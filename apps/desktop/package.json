@@ -2,6 +2,8 @@
   "name": "@private-voice/desktop",
   "version": "0.1.0",
   "private": true,
+  "description": "Quiet Team desktop app for private 3-5 person voice rooms",
+  "author": "Sober",
   "main": "dist-electron/main/index.cjs",
   "scripts": {
     "dev": "concurrently -k \"pnpm dev:main\" \"pnpm dev:renderer\" \"pnpm dev:electron\"",
