@@ -3,11 +3,11 @@ import path from "node:path";
 
 import { app } from "electron";
 
-import type { AppSettings } from "@private-voice/shared";
+import { DEFAULT_ROOM_NAME, type AppSettings } from "@private-voice/shared";
 
 export const defaultSettings: AppSettings = {
-  nickname: "Quiet Friend",
-  roomName: "Private Lounge",
+  nickname: "新成员",
+  roomName: DEFAULT_ROOM_NAME,
   minimizeToTray: true,
   reduceMotion: false,
   launchOnStartup: false,

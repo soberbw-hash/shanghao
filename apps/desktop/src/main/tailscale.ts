@@ -36,7 +36,7 @@ export const detectTailscaleStatus = async (): Promise<TailscaleStatus> => {
       state: TailscaleState.NotInstalled,
       isInstalled: false,
       isConnected: false,
-      message: "Tailscale is not installed on this device.",
+      message: "这台设备尚未安装 Tailscale。",
       installUrl: TAILSCALE_INSTALL_URL,
     };
   }
@@ -58,8 +58,8 @@ export const detectTailscaleStatus = async (): Promise<TailscaleStatus> => {
       tailnet: parsed.CurrentTailnet?.Name,
       ip,
       message: isConnected
-        ? "Tailscale is connected and ready for private room hosting."
-        : "Tailscale is installed, but this device is not connected to your tailnet.",
+        ? "Tailscale 已连接，可以直接用于私人房间联机。"
+        : "Tailscale 已安装，但这台设备还没有连接到你的 tailnet。",
       installUrl: TAILSCALE_INSTALL_URL,
     };
   } catch {
@@ -67,7 +67,7 @@ export const detectTailscaleStatus = async (): Promise<TailscaleStatus> => {
       state: TailscaleState.Installed,
       isInstalled: true,
       isConnected: false,
-      message: "Tailscale is installed, but the current status could not be read.",
+      message: "Tailscale 已安装，但暂时无法读取当前状态。",
       installUrl: TAILSCALE_INSTALL_URL,
     };
   }

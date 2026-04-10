@@ -21,15 +21,15 @@ export const RoomHeroCard = ({
       <div>
         <div className="text-[28px] font-semibold text-white">{roomName}</div>
         <p className="mt-2 max-w-lg text-sm leading-6 text-white/55">
-          Open one quiet room for your fixed group, then leave it when the session ends.
+          只开一个固定房间，需要时打开，不用时离开。
         </p>
       </div>
       <RoomActionButtons onStartRoom={onStartRoom} onJoinRoom={onJoinRoom} />
     </div>
     <div className="space-y-3 rounded-[18px] border border-white/8 bg-white/[0.04] p-4">
-      <div className="text-sm font-medium text-white">Join with a host address</div>
+      <div className="text-sm font-medium text-white">使用房主地址加入</div>
       <Input
-        placeholder="ws://100.x.x.x:4242"
+        placeholder="粘贴房主分享的 ws:// 地址"
         value={joinSignalUrl}
         onChange={(event) => onJoinSignalUrlChange(event.target.value)}
       />

@@ -1,6 +1,7 @@
 import path from "node:path";
 
 import { app, BrowserWindow } from "electron";
+import { APP_NAME } from "@private-voice/shared";
 
 const devServerUrl = "http://127.0.0.1:5173";
 
@@ -13,6 +14,7 @@ export const createMainWindow = (): BrowserWindow => {
     backgroundColor: "#0d1118",
     frame: false,
     titleBarStyle: "hidden",
+    title: APP_NAME,
     show: false,
     webPreferences: {
       preload: path.join(__dirname, "../preload/index.cjs"),

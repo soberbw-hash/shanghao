@@ -43,10 +43,10 @@ export const HomePage = () => {
       <TopStatusBar />
       <TailscaleDetectionBanner status={tailscaleStatus} />
       {permissionState === MicPermissionState.Denied ? (
-        <DeviceHealthNotice message="Microphone permission is blocked right now. Voice cannot start until Windows allows it." />
+        <DeviceHealthNotice message="麦克风权限当前被系统拦截，先到 Windows 里允许访问后才能开始语音。" />
       ) : null}
       {tailscaleStatus?.state === TailscaleState.NotInstalled ? (
-        <DeviceHealthNotice message="Tailscale is not installed yet. Hosting will still show a local address, but your remote friends should use Tailscale for a reliable private connection." />
+        <DeviceHealthNotice message="这台电脑还没安装 Tailscale。你仍然可以看到本地地址，但异地好友建议通过 Tailscale 加入，连接会更稳定。" />
       ) : null}
       <RoomHeroCard
         roomName={room.roomName}

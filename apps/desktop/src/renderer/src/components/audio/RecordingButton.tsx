@@ -17,6 +17,6 @@ export const RecordingButton = ({
     disabled={disabled}
   >
     {isRecording ? <Square className="h-4 w-4" /> : <Circle className="h-4 w-4" />}
-    {isRecording ? "Stop recording" : "Record room"}
+    {isRecording ? "停止录音" : "开始录音"}
   </Button>
 );

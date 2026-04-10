@@ -17,23 +17,23 @@ export const AudioSettingsCard = ({
   outputDevices: AudioDeviceDescriptor[];
   onChange: (patch: Partial<AppSettings>) => void;
 }) => (
-  <SettingsSection title="Audio devices" description="Choose the default path for voice in and voice out.">
+  <SettingsSection title="音频设备" description="设置默认输入设备、输出设备和基础降噪。">
     <div className="space-y-3">
-      <SettingsItemRow label="Input device">
+      <SettingsItemRow label="输入设备">
         <InputDevicePicker
           devices={inputDevices}
           value={settings.preferredInputDeviceId}
           onChange={(preferredInputDeviceId) => onChange({ preferredInputDeviceId })}
         />
       </SettingsItemRow>
-      <SettingsItemRow label="Output device">
+      <SettingsItemRow label="输出设备">
         <OutputDevicePicker
           devices={outputDevices}
           value={settings.preferredOutputDeviceId}
           onChange={(preferredOutputDeviceId) => onChange({ preferredOutputDeviceId })}
         />
       </SettingsItemRow>
-      <SettingsItemRow label="Noise suppression" description="Uses Chromium or system-level suppression only.">
+      <SettingsItemRow label="基础降噪" description="只使用 Chromium 或系统自带的基础降噪能力。">
         <Switch
           isChecked={settings.isNoiseSuppressionEnabled}
           onChange={(isNoiseSuppressionEnabled) => onChange({ isNoiseSuppressionEnabled })}

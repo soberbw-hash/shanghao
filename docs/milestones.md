@@ -1,18 +1,18 @@
-# Milestones
+# 当前里程碑
 
 ## Phase 1
 
-- monorepo initialized
-- shared enums/types/constants created
-- Electron main process skeleton created
-- renderer shell and design system foundation created
+- 完成 monorepo 初始化
+- 完成共享枚举、类型和常量
+- 完成 Electron 主进程骨架
+- 完成渲染层和设计系统基础
 
 ## Phase 2
 
-- home page, room page, settings page, and overlays created
-- onboarding flow and empty-state/status components created
-- static room/member UI with live Zustand state created
+- 完成首页、房间页、设置页和共享浮层
+- 完成引导、空状态和状态提示组件
+- 完成基于 Zustand 的静态房间 / 成员界面
 
-## Phase 3+
+## Phase 3 及以后
 
-Core signaling, WebRTC, recording, tray, shortcuts, and Tailscale plumbing are scaffolded in code, but still need local dependency install plus end-to-end validation on a real machine pair before they should be considered production-ready.
+核心 signaling、WebRTC、录音、托盘、快捷键、Tailscale 联动已经进入代码，但仍然需要在真实的多台 Windows 机器上继续做端到端验证和迭代，才适合更长期地稳定使用。

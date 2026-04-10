@@ -1,4 +1,5 @@
 import {
+  APP_NAME,
   RecordingState,
   type RecordingOptions,
   type RecordingResult,
@@ -41,7 +42,7 @@ export class RecordingService {
       this.stateMachine.transition(RecordingState.Preparing, {
         startedAt: Date.now(),
         durationMs: 0,
-        message: "Preparing recording pipeline",
+        message: "正在准备录音",
       }),
     );
 
@@ -50,7 +51,7 @@ export class RecordingService {
       return this.emitState(
         this.stateMachine.transition(RecordingState.Recording, {
           startedAt: Date.now(),
-          message: "Recording in progress",
+          message: "录音进行中",
         }),
       );
     } catch (error) {
@@ -61,7 +62,7 @@ export class RecordingService {
           message:
             error instanceof Error
               ? error.message
-              : "Recording could not start on this device.",
+              : "这台设备暂时无法开始录音。",
         }),
       );
     }
@@ -70,7 +71,7 @@ export class RecordingService {
   async stop(options: RecordingOptions, actualSampleRate: number): Promise<RecordingResult> {
     this.emitState(
       this.stateMachine.transition(RecordingState.Stopping, {
-        message: "Stopping recorder",
+        message: "正在停止录音",
       }),
     );
 
@@ -79,7 +80,7 @@ export class RecordingService {
     this.emitState(
       this.stateMachine.transition(RecordingState.Saving, {
         durationMs: encoded.durationMs,
-        message: "Saving .m4a export",
+        message: "正在保存 .m4a 录音",
       }),
     );
 
@@ -89,7 +90,7 @@ export class RecordingService {
       sampleRate: actualSampleRate,
       sourceMimeType: encoded.mimeType,
       channels: options.channels,
-      suggestedFileName: `quiet-team-${new Date().toISOString().replaceAll(":", "-")}.m4a`,
+      suggestedFileName: `${APP_NAME}-${new Date().toISOString().replaceAll(":", "-")}.m4a`,
       targetFormat: options.targetFormat,
     });
 
@@ -101,7 +102,7 @@ export class RecordingService {
           message: response.errorMessage,
         }),
       );
-      throw new Error(response.errorMessage ?? "Recording export failed.");
+      throw new Error(response.errorMessage ?? "录音导出失败。");
     }
 
     const result = toRecordingResult(
@@ -117,7 +118,7 @@ export class RecordingService {
       this.stateMachine.transition(RecordingState.Saved, {
         durationMs: result.durationMs,
         result,
-        message: "Saved .m4a recording",
+        message: "录音已保存为 .m4a",
       }),
     );
 

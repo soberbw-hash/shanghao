@@ -10,6 +10,7 @@ import {
   MemberSpeakingState,
   type RoomMember,
 } from "@private-voice/shared";
+import { getMemberPresenceLabel } from "../../utils/labels";
 
 export const MemberCard = ({
   member,
@@ -30,8 +31,8 @@ export const MemberCard = ({
           </div>
           <div className="text-sm text-white/50">
             {member.presenceState === MemberPresenceState.Online
-              ? "Connected"
-              : "Waiting for a friend"}
+              ? "已进入语音"
+              : getMemberPresenceLabel(member.presenceState)}
           </div>
         </div>
       </div>

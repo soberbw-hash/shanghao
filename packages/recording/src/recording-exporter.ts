@@ -22,7 +22,7 @@ export const toRecordingResult = (
     response.fileSize === undefined ||
     !response.mimeType
   ) {
-    throw new Error(response.errorMessage ?? "Recording export failed.");
+    throw new Error(response.errorMessage ?? "录音导出失败。");
   }
 
   return {

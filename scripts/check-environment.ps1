@@ -48,8 +48,8 @@ foreach ($check in $checks) {
   }
 
   if ($null -eq $resolved) {
-    Write-Host "[missing] $($check.Name)" -ForegroundColor Yellow
+    Write-Host "[缺失] $($check.Name)" -ForegroundColor Yellow
   } else {
-    Write-Host "[ok] $($check.Name): $resolved" -ForegroundColor Green
+    Write-Host "[已就绪] $($check.Name): $resolved" -ForegroundColor Green
   }
 }

@@ -1,8 +1,8 @@
 {
   "name": "@private-voice/desktop",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
-  "description": "Quiet Team desktop app for private 3-5 person voice rooms",
+  "description": "上号桌面端，给固定好友使用的私人开黑语音工具",
   "author": "Sober",
   "main": "dist-electron/main/index.cjs",
   "scripts": {

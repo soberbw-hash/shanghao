@@ -8,6 +8,6 @@ export const RecordingFileRow = ({ item }: { item: RecordingResult }) => (
       <div className="text-sm font-medium text-white">{item.filePath}</div>
       <div className="text-xs text-white/45">{item.mimeType}</div>
     </div>
-    <TimeBadge value={`${Math.round(item.durationMs / 1000)}s`} />
+    <TimeBadge value={`${Math.round(item.durationMs / 1000)} 秒`} />
   </div>
 );

@@ -1,5 +1,6 @@
-export const APP_NAME = "Quiet Team";
-export const DEFAULT_ROOM_NAME = "Private Lounge";
+export const APP_NAME = "上号";
+export const APP_SLOGAN = "更好的开黑语音";
+export const DEFAULT_ROOM_NAME = "上号房间";
 export const MAX_ROOM_MEMBERS = 5;
 export const TARGET_SAMPLE_RATE = 44_100;
 export const TARGET_CHANNEL_COUNT = 1;

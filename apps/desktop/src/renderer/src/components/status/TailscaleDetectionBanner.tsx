@@ -17,7 +17,7 @@ export const TailscaleDetectionBanner = ({
       <div className="flex flex-wrap items-center justify-between gap-3">
         <span>{status.message}</span>
         <Button variant="secondary" onClick={() => void window.desktopApi.tailscale.openInstallGuide()}>
-          Open guide
+          打开下载页
         </Button>
       </div>
     </InlineBanner>

@@ -30,19 +30,19 @@ export const exportRecordingFromMain = async (
   writeLog: (payload: RendererLogPayload) => Promise<void>,
 ): Promise<RecordingExportResponse> => {
   const saveDialogResult = await dialog.showSaveDialog({
-    title: "Save room recording",
+    title: "保存房间录音",
     defaultPath: payload.suggestedFileName,
-    filters: [{ name: "AAC recording", extensions: ["m4a"] }],
+    filters: [{ name: "AAC 录音", extensions: ["m4a"] }],
   });
 
   if (saveDialogResult.canceled || !saveDialogResult.filePath) {
     return {
       ok: false,
-      errorMessage: "Recording save was canceled.",
+      errorMessage: "已取消保存录音。",
     };
   }
 
-  const tempDirectory = path.join(app.getPath("temp"), "quiet-team-recordings");
+  const tempDirectory = path.join(app.getPath("temp"), "shanghao-recordings");
   await mkdir(tempDirectory, { recursive: true });
 
   const timestamp = Date.now().toString();
@@ -92,7 +92,7 @@ export const exportRecordingFromMain = async (
             resolve();
             return;
           }
-          reject(new Error(`ffmpeg exited with code ${code ?? -1}`));
+          reject(new Error(`ffmpeg 退出，错误代码 ${code ?? -1}`));
         });
         ffmpeg.on("error", reject);
       });
@@ -135,8 +135,8 @@ export const exportRecordingFromMain = async (
       keptTemporaryFilePath: inputPath,
       errorMessage:
         error instanceof Error
-          ? `${error.message}. The temporary recording file was kept.`
-          : "Recording export failed. The temporary recording file was kept.",
+          ? `${error.message}。临时录音文件已保留。`
+          : "录音导出失败，临时录音文件已保留。",
     };
   }
 };

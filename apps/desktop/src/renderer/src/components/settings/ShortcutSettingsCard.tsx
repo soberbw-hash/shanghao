@@ -12,21 +12,21 @@ export const ShortcutSettingsCard = ({
   settings: AppSettings;
   onChange: (patch: Partial<AppSettings>) => void;
 }) => (
-  <SettingsSection title="Shortcuts" description="Keep the important controls reachable while you play.">
+  <SettingsSection title="快捷键" description="把常用操作留在手边，打游戏时也能快速控制。">
     <div className="space-y-3">
-      <SettingsItemRow label="Global mute shortcut">
+      <SettingsItemRow label="全局静音快捷键">
         <ShortcutInput
           value={settings.globalMuteShortcut}
           onChange={(globalMuteShortcut) => onChange({ globalMuteShortcut })}
         />
       </SettingsItemRow>
-      <SettingsItemRow label="Push-to-talk shortcut">
+      <SettingsItemRow label="按键说话快捷键">
         <ShortcutInput
           value={settings.pushToTalkShortcut}
           onChange={(pushToTalkShortcut) => onChange({ pushToTalkShortcut })}
         />
       </SettingsItemRow>
-      <SettingsItemRow label="Enable push-to-talk">
+      <SettingsItemRow label="启用按键说话">
         <Switch
           isChecked={settings.isPushToTalkEnabled}
           onChange={(isPushToTalkEnabled) => onChange({ isPushToTalkEnabled })}

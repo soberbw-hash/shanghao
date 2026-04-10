@@ -50,9 +50,9 @@ export const RoomPage = () => {
       startRecording();
     } catch (error) {
       pushToast({
-        title: "Recording could not start",
+        title: "录音无法开始",
         description:
-          error instanceof Error ? error.message : "No audio source is available right now.",
+          error instanceof Error ? error.message : "当前没有可用于录音的音频来源。",
       });
     }
   };
@@ -145,7 +145,7 @@ export const RoomPage = () => {
           onClick={() => void leaveRoom()}
           className="rounded-[14px] border border-rose-300/20 bg-rose-300/8 px-4 py-3 text-sm font-medium text-rose-100"
         >
-          Leave room
+          离开房间
         </button>
       </BottomControlDock>
     </PageContainer>

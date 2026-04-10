@@ -11,6 +11,6 @@ export const PushToTalkToggle = ({
 }) => (
   <ToggleButton isActive={isEnabled} onClick={onClick}>
     <Radio className="h-4 w-4" />
-    {isEnabled ? "PTT armed" : "Open mic"}
+    {isEnabled ? "按键说话" : "自由麦"}
   </ToggleButton>
 );

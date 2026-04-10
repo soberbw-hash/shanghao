@@ -12,13 +12,13 @@ export const RecordingSaveDialog = ({
   isOpen ? (
     <div className="pointer-events-auto fixed inset-0 flex items-center justify-center bg-black/50 px-6">
       <div className="w-full max-w-lg rounded-[24px] border border-white/8 bg-[#111723] p-6 shadow-panel">
-        <div className="text-[20px] font-semibold text-white">Recording saved</div>
+        <div className="text-[20px] font-semibold text-white">录音已保存</div>
         <p className="mt-2 text-sm leading-6 text-white/55">
-          {filePath || "Your room recording was exported to an .m4a file."}
+          {filePath || "房间录音已经导出为 .m4a 文件。"}
         </p>
         <div className="mt-5">
           <Button variant="secondary" onClick={onClose}>
-            Close
+            关闭
           </Button>
         </div>
       </div>

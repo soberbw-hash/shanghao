@@ -8,7 +8,7 @@ export const createMixedCallStream = (
   }
 
   if (sources.length === 0) {
-    throw new Error("No room audio sources are available for recording.");
+    throw new Error("当前房间里没有可用于录音的音频来源。");
   }
 
   const audioContext = new AudioContext({ sampleRate: 44_100 });

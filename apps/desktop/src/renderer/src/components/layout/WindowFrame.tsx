@@ -1,12 +1,13 @@
 import { Minus, Square, X } from "lucide-react";
 
 import { IconButton } from "@private-voice/ui";
+import { APP_NAME } from "@private-voice/shared";
 
 import { desktopApi } from "../../utils/desktopApi";
 
 export const WindowFrame = () => (
   <div className="drag-region flex items-center justify-between px-5 py-3">
-    <div className="text-xs uppercase tracking-[0.24em] text-white/30">Quiet Team</div>
+    <div className="text-xs tracking-[0.24em] text-white/30">{APP_NAME}</div>
     <div className="no-drag flex items-center gap-2">
       <IconButton onClick={() => void desktopApi.window.minimize()}>
         <Minus className="h-4 w-4" />

@@ -1,4 +1,5 @@
 import { Menu, Tray, nativeImage, type BrowserWindow, app } from "electron";
+import { APP_NAME } from "@private-voice/shared";
 
 const createTrayImage = () => {
   const svg = `
@@ -22,7 +23,7 @@ export const createTrayController = (
   const renderMenu = () =>
     Menu.buildFromTemplate([
       {
-        label: "Show Quiet Team",
+        label: `显示${APP_NAME}`,
         click: () => {
           const window = getWindow();
           window?.show();
@@ -30,12 +31,12 @@ export const createTrayController = (
         },
       },
       {
-        label: "Hide",
+        label: "隐藏",
         click: () => getWindow()?.hide(),
       },
       { type: "separator" },
       {
-        label: "Quit",
+        label: "退出",
         click: () => {
           onQuit();
           app.quit();
@@ -43,7 +44,7 @@ export const createTrayController = (
       },
     ]);
 
-  tray.setToolTip("Quiet Team");
+  tray.setToolTip(APP_NAME);
   tray.setContextMenu(renderMenu());
   tray.on("double-click", () => {
     const window = getWindow();

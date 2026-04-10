@@ -1,7 +1,7 @@
 const steps = [
-  "Open a room when your group is ready",
-  "Share the host address over Tailscale",
-  "Use the mute shortcut whenever you need quiet fast",
+  "人齐了就开房，把房间长期保持成一个固定入口",
+  "把房主地址发给朋友，让他们直接粘贴加入",
+  "需要安静时，随时用静音或按键说话控制自己",
 ];
 
 export const SetupChecklist = () => (

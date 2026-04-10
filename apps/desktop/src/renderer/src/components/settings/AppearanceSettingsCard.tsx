@@ -11,15 +11,15 @@ export const AppearanceSettingsCard = ({
   settings: AppSettings;
   onChange: (patch: Partial<AppSettings>) => void;
 }) => (
-  <SettingsSection title="Appearance & behavior" description="Keep movement restrained and tray behavior predictable.">
+  <SettingsSection title="视觉与体验" description="把动画和托盘行为调到你顺手的状态。">
     <div className="space-y-3">
-      <SettingsItemRow label="Minimize to tray">
+      <SettingsItemRow label="最小化到托盘">
         <Switch
           isChecked={settings.minimizeToTray}
           onChange={(minimizeToTray) => onChange({ minimizeToTray })}
         />
       </SettingsItemRow>
-      <SettingsItemRow label="Reduce motion">
+      <SettingsItemRow label="减少动态效果">
         <Switch
           isChecked={settings.reduceMotion}
           onChange={(reduceMotion) => onChange({ reduceMotion })}

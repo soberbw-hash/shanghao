@@ -69,7 +69,7 @@ export const listAudioDevices = async (): Promise<AudioDeviceDescriptor[]> => {
       id: device.deviceId,
       label:
         device.label ||
-        (device.kind === "audioinput" ? "Unnamed microphone" : "Unnamed speaker"),
+        (device.kind === "audioinput" ? "未命名麦克风" : "未命名扬声器"),
       kind: device.kind as AudioDeviceKind,
       groupId: device.groupId,
       state: AudioDeviceState.Ready,

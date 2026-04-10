@@ -12,11 +12,11 @@ export const RoomActionButtons = ({
   <div className="flex flex-wrap gap-3">
     <Button onClick={onStartRoom}>
       <Radio className="h-4 w-4" />
-      Start room
+      开启房间
     </Button>
     <Button variant="secondary" onClick={onJoinRoom}>
       <DoorOpen className="h-4 w-4" />
-      Join room
+      加入房间
       <ArrowRight className="h-4 w-4" />
     </Button>
   </div>

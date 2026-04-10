@@ -1,5 +1,6 @@
-appId: com.privatevoice.quietteam
-productName: Quiet Team
+appId: com.sober.shanghao
+productName: 上号
+artifactName: ShangHao-Setup.${ext}
 asar: true
 directories:
   output: release

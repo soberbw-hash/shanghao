@@ -43,7 +43,7 @@ export class DiagnosticsService {
     };
 
     const result = await dialog.showOpenDialog({
-      title: "Export Quiet Team logs",
+      title: "导出上号日志",
       properties: ["openDirectory", "createDirectory"],
     });
 
@@ -67,7 +67,7 @@ export class DiagnosticsService {
 
       const exportDirectory = path.join(
         targetDirectory,
-        `quiet-team-logs-${new Date().toISOString().replaceAll(":", "-")}`,
+        `shanghao-logs-${new Date().toISOString().replaceAll(":", "-")}`,
       );
       await cp(this.logsDirectory, exportDirectory, { recursive: true });
 

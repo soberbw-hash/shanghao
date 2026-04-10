@@ -11,6 +11,6 @@ export const NoiseSuppressionToggle = ({
 }) => (
   <ToggleButton isActive={isEnabled} onClick={onClick}>
     <Waves className="h-4 w-4" />
-    Noise filter
+    基础降噪
   </ToggleButton>
 );

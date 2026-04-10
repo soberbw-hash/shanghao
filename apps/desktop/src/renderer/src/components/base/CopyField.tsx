@@ -13,7 +13,7 @@ export const CopyField = ({ value }: { value: string }) => (
       }}
     >
       <Copy className="h-4 w-4" />
-      Copy
+      复制
     </Button>
   </div>
 );

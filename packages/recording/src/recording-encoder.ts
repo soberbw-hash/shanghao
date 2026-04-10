@@ -18,7 +18,7 @@ export class BrowserRecordingEncoder implements RecordingEncoder {
 
   start(stream: MediaStream): void {
     if (!this.capability.mimeType) {
-      throw new Error("No supported recording MIME type was detected.");
+      throw new Error("当前设备没有检测到可用的录音 MIME 类型。");
     }
 
     this.chunks = [];
@@ -37,7 +37,7 @@ export class BrowserRecordingEncoder implements RecordingEncoder {
 
   async stop(): Promise<{ blob: Blob; mimeType: string; durationMs: number }> {
     if (!this.mediaRecorder) {
-      throw new Error("Recording was not started.");
+      throw new Error("录音尚未开始。");
     }
 
     const recorder = this.mediaRecorder;

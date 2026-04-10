@@ -19,7 +19,7 @@ const fallbackTailscaleStatus: TailscaleStatus = {
   state: TailscaleState.Unknown,
   isInstalled: false,
   isConnected: false,
-  message: "Checking Tailscale status...",
+  message: "正在检测 Tailscale 状态...",
 };
 
 export const useSettingsStore = create<SettingsStoreState>((set, get) => ({

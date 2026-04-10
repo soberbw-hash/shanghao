@@ -1,4 +1,5 @@
 import {
+  DEFAULT_ROOM_NAME,
   MemberSpeakingState,
   MemberPresenceState,
   RoomConnectionState,
@@ -30,7 +31,7 @@ interface RoomStoreState {
 
 const placeholderMembers: RoomMember[] = Array.from({ length: 5 }, (_, index) => ({
   id: `placeholder-${index}`,
-  nickname: index === 0 ? "You" : "Invite slot",
+  nickname: index === 0 ? "我" : "待加入成员",
   isHost: index === 0,
   isLocal: index === 0,
   isMuted: false,
@@ -43,7 +44,7 @@ const placeholderMembers: RoomMember[] = Array.from({ length: 5 }, (_, index) =>
 
 const initialRoomState = (): RoomSummary => ({
   roomId: "private-room",
-  roomName: "Private Lounge",
+  roomName: DEFAULT_ROOM_NAME,
   memberCount: 1,
   members: placeholderMembers,
   connectionState: RoomConnectionState.Idle,
