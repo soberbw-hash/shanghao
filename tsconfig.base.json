@@ -1,0 +1,29 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "strict": true,
+    "noImplicitOverride": true,
+    "noUncheckedIndexedAccess": true,
+    "useDefineForClassFields": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "skipLibCheck": true,
+    "esModuleInterop": true,
+    "forceConsistentCasingInFileNames": true,
+    "baseUrl": ".",
+    "paths": {
+      "@private-voice/shared": ["packages/shared/src/index.ts"],
+      "@private-voice/shared/*": ["packages/shared/src/*"],
+      "@private-voice/signaling": ["packages/signaling/src/index.ts"],
+      "@private-voice/signaling/*": ["packages/signaling/src/*"],
+      "@private-voice/webrtc": ["packages/webrtc/src/index.ts"],
+      "@private-voice/webrtc/*": ["packages/webrtc/src/*"],
+      "@private-voice/recording": ["packages/recording/src/index.ts"],
+      "@private-voice/recording/*": ["packages/recording/src/*"],
+      "@private-voice/ui": ["packages/ui/src/index.ts"],
+      "@private-voice/ui/*": ["packages/ui/src/*"]
+    }
+  }
+}

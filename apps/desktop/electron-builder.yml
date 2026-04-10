@@ -1,0 +1,19 @@
+appId: com.privatevoice.quietteam
+productName: Quiet Team
+asar: true
+directories:
+  output: release
+files:
+  - "dist/**"
+  - "dist-electron/**"
+  - "package.json"
+extraMetadata:
+  main: dist-electron/main/index.cjs
+win:
+  signAndEditExecutable: false
+  target:
+    - nsis
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true

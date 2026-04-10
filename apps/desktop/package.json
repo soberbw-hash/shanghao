@@ -1,0 +1,48 @@
+{
+  "name": "@private-voice/desktop",
+  "version": "0.1.0",
+  "private": true,
+  "main": "dist-electron/main/index.cjs",
+  "scripts": {
+    "dev": "concurrently -k \"pnpm dev:main\" \"pnpm dev:renderer\" \"pnpm dev:electron\"",
+    "dev:main": "tsup --config tsup.config.ts --watch",
+    "dev:renderer": "vite",
+    "dev:electron": "wait-on tcp:5173 file:dist-electron/main/index.cjs && electron .",
+    "build": "pnpm build:main && pnpm build:renderer",
+    "build:main": "tsup --config tsup.config.ts",
+    "build:renderer": "vite build",
+    "typecheck": "tsc --project tsconfig.json --noEmit",
+    "lint": "tsc --project tsconfig.json --noEmit",
+    "dist": "pnpm build && electron-builder --config electron-builder.yml"
+  },
+  "dependencies": {
+    "@private-voice/recording": "workspace:*",
+    "@private-voice/shared": "workspace:*",
+    "@private-voice/signaling": "workspace:*",
+    "@private-voice/ui": "workspace:*",
+    "@private-voice/webrtc": "workspace:*",
+    "ffmpeg-static": "^5.2.0",
+    "ffprobe-static": "^3.1.0",
+    "framer-motion": "^11.18.2",
+    "lucide-react": "^0.511.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "zustand": "^5.0.3"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.3",
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "@vitejs/plugin-react-swc": "^3.8.0",
+    "autoprefixer": "^10.4.21",
+    "concurrently": "^9.1.2",
+    "electron": "^35.1.5",
+    "electron-builder": "^26.0.12",
+    "postcss": "^8.5.3",
+    "tailwindcss": "^3.4.17",
+    "tsup": "^8.4.0",
+    "typescript": "^5.8.3",
+    "vite": "^6.3.5",
+    "wait-on": "^8.0.3"
+  }
+}

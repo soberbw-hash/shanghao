@@ -1,0 +1,12 @@
+node_modules/
+.turbo/
+dist/
+dist-electron/
+release/
+coverage/
+.DS_Store
+Thumbs.db
+*.log
+apps/desktop/release/
+apps/desktop/dist/
+apps/desktop/dist-electron/
