@@ -38,9 +38,8 @@ export const MemberCard = ({
   const isSpeaking = member.speakingState === MemberSpeakingState.Speaking;
 
   return (
-    <motion.button
+    <button
       type="button"
-      layout
       onClick={() => setIsExpanded((value) => !value)}
       className="relative flex w-full flex-col gap-3 rounded-[18px] border border-[#E7ECF2] bg-white px-4 py-3 text-left shadow-[0_8px_20px_rgba(17,24,39,0.04)] transition hover:border-[#C7D7EB]"
     >
@@ -96,6 +95,6 @@ export const MemberCard = ({
           />
         </motion.div>
       ) : null}
-    </motion.button>
+    </button>
   );
 };

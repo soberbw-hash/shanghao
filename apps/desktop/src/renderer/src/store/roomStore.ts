@@ -101,6 +101,35 @@ const normalizeMembers = (members: RoomMember[]): RoomMember[] => {
 const countActualMembers = (members: RoomMember[]): number =>
   members.filter((member) => !member.isEmptySlot).length;
 
+const areMembersEqual = (left: RoomMember[], right: RoomMember[]): boolean => {
+  if (left.length !== right.length) {
+    return false;
+  }
+
+  return left.every((member, index) => {
+    const candidate = right[index];
+    if (!candidate) {
+      return false;
+    }
+
+    return (
+      member.id === candidate.id &&
+      member.nickname === candidate.nickname &&
+      member.avatarPath === candidate.avatarPath &&
+      member.avatarDataUrl === candidate.avatarDataUrl &&
+      member.isHost === candidate.isHost &&
+      member.isLocal === candidate.isLocal &&
+      member.isEmptySlot === candidate.isEmptySlot &&
+      member.isMuted === candidate.isMuted &&
+      member.presenceState === candidate.presenceState &&
+      member.speakingState === candidate.speakingState &&
+      member.volume === candidate.volume &&
+      member.joinedAt === candidate.joinedAt &&
+      member.connectionQuality === candidate.connectionQuality
+    );
+  });
+};
+
 const initialRoomState = (): RoomSummary => {
   const members = normalizeMembers([createLocalPreviewMember()]);
   return {
@@ -142,6 +171,10 @@ export const useRoomStore = create<RoomStoreState>((set) => ({
   setMembers: (members) =>
     set((state) => {
       const normalizedMembers = normalizeMembers(members);
+      if (areMembersEqual(state.room.members, normalizedMembers)) {
+        return state;
+      }
+
       return {
         room: {
           ...state.room,
@@ -193,6 +226,9 @@ export const useRoomStore = create<RoomStoreState>((set) => ({
       }
 
       const normalizedMembers = normalizeMembers(members);
+      if (areMembersEqual(state.room.members, normalizedMembers)) {
+        return state;
+      }
 
       return {
         room: {

@@ -51,7 +51,11 @@ export class PeerManager {
   ): void {
     const peer = this.peers.get(peerId);
     if (peer) {
-      Object.assign(peer, nextState);
+      for (const [key, value] of Object.entries(nextState)) {
+        if (value !== undefined) {
+          Object.assign(peer, { [key]: value });
+        }
+      }
     }
   }
 

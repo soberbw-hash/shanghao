@@ -68,12 +68,25 @@ export class SettingsStore {
     return this.cachedSettings;
   }
 
+  private isCorruptedRoomName(roomName: string): boolean {
+    const trimmedRoomName = roomName.trim();
+    return [
+      "涓婂彿鎴块棿",
+      "ä¸Šå·æ¿é´",
+      "ä¸Šå·æ¿é´".trim(),
+    ].includes(trimmedRoomName);
+  }
+
   private normalizeSettings(settings: AppSettings): AppSettings {
     const isProfileReady = settings.nickname.trim().length > 0 && Boolean(settings.avatarPath);
+    const normalizedRoomName = this.isCorruptedRoomName(settings.roomName)
+      ? DEFAULT_ROOM_NAME
+      : settings.roomName.trim() || DEFAULT_ROOM_NAME;
+
     return {
       ...settings,
       nickname: settings.nickname.trim(),
-      roomName: settings.roomName.trim() || DEFAULT_ROOM_NAME,
+      roomName: normalizedRoomName,
       hasCompletedProfileSetup:
         Boolean(settings.hasCompletedProfileSetup) && isProfileReady,
     };

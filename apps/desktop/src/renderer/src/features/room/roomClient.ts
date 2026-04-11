@@ -46,6 +46,10 @@ export class RoomClient {
   private localStream: MediaStream;
   private nickname: string;
   private avatarDataUrl?: string;
+  private lastPublishedMuteState?: boolean;
+  private lastPublishedSpeakingState?: boolean;
+  private lastPublishedNickname: string;
+  private lastPublishedAvatarDataUrl?: string;
   private pendingConnection?: PendingConnection;
   private hasJoinedOnce = false;
 
@@ -53,6 +57,8 @@ export class RoomClient {
     this.localStream = options.localStream;
     this.nickname = options.nickname;
     this.avatarDataUrl = options.avatarDataUrl;
+    this.lastPublishedNickname = options.nickname;
+    this.lastPublishedAvatarDataUrl = options.avatarDataUrl;
   }
 
   connect(): Promise<void> {
@@ -80,6 +86,15 @@ export class RoomClient {
   }
 
   updateMuteState(isMuted: boolean, isSpeaking: boolean): void {
+    if (
+      this.lastPublishedMuteState === isMuted &&
+      this.lastPublishedSpeakingState === isSpeaking
+    ) {
+      return;
+    }
+
+    this.lastPublishedMuteState = isMuted;
+    this.lastPublishedSpeakingState = isSpeaking;
     this.send({
       type: "member_state",
       roomId: this.options.roomId,
@@ -90,8 +105,17 @@ export class RoomClient {
   }
 
   updateProfile(nickname: string, avatarDataUrl?: string): void {
+    if (
+      this.lastPublishedNickname === nickname &&
+      this.lastPublishedAvatarDataUrl === avatarDataUrl
+    ) {
+      return;
+    }
+
     this.nickname = nickname;
     this.avatarDataUrl = avatarDataUrl;
+    this.lastPublishedNickname = nickname;
+    this.lastPublishedAvatarDataUrl = avatarDataUrl;
 
     this.send({
       type: "member_state",
@@ -157,7 +181,13 @@ export class RoomClient {
 
         try {
           const payload = JSON.parse(event.data) as SignalEnvelope;
-          void this.handleSignal(payload);
+          void this.handleSignal(payload).catch((error) => {
+            const normalizedError =
+              error instanceof Error ? error : new Error("invalid_signaling_payload");
+
+            this.options.onConnectionState(RoomConnectionState.Failed);
+            this.rejectPendingConnection(normalizedError);
+          });
         } catch {
           this.rejectPendingConnection(new Error("invalid_signaling_payload"));
         }

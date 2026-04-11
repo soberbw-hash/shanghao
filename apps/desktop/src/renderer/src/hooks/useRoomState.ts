@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect } from "react";
 
 import { RoomConnectionState, RoomLifecycleState } from "@private-voice/shared";
 import { createSpeakingDetector, requestMicrophoneStream } from "@private-voice/webrtc";
@@ -9,6 +9,10 @@ import { useAudioStore } from "../store/audioStore";
 import { useRoomStore } from "../store/roomStore";
 import { useSettingsStore } from "../store/settingsStore";
 import { writeRendererLog } from "../utils/logger";
+
+const sharedPeerId = crypto.randomUUID();
+let activeClient: RoomClient | null = null;
+let activeSpeakingDetector: ReturnType<typeof createSpeakingDetector> | null = null;
 
 const copy = {
   startHostTitle: "\u623f\u95f4\u542f\u52a8\u5931\u8d25",
@@ -128,12 +132,8 @@ export const useRoomState = () => {
   const pushToast = useAppStore((state) => state.pushToast);
   const setRoomAction = useAppStore((state) => state.setRoomAction);
 
-  const clientRef = useRef<RoomClient | null>(null);
-  const speakingRef = useRef<ReturnType<typeof createSpeakingDetector> | null>(null);
-  const peerId = useMemo(() => crypto.randomUUID(), []);
-
   useEffect(() => {
-    clientRef.current?.updateMuteState(isMuted, false);
+    activeClient?.updateMuteState(isMuted, false);
   }, [isMuted]);
 
   useEffect(() => {
@@ -141,25 +141,19 @@ export const useRoomState = () => {
       return;
     }
 
-    useRoomStore.getState().syncLocalProfile({
-      nickname: settings.nickname,
-      avatarPath: settings.avatarPath,
-      avatarDataUrl,
-    });
-
-    clientRef.current?.updateProfile(settings.nickname, avatarDataUrl);
-  }, [avatarDataUrl, settings?.avatarPath, settings?.nickname]);
+    activeClient?.updateProfile(settings.nickname, avatarDataUrl);
+  }, [avatarDataUrl, settings?.nickname]);
 
   const startSpeakingDetector = (stream: MediaStream) => {
-    speakingRef.current?.destroy();
-    speakingRef.current = createSpeakingDetector(stream, (isSpeaking) => {
-      clientRef.current?.updateMuteState(useAudioStore.getState().isMuted, isSpeaking);
+    activeSpeakingDetector?.destroy();
+    activeSpeakingDetector = createSpeakingDetector(stream, (isSpeaking) => {
+      activeClient?.updateMuteState(useAudioStore.getState().isMuted, isSpeaking);
     });
   };
 
   const stopLocalMedia = () => {
-    speakingRef.current?.destroy();
-    speakingRef.current = null;
+    activeSpeakingDetector?.destroy();
+    activeSpeakingDetector = null;
     useRoomStore
       .getState()
       .localStream?.getTracks()
@@ -202,11 +196,11 @@ export const useRoomState = () => {
   }) => {
     const stream = await ensureLocalStream();
 
-    clientRef.current?.disconnect();
-    clientRef.current = new RoomClient({
+    activeClient?.disconnect();
+    activeClient = new RoomClient({
       signalingUrl,
       roomId,
-      peerId,
+      peerId: sharedPeerId,
       nickname: settings?.nickname ?? "\u6211",
       avatarDataUrl,
       localStream: stream,
@@ -225,7 +219,7 @@ export const useRoomState = () => {
       signalingUrl,
     });
 
-    await clientRef.current.connect();
+    await activeClient.connect();
     setRoom({
       roomId,
       roomName,
@@ -274,7 +268,7 @@ export const useRoomState = () => {
       });
       await window.desktopApi.host.stop().catch(() => undefined);
       stopLocalMedia();
-      clientRef.current = null;
+      activeClient = null;
       setHostSession(undefined);
       setConnectionState(RoomConnectionState.Failed);
       setRoom({
@@ -320,7 +314,7 @@ export const useRoomState = () => {
         signalingUrl,
       });
       stopLocalMedia();
-      clientRef.current = null;
+      activeClient = null;
       setConnectionState(RoomConnectionState.Failed);
       setRoom({
         lifecycleState: RoomLifecycleState.Closed,
@@ -336,7 +330,7 @@ export const useRoomState = () => {
   };
 
   const replaceInputDevice = async (preferredInputDeviceId?: string) => {
-    if (!clientRef.current || !settings) {
+    if (!activeClient || !settings) {
       return;
     }
 
@@ -353,7 +347,7 @@ export const useRoomState = () => {
 
       setLocalDiagnostics(diagnostics);
       setLocalStream(stream);
-      await clientRef.current.replaceInputTrack(nextTrack);
+      await activeClient.replaceInputTrack(nextTrack);
       startSpeakingDetector(stream);
       await writeRendererLog("devices", "info", "Switched input device", {
         preferredInputDeviceId,
@@ -375,10 +369,11 @@ export const useRoomState = () => {
 
   const leaveRoom = async () => {
     try {
-      speakingRef.current?.destroy();
+      activeSpeakingDetector?.destroy();
       localStream?.getTracks().forEach((track) => track.stop());
-      clientRef.current?.disconnect();
-      clientRef.current = null;
+      activeClient?.disconnect();
+      activeClient = null;
+      activeSpeakingDetector = null;
       await window.desktopApi.host.stop().catch(() => undefined);
       useRoomStore.getState().resetRoom();
       if (settings) {

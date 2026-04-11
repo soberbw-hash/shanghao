@@ -10,11 +10,15 @@ import { writeRendererLog } from "../utils/logger";
 
 export const useRecordingController = () => {
   const localStream = useRoomStore((state) => state.localStream);
-  const remoteStreams = useRoomStore((state) => Object.values(state.remoteStreams));
+  const remoteStreamsByPeer = useRoomStore((state) => state.remoteStreams);
   const setStatus = useRecordingStore((state) => state.setStatus);
   const addHistory = useRecordingStore((state) => state.addHistory);
   const serviceRef = useRef<RecordingService | null>(null);
   const mixRef = useRef<ReturnType<typeof createMixedCallStream> | null>(null);
+  const remoteStreams = useMemo(
+    () => Object.values(remoteStreamsByPeer),
+    [remoteStreamsByPeer],
+  );
 
   const recordingService = useMemo(() => {
     if (serviceRef.current) {
