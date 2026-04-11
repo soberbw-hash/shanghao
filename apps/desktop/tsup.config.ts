@@ -21,5 +21,6 @@ export default defineConfig({
   platform: "node",
   sourcemap: true,
   splitting: false,
-  external: ["electron"],
+  external: ["electron", "ffmpeg-static", "ffprobe-static"],
+  noExternal: [/^@private-voice\//, "ws"],
 });

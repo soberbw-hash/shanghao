@@ -3,11 +3,18 @@ import { Minus, Square, X } from "lucide-react";
 import { IconButton } from "@private-voice/ui";
 import { APP_NAME } from "@private-voice/shared";
 
+import { BrandMark } from "../brand/BrandMark";
 import { desktopApi } from "../../utils/desktopApi";
 
 export const WindowFrame = () => (
   <div className="drag-region flex items-center justify-between px-5 py-3">
-    <div className="text-xs tracking-[0.24em] text-white/30">{APP_NAME}</div>
+    <div className="flex items-center gap-3">
+      <BrandMark size="sm" />
+      <div>
+        <div className="text-[11px] tracking-[0.24em] text-white/30">SHANGHAO</div>
+        <div className="text-sm font-medium text-white/88">{APP_NAME}</div>
+      </div>
+    </div>
     <div className="no-drag flex items-center gap-2">
       <IconButton onClick={() => void desktopApi.window.minimize()}>
         <Minus className="h-4 w-4" />

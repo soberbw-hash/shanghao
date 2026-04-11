@@ -4,13 +4,16 @@ artifactName: ShangHao-Setup.${ext}
 asar: true
 directories:
   output: release
+  buildResources: build
 files:
   - "dist/**"
   - "dist-electron/**"
   - "package.json"
 extraMetadata:
+  name: shanghao
   main: dist-electron/main/index.cjs
 win:
+  icon: icon.ico
   signAndEditExecutable: false
   target:
     - nsis
@@ -18,3 +21,6 @@ nsis:
   oneClick: false
   perMachine: false
   allowToChangeInstallationDirectory: true
+  installerIcon: icon.ico
+  uninstallerIcon: icon.ico
+  installerHeaderIcon: icon.ico

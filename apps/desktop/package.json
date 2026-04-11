@@ -1,8 +1,8 @@
 {
-  "name": "@private-voice/desktop",
-  "version": "0.1.1",
+  "name": "shanghao-desktop",
+  "version": "0.1.2",
   "private": true,
-  "description": "上号桌面端，给固定好友使用的私人开黑语音工具",
+  "description": "ShangHao desktop voice app for private friends group chat",
   "author": "Sober",
   "main": "dist-electron/main/index.cjs",
   "scripts": {
@@ -15,7 +15,7 @@
     "build:renderer": "vite build",
     "typecheck": "tsc --project tsconfig.json --noEmit",
     "lint": "tsc --project tsconfig.json --noEmit",
-    "dist": "pnpm build && electron-builder --config electron-builder.yml"
+    "dist": "pnpm -C ../.. build && electron-builder --config electron-builder.yml"
   },
   "dependencies": {
     "@private-voice/recording": "workspace:*",

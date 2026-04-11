@@ -1,14 +1,14 @@
 {
-  "name": "private-voice-app",
-  "version": "0.1.1",
+  "name": "shanghao-workspace",
+  "version": "0.1.2",
   "private": true,
   "packageManager": "pnpm@10.0.0",
   "scripts": {
-    "dev": "turbo dev --filter=@private-voice/desktop",
+    "dev": "turbo dev --filter=shanghao-desktop",
     "build": "turbo build",
     "typecheck": "turbo typecheck",
     "lint": "turbo lint",
-    "dist": "pnpm --filter @private-voice/desktop dist"
+    "dist": "pnpm --filter shanghao-desktop dist"
   },
   "pnpm": {
     "onlyBuiltDependencies": [

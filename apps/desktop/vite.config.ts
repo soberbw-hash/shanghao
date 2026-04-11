@@ -8,6 +8,7 @@ const currentDirectory = path.dirname(fileURLToPath(import.meta.url));
 const resolvePath = (...segments: string[]) => path.resolve(currentDirectory, ...segments);
 
 export default defineConfig({
+  base: "./",
   plugins: [react()],
   resolve: {
     alias: {
