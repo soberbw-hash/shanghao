@@ -6,25 +6,35 @@ import {
   type RoomMember,
 } from "@private-voice/shared";
 import type {
+  ErrorMessage,
   IceCandidateMessage,
   PeerAnswerMessage,
   PeerOfferMessage,
   RoomSnapshotMessage,
   SignalEnvelope,
 } from "@private-voice/signaling";
-import { MeshPeerConnection, ExponentialBackoff } from "@private-voice/webrtc";
+import { ExponentialBackoff, MeshPeerConnection } from "@private-voice/webrtc";
 
 interface RoomClientOptions {
   signalingUrl: string;
   roomId: string;
   peerId: string;
   nickname: string;
+  avatarDataUrl?: string;
   localStream: MediaStream;
   onMembers: (members: RoomMember[]) => void;
   onRoomName: (roomName: string) => void;
   onConnectionState: (state: RoomConnectionState) => void;
   onRemoteStream: (peerId: string, stream: MediaStream | undefined) => void;
 }
+
+interface PendingConnection {
+  resolve: () => void;
+  reject: (error: Error) => void;
+  timeout: number;
+}
+
+const INITIAL_CONNECT_TIMEOUT_MS = 10_000;
 
 export class RoomClient {
   private socket?: WebSocket;
@@ -34,57 +44,25 @@ export class RoomClient {
   private reconnectTimer?: number;
   private shouldReconnect = true;
   private localStream: MediaStream;
+  private nickname: string;
+  private avatarDataUrl?: string;
+  private pendingConnection?: PendingConnection;
+  private hasJoinedOnce = false;
 
   constructor(private readonly options: RoomClientOptions) {
     this.localStream = options.localStream;
+    this.nickname = options.nickname;
+    this.avatarDataUrl = options.avatarDataUrl;
   }
 
-  connect(): void {
+  connect(): Promise<void> {
     this.shouldReconnect = true;
-    this.options.onConnectionState(RoomConnectionState.Joining);
-    this.socket = new WebSocket(this.options.signalingUrl);
-
-    this.socket.onopen = () => {
-      this.options.onConnectionState(RoomConnectionState.Connected);
-      this.backoff.reset();
-
-      this.send({
-        type: "join_room",
-        roomId: this.options.roomId,
-        peerId: this.options.peerId,
-        nickname: this.options.nickname,
-      });
-
-      this.startHeartbeat();
-    };
-
-    this.socket.onmessage = (event) => {
-      if (typeof event.data !== "string") {
-        return;
-      }
-
-      const payload = JSON.parse(event.data) as SignalEnvelope;
-      this.handleSignal(payload);
-    };
-
-    this.socket.onclose = () => {
-      if (!this.shouldReconnect) {
-        return;
-      }
-
-      this.options.onConnectionState(RoomConnectionState.Reconnecting);
-      this.stopHeartbeat();
-      this.clearPeers();
-      this.reconnect();
-    };
-
-    this.socket.onerror = () => {
-      this.options.onConnectionState(RoomConnectionState.Failed);
-    };
+    return this.openSocket(false);
   }
 
   disconnect(): void {
     this.shouldReconnect = false;
+    this.clearPendingConnection();
     this.stopHeartbeat();
     if (this.reconnectTimer) {
       window.clearTimeout(this.reconnectTimer);
@@ -111,6 +89,19 @@ export class RoomClient {
     });
   }
 
+  updateProfile(nickname: string, avatarDataUrl?: string): void {
+    this.nickname = nickname;
+    this.avatarDataUrl = avatarDataUrl;
+
+    this.send({
+      type: "member_state",
+      roomId: this.options.roomId,
+      peerId: this.options.peerId,
+      nickname,
+      avatarDataUrl,
+    });
+  }
+
   async replaceInputTrack(nextTrack: MediaStreamTrack): Promise<void> {
     const previousTracks = this.localStream.getAudioTracks();
     const nextStream = new MediaStream([nextTrack]);
@@ -127,19 +118,93 @@ export class RoomClient {
     });
   }
 
-  private handleSignal(payload: SignalEnvelope): void {
+  private openSocket(isReconnect: boolean): Promise<void> {
+    if (!isReconnect) {
+      this.options.onConnectionState(RoomConnectionState.Joining);
+    }
+
+    return new Promise((resolve, reject) => {
+      this.clearPendingConnection();
+      const timeout = window.setTimeout(() => {
+        const error = new Error("network_unreachable");
+        this.rejectPendingConnection(error);
+        this.socket?.close();
+      }, INITIAL_CONNECT_TIMEOUT_MS);
+
+      this.pendingConnection = { resolve, reject, timeout };
+      this.socket = new WebSocket(this.options.signalingUrl);
+
+      this.socket.onopen = () => {
+        if (isReconnect) {
+          this.options.onConnectionState(RoomConnectionState.Reconnecting);
+        }
+
+        this.send({
+          type: "join_room",
+          roomId: this.options.roomId,
+          peerId: this.options.peerId,
+          nickname: this.nickname,
+          avatarDataUrl: this.avatarDataUrl,
+        });
+
+        this.startHeartbeat();
+      };
+
+      this.socket.onmessage = (event) => {
+        if (typeof event.data !== "string") {
+          return;
+        }
+
+        try {
+          const payload = JSON.parse(event.data) as SignalEnvelope;
+          void this.handleSignal(payload);
+        } catch {
+          this.rejectPendingConnection(new Error("invalid_signaling_payload"));
+        }
+      };
+
+      this.socket.onclose = () => {
+        this.stopHeartbeat();
+        this.clearPendingConnection();
+
+        if (!this.shouldReconnect) {
+          return;
+        }
+
+        if (!this.hasJoinedOnce) {
+          this.options.onConnectionState(RoomConnectionState.Failed);
+          return;
+        }
+
+        this.options.onConnectionState(RoomConnectionState.Reconnecting);
+        this.clearPeers();
+        this.reconnect();
+      };
+
+      this.socket.onerror = () => {
+        if (!this.hasJoinedOnce) {
+          this.rejectPendingConnection(new Error("network_unreachable"));
+        }
+      };
+    });
+  }
+
+  private async handleSignal(payload: SignalEnvelope): Promise<void> {
     switch (payload.type) {
       case "room_snapshot":
-        void this.handleRoomSnapshot(payload);
+        await this.handleRoomSnapshot(payload);
         return;
       case "peer_offer":
-        void this.handlePeerOffer(payload);
+        await this.handlePeerOffer(payload);
         return;
       case "peer_answer":
-        void this.handlePeerAnswer(payload);
+        await this.handlePeerAnswer(payload);
         return;
       case "ice_candidate":
-        void this.handleIceCandidate(payload);
+        await this.handleIceCandidate(payload);
+        return;
+      case "error":
+        this.handleErrorMessage(payload);
         return;
       default:
         return;
@@ -160,6 +225,11 @@ export class RoomClient {
     }));
 
     this.options.onMembers(normalizedMembers);
+    this.options.onConnectionState(RoomConnectionState.Connected);
+    this.backoff.reset();
+    this.hasJoinedOnce = true;
+    this.resolvePendingConnection();
+
     const activePeerIds = new Set(
       normalizedMembers
         .filter((member) => member.id !== this.options.peerId)
@@ -224,6 +294,11 @@ export class RoomClient {
     await peer.addIceCandidate(payload.candidate);
   }
 
+  private handleErrorMessage(payload: ErrorMessage): void {
+    this.options.onConnectionState(RoomConnectionState.Failed);
+    this.rejectPendingConnection(new Error(payload.message || payload.code));
+  }
+
   private createPeer(targetPeerId: string): MeshPeerConnection {
     const peer = new MeshPeerConnection({
       peerId: targetPeerId,
@@ -263,7 +338,7 @@ export class RoomClient {
         roomId: this.options.roomId,
         peerId: this.options.peerId,
       });
-    }, 10000);
+    }, 10_000);
   }
 
   private stopHeartbeat(): void {
@@ -278,7 +353,9 @@ export class RoomClient {
     }
 
     const delay = this.backoff.nextDelay();
-    this.reconnectTimer = window.setTimeout(() => this.connect(), delay);
+    this.reconnectTimer = window.setTimeout(() => {
+      void this.openSocket(true).catch(() => undefined);
+    }, delay);
   }
 
   private clearPeers(): void {
@@ -287,5 +364,36 @@ export class RoomClient {
       this.options.onRemoteStream(peerId, undefined);
     }
     this.peers.clear();
+  }
+
+  private clearPendingConnection(): void {
+    if (!this.pendingConnection) {
+      return;
+    }
+
+    window.clearTimeout(this.pendingConnection.timeout);
+    this.pendingConnection = undefined;
+  }
+
+  private resolvePendingConnection(): void {
+    if (!this.pendingConnection) {
+      return;
+    }
+
+    const { resolve, timeout } = this.pendingConnection;
+    window.clearTimeout(timeout);
+    this.pendingConnection = undefined;
+    resolve();
+  }
+
+  private rejectPendingConnection(error: Error): void {
+    if (!this.pendingConnection) {
+      return;
+    }
+
+    const { reject, timeout } = this.pendingConnection;
+    window.clearTimeout(timeout);
+    this.pendingConnection = undefined;
+    reject(error);
   }
 }

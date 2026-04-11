@@ -8,6 +8,7 @@ import type { WebSocket } from "ws";
 export interface PeerSession {
   id: string;
   nickname: string;
+  avatarDataUrl?: string;
   socket: WebSocket;
   isHost: boolean;
   isMuted: boolean;
@@ -44,7 +45,9 @@ export class PeerManager {
 
   updateMemberState(
     peerId: string,
-    nextState: Partial<Pick<PeerSession, "isMuted" | "isSpeaking" | "nickname">>,
+    nextState: Partial<
+      Pick<PeerSession, "isMuted" | "isSpeaking" | "nickname" | "avatarDataUrl">
+    >,
   ): void {
     const peer = this.peers.get(peerId);
     if (peer) {
@@ -56,6 +59,7 @@ export class PeerManager {
     return this.listPeers().map((peer) => ({
       id: peer.id,
       nickname: peer.nickname,
+      avatarDataUrl: peer.avatarDataUrl,
       isHost: peer.isHost,
       isLocal: peer.id === localPeerId,
       isMuted: peer.isMuted,

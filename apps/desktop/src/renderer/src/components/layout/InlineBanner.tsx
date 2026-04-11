@@ -9,10 +9,10 @@ export const InlineBanner = ({
   <div
     className={cn(
       "rounded-[16px] border px-4 py-3 text-sm",
-      tone === "warning" && "border-amber-300/20 bg-amber-300/8 text-amber-100",
-      tone === "danger" && "border-rose-300/20 bg-rose-300/8 text-rose-100",
-      tone === "success" && "border-emerald-300/20 bg-emerald-300/8 text-emerald-100",
-      tone === "neutral" && "border-white/8 bg-white/5 text-white/70",
+      tone === "warning" && "border-[#FDE7B0] bg-[#FFFAEB] text-[#B45309]",
+      tone === "danger" && "border-[#F9D3D0] bg-[#FEF3F2] text-[#B42318]",
+      tone === "success" && "border-[#C7E8D2] bg-[#ECFDF3] text-[#15803D]",
+      tone === "neutral" && "border-[#E7ECF2] bg-[#F8FAFC] text-[#667085]",
     )}
   >
     {children}

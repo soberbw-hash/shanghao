@@ -17,6 +17,7 @@ import {
 import { DiagnosticsService } from "./diagnostics";
 import { HostSessionController } from "./host-session";
 import { exportRecordingFromMain } from "./recording-main";
+import { clearAvatarImage, pickAvatarImage, readAvatarImage } from "./profile-media";
 import { SettingsStore } from "./settings-store";
 import { ShortcutController } from "./shortcuts";
 import { detectTailscaleStatus, openTailscaleInstallGuide } from "./tailscale";
@@ -81,6 +82,18 @@ export const registerIpcHandlers = ({
     const settings = await settingsStore.reset();
     shortcuts.configureGlobalMute(settings.globalMuteShortcut);
     return settings;
+  });
+
+  ipcMain.handle(IPC_CHANNELS.profile.pickAvatar, async () => {
+    return pickAvatarImage(settingsStore.getSnapshot().avatarPath);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.profile.readAvatar, async (_event, avatarPath?: string) => {
+    return readAvatarImage(avatarPath);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.profile.clearAvatar, async (_event, avatarPath?: string) => {
+    await clearAvatarImage(avatarPath ?? settingsStore.getSnapshot().avatarPath);
   });
 
   ipcMain.handle(

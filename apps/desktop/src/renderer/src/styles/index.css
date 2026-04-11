@@ -2,19 +2,37 @@
 @tailwind components;
 @tailwind utilities;
 
+@font-face {
+  font-family: "HarmonyOS Sans";
+  src: url("../assets/fonts/HarmonyOS_Sans_SC_Regular.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "HarmonyOS Sans";
+  src: url("../assets/fonts/HarmonyOS_Sans_SC_Medium.woff2") format("woff2");
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "HarmonyOS Sans";
+  src: url("../assets/fonts/HarmonyOS_Sans_SC_Bold.woff2") format("woff2");
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+
 :root {
-  color-scheme: dark;
-  font-family:
-    "SF Pro Display",
-    "Segoe UI",
-    system-ui,
-    -apple-system,
-    BlinkMacSystemFont,
-    sans-serif;
+  color-scheme: light;
+  font-family: "HarmonyOS Sans", "Segoe UI", system-ui, sans-serif;
   background:
-    radial-gradient(circle at top, rgba(139, 211, 255, 0.16), transparent 26%),
-    linear-gradient(180deg, #0c1118 0%, #090d13 100%);
-  color: #f4f7fb;
+    radial-gradient(circle at top left, rgba(77, 163, 255, 0.1), transparent 24%),
+    linear-gradient(180deg, #f8fbff 0%, #f5f7fa 100%);
+  color: #111827;
 }
 
 html,
@@ -27,9 +45,12 @@ body,
 body {
   overflow: hidden;
   background:
-    radial-gradient(circle at top left, rgba(110, 196, 255, 0.12), transparent 30%),
-    radial-gradient(circle at top right, rgba(255, 255, 255, 0.04), transparent 26%),
-    linear-gradient(180deg, #0c1118 0%, #090d13 100%);
+    radial-gradient(circle at top left, rgba(77, 163, 255, 0.08), transparent 26%),
+    radial-gradient(circle at top right, rgba(255, 255, 255, 0.9), transparent 18%),
+    linear-gradient(180deg, #f8fbff 0%, #f5f7fa 100%);
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 * {
@@ -38,11 +59,29 @@ body {
 
 *::-webkit-scrollbar {
   width: 10px;
+  height: 10px;
 }
 
 *::-webkit-scrollbar-thumb {
+  border: 2px solid transparent;
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.12);
+  background: rgba(102, 112, 133, 0.28);
+  background-clip: padding-box;
+}
+
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+img {
+  user-select: none;
 }
 
 .drag-region {

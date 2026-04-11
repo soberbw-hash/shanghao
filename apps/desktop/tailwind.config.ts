@@ -10,12 +10,16 @@ export default {
     extend: {
       colors: {
         app: {
-          base: "#0d1118",
-          elevated: "#141b26",
-          card: "rgba(255,255,255,0.05)",
-          line: "rgba(255,255,255,0.08)",
-          accent: "#8bd3ff",
-          accentStrong: "#6ec4ff",
+          canvas: "#F5F7FA",
+          surface: "#FFFFFF",
+          muted: "#F8FAFC",
+          line: "#E7ECF2",
+          text: "#111827",
+          textSoft: "#667085",
+          accent: "#4DA3FF",
+          success: "#16A34A",
+          warning: "#F59E0B",
+          danger: "#EF4444",
         },
       },
       borderRadius: {
@@ -24,10 +28,11 @@ export default {
         button: "14px",
       },
       boxShadow: {
-        panel: "0 18px 50px rgba(0, 0, 0, 0.28)",
+        panel: "0 16px 36px rgba(17, 24, 39, 0.08)",
+        soft: "0 6px 20px rgba(17, 24, 39, 0.06)",
       },
       backdropBlur: {
-        panel: "20px",
+        panel: "10px",
       },
     },
   },

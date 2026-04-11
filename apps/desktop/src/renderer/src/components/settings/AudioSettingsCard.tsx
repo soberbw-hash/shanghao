@@ -2,6 +2,7 @@ import type { AppSettings, AudioDeviceDescriptor } from "@private-voice/shared";
 
 import { InputDevicePicker } from "../audio/InputDevicePicker";
 import { OutputDevicePicker } from "../audio/OutputDevicePicker";
+import { SegmentedControl } from "../base/SegmentedControl";
 import { Switch } from "../base/Switch";
 import { SettingsItemRow } from "./SettingsItemRow";
 import { SettingsSection } from "./SettingsSection";
@@ -17,7 +18,7 @@ export const AudioSettingsCard = ({
   outputDevices: AudioDeviceDescriptor[];
   onChange: (patch: Partial<AppSettings>) => void;
 }) => (
-  <SettingsSection title="音频设备" description="设置默认输入设备、输出设备和基础降噪。">
+  <SettingsSection title="音频" description="默认设备、降噪和说话模式。">
     <div className="space-y-3">
       <SettingsItemRow label="输入设备">
         <InputDevicePicker
@@ -33,7 +34,17 @@ export const AudioSettingsCard = ({
           onChange={(preferredOutputDeviceId) => onChange({ preferredOutputDeviceId })}
         />
       </SettingsItemRow>
-      <SettingsItemRow label="基础降噪" description="只使用 Chromium 或系统自带的基础降噪能力。">
+      <SettingsItemRow label="说话模式">
+        <SegmentedControl
+          value={settings.isPushToTalkEnabled ? "ptt" : "open"}
+          options={[
+            { value: "open", label: "自由麦" },
+            { value: "ptt", label: "按键说话" },
+          ]}
+          onChange={(value) => onChange({ isPushToTalkEnabled: value === "ptt" })}
+        />
+      </SettingsItemRow>
+      <SettingsItemRow label="基础降噪" description="使用系统和 WebRTC 自带能力。">
         <Switch
           isChecked={settings.isNoiseSuppressionEnabled}
           onChange={(isNoiseSuppressionEnabled) => onChange({ isNoiseSuppressionEnabled })}

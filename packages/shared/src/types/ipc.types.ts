@@ -1,5 +1,6 @@
 import type {
   AppSettings,
+  ProfileAvatarSelection,
   TailscaleStatus,
 } from "./settings.types";
 import type { DiagnosticsSnapshot, LogCategory, LogEntry } from "./diagnostics.types";
@@ -36,6 +37,11 @@ export interface DesktopApi {
     get: () => Promise<AppSettings>;
     save: (settings: Partial<AppSettings>) => Promise<AppSettings>;
     reset: () => Promise<AppSettings>;
+  };
+  profile: {
+    pickAvatar: () => Promise<ProfileAvatarSelection | undefined>;
+    readAvatar: (avatarPath?: string) => Promise<string | undefined>;
+    clearAvatar: (avatarPath?: string) => Promise<void>;
   };
   diagnostics: {
     snapshot: () => Promise<DiagnosticsSnapshot>;

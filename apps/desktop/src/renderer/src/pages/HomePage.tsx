@@ -10,19 +10,19 @@ import { PageContainer } from "../components/layout/PageContainer";
 import { TopStatusBar } from "../components/layout/TopStatusBar";
 import { MemberGrid } from "../components/room/MemberGrid";
 import { RoomHeroCard } from "../components/room/RoomHeroCard";
-import { JoinRoomEmptyState } from "../components/status/JoinRoomEmptyState";
-import { NoDeviceEmptyState } from "../components/status/NoDeviceEmptyState";
-import { NoMicPermissionEmptyState } from "../components/status/NoMicPermissionEmptyState";
 import { TailscaleDetectionBanner } from "../components/status/TailscaleDetectionBanner";
 import { TailscaleInstallGuideCard } from "../components/status/TailscaleInstallGuideCard";
+import { useRoomState } from "../hooks/useRoomState";
+import { useAppStore } from "../store/appStore";
 import { useAudioStore } from "../store/audioStore";
 import { useRoomStore } from "../store/roomStore";
 import { useSettingsStore } from "../store/settingsStore";
-import { useRoomState } from "../hooks/useRoomState";
 
 export const HomePage = () => {
   const { room, joinSignalUrl, setJoinSignalUrl, startHost, joinRoom, replaceInputDevice } =
     useRoomState();
+  const roomAction = useAppStore((state) => state.roomAction);
+  const pushToast = useAppStore((state) => state.pushToast);
   const tailscaleStatus = useSettingsStore((state) => state.tailscaleStatus);
   const settings = useSettingsStore((state) => state.settings);
   const saveSettings = useSettingsStore((state) => state.saveSettings);
@@ -35,46 +35,51 @@ export const HomePage = () => {
     setPushToTalkEnabled,
     permissionState,
   } = useAudioStore();
-  const setMembers = useRoomStore((state) => state.setMembers);
-  const hasAudioDevices = inputDevices.length > 0 && outputDevices.length > 0;
+  const updateMemberVolume = useRoomStore((state) => state.updateMemberVolume);
+
+  const handlePasteSignalUrl = () => {
+    void navigator.clipboard
+      .readText()
+      .then((value) => setJoinSignalUrl(value.trim()))
+      .catch(() => {
+        pushToast({
+          tone: "warning",
+          title: "读取剪贴板失败",
+          description: "可以手动粘贴房主发来的地址。",
+        });
+      });
+  };
 
   return (
-    <PageContainer>
+    <PageContainer className="overflow-y-auto">
       <TopStatusBar />
       <TailscaleDetectionBanner status={tailscaleStatus} />
       {permissionState === MicPermissionState.Denied ? (
-        <DeviceHealthNotice message="麦克风权限当前被系统拦截，先到 Windows 里允许访问后才能开始语音。" />
+        <DeviceHealthNotice message="系统还没有给上号麦克风权限，先去 Windows 设置里允许访问。" />
       ) : null}
-      {tailscaleStatus?.state === TailscaleState.NotInstalled ? (
-        <DeviceHealthNotice message="这台电脑还没安装 Tailscale。你仍然可以看到本地地址，但异地好友建议通过 Tailscale 加入，连接会更稳定。" />
+      {inputDevices.length === 0 || outputDevices.length === 0 ? (
+        <DeviceHealthNotice message="当前没有完整的输入或输出设备，先接好麦克风和扬声器。" />
       ) : null}
       <RoomHeroCard
         roomName={room.roomName}
         joinSignalUrl={joinSignalUrl}
         onJoinSignalUrlChange={setJoinSignalUrl}
+        onPasteSignalUrl={handlePasteSignalUrl}
         onStartRoom={() => void startHost()}
         onJoinRoom={() => void joinRoom()}
+        isStarting={roomAction === "starting"}
+        isJoining={roomAction === "joining"}
       />
       {tailscaleStatus?.state === TailscaleState.NotInstalled ? (
         <TailscaleInstallGuideCard />
       ) : null}
-      {permissionState === MicPermissionState.Denied ? <NoMicPermissionEmptyState /> : null}
-      {permissionState !== MicPermissionState.Denied && !hasAudioDevices ? (
-        <NoDeviceEmptyState />
-      ) : null}
-      {permissionState !== MicPermissionState.Denied && hasAudioDevices ? (
+      <div className="space-y-3">
+        <div className="text-sm font-medium text-[#667085]">开黑位</div>
         <MemberGrid
           members={room.members}
-          onVolumeChange={(memberId, value) =>
-            setMembers(
-              room.members.map((member) =>
-                member.id === memberId ? { ...member, volume: value } : member,
-              ),
-            )
-          }
+          onVolumeChange={(memberId, value) => updateMemberVolume(memberId, value)}
         />
-      ) : null}
-      {!joinSignalUrl ? <JoinRoomEmptyState /> : null}
+      </div>
       <BottomControlDock>
         <div className="flex flex-wrap items-center gap-3">
           <MuteButton isMuted={isMuted} onClick={toggleMute} />
@@ -86,7 +91,7 @@ export const HomePage = () => {
             }}
           />
         </div>
-        <div className="grid flex-1 gap-3 md:grid-cols-2">
+        <div className="grid min-w-[280px] flex-1 gap-3 md:grid-cols-2">
           <InputDevicePicker
             devices={inputDevices}
             value={settings?.preferredInputDeviceId}

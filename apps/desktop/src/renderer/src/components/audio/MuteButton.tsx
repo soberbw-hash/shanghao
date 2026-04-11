@@ -11,6 +11,6 @@ export const MuteButton = ({
 }) => (
   <ToggleButton isActive={isMuted} onClick={onClick}>
     {isMuted ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
-    {isMuted ? "已静音" : "麦克风开启"}
+    {isMuted ? "已静音" : "麦克风"}
   </ToggleButton>
 );

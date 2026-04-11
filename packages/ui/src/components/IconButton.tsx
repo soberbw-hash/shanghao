@@ -10,7 +10,7 @@ export const IconButton = ({
 }: PropsWithChildren<Omit<ButtonProps, "variant" | "isFullWidth">>) => (
   <Button
     variant="secondary"
-    className={cn("h-11 w-11 rounded-[14px] px-0", className)}
+    className={cn("h-9 w-9 rounded-[12px] px-0", className)}
     {...props}
   >
     {children}

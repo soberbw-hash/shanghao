@@ -17,6 +17,12 @@ const desktopApi: DesktopApi = {
     save: (settings) => ipcRenderer.invoke(IPC_CHANNELS.settings.save, settings),
     reset: () => ipcRenderer.invoke(IPC_CHANNELS.settings.reset),
   },
+  profile: {
+    pickAvatar: () => ipcRenderer.invoke(IPC_CHANNELS.profile.pickAvatar),
+    readAvatar: (avatarPath) => ipcRenderer.invoke(IPC_CHANNELS.profile.readAvatar, avatarPath),
+    clearAvatar: (avatarPath) =>
+      ipcRenderer.invoke(IPC_CHANNELS.profile.clearAvatar, avatarPath),
+  },
   diagnostics: {
     snapshot: () => ipcRenderer.invoke(IPC_CHANNELS.diagnostics.snapshot),
     exportLogs: () => ipcRenderer.invoke(IPC_CHANNELS.diagnostics.exportLogs),

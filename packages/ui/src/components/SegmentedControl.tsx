@@ -14,9 +14,9 @@ interface SegmentedControlProps {
 export const SegmentedControl = ({
   value,
   options,
-  onChange
+  onChange,
 }: SegmentedControlProps) => (
-  <div className="inline-flex rounded-[14px] border border-white/10 bg-white/5 p-1">
+  <div className="inline-flex rounded-[14px] border border-[#E7ECF2] bg-[#F8FAFC] p-1">
     {options.map((option) => (
       <button
         key={option.value}
@@ -25,8 +25,8 @@ export const SegmentedControl = ({
         className={cn(
           "min-w-20 rounded-[10px] px-3 py-2 text-sm transition-colors",
           value === option.value
-            ? "bg-white/12 text-white"
-            : "text-white/55 hover:text-white/80"
+            ? "bg-white text-[#111827] shadow-[0_4px_12px_rgba(17,24,39,0.06)]"
+            : "text-[#667085] hover:text-[#111827]",
         )}
       >
         {option.label}

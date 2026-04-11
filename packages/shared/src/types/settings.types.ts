@@ -3,6 +3,8 @@ import { TailscaleState } from "../enums/app.enums";
 export interface AppSettings {
   nickname: string;
   roomName: string;
+  avatarPath?: string;
+  hasCompletedProfileSetup: boolean;
   minimizeToTray: boolean;
   reduceMotion: boolean;
   launchOnStartup: boolean;
@@ -29,4 +31,9 @@ export interface OnboardingStep {
   id: string;
   title: string;
   description: string;
+}
+
+export interface ProfileAvatarSelection {
+  avatarPath: string;
+  avatarDataUrl: string;
 }

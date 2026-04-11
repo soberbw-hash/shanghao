@@ -11,7 +11,7 @@ export const AppearanceSettingsCard = ({
   settings: AppSettings;
   onChange: (patch: Partial<AppSettings>) => void;
 }) => (
-  <SettingsSection title="视觉与体验" description="把动画和托盘行为调到你顺手的状态。">
+  <SettingsSection title="体验" description="把托盘和动效调到你习惯的状态。">
     <div className="space-y-3">
       <SettingsItemRow label="最小化到托盘">
         <Switch

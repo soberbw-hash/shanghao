@@ -146,7 +146,7 @@ export class SignalingServer extends EventEmitter {
         code: "room_full",
         roomId: message.roomId,
         peerId: message.peerId,
-        message: "The room already has five members.",
+        message: "房间已满，最多只能同时 5 人语音。",
       };
       socket.send(JSON.stringify(roomFullMessage));
       return;
@@ -160,6 +160,7 @@ export class SignalingServer extends EventEmitter {
     this.roomManager.addPeer(message.roomId, this.roomName, {
       id: message.peerId,
       nickname: message.nickname,
+      avatarDataUrl: message.avatarDataUrl,
       socket,
       isHost: existingPeerCount === 0,
       isMuted: false,
@@ -181,6 +182,8 @@ export class SignalingServer extends EventEmitter {
     room?.peers.updateMemberState(message.peerId, {
       isMuted: message.isMuted,
       isSpeaking: message.isSpeaking,
+      nickname: message.nickname,
+      avatarDataUrl: message.avatarDataUrl,
     });
     this.broadcastSnapshot(message.roomId);
   }

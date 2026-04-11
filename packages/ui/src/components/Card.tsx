@@ -9,8 +9,8 @@ export const Card = ({
 }: PropsWithChildren<HTMLAttributes<HTMLDivElement>>) => (
   <div
     className={cn(
-      "rounded-[16px] border border-white/8 bg-[rgba(255,255,255,0.05)] p-4 shadow-[0_18px_50px_rgba(0,0,0,0.2)] backdrop-blur-xl",
-      className
+      "rounded-[16px] border border-[#E7ECF2] bg-white p-4 shadow-[0_10px_30px_rgba(17,24,39,0.05)]",
+      className,
     )}
     {...props}
   >

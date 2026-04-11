@@ -1,5 +1,5 @@
-import { networkInterfaces } from "node:os";
 import { execFile } from "node:child_process";
+import { networkInterfaces } from "node:os";
 import { promisify } from "node:util";
 
 import { shell } from "electron";
@@ -36,7 +36,7 @@ export const detectTailscaleStatus = async (): Promise<TailscaleStatus> => {
       state: TailscaleState.NotInstalled,
       isInstalled: false,
       isConnected: false,
-      message: "这台设备尚未安装 Tailscale。",
+      message: "这台设备还没有安装 Tailscale。",
       installUrl: TAILSCALE_INSTALL_URL,
     };
   }
@@ -58,8 +58,8 @@ export const detectTailscaleStatus = async (): Promise<TailscaleStatus> => {
       tailnet: parsed.CurrentTailnet?.Name,
       ip,
       message: isConnected
-        ? "Tailscale 已连接，可以直接用于私人房间联机。"
-        : "Tailscale 已安装，但这台设备还没有连接到你的 tailnet。",
+        ? "Tailscale 已连接，可以直接用于好友房间。"
+        : "Tailscale 已安装，但当前设备还没有连到你的 tailnet。",
       installUrl: TAILSCALE_INSTALL_URL,
     };
   } catch {

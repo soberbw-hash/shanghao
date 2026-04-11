@@ -1,33 +1,33 @@
 export const themeTokens = {
   colors: {
-    background: "#0d1118",
-    backgroundElevated: "rgba(22, 29, 40, 0.86)",
-    backgroundSoft: "rgba(255, 255, 255, 0.06)",
-    border: "rgba(255, 255, 255, 0.08)",
-    borderStrong: "rgba(255, 255, 255, 0.16)",
-    textPrimary: "#f4f7fb",
-    textSecondary: "rgba(228, 235, 245, 0.68)",
-    textMuted: "rgba(228, 235, 245, 0.45)",
-    accent: "#8bd3ff",
-    accentStrong: "#6ec4ff",
-    success: "#6ee7b7",
-    warning: "#fbbf24",
-    danger: "#f87171",
-    recording: "#ff5757"
+    background: "#F5F7FA",
+    backgroundElevated: "#FFFFFF",
+    backgroundSoft: "#F8FAFC",
+    border: "#E7ECF2",
+    borderStrong: "#D6DEE8",
+    textPrimary: "#111827",
+    textSecondary: "#667085",
+    textMuted: "#98A2B3",
+    accent: "#4DA3FF",
+    accentStrong: "#2B84E9",
+    success: "#16A34A",
+    warning: "#F59E0B",
+    danger: "#EF4444",
+    recording: "#EF4444",
   },
   radii: {
     panel: "20px",
     card: "16px",
-    button: "14px"
+    button: "14px",
   },
   spacing: {
     page: "24px",
     section: "20px",
     panel: "16px",
     compact: "8px",
-    default: "12px"
+    default: "12px",
   },
   shadow: {
-    panel: "0 18px 50px rgba(0, 0, 0, 0.28)"
-  }
+    panel: "0 16px 36px rgba(17, 24, 39, 0.08)",
+  },
 } as const;

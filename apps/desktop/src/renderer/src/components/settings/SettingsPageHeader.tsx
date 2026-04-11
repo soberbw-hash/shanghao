@@ -9,8 +9,8 @@ export const SettingsPageHeader = ({
 }) => (
   <div className="flex items-center justify-between gap-4">
     <div>
-      <div className="text-[24px] font-semibold text-white">设置</div>
-      <p className="text-sm text-white/55">把语音、快捷键和网络状态都收在这里。</p>
+      <div className="text-[24px] font-semibold text-[#111827]">设置</div>
+      <p className="text-sm text-[#667085]">资料、音频、快捷键和诊断都在这里。</p>
     </div>
     <Button variant="secondary" onClick={onBack}>
       <ArrowLeft className="h-4 w-4" />

@@ -9,10 +9,10 @@ export const MemberPresenceDot = ({
   <span
     className={cn(
       "inline-flex h-2.5 w-2.5 rounded-full",
-      presenceState === MemberPresenceState.Online && "bg-emerald-300 shadow-[0_0_14px_rgba(110,231,183,0.7)]",
-      presenceState === MemberPresenceState.Connecting && "bg-amber-300",
-      presenceState === MemberPresenceState.Reconnecting && "bg-sky-300",
-      presenceState === MemberPresenceState.Offline && "bg-white/16",
+      presenceState === MemberPresenceState.Online && "bg-[#16A34A]",
+      presenceState === MemberPresenceState.Connecting && "bg-[#F59E0B]",
+      presenceState === MemberPresenceState.Reconnecting && "bg-[#4DA3FF]",
+      presenceState === MemberPresenceState.Offline && "bg-[#CBD5E1]",
     )}
   />
 );

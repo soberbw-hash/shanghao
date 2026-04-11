@@ -9,7 +9,7 @@ export const GlassPanel = ({
 }: PropsWithChildren<HTMLAttributes<HTMLDivElement>>) => (
   <div
     className={cn(
-      "rounded-[20px] border border-white/8 bg-[rgba(18,24,34,0.8)] shadow-panel backdrop-blur-panel",
+      "rounded-[20px] border border-[#E7ECF2] bg-white shadow-[0_12px_30px_rgba(17,24,39,0.06)]",
       className,
     )}
     {...props}

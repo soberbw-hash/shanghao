@@ -5,9 +5,13 @@ import { app } from "electron";
 
 import { DEFAULT_ROOM_NAME, type AppSettings } from "@private-voice/shared";
 
+import { clearAvatarImage } from "./profile-media";
+
 export const defaultSettings: AppSettings = {
-  nickname: "新成员",
+  nickname: "",
   roomName: DEFAULT_ROOM_NAME,
+  avatarPath: undefined,
+  hasCompletedProfileSetup: false,
   minimizeToTray: true,
   reduceMotion: false,
   launchOnStartup: false,
@@ -27,10 +31,11 @@ export class SettingsStore {
     try {
       const fileContent = await readFile(this.filePath, "utf8");
       const parsed = JSON.parse(fileContent) as Partial<AppSettings>;
-      this.cachedSettings = {
+      const mergedSettings = {
         ...defaultSettings,
         ...parsed,
       };
+      this.cachedSettings = this.normalizeSettings(mergedSettings);
       return this.cachedSettings;
     } catch {
       await this.persist(defaultSettings);
@@ -43,18 +48,35 @@ export class SettingsStore {
   }
 
   async save(partial: Partial<AppSettings>): Promise<AppSettings> {
+    const previousAvatarPath = this.cachedSettings.avatarPath;
     this.cachedSettings = {
       ...this.cachedSettings,
       ...partial,
     };
+    this.cachedSettings = this.normalizeSettings(this.cachedSettings);
     await this.persist(this.cachedSettings);
+    if (partial.avatarPath !== undefined && previousAvatarPath !== partial.avatarPath) {
+      await clearAvatarImage(previousAvatarPath);
+    }
     return this.cachedSettings;
   }
 
   async reset(): Promise<AppSettings> {
+    await clearAvatarImage(this.cachedSettings.avatarPath);
     this.cachedSettings = defaultSettings;
     await this.persist(defaultSettings);
     return this.cachedSettings;
+  }
+
+  private normalizeSettings(settings: AppSettings): AppSettings {
+    const isProfileReady = settings.nickname.trim().length > 0 && Boolean(settings.avatarPath);
+    return {
+      ...settings,
+      nickname: settings.nickname.trim(),
+      roomName: settings.roomName.trim() || DEFAULT_ROOM_NAME,
+      hasCompletedProfileSetup:
+        Boolean(settings.hasCompletedProfileSetup) && isProfileReady,
+    };
   }
 
   private async persist(settings: AppSettings): Promise<void> {

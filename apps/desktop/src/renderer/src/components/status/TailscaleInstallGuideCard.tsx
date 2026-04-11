@@ -3,8 +3,8 @@ import { SectionCard } from "../layout/SectionCard";
 
 export const TailscaleInstallGuideCard = () => (
   <SectionCard
-    title="Tailscale 设置"
-    description="先安装 Tailscale 并登录到你的 tailnet，然后重新打开上号。"
+    title="先连上 Tailscale"
+    description="固定好友使用时更稳。装好并登录同一个 tailnet 后，再回来开房。"
   >
     <Button variant="secondary" onClick={() => void window.desktopApi.tailscale.openInstallGuide()}>
       打开 Tailscale 下载页

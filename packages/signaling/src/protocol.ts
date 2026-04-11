@@ -35,6 +35,7 @@ export interface HelloMessage extends BaseMessage {
   roomId: string;
   peerId: string;
   nickname: string;
+  avatarDataUrl?: string;
 }
 
 export interface JoinRoomMessage extends BaseMessage {
@@ -42,6 +43,7 @@ export interface JoinRoomMessage extends BaseMessage {
   roomId: string;
   peerId: string;
   nickname: string;
+  avatarDataUrl?: string;
 }
 
 export interface LeaveRoomMessage extends BaseMessage {
@@ -93,6 +95,8 @@ export interface MemberStateMessage extends BaseMessage {
   peerId: string;
   isMuted?: boolean;
   isSpeaking?: boolean;
+  nickname?: string;
+  avatarDataUrl?: string;
 }
 
 export interface ErrorMessage extends BaseMessage {

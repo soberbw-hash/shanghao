@@ -13,6 +13,11 @@ export const IPC_CHANNELS = {
     save: "settings:save",
     reset: "settings:reset",
   },
+  profile: {
+    pickAvatar: "profile:pick-avatar",
+    readAvatar: "profile:read-avatar",
+    clearAvatar: "profile:clear-avatar",
+  },
   diagnostics: {
     snapshot: "diagnostics:snapshot",
     exportLogs: "diagnostics:export-logs",

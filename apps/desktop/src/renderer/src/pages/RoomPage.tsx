@@ -1,4 +1,4 @@
-import { RecordingState } from "@private-voice/shared";
+import { RecordingState, RoomConnectionState } from "@private-voice/shared";
 
 import { ControlBar } from "../components/audio/ControlBar";
 import { InputDevicePicker } from "../components/audio/InputDevicePicker";
@@ -8,18 +8,18 @@ import { OutputDevicePicker } from "../components/audio/OutputDevicePicker";
 import { PushToTalkKeyBadge } from "../components/audio/PushToTalkKeyBadge";
 import { PushToTalkToggle } from "../components/audio/PushToTalkToggle";
 import { RecordingButton } from "../components/audio/RecordingButton";
+import { Button } from "../components/base/Button";
 import { BottomControlDock } from "../components/layout/BottomControlDock";
+import { InlineBanner } from "../components/layout/InlineBanner";
 import { PageContainer } from "../components/layout/PageContainer";
 import { TopStatusBar } from "../components/layout/TopStatusBar";
 import { ConnectionHealthStrip } from "../components/room/ConnectionHealthStrip";
 import { MemberGrid } from "../components/room/MemberGrid";
 import { RoomCodePanel } from "../components/room/RoomCodePanel";
 import { RoomStatusPanel } from "../components/room/RoomStatusPanel";
-import { RecordingConsentNotice } from "../components/status/RecordingConsentNotice";
 import { RecordingErrorBanner } from "../components/status/RecordingErrorBanner";
 import { RecordingHistoryList } from "../components/status/RecordingHistoryList";
 import { RecordingStatusBanner } from "../components/status/RecordingStatusBanner";
-import { UpdateNotice } from "../components/status/UpdateNotice";
 import { useRecordingController } from "../hooks/useRecordingController";
 import { useRoomState } from "../hooks/useRoomState";
 import { useAppStore } from "../store/appStore";
@@ -33,10 +33,19 @@ export const RoomPage = () => {
   const pushToast = useAppStore((state) => state.pushToast);
   const settings = useSettingsStore((state) => state.settings);
   const saveSettings = useSettingsStore((state) => state.saveSettings);
-  const { inputDevices, outputDevices, isMuted, isPushToTalkEnabled, isNoiseSuppressionEnabled, toggleMute, setPushToTalkEnabled, setNoiseSuppressionEnabled } = useAudioStore();
+  const {
+    inputDevices,
+    outputDevices,
+    isMuted,
+    isPushToTalkEnabled,
+    isNoiseSuppressionEnabled,
+    toggleMute,
+    setPushToTalkEnabled,
+    setNoiseSuppressionEnabled,
+  } = useAudioStore();
   const recordingStatus = useRecordingStore((state) => state.status);
   const recordingHistory = useRecordingStore((state) => state.history);
-  const setMembers = useRoomStore((state) => state.setMembers);
+  const updateMemberVolume = useRoomStore((state) => state.updateMemberVolume);
   const connectionHealth = useRoomStore((state) => state.connectionHealth);
   const { startRecording, stopRecording } = useRecordingController();
 
@@ -50,6 +59,7 @@ export const RoomPage = () => {
       startRecording();
     } catch (error) {
       pushToast({
+        tone: "danger",
         title: "录音无法开始",
         description:
           error instanceof Error ? error.message : "当前没有可用于录音的音频来源。",
@@ -63,20 +73,27 @@ export const RoomPage = () => {
     recordingStatus.state === RecordingState.Saving;
 
   return (
-    <PageContainer>
+    <PageContainer className="overflow-y-auto">
       <TopStatusBar />
+      {room.connectionState === RoomConnectionState.Reconnecting ? (
+        <InlineBanner tone="warning">连接有波动，正在自动重连…</InlineBanner>
+      ) : null}
+      {room.connectionState === RoomConnectionState.Failed ? (
+        <InlineBanner tone="danger">当前房间连接失败，请检查网络后重试。</InlineBanner>
+      ) : null}
+      <div className="grid gap-4 xl:grid-cols-[1.15fr_0.85fr]">
+        <RoomStatusPanel
+          roomName={room.roomName}
+          memberCount={room.memberCount}
+          connectionState={room.connectionState}
+        />
+        <RoomCodePanel signalingUrl={room.signalingUrl} />
+      </div>
       <ConnectionHealthStrip
         latencyMs={connectionHealth.latencyMs}
         jitterMs={connectionHealth.jitterMs}
         packetLossPercent={connectionHealth.packetLossPercent}
       />
-      <RoomStatusPanel
-        roomName={room.roomName}
-        memberCount={room.memberCount}
-        connectionState={room.connectionState}
-      />
-      <RoomCodePanel signalingUrl={room.signalingUrl} />
-      <RecordingConsentNotice />
       <RecordingStatusBanner
         state={recordingStatus.state}
         durationMs={recordingStatus.durationMs}
@@ -87,19 +104,17 @@ export const RoomPage = () => {
             : undefined
         }
       />
-      <RecordingErrorBanner message={recordingStatus.state === RecordingState.Failed ? recordingStatus.message : undefined} />
-      <MemberGrid
-        members={room.members}
-        onVolumeChange={(memberId, value) =>
-          setMembers(
-            room.members.map((member) =>
-              member.id === memberId ? { ...member, volume: value } : member,
-            ),
-          )
-        }
+      <RecordingErrorBanner
+        message={recordingStatus.state === RecordingState.Failed ? recordingStatus.message : undefined}
       />
+      <div className="space-y-3">
+        <div className="text-sm font-medium text-[#667085]">开黑位</div>
+        <MemberGrid
+          members={room.members}
+          onVolumeChange={(memberId, value) => updateMemberVolume(memberId, value)}
+        />
+      </div>
       <RecordingHistoryList items={recordingHistory} />
-      <UpdateNotice />
       <BottomControlDock>
         <ControlBar>
           <MuteButton isMuted={isMuted} onClick={toggleMute} />
@@ -110,7 +125,9 @@ export const RoomPage = () => {
               void saveSettings({ isPushToTalkEnabled: !isPushToTalkEnabled });
             }}
           />
-          <PushToTalkKeyBadge shortcut={settings?.pushToTalkShortcut || "Space"} />
+          {isPushToTalkEnabled ? (
+            <PushToTalkKeyBadge shortcut={settings?.pushToTalkShortcut || "Space"} />
+          ) : null}
           <NoiseSuppressionToggle
             isEnabled={isNoiseSuppressionEnabled}
             onClick={() => {
@@ -124,7 +141,7 @@ export const RoomPage = () => {
             disabled={isRecordingBusy}
           />
         </ControlBar>
-        <div className="grid flex-1 gap-3 md:grid-cols-2">
+        <div className="grid min-w-[280px] flex-1 gap-3 md:grid-cols-2">
           <InputDevicePicker
             devices={inputDevices}
             value={settings?.preferredInputDeviceId}
@@ -140,13 +157,9 @@ export const RoomPage = () => {
             onChange={(preferredOutputDeviceId) => void saveSettings({ preferredOutputDeviceId })}
           />
         </div>
-        <button
-          type="button"
-          onClick={() => void leaveRoom()}
-          className="rounded-[14px] border border-rose-300/20 bg-rose-300/8 px-4 py-3 text-sm font-medium text-rose-100"
-        >
+        <Button variant="danger" onClick={() => void leaveRoom()}>
           离开房间
-        </button>
+        </Button>
       </BottomControlDock>
     </PageContainer>
   );

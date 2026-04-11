@@ -54,7 +54,7 @@ const maybeCaptureScreenshot = async (window: BrowserWindow | null): Promise<voi
   }
 
   await sleep(1800);
-  await clickButtonByLabel(window, "开始使用");
+  await clickButtonByLabel(window, "进入上号");
   await sleep(500);
 
   if (mode !== "home") {
@@ -62,7 +62,6 @@ const maybeCaptureScreenshot = async (window: BrowserWindow | null): Promise<voi
 
     if (label) {
       await clickButtonByLabel(window, label);
-
       await sleep(mode === "room" ? 2400 : 900);
     }
   }

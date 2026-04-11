@@ -9,7 +9,10 @@ export const MemberGrid = ({
   members: RoomMember[];
   onVolumeChange: (memberId: string, value: number) => void;
 }) => (
-  <div className="grid flex-1 grid-cols-1 gap-4 xl:grid-cols-2">
+  <div
+    className="grid gap-3"
+    style={{ gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))" }}
+  >
     {members.map((member) => (
       <MemberCard key={member.id} member={member} onVolumeChange={onVolumeChange} />
     ))}

@@ -7,6 +7,7 @@ export const TARGET_CHANNEL_COUNT = 1;
 export const HEARTBEAT_INTERVAL_MS = 10_000;
 export const SIGNALING_PING_TIMEOUT_MS = 30_000;
 export const DEFAULT_RECONNECT_DELAYS_MS = [1_000, 2_000, 4_000, 8_000];
+
 export const LOG_CATEGORIES = [
   "app",
   "signaling",

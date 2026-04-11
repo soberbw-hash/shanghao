@@ -1,4 +1,8 @@
-import { DEFAULT_ROOM_NAME, type HostSessionInfo, type RendererLogPayload } from "@private-voice/shared";
+import {
+  DEFAULT_ROOM_NAME,
+  type HostSessionInfo,
+  type RendererLogPayload,
+} from "@private-voice/shared";
 import { SignalingServer } from "@private-voice/signaling";
 
 import { detectTailscaleStatus, resolvePreferredHostIp } from "./tailscale";
@@ -27,27 +31,45 @@ export class HostSessionController {
       },
     });
 
-    const signalingPort = await this.server.listen();
-    const tailscaleStatus = await detectTailscaleStatus();
-    const hostIp = (await resolvePreferredHostIp()) ?? "127.0.0.1";
+    try {
+      const signalingPort = await this.server.listen();
+      const tailscaleStatus = await detectTailscaleStatus();
+      const hostIp = await resolvePreferredHostIp();
 
-    const sessionInfo: HostSessionInfo = {
-      roomId: FIXED_ROOM_ID,
-      roomName: roomName || DEFAULT_ROOM_NAME,
-      hostDisplayName: nickname,
-      signalingPort,
-      signalingUrl: `ws://${hostIp}:${signalingPort}`,
-      tailscaleIp: tailscaleStatus.ip,
-    };
+      if (!hostIp) {
+        throw new Error("无法获取本机连接地址");
+      }
 
-    await this.writeLog({
-      category: "signaling",
-      level: "info",
-      message: "Host signaling session started",
-      context: { ...sessionInfo },
-    });
+      const sessionInfo: HostSessionInfo = {
+        roomId: FIXED_ROOM_ID,
+        roomName: roomName || DEFAULT_ROOM_NAME,
+        hostDisplayName: nickname,
+        signalingPort,
+        signalingUrl: `ws://${hostIp}:${signalingPort}`,
+        tailscaleIp: tailscaleStatus.ip,
+      };
 
-    return sessionInfo;
+      await this.writeLog({
+        category: "signaling",
+        level: "info",
+        message: "Host signaling session started",
+        context: { ...sessionInfo },
+      });
+
+      return sessionInfo;
+    } catch (error) {
+      await this.writeLog({
+        category: "signaling",
+        level: "error",
+        message: "Failed to start host signaling session",
+        context: {
+          roomName: roomName || DEFAULT_ROOM_NAME,
+          error: error instanceof Error ? error.message : String(error),
+        },
+      });
+      await this.stop();
+      throw error;
+    }
   }
 
   async stop(): Promise<void> {

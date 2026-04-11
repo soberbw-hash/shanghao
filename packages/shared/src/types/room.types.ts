@@ -8,8 +8,11 @@ import {
 export interface RoomMember {
   id: string;
   nickname: string;
+  avatarPath?: string;
+  avatarDataUrl?: string;
   isHost: boolean;
   isLocal: boolean;
+  isEmptySlot?: boolean;
   isMuted: boolean;
   presenceState: MemberPresenceState;
   speakingState: MemberSpeakingState;
