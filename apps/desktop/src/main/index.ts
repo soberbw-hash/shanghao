@@ -1,21 +1,75 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 
-import { app, BrowserWindow, Tray } from "electron";
+import { app, BrowserWindow, Tray, dialog } from "electron";
+
+import { APP_ID } from "@private-voice/shared";
 
 import { DiagnosticsService } from "./diagnostics";
 import { HostSessionController } from "./host-session";
 import { registerIpcHandlers } from "./ipc";
 import { SettingsStore } from "./settings-store";
 import { ShortcutController } from "./shortcuts";
+import { SignalingClientBridge } from "./signaling-client";
 import { createTrayController } from "./tray";
 import { createMainWindow } from "./window";
 
 let mainWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
 let isQuitting = false;
+let diagnostics: DiagnosticsService | null = null;
+let settingsStore: SettingsStore | null = null;
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+const showWindow = () => {
+  if (!mainWindow) {
+    return;
+  }
+
+  if (mainWindow.isMinimized()) {
+    mainWindow.restore();
+  }
+
+  if (!mainWindow.isVisible()) {
+    mainWindow.show();
+  }
+
+  mainWindow.focus();
+};
+
+const showBootstrapError = async (error: unknown) => {
+  const message = error instanceof Error ? error.message : String(error);
+  const logsDirectory = diagnostics?.getSnapshot().logsDirectory ?? app.getPath("userData");
+
+  await diagnostics?.writeLog({
+    category: "app",
+    level: "error",
+    message: "Software bootstrap failed",
+    context: { error: message, logsDirectory },
+  });
+
+  dialog.showErrorBox(
+    "软件启动失败",
+    `上号没有正常启动。\n\n日志目录：${logsDirectory}\n\n错误：${message}\n\n你可以重试，或者删除 settings.json 后再启动。`,
+  );
+
+  if (!mainWindow) {
+    mainWindow = createMainWindow({
+      log: (level, entry, context) => {
+        void diagnostics?.writeLog({
+          category: "app",
+          level,
+          message: entry,
+          context,
+        });
+      },
+      logsDirectory,
+    });
+  }
+
+  showWindow();
+};
 
 const clickButtonByLabel = async (
   window: BrowserWindow,
@@ -77,7 +131,7 @@ const maybeCaptureScreenshot = async (window: BrowserWindow | null): Promise<voi
 };
 
 const bootstrap = async (): Promise<void> => {
-  const diagnostics = new DiagnosticsService();
+  diagnostics = new DiagnosticsService();
   await diagnostics.init();
   await diagnostics.writeLog({
     category: "app",
@@ -85,35 +139,21 @@ const bootstrap = async (): Promise<void> => {
     message: "Main process bootstrap started",
   });
 
-  process.on("uncaughtException", (error) => {
-    void diagnostics.writeLog({
-      category: "app",
-      level: "error",
-      message: "Main process uncaught exception",
-      context: {
-        error: error.message,
-        stack: error.stack,
-      },
-    });
-  });
-
-  process.on("unhandledRejection", (reason) => {
-    void diagnostics.writeLog({
-      category: "app",
-      level: "error",
-      message: "Main process unhandled rejection",
-      context: {
-        reason: reason instanceof Error ? reason.message : String(reason),
-      },
-    });
-  });
-
-  const settingsStore = new SettingsStore((payload) => diagnostics.writeLog(payload));
+  settingsStore = new SettingsStore((payload) => diagnostics?.writeLog(payload) ?? Promise.resolve());
   const settings = await settingsStore.load();
 
-  const hostSession = new HostSessionController((payload) => diagnostics.writeLog(payload));
-  const shortcuts = new ShortcutController(() => mainWindow);
-  shortcuts.configureGlobalMute(settings.globalMuteShortcut);
+  const signalingClient = new SignalingClientBridge(
+    (payload) => diagnostics?.writeLog(payload) ?? Promise.resolve(),
+  );
+  const hostSession = new HostSessionController(
+    () => settingsStore?.getSnapshot() ?? settings,
+    (payload) => diagnostics?.writeLog(payload) ?? Promise.resolve(),
+  );
+  const shortcuts = new ShortcutController(
+    () => mainWindow,
+    (payload) => diagnostics?.writeLog(payload) ?? Promise.resolve(),
+  );
+  await shortcuts.configureGlobalMute(settings.globalMuteShortcut);
 
   registerIpcHandlers({
     getMainWindow: () => mainWindow,
@@ -121,18 +161,21 @@ const bootstrap = async (): Promise<void> => {
     diagnostics,
     shortcuts,
     hostSession,
+    signalingClient,
   });
 
   mainWindow = createMainWindow({
     log: (level, message, context) => {
-      void diagnostics.writeLog({
+      void diagnostics?.writeLog({
         category: "app",
         level,
         message,
         context,
       });
     },
+    logsDirectory: diagnostics.getSnapshot().logsDirectory,
   });
+
   await diagnostics.writeLog({
     category: "app",
     level: "info",
@@ -141,7 +184,7 @@ const bootstrap = async (): Promise<void> => {
   void maybeCaptureScreenshot(mainWindow);
 
   mainWindow.on("close", (event) => {
-    if (!isQuitting && settingsStore.getSnapshot().minimizeToTray) {
+    if (!isQuitting && settingsStore?.getSnapshot().minimizeToTray) {
       event.preventDefault();
       mainWindow?.hide();
     }
@@ -164,26 +207,41 @@ const bootstrap = async (): Promise<void> => {
     if (!mainWindow) {
       mainWindow = createMainWindow({
         log: (level, message, context) => {
-          void diagnostics.writeLog({
+          void diagnostics?.writeLog({
             category: "app",
             level,
             message,
             context,
           });
         },
+        logsDirectory: diagnostics?.getSnapshot().logsDirectory,
       });
       return;
     }
 
-    mainWindow.show();
-    mainWindow.focus();
+    showWindow();
   });
 };
+
+app.setAppUserModelId(APP_ID);
+app.commandLine.appendSwitch(
+  "proxy-bypass-list",
+  ".ts.net;100.64.0.0/10;<local>;localhost;127.0.0.1;10.*;172.16.*;172.17.*;172.18.*;172.19.*;172.20.*;172.21.*;172.22.*;172.23.*;172.24.*;172.25.*;172.26.*;172.27.*;172.28.*;172.29.*;172.30.*;172.31.*;192.168.*",
+);
+
+app.on("second-instance", () => {
+  showWindow();
+});
 
 if (!app.requestSingleInstanceLock()) {
   app.quit();
 } else {
-  void app.whenReady().then(bootstrap);
+  void app
+    .whenReady()
+    .then(bootstrap)
+    .catch(async (error) => {
+      await showBootstrapError(error);
+    });
 }
 
 app.on("window-all-closed", () => {

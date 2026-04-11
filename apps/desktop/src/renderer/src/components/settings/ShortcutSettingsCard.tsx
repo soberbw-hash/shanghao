@@ -11,9 +11,9 @@ export const ShortcutSettingsCard = ({
   settings: AppSettings;
   onChange: (patch: Partial<AppSettings>) => void;
 }) => (
-  <SettingsSection title="快捷键" description="常用操作留在手边，打游戏时更顺手。">
+  <SettingsSection title="快捷键" description="只保留常用的两个。">
     <div className="space-y-3">
-      <SettingsItemRow label="全局静音快捷键">
+      <SettingsItemRow label="全局静音快捷键" description="默认关闭，避免启动时被危险快捷键卡住。">
         <ShortcutInput
           value={settings.globalMuteShortcut}
           onChange={(globalMuteShortcut) => onChange({ globalMuteShortcut })}

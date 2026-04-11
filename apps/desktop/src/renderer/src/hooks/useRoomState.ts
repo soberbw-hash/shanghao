@@ -1,6 +1,6 @@
 import { useEffect } from "react";
 
-import { RoomConnectionState, RoomLifecycleState } from "@private-voice/shared";
+import { RoomConnectionState, RoomLifecycleState, type ConnectionMode } from "@private-voice/shared";
 import { createSpeakingDetector, requestMicrophoneStream } from "@private-voice/webrtc";
 
 import { RoomClient } from "../features/room/roomClient";
@@ -21,19 +21,40 @@ const copy = {
   hostStartedDescription: "地址已经生成，正在等待好友加入。",
   missingJoinUrl: "请先输入房主分享的地址。",
   invalidJoinUrl: "连接地址无效，请确认是房主发来的完整地址。",
-  missingHostAddress: "无法获取本机连接地址",
   roomFull: "房间已满，最多只支持 5 人同时语音。",
-  networkFailed: "连接失败，请检查 Tailscale 或网络环境。",
-  handshakeFailed: "已经找到房主地址，但连接没有建立成功，请让房主重新开房。",
+  networkFailed: "连接失败，请检查网络、代理 / TUN 或当前模式。",
+  handshakeFailed: "地址已可达，但房间连接握手失败，可能受代理 / TUN 影响。",
+  versionMismatch: "房主和成员版本不一致，请升级到同一版本。",
   microphoneUnavailable: "麦克风不可用",
   microphonePermission: "麦克风不可用，请先允许系统麦克风权限。",
   microphoneMissing: "没有找到可用的麦克风。",
   microphoneBusy: "麦克风当前被其他程序占用。",
   inputDeviceFailed: "输入设备切换失败",
-  invalidPayload: "房间返回的数据无法识别，请稍后再试。",
   joinedRoomTitle: "已加入房间",
   joinedRoomDescription: "语音连接已经建立。",
+  copiedAddressTitle: "已复制房间地址",
+  copiedAddressDescription: "把这份地址发给你的朋友就能加入。",
 } as const;
+
+const parseInvite = (value: string, fallbackMode: ConnectionMode) => {
+  const trimmedValue = value.trim();
+  if (!trimmedValue) {
+    throw new Error("missing_join_url");
+  }
+
+  const url = new URL(trimmedValue);
+  if (url.protocol !== "ws:" && url.protocol !== "wss:") {
+    throw new Error("invalid_join_url");
+  }
+
+  return {
+    signalingUrl: url.toString(),
+    roomId: url.searchParams.get("roomId") || "private-room",
+    connectionMode: (url.searchParams.get("mode") as ConnectionMode | null) || fallbackMode,
+    protocolVersion: url.searchParams.get("protocolVersion") ?? undefined,
+    buildNumber: url.searchParams.get("buildNumber") ?? undefined,
+  };
+};
 
 const normalizeRoomError = (error: unknown, fallback: string): string => {
   if (error instanceof DOMException) {
@@ -65,24 +86,12 @@ const normalizeRoomError = (error: unknown, fallback: string): string => {
       return copy.invalidJoinUrl;
     }
 
-    if (message === "network_unreachable") {
-      return copy.networkFailed;
+    if (message.includes("version")) {
+      return copy.versionMismatch;
     }
 
-    if (message === "invalid_signaling_payload") {
-      return copy.invalidPayload;
-    }
-
-    if (message.includes(copy.missingHostAddress)) {
-      return copy.missingHostAddress;
-    }
-
-    if (message.includes("room_full") || message.includes("房间已满")) {
+    if (message.includes("room_full")) {
       return copy.roomFull;
-    }
-
-    if (message.includes("麦克风")) {
-      return message;
     }
 
     return message;
@@ -91,21 +100,8 @@ const normalizeRoomError = (error: unknown, fallback: string): string => {
   return fallback;
 };
 
-const validateSignalingUrl = (value: string): string => {
-  const trimmedValue = value.trim();
-  if (!trimmedValue) {
-    throw new Error("missing_join_url");
-  }
-
-  const url = new URL(trimmedValue);
-  if (url.protocol !== "ws:" && url.protocol !== "wss:") {
-    throw new Error("invalid_join_url");
-  }
-
-  return url.toString();
-};
-
 export const useRoomState = () => {
+  const runtimeInfo = useSettingsStore((state) => state.runtimeInfo);
   const settings = useSettingsStore((state) => state.settings);
   const avatarDataUrl = useSettingsStore((state) => state.avatarDataUrl);
   const room = useRoomStore((state) => state.room);
@@ -116,6 +112,7 @@ export const useRoomState = () => {
   const setMembers = useRoomStore((state) => state.setMembers);
   const setConnectionState = useRoomStore((state) => state.setConnectionState);
   const setHostSession = useRoomStore((state) => state.setHostSession);
+  const setConnectionMode = useRoomStore((state) => state.setConnectionMode);
   const setLocalStream = useRoomStore((state) => state.setLocalStream);
   const setRemoteStream = useRoomStore((state) => state.setRemoteStream);
   const setLocalDiagnostics = useAudioStore((state) => state.setLocalDiagnostics);
@@ -180,10 +177,12 @@ export const useRoomState = () => {
     signalingUrl,
     roomId,
     roomName,
+    connectionMode,
   }: {
     signalingUrl: string;
     roomId: string;
     roomName: string;
+    connectionMode: ConnectionMode;
   }) => {
     const stream = await ensureLocalStream();
 
@@ -195,17 +194,30 @@ export const useRoomState = () => {
       nickname: settings?.nickname ?? "我",
       avatarDataUrl,
       localStream: stream,
+      connectionMode,
+      appVersion: runtimeInfo?.version ?? "0.0.0",
+      protocolVersion: runtimeInfo?.protocolVersion ?? "1",
+      buildNumber: runtimeInfo?.buildNumber ?? "unknown",
       onMembers: (members) => setMembers(members),
       onRoomName: (nextRoomName) => setRoom({ roomName: nextRoomName }),
       onConnectionState: (state) => setConnectionState(state),
       onRemoteStream: (remotePeerId, remoteStream) => {
         setRemoteStream(remotePeerId, remoteStream);
       },
+      onDiagnosticEvent: (payload) => {
+        void writeRendererLog(
+          "signaling",
+          "info",
+          "Signaling bridge event",
+          payload as unknown as Record<string, unknown>,
+        );
+      },
     });
 
     setRoom({
       roomId,
       roomName,
+      connectionMode,
       lifecycleState: RoomLifecycleState.Opening,
       signalingUrl,
     });
@@ -214,15 +226,20 @@ export const useRoomState = () => {
     setRoom({
       roomId,
       roomName,
+      connectionMode,
       lifecycleState: RoomLifecycleState.Open,
       signalingUrl,
     });
     startSpeakingDetector(stream);
   };
 
-  const diagnoseJoinFailure = async (signalingUrl: string, error: unknown) => {
+  const diagnoseJoinFailure = async (
+    signalingUrl: string,
+    connectionMode: ConnectionMode,
+    error: unknown,
+  ) => {
     try {
-      const diagnostic = await window.desktopApi.host.diagnoseJoin(signalingUrl);
+      const diagnostic = await window.desktopApi.host.diagnoseJoin(signalingUrl, connectionMode);
       await writeRendererLog("signaling", "warn", "Join failure diagnostic", {
         ...diagnostic,
         rawError: error instanceof Error ? error.message : String(error),
@@ -233,10 +250,14 @@ export const useRoomState = () => {
       }
 
       if (!diagnostic.isReachable) {
-        return copy.networkFailed;
+        return "无法连接到房主地址";
       }
 
-      return copy.handshakeFailed;
+      if (diagnostic.failureStage === "websocket") {
+        return copy.handshakeFailed;
+      }
+
+      return diagnostic.message;
     } catch (diagnosticError) {
       await writeRendererLog("signaling", "warn", "Failed to run join diagnostic", {
         error: diagnosticError instanceof Error ? diagnosticError.message : String(diagnosticError),
@@ -252,24 +273,40 @@ export const useRoomState = () => {
 
     setRoomAction("starting");
     setConnectionState(RoomConnectionState.StartingHost);
-    setRoom({ lifecycleState: RoomLifecycleState.Opening });
+    setRoom({ lifecycleState: RoomLifecycleState.Opening, connectionMode: settings.connectionMode });
 
     try {
-      await writeRendererLog("signaling", "info", "Starting host room", {
+      await writeRendererLog("connection-mode", "info", "Starting host room", {
         roomName: room.roomName,
+        connectionMode: settings.connectionMode,
       });
 
-      const session = await window.desktopApi.host.start(room.roomName, settings.nickname);
-      const signalingUrl = validateSignalingUrl(session.signalingUrl);
+      const session = await window.desktopApi.host.start(
+        room.roomName,
+        settings.nickname,
+        settings.connectionMode,
+      );
 
       setHostSession(session);
-      setJoinSignalUrl(signalingUrl);
+      setJoinSignalUrl(session.signalingUrl);
+      setConnectionMode(session.connectionMode);
 
       await connectToRoom({
-        signalingUrl,
+        signalingUrl: session.signalingUrl,
         roomId: session.roomId,
         roomName: session.roomName,
+        connectionMode: session.connectionMode,
       });
+
+      if (settings.shouldAutoCopyInviteLink) {
+        void navigator.clipboard.writeText(session.signalingUrl).then(() => {
+          pushToast({
+            tone: "success",
+            title: copy.copiedAddressTitle,
+            description: copy.copiedAddressDescription,
+          });
+        });
+      }
 
       useAppStore.getState().navigate("room");
       pushToast({
@@ -280,6 +317,7 @@ export const useRoomState = () => {
     } catch (error) {
       const description = normalizeRoomError(error, copy.startHostTitle);
       await writeRendererLog("signaling", "error", "Failed to start host room", {
+        connectionMode: settings.connectionMode,
         error: error instanceof Error ? error.message : String(error),
       });
       await window.desktopApi.host.stop().catch(() => undefined);
@@ -301,7 +339,7 @@ export const useRoomState = () => {
     }
   };
 
-  const joinRoom = async (signalingUrl = joinSignalUrl, roomId = room.roomId) => {
+  const joinRoom = async (inviteValue = joinSignalUrl) => {
     if (!settings) {
       return;
     }
@@ -310,18 +348,18 @@ export const useRoomState = () => {
     setConnectionState(RoomConnectionState.Joining);
 
     try {
-      const normalizedUrl = validateSignalingUrl(signalingUrl);
-      await writeRendererLog("signaling", "info", "Joining room", {
-        signalingUrl: normalizedUrl,
-      });
+      const invite = parseInvite(inviteValue, settings.connectionMode);
+      setConnectionMode(invite.connectionMode);
+      await writeRendererLog("connection-mode", "info", "Joining room", invite);
 
       await connectToRoom({
-        signalingUrl: normalizedUrl,
-        roomId,
+        signalingUrl: invite.signalingUrl,
+        roomId: invite.roomId,
         roomName: room.roomName,
+        connectionMode: invite.connectionMode,
       });
 
-      setJoinSignalUrl(normalizedUrl);
+      setJoinSignalUrl(invite.signalingUrl);
       useAppStore.getState().navigate("room");
       pushToast({
         tone: "success",
@@ -329,10 +367,12 @@ export const useRoomState = () => {
         description: copy.joinedRoomDescription,
       });
     } catch (error) {
-      const description = await diagnoseJoinFailure(signalingUrl, error);
+      const currentMode = room.connectionMode || settings.connectionMode;
+      const description = await diagnoseJoinFailure(inviteValue, currentMode, error);
       await writeRendererLog("signaling", "error", "Failed to join room", {
+        connectionMode: currentMode,
         error: error instanceof Error ? error.message : String(error),
-        signalingUrl,
+        signalingUrl: inviteValue,
       });
       stopLocalMedia();
       activeClient = null;
@@ -412,6 +452,27 @@ export const useRoomState = () => {
     }
   };
 
+  const copyInviteLink = async () => {
+    if (!room.signalingUrl) {
+      return;
+    }
+
+    try {
+      await navigator.clipboard.writeText(room.signalingUrl);
+      pushToast({
+        tone: "success",
+        title: copy.copiedAddressTitle,
+        description: copy.copiedAddressDescription,
+      });
+    } catch {
+      pushToast({
+        tone: "warning",
+        title: "复制失败",
+        description: "请手动复制当前地址。",
+      });
+    }
+  };
+
   return {
     room,
     joinSignalUrl,
@@ -420,5 +481,6 @@ export const useRoomState = () => {
     joinRoom,
     leaveRoom,
     replaceInputDevice,
+    copyInviteLink,
   };
 };

@@ -1,7 +1,7 @@
 import { EventEmitter } from "node:events";
 import { createServer, type Server as HttpServer } from "node:http";
 
-import { HEARTBEAT_INTERVAL_MS } from "@private-voice/shared";
+import { APP_BUILD_NUMBER, APP_PROTOCOL_VERSION, HEARTBEAT_INTERVAL_MS } from "@private-voice/shared";
 import type { WebSocket } from "ws";
 import { WebSocketServer } from "ws";
 
@@ -172,6 +172,18 @@ export class SignalingServer extends EventEmitter {
   }
 
   private handleJoin(socket: WebSocket, message: HelloMessage | JoinRoomMessage): void {
+    if (message.protocolVersion !== APP_PROTOCOL_VERSION) {
+      const mismatchMessage: ErrorMessage = {
+        type: "error",
+        code: "version_mismatch",
+        roomId: message.roomId,
+        peerId: message.peerId,
+        message: "房主和成员版本不一致，请升级到同一版本。",
+      };
+      socket.send(JSON.stringify(mismatchMessage));
+      return;
+    }
+
     if (!this.roomManager.canJoin(message.roomId)) {
       const roomFullMessage: ErrorMessage = {
         type: "error",
@@ -201,7 +213,12 @@ export class SignalingServer extends EventEmitter {
       lastHeartbeatAt: Date.now(),
     });
 
-    this.broadcastSnapshot(message.roomId);
+    this.broadcastSnapshot(message.roomId, {
+      appVersion: message.appVersion,
+      protocolVersion: APP_PROTOCOL_VERSION,
+      buildNumber: APP_BUILD_NUMBER,
+      connectionMode: message.connectionMode,
+    });
   }
 
   private handleLeave(message: LeaveRoomMessage): void {
@@ -230,7 +247,10 @@ export class SignalingServer extends EventEmitter {
     }
   }
 
-  private broadcastSnapshot(roomId: string): void {
+  private broadcastSnapshot(
+    roomId: string,
+    metadata?: Pick<RoomSnapshotMessage, "appVersion" | "protocolVersion" | "buildNumber" | "connectionMode">,
+  ): void {
     const room = this.roomManager.getRoom(roomId);
     if (!room) {
       return;
@@ -242,6 +262,10 @@ export class SignalingServer extends EventEmitter {
         roomId: room.roomId,
         roomName: room.roomName,
         members: room.peers.toRoomMembers(peer.id),
+        appVersion: metadata?.appVersion ?? "unknown",
+        protocolVersion: metadata?.protocolVersion ?? APP_PROTOCOL_VERSION,
+        buildNumber: metadata?.buildNumber ?? APP_BUILD_NUMBER,
+        connectionMode: metadata?.connectionMode ?? "direct_host",
       };
       peer.socket.send(JSON.stringify(payload));
       this.emit("snapshot", payload);

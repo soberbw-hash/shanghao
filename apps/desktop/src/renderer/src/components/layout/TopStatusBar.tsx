@@ -1,7 +1,7 @@
 import { Settings2 } from "lucide-react";
 
 import { Button, StatusPill } from "@private-voice/ui";
-import { APP_NAME, APP_SLOGAN, TailscaleState } from "@private-voice/shared";
+import { APP_NAME, APP_SLOGAN, TailscaleState, type ConnectionMode } from "@private-voice/shared";
 
 import { BrandMark } from "../brand/BrandMark";
 import { useAppStore } from "../../store/appStore";
@@ -9,12 +9,19 @@ import { useRoomStore } from "../../store/roomStore";
 import { useSettingsStore } from "../../store/settingsStore";
 import { getPrimaryRoomStatus, getTailscaleStateLabel } from "../../utils/labels";
 
+const modeLabelMap: Record<ConnectionMode, string> = {
+  direct_host: "公网直连",
+  tailscale: "Tailscale",
+  relay: "云中继",
+};
+
 export const TopStatusBar = () => {
   const navigate = useAppStore((state) => state.navigate);
   const currentPage = useAppStore((state) => state.currentPage);
   const roomName = useRoomStore((state) => state.room.roomName);
   const connectionState = useRoomStore((state) => state.room.connectionState);
   const memberCount = useRoomStore((state) => state.room.memberCount);
+  const connectionMode = useRoomStore((state) => state.room.connectionMode);
   const hostSession = useRoomStore((state) => state.hostSession);
   const tailscaleStatus = useSettingsStore((state) => state.tailscaleStatus);
 
@@ -41,6 +48,7 @@ export const TopStatusBar = () => {
         </div>
       </div>
       <div className="flex items-center gap-2">
+        <StatusPill tone="neutral">{modeLabelMap[connectionMode]}</StatusPill>
         <StatusPill tone={roomStatus.tone}>{roomStatus.label}</StatusPill>
         <StatusPill tone={tailscaleTone}>
           {tailscaleStatus?.state === TailscaleState.Connected

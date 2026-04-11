@@ -7,20 +7,31 @@ import { DEFAULT_ROOM_NAME, type AppSettings, type RendererLogPayload } from "@p
 
 import { clearAvatarImage } from "./profile-media";
 
+const SETTINGS_BOM = "\uFEFF";
+
 export const defaultSettings: AppSettings = {
   nickname: "",
   roomName: DEFAULT_ROOM_NAME,
   avatarPath: undefined,
   hasCompletedProfileSetup: false,
-  minimizeToTray: true,
+  minimizeToTray: false,
   reduceMotion: false,
   launchOnStartup: false,
   preferredInputDeviceId: undefined,
   preferredOutputDeviceId: undefined,
-  globalMuteShortcut: "CommandOrControl+Shift+M",
+  globalMuteShortcut: "",
   pushToTalkShortcut: "Space",
   isNoiseSuppressionEnabled: true,
   isPushToTalkEnabled: false,
+  connectionMode: "direct_host",
+  relayServerUrl: "",
+  manualDirectHost: "",
+  shouldAutoCopyInviteLink: true,
+  isMicOnSoundEnabled: true,
+  isMicOffSoundEnabled: true,
+  isMemberJoinSoundEnabled: true,
+  isMemberLeaveSoundEnabled: true,
+  isConnectionSoundEnabled: true,
 };
 
 export class SettingsStore {
@@ -34,21 +45,23 @@ export class SettingsStore {
   async load(): Promise<AppSettings> {
     try {
       const fileContent = await readFile(this.filePath, "utf8");
-      const parsed = JSON.parse(fileContent) as Partial<AppSettings>;
+      const parsed = JSON.parse(this.stripBom(fileContent)) as Partial<AppSettings>;
       const mergedSettings = {
         ...defaultSettings,
         ...parsed,
       };
       this.cachedSettings = this.normalizeSettings(mergedSettings);
-      await this.log("info", "Loaded settings from disk", {
+      await this.persist(this.cachedSettings);
+      await this.log("info", "settings loaded", {
         hasAvatar: Boolean(this.cachedSettings.avatarPath),
         profileReady: this.cachedSettings.hasCompletedProfileSetup,
+        connectionMode: this.cachedSettings.connectionMode,
       });
       return this.cachedSettings;
     } catch (error) {
       this.cachedSettings = defaultSettings;
       await this.persist(defaultSettings);
-      await this.log("warn", "Falling back to default settings", {
+      await this.log("warn", "settings fallback", {
         error: error instanceof Error ? error.message : String(error),
       });
       return this.cachedSettings;
@@ -61,11 +74,10 @@ export class SettingsStore {
 
   async save(partial: Partial<AppSettings>): Promise<AppSettings> {
     const previousAvatarPath = this.cachedSettings.avatarPath;
-    this.cachedSettings = {
+    this.cachedSettings = this.normalizeSettings({
       ...this.cachedSettings,
       ...partial,
-    };
-    this.cachedSettings = this.normalizeSettings(this.cachedSettings);
+    });
     await this.persist(this.cachedSettings);
     if (partial.avatarPath !== undefined && previousAvatarPath !== partial.avatarPath) {
       await clearAvatarImage(previousAvatarPath);
@@ -73,6 +85,7 @@ export class SettingsStore {
     await this.log("info", "Saved settings", {
       hasAvatar: Boolean(this.cachedSettings.avatarPath),
       nickname: this.cachedSettings.nickname,
+      connectionMode: this.cachedSettings.connectionMode,
     });
     return this.cachedSettings;
   }
@@ -85,25 +98,22 @@ export class SettingsStore {
     return this.cachedSettings;
   }
 
-  private isCorruptedRoomName(roomName: string): boolean {
-    const trimmedRoomName = roomName.trim();
-    return [
-      "娑撳﹤褰块幋鍧楁？",
-      "盲赂艩氓聫路忙聢驴茅聴麓",
-      "盲赂艩氓聫路忙聢驴茅聴麓".trim(),
-    ].includes(trimmedRoomName);
+  private stripBom(value: string): string {
+    return value.startsWith(SETTINGS_BOM) ? value.slice(1) : value;
   }
 
   private normalizeSettings(settings: AppSettings): AppSettings {
     const isProfileReady = settings.nickname.trim().length > 0 && Boolean(settings.avatarPath);
-    const normalizedRoomName = this.isCorruptedRoomName(settings.roomName)
-      ? DEFAULT_ROOM_NAME
-      : settings.roomName.trim() || DEFAULT_ROOM_NAME;
+    const normalizedRoomName = settings.roomName.trim() || DEFAULT_ROOM_NAME;
 
     return {
+      ...defaultSettings,
       ...settings,
       nickname: settings.nickname.trim(),
       roomName: normalizedRoomName,
+      globalMuteShortcut: settings.globalMuteShortcut.trim(),
+      relayServerUrl: settings.relayServerUrl?.trim(),
+      manualDirectHost: settings.manualDirectHost?.trim(),
       hasCompletedProfileSetup:
         Boolean(settings.hasCompletedProfileSetup) && isProfileReady,
     };
@@ -111,7 +121,9 @@ export class SettingsStore {
 
   private async persist(settings: AppSettings): Promise<void> {
     await mkdir(path.dirname(this.filePath), { recursive: true });
-    await writeFile(this.filePath, JSON.stringify(settings, null, 2), "utf8");
+    await writeFile(this.filePath, JSON.stringify(settings, null, 2), {
+      encoding: "utf8",
+    });
   }
 
   private async log(

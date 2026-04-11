@@ -3,6 +3,7 @@ import {
   DEFAULT_ROOM_NAME,
   TailscaleState,
   type AppSettings,
+  type NetworkStatusSnapshot,
   type RuntimeInfo,
   type TailscaleStatus,
 } from "@private-voice/shared";
@@ -24,6 +25,7 @@ interface SettingsStoreState {
   runtimeInfo?: RuntimeInfo;
   settings?: AppSettings;
   tailscaleStatus?: TailscaleStatus;
+  networkSnapshot?: NetworkStatusSnapshot;
   avatarDataUrl?: string;
   isHydrating: boolean;
   hydrate: () => Promise<HydrationOutcome>;
@@ -31,6 +33,7 @@ interface SettingsStoreState {
   pickAvatar: () => Promise<void>;
   clearAvatar: () => Promise<void>;
   refreshTailscale: () => Promise<void>;
+  refreshNetworkSnapshot: () => Promise<void>;
   resetSettings: () => Promise<void>;
 }
 
@@ -40,6 +43,8 @@ const fallbackRuntimeInfo: RuntimeInfo = {
   appName: APP_NAME,
   version: "0.0.0",
   platform: typeof navigator === "undefined" ? "unknown" : navigator.platform,
+  protocolVersion: "1",
+  buildNumber: "unknown",
 };
 
 const fallbackSettings: AppSettings = {
@@ -47,15 +52,24 @@ const fallbackSettings: AppSettings = {
   roomName: DEFAULT_ROOM_NAME,
   avatarPath: undefined,
   hasCompletedProfileSetup: false,
-  minimizeToTray: true,
+  minimizeToTray: false,
   reduceMotion: false,
   launchOnStartup: false,
   preferredInputDeviceId: undefined,
   preferredOutputDeviceId: undefined,
-  globalMuteShortcut: "CommandOrControl+Shift+M",
+  globalMuteShortcut: "",
   pushToTalkShortcut: "Space",
   isNoiseSuppressionEnabled: true,
   isPushToTalkEnabled: false,
+  connectionMode: "direct_host",
+  relayServerUrl: "",
+  manualDirectHost: "",
+  shouldAutoCopyInviteLink: true,
+  isMicOnSoundEnabled: true,
+  isMicOffSoundEnabled: true,
+  isMemberJoinSoundEnabled: true,
+  isMemberLeaveSoundEnabled: true,
+  isConnectionSoundEnabled: true,
 };
 
 const fallbackTailscaleStatus: TailscaleStatus = {
@@ -103,6 +117,7 @@ export const useSettingsStore = create<SettingsStoreState>((set, get) => ({
   runtimeInfo: undefined,
   tailscaleStatus: fallbackTailscaleStatus,
   avatarDataUrl: undefined,
+  networkSnapshot: undefined,
   isHydrating: true,
   hydrate: async () => {
     set({ isHydrating: true });
@@ -115,7 +130,7 @@ export const useSettingsStore = create<SettingsStoreState>((set, get) => ({
       "runtime_info_timeout",
       3_000,
     ).catch(async (error) => {
-      await writeRendererLog("app", "warn", "Falling back to runtime info", {
+      await writeRendererLog("renderer-startup", "warn", "Falling back to runtime info", {
         error: error instanceof Error ? error.message : String(error),
       });
       return fallbackRuntimeInfo;
@@ -132,7 +147,7 @@ export const useSettingsStore = create<SettingsStoreState>((set, get) => ({
         description: "上号已用默认设置启动。你可以先进入首页，再去设置里继续检查。",
         details: [error instanceof Error ? error.message : String(error)],
       };
-      await writeRendererLog("app", "error", "Failed to hydrate settings", {
+      await writeRendererLog("renderer-startup", "error", "Failed to hydrate settings", {
         error: error instanceof Error ? error.message : String(error),
       });
       return fallbackSettings;
@@ -147,7 +162,7 @@ export const useSettingsStore = create<SettingsStoreState>((set, get) => ({
           description: "本地头像文件不可用，已经临时忽略头像，不会影响继续使用。",
           details: [error instanceof Error ? error.message : String(error)],
         };
-        await writeRendererLog("app", "warn", "Failed to read local avatar", {
+        await writeRendererLog("renderer-startup", "warn", "Failed to read local avatar", {
           avatarPath: settings.avatarPath,
           error: error instanceof Error ? error.message : String(error),
         });
@@ -169,21 +184,30 @@ export const useSettingsStore = create<SettingsStoreState>((set, get) => ({
       });
     }
 
-    const tailscaleStatus = await withTimeout(
-      desktopApi.tailscale.checkStatus(),
-      "tailscale_timeout",
-      4_000,
-    ).catch(async (error) => {
-      await writeRendererLog("tailscale", "warn", "Failed to read Tailscale status", {
-        error: error instanceof Error ? error.message : String(error),
-      });
-      return fallbackTailscaleStatus;
-    });
+    const [tailscaleStatus, networkSnapshot] = await Promise.all([
+      withTimeout(desktopApi.tailscale.checkStatus(), "tailscale_timeout", 4_000).catch(
+        async (error) => {
+          await writeRendererLog("tailscale", "warn", "Failed to read Tailscale status", {
+            error: error instanceof Error ? error.message : String(error),
+          });
+          return fallbackTailscaleStatus;
+        },
+      ),
+      withTimeout(desktopApi.network.getSnapshot(), "network_snapshot_timeout", 4_000).catch(
+        async (error) => {
+          await writeRendererLog("proxy-diagnostics", "warn", "Failed to read network snapshot", {
+            error: error instanceof Error ? error.message : String(error),
+          });
+          return undefined;
+        },
+      ),
+    ]);
 
     set({
       runtimeInfo,
       settings,
       tailscaleStatus,
+      networkSnapshot,
       avatarDataUrl,
       isHydrating: false,
     });
@@ -191,16 +215,17 @@ export const useSettingsStore = create<SettingsStoreState>((set, get) => ({
     await desktopApi.shortcuts
       .configureMute(settings.globalMuteShortcut)
       .catch(async (error) => {
-        await writeRendererLog("app", "warn", "Failed to configure mute shortcut", {
+        await writeRendererLog("renderer-startup", "warn", "Failed to configure mute shortcut", {
           error: error instanceof Error ? error.message : String(error),
         });
       });
 
-    await writeRendererLog("app", "info", "Renderer hydrated settings", {
+    await writeRendererLog("renderer-startup", "info", "Renderer hydrated settings", {
       platform: runtimeInfo.platform,
       tailscaleState: tailscaleStatus.state,
       hasAvatar: Boolean(settings.avatarPath),
       profileReady: settings.hasCompletedProfileSetup,
+      connectionMode: settings.connectionMode,
       mode,
     });
 
@@ -258,15 +283,20 @@ export const useSettingsStore = create<SettingsStoreState>((set, get) => ({
         return fallbackTailscaleStatus;
       });
     set({ tailscaleStatus });
-    await writeRendererLog("tailscale", "info", "Refreshed Tailscale status", {
-      state: tailscaleStatus.state,
-      ip: tailscaleStatus.ip,
-      magicDnsName: tailscaleStatus.magicDnsName,
+  },
+  refreshNetworkSnapshot: async () => {
+    const networkSnapshot = await desktopApi.network.getSnapshot().catch(async (error) => {
+      await writeRendererLog("proxy-diagnostics", "warn", "Failed to refresh network snapshot", {
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return undefined;
     });
+    set({ networkSnapshot });
   },
   resetSettings: async () => {
     const settings = await desktopApi.settings.reset();
     set({ settings, avatarDataUrl: undefined });
     await get().refreshTailscale();
+    await get().refreshNetworkSnapshot();
   },
 }));

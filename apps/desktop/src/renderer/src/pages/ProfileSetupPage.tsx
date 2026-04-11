@@ -100,9 +100,7 @@ export const ProfileSetupPage = () => {
           <div className="space-y-4">
             <div>
               <div className="text-sm font-medium text-[#111827]">昵称</div>
-              <div className="mt-1 text-sm text-[#667085]">
-                房间里别人看到的就是这个名字。
-              </div>
+              <div className="mt-1 text-sm text-[#667085]">房间里别人看到的就是这个名字。</div>
             </div>
             <Input
               value={nickname}

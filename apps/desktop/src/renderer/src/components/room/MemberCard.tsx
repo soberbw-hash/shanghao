@@ -67,7 +67,7 @@ export const MemberCard = ({
             {isSpeaking ? (
               <>
                 <span className="text-[#D0D5DD]">·</span>
-                <span className="text-[#2B84E9]">在说话</span>
+                <span className="text-[#2B84E9]">说话中</span>
               </>
             ) : null}
           </div>

@@ -6,6 +6,7 @@ import {
   RoomConnectionState,
   RoomLifecycleState,
   type ConnectionHealth,
+  type ConnectionMode,
   type HostSessionInfo,
   type RoomMember,
   type RoomSummary,
@@ -30,6 +31,7 @@ interface RoomStoreState {
   setMembers: (members: RoomMember[]) => void;
   setJoinSignalUrl: (url: string) => void;
   setHostSession: (session?: HostSessionInfo) => void;
+  setConnectionMode: (mode: ConnectionMode) => void;
   setLocalStream: (stream?: MediaStream) => void;
   setRemoteStream: (peerId: string, stream?: MediaStream) => void;
   setConnectionHealth: (health: Partial<ConnectionHealth>) => void;
@@ -38,8 +40,8 @@ interface RoomStoreState {
   resetRoom: () => void;
 }
 
-const localMemberLabel = "\u6211";
-const emptySlotLabel = "\u7a7a\u4f4d";
+const localMemberLabel = "我";
+const emptySlotLabel = "空位";
 
 const createEmptySlot = (index: number): RoomMember => ({
   id: `empty-slot-${index}`,
@@ -137,6 +139,7 @@ const initialRoomState = (): RoomSummary => {
     roomName: DEFAULT_ROOM_NAME,
     memberCount: countActualMembers(members),
     members,
+    connectionMode: "direct_host",
     connectionState: RoomConnectionState.Idle,
     lifecycleState: RoomLifecycleState.Closed,
   };
@@ -185,6 +188,13 @@ export const useRoomStore = create<RoomStoreState>((set) => ({
     }),
   setJoinSignalUrl: (joinSignalUrl) => set({ joinSignalUrl }),
   setHostSession: (hostSession) => set({ hostSession }),
+  setConnectionMode: (connectionMode) =>
+    set((state) => ({
+      room: {
+        ...state.room,
+        connectionMode,
+      },
+    })),
   setLocalStream: (localStream) => set({ localStream }),
   setRemoteStream: (peerId, stream) =>
     set((state) => {

@@ -6,11 +6,13 @@ const desktopApi: DesktopApi = {
   app: {
     getRuntimeInfo: () => ipcRenderer.invoke(IPC_CHANNELS.app.getRuntimeInfo),
     writeLog: (payload) => ipcRenderer.invoke(IPC_CHANNELS.app.writeLog, payload),
+    openPath: (targetPath) => ipcRenderer.invoke(IPC_CHANNELS.app.openPath, targetPath),
   },
   window: {
     minimize: () => ipcRenderer.invoke(IPC_CHANNELS.window.minimize),
     hide: () => ipcRenderer.invoke(IPC_CHANNELS.window.hide),
     close: () => ipcRenderer.invoke(IPC_CHANNELS.window.close),
+    show: () => ipcRenderer.invoke(IPC_CHANNELS.window.show),
   },
   settings: {
     get: () => ipcRenderer.invoke(IPC_CHANNELS.settings.get),
@@ -26,6 +28,8 @@ const desktopApi: DesktopApi = {
   diagnostics: {
     snapshot: () => ipcRenderer.invoke(IPC_CHANNELS.diagnostics.snapshot),
     exportLogs: () => ipcRenderer.invoke(IPC_CHANNELS.diagnostics.exportLogs),
+    exportBundle: () => ipcRenderer.invoke(IPC_CHANNELS.diagnostics.exportBundle),
+    openLogsDirectory: () => ipcRenderer.invoke(IPC_CHANNELS.diagnostics.openLogsDirectory),
   },
   shortcuts: {
     configureMute: (accelerator) =>
@@ -41,12 +45,28 @@ const desktopApi: DesktopApi = {
     openInstallGuide: () =>
       ipcRenderer.invoke(IPC_CHANNELS.tailscale.openInstallGuide),
   },
+  network: {
+    getSnapshot: () => ipcRenderer.invoke(IPC_CHANNELS.network.getSnapshot),
+    getProxyDiagnostics: () => ipcRenderer.invoke(IPC_CHANNELS.network.getProxyDiagnostics),
+  },
   host: {
-    start: (roomName, nickname) =>
-      ipcRenderer.invoke(IPC_CHANNELS.host.start, roomName, nickname),
+    start: (roomName, nickname, connectionMode) =>
+      ipcRenderer.invoke(IPC_CHANNELS.host.start, roomName, nickname, connectionMode),
     stop: () => ipcRenderer.invoke(IPC_CHANNELS.host.stop),
-    diagnoseJoin: (signalingUrl) =>
-      ipcRenderer.invoke(IPC_CHANNELS.host.diagnoseJoin, signalingUrl),
+    diagnoseJoin: (signalingUrl, connectionMode) =>
+      ipcRenderer.invoke(IPC_CHANNELS.host.diagnoseJoin, signalingUrl, connectionMode),
+  },
+  signaling: {
+    connect: (signalingUrl) => ipcRenderer.invoke(IPC_CHANNELS.signaling.connect, signalingUrl),
+    send: (payload) => ipcRenderer.invoke(IPC_CHANNELS.signaling.send, payload),
+    close: () => ipcRenderer.invoke(IPC_CHANNELS.signaling.close),
+    onEvent: (listener) => {
+      const wrapped = (_event: Electron.IpcRendererEvent, payload: unknown) => {
+        listener(payload as Parameters<typeof listener>[0]);
+      };
+      ipcRenderer.on(IPC_CHANNELS.signaling.event, wrapped);
+      return () => ipcRenderer.removeListener(IPC_CHANNELS.signaling.event, wrapped);
+    },
   },
   recording: {
     export: (payload) => ipcRenderer.invoke(IPC_CHANNELS.recording.export, payload),

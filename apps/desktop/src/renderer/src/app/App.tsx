@@ -6,6 +6,7 @@ import { RemoteAudioRenderer } from "../features/audio/RemoteAudioRenderer";
 import { useAppBootstrap } from "../hooks/useAppBootstrap";
 import { useGlobalMuteSync } from "../hooks/useGlobalMuteSync";
 import { useLocalAudioTransport } from "../hooks/useLocalAudioTransport";
+import { useUiFeedbackSounds } from "../hooks/useUiFeedbackSounds";
 import { HomePage } from "../pages/HomePage";
 import { ProfileSetupPage } from "../pages/ProfileSetupPage";
 import { RoomPage } from "../pages/RoomPage";
@@ -22,6 +23,7 @@ export const App = () => {
   useAppBootstrap();
   useGlobalMuteSync();
   useLocalAudioTransport();
+  useUiFeedbackSounds();
 
   const currentPage = useAppStore((state) => state.currentPage);
   const bootstrapPhase = useAppStore((state) => state.bootstrapPhase);

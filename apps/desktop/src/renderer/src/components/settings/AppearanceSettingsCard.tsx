@@ -11,9 +11,9 @@ export const AppearanceSettingsCard = ({
   settings: AppSettings;
   onChange: (patch: Partial<AppSettings>) => void;
 }) => (
-  <SettingsSection title="体验" description="把托盘和动效调到你习惯的状态。">
+  <SettingsSection title="体验" description="托盘、动效和提示音都可以自己决定。">
     <div className="space-y-3">
-      <SettingsItemRow label="最小化到托盘">
+      <SettingsItemRow label="关闭时最小化到托盘">
         <Switch
           isChecked={settings.minimizeToTray}
           onChange={(minimizeToTray) => onChange({ minimizeToTray })}
@@ -23,6 +23,36 @@ export const AppearanceSettingsCard = ({
         <Switch
           isChecked={settings.reduceMotion}
           onChange={(reduceMotion) => onChange({ reduceMotion })}
+        />
+      </SettingsItemRow>
+      <SettingsItemRow label="开麦提示音">
+        <Switch
+          isChecked={settings.isMicOnSoundEnabled}
+          onChange={(isMicOnSoundEnabled) => onChange({ isMicOnSoundEnabled })}
+        />
+      </SettingsItemRow>
+      <SettingsItemRow label="关麦提示音">
+        <Switch
+          isChecked={settings.isMicOffSoundEnabled}
+          onChange={(isMicOffSoundEnabled) => onChange({ isMicOffSoundEnabled })}
+        />
+      </SettingsItemRow>
+      <SettingsItemRow label="成员进入提示音">
+        <Switch
+          isChecked={settings.isMemberJoinSoundEnabled}
+          onChange={(isMemberJoinSoundEnabled) => onChange({ isMemberJoinSoundEnabled })}
+        />
+      </SettingsItemRow>
+      <SettingsItemRow label="成员退出提示音">
+        <Switch
+          isChecked={settings.isMemberLeaveSoundEnabled}
+          onChange={(isMemberLeaveSoundEnabled) => onChange({ isMemberLeaveSoundEnabled })}
+        />
+      </SettingsItemRow>
+      <SettingsItemRow label="连接成功 / 失败提示音">
+        <Switch
+          isChecked={settings.isConnectionSoundEnabled}
+          onChange={(isConnectionSoundEnabled) => onChange({ isConnectionSoundEnabled })}
         />
       </SettingsItemRow>
     </div>

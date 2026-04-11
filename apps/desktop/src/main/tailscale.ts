@@ -8,6 +8,7 @@ import { TailscaleState, type TailscaleStatus } from "@private-voice/shared";
 
 const execFileAsync = promisify(execFile);
 const TAILSCALE_INSTALL_URL = "https://tailscale.com/download/windows";
+const BLOCKED_INTERFACE_KEYWORDS = ["clash", "meta", "mihomo", "wintun", "tun", "tap", "warp"];
 
 interface TailscaleStatusJson {
   BackendState?: string;
@@ -23,7 +24,7 @@ interface TailscaleStatusJson {
 
 export interface HostAddressResolution {
   host: string;
-  source: "magicdns" | "tailscale_ip" | "lan_ip";
+  source: "magicdns" | "tailscale_ip" | "public_ip" | "manual_public_host" | "relay";
   alternatives: string[];
 }
 
@@ -44,18 +45,16 @@ const normalizeMagicDnsName = (value?: string): string | undefined => {
   return value.endsWith(".") ? value.slice(0, -1) : value;
 };
 
-const resolveLanIpv4 = (): string | undefined => {
-  const interfaces = networkInterfaces();
-  for (const values of Object.values(interfaces)) {
-    for (const value of values ?? []) {
-      if (value.family === "IPv4" && !value.internal) {
-        return value.address;
-      }
-    }
-  }
-
-  return undefined;
+const isBlockedAddress = (address: string): boolean => {
+  return (
+    address.startsWith("127.") ||
+    address.startsWith("198.18.") ||
+    address.startsWith("198.19.")
+  );
 };
+
+const isBlockedInterface = (name: string): boolean =>
+  BLOCKED_INTERFACE_KEYWORDS.some((keyword) => name.toLowerCase().includes(keyword));
 
 export const detectTailscaleStatus = async (): Promise<TailscaleStatus> => {
   if (!(await detectBinary())) {
@@ -73,7 +72,7 @@ export const detectTailscaleStatus = async (): Promise<TailscaleStatus> => {
       windowsHide: true,
     });
     const parsed = JSON.parse(stdout) as TailscaleStatusJson;
-    const ip = parsed.Self?.TailscaleIPs?.[0];
+    const ip = parsed.Self?.TailscaleIPs?.find((candidate) => !isBlockedAddress(candidate));
     const magicDnsName = normalizeMagicDnsName(parsed.Self?.DNSName);
     const backendState = parsed.BackendState?.toLowerCase();
     const isConnected = backendState === "running" || Boolean(ip);
@@ -102,7 +101,7 @@ export const detectTailscaleStatus = async (): Promise<TailscaleStatus> => {
   }
 };
 
-export const resolvePreferredHostAddress = async (): Promise<HostAddressResolution | undefined> => {
+export const resolveTailscaleAddress = async (): Promise<HostAddressResolution | undefined> => {
   const tailscale = await detectTailscaleStatus();
   const candidates: HostAddressResolution[] = [];
 
@@ -110,9 +109,7 @@ export const resolvePreferredHostAddress = async (): Promise<HostAddressResoluti
     candidates.push({
       host: tailscale.magicDnsName,
       source: "magicdns",
-      alternatives: [tailscale.ip, resolveLanIpv4()].filter(
-        (value): value is string => Boolean(value),
-      ),
+      alternatives: [tailscale.ip].filter((value): value is string => Boolean(value)),
     });
   }
 
@@ -120,24 +117,34 @@ export const resolvePreferredHostAddress = async (): Promise<HostAddressResoluti
     candidates.push({
       host: tailscale.ip,
       source: "tailscale_ip",
-      alternatives: [tailscale.magicDnsName, resolveLanIpv4()].filter(
-        (value): value is string => Boolean(value),
-      ),
-    });
-  }
-
-  const lanIp = resolveLanIpv4();
-  if (lanIp) {
-    candidates.push({
-      host: lanIp,
-      source: "lan_ip",
-      alternatives: [tailscale.magicDnsName, tailscale.ip].filter(
-        (value): value is string => Boolean(value),
-      ),
+      alternatives: [tailscale.magicDnsName].filter((value): value is string => Boolean(value)),
     });
   }
 
   return candidates[0];
+};
+
+export const resolveLanIpv4Candidates = (): string[] => {
+  const interfaces = networkInterfaces();
+  const candidates: string[] = [];
+
+  for (const [name, values] of Object.entries(interfaces)) {
+    if (isBlockedInterface(name)) {
+      continue;
+    }
+
+    for (const value of values ?? []) {
+      if (
+        value.family === "IPv4" &&
+        !value.internal &&
+        !isBlockedAddress(value.address)
+      ) {
+        candidates.push(value.address);
+      }
+    }
+  }
+
+  return [...new Set(candidates)];
 };
 
 export const openTailscaleInstallGuide = async (): Promise<void> => {

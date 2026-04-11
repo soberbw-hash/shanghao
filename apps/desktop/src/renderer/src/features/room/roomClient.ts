@@ -3,7 +3,9 @@ import {
   MemberPresenceState,
   MemberSpeakingState,
   RoomConnectionState,
+  type ConnectionMode,
   type RoomMember,
+  type SignalingEventPayload,
 } from "@private-voice/shared";
 import type {
   ErrorMessage,
@@ -22,10 +24,15 @@ interface RoomClientOptions {
   nickname: string;
   avatarDataUrl?: string;
   localStream: MediaStream;
+  connectionMode: ConnectionMode;
+  appVersion: string;
+  protocolVersion: string;
+  buildNumber: string;
   onMembers: (members: RoomMember[]) => void;
   onRoomName: (roomName: string) => void;
   onConnectionState: (state: RoomConnectionState) => void;
   onRemoteStream: (peerId: string, stream: MediaStream | undefined) => void;
+  onDiagnosticEvent?: (payload: SignalingEventPayload) => void;
 }
 
 interface PendingConnection {
@@ -37,7 +44,6 @@ interface PendingConnection {
 const INITIAL_CONNECT_TIMEOUT_MS = 10_000;
 
 export class RoomClient {
-  private socket?: WebSocket;
   private readonly backoff = new ExponentialBackoff(DEFAULT_RECONNECT_DELAYS_MS);
   private readonly peers = new Map<string, MeshPeerConnection>();
   private heartbeatTimer?: number;
@@ -52,6 +58,7 @@ export class RoomClient {
   private lastPublishedAvatarDataUrl?: string;
   private pendingConnection?: PendingConnection;
   private hasJoinedOnce = false;
+  private unsubscribeEvents?: () => void;
 
   constructor(private readonly options: RoomClientOptions) {
     this.localStream = options.localStream;
@@ -81,7 +88,9 @@ export class RoomClient {
     });
 
     this.clearPeers();
-    this.socket?.close();
+    this.unsubscribeEvents?.();
+    this.unsubscribeEvents = undefined;
+    void window.desktopApi.signaling.close();
     this.options.onConnectionState(RoomConnectionState.Disconnected);
   }
 
@@ -152,71 +161,79 @@ export class RoomClient {
       const timeout = window.setTimeout(() => {
         const error = new Error("network_unreachable");
         this.rejectPendingConnection(error);
-        this.socket?.close();
+        void window.desktopApi.signaling.close();
       }, INITIAL_CONNECT_TIMEOUT_MS);
 
       this.pendingConnection = { resolve, reject, timeout };
-      this.socket = new WebSocket(this.options.signalingUrl);
+      this.unsubscribeEvents?.();
+      this.unsubscribeEvents = window.desktopApi.signaling.onEvent((payload) => {
+        this.options.onDiagnosticEvent?.(payload);
+        void this.handleBridgeEvent(payload);
+      });
 
-      this.socket.onopen = () => {
-        if (isReconnect) {
-          this.options.onConnectionState(RoomConnectionState.Reconnecting);
-        }
-
-        this.send({
-          type: "join_room",
-          roomId: this.options.roomId,
-          peerId: this.options.peerId,
-          nickname: this.nickname,
-          avatarDataUrl: this.avatarDataUrl,
+      void window.desktopApi.signaling
+        .connect(this.options.signalingUrl)
+        .catch((error) => {
+          this.rejectPendingConnection(error instanceof Error ? error : new Error(String(error)));
         });
-
-        this.startHeartbeat();
-      };
-
-      this.socket.onmessage = (event) => {
-        if (typeof event.data !== "string") {
-          return;
-        }
-
-        try {
-          const payload = JSON.parse(event.data) as SignalEnvelope;
-          void this.handleSignal(payload).catch((error) => {
-            const normalizedError =
-              error instanceof Error ? error : new Error("invalid_signaling_payload");
-
-            this.options.onConnectionState(RoomConnectionState.Failed);
-            this.rejectPendingConnection(normalizedError);
-          });
-        } catch {
-          this.rejectPendingConnection(new Error("invalid_signaling_payload"));
-        }
-      };
-
-      this.socket.onclose = () => {
-        this.stopHeartbeat();
-        this.clearPendingConnection();
-
-        if (!this.shouldReconnect) {
-          return;
-        }
-
-        if (!this.hasJoinedOnce) {
-          this.options.onConnectionState(RoomConnectionState.Failed);
-          return;
-        }
-
-        this.options.onConnectionState(RoomConnectionState.Reconnecting);
-        this.clearPeers();
-        this.reconnect();
-      };
-
-      this.socket.onerror = () => {
-        if (!this.hasJoinedOnce) {
-          this.rejectPendingConnection(new Error("network_unreachable"));
-        }
-      };
     });
+  }
+
+  private async handleBridgeEvent(payload: SignalingEventPayload): Promise<void> {
+    if (payload.type === "open") {
+      if (this.hasJoinedOnce) {
+        this.options.onConnectionState(RoomConnectionState.Reconnecting);
+      }
+
+      await this.send({
+        type: "join_room",
+        roomId: this.options.roomId,
+        peerId: this.options.peerId,
+        nickname: this.nickname,
+        avatarDataUrl: this.avatarDataUrl,
+        appVersion: this.options.appVersion,
+        protocolVersion: this.options.protocolVersion,
+        buildNumber: this.options.buildNumber,
+        connectionMode: this.options.connectionMode,
+      });
+      this.startHeartbeat();
+      return;
+    }
+
+    if (payload.type === "message" && payload.data) {
+      try {
+        const message = JSON.parse(payload.data) as SignalEnvelope;
+        await this.handleSignal(message);
+      } catch {
+        this.rejectPendingConnection(new Error("invalid_signaling_payload"));
+      }
+      return;
+    }
+
+    if (payload.type === "error") {
+      if (!this.hasJoinedOnce) {
+        this.rejectPendingConnection(new Error(payload.message || "network_unreachable"));
+      }
+      return;
+    }
+
+    if (payload.type === "close") {
+      this.stopHeartbeat();
+      this.clearPendingConnection();
+
+      if (!this.shouldReconnect) {
+        return;
+      }
+
+      if (!this.hasJoinedOnce) {
+        this.options.onConnectionState(RoomConnectionState.Failed);
+        return;
+      }
+
+      this.options.onConnectionState(RoomConnectionState.Reconnecting);
+      this.clearPeers();
+      this.reconnect();
+    }
   }
 
   private async handleSignal(payload: SignalEnvelope): Promise<void> {
@@ -335,7 +352,7 @@ export class RoomClient {
       localStream: this.localStream,
       onRemoteStream: (stream) => this.options.onRemoteStream(targetPeerId, stream),
       onIceCandidate: (candidate) => {
-        this.send({
+        void this.send({
           type: "ice_candidate",
           roomId: this.options.roomId,
           peerId: this.options.peerId,
@@ -354,16 +371,14 @@ export class RoomClient {
     return peer;
   }
 
-  private send(payload: SignalEnvelope): void {
-    if (this.socket?.readyState === WebSocket.OPEN) {
-      this.socket.send(JSON.stringify(payload));
-    }
+  private async send(payload: SignalEnvelope): Promise<void> {
+    await window.desktopApi.signaling.send(JSON.stringify(payload));
   }
 
   private startHeartbeat(): void {
     this.stopHeartbeat();
     this.heartbeatTimer = window.setInterval(() => {
-      this.send({
+      void this.send({
         type: "heartbeat",
         roomId: this.options.roomId,
         peerId: this.options.peerId,

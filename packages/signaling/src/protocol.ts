@@ -1,4 +1,4 @@
-import type { RoomMember } from "@private-voice/shared";
+import type { ConnectionMode, RoomMember } from "@private-voice/shared";
 
 export interface SessionDescriptionPayload {
   type: "offer" | "answer" | "pranswer" | "rollback";
@@ -30,7 +30,14 @@ interface BaseMessage {
   peerId?: string;
 }
 
-export interface HelloMessage extends BaseMessage {
+interface VersionedMessage {
+  appVersion: string;
+  protocolVersion: string;
+  buildNumber: string;
+  connectionMode: ConnectionMode;
+}
+
+export interface HelloMessage extends BaseMessage, VersionedMessage {
   type: "hello";
   roomId: string;
   peerId: string;
@@ -38,7 +45,7 @@ export interface HelloMessage extends BaseMessage {
   avatarDataUrl?: string;
 }
 
-export interface JoinRoomMessage extends BaseMessage {
+export interface JoinRoomMessage extends BaseMessage, VersionedMessage {
   type: "join_room";
   roomId: string;
   peerId: string;
@@ -58,7 +65,7 @@ export interface HeartbeatMessage extends BaseMessage {
   peerId: string;
 }
 
-export interface RoomSnapshotMessage extends BaseMessage {
+export interface RoomSnapshotMessage extends BaseMessage, VersionedMessage {
   type: "room_snapshot";
   roomId: string;
   roomName: string;

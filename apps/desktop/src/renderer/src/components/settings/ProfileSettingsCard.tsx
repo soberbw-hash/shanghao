@@ -19,9 +19,9 @@ export const ProfileSettingsCard = ({
   onPickAvatar: () => void;
   onClearAvatar: () => void;
 }) => (
-  <SettingsSection title="基础资料" description="房间里别人看到的就是你的昵称和头像。">
+  <SettingsSection title="资料" description="房间里别人看到的就是你的昵称和头像。">
     <div className="space-y-3">
-      <SettingsItemRow label="头像" description="支持本地图片，只保存在这台设备里。">
+      <SettingsItemRow label="头像" description="只保存在这台设备里。">
         <AvatarPlaceholder name={settings.nickname || "上号"} src={avatarDataUrl} size="lg" />
         <Button variant="secondary" onClick={onPickAvatar}>
           选择头像
@@ -30,16 +30,17 @@ export const ProfileSettingsCard = ({
           重置
         </Button>
       </SettingsItemRow>
-      <SettingsItemRow label="昵称" description="会显示在成员位里。">
+      <SettingsItemRow label="昵称" description="会显示在开黑位里。">
         <Input
           value={settings.nickname}
           placeholder="输入你的昵称"
           onChange={(event) => onChange({ nickname: event.target.value })}
         />
       </SettingsItemRow>
-      <SettingsItemRow label="默认房间名" description="你开房时默认使用。">
+      <SettingsItemRow label="默认房间名">
         <Input
           value={settings.roomName}
+          placeholder="上号房间"
           onChange={(event) => onChange({ roomName: event.target.value })}
         />
       </SettingsItemRow>

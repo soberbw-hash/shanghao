@@ -2,12 +2,15 @@ import { ExportTaskState } from "../enums/app.enums";
 
 export type LogCategory =
   | "app"
+  | "renderer-startup"
   | "signaling"
   | "webrtc"
   | "audio"
   | "devices"
   | "recording"
-  | "tailscale";
+  | "tailscale"
+  | "connection-mode"
+  | "proxy-diagnostics";
 
 export interface LogEntry {
   category: LogCategory;
@@ -21,4 +24,5 @@ export interface DiagnosticsSnapshot {
   logsDirectory: string;
   lastExportState: ExportTaskState;
   lastExportPath?: string;
+  lastBundlePath?: string;
 }

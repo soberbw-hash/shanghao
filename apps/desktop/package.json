@@ -1,6 +1,6 @@
 {
   "name": "shanghao-desktop",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "private": true,
   "description": "ShangHao desktop voice app for private friends group chat",
   "author": "Sober",
@@ -29,12 +29,14 @@
     "lucide-react": "^0.511.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
+    "ws": "^8.18.1",
     "zustand": "^5.0.3"
   },
   "devDependencies": {
     "@types/node": "^22.15.3",
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",
+    "@types/ws": "^8.5.14",
     "@vitejs/plugin-react-swc": "^3.8.0",
     "autoprefixer": "^10.4.21",
     "concurrently": "^9.1.2",

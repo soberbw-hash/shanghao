@@ -4,6 +4,7 @@ import {
   RoomConnectionState,
   RoomLifecycleState,
 } from "../enums/app.enums";
+import type { ConnectionMode, ProxyDiagnostics } from "./settings.types";
 
 export interface RoomMember {
   id: string;
@@ -28,8 +29,10 @@ export interface RoomSummary {
   memberCount: number;
   members: RoomMember[];
   signalingUrl?: string;
+  connectionMode: ConnectionMode;
   connectionState: RoomConnectionState;
   lifecycleState: RoomLifecycleState;
+  hostAddress?: string;
 }
 
 export interface ConnectionHealth {
@@ -44,23 +47,44 @@ export interface HostSessionInfo {
   roomId: string;
   roomName: string;
   hostDisplayName: string;
-  signalingPort: number;
+  signalingPort?: number;
   signalingUrl: string;
+  connectionMode: ConnectionMode;
   tailscaleIp?: string;
   hostAddress: string;
-  addressSource: "magicdns" | "tailscale_ip" | "lan_ip" | "unknown";
+  addressSource:
+    | "magicdns"
+    | "tailscale_ip"
+    | "public_ip"
+    | "relay"
+    | "manual_public_host"
+    | "unknown";
   alternativeAddresses?: string[];
+  protocolVersion: string;
+  appVersion: string;
+  buildNumber: string;
 }
 
 export interface JoinRoomDiagnostic {
   signalingUrl: string;
+  connectionMode: ConnectionMode;
   host?: string;
   port?: number;
   isUrlValid: boolean;
   isReachable: boolean;
-  addressSource: "magicdns" | "tailscale_ip" | "lan_ip" | "unknown";
+  addressSource:
+    | "magicdns"
+    | "tailscale_ip"
+    | "public_ip"
+    | "relay"
+    | "manual_public_host"
+    | "unknown";
   tailscaleState?: string;
-  failureStage: "validation" | "network" | "websocket" | "unknown";
+  failureStage: "validation" | "network" | "websocket" | "version" | "unknown";
   message: string;
   details: string[];
+  proxyDiagnostics?: ProxyDiagnostics;
+  protocolVersion?: string;
+  appVersion?: string;
+  buildNumber?: string;
 }
