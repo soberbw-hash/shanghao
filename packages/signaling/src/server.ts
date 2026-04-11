@@ -44,11 +44,26 @@ export class SignalingServer extends EventEmitter {
   }
 
   async listen(): Promise<number> {
-    const port = this.options.port ?? 0;
+    const preferredPort = this.options.port ?? 0;
 
-    await new Promise<void>((resolve) => {
-      this.httpServer.listen(port, "0.0.0.0", () => resolve());
-    });
+    try {
+      await this.listenOnPort(preferredPort);
+    } catch (error) {
+      if (
+        preferredPort !== 0 &&
+        typeof error === "object" &&
+        error !== null &&
+        "code" in error &&
+        (error as { code?: string }).code === "EADDRINUSE"
+      ) {
+        this.logger?.("preferred signaling port occupied, falling back", {
+          preferredPort,
+        });
+        await this.listenOnPort(0);
+      } else {
+        throw error;
+      }
+    }
 
     this.heartbeatTimer = setInterval(() => {
       for (const stale of this.roomManager.collectStalePeers()) {
@@ -58,8 +73,7 @@ export class SignalingServer extends EventEmitter {
     }, HEARTBEAT_INTERVAL_MS);
 
     const address = this.httpServer.address();
-    const listeningPort =
-      address && typeof address === "object" ? address.port : port;
+    const listeningPort = address && typeof address === "object" ? address.port : preferredPort;
 
     this.logger?.("signaling server listening", { port: listeningPort });
     return listeningPort;
@@ -82,6 +96,24 @@ export class SignalingServer extends EventEmitter {
         }
         resolve();
       });
+    });
+  }
+
+  private async listenOnPort(port: number): Promise<void> {
+    await new Promise<void>((resolve, reject) => {
+      const handleError = (error: Error) => {
+        this.httpServer.off("listening", handleListening);
+        reject(error);
+      };
+
+      const handleListening = () => {
+        this.httpServer.off("error", handleError);
+        resolve();
+      };
+
+      this.httpServer.once("error", handleError);
+      this.httpServer.once("listening", handleListening);
+      this.httpServer.listen(port, "0.0.0.0");
     });
   }
 

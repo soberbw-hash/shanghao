@@ -21,7 +21,7 @@ export const ProfileSettingsCard = ({
 }) => (
   <SettingsSection title="基础资料" description="房间里别人看到的就是你的昵称和头像。">
     <div className="space-y-3">
-      <SettingsItemRow label="头像" description="支持本地图片，保存在当前设备。">
+      <SettingsItemRow label="头像" description="支持本地图片，只保存在这台设备里。">
         <AvatarPlaceholder name={settings.nickname || "上号"} src={avatarDataUrl} size="lg" />
         <Button variant="secondary" onClick={onPickAvatar}>
           选择头像

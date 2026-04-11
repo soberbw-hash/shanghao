@@ -33,6 +33,7 @@ export const IPC_CHANNELS = {
   host: {
     start: "host:start",
     stop: "host:stop",
+    diagnoseJoin: "host:diagnose-join",
   },
   recording: {
     export: "recording:export",

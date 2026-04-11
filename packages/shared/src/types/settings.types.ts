@@ -21,6 +21,7 @@ export interface TailscaleStatus {
   isInstalled: boolean;
   isConnected: boolean;
   hostname?: string;
+  magicDnsName?: string;
   tailnet?: string;
   ip?: string;
   message: string;

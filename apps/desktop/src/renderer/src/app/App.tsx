@@ -15,6 +15,8 @@ import { useAppStore } from "../store/appStore";
 import { useRoomStore } from "../store/roomStore";
 import { useSettingsStore } from "../store/settingsStore";
 import { writeRendererLog } from "../utils/logger";
+import { StartupRecoveryPage } from "../components/status/StartupRecoveryPage";
+import { StartupSplashPage } from "../components/status/StartupSplashPage";
 
 export const App = () => {
   useAppBootstrap();
@@ -22,13 +24,18 @@ export const App = () => {
   useLocalAudioTransport();
 
   const currentPage = useAppStore((state) => state.currentPage);
+  const bootstrapPhase = useAppStore((state) => state.bootstrapPhase);
+  const bootstrapMessage = useAppStore((state) => state.bootstrapMessage);
+  const startupIssue = useAppStore((state) => state.startupIssue);
+  const retryBootstrap = useAppStore((state) => state.retryBootstrap);
+  const completeBootstrap = useAppStore((state) => state.completeBootstrap);
   const isHydrating = useSettingsStore((state) => state.isHydrating);
   const settings = useSettingsStore((state) => state.settings);
   const avatarDataUrl = useSettingsStore((state) => state.avatarDataUrl);
   const syncLocalProfile = useRoomStore((state) => state.syncLocalProfile);
 
   useEffect(() => {
-    if (!settings) {
+    if (!settings || bootstrapPhase !== "ready") {
       return;
     }
 
@@ -37,7 +44,7 @@ export const App = () => {
       avatarPath: settings.avatarPath,
       avatarDataUrl,
     });
-  }, [avatarDataUrl, settings, syncLocalProfile]);
+  }, [avatarDataUrl, bootstrapPhase, settings, syncLocalProfile]);
 
   const shouldShowProfileSetup = Boolean(
     settings && !settings.hasCompletedProfileSetup,
@@ -72,18 +79,41 @@ export const App = () => {
     };
   }, []);
 
+  const renderPage = () => {
+    if (bootstrapPhase === "booting" || isHydrating) {
+      return <StartupSplashPage message={bootstrapMessage} />;
+    }
+
+    if (bootstrapPhase === "recovery") {
+      return (
+        <StartupRecoveryPage
+          issue={startupIssue}
+          onRetry={retryBootstrap}
+          onContinue={completeBootstrap}
+        />
+      );
+    }
+
+    if (shouldShowProfileSetup) {
+      return <ProfileSetupPage />;
+    }
+
+    if (currentPage === "room") {
+      return <RoomPage />;
+    }
+
+    if (currentPage === "settings") {
+      return <SettingsPage />;
+    }
+
+    return <HomePage />;
+  };
+
   return (
     <AppShell>
       <AppErrorBoundary>
-        {isHydrating ? null : (
-          <>
-            {shouldShowProfileSetup ? <ProfileSetupPage /> : null}
-            {!shouldShowProfileSetup && currentPage === "home" ? <HomePage /> : null}
-            {!shouldShowProfileSetup && currentPage === "room" ? <RoomPage /> : null}
-            {!shouldShowProfileSetup && currentPage === "settings" ? <SettingsPage /> : null}
-            <RemoteAudioRenderer />
-          </>
-        )}
+        {renderPage()}
+        {bootstrapPhase === "ready" ? <RemoteAudioRenderer /> : null}
       </AppErrorBoundary>
       <SharedOverlays />
     </AppShell>

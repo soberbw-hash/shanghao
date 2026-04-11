@@ -3,7 +3,7 @@ import path from "node:path";
 
 import { app } from "electron";
 
-import { DEFAULT_ROOM_NAME, type AppSettings } from "@private-voice/shared";
+import { DEFAULT_ROOM_NAME, type AppSettings, type RendererLogPayload } from "@private-voice/shared";
 
 import { clearAvatarImage } from "./profile-media";
 
@@ -27,6 +27,10 @@ export class SettingsStore {
   private cachedSettings: AppSettings = defaultSettings;
   private readonly filePath = path.join(app.getPath("userData"), "settings.json");
 
+  constructor(
+    private readonly writeLog?: (payload: RendererLogPayload) => Promise<void>,
+  ) {}
+
   async load(): Promise<AppSettings> {
     try {
       const fileContent = await readFile(this.filePath, "utf8");
@@ -36,9 +40,17 @@ export class SettingsStore {
         ...parsed,
       };
       this.cachedSettings = this.normalizeSettings(mergedSettings);
+      await this.log("info", "Loaded settings from disk", {
+        hasAvatar: Boolean(this.cachedSettings.avatarPath),
+        profileReady: this.cachedSettings.hasCompletedProfileSetup,
+      });
       return this.cachedSettings;
-    } catch {
+    } catch (error) {
+      this.cachedSettings = defaultSettings;
       await this.persist(defaultSettings);
+      await this.log("warn", "Falling back to default settings", {
+        error: error instanceof Error ? error.message : String(error),
+      });
       return this.cachedSettings;
     }
   }
@@ -58,6 +70,10 @@ export class SettingsStore {
     if (partial.avatarPath !== undefined && previousAvatarPath !== partial.avatarPath) {
       await clearAvatarImage(previousAvatarPath);
     }
+    await this.log("info", "Saved settings", {
+      hasAvatar: Boolean(this.cachedSettings.avatarPath),
+      nickname: this.cachedSettings.nickname,
+    });
     return this.cachedSettings;
   }
 
@@ -65,15 +81,16 @@ export class SettingsStore {
     await clearAvatarImage(this.cachedSettings.avatarPath);
     this.cachedSettings = defaultSettings;
     await this.persist(defaultSettings);
+    await this.log("info", "Reset settings to defaults");
     return this.cachedSettings;
   }
 
   private isCorruptedRoomName(roomName: string): boolean {
     const trimmedRoomName = roomName.trim();
     return [
-      "涓婂彿鎴块棿",
-      "ä¸Šå·æ¿é´",
-      "ä¸Šå·æ¿é´".trim(),
+      "娑撳﹤褰块幋鍧楁？",
+      "盲赂艩氓聫路忙聢驴茅聴麓",
+      "盲赂艩氓聫路忙聢驴茅聴麓".trim(),
     ].includes(trimmedRoomName);
   }
 
@@ -95,5 +112,18 @@ export class SettingsStore {
   private async persist(settings: AppSettings): Promise<void> {
     await mkdir(path.dirname(this.filePath), { recursive: true });
     await writeFile(this.filePath, JSON.stringify(settings, null, 2), "utf8");
+  }
+
+  private async log(
+    level: RendererLogPayload["level"],
+    message: string,
+    context?: Record<string, unknown>,
+  ): Promise<void> {
+    await this.writeLog?.({
+      category: "app",
+      level,
+      message,
+      context,
+    });
   }
 }

@@ -2,10 +2,7 @@ import { useState } from "react";
 import { ChevronDown, MicOff } from "lucide-react";
 import { motion } from "framer-motion";
 
-import {
-  MemberSpeakingState,
-  type RoomMember,
-} from "@private-voice/shared";
+import { MemberSpeakingState, type RoomMember } from "@private-voice/shared";
 
 import { AvatarPlaceholder } from "../base/AvatarPlaceholder";
 import { HostBadge } from "./HostBadge";
@@ -46,11 +43,7 @@ export const MemberCard = ({
       <SpeakingGlow isSpeaking={isSpeaking} />
       <div className="flex items-center gap-3">
         <div className="relative shrink-0">
-          <AvatarPlaceholder
-            name={member.nickname}
-            src={member.avatarDataUrl}
-            size="md"
-          />
+          <AvatarPlaceholder name={member.nickname} src={member.avatarDataUrl} size="md" />
           <span className="absolute -bottom-0.5 -right-0.5 rounded-full border-2 border-white">
             <MemberPresenceDot presenceState={member.presenceState} />
           </span>
@@ -74,7 +67,7 @@ export const MemberCard = ({
             {isSpeaking ? (
               <>
                 <span className="text-[#D0D5DD]">·</span>
-                <span className="text-[#2B84E9]">说话中</span>
+                <span className="text-[#2B84E9]">在说话</span>
               </>
             ) : null}
           </div>

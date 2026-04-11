@@ -15,33 +15,24 @@ let activeClient: RoomClient | null = null;
 let activeSpeakingDetector: ReturnType<typeof createSpeakingDetector> | null = null;
 
 const copy = {
-  startHostTitle: "\u623f\u95f4\u542f\u52a8\u5931\u8d25",
-  joinRoomTitle: "\u52a0\u5165\u623f\u95f4\u5931\u8d25",
-  hostStartedTitle: "\u623f\u95f4\u5df2\u5f00\u542f",
-  hostStartedDescription:
-    "\u628a\u5730\u5740\u53d1\u7ed9\u670b\u53cb\uff0c\u5bf9\u65b9\u7c98\u8d34\u540e\u5c31\u80fd\u52a0\u5165\u3002",
-  missingJoinUrl:
-    "\u8bf7\u5148\u8f93\u5165\u623f\u4e3b\u5206\u4eab\u7684\u5730\u5740\u3002",
-  invalidJoinUrl:
-    "\u8fde\u63a5\u5730\u5740\u65e0\u6548\uff0c\u8bf7\u786e\u8ba4\u662f\u623f\u4e3b\u53d1\u6765\u7684\u5730\u5740\u3002",
-  missingHostAddress:
-    "\u65e0\u6cd5\u83b7\u53d6\u672c\u673a\u8fde\u63a5\u5730\u5740",
-  roomFull:
-    "\u623f\u95f4\u5df2\u6ee1\uff0c\u6700\u591a\u53ea\u652f\u6301 5 \u4eba\u540c\u65f6\u8bed\u97f3\u3002",
-  networkFailed:
-    "\u8fde\u63a5\u5931\u8d25\uff0c\u8bf7\u68c0\u67e5 Tailscale \u6216\u7f51\u7edc\u73af\u5883\u3002",
-  microphoneUnavailable:
-    "\u9ea6\u514b\u98ce\u4e0d\u53ef\u7528",
-  microphonePermission:
-    "\u9ea6\u514b\u98ce\u4e0d\u53ef\u7528\uff0c\u8bf7\u5148\u5141\u8bb8\u7cfb\u7edf\u9ea6\u514b\u98ce\u6743\u9650\u3002",
-  microphoneMissing:
-    "\u6ca1\u6709\u627e\u5230\u53ef\u7528\u7684\u9ea6\u514b\u98ce\u3002",
-  microphoneBusy:
-    "\u9ea6\u514b\u98ce\u5f53\u524d\u88ab\u5176\u4ed6\u7a0b\u5e8f\u5360\u7528\u3002",
-  inputDeviceFailed:
-    "\u8f93\u5165\u8bbe\u5907\u5207\u6362\u5931\u8d25",
-  invalidPayload:
-    "\u623f\u95f4\u8fd4\u56de\u7684\u6570\u636e\u65e0\u6cd5\u8bc6\u522b\uff0c\u8bf7\u7a0d\u540e\u518d\u8bd5\u3002",
+  startHostTitle: "房间启动失败",
+  joinRoomTitle: "加入房间失败",
+  hostStartedTitle: "房间已开启",
+  hostStartedDescription: "地址已经生成，正在等待好友加入。",
+  missingJoinUrl: "请先输入房主分享的地址。",
+  invalidJoinUrl: "连接地址无效，请确认是房主发来的完整地址。",
+  missingHostAddress: "无法获取本机连接地址",
+  roomFull: "房间已满，最多只支持 5 人同时语音。",
+  networkFailed: "连接失败，请检查 Tailscale 或网络环境。",
+  handshakeFailed: "已经找到房主地址，但连接没有建立成功，请让房主重新开房。",
+  microphoneUnavailable: "麦克风不可用",
+  microphonePermission: "麦克风不可用，请先允许系统麦克风权限。",
+  microphoneMissing: "没有找到可用的麦克风。",
+  microphoneBusy: "麦克风当前被其他程序占用。",
+  inputDeviceFailed: "输入设备切换失败",
+  invalidPayload: "房间返回的数据无法识别，请稍后再试。",
+  joinedRoomTitle: "已加入房间",
+  joinedRoomDescription: "语音连接已经建立。",
 } as const;
 
 const normalizeRoomError = (error: unknown, fallback: string): string => {
@@ -86,11 +77,11 @@ const normalizeRoomError = (error: unknown, fallback: string): string => {
       return copy.missingHostAddress;
     }
 
-    if (message.includes("\u623f\u95f4\u5df2\u6ee1")) {
+    if (message.includes("room_full") || message.includes("房间已满")) {
       return copy.roomFull;
     }
 
-    if (message.includes("\u9ea6\u514b\u98ce")) {
+    if (message.includes("麦克风")) {
       return message;
     }
 
@@ -201,7 +192,7 @@ export const useRoomState = () => {
       signalingUrl,
       roomId,
       peerId: sharedPeerId,
-      nickname: settings?.nickname ?? "\u6211",
+      nickname: settings?.nickname ?? "我",
       avatarDataUrl,
       localStream: stream,
       onMembers: (members) => setMembers(members),
@@ -227,6 +218,31 @@ export const useRoomState = () => {
       signalingUrl,
     });
     startSpeakingDetector(stream);
+  };
+
+  const diagnoseJoinFailure = async (signalingUrl: string, error: unknown) => {
+    try {
+      const diagnostic = await window.desktopApi.host.diagnoseJoin(signalingUrl);
+      await writeRendererLog("signaling", "warn", "Join failure diagnostic", {
+        ...diagnostic,
+        rawError: error instanceof Error ? error.message : String(error),
+      });
+
+      if (!diagnostic.isUrlValid) {
+        return diagnostic.message;
+      }
+
+      if (!diagnostic.isReachable) {
+        return copy.networkFailed;
+      }
+
+      return copy.handshakeFailed;
+    } catch (diagnosticError) {
+      await writeRendererLog("signaling", "warn", "Failed to run join diagnostic", {
+        error: diagnosticError instanceof Error ? diagnosticError.message : String(diagnosticError),
+      });
+      return normalizeRoomError(error, copy.networkFailed);
+    }
   };
 
   const startHost = async () => {
@@ -307,8 +323,13 @@ export const useRoomState = () => {
 
       setJoinSignalUrl(normalizedUrl);
       useAppStore.getState().navigate("room");
+      pushToast({
+        tone: "success",
+        title: copy.joinedRoomTitle,
+        description: copy.joinedRoomDescription,
+      });
     } catch (error) {
-      const description = normalizeRoomError(error, copy.networkFailed);
+      const description = await diagnoseJoinFailure(signalingUrl, error);
       await writeRendererLog("signaling", "error", "Failed to join room", {
         error: error instanceof Error ? error.message : String(error),
         signalingUrl,

@@ -33,7 +33,7 @@ export const ProfileSetupPage = () => {
       pushToast({
         tone: "warning",
         title: "先填一个昵称",
-        description: "这样朋友进房时才能认出你。",
+        description: "这样朋友进房间时才能一眼认出你。",
       });
       return;
     }
@@ -42,7 +42,7 @@ export const ProfileSetupPage = () => {
       pushToast({
         tone: "warning",
         title: "先选一个头像",
-        description: "头像会保存在本机，只用于房间显示。",
+        description: "头像只保存在本机，用来在房间里认人。",
       });
       return;
     }
@@ -54,6 +54,7 @@ export const ProfileSetupPage = () => {
         nickname: trimmedNickname,
         hasCompletedProfileSetup: true,
       });
+
       pushToast({
         tone: "success",
         title: "资料已保存",
@@ -66,7 +67,7 @@ export const ProfileSetupPage = () => {
 
   return (
     <PageContainer className="items-center justify-center">
-      <GlassPanel className="w-full max-w-[720px] p-6 md:p-8">
+      <GlassPanel className="w-full max-w-[760px] p-6 md:p-8">
         <div className="mb-8 flex items-center gap-4">
           <BrandMark size="lg" />
           <div>
@@ -74,6 +75,7 @@ export const ProfileSetupPage = () => {
             <div className="text-sm text-[#667085]">{APP_SLOGAN}</div>
           </div>
         </div>
+
         <div className="grid gap-6 md:grid-cols-[220px_1fr] md:items-center">
           <div className="flex flex-col items-center gap-4 rounded-[20px] border border-[#E7ECF2] bg-[#F8FAFC] p-5">
             <AvatarPlaceholder
@@ -83,8 +85,8 @@ export const ProfileSetupPage = () => {
               className="h-24 w-24 text-2xl"
             />
             <div className="text-center">
-              <div className="text-sm font-medium text-[#111827]">先定好你的资料</div>
-              <div className="mt-1 text-sm text-[#667085]">只要昵称和头像，两步就够。</div>
+              <div className="text-sm font-medium text-[#111827]">先把你自己定下来</div>
+              <div className="mt-1 text-sm text-[#667085]">只填昵称和头像，两步就够了。</div>
             </div>
             <Button variant="secondary" onClick={() => void pickAvatar()}>
               <Camera className="h-4 w-4" />
@@ -94,6 +96,7 @@ export const ProfileSetupPage = () => {
               重置头像
             </Button>
           </div>
+
           <div className="space-y-4">
             <div>
               <div className="text-sm font-medium text-[#111827]">昵称</div>
@@ -107,14 +110,14 @@ export const ProfileSetupPage = () => {
               onChange={(event) => setNickname(event.target.value)}
             />
             <div className="rounded-[16px] border border-[#E7ECF2] bg-[#F8FAFC] px-4 py-3 text-sm text-[#667085]">
-              打开后只做三件事：开房、粘贴地址加入、静音自己。
+              上号只做三件事：开房、粘贴地址加入、静音自己。
             </div>
             <div className="flex flex-wrap gap-3">
               <Button onClick={() => void handleSubmit()} disabled={isSaving}>
                 {isSaving ? "保存中…" : "进入上号"}
               </Button>
               <Button variant="secondary" onClick={() => void pickAvatar()}>
-                再选一张头像
+                重新选择头像
               </Button>
             </div>
           </div>

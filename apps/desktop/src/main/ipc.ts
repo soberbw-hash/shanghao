@@ -4,7 +4,6 @@ import {
   APP_NAME,
   IPC_CHANNELS,
   type AppSettings,
-  type DesktopApi,
   type DiagnosticsSnapshot,
   type HostSessionInfo,
   type RecordingExportPayload,
@@ -131,6 +130,10 @@ export const registerIpcHandlers = ({
 
   ipcMain.handle(IPC_CHANNELS.host.stop, async (): Promise<void> => {
     await hostSession.stop();
+  });
+
+  ipcMain.handle(IPC_CHANNELS.host.diagnoseJoin, async (_event, signalingUrl: string) => {
+    return hostSession.diagnoseJoin(signalingUrl);
   });
 
   ipcMain.handle(

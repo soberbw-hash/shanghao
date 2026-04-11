@@ -45,7 +45,7 @@ export const HomePage = () => {
         pushToast({
           tone: "warning",
           title: "读取剪贴板失败",
-          description: "可以手动粘贴房主发来的地址。",
+          description: "你也可以手动粘贴房主发来的地址。",
         });
       });
   };
@@ -55,10 +55,10 @@ export const HomePage = () => {
       <TopStatusBar />
       <TailscaleDetectionBanner status={tailscaleStatus} />
       {permissionState === MicPermissionState.Denied ? (
-        <DeviceHealthNotice message="系统还没有给上号麦克风权限，先去 Windows 设置里允许访问。" />
+        <DeviceHealthNotice message="还没有给上号麦克风权限，先去 Windows 设置里允许访问。" />
       ) : null}
       {inputDevices.length === 0 || outputDevices.length === 0 ? (
-        <DeviceHealthNotice message="当前没有完整的输入或输出设备，先接好麦克风和扬声器。" />
+        <DeviceHealthNotice message="当前缺少输入或输出设备，先接好麦克风和扬声器。" />
       ) : null}
       <RoomHeroCard
         roomName={room.roomName}
@@ -70,9 +70,7 @@ export const HomePage = () => {
         isStarting={roomAction === "starting"}
         isJoining={roomAction === "joining"}
       />
-      {tailscaleStatus?.state === TailscaleState.NotInstalled ? (
-        <TailscaleInstallGuideCard />
-      ) : null}
+      {tailscaleStatus?.state === TailscaleState.NotInstalled ? <TailscaleInstallGuideCard /> : null}
       <div className="space-y-3">
         <div className="text-sm font-medium text-[#667085]">开黑位</div>
         <MemberGrid

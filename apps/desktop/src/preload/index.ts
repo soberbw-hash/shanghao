@@ -45,10 +45,20 @@ const desktopApi: DesktopApi = {
     start: (roomName, nickname) =>
       ipcRenderer.invoke(IPC_CHANNELS.host.start, roomName, nickname),
     stop: () => ipcRenderer.invoke(IPC_CHANNELS.host.stop),
+    diagnoseJoin: (signalingUrl) =>
+      ipcRenderer.invoke(IPC_CHANNELS.host.diagnoseJoin, signalingUrl),
   },
   recording: {
     export: (payload) => ipcRenderer.invoke(IPC_CHANNELS.recording.export, payload),
   },
 };
+
+void ipcRenderer
+  .invoke(IPC_CHANNELS.app.writeLog, {
+    category: "app",
+    level: "info",
+    message: "Preload bridge initialized",
+  })
+  .catch(() => undefined);
 
 contextBridge.exposeInMainWorld("desktopApi", desktopApi);

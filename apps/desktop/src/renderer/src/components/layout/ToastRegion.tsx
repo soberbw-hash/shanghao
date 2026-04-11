@@ -14,7 +14,7 @@ export const ToastRegion = () => {
   const dismissToast = useAppStore((state) => state.dismissToast);
 
   return (
-    <div className="pointer-events-none fixed bottom-6 right-6 z-50 flex w-[min(360px,calc(100vw-32px))] flex-col gap-3">
+    <div className="pointer-events-none fixed bottom-5 right-5 z-50 flex w-[min(320px,calc(100vw-24px))] flex-col gap-2.5">
       <AnimatePresence>
         {toasts.map((toast) => (
           <motion.button
@@ -23,12 +23,12 @@ export const ToastRegion = () => {
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: 10 }}
             transition={{ duration: 0.18 }}
-            className={`pointer-events-auto rounded-[18px] border p-4 text-left shadow-[0_12px_28px_rgba(17,24,39,0.08)] ${toneClasses[toast.tone ?? "neutral"]}`}
+            className={`pointer-events-auto rounded-[16px] border px-4 py-3 text-left shadow-[0_12px_28px_rgba(17,24,39,0.08)] ${toneClasses[toast.tone ?? "neutral"]}`}
             onClick={() => dismissToast(toast.id)}
           >
             <div className="text-sm font-medium">{toast.title}</div>
             {toast.description ? (
-              <p className="mt-1 text-sm opacity-80">{toast.description}</p>
+              <p className="mt-1 text-[13px] leading-5 opacity-80">{toast.description}</p>
             ) : null}
           </motion.button>
         ))}

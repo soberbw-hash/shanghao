@@ -12,6 +12,7 @@ import { ProfileSettingsCard } from "../components/settings/ProfileSettingsCard"
 import { ResetSettingsButton } from "../components/settings/ResetSettingsButton";
 import { SettingsPageHeader } from "../components/settings/SettingsPageHeader";
 import { ShortcutSettingsCard } from "../components/settings/ShortcutSettingsCard";
+import { StartupSplashPage } from "../components/status/StartupSplashPage";
 import { useAppStore } from "../store/appStore";
 import { useAudioStore } from "../store/audioStore";
 import { useSettingsStore } from "../store/settingsStore";
@@ -35,7 +36,7 @@ export const SettingsPage = () => {
   }, []);
 
   if (!settings) {
-    return null;
+    return <StartupSplashPage message="正在准备设置…" />;
   }
 
   return (

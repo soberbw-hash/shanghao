@@ -14,7 +14,7 @@ export const RoomActionButtons = ({
   <div className="flex flex-wrap gap-3">
     <Button onClick={onStartRoom} disabled={Boolean(isStarting || isJoining)}>
       <Radio className="h-4 w-4" />
-      {isStarting ? "开启中…" : "开启房间"}
+      {isStarting ? "正在开启…" : "开启房间"}
     </Button>
   </div>
 );

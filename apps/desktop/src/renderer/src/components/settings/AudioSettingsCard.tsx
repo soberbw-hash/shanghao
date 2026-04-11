@@ -18,7 +18,7 @@ export const AudioSettingsCard = ({
   outputDevices: AudioDeviceDescriptor[];
   onChange: (patch: Partial<AppSettings>) => void;
 }) => (
-  <SettingsSection title="音频" description="默认设备、降噪和说话模式。">
+  <SettingsSection title="音频" description="默认设备、降噪和说话模式都放这里。">
     <div className="space-y-3">
       <SettingsItemRow label="输入设备">
         <InputDevicePicker

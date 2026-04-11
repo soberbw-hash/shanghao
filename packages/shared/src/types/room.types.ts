@@ -47,4 +47,20 @@ export interface HostSessionInfo {
   signalingPort: number;
   signalingUrl: string;
   tailscaleIp?: string;
+  hostAddress: string;
+  addressSource: "magicdns" | "tailscale_ip" | "lan_ip" | "unknown";
+  alternativeAddresses?: string[];
+}
+
+export interface JoinRoomDiagnostic {
+  signalingUrl: string;
+  host?: string;
+  port?: number;
+  isUrlValid: boolean;
+  isReachable: boolean;
+  addressSource: "magicdns" | "tailscale_ip" | "lan_ip" | "unknown";
+  tailscaleState?: string;
+  failureStage: "validation" | "network" | "websocket" | "unknown";
+  message: string;
+  details: string[];
 }

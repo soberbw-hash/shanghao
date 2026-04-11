@@ -4,7 +4,7 @@ import type {
   TailscaleStatus,
 } from "./settings.types";
 import type { DiagnosticsSnapshot, LogCategory, LogEntry } from "./diagnostics.types";
-import type { HostSessionInfo } from "./room.types";
+import type { HostSessionInfo, JoinRoomDiagnostic } from "./room.types";
 import type {
   RecordingExportPayload,
   RecordingExportResponse,
@@ -58,6 +58,7 @@ export interface DesktopApi {
   host: {
     start: (roomName: string, nickname: string) => Promise<HostSessionInfo>;
     stop: () => Promise<void>;
+    diagnoseJoin: (signalingUrl: string) => Promise<JoinRoomDiagnostic>;
   };
   recording: {
     export: (

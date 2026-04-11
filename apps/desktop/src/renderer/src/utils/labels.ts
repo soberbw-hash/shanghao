@@ -6,7 +6,7 @@ import {
 } from "@private-voice/shared";
 
 const roomConnectionLabels: Record<RoomConnectionState, string> = {
-  [RoomConnectionState.Idle]: "空闲",
+  [RoomConnectionState.Idle]: "待命",
   [RoomConnectionState.DetectingNetwork]: "检测中",
   [RoomConnectionState.StartingHost]: "开启中",
   [RoomConnectionState.Joining]: "加入中",
@@ -53,3 +53,46 @@ export const getMemberPresenceLabel = (state: MemberPresenceState): string =>
 
 export const getRecordingStateLabel = (state: RecordingState): string =>
   recordingStateLabels[state];
+
+export const getPrimaryRoomStatus = ({
+  connectionState,
+  memberCount,
+  hasHostSession,
+}: {
+  connectionState: RoomConnectionState;
+  memberCount: number;
+  hasHostSession: boolean;
+}): {
+  label: string;
+  tone: "neutral" | "success" | "warning" | "danger" | "accent";
+} => {
+  if (connectionState === RoomConnectionState.StartingHost) {
+    return { label: "开启中", tone: "accent" };
+  }
+
+  if (connectionState === RoomConnectionState.Joining) {
+    return { label: "加入中", tone: "accent" };
+  }
+
+  if (connectionState === RoomConnectionState.Reconnecting) {
+    return { label: "重连中", tone: "warning" };
+  }
+
+  if (connectionState === RoomConnectionState.Failed) {
+    return { label: "连接失败", tone: "danger" };
+  }
+
+  if (connectionState === RoomConnectionState.Connected && hasHostSession && memberCount <= 1) {
+    return { label: "等待加入", tone: "accent" };
+  }
+
+  if (connectionState === RoomConnectionState.Connected) {
+    return { label: "已连接", tone: "success" };
+  }
+
+  if (connectionState === RoomConnectionState.Disconnected) {
+    return { label: "已断开", tone: "neutral" };
+  }
+
+  return { label: "待命", tone: "neutral" };
+};

@@ -1,7 +1,7 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 
-import { app, type BrowserWindow, Tray } from "electron";
+import { app, BrowserWindow, Tray } from "electron";
 
 import { DiagnosticsService } from "./diagnostics";
 import { HostSessionController } from "./host-session";
@@ -77,34 +77,43 @@ const maybeCaptureScreenshot = async (window: BrowserWindow | null): Promise<voi
 };
 
 const bootstrap = async (): Promise<void> => {
-  const settingsStore = new SettingsStore();
-  const settings = await settingsStore.load();
-
   const diagnostics = new DiagnosticsService();
   await diagnostics.init();
-
-  const hostSession = new HostSessionController((payload) => diagnostics.writeLog(payload));
-
-  mainWindow = createMainWindow();
-  void maybeCaptureScreenshot(mainWindow);
-
-  mainWindow.on("close", (event) => {
-    if (!isQuitting && settingsStore.getSnapshot().minimizeToTray) {
-      event.preventDefault();
-      mainWindow?.hide();
-    }
+  await diagnostics.writeLog({
+    category: "app",
+    level: "info",
+    message: "Main process bootstrap started",
   });
 
+  process.on("uncaughtException", (error) => {
+    void diagnostics.writeLog({
+      category: "app",
+      level: "error",
+      message: "Main process uncaught exception",
+      context: {
+        error: error.message,
+        stack: error.stack,
+      },
+    });
+  });
+
+  process.on("unhandledRejection", (reason) => {
+    void diagnostics.writeLog({
+      category: "app",
+      level: "error",
+      message: "Main process unhandled rejection",
+      context: {
+        reason: reason instanceof Error ? reason.message : String(reason),
+      },
+    });
+  });
+
+  const settingsStore = new SettingsStore((payload) => diagnostics.writeLog(payload));
+  const settings = await settingsStore.load();
+
+  const hostSession = new HostSessionController((payload) => diagnostics.writeLog(payload));
   const shortcuts = new ShortcutController(() => mainWindow);
   shortcuts.configureGlobalMute(settings.globalMuteShortcut);
-
-  tray = createTrayController(
-    () => mainWindow,
-    () => {
-      isQuitting = true;
-      shortcuts.dispose();
-    },
-  );
 
   registerIpcHandlers({
     getMainWindow: () => mainWindow,
@@ -114,6 +123,38 @@ const bootstrap = async (): Promise<void> => {
     hostSession,
   });
 
+  mainWindow = createMainWindow({
+    log: (level, message, context) => {
+      void diagnostics.writeLog({
+        category: "app",
+        level,
+        message,
+        context,
+      });
+    },
+  });
+  await diagnostics.writeLog({
+    category: "app",
+    level: "info",
+    message: "Main window created",
+  });
+  void maybeCaptureScreenshot(mainWindow);
+
+  mainWindow.on("close", (event) => {
+    if (!isQuitting && settingsStore.getSnapshot().minimizeToTray) {
+      event.preventDefault();
+      mainWindow?.hide();
+    }
+  });
+
+  tray = createTrayController(
+    () => mainWindow,
+    () => {
+      isQuitting = true;
+      shortcuts.dispose();
+    },
+  );
+
   app.on("before-quit", () => {
     isQuitting = true;
     shortcuts.dispose();
@@ -121,7 +162,16 @@ const bootstrap = async (): Promise<void> => {
 
   app.on("activate", () => {
     if (!mainWindow) {
-      mainWindow = createMainWindow();
+      mainWindow = createMainWindow({
+        log: (level, message, context) => {
+          void diagnostics.writeLog({
+            category: "app",
+            level,
+            message,
+            context,
+          });
+        },
+      });
       return;
     }
 

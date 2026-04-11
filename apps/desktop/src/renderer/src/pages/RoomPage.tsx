@@ -33,6 +33,7 @@ export const RoomPage = () => {
   const pushToast = useAppStore((state) => state.pushToast);
   const settings = useSettingsStore((state) => state.settings);
   const saveSettings = useSettingsStore((state) => state.saveSettings);
+  const hostSession = useRoomStore((state) => state.hostSession);
   const {
     inputDevices,
     outputDevices,
@@ -72,20 +73,31 @@ export const RoomPage = () => {
     recordingStatus.state === RecordingState.Stopping ||
     recordingStatus.state === RecordingState.Saving;
 
+  const isWaitingForFriends =
+    room.connectionState === RoomConnectionState.Connected &&
+    Boolean(hostSession) &&
+    room.memberCount <= 1;
+
   return (
     <PageContainer className="overflow-y-auto">
       <TopStatusBar />
+      {isWaitingForFriends ? (
+        <InlineBanner tone="neutral">房间已经开启，正在等待好友加入。</InlineBanner>
+      ) : null}
       {room.connectionState === RoomConnectionState.Reconnecting ? (
         <InlineBanner tone="warning">连接有波动，正在自动重连…</InlineBanner>
       ) : null}
       {room.connectionState === RoomConnectionState.Failed ? (
-        <InlineBanner tone="danger">当前房间连接失败，请检查网络后重试。</InlineBanner>
+        <InlineBanner tone="danger">
+          当前连接失败，请检查地址、Tailscale 或网络环境。
+        </InlineBanner>
       ) : null}
       <div className="grid gap-4 xl:grid-cols-[1.15fr_0.85fr]">
         <RoomStatusPanel
           roomName={room.roomName}
           memberCount={room.memberCount}
           connectionState={room.connectionState}
+          hasHostSession={Boolean(hostSession)}
         />
         <RoomCodePanel signalingUrl={room.signalingUrl} />
       </div>
