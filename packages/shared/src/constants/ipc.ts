@@ -37,6 +37,11 @@ export const IPC_CHANNELS = {
   network: {
     getSnapshot: "network:get-snapshot",
     getProxyDiagnostics: "network:get-proxy-diagnostics",
+    exportSummary: "network:export-summary",
+  },
+  updates: {
+    check: "updates:check",
+    openReleases: "updates:open-releases",
   },
   host: {
     start: "host:start",

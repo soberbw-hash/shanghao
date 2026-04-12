@@ -69,11 +69,7 @@ export const useAppBootstrap = (): void => {
         bootstrapAttempt,
       });
 
-      const hydrationTask = withTimeout(
-        hydrate(),
-        "hydrate_timeout",
-        BOOTSTRAP_TIMEOUT_MS,
-      );
+      const hydrationTask = withTimeout(hydrate(), "hydrate_timeout", BOOTSTRAP_TIMEOUT_MS);
 
       try {
         const [hydration] = await Promise.all([

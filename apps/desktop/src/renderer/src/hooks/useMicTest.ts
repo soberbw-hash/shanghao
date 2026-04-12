@@ -3,6 +3,11 @@ import { useCallback, useEffect, useRef, useState } from "react";
 interface UseMicTestOptions {
   inputDeviceId?: string;
   outputDeviceId?: string;
+  echoCancellation?: boolean;
+  noiseSuppression?: boolean;
+  autoGainControl?: boolean;
+  preferredSampleRate?: "auto" | "44100" | "48000";
+  monitorMode?: "processed" | "raw";
 }
 
 interface UseMicTestResult {
@@ -17,14 +22,20 @@ interface UseMicTestResult {
 export const useMicTest = ({
   inputDeviceId,
   outputDeviceId,
+  echoCancellation = true,
+  noiseSuppression = true,
+  autoGainControl = true,
+  preferredSampleRate = "auto",
+  monitorMode = "processed",
 }: UseMicTestOptions): UseMicTestResult => {
   const [isTesting, setIsTesting] = useState(false);
   const [level, setLevel] = useState(0);
   const [error, setError] = useState<string>();
-  const audioRef = useRef<HTMLAudioElement>();
   const streamRef = useRef<MediaStream>();
   const contextRef = useRef<AudioContext>();
+  const destinationRef = useRef<MediaStreamAudioDestinationNode>();
   const analyserRef = useRef<AnalyserNode>();
+  const audioRef = useRef<HTMLAudioElement>();
   const rafRef = useRef<number>();
 
   const stop = useCallback(() => {
@@ -34,7 +45,9 @@ export const useMicTest = ({
     }
 
     analyserRef.current?.disconnect();
+    destinationRef.current?.disconnect();
     analyserRef.current = undefined;
+    destinationRef.current = undefined;
 
     if (audioRef.current) {
       audioRef.current.pause();
@@ -57,19 +70,17 @@ export const useMicTest = ({
       return;
     }
 
-    const sampleBuffer = new Uint8Array(analyser.frequencyBinCount);
+    const sampleBuffer = new Uint8Array(analyser.fftSize);
     const tick = () => {
       analyser.getByteTimeDomainData(sampleBuffer);
       let peak = 0;
 
       for (const value of sampleBuffer) {
         const normalized = Math.abs((value - 128) / 128);
-        if (normalized > peak) {
-          peak = normalized;
-        }
+        peak = Math.max(peak, normalized);
       }
 
-      setLevel(Math.min(1, peak * 2.6));
+      setLevel(Math.min(1, peak * 2.4));
       rafRef.current = window.requestAnimationFrame(tick);
     };
 
@@ -84,17 +95,31 @@ export const useMicTest = ({
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: {
           deviceId: inputDeviceId ? { exact: inputDeviceId } : undefined,
-          echoCancellation: true,
-          noiseSuppression: true,
-          autoGainControl: true,
+          echoCancellation: monitorMode === "processed" ? echoCancellation : false,
+          noiseSuppression: monitorMode === "processed" ? noiseSuppression : false,
+          autoGainControl: monitorMode === "processed" ? autoGainControl : false,
+          sampleRate: preferredSampleRate === "auto" ? undefined : Number(preferredSampleRate),
+          channelCount: 1,
         },
       });
+
+      const context = new AudioContext({
+        sampleRate: preferredSampleRate === "auto" ? undefined : Number(preferredSampleRate),
+        latencyHint: "interactive",
+      });
+      const source = context.createMediaStreamSource(stream);
+      const analyser = context.createAnalyser();
+      analyser.fftSize = 512;
+      source.connect(analyser);
+
+      const destination = context.createMediaStreamDestination();
+      source.connect(destination);
 
       const audio = new Audio();
       audio.autoplay = true;
       audio.muted = false;
       audio.volume = 1;
-      audio.srcObject = stream;
+      audio.srcObject = destination.stream;
 
       if (outputDeviceId && "setSinkId" in audio) {
         await (audio as HTMLAudioElement & { setSinkId?: (id: string) => Promise<void> }).setSinkId?.(
@@ -102,16 +127,11 @@ export const useMicTest = ({
         );
       }
 
-      const context = new AudioContext();
-      const source = context.createMediaStreamSource(stream);
-      const analyser = context.createAnalyser();
-      analyser.fftSize = 512;
-      source.connect(analyser);
-
       streamRef.current = stream;
-      audioRef.current = audio;
       contextRef.current = context;
       analyserRef.current = analyser;
+      destinationRef.current = destination;
+      audioRef.current = audio;
 
       await audio.play();
       setIsTesting(true);
@@ -121,7 +141,17 @@ export const useMicTest = ({
       stop();
       throw nextError;
     }
-  }, [inputDeviceId, outputDeviceId, startMeter, stop]);
+  }, [
+    autoGainControl,
+    echoCancellation,
+    inputDeviceId,
+    monitorMode,
+    noiseSuppression,
+    outputDeviceId,
+    preferredSampleRate,
+    startMeter,
+    stop,
+  ]);
 
   const toggle = useCallback(async () => {
     if (isTesting) {

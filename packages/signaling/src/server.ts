@@ -1,7 +1,11 @@
 import { EventEmitter } from "node:events";
 import { createServer, type Server as HttpServer } from "node:http";
 
-import { APP_BUILD_NUMBER, APP_PROTOCOL_VERSION, HEARTBEAT_INTERVAL_MS } from "@private-voice/shared";
+import {
+  APP_BUILD_NUMBER,
+  APP_PROTOCOL_VERSION,
+  HEARTBEAT_INTERVAL_MS,
+} from "@private-voice/shared";
 import type { WebSocket } from "ws";
 import { WebSocketServer } from "ws";
 
@@ -184,6 +188,23 @@ export class SignalingServer extends EventEmitter {
       return;
     }
 
+    const existingRoom = this.roomManager.getRoom(message.roomId);
+    if (
+      message.connectionMode === "relay" &&
+      existingRoom?.relayToken &&
+      existingRoom.relayToken !== message.relayToken
+    ) {
+      const relayMessage: ErrorMessage = {
+        type: "error",
+        code: "relay_auth_failed",
+        roomId: message.roomId,
+        peerId: message.peerId,
+        message: "云中继鉴权失败，请让房主重新分享房间地址。",
+      };
+      socket.send(JSON.stringify(relayMessage));
+      return;
+    }
+
     if (!this.roomManager.canJoin(message.roomId)) {
       const roomFullMessage: ErrorMessage = {
         type: "error",
@@ -198,20 +219,24 @@ export class SignalingServer extends EventEmitter {
 
     Reflect.set(socket, "__roomId", message.roomId);
     Reflect.set(socket, "__peerId", message.peerId);
-    const existingPeerCount =
-      this.roomManager.getRoom(message.roomId)?.peers.listPeers().length ?? 0;
+    const existingPeerCount = existingRoom?.peers.listPeers().length ?? 0;
 
-    this.roomManager.addPeer(message.roomId, this.roomName, {
-      id: message.peerId,
-      nickname: message.nickname,
-      avatarDataUrl: message.avatarDataUrl,
-      socket,
-      isHost: existingPeerCount === 0,
-      isMuted: false,
-      isSpeaking: false,
-      joinedAt: new Date().toISOString(),
-      lastHeartbeatAt: Date.now(),
-    });
+    this.roomManager.addPeer(
+      message.roomId,
+      this.roomName,
+      {
+        id: message.peerId,
+        nickname: message.nickname,
+        avatarDataUrl: message.avatarDataUrl,
+        socket,
+        isHost: existingPeerCount === 0,
+        isMuted: false,
+        isSpeaking: false,
+        joinedAt: new Date().toISOString(),
+        lastHeartbeatAt: Date.now(),
+      },
+      message.connectionMode === "relay" ? message.relayToken : undefined,
+    );
 
     this.broadcastSnapshot(message.roomId, {
       appVersion: message.appVersion,
@@ -249,7 +274,10 @@ export class SignalingServer extends EventEmitter {
 
   private broadcastSnapshot(
     roomId: string,
-    metadata?: Pick<RoomSnapshotMessage, "appVersion" | "protocolVersion" | "buildNumber" | "connectionMode">,
+    metadata?: Pick<
+      RoomSnapshotMessage,
+      "appVersion" | "protocolVersion" | "buildNumber" | "connectionMode"
+    >,
   ): void {
     const room = this.roomManager.getRoom(roomId);
     if (!room) {

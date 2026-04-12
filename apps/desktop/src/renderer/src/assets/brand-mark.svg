@@ -1,23 +1,21 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128" fill="none">
   <defs>
-    <linearGradient id="bg" x1="24" y1="14" x2="104" y2="112" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stop-color="#0c1829" />
-      <stop offset="1" stop-color="#16273b" />
+    <linearGradient id="panel" x1="18" y1="16" x2="110" y2="112" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#23262d" />
+      <stop offset="1" stop-color="#111318" />
     </linearGradient>
-    <radialGradient id="glow" cx="0" cy="0" r="1" gradientTransform="translate(92 34) rotate(136.27) scale(42.414)">
-      <stop offset="0" stop-color="#79d7ff" stop-opacity="0.56" />
-      <stop offset="1" stop-color="#79d7ff" stop-opacity="0" />
-    </radialGradient>
-    <linearGradient id="accent" x1="74.25" y1="74.25" x2="100.25" y2="100.25" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stop-color="#e3f7ff" />
-      <stop offset="1" stop-color="#6ecfff" />
-    </linearGradient>
+    <filter id="shadow" x="0" y="0" width="128" height="128" filterUnits="userSpaceOnUse">
+      <feDropShadow dx="0" dy="10" stdDeviation="12" flood-color="#111827" flood-opacity="0.18"/>
+    </filter>
   </defs>
-  <rect x="8" y="8" width="112" height="112" rx="32" fill="url(#bg)" />
-  <rect x="9.5" y="9.5" width="109" height="109" rx="30.5" stroke="white" stroke-opacity="0.08" stroke-width="3" />
-  <circle cx="92" cy="34" r="42" fill="url(#glow)" />
-  <rect x="30" y="32" width="54" height="14" rx="7" fill="#eff9ff" />
-  <rect x="50" y="32" width="14" height="58" rx="7" fill="#eff9ff" />
-  <circle cx="88" cy="88" r="12" fill="url(#accent)" />
-  <circle cx="91.5" cy="84.5" r="3" fill="white" fill-opacity="0.92" />
+  <g filter="url(#shadow)">
+    <rect x="10" y="10" width="108" height="108" rx="30" fill="url(#panel)"/>
+    <rect x="12" y="12" width="104" height="104" rx="28" stroke="#2b2f36" stroke-width="2"/>
+  </g>
+  <path d="M35 71V58c0-16.016 12.984-29 29-29s29 12.984 29 29v13" stroke="#FFFFFF" stroke-width="9" stroke-linecap="round"/>
+  <rect x="29" y="59" width="12" height="29" rx="6" fill="#FFFFFF"/>
+  <rect x="87" y="59" width="12" height="29" rx="6" fill="#FFFFFF"/>
+  <rect x="40" y="54" width="13" height="36" rx="6.5" fill="#FFFFFF"/>
+  <rect x="75" y="54" width="13" height="36" rx="6.5" fill="#FFFFFF"/>
+  <path d="M52 38c7-6 17-6 24 0" stroke="#FFFFFF" stroke-width="9" stroke-linecap="round"/>
 </svg>

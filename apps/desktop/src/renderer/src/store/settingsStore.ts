@@ -1,18 +1,20 @@
 import {
   APP_NAME,
   DEFAULT_ROOM_NAME,
+  SETTINGS_SCHEMA_VERSION,
   TailscaleState,
   type AppSettings,
   type NetworkStatusSnapshot,
   type RuntimeInfo,
   type TailscaleStatus,
+  type UpdateCheckResult,
 } from "@private-voice/shared";
 import { create } from "zustand";
 
 import { desktopApi } from "../utils/desktopApi";
 import { writeRendererLog } from "../utils/logger";
 
-export interface HydrationOutcome {
+interface StoreHydrationOutcome {
   mode: "ready" | "safe_mode";
   issue?: {
     title: string;
@@ -26,14 +28,17 @@ interface SettingsStoreState {
   settings?: AppSettings;
   tailscaleStatus?: TailscaleStatus;
   networkSnapshot?: NetworkStatusSnapshot;
+  updateInfo?: UpdateCheckResult;
   avatarDataUrl?: string;
   isHydrating: boolean;
-  hydrate: () => Promise<HydrationOutcome>;
+  hydrate: () => Promise<StoreHydrationOutcome>;
   saveSettings: (partial: Partial<AppSettings>) => Promise<AppSettings>;
   pickAvatar: () => Promise<void>;
   clearAvatar: () => Promise<void>;
   refreshTailscale: () => Promise<void>;
   refreshNetworkSnapshot: () => Promise<void>;
+  checkUpdates: () => Promise<UpdateCheckResult>;
+  openReleases: () => Promise<void>;
   resetSettings: () => Promise<void>;
 }
 
@@ -48,6 +53,7 @@ const fallbackRuntimeInfo: RuntimeInfo = {
 };
 
 const fallbackSettings: AppSettings = {
+  settingsSchemaVersion: SETTINGS_SCHEMA_VERSION,
   nickname: "",
   roomName: DEFAULT_ROOM_NAME,
   avatarPath: undefined,
@@ -57,12 +63,18 @@ const fallbackSettings: AppSettings = {
   launchOnStartup: false,
   preferredInputDeviceId: undefined,
   preferredOutputDeviceId: undefined,
+  preferredSampleRate: "auto",
+  inputLevelThreshold: 0.18,
   globalMuteShortcut: "",
   pushToTalkShortcut: "Space",
   isNoiseSuppressionEnabled: true,
+  isEchoCancellationEnabled: true,
+  isAutoGainControlEnabled: true,
   isPushToTalkEnabled: false,
+  micMonitorMode: "processed",
   connectionMode: "direct_host",
   relayServerUrl: "",
+  relayAuthToken: "",
   manualDirectHost: "",
   shouldAutoCopyInviteLink: true,
   isMicOnSoundEnabled: true,
@@ -70,6 +82,9 @@ const fallbackSettings: AppSettings = {
   isMemberJoinSoundEnabled: true,
   isMemberLeaveSoundEnabled: true,
   isConnectionSoundEnabled: true,
+  isBackgroundUpdateCheckEnabled: true,
+  lastUpdateCheckAt: undefined,
+  lastUpdateVersionSeen: undefined,
 };
 
 const fallbackTailscaleStatus: TailscaleStatus = {
@@ -105,11 +120,7 @@ const loadAvatarDataUrl = async (avatarPath?: string): Promise<string | undefine
     return undefined;
   }
 
-  return withTimeout(
-    desktopApi.profile.readAvatar(avatarPath),
-    "avatar_read_timeout",
-    3_000,
-  );
+  return withTimeout(desktopApi.profile.readAvatar(avatarPath), "avatar_read_timeout", 3_000);
 };
 
 export const useSettingsStore = create<SettingsStoreState>((set, get) => ({
@@ -118,12 +129,13 @@ export const useSettingsStore = create<SettingsStoreState>((set, get) => ({
   tailscaleStatus: fallbackTailscaleStatus,
   avatarDataUrl: undefined,
   networkSnapshot: undefined,
+  updateInfo: undefined,
   isHydrating: true,
   hydrate: async () => {
     set({ isHydrating: true });
 
-    let mode: HydrationOutcome["mode"] = "ready";
-    let issue: HydrationOutcome["issue"];
+    let mode: StoreHydrationOutcome["mode"] = "ready";
+    let issue: StoreHydrationOutcome["issue"];
 
     const runtimeInfo = await withTimeout(
       desktopApi.app.getRuntimeInfo(),
@@ -212,13 +224,15 @@ export const useSettingsStore = create<SettingsStoreState>((set, get) => ({
       isHydrating: false,
     });
 
-    await desktopApi.shortcuts
-      .configureMute(settings.globalMuteShortcut)
-      .catch(async (error) => {
-        await writeRendererLog("renderer-startup", "warn", "Failed to configure mute shortcut", {
-          error: error instanceof Error ? error.message : String(error),
-        });
+    await desktopApi.shortcuts.configureMute(settings.globalMuteShortcut).catch(async (error) => {
+      await writeRendererLog("renderer-startup", "warn", "Failed to configure mute shortcut", {
+        error: error instanceof Error ? error.message : String(error),
       });
+    });
+
+    if (settings.isBackgroundUpdateCheckEnabled) {
+      void get().checkUpdates().catch(() => undefined);
+    }
 
     await writeRendererLog("renderer-startup", "info", "Renderer hydrated settings", {
       platform: runtimeInfo.platform,
@@ -227,12 +241,10 @@ export const useSettingsStore = create<SettingsStoreState>((set, get) => ({
       profileReady: settings.hasCompletedProfileSetup,
       connectionMode: settings.connectionMode,
       mode,
+      settingsSchemaVersion: settings.settingsSchemaVersion,
     });
 
-    return {
-      mode,
-      issue,
-    };
+    return { mode, issue };
   },
   saveSettings: async (partial) => {
     const settings = await desktopApi.settings.save(partial);
@@ -248,40 +260,26 @@ export const useSettingsStore = create<SettingsStoreState>((set, get) => ({
   },
   pickAvatar: async () => {
     const selection = await desktopApi.profile.pickAvatar();
-
     if (!selection) {
       return;
     }
 
-    const settings = await desktopApi.settings.save({
-      avatarPath: selection.avatarPath,
-    });
-
-    set({
-      settings,
-      avatarDataUrl: selection.avatarDataUrl,
-    });
+    const settings = await desktopApi.settings.save({ avatarPath: selection.avatarPath });
+    set({ settings, avatarDataUrl: selection.avatarDataUrl });
   },
   clearAvatar: async () => {
     const avatarPath = get().settings?.avatarPath;
     await desktopApi.profile.clearAvatar(avatarPath);
-    const settings = await desktopApi.settings.save({
-      avatarPath: undefined,
-    });
-    set({
-      settings,
-      avatarDataUrl: undefined,
-    });
+    const settings = await desktopApi.settings.save({ avatarPath: undefined });
+    set({ settings, avatarDataUrl: undefined });
   },
   refreshTailscale: async () => {
-    const tailscaleStatus = await desktopApi.tailscale
-      .checkStatus()
-      .catch(async (error) => {
-        await writeRendererLog("tailscale", "warn", "Failed to refresh Tailscale status", {
-          error: error instanceof Error ? error.message : String(error),
-        });
-        return fallbackTailscaleStatus;
+    const tailscaleStatus = await desktopApi.tailscale.checkStatus().catch(async (error) => {
+      await writeRendererLog("tailscale", "warn", "Failed to refresh Tailscale status", {
+        error: error instanceof Error ? error.message : String(error),
       });
+      return fallbackTailscaleStatus;
+    });
     set({ tailscaleStatus });
   },
   refreshNetworkSnapshot: async () => {
@@ -292,6 +290,14 @@ export const useSettingsStore = create<SettingsStoreState>((set, get) => ({
       return undefined;
     });
     set({ networkSnapshot });
+  },
+  checkUpdates: async () => {
+    const updateInfo = await desktopApi.updates.check();
+    set({ updateInfo });
+    return updateInfo;
+  },
+  openReleases: async () => {
+    await desktopApi.updates.openReleases();
   },
   resetSettings: async () => {
     const settings = await desktopApi.settings.reset();

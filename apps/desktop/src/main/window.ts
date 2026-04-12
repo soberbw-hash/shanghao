@@ -2,27 +2,36 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 
 import { app, BrowserWindow } from "electron";
+
 import { APP_ID, APP_NAME } from "@private-voice/shared";
 
 const devServerUrl = "http://127.0.0.1:5173";
 
 interface CreateMainWindowOptions {
-  log?: (level: "info" | "warn" | "error", message: string, context?: Record<string, unknown>) => void;
+  log?: (
+    level: "info" | "warn" | "error",
+    message: string,
+    context?: Record<string, unknown>,
+  ) => void;
   logsDirectory?: string;
 }
 
 const getIconPath = () => path.join(app.getAppPath(), "build", "icon.ico");
 
-const createFallbackHtml = (title: string, description: string, logsDirectory?: string) => `<!doctype html>
+const createFallbackHtml = (
+  title: string,
+  description: string,
+  logsDirectory?: string,
+) => `<!doctype html>
 <html lang="zh-CN">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>${APP_NAME}</title>
     <style>
-      :root { color-scheme: light; font-family: "Segoe UI", system-ui, sans-serif; }
+      :root { color-scheme: light; font-family: "HarmonyOS Sans","Segoe UI",system-ui,sans-serif; }
       body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: #f5f7fa; color: #111827; }
-      .card { width: min(560px, calc(100vw - 32px)); border: 1px solid #e7ecf2; border-radius: 24px; background: #fff; padding: 28px; box-shadow: 0 20px 60px rgba(17,24,39,.08); }
+      .card { width: min(580px, calc(100vw - 32px)); border: 1px solid #e7ecf2; border-radius: 24px; background: #fff; padding: 28px; box-shadow: 0 20px 60px rgba(17,24,39,.08); }
       h1 { margin: 0; font-size: 26px; }
       p { margin: 12px 0 0; font-size: 14px; line-height: 1.7; color: #667085; }
       code { display:block; margin-top:12px; padding:10px 12px; border-radius:12px; background:#f8fafc; color:#111827; word-break:break-all; }
@@ -43,9 +52,9 @@ export const createMainWindow = ({
 }: CreateMainWindowOptions = {}): BrowserWindow => {
   const window = new BrowserWindow({
     width: 1440,
-    height: 960,
-    minWidth: 1040,
-    minHeight: 720,
+    height: 920,
+    minWidth: 1280,
+    minHeight: 820,
     backgroundColor: "#F5F7FA",
     frame: false,
     titleBarStyle: "hidden",
@@ -132,7 +141,6 @@ export const createMainWindow = ({
     window.show();
   });
 
-  window.setBackgroundColor("#F5F7FA");
   window.webContents.setWindowOpenHandler(({ url }) => {
     log?.("warn", "Blocked unexpected window open", { url });
     return { action: "deny" };
@@ -144,7 +152,6 @@ export const createMainWindow = ({
     callback(true);
   });
 
-  window.setTitle(APP_NAME);
   window.webContents.once("did-finish-load", () => {
     log?.("info", "Renderer main frame finished load", { targetUrl });
   });

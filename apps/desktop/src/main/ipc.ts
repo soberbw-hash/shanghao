@@ -14,17 +14,19 @@ import {
   type RuntimeInfo,
   type SignalingEventPayload,
   type TailscaleStatus,
+  type UpdateCheckResult,
 } from "@private-voice/shared";
 
 import { DiagnosticsService } from "./diagnostics";
 import { HostSessionController } from "./host-session";
-import { exportRecordingFromMain } from "./recording-main";
+import { buildDiagnosticsSummary, detectProxyDiagnostics, getNetworkStatusSnapshot } from "./network-diagnostics";
 import { clearAvatarImage, pickAvatarImage, readAvatarImage } from "./profile-media";
+import { exportRecordingFromMain } from "./recording-main";
 import { SettingsStore } from "./settings-store";
 import { ShortcutController } from "./shortcuts";
 import { SignalingClientBridge } from "./signaling-client";
-import { getNetworkStatusSnapshot, detectProxyDiagnostics } from "./network-diagnostics";
 import { detectTailscaleStatus, openTailscaleInstallGuide } from "./tailscale";
+import { UpdateService } from "./updates";
 
 interface MainProcessServices {
   getMainWindow: () => BrowserWindow | null;
@@ -33,6 +35,7 @@ interface MainProcessServices {
   shortcuts: ShortcutController;
   hostSession: HostSessionController;
   signalingClient: SignalingClientBridge;
+  updates: UpdateService;
 }
 
 export const registerIpcHandlers = ({
@@ -42,6 +45,7 @@ export const registerIpcHandlers = ({
   shortcuts,
   hostSession,
   signalingClient,
+  updates,
 }: MainProcessServices): void => {
   signalingClient.on("event", (payload: SignalingEventPayload) => {
     getMainWindow()?.webContents.send(IPC_CHANNELS.signaling.event, payload);
@@ -51,19 +55,16 @@ export const registerIpcHandlers = ({
     IPC_CHANNELS.app.getRuntimeInfo,
     async (): Promise<RuntimeInfo> => ({
       appName: APP_NAME,
-      version: process.env.npm_package_version ?? "0.1.5",
+      version: process.env.npm_package_version ?? "0.1.7",
       platform: process.platform,
       protocolVersion: APP_PROTOCOL_VERSION,
       buildNumber: APP_BUILD_NUMBER,
     }),
   );
 
-  ipcMain.handle(
-    IPC_CHANNELS.app.writeLog,
-    async (_event, payload: RendererLogPayload): Promise<void> => {
-      await diagnostics.writeLog(payload);
-    },
-  );
+  ipcMain.handle(IPC_CHANNELS.app.writeLog, async (_event, payload: RendererLogPayload): Promise<void> => {
+    await diagnostics.writeLog(payload);
+  });
 
   ipcMain.handle(IPC_CHANNELS.app.openPath, async (_event, targetPath: string): Promise<void> => {
     await shell.openPath(targetPath);
@@ -95,9 +96,7 @@ export const registerIpcHandlers = ({
     window.focus();
   });
 
-  ipcMain.handle(IPC_CHANNELS.settings.get, async (): Promise<AppSettings> => {
-    return settingsStore.getSnapshot();
-  });
+  ipcMain.handle(IPC_CHANNELS.settings.get, async (): Promise<AppSettings> => settingsStore.getSnapshot());
 
   ipcMain.handle(
     IPC_CHANNELS.settings.save,
@@ -117,66 +116,69 @@ export const registerIpcHandlers = ({
     return settings;
   });
 
-  ipcMain.handle(IPC_CHANNELS.profile.pickAvatar, async () => {
-    return pickAvatarImage(settingsStore.getSnapshot().avatarPath);
-  });
-
-  ipcMain.handle(IPC_CHANNELS.profile.readAvatar, async (_event, avatarPath?: string) => {
-    return readAvatarImage(avatarPath);
-  });
-
+  ipcMain.handle(IPC_CHANNELS.profile.pickAvatar, async () => pickAvatarImage(settingsStore.getSnapshot().avatarPath));
+  ipcMain.handle(IPC_CHANNELS.profile.readAvatar, async (_event, avatarPath?: string) => readAvatarImage(avatarPath));
   ipcMain.handle(IPC_CHANNELS.profile.clearAvatar, async (_event, avatarPath?: string) => {
     await clearAvatarImage(avatarPath ?? settingsStore.getSnapshot().avatarPath);
   });
 
-  ipcMain.handle(
-    IPC_CHANNELS.diagnostics.snapshot,
-    async (): Promise<DiagnosticsSnapshot> => diagnostics.getSnapshot(),
-  );
+  ipcMain.handle(IPC_CHANNELS.diagnostics.snapshot, async (): Promise<DiagnosticsSnapshot> => diagnostics.getSnapshot());
+  ipcMain.handle(IPC_CHANNELS.diagnostics.exportLogs, async (): Promise<DiagnosticsSnapshot> => diagnostics.exportLogs());
 
-  ipcMain.handle(
-    IPC_CHANNELS.diagnostics.exportLogs,
-    async (): Promise<DiagnosticsSnapshot> => diagnostics.exportLogs(),
-  );
+  ipcMain.handle(IPC_CHANNELS.diagnostics.exportBundle, async (): Promise<DiagnosticsSnapshot> => {
+    const settings = settingsStore.getSnapshot();
+    const network = await getNetworkStatusSnapshot(settings, (payload) => diagnostics.writeLog(payload));
+    const summary = await buildDiagnosticsSummary({
+      settings,
+      appVersion: process.env.npm_package_version ?? "0.1.7",
+      protocolVersion: APP_PROTOCOL_VERSION,
+      buildNumber: APP_BUILD_NUMBER,
+      inviteAddress: hostSession.getSnapshot()?.signalingUrl,
+      writeLog: (payload) => diagnostics.writeLog(payload),
+    });
 
-  ipcMain.handle(
-    IPC_CHANNELS.diagnostics.exportBundle,
-    async (): Promise<DiagnosticsSnapshot> => {
-      const settings = settingsStore.getSnapshot();
-      const network = await getNetworkStatusSnapshot();
-      return diagnostics.exportBundle([
-        { name: "settings.json", content: JSON.stringify(settings, null, 2) },
-        { name: "network.json", content: JSON.stringify(network, null, 2) },
-      ]);
-    },
-  );
+    return diagnostics.exportBundle([
+      { name: "settings.json", content: JSON.stringify(settings, null, 2) },
+      { name: "network.json", content: JSON.stringify(network, null, 2) },
+      { name: "summary.json", content: JSON.stringify(summary, null, 2) },
+    ]);
+  });
 
   ipcMain.handle(IPC_CHANNELS.diagnostics.openLogsDirectory, async (): Promise<void> => {
     await diagnostics.openLogsDirectory();
   });
 
-  ipcMain.handle(
-    IPC_CHANNELS.shortcuts.configureMute,
-    async (_event, accelerator: string): Promise<void> => {
-      await shortcuts.configureGlobalMute(accelerator);
-    },
-  );
+  ipcMain.handle(IPC_CHANNELS.shortcuts.configureMute, async (_event, accelerator: string): Promise<void> => {
+    await shortcuts.configureGlobalMute(accelerator);
+  });
 
-  ipcMain.handle(
-    IPC_CHANNELS.tailscale.checkStatus,
-    async (): Promise<TailscaleStatus> => detectTailscaleStatus(),
-  );
-
+  ipcMain.handle(IPC_CHANNELS.tailscale.checkStatus, async (): Promise<TailscaleStatus> => detectTailscaleStatus());
   ipcMain.handle(IPC_CHANNELS.tailscale.openInstallGuide, async (): Promise<void> => {
     await openTailscaleInstallGuide();
   });
 
   ipcMain.handle(IPC_CHANNELS.network.getSnapshot, async () => {
-    return getNetworkStatusSnapshot();
+    return getNetworkStatusSnapshot(settingsStore.getSnapshot(), (payload) => diagnostics.writeLog(payload));
+  });
+  ipcMain.handle(IPC_CHANNELS.network.getProxyDiagnostics, async () => detectProxyDiagnostics());
+  ipcMain.handle(IPC_CHANNELS.network.exportSummary, async () => {
+    return buildDiagnosticsSummary({
+      settings: settingsStore.getSnapshot(),
+      appVersion: process.env.npm_package_version ?? "0.1.7",
+      protocolVersion: APP_PROTOCOL_VERSION,
+      buildNumber: APP_BUILD_NUMBER,
+      inviteAddress: hostSession.getSnapshot()?.signalingUrl,
+      writeLog: (payload) => diagnostics.writeLog(payload),
+    });
   });
 
-  ipcMain.handle(IPC_CHANNELS.network.getProxyDiagnostics, async () => {
-    return detectProxyDiagnostics();
+  ipcMain.handle(IPC_CHANNELS.updates.check, async (): Promise<UpdateCheckResult> => {
+    const result = await updates.check();
+    diagnostics.setLastUpdateCheckMessage(result.message);
+    return result;
+  });
+  ipcMain.handle(IPC_CHANNELS.updates.openReleases, async (): Promise<void> => {
+    await updates.openReleases();
   });
 
   ipcMain.handle(
@@ -186,38 +188,28 @@ export const registerIpcHandlers = ({
       roomName: string,
       nickname: string,
       connectionMode: AppSettings["connectionMode"],
-    ): Promise<HostSessionInfo> => {
-      return hostSession.start(roomName, nickname, connectionMode);
-    },
+    ): Promise<HostSessionInfo> => hostSession.start(roomName, nickname, connectionMode),
   );
-
   ipcMain.handle(IPC_CHANNELS.host.stop, async (): Promise<void> => {
     await hostSession.stop();
   });
-
-  ipcMain.handle(
-    IPC_CHANNELS.host.diagnoseJoin,
-    async (_event, signalingUrl: string, connectionMode: AppSettings["connectionMode"]) => {
-      return hostSession.diagnoseJoin(signalingUrl, connectionMode);
-    },
-  );
+  ipcMain.handle(IPC_CHANNELS.host.diagnoseJoin, async (_event, signalingUrl: string, connectionMode: AppSettings["connectionMode"]) => {
+    return hostSession.diagnoseJoin(signalingUrl, connectionMode);
+  });
 
   ipcMain.handle(IPC_CHANNELS.signaling.connect, async (_event, signalingUrl: string) => {
     await signalingClient.connect(signalingUrl);
   });
-
   ipcMain.handle(IPC_CHANNELS.signaling.send, async (_event, payload: string) => {
     await signalingClient.send(payload);
   });
-
   ipcMain.handle(IPC_CHANNELS.signaling.close, async () => {
     await signalingClient.close();
   });
 
   ipcMain.handle(
     IPC_CHANNELS.recording.export,
-    async (_event, payload: RecordingExportPayload): Promise<RecordingExportResponse> => {
-      return exportRecordingFromMain(payload, (logPayload) => diagnostics.writeLog(logPayload));
-    },
+    async (_event, payload: RecordingExportPayload): Promise<RecordingExportResponse> =>
+      exportRecordingFromMain(payload, (logPayload) => diagnostics.writeLog(logPayload)),
   );
 };

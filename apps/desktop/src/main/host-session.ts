@@ -1,11 +1,11 @@
 import net from "node:net";
-import { request } from "node:https";
 
 import {
   APP_BUILD_NUMBER,
   APP_PROTOCOL_VERSION,
   DEFAULT_ROOM_NAME,
   DEFAULT_SIGNALING_PORT,
+  HostSessionState,
   type AppSettings,
   type ConnectionMode,
   type HostSessionInfo,
@@ -14,7 +14,9 @@ import {
 } from "@private-voice/shared";
 import { SignalingServer } from "@private-voice/signaling";
 
+import { probeDirectHost } from "./direct-host";
 import { detectProxyDiagnostics } from "./network-diagnostics";
+import { readRelayStatus } from "./relay-status";
 import {
   detectTailscaleStatus,
   resolveLanIpv4Candidates,
@@ -23,8 +25,9 @@ import {
 
 const JOIN_DIAGNOSTIC_TIMEOUT_MS = 2_500;
 
-const normalizeRoomName = (roomName: string): string =>
-  roomName.trim() || DEFAULT_ROOM_NAME;
+const appVersion = (): string => process.env.npm_package_version ?? "0.0.0";
+
+const normalizeRoomName = (roomName: string): string => roomName.trim() || DEFAULT_ROOM_NAME;
 
 const probeTcpPort = async (host: string, port: number): Promise<boolean> =>
   new Promise((resolve) => {
@@ -42,41 +45,18 @@ const probeTcpPort = async (host: string, port: number): Promise<boolean> =>
     socket.once("error", () => finish(false));
   });
 
-const detectPublicIp = async (): Promise<string | undefined> =>
-  new Promise((resolve) => {
-    const req = request("https://api64.ipify.org?format=json", (response) => {
-      let body = "";
-      response.on("data", (chunk) => {
-        body += chunk.toString();
-      });
-      response.on("end", () => {
-        try {
-          const parsed = JSON.parse(body) as { ip?: string };
-          resolve(parsed.ip);
-        } catch {
-          resolve(undefined);
-        }
-      });
-    });
-
-    req.on("error", () => resolve(undefined));
-    req.setTimeout(2_500, () => {
-      req.destroy();
-      resolve(undefined);
-    });
-    req.end();
-  });
-
 const createInviteUrl = ({
   host,
   port,
   roomId,
   mode,
+  relayToken,
 }: {
   host: string;
   port?: number;
   roomId: string;
   mode: ConnectionMode;
+  relayToken?: string;
 }) => {
   const base = port ? `ws://${host}:${port}` : host;
   const url = new URL(base);
@@ -84,16 +64,25 @@ const createInviteUrl = ({
   url.searchParams.set("mode", mode);
   url.searchParams.set("protocolVersion", APP_PROTOCOL_VERSION);
   url.searchParams.set("buildNumber", APP_BUILD_NUMBER);
+  if (relayToken) {
+    url.searchParams.set("relayToken", relayToken);
+  }
   return url.toString();
 };
 
 export class HostSessionController {
   private server?: SignalingServer;
+  private cleanupTasks: Array<() => Promise<void>> = [];
+  private currentSession?: HostSessionInfo;
 
   constructor(
     private readonly getSettings: () => AppSettings,
     private readonly writeLog: (payload: RendererLogPayload) => Promise<void>,
   ) {}
+
+  getSnapshot(): HostSessionInfo | undefined {
+    return this.currentSession;
+  }
 
   async start(
     roomName: string,
@@ -128,29 +117,49 @@ export class HostSessionController {
       let hostAddress = "";
       let addressSource: HostSessionInfo["addressSource"] = "unknown";
       let alternativeAddresses: string[] = [];
+      let directHostProbe: HostSessionInfo["directHostProbe"];
+      let relayStatus: HostSessionInfo["relayStatus"];
+      const relayToken =
+        connectionMode === "relay" ? settings.relayAuthToken || crypto.randomUUID() : undefined;
 
       if (connectionMode === "tailscale") {
         const resolvedAddress = await resolveTailscaleAddress();
         if (!resolvedAddress) {
-          throw new Error("Tailscale 模式下没有可用地址，请先连到同一个 tailnet。");
+          throw new Error("Tailscale 模式下没有可用地址，请先连接到同一个 tailnet。");
         }
         hostAddress = resolvedAddress.host;
         addressSource = resolvedAddress.source;
         alternativeAddresses = resolvedAddress.alternatives;
       } else if (connectionMode === "direct_host") {
-        hostAddress = settings.manualDirectHost || (await detectPublicIp()) || "";
-        addressSource = settings.manualDirectHost ? "manual_public_host" : "public_ip";
+        const probe = await probeDirectHost({
+          localPort: signalingPort ?? DEFAULT_SIGNALING_PORT,
+          manualHost: settings.manualDirectHost,
+          writeLog: this.writeLog,
+        });
+        this.cleanupTasks = probe.cleanupTasks;
+        directHostProbe = probe.summary;
+        hostAddress = probe.summary.selectedHost || "";
+        addressSource = probe.summary.addressSource;
         alternativeAddresses = resolveLanIpv4Candidates();
+
         if (!hostAddress) {
-          throw new Error("当前不满足公网直连条件，请改用 Tailscale 或云中继模式。");
+          throw new Error("当前网络不支持房主直连，请改用 Tailscale 或云中继模式。");
         }
       } else {
-        hostAddress = settings.relayServerUrl?.trim() || "";
+        relayStatus = await readRelayStatus({
+          relayServerUrl: settings.relayServerUrl,
+          writeLog: this.writeLog,
+        });
+        if (!relayStatus.isConfigured) {
+          throw new Error("请先在设置里填写可用的云中继地址。");
+        }
+        if (!relayStatus.serverUrl) {
+          throw new Error("云中继地址无效，请到设置里重新填写。");
+        }
+
+        hostAddress = relayStatus.serverUrl;
         addressSource = "relay";
         alternativeAddresses = [];
-        if (!hostAddress) {
-          throw new Error("请先在设置里填写可用的中继服务器地址。");
-        }
       }
 
       const signalingUrl = createInviteUrl({
@@ -158,6 +167,7 @@ export class HostSessionController {
         port: connectionMode === "relay" ? undefined : signalingPort,
         roomId,
         mode: connectionMode,
+        relayToken,
       });
 
       const sessionInfo: HostSessionInfo = {
@@ -167,6 +177,7 @@ export class HostSessionController {
         signalingPort,
         signalingUrl,
         connectionMode,
+        hostState: HostSessionState.Active,
         tailscaleIp: tailscaleStatus.ip,
         hostAddress,
         addressSource,
@@ -174,23 +185,26 @@ export class HostSessionController {
         protocolVersion: APP_PROTOCOL_VERSION,
         appVersion: appVersion(),
         buildNumber: APP_BUILD_NUMBER,
+        directHostProbe,
+        relayStatus,
+        inviteExpiresAt: new Date(Date.now() + 12 * 60 * 60 * 1000).toISOString(),
       };
 
+      this.currentSession = sessionInfo;
+
       await this.writeLog({
-        category: "connection-mode",
+        category: connectionMode === "relay" ? "relay" : "connection-mode",
         level: "info",
-        message: "Host session started",
-        context: {
-          ...sessionInfo,
-        },
+        message: "host session started",
+        context: sessionInfo as unknown as Record<string, unknown>,
       });
 
       return sessionInfo;
     } catch (error) {
       await this.writeLog({
-        category: "signaling",
+        category: connectionMode === "relay" ? "relay" : "signaling",
         level: "error",
-        message: "Failed to start host signaling session",
+        message: "failed to start host signaling session",
         context: {
           roomName: normalizedRoomName,
           connectionMode,
@@ -222,7 +236,7 @@ export class HostSessionController {
         tailscaleState: tailscaleStatus?.state,
         failureStage: "validation",
         message: "没有可用的房间地址。",
-        details: ["请先粘贴房主分享的地址。"],
+        details: ["请先粘贴房主分享的完整地址。"],
         proxyDiagnostics,
       };
     }
@@ -230,7 +244,7 @@ export class HostSessionController {
     try {
       const parsed = new URL(signalingUrl);
       const host = parsed.hostname;
-      const port = Number(parsed.port || "80");
+      const port = Number(parsed.port || (parsed.protocol === "wss:" ? "443" : "80"));
       const addressSource =
         connectionMode === "tailscale"
           ? host.endsWith(".ts.net")
@@ -253,6 +267,14 @@ export class HostSessionController {
         details.push("目标端口没有连通。");
       }
 
+      const relayStatus =
+        connectionMode === "relay"
+          ? await readRelayStatus({
+              relayServerUrl: `${parsed.protocol}//${parsed.host}${parsed.pathname}`,
+              writeLog: this.writeLog,
+            }).catch(() => undefined)
+          : undefined;
+
       return {
         signalingUrl,
         connectionMode,
@@ -264,14 +286,15 @@ export class HostSessionController {
         tailscaleState: tailscaleStatus?.state,
         failureStage: isReachable ? "websocket" : "network",
         message: isReachable
-          ? "地址已可达，但房间连接握手失败，可能受代理 / TUN 影响。"
+          ? "地址已可达，但房间连接握手失败，可能受代理/TUN 影响。"
           : "无法连接到房主地址。",
         details,
         proxyDiagnostics,
         protocolVersion: parsed.searchParams.get("protocolVersion") ?? undefined,
         buildNumber: parsed.searchParams.get("buildNumber") ?? undefined,
+        relayStatus,
       };
-    } catch {
+    } catch (error) {
       return {
         signalingUrl,
         connectionMode,
@@ -280,26 +303,27 @@ export class HostSessionController {
         addressSource: "unknown",
         tailscaleState: tailscaleStatus?.state,
         failureStage: "validation",
-        message: "房间地址格式不正确。",
-        details: ["请确认粘贴的是房主发来的完整地址。"],
+        message: "连接地址格式不正确。",
+        details: [error instanceof Error ? error.message : String(error)],
         proxyDiagnostics,
       };
     }
   }
 
   async stop(): Promise<void> {
-    if (!this.server) {
-      return;
+    if (this.server) {
+      try {
+        await this.server.close();
+      } catch {
+        // noop
+      }
+      this.server = undefined;
     }
 
-    await this.server.close();
-    this.server = undefined;
-    await this.writeLog({
-      category: "signaling",
-      level: "info",
-      message: "Host signaling session stopped",
-    });
+    for (const cleanup of this.cleanupTasks.splice(0)) {
+      await cleanup().catch(() => undefined);
+    }
+
+    this.currentSession = undefined;
   }
 }
-
-const appVersion = () => process.env.npm_package_version ?? "0.1.6";

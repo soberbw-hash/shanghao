@@ -25,12 +25,15 @@ export const SettingsPage = () => {
   const avatarDataUrl = useSettingsStore((state) => state.avatarDataUrl);
   const tailscaleStatus = useSettingsStore((state) => state.tailscaleStatus);
   const networkSnapshot = useSettingsStore((state) => state.networkSnapshot);
+  const updateInfo = useSettingsStore((state) => state.updateInfo);
   const saveSettings = useSettingsStore((state) => state.saveSettings);
   const pickAvatar = useSettingsStore((state) => state.pickAvatar);
   const clearAvatar = useSettingsStore((state) => state.clearAvatar);
   const refreshTailscale = useSettingsStore((state) => state.refreshTailscale);
   const refreshNetworkSnapshot = useSettingsStore((state) => state.refreshNetworkSnapshot);
   const resetSettings = useSettingsStore((state) => state.resetSettings);
+  const checkUpdates = useSettingsStore((state) => state.checkUpdates);
+  const openReleases = useSettingsStore((state) => state.openReleases);
   const inputDevices = useAudioStore((state) => state.inputDevices);
   const outputDevices = useAudioStore((state) => state.outputDevices);
   const [diagnostics, setDiagnostics] = useState<DiagnosticsSnapshot>();
@@ -38,6 +41,11 @@ export const SettingsPage = () => {
   const micTest = useMicTest({
     inputDeviceId: settings?.preferredInputDeviceId,
     outputDeviceId: settings?.preferredOutputDeviceId,
+    echoCancellation: settings?.isEchoCancellationEnabled,
+    noiseSuppression: settings?.isNoiseSuppressionEnabled,
+    autoGainControl: settings?.isAutoGainControlEnabled,
+    preferredSampleRate: settings?.preferredSampleRate,
+    monitorMode: settings?.micMonitorMode,
   });
 
   useEffect(() => {
@@ -104,6 +112,17 @@ export const SettingsPage = () => {
     });
   };
 
+  const handleCheckUpdates = () => {
+    void checkUpdates().then((result) => {
+      pushToast({
+        tone: result.hasUpdate ? "success" : "neutral",
+        title: "检查更新完成",
+        description: result.message,
+      });
+      refreshDiagnostics();
+    });
+  };
+
   return (
     <PageContainer className="overflow-y-auto">
       <SettingsPageHeader onBack={() => navigate("home")} />
@@ -130,8 +149,11 @@ export const SettingsPage = () => {
           tailscaleStatus={tailscaleStatus}
           networkSnapshot={networkSnapshot}
           runtimeInfo={runtimeInfo}
+          updateInfo={updateInfo}
           onChange={(patch) => void saveSettings(patch)}
           onRefresh={handleRefreshNetwork}
+          onCheckUpdates={handleCheckUpdates}
+          onOpenReleases={() => void openReleases()}
         />
         <AppearanceSettingsCard settings={settings} onChange={(patch) => void saveSettings(patch)} />
         <DiagnosticsSettingsCard

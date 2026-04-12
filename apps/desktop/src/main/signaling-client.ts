@@ -28,12 +28,20 @@ export class SignalingClientBridge extends EventEmitter {
 
   async connect(signalingUrl: string): Promise<void> {
     await this.close();
+    const mode =
+      (() => {
+        try {
+          return new URL(signalingUrl).searchParams.get("mode") ?? "unknown";
+        } catch {
+          return "unknown";
+        }
+      })();
 
     await this.writeLog({
-      category: "signaling",
+      category: mode === "relay" ? "relay" : "signaling",
       level: "info",
       message: "Opening signaling bridge socket",
-      context: { signalingUrl },
+      context: { signalingUrl, mode },
     });
 
     await new Promise<void>((resolve, reject) => {
@@ -45,10 +53,10 @@ export class SignalingClientBridge extends EventEmitter {
       socket.once("open", () => {
         this.emitEvent({ type: "open" });
         void this.writeLog({
-          category: "signaling",
+          category: mode === "relay" ? "relay" : "signaling",
           level: "info",
           message: "Signaling bridge socket opened",
-          context: { signalingUrl },
+          context: { signalingUrl, mode },
         });
         resolve();
       });
@@ -67,10 +75,10 @@ export class SignalingClientBridge extends EventEmitter {
           reason: reason.toString(),
         });
         void this.writeLog({
-          category: "signaling",
+          category: mode === "relay" ? "relay" : "signaling",
           level: "warn",
           message: "Signaling bridge socket closed",
-          context: { code, reason: reason.toString() },
+          context: { code, reason: reason.toString(), mode },
         });
       });
 
@@ -80,10 +88,10 @@ export class SignalingClientBridge extends EventEmitter {
           message: error.message,
         });
         void this.writeLog({
-          category: "signaling",
+          category: mode === "relay" ? "relay" : "signaling",
           level: "error",
           message: "Signaling bridge socket error",
-          context: { error: error.message },
+          context: { error: error.message, mode },
         });
         reject(error);
       });

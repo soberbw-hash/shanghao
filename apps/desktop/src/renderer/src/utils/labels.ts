@@ -9,7 +9,9 @@ const roomConnectionLabels: Record<RoomConnectionState, string> = {
   [RoomConnectionState.Idle]: "待命",
   [RoomConnectionState.DetectingNetwork]: "检测中",
   [RoomConnectionState.StartingHost]: "开启中",
+  [RoomConnectionState.WaitingPeer]: "等待加入",
   [RoomConnectionState.Joining]: "加入中",
+  [RoomConnectionState.Handshaking]: "握手中",
   [RoomConnectionState.Connected]: "已连接",
   [RoomConnectionState.Reconnecting]: "重连中",
   [RoomConnectionState.Disconnected]: "已断开",
@@ -70,8 +72,16 @@ export const getPrimaryRoomStatus = ({
     return { label: "开启中", tone: "accent" };
   }
 
+  if (connectionState === RoomConnectionState.WaitingPeer) {
+    return { label: "等待加入", tone: "accent" };
+  }
+
   if (connectionState === RoomConnectionState.Joining) {
     return { label: "加入中", tone: "accent" };
+  }
+
+  if (connectionState === RoomConnectionState.Handshaking) {
+    return { label: "握手中", tone: "accent" };
   }
 
   if (connectionState === RoomConnectionState.Reconnecting) {

@@ -1,12 +1,14 @@
 import path from "node:path";
 
-import { Menu, Tray, nativeImage, type BrowserWindow, app } from "electron";
+import { Menu, Tray, app, nativeImage, type BrowserWindow } from "electron";
+
 import { APP_NAME } from "@private-voice/shared";
 
 const getTrayImage = () => {
-  const pngPath = path.join(app.getAppPath(), "build", "icon.png");
+  const fileName = process.platform === "win32" ? "tray-light.png" : "tray-dark.png";
+  const pngPath = path.join(app.getAppPath(), "build", fileName);
   const image = nativeImage.createFromPath(pngPath);
-  return image.resize({ width: 20, height: 20 });
+  return image.resize({ width: 18, height: 18 });
 };
 
 const restoreWindow = (window: BrowserWindow | null) => {

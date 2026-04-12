@@ -1,10 +1,17 @@
 import {
+  HostSessionState,
+  MemberJoinState,
   MemberPresenceState,
   MemberSpeakingState,
   RoomConnectionState,
   RoomLifecycleState,
 } from "../enums/app.enums";
-import type { ConnectionMode, ProxyDiagnostics } from "./settings.types";
+import type {
+  ConnectionMode,
+  DirectHostProbeSummary,
+  ProxyDiagnostics,
+  RelayStatusSnapshot,
+} from "./settings.types";
 
 export interface RoomMember {
   id: string;
@@ -17,9 +24,18 @@ export interface RoomMember {
   isMuted: boolean;
   presenceState: MemberPresenceState;
   speakingState: MemberSpeakingState;
+  joinState?: MemberJoinState;
   volume: number;
   joinedAt: string;
   connectionQuality: "excellent" | "good" | "poor";
+}
+
+export interface HostEvent {
+  id: string;
+  level: "info" | "success" | "warning" | "error";
+  message: string;
+  memberName?: string;
+  createdAt: string;
 }
 
 export interface RoomSummary {
@@ -33,6 +49,9 @@ export interface RoomSummary {
   connectionState: RoomConnectionState;
   lifecycleState: RoomLifecycleState;
   hostAddress?: string;
+  hostSessionState?: HostSessionState;
+  latestFailureReason?: string;
+  recentHostEvents?: HostEvent[];
 }
 
 export interface ConnectionHealth {
@@ -50,6 +69,7 @@ export interface HostSessionInfo {
   signalingPort?: number;
   signalingUrl: string;
   connectionMode: ConnectionMode;
+  hostState: HostSessionState;
   tailscaleIp?: string;
   hostAddress: string;
   addressSource:
@@ -63,6 +83,9 @@ export interface HostSessionInfo {
   protocolVersion: string;
   appVersion: string;
   buildNumber: string;
+  directHostProbe?: DirectHostProbeSummary;
+  relayStatus?: RelayStatusSnapshot;
+  inviteExpiresAt?: string;
 }
 
 export interface JoinRoomDiagnostic {
@@ -80,11 +103,13 @@ export interface JoinRoomDiagnostic {
     | "manual_public_host"
     | "unknown";
   tailscaleState?: string;
-  failureStage: "validation" | "network" | "websocket" | "version" | "unknown";
+  failureStage: "validation" | "network" | "websocket" | "version" | "relay" | "unknown";
   message: string;
   details: string[];
   proxyDiagnostics?: ProxyDiagnostics;
   protocolVersion?: string;
   appVersion?: string;
   buildNumber?: string;
+  relayStatus?: RelayStatusSnapshot;
+  directHostProbe?: DirectHostProbeSummary;
 }

@@ -4,12 +4,15 @@ import type {
   ProfileAvatarSelection,
   ProxyDiagnostics,
   TailscaleStatus,
+  UpdateCheckResult,
 } from "./settings.types";
-import type { DiagnosticsSnapshot, LogCategory, LogEntry } from "./diagnostics.types";
 import type {
-  HostSessionInfo,
-  JoinRoomDiagnostic,
-} from "./room.types";
+  DiagnosticsBundleSummary,
+  DiagnosticsSnapshot,
+  LogCategory,
+  LogEntry,
+} from "./diagnostics.types";
+import type { HostSessionInfo, JoinRoomDiagnostic } from "./room.types";
 import type {
   RecordingExportPayload,
   RecordingExportResponse,
@@ -78,6 +81,11 @@ export interface DesktopApi {
   network: {
     getSnapshot: () => Promise<NetworkStatusSnapshot>;
     getProxyDiagnostics: () => Promise<ProxyDiagnostics>;
+    exportSummary: () => Promise<DiagnosticsBundleSummary>;
+  };
+  updates: {
+    check: () => Promise<UpdateCheckResult>;
+    openReleases: () => Promise<void>;
   };
   host: {
     start: (

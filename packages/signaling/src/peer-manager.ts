@@ -1,4 +1,5 @@
 import {
+  MemberJoinState,
   MemberPresenceState,
   MemberSpeakingState,
   type RoomMember,
@@ -73,6 +74,7 @@ export class PeerManager {
         : peer.isSpeaking
           ? MemberSpeakingState.Speaking
           : MemberSpeakingState.Silent,
+      joinState: MemberJoinState.Joined,
       volume: 1,
       joinedAt: peer.joinedAt,
       connectionQuality: "good",

@@ -43,6 +43,7 @@ export interface HelloMessage extends BaseMessage, VersionedMessage {
   peerId: string;
   nickname: string;
   avatarDataUrl?: string;
+  relayToken?: string;
 }
 
 export interface JoinRoomMessage extends BaseMessage, VersionedMessage {
@@ -51,6 +52,7 @@ export interface JoinRoomMessage extends BaseMessage, VersionedMessage {
   peerId: string;
   nickname: string;
   avatarDataUrl?: string;
+  relayToken?: string;
 }
 
 export interface LeaveRoomMessage extends BaseMessage {

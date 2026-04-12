@@ -56,8 +56,7 @@ export const useAppStore = create<AppStoreState>((set, get) => ({
   isSafeMode: false,
   navigate: (page) => set({ currentPage: page }),
   setOnboardingOpen: (isOnboardingOpen) => set({ isOnboardingOpen }),
-  setRecordingSaveDialogOpen: (isRecordingSaveDialogOpen) =>
-    set({ isRecordingSaveDialogOpen }),
+  setRecordingSaveDialogOpen: (isRecordingSaveDialogOpen) => set({ isRecordingSaveDialogOpen }),
   setRoomAction: (roomAction) => set({ roomAction }),
   beginBootstrap: (message = "正在准备上号…") =>
     set((state) => ({
@@ -109,7 +108,7 @@ export const useAppStore = create<AppStoreState>((set, get) => ({
 
     window.setTimeout(() => {
       get().dismissToast(id);
-    }, 4000);
+    }, 3600);
   },
   dismissToast: (id) =>
     set((state) => ({

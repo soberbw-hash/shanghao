@@ -46,6 +46,7 @@ const INITIAL_CONNECT_TIMEOUT_MS = 10_000;
 export class RoomClient {
   private readonly backoff = new ExponentialBackoff(DEFAULT_RECONNECT_DELAYS_MS);
   private readonly peers = new Map<string, MeshPeerConnection>();
+  private readonly relayToken?: string;
   private heartbeatTimer?: number;
   private reconnectTimer?: number;
   private shouldReconnect = true;
@@ -66,6 +67,11 @@ export class RoomClient {
     this.avatarDataUrl = options.avatarDataUrl;
     this.lastPublishedNickname = options.nickname;
     this.lastPublishedAvatarDataUrl = options.avatarDataUrl;
+    try {
+      this.relayToken = new URL(options.signalingUrl).searchParams.get("relayToken") ?? undefined;
+    } catch {
+      this.relayToken = undefined;
+    }
   }
 
   connect(): Promise<void> {
@@ -81,7 +87,7 @@ export class RoomClient {
       window.clearTimeout(this.reconnectTimer);
     }
 
-    this.send({
+    void this.send({
       type: "leave_room",
       roomId: this.options.roomId,
       peerId: this.options.peerId,
@@ -95,16 +101,13 @@ export class RoomClient {
   }
 
   updateMuteState(isMuted: boolean, isSpeaking: boolean): void {
-    if (
-      this.lastPublishedMuteState === isMuted &&
-      this.lastPublishedSpeakingState === isSpeaking
-    ) {
+    if (this.lastPublishedMuteState === isMuted && this.lastPublishedSpeakingState === isSpeaking) {
       return;
     }
 
     this.lastPublishedMuteState = isMuted;
     this.lastPublishedSpeakingState = isSpeaking;
-    this.send({
+    void this.send({
       type: "member_state",
       roomId: this.options.roomId,
       peerId: this.options.peerId,
@@ -126,7 +129,7 @@ export class RoomClient {
     this.lastPublishedNickname = nickname;
     this.lastPublishedAvatarDataUrl = avatarDataUrl;
 
-    this.send({
+    void this.send({
       type: "member_state",
       roomId: this.options.roomId,
       peerId: this.options.peerId,
@@ -140,9 +143,7 @@ export class RoomClient {
     const nextStream = new MediaStream([nextTrack]);
     this.localStream = nextStream;
 
-    await Promise.all(
-      [...this.peers.values()].map((peer) => peer.replaceLocalTrack(nextTrack)),
-    );
+    await Promise.all([...this.peers.values()].map((peer) => peer.replaceLocalTrack(nextTrack)));
 
     previousTracks.forEach((track) => {
       if (track.id !== nextTrack.id) {
@@ -152,9 +153,7 @@ export class RoomClient {
   }
 
   private openSocket(isReconnect: boolean): Promise<void> {
-    if (!isReconnect) {
-      this.options.onConnectionState(RoomConnectionState.Joining);
-    }
+    this.options.onConnectionState(isReconnect ? RoomConnectionState.Reconnecting : RoomConnectionState.Joining);
 
     return new Promise((resolve, reject) => {
       this.clearPendingConnection();
@@ -171,19 +170,17 @@ export class RoomClient {
         void this.handleBridgeEvent(payload);
       });
 
-      void window.desktopApi.signaling
-        .connect(this.options.signalingUrl)
-        .catch((error) => {
-          this.rejectPendingConnection(error instanceof Error ? error : new Error(String(error)));
-        });
+      void window.desktopApi.signaling.connect(this.options.signalingUrl).catch((error) => {
+        this.rejectPendingConnection(error instanceof Error ? error : new Error(String(error)));
+      });
     });
   }
 
   private async handleBridgeEvent(payload: SignalingEventPayload): Promise<void> {
     if (payload.type === "open") {
-      if (this.hasJoinedOnce) {
-        this.options.onConnectionState(RoomConnectionState.Reconnecting);
-      }
+      this.options.onConnectionState(
+        this.hasJoinedOnce ? RoomConnectionState.Reconnecting : RoomConnectionState.Handshaking,
+      );
 
       await this.send({
         type: "join_room",
@@ -195,6 +192,7 @@ export class RoomClient {
         protocolVersion: this.options.protocolVersion,
         buildNumber: this.options.buildNumber,
         connectionMode: this.options.connectionMode,
+        relayToken: this.relayToken,
       });
       this.startHeartbeat();
       return;
@@ -272,7 +270,11 @@ export class RoomClient {
     }));
 
     this.options.onMembers(normalizedMembers);
-    this.options.onConnectionState(RoomConnectionState.Connected);
+    this.options.onConnectionState(
+      normalizedMembers.filter((member) => !member.isEmptySlot).length <= 1
+        ? RoomConnectionState.WaitingPeer
+        : RoomConnectionState.Connected,
+    );
     this.backoff.reset();
     this.hasJoinedOnce = true;
     this.resolvePendingConnection();
@@ -299,7 +301,7 @@ export class RoomClient {
       if (this.options.peerId < member.id) {
         const peer = this.createPeer(member.id);
         const offer = await peer.createOffer();
-        this.send({
+        await this.send({
           type: "peer_offer",
           roomId: this.options.roomId,
           peerId: this.options.peerId,
@@ -314,7 +316,7 @@ export class RoomClient {
     const peer = this.peers.get(payload.peerId) ?? this.createPeer(payload.peerId);
     const answer = await peer.acceptOffer(payload.sdp);
 
-    this.send({
+    await this.send({
       type: "peer_answer",
       roomId: this.options.roomId,
       peerId: this.options.peerId,

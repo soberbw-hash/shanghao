@@ -11,14 +11,18 @@ export interface SignalingRoom {
   roomId: string;
   roomName: string;
   peers: PeerManager;
+  relayToken?: string;
 }
 
 export class RoomManager {
   private readonly rooms = new Map<string, SignalingRoom>();
 
-  getOrCreateRoom(roomId: string, roomName: string): SignalingRoom {
+  getOrCreateRoom(roomId: string, roomName: string, relayToken?: string): SignalingRoom {
     const existing = this.rooms.get(roomId);
     if (existing) {
+      if (!existing.relayToken && relayToken) {
+        existing.relayToken = relayToken;
+      }
       return existing;
     }
 
@@ -26,6 +30,7 @@ export class RoomManager {
       roomId,
       roomName,
       peers: new PeerManager(),
+      relayToken,
     };
 
     this.rooms.set(roomId, room);
@@ -36,8 +41,8 @@ export class RoomManager {
     return this.rooms.get(roomId);
   }
 
-  addPeer(roomId: string, roomName: string, session: PeerSession): SignalingRoom {
-    const room = this.getOrCreateRoom(roomId, roomName);
+  addPeer(roomId: string, roomName: string, session: PeerSession, relayToken?: string): SignalingRoom {
+    const room = this.getOrCreateRoom(roomId, roomName, relayToken);
     room.peers.addPeer(session);
     return room;
   }

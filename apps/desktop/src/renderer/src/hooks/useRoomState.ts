@@ -1,6 +1,12 @@
 import { useEffect } from "react";
 
-import { RoomConnectionState, RoomLifecycleState, type ConnectionMode } from "@private-voice/shared";
+import {
+  HostSessionState,
+  RoomConnectionState,
+  RoomLifecycleState,
+  type ConnectionMode,
+  type RoomMember,
+} from "@private-voice/shared";
 import { createSpeakingDetector, requestMicrophoneStream } from "@private-voice/webrtc";
 
 import { RoomClient } from "../features/room/roomClient";
@@ -13,6 +19,7 @@ import { writeRendererLog } from "../utils/logger";
 const sharedPeerId = crypto.randomUUID();
 let activeClient: RoomClient | null = null;
 let activeSpeakingDetector: ReturnType<typeof createSpeakingDetector> | null = null;
+let previousMemberIds = new Set<string>();
 
 const copy = {
   startHostTitle: "房间启动失败",
@@ -22,9 +29,10 @@ const copy = {
   missingJoinUrl: "请先输入房主分享的地址。",
   invalidJoinUrl: "连接地址无效，请确认是房主发来的完整地址。",
   roomFull: "房间已满，最多只支持 5 人同时语音。",
-  networkFailed: "连接失败，请检查网络、代理 / TUN 或当前模式。",
-  handshakeFailed: "地址已可达，但房间连接握手失败，可能受代理 / TUN 影响。",
+  networkFailed: "连接失败，请检查网络、代理/TUN 或当前模式。",
+  handshakeFailed: "地址已可达，但房间连接握手失败，可能受代理/TUN 影响。",
   versionMismatch: "房主和成员版本不一致，请升级到同一版本。",
+  relayAuthFailed: "云中继鉴权失败，请让房主重新分享房间地址。",
   microphoneUnavailable: "麦克风不可用",
   microphonePermission: "麦克风不可用，请先允许系统麦克风权限。",
   microphoneMissing: "没有找到可用的麦克风。",
@@ -33,7 +41,7 @@ const copy = {
   joinedRoomTitle: "已加入房间",
   joinedRoomDescription: "语音连接已经建立。",
   copiedAddressTitle: "已复制房间地址",
-  copiedAddressDescription: "把这份地址发给你的朋友就能加入。",
+  copiedAddressDescription: "把这份地址发给朋友就能加入。",
 } as const;
 
 const parseInvite = (value: string, fallbackMode: ConnectionMode) => {
@@ -73,7 +81,6 @@ const normalizeRoomError = (error: unknown, fallback: string): string => {
 
   if (error instanceof Error) {
     const message = error.message.trim();
-
     if (!message) {
       return fallback;
     }
@@ -90,6 +97,10 @@ const normalizeRoomError = (error: unknown, fallback: string): string => {
       return copy.versionMismatch;
     }
 
+    if (message.includes("relay_auth_failed")) {
+      return copy.relayAuthFailed;
+    }
+
     if (message.includes("room_full")) {
       return copy.roomFull;
     }
@@ -98,6 +109,18 @@ const normalizeRoomError = (error: unknown, fallback: string): string => {
   }
 
   return fallback;
+};
+
+const collectMemberEvents = (members: RoomMember[]) => {
+  const nextIds = new Set(
+    members.filter((member) => !member.isEmptySlot && !member.isLocal).map((member) => member.id),
+  );
+  const joined = members.filter(
+    (member) => !member.isEmptySlot && !member.isLocal && !previousMemberIds.has(member.id),
+  );
+  const left = [...previousMemberIds].filter((memberId) => !nextIds.has(memberId));
+  previousMemberIds = nextIds;
+  return { joined, left };
 };
 
 export const useRoomState = () => {
@@ -111,10 +134,13 @@ export const useRoomState = () => {
   const setRoom = useRoomStore((state) => state.setRoom);
   const setMembers = useRoomStore((state) => state.setMembers);
   const setConnectionState = useRoomStore((state) => state.setConnectionState);
+  const setLifecycleState = useRoomStore((state) => state.setLifecycleState);
   const setHostSession = useRoomStore((state) => state.setHostSession);
   const setConnectionMode = useRoomStore((state) => state.setConnectionMode);
   const setLocalStream = useRoomStore((state) => state.setLocalStream);
   const setRemoteStream = useRoomStore((state) => state.setRemoteStream);
+  const pushHostEvent = useRoomStore((state) => state.pushHostEvent);
+  const clearHostEvents = useRoomStore((state) => state.clearHostEvents);
   const setLocalDiagnostics = useAudioStore((state) => state.setLocalDiagnostics);
   const isMuted = useAudioStore((state) => state.isMuted);
   const pushToast = useAppStore((state) => state.pushToast);
@@ -157,6 +183,9 @@ export const useRoomState = () => {
       const { stream, diagnostics } = await requestMicrophoneStream({
         deviceId: preferredInputDeviceId ?? settings?.preferredInputDeviceId,
         noiseSuppression: settings?.isNoiseSuppressionEnabled ?? true,
+        echoCancellation: settings?.isEchoCancellationEnabled ?? true,
+        autoGainControl: settings?.isAutoGainControlEnabled ?? true,
+        preferredSampleRate: settings?.preferredSampleRate ?? "auto",
       });
 
       setLocalStream(stream);
@@ -198,19 +227,45 @@ export const useRoomState = () => {
       appVersion: runtimeInfo?.version ?? "0.0.0",
       protocolVersion: runtimeInfo?.protocolVersion ?? "1",
       buildNumber: runtimeInfo?.buildNumber ?? "unknown",
-      onMembers: (members) => setMembers(members),
+      onMembers: (members) => {
+        const { joined, left } = collectMemberEvents(members);
+        const previousMembers = useRoomStore.getState().room.members;
+        setMembers(members);
+
+        joined.forEach((member) => {
+          pushHostEvent({
+            level: "success",
+            memberName: member.nickname,
+            message: `${member.nickname} 加入成功`,
+          });
+        });
+
+        left.forEach((memberId) => {
+          const leftMember = previousMembers.find((member) => member.id === memberId);
+          pushHostEvent({
+            level: "warning",
+            memberName: leftMember?.nickname,
+            message: `${leftMember?.nickname ?? "有成员"} 已离开`,
+          });
+        });
+      },
       onRoomName: (nextRoomName) => setRoom({ roomName: nextRoomName }),
-      onConnectionState: (state) => setConnectionState(state),
+      onConnectionState: (state) => {
+        setConnectionState(state);
+        if (state === RoomConnectionState.WaitingPeer) {
+          pushHostEvent({
+            level: "info",
+            message: "等待好友加入",
+          });
+        }
+      },
       onRemoteStream: (remotePeerId, remoteStream) => {
         setRemoteStream(remotePeerId, remoteStream);
       },
       onDiagnosticEvent: (payload) => {
-        void writeRendererLog(
-          "signaling",
-          "info",
-          "Signaling bridge event",
-          payload as unknown as Record<string, unknown>,
-        );
+        void writeRendererLog("signaling", "info", "Signaling bridge event", {
+          ...payload,
+        });
       },
     });
 
@@ -220,6 +275,7 @@ export const useRoomState = () => {
       connectionMode,
       lifecycleState: RoomLifecycleState.Opening,
       signalingUrl,
+      hostSessionState: HostSessionState.Starting,
     });
 
     await activeClient.connect();
@@ -229,6 +285,7 @@ export const useRoomState = () => {
       connectionMode,
       lifecycleState: RoomLifecycleState.Open,
       signalingUrl,
+      hostSessionState: HostSessionState.Active,
     });
     startSpeakingDetector(stream);
   };
@@ -273,7 +330,9 @@ export const useRoomState = () => {
 
     setRoomAction("starting");
     setConnectionState(RoomConnectionState.StartingHost);
-    setRoom({ lifecycleState: RoomLifecycleState.Opening, connectionMode: settings.connectionMode });
+    setLifecycleState(RoomLifecycleState.Opening);
+    clearHostEvents();
+    pushHostEvent({ level: "info", message: "正在启动房间" });
 
     try {
       await writeRendererLog("connection-mode", "info", "Starting host room", {
@@ -286,10 +345,14 @@ export const useRoomState = () => {
         settings.nickname,
         settings.connectionMode,
       );
-
       setHostSession(session);
       setJoinSignalUrl(session.signalingUrl);
       setConnectionMode(session.connectionMode);
+      setRoom({
+        signalingUrl: session.signalingUrl,
+        hostAddress: session.hostAddress,
+        hostSessionState: session.hostState,
+      });
 
       await connectToRoom({
         signalingUrl: session.signalingUrl,
@@ -312,7 +375,10 @@ export const useRoomState = () => {
       pushToast({
         tone: "success",
         title: copy.hostStartedTitle,
-        description: copy.hostStartedDescription,
+        description:
+          session.connectionMode === "direct_host" && session.directHostProbe?.reachability !== "reachable"
+            ? `${copy.hostStartedDescription} ${session.directHostProbe?.message ?? ""}`.trim()
+            : copy.hostStartedDescription,
       });
     } catch (error) {
       const description = normalizeRoomError(error, copy.startHostTitle);
@@ -324,11 +390,13 @@ export const useRoomState = () => {
       stopLocalMedia();
       activeClient = null;
       setHostSession(undefined);
-      setConnectionState(RoomConnectionState.Failed);
+      setConnectionState(RoomConnectionState.Failed, description);
       setRoom({
-        lifecycleState: RoomLifecycleState.Closed,
+        lifecycleState: RoomLifecycleState.Failed,
         signalingUrl: undefined,
+        hostSessionState: HostSessionState.Failed,
       });
+      pushHostEvent({ level: "error", message: description });
       pushToast({
         tone: "danger",
         title: copy.startHostTitle,
@@ -346,6 +414,7 @@ export const useRoomState = () => {
 
     setRoomAction("joining");
     setConnectionState(RoomConnectionState.Joining);
+    setLifecycleState(RoomLifecycleState.Opening);
 
     try {
       const invite = parseInvite(inviteValue, settings.connectionMode);
@@ -376,10 +445,8 @@ export const useRoomState = () => {
       });
       stopLocalMedia();
       activeClient = null;
-      setConnectionState(RoomConnectionState.Failed);
-      setRoom({
-        lifecycleState: RoomLifecycleState.Closed,
-      });
+      setConnectionState(RoomConnectionState.Failed, description);
+      setRoom({ lifecycleState: RoomLifecycleState.Failed });
       pushToast({
         tone: "danger",
         title: copy.joinRoomTitle,
@@ -399,6 +466,9 @@ export const useRoomState = () => {
       const { stream, diagnostics } = await requestMicrophoneStream({
         deviceId: preferredInputDeviceId ?? settings.preferredInputDeviceId,
         noiseSuppression: settings.isNoiseSuppressionEnabled,
+        echoCancellation: settings.isEchoCancellationEnabled,
+        autoGainControl: settings.isAutoGainControlEnabled,
+        preferredSampleRate: settings.preferredSampleRate,
       });
 
       const [nextTrack] = stream.getAudioTracks();
@@ -437,6 +507,7 @@ export const useRoomState = () => {
       activeSpeakingDetector = null;
       await window.desktopApi.host.stop().catch(() => undefined);
       useRoomStore.getState().resetRoom();
+      previousMemberIds = new Set<string>();
       if (settings) {
         useRoomStore.getState().syncLocalProfile({
           nickname: settings.nickname,

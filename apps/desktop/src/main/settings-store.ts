@@ -3,59 +3,33 @@ import path from "node:path";
 
 import { app } from "electron";
 
-import { DEFAULT_ROOM_NAME, type AppSettings, type RendererLogPayload } from "@private-voice/shared";
+import { type AppSettings, type RendererLogPayload } from "@private-voice/shared";
 
 import { clearAvatarImage } from "./profile-media";
+import { defaultSettings, migrateSettings, type RawSettings } from "./settings-migration";
 
 const SETTINGS_BOM = "\uFEFF";
-
-export const defaultSettings: AppSettings = {
-  nickname: "",
-  roomName: DEFAULT_ROOM_NAME,
-  avatarPath: undefined,
-  hasCompletedProfileSetup: false,
-  minimizeToTray: false,
-  reduceMotion: false,
-  launchOnStartup: false,
-  preferredInputDeviceId: undefined,
-  preferredOutputDeviceId: undefined,
-  globalMuteShortcut: "",
-  pushToTalkShortcut: "Space",
-  isNoiseSuppressionEnabled: true,
-  isPushToTalkEnabled: false,
-  connectionMode: "direct_host",
-  relayServerUrl: "",
-  manualDirectHost: "",
-  shouldAutoCopyInviteLink: true,
-  isMicOnSoundEnabled: true,
-  isMicOffSoundEnabled: true,
-  isMemberJoinSoundEnabled: true,
-  isMemberLeaveSoundEnabled: true,
-  isConnectionSoundEnabled: true,
-};
 
 export class SettingsStore {
   private cachedSettings: AppSettings = defaultSettings;
   private readonly filePath = path.join(app.getPath("userData"), "settings.json");
 
-  constructor(
-    private readonly writeLog?: (payload: RendererLogPayload) => Promise<void>,
-  ) {}
+  constructor(private readonly writeLog?: (payload: RendererLogPayload) => Promise<void>) {}
 
   async load(): Promise<AppSettings> {
     try {
       const fileContent = await readFile(this.filePath, "utf8");
-      const parsed = JSON.parse(this.stripBom(fileContent)) as Partial<AppSettings>;
-      const mergedSettings = {
-        ...defaultSettings,
-        ...parsed,
-      };
-      this.cachedSettings = this.normalizeSettings(mergedSettings);
+      const parsed = JSON.parse(this.stripBom(fileContent)) as RawSettings;
+      const { settings, migrated, previousVersion } = migrateSettings(parsed);
+      this.cachedSettings = settings;
       await this.persist(this.cachedSettings);
       await this.log("info", "settings loaded", {
-        hasAvatar: Boolean(this.cachedSettings.avatarPath),
-        profileReady: this.cachedSettings.hasCompletedProfileSetup,
-        connectionMode: this.cachedSettings.connectionMode,
+        schemaVersion: settings.settingsSchemaVersion,
+        previousVersion,
+        migrated,
+        hasAvatar: Boolean(settings.avatarPath),
+        profileReady: settings.hasCompletedProfileSetup,
+        connectionMode: settings.connectionMode,
       });
       return this.cachedSettings;
     } catch (error) {
@@ -63,6 +37,7 @@ export class SettingsStore {
       await this.persist(defaultSettings);
       await this.log("warn", "settings fallback", {
         error: error instanceof Error ? error.message : String(error),
+        schemaVersion: defaultSettings.settingsSchemaVersion,
       });
       return this.cachedSettings;
     }
@@ -74,18 +49,22 @@ export class SettingsStore {
 
   async save(partial: Partial<AppSettings>): Promise<AppSettings> {
     const previousAvatarPath = this.cachedSettings.avatarPath;
-    this.cachedSettings = this.normalizeSettings({
+    const { settings } = migrateSettings({
       ...this.cachedSettings,
       ...partial,
     });
+    this.cachedSettings = settings;
     await this.persist(this.cachedSettings);
     if (partial.avatarPath !== undefined && previousAvatarPath !== partial.avatarPath) {
       await clearAvatarImage(previousAvatarPath);
     }
-    await this.log("info", "Saved settings", {
+    await this.log("info", "settings saved", {
+      schemaVersion: this.cachedSettings.settingsSchemaVersion,
       hasAvatar: Boolean(this.cachedSettings.avatarPath),
       nickname: this.cachedSettings.nickname,
       connectionMode: this.cachedSettings.connectionMode,
+      preferredSampleRate: this.cachedSettings.preferredSampleRate,
+      micMonitorMode: this.cachedSettings.micMonitorMode,
     });
     return this.cachedSettings;
   }
@@ -94,29 +73,14 @@ export class SettingsStore {
     await clearAvatarImage(this.cachedSettings.avatarPath);
     this.cachedSettings = defaultSettings;
     await this.persist(defaultSettings);
-    await this.log("info", "Reset settings to defaults");
+    await this.log("info", "settings reset", {
+      schemaVersion: defaultSettings.settingsSchemaVersion,
+    });
     return this.cachedSettings;
   }
 
   private stripBom(value: string): string {
     return value.startsWith(SETTINGS_BOM) ? value.slice(1) : value;
-  }
-
-  private normalizeSettings(settings: AppSettings): AppSettings {
-    const isProfileReady = settings.nickname.trim().length > 0 && Boolean(settings.avatarPath);
-    const normalizedRoomName = settings.roomName.trim() || DEFAULT_ROOM_NAME;
-
-    return {
-      ...defaultSettings,
-      ...settings,
-      nickname: settings.nickname.trim(),
-      roomName: normalizedRoomName,
-      globalMuteShortcut: settings.globalMuteShortcut.trim(),
-      relayServerUrl: settings.relayServerUrl?.trim(),
-      manualDirectHost: settings.manualDirectHost?.trim(),
-      hasCompletedProfileSetup:
-        Boolean(settings.hasCompletedProfileSetup) && isProfileReady,
-    };
   }
 
   private async persist(settings: AppSettings): Promise<void> {
@@ -139,3 +103,5 @@ export class SettingsStore {
     });
   }
 }
+
+export { defaultSettings };

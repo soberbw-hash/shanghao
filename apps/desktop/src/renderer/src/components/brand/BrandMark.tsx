@@ -12,7 +12,7 @@ export const BrandMark = ({
   size?: keyof typeof sizeClassNames;
 }) => (
   <div
-    className={`flex items-center justify-center overflow-hidden border border-[#E7ECF2] bg-white shadow-[0_10px_24px_rgba(17,24,39,0.08)] ${sizeClassNames[size]}`}
+    className={`flex items-center justify-center overflow-hidden shadow-[0_10px_24px_rgba(17,24,39,0.12)] ${sizeClassNames[size]}`}
   >
     <img
       alt="上号"

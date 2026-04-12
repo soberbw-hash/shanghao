@@ -1,12 +1,15 @@
 import {
   DEFAULT_ROOM_NAME,
+  HostSessionState,
   MAX_ROOM_MEMBERS,
+  MemberJoinState,
   MemberPresenceState,
   MemberSpeakingState,
   RoomConnectionState,
   RoomLifecycleState,
   type ConnectionHealth,
   type ConnectionMode,
+  type HostEvent,
   type HostSessionInfo,
   type RoomMember,
   type RoomSummary,
@@ -26,7 +29,8 @@ interface RoomStoreState {
   localStream?: MediaStream;
   remoteStreams: Record<string, MediaStream>;
   connectionHealth: ConnectionHealth;
-  setConnectionState: (state: RoomConnectionState) => void;
+  setConnectionState: (state: RoomConnectionState, reason?: string) => void;
+  setLifecycleState: (state: RoomLifecycleState) => void;
   setRoom: (room: Partial<RoomSummary>) => void;
   setMembers: (members: RoomMember[]) => void;
   setJoinSignalUrl: (url: string) => void;
@@ -37,6 +41,8 @@ interface RoomStoreState {
   setConnectionHealth: (health: Partial<ConnectionHealth>) => void;
   syncLocalProfile: (profile: LocalProfilePayload) => void;
   updateMemberVolume: (memberId: string, volume: number) => void;
+  pushHostEvent: (event: Omit<HostEvent, "id" | "createdAt">) => void;
+  clearHostEvents: () => void;
   resetRoom: () => void;
 }
 
@@ -52,6 +58,7 @@ const createEmptySlot = (index: number): RoomMember => ({
   isMuted: false,
   presenceState: MemberPresenceState.Offline,
   speakingState: MemberSpeakingState.Silent,
+  joinState: MemberJoinState.Waiting,
   volume: 1,
   joinedAt: new Date(0).toISOString(),
   connectionQuality: "good",
@@ -67,6 +74,7 @@ const createLocalPreviewMember = (profile?: LocalProfilePayload): RoomMember => 
   isMuted: false,
   presenceState: MemberPresenceState.Online,
   speakingState: MemberSpeakingState.Silent,
+  joinState: MemberJoinState.Joined,
   volume: 1,
   joinedAt: new Date().toISOString(),
   connectionQuality: "excellent",
@@ -87,9 +95,7 @@ const sortMembers = (members: RoomMember[]): RoomMember[] =>
 
 const normalizeMembers = (members: RoomMember[]): RoomMember[] => {
   const actualMembers = sortMembers(
-    members
-      .filter((member) => !member.isEmptySlot)
-      .slice(0, MAX_ROOM_MEMBERS),
+    members.filter((member) => !member.isEmptySlot).slice(0, MAX_ROOM_MEMBERS),
   );
 
   const paddedMembers = [...actualMembers];
@@ -110,27 +116,18 @@ const areMembersEqual = (left: RoomMember[], right: RoomMember[]): boolean => {
 
   return left.every((member, index) => {
     const candidate = right[index];
-    if (!candidate) {
-      return false;
-    }
-
-    return (
-      member.id === candidate.id &&
-      member.nickname === candidate.nickname &&
-      member.avatarPath === candidate.avatarPath &&
-      member.avatarDataUrl === candidate.avatarDataUrl &&
-      member.isHost === candidate.isHost &&
-      member.isLocal === candidate.isLocal &&
-      member.isEmptySlot === candidate.isEmptySlot &&
-      member.isMuted === candidate.isMuted &&
-      member.presenceState === candidate.presenceState &&
-      member.speakingState === candidate.speakingState &&
-      member.volume === candidate.volume &&
-      member.joinedAt === candidate.joinedAt &&
-      member.connectionQuality === candidate.connectionQuality
-    );
+    return candidate ? JSON.stringify(member) === JSON.stringify(candidate) : false;
   });
 };
+
+const initialHostEvents = (): HostEvent[] => [
+  {
+    id: "waiting-seed",
+    level: "info",
+    message: "等待好友加入",
+    createdAt: new Date().toISOString(),
+  },
+];
 
 const initialRoomState = (): RoomSummary => {
   const members = normalizeMembers([createLocalPreviewMember()]);
@@ -142,6 +139,8 @@ const initialRoomState = (): RoomSummary => {
     connectionMode: "direct_host",
     connectionState: RoomConnectionState.Idle,
     lifecycleState: RoomLifecycleState.Closed,
+    hostSessionState: HostSessionState.NotStarted,
+    recentHostEvents: initialHostEvents(),
   };
 };
 
@@ -157,11 +156,19 @@ export const useRoomStore = create<RoomStoreState>((set) => ({
     packetLossPercent: 0,
     reconnectAttempt: 0,
   },
-  setConnectionState: (connectionState) =>
+  setConnectionState: (connectionState, reason) =>
     set((state) => ({
       room: {
         ...state.room,
         connectionState,
+        latestFailureReason: reason ?? state.room.latestFailureReason,
+      },
+    })),
+  setLifecycleState: (lifecycleState) =>
+    set((state) => ({
+      room: {
+        ...state.room,
+        lifecycleState,
       },
     })),
   setRoom: (roomPatch) =>
@@ -187,7 +194,14 @@ export const useRoomStore = create<RoomStoreState>((set) => ({
       };
     }),
   setJoinSignalUrl: (joinSignalUrl) => set({ joinSignalUrl }),
-  setHostSession: (hostSession) => set({ hostSession }),
+  setHostSession: (hostSession) =>
+    set((state) => ({
+      hostSession,
+      room: {
+        ...state.room,
+        hostSessionState: hostSession?.hostState ?? HostSessionState.NotStarted,
+      },
+    })),
   setConnectionMode: (connectionMode) =>
     set((state) => ({
       room: {
@@ -219,8 +233,7 @@ export const useRoomStore = create<RoomStoreState>((set) => ({
       const localMemberIndex = members.findIndex((member) => member.isLocal);
       const existingLocalMember =
         localMemberIndex >= 0 ? members[localMemberIndex] : undefined;
-      const baseMember: RoomMember =
-        existingLocalMember ?? createLocalPreviewMember(profile);
+      const baseMember = existingLocalMember ?? createLocalPreviewMember(profile);
 
       const nextLocalMember: RoomMember = {
         ...baseMember,
@@ -255,6 +268,27 @@ export const useRoomStore = create<RoomStoreState>((set) => ({
         members: state.room.members.map((member) =>
           member.id === memberId ? { ...member, volume } : member,
         ),
+      },
+    })),
+  pushHostEvent: (event) =>
+    set((state) => ({
+      room: {
+        ...state.room,
+        recentHostEvents: [
+          {
+            id: crypto.randomUUID(),
+            createdAt: new Date().toISOString(),
+            ...event,
+          },
+          ...(state.room.recentHostEvents ?? []),
+        ].slice(0, 8),
+      },
+    })),
+  clearHostEvents: () =>
+    set((state) => ({
+      room: {
+        ...state.room,
+        recentHostEvents: [],
       },
     })),
   resetRoom: () =>

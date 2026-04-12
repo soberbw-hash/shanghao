@@ -1,8 +1,17 @@
+export enum AppBootState {
+  Booting = "booting",
+  Ready = "ready",
+  Degraded = "degraded",
+  Failed = "failed",
+}
+
 export enum RoomConnectionState {
   Idle = "idle",
   DetectingNetwork = "detecting_network",
   StartingHost = "starting_host",
+  WaitingPeer = "waiting_peer",
   Joining = "joining",
+  Handshaking = "handshaking",
   Connected = "connected",
   Reconnecting = "reconnecting",
   Disconnected = "disconnected",
@@ -10,10 +19,28 @@ export enum RoomConnectionState {
 }
 
 export enum RoomLifecycleState {
+  Idle = "idle",
   Closed = "closed",
   Opening = "opening",
   Open = "open",
   Closing = "closing",
+  Failed = "failed",
+}
+
+export enum HostSessionState {
+  NotStarted = "not_started",
+  Starting = "starting",
+  Active = "active",
+  Stopping = "stopping",
+  Failed = "failed",
+}
+
+export enum MemberJoinState {
+  Waiting = "waiting",
+  Connecting = "connecting",
+  Joined = "joined",
+  Left = "left",
+  Failed = "failed",
 }
 
 export enum MemberPresenceState {

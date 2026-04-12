@@ -18,6 +18,7 @@ export const DiagnosticsSettingsCard = ({
         <div>日志目录：{diagnostics?.logsDirectory || "读取中…"}</div>
         <div className="mt-2">最近导出日志：{diagnostics?.lastExportPath || "还没有导出记录"}</div>
         <div className="mt-2">最近导出诊断包：{diagnostics?.lastBundlePath || "还没有导出记录"}</div>
+        <div className="mt-2">更新检查：{diagnostics?.lastUpdateCheckMessage || "还没有检查更新"}</div>
       </div>
       <div className="flex flex-wrap gap-3">
         <Button variant="secondary" onClick={onOpenLogs}>

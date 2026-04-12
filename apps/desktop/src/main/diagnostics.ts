@@ -1,4 +1,4 @@
-import { cp, mkdir, appendFile, writeFile } from "node:fs/promises";
+import { appendFile, cp, mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
@@ -31,6 +31,13 @@ export class DiagnosticsService {
     return this.snapshot;
   }
 
+  setLastUpdateCheckMessage(message: string): void {
+    this.snapshot = {
+      ...this.snapshot,
+      lastUpdateCheckMessage: message,
+    };
+  }
+
   async writeLog(payload: RendererLogPayload): Promise<void> {
     const entry: LogEntry = {
       timestamp: new Date().toISOString(),
@@ -47,10 +54,7 @@ export class DiagnosticsService {
   }
 
   async exportLogs(): Promise<DiagnosticsSnapshot> {
-    this.snapshot = {
-      ...this.snapshot,
-      lastExportState: ExportTaskState.Running,
-    };
+    this.snapshot = { ...this.snapshot, lastExportState: ExportTaskState.Running };
 
     const result = await dialog.showOpenDialog({
       title: "导出上号日志",
@@ -58,20 +62,14 @@ export class DiagnosticsService {
     });
 
     if (result.canceled || result.filePaths.length === 0) {
-      this.snapshot = {
-        ...this.snapshot,
-        lastExportState: ExportTaskState.Idle,
-      };
+      this.snapshot = { ...this.snapshot, lastExportState: ExportTaskState.Idle };
       return this.snapshot;
     }
 
     try {
       const [targetDirectory] = result.filePaths;
       if (!targetDirectory) {
-        this.snapshot = {
-          ...this.snapshot,
-          lastExportState: ExportTaskState.Idle,
-        };
+        this.snapshot = { ...this.snapshot, lastExportState: ExportTaskState.Idle };
         return this.snapshot;
       }
 
@@ -88,19 +86,13 @@ export class DiagnosticsService {
       };
       return this.snapshot;
     } catch {
-      this.snapshot = {
-        ...this.snapshot,
-        lastExportState: ExportTaskState.Failed,
-      };
+      this.snapshot = { ...this.snapshot, lastExportState: ExportTaskState.Failed };
       return this.snapshot;
     }
   }
 
   async exportBundle(extraFiles: Array<{ name: string; content: string }>): Promise<DiagnosticsSnapshot> {
-    this.snapshot = {
-      ...this.snapshot,
-      lastExportState: ExportTaskState.Running,
-    };
+    this.snapshot = { ...this.snapshot, lastExportState: ExportTaskState.Running };
 
     const result = await dialog.showOpenDialog({
       title: "导出上号诊断包",
@@ -108,19 +100,13 @@ export class DiagnosticsService {
     });
 
     if (result.canceled || result.filePaths.length === 0) {
-      this.snapshot = {
-        ...this.snapshot,
-        lastExportState: ExportTaskState.Idle,
-      };
+      this.snapshot = { ...this.snapshot, lastExportState: ExportTaskState.Idle };
       return this.snapshot;
     }
 
     const [targetDirectory] = result.filePaths;
     if (!targetDirectory) {
-      this.snapshot = {
-        ...this.snapshot,
-        lastExportState: ExportTaskState.Idle,
-      };
+      this.snapshot = { ...this.snapshot, lastExportState: ExportTaskState.Idle };
       return this.snapshot;
     }
 
@@ -167,10 +153,7 @@ export class DiagnosticsService {
       };
       return this.snapshot;
     } catch {
-      this.snapshot = {
-        ...this.snapshot,
-        lastExportState: ExportTaskState.Failed,
-      };
+      this.snapshot = { ...this.snapshot, lastExportState: ExportTaskState.Failed };
       return this.snapshot;
     }
   }

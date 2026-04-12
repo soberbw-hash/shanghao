@@ -5,6 +5,7 @@ export interface AudioConstraintOverrides {
   noiseSuppression?: boolean;
   echoCancellation?: boolean;
   autoGainControl?: boolean;
+  preferredSampleRate?: "auto" | "44100" | "48000";
 }
 
 export const createAudioConstraints = (
@@ -16,7 +17,10 @@ export const createAudioConstraints = (
     noiseSuppression: overrides.noiseSuppression ?? true,
     autoGainControl: overrides.autoGainControl ?? true,
     channelCount: TARGET_CHANNEL_COUNT,
-    sampleRate: TARGET_SAMPLE_RATE,
+    sampleRate:
+      overrides.preferredSampleRate && overrides.preferredSampleRate !== "auto"
+        ? Number(overrides.preferredSampleRate)
+        : TARGET_SAMPLE_RATE,
   },
   video: false,
 });

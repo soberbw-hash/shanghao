@@ -38,7 +38,7 @@ export const MemberCard = ({
     <button
       type="button"
       onClick={() => setIsExpanded((value) => !value)}
-      className="relative flex w-full flex-col gap-3 rounded-[18px] border border-[#E7ECF2] bg-white px-4 py-3 text-left shadow-[0_8px_20px_rgba(17,24,39,0.04)] transition hover:border-[#C7D7EB]"
+      className="relative flex w-full flex-col gap-3 rounded-[18px] border border-[#E7ECF2] bg-white px-4 py-3 text-left shadow-[0_8px_20px_rgba(17,24,39,0.04)] transition hover:border-[#C7D7EB] active:scale-[0.99]"
     >
       <SpeakingGlow isSpeaking={isSpeaking} />
       <div className="flex items-center gap-3">

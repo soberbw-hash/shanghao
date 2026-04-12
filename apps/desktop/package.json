@@ -1,23 +1,25 @@
 {
   "name": "shanghao-desktop",
-  "version": "0.1.7",
+  "version": "0.1.8",
   "private": true,
   "description": "ShangHao desktop voice app for private friends group chat",
   "author": "Sober",
   "main": "dist-electron/main/index.cjs",
   "scripts": {
-    "dev": "concurrently -k \"pnpm dev:main\" \"pnpm dev:renderer\" \"pnpm dev:electron\"",
+    "dev": "concurrently -k \"corepack pnpm dev:main\" \"corepack pnpm dev:renderer\" \"corepack pnpm dev:electron\"",
     "dev:main": "tsup --config tsup.config.ts --watch",
     "dev:renderer": "vite",
     "dev:electron": "wait-on tcp:5173 file:dist-electron/main/index.cjs && electron .",
-    "build": "pnpm build:main && pnpm build:renderer",
+    "build": "corepack pnpm build:main && corepack pnpm build:renderer",
     "build:main": "tsup --config tsup.config.ts",
     "build:renderer": "vite build",
     "typecheck": "tsc --project tsconfig.json --noEmit",
     "lint": "tsc --project tsconfig.json --noEmit",
-    "dist": "pnpm -C ../.. build && electron-builder --config electron-builder.yml"
+    "test:smoke": "node --import tsx --test tests/*.test.ts",
+    "dist": "set \"PATH=%CD%\\..\\..\\tools;%PATH%\" && corepack pnpm build && electron-builder --config electron-builder.yml"
   },
   "dependencies": {
+    "@achingbrain/nat-port-mapper": "^4.0.5",
     "@private-voice/recording": "workspace:*",
     "@private-voice/shared": "workspace:*",
     "@private-voice/signaling": "workspace:*",
@@ -29,6 +31,8 @@
     "lucide-react": "^0.511.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
+    "semver": "^7.7.4",
+    "stun": "^2.1.0",
     "ws": "^8.18.1",
     "zustand": "^5.0.3"
   },
@@ -36,6 +40,7 @@
     "@types/node": "^22.15.3",
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",
+    "@types/semver": "^7.7.1",
     "@types/ws": "^8.5.14",
     "@vitejs/plugin-react-swc": "^3.8.0",
     "autoprefixer": "^10.4.21",
@@ -45,6 +50,7 @@
     "postcss": "^8.5.3",
     "tailwindcss": "^3.4.17",
     "tsup": "^8.4.0",
+    "tsx": "^4.21.0",
     "typescript": "^5.8.3",
     "vite": "^6.3.5",
     "wait-on": "^8.0.3"

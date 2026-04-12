@@ -12,6 +12,7 @@ import { SettingsStore } from "./settings-store";
 import { ShortcutController } from "./shortcuts";
 import { SignalingClientBridge } from "./signaling-client";
 import { createTrayController } from "./tray";
+import { UpdateService } from "./updates";
 import { createMainWindow } from "./window";
 
 let mainWindow: BrowserWindow | null = null;
@@ -149,6 +150,10 @@ const bootstrap = async (): Promise<void> => {
     () => settingsStore?.getSnapshot() ?? settings,
     (payload) => diagnostics?.writeLog(payload) ?? Promise.resolve(),
   );
+  const updates = new UpdateService(
+    process.env.npm_package_version ?? "0.1.7",
+    (payload) => diagnostics?.writeLog(payload) ?? Promise.resolve(),
+  );
   const shortcuts = new ShortcutController(
     () => mainWindow,
     (payload) => diagnostics?.writeLog(payload) ?? Promise.resolve(),
@@ -162,6 +167,7 @@ const bootstrap = async (): Promise<void> => {
     shortcuts,
     hostSession,
     signalingClient,
+    updates,
   });
 
   mainWindow = createMainWindow({

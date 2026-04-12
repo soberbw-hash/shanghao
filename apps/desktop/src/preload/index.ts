@@ -48,6 +48,11 @@ const desktopApi: DesktopApi = {
   network: {
     getSnapshot: () => ipcRenderer.invoke(IPC_CHANNELS.network.getSnapshot),
     getProxyDiagnostics: () => ipcRenderer.invoke(IPC_CHANNELS.network.getProxyDiagnostics),
+    exportSummary: () => ipcRenderer.invoke(IPC_CHANNELS.network.exportSummary),
+  },
+  updates: {
+    check: () => ipcRenderer.invoke(IPC_CHANNELS.updates.check),
+    openReleases: () => ipcRenderer.invoke(IPC_CHANNELS.updates.openReleases),
   },
   host: {
     start: (roomName, nickname, connectionMode) =>

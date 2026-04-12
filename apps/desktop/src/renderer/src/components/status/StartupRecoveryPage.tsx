@@ -1,8 +1,8 @@
 import { RefreshCcw, Shield } from "lucide-react";
 
+import type { StartupIssue } from "../../store/appStore";
 import { Button } from "../base/Button";
 import { BrandMark } from "../brand/BrandMark";
-import type { StartupIssue } from "../../store/appStore";
 
 export const StartupRecoveryPage = ({
   issue,

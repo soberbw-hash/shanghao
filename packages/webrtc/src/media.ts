@@ -1,8 +1,8 @@
 import {
   AudioDeviceState,
   MicPermissionState,
-  type AudioDeviceKind,
   type AudioDeviceDescriptor,
+  type AudioDeviceKind,
   type LocalAudioDiagnostics,
 } from "@private-voice/shared";
 
@@ -21,7 +21,10 @@ export const requestMicrophoneStream = async (
   return {
     stream,
     diagnostics: {
-      requestedSampleRate: 44_100,
+      requestedSampleRate:
+        overrides.preferredSampleRate && overrides.preferredSampleRate !== "auto"
+          ? Number(overrides.preferredSampleRate)
+          : 44_100,
       actualSampleRate: settings.sampleRate,
       actualChannelCount: settings.channelCount,
       echoCancellation: settings.echoCancellation,
@@ -67,9 +70,7 @@ export const listAudioDevices = async (): Promise<AudioDeviceDescriptor[]> => {
     )
     .map((device) => ({
       id: device.deviceId,
-      label:
-        device.label ||
-        (device.kind === "audioinput" ? "未命名麦克风" : "未命名扬声器"),
+      label: device.label || (device.kind === "audioinput" ? "未命名麦克风" : "未命名扬声器"),
       kind: device.kind as AudioDeviceKind,
       groupId: device.groupId,
       state: AudioDeviceState.Ready,

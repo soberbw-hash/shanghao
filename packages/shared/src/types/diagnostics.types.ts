@@ -1,4 +1,11 @@
 import { ExportTaskState } from "../enums/app.enums";
+import type {
+  ConnectionMode,
+  DirectHostProbeSummary,
+  ProxyDiagnostics,
+  RelayStatusSnapshot,
+  TailscaleStatus,
+} from "./settings.types";
 
 export type LogCategory =
   | "app"
@@ -10,7 +17,9 @@ export type LogCategory =
   | "recording"
   | "tailscale"
   | "connection-mode"
-  | "proxy-diagnostics";
+  | "proxy-diagnostics"
+  | "relay"
+  | "updates";
 
 export interface LogEntry {
   category: LogCategory;
@@ -20,9 +29,23 @@ export interface LogEntry {
   context?: Record<string, unknown>;
 }
 
+export interface DiagnosticsBundleSummary {
+  appVersion?: string;
+  protocolVersion?: string;
+  buildNumber?: string;
+  connectionMode?: ConnectionMode;
+  inviteAddress?: string;
+  proxy?: ProxyDiagnostics;
+  tailscale?: TailscaleStatus;
+  directHost?: DirectHostProbeSummary;
+  relay?: RelayStatusSnapshot;
+  exportedAt: string;
+}
+
 export interface DiagnosticsSnapshot {
   logsDirectory: string;
   lastExportState: ExportTaskState;
   lastExportPath?: string;
   lastBundlePath?: string;
+  lastUpdateCheckMessage?: string;
 }

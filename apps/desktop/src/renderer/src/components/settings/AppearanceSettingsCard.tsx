@@ -55,6 +55,14 @@ export const AppearanceSettingsCard = ({
           onChange={(isConnectionSoundEnabled) => onChange({ isConnectionSoundEnabled })}
         />
       </SettingsItemRow>
+      <SettingsItemRow label="后台检查更新">
+        <Switch
+          isChecked={settings.isBackgroundUpdateCheckEnabled}
+          onChange={(isBackgroundUpdateCheckEnabled) =>
+            onChange({ isBackgroundUpdateCheckEnabled })
+          }
+        />
+      </SettingsItemRow>
     </div>
   </SettingsSection>
 );
