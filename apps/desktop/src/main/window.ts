@@ -16,7 +16,12 @@ interface CreateMainWindowOptions {
   logsDirectory?: string;
 }
 
-const getIconPath = () => path.join(app.getAppPath(), "build", "icon.ico");
+const getBuildAssetPath = (fileName: string) =>
+  app.isPackaged
+    ? path.join(process.resourcesPath, "build", fileName)
+    : path.join(app.getAppPath(), "build", fileName);
+
+const getIconPath = () => getBuildAssetPath("icon.ico");
 
 const createFallbackHtml = (
   title: string,
@@ -29,7 +34,7 @@ const createFallbackHtml = (
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>${APP_NAME}</title>
     <style>
-      :root { color-scheme: light; font-family: "HarmonyOS Sans","Segoe UI",system-ui,sans-serif; }
+      :root { color-scheme: light; font-family: "HarmonyOS Sans", "Segoe UI", system-ui, sans-serif; }
       body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: #f5f7fa; color: #111827; }
       .card { width: min(580px, calc(100vw - 32px)); border: 1px solid #e7ecf2; border-radius: 24px; background: #fff; padding: 28px; box-shadow: 0 20px 60px rgba(17,24,39,.08); }
       h1 { margin: 0; font-size: 26px; }
@@ -41,7 +46,7 @@ const createFallbackHtml = (
     <div class="card">
       <h1>${title}</h1>
       <p>${description}</p>
-      ${logsDirectory ? `<code>日志目录：${logsDirectory}</code>` : ""}
+      ${logsDirectory ? `<code>\u65E5\u5FD7\u76EE\u5F55\uFF1A${logsDirectory}</code>` : ""}
     </div>
   </body>
 </html>`;
@@ -104,9 +109,13 @@ export const createMainWindow = ({
         await window.loadFile(path.join(__dirname, "../../dist/index.html"));
       }
     } catch (error) {
-      await loadFallback("软件启动失败", "上号没有顺利打开界面，请查看日志后重试。", {
+      await loadFallback(
+        "\u8F6F\u4EF6\u542F\u52A8\u5931\u8D25",
+        "\u4E0A\u53F7\u6CA1\u80FD\u987A\u5229\u6253\u5F00\u754C\u9762\uFF0C\u8BF7\u67E5\u770B\u65E5\u5FD7\u540E\u91CD\u8BD5\u3002",
+        {
         error: error instanceof Error ? error.message : String(error),
-      });
+        },
+      );
     }
   };
 
@@ -117,20 +126,28 @@ export const createMainWindow = ({
         return;
       }
 
-      void loadFallback("界面加载失败", "上号没有顺利加载主界面，请稍后重试。", {
+      void loadFallback(
+        "\u754C\u9762\u52A0\u8F7D\u5931\u8D25",
+        "\u4E0A\u53F7\u6CA1\u80FD\u987A\u5229\u52A0\u8F7D\u4E3B\u754C\u9762\uFF0C\u8BF7\u7A0D\u540E\u91CD\u8BD5\u3002",
+        {
         errorCode,
         errorDescription,
         validatedURL,
         targetUrl,
-      });
+        },
+      );
     },
   );
 
   window.webContents.on("render-process-gone", (_event, details) => {
-    void loadFallback("界面意外退出", "渲染进程已经退出，请根据日志检查启动问题。", {
+    void loadFallback(
+      "\u754C\u9762\u610F\u5916\u9000\u51FA",
+      "\u6E32\u67D3\u8FDB\u7A0B\u5DF2\u7ECF\u9000\u51FA\uFF0C\u8BF7\u6839\u636E\u65E5\u5FD7\u68C0\u67E5\u542F\u52A8\u95EE\u9898\u3002",
+      {
       reason: details.reason,
       exitCode: details.exitCode,
-    });
+      },
+    );
   });
 
   window.webContents.on("unresponsive", () => {

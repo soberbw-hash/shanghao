@@ -1,10 +1,8 @@
 import { request } from "node:https";
-import net from "node:net";
 import { execFile } from "node:child_process";
+import net from "node:net";
 import { networkInterfaces } from "node:os";
 import { promisify } from "node:util";
-
-import { pmpNat, upnpNat } from "@achingbrain/nat-port-mapper";
 
 import {
   DEFAULT_SIGNALING_PORT,
@@ -111,12 +109,21 @@ const resolveDefaultGateway = async (): Promise<string | undefined> => {
   }
 };
 
+const loadNatPortMapper = async (): Promise<typeof import("@achingbrain/nat-port-mapper")> => {
+  const dynamicImporter = new Function(
+    "specifier",
+    "return import(specifier)",
+  ) as (specifier: string) => Promise<typeof import("@achingbrain/nat-port-mapper")>;
+  return dynamicImporter("@achingbrain/nat-port-mapper");
+};
+
 const tryUpnpMapping = async (
   localPort: number,
   localHost: string,
 ): Promise<MappingAttemptResult> => {
-  const nat = upnpNat();
   try {
+    const { upnpNat } = await loadNatPortMapper();
+    const nat = upnpNat();
     for await (const gateway of nat.findGateways({ signal: AbortSignal.timeout(3_000) })) {
       const mapping = await gateway.map(localPort, localHost, {
         externalPort: localPort,
@@ -135,10 +142,11 @@ const tryUpnpMapping = async (
         },
       };
     }
+
     return {
       attempted: true,
       mapped: false,
-      error: "未发现可用的 UPnP 网关",
+      error: "\u672A\u53D1\u73B0\u53EF\u7528\u7684 UPnP \u7F51\u5173",
     };
   } catch (error) {
     return {
@@ -158,12 +166,13 @@ const tryNatPmpMapping = async (
     return {
       attempted: false,
       mapped: false,
-      error: "未找到默认网关，跳过 NAT-PMP",
+      error: "\u672A\u627E\u5230\u9ED8\u8BA4\u7F51\u5173\uFF0C\u8DF3\u8FC7 NAT-PMP",
     };
   }
 
-  const gateway = pmpNat(gatewayAddress);
   try {
+    const { pmpNat } = await loadNatPortMapper();
+    const gateway = pmpNat(gatewayAddress);
     const mapping = await gateway.map(localPort, localHost, {
       externalPort: localPort,
       protocol: "tcp",
@@ -202,7 +211,13 @@ export const probeDirectHost = async ({
   const localHost = resolveLocalLanAddress();
   const normalizedManualHost = manualHost?.trim() || undefined;
   const publicIp = await detectPublicIp();
-  const upnp = localHost ? await tryUpnpMapping(localPort, localHost) : { attempted: false, mapped: false, error: "未找到可用的本机 IPv4 地址" };
+  const upnp = localHost
+    ? await tryUpnpMapping(localPort, localHost)
+    : {
+        attempted: false,
+        mapped: false,
+        error: "\u672A\u627E\u5230\u53EF\u7528\u7684\u672C\u673A IPv4 \u5730\u5740",
+      };
   const natPmp =
     localHost && !upnp.mapped
       ? await tryNatPmpMapping(localPort, localHost)
@@ -240,12 +255,12 @@ export const probeDirectHost = async ({
 
   const message =
     reachability === "reachable"
-      ? "已获取公网地址，端口已可达，可以直接分享。"
+      ? "\u5DF2\u83B7\u53D6\u516C\u7F51\u5730\u5740\uFF0C\u7AEF\u53E3\u5DF2\u53EF\u8FBE\uFF0C\u53EF\u4EE5\u76F4\u63A5\u5206\u4EAB\u3002"
       : upnp.mapped || natPmp.mapped
-        ? "已尝试端口映射，公网可达性仍待验证。"
+        ? "\u5DF2\u5C1D\u8BD5\u7AEF\u53E3\u6620\u5C04\uFF0C\u516C\u7F51\u53EF\u8FBE\u6027\u4ECD\u5F85\u9A8C\u8BC1\u3002"
         : normalizedManualHost
-          ? "已使用手动公网地址，请确认路由器端口映射已生效。"
-          : "当前网络不满足房主直连条件，建议改用 Tailscale 或云中继。";
+          ? "\u5DF2\u4F7F\u7528\u624B\u52A8\u516C\u7F51\u5730\u5740\uFF0C\u8BF7\u786E\u8BA4\u8DEF\u7531\u5668\u7AEF\u53E3\u6620\u5C04\u5DF2\u7ECF\u751F\u6548\u3002"
+          : "\u5F53\u524D\u7F51\u7EDC\u4E0D\u6EE1\u8DB3\u623F\u4E3B\u76F4\u8FDE\u6761\u4EF6\uFF0C\u5EFA\u8BAE\u6539\u7528 Tailscale \u6216\u4E91\u4E2D\u7EE7\u3002";
 
   await writeLog?.({
     category: "connection-mode",

@@ -51,8 +51,8 @@ const showBootstrapError = async (error: unknown) => {
   });
 
   dialog.showErrorBox(
-    "软件启动失败",
-    `上号没有正常启动。\n\n日志目录：${logsDirectory}\n\n错误：${message}\n\n你可以重试，或者删除 settings.json 后再启动。`,
+    "\u8F6F\u4EF6\u542F\u52A8\u5931\u8D25",
+    `${"\u4E0A\u53F7\u6CA1\u6709\u6B63\u5E38\u542F\u52A8\u3002"}\n\n${"\u65E5\u5FD7\u76EE\u5F55\uFF1A"}${logsDirectory}\n\n${"\u9519\u8BEF\uFF1A"}${message}\n\n${"\u4F60\u53EF\u4EE5\u91CD\u8BD5\uFF0C\u6216\u8005\u5220\u9664 settings.json \u540E\u518D\u542F\u52A8\u3002"}`,
   );
 
   if (!mainWindow) {
@@ -109,11 +109,16 @@ const maybeCaptureScreenshot = async (window: BrowserWindow | null): Promise<voi
   }
 
   await sleep(1800);
-  await clickButtonByLabel(window, "进入上号");
+  await clickButtonByLabel(window, "\u8FDB\u5165\u4E0A\u53F7");
   await sleep(500);
 
   if (mode !== "home") {
-    const label = mode === "settings" ? "设置" : mode === "room" ? "开启房间" : "";
+    const label =
+      mode === "settings"
+        ? "\u8BBE\u7F6E"
+        : mode === "room"
+          ? "\u5F00\u542F\u623F\u95F4"
+          : "";
 
     if (label) {
       await clickButtonByLabel(window, label);
@@ -151,7 +156,7 @@ const bootstrap = async (): Promise<void> => {
     (payload) => diagnostics?.writeLog(payload) ?? Promise.resolve(),
   );
   const updates = new UpdateService(
-    process.env.npm_package_version ?? "0.1.7",
+    process.env.npm_package_version ?? "0.1.8",
     (payload) => diagnostics?.writeLog(payload) ?? Promise.resolve(),
   );
   const shortcuts = new ShortcutController(

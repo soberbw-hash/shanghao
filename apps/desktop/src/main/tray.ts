@@ -4,10 +4,14 @@ import { Menu, Tray, app, nativeImage, type BrowserWindow } from "electron";
 
 import { APP_NAME } from "@private-voice/shared";
 
+const getBuildAssetPath = (fileName: string) =>
+  app.isPackaged
+    ? path.join(process.resourcesPath, "build", fileName)
+    : path.join(app.getAppPath(), "build", fileName);
+
 const getTrayImage = () => {
   const fileName = process.platform === "win32" ? "tray-light.png" : "tray-dark.png";
-  const pngPath = path.join(app.getAppPath(), "build", fileName);
-  const image = nativeImage.createFromPath(pngPath);
+  const image = nativeImage.createFromPath(getBuildAssetPath(fileName));
   return image.resize({ width: 18, height: 18 });
 };
 
@@ -20,7 +24,10 @@ const restoreWindow = (window: BrowserWindow | null) => {
     window.restore();
   }
 
-  window.show();
+  if (!window.isVisible()) {
+    window.show();
+  }
+
   window.focus();
 };
 
@@ -33,18 +40,16 @@ export const createTrayController = (
   const renderMenu = () =>
     Menu.buildFromTemplate([
       {
-        label: `显示${APP_NAME}`,
-        click: () => {
-          restoreWindow(getWindow());
-        },
+        label: `\u663E\u793A${APP_NAME}`,
+        click: () => restoreWindow(getWindow()),
       },
       {
-        label: "隐藏窗口",
+        label: "\u9690\u85CF\u7A97\u53E3",
         click: () => getWindow()?.hide(),
       },
       { type: "separator" },
       {
-        label: "退出",
+        label: "\u9000\u51FA",
         click: () => {
           onQuit();
           app.quit();
@@ -54,12 +59,8 @@ export const createTrayController = (
 
   tray.setToolTip(APP_NAME);
   tray.setContextMenu(renderMenu());
-  tray.on("click", () => {
-    restoreWindow(getWindow());
-  });
-  tray.on("double-click", () => {
-    restoreWindow(getWindow());
-  });
+  tray.on("click", () => restoreWindow(getWindow()));
+  tray.on("double-click", () => restoreWindow(getWindow()));
 
   return tray;
 };

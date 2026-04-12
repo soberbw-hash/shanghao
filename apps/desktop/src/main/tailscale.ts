@@ -45,13 +45,8 @@ const normalizeMagicDnsName = (value?: string): string | undefined => {
   return value.endsWith(".") ? value.slice(0, -1) : value;
 };
 
-const isBlockedAddress = (address: string): boolean => {
-  return (
-    address.startsWith("127.") ||
-    address.startsWith("198.18.") ||
-    address.startsWith("198.19.")
-  );
-};
+const isBlockedAddress = (address: string): boolean =>
+  address.startsWith("127.") || address.startsWith("198.18.") || address.startsWith("198.19.");
 
 const isBlockedInterface = (name: string): boolean =>
   BLOCKED_INTERFACE_KEYWORDS.some((keyword) => name.toLowerCase().includes(keyword));
@@ -62,7 +57,7 @@ export const detectTailscaleStatus = async (): Promise<TailscaleStatus> => {
       state: TailscaleState.NotInstalled,
       isInstalled: false,
       isConnected: false,
-      message: "这台设备还没有安装 Tailscale。",
+      message: "\u8FD9\u53F0\u8BBE\u5907\u8FD8\u6CA1\u6709\u5B89\u88C5 Tailscale\u3002",
       installUrl: TAILSCALE_INSTALL_URL,
     };
   }
@@ -86,8 +81,8 @@ export const detectTailscaleStatus = async (): Promise<TailscaleStatus> => {
       ip,
       magicDnsName,
       message: isConnected
-        ? "Tailscale 已连接，可以直接用于好友房间。"
-        : "Tailscale 已安装，但当前设备还没有连到你的 tailnet。",
+        ? "Tailscale \u5DF2\u8FDE\u63A5\uFF0C\u53EF\u4EE5\u76F4\u63A5\u7528\u4E8E\u597D\u53CB\u623F\u95F4\u3002"
+        : "Tailscale \u5DF2\u5B89\u88C5\uFF0C\u4F46\u5F53\u524D\u8BBE\u5907\u8FD8\u6CA1\u6709\u8FDE\u5230\u4F60\u7684 tailnet\u3002",
       installUrl: TAILSCALE_INSTALL_URL,
     };
   } catch {
@@ -95,7 +90,7 @@ export const detectTailscaleStatus = async (): Promise<TailscaleStatus> => {
       state: TailscaleState.Installed,
       isInstalled: true,
       isConnected: false,
-      message: "Tailscale 已安装，但暂时无法读取当前状态。",
+      message: "Tailscale \u5DF2\u5B89\u88C5\uFF0C\u4F46\u6682\u65F6\u65E0\u6CD5\u8BFB\u53D6\u5F53\u524D\u72B6\u6001\u3002",
       installUrl: TAILSCALE_INSTALL_URL,
     };
   }
@@ -134,11 +129,7 @@ export const resolveLanIpv4Candidates = (): string[] => {
     }
 
     for (const value of values ?? []) {
-      if (
-        value.family === "IPv4" &&
-        !value.internal &&
-        !isBlockedAddress(value.address)
-      ) {
+      if (value.family === "IPv4" && !value.internal && !isBlockedAddress(value.address)) {
         candidates.push(value.address);
       }
     }

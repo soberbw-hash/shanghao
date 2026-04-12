@@ -1,5 +1,5 @@
 appId: com.sober.shanghao
-productName: 上号
+productName: "\u4E0A\u53F7"
 artifactName: ShangHao-Setup.${ext}
 asar: true
 directories:
@@ -9,10 +9,18 @@ files:
   - "dist/**"
   - "dist-electron/**"
   - "package.json"
+extraResources:
+  - from: build
+    to: build
+    filter:
+      - "icon.ico"
+      - "tray-dark.png"
+      - "tray-light.png"
 extraMetadata:
   name: shanghao
   main: dist-electron/main/index.cjs
 win:
+  executableName: ShangHao
   icon: icon.ico
   signAndEditExecutable: false
   target:
@@ -21,6 +29,7 @@ nsis:
   oneClick: false
   perMachine: false
   allowToChangeInstallationDirectory: true
+  shortcutName: "\u4E0A\u53F7"
   installerIcon: icon.ico
   uninstallerIcon: icon.ico
   installerHeaderIcon: icon.ico

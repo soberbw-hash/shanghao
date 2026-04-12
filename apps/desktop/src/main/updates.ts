@@ -72,10 +72,10 @@ export class UpdateService {
         checkedAt: new Date().toISOString(),
         releaseUrl: release.html_url || DEFAULT_RELEASES_URL,
         message: hasUpdate
-          ? `发现新版本 ${latestVersion}`
+          ? `\u53D1\u73B0\u65B0\u7248\u672C ${latestVersion}`
           : latestVersion
-            ? "当前已经是最新版本"
-            : "暂时无法判断是否有新版本",
+            ? "\u5F53\u524D\u5DF2\u7ECF\u662F\u6700\u65B0\u7248\u672C"
+            : "\u6682\u65F6\u65E0\u6CD5\u5224\u65AD\u662F\u5426\u6709\u65B0\u7248\u672C",
       };
 
       await this.writeLog?.({
@@ -92,7 +92,7 @@ export class UpdateService {
         hasUpdate: false,
         checkedAt: new Date().toISOString(),
         releaseUrl: DEFAULT_RELEASES_URL,
-        message: "检查更新失败，请稍后再试。",
+        message: "\u68C0\u67E5\u66F4\u65B0\u5931\u8D25\uFF0C\u8BF7\u7A0D\u540E\u518D\u8BD5\u3002",
       };
 
       await this.writeLog?.({
