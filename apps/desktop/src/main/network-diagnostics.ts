@@ -111,7 +111,7 @@ const summarizeDirectHost = (
   natTendency: settings.manualDirectHost || publicIp ? "mapping_required" : "unknown",
   message:
     settings.manualDirectHost || publicIp
-      ? "已准备公网地址，开房时会继续做端口映射与可达性探测。"
+      ? "已准备公网地址，开房时会继续做端口映射和外网可达性检测。"
       : "还没有可用的公网直连地址。",
 });
 

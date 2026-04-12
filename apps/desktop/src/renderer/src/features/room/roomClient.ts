@@ -3,11 +3,13 @@ import {
   MemberPresenceState,
   MemberSpeakingState,
   RoomConnectionState,
+  type ChatMessage,
   type ConnectionMode,
   type RoomMember,
   type SignalingEventPayload,
 } from "@private-voice/shared";
 import type {
+  ChatMessage as SignalChatMessage,
   ErrorMessage,
   IceCandidateMessage,
   PeerAnswerMessage,
@@ -32,6 +34,7 @@ interface RoomClientOptions {
   onRoomName: (roomName: string) => void;
   onConnectionState: (state: RoomConnectionState) => void;
   onRemoteStream: (peerId: string, stream: MediaStream | undefined) => void;
+  onChatMessage: (message: ChatMessage) => void;
   onDiagnosticEvent?: (payload: SignalingEventPayload) => void;
 }
 
@@ -251,6 +254,9 @@ export class RoomClient {
       case "error":
         this.handleErrorMessage(payload);
         return;
+      case "chat_message":
+        this.handleChatMessage(payload);
+        return;
       default:
         return;
     }
@@ -346,6 +352,35 @@ export class RoomClient {
   private handleErrorMessage(payload: ErrorMessage): void {
     this.options.onConnectionState(RoomConnectionState.Failed);
     this.rejectPendingConnection(new Error(payload.message || payload.code));
+  }
+
+  sendChatMessage(content: string): void {
+    const trimmed = content.trim();
+    if (!trimmed) {
+      return;
+    }
+
+    void this.send({
+      type: "chat_message",
+      roomId: this.options.roomId,
+      peerId: this.options.peerId,
+      nickname: this.nickname,
+      avatarDataUrl: this.avatarDataUrl,
+      content: trimmed,
+      createdAt: new Date().toISOString(),
+    });
+  }
+
+  private handleChatMessage(payload: SignalChatMessage): void {
+    this.options.onChatMessage({
+      id: `${payload.peerId}-${payload.createdAt}`,
+      peerId: payload.peerId,
+      nickname: payload.nickname,
+      avatarDataUrl: payload.avatarDataUrl,
+      content: payload.content,
+      createdAt: payload.createdAt,
+      isLocal: payload.peerId === this.options.peerId,
+    });
   }
 
   private createPeer(targetPeerId: string): MeshPeerConnection {

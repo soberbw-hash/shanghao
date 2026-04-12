@@ -70,6 +70,25 @@ const createInviteUrl = ({
   return url.toString();
 };
 
+const createLocalJoinUrl = ({
+  roomId,
+  port,
+  mode,
+  relayToken,
+}: {
+  roomId: string;
+  port: number;
+  mode: ConnectionMode;
+  relayToken?: string;
+}) =>
+  createInviteUrl({
+    host: "127.0.0.1",
+    port,
+    roomId,
+    mode,
+    relayToken,
+  });
+
 export class HostSessionController {
   private server?: SignalingServer;
   private cleanupTasks: Array<() => Promise<void>> = [];
@@ -113,7 +132,6 @@ export class HostSessionController {
     try {
       const signalingPort = this.server ? await this.server.listen() : undefined;
       const tailscaleStatus = await detectTailscaleStatus();
-
       let hostAddress = "";
       let addressSource: HostSessionInfo["addressSource"] = "unknown";
       let alternativeAddresses: string[] = [];
@@ -124,15 +142,20 @@ export class HostSessionController {
 
       if (connectionMode === "tailscale") {
         const resolvedAddress = await resolveTailscaleAddress();
-        if (!resolvedAddress) {
-          throw new Error("Tailscale 模式下没有可用地址，请先连接到同一个 tailnet。");
+        if (!resolvedAddress || !signalingPort) {
+          throw new Error("Tailscale 当前不可用，请先连接到同一个 tailnet。");
         }
+
         hostAddress = resolvedAddress.host;
         addressSource = resolvedAddress.source;
         alternativeAddresses = resolvedAddress.alternatives;
       } else if (connectionMode === "direct_host") {
+        if (!signalingPort) {
+          throw new Error("房间启动失败，未拿到可用的 signaling 端口。");
+        }
+
         const probe = await probeDirectHost({
-          localPort: signalingPort ?? DEFAULT_SIGNALING_PORT,
+          localPort: signalingPort,
           manualHost: settings.manualDirectHost,
           writeLog: this.writeLog,
         });
@@ -143,23 +166,24 @@ export class HostSessionController {
         alternativeAddresses = resolveLanIpv4Candidates();
 
         if (!hostAddress) {
-          throw new Error("当前网络不支持房主直连，请改用 Tailscale 或云中继模式。");
+          throw new Error("当前网络不支持房主直连，建议切换到 Tailscale 或云中继。");
         }
       } else {
         relayStatus = await readRelayStatus({
           relayServerUrl: settings.relayServerUrl,
           writeLog: this.writeLog,
         });
+
         if (!relayStatus.isConfigured) {
-          throw new Error("请先在设置里填写可用的云中继地址。");
+          throw new Error("请先在设置里填好可用的云中继地址。");
         }
+
         if (!relayStatus.serverUrl) {
-          throw new Error("云中继地址无效，请到设置里重新填写。");
+          throw new Error("云中继地址无效，请重新填写。");
         }
 
         hostAddress = relayStatus.serverUrl;
         addressSource = "relay";
-        alternativeAddresses = [];
       }
 
       const signalingUrl = createInviteUrl({
@@ -169,6 +193,15 @@ export class HostSessionController {
         mode: connectionMode,
         relayToken,
       });
+      const localSignalingUrl =
+        connectionMode === "relay" || !signalingPort
+          ? signalingUrl
+          : createLocalJoinUrl({
+              roomId,
+              port: signalingPort,
+              mode: connectionMode,
+              relayToken,
+            });
 
       const sessionInfo: HostSessionInfo = {
         roomId,
@@ -176,6 +209,7 @@ export class HostSessionController {
         hostDisplayName: nickname,
         signalingPort,
         signalingUrl,
+        localSignalingUrl,
         connectionMode,
         hostState: HostSessionState.Active,
         tailscaleIp: tailscaleStatus.ip,
@@ -196,7 +230,11 @@ export class HostSessionController {
         category: connectionMode === "relay" ? "relay" : "connection-mode",
         level: "info",
         message: "host session started",
-        context: sessionInfo as unknown as Record<string, unknown>,
+        context: {
+          ...sessionInfo,
+          localSignalingUrl,
+          joinMode: connectionMode === "direct_host" ? "loopback-for-host" : "default",
+        } as Record<string, unknown>,
       });
 
       return sessionInfo;
@@ -256,7 +294,7 @@ export class HostSessionController {
 
       details.push(`目标地址：${host}:${port}`);
       if (tailscaleStatus) {
-        details.push(`Tailscale 状态：${tailscaleStatus.state}`);
+        details.push(`Tailscale：${tailscaleStatus.state}`);
       }
       if (proxyDiagnostics) {
         details.push(proxyDiagnostics.message);
@@ -264,7 +302,7 @@ export class HostSessionController {
 
       const isReachable = await probeTcpPort(host, port);
       if (!isReachable) {
-        details.push("目标端口没有连通。");
+        details.push("目标端口当前不可达。");
       }
 
       const relayStatus =
@@ -286,7 +324,7 @@ export class HostSessionController {
         tailscaleState: tailscaleStatus?.state,
         failureStage: isReachable ? "websocket" : "network",
         message: isReachable
-          ? "地址已可达，但房间连接握手失败，可能受代理/TUN 影响。"
+          ? "地址已可达，但房间握手失败，可能受代理或 TUN 影响。"
           : "无法连接到房主地址。",
         details,
         proxyDiagnostics,

@@ -22,6 +22,7 @@ export type SignalEnvelope =
   | PeerAnswerMessage
   | IceCandidateMessage
   | MemberStateMessage
+  | ChatMessage
   | ErrorMessage;
 
 interface BaseMessage {
@@ -106,6 +107,16 @@ export interface MemberStateMessage extends BaseMessage {
   isSpeaking?: boolean;
   nickname?: string;
   avatarDataUrl?: string;
+}
+
+export interface ChatMessage extends BaseMessage {
+  type: "chat_message";
+  roomId: string;
+  peerId: string;
+  nickname: string;
+  avatarDataUrl?: string;
+  content: string;
+  createdAt: string;
 }
 
 export interface ErrorMessage extends BaseMessage {

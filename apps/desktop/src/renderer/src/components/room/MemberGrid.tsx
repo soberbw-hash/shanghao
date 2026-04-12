@@ -11,7 +11,7 @@ export const MemberGrid = ({
 }) => (
   <div
     className="grid gap-3"
-    style={{ gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))" }}
+    style={{ gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))" }}
   >
     {members.map((member) => (
       <MemberCard key={member.id} member={member} onVolumeChange={onVolumeChange} />

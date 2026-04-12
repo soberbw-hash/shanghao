@@ -10,6 +10,7 @@ import type { WebSocket } from "ws";
 import { WebSocketServer } from "ws";
 
 import type {
+  ChatMessage,
   ErrorMessage,
   HelloMessage,
   IceCandidateMessage,
@@ -170,6 +171,9 @@ export class SignalingServer extends EventEmitter {
       case "member_state":
         this.handleMemberState(message);
         return;
+      case "chat_message":
+        this.broadcastChatMessage(message);
+        return;
       default:
         return;
     }
@@ -260,6 +264,27 @@ export class SignalingServer extends EventEmitter {
       avatarDataUrl: message.avatarDataUrl,
     });
     this.broadcastSnapshot(message.roomId);
+  }
+
+  private broadcastChatMessage(message: ChatMessage): void {
+    const room = this.roomManager.getRoom(message.roomId);
+    if (!room) {
+      return;
+    }
+
+    const payload: ChatMessage = {
+      type: "chat_message",
+      roomId: message.roomId,
+      peerId: message.peerId,
+      nickname: message.nickname,
+      avatarDataUrl: message.avatarDataUrl,
+      content: message.content,
+      createdAt: message.createdAt,
+    };
+
+    for (const peer of room.peers.listPeers()) {
+      peer.socket.send(JSON.stringify(payload));
+    }
   }
 
   private forwardPeerSignal(

@@ -34,6 +34,7 @@ export const useMicTest = ({
   const streamRef = useRef<MediaStream>();
   const contextRef = useRef<AudioContext>();
   const destinationRef = useRef<MediaStreamAudioDestinationNode>();
+  const outputGainRef = useRef<GainNode>();
   const analyserRef = useRef<AnalyserNode>();
   const audioRef = useRef<HTMLAudioElement>();
   const rafRef = useRef<number>();
@@ -46,8 +47,10 @@ export const useMicTest = ({
 
     analyserRef.current?.disconnect();
     destinationRef.current?.disconnect();
+    outputGainRef.current?.disconnect();
     analyserRef.current = undefined;
     destinationRef.current = undefined;
+    outputGainRef.current = undefined;
 
     if (audioRef.current) {
       audioRef.current.pause();
@@ -107,13 +110,17 @@ export const useMicTest = ({
         sampleRate: preferredSampleRate === "auto" ? undefined : Number(preferredSampleRate),
         latencyHint: "interactive",
       });
+      await context.resume();
       const source = context.createMediaStreamSource(stream);
+      const outputGain = context.createGain();
+      outputGain.gain.value = 1;
       const analyser = context.createAnalyser();
       analyser.fftSize = 512;
-      source.connect(analyser);
+      source.connect(outputGain);
+      outputGain.connect(analyser);
 
       const destination = context.createMediaStreamDestination();
-      source.connect(destination);
+      outputGain.connect(destination);
 
       const audio = new Audio();
       audio.autoplay = true;
@@ -131,6 +138,7 @@ export const useMicTest = ({
       contextRef.current = context;
       analyserRef.current = analyser;
       destinationRef.current = destination;
+      outputGainRef.current = outputGain;
       audioRef.current = audio;
 
       await audio.play();

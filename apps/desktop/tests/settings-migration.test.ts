@@ -12,6 +12,12 @@ test("migrateSettings falls back to safe defaults for damaged legacy config", ()
     preferredSampleRate: "99999" as never,
     inputLevelThreshold: -10,
     settingsSchemaVersion: 0,
+    shouldAutoCopyInviteLink: false,
+    isMicOnSoundEnabled: false,
+    isMicOffSoundEnabled: false,
+    isMemberJoinSoundEnabled: false,
+    isMemberLeaveSoundEnabled: false,
+    isConnectionSoundEnabled: false,
   });
 
   assert.equal(result.settings.settingsSchemaVersion, SETTINGS_SCHEMA_VERSION);
@@ -20,5 +26,11 @@ test("migrateSettings falls back to safe defaults for damaged legacy config", ()
   assert.equal(result.settings.preferredSampleRate, "auto");
   assert.equal(result.settings.inputLevelThreshold, defaultSettings.inputLevelThreshold);
   assert.equal(result.settings.hasCompletedProfileSetup, false);
+  assert.equal(result.settings.shouldAutoCopyInviteLink, true);
+  assert.equal(result.settings.isMicOnSoundEnabled, true);
+  assert.equal(result.settings.isMicOffSoundEnabled, true);
+  assert.equal(result.settings.isMemberJoinSoundEnabled, true);
+  assert.equal(result.settings.isMemberLeaveSoundEnabled, true);
+  assert.equal(result.settings.isConnectionSoundEnabled, true);
   assert.equal(result.migrated, true);
 });

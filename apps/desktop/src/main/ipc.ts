@@ -1,4 +1,4 @@
-import { ipcMain, shell, type BrowserWindow } from "electron";
+import { app, ipcMain, shell, type BrowserWindow } from "electron";
 
 import {
   APP_BUILD_NUMBER,
@@ -55,7 +55,7 @@ export const registerIpcHandlers = ({
     IPC_CHANNELS.app.getRuntimeInfo,
     async (): Promise<RuntimeInfo> => ({
       appName: APP_NAME,
-      version: process.env.npm_package_version ?? "0.1.7",
+      version: app.getVersion(),
       platform: process.platform,
       protocolVersion: APP_PROTOCOL_VERSION,
       buildNumber: APP_BUILD_NUMBER,
@@ -130,7 +130,7 @@ export const registerIpcHandlers = ({
     const network = await getNetworkStatusSnapshot(settings, (payload) => diagnostics.writeLog(payload));
     const summary = await buildDiagnosticsSummary({
       settings,
-      appVersion: process.env.npm_package_version ?? "0.1.7",
+      appVersion: app.getVersion(),
       protocolVersion: APP_PROTOCOL_VERSION,
       buildNumber: APP_BUILD_NUMBER,
       inviteAddress: hostSession.getSnapshot()?.signalingUrl,
@@ -164,7 +164,7 @@ export const registerIpcHandlers = ({
   ipcMain.handle(IPC_CHANNELS.network.exportSummary, async () => {
     return buildDiagnosticsSummary({
       settings: settingsStore.getSnapshot(),
-      appVersion: process.env.npm_package_version ?? "0.1.7",
+      appVersion: app.getVersion(),
       protocolVersion: APP_PROTOCOL_VERSION,
       buildNumber: APP_BUILD_NUMBER,
       inviteAddress: hostSession.getSnapshot()?.signalingUrl,

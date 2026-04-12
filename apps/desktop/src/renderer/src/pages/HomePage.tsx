@@ -1,13 +1,5 @@
-import {
-  AlertCircle,
-  Clipboard,
-  Copy,
-  Link2,
-  Mic,
-  Radio,
-  Settings2,
-  Waves,
-} from "lucide-react";
+import { useMemo, useState } from "react";
+import { Clipboard, Link2, MessageCircle, Radio, Send, SmilePlus } from "lucide-react";
 
 import {
   MicPermissionState,
@@ -15,7 +7,6 @@ import {
   type ConnectionMode,
 } from "@private-voice/shared";
 
-import { DeviceHealthNotice } from "../components/audio/DeviceHealthNotice";
 import { InputDevicePicker } from "../components/audio/InputDevicePicker";
 import { MuteButton } from "../components/audio/MuteButton";
 import { OutputDevicePicker } from "../components/audio/OutputDevicePicker";
@@ -29,7 +20,6 @@ import { PageContainer } from "../components/layout/PageContainer";
 import { TopStatusBar } from "../components/layout/TopStatusBar";
 import { MemberGrid } from "../components/room/MemberGrid";
 import { StartupSplashPage } from "../components/status/StartupSplashPage";
-import { useMicTest } from "../hooks/useMicTest";
 import { useRoomState } from "../hooks/useRoomState";
 import { useAppStore } from "../store/appStore";
 import { useAudioStore } from "../store/audioStore";
@@ -42,29 +32,71 @@ const connectionModeOptions = [
   { value: "relay", label: "云中继" },
 ] satisfies { value: ConnectionMode; label: string }[];
 
+const emojiShortcuts = ["😀", "👍", "🎧", "🔥", "上号"];
+
 const modeCopy: Record<
   ConnectionMode,
   {
-    label: string;
     hint: string;
     placeholder: string;
+    startDescription: string;
   }
 > = {
   direct_host: {
-    label: "房主直连",
     hint: "默认模式。会尝试公网地址、端口映射和外网可达性检测。",
     placeholder: "ws://你的公网地址:43821?roomId=...",
+    startDescription: "适合已经有公网 IP、DDNS 或端口映射的网络环境。",
   },
   tailscale: {
-    label: "Tailscale",
-    hint: "适合固定好友长期使用，优先用 MagicDNS，其次用 100.x 地址。",
+    hint: "适合固定好友长期使用，优先走 MagicDNS，其次走 100.x 地址。",
     placeholder: "ws://your-name.ts.net:43821?roomId=...",
+    startDescription: "适合同一个 tailnet 里的固定好友，稳定直接。",
   },
   relay: {
-    label: "云中继",
-    hint: "当直连和 Tailscale 都不方便时，用中继服务兜底。",
+    hint: "当直连和 Tailscale 都不方便时，走云中继兜底。",
     placeholder: "wss://relay.example.com/room?roomId=...",
+    startDescription: "适合复杂网络环境，优先保证能连上。",
   },
+};
+
+const getStatusLine = ({
+  roomAction,
+  latestFailureReason,
+  latestHostEvent,
+  currentMode,
+  currentDirectMessage,
+  relayMessage,
+  tailscaleMessage,
+}: {
+  roomAction: string;
+  latestFailureReason?: string;
+  latestHostEvent?: string;
+  currentMode: ConnectionMode;
+  currentDirectMessage?: string;
+  relayMessage?: string;
+  tailscaleMessage?: string;
+}) => {
+  if (roomAction === "starting") {
+    return "正在启动房间，请稍等。";
+  }
+
+  if (latestFailureReason) {
+    return latestFailureReason;
+  }
+
+  if (latestHostEvent) {
+    return latestHostEvent;
+  }
+
+  if (currentMode === "direct_host") {
+    return currentDirectMessage || "准备检测公网直连条件。";
+  }
+
+  if (currentMode === "tailscale") {
+    return tailscaleMessage || "先确认 Tailscale 已连接到同一个 tailnet。";
+  }
+
+  return relayMessage || "先确认云中继地址可用，再开启房间。";
 };
 
 export const HomePage = () => {
@@ -76,10 +108,10 @@ export const HomePage = () => {
     joinRoom,
     replaceInputDevice,
     copyInviteLink,
+    sendChatMessage,
   } = useRoomState();
   const roomAction = useAppStore((state) => state.roomAction);
   const pushToast = useAppStore((state) => state.pushToast);
-  const navigate = useAppStore((state) => state.navigate);
   const settings = useSettingsStore((state) => state.settings);
   const networkSnapshot = useSettingsStore((state) => state.networkSnapshot);
   const tailscaleStatus = useSettingsStore((state) => state.tailscaleStatus);
@@ -88,6 +120,7 @@ export const HomePage = () => {
   const hostSession = useRoomStore((state) => state.hostSession);
   const updateMemberVolume = useRoomStore((state) => state.updateMemberVolume);
   const recentHostEvents = useRoomStore((state) => state.room.recentHostEvents);
+  const chatMessages = useRoomStore((state) => state.chatMessages);
   const {
     inputDevices,
     outputDevices,
@@ -97,16 +130,7 @@ export const HomePage = () => {
     setPushToTalkEnabled,
     permissionState,
   } = useAudioStore();
-
-  const micTest = useMicTest({
-    inputDeviceId: settings?.preferredInputDeviceId,
-    outputDeviceId: settings?.preferredOutputDeviceId,
-    echoCancellation: settings?.isEchoCancellationEnabled,
-    noiseSuppression: settings?.isNoiseSuppressionEnabled,
-    autoGainControl: settings?.isAutoGainControlEnabled,
-    preferredSampleRate: settings?.preferredSampleRate,
-    monitorMode: settings?.micMonitorMode,
-  });
+  const [chatInput, setChatInput] = useState("");
 
   if (!settings) {
     return <StartupSplashPage message="正在准备首页…" />;
@@ -117,6 +141,56 @@ export const HomePage = () => {
   const currentAddress = hostSession?.signalingUrl ?? room.signalingUrl;
   const currentDirectHost = networkSnapshot?.directHost;
   const relaySummary = networkSnapshot?.relay;
+  const latestHostEvent = recentHostEvents?.[0]?.message;
+  const statusLine = getStatusLine({
+    roomAction,
+    latestFailureReason: room.latestFailureReason,
+    latestHostEvent,
+    currentMode,
+    currentDirectMessage: currentDirectHost?.message,
+    relayMessage: relaySummary?.message,
+    tailscaleMessage: tailscaleStatus?.message,
+  });
+
+  const environmentBanner = useMemo(() => {
+    if (permissionState === MicPermissionState.Denied) {
+      return {
+        tone: "danger" as const,
+        message: "还没有给上号麦克风权限，请先在 Windows 设置里允许访问麦克风。",
+      };
+    }
+
+    if (inputDevices.length === 0 || outputDevices.length === 0) {
+      return {
+        tone: "warning" as const,
+        message: "当前缺少输入或输出设备，先接好麦克风和耳机再继续。",
+      };
+    }
+
+    if (tailscaleStatus?.state === TailscaleState.NotInstalled && currentMode === "tailscale") {
+      return {
+        tone: "warning" as const,
+        message: "你现在选中了 Tailscale 模式，但这台电脑还没有安装 Tailscale。",
+      };
+    }
+
+    if (networkSnapshot?.proxy?.compatibilityModeEnabled) {
+      return {
+        tone: "neutral" as const,
+        message: networkSnapshot.proxy.message,
+      };
+    }
+
+    return undefined;
+  }, [
+    currentMode,
+    inputDevices.length,
+    networkSnapshot?.proxy?.compatibilityModeEnabled,
+    networkSnapshot?.proxy?.message,
+    outputDevices.length,
+    permissionState,
+    tailscaleStatus?.state,
+  ]);
 
   const handlePasteSignalUrl = () => {
     void navigator.clipboard
@@ -155,115 +229,102 @@ export const HomePage = () => {
     });
   };
 
-  const handleMicTest = () => {
-    void micTest.toggle().catch((error) => {
-      pushToast({
-        tone: "danger",
-        title: "试音失败",
-        description:
-          error instanceof Error ? error.message : "当前无法启动试音，请检查麦克风权限。",
-      });
+  const handleSendChat = () => {
+    const message = chatInput.trim();
+    if (!message) {
+      return;
+    }
+
+    void sendChatMessage(message).then(() => {
+      setChatInput("");
     });
   };
 
-  const currentStatusLine =
-    currentMode === "relay"
-      ? relaySummary?.message ?? "还没有填写可用的中继地址"
-      : currentMode === "direct_host"
-        ? currentDirectHost?.message ?? "还没有可用的公网直连地址"
-        : tailscaleStatus?.message ?? "还没有可用的 Tailscale 地址";
-
   return (
-    <PageContainer className="overflow-y-auto">
-      <TopStatusBar />
+    <PageContainer className="min-h-0 gap-3 overflow-hidden py-3">
+      <div className="flex items-center justify-between gap-4">
+        <div className="min-w-0 text-sm text-[#667085]">
+          {currentAddress ? (
+            <span className="line-clamp-1">当前分享地址：{currentAddress}</span>
+          ) : (
+            <span>一句话上号，开房、加入和状态都在这里。</span>
+          )}
+        </div>
+        <TopStatusBar />
+      </div>
 
-      {permissionState === MicPermissionState.Denied ? (
-        <DeviceHealthNotice message="还没有给上号麦克风权限，先去 Windows 设置里允许访问。" />
-      ) : null}
-      {inputDevices.length === 0 || outputDevices.length === 0 ? (
-        <DeviceHealthNotice message="当前缺少输入或输出设备，先接好麦克风和耳机。" />
-      ) : null}
-      {tailscaleStatus?.state === TailscaleState.NotInstalled && currentMode === "tailscale" ? (
-        <InlineBanner tone="warning">
-          当前选中了 Tailscale 模式，但这台机器还没有安装 Tailscale。
-        </InlineBanner>
-      ) : null}
-      {networkSnapshot?.proxy?.compatibilityModeEnabled ? (
-        <InlineBanner tone="neutral">{networkSnapshot.proxy.message}</InlineBanner>
+      <InlineBanner tone={room.latestFailureReason ? "danger" : "neutral"}>{statusLine}</InlineBanner>
+
+      {environmentBanner ? (
+        <InlineBanner tone={environmentBanner.tone}>{environmentBanner.message}</InlineBanner>
       ) : null}
 
-      <section className="grid gap-4 xl:grid-cols-[1.12fr_0.88fr]">
-        <div className="rounded-[24px] border border-[#E7ECF2] bg-white p-5 shadow-[0_20px_40px_rgba(17,24,39,0.06)]">
-          <div className="flex flex-wrap items-start justify-between gap-4">
-            <div className="space-y-1">
+      <section className="grid min-h-0 flex-1 gap-4 xl:grid-cols-[minmax(0,1.22fr)_minmax(360px,0.78fr)]">
+        <div className="flex min-h-0 flex-col gap-4">
+          <div className="rounded-[24px] border border-[#E7ECF2] bg-white p-4 shadow-[0_20px_40px_rgba(17,24,39,0.06)]">
+            <div>
               <div className="text-[22px] font-semibold text-[#111827]">开房或加入</div>
-              <p className="text-sm text-[#667085]">先选模式，再开房或加入。</p>
-            </div>
-            <Button variant="secondary" onClick={() => navigate("settings")}>
-              <Settings2 className="h-4 w-4" />
-              连接设置
-            </Button>
-          </div>
-
-          <div className="mt-4 space-y-4">
-            <div className="space-y-2">
-              <div className="text-sm font-medium text-[#111827]">连接模式</div>
-              <SegmentedControl
-                value={currentMode}
-                options={connectionModeOptions}
-                onChange={handleModeChange}
-              />
-              <div className="text-sm text-[#667085]">{currentModeCopy.hint}</div>
+              <p className="mt-1 text-sm text-[#667085]">先选模式，再开房或加入。</p>
             </div>
 
-            <div className="grid gap-4 lg:grid-cols-2">
-              <div className="rounded-[18px] border border-[#E7ECF2] bg-[#F8FAFC] p-4">
-                <div className="flex items-center gap-2 text-sm font-medium text-[#111827]">
-                  <Radio className="h-4 w-4 text-[#4DA3FF]" />
-                  开启房间
-                </div>
-                <div className="mt-2 text-sm text-[#667085]">{currentStatusLine}</div>
-                <div className="mt-4 flex flex-wrap gap-3">
-                  <Button onClick={() => void startHost()} disabled={roomAction !== "idle"}>
-                    {roomAction === "starting" ? "正在开启…" : "开启房间"}
-                  </Button>
-                  {currentAddress ? (
-                    <Button variant="secondary" onClick={() => void copyInviteLink()}>
-                      <Copy className="h-4 w-4" />
-                      复制地址
-                    </Button>
-                  ) : null}
-                </div>
-                {hostSession ? (
-                  <div className="mt-3 rounded-[14px] border border-[#DCE8F7] bg-white px-3 py-3 text-sm text-[#667085]">
-                    <div className="font-medium text-[#111827]">当前地址</div>
-                    <div className="mt-1 break-all">{hostSession.signalingUrl}</div>
-                    <div className="mt-2 text-[#98A2B3]">
-                      {hostSession.connectionMode === "direct_host"
-                        ? hostSession.directHostProbe?.message
-                        : hostSession.connectionMode === "relay"
-                          ? hostSession.relayStatus?.message
-                          : "现在把地址发给朋友就行。"}
-                    </div>
-                  </div>
-                ) : null}
+            <div className="mt-4 space-y-3">
+              <div className="space-y-2">
+                <div className="text-sm font-medium text-[#111827]">连接模式</div>
+                <SegmentedControl
+                  value={currentMode}
+                  options={connectionModeOptions}
+                  onChange={handleModeChange}
+                />
+                <div className="text-sm text-[#667085]">{currentModeCopy.hint}</div>
               </div>
 
-              <div className="rounded-[18px] border border-[#E7ECF2] bg-[#F8FAFC] p-4">
-                <div className="flex items-center gap-2 text-sm font-medium text-[#111827]">
-                  <Link2 className="h-4 w-4 text-[#4DA3FF]" />
-                  加入房间
+              <div className="grid gap-4 lg:grid-cols-2">
+                <div className="flex min-h-[228px] flex-col rounded-[18px] border border-[#E7ECF2] bg-[#F8FAFC] p-4">
+                  <div className="flex items-center gap-2 text-sm font-medium text-[#111827]">
+                    <Radio className="h-4 w-4 text-[#4DA3FF]" />
+                    开启房间
+                  </div>
+                  <div className="mt-2 text-sm text-[#667085]">{currentModeCopy.startDescription}</div>
+
+                  {currentMode === "direct_host" ? (
+                    <div className="mt-3 rounded-[14px] border border-[#DCE8F7] bg-white px-3 py-3 text-sm text-[#667085]">
+                      <div className="font-medium text-[#111827]">直连探测</div>
+                      <div className="mt-1">
+                        {currentDirectHost?.message ?? "还没有可用的公网直连地址。"}
+                      </div>
+                    </div>
+                  ) : null}
+
+                  <div className="mt-auto flex items-end gap-3 pt-5">
+                    <Button onClick={() => void startHost()} disabled={roomAction !== "idle"}>
+                      {roomAction === "starting" ? "正在开启…" : "开启房间"}
+                    </Button>
+                    {currentAddress ? (
+                      <Button variant="secondary" onClick={() => void copyInviteLink()}>
+                        复制地址
+                      </Button>
+                    ) : null}
+                  </div>
                 </div>
-                <div className="mt-2 text-sm text-[#667085]">
-                  模式会写进邀请地址里，加入前仍会显示当前选中的模式。
-                </div>
-                <div className="mt-4 flex flex-col gap-3">
-                  <Input
-                    placeholder={currentModeCopy.placeholder}
-                    value={joinSignalUrl}
-                    onChange={(event) => setJoinSignalUrl(event.target.value)}
-                  />
-                  <div className="flex flex-wrap gap-3">
+
+                <div className="flex min-h-[228px] flex-col rounded-[18px] border border-[#E7ECF2] bg-[#F8FAFC] p-4">
+                  <div className="flex items-center gap-2 text-sm font-medium text-[#111827]">
+                    <Link2 className="h-4 w-4 text-[#4DA3FF]" />
+                    加入房间
+                  </div>
+                  <div className="mt-2 text-sm text-[#667085]">
+                    模式会写进邀请地址里，加入前仍会显示当前选中的模式。
+                  </div>
+
+                  <div className="mt-4 space-y-3">
+                    <Input
+                      placeholder={currentModeCopy.placeholder}
+                      value={joinSignalUrl}
+                      onChange={(event) => setJoinSignalUrl(event.target.value)}
+                    />
+                  </div>
+
+                  <div className="mt-auto flex items-end gap-3 pt-5">
                     <Button variant="secondary" onClick={handlePasteSignalUrl}>
                       <Clipboard className="h-4 w-4" />
                       粘贴地址
@@ -279,88 +340,90 @@ export const HomePage = () => {
               </div>
             </div>
           </div>
+
+          <div className="flex min-h-0 flex-col gap-3">
+            <div className="text-sm font-medium text-[#667085]">开黑位</div>
+            <MemberGrid
+              members={room.members}
+              onVolumeChange={(memberId, value) => updateMemberVolume(memberId, value)}
+            />
+          </div>
         </div>
 
-        <div className="space-y-4">
-          <div className="rounded-[24px] border border-[#E7ECF2] bg-white p-5 shadow-[0_20px_40px_rgba(17,24,39,0.06)]">
+        <div className="flex min-h-0 flex-col">
+          <div className="flex min-h-0 flex-1 flex-col rounded-[24px] border border-[#E7ECF2] bg-white p-4 shadow-[0_20px_40px_rgba(17,24,39,0.06)]">
             <div className="flex items-center gap-2 text-sm font-medium text-[#111827]">
-              <Mic className="h-4 w-4 text-[#4DA3FF]" />
-              试音
+              <MessageCircle className="h-4 w-4 text-[#4DA3FF]" />
+              临时聊天
             </div>
-            <div className="mt-2 text-sm text-[#667085]">
-              {settings.micMonitorMode === "raw" ? "当前试听原声监听。" : "当前试听处理后监听。"}
-            </div>
-            <div className="mt-4 flex items-center gap-3">
-              <Button variant={micTest.isTesting ? "danger" : "secondary"} onClick={handleMicTest}>
-                <Waves className="h-4 w-4" />
-                {micTest.isTesting ? "停止试音" : "开始试音"}
-              </Button>
-              <div className="text-sm text-[#667085]">{micTest.isTesting ? "试音中" : "未开始"}</div>
-            </div>
-            <div className="mt-4 h-3 overflow-hidden rounded-full bg-[#EEF2F6]">
-              <div
-                className="h-full rounded-full bg-[#4DA3FF] transition-[width] duration-150"
-                style={{ width: `${Math.max(6, micTest.level * 100)}%` }}
-              />
-            </div>
-            <div className="mt-3 grid gap-2 text-sm text-[#667085] sm:grid-cols-2">
-              <div>
-                采样率：
-                {settings.preferredSampleRate === "auto"
-                  ? "自动"
-                  : settings.preferredSampleRate === "44100"
-                    ? "44.1 kHz"
-                    : "48 kHz"}
-              </div>
-              <div>监听：{settings.micMonitorMode === "raw" ? "原声" : "处理后"}</div>
-            </div>
-            {micTest.error ? (
-              <div className="mt-3 flex items-start gap-2 rounded-[14px] border border-[#F9D3D0] bg-[#FEF3F2] px-3 py-3 text-sm text-[#B42318]">
-                <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
-                <span>{micTest.error}</span>
-              </div>
-            ) : null}
-          </div>
+            <div className="mt-2 text-sm text-[#667085]">只发文字和 emoji，不抢语音主流程。</div>
 
-          <div className="rounded-[24px] border border-[#E7ECF2] bg-white p-5 shadow-[0_20px_40px_rgba(17,24,39,0.06)]">
-            <div className="text-sm font-medium text-[#111827]">房主进度</div>
-            <div className="mt-3 space-y-2 text-sm text-[#667085]">
-              {(recentHostEvents ?? []).map((event) => (
-                <div key={event.id} className="flex items-start gap-2">
-                  <span
-                    className={`mt-1 h-2 w-2 rounded-full ${
-                      event.level === "success"
-                        ? "bg-[#16A34A]"
-                        : event.level === "warning"
-                          ? "bg-[#F59E0B]"
-                          : event.level === "error"
-                            ? "bg-[#EF4444]"
-                            : "bg-[#4DA3FF]"
-                    }`}
+            <div className="mt-4 flex min-h-0 flex-1 flex-col rounded-[18px] border border-[#E7ECF2] bg-[#F8FAFC] p-3">
+              <div className="min-h-0 flex-1 space-y-3 overflow-y-auto pr-1">
+                {chatMessages.length === 0 ? (
+                  <div className="flex h-full min-h-[180px] items-center justify-center rounded-[16px] border border-dashed border-[#D6DEE8] bg-white px-4 text-center text-sm text-[#98A2B3]">
+                    房间里还没有消息。进房后可以先发一句“上号”试试。
+                  </div>
+                ) : (
+                  chatMessages.map((message) => (
+                    <div
+                      key={message.id}
+                      className={`max-w-[88%] rounded-[16px] px-3 py-2 text-sm shadow-[0_4px_12px_rgba(17,24,39,0.04)] ${
+                        message.isLocal
+                          ? "ml-auto bg-[#4DA3FF] text-white"
+                          : "bg-white text-[#111827]"
+                      }`}
+                    >
+                      <div
+                        className={`text-[11px] ${
+                          message.isLocal ? "text-white/80" : "text-[#98A2B3]"
+                        }`}
+                      >
+                        {message.nickname}
+                      </div>
+                      <div className="mt-1 break-words leading-6">{message.content}</div>
+                    </div>
+                  ))
+                )}
+              </div>
+
+              <div className="mt-3 flex flex-wrap gap-2">
+                {emojiShortcuts.map((emoji) => (
+                  <button
+                    key={emoji}
+                    type="button"
+                    className="rounded-full border border-[#E7ECF2] bg-white px-3 py-1 text-sm text-[#667085] transition hover:border-[#C7D7EB] hover:text-[#111827]"
+                    onClick={() => setChatInput((value) => `${value}${emoji}`)}
+                  >
+                    {emoji}
+                  </button>
+                ))}
+              </div>
+
+              <div className="mt-3 flex items-center gap-3">
+                <div className="relative flex-1">
+                  <SmilePlus className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#98A2B3]" />
+                  <Input
+                    className="pl-10"
+                    placeholder="发一句话，或者来个 emoji"
+                    value={chatInput}
+                    onChange={(event) => setChatInput(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter") {
+                        handleSendChat();
+                      }
+                    }}
                   />
-                  <span>{event.message}</span>
                 </div>
-              ))}
-            </div>
-            <div className="mt-4 rounded-[14px] border border-[#E7ECF2] bg-[#F8FAFC] px-3 py-3 text-sm text-[#667085]">
-              <div>当前模式：{modeCopy[currentMode].label}</div>
-              <div className="mt-1">当前地址：{currentAddress || "还没有生成"}</div>
-              <div className="mt-1">
-                代理 / TUN：
-                {networkSnapshot?.proxy?.message || "未检测到异常代理环境"}
+                <Button onClick={handleSendChat} disabled={!chatInput.trim()}>
+                  <Send className="h-4 w-4" />
+                  发送
+                </Button>
               </div>
             </div>
           </div>
         </div>
       </section>
-
-      <div className="space-y-3">
-        <div className="text-sm font-medium text-[#667085]">开黑位</div>
-        <MemberGrid
-          members={room.members}
-          onVolumeChange={(memberId, value) => updateMemberVolume(memberId, value)}
-        />
-      </div>
 
       <BottomControlDock>
         <div className="flex flex-wrap items-center gap-3">

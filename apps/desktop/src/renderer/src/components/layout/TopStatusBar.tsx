@@ -1,12 +1,11 @@
 import { Settings2 } from "lucide-react";
 
-import { type ConnectionMode, APP_NAME, TailscaleState } from "@private-voice/shared";
+import { TailscaleState, type ConnectionMode } from "@private-voice/shared";
 import { Button, StatusPill } from "@private-voice/ui";
 
 import { useAppStore } from "../../store/appStore";
 import { useRoomStore } from "../../store/roomStore";
 import { useSettingsStore } from "../../store/settingsStore";
-import { BrandMark } from "../brand/BrandMark";
 
 const modeLabelMap: Record<ConnectionMode, string> = {
   direct_host: "房主直连",
@@ -54,29 +53,20 @@ export const TopStatusBar = () => {
         : "neutral";
 
   return (
-    <div className="flex items-center justify-between gap-3">
-      <div className="flex min-w-0 items-center gap-3">
-        <BrandMark size="sm" />
-        <div className="min-w-0">
-          <div className="truncate text-[17px] font-semibold text-[#111827]">{APP_NAME}</div>
-          <div className="truncate text-xs text-[#667085]">打开就能进语音</div>
-        </div>
-      </div>
-      <div className="flex items-center gap-2">
-        <StatusPill tone="neutral">{modeLabelMap[connectionMode]}</StatusPill>
-        <StatusPill tone={roomStatus.tone}>{roomStatus.label}</StatusPill>
-        {shouldShowTailscale ? (
-          <StatusPill tone={tailscaleTone}>
-            {tailscaleStatus?.state === TailscaleState.Connected
-              ? "Tailscale 已连接"
-              : "Tailscale"}
-          </StatusPill>
-        ) : null}
-        <Button variant="secondary" className="h-10 px-3" onClick={() => navigate("settings")}>
-          <Settings2 className="h-4 w-4" />
-          设置
-        </Button>
-      </div>
+    <div className="flex items-center justify-end gap-1.5">
+      <StatusPill tone="neutral">{modeLabelMap[connectionMode]}</StatusPill>
+      <StatusPill tone={roomStatus.tone}>{roomStatus.label}</StatusPill>
+      {shouldShowTailscale ? (
+        <StatusPill tone={tailscaleTone}>
+          {tailscaleStatus?.state === TailscaleState.Connected
+            ? "Tailscale 已连接"
+            : "Tailscale"}
+        </StatusPill>
+      ) : null}
+      <Button variant="secondary" className="h-10 px-3.5" onClick={() => navigate("settings")}>
+        <Settings2 className="h-4 w-4" />
+        设置
+      </Button>
     </div>
   );
 };

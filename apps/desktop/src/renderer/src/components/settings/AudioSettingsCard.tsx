@@ -26,7 +26,7 @@ export const AudioSettingsCard = ({
   onToggleMicTest: () => void;
   onChange: (patch: Partial<AppSettings>) => void;
 }) => (
-  <SettingsSection title="音频" description="设备、降噪、试音和高级采样率都在这里。">
+  <SettingsSection title="音频" description="设备、试音和高级音频设置都在这里。">
     <div className="space-y-3">
       <SettingsItemRow label="输入设备">
         <InputDevicePicker
@@ -93,12 +93,10 @@ export const AudioSettingsCard = ({
               onChange({ inputLevelThreshold: Number(event.currentTarget.value) })
             }
           />
-          <div className="text-xs text-[#98A2B3]">
-            当前：{settings.inputLevelThreshold.toFixed(2)}
-          </div>
+          <div className="text-xs text-[#98A2B3]">当前：{settings.inputLevelThreshold.toFixed(2)}</div>
         </div>
       </SettingsItemRow>
-      <SettingsItemRow label="采样率" description="高级设置。设备不支持时会自动回退。">
+      <SettingsItemRow label="采样率" description="设备不支持时会自动回退。">
         <SegmentedControl
           value={settings.preferredSampleRate}
           options={[
@@ -113,7 +111,7 @@ export const AudioSettingsCard = ({
           }
         />
       </SettingsItemRow>
-      <SettingsItemRow label="试音" description="优先本地监听，不走房间链路。">
+      <SettingsItemRow label="试音" description="本地监听，不走房间链路。">
         <div className="min-w-[280px] space-y-3">
           <Button variant={isMicTesting ? "danger" : "secondary"} onClick={onToggleMicTest}>
             {isMicTesting ? "停止试音" : "开始试音"}

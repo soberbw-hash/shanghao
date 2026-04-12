@@ -13,6 +13,16 @@ import type {
   RelayStatusSnapshot,
 } from "./settings.types";
 
+export interface ChatMessage {
+  id: string;
+  peerId: string;
+  nickname: string;
+  avatarDataUrl?: string;
+  content: string;
+  createdAt: string;
+  isLocal?: boolean;
+}
+
 export interface RoomMember {
   id: string;
   nickname: string;
@@ -68,6 +78,7 @@ export interface HostSessionInfo {
   hostDisplayName: string;
   signalingPort?: number;
   signalingUrl: string;
+  localSignalingUrl?: string;
   connectionMode: ConnectionMode;
   hostState: HostSessionState;
   tailscaleIp?: string;

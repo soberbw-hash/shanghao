@@ -1,3 +1,5 @@
+import { create } from "zustand";
+
 import {
   DEFAULT_ROOM_NAME,
   HostSessionState,
@@ -7,6 +9,7 @@ import {
   MemberSpeakingState,
   RoomConnectionState,
   RoomLifecycleState,
+  type ChatMessage,
   type ConnectionHealth,
   type ConnectionMode,
   type HostEvent,
@@ -14,7 +17,6 @@ import {
   type RoomMember,
   type RoomSummary,
 } from "@private-voice/shared";
-import { create } from "zustand";
 
 interface LocalProfilePayload {
   nickname?: string;
@@ -29,6 +31,7 @@ interface RoomStoreState {
   localStream?: MediaStream;
   remoteStreams: Record<string, MediaStream>;
   connectionHealth: ConnectionHealth;
+  chatMessages: ChatMessage[];
   setConnectionState: (state: RoomConnectionState, reason?: string) => void;
   setLifecycleState: (state: RoomLifecycleState) => void;
   setRoom: (room: Partial<RoomSummary>) => void;
@@ -39,6 +42,8 @@ interface RoomStoreState {
   setLocalStream: (stream?: MediaStream) => void;
   setRemoteStream: (peerId: string, stream?: MediaStream) => void;
   setConnectionHealth: (health: Partial<ConnectionHealth>) => void;
+  addChatMessage: (message: ChatMessage) => void;
+  clearChatMessages: () => void;
   syncLocalProfile: (profile: LocalProfilePayload) => void;
   updateMemberVolume: (memberId: string, volume: number) => void;
   pushHostEvent: (event: Omit<HostEvent, "id" | "createdAt">) => void;
@@ -97,8 +102,8 @@ const normalizeMembers = (members: RoomMember[]): RoomMember[] => {
   const actualMembers = sortMembers(
     members.filter((member) => !member.isEmptySlot).slice(0, MAX_ROOM_MEMBERS),
   );
-
   const paddedMembers = [...actualMembers];
+
   while (paddedMembers.length < MAX_ROOM_MEMBERS) {
     paddedMembers.push(createEmptySlot(paddedMembers.length));
   }
@@ -156,6 +161,7 @@ export const useRoomStore = create<RoomStoreState>((set) => ({
     packetLossPercent: 0,
     reconnectAttempt: 0,
   },
+  chatMessages: [],
   setConnectionState: (connectionState, reason) =>
     set((state) => ({
       room: {
@@ -227,6 +233,11 @@ export const useRoomStore = create<RoomStoreState>((set) => ({
         ...healthPatch,
       },
     })),
+  addChatMessage: (message) =>
+    set((state) => ({
+      chatMessages: [...state.chatMessages, message].slice(-80),
+    })),
+  clearChatMessages: () => set({ chatMessages: [] }),
   syncLocalProfile: (profile) =>
     set((state) => {
       const members = state.room.members.filter((member) => !member.isEmptySlot);
@@ -234,7 +245,6 @@ export const useRoomStore = create<RoomStoreState>((set) => ({
       const existingLocalMember =
         localMemberIndex >= 0 ? members[localMemberIndex] : undefined;
       const baseMember = existingLocalMember ?? createLocalPreviewMember(profile);
-
       const nextLocalMember: RoomMember = {
         ...baseMember,
         nickname: profile.nickname?.trim() || baseMember.nickname || localMemberLabel,
@@ -298,6 +308,7 @@ export const useRoomStore = create<RoomStoreState>((set) => ({
       joinSignalUrl: "",
       localStream: undefined,
       remoteStreams: {},
+      chatMessages: [],
       connectionHealth: {
         latencyMs: 0,
         jitterMs: 0,

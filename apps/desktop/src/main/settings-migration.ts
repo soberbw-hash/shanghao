@@ -80,6 +80,12 @@ export const migrateSettings = (raw: RawSettings): MigrationResult => {
     manualDirectHost: trimText(raw.manualDirectHost) ?? "",
     preferredSampleRate: normalizeSampleRate(raw.preferredSampleRate),
     micMonitorMode: normalizeMonitorMode(raw.micMonitorMode),
+    shouldAutoCopyInviteLink: true,
+    isMicOnSoundEnabled: true,
+    isMicOffSoundEnabled: true,
+    isMemberJoinSoundEnabled: true,
+    isMemberLeaveSoundEnabled: true,
+    isConnectionSoundEnabled: true,
     inputLevelThreshold:
       typeof raw.inputLevelThreshold === "number" && raw.inputLevelThreshold > 0
         ? Math.min(1, raw.inputLevelThreshold)

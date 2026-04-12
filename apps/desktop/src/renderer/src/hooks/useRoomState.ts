@@ -25,18 +25,18 @@ const copy = {
   startHostTitle: "房间启动失败",
   joinRoomTitle: "加入房间失败",
   hostStartedTitle: "房间已开启",
-  hostStartedDescription: "地址已经生成，正在等待好友加入。",
+  hostStartedDescription: "地址已经准备好了，正在等待好友加入。",
   missingJoinUrl: "请先输入房主分享的地址。",
   invalidJoinUrl: "连接地址无效，请确认是房主发来的完整地址。",
-  roomFull: "房间已满，最多只支持 5 人同时语音。",
-  networkFailed: "连接失败，请检查网络、代理/TUN 或当前模式。",
-  handshakeFailed: "地址已可达，但房间连接握手失败，可能受代理/TUN 影响。",
+  roomFull: "房间已满，最多支持 5 人同时语音。",
+  networkFailed: "连接失败，请检查网络、代理或当前连接模式。",
+  handshakeFailed: "地址已可达，但房间握手失败，可能受代理或 TUN 影响。",
   versionMismatch: "房主和成员版本不一致，请升级到同一版本。",
   relayAuthFailed: "云中继鉴权失败，请让房主重新分享房间地址。",
   microphoneUnavailable: "麦克风不可用",
-  microphonePermission: "麦克风不可用，请先允许系统麦克风权限。",
+  microphonePermission: "麦克风不可用，请先在系统设置里允许访问麦克风。",
   microphoneMissing: "没有找到可用的麦克风。",
-  microphoneBusy: "麦克风当前被其他程序占用。",
+  microphoneBusy: "麦克风正在被其他程序占用。",
   inputDeviceFailed: "输入设备切换失败",
   joinedRoomTitle: "已加入房间",
   joinedRoomDescription: "语音连接已经建立。",
@@ -141,6 +141,8 @@ export const useRoomState = () => {
   const setRemoteStream = useRoomStore((state) => state.setRemoteStream);
   const pushHostEvent = useRoomStore((state) => state.pushHostEvent);
   const clearHostEvents = useRoomStore((state) => state.clearHostEvents);
+  const addChatMessage = useRoomStore((state) => state.addChatMessage);
+  const clearChatMessages = useRoomStore((state) => state.clearChatMessages);
   const setLocalDiagnostics = useAudioStore((state) => state.setLocalDiagnostics);
   const isMuted = useAudioStore((state) => state.isMuted);
   const pushToast = useAppStore((state) => state.pushToast);
@@ -262,6 +264,9 @@ export const useRoomState = () => {
       onRemoteStream: (remotePeerId, remoteStream) => {
         setRemoteStream(remotePeerId, remoteStream);
       },
+      onChatMessage: (message) => {
+        addChatMessage(message);
+      },
       onDiagnosticEvent: (payload) => {
         void writeRendererLog("signaling", "info", "Signaling bridge event", {
           ...payload,
@@ -317,7 +322,8 @@ export const useRoomState = () => {
       return diagnostic.message;
     } catch (diagnosticError) {
       await writeRendererLog("signaling", "warn", "Failed to run join diagnostic", {
-        error: diagnosticError instanceof Error ? diagnosticError.message : String(diagnosticError),
+        error:
+          diagnosticError instanceof Error ? diagnosticError.message : String(diagnosticError),
       });
       return normalizeRoomError(error, copy.networkFailed);
     }
@@ -332,6 +338,7 @@ export const useRoomState = () => {
     setConnectionState(RoomConnectionState.StartingHost);
     setLifecycleState(RoomLifecycleState.Opening);
     clearHostEvents();
+    clearChatMessages();
     pushHostEvent({ level: "info", message: "正在启动房间" });
 
     try {
@@ -345,6 +352,8 @@ export const useRoomState = () => {
         settings.nickname,
         settings.connectionMode,
       );
+      const hostJoinUrl = session.localSignalingUrl || session.signalingUrl;
+
       setHostSession(session);
       setJoinSignalUrl(session.signalingUrl);
       setConnectionMode(session.connectionMode);
@@ -355,20 +364,21 @@ export const useRoomState = () => {
       });
 
       await connectToRoom({
-        signalingUrl: session.signalingUrl,
+        signalingUrl: hostJoinUrl,
         roomId: session.roomId,
         roomName: session.roomName,
         connectionMode: session.connectionMode,
       });
 
-      if (settings.shouldAutoCopyInviteLink) {
-        void navigator.clipboard.writeText(session.signalingUrl).then(() => {
-          pushToast({
-            tone: "success",
-            title: copy.copiedAddressTitle,
-            description: copy.copiedAddressDescription,
-          });
+      try {
+        await navigator.clipboard.writeText(session.signalingUrl);
+        pushToast({
+          tone: "success",
+          title: copy.copiedAddressTitle,
+          description: copy.copiedAddressDescription,
         });
+      } catch {
+        // noop
       }
 
       useAppStore.getState().navigate("room");
@@ -376,7 +386,8 @@ export const useRoomState = () => {
         tone: "success",
         title: copy.hostStartedTitle,
         description:
-          session.connectionMode === "direct_host" && session.directHostProbe?.reachability !== "reachable"
+          session.connectionMode === "direct_host" &&
+          session.directHostProbe?.reachability !== "reachable"
             ? `${copy.hostStartedDescription} ${session.directHostProbe?.message ?? ""}`.trim()
             : copy.hostStartedDescription,
       });
@@ -420,6 +431,7 @@ export const useRoomState = () => {
       const invite = parseInvite(inviteValue, settings.connectionMode);
       setConnectionMode(invite.connectionMode);
       await writeRendererLog("connection-mode", "info", "Joining room", invite);
+      clearChatMessages();
 
       await connectToRoom({
         signalingUrl: invite.signalingUrl,
@@ -470,7 +482,6 @@ export const useRoomState = () => {
         autoGainControl: settings.isAutoGainControlEnabled,
         preferredSampleRate: settings.preferredSampleRate,
       });
-
       const [nextTrack] = stream.getAudioTracks();
       if (!nextTrack) {
         throw new Error(copy.microphoneMissing);
@@ -544,6 +555,24 @@ export const useRoomState = () => {
     }
   };
 
+  const sendChatMessage = async (content: string) => {
+    const trimmed = content.trim();
+    if (!trimmed || !settings) {
+      return;
+    }
+
+    if (!activeClient) {
+      pushToast({
+        tone: "warning",
+        title: "还没进入房间",
+        description: "开启房间或加入房间后，才能和队友聊天。",
+      });
+      return;
+    }
+
+    activeClient.sendChatMessage(trimmed);
+  };
+
   return {
     room,
     joinSignalUrl,
@@ -553,5 +582,6 @@ export const useRoomState = () => {
     leaveRoom,
     replaceInputDevice,
     copyInviteLink,
+    sendChatMessage,
   };
 };

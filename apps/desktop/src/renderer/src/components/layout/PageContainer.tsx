@@ -6,5 +6,5 @@ export const PageContainer = ({
   children,
   className,
 }: PropsWithChildren<{ className?: string }>) => (
-  <div className={cn("flex h-full flex-col gap-5 px-6 py-6", className)}>{children}</div>
+  <div className={cn("flex h-full flex-col gap-3 px-4 py-3", className)}>{children}</div>
 );

@@ -9,6 +9,7 @@ test("desktop branding assets exist for app, tray, and github", () => {
   const files = [
     path.join(root, "apps/desktop/build/icon-master.png"),
     path.join(root, "apps/desktop/build/icon.ico"),
+    path.join(root, "apps/desktop/build/logo-ui.svg"),
     path.join(root, "apps/desktop/build/tray-dark.png"),
     path.join(root, "apps/desktop/build/tray-light.png"),
     path.join(root, "apps/desktop/src/renderer/src/assets/brand-mark.svg"),

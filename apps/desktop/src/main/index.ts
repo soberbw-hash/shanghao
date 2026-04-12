@@ -156,7 +156,7 @@ const bootstrap = async (): Promise<void> => {
     (payload) => diagnostics?.writeLog(payload) ?? Promise.resolve(),
   );
   const updates = new UpdateService(
-    process.env.npm_package_version ?? "0.1.8",
+    app.getVersion(),
     (payload) => diagnostics?.writeLog(payload) ?? Promise.resolve(),
   );
   const shortcuts = new ShortcutController(

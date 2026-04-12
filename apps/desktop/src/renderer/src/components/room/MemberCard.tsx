@@ -22,7 +22,7 @@ export const MemberCard = ({
 
   if (member.isEmptySlot) {
     return (
-      <div className="flex h-[80px] items-center gap-3 rounded-[18px] border border-dashed border-[#D6DEE8] bg-[#F8FAFC] px-4">
+      <div className="flex h-[82px] items-center gap-3 rounded-[18px] border border-dashed border-[#D6DEE8] bg-[#F8FAFC] px-4">
         <AvatarPlaceholder name="空位" size="md" className="bg-white text-[#98A2B3]" />
         <div>
           <div className="text-sm font-medium text-[#111827]">空位</div>

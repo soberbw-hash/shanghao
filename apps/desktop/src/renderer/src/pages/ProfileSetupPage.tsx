@@ -48,7 +48,6 @@ export const ProfileSetupPage = () => {
     }
 
     setIsSaving(true);
-
     try {
       await saveSettings({
         nickname: trimmedNickname,

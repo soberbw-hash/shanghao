@@ -48,7 +48,7 @@ export const NetworkSettingsCard = ({
           }
         />
       </SettingsItemRow>
-      <SettingsItemRow label="手动公网地址" description="DDNS、公网 IP 或你已经做好的端口映射地址。">
+      <SettingsItemRow label="手动公网地址" description="支持 DDNS、公网 IP 或你自己做好的端口映射。">
         <Input
           value={settings.manualDirectHost || ""}
           placeholder="例如 game.example.com"
@@ -62,20 +62,12 @@ export const NetworkSettingsCard = ({
           onChange={(event) => onChange({ relayServerUrl: event.target.value })}
         />
       </SettingsItemRow>
-      <SettingsItemRow label="自动复制开房地址">
-        <Button
-          variant={settings.shouldAutoCopyInviteLink ? "primary" : "secondary"}
-          onClick={() => onChange({ shouldAutoCopyInviteLink: !settings.shouldAutoCopyInviteLink })}
-        >
-          {settings.shouldAutoCopyInviteLink ? "已开启" : "已关闭"}
-        </Button>
-      </SettingsItemRow>
       <div className="rounded-[16px] border border-[#E7ECF2] bg-[#F8FAFC] p-4 text-sm text-[#667085]">
-        <div className="font-medium text-[#111827]">当前网络状态</div>
+        <div className="font-medium text-[#111827]">当前网络摘要</div>
         <div className="mt-2">Tailscale：{tailscaleStatus?.message ?? "待检测"}</div>
         <div className="mt-1">公网 IP：{networkSnapshot?.publicIp ?? "未检测到"}</div>
         <div className="mt-1">
-          代理 / TUN：{networkSnapshot?.proxy?.message ?? "未检测到异常代理环境"}
+          代理 / TUN：{networkSnapshot?.proxy?.message ?? "未检测到明显异常"}
         </div>
         <div className="mt-1">直连探测：{networkSnapshot?.directHost?.message ?? "待检测"}</div>
         <div className="mt-1">中继状态：{networkSnapshot?.relay?.message ?? "待检测"}</div>
@@ -90,7 +82,10 @@ export const NetworkSettingsCard = ({
         <Button variant="secondary" onClick={onRefresh}>
           重新检测
         </Button>
-        <Button variant="secondary" onClick={() => void window.desktopApi.tailscale.openInstallGuide()}>
+        <Button
+          variant="secondary"
+          onClick={() => void window.desktopApi.tailscale.openInstallGuide()}
+        >
           打开 Tailscale 页面
         </Button>
         <Button variant="secondary" onClick={onCheckUpdates}>
