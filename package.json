@@ -1,6 +1,6 @@
 {
   "name": "shanghao-workspace",
-  "version": "0.1.11",
+  "version": "0.1.12",
   "private": true,
   "packageManager": "pnpm@10.0.0",
   "scripts": {

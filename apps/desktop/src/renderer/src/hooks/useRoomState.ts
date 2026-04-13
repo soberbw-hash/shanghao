@@ -162,6 +162,7 @@ export const useRoomState = () => {
   const settings = useSettingsStore((state) => state.settings);
   const avatarDataUrl = useSettingsStore((state) => state.avatarDataUrl);
   const room = useRoomStore((state) => state.room);
+  const hostSession = useRoomStore((state) => state.hostSession);
   const localStream = useRoomStore((state) => state.localStream);
   const joinSignalUrl = useRoomStore((state) => state.joinSignalUrl);
   const setJoinSignalUrl = useRoomStore((state) => state.setJoinSignalUrl);
@@ -297,12 +298,14 @@ export const useRoomState = () => {
   };
 
   const connectToRoom = async ({
-    signalingUrl,
+    connectUrl,
+    inviteUrl,
     roomId,
     roomName,
     connectionMode,
   }: {
-    signalingUrl: string;
+    connectUrl: string;
+    inviteUrl?: string;
     roomId: string;
     roomName: string;
     connectionMode: ConnectionMode;
@@ -311,7 +314,7 @@ export const useRoomState = () => {
 
     activeClient?.disconnect();
     activeClient = new RoomClient({
-      signalingUrl,
+      signalingUrl: connectUrl,
       roomId,
       peerId: sharedPeerId,
       nickname: settings?.nickname ?? "我",
@@ -371,7 +374,7 @@ export const useRoomState = () => {
       roomName,
       connectionMode,
       lifecycleState: RoomLifecycleState.Opening,
-      signalingUrl,
+      signalingUrl: inviteUrl || undefined,
       hostSessionState: HostSessionState.Starting,
       latestFailureReason: undefined,
     });
@@ -382,7 +385,7 @@ export const useRoomState = () => {
       roomName,
       connectionMode,
       lifecycleState: RoomLifecycleState.Open,
-      signalingUrl,
+      signalingUrl: inviteUrl || undefined,
       hostSessionState: HostSessionState.Active,
       latestFailureReason: undefined,
     });
@@ -457,7 +460,8 @@ export const useRoomState = () => {
       });
 
       await connectToRoom({
-        signalingUrl: hostJoinUrl,
+        connectUrl: hostJoinUrl,
+        inviteUrl: session.signalingUrl,
         roomId: session.roomId,
         roomName: session.roomName,
         connectionMode: session.connectionMode,
@@ -529,7 +533,8 @@ export const useRoomState = () => {
       clearChatMessages();
 
       await connectToRoom({
-        signalingUrl: invite.signalingUrl,
+        connectUrl: invite.signalingUrl,
+        inviteUrl: invite.signalingUrl,
         roomId: invite.roomId,
         roomName: room.roomName,
         connectionMode: invite.connectionMode,
@@ -632,7 +637,9 @@ export const useRoomState = () => {
   };
 
   const copyInviteLink = async () => {
-    if (!room.signalingUrl) {
+    const inviteUrl = hostSession?.signalingUrl || room.signalingUrl;
+
+    if (!inviteUrl) {
       pushToast({
         tone: "warning",
         title: "还没有可复制的地址",
@@ -642,8 +649,8 @@ export const useRoomState = () => {
     }
 
     try {
-      await navigator.clipboard.writeText(room.signalingUrl);
-      lastCopiedInviteRef.current = room.signalingUrl;
+      await navigator.clipboard.writeText(inviteUrl);
+      lastCopiedInviteRef.current = inviteUrl;
       pushToast({
         tone: "success",
         title: copy.copiedAddressTitle,
