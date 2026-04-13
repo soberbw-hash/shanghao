@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { Clipboard, Link2, MessageCircle, Radio, Send, SmilePlus } from "lucide-react";
+import { Clipboard, Link2, Radio } from "lucide-react";
 
 import {
   MicPermissionState,
@@ -14,6 +14,7 @@ import { PushToTalkToggle } from "../components/audio/PushToTalkToggle";
 import { Button } from "../components/base/Button";
 import { Input } from "../components/base/Input";
 import { SegmentedControl } from "../components/base/SegmentedControl";
+import { TemporaryChatPanel } from "../components/chat/TemporaryChatPanel";
 import { BottomControlDock } from "../components/layout/BottomControlDock";
 import { InlineBanner } from "../components/layout/InlineBanner";
 import { PageContainer } from "../components/layout/PageContainer";
@@ -32,8 +33,6 @@ const connectionModeOptions = [
   { value: "relay", label: "云中继" },
 ] satisfies { value: ConnectionMode; label: string }[];
 
-const emojiShortcuts = ["😀", "👌", "🔥", "🎮", "上号"];
-
 const modeCopy: Record<
   ConnectionMode,
   {
@@ -44,22 +43,22 @@ const modeCopy: Record<
   }
 > = {
   direct_host: {
-    hint: "默认模式。先启动本地房间，再后台检测公网直连能力。",
-    placeholder: "ws://你的公网地址:43821?roomId=...",
-    startDescription: "本机先开房，再异步探测公网 IP、端口映射和外网可达性。",
+    hint: "先启动本地房间，再后台检测公网 IP、端口映射和外网可达性。",
+    placeholder: "ws://你的公网地址:43821/?roomId=...",
+    startDescription: "本机先开房，房间起来后继续检测公网直连能力。",
     joinDescription: "适合已经拿到公网可达地址的房主邀请。",
   },
   tailscale: {
     hint: "适合固定好友长期使用，优先走 MagicDNS，其次走 100.x 地址。",
-    placeholder: "ws://your-name.ts.net:43821?roomId=...",
-    startDescription: "同一个 tailnet 里的好友可以稳定直连，不依赖公网端口映射。",
-    joinDescription: "把房主分享的 Tailscale 地址粘进来即可加入。",
+    placeholder: "ws://your-name.ts.net:43821/?roomId=...",
+    startDescription: "同一个 tailnet 里的好友可以稳定加入，不依赖公网端口映射。",
+    joinDescription: "把房主发来的 Tailscale 地址粘贴进来即可加入。",
   },
   relay: {
-    hint: "当直连和 Tailscale 都不方便时，走云中继兜底。",
+    hint: "复杂网络环境下的兜底方案，优先保证能连上。",
     placeholder: "wss://relay.example.com/room?roomId=...",
-    startDescription: "优先保证能连上，适合复杂网络环境或临时兜底。",
-    joinDescription: "加入地址会携带房间 token，不需要你再判断模式。",
+    startDescription: "适合公网不通、Tailscale 不方便时的稳定兜底。",
+    joinDescription: "加入地址会带上房间信息，不需要你再判断模式。",
   },
 };
 
@@ -97,10 +96,10 @@ const getStatusLine = ({
   }
 
   if (currentMode === "tailscale") {
-    return tailscaleMessage || "确认 Tailscale 已连到同一个 tailnet 后再开房。";
+    return tailscaleMessage || "确认 Tailscale 已连接到同一个 tailnet 后再开房。";
   }
 
-  return relayMessage || "确认云中继地址可用后，再发地址给朋友。";
+  return relayMessage || "确认云中继地址可用后，再把地址发给队友。";
 };
 
 export const HomePage = () => {
@@ -145,6 +144,7 @@ export const HomePage = () => {
   const currentDirectHost = hostSession?.directHostProbe ?? networkSnapshot?.directHost;
   const relaySummary = networkSnapshot?.relay;
   const latestHostEvent = room.recentHostEvents?.[0]?.message;
+
   const statusLine = getStatusLine({
     roomAction,
     latestFailureReason: room.latestFailureReason,
@@ -244,7 +244,7 @@ export const HomePage = () => {
         <InlineBanner tone={environmentBanner.tone}>{environmentBanner.message}</InlineBanner>
       ) : null}
 
-      <section className="grid gap-4 xl:grid-cols-2">
+      <section className="grid items-stretch gap-4 xl:grid-cols-2">
         <div
           className="flex min-h-[376px] flex-col rounded-[24px] border border-[#E7ECF2] bg-white p-4 shadow-[0_18px_40px_rgba(17,24,39,0.06)]"
           data-testid="home-action-card"
@@ -273,7 +273,9 @@ export const HomePage = () => {
                 <Radio className="h-4 w-4 text-[#4DA3FF]" />
                 开启房间
               </div>
-              <div className="mt-2 text-sm text-[#667085]">{currentModeCopy.startDescription}</div>
+              <div className="mt-2 min-h-[44px] text-sm text-[#667085]">
+                {currentModeCopy.startDescription}
+              </div>
 
               <div className="mt-3 min-h-[88px] rounded-[14px] border border-[#DCE8F7] bg-white px-3 py-3 text-sm text-[#667085]">
                 <div className="font-medium text-[#111827]">当前状态</div>
@@ -334,80 +336,13 @@ export const HomePage = () => {
           </div>
         </div>
 
-        <div
-          className="flex min-h-[376px] flex-col rounded-[24px] border border-[#E7ECF2] bg-white p-4 shadow-[0_18px_40px_rgba(17,24,39,0.06)]"
-          data-testid="home-chat-card"
-        >
-          <div className="flex items-center gap-2 text-sm font-medium text-[#111827]">
-            <MessageCircle className="h-4 w-4 text-[#4DA3FF]" />
-            临时聊天
-          </div>
-          <div className="mt-2 text-sm text-[#667085]">只发文字和 emoji，不抢语音主流程。</div>
-
-          <div className="mt-4 flex min-h-0 flex-1 flex-col rounded-[18px] border border-[#E7ECF2] bg-[#F8FAFC] p-3">
-            <div className="min-h-0 flex-1 space-y-3 overflow-y-auto pr-1">
-              {chatMessages.length === 0 ? (
-                <div className="flex h-full min-h-[190px] items-center justify-center rounded-[16px] border border-dashed border-[#D6DEE8] bg-white px-4 text-center text-sm text-[#98A2B3]">
-                  房间里还没有消息。进房后先发一句“上号”试试。
-                </div>
-              ) : (
-                chatMessages.map((message) => (
-                  <div
-                    key={message.id}
-                    className={`max-w-[88%] rounded-[16px] px-3 py-2 text-sm shadow-[0_4px_12px_rgba(17,24,39,0.04)] ${
-                      message.isLocal
-                        ? "ml-auto bg-[#4DA3FF] text-white"
-                        : "bg-white text-[#111827]"
-                    }`}
-                  >
-                    <div
-                      className={`text-[11px] ${
-                        message.isLocal ? "text-white/80" : "text-[#98A2B3]"
-                      }`}
-                    >
-                      {message.nickname}
-                    </div>
-                    <div className="mt-1 break-words leading-6">{message.content}</div>
-                  </div>
-                ))
-              )}
-            </div>
-
-            <div className="mt-3 flex flex-wrap gap-2">
-              {emojiShortcuts.map((emoji) => (
-                <button
-                  key={emoji}
-                  type="button"
-                  className="rounded-full border border-[#E7ECF2] bg-white px-3 py-1 text-sm text-[#667085] transition hover:border-[#C7D7EB] hover:text-[#111827]"
-                  onClick={() => setChatInput((value) => `${value}${emoji}`)}
-                >
-                  {emoji}
-                </button>
-              ))}
-            </div>
-
-            <div className="mt-3 flex items-center gap-3">
-              <div className="relative flex-1">
-                <SmilePlus className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#98A2B3]" />
-                <Input
-                  className="pl-10"
-                  placeholder="发一句话，或者来个 emoji"
-                  value={chatInput}
-                  onChange={(event) => setChatInput(event.target.value)}
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter") {
-                      handleSendChat();
-                    }
-                  }}
-                />
-              </div>
-              <Button onClick={handleSendChat} disabled={!chatInput.trim()}>
-                <Send className="h-4 w-4" />
-                发送
-              </Button>
-            </div>
-          </div>
-        </div>
+        <TemporaryChatPanel
+          className="h-full"
+          messages={chatMessages}
+          chatInput={chatInput}
+          onChatInputChange={setChatInput}
+          onSend={handleSendChat}
+        />
       </section>
 
       <div className="flex min-h-0 flex-col gap-3">

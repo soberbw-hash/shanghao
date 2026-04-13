@@ -14,6 +14,7 @@ extraResources:
     to: build
     filter:
       - "icon.ico"
+      - "shortcut.ico"
       - "tray-dark.png"
       - "tray-light.png"
 extraMetadata:
@@ -29,6 +30,7 @@ nsis:
   oneClick: false
   perMachine: false
   allowToChangeInstallationDirectory: true
+  include: build/installer.nsh
   shortcutName: "\u4E0A\u53F7"
   installerIcon: icon.ico
   uninstallerIcon: icon.ico

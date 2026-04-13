@@ -277,6 +277,7 @@ try {
   $iconMasterPath = Join-Path $OutputDirectory "icon-master.png"
   $iconPngPath = Join-Path $OutputDirectory "icon.png"
   $iconIcoPath = Join-Path $OutputDirectory "icon.ico"
+  $shortcutIcoPath = Join-Path $OutputDirectory "shortcut.ico"
   $trayDarkPath = Join-Path $OutputDirectory "tray-dark.png"
   $trayLightPath = Join-Path $OutputDirectory "tray-light.png"
   $logoSvgPath = Join-Path $RendererAssetsDirectory "brand-mark.svg"
@@ -290,6 +291,7 @@ try {
   $largePng.Dispose()
 
   Save-MultiSizeIco -Source $master -Sizes @(16, 20, 24, 32, 40, 48, 64, 128, 256) -Path $iconIcoPath
+  Save-MultiSizeIco -Source $master -Sizes @(16, 20, 24, 32, 40, 48, 64, 128, 256) -Path $shortcutIcoPath
 
   $trayDark = New-TrayBitmap -Size 64 -StrokeColor ([System.Drawing.Color]::FromArgb(255, 255, 255, 255))
   $trayLight = New-TrayBitmap -Size 64 -StrokeColor ([System.Drawing.Color]::FromArgb(255, 17, 24, 39))
@@ -338,6 +340,7 @@ Write-Host "  Source: $SourceImage"
 Write-Host "  Icon master: $iconMasterPath"
 Write-Host "  Icon png: $iconPngPath"
 Write-Host "  Icon ico: $iconIcoPath"
+Write-Host "  Shortcut ico: $shortcutIcoPath"
 Write-Host "  Tray dark: $trayDarkPath"
 Write-Host "  Tray light: $trayLightPath"
 Write-Host "  UI logo: $logoSvgPath"

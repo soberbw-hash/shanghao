@@ -14,7 +14,7 @@ test("home page keeps one compact status row and a strict two-card main layout",
 
   assert.equal(source.includes('data-testid="home-status-row"'), true);
   assert.equal(source.includes('data-testid="home-action-card"'), true);
-  assert.equal(source.includes('data-testid="home-chat-card"'), true);
+  assert.equal(source.includes("TemporaryChatPanel"), true);
   assert.equal(source.includes("xl:grid-cols-2"), true);
 });
 
@@ -31,7 +31,7 @@ test("home page no longer renders a home mic-test panel", () => {
   const source = readFileSync(sourcePath, "utf8");
 
   assert.equal(source.includes("试音"), false);
-  assert.equal(source.includes("临时聊天"), true);
+  assert.equal(source.includes("TemporaryChatPanel"), true);
 });
 
 test("member grid stays in a single five-column row instead of wrapping", () => {
