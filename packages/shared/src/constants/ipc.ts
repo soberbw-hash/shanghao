@@ -47,6 +47,7 @@ export const IPC_CHANNELS = {
     start: "host:start",
     stop: "host:stop",
     diagnoseJoin: "host:diagnose-join",
+    sessionUpdated: "host:session-updated",
   },
   signaling: {
     connect: "signaling:connect",

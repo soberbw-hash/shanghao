@@ -1,10 +1,11 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 
 import {
   HostSessionState,
   RoomConnectionState,
   RoomLifecycleState,
   type ConnectionMode,
+  type HostSessionInfo,
   type RoomMember,
 } from "@private-voice/shared";
 import { createSpeakingDetector, requestMicrophoneStream } from "@private-voice/webrtc";
@@ -24,13 +25,16 @@ let previousMemberIds = new Set<string>();
 const copy = {
   startHostTitle: "房间启动失败",
   joinRoomTitle: "加入房间失败",
-  hostStartedTitle: "房间已开启",
-  hostStartedDescription: "地址已经准备好了，正在等待好友加入。",
+  hostStartedTitle: "房间已启动",
+  hostStartedDescription: "你已经进入房间，正在等待好友加入。",
+  hostDirectReadyTitle: "公网直连已就绪",
+  hostDirectReadyDescription: "现在可以直接复制房间地址发给朋友。",
+  hostDirectLimitedTitle: "房间已启动",
   missingJoinUrl: "请先输入房主分享的地址。",
   invalidJoinUrl: "连接地址无效，请确认是房主发来的完整地址。",
   roomFull: "房间已满，最多支持 5 人同时语音。",
   networkFailed: "连接失败，请检查网络、代理或当前连接模式。",
-  handshakeFailed: "地址已可达，但房间握手失败，可能受代理或 TUN 影响。",
+  handshakeFailed: "地址已可达，但房间连接握手失败，可能受代理或 TUN 影响。",
   versionMismatch: "房主和成员版本不一致，请升级到同一版本。",
   relayAuthFailed: "云中继鉴权失败，请让房主重新分享房间地址。",
   microphoneUnavailable: "麦克风不可用",
@@ -123,6 +127,36 @@ const collectMemberEvents = (members: RoomMember[]) => {
   return { joined, left };
 };
 
+const applyHostSessionSnapshot = (
+  session: HostSessionInfo | undefined,
+  {
+    setHostSession,
+    setJoinSignalUrl,
+    setConnectionMode,
+    setRoom,
+  }: {
+    setHostSession: (session?: HostSessionInfo) => void;
+    setJoinSignalUrl: (url: string) => void;
+    setConnectionMode: (mode: ConnectionMode) => void;
+    setRoom: (room: Partial<ReturnType<typeof useRoomStore.getState>["room"]>) => void;
+  },
+) => {
+  setHostSession(session);
+
+  if (!session) {
+    setJoinSignalUrl("");
+    return;
+  }
+
+  setJoinSignalUrl(session.signalingUrl);
+  setConnectionMode(session.connectionMode);
+  setRoom({
+    signalingUrl: session.signalingUrl || undefined,
+    hostAddress: session.hostAddress || undefined,
+    hostSessionState: session.hostState,
+  });
+};
+
 export const useRoomState = () => {
   const runtimeInfo = useSettingsStore((state) => state.runtimeInfo);
   const settings = useSettingsStore((state) => state.settings);
@@ -148,6 +182,9 @@ export const useRoomState = () => {
   const pushToast = useAppStore((state) => state.pushToast);
   const setRoomAction = useAppStore((state) => state.setRoomAction);
 
+  const lastProbeSignatureRef = useRef("");
+  const lastCopiedInviteRef = useRef("");
+
   useEffect(() => {
     activeClient?.updateMuteState(isMuted, false);
   }, [isMuted]);
@@ -159,6 +196,61 @@ export const useRoomState = () => {
 
     activeClient?.updateProfile(settings.nickname, avatarDataUrl);
   }, [avatarDataUrl, settings?.nickname]);
+
+  useEffect(() => {
+    const unsubscribe = window.desktopApi.host.onSessionUpdated((session) => {
+      applyHostSessionSnapshot(session, {
+        setHostSession,
+        setJoinSignalUrl,
+        setConnectionMode,
+        setRoom,
+      });
+
+      if (!session || session.connectionMode !== "direct_host" || !session.directHostProbe) {
+        return;
+      }
+
+      const probe = session.directHostProbe;
+      const signature = `${probe.reachability}:${session.signalingUrl || "none"}`;
+      if (lastProbeSignatureRef.current === signature) {
+        return;
+      }
+      lastProbeSignatureRef.current = signature;
+
+      if (probe.reachability === "pending") {
+        pushHostEvent({ level: "info", message: probe.message });
+        return;
+      }
+
+      if (session.signalingUrl) {
+        pushHostEvent({ level: "success", message: probe.message });
+        pushToast({
+          tone: "success",
+          title: copy.hostDirectReadyTitle,
+          description: copy.hostDirectReadyDescription,
+        });
+
+        if (
+          settings?.shouldAutoCopyInviteLink &&
+          lastCopiedInviteRef.current !== session.signalingUrl
+        ) {
+          lastCopiedInviteRef.current = session.signalingUrl;
+          void navigator.clipboard.writeText(session.signalingUrl).catch(() => undefined);
+        }
+      } else {
+        pushHostEvent({ level: "warning", message: probe.message });
+        pushToast({
+          tone: "warning",
+          title: copy.hostDirectLimitedTitle,
+          description: probe.message,
+        });
+      }
+    });
+
+    return () => {
+      unsubscribe();
+    };
+  }, [pushHostEvent, pushToast, setConnectionMode, setHostSession, setJoinSignalUrl, setRoom, settings?.shouldAutoCopyInviteLink]);
 
   const startSpeakingDetector = (stream: MediaStream) => {
     activeSpeakingDetector?.destroy();
@@ -281,6 +373,7 @@ export const useRoomState = () => {
       lifecycleState: RoomLifecycleState.Opening,
       signalingUrl,
       hostSessionState: HostSessionState.Starting,
+      latestFailureReason: undefined,
     });
 
     await activeClient.connect();
@@ -291,6 +384,7 @@ export const useRoomState = () => {
       lifecycleState: RoomLifecycleState.Open,
       signalingUrl,
       hostSessionState: HostSessionState.Active,
+      latestFailureReason: undefined,
     });
     startSpeakingDetector(stream);
   };
@@ -339,6 +433,7 @@ export const useRoomState = () => {
     setLifecycleState(RoomLifecycleState.Opening);
     clearHostEvents();
     clearChatMessages();
+    lastProbeSignatureRef.current = "";
     pushHostEvent({ level: "info", message: "正在启动房间" });
 
     try {
@@ -354,13 +449,11 @@ export const useRoomState = () => {
       );
       const hostJoinUrl = session.localSignalingUrl || session.signalingUrl;
 
-      setHostSession(session);
-      setJoinSignalUrl(session.signalingUrl);
-      setConnectionMode(session.connectionMode);
-      setRoom({
-        signalingUrl: session.signalingUrl,
-        hostAddress: session.hostAddress,
-        hostSessionState: session.hostState,
+      applyHostSessionSnapshot(session, {
+        setHostSession,
+        setJoinSignalUrl,
+        setConnectionMode,
+        setRoom,
       });
 
       await connectToRoom({
@@ -370,15 +463,18 @@ export const useRoomState = () => {
         connectionMode: session.connectionMode,
       });
 
-      try {
-        await navigator.clipboard.writeText(session.signalingUrl);
-        pushToast({
-          tone: "success",
-          title: copy.copiedAddressTitle,
-          description: copy.copiedAddressDescription,
-        });
-      } catch {
-        // noop
+      if (session.signalingUrl) {
+        try {
+          await navigator.clipboard.writeText(session.signalingUrl);
+          lastCopiedInviteRef.current = session.signalingUrl;
+          pushToast({
+            tone: "success",
+            title: copy.copiedAddressTitle,
+            description: copy.copiedAddressDescription,
+          });
+        } catch {
+          // noop
+        }
       }
 
       useAppStore.getState().navigate("room");
@@ -386,9 +482,8 @@ export const useRoomState = () => {
         tone: "success",
         title: copy.hostStartedTitle,
         description:
-          session.connectionMode === "direct_host" &&
-          session.directHostProbe?.reachability !== "reachable"
-            ? `${copy.hostStartedDescription} ${session.directHostProbe?.message ?? ""}`.trim()
+          session.connectionMode === "direct_host"
+            ? session.directHostProbe?.message ?? copy.hostStartedDescription
             : copy.hostStartedDescription,
       });
     } catch (error) {
@@ -519,6 +614,8 @@ export const useRoomState = () => {
       await window.desktopApi.host.stop().catch(() => undefined);
       useRoomStore.getState().resetRoom();
       previousMemberIds = new Set<string>();
+      lastProbeSignatureRef.current = "";
+      lastCopiedInviteRef.current = "";
       if (settings) {
         useRoomStore.getState().syncLocalProfile({
           nickname: settings.nickname,
@@ -536,11 +633,17 @@ export const useRoomState = () => {
 
   const copyInviteLink = async () => {
     if (!room.signalingUrl) {
+      pushToast({
+        tone: "warning",
+        title: "还没有可复制的地址",
+        description: "请等房间地址准备好，或切换到 Tailscale / 云中继模式。",
+      });
       return;
     }
 
     try {
       await navigator.clipboard.writeText(room.signalingUrl);
+      lastCopiedInviteRef.current = room.signalingUrl;
       pushToast({
         tone: "success",
         title: copy.copiedAddressTitle,

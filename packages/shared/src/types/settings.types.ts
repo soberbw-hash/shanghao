@@ -86,7 +86,7 @@ export interface DirectHostProbeSummary {
   upnpMapped: boolean;
   natPmpAttempted: boolean;
   natPmpMapped: boolean;
-  reachability: "reachable" | "unreachable" | "unverified";
+  reachability: "pending" | "reachable" | "unreachable" | "unverified";
   natTendency: "direct_friendly" | "mapping_required" | "restricted" | "unknown";
   message: string;
 }

@@ -167,7 +167,12 @@ export const useRoomStore = create<RoomStoreState>((set) => ({
       room: {
         ...state.room,
         connectionState,
-        latestFailureReason: reason ?? state.room.latestFailureReason,
+        latestFailureReason:
+          typeof reason === "string"
+            ? reason
+            : connectionState === RoomConnectionState.Failed
+              ? state.room.latestFailureReason
+              : undefined,
       },
     })),
   setLifecycleState: (lifecycleState) =>

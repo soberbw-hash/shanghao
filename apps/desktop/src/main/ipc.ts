@@ -47,6 +47,10 @@ export const registerIpcHandlers = ({
   signalingClient,
   updates,
 }: MainProcessServices): void => {
+  hostSession.onUpdate((session) => {
+    getMainWindow()?.webContents.send(IPC_CHANNELS.host.sessionUpdated, session);
+  });
+
   signalingClient.on("event", (payload: SignalingEventPayload) => {
     getMainWindow()?.webContents.send(IPC_CHANNELS.signaling.event, payload);
   });

@@ -9,12 +9,11 @@ export const MemberGrid = ({
   members: RoomMember[];
   onVolumeChange: (memberId: string, value: number) => void;
 }) => (
-  <div
-    className="grid gap-3"
-    style={{ gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))" }}
-  >
-    {members.map((member) => (
-      <MemberCard key={member.id} member={member} onVolumeChange={onVolumeChange} />
-    ))}
+  <div className="overflow-x-auto pb-1">
+    <div className="grid min-w-[1120px] grid-cols-5 gap-3">
+      {members.map((member) => (
+        <MemberCard key={member.id} member={member} onVolumeChange={onVolumeChange} />
+      ))}
+    </div>
   </div>
 );

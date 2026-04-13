@@ -60,6 +60,13 @@ const desktopApi: DesktopApi = {
     stop: () => ipcRenderer.invoke(IPC_CHANNELS.host.stop),
     diagnoseJoin: (signalingUrl, connectionMode) =>
       ipcRenderer.invoke(IPC_CHANNELS.host.diagnoseJoin, signalingUrl, connectionMode),
+    onSessionUpdated: (listener) => {
+      const wrapped = (_event: Electron.IpcRendererEvent, session: unknown) => {
+        listener(session as Parameters<typeof listener>[0]);
+      };
+      ipcRenderer.on(IPC_CHANNELS.host.sessionUpdated, wrapped);
+      return () => ipcRenderer.removeListener(IPC_CHANNELS.host.sessionUpdated, wrapped);
+    },
   },
   signaling: {
     connect: (signalingUrl) => ipcRenderer.invoke(IPC_CHANNELS.signaling.connect, signalingUrl),

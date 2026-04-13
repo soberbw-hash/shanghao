@@ -56,10 +56,10 @@ export const createMainWindow = ({
   logsDirectory,
 }: CreateMainWindowOptions = {}): BrowserWindow => {
   const window = new BrowserWindow({
-    width: 1600,
-    height: 1000,
-    minWidth: 1420,
-    minHeight: 900,
+    width: 1640,
+    height: 1020,
+    minWidth: 1500,
+    minHeight: 940,
     backgroundColor: "#F5F7FA",
     frame: false,
     titleBarStyle: "hidden",

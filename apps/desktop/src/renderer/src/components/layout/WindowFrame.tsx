@@ -7,12 +7,12 @@ import { BrandMark } from "../brand/BrandMark";
 import { desktopApi } from "../../utils/desktopApi";
 
 export const WindowFrame = () => (
-  <div className="drag-region flex items-center justify-between border-b border-[#EEF2F6] px-5 py-3">
+  <div className="drag-region flex items-center justify-between border-b border-[#EEF2F6] px-4 py-2.5">
     <div className="flex items-center gap-3">
       <BrandMark size="sm" />
       <div>
         <div className="text-[11px] tracking-[0.24em] text-[#98A2B3]">SHANGHAO</div>
-        <div className="text-sm font-medium text-[#111827]">{APP_NAME}</div>
+        <div className="text-[15px] font-medium text-[#111827]">{APP_NAME}</div>
       </div>
     </div>
     <div className="no-drag flex items-center gap-2">

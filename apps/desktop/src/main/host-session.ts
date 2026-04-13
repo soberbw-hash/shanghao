@@ -1,3 +1,4 @@
+import { EventEmitter } from "node:events";
 import net from "node:net";
 
 import {
@@ -89,7 +90,28 @@ const createLocalJoinUrl = ({
     relayToken,
   });
 
+const createPendingDirectProbe = (
+  localPort: number,
+  manualHost?: string,
+): HostSessionInfo["directHostProbe"] => ({
+  publicIp: undefined,
+  manualHost,
+  selectedHost: manualHost,
+  selectedPort: localPort,
+  addressSource: manualHost ? "manual_public_host" : "unknown",
+  upnpAttempted: false,
+  upnpMapped: false,
+  natPmpAttempted: false,
+  natPmpMapped: false,
+  reachability: "pending",
+  natTendency: "unknown",
+  message: manualHost
+    ? "房间已启动，正在验证你填写的公网地址是否可分享。"
+    : "房间已启动，正在检测公网直连能力。",
+});
+
 export class HostSessionController {
+  private readonly events = new EventEmitter();
   private server?: SignalingServer;
   private cleanupTasks: Array<() => Promise<void>> = [];
   private currentSession?: HostSessionInfo;
@@ -101,6 +123,13 @@ export class HostSessionController {
 
   getSnapshot(): HostSessionInfo | undefined {
     return this.currentSession;
+  }
+
+  onUpdate(listener: (session?: HostSessionInfo) => void): () => void {
+    this.events.on("update", listener);
+    return () => {
+      this.events.off("update", listener);
+    };
   }
 
   async start(
@@ -132,13 +161,15 @@ export class HostSessionController {
     try {
       const signalingPort = this.server ? await this.server.listen() : undefined;
       const tailscaleStatus = await detectTailscaleStatus();
+      const relayToken =
+        connectionMode === "relay" ? settings.relayAuthToken || crypto.randomUUID() : undefined;
+
       let hostAddress = "";
+      let signalingUrl = "";
       let addressSource: HostSessionInfo["addressSource"] = "unknown";
       let alternativeAddresses: string[] = [];
       let directHostProbe: HostSessionInfo["directHostProbe"];
       let relayStatus: HostSessionInfo["relayStatus"];
-      const relayToken =
-        connectionMode === "relay" ? settings.relayAuthToken || crypto.randomUUID() : undefined;
 
       if (connectionMode === "tailscale") {
         const resolvedAddress = await resolveTailscaleAddress();
@@ -149,25 +180,31 @@ export class HostSessionController {
         hostAddress = resolvedAddress.host;
         addressSource = resolvedAddress.source;
         alternativeAddresses = resolvedAddress.alternatives;
+        signalingUrl = createInviteUrl({
+          host: hostAddress,
+          port: signalingPort,
+          roomId,
+          mode: connectionMode,
+          relayToken,
+        });
       } else if (connectionMode === "direct_host") {
         if (!signalingPort) {
           throw new Error("房间启动失败，未拿到可用的 signaling 端口。");
         }
 
-        const probe = await probeDirectHost({
-          localPort: signalingPort,
-          manualHost: settings.manualDirectHost,
-          writeLog: this.writeLog,
-        });
-        this.cleanupTasks = probe.cleanupTasks;
-        directHostProbe = probe.summary;
-        hostAddress = probe.summary.selectedHost || "";
-        addressSource = probe.summary.addressSource;
+        const manualHost = settings.manualDirectHost?.trim() || undefined;
+        hostAddress = manualHost ?? "";
+        addressSource = manualHost ? "manual_public_host" : "unknown";
         alternativeAddresses = resolveLanIpv4Candidates();
-
-        if (!hostAddress) {
-          throw new Error("当前网络不支持房主直连，建议切换到 Tailscale 或云中继。");
-        }
+        directHostProbe = createPendingDirectProbe(signalingPort, manualHost);
+        signalingUrl = manualHost
+          ? createInviteUrl({
+              host: manualHost,
+              port: signalingPort,
+              roomId,
+              mode: connectionMode,
+            })
+          : "";
       } else {
         relayStatus = await readRelayStatus({
           relayServerUrl: settings.relayServerUrl,
@@ -184,15 +221,14 @@ export class HostSessionController {
 
         hostAddress = relayStatus.serverUrl;
         addressSource = "relay";
+        signalingUrl = createInviteUrl({
+          host: hostAddress,
+          roomId,
+          mode: connectionMode,
+          relayToken,
+        });
       }
 
-      const signalingUrl = createInviteUrl({
-        host: hostAddress,
-        port: connectionMode === "relay" ? undefined : signalingPort,
-        roomId,
-        mode: connectionMode,
-        relayToken,
-      });
       const localSignalingUrl =
         connectionMode === "relay" || !signalingPort
           ? signalingUrl
@@ -225,17 +261,28 @@ export class HostSessionController {
       };
 
       this.currentSession = sessionInfo;
+      this.emitUpdate();
 
       await this.writeLog({
         category: connectionMode === "relay" ? "relay" : "connection-mode",
         level: "info",
-        message: "host session started",
+        message:
+          connectionMode === "direct_host"
+            ? "host session started locally"
+            : "host session started",
         context: {
           ...sessionInfo,
-          localSignalingUrl,
           joinMode: connectionMode === "direct_host" ? "loopback-for-host" : "default",
         } as Record<string, unknown>,
       });
+
+      if (connectionMode === "direct_host" && signalingPort) {
+        void this.runDirectHostProbe({
+          roomId,
+          localPort: signalingPort,
+          manualHost: settings.manualDirectHost,
+        });
+      }
 
       return sessionInfo;
     } catch (error) {
@@ -251,6 +298,124 @@ export class HostSessionController {
       });
       await this.stop();
       throw error;
+    }
+  }
+
+  private async runDirectHostProbe({
+    roomId,
+    localPort,
+    manualHost,
+  }: {
+    roomId: string;
+    localPort: number;
+    manualHost?: string;
+  }): Promise<void> {
+    await this.writeLog({
+      category: "connection-mode",
+      level: "info",
+      message: "direct host probe started",
+      context: {
+        roomId,
+        localPort,
+        manualHost: manualHost?.trim() || undefined,
+      },
+    });
+
+    try {
+      const probe = await probeDirectHost({
+        localPort,
+        manualHost,
+        writeLog: this.writeLog,
+      });
+
+      if (!this.currentSession || this.currentSession.roomId !== roomId) {
+        for (const cleanup of probe.cleanupTasks) {
+          await cleanup().catch(() => undefined);
+        }
+        return;
+      }
+
+      this.cleanupTasks.push(...probe.cleanupTasks);
+
+      const isShareable = probe.summary.reachability === "reachable";
+      const hostAddress = isShareable ? probe.summary.selectedHost || "" : "";
+      const signalingUrl =
+        isShareable && hostAddress
+          ? createInviteUrl({
+              host: hostAddress,
+              port: localPort,
+              roomId,
+              mode: "direct_host",
+            })
+          : "";
+      const message = isShareable
+        ? "房间已启动，公网直连可用，可以直接分享地址。"
+        : "房间已启动，但当前网络不支持公网直连，建议改用 Tailscale 或云中继。";
+
+      this.currentSession = {
+        ...this.currentSession,
+        signalingUrl,
+        hostAddress,
+        addressSource: isShareable ? probe.summary.addressSource : "unknown",
+        alternativeAddresses: resolveLanIpv4Candidates(),
+        directHostProbe: {
+          ...probe.summary,
+          message,
+        },
+      };
+      this.emitUpdate();
+
+      await this.writeLog({
+        category: "connection-mode",
+        level: isShareable ? "info" : "warn",
+        message: "direct host probe finalized",
+        context: {
+          roomId,
+          hostAddress,
+          signalingUrl,
+          reachability: probe.summary.reachability,
+          natTendency: probe.summary.natTendency,
+          upnpMapped: probe.summary.upnpMapped,
+          natPmpMapped: probe.summary.natPmpMapped,
+          isShareable,
+        },
+      });
+    } catch (error) {
+      if (!this.currentSession || this.currentSession.roomId !== roomId) {
+        return;
+      }
+
+      this.currentSession = {
+        ...this.currentSession,
+        signalingUrl: "",
+        hostAddress: "",
+        addressSource: "unknown",
+        directHostProbe: {
+          publicIp: undefined,
+          manualHost: manualHost?.trim() || undefined,
+          selectedHost: undefined,
+          selectedPort: localPort,
+          addressSource: "unknown",
+          upnpAttempted: false,
+          upnpMapped: false,
+          natPmpAttempted: false,
+          natPmpMapped: false,
+          reachability: "unreachable",
+          natTendency: "unknown",
+          message: "房间已启动，但当前网络不支持公网直连，建议改用 Tailscale 或云中继。",
+        },
+      };
+      this.emitUpdate();
+
+      await this.writeLog({
+        category: "connection-mode",
+        level: "error",
+        message: "direct host probe failed",
+        context: {
+          roomId,
+          error: error instanceof Error ? error.message : String(error),
+        },
+      });
     }
   }
 
@@ -324,7 +489,7 @@ export class HostSessionController {
         tailscaleState: tailscaleStatus?.state,
         failureStage: isReachable ? "websocket" : "network",
         message: isReachable
-          ? "地址已可达，但房间握手失败，可能受代理或 TUN 影响。"
+          ? "地址已可达，但房间连接握手失败，可能受代理或 TUN 影响。"
           : "无法连接到房主地址。",
         details,
         proxyDiagnostics,
@@ -363,5 +528,10 @@ export class HostSessionController {
     }
 
     this.currentSession = undefined;
+    this.emitUpdate();
+  }
+
+  private emitUpdate(): void {
+    this.events.emit("update", this.currentSession);
   }
 }

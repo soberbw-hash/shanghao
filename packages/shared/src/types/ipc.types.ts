@@ -98,6 +98,7 @@ export interface DesktopApi {
       signalingUrl: string,
       connectionMode: AppSettings["connectionMode"],
     ) => Promise<JoinRoomDiagnostic>;
+    onSessionUpdated: (listener: (session?: HostSessionInfo) => void) => () => void;
   };
   signaling: {
     connect: (signalingUrl: string) => Promise<void>;
