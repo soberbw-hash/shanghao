@@ -10,7 +10,7 @@ export const SIGNALING_PING_TIMEOUT_MS = 30_000;
 export const DEFAULT_RECONNECT_DELAYS_MS = [1_000, 2_000, 4_000, 8_000];
 export const DEFAULT_SIGNALING_PORT = 43_821;
 export const APP_PROTOCOL_VERSION = "1";
-export const APP_BUILD_NUMBER = "2026.04.20.1";
+export const APP_BUILD_NUMBER = "2026.04.21.1";
 export const SETTINGS_SCHEMA_VERSION = 3;
 export const DEFAULT_RELEASES_URL = "https://github.com/soberbw-hash/shanghao/releases";
 

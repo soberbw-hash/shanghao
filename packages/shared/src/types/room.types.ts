@@ -86,6 +86,7 @@ export interface HostSessionInfo {
   addressSource:
     | "magicdns"
     | "tailscale_ip"
+    | "lan_ipv4"
     | "public_ip"
     | "relay"
     | "manual_public_host"
@@ -109,6 +110,7 @@ export interface JoinRoomDiagnostic {
   addressSource:
     | "magicdns"
     | "tailscale_ip"
+    | "lan_ipv4"
     | "public_ip"
     | "relay"
     | "manual_public_host"

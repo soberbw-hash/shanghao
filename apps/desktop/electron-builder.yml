@@ -13,8 +13,8 @@ extraResources:
   - from: build
     to: build
     filter:
-      - "shanghao-icon.ico"
-      - "shanghao-shortcut.ico"
+      - "shanghao-icon-xl.ico"
+      - "shanghao-shortcut-xl.ico"
       - "tray-dark.png"
       - "tray-light.png"
 extraMetadata:
@@ -22,7 +22,7 @@ extraMetadata:
   main: dist-electron/main/index.cjs
 win:
   executableName: ShangHao
-  icon: shanghao-icon.ico
+  icon: shanghao-icon-xl.ico
   signAndEditExecutable: false
   target:
     - nsis
@@ -32,6 +32,6 @@ nsis:
   allowToChangeInstallationDirectory: true
   include: build/installer.nsh
   shortcutName: "\u4E0A\u53F7"
-  installerIcon: shanghao-icon.ico
-  uninstallerIcon: shanghao-icon.ico
-  installerHeaderIcon: shanghao-icon.ico
+  installerIcon: shanghao-icon-xl.ico
+  uninstallerIcon: shanghao-icon-xl.ico
+  installerHeaderIcon: shanghao-icon-xl.ico

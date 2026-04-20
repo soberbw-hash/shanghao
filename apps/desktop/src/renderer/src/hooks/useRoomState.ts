@@ -223,7 +223,7 @@ export const useRoomState = () => {
         return;
       }
 
-      if (session.signalingUrl) {
+      if (probe.reachability === "reachable" && session.signalingUrl) {
         pushHostEvent({ level: "success", message: probe.message });
         pushToast({
           tone: "success",
@@ -238,6 +238,13 @@ export const useRoomState = () => {
           lastCopiedInviteRef.current = session.signalingUrl;
           void navigator.clipboard.writeText(session.signalingUrl).catch(() => undefined);
         }
+      } else if (session.signalingUrl) {
+        pushHostEvent({ level: "warning", message: probe.message });
+        pushToast({
+          tone: "warning",
+          title: copy.hostDirectLimitedTitle,
+          description: probe.message,
+        });
       } else {
         pushHostEvent({ level: "warning", message: probe.message });
         pushToast({

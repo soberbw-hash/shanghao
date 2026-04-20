@@ -18,8 +18,26 @@ test("host uses local loopback only for self-connect, not for outward invite lin
 test("direct host keeps a shareable candidate address even before full reachability verification", () => {
   const source = readFileSync(hostSessionPath, "utf8");
 
-  assert.equal(source.includes("const hasCandidateAddress = Boolean(probe.summary.selectedHost);"), true);
+  assert.equal(
+    source.includes("const hasCandidateAddress = Boolean(resolvedHost);"),
+    true,
+  );
   assert.equal(source.includes("const isVerifiedShareable = probe.summary.reachability === \"reachable\";"), true);
-  assert.equal(source.includes("hasCandidateAddress && hostAddress"), true);
-  assert.equal(source.includes("addressSource: hasCandidateAddress ? probe.summary.addressSource : \"unknown\""), true);
+  assert.equal(source.includes("hasCandidateAddress && resolvedHost"), true);
+  assert.equal(
+    source.includes("addressSource: hasCandidateAddress ? resolvedAddressSource : \"unknown\""),
+    true,
+  );
+});
+
+test("direct host seeds an immediate manual or LAN candidate before public probe completes", () => {
+  const source = readFileSync(hostSessionPath, "utf8");
+
+  assert.equal(source.includes("const lanCandidates = resolveLanIpv4Candidates();"), true);
+  assert.equal(source.includes("const initialHost = manualHost ?? lanCandidates[0] ?? \"\";"), true);
+  assert.equal(
+    source.includes("addressSource = manualHost\n          ? \"manual_public_host\"\n          : initialHost\n            ? \"lan_ipv4\"\n            : \"unknown\";"),
+    true,
+  );
+  assert.equal(source.includes("signalingUrl = initialHost"), true);
 });

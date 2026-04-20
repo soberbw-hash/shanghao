@@ -96,7 +96,7 @@ function New-SquareMasterFromSource {
   }
 
   $focusSide = [Math]::Max($focusBounds.Width, $focusBounds.Height)
-  $padding = [int]([Math]::Ceiling($focusSide * 0.08))
+  $padding = [int]([Math]::Ceiling($focusSide * 0.035))
   $squareSide = [Math]::Min([Math]::Max($focusSide + ($padding * 2), 1), [Math]::Min($Source.Width, $Source.Height))
 
   $originX = [int][Math]::Round($focusBounds.X - (($squareSide - $focusBounds.Width) / 2))
@@ -105,7 +105,7 @@ function New-SquareMasterFromSource {
   $originY = [Math]::Max(0, [Math]::Min($Source.Height - $squareSide, $originY))
 
   $sourceRect = [System.Drawing.Rectangle]::new($originX, $originY, [int]$squareSide, [int]$squareSide)
-  $targetInset = [int]([Math]::Round($Size * 0.055))
+  $targetInset = [int]([Math]::Round($Size * 0.02))
   $targetRect = [System.Drawing.Rectangle]::new(
     $targetInset,
     $targetInset,
@@ -276,8 +276,8 @@ try {
 
   $iconMasterPath = Join-Path $OutputDirectory "icon-master.png"
   $iconPngPath = Join-Path $OutputDirectory "icon.png"
-  $iconIcoPath = Join-Path $OutputDirectory "shanghao-icon.ico"
-  $shortcutIcoPath = Join-Path $OutputDirectory "shanghao-shortcut.ico"
+  $iconIcoPath = Join-Path $OutputDirectory "shanghao-icon-xl.ico"
+  $shortcutIcoPath = Join-Path $OutputDirectory "shanghao-shortcut-xl.ico"
   $trayDarkPath = Join-Path $OutputDirectory "tray-dark.png"
   $trayLightPath = Join-Path $OutputDirectory "tray-light.png"
   $logoSvgPath = Join-Path $RendererAssetsDirectory "brand-mark.svg"

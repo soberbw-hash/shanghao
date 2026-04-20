@@ -77,6 +77,7 @@ export interface DirectHostProbeSummary {
   selectedPort?: number;
   addressSource:
     | "manual_public_host"
+    | "lan_ipv4"
     | "public_ip"
     | "magicdns"
     | "tailscale_ip"

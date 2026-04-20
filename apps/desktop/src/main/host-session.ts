@@ -90,24 +90,62 @@ const createLocalJoinUrl = ({
     relayToken,
   });
 
-const createPendingDirectProbe = (
-  localPort: number,
-  manualHost?: string,
-): HostSessionInfo["directHostProbe"] => ({
+const isLanIpv4Address = (host: string): boolean =>
+  /^10\./.test(host) ||
+  /^192\.168\./.test(host) ||
+  /^172\.(1[6-9]|2\d|3[0-1])\./.test(host);
+
+const buildPendingDirectProbeMessage = (
+  addressSource: HostSessionInfo["addressSource"],
+): string => {
+  if (addressSource === "manual_public_host") {
+    return "房间已启动，正在验证你填写的公网地址是否可分享。";
+  }
+
+  if (addressSource === "lan_ipv4") {
+    return "房间已启动，局域网候选地址已准备好，正在继续检测公网直连能力。";
+  }
+
+  return "房间已启动，正在检测可分享地址。";
+};
+
+const buildFallbackDirectProbeMessage = (
+  addressSource: HostSessionInfo["addressSource"],
+): string => {
+  if (addressSource === "lan_ipv4") {
+    return "房间本地已启动，局域网候选地址仍可使用。公网直连当前不可用，建议同一网络先试连，或改用 Tailscale / 云中继。";
+  }
+
+  if (addressSource === "manual_public_host") {
+    return "房间已启动，已保留你手动填写的地址，但当前还无法验证公网可达性。";
+  }
+
+  return "房间本地已启动，但当前网络拿不到可分享地址，建议改用 Tailscale 或云中继。";
+};
+
+const createPendingDirectProbe = ({
+  localPort,
+  manualHost,
+  initialHost,
+  addressSource,
+}: {
+  localPort: number;
+  manualHost?: string;
+  initialHost?: string;
+  addressSource: HostSessionInfo["addressSource"];
+}): HostSessionInfo["directHostProbe"] => ({
   publicIp: undefined,
   manualHost,
-  selectedHost: manualHost,
+  selectedHost: initialHost,
   selectedPort: localPort,
-  addressSource: manualHost ? "manual_public_host" : "unknown",
+  addressSource,
   upnpAttempted: false,
   upnpMapped: false,
   natPmpAttempted: false,
   natPmpMapped: false,
   reachability: "pending",
   natTendency: "unknown",
-  message: manualHost
-    ? "房间已启动，正在验证你填写的公网地址是否可分享。"
-    : "房间已启动，正在检测公网直连能力。",
+  message: buildPendingDirectProbeMessage(addressSource),
 });
 
 export class HostSessionController {
@@ -193,13 +231,25 @@ export class HostSessionController {
         }
 
         const manualHost = settings.manualDirectHost?.trim() || undefined;
-        hostAddress = manualHost ?? "";
-        addressSource = manualHost ? "manual_public_host" : "unknown";
-        alternativeAddresses = resolveLanIpv4Candidates();
-        directHostProbe = createPendingDirectProbe(signalingPort, manualHost);
-        signalingUrl = manualHost
+        const lanCandidates = resolveLanIpv4Candidates();
+        const initialHost = manualHost ?? lanCandidates[0] ?? "";
+
+        hostAddress = initialHost;
+        addressSource = manualHost
+          ? "manual_public_host"
+          : initialHost
+            ? "lan_ipv4"
+            : "unknown";
+        alternativeAddresses = lanCandidates;
+        directHostProbe = createPendingDirectProbe({
+          localPort: signalingPort,
+          manualHost,
+          initialHost: initialHost || undefined,
+          addressSource,
+        });
+        signalingUrl = initialHost
           ? createInviteUrl({
-              host: manualHost,
+              host: initialHost,
               port: signalingPort,
               roomId,
               mode: connectionMode,
@@ -337,26 +387,48 @@ export class HostSessionController {
 
       this.cleanupTasks.push(...probe.cleanupTasks);
 
-      const hasCandidateAddress = Boolean(probe.summary.selectedHost);
+      const fallbackHost = this.currentSession.hostAddress || "";
+      const fallbackAddressSource =
+        this.currentSession.addressSource === "unknown" && fallbackHost
+          ? ("lan_ipv4" as const)
+          : this.currentSession.addressSource;
+      const resolvedHost = probe.summary.selectedHost || fallbackHost;
+      const resolvedAddressSource = probe.summary.selectedHost
+        ? probe.summary.addressSource
+        : fallbackHost
+          ? fallbackAddressSource
+          : "unknown";
+      const hasCandidateAddress = Boolean(resolvedHost);
       const isVerifiedShareable = probe.summary.reachability === "reachable";
-      const hostAddress = hasCandidateAddress ? probe.summary.selectedHost || "" : "";
       const signalingUrl =
-        hasCandidateAddress && hostAddress
+        hasCandidateAddress && resolvedHost
           ? createInviteUrl({
-              host: hostAddress,
+              host: resolvedHost,
               port: localPort,
               roomId,
               mode: "direct_host",
             })
           : "";
 
+      const directHostProbe =
+        probe.summary.selectedHost || !resolvedHost
+          ? probe.summary
+          : {
+              ...probe.summary,
+              selectedHost: resolvedHost,
+              selectedPort: localPort,
+              addressSource: resolvedAddressSource,
+              reachability: "unverified" as const,
+              message: buildFallbackDirectProbeMessage(resolvedAddressSource),
+            };
+
       this.currentSession = {
         ...this.currentSession,
         signalingUrl,
-        hostAddress,
-        addressSource: hasCandidateAddress ? probe.summary.addressSource : "unknown",
+        hostAddress: resolvedHost,
+        addressSource: hasCandidateAddress ? resolvedAddressSource : "unknown",
         alternativeAddresses: resolveLanIpv4Candidates(),
-        directHostProbe: probe.summary,
+        directHostProbe,
       };
       this.emitUpdate();
 
@@ -366,14 +438,15 @@ export class HostSessionController {
         message: "direct host probe finalized",
         context: {
           roomId,
-          hostAddress,
+          hostAddress: resolvedHost,
           signalingUrl,
-          reachability: probe.summary.reachability,
+          reachability: directHostProbe.reachability,
           natTendency: probe.summary.natTendency,
           upnpMapped: probe.summary.upnpMapped,
           natPmpMapped: probe.summary.natPmpMapped,
           hasCandidateAddress,
           isVerifiedShareable,
+          addressSource: resolvedAddressSource,
         },
       });
     } catch (error) {
@@ -381,35 +454,54 @@ export class HostSessionController {
         return;
       }
 
+      const fallbackHost = this.currentSession.hostAddress || "";
+      const fallbackAddressSource =
+        this.currentSession.addressSource === "unknown" && fallbackHost
+          ? ("lan_ipv4" as const)
+          : this.currentSession.addressSource;
+      const fallbackSignalingUrl =
+        fallbackHost && localPort
+          ? createInviteUrl({
+              host: fallbackHost,
+              port: localPort,
+              roomId,
+              mode: "direct_host",
+            })
+          : this.currentSession.signalingUrl;
+
       this.currentSession = {
         ...this.currentSession,
-        signalingUrl: "",
-        hostAddress: "",
-        addressSource: "unknown",
+        signalingUrl: fallbackSignalingUrl,
+        hostAddress: fallbackHost,
+        addressSource: fallbackHost ? fallbackAddressSource : "unknown",
         directHostProbe: {
           publicIp: undefined,
           manualHost: manualHost?.trim() || undefined,
-          selectedHost: undefined,
+          selectedHost: fallbackHost || undefined,
           selectedPort: localPort,
-          addressSource: "unknown",
+          addressSource: fallbackHost ? fallbackAddressSource : "unknown",
           upnpAttempted: false,
           upnpMapped: false,
           natPmpAttempted: false,
           natPmpMapped: false,
-          reachability: "unreachable",
+          reachability: fallbackHost ? "unverified" : "unreachable",
           natTendency: "unknown",
-          message: "房间本地已启动，但当前网络拿不到可分享地址，建议改用 Tailscale 或云中继。",
+          message: buildFallbackDirectProbeMessage(
+            fallbackHost ? fallbackAddressSource : "unknown",
+          ),
         },
       };
       this.emitUpdate();
 
       await this.writeLog({
         category: "connection-mode",
-        level: "error",
+        level: fallbackHost ? "warn" : "error",
         message: "direct host probe failed",
         context: {
           roomId,
           error: error instanceof Error ? error.message : String(error),
+          fallbackHost,
+          fallbackAddressSource,
         },
       });
     }
@@ -451,7 +543,9 @@ export class HostSessionController {
             : "tailscale_ip"
           : connectionMode === "relay"
             ? "relay"
-            : "public_ip";
+            : isLanIpv4Address(host)
+              ? "lan_ipv4"
+              : "public_ip";
 
       details.push(`目标地址：${host}:${port}`);
       if (tailscaleStatus) {

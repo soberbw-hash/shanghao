@@ -19,5 +19,5 @@ test("desktop build includes custom nsis shortcut icon wiring", () => {
   const source = readFileSync(installerPath, "utf8");
 
   assert.equal(source.includes("include: build/installer.nsh"), true);
-  assert.equal(source.includes("shanghao-shortcut.ico"), true);
+  assert.equal(source.includes("shanghao-shortcut-xl.ico"), true);
 });
