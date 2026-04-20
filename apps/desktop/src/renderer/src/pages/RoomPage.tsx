@@ -71,19 +71,27 @@ const getRoomStatusSummary = ({
 
   if (connectionMode === "direct_host") {
     const probe = hostSession?.directHostProbe;
-    if (signalingUrl) {
+    if (probe?.reachability === "reachable" && signalingUrl) {
       return {
-        title: "可直接分享",
-        description: "房间已启动，公网可达，复制地址发给朋友即可。",
+        title: "公网直连可用",
+        description: "房间已启动，公网地址已验证可达，可以直接分享给好友。",
         tone: "success" as const,
+      };
+    }
+
+    if (probe?.reachability === "unverified" && signalingUrl) {
+      return {
+        title: "候选地址已生成",
+        description: probe.message,
+        tone: "warning" as const,
       };
     }
 
     if (probe?.reachability === "pending") {
       return {
-        title: "房间已启动",
+        title: "正在检测地址",
         description: probe.message,
-        tone: "warning" as const,
+        tone: "neutral" as const,
       };
     }
 
@@ -194,6 +202,10 @@ export const RoomPage = () => {
     (room.connectionMode === "direct_host"
       ? "房间已启动，正在检测公网直连能力。"
       : "房间已启动，正在准备邀请地址。");
+  const copyButtonLabel =
+    room.connectionMode === "direct_host" && hostSession?.directHostProbe?.reachability === "unverified"
+      ? "复制候选地址"
+      : "复制地址";
 
   return (
     <PageContainer className="overflow-y-auto">
@@ -250,7 +262,7 @@ export const RoomPage = () => {
                   onClick={() => void copyInviteLink()}
                   disabled={!shareableAddress}
                 >
-                  复制地址
+                  {copyButtonLabel}
                 </Button>
                 <div className="text-sm text-[#98A2B3]">
                   {shareableAddress ? "地址已就绪" : "等待地址准备完成"}

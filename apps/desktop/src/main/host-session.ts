@@ -337,10 +337,11 @@ export class HostSessionController {
 
       this.cleanupTasks.push(...probe.cleanupTasks);
 
-      const isShareable = probe.summary.reachability === "reachable";
-      const hostAddress = isShareable ? probe.summary.selectedHost || "" : "";
+      const hasCandidateAddress = Boolean(probe.summary.selectedHost);
+      const isVerifiedShareable = probe.summary.reachability === "reachable";
+      const hostAddress = hasCandidateAddress ? probe.summary.selectedHost || "" : "";
       const signalingUrl =
-        isShareable && hostAddress
+        hasCandidateAddress && hostAddress
           ? createInviteUrl({
               host: hostAddress,
               port: localPort,
@@ -348,26 +349,20 @@ export class HostSessionController {
               mode: "direct_host",
             })
           : "";
-      const message = isShareable
-        ? "房间已启动，公网直连可用，可以直接分享地址。"
-        : "房间已启动，但当前网络不支持公网直连，建议改用 Tailscale 或云中继。";
 
       this.currentSession = {
         ...this.currentSession,
         signalingUrl,
         hostAddress,
-        addressSource: isShareable ? probe.summary.addressSource : "unknown",
+        addressSource: hasCandidateAddress ? probe.summary.addressSource : "unknown",
         alternativeAddresses: resolveLanIpv4Candidates(),
-        directHostProbe: {
-          ...probe.summary,
-          message,
-        },
+        directHostProbe: probe.summary,
       };
       this.emitUpdate();
 
       await this.writeLog({
         category: "connection-mode",
-        level: isShareable ? "info" : "warn",
+        level: isVerifiedShareable ? "info" : hasCandidateAddress ? "warn" : "error",
         message: "direct host probe finalized",
         context: {
           roomId,
@@ -377,7 +372,8 @@ export class HostSessionController {
           natTendency: probe.summary.natTendency,
           upnpMapped: probe.summary.upnpMapped,
           natPmpMapped: probe.summary.natPmpMapped,
-          isShareable,
+          hasCandidateAddress,
+          isVerifiedShareable,
         },
       });
     } catch (error) {
@@ -402,7 +398,7 @@ export class HostSessionController {
           natPmpMapped: false,
           reachability: "unreachable",
           natTendency: "unknown",
-          message: "房间已启动，但当前网络不支持公网直连，建议改用 Tailscale 或云中继。",
+          message: "房间本地已启动，但当前网络拿不到可分享地址，建议改用 Tailscale 或云中继。",
         },
       };
       this.emitUpdate();

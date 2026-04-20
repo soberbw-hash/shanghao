@@ -21,7 +21,7 @@ const getBuildAssetPath = (fileName: string) =>
     ? path.join(process.resourcesPath, "build", fileName)
     : path.join(app.getAppPath(), "build", fileName);
 
-const getIconPath = () => getBuildAssetPath("icon.ico");
+const getIconPath = () => getBuildAssetPath("shanghao-icon.ico");
 
 const createFallbackHtml = (
   title: string,

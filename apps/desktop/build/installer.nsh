@@ -1,5 +1,5 @@
 !macro customInstall
-  StrCpy $0 "$INSTDIR\resources\build\shortcut.ico"
+  StrCpy $0 "$INSTDIR\resources\build\shanghao-shortcut.ico"
 
   ${if} ${FileExists} "$newDesktopLink"
     Delete "$newDesktopLink"

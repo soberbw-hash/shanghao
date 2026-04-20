@@ -26,6 +26,12 @@ export interface DirectHostProbeResult {
   cleanupTasks: Array<() => Promise<void>>;
 }
 
+interface ResolvedReachabilityState {
+  reachability: DirectHostProbeSummary["reachability"];
+  natTendency: DirectHostProbeSummary["natTendency"];
+  message: string;
+}
+
 const detectPublicIp = async (): Promise<string | undefined> =>
   new Promise((resolve) => {
     const req = request("https://api64.ipify.org?format=json", (response) => {
@@ -88,6 +94,53 @@ const resolveLocalLanAddress = (): string | undefined => {
   }
 
   return undefined;
+};
+
+export const resolveDirectHostReachability = ({
+  selectedHost,
+  probeSucceeded,
+  manualHost,
+  publicIp,
+  upnpMapped,
+  natPmpMapped,
+}: {
+  selectedHost?: string;
+  probeSucceeded: boolean;
+  manualHost?: string;
+  publicIp?: string;
+  upnpMapped: boolean;
+  natPmpMapped: boolean;
+}): ResolvedReachabilityState => {
+  if (probeSucceeded && selectedHost) {
+    return {
+      reachability: "reachable",
+      natTendency: "direct_friendly",
+      message: "房间已启动，公网直连可用，现在可以直接把地址发给好友。",
+    };
+  }
+
+  if (selectedHost) {
+    const usedPortMapping = upnpMapped || natPmpMapped;
+    return {
+      reachability: "unverified",
+      natTendency: usedPortMapping
+        ? "mapping_required"
+        : publicIp || manualHost
+          ? "restricted"
+          : "unknown",
+      message: usedPortMapping
+        ? "房间已启动，已生成候选公网地址。端口映射已经尝试完成，请让好友从外部网络试连；如果仍然不通，建议切换 Tailscale 或云中继。"
+        : manualHost
+          ? "房间已启动，已使用你手动填写的公网地址。当前无法在本机确认外网可达，请让好友从外部网络试连；如果仍然不通，请检查端口映射或切换 Tailscale / 云中继。"
+          : "房间已启动，已生成候选公网地址。当前无法在本机确认外网可达，请让好友从外部网络试连；如果仍然不通，建议切换 Tailscale 或云中继。",
+    };
+  }
+
+  return {
+    reachability: "unreachable",
+    natTendency: publicIp ? "restricted" : "unknown",
+    message: "房间已启动，但当前网络暂时拿不到可分享地址，建议改用 Tailscale 或云中继。",
+  };
 };
 
 const resolveDefaultGateway = async (): Promise<string | undefined> => {
@@ -237,30 +290,15 @@ export const probeDirectHost = async ({
       ? "public_ip"
       : "unknown";
 
-  const reachability =
-    selectedHost && (await probeTcpPort(selectedHost, localPort))
-      ? "reachable"
-      : upnp.mapped || natPmp.mapped || normalizedManualHost
-        ? "unverified"
-        : "unreachable";
-
-  const natTendency =
-    reachability === "reachable"
-      ? "direct_friendly"
-      : upnp.mapped || natPmp.mapped
-        ? "mapping_required"
-        : publicIp
-          ? "restricted"
-          : "unknown";
-
-  const message =
-    reachability === "reachable"
-      ? "\u5DF2\u83B7\u53D6\u516C\u7F51\u5730\u5740\uFF0C\u7AEF\u53E3\u5DF2\u53EF\u8FBE\uFF0C\u53EF\u4EE5\u76F4\u63A5\u5206\u4EAB\u3002"
-      : upnp.mapped || natPmp.mapped
-        ? "\u5DF2\u5C1D\u8BD5\u7AEF\u53E3\u6620\u5C04\uFF0C\u516C\u7F51\u53EF\u8FBE\u6027\u4ECD\u5F85\u9A8C\u8BC1\u3002"
-        : normalizedManualHost
-          ? "\u5DF2\u4F7F\u7528\u624B\u52A8\u516C\u7F51\u5730\u5740\uFF0C\u8BF7\u786E\u8BA4\u8DEF\u7531\u5668\u7AEF\u53E3\u6620\u5C04\u5DF2\u7ECF\u751F\u6548\u3002"
-          : "\u5F53\u524D\u7F51\u7EDC\u4E0D\u6EE1\u8DB3\u623F\u4E3B\u76F4\u8FDE\u6761\u4EF6\uFF0C\u5EFA\u8BAE\u6539\u7528 Tailscale \u6216\u4E91\u4E2D\u7EE7\u3002";
+  const probeSucceeded = selectedHost ? await probeTcpPort(selectedHost, localPort) : false;
+  const { reachability, natTendency, message } = resolveDirectHostReachability({
+    selectedHost,
+    probeSucceeded,
+    manualHost: normalizedManualHost,
+    publicIp,
+    upnpMapped: upnp.mapped,
+    natPmpMapped: natPmp.mapped,
+  });
 
   await writeLog?.({
     category: "connection-mode",

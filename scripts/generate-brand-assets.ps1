@@ -276,8 +276,8 @@ try {
 
   $iconMasterPath = Join-Path $OutputDirectory "icon-master.png"
   $iconPngPath = Join-Path $OutputDirectory "icon.png"
-  $iconIcoPath = Join-Path $OutputDirectory "icon.ico"
-  $shortcutIcoPath = Join-Path $OutputDirectory "shortcut.ico"
+  $iconIcoPath = Join-Path $OutputDirectory "shanghao-icon.ico"
+  $shortcutIcoPath = Join-Path $OutputDirectory "shanghao-shortcut.ico"
   $trayDarkPath = Join-Path $OutputDirectory "tray-dark.png"
   $trayLightPath = Join-Path $OutputDirectory "tray-light.png"
   $logoSvgPath = Join-Path $RendererAssetsDirectory "brand-mark.svg"
