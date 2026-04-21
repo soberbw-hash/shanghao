@@ -1,14 +1,14 @@
 import { execFile } from "node:child_process";
-import { networkInterfaces } from "node:os";
 import { promisify } from "node:util";
 
 import { shell } from "electron";
 
 import { TailscaleState, type TailscaleStatus } from "@private-voice/shared";
 
+import { resolveLanIpv4Candidates } from "./network-addresses";
+
 const execFileAsync = promisify(execFile);
 const TAILSCALE_INSTALL_URL = "https://tailscale.com/download/windows";
-const BLOCKED_INTERFACE_KEYWORDS = ["clash", "meta", "mihomo", "wintun", "tun", "tap", "warp"];
 
 interface TailscaleStatusJson {
   BackendState?: string;
@@ -47,9 +47,6 @@ const normalizeMagicDnsName = (value?: string): string | undefined => {
 
 const isBlockedAddress = (address: string): boolean =>
   address.startsWith("127.") || address.startsWith("198.18.") || address.startsWith("198.19.");
-
-const isBlockedInterface = (name: string): boolean =>
-  BLOCKED_INTERFACE_KEYWORDS.some((keyword) => name.toLowerCase().includes(keyword));
 
 export const detectTailscaleStatus = async (): Promise<TailscaleStatus> => {
   if (!(await detectBinary())) {
@@ -117,25 +114,6 @@ export const resolveTailscaleAddress = async (): Promise<HostAddressResolution |
   }
 
   return candidates[0];
-};
-
-export const resolveLanIpv4Candidates = (): string[] => {
-  const interfaces = networkInterfaces();
-  const candidates: string[] = [];
-
-  for (const [name, values] of Object.entries(interfaces)) {
-    if (isBlockedInterface(name)) {
-      continue;
-    }
-
-    for (const value of values ?? []) {
-      if (value.family === "IPv4" && !value.internal && !isBlockedAddress(value.address)) {
-        candidates.push(value.address);
-      }
-    }
-  }
-
-  return [...new Set(candidates)];
 };
 
 export const openTailscaleInstallGuide = async (): Promise<void> => {

@@ -17,10 +17,10 @@ import { SignalingServer } from "@private-voice/signaling";
 
 import { probeDirectHost } from "./direct-host";
 import { detectProxyDiagnostics } from "./network-diagnostics";
+import { resolveLanIpv4Candidates } from "./network-addresses";
 import { readRelayStatus } from "./relay-status";
 import {
   detectTailscaleStatus,
-  resolveLanIpv4Candidates,
   resolveTailscaleAddress,
 } from "./tailscale";
 

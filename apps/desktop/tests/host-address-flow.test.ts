@@ -5,14 +5,15 @@ import test from "node:test";
 
 const sourcePath = path.resolve(process.cwd(), "src/renderer/src/hooks/useRoomState.ts");
 const hostSessionPath = path.resolve(process.cwd(), "src/main/host-session.ts");
+const inviteUtilPath = path.resolve(process.cwd(), "src/renderer/src/utils/invite.ts");
 
 test("host uses local loopback only for self-connect, not for outward invite links", () => {
   const source = readFileSync(sourcePath, "utf8");
 
   assert.equal(source.includes("connectUrl: hostJoinUrl"), true);
-  assert.equal(source.includes("inviteUrl: session.signalingUrl"), true);
+  assert.equal(source.includes("inviteUrl: shareableInviteUrl"), true);
   assert.equal(source.includes("signalingUrl: inviteUrl || undefined"), true);
-  assert.equal(source.includes("const inviteUrl = hostSession?.signalingUrl || room.signalingUrl;"), true);
+  assert.equal(source.includes("const inviteUrl = buildShareableInviteUrl(hostSession) || room.signalingUrl;"), true);
 });
 
 test("direct host keeps a shareable candidate address even before full reachability verification", () => {
@@ -40,4 +41,13 @@ test("direct host seeds an immediate manual or LAN candidate before public probe
     true,
   );
   assert.equal(source.includes("signalingUrl = initialHost"), true);
+});
+
+test("renderer can derive a shareable invite url even before signalingUrl is explicitly persisted", () => {
+  const source = readFileSync(inviteUtilPath, "utf8");
+
+  assert.equal(source.includes("if (session.signalingUrl?.trim())"), true);
+  assert.equal(source.includes("if (!session.hostAddress?.trim())"), true);
+  assert.equal(source.includes("url.searchParams.set(\"roomId\", session.roomId);"), true);
+  assert.equal(source.includes("url.searchParams.set(\"mode\", session.connectionMode);"), true);
 });

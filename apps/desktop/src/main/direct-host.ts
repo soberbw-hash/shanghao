@@ -1,7 +1,6 @@
-import { request } from "node:https";
 import { execFile } from "node:child_process";
+import { request } from "node:https";
 import net from "node:net";
-import { networkInterfaces } from "node:os";
 import { promisify } from "node:util";
 
 import {
@@ -10,8 +9,9 @@ import {
   type RendererLogPayload,
 } from "@private-voice/shared";
 
+import { resolveLanIpv4Candidates } from "./network-addresses";
+
 const execFileAsync = promisify(execFile);
-const BLOCKED_INTERFACE_KEYWORDS = ["clash", "meta", "mihomo", "wintun", "tun", "tap", "warp"];
 
 interface MappingAttemptResult {
   attempted: boolean;
@@ -73,32 +73,10 @@ const probeTcpPort = async (host: string, port: number): Promise<boolean> =>
     socket.once("error", () => finish(false));
   });
 
-const isBlockedAddress = (address: string): boolean =>
-  address.startsWith("127.") || address.startsWith("198.18.") || address.startsWith("198.19.");
-
-const isBlockedInterface = (name: string): boolean =>
-  BLOCKED_INTERFACE_KEYWORDS.some((keyword) => name.toLowerCase().includes(keyword));
-
-const resolveLocalLanAddress = (): string | undefined => {
-  const interfaces = networkInterfaces();
-  for (const [name, values] of Object.entries(interfaces)) {
-    if (isBlockedInterface(name)) {
-      continue;
-    }
-
-    for (const value of values ?? []) {
-      if (value.family === "IPv4" && !value.internal && !isBlockedAddress(value.address)) {
-        return value.address;
-      }
-    }
-  }
-
-  return undefined;
-};
-
 export const resolveDirectHostReachability = ({
   selectedHost,
   probeSucceeded,
+  addressSource,
   manualHost,
   publicIp,
   upnpMapped,
@@ -106,11 +84,21 @@ export const resolveDirectHostReachability = ({
 }: {
   selectedHost?: string;
   probeSucceeded: boolean;
+  addressSource: DirectHostProbeSummary["addressSource"];
   manualHost?: string;
   publicIp?: string;
   upnpMapped: boolean;
   natPmpMapped: boolean;
 }): ResolvedReachabilityState => {
+  if (selectedHost && addressSource === "lan_ipv4") {
+    return {
+      reachability: "reachable",
+      natTendency: "mapping_required",
+      message:
+        "房间已启动，局域网地址已准备好。同一网络下的好友现在就可以加入，公网直连能力仍会继续检测。",
+    };
+  }
+
   if (probeSucceeded && selectedHost) {
     return {
       reachability: "reachable",
@@ -199,7 +187,7 @@ const tryUpnpMapping = async (
     return {
       attempted: true,
       mapped: false,
-      error: "\u672A\u53D1\u73B0\u53EF\u7528\u7684 UPnP \u7F51\u5173",
+      error: "未发现可用的 UPnP 网关",
     };
   } catch (error) {
     return {
@@ -219,7 +207,7 @@ const tryNatPmpMapping = async (
     return {
       attempted: false,
       mapped: false,
-      error: "\u672A\u627E\u5230\u9ED8\u8BA4\u7F51\u5173\uFF0C\u8DF3\u8FC7 NAT-PMP",
+      error: "未找到默认网关，跳过 NAT-PMP",
     };
   }
 
@@ -261,7 +249,8 @@ export const probeDirectHost = async ({
   writeLog?: (payload: RendererLogPayload) => Promise<void>;
 }): Promise<DirectHostProbeResult> => {
   const cleanupTasks: Array<() => Promise<void>> = [];
-  const localHost = resolveLocalLanAddress();
+  const lanCandidates = resolveLanIpv4Candidates();
+  const localHost = lanCandidates[0];
   const normalizedManualHost = manualHost?.trim() || undefined;
   const publicIp = await detectPublicIp();
   const upnp = localHost
@@ -269,7 +258,7 @@ export const probeDirectHost = async ({
     : {
         attempted: false,
         mapped: false,
-        error: "\u672A\u627E\u5230\u53EF\u7528\u7684\u672C\u673A IPv4 \u5730\u5740",
+        error: "未找到可用的本机 IPv4 地址",
       };
   const natPmp =
     localHost && !upnp.mapped
@@ -283,17 +272,22 @@ export const probeDirectHost = async ({
     cleanupTasks.push(natPmp.cleanup);
   }
 
-  const selectedHost = normalizedManualHost || upnp.externalIp || natPmp.externalIp || publicIp;
+  const selectedHost =
+    normalizedManualHost || upnp.externalIp || natPmp.externalIp || publicIp || localHost;
   const addressSource = normalizedManualHost
     ? "manual_public_host"
     : upnp.externalIp || natPmp.externalIp || publicIp
       ? "public_ip"
-      : "unknown";
+      : localHost
+        ? "lan_ipv4"
+        : "unknown";
 
-  const probeSucceeded = selectedHost ? await probeTcpPort(selectedHost, localPort) : false;
+  const probeSucceeded =
+    selectedHost && addressSource !== "lan_ipv4" ? await probeTcpPort(selectedHost, localPort) : false;
   const { reachability, natTendency, message } = resolveDirectHostReachability({
     selectedHost,
     probeSucceeded,
+    addressSource,
     manualHost: normalizedManualHost,
     publicIp,
     upnpMapped: upnp.mapped,
@@ -307,6 +301,7 @@ export const probeDirectHost = async ({
     context: {
       selectedHost,
       localHost,
+      lanCandidates,
       localPort,
       publicIp,
       upnpAttempted: upnp.attempted,
@@ -317,6 +312,7 @@ export const probeDirectHost = async ({
       natPmpError: natPmp.error,
       reachability,
       natTendency,
+      addressSource,
     },
   });
 

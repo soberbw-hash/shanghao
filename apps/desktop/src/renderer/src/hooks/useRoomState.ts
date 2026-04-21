@@ -15,6 +15,7 @@ import { useAppStore } from "../store/appStore";
 import { useAudioStore } from "../store/audioStore";
 import { useRoomStore } from "../store/roomStore";
 import { useSettingsStore } from "../store/settingsStore";
+import { buildShareableInviteUrl } from "../utils/invite";
 import { writeRendererLog } from "../utils/logger";
 
 const sharedPeerId = crypto.randomUUID();
@@ -148,10 +149,11 @@ const applyHostSessionSnapshot = (
     return;
   }
 
-  setJoinSignalUrl(session.signalingUrl);
+  const inviteUrl = buildShareableInviteUrl(session);
+  setJoinSignalUrl(inviteUrl);
   setConnectionMode(session.connectionMode);
   setRoom({
-    signalingUrl: session.signalingUrl || undefined,
+    signalingUrl: inviteUrl || undefined,
     hostAddress: session.hostAddress || undefined,
     hostSessionState: session.hostState,
   });
@@ -212,7 +214,8 @@ export const useRoomState = () => {
       }
 
       const probe = session.directHostProbe;
-      const signature = `${probe.reachability}:${session.signalingUrl || "none"}`;
+      const inviteUrl = buildShareableInviteUrl(session);
+      const signature = `${probe.reachability}:${inviteUrl || "none"}`;
       if (lastProbeSignatureRef.current === signature) {
         return;
       }
@@ -223,7 +226,7 @@ export const useRoomState = () => {
         return;
       }
 
-      if (probe.reachability === "reachable" && session.signalingUrl) {
+      if (probe.reachability === "reachable" && inviteUrl && probe.addressSource !== "lan_ipv4") {
         pushHostEvent({ level: "success", message: probe.message });
         pushToast({
           tone: "success",
@@ -233,12 +236,19 @@ export const useRoomState = () => {
 
         if (
           settings?.shouldAutoCopyInviteLink &&
-          lastCopiedInviteRef.current !== session.signalingUrl
+          lastCopiedInviteRef.current !== inviteUrl
         ) {
-          lastCopiedInviteRef.current = session.signalingUrl;
-          void navigator.clipboard.writeText(session.signalingUrl).catch(() => undefined);
+          lastCopiedInviteRef.current = inviteUrl;
+          void navigator.clipboard.writeText(inviteUrl).catch(() => undefined);
         }
-      } else if (session.signalingUrl) {
+      } else if (inviteUrl && probe.addressSource === "lan_ipv4") {
+        pushHostEvent({ level: "success", message: probe.message });
+        pushToast({
+          tone: "success",
+          title: copy.hostStartedTitle,
+          description: probe.message,
+        });
+      } else if (inviteUrl) {
         pushHostEvent({ level: "warning", message: probe.message });
         pushToast({
           tone: "warning",
@@ -457,7 +467,8 @@ export const useRoomState = () => {
         settings.nickname,
         settings.connectionMode,
       );
-      const hostJoinUrl = session.localSignalingUrl || session.signalingUrl;
+      const shareableInviteUrl = buildShareableInviteUrl(session);
+      const hostJoinUrl = session.localSignalingUrl || shareableInviteUrl;
 
       applyHostSessionSnapshot(session, {
         setHostSession,
@@ -468,16 +479,16 @@ export const useRoomState = () => {
 
       await connectToRoom({
         connectUrl: hostJoinUrl,
-        inviteUrl: session.signalingUrl,
+        inviteUrl: shareableInviteUrl,
         roomId: session.roomId,
         roomName: session.roomName,
         connectionMode: session.connectionMode,
       });
 
-      if (session.signalingUrl) {
+      if (shareableInviteUrl) {
         try {
-          await navigator.clipboard.writeText(session.signalingUrl);
-          lastCopiedInviteRef.current = session.signalingUrl;
+          await navigator.clipboard.writeText(shareableInviteUrl);
+          lastCopiedInviteRef.current = shareableInviteUrl;
           pushToast({
             tone: "success",
             title: copy.copiedAddressTitle,
@@ -644,7 +655,7 @@ export const useRoomState = () => {
   };
 
   const copyInviteLink = async () => {
-    const inviteUrl = hostSession?.signalingUrl || room.signalingUrl;
+    const inviteUrl = buildShareableInviteUrl(hostSession) || room.signalingUrl;
 
     if (!inviteUrl) {
       pushToast({

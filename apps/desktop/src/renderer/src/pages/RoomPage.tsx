@@ -33,6 +33,7 @@ import { useAudioStore } from "../store/audioStore";
 import { useRecordingStore } from "../store/recordingStore";
 import { useRoomStore } from "../store/roomStore";
 import { useSettingsStore } from "../store/settingsStore";
+import { buildShareableInviteUrl } from "../utils/invite";
 
 const modeLabels: Record<ConnectionMode, string> = {
   direct_host: "房主直连",
@@ -71,6 +72,14 @@ const getRoomStatusSummary = ({
 
   if (connectionMode === "direct_host") {
     const probe = hostSession?.directHostProbe;
+    if (probe?.addressSource === "lan_ipv4" && signalingUrl) {
+      return {
+        title: "局域网地址已就绪",
+        description: probe.message,
+        tone: "success" as const,
+      };
+    }
+
     if (probe?.reachability === "reachable" && signalingUrl) {
       return {
         title: "公网直连可用",
@@ -196,7 +205,7 @@ export const RoomPage = () => {
     [hostSession, room.connectionMode, room.latestFailureReason, room.recentHostEvents, room.signalingUrl],
   );
 
-  const shareableAddress = hostSession?.signalingUrl || room.signalingUrl;
+  const shareableAddress = buildShareableInviteUrl(hostSession) || room.signalingUrl;
   const displayAddress =
     shareableAddress ||
     (room.connectionMode === "direct_host"
