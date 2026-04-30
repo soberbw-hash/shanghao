@@ -10,6 +10,7 @@ import type { WebSocket } from "ws";
 import { WebSocketServer } from "ws";
 
 import type {
+  AudioChunkMessage,
   ChatMessage,
   ErrorMessage,
   HelloMessage,
@@ -152,6 +153,10 @@ export class SignalingServer extends EventEmitter {
   }
 
   private handleSignal(socket: WebSocket, message: SignalEnvelope): void {
+    if (message.roomId && message.peerId) {
+      this.roomManager.getRoom(message.roomId)?.peers.updateHeartbeat(message.peerId);
+    }
+
     switch (message.type) {
       case "hello":
       case "join_room":
@@ -173,6 +178,9 @@ export class SignalingServer extends EventEmitter {
         return;
       case "chat_message":
         this.broadcastChatMessage(message);
+        return;
+      case "audio_chunk":
+        this.broadcastAudioChunk(message);
         return;
       default:
         return;
@@ -284,6 +292,30 @@ export class SignalingServer extends EventEmitter {
 
     for (const peer of room.peers.listPeers()) {
       peer.socket.send(JSON.stringify(payload));
+    }
+  }
+
+  private broadcastAudioChunk(message: AudioChunkMessage): void {
+    const room = this.roomManager.getRoom(message.roomId);
+    if (!room) {
+      return;
+    }
+
+    const payload: AudioChunkMessage = {
+      type: "audio_chunk",
+      roomId: message.roomId,
+      peerId: message.peerId,
+      sequence: message.sequence,
+      sampleRate: message.sampleRate,
+      channelCount: 1,
+      data: message.data,
+      createdAt: message.createdAt,
+    };
+
+    for (const peer of room.peers.listPeers()) {
+      if (peer.id !== message.peerId) {
+        peer.socket.send(JSON.stringify(payload));
+      }
     }
   }
 

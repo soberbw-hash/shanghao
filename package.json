@@ -1,6 +1,6 @@
 {
   "name": "shanghao-workspace",
-  "version": "0.1.16",
+  "version": "0.1.17",
   "private": true,
   "packageManager": "pnpm@10.0.0",
   "scripts": {
@@ -8,7 +8,8 @@
     "build": "corepack pnpm -r --filter @private-voice/shared --filter @private-voice/ui --filter @private-voice/signaling --filter @private-voice/webrtc --filter @private-voice/recording --filter shanghao-desktop run build",
     "typecheck": "corepack pnpm -r --filter @private-voice/shared --filter @private-voice/ui --filter @private-voice/signaling --filter @private-voice/webrtc --filter @private-voice/recording --filter shanghao-desktop run typecheck",
     "lint": "corepack pnpm -r --filter @private-voice/shared --filter @private-voice/ui --filter @private-voice/signaling --filter @private-voice/webrtc --filter @private-voice/recording --filter shanghao-desktop run lint",
-    "dist": "corepack pnpm --filter shanghao-desktop dist"
+    "dist": "corepack pnpm --filter shanghao-desktop dist",
+    "relay": "corepack pnpm --filter @private-voice/signaling build && node scripts/start-relay.mjs"
   },
   "pnpm": {
     "onlyBuiltDependencies": [

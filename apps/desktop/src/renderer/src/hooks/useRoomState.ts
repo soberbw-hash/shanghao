@@ -60,8 +60,33 @@ const parseInvite = (value: string, fallbackMode: ConnectionMode) => {
     throw new Error("invalid_join_url");
   }
 
+  const candidateUrls = [url.toString()];
+  for (const candidate of url.searchParams.getAll("candidate")) {
+    try {
+      const candidateUrl = new URL(candidate);
+      if (candidateUrl.protocol !== "ws:" && candidateUrl.protocol !== "wss:") {
+        continue;
+      }
+
+      if (!candidateUrl.searchParams.get("roomId")) {
+        candidateUrl.searchParams.set(
+          "roomId",
+          url.searchParams.get("roomId") || "private-room",
+        );
+      }
+      if (!candidateUrl.searchParams.get("mode")) {
+        candidateUrl.searchParams.set("mode", url.searchParams.get("mode") || fallbackMode);
+      }
+
+      candidateUrls.push(candidateUrl.toString());
+    } catch {
+      // Ignore malformed fallback candidates and keep trying the main address.
+    }
+  }
+
   return {
     signalingUrl: url.toString(),
+    candidateUrls: [...new Set(candidateUrls)],
     roomId: url.searchParams.get("roomId") || "private-room",
     connectionMode: (url.searchParams.get("mode") as ConnectionMode | null) || fallbackMode,
     protocolVersion: url.searchParams.get("protocolVersion") ?? undefined,
@@ -409,6 +434,60 @@ export const useRoomState = () => {
     startSpeakingDetector(stream);
   };
 
+  const connectToAnyCandidate = async ({
+    candidateUrls,
+    inviteUrl,
+    roomId,
+    roomName,
+    connectionMode,
+  }: {
+    candidateUrls: string[];
+    inviteUrl: string;
+    roomId: string;
+    roomName: string;
+    connectionMode: ConnectionMode;
+  }) => {
+    let lastError: unknown;
+
+    for (const [index, candidateUrl] of candidateUrls.entries()) {
+      try {
+        await writeRendererLog("signaling", "info", "Trying signaling candidate", {
+          candidateUrl,
+          index,
+          total: candidateUrls.length,
+          connectionMode,
+        });
+        await connectToRoom({
+          connectUrl: candidateUrl,
+          inviteUrl,
+          roomId,
+          roomName,
+          connectionMode,
+        });
+        if (index > 0) {
+          pushHostEvent({
+            level: "success",
+            message: "备用地址连接成功",
+          });
+        }
+        return candidateUrl;
+      } catch (error) {
+        lastError = error;
+        await writeRendererLog("signaling", "warn", "Signaling candidate failed", {
+          candidateUrl,
+          index,
+          total: candidateUrls.length,
+          connectionMode,
+          error: error instanceof Error ? error.message : String(error),
+        });
+        activeClient?.disconnect();
+        activeClient = null;
+      }
+    }
+
+    throw lastError instanceof Error ? lastError : new Error(copy.networkFailed);
+  };
+
   const diagnoseJoinFailure = async (
     signalingUrl: string,
     connectionMode: ConnectionMode,
@@ -550,8 +629,8 @@ export const useRoomState = () => {
       await writeRendererLog("connection-mode", "info", "Joining room", invite);
       clearChatMessages();
 
-      await connectToRoom({
-        connectUrl: invite.signalingUrl,
+      const connectedUrl = await connectToAnyCandidate({
+        candidateUrls: invite.candidateUrls,
         inviteUrl: invite.signalingUrl,
         roomId: invite.roomId,
         roomName: room.roomName,
@@ -559,6 +638,11 @@ export const useRoomState = () => {
       });
 
       setJoinSignalUrl(invite.signalingUrl);
+      await writeRendererLog("signaling", "info", "Joined room through signaling candidate", {
+        connectedUrl,
+        advertisedUrl: invite.signalingUrl,
+        candidateCount: invite.candidateUrls.length,
+      });
       useAppStore.getState().navigate("room");
       pushToast({
         tone: "success",

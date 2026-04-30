@@ -12,12 +12,18 @@ export interface MeshPeerOptions {
   onConnectionStateChange?: (state: RTCPeerConnectionState) => void;
 }
 
+const DEFAULT_ICE_SERVERS: RTCIceServer[] = [
+  {
+    urls: ["stun:stun.l.google.com:19302", "stun:global.stun.twilio.com:3478"],
+  },
+];
+
 export class MeshPeerConnection {
   readonly connection: RTCPeerConnection;
 
   constructor(private readonly options: MeshPeerOptions) {
     this.connection = new RTCPeerConnection({
-      iceServers: options.iceServers,
+      iceServers: options.iceServers ?? DEFAULT_ICE_SERVERS,
     });
 
     for (const track of options.localStream.getTracks()) {

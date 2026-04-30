@@ -46,8 +46,17 @@ test("direct host seeds an immediate manual or LAN candidate before public probe
 test("renderer can derive a shareable invite url even before signalingUrl is explicitly persisted", () => {
   const source = readFileSync(inviteUtilPath, "utf8");
 
-  assert.equal(source.includes("if (session.signalingUrl?.trim())"), true);
+  assert.equal(source.includes("withCandidateUrls(session.signalingUrl, session)"), true);
   assert.equal(source.includes("if (!session.hostAddress?.trim())"), true);
   assert.equal(source.includes("url.searchParams.set(\"roomId\", session.roomId);"), true);
   assert.equal(source.includes("url.searchParams.set(\"mode\", session.connectionMode);"), true);
+  assert.equal(source.includes("url.searchParams.append(\"candidate\", candidate);"), true);
+});
+
+test("joining tries invite fallback candidates before giving up", () => {
+  const source = readFileSync(sourcePath, "utf8");
+
+  assert.equal(source.includes("candidateUrls: [...new Set(candidateUrls)]"), true);
+  assert.equal(source.includes("const connectedUrl = await connectToAnyCandidate"), true);
+  assert.equal(source.includes("Trying signaling candidate"), true);
 });

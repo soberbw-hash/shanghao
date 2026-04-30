@@ -9,6 +9,7 @@ import {
   type SignalingEventPayload,
 } from "@private-voice/shared";
 import type {
+  AudioChunkMessage,
   ChatMessage as SignalChatMessage,
   ErrorMessage,
   IceCandidateMessage,
@@ -18,6 +19,9 @@ import type {
   SignalEnvelope,
 } from "@private-voice/signaling";
 import { ExponentialBackoff, MeshPeerConnection } from "@private-voice/webrtc";
+
+import { writeRendererLog } from "../../utils/logger";
+import { SignalingAudioRelay } from "./signalingAudioRelay";
 
 interface RoomClientOptions {
   signalingUrl: string;
@@ -63,6 +67,9 @@ export class RoomClient {
   private pendingConnection?: PendingConnection;
   private hasJoinedOnce = false;
   private unsubscribeEvents?: () => void;
+  private audioRelay?: SignalingAudioRelay;
+  private readonly remotePeerIds = new Set<string>();
+  private readonly webrtcReadyPeerIds = new Set<string>();
 
   constructor(private readonly options: RoomClientOptions) {
     this.localStream = options.localStream;
@@ -97,6 +104,10 @@ export class RoomClient {
     });
 
     this.clearPeers();
+    this.audioRelay?.destroy();
+    this.audioRelay = undefined;
+    this.remotePeerIds.clear();
+    this.webrtcReadyPeerIds.clear();
     this.unsubscribeEvents?.();
     this.unsubscribeEvents = undefined;
     void window.desktopApi.signaling.close();
@@ -110,6 +121,7 @@ export class RoomClient {
 
     this.lastPublishedMuteState = isMuted;
     this.lastPublishedSpeakingState = isSpeaking;
+    this.audioRelay?.setMuted(isMuted);
     void this.send({
       type: "member_state",
       roomId: this.options.roomId,
@@ -147,6 +159,7 @@ export class RoomClient {
     this.localStream = nextStream;
 
     await Promise.all([...this.peers.values()].map((peer) => peer.replaceLocalTrack(nextTrack)));
+    await this.audioRelay?.replaceLocalStream(nextStream);
 
     previousTracks.forEach((track) => {
       if (track.id !== nextTrack.id) {
@@ -257,6 +270,9 @@ export class RoomClient {
       case "chat_message":
         this.handleChatMessage(payload);
         return;
+      case "audio_chunk":
+        this.handleAudioChunk(payload);
+        return;
       default:
         return;
     }
@@ -290,11 +306,16 @@ export class RoomClient {
         .filter((member) => member.id !== this.options.peerId)
         .map((member) => member.id),
     );
+    this.remotePeerIds.clear();
+    activePeerIds.forEach((peerId) => this.remotePeerIds.add(peerId));
+    this.startAudioRelay();
+    this.updateAudioRelaySending();
 
     for (const peerId of [...this.peers.keys()]) {
       if (!activePeerIds.has(peerId)) {
         this.peers.get(peerId)?.destroy();
         this.peers.delete(peerId);
+        this.webrtcReadyPeerIds.delete(peerId);
         this.options.onRemoteStream(peerId, undefined);
       }
     }
@@ -383,11 +404,49 @@ export class RoomClient {
     });
   }
 
+  private handleAudioChunk(payload: AudioChunkMessage): void {
+    this.audioRelay?.handleRemoteChunk(payload);
+  }
+
+  private startAudioRelay(): void {
+    if (this.audioRelay) {
+      return;
+    }
+
+    this.audioRelay = new SignalingAudioRelay({
+      roomId: this.options.roomId,
+      peerId: this.options.peerId,
+      localStream: this.localStream,
+      send: (message) => this.send(message),
+      shouldPlayPeer: (peerId) => !this.webrtcReadyPeerIds.has(peerId),
+      onLog: (level, message, context) => {
+        void writeRendererLog("audio", level, message, context);
+      },
+    });
+    this.audioRelay.setMuted(this.lastPublishedMuteState ?? false);
+    void this.audioRelay.start().catch((error) => {
+      void writeRendererLog("audio", "warn", "Failed to start signaling audio relay", {
+        error: error instanceof Error ? error.message : String(error),
+      });
+    });
+  }
+
+  private updateAudioRelaySending(): void {
+    const hasPeerWithoutWebrtc = [...this.remotePeerIds].some(
+      (peerId) => !this.webrtcReadyPeerIds.has(peerId),
+    );
+    this.audioRelay?.setShouldSend(hasPeerWithoutWebrtc);
+  }
+
   private createPeer(targetPeerId: string): MeshPeerConnection {
     const peer = new MeshPeerConnection({
       peerId: targetPeerId,
       localStream: this.localStream,
-      onRemoteStream: (stream) => this.options.onRemoteStream(targetPeerId, stream),
+      onRemoteStream: (stream) => {
+        this.webrtcReadyPeerIds.add(targetPeerId);
+        this.updateAudioRelaySending();
+        this.options.onRemoteStream(targetPeerId, stream);
+      },
       onIceCandidate: (candidate) => {
         void this.send({
           type: "ice_candidate",
@@ -399,6 +458,8 @@ export class RoomClient {
       },
       onConnectionStateChange: (state) => {
         if (state === "failed" || state === "disconnected") {
+          this.webrtcReadyPeerIds.delete(targetPeerId);
+          this.updateAudioRelaySending();
           this.options.onRemoteStream(targetPeerId, undefined);
         }
       },
@@ -446,6 +507,9 @@ export class RoomClient {
       this.options.onRemoteStream(peerId, undefined);
     }
     this.peers.clear();
+    this.webrtcReadyPeerIds.clear();
+    this.remotePeerIds.clear();
+    this.updateAudioRelaySending();
   }
 
   private clearPendingConnection(): void {

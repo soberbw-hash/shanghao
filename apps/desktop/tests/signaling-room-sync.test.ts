@@ -89,3 +89,75 @@ test("signaling server syncs room members after join", async () => {
   peerSocket.close();
   await server.close();
 });
+
+test("signaling server relays fallback audio chunks to other room members only", async () => {
+  const server = new SignalingServer({ roomName: "audio-relay-test" });
+  const port = await server.listen();
+
+  const url = `ws://127.0.0.1:${port}`;
+  const hostSocket = new WebSocket(url);
+  const peerSocket = new WebSocket(url);
+
+  await Promise.all([
+    new Promise((resolve) => hostSocket.once("open", resolve)),
+    new Promise((resolve) => peerSocket.once("open", resolve)),
+  ]);
+
+  for (const [socket, peerId, nickname] of [
+    [hostSocket, "host-peer", "host"],
+    [peerSocket, "member-peer", "member"],
+  ] as const) {
+    socket.send(
+      JSON.stringify({
+        type: "join_room",
+        roomId: "audio-relay-room",
+        peerId,
+        nickname,
+        appVersion: "0.1.17",
+        protocolVersion: APP_PROTOCOL_VERSION,
+        buildNumber: APP_BUILD_NUMBER,
+        connectionMode: "direct_host",
+      }),
+    );
+  }
+
+  await waitForMessage(
+    peerSocket,
+    (payload): payload is { type: string; members: Array<{ id: string }> } =>
+      typeof payload === "object" &&
+      payload !== null &&
+      "type" in payload &&
+      (payload as { type?: string }).type === "room_snapshot" &&
+      Array.isArray((payload as { members?: unknown[] }).members) &&
+      (payload as { members: unknown[] }).members.length === 2,
+  );
+
+  hostSocket.send(
+    JSON.stringify({
+      type: "audio_chunk",
+      roomId: "audio-relay-room",
+      peerId: "host-peer",
+      sequence: 1,
+      sampleRate: 48000,
+      channelCount: 1,
+      data: "AAAA",
+      createdAt: new Date().toISOString(),
+    }),
+  );
+
+  const chunk = await waitForMessage(
+    peerSocket,
+    (payload): payload is { type: string; peerId: string; data: string } =>
+      typeof payload === "object" &&
+      payload !== null &&
+      "type" in payload &&
+      (payload as { type?: string }).type === "audio_chunk",
+  );
+
+  assert.equal(chunk.peerId, "host-peer");
+  assert.equal(chunk.data, "AAAA");
+
+  hostSocket.close();
+  peerSocket.close();
+  await server.close();
+});

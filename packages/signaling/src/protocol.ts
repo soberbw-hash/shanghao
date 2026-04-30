@@ -23,6 +23,7 @@ export type SignalEnvelope =
   | IceCandidateMessage
   | MemberStateMessage
   | ChatMessage
+  | AudioChunkMessage
   | ErrorMessage;
 
 interface BaseMessage {
@@ -116,6 +117,17 @@ export interface ChatMessage extends BaseMessage {
   nickname: string;
   avatarDataUrl?: string;
   content: string;
+  createdAt: string;
+}
+
+export interface AudioChunkMessage extends BaseMessage {
+  type: "audio_chunk";
+  roomId: string;
+  peerId: string;
+  sequence: number;
+  sampleRate: number;
+  channelCount: 1;
+  data: string;
   createdAt: string;
 }
 
