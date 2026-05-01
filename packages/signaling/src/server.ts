@@ -45,6 +45,23 @@ export class SignalingServer extends EventEmitter {
     this.roomName = options.roomName;
     this.logger = options.logger;
     this.httpServer = createServer();
+    this.httpServer.on("request", (request, response) => {
+      if (request.url?.startsWith("/health")) {
+        response.writeHead(200, { "content-type": "application/json; charset=utf-8" });
+        response.end(
+          JSON.stringify({
+            ok: true,
+            name: "shanghao-signaling",
+            roomName: this.roomName,
+            now: new Date().toISOString(),
+          }),
+        );
+        return;
+      }
+
+      response.writeHead(404, { "content-type": "text/plain; charset=utf-8" });
+      response.end("ShangHao signaling server");
+    });
     this.wss = new WebSocketServer({ server: this.httpServer });
     this.wss.on("connection", (socket) => this.handleConnection(socket));
   }
