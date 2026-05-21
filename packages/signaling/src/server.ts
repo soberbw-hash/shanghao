@@ -123,6 +123,28 @@ export class SignalingServer extends EventEmitter {
   }
 
   private async listenOnPort(port: number): Promise<void> {
+    try {
+      await this.listenOnHost(port, "::");
+      this.logger?.("signaling server bound on dual-stack host", { host: "::", port });
+    } catch (error) {
+      const code =
+        typeof error === "object" && error !== null && "code" in error
+          ? (error as { code?: string }).code
+          : undefined;
+
+      if (code !== "EAFNOSUPPORT" && code !== "EADDRNOTAVAIL") {
+        throw error;
+      }
+
+      this.logger?.("ipv6 dual-stack bind unavailable, falling back to ipv4", {
+        port,
+        code,
+      });
+      await this.listenOnHost(port, "0.0.0.0");
+    }
+  }
+
+  private async listenOnHost(port: number, host: string): Promise<void> {
     await new Promise<void>((resolve, reject) => {
       const handleError = (error: Error) => {
         this.httpServer.off("listening", handleListening);
@@ -136,7 +158,11 @@ export class SignalingServer extends EventEmitter {
 
       this.httpServer.once("error", handleError);
       this.httpServer.once("listening", handleListening);
-      this.httpServer.listen(port, "0.0.0.0");
+      this.httpServer.listen({
+        port,
+        host,
+        ipv6Only: false,
+      });
     });
   }
 

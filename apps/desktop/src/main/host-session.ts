@@ -17,7 +17,12 @@ import { SignalingServer } from "@private-voice/signaling";
 
 import { probeDirectHost } from "./direct-host";
 import { detectProxyDiagnostics } from "./network-diagnostics";
-import { resolveLanIpv4Candidates } from "./network-addresses";
+import {
+  formatHostForUrl,
+  isIpv6Address,
+  resolveLanIpv4Candidates,
+  resolvePublicIpv6Candidates,
+} from "./network-addresses";
 import { readRelayStatus } from "./relay-status";
 import {
   detectTailscaleStatus,
@@ -59,7 +64,7 @@ const createInviteUrl = ({
   mode: ConnectionMode;
   relayToken?: string;
 }) => {
-  const base = port ? `ws://${host}:${port}` : host;
+  const base = port ? `ws://${formatHostForUrl(host)}:${port}` : host;
   const url = new URL(base);
   url.searchParams.set("roomId", roomId);
   url.searchParams.set("mode", mode);
@@ -256,16 +261,19 @@ export class HostSessionController {
         }
 
         const manualHost = settings.manualDirectHost?.trim() || undefined;
+        const publicIpv6Candidates = resolvePublicIpv6Candidates();
         const lanCandidates = resolveLanIpv4Candidates();
-        const initialHost = manualHost ?? lanCandidates[0] ?? "";
+        const initialHost = manualHost ?? publicIpv6Candidates[0] ?? lanCandidates[0] ?? "";
 
         hostAddress = initialHost;
         addressSource = manualHost
           ? "manual_public_host"
-          : initialHost
+          : publicIpv6Candidates.includes(initialHost)
+            ? "public_ip"
+            : initialHost
             ? "lan_ipv4"
             : "unknown";
-        alternativeAddresses = lanCandidates;
+        alternativeAddresses = uniqueAddresses(publicIpv6Candidates, lanCandidates);
         directHostProbe = createPendingDirectProbe({
           localPort: signalingPort,
           manualHost,
@@ -422,6 +430,9 @@ export class HostSessionController {
         Boolean(probeHost) &&
         (!fallbackHost ||
           fallbackAddressSource === "manual_public_host" ||
+          probe.summary.upnpMapped ||
+          probe.summary.natPmpMapped ||
+          (probe.summary.addressSource === "public_ip" && isIpv6Address(probeHost)) ||
           (probe.summary.reachability === "reachable" &&
             probe.summary.addressSource !== "lan_ipv4"));
       const resolvedHost = shouldPromoteProbeHost ? probeHost : fallbackHost || probeHost;

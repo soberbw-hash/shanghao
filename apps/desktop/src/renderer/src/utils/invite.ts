@@ -1,5 +1,14 @@
 import type { HostSessionInfo } from "@private-voice/shared";
 
+const formatHostForUrl = (host: string): string => {
+  const trimmed = host.trim();
+  if (trimmed.includes(":") && !trimmed.startsWith("[") && !trimmed.endsWith("]")) {
+    return `[${trimmed}]`;
+  }
+
+  return trimmed;
+};
+
 const appendInviteMetadata = (url: URL, session: HostSessionInfo): URL => {
   url.searchParams.set("roomId", session.roomId);
   url.searchParams.set("mode", session.connectionMode);
@@ -10,7 +19,10 @@ const appendInviteMetadata = (url: URL, session: HostSessionInfo): URL => {
 
 const createInviteUrlForHost = (session: HostSessionInfo, host: string): string => {
   const hasPort = typeof session.signalingPort === "number" && session.signalingPort > 0;
-  const base = session.connectionMode === "relay" ? host : `ws://${host}:${session.signalingPort}`;
+  const base =
+    session.connectionMode === "relay"
+      ? host
+      : `ws://${formatHostForUrl(host)}:${session.signalingPort}`;
 
   if (!hasPort && session.connectionMode !== "relay") {
     return "";

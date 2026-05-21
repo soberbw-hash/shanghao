@@ -9,7 +9,7 @@ import {
   type RendererLogPayload,
 } from "@private-voice/shared";
 
-import { resolveLanIpv4Candidates } from "./network-addresses";
+import { resolveLanIpv4Candidates, resolvePublicIpv6Candidates } from "./network-addresses";
 
 const execFileAsync = promisify(execFile);
 
@@ -250,6 +250,7 @@ export const probeDirectHost = async ({
 }): Promise<DirectHostProbeResult> => {
   const cleanupTasks: Array<() => Promise<void>> = [];
   const lanCandidates = resolveLanIpv4Candidates();
+  const publicIpv6Candidates = resolvePublicIpv6Candidates();
   const localHost = lanCandidates[0];
   const normalizedManualHost = manualHost?.trim() || undefined;
   const publicIp = await detectPublicIp();
@@ -272,11 +273,17 @@ export const probeDirectHost = async ({
     cleanupTasks.push(natPmp.cleanup);
   }
 
+  const interfacePublicIpv6 = publicIpv6Candidates[0];
   const selectedHost =
-    normalizedManualHost || upnp.externalIp || natPmp.externalIp || publicIp || localHost;
+    normalizedManualHost ||
+    upnp.externalIp ||
+    natPmp.externalIp ||
+    publicIp ||
+    interfacePublicIpv6 ||
+    localHost;
   const addressSource = normalizedManualHost
     ? "manual_public_host"
-    : upnp.externalIp || natPmp.externalIp || publicIp
+    : upnp.externalIp || natPmp.externalIp || publicIp || interfacePublicIpv6
       ? "public_ip"
       : localHost
         ? "lan_ipv4"
@@ -302,8 +309,9 @@ export const probeDirectHost = async ({
       selectedHost,
       localHost,
       lanCandidates,
+      publicIpv6Candidates,
       localPort,
-      publicIp,
+      publicIp: publicIp || interfacePublicIpv6,
       upnpAttempted: upnp.attempted,
       upnpMapped: upnp.mapped,
       upnpError: upnp.error,
@@ -319,7 +327,7 @@ export const probeDirectHost = async ({
   return {
     cleanupTasks,
     summary: {
-      publicIp,
+      publicIp: publicIp || interfacePublicIpv6,
       manualHost: normalizedManualHost,
       selectedHost,
       selectedPort: localPort,
