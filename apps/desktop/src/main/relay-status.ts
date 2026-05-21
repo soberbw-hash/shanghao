@@ -2,6 +2,8 @@ import net from "node:net";
 
 import type { RelayStatusSnapshot, RendererLogPayload } from "@private-voice/shared";
 
+import { normalizeRelayServerUrl } from "./relay-url";
+
 const probePort = async (host: string, port: number): Promise<boolean> =>
   new Promise((resolve) => {
     const socket = net.createConnection({ host, port });
@@ -24,7 +26,7 @@ export const readRelayStatus = async ({
   relayServerUrl?: string;
   writeLog?: (payload: RendererLogPayload) => Promise<void>;
 }): Promise<RelayStatusSnapshot> => {
-  const normalizedUrl = relayServerUrl?.trim();
+  const normalizedUrl = normalizeRelayServerUrl(relayServerUrl);
   if (!normalizedUrl) {
     return {
       isConfigured: false,

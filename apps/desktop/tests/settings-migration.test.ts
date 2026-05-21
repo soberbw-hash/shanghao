@@ -34,3 +34,18 @@ test("migrateSettings falls back to safe defaults for damaged legacy config", ()
   assert.equal(result.settings.isConnectionSoundEnabled, true);
   assert.equal(result.migrated, true);
 });
+
+test("migrateSettings normalizes relay server urls for non-technical users", () => {
+  assert.equal(
+    migrateSettings({ relayServerUrl: "1.2.3.4:43821" }).settings.relayServerUrl,
+    "ws://1.2.3.4:43821/",
+  );
+  assert.equal(
+    migrateSettings({ relayServerUrl: "http://1.2.3.4:43821/health" }).settings.relayServerUrl,
+    "ws://1.2.3.4:43821/",
+  );
+  assert.equal(
+    migrateSettings({ relayServerUrl: "https://relay.example.com" }).settings.relayServerUrl,
+    "wss://relay.example.com/",
+  );
+});

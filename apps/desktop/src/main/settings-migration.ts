@@ -4,6 +4,8 @@ import {
   type AppSettings,
 } from "@private-voice/shared";
 
+import { normalizeRelayServerUrl } from "./relay-url";
+
 export type RawSettings = Partial<AppSettings> & {
   settingsSchemaVersion?: number;
 };
@@ -75,7 +77,7 @@ export const migrateSettings = (raw: RawSettings): MigrationResult => {
     avatarPath: trimText(raw.avatarPath),
     globalMuteShortcut: trimText(raw.globalMuteShortcut) ?? "",
     pushToTalkShortcut: trimText(raw.pushToTalkShortcut) ?? defaultSettings.pushToTalkShortcut,
-    relayServerUrl: trimText(raw.relayServerUrl) ?? "",
+    relayServerUrl: normalizeRelayServerUrl(raw.relayServerUrl) ?? "",
     relayAuthToken: trimText(raw.relayAuthToken) ?? "",
     manualDirectHost: trimText(raw.manualDirectHost) ?? "",
     preferredSampleRate: normalizeSampleRate(raw.preferredSampleRate),
