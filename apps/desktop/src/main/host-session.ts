@@ -148,6 +148,31 @@ const createPendingDirectProbe = ({
   message: buildPendingDirectProbeMessage(addressSource),
 });
 
+const uniqueAddresses = (...groups: Array<Array<string | undefined> | string | undefined>): string[] => {
+  const seen = new Set<string>();
+  const output: string[] = [];
+
+  const pushAddress = (value?: string) => {
+    const trimmed = value?.trim();
+    if (!trimmed || seen.has(trimmed)) {
+      return;
+    }
+
+    seen.add(trimmed);
+    output.push(trimmed);
+  };
+
+  for (const group of groups) {
+    if (Array.isArray(group)) {
+      group.forEach(pushAddress);
+    } else {
+      pushAddress(group);
+    }
+  }
+
+  return output;
+};
+
 export class HostSessionController {
   private readonly events = new EventEmitter();
   private server?: SignalingServer;
@@ -392,12 +417,21 @@ export class HostSessionController {
         this.currentSession.addressSource === "unknown" && fallbackHost
           ? ("lan_ipv4" as const)
           : this.currentSession.addressSource;
-      const resolvedHost = probe.summary.selectedHost || fallbackHost;
-      const resolvedAddressSource = probe.summary.selectedHost
+      const probeHost = probe.summary.selectedHost?.trim() || "";
+      const shouldPromoteProbeHost =
+        Boolean(probeHost) &&
+        (!fallbackHost ||
+          fallbackAddressSource === "manual_public_host" ||
+          (probe.summary.reachability === "reachable" &&
+            probe.summary.addressSource !== "lan_ipv4"));
+      const resolvedHost = shouldPromoteProbeHost ? probeHost : fallbackHost || probeHost;
+      const resolvedAddressSource = shouldPromoteProbeHost
         ? probe.summary.addressSource
         : fallbackHost
           ? fallbackAddressSource
-          : "unknown";
+          : probeHost
+            ? probe.summary.addressSource
+            : "unknown";
       const hasCandidateAddress = Boolean(resolvedHost);
       const isVerifiedShareable = probe.summary.reachability === "reachable";
       const signalingUrl =
@@ -410,24 +444,37 @@ export class HostSessionController {
             })
           : "";
 
+      const keptLanPrimaryWhilePublicIsUnverified =
+        fallbackAddressSource === "lan_ipv4" &&
+        resolvedAddressSource === "lan_ipv4" &&
+        probe.summary.addressSource === "public_ip" &&
+        probe.summary.reachability !== "reachable";
       const directHostProbe =
-        probe.summary.selectedHost || !resolvedHost
-          ? probe.summary
-          : {
+        keptLanPrimaryWhilePublicIsUnverified || (!probe.summary.selectedHost && resolvedHost)
+          ? {
               ...probe.summary,
               selectedHost: resolvedHost,
               selectedPort: localPort,
               addressSource: resolvedAddressSource,
-              reachability: "unverified" as const,
-              message: buildFallbackDirectProbeMessage(resolvedAddressSource),
-            };
+              reachability: "reachable" as const,
+              message:
+                "房间已启动，同一局域网下的好友可以直接加入；公网直连仍未确认可用，如跨网络连接失败，请手动做端口映射或改用云中继。",
+            }
+          : probe.summary;
 
       this.currentSession = {
         ...this.currentSession,
         signalingUrl,
         hostAddress: resolvedHost,
         addressSource: hasCandidateAddress ? resolvedAddressSource : "unknown",
-        alternativeAddresses: resolveLanIpv4Candidates(),
+        alternativeAddresses: uniqueAddresses(
+          resolveLanIpv4Candidates(),
+          this.currentSession.alternativeAddresses,
+          probeHost && probeHost !== resolvedHost ? probeHost : undefined,
+          probe.summary.publicIp && probe.summary.publicIp !== resolvedHost
+            ? probe.summary.publicIp
+            : undefined,
+        ),
         directHostProbe,
       };
       this.emitUpdate();
@@ -439,6 +486,8 @@ export class HostSessionController {
         context: {
           roomId,
           hostAddress: resolvedHost,
+          probeHost,
+          keptLanPrimaryWhilePublicIsUnverified,
           signalingUrl,
           reachability: directHostProbe.reachability,
           natTendency: probe.summary.natTendency,

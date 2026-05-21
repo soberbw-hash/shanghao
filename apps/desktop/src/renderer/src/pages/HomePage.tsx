@@ -26,6 +26,7 @@ import { useAppStore } from "../store/appStore";
 import { useAudioStore } from "../store/audioStore";
 import { useRoomStore } from "../store/roomStore";
 import { useSettingsStore } from "../store/settingsStore";
+import { buildShareableInviteUrl } from "../utils/invite";
 
 const connectionModeOptions = [
   { value: "direct_host", label: "房主直连" },
@@ -140,7 +141,7 @@ export const HomePage = () => {
 
   const currentMode = settings.connectionMode;
   const currentModeCopy = modeCopy[currentMode];
-  const currentAddress = hostSession?.signalingUrl ?? room.signalingUrl;
+  const currentAddress = buildShareableInviteUrl(hostSession) || room.signalingUrl;
   const currentDirectHost = hostSession?.directHostProbe ?? networkSnapshot?.directHost;
   const relaySummary = networkSnapshot?.relay;
   const latestHostEvent = room.recentHostEvents?.[0]?.message;

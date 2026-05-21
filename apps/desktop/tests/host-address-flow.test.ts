@@ -6,6 +6,7 @@ import test from "node:test";
 const sourcePath = path.resolve(process.cwd(), "src/renderer/src/hooks/useRoomState.ts");
 const hostSessionPath = path.resolve(process.cwd(), "src/main/host-session.ts");
 const inviteUtilPath = path.resolve(process.cwd(), "src/renderer/src/utils/invite.ts");
+const homePagePath = path.resolve(process.cwd(), "src/renderer/src/pages/HomePage.tsx");
 
 test("host uses local loopback only for self-connect, not for outward invite links", () => {
   const source = readFileSync(sourcePath, "utf8");
@@ -31,6 +32,15 @@ test("direct host keeps a shareable candidate address even before full reachabil
   );
 });
 
+test("direct host keeps LAN primary when public probing is still unverified", () => {
+  const source = readFileSync(hostSessionPath, "utf8");
+
+  assert.equal(source.includes("keptLanPrimaryWhilePublicIsUnverified"), true);
+  assert.equal(source.includes("probe.summary.addressSource === \"public_ip\""), true);
+  assert.equal(source.includes("probe.summary.reachability !== \"reachable\""), true);
+  assert.equal(source.includes("uniqueAddresses("), true);
+});
+
 test("direct host seeds an immediate manual or LAN candidate before public probe completes", () => {
   const source = readFileSync(hostSessionPath, "utf8");
 
@@ -51,6 +61,16 @@ test("renderer can derive a shareable invite url even before signalingUrl is exp
   assert.equal(source.includes("url.searchParams.set(\"roomId\", session.roomId);"), true);
   assert.equal(source.includes("url.searchParams.set(\"mode\", session.connectionMode);"), true);
   assert.equal(source.includes("url.searchParams.append(\"candidate\", candidate);"), true);
+});
+
+test("home page uses the same shareable invite builder as the room page", () => {
+  const source = readFileSync(homePagePath, "utf8");
+
+  assert.equal(source.includes("import { buildShareableInviteUrl }"), true);
+  assert.equal(
+    source.includes("const currentAddress = buildShareableInviteUrl(hostSession) || room.signalingUrl;"),
+    true,
+  );
 });
 
 test("joining tries invite fallback candidates before giving up", () => {
