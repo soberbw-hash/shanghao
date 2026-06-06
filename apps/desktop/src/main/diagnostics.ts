@@ -1,7 +1,10 @@
-import { appendFile, cp, mkdir, writeFile } from "node:fs/promises";
+import { createWriteStream } from "node:fs";
+import { appendFile, cp, mkdir, readdir, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
+import { createGzip } from "node:zlib";
+import { pipeline } from "node:stream/promises";
 
 import { app, dialog, shell } from "electron";
 
@@ -15,6 +18,34 @@ import {
 } from "@private-voice/shared";
 
 const execFileAsync = promisify(execFile);
+
+const zipDirectory = async (sourceDir: string, targetPath: string): Promise<void> => {
+  try {
+    // On Windows use PowerShell; macOS/Linux use system zip
+    if (process.platform === "win32") {
+      await execFileAsync(
+        "powershell",
+        [
+          "-NoProfile",
+          "-Command",
+          `Compress-Archive -Path '${sourceDir}${path.sep}*' -DestinationPath '${targetPath}' -Force`,
+        ],
+        { windowsHide: true },
+      );
+    } else {
+      await execFileAsync("zip", ["-r", targetPath, "."], {
+        cwd: sourceDir,
+      });
+    }
+  } catch {
+    // Fallback: tar.gz for any platform where zip isn't available
+    const files = await readdir(sourceDir, { recursive: true });
+    const tar = await import("node:child_process").then((m) =>
+      promisify(m.execFile)("tar", ["-czf", targetPath, "-C", sourceDir, "."]),
+    );
+    await tar;
+  }
+};
 
 export class DiagnosticsService {
   private readonly logsDirectory = path.join(app.getPath("userData"), "logs");
@@ -136,15 +167,7 @@ export class DiagnosticsService {
         await writeFile(path.join(bundleRoot, file.name), file.content, "utf8");
       }
 
-      await execFileAsync(
-        "powershell",
-        [
-          "-NoProfile",
-          "-Command",
-          `Compress-Archive -Path '${bundleRoot}\\*' -DestinationPath '${zipPath}' -Force`,
-        ],
-        { windowsHide: true },
-      );
+      await zipDirectory(bundleRoot, zipPath);
 
       this.snapshot = {
         ...this.snapshot,

@@ -8,7 +8,15 @@ import { TailscaleState, type TailscaleStatus } from "@private-voice/shared";
 import { resolveLanIpv4Candidates } from "./network-addresses";
 
 const execFileAsync = promisify(execFile);
-const TAILSCALE_INSTALL_URL = "https://tailscale.com/download/windows";
+
+const TAILSCALE_INSTALL_URLS: Record<string, string> = {
+  darwin: "https://tailscale.com/download/mac",
+  win32: "https://tailscale.com/download/windows",
+  linux: "https://tailscale.com/download/linux",
+};
+
+const getTailscaleInstallUrl = (): string =>
+  TAILSCALE_INSTALL_URLS[process.platform] ?? TAILSCALE_INSTALL_URLS.linux;
 
 interface TailscaleStatusJson {
   BackendState?: string;
@@ -30,7 +38,8 @@ export interface HostAddressResolution {
 
 const detectBinary = async (): Promise<boolean> => {
   try {
-    await execFileAsync("where", ["tailscale"], { windowsHide: true });
+    const command = process.platform === "win32" ? "where" : "which";
+    await execFileAsync(command, ["tailscale"], { windowsHide: true });
     return true;
   } catch {
     return false;
@@ -54,8 +63,8 @@ export const detectTailscaleStatus = async (): Promise<TailscaleStatus> => {
       state: TailscaleState.NotInstalled,
       isInstalled: false,
       isConnected: false,
-      message: "\u8FD9\u53F0\u8BBE\u5907\u8FD8\u6CA1\u6709\u5B89\u88C5 Tailscale\u3002",
-      installUrl: TAILSCALE_INSTALL_URL,
+      message: "这台设备还没有安装 Tailscale。",
+      installUrl: getTailscaleInstallUrl(),
     };
   }
 
@@ -78,17 +87,17 @@ export const detectTailscaleStatus = async (): Promise<TailscaleStatus> => {
       ip,
       magicDnsName,
       message: isConnected
-        ? "Tailscale \u5DF2\u8FDE\u63A5\uFF0C\u53EF\u4EE5\u76F4\u63A5\u7528\u4E8E\u597D\u53CB\u623F\u95F4\u3002"
-        : "Tailscale \u5DF2\u5B89\u88C5\uFF0C\u4F46\u5F53\u524D\u8BBE\u5907\u8FD8\u6CA1\u6709\u8FDE\u5230\u4F60\u7684 tailnet\u3002",
-      installUrl: TAILSCALE_INSTALL_URL,
+        ? "Tailscale 已连接，可以直接用于好友房间。"
+        : "Tailscale 已安装，但当前设备还没有连到你的 tailnet。",
+      installUrl: getTailscaleInstallUrl(),
     };
   } catch {
     return {
       state: TailscaleState.Installed,
       isInstalled: true,
       isConnected: false,
-      message: "Tailscale \u5DF2\u5B89\u88C5\uFF0C\u4F46\u6682\u65F6\u65E0\u6CD5\u8BFB\u53D6\u5F53\u524D\u72B6\u6001\u3002",
-      installUrl: TAILSCALE_INSTALL_URL,
+      message: "Tailscale 已安装，但暂时无法读取当前状态。",
+      installUrl: getTailscaleInstallUrl(),
     };
   }
 };
@@ -117,5 +126,5 @@ export const resolveTailscaleAddress = async (): Promise<HostAddressResolution |
 };
 
 export const openTailscaleInstallGuide = async (): Promise<void> => {
-  await shell.openExternal(TAILSCALE_INSTALL_URL);
+  await shell.openExternal(getTailscaleInstallUrl());
 };

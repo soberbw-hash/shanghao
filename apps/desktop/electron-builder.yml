@@ -1,6 +1,6 @@
 appId: com.sober.shanghao
-productName: "\u4E0A\u53F7"
-artifactName: ShangHao-Setup.${ext}
+productName: "上号"
+artifactName: ShangHao-${version}-${arch}.${ext}
 asar: true
 directories:
   output: release
@@ -13,6 +13,7 @@ extraResources:
   - from: build
     to: build
     filter:
+      - "shanghao-icon.icns"
       - "shanghao-icon-xl.ico"
       - "shanghao-shortcut-xl.ico"
       - "tray-dark.png"
@@ -20,6 +21,20 @@ extraResources:
 extraMetadata:
   name: shanghao
   main: dist-electron/main/index.cjs
+
+mac:
+  category: public.app-category.social-networking
+  icon: shanghao-icon.icns
+  target:
+    - target: dmg
+      arch:
+        - arm64
+        - x64
+    - target: zip
+      arch:
+        - arm64
+        - x64
+
 win:
   executableName: ShangHao
   icon: shanghao-icon-xl.ico
@@ -31,7 +46,7 @@ nsis:
   perMachine: false
   allowToChangeInstallationDirectory: true
   include: build/installer.nsh
-  shortcutName: "\u4E0A\u53F7"
+  shortcutName: "上号"
   installerIcon: shanghao-icon-xl.ico
   uninstallerIcon: shanghao-icon-xl.ico
   installerHeaderIcon: shanghao-icon-xl.ico

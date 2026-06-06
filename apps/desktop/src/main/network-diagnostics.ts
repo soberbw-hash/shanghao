@@ -50,10 +50,17 @@ export const detectProxyDiagnostics = async (): Promise<ProxyDiagnostics> => {
 
   let proxyDescription = "";
   try {
-    const result = await execFileAsync("netsh", ["winhttp", "show", "proxy"], {
-      windowsHide: true,
-    });
-    proxyDescription = result.stdout.trim();
+    if (process.platform === "win32") {
+      const result = await execFileAsync("netsh", ["winhttp", "show", "proxy"], {
+        windowsHide: true,
+      });
+      proxyDescription = result.stdout.trim();
+    } else if (process.platform === "darwin") {
+      const { stdout } = await execFileAsync("scutil", ["--proxy"]);
+      proxyDescription = stdout.trim();
+    } else {
+      proxyDescription = "";
+    }
   } catch {
     proxyDescription = "";
   }
@@ -70,6 +77,7 @@ export const detectProxyDiagnostics = async (): Promise<ProxyDiagnostics> => {
   const hasSystemProxy =
     Boolean(envProxy) ||
     /Proxy Server/i.test(proxyDescription) ||
+    /Enable:/i.test(proxyDescription) ||
     /Direct access/i.test(proxyDescription) === false;
 
   const hasTunAdapter = tunAdapterNames.length > 0;
