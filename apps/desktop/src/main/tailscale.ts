@@ -15,8 +15,12 @@ const TAILSCALE_INSTALL_URLS: Record<string, string> = {
   linux: "https://tailscale.com/download/linux",
 };
 
-const getTailscaleInstallUrl = (): string =>
-  TAILSCALE_INSTALL_URLS[process.platform] ?? TAILSCALE_INSTALL_URLS.linux;
+const TAILSCALE_FALLBACK_URL = "https://tailscale.com/download/linux";
+
+const getTailscaleInstallUrl = (): string => {
+  const url = TAILSCALE_INSTALL_URLS[process.platform];
+  return url ?? TAILSCALE_FALLBACK_URL;
+};
 
 interface TailscaleStatusJson {
   BackendState?: string;
