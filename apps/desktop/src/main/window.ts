@@ -73,7 +73,10 @@ export const createMainWindow = ({
     },
   });
 
-  window.setAppDetails({ appId: APP_ID, appIconPath: getIconPath() });
+  // NOTE: BrowserWindow#setAppDetails is a 36+ API that has stub types in
+  // 35.x but no runtime implementation, so calling it crashes startup.
+  // On macOS the dock icon is handled by the bundle, on Windows use
+  // app.setAppUserModelId() before app.whenReady() if needed.
 
   const targetUrl = !app.isPackaged
     ? devServerUrl
