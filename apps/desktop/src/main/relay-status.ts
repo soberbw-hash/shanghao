@@ -1,4 +1,5 @@
 import net from "node:net";
+import { WebSocket } from "ws";
 
 import type { RelayStatusSnapshot, RendererLogPayload } from "@private-voice/shared";
 
@@ -19,6 +20,45 @@ const probePort = async (host: string, port: number): Promise<boolean> =>
     socket.once("error", () => finish(false));
   });
 
+const probeWebSocket = async (url: string): Promise<boolean> =>
+  new Promise((resolve) => {
+    const socket = new WebSocket(url, { handshakeTimeout: 4_000 });
+    let settled = false;
+    const finish = (result: boolean) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      socket.removeAllListeners();
+      socket.close();
+      resolve(result);
+    };
+    socket.once("open", () => finish(true));
+    socket.once("error", () => finish(false));
+    socket.once("close", () => finish(false));
+  });
+
+const probeHealth = async (url: string): Promise<boolean> => {
+  const healthUrl = new URL(url);
+  healthUrl.protocol = healthUrl.protocol === "wss:" ? "https:" : "http:";
+  healthUrl.pathname = "/health";
+  healthUrl.search = "";
+  healthUrl.hash = "";
+
+  try {
+    const response = await fetch(healthUrl, {
+      signal: AbortSignal.timeout(4_000),
+    });
+    if (!response.ok) {
+      return false;
+    }
+    const payload = (await response.json()) as { ok?: unknown };
+    return payload.ok === true;
+  } catch {
+    return false;
+  }
+};
+
 export const readRelayStatus = async ({
   relayServerUrl,
   writeLog,
@@ -38,13 +78,25 @@ export const readRelayStatus = async ({
   try {
     const parsed = new URL(normalizedUrl);
     const port = Number(parsed.port || (parsed.protocol === "wss:" ? "443" : "80"));
-    const isReachable = await probePort(parsed.hostname, port);
+    const tcpReachable = await probePort(parsed.hostname, port);
+    const [isHealthReachable, isWebSocketReachable] = tcpReachable
+      ? await Promise.all([probeHealth(normalizedUrl), probeWebSocket(normalizedUrl)])
+      : [false, false];
+    const isReachable = isHealthReachable && isWebSocketReachable;
     const result: RelayStatusSnapshot = {
       serverUrl: normalizedUrl,
       isConfigured: true,
       isReachable,
+      isHealthReachable,
+      isWebSocketReachable,
       lastCheckedAt: new Date().toISOString(),
-      message: isReachable ? "云中继地址可连接。" : "云中继地址当前不可达。",
+      message: isReachable
+        ? "云中继健康检查与 WebSocket 均正常，可以用于开房。"
+        : tcpReachable
+          ? !isHealthReachable
+            ? "服务器端口可达，但 /health 健康检查失败。"
+            : "服务器健康检查正常，但 WebSocket 无法打开。"
+          : "云中继地址当前不可达。",
     };
 
     await writeLog?.({

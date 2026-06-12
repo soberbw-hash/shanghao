@@ -9,6 +9,7 @@ import type {
   NetworkStatusSnapshot,
   ProxyDiagnostics,
   RendererLogPayload,
+  HostSessionInfo,
 } from "@private-voice/shared";
 
 import { readRelayStatus } from "./relay-status";
@@ -43,10 +44,15 @@ const detectPublicIp = async (): Promise<string | undefined> =>
   });
 
 export const detectProxyDiagnostics = async (): Promise<ProxyDiagnostics> => {
-  const interfaces = Object.keys(networkInterfaces());
+  const networkInterfaceSnapshot = networkInterfaces();
+  const interfaces = Object.keys(networkInterfaceSnapshot);
   const tunAdapterNames = interfaces.filter((name) =>
     TUN_KEYWORDS.some((keyword) => name.toLowerCase().includes(keyword)),
   );
+  const fakeIpAddresses = Object.values(networkInterfaceSnapshot)
+    .flatMap((values) => values ?? [])
+    .map((value) => value.address)
+    .filter((address) => address.startsWith("198.18.") || address.startsWith("198.19."));
 
   let proxyDescription = "";
   try {
@@ -93,11 +99,14 @@ export const detectProxyDiagnostics = async (): Promise<ProxyDiagnostics> => {
     hasTunAdapter,
     tunAdapterNames,
     hasClashLikeAdapter,
+    fakeIpAddresses,
     directBypassEnabled: true,
     compatibilityModeEnabled: hasSystemProxy || hasTunAdapter,
     message:
-      hasSystemProxy || hasTunAdapter
-        ? "检测到代理 / TUN 环境，已自动启用房间连接直连兼容模式。"
+      fakeIpAddresses.length > 0
+        ? "检测到 Clash / Mihomo Fake-IP（198.18/198.19），MagicDNS 可能被劫持，Tailscale 请优先使用 100.x 地址。"
+        : hasSystemProxy || hasTunAdapter
+          ? "检测到代理 / TUN 环境，已自动启用房间连接直连兼容模式。"
         : "当前未检测到会影响房间连接的代理 / TUN 环境。",
   };
 };
@@ -152,6 +161,7 @@ export const buildDiagnosticsSummary = async ({
   protocolVersion,
   buildNumber,
   inviteAddress,
+  hostSession,
   writeLog,
 }: {
   settings: AppSettings;
@@ -159,6 +169,7 @@ export const buildDiagnosticsSummary = async ({
   protocolVersion?: string;
   buildNumber?: string;
   inviteAddress?: string;
+  hostSession?: HostSessionInfo;
   writeLog?: (payload: RendererLogPayload) => Promise<void>;
 }): Promise<DiagnosticsBundleSummary> => {
   const networkSnapshot = await getNetworkStatusSnapshot(settings, writeLog);
@@ -168,10 +179,15 @@ export const buildDiagnosticsSummary = async ({
     buildNumber,
     connectionMode: settings.connectionMode,
     inviteAddress,
+    localSignalingUrl: hostSession?.localSignalingUrl,
+    selectedHost: hostSession?.hostAddress,
+    candidateAddresses: hostSession?.alternativeAddresses,
+    addressSource: hostSession?.addressSource,
     proxy: networkSnapshot.proxy,
     tailscale: networkSnapshot.tailscale,
     directHost: networkSnapshot.directHost,
     relay: networkSnapshot.relay,
+    cloudflareTunnel: hostSession?.cloudflareTunnel,
     exportedAt: new Date().toISOString(),
   };
 };

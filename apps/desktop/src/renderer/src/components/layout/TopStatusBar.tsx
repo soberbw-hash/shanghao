@@ -8,6 +8,7 @@ import { useRoomStore } from "../../store/roomStore";
 import { useSettingsStore } from "../../store/settingsStore";
 
 const modeLabelMap: Record<ConnectionMode, string> = {
+  cloudflare_tunnel: "临时公网",
   direct_host: "房主直连",
   tailscale: "Tailscale",
   relay: "云中继",

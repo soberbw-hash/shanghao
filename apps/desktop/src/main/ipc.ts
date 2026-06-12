@@ -138,6 +138,7 @@ export const registerIpcHandlers = ({
       protocolVersion: APP_PROTOCOL_VERSION,
       buildNumber: APP_BUILD_NUMBER,
       inviteAddress: hostSession.getSnapshot()?.signalingUrl,
+      hostSession: hostSession.getSnapshot(),
       writeLog: (payload) => diagnostics.writeLog(payload),
     });
 
@@ -145,6 +146,10 @@ export const registerIpcHandlers = ({
       { name: "settings.json", content: JSON.stringify(settings, null, 2) },
       { name: "network.json", content: JSON.stringify(network, null, 2) },
       { name: "summary.json", content: JSON.stringify(summary, null, 2) },
+      {
+        name: "host-session.json",
+        content: JSON.stringify(hostSession.getSnapshot() ?? null, null, 2),
+      },
     ]);
   });
 
@@ -172,6 +177,7 @@ export const registerIpcHandlers = ({
       protocolVersion: APP_PROTOCOL_VERSION,
       buildNumber: APP_BUILD_NUMBER,
       inviteAddress: hostSession.getSnapshot()?.signalingUrl,
+      hostSession: hostSession.getSnapshot(),
       writeLog: (payload) => diagnostics.writeLog(payload),
     });
   });

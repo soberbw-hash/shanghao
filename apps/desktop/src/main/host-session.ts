@@ -1,5 +1,6 @@
 import { EventEmitter } from "node:events";
 import net from "node:net";
+import { WebSocket } from "ws";
 
 import {
   APP_BUILD_NUMBER,
@@ -9,6 +10,7 @@ import {
   HostSessionState,
   type AppSettings,
   type ConnectionMode,
+  type DirectHostProbeSummary,
   type HostSessionInfo,
   type JoinRoomDiagnostic,
   type RendererLogPayload,
@@ -16,10 +18,10 @@ import {
 import { SignalingServer } from "@private-voice/signaling";
 
 import { probeDirectHost } from "./direct-host";
+import { CloudflareTunnelController } from "./cloudflare-tunnel";
 import { detectProxyDiagnostics } from "./network-diagnostics";
 import {
   formatHostForUrl,
-  isIpv6Address,
   resolveLanIpv4Candidates,
   resolvePublicIpv6Candidates,
 } from "./network-addresses";
@@ -49,6 +51,19 @@ const probeTcpPort = async (host: string, port: number): Promise<boolean> =>
     socket.once("connect", () => finish(true));
     socket.once("timeout", () => finish(false));
     socket.once("error", () => finish(false));
+  });
+
+const probeWebSocket = async (url: string): Promise<boolean> =>
+  new Promise((resolve) => {
+    const socket = new WebSocket(url, { handshakeTimeout: 4_000 });
+    const finish = (result: boolean) => {
+      socket.removeAllListeners();
+      socket.close();
+      resolve(result);
+    };
+    socket.once("open", () => finish(true));
+    socket.once("error", () => finish(false));
+    socket.once("close", () => finish(false));
   });
 
 const createInviteUrl = ({
@@ -101,7 +116,7 @@ const isLanIpv4Address = (host: string): boolean =>
   /^172\.(1[6-9]|2\d|3[0-1])\./.test(host);
 
 const buildPendingDirectProbeMessage = (
-  addressSource: HostSessionInfo["addressSource"],
+  addressSource: DirectHostProbeSummary["addressSource"],
 ): string => {
   if (addressSource === "manual_public_host") {
     return "房间已启动，正在验证你填写的公网地址是否可分享。";
@@ -115,7 +130,7 @@ const buildPendingDirectProbeMessage = (
 };
 
 const buildFallbackDirectProbeMessage = (
-  addressSource: HostSessionInfo["addressSource"],
+  addressSource: DirectHostProbeSummary["addressSource"],
 ): string => {
   if (addressSource === "lan_ipv4") {
     return "房间本地已启动，局域网候选地址仍可使用。公网直连当前不可用，建议同一网络先试连，或改用 Tailscale / 云中继。";
@@ -137,7 +152,7 @@ const createPendingDirectProbe = ({
   localPort: number;
   manualHost?: string;
   initialHost?: string;
-  addressSource: HostSessionInfo["addressSource"];
+  addressSource: DirectHostProbeSummary["addressSource"];
 }): HostSessionInfo["directHostProbe"] => ({
   publicIp: undefined,
   manualHost,
@@ -187,9 +202,27 @@ export class HostSessionController {
   constructor(
     private readonly getSettings: () => AppSettings,
     private readonly writeLog: (payload: RendererLogPayload) => Promise<void>,
-  ) {}
+    private readonly cloudflareTunnel?: CloudflareTunnelController,
+  ) {
+    this.cloudflareTunnel?.onStatusChange((status) => {
+      if (this.currentSession?.connectionMode !== "cloudflare_tunnel") {
+        return;
+      }
+      this.currentSession = {
+        ...this.currentSession,
+        cloudflareTunnel: status,
+      };
+      this.emitUpdate();
+    });
+  }
 
   getSnapshot(): HostSessionInfo | undefined {
+    if (this.currentSession?.connectionMode === "cloudflare_tunnel" && this.cloudflareTunnel) {
+      return {
+        ...this.currentSession,
+        cloudflareTunnel: this.cloudflareTunnel.getSnapshot(),
+      };
+    }
     return this.currentSession;
   }
 
@@ -238,8 +271,26 @@ export class HostSessionController {
       let alternativeAddresses: string[] = [];
       let directHostProbe: HostSessionInfo["directHostProbe"];
       let relayStatus: HostSessionInfo["relayStatus"];
+      let cloudflareTunnel: HostSessionInfo["cloudflareTunnel"];
 
-      if (connectionMode === "tailscale") {
+      if (connectionMode === "cloudflare_tunnel") {
+        if (!signalingPort || !this.cloudflareTunnel) {
+          throw new Error("临时公网组件未准备好，请重试或切换到云中继。");
+        }
+
+        cloudflareTunnel = await this.cloudflareTunnel.start(signalingPort);
+        if (!cloudflareTunnel.tunnelUrl) {
+          throw new Error("临时公网隧道没有生成可用地址，请重试。");
+        }
+
+        hostAddress = cloudflareTunnel.tunnelUrl.replace(/^https:/, "wss:");
+        addressSource = "cloudflare_tunnel";
+        signalingUrl = createInviteUrl({
+          host: hostAddress,
+          roomId,
+          mode: connectionMode,
+        });
+      } else if (connectionMode === "tailscale") {
         const resolvedAddress = await resolveTailscaleAddress();
         if (!resolvedAddress || !signalingPort) {
           throw new Error("Tailscale 当前不可用，请先连接到同一个 tailnet。");
@@ -280,14 +331,7 @@ export class HostSessionController {
           initialHost: initialHost || undefined,
           addressSource,
         });
-        signalingUrl = initialHost
-          ? createInviteUrl({
-              host: initialHost,
-              port: signalingPort,
-              roomId,
-              mode: connectionMode,
-            })
-          : "";
+        signalingUrl = "";
       } else {
         relayStatus = await readRelayStatus({
           relayServerUrl: settings.relayServerUrl,
@@ -300,6 +344,9 @@ export class HostSessionController {
 
         if (!relayStatus.serverUrl) {
           throw new Error("云中继地址无效，请重新填写。");
+        }
+        if (!relayStatus.isReachable) {
+          throw new Error(relayStatus.message);
         }
 
         hostAddress = relayStatus.serverUrl;
@@ -340,6 +387,7 @@ export class HostSessionController {
         buildNumber: APP_BUILD_NUMBER,
         directHostProbe,
         relayStatus,
+        cloudflareTunnel,
         inviteExpiresAt: new Date(Date.now() + 12 * 60 * 60 * 1000).toISOString(),
       };
 
@@ -421,20 +469,14 @@ export class HostSessionController {
       this.cleanupTasks.push(...probe.cleanupTasks);
 
       const fallbackHost = this.currentSession.hostAddress || "";
-      const fallbackAddressSource =
-        this.currentSession.addressSource === "unknown" && fallbackHost
-          ? ("lan_ipv4" as const)
-          : this.currentSession.addressSource;
+      const fallbackAddressSource: DirectHostProbeSummary["addressSource"] =
+        this.currentSession.addressSource === "cloudflare_tunnel"
+          ? "unknown"
+          : this.currentSession.addressSource === "unknown" && fallbackHost
+            ? "lan_ipv4"
+            : this.currentSession.addressSource;
       const probeHost = probe.summary.selectedHost?.trim() || "";
-      const shouldPromoteProbeHost =
-        Boolean(probeHost) &&
-        (!fallbackHost ||
-          fallbackAddressSource === "manual_public_host" ||
-          probe.summary.upnpMapped ||
-          probe.summary.natPmpMapped ||
-          (probe.summary.addressSource === "public_ip" && isIpv6Address(probeHost)) ||
-          (probe.summary.reachability === "reachable" &&
-            probe.summary.addressSource !== "lan_ipv4"));
+      const shouldPromoteProbeHost = Boolean(probeHost) && probe.summary.addressSource !== "lan_ipv4";
       const resolvedHost = shouldPromoteProbeHost ? probeHost : fallbackHost || probeHost;
       const resolvedAddressSource = shouldPromoteProbeHost
         ? probe.summary.addressSource
@@ -444,9 +486,11 @@ export class HostSessionController {
             ? probe.summary.addressSource
             : "unknown";
       const hasCandidateAddress = Boolean(resolvedHost);
-      const isVerifiedShareable = probe.summary.reachability === "reachable";
+      const isVerifiedShareable =
+        probe.summary.reachability === "reachable" &&
+        probe.summary.addressSource !== "lan_ipv4";
       const signalingUrl =
-        hasCandidateAddress && resolvedHost
+        isVerifiedShareable && resolvedHost
           ? createInviteUrl({
               host: resolvedHost,
               port: localPort,
@@ -455,23 +499,14 @@ export class HostSessionController {
             })
           : "";
 
-      const keptLanPrimaryWhilePublicIsUnverified =
-        fallbackAddressSource === "lan_ipv4" &&
-        resolvedAddressSource === "lan_ipv4" &&
-        probe.summary.addressSource === "public_ip" &&
-        probe.summary.reachability !== "reachable";
-      const directHostProbe =
-        keptLanPrimaryWhilePublicIsUnverified || (!probe.summary.selectedHost && resolvedHost)
-          ? {
-              ...probe.summary,
-              selectedHost: resolvedHost,
-              selectedPort: localPort,
-              addressSource: resolvedAddressSource,
-              reachability: "reachable" as const,
-              message:
-                "房间已启动，同一局域网下的好友可以直接加入；公网直连仍未确认可用，如跨网络连接失败，请手动做端口映射或改用云中继。",
-            }
-          : probe.summary;
+      const directHostProbe = probe.summary.selectedHost
+        ? probe.summary
+        : {
+            ...probe.summary,
+            selectedHost: resolvedHost || undefined,
+            selectedPort: localPort,
+            addressSource: resolvedAddressSource,
+          };
 
       this.currentSession = {
         ...this.currentSession,
@@ -498,7 +533,6 @@ export class HostSessionController {
           roomId,
           hostAddress: resolvedHost,
           probeHost,
-          keptLanPrimaryWhilePublicIsUnverified,
           signalingUrl,
           reachability: directHostProbe.reachability,
           natTendency: probe.summary.natTendency,
@@ -515,23 +549,15 @@ export class HostSessionController {
       }
 
       const fallbackHost = this.currentSession.hostAddress || "";
-      const fallbackAddressSource =
-        this.currentSession.addressSource === "unknown" && fallbackHost
-          ? ("lan_ipv4" as const)
-          : this.currentSession.addressSource;
-      const fallbackSignalingUrl =
-        fallbackHost && localPort
-          ? createInviteUrl({
-              host: fallbackHost,
-              port: localPort,
-              roomId,
-              mode: "direct_host",
-            })
-          : this.currentSession.signalingUrl;
-
+      const fallbackAddressSource: DirectHostProbeSummary["addressSource"] =
+        this.currentSession.addressSource === "cloudflare_tunnel"
+          ? "unknown"
+          : this.currentSession.addressSource === "unknown" && fallbackHost
+            ? "lan_ipv4"
+            : this.currentSession.addressSource;
       this.currentSession = {
         ...this.currentSession,
-        signalingUrl: fallbackSignalingUrl,
+        signalingUrl: "",
         hostAddress: fallbackHost,
         addressSource: fallbackHost ? fallbackAddressSource : "unknown",
         directHostProbe: {
@@ -594,6 +620,13 @@ export class HostSessionController {
 
     try {
       const parsed = new URL(signalingUrl);
+      if (
+        (parsed.protocol !== "ws:" && parsed.protocol !== "wss:") ||
+        !parsed.searchParams.get("roomId") ||
+        !parsed.searchParams.get("mode")
+      ) {
+        throw new Error("地址必须是包含 roomId 和 mode 的完整 ws/wss 房间地址。");
+      }
       const host = parsed.hostname;
       const port = Number(parsed.port || (parsed.protocol === "wss:" ? "443" : "80"));
       const addressSource =
@@ -603,6 +636,8 @@ export class HostSessionController {
             : "tailscale_ip"
           : connectionMode === "relay"
             ? "relay"
+            : connectionMode === "cloudflare_tunnel"
+              ? "cloudflare_tunnel"
             : isLanIpv4Address(host)
               ? "lan_ipv4"
               : "public_ip";
@@ -616,8 +651,13 @@ export class HostSessionController {
       }
 
       const isReachable = await probeTcpPort(host, port);
+      const websocketOpened = isReachable ? await probeWebSocket(signalingUrl) : false;
       if (!isReachable) {
         details.push("目标端口当前不可达。");
+      } else if (!websocketOpened) {
+        details.push("TCP 端口可达，但 WebSocket 无法打开。");
+      } else {
+        details.push("WebSocket 已成功打开。");
       }
 
       const relayStatus =
@@ -634,12 +674,14 @@ export class HostSessionController {
         host,
         port,
         isUrlValid: true,
-        isReachable,
+        isReachable: websocketOpened,
         addressSource,
         tailscaleState: tailscaleStatus?.state,
-        failureStage: isReachable ? "websocket" : "network",
-        message: isReachable
-          ? "地址已可达，但房间连接握手失败，可能受代理或 TUN 影响。"
+        failureStage: !isReachable ? "network" : websocketOpened ? "unknown" : "websocket",
+        message: websocketOpened
+          ? "地址与 WebSocket 均可达，可以继续加入房间。"
+          : isReachable
+            ? "TCP 端口可达，但 WebSocket 打开失败，可能受代理、TUN 或服务端配置影响。"
           : "无法连接到房主地址。",
         details,
         proxyDiagnostics,
@@ -664,6 +706,8 @@ export class HostSessionController {
   }
 
   async stop(): Promise<void> {
+    await this.cloudflareTunnel?.stop().catch(() => undefined);
+
     if (this.server) {
       try {
         await this.server.close();

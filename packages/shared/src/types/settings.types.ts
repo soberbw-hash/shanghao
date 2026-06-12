@@ -1,6 +1,6 @@
 import { TailscaleState } from "../enums/app.enums";
 
-export type ConnectionMode = "direct_host" | "tailscale" | "relay";
+export type ConnectionMode = "cloudflare_tunnel" | "relay" | "tailscale" | "direct_host";
 export type PreferredSampleRate = "auto" | "44100" | "48000";
 export type MicMonitorMode = "processed" | "raw";
 
@@ -57,6 +57,7 @@ export interface ProxyDiagnostics {
   hasTunAdapter: boolean;
   tunAdapterNames: string[];
   hasClashLikeAdapter: boolean;
+  fakeIpAddresses?: string[];
   directBypassEnabled: boolean;
   compatibilityModeEnabled?: boolean;
   message: string;
@@ -66,7 +67,21 @@ export interface RelayStatusSnapshot {
   serverUrl?: string;
   isConfigured: boolean;
   isReachable: boolean;
+  isHealthReachable?: boolean;
+  isWebSocketReachable?: boolean;
   lastCheckedAt?: string;
+  message: string;
+}
+
+export interface CloudflareTunnelStatus {
+  isInstalled: boolean;
+  version?: string;
+  processState: "idle" | "downloading" | "starting" | "active" | "stopped" | "failed";
+  tunnelUrl?: string;
+  tunnelStartedAt?: string;
+  processPid?: number;
+  lastExitCode?: number | null;
+  lastError?: string;
   message: string;
 }
 

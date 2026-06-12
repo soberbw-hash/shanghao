@@ -443,8 +443,6 @@ export class RoomClient {
       peerId: targetPeerId,
       localStream: this.localStream,
       onRemoteStream: (stream) => {
-        this.webrtcReadyPeerIds.add(targetPeerId);
-        this.updateAudioRelaySending();
         this.options.onRemoteStream(targetPeerId, stream);
       },
       onIceCandidate: (candidate) => {
@@ -457,11 +455,34 @@ export class RoomClient {
         });
       },
       onConnectionStateChange: (state) => {
-        if (state === "failed" || state === "disconnected") {
+        if (state === "connected") {
+          this.webrtcReadyPeerIds.add(targetPeerId);
+          this.updateAudioRelaySending();
+          void writeRendererLog("webrtc", "info", "Peer connection connected", {
+            targetPeerId,
+            audioRelayFallbackEnabled: false,
+          });
+          return;
+        }
+
+        if (state === "failed" || state === "disconnected" || state === "closed") {
           this.webrtcReadyPeerIds.delete(targetPeerId);
           this.updateAudioRelaySending();
           this.options.onRemoteStream(targetPeerId, undefined);
+          void writeRendererLog("webrtc", "warn", "Peer connection unavailable, audio relay fallback enabled", {
+            targetPeerId,
+            state,
+            audioRelayFallbackEnabled: true,
+          });
         }
+      },
+      onDiagnosticEvent: (event, context) => {
+        void writeRendererLog(
+          "webrtc",
+          event === "connection_state" && context.state === "failed" ? "warn" : "info",
+          `WebRTC ${event}`,
+          context,
+        );
       },
     });
 

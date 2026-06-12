@@ -103,6 +103,7 @@ export class SignalingAudioRelay {
   private isMuted = false;
   private shouldSendAudio = false;
   private isDestroyed = false;
+  private lastReceiveLogAt = 0;
   private readonly players = new Map<string, FallbackAudioPlayer>();
 
   constructor(private readonly options: SignalingAudioRelayOptions) {}
@@ -172,7 +173,15 @@ export class SignalingAudioRelay {
   }
 
   setShouldSend(shouldSend: boolean): void {
+    if (this.shouldSendAudio === shouldSend) {
+      return;
+    }
+
     this.shouldSendAudio = shouldSend;
+    this.options.onLog?.(
+      "info",
+      shouldSend ? "signaling audio relay sending enabled" : "signaling audio relay sending disabled",
+    );
   }
 
   async replaceLocalStream(localStream: MediaStream): Promise<void> {
@@ -198,6 +207,13 @@ export class SignalingAudioRelay {
 
     const player = this.players.get(message.peerId) ?? new FallbackAudioPlayer();
     this.players.set(message.peerId, player);
+    if (Date.now() - this.lastReceiveLogAt > 5_000) {
+      this.lastReceiveLogAt = Date.now();
+      this.options.onLog?.("info", "signaling audio relay received remote chunk", {
+        peerId: message.peerId,
+        sequence: message.sequence,
+      });
+    }
     void player
       .resume()
       .then(() => player.play(message))
@@ -210,6 +226,10 @@ export class SignalingAudioRelay {
   }
 
   destroy(): void {
+    if (this.isDestroyed) {
+      return;
+    }
+
     this.isDestroyed = true;
     this.processor?.disconnect();
     this.source?.disconnect();
@@ -225,5 +245,6 @@ export class SignalingAudioRelay {
     this.processor = undefined;
     this.source = undefined;
     this.silentGain = undefined;
+    this.options.onLog?.("info", "signaling audio relay stopped");
   }
 }

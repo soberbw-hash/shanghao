@@ -39,9 +39,10 @@ export const NetworkSettingsCard = ({
         <SegmentedControl
           value={settings.connectionMode}
           options={[
-            { value: "direct_host", label: "房主直连" },
-            { value: "tailscale", label: "Tailscale" },
+            { value: "cloudflare_tunnel", label: "临时公网" },
             { value: "relay", label: "云中继" },
+            { value: "tailscale", label: "Tailscale" },
+            { value: "direct_host", label: "房主直连" },
           ]}
           onChange={(connectionMode) =>
             onChange({ connectionMode: connectionMode as AppSettings["connectionMode"] })
@@ -56,11 +57,16 @@ export const NetworkSettingsCard = ({
         />
       </SettingsItemRow>
       <SettingsItemRow label="云中继地址">
-        <Input
-          value={settings.relayServerUrl || ""}
-          placeholder="例如 wss://relay.example.com/room"
-          onChange={(event) => onChange({ relayServerUrl: event.target.value })}
-        />
+        <div className="flex min-w-[420px] items-center gap-2">
+          <Input
+            value={settings.relayServerUrl || ""}
+            placeholder="例如 ws://服务器公网IP:43821"
+            onChange={(event) => onChange({ relayServerUrl: event.target.value })}
+          />
+          <Button variant="secondary" onClick={onRefresh}>
+            测试连接
+          </Button>
+        </div>
       </SettingsItemRow>
       <div className="rounded-[16px] border border-[#E7ECF2] bg-[#F8FAFC] p-4 text-sm text-[#667085]">
         <div className="font-medium text-[#111827]">当前网络摘要</div>

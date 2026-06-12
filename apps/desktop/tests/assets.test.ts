@@ -10,6 +10,8 @@ test("desktop branding assets exist for app, tray, and github", () => {
     path.join(root, "apps/desktop/build/icon-master.png"),
     path.join(root, "apps/desktop/build/shanghao-icon-xl.ico"),
     path.join(root, "apps/desktop/build/shanghao-shortcut-xl.ico"),
+    path.join(root, "apps/desktop/build/shanghao-icon-v3.ico"),
+    path.join(root, "apps/desktop/build/shanghao-shortcut-v3.ico"),
     path.join(root, "apps/desktop/build/installer.nsh"),
     path.join(root, "apps/desktop/build/logo-ui.svg"),
     path.join(root, "apps/desktop/build/tray-dark.png"),

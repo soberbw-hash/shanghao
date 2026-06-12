@@ -5,8 +5,6 @@ import { shell } from "electron";
 
 import { TailscaleState, type TailscaleStatus } from "@private-voice/shared";
 
-import { resolveLanIpv4Candidates } from "./network-addresses";
-
 const execFileAsync = promisify(execFile);
 
 const TAILSCALE_INSTALL_URLS: Record<string, string> = {
@@ -61,6 +59,11 @@ const normalizeMagicDnsName = (value?: string): string | undefined => {
 const isBlockedAddress = (address: string): boolean =>
   address.startsWith("127.") || address.startsWith("198.18.") || address.startsWith("198.19.");
 
+const isTailscaleIpv4 = (address: string): boolean => {
+  const [first, second] = address.split(".").map(Number);
+  return first === 100 && typeof second === "number" && Number.isFinite(second) && second >= 64 && second <= 127;
+};
+
 export const detectTailscaleStatus = async (): Promise<TailscaleStatus> => {
   if (!(await detectBinary())) {
     return {
@@ -77,10 +80,22 @@ export const detectTailscaleStatus = async (): Promise<TailscaleStatus> => {
       windowsHide: true,
     });
     const parsed = JSON.parse(stdout) as TailscaleStatusJson;
-    const ip = parsed.Self?.TailscaleIPs?.find((candidate) => !isBlockedAddress(candidate));
+    const ip = parsed.Self?.TailscaleIPs?.find(
+      (candidate) => isTailscaleIpv4(candidate) && !isBlockedAddress(candidate),
+    );
     const magicDnsName = normalizeMagicDnsName(parsed.Self?.DNSName);
     const backendState = parsed.BackendState?.toLowerCase();
-    const isConnected = backendState === "running" || Boolean(ip);
+    const isConnected = backendState === "running" && Boolean(ip);
+    const message =
+      backendState === "needslogin"
+        ? "Tailscale 需要登录，请先登录同一个 tailnet。"
+        : backendState === "stopped"
+          ? "Tailscale 已停止，请先启动 Tailscale。"
+          : backendState === "running" && !ip
+            ? "Tailscale 正在运行，但没有拿到可用的 100.x 地址，请稍后重试。"
+            : isConnected
+              ? "Tailscale 已连接，优先使用稳定的 100.x 地址。"
+              : "Tailscale 暂未连接，请稍后重试。";
 
     return {
       state: isConnected ? TailscaleState.Connected : TailscaleState.Disconnected,
@@ -90,9 +105,7 @@ export const detectTailscaleStatus = async (): Promise<TailscaleStatus> => {
       tailnet: parsed.CurrentTailnet?.Name,
       ip,
       magicDnsName,
-      message: isConnected
-        ? "Tailscale 已连接，可以直接用于好友房间。"
-        : "Tailscale 已安装，但当前设备还没有连到你的 tailnet。",
+      message,
       installUrl: getTailscaleInstallUrl(),
     };
   } catch {
@@ -108,25 +121,24 @@ export const detectTailscaleStatus = async (): Promise<TailscaleStatus> => {
 
 export const resolveTailscaleAddress = async (): Promise<HostAddressResolution | undefined> => {
   const tailscale = await detectTailscaleStatus();
-  const candidates: HostAddressResolution[] = [];
-
-  if (tailscale.magicDnsName) {
-    candidates.push({
-      host: tailscale.magicDnsName,
-      source: "magicdns",
-      alternatives: [tailscale.ip].filter((value): value is string => Boolean(value)),
-    });
-  }
 
   if (tailscale.ip) {
-    candidates.push({
+    return {
       host: tailscale.ip,
       source: "tailscale_ip",
       alternatives: [tailscale.magicDnsName].filter((value): value is string => Boolean(value)),
-    });
+    };
   }
 
-  return candidates[0];
+  if (tailscale.magicDnsName && tailscale.isConnected) {
+    return {
+      host: tailscale.magicDnsName,
+      source: "magicdns",
+      alternatives: [],
+    };
+  }
+
+  return undefined;
 };
 
 export const openTailscaleInstallGuide = async (): Promise<void> => {

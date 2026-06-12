@@ -1,6 +1,7 @@
 import { ExportTaskState } from "../enums/app.enums";
 import type {
   ConnectionMode,
+  CloudflareTunnelStatus,
   DirectHostProbeSummary,
   ProxyDiagnostics,
   RelayStatusSnapshot,
@@ -17,6 +18,7 @@ export type LogCategory =
   | "recording"
   | "tailscale"
   | "connection-mode"
+  | "cloudflare-tunnel"
   | "proxy-diagnostics"
   | "relay"
   | "updates";
@@ -35,10 +37,15 @@ export interface DiagnosticsBundleSummary {
   buildNumber?: string;
   connectionMode?: ConnectionMode;
   inviteAddress?: string;
+  localSignalingUrl?: string;
+  selectedHost?: string;
+  candidateAddresses?: string[];
+  addressSource?: string;
   proxy?: ProxyDiagnostics;
   tailscale?: TailscaleStatus;
   directHost?: DirectHostProbeSummary;
   relay?: RelayStatusSnapshot;
+  cloudflareTunnel?: CloudflareTunnelStatus;
   exportedAt: string;
 }
 

@@ -72,7 +72,7 @@ const fallbackSettings: AppSettings = {
   isAutoGainControlEnabled: true,
   isPushToTalkEnabled: false,
   micMonitorMode: "processed",
-  connectionMode: "direct_host",
+  connectionMode: "cloudflare_tunnel",
   relayServerUrl: "",
   relayAuthToken: "",
   manualDirectHost: "",

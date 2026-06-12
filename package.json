@@ -1,6 +1,6 @@
 {
   "name": "shanghao-workspace",
-  "version": "0.1.19",
+  "version": "0.1.21",
   "private": true,
   "packageManager": "pnpm@10.0.0",
   "scripts": {
@@ -9,7 +9,17 @@
     "typecheck": "corepack pnpm -r --filter @private-voice/shared --filter @private-voice/ui --filter @private-voice/signaling --filter @private-voice/webrtc --filter @private-voice/recording --filter shanghao-desktop run typecheck",
     "lint": "corepack pnpm -r --filter @private-voice/shared --filter @private-voice/ui --filter @private-voice/signaling --filter @private-voice/webrtc --filter @private-voice/recording --filter shanghao-desktop run lint",
     "dist": "corepack pnpm --filter shanghao-desktop dist",
-    "relay": "corepack pnpm --filter @private-voice/signaling build && node scripts/start-relay.mjs"
+    "dist:win": "corepack pnpm --filter shanghao-desktop dist:win",
+    "dist:mac": "corepack pnpm --filter shanghao-desktop dist:mac",
+    "dist:mac:x64": "corepack pnpm --filter shanghao-desktop dist:mac:x64",
+    "dist:mac:arm64": "corepack pnpm --filter shanghao-desktop dist:mac:arm64",
+    "clean": "node scripts/clean.mjs",
+    "release": "corepack pnpm typecheck && corepack pnpm --dir apps/desktop test:smoke && corepack pnpm dist",
+    "relay": "corepack pnpm relay:start",
+    "relay:dev": "corepack pnpm relay:build && node --watch scripts/start-relay.mjs",
+    "relay:build": "corepack pnpm --filter @private-voice/shared build && corepack pnpm --filter @private-voice/signaling build",
+    "relay:start": "corepack pnpm relay:build && node scripts/start-relay.mjs",
+    "relay:health": "node -e \"fetch('http://127.0.0.1:43821/health').then(r=>r.text()).then(console.log)\""
   },
   "pnpm": {
     "onlyBuiltDependencies": [

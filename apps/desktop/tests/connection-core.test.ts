@@ -1,0 +1,66 @@
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import path from "node:path";
+import test from "node:test";
+
+const root = path.resolve(process.cwd(), "../..");
+const read = (relativePath: string) => readFileSync(path.join(root, relativePath), "utf8");
+
+test("webrtc prefers domestic stun and buffers early ICE candidates", () => {
+  const source = read("packages/webrtc/src/createPeer.ts");
+
+  assert.equal(source.includes("stun:stun.qq.com:3478"), true);
+  assert.equal(source.includes("stun:stun.miwifi.com:3478"), true);
+  assert.equal(source.includes("stun:stun.chat.bilibili.com:3478"), true);
+  assert.equal(source.includes("pendingIceCandidates"), true);
+  assert.equal(source.includes("flushPendingIceCandidates"), true);
+});
+
+test("room client marks webrtc ready from connection state instead of remote stream", () => {
+  const source = read("apps/desktop/src/renderer/src/features/room/roomClient.ts");
+
+  assert.equal(source.includes('if (state === "connected")'), true);
+  assert.equal(source.includes("this.webrtcReadyPeerIds.add(targetPeerId)"), true);
+  assert.equal(source.includes('state === "closed"'), true);
+});
+
+test("tailscale selects 100.x before MagicDNS", () => {
+  const source = read("apps/desktop/src/main/tailscale.ts");
+  const ipBranch = source.indexOf("if (tailscale.ip)");
+  const dnsBranch = source.indexOf("if (tailscale.magicDnsName");
+
+  assert.equal(ipBranch >= 0, true);
+  assert.equal(dnsBranch > ipBranch, true);
+  assert.equal(source.includes('backendState === "needslogin"'), true);
+  assert.equal(source.includes('backendState === "stopped"'), true);
+});
+
+test("cloudflare tunnel mode is wired into shared types and host lifecycle", () => {
+  const settingsTypes = read("packages/shared/src/types/settings.types.ts");
+  const hostSession = read("apps/desktop/src/main/host-session.ts");
+  const tunnel = read("apps/desktop/src/main/cloudflare-tunnel.ts");
+
+  assert.equal(settingsTypes.includes('"cloudflare_tunnel"'), true);
+  assert.equal(hostSession.includes('connectionMode === "cloudflare_tunnel"'), true);
+  assert.equal(hostSession.includes("this.cloudflareTunnel.start(signalingPort)"), true);
+  assert.equal(hostSession.includes("this.cloudflareTunnel?.stop()"), true);
+  assert.equal(tunnel.includes("trycloudflare"), true);
+  assert.equal(tunnel.includes("Cloudflare quick tunnel exited unexpectedly"), true);
+});
+
+test("relay status checks both health endpoint and websocket", () => {
+  const relayStatus = read("apps/desktop/src/main/relay-status.ts");
+
+  assert.equal(relayStatus.includes('healthUrl.pathname = "/health"'), true);
+  assert.equal(relayStatus.includes("probeHealth(normalizedUrl)"), true);
+  assert.equal(relayStatus.includes("probeWebSocket(normalizedUrl)"), true);
+});
+
+test("windows executable and shortcut use cache-busting v3 icons", () => {
+  const builder = read("apps/desktop/electron-builder.yml");
+  const installer = read("apps/desktop/build/installer.nsh");
+
+  assert.equal(builder.includes("icon: shanghao-icon-v3.ico"), true);
+  assert.equal(builder.includes("signAndEditExecutable: true"), true);
+  assert.equal(installer.includes("shanghao-shortcut-v3.ico"), true);
+});

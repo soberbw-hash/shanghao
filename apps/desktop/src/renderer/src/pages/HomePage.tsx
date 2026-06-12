@@ -29,9 +29,10 @@ import { useSettingsStore } from "../store/settingsStore";
 import { buildShareableInviteUrl } from "../utils/invite";
 
 const connectionModeOptions = [
-  { value: "direct_host", label: "房主直连" },
-  { value: "tailscale", label: "Tailscale" },
+  { value: "cloudflare_tunnel", label: "临时公网" },
   { value: "relay", label: "云中继" },
+  { value: "tailscale", label: "Tailscale" },
+  { value: "direct_host", label: "房主直连" },
 ] satisfies { value: ConnectionMode; label: string }[];
 
 const modeCopy: Record<
@@ -43,6 +44,12 @@ const modeCopy: Record<
     joinDescription: string;
   }
 > = {
+  cloudflare_tunnel: {
+    hint: "无需公网 IP 或端口映射，开房时自动生成临时公网地址。",
+    placeholder: "wss://xxxx.trycloudflare.com/?roomId=...",
+    startDescription: "首次使用会准备临时公网组件，关闭房间后地址自动失效。",
+    joinDescription: "粘贴房主分享的临时公网地址即可加入。",
+  },
   direct_host: {
     hint: "先启动本地房间，再后台检测公网 IP、端口映射和外网可达性。",
     placeholder: "ws://你的公网地址:43821/?roomId=...",
@@ -98,6 +105,10 @@ const getStatusLine = ({
 
   if (currentMode === "tailscale") {
     return tailscaleMessage || "确认 Tailscale 已连接到同一个 tailnet 后再开房。";
+  }
+
+  if (currentMode === "cloudflare_tunnel") {
+    return "开启房间后会自动创建临时公网地址，关闭房间后地址失效。";
   }
 
   return relayMessage || "确认云中继地址可用后，再把地址发给队友。";
@@ -283,6 +294,8 @@ export const HomePage = () => {
                 <div className="mt-1">
                   {currentMode === "direct_host"
                     ? currentDirectHost?.message ?? "房间会先启动，本地成功后再检测公网直连。"
+                    : currentMode === "cloudflare_tunnel"
+                      ? hostSession?.cloudflareTunnel?.message ?? "开启房间后会自动创建临时公网隧道。"
                     : currentMode === "tailscale"
                       ? tailscaleStatus?.message ?? "请确认 Tailscale 已连接。"
                       : relaySummary?.message ?? "请确认云中继地址可用。"}

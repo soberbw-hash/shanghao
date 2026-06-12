@@ -10,16 +10,22 @@ export interface MeshPeerOptions {
   onIceCandidate: (candidate: IceCandidatePayload) => void;
   onRemoteStream: (stream: MediaStream) => void;
   onConnectionStateChange?: (state: RTCPeerConnectionState) => void;
+  onDiagnosticEvent?: (
+    event: "connection_state" | "ice_connection_state" | "ice_gathering_state" | "ice_candidate_queue",
+    context: Record<string, unknown>,
+  ) => void;
 }
 
-const DEFAULT_ICE_SERVERS: RTCIceServer[] = [
-  {
-    urls: ["stun:stun.l.google.com:19302", "stun:global.stun.twilio.com:3478"],
-  },
+export const DEFAULT_ICE_SERVERS: RTCIceServer[] = [
+  { urls: "stun:stun.qq.com:3478" },
+  { urls: "stun:stun.miwifi.com:3478" },
+  { urls: "stun:stun.chat.bilibili.com:3478" },
+  { urls: "stun:stun.l.google.com:19302" },
 ];
 
 export class MeshPeerConnection {
   readonly connection: RTCPeerConnection;
+  private readonly pendingIceCandidates: IceCandidatePayload[] = [];
 
   constructor(private readonly options: MeshPeerOptions) {
     this.connection = new RTCPeerConnection({
@@ -51,7 +57,25 @@ export class MeshPeerConnection {
     };
 
     this.connection.onconnectionstatechange = () => {
+      this.options.onDiagnosticEvent?.("connection_state", {
+        peerId: this.options.peerId,
+        state: this.connection.connectionState,
+      });
       this.options.onConnectionStateChange?.(this.connection.connectionState);
+    };
+
+    this.connection.oniceconnectionstatechange = () => {
+      this.options.onDiagnosticEvent?.("ice_connection_state", {
+        peerId: this.options.peerId,
+        state: this.connection.iceConnectionState,
+      });
+    };
+
+    this.connection.onicegatheringstatechange = () => {
+      this.options.onDiagnosticEvent?.("ice_gathering_state", {
+        peerId: this.options.peerId,
+        state: this.connection.iceGatheringState,
+      });
     };
   }
 
@@ -72,6 +96,7 @@ export class MeshPeerConnection {
       type: offer.type,
       sdp: offer.sdp ?? undefined,
     });
+    await this.flushPendingIceCandidates();
     const answer = await this.connection.createAnswer();
     await this.connection.setLocalDescription(answer);
 
@@ -86,10 +111,21 @@ export class MeshPeerConnection {
       type: answer.type,
       sdp: answer.sdp ?? undefined,
     });
+    await this.flushPendingIceCandidates();
   }
 
   async addIceCandidate(candidate: IceCandidatePayload): Promise<void> {
-    await this.connection.addIceCandidate(candidate);
+    if (!this.connection.remoteDescription) {
+      this.pendingIceCandidates.push(candidate);
+      this.options.onDiagnosticEvent?.("ice_candidate_queue", {
+        peerId: this.options.peerId,
+        action: "buffered",
+        pendingCount: this.pendingIceCandidates.length,
+      });
+      return;
+    }
+
+    await this.addIceCandidateSafely(candidate);
   }
 
   async replaceLocalTrack(nextTrack: MediaStreamTrack): Promise<void> {
@@ -103,6 +139,36 @@ export class MeshPeerConnection {
   }
 
   destroy(): void {
+    this.pendingIceCandidates.length = 0;
     this.connection.close();
+  }
+
+  private async flushPendingIceCandidates(): Promise<void> {
+    const candidates = this.pendingIceCandidates.splice(0);
+    if (candidates.length === 0) {
+      return;
+    }
+
+    const results = await Promise.allSettled(
+      candidates.map((candidate) => this.addIceCandidateSafely(candidate)),
+    );
+    this.options.onDiagnosticEvent?.("ice_candidate_queue", {
+      peerId: this.options.peerId,
+      action: "flushed",
+      candidateCount: candidates.length,
+      failedCount: results.filter((result) => result.status === "rejected").length,
+    });
+  }
+
+  private async addIceCandidateSafely(candidate: IceCandidatePayload): Promise<void> {
+    try {
+      await this.connection.addIceCandidate(candidate);
+    } catch (error) {
+      this.options.onDiagnosticEvent?.("ice_candidate_queue", {
+        peerId: this.options.peerId,
+        action: "failed",
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
   }
 }

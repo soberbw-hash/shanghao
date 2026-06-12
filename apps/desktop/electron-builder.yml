@@ -1,6 +1,5 @@
 appId: com.sober.shanghao
 productName: "上号"
-artifactName: ShangHao-${version}-${arch}.${ext}
 asar: true
 directories:
   output: release
@@ -14,8 +13,8 @@ extraResources:
     to: build
     filter:
       - "shanghao-icon.icns"
-      - "shanghao-icon-xl.ico"
-      - "shanghao-shortcut-xl.ico"
+      - "shanghao-icon-v3.ico"
+      - "shanghao-shortcut-v3.ico"
       - "tray-dark.png"
       - "tray-light.png"
 extraMetadata:
@@ -25,20 +24,23 @@ extraMetadata:
 mac:
   category: public.app-category.social-networking
   icon: shanghao-icon.icns
+  artifactName: ShangHao-${version}-mac-${arch}.${ext}
+  identity: null
   target:
     - target: dmg
       arch:
-        - arm64
         - x64
+        - arm64
     - target: zip
       arch:
-        - arm64
         - x64
+        - arm64
 
 win:
   executableName: ShangHao
-  icon: shanghao-icon-xl.ico
-  signAndEditExecutable: false
+  icon: shanghao-icon-v3.ico
+  artifactName: ShangHao-${version}-Setup-${arch}.${ext}
+  signAndEditExecutable: true
   target:
     - nsis
 nsis:
@@ -47,6 +49,6 @@ nsis:
   allowToChangeInstallationDirectory: true
   include: build/installer.nsh
   shortcutName: "上号"
-  installerIcon: shanghao-icon-xl.ico
-  uninstallerIcon: shanghao-icon-xl.ico
-  installerHeaderIcon: shanghao-icon-xl.ico
+  installerIcon: shanghao-icon-v3.ico
+  uninstallerIcon: shanghao-icon-v3.ico
+  installerHeaderIcon: shanghao-icon-v3.ico

@@ -19,27 +19,18 @@ test("host uses local loopback only for self-connect, not for outward invite lin
   assert.equal(source.includes("const inviteUrl = buildShareableInviteUrl(hostSession) || room.signalingUrl;"), true);
 });
 
-test("direct host keeps a shareable candidate address even before full reachability verification", () => {
+test("direct host only emits a shareable address after public reachability verification", () => {
   const source = readFileSync(hostSessionPath, "utf8");
 
-  assert.equal(
-    source.includes("const hasCandidateAddress = Boolean(resolvedHost);"),
-    true,
-  );
-  assert.equal(source.includes("const isVerifiedShareable = probe.summary.reachability === \"reachable\";"), true);
-  assert.equal(source.includes("hasCandidateAddress && resolvedHost"), true);
-  assert.equal(
-    source.includes("addressSource: hasCandidateAddress ? resolvedAddressSource : \"unknown\""),
-    true,
-  );
+  assert.equal(source.includes("probe.summary.reachability === \"reachable\""), true);
+  assert.equal(source.includes("probe.summary.addressSource !== \"lan_ipv4\""), true);
+  assert.equal(source.includes("isVerifiedShareable && resolvedHost"), true);
 });
 
-test("direct host keeps LAN primary when public probing is still unverified", () => {
+test("direct host does not persist a fallback share url when probing fails", () => {
   const source = readFileSync(hostSessionPath, "utf8");
 
-  assert.equal(source.includes("keptLanPrimaryWhilePublicIsUnverified"), true);
-  assert.equal(source.includes("probe.summary.addressSource === \"public_ip\""), true);
-  assert.equal(source.includes("probe.summary.reachability !== \"reachable\""), true);
+  assert.equal(source.includes("signalingUrl: \"\""), true);
   assert.equal(source.includes("uniqueAddresses("), true);
 });
 
@@ -56,7 +47,7 @@ test("direct host seeds an immediate manual or LAN candidate before public probe
     source.includes("publicIpv6Candidates.includes(initialHost)"),
     true,
   );
-  assert.equal(source.includes("signalingUrl = initialHost"), true);
+  assert.equal(source.includes("signalingUrl = \"\""), true);
 });
 
 test("direct host can advertise public ipv6 candidates before falling back to LAN", () => {
@@ -67,12 +58,14 @@ test("direct host can advertise public ipv6 candidates before falling back to LA
   assert.equal(source.includes("publicIp ||\n    interfacePublicIpv6 ||\n    localHost"), true);
 });
 
-test("renderer can derive a shareable invite url even before signalingUrl is explicitly persisted", () => {
+test("renderer validates real invite urls and blocks unverified direct-host addresses", () => {
   const source = readFileSync(inviteUtilPath, "utf8");
 
   assert.equal(source.includes("formatHostForUrl"), true);
   assert.equal(source.includes("withCandidateUrls(session.signalingUrl, session)"), true);
-  assert.equal(source.includes("if (!session.hostAddress?.trim())"), true);
+  assert.equal(source.includes("session.directHostProbe?.reachability !== \"reachable\""), true);
+  assert.equal(source.includes("session.directHostProbe.addressSource === \"lan_ipv4\""), true);
+  assert.equal(source.includes("export const isValidInviteUrl"), true);
   assert.equal(source.includes("url.searchParams.set(\"roomId\", session.roomId);"), true);
   assert.equal(source.includes("url.searchParams.set(\"mode\", session.connectionMode);"), true);
   assert.equal(source.includes("url.searchParams.append(\"candidate\", candidate);"), true);

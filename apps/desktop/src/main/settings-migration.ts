@@ -30,7 +30,7 @@ export const defaultSettings: AppSettings = {
   isAutoGainControlEnabled: true,
   isPushToTalkEnabled: false,
   micMonitorMode: "processed",
-  connectionMode: "direct_host",
+  connectionMode: "cloudflare_tunnel",
   relayServerUrl: "",
   relayAuthToken: "",
   manualDirectHost: "",
@@ -62,6 +62,14 @@ const normalizeSampleRate = (value?: string): AppSettings["preferredSampleRate"]
 const normalizeMonitorMode = (value?: string): AppSettings["micMonitorMode"] =>
   value === "raw" ? "raw" : "processed";
 
+const normalizeConnectionMode = (value?: string): AppSettings["connectionMode"] =>
+  value === "cloudflare_tunnel" ||
+  value === "relay" ||
+  value === "tailscale" ||
+  value === "direct_host"
+    ? value
+    : defaultSettings.connectionMode;
+
 export const migrateSettings = (raw: RawSettings): MigrationResult => {
   const previousVersion =
     typeof raw.settingsSchemaVersion === "number" && Number.isFinite(raw.settingsSchemaVersion)
@@ -82,6 +90,7 @@ export const migrateSettings = (raw: RawSettings): MigrationResult => {
     manualDirectHost: trimText(raw.manualDirectHost) ?? "",
     preferredSampleRate: normalizeSampleRate(raw.preferredSampleRate),
     micMonitorMode: normalizeMonitorMode(raw.micMonitorMode),
+    connectionMode: normalizeConnectionMode(raw.connectionMode),
     shouldAutoCopyInviteLink: true,
     isMicOnSoundEnabled: true,
     isMicOffSoundEnabled: true,

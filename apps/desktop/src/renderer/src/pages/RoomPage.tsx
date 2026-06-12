@@ -36,6 +36,7 @@ import { useSettingsStore } from "../store/settingsStore";
 import { buildShareableInviteUrl } from "../utils/invite";
 
 const modeLabels: Record<ConnectionMode, string> = {
+  cloudflare_tunnel: "临时公网",
   direct_host: "房主直连",
   tailscale: "Tailscale",
   relay: "云中继",
@@ -119,6 +120,16 @@ const getRoomStatusSummary = ({
       description: signalingUrl
         ? "Tailscale 地址已经准备好，固定好友可直接加入。"
         : "正在准备 Tailscale 邀请地址。",
+      tone: signalingUrl ? ("success" as const) : ("neutral" as const),
+    };
+  }
+
+  if (connectionMode === "cloudflare_tunnel") {
+    return {
+      title: signalingUrl ? "临时公网已就绪" : "正在创建临时公网",
+      description: signalingUrl
+        ? "地址已准备好，可以直接分享给全国各地的好友。关闭房间后地址会失效。"
+        : hostSession?.cloudflareTunnel?.message ?? "正在创建临时公网隧道…",
       tone: signalingUrl ? ("success" as const) : ("neutral" as const),
     };
   }

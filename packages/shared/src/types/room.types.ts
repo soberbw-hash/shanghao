@@ -8,6 +8,7 @@ import {
 } from "../enums/app.enums";
 import type {
   ConnectionMode,
+  CloudflareTunnelStatus,
   DirectHostProbeSummary,
   ProxyDiagnostics,
   RelayStatusSnapshot,
@@ -89,6 +90,7 @@ export interface HostSessionInfo {
     | "lan_ipv4"
     | "public_ip"
     | "relay"
+    | "cloudflare_tunnel"
     | "manual_public_host"
     | "unknown";
   alternativeAddresses?: string[];
@@ -97,6 +99,7 @@ export interface HostSessionInfo {
   buildNumber: string;
   directHostProbe?: DirectHostProbeSummary;
   relayStatus?: RelayStatusSnapshot;
+  cloudflareTunnel?: CloudflareTunnelStatus;
   inviteExpiresAt?: string;
 }
 
@@ -113,6 +116,7 @@ export interface JoinRoomDiagnostic {
     | "lan_ipv4"
     | "public_ip"
     | "relay"
+    | "cloudflare_tunnel"
     | "manual_public_host"
     | "unknown";
   tailscaleState?: string;

@@ -1,6 +1,6 @@
 {
   "name": "shanghao-desktop",
-  "version": "0.1.20",
+  "version": "0.1.21",
   "private": true,
   "description": "ShangHao desktop voice app for private friends group chat",
   "author": "Sober",
@@ -16,7 +16,12 @@
     "typecheck": "tsc --project tsconfig.json --noEmit",
     "lint": "tsc --project tsconfig.json --noEmit",
     "test:smoke": "node --import tsx --test tests/*.test.ts",
-    "dist": "set \"PATH=%CD%\\..\\..\\tools;%PATH%\" && corepack pnpm build && electron-builder --config electron-builder.yml"
+    "clean": "node ../../scripts/clean.mjs",
+    "dist": "corepack pnpm build && node ../../scripts/run-electron-builder.mjs --config electron-builder.yml",
+    "dist:win": "corepack pnpm build && node ../../scripts/run-electron-builder.mjs --config electron-builder.yml --win nsis",
+    "dist:mac": "corepack pnpm build && node ../../scripts/run-electron-builder.mjs --config electron-builder.yml --mac dmg zip",
+    "dist:mac:x64": "corepack pnpm build && node ../../scripts/run-electron-builder.mjs --config electron-builder.yml --mac dmg zip --x64",
+    "dist:mac:arm64": "corepack pnpm build && node ../../scripts/run-electron-builder.mjs --config electron-builder.yml --mac dmg zip --arm64"
   },
   "dependencies": {
     "@achingbrain/nat-port-mapper": "^4.0.5",

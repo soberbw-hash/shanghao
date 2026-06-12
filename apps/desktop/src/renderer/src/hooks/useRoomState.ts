@@ -15,7 +15,7 @@ import { useAppStore } from "../store/appStore";
 import { useAudioStore } from "../store/audioStore";
 import { useRoomStore } from "../store/roomStore";
 import { useSettingsStore } from "../store/settingsStore";
-import { buildShareableInviteUrl } from "../utils/invite";
+import { buildShareableInviteUrl, isValidInviteUrl } from "../utils/invite";
 import { writeRendererLog } from "../utils/logger";
 
 const sharedPeerId = crypto.randomUUID();
@@ -56,7 +56,7 @@ const parseInvite = (value: string, fallbackMode: ConnectionMode) => {
   }
 
   const url = new URL(trimmedValue);
-  if (url.protocol !== "ws:" && url.protocol !== "wss:") {
+  if (!isValidInviteUrl(url.toString())) {
     throw new Error("invalid_join_url");
   }
 
@@ -741,11 +741,11 @@ export const useRoomState = () => {
   const copyInviteLink = async () => {
     const inviteUrl = buildShareableInviteUrl(hostSession) || room.signalingUrl;
 
-    if (!inviteUrl) {
+    if (!inviteUrl || !isValidInviteUrl(inviteUrl)) {
       pushToast({
         tone: "warning",
-        title: "还没有可复制的地址",
-        description: "请等房间地址准备好，或切换到 Tailscale / 云中继模式。",
+        title: "当前还没有真实可分享地址",
+        description: "请等待地址验证完成，或切换到临时公网、Tailscale / 云中继模式。",
       });
       return;
     }
