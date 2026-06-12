@@ -3,7 +3,7 @@ import { promisify } from "node:util";
 
 import type { DirectHostProbeSummary, RendererLogPayload } from "@private-voice/shared";
 
-import { resolveLanIpv4Candidates } from "./network-addresses";
+import { resolveLanIpv4Candidates, resolvePublicIpv6Candidates } from "./network-addresses";
 import { probePort } from "./port-probe";
 
 const execFileAsync = promisify(execFile);
@@ -38,15 +38,79 @@ interface PmpGateway {
 
 type CleanupTask = () => Promise<void>;
 
+interface ResolvedReachabilityState {
+  reachability: DirectHostProbeSummary["reachability"];
+  natTendency: DirectHostProbeSummary["natTendency"];
+  message: string;
+}
+
 const detectPublicIp = async (): Promise<string | undefined> => {
   try {
-    const response = await fetch("https://api64.ipify.org?format=json");
+    const response = await fetch("https://api64.ipify.org?format=json", {
+      signal: AbortSignal.timeout(2_500),
+    });
     if (!response.ok) return undefined;
     const data = (await response.json()) as { ip?: string };
     return data.ip;
   } catch {
     return undefined;
   }
+};
+
+export const resolveDirectHostReachability = ({
+  selectedHost,
+  probeSucceeded,
+  addressSource,
+  manualHost,
+  publicIp,
+  upnpMapped,
+  natPmpMapped,
+}: {
+  selectedHost?: string;
+  probeSucceeded: boolean;
+  addressSource: DirectHostProbeSummary["addressSource"];
+  manualHost?: string;
+  publicIp?: string;
+  upnpMapped: boolean;
+  natPmpMapped: boolean;
+}): ResolvedReachabilityState => {
+  if (selectedHost && addressSource === "lan_ipv4") {
+    return {
+      reachability: "reachable",
+      natTendency: "mapping_required",
+      message:
+        "房间已启动，局域网地址已准备好。同一网络下的好友可以加入，跨网络好友不能使用该地址。",
+    };
+  }
+
+  if (probeSucceeded && selectedHost) {
+    return {
+      reachability: "reachable",
+      natTendency: "direct_friendly",
+      message: "房间已启动，公网直连可用，现在可以直接把地址发给好友。",
+    };
+  }
+
+  if (selectedHost) {
+    const usedPortMapping = upnpMapped || natPmpMapped;
+    return {
+      reachability: "unverified",
+      natTendency: usedPortMapping
+        ? "mapping_required"
+        : publicIp || manualHost
+          ? "restricted"
+          : "unknown",
+      message: usedPortMapping
+        ? "端口映射已完成，但公网地址仍未验证，不会把候选地址自动分享给跨网络好友。"
+        : "已找到候选公网地址，但当前无法验证外网可达，建议使用临时公网、云中继或 Tailscale。",
+    };
+  }
+
+  return {
+    reachability: "unreachable",
+    natTendency: publicIp ? "restricted" : "unknown",
+    message: "房间已启动，但当前网络拿不到可分享地址，建议使用临时公网、云中继或 Tailscale。",
+  };
 };
 
 const resolveDefaultGateway = async (): Promise<string | undefined> => {
@@ -204,20 +268,25 @@ export const probeDirectHost = async ({
   };
 
   const candidates = resolveLanIpv4Candidates();
-  const localHost = candidates[0] ?? "127.0.0.1";
+  const publicIpv6Candidates = resolvePublicIpv6Candidates();
+  const interfacePublicIpv6 = publicIpv6Candidates[0];
+  const localHost = candidates[0];
 
   const trimmedManual = manualHost?.trim() || undefined;
   const publicIp = await detectPublicIp();
   await log("info", "direct host public ip detected", { publicIp });
 
   // Try UPnP mapping first.
-  const upnp = await tryUpnpMapping(localPort, localHost);
+  const upnp = localHost
+    ? await tryUpnpMapping(localPort, localHost)
+    : { attempted: false, mapped: false, error: "未找到可用的本机 IPv4 地址" };
   if (upnp.cleanup) cleanupTasks.push(upnp.cleanup);
 
   // Try NAT-PMP as a fallback.
-  const natPmp = upnp.mapped
-    ? { attempted: false, mapped: false }
-    : await tryNatPmpMapping(localPort, localHost);
+  const natPmp =
+    localHost && !upnp.mapped
+      ? await tryNatPmpMapping(localPort, localHost)
+      : { attempted: false, mapped: false };
   if (natPmp.cleanup) cleanupTasks.push(natPmp.cleanup);
 
   // Pick the best host we can offer.
@@ -236,53 +305,30 @@ export const probeDirectHost = async ({
   } else if (publicIp) {
     selectedHost = publicIp;
     addressSource = "public_ip";
+  } else if (interfacePublicIpv6) {
+    selectedHost = interfacePublicIpv6;
+    addressSource = "public_ip";
   } else if (localHost) {
     selectedHost = localHost;
     addressSource = "lan_ipv4";
   }
 
-  // Probe the public reachability of whatever we picked (best effort, 2s).
-  let reachability: DirectHostProbeSummary["reachability"] = "unverified";
-  if (selectedHost && addressSource !== "lan_ipv4") {
-    const ok = await probePort(selectedHost, localPort, 2_000).catch(() => false);
-    reachability = ok ? "reachable" : "unreachable";
-  } else if (addressSource === "lan_ipv4") {
-    reachability = "unverified";
-  } else {
-    reachability = "unreachable";
-  }
-
-  const natTendency: DirectHostProbeSummary["natTendency"] = upnp.mapped || natPmp.mapped
-    ? "mapping_required"
-    : addressSource === "public_ip"
-      ? "direct_friendly"
-      : addressSource === "lan_ipv4"
-        ? "restricted"
-        : "unknown";
-
-  const message = (() => {
-    if (trimmedManual) {
-      return reachability === "reachable"
-        ? "手动公网地址已确认可达。好友可以直接复制使用。"
-        : "已使用手动公网地址，但当前无法从外网验证可达，建议同时准备 Tailscale 兜底。";
-    }
-    if (upnp.mapped || natPmp.mapped) {
-      return "已通过网关映射建立端口转发，可直接分享当前地址。";
-    }
-    if (addressSource === "public_ip" && reachability === "reachable") {
-      return "公网直连已确认可用，可直接分享当前地址。";
-    }
-    if (addressSource === "public_ip") {
-      return "已拿到公网 IP，但当前无法从外网验证端口可达，建议改用 Tailscale 或云中继。";
-    }
-    if (addressSource === "lan_ipv4") {
-      return "房间已启动，同一局域网下的好友可以直接加入；公网直连仍未确认可用，如跨网络连接失败，请手动做端口映射或改用云中继。";
-    }
-    return "房间已启动，但当前网络暂时拿不到可分享地址，建议改用 Tailscale 或云中继。";
-  })();
+  const probeSucceeded =
+    selectedHost && addressSource !== "lan_ipv4"
+      ? await probePort(selectedHost, localPort, 2_000).catch(() => false)
+      : false;
+  const { reachability, natTendency, message } = resolveDirectHostReachability({
+    selectedHost,
+    probeSucceeded,
+    addressSource,
+    manualHost: trimmedManual,
+    publicIp,
+    upnpMapped: upnp.mapped,
+    natPmpMapped: natPmp.mapped,
+  });
 
   const summary: DirectHostProbeSummary = {
-    publicIp,
+    publicIp: publicIp || interfacePublicIpv6,
     manualHost: trimmedManual,
     selectedHost,
     selectedPort: localPort,
@@ -303,6 +349,7 @@ export const probeDirectHost = async ({
     upnpMapped: upnp.mapped,
     natPmpMapped: natPmp.mapped,
     selectedHost,
+    publicIpv6Candidates,
   });
 
   return { summary, cleanupTasks };

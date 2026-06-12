@@ -55,7 +55,8 @@ test("direct host can advertise public ipv6 candidates before falling back to LA
 
   assert.equal(source.includes("resolvePublicIpv6Candidates"), true);
   assert.equal(source.includes("const interfacePublicIpv6 = publicIpv6Candidates[0];"), true);
-  assert.equal(source.includes("publicIp ||\n    interfacePublicIpv6 ||\n    localHost"), true);
+  assert.equal(source.includes("else if (interfacePublicIpv6)"), true);
+  assert.equal(source.includes("publicIp: publicIp || interfacePublicIpv6"), true);
 });
 
 test("renderer validates real invite urls and blocks unverified direct-host addresses", () => {
