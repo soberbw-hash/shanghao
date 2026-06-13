@@ -74,4 +74,10 @@ export interface RendererDiagnosticsSummary {
   remotePeerCount: number;
   roomSnapshotRevision: number;
   chatSendFailures: number;
+  joinStage?: string;
+  wsOpened?: boolean;
+  joinRoomSent?: boolean;
+  joinAckReceived?: boolean;
+  roomSnapshotReceived?: boolean;
+  lastServerError?: string;
 }

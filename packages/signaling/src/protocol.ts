@@ -17,7 +17,10 @@ export type SignalEnvelope =
   | JoinRoomMessage
   | LeaveRoomMessage
   | HeartbeatMessage
+  | JoinAckMessage
+  | RequestSnapshotMessage
   | RoomSnapshotMessage
+  | AvatarUpdateMessage
   | PeerOfferMessage
   | PeerAnswerMessage
   | IceCandidateMessage
@@ -69,6 +72,21 @@ export interface HeartbeatMessage extends BaseMessage {
   peerId: string;
 }
 
+export interface JoinAckMessage extends BaseMessage, VersionedMessage {
+  type: "join_ack";
+  roomId: string;
+  peerId: string;
+  serverTime: number;
+  revision: number;
+  memberCount: number;
+}
+
+export interface RequestSnapshotMessage extends BaseMessage {
+  type: "request_snapshot";
+  roomId: string;
+  peerId: string;
+}
+
 export interface RoomSnapshotMessage extends BaseMessage, VersionedMessage {
   type: "room_snapshot";
   roomId: string;
@@ -76,6 +94,14 @@ export interface RoomSnapshotMessage extends BaseMessage, VersionedMessage {
   members: RoomMember[];
   revision: number;
   serverTime: number;
+}
+
+export interface AvatarUpdateMessage extends BaseMessage {
+  type: "avatar_update";
+  roomId: string;
+  peerId: string;
+  avatarHash?: string;
+  avatarDataUrl?: string;
 }
 
 export interface PeerOfferMessage extends BaseMessage {

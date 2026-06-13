@@ -121,9 +121,11 @@ export const NetworkSettingsCard = ({
     setRelayFeedback({ tone: "loading", message: "正在测试…" });
     const result = await onTestRelay();
     if (result?.isReachable && result.isHealthReachable === false) {
-      setRelayFeedback({ tone: "warning", message: "可连接，但 /health 异常" });
+      setRelayFeedback({ tone: "warning", message: result.message });
+    } else if (result?.isReachable && result.hasVersionMismatch) {
+      setRelayFeedback({ tone: "warning", message: result.message });
     } else if (result?.isReachable) {
-      setRelayFeedback({ tone: "success", message: "服务器可用" });
+      setRelayFeedback({ tone: "success", message: `服务器可用 · ${result.message}` });
     } else {
       setRelayFeedback({ tone: "error", message: result?.message || "服务器不可用" });
     }

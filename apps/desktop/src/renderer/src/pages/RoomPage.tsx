@@ -302,7 +302,8 @@ export const RoomPage = () => {
           emptyMessage="还没有消息。"
           canSend={
             room.connectionState === RoomConnectionState.Connected ||
-            room.connectionState === RoomConnectionState.WaitingPeer
+            room.connectionState === RoomConnectionState.WaitingPeer ||
+            room.connectionState === RoomConnectionState.WaitingSnapshot
           }
           unavailableLabel={
             room.connectionState === RoomConnectionState.Reconnecting ? "重连中" : "连接已断开"

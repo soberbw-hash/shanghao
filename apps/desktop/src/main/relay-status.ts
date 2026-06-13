@@ -1,7 +1,12 @@
 import net from "node:net";
 import { WebSocket } from "ws";
 
-import type { RelayStatusSnapshot, RendererLogPayload } from "@private-voice/shared";
+import {
+  APP_BUILD_NUMBER,
+  APP_PROTOCOL_VERSION,
+  type RelayStatusSnapshot,
+  type RendererLogPayload,
+} from "@private-voice/shared";
 
 import { normalizeRelayServerUrl } from "./relay-url";
 
@@ -38,7 +43,17 @@ const probeWebSocket = async (url: string): Promise<boolean> =>
     socket.once("close", () => finish(false));
   });
 
-const probeHealth = async (url: string): Promise<boolean> => {
+interface RelayHealthPayload {
+  ok?: boolean;
+  protocolVersion?: string;
+  buildNumber?: string;
+  packageVersion?: string;
+  uptime?: number;
+  activeRooms?: number;
+  connectedPeers?: number;
+}
+
+const probeHealth = async (url: string): Promise<RelayHealthPayload | undefined> => {
   const healthUrl = new URL(url);
   healthUrl.protocol = healthUrl.protocol === "wss:" ? "https:" : "http:";
   healthUrl.pathname = "/health";
@@ -50,12 +65,12 @@ const probeHealth = async (url: string): Promise<boolean> => {
       signal: AbortSignal.timeout(4_000),
     });
     if (!response.ok) {
-      return false;
+      return undefined;
     }
-    const payload = (await response.json()) as { ok?: unknown };
-    return payload.ok === true;
+    const payload = (await response.json()) as RelayHealthPayload;
+    return payload.ok === true ? payload : undefined;
   } catch {
-    return false;
+    return undefined;
   }
 };
 
@@ -79,9 +94,14 @@ export const readRelayStatus = async ({
     const parsed = new URL(normalizedUrl);
     const port = Number(parsed.port || (parsed.protocol === "wss:" ? "443" : "80"));
     const tcpReachable = await probePort(parsed.hostname, port);
-    const [isHealthReachable, isWebSocketReachable] = tcpReachable
+    const [health, isWebSocketReachable] = tcpReachable
       ? await Promise.all([probeHealth(normalizedUrl), probeWebSocket(normalizedUrl)])
-      : [false, false];
+      : [undefined, false];
+    const isHealthReachable = Boolean(health);
+    const hasVersionMismatch = Boolean(
+      (health?.protocolVersion && health.protocolVersion !== APP_PROTOCOL_VERSION) ||
+      (health?.buildNumber && health.buildNumber !== APP_BUILD_NUMBER),
+    );
 
     // WebSocket is the real signaling path. A missing /health endpoint should
     // warn the user, but must not reject an otherwise usable relay.
@@ -92,10 +112,19 @@ export const readRelayStatus = async ({
       isReachable,
       isHealthReachable,
       isWebSocketReachable,
+      protocolVersion: health?.protocolVersion,
+      buildNumber: health?.buildNumber,
+      packageVersion: health?.packageVersion,
+      uptime: health?.uptime,
+      activeRooms: health?.activeRooms,
+      connectedPeers: health?.connectedPeers,
+      hasVersionMismatch,
       lastCheckedAt: new Date().toISOString(),
       message: isReachable
-        ? isHealthReachable
-          ? "云中继健康检查与 WebSocket 均正常，可以用于开房。"
+        ? hasVersionMismatch
+          ? `服务器版本 ${health?.protocolVersion ?? "未知"} / ${health?.buildNumber ?? "未知"} 与客户端 ${APP_PROTOCOL_VERSION} / ${APP_BUILD_NUMBER} 不一致，请更新中继服务。`
+          : isHealthReachable
+          ? `服务器可用，协议 ${health?.protocolVersion ?? "未知"}，构建 ${health?.buildNumber ?? "未知"}，客户端构建 ${APP_BUILD_NUMBER}。`
           : "服务器可连接，但 /health 返回异常；WebSocket 可正常使用。"
         : tcpReachable
           ? isHealthReachable

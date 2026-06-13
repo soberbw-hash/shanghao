@@ -12,6 +12,7 @@ const roomConnectionLabels: Record<RoomConnectionState, string> = {
   [RoomConnectionState.WaitingPeer]: "等待加入",
   [RoomConnectionState.Joining]: "加入中",
   [RoomConnectionState.Handshaking]: "握手中",
+  [RoomConnectionState.WaitingSnapshot]: "同步成员中",
   [RoomConnectionState.Connected]: "已连接",
   [RoomConnectionState.Reconnecting]: "重连中",
   [RoomConnectionState.Degraded]: "连接波动",
@@ -83,6 +84,10 @@ export const getPrimaryRoomStatus = ({
 
   if (connectionState === RoomConnectionState.Handshaking) {
     return { label: "握手中", tone: "accent" };
+  }
+
+  if (connectionState === RoomConnectionState.WaitingSnapshot) {
+    return { label: "已连接，正在同步成员", tone: "accent" };
   }
 
   if (connectionState === RoomConnectionState.Reconnecting) {

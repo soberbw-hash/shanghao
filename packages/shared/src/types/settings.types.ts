@@ -70,6 +70,13 @@ export interface RelayStatusSnapshot {
   isReachable: boolean;
   isHealthReachable?: boolean;
   isWebSocketReachable?: boolean;
+  protocolVersion?: string;
+  buildNumber?: string;
+  packageVersion?: string;
+  uptime?: number;
+  activeRooms?: number;
+  connectedPeers?: number;
+  hasVersionMismatch?: boolean;
   lastCheckedAt?: string;
   message: string;
 }

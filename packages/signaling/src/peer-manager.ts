@@ -10,6 +10,7 @@ export interface PeerSession {
   id: string;
   nickname: string;
   avatarDataUrl?: string;
+  avatarHash?: string;
   socket: WebSocket;
   isHost: boolean;
   isMuted: boolean;
@@ -62,7 +63,7 @@ export class PeerManager {
   updateMemberState(
     peerId: string,
     nextState: Partial<
-      Pick<PeerSession, "isMuted" | "isSpeaking" | "nickname" | "avatarDataUrl">
+      Pick<PeerSession, "isMuted" | "isSpeaking" | "nickname" | "avatarDataUrl" | "avatarHash">
     >,
   ): void {
     const peer = this.peers.get(peerId);
@@ -79,7 +80,7 @@ export class PeerManager {
     return this.listPeers().map((peer) => ({
       id: peer.id,
       nickname: peer.nickname,
-      avatarDataUrl: peer.avatarDataUrl,
+      avatarHash: peer.avatarHash,
       isHost: peer.isHost,
       isLocal: peer.id === localPeerId,
       isMuted: peer.isMuted,

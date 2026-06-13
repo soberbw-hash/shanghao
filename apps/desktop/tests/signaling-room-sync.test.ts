@@ -19,6 +19,154 @@ const waitForMessage = <T>(socket: WebSocket, matcher: (payload: unknown) => pay
     socket.on("error", reject);
   });
 
+const openSocket = async (url: string): Promise<WebSocket> => {
+  const socket = new WebSocket(url);
+  await new Promise((resolve, reject) => {
+    socket.once("open", resolve);
+    socket.once("error", reject);
+  });
+  return socket;
+};
+
+const sendJoin = (socket: WebSocket, roomId: string, peerId: string, avatarDataUrl?: string) => {
+  socket.send(JSON.stringify({
+    type: "join_room",
+    roomId,
+    peerId,
+    nickname: peerId,
+    avatarDataUrl,
+    appVersion: "0.1.24",
+    protocolVersion: APP_PROTOCOL_VERSION,
+    buildNumber: APP_BUILD_NUMBER,
+    connectionMode: "relay",
+  }));
+};
+
+test("signaling server acknowledges join before sending the room snapshot", async () => {
+  const server = new SignalingServer({ roomName: "join-ack-test" });
+  const port = await server.listen();
+  const socket = await openSocket(`ws://127.0.0.1:${port}`);
+  const messageTypes: string[] = [];
+
+  const snapshotReceived = new Promise<void>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error("message_timeout")), 4_000);
+    socket.on("message", (raw) => {
+      const payload = JSON.parse(raw.toString()) as {
+        type?: string;
+        peerId?: string;
+        memberCount?: number;
+        revision?: number;
+      };
+      if (payload.type) {
+        messageTypes.push(payload.type);
+      }
+      if (payload.type === "join_ack") {
+        assert.equal(payload.peerId, "ack-peer");
+        assert.equal(payload.memberCount, 1);
+        assert.equal(typeof payload.revision, "number");
+      }
+      if (payload.type === "room_snapshot") {
+        clearTimeout(timer);
+        resolve();
+      }
+    });
+  });
+
+  sendJoin(socket, "join-ack-room", "ack-peer");
+  await snapshotReceived;
+  assert.equal(messageTypes[0], "join_ack");
+  assert.equal(messageTypes[1], "room_snapshot");
+
+  socket.close();
+  await server.close();
+});
+
+test("request_snapshot returns a lightweight snapshot only to the requester", async () => {
+  const server = new SignalingServer({ roomName: "snapshot-recovery-test" });
+  const port = await server.listen();
+  const url = `ws://127.0.0.1:${port}`;
+  const host = await openSocket(url);
+  const peer = await openSocket(url);
+  const hostInitialSnapshot = waitForMessage(host, (payload): payload is { type: string } =>
+    typeof payload === "object" && payload !== null &&
+    (payload as { type?: string }).type === "room_snapshot");
+  sendJoin(host, "snapshot-recovery-room", "host");
+  await hostInitialSnapshot;
+  const peerJoinedSnapshot = waitForMessage(peer, (payload): payload is { members: unknown[] } =>
+    typeof payload === "object" && payload !== null &&
+    (payload as { type?: string }).type === "room_snapshot" &&
+    (payload as { members?: unknown[] }).members?.length === 2);
+  sendJoin(peer, "snapshot-recovery-room", "peer");
+  await peerJoinedSnapshot;
+  await new Promise((resolve) => setTimeout(resolve, 100));
+
+  let hostSnapshotCount = 0;
+  host.on("message", (raw) => {
+    if ((JSON.parse(raw.toString()) as { type?: string }).type === "room_snapshot") {
+      hostSnapshotCount += 1;
+    }
+  });
+  const recoveredSnapshot = waitForMessage(peer, (payload): payload is { members: unknown[] } =>
+    typeof payload === "object" && payload !== null &&
+    (payload as { type?: string }).type === "room_snapshot");
+  peer.send(JSON.stringify({
+    type: "request_snapshot",
+    roomId: "snapshot-recovery-room",
+    peerId: "peer",
+  }));
+  const recovered = await recoveredSnapshot;
+  await new Promise((resolve) => setTimeout(resolve, 100));
+
+  assert.equal(recovered.members.length, 2);
+  assert.equal(hostSnapshotCount, 0);
+  host.close();
+  peer.close();
+  await server.close();
+});
+
+test("room snapshots omit avatar data and avatars use a separate bounded message", async () => {
+  const server = new SignalingServer({ roomName: "avatar-snapshot-test" });
+  const port = await server.listen();
+  const socket = await openSocket(`ws://127.0.0.1:${port}`);
+  const avatarDataUrl = `data:image/png;base64,${"A".repeat(512)}`;
+  const snapshotPromise = waitForMessage(
+    socket,
+    (payload): payload is { members: Array<{ avatarDataUrl?: string; avatarHash?: string }> } =>
+      typeof payload === "object" && payload !== null &&
+      (payload as { type?: string }).type === "room_snapshot",
+  );
+  const avatarPromise = waitForMessage(
+    socket,
+    (payload): payload is { avatarDataUrl: string; avatarHash?: string } =>
+      typeof payload === "object" && payload !== null &&
+      (payload as { type?: string }).type === "avatar_update",
+  );
+  sendJoin(socket, "avatar-room", "avatar-peer", avatarDataUrl);
+
+  const [snapshot, avatar] = await Promise.all([snapshotPromise, avatarPromise]);
+
+  assert.equal(snapshot.members[0]?.avatarDataUrl, undefined);
+  assert.equal(typeof snapshot.members[0]?.avatarHash, "string");
+  assert.equal(avatar.avatarDataUrl, avatarDataUrl);
+  socket.close();
+  await server.close();
+});
+
+test("health endpoint exposes signaling version and room counts", async () => {
+  const server = new SignalingServer({ roomName: "health-test" });
+  const port = await server.listen();
+  const response = await fetch(`http://127.0.0.1:${port}/health`);
+  const health = await response.json() as Record<string, unknown>;
+
+  assert.equal(health.ok, true);
+  assert.equal(health.protocolVersion, APP_PROTOCOL_VERSION);
+  assert.equal(health.buildNumber, APP_BUILD_NUMBER);
+  assert.equal(typeof health.uptime, "number");
+  assert.equal(health.activeRooms, 0);
+  assert.equal(health.connectedPeers, 0);
+  await server.close();
+});
+
 test("signaling server syncs room members after join", async () => {
   const server = new SignalingServer({ roomName: "测试房间" });
   const port = await server.listen();

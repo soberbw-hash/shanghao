@@ -10,9 +10,12 @@ import {
 } from "@private-voice/shared";
 import type {
   AudioChunkMessage,
+  AvatarUpdateMessage,
   ChatMessage as SignalChatMessage,
   ErrorMessage,
   IceCandidateMessage,
+  JoinAckMessage,
+  MemberStateMessage,
   PeerAnswerMessage,
   PeerOfferMessage,
   RoomSnapshotMessage,
@@ -52,6 +55,7 @@ interface PendingConnection {
 }
 
 const INITIAL_CONNECT_TIMEOUT_MS = 10_000;
+const SNAPSHOT_RETRY_TIMEOUT_MS = 5_000;
 const MAX_RECONNECT_ATTEMPTS = 4;
 
 export class RoomClient {
@@ -59,6 +63,7 @@ export class RoomClient {
   private readonly peers = new Map<string, MeshPeerConnection>();
   private readonly relayToken?: string;
   private heartbeatTimer?: number;
+  private snapshotRetryTimer?: number;
   private reconnectTimer?: number;
   private shouldReconnect = true;
   private localStream: MediaStream;
@@ -82,6 +87,14 @@ export class RoomClient {
   private lastSocketCloseReason?: string;
   private lastSocketClosedAt?: string;
   private chatSendFailures = 0;
+  private currentMembers: RoomMember[] = [];
+  private readonly avatarCache = new Map<string, { avatarHash?: string; avatarDataUrl?: string }>();
+  private joinStage = "idle";
+  private wsOpened = false;
+  private joinRoomSent = false;
+  private joinAckReceived = false;
+  private roomSnapshotReceived = false;
+  private lastServerError?: string;
 
   constructor(private readonly options: RoomClientOptions) {
     this.localStream = options.localStream;
@@ -108,6 +121,7 @@ export class RoomClient {
     this.isDisconnecting = true;
     this.shouldReconnect = false;
     this.clearPendingConnection();
+    this.stopSnapshotRecovery();
     this.stopHeartbeat();
     if (this.reconnectTimer) {
       window.clearTimeout(this.reconnectTimer);
@@ -134,7 +148,7 @@ export class RoomClient {
   }
 
   canSendChat(): boolean {
-    return this.isSignalingConnected && this.hasJoinedOnce && !this.isDisconnecting;
+    return this.isSignalingConnected && this.joinAckReceived && !this.isDisconnecting;
   }
 
   getDiagnostics() {
@@ -148,6 +162,12 @@ export class RoomClient {
       remotePeerCount: this.remotePeerIds.size,
       roomSnapshotRevision: this.lastSnapshotRevision,
       chatSendFailures: this.chatSendFailures,
+      joinStage: this.joinStage,
+      wsOpened: this.wsOpened,
+      joinRoomSent: this.joinRoomSent,
+      joinAckReceived: this.joinAckReceived,
+      roomSnapshotReceived: this.roomSnapshotReceived,
+      lastServerError: this.lastServerError,
     };
   }
 
@@ -207,11 +227,17 @@ export class RoomClient {
 
   private openSocket(isReconnect: boolean): Promise<void> {
     this.options.onConnectionState(isReconnect ? RoomConnectionState.Reconnecting : RoomConnectionState.Joining);
+    this.joinStage = "websocket_open";
+    this.wsOpened = false;
+    this.joinRoomSent = false;
+    this.joinAckReceived = false;
+    this.roomSnapshotReceived = false;
+    this.lastServerError = undefined;
 
     return new Promise((resolve, reject) => {
       this.clearPendingConnection();
       const timeout = window.setTimeout(() => {
-        const error = new Error("network_unreachable");
+        const error = new Error(this.wsOpened ? "join_ack_timeout" : "network_unreachable");
         this.rejectPendingConnection(error);
         void window.desktopApi.signaling.close();
       }, INITIAL_CONNECT_TIMEOUT_MS);
@@ -234,6 +260,8 @@ export class RoomClient {
   private async handleBridgeEvent(payload: SignalingEventPayload): Promise<void> {
     if (payload.type === "open") {
       this.isSignalingConnected = true;
+      this.wsOpened = true;
+      this.joinStage = "join_room_sent";
       this.options.onConnectionState(
         this.hasJoinedOnce ? RoomConnectionState.Reconnecting : RoomConnectionState.Handshaking,
       );
@@ -250,6 +278,7 @@ export class RoomClient {
         connectionMode: this.options.connectionMode,
         relayToken: this.relayToken,
       });
+      this.joinRoomSent = true;
       this.startHeartbeat();
       return;
     }
@@ -276,7 +305,9 @@ export class RoomClient {
       this.lastSocketCloseReason = payload.reason;
       this.lastSocketClosedAt = new Date().toISOString();
       this.stopHeartbeat();
+      this.stopSnapshotRecovery();
       this.isSignalingConnected = false;
+      this.joinAckReceived = false;
       this.audioRelay?.resetTransport("signaling_socket_closed");
 
       if (!this.shouldReconnect) {
@@ -301,6 +332,9 @@ export class RoomClient {
 
   private async handleSignal(payload: SignalEnvelope): Promise<void> {
     switch (payload.type) {
+      case "join_ack":
+        this.handleJoinAck(payload);
+        return;
       case "room_snapshot":
         await this.handleRoomSnapshot(payload);
         return;
@@ -322,9 +356,36 @@ export class RoomClient {
       case "audio_chunk":
         this.handleAudioChunk(payload);
         return;
+      case "member_state":
+        this.handleMemberState(payload);
+        return;
+      case "avatar_update":
+        this.handleAvatarUpdate(payload);
+        return;
       default:
         return;
     }
+  }
+
+  private handleJoinAck(payload: JoinAckMessage): void {
+    if (payload.roomId !== this.options.roomId || payload.peerId !== this.options.peerId) {
+      return;
+    }
+
+    this.joinAckReceived = true;
+    this.hasJoinedOnce = true;
+    this.joinStage = "join_ack_received";
+    this.options.onConnectionState(RoomConnectionState.WaitingSnapshot);
+    this.resolvePendingConnection();
+    this.startSnapshotRecovery();
+    void writeRendererLog("signaling", "info", "Join acknowledgement received", {
+      roomId: payload.roomId,
+      peerId: payload.peerId,
+      revision: payload.revision,
+      memberCount: payload.memberCount,
+      protocolVersion: payload.protocolVersion,
+      buildNumber: payload.buildNumber,
+    });
   }
 
   private async handleRoomSnapshot(snapshot: RoomSnapshotMessage): Promise<void> {
@@ -337,10 +398,14 @@ export class RoomClient {
       return;
     }
     this.lastSnapshotRevision = snapshot.revision;
+    this.roomSnapshotReceived = true;
+    this.joinStage = "room_snapshot_received";
+    this.stopSnapshotRecovery();
     this.options.onSnapshotRevision?.(snapshot.revision);
     this.options.onRoomName(snapshot.roomName);
     const normalizedMembers = snapshot.members.map((member) => ({
       ...member,
+      avatarDataUrl: this.avatarCache.get(member.id)?.avatarDataUrl,
       presenceState:
         member.id === this.options.peerId || member.presenceState === MemberPresenceState.Online
           ? MemberPresenceState.Online
@@ -350,6 +415,7 @@ export class RoomClient {
         : member.speakingState ?? MemberSpeakingState.Silent,
     }));
 
+    this.currentMembers = normalizedMembers;
     this.options.onMembers(normalizedMembers);
     this.options.onConnectionState(
       normalizedMembers.filter((member) => !member.isEmptySlot).length <= 1
@@ -359,6 +425,7 @@ export class RoomClient {
     this.backoff.reset();
     this.reconnectAttempts = 0;
     this.hasJoinedOnce = true;
+    this.joinAckReceived = true;
     this.resolvePendingConnection();
 
     const activePeerIds = new Set(
@@ -432,6 +499,7 @@ export class RoomClient {
   }
 
   private handleErrorMessage(payload: ErrorMessage): void {
+    this.lastServerError = `${payload.code}:${payload.message}`;
     this.options.onConnectionState(RoomConnectionState.Failed);
     this.rejectPendingConnection(new Error(payload.message || payload.code));
   }
@@ -476,6 +544,57 @@ export class RoomClient {
 
   private handleAudioChunk(payload: AudioChunkMessage): void {
     this.audioRelay?.handleRemoteChunk(payload);
+  }
+
+  private handleMemberState(payload: MemberStateMessage): void {
+    let changed = false;
+    this.currentMembers = this.currentMembers.map((member) => {
+      if (member.id !== payload.peerId) {
+        return member;
+      }
+      changed = true;
+      const isMuted = payload.isMuted ?? member.isMuted;
+      const isSpeaking =
+        payload.isSpeaking ?? member.speakingState === MemberSpeakingState.Speaking;
+      return {
+        ...member,
+        nickname: payload.nickname ?? member.nickname,
+        isMuted,
+        speakingState: isMuted
+          ? MemberSpeakingState.Muted
+          : isSpeaking
+            ? MemberSpeakingState.Speaking
+            : MemberSpeakingState.Silent,
+      };
+    });
+    if (changed) {
+      this.options.onMembers(this.currentMembers);
+    }
+  }
+
+  private handleAvatarUpdate(payload: AvatarUpdateMessage): void {
+    if (!payload.avatarDataUrl) {
+      return;
+    }
+    this.avatarCache.set(payload.peerId, {
+      avatarHash: payload.avatarHash,
+      avatarDataUrl: payload.avatarDataUrl,
+    });
+    let changed = false;
+    this.currentMembers = this.currentMembers.map((member) => {
+      if (member.id !== payload.peerId) {
+        return member;
+      }
+      changed = true;
+      return {
+        ...member,
+        avatarHash: payload.avatarHash,
+        avatarDataUrl: payload.avatarDataUrl,
+      };
+    });
+    if (changed) {
+      this.options.onMembers(this.currentMembers);
+    }
   }
 
   private startAudioRelay(): void {
@@ -612,6 +731,34 @@ export class RoomClient {
   private stopHeartbeat(): void {
     if (this.heartbeatTimer) {
       window.clearInterval(this.heartbeatTimer);
+    }
+  }
+
+  private startSnapshotRecovery(): void {
+    this.stopSnapshotRecovery();
+    this.snapshotRetryTimer = window.setTimeout(() => {
+      if (!this.isSignalingConnected || this.roomSnapshotReceived) {
+        return;
+      }
+      this.options.onConnectionState(RoomConnectionState.WaitingSnapshot);
+      void writeRendererLog("signaling", "warn", "Room snapshot timeout, requesting recovery", {
+        code: "room_snapshot_timeout",
+        roomId: this.options.roomId,
+        peerId: this.options.peerId,
+        lastSnapshotRevision: this.lastSnapshotRevision,
+      });
+      void this.safeSend({
+        type: "request_snapshot",
+        roomId: this.options.roomId,
+        peerId: this.options.peerId,
+      }).then(() => this.startSnapshotRecovery());
+    }, SNAPSHOT_RETRY_TIMEOUT_MS);
+  }
+
+  private stopSnapshotRecovery(): void {
+    if (this.snapshotRetryTimer) {
+      window.clearTimeout(this.snapshotRetryTimer);
+      this.snapshotRetryTimer = undefined;
     }
   }
 

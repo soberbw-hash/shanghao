@@ -29,6 +29,7 @@ const statusCopy = (state: RoomConnectionState, memberCount: number) => {
   if (
     state === RoomConnectionState.Joining ||
     state === RoomConnectionState.Handshaking ||
+    state === RoomConnectionState.WaitingSnapshot ||
     state === RoomConnectionState.StartingHost
   ) {
     return { title: "正在连接", detail: "正在建立房间链路", tone: "neutral" as const };
@@ -70,7 +71,8 @@ export const TopStatusBar = ({
     const isBusy = room.connectionState === RoomConnectionState.Reconnecting ||
       room.connectionState === RoomConnectionState.Degraded ||
       room.connectionState === RoomConnectionState.Joining ||
-      room.connectionState === RoomConnectionState.Handshaking;
+      room.connectionState === RoomConnectionState.Handshaking ||
+      room.connectionState === RoomConnectionState.WaitingSnapshot;
     const shellTone =
       status.tone === "danger"
         ? "border-[#F2C6C6] bg-[#FFF7F7]"

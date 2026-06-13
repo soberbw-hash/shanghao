@@ -7,6 +7,7 @@ import {
   type ConnectionMode,
   type HostSessionInfo,
   type RoomMember,
+  type SignalingEventPayload,
 } from "@private-voice/shared";
 import { createSpeakingDetector, requestMicrophoneStream } from "@private-voice/webrtc";
 
@@ -136,6 +137,14 @@ const normalizeRoomError = (error: unknown, fallback: string): string => {
       return copy.roomFull;
     }
 
+    if (message === "join_ack_timeout") {
+      return "服务器已连接，但没有确认加入房间。";
+    }
+
+    if (message === "room_snapshot_timeout") {
+      return "已加入房间，但成员同步超时。";
+    }
+
     return message;
   }
 
@@ -152,6 +161,34 @@ const collectMemberEvents = (members: RoomMember[]) => {
   const left = [...previousMemberIds].filter((memberId) => !nextIds.has(memberId));
   previousMemberIds = nextIds;
   return { joined, left };
+};
+
+const summarizeSignalingEvent = (payload: SignalingEventPayload): Record<string, unknown> => {
+  const summary: Record<string, unknown> = {
+    bridgeEventType: payload.type,
+    code: payload.code,
+    reason: payload.reason,
+    wasClean: payload.wasClean,
+    message: payload.message,
+  };
+
+  if (payload.type !== "message" || !payload.data) {
+    return summary;
+  }
+
+  summary.payloadBytes = new TextEncoder().encode(payload.data).byteLength;
+  try {
+    const message = JSON.parse(payload.data) as Record<string, unknown>;
+    summary.messageType = message.type;
+    summary.roomId = message.roomId;
+    summary.peerId = message.peerId;
+    summary.targetPeerId = message.targetPeerId;
+    summary.revision = message.revision;
+    summary.memberCount = Array.isArray(message.members) ? message.members.length : undefined;
+  } catch {
+    summary.messageType = "invalid_json";
+  }
+  return summary;
 };
 
 const applyHostSessionSnapshot = (
@@ -417,6 +454,12 @@ export const useRoomState = () => {
       onRoomName: (nextRoomName) => setRoom({ roomName: nextRoomName }),
       onConnectionState: (state) => {
         setConnectionState(state);
+        if (state === RoomConnectionState.WaitingSnapshot) {
+          pushHostEvent({
+            level: "info",
+            message: "已连接，正在同步成员…",
+          });
+        }
         if (state === RoomConnectionState.WaitingPeer) {
           pushHostEvent({
             level: "info",
@@ -464,7 +507,7 @@ export const useRoomState = () => {
       },
       onDiagnosticEvent: (payload) => {
         void writeRendererLog("signaling", "info", "Signaling bridge event", {
-          ...payload,
+          ...summarizeSignalingEvent(payload),
         });
       },
     });
@@ -537,6 +580,7 @@ export const useRoomState = () => {
           total: candidateUrls.length,
           connectionMode,
           error: error instanceof Error ? error.message : String(error),
+          ...activeClient?.getDiagnostics(),
         });
         await cleanupPreviousSession();
       }
@@ -551,11 +595,29 @@ export const useRoomState = () => {
     error: unknown,
   ) => {
     try {
-      const diagnostic = await window.desktopApi.host.diagnoseJoin(signalingUrl, connectionMode);
+      let parsedMode = connectionMode;
+      try {
+        parsedMode =
+          (new URL(signalingUrl).searchParams.get("mode") as ConnectionMode | null) ??
+          connectionMode;
+      } catch {
+        // URL validation is handled by diagnoseJoin.
+      }
+      const diagnostic = await window.desktopApi.host.diagnoseJoin(signalingUrl, parsedMode);
       await writeRendererLog("signaling", "warn", "Join failure diagnostic", {
         ...diagnostic,
+        parsedMode,
+        currentSelectedMode: connectionMode,
         rawError: error instanceof Error ? error.message : String(error),
       });
+
+      if (error instanceof Error && error.message === "join_ack_timeout") {
+        return "服务器已连接，但没有确认加入房间。";
+      }
+
+      if (error instanceof Error && error.message === "room_snapshot_timeout") {
+        return "已加入房间，但成员同步超时。";
+      }
 
       if (!diagnostic.isUrlValid) {
         return diagnostic.message;

@@ -54,6 +54,16 @@ export class RoomManager {
     return this.rooms.get(roomId);
   }
 
+  getStats(): { activeRooms: number; connectedPeers: number } {
+    return {
+      activeRooms: this.rooms.size,
+      connectedPeers: [...this.rooms.values()].reduce(
+        (count, room) => count + room.peers.listConnectedPeers().length,
+        0,
+      ),
+    };
+  }
+
   addPeer(roomId: string, roomName: string, session: PeerSession, relayToken?: string): SignalingRoom {
     const room = this.getOrCreateRoom(roomId, roomName, relayToken);
     room.peers.addPeer(session);

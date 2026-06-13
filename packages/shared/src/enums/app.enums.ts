@@ -12,6 +12,7 @@ export enum RoomConnectionState {
   WaitingPeer = "waiting_peer",
   Joining = "joining",
   Handshaking = "handshaking",
+  WaitingSnapshot = "waiting_snapshot",
   Connected = "connected",
   Reconnecting = "reconnecting",
   Degraded = "degraded",

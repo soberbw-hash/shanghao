@@ -1,4 +1,5 @@
 import { EventEmitter } from "node:events";
+import { createHash } from "node:crypto";
 import { createServer, type Server as HttpServer } from "node:http";
 
 import {
@@ -10,16 +11,19 @@ import { WebSocket, WebSocketServer } from "ws";
 
 import type {
   AudioChunkMessage,
+  AvatarUpdateMessage,
   ChatMessage,
   ErrorMessage,
   HelloMessage,
   IceCandidateMessage,
   JoinRoomMessage,
+  JoinAckMessage,
   LeaveRoomMessage,
   MemberStateMessage,
   PeerAnswerMessage,
   PeerOfferMessage,
   RoomSnapshotMessage,
+  RequestSnapshotMessage,
   SignalEnvelope,
 } from "./protocol";
 import { isSignalEnvelope } from "./protocol";
@@ -28,8 +32,25 @@ import { RoomManager } from "./room-manager";
 interface SignalingServerOptions {
   port?: number;
   roomName: string;
+  packageVersion?: string;
   logger?: (message: string, context?: Record<string, unknown>) => void;
 }
+
+const MAX_SIGNALING_PAYLOAD_BYTES = 256 * 1024;
+const MAX_AVATAR_BYTES = 128 * 1024;
+
+const normalizeAvatar = (
+  avatarDataUrl?: string,
+): { avatarDataUrl?: string; avatarHash?: string } => {
+  if (!avatarDataUrl || Buffer.byteLength(avatarDataUrl, "utf8") > MAX_AVATAR_BYTES) {
+    return {};
+  }
+
+  return {
+    avatarDataUrl,
+    avatarHash: createHash("sha256").update(avatarDataUrl).digest("hex"),
+  };
+};
 
 export class SignalingServer extends EventEmitter {
   private readonly roomManager = new RoomManager();
@@ -46,12 +67,19 @@ export class SignalingServer extends EventEmitter {
     this.httpServer = createServer();
     this.httpServer.on("request", (request, response) => {
       if (request.url?.startsWith("/health")) {
+        const stats = this.roomManager.getStats();
         response.writeHead(200, { "content-type": "application/json; charset=utf-8" });
         response.end(
           JSON.stringify({
             ok: true,
             name: "shanghao-signaling",
             roomName: this.roomName,
+            protocolVersion: APP_PROTOCOL_VERSION,
+            buildNumber: APP_BUILD_NUMBER,
+            packageVersion: this.options.packageVersion ?? process.env.npm_package_version ?? "unknown",
+            uptime: process.uptime(),
+            activeRooms: stats.activeRooms,
+            connectedPeers: stats.connectedPeers,
             now: new Date().toISOString(),
           }),
         );
@@ -168,7 +196,16 @@ export class SignalingServer extends EventEmitter {
   private handleConnection(socket: WebSocket): void {
     socket.on("message", (raw) => {
       try {
-        const payload = JSON.parse(raw.toString()) as unknown;
+        const payloadText = raw.toString();
+        if (Buffer.byteLength(payloadText, "utf8") > MAX_SIGNALING_PAYLOAD_BYTES) {
+          this.safeSend(socket, {
+            type: "error",
+            code: "payload_too_large",
+            message: "Signaling message exceeds the 256KB limit.",
+          });
+          return;
+        }
+        const payload = JSON.parse(payloadText) as unknown;
         if (!isSignalEnvelope(payload)) {
           return;
         }
@@ -218,6 +255,9 @@ export class SignalingServer extends EventEmitter {
         return;
       case "heartbeat":
         this.roomManager.getRoom(message.roomId)?.peers.updateHeartbeat(message.peerId);
+        return;
+      case "request_snapshot":
+        this.handleSnapshotRequest(socket, message);
         return;
       case "peer_offer":
       case "peer_answer":
@@ -292,13 +332,15 @@ export class SignalingServer extends EventEmitter {
       }
     }
 
+    const normalizedAvatar = normalizeAvatar(message.avatarDataUrl);
     const room = this.roomManager.addPeer(
       message.roomId,
       this.roomName,
       {
         id: message.peerId,
         nickname: message.nickname,
-        avatarDataUrl: message.avatarDataUrl,
+        avatarDataUrl: normalizedAvatar.avatarDataUrl ?? existingPeer?.avatarDataUrl,
+        avatarHash: normalizedAvatar.avatarHash ?? existingPeer?.avatarHash,
         socket,
         isHost: existingPeer?.isHost ?? existingPeerCount === 0,
         isMuted: existingPeer?.isMuted ?? false,
@@ -320,7 +362,24 @@ export class SignalingServer extends EventEmitter {
       memberCount: room.peers.listPeers().length,
     });
 
+    const joinAck: JoinAckMessage = {
+      type: "join_ack",
+      roomId: room.roomId,
+      peerId: message.peerId,
+      serverTime: Date.now(),
+      revision: room.revision + 1,
+      memberCount: room.peers.listPeers().length,
+      appVersion: room.appVersion,
+      protocolVersion: room.protocolVersion,
+      buildNumber: room.buildNumber,
+      connectionMode: room.connectionMode,
+    };
+    this.safeSend(socket, joinAck);
     this.broadcastSnapshot(message.roomId);
+    this.sendAvatarsToPeer(socket, room.roomId);
+    if (normalizedAvatar.avatarDataUrl) {
+      this.broadcastAvatarUpdate(message.roomId, message.peerId);
+    }
   }
 
   private handleLeave(message: LeaveRoomMessage): void {
@@ -331,13 +390,32 @@ export class SignalingServer extends EventEmitter {
 
   private handleMemberState(message: MemberStateMessage): void {
     const room = this.roomManager.getRoom(message.roomId);
+    const normalizedAvatar = normalizeAvatar(message.avatarDataUrl);
     room?.peers.updateMemberState(message.peerId, {
       isMuted: message.isMuted,
       isSpeaking: message.isSpeaking,
       nickname: message.nickname,
-      avatarDataUrl: message.avatarDataUrl,
+      avatarDataUrl: normalizedAvatar.avatarDataUrl,
+      avatarHash: normalizedAvatar.avatarHash,
     });
-    this.broadcastSnapshot(message.roomId);
+    if (!room) {
+      return;
+    }
+
+    const payload: MemberStateMessage = {
+      type: "member_state",
+      roomId: message.roomId,
+      peerId: message.peerId,
+      isMuted: message.isMuted,
+      isSpeaking: message.isSpeaking,
+      nickname: message.nickname,
+    };
+    for (const peer of room.peers.listConnectedPeers()) {
+      this.safeSend(peer.socket, payload);
+    }
+    if (normalizedAvatar.avatarDataUrl) {
+      this.broadcastAvatarUpdate(message.roomId, message.peerId);
+    }
   }
 
   private broadcastChatMessage(message: ChatMessage): void {
@@ -351,7 +429,6 @@ export class SignalingServer extends EventEmitter {
       roomId: message.roomId,
       peerId: message.peerId,
       nickname: message.nickname,
-      avatarDataUrl: message.avatarDataUrl,
       content: message.content,
       createdAt: message.createdAt,
     };
@@ -428,13 +505,98 @@ export class SignalingServer extends EventEmitter {
     });
   }
 
+  private handleSnapshotRequest(socket: WebSocket, message: RequestSnapshotMessage): void {
+    const room = this.roomManager.getRoom(message.roomId);
+    const peer = room?.peers.getPeer(message.peerId);
+    if (!room || !peer || peer.socket !== socket) {
+      return;
+    }
+
+    this.sendSnapshotToPeer(socket, message.roomId, message.peerId);
+    this.sendAvatarsToPeer(socket, message.roomId);
+    this.logger?.("room snapshot requested", {
+      roomId: message.roomId,
+      peerId: message.peerId,
+      revision: room.revision,
+    });
+  }
+
+  private sendSnapshotToPeer(socket: WebSocket, roomId: string, localPeerId: string): void {
+    const room = this.roomManager.getRoom(roomId);
+    if (!room) {
+      return;
+    }
+
+    const payload: RoomSnapshotMessage = {
+      type: "room_snapshot",
+      roomId: room.roomId,
+      roomName: room.roomName,
+      members: room.peers.toRoomMembers(localPeerId),
+      revision: room.revision,
+      serverTime: Date.now(),
+      appVersion: room.appVersion,
+      protocolVersion: room.protocolVersion,
+      buildNumber: room.buildNumber,
+      connectionMode: room.connectionMode,
+    };
+    this.safeSend(socket, payload);
+    this.emit("snapshot", payload);
+  }
+
+  private sendAvatarsToPeer(socket: WebSocket, roomId: string): void {
+    const room = this.roomManager.getRoom(roomId);
+    if (!room) {
+      return;
+    }
+
+    for (const peer of room.peers.listPeers()) {
+      if (!peer.avatarDataUrl) {
+        continue;
+      }
+      this.safeSend(socket, {
+        type: "avatar_update",
+        roomId,
+        peerId: peer.id,
+        avatarHash: peer.avatarHash,
+        avatarDataUrl: peer.avatarDataUrl,
+      });
+    }
+  }
+
+  private broadcastAvatarUpdate(roomId: string, peerId: string): void {
+    const room = this.roomManager.getRoom(roomId);
+    const member = room?.peers.getPeer(peerId);
+    if (!room || !member?.avatarDataUrl) {
+      return;
+    }
+
+    const payload: AvatarUpdateMessage = {
+      type: "avatar_update",
+      roomId,
+      peerId,
+      avatarHash: member.avatarHash,
+      avatarDataUrl: member.avatarDataUrl,
+    };
+    for (const peer of room.peers.listConnectedPeers()) {
+      this.safeSend(peer.socket, payload);
+    }
+  }
+
   private safeSend(socket: WebSocket, payload: SignalEnvelope): boolean {
     if (socket.readyState !== WebSocket.OPEN) {
       return false;
     }
 
     try {
-      socket.send(JSON.stringify(payload));
+      const serialized = JSON.stringify(payload);
+      if (Buffer.byteLength(serialized, "utf8") > MAX_SIGNALING_PAYLOAD_BYTES) {
+        this.logger?.("signaling send skipped because payload is too large", {
+          type: payload.type,
+          payloadBytes: Buffer.byteLength(serialized, "utf8"),
+        });
+        return false;
+      }
+      socket.send(serialized);
       return true;
     } catch (error) {
       this.logger?.("signaling send failed", {

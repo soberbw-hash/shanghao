@@ -79,6 +79,22 @@ test("room client preserves peers while signaling reconnects and bounds retry at
   assert.equal(hook.includes("peerId: sharedPeerId"), false);
 });
 
+test("room joining uses acknowledgement and snapshot recovery without logging raw signaling data", () => {
+  const client = read("apps/desktop/src/renderer/src/features/room/roomClient.ts");
+  const hook = read("apps/desktop/src/renderer/src/hooks/useRoomState.ts");
+  const diagnostics = read("apps/desktop/src/main/diagnostics.ts");
+
+  assert.equal(client.includes('case "join_ack"'), true);
+  assert.equal(client.includes('type: "request_snapshot"'), true);
+  assert.equal(client.includes("RoomConnectionState.WaitingSnapshot"), true);
+  assert.equal(client.includes('new Error(this.wsOpened ? "join_ack_timeout"'), true);
+  assert.equal(hook.includes("summarizeSignalingEvent"), true);
+  assert.equal(hook.includes("...payload,"), false);
+  assert.equal(diagnostics.includes("MAX_LOG_FILE_BYTES"), true);
+  assert.equal(diagnostics.includes("EXPORT_LOG_TAIL_BYTES"), true);
+  assert.equal(diagnostics.includes('"log-stats.json"'), true);
+});
+
 test("windows executable and shortcut use cache-busting v3 icons", () => {
   const builder = read("apps/desktop/electron-builder.yml");
   const installer = read("apps/desktop/build/installer.nsh");

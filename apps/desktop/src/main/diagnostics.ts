@@ -1,10 +1,17 @@
-import { createWriteStream } from "node:fs";
-import { appendFile, cp, mkdir, readdir, stat, writeFile } from "node:fs/promises";
+import {
+  appendFile,
+  copyFile,
+  mkdir,
+  open,
+  readdir,
+  rename,
+  rm,
+  stat,
+  writeFile,
+} from "node:fs/promises";
 import path from "node:path";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { createGzip } from "node:zlib";
-import { pipeline } from "node:stream/promises";
 
 import { app, dialog, shell } from "electron";
 
@@ -18,6 +25,10 @@ import {
 } from "@private-voice/shared";
 
 const execFileAsync = promisify(execFile);
+const MAX_LOG_FILE_BYTES = 10 * 1024 * 1024;
+const MAX_LOG_FILES = 5;
+const EXPORT_LOG_TRUNCATE_THRESHOLD_BYTES = 20 * 1024 * 1024;
+const EXPORT_LOG_TAIL_BYTES = 2 * 1024 * 1024;
 
 const zipDirectory = async (sourceDir: string, targetPath: string): Promise<void> => {
   try {
@@ -53,6 +64,7 @@ export class DiagnosticsService {
     logsDirectory: this.logsDirectory,
     lastExportState: ExportTaskState.Idle,
   };
+  private logWriteQueue = Promise.resolve();
 
   async init(): Promise<void> {
     await mkdir(this.logsDirectory, { recursive: true });
@@ -77,7 +89,13 @@ export class DiagnosticsService {
 
     const filePath = path.join(this.logsDirectory, `${payload.category}.log`);
     const line = `${JSON.stringify(entry)}\n`;
-    await appendFile(filePath, line, "utf8");
+    this.logWriteQueue = this.logWriteQueue
+      .catch(() => undefined)
+      .then(async () => {
+        await this.rotateLogIfNeeded(filePath, Buffer.byteLength(line, "utf8"));
+        await appendFile(filePath, line, "utf8");
+      });
+    await this.logWriteQueue;
   }
 
   async openLogsDirectory(): Promise<void> {
@@ -108,7 +126,7 @@ export class DiagnosticsService {
         targetDirectory,
         `shanghao-logs-${new Date().toISOString().replaceAll(":", "-")}`,
       );
-      await cp(this.logsDirectory, exportDirectory, { recursive: true });
+      await this.exportLogsToDirectory(exportDirectory);
 
       this.snapshot = {
         ...this.snapshot,
@@ -148,7 +166,13 @@ export class DiagnosticsService {
     const zipPath = `${bundleRoot}.zip`;
 
     try {
-      await cp(this.logsDirectory, bundleRoot, { recursive: true });
+      await mkdir(bundleRoot, { recursive: true });
+      const logStats = await this.exportLogsToDirectory(path.join(bundleRoot, "logs"));
+      await writeFile(
+        path.join(bundleRoot, "log-stats.json"),
+        JSON.stringify(logStats, null, 2),
+        "utf8",
+      );
       await writeFile(
         path.join(bundleRoot, "version.json"),
         JSON.stringify(
@@ -179,5 +203,60 @@ export class DiagnosticsService {
       this.snapshot = { ...this.snapshot, lastExportState: ExportTaskState.Failed };
       return this.snapshot;
     }
+  }
+
+  private async rotateLogIfNeeded(filePath: string, incomingBytes: number): Promise<void> {
+    const currentSize = await stat(filePath).then((value) => value.size).catch(() => 0);
+    if (currentSize + incomingBytes <= MAX_LOG_FILE_BYTES) {
+      return;
+    }
+
+    await rm(`${filePath}.${MAX_LOG_FILES}`, { force: true });
+    for (let index = MAX_LOG_FILES - 1; index >= 1; index -= 1) {
+      await rename(`${filePath}.${index}`, `${filePath}.${index + 1}`).catch(() => undefined);
+    }
+    await rename(filePath, `${filePath}.1`).catch(() => undefined);
+  }
+
+  private async exportLogsToDirectory(targetDirectory: string): Promise<
+    Array<{ file: string; originalSize: number; exportedSize: number; truncated: boolean }>
+  > {
+    await mkdir(targetDirectory, { recursive: true });
+    const entries = await readdir(this.logsDirectory, { withFileTypes: true });
+    const logStats: Array<{
+      file: string;
+      originalSize: number;
+      exportedSize: number;
+      truncated: boolean;
+    }> = [];
+
+    for (const entry of entries) {
+      if (!entry.isFile()) {
+        continue;
+      }
+      const sourcePath = path.join(this.logsDirectory, entry.name);
+      const targetPath = path.join(targetDirectory, entry.name);
+      const originalSize = (await stat(sourcePath)).size;
+      const truncated = originalSize > EXPORT_LOG_TRUNCATE_THRESHOLD_BYTES;
+
+      if (!truncated) {
+        await copyFile(sourcePath, targetPath);
+      } else {
+        const exportedSize = Math.min(EXPORT_LOG_TAIL_BYTES, originalSize);
+        const handle = await open(sourcePath, "r");
+        try {
+          const buffer = Buffer.alloc(exportedSize);
+          await handle.read(buffer, 0, exportedSize, originalSize - exportedSize);
+          await writeFile(targetPath, buffer);
+        } finally {
+          await handle.close();
+        }
+      }
+
+      const exportedSize = (await stat(targetPath)).size;
+      logStats.push({ file: entry.name, originalSize, exportedSize, truncated });
+    }
+
+    return logStats;
   }
 }

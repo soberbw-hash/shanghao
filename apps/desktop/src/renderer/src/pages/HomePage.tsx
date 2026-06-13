@@ -358,7 +358,8 @@ export const HomePage = () => {
           onSend={handleSendChat}
           canSend={
             room.connectionState === RoomConnectionState.Connected ||
-            room.connectionState === RoomConnectionState.WaitingPeer
+            room.connectionState === RoomConnectionState.WaitingPeer ||
+            room.connectionState === RoomConnectionState.WaitingSnapshot
           }
           unavailableLabel={
             room.connectionState === RoomConnectionState.Reconnecting ? "重连中" : "连接后发送"

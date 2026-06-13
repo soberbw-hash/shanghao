@@ -248,6 +248,7 @@ export class HostSessionController {
       this.server = new SignalingServer({
         port: DEFAULT_SIGNALING_PORT,
         roomName: normalizedRoomName,
+        packageVersion: appVersion(),
         logger: (message, context) => {
           void this.writeLog({
             category: "signaling",
@@ -629,14 +630,16 @@ export class HostSessionController {
       }
       const host = parsed.hostname;
       const port = Number(parsed.port || (parsed.protocol === "wss:" ? "443" : "80"));
+      const parsedMode =
+        (parsed.searchParams.get("mode") as ConnectionMode | null) ?? connectionMode;
       const addressSource =
-        connectionMode === "tailscale"
+        parsedMode === "tailscale"
           ? host.endsWith(".ts.net")
             ? "magicdns"
             : "tailscale_ip"
-          : connectionMode === "relay"
+          : parsedMode === "relay"
             ? "relay"
-            : connectionMode === "cloudflare_tunnel"
+            : parsedMode === "cloudflare_tunnel"
               ? "cloudflare_tunnel"
             : isLanIpv4Address(host)
               ? "lan_ipv4"
@@ -661,7 +664,7 @@ export class HostSessionController {
       }
 
       const relayStatus =
-        connectionMode === "relay"
+        parsedMode === "relay"
           ? await readRelayStatus({
               relayServerUrl: `${parsed.protocol}//${parsed.host}${parsed.pathname}`,
               writeLog: this.writeLog,
@@ -670,7 +673,7 @@ export class HostSessionController {
 
       return {
         signalingUrl,
-        connectionMode,
+        connectionMode: parsedMode,
         host,
         port,
         isUrlValid: true,

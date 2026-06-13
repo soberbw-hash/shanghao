@@ -29,6 +29,7 @@ export interface RoomMember {
   nickname: string;
   avatarPath?: string;
   avatarDataUrl?: string;
+  avatarHash?: string;
   isHost: boolean;
   isLocal: boolean;
   isEmptySlot?: boolean;
