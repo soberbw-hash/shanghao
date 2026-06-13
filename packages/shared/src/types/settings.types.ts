@@ -77,9 +77,14 @@ export interface CloudflareTunnelStatus {
   isInstalled: boolean;
   version?: string;
   processState: "idle" | "downloading" | "starting" | "active" | "stopped" | "failed";
+  healthState?: "idle" | "healthy" | "degraded" | "failed";
   tunnelUrl?: string;
   tunnelStartedAt?: string;
   processPid?: number;
+  lastStdout?: string;
+  lastStderr?: string;
+  lastHealthCheckAt?: string;
+  consecutiveHealthFailures?: number;
   lastExitCode?: number | null;
   lastError?: string;
   message: string;

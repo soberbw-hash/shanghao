@@ -1,6 +1,6 @@
 {
   "name": "shanghao-desktop",
-  "version": "0.1.21",
+  "version": "0.1.22",
   "private": true,
   "description": "ShangHao desktop voice app for private friends group chat",
   "author": "Sober",
@@ -19,9 +19,9 @@
     "clean": "node ../../scripts/clean.mjs",
     "dist": "corepack pnpm build && node ../../scripts/run-electron-builder.mjs --config electron-builder.yml",
     "dist:win": "corepack pnpm build && node ../../scripts/run-electron-builder.mjs --config electron-builder.yml --win nsis",
-    "dist:mac": "corepack pnpm build && node ../../scripts/run-electron-builder.mjs --config electron-builder.yml --mac dmg zip",
-    "dist:mac:x64": "corepack pnpm build && node ../../scripts/run-electron-builder.mjs --config electron-builder.yml --mac dmg zip --x64",
-    "dist:mac:arm64": "corepack pnpm build && node ../../scripts/run-electron-builder.mjs --config electron-builder.yml --mac dmg zip --arm64"
+    "dist:mac": "corepack pnpm build && node ../../scripts/run-electron-builder.mjs --config electron-builder.yml --mac dmg",
+    "dist:mac:x64": "corepack pnpm build && node ../../scripts/run-electron-builder.mjs --config electron-builder.yml --mac dmg --x64",
+    "dist:mac:arm64": "corepack pnpm build && node ../../scripts/run-electron-builder.mjs --config electron-builder.yml --mac dmg --arm64"
   },
   "dependencies": {
     "@achingbrain/nat-port-mapper": "^4.0.5",

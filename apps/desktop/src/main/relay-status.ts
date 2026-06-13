@@ -82,7 +82,10 @@ export const readRelayStatus = async ({
     const [isHealthReachable, isWebSocketReachable] = tcpReachable
       ? await Promise.all([probeHealth(normalizedUrl), probeWebSocket(normalizedUrl)])
       : [false, false];
-    const isReachable = isHealthReachable && isWebSocketReachable;
+
+    // WebSocket is the real signaling path. A missing /health endpoint should
+    // warn the user, but must not reject an otherwise usable relay.
+    const isReachable = isWebSocketReachable;
     const result: RelayStatusSnapshot = {
       serverUrl: normalizedUrl,
       isConfigured: true,
@@ -91,11 +94,13 @@ export const readRelayStatus = async ({
       isWebSocketReachable,
       lastCheckedAt: new Date().toISOString(),
       message: isReachable
-        ? "云中继健康检查与 WebSocket 均正常，可以用于开房。"
+        ? isHealthReachable
+          ? "云中继健康检查与 WebSocket 均正常，可以用于开房。"
+          : "服务器可连接，但 /health 返回异常；WebSocket 可正常使用。"
         : tcpReachable
-          ? !isHealthReachable
-            ? "服务器端口可达，但 /health 健康检查失败。"
-            : "服务器健康检查正常，但 WebSocket 无法打开。"
+          ? isHealthReachable
+            ? "服务器健康检查正常，但 WebSocket 无法打开。"
+            : "服务器端口可达，但 /health 与 WebSocket 均不可用。"
           : "云中继地址当前不可达。",
     };
 

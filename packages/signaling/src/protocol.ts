@@ -125,10 +125,12 @@ export interface AudioChunkMessage extends BaseMessage {
   roomId: string;
   peerId: string;
   sequence: number;
+  sentAt: number;
+  durationMs: number;
   sampleRate: number;
   channelCount: 1;
   data: string;
-  createdAt: string;
+  createdAt?: string;
 }
 
 export interface ErrorMessage extends BaseMessage {

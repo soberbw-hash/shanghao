@@ -6,6 +6,9 @@ import { promisify } from "node:util";
 import type { CloudflareTunnelStatus, RendererLogPayload } from "@private-voice/shared";
 
 const TUNNEL_START_TIMEOUT_MS = 45_000;
+const HEALTH_CHECK_INTERVAL_MS = 20_000;
+const HEALTH_CHECK_TIMEOUT_MS = 6_000;
+const MAX_HEALTH_FAILURES = 3;
 const execFileAsync = promisify(execFile);
 const TRY_CLOUDFLARE_URL_PATTERN = /https:\/\/[a-z0-9-]+\.trycloudflare\.com/i;
 
@@ -73,12 +76,19 @@ const readCommandVersion = async (command: string): Promise<string | undefined> 
   }
 };
 
+const trimOutput = (value: string): string => value.trim().slice(-1_000);
+
 export class CloudflareTunnelController {
   private process?: ChildProcessWithoutNullStreams;
+  private healthTimer?: NodeJS.Timeout;
+  private activeTunnelUrl?: string;
+  private healthFailures = 0;
   private readonly listeners = new Set<(status: CloudflareTunnelStatus) => void>();
   private status: CloudflareTunnelStatus = {
     isInstalled: false,
     processState: "idle",
+    healthState: "idle",
+    consecutiveHealthFailures: 0,
     message: "临时公网尚未启动。",
   };
 
@@ -100,6 +110,8 @@ export class CloudflareTunnelController {
     await this.stop();
     this.setStatus({
       processState: "starting",
+      healthState: "idle",
+      consecutiveHealthFailures: 0,
       message: "正在创建临时公网隧道…",
       lastError: undefined,
       lastExitCode: undefined,
@@ -111,24 +123,30 @@ export class CloudflareTunnelController {
     try {
       const binaryPath = await this.resolveBinary();
       const tunnelUrl = await this.spawnTunnel(binaryPath, localPort);
+      this.activeTunnelUrl = tunnelUrl;
+      this.healthFailures = 0;
       this.setStatus({
         isInstalled: true,
         processState: "active",
+        healthState: "healthy",
+        consecutiveHealthFailures: 0,
         tunnelUrl,
         tunnelStartedAt: new Date().toISOString(),
-        message: "临时公网地址已准备好，关闭房间后地址会失效。",
+        message: "临时公网地址已生成。",
       });
+      this.startHealthChecks(tunnelUrl);
       await this.writeLog({
         category: "cloudflare-tunnel",
         level: "info",
         message: "Cloudflare quick tunnel active",
-        context: { tunnelUrl, localPort },
+        context: { tunnelUrl, localPort, processPid: this.process?.pid },
       });
       return this.getSnapshot();
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       this.setStatus({
         processState: "failed",
+        healthState: "failed",
         processPid: undefined,
         lastError: message,
         message: "临时公网隧道创建失败，请重试或切换到云中继。",
@@ -144,6 +162,9 @@ export class CloudflareTunnelController {
   }
 
   async stop(): Promise<void> {
+    this.stopHealthChecks();
+    this.activeTunnelUrl = undefined;
+    this.healthFailures = 0;
     const child = this.process;
     this.process = undefined;
     if (child && !child.killed) {
@@ -160,6 +181,8 @@ export class CloudflareTunnelController {
     if (this.status.processState !== "idle") {
       this.setStatus({
         processState: "stopped",
+        healthState: "idle",
+        consecutiveHealthFailures: 0,
         tunnelUrl: undefined,
         processPid: undefined,
         message: "临时公网隧道已停止。",
@@ -254,16 +277,26 @@ export class CloudflareTunnelController {
         }
       };
 
-      const inspectOutput = (raw: Buffer) => {
-        const text = raw.toString();
+      const inspectOutput = (stream: "stdout" | "stderr", raw: Buffer) => {
+        const text = trimOutput(raw.toString());
+        if (!text) {
+          return;
+        }
+        this.setStatus(stream === "stdout" ? { lastStdout: text } : { lastStderr: text });
+        void this.writeLog({
+          category: "cloudflare-tunnel",
+          level: stream === "stderr" && /\b(error|failed|disconnect)\b/i.test(text) ? "warn" : "info",
+          message: `cloudflared ${stream}`,
+          context: { output: text },
+        });
         const match = text.match(TRY_CLOUDFLARE_URL_PATTERN);
         if (match?.[0]) {
           finish(match[0]);
         }
       };
 
-      child.stdout.on("data", inspectOutput);
-      child.stderr.on("data", inspectOutput);
+      child.stdout.on("data", (raw: Buffer) => inspectOutput("stdout", raw));
+      child.stderr.on("data", (raw: Buffer) => inspectOutput("stderr", raw));
       child.once("error", (error) => finish(error));
       child.once("exit", (code) => {
         if (!settled) {
@@ -274,9 +307,12 @@ export class CloudflareTunnelController {
           return;
         }
         this.process = undefined;
+        this.stopHealthChecks();
+        this.activeTunnelUrl = undefined;
         const message = `cloudflared_exited:${code ?? "unknown"}`;
         this.setStatus({
           processState: "failed",
+          healthState: "failed",
           tunnelUrl: undefined,
           processPid: undefined,
           lastExitCode: code,
@@ -291,5 +327,82 @@ export class CloudflareTunnelController {
         });
       });
     });
+  }
+
+  private startHealthChecks(tunnelUrl: string): void {
+    this.stopHealthChecks();
+    const check = () => void this.checkHealth(tunnelUrl);
+    this.healthTimer = setInterval(check, HEALTH_CHECK_INTERVAL_MS);
+    check();
+  }
+
+  private stopHealthChecks(): void {
+    if (this.healthTimer) {
+      clearInterval(this.healthTimer);
+      this.healthTimer = undefined;
+    }
+  }
+
+  private async checkHealth(tunnelUrl: string): Promise<void> {
+    if (!this.process || this.activeTunnelUrl !== tunnelUrl) {
+      return;
+    }
+
+    const checkedAt = new Date().toISOString();
+    try {
+      const healthUrl = new URL("/health", tunnelUrl);
+      const response = await fetch(healthUrl, {
+        signal: AbortSignal.timeout(HEALTH_CHECK_TIMEOUT_MS),
+      });
+      const payload = response.ok ? (await response.json().catch(() => undefined)) as { ok?: unknown } | undefined : undefined;
+      if (!response.ok || payload?.ok !== true) {
+        throw new Error(`health_check_failed:${response.status}`);
+      }
+
+      const wasDegraded = this.healthFailures > 0 || this.status.processState === "failed";
+      this.healthFailures = 0;
+      this.setStatus({
+        processState: "active",
+        healthState: "healthy",
+        consecutiveHealthFailures: 0,
+        lastHealthCheckAt: checkedAt,
+        tunnelUrl,
+        lastError: undefined,
+        message: "临时公网地址已生成。",
+      });
+      await this.writeLog({
+        category: "cloudflare-tunnel",
+        level: "info",
+        message: wasDegraded ? "Cloudflare quick tunnel health recovered" : "Cloudflare quick tunnel health check passed",
+        context: { tunnelUrl, checkedAt },
+      });
+    } catch (error) {
+      this.healthFailures += 1;
+      const isFailed = this.healthFailures >= MAX_HEALTH_FAILURES;
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      this.setStatus({
+        processState: isFailed ? "failed" : "active",
+        healthState: isFailed ? "failed" : "degraded",
+        consecutiveHealthFailures: this.healthFailures,
+        lastHealthCheckAt: checkedAt,
+        tunnelUrl: isFailed ? undefined : tunnelUrl,
+        lastError: errorMessage,
+        message: isFailed
+          ? "临时公网隧道已断开，请重新开房。"
+          : "临时公网连接有波动，正在确认…",
+      });
+      await this.writeLog({
+        category: "cloudflare-tunnel",
+        level: isFailed ? "error" : "warn",
+        message: "Cloudflare quick tunnel health check failed",
+        context: {
+          tunnelUrl,
+          checkedAt,
+          consecutiveFailures: this.healthFailures,
+          maxFailures: MAX_HEALTH_FAILURES,
+          error: errorMessage,
+        },
+      });
+    }
   }
 }

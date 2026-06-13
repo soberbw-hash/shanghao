@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 
-import type { DiagnosticsSnapshot } from "@private-voice/shared";
+import type { AppSettings, DiagnosticsSnapshot } from "@private-voice/shared";
 
 import { Button } from "../components/base/Button";
 import { PageContainer } from "../components/layout/PageContainer";
@@ -37,6 +37,7 @@ export const SettingsPage = () => {
   const inputDevices = useAudioStore((state) => state.inputDevices);
   const outputDevices = useAudioStore((state) => state.outputDevices);
   const [diagnostics, setDiagnostics] = useState<DiagnosticsSnapshot>();
+  const [saveNotice, setSaveNotice] = useState("设置会自动保存");
 
   const micTest = useMicTest({
     inputDeviceId: settings?.preferredInputDeviceId,
@@ -60,6 +61,22 @@ export const SettingsPage = () => {
     void window.desktopApi.diagnostics.snapshot().then(setDiagnostics);
   };
 
+  const handleSaveSettings = async (patch: Partial<AppSettings>): Promise<void> => {
+    setSaveNotice("正在保存…");
+    try {
+      await saveSettings(patch);
+      setSaveNotice("已保存");
+    } catch (error) {
+      setSaveNotice("保存失败");
+      pushToast({
+        tone: "danger",
+        title: "设置保存失败",
+        description: error instanceof Error ? error.message : "请稍后重试。",
+      });
+      throw error;
+    }
+  };
+
   const handleMicTest = () => {
     void micTest.toggle().catch((error) => {
       pushToast({
@@ -73,6 +90,28 @@ export const SettingsPage = () => {
 
   const handleRefreshNetwork = () => {
     void Promise.all([refreshTailscale(), refreshNetworkSnapshot()]).then(refreshDiagnostics);
+  };
+
+  const handleTestRelay = async () => {
+    await refreshNetworkSnapshot();
+    const result = useSettingsStore.getState().networkSnapshot?.relay;
+    pushToast({
+      tone: result?.isReachable ? "success" : "danger",
+      title: result?.isReachable ? "云中继可用" : "云中继不可用",
+      description: result?.message ?? "暂时没有检测结果。",
+    });
+    return result;
+  };
+
+  const handleTestDirectHost = async () => {
+    await refreshNetworkSnapshot();
+    const result = useSettingsStore.getState().networkSnapshot?.directHost;
+    pushToast({
+      tone: result?.reachability === "reachable" ? "success" : "neutral",
+      title: result?.reachability === "reachable" ? "公网直连可用" : "公网直连尚未确认",
+      description: result?.message ?? "暂时没有检测结果。",
+    });
+    return result;
   };
 
   const handleExportLogs = () => {
@@ -126,13 +165,16 @@ export const SettingsPage = () => {
   return (
     <PageContainer className="overflow-y-auto">
       <SettingsPageHeader onBack={() => navigate("home")} />
+      <div className="mb-3 flex justify-end text-xs text-[#667085]" aria-live="polite">
+        {saveNotice}
+      </div>
       <div className="space-y-4">
         <ProfileSettingsCard
           settings={settings}
           avatarDataUrl={avatarDataUrl}
           onPickAvatar={() => void pickAvatar()}
           onClearAvatar={() => void clearAvatar()}
-          onChange={(patch) => void saveSettings(patch)}
+          onChange={(patch) => void handleSaveSettings(patch)}
         />
         <AudioSettingsCard
           settings={settings}
@@ -141,21 +183,23 @@ export const SettingsPage = () => {
           isMicTesting={micTest.isTesting}
           micTestLevel={micTest.level}
           onToggleMicTest={handleMicTest}
-          onChange={(patch) => void saveSettings(patch)}
+          onChange={(patch) => void handleSaveSettings(patch)}
         />
-        <ShortcutSettingsCard settings={settings} onChange={(patch) => void saveSettings(patch)} />
+        <ShortcutSettingsCard settings={settings} onChange={(patch) => void handleSaveSettings(patch)} />
         <NetworkSettingsCard
           settings={settings}
           tailscaleStatus={tailscaleStatus}
           networkSnapshot={networkSnapshot}
           runtimeInfo={runtimeInfo}
           updateInfo={updateInfo}
-          onChange={(patch) => void saveSettings(patch)}
+          onChange={handleSaveSettings}
           onRefresh={handleRefreshNetwork}
+          onTestRelay={handleTestRelay}
+          onTestDirectHost={handleTestDirectHost}
           onCheckUpdates={handleCheckUpdates}
           onOpenReleases={() => void openReleases()}
         />
-        <AppearanceSettingsCard settings={settings} onChange={(patch) => void saveSettings(patch)} />
+        <AppearanceSettingsCard settings={settings} onChange={(patch) => void handleSaveSettings(patch)} />
         <DiagnosticsSettingsCard
           diagnostics={diagnostics}
           onOpenLogs={handleOpenLogs}

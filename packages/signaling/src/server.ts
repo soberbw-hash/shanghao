@@ -340,7 +340,7 @@ export class SignalingServer extends EventEmitter {
 
   private broadcastAudioChunk(message: AudioChunkMessage): void {
     const room = this.roomManager.getRoom(message.roomId);
-    if (!room) {
+    if (!room || Date.now() - message.sentAt > 1_000) {
       return;
     }
 
@@ -349,10 +349,11 @@ export class SignalingServer extends EventEmitter {
       roomId: message.roomId,
       peerId: message.peerId,
       sequence: message.sequence,
+      sentAt: message.sentAt,
+      durationMs: message.durationMs,
       sampleRate: message.sampleRate,
       channelCount: 1,
       data: message.data,
-      createdAt: message.createdAt,
     };
 
     for (const peer of room.peers.listPeers()) {

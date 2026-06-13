@@ -138,10 +138,11 @@ test("signaling server relays fallback audio chunks to other room members only",
       roomId: "audio-relay-room",
       peerId: "host-peer",
       sequence: 1,
+      sentAt: Date.now(),
+      durationMs: 40,
       sampleRate: 48000,
       channelCount: 1,
       data: "AAAA",
-      createdAt: new Date().toISOString(),
     }),
   );
 

@@ -234,6 +234,7 @@ export class RoomClient {
     if (payload.type === "close") {
       this.stopHeartbeat();
       this.clearPendingConnection();
+      this.audioRelay?.resetTransport("signaling_socket_closed");
 
       if (!this.shouldReconnect) {
         return;
@@ -316,6 +317,7 @@ export class RoomClient {
         this.peers.get(peerId)?.destroy();
         this.peers.delete(peerId);
         this.webrtcReadyPeerIds.delete(peerId);
+        this.audioRelay?.clearPeer(peerId, "peer_left_room");
         this.options.onRemoteStream(peerId, undefined);
       }
     }
@@ -457,6 +459,7 @@ export class RoomClient {
       onConnectionStateChange: (state) => {
         if (state === "connected") {
           this.webrtcReadyPeerIds.add(targetPeerId);
+          this.audioRelay?.clearPeer(targetPeerId, "webrtc_connected");
           this.updateAudioRelaySending();
           void writeRendererLog("webrtc", "info", "Peer connection connected", {
             targetPeerId,
@@ -467,6 +470,7 @@ export class RoomClient {
 
         if (state === "failed" || state === "disconnected" || state === "closed") {
           this.webrtcReadyPeerIds.delete(targetPeerId);
+          this.audioRelay?.clearPeer(targetPeerId, `webrtc_${state}`);
           this.updateAudioRelaySending();
           this.options.onRemoteStream(targetPeerId, undefined);
           void writeRendererLog("webrtc", "warn", "Peer connection unavailable, audio relay fallback enabled", {

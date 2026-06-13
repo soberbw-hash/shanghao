@@ -18,10 +18,16 @@ test("webrtc prefers domestic stun and buffers early ICE candidates", () => {
 
 test("room client marks webrtc ready from connection state instead of remote stream", () => {
   const source = read("apps/desktop/src/renderer/src/features/room/roomClient.ts");
+  const relay = read("apps/desktop/src/renderer/src/features/room/signalingAudioRelay.ts");
 
   assert.equal(source.includes('if (state === "connected")'), true);
   assert.equal(source.includes("this.webrtcReadyPeerIds.add(targetPeerId)"), true);
+  assert.equal(source.includes('this.audioRelay?.clearPeer(targetPeerId, "webrtc_connected")'), true);
   assert.equal(source.includes('state === "closed"'), true);
+  assert.equal(relay.includes("MAX_PACKET_AGE_MS = 1_000"), true);
+  assert.equal(relay.includes("MAX_QUEUE_DURATION_MS = 800"), true);
+  assert.equal(relay.includes("MAX_QUEUE_CHUNKS = 20"), true);
+  assert.equal(relay.includes("droppedExpiredChunks"), true);
 });
 
 test("tailscale selects 100.x before MagicDNS", () => {
@@ -46,6 +52,9 @@ test("cloudflare tunnel mode is wired into shared types and host lifecycle", () 
   assert.equal(hostSession.includes("this.cloudflareTunnel?.stop()"), true);
   assert.equal(tunnel.includes("trycloudflare"), true);
   assert.equal(tunnel.includes("Cloudflare quick tunnel exited unexpectedly"), true);
+  assert.equal(tunnel.includes("HEALTH_CHECK_INTERVAL_MS = 20_000"), true);
+  assert.equal(tunnel.includes("MAX_HEALTH_FAILURES = 3"), true);
+  assert.equal(tunnel.includes("Cloudflare quick tunnel health recovered"), true);
 });
 
 test("relay status checks both health endpoint and websocket", () => {
@@ -54,6 +63,7 @@ test("relay status checks both health endpoint and websocket", () => {
   assert.equal(relayStatus.includes('healthUrl.pathname = "/health"'), true);
   assert.equal(relayStatus.includes("probeHealth(normalizedUrl)"), true);
   assert.equal(relayStatus.includes("probeWebSocket(normalizedUrl)"), true);
+  assert.equal(relayStatus.includes("const isReachable = isWebSocketReachable"), true);
 });
 
 test("windows executable and shortcut use cache-busting v3 icons", () => {
@@ -61,6 +71,8 @@ test("windows executable and shortcut use cache-busting v3 icons", () => {
   const installer = read("apps/desktop/build/installer.nsh");
 
   assert.equal(builder.includes("icon: shanghao-icon-v3.ico"), true);
-  assert.equal(builder.includes("signAndEditExecutable: true"), true);
+  assert.equal(builder.includes("signAndEditExecutable: false"), true);
+  assert.equal(builder.includes("afterPack: ../../scripts/after-pack.cjs"), true);
+  assert.equal(read("scripts/after-pack.cjs").includes("shanghao-icon-v3.ico"), true);
   assert.equal(installer.includes("shanghao-shortcut-v3.ico"), true);
 });
