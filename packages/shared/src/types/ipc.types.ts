@@ -11,6 +11,7 @@ import type {
   DiagnosticsSnapshot,
   LogCategory,
   LogEntry,
+  RendererDiagnosticsSummary,
 } from "./diagnostics.types";
 import type { HostSessionInfo, JoinRoomDiagnostic } from "./room.types";
 import type {
@@ -67,7 +68,7 @@ export interface DesktopApi {
   diagnostics: {
     snapshot: () => Promise<DiagnosticsSnapshot>;
     exportLogs: () => Promise<DiagnosticsSnapshot>;
-    exportBundle: () => Promise<DiagnosticsSnapshot>;
+    exportBundle: (rendererState?: RendererDiagnosticsSummary) => Promise<DiagnosticsSnapshot>;
     openLogsDirectory: () => Promise<void>;
   };
   shortcuts: {

@@ -12,11 +12,10 @@ export const DiagnosticsSettingsCard = ({
   onOpenLogs: () => void;
   onExportBundle: () => void;
 }) => (
-  <SettingsSection title="日志与诊断" description="出问题时先看这里。">
+  <SettingsSection title="日志与诊断" description="出问题时导出诊断包发给开发者。">
     <div className="space-y-3">
       <div className="rounded-[16px] border border-[#E7ECF2] bg-[#F8FAFC] p-4 text-sm text-[#667085]">
         <div>日志目录：{diagnostics?.logsDirectory || "读取中…"}</div>
-        <div className="mt-2">最近导出日志：{diagnostics?.lastExportPath || "还没有导出记录"}</div>
         <div className="mt-2">最近导出诊断包：{diagnostics?.lastBundlePath || "还没有导出记录"}</div>
         <div className="mt-2">更新检查：{diagnostics?.lastUpdateCheckMessage || "还没有检查更新"}</div>
       </div>

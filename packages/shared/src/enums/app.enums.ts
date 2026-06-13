@@ -14,6 +14,7 @@ export enum RoomConnectionState {
   Handshaking = "handshaking",
   Connected = "connected",
   Reconnecting = "reconnecting",
+  Degraded = "degraded",
   Disconnected = "disconnected",
   Failed = "failed",
 }

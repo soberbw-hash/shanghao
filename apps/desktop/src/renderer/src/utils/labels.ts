@@ -14,6 +14,7 @@ const roomConnectionLabels: Record<RoomConnectionState, string> = {
   [RoomConnectionState.Handshaking]: "握手中",
   [RoomConnectionState.Connected]: "已连接",
   [RoomConnectionState.Reconnecting]: "重连中",
+  [RoomConnectionState.Degraded]: "连接波动",
   [RoomConnectionState.Disconnected]: "已断开",
   [RoomConnectionState.Failed]: "失败",
 };
@@ -86,6 +87,10 @@ export const getPrimaryRoomStatus = ({
 
   if (connectionState === RoomConnectionState.Reconnecting) {
     return { label: "重连中", tone: "warning" };
+  }
+
+  if (connectionState === RoomConnectionState.Degraded) {
+    return { label: "语音可用，信令重连中", tone: "warning" };
   }
 
   if (connectionState === RoomConnectionState.Failed) {

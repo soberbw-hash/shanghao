@@ -188,7 +188,7 @@ export const NetworkSettingsCard = ({
                 }}
                 onBlur={() => void saveDirect()}
               />
-              <Button variant="secondary" onClick={() => void testDirect()} disabled={directFeedback.tone === "loading"}>
+              <Button variant="secondary" className="min-w-[104px] whitespace-nowrap" onClick={() => void testDirect()} disabled={directFeedback.tone === "loading"}>
                 测试地址
               </Button>
             </div>
@@ -207,7 +207,7 @@ export const NetworkSettingsCard = ({
                 }}
                 onBlur={() => void saveRelay()}
               />
-              <Button variant="secondary" onClick={() => void testRelay()} disabled={relayFeedback.tone === "loading"}>
+              <Button variant="secondary" className="min-w-[104px] whitespace-nowrap" onClick={() => void testRelay()} disabled={relayFeedback.tone === "loading"}>
                 {relayFeedback.tone === "loading" ? "测试中…" : "测试连接"}
               </Button>
             </div>
@@ -228,12 +228,12 @@ export const NetworkSettingsCard = ({
           <div className="mt-1">更新状态：{updateInfo?.message ?? "还没有检查更新"}</div>
         </div>
         <div className="flex flex-wrap gap-3">
-          <Button variant="secondary" onClick={onRefresh}>重新检测</Button>
-          <Button variant="secondary" onClick={() => void window.desktopApi.tailscale.openInstallGuide()}>
+          <Button variant="secondary" className="whitespace-nowrap" onClick={onRefresh}>重新检测</Button>
+          <Button variant="secondary" className="whitespace-nowrap" onClick={() => void window.desktopApi.tailscale.openInstallGuide()}>
             打开 Tailscale 页面
           </Button>
-          <Button variant="secondary" onClick={onCheckUpdates}>检查更新</Button>
-          <Button variant="secondary" onClick={onOpenReleases}>查看 Releases</Button>
+          <Button variant="secondary" className="whitespace-nowrap" onClick={onCheckUpdates}>检查更新</Button>
+          <Button variant="secondary" className="whitespace-nowrap" onClick={onOpenReleases}>查看 Releases</Button>
         </div>
       </div>
     </SettingsSection>

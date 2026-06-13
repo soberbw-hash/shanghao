@@ -129,7 +129,7 @@ export const registerIpcHandlers = ({
   ipcMain.handle(IPC_CHANNELS.diagnostics.snapshot, async (): Promise<DiagnosticsSnapshot> => diagnostics.getSnapshot());
   ipcMain.handle(IPC_CHANNELS.diagnostics.exportLogs, async (): Promise<DiagnosticsSnapshot> => diagnostics.exportLogs());
 
-  ipcMain.handle(IPC_CHANNELS.diagnostics.exportBundle, async (): Promise<DiagnosticsSnapshot> => {
+  ipcMain.handle(IPC_CHANNELS.diagnostics.exportBundle, async (_event, rendererState): Promise<DiagnosticsSnapshot> => {
     const settings = settingsStore.getSnapshot();
     const network = await getNetworkStatusSnapshot(settings, (payload) => diagnostics.writeLog(payload));
     const summary = await buildDiagnosticsSummary({
@@ -149,6 +149,10 @@ export const registerIpcHandlers = ({
       {
         name: "host-session.json",
         content: JSON.stringify(hostSession.getSnapshot() ?? null, null, 2),
+      },
+      {
+        name: "renderer-session.json",
+        content: JSON.stringify(rendererState ?? null, null, 2),
       },
     ]);
   });

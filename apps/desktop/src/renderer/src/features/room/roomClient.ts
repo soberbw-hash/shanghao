@@ -40,6 +40,9 @@ interface RoomClientOptions {
   onRemoteStream: (peerId: string, stream: MediaStream | undefined) => void;
   onChatMessage: (message: ChatMessage) => void;
   onDiagnosticEvent?: (payload: SignalingEventPayload) => void;
+  onReconnectAttempt?: (attempt: number) => void;
+  onReconnectExhausted?: (error: Error) => void;
+  onSnapshotRevision?: (revision: number) => void;
 }
 
 interface PendingConnection {
@@ -49,6 +52,7 @@ interface PendingConnection {
 }
 
 const INITIAL_CONNECT_TIMEOUT_MS = 10_000;
+const MAX_RECONNECT_ATTEMPTS = 4;
 
 export class RoomClient {
   private readonly backoff = new ExponentialBackoff(DEFAULT_RECONNECT_DELAYS_MS);
@@ -70,6 +74,14 @@ export class RoomClient {
   private audioRelay?: SignalingAudioRelay;
   private readonly remotePeerIds = new Set<string>();
   private readonly webrtcReadyPeerIds = new Set<string>();
+  private reconnectAttempts = 0;
+  private lastSnapshotRevision = 0;
+  private isSignalingConnected = false;
+  private isDisconnecting = false;
+  private lastSocketCloseCode?: number;
+  private lastSocketCloseReason?: string;
+  private lastSocketClosedAt?: string;
+  private chatSendFailures = 0;
 
   constructor(private readonly options: RoomClientOptions) {
     this.localStream = options.localStream;
@@ -89,7 +101,11 @@ export class RoomClient {
     return this.openSocket(false);
   }
 
-  disconnect(): void {
+  async disconnect(): Promise<void> {
+    if (this.isDisconnecting) {
+      return;
+    }
+    this.isDisconnecting = true;
     this.shouldReconnect = false;
     this.clearPendingConnection();
     this.stopHeartbeat();
@@ -97,11 +113,13 @@ export class RoomClient {
       window.clearTimeout(this.reconnectTimer);
     }
 
-    void this.send({
-      type: "leave_room",
-      roomId: this.options.roomId,
-      peerId: this.options.peerId,
-    });
+    if (this.isSignalingConnected) {
+      await this.safeSend({
+        type: "leave_room",
+        roomId: this.options.roomId,
+        peerId: this.options.peerId,
+      });
+    }
 
     this.clearPeers();
     this.audioRelay?.destroy();
@@ -110,8 +128,27 @@ export class RoomClient {
     this.webrtcReadyPeerIds.clear();
     this.unsubscribeEvents?.();
     this.unsubscribeEvents = undefined;
-    void window.desktopApi.signaling.close();
+    this.isSignalingConnected = false;
+    await window.desktopApi.signaling.close().catch(() => undefined);
     this.options.onConnectionState(RoomConnectionState.Disconnected);
+  }
+
+  canSendChat(): boolean {
+    return this.isSignalingConnected && this.hasJoinedOnce && !this.isDisconnecting;
+  }
+
+  getDiagnostics() {
+    return {
+      currentPeerId: this.options.peerId,
+      reconnectAttempts: this.reconnectAttempts,
+      lastSocketCloseCode: this.lastSocketCloseCode,
+      lastSocketCloseReason: this.lastSocketCloseReason,
+      lastSocketClosedAt: this.lastSocketClosedAt,
+      audioRelayState: this.audioRelay ? ("active" as const) : ("inactive" as const),
+      remotePeerCount: this.remotePeerIds.size,
+      roomSnapshotRevision: this.lastSnapshotRevision,
+      chatSendFailures: this.chatSendFailures,
+    };
   }
 
   updateMuteState(isMuted: boolean, isSpeaking: boolean): void {
@@ -122,7 +159,7 @@ export class RoomClient {
     this.lastPublishedMuteState = isMuted;
     this.lastPublishedSpeakingState = isSpeaking;
     this.audioRelay?.setMuted(isMuted);
-    void this.send({
+    void this.safeSend({
       type: "member_state",
       roomId: this.options.roomId,
       peerId: this.options.peerId,
@@ -144,7 +181,7 @@ export class RoomClient {
     this.lastPublishedNickname = nickname;
     this.lastPublishedAvatarDataUrl = avatarDataUrl;
 
-    void this.send({
+    void this.safeSend({
       type: "member_state",
       roomId: this.options.roomId,
       peerId: this.options.peerId,
@@ -183,7 +220,9 @@ export class RoomClient {
       this.unsubscribeEvents?.();
       this.unsubscribeEvents = window.desktopApi.signaling.onEvent((payload) => {
         this.options.onDiagnosticEvent?.(payload);
-        void this.handleBridgeEvent(payload);
+        void this.handleBridgeEvent(payload).catch((error) => {
+          this.handleBridgeFailure(error);
+        });
       });
 
       void window.desktopApi.signaling.connect(this.options.signalingUrl).catch((error) => {
@@ -194,6 +233,7 @@ export class RoomClient {
 
   private async handleBridgeEvent(payload: SignalingEventPayload): Promise<void> {
     if (payload.type === "open") {
+      this.isSignalingConnected = true;
       this.options.onConnectionState(
         this.hasJoinedOnce ? RoomConnectionState.Reconnecting : RoomConnectionState.Handshaking,
       );
@@ -232,8 +272,11 @@ export class RoomClient {
     }
 
     if (payload.type === "close") {
+      this.lastSocketCloseCode = payload.code;
+      this.lastSocketCloseReason = payload.reason;
+      this.lastSocketClosedAt = new Date().toISOString();
       this.stopHeartbeat();
-      this.clearPendingConnection();
+      this.isSignalingConnected = false;
       this.audioRelay?.resetTransport("signaling_socket_closed");
 
       if (!this.shouldReconnect) {
@@ -241,12 +284,17 @@ export class RoomClient {
       }
 
       if (!this.hasJoinedOnce) {
+        this.rejectPendingConnection(new Error("signaling_socket_closed"));
         this.options.onConnectionState(RoomConnectionState.Failed);
         return;
       }
 
-      this.options.onConnectionState(RoomConnectionState.Reconnecting);
-      this.clearPeers();
+      this.clearPendingConnection();
+      this.options.onConnectionState(
+        this.webrtcReadyPeerIds.size > 0
+          ? RoomConnectionState.Degraded
+          : RoomConnectionState.Reconnecting,
+      );
       this.reconnect();
     }
   }
@@ -280,6 +328,16 @@ export class RoomClient {
   }
 
   private async handleRoomSnapshot(snapshot: RoomSnapshotMessage): Promise<void> {
+    if (snapshot.revision <= this.lastSnapshotRevision) {
+      void writeRendererLog("signaling", "warn", "Ignored stale room snapshot", {
+        roomId: snapshot.roomId,
+        revision: snapshot.revision,
+        lastSnapshotRevision: this.lastSnapshotRevision,
+      });
+      return;
+    }
+    this.lastSnapshotRevision = snapshot.revision;
+    this.options.onSnapshotRevision?.(snapshot.revision);
     this.options.onRoomName(snapshot.roomName);
     const normalizedMembers = snapshot.members.map((member) => ({
       ...member,
@@ -299,6 +357,7 @@ export class RoomClient {
         : RoomConnectionState.Connected,
     );
     this.backoff.reset();
+    this.reconnectAttempts = 0;
     this.hasJoinedOnce = true;
     this.resolvePendingConnection();
 
@@ -377,21 +436,30 @@ export class RoomClient {
     this.rejectPendingConnection(new Error(payload.message || payload.code));
   }
 
-  sendChatMessage(content: string): void {
+  async sendChatMessage(content: string): Promise<void> {
     const trimmed = content.trim();
     if (!trimmed) {
-      return;
+      throw new Error("empty_chat_message");
     }
 
-    void this.send({
-      type: "chat_message",
-      roomId: this.options.roomId,
-      peerId: this.options.peerId,
-      nickname: this.nickname,
-      avatarDataUrl: this.avatarDataUrl,
-      content: trimmed,
-      createdAt: new Date().toISOString(),
-    });
+    if (!this.canSendChat()) {
+      throw new Error("signaling_not_connected");
+    }
+
+    try {
+      await this.send({
+        type: "chat_message",
+        roomId: this.options.roomId,
+        peerId: this.options.peerId,
+        nickname: this.nickname,
+        avatarDataUrl: this.avatarDataUrl,
+        content: trimmed,
+        createdAt: new Date().toISOString(),
+      });
+    } catch (error) {
+      this.chatSendFailures += 1;
+      throw error;
+    }
   }
 
   private handleChatMessage(payload: SignalChatMessage): void {
@@ -448,7 +516,7 @@ export class RoomClient {
         this.options.onRemoteStream(targetPeerId, stream);
       },
       onIceCandidate: (candidate) => {
-        void this.send({
+        void this.safeSend({
           type: "ice_candidate",
           roomId: this.options.roomId,
           peerId: this.options.peerId,
@@ -495,13 +563,45 @@ export class RoomClient {
   }
 
   private async send(payload: SignalEnvelope): Promise<void> {
+    if (!this.isSignalingConnected) {
+      throw new Error("signaling_not_connected");
+    }
     await window.desktopApi.signaling.send(JSON.stringify(payload));
+  }
+
+  private handleBridgeFailure(error: unknown): void {
+    const normalizedError = error instanceof Error ? error : new Error(String(error));
+    void writeRendererLog("signaling", "error", "Signaling bridge handler failed", {
+      roomId: this.options.roomId,
+      peerId: this.options.peerId,
+      error: normalizedError.message,
+    });
+    this.isSignalingConnected = false;
+    this.rejectPendingConnection(normalizedError);
+    void window.desktopApi.signaling.close().catch(() => undefined);
+  }
+
+  private async safeSend(payload: SignalEnvelope): Promise<boolean> {
+    if (!this.isSignalingConnected) {
+      return false;
+    }
+
+    try {
+      await this.send(payload);
+      return true;
+    } catch (error) {
+      void writeRendererLog("signaling", "warn", "Skipped signaling send", {
+        type: payload.type,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return false;
+    }
   }
 
   private startHeartbeat(): void {
     this.stopHeartbeat();
     this.heartbeatTimer = window.setInterval(() => {
-      void this.send({
+      void this.safeSend({
         type: "heartbeat",
         roomId: this.options.roomId,
         peerId: this.options.peerId,
@@ -520,9 +620,38 @@ export class RoomClient {
       window.clearTimeout(this.reconnectTimer);
     }
 
+    if (this.reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
+      const error = new Error("signaling_reconnect_exhausted");
+      this.shouldReconnect = false;
+      this.options.onConnectionState(RoomConnectionState.Failed);
+      this.clearPeers();
+      this.audioRelay?.destroy();
+      this.audioRelay = undefined;
+      this.options.onReconnectExhausted?.(error);
+      return;
+    }
+
+    this.reconnectAttempts += 1;
+    this.options.onReconnectAttempt?.(this.reconnectAttempts);
     const delay = this.backoff.nextDelay();
+    void writeRendererLog("signaling", "warn", "Scheduling signaling reconnect", {
+      roomId: this.options.roomId,
+      peerId: this.options.peerId,
+      attempt: this.reconnectAttempts,
+      delay,
+    });
     this.reconnectTimer = window.setTimeout(() => {
-      void this.openSocket(true).catch(() => undefined);
+      void this.openSocket(true).catch((error) => {
+        void writeRendererLog("signaling", "warn", "Signaling reconnect attempt failed", {
+          roomId: this.options.roomId,
+          peerId: this.options.peerId,
+          attempt: this.reconnectAttempts,
+          error: error instanceof Error ? error.message : String(error),
+        });
+        if (this.shouldReconnect) {
+          this.reconnect();
+        }
+      });
     }, delay);
   }
 

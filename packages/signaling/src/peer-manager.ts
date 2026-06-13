@@ -16,6 +16,7 @@ export interface PeerSession {
   isSpeaking: boolean;
   joinedAt: string;
   lastHeartbeatAt: number;
+  disconnectedAt?: number;
 }
 
 export class PeerManager {
@@ -35,6 +36,20 @@ export class PeerManager {
 
   listPeers(): PeerSession[] {
     return [...this.peers.values()];
+  }
+
+  listConnectedPeers(): PeerSession[] {
+    return this.listPeers().filter((peer) => !peer.disconnectedAt);
+  }
+
+  markDisconnected(peerId: string, socket: WebSocket): boolean {
+    const peer = this.peers.get(peerId);
+    if (!peer || peer.socket !== socket) {
+      return false;
+    }
+
+    peer.disconnectedAt = Date.now();
+    return true;
   }
 
   updateHeartbeat(peerId: string): void {
@@ -68,13 +83,15 @@ export class PeerManager {
       isHost: peer.isHost,
       isLocal: peer.id === localPeerId,
       isMuted: peer.isMuted,
-      presenceState: MemberPresenceState.Online,
+      presenceState: peer.disconnectedAt
+        ? MemberPresenceState.Reconnecting
+        : MemberPresenceState.Online,
       speakingState: peer.isMuted
         ? MemberSpeakingState.Muted
         : peer.isSpeaking
           ? MemberSpeakingState.Speaking
           : MemberSpeakingState.Silent,
-      joinState: MemberJoinState.Joined,
+      joinState: peer.disconnectedAt ? MemberJoinState.Connecting : MemberJoinState.Joined,
       volume: 1,
       joinedAt: peer.joinedAt,
       connectionQuality: "good",

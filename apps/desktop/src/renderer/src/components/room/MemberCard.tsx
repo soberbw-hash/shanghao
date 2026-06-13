@@ -2,14 +2,16 @@ import { useState } from "react";
 import { ChevronDown, MicOff } from "lucide-react";
 import { motion } from "framer-motion";
 
-import { MemberSpeakingState, type RoomMember } from "@private-voice/shared";
+import {
+  MemberPresenceState,
+  MemberSpeakingState,
+  type RoomMember,
+} from "@private-voice/shared";
 
 import { AvatarPlaceholder } from "../base/AvatarPlaceholder";
 import { HostBadge } from "./HostBadge";
-import { MemberPresenceDot } from "./MemberPresenceDot";
 import { MemberVolumePopover } from "./MemberVolumePopover";
 import { SpeakingGlow } from "./SpeakingGlow";
-import { getMemberPresenceLabel } from "../../utils/labels";
 
 export const MemberCard = ({
   member,
@@ -33,6 +35,7 @@ export const MemberCard = ({
   }
 
   const isSpeaking = member.speakingState === MemberSpeakingState.Speaking;
+  const isReconnecting = member.presenceState === MemberPresenceState.Reconnecting;
 
   return (
     <button
@@ -42,11 +45,8 @@ export const MemberCard = ({
     >
       <SpeakingGlow isSpeaking={isSpeaking} />
       <div className="flex min-h-[52px] items-center gap-3">
-        <div className="relative shrink-0">
+        <div className="shrink-0">
           <AvatarPlaceholder name={member.nickname} src={member.avatarDataUrl} size="md" />
-          <span className="absolute -bottom-0.5 -right-0.5 rounded-full border-2 border-white">
-            <MemberPresenceDot presenceState={member.presenceState} />
-          </span>
         </div>
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
@@ -54,20 +54,18 @@ export const MemberCard = ({
             {member.isHost ? <HostBadge /> : null}
           </div>
           <div className="mt-1 flex items-center gap-2 text-xs text-[#667085]">
-            <span>{getMemberPresenceLabel(member.presenceState)}</span>
             {member.isMuted ? (
               <>
-                <span className="text-[#D0D5DD]">·</span>
                 <MicOff className="h-3.5 w-3.5 text-[#EF4444]" />
                 <span>静音</span>
               </>
             ) : null}
             {isSpeaking ? (
               <>
-                <span className="text-[#D0D5DD]">·</span>
                 <span className="text-[#2B84E9]">说话中</span>
               </>
             ) : null}
+            {isReconnecting ? <span className="text-[#B7791F]">重连中</span> : null}
           </div>
         </div>
         <ChevronDown

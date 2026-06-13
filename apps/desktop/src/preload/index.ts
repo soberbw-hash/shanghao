@@ -28,7 +28,7 @@ const desktopApi: DesktopApi = {
   diagnostics: {
     snapshot: () => ipcRenderer.invoke(IPC_CHANNELS.diagnostics.snapshot),
     exportLogs: () => ipcRenderer.invoke(IPC_CHANNELS.diagnostics.exportLogs),
-    exportBundle: () => ipcRenderer.invoke(IPC_CHANNELS.diagnostics.exportBundle),
+    exportBundle: (rendererState) => ipcRenderer.invoke(IPC_CHANNELS.diagnostics.exportBundle, rendererState),
     openLogsDirectory: () => ipcRenderer.invoke(IPC_CHANNELS.diagnostics.openLogsDirectory),
   },
   shortcuts: {

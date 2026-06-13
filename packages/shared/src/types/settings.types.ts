@@ -34,6 +34,7 @@ export interface AppSettings {
   isMemberJoinSoundEnabled: boolean;
   isMemberLeaveSoundEnabled: boolean;
   isConnectionSoundEnabled: boolean;
+  isUiSoundEnabled: boolean;
   isBackgroundUpdateCheckEnabled: boolean;
   lastUpdateCheckAt?: string;
   lastUpdateVersionSeen?: string;

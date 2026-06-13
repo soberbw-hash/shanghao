@@ -12,6 +12,7 @@ type ToneStep = {
 };
 
 let sharedContext: AudioContext | null = null;
+let lastClickAt = 0;
 
 const getAudioContext = () => {
   if (!sharedContext) {
@@ -64,6 +65,28 @@ export const useUiFeedbackSounds = (): void => {
   const previousMemberIdsRef = useRef(
     members.filter((member) => !member.isEmptySlot).map((member) => member.id),
   );
+
+  useEffect(() => {
+    if (!settings?.isUiSoundEnabled) {
+      return;
+    }
+
+    const handleClick = (event: MouseEvent) => {
+      const target = event.target instanceof Element ? event.target.closest("button") : null;
+      if (!(target instanceof HTMLButtonElement) || target.disabled) {
+        return;
+      }
+      const now = Date.now();
+      if (now - lastClickAt < 80) {
+        return;
+      }
+      lastClickAt = now;
+      playToneSequence([{ frequency: 620, durationMs: 35 }]);
+    };
+
+    document.addEventListener("click", handleClick, true);
+    return () => document.removeEventListener("click", handleClick, true);
+  }, [settings?.isUiSoundEnabled]);
 
   useEffect(() => {
     if (!settings) {

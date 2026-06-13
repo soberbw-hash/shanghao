@@ -1,7 +1,10 @@
 import {
+  APP_BUILD_NUMBER,
+  APP_PROTOCOL_VERSION,
   HEARTBEAT_INTERVAL_MS,
   MAX_ROOM_MEMBERS,
   SIGNALING_PING_TIMEOUT_MS,
+  type ConnectionMode,
 } from "@private-voice/shared";
 
 import type { PeerSession } from "./peer-manager";
@@ -12,6 +15,11 @@ export interface SignalingRoom {
   roomName: string;
   peers: PeerManager;
   relayToken?: string;
+  revision: number;
+  appVersion: string;
+  protocolVersion: string;
+  buildNumber: string;
+  connectionMode: ConnectionMode;
 }
 
 export class RoomManager {
@@ -31,6 +39,11 @@ export class RoomManager {
       roomName,
       peers: new PeerManager(),
       relayToken,
+      revision: 0,
+      appVersion: "unknown",
+      protocolVersion: APP_PROTOCOL_VERSION,
+      buildNumber: APP_BUILD_NUMBER,
+      connectionMode: "direct_host",
     };
 
     this.rooms.set(roomId, room);
@@ -59,6 +72,10 @@ export class RoomManager {
     }
   }
 
+  markPeerDisconnected(roomId: string, peerId: string, socket: PeerSession["socket"]): boolean {
+    return this.rooms.get(roomId)?.peers.markDisconnected(peerId, socket) ?? false;
+  }
+
   canJoin(roomId: string): boolean {
     const room = this.rooms.get(roomId);
     if (!room) {
@@ -71,10 +88,14 @@ export class RoomManager {
   collectStalePeers(): Array<{ roomId: string; peerId: string }> {
     const stalePeers: Array<{ roomId: string; peerId: string }> = [];
     const staleAfterMs = SIGNALING_PING_TIMEOUT_MS + HEARTBEAT_INTERVAL_MS;
+    const reconnectGraceMs = 20_000;
 
     for (const room of this.rooms.values()) {
       for (const peer of room.peers.listPeers()) {
-        if (Date.now() - peer.lastHeartbeatAt > staleAfterMs) {
+        if (
+          (peer.disconnectedAt && Date.now() - peer.disconnectedAt > reconnectGraceMs) ||
+          (!peer.disconnectedAt && Date.now() - peer.lastHeartbeatAt > staleAfterMs)
+        ) {
           stalePeers.push({ roomId: room.roomId, peerId: peer.id });
         }
       }

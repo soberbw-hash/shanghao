@@ -18,10 +18,11 @@ import { useSettingsStore } from "../store/settingsStore";
 import { buildShareableInviteUrl, isValidInviteUrl } from "../utils/invite";
 import { writeRendererLog } from "../utils/logger";
 
-const sharedPeerId = crypto.randomUUID();
 let activeClient: RoomClient | null = null;
 let activeSpeakingDetector: ReturnType<typeof createSpeakingDetector> | null = null;
 let previousMemberIds = new Set<string>();
+
+export const getRoomRuntimeDiagnostics = () => activeClient?.getDiagnostics();
 
 const copy = {
   startHostTitle: "房间启动失败",
@@ -205,6 +206,7 @@ export const useRoomState = () => {
   const clearHostEvents = useRoomStore((state) => state.clearHostEvents);
   const addChatMessage = useRoomStore((state) => state.addChatMessage);
   const clearChatMessages = useRoomStore((state) => state.clearChatMessages);
+  const setConnectionHealth = useRoomStore((state) => state.setConnectionHealth);
   const setLocalDiagnostics = useAudioStore((state) => state.setLocalDiagnostics);
   const isMuted = useAudioStore((state) => state.isMuted);
   const pushToast = useAppStore((state) => state.pushToast);
@@ -312,6 +314,30 @@ export const useRoomState = () => {
     setLocalStream(undefined);
   };
 
+  const cleanupPreviousSession = async ({
+    resetStore = false,
+    stopHost = false,
+  }: {
+    resetStore?: boolean;
+    stopHost?: boolean;
+  } = {}) => {
+    const client = activeClient;
+    activeClient = null;
+    if (client) {
+      await client.disconnect().catch(() => undefined);
+    }
+
+    stopLocalMedia();
+    previousMemberIds = new Set<string>();
+    setConnectionHealth({ reconnectAttempt: 0 });
+    if (stopHost) {
+      await window.desktopApi.host.stop().catch(() => undefined);
+    }
+    if (resetStore) {
+      useRoomStore.getState().resetRoom();
+    }
+  };
+
   const ensureLocalStream = async (preferredInputDeviceId?: string) => {
     const existingStream = useRoomStore.getState().localStream;
     existingStream?.getTracks().forEach((track) => track.stop());
@@ -354,11 +380,11 @@ export const useRoomState = () => {
   }) => {
     const stream = await ensureLocalStream();
 
-    activeClient?.disconnect();
+    const peerId = crypto.randomUUID();
     activeClient = new RoomClient({
       signalingUrl: connectUrl,
       roomId,
-      peerId: sharedPeerId,
+      peerId,
       nickname: settings?.nickname ?? "我",
       avatarDataUrl,
       localStream: stream,
@@ -397,6 +423,38 @@ export const useRoomState = () => {
             message: "等待好友加入",
           });
         }
+      },
+      onReconnectAttempt: (attempt) => {
+        setConnectionHealth({ reconnectAttempt: attempt, lastUpdatedAt: new Date().toISOString() });
+        pushHostEvent({
+          level: "warning",
+          message: `连接有波动，正在第 ${attempt} 次重连…`,
+        });
+      },
+      onReconnectExhausted: (error) => {
+        void writeRendererLog("signaling", "error", "Signaling reconnect exhausted", {
+          roomId,
+          peerId,
+          error: error.message,
+        });
+        void cleanupPreviousSession({ resetStore: true, stopHost: true }).then(() => {
+          setConnectionState(RoomConnectionState.Failed, "连接已断开，请重新加入房间。");
+          setLifecycleState(RoomLifecycleState.Failed);
+          pushToast({
+            tone: "danger",
+            title: "连接已断开",
+            description: "自动重连未成功，音频已经安全停止，请重新开房或加入。",
+          });
+          useAppStore.getState().navigate("home");
+        });
+      },
+      onSnapshotRevision: (revision) => {
+        setConnectionHealth({ lastUpdatedAt: new Date().toISOString() });
+        void writeRendererLog("signaling", "info", "Applied room snapshot", {
+          roomId,
+          peerId,
+          revision,
+        });
       },
       onRemoteStream: (remotePeerId, remoteStream) => {
         setRemoteStream(remotePeerId, remoteStream);
@@ -480,8 +538,7 @@ export const useRoomState = () => {
           connectionMode,
           error: error instanceof Error ? error.message : String(error),
         });
-        activeClient?.disconnect();
-        activeClient = null;
+        await cleanupPreviousSession();
       }
     }
 
@@ -536,6 +593,7 @@ export const useRoomState = () => {
     pushHostEvent({ level: "info", message: "正在启动房间" });
 
     try {
+      await cleanupPreviousSession({ stopHost: true });
       await writeRendererLog("connection-mode", "info", "Starting host room", {
         roomName: room.roomName,
         connectionMode: settings.connectionMode,
@@ -594,8 +652,7 @@ export const useRoomState = () => {
         error: error instanceof Error ? error.message : String(error),
       });
       await window.desktopApi.host.stop().catch(() => undefined);
-      stopLocalMedia();
-      activeClient = null;
+      await cleanupPreviousSession({ stopHost: true });
       setHostSession(undefined);
       setConnectionState(RoomConnectionState.Failed, description);
       setRoom({
@@ -624,6 +681,7 @@ export const useRoomState = () => {
     setLifecycleState(RoomLifecycleState.Opening);
 
     try {
+      await cleanupPreviousSession({ stopHost: true });
       const invite = parseInvite(inviteValue, settings.connectionMode);
       setConnectionMode(invite.connectionMode);
       await writeRendererLog("connection-mode", "info", "Joining room", invite);
@@ -657,8 +715,7 @@ export const useRoomState = () => {
         error: error instanceof Error ? error.message : String(error),
         signalingUrl: inviteValue,
       });
-      stopLocalMedia();
-      activeClient = null;
+      await cleanupPreviousSession();
       setConnectionState(RoomConnectionState.Failed, description);
       setRoom({ lifecycleState: RoomLifecycleState.Failed });
       pushToast({
@@ -713,13 +770,8 @@ export const useRoomState = () => {
 
   const leaveRoom = async () => {
     try {
-      activeSpeakingDetector?.destroy();
-      localStream?.getTracks().forEach((track) => track.stop());
-      activeClient?.disconnect();
-      activeClient = null;
-      activeSpeakingDetector = null;
-      await window.desktopApi.host.stop().catch(() => undefined);
-      useRoomStore.getState().resetRoom();
+      setLifecycleState(RoomLifecycleState.Closing);
+      await cleanupPreviousSession({ resetStore: true, stopHost: true });
       previousMemberIds = new Set<string>();
       lastProbeSignatureRef.current = "";
       lastCopiedInviteRef.current = "";
@@ -782,7 +834,28 @@ export const useRoomState = () => {
       return;
     }
 
-    activeClient.sendChatMessage(trimmed);
+    if (!activeClient.canSendChat()) {
+      pushToast({
+        tone: "warning",
+        title: "正在重连",
+        description: "信令恢复后再发送消息。",
+      });
+      throw new Error("signaling_not_connected");
+    }
+
+    try {
+      await activeClient.sendChatMessage(trimmed);
+    } catch (error) {
+      await writeRendererLog("signaling", "warn", "Chat message send failed", {
+        error: error instanceof Error ? error.message : String(error),
+      });
+      pushToast({
+        tone: "danger",
+        title: "消息发送失败",
+        description: "正在重连，请稍后再试。",
+      });
+      throw error;
+    }
   };
 
   return {

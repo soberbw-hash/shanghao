@@ -1,4 +1,5 @@
 import { ExportTaskState } from "../enums/app.enums";
+import type { RoomConnectionState, RoomLifecycleState } from "../enums/app.enums";
 import type {
   ConnectionMode,
   CloudflareTunnelStatus,
@@ -55,4 +56,22 @@ export interface DiagnosticsSnapshot {
   lastExportPath?: string;
   lastBundlePath?: string;
   lastUpdateCheckMessage?: string;
+}
+
+export interface RendererDiagnosticsSummary {
+  roomLifecycleState: RoomLifecycleState;
+  roomConnectionState: RoomConnectionState;
+  connectionMode: ConnectionMode;
+  currentRoomId?: string;
+  currentPeerId?: string;
+  reconnectAttempts: number;
+  lastSocketCloseCode?: number;
+  lastSocketCloseReason?: string;
+  lastSocketClosedAt?: string;
+  activeClientExists: boolean;
+  audioRelayState: "active" | "inactive";
+  localStreamActive: boolean;
+  remotePeerCount: number;
+  roomSnapshotRevision: number;
+  chatSendFailures: number;
 }

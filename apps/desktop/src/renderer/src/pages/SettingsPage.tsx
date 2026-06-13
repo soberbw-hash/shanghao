@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 
-import type { AppSettings, DiagnosticsSnapshot } from "@private-voice/shared";
+import type { AppSettings, DiagnosticsSnapshot, RendererDiagnosticsSummary } from "@private-voice/shared";
 
 import { Button } from "../components/base/Button";
 import { PageContainer } from "../components/layout/PageContainer";
@@ -13,9 +13,11 @@ import { SettingsPageHeader } from "../components/settings/SettingsPageHeader";
 import { ShortcutSettingsCard } from "../components/settings/ShortcutSettingsCard";
 import { StartupSplashPage } from "../components/status/StartupSplashPage";
 import { useMicTest } from "../hooks/useMicTest";
+import { getRoomRuntimeDiagnostics } from "../hooks/useRoomState";
 import { useAppStore } from "../store/appStore";
 import { useAudioStore } from "../store/audioStore";
 import { useSettingsStore } from "../store/settingsStore";
+import { useRoomStore } from "../store/roomStore";
 
 export const SettingsPage = () => {
   const navigate = useAppStore((state) => state.navigate);
@@ -38,6 +40,9 @@ export const SettingsPage = () => {
   const outputDevices = useAudioStore((state) => state.outputDevices);
   const [diagnostics, setDiagnostics] = useState<DiagnosticsSnapshot>();
   const [saveNotice, setSaveNotice] = useState("设置会自动保存");
+  const room = useRoomStore((state) => state.room);
+  const localStream = useRoomStore((state) => state.localStream);
+  const remoteStreams = useRoomStore((state) => state.remoteStreams);
 
   const micTest = useMicTest({
     inputDeviceId: settings?.preferredInputDeviceId,
@@ -114,26 +119,42 @@ export const SettingsPage = () => {
     return result;
   };
 
-  const handleExportLogs = () => {
-    void window.desktopApi.diagnostics.exportLogs().then((snapshot) => {
-      setDiagnostics(snapshot);
-      pushToast({
-        tone: "success",
-        title: "日志已导出",
-        description: snapshot.lastExportPath || "请到导出位置查看。",
-      });
-    });
-  };
-
   const handleExportBundle = () => {
-    void window.desktopApi.diagnostics.exportBundle().then((snapshot) => {
-      setDiagnostics(snapshot);
-      pushToast({
-        tone: "success",
-        title: "诊断包已导出",
-        description: snapshot.lastBundlePath || "请到导出位置查看。",
+    const runtimeDiagnostics = getRoomRuntimeDiagnostics();
+    const rendererState: RendererDiagnosticsSummary = {
+      roomLifecycleState: room.lifecycleState,
+      roomConnectionState: room.connectionState,
+      connectionMode: room.connectionMode,
+      currentRoomId: room.roomId,
+      currentPeerId: runtimeDiagnostics?.currentPeerId,
+      reconnectAttempts: runtimeDiagnostics?.reconnectAttempts ?? 0,
+      lastSocketCloseCode: runtimeDiagnostics?.lastSocketCloseCode,
+      lastSocketCloseReason: runtimeDiagnostics?.lastSocketCloseReason,
+      lastSocketClosedAt: runtimeDiagnostics?.lastSocketClosedAt,
+      activeClientExists: Boolean(runtimeDiagnostics),
+      audioRelayState: runtimeDiagnostics?.audioRelayState ?? "inactive",
+      localStreamActive: Boolean(localStream?.getAudioTracks().some((track) => track.readyState === "live")),
+      remotePeerCount: runtimeDiagnostics?.remotePeerCount ?? Object.keys(remoteStreams).length,
+      roomSnapshotRevision: runtimeDiagnostics?.roomSnapshotRevision ?? 0,
+      chatSendFailures: runtimeDiagnostics?.chatSendFailures ?? 0,
+    };
+    void window.desktopApi.diagnostics
+      .exportBundle(rendererState)
+      .then((snapshot) => {
+        setDiagnostics(snapshot);
+        pushToast({
+          tone: "success",
+          title: "诊断包已导出",
+          description: snapshot.lastBundlePath || "请到导出位置查看。",
+        });
+      })
+      .catch((error) => {
+        pushToast({
+          tone: "danger",
+          title: "导出失败，请重试",
+          description: error instanceof Error ? error.message : "暂时无法导出诊断包。",
+        });
       });
-    });
   };
 
   const handleOpenLogs = () => {
@@ -206,9 +227,6 @@ export const SettingsPage = () => {
           onExportBundle={handleExportBundle}
         />
         <div className="flex flex-wrap items-center gap-3">
-          <Button variant="secondary" onClick={handleExportLogs}>
-            导出日志
-          </Button>
           <Button variant="danger" onClick={handleReset}>
             安全重置设置
           </Button>

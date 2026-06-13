@@ -18,6 +18,7 @@ test("migrateSettings falls back to safe defaults for damaged legacy config", ()
     isMemberJoinSoundEnabled: false,
     isMemberLeaveSoundEnabled: false,
     isConnectionSoundEnabled: false,
+    isUiSoundEnabled: false,
   });
 
   assert.equal(result.settings.settingsSchemaVersion, SETTINGS_SCHEMA_VERSION);
@@ -32,6 +33,7 @@ test("migrateSettings falls back to safe defaults for damaged legacy config", ()
   assert.equal(result.settings.isMemberJoinSoundEnabled, true);
   assert.equal(result.settings.isMemberLeaveSoundEnabled, true);
   assert.equal(result.settings.isConnectionSoundEnabled, true);
+  assert.equal(result.settings.isUiSoundEnabled, false);
   assert.equal(result.migrated, true);
 });
 

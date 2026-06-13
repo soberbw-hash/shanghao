@@ -82,6 +82,7 @@ const fallbackSettings: AppSettings = {
   isMemberJoinSoundEnabled: true,
   isMemberLeaveSoundEnabled: true,
   isConnectionSoundEnabled: true,
+  isUiSoundEnabled: true,
   isBackgroundUpdateCheckEnabled: true,
   lastUpdateCheckAt: undefined,
   lastUpdateVersionSeen: undefined,

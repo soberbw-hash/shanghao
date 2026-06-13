@@ -1,4 +1,4 @@
-import { MessageCircle, Send, SmilePlus } from "lucide-react";
+import { MessageCircle, Send } from "lucide-react";
 
 import type { ChatMessage } from "@private-voice/shared";
 
@@ -14,6 +14,8 @@ export const TemporaryChatPanel = ({
   onSend,
   className = "",
   emptyMessage = "还没有消息。",
+  canSend = false,
+  unavailableLabel = "连接后可发送",
 }: {
   messages: ChatMessage[];
   chatInput: string;
@@ -21,6 +23,8 @@ export const TemporaryChatPanel = ({
   onSend: () => void;
   className?: string;
   emptyMessage?: string;
+  canSend?: boolean;
+  unavailableLabel?: string;
 }) => (
   <div
     className={`flex min-h-[376px] flex-col rounded-[24px] border border-[#E7ECF2] bg-white p-4 shadow-[0_18px_40px_rgba(17,24,39,0.06)] ${className}`.trim()}
@@ -28,7 +32,7 @@ export const TemporaryChatPanel = ({
   >
     <div className="flex items-center gap-2 text-sm font-medium text-[#111827]">
       <MessageCircle className="h-4 w-4 text-[#4DA3FF]" />
-      临时聊天
+      聊天
     </div>
 
     <div className="mt-3 flex min-h-0 flex-1 flex-col rounded-[18px] border border-[#E7ECF2] bg-[#F8FAFC] p-3">
@@ -73,22 +77,21 @@ export const TemporaryChatPanel = ({
 
       <div className="mt-3 flex items-center gap-3">
         <div className="relative flex-1">
-          <SmilePlus className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#98A2B3]" />
           <Input
-            className="pl-10"
-            placeholder="发一句话"
+            placeholder="发一句"
             value={chatInput}
             onChange={(event) => onChatInputChange(event.target.value)}
             onKeyDown={(event) => {
-              if (event.key === "Enter") {
+              if (event.key === "Enter" && !event.shiftKey && canSend) {
+                event.preventDefault();
                 onSend();
               }
             }}
           />
         </div>
-        <Button onClick={onSend} disabled={!chatInput.trim()}>
+        <Button onClick={onSend} disabled={!chatInput.trim() || !canSend} className="whitespace-nowrap">
           <Send className="h-4 w-4" />
-          发送
+          {canSend ? "发送" : unavailableLabel}
         </Button>
       </div>
     </div>

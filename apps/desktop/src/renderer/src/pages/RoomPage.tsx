@@ -229,11 +229,12 @@ export const RoomPage = () => {
 
   return (
     <PageContainer className="overflow-y-auto">
-      <TopStatusBar />
+      <TopStatusBar variant="room" onCopyInvite={() => void copyInviteLink()} />
       {isWaitingForFriends ? (
         <InlineBanner tone="neutral">等待好友加入</InlineBanner>
       ) : null}
-      {room.connectionState === RoomConnectionState.Reconnecting ? (
+      {room.connectionState === RoomConnectionState.Reconnecting ||
+      room.connectionState === RoomConnectionState.Degraded ? (
         <InlineBanner tone="warning">连接有波动，正在自动重连…</InlineBanner>
       ) : null}
       {room.connectionState === RoomConnectionState.Failed ? (
@@ -298,7 +299,14 @@ export const RoomPage = () => {
           chatInput={chatInput}
           onChatInputChange={setChatInput}
           onSend={handleSendChat}
-          emptyMessage="房间里还没有聊天消息。开房后更适合在这里补一句文字和 emoji。"
+          emptyMessage="还没有消息。"
+          canSend={
+            room.connectionState === RoomConnectionState.Connected ||
+            room.connectionState === RoomConnectionState.WaitingPeer
+          }
+          unavailableLabel={
+            room.connectionState === RoomConnectionState.Reconnecting ? "重连中" : "连接已断开"
+          }
         />
       </section>
 

@@ -3,6 +3,7 @@ import { Clipboard, Link2, Radio } from "lucide-react";
 
 import {
   MicPermissionState,
+  RoomConnectionState,
   TailscaleState,
   type ConnectionMode,
 } from "@private-voice/shared";
@@ -45,25 +46,25 @@ const modeCopy: Record<
   }
 > = {
   cloudflare_tunnel: {
-    hint: "无需公网 IP 或端口映射，开房时自动生成临时公网地址。",
+    hint: "不用公网 IP，临时生成地址。",
     placeholder: "wss://xxxx.trycloudflare.com/?roomId=...",
     startDescription: "首次使用会准备临时公网组件，关闭房间后地址自动失效。",
     joinDescription: "粘贴房主分享的临时公网地址即可加入。",
   },
   direct_host: {
-    hint: "先启动本地房间，再后台检测公网 IP、端口映射和外网可达性。",
+    hint: "高级模式，需要公网与端口映射。",
     placeholder: "ws://你的公网地址:43821/?roomId=...",
     startDescription: "本机先开房，房间起来后继续检测公网直连能力。",
     joinDescription: "适合已经拿到公网可达地址的房主邀请。",
   },
   tailscale: {
-    hint: "适合固定好友长期使用，优先走 MagicDNS，其次走 100.x 地址。",
+    hint: "固定好友，免费内网。",
     placeholder: "ws://your-name.ts.net:43821/?roomId=...",
     startDescription: "同一个 tailnet 里的好友可以稳定加入，不依赖公网端口映射。",
     joinDescription: "把房主发来的 Tailscale 地址粘贴进来即可加入。",
   },
   relay: {
-    hint: "复杂网络环境下的兜底方案，优先保证能连上。",
+    hint: "稳定方案，需要服务器。",
     placeholder: "wss://relay.example.com/room?roomId=...",
     startDescription: "适合公网不通、Tailscale 不方便时的稳定兜底。",
     joinDescription: "加入地址会带上房间信息，不需要你再判断模式。",
@@ -262,12 +263,11 @@ export const HomePage = () => {
           data-testid="home-action-card"
         >
           <div>
-            <div className="text-[22px] font-semibold text-[#111827]">开房或加入</div>
-            <p className="mt-1 text-sm text-[#667085]">先选模式，再开房或加入。</p>
+            <div className="text-[22px] font-semibold text-[#111827]">连接模式</div>
+            <p className="mt-1 text-sm text-[#667085]">选择一种方式，开始上号。</p>
           </div>
 
           <div className="mt-4 min-h-[84px] space-y-2">
-            <div className="text-sm font-medium text-[#111827]">连接模式</div>
             <SegmentedControl
               value={currentMode}
               options={connectionModeOptions}
@@ -356,6 +356,13 @@ export const HomePage = () => {
           chatInput={chatInput}
           onChatInputChange={setChatInput}
           onSend={handleSendChat}
+          canSend={
+            room.connectionState === RoomConnectionState.Connected ||
+            room.connectionState === RoomConnectionState.WaitingPeer
+          }
+          unavailableLabel={
+            room.connectionState === RoomConnectionState.Reconnecting ? "重连中" : "连接后发送"
+          }
         />
       </section>
 

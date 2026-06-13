@@ -6,8 +6,7 @@ import {
   APP_PROTOCOL_VERSION,
   HEARTBEAT_INTERVAL_MS,
 } from "@private-voice/shared";
-import type { WebSocket } from "ws";
-import { WebSocketServer } from "ws";
+import { WebSocket, WebSocketServer } from "ws";
 
 import type {
   AudioChunkMessage,
@@ -180,17 +179,26 @@ export class SignalingServer extends EventEmitter {
           code: "invalid_payload",
           message: error instanceof Error ? error.message : "Unknown signaling error",
         };
-        socket.send(JSON.stringify(message));
+        this.safeSend(socket, message);
       }
     });
 
-    socket.on("close", () => {
+    socket.on("close", (code, reason) => {
       const roomId = Reflect.get(socket, "__roomId") as string | undefined;
       const peerId = Reflect.get(socket, "__peerId") as string | undefined;
 
       if (roomId && peerId) {
-        this.roomManager.removePeer(roomId, peerId);
-        this.broadcastSnapshot(roomId);
+        const marked = this.roomManager.markPeerDisconnected(roomId, peerId, socket);
+        this.logger?.("peer socket closed", {
+          roomId,
+          peerId,
+          code,
+          reason: reason.toString(),
+          reconnectGraceActive: marked,
+        });
+        if (marked) {
+          this.broadcastSnapshot(roomId);
+        }
       }
     });
   }
@@ -239,7 +247,7 @@ export class SignalingServer extends EventEmitter {
         peerId: message.peerId,
         message: "房主和成员版本不一致，请升级到同一版本。",
       };
-      socket.send(JSON.stringify(mismatchMessage));
+      this.safeSend(socket, mismatchMessage);
       return;
     }
 
@@ -256,11 +264,12 @@ export class SignalingServer extends EventEmitter {
         peerId: message.peerId,
         message: "云中继鉴权失败，请让房主重新分享房间地址。",
       };
-      socket.send(JSON.stringify(relayMessage));
+      this.safeSend(socket, relayMessage);
       return;
     }
 
-    if (!this.roomManager.canJoin(message.roomId)) {
+    const existingPeer = existingRoom?.peers.getPeer(message.peerId);
+    if (!existingPeer && !this.roomManager.canJoin(message.roomId)) {
       const roomFullMessage: ErrorMessage = {
         type: "error",
         code: "room_full",
@@ -268,15 +277,22 @@ export class SignalingServer extends EventEmitter {
         peerId: message.peerId,
         message: "房间已满，最多只能同时 5 人语音。",
       };
-      socket.send(JSON.stringify(roomFullMessage));
+      this.safeSend(socket, roomFullMessage);
       return;
     }
 
     Reflect.set(socket, "__roomId", message.roomId);
     Reflect.set(socket, "__peerId", message.peerId);
     const existingPeerCount = existingRoom?.peers.listPeers().length ?? 0;
+    if (existingPeer && existingPeer.socket !== socket) {
+      try {
+        existingPeer.socket.close(4001, "peer_reconnected");
+      } catch {
+        // The replacement socket remains authoritative even if the old socket is already gone.
+      }
+    }
 
-    this.roomManager.addPeer(
+    const room = this.roomManager.addPeer(
       message.roomId,
       this.roomName,
       {
@@ -284,24 +300,31 @@ export class SignalingServer extends EventEmitter {
         nickname: message.nickname,
         avatarDataUrl: message.avatarDataUrl,
         socket,
-        isHost: existingPeerCount === 0,
-        isMuted: false,
-        isSpeaking: false,
-        joinedAt: new Date().toISOString(),
+        isHost: existingPeer?.isHost ?? existingPeerCount === 0,
+        isMuted: existingPeer?.isMuted ?? false,
+        isSpeaking: existingPeer?.isSpeaking ?? false,
+        joinedAt: existingPeer?.joinedAt ?? new Date().toISOString(),
         lastHeartbeatAt: Date.now(),
+        disconnectedAt: undefined,
       },
       message.connectionMode === "relay" ? message.relayToken : undefined,
     );
 
-    this.broadcastSnapshot(message.roomId, {
-      appVersion: message.appVersion,
-      protocolVersion: APP_PROTOCOL_VERSION,
-      buildNumber: APP_BUILD_NUMBER,
-      connectionMode: message.connectionMode,
+    room.appVersion = message.appVersion;
+    room.protocolVersion = APP_PROTOCOL_VERSION;
+    room.buildNumber = APP_BUILD_NUMBER;
+    room.connectionMode = message.connectionMode;
+    this.logger?.(existingPeer ? "peer reconnected" : "peer joined", {
+      roomId: message.roomId,
+      peerId: message.peerId,
+      memberCount: room.peers.listPeers().length,
     });
+
+    this.broadcastSnapshot(message.roomId);
   }
 
   private handleLeave(message: LeaveRoomMessage): void {
+    this.logger?.("peer left", { roomId: message.roomId, peerId: message.peerId });
     this.roomManager.removePeer(message.roomId, message.peerId);
     this.broadcastSnapshot(message.roomId);
   }
@@ -333,8 +356,8 @@ export class SignalingServer extends EventEmitter {
       createdAt: message.createdAt,
     };
 
-    for (const peer of room.peers.listPeers()) {
-      peer.socket.send(JSON.stringify(payload));
+    for (const peer of room.peers.listConnectedPeers()) {
+      this.safeSend(peer.socket, payload);
     }
   }
 
@@ -356,9 +379,9 @@ export class SignalingServer extends EventEmitter {
       data: message.data,
     };
 
-    for (const peer of room.peers.listPeers()) {
+    for (const peer of room.peers.listConnectedPeers()) {
       if (peer.id !== message.peerId) {
-        peer.socket.send(JSON.stringify(payload));
+        this.safeSend(peer.socket, payload);
       }
     }
   }
@@ -368,36 +391,57 @@ export class SignalingServer extends EventEmitter {
   ): void {
     const room = this.roomManager.getRoom(message.roomId);
     const targetPeer = room?.peers.getPeer(message.targetPeerId);
-    if (targetPeer) {
-      targetPeer.socket.send(JSON.stringify(message));
+    if (targetPeer && !targetPeer.disconnectedAt) {
+      this.safeSend(targetPeer.socket, message);
     }
   }
 
-  private broadcastSnapshot(
-    roomId: string,
-    metadata?: Pick<
-      RoomSnapshotMessage,
-      "appVersion" | "protocolVersion" | "buildNumber" | "connectionMode"
-    >,
-  ): void {
+  private broadcastSnapshot(roomId: string): void {
     const room = this.roomManager.getRoom(roomId);
     if (!room) {
       return;
     }
 
-    for (const peer of room.peers.listPeers()) {
+    room.revision += 1;
+    const serverTime = Date.now();
+    for (const peer of room.peers.listConnectedPeers()) {
       const payload: RoomSnapshotMessage = {
         type: "room_snapshot",
         roomId: room.roomId,
         roomName: room.roomName,
         members: room.peers.toRoomMembers(peer.id),
-        appVersion: metadata?.appVersion ?? "unknown",
-        protocolVersion: metadata?.protocolVersion ?? APP_PROTOCOL_VERSION,
-        buildNumber: metadata?.buildNumber ?? APP_BUILD_NUMBER,
-        connectionMode: metadata?.connectionMode ?? "direct_host",
+        revision: room.revision,
+        serverTime,
+        appVersion: room.appVersion,
+        protocolVersion: room.protocolVersion,
+        buildNumber: room.buildNumber,
+        connectionMode: room.connectionMode,
       };
-      peer.socket.send(JSON.stringify(payload));
+      this.safeSend(peer.socket, payload);
       this.emit("snapshot", payload);
+    }
+    this.logger?.("room snapshot broadcast", {
+      roomId,
+      revision: room.revision,
+      memberCount: room.peers.listPeers().length,
+      connectedPeerCount: room.peers.listConnectedPeers().length,
+    });
+  }
+
+  private safeSend(socket: WebSocket, payload: SignalEnvelope): boolean {
+    if (socket.readyState !== WebSocket.OPEN) {
+      return false;
+    }
+
+    try {
+      socket.send(JSON.stringify(payload));
+      return true;
+    } catch (error) {
+      this.logger?.("signaling send failed", {
+        type: payload.type,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return false;
     }
   }
 }

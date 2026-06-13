@@ -33,6 +33,12 @@ export const AppearanceSettingsCard = ({
           }
         />
       </SettingsItemRow>
+      <SettingsItemRow label="操作提示音" description="按钮点击会播放很轻的确认音。">
+        <Switch
+          isChecked={settings.isUiSoundEnabled}
+          onChange={(isUiSoundEnabled) => onChange({ isUiSoundEnabled })}
+        />
+      </SettingsItemRow>
     </div>
   </SettingsSection>
 );

@@ -66,6 +66,19 @@ test("relay status checks both health endpoint and websocket", () => {
   assert.equal(relayStatus.includes("const isReachable = isWebSocketReachable"), true);
 });
 
+test("room client preserves peers while signaling reconnects and bounds retry attempts", () => {
+  const source = read("apps/desktop/src/renderer/src/features/room/roomClient.ts");
+  const hook = read("apps/desktop/src/renderer/src/hooks/useRoomState.ts");
+
+  assert.equal(source.includes("MAX_RECONNECT_ATTEMPTS = 4"), true);
+  assert.equal(source.includes("this.options.onReconnectExhausted?.(error)"), true);
+  assert.equal(source.includes("Ignored stale room snapshot"), true);
+  assert.equal(source.includes("snapshot.revision <= this.lastSnapshotRevision"), true);
+  assert.equal(source.includes("this.clearPeers();\n      this.reconnect();"), false);
+  assert.equal(hook.includes("cleanupPreviousSession"), true);
+  assert.equal(hook.includes("peerId: sharedPeerId"), false);
+});
+
 test("windows executable and shortcut use cache-busting v3 icons", () => {
   const builder = read("apps/desktop/electron-builder.yml");
   const installer = read("apps/desktop/build/installer.nsh");

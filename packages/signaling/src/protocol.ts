@@ -74,6 +74,8 @@ export interface RoomSnapshotMessage extends BaseMessage, VersionedMessage {
   roomId: string;
   roomName: string;
   members: RoomMember[];
+  revision: number;
+  serverTime: number;
 }
 
 export interface PeerOfferMessage extends BaseMessage {

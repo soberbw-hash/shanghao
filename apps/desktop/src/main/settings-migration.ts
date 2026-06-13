@@ -40,6 +40,7 @@ export const defaultSettings: AppSettings = {
   isMemberJoinSoundEnabled: true,
   isMemberLeaveSoundEnabled: true,
   isConnectionSoundEnabled: true,
+  isUiSoundEnabled: true,
   isBackgroundUpdateCheckEnabled: true,
   lastUpdateCheckAt: undefined,
   lastUpdateVersionSeen: undefined,
@@ -97,6 +98,7 @@ export const migrateSettings = (raw: RawSettings): MigrationResult => {
     isMemberJoinSoundEnabled: true,
     isMemberLeaveSoundEnabled: true,
     isConnectionSoundEnabled: true,
+    isUiSoundEnabled: raw.isUiSoundEnabled !== false,
     inputLevelThreshold:
       typeof raw.inputLevelThreshold === "number" && raw.inputLevelThreshold > 0
         ? Math.min(1, raw.inputLevelThreshold)
