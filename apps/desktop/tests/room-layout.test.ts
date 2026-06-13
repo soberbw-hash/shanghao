@@ -10,9 +10,10 @@ test("room page keeps the right column dedicated to temporary chat", () => {
   const source = readFileSync(roomPagePath, "utf8");
 
   assert.equal(source.includes("TemporaryChatPanel"), true);
-  assert.equal(source.includes("xl:grid-cols-[1.15fr_0.85fr]"), true);
-  assert.equal(source.includes("房间地址"), true);
-  assert.equal(source.includes("连接方式"), true);
+  assert.equal(source.includes("xl:grid-cols-[1.12fr_0.88fr]"), true);
+  assert.equal(source.includes("房间地址"), false);
+  assert.equal(source.includes("连接方式"), false);
+  assert.equal(source.includes("队伍"), true);
 });
 
 test("desktop build includes custom nsis shortcut icon wiring", () => {

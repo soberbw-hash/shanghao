@@ -3,13 +3,17 @@ import { TailscaleState } from "../enums/app.enums";
 export type ConnectionMode = "cloudflare_tunnel" | "relay" | "tailscale" | "direct_host";
 export type PreferredSampleRate = "auto" | "44100" | "48000";
 export type MicMonitorMode = "processed" | "raw";
+export type BuiltInAvatarId = "fox" | "panda" | "penguin" | "cat" | "dog";
 
 export interface AppSettings {
   settingsSchemaVersion: number;
+  profileSchemaVersion: number;
   nickname: string;
   roomName: string;
+  avatarId: BuiltInAvatarId;
   avatarPath?: string;
   hasCompletedProfileSetup: boolean;
+  channelAccessCode: string;
   minimizeToTray: boolean;
   reduceMotion: boolean;
   launchOnStartup: boolean;

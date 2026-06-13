@@ -77,7 +77,7 @@ export class RoomManager {
     }
 
     room.peers.removePeer(peerId);
-    if (room.peers.listPeers().length === 0) {
+    if (room.peers.listPeers().length === 0 && roomId !== "main") {
       this.rooms.delete(roomId);
     }
   }

@@ -11,17 +11,22 @@ import { WebSocket, WebSocketServer } from "ws";
 
 import type {
   AudioChunkMessage,
+  AudioResyncAckMessage,
+  AudioResyncRequestMessage,
   AvatarUpdateMessage,
   ChatMessage,
   ErrorMessage,
   HelloMessage,
   IceCandidateMessage,
+  JoinChannelMessage,
   JoinRoomMessage,
   JoinAckMessage,
+  LeaveChannelMessage,
   LeaveRoomMessage,
   MemberStateMessage,
   PeerAnswerMessage,
   PeerOfferMessage,
+  ChannelSnapshotMessage,
   RoomSnapshotMessage,
   RequestSnapshotMessage,
   SignalEnvelope,
@@ -38,6 +43,7 @@ interface SignalingServerOptions {
 
 const MAX_SIGNALING_PAYLOAD_BYTES = 256 * 1024;
 const MAX_AVATAR_BYTES = 128 * 1024;
+const MAX_AUDIO_CHUNK_BYTES = 96 * 1024;
 
 const normalizeAvatar = (
   avatarDataUrl?: string,
@@ -59,6 +65,7 @@ export class SignalingServer extends EventEmitter {
   private readonly roomName: string;
   private readonly logger?: SignalingServerOptions["logger"];
   private heartbeatTimer?: NodeJS.Timeout;
+  private audioServerSequence = 0;
 
   constructor(private readonly options: SignalingServerOptions) {
     super();
@@ -80,7 +87,9 @@ export class SignalingServer extends EventEmitter {
             uptime: process.uptime(),
             activeRooms: stats.activeRooms,
             connectedPeers: stats.connectedPeers,
+            currentOnlineCount: stats.connectedPeers,
             now: new Date().toISOString(),
+            serverTime: Date.now(),
           }),
         );
         return;
@@ -248,13 +257,22 @@ export class SignalingServer extends EventEmitter {
     switch (message.type) {
       case "hello":
       case "join_room":
+      case "join_channel":
         this.handleJoin(socket, message);
         return;
       case "leave_room":
+      case "leave_channel":
         this.handleLeave(message);
         return;
       case "heartbeat":
         this.roomManager.getRoom(message.roomId)?.peers.updateHeartbeat(message.peerId);
+        this.safeSend(socket, {
+          type: "pong",
+          roomId: message.roomId,
+          peerId: message.peerId,
+          sentAt: message.sentAt ?? Date.now(),
+          serverTime: Date.now(),
+        });
         return;
       case "request_snapshot":
         this.handleSnapshotRequest(socket, message);
@@ -273,12 +291,19 @@ export class SignalingServer extends EventEmitter {
       case "audio_chunk":
         this.broadcastAudioChunk(message);
         return;
+      case "audio_resync_request":
+      case "audio_resync_ack":
+        this.forwardAudioResync(message);
+        return;
       default:
         return;
     }
   }
 
-  private handleJoin(socket: WebSocket, message: HelloMessage | JoinRoomMessage): void {
+  private handleJoin(
+    socket: WebSocket,
+    message: HelloMessage | JoinRoomMessage | JoinChannelMessage,
+  ): void {
     if (message.protocolVersion !== APP_PROTOCOL_VERSION) {
       const mismatchMessage: ErrorMessage = {
         type: "error",
@@ -291,11 +316,33 @@ export class SignalingServer extends EventEmitter {
       return;
     }
 
+    const isFixedChannel = message.type === "join_channel";
+    const configuredChannelCode = process.env.CHANNEL_ACCESS_CODE?.trim();
+    if (
+      isFixedChannel &&
+      configuredChannelCode &&
+      message.channelCode?.trim() !== configuredChannelCode
+    ) {
+      this.safeSend(socket, {
+        type: "error",
+        code: "channel_code_invalid",
+        roomId: message.roomId,
+        peerId: message.peerId,
+        message: "频道码不正确，请向好友确认后重试。",
+      });
+      this.logger?.("channel join rejected", {
+        roomId: message.roomId,
+        peerId: message.peerId,
+        reason: "channel_code_invalid",
+      });
+      return;
+    }
+
     const existingRoom = this.roomManager.getRoom(message.roomId);
     if (
       message.connectionMode === "relay" &&
       existingRoom?.relayToken &&
-      existingRoom.relayToken !== message.relayToken
+      existingRoom.relayToken !== ("relayToken" in message ? message.relayToken : undefined)
     ) {
       const relayMessage: ErrorMessage = {
         type: "error",
@@ -332,7 +379,9 @@ export class SignalingServer extends EventEmitter {
       }
     }
 
-    const normalizedAvatar = normalizeAvatar(message.avatarDataUrl);
+    const normalizedAvatar = normalizeAvatar(
+      "avatarDataUrl" in message ? message.avatarDataUrl : undefined,
+    );
     const room = this.roomManager.addPeer(
       message.roomId,
       this.roomName,
@@ -341,15 +390,16 @@ export class SignalingServer extends EventEmitter {
         nickname: message.nickname,
         avatarDataUrl: normalizedAvatar.avatarDataUrl ?? existingPeer?.avatarDataUrl,
         avatarHash: normalizedAvatar.avatarHash ?? existingPeer?.avatarHash,
+        avatarId: message.avatarId ?? existingPeer?.avatarId,
         socket,
-        isHost: existingPeer?.isHost ?? existingPeerCount === 0,
+        isHost: isFixedChannel ? false : existingPeer?.isHost ?? existingPeerCount === 0,
         isMuted: existingPeer?.isMuted ?? false,
         isSpeaking: existingPeer?.isSpeaking ?? false,
         joinedAt: existingPeer?.joinedAt ?? new Date().toISOString(),
         lastHeartbeatAt: Date.now(),
         disconnectedAt: undefined,
       },
-      message.connectionMode === "relay" ? message.relayToken : undefined,
+      message.connectionMode === "relay" && "relayToken" in message ? message.relayToken : undefined,
     );
 
     room.appVersion = message.appVersion;
@@ -382,7 +432,7 @@ export class SignalingServer extends EventEmitter {
     }
   }
 
-  private handleLeave(message: LeaveRoomMessage): void {
+  private handleLeave(message: LeaveRoomMessage | LeaveChannelMessage): void {
     this.logger?.("peer left", { roomId: message.roomId, peerId: message.peerId });
     this.roomManager.removePeer(message.roomId, message.peerId);
     this.broadcastSnapshot(message.roomId);
@@ -397,6 +447,7 @@ export class SignalingServer extends EventEmitter {
       nickname: message.nickname,
       avatarDataUrl: normalizedAvatar.avatarDataUrl,
       avatarHash: normalizedAvatar.avatarHash,
+      avatarId: message.avatarId,
     });
     if (!room) {
       return;
@@ -409,6 +460,7 @@ export class SignalingServer extends EventEmitter {
       isMuted: message.isMuted,
       isSpeaking: message.isSpeaking,
       nickname: message.nickname,
+      avatarId: message.avatarId,
     };
     for (const peer of room.peers.listConnectedPeers()) {
       this.safeSend(peer.socket, payload);
@@ -429,6 +481,7 @@ export class SignalingServer extends EventEmitter {
       roomId: message.roomId,
       peerId: message.peerId,
       nickname: message.nickname,
+      avatarId: message.avatarId,
       content: message.content,
       createdAt: message.createdAt,
     };
@@ -440,7 +493,10 @@ export class SignalingServer extends EventEmitter {
 
   private broadcastAudioChunk(message: AudioChunkMessage): void {
     const room = this.roomManager.getRoom(message.roomId);
-    if (!room || Date.now() - message.sentAt > 1_000) {
+    if (
+      !room ||
+      Buffer.byteLength(message.data, "utf8") > MAX_AUDIO_CHUNK_BYTES
+    ) {
       return;
     }
 
@@ -448,8 +504,16 @@ export class SignalingServer extends EventEmitter {
       type: "audio_chunk",
       roomId: message.roomId,
       peerId: message.peerId,
+      sourcePeerId: message.sourcePeerId || message.peerId,
+      audioSessionId: message.audioSessionId,
+      audioStreamEpoch: message.audioStreamEpoch,
+      audioPath: "relay",
       sequence: message.sequence,
       sentAt: message.sentAt,
+      capturedAtMonotonic: message.capturedAtMonotonic,
+      serverReceivedAt: Date.now(),
+      serverForwardedAt: Date.now(),
+      serverSequence: ++this.audioServerSequence,
       durationMs: message.durationMs,
       sampleRate: message.sampleRate,
       channelCount: 1,
@@ -460,6 +524,22 @@ export class SignalingServer extends EventEmitter {
       if (peer.id !== message.peerId) {
         this.safeSend(peer.socket, payload);
       }
+    }
+  }
+
+  private forwardAudioResync(
+    message: AudioResyncRequestMessage | AudioResyncAckMessage,
+  ): void {
+    const room = this.roomManager.getRoom(message.roomId);
+    const targetPeer = room?.peers.getPeer(message.targetPeerId);
+    if (targetPeer && !targetPeer.disconnectedAt) {
+      this.safeSend(targetPeer.socket, message);
+      this.logger?.("audio resync forwarded", {
+        roomId: message.roomId,
+        type: message.type,
+        peerId: message.peerId,
+        targetPeerId: message.targetPeerId,
+      });
     }
   }
 
@@ -482,8 +562,8 @@ export class SignalingServer extends EventEmitter {
     room.revision += 1;
     const serverTime = Date.now();
     for (const peer of room.peers.listConnectedPeers()) {
-      const payload: RoomSnapshotMessage = {
-        type: "room_snapshot",
+      const payload: RoomSnapshotMessage | ChannelSnapshotMessage = {
+        type: room.roomId === "main" ? "channel_snapshot" : "room_snapshot",
         roomId: room.roomId,
         roomName: room.roomName,
         members: room.peers.toRoomMembers(peer.id),
@@ -527,8 +607,8 @@ export class SignalingServer extends EventEmitter {
       return;
     }
 
-    const payload: RoomSnapshotMessage = {
-      type: "room_snapshot",
+    const payload: RoomSnapshotMessage | ChannelSnapshotMessage = {
+      type: room.roomId === "main" ? "channel_snapshot" : "room_snapshot",
       roomId: room.roomId,
       roomName: room.roomName,
       members: room.peers.toRoomMembers(localPeerId),

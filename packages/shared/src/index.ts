@@ -1,4 +1,5 @@
 export * from "./constants/app";
+export * from "./constants/profile";
 export * from "./constants/ipc";
 export * from "./enums/app.enums";
 export * from "./types/audio.types";

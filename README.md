@@ -2,18 +2,25 @@
 
 ![上号图标](./docs/branding/github-avatar.png)
 
-给 3–5 个固定好友使用的极简桌面语音工具。朋友说一句“上号”，打开软件、加入房间、开始语音。
+给 3–5 个固定好友使用的轻量桌面开黑语音频道。没有账号、没有公会、没有复杂房间：打开上号，输入同一个频道码，就能看到谁在线并直接语音。
 
-![上号首页](./docs/assets/release-home.png)
+## 推荐玩法：固定开黑频道
 
-## 推荐连接方式
+1. 在常驻服务器运行上号信令服务。
+2. 在服务端配置一个只告诉好友的 `CHANNEL_ACCESS_CODE`。
+3. 每位好友在客户端高级连接里填写同一个频道服务器地址。
+4. 打开软件，点击“进入频道”。
 
-1. **临时公网（推荐）**：自动创建 Cloudflare Tunnel 临时公网地址，不要求公网 IP、端口映射或好友安装额外软件。房主关闭房间后地址失效。
-2. **云中继**：在自己的公网服务器运行上号 relay，适合长期稳定使用。
-3. **Tailscale**：双方安装并登录同一个 tailnet，软件优先分享稳定的 `100.x` 地址。
-4. **房主直连（高级）**：只适合有公网 IP、端口映射和防火墙配置能力的用户。
+固定频道 `main` 会一直存在，没有房主；第一个人退出后频道也不会消失。旧版临时公网、Tailscale 和房主直连仍保留在高级连接中，用于排障和兼容。
 
-房主直连只有在公网地址验证成功后才允许复制。局域网地址和未验证地址不会再伪装成跨网络可分享地址。
+## 这版重点
+
+- `join_channel / channel_snapshot / leave_channel` 固定频道协议
+- 3–5 人独立 WebRTC mesh，失败时自动切换服务端音频转发
+- 音频流 session/epoch 隔离、自动 resync、WebSocket 背压丢帧
+- ping/pong 延迟估算与长连接自动重连
+- 5 个轻量内置动物头像，不再上传大图
+- 独立 `audio-timeline.json` 诊断时间线
 
 ## 下载
 
@@ -23,52 +30,46 @@
 - Apple Silicon Mac：`ShangHao-版本-mac-arm64.dmg`
 - Intel Mac：`ShangHao-版本-mac-x64.dmg`
 
-macOS 测试包当前未签名，首次打开可能被 Gatekeeper 拦截。测试用户可在 Finder 中右键应用并选择“打开”。正式公开发布需要 Apple Developer ID 签名和 notarization。
+macOS 测试包当前未签名，首次打开可在 Finder 中右键应用并选择“打开”。
 
-## 临时公网模式
-
-选择“临时公网”，点击“开启房间”。首次使用会自动下载 `cloudflared`，随后生成真实的 `wss://xxxx.trycloudflare.com` 房间地址。好友粘贴该地址即可加入。
-
-部分代理、TUN 或网络环境可能阻断 `trycloudflare.com`。遇到此情况请改用自部署云中继。
-
-## 自部署云中继
-
-详细步骤见 [自部署上号云中继](./docs/deploy-relay-server.md)。
-
-最简启动：
+## 部署固定频道
 
 ```bash
 corepack enable
 corepack pnpm install --frozen-lockfile
+copy .env.example .env
 corepack pnpm relay:start
 ```
 
-访问 `http://服务器公网IP:43821/health`，确认返回 `ok: true`，然后在客户端设置中填写 `ws://服务器公网IP:43821`。
+`.env` 示例：
 
-## 本地开发与打包
+```dotenv
+CHANNEL_ACCESS_CODE=change-me
+PORT=43821
+ROOM_NAME=ShangHao
+```
+
+真实频道码不要提交到 GitHub。公网长期使用建议通过域名和 TLS 暴露为 `wss://voice.example.com`。
+
+详细服务器步骤见 [自部署上号云中继](./docs/deploy-relay-server.md)。
+
+## 开发与验证
 
 ```bash
 corepack pnpm install
 corepack pnpm dev
 corepack pnpm typecheck
 corepack pnpm --dir apps/desktop test:smoke
+corepack pnpm test:three-peer-audio
 corepack pnpm dist:win
-corepack pnpm dist:mac
 ```
 
-构建产物输出到 `apps/desktop/release`。推送 `v*` 标签后，[Release workflow](./.github/workflows/release.yml) 会分别在 Windows 和 macOS runner 上构建安装包。
+`test:three-peer-audio` 会自动创建 A/B/C 三个客户端，验证每个人的音频都能路由给另外两个人，并验证第三人退出后 A/B 仍可继续收音。
 
-## 连接诊断
+## 诊断
 
-加入失败时，在设置页导出诊断包。诊断包包括：
-
-- 应用、协议和构建版本
-- 当前连接模式、最终邀请地址、本地信令地址
-- Tailscale IP、MagicDNS、候选地址
-- 房主直连、云中继与临时公网状态
-- WebSocket、WebRTC ICE、音频 fallback 日志
-- 代理、TUN、Clash/Mihomo Fake-IP 检测结果
+设置页可一键导出诊断包，其中包括版本、连接状态、最近重连、每位好友的音频状态，以及独立的 `audio-timeline.json`。日志不会记录频道码、音频数据、完整 SDP 或大段信令 payload。
 
 ## 技术栈
 
-Electron、React、TypeScript、Vite、Tailwind CSS、Zustand、Node.js、ws、WebRTC 纯音频。
+Electron、React、TypeScript、Vite、Tailwind CSS、Framer Motion、Zustand、Node.js、ws、WebRTC 纯音频。

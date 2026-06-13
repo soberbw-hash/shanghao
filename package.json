@@ -1,6 +1,6 @@
 {
   "name": "shanghao-workspace",
-  "version": "0.1.24",
+  "version": "0.1.25",
   "private": true,
   "packageManager": "pnpm@10.0.0",
   "scripts": {
@@ -19,7 +19,8 @@
     "relay:dev": "corepack pnpm relay:build && node --watch scripts/start-relay.mjs",
     "relay:build": "corepack pnpm --filter @private-voice/shared build && corepack pnpm --filter @private-voice/signaling build",
     "relay:start": "corepack pnpm relay:build && node scripts/start-relay.mjs",
-    "relay:health": "node -e \"fetch('http://127.0.0.1:43821/health').then(r=>r.text()).then(console.log)\""
+    "relay:health": "node -e \"fetch('http://127.0.0.1:43821/health').then(r=>r.text()).then(console.log)\"",
+    "test:three-peer-audio": "corepack pnpm relay:build && node scripts/verify-three-peer-audio.mjs"
   },
   "pnpm": {
     "onlyBuiltDependencies": [

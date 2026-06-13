@@ -80,4 +80,10 @@ export interface RendererDiagnosticsSummary {
   joinAckReceived?: boolean;
   roomSnapshotReceived?: boolean;
   lastServerError?: string;
+  serverClockOffsetMs?: number;
+  audioStreamEpoch?: number;
+  droppedExpiredChunks?: number;
+  droppedSendChunks?: number;
+  perPeerAudioStatus?: Array<Record<string, unknown>>;
+  audioTimeline?: Array<Record<string, unknown>>;
 }

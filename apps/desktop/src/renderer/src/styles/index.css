@@ -28,6 +28,26 @@
 
 :root {
   color-scheme: light;
+  --ease-out-soft: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-in-out-soft: cubic-bezier(0.65, 0, 0.35, 1);
+  --ease-spring-soft: cubic-bezier(0.2, 0.9, 0.2, 1);
+  --duration-fast: 120ms;
+  --duration-normal: 180ms;
+  --duration-slow: 280ms;
+  --duration-page: 360ms;
+  --radius-sm: 10px;
+  --radius-md: 14px;
+  --radius-lg: 18px;
+  --radius-xl: 24px;
+  --blur-soft: 10px;
+  --blur-glass: 18px;
+  --blur-modal: 22px;
+  --shadow-card: 0 8px 24px rgba(15, 23, 42, 0.06);
+  --shadow-float: 0 16px 40px rgba(15, 23, 42, 0.12);
+  --shadow-modal: 0 24px 80px rgba(15, 23, 42, 0.18);
+  --color-status-good: #22c55e;
+  --color-status-warn: #f59e0b;
+  --color-status-bad: #ef4444;
   font-family: "HarmonyOS Sans", "Segoe UI", system-ui, sans-serif;
   background:
     radial-gradient(circle at top left, rgba(77, 163, 255, 0.1), transparent 24%),
@@ -90,4 +110,65 @@ img {
 
 .no-drag {
   -webkit-app-region: no-drag;
+}
+
+.surface-card {
+  border: 1px solid #e7ecf2;
+  border-radius: var(--radius-xl);
+  background: #fff;
+  box-shadow: var(--shadow-card);
+}
+
+.glass-panel {
+  border: 1px solid rgba(255, 255, 255, 0.65);
+  background: rgba(255, 255, 255, 0.78);
+  box-shadow: var(--shadow-card);
+  backdrop-filter: blur(var(--blur-glass));
+  -webkit-backdrop-filter: blur(var(--blur-glass));
+}
+
+.interactive-surface {
+  transition:
+    transform var(--duration-fast) var(--ease-out-soft),
+    border-color var(--duration-normal) var(--ease-out-soft),
+    background-color var(--duration-normal) var(--ease-out-soft),
+    box-shadow var(--duration-normal) var(--ease-out-soft);
+}
+
+.interactive-surface:hover {
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-card);
+}
+
+.interactive-surface:active {
+  transform: scale(0.98);
+}
+
+.status-capsule {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  border: 1px solid #dce8f7;
+  border-radius: 999px;
+  background: #f6faff;
+  padding: 0.38rem 0.7rem;
+  color: #52677d;
+  font-size: 0.75rem;
+  white-space: nowrap;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 1ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 1ms !important;
+  }
+
+  .glass-panel {
+    backdrop-filter: blur(6px);
+    -webkit-backdrop-filter: blur(6px);
+  }
 }

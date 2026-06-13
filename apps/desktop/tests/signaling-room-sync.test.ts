@@ -448,3 +448,130 @@ test("signaling server broadcasts chat messages to connected room members", asyn
   receiver.close();
   await server.close();
 });
+
+test("fixed channel accepts join_channel, has no host, and survives becoming empty", async () => {
+  const server = new SignalingServer({ roomName: "固定频道" });
+  const port = await server.listen();
+  const url = `ws://127.0.0.1:${port}`;
+  const first = await openSocket(url);
+  const snapshotPromise = waitForMessage(
+    first,
+    (payload): payload is { type: string; members: Array<{ isHost: boolean; avatarId?: string }> } =>
+      typeof payload === "object" &&
+      payload !== null &&
+      (payload as { type?: string }).type === "channel_snapshot",
+  );
+  first.send(JSON.stringify({
+    type: "join_channel",
+    roomId: "main",
+    channelId: "main",
+    peerId: "fixed-a",
+    nickname: "A",
+    avatarId: "fox",
+    appVersion: "0.1.25",
+    protocolVersion: APP_PROTOCOL_VERSION,
+    buildNumber: APP_BUILD_NUMBER,
+    connectionMode: "relay",
+  }));
+  const snapshot = await snapshotPromise;
+  assert.equal(snapshot.members[0]?.isHost, false);
+  assert.equal(snapshot.members[0]?.avatarId, "fox");
+  first.send(JSON.stringify({ type: "leave_channel", roomId: "main", peerId: "fixed-a" }));
+  first.close();
+  await new Promise((resolve) => setTimeout(resolve, 100));
+
+  const health = await fetch(`http://127.0.0.1:${port}/health`).then((response) => response.json()) as {
+    activeRooms: number;
+  };
+  assert.equal(health.activeRooms, 1);
+  await server.close();
+});
+
+test("fixed channel code is validated without exposing it in health", async () => {
+  const previousCode = process.env.CHANNEL_ACCESS_CODE;
+  process.env.CHANNEL_ACCESS_CODE = "friends-only";
+  const server = new SignalingServer({ roomName: "protected-channel" });
+  const port = await server.listen();
+  const socket = await openSocket(`ws://127.0.0.1:${port}`);
+  const errorPromise = waitForMessage(
+    socket,
+    (payload): payload is { type: string; code: string } =>
+      typeof payload === "object" &&
+      payload !== null &&
+      (payload as { type?: string }).type === "error",
+  );
+  socket.send(JSON.stringify({
+    type: "join_channel",
+    roomId: "main",
+    channelId: "main",
+    peerId: "bad-code",
+    nickname: "bad-code",
+    avatarId: "cat",
+    channelCode: "wrong",
+    appVersion: "0.1.25",
+    protocolVersion: APP_PROTOCOL_VERSION,
+    buildNumber: APP_BUILD_NUMBER,
+    connectionMode: "relay",
+  }));
+  const error = await errorPromise;
+  assert.equal(error.code, "channel_code_invalid");
+  const healthText = await fetch(`http://127.0.0.1:${port}/health`).then((response) => response.text());
+  assert.equal(healthText.includes("friends-only"), false);
+  socket.close();
+  await server.close();
+  if (previousCode === undefined) {
+    delete process.env.CHANNEL_ACCESS_CODE;
+  } else {
+    process.env.CHANNEL_ACCESS_CODE = previousCode;
+  }
+});
+
+test("audio relay adds server timing, generation, and sequence metadata", async () => {
+  const server = new SignalingServer({ roomName: "audio-metadata-test" });
+  const port = await server.listen();
+  const url = `ws://127.0.0.1:${port}`;
+  const sender = await openSocket(url);
+  const receiver = await openSocket(url);
+  sendJoin(sender, "audio-metadata-room", "sender");
+  sendJoin(receiver, "audio-metadata-room", "receiver");
+  await waitForMessage(
+    receiver,
+    (payload): payload is { members: unknown[] } =>
+      typeof payload === "object" &&
+      payload !== null &&
+      (payload as { type?: string }).type === "room_snapshot" &&
+      (payload as { members?: unknown[] }).members?.length === 2,
+  );
+  const chunkPromise = waitForMessage(
+    receiver,
+    (payload): payload is {
+      serverSequence: number;
+      serverReceivedAt: number;
+      serverForwardedAt: number;
+      audioStreamEpoch: number;
+    } => typeof payload === "object" && payload !== null && (payload as { type?: string }).type === "audio_chunk",
+  );
+  sender.send(JSON.stringify({
+    type: "audio_chunk",
+    roomId: "audio-metadata-room",
+    peerId: "sender",
+    sourcePeerId: "sender",
+    audioSessionId: "session-a",
+    audioStreamEpoch: 3,
+    audioPath: "relay",
+    sequence: 1,
+    sentAt: Date.now() - 300_000,
+    durationMs: 40,
+    sampleRate: 48_000,
+    channelCount: 1,
+    data: "AAAA",
+  }));
+  const chunk = await chunkPromise;
+  assert.equal(chunk.audioStreamEpoch, 3);
+  assert.equal(typeof chunk.serverSequence, "number");
+  assert.equal(typeof chunk.serverReceivedAt, "number");
+  assert.equal(typeof chunk.serverForwardedAt, "number");
+  sender.close();
+  receiver.close();
+  await server.close();
+});

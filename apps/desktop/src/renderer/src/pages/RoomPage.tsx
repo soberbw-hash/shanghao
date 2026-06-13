@@ -1,295 +1,84 @@
-import { useMemo, useState } from "react";
+import { useState } from "react";
 
-import {
-  RecordingState,
-  RoomConnectionState,
-  type ConnectionMode,
-} from "@private-voice/shared";
+import { RoomConnectionState } from "@private-voice/shared";
 
-import { ControlBar } from "../components/audio/ControlBar";
 import { InputDevicePicker } from "../components/audio/InputDevicePicker";
 import { MuteButton } from "../components/audio/MuteButton";
-import { NoiseSuppressionToggle } from "../components/audio/NoiseSuppressionToggle";
 import { OutputDevicePicker } from "../components/audio/OutputDevicePicker";
 import { PushToTalkKeyBadge } from "../components/audio/PushToTalkKeyBadge";
 import { PushToTalkToggle } from "../components/audio/PushToTalkToggle";
-import { RecordingButton } from "../components/audio/RecordingButton";
-import { TemporaryChatPanel } from "../components/chat/TemporaryChatPanel";
 import { Button } from "../components/base/Button";
+import { TemporaryChatPanel } from "../components/chat/TemporaryChatPanel";
 import { BottomControlDock } from "../components/layout/BottomControlDock";
 import { InlineBanner } from "../components/layout/InlineBanner";
 import { PageContainer } from "../components/layout/PageContainer";
 import { TopStatusBar } from "../components/layout/TopStatusBar";
 import { ConnectionHealthStrip } from "../components/room/ConnectionHealthStrip";
 import { MemberGrid } from "../components/room/MemberGrid";
-import { RoomStatusPanel } from "../components/room/RoomStatusPanel";
-import { RecordingErrorBanner } from "../components/status/RecordingErrorBanner";
-import { RecordingHistoryList } from "../components/status/RecordingHistoryList";
-import { RecordingStatusBanner } from "../components/status/RecordingStatusBanner";
-import { useRecordingController } from "../hooks/useRecordingController";
 import { useRoomState } from "../hooks/useRoomState";
-import { useAppStore } from "../store/appStore";
 import { useAudioStore } from "../store/audioStore";
-import { useRecordingStore } from "../store/recordingStore";
 import { useRoomStore } from "../store/roomStore";
 import { useSettingsStore } from "../store/settingsStore";
-import { buildShareableInviteUrl } from "../utils/invite";
-
-const modeLabels: Record<ConnectionMode, string> = {
-  cloudflare_tunnel: "临时公网",
-  direct_host: "房主直连",
-  tailscale: "Tailscale",
-  relay: "云中继",
-};
-
-const getRoomStatusSummary = ({
-  connectionMode,
-  signalingUrl,
-  hostSession,
-  latestHostEvent,
-  latestFailureReason,
-}: {
-  connectionMode: ConnectionMode;
-  signalingUrl?: string;
-  hostSession?: ReturnType<typeof useRoomStore.getState>["hostSession"];
-  latestHostEvent?: string;
-  latestFailureReason?: string;
-}) => {
-  if (latestFailureReason) {
-    return {
-      title: "连接失败",
-      description: latestFailureReason,
-      tone: "danger" as const,
-    };
-  }
-
-  if (latestHostEvent) {
-    return {
-      title: "房主状态",
-      description: latestHostEvent,
-      tone: "neutral" as const,
-    };
-  }
-
-  if (connectionMode === "direct_host") {
-    const probe = hostSession?.directHostProbe;
-    if (probe?.addressSource === "lan_ipv4" && signalingUrl) {
-      return {
-        title: "局域网地址已就绪",
-        description: probe.message,
-        tone: "success" as const,
-      };
-    }
-
-    if (probe?.reachability === "reachable" && signalingUrl) {
-      return {
-        title: "公网直连可用",
-        description: "房间已启动，公网地址已验证可达，可以直接分享给好友。",
-        tone: "success" as const,
-      };
-    }
-
-    if (probe?.reachability === "unverified" && signalingUrl) {
-      return {
-        title: "候选地址已生成",
-        description: probe.message,
-        tone: "warning" as const,
-      };
-    }
-
-    if (probe?.reachability === "pending") {
-      return {
-        title: "正在检测地址",
-        description: probe.message,
-        tone: "neutral" as const,
-      };
-    }
-
-    if (hostSession?.hostState === "active") {
-      return {
-        title: "房间已启动",
-        description: probe?.message || "当前网络不支持公网直连，建议切换 Tailscale 或云中继。",
-        tone: "warning" as const,
-      };
-    }
-  }
-
-  if (connectionMode === "tailscale") {
-    return {
-      title: signalingUrl ? "地址已准备好" : "房间已启动",
-      description: signalingUrl
-        ? "Tailscale 地址已经准备好，固定好友可直接加入。"
-        : "正在准备 Tailscale 邀请地址。",
-      tone: signalingUrl ? ("success" as const) : ("neutral" as const),
-    };
-  }
-
-  if (connectionMode === "cloudflare_tunnel") {
-    return {
-      title: signalingUrl ? "临时公网已就绪" : "正在创建临时公网",
-      description: signalingUrl
-        ? "地址已准备好，可以直接分享给全国各地的好友。关闭房间后地址会失效。"
-        : hostSession?.cloudflareTunnel?.message ?? "正在创建临时公网隧道…",
-      tone: signalingUrl ? ("success" as const) : ("neutral" as const),
-    };
-  }
-
-  return {
-    title: signalingUrl ? "中继已就绪" : "正在准备中继",
-    description: signalingUrl
-      ? "云中继地址已经就绪，可以复制给好友。"
-      : "房间已启动，正在准备云中继邀请地址。",
-    tone: signalingUrl ? ("success" as const) : ("neutral" as const),
-  };
-};
 
 export const RoomPage = () => {
-  const { room, leaveRoom, replaceInputDevice, copyInviteLink, sendChatMessage } = useRoomState();
-  const pushToast = useAppStore((state) => state.pushToast);
+  const { room, leaveRoom, replaceInputDevice, sendChatMessage } = useRoomState();
   const settings = useSettingsStore((state) => state.settings);
   const saveSettings = useSettingsStore((state) => state.saveSettings);
-  const hostSession = useRoomStore((state) => state.hostSession);
   const chatMessages = useRoomStore((state) => state.chatMessages);
+  const connectionHealth = useRoomStore((state) => state.connectionHealth);
+  const updateMemberVolume = useRoomStore((state) => state.updateMemberVolume);
   const {
     inputDevices,
     outputDevices,
     isMuted,
     isPushToTalkEnabled,
-    isNoiseSuppressionEnabled,
     toggleMute,
     setPushToTalkEnabled,
-    setNoiseSuppressionEnabled,
   } = useAudioStore();
-  const recordingStatus = useRecordingStore((state) => state.status);
-  const recordingHistory = useRecordingStore((state) => state.history);
-  const updateMemberVolume = useRoomStore((state) => state.updateMemberVolume);
-  const connectionHealth = useRoomStore((state) => state.connectionHealth);
-  const { startRecording, stopRecording } = useRecordingController();
   const [chatInput, setChatInput] = useState("");
 
-  const handleRecording = async () => {
-    try {
-      if (recordingStatus.state === RecordingState.Recording) {
-        await stopRecording();
-        return;
-      }
-
-      startRecording();
-    } catch (error) {
-      pushToast({
-        tone: "danger",
-        title: "录音无法开始",
-        description:
-          error instanceof Error ? error.message : "当前没有可用的录音音频来源。",
-      });
-    }
-  };
+  const canSend =
+    room.connectionState === RoomConnectionState.Connected ||
+    room.connectionState === RoomConnectionState.WaitingPeer ||
+    room.connectionState === RoomConnectionState.WaitingSnapshot;
 
   const handleSendChat = () => {
     const content = chatInput.trim();
     if (!content) {
       return;
     }
-
-    void sendChatMessage(content).then(() => {
-      setChatInput("");
-    });
+    void sendChatMessage(content).then(() => setChatInput(""));
   };
 
-  const isRecordingBusy =
-    recordingStatus.state === RecordingState.Preparing ||
-    recordingStatus.state === RecordingState.Stopping ||
-    recordingStatus.state === RecordingState.Saving;
-
-  const isWaitingForFriends =
-    Boolean(hostSession) && room.connectionState === RoomConnectionState.WaitingPeer;
-
-  const roomSummary = useMemo(
-    () =>
-      getRoomStatusSummary({
-        connectionMode: room.connectionMode,
-        signalingUrl: room.signalingUrl,
-        hostSession,
-        latestHostEvent: room.recentHostEvents?.[0]?.message,
-        latestFailureReason: room.latestFailureReason,
-      }),
-    [hostSession, room.connectionMode, room.latestFailureReason, room.recentHostEvents, room.signalingUrl],
-  );
-
-  const shareableAddress = buildShareableInviteUrl(hostSession) || room.signalingUrl;
-  const displayAddress =
-    shareableAddress ||
-    (room.connectionMode === "direct_host"
-      ? "房间已启动，正在检测公网直连能力。"
-      : "房间已启动，正在准备邀请地址。");
-  const copyButtonLabel =
-    room.connectionMode === "direct_host" && hostSession?.directHostProbe?.reachability === "unverified"
-      ? "复制候选地址"
-      : "复制地址";
-
   return (
-    <PageContainer className="overflow-y-auto">
-      <TopStatusBar variant="room" onCopyInvite={() => void copyInviteLink()} />
-      {isWaitingForFriends ? (
-        <InlineBanner tone="neutral">等待好友加入</InlineBanner>
-      ) : null}
+    <PageContainer className="min-h-0 gap-3 overflow-hidden py-2.5">
+      <TopStatusBar variant="room" />
       {room.connectionState === RoomConnectionState.Reconnecting ||
       room.connectionState === RoomConnectionState.Degraded ? (
-        <InlineBanner tone="warning">连接有波动，正在自动重连…</InlineBanner>
+        <InlineBanner tone="warning">网络有波动，正在自动恢复频道连接。</InlineBanner>
       ) : null}
       {room.connectionState === RoomConnectionState.Failed ? (
-        <InlineBanner tone="danger">
-          当前连接失败。你可以直接重试，或者去设置页导出诊断包。
-        </InlineBanner>
+        <InlineBanner tone="danger">连接失败，请检查网络或频道服务器设置后重新进入。</InlineBanner>
       ) : null}
 
-      <section className="grid items-stretch gap-4 xl:grid-cols-[1.15fr_0.85fr]">
-        <div className="flex min-h-[360px] flex-col gap-4">
-          <RoomStatusPanel
-            roomName={room.roomName}
-            memberCount={room.memberCount}
-            connectionState={room.connectionState}
-            hasHostSession={Boolean(hostSession)}
-          />
-
-          <div className="grid flex-1 gap-4 md:grid-cols-[0.95fr_1.05fr]">
-            <div className="rounded-[18px] border border-[#E7ECF2] bg-white p-4 shadow-[0_10px_26px_rgba(17,24,39,0.05)]">
-              <div className="text-xs uppercase tracking-[0.2em] text-[#98A2B3]">连接方式</div>
-              <div className="mt-2 text-lg font-semibold text-[#111827]">
-                {modeLabels[room.connectionMode]}
-              </div>
-              <div className="mt-3 rounded-[14px] border border-[#E7ECF2] bg-[#F8FAFC] px-3 py-3">
-                <div className="text-sm font-medium text-[#111827]">{roomSummary.title}</div>
-                <div className="mt-1 text-sm text-[#667085]">{roomSummary.description}</div>
-              </div>
-              {hostSession?.hostAddress ? (
-                <div className="mt-3 text-sm text-[#667085]">
-                  当前主地址：<span className="break-all text-[#111827]">{hostSession.hostAddress}</span>
-                </div>
-              ) : null}
+      <section className="grid min-h-0 flex-1 items-stretch gap-4 xl:grid-cols-[1.12fr_0.88fr]">
+        <div className="surface-card flex min-h-[350px] flex-col p-5">
+          <div className="flex items-center justify-between">
+            <div>
+              <div className="text-[22px] font-semibold text-[#111827]">队伍</div>
+              <div className="mt-1 text-sm text-[#667085]">谁在线、谁在说话，一眼就能看到。</div>
             </div>
-
-            <div className="rounded-[18px] border border-[#E7ECF2] bg-white p-4 shadow-[0_10px_26px_rgba(17,24,39,0.05)]">
-              <div className="text-xs uppercase tracking-[0.2em] text-[#98A2B3]">房间地址</div>
-              <div className="mt-2 text-sm text-[#667085]">
-                把这份地址发给固定好友，对方粘贴后就能加入。
-              </div>
-              <div className="mt-4 rounded-[14px] border border-[#E7ECF2] bg-[#F8FAFC] px-3 py-3 text-sm text-[#111827]">
-                <div className="break-all">{displayAddress}</div>
-              </div>
-              <div className="mt-4 flex items-center gap-3">
-                <Button
-                  variant="secondary"
-                  onClick={() => void copyInviteLink()}
-                  disabled={!shareableAddress}
-                >
-                  {copyButtonLabel}
-                </Button>
-                <div className="text-sm text-[#98A2B3]">
-                  {shareableAddress ? "地址已就绪" : "等待地址准备完成"}
-                </div>
-              </div>
-            </div>
+            <div className="status-capsule">{room.memberCount}/5 在线</div>
+          </div>
+          <div className="mt-5">
+            <MemberGrid members={room.members} onVolumeChange={(memberId, value) => updateMemberVolume(memberId, value)} />
+          </div>
+          <div className="mt-auto pt-5">
+            <ConnectionHealthStrip
+              latencyMs={connectionHealth.latencyMs}
+              jitterMs={connectionHealth.jitterMs}
+              packetLossPercent={connectionHealth.packetLossPercent}
+            />
           </div>
         </div>
 
@@ -299,49 +88,15 @@ export const RoomPage = () => {
           chatInput={chatInput}
           onChatInputChange={setChatInput}
           onSend={handleSendChat}
-          emptyMessage="还没有消息。"
-          canSend={
-            room.connectionState === RoomConnectionState.Connected ||
-            room.connectionState === RoomConnectionState.WaitingPeer ||
-            room.connectionState === RoomConnectionState.WaitingSnapshot
-          }
-          unavailableLabel={
-            room.connectionState === RoomConnectionState.Reconnecting ? "重连中" : "连接已断开"
-          }
+          onQuickSend={(message) => void sendChatMessage(message)}
+          emptyMessage="发一句，叫大家上号。"
+          canSend={canSend}
+          unavailableLabel={room.connectionState === RoomConnectionState.Reconnecting ? "重连中" : "连接已断开"}
         />
       </section>
 
-      <ConnectionHealthStrip
-        latencyMs={connectionHealth.latencyMs}
-        jitterMs={connectionHealth.jitterMs}
-        packetLossPercent={connectionHealth.packetLossPercent}
-      />
-      <RecordingStatusBanner
-        state={recordingStatus.state}
-        durationMs={recordingStatus.durationMs}
-        message={recordingStatus.message}
-        startedAt={
-          recordingStatus.state === RecordingState.Recording
-            ? recordingStatus.startedAt
-            : undefined
-        }
-      />
-      <RecordingErrorBanner
-        message={recordingStatus.state === RecordingState.Failed ? recordingStatus.message : undefined}
-      />
-
-      <div className="space-y-3">
-        <div className="text-sm font-medium text-[#667085]">开黑位</div>
-        <MemberGrid
-          members={room.members}
-          onVolumeChange={(memberId, value) => updateMemberVolume(memberId, value)}
-        />
-      </div>
-
-      <RecordingHistoryList items={recordingHistory} />
-
       <BottomControlDock>
-        <ControlBar>
+        <div className="flex items-center gap-3">
           <MuteButton isMuted={isMuted} onClick={toggleMute} />
           <PushToTalkToggle
             isEnabled={isPushToTalkEnabled}
@@ -350,31 +105,14 @@ export const RoomPage = () => {
               void saveSettings({ isPushToTalkEnabled: !isPushToTalkEnabled });
             }}
           />
-          {isPushToTalkEnabled ? (
-            <PushToTalkKeyBadge shortcut={settings?.pushToTalkShortcut || "Space"} />
-          ) : null}
-          <NoiseSuppressionToggle
-            isEnabled={isNoiseSuppressionEnabled}
-            onClick={() => {
-              setNoiseSuppressionEnabled(!isNoiseSuppressionEnabled);
-              void saveSettings({ isNoiseSuppressionEnabled: !isNoiseSuppressionEnabled });
-            }}
-          />
-          <RecordingButton
-            isRecording={recordingStatus.state === RecordingState.Recording}
-            onClick={() => void handleRecording()}
-            disabled={isRecordingBusy}
-          />
-        </ControlBar>
-
+          {isPushToTalkEnabled ? <PushToTalkKeyBadge shortcut={settings?.pushToTalkShortcut || "Space"} /> : null}
+        </div>
         <div className="grid min-w-[280px] flex-1 gap-3 md:grid-cols-2">
           <InputDevicePicker
             devices={inputDevices}
             value={settings?.preferredInputDeviceId}
             onChange={(preferredInputDeviceId) => {
-              void saveSettings({ preferredInputDeviceId }).then(() =>
-                replaceInputDevice(preferredInputDeviceId),
-              );
+              void saveSettings({ preferredInputDeviceId }).then(() => replaceInputDevice(preferredInputDeviceId));
             }}
           />
           <OutputDevicePicker
@@ -383,9 +121,8 @@ export const RoomPage = () => {
             onChange={(preferredOutputDeviceId) => void saveSettings({ preferredOutputDeviceId })}
           />
         </div>
-
         <Button variant="danger" onClick={() => void leaveRoom()}>
-          离开房间
+          退出频道
         </Button>
       </BottomControlDock>
     </PageContainer>

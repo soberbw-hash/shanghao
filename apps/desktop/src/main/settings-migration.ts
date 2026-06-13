@@ -1,6 +1,8 @@
 import {
   DEFAULT_ROOM_NAME,
+  PROFILE_SCHEMA_VERSION,
   SETTINGS_SCHEMA_VERSION,
+  isBuiltInAvatarId,
   type AppSettings,
 } from "@private-voice/shared";
 
@@ -12,10 +14,13 @@ export type RawSettings = Partial<AppSettings> & {
 
 export const defaultSettings: AppSettings = {
   settingsSchemaVersion: SETTINGS_SCHEMA_VERSION,
+  profileSchemaVersion: PROFILE_SCHEMA_VERSION,
   nickname: "",
   roomName: DEFAULT_ROOM_NAME,
+  avatarId: "fox",
   avatarPath: undefined,
   hasCompletedProfileSetup: false,
+  channelAccessCode: "",
   minimizeToTray: false,
   reduceMotion: false,
   launchOnStartup: false,
@@ -81,9 +86,12 @@ export const migrateSettings = (raw: RawSettings): MigrationResult => {
     ...defaultSettings,
     ...raw,
     settingsSchemaVersion: SETTINGS_SCHEMA_VERSION,
+    profileSchemaVersion: PROFILE_SCHEMA_VERSION,
     nickname: trimText(raw.nickname) ?? "",
     roomName: trimText(raw.roomName) ?? DEFAULT_ROOM_NAME,
-    avatarPath: trimText(raw.avatarPath),
+    avatarId: isBuiltInAvatarId(raw.avatarId) ? raw.avatarId : defaultSettings.avatarId,
+    avatarPath: undefined,
+    channelAccessCode: trimText(raw.channelAccessCode) ?? "",
     globalMuteShortcut: trimText(raw.globalMuteShortcut) ?? "",
     pushToTalkShortcut: trimText(raw.pushToTalkShortcut) ?? defaultSettings.pushToTalkShortcut,
     relayServerUrl: normalizeRelayServerUrl(raw.relayServerUrl) ?? "",
@@ -105,8 +113,15 @@ export const migrateSettings = (raw: RawSettings): MigrationResult => {
         : defaultSettings.inputLevelThreshold,
   };
 
-  const isProfileReady = merged.nickname.length > 0 && Boolean(merged.avatarPath);
-  merged.hasCompletedProfileSetup = Boolean(merged.hasCompletedProfileSetup) && isProfileReady;
+  const previousProfileVersion =
+    typeof raw.profileSchemaVersion === "number" && Number.isFinite(raw.profileSchemaVersion)
+      ? raw.profileSchemaVersion
+      : 0;
+  const isProfileReady = merged.nickname.length > 0 && isBuiltInAvatarId(merged.avatarId);
+  merged.hasCompletedProfileSetup =
+    previousProfileVersion === PROFILE_SCHEMA_VERSION &&
+    Boolean(merged.hasCompletedProfileSetup) &&
+    isProfileReady;
 
   return {
     settings: merged,

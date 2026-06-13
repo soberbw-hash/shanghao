@@ -1,4 +1,5 @@
 import { MessageCircle, Send } from "lucide-react";
+import { motion } from "framer-motion";
 
 import type { ChatMessage } from "@private-voice/shared";
 
@@ -12,6 +13,7 @@ export const TemporaryChatPanel = ({
   chatInput,
   onChatInputChange,
   onSend,
+  onQuickSend,
   className = "",
   emptyMessage = "还没有消息。",
   canSend = false,
@@ -21,13 +23,14 @@ export const TemporaryChatPanel = ({
   chatInput: string;
   onChatInputChange: (value: string) => void;
   onSend: () => void;
+  onQuickSend?: (message: string) => void;
   className?: string;
   emptyMessage?: string;
   canSend?: boolean;
   unavailableLabel?: string;
 }) => (
   <div
-    className={`flex min-h-[376px] flex-col rounded-[24px] border border-[#E7ECF2] bg-white p-4 shadow-[0_18px_40px_rgba(17,24,39,0.06)] ${className}`.trim()}
+    className={`surface-card flex min-h-[350px] flex-col p-4 ${className}`.trim()}
     data-testid="temporary-chat-panel"
   >
     <div className="flex items-center gap-2 text-sm font-medium text-[#111827]">
@@ -38,26 +41,30 @@ export const TemporaryChatPanel = ({
     <div className="mt-3 flex min-h-0 flex-1 flex-col rounded-[18px] border border-[#E7ECF2] bg-[#F8FAFC] p-3">
       <div className="min-h-0 flex-1 space-y-3 overflow-y-auto pr-1">
         {messages.length === 0 ? (
-          <div className="flex h-full min-h-[190px] items-center justify-center rounded-[16px] border border-dashed border-[#D6DEE8] bg-white px-4 text-center text-sm text-[#98A2B3]">
+          <div className="flex h-full min-h-[190px] flex-col items-center justify-center rounded-[16px] border border-dashed border-[#D6DEE8] bg-white px-4 text-center text-sm text-[#98A2B3]">
+            <div className="mb-2 text-2xl">💬</div>
             {emptyMessage}
           </div>
         ) : (
           messages.map((message) => (
-            <div
+            <motion.div
               key={message.id}
-              className={`max-w-[88%] rounded-[16px] px-3 py-2 text-sm shadow-[0_4px_12px_rgba(17,24,39,0.04)] ${
-                message.isLocal ? "ml-auto bg-[#4DA3FF] text-white" : "bg-white text-[#111827]"
+              initial={{ opacity: 0, y: 6 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.18, ease: [0.22, 1, 0.36, 1] }}
+              className={`max-w-[68%] rounded-[16px] px-3 py-2 text-sm shadow-[0_4px_12px_rgba(17,24,39,0.04)] ${
+                message.isLocal ? "ml-auto bg-[#E8F3FF] text-[#174F86]" : "bg-white text-[#111827]"
               }`}
             >
               <div
                 className={`text-[11px] ${
-                  message.isLocal ? "text-white/80" : "text-[#98A2B3]"
+                  message.isLocal ? "text-[#5C8FBE]" : "text-[#98A2B3]"
                 }`}
               >
                 {message.nickname}
               </div>
               <div className="mt-1 break-words leading-6">{message.content}</div>
-            </div>
+            </motion.div>
           ))
         )}
       </div>
@@ -67,8 +74,14 @@ export const TemporaryChatPanel = ({
           <button
             key={emoji}
             type="button"
-            className="rounded-full border border-[#E7ECF2] bg-white px-3 py-1 text-sm text-[#667085] transition hover:border-[#C7D7EB] hover:text-[#111827]"
-            onClick={() => onChatInputChange(`${chatInput}${emoji}`)}
+            className="interactive-surface rounded-full border border-[#E7ECF2] bg-white px-3 py-1 text-sm text-[#667085] hover:border-[#C7D7EB] hover:text-[#111827]"
+            onClick={() => {
+              if (canSend && onQuickSend) {
+                onQuickSend(emoji);
+                return;
+              }
+              onChatInputChange(`${chatInput}${emoji}`);
+            }}
           >
             {emoji}
           </button>
@@ -82,7 +95,7 @@ export const TemporaryChatPanel = ({
             value={chatInput}
             onChange={(event) => onChatInputChange(event.target.value)}
             onKeyDown={(event) => {
-              if (event.key === "Enter" && !event.shiftKey && canSend) {
+              if (event.key === "Enter" && !event.shiftKey && !event.ctrlKey && canSend) {
                 event.preventDefault();
                 onSend();
               }

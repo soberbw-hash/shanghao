@@ -22,12 +22,16 @@ test("room client marks webrtc ready from connection state instead of remote str
 
   assert.equal(source.includes('if (state === "connected")'), true);
   assert.equal(source.includes("this.webrtcReadyPeerIds.add(targetPeerId)"), true);
-  assert.equal(source.includes('this.audioRelay?.clearPeer(targetPeerId, "webrtc_connected")'), true);
+  assert.equal(source.includes('this.audioRelay?.markPeerPath(targetPeerId, "webrtc", "webrtc_connected")'), true);
   assert.equal(source.includes('state === "closed"'), true);
-  assert.equal(relay.includes("MAX_PACKET_AGE_MS = 1_000"), true);
+  assert.equal(relay.includes("MAX_PACKET_AGE_MS = 1_500"), true);
   assert.equal(relay.includes("MAX_QUEUE_DURATION_MS = 800"), true);
   assert.equal(relay.includes("MAX_QUEUE_CHUNKS = 20"), true);
   assert.equal(relay.includes("droppedExpiredChunks"), true);
+  assert.equal(relay.includes("serverClockOffsetMs"), true);
+  assert.equal(relay.includes("audioStreamEpoch"), true);
+  assert.equal(relay.includes("audio_resync_request"), true);
+  assert.equal(relay.includes("this.context.currentTime"), true);
 });
 
 test("tailscale selects 100.x before MagicDNS", () => {
@@ -70,13 +74,20 @@ test("room client preserves peers while signaling reconnects and bounds retry at
   const source = read("apps/desktop/src/renderer/src/features/room/roomClient.ts");
   const hook = read("apps/desktop/src/renderer/src/hooks/useRoomState.ts");
 
-  assert.equal(source.includes("MAX_RECONNECT_ATTEMPTS = 4"), true);
+  assert.equal(source.includes("MAX_RECONNECT_ATTEMPTS = 6"), true);
   assert.equal(source.includes("this.options.onReconnectExhausted?.(error)"), true);
   assert.equal(source.includes("Ignored stale room snapshot"), true);
   assert.equal(source.includes("snapshot.revision <= this.lastSnapshotRevision"), true);
   assert.equal(source.includes("this.clearPeers();\n      this.reconnect();"), false);
   assert.equal(hook.includes("cleanupPreviousSession"), true);
   assert.equal(hook.includes("peerId: sharedPeerId"), false);
+});
+
+test("audio backpressure drops realtime frames instead of queueing stale audio", () => {
+  const bridge = read("apps/desktop/src/main/signaling-client.ts");
+  assert.equal(bridge.includes("bufferedAmount >= 512 * 1024"), true);
+  assert.equal(bridge.includes("droppedByBackpressure"), true);
+  assert.equal(bridge.includes("maxBufferedAmount"), true);
 });
 
 test("room joining uses acknowledgement and snapshot recovery without logging raw signaling data", () => {

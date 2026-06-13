@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 
 import {
+  DEFAULT_CHANNEL_ID,
   HostSessionState,
   RoomConnectionState,
   RoomLifecycleState,
@@ -261,8 +262,8 @@ export const useRoomState = () => {
       return;
     }
 
-    activeClient?.updateProfile(settings.nickname, avatarDataUrl);
-  }, [avatarDataUrl, settings?.nickname]);
+    activeClient?.updateProfile(settings.nickname, avatarDataUrl, settings.avatarId);
+  }, [avatarDataUrl, settings?.avatarId, settings?.nickname]);
 
   useEffect(() => {
     const unsubscribe = window.desktopApi.host.onSessionUpdated((session) => {
@@ -408,12 +409,16 @@ export const useRoomState = () => {
     roomId,
     roomName,
     connectionMode,
+    isFixedChannel = false,
+    channelCode,
   }: {
     connectUrl: string;
     inviteUrl?: string;
     roomId: string;
     roomName: string;
     connectionMode: ConnectionMode;
+    isFixedChannel?: boolean;
+    channelCode?: string;
   }) => {
     const stream = await ensureLocalStream();
 
@@ -424,6 +429,9 @@ export const useRoomState = () => {
       peerId,
       nickname: settings?.nickname ?? "我",
       avatarDataUrl,
+      avatarId: settings?.avatarId,
+      isFixedChannel,
+      channelCode,
       localStream: stream,
       connectionMode,
       appVersion: runtimeInfo?.version ?? "0.0.0",
@@ -498,6 +506,9 @@ export const useRoomState = () => {
           peerId,
           revision,
         });
+      },
+      onRtt: (latencyMs) => {
+        setConnectionHealth({ latencyMs, lastUpdatedAt: new Date().toISOString() });
       },
       onRemoteStream: (remotePeerId, remoteStream) => {
         setRemoteStream(remotePeerId, remoteStream);
@@ -790,6 +801,71 @@ export const useRoomState = () => {
     }
   };
 
+  const joinChannel = async () => {
+    if (!settings) {
+      return;
+    }
+
+    const serverUrl = settings.relayServerUrl?.trim();
+    if (!serverUrl) {
+      pushToast({
+        tone: "warning",
+        title: "还没有设置频道服务器",
+        description: "请先在设置的高级连接里填写固定频道服务器地址。",
+      });
+      useAppStore.getState().navigate("settings");
+      return;
+    }
+
+    setRoomAction("joining");
+    setConnectionState(RoomConnectionState.Joining);
+    setLifecycleState(RoomLifecycleState.Opening);
+    clearHostEvents();
+    clearChatMessages();
+    pushHostEvent({ level: "info", message: "正在进入开黑频道" });
+
+    try {
+      await cleanupPreviousSession({ stopHost: true });
+      await writeRendererLog("signaling", "info", "Joining fixed channel", {
+        channelId: DEFAULT_CHANNEL_ID,
+        connectionMode: "relay",
+        hasChannelCode: Boolean(settings.channelAccessCode),
+      });
+      await connectToRoom({
+        connectUrl: serverUrl,
+        roomId: DEFAULT_CHANNEL_ID,
+        roomName: settings.roomName,
+        connectionMode: "relay",
+        isFixedChannel: true,
+        channelCode: settings.channelAccessCode,
+      });
+      setConnectionMode("relay");
+      useAppStore.getState().navigate("room");
+      pushToast({
+        tone: "success",
+        title: "已进入开黑频道",
+        description: "好友上线后会自动出现在队伍里。",
+      });
+    } catch (error) {
+      const rawMessage = error instanceof Error ? error.message : String(error);
+      const description =
+        rawMessage.includes("频道码") || rawMessage.includes("channel_code_invalid")
+          ? "频道码不正确，请向好友确认后重试。"
+          : normalizeRoomError(error, "暂时无法进入频道，请检查服务器设置后重试。");
+      await writeRendererLog("signaling", "error", "Failed to join fixed channel", {
+        channelId: DEFAULT_CHANNEL_ID,
+        hasChannelCode: Boolean(settings.channelAccessCode),
+        error: rawMessage,
+      });
+      await cleanupPreviousSession();
+      setConnectionState(RoomConnectionState.Failed, description);
+      setRoom({ lifecycleState: RoomLifecycleState.Failed });
+      pushToast({ tone: "danger", title: "进入频道失败", description });
+    } finally {
+      setRoomAction("idle");
+    }
+  };
+
   const replaceInputDevice = async (preferredInputDeviceId?: string) => {
     if (!activeClient || !settings) {
       return;
@@ -842,6 +918,7 @@ export const useRoomState = () => {
           nickname: settings.nickname,
           avatarPath: settings.avatarPath,
           avatarDataUrl,
+          avatarId: settings.avatarId,
         });
       }
       useAppStore.getState().navigate("home");
@@ -926,6 +1003,7 @@ export const useRoomState = () => {
     setJoinSignalUrl,
     startHost,
     joinRoom,
+    joinChannel,
     leaveRoom,
     replaceInputDevice,
     copyInviteLink,

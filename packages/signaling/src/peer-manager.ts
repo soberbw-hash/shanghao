@@ -2,6 +2,7 @@ import {
   MemberJoinState,
   MemberPresenceState,
   MemberSpeakingState,
+  type BuiltInAvatarId,
   type RoomMember,
 } from "@private-voice/shared";
 import type { WebSocket } from "ws";
@@ -11,6 +12,7 @@ export interface PeerSession {
   nickname: string;
   avatarDataUrl?: string;
   avatarHash?: string;
+  avatarId?: BuiltInAvatarId;
   socket: WebSocket;
   isHost: boolean;
   isMuted: boolean;
@@ -63,7 +65,7 @@ export class PeerManager {
   updateMemberState(
     peerId: string,
     nextState: Partial<
-      Pick<PeerSession, "isMuted" | "isSpeaking" | "nickname" | "avatarDataUrl" | "avatarHash">
+      Pick<PeerSession, "isMuted" | "isSpeaking" | "nickname" | "avatarDataUrl" | "avatarHash" | "avatarId">
     >,
   ): void {
     const peer = this.peers.get(peerId);
@@ -81,6 +83,7 @@ export class PeerManager {
       id: peer.id,
       nickname: peer.nickname,
       avatarHash: peer.avatarHash,
+      avatarId: peer.avatarId,
       isHost: peer.isHost,
       isLocal: peer.id === localPeerId,
       isMuted: peer.isMuted,

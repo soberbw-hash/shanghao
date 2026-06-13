@@ -1,8 +1,9 @@
 import { cn } from "./cn";
+import type { ReactNode } from "react";
 
 interface StatusPillProps {
   tone?: "neutral" | "success" | "warning" | "danger" | "accent";
-  children: string;
+  children: ReactNode;
 }
 
 const toneClasses = {

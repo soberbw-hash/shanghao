@@ -13,6 +13,7 @@ const SETTINGS_BOM = "\uFEFF";
 export class SettingsStore {
   private cachedSettings: AppSettings = defaultSettings;
   private readonly filePath = path.join(app.getPath("userData"), "settings.json");
+  private readonly backupFilePath = path.join(app.getPath("userData"), "settings.backup.json");
 
   constructor(private readonly writeLog?: (payload: RendererLogPayload) => Promise<void>) {}
 
@@ -21,13 +22,18 @@ export class SettingsStore {
       const fileContent = await readFile(this.filePath, "utf8");
       const parsed = JSON.parse(this.stripBom(fileContent)) as RawSettings;
       const { settings, migrated, previousVersion } = migrateSettings(parsed);
+      if (migrated) {
+        await writeFile(this.backupFilePath, this.stripBom(fileContent), { encoding: "utf8" });
+        await clearAvatarImage(parsed.avatarPath);
+      }
       this.cachedSettings = settings;
       await this.persist(this.cachedSettings);
       await this.log("info", "settings loaded", {
         schemaVersion: settings.settingsSchemaVersion,
         previousVersion,
         migrated,
-        hasAvatar: Boolean(settings.avatarPath),
+        avatarId: settings.avatarId,
+        profileSchemaVersion: settings.profileSchemaVersion,
         profileReady: settings.hasCompletedProfileSetup,
         connectionMode: settings.connectionMode,
       });
@@ -48,19 +54,15 @@ export class SettingsStore {
   }
 
   async save(partial: Partial<AppSettings>): Promise<AppSettings> {
-    const previousAvatarPath = this.cachedSettings.avatarPath;
     const { settings } = migrateSettings({
       ...this.cachedSettings,
       ...partial,
     });
     this.cachedSettings = settings;
     await this.persist(this.cachedSettings);
-    if (partial.avatarPath !== undefined && previousAvatarPath !== partial.avatarPath) {
-      await clearAvatarImage(previousAvatarPath);
-    }
     await this.log("info", "settings saved", {
       schemaVersion: this.cachedSettings.settingsSchemaVersion,
-      hasAvatar: Boolean(this.cachedSettings.avatarPath),
+      avatarId: this.cachedSettings.avatarId,
       nickname: this.cachedSettings.nickname,
       connectionMode: this.cachedSettings.connectionMode,
       preferredSampleRate: this.cachedSettings.preferredSampleRate,

@@ -10,6 +10,7 @@ import {
   RoomConnectionState,
   RoomLifecycleState,
   type ChatMessage,
+  type BuiltInAvatarId,
   type ConnectionHealth,
   type ConnectionMode,
   type HostEvent,
@@ -22,6 +23,7 @@ interface LocalProfilePayload {
   nickname?: string;
   avatarPath?: string;
   avatarDataUrl?: string;
+  avatarId?: BuiltInAvatarId;
 }
 
 interface RoomStoreState {
@@ -74,7 +76,8 @@ const createLocalPreviewMember = (profile?: LocalProfilePayload): RoomMember => 
   nickname: profile?.nickname?.trim() || localMemberLabel,
   avatarPath: profile?.avatarPath,
   avatarDataUrl: profile?.avatarDataUrl,
-  isHost: true,
+  avatarId: profile?.avatarId,
+  isHost: false,
   isLocal: true,
   isMuted: false,
   presenceState: MemberPresenceState.Online,
@@ -255,6 +258,7 @@ export const useRoomStore = create<RoomStoreState>((set) => ({
         nickname: profile.nickname?.trim() || baseMember.nickname || localMemberLabel,
         avatarPath: profile.avatarPath,
         avatarDataUrl: profile.avatarDataUrl,
+        avatarId: profile.avatarId,
       };
 
       if (localMemberIndex >= 0) {

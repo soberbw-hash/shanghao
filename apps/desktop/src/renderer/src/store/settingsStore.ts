@@ -1,6 +1,7 @@
 import {
   APP_NAME,
   DEFAULT_ROOM_NAME,
+  PROFILE_SCHEMA_VERSION,
   SETTINGS_SCHEMA_VERSION,
   TailscaleState,
   type AppSettings,
@@ -13,6 +14,7 @@ import { create } from "zustand";
 
 import { desktopApi } from "../utils/desktopApi";
 import { writeRendererLog } from "../utils/logger";
+import { getAvatarSrc } from "../utils/profile";
 
 interface StoreHydrationOutcome {
   mode: "ready" | "safe_mode";
@@ -33,8 +35,6 @@ interface SettingsStoreState {
   isHydrating: boolean;
   hydrate: () => Promise<StoreHydrationOutcome>;
   saveSettings: (partial: Partial<AppSettings>) => Promise<AppSettings>;
-  pickAvatar: () => Promise<void>;
-  clearAvatar: () => Promise<void>;
   refreshTailscale: () => Promise<void>;
   refreshNetworkSnapshot: () => Promise<void>;
   checkUpdates: () => Promise<UpdateCheckResult>;
@@ -54,10 +54,13 @@ const fallbackRuntimeInfo: RuntimeInfo = {
 
 const fallbackSettings: AppSettings = {
   settingsSchemaVersion: SETTINGS_SCHEMA_VERSION,
+  profileSchemaVersion: PROFILE_SCHEMA_VERSION,
   nickname: "",
   roomName: DEFAULT_ROOM_NAME,
+  avatarId: "fox",
   avatarPath: undefined,
   hasCompletedProfileSetup: false,
+  channelAccessCode: "",
   minimizeToTray: false,
   reduceMotion: false,
   launchOnStartup: false,
@@ -116,14 +119,6 @@ const withTimeout = async <T>(
       });
   });
 
-const loadAvatarDataUrl = async (avatarPath?: string): Promise<string | undefined> => {
-  if (!avatarPath) {
-    return undefined;
-  }
-
-  return withTimeout(desktopApi.profile.readAvatar(avatarPath), "avatar_read_timeout", 3_000);
-};
-
 export const useSettingsStore = create<SettingsStoreState>((set, get) => ({
   settings: undefined,
   runtimeInfo: undefined,
@@ -166,36 +161,7 @@ export const useSettingsStore = create<SettingsStoreState>((set, get) => ({
       return fallbackSettings;
     });
 
-    let avatarDataUrl: string | undefined;
-    if (settings.avatarPath) {
-      avatarDataUrl = await loadAvatarDataUrl(settings.avatarPath).catch(async (error) => {
-        mode = "safe_mode";
-        issue = issue ?? {
-          title: "头像读取失败，已按安全模式启动",
-          description: "本地头像文件不可用，已经临时忽略头像，不会影响继续使用。",
-          details: [error instanceof Error ? error.message : String(error)],
-        };
-        await writeRendererLog("renderer-startup", "warn", "Failed to read local avatar", {
-          avatarPath: settings.avatarPath,
-          error: error instanceof Error ? error.message : String(error),
-        });
-
-        settings = {
-          ...settings,
-          avatarPath: undefined,
-          hasCompletedProfileSetup: false,
-        };
-
-        void desktopApi.settings
-          .save({
-            avatarPath: undefined,
-            hasCompletedProfileSetup: false,
-          })
-          .catch(() => undefined);
-
-        return undefined;
-      });
-    }
+    const avatarDataUrl = getAvatarSrc(settings.avatarId);
 
     const [tailscaleStatus, networkSnapshot] = await Promise.all([
       withTimeout(desktopApi.tailscale.checkStatus(), "tailscale_timeout", 4_000).catch(
@@ -238,7 +204,8 @@ export const useSettingsStore = create<SettingsStoreState>((set, get) => ({
     await writeRendererLog("renderer-startup", "info", "Renderer hydrated settings", {
       platform: runtimeInfo.platform,
       tailscaleState: tailscaleStatus.state,
-      hasAvatar: Boolean(settings.avatarPath),
+      avatarId: settings.avatarId,
+      profileSchemaVersion: settings.profileSchemaVersion,
       profileReady: settings.hasCompletedProfileSetup,
       connectionMode: settings.connectionMode,
       mode,
@@ -249,30 +216,9 @@ export const useSettingsStore = create<SettingsStoreState>((set, get) => ({
   },
   saveSettings: async (partial) => {
     const settings = await desktopApi.settings.save(partial);
-    const avatarDataUrl = await loadAvatarDataUrl(settings.avatarPath).catch(async (error) => {
-      await writeRendererLog("app", "warn", "Failed to refresh avatar preview", {
-        avatarPath: settings.avatarPath,
-        error: error instanceof Error ? error.message : String(error),
-      });
-      return undefined;
-    });
+    const avatarDataUrl = getAvatarSrc(settings.avatarId);
     set({ settings, avatarDataUrl });
     return settings;
-  },
-  pickAvatar: async () => {
-    const selection = await desktopApi.profile.pickAvatar();
-    if (!selection) {
-      return;
-    }
-
-    const settings = await desktopApi.settings.save({ avatarPath: selection.avatarPath });
-    set({ settings, avatarDataUrl: selection.avatarDataUrl });
-  },
-  clearAvatar: async () => {
-    const avatarPath = get().settings?.avatarPath;
-    await desktopApi.profile.clearAvatar(avatarPath);
-    const settings = await desktopApi.settings.save({ avatarPath: undefined });
-    set({ settings, avatarDataUrl: undefined });
   },
   refreshTailscale: async () => {
     const tailscaleStatus = await desktopApi.tailscale.checkStatus().catch(async (error) => {
@@ -302,7 +248,7 @@ export const useSettingsStore = create<SettingsStoreState>((set, get) => ({
   },
   resetSettings: async () => {
     const settings = await desktopApi.settings.reset();
-    set({ settings, avatarDataUrl: undefined });
+    set({ settings, avatarDataUrl: getAvatarSrc(settings.avatarId) });
     await get().refreshTailscale();
     await get().refreshNetworkSnapshot();
   },

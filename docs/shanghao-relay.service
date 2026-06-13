@@ -7,8 +7,7 @@ Wants=network-online.target
 Type=simple
 WorkingDirectory=/opt/shanghao
 Environment=NODE_ENV=production
-Environment=PORT=43821
-Environment=ROOM_NAME=ShangHao Relay
+EnvironmentFile=-/opt/shanghao/.env
 ExecStart=/usr/bin/node /opt/shanghao/scripts/start-relay.mjs
 Restart=always
 RestartSec=3

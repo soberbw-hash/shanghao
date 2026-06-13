@@ -142,8 +142,14 @@ export const registerIpcHandlers = ({
       writeLog: (payload) => diagnostics.writeLog(payload),
     });
 
+    const sanitizedSettings = {
+      ...settings,
+      channelAccessCode: settings.channelAccessCode ? "[redacted]" : "",
+      relayAuthToken: settings.relayAuthToken ? "[redacted]" : "",
+    };
+
     return diagnostics.exportBundle([
-      { name: "settings.json", content: JSON.stringify(settings, null, 2) },
+      { name: "settings.json", content: JSON.stringify(sanitizedSettings, null, 2) },
       { name: "network.json", content: JSON.stringify(network, null, 2) },
       { name: "summary.json", content: JSON.stringify(summary, null, 2) },
       {
@@ -153,6 +159,10 @@ export const registerIpcHandlers = ({
       {
         name: "renderer-session.json",
         content: JSON.stringify(rendererState ?? null, null, 2),
+      },
+      {
+        name: "audio-timeline.json",
+        content: JSON.stringify(rendererState?.audioTimeline ?? [], null, 2),
       },
     ]);
   });

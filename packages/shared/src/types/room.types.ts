@@ -7,6 +7,7 @@ import {
   RoomLifecycleState,
 } from "../enums/app.enums";
 import type {
+  BuiltInAvatarId,
   ConnectionMode,
   CloudflareTunnelStatus,
   DirectHostProbeSummary,
@@ -19,6 +20,7 @@ export interface ChatMessage {
   peerId: string;
   nickname: string;
   avatarDataUrl?: string;
+  avatarId?: BuiltInAvatarId;
   content: string;
   createdAt: string;
   isLocal?: boolean;
@@ -29,6 +31,7 @@ export interface RoomMember {
   nickname: string;
   avatarPath?: string;
   avatarDataUrl?: string;
+  avatarId?: BuiltInAvatarId;
   avatarHash?: string;
   isHost: boolean;
   isLocal: boolean;

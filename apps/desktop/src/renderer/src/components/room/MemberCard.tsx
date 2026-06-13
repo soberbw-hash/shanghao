@@ -9,9 +9,9 @@ import {
 } from "@private-voice/shared";
 
 import { AvatarPlaceholder } from "../base/AvatarPlaceholder";
-import { HostBadge } from "./HostBadge";
 import { MemberVolumePopover } from "./MemberVolumePopover";
 import { SpeakingGlow } from "./SpeakingGlow";
+import { getAvatarSrc } from "../../utils/profile";
 
 export const MemberCard = ({
   member,
@@ -24,11 +24,11 @@ export const MemberCard = ({
 
   if (member.isEmptySlot) {
     return (
-      <div className="flex h-[84px] items-center gap-3 rounded-[18px] border border-dashed border-[#D6DEE8] bg-[#F8FAFC] px-4">
-        <AvatarPlaceholder name="空位" size="md" className="bg-white text-[#98A2B3]" />
+      <div className="flex h-[84px] items-center gap-3 rounded-[18px] border border-dashed border-[#D6DEE8] bg-[#F8FAFC]/70 px-4 opacity-75">
+        <AvatarPlaceholder name="等待" size="md" className="bg-white text-[#98A2B3]" />
         <div className="min-w-0">
-          <div className="truncate text-sm font-medium text-[#111827]">空位</div>
-          <div className="text-xs text-[#98A2B3]">等好友上号</div>
+          <div className="truncate text-sm font-medium text-[#667085]">等待加入</div>
+          <div className="text-xs text-[#98A2B3]">好友上线后会出现在这里</div>
         </div>
       </div>
     );
@@ -41,17 +41,16 @@ export const MemberCard = ({
     <button
       type="button"
       onClick={() => setIsExpanded((value) => !value)}
-      className="relative flex w-full flex-col gap-2 rounded-[18px] border border-[#E7ECF2] bg-white px-4 py-3 text-left shadow-[0_8px_20px_rgba(17,24,39,0.04)] transition hover:border-[#C7D7EB] active:scale-[0.99]"
+      className="interactive-surface relative flex w-full flex-col gap-2 rounded-[18px] border border-[#E7ECF2] bg-white px-4 py-3 text-left shadow-[0_8px_20px_rgba(17,24,39,0.04)] hover:border-[#C7D7EB]"
     >
       <SpeakingGlow isSpeaking={isSpeaking} />
       <div className="flex min-h-[52px] items-center gap-3">
         <div className="shrink-0">
-          <AvatarPlaceholder name={member.nickname} src={member.avatarDataUrl} size="md" />
+          <AvatarPlaceholder name={member.nickname} src={member.avatarDataUrl || getAvatarSrc(member.avatarId)} size="md" />
         </div>
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
             <span className="truncate text-sm font-semibold text-[#111827]">{member.nickname}</span>
-            {member.isHost ? <HostBadge /> : null}
           </div>
           <div className="mt-1 flex items-center gap-2 text-xs text-[#667085]">
             {member.isMuted ? (

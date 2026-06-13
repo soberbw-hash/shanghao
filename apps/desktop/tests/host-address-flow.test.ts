@@ -72,14 +72,12 @@ test("renderer validates real invite urls and blocks unverified direct-host addr
   assert.equal(source.includes("url.searchParams.append(\"candidate\", candidate);"), true);
 });
 
-test("home page uses the same shareable invite builder as the room page", () => {
+test("home page no longer exposes raw shareable addresses in the fixed-channel flow", () => {
   const source = readFileSync(homePagePath, "utf8");
 
-  assert.equal(source.includes("import { buildShareableInviteUrl }"), true);
-  assert.equal(
-    source.includes("const currentAddress = buildShareableInviteUrl(hostSession) || room.signalingUrl;"),
-    true,
-  );
+  assert.equal(source.includes("buildShareableInviteUrl"), false);
+  assert.equal(source.includes("进入开黑频道"), true);
+  assert.equal(source.includes("ws://"), false);
 });
 
 test("joining tries invite fallback candidates before giving up", () => {

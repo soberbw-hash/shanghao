@@ -24,13 +24,10 @@ export const SettingsPage = () => {
   const pushToast = useAppStore((state) => state.pushToast);
   const settings = useSettingsStore((state) => state.settings);
   const runtimeInfo = useSettingsStore((state) => state.runtimeInfo);
-  const avatarDataUrl = useSettingsStore((state) => state.avatarDataUrl);
   const tailscaleStatus = useSettingsStore((state) => state.tailscaleStatus);
   const networkSnapshot = useSettingsStore((state) => state.networkSnapshot);
   const updateInfo = useSettingsStore((state) => state.updateInfo);
   const saveSettings = useSettingsStore((state) => state.saveSettings);
-  const pickAvatar = useSettingsStore((state) => state.pickAvatar);
-  const clearAvatar = useSettingsStore((state) => state.clearAvatar);
   const refreshTailscale = useSettingsStore((state) => state.refreshTailscale);
   const refreshNetworkSnapshot = useSettingsStore((state) => state.refreshNetworkSnapshot);
   const resetSettings = useSettingsStore((state) => state.resetSettings);
@@ -137,6 +134,12 @@ export const SettingsPage = () => {
       remotePeerCount: runtimeDiagnostics?.remotePeerCount ?? Object.keys(remoteStreams).length,
       roomSnapshotRevision: runtimeDiagnostics?.roomSnapshotRevision ?? 0,
       chatSendFailures: runtimeDiagnostics?.chatSendFailures ?? 0,
+      serverClockOffsetMs: runtimeDiagnostics?.audioRelayDiagnostics?.serverClockOffsetMs,
+      audioStreamEpoch: runtimeDiagnostics?.audioRelayDiagnostics?.audioStreamEpoch,
+      droppedExpiredChunks: runtimeDiagnostics?.audioRelayDiagnostics?.droppedExpiredChunks,
+      droppedSendChunks: runtimeDiagnostics?.audioRelayDiagnostics?.droppedSendChunks,
+      perPeerAudioStatus: runtimeDiagnostics?.audioRelayDiagnostics?.perPeerAudioStatus,
+      audioTimeline: runtimeDiagnostics?.audioRelayDiagnostics?.audioTimeline,
     };
     void window.desktopApi.diagnostics
       .exportBundle(rendererState)
@@ -192,9 +195,6 @@ export const SettingsPage = () => {
       <div className="space-y-4">
         <ProfileSettingsCard
           settings={settings}
-          avatarDataUrl={avatarDataUrl}
-          onPickAvatar={() => void pickAvatar()}
-          onClearAvatar={() => void clearAvatar()}
           onChange={(patch) => void handleSaveSettings(patch)}
         />
         <AudioSettingsCard

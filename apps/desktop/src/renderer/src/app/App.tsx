@@ -45,6 +45,7 @@ export const App = () => {
       nickname: settings.nickname,
       avatarPath: settings.avatarPath,
       avatarDataUrl,
+      avatarId: settings.avatarId,
     });
   }, [avatarDataUrl, bootstrapPhase, settings, syncLocalProfile]);
 

@@ -8,6 +8,7 @@ type BridgeSocket = {
   send(payload: string): void;
   close(): void;
   readyState: number;
+  bufferedAmount: number;
 };
 
 type WebSocketConstructor = {
@@ -19,6 +20,11 @@ const NodeWebSocket = require("ws") as WebSocketConstructor;
 
 export class SignalingClientBridge extends EventEmitter {
   private socket?: BridgeSocket;
+  private maxBufferedAmount = 0;
+  private droppedByBackpressure = 0;
+  private sentAudioChunks = 0;
+  private skippedAudioChunks = 0;
+  private lastBackpressureLogAt = 0;
 
   constructor(
     private readonly writeLog: (payload: RendererLogPayload) => Promise<void>,
@@ -103,7 +109,46 @@ export class SignalingClientBridge extends EventEmitter {
       throw new Error("signaling_not_connected");
     }
 
+    const isAudioChunk = payload.includes('"type":"audio_chunk"');
+    const bufferedAmount = this.socket.bufferedAmount;
+    this.maxBufferedAmount = Math.max(this.maxBufferedAmount, bufferedAmount);
+    if (isAudioChunk && bufferedAmount >= 512 * 1024) {
+      this.droppedByBackpressure += 1;
+      this.skippedAudioChunks += 1;
+      await this.logBackpressureMetrics(bufferedAmount >= 1024 * 1024 ? "error" : "warn");
+      return;
+    }
+
     this.socket.send(payload);
+    if (isAudioChunk) {
+      this.sentAudioChunks += 1;
+      if (bufferedAmount >= 256 * 1024) {
+        await this.logBackpressureMetrics("warn");
+      }
+    }
+  }
+
+  private async logBackpressureMetrics(level: RendererLogPayload["level"]): Promise<void> {
+    const now = Date.now();
+    if (now - this.lastBackpressureLogAt < 5_000) {
+      return;
+    }
+    await this.writeLog({
+      category: "audio",
+      level,
+      message: "signaling audio websocket backpressure metrics",
+      context: {
+        maxBufferedAmount: this.maxBufferedAmount,
+        droppedByBackpressure: this.droppedByBackpressure,
+        sentAudioChunks: this.sentAudioChunks,
+        skippedAudioChunks: this.skippedAudioChunks,
+      },
+    });
+    this.lastBackpressureLogAt = now;
+    this.maxBufferedAmount = 0;
+    this.droppedByBackpressure = 0;
+    this.sentAudioChunks = 0;
+    this.skippedAudioChunks = 0;
   }
 
   async close(): Promise<void> {

@@ -161,7 +161,7 @@ export const NetworkSettingsCard = ({
   };
 
   return (
-    <SettingsSection title="网络与连接" description="连接方式由你手动选择。">
+    <SettingsSection title="高级连接" description="固定频道优先使用自定义服务器，其他方式仅用于排障。">
       <div className="space-y-3">
         <SettingsItemRow label="默认连接模式">
           <div className="space-y-2">
@@ -197,12 +197,12 @@ export const NetworkSettingsCard = ({
             <FeedbackBadge tone={directFeedback.tone}>{directFeedback.message}</FeedbackBadge>
           </div>
         </SettingsItemRow>
-        <SettingsItemRow label="云中继地址">
+        <SettingsItemRow label="固定频道服务器" description="普通使用只需要配置这一项。">
           <div className="min-w-[420px] space-y-2">
             <div className="flex items-center gap-2">
               <Input
                 value={relayDraft}
-                placeholder="例如 wss://relay.example.com"
+                placeholder="例如 wss://voice.example.com"
                 onChange={(event) => {
                   setRelayDraft(event.target.value);
                   setRelayFeedback({ tone: "neutral", message: "未测试" });

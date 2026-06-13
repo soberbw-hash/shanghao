@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { SETTINGS_SCHEMA_VERSION } from "@private-voice/shared";
+import { PROFILE_SCHEMA_VERSION, SETTINGS_SCHEMA_VERSION } from "@private-voice/shared";
 
 import { defaultSettings, migrateSettings } from "../src/main/settings-migration";
 
@@ -22,6 +22,9 @@ test("migrateSettings falls back to safe defaults for damaged legacy config", ()
   });
 
   assert.equal(result.settings.settingsSchemaVersion, SETTINGS_SCHEMA_VERSION);
+  assert.equal(result.settings.profileSchemaVersion, PROFILE_SCHEMA_VERSION);
+  assert.equal(result.settings.avatarId, "fox");
+  assert.equal(result.settings.avatarPath, undefined);
   assert.equal(result.settings.nickname, "阿北");
   assert.equal(result.settings.globalMuteShortcut, "Ctrl+Shift+M");
   assert.equal(result.settings.preferredSampleRate, "auto");
@@ -35,6 +38,20 @@ test("migrateSettings falls back to safe defaults for damaged legacy config", ()
   assert.equal(result.settings.isConnectionSoundEnabled, true);
   assert.equal(result.settings.isUiSoundEnabled, false);
   assert.equal(result.migrated, true);
+});
+
+test("legacy uploaded avatar profiles are reset without clearing channel server settings", () => {
+  const result = migrateSettings({
+    nickname: "阿北",
+    avatarPath: "C:/legacy/avatar.png",
+    hasCompletedProfileSetup: true,
+    relayServerUrl: "wss://voice.example.com",
+    settingsSchemaVersion: 5,
+  });
+
+  assert.equal(result.settings.avatarPath, undefined);
+  assert.equal(result.settings.hasCompletedProfileSetup, false);
+  assert.equal(result.settings.relayServerUrl, "wss://voice.example.com/");
 });
 
 test("migrateSettings normalizes relay server urls for non-technical users", () => {
