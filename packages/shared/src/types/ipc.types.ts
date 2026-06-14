@@ -14,7 +14,7 @@ import type {
   LogEntry,
   RendererDiagnosticsSummary,
 } from "./diagnostics.types";
-import type { HostSessionInfo, JoinRoomDiagnostic } from "./room.types";
+import type { HostSessionInfo, JoinRoomDiagnostic, RoomMember } from "./room.types";
 import type {
   RecordingExportPayload,
   RecordingExportResponse,
@@ -44,6 +44,12 @@ export interface SignalingEventPayload {
   message?: string;
 }
 
+export interface OverlayState {
+  members: RoomMember[];
+  isMuted: boolean;
+  connectionState: string;
+}
+
 export interface DesktopApi {
   app: {
     getRuntimeInfo: () => Promise<RuntimeInfo>;
@@ -55,6 +61,12 @@ export interface DesktopApi {
     hide: () => Promise<void>;
     close: () => Promise<void>;
     show: () => Promise<void>;
+  };
+  overlay: {
+    toggle: () => Promise<boolean>;
+    close: () => Promise<void>;
+    update: (state: OverlayState) => Promise<void>;
+    onState: (listener: (state: OverlayState) => void) => () => void;
   };
   settings: {
     get: () => Promise<AppSettings>;

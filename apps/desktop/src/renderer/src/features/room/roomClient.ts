@@ -16,6 +16,7 @@ import type {
   ErrorMessage,
   IceCandidateMessage,
   JoinAckMessage,
+  KnockEventMessage,
   PongMessage,
   MemberStateMessage,
   PeerAnswerMessage,
@@ -48,6 +49,7 @@ interface RoomClientOptions {
   onConnectionState: (state: RoomConnectionState) => void;
   onRemoteStream: (peerId: string, stream: MediaStream | undefined) => void;
   onChatMessage: (message: ChatMessage) => void;
+  onKnock: (message: ChatMessage) => void;
   onDiagnosticEvent?: (payload: SignalingEventPayload) => void;
   onReconnectAttempt?: (attempt: number) => void;
   onReconnectExhausted?: (error: Error) => void;
@@ -389,6 +391,9 @@ export class RoomClient {
       case "chat_message":
         this.handleChatMessage(payload);
         return;
+      case "knock_event":
+        this.handleKnockEvent(payload);
+        return;
       case "audio_chunk":
         this.handleAudioChunk(payload);
         return;
@@ -572,6 +577,20 @@ export class RoomClient {
     }
   }
 
+  async sendKnock(): Promise<void> {
+    if (!this.canSendChat()) {
+      throw new Error("signaling_not_connected");
+    }
+
+    await this.send({
+      type: "knock_event",
+      roomId: this.options.roomId,
+      peerId: this.options.peerId,
+      nickname: this.nickname,
+      createdAt: new Date().toISOString(),
+    });
+  }
+
   private handleChatMessage(payload: SignalChatMessage): void {
     this.options.onChatMessage({
       id: `${payload.peerId}-${payload.createdAt}`,
@@ -582,6 +601,21 @@ export class RoomClient {
       content: payload.content,
       createdAt: payload.createdAt,
       isLocal: payload.peerId === this.options.peerId,
+    });
+  }
+
+  private handleKnockEvent(payload: KnockEventMessage): void {
+    this.options.onKnock({
+      id: `knock-${payload.peerId}-${payload.createdAt}`,
+      peerId: payload.peerId,
+      nickname: payload.nickname,
+      content:
+        payload.peerId === this.options.peerId
+          ? "你敲了一下"
+          : `${payload.nickname} 敲了一下`,
+      createdAt: payload.createdAt,
+      isLocal: payload.peerId === this.options.peerId,
+      kind: "system",
     });
   }
 

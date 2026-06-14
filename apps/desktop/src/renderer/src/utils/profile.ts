@@ -4,18 +4,18 @@ import {
   type BuiltInAvatarId,
 } from "@private-voice/shared";
 
-import catAvatar from "../assets/avatars/cat.svg";
-import dogAvatar from "../assets/avatars/dog.svg";
-import foxAvatar from "../assets/avatars/fox.svg";
-import pandaAvatar from "../assets/avatars/panda.svg";
-import penguinAvatar from "../assets/avatars/penguin.svg";
+import catAvatar from "../assets/avatars/cat-3d.png";
+import corgiAvatar from "../assets/avatars/corgi-3d.png";
+import duckAvatar from "../assets/avatars/duck-3d.png";
+import foxAvatar from "../assets/avatars/fox-3d.png";
+import pandaAvatar from "../assets/avatars/panda-3d.png";
 
 export const avatarOptions: Array<{ id: BuiltInAvatarId; label: string; src: string }> = [
-  { id: "fox", label: "小狐狸", src: foxAvatar },
-  { id: "panda", label: "小熊猫", src: pandaAvatar },
-  { id: "penguin", label: "小企鹅", src: penguinAvatar },
-  { id: "cat", label: "小猫", src: catAvatar },
-  { id: "dog", label: "小狗", src: dogAvatar },
+  { id: "fox", label: "狐狸", src: foxAvatar },
+  { id: "cat", label: "猫", src: catAvatar },
+  { id: "duck", label: "鸭子", src: duckAvatar },
+  { id: "panda", label: "熊猫", src: pandaAvatar },
+  { id: "corgi", label: "柯基", src: corgiAvatar },
 ];
 
 export const getAvatarSrc = (avatarId?: BuiltInAvatarId): string | undefined =>

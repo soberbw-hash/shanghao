@@ -449,6 +449,46 @@ test("signaling server broadcasts chat messages to connected room members", asyn
   await server.close();
 });
 
+test("signaling server broadcasts knock events as a separate room event", async () => {
+  const server = new SignalingServer({ roomName: "knock-test" });
+  const port = await server.listen();
+  const url = `ws://127.0.0.1:${port}`;
+  const sender = await openSocket(url);
+  const receiver = await openSocket(url);
+  sendJoin(sender, "knock-room", "sender");
+  sendJoin(receiver, "knock-room", "receiver");
+  await waitForMessage(
+    receiver,
+    (payload): payload is { members: unknown[] } =>
+      typeof payload === "object" &&
+      payload !== null &&
+      (payload as { type?: string }).type === "room_snapshot" &&
+      (payload as { members?: unknown[] }).members?.length === 2,
+  );
+
+  const createdAt = new Date().toISOString();
+  sender.send(JSON.stringify({
+    type: "knock_event",
+    roomId: "knock-room",
+    peerId: "sender",
+    nickname: "小狐狸",
+    createdAt,
+  }));
+
+  const event = await waitForMessage(
+    receiver,
+    (payload): payload is { type: string; nickname: string; createdAt: string } =>
+      typeof payload === "object" &&
+      payload !== null &&
+      (payload as { type?: string }).type === "knock_event",
+  );
+  assert.equal(event.nickname, "小狐狸");
+  assert.equal(event.createdAt, createdAt);
+  sender.close();
+  receiver.close();
+  await server.close();
+});
+
 test("fixed channel accepts join_channel, has no host, and survives becoming empty", async () => {
   const server = new SignalingServer({ roomName: "固定频道" });
   const port = await server.listen();

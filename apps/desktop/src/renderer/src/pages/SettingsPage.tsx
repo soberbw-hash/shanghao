@@ -1,23 +1,16 @@
 import { useEffect, useState } from "react";
-import {
-  Activity,
-  Bell,
-  CircleUserRound,
-  Headphones,
-  Network,
-  PanelTopOpen,
-} from "lucide-react";
+import { Activity, Bell, CircleDot, Headphones, RefreshCw } from "lucide-react";
 
 import type { AppSettings, DiagnosticsSnapshot, RendererDiagnosticsSummary } from "@private-voice/shared";
 
 import { Button } from "../components/base/Button";
+import { Switch } from "../components/base/Switch";
 import { PageContainer } from "../components/layout/PageContainer";
-import { AppearanceSettingsCard } from "../components/settings/AppearanceSettingsCard";
 import { AudioSettingsCard } from "../components/settings/AudioSettingsCard";
 import { DiagnosticsSettingsCard } from "../components/settings/DiagnosticsSettingsCard";
-import { NetworkSettingsCard } from "../components/settings/NetworkSettingsCard";
-import { ProfileSettingsCard } from "../components/settings/ProfileSettingsCard";
+import { SettingsItemRow } from "../components/settings/SettingsItemRow";
 import { SettingsPageHeader } from "../components/settings/SettingsPageHeader";
+import { SettingsSection } from "../components/settings/SettingsSection";
 import { ShortcutSettingsCard } from "../components/settings/ShortcutSettingsCard";
 import { StartupSplashPage } from "../components/status/StartupSplashPage";
 import { useMicTest } from "../hooks/useMicTest";
@@ -27,28 +20,23 @@ import { useAudioStore } from "../store/audioStore";
 import { useRoomStore } from "../store/roomStore";
 import { useSettingsStore } from "../store/settingsStore";
 
-type SettingsSectionId = "profile" | "audio" | "floating" | "notifications" | "network" | "diagnostics";
+type SettingsSectionId = "audio" | "recording" | "notifications" | "updates" | "diagnostics";
 
 const sections = [
-  { id: "profile", label: "资料", icon: CircleUserRound },
   { id: "audio", label: "语音", icon: Headphones },
-  { id: "floating", label: "悬浮小窗", icon: PanelTopOpen },
+  { id: "recording", label: "录音", icon: CircleDot },
   { id: "notifications", label: "通知", icon: Bell },
-  { id: "network", label: "高级连接", icon: Network },
+  { id: "updates", label: "更新", icon: RefreshCw },
   { id: "diagnostics", label: "诊断", icon: Activity },
-] satisfies Array<{ id: SettingsSectionId; label: string; icon: typeof CircleUserRound }>;
+] satisfies Array<{ id: SettingsSectionId; label: string; icon: typeof Headphones }>;
 
 export const SettingsPage = () => {
   const navigate = useAppStore((state) => state.navigate);
   const pushToast = useAppStore((state) => state.pushToast);
   const settings = useSettingsStore((state) => state.settings);
   const runtimeInfo = useSettingsStore((state) => state.runtimeInfo);
-  const tailscaleStatus = useSettingsStore((state) => state.tailscaleStatus);
-  const networkSnapshot = useSettingsStore((state) => state.networkSnapshot);
   const updateInfo = useSettingsStore((state) => state.updateInfo);
   const saveSettings = useSettingsStore((state) => state.saveSettings);
-  const refreshTailscale = useSettingsStore((state) => state.refreshTailscale);
-  const refreshNetworkSnapshot = useSettingsStore((state) => state.refreshNetworkSnapshot);
   const resetSettings = useSettingsStore((state) => state.resetSettings);
   const checkUpdates = useSettingsStore((state) => state.checkUpdates);
   const openReleases = useSettingsStore((state) => state.openReleases);
@@ -57,7 +45,7 @@ export const SettingsPage = () => {
   const room = useRoomStore((state) => state.room);
   const localStream = useRoomStore((state) => state.localStream);
   const remoteStreams = useRoomStore((state) => state.remoteStreams);
-  const [activeSection, setActiveSection] = useState<SettingsSectionId>("profile");
+  const [activeSection, setActiveSection] = useState<SettingsSectionId>("audio");
   const [diagnostics, setDiagnostics] = useState<DiagnosticsSnapshot>();
   const [saveNotice, setSaveNotice] = useState("设置会自动保存");
 
@@ -76,30 +64,26 @@ export const SettingsPage = () => {
   }, []);
 
   if (!settings) {
-    return <StartupSplashPage message="正在准备设置…" />;
+    return <StartupSplashPage message="正在准备设置..." />;
   }
 
   const refreshDiagnostics = () => void window.desktopApi.diagnostics.snapshot().then(setDiagnostics);
   const handleSaveSettings = async (patch: Partial<AppSettings>) => {
-    setSaveNotice("正在保存…");
+    setSaveNotice("正在保存...");
     try {
       await saveSettings(patch);
       setSaveNotice("已保存");
     } catch (error) {
       setSaveNotice("保存失败");
-      pushToast({ tone: "danger", title: "设置保存失败", description: error instanceof Error ? error.message : "请稍后重试。" });
+      pushToast({
+        tone: "danger",
+        title: "设置保存失败",
+        description: error instanceof Error ? error.message : "请稍后重试。",
+      });
       throw error;
     }
   };
-  const handleRefreshNetwork = () => void Promise.all([refreshTailscale(), refreshNetworkSnapshot()]).then(refreshDiagnostics);
-  const handleTestRelay = async () => {
-    await refreshNetworkSnapshot();
-    return useSettingsStore.getState().networkSnapshot?.relay;
-  };
-  const handleTestDirectHost = async () => {
-    await refreshNetworkSnapshot();
-    return useSettingsStore.getState().networkSnapshot?.directHost;
-  };
+
   const handleExportBundle = () => {
     const runtime = getRoomRuntimeDiagnostics();
     const rendererState: RendererDiagnosticsSummary = {
@@ -127,12 +111,11 @@ export const SettingsPage = () => {
     };
     void window.desktopApi.diagnostics.exportBundle(rendererState).then((snapshot) => {
       setDiagnostics(snapshot);
-      pushToast({ tone: "success", title: "诊断包已导出", description: snapshot.lastBundlePath || "请到导出位置查看。" });
+      pushToast({ tone: "success", title: "诊断包已导出", description: "已保存到诊断目录。" });
     }).catch(() => pushToast({ tone: "danger", title: "导出失败", description: "请稍后再试。" }));
   };
 
-  const content = {
-    profile: <ProfileSettingsCard settings={settings} onChange={(patch) => void handleSaveSettings(patch)} />,
+  const content: Record<SettingsSectionId, React.ReactNode> = {
     audio: (
       <div className="space-y-4">
         <AudioSettingsCard
@@ -147,22 +130,41 @@ export const SettingsPage = () => {
         <ShortcutSettingsCard settings={settings} onChange={(patch) => void handleSaveSettings(patch)} />
       </div>
     ),
-    floating: <AppearanceSettingsCard section="floating" settings={settings} onChange={(patch) => void handleSaveSettings(patch)} />,
-    notifications: <AppearanceSettingsCard section="notifications" settings={settings} onChange={(patch) => void handleSaveSettings(patch)} />,
-    network: (
-      <NetworkSettingsCard
-        settings={settings}
-        tailscaleStatus={tailscaleStatus}
-        networkSnapshot={networkSnapshot}
-        runtimeInfo={runtimeInfo}
-        updateInfo={updateInfo}
-        onChange={handleSaveSettings}
-        onRefresh={handleRefreshNetwork}
-        onTestRelay={handleTestRelay}
-        onTestDirectHost={handleTestDirectHost}
-        onCheckUpdates={() => void checkUpdates()}
-        onOpenReleases={() => void openReleases()}
-      />
+    recording: (
+      <SettingsSection title="录音" description="录音按钮在频道底部，停止后会自动保存。">
+        <SettingsItemRow label="录音格式" description="单声道 M4A，适合语音回顾">
+          <span className="text-xs font-semibold text-[#76869a]">M4A</span>
+        </SettingsItemRow>
+      </SettingsSection>
+    ),
+    notifications: (
+      <SettingsSection title="通知与提示音" description="保留必要的轻提示，不打扰开黑。">
+        <div className="space-y-3">
+          <SettingsItemRow label="界面提示音">
+            <Switch
+              isChecked={settings.isUiSoundEnabled}
+              onChange={(isUiSoundEnabled) => void handleSaveSettings({ isUiSoundEnabled })}
+            />
+          </SettingsItemRow>
+          <SettingsItemRow label="关闭窗口时留在后台">
+            <Switch
+              isChecked={settings.minimizeToTray}
+              onChange={(minimizeToTray) => void handleSaveSettings({ minimizeToTray })}
+            />
+          </SettingsItemRow>
+        </div>
+      </SettingsSection>
+    ),
+    updates: (
+      <SettingsSection title="更新" description={`当前版本 ${runtimeInfo?.version ?? "读取中..."}`}>
+        <div className="flex items-center justify-between gap-3">
+          <div className="text-sm text-[#718096]">{updateInfo?.message ?? "还没有检查更新"}</div>
+          <div className="flex gap-2">
+            <Button variant="secondary" onClick={() => void checkUpdates()}>检查更新</Button>
+            <Button variant="ghost" onClick={() => void openReleases()}>查看发布页</Button>
+          </div>
+        </div>
+      </SettingsSection>
     ),
     diagnostics: (
       <div className="space-y-4">
@@ -174,12 +176,12 @@ export const SettingsPage = () => {
         <Button variant="danger" onClick={() => void resetSettings().then(refreshDiagnostics)}>安全重置设置</Button>
       </div>
     ),
-  } satisfies Record<SettingsSectionId, React.ReactNode>;
+  };
 
   return (
     <PageContainer className="overflow-y-auto">
       <SettingsPageHeader onBack={() => navigate("home")} />
-      <div className="mt-5 grid gap-5 lg:grid-cols-[176px_minmax(0,1fr)]">
+      <div className="mt-5 grid gap-5 lg:grid-cols-[168px_minmax(0,1fr)]">
         <nav className="settings-nav glass-panel h-fit rounded-[22px] p-2">
           {sections.map(({ id, label, icon: Icon }) => (
             <button

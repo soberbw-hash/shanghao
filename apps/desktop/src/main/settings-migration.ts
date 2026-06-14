@@ -77,6 +77,12 @@ const normalizeConnectionMode = (value?: string): AppSettings["connectionMode"] 
     ? value
     : defaultSettings.connectionMode;
 
+const normalizeAvatarId = (value: unknown): AppSettings["avatarId"] => {
+  if (value === "penguin") return "duck";
+  if (value === "dog") return "corgi";
+  return isBuiltInAvatarId(value) ? value : defaultSettings.avatarId;
+};
+
 export const migrateSettings = (raw: RawSettings): MigrationResult => {
   const previousVersion =
     typeof raw.settingsSchemaVersion === "number" && Number.isFinite(raw.settingsSchemaVersion)
@@ -90,7 +96,7 @@ export const migrateSettings = (raw: RawSettings): MigrationResult => {
     profileSchemaVersion: PROFILE_SCHEMA_VERSION,
     nickname: trimText(raw.nickname) ?? "",
     roomName: trimText(raw.roomName) ?? DEFAULT_ROOM_NAME,
-    avatarId: isBuiltInAvatarId(raw.avatarId) ? raw.avatarId : defaultSettings.avatarId,
+    avatarId: normalizeAvatarId(raw.avatarId),
     avatarPath: undefined,
     channelAccessCode: trimText(raw.channelAccessCode) ?? "",
     globalMuteShortcut: trimText(raw.globalMuteShortcut) ?? "",

@@ -45,11 +45,14 @@ test("advanced audio settings are collapsed by default", () => {
   assert.equal(source.includes("isAdvancedOpen ?"), true);
 });
 
-test("V5 settings use left navigation and hide advanced connection by default", () => {
+test("settings keep only everyday voice controls and remove advanced connection", () => {
   const source = readFileSync(settingsPagePath, "utf8");
 
-  for (const label of ["资料", "语音", "悬浮小窗", "通知", "高级连接", "诊断"]) {
+  for (const label of ["语音", "录音", "通知", "更新", "诊断"]) {
     assert.equal(source.includes(label), true);
   }
-  assert.equal(source.includes('useState<SettingsSectionId>("profile")'), true);
+  for (const removed of ["资料", "悬浮小窗", "高级连接", "NetworkSettingsCard", "ProfileSettingsCard"]) {
+    assert.equal(source.includes(removed), false);
+  }
+  assert.equal(source.includes('useState<SettingsSectionId>("audio")'), true);
 });

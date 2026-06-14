@@ -8,6 +8,7 @@ import {
   type AppSettings,
   type DiagnosticsSnapshot,
   type HostSessionInfo,
+  type OverlayState,
   type RecordingExportPayload,
   type RecordingExportResponse,
   type RendererLogPayload,
@@ -28,6 +29,7 @@ import { ShortcutController } from "./shortcuts";
 import { SignalingClientBridge } from "./signaling-client";
 import { detectTailscaleStatus, openTailscaleInstallGuide } from "./tailscale";
 import { UpdateService } from "./updates";
+import { OverlayWindowController } from "./overlay-window";
 
 interface MainProcessServices {
   getMainWindow: () => BrowserWindow | null;
@@ -37,6 +39,7 @@ interface MainProcessServices {
   hostSession: HostSessionController;
   signalingClient: SignalingClientBridge;
   updates: UpdateService;
+  overlay: OverlayWindowController;
 }
 
 export const registerIpcHandlers = ({
@@ -47,6 +50,7 @@ export const registerIpcHandlers = ({
   hostSession,
   signalingClient,
   updates,
+  overlay,
 }: MainProcessServices): void => {
   hostSession.onUpdate((session) => {
     getMainWindow()?.webContents.send(IPC_CHANNELS.host.sessionUpdated, session);
@@ -207,6 +211,12 @@ export const registerIpcHandlers = ({
   });
   ipcMain.handle(IPC_CHANNELS.updates.openReleases, async (): Promise<void> => {
     await updates.openReleases();
+  });
+
+  ipcMain.handle(IPC_CHANNELS.overlay.toggle, async (): Promise<boolean> => overlay.toggle());
+  ipcMain.handle(IPC_CHANNELS.overlay.close, async (): Promise<void> => overlay.close());
+  ipcMain.handle(IPC_CHANNELS.overlay.update, async (_event, state: OverlayState): Promise<void> => {
+    overlay.update(state);
   });
   ipcMain.handle(IPC_CHANNELS.updates.download, async (): Promise<void> => {
     await updates.download();

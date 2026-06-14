@@ -3,7 +3,7 @@ import { TailscaleState } from "../enums/app.enums";
 export type ConnectionMode = "cloudflare_tunnel" | "relay" | "tailscale" | "direct_host";
 export type PreferredSampleRate = "auto" | "44100" | "48000";
 export type MicMonitorMode = "processed" | "raw";
-export type BuiltInAvatarId = "fox" | "panda" | "penguin" | "cat" | "dog";
+export type BuiltInAvatarId = "fox" | "cat" | "duck" | "panda" | "corgi";
 
 export interface AppSettings {
   settingsSchemaVersion: number;

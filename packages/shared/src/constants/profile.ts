@@ -2,16 +2,16 @@ import type { BuiltInAvatarId } from "../types/settings.types";
 
 export const BUILT_IN_AVATAR_IDS: BuiltInAvatarId[] = [
   "fox",
-  "panda",
-  "penguin",
   "cat",
-  "dog",
+  "duck",
+  "panda",
+  "corgi",
 ];
 
 export const RANDOM_NICKNAMES = [
   "摸鱼小猫",
-  "暴躁企鹅",
-  "打工小狗",
+  "暴躁小鸭",
+  "打工柯基",
   "上号小狐",
   "低电量熊猫",
   "团战路人王",
@@ -22,8 +22,8 @@ export const RANDOM_NICKNAMES = [
   "Lucky Fox",
   "Sleepy Cat",
   "Panda Bro",
-  "Tiny Penguin",
-  "Happy Dog",
+  "Tiny Duck",
+  "Happy Corgi",
 ];
 
 export const isBuiltInAvatarId = (value: unknown): value is BuiltInAvatarId =>

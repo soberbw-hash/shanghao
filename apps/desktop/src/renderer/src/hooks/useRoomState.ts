@@ -13,6 +13,7 @@ import {
 import { createSpeakingDetector, requestMicrophoneStream } from "@private-voice/webrtc";
 
 import { RoomClient } from "../features/room/roomClient";
+import { playUiSound } from "../features/audio/uiSound";
 import { useAppStore } from "../store/appStore";
 import { useAudioStore } from "../store/audioStore";
 import { useRoomStore } from "../store/roomStore";
@@ -377,16 +378,17 @@ export const useRoomState = () => {
   };
 
   const ensureLocalStream = async (preferredInputDeviceId?: string) => {
+    const currentSettings = useSettingsStore.getState().settings ?? settings;
     const existingStream = useRoomStore.getState().localStream;
     existingStream?.getTracks().forEach((track) => track.stop());
 
     try {
       const { stream, diagnostics } = await requestMicrophoneStream({
-        deviceId: preferredInputDeviceId ?? settings?.preferredInputDeviceId,
-        noiseSuppression: settings?.isNoiseSuppressionEnabled ?? true,
-        echoCancellation: settings?.isEchoCancellationEnabled ?? true,
-        autoGainControl: settings?.isAutoGainControlEnabled ?? true,
-        preferredSampleRate: settings?.preferredSampleRate ?? "auto",
+        deviceId: preferredInputDeviceId ?? currentSettings?.preferredInputDeviceId,
+        noiseSuppression: currentSettings?.isNoiseSuppressionEnabled ?? true,
+        echoCancellation: currentSettings?.isEchoCancellationEnabled ?? true,
+        autoGainControl: currentSettings?.isAutoGainControlEnabled ?? true,
+        preferredSampleRate: currentSettings?.preferredSampleRate ?? "auto",
       });
 
       setLocalStream(stream);
@@ -420,6 +422,7 @@ export const useRoomState = () => {
     isFixedChannel?: boolean;
     channelCode?: string;
   }) => {
+    const currentSettings = useSettingsStore.getState().settings ?? settings;
     const stream = await ensureLocalStream();
 
     const peerId = crypto.randomUUID();
@@ -427,9 +430,9 @@ export const useRoomState = () => {
       signalingUrl: connectUrl,
       roomId,
       peerId,
-      nickname: settings?.nickname ?? "我",
+      nickname: currentSettings?.nickname ?? "我",
       avatarDataUrl: isFixedChannel ? undefined : avatarDataUrl,
-      avatarId: settings?.avatarId,
+      avatarId: currentSettings?.avatarId,
       isFixedChannel,
       channelCode,
       localStream: stream,
@@ -515,6 +518,20 @@ export const useRoomState = () => {
       },
       onChatMessage: (message) => {
         addChatMessage(message);
+        if (!message.isLocal) {
+          playUiSound("message");
+        }
+      },
+      onKnock: (message) => {
+        addChatMessage(message);
+        playUiSound("knock");
+        if (!message.isLocal) {
+          pushToast({
+            tone: "neutral",
+            title: `${message.nickname} 敲了敲你`,
+            description: "上号啦",
+          });
+        }
       },
       onDiagnosticEvent: (payload) => {
         void writeRendererLog("signaling", "info", "Signaling bridge event", {
@@ -801,19 +818,19 @@ export const useRoomState = () => {
     }
   };
 
-  const joinChannel = async () => {
-    if (!settings) {
+  const joinChannel = async (serverUrlOverride?: string) => {
+    const currentSettings = useSettingsStore.getState().settings ?? settings;
+    if (!currentSettings) {
       return;
     }
 
-    const serverUrl = settings.relayServerUrl?.trim();
+    const serverUrl = serverUrlOverride?.trim() || currentSettings.relayServerUrl?.trim();
     if (!serverUrl) {
       pushToast({
         tone: "warning",
-        title: "还没有设置频道服务器",
-        description: "请先在设置的高级连接里填写固定频道服务器地址。",
+        title: "还没有服务器地址",
+        description: "请返回进入页填写服务器地址。",
       });
-      useAppStore.getState().navigate("settings");
       return;
     }
 
@@ -829,15 +846,15 @@ export const useRoomState = () => {
       await writeRendererLog("signaling", "info", "Joining fixed channel", {
         channelId: DEFAULT_CHANNEL_ID,
         connectionMode: "relay",
-        hasChannelCode: Boolean(settings.channelAccessCode),
+        hasChannelCode: Boolean(currentSettings.channelAccessCode),
       });
       await connectToRoom({
         connectUrl: serverUrl,
         roomId: DEFAULT_CHANNEL_ID,
-        roomName: settings.roomName,
+        roomName: currentSettings.roomName,
         connectionMode: "relay",
         isFixedChannel: true,
-        channelCode: settings.channelAccessCode,
+        channelCode: currentSettings.channelAccessCode,
       });
       setConnectionMode("relay");
       useAppStore.getState().navigate("room");
@@ -854,7 +871,7 @@ export const useRoomState = () => {
           : normalizeRoomError(error, "暂时连不上频道，请稍后再试。");
       await writeRendererLog("signaling", "error", "Failed to join fixed channel", {
         channelId: DEFAULT_CHANNEL_ID,
-        hasChannelCode: Boolean(settings.channelAccessCode),
+        hasChannelCode: Boolean(currentSettings.channelAccessCode),
         error: rawMessage,
       });
       await cleanupPreviousSession();
@@ -908,6 +925,7 @@ export const useRoomState = () => {
 
   const leaveRoom = async () => {
     try {
+      playUiSound("leave");
       setLifecycleState(RoomLifecycleState.Closing);
       await cleanupPreviousSession({ resetStore: true, stopHost: true });
       previousMemberIds = new Set<string>();
@@ -997,6 +1015,19 @@ export const useRoomState = () => {
     }
   };
 
+  const sendKnock = async () => {
+    if (!activeClient || !activeClient.canSendChat()) {
+      pushToast({
+        tone: "warning",
+        title: "还没进入频道",
+        description: "进入频道后才能敲一敲大家。",
+      });
+      return;
+    }
+
+    await activeClient.sendKnock();
+  };
+
   return {
     room,
     joinSignalUrl,
@@ -1008,5 +1039,6 @@ export const useRoomState = () => {
     replaceInputDevice,
     copyInviteLink,
     sendChatMessage,
+    sendKnock,
   };
 };

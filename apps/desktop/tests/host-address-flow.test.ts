@@ -72,12 +72,14 @@ test("renderer validates real invite urls and blocks unverified direct-host addr
   assert.equal(source.includes("url.searchParams.append(\"candidate\", candidate);"), true);
 });
 
-test("home page no longer exposes raw shareable addresses in the fixed-channel flow", () => {
+test("home page saves and validates the fixed channel server address", () => {
   const source = readFileSync(homePagePath, "utf8");
 
   assert.equal(source.includes("buildShareableInviteUrl"), false);
   assert.equal(source.includes("进入开黑频道"), true);
-  assert.equal(source.includes("ws://"), false);
+  assert.equal(source.includes("服务器地址"), true);
+  assert.equal(source.includes("relayServerUrl: trimmedAddress"), true);
+  assert.equal(source.includes('url.protocol === "ws:" || url.protocol === "wss:"'), true);
 });
 
 test("joining tries invite fallback candidates before giving up", () => {

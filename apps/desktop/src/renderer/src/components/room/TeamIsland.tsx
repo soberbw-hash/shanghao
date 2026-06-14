@@ -1,5 +1,5 @@
-import { MicOff } from "lucide-react";
-import { motion } from "framer-motion";
+import { MicOff, RotateCw, WifiOff } from "lucide-react";
+import { AnimatePresence, motion } from "framer-motion";
 
 import {
   MemberPresenceState,
@@ -7,74 +7,99 @@ import {
   type RoomMember,
 } from "@private-voice/shared";
 
-import { AvatarPlaceholder } from "../base/AvatarPlaceholder";
+import whiteOfficeRoom from "../../assets/scenes/white-office-room.png";
 import { getAvatarSrc } from "../../utils/profile";
+import { AvatarPlaceholder } from "../base/AvatarPlaceholder";
 
 const positions = [
-  "left-[10%] top-[46%]",
-  "left-[31%] top-[18%]",
-  "left-[50%] top-[53%]",
-  "right-[28%] top-[18%]",
-  "right-[9%] top-[46%]",
+  "left-[34%] top-[43%]",
+  "left-[53%] top-[25%]",
+  "left-[72%] top-[48%]",
+  "left-[46%] top-[74%]",
+  "left-[73%] top-[77%]",
 ];
 
-export const TeamIsland = ({ members }: { members: RoomMember[] }) => (
-  <div className="team-island relative min-h-[410px] overflow-hidden" data-testid="team-island">
-    <div className="team-island-haze" />
-    <div className="team-island-platform">
-      <div className="team-island-platform-inner">
-        <span />
-        <span />
-        <span />
-      </div>
-    </div>
+const memberStatus = (member: RoomMember) => {
+  if (member.presenceState === MemberPresenceState.Reconnecting) {
+    return { label: "正在回来", tone: "reconnecting" as const, icon: RotateCw };
+  }
+  if (member.presenceState === MemberPresenceState.Offline) {
+    return { label: "暂时离开", tone: "offline" as const, icon: WifiOff };
+  }
+  if (member.isMuted) {
+    return { label: "静音", tone: "muted" as const, icon: MicOff };
+  }
+  if (member.speakingState === MemberSpeakingState.Speaking) {
+    return { label: "语音中", tone: "speaking" as const };
+  }
+  return { label: member.isLocal ? "是你" : "在线", tone: "online" as const };
+};
 
-    {members.slice(0, 5).map((member, index) => {
-      const isEmpty = Boolean(member.isEmptySlot);
-      const isSpeaking = member.speakingState === MemberSpeakingState.Speaking;
-      const isReconnecting = member.presenceState === MemberPresenceState.Reconnecting;
-      return (
-        <motion.div
-          key={member.id}
-          initial={{ opacity: 0, scale: 0.82, y: 10 }}
-          animate={{ opacity: isEmpty ? 0.42 : 1, scale: 1, y: 0 }}
-          exit={{ opacity: 0, scale: 0.9 }}
-          transition={{ duration: 0.38, ease: [0.22, 1, 0.36, 1] }}
-          className={`absolute z-10 -translate-x-1/2 -translate-y-1/2 ${positions[index] ?? positions[0]}`}
-        >
-          <motion.div
-            animate={isSpeaking ? { y: [0, -5, 0] } : { y: [0, -2, 0] }}
-            transition={{ duration: isSpeaking ? 1.2 : 4.8, repeat: Infinity, ease: "easeInOut" }}
-            className="flex flex-col items-center"
-          >
-            <div
-              className={`relative rounded-[26px] p-2 transition-all duration-300 ${
-                isSpeaking
-                  ? "bg-white shadow-[0_0_0_6px_rgba(79,125,247,.12),0_18px_44px_rgba(79,125,247,.24)]"
-                  : "bg-white/70 shadow-[0_12px_30px_rgba(44,65,105,.12)]"
-              } ${member.isMuted ? "opacity-55 grayscale-[.35]" : ""}`}
+export const TeamIsland = ({ members }: { members: RoomMember[] }) => {
+  const visibleMembers = members.filter((member) => !member.isEmptySlot).slice(0, 5);
+
+  return (
+    <div className="team-island relative h-full min-h-[420px] overflow-hidden" data-testid="team-island">
+      <img
+        src={whiteOfficeRoom}
+        alt=""
+        className="absolute inset-0 h-full w-full object-cover"
+        draggable={false}
+      />
+      <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(255,255,255,.03),rgba(240,246,255,.16))]" />
+      <div className="absolute left-5 top-5 rounded-full border border-white/90 bg-white/72 px-3 py-1.5 text-xs font-semibold text-[#66778e] shadow-sm backdrop-blur-xl">
+        {visibleMembers.length}/5 在线
+      </div>
+
+      <AnimatePresence initial={false}>
+        {visibleMembers.map((member, index) => {
+          const status = memberStatus(member);
+          const isSpeaking = status.tone === "speaking";
+          const isReconnecting = status.tone === "reconnecting";
+          const isOffline = status.tone === "offline";
+          const StatusIcon = status.icon;
+
+          return (
+            <motion.div
+              key={member.id}
+              initial={{ opacity: 0, scale: 0.82, y: 10 }}
+              animate={{ opacity: isOffline ? 0.48 : 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.88, y: 8 }}
+              transition={{ duration: 0.34, ease: [0.22, 1, 0.36, 1] }}
+              className={`absolute z-10 -translate-x-1/2 -translate-y-1/2 ${positions[index] ?? positions[0]}`}
             >
-              <AvatarPlaceholder
-                name={member.nickname}
-                src={isEmpty ? undefined : getAvatarSrc(member.avatarId)}
-                size="lg"
-                className="h-[76px] w-[76px] rounded-[21px]"
-              />
-              {member.isMuted && !isEmpty ? (
-                <span className="absolute -bottom-1 -right-1 grid h-7 w-7 place-items-center rounded-full border-2 border-white bg-[#f5f7fa] text-[#7b8798]">
-                  <MicOff className="h-3.5 w-3.5" />
-                </span>
-              ) : null}
-              {isReconnecting ? (
-                <span className="absolute -right-1 -top-1 h-3.5 w-3.5 animate-pulse rounded-full border-2 border-white bg-[#f5a524]" />
-              ) : null}
-            </div>
-            <div className="mt-2 max-w-[120px] truncate rounded-full border border-white/90 bg-white/75 px-3 py-1 text-xs font-semibold text-[#43536a] shadow-sm backdrop-blur-xl">
-              {isEmpty ? "等一个朋友" : member.nickname}
-            </div>
-          </motion.div>
-        </motion.div>
-      );
-    })}
-  </div>
-);
+              <div className="flex flex-col items-center">
+                <motion.div
+                  animate={isSpeaking ? { scale: [1, 1.035, 1] } : { scale: 1 }}
+                  transition={{ duration: 1.15, repeat: isSpeaking ? Infinity : 0, ease: "easeInOut" }}
+                  className={`room-character relative rounded-[24px] p-1.5 ${
+                    isSpeaking ? "room-character-speaking" : ""
+                  } ${member.isMuted ? "room-character-muted" : ""} ${isReconnecting ? "room-character-reconnecting" : ""}`}
+                >
+                  <AvatarPlaceholder
+                    name={member.nickname}
+                    src={getAvatarSrc(member.avatarId)}
+                    size="lg"
+                    className="h-[70px] w-[70px] rounded-[19px]"
+                  />
+                  {member.isLocal ? (
+                    <span className="absolute -left-1 -top-1 rounded-full border-2 border-white bg-[#1f2937] px-1.5 py-0.5 text-[9px] font-bold text-white">
+                      你
+                    </span>
+                  ) : null}
+                </motion.div>
+
+                <div className={`room-character-label mt-1.5 ${status.tone}`}>
+                  {StatusIcon ? <StatusIcon className={`h-3 w-3 ${isReconnecting ? "animate-spin" : ""}`} /> : null}
+                  <span className="max-w-[82px] truncate">{member.nickname}</span>
+                  <span className="opacity-55">·</span>
+                  <span>{status.label}</span>
+                </div>
+              </div>
+            </motion.div>
+          );
+        })}
+      </AnimatePresence>
+    </div>
+  );
+};

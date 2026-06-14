@@ -10,6 +10,12 @@ export const IPC_CHANNELS = {
     close: "window:close",
     show: "window:show",
   },
+  overlay: {
+    toggle: "overlay:toggle",
+    close: "overlay:close",
+    update: "overlay:update",
+    state: "overlay:state",
+  },
   settings: {
     get: "settings:get",
     save: "settings:save",

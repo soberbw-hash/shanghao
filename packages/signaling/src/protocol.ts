@@ -30,6 +30,7 @@ export type SignalEnvelope =
   | IceCandidateMessage
   | MemberStateMessage
   | ChatMessage
+  | KnockEventMessage
   | AudioChunkMessage
   | AudioResyncRequestMessage
   | AudioResyncAckMessage
@@ -185,6 +186,14 @@ export interface ChatMessage extends BaseMessage {
   avatarDataUrl?: string;
   avatarId?: BuiltInAvatarId;
   content: string;
+  createdAt: string;
+}
+
+export interface KnockEventMessage extends BaseMessage {
+  type: "knock_event";
+  roomId: string;
+  peerId: string;
+  nickname: string;
   createdAt: string;
 }
 

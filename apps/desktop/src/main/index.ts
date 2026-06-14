@@ -15,6 +15,7 @@ import { SignalingClientBridge } from "./signaling-client";
 import { createTrayController } from "./tray";
 import { UpdateService } from "./updates";
 import { createMainWindow } from "./window";
+import { OverlayWindowController } from "./overlay-window";
 
 let mainWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
@@ -109,9 +110,11 @@ const maybeCaptureScreenshot = async (window: BrowserWindow | null): Promise<voi
     });
   }
 
-  await sleep(1800);
-  await clickButtonByLabel(window, "\u8FDB\u5165\u9891\u9053");
-  await sleep(500);
+  await sleep(5200);
+  if (mode !== "home") {
+    await clickButtonByLabel(window, "\u8FDB\u5165\u9891\u9053");
+    await sleep(mode === "room" ? 3600 : 700);
+  }
 
   if (mode !== "home") {
     const label =
@@ -168,6 +171,7 @@ const bootstrap = async (): Promise<void> => {
     (payload) => diagnostics?.writeLog(payload) ?? Promise.resolve(),
   );
   await shortcuts.configureGlobalMute(settings.globalMuteShortcut);
+  const overlay = new OverlayWindowController();
 
   registerIpcHandlers({
     getMainWindow: () => mainWindow,
@@ -177,6 +181,7 @@ const bootstrap = async (): Promise<void> => {
     hostSession,
     signalingClient,
     updates,
+    overlay,
   });
 
   mainWindow = createMainWindow({
@@ -215,6 +220,7 @@ const bootstrap = async (): Promise<void> => {
 
   app.on("before-quit", () => {
     isQuitting = true;
+    overlay.close();
     shortcuts.dispose();
   });
 

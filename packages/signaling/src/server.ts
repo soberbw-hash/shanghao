@@ -24,6 +24,7 @@ import type {
   LeaveChannelMessage,
   LeaveRoomMessage,
   MemberStateMessage,
+  KnockEventMessage,
   PeerAnswerMessage,
   PeerOfferMessage,
   ChannelSnapshotMessage,
@@ -288,6 +289,9 @@ export class SignalingServer extends EventEmitter {
       case "chat_message":
         this.broadcastChatMessage(message);
         return;
+      case "knock_event":
+        this.broadcastKnockEvent(message);
+        return;
       case "audio_chunk":
         this.broadcastAudioChunk(message);
         return;
@@ -485,6 +489,25 @@ export class SignalingServer extends EventEmitter {
       nickname: message.nickname,
       avatarId: message.avatarId,
       content: message.content,
+      createdAt: message.createdAt,
+    };
+
+    for (const peer of room.peers.listConnectedPeers()) {
+      this.safeSend(peer.socket, payload);
+    }
+  }
+
+  private broadcastKnockEvent(message: KnockEventMessage): void {
+    const room = this.roomManager.getRoom(message.roomId);
+    if (!room) {
+      return;
+    }
+
+    const payload: KnockEventMessage = {
+      type: "knock_event",
+      roomId: message.roomId,
+      peerId: message.peerId,
+      nickname: message.nickname,
       createdAt: message.createdAt,
     };
 

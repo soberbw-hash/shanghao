@@ -24,6 +24,7 @@ export interface ChatMessage {
   content: string;
   createdAt: string;
   isLocal?: boolean;
+  kind?: "chat" | "system";
 }
 
 export interface RoomMember {

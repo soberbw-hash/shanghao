@@ -14,6 +14,18 @@ const desktopApi: DesktopApi = {
     close: () => ipcRenderer.invoke(IPC_CHANNELS.window.close),
     show: () => ipcRenderer.invoke(IPC_CHANNELS.window.show),
   },
+  overlay: {
+    toggle: () => ipcRenderer.invoke(IPC_CHANNELS.overlay.toggle),
+    close: () => ipcRenderer.invoke(IPC_CHANNELS.overlay.close),
+    update: (state) => ipcRenderer.invoke(IPC_CHANNELS.overlay.update, state),
+    onState: (listener) => {
+      const wrapped = (_event: Electron.IpcRendererEvent, state: unknown) => {
+        listener(state as Parameters<typeof listener>[0]);
+      };
+      ipcRenderer.on(IPC_CHANNELS.overlay.state, wrapped);
+      return () => ipcRenderer.removeListener(IPC_CHANNELS.overlay.state, wrapped);
+    },
+  },
   settings: {
     get: () => ipcRenderer.invoke(IPC_CHANNELS.settings.get),
     save: (settings) => ipcRenderer.invoke(IPC_CHANNELS.settings.save, settings),

@@ -27,7 +27,6 @@ export const AvatarPicker = ({
           onClick={() => onChange(avatar.id)}
         >
           <img src={avatar.src} alt={avatar.label} className="mx-auto h-12 w-12 rounded-[14px]" />
-          <span className="mt-1 block truncate text-[11px] text-[#667085]">{avatar.label}</span>
         </button>
       );
     })}

@@ -5,53 +5,9 @@ import { RoomConnectionState } from "@private-voice/shared";
 import { useAudioStore } from "../store/audioStore";
 import { useRoomStore } from "../store/roomStore";
 import { useSettingsStore } from "../store/settingsStore";
+import { playUiSound } from "../features/audio/uiSound";
 
-type ToneStep = {
-  frequency: number;
-  durationMs: number;
-};
-
-let sharedContext: AudioContext | null = null;
 let lastClickAt = 0;
-
-const getAudioContext = () => {
-  if (!sharedContext) {
-    sharedContext = new AudioContext();
-  }
-
-  if (sharedContext.state === "suspended") {
-    void sharedContext.resume().catch(() => undefined);
-  }
-
-  return sharedContext;
-};
-
-const playToneSequence = (sequence: ToneStep[]) => {
-  try {
-    const context = getAudioContext();
-    let cursor = context.currentTime;
-
-    for (const step of sequence) {
-      const oscillator = context.createOscillator();
-      const gain = context.createGain();
-      oscillator.type = "sine";
-      oscillator.frequency.value = step.frequency;
-      gain.gain.setValueAtTime(0.0001, cursor);
-      gain.gain.linearRampToValueAtTime(0.06, cursor + 0.01);
-      gain.gain.exponentialRampToValueAtTime(
-        0.0001,
-        cursor + step.durationMs / 1000,
-      );
-      oscillator.connect(gain);
-      gain.connect(context.destination);
-      oscillator.start(cursor);
-      oscillator.stop(cursor + step.durationMs / 1000);
-      cursor += step.durationMs / 1000 + 0.03;
-    }
-  } catch {
-    // Ignore sound failures; UI state remains the source of truth.
-  }
-};
 
 export const useUiFeedbackSounds = (): void => {
   const settings = useSettingsStore((state) => state.settings);
@@ -81,7 +37,7 @@ export const useUiFeedbackSounds = (): void => {
         return;
       }
       lastClickAt = now;
-      playToneSequence([{ frequency: 620, durationMs: 35 }]);
+      playUiSound("click");
     };
 
     document.addEventListener("click", handleClick, true);
@@ -105,11 +61,11 @@ export const useUiFeedbackSounds = (): void => {
 
     if (isMuted !== previousMuteRef.current) {
       if (isMuted && settings.isMicOffSoundEnabled) {
-        playToneSequence([{ frequency: 440, durationMs: 90 }]);
+        playUiSound("mic-off");
       }
 
       if (!isMuted && settings.isMicOnSoundEnabled) {
-        playToneSequence([{ frequency: 660, durationMs: 90 }]);
+        playUiSound("mic-on");
       }
 
       previousMuteRef.current = isMuted;
@@ -127,17 +83,11 @@ export const useUiFeedbackSounds = (): void => {
     const previousMemberIds = previousMemberIdsRef.current;
 
     if (currentMemberIds.length > previousMemberIds.length && settings.isMemberJoinSoundEnabled) {
-      playToneSequence([
-        { frequency: 523, durationMs: 70 },
-        { frequency: 659, durationMs: 90 },
-      ]);
+      playUiSound("join");
     }
 
     if (currentMemberIds.length < previousMemberIds.length && settings.isMemberLeaveSoundEnabled) {
-      playToneSequence([
-        { frequency: 523, durationMs: 70 },
-        { frequency: 392, durationMs: 100 },
-      ]);
+      playUiSound("leave");
     }
 
     previousMemberIdsRef.current = currentMemberIds;
@@ -153,10 +103,7 @@ export const useUiFeedbackSounds = (): void => {
       previousConnectionRef.current !== RoomConnectionState.Connected &&
       settings.isConnectionSoundEnabled
     ) {
-      playToneSequence([
-        { frequency: 659, durationMs: 60 },
-        { frequency: 784, durationMs: 80 },
-      ]);
+      playUiSound("connected");
     }
 
     if (
@@ -164,10 +111,7 @@ export const useUiFeedbackSounds = (): void => {
       previousConnectionRef.current !== RoomConnectionState.Failed &&
       settings.isConnectionSoundEnabled
     ) {
-      playToneSequence([
-        { frequency: 440, durationMs: 80 },
-        { frequency: 349, durationMs: 110 },
-      ]);
+      playUiSound("failed");
     }
 
     previousConnectionRef.current = connectionState;
