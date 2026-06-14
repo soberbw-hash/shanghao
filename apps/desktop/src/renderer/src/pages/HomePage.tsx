@@ -103,8 +103,8 @@ export const HomePage = () => {
         </header>
 
         <section className="mt-6 grid min-h-0 flex-1 gap-7 md:grid-cols-[1.05fr_.95fr]">
-          <div className="rounded-[26px] border border-[#e8edf4] bg-[#fbfcfe] p-5">
-            <div className="mb-4 text-sm font-semibold text-[#314158]">选一个头像</div>
+          <div className="p-2">
+            <div className="mb-4 text-sm font-semibold text-[#314158]">选一个角色</div>
             <AvatarPicker value={avatarId} onChange={setAvatarId} />
           </div>
 

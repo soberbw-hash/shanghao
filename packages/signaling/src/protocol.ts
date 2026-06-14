@@ -1,4 +1,10 @@
-import type { BuiltInAvatarId, ConnectionMode, RoomMember } from "@private-voice/shared";
+import type {
+  BuiltInAvatarId,
+  ConnectionMode,
+  MemberActivity,
+  RoomMember,
+  SceneZoneId,
+} from "@private-voice/shared";
 
 export interface SessionDescriptionPayload {
   type: "offer" | "answer" | "pranswer" | "rollback";
@@ -173,6 +179,10 @@ export interface MemberStateMessage extends BaseMessage {
   peerId: string;
   isMuted?: boolean;
   isSpeaking?: boolean;
+  isDeafened?: boolean;
+  activity?: MemberActivity;
+  sceneZone?: SceneZoneId;
+  gameName?: string;
   nickname?: string;
   avatarDataUrl?: string;
   avatarId?: BuiltInAvatarId;

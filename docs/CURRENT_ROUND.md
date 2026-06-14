@@ -24,20 +24,20 @@ The source brief is `C:\Users\sober\Desktop\优化方案.txt`.
 
 ## This round checklist
 
-- [ ] Replace scene avatar cards with transparent character sprites and no white UI container.
-- [ ] Remove character scaling/bouncing and move speaking feedback onto the character.
-- [ ] Remove the footer green audio meter.
-- [ ] Add speaker-off/deafen state, local audio behavior, signaling sync, and character icon.
-- [ ] Add eight percentage-based clickable scene zones.
+- [x] Replace scene avatar cards with transparent character sprites and no white UI container.
+- [x] Remove character scaling/bouncing and move speaking feedback onto the character.
+- [x] Remove the footer green audio meter.
+- [x] Add speaker-off/deafen state, local audio behavior, signaling sync, and character icon.
+- [x] Add eight percentage-based clickable scene zones.
 - [ ] Add local Windows detection for Delta Force and League of Legends.
 - [ ] Add simple activity/zone state and slow random idle assignment.
-- [ ] Enforce unique visible avatar identities.
-- [ ] Improve scene cover/cropping while keeping zones aligned.
-- [ ] Change entry copy from avatar selection to character selection and remove character cards.
-- [ ] Remove recording from Settings.
-- [ ] Redesign overlay into a tiny left-side speaking avatar widget without a close button.
+- [x] Enforce unique visible avatar identities.
+- [x] Improve scene cover/cropping while keeping zones aligned.
+- [x] Change entry copy from avatar selection to character selection and remove character cards.
+- [x] Remove recording from Settings.
+- [x] Redesign overlay into a tiny left-side speaking avatar widget without a close button.
 - [ ] Add generated short sound assets and centralized playback for all required actions.
-- [ ] Expand quick replies to include 上号, 开麦, 等我, 来了, and 冲.
+- [x] Expand quick replies to include 上号, 开麦, 等我, 来了, and 冲.
 - [ ] Add or update smoke tests for these behaviors.
 - [ ] Run typecheck, smoke tests, three-peer audio verification, and Windows packaging.
 
@@ -49,3 +49,12 @@ The source brief is `C:\Users\sober\Desktop\优化方案.txt`.
   - `enable-low-latency-profile.ps1`
   - `gaming-optimize-admin.ps1`
   - `run-low-latency-profile-admin.cmd`
+
+## Checkpoint 2026-06-15 / scene presence
+
+- Added transparent scene-specific character assets.
+- Added synchronized deafen, activity, scene zone, and game name member fields.
+- Added eight clickable percentage-positioned room zones.
+- Replaced the large overlay panel with a 72x76 left-side speaking character widget.
+- Removed the room audio meter and the Settings recording section.
+- Verification: `corepack pnpm typecheck` passed.

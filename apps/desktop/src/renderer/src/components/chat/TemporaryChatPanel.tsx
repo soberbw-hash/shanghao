@@ -8,7 +8,7 @@ import { AvatarPlaceholder } from "../base/AvatarPlaceholder";
 import { Button } from "../base/Button";
 import { Input } from "../base/Input";
 
-const quickReplies = ["👍", "🎮", "🔥", "上号", "等我", "来了"];
+const quickReplies = ["👍", "🎮", "🔥", "上号", "开麦", "等我", "来了", "冲"];
 
 export const TemporaryChatPanel = ({
   messages,
@@ -40,13 +40,13 @@ export const TemporaryChatPanel = ({
         <div className="text-sm font-bold text-[#27364a]">临时聊天</div>
         <div className="mt-0.5 text-[11px] text-[#93a0b1]">只在当前频道保留</div>
       </div>
-      <div className="flex gap-1">
-        {quickReplies.slice(0, 3).map((reply) => (
+      <div className="flex max-w-[70%] flex-wrap justify-end gap-1">
+        {quickReplies.map((reply) => (
           <button
             key={reply}
             type="button"
             disabled={!canSend}
-            className="interactive-surface grid h-8 w-8 place-items-center rounded-full border border-[#e8edf4] bg-white text-sm disabled:opacity-40"
+            className="interactive-surface grid min-h-7 min-w-7 place-items-center rounded-full border border-[#e8edf4] bg-white px-2 text-xs disabled:opacity-40"
             onClick={() => onQuickSend?.(reply)}
           >
             {reply}

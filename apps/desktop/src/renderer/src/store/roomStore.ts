@@ -15,8 +15,10 @@ import {
   type ConnectionMode,
   type HostEvent,
   type HostSessionInfo,
+  type MemberActivity,
   type RoomMember,
   type RoomSummary,
+  type SceneZoneId,
 } from "@private-voice/shared";
 
 interface LocalProfilePayload {
@@ -48,6 +50,12 @@ interface RoomStoreState {
   clearChatMessages: () => void;
   syncLocalProfile: (profile: LocalProfilePayload) => void;
   updateMemberVolume: (memberId: string, volume: number) => void;
+  updateLocalPresence: (presence: {
+    isDeafened?: boolean;
+    activity?: MemberActivity;
+    sceneZone?: SceneZoneId;
+    gameName?: string;
+  }) => void;
   pushHostEvent: (event: Omit<HostEvent, "id" | "createdAt">) => void;
   clearHostEvents: () => void;
   resetRoom: () => void;
@@ -63,6 +71,9 @@ const createEmptySlot = (index: number): RoomMember => ({
   isLocal: false,
   isEmptySlot: true,
   isMuted: false,
+  isDeafened: false,
+  activity: "idle",
+  sceneZone: "gameDesk1",
   presenceState: MemberPresenceState.Offline,
   speakingState: MemberSpeakingState.Silent,
   joinState: MemberJoinState.Waiting,
@@ -286,6 +297,15 @@ export const useRoomStore = create<RoomStoreState>((set) => ({
         ...state.room,
         members: state.room.members.map((member) =>
           member.id === memberId ? { ...member, volume } : member,
+        ),
+      },
+    })),
+  updateLocalPresence: (presence) =>
+    set((state) => ({
+      room: {
+        ...state.room,
+        members: state.room.members.map((member) =>
+          member.isLocal ? { ...member, ...presence } : member,
         ),
       },
     })),

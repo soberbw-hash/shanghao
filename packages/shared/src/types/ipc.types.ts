@@ -47,6 +47,7 @@ export interface SignalingEventPayload {
 export interface OverlayState {
   members: RoomMember[];
   isMuted: boolean;
+  isDeafened: boolean;
   connectionState: string;
 }
 

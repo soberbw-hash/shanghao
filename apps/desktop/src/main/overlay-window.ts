@@ -1,7 +1,7 @@
 import path from "node:path";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 
-import { app, BrowserWindow } from "electron";
+import { app, BrowserWindow, screen } from "electron";
 
 import { IPC_CHANNELS, type OverlayState } from "@private-voice/shared";
 
@@ -35,7 +35,7 @@ export class OverlayWindowController {
 
   private create(): void {
     const boundsPath = path.join(app.getPath("userData"), "overlay-bounds.json");
-    let savedBounds: { x?: number; y?: number; width?: number; height?: number } = {};
+    let savedBounds: { x?: number; y?: number } = {};
     try {
       if (existsSync(boundsPath)) {
         savedBounds = JSON.parse(readFileSync(boundsPath, "utf8")) as typeof savedBounds;
@@ -44,19 +44,22 @@ export class OverlayWindowController {
       savedBounds = {};
     }
 
+    const workArea = screen.getPrimaryDisplay().workArea;
     const window = new BrowserWindow({
-      width: savedBounds.width ?? 356,
-      height: savedBounds.height ?? 118,
-      x: savedBounds.x,
-      y: savedBounds.y,
-      minWidth: 300,
-      minHeight: 104,
+      width: 72,
+      height: 76,
+      x: savedBounds.x ?? workArea.x + 18,
+      y: savedBounds.y ?? workArea.y + Math.round((workArea.height - 76) / 2),
+      minWidth: 72,
+      minHeight: 76,
+      maxWidth: 72,
+      maxHeight: 76,
       frame: false,
       transparent: true,
       backgroundColor: "#00000000",
       alwaysOnTop: true,
       skipTaskbar: true,
-      resizable: true,
+      resizable: false,
       show: false,
       webPreferences: {
         preload: path.join(__dirname, "../preload/index.cjs"),
@@ -81,7 +84,6 @@ export class OverlayWindowController {
       }
     };
     window.on("moved", saveBounds);
-    window.on("resized", saveBounds);
     window.webContents.once("did-finish-load", () => {
       if (this.state) {
         window.webContents.send(IPC_CHANNELS.overlay.state, this.state);

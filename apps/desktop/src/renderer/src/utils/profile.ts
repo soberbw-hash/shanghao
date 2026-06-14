@@ -4,11 +4,11 @@ import {
   type BuiltInAvatarId,
 } from "@private-voice/shared";
 
-import catAvatar from "../assets/avatars/cat-3d.png";
-import corgiAvatar from "../assets/avatars/corgi-3d.png";
-import duckAvatar from "../assets/avatars/duck-3d.png";
-import foxAvatar from "../assets/avatars/fox-3d.png";
-import pandaAvatar from "../assets/avatars/panda-3d.png";
+import catAvatar from "../assets/avatars/cat-scene.png";
+import corgiAvatar from "../assets/avatars/corgi-scene.png";
+import duckAvatar from "../assets/avatars/duck-scene.png";
+import foxAvatar from "../assets/avatars/fox-scene.png";
+import pandaAvatar from "../assets/avatars/panda-scene.png";
 
 export const avatarOptions: Array<{ id: BuiltInAvatarId; label: string; src: string }> = [
   { id: "fox", label: "狐狸", src: foxAvatar },

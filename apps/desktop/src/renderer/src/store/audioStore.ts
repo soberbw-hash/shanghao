@@ -19,12 +19,15 @@ interface AudioStoreState {
   outputState: AudioDeviceState;
   localDiagnostics?: LocalAudioDiagnostics;
   isMuted: boolean;
+  isDeafened: boolean;
   isNoiseSuppressionEnabled: boolean;
   isPushToTalkEnabled: boolean;
   pushToTalkState: PushToTalkState;
   refreshDevices: () => Promise<void>;
   toggleMute: () => void;
+  toggleDeafen: () => void;
   setMuted: (isMuted: boolean) => void;
+  setDeafened: (isDeafened: boolean) => void;
   setNoiseSuppressionEnabled: (isEnabled: boolean) => void;
   setPushToTalkEnabled: (isEnabled: boolean) => void;
   setPushToTalkState: (state: PushToTalkState) => void;
@@ -39,6 +42,7 @@ export const useAudioStore = create<AudioStoreState>((set) => ({
   outputState: AudioDeviceState.Ready,
   localDiagnostics: undefined,
   isMuted: false,
+  isDeafened: false,
   isNoiseSuppressionEnabled: true,
   isPushToTalkEnabled: false,
   pushToTalkState: PushToTalkState.Off,
@@ -81,7 +85,9 @@ export const useAudioStore = create<AudioStoreState>((set) => ({
     }
   },
   toggleMute: () => set((state) => ({ isMuted: !state.isMuted })),
+  toggleDeafen: () => set((state) => ({ isDeafened: !state.isDeafened })),
   setMuted: (isMuted) => set({ isMuted }),
+  setDeafened: (isDeafened) => set({ isDeafened }),
   setNoiseSuppressionEnabled: (isNoiseSuppressionEnabled) =>
     set({ isNoiseSuppressionEnabled }),
   setPushToTalkEnabled: (isPushToTalkEnabled) => set({ isPushToTalkEnabled }),

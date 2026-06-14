@@ -27,6 +27,18 @@ export interface ChatMessage {
   kind?: "chat" | "system";
 }
 
+export type SceneZoneId =
+  | "coffeeBar"
+  | "fitnessZone"
+  | "restroomZone"
+  | "gameDesk1"
+  | "gameDesk2"
+  | "gameDesk3"
+  | "gameDesk4"
+  | "gameDesk5";
+
+export type MemberActivity = "idle" | "gaming" | "drinking" | "fitness" | "restroom";
+
 export interface RoomMember {
   id: string;
   nickname: string;
@@ -38,6 +50,10 @@ export interface RoomMember {
   isLocal: boolean;
   isEmptySlot?: boolean;
   isMuted: boolean;
+  isDeafened?: boolean;
+  activity?: MemberActivity;
+  sceneZone?: SceneZoneId;
+  gameName?: string;
   presenceState: MemberPresenceState;
   speakingState: MemberSpeakingState;
   joinState?: MemberJoinState;

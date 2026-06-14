@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Activity, Bell, CircleDot, Headphones, RefreshCw } from "lucide-react";
+import { Activity, Bell, Headphones, RefreshCw } from "lucide-react";
 
 import type { AppSettings, DiagnosticsSnapshot, RendererDiagnosticsSummary } from "@private-voice/shared";
 
@@ -20,11 +20,10 @@ import { useAudioStore } from "../store/audioStore";
 import { useRoomStore } from "../store/roomStore";
 import { useSettingsStore } from "../store/settingsStore";
 
-type SettingsSectionId = "audio" | "recording" | "notifications" | "updates" | "diagnostics";
+type SettingsSectionId = "audio" | "notifications" | "updates" | "diagnostics";
 
 const sections = [
   { id: "audio", label: "语音", icon: Headphones },
-  { id: "recording", label: "录音", icon: CircleDot },
   { id: "notifications", label: "通知", icon: Bell },
   { id: "updates", label: "更新", icon: RefreshCw },
   { id: "diagnostics", label: "诊断", icon: Activity },
@@ -129,13 +128,6 @@ export const SettingsPage = () => {
         />
         <ShortcutSettingsCard settings={settings} onChange={(patch) => void handleSaveSettings(patch)} />
       </div>
-    ),
-    recording: (
-      <SettingsSection title="录音" description="录音按钮在频道底部，停止后会自动保存。">
-        <SettingsItemRow label="录音格式" description="单声道 M4A，适合语音回顾">
-          <span className="text-xs font-semibold text-[#76869a]">M4A</span>
-        </SettingsItemRow>
-      </SettingsSection>
     ),
     notifications: (
       <SettingsSection title="通知与提示音" description="保留必要的轻提示，不打扰开黑。">

@@ -3,7 +3,9 @@ import {
   MemberPresenceState,
   MemberSpeakingState,
   type BuiltInAvatarId,
+  type MemberActivity,
   type RoomMember,
+  type SceneZoneId,
 } from "@private-voice/shared";
 import type { WebSocket } from "ws";
 
@@ -17,6 +19,10 @@ export interface PeerSession {
   isHost: boolean;
   isMuted: boolean;
   isSpeaking: boolean;
+  isDeafened: boolean;
+  activity: MemberActivity;
+  sceneZone?: SceneZoneId;
+  gameName?: string;
   joinedAt: string;
   lastHeartbeatAt: number;
   disconnectedAt?: number;
@@ -65,7 +71,19 @@ export class PeerManager {
   updateMemberState(
     peerId: string,
     nextState: Partial<
-      Pick<PeerSession, "isMuted" | "isSpeaking" | "nickname" | "avatarDataUrl" | "avatarHash" | "avatarId">
+      Pick<
+        PeerSession,
+        | "isMuted"
+        | "isSpeaking"
+        | "isDeafened"
+        | "activity"
+        | "sceneZone"
+        | "gameName"
+        | "nickname"
+        | "avatarDataUrl"
+        | "avatarHash"
+        | "avatarId"
+      >
     >,
   ): void {
     const peer = this.peers.get(peerId);
@@ -87,6 +105,10 @@ export class PeerManager {
       isHost: peer.isHost,
       isLocal: peer.id === localPeerId,
       isMuted: peer.isMuted,
+      isDeafened: peer.isDeafened,
+      activity: peer.activity,
+      sceneZone: peer.sceneZone,
+      gameName: peer.gameName,
       presenceState: peer.disconnectedAt
         ? MemberPresenceState.Reconnecting
         : MemberPresenceState.Online,

@@ -7,7 +7,9 @@ import {
   RoomLifecycleState,
   type ConnectionMode,
   type HostSessionInfo,
+  type MemberActivity,
   type RoomMember,
+  type SceneZoneId,
   type SignalingEventPayload,
 } from "@private-voice/shared";
 import { createSpeakingDetector, requestMicrophoneStream } from "@private-voice/webrtc";
@@ -246,8 +248,10 @@ export const useRoomState = () => {
   const addChatMessage = useRoomStore((state) => state.addChatMessage);
   const clearChatMessages = useRoomStore((state) => state.clearChatMessages);
   const setConnectionHealth = useRoomStore((state) => state.setConnectionHealth);
+  const updateLocalPresence = useRoomStore((state) => state.updateLocalPresence);
   const setLocalDiagnostics = useAudioStore((state) => state.setLocalDiagnostics);
   const isMuted = useAudioStore((state) => state.isMuted);
+  const isDeafened = useAudioStore((state) => state.isDeafened);
   const pushToast = useAppStore((state) => state.pushToast);
   const setRoomAction = useAppStore((state) => state.setRoomAction);
 
@@ -257,6 +261,17 @@ export const useRoomState = () => {
   useEffect(() => {
     activeClient?.updateMuteState(isMuted, false);
   }, [isMuted]);
+
+  useEffect(() => {
+    updateLocalPresence({ isDeafened });
+    const localMember = useRoomStore.getState().room.members.find((member) => member.isLocal);
+    activeClient?.updatePresenceState(
+      isDeafened,
+      localMember?.activity ?? "idle",
+      localMember?.sceneZone,
+      localMember?.gameName,
+    );
+  }, [isDeafened, updateLocalPresence]);
 
   useEffect(() => {
     if (!settings) {
@@ -551,6 +566,14 @@ export const useRoomState = () => {
     });
 
     await activeClient.connect();
+    const localMember = useRoomStore.getState().room.members.find((member) => member.isLocal);
+    activeClient.updateMuteState(useAudioStore.getState().isMuted, false);
+    activeClient.updatePresenceState(
+      useAudioStore.getState().isDeafened,
+      localMember?.activity ?? "idle",
+      localMember?.sceneZone,
+      localMember?.gameName,
+    );
     setRoom({
       roomId,
       roomName,
@@ -1028,6 +1051,20 @@ export const useRoomState = () => {
     await activeClient.sendKnock();
   };
 
+  const moveLocalMember = (
+    sceneZone: SceneZoneId,
+    activity: MemberActivity,
+    gameName?: string,
+  ) => {
+    updateLocalPresence({ sceneZone, activity, gameName });
+    activeClient?.updatePresenceState(isDeafened, activity, sceneZone, gameName);
+    void writeRendererLog("app", "info", "Local member moved in scene", {
+      sceneZone,
+      activity,
+      gameName,
+    });
+  };
+
   return {
     room,
     joinSignalUrl,
@@ -1040,5 +1077,6 @@ export const useRoomState = () => {
     copyInviteLink,
     sendChatMessage,
     sendKnock,
+    moveLocalMember,
   };
 };

@@ -6,7 +6,9 @@ import {
   type BuiltInAvatarId,
   type ChatMessage,
   type ConnectionMode,
+  type MemberActivity,
   type RoomMember,
+  type SceneZoneId,
   type SignalingEventPayload,
 } from "@private-voice/shared";
 import type {
@@ -81,6 +83,10 @@ export class RoomClient {
   private avatarId?: BuiltInAvatarId;
   private lastPublishedMuteState?: boolean;
   private lastPublishedSpeakingState?: boolean;
+  private lastPublishedDeafenState?: boolean;
+  private lastPublishedActivity?: MemberActivity;
+  private lastPublishedSceneZone?: SceneZoneId;
+  private lastPublishedGameName?: string;
   private lastPublishedNickname: string;
   private lastPublishedAvatarDataUrl?: string;
   private lastPublishedAvatarId?: BuiltInAvatarId;
@@ -414,6 +420,36 @@ export class RoomClient {
     }
   }
 
+  updatePresenceState(
+    isDeafened: boolean,
+    activity: MemberActivity,
+    sceneZone?: SceneZoneId,
+    gameName?: string,
+  ): void {
+    if (
+      this.lastPublishedDeafenState === isDeafened &&
+      this.lastPublishedActivity === activity &&
+      this.lastPublishedSceneZone === sceneZone &&
+      this.lastPublishedGameName === gameName
+    ) {
+      return;
+    }
+
+    this.lastPublishedDeafenState = isDeafened;
+    this.lastPublishedActivity = activity;
+    this.lastPublishedSceneZone = sceneZone;
+    this.lastPublishedGameName = gameName;
+    void this.safeSend({
+      type: "member_state",
+      roomId: this.options.roomId,
+      peerId: this.options.peerId,
+      isDeafened,
+      activity,
+      sceneZone,
+      gameName: gameName ?? "",
+    });
+  }
+
   private handleJoinAck(payload: JoinAckMessage): void {
     if (payload.roomId !== this.options.roomId || payload.peerId !== this.options.peerId) {
       return;
@@ -637,6 +673,13 @@ export class RoomClient {
         ...member,
         nickname: payload.nickname ?? member.nickname,
         avatarId: payload.avatarId ?? member.avatarId,
+        isDeafened: payload.isDeafened ?? member.isDeafened,
+        activity: payload.activity ?? member.activity,
+        sceneZone: payload.sceneZone ?? member.sceneZone,
+        gameName:
+          payload.gameName === ""
+            ? undefined
+            : payload.gameName ?? member.gameName,
         isMuted,
         speakingState: isMuted
           ? MemberSpeakingState.Muted

@@ -3,11 +3,13 @@ import { useEffect, useMemo, useRef } from "react";
 import { setAudioElementSinkId } from "@private-voice/webrtc";
 
 import { useRoomStore } from "../../store/roomStore";
+import { useAudioStore } from "../../store/audioStore";
 import { useSettingsStore } from "../../store/settingsStore";
 
 export const RemoteAudioRenderer = () => {
   const remoteStreams = useRoomStore((state) => state.remoteStreams);
   const members = useRoomStore((state) => state.room.members);
+  const isDeafened = useAudioStore((state) => state.isDeafened);
   const outputDeviceId = useSettingsStore((state) => state.settings?.preferredOutputDeviceId);
   const audioElementsRef = useRef<Record<string, HTMLAudioElement>>({});
 
@@ -26,12 +28,13 @@ export const RemoteAudioRenderer = () => {
 
       const member = members.find((candidate) => candidate.id === peerId);
       audioElement.volume = member?.volume ?? 1;
+      audioElement.muted = isDeafened;
 
       if (outputDeviceId) {
         void setAudioElementSinkId(audioElement, outputDeviceId);
       }
     }
-  }, [members, outputDeviceId, streamEntries]);
+  }, [isDeafened, members, outputDeviceId, streamEntries]);
 
   return (
     <>

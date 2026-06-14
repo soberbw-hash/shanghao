@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Headphones, LogOut, MonitorUp, Volume2 } from "lucide-react";
+import { Headphones, LogOut, MonitorUp, Volume2, VolumeX } from "lucide-react";
 
 import { RecordingEncoderState, RecordingState, RoomConnectionState } from "@private-voice/shared";
 
@@ -21,12 +21,19 @@ import { useSettingsStore } from "../store/settingsStore";
 const KNOCK_COOLDOWN_MS = 5_000;
 
 export const RoomPage = () => {
-  const { room, leaveRoom, sendChatMessage, sendKnock, replaceInputDevice } = useRoomState();
+  const {
+    room,
+    leaveRoom,
+    sendChatMessage,
+    sendKnock,
+    replaceInputDevice,
+    moveLocalMember,
+  } = useRoomState();
   const pushToast = useAppStore((state) => state.pushToast);
   const settings = useSettingsStore((state) => state.settings);
   const saveSettings = useSettingsStore((state) => state.saveSettings);
   const chatMessages = useRoomStore((state) => state.chatMessages);
-  const { inputDevices, outputDevices, isMuted, toggleMute } = useAudioStore();
+  const { inputDevices, outputDevices, isMuted, isDeafened, toggleMute, toggleDeafen } = useAudioStore();
   const recordingStatus = useRecordingStore((state) => state.status);
   const { capability, startRecording, stopRecording } = useRecordingController();
   const [chatInput, setChatInput] = useState("");
@@ -42,9 +49,10 @@ export const RoomPage = () => {
     void window.desktopApi.overlay.update({
       members: room.members,
       isMuted,
+      isDeafened,
       connectionState: room.connectionState,
     });
-  }, [isMuted, room.connectionState, room.members]);
+  }, [isDeafened, isMuted, room.connectionState, room.members]);
 
   const send = async (content = chatInput) => {
     if (!content.trim()) return;
@@ -137,7 +145,10 @@ export const RoomPage = () => {
 
       <main className="grid min-h-0 flex-1 gap-2.5 lg:grid-cols-[minmax(0,1.44fr)_minmax(280px,.56fr)]">
         <section className="island-panel min-h-0 overflow-hidden">
-          <TeamIsland members={room.members} />
+          <TeamIsland
+            members={room.members}
+            onZoneSelect={(zone, activity) => moveLocalMember(zone, activity)}
+          />
         </section>
         <TemporaryChatPanel
           className="h-full"
@@ -180,9 +191,15 @@ export const RoomPage = () => {
             ))}
           </select>
         </label>
-        <div className="audio-level-bars" aria-label="输入音量">
-          <i /><i /><i /><i />
-        </div>
+        <Button
+          variant={isDeafened ? "secondary" : "ghost"}
+          className="voice-action-button whitespace-nowrap"
+          title={isDeafened ? "打开扬声器" : "关闭扬声器"}
+          onClick={toggleDeafen}
+        >
+          {isDeafened ? <VolumeX className="h-4 w-4" /> : <Volume2 className="h-4 w-4" />}
+          <span className="voice-action-label">{isDeafened ? "打开扬声器" : "关闭扬声器"}</span>
+        </Button>
         <div className="flex-1" />
         <RecordingButton
           isRecording={recordingStatus.state === RecordingState.Recording}
