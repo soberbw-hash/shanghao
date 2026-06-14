@@ -110,16 +110,14 @@ const maybeCaptureScreenshot = async (window: BrowserWindow | null): Promise<voi
   }
 
   await sleep(1800);
-  await clickButtonByLabel(window, "\u8FDB\u5165\u4E0A\u53F7");
+  await clickButtonByLabel(window, "\u8FDB\u5165\u9891\u9053");
   await sleep(500);
 
   if (mode !== "home") {
     const label =
       mode === "settings"
         ? "\u8BBE\u7F6E"
-        : mode === "room"
-          ? "\u5F00\u542F\u623F\u95F4"
-          : "";
+        : "";
 
     if (label) {
       await clickButtonByLabel(window, label);

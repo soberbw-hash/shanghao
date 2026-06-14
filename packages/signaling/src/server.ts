@@ -310,7 +310,7 @@ export class SignalingServer extends EventEmitter {
         code: "version_mismatch",
         roomId: message.roomId,
         peerId: message.peerId,
-        message: "房主和成员版本不一致，请升级到同一版本。",
+        message: "当前版本太旧，请更新后再进入频道。",
       };
       this.safeSend(socket, mismatchMessage);
       return;
@@ -328,7 +328,7 @@ export class SignalingServer extends EventEmitter {
         code: "channel_code_invalid",
         roomId: message.roomId,
         peerId: message.peerId,
-        message: "频道码不正确，请向好友确认后重试。",
+        message: "频道码不对，问下朋友再试试。",
       });
       this.logger?.("channel join rejected", {
         roomId: message.roomId,
@@ -349,7 +349,7 @@ export class SignalingServer extends EventEmitter {
         code: "relay_auth_failed",
         roomId: message.roomId,
         peerId: message.peerId,
-        message: "云中继鉴权失败，请让房主重新分享房间地址。",
+        message: "这个临时链接已经失效，请向朋友确认。",
       };
       this.safeSend(socket, relayMessage);
       return;
@@ -362,7 +362,7 @@ export class SignalingServer extends EventEmitter {
         code: "room_full",
         roomId: message.roomId,
         peerId: message.peerId,
-        message: "房间已满，最多只能同时 5 人语音。",
+        message: "频道满了，最多 5 人同时语音。",
       };
       this.safeSend(socket, roomFullMessage);
       return;
@@ -388,8 +388,8 @@ export class SignalingServer extends EventEmitter {
       {
         id: message.peerId,
         nickname: message.nickname,
-        avatarDataUrl: normalizedAvatar.avatarDataUrl ?? existingPeer?.avatarDataUrl,
-        avatarHash: normalizedAvatar.avatarHash ?? existingPeer?.avatarHash,
+        avatarDataUrl: isFixedChannel ? undefined : normalizedAvatar.avatarDataUrl ?? existingPeer?.avatarDataUrl,
+        avatarHash: isFixedChannel ? undefined : normalizedAvatar.avatarHash ?? existingPeer?.avatarHash,
         avatarId: message.avatarId ?? existingPeer?.avatarId,
         socket,
         isHost: isFixedChannel ? false : existingPeer?.isHost ?? existingPeerCount === 0,
@@ -426,8 +426,10 @@ export class SignalingServer extends EventEmitter {
     };
     this.safeSend(socket, joinAck);
     this.broadcastSnapshot(message.roomId);
-    this.sendAvatarsToPeer(socket, room.roomId);
-    if (normalizedAvatar.avatarDataUrl) {
+    if (!isFixedChannel) {
+      this.sendAvatarsToPeer(socket, room.roomId);
+    }
+    if (!isFixedChannel && normalizedAvatar.avatarDataUrl) {
       this.broadcastAvatarUpdate(message.roomId, message.peerId);
     }
   }
@@ -624,6 +626,9 @@ export class SignalingServer extends EventEmitter {
   }
 
   private sendAvatarsToPeer(socket: WebSocket, roomId: string): void {
+    if (roomId === "main") {
+      return;
+    }
     const room = this.roomManager.getRoom(roomId);
     if (!room) {
       return;

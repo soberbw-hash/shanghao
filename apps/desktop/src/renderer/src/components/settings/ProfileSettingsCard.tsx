@@ -41,9 +41,6 @@ export const ProfileSettingsCard = ({
           </Button>
         </div>
       </SettingsItemRow>
-      <SettingsItemRow label="频道名称">
-        <Input value={settings.roomName} placeholder="开黑频道" onChange={(event) => onChange({ roomName: event.target.value })} />
-      </SettingsItemRow>
     </div>
   </SettingsSection>
 );

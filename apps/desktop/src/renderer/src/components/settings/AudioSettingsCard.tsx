@@ -30,6 +30,13 @@ export const AudioSettingsCard = ({
   onChange: (patch: Partial<AppSettings>) => void;
 }) => {
   const [isAdvancedOpen, setIsAdvancedOpen] = useState(false);
+  const micHealth = !isMicTesting
+    ? "点击开始，听听朋友会听到的声音"
+    : micTestLevel > 0.18
+      ? "麦克风正常"
+      : micTestLevel > 0.035
+        ? "声音有点小"
+        : "听不到你";
 
   return (
     <SettingsSection title="音频" description="选择设备并确认麦克风状态。">
@@ -76,7 +83,7 @@ export const AudioSettingsCard = ({
             onChange={(isAutoGainControlEnabled) => onChange({ isAutoGainControlEnabled })}
           />
         </SettingsItemRow>
-        <SettingsItemRow label="试音" description="本地实时监听，不经过房间网络。">
+        <SettingsItemRow label="麦克风体检" description={micHealth}>
           <div className="min-w-[280px] space-y-3">
             <Button variant={isMicTesting ? "danger" : "secondary"} onClick={onToggleMicTest}>
               {isMicTesting ? "停止试音" : "开始试音"}

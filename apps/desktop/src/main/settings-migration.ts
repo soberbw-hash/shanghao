@@ -23,6 +23,7 @@ export const defaultSettings: AppSettings = {
   channelAccessCode: "",
   minimizeToTray: false,
   reduceMotion: false,
+  showFloatingBarOnJoin: false,
   launchOnStartup: false,
   preferredInputDeviceId: undefined,
   preferredOutputDeviceId: undefined,
@@ -35,8 +36,8 @@ export const defaultSettings: AppSettings = {
   isAutoGainControlEnabled: true,
   isPushToTalkEnabled: false,
   micMonitorMode: "processed",
-  connectionMode: "cloudflare_tunnel",
-  relayServerUrl: "",
+  connectionMode: "relay",
+  relayServerUrl: "ws://118.25.103.107:43821",
   relayAuthToken: "",
   manualDirectHost: "",
   shouldAutoCopyInviteLink: true,
@@ -94,7 +95,7 @@ export const migrateSettings = (raw: RawSettings): MigrationResult => {
     channelAccessCode: trimText(raw.channelAccessCode) ?? "",
     globalMuteShortcut: trimText(raw.globalMuteShortcut) ?? "",
     pushToTalkShortcut: trimText(raw.pushToTalkShortcut) ?? defaultSettings.pushToTalkShortcut,
-    relayServerUrl: normalizeRelayServerUrl(raw.relayServerUrl) ?? "",
+    relayServerUrl: normalizeRelayServerUrl(raw.relayServerUrl) ?? defaultSettings.relayServerUrl,
     relayAuthToken: trimText(raw.relayAuthToken) ?? "",
     manualDirectHost: trimText(raw.manualDirectHost) ?? "",
     preferredSampleRate: normalizeSampleRate(raw.preferredSampleRate),
@@ -119,13 +120,14 @@ export const migrateSettings = (raw: RawSettings): MigrationResult => {
       : 0;
   const isProfileReady = merged.nickname.length > 0 && isBuiltInAvatarId(merged.avatarId);
   merged.hasCompletedProfileSetup =
+    !raw.avatarPath &&
     previousProfileVersion === PROFILE_SCHEMA_VERSION &&
     Boolean(merged.hasCompletedProfileSetup) &&
     isProfileReady;
 
   return {
     settings: merged,
-    migrated: previousVersion !== SETTINGS_SCHEMA_VERSION,
+    migrated: previousVersion !== SETTINGS_SCHEMA_VERSION || Boolean(raw.avatarPath),
     previousVersion,
   };
 };

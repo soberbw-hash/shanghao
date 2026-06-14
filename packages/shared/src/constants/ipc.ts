@@ -41,6 +41,9 @@ export const IPC_CHANNELS = {
   },
   updates: {
     check: "updates:check",
+    download: "updates:download",
+    install: "updates:install",
+    status: "updates:status",
     openReleases: "updates:open-releases",
   },
   host: {

@@ -15,6 +15,7 @@ const audioCardPath = path.resolve(
   process.cwd(),
   "src/renderer/src/components/settings/AudioSettingsCard.tsx",
 );
+const settingsPagePath = path.resolve(process.cwd(), "src/renderer/src/pages/SettingsPage.tsx");
 
 test("appearance settings no longer expose fixed prompt sound toggles", () => {
   const source = readFileSync(appearanceCardPath, "utf8");
@@ -42,4 +43,13 @@ test("advanced audio settings are collapsed by default", () => {
   assert.equal(source.includes("高级音频"), true);
   assert.equal(source.includes("一般不需要修改"), true);
   assert.equal(source.includes("isAdvancedOpen ?"), true);
+});
+
+test("V5 settings use left navigation and hide advanced connection by default", () => {
+  const source = readFileSync(settingsPagePath, "utf8");
+
+  for (const label of ["资料", "语音", "悬浮小窗", "通知", "高级连接", "诊断"]) {
+    assert.equal(source.includes(label), true);
+  }
+  assert.equal(source.includes('useState<SettingsSectionId>("profile")'), true);
 });

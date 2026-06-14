@@ -16,6 +16,7 @@ export interface AppSettings {
   channelAccessCode: string;
   minimizeToTray: boolean;
   reduceMotion: boolean;
+  showFloatingBarOnJoin: boolean;
   launchOnStartup: boolean;
   preferredInputDeviceId?: string;
   preferredOutputDeviceId?: string;
@@ -128,9 +129,21 @@ export interface UpdateCheckResult {
   currentVersion: string;
   latestVersion?: string;
   hasUpdate: boolean;
+  forceUpdate?: boolean;
+  minSupportedVersion?: string;
+  releaseNotes?: string;
+  canAutoInstall?: boolean;
   checkedAt: string;
   releaseUrl: string;
   message: string;
+}
+
+export interface UpdateStatus {
+  phase: "idle" | "checking" | "available" | "downloading" | "downloaded" | "installing" | "error";
+  message: string;
+  percent?: number;
+  latestVersion?: string;
+  forceUpdate?: boolean;
 }
 
 export interface NetworkStatusSnapshot {

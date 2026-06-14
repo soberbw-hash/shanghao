@@ -9,13 +9,13 @@ const memberGridPath = path.resolve(
   "src/renderer/src/components/room/MemberGrid.tsx",
 );
 
-test("home page keeps a fixed-channel entry and a strict two-card main layout", () => {
+test("home page is a full-screen fixed-channel entry page", () => {
   const source = readFileSync(sourcePath, "utf8");
 
-  assert.equal(source.includes('data-testid="home-channel-card"'), true);
+  assert.equal(source.includes("entry-page"), true);
   assert.equal(source.includes("进入开黑频道"), true);
-  assert.equal(source.includes("TemporaryChatPanel"), true);
-  assert.equal(source.includes("xl:grid-cols-2"), true);
+  assert.equal(source.includes("AvatarPicker"), true);
+  assert.equal(source.includes("TemporaryChatPanel"), false);
 });
 
 test("home page hides legacy connection mode tabs from the primary flow", () => {
@@ -31,7 +31,7 @@ test("home page no longer renders a home mic-test panel", () => {
   const source = readFileSync(sourcePath, "utf8");
 
   assert.equal(source.includes("试音"), false);
-  assert.equal(source.includes("TemporaryChatPanel"), true);
+  assert.equal(source.includes("麦克风正常"), true);
 });
 
 test("member grid stays in a single five-column row instead of wrapping", () => {

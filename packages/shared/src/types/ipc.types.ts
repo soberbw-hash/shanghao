@@ -5,6 +5,7 @@ import type {
   ProxyDiagnostics,
   TailscaleStatus,
   UpdateCheckResult,
+  UpdateStatus,
 } from "./settings.types";
 import type {
   DiagnosticsBundleSummary,
@@ -86,6 +87,9 @@ export interface DesktopApi {
   };
   updates: {
     check: () => Promise<UpdateCheckResult>;
+    download: () => Promise<void>;
+    install: () => Promise<void>;
+    onStatus: (listener: (status: UpdateStatus) => void) => () => void;
     openReleases: () => Promise<void>;
   };
   host: {

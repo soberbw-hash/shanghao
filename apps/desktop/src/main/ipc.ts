@@ -15,6 +15,7 @@ import {
   type SignalingEventPayload,
   type TailscaleStatus,
   type UpdateCheckResult,
+  type UpdateStatus,
 } from "@private-voice/shared";
 
 import { DiagnosticsService } from "./diagnostics";
@@ -53,6 +54,9 @@ export const registerIpcHandlers = ({
 
   signalingClient.on("event", (payload: SignalingEventPayload) => {
     getMainWindow()?.webContents.send(IPC_CHANNELS.signaling.event, payload);
+  });
+  updates.onStatus((status: UpdateStatus) => {
+    getMainWindow()?.webContents.send(IPC_CHANNELS.updates.status, status);
   });
 
   ipcMain.handle(
@@ -203,6 +207,12 @@ export const registerIpcHandlers = ({
   });
   ipcMain.handle(IPC_CHANNELS.updates.openReleases, async (): Promise<void> => {
     await updates.openReleases();
+  });
+  ipcMain.handle(IPC_CHANNELS.updates.download, async (): Promise<void> => {
+    await updates.download();
+  });
+  ipcMain.handle(IPC_CHANNELS.updates.install, async (): Promise<void> => {
+    updates.install();
   });
 
   ipcMain.handle(

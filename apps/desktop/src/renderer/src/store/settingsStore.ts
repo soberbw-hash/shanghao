@@ -9,12 +9,12 @@ import {
   type RuntimeInfo,
   type TailscaleStatus,
   type UpdateCheckResult,
+  type UpdateStatus,
 } from "@private-voice/shared";
 import { create } from "zustand";
 
 import { desktopApi } from "../utils/desktopApi";
 import { writeRendererLog } from "../utils/logger";
-import { getAvatarSrc } from "../utils/profile";
 
 interface StoreHydrationOutcome {
   mode: "ready" | "safe_mode";
@@ -31,6 +31,7 @@ interface SettingsStoreState {
   tailscaleStatus?: TailscaleStatus;
   networkSnapshot?: NetworkStatusSnapshot;
   updateInfo?: UpdateCheckResult;
+  updateStatus: UpdateStatus;
   avatarDataUrl?: string;
   isHydrating: boolean;
   hydrate: () => Promise<StoreHydrationOutcome>;
@@ -38,6 +39,8 @@ interface SettingsStoreState {
   refreshTailscale: () => Promise<void>;
   refreshNetworkSnapshot: () => Promise<void>;
   checkUpdates: () => Promise<UpdateCheckResult>;
+  downloadUpdate: () => Promise<void>;
+  installUpdate: () => Promise<void>;
   openReleases: () => Promise<void>;
   resetSettings: () => Promise<void>;
 }
@@ -63,6 +66,7 @@ const fallbackSettings: AppSettings = {
   channelAccessCode: "",
   minimizeToTray: false,
   reduceMotion: false,
+  showFloatingBarOnJoin: false,
   launchOnStartup: false,
   preferredInputDeviceId: undefined,
   preferredOutputDeviceId: undefined,
@@ -75,8 +79,8 @@ const fallbackSettings: AppSettings = {
   isAutoGainControlEnabled: true,
   isPushToTalkEnabled: false,
   micMonitorMode: "processed",
-  connectionMode: "cloudflare_tunnel",
-  relayServerUrl: "",
+  connectionMode: "relay",
+  relayServerUrl: "ws://118.25.103.107:43821",
   relayAuthToken: "",
   manualDirectHost: "",
   shouldAutoCopyInviteLink: true,
@@ -126,6 +130,7 @@ export const useSettingsStore = create<SettingsStoreState>((set, get) => ({
   avatarDataUrl: undefined,
   networkSnapshot: undefined,
   updateInfo: undefined,
+  updateStatus: { phase: "idle", message: "暂未检查更新" },
   isHydrating: true,
   hydrate: async () => {
     set({ isHydrating: true });
@@ -161,7 +166,7 @@ export const useSettingsStore = create<SettingsStoreState>((set, get) => ({
       return fallbackSettings;
     });
 
-    const avatarDataUrl = getAvatarSrc(settings.avatarId);
+    const avatarDataUrl = undefined;
 
     const [tailscaleStatus, networkSnapshot] = await Promise.all([
       withTimeout(desktopApi.tailscale.checkStatus(), "tailscale_timeout", 4_000).catch(
@@ -191,6 +196,8 @@ export const useSettingsStore = create<SettingsStoreState>((set, get) => ({
       isHydrating: false,
     });
 
+    desktopApi.updates.onStatus((updateStatus) => set({ updateStatus }));
+
     await desktopApi.shortcuts.configureMute(settings.globalMuteShortcut).catch(async (error) => {
       await writeRendererLog("renderer-startup", "warn", "Failed to configure mute shortcut", {
         error: error instanceof Error ? error.message : String(error),
@@ -216,8 +223,7 @@ export const useSettingsStore = create<SettingsStoreState>((set, get) => ({
   },
   saveSettings: async (partial) => {
     const settings = await desktopApi.settings.save(partial);
-    const avatarDataUrl = getAvatarSrc(settings.avatarId);
-    set({ settings, avatarDataUrl });
+    set({ settings, avatarDataUrl: undefined });
     return settings;
   },
   refreshTailscale: async () => {
@@ -243,12 +249,18 @@ export const useSettingsStore = create<SettingsStoreState>((set, get) => ({
     set({ updateInfo });
     return updateInfo;
   },
+  downloadUpdate: async () => {
+    await desktopApi.updates.download();
+  },
+  installUpdate: async () => {
+    await desktopApi.updates.install();
+  },
   openReleases: async () => {
     await desktopApi.updates.openReleases();
   },
   resetSettings: async () => {
     const settings = await desktopApi.settings.reset();
-    set({ settings, avatarDataUrl: getAvatarSrc(settings.avatarId) });
+    set({ settings, avatarDataUrl: undefined });
     await get().refreshTailscale();
     await get().refreshNetworkSnapshot();
   },

@@ -1,130 +1,105 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
+import { Headphones, LogOut, MonitorUp, Volume2 } from "lucide-react";
 
 import { RoomConnectionState } from "@private-voice/shared";
 
-import { InputDevicePicker } from "../components/audio/InputDevicePicker";
 import { MuteButton } from "../components/audio/MuteButton";
-import { OutputDevicePicker } from "../components/audio/OutputDevicePicker";
-import { PushToTalkKeyBadge } from "../components/audio/PushToTalkKeyBadge";
-import { PushToTalkToggle } from "../components/audio/PushToTalkToggle";
 import { Button } from "../components/base/Button";
 import { TemporaryChatPanel } from "../components/chat/TemporaryChatPanel";
-import { BottomControlDock } from "../components/layout/BottomControlDock";
-import { InlineBanner } from "../components/layout/InlineBanner";
-import { PageContainer } from "../components/layout/PageContainer";
 import { TopStatusBar } from "../components/layout/TopStatusBar";
-import { ConnectionHealthStrip } from "../components/room/ConnectionHealthStrip";
-import { MemberGrid } from "../components/room/MemberGrid";
+import { FloatingBuddyBar } from "../components/room/FloatingBuddyBar";
+import { TeamIsland } from "../components/room/TeamIsland";
 import { useRoomState } from "../hooks/useRoomState";
+import { useAppStore } from "../store/appStore";
 import { useAudioStore } from "../store/audioStore";
 import { useRoomStore } from "../store/roomStore";
 import { useSettingsStore } from "../store/settingsStore";
 
+const shortDeviceName = (value?: string) => {
+  if (!value) return "默认设备";
+  return value.replace(/\s*\([^)]*\)\s*$/, "").slice(0, 24);
+};
+
 export const RoomPage = () => {
-  const { room, leaveRoom, replaceInputDevice, sendChatMessage } = useRoomState();
+  const { room, leaveRoom, sendChatMessage } = useRoomState();
+  const pushToast = useAppStore((state) => state.pushToast);
   const settings = useSettingsStore((state) => state.settings);
-  const saveSettings = useSettingsStore((state) => state.saveSettings);
   const chatMessages = useRoomStore((state) => state.chatMessages);
-  const connectionHealth = useRoomStore((state) => state.connectionHealth);
-  const updateMemberVolume = useRoomStore((state) => state.updateMemberVolume);
-  const {
-    inputDevices,
-    outputDevices,
-    isMuted,
-    isPushToTalkEnabled,
-    toggleMute,
-    setPushToTalkEnabled,
-  } = useAudioStore();
+  const { inputDevices, outputDevices, isMuted, toggleMute } = useAudioStore();
   const [chatInput, setChatInput] = useState("");
+  const [showBuddyBar, setShowBuddyBar] = useState(Boolean(settings?.showFloatingBarOnJoin));
+  const enteredAt = useRef(Date.now());
 
   const canSend =
     room.connectionState === RoomConnectionState.Connected ||
     room.connectionState === RoomConnectionState.WaitingPeer ||
     room.connectionState === RoomConnectionState.WaitingSnapshot;
 
-  const handleSendChat = () => {
-    const content = chatInput.trim();
-    if (!content) {
-      return;
-    }
-    void sendChatMessage(content).then(() => setChatInput(""));
+  const send = async (content = chatInput) => {
+    if (!content.trim()) return;
+    await sendChatMessage(content);
+    if (content === chatInput) setChatInput("");
+  };
+
+  const invite = async () => {
+    await navigator.clipboard.writeText("上号，进开黑频道！");
+    pushToast({ tone: "success", title: "邀请话已经复制", description: "发给朋友，叫他打开上号进入频道。" });
+  };
+
+  const leave = async () => {
+    localStorage.setItem(
+      "shanghao:last-session-note",
+      JSON.stringify({
+        people: room.memberCount,
+        minutes: Math.max(1, Math.round((Date.now() - enteredAt.current) / 60_000)),
+      }),
+    );
+    await leaveRoom();
   };
 
   return (
-    <PageContainer className="min-h-0 gap-3 overflow-hidden py-2.5">
-      <TopStatusBar variant="room" />
-      {room.connectionState === RoomConnectionState.Reconnecting ||
-      room.connectionState === RoomConnectionState.Degraded ? (
-        <InlineBanner tone="warning">网络有波动，正在自动恢复频道连接。</InlineBanner>
-      ) : null}
-      {room.connectionState === RoomConnectionState.Failed ? (
-        <InlineBanner tone="danger">连接失败，请检查网络或频道服务器设置后重新进入。</InlineBanner>
-      ) : null}
+    <div className="room-page relative flex h-full flex-col gap-3 overflow-hidden px-4 pb-4 pt-2">
+      <TopStatusBar onKnock={() => void send("上号？")} onInvite={() => void invite()} />
 
-      <section className="grid min-h-0 flex-1 items-stretch gap-4 xl:grid-cols-[1.12fr_0.88fr]">
-        <div className="surface-card flex min-h-[350px] flex-col p-5">
-          <div className="flex items-center justify-between">
-            <div>
-              <div className="text-[22px] font-semibold text-[#111827]">队伍</div>
-              <div className="mt-1 text-sm text-[#667085]">谁在线、谁在说话，一眼就能看到。</div>
-            </div>
-            <div className="status-capsule">{room.memberCount}/5 在线</div>
-          </div>
-          <div className="mt-5">
-            <MemberGrid members={room.members} onVolumeChange={(memberId, value) => updateMemberVolume(memberId, value)} />
-          </div>
-          <div className="mt-auto pt-5">
-            <ConnectionHealthStrip
-              latencyMs={connectionHealth.latencyMs}
-              jitterMs={connectionHealth.jitterMs}
-              packetLossPercent={connectionHealth.packetLossPercent}
-            />
-          </div>
-        </div>
-
+      <main className="grid min-h-0 flex-1 gap-3 xl:grid-cols-[1.38fr_.62fr]">
+        <section className="island-panel min-h-0 overflow-hidden">
+          <TeamIsland members={room.members} />
+        </section>
         <TemporaryChatPanel
           className="h-full"
           messages={chatMessages}
           chatInput={chatInput}
           onChatInputChange={setChatInput}
-          onSend={handleSendChat}
-          onQuickSend={(message) => void sendChatMessage(message)}
-          emptyMessage="发一句，叫大家上号。"
+          onSend={() => void send()}
+          onQuickSend={(message) => void send(message)}
           canSend={canSend}
-          unavailableLabel={room.connectionState === RoomConnectionState.Reconnecting ? "重连中" : "连接已断开"}
+          unavailableLabel="正在回来…"
         />
-      </section>
+      </main>
 
-      <BottomControlDock>
-        <div className="flex items-center gap-3">
-          <MuteButton isMuted={isMuted} onClick={toggleMute} />
-          <PushToTalkToggle
-            isEnabled={isPushToTalkEnabled}
-            onClick={() => {
-              setPushToTalkEnabled(!isPushToTalkEnabled);
-              void saveSettings({ isPushToTalkEnabled: !isPushToTalkEnabled });
-            }}
-          />
-          {isPushToTalkEnabled ? <PushToTalkKeyBadge shortcut={settings?.pushToTalkShortcut || "Space"} /> : null}
+      <footer className="voice-dock flex items-center gap-3 px-4 py-3">
+        <MuteButton isMuted={isMuted} onClick={toggleMute} />
+        <div className="hidden min-w-0 flex-1 items-center gap-5 md:flex">
+          <div className="flex min-w-0 items-center gap-2 text-xs text-[#71849b]">
+            <Headphones className="h-4 w-4 shrink-0" />
+            <span className="truncate">{shortDeviceName(inputDevices.find((device) => device.id === settings?.preferredInputDeviceId)?.label || inputDevices[0]?.label)}</span>
+          </div>
+          <div className="flex min-w-0 items-center gap-2 text-xs text-[#71849b]">
+            <Volume2 className="h-4 w-4 shrink-0" />
+            <span className="truncate">{shortDeviceName(outputDevices.find((device) => device.id === settings?.preferredOutputDeviceId)?.label || outputDevices[0]?.label)}</span>
+          </div>
         </div>
-        <div className="grid min-w-[280px] flex-1 gap-3 md:grid-cols-2">
-          <InputDevicePicker
-            devices={inputDevices}
-            value={settings?.preferredInputDeviceId}
-            onChange={(preferredInputDeviceId) => {
-              void saveSettings({ preferredInputDeviceId }).then(() => replaceInputDevice(preferredInputDeviceId));
-            }}
-          />
-          <OutputDevicePicker
-            devices={outputDevices}
-            value={settings?.preferredOutputDeviceId}
-            onChange={(preferredOutputDeviceId) => void saveSettings({ preferredOutputDeviceId })}
-          />
-        </div>
-        <Button variant="danger" onClick={() => void leaveRoom()}>
+        <Button variant="ghost" className="whitespace-nowrap" onClick={() => setShowBuddyBar((value) => !value)}>
+          <MonitorUp className="h-4 w-4" />
+          悬浮小窗
+        </Button>
+        <Button variant="danger" className="whitespace-nowrap" onClick={() => void leave()}>
+          <LogOut className="h-4 w-4" />
           退出频道
         </Button>
-      </BottomControlDock>
-    </PageContainer>
+      </footer>
+
+      {showBuddyBar ? <FloatingBuddyBar members={room.members} isMuted={isMuted} onClose={() => setShowBuddyBar(false)} /> : null}
+    </div>
   );
 };

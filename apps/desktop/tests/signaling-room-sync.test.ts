@@ -487,6 +487,41 @@ test("fixed channel accepts join_channel, has no host, and survives becoming emp
   await server.close();
 });
 
+test("fixed channel never forwards legacy uploaded avatar data", async () => {
+  const server = new SignalingServer({ roomName: "固定频道头像测试" });
+  const port = await server.listen();
+  const socket = await openSocket(`ws://127.0.0.1:${port}`);
+  const receivedTypes: string[] = [];
+  socket.on("message", (raw) => {
+    receivedTypes.push((JSON.parse(raw.toString()) as { type: string }).type);
+  });
+  socket.send(JSON.stringify({
+    type: "join_channel",
+    roomId: "main",
+    channelId: "main",
+    peerId: "fixed-avatar",
+    nickname: "小狐狸",
+    avatarId: "fox",
+    avatarDataUrl: `data:image/png;base64,${"A".repeat(512)}`,
+    appVersion: "0.1.26",
+    protocolVersion: APP_PROTOCOL_VERSION,
+    buildNumber: APP_BUILD_NUMBER,
+    connectionMode: "relay",
+  }));
+  const snapshot = await waitForMessage(
+    socket,
+    (payload): payload is { members: Array<{ avatarDataUrl?: string; avatarId?: string }> } =>
+      typeof payload === "object" && payload !== null &&
+      (payload as { type?: string }).type === "channel_snapshot",
+  );
+  await new Promise((resolve) => setTimeout(resolve, 80));
+  assert.equal(snapshot.members[0]?.avatarDataUrl, undefined);
+  assert.equal(snapshot.members[0]?.avatarId, "fox");
+  assert.equal(receivedTypes.includes("avatar_update"), false);
+  socket.close();
+  await server.close();
+});
+
 test("fixed channel code is validated without exposing it in health", async () => {
   const previousCode = process.env.CHANNEL_ACCESS_CODE;
   process.env.CHANNEL_ACCESS_CODE = "friends-only";

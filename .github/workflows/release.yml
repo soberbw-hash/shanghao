@@ -21,11 +21,15 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm typecheck
       - run: pnpm --dir apps/desktop test:smoke
+      - run: pnpm test:three-peer-audio
       - run: pnpm dist:win
       - uses: actions/upload-artifact@v4
         with:
           name: windows
-          path: apps/desktop/release/*.exe
+          path: |
+            apps/desktop/release/*.exe
+            apps/desktop/release/*.blockmap
+            apps/desktop/release/latest*.yml
 
   macos:
     runs-on: macos-latest
@@ -47,7 +51,11 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: macos-${{ matrix.arch }}
-          path: apps/desktop/release/*.dmg
+          path: |
+            apps/desktop/release/*.dmg
+            apps/desktop/release/*.zip
+            apps/desktop/release/*.blockmap
+            apps/desktop/release/latest*.yml
 
   publish:
     needs: [windows, macos]

@@ -1,6 +1,6 @@
 {
   "name": "shanghao-desktop",
-  "version": "0.1.25",
+  "version": "0.1.26",
   "private": true,
   "description": "ShangHao desktop voice app for private friends group chat",
   "author": "Sober",
@@ -20,8 +20,8 @@
     "dist": "corepack pnpm build && node ../../scripts/run-electron-builder.mjs --config electron-builder.yml",
     "dist:win": "corepack pnpm build && node ../../scripts/run-electron-builder.mjs --config electron-builder.yml --win nsis",
     "dist:mac": "corepack pnpm build && node ../../scripts/run-electron-builder.mjs --config electron-builder.yml --mac dmg",
-    "dist:mac:x64": "corepack pnpm build && node ../../scripts/run-electron-builder.mjs --config electron-builder.yml --mac dmg --x64",
-    "dist:mac:arm64": "corepack pnpm build && node ../../scripts/run-electron-builder.mjs --config electron-builder.yml --mac dmg --arm64"
+    "dist:mac:x64": "corepack pnpm build && node ../../scripts/run-electron-builder.mjs --config electron-builder.yml --mac dmg zip --x64",
+    "dist:mac:arm64": "corepack pnpm build && node ../../scripts/run-electron-builder.mjs --config electron-builder.yml --mac dmg zip --arm64"
   },
   "dependencies": {
     "@achingbrain/nat-port-mapper": "^4.0.5",
@@ -30,6 +30,7 @@
     "@private-voice/signaling": "workspace:*",
     "@private-voice/ui": "workspace:*",
     "@private-voice/webrtc": "workspace:*",
+    "electron-updater": "6.6.2",
     "ffmpeg-static": "^5.2.0",
     "ffprobe-static": "^3.1.0",
     "framer-motion": "^11.18.2",

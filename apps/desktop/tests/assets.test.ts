@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import test from "node:test";
 
@@ -23,4 +23,15 @@ test("desktop branding assets exist for app, tray, and github", () => {
   files.forEach((filePath) => {
     assert.equal(existsSync(filePath), true, `missing asset: ${filePath}`);
   });
+});
+
+test("desktop release configuration publishes automatic update metadata", () => {
+  const builder = readFileSync(path.join(root, "apps/desktop/electron-builder.yml"), "utf8");
+  const workflow = readFileSync(path.join(root, ".github/workflows/release.yml"), "utf8");
+
+  assert.equal(builder.includes("provider: github"), true);
+  assert.equal(builder.includes("generateUpdatesFilesForAllChannels: true"), true);
+  assert.equal(workflow.includes("latest*.yml"), true);
+  assert.equal(workflow.includes("*.blockmap"), true);
+  assert.equal(workflow.includes("pnpm test:three-peer-audio"), true);
 });

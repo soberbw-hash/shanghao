@@ -1,5 +1,10 @@
 appId: com.sober.shanghao
 productName: "上号"
+publish:
+  provider: github
+  owner: soberbw-hash
+  repo: shanghao
+generateUpdatesFilesForAllChannels: true
 asar: true
 afterPack: ../../scripts/after-pack.cjs
 directories:

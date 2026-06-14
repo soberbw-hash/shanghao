@@ -2,30 +2,6 @@
 @tailwind components;
 @tailwind utilities;
 
-@font-face {
-  font-family: "HarmonyOS Sans";
-  src: url("../assets/fonts/HarmonyOS_Sans_SC_Regular.woff2") format("woff2");
-  font-weight: 400;
-  font-style: normal;
-  font-display: swap;
-}
-
-@font-face {
-  font-family: "HarmonyOS Sans";
-  src: url("../assets/fonts/HarmonyOS_Sans_SC_Medium.woff2") format("woff2");
-  font-weight: 500;
-  font-style: normal;
-  font-display: swap;
-}
-
-@font-face {
-  font-family: "HarmonyOS Sans";
-  src: url("../assets/fonts/HarmonyOS_Sans_SC_Bold.woff2") format("woff2");
-  font-weight: 700;
-  font-style: normal;
-  font-display: swap;
-}
-
 :root {
   color-scheme: light;
   --ease-out-soft: cubic-bezier(0.22, 1, 0.36, 1);
@@ -48,7 +24,8 @@
   --color-status-good: #22c55e;
   --color-status-warn: #f59e0b;
   --color-status-bad: #ef4444;
-  font-family: "HarmonyOS Sans", "Segoe UI", system-ui, sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", "PingFang SC",
+    "Hiragino Sans GB", "Microsoft YaHei", Arial, sans-serif;
   background:
     radial-gradient(circle at top left, rgba(77, 163, 255, 0.1), transparent 24%),
     linear-gradient(180deg, #f8fbff 0%, #f5f7fa 100%);
@@ -155,6 +132,128 @@ img {
   color: #52677d;
   font-size: 0.75rem;
   white-space: nowrap;
+}
+
+.entry-page,
+.room-page {
+  isolation: isolate;
+  background:
+    radial-gradient(circle at 13% 8%, rgba(79, 125, 247, 0.15), transparent 29%),
+    radial-gradient(circle at 88% 84%, rgba(24, 182, 105, 0.11), transparent 28%),
+    linear-gradient(160deg, #f8fbff 0%, #f3f7fd 100%);
+}
+
+.entry-page::before,
+.room-page::before {
+  position: absolute;
+  inset: -30%;
+  z-index: -1;
+  background:
+    radial-gradient(circle at 45% 20%, rgba(255, 255, 255, 0.92), transparent 27%),
+    radial-gradient(circle at 64% 70%, rgba(156, 202, 255, 0.18), transparent 29%);
+  content: "";
+  animation: ambient-flow 18s var(--ease-out-soft) infinite alternate;
+}
+
+.entry-card,
+.room-topbar,
+.island-panel,
+.response-panel,
+.voice-dock {
+  border: 1px solid rgba(255, 255, 255, 0.88);
+  background: rgba(255, 255, 255, 0.7);
+  box-shadow:
+    0 24px 70px rgba(42, 70, 115, 0.11),
+    inset 0 1px 0 rgba(255, 255, 255, 0.96),
+    inset 0 -1px 0 rgba(112, 145, 188, 0.12);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+}
+
+.entry-card {
+  min-height: 620px;
+  border-radius: 36px;
+}
+
+.room-topbar,
+.voice-dock {
+  border-radius: 22px;
+}
+
+.island-panel,
+.response-panel {
+  border-radius: 30px;
+}
+
+.team-island {
+  height: 100%;
+  min-height: 410px;
+}
+
+.team-island-haze {
+  position: absolute;
+  inset: 7% 6% 2%;
+  border-radius: 50%;
+  background:
+    radial-gradient(circle at 52% 44%, rgba(255, 255, 255, 0.92), rgba(226, 238, 255, 0.44) 48%, transparent 72%),
+    radial-gradient(circle at 28% 72%, rgba(24, 182, 105, 0.12), transparent 34%);
+  filter: blur(10px);
+}
+
+.team-island-platform {
+  position: absolute;
+  left: 50%;
+  top: 54%;
+  width: min(68%, 600px);
+  height: 54%;
+  transform: translate(-50%, -50%) rotateX(57deg) rotateZ(-3deg);
+  border: 1px solid rgba(255, 255, 255, 0.94);
+  border-radius: 46% 54% 48% 52%;
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.92), rgba(222, 235, 255, 0.72) 58%, rgba(204, 224, 255, 0.48));
+  box-shadow:
+    0 40px 88px rgba(69, 102, 160, 0.17),
+    inset 0 1px 0 #fff,
+    inset 0 -20px 30px rgba(96, 130, 190, 0.12);
+}
+
+.team-island-platform-inner {
+  position: absolute;
+  inset: 18% 22%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.72);
+  border-radius: 50%;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.62), rgba(255, 255, 255, 0.18));
+}
+
+.team-island-platform-inner span {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: rgba(79, 125, 247, 0.3);
+}
+
+.settings-nav {
+  position: sticky;
+  top: 0;
+}
+
+@keyframes ambient-flow {
+  to {
+    transform: translate3d(3%, -2%, 0) scale(1.04);
+  }
+}
+
+@media (max-width: 1100px) {
+  .entry-card {
+    min-height: auto;
+  }
+
+  .team-island-platform {
+    width: 76%;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

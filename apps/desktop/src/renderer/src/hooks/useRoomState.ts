@@ -27,29 +27,29 @@ let previousMemberIds = new Set<string>();
 export const getRoomRuntimeDiagnostics = () => activeClient?.getDiagnostics();
 
 const copy = {
-  startHostTitle: "房间启动失败",
-  joinRoomTitle: "加入房间失败",
-  hostStartedTitle: "房间已启动",
-  hostStartedDescription: "你已经进入房间，正在等待好友加入。",
+  startHostTitle: "暂时无法进入频道",
+  joinRoomTitle: "暂时无法进入频道",
+  hostStartedTitle: "已进入频道",
+  hostStartedDescription: "正在等待好友上线。",
   hostDirectReadyTitle: "公网直连已就绪",
   hostDirectReadyDescription: "现在可以直接复制房间地址发给朋友。",
   hostDirectLimitedTitle: "房间已启动",
-  missingJoinUrl: "请先输入房主分享的地址。",
-  invalidJoinUrl: "连接地址无效，请确认是房主发来的完整地址。",
-  roomFull: "房间已满，最多支持 5 人同时语音。",
-  networkFailed: "连接失败，请检查网络、代理或当前连接模式。",
-  handshakeFailed: "地址已可达，但房间连接握手失败，可能受代理或 TUN 影响。",
-  versionMismatch: "房主和成员版本不一致，请升级到同一版本。",
-  relayAuthFailed: "云中继鉴权失败，请让房主重新分享房间地址。",
+  missingJoinUrl: "还没有填写朋友发来的临时链接。",
+  invalidJoinUrl: "这个临时链接不完整，请向朋友确认。",
+  roomFull: "频道满了，最多 5 人同时语音。",
+  networkFailed: "暂时连不上频道，请稍后再试。",
+  handshakeFailed: "频道没有响应，检查网络后重试。",
+  versionMismatch: "当前版本太旧，请更新后再进入频道。",
+  relayAuthFailed: "这个临时链接已经失效，请向朋友确认。",
   microphoneUnavailable: "麦克风不可用",
   microphonePermission: "麦克风不可用，请先在系统设置里允许访问麦克风。",
   microphoneMissing: "没有找到可用的麦克风。",
   microphoneBusy: "麦克风正在被其他程序占用。",
   inputDeviceFailed: "输入设备切换失败",
-  joinedRoomTitle: "已加入房间",
-  joinedRoomDescription: "语音连接已经建立。",
-  copiedAddressTitle: "已复制房间地址",
-  copiedAddressDescription: "把这份地址发给朋友就能加入。",
+  joinedRoomTitle: "已进入频道",
+  joinedRoomDescription: "语音已经准备好。",
+  copiedAddressTitle: "临时链接已复制",
+  copiedAddressDescription: "发给朋友就能进入。",
 } as const;
 
 const parseInvite = (value: string, fallbackMode: ConnectionMode) => {
@@ -139,11 +139,11 @@ const normalizeRoomError = (error: unknown, fallback: string): string => {
     }
 
     if (message === "join_ack_timeout") {
-      return "服务器已连接，但没有确认加入房间。";
+      return "频道没有响应，检查网络后重试。";
     }
 
     if (message === "room_snapshot_timeout") {
-      return "已加入房间，但成员同步超时。";
+      return "正在同步好友状态，请稍后重试。";
     }
 
     return message;
@@ -428,7 +428,7 @@ export const useRoomState = () => {
       roomId,
       peerId,
       nickname: settings?.nickname ?? "我",
-      avatarDataUrl,
+      avatarDataUrl: isFixedChannel ? undefined : avatarDataUrl,
       avatarId: settings?.avatarId,
       isFixedChannel,
       channelCode,
@@ -850,8 +850,8 @@ export const useRoomState = () => {
       const rawMessage = error instanceof Error ? error.message : String(error);
       const description =
         rawMessage.includes("频道码") || rawMessage.includes("channel_code_invalid")
-          ? "频道码不正确，请向好友确认后重试。"
-          : normalizeRoomError(error, "暂时无法进入频道，请检查服务器设置后重试。");
+          ? "频道码不对，问下朋友再试试。"
+          : normalizeRoomError(error, "暂时连不上频道，请稍后再试。");
       await writeRendererLog("signaling", "error", "Failed to join fixed channel", {
         channelId: DEFAULT_CHANNEL_ID,
         hasChannelCode: Boolean(settings.channelAccessCode),
@@ -967,8 +967,8 @@ export const useRoomState = () => {
     if (!activeClient) {
       pushToast({
         tone: "warning",
-        title: "还没进入房间",
-        description: "开启房间或加入房间后，才能和队友聊天。",
+        title: "还没进入频道",
+        description: "进入频道后就能和朋友轻轻说一句。",
       });
       return;
     }
@@ -977,7 +977,7 @@ export const useRoomState = () => {
       pushToast({
         tone: "warning",
         title: "正在重连",
-        description: "信令恢复后再发送消息。",
+        description: "连接恢复后再发送消息。",
       });
       throw new Error("signaling_not_connected");
     }

@@ -8,7 +8,6 @@ import { useGlobalMuteSync } from "../hooks/useGlobalMuteSync";
 import { useLocalAudioTransport } from "../hooks/useLocalAudioTransport";
 import { useUiFeedbackSounds } from "../hooks/useUiFeedbackSounds";
 import { HomePage } from "../pages/HomePage";
-import { ProfileSetupPage } from "../pages/ProfileSetupPage";
 import { RoomPage } from "../pages/RoomPage";
 import { SettingsPage } from "../pages/SettingsPage";
 import { SharedOverlays } from "../pages/SharedOverlays";
@@ -48,10 +47,6 @@ export const App = () => {
       avatarId: settings.avatarId,
     });
   }, [avatarDataUrl, bootstrapPhase, settings, syncLocalProfile]);
-
-  const shouldShowProfileSetup = Boolean(
-    settings && !settings.hasCompletedProfileSetup,
-  );
 
   useEffect(() => {
     const handleError = (event: ErrorEvent) => {
@@ -95,10 +90,6 @@ export const App = () => {
           onContinue={completeBootstrap}
         />
       );
-    }
-
-    if (shouldShowProfileSetup) {
-      return <ProfileSetupPage />;
     }
 
     if (currentPage === "room") {

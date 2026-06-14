@@ -1,84 +1,60 @@
-import { LoaderCircle, Settings2, Users, Wifi, WifiOff } from "lucide-react";
+import { Bell, Settings2, UserPlus, Users } from "lucide-react";
 import { motion } from "framer-motion";
 
-import { RoomConnectionState } from "@private-voice/shared";
-import { Button, StatusPill } from "@private-voice/ui";
+import { MemberSpeakingState, RoomConnectionState } from "@private-voice/shared";
 
+import { Button } from "../base/Button";
 import { useAppStore } from "../../store/appStore";
 import { useRoomStore } from "../../store/roomStore";
 
 const statusCopy = (state: RoomConnectionState) => {
-  if (state === RoomConnectionState.Reconnecting || state === RoomConnectionState.Degraded) {
-    return { title: "正在重连", detail: "网络有波动", tone: "warning" as const };
-  }
-  if (state === RoomConnectionState.Failed || state === RoomConnectionState.Disconnected) {
-    return { title: "连接失败", detail: "请检查网络", tone: "danger" as const };
-  }
-  if (
-    state === RoomConnectionState.Joining ||
-    state === RoomConnectionState.Handshaking ||
-    state === RoomConnectionState.WaitingSnapshot ||
-    state === RoomConnectionState.StartingHost
-  ) {
-    return { title: "正在进入", detail: "建立频道连接", tone: "neutral" as const };
-  }
-  if (state === RoomConnectionState.WaitingPeer || state === RoomConnectionState.Connected) {
-    return { title: "连接稳定", detail: "语音频道在线", tone: "success" as const };
-  }
-  return { title: "开黑频道", detail: "准备上号", tone: "neutral" as const };
+  if (state === RoomConnectionState.Reconnecting || state === RoomConnectionState.Degraded) return "正在回来…";
+  if (state === RoomConnectionState.Failed || state === RoomConnectionState.Disconnected) return "暂时没连上";
+  if (state === RoomConnectionState.Joining || state === RoomConnectionState.Handshaking || state === RoomConnectionState.WaitingSnapshot) return "正在进入频道";
+  if (state === RoomConnectionState.WaitingPeer || state === RoomConnectionState.Connected) return "连接稳定";
+  return "开黑频道";
 };
 
-export const TopStatusBar = ({ variant = "compact" }: { variant?: "compact" | "room"; onCopyInvite?: () => void }) => {
+export const TopStatusBar = ({
+  onKnock,
+  onInvite,
+}: {
+  variant?: "compact" | "room";
+  onCopyInvite?: () => void;
+  onKnock?: () => void;
+  onInvite?: () => void;
+}) => {
   const navigate = useAppStore((state) => state.navigate);
   const room = useRoomStore((state) => state.room);
-  const latencyMs = useRoomStore((state) => state.connectionHealth.latencyMs);
-  const status = statusCopy(room.connectionState);
-  const isBusy =
-    room.connectionState === RoomConnectionState.Reconnecting ||
-    room.connectionState === RoomConnectionState.Degraded ||
-    room.connectionState === RoomConnectionState.Joining ||
-    room.connectionState === RoomConnectionState.Handshaking ||
-    room.connectionState === RoomConnectionState.WaitingSnapshot;
+  const speaking = room.members.find((member) => member.speakingState === MemberSpeakingState.Speaking);
 
   return (
-    <div
-      className={`glass-panel flex items-center gap-4 rounded-[20px] px-4 py-3 ${
-        variant === "room" ? "min-h-[72px]" : "min-h-[64px]"
-      }`}
-      data-testid="channel-status-bar"
-    >
-      <div className="flex min-w-0 flex-1 items-center gap-3">
-        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-white shadow-sm">
-          {isBusy ? (
-            <LoaderCircle className="h-5 w-5 animate-spin text-[#D08A12]" />
-          ) : status.tone === "danger" ? (
-            <WifiOff className="h-5 w-5 text-[#D92D20]" />
-          ) : (
-            <Wifi className="h-5 w-5 text-[#2B84E9]" />
-          )}
+    <header className="room-topbar flex items-center gap-3 px-4 py-3" data-testid="channel-status-bar">
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-2">
+          <h1 className="whitespace-nowrap text-[18px] font-[740] tracking-[-0.03em] text-[#1d2939]">开黑频道</h1>
+          <span className="h-2 w-2 rounded-full bg-[#18b669] shadow-[0_0_12px_rgba(24,182,105,.55)]" />
         </div>
-        <motion.div
-          key={`${status.title}-${status.detail}`}
-          initial={{ opacity: 0, y: 4 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.18, ease: [0.22, 1, 0.36, 1] }}
-          className="min-w-0"
-        >
-          <div className="text-base font-semibold text-[#111827]">{status.title}</div>
-          <div className="mt-0.5 text-xs text-[#667085]">{status.detail}</div>
+        <motion.div key={speaking?.id || statusCopy(room.connectionState)} initial={{ opacity: 0, y: 3 }} animate={{ opacity: 1, y: 0 }} className="mt-0.5 truncate text-xs text-[#7d8da2]">
+          {speaking ? `${speaking.nickname}正在说话` : statusCopy(room.connectionState)}
         </motion.div>
       </div>
-      <StatusPill tone="neutral">
+      <div className="status-capsule">
         <Users className="h-3.5 w-3.5" />
         {room.memberCount}/5 在线
-      </StatusPill>
-      <StatusPill tone={status.tone}>
-        {latencyMs > 0 ? `${Math.round(latencyMs)}ms` : status.title}
-      </StatusPill>
-      <Button variant="secondary" className="h-9 whitespace-nowrap px-3.5" onClick={() => navigate("settings")}>
+      </div>
+      <Button variant="ghost" className="h-9 whitespace-nowrap px-3" onClick={onKnock}>
+        <Bell className="h-4 w-4" />
+        敲一下
+      </Button>
+      <Button variant="ghost" className="h-9 whitespace-nowrap px-3" onClick={onInvite}>
+        <UserPlus className="h-4 w-4" />
+        邀请
+      </Button>
+      <Button variant="ghost" className="h-9 whitespace-nowrap px-3" onClick={() => navigate("settings")}>
         <Settings2 className="h-4 w-4" />
         设置
       </Button>
-    </div>
+    </header>
   );
 };

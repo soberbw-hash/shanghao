@@ -5,7 +5,6 @@ import { useAppStore } from "../store/appStore";
 import { useSettingsStore } from "../store/settingsStore";
 import { writeRendererLog } from "../utils/logger";
 
-const FONT_TIMEOUT_MS = 3_000;
 const BOOTSTRAP_TIMEOUT_MS = 8_000;
 
 const withTimeout = async <T>(
@@ -28,22 +27,6 @@ const withTimeout = async <T>(
         reject(error);
       });
   });
-
-const loadHarmonyFont = async (): Promise<void> => {
-  if (!("fonts" in document)) {
-    return;
-  }
-
-  const fontSet = document.fonts;
-  await withTimeout(
-    Promise.all([
-      fontSet.load('400 14px "HarmonyOS Sans"'),
-      fontSet.load('500 14px "HarmonyOS Sans"'),
-    ]).then(() => undefined),
-    "font_load_timeout",
-    FONT_TIMEOUT_MS,
-  );
-};
 
 export const useAppBootstrap = (): void => {
   const hydrate = useSettingsStore((state) => state.hydrate);
@@ -76,11 +59,6 @@ export const useAppBootstrap = (): void => {
           hydrationTask,
           refreshDevices().catch(async (error) => {
             await writeRendererLog("devices", "warn", "Device refresh degraded", {
-              error: error instanceof Error ? error.message : String(error),
-            });
-          }),
-          loadHarmonyFont().catch(async (error) => {
-            await writeRendererLog("app", "warn", "HarmonyOS Sans failed to load", {
               error: error instanceof Error ? error.message : String(error),
             });
           }),

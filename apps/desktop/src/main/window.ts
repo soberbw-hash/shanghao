@@ -34,7 +34,7 @@ const createFallbackHtml = (
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>${APP_NAME}</title>
     <style>
-      :root { color-scheme: light; font-family: "HarmonyOS Sans", "Segoe UI", system-ui, sans-serif; }
+      :root { color-scheme: light; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", Arial, sans-serif; }
       body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: #f5f7fa; color: #111827; }
       .card { width: min(580px, calc(100vw - 32px)); border: 1px solid #e7ecf2; border-radius: 24px; background: #fff; padding: 28px; box-shadow: 0 20px 60px rgba(17,24,39,.08); }
       h1 { margin: 0; font-size: 26px; }

@@ -52,6 +52,15 @@ const desktopApi: DesktopApi = {
   },
   updates: {
     check: () => ipcRenderer.invoke(IPC_CHANNELS.updates.check),
+    download: () => ipcRenderer.invoke(IPC_CHANNELS.updates.download),
+    install: () => ipcRenderer.invoke(IPC_CHANNELS.updates.install),
+    onStatus: (listener) => {
+      const wrapped = (_event: Electron.IpcRendererEvent, status: unknown) => {
+        listener(status as Parameters<typeof listener>[0]);
+      };
+      ipcRenderer.on(IPC_CHANNELS.updates.status, wrapped);
+      return () => ipcRenderer.removeListener(IPC_CHANNELS.updates.status, wrapped);
+    },
     openReleases: () => ipcRenderer.invoke(IPC_CHANNELS.updates.openReleases),
   },
   host: {
