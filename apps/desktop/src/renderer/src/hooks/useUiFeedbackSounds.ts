@@ -5,7 +5,7 @@ import { RoomConnectionState } from "@private-voice/shared";
 import { useAudioStore } from "../store/audioStore";
 import { useRoomStore } from "../store/roomStore";
 import { useSettingsStore } from "../store/settingsStore";
-import { playUiSound } from "../features/audio/uiSound";
+import { playUiSound, setUiSoundEnabled } from "../features/audio/uiSound";
 
 let lastClickAt = 0;
 
@@ -23,6 +23,10 @@ export const useUiFeedbackSounds = (): void => {
   );
 
   useEffect(() => {
+    setUiSoundEnabled(settings?.isUiSoundEnabled !== false);
+  }, [settings?.isUiSoundEnabled]);
+
+  useEffect(() => {
     if (!settings?.isUiSoundEnabled) {
       return;
     }
@@ -37,7 +41,7 @@ export const useUiFeedbackSounds = (): void => {
         return;
       }
       lastClickAt = now;
-      playUiSound("click");
+      playUiSound("button-click");
     };
 
     document.addEventListener("click", handleClick, true);
@@ -83,11 +87,11 @@ export const useUiFeedbackSounds = (): void => {
     const previousMemberIds = previousMemberIdsRef.current;
 
     if (currentMemberIds.length > previousMemberIds.length && settings.isMemberJoinSoundEnabled) {
-      playUiSound("join");
+      playUiSound("enter-room");
     }
 
     if (currentMemberIds.length < previousMemberIds.length && settings.isMemberLeaveSoundEnabled) {
-      playUiSound("leave");
+      playUiSound("leave-room");
     }
 
     previousMemberIdsRef.current = currentMemberIds;
@@ -103,7 +107,7 @@ export const useUiFeedbackSounds = (): void => {
       previousConnectionRef.current !== RoomConnectionState.Connected &&
       settings.isConnectionSoundEnabled
     ) {
-      playUiSound("connected");
+      playUiSound("connection-restored");
     }
 
     if (
@@ -111,7 +115,7 @@ export const useUiFeedbackSounds = (): void => {
       previousConnectionRef.current !== RoomConnectionState.Failed &&
       settings.isConnectionSoundEnabled
     ) {
-      playUiSound("failed");
+      playUiSound("connection-failed");
     }
 
     previousConnectionRef.current = connectionState;

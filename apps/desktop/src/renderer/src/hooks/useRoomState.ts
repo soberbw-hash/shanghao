@@ -534,12 +534,12 @@ export const useRoomState = () => {
       onChatMessage: (message) => {
         addChatMessage(message);
         if (!message.isLocal) {
-          playUiSound("message");
+          playUiSound("receive-message");
         }
       },
       onKnock: (message) => {
         addChatMessage(message);
-        playUiSound("knock");
+        playUiSound("knock-bell");
         if (!message.isLocal) {
           pushToast({
             tone: "neutral",
@@ -943,12 +943,13 @@ export const useRoomState = () => {
         title: copy.inputDeviceFailed,
         description,
       });
+      playUiSound("mic-error");
     }
   };
 
   const leaveRoom = async () => {
     try {
-      playUiSound("leave");
+      playUiSound("leave-room");
       setLifecycleState(RoomLifecycleState.Closing);
       await cleanupPreviousSession({ resetStore: true, stopHost: true });
       previousMemberIds = new Set<string>();
@@ -985,6 +986,7 @@ export const useRoomState = () => {
     try {
       await navigator.clipboard.writeText(inviteUrl);
       lastCopiedInviteRef.current = inviteUrl;
+      playUiSound("copy-success");
       pushToast({
         tone: "success",
         title: copy.copiedAddressTitle,

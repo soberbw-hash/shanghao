@@ -1,7 +1,14 @@
 import { useEffect, useRef, useState } from "react";
 import { Headphones, LogOut, MonitorUp, Volume2, VolumeX } from "lucide-react";
 
-import { RecordingEncoderState, RecordingState, RoomConnectionState } from "@private-voice/shared";
+import {
+  RecordingEncoderState,
+  RecordingState,
+  RoomConnectionState,
+  type GameDetectionSnapshot,
+  type MemberActivity,
+  type SceneZoneId,
+} from "@private-voice/shared";
 
 import { MuteButton } from "../components/audio/MuteButton";
 import { RecordingButton } from "../components/audio/RecordingButton";
@@ -19,6 +26,12 @@ import { useRoomStore } from "../store/roomStore";
 import { useSettingsStore } from "../store/settingsStore";
 
 const KNOCK_COOLDOWN_MS = 5_000;
+const naturalActivityZones: Array<{ zone: SceneZoneId; activity: MemberActivity }> = [
+  { zone: "coffeeBar", activity: "drinking" },
+  { zone: "fitnessZone", activity: "fitness" },
+  { zone: "restroomZone", activity: "restroom" },
+  { zone: "gameDesk1", activity: "idle" },
+];
 
 export const RoomPage = () => {
   const {
@@ -39,6 +52,9 @@ export const RoomPage = () => {
   const [chatInput, setChatInput] = useState("");
   const enteredAt = useRef(Date.now());
   const lastKnockAt = useRef(0);
+  const detectedGameRef = useRef<string>();
+  const moveLocalMemberRef = useRef(moveLocalMember);
+  moveLocalMemberRef.current = moveLocalMember;
 
   const canSend =
     room.connectionState === RoomConnectionState.Connected ||
@@ -54,10 +70,46 @@ export const RoomPage = () => {
     });
   }, [isDeafened, isMuted, room.connectionState, room.members]);
 
+  useEffect(() => {
+    const applyGameDetection = (snapshot: GameDetectionSnapshot) => {
+      const previousGame = detectedGameRef.current;
+      detectedGameRef.current = snapshot.gameName;
+      const localMember = useRoomStore.getState().room.members.find((member) => member.isLocal);
+      const currentZone = localMember?.sceneZone ?? "gameDesk1";
+
+      if (snapshot.gameName) {
+        const gameZone = currentZone.startsWith("gameDesk") ? currentZone : "gameDesk1";
+        moveLocalMemberRef.current(gameZone, "gaming", snapshot.gameName);
+      } else if (previousGame) {
+        moveLocalMemberRef.current(currentZone, "idle");
+      }
+    };
+
+    void window.desktopApi.games.getSnapshot().then(applyGameDetection);
+    return window.desktopApi.games.onDetected(applyGameDetection);
+  }, []);
+
+  useEffect(() => {
+    let timer: number;
+    const schedule = () => {
+      timer = window.setTimeout(() => {
+        if (!detectedGameRef.current) {
+          const next =
+            naturalActivityZones[Math.floor(Math.random() * naturalActivityZones.length)] ??
+            naturalActivityZones[3];
+          if (next) moveLocalMemberRef.current(next.zone, next.activity);
+        }
+        schedule();
+      }, 5 * 60_000 + Math.round(Math.random() * 5 * 60_000));
+    };
+    schedule();
+    return () => window.clearTimeout(timer);
+  }, []);
+
   const send = async (content = chatInput) => {
     if (!content.trim()) return;
     await sendChatMessage(content);
-    playUiSound("message");
+    playUiSound("send-message");
     if (content === chatInput) setChatInput("");
   };
 
@@ -129,13 +181,13 @@ export const RoomPage = () => {
   const switchInputDevice = async (preferredInputDeviceId?: string) => {
     await saveSettings({ preferredInputDeviceId });
     await replaceInputDevice(preferredInputDeviceId);
-    playUiSound("connected");
+    playUiSound("device-switch");
     pushToast({ tone: "success", title: "麦克风已切换", description: "新的输入设备已经生效。" });
   };
 
   const switchOutputDevice = async (preferredOutputDeviceId?: string) => {
     await saveSettings({ preferredOutputDeviceId });
-    playUiSound("connected");
+    playUiSound("device-switch");
     pushToast({ tone: "success", title: "扬声器已切换", description: "新的输出设备已经生效。" });
   };
 
@@ -210,7 +262,10 @@ export const RoomPage = () => {
           variant="ghost"
           className="voice-action-button whitespace-nowrap"
           title="悬浮小窗"
-          onClick={() => void window.desktopApi.overlay.toggle()}
+          onClick={() => {
+            playUiSound("popup-open");
+            void window.desktopApi.overlay.toggle();
+          }}
         >
           <MonitorUp className="h-4 w-4" />
           <span className="voice-action-label">悬浮小窗</span>

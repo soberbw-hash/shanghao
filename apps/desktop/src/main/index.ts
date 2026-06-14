@@ -16,6 +16,7 @@ import { createTrayController } from "./tray";
 import { UpdateService } from "./updates";
 import { createMainWindow } from "./window";
 import { OverlayWindowController } from "./overlay-window";
+import { GameDetectionController } from "./game-detection";
 
 let mainWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
@@ -172,6 +173,10 @@ const bootstrap = async (): Promise<void> => {
   );
   await shortcuts.configureGlobalMute(settings.globalMuteShortcut);
   const overlay = new OverlayWindowController();
+  const gameDetection = new GameDetectionController(
+    (payload) => diagnostics?.writeLog(payload) ?? Promise.resolve(),
+  );
+  gameDetection.start();
 
   registerIpcHandlers({
     getMainWindow: () => mainWindow,
@@ -182,6 +187,7 @@ const bootstrap = async (): Promise<void> => {
     signalingClient,
     updates,
     overlay,
+    gameDetection,
   });
 
   mainWindow = createMainWindow({
@@ -221,6 +227,7 @@ const bootstrap = async (): Promise<void> => {
   app.on("before-quit", () => {
     isQuitting = true;
     overlay.close();
+    gameDetection.stop();
     shortcuts.dispose();
   });
 

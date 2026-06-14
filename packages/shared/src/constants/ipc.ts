@@ -16,6 +16,10 @@ export const IPC_CHANNELS = {
     update: "overlay:update",
     state: "overlay:state",
   },
+  games: {
+    getSnapshot: "games:get-snapshot",
+    detected: "games:detected",
+  },
   settings: {
     get: "settings:get",
     save: "settings:save",

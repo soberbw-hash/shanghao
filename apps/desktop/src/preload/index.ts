@@ -26,6 +26,16 @@ const desktopApi: DesktopApi = {
       return () => ipcRenderer.removeListener(IPC_CHANNELS.overlay.state, wrapped);
     },
   },
+  games: {
+    getSnapshot: () => ipcRenderer.invoke(IPC_CHANNELS.games.getSnapshot),
+    onDetected: (listener) => {
+      const wrapped = (_event: Electron.IpcRendererEvent, snapshot: unknown) => {
+        listener(snapshot as Parameters<typeof listener>[0]);
+      };
+      ipcRenderer.on(IPC_CHANNELS.games.detected, wrapped);
+      return () => ipcRenderer.removeListener(IPC_CHANNELS.games.detected, wrapped);
+    },
+  },
   settings: {
     get: () => ipcRenderer.invoke(IPC_CHANNELS.settings.get),
     save: (settings) => ipcRenderer.invoke(IPC_CHANNELS.settings.save, settings),

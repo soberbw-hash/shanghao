@@ -8,6 +8,7 @@ import {
   type AppSettings,
   type DiagnosticsSnapshot,
   type HostSessionInfo,
+  type GameDetectionSnapshot,
   type OverlayState,
   type RecordingExportPayload,
   type RecordingExportResponse,
@@ -30,6 +31,7 @@ import { SignalingClientBridge } from "./signaling-client";
 import { detectTailscaleStatus, openTailscaleInstallGuide } from "./tailscale";
 import { UpdateService } from "./updates";
 import { OverlayWindowController } from "./overlay-window";
+import { GameDetectionController } from "./game-detection";
 
 interface MainProcessServices {
   getMainWindow: () => BrowserWindow | null;
@@ -40,6 +42,7 @@ interface MainProcessServices {
   signalingClient: SignalingClientBridge;
   updates: UpdateService;
   overlay: OverlayWindowController;
+  gameDetection: GameDetectionController;
 }
 
 export const registerIpcHandlers = ({
@@ -51,6 +54,7 @@ export const registerIpcHandlers = ({
   signalingClient,
   updates,
   overlay,
+  gameDetection,
 }: MainProcessServices): void => {
   hostSession.onUpdate((session) => {
     getMainWindow()?.webContents.send(IPC_CHANNELS.host.sessionUpdated, session);
@@ -61,6 +65,9 @@ export const registerIpcHandlers = ({
   });
   updates.onStatus((status: UpdateStatus) => {
     getMainWindow()?.webContents.send(IPC_CHANNELS.updates.status, status);
+  });
+  gameDetection.onDetected((snapshot) => {
+    getMainWindow()?.webContents.send(IPC_CHANNELS.games.detected, snapshot);
   });
 
   ipcMain.handle(
@@ -218,6 +225,10 @@ export const registerIpcHandlers = ({
   ipcMain.handle(IPC_CHANNELS.overlay.update, async (_event, state: OverlayState): Promise<void> => {
     overlay.update(state);
   });
+  ipcMain.handle(
+    IPC_CHANNELS.games.getSnapshot,
+    async (): Promise<GameDetectionSnapshot> => gameDetection.getSnapshot(),
+  );
   ipcMain.handle(IPC_CHANNELS.updates.download, async (): Promise<void> => {
     await updates.download();
   });

@@ -35,3 +35,35 @@ test("desktop release configuration publishes automatic update metadata", () => 
   assert.equal(workflow.includes("*.blockmap"), true);
   assert.equal(workflow.includes("pnpm test:three-peer-audio"), true);
 });
+
+test("room scene and feedback sound assets are bundled", () => {
+  for (const avatar of ["fox", "cat", "duck", "panda", "corgi"]) {
+    assert.equal(
+      existsSync(path.join(root, `apps/desktop/src/renderer/src/assets/avatars/${avatar}-scene.png`)),
+      true,
+    );
+  }
+
+  for (const sound of [
+    "button-click",
+    "enter-room",
+    "leave-room",
+    "knock-bell",
+    "popup-open",
+    "copy-success",
+    "device-switch",
+    "send-message",
+    "receive-message",
+    "connection-restored",
+    "connection-failed",
+    "mic-error",
+    "record-start",
+    "record-stop",
+  ]) {
+    assert.equal(
+      existsSync(path.join(root, `apps/desktop/src/renderer/src/assets/sounds/${sound}.wav`)),
+      true,
+      `missing sound: ${sound}`,
+    );
+  }
+});

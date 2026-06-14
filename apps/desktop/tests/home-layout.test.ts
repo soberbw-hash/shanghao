@@ -15,6 +15,8 @@ test("home page is a full-screen fixed-channel entry page", () => {
   assert.equal(source.includes("entry-page"), true);
   assert.equal(source.includes("进入开黑频道"), true);
   assert.equal(source.includes("AvatarPicker"), true);
+  assert.equal(source.includes("选一个角色"), true);
+  assert.equal(source.includes("选一个头像"), false);
   assert.equal(source.includes("TemporaryChatPanel"), false);
 });
 

@@ -449,6 +449,53 @@ test("signaling server broadcasts chat messages to connected room members", asyn
   await server.close();
 });
 
+test("signaling server synchronizes deafen and scene activity state", async () => {
+  const server = new SignalingServer({ roomName: "presence-state-test" });
+  const port = await server.listen();
+  const url = `ws://127.0.0.1:${port}`;
+  const sender = await openSocket(url);
+  const receiver = await openSocket(url);
+  sendJoin(sender, "presence-room", "sender");
+  sendJoin(receiver, "presence-room", "receiver");
+  await waitForMessage(
+    receiver,
+    (payload): payload is { members: unknown[] } =>
+      typeof payload === "object" &&
+      payload !== null &&
+      (payload as { type?: string }).type === "room_snapshot" &&
+      (payload as { members?: unknown[] }).members?.length === 2,
+  );
+
+  const statePromise = waitForMessage(
+    receiver,
+    (payload): payload is {
+      type: "member_state";
+      isDeafened: boolean;
+      activity: string;
+      sceneZone: string;
+      gameName: string;
+    } => typeof payload === "object" && payload !== null &&
+      (payload as { type?: string }).type === "member_state",
+  );
+  sender.send(JSON.stringify({
+    type: "member_state",
+    roomId: "presence-room",
+    peerId: "sender",
+    isDeafened: true,
+    activity: "gaming",
+    sceneZone: "gameDesk3",
+    gameName: "三角洲行动",
+  }));
+  const state = await statePromise;
+  assert.equal(state.isDeafened, true);
+  assert.equal(state.activity, "gaming");
+  assert.equal(state.sceneZone, "gameDesk3");
+  assert.equal(state.gameName, "三角洲行动");
+  sender.close();
+  receiver.close();
+  await server.close();
+});
+
 test("signaling server broadcasts knock events as a separate room event", async () => {
   const server = new SignalingServer({ roomName: "knock-test" });
   const port = await server.listen();

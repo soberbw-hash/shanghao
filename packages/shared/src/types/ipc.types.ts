@@ -51,6 +51,12 @@ export interface OverlayState {
   connectionState: string;
 }
 
+export interface GameDetectionSnapshot {
+  gameName?: "三角洲行动" | "英雄联盟";
+  detectedAt?: string;
+  checkedAt: string;
+}
+
 export interface DesktopApi {
   app: {
     getRuntimeInfo: () => Promise<RuntimeInfo>;
@@ -68,6 +74,10 @@ export interface DesktopApi {
     close: () => Promise<void>;
     update: (state: OverlayState) => Promise<void>;
     onState: (listener: (state: OverlayState) => void) => () => void;
+  };
+  games: {
+    getSnapshot: () => Promise<GameDetectionSnapshot>;
+    onDetected: (listener: (snapshot: GameDetectionSnapshot) => void) => () => void;
   };
   settings: {
     get: () => Promise<AppSettings>;

@@ -48,9 +48,10 @@ test("advanced audio settings are collapsed by default", () => {
 test("settings keep only everyday voice controls and remove advanced connection", () => {
   const source = readFileSync(settingsPagePath, "utf8");
 
-  for (const label of ["语音", "录音", "通知", "更新", "诊断"]) {
+  for (const label of ["语音", "通知", "更新", "诊断"]) {
     assert.equal(source.includes(label), true);
   }
+  assert.equal(source.includes('id: "recording"'), false);
   for (const removed of ["资料", "悬浮小窗", "高级连接", "NetworkSettingsCard", "ProfileSettingsCard"]) {
     assert.equal(source.includes(removed), false);
   }

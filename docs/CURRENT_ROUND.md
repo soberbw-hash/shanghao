@@ -29,16 +29,16 @@ The source brief is `C:\Users\sober\Desktop\优化方案.txt`.
 - [x] Remove the footer green audio meter.
 - [x] Add speaker-off/deafen state, local audio behavior, signaling sync, and character icon.
 - [x] Add eight percentage-based clickable scene zones.
-- [ ] Add local Windows detection for Delta Force and League of Legends.
-- [ ] Add simple activity/zone state and slow random idle assignment.
+- [x] Add local Windows detection for Delta Force and League of Legends.
+- [x] Add simple activity/zone state and slow random idle assignment.
 - [x] Enforce unique visible avatar identities.
 - [x] Improve scene cover/cropping while keeping zones aligned.
 - [x] Change entry copy from avatar selection to character selection and remove character cards.
 - [x] Remove recording from Settings.
 - [x] Redesign overlay into a tiny left-side speaking avatar widget without a close button.
-- [ ] Add generated short sound assets and centralized playback for all required actions.
+- [x] Add generated short sound assets and centralized playback for all required actions.
 - [x] Expand quick replies to include 上号, 开麦, 等我, 来了, and 冲.
-- [ ] Add or update smoke tests for these behaviors.
+- [x] Add or update smoke tests for these behaviors.
 - [ ] Run typecheck, smoke tests, three-peer audio verification, and Windows packaging.
 
 ## Save strategy
@@ -58,3 +58,11 @@ The source brief is `C:\Users\sober\Desktop\优化方案.txt`.
 - Replaced the large overlay panel with a 72x76 left-side speaking character widget.
 - Removed the room audio meter and the Settings recording section.
 - Verification: `corepack pnpm typecheck` passed.
+
+## Checkpoint 2026-06-15 / activity and feedback
+
+- Added a privacy-bounded Windows game detector that polls every four seconds and emits only known friendly game names.
+- Added detected-game activity, user-selected scene movement, and slow natural idle movement.
+- Added 16 generated low-volume WAV feedback assets and a single centralized playback manager.
+- Added regression coverage for scene/deafen synchronization, game matching, sound assets, overlay size, and simplified Settings.
+- Verification: `corepack pnpm --dir apps/desktop test:smoke` passed, 57 tests.
