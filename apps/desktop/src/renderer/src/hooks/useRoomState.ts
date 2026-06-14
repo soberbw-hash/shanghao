@@ -574,6 +574,7 @@ export const useRoomState = () => {
       localMember?.sceneZone,
       localMember?.gameName,
     );
+    playUiSound("enter-room");
     setRoom({
       roomId,
       roomName,

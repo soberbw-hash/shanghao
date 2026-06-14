@@ -249,7 +249,7 @@ export const RoomPage = () => {
           title={isDeafened ? "打开扬声器" : "关闭扬声器"}
           onClick={toggleDeafen}
         >
-          {isDeafened ? <VolumeX className="h-4 w-4" /> : <Volume2 className="h-4 w-4" />}
+          {isDeafened ? <Volume2 className="h-4 w-4" /> : <VolumeX className="h-4 w-4" />}
           <span className="voice-action-label">{isDeafened ? "打开扬声器" : "关闭扬声器"}</span>
         </Button>
         <div className="flex-1" />

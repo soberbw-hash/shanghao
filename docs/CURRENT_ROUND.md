@@ -39,7 +39,7 @@ The source brief is `C:\Users\sober\Desktop\优化方案.txt`.
 - [x] Add generated short sound assets and centralized playback for all required actions.
 - [x] Expand quick replies to include 上号, 开麦, 等我, 来了, and 冲.
 - [x] Add or update smoke tests for these behaviors.
-- [ ] Run typecheck, smoke tests, three-peer audio verification, and Windows packaging.
+- [x] Run typecheck, smoke tests, three-peer audio verification, and Windows packaging.
 
 ## Save strategy
 
@@ -66,3 +66,12 @@ The source brief is `C:\Users\sober\Desktop\优化方案.txt`.
 - Added 16 generated low-volume WAV feedback assets and a single centralized playback manager.
 - Added regression coverage for scene/deafen synchronization, game matching, sound assets, overlay size, and simplified Settings.
 - Verification: `corepack pnpm --dir apps/desktop test:smoke` passed, 57 tests.
+
+## Final verification
+
+- `corepack pnpm typecheck`: passed.
+- `corepack pnpm --dir apps/desktop test:smoke`: passed, 57 tests.
+- `corepack pnpm test:three-peer-audio`: passed with no missing audio routes.
+- `corepack pnpm dist:win`: passed.
+- Packaged scene screenshot: `artifacts/current-round-room.png`.
+- Installer: `apps/desktop/release/ShangHao-0.1.26-Setup-x64.exe`.
