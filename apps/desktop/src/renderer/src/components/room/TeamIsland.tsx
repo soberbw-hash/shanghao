@@ -56,7 +56,7 @@ const activityLabels: Record<MemberActivity, string> = {
   gaming: "游戏中",
   drinking: "喝水中",
   fitness: "运动中",
-  restroom: "暂离",
+  restroom: "离开一下",
 };
 
 const memberStatus = (member: RoomMember) => {
@@ -66,11 +66,14 @@ const memberStatus = (member: RoomMember) => {
   if (member.presenceState === MemberPresenceState.Offline) {
     return { label: "暂时离开", tone: "offline" as const, icon: WifiOff };
   }
+  if (member.isDeafened) {
+    return { label: "已关闭扬声器", tone: "deafened" as const, icon: VolumeX };
+  }
   if (member.isMuted) {
-    return { label: "静音", tone: "muted" as const, icon: MicOff };
+    return { label: "静音中", tone: "muted" as const, icon: MicOff };
   }
   if (member.speakingState === MemberSpeakingState.Speaking) {
-    return { label: "语音中", tone: "speaking" as const, icon: Headphones };
+    return { label: "正在说话", tone: "speaking" as const, icon: Headphones };
   }
   return {
     label: member.gameName || activityLabels[member.activity ?? "idle"],
@@ -129,7 +132,6 @@ export const TeamIsland = ({
               width: `${zone.width}%`,
               height: `${zone.height}%`,
             }}
-            title={`移动到${zone.label}`}
             aria-label={`移动到${zone.label}`}
             onClick={() => onZoneSelect?.(zone.id, zone.activity)}
           />
@@ -142,21 +144,20 @@ export const TeamIsland = ({
           const isSpeaking = status.tone === "speaking";
           const isReconnecting = status.tone === "reconnecting";
           const isOffline = status.tone === "offline";
-          const StatusIcon = status.icon;
           const zone = member.sceneZone ?? defaultMemberZones[index] ?? "gameDesk1";
           const position = characterPositions[zone];
 
           return (
             <motion.div
               key={member.id}
-              initial={{ opacity: 0, y: 8 }}
-              animate={{ opacity: isOffline ? 0.45 : 1, y: 0 }}
-              exit={{ opacity: 0, y: 8 }}
+              initial={{ opacity: 0 }}
+              animate={{ opacity: isOffline ? 0.45 : 1 }}
+              exit={{ opacity: 0 }}
               transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
               className="absolute z-20 -translate-x-1/2 -translate-y-1/2"
               style={{ left: `${position.left}%`, top: `${position.top}%` }}
             >
-              <div className="flex flex-col items-center">
+              <div className="relative">
                 <div
                   className={`room-character-sprite relative ${
                     isSpeaking ? "room-character-speaking" : ""
@@ -168,19 +169,16 @@ export const TeamIsland = ({
                     className="h-[96px] w-[96px] object-contain"
                     draggable={false}
                   />
-                  {member.isLocal ? <span className="room-character-local">你</span> : null}
                   {member.isDeafened ? (
-                    <span className="room-character-deafened" title="已关闭扬声器">
+                    <span className="room-character-deafened" aria-label="已关闭扬声器">
                       <VolumeX className="h-3.5 w-3.5" />
                     </span>
                   ) : null}
                 </div>
 
-                <div className={`room-character-label mt-0.5 ${status.tone}`}>
-                  {StatusIcon ? <StatusIcon className={`h-3 w-3 ${isReconnecting ? "animate-spin" : ""}`} /> : null}
-                  <span className="max-w-[82px] truncate">{member.nickname}</span>
-                  <span className="opacity-55">·</span>
-                  <span>{status.label}</span>
+                <div className={`room-character-label absolute left-1/2 top-full -translate-x-1/2 mt-1 ${status.tone}`}>
+                  {status.icon ? <status.icon className={`h-3 w-3 ${isReconnecting ? "animate-spin" : ""}`} /> : null}
+                  <span className="max-w-[82px] truncate">{status.label}</span>
                 </div>
               </div>
             </motion.div>

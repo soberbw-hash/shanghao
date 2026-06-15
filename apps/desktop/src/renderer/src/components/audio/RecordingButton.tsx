@@ -13,12 +13,13 @@ export const RecordingButton = ({
 }) => (
   <Button
     variant={isRecording ? "danger" : "secondary"}
-    className="h-10 w-10 shrink-0 rounded-[13px] p-0"
+    className={`voice-action-button whitespace-nowrap ${isRecording ? "bg-[#fef2f2] text-[#dc2626] border-[#fecaca]" : ""}`}
     onClick={onClick}
     disabled={disabled}
     title={isRecording ? "停止录音" : "开始录音"}
     aria-label={isRecording ? "停止录音" : "开始录音"}
   >
     {isRecording ? <Square className="h-4 w-4" /> : <Circle className="h-4 w-4" />}
+    <span className="voice-action-label">{isRecording ? "录音中" : "录音"}</span>
   </Button>
 );

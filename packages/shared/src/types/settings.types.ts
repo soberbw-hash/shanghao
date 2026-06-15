@@ -13,9 +13,11 @@ export interface AppSettings {
   avatarId: BuiltInAvatarId;
   avatarPath?: string;
   hasCompletedProfileSetup: boolean;
+  /** @deprecated Legacy field - will be removed in future version */
   channelAccessCode: string;
   minimizeToTray: boolean;
   reduceMotion: boolean;
+  /** @deprecated Legacy field - will be removed in future version */
   showFloatingBarOnJoin: boolean;
   launchOnStartup: boolean;
   preferredInputDeviceId?: string;
@@ -29,10 +31,14 @@ export interface AppSettings {
   isAutoGainControlEnabled: boolean;
   isPushToTalkEnabled: boolean;
   micMonitorMode: MicMonitorMode;
+  /** @deprecated Legacy field - only relay mode is used */
   connectionMode: ConnectionMode;
   relayServerUrl?: string;
+  /** @deprecated Legacy field - will be removed in future version */
   relayAuthToken?: string;
+  /** @deprecated Legacy field - will be removed in future version */
   manualDirectHost?: string;
+  /** @deprecated Legacy field - will be removed in future version */
   shouldAutoCopyInviteLink: boolean;
   isMicOnSoundEnabled: boolean;
   isMicOffSoundEnabled: boolean;

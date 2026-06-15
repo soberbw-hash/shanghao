@@ -1,6 +1,7 @@
 import { create } from "zustand";
 
 export type AppPage = "home" | "room" | "settings";
+export type SettingsReturnTarget = "home" | "room";
 export type RoomActionState = "idle" | "starting" | "joining";
 export type ToastTone = "neutral" | "success" | "warning" | "danger";
 export type BootstrapPhase = "booting" | "recovery" | "ready";
@@ -20,6 +21,7 @@ export interface StartupIssue {
 
 interface AppStoreState {
   currentPage: AppPage;
+  settingsReturnTo: SettingsReturnTarget;
   isOnboardingOpen: boolean;
   isRecordingSaveDialogOpen: boolean;
   roomAction: RoomActionState;
@@ -30,6 +32,7 @@ interface AppStoreState {
   startupIssue?: StartupIssue;
   isSafeMode: boolean;
   navigate: (page: AppPage) => void;
+  setSettingsReturnTo: (target: SettingsReturnTarget) => void;
   setOnboardingOpen: (isOpen: boolean) => void;
   setRecordingSaveDialogOpen: (isOpen: boolean) => void;
   setRoomAction: (roomAction: RoomActionState) => void;
@@ -45,6 +48,7 @@ interface AppStoreState {
 
 export const useAppStore = create<AppStoreState>((set, get) => ({
   currentPage: "home",
+  settingsReturnTo: "home",
   isOnboardingOpen: false,
   isRecordingSaveDialogOpen: false,
   roomAction: "idle",
@@ -55,6 +59,7 @@ export const useAppStore = create<AppStoreState>((set, get) => ({
   startupIssue: undefined,
   isSafeMode: false,
   navigate: (page) => set({ currentPage: page }),
+  setSettingsReturnTo: (settingsReturnTo) => set({ settingsReturnTo }),
   setOnboardingOpen: (isOnboardingOpen) => set({ isOnboardingOpen }),
   setRecordingSaveDialogOpen: (isRecordingSaveDialogOpen) => set({ isRecordingSaveDialogOpen }),
   setRoomAction: (roomAction) => set({ roomAction }),

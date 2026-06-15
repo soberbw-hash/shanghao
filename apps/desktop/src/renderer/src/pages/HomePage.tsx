@@ -7,13 +7,15 @@ import { MicPermissionState, type BuiltInAvatarId } from "@private-voice/shared"
 import { Button } from "../components/base/Button";
 import { Input } from "../components/base/Input";
 import { BrandMark } from "../components/brand/BrandMark";
-import { AvatarPicker } from "../components/profile/AvatarPicker";
+import { CharacterPicker } from "../components/profile/AvatarPicker";
 import { StartupSplashPage } from "../components/status/StartupSplashPage";
 import { useRoomState } from "../hooks/useRoomState";
 import { useAppStore } from "../store/appStore";
 import { useAudioStore } from "../store/audioStore";
 import { useSettingsStore } from "../store/settingsStore";
 import { randomAvatarId, randomNickname } from "../utils/profile";
+
+const DEFAULT_SERVER_ADDRESS = "ws://118.25.103.107:43821";
 
 const isValidServerAddress = (value: string) => {
   try {
@@ -35,13 +37,13 @@ export const HomePage = () => {
   const refreshDevices = useAudioStore((state) => state.refreshDevices);
   const [nickname, setNickname] = useState("");
   const [avatarId, setAvatarId] = useState<BuiltInAvatarId>("fox");
-  const [serverAddress, setServerAddress] = useState("");
+  const [serverAddress, setServerAddress] = useState(DEFAULT_SERVER_ADDRESS);
 
   useEffect(() => {
     if (!settings) return;
     setNickname(settings.nickname || randomNickname());
     setAvatarId(settings.avatarId || randomAvatarId());
-    setServerAddress(settings.relayServerUrl || "");
+    setServerAddress(settings.relayServerUrl || DEFAULT_SERVER_ADDRESS);
   }, [settings]);
 
   if (!settings) {
@@ -104,8 +106,8 @@ export const HomePage = () => {
 
         <section className="mt-6 grid min-h-0 flex-1 gap-7 md:grid-cols-[1.05fr_.95fr]">
           <div className="p-2">
-            <div className="mb-4 text-sm font-semibold text-[#314158]">选一个角色</div>
-            <AvatarPicker value={avatarId} onChange={setAvatarId} />
+            <div className="mb-4 text-sm font-semibold text-[#314158]">选择角色</div>
+            <CharacterPicker value={avatarId} onChange={setAvatarId} />
           </div>
 
           <div className="flex min-w-0 flex-col gap-5">

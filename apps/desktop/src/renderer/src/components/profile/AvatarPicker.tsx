@@ -2,14 +2,14 @@ import type { BuiltInAvatarId } from "@private-voice/shared";
 
 import { avatarOptions } from "../../utils/profile";
 
-export const AvatarPicker = ({
+export const CharacterPicker = ({
   value,
   onChange,
 }: {
   value: BuiltInAvatarId;
   onChange: (avatarId: BuiltInAvatarId) => void;
 }) => (
-  <div className="grid grid-cols-5 gap-3" role="radiogroup" aria-label="选择角色">
+  <div className="grid grid-cols-5 gap-4" role="radiogroup" aria-label="选择角色">
     {avatarOptions.map((avatar) => {
       const isSelected = avatar.id === value;
       return (
@@ -18,17 +18,21 @@ export const AvatarPicker = ({
           type="button"
           role="radio"
           aria-checked={isSelected}
-          title={avatar.label}
-          className={`interactive-surface rounded-[18px] p-1.5 ${
+          className={`relative rounded-full p-2 transition-all duration-200 ${
             isSelected
-              ? "bg-[#F0F7FF] shadow-[0_0_0_3px_rgba(77,163,255,0.14)]"
-              : "hover:bg-white/60"
+              ? "bg-[#eff6ff] shadow-[0_0_0_2px_rgba(59,130,246,0.3),0_0_16px_rgba(59,130,246,0.15)]"
+              : "hover:bg-white/50"
           }`}
           onClick={() => onChange(avatar.id)}
         >
-          <img src={avatar.src} alt={avatar.label} className="mx-auto h-[76px] w-[76px] object-contain" />
+          <img src={avatar.src} alt="" className="mx-auto h-[110px] w-[110px] object-contain" draggable={false} />
+          {isSelected && (
+            <span className="absolute bottom-1 left-1/2 -translate-x-1/2 h-1.5 w-1.5 rounded-full bg-[#3b82f6]" />
+          )}
         </button>
       );
     })}
   </div>
 );
+
+export const AvatarPicker = CharacterPicker;

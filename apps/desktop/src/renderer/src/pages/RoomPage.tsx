@@ -216,6 +216,15 @@ export const RoomPage = () => {
 
       <footer className="voice-dock flex items-center gap-2.5 px-3.5 py-2.5">
         <MuteButton isMuted={isMuted} onClick={toggleMute} />
+        <Button
+          variant={isDeafened ? "secondary" : "ghost"}
+          className={`voice-action-button whitespace-nowrap ${isDeafened ? "bg-[#eef2ff] text-[#6366f1] border-[#c7d2fe]" : ""}`}
+          title={isDeafened ? "打开扬声器" : "关闭扬声器"}
+          onClick={toggleDeafen}
+        >
+          {isDeafened ? <Volume2 className="h-4 w-4" /> : <VolumeX className="h-4 w-4" />}
+          <span className="voice-action-label">{isDeafened ? "打开扬声器" : "关闭扬声器"}</span>
+        </Button>
         <label className="device-select" title="选择麦克风">
           <Headphones className="h-4 w-4" />
           <select
@@ -243,15 +252,6 @@ export const RoomPage = () => {
             ))}
           </select>
         </label>
-        <Button
-          variant={isDeafened ? "secondary" : "ghost"}
-          className="voice-action-button whitespace-nowrap"
-          title={isDeafened ? "打开扬声器" : "关闭扬声器"}
-          onClick={toggleDeafen}
-        >
-          {isDeafened ? <Volume2 className="h-4 w-4" /> : <VolumeX className="h-4 w-4" />}
-          <span className="voice-action-label">{isDeafened ? "打开扬声器" : "关闭扬声器"}</span>
-        </Button>
         <div className="flex-1" />
         <RecordingButton
           isRecording={recordingStatus.state === RecordingState.Recording}
@@ -261,14 +261,14 @@ export const RoomPage = () => {
         <Button
           variant="ghost"
           className="voice-action-button whitespace-nowrap"
-          title="悬浮小窗"
+          title="悬浮窗"
           onClick={() => {
             playUiSound("popup-open");
             void window.desktopApi.overlay.toggle();
           }}
         >
           <MonitorUp className="h-4 w-4" />
-          <span className="voice-action-label">悬浮小窗</span>
+          <span className="voice-action-label">悬浮窗</span>
         </Button>
         <Button
           variant="danger"

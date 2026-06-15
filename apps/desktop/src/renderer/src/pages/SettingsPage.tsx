@@ -31,6 +31,7 @@ const sections = [
 
 export const SettingsPage = () => {
   const navigate = useAppStore((state) => state.navigate);
+  const settingsReturnTo = useAppStore((state) => state.settingsReturnTo);
   const pushToast = useAppStore((state) => state.pushToast);
   const settings = useSettingsStore((state) => state.settings);
   const runtimeInfo = useSettingsStore((state) => state.runtimeInfo);
@@ -172,7 +173,7 @@ export const SettingsPage = () => {
 
   return (
     <PageContainer className="overflow-y-auto">
-      <SettingsPageHeader onBack={() => navigate("home")} />
+      <SettingsPageHeader onBack={() => navigate(settingsReturnTo)} />
       <div className="mt-5 grid gap-5 lg:grid-cols-[168px_minmax(0,1fr)]">
         <nav className="settings-nav glass-panel h-fit rounded-[22px] p-2">
           {sections.map(({ id, label, icon: Icon }) => (

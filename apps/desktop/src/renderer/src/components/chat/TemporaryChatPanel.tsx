@@ -1,4 +1,4 @@
-import { Send, SmilePlus } from "lucide-react";
+import { Send } from "lucide-react";
 import { motion } from "framer-motion";
 
 import type { ChatMessage } from "@private-voice/shared";
@@ -38,7 +38,6 @@ export const TemporaryChatPanel = ({
     <div className="flex items-center justify-between gap-3 border-b border-[#e9eef5] pb-3">
       <div>
         <div className="text-sm font-bold text-[#27364a]">临时聊天</div>
-        <div className="mt-0.5 text-[11px] text-[#93a0b1]">只在当前频道保留</div>
       </div>
       <div className="flex max-w-[70%] flex-wrap justify-end gap-1">
         {quickReplies.map((reply) => (
@@ -109,15 +108,6 @@ export const TemporaryChatPanel = ({
     </div>
 
     <div className="mt-3 flex items-center gap-2 border-t border-[#e9eef5] pt-3">
-      <button
-        type="button"
-        disabled={!canSend}
-        className="interactive-surface grid h-10 w-10 shrink-0 place-items-center rounded-[13px] border border-[#e4eaf2] bg-white text-[#70839a] disabled:opacity-40"
-        onClick={() => onQuickSend?.("😊")}
-        aria-label="发送表情"
-      >
-        <SmilePlus className="h-4 w-4" />
-      </button>
       <Input
         placeholder={canSend ? "发一句..." : unavailableLabel}
         value={chatInput}

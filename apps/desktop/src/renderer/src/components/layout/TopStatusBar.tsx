@@ -30,10 +30,16 @@ export const TopStatusBar = ({
   onInvite?: () => void;
 }) => {
   const navigate = useAppStore((state) => state.navigate);
+  const setSettingsReturnTo = useAppStore((state) => state.setSettingsReturnTo);
   const room = useRoomStore((state) => state.room);
   const speaking = room.members.find(
     (member) => !member.isEmptySlot && member.speakingState === MemberSpeakingState.Speaking,
   );
+
+  const openSettings = () => {
+    setSettingsReturnTo("room");
+    navigate("settings");
+  };
 
   return (
     <header className="room-topbar flex items-center gap-3 px-4 py-2.5" data-testid="channel-status-bar">
@@ -63,7 +69,7 @@ export const TopStatusBar = ({
         <UserPlus className="h-4 w-4" />
         邀请
       </Button>
-      <Button variant="ghost" className="h-9 whitespace-nowrap px-3" onClick={() => navigate("settings")}>
+      <Button variant="ghost" className="h-9 whitespace-nowrap px-3" onClick={openSettings}>
         <Settings2 className="h-4 w-4" />
         设置
       </Button>

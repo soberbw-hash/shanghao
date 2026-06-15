@@ -283,55 +283,41 @@ img {
   opacity: 0.72;
 }
 
-.room-character-local,
 .room-character-deafened {
   position: absolute;
+  right: 4px;
+  top: 4px;
   display: grid;
   place-items: center;
+  width: 24px;
+  height: 24px;
   border: 2px solid white;
   border-radius: 999px;
+  background: #ffffff;
+  color: #718096;
   box-shadow: 0 4px 10px rgba(43, 57, 78, 0.16);
 }
 
-.room-character-local {
-  left: 4px;
-  top: 4px;
-  min-width: 22px;
-  height: 22px;
-  background: #263344;
-  color: white;
-  font-size: 10px;
-  font-weight: 800;
-}
-
-.room-character-deafened {
-  right: 4px;
-  top: 4px;
-  width: 24px;
-  height: 24px;
-  background: #ffffff;
-  color: #718096;
-}
-
 .room-character-label {
-  display: flex;
+  display: inline-flex;
   align-items: center;
   gap: 0.25rem;
-  max-width: 180px;
+  max-width: 120px;
+  white-space: nowrap;
   border: 1px solid rgba(255, 255, 255, 0.94);
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.88);
-  padding: 0.3rem 0.55rem;
-  box-shadow: 0 6px 18px rgba(67, 83, 106, 0.12);
+  padding: 0.2rem 0.45rem;
+  box-shadow: 0 4px 12px rgba(67, 83, 106, 0.1);
   color: #718096;
-  font-size: 0.625rem;
+  font-size: 0.5625rem;
   font-weight: 700;
-  white-space: nowrap;
   backdrop-filter: blur(12px);
 }
 
 .room-character-label.speaking {
   color: #426fde;
+  background: rgba(230, 243, 255, 0.92);
 }
 
 .room-character-label.muted {
@@ -344,6 +330,11 @@ img {
 
 .room-character-label.offline {
   color: #9ca3af;
+}
+
+.room-character-label.deafened {
+  color: #6366f1;
+  background: rgba(238, 242, 255, 0.92);
 }
 
 .device-select {
