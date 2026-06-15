@@ -17,6 +17,7 @@ import { TemporaryChatPanel } from "../components/chat/TemporaryChatPanel";
 import { TopStatusBar } from "../components/layout/TopStatusBar";
 import { TeamIsland } from "../components/room/TeamIsland";
 import { playUiSound } from "../features/audio/uiSound";
+import { chatWithLLM, shouldCallLLM } from "../features/chat/llmService";
 import { useRecordingController } from "../hooks/useRecordingController";
 import { useRoomState } from "../hooks/useRoomState";
 import { useAppStore } from "../store/appStore";
@@ -50,6 +51,7 @@ export const RoomPage = () => {
   const recordingStatus = useRecordingStore((state) => state.status);
   const { capability, startRecording, stopRecording } = useRecordingController();
   const [chatInput, setChatInput] = useState("");
+  const [isLLMLoading, setIsLLMLoading] = useState(false);
   const enteredAt = useRef(Date.now());
   const lastKnockAt = useRef(0);
   const detectedGameRef = useRef<string>();
@@ -111,6 +113,18 @@ export const RoomPage = () => {
     await sendChatMessage(content);
     playUiSound("send-message");
     if (content === chatInput) setChatInput("");
+
+    if (shouldCallLLM(content) && !isLLMLoading) {
+      setIsLLMLoading(true);
+      try {
+        const reply = await chatWithLLM(content);
+        await sendChatMessage("[上号助手] " + reply);
+      } catch {
+        // LLM errors should not break the chat flow
+      } finally {
+        setIsLLMLoading(false);
+      }
+    }
   };
 
   const knock = async () => {

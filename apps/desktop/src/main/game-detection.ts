@@ -4,15 +4,31 @@ import { promisify } from "node:util";
 import type { GameDetectionSnapshot, RendererLogPayload } from "@private-voice/shared";
 
 const execFileAsync = promisify(execFile);
-const POLL_INTERVAL_MS = 4_000;
+const POLL_INTERVAL_MS = 4000;
+
+const KNOWN_GAMES: Array<{ name: string; processNames: string[] }> = [
+  { name: "三角洲行动", processNames: ["deltaforce", "delta force"] },
+  { name: "英雄联盟", processNames: ["leagueclient", "league of legends"] },
+  { name: "无畏契约", processNames: ["valorant"] },
+  { name: "CS2", processNames: ["cs2", "counter-strike"] },
+  { name: "原神", processNames: ["genshin", "mihoyo"] },
+  { name: "永劫无间", processNames: ["narakabladepoint", "nablauncher"] },
+  { name: "Apex英雄", processNames: ["r5apex", "apex"] },
+  { name: "绝地求生", processNames: ["tslgame", "pubg"] },
+  { name: "守望先锋", processNames: ["overwatch"] },
+  { name: "蛋仔派对", processNames: ["eggy"] },
+  { name: "我的世界", processNames: ["minecraft", "javaw"] },
+  { name: "Roblox", processNames: ["roblox"] },
+];
 
 export const matchKnownGame = (processNames: string): GameDetectionSnapshot["gameName"] => {
   const normalized = processNames.toLowerCase();
-  if (normalized.includes("deltaforce")) {
-    return "三角洲行动";
-  }
-  if (normalized.includes("leagueclient") || normalized.includes("league of legends")) {
-    return "英雄联盟";
+  for (const game of KNOWN_GAMES) {
+    for (const pn of game.processNames) {
+      if (normalized.includes(pn)) {
+        return game.name as GameDetectionSnapshot["gameName"];
+      }
+    }
   }
   return undefined;
 };
@@ -22,22 +38,27 @@ const detectKnownGame = async (): Promise<GameDetectionSnapshot["gameName"]> => 
     return undefined;
   }
 
-  const { stdout } = await execFileAsync(
-    "powershell.exe",
-    [
-      "-NoProfile",
-      "-NonInteractive",
-      "-Command",
-      "$ErrorActionPreference='SilentlyContinue'; Get-Process -Name DeltaForce,LeagueClient,'League of Legends' | Select-Object -ExpandProperty ProcessName",
-    ],
-    { windowsHide: true, timeout: 2_500 },
-  ).catch(() => ({ stdout: "" }));
+  const gameNames = KNOWN_GAMES.flatMap(function (g) {
+    return g.processNames.map(function (p) {
+      return "'" + p + "'";
+    });
+  }).join(",");
 
-  return matchKnownGame(stdout);
+  var cmd = "$ErrorActionPreference='SilentlyContinue'; Get-Process -Name " + gameNames + " -ErrorAction SilentlyContinue | Select-Object -ExpandProperty ProcessName";
+
+  var result = await execFileAsync(
+    "powershell.exe",
+    ["-NoProfile", "-NonInteractive", "-Command", cmd],
+    { windowsHide: true, timeout: 2500 },
+  ).catch(function () {
+    return { stdout: "" };
+  });
+
+  return matchKnownGame(result.stdout);
 };
 
 export class GameDetectionController {
-  private timer?: NodeJS.Timeout;
+  private timer: NodeJS.Timeout | undefined;
   private listeners = new Set<(snapshot: GameDetectionSnapshot) => void>();
   private snapshot: GameDetectionSnapshot = { checkedAt: new Date(0).toISOString() };
 
@@ -68,13 +89,12 @@ export class GameDetectionController {
     const previousGame = this.snapshot.gameName;
     const gameName = await detectKnownGame();
     this.snapshot = {
-      gameName,
-      detectedAt:
-        gameName
-          ? previousGame === gameName
-            ? this.snapshot.detectedAt
-            : new Date().toISOString()
-          : undefined,
+      gameName: gameName,
+      detectedAt: gameName
+        ? previousGame === gameName
+          ? this.snapshot.detectedAt
+          : new Date().toISOString()
+        : undefined,
       checkedAt: new Date().toISOString(),
     };
 
@@ -83,8 +103,10 @@ export class GameDetectionController {
       category: "app",
       level: "info",
       message: gameName ? "Known game detected" : "Known game no longer detected",
-      context: { gameName },
+      context: { gameName: gameName },
     });
-    for (const listener of this.listeners) listener(this.snapshot);
+    for (const listener of this.listeners) {
+      listener(this.snapshot);
+    }
   }
 }

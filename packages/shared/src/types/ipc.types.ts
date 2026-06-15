@@ -52,7 +52,7 @@ export interface OverlayState {
 }
 
 export interface GameDetectionSnapshot {
-  gameName?: "三角洲行动" | "英雄联盟";
+  gameName?: "三角洲行动" | "英雄联盟" | "无畏契约" | "CS2" | "原神" | "永劫无间" | "Apex英雄" | "绝地求生" | "守望先锋" | "蛋仔派对" | "我的世界" | "Roblox";
   detectedAt?: string;
   checkedAt: string;
 }
