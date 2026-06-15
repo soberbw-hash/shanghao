@@ -42,7 +42,7 @@ const defaultMemberZones: SceneZoneId[] = [
 ];
 
 const characterPositions: Record<SceneZoneId, { left: number; top: number; zIndex: number }> = {
-  coffeeBar: { left: 28, top: 24, zIndex: 20 },
+  coffeeBar: { left: 24, top: 24, zIndex: 20 },
   fitnessZone: { left: 15, top: 70, zIndex: 30 },
   restroomZone: { left: 84, top: 25, zIndex: 20 },
   gameDesk1: { left: 37, top: 48, zIndex: 25 },

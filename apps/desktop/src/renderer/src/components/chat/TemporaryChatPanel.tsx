@@ -8,7 +8,7 @@ import { AvatarPlaceholder } from "../base/AvatarPlaceholder";
 import { Button } from "../base/Button";
 import { Input } from "../base/Input";
 
-const quickReplies = ["👍", "🎮", "🔥", "上号", "开麦", "等我", "来了", "冲"];
+const quickReplies = ["👍", "上号", "开麦", "等我"];
 
 export const TemporaryChatPanel = ({
   messages,
@@ -36,7 +36,7 @@ export const TemporaryChatPanel = ({
     data-testid="temporary-chat-panel"
   >
     <div className="flex items-center justify-between gap-2 border-b border-[rgba(220,230,242,0.6)] pb-2.5">
-      <div className="text-[13px] font-semibold text-[#1a2332]">聊天</div>
+      <div className="whitespace-nowrap text-[13px] font-semibold text-[#1a2332]">聊天</div>
       <div className="flex flex-wrap justify-end gap-1">
         {quickReplies.map((reply) => (
           <button

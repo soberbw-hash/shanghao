@@ -15,13 +15,13 @@ export interface ButtonProps extends NativeButtonProps, MotionProps {
 
 const variantClasses: Record<ButtonVariant, string> = {
   primary:
-    "border border-[#4DA3FF] bg-[#4DA3FF] text-white shadow-[0_8px_18px_rgba(77,163,255,0.24)] hover:bg-[#3996F7] hover:border-[#3996F7]",
+    "border border-[#3D8FEE] bg-gradient-to-b from-[#5AAEFF] to-[#4295F5] text-white shadow-[0_2px_4px_rgba(30,45,70,0.12),0_1px_0_rgba(255,255,255,0.3)_inset] hover:from-[#4DA3FF] hover:to-[#3D8FEE] hover:shadow-[0_4px_12px_rgba(77,163,255,0.3),0_1px_0_rgba(255,255,255,0.3)_inset] active:shadow-[0_1px_2px_rgba(30,45,70,0.1)_inset]",
   secondary:
-    "border border-[#E7ECF2] bg-white text-[#111827] shadow-[0_4px_12px_rgba(17,24,39,0.05)] hover:border-[#D6DEE8] hover:bg-[#F8FAFC]",
+    "border border-[#D6DEE8] bg-gradient-to-b from-white to-[#F8FAFC] text-[#111827] shadow-[0_2px_4px_rgba(30,45,70,0.06),0_1px_0_rgba(255,255,255,0.9)_inset] hover:border-[#C4CED9] hover:from-[#FAFBFC] hover:to-[#F1F5F9] hover:shadow-[0_3px_8px_rgba(30,45,70,0.1),0_1px_0_rgba(255,255,255,0.9)_inset] active:shadow-[0_1px_2px_rgba(30,45,70,0.06)_inset]",
   ghost:
-    "border border-transparent bg-transparent text-[#667085] hover:bg-white hover:text-[#111827]",
+    "border border-transparent bg-transparent text-[#667085] hover:bg-white hover:text-[#111827] hover:shadow-[0_2px_6px_rgba(30,45,70,0.08)] active:shadow-none active:bg-[#F5F7FB]",
   danger:
-    "border border-[#FECACA] bg-[#FEF2F2] text-[#DC2626] hover:border-[#FCA5A5] hover:bg-[#FEE2E2]",
+    "border border-[#FCA5A5] bg-gradient-to-b from-[#FFF0F0] to-[#FEE2E2] text-[#DC2626] shadow-[0_2px_4px_rgba(30,45,70,0.06),0_1px_0_rgba(255,255,255,0.9)_inset] hover:border-[#F87171] hover:from-[#FEE2E2] hover:to-[#FECACA] hover:shadow-[0_3px_8px_rgba(220,38,38,0.12),0_1px_0_rgba(255,255,255,0.9)_inset] active:shadow-[0_1px_2px_rgba(30,45,70,0.06)_inset]",
 };
 
 export const Button = ({
@@ -34,7 +34,7 @@ export const Button = ({
   <motion.button
     type="button"
     className={cn(
-      "inline-flex h-11 items-center justify-center gap-2 rounded-[14px] px-4 text-sm font-medium transition-colors disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-55",
+      "inline-flex h-11 items-center justify-center gap-2 rounded-[14px] px-4 text-sm font-medium transition-all duration-150 disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50",
       "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4DA3FF]/30 focus-visible:ring-offset-2 focus-visible:ring-offset-[#F5F7FA]",
       variantClasses[variant],
       isFullWidth && "w-full",

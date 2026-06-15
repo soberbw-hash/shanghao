@@ -150,17 +150,11 @@ export const RoomPage = () => {
       if (recordingStatus.state === RecordingState.Recording) {
         await stopRecording();
         playUiSound("record-stop");
-        pushToast({
-          tone: "success",
-          title: "录音已保存",
-          description: "可以在保存记录中查看。",
-        });
         return;
       }
 
       startRecording();
       playUiSound("record-start");
-      pushToast({ tone: "neutral", title: "开始录音", description: "会录下当前频道的混合语音。" });
     } catch {
       pushToast({ tone: "danger", title: "录音失败", description: "请稍后再试。" });
     }
@@ -221,8 +215,8 @@ export const RoomPage = () => {
           className={`voice-action-button-with-text ${isDeafened ? "bg-[#EAF4FF] text-[#2F6FCC] border-[rgba(77,163,255,0.25)]" : ""}`}
           onClick={toggleDeafen}
         >
-          {isDeafened ? <Volume2 className="h-4 w-4" /> : <VolumeX className="h-4 w-4" />}
-          <span className="voice-action-label">{isDeafened ? "扬声器开" : "扬声器关"}</span>
+          {isDeafened ? <VolumeX className="h-4 w-4" /> : <Volume2 className="h-4 w-4" />}
+          <span className="voice-action-label">{isDeafened ? "扬声器关" : "扬声器开"}</span>
         </Button>
         <label className="device-select" title="选择麦克风">
           <Headphones className="h-4 w-4" />
