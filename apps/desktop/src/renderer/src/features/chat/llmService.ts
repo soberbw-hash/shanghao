@@ -2,13 +2,7 @@ const MIMO_API_URL = "https://api.siliconflow.cn/v1/chat/completions";
 const MIMO_MODEL = "Qwen/Qwen2.5-7B-Instruct";
 const MIMO_API_KEY = "tp-cu9avv6x15apzb3yrpr3f8dbj3kyqfka2edd6le64nsv8ap";
 
-const SYSTEM_PROMPT = `你是一个聊天频道里的AI助手，帮助大家回答各种问题。
-
-回复要求：
-- 简洁明了
-- 用中文回复
-- 每次回复控制在80字以内
-- 不要说"我是AI"之类的话`;
+const SYSTEM_PROMPT = `你是聊天频道里的助手，简洁回答问题。用中文，50字以内，不要废话。`;
 
 export interface LLMMessage {
   role: "system" | "user" | "assistant";
