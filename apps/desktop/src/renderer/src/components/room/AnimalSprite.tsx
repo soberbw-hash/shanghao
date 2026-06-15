@@ -22,14 +22,13 @@ interface AnimalSpriteProps {
   className?: string;
 }
 
-const getAnimationPath = (avatarId: BuiltInAvatarId, state: AnimationState): string[] => {
-  const base = `/assets/animations/${avatarId}`;
-  const stateFile = state === "away" ? "away" : state;
-  return [
-    `${base}/${stateFile}.webm`,
-    `${base}/${stateFile}.webp`,
-    `${base}/${stateFile}.png`,
-  ];
+const animationClasses: Record<AnimationState, string> = {
+  idle: "animate-idle",
+  gaming: "animate-gaming",
+  drinking: "animate-drinking",
+  fitness: "animate-fitness",
+  away: "animate-away",
+  speaking: "animate-speaking",
 };
 
 export const AnimalSprite = ({
@@ -37,8 +36,6 @@ export const AnimalSprite = ({
   state = "idle",
   className = "",
 }: AnimalSpriteProps) => {
-  const videoRef = useRef<HTMLVideoElement>(null);
-  const [mediaType, setMediaType] = useState<"video" | "image">("image");
   const [currentSrc, setCurrentSrc] = useState<string>("");
   const [hasError, setHasError] = useState(false);
 
@@ -48,37 +45,10 @@ export const AnimalSprite = ({
 
   useEffect(() => {
     setHasError(false);
-    const sources = getAnimationPath(avatarId, animationState);
+    setCurrentSrc(getAvatarSrc(avatarId) ?? "");
+  }, [avatarId]);
 
-    const tryLoad = async (): Promise<void> => {
-      for (const src of sources) {
-        try {
-          const response = await fetch(src, { method: "HEAD" });
-          if (response.ok) {
-            if (src.endsWith(".webm")) {
-              setMediaType("video");
-            } else {
-              setMediaType("image");
-            }
-            setCurrentSrc(src);
-            return;
-          }
-        } catch {
-          continue;
-        }
-      }
-      setMediaType("image");
-      setCurrentSrc(getAvatarSrc(avatarId) ?? "");
-    };
-
-    void tryLoad();
-  }, [avatarId, animationState]);
-
-  useEffect(() => {
-    if (mediaType === "video" && videoRef.current) {
-      void videoRef.current.play().catch(() => undefined);
-    }
-  }, [mediaType, currentSrc]);
+  const animClass = animationClasses[animationState] ?? animationClasses.idle;
 
   if (hasError || !currentSrc) {
     return (
@@ -91,26 +61,11 @@ export const AnimalSprite = ({
     );
   }
 
-  if (mediaType === "video") {
-    return (
-      <video
-        ref={videoRef}
-        src={currentSrc}
-        className={`h-[96px] w-[96px] object-contain ${className}`}
-        muted
-        autoPlay
-        loop
-        playsInline
-        onError={() => setHasError(true)}
-      />
-    );
-  }
-
   return (
     <img
       src={currentSrc}
       alt=""
-      className={`h-[96px] w-[96px] object-contain ${className}`}
+      className={`h-[96px] w-[96px] object-contain ${animClass} ${className}`}
       draggable={false}
       onError={() => setHasError(true)}
     />
