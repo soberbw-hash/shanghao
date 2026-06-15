@@ -11,7 +11,8 @@ import {
 } from "@private-voice/shared";
 
 import whiteOfficeRoom from "../../assets/scenes/white-office-room.png";
-import { avatarOptions, getAvatarSrc } from "../../utils/profile";
+import { avatarOptions } from "../../utils/profile";
+import { AnimalSprite } from "./AnimalSprite";
 
 const sceneZones: Array<{
   id: SceneZoneId;
@@ -163,11 +164,9 @@ export const TeamIsland = ({
                     isSpeaking ? "room-character-speaking" : ""
                   } ${member.isMuted ? "room-character-muted" : ""} ${isReconnecting ? "room-character-reconnecting" : ""}`}
                 >
-                  <img
-                    src={getAvatarSrc(visibleAvatars.get(member.id))}
-                    alt={member.nickname}
-                    className="h-[96px] w-[96px] object-contain"
-                    draggable={false}
+                  <AnimalSprite
+                    avatarId={visibleAvatars.get(member.id) ?? "fox"}
+                    state={isSpeaking ? "speaking" : member.activity ?? "idle"}
                   />
                   {member.isDeafened ? (
                     <span className="room-character-deafened" aria-label="已关闭扬声器">
