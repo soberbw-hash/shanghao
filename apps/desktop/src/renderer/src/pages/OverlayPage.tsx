@@ -15,6 +15,12 @@ export const OverlayPage = () => {
 
   useEffect(() => window.desktopApi.overlay.onState(setState), []);
 
+  useEffect(() => {
+    const handler = (e: MouseEvent) => e.preventDefault();
+    document.addEventListener("contextmenu", handler);
+    return () => document.removeEventListener("contextmenu", handler);
+  }, []);
+
   const members = state.members.filter((member) => !member.isEmptySlot);
   const activeMember =
     members.find((member) => member.speakingState === MemberSpeakingState.Speaking) ??
@@ -23,7 +29,10 @@ export const OverlayPage = () => {
   const isSpeaking = activeMember?.speakingState === MemberSpeakingState.Speaking;
 
   return (
-    <div className={`overlay-shell drag-region ${isSpeaking ? "overlay-speaking" : "overlay-idle"}`}>
+    <div
+      className={`overlay-shell drag-region ${isSpeaking ? "overlay-speaking" : "overlay-idle"}`}
+      onContextMenu={(e) => e.preventDefault()}
+    >
       {activeMember ? (
         <>
           <img

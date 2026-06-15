@@ -61,6 +61,9 @@ export class OverlayWindowController {
       skipTaskbar: true,
       resizable: false,
       show: false,
+      closable: false,
+      minimizable: false,
+      maximizable: false,
       webPreferences: {
         preload: path.join(__dirname, "../preload/index.cjs"),
         contextIsolation: true,
@@ -71,14 +74,24 @@ export class OverlayWindowController {
     this.window = window;
     window.setAlwaysOnTop(true, "screen-saver");
     window.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+    window.setMovable(true);
+
     window.on("closed", () => {
       if (this.window === window) {
         this.window = null;
       }
     });
+
+    window.on("blur", () => {
+      if (this.window && !this.window.isDestroyed()) {
+        this.window.setAlwaysOnTop(true, "screen-saver");
+      }
+    });
+
     const saveBounds = () => {
       try {
-        writeFileSync(boundsPath, JSON.stringify(window.getBounds()), "utf8");
+        const bounds = window.getBounds();
+        writeFileSync(boundsPath, JSON.stringify({ x: bounds.x, y: bounds.y }), "utf8");
       } catch {
         // Position memory is optional and must not affect the overlay.
       }
