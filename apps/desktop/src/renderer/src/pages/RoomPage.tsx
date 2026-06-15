@@ -214,16 +214,15 @@ export const RoomPage = () => {
         />
       </main>
 
-      <footer className="voice-dock flex items-center gap-2.5 px-3.5 py-2.5">
+      <footer className="voice-dock flex items-center gap-2 px-3 py-2.5">
         <MuteButton isMuted={isMuted} onClick={toggleMute} />
         <Button
           variant={isDeafened ? "secondary" : "ghost"}
-          className={`voice-action-button whitespace-nowrap ${isDeafened ? "bg-[#eef2ff] text-[#6366f1] border-[#c7d2fe]" : ""}`}
-          title={isDeafened ? "打开扬声器" : "关闭扬声器"}
+          className={`voice-action-button-with-text ${isDeafened ? "bg-[#EAF4FF] text-[#2F6FCC] border-[rgba(77,163,255,0.25)]" : ""}`}
           onClick={toggleDeafen}
         >
           {isDeafened ? <Volume2 className="h-4 w-4" /> : <VolumeX className="h-4 w-4" />}
-          <span className="voice-action-label">{isDeafened ? "打开扬声器" : "关闭扬声器"}</span>
+          <span className="voice-action-label">{isDeafened ? "扬声器开" : "扬声器关"}</span>
         </Button>
         <label className="device-select" title="选择麦克风">
           <Headphones className="h-4 w-4" />
@@ -260,8 +259,7 @@ export const RoomPage = () => {
         />
         <Button
           variant="ghost"
-          className="voice-action-button whitespace-nowrap"
-          title="悬浮窗"
+          className="voice-action-button-with-text"
           onClick={() => {
             playUiSound("popup-open");
             void window.desktopApi.overlay.toggle();
@@ -272,12 +270,11 @@ export const RoomPage = () => {
         </Button>
         <Button
           variant="danger"
-          className="voice-action-button whitespace-nowrap"
-          title="退出频道"
+          className="voice-action-button-with-text"
           onClick={() => void leave()}
         >
           <LogOut className="h-4 w-4" />
-          <span className="voice-action-label">退出频道</span>
+          <span className="voice-action-label">退出</span>
         </Button>
       </footer>
 

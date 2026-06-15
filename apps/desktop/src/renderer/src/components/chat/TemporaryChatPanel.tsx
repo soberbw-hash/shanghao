@@ -32,20 +32,18 @@ export const TemporaryChatPanel = ({
   unavailableLabel?: string;
 }) => (
   <div
-    className={`response-panel flex min-h-0 flex-col p-3.5 ${className}`.trim()}
+    className={`response-panel flex min-h-0 flex-col p-3 ${className}`.trim()}
     data-testid="temporary-chat-panel"
   >
-    <div className="flex items-center justify-between gap-3 border-b border-[#e9eef5] pb-3">
-      <div>
-        <div className="text-sm font-bold text-[#27364a]">临时聊天</div>
-      </div>
-      <div className="flex max-w-[70%] flex-wrap justify-end gap-1">
+    <div className="flex items-center justify-between gap-2 border-b border-[rgba(220,230,242,0.6)] pb-2.5">
+      <div className="text-[13px] font-semibold text-[#1a2332]">聊天</div>
+      <div className="flex flex-wrap justify-end gap-1">
         {quickReplies.map((reply) => (
           <button
             key={reply}
             type="button"
             disabled={!canSend}
-            className="interactive-surface grid min-h-7 min-w-7 place-items-center rounded-full border border-[#e8edf4] bg-white px-2 text-xs disabled:opacity-40"
+            className="interactive-surface min-h-[28px] min-w-[28px] rounded-[10px] border border-[rgba(220,230,242,0.8)] bg-white px-2 text-[11px] font-medium text-[#52657d] disabled:opacity-35 hover:bg-[#f5f7fb]"
             onClick={() => onQuickSend?.(reply)}
           >
             {reply}
@@ -54,9 +52,9 @@ export const TemporaryChatPanel = ({
       </div>
     </div>
 
-    <div className="mt-3 min-h-0 flex-1 space-y-3 overflow-y-auto pr-1">
+    <div className="mt-2.5 min-h-0 flex-1 space-y-2.5 overflow-y-auto pr-1">
       {messages.length === 0 ? (
-        <div className="grid h-full min-h-[120px] place-items-center px-5 text-center text-xs leading-5 text-[#9aa6b5]">
+        <div className="grid h-full min-h-[100px] place-items-center px-4 text-center text-[11px] leading-5 text-[#a0aec0]">
           {emptyMessage}
         </div>
       ) : (
@@ -64,38 +62,39 @@ export const TemporaryChatPanel = ({
           message.kind === "system" ? (
             <motion.div
               key={message.id}
-              initial={{ opacity: 0, y: 4 }}
-              animate={{ opacity: 1, y: 0 }}
-              className="mx-auto w-fit max-w-[90%] rounded-full bg-[#f2f5f9] px-3 py-1.5 text-center text-[11px] text-[#8492a5]"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              className="mx-auto w-fit max-w-[90%] rounded-full bg-[#f5f7fb] px-3 py-1 text-center text-[10px] text-[#8492a5]"
             >
               {message.content}
             </motion.div>
           ) : (
             <motion.div
               key={message.id}
-              initial={{ opacity: 0, y: 5 }}
+              initial={{ opacity: 0, y: 3 }}
               animate={{ opacity: 1, y: 0 }}
-              className={`flex items-end gap-2 ${message.isLocal ? "justify-end" : ""}`}
+              transition={{ duration: 0.2 }}
+              className={`flex items-end gap-1.5 ${message.isLocal ? "justify-end" : ""}`}
             >
               {!message.isLocal ? (
                 <AvatarPlaceholder
                   name={message.nickname}
                   src={message.avatarDataUrl || getAvatarSrc(message.avatarId)}
                   size="sm"
-                  className="h-8 w-8 shrink-0 rounded-[11px]"
+                  className="h-7 w-7 shrink-0 rounded-[10px]"
                 />
               ) : null}
-              <div className={`max-w-[76%] ${message.isLocal ? "items-end" : "items-start"} flex flex-col`}>
+              <div className={`max-w-[78%] ${message.isLocal ? "items-end" : "items-start"} flex flex-col`}>
                 {!message.isLocal ? (
-                  <span className="mb-1 px-1 text-[10px] font-semibold text-[#94a0af]">
+                  <span className="mb-0.5 px-1 text-[9px] font-medium text-[#a0aec0]">
                     {message.nickname}
                   </span>
                 ) : null}
                 <span
-                  className={`rounded-[15px] px-3 py-2 text-sm leading-5 ${
+                  className={`rounded-[14px] px-3 py-1.5 text-[13px] leading-[1.4] ${
                     message.isLocal
-                      ? "rounded-br-[5px] bg-[#e7efff] text-[#315b94]"
-                      : "rounded-bl-[5px] bg-white text-[#53647a] shadow-sm"
+                      ? "rounded-br-[4px] bg-[#EAF4FF] text-[#2F6FCC]"
+                      : "rounded-bl-[4px] bg-white text-[#374151] border border-[rgba(220,230,242,0.5)]"
                   }`}
                 >
                   {message.content}
@@ -107,7 +106,7 @@ export const TemporaryChatPanel = ({
       )}
     </div>
 
-    <div className="mt-3 flex items-center gap-2 border-t border-[#e9eef5] pt-3">
+    <div className="mt-2.5 flex items-center gap-2 border-t border-[rgba(220,230,242,0.6)] pt-2.5">
       <Input
         placeholder={canSend ? "发一句..." : unavailableLabel}
         value={chatInput}
@@ -123,7 +122,7 @@ export const TemporaryChatPanel = ({
       <Button
         onClick={onSend}
         disabled={!chatInput.trim() || !canSend}
-        className="h-10 w-10 shrink-0 rounded-[13px] p-0"
+        className="h-9 w-9 shrink-0 rounded-[10px] p-0 bg-[#4DA3FF] hover:bg-[#3D8FEE] text-white"
         aria-label="发送消息"
       >
         <Send className="h-4 w-4" />

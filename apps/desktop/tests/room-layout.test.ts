@@ -20,7 +20,7 @@ test("room page uses the V5 island, light responses, and voice dock", () => {
   assert.equal(source.includes("连接方式"), false);
   assert.equal(source.includes("进入开黑频道"), false);
   assert.equal(source.includes("audio-level-bars"), false);
-  assert.equal(source.includes("关闭扬声器"), true);
+  assert.equal(source.includes("扬声器关"), true);
 });
 
 test("room uses a real always-on-top overlay and a five-second knock cooldown", () => {

@@ -41,15 +41,15 @@ const defaultMemberZones: SceneZoneId[] = [
   "gameDesk5",
 ];
 
-const characterPositions: Record<SceneZoneId, { left: number; top: number }> = {
-  coffeeBar: { left: 28, top: 23 },
-  fitnessZone: { left: 15, top: 69 },
-  restroomZone: { left: 84, top: 24 },
-  gameDesk1: { left: 37, top: 47 },
-  gameDesk2: { left: 55, top: 34 },
-  gameDesk3: { left: 70, top: 54 },
-  gameDesk4: { left: 47, top: 77 },
-  gameDesk5: { left: 72, top: 79 },
+const characterPositions: Record<SceneZoneId, { left: number; top: number; zIndex: number }> = {
+  coffeeBar: { left: 28, top: 24, zIndex: 20 },
+  fitnessZone: { left: 15, top: 70, zIndex: 30 },
+  restroomZone: { left: 84, top: 25, zIndex: 20 },
+  gameDesk1: { left: 37, top: 48, zIndex: 25 },
+  gameDesk2: { left: 55, top: 35, zIndex: 22 },
+  gameDesk3: { left: 70, top: 55, zIndex: 28 },
+  gameDesk4: { left: 47, top: 78, zIndex: 32 },
+  gameDesk5: { left: 72, top: 80, zIndex: 33 },
 };
 
 const activityLabels: Record<MemberActivity, string> = {
@@ -154,9 +154,9 @@ export const TeamIsland = ({
               initial={{ opacity: 0 }}
               animate={{ opacity: isOffline ? 0.45 : 1 }}
               exit={{ opacity: 0 }}
-              transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
-              className="absolute z-20 -translate-x-1/2 -translate-y-1/2"
-              style={{ left: `${position.left}%`, top: `${position.top}%` }}
+              transition={{ duration: 0.3, ease: [0.22, 1, 0.36, 1] }}
+              className="absolute -translate-x-1/2 -translate-y-1/2"
+              style={{ left: `${position.left}%`, top: `${position.top}%`, zIndex: position.zIndex }}
             >
               <div className="relative">
                 <div
@@ -170,14 +170,14 @@ export const TeamIsland = ({
                   />
                   {member.isDeafened ? (
                     <span className="room-character-deafened" aria-label="已关闭扬声器">
-                      <VolumeX className="h-3.5 w-3.5" />
+                      <VolumeX className="h-3 w-3" />
                     </span>
                   ) : null}
                 </div>
 
-                <div className={`room-character-label absolute left-1/2 top-full -translate-x-1/2 mt-1 ${status.tone}`}>
-                  {status.icon ? <status.icon className={`h-3 w-3 ${isReconnecting ? "animate-spin" : ""}`} /> : null}
-                  <span className="max-w-[82px] truncate">{status.label}</span>
+                <div className={`room-character-label ${status.tone}`}>
+                  {status.icon ? <status.icon className={`h-2.5 w-2.5 ${isReconnecting ? "animate-spin" : ""}`} /> : null}
+                  <span className="max-w-[80px] truncate">{status.label}</span>
                 </div>
               </div>
             </motion.div>
