@@ -81,12 +81,17 @@ export const HomePage = () => {
   return (
     <div className="entry-page relative flex h-full items-center justify-center overflow-hidden px-6 py-7">
       <motion.main
-        initial={{ opacity: 0, scale: 0.975, y: 12 }}
+        initial={{ opacity: 0, scale: 0.97, y: 20 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
-        transition={{ duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
+        transition={{ duration: 0.6, ease: [0.22, 1, 0.36, 1] }}
         className="entry-card relative z-10 flex w-full max-w-[900px] flex-col px-9 py-8"
       >
-        <header className="flex items-center gap-4 border-b border-[#e9eef5] pb-5">
+        <motion.header
+          initial={{ opacity: 0, y: -10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.15, duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
+          className="flex items-center gap-4 border-b border-[#e9eef5] pb-5"
+        >
           <BrandMark size="lg" />
           <div>
             <h1 className="text-[32px] font-[720] tracking-[0.035em] text-[#172033]">进入开黑频道</h1>
@@ -102,9 +107,14 @@ export const HomePage = () => {
             </span>
             {micCopy.title}
           </button>
-        </header>
+        </motion.header>
 
-        <section className="mt-6 grid min-h-0 flex-1 gap-7 md:grid-cols-[1.05fr_.95fr]">
+        <motion.section
+          initial={{ opacity: 0, y: 16 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.25, duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
+          className="mt-6 grid min-h-0 flex-1 gap-7 md:grid-cols-[1.05fr_.95fr]"
+        >
           <div className="p-2">
             <div className="mb-4 text-sm font-semibold text-[#314158]">选择角色</div>
             <CharacterPicker value={avatarId} onChange={setAvatarId} />
@@ -146,7 +156,7 @@ export const HomePage = () => {
               </Button>
             </div>
           </div>
-        </section>
+        </motion.section>
       </motion.main>
     </div>
   );
