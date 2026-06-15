@@ -162,7 +162,7 @@ export const TeamIsland = ({
                 <div
                   className={`room-character-sprite relative ${
                     isSpeaking ? "room-character-speaking" : ""
-                  } ${member.isMuted ? "room-character-muted" : ""} ${isReconnecting ? "room-character-reconnecting" : ""}`}
+                  } ${member.isMuted ? "room-character-muted" : ""} ${member.isDeafened ? "room-character-deafened" : ""} ${isReconnecting ? "room-character-reconnecting" : ""}`}
                 >
                   <AnimalSprite
                     avatarId={visibleAvatars.get(member.id) ?? "fox"}
@@ -176,8 +176,8 @@ export const TeamIsland = ({
                 </div>
 
                 <div className={`room-character-label ${status.tone}`}>
-                  {status.icon ? <status.icon className={`h-2.5 w-2.5 ${isReconnecting ? "animate-spin" : ""}`} /> : null}
-                  <span className="max-w-[80px] truncate">{status.label}</span>
+                  {status.icon ? <status.icon className={`h-3 w-3 ${isReconnecting ? "animate-spin" : ""}`} /> : null}
+                  <span className="max-w-[100px] truncate">{status.label}</span>
                 </div>
               </div>
             </motion.div>

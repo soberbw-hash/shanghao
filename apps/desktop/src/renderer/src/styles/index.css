@@ -201,6 +201,12 @@ img {
   filter: saturate(0.5) drop-shadow(0 6px 8px rgba(30, 45, 70, 0.06));
 }
 
+.room-character-deafened {
+  filter:
+    drop-shadow(0 0 8px rgba(220, 38, 38, 0.3))
+    drop-shadow(0 4px 6px rgba(30, 45, 70, 0.1));
+}
+
 .room-character-reconnecting {
   opacity: 0.6;
 }
@@ -228,16 +234,16 @@ img {
   margin-top: 6px;
   display: inline-flex;
   align-items: center;
-  gap: 3px;
-  max-width: 100px;
+  gap: 4px;
+  max-width: 120px;
   white-space: nowrap;
   border: 1px solid var(--color-border);
   border-radius: 999px;
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.95) 0%, rgba(248, 251, 255, 0.9) 100%);
-  padding: 3px 8px;
+  padding: 4px 10px;
   box-shadow: var(--shadow-button);
-  color: #718096;
-  font-size: 10px;
+  color: #52657d;
+  font-size: 11px;
   font-weight: 600;
   backdrop-filter: blur(8px);
   pointer-events: none;

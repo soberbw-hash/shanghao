@@ -51,18 +51,18 @@ export const OverlayPage = () => {
       className="overlay-capsule drag-region"
       onContextMenu={(e) => e.preventDefault()}
       style={{
-        width: "72px",
-        height: "72px",
-        borderRadius: "36px",
-        background: "rgba(255, 255, 255, 0.75)",
-        backdropFilter: "blur(20px)",
-        WebkitBackdropFilter: "blur(20px)",
+        width: "48px",
+        height: "48px",
+        borderRadius: "24px",
+        background: "rgba(255, 255, 255, 0.8)",
+        backdropFilter: "blur(16px)",
+        WebkitBackdropFilter: "blur(16px)",
         border: `2px solid ${getBorderColor()}`,
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
         position: "relative",
-        boxShadow: `0 4px 16px rgba(30, 45, 70, 0.1), 0 0 0 1px rgba(255, 255, 255, 0.5) inset`,
+        boxShadow: `0 2px 8px rgba(30, 45, 70, 0.1), 0 0 0 1px rgba(255, 255, 255, 0.6) inset`,
         transition: "border-color 300ms ease, box-shadow 300ms ease",
       }}
     >
@@ -70,8 +70,8 @@ export const OverlayPage = () => {
         <>
           <div
             style={{
-              width: "56px",
-              height: "56px",
+              width: "40px",
+              height: "40px",
               borderRadius: "50%",
               overflow: "hidden",
               display: "flex",
@@ -86,8 +86,8 @@ export const OverlayPage = () => {
               alt=""
               draggable={false}
               style={{
-                width: "48px",
-                height: "48px",
+                width: "32px",
+                height: "32px",
                 objectFit: "contain",
                 filter: isMuted || isDeafened ? "saturate(0.5)" : "none",
                 transition: "filter 300ms ease",
@@ -97,22 +97,22 @@ export const OverlayPage = () => {
           <div
             style={{
               position: "absolute",
-              bottom: "2px",
-              right: "2px",
-              width: "14px",
-              height: "14px",
+              bottom: "1px",
+              right: "1px",
+              width: "12px",
+              height: "12px",
               borderRadius: "50%",
               background: getStatusColor(),
               border: "2px solid white",
-              boxShadow: `0 0 6px ${getStatusColor()}40`,
+              boxShadow: `0 0 4px ${getStatusColor()}40`,
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
             }}
           >
-            {isMuted && <MicOff className="h-2 w-2 text-white" />}
-            {isDeafened && <VolumeX className="h-2 w-2 text-white" />}
-            {isReconnecting && <RotateCw className="h-2 w-2 text-white animate-spin" />}
+            {isMuted && <MicOff className="h-1.5 w-1.5 text-white" />}
+            {isDeafened && <VolumeX className="h-1.5 w-1.5 text-white" />}
+            {isReconnecting && <RotateCw className="h-1.5 w-1.5 text-white animate-spin" />}
           </div>
         </>
       ) : null}

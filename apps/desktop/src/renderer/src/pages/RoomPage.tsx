@@ -118,7 +118,17 @@ export const RoomPage = () => {
       setIsLLMLoading(true);
       try {
         const reply = await chatWithLLM(content);
-        await sendChatMessage("[上号助手] " + reply);
+        const { addChatMessage } = useRoomStore.getState();
+        addChatMessage({
+          id: "llm-" + Date.now(),
+          peerId: "llm-assistant",
+          nickname: "上号助手",
+          avatarId: "fox",
+          content: reply,
+          createdAt: new Date().toISOString(),
+          isLocal: false,
+          kind: "chat",
+        });
       } catch {
         // LLM errors should not break the chat flow
       } finally {
@@ -225,8 +235,8 @@ export const RoomPage = () => {
       <footer className="voice-dock flex items-center gap-2 px-3 py-2.5">
         <MuteButton isMuted={isMuted} onClick={toggleMute} />
         <Button
-          variant={isDeafened ? "secondary" : "ghost"}
-          className={`voice-action-button-with-text ${isDeafened ? "bg-[#EAF4FF] text-[#2F6FCC] border-[rgba(77,163,255,0.25)]" : ""}`}
+          variant="ghost"
+          className={`voice-action-button-with-text ${isDeafened ? "bg-gradient-to-b from-[#FEE2E2] to-[#FECACA] text-[#DC2626] border border-[#FCA5A5] shadow-[0_2px_4px_rgba(220,38,38,0.12),0_1px_0_rgba(255,255,255,0.5)_inset]" : ""}`}
           onClick={toggleDeafen}
         >
           {isDeafened ? <VolumeX className="h-4 w-4" /> : <Volume2 className="h-4 w-4" />}

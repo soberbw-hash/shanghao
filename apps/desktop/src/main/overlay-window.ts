@@ -46,14 +46,14 @@ export class OverlayWindowController {
 
     const workArea = screen.getPrimaryDisplay().workArea;
     const window = new BrowserWindow({
-      width: 72,
-      height: 76,
-      x: savedBounds.x ?? workArea.x + 18,
-      y: savedBounds.y ?? workArea.y + Math.round((workArea.height - 76) / 2),
-      minWidth: 72,
-      minHeight: 76,
-      maxWidth: 72,
-      maxHeight: 76,
+      width: 48,
+      height: 48,
+      x: savedBounds.x ?? workArea.x + 12,
+      y: savedBounds.y ?? workArea.y + Math.round((workArea.height - 48) / 2),
+      minWidth: 48,
+      minHeight: 48,
+      maxWidth: 48,
+      maxHeight: 48,
       frame: false,
       transparent: true,
       backgroundColor: "#00000000",
