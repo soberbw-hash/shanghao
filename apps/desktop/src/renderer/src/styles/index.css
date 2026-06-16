@@ -201,17 +201,11 @@ img {
   filter: saturate(0.5) drop-shadow(0 6px 8px rgba(30, 45, 70, 0.06));
 }
 
-.room-character-deafened {
-  filter:
-    drop-shadow(0 0 8px rgba(220, 38, 38, 0.3))
-    drop-shadow(0 4px 6px rgba(30, 45, 70, 0.1));
-}
-
 .room-character-reconnecting {
   opacity: 0.6;
 }
 
-.room-character-deafened {
+.room-character-deafened-badge {
   position: absolute;
   right: 2px;
   top: 2px;

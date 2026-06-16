@@ -55,7 +55,7 @@ export const AnimalSprite = ({
       <img
         src={getAvatarSrc(avatarId)}
         alt=""
-        className={`h-[96px] w-[96px] object-contain ${className}`}
+        className={`h-[96px] w-[96px] object-contain object-center ${className}`}
         draggable={false}
       />
     );
@@ -65,7 +65,7 @@ export const AnimalSprite = ({
     <img
       src={currentSrc}
       alt=""
-      className={`h-[96px] w-[96px] object-contain ${animClass} ${className}`}
+      className={`h-[96px] w-[96px] object-contain object-center ${animClass} ${className}`}
       draggable={false}
       onError={() => setHasError(true)}
     />

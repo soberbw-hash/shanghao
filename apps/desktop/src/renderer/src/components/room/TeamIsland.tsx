@@ -169,7 +169,7 @@ export const TeamIsland = ({
                     state={isSpeaking ? "speaking" : member.activity ?? "idle"}
                   />
                   {member.isDeafened ? (
-                    <span className="room-character-deafened" aria-label="已关闭扬声器">
+                    <span className="room-character-deafened-badge" aria-label="已关闭扬声器">
                       <VolumeX className="h-3 w-3" />
                     </span>
                   ) : null}
