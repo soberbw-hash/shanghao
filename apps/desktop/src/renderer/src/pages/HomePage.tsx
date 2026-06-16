@@ -38,12 +38,14 @@ export const HomePage = () => {
   const [nickname, setNickname] = useState("");
   const [avatarId, setAvatarId] = useState<BuiltInAvatarId>("fox");
   const [serverAddress, setServerAddress] = useState(DEFAULT_SERVER_ADDRESS);
+  const [channelCode, setChannelCode] = useState("");
 
   useEffect(() => {
     if (!settings) return;
     setNickname(settings.nickname || randomNickname());
     setAvatarId(settings.avatarId || randomAvatarId());
     setServerAddress(settings.relayServerUrl || DEFAULT_SERVER_ADDRESS);
+    setChannelCode(settings.channelAccessCode || "");
   }, [settings]);
 
   if (!settings) {
@@ -73,6 +75,7 @@ export const HomePage = () => {
       avatarId,
       avatarPath: undefined,
       relayServerUrl: trimmedAddress,
+      channelAccessCode: channelCode.trim(),
       hasCompletedProfileSetup: true,
     });
     await joinChannel(trimmedAddress);
@@ -142,6 +145,14 @@ export const HomePage = () => {
                 value={serverAddress}
                 placeholder="ws://118.25.103.107:43821"
                 onChange={(event) => setServerAddress(event.target.value)}
+              />
+            </label>
+            <label className="space-y-2">
+              <span className="text-xs font-semibold text-[#52657d]">频道码 <span className="text-[#9aa7b8]">（朋友问房主要）</span></span>
+              <Input
+                value={channelCode}
+                placeholder="留空则不需要频道码"
+                onChange={(event) => setChannelCode(event.target.value)}
               />
             </label>
             <div className="mt-auto">
