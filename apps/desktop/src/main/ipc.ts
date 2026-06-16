@@ -9,6 +9,8 @@ import {
   type DiagnosticsSnapshot,
   type HostSessionInfo,
   type GameDetectionSnapshot,
+  type LlmChatRequest,
+  type LlmChatResponse,
   type OverlayState,
   type RecordingExportPayload,
   type RecordingExportResponse,
@@ -22,6 +24,7 @@ import {
 
 import { DiagnosticsService } from "./diagnostics";
 import { HostSessionController } from "./host-session";
+import { LlmService } from "./llm-service";
 import { buildDiagnosticsSummary, detectProxyDiagnostics, getNetworkStatusSnapshot } from "./network-diagnostics";
 import { clearAvatarImage, pickAvatarImage, readAvatarImage } from "./profile-media";
 import { exportRecordingFromMain } from "./recording-main";
@@ -43,6 +46,7 @@ interface MainProcessServices {
   updates: UpdateService;
   overlay: OverlayWindowController;
   gameDetection: GameDetectionController;
+  llm: LlmService;
 }
 
 export const registerIpcHandlers = ({
@@ -55,6 +59,7 @@ export const registerIpcHandlers = ({
   updates,
   overlay,
   gameDetection,
+  llm,
 }: MainProcessServices): void => {
   hostSession.onUpdate((session) => {
     getMainWindow()?.webContents.send(IPC_CHANNELS.host.sessionUpdated, session);
@@ -266,5 +271,10 @@ export const registerIpcHandlers = ({
     IPC_CHANNELS.recording.export,
     async (_event, payload: RecordingExportPayload): Promise<RecordingExportResponse> =>
       exportRecordingFromMain(payload, (logPayload) => diagnostics.writeLog(logPayload)),
+  );
+
+  ipcMain.handle(
+    IPC_CHANNELS.llm.chat,
+    async (_event, payload: LlmChatRequest): Promise<LlmChatResponse> => llm.chat(payload),
   );
 };

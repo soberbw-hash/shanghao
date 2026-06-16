@@ -17,7 +17,7 @@ import { TemporaryChatPanel } from "../components/chat/TemporaryChatPanel";
 import { TopStatusBar } from "../components/layout/TopStatusBar";
 import { TeamIsland } from "../components/room/TeamIsland";
 import { playUiSound } from "../features/audio/uiSound";
-import { chatWithLLM, shouldCallLLM } from "../features/chat/llmService";
+import { chatWithLLM, shouldCallLLM, type LlmHistoryEntry } from "../features/chat/llmService";
 import { useRecordingController } from "../hooks/useRecordingController";
 import { useRoomState } from "../hooks/useRoomState";
 import { useAppStore } from "../store/appStore";
@@ -57,6 +57,7 @@ export const RoomPage = () => {
   const detectedGameRef = useRef<string>();
   const moveLocalMemberRef = useRef(moveLocalMember);
   moveLocalMemberRef.current = moveLocalMember;
+  const llmHistoryRef = useRef<LlmHistoryEntry[]>([]);
 
   const canSend =
     room.connectionState === RoomConnectionState.Connected ||
@@ -117,17 +118,24 @@ export const RoomPage = () => {
     if (shouldCallLLM(content) && !isLLMLoading) {
       setIsLLMLoading(true);
       try {
-        const reply = await chatWithLLM(content);
+        const reply = await chatWithLLM(content, llmHistoryRef.current);
+        llmHistoryRef.current.push(
+          { role: "user", content },
+          { role: "assistant", content: reply },
+        );
+        if (llmHistoryRef.current.length > 20) {
+          llmHistoryRef.current.splice(0, llmHistoryRef.current.length - 20);
+        }
         const { addChatMessage } = useRoomStore.getState();
         addChatMessage({
           id: "llm-" + Date.now(),
           peerId: "llm-assistant",
-          nickname: "上号助手",
-          avatarId: "fox",
+          nickname: "上号",
           content: reply,
           createdAt: new Date().toISOString(),
           isLocal: false,
           kind: "chat",
+          isBot: true,
         });
       } catch {
         // LLM errors should not break the chat flow

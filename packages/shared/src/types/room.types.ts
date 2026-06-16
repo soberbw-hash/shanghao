@@ -25,6 +25,8 @@ export interface ChatMessage {
   createdAt: string;
   isLocal?: boolean;
   kind?: "chat" | "system";
+  /** 内置 AI 助手消息：头像使用软件品牌图标，昵称固定为"上号"。 */
+  isBot?: boolean;
 }
 
 export type SceneZoneId =

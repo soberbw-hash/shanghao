@@ -168,8 +168,9 @@ export const createMainWindow = ({
 
   window.setMenuBarVisibility(false);
   window.setAutoHideMenuBar(true);
-  window.webContents.session.setPermissionRequestHandler((_webContents, _permission, callback) => {
-    callback(true);
+  window.webContents.session.setPermissionRequestHandler((_webContents, permission, callback) => {
+    // 仅允许麦克风权限（语音通话核心需求），拒绝 camera、notifications 等。
+    callback(permission === "media");
   });
 
   window.webContents.once("did-finish-load", () => {

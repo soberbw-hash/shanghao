@@ -24,9 +24,9 @@ test("room client marks webrtc ready from connection state instead of remote str
   assert.equal(source.includes("this.webrtcReadyPeerIds.add(targetPeerId)"), true);
   assert.equal(source.includes('this.audioRelay?.markPeerPath(targetPeerId, "webrtc", "webrtc_connected")'), true);
   assert.equal(source.includes('state === "closed"'), true);
-  assert.equal(relay.includes("MAX_PACKET_AGE_MS = 1_500"), true);
-  assert.equal(relay.includes("MAX_QUEUE_DURATION_MS = 800"), true);
-  assert.equal(relay.includes("MAX_QUEUE_CHUNKS = 20"), true);
+  assert.equal(relay.includes("MAX_PACKET_AGE_MS = 8_000"), true);
+  assert.equal(relay.includes("MAX_QUEUE_DURATION_MS = 3_000"), true);
+  assert.equal(relay.includes("MAX_QUEUE_CHUNKS = 80"), true);
   assert.equal(relay.includes("droppedExpiredChunks"), true);
   assert.equal(relay.includes("serverClockOffsetMs"), true);
   assert.equal(relay.includes("audioStreamEpoch"), true);

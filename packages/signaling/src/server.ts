@@ -1,5 +1,5 @@
 import { EventEmitter } from "node:events";
-import { createHash } from "node:crypto";
+import { createHash, timingSafeEqual } from "node:crypto";
 import { createServer, type Server as HttpServer } from "node:http";
 
 import {
@@ -34,6 +34,7 @@ import type {
 } from "./protocol";
 import { isSignalEnvelope } from "./protocol";
 import { RoomManager } from "./room-manager";
+import { isLlmProxyRequest, proxyLlmChat } from "./llm-proxy";
 
 interface SignalingServerOptions {
   port?: number;
@@ -45,6 +46,8 @@ interface SignalingServerOptions {
 const MAX_SIGNALING_PAYLOAD_BYTES = 256 * 1024;
 const MAX_AVATAR_BYTES = 128 * 1024;
 const MAX_AUDIO_CHUNK_BYTES = 96 * 1024;
+const CHANNEL_CODE_MAX_FAILURES = 5;
+const CHANNEL_CODE_COOLDOWN_MS = 30_000;
 
 const normalizeAvatar = (
   avatarDataUrl?: string,
@@ -67,6 +70,7 @@ export class SignalingServer extends EventEmitter {
   private readonly logger?: SignalingServerOptions["logger"];
   private heartbeatTimer?: NodeJS.Timeout;
   private audioServerSequence = 0;
+  private readonly channelCodeFailures = new Map<string, { count: number; lastFailAt: number }>();
 
   constructor(private readonly options: SignalingServerOptions) {
     super();
@@ -93,6 +97,11 @@ export class SignalingServer extends EventEmitter {
             serverTime: Date.now(),
           }),
         );
+        return;
+      }
+
+      if (request.url === "/llm/chat" && request.method === "POST") {
+        this.handleLlmProxy(request, response);
         return;
       }
 
@@ -322,24 +331,44 @@ export class SignalingServer extends EventEmitter {
 
     const isFixedChannel = message.type === "join_channel";
     const configuredChannelCode = process.env.CHANNEL_ACCESS_CODE?.trim();
-    if (
-      isFixedChannel &&
-      configuredChannelCode &&
-      message.channelCode?.trim() !== configuredChannelCode
-    ) {
-      this.safeSend(socket, {
-        type: "error",
-        code: "channel_code_invalid",
-        roomId: message.roomId,
-        peerId: message.peerId,
-        message: "频道码不对，问下朋友再试试。",
-      });
-      this.logger?.("channel join rejected", {
-        roomId: message.roomId,
-        peerId: message.peerId,
-        reason: "channel_code_invalid",
-      });
-      return;
+    if (isFixedChannel && configuredChannelCode) {
+      const clientIp = this.getSocketRemoteAddress(socket);
+      if (this.isChannelCodeRateLimited(clientIp)) {
+        this.safeSend(socket, {
+          type: "error",
+          code: "rate_limited",
+          roomId: message.roomId,
+          peerId: message.peerId,
+          message: "频道码验证失败次数过多，请稍后再试。",
+        });
+        this.logger?.("channel join rate limited", {
+          roomId: message.roomId,
+          peerId: message.peerId,
+          reason: "rate_limited",
+          remoteAddress: clientIp,
+        });
+        return;
+      }
+      const incomingCode = message.channelCode?.trim() ?? "";
+      if (
+        incomingCode.length !== configuredChannelCode.length ||
+        !this.safeEquals(incomingCode, configuredChannelCode)
+      ) {
+        this.recordChannelCodeFailure(clientIp);
+        this.safeSend(socket, {
+          type: "error",
+          code: "channel_code_invalid",
+          roomId: message.roomId,
+          peerId: message.peerId,
+          message: "频道码不对，问下朋友再试试。",
+        });
+        this.logger?.("channel join rejected", {
+          roomId: message.roomId,
+          peerId: message.peerId,
+          reason: "channel_code_invalid",
+        });
+        return;
+      }
     }
 
     const existingRoom = this.roomManager.getRoom(message.roomId);
@@ -725,5 +754,107 @@ export class SignalingServer extends EventEmitter {
       });
       return false;
     }
+  }
+
+  private getSocketRemoteAddress(socket: WebSocket): string {
+    const req = (socket as WebSocket & { _socket?: { remoteAddress?: string } })._socket;
+    return req?.remoteAddress ?? "unknown";
+  }
+
+  private isChannelCodeRateLimited(remoteAddress: string): boolean {
+    const entry = this.channelCodeFailures.get(remoteAddress);
+    if (!entry) {
+      return false;
+    }
+    if (Date.now() - entry.lastFailAt > CHANNEL_CODE_COOLDOWN_MS) {
+      this.channelCodeFailures.delete(remoteAddress);
+      return false;
+    }
+    return entry.count >= CHANNEL_CODE_MAX_FAILURES;
+  }
+
+  private recordChannelCodeFailure(remoteAddress: string): void {
+    const entry = this.channelCodeFailures.get(remoteAddress);
+    if (entry && Date.now() - entry.lastFailAt <= CHANNEL_CODE_COOLDOWN_MS) {
+      entry.count += 1;
+      entry.lastFailAt = Date.now();
+    } else {
+      this.channelCodeFailures.set(remoteAddress, { count: 1, lastFailAt: Date.now() });
+    }
+  }
+
+  private safeEquals(a: string, b: string): boolean {
+    if (a.length !== b.length) {
+      return false;
+    }
+    try {
+      return timingSafeEqual(Buffer.from(a, "utf8"), Buffer.from(b, "utf8"));
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * HTTP POST /llm/chat — AI 代理端点。
+   * 客户端不带 MiMo key，用 CHANNEL_ACCESS_CODE 做鉴权。
+   */
+  private handleLlmProxy(
+    request: import("node:http").IncomingMessage,
+    response: import("node:http").ServerResponse,
+  ): void {
+    const configuredCode = process.env.CHANNEL_ACCESS_CODE?.trim();
+
+    if (configuredCode) {
+      const clientCode = (typeof request.headers["x-channel-code"] === "string"
+        ? request.headers["x-channel-code"]
+        : undefined)?.trim() ?? "";
+      if (clientCode.length !== configuredCode.length || !this.safeEquals(clientCode, configuredCode)) {
+        response.writeHead(403, { "content-type": "application/json; charset=utf-8" });
+        response.end(JSON.stringify({ ok: false, reason: "unauthorized" }));
+        return;
+      }
+    }
+
+    const chunks: Buffer[] = [];
+    request.on("data", (chunk: Buffer) => chunks.push(chunk));
+    request.on("end", () => {
+      const body = Buffer.concat(chunks).toString("utf8");
+
+      if (Buffer.byteLength(body, "utf8") > 64 * 1024) {
+        response.writeHead(413, { "content-type": "application/json; charset=utf-8" });
+        response.end(JSON.stringify({ ok: false, reason: "payload_too_large" }));
+        return;
+      }
+
+      let payload: unknown;
+      try {
+        payload = JSON.parse(body);
+      } catch {
+        response.writeHead(400, { "content-type": "application/json; charset=utf-8" });
+        response.end(JSON.stringify({ ok: false, reason: "invalid_json" }));
+        return;
+      }
+
+      if (!isLlmProxyRequest(payload)) {
+        response.writeHead(400, { "content-type": "application/json; charset=utf-8" });
+        response.end(JSON.stringify({ ok: false, reason: "bad_request" }));
+        return;
+      }
+
+      void proxyLlmChat(payload)
+        .then((result) => {
+          response.writeHead(200, { "content-type": "application/json; charset=utf-8" });
+          response.end(JSON.stringify(result));
+        })
+        .catch(() => {
+          response.writeHead(500, { "content-type": "application/json; charset=utf-8" });
+          response.end(JSON.stringify({ ok: false, reason: "internal_error" }));
+        });
+    });
+
+    request.on("error", () => {
+      response.writeHead(400, { "content-type": "application/json; charset=utf-8" });
+      response.end(JSON.stringify({ ok: false, reason: "read_error" }));
+    });
   }
 }

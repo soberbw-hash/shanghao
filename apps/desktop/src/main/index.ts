@@ -17,6 +17,7 @@ import { UpdateService } from "./updates";
 import { createMainWindow } from "./window";
 import { OverlayWindowController } from "./overlay-window";
 import { GameDetectionController } from "./game-detection";
+import { LlmService } from "./llm-service";
 
 let mainWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
@@ -178,6 +179,12 @@ const bootstrap = async (): Promise<void> => {
   );
   gameDetection.start();
 
+  const llm = new LlmService({
+    getRelayServerUrl: () => settingsStore?.getSnapshot().relayServerUrl,
+    getChannelAccessCode: () => settingsStore?.getSnapshot().channelAccessCode,
+    writeLog: (payload) => diagnostics?.writeLog(payload) ?? Promise.resolve(),
+  });
+
   registerIpcHandlers({
     getMainWindow: () => mainWindow,
     settingsStore,
@@ -188,6 +195,7 @@ const bootstrap = async (): Promise<void> => {
     updates,
     overlay,
     gameDetection,
+    llm,
   });
 
   mainWindow = createMainWindow({

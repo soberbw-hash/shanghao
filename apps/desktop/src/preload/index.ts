@@ -114,6 +114,9 @@ const desktopApi: DesktopApi = {
   recording: {
     export: (payload) => ipcRenderer.invoke(IPC_CHANNELS.recording.export, payload),
   },
+  llm: {
+    chat: (payload) => ipcRenderer.invoke(IPC_CHANNELS.llm.chat, payload),
+  },
 };
 
 void ipcRenderer

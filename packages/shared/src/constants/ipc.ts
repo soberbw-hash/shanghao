@@ -71,4 +71,7 @@ export const IPC_CHANNELS = {
   recording: {
     export: "recording:export",
   },
+  llm: {
+    chat: "llm:chat",
+  },
 } as const;

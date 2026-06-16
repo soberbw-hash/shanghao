@@ -44,6 +44,17 @@ export interface SignalingEventPayload {
   message?: string;
 }
 
+export interface LlmChatRequest {
+  message: string;
+  history: Array<{ role: "user" | "assistant"; content: string }>;
+}
+
+export interface LlmChatResponse {
+  ok: boolean;
+  reply?: string;
+  reason?: "not_configured" | "request_failed" | "empty";
+}
+
 export interface OverlayState {
   members: RoomMember[];
   isMuted: boolean;
@@ -138,5 +149,8 @@ export interface DesktopApi {
     export: (
       payload: RecordingExportPayload,
     ) => Promise<RecordingExportResponse>;
+  };
+  llm: {
+    chat: (payload: LlmChatRequest) => Promise<LlmChatResponse>;
   };
 }

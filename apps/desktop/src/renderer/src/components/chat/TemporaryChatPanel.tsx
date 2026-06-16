@@ -3,6 +3,7 @@ import { motion } from "framer-motion";
 
 import type { ChatMessage } from "@private-voice/shared";
 
+import brandMarkUrl from "../../assets/brand-mark.svg";
 import { getAvatarSrc } from "../../utils/profile";
 import { AvatarPlaceholder } from "../base/AvatarPlaceholder";
 import { Button } from "../base/Button";
@@ -77,15 +78,24 @@ export const TemporaryChatPanel = ({
               className={`flex items-end gap-1.5 ${message.isLocal ? "justify-end" : ""}`}
             >
               {!message.isLocal ? (
-                <AvatarPlaceholder
-                  name={message.nickname}
-                  src={message.avatarDataUrl || getAvatarSrc(message.avatarId)}
-                  size="sm"
-                  className="h-7 w-7 shrink-0 rounded-[10px]"
-                />
+                message.isBot ? (
+                  <img
+                    src={brandMarkUrl}
+                    alt="上号"
+                    draggable={false}
+                    className="h-7 w-7 shrink-0 rounded-[10px] object-contain bg-[#EAF4FF]"
+                  />
+                ) : (
+                  <AvatarPlaceholder
+                    name={message.nickname}
+                    src={message.avatarDataUrl || getAvatarSrc(message.avatarId)}
+                    size="sm"
+                    className="h-7 w-7 shrink-0 rounded-[10px]"
+                  />
+                )
               ) : null}
               <div className={`max-w-[78%] ${message.isLocal ? "items-end" : "items-start"} flex flex-col`}>
-                {!message.isLocal ? (
+                {!message.isLocal && !message.isBot ? (
                   <span className="mb-0.5 px-1 text-[9px] font-medium text-[#a0aec0]">
                     {message.nickname}
                   </span>
@@ -94,7 +104,9 @@ export const TemporaryChatPanel = ({
                   className={`rounded-[14px] px-3 py-1.5 text-[13px] leading-[1.4] ${
                     message.isLocal
                       ? "rounded-br-[4px] bg-[#EAF4FF] text-[#2F6FCC]"
-                      : "rounded-bl-[4px] bg-white text-[#374151] border border-[rgba(220,230,242,0.5)]"
+                      : message.isBot
+                        ? "rounded-bl-[4px] bg-[#F0F7FF] text-[#2F6FCC] border border-[rgba(45,111,204,0.18)]"
+                        : "rounded-bl-[4px] bg-white text-[#374151] border border-[rgba(220,230,242,0.5)]"
                   }`}
                 >
                   {message.content}
