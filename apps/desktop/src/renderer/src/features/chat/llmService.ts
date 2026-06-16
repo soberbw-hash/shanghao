@@ -31,7 +31,7 @@ export const chatWithLLM = async (userMessage: string): Promise<string> => {
         model: MIMO_MODEL,
         messages: conversationHistory,
         temperature: 0.7,
-        max_tokens: 200,
+        max_tokens: 2048,
       }),
     });
 
@@ -40,7 +40,8 @@ export const chatWithLLM = async (userMessage: string): Promise<string> => {
     }
 
     const data = await response.json();
-    const reply = data.choices?.[0]?.message?.content ?? "暂时无法回答，请稍后再试。";
+    const message = data.choices?.[0]?.message;
+    const reply = message?.content || message?.reasoning_content || "暂时无法回答，请稍后再试。";
 
     conversationHistory.push({ role: "assistant", content: reply });
 
