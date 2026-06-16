@@ -56,7 +56,7 @@ interface PeerAudioState {
 
 const CHUNK_SIZE = 2048;
 const MIN_SEND_INTERVAL_MS = 35;
-const MAX_PACKET_AGE_MS = 1_500;
+const MAX_PACKET_AGE_MS = 3_000;
 const MAX_QUEUE_DURATION_MS = 800;
 const MAX_QUEUE_CHUNKS = 20;
 const PLAYBACK_LEAD_SECONDS = 0.05;
