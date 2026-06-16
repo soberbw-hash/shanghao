@@ -2,7 +2,7 @@ const MIMO_API_URL = "https://token-plan-cn.xiaomimimo.com/v1/chat/completions";
 const MIMO_MODEL = "mimo-v2.5";
 const MIMO_API_KEY = "tp-cu9avv6x15apzbq3yrpr3f8dbj3kyqfka2edd6le64nsv8ap";
 
-const SYSTEM_PROMPT = `你是聊天频道里的助手，简洁回答问题。用中文，50字以内，不要废话。`;
+const SYSTEM_PROMPT = `你是聊天频道里的助手，简洁回答问题。用中文，50字以内，不要废话。回答时参考最新信息。`;
 
 export interface LLMMessage {
   role: "system" | "user" | "assistant";
