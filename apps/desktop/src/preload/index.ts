@@ -116,6 +116,7 @@ const desktopApi: DesktopApi = {
   },
   llm: {
     chat: (payload) => ipcRenderer.invoke(IPC_CHANNELS.llm.chat, payload),
+    health: () => ipcRenderer.invoke(IPC_CHANNELS.llm.health),
   },
 };
 

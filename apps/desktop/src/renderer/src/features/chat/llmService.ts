@@ -44,9 +44,26 @@ export const chatWithLLM = async (
   return result.reply ?? friendlyFallbackMessage("empty");
 };
 
+/**
+ * 检查 AI 助手健康状态。
+ */
+export const checkLLMHealth = async (): Promise<{ ok: boolean; configured: boolean; reason?: string }> => {
+  try {
+    return await desktopApi.llm.health();
+  } catch {
+    return { ok: false, configured: false, reason: "无法连接服务器" };
+  }
+};
+
 const friendlyFallbackMessage = (reason?: LlmChatResponse["reason"]): string => {
   if (reason === "not_configured") {
-    return "助手还没配置，先让房主接一下。";
+    return "助手还没配置，服务器缺少 SHANGHAO_LLM_API_KEY。";
   }
-  return "助手没接通，稍后再试。";
+  if (reason === "request_failed") {
+    return "助手请求失败，检查服务器 /llm/chat 是否可用。";
+  }
+  if (reason === "empty") {
+    return "助手没有返回内容，换个问法试试。";
+  }
+  return "助手请求失败，稍后再试。";
 };

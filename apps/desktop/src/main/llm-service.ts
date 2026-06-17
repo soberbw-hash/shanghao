@@ -83,6 +83,39 @@ export class LlmService {
   ): Promise<void> {
     await this.options.writeLog?.({ category: "app", level, message, context });
   }
+
+  async health(): Promise<{ ok: boolean; configured: boolean; reason?: string }> {
+    const baseUrl = this.options.getRelayServerUrl?.();
+    if (!baseUrl) {
+      return { ok: false, configured: false, reason: "未配置服务器地址" };
+    }
+
+    const httpUrl = wsToHttp(baseUrl);
+    if (!httpUrl) {
+      return { ok: false, configured: false, reason: "服务器地址格式错误" };
+    }
+
+    try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 5000);
+
+      const response = await fetch(`${httpUrl}/llm/health`, {
+        method: "GET",
+        signal: controller.signal,
+      });
+
+      clearTimeout(timeout);
+
+      if (!response.ok) {
+        return { ok: false, configured: false, reason: "服务器返回 " + response.status };
+      }
+
+      const data = (await response.json()) as { configured: boolean; model?: string };
+      return { ok: true, configured: data.configured };
+    } catch (error) {
+      return { ok: false, configured: false, reason: "无法连接服务器" };
+    }
+  }
 }
 
 function wsToHttp(wsUrl: string): string | null {

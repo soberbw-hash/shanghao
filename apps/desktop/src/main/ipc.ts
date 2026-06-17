@@ -277,4 +277,9 @@ export const registerIpcHandlers = ({
     IPC_CHANNELS.llm.chat,
     async (_event, payload: LlmChatRequest): Promise<LlmChatResponse> => llm.chat(payload),
   );
+
+  ipcMain.handle(
+    IPC_CHANNELS.llm.health,
+    async () => llm.health(),
+  );
 };

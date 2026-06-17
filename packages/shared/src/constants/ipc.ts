@@ -73,5 +73,6 @@ export const IPC_CHANNELS = {
   },
   llm: {
     chat: "llm:chat",
+    health: "llm:health",
   },
 } as const;

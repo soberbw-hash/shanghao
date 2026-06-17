@@ -152,5 +152,6 @@ export interface DesktopApi {
   };
   llm: {
     chat: (payload: LlmChatRequest) => Promise<LlmChatResponse>;
+    health: () => Promise<{ ok: boolean; configured: boolean; reason?: string }>;
   };
 }
