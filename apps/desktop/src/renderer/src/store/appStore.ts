@@ -4,7 +4,7 @@ export type AppPage = "home" | "room" | "settings";
 export type SettingsReturnTarget = "home" | "room";
 export type RoomActionState = "idle" | "starting" | "joining";
 export type ToastTone = "neutral" | "success" | "warning" | "danger";
-export type BootstrapPhase = "booting" | "recovery" | "ready";
+export type BootstrapPhase = "booting" | "checking-update" | "update-gate" | "recovery" | "ready";
 
 interface ToastMessage {
   id: string;
@@ -42,6 +42,8 @@ interface AppStoreState {
   showStartupRecovery: (issue: StartupIssue) => void;
   dismissStartupIssue: () => void;
   retryBootstrap: () => void;
+  enterUpdateGate: () => void;
+  dismissUpdateGate: () => void;
   pushToast: (toast: Omit<ToastMessage, "id">) => void;
   dismissToast: (id: string) => void;
 }
@@ -97,6 +99,16 @@ export const useAppStore = create<AppStoreState>((set, get) => ({
       startupIssue: undefined,
       isSafeMode: false,
     })),
+  enterUpdateGate: () =>
+    set({
+      bootstrapPhase: "update-gate",
+      bootstrapMessage: "正在检查更新…",
+    }),
+  dismissUpdateGate: () =>
+    set({
+      bootstrapPhase: "ready",
+      bootstrapMessage: "准备完成",
+    }),
   pushToast: (toast) => {
     const id = crypto.randomUUID();
     set((state) => ({

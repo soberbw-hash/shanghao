@@ -536,3 +536,28 @@ a,
     transition-duration: 1ms !important;
   }
 }
+
+/* ── 更新页 ── */
+
+.update-gate-page {
+  min-height: 100%;
+  display: grid;
+  place-items: center;
+  background:
+    radial-gradient(circle at 20% 12%, rgba(77, 163, 255, 0.10), transparent 28%),
+    linear-gradient(180deg, #f7fbff, #eef4fb);
+}
+
+.update-gate-card {
+  width: min(520px, calc(100vw - 48px));
+  border-radius: 30px;
+  background: rgba(255, 255, 255, 0.92);
+  border: 1px solid rgba(220, 230, 242, 0.9);
+  box-shadow: 0 24px 80px rgba(63, 102, 160, 0.16);
+  backdrop-filter: blur(20px) saturate(160%);
+  padding: 40px;
+}
+
+.update-gate-card * {
+  opacity: 1;
+}

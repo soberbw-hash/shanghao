@@ -41,6 +41,7 @@ export const useAppBootstrap = (): void => {
   const enterSafeMode = useAppStore((state) => state.enterSafeMode);
   const showStartupRecovery = useAppStore((state) => state.showStartupRecovery);
   const bootstrapAttempt = useAppStore((state) => state.bootstrapAttempt);
+  const checkUpdates = useSettingsStore((state) => state.checkUpdates);
 
   useEffect(() => {
     let isDisposed = false;
@@ -72,6 +73,25 @@ export const useAppBootstrap = (): void => {
           enterSafeMode(hydration.issue);
           await writeRendererLog("app", "warn", "Renderer entered safe mode", hydration.issue);
           return;
+        }
+
+        // Check for updates before completing bootstrap
+        const currentSettings = useSettingsStore.getState().settings;
+        if (currentSettings?.isBackgroundUpdateCheckEnabled) {
+          beginBootstrap("正在检查更新…");
+          try {
+            const result = await checkUpdates();
+            if (result.hasUpdate && !isDisposed) {
+              useAppStore.getState().enterUpdateGate();
+              await writeRendererLog("app", "info", "Update gate activated", {
+                latestVersion: result.latestVersion,
+                forceUpdate: result.forceUpdate,
+              });
+              return;
+            }
+          } catch {
+            // Update check failure should not block startup
+          }
         }
 
         completeBootstrap();

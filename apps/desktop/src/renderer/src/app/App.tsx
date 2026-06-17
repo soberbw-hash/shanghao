@@ -17,6 +17,7 @@ import { useSettingsStore } from "../store/settingsStore";
 import { writeRendererLog } from "../utils/logger";
 import { StartupRecoveryPage } from "../components/status/StartupRecoveryPage";
 import { StartupSplashPage } from "../components/status/StartupSplashPage";
+import { UpdateGatePage } from "../components/status/UpdateGatePage";
 
 export const App = () => {
   useAppBootstrap();
@@ -78,8 +79,12 @@ export const App = () => {
   }, []);
 
   const renderPage = () => {
-    if (bootstrapPhase === "booting" || isHydrating) {
+    if (bootstrapPhase === "booting" || bootstrapPhase === "checking-update" || isHydrating) {
       return <StartupSplashPage message={bootstrapMessage} />;
+    }
+
+    if (bootstrapPhase === "update-gate") {
+      return <UpdateGatePage />;
     }
 
     if (bootstrapPhase === "recovery") {
