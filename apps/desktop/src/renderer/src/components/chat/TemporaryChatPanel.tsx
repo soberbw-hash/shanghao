@@ -9,7 +9,7 @@ import { AvatarPlaceholder } from "../base/AvatarPlaceholder";
 import { Button } from "../base/Button";
 import { Input } from "../base/Input";
 
-const quickReplies = ["👍", "上号", "开麦", "等我"];
+const quickReplies = ["👍", "🎮", "🔥", "上号", "开麦", "等我", "来了", "冲"];
 
 export const TemporaryChatPanel = ({
   messages,

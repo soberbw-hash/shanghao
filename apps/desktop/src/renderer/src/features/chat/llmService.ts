@@ -6,28 +6,42 @@ export interface LlmHistoryEntry {
   content: string;
 }
 
-const QUICK_REPLIES = ["👍", "上号", "开麦", "等我"];
+/**
+ * 判断是否应该调用 AI 助手。
+ * 只有以"问"字开头的消息才触发 AI。
+ */
+export const shouldCallLLM = (message: string): boolean => {
+  const trimmed = message.trim();
+  return /^问[：:\s]?/.test(trimmed);
+};
 
 /**
- * 调用 AI 助手。API key 由服务器代理，渲染进程不持有任何凭证。
- * history 由调用方维护并传入。
+ * 提取用户真正的问题（去掉"问"前缀）。
+ */
+export const extractQuestion = (message: string): string => {
+  const trimmed = message.trim();
+  return trimmed.replace(/^问[：:\s]?/, "").trim();
+};
+
+/**
+ * 调用 AI 助手。
  */
 export const chatWithLLM = async (
   userMessage: string,
   history: LlmHistoryEntry[] = [],
 ): Promise<string> => {
-  const request: LlmChatRequest = { message: userMessage, history };
+  const question = extractQuestion(userMessage);
+  if (!question) {
+    return "你想问什么呀？";
+  }
+
+  const request: LlmChatRequest = { message: question, history };
   const result: LlmChatResponse = await desktopApi.llm.chat(request);
 
   if (!result.ok) {
     return friendlyFallbackMessage(result.reason);
   }
   return result.reply ?? friendlyFallbackMessage("empty");
-};
-
-export const shouldCallLLM = (message: string): boolean => {
-  const trimmed = message.trim();
-  return !QUICK_REPLIES.includes(trimmed);
 };
 
 const friendlyFallbackMessage = (reason?: LlmChatResponse["reason"]): string => {

@@ -15,8 +15,6 @@ import { useAudioStore } from "../store/audioStore";
 import { useSettingsStore } from "../store/settingsStore";
 import { randomAvatarId, randomNickname } from "../utils/profile";
 
-const DEFAULT_SERVER_ADDRESS = "ws://118.25.103.107:43821";
-
 const isValidServerAddress = (value: string) => {
   try {
     const url = new URL(value);
@@ -37,15 +35,13 @@ export const HomePage = () => {
   const refreshDevices = useAudioStore((state) => state.refreshDevices);
   const [nickname, setNickname] = useState("");
   const [avatarId, setAvatarId] = useState<BuiltInAvatarId>("fox");
-  const [serverAddress, setServerAddress] = useState(DEFAULT_SERVER_ADDRESS);
-  const [channelCode, setChannelCode] = useState("");
+  const [serverAddress, setServerAddress] = useState("");
 
   useEffect(() => {
     if (!settings) return;
     setNickname(settings.nickname || randomNickname());
     setAvatarId(settings.avatarId || randomAvatarId());
-    setServerAddress(settings.relayServerUrl || DEFAULT_SERVER_ADDRESS);
-    setChannelCode(settings.channelAccessCode || "");
+    setServerAddress(settings.relayServerUrl || "");
   }, [settings]);
 
   if (!settings) {
@@ -75,7 +71,6 @@ export const HomePage = () => {
       avatarId,
       avatarPath: undefined,
       relayServerUrl: trimmedAddress,
-      channelAccessCode: channelCode.trim(),
       hasCompletedProfileSetup: true,
     });
     await joinChannel(trimmedAddress);
@@ -143,16 +138,8 @@ export const HomePage = () => {
               <span className="text-xs font-semibold text-[#52657d]">服务器地址</span>
               <Input
                 value={serverAddress}
-                placeholder="ws://118.25.103.107:43821"
+                placeholder="ws://你的服务器地址:端口"
                 onChange={(event) => setServerAddress(event.target.value)}
-              />
-            </label>
-            <label className="space-y-2">
-              <span className="text-xs font-semibold text-[#52657d]">频道码 <span className="text-[#9aa7b8]">（朋友问房主要）</span></span>
-              <Input
-                value={channelCode}
-                placeholder="留空则不需要频道码"
-                onChange={(event) => setChannelCode(event.target.value)}
               />
             </label>
             <div className="mt-auto">
