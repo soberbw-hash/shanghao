@@ -47,6 +47,7 @@ interface RoomStoreState {
   setRemoteStream: (peerId: string, stream?: MediaStream) => void;
   setConnectionHealth: (health: Partial<ConnectionHealth>) => void;
   addChatMessage: (message: ChatMessage) => void;
+  replaceChatMessage: (id: string, content: string) => void;
   clearChatMessages: () => void;
   syncLocalProfile: (profile: LocalProfilePayload) => void;
   updateMemberVolume: (memberId: string, volume: number) => void;
@@ -255,6 +256,12 @@ export const useRoomStore = create<RoomStoreState>((set) => ({
   addChatMessage: (message) =>
     set((state) => ({
       chatMessages: [...state.chatMessages, message].slice(-80),
+    })),
+  replaceChatMessage: (id, content) =>
+    set((state) => ({
+      chatMessages: state.chatMessages.map((m) =>
+        m.id === id ? { ...m, content } : m,
+      ),
     })),
   clearChatMessages: () => set({ chatMessages: [] }),
   syncLocalProfile: (profile) =>

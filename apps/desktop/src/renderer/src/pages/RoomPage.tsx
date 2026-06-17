@@ -117,6 +117,20 @@ export const RoomPage = () => {
 
     if (shouldCallLLM(content) && !isLLMLoading) {
       setIsLLMLoading(true);
+      const { addChatMessage } = useRoomStore.getState();
+      const placeholderId = "llm-thinking-" + Date.now();
+
+      addChatMessage({
+        id: placeholderId,
+        peerId: "llm-assistant",
+        nickname: "上号",
+        content: "上号正在想…",
+        createdAt: new Date().toISOString(),
+        isLocal: false,
+        kind: "chat",
+        isBot: true,
+      });
+
       try {
         const reply = await chatWithLLM(content, llmHistoryRef.current);
         llmHistoryRef.current.push(
@@ -126,19 +140,12 @@ export const RoomPage = () => {
         if (llmHistoryRef.current.length > 20) {
           llmHistoryRef.current.splice(0, llmHistoryRef.current.length - 20);
         }
-        const { addChatMessage } = useRoomStore.getState();
-        addChatMessage({
-          id: "llm-" + Date.now(),
-          peerId: "llm-assistant",
-          nickname: "上号",
-          content: reply,
-          createdAt: new Date().toISOString(),
-          isLocal: false,
-          kind: "chat",
-          isBot: true,
-        });
+
+        const { replaceChatMessage } = useRoomStore.getState();
+        replaceChatMessage(placeholderId, reply);
       } catch {
-        // LLM errors should not break the chat flow
+        const { replaceChatMessage } = useRoomStore.getState();
+        replaceChatMessage(placeholderId, "助手没接通，稍后再试。");
       } finally {
         setIsLLMLoading(false);
       }

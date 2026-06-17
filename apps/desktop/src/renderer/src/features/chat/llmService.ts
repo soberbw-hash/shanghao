@@ -12,7 +12,7 @@ export interface LlmHistoryEntry {
  */
 export const shouldCallLLM = (message: string): boolean => {
   const trimmed = message.trim();
-  return /^问[：:\s]?/.test(trimmed);
+  return /^问(?:一下)?[：:\s]?/.test(trimmed);
 };
 
 /**
@@ -20,7 +20,7 @@ export const shouldCallLLM = (message: string): boolean => {
  */
 export const extractQuestion = (message: string): string => {
   const trimmed = message.trim();
-  return trimmed.replace(/^问[：:\s]?/, "").trim();
+  return trimmed.replace(/^问(?:一下)?[：:\s]?/, "").trim();
 };
 
 /**
@@ -46,7 +46,7 @@ export const chatWithLLM = async (
 
 const friendlyFallbackMessage = (reason?: LlmChatResponse["reason"]): string => {
   if (reason === "not_configured") {
-    return "助手暂时没接通，让房主配置一下再问我吧。";
+    return "助手还没配置，先让房主接一下。";
   }
-  return "网络开小差了，稍后再问我吧。";
+  return "助手没接通，稍后再试。";
 };
