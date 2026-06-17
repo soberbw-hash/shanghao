@@ -37,7 +37,7 @@ export const defaultSettings: AppSettings = {
   isPushToTalkEnabled: false,
   micMonitorMode: "processed",
   connectionMode: "relay",
-  relayServerUrl: "ws://118.25.103.107:43821",
+  relayServerUrl: "",
   relayAuthToken: "",
   manualDirectHost: "",
   shouldAutoCopyInviteLink: true,
