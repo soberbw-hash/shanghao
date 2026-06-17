@@ -21,101 +21,147 @@ export const OverlayPage = () => {
     return () => document.removeEventListener("contextmenu", handler);
   }, []);
 
-  const members = state.members.filter((member) => !member.isEmptySlot);
-  const activeMember =
-    members.find((member) => member.speakingState === MemberSpeakingState.Speaking) ??
-    members.find((member) => member.isLocal) ??
-    members[0];
+  const onlineMembers = state.members
+    .filter((m) => !m.isEmptySlot)
+    .sort((a, b) => {
+      if (a.speakingState === MemberSpeakingState.Speaking) return -1;
+      if (b.speakingState === MemberSpeakingState.Speaking) return 1;
+      if (a.isLocal) return -1;
+      if (b.isLocal) return 1;
+      return 0;
+    })
+    .slice(0, 5);
 
-  const isSpeaking = activeMember?.speakingState === MemberSpeakingState.Speaking;
-  const isMuted = activeMember?.isMuted ?? false;
-  const isDeafened = activeMember?.isDeafened ?? false;
-  const isReconnecting = activeMember?.presenceState === MemberPresenceState.Reconnecting;
-
-  const getBorderColor = () => {
-    if (isSpeaking) return "rgba(77, 163, 255, 0.6)";
-    if (isMuted || isDeafened) return "rgba(156, 163, 175, 0.4)";
-    if (isReconnecting) return "rgba(245, 158, 11, 0.4)";
-    return "rgba(220, 230, 242, 0.5)";
-  };
-
-  const getStatusColor = () => {
-    if (isSpeaking) return "#4DA3FF";
-    if (isMuted || isDeafened) return "#9CA3AF";
-    if (isReconnecting) return "#F59E0B";
-    return "#18B66A";
-  };
+  const count = onlineMembers.length;
+  const avatarSize = 36;
+  const gap = 4;
+  const padding = 6;
+  const width = Math.max(52, padding * 2 + count * avatarSize + Math.max(0, count - 1) * gap);
 
   return (
     <div
-      className="overlay-capsule drag-region"
+      className="drag-region"
       onContextMenu={(e) => e.preventDefault()}
       style={{
-        width: "48px",
-        height: "48px",
-        borderRadius: "24px",
-        background: "rgba(255, 255, 255, 0.8)",
-        backdropFilter: "blur(16px)",
-        WebkitBackdropFilter: "blur(16px)",
-        border: `2px solid ${getBorderColor()}`,
+        width: `${width}px`,
+        height: `${padding * 2 + avatarSize}px`,
+        borderRadius: "999px",
+        background: "linear-gradient(180deg, rgba(255,255,255,0.72), rgba(255,255,255,0.46))",
+        border: "1px solid rgba(185, 205, 235, 0.45)",
+        backdropFilter: "blur(26px) saturate(180%)",
+        WebkitBackdropFilter: "blur(26px) saturate(180%)",
+        boxShadow: "0 8px 32px rgba(63, 102, 160, 0.12), 0 2px 8px rgba(63, 102, 160, 0.06), inset 0 1px 0 rgba(255, 255, 255, 0.6)",
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
+        gap: `${gap}px`,
+        padding: `${padding}px`,
         position: "relative",
-        boxShadow: `0 2px 8px rgba(30, 45, 70, 0.1), 0 0 0 1px rgba(255, 255, 255, 0.6) inset`,
-        transition: "border-color 300ms ease, box-shadow 300ms ease",
       }}
     >
-      {activeMember ? (
-        <>
+      {onlineMembers.map((member) => {
+        const isSpeaking = member.speakingState === MemberSpeakingState.Speaking;
+        const isMuted = member.isMuted;
+        const isDeafened = member.isDeafened;
+        const isReconnecting = member.presenceState === MemberPresenceState.Reconnecting;
+        const isOffline = member.presenceState === MemberPresenceState.Offline;
+
+        return (
           <div
+            key={member.id}
             style={{
-              width: "40px",
-              height: "40px",
-              borderRadius: "50%",
-              overflow: "hidden",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              background: isSpeaking ? "rgba(77, 163, 255, 0.08)" : "transparent",
-              transition: "background 300ms ease",
+              position: "relative",
+              width: `${avatarSize}px`,
+              height: `${avatarSize}px`,
+              flexShrink: 0,
             }}
           >
-            <img
-              src={getAvatarSrc(activeMember.avatarId)}
-              alt=""
-              draggable={false}
+            <div
               style={{
-                width: "32px",
-                height: "32px",
-                objectFit: "contain",
-                filter: isMuted || isDeafened ? "saturate(0.5)" : "none",
-                transition: "filter 300ms ease",
+                width: "100%",
+                height: "100%",
+                borderRadius: "50%",
+                overflow: "hidden",
+                border: isSpeaking ? "2px solid rgba(77, 163, 255, 0.5)" : "2px solid rgba(255, 255, 255, 0.6)",
+                boxShadow: isSpeaking
+                  ? "0 0 10px rgba(77, 163, 255, 0.4), 0 2px 6px rgba(30, 45, 70, 0.1)"
+                  : "0 2px 6px rgba(30, 45, 70, 0.08)",
+                opacity: isOffline ? 0.5 : 1,
+                transition: "all 300ms ease",
               }}
-            />
+            >
+              <img
+                src={getAvatarSrc(member.avatarId)}
+                alt=""
+                draggable={false}
+                style={{
+                  width: "100%",
+                  height: "100%",
+                  objectFit: "contain",
+                  filter: isMuted || isDeafened ? "saturate(0.5)" : "none",
+                }}
+              />
+            </div>
+            {member.isLocal && isMuted && (
+              <span
+                style={{
+                  position: "absolute",
+                  bottom: -2,
+                  right: -2,
+                  width: 14,
+                  height: 14,
+                  borderRadius: "50%",
+                  background: "white",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  boxShadow: "0 1px 4px rgba(0,0,0,0.15)",
+                }}
+              >
+                <MicOff className="h-2 w-2 text-[#FF5A5A]" />
+              </span>
+            )}
+            {member.isLocal && isDeafened && (
+              <span
+                style={{
+                  position: "absolute",
+                  bottom: -2,
+                  right: -2,
+                  width: 14,
+                  height: 14,
+                  borderRadius: "50%",
+                  background: "white",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  boxShadow: "0 1px 4px rgba(0,0,0,0.15)",
+                }}
+              >
+                <VolumeX className="h-2 w-2 text-[#6366f1]" />
+              </span>
+            )}
+            {isReconnecting && (
+              <span
+                style={{
+                  position: "absolute",
+                  bottom: -2,
+                  right: -2,
+                  width: 14,
+                  height: 14,
+                  borderRadius: "50%",
+                  background: "white",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  boxShadow: "0 1px 4px rgba(0,0,0,0.15)",
+                }}
+              >
+                <RotateCw className="h-2 w-2 text-[#F59E0B] animate-spin" />
+              </span>
+            )}
           </div>
-          <div
-            style={{
-              position: "absolute",
-              bottom: "1px",
-              right: "1px",
-              width: "12px",
-              height: "12px",
-              borderRadius: "50%",
-              background: getStatusColor(),
-              border: "2px solid white",
-              boxShadow: `0 0 4px ${getStatusColor()}40`,
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-            }}
-          >
-            {isMuted && <MicOff className="h-1.5 w-1.5 text-white" />}
-            {isDeafened && <VolumeX className="h-1.5 w-1.5 text-white" />}
-            {isReconnecting && <RotateCw className="h-1.5 w-1.5 text-white animate-spin" />}
-          </div>
-        </>
-      ) : null}
+        );
+      })}
     </div>
   );
 };
