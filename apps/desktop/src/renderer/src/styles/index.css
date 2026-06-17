@@ -9,8 +9,8 @@
   --sg-bg-0: #f7fbff;
   --sg-bg-1: #eef5ff;
   --sg-ink-0: #172033;
-  --sg-ink-1: #52657d;
-  --sg-ink-2: #8a9aaf;
+  --sg-ink-1: #44546A;
+  --sg-ink-2: #7B8798;
 
   --sg-blue: #4DA3FF;
   --sg-blue-deep: #2F6FCC;
@@ -93,6 +93,22 @@ body {
 
 button, input, select, textarea { font: inherit; }
 img { user-select: none; }
+
+/* ── 窗口拖动 ── */
+
+.drag-region {
+  -webkit-app-region: drag;
+}
+
+.no-drag,
+button,
+input,
+select,
+textarea,
+a,
+[role="button"] {
+  -webkit-app-region: no-drag;
+}
 
 /* ── 液态玻璃组件 ── */
 
@@ -223,6 +239,7 @@ img { user-select: none; }
   backdrop-filter: blur(var(--sg-glass-blur)) saturate(var(--sg-glass-saturate));
   -webkit-backdrop-filter: blur(var(--sg-glass-blur)) saturate(var(--sg-glass-saturate));
   position: relative;
+  isolation: isolate;
 }
 
 .entry-card::before,
@@ -235,8 +252,18 @@ img { user-select: none; }
   inset: 1px 1px auto 1px;
   height: 42%;
   border-radius: inherit;
-  background: linear-gradient(180deg, rgba(255,255,255,.62), rgba(255,255,255,0));
+  background: linear-gradient(180deg, rgba(255,255,255,.55), rgba(255,255,255,0));
   pointer-events: none;
+  z-index: 0;
+}
+
+.entry-card > *,
+.room-topbar > *,
+.island-panel > *,
+.response-panel > *,
+.voice-dock > * {
+  position: relative;
+  z-index: 1;
 }
 
 .entry-card {
@@ -301,6 +328,15 @@ img { user-select: none; }
 }
 
 /* ── 角色 ── */
+
+.animal-sprite-img {
+  width: auto;
+  height: auto;
+  max-width: 96px;
+  max-height: 96px;
+  object-fit: contain;
+  object-position: center bottom;
+}
 
 .room-character-sprite {
   position: relative;

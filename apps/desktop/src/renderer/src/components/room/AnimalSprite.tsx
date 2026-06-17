@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 
 import type { BuiltInAvatarId, MemberActivity } from "@private-voice/shared";
 
@@ -24,9 +24,9 @@ interface AnimalSpriteProps {
 
 const animationClasses: Record<AnimationState, string> = {
   idle: "animate-idle",
-  gaming: "animate-gaming",
-  drinking: "animate-drinking",
-  fitness: "animate-fitness",
+  gaming: "animate-speaking",
+  drinking: "animate-idle",
+  fitness: "animate-speaking",
   away: "animate-away",
   speaking: "animate-speaking",
 };
@@ -55,7 +55,7 @@ export const AnimalSprite = ({
       <img
         src={getAvatarSrc(avatarId)}
         alt=""
-        className={`h-[96px] w-[96px] object-contain object-center ${className}`}
+        className={`animal-sprite-img ${className}`}
         draggable={false}
       />
     );
@@ -65,7 +65,7 @@ export const AnimalSprite = ({
     <img
       src={currentSrc}
       alt=""
-      className={`h-[96px] w-[96px] object-contain object-center ${animClass} ${className}`}
+      className={`animal-sprite-img ${animClass} ${className}`}
       draggable={false}
       onError={() => setHasError(true)}
     />

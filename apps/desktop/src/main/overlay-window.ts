@@ -10,6 +10,7 @@ const devServerUrl = "http://127.0.0.1:5173";
 export class OverlayWindowController {
   private window: BrowserWindow | null = null;
   private state?: OverlayState;
+  private snapX = 0;
 
   toggle(): boolean {
     if (this.window && !this.window.isDestroyed()) {
@@ -30,30 +31,54 @@ export class OverlayWindowController {
     this.state = state;
     if (this.window && !this.window.isDestroyed() && !this.window.webContents.isLoading()) {
       this.window.webContents.send(IPC_CHANNELS.overlay.state, state);
+      this.resizeForMembers(state.members.filter((m) => !m.isEmptySlot).length);
     }
+  }
+
+  private resizeForMembers(onlineCount: number): void {
+    if (!this.window || this.window.isDestroyed()) return;
+
+    const avatarSize = 40;
+    const gap = 6;
+    const padding = 8;
+    const count = Math.max(1, Math.min(onlineCount, 5));
+    const width = padding * 2 + count * avatarSize + Math.max(0, count - 1) * gap;
+    const height = padding * 2 + avatarSize;
+
+    const bounds = this.window.getBounds();
+    this.window.setBounds({
+      x: this.snapX,
+      y: bounds.y,
+      width: Math.max(56, width),
+      height: Math.max(56, height),
+    });
   }
 
   private create(): void {
     const boundsPath = path.join(app.getPath("userData"), "overlay-bounds.json");
-    let savedBounds: { x?: number; y?: number } = {};
+    let savedY: number | undefined;
     try {
       if (existsSync(boundsPath)) {
-        savedBounds = JSON.parse(readFileSync(boundsPath, "utf8")) as typeof savedBounds;
+        const saved = JSON.parse(readFileSync(boundsPath, "utf8")) as { y?: number };
+        savedY = saved.y;
       }
     } catch {
-      savedBounds = {};
+      // ignore
     }
 
     const workArea = screen.getPrimaryDisplay().workArea;
+    this.snapX = workArea.x + 4;
+    const y = savedY ?? workArea.y + Math.round((workArea.height - 56) / 2);
+
     const window = new BrowserWindow({
-      width: 48,
-      height: 48,
-      x: savedBounds.x ?? workArea.x + 12,
-      y: savedBounds.y ?? workArea.y + Math.round((workArea.height - 48) / 2),
-      minWidth: 48,
-      minHeight: 48,
-      maxWidth: 48,
-      maxHeight: 48,
+      width: 56,
+      height: 56,
+      x: this.snapX,
+      y,
+      minWidth: 56,
+      minHeight: 56,
+      maxWidth: 280,
+      maxHeight: 64,
       frame: false,
       transparent: true,
       backgroundColor: "#00000000",
@@ -91,15 +116,17 @@ export class OverlayWindowController {
     const saveBounds = () => {
       try {
         const bounds = window.getBounds();
-        writeFileSync(boundsPath, JSON.stringify({ x: bounds.x, y: bounds.y }), "utf8");
+        window.setBounds({ x: this.snapX, y: bounds.y, width: bounds.width, height: bounds.height });
+        writeFileSync(boundsPath, JSON.stringify({ y: bounds.y }), "utf8");
       } catch {
-        // Position memory is optional and must not affect the overlay.
+        // ignore
       }
     };
     window.on("moved", saveBounds);
     window.webContents.once("did-finish-load", () => {
       if (this.state) {
         window.webContents.send(IPC_CHANNELS.overlay.state, this.state);
+        this.resizeForMembers(this.state.members.filter((m) => !m.isEmptySlot).length);
       }
       window.showInactive();
     });

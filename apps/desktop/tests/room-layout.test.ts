@@ -36,7 +36,7 @@ test("room uses a real always-on-top overlay and a five-second knock cooldown", 
   assert.equal(overlaySource.includes("alwaysOnTop: true"), true);
   assert.equal(overlaySource.includes("skipTaskbar: true"), true);
   assert.equal(overlaySource.includes("overlay-bounds.json"), true);
-  assert.equal(overlaySource.includes("width: 48"), true);
+  assert.equal(overlaySource.includes("width: 56"), true);
   assert.equal(overlaySource.includes("resizable: false"), true);
   assert.equal(chatSource.includes('message.kind === "system"'), true);
   assert.equal(chatSource.includes("AvatarPlaceholder"), true);
