@@ -1,13 +1,6 @@
 import { ExportTaskState } from "../enums/app.enums";
 import type { RoomConnectionState, RoomLifecycleState } from "../enums/app.enums";
-import type {
-  ConnectionMode,
-  CloudflareTunnelStatus,
-  DirectHostProbeSummary,
-  ProxyDiagnostics,
-  RelayStatusSnapshot,
-  TailscaleStatus,
-} from "./settings.types";
+import type { RelayStatusSnapshot } from "./settings.types";
 
 export type LogCategory =
   | "app"
@@ -17,10 +10,6 @@ export type LogCategory =
   | "audio"
   | "devices"
   | "recording"
-  | "tailscale"
-  | "connection-mode"
-  | "cloudflare-tunnel"
-  | "proxy-diagnostics"
   | "relay"
   | "updates";
 
@@ -28,40 +17,26 @@ export interface LogEntry {
   category: LogCategory;
   level: "debug" | "info" | "warn" | "error";
   message: string;
-  timestamp: string;
   context?: Record<string, unknown>;
-}
-
-export interface DiagnosticsBundleSummary {
-  appVersion?: string;
-  protocolVersion?: string;
-  buildNumber?: string;
-  connectionMode?: ConnectionMode;
-  inviteAddress?: string;
-  localSignalingUrl?: string;
-  selectedHost?: string;
-  candidateAddresses?: string[];
-  addressSource?: string;
-  proxy?: ProxyDiagnostics;
-  tailscale?: TailscaleStatus;
-  directHost?: DirectHostProbeSummary;
-  relay?: RelayStatusSnapshot;
-  cloudflareTunnel?: CloudflareTunnelStatus;
-  exportedAt: string;
+  timestamp: string;
 }
 
 export interface DiagnosticsSnapshot {
+  version: string;
+  platform: string;
   logsDirectory: string;
-  lastExportState: ExportTaskState;
-  lastExportPath?: string;
-  lastBundlePath?: string;
-  lastUpdateCheckMessage?: string;
+  relay?: RelayStatusSnapshot;
+  logStats: Record<string, number>;
+  exportTask?: {
+    state: ExportTaskState;
+    filePath?: string;
+    error?: string;
+  };
 }
 
 export interface RendererDiagnosticsSummary {
   roomLifecycleState: RoomLifecycleState;
   roomConnectionState: RoomConnectionState;
-  connectionMode: ConnectionMode;
   currentRoomId?: string;
   currentPeerId?: string;
   reconnectAttempts: number;
@@ -69,21 +44,23 @@ export interface RendererDiagnosticsSummary {
   lastSocketCloseReason?: string;
   lastSocketClosedAt?: string;
   activeClientExists: boolean;
-  audioRelayState: "active" | "inactive";
+  audioRelayState: string;
   localStreamActive: boolean;
   remotePeerCount: number;
   roomSnapshotRevision: number;
   chatSendFailures: number;
-  joinStage?: string;
-  wsOpened?: boolean;
-  joinRoomSent?: boolean;
-  joinAckReceived?: boolean;
-  roomSnapshotReceived?: boolean;
-  lastServerError?: string;
   serverClockOffsetMs?: number;
   audioStreamEpoch?: number;
   droppedExpiredChunks?: number;
   droppedSendChunks?: number;
-  perPeerAudioStatus?: Array<Record<string, unknown>>;
-  audioTimeline?: Array<Record<string, unknown>>;
+  perPeerAudioStatus?: Record<string, string>;
+  audioTimeline?: unknown[];
+}
+
+export interface DiagnosticsBundleSummary {
+  version: string;
+  platform: string;
+  exportedAt: string;
+  logStats: Record<string, number>;
+  relay?: RelayStatusSnapshot;
 }

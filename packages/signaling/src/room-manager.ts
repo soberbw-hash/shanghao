@@ -43,7 +43,7 @@ export class RoomManager {
       appVersion: "unknown",
       protocolVersion: APP_PROTOCOL_VERSION,
       buildNumber: APP_BUILD_NUMBER,
-      connectionMode: "direct_host",
+      connectionMode: "relay",
     };
 
     this.rooms.set(roomId, room);

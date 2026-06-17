@@ -1,5 +1,4 @@
 import {
-  HostSessionState,
   MemberJoinState,
   MemberPresenceState,
   MemberSpeakingState,
@@ -8,10 +7,6 @@ import {
 } from "../enums/app.enums";
 import type {
   BuiltInAvatarId,
-  ConnectionMode,
-  CloudflareTunnelStatus,
-  DirectHostProbeSummary,
-  ProxyDiagnostics,
   RelayStatusSnapshot,
 } from "./settings.types";
 
@@ -79,11 +74,8 @@ export interface RoomSummary {
   memberCount: number;
   members: RoomMember[];
   signalingUrl?: string;
-  connectionMode: ConnectionMode;
   connectionState: RoomConnectionState;
   lifecycleState: RoomLifecycleState;
-  hostAddress?: string;
-  hostSessionState?: HostSessionState;
   latestFailureReason?: string;
   recentHostEvents?: HostEvent[];
 }
@@ -94,62 +86,4 @@ export interface ConnectionHealth {
   packetLossPercent: number;
   reconnectAttempt: number;
   lastUpdatedAt?: string;
-}
-
-export interface HostSessionInfo {
-  roomId: string;
-  roomName: string;
-  hostDisplayName: string;
-  signalingPort?: number;
-  signalingUrl: string;
-  localSignalingUrl?: string;
-  connectionMode: ConnectionMode;
-  hostState: HostSessionState;
-  tailscaleIp?: string;
-  hostAddress: string;
-  addressSource:
-    | "magicdns"
-    | "tailscale_ip"
-    | "lan_ipv4"
-    | "public_ip"
-    | "relay"
-    | "cloudflare_tunnel"
-    | "manual_public_host"
-    | "unknown";
-  alternativeAddresses?: string[];
-  protocolVersion: string;
-  appVersion: string;
-  buildNumber: string;
-  directHostProbe?: DirectHostProbeSummary;
-  relayStatus?: RelayStatusSnapshot;
-  cloudflareTunnel?: CloudflareTunnelStatus;
-  inviteExpiresAt?: string;
-}
-
-export interface JoinRoomDiagnostic {
-  signalingUrl: string;
-  connectionMode: ConnectionMode;
-  host?: string;
-  port?: number;
-  isUrlValid: boolean;
-  isReachable: boolean;
-  addressSource:
-    | "magicdns"
-    | "tailscale_ip"
-    | "lan_ipv4"
-    | "public_ip"
-    | "relay"
-    | "cloudflare_tunnel"
-    | "manual_public_host"
-    | "unknown";
-  tailscaleState?: string;
-  failureStage: "validation" | "network" | "websocket" | "version" | "relay" | "unknown";
-  message: string;
-  details: string[];
-  proxyDiagnostics?: ProxyDiagnostics;
-  protocolVersion?: string;
-  appVersion?: string;
-  buildNumber?: string;
-  relayStatus?: RelayStatusSnapshot;
-  directHostProbe?: DirectHostProbeSummary;
 }

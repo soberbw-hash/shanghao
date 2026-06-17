@@ -1,9 +1,6 @@
 import type {
   AppSettings,
-  NetworkStatusSnapshot,
   ProfileAvatarSelection,
-  ProxyDiagnostics,
-  TailscaleStatus,
   UpdateCheckResult,
   UpdateStatus,
 } from "./settings.types";
@@ -14,7 +11,7 @@ import type {
   LogEntry,
   RendererDiagnosticsSummary,
 } from "./diagnostics.types";
-import type { HostSessionInfo, JoinRoomDiagnostic, RoomMember } from "./room.types";
+import type { RoomMember } from "./room.types";
 import type {
   RecordingExportPayload,
   RecordingExportResponse,
@@ -63,7 +60,7 @@ export interface OverlayState {
 }
 
 export interface GameDetectionSnapshot {
-  gameName?: "三角洲行动" | "英雄联盟" | "无畏契约" | "CS2" | "原神" | "永劫无间" | "Apex英雄" | "绝地求生" | "守望先锋" | "蛋仔派对" | "我的世界" | "Roblox";
+  gameName?: string;
   detectedAt?: string;
   checkedAt: string;
 }
@@ -104,20 +101,11 @@ export interface DesktopApi {
     snapshot: () => Promise<DiagnosticsSnapshot>;
     exportLogs: () => Promise<DiagnosticsSnapshot>;
     exportBundle: (rendererState?: RendererDiagnosticsSummary) => Promise<DiagnosticsSnapshot>;
-    openLogsDirectory: () => Promise<void>;
+    openLogsDirectories: () => Promise<void>;
   };
   shortcuts: {
     configureMute: (accelerator: string) => Promise<void>;
     onMuteTriggered: (listener: () => void) => () => void;
-  };
-  tailscale: {
-    checkStatus: () => Promise<TailscaleStatus>;
-    openInstallGuide: () => Promise<void>;
-  };
-  network: {
-    getSnapshot: () => Promise<NetworkStatusSnapshot>;
-    getProxyDiagnostics: () => Promise<ProxyDiagnostics>;
-    exportSummary: () => Promise<DiagnosticsBundleSummary>;
   };
   updates: {
     check: () => Promise<UpdateCheckResult>;
@@ -125,19 +113,6 @@ export interface DesktopApi {
     install: () => Promise<void>;
     onStatus: (listener: (status: UpdateStatus) => void) => () => void;
     openReleases: () => Promise<void>;
-  };
-  host: {
-    start: (
-      roomName: string,
-      nickname: string,
-      connectionMode: AppSettings["connectionMode"],
-    ) => Promise<HostSessionInfo>;
-    stop: () => Promise<void>;
-    diagnoseJoin: (
-      signalingUrl: string,
-      connectionMode: AppSettings["connectionMode"],
-    ) => Promise<JoinRoomDiagnostic>;
-    onSessionUpdated: (listener: (session?: HostSessionInfo) => void) => () => void;
   };
   signaling: {
     connect: (signalingUrl: string) => Promise<void>;
