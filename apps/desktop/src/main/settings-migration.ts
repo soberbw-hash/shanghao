@@ -8,7 +8,7 @@ import {
 
 import { normalizeRelayServerUrl } from "./relay-url";
 
-export type RawSettings = Partial<AppSettings> & {
+export type RawSettings = Partial<AppSettings> & Record<string, unknown> & {
   settingsSchemaVersion?: number;
 };
 
@@ -20,10 +20,8 @@ export const defaultSettings: AppSettings = {
   avatarId: "fox",
   avatarPath: undefined,
   hasCompletedProfileSetup: false,
-  channelAccessCode: "",
   minimizeToTray: false,
   reduceMotion: false,
-  showFloatingBarOnJoin: false,
   launchOnStartup: false,
   preferredInputDeviceId: undefined,
   preferredOutputDeviceId: undefined,
@@ -36,11 +34,7 @@ export const defaultSettings: AppSettings = {
   isAutoGainControlEnabled: true,
   isPushToTalkEnabled: false,
   micMonitorMode: "processed",
-  connectionMode: "relay",
   relayServerUrl: "",
-  relayAuthToken: "",
-  manualDirectHost: "",
-  shouldAutoCopyInviteLink: true,
   isMicOnSoundEnabled: true,
   isMicOffSoundEnabled: true,
   isMemberJoinSoundEnabled: true,
@@ -63,19 +57,17 @@ const trimText = (value?: string): string | undefined => {
   return trimmed ? trimmed : undefined;
 };
 
+const trimUnknownText = (value: unknown): string | undefined =>
+  typeof value === "string" ? trimText(value) : undefined;
+
+const normalizeBoolean = (value: unknown, fallback: boolean): boolean =>
+  typeof value === "boolean" ? value : fallback;
+
 const normalizeSampleRate = (value?: string): AppSettings["preferredSampleRate"] =>
   value === "44100" || value === "48000" ? value : "auto";
 
 const normalizeMonitorMode = (value?: string): AppSettings["micMonitorMode"] =>
   value === "raw" ? "raw" : "processed";
-
-const normalizeConnectionMode = (value?: string): AppSettings["connectionMode"] =>
-  value === "cloudflare_tunnel" ||
-  value === "relay" ||
-  value === "tailscale" ||
-  value === "direct_host"
-    ? value
-    : defaultSettings.connectionMode;
 
 const normalizeAvatarId = (value: unknown): AppSettings["avatarId"] => {
   if (value === "penguin") return "duck";
@@ -90,30 +82,49 @@ export const migrateSettings = (raw: RawSettings): MigrationResult => {
       : 0;
 
   const merged: AppSettings = {
-    ...defaultSettings,
-    ...raw,
     settingsSchemaVersion: SETTINGS_SCHEMA_VERSION,
     profileSchemaVersion: PROFILE_SCHEMA_VERSION,
     nickname: trimText(raw.nickname) ?? "",
     roomName: trimText(raw.roomName) ?? DEFAULT_ROOM_NAME,
     avatarId: normalizeAvatarId(raw.avatarId),
     avatarPath: undefined,
-    channelAccessCode: trimText(raw.channelAccessCode) ?? "",
-    globalMuteShortcut: trimText(raw.globalMuteShortcut) ?? "",
-    pushToTalkShortcut: trimText(raw.pushToTalkShortcut) ?? defaultSettings.pushToTalkShortcut,
-    relayServerUrl: normalizeRelayServerUrl(raw.relayServerUrl) ?? defaultSettings.relayServerUrl,
-    relayAuthToken: trimText(raw.relayAuthToken) ?? "",
-    manualDirectHost: trimText(raw.manualDirectHost) ?? "",
-    preferredSampleRate: normalizeSampleRate(raw.preferredSampleRate),
-    micMonitorMode: normalizeMonitorMode(raw.micMonitorMode),
-    connectionMode: normalizeConnectionMode(raw.connectionMode),
-    shouldAutoCopyInviteLink: true,
+    hasCompletedProfileSetup: normalizeBoolean(
+      raw.hasCompletedProfileSetup,
+      defaultSettings.hasCompletedProfileSetup,
+    ),
+    minimizeToTray: normalizeBoolean(raw.minimizeToTray, defaultSettings.minimizeToTray),
+    reduceMotion: normalizeBoolean(raw.reduceMotion, defaultSettings.reduceMotion),
+    launchOnStartup: normalizeBoolean(raw.launchOnStartup, defaultSettings.launchOnStartup),
+    preferredInputDeviceId: trimUnknownText(raw.preferredInputDeviceId),
+    preferredOutputDeviceId: trimUnknownText(raw.preferredOutputDeviceId),
+    globalMuteShortcut: trimUnknownText(raw.globalMuteShortcut) ?? "",
+    pushToTalkShortcut:
+      trimUnknownText(raw.pushToTalkShortcut) ?? defaultSettings.pushToTalkShortcut,
+    relayServerUrl:
+      normalizeRelayServerUrl(trimUnknownText(raw.relayServerUrl)) ?? defaultSettings.relayServerUrl,
+    preferredSampleRate: normalizeSampleRate(trimUnknownText(raw.preferredSampleRate)),
+    micMonitorMode: normalizeMonitorMode(trimUnknownText(raw.micMonitorMode)),
+    isNoiseSuppressionEnabled: raw.isNoiseSuppressionEnabled !== false,
+    isEchoCancellationEnabled: raw.isEchoCancellationEnabled !== false,
+    isAutoGainControlEnabled: raw.isAutoGainControlEnabled !== false,
+    isPushToTalkEnabled: raw.isPushToTalkEnabled === true,
     isMicOnSoundEnabled: true,
     isMicOffSoundEnabled: true,
     isMemberJoinSoundEnabled: true,
     isMemberLeaveSoundEnabled: true,
     isConnectionSoundEnabled: true,
     isUiSoundEnabled: raw.isUiSoundEnabled !== false,
+    isBackgroundUpdateCheckEnabled: raw.isBackgroundUpdateCheckEnabled !== false,
+    isAutoDownloadUpdateEnabled:
+      typeof raw.isAutoDownloadUpdateEnabled === "boolean"
+        ? raw.isAutoDownloadUpdateEnabled
+        : defaultSettings.isAutoDownloadUpdateEnabled,
+    isAutoInstallUpdateEnabled:
+      typeof raw.isAutoInstallUpdateEnabled === "boolean"
+        ? raw.isAutoInstallUpdateEnabled
+        : defaultSettings.isAutoInstallUpdateEnabled,
+    lastUpdateCheckAt: trimUnknownText(raw.lastUpdateCheckAt),
+    lastUpdateVersionSeen: trimUnknownText(raw.lastUpdateVersionSeen),
     inputLevelThreshold:
       typeof raw.inputLevelThreshold === "number" && raw.inputLevelThreshold > 0
         ? Math.min(1, raw.inputLevelThreshold)

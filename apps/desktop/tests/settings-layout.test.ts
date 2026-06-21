@@ -3,38 +3,33 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import test from "node:test";
 
-const appearanceCardPath = path.resolve(
-  process.cwd(),
-  "src/renderer/src/components/settings/AppearanceSettingsCard.tsx",
-);
-const networkCardPath = path.resolve(
-  process.cwd(),
-  "src/renderer/src/components/settings/NetworkSettingsCard.tsx",
-);
 const audioCardPath = path.resolve(
   process.cwd(),
   "src/renderer/src/components/settings/AudioSettingsCard.tsx",
 );
 const settingsPagePath = path.resolve(process.cwd(), "src/renderer/src/pages/SettingsPage.tsx");
+const homePagePath = path.resolve(process.cwd(), "src/renderer/src/pages/HomePage.tsx");
 
 test("appearance settings no longer expose fixed prompt sound toggles", () => {
-  const source = readFileSync(appearanceCardPath, "utf8");
+  const source = readFileSync(settingsPagePath, "utf8");
 
   assert.equal(source.includes("开麦提示音"), false);
   assert.equal(source.includes("关麦提示音"), false);
   assert.equal(source.includes("成员进入提示音"), false);
   assert.equal(source.includes("成员退出提示音"), false);
   assert.equal(source.includes("连接成功"), false);
+  assert.equal(source.includes("界面提示音"), true);
+  assert.equal(source.includes("关闭窗口时留在后台"), true);
 });
 
-test("network settings provide visible save and connection test feedback", () => {
-  const source = readFileSync(networkCardPath, "utf8");
+test("home page exposes only the fixed channel server address entry", () => {
+  const source = readFileSync(homePagePath, "utf8");
 
+  assert.equal(source.includes("服务器地址"), true);
+  assert.equal(source.includes("进入频道"), true);
   assert.equal(source.includes("自动复制开房地址"), false);
-  assert.equal(source.includes("正在测试…"), true);
-  assert.equal(source.includes("服务器可用"), true);
-  assert.equal(source.includes("已切换为"), true);
-  assert.equal(source.includes("测试地址"), true);
+  assert.equal(source.includes("连接模式"), false);
+  assert.equal(source.includes("开启房间"), false);
 });
 
 test("advanced audio settings are collapsed by default", () => {

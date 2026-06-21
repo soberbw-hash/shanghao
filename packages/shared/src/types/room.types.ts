@@ -1,19 +1,11 @@
 import {
-  HostSessionState,
   MemberJoinState,
   MemberPresenceState,
   MemberSpeakingState,
   RoomConnectionState,
   RoomLifecycleState,
 } from "../enums/app.enums";
-import type {
-  BuiltInAvatarId,
-  ConnectionMode,
-  CloudflareTunnelStatus,
-  DirectHostProbeSummary,
-  ProxyDiagnostics,
-  RelayStatusSnapshot,
-} from "./settings.types";
+import type { BuiltInAvatarId, RelayStatusSnapshot } from "./settings.types";
 
 export interface ChatMessage {
   id: string;
@@ -64,7 +56,7 @@ export interface RoomMember {
   connectionQuality: "excellent" | "good" | "poor";
 }
 
-export interface HostEvent {
+export interface RoomEvent {
   id: string;
   level: "info" | "success" | "warning" | "error";
   message: string;
@@ -75,17 +67,14 @@ export interface HostEvent {
 export interface RoomSummary {
   roomId: string;
   roomName: string;
-  hostId?: string;
   memberCount: number;
   members: RoomMember[];
   signalingUrl?: string;
-  connectionMode: ConnectionMode;
   connectionState: RoomConnectionState;
   lifecycleState: RoomLifecycleState;
-  hostAddress?: string;
-  hostSessionState?: HostSessionState;
   latestFailureReason?: string;
-  recentHostEvents?: HostEvent[];
+  recentRoomEvents?: RoomEvent[];
+  relayStatus?: RelayStatusSnapshot;
 }
 
 export interface ConnectionHealth {
@@ -94,62 +83,4 @@ export interface ConnectionHealth {
   packetLossPercent: number;
   reconnectAttempt: number;
   lastUpdatedAt?: string;
-}
-
-export interface HostSessionInfo {
-  roomId: string;
-  roomName: string;
-  hostDisplayName: string;
-  signalingPort?: number;
-  signalingUrl: string;
-  localSignalingUrl?: string;
-  connectionMode: ConnectionMode;
-  hostState: HostSessionState;
-  tailscaleIp?: string;
-  hostAddress: string;
-  addressSource:
-    | "magicdns"
-    | "tailscale_ip"
-    | "lan_ipv4"
-    | "public_ip"
-    | "relay"
-    | "cloudflare_tunnel"
-    | "manual_public_host"
-    | "unknown";
-  alternativeAddresses?: string[];
-  protocolVersion: string;
-  appVersion: string;
-  buildNumber: string;
-  directHostProbe?: DirectHostProbeSummary;
-  relayStatus?: RelayStatusSnapshot;
-  cloudflareTunnel?: CloudflareTunnelStatus;
-  inviteExpiresAt?: string;
-}
-
-export interface JoinRoomDiagnostic {
-  signalingUrl: string;
-  connectionMode: ConnectionMode;
-  host?: string;
-  port?: number;
-  isUrlValid: boolean;
-  isReachable: boolean;
-  addressSource:
-    | "magicdns"
-    | "tailscale_ip"
-    | "lan_ipv4"
-    | "public_ip"
-    | "relay"
-    | "cloudflare_tunnel"
-    | "manual_public_host"
-    | "unknown";
-  tailscaleState?: string;
-  failureStage: "validation" | "network" | "websocket" | "version" | "relay" | "unknown";
-  message: string;
-  details: string[];
-  proxyDiagnostics?: ProxyDiagnostics;
-  protocolVersion?: string;
-  appVersion?: string;
-  buildNumber?: string;
-  relayStatus?: RelayStatusSnapshot;
-  directHostProbe?: DirectHostProbeSummary;
 }

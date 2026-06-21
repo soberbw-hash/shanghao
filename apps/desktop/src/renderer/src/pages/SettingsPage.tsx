@@ -89,7 +89,7 @@ export const SettingsPage = () => {
     const rendererState: RendererDiagnosticsSummary = {
       roomLifecycleState: room.lifecycleState,
       roomConnectionState: room.connectionState,
-      connectionMode: room.connectionMode,
+      serverUrl: room.signalingUrl ?? settings.relayServerUrl,
       currentRoomId: room.roomId,
       currentPeerId: runtime?.currentPeerId,
       reconnectAttempts: runtime?.reconnectAttempts ?? 0,

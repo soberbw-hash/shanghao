@@ -4,7 +4,6 @@ import {
   HEARTBEAT_INTERVAL_MS,
   MAX_ROOM_MEMBERS,
   SIGNALING_PING_TIMEOUT_MS,
-  type ConnectionMode,
 } from "@private-voice/shared";
 
 import type { PeerSession } from "./peer-manager";
@@ -14,23 +13,18 @@ export interface SignalingRoom {
   roomId: string;
   roomName: string;
   peers: PeerManager;
-  relayToken?: string;
   revision: number;
   appVersion: string;
   protocolVersion: string;
   buildNumber: string;
-  connectionMode: ConnectionMode;
 }
 
 export class RoomManager {
   private readonly rooms = new Map<string, SignalingRoom>();
 
-  getOrCreateRoom(roomId: string, roomName: string, relayToken?: string): SignalingRoom {
+  getOrCreateRoom(roomId: string, roomName: string): SignalingRoom {
     const existing = this.rooms.get(roomId);
     if (existing) {
-      if (!existing.relayToken && relayToken) {
-        existing.relayToken = relayToken;
-      }
       return existing;
     }
 
@@ -38,12 +32,10 @@ export class RoomManager {
       roomId,
       roomName,
       peers: new PeerManager(),
-      relayToken,
       revision: 0,
       appVersion: "unknown",
       protocolVersion: APP_PROTOCOL_VERSION,
       buildNumber: APP_BUILD_NUMBER,
-      connectionMode: "direct_host",
     };
 
     this.rooms.set(roomId, room);
@@ -64,8 +56,8 @@ export class RoomManager {
     };
   }
 
-  addPeer(roomId: string, roomName: string, session: PeerSession, relayToken?: string): SignalingRoom {
-    const room = this.getOrCreateRoom(roomId, roomName, relayToken);
+  addPeer(roomId: string, roomName: string, session: PeerSession): SignalingRoom {
+    const room = this.getOrCreateRoom(roomId, roomName);
     room.peers.addPeer(session);
     return room;
   }

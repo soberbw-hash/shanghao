@@ -1,20 +1,16 @@
 import type {
   AppSettings,
-  NetworkStatusSnapshot,
   ProfileAvatarSelection,
-  ProxyDiagnostics,
-  TailscaleStatus,
   UpdateCheckResult,
   UpdateStatus,
 } from "./settings.types";
 import type {
-  DiagnosticsBundleSummary,
   DiagnosticsSnapshot,
   LogCategory,
   LogEntry,
   RendererDiagnosticsSummary,
 } from "./diagnostics.types";
-import type { HostSessionInfo, JoinRoomDiagnostic, RoomMember } from "./room.types";
+import type { RoomMember } from "./room.types";
 import type {
   RecordingExportPayload,
   RecordingExportResponse,
@@ -110,34 +106,12 @@ export interface DesktopApi {
     configureMute: (accelerator: string) => Promise<void>;
     onMuteTriggered: (listener: () => void) => () => void;
   };
-  tailscale: {
-    checkStatus: () => Promise<TailscaleStatus>;
-    openInstallGuide: () => Promise<void>;
-  };
-  network: {
-    getSnapshot: () => Promise<NetworkStatusSnapshot>;
-    getProxyDiagnostics: () => Promise<ProxyDiagnostics>;
-    exportSummary: () => Promise<DiagnosticsBundleSummary>;
-  };
   updates: {
     check: () => Promise<UpdateCheckResult>;
     download: () => Promise<void>;
     install: () => Promise<void>;
     onStatus: (listener: (status: UpdateStatus) => void) => () => void;
     openReleases: () => Promise<void>;
-  };
-  host: {
-    start: (
-      roomName: string,
-      nickname: string,
-      connectionMode: AppSettings["connectionMode"],
-    ) => Promise<HostSessionInfo>;
-    stop: () => Promise<void>;
-    diagnoseJoin: (
-      signalingUrl: string,
-      connectionMode: AppSettings["connectionMode"],
-    ) => Promise<JoinRoomDiagnostic>;
-    onSessionUpdated: (listener: (session?: HostSessionInfo) => void) => () => void;
   };
   signaling: {
     connect: (signalingUrl: string) => Promise<void>;

@@ -36,7 +36,6 @@ const openPeer = async (peerId) => {
     appVersion: "dev",
     protocolVersion: APP_PROTOCOL_VERSION,
     buildNumber: "three-peer-check",
-    connectionMode: "relay",
   }));
   peers.set(peerId, socket);
   return socket;

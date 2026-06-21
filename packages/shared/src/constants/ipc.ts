@@ -40,27 +40,12 @@ export const IPC_CHANNELS = {
     configureMute: "shortcuts:configure-mute",
     muteTriggered: "shortcuts:mute-triggered",
   },
-  tailscale: {
-    checkStatus: "tailscale:check-status",
-    openInstallGuide: "tailscale:open-install-guide",
-  },
-  network: {
-    getSnapshot: "network:get-snapshot",
-    getProxyDiagnostics: "network:get-proxy-diagnostics",
-    exportSummary: "network:export-summary",
-  },
   updates: {
     check: "updates:check",
     download: "updates:download",
     install: "updates:install",
     status: "updates:status",
     openReleases: "updates:open-releases",
-  },
-  host: {
-    start: "host:start",
-    stop: "host:stop",
-    diagnoseJoin: "host:diagnose-join",
-    sessionUpdated: "host:session-updated",
   },
   signaling: {
     connect: "signaling:connect",

@@ -35,7 +35,7 @@ export class SettingsStore {
         avatarId: settings.avatarId,
         profileSchemaVersion: settings.profileSchemaVersion,
         profileReady: settings.hasCompletedProfileSetup,
-        connectionMode: settings.connectionMode,
+        serverConfigured: Boolean(settings.relayServerUrl?.trim()),
       });
       return this.cachedSettings;
     } catch (error) {
@@ -64,7 +64,7 @@ export class SettingsStore {
       schemaVersion: this.cachedSettings.settingsSchemaVersion,
       avatarId: this.cachedSettings.avatarId,
       nickname: this.cachedSettings.nickname,
-      connectionMode: this.cachedSettings.connectionMode,
+      serverConfigured: Boolean(this.cachedSettings.relayServerUrl?.trim()),
       preferredSampleRate: this.cachedSettings.preferredSampleRate,
       micMonitorMode: this.cachedSettings.micMonitorMode,
     });

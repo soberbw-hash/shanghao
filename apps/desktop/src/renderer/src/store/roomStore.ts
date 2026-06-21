@@ -2,20 +2,17 @@ import { create } from "zustand";
 
 import {
   DEFAULT_ROOM_NAME,
-  HostSessionState,
   MAX_ROOM_MEMBERS,
   MemberJoinState,
   MemberPresenceState,
   MemberSpeakingState,
   RoomConnectionState,
   RoomLifecycleState,
-  type ChatMessage,
   type BuiltInAvatarId,
+  type ChatMessage,
   type ConnectionHealth,
-  type ConnectionMode,
-  type HostEvent,
-  type HostSessionInfo,
   type MemberActivity,
+  type RoomEvent,
   type RoomMember,
   type RoomSummary,
   type SceneZoneId,
@@ -30,8 +27,6 @@ interface LocalProfilePayload {
 
 interface RoomStoreState {
   room: RoomSummary;
-  hostSession?: HostSessionInfo;
-  joinSignalUrl: string;
   localStream?: MediaStream;
   remoteStreams: Record<string, MediaStream>;
   connectionHealth: ConnectionHealth;
@@ -40,9 +35,6 @@ interface RoomStoreState {
   setLifecycleState: (state: RoomLifecycleState) => void;
   setRoom: (room: Partial<RoomSummary>) => void;
   setMembers: (members: RoomMember[]) => void;
-  setJoinSignalUrl: (url: string) => void;
-  setHostSession: (session?: HostSessionInfo) => void;
-  setConnectionMode: (mode: ConnectionMode) => void;
   setLocalStream: (stream?: MediaStream) => void;
   setRemoteStream: (peerId: string, stream?: MediaStream) => void;
   setConnectionHealth: (health: Partial<ConnectionHealth>) => void;
@@ -57,8 +49,8 @@ interface RoomStoreState {
     sceneZone?: SceneZoneId;
     gameName?: string;
   }) => void;
-  pushHostEvent: (event: Omit<HostEvent, "id" | "createdAt">) => void;
-  clearHostEvents: () => void;
+  pushRoomEvent: (event: Omit<RoomEvent, "id" | "createdAt">) => void;
+  clearRoomEvents: () => void;
   resetRoom: () => void;
 }
 
@@ -92,6 +84,9 @@ const createLocalPreviewMember = (profile?: LocalProfilePayload): RoomMember => 
   isHost: false,
   isLocal: true,
   isMuted: false,
+  isDeafened: false,
+  activity: "idle",
+  sceneZone: "gameDesk1",
   presenceState: MemberPresenceState.Online,
   speakingState: MemberSpeakingState.Silent,
   joinState: MemberJoinState.Joined,
@@ -104,10 +99,6 @@ const sortMembers = (members: RoomMember[]): RoomMember[] =>
   [...members].sort((left, right) => {
     if (left.isLocal !== right.isLocal) {
       return left.isLocal ? -1 : 1;
-    }
-
-    if (left.isHost !== right.isHost) {
-      return left.isHost ? -1 : 1;
     }
 
     return left.joinedAt.localeCompare(right.joinedAt);
@@ -140,11 +131,11 @@ const areMembersEqual = (left: RoomMember[], right: RoomMember[]): boolean => {
   });
 };
 
-const initialHostEvents = (): HostEvent[] => [
+const initialRoomEvents = (): RoomEvent[] => [
   {
     id: "waiting-seed",
     level: "info",
-    message: "等待好友加入",
+    message: "输入服务器地址后即可进入固定频道",
     createdAt: new Date().toISOString(),
   },
 ];
@@ -152,22 +143,18 @@ const initialHostEvents = (): HostEvent[] => [
 const initialRoomState = (): RoomSummary => {
   const members = normalizeMembers([createLocalPreviewMember()]);
   return {
-    roomId: "private-room",
+    roomId: "main",
     roomName: DEFAULT_ROOM_NAME,
     memberCount: countActualMembers(members),
     members,
-    connectionMode: "direct_host",
     connectionState: RoomConnectionState.Idle,
     lifecycleState: RoomLifecycleState.Closed,
-    hostSessionState: HostSessionState.NotStarted,
-    recentHostEvents: initialHostEvents(),
+    recentRoomEvents: initialRoomEvents(),
   };
 };
 
 export const useRoomStore = create<RoomStoreState>((set) => ({
   room: initialRoomState(),
-  hostSession: undefined,
-  joinSignalUrl: "",
   localStream: undefined,
   remoteStreams: {},
   connectionHealth: {
@@ -219,22 +206,6 @@ export const useRoomStore = create<RoomStoreState>((set) => ({
         },
       };
     }),
-  setJoinSignalUrl: (joinSignalUrl) => set({ joinSignalUrl }),
-  setHostSession: (hostSession) =>
-    set((state) => ({
-      hostSession,
-      room: {
-        ...state.room,
-        hostSessionState: hostSession?.hostState ?? HostSessionState.NotStarted,
-      },
-    })),
-  setConnectionMode: (connectionMode) =>
-    set((state) => ({
-      room: {
-        ...state.room,
-        connectionMode,
-      },
-    })),
   setLocalStream: (localStream) => set({ localStream }),
   setRemoteStream: (peerId, stream) =>
     set((state) => {
@@ -259,8 +230,8 @@ export const useRoomStore = create<RoomStoreState>((set) => ({
     })),
   replaceChatMessage: (id, content) =>
     set((state) => ({
-      chatMessages: state.chatMessages.map((m) =>
-        m.id === id ? { ...m, content } : m,
+      chatMessages: state.chatMessages.map((message) =>
+        message.id === id ? { ...message, content } : message,
       ),
     })),
   clearChatMessages: () => set({ chatMessages: [] }),
@@ -316,32 +287,30 @@ export const useRoomStore = create<RoomStoreState>((set) => ({
         ),
       },
     })),
-  pushHostEvent: (event) =>
+  pushRoomEvent: (event) =>
     set((state) => ({
       room: {
         ...state.room,
-        recentHostEvents: [
+        recentRoomEvents: [
           {
             id: crypto.randomUUID(),
             createdAt: new Date().toISOString(),
             ...event,
           },
-          ...(state.room.recentHostEvents ?? []),
+          ...(state.room.recentRoomEvents ?? []),
         ].slice(0, 8),
       },
     })),
-  clearHostEvents: () =>
+  clearRoomEvents: () =>
     set((state) => ({
       room: {
         ...state.room,
-        recentHostEvents: [],
+        recentRoomEvents: [],
       },
     })),
   resetRoom: () =>
     set({
       room: initialRoomState(),
-      hostSession: undefined,
-      joinSignalUrl: "",
       localStream: undefined,
       remoteStreams: {},
       chatMessages: [],

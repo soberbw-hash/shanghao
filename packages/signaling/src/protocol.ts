@@ -1,6 +1,5 @@
 import type {
   BuiltInAvatarId,
-  ConnectionMode,
   MemberActivity,
   RoomMember,
   SceneZoneId,
@@ -19,10 +18,7 @@ export interface IceCandidatePayload {
 }
 
 export type SignalEnvelope =
-  | HelloMessage
-  | JoinRoomMessage
   | JoinChannelMessage
-  | LeaveRoomMessage
   | LeaveChannelMessage
   | HeartbeatMessage
   | PongMessage
@@ -52,27 +48,6 @@ interface VersionedMessage {
   appVersion: string;
   protocolVersion: string;
   buildNumber: string;
-  connectionMode: ConnectionMode;
-}
-
-export interface HelloMessage extends BaseMessage, VersionedMessage {
-  type: "hello";
-  roomId: string;
-  peerId: string;
-  nickname: string;
-  avatarDataUrl?: string;
-  avatarId?: BuiltInAvatarId;
-  relayToken?: string;
-}
-
-export interface JoinRoomMessage extends BaseMessage, VersionedMessage {
-  type: "join_room";
-  roomId: string;
-  peerId: string;
-  nickname: string;
-  avatarDataUrl?: string;
-  avatarId?: BuiltInAvatarId;
-  relayToken?: string;
 }
 
 export interface JoinChannelMessage extends BaseMessage, VersionedMessage {
@@ -82,13 +57,6 @@ export interface JoinChannelMessage extends BaseMessage, VersionedMessage {
   peerId: string;
   nickname: string;
   avatarId: BuiltInAvatarId;
-  channelCode?: string;
-}
-
-export interface LeaveRoomMessage extends BaseMessage {
-  type: "leave_room";
-  roomId: string;
-  peerId: string;
 }
 
 export interface LeaveChannelMessage extends BaseMessage {

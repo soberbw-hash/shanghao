@@ -2,7 +2,6 @@ import {
   MemberPresenceState,
   RecordingState,
   RoomConnectionState,
-  TailscaleState,
 } from "@private-voice/shared";
 
 const roomConnectionLabels: Record<RoomConnectionState, string> = {
@@ -18,15 +17,6 @@ const roomConnectionLabels: Record<RoomConnectionState, string> = {
   [RoomConnectionState.Degraded]: "连接波动",
   [RoomConnectionState.Disconnected]: "已断开",
   [RoomConnectionState.Failed]: "失败",
-};
-
-const tailscaleLabels: Record<TailscaleState, string> = {
-  [TailscaleState.Unknown]: "待检测",
-  [TailscaleState.Checking]: "检测中",
-  [TailscaleState.Installed]: "已安装",
-  [TailscaleState.NotInstalled]: "未安装",
-  [TailscaleState.Connected]: "已连接",
-  [TailscaleState.Disconnected]: "未连接",
 };
 
 const memberPresenceLabels: Record<MemberPresenceState, string> = {
@@ -49,9 +39,6 @@ const recordingStateLabels: Record<RecordingState, string> = {
 export const getRoomConnectionLabel = (state: RoomConnectionState | string): string =>
   roomConnectionLabels[state as RoomConnectionState] ?? state;
 
-export const getTailscaleStateLabel = (state?: TailscaleState): string =>
-  state ? tailscaleLabels[state] : "待检测";
-
 export const getMemberPresenceLabel = (state: MemberPresenceState): string =>
   memberPresenceLabels[state];
 
@@ -61,19 +48,13 @@ export const getRecordingStateLabel = (state: RecordingState): string =>
 export const getPrimaryRoomStatus = ({
   connectionState,
   memberCount,
-  hasHostSession,
 }: {
   connectionState: RoomConnectionState;
   memberCount: number;
-  hasHostSession: boolean;
 }): {
   label: string;
   tone: "neutral" | "success" | "warning" | "danger" | "accent";
 } => {
-  if (connectionState === RoomConnectionState.StartingHost) {
-    return { label: "开启中", tone: "accent" };
-  }
-
   if (connectionState === RoomConnectionState.WaitingPeer) {
     return { label: "等待加入", tone: "accent" };
   }
@@ -102,7 +83,7 @@ export const getPrimaryRoomStatus = ({
     return { label: "连接失败", tone: "danger" };
   }
 
-  if (connectionState === RoomConnectionState.Connected && hasHostSession && memberCount <= 1) {
+  if (connectionState === RoomConnectionState.Connected && memberCount <= 1) {
     return { label: "等待加入", tone: "accent" };
   }
 

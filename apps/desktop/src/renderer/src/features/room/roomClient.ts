@@ -5,7 +5,6 @@ import {
   RoomConnectionState,
   type BuiltInAvatarId,
   type ChatMessage,
-  type ConnectionMode,
   type MemberActivity,
   type RoomMember,
   type SceneZoneId,
@@ -39,10 +38,7 @@ interface RoomClientOptions {
   nickname: string;
   avatarDataUrl?: string;
   avatarId?: BuiltInAvatarId;
-  isFixedChannel?: boolean;
-  channelCode?: string;
   localStream: MediaStream;
-  connectionMode: ConnectionMode;
   appVersion: string;
   protocolVersion: string;
   buildNumber: string;
@@ -72,7 +68,6 @@ const MAX_RECONNECT_ATTEMPTS = 6;
 export class RoomClient {
   private readonly backoff = new ExponentialBackoff(DEFAULT_RECONNECT_DELAYS_MS);
   private readonly peers = new Map<string, MeshPeerConnection>();
-  private readonly relayToken?: string;
   private heartbeatTimer?: number;
   private snapshotRetryTimer?: number;
   private reconnectTimer?: number;
@@ -108,7 +103,7 @@ export class RoomClient {
   private readonly avatarCache = new Map<string, { avatarHash?: string; avatarDataUrl?: string }>();
   private joinStage = "idle";
   private wsOpened = false;
-  private joinRoomSent = false;
+  private joinChannelSent = false;
   private joinAckReceived = false;
   private roomSnapshotReceived = false;
   private lastServerError?: string;
@@ -121,11 +116,6 @@ export class RoomClient {
     this.lastPublishedNickname = options.nickname;
     this.lastPublishedAvatarDataUrl = options.avatarDataUrl;
     this.lastPublishedAvatarId = options.avatarId;
-    try {
-      this.relayToken = new URL(options.signalingUrl).searchParams.get("relayToken") ?? undefined;
-    } catch {
-      this.relayToken = undefined;
-    }
   }
 
   connect(): Promise<void> {
@@ -148,7 +138,7 @@ export class RoomClient {
 
     if (this.isSignalingConnected) {
       await this.safeSend({
-        type: this.options.isFixedChannel ? "leave_channel" : "leave_room",
+        type: "leave_channel",
         roomId: this.options.roomId,
         peerId: this.options.peerId,
       });
@@ -183,7 +173,7 @@ export class RoomClient {
       chatSendFailures: this.chatSendFailures,
       joinStage: this.joinStage,
       wsOpened: this.wsOpened,
-      joinRoomSent: this.joinRoomSent,
+      joinChannelSent: this.joinChannelSent,
       joinAckReceived: this.joinAckReceived,
       roomSnapshotReceived: this.roomSnapshotReceived,
       lastServerError: this.lastServerError,
@@ -252,7 +242,7 @@ export class RoomClient {
     this.options.onConnectionState(isReconnect ? RoomConnectionState.Reconnecting : RoomConnectionState.Joining);
     this.joinStage = "websocket_open";
     this.wsOpened = false;
-    this.joinRoomSent = false;
+    this.joinChannelSent = false;
     this.joinAckReceived = false;
     this.roomSnapshotReceived = false;
     this.lastServerError = undefined;
@@ -284,41 +274,23 @@ export class RoomClient {
     if (payload.type === "open") {
       this.isSignalingConnected = true;
       this.wsOpened = true;
-      this.joinStage = "join_room_sent";
+      this.joinStage = "join_channel_sent";
       this.options.onConnectionState(
         this.hasJoinedOnce ? RoomConnectionState.Reconnecting : RoomConnectionState.Handshaking,
       );
 
-      await this.send(
-        this.options.isFixedChannel
-          ? {
-              type: "join_channel",
-              roomId: this.options.roomId,
-              channelId: this.options.roomId,
-              peerId: this.options.peerId,
-              nickname: this.nickname,
-              avatarId: this.avatarId ?? "fox",
-              channelCode: this.options.channelCode,
-              appVersion: this.options.appVersion,
-              protocolVersion: this.options.protocolVersion,
-              buildNumber: this.options.buildNumber,
-              connectionMode: this.options.connectionMode,
-            }
-          : {
-              type: "join_room",
-              roomId: this.options.roomId,
-              peerId: this.options.peerId,
-              nickname: this.nickname,
-              avatarDataUrl: this.avatarDataUrl,
-              avatarId: this.avatarId,
-              appVersion: this.options.appVersion,
-              protocolVersion: this.options.protocolVersion,
-              buildNumber: this.options.buildNumber,
-              connectionMode: this.options.connectionMode,
-              relayToken: this.relayToken,
-            },
-      );
-      this.joinRoomSent = true;
+      await this.send({
+        type: "join_channel",
+        roomId: this.options.roomId,
+        channelId: this.options.roomId,
+        peerId: this.options.peerId,
+        nickname: this.nickname,
+        avatarId: this.avatarId ?? "fox",
+        appVersion: this.options.appVersion,
+        protocolVersion: this.options.protocolVersion,
+        buildNumber: this.options.buildNumber,
+      });
+      this.joinChannelSent = true;
       this.startHeartbeat();
       return;
     }
@@ -602,8 +574,8 @@ export class RoomClient {
         type: "chat_message",
         roomId: this.options.roomId,
         peerId: this.options.peerId,
-      nickname: this.nickname,
-      avatarId: this.avatarId,
+        nickname: this.nickname,
+        avatarId: this.avatarId,
         content: trimmed,
         createdAt: new Date().toISOString(),
       });

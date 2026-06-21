@@ -3,11 +3,8 @@ import {
   DEFAULT_ROOM_NAME,
   PROFILE_SCHEMA_VERSION,
   SETTINGS_SCHEMA_VERSION,
-  TailscaleState,
   type AppSettings,
-  type NetworkStatusSnapshot,
   type RuntimeInfo,
-  type TailscaleStatus,
   type UpdateCheckResult,
   type UpdateStatus,
 } from "@private-voice/shared";
@@ -28,16 +25,12 @@ interface StoreHydrationOutcome {
 interface SettingsStoreState {
   runtimeInfo?: RuntimeInfo;
   settings?: AppSettings;
-  tailscaleStatus?: TailscaleStatus;
-  networkSnapshot?: NetworkStatusSnapshot;
   updateInfo?: UpdateCheckResult;
   updateStatus: UpdateStatus;
   avatarDataUrl?: string;
   isHydrating: boolean;
   hydrate: () => Promise<StoreHydrationOutcome>;
   saveSettings: (partial: Partial<AppSettings>) => Promise<AppSettings>;
-  refreshTailscale: () => Promise<void>;
-  refreshNetworkSnapshot: () => Promise<void>;
   checkUpdates: () => Promise<UpdateCheckResult>;
   downloadUpdate: () => Promise<void>;
   installUpdate: () => Promise<void>;
@@ -63,10 +56,8 @@ const fallbackSettings: AppSettings = {
   avatarId: "fox",
   avatarPath: undefined,
   hasCompletedProfileSetup: false,
-  channelAccessCode: "",
   minimizeToTray: false,
   reduceMotion: false,
-  showFloatingBarOnJoin: false,
   launchOnStartup: false,
   preferredInputDeviceId: undefined,
   preferredOutputDeviceId: undefined,
@@ -79,11 +70,7 @@ const fallbackSettings: AppSettings = {
   isAutoGainControlEnabled: true,
   isPushToTalkEnabled: false,
   micMonitorMode: "processed",
-  connectionMode: "relay",
-  relayServerUrl: "ws://118.25.103.107:43821",
-  relayAuthToken: "",
-  manualDirectHost: "",
-  shouldAutoCopyInviteLink: true,
+  relayServerUrl: "",
   isMicOnSoundEnabled: true,
   isMicOffSoundEnabled: true,
   isMemberJoinSoundEnabled: true,
@@ -93,13 +80,6 @@ const fallbackSettings: AppSettings = {
   isBackgroundUpdateCheckEnabled: true,
   lastUpdateCheckAt: undefined,
   lastUpdateVersionSeen: undefined,
-};
-
-const fallbackTailscaleStatus: TailscaleStatus = {
-  state: TailscaleState.Unknown,
-  isInstalled: false,
-  isConnected: false,
-  message: "暂时无法读取 Tailscale 状态。",
 };
 
 const withTimeout = async <T>(
@@ -126,9 +106,7 @@ const withTimeout = async <T>(
 export const useSettingsStore = create<SettingsStoreState>((set, get) => ({
   settings: undefined,
   runtimeInfo: undefined,
-  tailscaleStatus: fallbackTailscaleStatus,
   avatarDataUrl: undefined,
-  networkSnapshot: undefined,
   updateInfo: undefined,
   updateStatus: { phase: "idle", message: "暂未检查更新" },
   isHydrating: true,
@@ -149,7 +127,7 @@ export const useSettingsStore = create<SettingsStoreState>((set, get) => ({
       return fallbackRuntimeInfo;
     });
 
-    let settings = await withTimeout(
+    const settings = await withTimeout(
       desktopApi.settings.get(),
       "settings_read_timeout",
       HYDRATE_TIMEOUT_MS,
@@ -166,33 +144,10 @@ export const useSettingsStore = create<SettingsStoreState>((set, get) => ({
       return fallbackSettings;
     });
 
-    const avatarDataUrl = undefined;
-
-    const [tailscaleStatus, networkSnapshot] = await Promise.all([
-      withTimeout(desktopApi.tailscale.checkStatus(), "tailscale_timeout", 4_000).catch(
-        async (error) => {
-          await writeRendererLog("tailscale", "warn", "Failed to read Tailscale status", {
-            error: error instanceof Error ? error.message : String(error),
-          });
-          return fallbackTailscaleStatus;
-        },
-      ),
-      withTimeout(desktopApi.network.getSnapshot(), "network_snapshot_timeout", 4_000).catch(
-        async (error) => {
-          await writeRendererLog("proxy-diagnostics", "warn", "Failed to read network snapshot", {
-            error: error instanceof Error ? error.message : String(error),
-          });
-          return undefined;
-        },
-      ),
-    ]);
-
     set({
       runtimeInfo,
       settings,
-      tailscaleStatus,
-      networkSnapshot,
-      avatarDataUrl,
+      avatarDataUrl: undefined,
       isHydrating: false,
     });
 
@@ -210,11 +165,10 @@ export const useSettingsStore = create<SettingsStoreState>((set, get) => ({
 
     await writeRendererLog("renderer-startup", "info", "Renderer hydrated settings", {
       platform: runtimeInfo.platform,
-      tailscaleState: tailscaleStatus.state,
       avatarId: settings.avatarId,
       profileSchemaVersion: settings.profileSchemaVersion,
       profileReady: settings.hasCompletedProfileSetup,
-      connectionMode: settings.connectionMode,
+      serverConfigured: Boolean(settings.relayServerUrl?.trim()),
       mode,
       settingsSchemaVersion: settings.settingsSchemaVersion,
     });
@@ -225,24 +179,6 @@ export const useSettingsStore = create<SettingsStoreState>((set, get) => ({
     const settings = await desktopApi.settings.save(partial);
     set({ settings, avatarDataUrl: undefined });
     return settings;
-  },
-  refreshTailscale: async () => {
-    const tailscaleStatus = await desktopApi.tailscale.checkStatus().catch(async (error) => {
-      await writeRendererLog("tailscale", "warn", "Failed to refresh Tailscale status", {
-        error: error instanceof Error ? error.message : String(error),
-      });
-      return fallbackTailscaleStatus;
-    });
-    set({ tailscaleStatus });
-  },
-  refreshNetworkSnapshot: async () => {
-    const networkSnapshot = await desktopApi.network.getSnapshot().catch(async (error) => {
-      await writeRendererLog("proxy-diagnostics", "warn", "Failed to refresh network snapshot", {
-        error: error instanceof Error ? error.message : String(error),
-      });
-      return undefined;
-    });
-    set({ networkSnapshot });
   },
   checkUpdates: async () => {
     const updateInfo = await desktopApi.updates.check();
@@ -261,7 +197,5 @@ export const useSettingsStore = create<SettingsStoreState>((set, get) => ({
   resetSettings: async () => {
     const settings = await desktopApi.settings.reset();
     set({ settings, avatarDataUrl: undefined });
-    await get().refreshTailscale();
-    await get().refreshNetworkSnapshot();
   },
 }));

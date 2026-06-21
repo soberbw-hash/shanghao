@@ -7,7 +7,6 @@ import {
   IPC_CHANNELS,
   type AppSettings,
   type DiagnosticsSnapshot,
-  type HostSessionInfo,
   type GameDetectionSnapshot,
   type LlmChatRequest,
   type LlmChatResponse,
@@ -17,21 +16,18 @@ import {
   type RendererLogPayload,
   type RuntimeInfo,
   type SignalingEventPayload,
-  type TailscaleStatus,
   type UpdateCheckResult,
   type UpdateStatus,
 } from "@private-voice/shared";
 
 import { DiagnosticsService } from "./diagnostics";
-import { HostSessionController } from "./host-session";
 import { LlmService } from "./llm-service";
-import { buildDiagnosticsSummary, detectProxyDiagnostics, getNetworkStatusSnapshot } from "./network-diagnostics";
 import { clearAvatarImage, pickAvatarImage, readAvatarImage } from "./profile-media";
 import { exportRecordingFromMain } from "./recording-main";
+import { readRelayStatus } from "./relay-status";
 import { SettingsStore } from "./settings-store";
 import { ShortcutController } from "./shortcuts";
 import { SignalingClientBridge } from "./signaling-client";
-import { detectTailscaleStatus, openTailscaleInstallGuide } from "./tailscale";
 import { UpdateService } from "./updates";
 import { OverlayWindowController } from "./overlay-window";
 import { GameDetectionController } from "./game-detection";
@@ -41,7 +37,6 @@ interface MainProcessServices {
   settingsStore: SettingsStore;
   diagnostics: DiagnosticsService;
   shortcuts: ShortcutController;
-  hostSession: HostSessionController;
   signalingClient: SignalingClientBridge;
   updates: UpdateService;
   overlay: OverlayWindowController;
@@ -54,17 +49,12 @@ export const registerIpcHandlers = ({
   settingsStore,
   diagnostics,
   shortcuts,
-  hostSession,
   signalingClient,
   updates,
   overlay,
   gameDetection,
   llm,
 }: MainProcessServices): void => {
-  hostSession.onUpdate((session) => {
-    getMainWindow()?.webContents.send(IPC_CHANNELS.host.sessionUpdated, session);
-  });
-
   signalingClient.on("event", (payload: SignalingEventPayload) => {
     getMainWindow()?.webContents.send(IPC_CHANNELS.signaling.event, payload);
   });
@@ -151,31 +141,25 @@ export const registerIpcHandlers = ({
 
   ipcMain.handle(IPC_CHANNELS.diagnostics.exportBundle, async (_event, rendererState): Promise<DiagnosticsSnapshot> => {
     const settings = settingsStore.getSnapshot();
-    const network = await getNetworkStatusSnapshot(settings, (payload) => diagnostics.writeLog(payload));
-    const summary = await buildDiagnosticsSummary({
-      settings,
+    const relay = await readRelayStatus({
+      relayServerUrl: settings.relayServerUrl,
+      writeLog: (payload) => diagnostics.writeLog(payload),
+    });
+    const summary = {
       appVersion: app.getVersion(),
       protocolVersion: APP_PROTOCOL_VERSION,
       buildNumber: APP_BUILD_NUMBER,
-      inviteAddress: hostSession.getSnapshot()?.signalingUrl,
-      hostSession: hostSession.getSnapshot(),
-      writeLog: (payload) => diagnostics.writeLog(payload),
-    });
-
-    const sanitizedSettings = {
-      ...settings,
-      channelAccessCode: settings.channelAccessCode ? "[redacted]" : "",
-      relayAuthToken: settings.relayAuthToken ? "[redacted]" : "",
+      serverUrl: settings.relayServerUrl,
+      currentRoomId: rendererState?.currentRoomId,
+      currentPeerId: rendererState?.currentPeerId,
+      relay,
+      exportedAt: new Date().toISOString(),
     };
 
     return diagnostics.exportBundle([
-      { name: "settings.json", content: JSON.stringify(sanitizedSettings, null, 2) },
-      { name: "network.json", content: JSON.stringify(network, null, 2) },
+      { name: "settings.json", content: JSON.stringify(settings, null, 2) },
+      { name: "relay.json", content: JSON.stringify(relay, null, 2) },
       { name: "summary.json", content: JSON.stringify(summary, null, 2) },
-      {
-        name: "host-session.json",
-        content: JSON.stringify(hostSession.getSnapshot() ?? null, null, 2),
-      },
       {
         name: "renderer-session.json",
         content: JSON.stringify(rendererState ?? null, null, 2),
@@ -193,27 +177,6 @@ export const registerIpcHandlers = ({
 
   ipcMain.handle(IPC_CHANNELS.shortcuts.configureMute, async (_event, accelerator: string): Promise<void> => {
     await shortcuts.configureGlobalMute(accelerator);
-  });
-
-  ipcMain.handle(IPC_CHANNELS.tailscale.checkStatus, async (): Promise<TailscaleStatus> => detectTailscaleStatus());
-  ipcMain.handle(IPC_CHANNELS.tailscale.openInstallGuide, async (): Promise<void> => {
-    await openTailscaleInstallGuide();
-  });
-
-  ipcMain.handle(IPC_CHANNELS.network.getSnapshot, async () => {
-    return getNetworkStatusSnapshot(settingsStore.getSnapshot(), (payload) => diagnostics.writeLog(payload));
-  });
-  ipcMain.handle(IPC_CHANNELS.network.getProxyDiagnostics, async () => detectProxyDiagnostics());
-  ipcMain.handle(IPC_CHANNELS.network.exportSummary, async () => {
-    return buildDiagnosticsSummary({
-      settings: settingsStore.getSnapshot(),
-      appVersion: app.getVersion(),
-      protocolVersion: APP_PROTOCOL_VERSION,
-      buildNumber: APP_BUILD_NUMBER,
-      inviteAddress: hostSession.getSnapshot()?.signalingUrl,
-      hostSession: hostSession.getSnapshot(),
-      writeLog: (payload) => diagnostics.writeLog(payload),
-    });
   });
 
   ipcMain.handle(IPC_CHANNELS.updates.check, async (): Promise<UpdateCheckResult> => {
@@ -239,22 +202,6 @@ export const registerIpcHandlers = ({
   });
   ipcMain.handle(IPC_CHANNELS.updates.install, async (): Promise<void> => {
     updates.install();
-  });
-
-  ipcMain.handle(
-    IPC_CHANNELS.host.start,
-    async (
-      _event,
-      roomName: string,
-      nickname: string,
-      connectionMode: AppSettings["connectionMode"],
-    ): Promise<HostSessionInfo> => hostSession.start(roomName, nickname, connectionMode),
-  );
-  ipcMain.handle(IPC_CHANNELS.host.stop, async (): Promise<void> => {
-    await hostSession.stop();
-  });
-  ipcMain.handle(IPC_CHANNELS.host.diagnoseJoin, async (_event, signalingUrl: string, connectionMode: AppSettings["connectionMode"]) => {
-    return hostSession.diagnoseJoin(signalingUrl, connectionMode);
   });
 
   ipcMain.handle(IPC_CHANNELS.signaling.connect, async (_event, signalingUrl: string) => {

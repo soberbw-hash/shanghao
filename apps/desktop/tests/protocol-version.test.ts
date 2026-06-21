@@ -31,14 +31,15 @@ test("signaling server rejects mismatched protocol versions with a clear error",
 
     socket.send(
       JSON.stringify({
-        type: "join_room",
-        roomId: "version-mismatch-room",
+        type: "join_channel",
+        roomId: "main",
+        channelId: "main",
         peerId: "peer-1",
         nickname: "成员",
+        avatarId: "fox",
         appVersion: "0.1.7",
         protocolVersion: "999",
         buildNumber: APP_BUILD_NUMBER,
-        connectionMode: "direct_host",
       }),
     );
 

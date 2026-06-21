@@ -16,14 +16,6 @@ $checks = @(
       (Join-Path $env:LOCALAPPDATA "pnpm\pnpm.cmd"),
       (Join-Path $env:LOCALAPPDATA "pnpm\pnpm.ps1")
     )
-  },
-  @{
-    Name = "Tailscale"
-    Commands = @("tailscale")
-    Paths = @(
-      "C:\Program Files\Tailscale\tailscale.exe",
-      "C:\Program Files (x86)\Tailscale\tailscale.exe"
-    )
   }
 )
 

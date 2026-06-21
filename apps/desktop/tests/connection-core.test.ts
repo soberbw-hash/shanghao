@@ -34,31 +34,19 @@ test("room client marks webrtc ready from connection state instead of remote str
   assert.equal(relay.includes("this.context.currentTime"), true);
 });
 
-test("tailscale selects 100.x before MagicDNS", () => {
-  const source = read("apps/desktop/src/main/tailscale.ts");
-  const ipBranch = source.indexOf("if (tailscale.ip)");
-  const dnsBranch = source.indexOf("if (tailscale.magicDnsName");
+test("room flow is fixed-channel only", () => {
+  const client = read("apps/desktop/src/renderer/src/features/room/roomClient.ts");
+  const hook = read("apps/desktop/src/renderer/src/hooks/useRoomState.ts");
+  const protocol = read("packages/signaling/src/protocol.ts");
 
-  assert.equal(ipBranch >= 0, true);
-  assert.equal(dnsBranch > ipBranch, true);
-  assert.equal(source.includes('backendState === "needslogin"'), true);
-  assert.equal(source.includes('backendState === "stopped"'), true);
-});
-
-test("cloudflare tunnel mode is wired into shared types and host lifecycle", () => {
-  const settingsTypes = read("packages/shared/src/types/settings.types.ts");
-  const hostSession = read("apps/desktop/src/main/host-session.ts");
-  const tunnel = read("apps/desktop/src/main/cloudflare-tunnel.ts");
-
-  assert.equal(settingsTypes.includes('"cloudflare_tunnel"'), true);
-  assert.equal(hostSession.includes('connectionMode === "cloudflare_tunnel"'), true);
-  assert.equal(hostSession.includes("this.cloudflareTunnel.start(signalingPort)"), true);
-  assert.equal(hostSession.includes("this.cloudflareTunnel?.stop()"), true);
-  assert.equal(tunnel.includes("trycloudflare"), true);
-  assert.equal(tunnel.includes("Cloudflare quick tunnel exited unexpectedly"), true);
-  assert.equal(tunnel.includes("HEALTH_CHECK_INTERVAL_MS = 20_000"), true);
-  assert.equal(tunnel.includes("MAX_HEALTH_FAILURES = 3"), true);
-  assert.equal(tunnel.includes("Cloudflare quick tunnel health recovered"), true);
+  assert.equal(client.includes('type: "join_channel"'), true);
+  assert.equal(client.includes('type: "leave_channel"'), true);
+  assert.equal(client.includes("joinChannelSent"), true);
+  assert.equal(client.includes("join_room"), false);
+  assert.equal(hook.includes("connectToFixedChannel"), true);
+  assert.equal(hook.includes("startHost"), false);
+  assert.equal(protocol.includes("JoinChannelMessage"), true);
+  assert.equal(protocol.includes("JoinRoomMessage"), false);
 });
 
 test("relay status checks both health endpoint and websocket", () => {

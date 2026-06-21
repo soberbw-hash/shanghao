@@ -1,13 +1,11 @@
 import { mkdir, writeFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { dirname } from "node:path";
 
 import { app, BrowserWindow, Tray, dialog } from "electron";
 
 import { APP_ID } from "@private-voice/shared";
 
 import { DiagnosticsService } from "./diagnostics";
-import { CloudflareTunnelController } from "./cloudflare-tunnel";
-import { HostSessionController } from "./host-session";
 import { registerIpcHandlers } from "./ipc";
 import { SettingsStore } from "./settings-store";
 import { ShortcutController } from "./shortcuts";
@@ -155,15 +153,6 @@ const bootstrap = async (): Promise<void> => {
   const signalingClient = new SignalingClientBridge(
     (payload) => diagnostics?.writeLog(payload) ?? Promise.resolve(),
   );
-  const cloudflareTunnel = new CloudflareTunnelController(
-    join(app.getPath("userData"), "bin"),
-    (payload) => diagnostics?.writeLog(payload) ?? Promise.resolve(),
-  );
-  const hostSession = new HostSessionController(
-    () => settingsStore?.getSnapshot() ?? settings,
-    (payload) => diagnostics?.writeLog(payload) ?? Promise.resolve(),
-    cloudflareTunnel,
-  );
   const updates = new UpdateService(
     app.getVersion(),
     (payload) => diagnostics?.writeLog(payload) ?? Promise.resolve(),
@@ -181,7 +170,6 @@ const bootstrap = async (): Promise<void> => {
 
   const llm = new LlmService({
     getRelayServerUrl: () => settingsStore?.getSnapshot().relayServerUrl,
-    getChannelAccessCode: () => settingsStore?.getSnapshot().channelAccessCode,
     writeLog: (payload) => diagnostics?.writeLog(payload) ?? Promise.resolve(),
   });
 
@@ -190,7 +178,6 @@ const bootstrap = async (): Promise<void> => {
     settingsStore,
     diagnostics,
     shortcuts,
-    hostSession,
     signalingClient,
     updates,
     overlay,

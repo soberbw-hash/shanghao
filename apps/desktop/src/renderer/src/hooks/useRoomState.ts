@@ -1,12 +1,9 @@
-import { useEffect, useRef } from "react";
+import { useEffect } from "react";
 
 import {
   DEFAULT_CHANNEL_ID,
-  HostSessionState,
   RoomConnectionState,
   RoomLifecycleState,
-  type ConnectionMode,
-  type HostSessionInfo,
   type MemberActivity,
   type RoomMember,
   type SceneZoneId,
@@ -14,13 +11,12 @@ import {
 } from "@private-voice/shared";
 import { createSpeakingDetector, requestMicrophoneStream } from "@private-voice/webrtc";
 
-import { RoomClient } from "../features/room/roomClient";
 import { playUiSound } from "../features/audio/uiSound";
+import { RoomClient } from "../features/room/roomClient";
 import { useAppStore } from "../store/appStore";
 import { useAudioStore } from "../store/audioStore";
 import { useRoomStore } from "../store/roomStore";
 import { useSettingsStore } from "../store/settingsStore";
-import { buildShareableInviteUrl, isValidInviteUrl } from "../utils/invite";
 import { writeRendererLog } from "../utils/logger";
 
 let activeClient: RoomClient | null = null;
@@ -30,125 +26,63 @@ let previousMemberIds = new Set<string>();
 export const getRoomRuntimeDiagnostics = () => activeClient?.getDiagnostics();
 
 const copy = {
-  startHostTitle: "暂时无法进入频道",
-  joinRoomTitle: "暂时无法进入频道",
-  hostStartedTitle: "已进入频道",
-  hostStartedDescription: "正在等待好友上线。",
-  hostDirectReadyTitle: "公网直连已就绪",
-  hostDirectReadyDescription: "现在可以直接复制房间地址发给朋友。",
-  hostDirectLimitedTitle: "房间已启动",
-  missingJoinUrl: "还没有填写朋友发来的临时链接。",
-  invalidJoinUrl: "这个临时链接不完整，请向朋友确认。",
+  joinTitle: "进入频道失败",
+  joinedTitle: "已进入开黑频道",
+  joinedDescription: "好友上线后会自动出现在队伍里。",
+  missingServerUrl: "还没有服务器地址，请先填写 ws:// 或 wss:// 开头的地址。",
+  invalidServerUrl: "服务器地址要以 ws:// 或 wss:// 开头，不是 http://。",
   roomFull: "频道满了，最多 5 人同时语音。",
-  networkFailed: "暂时连不上频道，请稍后再试。",
-  handshakeFailed: "频道没有响应，检查网络后重试。",
+  networkFailed: "无法连接服务器，请检查地址、端口和防火墙。",
+  socketClosed: "服务器连接被关闭，请确认服务端正在运行。",
+  joinAckTimeout: "服务器已连接，但没有确认加入频道，可能是服务端版本不兼容。",
+  snapshotTimeout: "已进入频道，但同步成员超时，请重试。",
   versionMismatch: "当前版本太旧，请更新后再进入频道。",
-  relayAuthFailed: "这个临时链接已经失效，请向朋友确认。",
   microphoneUnavailable: "麦克风不可用",
   microphonePermission: "麦克风不可用，请先在系统设置里允许访问麦克风。",
   microphoneMissing: "没有找到可用的麦克风。",
   microphoneBusy: "麦克风正在被其他程序占用。",
   inputDeviceFailed: "输入设备切换失败",
-  joinedRoomTitle: "已进入频道",
-  joinedRoomDescription: "语音已经准备好。",
-  copiedAddressTitle: "临时链接已复制",
-  copiedAddressDescription: "发给朋友就能进入。",
+  copiedServerTitle: "服务器地址已复制",
+  copiedServerDescription: "发给朋友，大家填写同一个地址就能进同一个频道。",
 } as const;
 
-const parseInvite = (value: string, fallbackMode: ConnectionMode) => {
-  const trimmedValue = value.trim();
-  if (!trimmedValue) {
-    throw new Error("missing_join_url");
+const normalizeServerUrl = (value?: string): string => {
+  const trimmed = value?.trim() ?? "";
+  if (!trimmed) {
+    throw new Error("missing_server_url");
   }
 
-  const url = new URL(trimmedValue);
-  if (!isValidInviteUrl(url.toString())) {
-    throw new Error("invalid_join_url");
+  const url = new URL(trimmed);
+  if (url.protocol !== "ws:" && url.protocol !== "wss:") {
+    throw new Error("invalid_server_url");
   }
-
-  const candidateUrls = [url.toString()];
-  for (const candidate of url.searchParams.getAll("candidate")) {
-    try {
-      const candidateUrl = new URL(candidate);
-      if (candidateUrl.protocol !== "ws:" && candidateUrl.protocol !== "wss:") {
-        continue;
-      }
-
-      if (!candidateUrl.searchParams.get("roomId")) {
-        candidateUrl.searchParams.set(
-          "roomId",
-          url.searchParams.get("roomId") || "private-room",
-        );
-      }
-      if (!candidateUrl.searchParams.get("mode")) {
-        candidateUrl.searchParams.set("mode", url.searchParams.get("mode") || fallbackMode);
-      }
-
-      candidateUrls.push(candidateUrl.toString());
-    } catch {
-      // Ignore malformed fallback candidates and keep trying the main address.
-    }
-  }
-
-  return {
-    signalingUrl: url.toString(),
-    candidateUrls: [...new Set(candidateUrls)],
-    roomId: url.searchParams.get("roomId") || "private-room",
-    connectionMode: (url.searchParams.get("mode") as ConnectionMode | null) || fallbackMode,
-    protocolVersion: url.searchParams.get("protocolVersion") ?? undefined,
-    buildNumber: url.searchParams.get("buildNumber") ?? undefined,
-  };
+  url.hash = "";
+  return url.toString();
 };
 
 const normalizeRoomError = (error: unknown, fallback: string): string => {
   if (error instanceof DOMException) {
-    if (error.name === "NotAllowedError") {
-      return copy.microphonePermission;
-    }
-
+    if (error.name === "NotAllowedError") return copy.microphonePermission;
     if (error.name === "NotFoundError" || error.name === "DevicesNotFoundError") {
       return copy.microphoneMissing;
     }
-
-    if (error.name === "NotReadableError") {
-      return copy.microphoneBusy;
-    }
+    if (error.name === "NotReadableError") return copy.microphoneBusy;
   }
 
   if (error instanceof Error) {
     const message = error.message.trim();
-    if (!message) {
-      return fallback;
+    if (!message) return fallback;
+    if (message === "missing_server_url") return copy.missingServerUrl;
+    if (message === "invalid_server_url" || message === "Invalid URL") {
+      return copy.invalidServerUrl;
     }
-
-    if (message === "missing_join_url" || message === "Invalid URL") {
-      return copy.missingJoinUrl;
-    }
-
-    if (message === "invalid_join_url" || message.includes("Failed to construct 'URL'")) {
-      return copy.invalidJoinUrl;
-    }
-
-    if (message.includes("version")) {
-      return copy.versionMismatch;
-    }
-
-    if (message.includes("relay_auth_failed")) {
-      return copy.relayAuthFailed;
-    }
-
-    if (message.includes("room_full")) {
-      return copy.roomFull;
-    }
-
-    if (message === "join_ack_timeout") {
-      return "频道没有响应，检查网络后重试。";
-    }
-
-    if (message === "room_snapshot_timeout") {
-      return "正在同步好友状态，请稍后重试。";
-    }
-
+    if (message.includes("version")) return copy.versionMismatch;
+    if (message.includes("room_full")) return copy.roomFull;
+    if (message === "network_unreachable") return copy.networkFailed;
+    if (message === "signaling_socket_closed") return copy.socketClosed;
+    if (message === "join_ack_timeout") return copy.joinAckTimeout;
+    if (message === "room_snapshot_timeout") return copy.snapshotTimeout;
+    if (message === "signaling_not_connected") return "连接还没恢复，请稍后再试。";
     return message;
   }
 
@@ -195,56 +129,20 @@ const summarizeSignalingEvent = (payload: SignalingEventPayload): Record<string,
   return summary;
 };
 
-const applyHostSessionSnapshot = (
-  session: HostSessionInfo | undefined,
-  {
-    setHostSession,
-    setJoinSignalUrl,
-    setConnectionMode,
-    setRoom,
-  }: {
-    setHostSession: (session?: HostSessionInfo) => void;
-    setJoinSignalUrl: (url: string) => void;
-    setConnectionMode: (mode: ConnectionMode) => void;
-    setRoom: (room: Partial<ReturnType<typeof useRoomStore.getState>["room"]>) => void;
-  },
-) => {
-  setHostSession(session);
-
-  if (!session) {
-    setJoinSignalUrl("");
-    return;
-  }
-
-  const inviteUrl = buildShareableInviteUrl(session);
-  setJoinSignalUrl(inviteUrl);
-  setConnectionMode(session.connectionMode);
-  setRoom({
-    signalingUrl: inviteUrl || undefined,
-    hostAddress: session.hostAddress || undefined,
-    hostSessionState: session.hostState,
-  });
-};
-
 export const useRoomState = () => {
   const runtimeInfo = useSettingsStore((state) => state.runtimeInfo);
   const settings = useSettingsStore((state) => state.settings);
   const avatarDataUrl = useSettingsStore((state) => state.avatarDataUrl);
   const room = useRoomStore((state) => state.room);
-  const hostSession = useRoomStore((state) => state.hostSession);
   const localStream = useRoomStore((state) => state.localStream);
-  const joinSignalUrl = useRoomStore((state) => state.joinSignalUrl);
-  const setJoinSignalUrl = useRoomStore((state) => state.setJoinSignalUrl);
   const setRoom = useRoomStore((state) => state.setRoom);
   const setMembers = useRoomStore((state) => state.setMembers);
   const setConnectionState = useRoomStore((state) => state.setConnectionState);
   const setLifecycleState = useRoomStore((state) => state.setLifecycleState);
-  const setHostSession = useRoomStore((state) => state.setHostSession);
-  const setConnectionMode = useRoomStore((state) => state.setConnectionMode);
   const setLocalStream = useRoomStore((state) => state.setLocalStream);
   const setRemoteStream = useRoomStore((state) => state.setRemoteStream);
-  const pushHostEvent = useRoomStore((state) => state.pushHostEvent);
-  const clearHostEvents = useRoomStore((state) => state.clearHostEvents);
+  const pushRoomEvent = useRoomStore((state) => state.pushRoomEvent);
+  const clearRoomEvents = useRoomStore((state) => state.clearRoomEvents);
   const addChatMessage = useRoomStore((state) => state.addChatMessage);
   const clearChatMessages = useRoomStore((state) => state.clearChatMessages);
   const setConnectionHealth = useRoomStore((state) => state.setConnectionHealth);
@@ -254,9 +152,6 @@ export const useRoomState = () => {
   const isDeafened = useAudioStore((state) => state.isDeafened);
   const pushToast = useAppStore((state) => state.pushToast);
   const setRoomAction = useAppStore((state) => state.setRoomAction);
-
-  const lastProbeSignatureRef = useRef("");
-  const lastCopiedInviteRef = useRef("");
 
   useEffect(() => {
     activeClient?.updateMuteState(isMuted, false);
@@ -281,76 +176,6 @@ export const useRoomState = () => {
     activeClient?.updateProfile(settings.nickname, avatarDataUrl, settings.avatarId);
   }, [avatarDataUrl, settings?.avatarId, settings?.nickname]);
 
-  useEffect(() => {
-    const unsubscribe = window.desktopApi.host.onSessionUpdated((session) => {
-      applyHostSessionSnapshot(session, {
-        setHostSession,
-        setJoinSignalUrl,
-        setConnectionMode,
-        setRoom,
-      });
-
-      if (!session || session.connectionMode !== "direct_host" || !session.directHostProbe) {
-        return;
-      }
-
-      const probe = session.directHostProbe;
-      const inviteUrl = buildShareableInviteUrl(session);
-      const signature = `${probe.reachability}:${inviteUrl || "none"}`;
-      if (lastProbeSignatureRef.current === signature) {
-        return;
-      }
-      lastProbeSignatureRef.current = signature;
-
-      if (probe.reachability === "pending") {
-        pushHostEvent({ level: "info", message: probe.message });
-        return;
-      }
-
-      if (probe.reachability === "reachable" && inviteUrl && probe.addressSource !== "lan_ipv4") {
-        pushHostEvent({ level: "success", message: probe.message });
-        pushToast({
-          tone: "success",
-          title: copy.hostDirectReadyTitle,
-          description: copy.hostDirectReadyDescription,
-        });
-
-        if (
-          settings?.shouldAutoCopyInviteLink &&
-          lastCopiedInviteRef.current !== inviteUrl
-        ) {
-          lastCopiedInviteRef.current = inviteUrl;
-          void navigator.clipboard.writeText(inviteUrl).catch(() => undefined);
-        }
-      } else if (inviteUrl && probe.addressSource === "lan_ipv4") {
-        pushHostEvent({ level: "success", message: probe.message });
-        pushToast({
-          tone: "success",
-          title: copy.hostStartedTitle,
-          description: probe.message,
-        });
-      } else if (inviteUrl) {
-        pushHostEvent({ level: "warning", message: probe.message });
-        pushToast({
-          tone: "warning",
-          title: copy.hostDirectLimitedTitle,
-          description: probe.message,
-        });
-      } else {
-        pushHostEvent({ level: "warning", message: probe.message });
-        pushToast({
-          tone: "warning",
-          title: copy.hostDirectLimitedTitle,
-          description: probe.message,
-        });
-      }
-    });
-
-    return () => {
-      unsubscribe();
-    };
-  }, [pushHostEvent, pushToast, setConnectionMode, setHostSession, setJoinSignalUrl, setRoom, settings?.shouldAutoCopyInviteLink]);
-
   const startSpeakingDetector = (stream: MediaStream) => {
     activeSpeakingDetector?.destroy();
     activeSpeakingDetector = createSpeakingDetector(stream, (isSpeaking) => {
@@ -368,13 +193,7 @@ export const useRoomState = () => {
     setLocalStream(undefined);
   };
 
-  const cleanupPreviousSession = async ({
-    resetStore = false,
-    stopHost = false,
-  }: {
-    resetStore?: boolean;
-    stopHost?: boolean;
-  } = {}) => {
+  const cleanupPreviousSession = async ({ resetStore = false }: { resetStore?: boolean } = {}) => {
     const client = activeClient;
     activeClient = null;
     if (client) {
@@ -384,9 +203,6 @@ export const useRoomState = () => {
     stopLocalMedia();
     previousMemberIds = new Set<string>();
     setConnectionHealth({ reconnectAttempt: 0 });
-    if (stopHost) {
-      await window.desktopApi.host.stop().catch(() => undefined);
-    }
     if (resetStore) {
       useRoomStore.getState().resetRoom();
     }
@@ -420,38 +236,20 @@ export const useRoomState = () => {
     }
   };
 
-  const connectToRoom = async ({
-    connectUrl,
-    inviteUrl,
-    roomId,
-    roomName,
-    connectionMode,
-    isFixedChannel = false,
-    channelCode,
-  }: {
-    connectUrl: string;
-    inviteUrl?: string;
-    roomId: string;
-    roomName: string;
-    connectionMode: ConnectionMode;
-    isFixedChannel?: boolean;
-    channelCode?: string;
-  }) => {
+  const connectToFixedChannel = async (serverUrl: string) => {
     const currentSettings = useSettingsStore.getState().settings ?? settings;
     const stream = await ensureLocalStream();
-
     const peerId = crypto.randomUUID();
+    const roomName = currentSettings?.roomName ?? room.roomName;
+
     activeClient = new RoomClient({
-      signalingUrl: connectUrl,
-      roomId,
+      signalingUrl: serverUrl,
+      roomId: DEFAULT_CHANNEL_ID,
       peerId,
-      nickname: currentSettings?.nickname ?? "我",
-      avatarDataUrl: isFixedChannel ? undefined : avatarDataUrl,
+      nickname: currentSettings?.nickname || "我",
+      avatarDataUrl: undefined,
       avatarId: currentSettings?.avatarId,
-      isFixedChannel,
-      channelCode,
       localStream: stream,
-      connectionMode,
       appVersion: runtimeInfo?.version ?? "0.0.0",
       protocolVersion: runtimeInfo?.protocolVersion ?? "1",
       buildNumber: runtimeInfo?.buildNumber ?? "unknown",
@@ -461,19 +259,19 @@ export const useRoomState = () => {
         setMembers(members);
 
         joined.forEach((member) => {
-          pushHostEvent({
+          pushRoomEvent({
             level: "success",
             memberName: member.nickname,
-            message: `${member.nickname} 加入成功`,
+            message: `${member.nickname} 加入频道`,
           });
         });
 
         left.forEach((memberId) => {
           const leftMember = previousMembers.find((member) => member.id === memberId);
-          pushHostEvent({
+          pushRoomEvent({
             level: "warning",
             memberName: leftMember?.nickname,
-            message: `${leftMember?.nickname ?? "有成员"} 已离开`,
+            message: `${leftMember?.nickname ?? "有成员"} 离开频道`,
           });
         });
       },
@@ -481,46 +279,37 @@ export const useRoomState = () => {
       onConnectionState: (state) => {
         setConnectionState(state);
         if (state === RoomConnectionState.WaitingSnapshot) {
-          pushHostEvent({
-            level: "info",
-            message: "已连接，正在同步成员…",
-          });
+          pushRoomEvent({ level: "info", message: "已连接，正在同步成员…" });
         }
         if (state === RoomConnectionState.WaitingPeer) {
-          pushHostEvent({
-            level: "info",
-            message: "等待好友加入",
-          });
+          pushRoomEvent({ level: "info", message: "等待好友加入" });
         }
       },
       onReconnectAttempt: (attempt) => {
         setConnectionHealth({ reconnectAttempt: attempt, lastUpdatedAt: new Date().toISOString() });
-        pushHostEvent({
-          level: "warning",
-          message: `连接有波动，正在第 ${attempt} 次重连…`,
-        });
+        pushRoomEvent({ level: "warning", message: `连接有波动，正在第 ${attempt} 次重连…` });
       },
       onReconnectExhausted: (error) => {
         void writeRendererLog("signaling", "error", "Signaling reconnect exhausted", {
-          roomId,
+          roomId: DEFAULT_CHANNEL_ID,
           peerId,
           error: error.message,
         });
-        void cleanupPreviousSession({ resetStore: true, stopHost: true }).then(() => {
-          setConnectionState(RoomConnectionState.Failed, "连接已断开，请重新加入房间。");
+        void cleanupPreviousSession({ resetStore: true }).then(() => {
+          setConnectionState(RoomConnectionState.Failed, "连接已断开，请重新进入频道。");
           setLifecycleState(RoomLifecycleState.Failed);
           pushToast({
             tone: "danger",
             title: "连接已断开",
-            description: "自动重连未成功，音频已经安全停止，请重新开房或加入。",
+            description: "自动重连未成功，音频已经安全停止，请重新进入频道。",
           });
           useAppStore.getState().navigate("home");
         });
       },
       onSnapshotRevision: (revision) => {
         setConnectionHealth({ lastUpdatedAt: new Date().toISOString() });
-        void writeRendererLog("signaling", "info", "Applied room snapshot", {
-          roomId,
+        void writeRendererLog("signaling", "info", "Applied fixed channel snapshot", {
+          roomId: DEFAULT_CHANNEL_ID,
           peerId,
           revision,
         });
@@ -556,12 +345,10 @@ export const useRoomState = () => {
     });
 
     setRoom({
-      roomId,
+      roomId: DEFAULT_CHANNEL_ID,
       roomName,
-      connectionMode,
       lifecycleState: RoomLifecycleState.Opening,
-      signalingUrl: inviteUrl || undefined,
-      hostSessionState: HostSessionState.Starting,
+      signalingUrl: serverUrl,
       latestFailureReason: undefined,
     });
 
@@ -576,270 +363,13 @@ export const useRoomState = () => {
     );
     playUiSound("enter-room");
     setRoom({
-      roomId,
+      roomId: DEFAULT_CHANNEL_ID,
       roomName,
-      connectionMode,
       lifecycleState: RoomLifecycleState.Open,
-      signalingUrl: inviteUrl || undefined,
-      hostSessionState: HostSessionState.Active,
+      signalingUrl: serverUrl,
       latestFailureReason: undefined,
     });
     startSpeakingDetector(stream);
-  };
-
-  const connectToAnyCandidate = async ({
-    candidateUrls,
-    inviteUrl,
-    roomId,
-    roomName,
-    connectionMode,
-  }: {
-    candidateUrls: string[];
-    inviteUrl: string;
-    roomId: string;
-    roomName: string;
-    connectionMode: ConnectionMode;
-  }) => {
-    let lastError: unknown;
-
-    for (const [index, candidateUrl] of candidateUrls.entries()) {
-      try {
-        await writeRendererLog("signaling", "info", "Trying signaling candidate", {
-          candidateUrl,
-          index,
-          total: candidateUrls.length,
-          connectionMode,
-        });
-        await connectToRoom({
-          connectUrl: candidateUrl,
-          inviteUrl,
-          roomId,
-          roomName,
-          connectionMode,
-        });
-        if (index > 0) {
-          pushHostEvent({
-            level: "success",
-            message: "备用地址连接成功",
-          });
-        }
-        return candidateUrl;
-      } catch (error) {
-        lastError = error;
-        await writeRendererLog("signaling", "warn", "Signaling candidate failed", {
-          candidateUrl,
-          index,
-          total: candidateUrls.length,
-          connectionMode,
-          error: error instanceof Error ? error.message : String(error),
-          ...activeClient?.getDiagnostics(),
-        });
-        await cleanupPreviousSession();
-      }
-    }
-
-    throw lastError instanceof Error ? lastError : new Error(copy.networkFailed);
-  };
-
-  const diagnoseJoinFailure = async (
-    signalingUrl: string,
-    connectionMode: ConnectionMode,
-    error: unknown,
-  ) => {
-    try {
-      let parsedMode = connectionMode;
-      try {
-        parsedMode =
-          (new URL(signalingUrl).searchParams.get("mode") as ConnectionMode | null) ??
-          connectionMode;
-      } catch {
-        // URL validation is handled by diagnoseJoin.
-      }
-      const diagnostic = await window.desktopApi.host.diagnoseJoin(signalingUrl, parsedMode);
-      await writeRendererLog("signaling", "warn", "Join failure diagnostic", {
-        ...diagnostic,
-        parsedMode,
-        currentSelectedMode: connectionMode,
-        rawError: error instanceof Error ? error.message : String(error),
-      });
-
-      if (error instanceof Error && error.message === "join_ack_timeout") {
-        return "服务器已连接，但没有确认加入房间。";
-      }
-
-      if (error instanceof Error && error.message === "room_snapshot_timeout") {
-        return "已加入房间，但成员同步超时。";
-      }
-
-      if (!diagnostic.isUrlValid) {
-        return diagnostic.message;
-      }
-
-      if (!diagnostic.isReachable) {
-        return "无法连接到房主地址";
-      }
-
-      if (diagnostic.failureStage === "websocket") {
-        return copy.handshakeFailed;
-      }
-
-      return diagnostic.message;
-    } catch (diagnosticError) {
-      await writeRendererLog("signaling", "warn", "Failed to run join diagnostic", {
-        error:
-          diagnosticError instanceof Error ? diagnosticError.message : String(diagnosticError),
-      });
-      return normalizeRoomError(error, copy.networkFailed);
-    }
-  };
-
-  const startHost = async () => {
-    if (!settings) {
-      return;
-    }
-
-    setRoomAction("starting");
-    setConnectionState(RoomConnectionState.StartingHost);
-    setLifecycleState(RoomLifecycleState.Opening);
-    clearHostEvents();
-    clearChatMessages();
-    lastProbeSignatureRef.current = "";
-    pushHostEvent({ level: "info", message: "正在启动房间" });
-
-    try {
-      await cleanupPreviousSession({ stopHost: true });
-      await writeRendererLog("connection-mode", "info", "Starting host room", {
-        roomName: room.roomName,
-        connectionMode: settings.connectionMode,
-      });
-
-      const session = await window.desktopApi.host.start(
-        room.roomName,
-        settings.nickname,
-        settings.connectionMode,
-      );
-      const shareableInviteUrl = buildShareableInviteUrl(session);
-      const hostJoinUrl = session.localSignalingUrl || shareableInviteUrl;
-
-      applyHostSessionSnapshot(session, {
-        setHostSession,
-        setJoinSignalUrl,
-        setConnectionMode,
-        setRoom,
-      });
-
-      await connectToRoom({
-        connectUrl: hostJoinUrl,
-        inviteUrl: shareableInviteUrl,
-        roomId: session.roomId,
-        roomName: session.roomName,
-        connectionMode: session.connectionMode,
-      });
-
-      if (shareableInviteUrl) {
-        try {
-          await navigator.clipboard.writeText(shareableInviteUrl);
-          lastCopiedInviteRef.current = shareableInviteUrl;
-          pushToast({
-            tone: "success",
-            title: copy.copiedAddressTitle,
-            description: copy.copiedAddressDescription,
-          });
-        } catch {
-          // noop
-        }
-      }
-
-      useAppStore.getState().navigate("room");
-      pushToast({
-        tone: "success",
-        title: copy.hostStartedTitle,
-        description:
-          session.connectionMode === "direct_host"
-            ? session.directHostProbe?.message ?? copy.hostStartedDescription
-            : copy.hostStartedDescription,
-      });
-    } catch (error) {
-      const description = normalizeRoomError(error, copy.startHostTitle);
-      await writeRendererLog("signaling", "error", "Failed to start host room", {
-        connectionMode: settings.connectionMode,
-        error: error instanceof Error ? error.message : String(error),
-      });
-      await window.desktopApi.host.stop().catch(() => undefined);
-      await cleanupPreviousSession({ stopHost: true });
-      setHostSession(undefined);
-      setConnectionState(RoomConnectionState.Failed, description);
-      setRoom({
-        lifecycleState: RoomLifecycleState.Failed,
-        signalingUrl: undefined,
-        hostSessionState: HostSessionState.Failed,
-      });
-      pushHostEvent({ level: "error", message: description });
-      pushToast({
-        tone: "danger",
-        title: copy.startHostTitle,
-        description,
-      });
-    } finally {
-      setRoomAction("idle");
-    }
-  };
-
-  const joinRoom = async (inviteValue = joinSignalUrl) => {
-    if (!settings) {
-      return;
-    }
-
-    setRoomAction("joining");
-    setConnectionState(RoomConnectionState.Joining);
-    setLifecycleState(RoomLifecycleState.Opening);
-
-    try {
-      await cleanupPreviousSession({ stopHost: true });
-      const invite = parseInvite(inviteValue, settings.connectionMode);
-      setConnectionMode(invite.connectionMode);
-      await writeRendererLog("connection-mode", "info", "Joining room", invite);
-      clearChatMessages();
-
-      const connectedUrl = await connectToAnyCandidate({
-        candidateUrls: invite.candidateUrls,
-        inviteUrl: invite.signalingUrl,
-        roomId: invite.roomId,
-        roomName: room.roomName,
-        connectionMode: invite.connectionMode,
-      });
-
-      setJoinSignalUrl(invite.signalingUrl);
-      await writeRendererLog("signaling", "info", "Joined room through signaling candidate", {
-        connectedUrl,
-        advertisedUrl: invite.signalingUrl,
-        candidateCount: invite.candidateUrls.length,
-      });
-      useAppStore.getState().navigate("room");
-      pushToast({
-        tone: "success",
-        title: copy.joinedRoomTitle,
-        description: copy.joinedRoomDescription,
-      });
-    } catch (error) {
-      const currentMode = room.connectionMode || settings.connectionMode;
-      const description = await diagnoseJoinFailure(inviteValue, currentMode, error);
-      await writeRendererLog("signaling", "error", "Failed to join room", {
-        connectionMode: currentMode,
-        error: error instanceof Error ? error.message : String(error),
-        signalingUrl: inviteValue,
-      });
-      await cleanupPreviousSession();
-      setConnectionState(RoomConnectionState.Failed, description);
-      setRoom({ lifecycleState: RoomLifecycleState.Failed });
-      pushToast({
-        tone: "danger",
-        title: copy.joinRoomTitle,
-        description,
-      });
-    } finally {
-      setRoomAction("idle");
-    }
   };
 
   const joinChannel = async (serverUrlOverride?: string) => {
@@ -848,60 +378,51 @@ export const useRoomState = () => {
       return;
     }
 
-    const serverUrl = serverUrlOverride?.trim() || currentSettings.relayServerUrl?.trim();
-    if (!serverUrl) {
-      pushToast({
-        tone: "warning",
-        title: "还没有服务器地址",
-        description: "请返回进入页填写服务器地址。",
-      });
+    let serverUrl: string;
+    try {
+      serverUrl = normalizeServerUrl(serverUrlOverride || currentSettings.relayServerUrl);
+    } catch (error) {
+      const description = normalizeRoomError(error, copy.joinTitle);
+      pushToast({ tone: "warning", title: copy.joinTitle, description });
       return;
     }
 
     setRoomAction("joining");
     setConnectionState(RoomConnectionState.Joining);
     setLifecycleState(RoomLifecycleState.Opening);
-    clearHostEvents();
+    clearRoomEvents();
     clearChatMessages();
-    pushHostEvent({ level: "info", message: "正在进入开黑频道" });
+    pushRoomEvent({ level: "info", message: "正在进入固定频道" });
 
     try {
-      await cleanupPreviousSession({ stopHost: true });
+      await cleanupPreviousSession();
       await writeRendererLog("signaling", "info", "Joining fixed channel", {
+        serverUrl,
         channelId: DEFAULT_CHANNEL_ID,
-        connectionMode: "relay",
-        hasChannelCode: Boolean(currentSettings.channelAccessCode),
       });
-      await connectToRoom({
-        connectUrl: serverUrl,
-        roomId: DEFAULT_CHANNEL_ID,
-        roomName: currentSettings.roomName,
-        connectionMode: "relay",
-        isFixedChannel: true,
-        channelCode: currentSettings.channelAccessCode,
-      });
-      setConnectionMode("relay");
+      await connectToFixedChannel(serverUrl);
       useAppStore.getState().navigate("room");
       pushToast({
         tone: "success",
-        title: "已进入开黑频道",
-        description: "好友上线后会自动出现在队伍里。",
+        title: copy.joinedTitle,
+        description: copy.joinedDescription,
       });
     } catch (error) {
-      const rawMessage = error instanceof Error ? error.message : String(error);
-      const description =
-        rawMessage.includes("频道码") || rawMessage.includes("channel_code_invalid")
-          ? "频道码不对，问下朋友再试试。"
-          : normalizeRoomError(error, "暂时连不上频道，请稍后再试。");
+      const description = normalizeRoomError(error, copy.networkFailed);
       await writeRendererLog("signaling", "error", "Failed to join fixed channel", {
+        serverUrl,
         channelId: DEFAULT_CHANNEL_ID,
-        hasChannelCode: Boolean(currentSettings.channelAccessCode),
-        error: rawMessage,
+        error: error instanceof Error ? error.message : String(error),
+        ...activeClient?.getDiagnostics(),
       });
       await cleanupPreviousSession();
       setConnectionState(RoomConnectionState.Failed, description);
-      setRoom({ lifecycleState: RoomLifecycleState.Failed });
-      pushToast({ tone: "danger", title: "进入频道失败", description });
+      setRoom({
+        lifecycleState: RoomLifecycleState.Failed,
+        signalingUrl: serverUrl,
+      });
+      pushRoomEvent({ level: "error", message: description });
+      pushToast({ tone: "danger", title: copy.joinTitle, description });
     } finally {
       setRoomAction("idle");
     }
@@ -952,10 +473,8 @@ export const useRoomState = () => {
     try {
       playUiSound("leave-room");
       setLifecycleState(RoomLifecycleState.Closing);
-      await cleanupPreviousSession({ resetStore: true, stopHost: true });
+      await cleanupPreviousSession({ resetStore: true });
       previousMemberIds = new Set<string>();
-      lastProbeSignatureRef.current = "";
-      lastCopiedInviteRef.current = "";
       if (settings) {
         useRoomStore.getState().syncLocalProfile({
           nickname: settings.nickname,
@@ -973,25 +492,24 @@ export const useRoomState = () => {
   };
 
   const copyInviteLink = async () => {
-    const inviteUrl = buildShareableInviteUrl(hostSession) || room.signalingUrl;
+    const serverUrl = room.signalingUrl || settings?.relayServerUrl?.trim();
 
-    if (!inviteUrl || !isValidInviteUrl(inviteUrl)) {
+    if (!serverUrl) {
       pushToast({
         tone: "warning",
-        title: "当前还没有真实可分享地址",
-        description: "请等待地址验证完成，或切换到临时公网、Tailscale / 云中继模式。",
+        title: "还没有服务器地址",
+        description: "填写服务器地址并进入频道后再复制。",
       });
       return;
     }
 
     try {
-      await navigator.clipboard.writeText(inviteUrl);
-      lastCopiedInviteRef.current = inviteUrl;
+      await navigator.clipboard.writeText(serverUrl);
       playUiSound("copy-success");
       pushToast({
         tone: "success",
-        title: copy.copiedAddressTitle,
-        description: copy.copiedAddressDescription,
+        title: copy.copiedServerTitle,
+        description: copy.copiedServerDescription,
       });
     } catch {
       pushToast({
@@ -1070,10 +588,7 @@ export const useRoomState = () => {
 
   return {
     room,
-    joinSignalUrl,
-    setJoinSignalUrl,
-    startHost,
-    joinRoom,
+    localStream,
     joinChannel,
     leaveRoom,
     replaceInputDevice,

@@ -29,14 +29,6 @@ export enum RoomLifecycleState {
   Failed = "failed",
 }
 
-export enum HostSessionState {
-  NotStarted = "not_started",
-  Starting = "starting",
-  Active = "active",
-  Stopping = "stopping",
-  Failed = "failed",
-}
-
 export enum MemberJoinState {
   Waiting = "waiting",
   Connecting = "connecting",
@@ -95,15 +87,6 @@ export enum PushToTalkState {
   Armed = "armed",
   Pressed = "pressed",
   Locked = "locked",
-}
-
-export enum TailscaleState {
-  Unknown = "unknown",
-  Checking = "checking",
-  Installed = "installed",
-  NotInstalled = "not_installed",
-  Connected = "connected",
-  Disconnected = "disconnected",
 }
 
 export enum ExportTaskState {

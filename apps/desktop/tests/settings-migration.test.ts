@@ -13,6 +13,9 @@ test("migrateSettings falls back to safe defaults for damaged legacy config", ()
     inputLevelThreshold: -10,
     settingsSchemaVersion: 0,
     shouldAutoCopyInviteLink: false,
+    channelAccessCode: "legacy-code",
+    manualDirectHost: "203.0.113.8",
+    connectionMode: "direct_host",
     isMicOnSoundEnabled: false,
     isMicOffSoundEnabled: false,
     isMemberJoinSoundEnabled: false,
@@ -30,7 +33,10 @@ test("migrateSettings falls back to safe defaults for damaged legacy config", ()
   assert.equal(result.settings.preferredSampleRate, "auto");
   assert.equal(result.settings.inputLevelThreshold, defaultSettings.inputLevelThreshold);
   assert.equal(result.settings.hasCompletedProfileSetup, false);
-  assert.equal(result.settings.shouldAutoCopyInviteLink, true);
+  assert.equal("shouldAutoCopyInviteLink" in result.settings, false);
+  assert.equal("channelAccessCode" in result.settings, false);
+  assert.equal("manualDirectHost" in result.settings, false);
+  assert.equal("connectionMode" in result.settings, false);
   assert.equal(result.settings.isMicOnSoundEnabled, true);
   assert.equal(result.settings.isMicOffSoundEnabled, true);
   assert.equal(result.settings.isMemberJoinSoundEnabled, true);

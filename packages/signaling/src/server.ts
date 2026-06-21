@@ -1,5 +1,5 @@
 import { EventEmitter } from "node:events";
-import { createHash, timingSafeEqual } from "node:crypto";
+import { createHash } from "node:crypto";
 import { createServer, type Server as HttpServer } from "node:http";
 
 import {
@@ -16,13 +16,10 @@ import type {
   AvatarUpdateMessage,
   ChatMessage,
   ErrorMessage,
-  HelloMessage,
   IceCandidateMessage,
   JoinChannelMessage,
-  JoinRoomMessage,
   JoinAckMessage,
   LeaveChannelMessage,
-  LeaveRoomMessage,
   MemberStateMessage,
   KnockEventMessage,
   PeerAnswerMessage,
@@ -46,8 +43,6 @@ interface SignalingServerOptions {
 const MAX_SIGNALING_PAYLOAD_BYTES = 256 * 1024;
 const MAX_AVATAR_BYTES = 128 * 1024;
 const MAX_AUDIO_CHUNK_BYTES = 96 * 1024;
-const CHANNEL_CODE_MAX_FAILURES = 5;
-const CHANNEL_CODE_COOLDOWN_MS = 30_000;
 
 const normalizeAvatar = (
   avatarDataUrl?: string,
@@ -70,7 +65,6 @@ export class SignalingServer extends EventEmitter {
   private readonly logger?: SignalingServerOptions["logger"];
   private heartbeatTimer?: NodeJS.Timeout;
   private audioServerSequence = 0;
-  private readonly channelCodeFailures = new Map<string, { count: number; lastFailAt: number }>();
 
   constructor(private readonly options: SignalingServerOptions) {
     super();
@@ -273,12 +267,9 @@ export class SignalingServer extends EventEmitter {
     }
 
     switch (message.type) {
-      case "hello":
-      case "join_room":
       case "join_channel":
         this.handleJoin(socket, message);
         return;
-      case "leave_room":
       case "leave_channel":
         this.handleLeave(message);
         return;
@@ -323,7 +314,7 @@ export class SignalingServer extends EventEmitter {
 
   private handleJoin(
     socket: WebSocket,
-    message: HelloMessage | JoinRoomMessage | JoinChannelMessage,
+    message: JoinChannelMessage,
   ): void {
     if (message.protocolVersion !== APP_PROTOCOL_VERSION) {
       const mismatchMessage: ErrorMessage = {
@@ -337,65 +328,7 @@ export class SignalingServer extends EventEmitter {
       return;
     }
 
-    const isFixedChannel = message.type === "join_channel";
-    const configuredChannelCode = process.env.CHANNEL_ACCESS_CODE?.trim();
-    if (isFixedChannel && configuredChannelCode) {
-      const clientIp = this.getSocketRemoteAddress(socket);
-      if (this.isChannelCodeRateLimited(clientIp)) {
-        this.safeSend(socket, {
-          type: "error",
-          code: "rate_limited",
-          roomId: message.roomId,
-          peerId: message.peerId,
-          message: "频道码验证失败次数过多，请稍后再试。",
-        });
-        this.logger?.("channel join rate limited", {
-          roomId: message.roomId,
-          peerId: message.peerId,
-          reason: "rate_limited",
-          remoteAddress: clientIp,
-        });
-        return;
-      }
-      const incomingCode = message.channelCode?.trim() ?? "";
-      if (
-        incomingCode.length !== configuredChannelCode.length ||
-        !this.safeEquals(incomingCode, configuredChannelCode)
-      ) {
-        this.recordChannelCodeFailure(clientIp);
-        this.safeSend(socket, {
-          type: "error",
-          code: "channel_code_invalid",
-          roomId: message.roomId,
-          peerId: message.peerId,
-          message: "频道码不对，问下朋友再试试。",
-        });
-        this.logger?.("channel join rejected", {
-          roomId: message.roomId,
-          peerId: message.peerId,
-          reason: "channel_code_invalid",
-        });
-        return;
-      }
-    }
-
     const existingRoom = this.roomManager.getRoom(message.roomId);
-    if (
-      message.connectionMode === "relay" &&
-      existingRoom?.relayToken &&
-      existingRoom.relayToken !== ("relayToken" in message ? message.relayToken : undefined)
-    ) {
-      const relayMessage: ErrorMessage = {
-        type: "error",
-        code: "relay_auth_failed",
-        roomId: message.roomId,
-        peerId: message.peerId,
-        message: "这个临时链接已经失效，请向朋友确认。",
-      };
-      this.safeSend(socket, relayMessage);
-      return;
-    }
-
     const existingPeer = existingRoom?.peers.getPeer(message.peerId);
     if (!existingPeer && !this.roomManager.canJoin(message.roomId)) {
       const roomFullMessage: ErrorMessage = {
@@ -411,7 +344,6 @@ export class SignalingServer extends EventEmitter {
 
     Reflect.set(socket, "__roomId", message.roomId);
     Reflect.set(socket, "__peerId", message.peerId);
-    const existingPeerCount = existingRoom?.peers.listPeers().length ?? 0;
     if (existingPeer && existingPeer.socket !== socket) {
       try {
         existingPeer.socket.close(4001, "peer_reconnected");
@@ -420,20 +352,17 @@ export class SignalingServer extends EventEmitter {
       }
     }
 
-    const normalizedAvatar = normalizeAvatar(
-      "avatarDataUrl" in message ? message.avatarDataUrl : undefined,
-    );
     const room = this.roomManager.addPeer(
       message.roomId,
       this.roomName,
       {
         id: message.peerId,
         nickname: message.nickname,
-        avatarDataUrl: isFixedChannel ? undefined : normalizedAvatar.avatarDataUrl ?? existingPeer?.avatarDataUrl,
-        avatarHash: isFixedChannel ? undefined : normalizedAvatar.avatarHash ?? existingPeer?.avatarHash,
+        avatarDataUrl: existingPeer?.avatarDataUrl,
+        avatarHash: existingPeer?.avatarHash,
         avatarId: message.avatarId ?? existingPeer?.avatarId,
         socket,
-        isHost: isFixedChannel ? false : existingPeer?.isHost ?? existingPeerCount === 0,
+        isHost: false,
         isMuted: existingPeer?.isMuted ?? false,
         isSpeaking: existingPeer?.isSpeaking ?? false,
         isDeafened: existingPeer?.isDeafened ?? false,
@@ -444,13 +373,11 @@ export class SignalingServer extends EventEmitter {
         lastHeartbeatAt: Date.now(),
         disconnectedAt: undefined,
       },
-      message.connectionMode === "relay" && "relayToken" in message ? message.relayToken : undefined,
     );
 
     room.appVersion = message.appVersion;
     room.protocolVersion = APP_PROTOCOL_VERSION;
     room.buildNumber = APP_BUILD_NUMBER;
-    room.connectionMode = message.connectionMode;
     this.logger?.(existingPeer ? "peer reconnected" : "peer joined", {
       roomId: message.roomId,
       peerId: message.peerId,
@@ -467,19 +394,12 @@ export class SignalingServer extends EventEmitter {
       appVersion: room.appVersion,
       protocolVersion: room.protocolVersion,
       buildNumber: room.buildNumber,
-      connectionMode: room.connectionMode,
     };
     this.safeSend(socket, joinAck);
     this.broadcastSnapshot(message.roomId);
-    if (!isFixedChannel) {
-      this.sendAvatarsToPeer(socket, room.roomId);
-    }
-    if (!isFixedChannel && normalizedAvatar.avatarDataUrl) {
-      this.broadcastAvatarUpdate(message.roomId, message.peerId);
-    }
   }
 
-  private handleLeave(message: LeaveRoomMessage | LeaveChannelMessage): void {
+  private handleLeave(message: LeaveChannelMessage): void {
     this.logger?.("peer left", { roomId: message.roomId, peerId: message.peerId });
     this.roomManager.removePeer(message.roomId, message.peerId);
     this.broadcastSnapshot(message.roomId);
@@ -646,7 +566,6 @@ export class SignalingServer extends EventEmitter {
         appVersion: room.appVersion,
         protocolVersion: room.protocolVersion,
         buildNumber: room.buildNumber,
-        connectionMode: room.connectionMode,
       };
       this.safeSend(peer.socket, payload);
       this.emit("snapshot", payload);
@@ -691,7 +610,6 @@ export class SignalingServer extends EventEmitter {
       appVersion: room.appVersion,
       protocolVersion: room.protocolVersion,
       buildNumber: room.buildNumber,
-      connectionMode: room.connectionMode,
     };
     this.safeSend(socket, payload);
     this.emit("snapshot", payload);
@@ -764,65 +682,14 @@ export class SignalingServer extends EventEmitter {
     }
   }
 
-  private getSocketRemoteAddress(socket: WebSocket): string {
-    const req = (socket as WebSocket & { _socket?: { remoteAddress?: string } })._socket;
-    return req?.remoteAddress ?? "unknown";
-  }
-
-  private isChannelCodeRateLimited(remoteAddress: string): boolean {
-    const entry = this.channelCodeFailures.get(remoteAddress);
-    if (!entry) {
-      return false;
-    }
-    if (Date.now() - entry.lastFailAt > CHANNEL_CODE_COOLDOWN_MS) {
-      this.channelCodeFailures.delete(remoteAddress);
-      return false;
-    }
-    return entry.count >= CHANNEL_CODE_MAX_FAILURES;
-  }
-
-  private recordChannelCodeFailure(remoteAddress: string): void {
-    const entry = this.channelCodeFailures.get(remoteAddress);
-    if (entry && Date.now() - entry.lastFailAt <= CHANNEL_CODE_COOLDOWN_MS) {
-      entry.count += 1;
-      entry.lastFailAt = Date.now();
-    } else {
-      this.channelCodeFailures.set(remoteAddress, { count: 1, lastFailAt: Date.now() });
-    }
-  }
-
-  private safeEquals(a: string, b: string): boolean {
-    if (a.length !== b.length) {
-      return false;
-    }
-    try {
-      return timingSafeEqual(Buffer.from(a, "utf8"), Buffer.from(b, "utf8"));
-    } catch {
-      return false;
-    }
-  }
-
   /**
    * HTTP POST /llm/chat — AI 代理端点。
-   * 客户端不带 MiMo key，用 CHANNEL_ACCESS_CODE 做鉴权。
+   * 客户端不带 MiMo key，只有用户消息以“问”开头时才会调用。
    */
   private handleLlmProxy(
     request: import("node:http").IncomingMessage,
     response: import("node:http").ServerResponse,
   ): void {
-    const configuredCode = process.env.CHANNEL_ACCESS_CODE?.trim();
-
-    if (configuredCode) {
-      const clientCode = (typeof request.headers["x-channel-code"] === "string"
-        ? request.headers["x-channel-code"]
-        : undefined)?.trim() ?? "";
-      if (clientCode.length !== configuredCode.length || !this.safeEquals(clientCode, configuredCode)) {
-        response.writeHead(403, { "content-type": "application/json; charset=utf-8" });
-        response.end(JSON.stringify({ ok: false, reason: "unauthorized" }));
-        return;
-      }
-    }
-
     const chunks: Buffer[] = [];
     request.on("data", (chunk: Buffer) => chunks.push(chunk));
     request.on("end", () => {

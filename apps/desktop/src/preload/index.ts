@@ -62,16 +62,6 @@ const desktopApi: DesktopApi = {
       return () => ipcRenderer.removeListener(IPC_CHANNELS.shortcuts.muteTriggered, wrapped);
     },
   },
-  tailscale: {
-    checkStatus: () => ipcRenderer.invoke(IPC_CHANNELS.tailscale.checkStatus),
-    openInstallGuide: () =>
-      ipcRenderer.invoke(IPC_CHANNELS.tailscale.openInstallGuide),
-  },
-  network: {
-    getSnapshot: () => ipcRenderer.invoke(IPC_CHANNELS.network.getSnapshot),
-    getProxyDiagnostics: () => ipcRenderer.invoke(IPC_CHANNELS.network.getProxyDiagnostics),
-    exportSummary: () => ipcRenderer.invoke(IPC_CHANNELS.network.exportSummary),
-  },
   updates: {
     check: () => ipcRenderer.invoke(IPC_CHANNELS.updates.check),
     download: () => ipcRenderer.invoke(IPC_CHANNELS.updates.download),
@@ -84,20 +74,6 @@ const desktopApi: DesktopApi = {
       return () => ipcRenderer.removeListener(IPC_CHANNELS.updates.status, wrapped);
     },
     openReleases: () => ipcRenderer.invoke(IPC_CHANNELS.updates.openReleases),
-  },
-  host: {
-    start: (roomName, nickname, connectionMode) =>
-      ipcRenderer.invoke(IPC_CHANNELS.host.start, roomName, nickname, connectionMode),
-    stop: () => ipcRenderer.invoke(IPC_CHANNELS.host.stop),
-    diagnoseJoin: (signalingUrl, connectionMode) =>
-      ipcRenderer.invoke(IPC_CHANNELS.host.diagnoseJoin, signalingUrl, connectionMode),
-    onSessionUpdated: (listener) => {
-      const wrapped = (_event: Electron.IpcRendererEvent, session: unknown) => {
-        listener(session as Parameters<typeof listener>[0]);
-      };
-      ipcRenderer.on(IPC_CHANNELS.host.sessionUpdated, wrapped);
-      return () => ipcRenderer.removeListener(IPC_CHANNELS.host.sessionUpdated, wrapped);
-    },
   },
   signaling: {
     connect: (signalingUrl) => ipcRenderer.invoke(IPC_CHANNELS.signaling.connect, signalingUrl),
