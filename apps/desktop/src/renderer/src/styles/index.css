@@ -498,6 +498,15 @@ a,
 
 /* ── 动画 ── */
 
+[data-gsap-entry],
+[data-gsap-room],
+[data-gsap-character],
+[data-gsap-chat-message],
+[data-gsap-settings],
+[data-gsap-voice] {
+  will-change: transform, opacity;
+}
+
 @keyframes idle-breathe {
   0%, 100% { transform: translateY(0); }
   50% { transform: translateY(-1.5px); }

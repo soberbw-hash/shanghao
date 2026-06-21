@@ -1,6 +1,6 @@
-import { useEffect, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { ArrowRight, Dices, Mic, MicOff } from "lucide-react";
-import { motion } from "framer-motion";
+import { gsap } from "gsap";
 
 import { MicPermissionState, type BuiltInAvatarId } from "@private-voice/shared";
 
@@ -9,6 +9,7 @@ import { Input } from "../components/base/Input";
 import { BrandMark } from "../components/brand/BrandMark";
 import { CharacterPicker } from "../components/profile/AvatarPicker";
 import { StartupSplashPage } from "../components/status/StartupSplashPage";
+import { usePrefersReducedMotion } from "../hooks/usePrefersReducedMotion";
 import { useRoomState } from "../hooks/useRoomState";
 import { useAppStore } from "../store/appStore";
 import { useAudioStore } from "../store/audioStore";
@@ -33,9 +34,11 @@ export const HomePage = () => {
   const permissionState = useAudioStore((state) => state.permissionState);
   const inputDevices = useAudioStore((state) => state.inputDevices);
   const refreshDevices = useAudioStore((state) => state.refreshDevices);
+  const pageRef = useRef<HTMLDivElement>(null);
   const [nickname, setNickname] = useState("");
   const [avatarId, setAvatarId] = useState<BuiltInAvatarId>("fox");
   const [serverAddress, setServerAddress] = useState("");
+  const reduceMotion = usePrefersReducedMotion(settings?.reduceMotion ?? false);
 
   useEffect(() => {
     if (!settings) return;
@@ -43,6 +46,51 @@ export const HomePage = () => {
     setAvatarId(settings.avatarId || randomAvatarId());
     setServerAddress(settings.relayServerUrl || "");
   }, [settings]);
+
+  useLayoutEffect(() => {
+    if (!settings || !pageRef.current) return;
+
+    const context = gsap.context(() => {
+      if (reduceMotion) {
+        gsap.set("[data-gsap-entry]", { clearProps: "all" });
+        return;
+      }
+
+      const timeline = gsap.timeline({ defaults: { ease: "power3.out" } });
+      timeline
+        .fromTo(
+          "[data-gsap-entry='card']",
+          { autoAlpha: 0, y: 22, scale: 0.965, filter: "blur(8px)" },
+          { autoAlpha: 1, y: 0, scale: 1, filter: "blur(0px)", duration: 0.58 },
+        )
+        .fromTo(
+          "[data-gsap-entry='brand']",
+          { autoAlpha: 0, y: -8 },
+          { autoAlpha: 1, y: 0, duration: 0.28 },
+          "-=0.34",
+        )
+        .fromTo(
+          "[data-gsap-entry='role-picker']",
+          { autoAlpha: 0, x: -18 },
+          { autoAlpha: 1, x: 0, duration: 0.42 },
+          "-=0.18",
+        )
+        .fromTo(
+          "[data-gsap-entry='form'] > *",
+          { autoAlpha: 0, x: 18 },
+          { autoAlpha: 1, x: 0, duration: 0.34, stagger: 0.055 },
+          "-=0.34",
+        )
+        .fromTo(
+          "[data-gsap-entry='cta']",
+          { scale: 0.96 },
+          { scale: 1, duration: 0.32, ease: "back.out(1.7)" },
+          "-=0.12",
+        );
+    }, pageRef);
+
+    return () => context.revert();
+  }, [reduceMotion, settings]);
 
   if (!settings) {
     return <StartupSplashPage message="正在准备开黑频道..." />;
@@ -77,17 +125,13 @@ export const HomePage = () => {
   };
 
   return (
-    <div className="entry-page relative flex h-full items-center justify-center overflow-hidden px-6 py-7">
-      <motion.main
-        initial={{ opacity: 0, scale: 0.97, y: 20 }}
-        animate={{ opacity: 1, scale: 1, y: 0 }}
-        transition={{ duration: 0.6, ease: [0.22, 1, 0.36, 1] }}
+    <div ref={pageRef} className="entry-page relative flex h-full items-center justify-center overflow-hidden px-6 py-7">
+      <main
+        data-gsap-entry="card"
         className="entry-card relative z-10 flex w-full max-w-[900px] flex-col px-9 py-8"
       >
-        <motion.header
-          initial={{ opacity: 0, y: -10 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.15, duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
+        <header
+          data-gsap-entry="brand"
           className="flex items-center gap-4 border-b border-[#e9eef5] pb-5"
         >
           <BrandMark size="lg" />
@@ -105,20 +149,17 @@ export const HomePage = () => {
             </span>
             {micCopy.title}
           </button>
-        </motion.header>
+        </header>
 
-        <motion.section
-          initial={{ opacity: 0, y: 16 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.25, duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
+        <section
           className="mt-6 grid min-h-0 flex-1 gap-7 md:grid-cols-[1.05fr_.95fr]"
         >
-          <div className="p-2">
+          <div data-gsap-entry="role-picker" className="p-2">
             <div className="mb-4 text-sm font-semibold text-[#314158]">选择角色</div>
             <CharacterPicker value={avatarId} onChange={setAvatarId} />
           </div>
 
-          <div className="flex min-w-0 flex-col gap-5">
+          <div data-gsap-entry="form" className="flex min-w-0 flex-col gap-5">
             <label className="space-y-2">
               <span className="text-xs font-semibold text-[#52657d]">昵称</span>
               <div className="flex gap-2">
@@ -142,7 +183,7 @@ export const HomePage = () => {
                 onChange={(event) => setServerAddress(event.target.value)}
               />
             </label>
-            <div className="mt-auto">
+            <div className="mt-auto" data-gsap-entry="cta">
               <Button
                 isFullWidth
                 className="h-[52px] rounded-[18px] text-[15px]"
@@ -154,8 +195,8 @@ export const HomePage = () => {
               </Button>
             </div>
           </div>
-        </motion.section>
-      </motion.main>
+        </section>
+      </main>
     </div>
   );
 };

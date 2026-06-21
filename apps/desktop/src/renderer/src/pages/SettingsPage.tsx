@@ -1,5 +1,6 @@
-import { useEffect, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Activity, Bell, Headphones, RefreshCw } from "lucide-react";
+import { gsap } from "gsap";
 
 import type { AppSettings, DiagnosticsSnapshot, RendererDiagnosticsSummary } from "@private-voice/shared";
 
@@ -14,6 +15,7 @@ import { SettingsSection } from "../components/settings/SettingsSection";
 import { ShortcutSettingsCard } from "../components/settings/ShortcutSettingsCard";
 import { StartupSplashPage } from "../components/status/StartupSplashPage";
 import { useMicTest } from "../hooks/useMicTest";
+import { usePrefersReducedMotion } from "../hooks/usePrefersReducedMotion";
 import { getRoomRuntimeDiagnostics } from "../hooks/useRoomState";
 import { useAppStore } from "../store/appStore";
 import { useAudioStore } from "../store/audioStore";
@@ -48,6 +50,8 @@ export const SettingsPage = () => {
   const [activeSection, setActiveSection] = useState<SettingsSectionId>("audio");
   const [diagnostics, setDiagnostics] = useState<DiagnosticsSnapshot>();
   const [saveNotice, setSaveNotice] = useState("设置会自动保存");
+  const pageRef = useRef<HTMLDivElement>(null);
+  const reduceMotion = usePrefersReducedMotion(settings?.reduceMotion ?? false);
 
   const micTest = useMicTest({
     inputDeviceId: settings?.preferredInputDeviceId,
@@ -62,6 +66,39 @@ export const SettingsPage = () => {
   useEffect(() => {
     void window.desktopApi.diagnostics.snapshot().then(setDiagnostics);
   }, []);
+
+  useLayoutEffect(() => {
+    if (!settings || !pageRef.current) return;
+
+    const context = gsap.context(() => {
+      if (reduceMotion) {
+        gsap.set("[data-gsap-settings]", { clearProps: "all" });
+        return;
+      }
+
+      gsap.fromTo(
+        "[data-gsap-settings='header'], [data-gsap-settings='nav'], [data-gsap-settings='content']",
+        { autoAlpha: 0, y: 12 },
+        { autoAlpha: 1, y: 0, duration: 0.38, ease: "power3.out", stagger: 0.045 },
+      );
+    }, pageRef);
+
+    return () => context.revert();
+  }, [reduceMotion, settings]);
+
+  useLayoutEffect(() => {
+    if (!settings || reduceMotion || !pageRef.current) return;
+
+    const context = gsap.context(() => {
+      gsap.fromTo(
+        "[data-gsap-settings='content']",
+        { autoAlpha: 0, x: 10 },
+        { autoAlpha: 1, x: 0, duration: 0.24, ease: "power3.out", overwrite: true },
+      );
+    }, pageRef);
+
+    return () => context.revert();
+  }, [activeSection, reduceMotion, settings]);
 
   if (!settings) {
     return <StartupSplashPage message="正在准备设置..." />;
@@ -173,26 +210,30 @@ export const SettingsPage = () => {
 
   return (
     <PageContainer className="overflow-y-auto">
-      <SettingsPageHeader onBack={() => navigate(settingsReturnTo)} />
-      <div className="mt-5 grid gap-5 lg:grid-cols-[168px_minmax(0,1fr)]">
-        <nav className="settings-nav glass-panel h-fit rounded-[22px] p-2">
-          {sections.map(({ id, label, icon: Icon }) => (
-            <button
-              key={id}
-              type="button"
-              onClick={() => setActiveSection(id)}
-              className={`flex w-full items-center gap-3 whitespace-nowrap rounded-[14px] px-3 py-2.5 text-left text-sm font-semibold transition ${
-                activeSection === id ? "bg-[#eaf1ff] text-[#3f6ed7]" : "text-[#718096] hover:bg-white/70"
-              }`}
-            >
-              <Icon className="h-4 w-4" />
-              {label}
-            </button>
-          ))}
-        </nav>
-        <div className="min-w-0">
-          <div className="mb-2 text-right text-xs text-[#7c8da2]" aria-live="polite">{saveNotice}</div>
-          {content[activeSection]}
+      <div ref={pageRef} className="contents">
+        <div data-gsap-settings="header">
+          <SettingsPageHeader onBack={() => navigate(settingsReturnTo)} />
+        </div>
+        <div className="mt-5 grid gap-5 lg:grid-cols-[168px_minmax(0,1fr)]">
+          <nav data-gsap-settings="nav" className="settings-nav glass-panel h-fit rounded-[22px] p-2">
+            {sections.map(({ id, label, icon: Icon }) => (
+              <button
+                key={id}
+                type="button"
+                onClick={() => setActiveSection(id)}
+                className={`flex w-full items-center gap-3 whitespace-nowrap rounded-[14px] px-3 py-2.5 text-left text-sm font-semibold transition ${
+                  activeSection === id ? "bg-[#eaf1ff] text-[#3f6ed7]" : "text-[#718096] hover:bg-white/70"
+                }`}
+              >
+                <Icon className="h-4 w-4" />
+                {label}
+              </button>
+            ))}
+          </nav>
+          <div data-gsap-settings="content" className="min-w-0">
+            <div className="mb-2 text-right text-xs text-[#7c8da2]" aria-live="polite">{saveNotice}</div>
+            {content[activeSection]}
+          </div>
         </div>
       </div>
     </PageContainer>

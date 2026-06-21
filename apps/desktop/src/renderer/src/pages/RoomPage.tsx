@@ -1,5 +1,6 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Headphones, LogOut, MonitorUp, Volume2, VolumeX } from "lucide-react";
+import { gsap } from "gsap";
 
 import {
   RecordingEncoderState,
@@ -18,6 +19,7 @@ import { TopStatusBar } from "../components/layout/TopStatusBar";
 import { TeamIsland } from "../components/room/TeamIsland";
 import { playUiSound } from "../features/audio/uiSound";
 import { chatWithLLM, shouldCallLLM, type LlmHistoryEntry } from "../features/chat/llmService";
+import { usePrefersReducedMotion } from "../hooks/usePrefersReducedMotion";
 import { useRecordingController } from "../hooks/useRecordingController";
 import { useRoomState } from "../hooks/useRoomState";
 import { useAppStore } from "../store/appStore";
@@ -50,6 +52,8 @@ export const RoomPage = () => {
   const { inputDevices, outputDevices, isMuted, isDeafened, toggleMute, toggleDeafen } = useAudioStore();
   const recordingStatus = useRecordingStore((state) => state.status);
   const { capability, startRecording, stopRecording } = useRecordingController();
+  const pageRef = useRef<HTMLDivElement>(null);
+  const voicePulseRef = useRef<HTMLDivElement>(null);
   const [chatInput, setChatInput] = useState("");
   const [isLLMLoading, setIsLLMLoading] = useState(false);
   const enteredAt = useRef(Date.now());
@@ -58,11 +62,65 @@ export const RoomPage = () => {
   const moveLocalMemberRef = useRef(moveLocalMember);
   moveLocalMemberRef.current = moveLocalMember;
   const llmHistoryRef = useRef<LlmHistoryEntry[]>([]);
+  const reduceMotion = usePrefersReducedMotion(settings?.reduceMotion ?? false);
 
   const canSend =
     room.connectionState === RoomConnectionState.Connected ||
     room.connectionState === RoomConnectionState.WaitingPeer ||
     room.connectionState === RoomConnectionState.WaitingSnapshot;
+
+  useLayoutEffect(() => {
+    if (!pageRef.current) return;
+
+    const context = gsap.context(() => {
+      if (reduceMotion) {
+        gsap.set("[data-gsap-room]", { clearProps: "all" });
+        return;
+      }
+
+      const timeline = gsap.timeline({ defaults: { ease: "power3.out" } });
+      timeline
+        .fromTo(
+          "[data-gsap-room='topbar']",
+          { autoAlpha: 0, y: -8 },
+          { autoAlpha: 1, y: 0, duration: 0.3 },
+        )
+        .fromTo(
+          "[data-gsap-room='island']",
+          { autoAlpha: 0, y: 10, scale: 0.985, filter: "blur(6px)" },
+          { autoAlpha: 1, y: 0, scale: 1, filter: "blur(0px)", duration: 0.52, ease: "expo.out" },
+          "-=0.14",
+        )
+        .fromTo(
+          "[data-gsap-room='chat']",
+          { autoAlpha: 0, x: 14 },
+          { autoAlpha: 1, x: 0, duration: 0.42 },
+          "-=0.38",
+        )
+        .fromTo(
+          "[data-gsap-room='dock']",
+          { autoAlpha: 0, y: 14, scale: 0.985 },
+          { autoAlpha: 1, y: 0, scale: 1, duration: 0.36, ease: "back.out(1.35)" },
+          "-=0.24",
+        );
+    }, pageRef);
+
+    return () => context.revert();
+  }, [reduceMotion]);
+
+  useLayoutEffect(() => {
+    if (reduceMotion || !voicePulseRef.current) return;
+
+    const context = gsap.context(() => {
+      gsap.fromTo(
+        "[data-gsap-voice='primary']",
+        { scale: 0.96 },
+        { scale: 1, duration: 0.22, ease: "back.out(1.9)", overwrite: true },
+      );
+    }, voicePulseRef);
+
+    return () => context.revert();
+  }, [isDeafened, isMuted, reduceMotion]);
 
   useEffect(() => {
     void window.desktopApi.overlay.update({
@@ -225,32 +283,41 @@ export const RoomPage = () => {
   };
 
   return (
-    <div className="room-page relative flex h-full flex-col gap-2.5 overflow-hidden px-3.5 pb-3.5 pt-2">
-      <TopStatusBar onKnock={() => void knock()} onInvite={() => void invite()} />
+    <div ref={pageRef} className="room-page relative flex h-full flex-col gap-2.5 overflow-hidden px-3.5 pb-3.5 pt-2">
+      <div data-gsap-room="topbar">
+        <TopStatusBar onKnock={() => void knock()} onInvite={() => void invite()} />
+      </div>
 
       <main className="grid min-h-0 flex-1 gap-2.5 lg:grid-cols-[minmax(0,1.44fr)_minmax(280px,.56fr)]">
-        <section className="island-panel min-h-0 overflow-hidden">
+        <section data-gsap-room="island" className="island-panel min-h-0 overflow-hidden">
           <TeamIsland
             members={room.members}
             onZoneSelect={(zone, activity) => moveLocalMember(zone, activity)}
+            reduceMotion={settings?.reduceMotion ?? false}
           />
         </section>
-        <TemporaryChatPanel
-          className="h-full"
-          messages={chatMessages}
-          chatInput={chatInput}
-          onChatInputChange={setChatInput}
-          onSend={() => void send()}
-          onQuickSend={(message) => void send(message)}
-          canSend={canSend}
-          unavailableLabel="正在重连..."
-        />
+        <div data-gsap-room="chat" className="min-h-0">
+          <TemporaryChatPanel
+            className="h-full"
+            messages={chatMessages}
+            chatInput={chatInput}
+            onChatInputChange={setChatInput}
+            onSend={() => void send()}
+            onQuickSend={(message) => void send(message)}
+            canSend={canSend}
+            unavailableLabel="正在重连..."
+            reduceMotion={settings?.reduceMotion ?? false}
+          />
+        </div>
       </main>
 
-      <footer className="voice-dock flex items-center gap-2 px-3 py-2.5">
-        <MuteButton isMuted={isMuted} onClick={toggleMute} />
+      <footer ref={voicePulseRef} data-gsap-room="dock" className="voice-dock flex items-center gap-2 px-3 py-2.5">
+        <span data-gsap-voice="primary" className="inline-flex">
+          <MuteButton isMuted={isMuted} onClick={toggleMute} />
+        </span>
         <Button
           variant="ghost"
+          data-gsap-voice="primary"
           className={`voice-action-button-with-text ${isDeafened ? "bg-gradient-to-b from-[#FEE2E2] to-[#FECACA] text-[#DC2626] border border-[#FCA5A5] shadow-[0_2px_4px_rgba(220,38,38,0.12),0_1px_0_rgba(255,255,255,0.5)_inset]" : ""}`}
           onClick={toggleDeafen}
         >

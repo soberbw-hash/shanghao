@@ -1,5 +1,7 @@
+import { useLayoutEffect, useRef } from "react";
 import { VolumeX } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
+import { gsap } from "gsap";
 
 import {
   type BuiltInAvatarId,
@@ -13,6 +15,7 @@ import { avatarOptions } from "../../utils/profile";
 import { AnimalSprite } from "./AnimalSprite";
 import { sceneZones, defaultMemberZones, characterPositions } from "../../features/voice-scene/sceneZones";
 import { memberStatus } from "../../features/voice-scene/activityRules";
+import { usePrefersReducedMotion } from "../../hooks/usePrefersReducedMotion";
 
 const assignVisibleAvatars = (members: RoomMember[]): Map<string, BuiltInAvatarId> => {
   const result = new Map<string, BuiltInAvatarId>();
@@ -33,15 +36,45 @@ const assignVisibleAvatars = (members: RoomMember[]): Map<string, BuiltInAvatarI
 export const TeamIsland = ({
   members,
   onZoneSelect,
+  reduceMotion = false,
 }: {
   members: RoomMember[];
   onZoneSelect?: (zone: SceneZoneId, activity: MemberActivity) => void;
+  reduceMotion?: boolean;
 }) => {
+  const islandRef = useRef<HTMLDivElement>(null);
   const visibleMembers = members.filter((member) => !member.isEmptySlot).slice(0, 5);
   const visibleAvatars = assignVisibleAvatars(visibleMembers);
+  const shouldReduceMotion = usePrefersReducedMotion(reduceMotion);
+  const memberMotionKey = visibleMembers
+    .map((member) => `${member.id}:${member.sceneZone ?? "gameDesk1"}`)
+    .join("|");
+
+  useLayoutEffect(() => {
+    if (shouldReduceMotion || !islandRef.current || !memberMotionKey) return;
+
+    const context = gsap.context(() => {
+      gsap.fromTo(
+        "[data-gsap-character]",
+        { autoAlpha: 0, y: 12, scale: 0.94, rotation: -1.5 },
+        {
+          autoAlpha: 1,
+          y: 0,
+          scale: 1,
+          rotation: 0,
+          duration: 0.34,
+          ease: "back.out(1.45)",
+          stagger: 0.045,
+          overwrite: true,
+        },
+      );
+    }, islandRef);
+
+    return () => context.revert();
+  }, [memberMotionKey, shouldReduceMotion]);
 
   return (
-    <div className="team-island relative h-full min-h-[420px] overflow-hidden" data-testid="team-island">
+    <div ref={islandRef} className="team-island relative h-full min-h-[420px] overflow-hidden" data-testid="team-island">
       <img
         src={whiteOfficeRoom}
         alt=""
@@ -90,7 +123,7 @@ export const TeamIsland = ({
               className="absolute -translate-x-1/2 -translate-y-1/2"
               style={{ left: `${position.left}%`, top: `${position.top}%`, zIndex: position.zIndex }}
             >
-              <div className="relative">
+              <div className="relative" data-gsap-character>
                 <div
                   className={`room-character-sprite relative ${
                     isSpeaking ? "room-character-speaking" : ""

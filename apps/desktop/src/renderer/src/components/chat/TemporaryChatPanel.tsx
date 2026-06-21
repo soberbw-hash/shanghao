@@ -1,6 +1,6 @@
-import { useRef } from "react";
+import { useLayoutEffect, useRef } from "react";
 import { Send } from "lucide-react";
-import { motion } from "framer-motion";
+import { gsap } from "gsap";
 
 import type { ChatMessage } from "@private-voice/shared";
 
@@ -9,6 +9,7 @@ import { getAvatarSrc } from "../../utils/profile";
 import { AvatarPlaceholder } from "../base/AvatarPlaceholder";
 import { Button } from "../base/Button";
 import { Input } from "../base/Input";
+import { usePrefersReducedMotion } from "../../hooks/usePrefersReducedMotion";
 
 const quickReplies = ["👍", "上号", "开麦", "等我"];
 
@@ -33,6 +34,7 @@ export const TemporaryChatPanel = ({
   emptyMessage = "频道里还很安静，先说一句吧。",
   canSend = false,
   unavailableLabel = "重连中",
+  reduceMotion = false,
 }: {
   messages: ChatMessage[];
   chatInput: string;
@@ -43,8 +45,33 @@ export const TemporaryChatPanel = ({
   emptyMessage?: string;
   canSend?: boolean;
   unavailableLabel?: string;
+  reduceMotion?: boolean;
 }) => {
   const lastQuickSendAt = useRef(0);
+  const listRef = useRef<HTMLDivElement>(null);
+  const previousMessageCount = useRef(messages.length);
+  const shouldReduceMotion = usePrefersReducedMotion(reduceMotion);
+
+  useLayoutEffect(() => {
+    const list = listRef.current;
+    if (!list) return;
+
+    const previous = previousMessageCount.current;
+    previousMessageCount.current = messages.length;
+    list.scrollTo({ top: list.scrollHeight, behavior: shouldReduceMotion ? "auto" : "smooth" });
+
+    if (shouldReduceMotion || messages.length <= previous) return;
+
+    const messageItems = list.querySelectorAll("[data-gsap-chat-message]");
+    const latest = messageItems.item(messageItems.length - 1);
+    if (!latest) return;
+
+    gsap.fromTo(
+      latest,
+      { autoAlpha: 0, y: 8, scale: 0.985 },
+      { autoAlpha: 1, y: 0, scale: 1, duration: 0.24, ease: "back.out(1.35)", overwrite: true },
+    );
+  }, [messages.length, shouldReduceMotion]);
 
   const handleQuickSend = (reply: string) => {
     const now = Date.now();
@@ -75,7 +102,7 @@ export const TemporaryChatPanel = ({
         </div>
       </div>
 
-      <div className="mt-2.5 min-h-0 flex-1 space-y-2.5 overflow-y-auto pr-1">
+      <div ref={listRef} className="mt-2.5 min-h-0 flex-1 space-y-2.5 overflow-y-auto pr-1">
         {messages.length === 0 ? (
           <div className="grid h-full min-h-[100px] place-items-center px-4 text-center text-[11px] leading-5 text-[#a0aec0]">
             {emptyMessage}
@@ -83,21 +110,18 @@ export const TemporaryChatPanel = ({
         ) : (
           messages.slice(-32).map((message) =>
             message.kind === "system" ? (
-              <motion.div
+              <div
                 key={message.id}
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
+                data-gsap-chat-message
                 className="mx-auto w-fit max-w-[90%] rounded-full bg-[#f5f7fb] px-3 py-1 text-center text-[10px] text-[#8492a5]"
               >
                 {message.content}
                 <span className="ml-1.5 text-[9px] text-[#b0b8c4]">{formatMessageTime(message.createdAt)}</span>
-              </motion.div>
+              </div>
             ) : (
-              <motion.div
+              <div
                 key={message.id}
-                initial={{ opacity: 0, y: 3 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.2 }}
+                data-gsap-chat-message
                 className={`flex items-end gap-1.5 ${message.isLocal ? "justify-end" : ""}`}
               >
                 {!message.isLocal ? (
@@ -139,7 +163,7 @@ export const TemporaryChatPanel = ({
                     {formatMessageTime(message.createdAt)}
                   </span>
                 </div>
-              </motion.div>
+              </div>
             ),
           )
         )}
