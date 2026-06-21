@@ -105,6 +105,14 @@ export class SignalingServer extends EventEmitter {
         return;
       }
 
+      if (request.url === "/llm/health" && request.method === "GET") {
+        const configured = Boolean(process.env.SHANGHAO_LLM_API_KEY?.trim());
+        const model = process.env.SHANGHAO_LLM_MODEL ?? "mimo-v2.5-pro";
+        response.writeHead(200, { "content-type": "application/json; charset=utf-8" });
+        response.end(JSON.stringify({ ok: true, configured, model }));
+        return;
+      }
+
       response.writeHead(404, { "content-type": "text/plain; charset=utf-8" });
       response.end("ShangHao signaling server");
     });
