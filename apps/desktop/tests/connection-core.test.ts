@@ -116,3 +116,16 @@ test("llm chat accepts slash commands and joins proxy paths safely", () => {
   assert.equal(mainLlm.includes("replace(/\\/+$/, \"\")"), true);
   assert.equal(signaling.includes("normalizeRequestPathname"), true);
 });
+
+test("main process guards ipc pushes after windows are destroyed", () => {
+  const ipc = read("apps/desktop/src/main/ipc.ts");
+  const shortcuts = read("apps/desktop/src/main/shortcuts.ts");
+  const overlay = read("apps/desktop/src/main/overlay-window.ts");
+  const safeSend = read("apps/desktop/src/main/safe-web-contents.ts");
+
+  assert.equal(ipc.includes("sendToWindow(getMainWindow()"), true);
+  assert.equal(shortcuts.includes("sendToWindow(this.windowProvider()"), true);
+  assert.equal(overlay.includes("sendToWindow(window"), true);
+  assert.equal(safeSend.includes("window.webContents.isDestroyed()"), true);
+  assert.equal(safeSend.includes("destroyed"), true);
+});

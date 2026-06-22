@@ -5,6 +5,8 @@ import { app, BrowserWindow, screen } from "electron";
 
 import { IPC_CHANNELS, type OverlayState } from "@private-voice/shared";
 
+import { sendToWindow } from "./safe-web-contents";
+
 const devServerUrl = "http://127.0.0.1:5173";
 const OVERLAY_AVATAR_SIZE = 30;
 const OVERLAY_GAP = 5;
@@ -35,7 +37,7 @@ export class OverlayWindowController {
   update(state: OverlayState): void {
     this.state = state;
     if (this.window && !this.window.isDestroyed() && !this.window.webContents.isLoading()) {
-      this.window.webContents.send(IPC_CHANNELS.overlay.state, state);
+      sendToWindow(this.window, IPC_CHANNELS.overlay.state, state);
       this.resizeForMembers(state.members.filter((m) => !m.isEmptySlot).length);
     }
   }
@@ -132,7 +134,7 @@ export class OverlayWindowController {
     window.on("moved", saveBounds);
     window.webContents.once("did-finish-load", () => {
       if (this.state) {
-        window.webContents.send(IPC_CHANNELS.overlay.state, this.state);
+        sendToWindow(window, IPC_CHANNELS.overlay.state, this.state);
         this.resizeForMembers(this.state.members.filter((m) => !m.isEmptySlot).length);
       }
       window.showInactive();

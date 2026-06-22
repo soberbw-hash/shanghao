@@ -2,6 +2,8 @@ import { globalShortcut, type BrowserWindow } from "electron";
 
 import { IPC_CHANNELS, type RendererLogPayload } from "@private-voice/shared";
 
+import { sendToWindow } from "./safe-web-contents";
+
 export class ShortcutController {
   private currentMuteShortcut?: string;
 
@@ -28,7 +30,7 @@ export class ShortcutController {
 
     try {
       const registered = globalShortcut.register(accelerator, () => {
-        this.windowProvider()?.webContents.send(IPC_CHANNELS.shortcuts.muteTriggered);
+        sendToWindow(this.windowProvider(), IPC_CHANNELS.shortcuts.muteTriggered);
       });
 
       if (!registered) {

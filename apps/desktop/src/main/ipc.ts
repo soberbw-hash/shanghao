@@ -25,6 +25,7 @@ import { LlmService } from "./llm-service";
 import { clearAvatarImage, pickAvatarImage, readAvatarImage } from "./profile-media";
 import { exportRecordingFromMain } from "./recording-main";
 import { readRelayStatus } from "./relay-status";
+import { sendToWindow } from "./safe-web-contents";
 import { SettingsStore } from "./settings-store";
 import { ShortcutController } from "./shortcuts";
 import { SignalingClientBridge } from "./signaling-client";
@@ -56,13 +57,13 @@ export const registerIpcHandlers = ({
   llm,
 }: MainProcessServices): void => {
   signalingClient.on("event", (payload: SignalingEventPayload) => {
-    getMainWindow()?.webContents.send(IPC_CHANNELS.signaling.event, payload);
+    sendToWindow(getMainWindow(), IPC_CHANNELS.signaling.event, payload);
   });
   updates.onStatus((status: UpdateStatus) => {
-    getMainWindow()?.webContents.send(IPC_CHANNELS.updates.status, status);
+    sendToWindow(getMainWindow(), IPC_CHANNELS.updates.status, status);
   });
   gameDetection.onDetected((snapshot) => {
-    getMainWindow()?.webContents.send(IPC_CHANNELS.games.detected, snapshot);
+    sendToWindow(getMainWindow(), IPC_CHANNELS.games.detected, snapshot);
   });
 
   ipcMain.handle(
