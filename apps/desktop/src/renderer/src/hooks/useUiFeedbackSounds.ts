@@ -12,11 +12,13 @@ let lastClickAt = 0;
 export const useUiFeedbackSounds = (): void => {
   const settings = useSettingsStore((state) => state.settings);
   const isMuted = useAudioStore((state) => state.isMuted);
+  const isDeafened = useAudioStore((state) => state.isDeafened);
   const members = useRoomStore((state) => state.room.members);
   const connectionState = useRoomStore((state) => state.room.connectionState);
 
   const didInitRef = useRef(false);
   const previousMuteRef = useRef(isMuted);
+  const previousDeafenRef = useRef(isDeafened);
   const previousConnectionRef = useRef(connectionState);
   const previousMemberIdsRef = useRef(
     members.filter((member) => !member.isEmptySlot).map((member) => member.id),
@@ -56,6 +58,7 @@ export const useUiFeedbackSounds = (): void => {
     if (!didInitRef.current) {
       didInitRef.current = true;
       previousMuteRef.current = isMuted;
+      previousDeafenRef.current = isDeafened;
       previousConnectionRef.current = connectionState;
       previousMemberIdsRef.current = members
         .filter((member) => !member.isEmptySlot)
@@ -74,7 +77,12 @@ export const useUiFeedbackSounds = (): void => {
 
       previousMuteRef.current = isMuted;
     }
-  }, [connectionState, isMuted, members, settings]);
+
+    if (isDeafened !== previousDeafenRef.current) {
+      playUiSound(isDeafened ? "speaker-muted" : "speaker-unmuted");
+      previousDeafenRef.current = isDeafened;
+    }
+  }, [connectionState, isDeafened, isMuted, members, settings]);
 
   useEffect(() => {
     if (!settings || !didInitRef.current) {

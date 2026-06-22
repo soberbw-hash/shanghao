@@ -8,11 +8,11 @@ export interface LlmHistoryEntry {
 
 /**
  * 判断是否应该调用 AI 助手。
- * 只有以"问"字开头的消息才触发 AI。
+ * 支持"问"、/ai、/llm 三种轻量触发方式。
  */
 export const shouldCallLLM = (message: string): boolean => {
   const trimmed = message.trim();
-  return /^问(?:一下)?[：:\s]?/.test(trimmed);
+  return /^问(?:一下)?[：:\s]?/.test(trimmed) || /^\/(?:ai|llm)(?:\s|$)/i.test(trimmed);
 };
 
 /**
@@ -20,7 +20,10 @@ export const shouldCallLLM = (message: string): boolean => {
  */
 export const extractQuestion = (message: string): string => {
   const trimmed = message.trim();
-  return trimmed.replace(/^问(?:一下)?[：:\s]?/, "").trim();
+  return trimmed
+    .replace(/^问(?:一下)?[：:\s]?/, "")
+    .replace(/^\/(?:ai|llm)(?:\s+)?/i, "")
+    .trim();
 };
 
 /**
@@ -60,7 +63,7 @@ const friendlyFallbackMessage = (reason?: LlmChatResponse["reason"]): string => 
     return "助手还没配置，服务器缺少 SHANGHAO_LLM_API_KEY。";
   }
   if (reason === "request_failed") {
-    return "助手请求失败，检查服务器 /llm/chat 是否可用。";
+    return "助手请求失败，检查服务器 AI 配置或 /llm/chat 是否可用。";
   }
   if (reason === "empty") {
     return "助手没有返回内容，换个问法试试。";

@@ -32,7 +32,7 @@ export class LlmService {
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), LLM_PROXY_TIMEOUT_MS);
 
-      const response = await fetch(`${httpUrl}/llm/chat`, {
+      const response = await fetch(joinHttpPath(httpUrl, "/llm/chat"), {
         method: "POST",
         signal: controller.signal,
         headers: {
@@ -86,7 +86,7 @@ export class LlmService {
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), 5000);
 
-      const response = await fetch(`${httpUrl}/llm/health`, {
+      const response = await fetch(joinHttpPath(httpUrl, "/llm/health"), {
         method: "GET",
         signal: controller.signal,
       });
@@ -119,4 +119,8 @@ function wsToHttp(wsUrl: string): string | null {
   } catch {
     return null;
   }
+}
+
+function joinHttpPath(baseUrl: string, pathname: string): string {
+  return `${baseUrl.replace(/\/+$/, "")}/${pathname.replace(/^\/+/, "")}`;
 }

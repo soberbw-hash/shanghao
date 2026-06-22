@@ -94,12 +94,14 @@ export class SignalingServer extends EventEmitter {
         return;
       }
 
-      if (request.url === "/llm/chat" && request.method === "POST") {
+      const normalizedPathname = normalizeRequestPathname(request.url);
+
+      if (normalizedPathname === "/llm/chat" && request.method === "POST") {
         this.handleLlmProxy(request, response);
         return;
       }
 
-      if (request.url === "/llm/health" && request.method === "GET") {
+      if (normalizedPathname === "/llm/health" && request.method === "GET") {
         const configured = Boolean(process.env.SHANGHAO_LLM_API_KEY?.trim());
         const model = process.env.SHANGHAO_LLM_MODEL ?? "mimo-v2.5-pro";
         response.writeHead(200, { "content-type": "application/json; charset=utf-8" });
@@ -733,3 +735,8 @@ export class SignalingServer extends EventEmitter {
     });
   }
 }
+
+const normalizeRequestPathname = (url?: string): string => {
+  const pathname = (url ?? "/").split("?")[0] || "/";
+  return "/" + pathname.split("/").filter(Boolean).join("/");
+};

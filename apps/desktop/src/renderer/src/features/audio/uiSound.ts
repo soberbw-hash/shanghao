@@ -35,8 +35,8 @@ const soundUrls: Record<UiSound, string> = {
   "record-stop": new URL("../../assets/sounds/record-stop.wav", import.meta.url).href,
   "mic-on": new URL("../../assets/sounds/mic-on.wav", import.meta.url).href,
   "mic-off": new URL("../../assets/sounds/mic-off.wav", import.meta.url).href,
-  "speaker-muted": new URL("../../assets/sounds/mic-off.wav", import.meta.url).href,
-  "speaker-unmuted": new URL("../../assets/sounds/mic-on.wav", import.meta.url).href,
+  "speaker-muted": new URL("../../assets/sounds/speaker-muted.wav", import.meta.url).href,
+  "speaker-unmuted": new URL("../../assets/sounds/speaker-unmuted.wav", import.meta.url).href,
 };
 
 const audioCache = new Map<UiSound, HTMLAudioElement>();

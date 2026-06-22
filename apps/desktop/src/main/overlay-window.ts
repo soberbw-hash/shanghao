@@ -6,6 +6,11 @@ import { app, BrowserWindow, screen } from "electron";
 import { IPC_CHANNELS, type OverlayState } from "@private-voice/shared";
 
 const devServerUrl = "http://127.0.0.1:5173";
+const OVERLAY_AVATAR_SIZE = 30;
+const OVERLAY_GAP = 5;
+const OVERLAY_PADDING = 5;
+const OVERLAY_HEIGHT = OVERLAY_PADDING * 2 + OVERLAY_AVATAR_SIZE;
+const OVERLAY_MIN_WIDTH = 48;
 
 export class OverlayWindowController {
   private window: BrowserWindow | null = null;
@@ -38,19 +43,19 @@ export class OverlayWindowController {
   private resizeForMembers(onlineCount: number): void {
     if (!this.window || this.window.isDestroyed()) return;
 
-    const avatarSize = 40;
-    const gap = 6;
-    const padding = 8;
+    const avatarSize = OVERLAY_AVATAR_SIZE;
+    const gap = OVERLAY_GAP;
+    const padding = OVERLAY_PADDING;
     const count = Math.max(1, Math.min(onlineCount, 5));
     const width = padding * 2 + count * avatarSize + Math.max(0, count - 1) * gap;
-    const height = padding * 2 + avatarSize;
+    const height = OVERLAY_HEIGHT;
 
     const bounds = this.window.getBounds();
     this.window.setBounds({
       x: this.snapX,
       y: bounds.y,
-      width: Math.max(56, width),
-      height: Math.max(56, height),
+      width: Math.max(OVERLAY_MIN_WIDTH, width),
+      height,
     });
   }
 
@@ -68,22 +73,23 @@ export class OverlayWindowController {
 
     const workArea = screen.getPrimaryDisplay().workArea;
     this.snapX = workArea.x + 4;
-    const y = savedY ?? workArea.y + Math.round((workArea.height - 56) / 2);
+    const y = savedY ?? workArea.y + Math.round((workArea.height - OVERLAY_HEIGHT) / 2);
 
     const window = new BrowserWindow({
-      width: 56,
-      height: 56,
+      width: OVERLAY_MIN_WIDTH,
+      height: OVERLAY_HEIGHT,
       x: this.snapX,
       y,
-      minWidth: 56,
-      minHeight: 56,
-      maxWidth: 280,
-      maxHeight: 64,
+      minWidth: OVERLAY_MIN_WIDTH,
+      minHeight: OVERLAY_HEIGHT,
+      maxWidth: 230,
+      maxHeight: OVERLAY_HEIGHT,
       frame: false,
       transparent: true,
       backgroundColor: "#00000000",
       alwaysOnTop: true,
       skipTaskbar: true,
+      focusable: false,
       resizable: false,
       show: false,
       closable: false,
@@ -99,7 +105,8 @@ export class OverlayWindowController {
     this.window = window;
     window.setAlwaysOnTop(true, "screen-saver");
     window.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
-    window.setMovable(true);
+    window.setMovable(false);
+    window.setIgnoreMouseEvents(true, { forward: true });
 
     window.on("closed", () => {
       if (this.window === window) {

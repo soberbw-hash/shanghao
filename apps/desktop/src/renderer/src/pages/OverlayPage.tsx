@@ -33,30 +33,31 @@ export const OverlayPage = () => {
     .slice(0, 5);
 
   const count = onlineMembers.length;
-  const avatarSize = 36;
-  const gap = 4;
-  const padding = 6;
-  const width = Math.max(52, padding * 2 + count * avatarSize + Math.max(0, count - 1) * gap);
+  const avatarSize = 30;
+  const gap = 5;
+  const padding = 5;
+  const width = Math.max(48, padding * 2 + Math.max(1, count) * avatarSize + Math.max(0, count - 1) * gap);
 
   return (
     <div
-      className="drag-region"
       onContextMenu={(e) => e.preventDefault()}
       style={{
         width: `${width}px`,
         height: `${padding * 2 + avatarSize}px`,
         borderRadius: "999px",
-        background: "linear-gradient(180deg, rgba(255,255,255,0.72), rgba(255,255,255,0.46))",
-        border: "1px solid rgba(185, 205, 235, 0.45)",
-        backdropFilter: "blur(26px) saturate(180%)",
-        WebkitBackdropFilter: "blur(26px) saturate(180%)",
-        boxShadow: "0 8px 32px rgba(63, 102, 160, 0.12), 0 2px 8px rgba(63, 102, 160, 0.06), inset 0 1px 0 rgba(255, 255, 255, 0.6)",
+        background: "linear-gradient(180deg, rgba(255,255,255,0.66), rgba(245,249,255,0.34))",
+        border: "1px solid rgba(209, 224, 244, 0.72)",
+        backdropFilter: "blur(24px) saturate(180%)",
+        WebkitBackdropFilter: "blur(24px) saturate(180%)",
+        boxShadow: "0 10px 28px rgba(45, 82, 126, 0.16), 0 2px 8px rgba(45, 82, 126, 0.08), inset 0 1px 0 rgba(255, 255, 255, 0.82)",
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
         gap: `${gap}px`,
         padding: `${padding}px`,
         position: "relative",
+        pointerEvents: "none",
+        userSelect: "none",
       }}
     >
       {onlineMembers.map((member) => {
@@ -82,10 +83,11 @@ export const OverlayPage = () => {
                 height: "100%",
                 borderRadius: "50%",
                 overflow: "hidden",
-                border: isSpeaking ? "2px solid rgba(77, 163, 255, 0.5)" : "2px solid rgba(255, 255, 255, 0.6)",
+                background: "rgba(255,255,255,0.82)",
+                border: isSpeaking ? "2px solid rgba(77, 163, 255, 0.62)" : "1px solid rgba(255, 255, 255, 0.78)",
                 boxShadow: isSpeaking
-                  ? "0 0 10px rgba(77, 163, 255, 0.4), 0 2px 6px rgba(30, 45, 70, 0.1)"
-                  : "0 2px 6px rgba(30, 45, 70, 0.08)",
+                  ? "0 0 0 3px rgba(77, 163, 255, 0.12), 0 0 14px rgba(77, 163, 255, 0.42), 0 2px 6px rgba(30, 45, 70, 0.1)"
+                  : "0 2px 8px rgba(30, 45, 70, 0.1)",
                 opacity: isOffline ? 0.5 : 1,
                 transition: "all 300ms ease",
               }}
@@ -98,6 +100,7 @@ export const OverlayPage = () => {
                   width: "100%",
                   height: "100%",
                   objectFit: "contain",
+                  transform: "scale(1.18)",
                   filter: isMuted || isDeafened ? "saturate(0.5)" : "none",
                 }}
               />

@@ -31,34 +31,8 @@ jobs:
             apps/desktop/release/*.blockmap
             apps/desktop/release/latest*.yml
 
-  macos:
-    runs-on: macos-latest
-    strategy:
-      matrix:
-        arch: [x64, arm64]
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-      - run: corepack enable
-      - run: corepack prepare pnpm@10.0.0 --activate
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm typecheck
-      - run: pnpm dist:mac:${{ matrix.arch }}
-        env:
-          CSC_IDENTITY_AUTO_DISCOVERY: "false"
-      - uses: actions/upload-artifact@v4
-        with:
-          name: macos-${{ matrix.arch }}
-          path: |
-            apps/desktop/release/*.dmg
-            apps/desktop/release/*.zip
-            apps/desktop/release/*.blockmap
-            apps/desktop/release/latest*.yml
-
   publish:
-    needs: [windows, macos]
+    needs: [windows]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@v4

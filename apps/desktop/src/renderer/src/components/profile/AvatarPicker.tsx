@@ -15,7 +15,7 @@ export const CharacterPicker = ({
       <img
         src={avatarOptions.find((a) => a.id === value)?.src}
         alt=""
-        className="relative h-[140px] w-[140px] object-contain"
+        className="relative h-[156px] w-[156px] object-contain"
         draggable={false}
       />
     </div>
@@ -33,7 +33,7 @@ export const CharacterPicker = ({
             }`}
             onClick={() => onChange(avatar.id)}
           >
-            <img src={avatar.src} alt="" className="h-[52px] w-[52px] object-contain" draggable={false} />
+            <img src={avatar.src} alt="" className="h-[58px] w-[58px] object-contain" draggable={false} />
             {isSelected && (
               <span className="absolute -bottom-0.5 left-1/2 -translate-x-1/2 h-1 w-1 rounded-full bg-[#4DA3FF]" />
             )}

@@ -104,3 +104,15 @@ test("windows executable and shortcut use cache-busting v3 icons", () => {
   assert.equal(read("scripts/after-pack.cjs").includes("shanghao-icon-v3.ico"), true);
   assert.equal(installer.includes("shanghao-shortcut-v3.ico"), true);
 });
+
+test("llm chat accepts slash commands and joins proxy paths safely", () => {
+  const rendererLlm = read("apps/desktop/src/renderer/src/features/chat/llmService.ts");
+  const mainLlm = read("apps/desktop/src/main/llm-service.ts");
+  const signaling = read("packages/signaling/src/server.ts");
+
+  assert.equal(rendererLlm.includes("/(?:ai|llm)"), true);
+  assert.equal(rendererLlm.includes("你想问什么呀？"), true);
+  assert.equal(mainLlm.includes("joinHttpPath(httpUrl, \"/llm/chat\")"), true);
+  assert.equal(mainLlm.includes("replace(/\\/+$/, \"\")"), true);
+  assert.equal(signaling.includes("normalizeRequestPathname"), true);
+});

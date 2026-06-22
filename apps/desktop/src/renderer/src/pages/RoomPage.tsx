@@ -316,9 +316,9 @@ export const RoomPage = () => {
           <MuteButton isMuted={isMuted} onClick={toggleMute} />
         </span>
         <Button
-          variant="ghost"
+          variant={isDeafened ? "danger" : "ghost"}
           data-gsap-voice="primary"
-          className={`voice-action-button-with-text ${isDeafened ? "bg-gradient-to-b from-[#FEE2E2] to-[#FECACA] text-[#DC2626] border border-[#FCA5A5] shadow-[0_2px_4px_rgba(220,38,38,0.12),0_1px_0_rgba(255,255,255,0.5)_inset]" : ""}`}
+          className={`voice-action-button-with-text voice-main-control ${isDeafened ? "voice-main-control-danger" : ""}`}
           onClick={toggleDeafen}
         >
           {isDeafened ? <VolumeX className="h-4 w-4" /> : <Volume2 className="h-4 w-4" />}

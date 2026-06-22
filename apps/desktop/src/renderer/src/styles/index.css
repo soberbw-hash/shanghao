@@ -332,10 +332,12 @@ a,
 .animal-sprite-img {
   width: auto;
   height: auto;
-  max-width: 96px;
-  max-height: 96px;
+  max-width: 104px;
+  max-height: 108px;
   object-fit: contain;
   object-position: center bottom;
+  transform: scaleY(1.06);
+  transform-origin: center bottom;
 }
 
 .room-character-sprite {
@@ -483,6 +485,52 @@ a,
   background: linear-gradient(180deg, rgba(255,255,255,.68), rgba(255,255,255,.42));
 }
 
+.voice-main-control {
+  min-width: 150px;
+  height: 46px;
+  padding: 0 18px;
+  border-radius: 18px;
+  border-color: rgba(211, 224, 242, 0.84);
+  background:
+    linear-gradient(180deg, rgba(255,255,255,.88), rgba(247,250,255,.64));
+  box-shadow:
+    0 10px 26px rgba(54, 92, 140, 0.12),
+    0 2px 8px rgba(54, 92, 140, 0.06),
+    inset 0 1px 0 rgba(255,255,255,.95);
+}
+
+.voice-main-control-primary {
+  border-color: rgba(61, 143, 238, 0.94) !important;
+  background: #4da3ff !important;
+  color: #fff !important;
+  box-shadow:
+    0 12px 28px rgba(77, 163, 255, 0.28),
+    0 2px 8px rgba(47, 111, 204, 0.14),
+    inset 0 1px 0 rgba(255,255,255,.3) !important;
+}
+
+.voice-main-control-primary:hover {
+  background: #3d8fee !important;
+}
+
+.voice-main-control-danger {
+  border-color: rgba(236, 72, 85, 0.92) !important;
+  background: #ef4444 !important;
+  color: #fff !important;
+  box-shadow:
+    0 12px 28px rgba(239, 68, 68, 0.28),
+    0 2px 8px rgba(153, 27, 27, 0.14),
+    inset 0 1px 0 rgba(255,255,255,.28) !important;
+}
+
+.voice-main-control-danger:hover {
+  background: #dc2626 !important;
+  box-shadow:
+    0 14px 32px rgba(220, 38, 38, 0.32),
+    0 2px 8px rgba(153, 27, 27, 0.16),
+    inset 0 1px 0 rgba(255,255,255,.22) !important;
+}
+
 .voice-action-button-with-text:hover {
   box-shadow: 0 8px 24px rgba(63, 102, 160, 0.14), inset 0 1px 0 rgba(255, 255, 255, 0.9);
 }
@@ -508,8 +556,8 @@ a,
 }
 
 @keyframes idle-breathe {
-  0%, 100% { transform: translateY(0); }
-  50% { transform: translateY(-1.5px); }
+  0%, 100% { transform: translateY(0) scaleY(1.06); }
+  50% { transform: translateY(-1.5px) scaleY(1.06); }
 }
 
 @keyframes speaking-glow {

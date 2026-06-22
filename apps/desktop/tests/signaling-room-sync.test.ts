@@ -199,6 +199,22 @@ test("fixed channel keeps main room alive after everyone leaves", async () => {
   }
 });
 
+test("llm health endpoint tolerates duplicate slashes from client url joins", async () => {
+  const server = new SignalingServer({ roomName: "固定频道" });
+  const port = await server.listen();
+
+  try {
+    const health = (await fetch(`http://127.0.0.1:${port}//llm/health`).then((response) =>
+      response.json(),
+    )) as { ok: boolean; configured: boolean };
+
+    assert.equal(health.ok, true);
+    assert.equal(typeof health.configured, "boolean");
+  } finally {
+    await server.close();
+  }
+});
+
 test("fixed channel broadcasts text chat and knock events", async () => {
   const server = new SignalingServer({ roomName: "固定频道" });
   const port = await server.listen();
