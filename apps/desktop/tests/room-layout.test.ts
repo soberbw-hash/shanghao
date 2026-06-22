@@ -11,6 +11,7 @@ const stylesPath = path.resolve(process.cwd(), "src/renderer/src/styles/index.cs
 const chatPanelPath = path.resolve(process.cwd(), "src/renderer/src/components/chat/TemporaryChatPanel.tsx");
 const teamIslandPath = path.resolve(process.cwd(), "src/renderer/src/components/room/TeamIsland.tsx");
 const sceneZonesPath = path.resolve(process.cwd(), "src/renderer/src/features/voice-scene/sceneZones.ts");
+const sharedOverlaysPath = path.resolve(process.cwd(), "src/renderer/src/pages/SharedOverlays.tsx");
 const installerPath = path.resolve(process.cwd(), "electron-builder.yml");
 
 test("room page uses the V5 island, light responses, and voice dock", () => {
@@ -68,6 +69,25 @@ test("desktop build includes custom nsis shortcut icon wiring", () => {
   assert.equal(source.includes("include: build/installer.nsh"), true);
   assert.equal(source.includes("shanghao-shortcut-v3.ico"), true);
   assert.equal(installer.includes("--shanghao-quit-for-install"), true);
-  assert.equal(installer.includes("killShangHaoProcess"), true);
+  assert.equal(installer.includes("customCheckAppRunning"), true);
+  assert.equal(installer.includes("shutdownShangHaoProcesses"), true);
+  assert.equal(installer.includes("killShangHaoProcessByInstallDir"), true);
   assert.equal(installer.includes('"上号.exe"'), true);
+});
+
+test("update gate owns update UI without the floating duplicate card", () => {
+  const source = readFileSync(sharedOverlaysPath, "utf8");
+
+  assert.equal(source.includes('bootstrapPhase === "ready" ? <UpdateModal /> : null'), true);
+});
+
+test("scene seats align with the marked workstation positions", () => {
+  const sceneZonesSource = readFileSync(sceneZonesPath, "utf8");
+  const stylesSource = readFileSync(stylesPath, "utf8");
+
+  assert.equal(stylesSource.includes("object-position: center 60%"), true);
+  assert.equal(stylesSource.includes("transform: scale(1.01)"), true);
+  assert.equal(sceneZonesSource.includes("gameDesk5: { left: 86, top: 88"), true);
+  assert.equal(sceneZonesSource.includes("gameDesk4: { left: 42, top: 89"), true);
+  assert.equal(sceneZonesSource.includes("gameDesk1: { left: 33, top: 53"), true);
 });

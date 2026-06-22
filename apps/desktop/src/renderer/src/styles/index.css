@@ -320,8 +320,8 @@ a,
 
 .team-island-background {
   object-fit: cover;
-  object-position: center 40%;
-  transform: scale(1.08);
+  object-position: center 60%;
+  transform: scale(1.01);
 }
 
 .scene-zone-hotspot {

@@ -26,7 +26,7 @@ export const SharedOverlays = () => {
   return (
     <>
       <ToastRegion />
-      <UpdateModal />
+      {bootstrapPhase === "ready" ? <UpdateModal /> : null}
       {isSafeMode && bootstrapPhase === "ready" ? (
         <SafeModeBanner
           issue={startupIssue}

@@ -27,6 +27,7 @@ let overlayController: OverlayWindowController | null = null;
 let gameDetectionController: GameDetectionController | null = null;
 
 const QUIT_FOR_INSTALL_ARG = "--shanghao-quit-for-install";
+const shouldQuitForInstall = process.argv.includes(QUIT_FOR_INSTALL_ARG);
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -299,9 +300,12 @@ app.on("second-instance", (_event, commandLine) => {
 const hasSingleInstanceLock = app.requestSingleInstanceLock();
 
 if (!hasSingleInstanceLock) {
+  if (shouldQuitForInstall) {
+    setTimeout(() => app.exit(0), 500).unref();
+  }
   app.quit();
-} else if (process.argv.includes(QUIT_FOR_INSTALL_ARG)) {
-  app.quit();
+} else if (shouldQuitForInstall) {
+  app.exit(0);
 } else {
   void app
     .whenReady()

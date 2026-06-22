@@ -7,8 +7,18 @@ const execFileAsync = promisify(execFile);
 const POLL_INTERVAL_MS = 4000;
 
 const KNOWN_GAMES: Array<{ name: string; processNames: string[] }> = [
+  { name: "失落城堡2", processNames: ["lostcastle2", "lost castle 2", "lostcastleii", "lost castle ii"] },
   { name: "三角洲行动", processNames: ["deltaforce", "delta force"] },
-  { name: "英雄联盟", processNames: ["leagueclient", "league of legends"] },
+  {
+    name: "英雄联盟",
+    processNames: [
+      "leagueclient",
+      "leagueclientux",
+      "leagueclientuxrender",
+      "league of legends",
+      "riotclientservices",
+    ],
+  },
   { name: "无畏契约", processNames: ["valorant"] },
   { name: "CS2", processNames: ["cs2", "counter-strike"] },
   { name: "原神", processNames: ["genshin", "mihoyo"] },
