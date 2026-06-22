@@ -1,4 +1,3 @@
-import { SignalingServer } from "../packages/signaling/dist/index.js";
 import { readFile } from "node:fs/promises";
 
 const loadLocalEnv = async () => {
@@ -25,6 +24,8 @@ const loadLocalEnv = async () => {
 };
 
 await loadLocalEnv();
+
+const { SignalingServer } = await import("../packages/signaling/dist/index.js");
 
 const port = Number(process.env.PORT || "43821");
 const roomName = process.env.ROOM_NAME || "ShangHao Relay";

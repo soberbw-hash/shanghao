@@ -9,8 +9,10 @@ export const CopyField = ({ value, onCopy }: { value: string; onCopy?: () => voi
     <Button
       variant="secondary"
       onClick={() => {
-        void navigator.clipboard.writeText(value);
-        onCopy?.();
+        void window.desktopApi.clipboard
+          .writeText(value)
+          .then(() => onCopy?.())
+          .catch(() => undefined);
       }}
     >
       <Copy className="h-4 w-4" />

@@ -1,4 +1,4 @@
-import { app, ipcMain, shell, type BrowserWindow } from "electron";
+import { app, clipboard, ipcMain, shell, type BrowserWindow } from "electron";
 
 import {
   APP_BUILD_NUMBER,
@@ -83,6 +83,16 @@ export const registerIpcHandlers = ({
 
   ipcMain.handle(IPC_CHANNELS.app.openPath, async (_event, targetPath: string): Promise<void> => {
     await shell.openPath(targetPath);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.clipboard.writeText, async (_event, text: string): Promise<void> => {
+    clipboard.writeText(text);
+    await diagnostics.writeLog({
+      category: "app",
+      level: "info",
+      message: "Copied text through native clipboard",
+      context: { length: text.length },
+    });
   });
 
   ipcMain.handle(IPC_CHANNELS.window.minimize, async (): Promise<void> => {

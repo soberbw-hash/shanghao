@@ -22,6 +22,6 @@ export const MuteButton = ({
     onClick={onClick}
   >
     {isMuted ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
-    {isMuted ? "已静音" : "麦克风"}
+    <span className="voice-action-label">{isMuted ? "已静音" : "麦克风"}</span>
   </ToggleButton>
 );

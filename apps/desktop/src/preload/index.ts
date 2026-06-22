@@ -8,6 +8,9 @@ const desktopApi: DesktopApi = {
     writeLog: (payload) => ipcRenderer.invoke(IPC_CHANNELS.app.writeLog, payload),
     openPath: (targetPath) => ipcRenderer.invoke(IPC_CHANNELS.app.openPath, targetPath),
   },
+  clipboard: {
+    writeText: (text) => ipcRenderer.invoke(IPC_CHANNELS.clipboard.writeText, text),
+  },
   window: {
     minimize: () => ipcRenderer.invoke(IPC_CHANNELS.window.minimize),
     hide: () => ipcRenderer.invoke(IPC_CHANNELS.window.hide),

@@ -5,6 +5,9 @@ import test from "node:test";
 
 const roomPagePath = path.resolve(process.cwd(), "src/renderer/src/pages/RoomPage.tsx");
 const overlayWindowPath = path.resolve(process.cwd(), "src/main/overlay-window.ts");
+const overlayPagePath = path.resolve(process.cwd(), "src/renderer/src/pages/OverlayPage.tsx");
+const rendererMainPath = path.resolve(process.cwd(), "src/renderer/src/main.tsx");
+const stylesPath = path.resolve(process.cwd(), "src/renderer/src/styles/index.css");
 const chatPanelPath = path.resolve(process.cwd(), "src/renderer/src/components/chat/TemporaryChatPanel.tsx");
 const teamIslandPath = path.resolve(process.cwd(), "src/renderer/src/components/room/TeamIsland.tsx");
 const sceneZonesPath = path.resolve(process.cwd(), "src/renderer/src/features/voice-scene/sceneZones.ts");
@@ -27,6 +30,9 @@ test("room page uses the V5 island, light responses, and voice dock", () => {
 test("room uses a real always-on-top overlay and a five-second knock cooldown", () => {
   const roomSource = readFileSync(roomPagePath, "utf8");
   const overlaySource = readFileSync(overlayWindowPath, "utf8");
+  const overlayPageSource = readFileSync(overlayPagePath, "utf8");
+  const rendererMainSource = readFileSync(rendererMainPath, "utf8");
+  const stylesSource = readFileSync(stylesPath, "utf8");
   const chatSource = readFileSync(chatPanelPath, "utf8");
   const teamIslandSource = readFileSync(teamIslandPath, "utf8");
   const sceneZonesSource = readFileSync(sceneZonesPath, "utf8");
@@ -36,11 +42,17 @@ test("room uses a real always-on-top overlay and a five-second knock cooldown", 
   assert.equal(overlaySource.includes("alwaysOnTop: true"), true);
   assert.equal(overlaySource.includes("skipTaskbar: true"), true);
   assert.equal(overlaySource.includes("overlay-bounds.json"), true);
-  assert.equal(overlaySource.includes("OVERLAY_MIN_WIDTH = 48"), true);
+  assert.equal(overlaySource.includes("OVERLAY_MIN_PILL_WIDTH = 88"), true);
+  assert.equal(overlaySource.includes("OVERLAY_SHADOW_MARGIN = 6"), true);
   assert.equal(overlaySource.includes("focusable: false"), true);
   assert.equal(overlaySource.includes("setIgnoreMouseEvents(true"), true);
   assert.equal(overlaySource.includes("setMovable(false)"), true);
   assert.equal(overlaySource.includes("resizable: false"), true);
+  assert.equal(overlayPageSource.includes("data-overlay-pill"), true);
+  assert.equal(overlayPageSource.includes("gsap.fromTo"), true);
+  assert.equal(rendererMainSource.includes("overlay-renderer"), true);
+  assert.equal(stylesSource.includes("html.overlay-renderer"), true);
+  assert.equal(stylesSource.includes("background: transparent !important"), true);
   assert.equal(chatSource.includes('message.kind === "system"'), true);
   assert.equal(chatSource.includes("AvatarPlaceholder"), true);
   assert.equal(teamIslandSource.includes("scene-zone-hotspot"), true);
@@ -51,7 +63,11 @@ test("room uses a real always-on-top overlay and a five-second knock cooldown", 
 
 test("desktop build includes custom nsis shortcut icon wiring", () => {
   const source = readFileSync(installerPath, "utf8");
+  const installer = readFileSync(path.resolve(process.cwd(), "build/installer.nsh"), "utf8");
 
   assert.equal(source.includes("include: build/installer.nsh"), true);
   assert.equal(source.includes("shanghao-shortcut-v3.ico"), true);
+  assert.equal(installer.includes("--shanghao-quit-for-install"), true);
+  assert.equal(installer.includes("killShangHaoProcess"), true);
+  assert.equal(installer.includes('"上号.exe"'), true);
 });

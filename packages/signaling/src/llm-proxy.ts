@@ -1,10 +1,8 @@
 // 服务器侧 AI 代理：MiMo key 只在这里，从环境变量读取，绝不外泄给客户端。
 // 客户端通过 /llm/chat HTTP 端点调用，不带任何 key。
 
-const LLM_API_URL =
-  process.env.SHANGHAO_LLM_API_URL ?? "https://token-plan-cn.xiaomimimo.com/v1/chat/completions";
-const LLM_MODEL = process.env.SHANGHAO_LLM_MODEL ?? "mimo-v2.5-pro";
-const LLM_API_KEY = process.env.SHANGHAO_LLM_API_KEY ?? "";
+const DEFAULT_LLM_API_URL = "https://token-plan-cn.xiaomimimo.com/v1/chat/completions";
+const DEFAULT_LLM_MODEL = "mimo-v2.5-pro";
 
 const SYSTEM_PROMPT = "你是聊天频道里的助手，简洁回答问题。用中文，50字以内，不要废话。回答时参考最新信息。";
 const MAX_HISTORY_TURNS = 10;
@@ -29,7 +27,13 @@ export const isLlmProxyRequest = (value: unknown): value is LlmProxyRequest => {
   return typeof candidate.message === "string" && Array.isArray(candidate.history);
 };
 
-export const isLlmConfigured = (): boolean => LLM_API_KEY.trim().length > 0;
+export const getLlmApiUrl = (): string => process.env.SHANGHAO_LLM_API_URL ?? DEFAULT_LLM_API_URL;
+
+export const getLlmModel = (): string => process.env.SHANGHAO_LLM_MODEL ?? DEFAULT_LLM_MODEL;
+
+export const getLlmApiKey = (): string => process.env.SHANGHAO_LLM_API_KEY ?? "";
+
+export const isLlmConfigured = (): boolean => getLlmApiKey().trim().length > 0;
 
 export const proxyLlmChat = async (request: LlmProxyRequest): Promise<LlmProxyResponse> => {
   if (!isLlmConfigured()) {
@@ -51,18 +55,19 @@ export const proxyLlmChat = async (request: LlmProxyRequest): Promise<LlmProxyRe
   ];
 
   try {
+    const apiKey = getLlmApiKey().trim();
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 15_000);
 
-    const response = await fetch(LLM_API_URL, {
+    const response = await fetch(getLlmApiUrl(), {
       method: "POST",
       signal: controller.signal,
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${LLM_API_KEY}`,
+        Authorization: `Bearer ${apiKey}`,
       },
       body: JSON.stringify({
-        model: LLM_MODEL,
+        model: getLlmModel(),
         messages,
         temperature: 0.7,
         max_tokens: 2048,

@@ -22,6 +22,11 @@ let tray: Tray | null = null;
 let isQuitting = false;
 let diagnostics: DiagnosticsService | null = null;
 let settingsStore: SettingsStore | null = null;
+let shortcutsController: ShortcutController | null = null;
+let overlayController: OverlayWindowController | null = null;
+let gameDetectionController: GameDetectionController | null = null;
+
+const QUIT_FOR_INSTALL_ARG = "--shanghao-quit-for-install";
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -39,6 +44,35 @@ const showWindow = () => {
   }
 
   mainWindow.focus();
+};
+
+const prepareForQuit = (reason: string) => {
+  isQuitting = true;
+  void diagnostics?.writeLog({
+    category: "app",
+    level: "info",
+    message: "Preparing to quit",
+    context: { reason },
+  });
+
+  overlayController?.close();
+  gameDetectionController?.stop();
+  shortcutsController?.dispose();
+
+  if (tray && !tray.isDestroyed()) {
+    tray.destroy();
+  }
+  tray = null;
+};
+
+const quitForInstall = (reason: string) => {
+  prepareForQuit(reason);
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.removeAllListeners("close");
+    mainWindow.close();
+  }
+  app.quit();
+  setTimeout(() => app.exit(0), 1_500).unref();
 };
 
 const showBootstrapError = async (error: unknown) => {
@@ -156,6 +190,7 @@ const bootstrap = async (): Promise<void> => {
   const updates = new UpdateService(
     app.getVersion(),
     (payload) => diagnostics?.writeLog(payload) ?? Promise.resolve(),
+    () => prepareForQuit("auto-update"),
   );
   const shortcuts = new ShortcutController(
     () => mainWindow,
@@ -167,6 +202,9 @@ const bootstrap = async (): Promise<void> => {
     (payload) => diagnostics?.writeLog(payload) ?? Promise.resolve(),
   );
   gameDetection.start();
+  shortcutsController = shortcuts;
+  overlayController = overlay;
+  gameDetectionController = gameDetection;
 
   const llm = new LlmService({
     getRelayServerUrl: () => settingsStore?.getSnapshot().relayServerUrl,
@@ -210,20 +248,17 @@ const bootstrap = async (): Promise<void> => {
       mainWindow?.hide();
     }
   });
+  mainWindow.on("closed", () => {
+    mainWindow = null;
+  });
 
   tray = createTrayController(
     () => mainWindow,
-    () => {
-      isQuitting = true;
-      shortcuts.dispose();
-    },
+    () => prepareForQuit("tray"),
   );
 
   app.on("before-quit", () => {
-    isQuitting = true;
-    overlay.close();
-    gameDetection.stop();
-    shortcuts.dispose();
+    prepareForQuit("before-quit");
   });
 
   app.on("activate", () => {
@@ -252,11 +287,20 @@ app.commandLine.appendSwitch(
   ".ts.net;100.64.0.0/10;<local>;localhost;127.0.0.1;10.*;172.16.*;172.17.*;172.18.*;172.19.*;172.20.*;172.21.*;172.22.*;172.23.*;172.24.*;172.25.*;172.26.*;172.27.*;172.28.*;172.29.*;172.30.*;172.31.*;192.168.*",
 );
 
-app.on("second-instance", () => {
+app.on("second-instance", (_event, commandLine) => {
+  if (commandLine.includes(QUIT_FOR_INSTALL_ARG)) {
+    quitForInstall("installer-second-instance");
+    return;
+  }
+
   showWindow();
 });
 
-if (!app.requestSingleInstanceLock()) {
+const hasSingleInstanceLock = app.requestSingleInstanceLock();
+
+if (!hasSingleInstanceLock) {
+  app.quit();
+} else if (process.argv.includes(QUIT_FOR_INSTALL_ARG)) {
   app.quit();
 } else {
   void app

@@ -42,8 +42,8 @@ const copy = {
   microphoneMissing: "没有找到可用的麦克风。",
   microphoneBusy: "麦克风正在被其他程序占用。",
   inputDeviceFailed: "输入设备切换失败",
-  copiedServerTitle: "服务器地址已复制",
-  copiedServerDescription: "发给朋友，大家填写同一个地址就能进同一个频道。",
+  copiedInviteTitle: "频道码已复制",
+  copiedInviteDescription: "已把频道码和服务器地址复制好，发给朋友即可进入同一个频道。",
 } as const;
 
 const normalizeServerUrl = (value?: string): string => {
@@ -88,6 +88,18 @@ const normalizeRoomError = (error: unknown, fallback: string): string => {
 
   return fallback;
 };
+
+export const buildChannelInviteText = ({
+  channelId,
+  serverUrl,
+}: {
+  channelId: string;
+  serverUrl: string;
+}) => [
+  `上号频道码：${channelId}`,
+  `服务器地址：${serverUrl}`,
+  "打开上号，填写同一个服务器地址后进入频道即可开黑。",
+].join("\n");
 
 const collectMemberEvents = (members: RoomMember[]) => {
   const nextIds = new Set(
@@ -504,12 +516,20 @@ export const useRoomState = () => {
     }
 
     try {
-      await navigator.clipboard.writeText(serverUrl);
+      const inviteText = buildChannelInviteText({
+        channelId: room.roomId || DEFAULT_CHANNEL_ID,
+        serverUrl,
+      });
+      await window.desktopApi.clipboard.writeText(inviteText);
       playUiSound("copy-success");
+      await writeRendererLog("app", "info", "Copied fixed channel invite", {
+        channelId: room.roomId || DEFAULT_CHANNEL_ID,
+        hasServerUrl: true,
+      });
       pushToast({
         tone: "success",
-        title: copy.copiedServerTitle,
-        description: copy.copiedServerDescription,
+        title: copy.copiedInviteTitle,
+        description: copy.copiedInviteDescription,
       });
     } catch {
       pushToast({

@@ -25,6 +25,10 @@ interface UpdatePolicy {
   forceUpdate?: boolean;
 }
 
+type UpdaterWithQuitEvent = typeof autoUpdater & {
+  on(event: "before-quit-for-update", listener: () => void): void;
+};
+
 const fetchJson = async <T>(url: string): Promise<T> =>
   new Promise<T>((resolve, reject) => {
     const req = request(
@@ -74,6 +78,7 @@ export class UpdateService {
   constructor(
     private readonly currentVersion: string,
     private readonly writeLog?: (payload: RendererLogPayload) => Promise<void>,
+    private readonly beforeInstall?: () => void,
   ) {
     autoUpdater.autoDownload = false;
     autoUpdater.autoInstallOnAppQuit = true;
@@ -95,6 +100,10 @@ export class UpdateService {
         forceUpdate: this.lastResult?.forceUpdate,
       });
       setTimeout(() => this.install(), 900);
+    });
+    (autoUpdater as UpdaterWithQuitEvent).on("before-quit-for-update", () => {
+      this.beforeInstall?.();
+      void this.log("info", "automatic update requested app quit");
     });
     autoUpdater.on("error", (error) => {
       this.emit({ phase: "error", message: "更新失败，请稍后重试。" });
@@ -188,6 +197,7 @@ export class UpdateService {
       return;
     }
     this.emit({ phase: "installing", message: "正在安装新版…" });
+    this.beforeInstall?.();
     autoUpdater.quitAndInstall(false, true);
   }
 

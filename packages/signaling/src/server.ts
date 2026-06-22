@@ -31,7 +31,7 @@ import type {
 } from "./protocol";
 import { isSignalEnvelope } from "./protocol";
 import { RoomManager } from "./room-manager";
-import { isLlmProxyRequest, proxyLlmChat } from "./llm-proxy";
+import { getLlmModel, isLlmConfigured, isLlmProxyRequest, proxyLlmChat } from "./llm-proxy";
 
 interface SignalingServerOptions {
   port?: number;
@@ -102,8 +102,8 @@ export class SignalingServer extends EventEmitter {
       }
 
       if (normalizedPathname === "/llm/health" && request.method === "GET") {
-        const configured = Boolean(process.env.SHANGHAO_LLM_API_KEY?.trim());
-        const model = process.env.SHANGHAO_LLM_MODEL ?? "mimo-v2.5-pro";
+        const configured = isLlmConfigured();
+        const model = getLlmModel();
         response.writeHead(200, { "content-type": "application/json; charset=utf-8" });
         response.end(JSON.stringify({ ok: true, configured, model }));
         return;

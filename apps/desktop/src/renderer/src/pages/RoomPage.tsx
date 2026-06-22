@@ -43,6 +43,7 @@ export const RoomPage = () => {
     sendChatMessage,
     sendKnock,
     replaceInputDevice,
+    copyInviteLink,
     moveLocalMember,
   } = useRoomState();
   const pushToast = useAppStore((state) => state.pushToast);
@@ -224,24 +225,6 @@ export const RoomPage = () => {
     await sendKnock();
   };
 
-  const invite = async () => {
-    const address = settings?.relayServerUrl?.trim();
-    if (!address) {
-      pushToast({
-        tone: "warning",
-        title: "没有可用的服务器地址",
-        description: "请返回进入页检查地址。",
-      });
-      return;
-    }
-    await navigator.clipboard.writeText(`上号服务器：${address}`);
-    pushToast({
-      tone: "success",
-      title: "服务器地址已复制",
-      description: "发给朋友即可进入同一个频道。",
-    });
-  };
-
   const toggleRecording = async () => {
     try {
       if (recordingStatus.state === RecordingState.Recording) {
@@ -285,7 +268,7 @@ export const RoomPage = () => {
   return (
     <div ref={pageRef} className="room-page relative flex h-full flex-col gap-2.5 overflow-hidden px-3.5 pb-3.5 pt-2">
       <div data-gsap-room="topbar">
-        <TopStatusBar onKnock={() => void knock()} onInvite={() => void invite()} />
+        <TopStatusBar onKnock={() => void knock()} onInvite={() => void copyInviteLink()} />
       </div>
 
       <main className="grid min-h-0 flex-1 gap-2.5 lg:grid-cols-[minmax(0,1.44fr)_minmax(280px,.56fr)]">

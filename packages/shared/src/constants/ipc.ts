@@ -4,6 +4,9 @@ export const IPC_CHANNELS = {
     writeLog: "app:write-log",
     openPath: "app:open-path",
   },
+  clipboard: {
+    writeText: "clipboard:write-text",
+  },
   window: {
     minimize: "window:minimize",
     hide: "window:hide",

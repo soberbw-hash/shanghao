@@ -70,6 +70,9 @@ export interface DesktopApi {
     writeLog: (payload: RendererLogPayload) => Promise<void>;
     openPath: (targetPath: string) => Promise<void>;
   };
+  clipboard: {
+    writeText: (text: string) => Promise<void>;
+  };
   window: {
     minimize: () => Promise<void>;
     hide: () => Promise<void>;

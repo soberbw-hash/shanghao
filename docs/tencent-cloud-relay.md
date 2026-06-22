@@ -56,3 +56,56 @@ wss://你的域名
 如果“房主直连”或 “Tailscale” 加入失败，优先切到云中继。云中继的逻辑是双方都主动连接腾讯云服务器，不要求房主电脑暴露端口，所以最适合复杂家宽、校园网、公司网、代理/TUN 环境。
 
 云中继只负责转发房间信令和必要的兜底音频，不做账号、数据库和公开社交。
+
+## AI 助手配置
+
+AI Key 只放在腾讯云服务器，不要放进桌面端，也不要提交到 GitHub。
+
+在服务器仓库根目录创建或编辑 `.env`：
+
+```bash
+nano .env
+```
+
+填入：
+
+```env
+PORT=43821
+ROOM_NAME=ShangHao Relay
+SHANGHAO_LLM_API_KEY=你的服务商API_KEY
+SHANGHAO_LLM_API_URL=https://token-plan-cn.xiaomimimo.com/v1/chat/completions
+SHANGHAO_LLM_MODEL=mimo-v2.5-pro
+```
+
+如果你使用其他兼容 OpenAI Chat Completions 的服务商，把 `SHANGHAO_LLM_API_URL` 和
+`SHANGHAO_LLM_MODEL` 换成服务商给你的地址和模型名。
+
+重启中继：
+
+```bash
+corepack pnpm relay:build
+pm2 restart shanghao-relay --update-env
+```
+
+验证 AI 配置：
+
+```bash
+curl http://127.0.0.1:43821/llm/health
+```
+
+正常会看到：
+
+```json
+{"ok":true,"configured":true,"model":"mimo-v2.5-pro"}
+```
+
+再测试聊天代理：
+
+```bash
+curl -X POST http://127.0.0.1:43821/llm/chat \
+  -H "Content-Type: application/json" \
+  -d '{"message":"只回复 OK 两个字","history":[]}'
+```
+
+正常会返回 `{"ok":true,"reply":"..."}`。如果返回 `not_configured`，说明服务没有读到
+`SHANGHAO_LLM_API_KEY`，需要确认 `.env` 路径和重启命令。

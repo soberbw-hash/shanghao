@@ -129,3 +129,51 @@ test("main process guards ipc pushes after windows are destroyed", () => {
   assert.equal(safeSend.includes("window.webContents.isDestroyed()"), true);
   assert.equal(safeSend.includes("destroyed"), true);
 });
+
+test("installer and updater quit paths clean background surfaces", () => {
+  const main = read("apps/desktop/src/main/index.ts");
+  const updates = read("apps/desktop/src/main/updates.ts");
+  const installer = read("apps/desktop/build/installer.nsh");
+
+  assert.equal(main.includes("QUIT_FOR_INSTALL_ARG"), true);
+  assert.equal(main.includes("installer-second-instance"), true);
+  assert.equal(main.includes("prepareForQuit"), true);
+  assert.equal(main.includes("tray.destroy()"), true);
+  assert.equal(main.includes("overlayController?.close()"), true);
+  assert.equal(main.includes("shortcutsController?.dispose()"), true);
+  assert.equal(updates.includes("before-quit-for-update"), true);
+  assert.equal(updates.includes("beforeInstall?.()"), true);
+  assert.equal(installer.includes("--shanghao-quit-for-install"), true);
+  assert.equal(installer.includes("taskkill.exe"), true);
+});
+
+test("room invite copies the fixed channel code with a visible success toast", () => {
+  const hook = read("apps/desktop/src/renderer/src/hooks/useRoomState.ts");
+  const roomPage = read("apps/desktop/src/renderer/src/pages/RoomPage.tsx");
+
+  assert.equal(hook.includes("buildChannelInviteText"), true);
+  assert.equal(hook.includes("上号频道码："), true);
+  assert.equal(hook.includes("服务器地址："), true);
+  assert.equal(hook.includes("频道码已复制"), true);
+  assert.equal(hook.includes('playUiSound("copy-success")'), true);
+  assert.equal(hook.includes("Copied fixed channel invite"), true);
+  assert.equal(hook.includes("desktopApi.clipboard.writeText"), true);
+  assert.equal(hook.includes("navigator.clipboard.writeText"), false);
+  assert.equal(roomPage.includes("copyInviteLink"), true);
+  assert.equal(roomPage.includes("navigator.clipboard.writeText(`上号服务器"), false);
+});
+
+test("desktop clipboard writes go through the electron main process", () => {
+  const ipcConstants = read("packages/shared/src/constants/ipc.ts");
+  const ipcTypes = read("packages/shared/src/types/ipc.types.ts");
+  const preload = read("apps/desktop/src/preload/index.ts");
+  const mainIpc = read("apps/desktop/src/main/ipc.ts");
+  const copyField = read("apps/desktop/src/renderer/src/components/base/CopyField.tsx");
+
+  assert.equal(ipcConstants.includes("clipboard:write-text"), true);
+  assert.equal(ipcTypes.includes("clipboard: {"), true);
+  assert.equal(preload.includes("IPC_CHANNELS.clipboard.writeText"), true);
+  assert.equal(mainIpc.includes("clipboard.writeText(text)"), true);
+  assert.equal(copyField.includes("desktopApi.clipboard"), true);
+  assert.equal(copyField.includes("navigator.clipboard"), false);
+});
