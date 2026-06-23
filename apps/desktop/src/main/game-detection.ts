@@ -6,36 +6,61 @@ import type { GameDetectionSnapshot, RendererLogPayload } from "@private-voice/s
 const execFileAsync = promisify(execFile);
 const POLL_INTERVAL_MS = 4000;
 
-const KNOWN_GAMES: Array<{ name: string; processNames: string[] }> = [
-  { name: "失落城堡2", processNames: ["lostcastle2", "lost castle 2", "lostcastleii", "lost castle ii"] },
-  { name: "三角洲行动", processNames: ["deltaforce", "delta force"] },
+const KNOWN_GAMES: Array<{ name: string; aliases: string[] }> = [
+  {
+    name: "失落城堡2",
+    aliases: [
+      "lostcastle2",
+      "lost castle 2",
+      "lostcastleii",
+      "lost castle ii",
+      "lostcastle2-win64-shipping",
+      "失落城堡2",
+      "失落城堡 2",
+    ],
+  },
+  { name: "三角洲行动", aliases: ["deltaforce", "delta force"] },
   {
     name: "英雄联盟",
-    processNames: [
+    aliases: [
       "leagueclient",
       "leagueclientux",
       "leagueclientuxrender",
       "league of legends",
+      "league of legends.exe",
+      "lolclient",
+      "lol.launcher",
       "riotclientservices",
+      "riot client",
+      "英雄联盟",
     ],
   },
-  { name: "无畏契约", processNames: ["valorant"] },
-  { name: "CS2", processNames: ["cs2", "counter-strike"] },
-  { name: "原神", processNames: ["genshin", "mihoyo"] },
-  { name: "永劫无间", processNames: ["narakabladepoint", "nablauncher"] },
-  { name: "Apex英雄", processNames: ["r5apex", "apex"] },
-  { name: "绝地求生", processNames: ["tslgame", "pubg"] },
-  { name: "守望先锋", processNames: ["overwatch"] },
-  { name: "蛋仔派对", processNames: ["eggy"] },
-  { name: "我的世界", processNames: ["minecraft", "javaw"] },
-  { name: "Roblox", processNames: ["roblox"] },
+  { name: "无畏契约", aliases: ["valorant"] },
+  { name: "CS2", aliases: ["cs2", "counter-strike"] },
+  { name: "原神", aliases: ["genshin", "mihoyo"] },
+  { name: "永劫无间", aliases: ["narakabladepoint", "nablauncher"] },
+  { name: "Apex英雄", aliases: ["r5apex", "apex"] },
+  { name: "绝地求生", aliases: ["tslgame", "pubg"] },
+  { name: "守望先锋", aliases: ["overwatch"] },
+  { name: "蛋仔派对", aliases: ["eggy"] },
+  { name: "我的世界", aliases: ["minecraft", "javaw"] },
+  { name: "Roblox", aliases: ["roblox"] },
 ];
 
-export const matchKnownGame = (processNames: string): GameDetectionSnapshot["gameName"] => {
-  const normalized = processNames.toLowerCase();
+export const buildGameDetectionProbeCommand = (): string => [
+  "$ErrorActionPreference='SilentlyContinue'",
+  "Get-Process | ForEach-Object {",
+  "  $processPath = ''",
+  "  try { $processPath = $_.Path } catch {}",
+  "  [PSCustomObject]@{ ProcessName=$_.ProcessName; MainWindowTitle=$_.MainWindowTitle; Path=$processPath }",
+  "} | ConvertTo-Json -Compress",
+].join("; ");
+
+export const matchKnownGame = (processSnapshot: string): GameDetectionSnapshot["gameName"] => {
+  const normalized = processSnapshot.toLowerCase();
   for (const game of KNOWN_GAMES) {
-    for (const pn of game.processNames) {
-      if (normalized.includes(pn)) {
+    for (const alias of game.aliases) {
+      if (normalized.includes(alias)) {
         return game.name as GameDetectionSnapshot["gameName"];
       }
     }
@@ -48,19 +73,11 @@ const detectKnownGame = async (): Promise<GameDetectionSnapshot["gameName"]> => 
     return undefined;
   }
 
-  const gameNames = KNOWN_GAMES.flatMap(function (g) {
-    return g.processNames.map(function (p) {
-      return "'" + p + "'";
-    });
-  }).join(",");
-
-  var cmd = "$ErrorActionPreference='SilentlyContinue'; Get-Process -Name " + gameNames + " -ErrorAction SilentlyContinue | Select-Object -ExpandProperty ProcessName";
-
-  var result = await execFileAsync(
+  const result = await execFileAsync(
     "powershell.exe",
-    ["-NoProfile", "-NonInteractive", "-Command", cmd],
-    { windowsHide: true, timeout: 2500 },
-  ).catch(function () {
+    ["-NoProfile", "-NonInteractive", "-Command", buildGameDetectionProbeCommand()],
+    { windowsHide: true, maxBuffer: 1024 * 1024, timeout: 3000 },
+  ).catch(() => {
     return { stdout: "" };
   });
 

@@ -21,11 +21,11 @@ export interface CharacterPosition {
 }
 
 export const seatSlots: SceneZone[] = [
-  { id: "gameDesk1", label: "1 号位", shortLabel: "1", kind: "seat", activity: "gaming", left: 33, top: 53, width: 12, height: 14 },
-  { id: "gameDesk2", label: "2 号位", shortLabel: "2", kind: "seat", activity: "gaming", left: 50, top: 34, width: 12, height: 14 },
-  { id: "gameDesk3", label: "3 号位", shortLabel: "3", kind: "seat", activity: "gaming", left: 68, top: 60, width: 12, height: 14 },
-  { id: "gameDesk4", label: "4 号位", shortLabel: "4", kind: "seat", activity: "gaming", left: 42, top: 79, width: 13, height: 14 },
-  { id: "gameDesk5", label: "5 号位", shortLabel: "5", kind: "seat", activity: "gaming", left: 84, top: 78, width: 13, height: 14 },
+  { id: "gameDesk1", label: "1 号位", shortLabel: "1", kind: "seat", activity: "gaming", left: 44, top: 32, width: 14, height: 15 },
+  { id: "gameDesk2", label: "2 号位", shortLabel: "2", kind: "seat", activity: "gaming", left: 70, top: 32, width: 14, height: 15 },
+  { id: "gameDesk3", label: "3 号位", shortLabel: "3", kind: "seat", activity: "gaming", left: 44, top: 58, width: 14, height: 15 },
+  { id: "gameDesk4", label: "4 号位", shortLabel: "4", kind: "seat", activity: "gaming", left: 70, top: 58, width: 14, height: 15 },
+  { id: "gameDesk5", label: "5 号位", shortLabel: "5", kind: "seat", activity: "gaming", left: 57, top: 82, width: 14, height: 15 },
 ];
 
 export const activityZones: SceneZone[] = [
@@ -50,9 +50,9 @@ export const characterPositions: Record<SceneZoneId, CharacterPosition> = {
   coffeeBar: { left: 14, top: 25, zIndex: 20, scale: 0.9 },
   fitnessZone: { left: 11, top: 68, zIndex: 30, scale: 1.04 },
   restroomZone: { left: 85, top: 17, zIndex: 20, scale: 0.82 },
-  gameDesk1: { left: 33, top: 53, zIndex: 25, scale: 1 },
-  gameDesk2: { left: 50, top: 34, zIndex: 22, scale: 0.9 },
-  gameDesk3: { left: 68, top: 60, zIndex: 28, scale: 0.94 },
-  gameDesk4: { left: 42, top: 79, zIndex: 32, scale: 1.02, labelOffsetY: -2 },
-  gameDesk5: { left: 84, top: 78, zIndex: 33, scale: 0.98, labelOffsetY: -3 },
+  gameDesk1: { left: 44, top: 35, zIndex: 24, scale: 0.92 },
+  gameDesk2: { left: 70, top: 35, zIndex: 25, scale: 0.92 },
+  gameDesk3: { left: 44, top: 61, zIndex: 31, scale: 1 },
+  gameDesk4: { left: 70, top: 61, zIndex: 32, scale: 1 },
+  gameDesk5: { left: 57, top: 84, zIndex: 37, scale: 1.02, labelOffsetY: -5 },
 };

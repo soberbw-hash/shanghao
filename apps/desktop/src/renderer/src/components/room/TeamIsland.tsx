@@ -10,10 +10,10 @@ import {
   type SceneZoneId,
 } from "@private-voice/shared";
 
-import whiteOfficeRoom from "../../assets/scenes/white-office-room.png";
 import { avatarOptions } from "../../utils/profile";
 import { AnimalSprite } from "./AnimalSprite";
 import {
+  activityZones,
   characterPositions,
   defaultMemberZones,
   isSeatZone,
@@ -174,13 +174,43 @@ export const TeamIsland = ({
 
   return (
     <div ref={islandRef} className="team-island relative h-full min-h-[420px] overflow-hidden" data-testid="team-island">
-      <img
-        src={whiteOfficeRoom}
-        alt=""
-        className="team-island-background absolute inset-0 h-full w-full"
-        draggable={false}
-      />
-      <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(255,255,255,.02),rgba(240,246,255,.1))]" />
+      <div className="team-island-stage absolute inset-0" aria-hidden="true">
+        <div className="scene-room-title">上号办公室</div>
+        <div className="scene-service-zone scene-service-coffee">
+          <span>茶水间</span>
+          <i className="scene-coffee-machine" />
+          <i className="scene-cups" />
+        </div>
+        <div className="scene-service-zone scene-service-fitness">
+          <span>运动区</span>
+          <i className="scene-treadmill" />
+          <i className="scene-dumbbell" />
+        </div>
+        <div className="scene-service-zone scene-service-restroom">
+          <span>离开一下</span>
+          <i className="scene-restroom-door" />
+        </div>
+        {seatSlots.map((slot) => (
+          <div
+            key={slot.id}
+            className="scene-workstation"
+            style={{
+              left: `${slot.left}%`,
+              top: `${slot.top}%`,
+              zIndex: characterPositions[slot.id].zIndex - 3,
+            }}
+          >
+            <div className="scene-desk-shadow" />
+            <div className="scene-desk-top">
+              <span className="scene-monitor" />
+              <span className="scene-keyboard" />
+              <span className="scene-speaker left" />
+              <span className="scene-speaker right" />
+            </div>
+            <div className="scene-chair" />
+          </div>
+        ))}
+      </div>
       <div className="absolute left-5 top-5 z-30 rounded-full border border-white/90 bg-white/72 px-3 py-1.5 text-xs font-semibold text-[#66778e] shadow-sm backdrop-blur-xl">
         {visibleMembers.length}/5 在线
       </div>
@@ -218,7 +248,11 @@ export const TeamIsland = ({
             }}
             aria-label={`移动到${zone.label}`}
             onClick={() => onZoneSelect?.(zone.id, zone.activity)}
-          />
+          >
+            {activityZones.some((candidate) => candidate.id === zone.id) ? (
+              <span>{zone.label}</span>
+            ) : null}
+          </button>
         ))}
       </div>
 

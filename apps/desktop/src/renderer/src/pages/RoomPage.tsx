@@ -36,6 +36,98 @@ const naturalActivityZones: Array<{ zone: SceneZoneId; activity: MemberActivity 
   { zone: "gameDesk1", activity: "idle" },
 ];
 
+interface ScreenShareItem {
+  id: string;
+  title: string;
+  stream?: MediaStream;
+  frameDataUrl?: string;
+  isLocal?: boolean;
+  transport: "webrtc" | "relay";
+}
+
+const ScreenShareVideo = ({
+  stream,
+  muted = false,
+}: {
+  stream: MediaStream;
+  muted?: boolean;
+}) => {
+  const videoRef = useRef<HTMLVideoElement>(null);
+
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video) return;
+    if (video.srcObject !== stream) {
+      video.srcObject = stream;
+    }
+  }, [stream]);
+
+  return (
+    <video
+      ref={videoRef}
+      autoPlay
+      playsInline
+      muted={muted}
+      className="screen-share-video"
+    />
+  );
+};
+
+const ScreenShareMedia = ({ item }: { item: ScreenShareItem }) => {
+  if (item.stream) {
+    return <ScreenShareVideo stream={item.stream} muted={item.isLocal} />;
+  }
+
+  return (
+    <img
+      src={item.frameDataUrl}
+      alt=""
+      className="screen-share-video"
+      draggable={false}
+    />
+  );
+};
+
+const ScreenSharePanel = ({
+  items,
+  onStopLocalShare,
+}: {
+  items: ScreenShareItem[];
+  onStopLocalShare: () => void;
+}) => {
+  if (items.length === 0) return null;
+
+  const primaryItem = items[0];
+  if (!primaryItem) return null;
+
+  return (
+    <div className="screen-share-panel" data-testid="screen-share-panel">
+      <div className="screen-share-panel-header">
+        <div>
+          <p className="screen-share-kicker">屏幕分享</p>
+          <strong>{primaryItem.title}</strong>
+          <span className="screen-share-transport">
+            {primaryItem.transport === "webrtc" ? "实时视频" : "服务器兜底"}
+          </span>
+        </div>
+        {primaryItem.isLocal ? (
+          <button type="button" className="screen-share-stop" onClick={onStopLocalShare}>
+            停止
+          </button>
+        ) : null}
+      </div>
+      <div className="screen-share-video-shell">
+        <ScreenShareMedia item={primaryItem} />
+      </div>
+      {items.length > 1 ? (
+        <div className="screen-share-stack">
+          还有 {items.length - 1} 个屏幕正在分享
+        </div>
+      ) : null}
+    </div>
+  );
+};
+
 export const RoomPage = () => {
   const {
     room,
@@ -45,11 +137,15 @@ export const RoomPage = () => {
     replaceInputDevice,
     copyInviteLink,
     moveLocalMember,
+    startScreenShare,
+    stopScreenShare,
   } = useRoomState();
   const pushToast = useAppStore((state) => state.pushToast);
   const settings = useSettingsStore((state) => state.settings);
   const saveSettings = useSettingsStore((state) => state.saveSettings);
   const chatMessages = useRoomStore((state) => state.chatMessages);
+  const remoteStreams = useRoomStore((state) => state.remoteStreams);
+  const remoteScreenFrames = useRoomStore((state) => state.remoteScreenFrames);
   const { inputDevices, outputDevices, isMuted, isDeafened, toggleMute, toggleDeafen } = useAudioStore();
   const recordingStatus = useRecordingStore((state) => state.status);
   const { capability, startRecording, stopRecording } = useRecordingController();
@@ -57,9 +153,11 @@ export const RoomPage = () => {
   const voicePulseRef = useRef<HTMLDivElement>(null);
   const [chatInput, setChatInput] = useState("");
   const [isLLMLoading, setIsLLMLoading] = useState(false);
+  const [localScreenShareStream, setLocalScreenShareStream] = useState<MediaStream>();
   const enteredAt = useRef(Date.now());
   const lastKnockAt = useRef(0);
   const detectedGameRef = useRef<string>();
+  const screenShareStoppingRef = useRef(false);
   const moveLocalMemberRef = useRef(moveLocalMember);
   moveLocalMemberRef.current = moveLocalMember;
   const llmHistoryRef = useRef<LlmHistoryEntry[]>([]);
@@ -69,6 +167,49 @@ export const RoomPage = () => {
     room.connectionState === RoomConnectionState.Connected ||
     room.connectionState === RoomConnectionState.WaitingPeer ||
     room.connectionState === RoomConnectionState.WaitingSnapshot;
+  const screenShareItems: ScreenShareItem[] = [
+    ...(localScreenShareStream
+      ? [
+          {
+            id: "local",
+            title: "你正在分享",
+            stream: localScreenShareStream,
+            isLocal: true,
+            transport: "webrtc" as const,
+          },
+        ]
+      : []),
+    ...Object.entries(remoteStreams)
+      .filter(([, stream]) =>
+        stream.getVideoTracks().some((track) => track.readyState === "live"),
+      )
+      .map(([peerId, stream]) => {
+        const member = room.members.find((candidate) => candidate.id === peerId);
+        return {
+          id: peerId,
+          title: `${member?.nickname ?? "好友"} 正在分享`,
+          stream,
+          transport: "webrtc" as const,
+        };
+      }),
+    ...Object.entries(remoteScreenFrames)
+      .filter(([peerId, frame]) => {
+        const stream = remoteStreams[peerId];
+        const hasLiveVideo = stream
+          ?.getVideoTracks()
+          .some((track) => track.readyState === "live");
+        return Boolean(frame.data) && !hasLiveVideo;
+      })
+      .map(([peerId, frame]) => {
+        const member = room.members.find((candidate) => candidate.id === peerId);
+        return {
+          id: `${peerId}-relay`,
+          title: `${member?.nickname ?? "好友"} 正在分享`,
+          frameDataUrl: frame.data,
+          transport: "relay" as const,
+        };
+      }),
+  ];
 
   useLayoutEffect(() => {
     if (!pageRef.current) return;
@@ -252,6 +393,79 @@ export const RoomPage = () => {
     await leaveRoom();
   };
 
+  const startSharingScreen = async () => {
+    let requestedStream: MediaStream | undefined;
+    try {
+      const stream = await navigator.mediaDevices.getDisplayMedia({
+        video: {
+          frameRate: { ideal: 24, max: 30 },
+        },
+        audio: false,
+      });
+      requestedStream = stream;
+      const [videoTrack] = stream.getVideoTracks();
+      if (!videoTrack) {
+        stream.getTracks().forEach((track) => track.stop());
+        throw new Error("screen_track_missing");
+      }
+
+      await startScreenShare(stream);
+      setLocalScreenShareStream(stream);
+      playUiSound("popup-open");
+      pushToast({
+        tone: "success",
+        title: "屏幕分享已开启",
+        description: "频道里的好友现在可以看你的屏幕。",
+      });
+
+      videoTrack.addEventListener(
+        "ended",
+        () => {
+          if (screenShareStoppingRef.current) {
+            return;
+          }
+          setLocalScreenShareStream(undefined);
+          void stopScreenShare();
+        },
+        { once: true },
+      );
+    } catch (error) {
+      if (error instanceof DOMException && error.name === "NotAllowedError") {
+        pushToast({
+          tone: "neutral",
+          title: "已取消屏幕分享",
+          description: "没有选择要分享的窗口。",
+        });
+        return;
+      }
+
+      requestedStream?.getTracks().forEach((track) => track.stop());
+      pushToast({
+        tone: "danger",
+        title: "屏幕分享失败",
+        description: "请确认系统允许上号录制屏幕。",
+      });
+    }
+  };
+
+  const stopSharingScreen = async () => {
+    screenShareStoppingRef.current = true;
+    try {
+      setLocalScreenShareStream(undefined);
+      await stopScreenShare();
+      playUiSound("popup-open");
+      pushToast({
+        tone: "neutral",
+        title: "屏幕分享已停止",
+        description: "好友不再看到你的屏幕。",
+      });
+    } finally {
+      window.setTimeout(() => {
+        screenShareStoppingRef.current = false;
+      }, 0);
+    }
+  };
+
   const switchInputDevice = async (preferredInputDeviceId?: string) => {
     await saveSettings({ preferredInputDeviceId });
     await replaceInputDevice(preferredInputDeviceId);
@@ -277,6 +491,10 @@ export const RoomPage = () => {
             members={room.members}
             onZoneSelect={(zone, activity) => moveLocalMember(zone, activity)}
             reduceMotion={settings?.reduceMotion ?? false}
+          />
+          <ScreenSharePanel
+            items={screenShareItems}
+            onStopLocalShare={() => void stopSharingScreen()}
           />
         </section>
         <div data-gsap-room="chat" className="min-h-0">
@@ -340,6 +558,22 @@ export const RoomPage = () => {
           onClick={() => void toggleRecording()}
           disabled={capability.encoderState === RecordingEncoderState.Unsupported}
         />
+        <Button
+          variant={localScreenShareStream ? "secondary" : "ghost"}
+          className={`voice-action-button-with-text ${localScreenShareStream ? "screen-share-active-button" : ""}`}
+          onClick={() => {
+            if (localScreenShareStream) {
+              void stopSharingScreen();
+              return;
+            }
+            void startSharingScreen();
+          }}
+        >
+          <MonitorUp className="h-4 w-4" />
+          <span className="voice-action-label">
+            {localScreenShareStream ? "停止分享" : "屏幕分享"}
+          </span>
+        </Button>
         <Button
           variant="ghost"
           className="voice-action-button-with-text"

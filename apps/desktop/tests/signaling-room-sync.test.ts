@@ -399,6 +399,75 @@ test("fixed channel relays fallback audio chunks to other peers only", async () 
   }
 });
 
+test("fixed channel relays fallback screen frames and stop state to other peers only", async () => {
+  const server = new SignalingServer({ roomName: "固定频道" });
+  const port = await server.listen();
+  const url = `ws://127.0.0.1:${port}`;
+  const sender = await openSocket(url);
+  const receiver = await openSocket(url);
+
+  try {
+    joinChannel(sender, "sender");
+    joinChannel(receiver, "receiver");
+    await waitForMessage(
+      receiver,
+      (payload): payload is { members: unknown[] } =>
+        typeof payload === "object" &&
+        payload !== null &&
+        (payload as { type?: string }).type === "channel_snapshot" &&
+        (payload as { members?: unknown[] }).members?.length === 2,
+    );
+
+    sender.send(
+      JSON.stringify({
+        type: "screen_frame",
+        roomId: "main",
+        peerId: "sender",
+        sourcePeerId: "sender",
+        sequence: 7,
+        sentAt: Date.now(),
+        width: 320,
+        height: 180,
+        data: "data:image/jpeg;base64,AAAA",
+      }),
+    );
+
+    const frame = await waitForMessage(
+      receiver,
+      (payload): payload is { type: string; sourcePeerId: string; sequence: number; data: string } =>
+        typeof payload === "object" &&
+        payload !== null &&
+        (payload as { type?: string }).type === "screen_frame",
+    );
+    assert.equal(frame.sourcePeerId, "sender");
+    assert.equal(frame.sequence, 7);
+    assert.equal(frame.data, "data:image/jpeg;base64,AAAA");
+
+    sender.send(
+      JSON.stringify({
+        type: "screen_share_state",
+        roomId: "main",
+        peerId: "sender",
+        isSharing: false,
+      }),
+    );
+
+    const stopped = await waitForMessage(
+      receiver,
+      (payload): payload is { type: string; peerId: string; isSharing: boolean } =>
+        typeof payload === "object" &&
+        payload !== null &&
+        (payload as { type?: string }).type === "screen_share_state",
+    );
+    assert.equal(stopped.peerId, "sender");
+    assert.equal(stopped.isSharing, false);
+  } finally {
+    sender.close();
+    receiver.close();
+    await server.close();
+  }
+});
+
 test("fixed channel keeps a reconnecting member during grace and replaces same peer socket", async () => {
   const server = new SignalingServer({ roomName: "固定频道" });
   const port = await server.listen();

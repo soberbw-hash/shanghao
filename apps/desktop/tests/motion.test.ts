@@ -39,10 +39,12 @@ test("gsap motion is wired across the main surfaces with reduced-motion fallback
   assert.equal(islandSource.includes("data-gsap-character"), true);
   assert.equal(hookSource.includes("prefers-reduced-motion: reduce"), true);
   assert.equal(stylesSource.includes("[data-gsap-entry]"), true);
-  assert.equal(animalSource.includes("animal-motion-sprite"), true);
-  assert.equal(animalSource.includes("motionRows"), true);
+  assert.equal(animalSource.includes("layered-animal"), true);
+  assert.equal(animalSource.includes("avatarLayerAssets"), true);
+  assert.equal(animalSource.includes("LayerPart"), true);
   assert.equal(animalSource.includes("isMoving ? \"walk\""), true);
   assert.equal(islandSource.includes("SceneCharacter"), true);
   assert.equal(islandSource.includes("setIsMoving(true)"), true);
-  assert.equal(stylesSource.includes("@keyframes animal-motion-frames"), true);
+  assert.equal(stylesSource.includes("@keyframes layered-body-walk"), true);
+  assert.equal(stylesSource.includes(".layered-animal-head"), true);
 });

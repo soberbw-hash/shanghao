@@ -26,6 +26,8 @@ export const DEFAULT_ICE_SERVERS: RTCIceServer[] = [
 export class MeshPeerConnection {
   readonly connection: RTCPeerConnection;
   private readonly pendingIceCandidates: IceCandidatePayload[] = [];
+  private readonly remoteStream = new MediaStream();
+  private readonly screenTransceiver: RTCRtpTransceiver;
 
   constructor(private readonly options: MeshPeerOptions) {
     this.connection = new RTCPeerConnection({
@@ -35,6 +37,10 @@ export class MeshPeerConnection {
     for (const track of options.localStream.getTracks()) {
       this.connection.addTrack(track, options.localStream);
     }
+
+    this.screenTransceiver = this.connection.addTransceiver("video", {
+      direction: "recvonly",
+    });
 
     this.connection.onicecandidate = (event) => {
       if (!event.candidate) {
@@ -50,10 +56,15 @@ export class MeshPeerConnection {
     };
 
     this.connection.ontrack = (event) => {
-      const [stream] = event.streams;
-      if (stream) {
-        this.options.onRemoteStream(stream);
+      if (!this.remoteStream.getTracks().some((track) => track.id === event.track.id)) {
+        this.remoteStream.addTrack(event.track);
       }
+
+      event.track.onended = () => {
+        this.remoteStream.removeTrack(event.track);
+        this.options.onRemoteStream(this.remoteStream);
+      };
+      this.options.onRemoteStream(this.remoteStream);
     };
 
     this.connection.onconnectionstatechange = () => {
@@ -82,7 +93,7 @@ export class MeshPeerConnection {
   async createOffer(): Promise<SessionDescriptionPayload> {
     const offer = await this.connection.createOffer({
       offerToReceiveAudio: true,
-      offerToReceiveVideo: false,
+      offerToReceiveVideo: true,
     });
     await this.connection.setLocalDescription(offer);
     return {
@@ -138,8 +149,14 @@ export class MeshPeerConnection {
     }
   }
 
+  async setScreenTrack(nextTrack?: MediaStreamTrack): Promise<void> {
+    this.screenTransceiver.direction = nextTrack ? "sendrecv" : "recvonly";
+    await this.screenTransceiver.sender.replaceTrack(nextTrack ?? null);
+  }
+
   destroy(): void {
     this.pendingIceCandidates.length = 0;
+    void this.screenTransceiver.sender.replaceTrack(null).catch(() => undefined);
     this.connection.close();
   }
 

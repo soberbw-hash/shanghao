@@ -153,6 +153,7 @@ export const useRoomState = () => {
   const setLifecycleState = useRoomStore((state) => state.setLifecycleState);
   const setLocalStream = useRoomStore((state) => state.setLocalStream);
   const setRemoteStream = useRoomStore((state) => state.setRemoteStream);
+  const setRemoteScreenFrame = useRoomStore((state) => state.setRemoteScreenFrame);
   const pushRoomEvent = useRoomStore((state) => state.pushRoomEvent);
   const clearRoomEvents = useRoomStore((state) => state.clearRoomEvents);
   const addChatMessage = useRoomStore((state) => state.addChatMessage);
@@ -331,6 +332,9 @@ export const useRoomState = () => {
       },
       onRemoteStream: (remotePeerId, remoteStream) => {
         setRemoteStream(remotePeerId, remoteStream);
+      },
+      onRemoteScreenFrame: (remotePeerId, frame) => {
+        setRemoteScreenFrame(remotePeerId, frame);
       },
       onChatMessage: (message) => {
         addChatMessage(message);
@@ -592,6 +596,23 @@ export const useRoomState = () => {
     await activeClient.sendKnock();
   };
 
+  const startScreenShare = async (stream: MediaStream) => {
+    if (!activeClient) {
+      stream.getTracks().forEach((track) => track.stop());
+      throw new Error("room_not_connected");
+    }
+
+    await activeClient.startScreenShare(stream);
+    await writeRendererLog("webrtc", "info", "Screen share started from room state", {
+      videoTracks: stream.getVideoTracks().length,
+    });
+  };
+
+  const stopScreenShare = async () => {
+    await activeClient?.stopScreenShare();
+    await writeRendererLog("webrtc", "info", "Screen share stopped from room state");
+  };
+
   const moveLocalMember = (
     sceneZone: SceneZoneId,
     activity: MemberActivity,
@@ -615,6 +636,8 @@ export const useRoomState = () => {
     copyInviteLink,
     sendChatMessage,
     sendKnock,
+    startScreenShare,
+    stopScreenShare,
     moveLocalMember,
   };
 };

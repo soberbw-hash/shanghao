@@ -2,14 +2,10 @@ import { type CSSProperties, useEffect, useState } from "react";
 
 import type { BuiltInAvatarId, MemberActivity } from "@private-voice/shared";
 
-import catMotion from "../../assets/avatars/motion/cat-motion.png";
-import corgiMotion from "../../assets/avatars/motion/corgi-motion.png";
-import duckMotion from "../../assets/avatars/motion/duck-motion.png";
-import foxMotion from "../../assets/avatars/motion/fox-motion.png";
-import pandaMotion from "../../assets/avatars/motion/panda-motion.png";
 import { getAvatarSrc } from "../../utils/profile";
 
 type AnimationState = "idle" | "walk" | "gaming" | "drinking" | "fitness" | "away" | "speaking";
+type LayerPart = "tail" | "body" | "feet" | "head";
 
 const animationStates: AnimationState[] = [
   "idle",
@@ -21,33 +17,14 @@ const animationStates: AnimationState[] = [
   "speaking",
 ];
 
-const motionSheets: Record<BuiltInAvatarId, string> = {
-  fox: foxMotion,
-  cat: catMotion,
-  duck: duckMotion,
-  panda: pandaMotion,
-  corgi: corgiMotion,
-};
+const layerParts: LayerPart[] = ["tail", "body", "feet", "head"];
+const avatarLayerAssets = import.meta.glob("../../assets/avatars/layers/*.png", {
+  eager: true,
+  import: "default",
+}) as Record<string, string>;
 
-const motionRows: Record<AnimationState, number> = {
-  idle: 0,
-  walk: 1,
-  gaming: 2,
-  drinking: 3,
-  speaking: 4,
-  fitness: 5,
-  away: 6,
-};
-
-const motionDurations: Record<AnimationState, string> = {
-  idle: "1.7s",
-  walk: "0.62s",
-  gaming: "0.9s",
-  drinking: "1.45s",
-  speaking: "0.72s",
-  fitness: "0.68s",
-  away: "1.9s",
-};
+const layerSrc = (avatarId: BuiltInAvatarId, part: LayerPart): string | undefined =>
+  avatarLayerAssets[`../../assets/avatars/layers/${avatarId}-${part}.png`];
 
 const activityToAnimationState = (activity: MemberActivity): AnimationState => {
   switch (activity) {
@@ -85,20 +62,29 @@ export const AnimalSprite = ({
     setCurrentSrc(getAvatarSrc(avatarId) ?? "");
   }, [avatarId]);
 
-  const sheetSrc = motionSheets[avatarId];
-  const motionStyle = {
-    backgroundImage: `url(${sheetSrc})`,
-    "--motion-row": motionRows[animationState],
-    "--motion-duration": motionDurations[animationState],
-  } as CSSProperties & Record<string, string | number>;
+  const layers = layerParts
+    .map((part) => ({ part, src: layerSrc(avatarId, part) }))
+    .filter((layer): layer is { part: LayerPart; src: string } => Boolean(layer.src));
 
-  if (!hasError && sheetSrc) {
+  if (!hasError && layers.length === layerParts.length) {
     return (
       <div
         aria-hidden="true"
-        className={`animal-motion-sprite ${className}`}
-        style={motionStyle}
-      />
+        className={`layered-animal layered-animal-${animationState} ${isMoving ? "is-moving" : ""} ${className}`}
+        style={{ "--layer-count": layers.length } as CSSProperties & Record<string, string | number>}
+      >
+        <span className="layered-animal-shadow" />
+        {layers.map(({ part, src }) => (
+          <img
+            key={part}
+            src={src}
+            alt=""
+            className={`layered-animal-part layered-animal-${part}`}
+            draggable={false}
+            onError={() => setHasError(true)}
+          />
+        ))}
+      </div>
     );
   }
 

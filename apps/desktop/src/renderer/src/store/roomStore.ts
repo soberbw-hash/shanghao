@@ -25,10 +25,19 @@ interface LocalProfilePayload {
   avatarId?: BuiltInAvatarId;
 }
 
+export interface RemoteScreenFrame {
+  data: string;
+  width: number;
+  height: number;
+  sequence: number;
+  receivedAt: string;
+}
+
 interface RoomStoreState {
   room: RoomSummary;
   localStream?: MediaStream;
   remoteStreams: Record<string, MediaStream>;
+  remoteScreenFrames: Record<string, RemoteScreenFrame>;
   connectionHealth: ConnectionHealth;
   chatMessages: ChatMessage[];
   setConnectionState: (state: RoomConnectionState, reason?: string) => void;
@@ -37,6 +46,7 @@ interface RoomStoreState {
   setMembers: (members: RoomMember[]) => void;
   setLocalStream: (stream?: MediaStream) => void;
   setRemoteStream: (peerId: string, stream?: MediaStream) => void;
+  setRemoteScreenFrame: (peerId: string, frame?: RemoteScreenFrame) => void;
   setConnectionHealth: (health: Partial<ConnectionHealth>) => void;
   addChatMessage: (message: ChatMessage) => void;
   replaceChatMessage: (id: string, content: string) => void;
@@ -157,6 +167,7 @@ export const useRoomStore = create<RoomStoreState>((set) => ({
   room: initialRoomState(),
   localStream: undefined,
   remoteStreams: {},
+  remoteScreenFrames: {},
   connectionHealth: {
     latencyMs: 0,
     jitterMs: 0,
@@ -216,6 +227,16 @@ export const useRoomStore = create<RoomStoreState>((set) => ({
         delete nextRemoteStreams[peerId];
       }
       return { remoteStreams: nextRemoteStreams };
+    }),
+  setRemoteScreenFrame: (peerId, frame) =>
+    set((state) => {
+      const nextRemoteScreenFrames = { ...state.remoteScreenFrames };
+      if (frame) {
+        nextRemoteScreenFrames[peerId] = frame;
+      } else {
+        delete nextRemoteScreenFrames[peerId];
+      }
+      return { remoteScreenFrames: nextRemoteScreenFrames };
     }),
   setConnectionHealth: (healthPatch) =>
     set((state) => ({
@@ -313,6 +334,7 @@ export const useRoomStore = create<RoomStoreState>((set) => ({
       room: initialRoomState(),
       localStream: undefined,
       remoteStreams: {},
+      remoteScreenFrames: {},
       chatMessages: [],
       connectionHealth: {
         latencyMs: 0,

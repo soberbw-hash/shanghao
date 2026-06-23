@@ -36,6 +36,8 @@ export type SignalEnvelope =
   | AudioChunkMessage
   | AudioResyncRequestMessage
   | AudioResyncAckMessage
+  | ScreenFrameMessage
+  | ScreenShareStateMessage
   | ErrorMessage;
 
 interface BaseMessage {
@@ -215,6 +217,25 @@ export interface AudioResyncAckMessage extends BaseMessage {
   audioSessionId: string;
   newAudioStreamEpoch: number;
   resetAt: number;
+}
+
+export interface ScreenFrameMessage extends BaseMessage {
+  type: "screen_frame";
+  roomId: string;
+  peerId: string;
+  sourcePeerId: string;
+  sequence: number;
+  sentAt: number;
+  width: number;
+  height: number;
+  data: string;
+}
+
+export interface ScreenShareStateMessage extends BaseMessage {
+  type: "screen_share_state";
+  roomId: string;
+  peerId: string;
+  isSharing: boolean;
 }
 
 export interface ErrorMessage extends BaseMessage {

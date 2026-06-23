@@ -24,6 +24,8 @@ import type {
   PeerOfferMessage,
   RoomSnapshotMessage,
   ChannelSnapshotMessage,
+  ScreenFrameMessage,
+  ScreenShareStateMessage,
   SignalEnvelope,
 } from "@private-voice/signaling";
 import { ExponentialBackoff, MeshPeerConnection } from "@private-voice/webrtc";
@@ -48,6 +50,7 @@ interface RoomClientOptions {
   onRemoteStream: (peerId: string, stream: MediaStream | undefined) => void;
   onChatMessage: (message: ChatMessage) => void;
   onKnock: (message: ChatMessage) => void;
+  onRemoteScreenFrame: (peerId: string, frame?: RemoteScreenFrame) => void;
   onDiagnosticEvent?: (payload: SignalingEventPayload) => void;
   onReconnectAttempt?: (attempt: number) => void;
   onReconnectExhausted?: (error: Error) => void;
@@ -61,9 +64,20 @@ interface PendingConnection {
   timeout: number;
 }
 
+export interface RemoteScreenFrame {
+  data: string;
+  width: number;
+  height: number;
+  sequence: number;
+  receivedAt: string;
+}
+
 const INITIAL_CONNECT_TIMEOUT_MS = 10_000;
 const SNAPSHOT_RETRY_TIMEOUT_MS = 5_000;
 const MAX_RECONNECT_ATTEMPTS = 6;
+const SCREEN_FRAME_INTERVAL_MS = 850;
+const SCREEN_FRAME_MAX_WIDTH = 860;
+const SCREEN_FRAME_MAX_BYTES = 210 * 1024;
 
 export class RoomClient {
   private readonly backoff = new ExponentialBackoff(DEFAULT_RECONNECT_DELAYS_MS);
@@ -107,6 +121,12 @@ export class RoomClient {
   private joinAckReceived = false;
   private roomSnapshotReceived = false;
   private lastServerError?: string;
+  private screenShareStream?: MediaStream;
+  private screenFrameVideo?: HTMLVideoElement;
+  private screenFrameCanvas?: HTMLCanvasElement;
+  private screenFrameTimer?: number;
+  private screenFrameSequence = 0;
+  private isRenegotiating = false;
 
   constructor(private readonly options: RoomClientOptions) {
     this.localStream = options.localStream;
@@ -145,6 +165,7 @@ export class RoomClient {
     }
 
     this.clearPeers();
+    this.stopScreenShareTracks();
     this.audioRelay?.destroy();
     this.audioRelay = undefined;
     this.remotePeerIds.clear();
@@ -177,6 +198,7 @@ export class RoomClient {
       joinAckReceived: this.joinAckReceived,
       roomSnapshotReceived: this.roomSnapshotReceived,
       lastServerError: this.lastServerError,
+      screenShareRelayState: this.screenFrameTimer ? ("active" as const) : ("inactive" as const),
       audioRelayDiagnostics: this.audioRelay?.getDiagnostics(),
     };
   }
@@ -381,6 +403,12 @@ export class RoomClient {
       case "audio_resync_ack":
         this.audioRelay?.handleResyncAck(payload);
         return;
+      case "screen_frame":
+        this.handleScreenFrame(payload);
+        return;
+      case "screen_share_state":
+        this.handleScreenShareState(payload);
+        return;
       case "member_state":
         this.handleMemberState(payload);
         return;
@@ -419,6 +447,63 @@ export class RoomClient {
       activity,
       sceneZone,
       gameName: gameName ?? "",
+    });
+  }
+
+  async startScreenShare(stream: MediaStream): Promise<void> {
+    const [videoTrack] = stream.getVideoTracks();
+    if (!videoTrack) {
+      throw new Error("screen_track_missing");
+    }
+
+    this.stopScreenShareTracks();
+    this.screenShareStream = stream;
+    this.startScreenFrameRelay(stream);
+    void this.safeSend({
+      type: "screen_share_state",
+      roomId: this.options.roomId,
+      peerId: this.options.peerId,
+      isSharing: true,
+    });
+    videoTrack.addEventListener(
+      "ended",
+      () => {
+        void this.stopScreenShare(false).catch((error) => {
+          void writeRendererLog("webrtc", "warn", "Failed to stop screen share after track ended", {
+            error: error instanceof Error ? error.message : String(error),
+          });
+        });
+      },
+      { once: true },
+    );
+
+    await Promise.all([...this.peers.values()].map((peer) => peer.setScreenTrack(videoTrack)));
+    await this.renegotiateAllPeers("screen_share_started");
+    void writeRendererLog("webrtc", "info", "Screen share track attached", {
+      peerCount: this.peers.size,
+      trackId: videoTrack.id,
+      settings: videoTrack.getSettings?.(),
+    });
+  }
+
+  async stopScreenShare(stopTracks = true): Promise<void> {
+    const previousStream = this.screenShareStream;
+    this.screenShareStream = undefined;
+    this.stopScreenFrameRelay();
+
+    await Promise.all([...this.peers.values()].map((peer) => peer.setScreenTrack(undefined)));
+    if (stopTracks) {
+      previousStream?.getTracks().forEach((track) => track.stop());
+    }
+    await this.renegotiateAllPeers("screen_share_stopped");
+    void this.safeSend({
+      type: "screen_share_state",
+      roomId: this.options.roomId,
+      peerId: this.options.peerId,
+      isSharing: false,
+    });
+    void writeRendererLog("webrtc", "info", "Screen share track detached", {
+      peerCount: this.peers.size,
     });
   }
 
@@ -500,6 +585,7 @@ export class RoomClient {
         this.webrtcReadyPeerIds.delete(peerId);
         this.audioRelay?.clearPeer(peerId, "peer_left_room");
         this.options.onRemoteStream(peerId, undefined);
+        this.options.onRemoteScreenFrame(peerId, undefined);
       }
     }
 
@@ -510,6 +596,7 @@ export class RoomClient {
 
       if (this.options.peerId < member.id) {
         const peer = this.createPeer(member.id);
+        await this.applyScreenShareToPeer(peer);
         const offer = await peer.createOffer();
         await this.send({
           type: "peer_offer",
@@ -524,6 +611,7 @@ export class RoomClient {
 
   private async handlePeerOffer(payload: PeerOfferMessage): Promise<void> {
     const peer = this.peers.get(payload.peerId) ?? this.createPeer(payload.peerId);
+    await this.applyScreenShareToPeer(peer);
     const answer = await peer.acceptOffer(payload.sdp);
 
     await this.send({
@@ -629,6 +717,28 @@ export class RoomClient {
 
   private handleAudioChunk(payload: AudioChunkMessage): void {
     this.audioRelay?.handleRemoteChunk(payload);
+  }
+
+  private handleScreenFrame(payload: ScreenFrameMessage): void {
+    if (payload.peerId === this.options.peerId) {
+      return;
+    }
+
+    this.options.onRemoteScreenFrame(payload.peerId, {
+      data: payload.data,
+      width: payload.width,
+      height: payload.height,
+      sequence: payload.sequence,
+      receivedAt: new Date().toISOString(),
+    });
+  }
+
+  private handleScreenShareState(payload: ScreenShareStateMessage): void {
+    if (payload.peerId === this.options.peerId || payload.isSharing) {
+      return;
+    }
+
+    this.options.onRemoteScreenFrame(payload.peerId, undefined);
   }
 
   private handleMemberState(payload: MemberStateMessage): void {
@@ -774,6 +884,46 @@ export class RoomClient {
     return peer;
   }
 
+  private async applyScreenShareToPeer(peer: MeshPeerConnection): Promise<void> {
+    const [videoTrack] = this.screenShareStream?.getVideoTracks() ?? [];
+    if (!videoTrack || videoTrack.readyState !== "live") {
+      return;
+    }
+
+    await peer.setScreenTrack(videoTrack);
+  }
+
+  private async renegotiateAllPeers(reason: string): Promise<void> {
+    if (!this.isSignalingConnected || this.isRenegotiating) {
+      return;
+    }
+
+    this.isRenegotiating = true;
+    try {
+      for (const [targetPeerId, peer] of this.peers) {
+        if (peer.connection.signalingState !== "stable") {
+          void writeRendererLog("webrtc", "warn", "Skipped renegotiation because peer is not stable", {
+            targetPeerId,
+            reason,
+            signalingState: peer.connection.signalingState,
+          });
+          continue;
+        }
+
+        const offer = await peer.createOffer();
+        await this.safeSend({
+          type: "peer_offer",
+          roomId: this.options.roomId,
+          peerId: this.options.peerId,
+          targetPeerId,
+          sdp: offer,
+        });
+      }
+    } finally {
+      this.isRenegotiating = false;
+    }
+  }
+
   private async send(payload: SignalEnvelope): Promise<void> {
     if (!this.isSignalingConnected) {
       throw new Error("signaling_not_connected");
@@ -908,11 +1058,93 @@ export class RoomClient {
     for (const [peerId, peer] of this.peers) {
       peer.destroy();
       this.options.onRemoteStream(peerId, undefined);
+      this.options.onRemoteScreenFrame(peerId, undefined);
     }
     this.peers.clear();
     this.webrtcReadyPeerIds.clear();
     this.remotePeerIds.clear();
     this.updateAudioRelaySending();
+  }
+
+  private stopScreenShareTracks(): void {
+    this.stopScreenFrameRelay();
+    this.screenShareStream?.getTracks().forEach((track) => track.stop());
+    this.screenShareStream = undefined;
+  }
+
+  private startScreenFrameRelay(stream: MediaStream): void {
+    this.stopScreenFrameRelay();
+
+    const [videoTrack] = stream.getVideoTracks();
+    if (!videoTrack) {
+      return;
+    }
+
+    const video = document.createElement("video");
+    video.muted = true;
+    video.playsInline = true;
+    video.srcObject = stream;
+    const canvas = document.createElement("canvas");
+    this.screenFrameVideo = video;
+    this.screenFrameCanvas = canvas;
+    void video.play().catch(() => undefined);
+    this.screenFrameTimer = window.setInterval(
+      () => void this.captureAndSendScreenFrame(),
+      SCREEN_FRAME_INTERVAL_MS,
+    );
+    void this.captureAndSendScreenFrame();
+  }
+
+  private stopScreenFrameRelay(): void {
+    if (this.screenFrameTimer) {
+      window.clearInterval(this.screenFrameTimer);
+      this.screenFrameTimer = undefined;
+    }
+
+    if (this.screenFrameVideo) {
+      this.screenFrameVideo.pause();
+      this.screenFrameVideo.srcObject = null;
+      this.screenFrameVideo = undefined;
+    }
+    this.screenFrameCanvas = undefined;
+  }
+
+  private async captureAndSendScreenFrame(): Promise<void> {
+    const video = this.screenFrameVideo;
+    const canvas = this.screenFrameCanvas;
+    if (!video || !canvas || video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) {
+      return;
+    }
+
+    const sourceWidth = video.videoWidth || 1280;
+    const sourceHeight = video.videoHeight || 720;
+    const width = Math.min(SCREEN_FRAME_MAX_WIDTH, sourceWidth);
+    const height = Math.max(1, Math.round((width / sourceWidth) * sourceHeight));
+    canvas.width = width;
+    canvas.height = height;
+
+    const context = canvas.getContext("2d", { alpha: false });
+    if (!context) {
+      return;
+    }
+
+    context.drawImage(video, 0, 0, width, height);
+    const data = canvas.toDataURL("image/jpeg", 0.46);
+    if (new TextEncoder().encode(data).byteLength > SCREEN_FRAME_MAX_BYTES) {
+      return;
+    }
+
+    await this.safeSend({
+      type: "screen_frame",
+      roomId: this.options.roomId,
+      peerId: this.options.peerId,
+      sourcePeerId: this.options.peerId,
+      sequence: ++this.screenFrameSequence,
+      sentAt: Date.now(),
+      width,
+      height,
+      data,
+    });
   }
 
   private clearPendingConnection(): void {

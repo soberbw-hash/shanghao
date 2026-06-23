@@ -27,6 +27,8 @@ import type {
   ChannelSnapshotMessage,
   RoomSnapshotMessage,
   RequestSnapshotMessage,
+  ScreenFrameMessage,
+  ScreenShareStateMessage,
   SignalEnvelope,
 } from "./protocol";
 import { isSignalEnvelope } from "./protocol";
@@ -43,6 +45,7 @@ interface SignalingServerOptions {
 const MAX_SIGNALING_PAYLOAD_BYTES = 256 * 1024;
 const MAX_AVATAR_BYTES = 128 * 1024;
 const MAX_AUDIO_CHUNK_BYTES = 96 * 1024;
+const MAX_SCREEN_FRAME_BYTES = 220 * 1024;
 
 const normalizeAvatar = (
   avatarDataUrl?: string,
@@ -309,6 +312,12 @@ export class SignalingServer extends EventEmitter {
       case "audio_resync_ack":
         this.forwardAudioResync(message);
         return;
+      case "screen_frame":
+        this.broadcastScreenFrame(message);
+        return;
+      case "screen_share_state":
+        this.broadcastScreenShareState(message);
+        return;
       default:
         return;
     }
@@ -536,6 +545,54 @@ export class SignalingServer extends EventEmitter {
         peerId: message.peerId,
         targetPeerId: message.targetPeerId,
       });
+    }
+  }
+
+  private broadcastScreenFrame(message: ScreenFrameMessage): void {
+    const room = this.roomManager.getRoom(message.roomId);
+    if (
+      !room ||
+      Buffer.byteLength(message.data, "utf8") > MAX_SCREEN_FRAME_BYTES
+    ) {
+      return;
+    }
+
+    const payload: ScreenFrameMessage = {
+      type: "screen_frame",
+      roomId: message.roomId,
+      peerId: message.peerId,
+      sourcePeerId: message.sourcePeerId || message.peerId,
+      sequence: message.sequence,
+      sentAt: message.sentAt,
+      width: message.width,
+      height: message.height,
+      data: message.data,
+    };
+
+    for (const peer of room.peers.listConnectedPeers()) {
+      if (peer.id !== message.peerId) {
+        this.safeSend(peer.socket, payload);
+      }
+    }
+  }
+
+  private broadcastScreenShareState(message: ScreenShareStateMessage): void {
+    const room = this.roomManager.getRoom(message.roomId);
+    if (!room) {
+      return;
+    }
+
+    const payload: ScreenShareStateMessage = {
+      type: "screen_share_state",
+      roomId: message.roomId,
+      peerId: message.peerId,
+      isSharing: message.isSharing,
+    };
+
+    for (const peer of room.peers.listConnectedPeers()) {
+      if (peer.id !== message.peerId) {
+        this.safeSend(peer.socket, payload);
+      }
     }
   }
 

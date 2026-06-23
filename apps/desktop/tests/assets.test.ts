@@ -47,6 +47,13 @@ test("room scene and feedback sound assets are bundled", () => {
       true,
       `missing motion spritesheet: ${avatar}`,
     );
+    for (const part of ["tail", "body", "feet", "head"]) {
+      assert.equal(
+        existsSync(path.join(root, `apps/desktop/src/renderer/src/assets/avatars/layers/${avatar}-${part}.png`)),
+        true,
+        `missing layered avatar part: ${avatar}-${part}`,
+      );
+    }
   }
 
   for (const sound of [

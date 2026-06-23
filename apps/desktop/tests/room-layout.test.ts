@@ -20,6 +20,8 @@ test("room page uses the V5 island, light responses, and voice dock", () => {
   assert.equal(source.includes("TemporaryChatPanel"), true);
   assert.equal(source.includes("TeamIsland"), true);
   assert.equal(source.includes("desktopApi.overlay.toggle"), true);
+  assert.equal(source.includes("getDisplayMedia"), true);
+  assert.equal(source.includes("ScreenSharePanel"), true);
   assert.equal(source.includes("voice-dock"), true);
   assert.equal(source.includes("房间地址"), false);
   assert.equal(source.includes("连接方式"), false);
@@ -58,6 +60,8 @@ test("room uses a real always-on-top overlay and a five-second knock cooldown", 
   assert.equal(chatSource.includes("AvatarPlaceholder"), true);
   assert.equal(teamIslandSource.includes("scene-zone-hotspot"), true);
   assert.equal(teamIslandSource.includes("scene-seat-marker"), true);
+  assert.equal(teamIslandSource.includes("team-island-stage"), true);
+  assert.equal(teamIslandSource.includes("scene-workstation"), true);
   assert.equal(sceneZonesSource.includes("coffeeBar"), true);
   assert.equal(sceneZonesSource.includes("restroomZone"), true);
   assert.equal(sceneZonesSource.includes("seatSlots"), true);
@@ -90,10 +94,32 @@ test("scene seats align with the marked workstation positions", () => {
   const sceneZonesSource = readFileSync(sceneZonesPath, "utf8");
   const stylesSource = readFileSync(stylesPath, "utf8");
 
-  assert.equal(stylesSource.includes("object-position: center 60%"), true);
-  assert.equal(stylesSource.includes("transform: scale(1.01)"), true);
-  assert.equal(sceneZonesSource.includes("gameDesk5: { left: 84, top: 78"), true);
-  assert.equal(sceneZonesSource.includes("gameDesk4: { left: 42, top: 79"), true);
-  assert.equal(sceneZonesSource.includes("gameDesk1: { left: 33, top: 53"), true);
-  assert.equal(sceneZonesSource.includes("scale: 0.9"), true);
+  assert.equal(stylesSource.includes(".scene-workstation"), true);
+  assert.equal(stylesSource.includes(".scene-desk-top"), true);
+  assert.equal(stylesSource.includes(".layered-animal-part"), true);
+  assert.equal(sceneZonesSource.includes("gameDesk5: { left: 57, top: 84"), true);
+  assert.equal(sceneZonesSource.includes("gameDesk4: { left: 70, top: 61"), true);
+  assert.equal(sceneZonesSource.includes("gameDesk1: { left: 44, top: 35"), true);
+  assert.equal(sceneZonesSource.includes("scale: 0.92"), true);
+});
+
+test("screen sharing is wired through the room page and WebRTC peer layer", () => {
+  const roomSource = readFileSync(roomPagePath, "utf8");
+  const hookSource = readFileSync(path.resolve(process.cwd(), "src/renderer/src/hooks/useRoomState.ts"), "utf8");
+  const clientSource = readFileSync(path.resolve(process.cwd(), "src/renderer/src/features/room/roomClient.ts"), "utf8");
+  const peerSource = readFileSync(path.resolve(process.cwd(), "../../packages/webrtc/src/createPeer.ts"), "utf8");
+  const stylesSource = readFileSync(stylesPath, "utf8");
+
+  assert.equal(roomSource.includes("navigator.mediaDevices.getDisplayMedia"), true);
+  assert.equal(roomSource.includes("screen-share-panel"), true);
+  assert.equal(roomSource.includes("remoteScreenFrames"), true);
+  assert.equal(hookSource.includes("startScreenShare"), true);
+  assert.equal(hookSource.includes("setRemoteScreenFrame"), true);
+  assert.equal(clientSource.includes("renegotiateAllPeers"), true);
+  assert.equal(clientSource.includes("screen_frame"), true);
+  assert.equal(clientSource.includes("SCREEN_FRAME_INTERVAL_MS"), true);
+  assert.equal(peerSource.includes('addTransceiver("video"'), true);
+  assert.equal(peerSource.includes("offerToReceiveVideo: true"), true);
+  assert.equal(peerSource.includes("setScreenTrack"), true);
+  assert.equal(stylesSource.includes(".screen-share-video"), true);
 });
