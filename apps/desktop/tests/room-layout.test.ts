@@ -57,8 +57,13 @@ test("room uses a real always-on-top overlay and a five-second knock cooldown", 
   assert.equal(chatSource.includes('message.kind === "system"'), true);
   assert.equal(chatSource.includes("AvatarPlaceholder"), true);
   assert.equal(teamIslandSource.includes("scene-zone-hotspot"), true);
+  assert.equal(teamIslandSource.includes("scene-seat-marker"), true);
   assert.equal(sceneZonesSource.includes("coffeeBar"), true);
   assert.equal(sceneZonesSource.includes("restroomZone"), true);
+  assert.equal(sceneZonesSource.includes("seatSlots"), true);
+  assert.equal(sceneZonesSource.includes("activityZones"), true);
+  assert.equal(sceneZonesSource.includes('kind: "seat"'), true);
+  assert.equal(sceneZonesSource.includes('kind: "activity"'), true);
   assert.equal(teamIslandSource.includes("scale: ["), false);
 });
 
@@ -87,7 +92,8 @@ test("scene seats align with the marked workstation positions", () => {
 
   assert.equal(stylesSource.includes("object-position: center 60%"), true);
   assert.equal(stylesSource.includes("transform: scale(1.01)"), true);
-  assert.equal(sceneZonesSource.includes("gameDesk5: { left: 86, top: 80"), true);
-  assert.equal(sceneZonesSource.includes("gameDesk4: { left: 42, top: 81"), true);
+  assert.equal(sceneZonesSource.includes("gameDesk5: { left: 84, top: 78"), true);
+  assert.equal(sceneZonesSource.includes("gameDesk4: { left: 42, top: 79"), true);
   assert.equal(sceneZonesSource.includes("gameDesk1: { left: 33, top: 53"), true);
+  assert.equal(sceneZonesSource.includes("scale: 0.9"), true);
 });

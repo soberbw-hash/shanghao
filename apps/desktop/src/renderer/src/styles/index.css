@@ -340,6 +340,47 @@ a,
   outline: none;
 }
 
+.scene-zone-hotspot.seat:hover,
+.scene-zone-hotspot.seat:focus-visible {
+  border-color: rgba(77, 163, 255, 0.26);
+  background: radial-gradient(circle at 50% 70%, rgba(77, 163, 255, 0.13), transparent 62%);
+}
+
+.scene-zone-hotspot.activity:hover,
+.scene-zone-hotspot.activity:focus-visible {
+  border-color: rgba(24, 182, 106, 0.22);
+  background: radial-gradient(circle at 50% 50%, rgba(24, 182, 106, 0.1), transparent 64%);
+}
+
+.scene-seat-marker {
+  position: absolute;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  transform: translate(-50%, -50%);
+  border-radius: 999px;
+  border: 1px solid rgba(255,255,255,.72);
+  background: rgba(255,255,255,.28);
+  color: rgba(83, 102, 128, 0.62);
+  font-size: 10px;
+  font-weight: 800;
+  box-shadow:
+    0 6px 18px rgba(63, 102, 160, 0.08),
+    inset 0 1px 0 rgba(255,255,255,.74);
+  backdrop-filter: blur(10px) saturate(145%);
+  -webkit-backdrop-filter: blur(10px) saturate(145%);
+}
+
+.scene-seat-marker.empty {
+  opacity: .58;
+}
+
+.scene-seat-marker.occupied {
+  opacity: .22;
+  transform: translate(-50%, -50%) scale(.86);
+}
+
 /* ── 角色 ── */
 
 .animal-sprite-img {
@@ -350,6 +391,13 @@ a,
   object-fit: contain;
   object-position: center bottom;
   transform: scaleY(1.06);
+  transform-origin: center bottom;
+}
+
+.scene-character-anchor {
+  --character-scale: 1;
+  --label-offset-y: 0px;
+  transform: scale(var(--character-scale));
   transform-origin: center bottom;
 }
 
@@ -423,7 +471,7 @@ a,
   left: 50%;
   top: 100%;
   transform: translateX(-50%);
-  margin-top: 6px;
+  margin-top: calc(6px + var(--label-offset-y));
   display: inline-flex;
   align-items: center;
   gap: 4px;

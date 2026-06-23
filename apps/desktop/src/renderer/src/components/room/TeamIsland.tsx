@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { type CSSProperties, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { VolumeX } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
 import { gsap } from "gsap";
@@ -13,7 +13,13 @@ import {
 import whiteOfficeRoom from "../../assets/scenes/white-office-room.png";
 import { avatarOptions } from "../../utils/profile";
 import { AnimalSprite } from "./AnimalSprite";
-import { sceneZones, defaultMemberZones, characterPositions } from "../../features/voice-scene/sceneZones";
+import {
+  characterPositions,
+  defaultMemberZones,
+  isSeatZone,
+  sceneZones,
+  seatSlots,
+} from "../../features/voice-scene/sceneZones";
 import { memberStatus } from "../../features/voice-scene/activityRules";
 import { usePrefersReducedMotion } from "../../hooks/usePrefersReducedMotion";
 
@@ -88,25 +94,33 @@ const SceneCharacter = ({
     >
       <div className="relative" data-gsap-character>
         <div
-          className={`room-character-sprite relative ${
-            isSpeaking ? "room-character-speaking" : ""
-          } ${member.isMuted ? "room-character-muted" : ""} ${member.isDeafened ? "room-character-deafened" : ""} ${isReconnecting ? "room-character-reconnecting" : ""}`}
+          className="scene-character-anchor relative"
+          style={{
+            "--character-scale": position.scale,
+            "--label-offset-y": `${position.labelOffsetY ?? 0}px`,
+          } as CSSProperties & Record<string, string | number>}
         >
-          <AnimalSprite
-            avatarId={avatarId}
-            state={isSpeaking ? "speaking" : member.activity ?? "idle"}
-            isMoving={isMoving}
-          />
-          {member.isDeafened ? (
-            <span className="room-character-deafened-badge" aria-label="已关闭扬声器">
-              <VolumeX className="h-3 w-3" />
-            </span>
-          ) : null}
-        </div>
+          <div
+            className={`room-character-sprite relative ${
+              isSpeaking ? "room-character-speaking" : ""
+            } ${member.isMuted ? "room-character-muted" : ""} ${member.isDeafened ? "room-character-deafened" : ""} ${isReconnecting ? "room-character-reconnecting" : ""}`}
+          >
+            <AnimalSprite
+              avatarId={avatarId}
+              state={isSpeaking ? "speaking" : member.activity ?? "idle"}
+              isMoving={isMoving}
+            />
+            {member.isDeafened ? (
+              <span className="room-character-deafened-badge" aria-label="已关闭扬声器">
+                <VolumeX className="h-3 w-3" />
+              </span>
+            ) : null}
+          </div>
 
-        <div className={`room-character-label ${status.tone}`}>
-          {status.icon ? <status.icon className={`h-3 w-3 ${isReconnecting ? "animate-spin" : ""}`} /> : null}
-          <span className="max-w-[100px] truncate">{status.label}</span>
+          <div className={`room-character-label ${status.tone}`}>
+            {status.icon ? <status.icon className={`h-3 w-3 ${isReconnecting ? "animate-spin" : ""}`} /> : null}
+            <span className="max-w-[100px] truncate">{status.label}</span>
+          </div>
         </div>
       </div>
     </motion.div>
@@ -126,6 +140,11 @@ export const TeamIsland = ({
   const visibleMembers = members.filter((member) => !member.isEmptySlot).slice(0, 5);
   const visibleAvatars = assignVisibleAvatars(visibleMembers);
   const shouldReduceMotion = usePrefersReducedMotion(reduceMotion);
+  const occupiedSeatIds = new Set<SceneZoneId>();
+  visibleMembers.forEach((member, index) => {
+    const zone = member.sceneZone ?? defaultMemberZones[index] ?? "gameDesk1";
+    occupiedSeatIds.add(isSeatZone(zone) ? zone : defaultMemberZones[index] ?? "gameDesk1");
+  });
   const memberMotionKey = visibleMembers
     .map((member) => `${member.id}:${member.sceneZone ?? "gameDesk1"}`)
     .join("|");
@@ -166,12 +185,31 @@ export const TeamIsland = ({
         {visibleMembers.length}/5 在线
       </div>
 
+      <div className="pointer-events-none absolute inset-0 z-[8]">
+        {seatSlots.map((slot) => {
+          const occupied = occupiedSeatIds.has(slot.id);
+          return (
+            <div
+              key={slot.id}
+              className={`scene-seat-marker ${occupied ? "occupied" : "empty"}`}
+              style={{
+                left: `${slot.left}%`,
+                top: `${slot.top}%`,
+              }}
+              aria-hidden="true"
+            >
+              <span>{slot.shortLabel}</span>
+            </div>
+          );
+        })}
+      </div>
+
       <div className="absolute inset-0 z-10">
         {sceneZones.map((zone) => (
           <button
             key={zone.id}
             type="button"
-            className="scene-zone-hotspot"
+            className={`scene-zone-hotspot ${zone.kind === "seat" ? "seat" : "activity"}`}
             style={{
               left: `${zone.left - zone.width / 2}%`,
               top: `${zone.top - zone.height / 2}%`,
