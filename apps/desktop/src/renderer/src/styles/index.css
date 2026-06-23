@@ -353,6 +353,24 @@ a,
   transform-origin: center bottom;
 }
 
+.animal-motion-sprite {
+  --motion-frame-size: 112px;
+  --motion-frame-count: 8;
+  --motion-row-count: 7;
+  --motion-row: 0;
+  --motion-duration: 1.4s;
+  width: var(--motion-frame-size);
+  height: var(--motion-frame-size);
+  background-repeat: no-repeat;
+  background-size:
+    calc(var(--motion-frame-size) * var(--motion-frame-count))
+    calc(var(--motion-frame-size) * var(--motion-row-count));
+  background-position-x: 0;
+  background-position-y: calc(var(--motion-row) * var(--motion-frame-size) * -1);
+  animation: animal-motion-frames var(--motion-duration) steps(var(--motion-frame-count)) infinite;
+  transform-origin: center bottom;
+}
+
 .room-character-sprite {
   position: relative;
   filter: drop-shadow(0 4px 6px rgba(30, 45, 70, 0.15)) drop-shadow(0 1px 2px rgba(30, 45, 70, 0.1));
@@ -401,6 +419,7 @@ a,
 
 .room-character-label {
   position: absolute;
+  z-index: 4;
   left: 50%;
   top: 100%;
   transform: translateX(-50%);
@@ -589,6 +608,11 @@ a,
   100% { box-shadow: 0 0 0 0 rgba(255, 90, 90, 0); }
 }
 
+@keyframes animal-motion-frames {
+  from { background-position-x: 0; }
+  to { background-position-x: calc(var(--motion-frame-size) * var(--motion-frame-count) * -1); }
+}
+
 .animate-idle { animation: idle-breathe 5s ease-in-out infinite; }
 .animate-speaking { animation: speaking-glow 2.5s ease-in-out infinite; }
 .animate-away { animation: away-fade 6s ease-in-out infinite; }
@@ -604,6 +628,10 @@ a,
     animation-duration: 1ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 1ms !important;
+  }
+
+  .animal-motion-sprite {
+    animation: none !important;
   }
 }
 

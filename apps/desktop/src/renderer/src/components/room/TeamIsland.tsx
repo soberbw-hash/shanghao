@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { VolumeX } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
 import { gsap } from "gsap";
@@ -31,6 +31,86 @@ const assignVisibleAvatars = (members: RoomMember[]): Map<string, BuiltInAvatarI
     if (index >= 0) available.splice(index, 1);
   }
   return result;
+};
+
+const SceneCharacter = ({
+  member,
+  index,
+  avatarId,
+  shouldReduceMotion,
+}: {
+  member: RoomMember;
+  index: number;
+  avatarId: BuiltInAvatarId;
+  shouldReduceMotion: boolean;
+}) => {
+  const status = memberStatus(member);
+  const isSpeaking = status.tone === "speaking";
+  const isReconnecting = status.tone === "reconnecting";
+  const isOffline = status.tone === "offline";
+  const zone = member.sceneZone ?? defaultMemberZones[index] ?? "gameDesk1";
+  const position = characterPositions[zone];
+  const lastZoneRef = useRef<SceneZoneId>(zone);
+  const [isMoving, setIsMoving] = useState(false);
+
+  useEffect(() => {
+    if (shouldReduceMotion) {
+      lastZoneRef.current = zone;
+      setIsMoving(false);
+      return;
+    }
+
+    if (lastZoneRef.current === zone) return;
+
+    lastZoneRef.current = zone;
+    setIsMoving(true);
+    const timer = window.setTimeout(() => setIsMoving(false), 760);
+    return () => window.clearTimeout(timer);
+  }, [shouldReduceMotion, zone]);
+
+  return (
+    <motion.div
+      key={member.id}
+      initial={{ opacity: 0 }}
+      animate={{
+        left: `${position.left}%`,
+        top: `${position.top}%`,
+        opacity: isOffline ? 0.45 : 1,
+      }}
+      exit={{ opacity: 0 }}
+      transition={{
+        left: { duration: shouldReduceMotion ? 0 : 0.72, ease: [0.22, 1, 0.36, 1] },
+        top: { duration: shouldReduceMotion ? 0 : 0.72, ease: [0.22, 1, 0.36, 1] },
+        opacity: { duration: 0.24, ease: [0.22, 1, 0.36, 1] },
+      }}
+      className="absolute -translate-x-1/2 -translate-y-1/2"
+      style={{ zIndex: position.zIndex }}
+    >
+      <div className="relative" data-gsap-character>
+        <div
+          className={`room-character-sprite relative ${
+            isSpeaking ? "room-character-speaking" : ""
+          } ${member.isMuted ? "room-character-muted" : ""} ${member.isDeafened ? "room-character-deafened" : ""} ${isReconnecting ? "room-character-reconnecting" : ""}`}
+        >
+          <AnimalSprite
+            avatarId={avatarId}
+            state={isSpeaking ? "speaking" : member.activity ?? "idle"}
+            isMoving={isMoving}
+          />
+          {member.isDeafened ? (
+            <span className="room-character-deafened-badge" aria-label="已关闭扬声器">
+              <VolumeX className="h-3 w-3" />
+            </span>
+          ) : null}
+        </div>
+
+        <div className={`room-character-label ${status.tone}`}>
+          {status.icon ? <status.icon className={`h-3 w-3 ${isReconnecting ? "animate-spin" : ""}`} /> : null}
+          <span className="max-w-[100px] truncate">{status.label}</span>
+        </div>
+      </div>
+    </motion.div>
+  );
 };
 
 export const TeamIsland = ({
@@ -105,49 +185,15 @@ export const TeamIsland = ({
       </div>
 
       <AnimatePresence initial={false}>
-        {visibleMembers.map((member, index) => {
-          const status = memberStatus(member);
-          const isSpeaking = status.tone === "speaking";
-          const isReconnecting = status.tone === "reconnecting";
-          const isOffline = status.tone === "offline";
-          const zone = member.sceneZone ?? defaultMemberZones[index] ?? "gameDesk1";
-          const position = characterPositions[zone];
-
-          return (
-            <motion.div
-              key={member.id}
-              initial={{ opacity: 0 }}
-              animate={{ opacity: isOffline ? 0.45 : 1 }}
-              exit={{ opacity: 0 }}
-              transition={{ duration: 0.3, ease: [0.22, 1, 0.36, 1] }}
-              className="absolute -translate-x-1/2 -translate-y-1/2"
-              style={{ left: `${position.left}%`, top: `${position.top}%`, zIndex: position.zIndex }}
-            >
-              <div className="relative" data-gsap-character>
-                <div
-                  className={`room-character-sprite relative ${
-                    isSpeaking ? "room-character-speaking" : ""
-                  } ${member.isMuted ? "room-character-muted" : ""} ${member.isDeafened ? "room-character-deafened" : ""} ${isReconnecting ? "room-character-reconnecting" : ""}`}
-                >
-                  <AnimalSprite
-                    avatarId={visibleAvatars.get(member.id) ?? "fox"}
-                    state={isSpeaking ? "speaking" : member.activity ?? "idle"}
-                  />
-                  {member.isDeafened ? (
-                    <span className="room-character-deafened-badge" aria-label="已关闭扬声器">
-                      <VolumeX className="h-3 w-3" />
-                    </span>
-                  ) : null}
-                </div>
-
-                <div className={`room-character-label ${status.tone}`}>
-                  {status.icon ? <status.icon className={`h-3 w-3 ${isReconnecting ? "animate-spin" : ""}`} /> : null}
-                  <span className="max-w-[100px] truncate">{status.label}</span>
-                </div>
-              </div>
-            </motion.div>
-          );
-        })}
+        {visibleMembers.map((member, index) => (
+          <SceneCharacter
+            key={member.id}
+            member={member}
+            index={index}
+            avatarId={visibleAvatars.get(member.id) ?? "fox"}
+            shouldReduceMotion={shouldReduceMotion}
+          />
+        ))}
       </AnimatePresence>
     </div>
   );

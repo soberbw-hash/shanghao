@@ -42,6 +42,6 @@ export const characterPositions: Record<SceneZoneId, CharacterPosition> = {
   gameDesk1: { left: 33, top: 53, zIndex: 25 },
   gameDesk2: { left: 50, top: 32, zIndex: 22 },
   gameDesk3: { left: 68, top: 60, zIndex: 28 },
-  gameDesk4: { left: 42, top: 89, zIndex: 32 },
-  gameDesk5: { left: 86, top: 88, zIndex: 33 },
+  gameDesk4: { left: 42, top: 81, zIndex: 32 },
+  gameDesk5: { left: 86, top: 80, zIndex: 33 },
 };

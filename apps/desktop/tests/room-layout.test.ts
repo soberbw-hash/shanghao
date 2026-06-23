@@ -87,7 +87,7 @@ test("scene seats align with the marked workstation positions", () => {
 
   assert.equal(stylesSource.includes("object-position: center 60%"), true);
   assert.equal(stylesSource.includes("transform: scale(1.01)"), true);
-  assert.equal(sceneZonesSource.includes("gameDesk5: { left: 86, top: 88"), true);
-  assert.equal(sceneZonesSource.includes("gameDesk4: { left: 42, top: 89"), true);
+  assert.equal(sceneZonesSource.includes("gameDesk5: { left: 86, top: 80"), true);
+  assert.equal(sceneZonesSource.includes("gameDesk4: { left: 42, top: 81"), true);
   assert.equal(sceneZonesSource.includes("gameDesk1: { left: 33, top: 53"), true);
 });
