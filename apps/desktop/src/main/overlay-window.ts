@@ -12,7 +12,7 @@ const OVERLAY_AVATAR_SIZE = 28;
 const OVERLAY_GAP = 4;
 const OVERLAY_PADDING_X = 8;
 const OVERLAY_STATUS_WIDTH = 24;
-const OVERLAY_SHADOW_MARGIN = 6;
+const OVERLAY_SHADOW_MARGIN = 0;
 const OVERLAY_PILL_HEIGHT = 38;
 const OVERLAY_HEIGHT = OVERLAY_PILL_HEIGHT + OVERLAY_SHADOW_MARGIN * 2;
 const OVERLAY_MIN_PILL_WIDTH = 88;
@@ -22,6 +22,13 @@ export class OverlayWindowController {
   private window: BrowserWindow | null = null;
   private state?: OverlayState;
   private snapX = 0;
+
+  show(): boolean {
+    if (!this.window || this.window.isDestroyed()) {
+      this.create();
+    }
+    return true;
+  }
 
   toggle(): boolean {
     if (this.window && !this.window.isDestroyed()) {

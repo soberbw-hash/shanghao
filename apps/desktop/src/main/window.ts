@@ -1,7 +1,7 @@
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
-import { app, BrowserWindow } from "electron";
+import { app, BrowserWindow, desktopCapturer, screen } from "electron";
 
 import { APP_ID, APP_NAME } from "@private-voice/shared";
 
@@ -169,8 +169,39 @@ export const createMainWindow = ({
   window.setMenuBarVisibility(false);
   window.setAutoHideMenuBar(true);
   window.webContents.session.setPermissionRequestHandler((_webContents, permission, callback) => {
-    // 仅允许麦克风权限（语音通话核心需求），拒绝 camera、notifications 等。
-    callback(permission === "media");
+    callback(permission === "media" || permission === "display-capture");
+  });
+  window.webContents.session.setDisplayMediaRequestHandler(async (_request, callback) => {
+    try {
+      const sources = await desktopCapturer.getSources({
+        types: ["screen", "window"],
+        thumbnailSize: { width: 0, height: 0 },
+        fetchWindowIcons: false,
+      });
+      const primaryDisplayId = String(screen.getPrimaryDisplay().id);
+      const selectedSource =
+        sources.find((source) => source.display_id === primaryDisplayId) ??
+        sources.find((source) => source.id.startsWith("screen:")) ??
+        sources[0];
+
+      if (!selectedSource) {
+        log?.("error", "Screen share source enumeration returned no sources");
+        callback({});
+        return;
+      }
+
+      log?.("info", "Approved screen capture request", {
+        sourceId: selectedSource.id,
+        sourceName: selectedSource.name,
+        primaryDisplayId,
+      });
+      callback({ video: selectedSource });
+    } catch (error) {
+      log?.("error", "Failed to approve screen capture request", {
+        error: error instanceof Error ? error.message : String(error),
+      });
+      callback({});
+    }
   });
 
   window.webContents.once("did-finish-load", () => {

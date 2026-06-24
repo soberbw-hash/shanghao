@@ -80,6 +80,7 @@ export interface DesktopApi {
     show: () => Promise<void>;
   };
   overlay: {
+    show: () => Promise<boolean>;
     toggle: () => Promise<boolean>;
     close: () => Promise<void>;
     update: (state: OverlayState) => Promise<void>;

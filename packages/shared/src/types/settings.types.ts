@@ -1,6 +1,18 @@
 export type PreferredSampleRate = "auto" | "44100" | "48000";
 export type MicMonitorMode = "processed" | "raw";
 export type BuiltInAvatarId = "fox" | "cat" | "duck" | "panda" | "corgi";
+export type MicEqualizerGains = [
+  number,
+  number,
+  number,
+  number,
+  number,
+  number,
+  number,
+  number,
+  number,
+  number,
+];
 
 export interface AppSettings {
   settingsSchemaVersion: number;
@@ -13,10 +25,13 @@ export interface AppSettings {
   minimizeToTray: boolean;
   reduceMotion: boolean;
   launchOnStartup: boolean;
+  isHardwareAccelerationEnabled: boolean;
+  isOverlayEnabled: boolean;
   preferredInputDeviceId?: string;
   preferredOutputDeviceId?: string;
   preferredSampleRate: PreferredSampleRate;
   inputLevelThreshold: number;
+  micEqualizerGains: MicEqualizerGains;
   globalMuteShortcut: string;
   pushToTalkShortcut: string;
   isNoiseSuppressionEnabled: boolean;

@@ -11,6 +11,10 @@ import {
 } from "@private-voice/shared";
 import { createSpeakingDetector, requestMicrophoneStream } from "@private-voice/webrtc";
 
+import {
+  createProcessedMicrophoneStream,
+  type ProcessedMicrophoneStream,
+} from "../features/audio/microphoneProcessor";
 import { playUiSound } from "../features/audio/uiSound";
 import { RoomClient } from "../features/room/roomClient";
 import { useAppStore } from "../store/appStore";
@@ -21,6 +25,7 @@ import { writeRendererLog } from "../utils/logger";
 
 let activeClient: RoomClient | null = null;
 let activeSpeakingDetector: ReturnType<typeof createSpeakingDetector> | null = null;
+let activeProcessedMicrophone: ProcessedMicrophoneStream | null = null;
 let previousMemberIds = new Set<string>();
 
 export const getRoomRuntimeDiagnostics = () => activeClient?.getDiagnostics();
@@ -193,16 +198,15 @@ export const useRoomState = () => {
     activeSpeakingDetector?.destroy();
     activeSpeakingDetector = createSpeakingDetector(stream, (isSpeaking) => {
       activeClient?.updateMuteState(useAudioStore.getState().isMuted, isSpeaking);
-    });
+    }, useSettingsStore.getState().settings?.inputLevelThreshold ?? 0.4);
   };
 
   const stopLocalMedia = () => {
     activeSpeakingDetector?.destroy();
     activeSpeakingDetector = null;
-    useRoomStore
-      .getState()
-      .localStream?.getTracks()
-      .forEach((track) => track.stop());
+    activeProcessedMicrophone?.dispose();
+    activeProcessedMicrophone = null;
+    useRoomStore.getState().localStream?.getTracks().forEach((track) => track.stop());
     setLocalStream(undefined);
   };
 
@@ -223,17 +227,24 @@ export const useRoomState = () => {
 
   const ensureLocalStream = async (preferredInputDeviceId?: string) => {
     const currentSettings = useSettingsStore.getState().settings ?? settings;
-    const existingStream = useRoomStore.getState().localStream;
-    existingStream?.getTracks().forEach((track) => track.stop());
+    activeProcessedMicrophone?.dispose();
+    activeProcessedMicrophone = null;
 
     try {
-      const { stream, diagnostics } = await requestMicrophoneStream({
+      const { stream: inputStream, diagnostics } = await requestMicrophoneStream({
         deviceId: preferredInputDeviceId ?? currentSettings?.preferredInputDeviceId,
         noiseSuppression: currentSettings?.isNoiseSuppressionEnabled ?? true,
         echoCancellation: currentSettings?.isEchoCancellationEnabled ?? true,
         autoGainControl: currentSettings?.isAutoGainControlEnabled ?? true,
         preferredSampleRate: currentSettings?.preferredSampleRate ?? "auto",
       });
+      const processedMicrophone = await createProcessedMicrophoneStream(inputStream, {
+        micEqualizerGains:
+          currentSettings?.micEqualizerGains ?? [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        preferredSampleRate: currentSettings?.preferredSampleRate ?? "auto",
+      });
+      activeProcessedMicrophone = processedMicrophone;
+      const stream = processedMicrophone.stream;
 
       setLocalStream(stream);
       setLocalDiagnostics(diagnostics);
@@ -450,18 +461,23 @@ export const useRoomState = () => {
     }
 
     try {
-      const { stream, diagnostics } = await requestMicrophoneStream({
+      const { stream: inputStream, diagnostics } = await requestMicrophoneStream({
         deviceId: preferredInputDeviceId ?? settings.preferredInputDeviceId,
         noiseSuppression: settings.isNoiseSuppressionEnabled,
         echoCancellation: settings.isEchoCancellationEnabled,
         autoGainControl: settings.isAutoGainControlEnabled,
         preferredSampleRate: settings.preferredSampleRate,
       });
+      const processedMicrophone = await createProcessedMicrophoneStream(inputStream, settings);
+      const stream = processedMicrophone.stream;
       const [nextTrack] = stream.getAudioTracks();
       if (!nextTrack) {
+        processedMicrophone.dispose();
         throw new Error(copy.microphoneMissing);
       }
 
+      activeProcessedMicrophone?.dispose();
+      activeProcessedMicrophone = processedMicrophone;
       setLocalDiagnostics(diagnostics);
       setLocalStream(stream);
       await activeClient.replaceInputTrack(nextTrack);

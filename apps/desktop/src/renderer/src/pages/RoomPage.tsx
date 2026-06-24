@@ -5,6 +5,7 @@ import { gsap } from "gsap";
 import {
   RecordingEncoderState,
   RecordingState,
+  MemberSpeakingState,
   RoomConnectionState,
   type GameDetectionSnapshot,
   type MemberActivity,
@@ -19,6 +20,8 @@ import { TopStatusBar } from "../components/layout/TopStatusBar";
 import { TeamIsland } from "../components/room/TeamIsland";
 import { playUiSound } from "../features/audio/uiSound";
 import { chatWithLLM, shouldCallLLM, type LlmHistoryEntry } from "../features/chat/llmService";
+import { recordDailySession } from "../features/session/dailyStats";
+import { isSeatZone } from "../features/voice-scene/sceneZones";
 import { usePrefersReducedMotion } from "../hooks/usePrefersReducedMotion";
 import { useRecordingController } from "../hooks/useRecordingController";
 import { useRoomState } from "../hooks/useRoomState";
@@ -29,13 +32,6 @@ import { useRoomStore } from "../store/roomStore";
 import { useSettingsStore } from "../store/settingsStore";
 
 const KNOCK_COOLDOWN_MS = 5_000;
-const naturalActivityZones: Array<{ zone: SceneZoneId; activity: MemberActivity }> = [
-  { zone: "coffeeBar", activity: "drinking" },
-  { zone: "fitnessZone", activity: "fitness" },
-  { zone: "restroomZone", activity: "restroom" },
-  { zone: "gameDesk1", activity: "idle" },
-];
-
 interface ScreenShareItem {
   id: string;
   title: string;
@@ -154,7 +150,16 @@ export const RoomPage = () => {
   const [chatInput, setChatInput] = useState("");
   const [isLLMLoading, setIsLLMLoading] = useState(false);
   const [localScreenShareStream, setLocalScreenShareStream] = useState<MediaStream>();
+  const [isOverlayOpen, setIsOverlayOpen] = useState(false);
   const enteredAt = useRef(Date.now());
+  const sessionId = useRef(crypto.randomUUID());
+  const sessionRecordedRef = useRef(false);
+  const sentMessageCountRef = useRef(0);
+  const knockCountRef = useRef(0);
+  const screenShareCountRef = useRef(0);
+  const maxOnlineRef = useRef(1);
+  const lastSpokeAtRef = useRef(Date.now());
+  const lastSeatZoneRef = useRef<SceneZoneId>("gameDesk1");
   const lastKnockAt = useRef(0);
   const detectedGameRef = useRef<string>();
   const screenShareStoppingRef = useRef(false);
@@ -210,6 +215,7 @@ export const RoomPage = () => {
         };
       }),
   ];
+  const localMember = room.members.find((member) => member.isLocal);
 
   useLayoutEffect(() => {
     if (!pageRef.current) return;
@@ -274,6 +280,60 @@ export const RoomPage = () => {
   }, [isDeafened, isMuted, room.connectionState, room.members]);
 
   useEffect(() => {
+    maxOnlineRef.current = Math.max(maxOnlineRef.current, room.memberCount);
+  }, [room.memberCount]);
+
+  useEffect(() => {
+    if (settings?.isOverlayEnabled === false) {
+      void window.desktopApi.overlay.close().then(() => setIsOverlayOpen(false));
+      return;
+    }
+    void window.desktopApi.overlay.show().then(setIsOverlayOpen);
+  }, [settings?.isOverlayEnabled]);
+
+  useEffect(() => {
+    if (!localMember) return;
+    if (localMember.sceneZone && isSeatZone(localMember.sceneZone)) {
+      lastSeatZoneRef.current = localMember.sceneZone;
+    }
+    if (localMember.speakingState === MemberSpeakingState.Speaking) {
+      lastSpokeAtRef.current = Date.now();
+      if (localMember.sceneZone === "restroomZone") {
+        moveLocalMemberRef.current(
+          lastSeatZoneRef.current,
+          localMember.gameName ? "gaming" : "idle",
+          localMember.gameName,
+        );
+      }
+    }
+  }, [
+    localMember?.gameName,
+    localMember?.sceneZone,
+    localMember?.speakingState,
+  ]);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      const currentLocalMember = useRoomStore
+        .getState()
+        .room.members.find((member) => member.isLocal);
+      if (
+        currentLocalMember &&
+        currentLocalMember.sceneZone !== "restroomZone" &&
+        Date.now() - lastSpokeAtRef.current >= 5 * 60_000
+      ) {
+        moveLocalMemberRef.current("restroomZone", "restroom");
+        void window.desktopApi.app.writeLog({
+          category: "app",
+          level: "info",
+          message: "Moved local member to away zone after five minutes of silence",
+        });
+      }
+    }, 15_000);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  useEffect(() => {
     const applyGameDetection = (snapshot: GameDetectionSnapshot) => {
       const previousGame = detectedGameRef.current;
       detectedGameRef.current = snapshot.gameName;
@@ -292,26 +352,10 @@ export const RoomPage = () => {
     return window.desktopApi.games.onDetected(applyGameDetection);
   }, []);
 
-  useEffect(() => {
-    let timer: number;
-    const schedule = () => {
-      timer = window.setTimeout(() => {
-        if (!detectedGameRef.current) {
-          const next =
-            naturalActivityZones[Math.floor(Math.random() * naturalActivityZones.length)] ??
-            naturalActivityZones[3];
-          if (next) moveLocalMemberRef.current(next.zone, next.activity);
-        }
-        schedule();
-      }, 5 * 60_000 + Math.round(Math.random() * 5 * 60_000));
-    };
-    schedule();
-    return () => window.clearTimeout(timer);
-  }, []);
-
   const send = async (content = chatInput) => {
     if (!content.trim()) return;
     await sendChatMessage(content);
+    sentMessageCountRef.current += 1;
     playUiSound("send-message");
     if (content === chatInput) setChatInput("");
 
@@ -364,6 +408,7 @@ export const RoomPage = () => {
     }
     lastKnockAt.current = Date.now();
     await sendKnock();
+    knockCountRef.current += 1;
   };
 
   const toggleRecording = async () => {
@@ -381,14 +426,27 @@ export const RoomPage = () => {
     }
   };
 
+  const recordCurrentSession = () => {
+    if (sessionRecordedRef.current) return;
+    sessionRecordedRef.current = true;
+    recordDailySession({
+      sessionId: sessionId.current,
+      minutes: (Date.now() - enteredAt.current) / 60_000,
+      maxOnline: maxOnlineRef.current,
+      messages: sentMessageCountRef.current,
+      knocks: knockCountRef.current,
+      screenShares: screenShareCountRef.current,
+    });
+  };
+
+  useEffect(() => {
+    const recordBeforeClose = () => recordCurrentSession();
+    window.addEventListener("beforeunload", recordBeforeClose);
+    return () => window.removeEventListener("beforeunload", recordBeforeClose);
+  }, []);
+
   const leave = async () => {
-    localStorage.setItem(
-      "shanghao:last-session-note",
-      JSON.stringify({
-        people: room.memberCount,
-        minutes: Math.max(1, Math.round((Date.now() - enteredAt.current) / 60_000)),
-      }),
-    );
+    recordCurrentSession();
     await window.desktopApi.overlay.close();
     await leaveRoom();
   };
@@ -410,6 +468,7 @@ export const RoomPage = () => {
       }
 
       await startScreenShare(stream);
+      screenShareCountRef.current += 1;
       setLocalScreenShareStream(stream);
       playUiSound("popup-open");
       pushToast({
@@ -430,6 +489,15 @@ export const RoomPage = () => {
         { once: true },
       );
     } catch (error) {
+      await window.desktopApi.app.writeLog({
+        category: "webrtc",
+        level: "error",
+        message: "Screen share request failed",
+        context: {
+          name: error instanceof DOMException ? error.name : undefined,
+          error: error instanceof Error ? error.message : String(error),
+        },
+      });
       if (error instanceof DOMException && error.name === "NotAllowedError") {
         pushToast({
           tone: "neutral",
@@ -443,7 +511,10 @@ export const RoomPage = () => {
       pushToast({
         tone: "danger",
         title: "屏幕分享失败",
-        description: "请确认系统允许上号录制屏幕。",
+        description:
+          error instanceof DOMException && error.name === "NotFoundError"
+            ? "没有找到可分享的显示器或窗口。"
+            : "桌面捕获没有启动，请重试；错误详情已经写入诊断日志。",
       });
     }
   };
@@ -479,6 +550,14 @@ export const RoomPage = () => {
     pushToast({ tone: "success", title: "扬声器已切换", description: "新的输出设备已经生效。" });
   };
 
+  const handleZoneSelect = (zone: SceneZoneId, activity: MemberActivity) => {
+    if (isSeatZone(zone)) {
+      lastSeatZoneRef.current = zone;
+      lastSpokeAtRef.current = Date.now();
+    }
+    moveLocalMember(zone, activity);
+  };
+
   return (
     <div ref={pageRef} className="room-page relative flex h-full flex-col gap-2.5 overflow-hidden px-3.5 pb-3.5 pt-2">
       <div data-gsap-room="topbar">
@@ -489,7 +568,7 @@ export const RoomPage = () => {
         <section data-gsap-room="island" className="island-panel min-h-0 overflow-hidden">
           <TeamIsland
             members={room.members}
-            onZoneSelect={(zone, activity) => moveLocalMember(zone, activity)}
+            onZoneSelect={handleZoneSelect}
             reduceMotion={settings?.reduceMotion ?? false}
           />
           <ScreenSharePanel
@@ -575,15 +654,15 @@ export const RoomPage = () => {
           </span>
         </Button>
         <Button
-          variant="ghost"
-          className="voice-action-button-with-text"
+          variant={isOverlayOpen ? "secondary" : "ghost"}
+          className={`voice-action-button-with-text ${isOverlayOpen ? "overlay-active-button" : ""}`}
           onClick={() => {
             playUiSound("popup-open");
-            void window.desktopApi.overlay.toggle();
+            void window.desktopApi.overlay.toggle().then(setIsOverlayOpen);
           }}
         >
           <MonitorUp className="h-4 w-4" />
-          <span className="voice-action-label">悬浮窗</span>
+          <span className="voice-action-label">{isOverlayOpen ? "悬浮窗开" : "悬浮窗关"}</span>
         </Button>
         <Button
           variant="danger"

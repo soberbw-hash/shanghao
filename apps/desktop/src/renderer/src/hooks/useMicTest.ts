@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import { connectMicrophoneEqualizer } from "../features/audio/microphoneProcessor";
+
 interface UseMicTestOptions {
   inputDeviceId?: string;
   outputDeviceId?: string;
@@ -8,6 +10,7 @@ interface UseMicTestOptions {
   autoGainControl?: boolean;
   preferredSampleRate?: "auto" | "44100" | "48000";
   monitorMode?: "processed" | "raw";
+  equalizerGains?: number[];
 }
 
 interface UseMicTestResult {
@@ -27,6 +30,7 @@ export const useMicTest = ({
   autoGainControl = true,
   preferredSampleRate = "auto",
   monitorMode = "processed",
+  equalizerGains = [],
 }: UseMicTestOptions): UseMicTestResult => {
   const [isTesting, setIsTesting] = useState(false);
   const [level, setLevel] = useState(0);
@@ -116,7 +120,11 @@ export const useMicTest = ({
       outputGain.gain.value = 1;
       const analyser = context.createAnalyser();
       analyser.fftSize = 512;
-      source.connect(outputGain);
+      const processedSource =
+        monitorMode === "processed"
+          ? connectMicrophoneEqualizer(context, source, equalizerGains)
+          : source;
+      processedSource.connect(outputGain);
       outputGain.connect(analyser);
 
       const destination = context.createMediaStreamDestination();
@@ -152,6 +160,7 @@ export const useMicTest = ({
   }, [
     autoGainControl,
     echoCancellation,
+    equalizerGains,
     inputDeviceId,
     monitorMode,
     noiseSuppression,

@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { ArrowRight, Dices, Mic, MicOff } from "lucide-react";
+import { ArrowRight, Clock3, Dices, MessageCircle, Mic, MicOff, Users, X } from "lucide-react";
 import { gsap } from "gsap";
 
 import { MicPermissionState, type BuiltInAvatarId } from "@private-voice/shared";
@@ -11,6 +11,11 @@ import { CharacterPicker } from "../components/profile/AvatarPicker";
 import { StartupSplashPage } from "../components/status/StartupSplashPage";
 import { usePrefersReducedMotion } from "../hooks/usePrefersReducedMotion";
 import { useRoomState } from "../hooks/useRoomState";
+import {
+  dismissPendingDailySummary,
+  readPendingDailySummary,
+  type DailyStatsSummary,
+} from "../features/session/dailyStats";
 import { useAppStore } from "../store/appStore";
 import { useAudioStore } from "../store/audioStore";
 import { useSettingsStore } from "../store/settingsStore";
@@ -38,6 +43,7 @@ export const HomePage = () => {
   const [nickname, setNickname] = useState("");
   const [avatarId, setAvatarId] = useState<BuiltInAvatarId>("fox");
   const [serverAddress, setServerAddress] = useState("");
+  const [dailySummary, setDailySummary] = useState<DailyStatsSummary>();
   const reduceMotion = usePrefersReducedMotion(settings?.reduceMotion ?? false);
 
   useEffect(() => {
@@ -46,6 +52,10 @@ export const HomePage = () => {
     setAvatarId(settings.avatarId || randomAvatarId());
     setServerAddress(settings.relayServerUrl || "");
   }, [settings]);
+
+  useEffect(() => {
+    setDailySummary(readPendingDailySummary());
+  }, []);
 
   useLayoutEffect(() => {
     if (!settings || !pageRef.current) return;
@@ -197,6 +207,50 @@ export const HomePage = () => {
           </div>
         </section>
       </main>
+      {dailySummary ? (
+        <div className="absolute inset-0 z-40 grid place-items-center bg-[#eaf2fb]/55 p-6 backdrop-blur-[8px]">
+          <section className="w-full max-w-[480px] rounded-[28px] border border-white/80 bg-white/90 p-6 shadow-[0_28px_90px_rgba(63,102,160,.2)]">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <p className="text-xs font-bold tracking-[.16em] text-[#4d83c7]">TODAY</p>
+                <h2 className="mt-1 text-2xl font-bold text-[#172033]">今日开黑小结</h2>
+                <p className="mt-1 text-sm text-[#718096]">辛苦了，今天的频道足迹已经记下。</p>
+              </div>
+              <button
+                type="button"
+                className="grid h-9 w-9 place-items-center rounded-full border border-[#e3ebf5] text-[#718096] hover:bg-[#f4f8fd]"
+                onClick={() => {
+                  dismissPendingDailySummary();
+                  setDailySummary(undefined);
+                }}
+                aria-label="关闭今日小结"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <div className="mt-5 grid grid-cols-3 gap-3">
+              <div className="rounded-2xl bg-[#f3f8ff] p-4">
+                <Clock3 className="h-4 w-4 text-[#4d83c7]" />
+                <strong className="mt-2 block text-xl text-[#172033]">{dailySummary.minutes}</strong>
+                <span className="text-xs text-[#7b8798]">分钟</span>
+              </div>
+              <div className="rounded-2xl bg-[#f3f8ff] p-4">
+                <Users className="h-4 w-4 text-[#4d83c7]" />
+                <strong className="mt-2 block text-xl text-[#172033]">{dailySummary.maxOnline}</strong>
+                <span className="text-xs text-[#7b8798]">最多在线</span>
+              </div>
+              <div className="rounded-2xl bg-[#f3f8ff] p-4">
+                <MessageCircle className="h-4 w-4 text-[#4d83c7]" />
+                <strong className="mt-2 block text-xl text-[#172033]">{dailySummary.messages}</strong>
+                <span className="text-xs text-[#7b8798]">条消息</span>
+              </div>
+            </div>
+            <p className="mt-4 text-center text-xs text-[#98a2b3]">
+              今日共进入 {dailySummary.sessions} 次频道，敲一敲 {dailySummary.knocks} 次，屏幕分享 {dailySummary.screenShares} 次
+            </p>
+          </section>
+        </div>
+      ) : null}
     </div>
   );
 };

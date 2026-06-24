@@ -3,6 +3,7 @@ import { ChevronDown } from "lucide-react";
 
 import type { AppSettings, AudioDeviceDescriptor } from "@private-voice/shared";
 
+import { MICROPHONE_EQ_FREQUENCIES } from "../../features/audio/microphoneProcessor";
 import { InputDevicePicker } from "../audio/InputDevicePicker";
 import { OutputDevicePicker } from "../audio/OutputDevicePicker";
 import { Button } from "../base/Button";
@@ -154,8 +155,39 @@ export const AudioSettingsCard = ({
                     }
                   />
                   <div className="text-xs text-[#98A2B3]">
-                    当前：{settings.inputLevelThreshold.toFixed(2)}
+                    当前：{Math.round(settings.inputLevelThreshold * 100)}
                   </div>
+                </div>
+              </SettingsItemRow>
+              <SettingsItemRow
+                label="十段均衡器"
+                description="0 dB 为原声，建议每次只微调 1–3 dB。"
+              >
+                <div className="grid min-w-[420px] grid-cols-2 gap-x-4 gap-y-2">
+                  {MICROPHONE_EQ_FREQUENCIES.map((frequency, index) => {
+                    const gain = settings.micEqualizerGains[index] ?? 0;
+                    const label =
+                      frequency >= 1_000 ? `${frequency / 1_000}k` : String(frequency);
+                    return (
+                      <label key={frequency} className="grid grid-cols-[34px_1fr_42px] items-center gap-2">
+                        <span className="text-[11px] font-semibold text-[#667085]">{label}</span>
+                        <Slider
+                          min={-12}
+                          max={12}
+                          step={1}
+                          value={gain}
+                          onChange={(event) => {
+                            const nextGains = [...settings.micEqualizerGains] as AppSettings["micEqualizerGains"];
+                            nextGains[index] = Number(event.currentTarget.value);
+                            onChange({ micEqualizerGains: nextGains });
+                          }}
+                        />
+                        <span className="text-right text-[11px] tabular-nums text-[#98A2B3]">
+                          {gain > 0 ? "+" : ""}{gain} dB
+                        </span>
+                      </label>
+                    );
+                  })}
                 </div>
               </SettingsItemRow>
             </div>

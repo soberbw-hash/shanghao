@@ -199,6 +199,7 @@ export const registerIpcHandlers = ({
     await updates.openReleases();
   });
 
+  ipcMain.handle(IPC_CHANNELS.overlay.show, async (): Promise<boolean> => overlay.show());
   ipcMain.handle(IPC_CHANNELS.overlay.toggle, async (): Promise<boolean> => overlay.toggle());
   ipcMain.handle(IPC_CHANNELS.overlay.close, async (): Promise<void> => overlay.close());
   ipcMain.handle(IPC_CHANNELS.overlay.update, async (_event, state: OverlayState): Promise<void> => {

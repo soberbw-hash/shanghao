@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { Activity, Bell, Headphones, RefreshCw } from "lucide-react";
+import { Activity, Bell, Headphones, MonitorCog, RefreshCw } from "lucide-react";
 import { gsap } from "gsap";
 
 import type { AppSettings, DiagnosticsSnapshot, RendererDiagnosticsSummary } from "@private-voice/shared";
@@ -22,14 +22,15 @@ import { useAudioStore } from "../store/audioStore";
 import { useRoomStore } from "../store/roomStore";
 import { useSettingsStore } from "../store/settingsStore";
 
-type SettingsSectionId = "audio" | "notifications" | "updates" | "diagnostics";
+type SettingsSectionId = "general" | "audio" | "notifications" | "updates" | "diagnostics";
 
 const sections = [
+  { id: "general", label: "通用", icon: MonitorCog },
   { id: "audio", label: "语音", icon: Headphones },
   { id: "notifications", label: "通知", icon: Bell },
   { id: "updates", label: "更新", icon: RefreshCw },
   { id: "diagnostics", label: "诊断", icon: Activity },
-] satisfies Array<{ id: SettingsSectionId; label: string; icon: typeof Headphones }>;
+  ] satisfies Array<{ id: SettingsSectionId; label: string; icon: typeof Headphones }>;
 
 export const SettingsPage = () => {
   const navigate = useAppStore((state) => state.navigate);
@@ -61,6 +62,7 @@ export const SettingsPage = () => {
     autoGainControl: settings?.isAutoGainControlEnabled,
     preferredSampleRate: settings?.preferredSampleRate,
     monitorMode: settings?.micMonitorMode,
+    equalizerGains: settings?.micEqualizerGains,
   });
 
   useEffect(() => {
@@ -153,6 +155,32 @@ export const SettingsPage = () => {
   };
 
   const content: Record<SettingsSectionId, React.ReactNode> = {
+    general: (
+      <SettingsSection title="应用" description="控制窗口、悬浮窗与图形渲染。">
+        <div className="space-y-3">
+          <SettingsItemRow
+            label="进入频道时显示悬浮窗"
+            description="默认开启，进入频道后自动显示胶囊悬浮窗。"
+          >
+            <Switch
+              isChecked={settings.isOverlayEnabled}
+              onChange={(isOverlayEnabled) => void handleSaveSettings({ isOverlayEnabled })}
+            />
+          </SettingsItemRow>
+          <SettingsItemRow
+            label="硬件加速"
+            description="默认开启。修改后下次启动生效。"
+          >
+            <Switch
+              isChecked={settings.isHardwareAccelerationEnabled}
+              onChange={(isHardwareAccelerationEnabled) =>
+                void handleSaveSettings({ isHardwareAccelerationEnabled })
+              }
+            />
+          </SettingsItemRow>
+        </div>
+      </SettingsSection>
+    ),
     audio: (
       <div className="space-y-4">
         <AudioSettingsCard

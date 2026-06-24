@@ -5,6 +5,7 @@ export interface SpeakingDetectorControls {
 export const createSpeakingDetector = (
   stream: MediaStream,
   onSpeakingChange: (isSpeaking: boolean, level: number) => void,
+  inputThreshold = 0.4,
 ): SpeakingDetectorControls => {
   const audioContext = new AudioContext();
   const analyser = audioContext.createAnalyser();
@@ -21,7 +22,7 @@ export const createSpeakingDetector = (
     analyser.getByteFrequencyData(data);
     const average = data.reduce((sum, value) => sum + value, 0) / Math.max(data.length, 1);
     const normalizedLevel = average / 255;
-    const isSpeaking = normalizedLevel > 0.08;
+    const isSpeaking = normalizedLevel > Math.max(0.01, Math.min(0.2, inputThreshold * 0.2));
 
     if (isSpeaking !== previousState) {
       previousState = isSpeaking;

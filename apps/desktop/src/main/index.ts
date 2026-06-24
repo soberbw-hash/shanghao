@@ -1,5 +1,6 @@
+import { readFileSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
-import { dirname } from "node:path";
+import { dirname, join } from "node:path";
 
 import { app, BrowserWindow, Tray, dialog } from "electron";
 
@@ -30,6 +31,18 @@ const QUIT_FOR_INSTALL_ARG = "--shanghao-quit-for-install";
 const shouldQuitForInstall = process.argv.includes(QUIT_FOR_INSTALL_ARG);
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+const shouldUseHardwareAcceleration = (): boolean => {
+  try {
+    const settingsPath = join(app.getPath("userData"), "settings.json");
+    const raw = JSON.parse(readFileSync(settingsPath, "utf8").replace(/^\uFEFF/, "")) as {
+      isHardwareAccelerationEnabled?: unknown;
+    };
+    return raw.isHardwareAccelerationEnabled !== false;
+  } catch {
+    return true;
+  }
+};
 
 const showWindow = () => {
   if (!mainWindow) {
@@ -163,6 +176,16 @@ const maybeCaptureScreenshot = async (window: BrowserWindow | null): Promise<voi
     }
   }
 
+  if (mode === "room-seat") {
+    await clickButtonByLabel(window, "2 \u53F7\u4F4D");
+    await sleep(900);
+  }
+
+  if (mode === "screen-share") {
+    await clickButtonByLabel(window, "\u5C4F\u5E55\u5206\u4EAB");
+    await sleep(1800);
+  }
+
   const image = await window.capturePage();
   await mkdir(dirname(outputPath), { recursive: true });
   await writeFile(outputPath, image.toPNG());
@@ -282,6 +305,9 @@ const bootstrap = async (): Promise<void> => {
   });
 };
 
+if (!shouldUseHardwareAcceleration()) {
+  app.disableHardwareAcceleration();
+}
 if (process.platform === "win32") app.setAppUserModelId(APP_ID);
 app.commandLine.appendSwitch(
   "proxy-bypass-list",

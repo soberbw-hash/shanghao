@@ -22,6 +22,9 @@ test("migrateSettings falls back to safe defaults for damaged legacy config", ()
     isMemberLeaveSoundEnabled: false,
     isConnectionSoundEnabled: false,
     isUiSoundEnabled: false,
+    isHardwareAccelerationEnabled: "invalid" as never,
+    isOverlayEnabled: "invalid" as never,
+    micEqualizerGains: [99, -99, 3, Number.NaN] as never,
   });
 
   assert.equal(result.settings.settingsSchemaVersion, SETTINGS_SCHEMA_VERSION);
@@ -43,6 +46,9 @@ test("migrateSettings falls back to safe defaults for damaged legacy config", ()
   assert.equal(result.settings.isMemberLeaveSoundEnabled, true);
   assert.equal(result.settings.isConnectionSoundEnabled, true);
   assert.equal(result.settings.isUiSoundEnabled, false);
+  assert.equal(result.settings.isHardwareAccelerationEnabled, true);
+  assert.equal(result.settings.isOverlayEnabled, true);
+  assert.deepEqual(result.settings.micEqualizerGains, [12, -12, 3, 0, 0, 0, 0, 0, 0, 0]);
   assert.equal(result.migrated, true);
 });
 

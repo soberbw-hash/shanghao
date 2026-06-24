@@ -14,6 +14,7 @@ export const IPC_CHANNELS = {
     show: "window:show",
   },
   overlay: {
+    show: "overlay:show",
     toggle: "overlay:toggle",
     close: "overlay:close",
     update: "overlay:update",

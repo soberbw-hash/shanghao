@@ -10,7 +10,7 @@ const AVATAR_SIZE = 28;
 const GAP = 4;
 const PADDING_X = 8;
 const STATUS_WIDTH = 24;
-const SHADOW_MARGIN = 6;
+const SHADOW_MARGIN = 0;
 const PILL_HEIGHT = 38;
 const MIN_PILL_WIDTH = 88;
 
@@ -115,7 +115,7 @@ export const OverlayPage = () => {
           backdropFilter: "blur(24px) saturate(185%)",
           WebkitBackdropFilter: "blur(24px) saturate(185%)",
           boxShadow:
-            "0 12px 30px rgba(36, 68, 111, 0.18), 0 2px 8px rgba(36, 68, 111, 0.10), inset 0 1px 0 rgba(255,255,255,0.86), inset 0 -1px 0 rgba(120,150,190,0.10)",
+            "inset 0 1px 0 rgba(255,255,255,0.90), inset 0 -1px 0 rgba(120,150,190,0.12)",
           display: "flex",
           alignItems: "center",
           gap: `${GAP}px`,

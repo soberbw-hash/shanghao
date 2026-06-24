@@ -18,6 +18,7 @@ const desktopApi: DesktopApi = {
     show: () => ipcRenderer.invoke(IPC_CHANNELS.window.show),
   },
   overlay: {
+    show: () => ipcRenderer.invoke(IPC_CHANNELS.overlay.show),
     toggle: () => ipcRenderer.invoke(IPC_CHANNELS.overlay.toggle),
     close: () => ipcRenderer.invoke(IPC_CHANNELS.overlay.close),
     update: (state) => ipcRenderer.invoke(IPC_CHANNELS.overlay.update, state),

@@ -6,6 +6,7 @@ import test from "node:test";
 const roomPagePath = path.resolve(process.cwd(), "src/renderer/src/pages/RoomPage.tsx");
 const overlayWindowPath = path.resolve(process.cwd(), "src/main/overlay-window.ts");
 const overlayPagePath = path.resolve(process.cwd(), "src/renderer/src/pages/OverlayPage.tsx");
+const mainWindowPath = path.resolve(process.cwd(), "src/main/window.ts");
 const rendererMainPath = path.resolve(process.cwd(), "src/renderer/src/main.tsx");
 const stylesPath = path.resolve(process.cwd(), "src/renderer/src/styles/index.css");
 const chatPanelPath = path.resolve(process.cwd(), "src/renderer/src/components/chat/TemporaryChatPanel.tsx");
@@ -46,7 +47,8 @@ test("room uses a real always-on-top overlay and a five-second knock cooldown", 
   assert.equal(overlaySource.includes("skipTaskbar: true"), true);
   assert.equal(overlaySource.includes("overlay-bounds.json"), true);
   assert.equal(overlaySource.includes("OVERLAY_MIN_PILL_WIDTH = 88"), true);
-  assert.equal(overlaySource.includes("OVERLAY_SHADOW_MARGIN = 6"), true);
+  assert.equal(overlaySource.includes("OVERLAY_SHADOW_MARGIN = 0"), true);
+  assert.equal(overlaySource.includes("show(): boolean"), true);
   assert.equal(overlaySource.includes("focusable: false"), true);
   assert.equal(overlaySource.includes("setIgnoreMouseEvents(true"), true);
   assert.equal(overlaySource.includes("setMovable(false)"), true);
@@ -62,8 +64,8 @@ test("room uses a real always-on-top overlay and a five-second knock cooldown", 
   assert.equal(teamIslandSource.includes("scene-seat-marker"), true);
   assert.equal(teamIslandSource.includes("team-island-stage"), true);
   assert.equal(teamIslandSource.includes("scene-workstation"), true);
-  assert.equal(sceneZonesSource.includes("coffeeBar"), true);
   assert.equal(sceneZonesSource.includes("restroomZone"), true);
+  assert.equal(sceneZonesSource.includes('label: "离开"'), true);
   assert.equal(sceneZonesSource.includes("seatSlots"), true);
   assert.equal(sceneZonesSource.includes("activityZones"), true);
   assert.equal(sceneZonesSource.includes('kind: "seat"'), true);
@@ -96,11 +98,11 @@ test("scene seats align with the marked workstation positions", () => {
 
   assert.equal(stylesSource.includes(".scene-workstation"), true);
   assert.equal(stylesSource.includes(".scene-desk-top"), true);
-  assert.equal(stylesSource.includes(".layered-animal-part"), true);
-  assert.equal(sceneZonesSource.includes("gameDesk5: { left: 57, top: 84"), true);
-  assert.equal(sceneZonesSource.includes("gameDesk4: { left: 70, top: 61"), true);
-  assert.equal(sceneZonesSource.includes("gameDesk1: { left: 44, top: 35"), true);
-  assert.equal(sceneZonesSource.includes("scale: 0.92"), true);
+  assert.equal(stylesSource.includes(".desk-animal-layer"), true);
+  assert.equal(sceneZonesSource.includes("gameDesk5: { left: 65, top: 74"), true);
+  assert.equal(sceneZonesSource.includes("gameDesk4: { left: 40, top: 74"), true);
+  assert.equal(sceneZonesSource.includes("gameDesk1: { left: 30, top: 38"), true);
+  assert.equal(sceneZonesSource.includes("scale: 0.86"), true);
 });
 
 test("screen sharing is wired through the room page and WebRTC peer layer", () => {
@@ -109,6 +111,7 @@ test("screen sharing is wired through the room page and WebRTC peer layer", () =
   const clientSource = readFileSync(path.resolve(process.cwd(), "src/renderer/src/features/room/roomClient.ts"), "utf8");
   const peerSource = readFileSync(path.resolve(process.cwd(), "../../packages/webrtc/src/createPeer.ts"), "utf8");
   const stylesSource = readFileSync(stylesPath, "utf8");
+  const mainWindowSource = readFileSync(mainWindowPath, "utf8");
 
   assert.equal(roomSource.includes("navigator.mediaDevices.getDisplayMedia"), true);
   assert.equal(roomSource.includes("screen-share-panel"), true);
@@ -122,4 +125,23 @@ test("screen sharing is wired through the room page and WebRTC peer layer", () =
   assert.equal(peerSource.includes("offerToReceiveVideo: true"), true);
   assert.equal(peerSource.includes("setScreenTrack"), true);
   assert.equal(stylesSource.includes(".screen-share-video"), true);
+  assert.equal(mainWindowSource.includes("setDisplayMediaRequestHandler"), true);
+  assert.equal(mainWindowSource.includes("desktopCapturer.getSources"), true);
+});
+
+test("room scene supports clickable seats, silent-away, and daily summaries", () => {
+  const roomSource = readFileSync(roomPagePath, "utf8");
+  const teamIslandSource = readFileSync(teamIslandPath, "utf8");
+  const dailyStatsSource = readFileSync(
+    path.resolve(process.cwd(), "src/renderer/src/features/session/dailyStats.ts"),
+    "utf8",
+  );
+
+  assert.equal(teamIslandSource.includes("onZoneSelect?.(zone.id, zone.activity)"), true);
+  assert.equal(teamIslandSource.includes("disabled={"), true);
+  assert.equal(teamIslandSource.includes("DeskAnimalSprite"), true);
+  assert.equal(roomSource.includes("5 * 60_000"), true);
+  assert.equal(roomSource.includes('moveLocalMemberRef.current("restroomZone", "restroom")'), true);
+  assert.equal(roomSource.includes("recordDailySession"), true);
+  assert.equal(dailyStatsSource.includes("PENDING_DAILY_STATS_KEY"), true);
 });

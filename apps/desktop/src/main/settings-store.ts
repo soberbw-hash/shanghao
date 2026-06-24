@@ -67,6 +67,10 @@ export class SettingsStore {
       serverConfigured: Boolean(this.cachedSettings.relayServerUrl?.trim()),
       preferredSampleRate: this.cachedSettings.preferredSampleRate,
       micMonitorMode: this.cachedSettings.micMonitorMode,
+      inputLevelThreshold: this.cachedSettings.inputLevelThreshold,
+      micEqualizerGains: this.cachedSettings.micEqualizerGains,
+      isHardwareAccelerationEnabled: this.cachedSettings.isHardwareAccelerationEnabled,
+      isOverlayEnabled: this.cachedSettings.isOverlayEnabled,
     });
     return this.cachedSettings;
   }

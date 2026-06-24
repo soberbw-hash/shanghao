@@ -4,6 +4,7 @@ import {
   SETTINGS_SCHEMA_VERSION,
   isBuiltInAvatarId,
   type AppSettings,
+  type MicEqualizerGains,
 } from "@private-voice/shared";
 
 import { normalizeRelayServerUrl } from "./relay-url";
@@ -23,10 +24,13 @@ export const defaultSettings: AppSettings = {
   minimizeToTray: false,
   reduceMotion: false,
   launchOnStartup: false,
+  isHardwareAccelerationEnabled: true,
+  isOverlayEnabled: true,
   preferredInputDeviceId: undefined,
   preferredOutputDeviceId: undefined,
   preferredSampleRate: "auto",
-  inputLevelThreshold: 0.18,
+  inputLevelThreshold: 0.4,
+  micEqualizerGains: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
   globalMuteShortcut: "",
   pushToTalkShortcut: "Space",
   isNoiseSuppressionEnabled: true,
@@ -75,6 +79,16 @@ const normalizeAvatarId = (value: unknown): AppSettings["avatarId"] => {
   return isBuiltInAvatarId(value) ? value : defaultSettings.avatarId;
 };
 
+const normalizeEqualizerGains = (value: unknown): MicEqualizerGains => {
+  const source = Array.isArray(value) ? value : [];
+  return Array.from({ length: 10 }, (_, index) => {
+    const gain = source[index];
+    return typeof gain === "number" && Number.isFinite(gain)
+      ? Math.max(-12, Math.min(12, gain))
+      : 0;
+  }) as MicEqualizerGains;
+};
+
 export const migrateSettings = (raw: RawSettings): MigrationResult => {
   const previousVersion =
     typeof raw.settingsSchemaVersion === "number" && Number.isFinite(raw.settingsSchemaVersion)
@@ -95,6 +109,11 @@ export const migrateSettings = (raw: RawSettings): MigrationResult => {
     minimizeToTray: normalizeBoolean(raw.minimizeToTray, defaultSettings.minimizeToTray),
     reduceMotion: normalizeBoolean(raw.reduceMotion, defaultSettings.reduceMotion),
     launchOnStartup: normalizeBoolean(raw.launchOnStartup, defaultSettings.launchOnStartup),
+    isHardwareAccelerationEnabled: normalizeBoolean(
+      raw.isHardwareAccelerationEnabled,
+      defaultSettings.isHardwareAccelerationEnabled,
+    ),
+    isOverlayEnabled: normalizeBoolean(raw.isOverlayEnabled, defaultSettings.isOverlayEnabled),
     preferredInputDeviceId: trimUnknownText(raw.preferredInputDeviceId),
     preferredOutputDeviceId: trimUnknownText(raw.preferredOutputDeviceId),
     globalMuteShortcut: trimUnknownText(raw.globalMuteShortcut) ?? "",
@@ -103,6 +122,7 @@ export const migrateSettings = (raw: RawSettings): MigrationResult => {
     relayServerUrl:
       normalizeRelayServerUrl(trimUnknownText(raw.relayServerUrl)) ?? defaultSettings.relayServerUrl,
     preferredSampleRate: normalizeSampleRate(trimUnknownText(raw.preferredSampleRate)),
+    micEqualizerGains: normalizeEqualizerGains(raw.micEqualizerGains),
     micMonitorMode: normalizeMonitorMode(trimUnknownText(raw.micMonitorMode)),
     isNoiseSuppressionEnabled: raw.isNoiseSuppressionEnabled !== false,
     isEchoCancellationEnabled: raw.isEchoCancellationEnabled !== false,
