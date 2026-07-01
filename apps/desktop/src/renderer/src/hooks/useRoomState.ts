@@ -47,8 +47,8 @@ const copy = {
   microphoneMissing: "没有找到可用的麦克风。",
   microphoneBusy: "麦克风正在被其他程序占用。",
   inputDeviceFailed: "输入设备切换失败",
-  copiedInviteTitle: "频道码已复制",
-  copiedInviteDescription: "已把频道码和服务器地址复制好，发给朋友即可进入同一个频道。",
+  copiedInviteTitle: "服务器地址已复制",
+  copiedInviteDescription: "把这个地址发给朋友，填写后即可进入同一个频道。",
 } as const;
 
 const normalizeServerUrl = (value?: string): string => {
@@ -95,16 +95,11 @@ const normalizeRoomError = (error: unknown, fallback: string): string => {
 };
 
 export const buildChannelInviteText = ({
-  channelId,
   serverUrl,
 }: {
   channelId: string;
   serverUrl: string;
-}) => [
-  `上号频道码：${channelId}`,
-  `服务器地址：${serverUrl}`,
-  "打开上号，填写同一个服务器地址后进入频道即可开黑。",
-].join("\n");
+}) => serverUrl;
 
 const collectMemberEvents = (members: RoomMember[]) => {
   const nextIds = new Set(
@@ -240,8 +235,10 @@ export const useRoomState = () => {
       });
       const processedMicrophone = await createProcessedMicrophoneStream(inputStream, {
         micEqualizerGains:
-          currentSettings?.micEqualizerGains ?? [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+          currentSettings?.micEqualizerGains ?? [0, 0, 0, 0, 0],
         preferredSampleRate: currentSettings?.preferredSampleRate ?? "auto",
+        isLowCutEnabled: currentSettings?.isLowCutEnabled ?? true,
+        isNoiseSuppressionEnabled: currentSettings?.isNoiseSuppressionEnabled ?? true,
       });
       activeProcessedMicrophone = processedMicrophone;
       const stream = processedMicrophone.stream;
@@ -251,6 +248,13 @@ export const useRoomState = () => {
       await writeRendererLog("audio", "info", "Acquired local microphone stream", {
         ...diagnostics,
       });
+      if (diagnostics.sampleRateFallbackApplied) {
+        pushToast({
+          tone: "neutral",
+          title: "已自动兼容麦克风",
+          description: "设备不支持所选采样率，已回退到设备原生采样率。",
+        });
+      }
       return stream;
     } catch (error) {
       await writeRendererLog("audio", "error", "Failed to acquire local microphone stream", {
@@ -468,7 +472,7 @@ export const useRoomState = () => {
         autoGainControl: settings.isAutoGainControlEnabled,
         preferredSampleRate: settings.preferredSampleRate,
       });
-      const processedMicrophone = await createProcessedMicrophoneStream(inputStream, settings);
+    const processedMicrophone = await createProcessedMicrophoneStream(inputStream, settings);
       const stream = processedMicrophone.stream;
       const [nextTrack] = stream.getAudioTracks();
       if (!nextTrack) {
@@ -634,6 +638,10 @@ export const useRoomState = () => {
     activity: MemberActivity,
     gameName?: string,
   ) => {
+    if (sceneZone === "restroomZone") {
+      useAudioStore.getState().setMuted(true);
+      activeClient?.updateMuteState(true, false);
+    }
     updateLocalPresence({ sceneZone, activity, gameName });
     activeClient?.updatePresenceState(isDeafened, activity, sceneZone, gameName);
     void writeRendererLog("app", "info", "Local member moved in scene", {

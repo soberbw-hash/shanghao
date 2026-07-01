@@ -75,9 +75,10 @@ export interface RemoteScreenFrame {
 const INITIAL_CONNECT_TIMEOUT_MS = 10_000;
 const SNAPSHOT_RETRY_TIMEOUT_MS = 5_000;
 const MAX_RECONNECT_ATTEMPTS = 6;
-const SCREEN_FRAME_INTERVAL_MS = 850;
-const SCREEN_FRAME_MAX_WIDTH = 860;
-const SCREEN_FRAME_MAX_BYTES = 210 * 1024;
+const SCREEN_FRAME_INTERVAL_MS = 1_500;
+const SCREEN_FRAME_HEALTHY_INTERVAL_MS = 4_000;
+const SCREEN_FRAME_MAX_WIDTH = 640;
+const SCREEN_FRAME_MAX_BYTES = 96 * 1024;
 
 export class RoomClient {
   private readonly backoff = new ExponentialBackoff(DEFAULT_RECONNECT_DELAYS_MS);
@@ -125,8 +126,8 @@ export class RoomClient {
   private screenFrameVideo?: HTMLVideoElement;
   private screenFrameCanvas?: HTMLCanvasElement;
   private screenFrameTimer?: number;
+  private screenFrameIntervalMs?: number;
   private screenFrameSequence = 0;
-  private isRenegotiating = false;
 
   constructor(private readonly options: RoomClientOptions) {
     this.localStream = options.localStream;
@@ -458,7 +459,7 @@ export class RoomClient {
 
     this.stopScreenShareTracks();
     this.screenShareStream = stream;
-    this.startScreenFrameRelay(stream);
+    this.updateScreenFrameRelaySending();
     void this.safeSend({
       type: "screen_share_state",
       roomId: this.options.roomId,
@@ -478,7 +479,6 @@ export class RoomClient {
     );
 
     await Promise.all([...this.peers.values()].map((peer) => peer.setScreenTrack(videoTrack)));
-    await this.renegotiateAllPeers("screen_share_started");
     void writeRendererLog("webrtc", "info", "Screen share track attached", {
       peerCount: this.peers.size,
       trackId: videoTrack.id,
@@ -495,7 +495,6 @@ export class RoomClient {
     if (stopTracks) {
       previousStream?.getTracks().forEach((track) => track.stop());
     }
-    await this.renegotiateAllPeers("screen_share_stopped");
     void this.safeSend({
       type: "screen_share_state",
       roomId: this.options.roomId,
@@ -828,6 +827,28 @@ export class RoomClient {
       (peerId) => !this.webrtcReadyPeerIds.has(peerId),
     );
     this.audioRelay?.setShouldSend(hasPeerWithoutWebrtc);
+    this.updateScreenFrameRelaySending();
+  }
+
+  private updateScreenFrameRelaySending(): void {
+    const hasRemotePeers = this.remotePeerIds.size > 0;
+    const hasPeerWithoutWebrtc = [...this.remotePeerIds].some(
+      (peerId) => !this.webrtcReadyPeerIds.has(peerId),
+    );
+    const desiredInterval = hasPeerWithoutWebrtc
+      ? SCREEN_FRAME_INTERVAL_MS
+      : SCREEN_FRAME_HEALTHY_INTERVAL_MS;
+    if (
+      this.screenShareStream &&
+      hasRemotePeers &&
+      (!this.screenFrameTimer || this.screenFrameIntervalMs !== desiredInterval)
+    ) {
+      this.startScreenFrameRelay(this.screenShareStream, desiredInterval);
+      return;
+    }
+    if ((!this.screenShareStream || !hasRemotePeers) && this.screenFrameTimer) {
+      this.stopScreenFrameRelay();
+    }
   }
 
   private createPeer(targetPeerId: string): MeshPeerConnection {
@@ -891,37 +912,6 @@ export class RoomClient {
     }
 
     await peer.setScreenTrack(videoTrack);
-  }
-
-  private async renegotiateAllPeers(reason: string): Promise<void> {
-    if (!this.isSignalingConnected || this.isRenegotiating) {
-      return;
-    }
-
-    this.isRenegotiating = true;
-    try {
-      for (const [targetPeerId, peer] of this.peers) {
-        if (peer.connection.signalingState !== "stable") {
-          void writeRendererLog("webrtc", "warn", "Skipped renegotiation because peer is not stable", {
-            targetPeerId,
-            reason,
-            signalingState: peer.connection.signalingState,
-          });
-          continue;
-        }
-
-        const offer = await peer.createOffer();
-        await this.safeSend({
-          type: "peer_offer",
-          roomId: this.options.roomId,
-          peerId: this.options.peerId,
-          targetPeerId,
-          sdp: offer,
-        });
-      }
-    } finally {
-      this.isRenegotiating = false;
-    }
   }
 
   private async send(payload: SignalEnvelope): Promise<void> {
@@ -1072,7 +1062,7 @@ export class RoomClient {
     this.screenShareStream = undefined;
   }
 
-  private startScreenFrameRelay(stream: MediaStream): void {
+  private startScreenFrameRelay(stream: MediaStream, intervalMs: number): void {
     this.stopScreenFrameRelay();
 
     const [videoTrack] = stream.getVideoTracks();
@@ -1087,10 +1077,16 @@ export class RoomClient {
     const canvas = document.createElement("canvas");
     this.screenFrameVideo = video;
     this.screenFrameCanvas = canvas;
+    this.screenFrameIntervalMs = intervalMs;
+    video.addEventListener(
+      "loadeddata",
+      () => void this.captureAndSendScreenFrame(),
+      { once: true },
+    );
     void video.play().catch(() => undefined);
     this.screenFrameTimer = window.setInterval(
       () => void this.captureAndSendScreenFrame(),
-      SCREEN_FRAME_INTERVAL_MS,
+      intervalMs,
     );
     void this.captureAndSendScreenFrame();
   }
@@ -1100,6 +1096,7 @@ export class RoomClient {
       window.clearInterval(this.screenFrameTimer);
       this.screenFrameTimer = undefined;
     }
+    this.screenFrameIntervalMs = undefined;
 
     if (this.screenFrameVideo) {
       this.screenFrameVideo.pause();
@@ -1118,8 +1115,8 @@ export class RoomClient {
 
     const sourceWidth = video.videoWidth || 1280;
     const sourceHeight = video.videoHeight || 720;
-    const width = Math.min(SCREEN_FRAME_MAX_WIDTH, sourceWidth);
-    const height = Math.max(1, Math.round((width / sourceWidth) * sourceHeight));
+    let width = Math.min(SCREEN_FRAME_MAX_WIDTH, sourceWidth);
+    let height = Math.max(1, Math.round((width / sourceWidth) * sourceHeight));
     canvas.width = width;
     canvas.height = height;
 
@@ -1129,9 +1126,18 @@ export class RoomClient {
     }
 
     context.drawImage(video, 0, 0, width, height);
-    const data = canvas.toDataURL("image/jpeg", 0.46);
+    let data = canvas.toDataURL("image/jpeg", 0.38);
     if (new TextEncoder().encode(data).byteLength > SCREEN_FRAME_MAX_BYTES) {
-      return;
+      width = Math.min(480, sourceWidth);
+      height = Math.max(1, Math.round((width / sourceWidth) * sourceHeight));
+      canvas.width = width;
+      canvas.height = height;
+      const retryContext = canvas.getContext("2d", { alpha: false });
+      retryContext?.drawImage(video, 0, 0, width, height);
+      data = canvas.toDataURL("image/jpeg", 0.26);
+      if (new TextEncoder().encode(data).byteLength > SCREEN_FRAME_MAX_BYTES) {
+        return;
+      }
     }
 
     await this.safeSend({

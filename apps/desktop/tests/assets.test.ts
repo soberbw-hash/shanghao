@@ -37,6 +37,22 @@ test("desktop release configuration publishes automatic update metadata", () => 
 });
 
 test("room scene and feedback sound assets are bundled", () => {
+  assert.equal(
+    existsSync(
+      path.join(
+        root,
+        "apps/desktop/src/renderer/src/assets/scenes/workstation-chibi.webp",
+      ),
+    ),
+    true,
+    "missing premium workstation asset",
+  );
+  assert.equal(
+    existsSync(path.join(root, "apps/desktop/src/renderer/src/assets/scenes/chair-chibi.webp")),
+    true,
+    "missing chibi chair asset",
+  );
+
   for (const avatar of ["fox", "cat", "duck", "panda", "corgi"]) {
     assert.equal(
       existsSync(path.join(root, `apps/desktop/src/renderer/src/assets/avatars/${avatar}-scene.png`)),

@@ -6,6 +6,7 @@ import {
   APP_BUILD_NUMBER,
   APP_PROTOCOL_VERSION,
   HEARTBEAT_INTERVAL_MS,
+  type SceneZoneId,
 } from "@private-voice/shared";
 import { WebSocket, WebSocketServer } from "ws";
 
@@ -46,6 +47,34 @@ const MAX_SIGNALING_PAYLOAD_BYTES = 256 * 1024;
 const MAX_AVATAR_BYTES = 128 * 1024;
 const MAX_AUDIO_CHUNK_BYTES = 96 * 1024;
 const MAX_SCREEN_FRAME_BYTES = 220 * 1024;
+const SEAT_ZONES: SceneZoneId[] = [
+  "gameDesk1",
+  "gameDesk2",
+  "gameDesk3",
+  "gameDesk4",
+  "gameDesk5",
+];
+
+const resolveSceneZone = (
+  occupiedZones: Array<{ peerId: string; sceneZone?: SceneZoneId; disconnectedAt?: number }>,
+  peerId: string,
+  requestedZone?: SceneZoneId,
+): SceneZoneId => {
+  if (requestedZone && !SEAT_ZONES.includes(requestedZone)) {
+    return requestedZone;
+  }
+
+  const occupiedSeats = new Set(
+    occupiedZones
+      .filter((peer) => peer.peerId !== peerId && !peer.disconnectedAt)
+      .map((peer) => peer.sceneZone)
+      .filter((zone): zone is SceneZoneId => Boolean(zone && SEAT_ZONES.includes(zone))),
+  );
+  if (requestedZone && !occupiedSeats.has(requestedZone)) {
+    return requestedZone;
+  }
+  return SEAT_ZONES.find((zone) => !occupiedSeats.has(zone)) ?? "restroomZone";
+};
 
 const normalizeAvatar = (
   avatarDataUrl?: string,
@@ -363,6 +392,15 @@ export class SignalingServer extends EventEmitter {
       }
     }
 
+    const assignedSceneZone = resolveSceneZone(
+      existingRoom?.peers.listPeers().map((peer) => ({
+        peerId: peer.id,
+        sceneZone: peer.sceneZone,
+        disconnectedAt: peer.disconnectedAt,
+      })) ?? [],
+      message.peerId,
+      existingPeer?.sceneZone,
+    );
     const room = this.roomManager.addPeer(
       message.roomId,
       this.roomName,
@@ -377,8 +415,11 @@ export class SignalingServer extends EventEmitter {
         isMuted: existingPeer?.isMuted ?? false,
         isSpeaking: existingPeer?.isSpeaking ?? false,
         isDeafened: existingPeer?.isDeafened ?? false,
-        activity: existingPeer?.activity ?? "idle",
-        sceneZone: existingPeer?.sceneZone,
+        activity:
+          assignedSceneZone === "restroomZone"
+            ? "restroom"
+            : existingPeer?.activity ?? "idle",
+        sceneZone: assignedSceneZone,
         gameName: existingPeer?.gameName,
         joinedAt: existingPeer?.joinedAt ?? new Date().toISOString(),
         lastHeartbeatAt: Date.now(),
@@ -418,23 +459,35 @@ export class SignalingServer extends EventEmitter {
 
   private handleMemberState(message: MemberStateMessage): void {
     const room = this.roomManager.getRoom(message.roomId);
+    if (!room) {
+      return;
+    }
+    const normalizedSceneZone = message.sceneZone
+      ? resolveSceneZone(
+          room.peers.listPeers().map((peer) => ({
+            peerId: peer.id,
+            sceneZone: peer.sceneZone,
+            disconnectedAt: peer.disconnectedAt,
+          })),
+          message.peerId,
+          message.sceneZone,
+        )
+      : undefined;
+    const normalizedActivity =
+      normalizedSceneZone === "restroomZone" ? "restroom" : message.activity;
     const normalizedAvatar = normalizeAvatar(message.avatarDataUrl);
-    room?.peers.updateMemberState(message.peerId, {
+    room.peers.updateMemberState(message.peerId, {
       isMuted: message.isMuted,
       isSpeaking: message.isSpeaking,
       isDeafened: message.isDeafened,
-      activity: message.activity,
-      sceneZone: message.sceneZone,
+      activity: normalizedActivity,
+      sceneZone: normalizedSceneZone,
       gameName: message.gameName,
       nickname: message.nickname,
       avatarDataUrl: normalizedAvatar.avatarDataUrl,
       avatarHash: normalizedAvatar.avatarHash,
       avatarId: message.avatarId,
     });
-    if (!room) {
-      return;
-    }
-
     const payload: MemberStateMessage = {
       type: "member_state",
       roomId: message.roomId,
@@ -442,8 +495,8 @@ export class SignalingServer extends EventEmitter {
       isMuted: message.isMuted,
       isSpeaking: message.isSpeaking,
       isDeafened: message.isDeafened,
-      activity: message.activity,
-      sceneZone: message.sceneZone,
+      activity: normalizedActivity,
+      sceneZone: normalizedSceneZone,
       gameName: message.gameName,
       nickname: message.nickname,
       avatarId: message.avatarId,

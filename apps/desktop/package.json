@@ -1,6 +1,6 @@
 {
   "name": "shanghao-desktop",
-  "version": "0.1.45",
+  "version": "0.1.46",
   "private": true,
   "description": "ShangHao desktop voice app for private friends group chat",
   "author": "Sober",
@@ -32,7 +32,6 @@
     "@private-voice/webrtc": "workspace:*",
     "electron-updater": "6.6.2",
     "ffmpeg-static": "^5.2.0",
-    "ffprobe-static": "^3.1.0",
     "framer-motion": "^11.18.2",
     "gsap": "^3.15.0",
     "lucide-react": "^0.511.0",

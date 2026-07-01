@@ -28,9 +28,10 @@ export const defaultSettings: AppSettings = {
   isOverlayEnabled: true,
   preferredInputDeviceId: undefined,
   preferredOutputDeviceId: undefined,
-  preferredSampleRate: "auto",
+  preferredSampleRate: "32000",
   inputLevelThreshold: 0.4,
-  micEqualizerGains: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+  micEqualizerGains: [0, 0, 0, 0, 0],
+  isLowCutEnabled: true,
   globalMuteShortcut: "",
   pushToTalkShortcut: "Space",
   isNoiseSuppressionEnabled: true,
@@ -67,8 +68,18 @@ const trimUnknownText = (value: unknown): string | undefined =>
 const normalizeBoolean = (value: unknown, fallback: boolean): boolean =>
   typeof value === "boolean" ? value : fallback;
 
-const normalizeSampleRate = (value?: string): AppSettings["preferredSampleRate"] =>
-  value === "44100" || value === "48000" ? value : "auto";
+const normalizeSampleRate = (
+  value: string | undefined,
+  previousVersion: number,
+): AppSettings["preferredSampleRate"] => {
+  if (previousVersion < 10 && (!value || value === "auto")) {
+    return "32000";
+  }
+  if (value === "auto" || value === "32000" || value === "44100" || value === "48000") {
+    return value;
+  }
+  return defaultSettings.preferredSampleRate;
+};
 
 const normalizeMonitorMode = (value?: string): AppSettings["micMonitorMode"] =>
   value === "raw" ? "raw" : "processed";
@@ -81,8 +92,18 @@ const normalizeAvatarId = (value: unknown): AppSettings["avatarId"] => {
 
 const normalizeEqualizerGains = (value: unknown): MicEqualizerGains => {
   const source = Array.isArray(value) ? value : [];
-  return Array.from({ length: 10 }, (_, index) => {
-    const gain = source[index];
+  const migratedSource =
+    source.length >= 10
+      ? [
+          ((Number(source[0]) || 0) + (Number(source[1]) || 0) + (Number(source[2]) || 0)) / 3,
+          Number(source[3]) || 0,
+          Number(source[5]) || 0,
+          Number(source[7]) || 0,
+          ((Number(source[8]) || 0) + (Number(source[9]) || 0)) / 2,
+        ]
+      : source;
+  return Array.from({ length: 5 }, (_, index) => {
+    const gain = migratedSource[index];
     return typeof gain === "number" && Number.isFinite(gain)
       ? Math.max(-12, Math.min(12, gain))
       : 0;
@@ -121,8 +142,12 @@ export const migrateSettings = (raw: RawSettings): MigrationResult => {
       trimUnknownText(raw.pushToTalkShortcut) ?? defaultSettings.pushToTalkShortcut,
     relayServerUrl:
       normalizeRelayServerUrl(trimUnknownText(raw.relayServerUrl)) ?? defaultSettings.relayServerUrl,
-    preferredSampleRate: normalizeSampleRate(trimUnknownText(raw.preferredSampleRate)),
+    preferredSampleRate: normalizeSampleRate(
+      trimUnknownText(raw.preferredSampleRate),
+      previousVersion,
+    ),
     micEqualizerGains: normalizeEqualizerGains(raw.micEqualizerGains),
+    isLowCutEnabled: normalizeBoolean(raw.isLowCutEnabled, defaultSettings.isLowCutEnabled),
     micMonitorMode: normalizeMonitorMode(trimUnknownText(raw.micMonitorMode)),
     isNoiseSuppressionEnabled: raw.isNoiseSuppressionEnabled !== false,
     isEchoCancellationEnabled: raw.isEchoCancellationEnabled !== false,

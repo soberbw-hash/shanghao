@@ -69,6 +69,7 @@ export class SettingsStore {
       micMonitorMode: this.cachedSettings.micMonitorMode,
       inputLevelThreshold: this.cachedSettings.inputLevelThreshold,
       micEqualizerGains: this.cachedSettings.micEqualizerGains,
+      isLowCutEnabled: this.cachedSettings.isLowCutEnabled,
       isHardwareAccelerationEnabled: this.cachedSettings.isHardwareAccelerationEnabled,
       isOverlayEnabled: this.cachedSettings.isOverlayEnabled,
     });

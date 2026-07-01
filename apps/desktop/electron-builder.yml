@@ -46,6 +46,9 @@ win:
   executableName: ShangHao
   icon: shanghao-icon-v3.ico
   artifactName: ShangHao-${version}-Setup-${arch}.${ext}
+  electronLanguages:
+    - zh-CN
+    - en-US
   signAndEditExecutable: false
   target:
     - nsis

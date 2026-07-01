@@ -14,18 +14,36 @@ export const requestMicrophoneStream = async (
   stream: MediaStream;
   diagnostics: LocalAudioDiagnostics;
 }> => {
-  const stream = await navigator.mediaDevices.getUserMedia(createAudioConstraints(overrides));
+  const requestedSampleRate =
+    overrides.preferredSampleRate && overrides.preferredSampleRate !== "auto"
+      ? Number(overrides.preferredSampleRate)
+      : 0;
+  let sampleRateFallbackApplied = false;
+  let stream: MediaStream;
+  try {
+    stream = await navigator.mediaDevices.getUserMedia(createAudioConstraints(overrides));
+  } catch (error) {
+    const canRetryWithoutSampleRate =
+      requestedSampleRate > 0 &&
+      error instanceof DOMException &&
+      (error.name === "OverconstrainedError" || error.name === "NotReadableError");
+    if (!canRetryWithoutSampleRate) {
+      throw error;
+    }
+    sampleRateFallbackApplied = true;
+    stream = await navigator.mediaDevices.getUserMedia(
+      createAudioConstraints({ ...overrides, preferredSampleRate: "auto" }),
+    );
+  }
   const [track] = stream.getAudioTracks();
   const settings = track?.getSettings() ?? {};
 
   return {
     stream,
     diagnostics: {
-      requestedSampleRate:
-        overrides.preferredSampleRate && overrides.preferredSampleRate !== "auto"
-          ? Number(overrides.preferredSampleRate)
-          : 44_100,
+      requestedSampleRate: requestedSampleRate || settings.sampleRate || 0,
       actualSampleRate: settings.sampleRate,
+      sampleRateFallbackApplied,
       actualChannelCount: settings.channelCount,
       echoCancellation: settings.echoCancellation,
       noiseSuppression: settings.noiseSuppression,

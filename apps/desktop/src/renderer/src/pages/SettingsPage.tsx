@@ -6,6 +6,7 @@ import type { AppSettings, DiagnosticsSnapshot, RendererDiagnosticsSummary } fro
 
 import { Button } from "../components/base/Button";
 import { Switch } from "../components/base/Switch";
+import { motionDuration, motionEase } from "../features/motion/motionSystem";
 import { PageContainer } from "../components/layout/PageContainer";
 import { AudioSettingsCard } from "../components/settings/AudioSettingsCard";
 import { DiagnosticsSettingsCard } from "../components/settings/DiagnosticsSettingsCard";
@@ -63,6 +64,7 @@ export const SettingsPage = () => {
     preferredSampleRate: settings?.preferredSampleRate,
     monitorMode: settings?.micMonitorMode,
     equalizerGains: settings?.micEqualizerGains,
+    isLowCutEnabled: settings?.isLowCutEnabled,
   });
 
   useEffect(() => {
@@ -78,15 +80,25 @@ export const SettingsPage = () => {
         return;
       }
 
+      const targets = "[data-gsap-settings='header'], [data-gsap-settings='nav'], [data-gsap-settings='content']";
+      gsap.set(targets, { willChange: "transform,opacity" });
       gsap.fromTo(
-        "[data-gsap-settings='header'], [data-gsap-settings='nav'], [data-gsap-settings='content']",
+        targets,
         { autoAlpha: 0, y: 12 },
-        { autoAlpha: 1, y: 0, duration: 0.38, ease: "power3.out", stagger: 0.045 },
+        {
+          autoAlpha: 1,
+          y: 0,
+          duration: motionDuration.panel,
+          ease: motionEase.spatial,
+          stagger: 0.04,
+          force3D: true,
+          onComplete: () => gsap.set(targets, { clearProps: "willChange" }),
+        },
       );
     }, pageRef);
 
     return () => context.revert();
-  }, [reduceMotion, settings]);
+  }, [reduceMotion, Boolean(settings)]);
 
   useLayoutEffect(() => {
     if (!settings || reduceMotion || !pageRef.current) return;
@@ -95,12 +107,19 @@ export const SettingsPage = () => {
       gsap.fromTo(
         "[data-gsap-settings='content']",
         { autoAlpha: 0, x: 10 },
-        { autoAlpha: 1, x: 0, duration: 0.24, ease: "power3.out", overwrite: true },
+        {
+          autoAlpha: 1,
+          x: 0,
+          duration: 0.22,
+          ease: motionEase.standard,
+          overwrite: true,
+          force3D: true,
+        },
       );
     }, pageRef);
 
     return () => context.revert();
-  }, [activeSection, reduceMotion, settings]);
+  }, [activeSection, reduceMotion, Boolean(settings)]);
 
   if (!settings) {
     return <StartupSplashPage message="正在准备设置..." />;

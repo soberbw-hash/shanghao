@@ -1,5 +1,7 @@
 import type { BuiltInAvatarId, MemberActivity } from "@private-voice/shared";
 
+import chairArt from "../../assets/scenes/chair-chibi.webp";
+
 const rearAvatarModules = import.meta.glob<string>(
   "../../assets/avatars/rear/*-rear.png",
   {
@@ -41,11 +43,10 @@ export const DeskAnimalSprite = ({
   return (
     <div className={`desk-animal desk-animal-${motionState}`} aria-hidden="true">
       <span className="desk-animal-ground-shadow" />
-      <span className="desk-animal-chair-back" />
+      <img className="desk-animal-chair desk-animal-chair-back" src={chairArt} alt="" draggable={false} />
       <img className="desk-animal-layer desk-animal-body" src={source} alt="" draggable={false} />
       <img className="desk-animal-layer desk-animal-head" src={source} alt="" draggable={false} />
       <img className="desk-animal-layer desk-animal-arm" src={source} alt="" draggable={false} />
-      <span className="desk-animal-chair-front" />
     </div>
   );
 };

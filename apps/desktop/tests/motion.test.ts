@@ -12,6 +12,18 @@ const islandPath = path.resolve(process.cwd(), "src/renderer/src/components/room
 const animalPath = path.resolve(process.cwd(), "src/renderer/src/components/room/AnimalSprite.tsx");
 const hookPath = path.resolve(process.cwd(), "src/renderer/src/hooks/usePrefersReducedMotion.ts");
 const stylesPath = path.resolve(process.cwd(), "src/renderer/src/styles/index.css");
+const appStorePath = path.resolve(process.cwd(), "src/renderer/src/store/appStore.ts");
+const startupPath = path.resolve(
+  process.cwd(),
+  "src/renderer/src/components/status/StartupSplashPage.tsx",
+);
+const bootstrapPath = path.resolve(process.cwd(), "src/renderer/src/hooks/useAppBootstrap.ts");
+const rendererHtmlPath = path.resolve(process.cwd(), "src/renderer/index.html");
+const mainWindowPath = path.resolve(process.cwd(), "src/main/window.ts");
+const motionSystemPath = path.resolve(
+  process.cwd(),
+  "src/renderer/src/features/motion/motionSystem.ts",
+);
 
 test("gsap motion is wired across the main surfaces with reduced-motion fallback", () => {
   const packageJson = JSON.parse(readFileSync(packagePath, "utf8")) as {
@@ -25,6 +37,7 @@ test("gsap motion is wired across the main surfaces with reduced-motion fallback
   const animalSource = readFileSync(animalPath, "utf8");
   const hookSource = readFileSync(hookPath, "utf8");
   const stylesSource = readFileSync(stylesPath, "utf8");
+  const appStoreSource = readFileSync(appStorePath, "utf8");
 
   assert.match(packageJson.dependencies?.gsap ?? "", /^\^3\./);
   assert.equal(homeSource.includes('from "gsap"'), true);
@@ -38,7 +51,9 @@ test("gsap motion is wired across the main surfaces with reduced-motion fallback
   assert.equal(chatSource.includes("data-gsap-chat-message"), true);
   assert.equal(islandSource.includes("data-gsap-character"), true);
   assert.equal(hookSource.includes("prefers-reduced-motion: reduce"), true);
-  assert.equal(stylesSource.includes("[data-gsap-entry]"), true);
+  assert.equal(stylesSource.includes("[data-gsap-entry],"), false);
+  assert.equal(stylesSource.includes("@media (prefers-reduced-motion: reduce)"), true);
+  assert.equal(appStoreSource.includes("startTransition"), true);
   assert.equal(animalSource.includes("layered-animal"), true);
   assert.equal(animalSource.includes("avatarLayerAssets"), true);
   assert.equal(animalSource.includes("LayerPart"), true);
@@ -47,4 +62,25 @@ test("gsap motion is wired across the main surfaces with reduced-motion fallback
   assert.equal(islandSource.includes("setIsMoving(true)"), true);
   assert.equal(stylesSource.includes("@keyframes layered-body-walk"), true);
   assert.equal(stylesSource.includes(".layered-animal-head"), true);
+  assert.equal(islandSource.includes('layout="position"'), true);
+  assert.equal(readFileSync(motionSystemPath, "utf8").includes("force3D: true"), true);
+  assert.equal(readFileSync(motionSystemPath, "utf8").includes("expo.out"), true);
+});
+
+test("startup paints immediately and keeps network work off the critical path", () => {
+  const startupSource = readFileSync(startupPath, "utf8");
+  const bootstrapSource = readFileSync(bootstrapPath, "utf8");
+  const rendererHtml = readFileSync(rendererHtmlPath, "utf8");
+  const mainWindowSource = readFileSync(mainWindowPath, "utf8");
+  const stylesSource = readFileSync(stylesPath, "utf8");
+
+  assert.equal(rendererHtml.includes("app-preboot"), true);
+  assert.equal(rendererHtml.includes("preboot-mark-enter"), true);
+  assert.equal(rendererHtml.includes('data-renderer="overlay"'), true);
+  assert.equal(mainWindowSource.includes('backgroundColor: "#EEF5FF"'), true);
+  assert.equal(startupSource.includes("startup-splash-progress"), true);
+  assert.equal(stylesSource.includes("@keyframes startup-mark-enter"), true);
+  assert.equal(bootstrapSource.includes("await checkUpdates()"), false);
+  assert.equal(bootstrapSource.includes("const hydration = await hydrationTask"), true);
+  assert.equal(bootstrapSource.includes("void refreshDevices()"), true);
 });

@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { ArrowRight, Clock3, Dices, MessageCircle, Mic, MicOff, Users, X } from "lucide-react";
+import { ArrowRight, Dices, Mic, MicOff } from "lucide-react";
 import { gsap } from "gsap";
 
 import { MicPermissionState, type BuiltInAvatarId } from "@private-voice/shared";
@@ -9,17 +9,13 @@ import { Input } from "../components/base/Input";
 import { BrandMark } from "../components/brand/BrandMark";
 import { CharacterPicker } from "../components/profile/AvatarPicker";
 import { StartupSplashPage } from "../components/status/StartupSplashPage";
+import { motionDuration, motionEase } from "../features/motion/motionSystem";
 import { usePrefersReducedMotion } from "../hooks/usePrefersReducedMotion";
 import { useRoomState } from "../hooks/useRoomState";
-import {
-  dismissPendingDailySummary,
-  readPendingDailySummary,
-  type DailyStatsSummary,
-} from "../features/session/dailyStats";
 import { useAppStore } from "../store/appStore";
 import { useAudioStore } from "../store/audioStore";
 import { useSettingsStore } from "../store/settingsStore";
-import { randomAvatarId, randomNickname } from "../utils/profile";
+import { randomNickname } from "../utils/profile";
 
 const isValidServerAddress = (value: string) => {
   try {
@@ -43,22 +39,19 @@ export const HomePage = () => {
   const [nickname, setNickname] = useState("");
   const [avatarId, setAvatarId] = useState<BuiltInAvatarId>("fox");
   const [serverAddress, setServerAddress] = useState("");
-  const [dailySummary, setDailySummary] = useState<DailyStatsSummary>();
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const reduceMotion = usePrefersReducedMotion(settings?.reduceMotion ?? false);
+  const isSettingsReady = Boolean(settings);
 
   useEffect(() => {
     if (!settings) return;
-    setNickname(settings.nickname || randomNickname());
-    setAvatarId(settings.avatarId || randomAvatarId());
+    setNickname(settings.nickname);
+    setAvatarId(settings.avatarId || "fox");
     setServerAddress(settings.relayServerUrl || "");
-  }, [settings]);
-
-  useEffect(() => {
-    setDailySummary(readPendingDailySummary());
-  }, []);
+  }, [settings?.avatarId, settings?.nickname, settings?.relayServerUrl]);
 
   useLayoutEffect(() => {
-    if (!settings || !pageRef.current) return;
+    if (!isSettingsReady || !pageRef.current) return;
 
     const context = gsap.context(() => {
       if (reduceMotion) {
@@ -66,41 +59,46 @@ export const HomePage = () => {
         return;
       }
 
-      const timeline = gsap.timeline({ defaults: { ease: "power3.out" } });
+      const targets = "[data-gsap-entry]";
+      const timeline = gsap.timeline({
+        defaults: { ease: motionEase.spatial, force3D: true },
+        onComplete: () => gsap.set(targets, { clearProps: "willChange" }),
+      });
       timeline
+        .set(targets, { willChange: "transform,opacity" })
         .fromTo(
           "[data-gsap-entry='card']",
-          { autoAlpha: 0, y: 22, scale: 0.965, filter: "blur(8px)" },
-          { autoAlpha: 1, y: 0, scale: 1, filter: "blur(0px)", duration: 0.58 },
+          { autoAlpha: 0, y: 16, scale: 0.978 },
+          { autoAlpha: 1, y: 0, scale: 1, duration: motionDuration.page },
         )
         .fromTo(
           "[data-gsap-entry='brand']",
           { autoAlpha: 0, y: -8 },
-          { autoAlpha: 1, y: 0, duration: 0.28 },
+          { autoAlpha: 1, y: 0, duration: 0.28, ease: motionEase.standard },
           "-=0.34",
         )
         .fromTo(
           "[data-gsap-entry='role-picker']",
           { autoAlpha: 0, x: -18 },
-          { autoAlpha: 1, x: 0, duration: 0.42 },
+          { autoAlpha: 1, x: 0, duration: motionDuration.panel },
           "-=0.18",
         )
         .fromTo(
           "[data-gsap-entry='form'] > *",
           { autoAlpha: 0, x: 18 },
-          { autoAlpha: 1, x: 0, duration: 0.34, stagger: 0.055 },
+          { autoAlpha: 1, x: 0, duration: 0.32, stagger: 0.045 },
           "-=0.34",
         )
         .fromTo(
           "[data-gsap-entry='cta']",
           { scale: 0.96 },
-          { scale: 1, duration: 0.32, ease: "back.out(1.7)" },
+          { scale: 1, duration: 0.28, ease: motionEase.feedback },
           "-=0.12",
         );
     }, pageRef);
 
     return () => context.revert();
-  }, [reduceMotion, settings]);
+  }, [isSettingsReady, reduceMotion]);
 
   if (!settings) {
     return <StartupSplashPage message="正在准备开黑频道..." />;
@@ -115,6 +113,16 @@ export const HomePage = () => {
 
   const enterChannel = async () => {
     const trimmedAddress = serverAddress.trim();
+    const trimmedNickname = nickname.trim();
+    if (!trimmedNickname) {
+      pushToast({
+        tone: "warning",
+        title: "先填一个昵称",
+        description: "朋友需要靠昵称认出你。",
+      });
+      return;
+    }
+
     if (!isValidServerAddress(trimmedAddress)) {
       pushToast({
         tone: "warning",
@@ -124,15 +132,22 @@ export const HomePage = () => {
       return;
     }
 
-    await saveSettings({
-      nickname: (nickname.trim() || randomNickname()).slice(0, 24),
-      avatarId,
-      avatarPath: undefined,
-      relayServerUrl: trimmedAddress,
-      hasCompletedProfileSetup: true,
-    });
-    await joinChannel(trimmedAddress);
+    setIsSubmitting(true);
+    try {
+      await saveSettings({
+        nickname: trimmedNickname.slice(0, 24),
+        avatarId,
+        avatarPath: undefined,
+        relayServerUrl: trimmedAddress,
+        hasCompletedProfileSetup: true,
+      });
+      await joinChannel(trimmedAddress);
+    } finally {
+      setIsSubmitting(false);
+    }
   };
+
+  const isJoining = isSubmitting || roomAction === "joining";
 
   return (
     <div ref={pageRef} className="entry-page relative flex h-full items-center justify-center overflow-hidden px-6 py-7">
@@ -197,60 +212,16 @@ export const HomePage = () => {
               <Button
                 isFullWidth
                 className="h-[52px] rounded-[18px] text-[15px]"
-                disabled={roomAction === "joining" || !serverAddress.trim()}
+                disabled={isJoining || !serverAddress.trim()}
                 onClick={() => void enterChannel()}
               >
-                {roomAction === "joining" ? "正在进入..." : "进入频道"}
+                {isJoining ? "正在进入..." : "进入频道"}
                 <ArrowRight className="h-4 w-4" />
               </Button>
             </div>
           </div>
         </section>
       </main>
-      {dailySummary ? (
-        <div className="absolute inset-0 z-40 grid place-items-center bg-[#eaf2fb]/55 p-6 backdrop-blur-[8px]">
-          <section className="w-full max-w-[480px] rounded-[28px] border border-white/80 bg-white/90 p-6 shadow-[0_28px_90px_rgba(63,102,160,.2)]">
-            <div className="flex items-start justify-between gap-4">
-              <div>
-                <p className="text-xs font-bold tracking-[.16em] text-[#4d83c7]">TODAY</p>
-                <h2 className="mt-1 text-2xl font-bold text-[#172033]">今日开黑小结</h2>
-                <p className="mt-1 text-sm text-[#718096]">辛苦了，今天的频道足迹已经记下。</p>
-              </div>
-              <button
-                type="button"
-                className="grid h-9 w-9 place-items-center rounded-full border border-[#e3ebf5] text-[#718096] hover:bg-[#f4f8fd]"
-                onClick={() => {
-                  dismissPendingDailySummary();
-                  setDailySummary(undefined);
-                }}
-                aria-label="关闭今日小结"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-            <div className="mt-5 grid grid-cols-3 gap-3">
-              <div className="rounded-2xl bg-[#f3f8ff] p-4">
-                <Clock3 className="h-4 w-4 text-[#4d83c7]" />
-                <strong className="mt-2 block text-xl text-[#172033]">{dailySummary.minutes}</strong>
-                <span className="text-xs text-[#7b8798]">分钟</span>
-              </div>
-              <div className="rounded-2xl bg-[#f3f8ff] p-4">
-                <Users className="h-4 w-4 text-[#4d83c7]" />
-                <strong className="mt-2 block text-xl text-[#172033]">{dailySummary.maxOnline}</strong>
-                <span className="text-xs text-[#7b8798]">最多在线</span>
-              </div>
-              <div className="rounded-2xl bg-[#f3f8ff] p-4">
-                <MessageCircle className="h-4 w-4 text-[#4d83c7]" />
-                <strong className="mt-2 block text-xl text-[#172033]">{dailySummary.messages}</strong>
-                <span className="text-xs text-[#7b8798]">条消息</span>
-              </div>
-            </div>
-            <p className="mt-4 text-center text-xs text-[#98a2b3]">
-              今日共进入 {dailySummary.sessions} 次频道，敲一敲 {dailySummary.knocks} 次，屏幕分享 {dailySummary.screenShares} 次
-            </p>
-          </section>
-        </div>
-      ) : null}
     </div>
   );
 };

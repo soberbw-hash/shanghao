@@ -31,6 +31,7 @@ export interface AudioPreferences {
 export interface LocalAudioDiagnostics {
   requestedSampleRate: number;
   actualSampleRate?: number;
+  sampleRateFallbackApplied?: boolean;
   actualChannelCount?: number;
   echoCancellation?: boolean;
   noiseSuppression?: boolean;

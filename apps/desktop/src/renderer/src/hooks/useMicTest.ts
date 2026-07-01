@@ -8,9 +8,10 @@ interface UseMicTestOptions {
   echoCancellation?: boolean;
   noiseSuppression?: boolean;
   autoGainControl?: boolean;
-  preferredSampleRate?: "auto" | "44100" | "48000";
+  preferredSampleRate?: "auto" | "32000" | "44100" | "48000";
   monitorMode?: "processed" | "raw";
   equalizerGains?: number[];
+  isLowCutEnabled?: boolean;
 }
 
 interface UseMicTestResult {
@@ -31,6 +32,7 @@ export const useMicTest = ({
   preferredSampleRate = "auto",
   monitorMode = "processed",
   equalizerGains = [],
+  isLowCutEnabled = true,
 }: UseMicTestOptions): UseMicTestResult => {
   const [isTesting, setIsTesting] = useState(false);
   const [level, setLevel] = useState(0);
@@ -122,7 +124,7 @@ export const useMicTest = ({
       analyser.fftSize = 512;
       const processedSource =
         monitorMode === "processed"
-          ? connectMicrophoneEqualizer(context, source, equalizerGains)
+          ? connectMicrophoneEqualizer(context, source, equalizerGains, isLowCutEnabled)
           : source;
       processedSource.connect(outputGain);
       outputGain.connect(analyser);
@@ -162,6 +164,7 @@ export const useMicTest = ({
     echoCancellation,
     equalizerGains,
     inputDeviceId,
+    isLowCutEnabled,
     monitorMode,
     noiseSuppression,
     outputDeviceId,

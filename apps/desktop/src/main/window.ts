@@ -60,7 +60,7 @@ export const createMainWindow = ({
     height: 800,
     minWidth: 1120,
     minHeight: 720,
-    backgroundColor: "#F5F7FA",
+    backgroundColor: "#EEF5FF",
     frame: false,
     titleBarStyle: "hidden",
     title: APP_NAME,

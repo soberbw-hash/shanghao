@@ -1,5 +1,20 @@
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { Headphones, LogOut, MonitorUp, Volume2, VolumeX } from "lucide-react";
+import {
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type PointerEvent as ReactPointerEvent,
+} from "react";
+import {
+  GripHorizontal,
+  Headphones,
+  LogOut,
+  Maximize2,
+  Minimize2,
+  MonitorUp,
+  Volume2,
+  VolumeX,
+} from "lucide-react";
 import { gsap } from "gsap";
 
 import {
@@ -20,7 +35,7 @@ import { TopStatusBar } from "../components/layout/TopStatusBar";
 import { TeamIsland } from "../components/room/TeamIsland";
 import { playUiSound } from "../features/audio/uiSound";
 import { chatWithLLM, shouldCallLLM, type LlmHistoryEntry } from "../features/chat/llmService";
-import { recordDailySession } from "../features/session/dailyStats";
+import { motionDuration, motionEase } from "../features/motion/motionSystem";
 import { isSeatZone } from "../features/voice-scene/sceneZones";
 import { usePrefersReducedMotion } from "../hooks/usePrefersReducedMotion";
 import { useRecordingController } from "../hooks/useRecordingController";
@@ -41,13 +56,7 @@ interface ScreenShareItem {
   transport: "webrtc" | "relay";
 }
 
-const ScreenShareVideo = ({
-  stream,
-  muted = false,
-}: {
-  stream: MediaStream;
-  muted?: boolean;
-}) => {
+const ScreenShareVideo = ({ stream }: { stream: MediaStream }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
 
   useEffect(() => {
@@ -56,6 +65,8 @@ const ScreenShareVideo = ({
     if (video.srcObject !== stream) {
       video.srcObject = stream;
     }
+    video.muted = true;
+    void video.play().catch(() => undefined);
   }, [stream]);
 
   return (
@@ -63,7 +74,7 @@ const ScreenShareVideo = ({
       ref={videoRef}
       autoPlay
       playsInline
-      muted={muted}
+      muted
       className="screen-share-video"
     />
   );
@@ -71,7 +82,7 @@ const ScreenShareVideo = ({
 
 const ScreenShareMedia = ({ item }: { item: ScreenShareItem }) => {
   if (item.stream) {
-    return <ScreenShareVideo stream={item.stream} muted={item.isLocal} />;
+    return <ScreenShareVideo stream={item.stream} />;
   }
 
   return (
@@ -87,18 +98,86 @@ const ScreenShareMedia = ({ item }: { item: ScreenShareItem }) => {
 const ScreenSharePanel = ({
   items,
   onStopLocalShare,
+  isExpanded,
+  onToggleExpanded,
 }: {
   items: ScreenShareItem[];
   onStopLocalShare: () => void;
+  isExpanded: boolean;
+  onToggleExpanded: () => void;
 }) => {
+  const panelRef = useRef<HTMLDivElement>(null);
+  const [position, setPosition] = useState({ x: 0, y: 0 });
+  const dragStateRef = useRef<{
+    pointerId: number;
+    startX: number;
+    startY: number;
+    baseX: number;
+    baseY: number;
+  }>();
   if (items.length === 0) return null;
 
   const primaryItem = items[0];
   if (!primaryItem) return null;
 
+  const handlePointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (isExpanded || (event.target as Element).closest("button")) return;
+    dragStateRef.current = {
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      baseX: position.x,
+      baseY: position.y,
+    };
+    event.currentTarget.setPointerCapture(event.pointerId);
+  };
+
+  const handlePointerMove = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const dragState = dragStateRef.current;
+    const panel = panelRef.current;
+    const parent = panel?.offsetParent as HTMLElement | null;
+    if (!dragState || dragState.pointerId !== event.pointerId || !panel || !parent) return;
+
+    const parentRect = parent.getBoundingClientRect();
+    const baseLeft = parentRect.width - panel.offsetWidth - 14;
+    const desiredLeft = baseLeft + dragState.baseX + event.clientX - dragState.startX;
+    const desiredTop = 14 + dragState.baseY + event.clientY - dragState.startY;
+    const clampedLeft = Math.min(
+      Math.max(10, desiredLeft),
+      Math.max(10, parentRect.width - panel.offsetWidth - 10),
+    );
+    const clampedTop = Math.min(
+      Math.max(10, desiredTop),
+      Math.max(10, parentRect.height - panel.offsetHeight - 10),
+    );
+    setPosition({ x: clampedLeft - baseLeft, y: clampedTop - 14 });
+  };
+
+  const stopDragging = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (dragStateRef.current?.pointerId !== event.pointerId) return;
+    dragStateRef.current = undefined;
+    event.currentTarget.releasePointerCapture(event.pointerId);
+  };
+
   return (
-    <div className="screen-share-panel" data-testid="screen-share-panel">
-      <div className="screen-share-panel-header">
+    <div
+      ref={panelRef}
+      className={`screen-share-panel ${isExpanded ? "screen-share-panel-expanded" : ""}`}
+      data-testid="screen-share-panel"
+      style={
+        isExpanded
+          ? undefined
+          : { transform: `translate3d(${position.x}px, ${position.y}px, 0)` }
+      }
+    >
+      <div
+        className="screen-share-panel-header"
+        onPointerDown={handlePointerDown}
+        onPointerMove={handlePointerMove}
+        onPointerUp={stopDragging}
+        onPointerCancel={stopDragging}
+      >
+        <GripHorizontal className="screen-share-drag-handle" aria-hidden="true" />
         <div>
           <p className="screen-share-kicker">屏幕分享</p>
           <strong>{primaryItem.title}</strong>
@@ -106,11 +185,26 @@ const ScreenSharePanel = ({
             {primaryItem.transport === "webrtc" ? "实时视频" : "服务器兜底"}
           </span>
         </div>
-        {primaryItem.isLocal ? (
-          <button type="button" className="screen-share-stop" onClick={onStopLocalShare}>
-            停止
+        <div className="screen-share-panel-actions">
+          <button
+            type="button"
+            className="screen-share-icon-action"
+            onClick={onToggleExpanded}
+            title={isExpanded ? "缩小屏幕分享" : "放大屏幕分享"}
+            aria-label={isExpanded ? "缩小屏幕分享" : "放大屏幕分享"}
+          >
+            {isExpanded ? (
+              <Minimize2 className="h-3.5 w-3.5" />
+            ) : (
+              <Maximize2 className="h-3.5 w-3.5" />
+            )}
           </button>
-        ) : null}
+          {primaryItem.isLocal ? (
+            <button type="button" className="screen-share-stop" onClick={onStopLocalShare}>
+              停止
+            </button>
+          ) : null}
+        </div>
       </div>
       <div className="screen-share-video-shell">
         <ScreenShareMedia item={primaryItem} />
@@ -150,14 +244,9 @@ export const RoomPage = () => {
   const [chatInput, setChatInput] = useState("");
   const [isLLMLoading, setIsLLMLoading] = useState(false);
   const [localScreenShareStream, setLocalScreenShareStream] = useState<MediaStream>();
+  const [isScreenShareStarting, setIsScreenShareStarting] = useState(false);
+  const [isScreenShareExpanded, setIsScreenShareExpanded] = useState(false);
   const [isOverlayOpen, setIsOverlayOpen] = useState(false);
-  const enteredAt = useRef(Date.now());
-  const sessionId = useRef(crypto.randomUUID());
-  const sessionRecordedRef = useRef(false);
-  const sentMessageCountRef = useRef(0);
-  const knockCountRef = useRef(0);
-  const screenShareCountRef = useRef(0);
-  const maxOnlineRef = useRef(1);
   const lastSpokeAtRef = useRef(Date.now());
   const lastSeatZoneRef = useRef<SceneZoneId>("gameDesk1");
   const lastKnockAt = useRef(0);
@@ -186,7 +275,7 @@ export const RoomPage = () => {
       : []),
     ...Object.entries(remoteStreams)
       .filter(([, stream]) =>
-        stream.getVideoTracks().some((track) => track.readyState === "live"),
+        stream.getVideoTracks().some((track) => track.readyState === "live" && !track.muted),
       )
       .map(([peerId, stream]) => {
         const member = room.members.find((candidate) => candidate.id === peerId);
@@ -202,7 +291,7 @@ export const RoomPage = () => {
         const stream = remoteStreams[peerId];
         const hasLiveVideo = stream
           ?.getVideoTracks()
-          .some((track) => track.readyState === "live");
+          .some((track) => track.readyState === "live" && !track.muted);
         return Boolean(frame.data) && !hasLiveVideo;
       })
       .map(([peerId, frame]) => {
@@ -217,40 +306,33 @@ export const RoomPage = () => {
   ];
   const localMember = room.members.find((member) => member.isLocal);
 
+  useEffect(() => {
+    if (screenShareItems.length === 0) {
+      setIsScreenShareExpanded(false);
+    }
+  }, [screenShareItems.length]);
+
   useLayoutEffect(() => {
     if (!pageRef.current) return;
 
     const context = gsap.context(() => {
       if (reduceMotion) {
-        gsap.set("[data-gsap-room]", { clearProps: "all" });
+        gsap.set(pageRef.current, { clearProps: "all" });
         return;
       }
 
-      const timeline = gsap.timeline({ defaults: { ease: "power3.out" } });
-      timeline
-        .fromTo(
-          "[data-gsap-room='topbar']",
-          { autoAlpha: 0, y: -8 },
-          { autoAlpha: 1, y: 0, duration: 0.3 },
-        )
-        .fromTo(
-          "[data-gsap-room='island']",
-          { autoAlpha: 0, y: 10, scale: 0.985, filter: "blur(6px)" },
-          { autoAlpha: 1, y: 0, scale: 1, filter: "blur(0px)", duration: 0.52, ease: "expo.out" },
-          "-=0.14",
-        )
-        .fromTo(
-          "[data-gsap-room='chat']",
-          { autoAlpha: 0, x: 14 },
-          { autoAlpha: 1, x: 0, duration: 0.42 },
-          "-=0.38",
-        )
-        .fromTo(
-          "[data-gsap-room='dock']",
-          { autoAlpha: 0, y: 14, scale: 0.985 },
-          { autoAlpha: 1, y: 0, scale: 1, duration: 0.36, ease: "back.out(1.35)" },
-          "-=0.24",
-        );
+      gsap.fromTo(
+        pageRef.current,
+        { autoAlpha: 0.94, y: 5 },
+        {
+          autoAlpha: 1,
+          y: 0,
+          duration: 0.26,
+          ease: motionEase.spatial,
+          force3D: true,
+          clearProps: "transform,opacity,visibility",
+        },
+      );
     }, pageRef);
 
     return () => context.revert();
@@ -263,7 +345,13 @@ export const RoomPage = () => {
       gsap.fromTo(
         "[data-gsap-voice='primary']",
         { scale: 0.96 },
-        { scale: 1, duration: 0.22, ease: "back.out(1.9)", overwrite: true },
+        {
+          scale: 1,
+          duration: motionDuration.feedback,
+          ease: motionEase.feedback,
+          overwrite: true,
+          force3D: true,
+        },
       );
     }, voicePulseRef);
 
@@ -278,10 +366,6 @@ export const RoomPage = () => {
       connectionState: room.connectionState,
     });
   }, [isDeafened, isMuted, room.connectionState, room.members]);
-
-  useEffect(() => {
-    maxOnlineRef.current = Math.max(maxOnlineRef.current, room.memberCount);
-  }, [room.memberCount]);
 
   useEffect(() => {
     if (settings?.isOverlayEnabled === false) {
@@ -355,7 +439,6 @@ export const RoomPage = () => {
   const send = async (content = chatInput) => {
     if (!content.trim()) return;
     await sendChatMessage(content);
-    sentMessageCountRef.current += 1;
     playUiSound("send-message");
     if (content === chatInput) setChatInput("");
 
@@ -408,7 +491,6 @@ export const RoomPage = () => {
     }
     lastKnockAt.current = Date.now();
     await sendKnock();
-    knockCountRef.current += 1;
   };
 
   const toggleRecording = async () => {
@@ -426,33 +508,14 @@ export const RoomPage = () => {
     }
   };
 
-  const recordCurrentSession = () => {
-    if (sessionRecordedRef.current) return;
-    sessionRecordedRef.current = true;
-    recordDailySession({
-      sessionId: sessionId.current,
-      minutes: (Date.now() - enteredAt.current) / 60_000,
-      maxOnline: maxOnlineRef.current,
-      messages: sentMessageCountRef.current,
-      knocks: knockCountRef.current,
-      screenShares: screenShareCountRef.current,
-    });
-  };
-
-  useEffect(() => {
-    const recordBeforeClose = () => recordCurrentSession();
-    window.addEventListener("beforeunload", recordBeforeClose);
-    return () => window.removeEventListener("beforeunload", recordBeforeClose);
-  }, []);
-
   const leave = async () => {
-    recordCurrentSession();
     await window.desktopApi.overlay.close();
     await leaveRoom();
   };
 
   const startSharingScreen = async () => {
     let requestedStream: MediaStream | undefined;
+    setIsScreenShareStarting(true);
     try {
       const stream = await navigator.mediaDevices.getDisplayMedia({
         video: {
@@ -468,7 +531,6 @@ export const RoomPage = () => {
       }
 
       await startScreenShare(stream);
-      screenShareCountRef.current += 1;
       setLocalScreenShareStream(stream);
       playUiSound("popup-open");
       pushToast({
@@ -516,6 +578,8 @@ export const RoomPage = () => {
             ? "没有找到可分享的显示器或窗口。"
             : "桌面捕获没有启动，请重试；错误详情已经写入诊断日志。",
       });
+    } finally {
+      setIsScreenShareStarting(false);
     }
   };
 
@@ -574,6 +638,8 @@ export const RoomPage = () => {
           <ScreenSharePanel
             items={screenShareItems}
             onStopLocalShare={() => void stopSharingScreen()}
+            isExpanded={isScreenShareExpanded}
+            onToggleExpanded={() => setIsScreenShareExpanded((current) => !current)}
           />
         </section>
         <div data-gsap-room="chat" className="min-h-0">
@@ -639,7 +705,11 @@ export const RoomPage = () => {
         />
         <Button
           variant={localScreenShareStream ? "secondary" : "ghost"}
-          className={`voice-action-button-with-text ${localScreenShareStream ? "screen-share-active-button" : ""}`}
+          className={`voice-action-button-with-text ${
+            localScreenShareStream || isScreenShareStarting ? "screen-share-active-button" : ""
+          }`}
+          disabled={isScreenShareStarting}
+          aria-pressed={Boolean(localScreenShareStream)}
           onClick={() => {
             if (localScreenShareStream) {
               void stopSharingScreen();
@@ -650,7 +720,11 @@ export const RoomPage = () => {
         >
           <MonitorUp className="h-4 w-4" />
           <span className="voice-action-label">
-            {localScreenShareStream ? "停止分享" : "屏幕分享"}
+            {isScreenShareStarting
+              ? "正在开启…"
+              : localScreenShareStream
+                ? "正在分享"
+                : "屏幕分享"}
           </span>
         </Button>
         <Button
@@ -666,7 +740,7 @@ export const RoomPage = () => {
         </Button>
         <Button
           variant="danger"
-          className="voice-action-button-with-text"
+          className="voice-action-button-with-text voice-exit-button"
           onClick={() => void leave()}
         >
           <LogOut className="h-4 w-4" />

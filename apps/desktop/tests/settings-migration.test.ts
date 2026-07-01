@@ -33,7 +33,7 @@ test("migrateSettings falls back to safe defaults for damaged legacy config", ()
   assert.equal(result.settings.avatarPath, undefined);
   assert.equal(result.settings.nickname, "阿北");
   assert.equal(result.settings.globalMuteShortcut, "Ctrl+Shift+M");
-  assert.equal(result.settings.preferredSampleRate, "auto");
+  assert.equal(result.settings.preferredSampleRate, "32000");
   assert.equal(result.settings.inputLevelThreshold, defaultSettings.inputLevelThreshold);
   assert.equal(result.settings.hasCompletedProfileSetup, false);
   assert.equal("shouldAutoCopyInviteLink" in result.settings, false);
@@ -48,7 +48,8 @@ test("migrateSettings falls back to safe defaults for damaged legacy config", ()
   assert.equal(result.settings.isUiSoundEnabled, false);
   assert.equal(result.settings.isHardwareAccelerationEnabled, true);
   assert.equal(result.settings.isOverlayEnabled, true);
-  assert.deepEqual(result.settings.micEqualizerGains, [12, -12, 3, 0, 0, 0, 0, 0, 0, 0]);
+  assert.deepEqual(result.settings.micEqualizerGains, [12, -12, 3, 0, 0]);
+  assert.equal(result.settings.isLowCutEnabled, true);
   assert.equal(result.migrated, true);
 });
 

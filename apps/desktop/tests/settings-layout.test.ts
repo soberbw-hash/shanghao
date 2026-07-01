@@ -38,6 +38,11 @@ test("advanced audio settings are collapsed by default", () => {
   assert.equal(source.includes("高级音频"), true);
   assert.equal(source.includes("一般不需要修改"), true);
   assert.equal(source.includes("isAdvancedOpen ?"), true);
+  assert.equal(source.includes('value: "32000"'), true);
+  assert.equal(source.includes("五段声音塑形"), true);
+  assert.equal(source.includes("低切滤波"), true);
+  assert.equal(source.includes("thresholdDraft"), true);
+  assert.equal(source.includes("equalizerDraft"), true);
 });
 
 test("settings keep only everyday voice controls and remove advanced connection", () => {

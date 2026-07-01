@@ -126,6 +126,80 @@ test("fixed channel syncs members after two peers join", async () => {
   }
 });
 
+test("fixed channel assigns unique seats and arbitrates simultaneous seat requests", async () => {
+  const server = new SignalingServer({ roomName: "固定频道" });
+  const port = await server.listen();
+  const url = `ws://127.0.0.1:${port}`;
+  const first = await openSocket(url);
+  const second = await openSocket(url);
+
+  try {
+    joinChannel(first, "seat-first");
+    await waitForMessage(
+      first,
+      (payload): payload is { type: string; members: Array<{ id: string; sceneZone?: string }> } =>
+        typeof payload === "object" &&
+        payload !== null &&
+        (payload as { type?: string }).type === "channel_snapshot" &&
+        (payload as { members?: unknown[] }).members?.length === 1,
+    );
+    joinChannel(second, "seat-second");
+    const joined = await waitForMessage(
+      first,
+      (payload): payload is { members: Array<{ id: string; sceneZone?: string }> } =>
+        typeof payload === "object" &&
+        payload !== null &&
+        (payload as { type?: string }).type === "channel_snapshot" &&
+        (payload as { members?: unknown[] }).members?.length === 2,
+    );
+    assert.equal(new Set(joined.members.map((member) => member.sceneZone)).size, 2);
+
+    first.send(JSON.stringify({
+      type: "member_state",
+      roomId: "main",
+      peerId: "seat-first",
+      sceneZone: "gameDesk3",
+      activity: "gaming",
+      isMuted: false,
+      isSpeaking: false,
+      isDeafened: false,
+    }));
+    await waitForMessage(
+      second,
+      (payload): payload is { peerId: string; sceneZone: string } =>
+        typeof payload === "object" &&
+        payload !== null &&
+        (payload as { type?: string }).type === "member_state" &&
+        (payload as { peerId?: string }).peerId === "seat-first" &&
+        (payload as { sceneZone?: string }).sceneZone === "gameDesk3",
+    );
+
+    second.send(JSON.stringify({
+      type: "member_state",
+      roomId: "main",
+      peerId: "seat-second",
+      sceneZone: "gameDesk3",
+      activity: "gaming",
+      isMuted: false,
+      isSpeaking: false,
+      isDeafened: false,
+    }));
+    const arbitrated = await waitForMessage(
+      first,
+      (payload): payload is { peerId: string; sceneZone: string } =>
+        typeof payload === "object" &&
+        payload !== null &&
+        (payload as { type?: string }).type === "member_state" &&
+        (payload as { peerId?: string }).peerId === "seat-second",
+    );
+    assert.notEqual(arbitrated.sceneZone, "gameDesk3");
+  } finally {
+    first.close();
+    second.close();
+    await server.close();
+  }
+});
+
 test("request_snapshot returns a fixed-channel snapshot only to the requester", async () => {
   const server = new SignalingServer({ roomName: "固定频道" });
   const port = await server.listen();

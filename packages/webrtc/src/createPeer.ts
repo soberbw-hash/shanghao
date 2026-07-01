@@ -39,8 +39,14 @@ export class MeshPeerConnection {
     }
 
     this.screenTransceiver = this.connection.addTransceiver("video", {
-      direction: "recvonly",
+      direction: "sendrecv",
     });
+    const audioSender = this.connection
+      .getSenders()
+      .find((candidate) => candidate.track?.kind === "audio");
+    if (audioSender) {
+      void this.configureAudioSender(audioSender);
+    }
 
     this.connection.onicecandidate = (event) => {
       if (!event.candidate) {
@@ -62,9 +68,11 @@ export class MeshPeerConnection {
 
       event.track.onended = () => {
         this.remoteStream.removeTrack(event.track);
-        this.options.onRemoteStream(this.remoteStream);
+        this.publishRemoteStream();
       };
-      this.options.onRemoteStream(this.remoteStream);
+      event.track.onmute = () => this.publishRemoteStream();
+      event.track.onunmute = () => this.publishRemoteStream();
+      this.publishRemoteStream();
     };
 
     this.connection.onconnectionstatechange = () => {
@@ -96,6 +104,7 @@ export class MeshPeerConnection {
       offerToReceiveVideo: true,
     });
     await this.connection.setLocalDescription(offer);
+    await this.configureOutgoingSenders();
     return {
       type: offer.type,
       sdp: offer.sdp,
@@ -110,6 +119,7 @@ export class MeshPeerConnection {
     await this.flushPendingIceCandidates();
     const answer = await this.connection.createAnswer();
     await this.connection.setLocalDescription(answer);
+    await this.configureOutgoingSenders();
 
     return {
       type: answer.type,
@@ -123,6 +133,7 @@ export class MeshPeerConnection {
       sdp: answer.sdp ?? undefined,
     });
     await this.flushPendingIceCandidates();
+    await this.configureOutgoingSenders();
   }
 
   async addIceCandidate(candidate: IceCandidatePayload): Promise<void> {
@@ -146,12 +157,21 @@ export class MeshPeerConnection {
 
     if (sender) {
       await sender.replaceTrack(nextTrack);
+      await this.configureAudioSender(sender);
     }
   }
 
   async setScreenTrack(nextTrack?: MediaStreamTrack): Promise<void> {
-    this.screenTransceiver.direction = nextTrack ? "sendrecv" : "recvonly";
     await this.screenTransceiver.sender.replaceTrack(nextTrack ?? null);
+    if (nextTrack) {
+      nextTrack.contentHint = "detail";
+      await nextTrack.applyConstraints({
+        width: { max: 1_280 },
+        height: { max: 720 },
+        frameRate: { ideal: 12, max: 15 },
+      }).catch(() => undefined);
+      await this.configureScreenSender();
+    }
   }
 
   destroy(): void {
@@ -186,6 +206,70 @@ export class MeshPeerConnection {
         action: "failed",
         error: error instanceof Error ? error.message : String(error),
       });
+    }
+  }
+
+  private publishRemoteStream(): void {
+    this.options.onRemoteStream(new MediaStream(this.remoteStream.getTracks()));
+  }
+
+  private async configureAudioSender(sender: RTCRtpSender): Promise<void> {
+    const track = sender.track;
+    if (track) {
+      track.contentHint = "speech";
+    }
+    try {
+      const parameters = sender.getParameters();
+      parameters.encodings ??= [{}];
+      const encoding = parameters.encodings[0] as RTCRtpEncodingParameters & {
+        dtx?: "enabled" | "disabled";
+        networkPriority?: RTCPriorityType;
+      };
+      encoding.maxBitrate = 24_000;
+      encoding.priority = "high";
+      encoding.networkPriority = "high";
+      encoding.dtx = "enabled";
+      await sender.setParameters(parameters);
+    } catch (error) {
+      this.options.onDiagnosticEvent?.("connection_state", {
+        peerId: this.options.peerId,
+        state: this.connection.connectionState,
+        audioSenderTuningError: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  private async configureScreenSender(): Promise<void> {
+    const sender = this.screenTransceiver.sender;
+    try {
+      const parameters = sender.getParameters();
+      parameters.encodings ??= [{}];
+      const encoding = parameters.encodings[0] as RTCRtpEncodingParameters & {
+        networkPriority?: RTCPriorityType;
+      };
+      encoding.maxBitrate = 900_000;
+      encoding.maxFramerate = 15;
+      encoding.priority = "low";
+      encoding.networkPriority = "low";
+      await sender.setParameters(parameters);
+    } catch (error) {
+      this.options.onDiagnosticEvent?.("connection_state", {
+        peerId: this.options.peerId,
+        state: this.connection.connectionState,
+        screenSenderTuningError: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  private async configureOutgoingSenders(): Promise<void> {
+    const audioSender = this.connection
+      .getSenders()
+      .find((candidate) => candidate.track?.kind === "audio");
+    if (audioSender) {
+      await this.configureAudioSender(audioSender);
+    }
+    if (this.screenTransceiver.sender.track) {
+      await this.configureScreenSender();
     }
   }
 }

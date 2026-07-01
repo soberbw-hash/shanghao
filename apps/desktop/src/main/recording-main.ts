@@ -3,7 +3,6 @@ import { mkdir, stat, unlink, writeFile, copyFile } from "node:fs/promises";
 import path from "node:path";
 
 import ffmpegPath from "ffmpeg-static";
-import ffprobe from "ffprobe-static";
 import { app, dialog } from "electron";
 
 import type {
@@ -76,15 +75,7 @@ export const exportRecordingFromMain = async (
             "+faststart",
             saveDialogResult.filePath,
           ],
-          {
-            windowsHide: true,
-            env: ffprobe.path
-              ? {
-                  ...process.env,
-                  FFPROBE_PATH: ffprobe.path,
-                }
-              : process.env,
-          },
+          { windowsHide: true },
         );
 
         ffmpeg.on("close", (code) => {

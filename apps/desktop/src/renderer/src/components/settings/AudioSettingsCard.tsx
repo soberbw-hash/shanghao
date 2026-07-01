@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { ChevronDown } from "lucide-react";
 
 import type { AppSettings, AudioDeviceDescriptor } from "@private-voice/shared";
@@ -31,6 +31,12 @@ export const AudioSettingsCard = ({
   onChange: (patch: Partial<AppSettings>) => void;
 }) => {
   const [isAdvancedOpen, setIsAdvancedOpen] = useState(false);
+  const [thresholdDraft, setThresholdDraft] = useState(settings.inputLevelThreshold);
+  const [equalizerDraft, setEqualizerDraft] = useState(settings.micEqualizerGains);
+  useEffect(() => {
+    setThresholdDraft(settings.inputLevelThreshold);
+    setEqualizerDraft(settings.micEqualizerGains);
+  }, [settings.inputLevelThreshold, settings.micEqualizerGains]);
   const micHealth = !isMicTesting
     ? "点击开始，听听朋友会听到的声音"
     : micTestLevel > 0.18
@@ -121,6 +127,7 @@ export const AudioSettingsCard = ({
                   value={settings.preferredSampleRate}
                   options={[
                     { value: "auto", label: "自动" },
+                    { value: "32000", label: "32 kHz" },
                     { value: "44100", label: "44.1 kHz" },
                     { value: "48000", label: "48 kHz" },
                   ]}
@@ -143,29 +150,42 @@ export const AudioSettingsCard = ({
                   }
                 />
               </SettingsItemRow>
+              <SettingsItemRow
+                label="低切滤波"
+                description="削弱风扇、桌面震动和低频轰鸣，默认 80 Hz。"
+              >
+                <Switch
+                  isChecked={settings.isLowCutEnabled}
+                  onChange={(isLowCutEnabled) => onChange({ isLowCutEnabled })}
+                />
+              </SettingsItemRow>
               <SettingsItemRow label="输入阈值">
                 <div className="min-w-[280px] space-y-2">
                   <Slider
                     min={0.05}
                     max={0.8}
                     step={0.01}
-                    value={settings.inputLevelThreshold}
-                    onChange={(event) =>
+                    value={thresholdDraft}
+                    onChange={(event) => setThresholdDraft(Number(event.currentTarget.value))}
+                    onPointerUp={(event) =>
+                      onChange({ inputLevelThreshold: Number(event.currentTarget.value) })
+                    }
+                    onKeyUp={(event) =>
                       onChange({ inputLevelThreshold: Number(event.currentTarget.value) })
                     }
                   />
                   <div className="text-xs text-[#98A2B3]">
-                    当前：{Math.round(settings.inputLevelThreshold * 100)}
+                    当前：{Math.round(thresholdDraft * 100)}
                   </div>
                 </div>
               </SettingsItemRow>
               <SettingsItemRow
-                label="十段均衡器"
-                description="0 dB 为原声，建议每次只微调 1–3 dB。"
+                label="五段声音塑形"
+                description="针对语音保留五个关键频段，0 dB 为原声。"
               >
                 <div className="grid min-w-[420px] grid-cols-2 gap-x-4 gap-y-2">
                   {MICROPHONE_EQ_FREQUENCIES.map((frequency, index) => {
-                    const gain = settings.micEqualizerGains[index] ?? 0;
+                    const gain = equalizerDraft[index] ?? 0;
                     const label =
                       frequency >= 1_000 ? `${frequency / 1_000}k` : String(frequency);
                     return (
@@ -177,7 +197,17 @@ export const AudioSettingsCard = ({
                           step={1}
                           value={gain}
                           onChange={(event) => {
-                            const nextGains = [...settings.micEqualizerGains] as AppSettings["micEqualizerGains"];
+                            const nextGains = [...equalizerDraft] as AppSettings["micEqualizerGains"];
+                            nextGains[index] = Number(event.currentTarget.value);
+                            setEqualizerDraft(nextGains);
+                          }}
+                          onPointerUp={(event) => {
+                            const nextGains = [...equalizerDraft] as AppSettings["micEqualizerGains"];
+                            nextGains[index] = Number(event.currentTarget.value);
+                            onChange({ micEqualizerGains: nextGains });
+                          }}
+                          onKeyUp={(event) => {
+                            const nextGains = [...equalizerDraft] as AppSettings["micEqualizerGains"];
                             nextGains[index] = Number(event.currentTarget.value);
                             onChange({ micEqualizerGains: nextGains });
                           }}

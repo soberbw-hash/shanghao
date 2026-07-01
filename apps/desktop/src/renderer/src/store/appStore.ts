@@ -1,3 +1,4 @@
+import { startTransition } from "react";
 import { create } from "zustand";
 
 export type AppPage = "home" | "room" | "settings";
@@ -60,7 +61,9 @@ export const useAppStore = create<AppStoreState>((set, get) => ({
   bootstrapMessage: "正在准备上号…",
   startupIssue: undefined,
   isSafeMode: false,
-  navigate: (page) => set({ currentPage: page }),
+  navigate: (page) => {
+    startTransition(() => set({ currentPage: page }));
+  },
   setSettingsReturnTo: (settingsReturnTo) => set({ settingsReturnTo }),
   setOnboardingOpen: (isOnboardingOpen) => set({ isOnboardingOpen }),
   setRecordingSaveDialogOpen: (isRecordingSaveDialogOpen) => set({ isRecordingSaveDialogOpen }),

@@ -10,13 +10,15 @@ import {
   type SceneZoneId,
 } from "@private-voice/shared";
 
+import workstationArt from "../../assets/scenes/workstation-chibi.webp";
 import { avatarOptions } from "../../utils/profile";
+import { motionDuration, motionEase } from "../../features/motion/motionSystem";
 import { AnimalSprite } from "./AnimalSprite";
 import { DeskAnimalSprite } from "./DeskAnimalSprite";
 import {
   characterPositions,
-  defaultMemberZones,
   isSeatZone,
+  resolveMemberSceneZones,
   sceneZones,
   seatSlots,
 } from "../../features/voice-scene/sceneZones";
@@ -41,21 +43,36 @@ const assignVisibleAvatars = (members: RoomMember[]): Map<string, BuiltInAvatarI
 
 const SceneCharacter = ({
   member,
-  index,
   avatarId,
   shouldReduceMotion,
+  awayIndex,
+  awayCount,
+  zone,
 }: {
   member: RoomMember;
-  index: number;
   avatarId: BuiltInAvatarId;
   shouldReduceMotion: boolean;
+  awayIndex: number;
+  awayCount: number;
+  zone: SceneZoneId;
 }) => {
   const status = memberStatus(member);
   const isSpeaking = status.tone === "speaking";
   const isReconnecting = status.tone === "reconnecting";
   const isOffline = status.tone === "offline";
-  const zone = member.sceneZone ?? defaultMemberZones[index] ?? "gameDesk1";
-  const position = characterPositions[zone];
+  const basePosition = characterPositions[zone];
+  const awayColumnCount = Math.min(3, Math.max(1, awayCount));
+  const awayColumn = awayIndex % awayColumnCount;
+  const awayRow = Math.floor(awayIndex / awayColumnCount);
+  const position =
+    zone === "restroomZone"
+      ? {
+          ...basePosition,
+          left: 12 + (awayColumn - (awayColumnCount - 1) / 2) * 5,
+          top: 65 + awayRow * 7,
+          zIndex: basePosition.zIndex + awayIndex,
+        }
+      : basePosition;
   const lastZoneRef = useRef<SceneZoneId>(zone);
   const [isMoving, setIsMoving] = useState(false);
 
@@ -77,22 +94,26 @@ const SceneCharacter = ({
   return (
     <motion.div
       key={member.id}
+      layout="position"
       initial={{ opacity: 0 }}
       animate={{
-        left: `${position.left}%`,
-        top: `${position.top}%`,
         opacity: isOffline ? 0.45 : 1,
       }}
       exit={{ opacity: 0 }}
       transition={{
-        left: { duration: shouldReduceMotion ? 0 : 0.72, ease: [0.22, 1, 0.36, 1] },
-        top: { duration: shouldReduceMotion ? 0 : 0.72, ease: [0.22, 1, 0.36, 1] },
-        opacity: { duration: 0.24, ease: [0.22, 1, 0.36, 1] },
+        layout: shouldReduceMotion
+          ? { duration: 0 }
+          : { type: "spring", stiffness: 260, damping: 29, mass: 0.72 },
+        opacity: { duration: shouldReduceMotion ? 0 : motionDuration.feedback },
       }}
-      className="pointer-events-none absolute -translate-x-1/2 -translate-y-1/2"
-      style={{ zIndex: position.zIndex }}
+      className="pointer-events-none absolute"
+      style={{
+        left: `${position.left}%`,
+        top: `${position.top}%`,
+        zIndex: position.zIndex,
+      }}
     >
-      <div className="relative" data-gsap-character>
+      <div className="-translate-x-1/2" data-gsap-character>
         <div
           className="scene-character-anchor relative"
           style={{
@@ -149,19 +170,27 @@ export const TeamIsland = ({
   const visibleMembers = members.filter((member) => !member.isEmptySlot).slice(0, 5);
   const visibleAvatars = assignVisibleAvatars(visibleMembers);
   const shouldReduceMotion = usePrefersReducedMotion(reduceMotion);
+  const resolvedMemberZones = resolveMemberSceneZones(visibleMembers);
   const occupiedSeatIds = new Set<SceneZoneId>();
-  visibleMembers.forEach((member, index) => {
-    const zone = member.sceneZone ?? defaultMemberZones[index] ?? "gameDesk1";
+  visibleMembers.forEach((member) => {
+    const zone = resolvedMemberZones.get(member.id) ?? "gameDesk1";
     if (isSeatZone(zone)) occupiedSeatIds.add(zone);
   });
   const memberBySeat = new Map(
     visibleMembers
-      .filter((member) => member.sceneZone && isSeatZone(member.sceneZone))
-      .map((member) => [member.sceneZone as SceneZoneId, member]),
+      .map((member) => [resolvedMemberZones.get(member.id), member] as const)
+      .filter(
+        (entry): entry is readonly [SceneZoneId, RoomMember] =>
+          Boolean(entry[0] && isSeatZone(entry[0])),
+      ),
   );
-  const localZone = visibleMembers.find((member) => member.isLocal)?.sceneZone;
+  const localMember = visibleMembers.find((member) => member.isLocal);
+  const localZone = localMember ? resolvedMemberZones.get(localMember.id) : undefined;
+  const awayMembers = visibleMembers.filter(
+    (member) => resolvedMemberZones.get(member.id) === "restroomZone",
+  );
   const memberMotionKey = visibleMembers
-    .map((member) => `${member.id}:${member.sceneZone ?? "gameDesk1"}`)
+    .map((member) => `${member.id}:${resolvedMemberZones.get(member.id) ?? "gameDesk1"}`)
     .join("|");
 
   useLayoutEffect(() => {
@@ -177,9 +206,10 @@ export const TeamIsland = ({
           scale: 1,
           rotation: 0,
           duration: 0.34,
-          ease: "back.out(1.45)",
+          ease: motionEase.feedback,
           stagger: 0.045,
           overwrite: true,
+          force3D: true,
         },
       );
     }, islandRef);
@@ -191,8 +221,7 @@ export const TeamIsland = ({
     <div ref={islandRef} className="team-island relative h-full min-h-[420px] overflow-hidden" data-testid="team-island">
       <div className="team-island-stage absolute inset-0" aria-hidden="true">
         <div className="scene-service-zone scene-service-restroom">
-          <span>离开</span>
-          <i className="scene-restroom-door" />
+          <span>离开一下</span>
         </div>
         {seatSlots.map((slot) => {
           const occupant = memberBySeat.get(slot.id);
@@ -207,13 +236,17 @@ export const TeamIsland = ({
               }}
             >
               <div className="scene-desk-shadow" />
-              <div className="scene-desk-top">
-                <span className={`scene-monitor ${occupant ? "online" : ""} ${occupant?.gameName ? "gaming" : ""}`}>
-                  <span>{occupant?.gameName ?? (occupant ? "上号" : "")}</span>
+              <div className="scene-workstation-art-frame">
+                <img
+                  src={workstationArt}
+                  alt=""
+                  className="scene-workstation-art"
+                  draggable={false}
+                  decoding="async"
+                />
+                <span className={`scene-workstation-screen ${occupant ? "online" : ""} ${occupant?.gameName ? "gaming" : ""}`}>
+                  {occupant?.gameName ?? (occupant ? "上号" : "")}
                 </span>
-                <span className="scene-keyboard" />
-                <span className="scene-speaker left" />
-                <span className="scene-speaker right" />
               </div>
             </div>
           );
@@ -270,15 +303,21 @@ export const TeamIsland = ({
       </div>
 
       <AnimatePresence initial={false}>
-        {visibleMembers.map((member, index) => (
-          <SceneCharacter
-            key={member.id}
-            member={member}
-            index={index}
-            avatarId={visibleAvatars.get(member.id) ?? "fox"}
-            shouldReduceMotion={shouldReduceMotion}
-          />
-        ))}
+        {visibleMembers.map((member) => {
+          const zone = resolvedMemberZones.get(member.id) ?? "gameDesk1";
+          const awayIndex = awayMembers.findIndex((candidate) => candidate.id === member.id);
+          return (
+            <SceneCharacter
+              key={member.id}
+              member={member}
+              avatarId={visibleAvatars.get(member.id) ?? "fox"}
+              shouldReduceMotion={shouldReduceMotion}
+              awayIndex={Math.max(0, awayIndex)}
+              awayCount={awayMembers.length}
+              zone={zone}
+            />
+          );
+        })}
       </AnimatePresence>
     </div>
   );

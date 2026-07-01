@@ -1,4 +1,8 @@
-import type { MemberActivity, SceneZoneId } from "@private-voice/shared";
+import type {
+  MemberActivity,
+  RoomMember,
+  SceneZoneId,
+} from "@private-voice/shared";
 
 export interface SceneZone {
   id: SceneZoneId;
@@ -29,7 +33,7 @@ export const seatSlots: SceneZone[] = [
 ];
 
 export const activityZones: SceneZone[] = [
-  { id: "restroomZone", label: "离开", kind: "activity", activity: "restroom", left: 11, top: 82, width: 15, height: 19 },
+  { id: "restroomZone", label: "离开一下", kind: "activity", activity: "restroom", left: 12, top: 80, width: 20, height: 25 },
 ];
 
 export const sceneZones: SceneZone[] = [...seatSlots, ...activityZones];
@@ -44,10 +48,40 @@ export const defaultMemberZones: SceneZoneId[] = [
 
 export const isSeatZone = (zone: SceneZoneId): boolean => zone.startsWith("gameDesk");
 
+export const resolveMemberSceneZones = (
+  members: Pick<RoomMember, "id" | "joinedAt" | "sceneZone">[],
+): Map<string, SceneZoneId> => {
+  const result = new Map<string, SceneZoneId>();
+  const occupiedSeats = new Set<SceneZoneId>();
+  const orderedMembers = [...members].sort(
+    (left, right) =>
+      left.joinedAt.localeCompare(right.joinedAt) || left.id.localeCompare(right.id),
+  );
+
+  orderedMembers.forEach((member) => {
+    const requestedZone = member.sceneZone;
+    if (requestedZone && !isSeatZone(requestedZone)) {
+      result.set(member.id, requestedZone);
+      return;
+    }
+
+    const resolvedZone =
+      requestedZone && !occupiedSeats.has(requestedZone)
+        ? requestedZone
+        : defaultMemberZones.find((zone) => !occupiedSeats.has(zone)) ?? "restroomZone";
+    result.set(member.id, resolvedZone);
+    if (isSeatZone(resolvedZone)) {
+      occupiedSeats.add(resolvedZone);
+    }
+  });
+
+  return result;
+};
+
 export const characterPositions: Record<SceneZoneId, CharacterPosition> = {
   coffeeBar: { left: 11, top: 82, zIndex: 38, scale: 0.78 },
   fitnessZone: { left: 11, top: 82, zIndex: 38, scale: 0.78 },
-  restroomZone: { left: 11, top: 82, zIndex: 38, scale: 0.78 },
+  restroomZone: { left: 12, top: 65, zIndex: 38, scale: 0.42 },
   gameDesk1: { left: 30, top: 38, zIndex: 24, scale: 0.86 },
   gameDesk2: { left: 52, top: 38, zIndex: 25, scale: 0.86 },
   gameDesk3: { left: 74, top: 38, zIndex: 26, scale: 0.86 },

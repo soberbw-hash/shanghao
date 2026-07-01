@@ -1,26 +1,41 @@
-import { TARGET_CHANNEL_COUNT, TARGET_SAMPLE_RATE } from "@private-voice/shared";
+import {
+  TARGET_CHANNEL_COUNT,
+  type PreferredSampleRate,
+} from "@private-voice/shared";
 
 export interface AudioConstraintOverrides {
   deviceId?: string;
   noiseSuppression?: boolean;
   echoCancellation?: boolean;
   autoGainControl?: boolean;
-  preferredSampleRate?: "auto" | "44100" | "48000";
+  preferredSampleRate?: PreferredSampleRate;
 }
 
 export const createAudioConstraints = (
   overrides: AudioConstraintOverrides = {},
-): MediaStreamConstraints => ({
-  audio: {
+): MediaStreamConstraints => {
+  const requestedSampleRate =
+    overrides.preferredSampleRate && overrides.preferredSampleRate !== "auto"
+      ? Number(overrides.preferredSampleRate)
+      : undefined;
+  const audioConstraints = {
     deviceId: overrides.deviceId ? { exact: overrides.deviceId } : undefined,
-    echoCancellation: overrides.echoCancellation ?? true,
-    noiseSuppression: overrides.noiseSuppression ?? true,
-    autoGainControl: overrides.autoGainControl ?? true,
-    channelCount: TARGET_CHANNEL_COUNT,
-    sampleRate:
-      overrides.preferredSampleRate && overrides.preferredSampleRate !== "auto"
-        ? Number(overrides.preferredSampleRate)
-        : TARGET_SAMPLE_RATE,
-  },
-  video: false,
-});
+    echoCancellation: { ideal: overrides.echoCancellation ?? true },
+    noiseSuppression: { ideal: overrides.noiseSuppression ?? true },
+    autoGainControl: { ideal: overrides.autoGainControl ?? true },
+    channelCount: { ideal: TARGET_CHANNEL_COUNT },
+    sampleRate: requestedSampleRate ? { ideal: requestedSampleRate } : undefined,
+    sampleSize: { ideal: 16 },
+    latency: { ideal: 0.02 },
+    googEchoCancellation: overrides.echoCancellation ?? true,
+    googNoiseSuppression: overrides.noiseSuppression ?? true,
+    googHighpassFilter: true,
+    googAutoGainControl: overrides.autoGainControl ?? true,
+    googTypingNoiseDetection: true,
+  } as MediaTrackConstraints;
+
+  return {
+    audio: audioConstraints,
+    video: false,
+  };
+};

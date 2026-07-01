@@ -131,7 +131,8 @@ const clickButtonByLabel = async (
       (() => {
         const buttons = Array.from(document.querySelectorAll("button"));
         const target = buttons.find((button) =>
-          (button.textContent || "").replace(/\\s+/g, " ").includes(${JSON.stringify(label)}),
+          (button.textContent || "").replace(/\\s+/g, " ").includes(${JSON.stringify(label)}) ||
+          (button.getAttribute("aria-label") || "").includes(${JSON.stringify(label)}),
         );
         if (target instanceof HTMLButtonElement) {
           target.click();
@@ -180,10 +181,18 @@ const maybeCaptureScreenshot = async (window: BrowserWindow | null): Promise<voi
     await clickButtonByLabel(window, "2 \u53F7\u4F4D");
     await sleep(900);
   }
+  if (mode === "room-away") {
+    await clickButtonByLabel(window, "\u79BB\u5F00\u4E00\u4E0B");
+    await sleep(900);
+  }
 
-  if (mode === "screen-share") {
+  if (mode === "screen-share" || mode === "screen-share-expanded") {
     await clickButtonByLabel(window, "\u5C4F\u5E55\u5206\u4EAB");
     await sleep(1800);
+  }
+  if (mode === "screen-share-expanded") {
+    await clickButtonByLabel(window, "\u653E\u5927\u5C4F\u5E55\u5206\u4EAB");
+    await sleep(800);
   }
 
   const image = await window.capturePage();

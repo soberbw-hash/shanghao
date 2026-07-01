@@ -6,7 +6,7 @@ export const fadeSlideUp = {
 };
 
 export const gentleScale = {
-  whileTap: { scale: 0.98 },
-  whileHover: { scale: 1.01 },
-  transition: { duration: 0.14, ease: "easeOut" }
+  whileTap: { scale: 0.965, y: 0 },
+  whileHover: { scale: 1.012, y: -1 },
+  transition: { type: "spring", stiffness: 440, damping: 30, mass: 0.42 }
 };

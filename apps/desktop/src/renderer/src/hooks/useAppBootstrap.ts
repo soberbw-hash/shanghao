@@ -41,7 +41,6 @@ export const useAppBootstrap = (): void => {
   const enterSafeMode = useAppStore((state) => state.enterSafeMode);
   const showStartupRecovery = useAppStore((state) => state.showStartupRecovery);
   const bootstrapAttempt = useAppStore((state) => state.bootstrapAttempt);
-  const checkUpdates = useSettingsStore((state) => state.checkUpdates);
 
   useEffect(() => {
     let isDisposed = false;
@@ -54,16 +53,14 @@ export const useAppBootstrap = (): void => {
       });
 
       const hydrationTask = withTimeout(hydrate(), "hydrate_timeout", BOOTSTRAP_TIMEOUT_MS);
+      void refreshDevices().catch(async (error) => {
+        await writeRendererLog("devices", "warn", "Device refresh degraded", {
+          error: error instanceof Error ? error.message : String(error),
+        });
+      });
 
       try {
-        const [hydration] = await Promise.all([
-          hydrationTask,
-          refreshDevices().catch(async (error) => {
-            await writeRendererLog("devices", "warn", "Device refresh degraded", {
-              error: error instanceof Error ? error.message : String(error),
-            });
-          }),
-        ]);
+        const hydration = await hydrationTask;
 
         if (isDisposed) {
           return;
@@ -75,25 +72,7 @@ export const useAppBootstrap = (): void => {
           return;
         }
 
-        // Check for updates before completing bootstrap
-        const currentSettings = useSettingsStore.getState().settings;
-        if (currentSettings?.isBackgroundUpdateCheckEnabled) {
-          beginBootstrap("正在检查更新…");
-          try {
-            const result = await checkUpdates();
-            if (result.hasUpdate && !isDisposed) {
-              useAppStore.getState().enterUpdateGate();
-              await writeRendererLog("app", "info", "Update gate activated", {
-                latestVersion: result.latestVersion,
-                forceUpdate: result.forceUpdate,
-              });
-              return;
-            }
-          } catch {
-            // Update check failure should not block startup
-          }
-        }
-
+        // Device enumeration and update checks continue in the background.
         completeBootstrap();
         await writeRendererLog("app", "info", "Renderer bootstrap completed");
       } catch (error) {

@@ -7,9 +7,134 @@
       content="width=device-width, initial-scale=1.0"
     />
     <title>上号</title>
+    <script>
+      document.documentElement.dataset.renderer =
+        new URLSearchParams(window.location.search).get("overlay") === "1" ? "overlay" : "main";
+    </script>
+    <style>
+      :root {
+        color-scheme: light;
+        background: #eef5ff;
+      }
+
+      html,
+      body,
+      #root {
+        width: 100%;
+        height: 100%;
+        margin: 0;
+      }
+
+      body {
+        overflow: hidden;
+        background:
+          radial-gradient(circle at 18% 12%, rgba(112, 172, 255, 0.2), transparent 32%),
+          radial-gradient(circle at 84% 84%, rgba(104, 216, 184, 0.13), transparent 30%),
+          linear-gradient(145deg, #f9fcff, #edf4fd 56%, #f5fbf8);
+      }
+
+      .app-preboot {
+        display: grid;
+        width: 100%;
+        height: 100%;
+        place-items: center;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", sans-serif;
+        color: #172033;
+      }
+
+      .app-preboot-content {
+        display: grid;
+        justify-items: center;
+      }
+
+      .app-preboot-mark {
+        width: 88px;
+        height: 88px;
+        animation: preboot-mark-enter 620ms cubic-bezier(0.22, 1, 0.36, 1) both;
+      }
+
+      .app-preboot-mark img {
+        display: block;
+        width: 100%;
+        height: 100%;
+      }
+
+      .app-preboot-name {
+        margin-top: 16px;
+        font-size: 20px;
+        font-weight: 650;
+        letter-spacing: 0.12em;
+        animation: preboot-copy-enter 420ms 120ms cubic-bezier(0.22, 1, 0.36, 1) both;
+      }
+
+      .app-preboot-track {
+        width: 72px;
+        height: 3px;
+        margin-top: 18px;
+        overflow: hidden;
+        border-radius: 999px;
+        background: rgba(93, 132, 181, 0.12);
+        animation: preboot-copy-enter 420ms 180ms cubic-bezier(0.22, 1, 0.36, 1) both;
+      }
+
+      .app-preboot-track::after {
+        display: block;
+        width: 45%;
+        height: 100%;
+        border-radius: inherit;
+        background: linear-gradient(90deg, #4da3ff, #83c6ff);
+        content: "";
+        animation: preboot-progress 1.1s cubic-bezier(0.65, 0, 0.35, 1) infinite;
+      }
+
+      html[data-renderer="overlay"],
+      html[data-renderer="overlay"] body,
+      html[data-renderer="overlay"] #root {
+        background: transparent !important;
+      }
+
+      html[data-renderer="overlay"] .app-preboot {
+        display: none;
+      }
+
+      @keyframes preboot-mark-enter {
+        from { opacity: 0; transform: translateY(8px) scale(0.9); }
+        72% { opacity: 1; transform: translateY(0) scale(1.015); }
+        to { opacity: 1; transform: translateY(0) scale(1); }
+      }
+
+      @keyframes preboot-copy-enter {
+        from { opacity: 0; transform: translateY(5px); }
+        to { opacity: 1; transform: translateY(0); }
+      }
+
+      @keyframes preboot-progress {
+        from { transform: translateX(-110%); }
+        to { transform: translateX(225%); }
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        .app-preboot-mark,
+        .app-preboot-name,
+        .app-preboot-track,
+        .app-preboot-track::after {
+          animation: none;
+        }
+      }
+    </style>
   </head>
   <body class="bg-app-base">
-    <div id="root"></div>
+    <div id="root">
+      <div class="app-preboot" role="status" aria-label="上号正在启动">
+        <div class="app-preboot-content">
+          <div class="app-preboot-mark">
+            <img src="/src/assets/brand-mark.svg" alt="" />
+          </div>
+          <div class="app-preboot-name">上号</div>
+          <div class="app-preboot-track" aria-hidden="true"></div>
+        </div>
+      </div>
+    </div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

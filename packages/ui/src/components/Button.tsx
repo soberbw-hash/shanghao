@@ -15,13 +15,13 @@ export interface ButtonProps extends NativeButtonProps, MotionProps {
 
 const variantClasses: Record<ButtonVariant, string> = {
   primary:
-    "border border-[#3D8FEE] bg-gradient-to-b from-[#5AAEFF] to-[#4295F5] text-white shadow-[0_2px_4px_rgba(30,45,70,0.12),0_1px_0_rgba(255,255,255,0.3)_inset] hover:from-[#4DA3FF] hover:to-[#3D8FEE] hover:shadow-[0_4px_12px_rgba(77,163,255,0.3),0_1px_0_rgba(255,255,255,0.3)_inset] active:shadow-[0_1px_2px_rgba(30,45,70,0.1)_inset]",
+    "border border-white/45 bg-[linear-gradient(180deg,rgba(104,181,255,.96),rgba(57,137,238,.94))] text-white shadow-[0_8px_24px_rgba(47,111,204,.24),inset_0_1px_0_rgba(255,255,255,.46),inset_0_-1px_0_rgba(32,92,180,.22)] backdrop-blur-xl hover:brightness-[1.04] hover:shadow-[0_12px_30px_rgba(47,111,204,.3),inset_0_1px_0_rgba(255,255,255,.52)] active:brightness-[.98]",
   secondary:
-    "border border-[#D6DEE8] bg-gradient-to-b from-white to-[#F8FAFC] text-[#111827] shadow-[0_2px_4px_rgba(30,45,70,0.06),0_1px_0_rgba(255,255,255,0.9)_inset] hover:border-[#C4CED9] hover:from-[#FAFBFC] hover:to-[#F1F5F9] hover:shadow-[0_3px_8px_rgba(30,45,70,0.1),0_1px_0_rgba(255,255,255,0.9)_inset] active:shadow-[0_1px_2px_rgba(30,45,70,0.06)_inset]",
+    "border border-white/70 bg-[linear-gradient(180deg,rgba(255,255,255,.78),rgba(243,248,255,.54))] text-[#172033] shadow-[0_7px_22px_rgba(63,102,160,.1),inset_0_1px_0_rgba(255,255,255,.92),inset_0_-1px_0_rgba(130,160,198,.1)] backdrop-blur-2xl hover:border-white/90 hover:bg-white/75 hover:shadow-[0_10px_28px_rgba(63,102,160,.14),inset_0_1px_0_white]",
   ghost:
-    "border border-transparent bg-transparent text-[#667085] hover:bg-white hover:text-[#111827] hover:shadow-[0_2px_6px_rgba(30,45,70,0.08)] active:shadow-none active:bg-[#F5F7FB]",
+    "border border-transparent bg-white/20 text-[#667085] backdrop-blur-lg hover:border-white/70 hover:bg-white/58 hover:text-[#172033] hover:shadow-[0_7px_20px_rgba(63,102,160,.09),inset_0_1px_0_rgba(255,255,255,.85)] active:bg-white/42",
   danger:
-    "border border-[#FCA5A5] bg-gradient-to-b from-[#FFF0F0] to-[#FEE2E2] text-[#DC2626] shadow-[0_2px_4px_rgba(30,45,70,0.06),0_1px_0_rgba(255,255,255,0.9)_inset] hover:border-[#F87171] hover:from-[#FEE2E2] hover:to-[#FECACA] hover:shadow-[0_3px_8px_rgba(220,38,38,0.12),0_1px_0_rgba(255,255,255,0.9)_inset] active:shadow-[0_1px_2px_rgba(30,45,70,0.06)_inset]",
+    "border border-white/55 bg-[linear-gradient(180deg,rgba(255,111,111,.94),rgba(231,66,66,.92))] text-white shadow-[0_8px_22px_rgba(220,38,38,.2),inset_0_1px_0_rgba(255,255,255,.45)] backdrop-blur-xl hover:brightness-[1.04] hover:shadow-[0_11px_28px_rgba(220,38,38,.27),inset_0_1px_0_rgba(255,255,255,.48)]",
 };
 
 export const Button = ({
@@ -34,7 +34,7 @@ export const Button = ({
   <motion.button
     type="button"
     className={cn(
-      "inline-flex h-11 items-center justify-center gap-2 rounded-[14px] px-4 text-sm font-medium transition-all duration-150 disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50",
+      "inline-flex h-11 items-center justify-center gap-2 rounded-[15px] px-4 text-sm font-medium transition-all duration-200 disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50",
       "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4DA3FF]/30 focus-visible:ring-offset-2 focus-visible:ring-offset-[#F5F7FA]",
       variantClasses[variant],
       isFullWidth && "w-full",

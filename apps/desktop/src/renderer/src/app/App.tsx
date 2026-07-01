@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { lazy, Suspense, useEffect } from "react";
 
 import { AppErrorBoundary } from "../components/layout/AppErrorBoundary";
 import { AppShell } from "../components/layout/AppShell";
@@ -8,8 +8,6 @@ import { useGlobalMuteSync } from "../hooks/useGlobalMuteSync";
 import { useLocalAudioTransport } from "../hooks/useLocalAudioTransport";
 import { useUiFeedbackSounds } from "../hooks/useUiFeedbackSounds";
 import { HomePage } from "../pages/HomePage";
-import { RoomPage } from "../pages/RoomPage";
-import { SettingsPage } from "../pages/SettingsPage";
 import { SharedOverlays } from "../pages/SharedOverlays";
 import { useAppStore } from "../store/appStore";
 import { useRoomStore } from "../store/roomStore";
@@ -19,6 +17,14 @@ import { StartupRecoveryPage } from "../components/status/StartupRecoveryPage";
 import { StartupSplashPage } from "../components/status/StartupSplashPage";
 import { UpdateGatePage } from "../components/status/UpdateGatePage";
 
+const loadRoomPage = () => import("../pages/RoomPage");
+const loadSettingsPage = () => import("../pages/SettingsPage");
+const roomPagePromise = loadRoomPage();
+const RoomPage = lazy(() => roomPagePromise.then(({ RoomPage: Page }) => ({ default: Page })));
+const SettingsPage = lazy(() =>
+  loadSettingsPage().then(({ SettingsPage: Page }) => ({ default: Page })),
+);
+
 export const App = () => {
   useAppBootstrap();
   useGlobalMuteSync();
@@ -26,6 +32,7 @@ export const App = () => {
   useUiFeedbackSounds();
 
   const currentPage = useAppStore((state) => state.currentPage);
+  const settingsReturnTo = useAppStore((state) => state.settingsReturnTo);
   const bootstrapPhase = useAppStore((state) => state.bootstrapPhase);
   const bootstrapMessage = useAppStore((state) => state.bootstrapMessage);
   const startupIssue = useAppStore((state) => state.startupIssue);
@@ -78,6 +85,19 @@ export const App = () => {
     };
   }, []);
 
+  useEffect(() => {
+    if (bootstrapPhase !== "ready") {
+      return;
+    }
+
+    const preloadPages = () => {
+      void loadSettingsPage();
+    };
+
+    const requestId = window.requestIdleCallback(preloadPages, { timeout: 1_200 });
+    return () => window.cancelIdleCallback(requestId);
+  }, [bootstrapPhase]);
+
   const renderPage = () => {
     if (bootstrapPhase === "booting" || bootstrapPhase === "checking-update" || isHydrating) {
       return <StartupSplashPage message={bootstrapMessage} />;
@@ -97,15 +117,26 @@ export const App = () => {
       );
     }
 
-    if (currentPage === "room") {
-      return <RoomPage />;
-    }
+    const isSettingsOpen = currentPage === "settings";
+    const basePage = isSettingsOpen ? settingsReturnTo : currentPage;
 
-    if (currentPage === "settings") {
-      return <SettingsPage />;
-    }
-
-    return <HomePage />;
+    return (
+      <Suspense fallback={<StartupSplashPage message="正在打开页面..." />}>
+        <div className="app-page-stack">
+          <div
+            className={`app-page-layer app-page-base ${isSettingsOpen ? "is-obscured" : ""}`}
+            aria-hidden={isSettingsOpen || undefined}
+          >
+            {basePage === "room" ? <RoomPage /> : <HomePage />}
+          </div>
+          {isSettingsOpen ? (
+            <div className="app-page-layer app-page-settings">
+              <SettingsPage />
+            </div>
+          ) : null}
+        </div>
+      </Suspense>
+    );
   };
 
   return (

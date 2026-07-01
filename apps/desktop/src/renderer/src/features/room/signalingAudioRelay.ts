@@ -54,12 +54,13 @@ interface PeerAudioState {
   fallbackStatus: "observing" | "relay_active" | "relay_receiving_but_dropping" | "relay_no_audio_received";
 }
 
-const CHUNK_SIZE = 2048;
-const MIN_SEND_INTERVAL_MS = 35;
-const MAX_PACKET_AGE_MS = 8_000;
-const MAX_QUEUE_DURATION_MS = 3_000;
-const MAX_QUEUE_CHUNKS = 80;
-const PLAYBACK_LEAD_SECONDS = 0.15;
+const CHUNK_SIZE = 1024;
+const RELAY_SAMPLE_RATE = 16_000;
+const MIN_SEND_INTERVAL_MS = 20;
+const MAX_PACKET_AGE_MS = 3_000;
+const MAX_QUEUE_DURATION_MS = 1_200;
+const MAX_QUEUE_CHUNKS = 60;
+const PLAYBACK_LEAD_SECONDS = 0.1;
 const METRICS_LOG_INTERVAL_MS = 5_000;
 const RESYNC_DROP_THRESHOLD = 20;
 
@@ -94,6 +95,30 @@ const int16ToFloat = (input: Int16Array): Float32Array => {
   const output = new Float32Array(input.length);
   for (let index = 0; index < input.length; index += 1) {
     output[index] = (input[index] ?? 0) / 0x8000;
+  }
+  return output;
+};
+
+const downsampleMono = (
+  input: Float32Array,
+  sourceSampleRate: number,
+  targetSampleRate: number,
+): Float32Array => {
+  if (sourceSampleRate <= targetSampleRate) {
+    return new Float32Array(input);
+  }
+
+  const ratio = sourceSampleRate / targetSampleRate;
+  const outputLength = Math.max(1, Math.round(input.length / ratio));
+  const output = new Float32Array(outputLength);
+  for (let outputIndex = 0; outputIndex < outputLength; outputIndex += 1) {
+    const start = Math.floor(outputIndex * ratio);
+    const end = Math.min(input.length, Math.max(start + 1, Math.floor((outputIndex + 1) * ratio)));
+    let sum = 0;
+    for (let inputIndex = start; inputIndex < end; inputIndex += 1) {
+      sum += input[inputIndex] ?? 0;
+    }
+    output[outputIndex] = sum / Math.max(1, end - start);
   }
   return output;
 };
@@ -261,6 +286,7 @@ export class SignalingAudioRelay {
       }
       const input = event.inputBuffer.getChannelData(0);
       const durationMs = (input.length / context.sampleRate) * 1_000;
+      const relaySamples = downsampleMono(input, context.sampleRate, RELAY_SAMPLE_RATE);
       this.isSendInFlight = true;
       this.lastSendAt = monotonicNow;
       this.sentSinceMetricsLog += 1;
@@ -277,9 +303,9 @@ export class SignalingAudioRelay {
           sentAt: Date.now(),
           capturedAtMonotonic: monotonicNow,
           durationMs,
-          sampleRate: context.sampleRate,
+          sampleRate: RELAY_SAMPLE_RATE,
           channelCount: 1,
-          data: encodeInt16ToBase64(floatToInt16(input)),
+          data: encodeInt16ToBase64(floatToInt16(relaySamples)),
         })
         .catch((error) => {
           this.droppedSendChunks += 1;

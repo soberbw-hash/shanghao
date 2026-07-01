@@ -12,7 +12,7 @@ import { PageContainer } from "../components/layout/PageContainer";
 import { AvatarPicker } from "../components/profile/AvatarPicker";
 import { useAppStore } from "../store/appStore";
 import { useSettingsStore } from "../store/settingsStore";
-import { getAvatarSrc, randomAvatarId, randomNickname } from "../utils/profile";
+import { getAvatarSrc, randomNickname } from "../utils/profile";
 
 export const ProfileSetupPage = () => {
   const settings = useSettingsStore((state) => state.settings);
@@ -23,8 +23,8 @@ export const ProfileSetupPage = () => {
   const [isSaving, setIsSaving] = useState(false);
 
   useEffect(() => {
-    setNickname(settings?.nickname || randomNickname());
-    setAvatarId(settings?.avatarId || randomAvatarId());
+    setNickname(settings?.nickname ?? "");
+    setAvatarId(settings?.avatarId ?? "fox");
   }, [settings?.avatarId, settings?.nickname]);
 
   const handleSubmit = async () => {

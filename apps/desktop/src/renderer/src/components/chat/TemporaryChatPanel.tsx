@@ -6,6 +6,7 @@ import type { ChatMessage } from "@private-voice/shared";
 
 import brandMarkUrl from "../../assets/brand-mark.svg";
 import { getAvatarSrc } from "../../utils/profile";
+import { motionDuration, motionEase } from "../../features/motion/motionSystem";
 import { AvatarPlaceholder } from "../base/AvatarPlaceholder";
 import { Button } from "../base/Button";
 import { Input } from "../base/Input";
@@ -69,7 +70,15 @@ export const TemporaryChatPanel = ({
     gsap.fromTo(
       latest,
       { autoAlpha: 0, y: 8, scale: 0.985 },
-      { autoAlpha: 1, y: 0, scale: 1, duration: 0.24, ease: "back.out(1.35)", overwrite: true },
+      {
+        autoAlpha: 1,
+        y: 0,
+        scale: 1,
+        duration: motionDuration.feedback,
+        ease: motionEase.feedback,
+        overwrite: true,
+        force3D: true,
+      },
     );
   }, [messages.length, shouldReduceMotion]);
 
