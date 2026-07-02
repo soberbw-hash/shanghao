@@ -16,6 +16,12 @@ export interface RecordingResult {
   fileSize: number;
 }
 
+export interface RecordingMarker {
+  id: string;
+  offsetMs: number;
+  createdAt: string;
+}
+
 export interface RecordingCapability {
   mimeType?: string;
   encoderState: RecordingEncoderState;

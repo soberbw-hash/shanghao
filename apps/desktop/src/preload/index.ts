@@ -7,6 +7,7 @@ const desktopApi: DesktopApi = {
     getRuntimeInfo: () => ipcRenderer.invoke(IPC_CHANNELS.app.getRuntimeInfo),
     writeLog: (payload) => ipcRenderer.invoke(IPC_CHANNELS.app.writeLog, payload),
     openPath: (targetPath) => ipcRenderer.invoke(IPC_CHANNELS.app.openPath, targetPath),
+    notify: (payload) => ipcRenderer.invoke(IPC_CHANNELS.app.notify, payload),
   },
   clipboard: {
     writeText: (text) => ipcRenderer.invoke(IPC_CHANNELS.clipboard.writeText, text),
@@ -60,10 +61,37 @@ const desktopApi: DesktopApi = {
   shortcuts: {
     configureMute: (accelerator) =>
       ipcRenderer.invoke(IPC_CHANNELS.shortcuts.configureMute, accelerator),
+    configurePushToTalk: (accelerator, enabled) =>
+      ipcRenderer.invoke(
+        IPC_CHANNELS.shortcuts.configurePushToTalk,
+        accelerator,
+        enabled,
+      ),
     onMuteTriggered: (listener) => {
       const wrapped = () => listener();
       ipcRenderer.on(IPC_CHANNELS.shortcuts.muteTriggered, wrapped);
       return () => ipcRenderer.removeListener(IPC_CHANNELS.shortcuts.muteTriggered, wrapped);
+    },
+    onPushToTalkState: (listener) => {
+      const wrapped = (_event: Electron.IpcRendererEvent, isPressed: boolean) =>
+        listener(isPressed);
+      ipcRenderer.on(IPC_CHANNELS.shortcuts.pushToTalkState, wrapped);
+      return () =>
+        ipcRenderer.removeListener(IPC_CHANNELS.shortcuts.pushToTalkState, wrapped);
+    },
+    configureRecordingMarker: (accelerator) =>
+      ipcRenderer.invoke(
+        IPC_CHANNELS.shortcuts.configureRecordingMarker,
+        accelerator,
+      ),
+    onRecordingMarkerTriggered: (listener) => {
+      const wrapped = () => listener();
+      ipcRenderer.on(IPC_CHANNELS.shortcuts.recordingMarkerTriggered, wrapped);
+      return () =>
+        ipcRenderer.removeListener(
+          IPC_CHANNELS.shortcuts.recordingMarkerTriggered,
+          wrapped,
+        );
     },
   },
   updates: {
@@ -93,6 +121,8 @@ const desktopApi: DesktopApi = {
   },
   recording: {
     export: (payload) => ipcRenderer.invoke(IPC_CHANNELS.recording.export, payload),
+    saveMarkers: (filePath, markers) =>
+      ipcRenderer.invoke(IPC_CHANNELS.recording.saveMarkers, filePath, markers),
   },
   llm: {
     chat: (payload) => ipcRenderer.invoke(IPC_CHANNELS.llm.chat, payload),

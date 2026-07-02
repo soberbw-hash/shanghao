@@ -1,12 +1,15 @@
 import { type CSSProperties, useEffect, useLayoutEffect, useRef, useState } from "react";
-import { VolumeX } from "lucide-react";
+import { Gamepad2, StickyNote, VolumeX } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
 import { gsap } from "gsap";
 
 import {
+  APPLE_MOTION_SPRING,
   type BuiltInAvatarId,
   type MemberActivity,
   type RoomMember,
+  type RoomNote,
+  type SceneReaction,
   type SceneZoneId,
 } from "@private-voice/shared";
 
@@ -48,6 +51,8 @@ const SceneCharacter = ({
   awayIndex,
   awayCount,
   zone,
+  reaction,
+  onReact,
 }: {
   member: RoomMember;
   avatarId: BuiltInAvatarId;
@@ -55,8 +60,11 @@ const SceneCharacter = ({
   awayIndex: number;
   awayCount: number;
   zone: SceneZoneId;
+  reaction?: SceneReaction;
+  onReact?: (targetPeerId: string, emoji: SceneReaction["emoji"]) => void;
 }) => {
   const status = memberStatus(member);
+  const [visibleReaction, setVisibleReaction] = useState<SceneReaction>();
   const isSpeaking = status.tone === "speaking";
   const isReconnecting = status.tone === "reconnecting";
   const isOffline = status.tone === "offline";
@@ -73,6 +81,20 @@ const SceneCharacter = ({
           zIndex: basePosition.zIndex + awayIndex,
         }
       : basePosition;
+
+  useEffect(() => {
+    if (!reaction) {
+      setVisibleReaction(undefined);
+      return;
+    }
+    setVisibleReaction(reaction);
+    const elapsed = Date.now() - Date.parse(reaction.createdAt);
+    const timeout = window.setTimeout(
+      () => setVisibleReaction((current) => (current?.id === reaction.id ? undefined : current)),
+      Math.max(200, 4_000 - elapsed),
+    );
+    return () => window.clearTimeout(timeout);
+  }, [reaction]);
   const lastZoneRef = useRef<SceneZoneId>(zone);
   const [isMoving, setIsMoving] = useState(false);
 
@@ -99,11 +121,16 @@ const SceneCharacter = ({
       animate={{
         opacity: isOffline ? 0.45 : 1,
       }}
-      exit={{ opacity: 0 }}
+      exit={{
+        opacity: 0,
+        x: -72,
+        y: 36,
+        scale: 0.82,
+      }}
       transition={{
         layout: shouldReduceMotion
           ? { duration: 0 }
-          : { type: "spring", stiffness: 260, damping: 29, mass: 0.72 },
+          : { type: "spring", ...APPLE_MOTION_SPRING },
         opacity: { duration: shouldReduceMotion ? 0 : motionDuration.feedback },
       }}
       className="pointer-events-none absolute"
@@ -149,8 +176,35 @@ const SceneCharacter = ({
 
           <div className={`room-character-label ${status.tone}`}>
             {status.icon ? <status.icon className={`h-3 w-3 ${isReconnecting ? "animate-spin" : ""}`} /> : null}
-            <span className="max-w-[100px] truncate">{status.label}</span>
+            <span className="max-w-[118px] truncate">
+              {member.customStatus ? `${status.label} · ${member.customStatus}` : status.label}
+            </span>
           </div>
+          {visibleReaction ? (
+            <motion.div
+              key={visibleReaction.id}
+              className="scene-character-reaction"
+              initial={{ opacity: 0, y: 8, scale: 0.72 }}
+              animate={{ opacity: 1, y: -6, scale: 1 }}
+              exit={{ opacity: 0, y: -20, scale: 0.84 }}
+            >
+              {visibleReaction.emoji}
+            </motion.div>
+          ) : null}
+          {!member.isLocal ? (
+            <div className="scene-reaction-picker" aria-label={`给${member.nickname}发送表情`}>
+              {(["👍", "🔥", "😂", "❤️"] as const).map((emoji) => (
+                <button
+                  key={emoji}
+                  type="button"
+                  onClick={() => onReact?.(member.id, emoji)}
+                  aria-label={`发送${emoji}`}
+                >
+                  {emoji}
+                </button>
+              ))}
+            </div>
+          ) : null}
         </div>
       </div>
     </motion.div>
@@ -160,16 +214,28 @@ const SceneCharacter = ({
 export const TeamIsland = ({
   members,
   onZoneSelect,
+  onReact,
+  reactions = [],
+  roomNote,
+  onRoomNoteChange,
+  knockPulse = 0,
   reduceMotion = false,
 }: {
   members: RoomMember[];
   onZoneSelect?: (zone: SceneZoneId, activity: MemberActivity) => void;
+  onReact?: (targetPeerId: string, emoji: SceneReaction["emoji"]) => void;
+  reactions?: SceneReaction[];
+  roomNote?: RoomNote;
+  onRoomNoteChange?: (content: string) => void;
+  knockPulse?: number;
   reduceMotion?: boolean;
 }) => {
   const islandRef = useRef<HTMLDivElement>(null);
   const visibleMembers = members.filter((member) => !member.isEmptySlot).slice(0, 5);
   const visibleAvatars = assignVisibleAvatars(visibleMembers);
   const shouldReduceMotion = usePrefersReducedMotion(reduceMotion);
+  const [noteDraft, setNoteDraft] = useState(roomNote?.content ?? "");
+  const [ambient, setAmbient] = useState<"day" | "evening" | "night">("day");
   const resolvedMemberZones = resolveMemberSceneZones(visibleMembers);
   const occupiedSeatIds = new Set<SceneZoneId>();
   visibleMembers.forEach((member) => {
@@ -192,6 +258,41 @@ export const TeamIsland = ({
   const memberMotionKey = visibleMembers
     .map((member) => `${member.id}:${resolvedMemberZones.get(member.id) ?? "gameDesk1"}`)
     .join("|");
+
+  useEffect(() => {
+    setNoteDraft(roomNote?.content ?? "");
+  }, [roomNote?.content]);
+
+  useEffect(() => {
+    const updateAmbient = () => {
+      const hour = new Date().getHours();
+      setAmbient(hour >= 22 || hour < 6 ? "night" : hour >= 18 ? "evening" : "day");
+    };
+    updateAmbient();
+    const timer = window.setInterval(updateAmbient, 60_000);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  useLayoutEffect(() => {
+    if (shouldReduceMotion || !islandRef.current || knockPulse <= 0) return;
+    const context = gsap.context(() => {
+      gsap.fromTo(
+        ".scene-workstation",
+        { x: 0, rotation: 0 },
+        {
+          keyframes: [
+            { x: -2, rotation: -0.35, duration: 0.05 },
+            { x: 2.5, rotation: 0.4, duration: 0.06 },
+            { x: 0, rotation: 0, duration: 0.1 },
+          ],
+          ease: motionEase.feedback,
+          stagger: 0.018,
+          overwrite: true,
+        },
+      );
+    }, islandRef);
+    return () => context.revert();
+  }, [knockPulse, shouldReduceMotion]);
 
   useLayoutEffect(() => {
     if (shouldReduceMotion || !islandRef.current || !memberMotionKey) return;
@@ -218,7 +319,11 @@ export const TeamIsland = ({
   }, [memberMotionKey, shouldReduceMotion]);
 
   return (
-    <div ref={islandRef} className="team-island relative h-full min-h-[420px] overflow-hidden" data-testid="team-island">
+    <div
+      ref={islandRef}
+      className={`team-island ambient-${ambient} relative h-full min-h-[420px] overflow-hidden`}
+      data-testid="team-island"
+    >
       <div className="team-island-stage absolute inset-0" aria-hidden="true">
         <div className="scene-service-zone scene-service-restroom">
           <span>离开一下</span>
@@ -245,7 +350,8 @@ export const TeamIsland = ({
                   decoding="async"
                 />
                 <span className={`scene-workstation-screen ${occupant ? "online" : ""} ${occupant?.gameName ? "gaming" : ""}`}>
-                  {occupant?.gameName ?? (occupant ? "上号" : "")}
+                  {occupant?.gameName ? <Gamepad2 aria-hidden="true" /> : null}
+                  <span>{occupant?.gameName ?? (occupant ? "上号" : "")}</span>
                 </span>
               </div>
             </div>
@@ -255,6 +361,22 @@ export const TeamIsland = ({
       <div className="absolute left-5 top-5 z-30 rounded-full border border-white/90 bg-white/72 px-3 py-1.5 text-xs font-semibold text-[#66778e] shadow-sm backdrop-blur-xl">
         {visibleMembers.length}/5 在线
       </div>
+      <label className="scene-note-wall">
+        <span><StickyNote aria-hidden="true" /> 便签</span>
+        <input
+          value={noteDraft}
+          maxLength={80}
+          placeholder="周五晚上，老时间"
+          onChange={(event) => setNoteDraft(event.target.value)}
+          onBlur={() => onRoomNoteChange?.(noteDraft)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") {
+              event.currentTarget.blur();
+            }
+          }}
+        />
+        {roomNote?.authorName ? <small>{roomNote.authorName} 留下</small> : null}
+      </label>
 
       <div className="pointer-events-none absolute inset-0 z-[48]">
         {seatSlots.map((slot) => {
@@ -315,6 +437,14 @@ export const TeamIsland = ({
               awayIndex={Math.max(0, awayIndex)}
               awayCount={awayMembers.length}
               zone={zone}
+              reaction={[...reactions]
+                .reverse()
+                .find(
+                  (reaction) =>
+                    reaction.targetPeerId === member.id &&
+                    Date.now() - Date.parse(reaction.createdAt) < 4_000,
+                )}
+              onReact={onReact}
             />
           );
         })}

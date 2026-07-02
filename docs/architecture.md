@@ -4,7 +4,7 @@
 
 ## 核心原则
 
-- Electron 负责原生能力：托盘、文件系统、日志、全局快捷键、Tailscale 检测、录音导出。
+- Electron 负责原生能力：托盘、文件系统、日志、全局快捷键、系统通知、录音导出。
 - React 渲染层负责 UI、房间状态、WebRTC 编排、设备切换、录音控制。
 - 房主在桌面程序内启动一个极简 `ws` signaling server。
 - WebRTC 只做音频，采用小房间 P2P mesh。
@@ -28,7 +28,7 @@
 ## 运行流转
 
 1. 用户打开上号。
-2. 渲染层读取设置、设备、Tailscale 状态。
+2. 渲染层读取设置、设备和固定频道服务器状态。
 3. 房主点击“开启房间”后，主进程启动 signaling server。
 4. 房主和好友通过 signaling 交换 WebRTC offer / answer / ICE。
 5. 多个成员之间建立音频 P2P mesh。

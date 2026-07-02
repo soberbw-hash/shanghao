@@ -13,7 +13,7 @@ Implement the requirements from `C:\Users\sober\Desktop\文字.txt` in P0 -> P1 
   - Pending remote ICE candidate queue.
   - WebRTC ready state now follows `connectionState === "connected"`.
   - Signaling audio relay is disabled for WebRTC-ready peers and restored on failure.
-  - Tailscale prefers `100.x` and rejects NeedsLogin/Stopped/no-IP states.
+  - Connection entry is now a single fixed-channel server URL with no client-side mode guessing.
   - Direct-host never shares LAN, loopback, pending, or unverified addresses.
   - Invite copying validates complete real `ws://` / `wss://` URLs.
 - P1 connection modes:

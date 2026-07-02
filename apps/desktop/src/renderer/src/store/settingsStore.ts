@@ -69,12 +69,17 @@ const fallbackSettings: AppSettings = {
   isLowCutEnabled: true,
   globalMuteShortcut: "",
   pushToTalkShortcut: "Space",
+  recordingMarkerShortcut: "F8",
   isNoiseSuppressionEnabled: true,
   isEchoCancellationEnabled: true,
   isAutoGainControlEnabled: true,
   isPushToTalkEnabled: false,
   micMonitorMode: "processed",
   relayServerUrl: "",
+  customStatus: "",
+  screenShareQuality: "smooth",
+  isScreenShareSystemAudioEnabled: true,
+  isSystemNotificationEnabled: true,
   isMicOnSoundEnabled: true,
   isMicOffSoundEnabled: true,
   isMemberJoinSoundEnabled: true,
@@ -162,6 +167,22 @@ export const useSettingsStore = create<SettingsStoreState>((set, get) => ({
         error: error instanceof Error ? error.message : String(error),
       });
     });
+    await desktopApi.shortcuts
+      .configurePushToTalk(
+        settings.pushToTalkShortcut,
+        settings.isPushToTalkEnabled,
+      )
+      .catch(async (error) => {
+        await writeRendererLog(
+          "renderer-startup",
+          "warn",
+          "Failed to configure push-to-talk shortcut",
+          { error: error instanceof Error ? error.message : String(error) },
+        );
+      });
+    await desktopApi.shortcuts
+      .configureRecordingMarker(settings.recordingMarkerShortcut)
+      .catch(() => false);
 
     if (settings.isBackgroundUpdateCheckEnabled) {
       void get().checkUpdates().catch(() => undefined);
@@ -182,6 +203,20 @@ export const useSettingsStore = create<SettingsStoreState>((set, get) => ({
   saveSettings: async (partial) => {
     const settings = await desktopApi.settings.save(partial);
     set({ settings, avatarDataUrl: undefined });
+    if (
+      "pushToTalkShortcut" in partial ||
+      "isPushToTalkEnabled" in partial
+    ) {
+      await desktopApi.shortcuts.configurePushToTalk(
+        settings.pushToTalkShortcut,
+        settings.isPushToTalkEnabled,
+      );
+    }
+    if ("recordingMarkerShortcut" in partial) {
+      await desktopApi.shortcuts.configureRecordingMarker(
+        settings.recordingMarkerShortcut,
+      );
+    }
     return settings;
   },
   checkUpdates: async () => {

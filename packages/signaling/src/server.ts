@@ -30,6 +30,8 @@ import type {
   RequestSnapshotMessage,
   ScreenFrameMessage,
   ScreenShareStateMessage,
+  SceneReactionMessage,
+  RoomNoteUpdateMessage,
   SignalEnvelope,
 } from "./protocol";
 import { isSignalEnvelope } from "./protocol";
@@ -347,6 +349,12 @@ export class SignalingServer extends EventEmitter {
       case "screen_share_state":
         this.broadcastScreenShareState(message);
         return;
+      case "scene_reaction":
+        this.broadcastSceneReaction(message);
+        return;
+      case "room_note_update":
+        this.updateRoomNote(message);
+        return;
       default:
         return;
     }
@@ -421,6 +429,7 @@ export class SignalingServer extends EventEmitter {
             : existingPeer?.activity ?? "idle",
         sceneZone: assignedSceneZone,
         gameName: existingPeer?.gameName,
+        customStatus: message.customStatus?.trim().slice(0, 32) || existingPeer?.customStatus,
         joinedAt: existingPeer?.joinedAt ?? new Date().toISOString(),
         lastHeartbeatAt: Date.now(),
         disconnectedAt: undefined,
@@ -487,6 +496,7 @@ export class SignalingServer extends EventEmitter {
       avatarDataUrl: normalizedAvatar.avatarDataUrl,
       avatarHash: normalizedAvatar.avatarHash,
       avatarId: message.avatarId,
+      customStatus: message.customStatus?.trim().slice(0, 32),
     });
     const payload: MemberStateMessage = {
       type: "member_state",
@@ -500,6 +510,7 @@ export class SignalingServer extends EventEmitter {
       gameName: message.gameName,
       nickname: message.nickname,
       avatarId: message.avatarId,
+      customStatus: message.customStatus?.trim().slice(0, 32),
     };
     for (const peer of room.peers.listConnectedPeers()) {
       this.safeSend(peer.socket, payload);
@@ -649,6 +660,43 @@ export class SignalingServer extends EventEmitter {
     }
   }
 
+  private broadcastSceneReaction(message: SceneReactionMessage): void {
+    const room = this.roomManager.getRoom(message.roomId);
+    const allowedEmoji = new Set(["👍", "🔥", "😂", "❤️"]);
+    if (!room || !allowedEmoji.has(message.emoji)) {
+      return;
+    }
+    const payload: SceneReactionMessage = {
+      ...message,
+      createdAt: new Date().toISOString(),
+    };
+    for (const peer of room.peers.listConnectedPeers()) {
+      this.safeSend(peer.socket, payload);
+    }
+  }
+
+  private updateRoomNote(message: RoomNoteUpdateMessage): void {
+    const room = this.roomManager.getRoom(message.roomId);
+    const author = room?.peers.getPeer(message.peerId);
+    if (!room || !author) {
+      return;
+    }
+    room.roomNote = {
+      content: message.note.content.trim().slice(0, 80),
+      authorName: author.nickname,
+      updatedAt: new Date().toISOString(),
+    };
+    const payload: RoomNoteUpdateMessage = {
+      type: "room_note_update",
+      roomId: room.roomId,
+      peerId: message.peerId,
+      note: room.roomNote,
+    };
+    for (const peer of room.peers.listConnectedPeers()) {
+      this.safeSend(peer.socket, payload);
+    }
+  }
+
   private forwardPeerSignal(
     message: PeerOfferMessage | PeerAnswerMessage | IceCandidateMessage,
   ): void {
@@ -678,6 +726,7 @@ export class SignalingServer extends EventEmitter {
         appVersion: room.appVersion,
         protocolVersion: room.protocolVersion,
         buildNumber: room.buildNumber,
+        roomNote: room.roomNote,
       };
       this.safeSend(peer.socket, payload);
       this.emit("snapshot", payload);
@@ -722,6 +771,7 @@ export class SignalingServer extends EventEmitter {
       appVersion: room.appVersion,
       protocolVersion: room.protocolVersion,
       buildNumber: room.buildNumber,
+      roomNote: room.roomNote,
     };
     this.safeSend(socket, payload);
     this.emit("snapshot", payload);

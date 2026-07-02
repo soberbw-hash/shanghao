@@ -178,6 +178,49 @@ export const SettingsPage = () => {
       <SettingsSection title="应用" description="控制窗口、悬浮窗与图形渲染。">
         <div className="space-y-3">
           <SettingsItemRow
+            label="一句话状态"
+            description="最多 32 个字，显示在你的角色状态旁。"
+          >
+            <input
+              defaultValue={settings.customStatus}
+              maxLength={32}
+              placeholder="例如：排位中，晚点聊"
+              className="settings-inline-input"
+              onBlur={(event) => {
+                void handleSaveSettings({ customStatus: event.target.value });
+              }}
+            />
+          </SettingsItemRow>
+          <SettingsItemRow
+            label="屏幕分享画质"
+            description="服务器带宽有限时推荐“流畅”。"
+          >
+            <select
+              value={settings.screenShareQuality}
+              className="settings-inline-select"
+              onChange={(event) => {
+                void handleSaveSettings({
+                  screenShareQuality: event.target.value as AppSettings["screenShareQuality"],
+                });
+              }}
+            >
+              <option value="smooth">流畅（720p / 15fps）</option>
+              <option value="balanced">均衡（900p / 20fps）</option>
+              <option value="clear">清晰（1080p / 24fps）</option>
+            </select>
+          </SettingsItemRow>
+          <SettingsItemRow
+            label="共享系统音频"
+            description="Windows 分享屏幕时，同时让好友听到游戏或视频声音。"
+          >
+            <Switch
+              isChecked={settings.isScreenShareSystemAudioEnabled}
+              onChange={(isScreenShareSystemAudioEnabled) =>
+                void handleSaveSettings({ isScreenShareSystemAudioEnabled })
+              }
+            />
+          </SettingsItemRow>
+          <SettingsItemRow
             label="进入频道时显示悬浮窗"
             description="默认开启，进入频道后自动显示胶囊悬浮窗。"
           >
@@ -221,6 +264,17 @@ export const SettingsPage = () => {
             <Switch
               isChecked={settings.isUiSoundEnabled}
               onChange={(isUiSoundEnabled) => void handleSaveSettings({ isUiSoundEnabled })}
+            />
+          </SettingsItemRow>
+          <SettingsItemRow
+            label="系统通知"
+            description="全屏游戏时提醒好友上线或敲你。"
+          >
+            <Switch
+              isChecked={settings.isSystemNotificationEnabled}
+              onChange={(isSystemNotificationEnabled) =>
+                void handleSaveSettings({ isSystemNotificationEnabled })
+              }
             />
           </SettingsItemRow>
           <SettingsItemRow label="关闭窗口时留在后台">

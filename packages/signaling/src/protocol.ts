@@ -1,6 +1,7 @@
 import type {
   BuiltInAvatarId,
   MemberActivity,
+  RoomNote,
   RoomMember,
   SceneZoneId,
 } from "@private-voice/shared";
@@ -38,6 +39,8 @@ export type SignalEnvelope =
   | AudioResyncAckMessage
   | ScreenFrameMessage
   | ScreenShareStateMessage
+  | SceneReactionMessage
+  | RoomNoteUpdateMessage
   | ErrorMessage;
 
 interface BaseMessage {
@@ -59,6 +62,7 @@ export interface JoinChannelMessage extends BaseMessage, VersionedMessage {
   peerId: string;
   nickname: string;
   avatarId: BuiltInAvatarId;
+  customStatus?: string;
 }
 
 export interface LeaveChannelMessage extends BaseMessage {
@@ -104,6 +108,7 @@ export interface RoomSnapshotMessage extends BaseMessage, VersionedMessage {
   members: RoomMember[];
   revision: number;
   serverTime: number;
+  roomNote?: RoomNote;
 }
 
 export interface ChannelSnapshotMessage extends Omit<RoomSnapshotMessage, "type"> {
@@ -156,6 +161,7 @@ export interface MemberStateMessage extends BaseMessage {
   nickname?: string;
   avatarDataUrl?: string;
   avatarId?: BuiltInAvatarId;
+  customStatus?: string;
 }
 
 export interface ChatMessage extends BaseMessage {
@@ -236,6 +242,22 @@ export interface ScreenShareStateMessage extends BaseMessage {
   roomId: string;
   peerId: string;
   isSharing: boolean;
+}
+
+export interface SceneReactionMessage extends BaseMessage {
+  type: "scene_reaction";
+  roomId: string;
+  peerId: string;
+  targetPeerId: string;
+  emoji: "👍" | "🔥" | "😂" | "❤️";
+  createdAt: string;
+}
+
+export interface RoomNoteUpdateMessage extends BaseMessage {
+  type: "room_note_update";
+  roomId: string;
+  peerId: string;
+  note: RoomNote;
 }
 
 export interface ErrorMessage extends BaseMessage {

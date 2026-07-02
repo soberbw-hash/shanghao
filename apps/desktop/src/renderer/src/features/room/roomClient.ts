@@ -7,6 +7,8 @@ import {
   type ChatMessage,
   type MemberActivity,
   type RoomMember,
+  type RoomNote,
+  type SceneReaction,
   type SceneZoneId,
   type SignalingEventPayload,
 } from "@private-voice/shared";
@@ -26,9 +28,16 @@ import type {
   ChannelSnapshotMessage,
   ScreenFrameMessage,
   ScreenShareStateMessage,
+  SceneReactionMessage,
+  RoomNoteUpdateMessage,
   SignalEnvelope,
 } from "@private-voice/signaling";
-import { ExponentialBackoff, MeshPeerConnection } from "@private-voice/webrtc";
+import {
+  DEFAULT_SCREEN_SHARE_PROFILE,
+  ExponentialBackoff,
+  MeshPeerConnection,
+  type ScreenShareEncodingProfile,
+} from "@private-voice/webrtc";
 
 import { writeRendererLog } from "../../utils/logger";
 import { SignalingAudioRelay } from "./signalingAudioRelay";
@@ -40,6 +49,7 @@ interface RoomClientOptions {
   nickname: string;
   avatarDataUrl?: string;
   avatarId?: BuiltInAvatarId;
+  customStatus?: string;
   localStream: MediaStream;
   appVersion: string;
   protocolVersion: string;
@@ -51,6 +61,8 @@ interface RoomClientOptions {
   onChatMessage: (message: ChatMessage) => void;
   onKnock: (message: ChatMessage) => void;
   onRemoteScreenFrame: (peerId: string, frame?: RemoteScreenFrame) => void;
+  onRoomNote: (note?: RoomNote) => void;
+  onSceneReaction: (reaction: SceneReaction) => void;
   onDiagnosticEvent?: (payload: SignalingEventPayload) => void;
   onReconnectAttempt?: (attempt: number) => void;
   onReconnectExhausted?: (error: Error) => void;
@@ -75,10 +87,10 @@ export interface RemoteScreenFrame {
 const INITIAL_CONNECT_TIMEOUT_MS = 10_000;
 const SNAPSHOT_RETRY_TIMEOUT_MS = 5_000;
 const MAX_RECONNECT_ATTEMPTS = 6;
-const SCREEN_FRAME_INTERVAL_MS = 1_500;
-const SCREEN_FRAME_HEALTHY_INTERVAL_MS = 4_000;
-const SCREEN_FRAME_MAX_WIDTH = 640;
-const SCREEN_FRAME_MAX_BYTES = 96 * 1024;
+const SCREEN_FRAME_INTERVAL_MS = 2_000;
+const SCREEN_FRAME_HEALTHY_INTERVAL_MS = 5_000;
+const SCREEN_FRAME_MAX_WIDTH = 512;
+const SCREEN_FRAME_MAX_BYTES = 64 * 1024;
 
 export class RoomClient {
   private readonly backoff = new ExponentialBackoff(DEFAULT_RECONNECT_DELAYS_MS);
@@ -91,6 +103,7 @@ export class RoomClient {
   private nickname: string;
   private avatarDataUrl?: string;
   private avatarId?: BuiltInAvatarId;
+  private customStatus?: string;
   private lastPublishedMuteState?: boolean;
   private lastPublishedSpeakingState?: boolean;
   private lastPublishedDeafenState?: boolean;
@@ -100,6 +113,7 @@ export class RoomClient {
   private lastPublishedNickname: string;
   private lastPublishedAvatarDataUrl?: string;
   private lastPublishedAvatarId?: BuiltInAvatarId;
+  private lastPublishedCustomStatus?: string;
   private pendingConnection?: PendingConnection;
   private hasJoinedOnce = false;
   private unsubscribeEvents?: () => void;
@@ -123,6 +137,10 @@ export class RoomClient {
   private roomSnapshotReceived = false;
   private lastServerError?: string;
   private screenShareStream?: MediaStream;
+  private screenShareProfile = DEFAULT_SCREEN_SHARE_PROFILE;
+  private primaryInputTrack?: MediaStreamTrack;
+  private screenAudioContext?: AudioContext;
+  private mixedScreenAudioTrack?: MediaStreamTrack;
   private screenFrameVideo?: HTMLVideoElement;
   private screenFrameCanvas?: HTMLCanvasElement;
   private screenFrameTimer?: number;
@@ -131,12 +149,15 @@ export class RoomClient {
 
   constructor(private readonly options: RoomClientOptions) {
     this.localStream = options.localStream;
+    this.primaryInputTrack = options.localStream.getAudioTracks()[0];
     this.nickname = options.nickname;
     this.avatarDataUrl = options.avatarDataUrl;
     this.avatarId = options.avatarId;
+    this.customStatus = options.customStatus;
     this.lastPublishedNickname = options.nickname;
     this.lastPublishedAvatarDataUrl = options.avatarDataUrl;
     this.lastPublishedAvatarId = options.avatarId;
+    this.lastPublishedCustomStatus = options.customStatus;
   }
 
   connect(): Promise<void> {
@@ -166,6 +187,9 @@ export class RoomClient {
     }
 
     this.clearPeers();
+    if (this.screenShareStream) {
+      await this.restorePrimaryInputTrack();
+    }
     this.stopScreenShareTracks();
     this.audioRelay?.destroy();
     this.audioRelay = undefined;
@@ -221,11 +245,17 @@ export class RoomClient {
     });
   }
 
-  updateProfile(nickname: string, avatarDataUrl?: string, avatarId?: BuiltInAvatarId): void {
+  updateProfile(
+    nickname: string,
+    avatarDataUrl?: string,
+    avatarId?: BuiltInAvatarId,
+    customStatus?: string,
+  ): void {
     if (
       this.lastPublishedNickname === nickname &&
       this.lastPublishedAvatarDataUrl === avatarDataUrl &&
-      this.lastPublishedAvatarId === avatarId
+      this.lastPublishedAvatarId === avatarId &&
+      this.lastPublishedCustomStatus === customStatus
     ) {
       return;
     }
@@ -233,9 +263,11 @@ export class RoomClient {
     this.nickname = nickname;
     this.avatarDataUrl = avatarDataUrl;
     this.avatarId = avatarId;
+    this.customStatus = customStatus;
     this.lastPublishedNickname = nickname;
     this.lastPublishedAvatarDataUrl = avatarDataUrl;
     this.lastPublishedAvatarId = avatarId;
+    this.lastPublishedCustomStatus = customStatus;
 
     void this.safeSend({
       type: "member_state",
@@ -243,22 +275,22 @@ export class RoomClient {
       peerId: this.options.peerId,
       nickname,
       avatarId,
+      customStatus,
     });
   }
 
   async replaceInputTrack(nextTrack: MediaStreamTrack): Promise<void> {
-    const previousTracks = this.localStream.getAudioTracks();
-    const nextStream = new MediaStream([nextTrack]);
-    this.localStream = nextStream;
-
-    await Promise.all([...this.peers.values()].map((peer) => peer.replaceLocalTrack(nextTrack)));
-    await this.audioRelay?.replaceLocalStream(nextStream);
-
-    previousTracks.forEach((track) => {
-      if (track.id !== nextTrack.id) {
-        track.stop();
-      }
-    });
+    const previousPrimaryTrack = this.primaryInputTrack;
+    this.primaryInputTrack = nextTrack;
+    const systemAudioTrack = this.screenShareStream?.getAudioTracks()[0];
+    if (systemAudioTrack) {
+      await this.applyScreenAudioMix(nextTrack, systemAudioTrack);
+    } else {
+      await this.applyOutgoingAudioTrack(nextTrack);
+    }
+    if (previousPrimaryTrack && previousPrimaryTrack.id !== nextTrack.id) {
+      previousPrimaryTrack.stop();
+    }
   }
 
   private openSocket(isReconnect: boolean): Promise<void> {
@@ -309,6 +341,7 @@ export class RoomClient {
         peerId: this.options.peerId,
         nickname: this.nickname,
         avatarId: this.avatarId ?? "fox",
+        customStatus: this.customStatus,
         appVersion: this.options.appVersion,
         protocolVersion: this.options.protocolVersion,
         buildNumber: this.options.buildNumber,
@@ -410,6 +443,12 @@ export class RoomClient {
       case "screen_share_state":
         this.handleScreenShareState(payload);
         return;
+      case "scene_reaction":
+        this.handleSceneReaction(payload);
+        return;
+      case "room_note_update":
+        this.options.onRoomNote(payload.note);
+        return;
       case "member_state":
         this.handleMemberState(payload);
         return;
@@ -451,14 +490,25 @@ export class RoomClient {
     });
   }
 
-  async startScreenShare(stream: MediaStream): Promise<void> {
+  async startScreenShare(
+    stream: MediaStream,
+    profile: ScreenShareEncodingProfile = DEFAULT_SCREEN_SHARE_PROFILE,
+  ): Promise<void> {
     const [videoTrack] = stream.getVideoTracks();
     if (!videoTrack) {
       throw new Error("screen_track_missing");
     }
 
+    if (this.screenShareStream) {
+      await this.restorePrimaryInputTrack();
+    }
     this.stopScreenShareTracks();
     this.screenShareStream = stream;
+    this.screenShareProfile = profile;
+    const systemAudioTrack = stream.getAudioTracks()[0];
+    if (systemAudioTrack && this.primaryInputTrack) {
+      await this.applyScreenAudioMix(this.primaryInputTrack, systemAudioTrack);
+    }
     this.updateScreenFrameRelaySending();
     void this.safeSend({
       type: "screen_share_state",
@@ -478,11 +528,14 @@ export class RoomClient {
       { once: true },
     );
 
-    await Promise.all([...this.peers.values()].map((peer) => peer.setScreenTrack(videoTrack)));
+    await Promise.all(
+      [...this.peers.values()].map((peer) => peer.setScreenTrack(videoTrack, profile)),
+    );
     void writeRendererLog("webrtc", "info", "Screen share track attached", {
       peerCount: this.peers.size,
       trackId: videoTrack.id,
       settings: videoTrack.getSettings?.(),
+      profile,
     });
   }
 
@@ -492,6 +545,7 @@ export class RoomClient {
     this.stopScreenFrameRelay();
 
     await Promise.all([...this.peers.values()].map((peer) => peer.setScreenTrack(undefined)));
+    await this.restorePrimaryInputTrack();
     if (stopTracks) {
       previousStream?.getTracks().forEach((track) => track.stop());
     }
@@ -542,6 +596,7 @@ export class RoomClient {
     this.stopSnapshotRecovery();
     this.options.onSnapshotRevision?.(snapshot.revision);
     this.options.onRoomName(snapshot.roomName);
+    this.options.onRoomNote(snapshot.roomNote);
     const normalizedMembers = snapshot.members.map((member) => ({
       ...member,
       avatarDataUrl: this.avatarCache.get(member.id)?.avatarDataUrl,
@@ -686,6 +741,39 @@ export class RoomClient {
     });
   }
 
+  async sendSceneReaction(
+    targetPeerId: string,
+    emoji: SceneReaction["emoji"],
+  ): Promise<void> {
+    if (!this.canSendChat()) {
+      throw new Error("signaling_not_connected");
+    }
+    await this.send({
+      type: "scene_reaction",
+      roomId: this.options.roomId,
+      peerId: this.options.peerId,
+      targetPeerId,
+      emoji,
+      createdAt: new Date().toISOString(),
+    });
+  }
+
+  async updateRoomNote(content: string): Promise<void> {
+    if (!this.canSendChat()) {
+      throw new Error("signaling_not_connected");
+    }
+    await this.send({
+      type: "room_note_update",
+      roomId: this.options.roomId,
+      peerId: this.options.peerId,
+      note: {
+        content: content.trim().slice(0, 80),
+        authorName: this.nickname,
+        updatedAt: new Date().toISOString(),
+      },
+    });
+  }
+
   private handleChatMessage(payload: SignalChatMessage): void {
     this.options.onChatMessage({
       id: `${payload.peerId}-${payload.createdAt}`,
@@ -740,6 +828,16 @@ export class RoomClient {
     this.options.onRemoteScreenFrame(payload.peerId, undefined);
   }
 
+  private handleSceneReaction(payload: SceneReactionMessage): void {
+    this.options.onSceneReaction({
+      id: `${payload.peerId}-${payload.targetPeerId}-${payload.createdAt}`,
+      peerId: payload.peerId,
+      targetPeerId: payload.targetPeerId,
+      emoji: payload.emoji,
+      createdAt: payload.createdAt,
+    });
+  }
+
   private handleMemberState(payload: MemberStateMessage): void {
     let changed = false;
     this.currentMembers = this.currentMembers.map((member) => {
@@ -761,6 +859,7 @@ export class RoomClient {
           payload.gameName === ""
             ? undefined
             : payload.gameName ?? member.gameName,
+        customStatus: payload.customStatus ?? member.customStatus,
         isMuted,
         speakingState: isMuted
           ? MemberSpeakingState.Muted
@@ -911,7 +1010,7 @@ export class RoomClient {
       return;
     }
 
-    await peer.setScreenTrack(videoTrack);
+    await peer.setScreenTrack(videoTrack, this.screenShareProfile);
   }
 
   private async send(payload: SignalEnvelope): Promise<void> {
@@ -1056,8 +1155,72 @@ export class RoomClient {
     this.updateAudioRelaySending();
   }
 
+  private async applyOutgoingAudioTrack(track: MediaStreamTrack): Promise<void> {
+    const nextStream = new MediaStream([track]);
+    this.localStream = nextStream;
+    await Promise.all([...this.peers.values()].map((peer) => peer.replaceLocalTrack(track)));
+    await this.audioRelay?.replaceLocalStream(nextStream);
+  }
+
+  private async applyScreenAudioMix(
+    microphoneTrack: MediaStreamTrack,
+    systemAudioTrack: MediaStreamTrack,
+  ): Promise<void> {
+    this.disposeScreenAudioMixer();
+    let context: AudioContext;
+    try {
+      context = new AudioContext({ latencyHint: "interactive", sampleRate: 32_000 });
+    } catch {
+      context = new AudioContext({ latencyHint: "interactive" });
+    }
+    const destination = context.createMediaStreamDestination();
+    const microphoneSource = context.createMediaStreamSource(
+      new MediaStream([microphoneTrack]),
+    );
+    const systemSource = context.createMediaStreamSource(
+      new MediaStream([systemAudioTrack]),
+    );
+    const microphoneGain = context.createGain();
+    const systemGain = context.createGain();
+    microphoneGain.gain.value = 1;
+    systemGain.gain.value = 0.72;
+    microphoneSource.connect(microphoneGain).connect(destination);
+    systemSource.connect(systemGain).connect(destination);
+    const mixedTrack = destination.stream.getAudioTracks()[0];
+    if (!mixedTrack) {
+      await context.close();
+      return;
+    }
+    mixedTrack.contentHint = "speech";
+    this.screenAudioContext = context;
+    this.mixedScreenAudioTrack = mixedTrack;
+    await this.applyOutgoingAudioTrack(mixedTrack);
+    void writeRendererLog("audio", "info", "Screen system audio mixed with microphone", {
+      contextSampleRate: context.sampleRate,
+      systemTrackLabel: systemAudioTrack.label,
+    });
+  }
+
+  private async restorePrimaryInputTrack(): Promise<void> {
+    const primaryTrack = this.primaryInputTrack;
+    if (primaryTrack?.readyState === "live" && this.mixedScreenAudioTrack) {
+      await this.applyOutgoingAudioTrack(primaryTrack);
+    }
+    this.disposeScreenAudioMixer();
+  }
+
+  private disposeScreenAudioMixer(): void {
+    this.mixedScreenAudioTrack?.stop();
+    this.mixedScreenAudioTrack = undefined;
+    if (this.screenAudioContext) {
+      void this.screenAudioContext.close().catch(() => undefined);
+      this.screenAudioContext = undefined;
+    }
+  }
+
   private stopScreenShareTracks(): void {
     this.stopScreenFrameRelay();
+    this.disposeScreenAudioMixer();
     this.screenShareStream?.getTracks().forEach((track) => track.stop());
     this.screenShareStream = undefined;
   }

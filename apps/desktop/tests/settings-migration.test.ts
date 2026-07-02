@@ -15,7 +15,6 @@ test("migrateSettings falls back to safe defaults for damaged legacy config", ()
     shouldAutoCopyInviteLink: false,
     channelAccessCode: "legacy-code",
     manualDirectHost: "203.0.113.8",
-    connectionMode: "direct_host",
     isMicOnSoundEnabled: false,
     isMicOffSoundEnabled: false,
     isMemberJoinSoundEnabled: false,

@@ -603,3 +603,100 @@ test("fixed channel keeps a reconnecting member during grace and replaces same p
     await server.close();
   }
 });
+
+test("fixed channel syncs custom status, reactions, and the shared note", async () => {
+  const server = new SignalingServer({ roomName: "固定频道" });
+  const port = await server.listen();
+  const url = `ws://127.0.0.1:${port}`;
+  const first = await openSocket(url);
+  const second = await openSocket(url);
+
+  try {
+    joinChannel(first, "fox", "橘子");
+    await waitForMessage(
+      first,
+      (payload): payload is { type: "channel_snapshot" } =>
+        typeof payload === "object" &&
+        payload !== null &&
+        (payload as { type?: string }).type === "channel_snapshot",
+    );
+    second.send(
+      JSON.stringify({
+        type: "join_channel",
+        roomId: "main",
+        channelId: "main",
+        peerId: "cat",
+        nickname: "团团",
+        avatarId: "cat",
+        customStatus: "排位中",
+        appVersion: "0.1.47",
+        protocolVersion: APP_PROTOCOL_VERSION,
+        buildNumber: APP_BUILD_NUMBER,
+      }),
+    );
+    const snapshot = await waitForMessage(
+      first,
+      (payload): payload is {
+        type: "channel_snapshot";
+        members: Array<{ id: string; customStatus?: string }>;
+      } =>
+        typeof payload === "object" &&
+        payload !== null &&
+        (payload as { type?: string }).type === "channel_snapshot" &&
+        (payload as { members?: unknown[] }).members?.length === 2,
+    );
+    assert.equal(
+      snapshot.members.find((member) => member.id === "cat")?.customStatus,
+      "排位中",
+    );
+
+    const reactionPromise = waitForMessage(
+      second,
+      (payload): payload is { type: "scene_reaction"; emoji: string } =>
+        typeof payload === "object" &&
+        payload !== null &&
+        (payload as { type?: string }).type === "scene_reaction",
+    );
+    first.send(
+      JSON.stringify({
+        type: "scene_reaction",
+        roomId: "main",
+        peerId: "fox",
+        targetPeerId: "cat",
+        emoji: "🔥",
+        createdAt: new Date().toISOString(),
+      }),
+    );
+    assert.equal((await reactionPromise).emoji, "🔥");
+
+    const notePromise = waitForMessage(
+      second,
+      (payload): payload is {
+        type: "room_note_update";
+        note: { content: string; authorName: string };
+      } =>
+        typeof payload === "object" &&
+        payload !== null &&
+        (payload as { type?: string }).type === "room_note_update",
+    );
+    first.send(
+      JSON.stringify({
+        type: "room_note_update",
+        roomId: "main",
+        peerId: "fox",
+        note: {
+          content: "周五晚上，老时间",
+          authorName: "客户端伪造值",
+          updatedAt: new Date().toISOString(),
+        },
+      }),
+    );
+    const noteMessage = await notePromise;
+    assert.equal(noteMessage.note.content, "周五晚上，老时间");
+    assert.equal(noteMessage.note.authorName, "橘子");
+  } finally {
+    first.close();
+    second.close();
+    await server.close();
+  }
+});

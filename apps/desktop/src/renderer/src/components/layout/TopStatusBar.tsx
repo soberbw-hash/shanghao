@@ -20,12 +20,29 @@ const statusCopy = (state: RoomConnectionState) => {
   return "开黑频道";
 };
 
+const statusTone = (state: RoomConnectionState) => {
+  if (state === RoomConnectionState.Connected || state === RoomConnectionState.WaitingPeer) {
+    return "online";
+  }
+  if (
+    state === RoomConnectionState.Reconnecting ||
+    state === RoomConnectionState.Degraded ||
+    state === RoomConnectionState.Joining ||
+    state === RoomConnectionState.Handshaking ||
+    state === RoomConnectionState.WaitingSnapshot
+  ) {
+    return "pending";
+  }
+  if (state === RoomConnectionState.Failed || state === RoomConnectionState.Disconnected) {
+    return "offline";
+  }
+  return "neutral";
+};
+
 export const TopStatusBar = ({
   onKnock,
   onInvite,
 }: {
-  variant?: "compact" | "room";
-  onCopyInvite?: () => void;
   onKnock?: () => void;
   onInvite?: () => void;
 }) => {
@@ -46,7 +63,10 @@ export const TopStatusBar = ({
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
           <h1 className="whitespace-nowrap text-[15px] font-[700] tracking-[-0.02em] text-[#1a2332]">开黑频道</h1>
-          <span className="h-1.5 w-1.5 rounded-full bg-[#18B66A]" />
+          <span
+            className={`channel-status-dot ${statusTone(room.connectionState)}`}
+            aria-label={statusCopy(room.connectionState)}
+          />
         </div>
         <motion.div
           key={speaking?.id || statusCopy(room.connectionState)}

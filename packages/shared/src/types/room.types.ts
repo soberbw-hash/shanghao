@@ -21,9 +21,21 @@ export interface ChatMessage {
   isBot?: boolean;
 }
 
+export interface RoomNote {
+  content: string;
+  authorName: string;
+  updatedAt: string;
+}
+
+export interface SceneReaction {
+  id: string;
+  peerId: string;
+  targetPeerId: string;
+  emoji: "👍" | "🔥" | "😂" | "❤️";
+  createdAt: string;
+}
+
 export type SceneZoneId =
-  | "coffeeBar"
-  | "fitnessZone"
   | "restroomZone"
   | "gameDesk1"
   | "gameDesk2"
@@ -48,6 +60,7 @@ export interface RoomMember {
   activity?: MemberActivity;
   sceneZone?: SceneZoneId;
   gameName?: string;
+  customStatus?: string;
   presenceState: MemberPresenceState;
   speakingState: MemberSpeakingState;
   joinState?: MemberJoinState;
@@ -75,6 +88,7 @@ export interface RoomSummary {
   latestFailureReason?: string;
   recentRoomEvents?: RoomEvent[];
   relayStatus?: RelayStatusSnapshot;
+  roomNote?: RoomNote;
 }
 
 export interface ConnectionHealth {

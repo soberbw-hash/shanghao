@@ -16,6 +16,20 @@ export interface MeshPeerOptions {
   ) => void;
 }
 
+export interface ScreenShareEncodingProfile {
+  maxBitrate: number;
+  maxFramerate: number;
+  maxWidth: number;
+  maxHeight: number;
+}
+
+export const DEFAULT_SCREEN_SHARE_PROFILE: ScreenShareEncodingProfile = {
+  maxBitrate: 420_000,
+  maxFramerate: 15,
+  maxWidth: 1_280,
+  maxHeight: 720,
+};
+
 export const DEFAULT_ICE_SERVERS: RTCIceServer[] = [
   { urls: "stun:stun.qq.com:3478" },
   { urls: "stun:stun.miwifi.com:3478" },
@@ -28,6 +42,7 @@ export class MeshPeerConnection {
   private readonly pendingIceCandidates: IceCandidatePayload[] = [];
   private readonly remoteStream = new MediaStream();
   private readonly screenTransceiver: RTCRtpTransceiver;
+  private screenShareProfile = DEFAULT_SCREEN_SHARE_PROFILE;
 
   constructor(private readonly options: MeshPeerOptions) {
     this.connection = new RTCPeerConnection({
@@ -161,16 +176,23 @@ export class MeshPeerConnection {
     }
   }
 
-  async setScreenTrack(nextTrack?: MediaStreamTrack): Promise<void> {
+  async setScreenTrack(
+    nextTrack?: MediaStreamTrack,
+    profile: ScreenShareEncodingProfile = DEFAULT_SCREEN_SHARE_PROFILE,
+  ): Promise<void> {
+    this.screenShareProfile = profile;
     await this.screenTransceiver.sender.replaceTrack(nextTrack ?? null);
     if (nextTrack) {
       nextTrack.contentHint = "detail";
       await nextTrack.applyConstraints({
-        width: { max: 1_280 },
-        height: { max: 720 },
-        frameRate: { ideal: 12, max: 15 },
+        width: { max: profile.maxWidth },
+        height: { max: profile.maxHeight },
+        frameRate: {
+          ideal: Math.max(10, profile.maxFramerate - 3),
+          max: profile.maxFramerate,
+        },
       }).catch(() => undefined);
-      await this.configureScreenSender();
+      await this.configureScreenSender(profile);
     }
   }
 
@@ -239,7 +261,9 @@ export class MeshPeerConnection {
     }
   }
 
-  private async configureScreenSender(): Promise<void> {
+  private async configureScreenSender(
+    profile: ScreenShareEncodingProfile = DEFAULT_SCREEN_SHARE_PROFILE,
+  ): Promise<void> {
     const sender = this.screenTransceiver.sender;
     try {
       const parameters = sender.getParameters();
@@ -247,8 +271,8 @@ export class MeshPeerConnection {
       const encoding = parameters.encodings[0] as RTCRtpEncodingParameters & {
         networkPriority?: RTCPriorityType;
       };
-      encoding.maxBitrate = 900_000;
-      encoding.maxFramerate = 15;
+      encoding.maxBitrate = profile.maxBitrate;
+      encoding.maxFramerate = profile.maxFramerate;
       encoding.priority = "low";
       encoding.networkPriority = "low";
       await sender.setParameters(parameters);
@@ -269,7 +293,7 @@ export class MeshPeerConnection {
       await this.configureAudioSender(audioSender);
     }
     if (this.screenTransceiver.sender.track) {
-      await this.configureScreenSender();
+      await this.configureScreenSender(this.screenShareProfile);
     }
   }
 }

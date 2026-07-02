@@ -64,7 +64,8 @@ test("gsap motion is wired across the main surfaces with reduced-motion fallback
   assert.equal(stylesSource.includes(".layered-animal-head"), true);
   assert.equal(islandSource.includes('layout="position"'), true);
   assert.equal(readFileSync(motionSystemPath, "utf8").includes("force3D: true"), true);
-  assert.equal(readFileSync(motionSystemPath, "utf8").includes("expo.out"), true);
+  assert.equal(readFileSync(motionSystemPath, "utf8").includes("power3.out"), true);
+  assert.equal(readFileSync(motionSystemPath, "utf8").includes("APPLE_MOTION_DURATION"), true);
 });
 
 test("startup paints immediately and keeps network work off the critical path", () => {

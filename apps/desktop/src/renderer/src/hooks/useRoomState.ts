@@ -9,7 +9,11 @@ import {
   type SceneZoneId,
   type SignalingEventPayload,
 } from "@private-voice/shared";
-import { createSpeakingDetector, requestMicrophoneStream } from "@private-voice/webrtc";
+import {
+  createSpeakingDetector,
+  requestMicrophoneStream,
+  type ScreenShareEncodingProfile,
+} from "@private-voice/webrtc";
 
 import {
   createProcessedMicrophoneStream,
@@ -157,6 +161,7 @@ export const useRoomState = () => {
   const pushRoomEvent = useRoomStore((state) => state.pushRoomEvent);
   const clearRoomEvents = useRoomStore((state) => state.clearRoomEvents);
   const addChatMessage = useRoomStore((state) => state.addChatMessage);
+  const addSceneReaction = useRoomStore((state) => state.addSceneReaction);
   const clearChatMessages = useRoomStore((state) => state.clearChatMessages);
   const setConnectionHealth = useRoomStore((state) => state.setConnectionHealth);
   const updateLocalPresence = useRoomStore((state) => state.updateLocalPresence);
@@ -186,8 +191,13 @@ export const useRoomState = () => {
       return;
     }
 
-    activeClient?.updateProfile(settings.nickname, avatarDataUrl, settings.avatarId);
-  }, [avatarDataUrl, settings?.avatarId, settings?.nickname]);
+    activeClient?.updateProfile(
+      settings.nickname,
+      avatarDataUrl,
+      settings.avatarId,
+      settings.customStatus,
+    );
+  }, [avatarDataUrl, settings?.avatarId, settings?.customStatus, settings?.nickname]);
 
   const startSpeakingDetector = (stream: MediaStream) => {
     activeSpeakingDetector?.destroy();
@@ -277,6 +287,7 @@ export const useRoomState = () => {
       nickname: currentSettings?.nickname || "我",
       avatarDataUrl: undefined,
       avatarId: currentSettings?.avatarId,
+      customStatus: currentSettings?.customStatus,
       localStream: stream,
       appVersion: runtimeInfo?.version ?? "0.0.0",
       protocolVersion: runtimeInfo?.protocolVersion ?? "1",
@@ -292,6 +303,15 @@ export const useRoomState = () => {
             memberName: member.nickname,
             message: `${member.nickname} 加入频道`,
           });
+          if (
+            !member.isLocal &&
+            useSettingsStore.getState().settings?.isSystemNotificationEnabled !== false
+          ) {
+            void window.desktopApi.app.notify({
+              title: "好友上线",
+              body: `${member.nickname} 进入了开黑频道`,
+            });
+          }
         });
 
         left.forEach((memberId) => {
@@ -351,6 +371,15 @@ export const useRoomState = () => {
       onRemoteScreenFrame: (remotePeerId, frame) => {
         setRemoteScreenFrame(remotePeerId, frame);
       },
+      onRoomNote: (roomNote) => {
+        setRoom({ roomNote });
+      },
+      onSceneReaction: (reaction) => {
+        addSceneReaction(reaction);
+        if (reaction.targetPeerId === peerId && reaction.peerId !== peerId) {
+          playUiSound("receive-message");
+        }
+      },
       onChatMessage: (message) => {
         addChatMessage(message);
         if (!message.isLocal) {
@@ -366,6 +395,12 @@ export const useRoomState = () => {
             title: `${message.nickname} 敲了敲你`,
             description: "上号啦",
           });
+          if (useSettingsStore.getState().settings?.isSystemNotificationEnabled !== false) {
+            void window.desktopApi.app.notify({
+              title: `${message.nickname} 敲了敲你`,
+              body: "上号啦",
+            });
+          }
         }
       },
       onDiagnosticEvent: (payload) => {
@@ -517,6 +552,7 @@ export const useRoomState = () => {
           avatarPath: settings.avatarPath,
           avatarDataUrl,
           avatarId: settings.avatarId,
+          customStatus: settings.customStatus,
         });
       }
       useAppStore.getState().navigate("home");
@@ -616,13 +652,33 @@ export const useRoomState = () => {
     await activeClient.sendKnock();
   };
 
-  const startScreenShare = async (stream: MediaStream) => {
+  const sendSceneReaction = async (
+    targetPeerId: string,
+    emoji: "👍" | "🔥" | "😂" | "❤️",
+  ) => {
+    if (!activeClient?.canSendChat()) {
+      return;
+    }
+    await activeClient.sendSceneReaction(targetPeerId, emoji);
+  };
+
+  const updateRoomNote = async (content: string) => {
+    if (!activeClient?.canSendChat()) {
+      return;
+    }
+    await activeClient.updateRoomNote(content);
+  };
+
+  const startScreenShare = async (
+    stream: MediaStream,
+    profile?: ScreenShareEncodingProfile,
+  ) => {
     if (!activeClient) {
       stream.getTracks().forEach((track) => track.stop());
       throw new Error("room_not_connected");
     }
 
-    await activeClient.startScreenShare(stream);
+    await activeClient.startScreenShare(stream, profile);
     await writeRendererLog("webrtc", "info", "Screen share started from room state", {
       videoTracks: stream.getVideoTracks().length,
     });
@@ -660,6 +716,8 @@ export const useRoomState = () => {
     copyInviteLink,
     sendChatMessage,
     sendKnock,
+    sendSceneReaction,
+    updateRoomNote,
     startScreenShare,
     stopScreenShare,
     moveLocalMember,

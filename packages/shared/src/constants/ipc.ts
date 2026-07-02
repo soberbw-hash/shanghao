@@ -3,6 +3,7 @@ export const IPC_CHANNELS = {
     getRuntimeInfo: "app:get-runtime-info",
     writeLog: "app:write-log",
     openPath: "app:open-path",
+    notify: "app:notify",
   },
   clipboard: {
     writeText: "clipboard:write-text",
@@ -43,6 +44,10 @@ export const IPC_CHANNELS = {
   shortcuts: {
     configureMute: "shortcuts:configure-mute",
     muteTriggered: "shortcuts:mute-triggered",
+    configurePushToTalk: "shortcuts:configure-push-to-talk",
+    pushToTalkState: "shortcuts:push-to-talk-state",
+    configureRecordingMarker: "shortcuts:configure-recording-marker",
+    recordingMarkerTriggered: "shortcuts:recording-marker-triggered",
   },
   updates: {
     check: "updates:check",
@@ -59,6 +64,7 @@ export const IPC_CHANNELS = {
   },
   recording: {
     export: "recording:export",
+    saveMarkers: "recording:save-markers",
   },
   llm: {
     chat: "llm:chat",

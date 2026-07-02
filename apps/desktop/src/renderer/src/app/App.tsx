@@ -53,6 +53,7 @@ export const App = () => {
       avatarPath: settings.avatarPath,
       avatarDataUrl,
       avatarId: settings.avatarId,
+      customStatus: settings.customStatus,
     });
   }, [avatarDataUrl, bootstrapPhase, settings, syncLocalProfile]);
 

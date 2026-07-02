@@ -4,6 +4,7 @@ import {
   HEARTBEAT_INTERVAL_MS,
   MAX_ROOM_MEMBERS,
   SIGNALING_PING_TIMEOUT_MS,
+  type RoomNote,
 } from "@private-voice/shared";
 
 import type { PeerSession } from "./peer-manager";
@@ -17,6 +18,7 @@ export interface SignalingRoom {
   appVersion: string;
   protocolVersion: string;
   buildNumber: string;
+  roomNote?: RoomNote;
 }
 
 export class RoomManager {

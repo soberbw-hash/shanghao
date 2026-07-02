@@ -1,4 +1,5 @@
-import { app, clipboard, ipcMain, shell, type BrowserWindow } from "electron";
+import { app, clipboard, ipcMain, Notification, shell, type BrowserWindow } from "electron";
+import { writeFile } from "node:fs/promises";
 
 import {
   APP_BUILD_NUMBER,
@@ -13,6 +14,7 @@ import {
   type OverlayState,
   type RecordingExportPayload,
   type RecordingExportResponse,
+  type RecordingMarker,
   type RendererLogPayload,
   type RuntimeInfo,
   type SignalingEventPayload,
@@ -84,6 +86,34 @@ export const registerIpcHandlers = ({
   ipcMain.handle(IPC_CHANNELS.app.openPath, async (_event, targetPath: string): Promise<void> => {
     await shell.openPath(targetPath);
   });
+
+  ipcMain.handle(
+    IPC_CHANNELS.app.notify,
+    async (_event, payload: { title: string; body: string }): Promise<void> => {
+      if (!Notification.isSupported()) {
+        return;
+      }
+      const notification = new Notification({
+        title: payload.title.slice(0, 80),
+        body: payload.body.slice(0, 180),
+        silent: true,
+      });
+      notification.on("click", () => {
+        const mainWindow = getMainWindow();
+        if (mainWindow?.isMinimized()) {
+          mainWindow.restore();
+        }
+        mainWindow?.show();
+        mainWindow?.focus();
+      });
+      notification.show();
+    },
+  );
+  ipcMain.handle(
+    IPC_CHANNELS.shortcuts.configureRecordingMarker,
+    async (_event, accelerator: string): Promise<boolean> =>
+      shortcuts.configureRecordingMarker(accelerator),
+  );
 
   ipcMain.handle(IPC_CHANNELS.clipboard.writeText, async (_event, text: string): Promise<void> => {
     clipboard.writeText(text);
@@ -189,6 +219,11 @@ export const registerIpcHandlers = ({
   ipcMain.handle(IPC_CHANNELS.shortcuts.configureMute, async (_event, accelerator: string): Promise<void> => {
     await shortcuts.configureGlobalMute(accelerator);
   });
+  ipcMain.handle(
+    IPC_CHANNELS.shortcuts.configurePushToTalk,
+    async (_event, accelerator: string, enabled: boolean): Promise<boolean> =>
+      shortcuts.configurePushToTalk(accelerator, enabled),
+  );
 
   ipcMain.handle(IPC_CHANNELS.updates.check, async (): Promise<UpdateCheckResult> => {
     const result = await updates.check();
@@ -230,6 +265,22 @@ export const registerIpcHandlers = ({
     IPC_CHANNELS.recording.export,
     async (_event, payload: RecordingExportPayload): Promise<RecordingExportResponse> =>
       exportRecordingFromMain(payload, (logPayload) => diagnostics.writeLog(logPayload)),
+  );
+  ipcMain.handle(
+    IPC_CHANNELS.recording.saveMarkers,
+    async (
+      _event,
+      filePath: string,
+      markers: RecordingMarker[],
+    ): Promise<string> => {
+      const markerPath = `${filePath}.markers.json`;
+      await writeFile(
+        markerPath,
+        JSON.stringify({ recordingFile: filePath, markers }, null, 2),
+        "utf8",
+      );
+      return markerPath;
+    },
   );
 
   ipcMain.handle(

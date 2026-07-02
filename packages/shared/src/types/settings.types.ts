@@ -1,5 +1,6 @@
 export type PreferredSampleRate = "auto" | "32000" | "44100" | "48000";
 export type MicMonitorMode = "processed" | "raw";
+export type ScreenShareQuality = "smooth" | "balanced" | "clear";
 export type BuiltInAvatarId = "fox" | "cat" | "duck" | "panda" | "corgi";
 export type MicEqualizerGains = [
   number,
@@ -30,12 +31,17 @@ export interface AppSettings {
   isLowCutEnabled: boolean;
   globalMuteShortcut: string;
   pushToTalkShortcut: string;
+  recordingMarkerShortcut: string;
   isNoiseSuppressionEnabled: boolean;
   isEchoCancellationEnabled: boolean;
   isAutoGainControlEnabled: boolean;
   isPushToTalkEnabled: boolean;
   micMonitorMode: MicMonitorMode;
   relayServerUrl?: string;
+  customStatus: string;
+  screenShareQuality: ScreenShareQuality;
+  isScreenShareSystemAudioEnabled: boolean;
+  isSystemNotificationEnabled: boolean;
   isMicOnSoundEnabled: boolean;
   isMicOffSoundEnabled: boolean;
   isMemberJoinSoundEnabled: boolean;

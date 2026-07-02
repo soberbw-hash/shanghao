@@ -165,7 +165,8 @@ test("screen sharing is wired through the room page and WebRTC peer layer", () =
   assert.equal(clientSource.includes("SCREEN_FRAME_INTERVAL_MS"), true);
   assert.equal(peerSource.includes('addTransceiver("video"'), true);
   assert.equal(peerSource.includes('direction: "sendrecv"'), true);
-  assert.equal(peerSource.includes("maxBitrate = 900_000"), true);
+  assert.equal(peerSource.includes("encoding.maxBitrate = profile.maxBitrate"), true);
+  assert.equal(peerSource.includes("DEFAULT_SCREEN_SHARE_PROFILE"), true);
   assert.equal(peerSource.includes("offerToReceiveVideo: true"), true);
   assert.equal(peerSource.includes("setScreenTrack"), true);
   assert.equal(stylesSource.includes(".screen-share-video"), true);
@@ -173,6 +174,9 @@ test("screen sharing is wired through the room page and WebRTC peer layer", () =
   assert.equal(roomSource.includes("screen-share-drag-handle"), true);
   assert.equal(mainWindowSource.includes("setDisplayMediaRequestHandler"), true);
   assert.equal(mainWindowSource.includes("desktopCapturer.getSources"), true);
+  assert.equal(mainWindowSource.includes('"loopback"'), true);
+  assert.equal(roomSource.includes("screenShareQuality"), true);
+  assert.equal(roomSource.includes("aria-selected"), true);
 });
 
 test("room scene supports clickable seats and silent-away without daily summaries", () => {

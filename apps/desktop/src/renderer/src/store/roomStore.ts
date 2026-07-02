@@ -16,6 +16,7 @@ import {
   type RoomMember,
   type RoomSummary,
   type SceneZoneId,
+  type SceneReaction,
 } from "@private-voice/shared";
 
 interface LocalProfilePayload {
@@ -23,6 +24,7 @@ interface LocalProfilePayload {
   avatarPath?: string;
   avatarDataUrl?: string;
   avatarId?: BuiltInAvatarId;
+  customStatus?: string;
 }
 
 export interface RemoteScreenFrame {
@@ -40,6 +42,7 @@ interface RoomStoreState {
   remoteScreenFrames: Record<string, RemoteScreenFrame>;
   connectionHealth: ConnectionHealth;
   chatMessages: ChatMessage[];
+  sceneReactions: SceneReaction[];
   setConnectionState: (state: RoomConnectionState, reason?: string) => void;
   setLifecycleState: (state: RoomLifecycleState) => void;
   setRoom: (room: Partial<RoomSummary>) => void;
@@ -51,6 +54,7 @@ interface RoomStoreState {
   addChatMessage: (message: ChatMessage) => void;
   replaceChatMessage: (id: string, content: string) => void;
   clearChatMessages: () => void;
+  addSceneReaction: (reaction: SceneReaction) => void;
   syncLocalProfile: (profile: LocalProfilePayload) => void;
   updateMemberVolume: (memberId: string, volume: number) => void;
   updateLocalPresence: (presence: {
@@ -91,6 +95,7 @@ const createLocalPreviewMember = (profile?: LocalProfilePayload): RoomMember => 
   avatarPath: profile?.avatarPath,
   avatarDataUrl: profile?.avatarDataUrl,
   avatarId: profile?.avatarId,
+  customStatus: profile?.customStatus,
   isHost: false,
   isLocal: true,
   isMuted: false,
@@ -175,6 +180,7 @@ export const useRoomStore = create<RoomStoreState>((set) => ({
     reconnectAttempt: 0,
   },
   chatMessages: [],
+  sceneReactions: [],
   setConnectionState: (connectionState, reason) =>
     set((state) => ({
       room: {
@@ -256,6 +262,10 @@ export const useRoomStore = create<RoomStoreState>((set) => ({
       ),
     })),
   clearChatMessages: () => set({ chatMessages: [] }),
+  addSceneReaction: (reaction) =>
+    set((state) => ({
+      sceneReactions: [...state.sceneReactions, reaction].slice(-20),
+    })),
   syncLocalProfile: (profile) =>
     set((state) => {
       const members = state.room.members.filter((member) => !member.isEmptySlot);
@@ -269,6 +279,7 @@ export const useRoomStore = create<RoomStoreState>((set) => ({
         avatarPath: profile.avatarPath,
         avatarDataUrl: profile.avatarDataUrl,
         avatarId: profile.avatarId,
+        customStatus: profile.customStatus ?? baseMember.customStatus,
       };
 
       if (localMemberIndex >= 0) {
@@ -336,6 +347,7 @@ export const useRoomStore = create<RoomStoreState>((set) => ({
       remoteStreams: {},
       remoteScreenFrames: {},
       chatMessages: [],
+      sceneReactions: [],
       connectionHealth: {
         latencyMs: 0,
         jitterMs: 0,

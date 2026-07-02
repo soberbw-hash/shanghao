@@ -1,16 +1,14 @@
 import { gsap } from "gsap";
 
+import { APPLE_MOTION_DURATION } from "@private-voice/shared";
+
 export const motionEase = {
-  spatial: "expo.out",
-  standard: "power4.out",
-  feedback: "back.out(1.22)",
+  spatial: "power3.out",
+  standard: "power3.out",
+  feedback: "power2.out",
 } as const;
 
-export const motionDuration = {
-  page: 0.46,
-  panel: 0.36,
-  feedback: 0.2,
-} as const;
+export const motionDuration = APPLE_MOTION_DURATION;
 
 export const configureMotionRuntime = (): void => {
   // GSAP follows requestAnimationFrame, so 120/144 Hz displays stay uncapped.

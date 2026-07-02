@@ -195,7 +195,10 @@ export const createMainWindow = ({
         sourceName: selectedSource.name,
         primaryDisplayId,
       });
-      callback({ video: selectedSource });
+      callback({
+        video: selectedSource,
+        audio: process.platform === "win32" ? "loopback" : undefined,
+      });
     } catch (error) {
       log?.("error", "Failed to approve screen capture request", {
         error: error instanceof Error ? error.message : String(error),

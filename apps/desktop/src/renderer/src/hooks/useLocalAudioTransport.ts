@@ -107,6 +107,13 @@ export const useLocalAudioTransport = (): void => {
         setPushToTalkState(PushToTalkState.Armed);
       }
     };
+    const unsubscribeGlobalPushToTalk =
+      window.desktopApi.shortcuts.onPushToTalkState((isPressed) => {
+        track.enabled = isPressed && !isMuted;
+        setPushToTalkState(
+          isPressed ? PushToTalkState.Pressed : PushToTalkState.Armed,
+        );
+      });
 
     window.addEventListener("keydown", handleKeyDown);
     window.addEventListener("keyup", handleKeyUp);
@@ -114,6 +121,7 @@ export const useLocalAudioTransport = (): void => {
     return () => {
       window.removeEventListener("keydown", handleKeyDown);
       window.removeEventListener("keyup", handleKeyUp);
+      unsubscribeGlobalPushToTalk();
     };
   }, [isMuted, isPushToTalkEnabled, localStream, pushToTalkShortcut, setPushToTalkState]);
 };

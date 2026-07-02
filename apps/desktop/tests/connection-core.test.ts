@@ -178,3 +178,22 @@ test("desktop clipboard writes go through the electron main process", () => {
   assert.equal(copyField.includes("desktopApi.clipboard"), true);
   assert.equal(copyField.includes("navigator.clipboard"), false);
 });
+
+test("global push-to-talk listens for keydown and keyup outside the app", () => {
+  const shortcuts = read("apps/desktop/src/main/shortcuts.ts");
+  const transport = read(
+    "apps/desktop/src/renderer/src/hooks/useLocalAudioTransport.ts",
+  );
+  assert.equal(shortcuts.includes('uIOhook.on("keydown"'), true);
+  assert.equal(shortcuts.includes('uIOhook.on("keyup"'), true);
+  assert.equal(shortcuts.includes("pushToTalkState"), true);
+  assert.equal(transport.includes("onPushToTalkState"), true);
+});
+
+test("native notifications and recording markers use main process IPC", () => {
+  const ipc = read("apps/desktop/src/main/ipc.ts");
+  const room = read("apps/desktop/src/renderer/src/pages/RoomPage.tsx");
+  assert.equal(ipc.includes("Notification.isSupported"), true);
+  assert.equal(ipc.includes("recording.saveMarkers"), true);
+  assert.equal(room.includes("onRecordingMarkerTriggered"), true);
+});

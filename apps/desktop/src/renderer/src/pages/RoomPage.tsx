@@ -7,11 +7,13 @@ import {
 } from "react";
 import {
   GripHorizontal,
+  BookmarkPlus,
   Headphones,
   LogOut,
   Maximize2,
   Minimize2,
   MonitorUp,
+  PictureInPicture2,
   Volume2,
   VolumeX,
 } from "lucide-react";
@@ -25,7 +27,9 @@ import {
   type GameDetectionSnapshot,
   type MemberActivity,
   type SceneZoneId,
+  type ScreenShareQuality,
 } from "@private-voice/shared";
+import type { ScreenShareEncodingProfile } from "@private-voice/webrtc";
 
 import { MuteButton } from "../components/audio/MuteButton";
 import { RecordingButton } from "../components/audio/RecordingButton";
@@ -47,6 +51,29 @@ import { useRoomStore } from "../store/roomStore";
 import { useSettingsStore } from "../store/settingsStore";
 
 const KNOCK_COOLDOWN_MS = 5_000;
+const SCREEN_SHARE_PROFILES: Record<
+  ScreenShareQuality,
+  ScreenShareEncodingProfile
+> = {
+  smooth: {
+    maxBitrate: 420_000,
+    maxFramerate: 15,
+    maxWidth: 1_280,
+    maxHeight: 720,
+  },
+  balanced: {
+    maxBitrate: 680_000,
+    maxFramerate: 20,
+    maxWidth: 1_600,
+    maxHeight: 900,
+  },
+  clear: {
+    maxBitrate: 1_050_000,
+    maxFramerate: 24,
+    maxWidth: 1_920,
+    maxHeight: 1_080,
+  },
+};
 interface ScreenShareItem {
   id: string;
   title: string;
@@ -108,6 +135,7 @@ const ScreenSharePanel = ({
 }) => {
   const panelRef = useRef<HTMLDivElement>(null);
   const [position, setPosition] = useState({ x: 0, y: 0 });
+  const [selectedId, setSelectedId] = useState<string>();
   const dragStateRef = useRef<{
     pointerId: number;
     startX: number;
@@ -115,9 +143,18 @@ const ScreenSharePanel = ({
     baseX: number;
     baseY: number;
   }>();
+  useEffect(() => {
+    if (!items.length) {
+      setSelectedId(undefined);
+      return;
+    }
+    if (!selectedId || !items.some((item) => item.id === selectedId)) {
+      setSelectedId(items[0]?.id);
+    }
+  }, [items, selectedId]);
   if (items.length === 0) return null;
 
-  const primaryItem = items[0];
+  const primaryItem = items.find((item) => item.id === selectedId) ?? items[0];
   if (!primaryItem) return null;
 
   const handlePointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
@@ -210,8 +247,19 @@ const ScreenSharePanel = ({
         <ScreenShareMedia item={primaryItem} />
       </div>
       {items.length > 1 ? (
-        <div className="screen-share-stack">
-          还有 {items.length - 1} 个屏幕正在分享
+        <div className="screen-share-stack" role="tablist" aria-label="切换共享画面">
+          {items.map((item) => (
+            <button
+              key={item.id}
+              type="button"
+              role="tab"
+              aria-selected={item.id === primaryItem.id}
+              className={item.id === primaryItem.id ? "active" : ""}
+              onClick={() => setSelectedId(item.id)}
+            >
+              {item.title.replace(" 正在分享", "").replace("你正在分享", "你")}
+            </button>
+          ))}
         </div>
       ) : null}
     </div>
@@ -224,6 +272,8 @@ export const RoomPage = () => {
     leaveRoom,
     sendChatMessage,
     sendKnock,
+    sendSceneReaction,
+    updateRoomNote,
     replaceInputDevice,
     copyInviteLink,
     moveLocalMember,
@@ -236,8 +286,12 @@ export const RoomPage = () => {
   const chatMessages = useRoomStore((state) => state.chatMessages);
   const remoteStreams = useRoomStore((state) => state.remoteStreams);
   const remoteScreenFrames = useRoomStore((state) => state.remoteScreenFrames);
+  const sceneReactions = useRoomStore((state) => state.sceneReactions);
   const { inputDevices, outputDevices, isMuted, isDeafened, toggleMute, toggleDeafen } = useAudioStore();
   const recordingStatus = useRecordingStore((state) => state.status);
+  const recordingMarkers = useRecordingStore((state) => state.markers);
+  const addRecordingMarker = useRecordingStore((state) => state.addMarker);
+  const clearRecordingMarkers = useRecordingStore((state) => state.clearMarkers);
   const { capability, startRecording, stopRecording } = useRecordingController();
   const pageRef = useRef<HTMLDivElement>(null);
   const voicePulseRef = useRef<HTMLDivElement>(null);
@@ -252,6 +306,7 @@ export const RoomPage = () => {
   const lastKnockAt = useRef(0);
   const detectedGameRef = useRef<string>();
   const screenShareStoppingRef = useRef(false);
+  const localScreenShareActiveRef = useRef(false);
   const moveLocalMemberRef = useRef(moveLocalMember);
   moveLocalMemberRef.current = moveLocalMember;
   const llmHistoryRef = useRef<LlmHistoryEntry[]>([]);
@@ -375,6 +430,28 @@ export const RoomPage = () => {
     void window.desktopApi.overlay.show().then(setIsOverlayOpen);
   }, [settings?.isOverlayEnabled]);
 
+  useEffect(
+    () =>
+      window.desktopApi.shortcuts.onRecordingMarkerTriggered(() => {
+        if (useRecordingStore.getState().status.state !== RecordingState.Recording) {
+          return;
+        }
+        const startedAt = useRecordingStore.getState().status.startedAt ?? Date.now();
+        addRecordingMarker({
+          id: crypto.randomUUID(),
+          offsetMs: Math.max(0, Date.now() - startedAt),
+          createdAt: new Date().toISOString(),
+        });
+        playUiSound("button-click");
+        pushToast({
+          tone: "neutral",
+          title: "已标记精彩时刻",
+          description: "停止录音后会在录音旁保存时间点。",
+        });
+      }),
+    [addRecordingMarker, pushToast],
+  );
+
   useEffect(() => {
     if (!localMember) return;
     if (localMember.sceneZone && isSeatZone(localMember.sceneZone)) {
@@ -404,6 +481,8 @@ export const RoomPage = () => {
       if (
         currentLocalMember &&
         currentLocalMember.sceneZone !== "restroomZone" &&
+        !currentLocalMember.gameName &&
+        !localScreenShareActiveRef.current &&
         Date.now() - lastSpokeAtRef.current >= 5 * 60_000
       ) {
         moveLocalMemberRef.current("restroomZone", "restroom");
@@ -411,6 +490,11 @@ export const RoomPage = () => {
           category: "app",
           level: "info",
           message: "Moved local member to away zone after five minutes of silence",
+        });
+        pushToast({
+          tone: "neutral",
+          title: "已切到离开一下",
+          description: "5 分钟没有说话，开麦后会自动回到座位。",
         });
       }
     }, 15_000);
@@ -496,11 +580,19 @@ export const RoomPage = () => {
   const toggleRecording = async () => {
     try {
       if (recordingStatus.state === RecordingState.Recording) {
-        await stopRecording();
+        const result = await stopRecording();
+        if (recordingMarkers.length) {
+          await window.desktopApi.recording.saveMarkers(
+            result.filePath,
+            recordingMarkers,
+          );
+        }
+        clearRecordingMarkers();
         playUiSound("record-stop");
         return;
       }
 
+      clearRecordingMarkers();
       startRecording();
       playUiSound("record-start");
     } catch {
@@ -517,11 +609,18 @@ export const RoomPage = () => {
     let requestedStream: MediaStream | undefined;
     setIsScreenShareStarting(true);
     try {
+      const quality = settings?.screenShareQuality ?? "smooth";
+      const profile = SCREEN_SHARE_PROFILES[quality];
       const stream = await navigator.mediaDevices.getDisplayMedia({
         video: {
-          frameRate: { ideal: 24, max: 30 },
+          width: { ideal: profile.maxWidth, max: profile.maxWidth },
+          height: { ideal: profile.maxHeight, max: profile.maxHeight },
+          frameRate: {
+            ideal: Math.max(10, profile.maxFramerate - 3),
+            max: profile.maxFramerate,
+          },
         },
-        audio: false,
+        audio: settings?.isScreenShareSystemAudioEnabled !== false,
       });
       requestedStream = stream;
       const [videoTrack] = stream.getVideoTracks();
@@ -530,13 +629,16 @@ export const RoomPage = () => {
         throw new Error("screen_track_missing");
       }
 
-      await startScreenShare(stream);
+      await startScreenShare(stream, profile);
+      localScreenShareActiveRef.current = true;
       setLocalScreenShareStream(stream);
       playUiSound("popup-open");
       pushToast({
         tone: "success",
         title: "屏幕分享已开启",
-        description: "频道里的好友现在可以看你的屏幕。",
+        description: stream.getAudioTracks().length
+          ? "好友现在可以看到画面并听到系统声音。"
+          : "好友现在可以看到画面；本次未捕获到系统声音。",
       });
 
       videoTrack.addEventListener(
@@ -546,6 +648,7 @@ export const RoomPage = () => {
             return;
           }
           setLocalScreenShareStream(undefined);
+          localScreenShareActiveRef.current = false;
           void stopScreenShare();
         },
         { once: true },
@@ -587,6 +690,7 @@ export const RoomPage = () => {
     screenShareStoppingRef.current = true;
     try {
       setLocalScreenShareStream(undefined);
+      localScreenShareActiveRef.current = false;
       await stopScreenShare();
       playUiSound("popup-open");
       pushToast({
@@ -623,7 +727,12 @@ export const RoomPage = () => {
   };
 
   return (
-    <div ref={pageRef} className="room-page relative flex h-full flex-col gap-2.5 overflow-hidden px-3.5 pb-3.5 pt-2">
+    <div
+      ref={pageRef}
+      className={`room-page relative flex h-full flex-col gap-2.5 overflow-hidden px-3.5 pb-3.5 pt-2 ${
+        localMember?.gameName ? "performance-gaming" : ""
+      }`}
+    >
       <div data-gsap-room="topbar">
         <TopStatusBar onKnock={() => void knock()} onInvite={() => void copyInviteLink()} />
       </div>
@@ -633,6 +742,11 @@ export const RoomPage = () => {
           <TeamIsland
             members={room.members}
             onZoneSelect={handleZoneSelect}
+            onReact={(targetPeerId, emoji) => void sendSceneReaction(targetPeerId, emoji)}
+            reactions={sceneReactions}
+            roomNote={room.roomNote}
+            onRoomNoteChange={(content) => void updateRoomNote(content)}
+            knockPulse={chatMessages.filter((message) => message.kind === "system").length}
             reduceMotion={settings?.reduceMotion ?? false}
           />
           <ScreenSharePanel
@@ -703,6 +817,24 @@ export const RoomPage = () => {
           onClick={() => void toggleRecording()}
           disabled={capability.encoderState === RecordingEncoderState.Unsupported}
         />
+        {recordingStatus.state === RecordingState.Recording ? (
+          <Button
+            variant="ghost"
+            className="voice-action-button-with-text"
+            onClick={() => {
+              const startedAt = recordingStatus.startedAt ?? Date.now();
+              addRecordingMarker({
+                id: crypto.randomUUID(),
+                offsetMs: Math.max(0, Date.now() - startedAt),
+                createdAt: new Date().toISOString(),
+              });
+              playUiSound("button-click");
+            }}
+          >
+            <BookmarkPlus className="h-4 w-4" />
+            <span className="voice-action-label">标记 {recordingMarkers.length}</span>
+          </Button>
+        ) : null}
         <Button
           variant={localScreenShareStream ? "secondary" : "ghost"}
           className={`voice-action-button-with-text ${
@@ -735,7 +867,7 @@ export const RoomPage = () => {
             void window.desktopApi.overlay.toggle().then(setIsOverlayOpen);
           }}
         >
-          <MonitorUp className="h-4 w-4" />
+          <PictureInPicture2 className="h-4 w-4" />
           <span className="voice-action-label">{isOverlayOpen ? "悬浮窗开" : "悬浮窗关"}</span>
         </Button>
         <Button

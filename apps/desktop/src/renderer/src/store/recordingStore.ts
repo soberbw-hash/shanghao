@@ -1,4 +1,9 @@
-import { RecordingState, type RecordingResult, type RecordingStatusSnapshot } from "@private-voice/shared";
+import {
+  RecordingState,
+  type RecordingMarker,
+  type RecordingResult,
+  type RecordingStatusSnapshot,
+} from "@private-voice/shared";
 import { create } from "zustand";
 
 const STORAGE_KEY = "shanghao:recordings";
@@ -27,10 +32,13 @@ const saveRecordings = (recordings: RecordingResult[]): void => {
 interface RecordingStoreState {
   status: RecordingStatusSnapshot;
   history: RecordingResult[];
+  markers: RecordingMarker[];
   setStatus: (status: RecordingStatusSnapshot) => void;
   addHistory: (result: RecordingResult) => void;
   deleteRecording: (index: number) => void;
   resetStatus: () => void;
+  addMarker: (marker: RecordingMarker) => void;
+  clearMarkers: () => void;
 }
 
 export const useRecordingStore = create<RecordingStoreState>((set, get) => ({
@@ -39,6 +47,7 @@ export const useRecordingStore = create<RecordingStoreState>((set, get) => ({
     durationMs: 0,
   },
   history: loadRecordings(),
+  markers: [],
   setStatus: (status) => set({ status }),
   addHistory: (result) => {
     const newHistory = [result, ...get().history].slice(0, MAX_RECORDINGS);
@@ -50,6 +59,9 @@ export const useRecordingStore = create<RecordingStoreState>((set, get) => ({
     saveRecordings(newHistory);
     set({ history: newHistory });
   },
+  addMarker: (marker) =>
+    set((state) => ({ markers: [...state.markers, marker] })),
+  clearMarkers: () => set({ markers: [] }),
   resetStatus: () =>
     set({
       status: {

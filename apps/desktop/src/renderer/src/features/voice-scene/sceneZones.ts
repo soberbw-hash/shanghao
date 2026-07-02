@@ -79,8 +79,6 @@ export const resolveMemberSceneZones = (
 };
 
 export const characterPositions: Record<SceneZoneId, CharacterPosition> = {
-  coffeeBar: { left: 11, top: 82, zIndex: 38, scale: 0.78 },
-  fitnessZone: { left: 11, top: 82, zIndex: 38, scale: 0.78 },
   restroomZone: { left: 12, top: 65, zIndex: 38, scale: 0.42 },
   gameDesk1: { left: 30, top: 38, zIndex: 24, scale: 0.86 },
   gameDesk2: { left: 52, top: 38, zIndex: 25, scale: 0.86 },

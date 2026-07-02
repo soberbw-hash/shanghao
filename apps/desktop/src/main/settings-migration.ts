@@ -34,12 +34,17 @@ export const defaultSettings: AppSettings = {
   isLowCutEnabled: true,
   globalMuteShortcut: "",
   pushToTalkShortcut: "Space",
+  recordingMarkerShortcut: "F8",
   isNoiseSuppressionEnabled: true,
   isEchoCancellationEnabled: true,
   isAutoGainControlEnabled: true,
   isPushToTalkEnabled: false,
   micMonitorMode: "processed",
   relayServerUrl: "",
+  customStatus: "",
+  screenShareQuality: "smooth",
+  isScreenShareSystemAudioEnabled: true,
+  isSystemNotificationEnabled: true,
   isMicOnSoundEnabled: true,
   isMicOffSoundEnabled: true,
   isMemberJoinSoundEnabled: true,
@@ -83,6 +88,11 @@ const normalizeSampleRate = (
 
 const normalizeMonitorMode = (value?: string): AppSettings["micMonitorMode"] =>
   value === "raw" ? "raw" : "processed";
+
+const normalizeScreenShareQuality = (
+  value?: string,
+): AppSettings["screenShareQuality"] =>
+  value === "balanced" || value === "clear" ? value : "smooth";
 
 const normalizeAvatarId = (value: unknown): AppSettings["avatarId"] => {
   if (value === "penguin") return "duck";
@@ -140,8 +150,23 @@ export const migrateSettings = (raw: RawSettings): MigrationResult => {
     globalMuteShortcut: trimUnknownText(raw.globalMuteShortcut) ?? "",
     pushToTalkShortcut:
       trimUnknownText(raw.pushToTalkShortcut) ?? defaultSettings.pushToTalkShortcut,
+    recordingMarkerShortcut:
+      trimUnknownText(raw.recordingMarkerShortcut) ??
+      defaultSettings.recordingMarkerShortcut,
     relayServerUrl:
       normalizeRelayServerUrl(trimUnknownText(raw.relayServerUrl)) ?? defaultSettings.relayServerUrl,
+    customStatus: trimUnknownText(raw.customStatus)?.slice(0, 32) ?? "",
+    screenShareQuality: normalizeScreenShareQuality(
+      trimUnknownText(raw.screenShareQuality),
+    ),
+    isScreenShareSystemAudioEnabled: normalizeBoolean(
+      raw.isScreenShareSystemAudioEnabled,
+      defaultSettings.isScreenShareSystemAudioEnabled,
+    ),
+    isSystemNotificationEnabled: normalizeBoolean(
+      raw.isSystemNotificationEnabled,
+      defaultSettings.isSystemNotificationEnabled,
+    ),
     preferredSampleRate: normalizeSampleRate(
       trimUnknownText(raw.preferredSampleRate),
       previousVersion,

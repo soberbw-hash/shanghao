@@ -14,6 +14,7 @@ import type { RoomMember } from "./room.types";
 import type {
   RecordingExportPayload,
   RecordingExportResponse,
+  RecordingMarker,
 } from "./recording.types";
 
 export interface RuntimeInfo {
@@ -69,6 +70,7 @@ export interface DesktopApi {
     getRuntimeInfo: () => Promise<RuntimeInfo>;
     writeLog: (payload: RendererLogPayload) => Promise<void>;
     openPath: (targetPath: string) => Promise<void>;
+    notify: (payload: { title: string; body: string }) => Promise<void>;
   };
   clipboard: {
     writeText: (text: string) => Promise<void>;
@@ -109,6 +111,10 @@ export interface DesktopApi {
   shortcuts: {
     configureMute: (accelerator: string) => Promise<void>;
     onMuteTriggered: (listener: () => void) => () => void;
+    configurePushToTalk: (accelerator: string, enabled: boolean) => Promise<boolean>;
+    onPushToTalkState: (listener: (isPressed: boolean) => void) => () => void;
+    configureRecordingMarker: (accelerator: string) => Promise<boolean>;
+    onRecordingMarkerTriggered: (listener: () => void) => () => void;
   };
   updates: {
     check: () => Promise<UpdateCheckResult>;
@@ -127,6 +133,7 @@ export interface DesktopApi {
     export: (
       payload: RecordingExportPayload,
     ) => Promise<RecordingExportResponse>;
+    saveMarkers: (filePath: string, markers: RecordingMarker[]) => Promise<string>;
   };
   llm: {
     chat: (payload: LlmChatRequest) => Promise<LlmChatResponse>;

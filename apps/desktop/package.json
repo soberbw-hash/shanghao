@@ -1,6 +1,6 @@
 {
   "name": "shanghao-desktop",
-  "version": "0.1.46",
+  "version": "0.1.47",
   "private": true,
   "description": "ShangHao desktop voice app for private friends group chat",
   "author": "Sober",
@@ -24,7 +24,6 @@
     "dist:mac:arm64": "corepack pnpm build && node ../../scripts/run-electron-builder.mjs --config electron-builder.yml --mac dmg zip --arm64"
   },
   "dependencies": {
-    "@achingbrain/nat-port-mapper": "^4.0.5",
     "@private-voice/recording": "workspace:*",
     "@private-voice/shared": "workspace:*",
     "@private-voice/signaling": "workspace:*",
@@ -39,6 +38,7 @@
     "react-dom": "^18.3.1",
     "semver": "^7.7.4",
     "stun": "^2.1.0",
+    "uiohook-napi": "1.5.5",
     "ws": "^8.18.1",
     "zustand": "^5.0.3"
   },
