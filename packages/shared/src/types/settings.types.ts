@@ -67,6 +67,8 @@ export interface RelayStatusSnapshot {
   uptime?: number;
   activeRooms?: number;
   connectedPeers?: number;
+  turnConfigured?: boolean;
+  droppedRealtimeMessages?: number;
   hasVersionMismatch?: boolean;
   lastCheckedAt?: string;
   message: string;

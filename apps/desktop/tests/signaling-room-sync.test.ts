@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHmac } from "node:crypto";
 import { createServer } from "node:http";
 import test from "node:test";
 
@@ -89,6 +90,58 @@ test("fixed channel acknowledges join before sending the channel snapshot", asyn
   }
 });
 
+test("join acknowledgement provides short-lived TURN credentials when configured", async () => {
+  const previousUrls = process.env.TURN_URLS;
+  const previousSecret = process.env.TURN_SHARED_SECRET;
+  const previousTtl = process.env.TURN_CREDENTIAL_TTL_SECONDS;
+  process.env.TURN_URLS = "turn:127.0.0.1:3478?transport=udp,turn:127.0.0.1:3478?transport=tcp";
+  process.env.TURN_SHARED_SECRET = "test-turn-secret";
+  process.env.TURN_CREDENTIAL_TTL_SECONDS = "3600";
+
+  const server = new SignalingServer({ roomName: "固定频道" });
+  const port = await server.listen();
+  const socket = await openSocket(`ws://127.0.0.1:${port}`);
+
+  try {
+    const acknowledgement = waitForMessage(
+      socket,
+      (payload): payload is {
+        type: "join_ack";
+        iceServers: Array<{ urls: string[]; username: string; credential: string }>;
+      } =>
+        typeof payload === "object" &&
+        payload !== null &&
+        (payload as { type?: string }).type === "join_ack",
+    );
+    joinChannel(socket, "turn-peer");
+    const message = await acknowledgement;
+    assert.deepEqual(message.iceServers[0]?.urls, [
+      "turn:127.0.0.1:3478?transport=udp",
+      "turn:127.0.0.1:3478?transport=tcp",
+    ]);
+    const username = message.iceServers[0]?.username;
+    assert.match(username, /^\d+:turn-peer$/);
+    assert.equal(
+      message.iceServers[0]?.credential,
+      createHmac("sha1", "test-turn-secret").update(username).digest("base64"),
+    );
+
+    const health = (await fetch(`http://127.0.0.1:${port}/health`).then((response) =>
+      response.json(),
+    )) as { turnConfigured: boolean };
+    assert.equal(health.turnConfigured, true);
+  } finally {
+    socket.close();
+    await server.close();
+    if (previousUrls === undefined) delete process.env.TURN_URLS;
+    else process.env.TURN_URLS = previousUrls;
+    if (previousSecret === undefined) delete process.env.TURN_SHARED_SECRET;
+    else process.env.TURN_SHARED_SECRET = previousSecret;
+    if (previousTtl === undefined) delete process.env.TURN_CREDENTIAL_TTL_SECONDS;
+    else process.env.TURN_CREDENTIAL_TTL_SECONDS = previousTtl;
+  }
+});
+
 test("fixed channel syncs members after two peers join", async () => {
   const server = new SignalingServer({ roomName: "固定频道" });
   const port = await server.listen();
@@ -122,6 +175,62 @@ test("fixed channel syncs members after two peers join", async () => {
   } finally {
     first.close();
     second.close();
+    await server.close();
+  }
+});
+
+test("fixed channel forwards peer media restart requests to the target only", async () => {
+  const server = new SignalingServer({ roomName: "固定频道" });
+  const port = await server.listen();
+  const url = `ws://127.0.0.1:${port}`;
+  const sender = await openSocket(url);
+  const receiver = await openSocket(url);
+
+  try {
+    joinChannel(sender, "restart-sender");
+    await waitForMessage(
+      sender,
+      (payload): payload is { type: "channel_snapshot" } =>
+        typeof payload === "object" &&
+        payload !== null &&
+        (payload as { type?: string }).type === "channel_snapshot",
+    );
+    joinChannel(receiver, "restart-receiver");
+    await waitForMessage(
+      sender,
+      (payload): payload is { members: unknown[] } =>
+        typeof payload === "object" &&
+        payload !== null &&
+        (payload as { type?: string }).type === "channel_snapshot" &&
+        (payload as { members?: unknown[] }).members?.length === 2,
+    );
+
+    const forwarded = waitForMessage(
+      receiver,
+      (payload): payload is {
+        type: "peer_restart_request";
+        peerId: string;
+        targetPeerId: string;
+        reason: string;
+      } =>
+        typeof payload === "object" &&
+        payload !== null &&
+        (payload as { type?: string }).type === "peer_restart_request",
+    );
+    sender.send(JSON.stringify({
+      type: "peer_restart_request",
+      roomId: "main",
+      peerId: "restart-sender",
+      targetPeerId: "restart-receiver",
+      reason: "connection_timeout",
+    }));
+    const message = await forwarded;
+    assert.equal(message.peerId, "restart-sender");
+    assert.equal(message.targetPeerId, "restart-receiver");
+    assert.equal(message.reason, "connection_timeout");
+  } finally {
+    sender.close();
+    receiver.close();
     await server.close();
   }
 });
@@ -452,19 +561,21 @@ test("fixed channel relays fallback audio chunks to other peers only", async () 
         durationMs: 40,
         sampleRate: 48_000,
         channelCount: 1,
+        codec: "mulaw",
         data: "AAAA",
       }),
     );
 
     const chunk = await waitForMessage(
       receiver,
-      (payload): payload is { sourcePeerId: string; data: string; serverSequence: number } =>
+      (payload): payload is { sourcePeerId: string; data: string; codec: string; serverSequence: number } =>
         typeof payload === "object" &&
         payload !== null &&
         (payload as { type?: string }).type === "audio_chunk",
     );
     assert.equal(chunk.sourcePeerId, "sender");
     assert.equal(chunk.data, "AAAA");
+    assert.equal(chunk.codec, "mulaw");
     assert.equal(typeof chunk.serverSequence, "number");
   } finally {
     sender.close();
@@ -629,7 +740,7 @@ test("fixed channel syncs custom status, reactions, and the shared note", async 
         nickname: "团团",
         avatarId: "cat",
         customStatus: "排位中",
-        appVersion: "0.1.47",
+        appVersion: "0.1.48",
         protocolVersion: APP_PROTOCOL_VERSION,
         buildNumber: APP_BUILD_NUMBER,
       }),

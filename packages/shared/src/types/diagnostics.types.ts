@@ -54,6 +54,9 @@ export interface RendererDiagnosticsSummary {
   audioRelayState: "active" | "inactive";
   localStreamActive: boolean;
   remotePeerCount: number;
+  webrtcReadyPeerCount?: number;
+  turnConfigured?: boolean;
+  peerRecoveryAttempts?: Record<string, number>;
   roomSnapshotRevision: number;
   chatSendFailures: number;
   joinStage?: string;

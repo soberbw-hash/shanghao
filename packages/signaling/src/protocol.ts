@@ -30,6 +30,7 @@ export type SignalEnvelope =
   | AvatarUpdateMessage
   | PeerOfferMessage
   | PeerAnswerMessage
+  | PeerRestartRequestMessage
   | IceCandidateMessage
   | MemberStateMessage
   | ChatMessage
@@ -53,6 +54,12 @@ interface VersionedMessage {
   appVersion: string;
   protocolVersion: string;
   buildNumber: string;
+}
+
+export interface IceServerConfig {
+  urls: string[];
+  username?: string;
+  credential?: string;
 }
 
 export interface JoinChannelMessage extends BaseMessage, VersionedMessage {
@@ -93,6 +100,7 @@ export interface JoinAckMessage extends BaseMessage, VersionedMessage {
   serverTime: number;
   revision: number;
   memberCount: number;
+  iceServers?: IceServerConfig[];
 }
 
 export interface RequestSnapshotMessage extends BaseMessage {
@@ -138,6 +146,14 @@ export interface PeerAnswerMessage extends BaseMessage {
   peerId: string;
   targetPeerId: string;
   sdp: SessionDescriptionPayload;
+}
+
+export interface PeerRestartRequestMessage extends BaseMessage {
+  type: "peer_restart_request";
+  roomId: string;
+  peerId: string;
+  targetPeerId: string;
+  reason: string;
 }
 
 export interface IceCandidateMessage extends BaseMessage {
@@ -200,6 +216,7 @@ export interface AudioChunkMessage extends BaseMessage {
   durationMs: number;
   sampleRate: number;
   channelCount: 1;
+  codec?: "pcm_s16le" | "mulaw";
   data: string;
   createdAt?: string;
 }

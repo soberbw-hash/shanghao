@@ -457,8 +457,6 @@ a,
 
 .entry-card,
 .room-topbar,
-.island-panel,
-.response-panel,
 .voice-dock {
   border: 1px solid rgba(255,255,255,.78);
   background:
@@ -472,8 +470,6 @@ a,
 
 .entry-card::before,
 .room-topbar::before,
-.island-panel::before,
-.response-panel::before,
 .voice-dock::before {
   content: "";
   position: absolute;
@@ -487,16 +483,156 @@ a,
 
 .entry-card > *,
 .room-topbar > *,
-.island-panel > *,
-.response-panel > *,
 .voice-dock > * {
   position: relative;
   z-index: 1;
 }
 
 .entry-card {
-  min-height: 620px;
+  min-height: 560px;
   border-radius: var(--sg-radius-xl);
+}
+
+.entry-card-ready {
+  min-height: 500px;
+  overflow: hidden;
+  background:
+    radial-gradient(circle at 18% 74%, rgba(91, 167, 255, .14), transparent 34%),
+    linear-gradient(135deg, rgba(255,255,255,.82), rgba(247,251,255,.62) 62%, rgba(237,248,255,.54));
+}
+
+.entry-eyebrow {
+  color: #7f90a6;
+  font-size: 10px;
+  font-weight: 680;
+  letter-spacing: .12em;
+}
+
+.entry-mic-status {
+  border: 1px solid rgba(196, 212, 232, .58);
+  background: rgba(255, 255, 255, .58);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.88), 0 5px 18px rgba(66, 102, 151, .07);
+}
+
+.entry-ready-layout {
+  display: grid;
+  grid-template-columns: minmax(240px, .92fr) minmax(300px, 1.08fr);
+  align-items: center;
+  gap: 42px;
+  padding: 34px 28px 18px;
+}
+
+.entry-ready-avatar-stage {
+  position: relative;
+  display: grid;
+  width: 248px;
+  height: 248px;
+  place-items: center;
+  justify-self: center;
+  border-radius: 50%;
+  background:
+    radial-gradient(circle at 50% 42%, rgba(255,255,255,.96), rgba(237,246,255,.72) 56%, rgba(216,235,255,.4));
+  box-shadow:
+    0 24px 58px rgba(69, 118, 178, .14),
+    inset 0 1px 0 rgba(255,255,255,.96),
+    inset 0 -14px 30px rgba(82, 150, 228, .06);
+}
+
+.entry-ready-avatar-stage::after {
+  position: absolute;
+  right: 28px;
+  bottom: 28px;
+  width: 13px;
+  height: 13px;
+  border: 3px solid rgba(255,255,255,.95);
+  border-radius: 50%;
+  background: var(--sg-success);
+  box-shadow: 0 3px 10px rgba(24,182,106,.25);
+  content: "";
+}
+
+.entry-ready-avatar {
+  position: relative;
+  z-index: 2;
+  width: 182px;
+  height: 182px;
+  object-fit: contain;
+  filter: drop-shadow(0 16px 16px rgba(54, 80, 112, .16));
+  animation: entry-avatar-breathe 5.2s cubic-bezier(.45, 0, .55, 1) infinite;
+}
+
+.entry-ready-orbit {
+  position: absolute;
+  border: 1px solid rgba(92, 163, 241, .14);
+  border-radius: 50%;
+  pointer-events: none;
+}
+
+.entry-ready-orbit-one { inset: 17px; }
+.entry-ready-orbit-two { inset: 42px; border-style: dashed; opacity: .72; }
+
+.entry-ready-server {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  width: 100%;
+  min-width: 0;
+  padding: 11px 13px;
+  border: 1px solid rgba(192, 210, 232, .54);
+  border-radius: 16px;
+  background: rgba(255,255,255,.54);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.9);
+}
+
+.entry-ready-server-icon {
+  display: grid;
+  width: 34px;
+  height: 34px;
+  flex: 0 0 auto;
+  place-items: center;
+  border-radius: 11px;
+  background: linear-gradient(145deg, rgba(77,163,255,.16), rgba(77,163,255,.07));
+  color: var(--sg-blue-deep);
+}
+
+.entry-ready-server small,
+.entry-ready-server strong {
+  display: block;
+}
+
+.entry-ready-server small {
+  margin-bottom: 2px;
+  color: #91a0b4;
+  font-size: 9px;
+  font-weight: 650;
+}
+
+.entry-ready-server strong {
+  overflow: hidden;
+  color: #42536a;
+  font-size: 12px;
+  font-weight: 650;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.entry-edit-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  min-height: 30px;
+  padding: 4px 8px;
+  border-radius: 10px;
+  color: #7a8ba1;
+  font-size: 11px;
+  font-weight: 620;
+  transition: color var(--duration-fast) var(--ease-out-soft), background-color var(--duration-fast) var(--ease-out-soft);
+}
+
+.entry-edit-button:hover {
+  color: #3d6fa8;
+  background: rgba(77,163,255,.08);
 }
 
 .room-topbar, .voice-dock {
@@ -504,7 +640,19 @@ a,
 }
 
 .island-panel, .response-panel {
+  position: relative;
+  isolation: isolate;
   border-radius: var(--sg-radius-xl);
+  border: 1px solid rgba(198, 215, 235, .64);
+  background: rgba(248, 251, 255, .94);
+  box-shadow:
+    0 14px 38px rgba(67, 100, 143, .09),
+    inset 0 1px 0 rgba(255,255,255,.96);
+}
+
+.response-panel {
+  background:
+    linear-gradient(180deg, rgba(255,255,255,.98), rgba(246,250,255,.96));
 }
 
 /* ── 状态胶囊 ── */
@@ -532,9 +680,30 @@ a,
   background:
     radial-gradient(circle at 74% 15%, rgba(77, 163, 255, .11), transparent 31%),
     radial-gradient(circle at 12% 90%, rgba(96, 210, 175, .09), transparent 28%),
-    linear-gradient(155deg, #fcfdff 0%, #edf5fc 58%, #f5faf8 100%);
+    linear-gradient(155deg, #fffefd 0%, #f1f7fd 58%, #f5faf8 100%);
   overflow: hidden;
 }
+
+.connection-quality-capsule {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 58px;
+  justify-content: center;
+  padding: 5px 8px;
+  border: 1px solid rgba(185, 205, 235, .42);
+  border-radius: 999px;
+  background: rgba(255,255,255,.4);
+  color: #718198;
+  font-size: 10px;
+  font-weight: 680;
+  font-variant-numeric: tabular-nums;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.82);
+}
+
+.connection-quality-capsule.good { color: #168e58; }
+.connection-quality-capsule.fair { color: #b87816; }
+.connection-quality-capsule.poor { color: #d54e56; }
 
 .channel-status-dot {
   width: 6px;
@@ -602,11 +771,16 @@ a,
 
 .team-island-stage {
   background:
-    linear-gradient(90deg, rgba(216, 229, 244, .48) 0 1px, transparent 1px 100%),
-    linear-gradient(180deg, rgba(216, 229, 244, .38) 0 1px, transparent 1px 100%),
+    linear-gradient(90deg, rgba(213, 227, 242, .34) 0 1px, transparent 1px 100%),
+    linear-gradient(180deg, rgba(213, 227, 242, .28) 0 1px, transparent 1px 100%),
     radial-gradient(circle at 24% 16%, rgba(255, 255, 255, .96), rgba(255, 255, 255, .3) 32%, transparent 56%),
     linear-gradient(145deg, rgba(255,255,255,.82), rgba(235,244,252,.7));
-  background-size: 76px 76px, 76px 76px, auto, auto;
+  background-size: 92px 92px, 92px 92px, auto, auto;
+}
+
+@keyframes entry-avatar-breathe {
+  0%, 100% { transform: translate3d(0, 0, 0) scale(1); }
+  48% { transform: translate3d(0, -3px, 0) scale(1.012); }
 }
 
 .team-island::before {
@@ -1821,6 +1995,19 @@ a,
 
 @media (max-width: 1100px) {
   .entry-card { min-height: auto; }
+  .entry-ready-layout {
+    grid-template-columns: minmax(190px, .8fr) minmax(280px, 1.2fr);
+    gap: 24px;
+    padding-inline: 8px;
+  }
+  .entry-ready-avatar-stage {
+    width: 210px;
+    height: 210px;
+  }
+  .entry-ready-avatar {
+    width: 154px;
+    height: 154px;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

@@ -24,6 +24,7 @@ import type {
   MemberStateMessage,
   PeerAnswerMessage,
   PeerOfferMessage,
+  PeerRestartRequestMessage,
   RoomSnapshotMessage,
   ChannelSnapshotMessage,
   ScreenFrameMessage,
@@ -33,6 +34,7 @@ import type {
   SignalEnvelope,
 } from "@private-voice/signaling";
 import {
+  DEFAULT_ICE_SERVERS,
   DEFAULT_SCREEN_SHARE_PROFILE,
   ExponentialBackoff,
   MeshPeerConnection,
@@ -86,7 +88,6 @@ export interface RemoteScreenFrame {
 
 const INITIAL_CONNECT_TIMEOUT_MS = 10_000;
 const SNAPSHOT_RETRY_TIMEOUT_MS = 5_000;
-const MAX_RECONNECT_ATTEMPTS = 6;
 const SCREEN_FRAME_INTERVAL_MS = 2_000;
 const SCREEN_FRAME_HEALTHY_INTERVAL_MS = 5_000;
 const SCREEN_FRAME_MAX_WIDTH = 512;
@@ -120,6 +121,9 @@ export class RoomClient {
   private audioRelay?: SignalingAudioRelay;
   private readonly remotePeerIds = new Set<string>();
   private readonly webrtcReadyPeerIds = new Set<string>();
+  private readonly peerRecoveryTimers = new Map<string, number>();
+  private readonly peerConnectionWatchdogs = new Map<string, number>();
+  private readonly peerRecoveryAttempts = new Map<string, number>();
   private reconnectAttempts = 0;
   private lastSnapshotRevision = 0;
   private isSignalingConnected = false;
@@ -146,6 +150,8 @@ export class RoomClient {
   private screenFrameTimer?: number;
   private screenFrameIntervalMs?: number;
   private screenFrameSequence = 0;
+  private iceServers?: RTCIceServer[];
+  private hasTurnServer = false;
 
   constructor(private readonly options: RoomClientOptions) {
     this.localStream = options.localStream;
@@ -225,6 +231,9 @@ export class RoomClient {
       lastServerError: this.lastServerError,
       screenShareRelayState: this.screenFrameTimer ? ("active" as const) : ("inactive" as const),
       audioRelayDiagnostics: this.audioRelay?.getDiagnostics(),
+      webrtcReadyPeerCount: this.webrtcReadyPeerIds.size,
+      peerRecoveryAttempts: Object.fromEntries(this.peerRecoveryAttempts),
+      turnConfigured: this.hasTurnServer,
     };
   }
 
@@ -416,6 +425,9 @@ export class RoomClient {
       case "peer_answer":
         await this.handlePeerAnswer(payload);
         return;
+      case "peer_restart_request":
+        await this.handlePeerRestartRequest(payload);
+        return;
       case "ice_candidate":
         await this.handleIceCandidate(payload);
         return;
@@ -571,6 +583,15 @@ export class RoomClient {
     this.options.onConnectionState(RoomConnectionState.WaitingSnapshot);
     this.resolvePendingConnection();
     this.startSnapshotRecovery();
+    const relayIceServers = payload.iceServers?.map((server) => ({
+      urls: server.urls,
+      username: server.username,
+      credential: server.credential,
+    })) ?? [];
+    this.hasTurnServer = relayIceServers.length > 0;
+    this.iceServers = this.hasTurnServer
+      ? [...DEFAULT_ICE_SERVERS, ...relayIceServers]
+      : undefined;
     void writeRendererLog("signaling", "info", "Join acknowledgement received", {
       roomId: payload.roomId,
       peerId: payload.peerId,
@@ -578,6 +599,8 @@ export class RoomClient {
       memberCount: payload.memberCount,
       protocolVersion: payload.protocolVersion,
       buildNumber: payload.buildNumber,
+      turnConfigured: this.hasTurnServer,
+      iceServerCount: this.iceServers?.length ?? DEFAULT_ICE_SERVERS.length,
     });
   }
 
@@ -634,8 +657,10 @@ export class RoomClient {
 
     for (const peerId of [...this.peers.keys()]) {
       if (!activePeerIds.has(peerId)) {
-        this.peers.get(peerId)?.destroy();
+        const peer = this.peers.get(peerId);
         this.peers.delete(peerId);
+        this.clearPeerRecovery(peerId, true);
+        peer?.destroy();
         this.webrtcReadyPeerIds.delete(peerId);
         this.audioRelay?.clearPeer(peerId, "peer_left_room");
         this.options.onRemoteStream(peerId, undefined);
@@ -664,7 +689,11 @@ export class RoomClient {
   }
 
   private async handlePeerOffer(payload: PeerOfferMessage): Promise<void> {
-    const peer = this.peers.get(payload.peerId) ?? this.createPeer(payload.peerId);
+    const existing = this.peers.get(payload.peerId);
+    const peer =
+      existing && existing.connection.connectionState === "connected"
+        ? existing
+        : this.replacePeer(payload.peerId);
     await this.applyScreenShareToPeer(peer);
     const answer = await peer.acceptOffer(payload.sdp);
 
@@ -684,6 +713,20 @@ export class RoomClient {
     }
 
     await peer.acceptAnswer(payload.sdp);
+  }
+
+  private async handlePeerRestartRequest(payload: PeerRestartRequestMessage): Promise<void> {
+    if (payload.targetPeerId !== this.options.peerId || !this.remotePeerIds.has(payload.peerId)) {
+      return;
+    }
+    void writeRendererLog("webrtc", "warn", "Peer requested a fresh media negotiation", {
+      targetPeerId: payload.peerId,
+      reason: payload.reason,
+    });
+    const peer = this.replacePeer(payload.peerId);
+    if (this.options.peerId < payload.peerId) {
+      await this.sendFreshOffer(payload.peerId, peer, `remote_request:${payload.reason}`);
+    }
   }
 
   private async handleIceCandidate(payload: IceCandidateMessage): Promise<void> {
@@ -951,9 +994,11 @@ export class RoomClient {
   }
 
   private createPeer(targetPeerId: string): MeshPeerConnection {
-    const peer = new MeshPeerConnection({
+    let peer: MeshPeerConnection;
+    peer = new MeshPeerConnection({
       peerId: targetPeerId,
       localStream: this.localStream,
+      iceServers: this.iceServers,
       onRemoteStream: (stream) => {
         this.options.onRemoteStream(targetPeerId, stream);
       },
@@ -967,7 +1012,11 @@ export class RoomClient {
         });
       },
       onConnectionStateChange: (state) => {
+        if (this.peers.get(targetPeerId) !== peer) {
+          return;
+        }
         if (state === "connected") {
+          this.clearPeerRecovery(targetPeerId, true);
           this.webrtcReadyPeerIds.add(targetPeerId);
           this.audioRelay?.markPeerPath(targetPeerId, "webrtc", "webrtc_connected");
           this.updateAudioRelaySending();
@@ -975,6 +1024,12 @@ export class RoomClient {
             targetPeerId,
             audioRelayFallbackEnabled: false,
           });
+          if (
+            this.remotePeerIds.size > 0 &&
+            [...this.remotePeerIds].every((peerId) => this.webrtcReadyPeerIds.has(peerId))
+          ) {
+            this.options.onConnectionState(RoomConnectionState.Connected);
+          }
           return;
         }
 
@@ -983,11 +1038,17 @@ export class RoomClient {
           this.audioRelay?.markPeerPath(targetPeerId, "relay", `webrtc_${state}`);
           this.updateAudioRelaySending();
           this.options.onRemoteStream(targetPeerId, undefined);
+          if (this.isSignalingConnected && this.remotePeerIds.has(targetPeerId)) {
+            this.options.onConnectionState(RoomConnectionState.Degraded);
+          }
           void writeRendererLog("webrtc", "warn", "Peer connection unavailable, audio relay fallback enabled", {
             targetPeerId,
             state,
             audioRelayFallbackEnabled: true,
           });
+          if (state !== "closed") {
+            this.schedulePeerRecovery(targetPeerId, `connection_${state}`);
+          }
         }
       },
       onDiagnosticEvent: (event, context) => {
@@ -1001,7 +1062,112 @@ export class RoomClient {
     });
 
     this.peers.set(targetPeerId, peer);
+    const watchdog = window.setTimeout(() => {
+      this.peerConnectionWatchdogs.delete(targetPeerId);
+      if (
+        this.peers.get(targetPeerId) === peer &&
+        !this.webrtcReadyPeerIds.has(targetPeerId) &&
+        this.remotePeerIds.has(targetPeerId)
+      ) {
+        this.schedulePeerRecovery(targetPeerId, "connection_timeout");
+      }
+    }, 8_000);
+    this.peerConnectionWatchdogs.set(targetPeerId, watchdog);
     return peer;
+  }
+
+  private replacePeer(targetPeerId: string): MeshPeerConnection {
+    const existing = this.peers.get(targetPeerId);
+    if (existing) {
+      this.peers.delete(targetPeerId);
+      existing.destroy();
+    }
+    this.clearPeerRecovery(targetPeerId);
+    this.webrtcReadyPeerIds.delete(targetPeerId);
+    this.options.onRemoteStream(targetPeerId, undefined);
+    return this.createPeer(targetPeerId);
+  }
+
+  private schedulePeerRecovery(targetPeerId: string, reason: string): void {
+    if (
+      this.peerRecoveryTimers.has(targetPeerId) ||
+      !this.shouldReconnect ||
+      !this.isSignalingConnected ||
+      !this.remotePeerIds.has(targetPeerId)
+    ) {
+      return;
+    }
+    const attempt = (this.peerRecoveryAttempts.get(targetPeerId) ?? 0) + 1;
+    this.peerRecoveryAttempts.set(targetPeerId, attempt);
+    const baseDelay = Math.min(15_000, 1_500 * 2 ** Math.min(3, attempt - 1));
+    const delay = baseDelay + Math.floor(Math.random() * 450);
+    void writeRendererLog("webrtc", "warn", "Scheduling peer media recovery", {
+      targetPeerId,
+      attempt,
+      delay,
+      reason,
+    });
+    const timer = window.setTimeout(() => {
+      this.peerRecoveryTimers.delete(targetPeerId);
+      void this.recoverPeer(targetPeerId, reason).catch((error) => {
+        void writeRendererLog("webrtc", "warn", "Peer media recovery failed", {
+          targetPeerId,
+          attempt,
+          reason,
+          error: error instanceof Error ? error.message : String(error),
+        });
+        this.schedulePeerRecovery(targetPeerId, "recovery_failed");
+      });
+    }, delay);
+    this.peerRecoveryTimers.set(targetPeerId, timer);
+  }
+
+  private async recoverPeer(targetPeerId: string, reason: string): Promise<void> {
+    if (!this.isSignalingConnected || !this.remotePeerIds.has(targetPeerId)) {
+      return;
+    }
+    const peer = this.replacePeer(targetPeerId);
+    if (this.options.peerId < targetPeerId) {
+      await this.sendFreshOffer(targetPeerId, peer, reason);
+      return;
+    }
+    await this.send({
+      type: "peer_restart_request",
+      roomId: this.options.roomId,
+      peerId: this.options.peerId,
+      targetPeerId,
+      reason,
+    });
+  }
+
+  private async sendFreshOffer(
+    targetPeerId: string,
+    peer: MeshPeerConnection,
+    reason: string,
+  ): Promise<void> {
+    await this.applyScreenShareToPeer(peer);
+    const offer = await peer.createOffer();
+    await this.send({
+      type: "peer_offer",
+      roomId: this.options.roomId,
+      peerId: this.options.peerId,
+      targetPeerId,
+      sdp: offer,
+    });
+    void writeRendererLog("webrtc", "info", "Fresh peer media offer sent", {
+      targetPeerId,
+      reason,
+    });
+  }
+
+  private clearPeerRecovery(peerId: string, resetAttempts = false): void {
+    const recoveryTimer = this.peerRecoveryTimers.get(peerId);
+    if (recoveryTimer) window.clearTimeout(recoveryTimer);
+    this.peerRecoveryTimers.delete(peerId);
+    const watchdog = this.peerConnectionWatchdogs.get(peerId);
+    if (watchdog) window.clearTimeout(watchdog);
+    this.peerConnectionWatchdogs.delete(peerId);
+    if (resetAttempts) this.peerRecoveryAttempts.delete(peerId);
   }
 
   private async applyScreenShareToPeer(peer: MeshPeerConnection): Promise<void> {
@@ -1108,20 +1274,10 @@ export class RoomClient {
       window.clearTimeout(this.reconnectTimer);
     }
 
-    if (this.reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
-      const error = new Error("signaling_reconnect_exhausted");
-      this.shouldReconnect = false;
-      this.options.onConnectionState(RoomConnectionState.Failed);
-      this.clearPeers();
-      this.audioRelay?.destroy();
-      this.audioRelay = undefined;
-      this.options.onReconnectExhausted?.(error);
-      return;
-    }
-
     this.reconnectAttempts += 1;
     this.options.onReconnectAttempt?.(this.reconnectAttempts);
-    const delay = this.backoff.nextDelay();
+    const baseDelay = this.backoff.nextDelay();
+    const delay = baseDelay + Math.floor(Math.random() * Math.max(250, baseDelay * 0.16));
     void writeRendererLog("signaling", "warn", "Scheduling signaling reconnect", {
       roomId: this.options.roomId,
       peerId: this.options.peerId,
@@ -1144,12 +1300,14 @@ export class RoomClient {
   }
 
   private clearPeers(): void {
-    for (const [peerId, peer] of this.peers) {
+    const existingPeers = [...this.peers];
+    this.peers.clear();
+    for (const [peerId, peer] of existingPeers) {
+      this.clearPeerRecovery(peerId, true);
       peer.destroy();
       this.options.onRemoteStream(peerId, undefined);
       this.options.onRemoteScreenFrame(peerId, undefined);
     }
-    this.peers.clear();
     this.webrtcReadyPeerIds.clear();
     this.remotePeerIds.clear();
     this.updateAudioRelaySending();

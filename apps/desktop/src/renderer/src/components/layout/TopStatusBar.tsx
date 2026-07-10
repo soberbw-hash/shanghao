@@ -1,4 +1,4 @@
-import { Bell, Settings2, UserPlus, Users } from "lucide-react";
+import { Bell, Settings2, UserPlus, Users, Wifi } from "lucide-react";
 import { motion } from "framer-motion";
 
 import { MemberSpeakingState, RoomConnectionState } from "@private-voice/shared";
@@ -8,7 +8,8 @@ import { useRoomStore } from "../../store/roomStore";
 import { Button } from "../base/Button";
 
 const statusCopy = (state: RoomConnectionState) => {
-  if (state === RoomConnectionState.Reconnecting || state === RoomConnectionState.Degraded) return "重新连接中...";
+  if (state === RoomConnectionState.Reconnecting) return "正在恢复连接...";
+  if (state === RoomConnectionState.Degraded) return "语音已切换备用通道";
   if (state === RoomConnectionState.Failed || state === RoomConnectionState.Disconnected) return "连接断开";
   if (
     state === RoomConnectionState.Joining ||
@@ -49,6 +50,7 @@ export const TopStatusBar = ({
   const navigate = useAppStore((state) => state.navigate);
   const setSettingsReturnTo = useAppStore((state) => state.setSettingsReturnTo);
   const room = useRoomStore((state) => state.room);
+  const latencyMs = useRoomStore((state) => state.connectionHealth.latencyMs);
   const speaking = room.members.find(
     (member) => !member.isEmptySlot && member.speakingState === MemberSpeakingState.Speaking,
   );
@@ -57,6 +59,8 @@ export const TopStatusBar = ({
     setSettingsReturnTo("room");
     navigate("settings");
   };
+  const roundedLatency = Math.max(0, Math.round(latencyMs));
+  const latencyTone = roundedLatency <= 80 ? "good" : roundedLatency <= 180 ? "fair" : "poor";
 
   return (
     <header className="room-topbar flex items-center gap-3 px-4 py-2.5" data-testid="channel-status-bar">
@@ -82,6 +86,16 @@ export const TopStatusBar = ({
         <Users className="h-3 w-3" />
         {room.memberCount}/5
       </div>
+      {roundedLatency > 0 ? (
+        <div
+          className={`connection-quality-capsule ${latencyTone}`}
+          title={`服务器往返延迟 ${roundedLatency} 毫秒`}
+          aria-label={`服务器延迟 ${roundedLatency} 毫秒`}
+        >
+          <Wifi className="h-3 w-3" />
+          {roundedLatency} ms
+        </div>
+      ) : null}
       <Button variant="ghost" className="h-8 whitespace-nowrap px-3 text-[12px]" onClick={onKnock}>
         <Bell className="h-3.5 w-3.5" />
         敲一下

@@ -34,7 +34,7 @@ export const Button = ({
   <motion.button
     type="button"
     className={cn(
-      "inline-flex h-11 items-center justify-center gap-2 rounded-[15px] px-4 text-sm font-medium transition-all duration-200 disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50",
+      "inline-flex h-11 items-center justify-center gap-2 rounded-[15px] px-4 text-sm font-medium transition-[transform,filter,background-color,border-color,box-shadow,opacity,color] duration-150 disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50",
       "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4DA3FF]/30 focus-visible:ring-offset-2 focus-visible:ring-offset-[#F5F7FA]",
       variantClasses[variant],
       isFullWidth && "w-full",

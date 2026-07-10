@@ -161,7 +161,10 @@ const maybeCaptureScreenshot = async (window: BrowserWindow | null): Promise<voi
 
   await sleep(5200);
   if (mode !== "home") {
-    await clickButtonByLabel(window, "\u8FDB\u5165\u9891\u9053");
+    const usedQuickEntry = await clickButtonByLabel(window, "\u4E0A\u53F7");
+    if (!usedQuickEntry) {
+      await clickButtonByLabel(window, "\u8FDB\u5165\u9891\u9053");
+    }
     await sleep(mode === "room" ? 3600 : 700);
   }
 

@@ -9,6 +9,7 @@
 - 3 Mbps 起步，5 Mbps 更稳
 - 公网 IPv4
 - 安全组开放 TCP `43821`
+- 推荐同时开放 TURN：TCP/UDP `3478` 与 UDP `49160-49220`
 
 ## 首次部署
 
@@ -31,12 +32,16 @@ cp .env.example .env
 编辑 `/opt/shanghao/.env`：
 
 ```dotenv
-CHANNEL_ACCESS_CODE=只告诉好友的频道码
 PORT=43821
 ROOM_NAME=ShangHao
+TURN_URLS=turn:服务器公网IP:3478?transport=udp,turn:服务器公网IP:3478?transport=tcp
+TURN_SHARED_SECRET=由安装脚本生成的随机密钥
+TURN_CREDENTIAL_TTL_SECONDS=86400
 ```
 
-频道码不会出现在健康检查和服务器日志中，`.env` 也已被 Git 忽略。
+`.env` 已被 Git 忽略。`TURN_SHARED_SECRET` 只保存在服务器上，健康检查与日志不会返回它。
+
+跨地区、跨运营商语音建议继续执行 [TURN 部署步骤](./deploy-turn.md)。只启动信令服务也能使用低带宽语音兜底，但 TURN 能让媒体链路延迟更低、多人时更稳定。
 
 安装 systemd 服务：
 
@@ -61,7 +66,7 @@ journalctl -u shanghao-relay -f
 ws://服务器公网IP:43821
 ```
 
-并填写相同频道码。长期使用建议通过 Caddy 或 Nginx 将连接升级为 `wss://voice.example.com`。
+长期使用建议通过 Caddy 或 Nginx 将连接升级为 `wss://voice.example.com`。
 
 ## 更新服务器
 
@@ -76,4 +81,4 @@ sudo systemctl restart shanghao-relay
 curl -i http://127.0.0.1:43821/health
 ```
 
-`/health` 会返回 `protocolVersion`、`buildNumber`、`packageVersion`、`activeRooms` 和 `connectedPeers`，但不会返回频道码。
+`/health` 会返回 `protocolVersion`、`buildNumber`、`packageVersion`、`activeRooms`、`connectedPeers`、`turnConfigured` 与实时丢帧计数，但不会返回 TURN 密钥。

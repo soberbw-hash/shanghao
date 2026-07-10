@@ -200,9 +200,11 @@ test("entering a channel does not replay the whole home entrance animation", () 
   const roomSource = readFileSync(roomPagePath, "utf8");
 
   assert.equal(homeSource.includes("const isSettingsReady = Boolean(settings)"), true);
-  assert.equal(homeSource.includes("[isSettingsReady, reduceMotion]"), true);
+  assert.equal(homeSource.includes("[isQuickEntry, isSettingsReady, reduceMotion]"), true);
   assert.equal(homeSource.includes("[reduceMotion, settings]"), false);
   assert.equal(homeSource.includes("const [isSubmitting, setIsSubmitting]"), true);
+  assert.equal(homeSource.includes("hasSavedEntry"), true);
+  assert.equal(homeSource.includes("今晚也一起？"), true);
   assert.equal(appSource.includes("const roomPagePromise = loadRoomPage()"), true);
   assert.equal(roomSource.includes("{ autoAlpha: 0.94, y: 5 }"), true);
   assert.equal(roomSource.includes("[data-gsap-room='island']"), false);

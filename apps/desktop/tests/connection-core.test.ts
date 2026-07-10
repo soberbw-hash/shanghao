@@ -26,8 +26,12 @@ test("room client marks webrtc ready from connection state instead of remote str
   assert.equal(source.includes('state === "closed"'), true);
   assert.equal(relay.includes("RELAY_SAMPLE_RATE = 16_000"), true);
   assert.equal(relay.includes("MAX_PACKET_AGE_MS = 3_000"), true);
-  assert.equal(relay.includes("MAX_QUEUE_DURATION_MS = 1_200"), true);
-  assert.equal(relay.includes("MAX_QUEUE_CHUNKS = 60"), true);
+  assert.equal(relay.includes("MAX_QUEUE_DURATION_MS = 700"), true);
+  assert.equal(relay.includes("MAX_QUEUE_CHUNKS = 36"), true);
+  assert.equal(relay.includes('codec: "mulaw"'), true);
+  assert.equal(relay.includes('message.codec === "mulaw"'), true);
+  assert.equal(relay.includes("new AudioWorkletNode"), true);
+  assert.equal(relay.includes("script_processor_fallback_started"), true);
   assert.equal(relay.includes("droppedExpiredChunks"), true);
   assert.equal(relay.includes("serverClockOffsetMs"), true);
   assert.equal(relay.includes("audioStreamEpoch"), true);
@@ -59,12 +63,16 @@ test("relay status checks both health endpoint and websocket", () => {
   assert.equal(relayStatus.includes("const isReachable = isWebSocketReachable"), true);
 });
 
-test("room client preserves peers while signaling reconnects and bounds retry attempts", () => {
+test("room client preserves peers and self-heals signaling and media indefinitely", () => {
   const source = read("apps/desktop/src/renderer/src/features/room/roomClient.ts");
   const hook = read("apps/desktop/src/renderer/src/hooks/useRoomState.ts");
 
-  assert.equal(source.includes("MAX_RECONNECT_ATTEMPTS = 6"), true);
-  assert.equal(source.includes("this.options.onReconnectExhausted?.(error)"), true);
+  assert.equal(source.includes("MAX_RECONNECT_ATTEMPTS"), false);
+  assert.equal(source.includes('type: "peer_restart_request"'), true);
+  assert.equal(source.includes("schedulePeerRecovery"), true);
+  assert.equal(source.includes("connection_timeout"), true);
+  assert.equal(source.includes("DEFAULT_ICE_SERVERS"), true);
+  assert.equal(source.includes("[...DEFAULT_ICE_SERVERS, ...relayIceServers]"), true);
   assert.equal(source.includes("Ignored stale room snapshot"), true);
   assert.equal(source.includes("snapshot.revision <= this.lastSnapshotRevision"), true);
   assert.equal(source.includes("this.clearPeers();\n      this.reconnect();"), false);
@@ -74,9 +82,13 @@ test("room client preserves peers while signaling reconnects and bounds retry at
 
 test("audio backpressure drops realtime frames instead of queueing stale audio", () => {
   const bridge = read("apps/desktop/src/main/signaling-client.ts");
+  const server = read("packages/signaling/src/server.ts");
   assert.equal(bridge.includes("bufferedAmount >= 512 * 1024"), true);
   assert.equal(bridge.includes("droppedByBackpressure"), true);
   assert.equal(bridge.includes("maxBufferedAmount"), true);
+  assert.equal(server.includes("MAX_REALTIME_SOCKET_BUFFER_BYTES"), true);
+  assert.equal(server.includes("dropping stale realtime payload for slow client"), true);
+  assert.equal(server.includes('payload.type === "audio_chunk" || payload.type === "screen_frame"'), true);
 });
 
 test("room joining uses acknowledgement and snapshot recovery without logging raw signaling data", () => {

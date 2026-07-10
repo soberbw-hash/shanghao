@@ -58,14 +58,43 @@ const CHUNK_SIZE = 1024;
 const RELAY_SAMPLE_RATE = 16_000;
 const MIN_SEND_INTERVAL_MS = 20;
 const MAX_PACKET_AGE_MS = 3_000;
-const MAX_QUEUE_DURATION_MS = 1_200;
-const MAX_QUEUE_CHUNKS = 60;
-const PLAYBACK_LEAD_SECONDS = 0.1;
+const MAX_QUEUE_DURATION_MS = 700;
+const MAX_QUEUE_CHUNKS = 36;
+const PLAYBACK_LEAD_SECONDS = 0.08;
 const METRICS_LOG_INTERVAL_MS = 5_000;
 const RESYNC_DROP_THRESHOLD = 20;
+const RELAY_CAPTURE_WORKLET = "shanghao-relay-capture";
+const RELAY_CAPTURE_WORKLET_SOURCE = `
+class ShangHaoRelayCapture extends AudioWorkletProcessor {
+  constructor() {
+    super();
+    this.buffer = new Float32Array(${CHUNK_SIZE});
+    this.offset = 0;
+  }
 
-const encodeInt16ToBase64 = (samples: Int16Array): string => {
-  const bytes = new Uint8Array(samples.buffer);
+  process(inputs) {
+    const channel = inputs[0] && inputs[0][0];
+    if (!channel) return true;
+    let sourceOffset = 0;
+    while (sourceOffset < channel.length) {
+      const writable = Math.min(this.buffer.length - this.offset, channel.length - sourceOffset);
+      this.buffer.set(channel.subarray(sourceOffset, sourceOffset + writable), this.offset);
+      this.offset += writable;
+      sourceOffset += writable;
+      if (this.offset === this.buffer.length) {
+        const completed = this.buffer;
+        this.port.postMessage(completed.buffer, [completed.buffer]);
+        this.buffer = new Float32Array(${CHUNK_SIZE});
+        this.offset = 0;
+      }
+    }
+    return true;
+  }
+}
+registerProcessor("${RELAY_CAPTURE_WORKLET}", ShangHaoRelayCapture);
+`;
+
+const encodeBytesToBase64 = (bytes: Uint8Array): string => {
   let binary = "";
   for (let index = 0; index < bytes.length; index += 0x8000) {
     binary += String.fromCharCode(...bytes.subarray(index, index + 0x8000));
@@ -73,22 +102,13 @@ const encodeInt16ToBase64 = (samples: Int16Array): string => {
   return btoa(binary);
 };
 
-const decodeBase64ToInt16 = (payload: string): Int16Array => {
+const decodeBase64ToBytes = (payload: string): Uint8Array => {
   const binary = atob(payload);
   const bytes = new Uint8Array(binary.length);
   for (let index = 0; index < binary.length; index += 1) {
     bytes[index] = binary.charCodeAt(index);
   }
-  return new Int16Array(bytes.buffer);
-};
-
-const floatToInt16 = (input: Float32Array): Int16Array => {
-  const output = new Int16Array(input.length);
-  for (let index = 0; index < input.length; index += 1) {
-    const sample = Math.max(-1, Math.min(1, input[index] ?? 0));
-    output[index] = sample < 0 ? sample * 0x8000 : sample * 0x7fff;
-  }
-  return output;
+  return bytes;
 };
 
 const int16ToFloat = (input: Int16Array): Float32Array => {
@@ -97,6 +117,49 @@ const int16ToFloat = (input: Int16Array): Float32Array => {
     output[index] = (input[index] ?? 0) / 0x8000;
   }
   return output;
+};
+
+const MULAW_BIAS = 0x84;
+const MULAW_CLIP = 32_635;
+
+const floatToMuLaw = (input: Float32Array): Uint8Array => {
+  const output = new Uint8Array(input.length);
+  for (let index = 0; index < input.length; index += 1) {
+    let sample = Math.round(Math.max(-1, Math.min(1, input[index] ?? 0)) * 0x7fff);
+    const sign = sample < 0 ? 0x80 : 0;
+    if (sample < 0) sample = -sample;
+    sample = Math.min(MULAW_CLIP, sample) + MULAW_BIAS;
+    let exponent = 7;
+    for (let mask = 0x4000; exponent > 0 && (sample & mask) === 0; mask >>= 1) {
+      exponent -= 1;
+    }
+    const mantissa = (sample >> (exponent + 3)) & 0x0f;
+    output[index] = (~(sign | (exponent << 4) | mantissa)) & 0xff;
+  }
+  return output;
+};
+
+const muLawToFloat = (input: Uint8Array): Float32Array => {
+  const output = new Float32Array(input.length);
+  for (let index = 0; index < input.length; index += 1) {
+    const encoded = (~(input[index] ?? 0)) & 0xff;
+    const sign = encoded & 0x80;
+    const exponent = (encoded >> 4) & 0x07;
+    const mantissa = encoded & 0x0f;
+    let sample = ((mantissa << 3) + MULAW_BIAS) << exponent;
+    sample -= MULAW_BIAS;
+    output[index] = (sign ? -sample : sample) / 0x8000;
+  }
+  return output;
+};
+
+const decodeRelaySamples = (message: AudioChunkMessage): Float32Array => {
+  const bytes = decodeBase64ToBytes(message.data);
+  if (message.codec === "mulaw") {
+    return muLawToFloat(bytes);
+  }
+  const aligned = bytes.byteLength % 2 === 0 ? bytes : bytes.subarray(0, bytes.byteLength - 1);
+  return int16ToFloat(new Int16Array(aligned.buffer, aligned.byteOffset, aligned.byteLength / 2));
 };
 
 const downsampleMono = (
@@ -130,7 +193,7 @@ class FallbackAudioPlayer {
   private readonly scheduled: ScheduledChunk[] = [];
 
   play(message: AudioChunkMessage): PlaybackStats {
-    const samples = int16ToFloat(decodeBase64ToInt16(message.data));
+    const samples = decodeRelaySamples(message);
     if (samples.length === 0) {
       return this.getStats();
     }
@@ -230,6 +293,8 @@ class FallbackAudioPlayer {
 export class SignalingAudioRelay {
   private context?: AudioContext;
   private processor?: ScriptProcessorNode;
+  private workletNode?: AudioWorkletNode;
+  private captureNode?: AudioNode;
   private source?: MediaStreamAudioSourceNode;
   private silentGain?: GainNode;
   private sequence = 0;
@@ -262,69 +327,49 @@ export class SignalingAudioRelay {
       await context.resume();
     }
     const source = context.createMediaStreamSource(this.options.localStream);
-    const processor = context.createScriptProcessor(CHUNK_SIZE, 1, 1);
     const silentGain = context.createGain();
     silentGain.gain.value = 0;
-
-    processor.onaudioprocess = (event) => {
-      const monotonicNow = performance.now();
-      if (
-        this.isDestroyed ||
-        this.isMuted ||
-        !this.shouldSendAudio ||
-        this.isSendInFlight ||
-        monotonicNow - this.lastSendAt < MIN_SEND_INTERVAL_MS
-      ) {
-        if (this.isSendInFlight) {
-          this.droppedSendChunks += 1;
-        }
-        return;
+    let captureNode: AudioNode;
+    try {
+      const moduleUrl = URL.createObjectURL(
+        new Blob([RELAY_CAPTURE_WORKLET_SOURCE], { type: "text/javascript" }),
+      );
+      try {
+        await context.audioWorklet.addModule(moduleUrl);
+      } finally {
+        URL.revokeObjectURL(moduleUrl);
       }
-      const [track] = this.options.localStream.getAudioTracks();
-      if (!track || track.readyState !== "live" || !track.enabled) {
-        return;
-      }
-      const input = event.inputBuffer.getChannelData(0);
-      const durationMs = (input.length / context.sampleRate) * 1_000;
-      const relaySamples = downsampleMono(input, context.sampleRate, RELAY_SAMPLE_RATE);
-      this.isSendInFlight = true;
-      this.lastSendAt = monotonicNow;
-      this.sentSinceMetricsLog += 1;
-      void this.options
-        .send({
-          type: "audio_chunk",
-          roomId: this.options.roomId,
-          peerId: this.options.peerId,
-          sourcePeerId: this.options.peerId,
-          audioSessionId: this.audioSessionId,
-          audioStreamEpoch: this.audioStreamEpoch,
-          audioPath: "relay",
-          sequence: this.sequence++,
-          sentAt: Date.now(),
-          capturedAtMonotonic: monotonicNow,
-          durationMs,
-          sampleRate: RELAY_SAMPLE_RATE,
-          channelCount: 1,
-          data: encodeInt16ToBase64(floatToInt16(relaySamples)),
-        })
-        .catch((error) => {
-          this.droppedSendChunks += 1;
-          this.options.onLog?.("warn", "signaling audio relay send failed", {
-            error: error instanceof Error ? error.message : String(error),
-          });
-        })
-        .finally(() => {
-          this.isSendInFlight = false;
-        });
-      this.logSendMetrics(monotonicNow);
-    };
+      const workletNode = new AudioWorkletNode(context, RELAY_CAPTURE_WORKLET, {
+        numberOfInputs: 1,
+        numberOfOutputs: 1,
+        outputChannelCount: [1],
+        channelCount: 1,
+      });
+      workletNode.port.onmessage = (event: MessageEvent<ArrayBuffer>) => {
+        this.sendCapturedAudio(new Float32Array(event.data), context.sampleRate);
+      };
+      this.workletNode = workletNode;
+      captureNode = workletNode;
+      this.recordTimeline("audio_worklet_started");
+    } catch (error) {
+      const processor = context.createScriptProcessor(CHUNK_SIZE, 1, 1);
+      processor.onaudioprocess = (event) => {
+        this.sendCapturedAudio(event.inputBuffer.getChannelData(0), context.sampleRate);
+      };
+      this.processor = processor;
+      captureNode = processor;
+      this.options.onLog?.("warn", "audio worklet unavailable, using compatibility capture", {
+        error: error instanceof Error ? error.message : String(error),
+      });
+      this.recordTimeline("script_processor_fallback_started");
+    }
 
-    source.connect(processor);
-    processor.connect(silentGain);
+    source.connect(captureNode);
+    captureNode.connect(silentGain);
     silentGain.connect(context.destination);
     this.context = context;
     this.source = source;
-    this.processor = processor;
+    this.captureNode = captureNode;
     this.silentGain = silentGain;
     this.watchdogTimer = window.setInterval(() => this.runWatchdog(), 1_000);
     this.recordTimeline("mic_started");
@@ -352,12 +397,12 @@ export class SignalingAudioRelay {
   async replaceLocalStream(localStream: MediaStream): Promise<void> {
     this.options.localStream = localStream;
     this.bumpEpoch("microphone_reinitialized");
-    if (!this.context || this.isDestroyed || !this.processor) {
+    if (!this.context || this.isDestroyed || !this.captureNode) {
       return;
     }
     this.source?.disconnect();
     this.source = this.context.createMediaStreamSource(localStream);
-    this.source.connect(this.processor);
+    this.source.connect(this.captureNode);
   }
 
   handleRemoteChunk(message: AudioChunkMessage): void {
@@ -498,7 +543,13 @@ export class SignalingAudioRelay {
     if (this.watchdogTimer) {
       window.clearInterval(this.watchdogTimer);
     }
-    this.processor?.disconnect();
+    if (this.processor) {
+      this.processor.onaudioprocess = null;
+    }
+    if (this.workletNode) {
+      this.workletNode.port.onmessage = null;
+    }
+    this.captureNode?.disconnect();
     this.source?.disconnect();
     this.silentGain?.disconnect();
     void this.context?.close().catch(() => undefined);
@@ -507,6 +558,60 @@ export class SignalingAudioRelay {
     }
     this.players.clear();
     this.recordTimeline("mic_stopped");
+  }
+
+  private sendCapturedAudio(input: Float32Array, sourceSampleRate: number): void {
+    const monotonicNow = performance.now();
+    if (
+      this.isDestroyed ||
+      this.isMuted ||
+      !this.shouldSendAudio ||
+      this.isSendInFlight ||
+      monotonicNow - this.lastSendAt < MIN_SEND_INTERVAL_MS
+    ) {
+      if (this.isSendInFlight) {
+        this.droppedSendChunks += 1;
+      }
+      return;
+    }
+    const [track] = this.options.localStream.getAudioTracks();
+    if (!track || track.readyState !== "live" || !track.enabled) {
+      return;
+    }
+
+    const durationMs = (input.length / sourceSampleRate) * 1_000;
+    const relaySamples = downsampleMono(input, sourceSampleRate, RELAY_SAMPLE_RATE);
+    this.isSendInFlight = true;
+    this.lastSendAt = monotonicNow;
+    this.sentSinceMetricsLog += 1;
+    void this.options
+      .send({
+        type: "audio_chunk",
+        roomId: this.options.roomId,
+        peerId: this.options.peerId,
+        sourcePeerId: this.options.peerId,
+        audioSessionId: this.audioSessionId,
+        audioStreamEpoch: this.audioStreamEpoch,
+        audioPath: "relay",
+        sequence: this.sequence++,
+        sentAt: Date.now(),
+        capturedAtMonotonic: monotonicNow,
+        durationMs,
+        sampleRate: RELAY_SAMPLE_RATE,
+        channelCount: 1,
+        codec: "mulaw",
+        data: encodeBytesToBase64(floatToMuLaw(relaySamples)),
+      })
+      .catch((error) => {
+        this.droppedSendChunks += 1;
+        this.options.onLog?.("warn", "signaling audio relay send failed", {
+          error: error instanceof Error ? error.message : String(error),
+        });
+      })
+      .finally(() => {
+        this.isSendInFlight = false;
+      });
+    this.logSendMetrics(monotonicNow);
   }
 
   private getPeerState(peerId: string): PeerAudioState {

@@ -51,6 +51,8 @@ interface RelayHealthPayload {
   uptime?: number;
   activeRooms?: number;
   connectedPeers?: number;
+  turnConfigured?: boolean;
+  droppedRealtimeMessages?: number;
 }
 
 const probeHealth = async (url: string): Promise<RelayHealthPayload | undefined> => {
@@ -86,7 +88,7 @@ export const readRelayStatus = async ({
     return {
       isConfigured: false,
       isReachable: false,
-      message: "还没有填写云中继地址。",
+      message: "还没有填写固定服务器地址。",
     };
   }
 
@@ -118,6 +120,8 @@ export const readRelayStatus = async ({
       uptime: health?.uptime,
       activeRooms: health?.activeRooms,
       connectedPeers: health?.connectedPeers,
+      turnConfigured: health?.turnConfigured,
+      droppedRealtimeMessages: health?.droppedRealtimeMessages,
       hasVersionMismatch,
       lastCheckedAt: new Date().toISOString(),
       message: isReachable
@@ -130,7 +134,7 @@ export const readRelayStatus = async ({
           ? isHealthReachable
             ? "服务器健康检查正常，但 WebSocket 无法打开。"
             : "服务器端口可达，但 /health 与 WebSocket 均不可用。"
-          : "云中继地址当前不可达。",
+          : "固定服务器地址当前不可达。",
     };
 
     await writeLog?.({
@@ -157,7 +161,7 @@ export const readRelayStatus = async ({
       isConfigured: true,
       isReachable: false,
       lastCheckedAt: new Date().toISOString(),
-      message: "云中继地址格式不正确。",
+      message: "固定服务器地址格式不正确。",
     };
   }
 };

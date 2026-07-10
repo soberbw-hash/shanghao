@@ -1,5 +1,5 @@
 import { EventEmitter } from "node:events";
-import { createHash } from "node:crypto";
+import { createHash, createHmac } from "node:crypto";
 import { createServer, type Server as HttpServer } from "node:http";
 
 import {
@@ -20,11 +20,13 @@ import type {
   IceCandidateMessage,
   JoinChannelMessage,
   JoinAckMessage,
+  IceServerConfig,
   LeaveChannelMessage,
   MemberStateMessage,
   KnockEventMessage,
   PeerAnswerMessage,
   PeerOfferMessage,
+  PeerRestartRequestMessage,
   ChannelSnapshotMessage,
   RoomSnapshotMessage,
   RequestSnapshotMessage,
@@ -49,6 +51,9 @@ const MAX_SIGNALING_PAYLOAD_BYTES = 256 * 1024;
 const MAX_AVATAR_BYTES = 128 * 1024;
 const MAX_AUDIO_CHUNK_BYTES = 96 * 1024;
 const MAX_SCREEN_FRAME_BYTES = 220 * 1024;
+const MAX_REALTIME_SOCKET_BUFFER_BYTES = 256 * 1024;
+const MAX_SOCKET_BUFFER_BYTES = 8 * 1024 * 1024;
+const BACKPRESSURE_LOG_INTERVAL_MS = 5_000;
 const SEAT_ZONES: SceneZoneId[] = [
   "gameDesk1",
   "gameDesk2",
@@ -91,6 +96,33 @@ const normalizeAvatar = (
   };
 };
 
+const getTurnUrls = (): string[] =>
+  (process.env.TURN_URLS ?? "")
+    .split(",")
+    .map((value) => value.trim())
+    .filter((value) => value.startsWith("turn:") || value.startsWith("turns:"));
+
+const buildIceServersForPeer = (peerId: string): IceServerConfig[] | undefined => {
+  const urls = getTurnUrls();
+  if (urls.length === 0) return undefined;
+
+  const sharedSecret = process.env.TURN_SHARED_SECRET?.trim();
+  if (sharedSecret) {
+    const requestedTtl = Number(process.env.TURN_CREDENTIAL_TTL_SECONDS ?? 86_400);
+    const ttl = Number.isFinite(requestedTtl) ? Math.min(604_800, Math.max(3_600, requestedTtl)) : 86_400;
+    const username = `${Math.floor(Date.now() / 1_000) + ttl}:${peerId}`;
+    return [{
+      urls,
+      username,
+      credential: createHmac("sha1", sharedSecret).update(username).digest("base64"),
+    }];
+  }
+
+  const username = process.env.TURN_USERNAME?.trim();
+  const credential = process.env.TURN_CREDENTIAL?.trim();
+  return username && credential ? [{ urls, username, credential }] : undefined;
+};
+
 export class SignalingServer extends EventEmitter {
   private readonly roomManager = new RoomManager();
   private readonly httpServer: HttpServer;
@@ -99,6 +131,8 @@ export class SignalingServer extends EventEmitter {
   private readonly logger?: SignalingServerOptions["logger"];
   private heartbeatTimer?: NodeJS.Timeout;
   private audioServerSequence = 0;
+  private droppedRealtimeMessages = 0;
+  private lastBackpressureLogAt = 0;
 
   constructor(private readonly options: SignalingServerOptions) {
     super();
@@ -121,6 +155,11 @@ export class SignalingServer extends EventEmitter {
             activeRooms: stats.activeRooms,
             connectedPeers: stats.connectedPeers,
             currentOnlineCount: stats.connectedPeers,
+            droppedRealtimeMessages: this.droppedRealtimeMessages,
+            turnConfigured: getTurnUrls().length > 0 && Boolean(
+              process.env.TURN_SHARED_SECRET?.trim() ||
+              (process.env.TURN_USERNAME?.trim() && process.env.TURN_CREDENTIAL?.trim()),
+            ),
             now: new Date().toISOString(),
             serverTime: Date.now(),
           }),
@@ -324,6 +363,7 @@ export class SignalingServer extends EventEmitter {
         return;
       case "peer_offer":
       case "peer_answer":
+      case "peer_restart_request":
       case "ice_candidate":
         this.forwardPeerSignal(message);
         return;
@@ -455,6 +495,7 @@ export class SignalingServer extends EventEmitter {
       appVersion: room.appVersion,
       protocolVersion: room.protocolVersion,
       buildNumber: room.buildNumber,
+      iceServers: buildIceServersForPeer(message.peerId),
     };
     this.safeSend(socket, joinAck);
     this.broadcastSnapshot(message.roomId);
@@ -586,6 +627,7 @@ export class SignalingServer extends EventEmitter {
       durationMs: message.durationMs,
       sampleRate: message.sampleRate,
       channelCount: 1,
+      codec: message.codec ?? "pcm_s16le",
       data: message.data,
     };
 
@@ -698,7 +740,7 @@ export class SignalingServer extends EventEmitter {
   }
 
   private forwardPeerSignal(
-    message: PeerOfferMessage | PeerAnswerMessage | IceCandidateMessage,
+    message: PeerOfferMessage | PeerAnswerMessage | PeerRestartRequestMessage | IceCandidateMessage,
   ): void {
     const room = this.roomManager.getRoom(message.roomId);
     const targetPeer = room?.peers.getPeer(message.targetPeerId);
@@ -825,6 +867,30 @@ export class SignalingServer extends EventEmitter {
     }
 
     try {
+      if (socket.bufferedAmount > MAX_SOCKET_BUFFER_BYTES) {
+        this.logger?.("closing slow signaling client", {
+          bufferedAmount: socket.bufferedAmount,
+          type: payload.type,
+        });
+        socket.close(1013, "client_backpressure");
+        return false;
+      }
+
+      const isRealtimePayload = payload.type === "audio_chunk" || payload.type === "screen_frame";
+      if (isRealtimePayload && socket.bufferedAmount > MAX_REALTIME_SOCKET_BUFFER_BYTES) {
+        this.droppedRealtimeMessages += 1;
+        const now = Date.now();
+        if (now - this.lastBackpressureLogAt >= BACKPRESSURE_LOG_INTERVAL_MS) {
+          this.logger?.("dropping stale realtime payload for slow client", {
+            bufferedAmount: socket.bufferedAmount,
+            type: payload.type,
+            droppedRealtimeMessages: this.droppedRealtimeMessages,
+          });
+          this.lastBackpressureLogAt = now;
+        }
+        return false;
+      }
+
       const serialized = JSON.stringify(payload);
       if (Buffer.byteLength(serialized, "utf8") > MAX_SIGNALING_PAYLOAD_BYTES) {
         this.logger?.("signaling send skipped because payload is too large", {

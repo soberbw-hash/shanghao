@@ -26,7 +26,7 @@ export const CharacterPicker = ({
           <button
             key={avatar.id}
             type="button"
-            className={`relative rounded-full p-1.5 transition-all duration-200 ${
+            className={`relative rounded-full p-1.5 transition-[transform,opacity,background-color] duration-150 ${
               isSelected
                 ? "bg-[#EAF4FF]"
                 : "hover:bg-[#f5f7fb] opacity-60 hover:opacity-100"
