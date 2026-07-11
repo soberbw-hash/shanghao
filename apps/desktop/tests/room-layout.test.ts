@@ -92,6 +92,9 @@ test("desktop build includes custom nsis shortcut icon wiring", () => {
   assert.equal(installer.includes("--shanghao-quit-for-install"), true);
   assert.equal(installer.includes("customCheckAppRunning"), true);
   assert.equal(installer.includes("shutdownShangHaoProcesses"), true);
+  assert.equal(installer.includes("requestShangHaoQuitByName"), true);
+  assert.equal(installer.includes("绝不能在应用没有运行时启动 EXE"), true);
+  assert.equal(installer.includes("正在修复旧版覆盖安装组件"), true);
   assert.equal(installer.includes("killShangHaoProcessByInstallDir"), true);
   assert.equal(installer.includes('"上号.exe"'), true);
 });

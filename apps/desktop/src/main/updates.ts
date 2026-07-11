@@ -74,6 +74,7 @@ const parsePolicy = (releaseNotes?: string): UpdatePolicy => {
 export class UpdateService {
   private lastResult?: UpdateCheckResult;
   private statusListener?: (status: UpdateStatus) => void;
+  private installStarted = false;
 
   constructor(
     private readonly currentVersion: string,
@@ -193,12 +194,27 @@ export class UpdateService {
   }
 
   install(): void {
-    if (!app.isPackaged) {
+    if (!app.isPackaged || this.installStarted) {
       return;
     }
+    this.installStarted = true;
     this.emit({ phase: "installing", message: "正在安装新版…" });
     this.beforeInstall?.();
-    autoUpdater.quitAndInstall(false, true);
+    void this.log("info", "starting silent automatic update install");
+
+    // quitAndInstall normally exits immediately. Keep a referenced fallback timer so
+    // tray windows, native hooks, or a stuck renderer cannot leave the installer waiting.
+    const forceExitTimer = setTimeout(() => app.exit(0), 4_000);
+    try {
+      autoUpdater.quitAndInstall(true, true);
+    } catch (error) {
+      clearTimeout(forceExitTimer);
+      this.installStarted = false;
+      this.emit({ phase: "error", message: "自动安装没有启动，请稍后重试。" });
+      void this.log("error", "silent automatic update install failed", {
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
   }
 
   async openReleases(): Promise<void> {

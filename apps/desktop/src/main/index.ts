@@ -86,7 +86,8 @@ const quitForInstall = (reason: string) => {
     mainWindow.close();
   }
   app.quit();
-  setTimeout(() => app.exit(0), 1_500).unref();
+  // Keep the timer referenced so a native hook or hidden surface cannot stall an update forever.
+  setTimeout(() => app.exit(0), 1_500);
 };
 
 const showBootstrapError = async (error: unknown) => {

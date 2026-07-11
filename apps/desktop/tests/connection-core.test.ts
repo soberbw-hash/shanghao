@@ -156,7 +156,19 @@ test("installer and updater quit paths clean background surfaces", () => {
   assert.equal(main.includes("shortcutsController?.dispose()"), true);
   assert.equal(updates.includes("before-quit-for-update"), true);
   assert.equal(updates.includes("beforeInstall?.()"), true);
+  assert.equal(updates.includes("autoUpdater.quitAndInstall(true, true)"), true);
+  assert.equal(updates.includes("setTimeout(() => app.exit(0), 4_000)"), true);
   assert.equal(installer.includes("--shanghao-quit-for-install"), true);
+  assert.equal(installer.includes('${nsProcess::FindProcess} "${PROCESS_NAME}" $R8'), true);
+  assert.equal(installer.includes("Exec '\"${EXECUTABLE_PATH}\" --shanghao-quit-for-install'"), true);
+  assert.equal(installer.includes("nsExec::ExecToLog '\"$INSTDIR\\ShangHao.exe\" --shanghao-quit-for-install'"), false);
+  assert.equal(installer.includes("migrateBrokenLegacyInstaller"), true);
+  assert.equal(installer.includes("!macro customRemoveFiles"), true);
+  assert.equal(installer.includes('SetOutPath "$TEMP"'), true);
+  assert.equal(installer.includes('Abort "旧版上号程序文件仍被占用。"'), true);
+  assert.equal(installer.includes('$R7 == "0.1.45"'), true);
+  assert.equal(installer.includes('$R7 == "0.1.48"'), true);
+  assert.equal(installer.includes('DeleteRegKey ${ROOT_KEY} "${UNINSTALL_REGISTRY_KEY}"'), true);
   assert.equal(installer.includes("taskkill.exe"), true);
 });
 
