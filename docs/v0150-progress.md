@@ -32,7 +32,7 @@ This file is the durable checkpoint for the v0.1.50 product pass. It is updated 
 - [x] Electron hardening complete
 - [x] Design and motion pass complete
 - [x] Full verification complete
-- [ ] GitHub release published
+- [x] GitHub release published
 
 ## Final local verification
 
@@ -42,3 +42,4 @@ This file is the durable checkpoint for the v0.1.50 product pass. It is updated 
 - The packaged runtime contains the RNNoise AudioWorklet, 199 offline Noto Sans SC font files, and every required third-party license.
 - Windows NSIS coverage installation passed twice. The second pass started with six ShangHao processes and ended with zero locked processes, exit code 0, and installed product version 0.1.50.
 - SHA256 checksums were generated for exactly the installer, blockmap, and `latest.yml` update metadata.
+- GitHub Actions run `29188448594` rebuilt the package on a clean Windows runner and published the final `v0.1.50` release: <https://github.com/soberbw-hash/shanghao/releases/tag/v0.1.50>.
