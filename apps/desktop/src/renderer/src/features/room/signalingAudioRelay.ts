@@ -24,7 +24,12 @@ interface SignalingAudioRelayOptions {
   localStream: MediaStream;
   send: (message: AudioRelayMessage) => Promise<void>;
   shouldPlayPeer: (peerId: string) => boolean;
-  onLog?: (level: "info" | "warn" | "error", message: string, context?: Record<string, unknown>) => void;
+  getPeerVolume: (peerId: string) => number;
+  onLog?: (
+    level: "info" | "warn" | "error",
+    message: string,
+    context?: Record<string, unknown>,
+  ) => void;
 }
 
 interface PlaybackStats {
@@ -51,7 +56,8 @@ interface PeerAudioState {
   lastReceivedAt?: number;
   lastPlayedAt?: number;
   resyncPending: boolean;
-  fallbackStatus: "observing" | "relay_active" | "relay_receiving_but_dropping" | "relay_no_audio_received";
+  fallbackStatus:
+    "observing" | "relay_active" | "relay_receiving_but_dropping" | "relay_no_audio_received";
 }
 
 const CHUNK_SIZE = 1024;
@@ -134,7 +140,7 @@ const floatToMuLaw = (input: Float32Array): Uint8Array => {
       exponent -= 1;
     }
     const mantissa = (sample >> (exponent + 3)) & 0x0f;
-    output[index] = (~(sign | (exponent << 4) | mantissa)) & 0xff;
+    output[index] = ~(sign | (exponent << 4) | mantissa) & 0xff;
   }
   return output;
 };
@@ -142,7 +148,7 @@ const floatToMuLaw = (input: Float32Array): Uint8Array => {
 const muLawToFloat = (input: Uint8Array): Float32Array => {
   const output = new Float32Array(input.length);
   for (let index = 0; index < input.length; index += 1) {
-    const encoded = (~(input[index] ?? 0)) & 0xff;
+    const encoded = ~(input[index] ?? 0) & 0xff;
     const sign = encoded & 0x80;
     const exponent = (encoded >> 4) & 0x07;
     const mantissa = encoded & 0x0f;
@@ -188,9 +194,22 @@ const downsampleMono = (
 
 class FallbackAudioPlayer {
   private readonly context = new AudioContext({ latencyHint: "interactive" });
+  private readonly gain = this.context.createGain();
   private nextPlaybackTime = 0;
   private droppedOldChunks = 0;
   private readonly scheduled: ScheduledChunk[] = [];
+
+  constructor() {
+    this.gain.connect(this.context.destination);
+  }
+
+  setVolume(volume: number): void {
+    this.gain.gain.setTargetAtTime(
+      Math.max(0, Math.min(2, volume)),
+      this.context.currentTime,
+      0.012,
+    );
+  }
 
   play(message: AudioChunkMessage): PlaybackStats {
     const samples = decodeRelaySamples(message);
@@ -225,9 +244,13 @@ class FallbackAudioPlayer {
     buffer.getChannelData(0).set(samples);
     const source = this.context.createBufferSource();
     source.buffer = buffer;
-    source.connect(this.context.destination);
+    source.connect(this.gain);
     source.start(this.nextPlaybackTime);
-    this.scheduled.push({ source, startsAt: this.nextPlaybackTime, durationMs: buffer.duration * 1_000 });
+    this.scheduled.push({
+      source,
+      startsAt: this.nextPlaybackTime,
+      durationMs: buffer.duration * 1_000,
+    });
     this.nextPlaybackTime += buffer.duration;
     return this.getStats();
   }
@@ -252,6 +275,7 @@ class FallbackAudioPlayer {
 
   destroy(): void {
     this.clear();
+    this.gain.disconnect();
     void this.context.close().catch(() => undefined);
   }
 
@@ -407,7 +431,11 @@ export class SignalingAudioRelay {
 
   handleRemoteChunk(message: AudioChunkMessage): void {
     const receivedAt = performance.now();
-    if (this.isDestroyed || message.peerId === this.options.peerId || !this.options.shouldPlayPeer(message.peerId)) {
+    if (
+      this.isDestroyed ||
+      message.peerId === this.options.peerId ||
+      !this.options.shouldPlayPeer(message.peerId)
+    ) {
       return;
     }
     const state = this.getPeerState(message.peerId);
@@ -443,24 +471,31 @@ export class SignalingAudioRelay {
     state.lastSequence = message.sequence;
     const player = this.players.get(message.peerId) ?? new FallbackAudioPlayer();
     this.players.set(message.peerId, player);
-    void player.resume().then(() => {
-      const stats = player.play(message);
-      state.lastGoodSequence = message.sequence;
-      state.lastPlayedAt = performance.now();
-      state.droppedConsecutive = 0;
-      state.resyncPending = false;
-      if (state.fallbackStatus !== "relay_active") {
-        state.fallbackStatus = "relay_active";
-        this.recordTimeline("relay_first_chunk_played", { peerId: message.peerId, queueDurationMs: stats.queueDurationMs });
-      }
-      this.logReceiveMetrics(message, estimatedServerAgeMs, receivedAt, stats, state);
-    }).catch((error) => {
-      this.dropChunk(message, state, "playback_failed", estimatedServerAgeMs);
-      this.options.onLog?.("warn", "signaling audio relay playback failed", {
-        peerId: message.peerId,
-        error: error instanceof Error ? error.message : String(error),
+    player.setVolume(this.options.getPeerVolume(message.peerId));
+    void player
+      .resume()
+      .then(() => {
+        const stats = player.play(message);
+        state.lastGoodSequence = message.sequence;
+        state.lastPlayedAt = performance.now();
+        state.droppedConsecutive = 0;
+        state.resyncPending = false;
+        if (state.fallbackStatus !== "relay_active") {
+          state.fallbackStatus = "relay_active";
+          this.recordTimeline("relay_first_chunk_played", {
+            peerId: message.peerId,
+            queueDurationMs: stats.queueDurationMs,
+          });
+        }
+        this.logReceiveMetrics(message, estimatedServerAgeMs, receivedAt, stats, state);
+      })
+      .catch((error) => {
+        this.dropChunk(message, state, "playback_failed", estimatedServerAgeMs);
+        this.options.onLog?.("warn", "signaling audio relay playback failed", {
+          peerId: message.peerId,
+          error: error instanceof Error ? error.message : String(error),
+        });
       });
-    });
   }
 
   handleResyncRequest(message: AudioResyncRequestMessage): void {
@@ -477,7 +512,10 @@ export class SignalingAudioRelay {
       newAudioStreamEpoch: this.audioStreamEpoch,
       resetAt: Date.now(),
     });
-    this.recordTimeline("audio_resync_completed", { peerId: message.peerId, reason: message.reason });
+    this.recordTimeline("audio_resync_completed", {
+      peerId: message.peerId,
+      reason: message.reason,
+    });
   }
 
   handleResyncAck(message: AudioResyncAckMessage): void {
@@ -645,7 +683,14 @@ export class SignalingAudioRelay {
     state.droppedTotal += 1;
     this.droppedExpiredChunks += 1;
     state.fallbackStatus = "relay_receiving_but_dropping";
-    this.logReceiveMetrics(message, estimatedServerAgeMs, performance.now(), undefined, state, reason);
+    this.logReceiveMetrics(
+      message,
+      estimatedServerAgeMs,
+      performance.now(),
+      undefined,
+      state,
+      reason,
+    );
     if (state.droppedConsecutive >= RESYNC_DROP_THRESHOLD) {
       this.requestResync(message.peerId, state, reason);
     }
@@ -667,7 +712,11 @@ export class SignalingAudioRelay {
       lastGoodSequence: state.lastGoodSequence,
       droppedCount: state.droppedTotal,
     });
-    this.recordTimeline("audio_resync_requested", { peerId, reason, droppedChunks: state.droppedTotal });
+    this.recordTimeline("audio_resync_requested", {
+      peerId,
+      reason,
+      droppedChunks: state.droppedTotal,
+    });
   }
 
   private resetPeerQueue(peerId: string, state: PeerAudioState, reason: string): void {
@@ -698,7 +747,10 @@ export class SignalingAudioRelay {
         state.fallbackStatus !== "relay_no_audio_received"
       ) {
         state.fallbackStatus = "relay_no_audio_received";
-        this.recordTimeline("peer_audio_silent_timeout", { peerId, reason: "relay_no_audio_received" });
+        this.recordTimeline("peer_audio_silent_timeout", {
+          peerId,
+          reason: "relay_no_audio_received",
+        });
       }
     }
   }

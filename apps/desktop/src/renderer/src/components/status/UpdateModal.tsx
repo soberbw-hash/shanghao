@@ -45,8 +45,10 @@ export const UpdateModal = () => {
             </div>
             <div className="h-2 overflow-hidden rounded-full bg-[#edf2f8]">
               <div
-                className="h-full rounded-full bg-[#4f7df7] transition-[width] duration-300"
-                style={{ width: `${status.percent ?? 0}%` }}
+                className="h-full w-full origin-left rounded-full bg-[#4f7df7] transition-transform duration-300"
+                style={{
+                  transform: `scaleX(${Math.max(0, Math.min(100, status.percent ?? 0)) / 100})`,
+                }}
               />
             </div>
           </div>

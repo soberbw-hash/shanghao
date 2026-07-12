@@ -4,14 +4,15 @@ import { gsap } from "gsap";
 
 import { MemberPresenceState, MemberSpeakingState, type OverlayState } from "@private-voice/shared";
 
-import { getAvatarSrc } from "../utils/profile";
+import { motionEase } from "../features/motion/motionSystem";
+import { getAvatarFaceStyle, getAvatarSrc, getStableAvatarId } from "../utils/profile";
 
-const AVATAR_SIZE = 28;
+const AVATAR_SIZE = 34;
 const GAP = 4;
 const PADDING_X = 8;
 const STATUS_WIDTH = 24;
 const SHADOW_MARGIN = 0;
-const PILL_HEIGHT = 38;
+const PILL_HEIGHT = 44;
 const MIN_PILL_WIDTH = 88;
 
 export const OverlayPage = () => {
@@ -43,7 +44,7 @@ export const OverlayPage = () => {
     .slice(0, 5);
 
   const count = onlineMembers.length;
-  const visibleCount = Math.max(1, count);
+  const visibleCount = count;
   const pillWidth = Math.max(
     MIN_PILL_WIDTH,
     PADDING_X * 2 +
@@ -62,19 +63,28 @@ export const OverlayPage = () => {
     const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     const context = gsap.context(() => {
       if (reduceMotion) {
-        gsap.set("[data-overlay-pill], [data-overlay-avatar], [data-overlay-status]", { clearProps: "all" });
+        gsap.set("[data-overlay-pill], [data-overlay-avatar], [data-overlay-status]", {
+          clearProps: "all",
+        });
         return;
       }
 
       gsap.fromTo(
         "[data-overlay-pill]",
         { autoAlpha: 0, x: -8, scale: 0.92, filter: "blur(4px)" },
-        { autoAlpha: 1, x: 0, scale: 1, filter: "blur(0px)", duration: 0.36, ease: "back.out(1.55)" },
+        {
+          autoAlpha: 1,
+          x: 0,
+          scale: 1,
+          filter: "blur(0px)",
+          duration: 0.28,
+          ease: motionEase.spatial,
+        },
       );
       gsap.fromTo(
         "[data-overlay-avatar]",
         { autoAlpha: 0, y: 4, scale: 0.82 },
-        { autoAlpha: 1, y: 0, scale: 1, duration: 0.28, ease: "back.out(1.8)", stagger: 0.035 },
+        { autoAlpha: 1, y: 0, scale: 1, duration: 0.22, ease: motionEase.spatial, stagger: 0.025 },
       );
       gsap.fromTo(
         "[data-overlay-status]",
@@ -109,13 +119,11 @@ export const OverlayPage = () => {
           width: `${pillWidth}px`,
           height: `${PILL_HEIGHT}px`,
           borderRadius: "999px",
-          background:
-            "linear-gradient(180deg, rgba(255,255,255,0.76), rgba(235,244,255,0.48))",
+          background: "linear-gradient(180deg, rgba(255,255,255,0.76), rgba(235,244,255,0.48))",
           border: "1px solid rgba(214, 226, 244, 0.74)",
           backdropFilter: "blur(24px) saturate(185%)",
           WebkitBackdropFilter: "blur(24px) saturate(185%)",
-          boxShadow:
-            "inset 0 1px 0 rgba(255,255,255,0.90), inset 0 -1px 0 rgba(120,150,190,0.12)",
+          boxShadow: "inset 0 1px 0 rgba(255,255,255,0.90), inset 0 -1px 0 rgba(120,150,190,0.12)",
           display: "flex",
           alignItems: "center",
           gap: `${GAP}px`,
@@ -133,123 +141,112 @@ export const OverlayPage = () => {
             background: "linear-gradient(180deg, rgba(255,255,255,0.66), rgba(255,255,255,0))",
           }}
         />
-        {onlineMembers.length === 0 ? (
-          <span
-            data-overlay-avatar
-            style={{
-              width: `${AVATAR_SIZE}px`,
-              height: `${AVATAR_SIZE}px`,
-              borderRadius: "999px",
-              background: "linear-gradient(180deg, rgba(255,255,255,0.9), rgba(233,241,252,0.8))",
-              boxShadow: "inset 0 0 0 1px rgba(255,255,255,0.78), 0 2px 7px rgba(30,45,70,0.08)",
-            }}
-          />
-        ) : null}
         {onlineMembers.map((member) => {
-        const isSpeaking = member.speakingState === MemberSpeakingState.Speaking;
-        const isMuted = member.isMuted;
-        const isDeafened = member.isDeafened;
-        const isReconnecting = member.presenceState === MemberPresenceState.Reconnecting;
-        const isOffline = member.presenceState === MemberPresenceState.Offline;
+          const avatarId = getStableAvatarId(member.id, member.avatarId);
+          const isSpeaking = member.speakingState === MemberSpeakingState.Speaking;
+          const isMuted = member.isMuted;
+          const isDeafened = member.isDeafened;
+          const isReconnecting = member.presenceState === MemberPresenceState.Reconnecting;
+          const isOffline = member.presenceState === MemberPresenceState.Offline;
 
-        return (
-          <div
-            key={member.id}
-            data-overlay-avatar
-            style={{
-              position: "relative",
-              width: `${AVATAR_SIZE}px`,
-              height: `${AVATAR_SIZE}px`,
-              flexShrink: 0,
-            }}
-          >
+          return (
             <div
+              key={member.id}
+              data-overlay-avatar
               style={{
-                width: "100%",
-                height: "100%",
-                borderRadius: "50%",
-                overflow: "hidden",
-                background: "rgba(255,255,255,0.88)",
-                border: isSpeaking ? "2px solid rgba(77, 163, 255, 0.70)" : "1px solid rgba(255, 255, 255, 0.82)",
-                boxShadow: isSpeaking
-                  ? "0 0 0 3px rgba(77, 163, 255, 0.13), 0 0 14px rgba(77, 163, 255, 0.42), 0 2px 7px rgba(30, 45, 70, 0.10)"
-                  : "0 2px 7px rgba(30, 45, 70, 0.10)",
-                opacity: isOffline ? 0.5 : 1,
-                transition: "all 300ms ease",
+                position: "relative",
+                width: `${AVATAR_SIZE}px`,
+                height: `${AVATAR_SIZE}px`,
+                flexShrink: 0,
               }}
             >
-              <img
-                src={getAvatarSrc(member.avatarId)}
-                alt=""
-                draggable={false}
+              <div
                 style={{
                   width: "100%",
                   height: "100%",
-                  objectFit: "contain",
-                  transform: "scale(1.18) translateY(1px)",
-                  filter: isMuted || isDeafened ? "saturate(0.5)" : "none",
+                  borderRadius: "50%",
+                  overflow: "hidden",
+                  background: "rgba(255,255,255,0.88)",
+                  border: isSpeaking
+                    ? "2px solid rgba(77, 163, 255, 0.70)"
+                    : "1px solid rgba(255, 255, 255, 0.82)",
+                  boxShadow: isSpeaking
+                    ? "0 0 0 3px rgba(77, 163, 255, 0.13), 0 0 14px rgba(77, 163, 255, 0.42), 0 2px 7px rgba(30, 45, 70, 0.10)"
+                    : "0 2px 7px rgba(30, 45, 70, 0.10)",
+                  opacity: isOffline ? 0.5 : 1,
+                  transition:
+                    "border-color 180ms cubic-bezier(0.23,1,0.32,1), box-shadow 180ms cubic-bezier(0.23,1,0.32,1), opacity 150ms linear",
                 }}
-              />
+              >
+                <img
+                  src={getAvatarSrc(avatarId)}
+                  alt=""
+                  draggable={false}
+                  style={{
+                    ...getAvatarFaceStyle(avatarId),
+                    filter: isMuted || isDeafened ? "saturate(0.5)" : "none",
+                  }}
+                />
+              </div>
+              {isMuted && !isDeafened && !isReconnecting && (
+                <span
+                  style={{
+                    position: "absolute",
+                    bottom: -2,
+                    right: -2,
+                    width: 13,
+                    height: 13,
+                    borderRadius: "50%",
+                    background: "white",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    boxShadow: "0 1px 4px rgba(0,0,0,0.15)",
+                  }}
+                >
+                  <MicOff className="h-2 w-2 text-[#FF5A5A]" />
+                </span>
+              )}
+              {isDeafened && !isReconnecting && (
+                <span
+                  style={{
+                    position: "absolute",
+                    bottom: -2,
+                    right: -2,
+                    width: 13,
+                    height: 13,
+                    borderRadius: "50%",
+                    background: "white",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    boxShadow: "0 1px 4px rgba(0,0,0,0.15)",
+                  }}
+                >
+                  <VolumeX className="h-2 w-2 text-[#6366f1]" />
+                </span>
+              )}
+              {isReconnecting && (
+                <span
+                  style={{
+                    position: "absolute",
+                    bottom: -2,
+                    right: -2,
+                    width: 13,
+                    height: 13,
+                    borderRadius: "50%",
+                    background: "white",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    boxShadow: "0 1px 4px rgba(0,0,0,0.15)",
+                  }}
+                >
+                  <RotateCw className="h-2 w-2 text-[#F59E0B] animate-spin" />
+                </span>
+              )}
             </div>
-            {member.isLocal && isMuted && (
-              <span
-                style={{
-                  position: "absolute",
-                  bottom: -2,
-                  right: -2,
-                  width: 13,
-                  height: 13,
-                  borderRadius: "50%",
-                  background: "white",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  boxShadow: "0 1px 4px rgba(0,0,0,0.15)",
-                }}
-              >
-                <MicOff className="h-2 w-2 text-[#FF5A5A]" />
-              </span>
-            )}
-            {member.isLocal && isDeafened && (
-              <span
-                style={{
-                  position: "absolute",
-                  bottom: -2,
-                  right: -2,
-                  width: 13,
-                  height: 13,
-                  borderRadius: "50%",
-                  background: "white",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  boxShadow: "0 1px 4px rgba(0,0,0,0.15)",
-                }}
-              >
-                <VolumeX className="h-2 w-2 text-[#6366f1]" />
-              </span>
-            )}
-            {isReconnecting && (
-              <span
-                style={{
-                  position: "absolute",
-                  bottom: -2,
-                  right: -2,
-                  width: 13,
-                  height: 13,
-                  borderRadius: "50%",
-                  background: "white",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  boxShadow: "0 1px 4px rgba(0,0,0,0.15)",
-                }}
-              >
-                <RotateCw className="h-2 w-2 text-[#F59E0B] animate-spin" />
-              </span>
-            )}
-          </div>
-        );
+          );
         })}
         <span
           data-overlay-status
@@ -270,11 +267,17 @@ export const OverlayPage = () => {
                 : "rgba(77,163,255,0.12)",
             border: "1px solid rgba(255,255,255,0.62)",
             boxShadow: "inset 0 1px 0 rgba(255,255,255,0.72)",
-            fontSize: "9px",
+            fontSize: "11px",
             fontWeight: 700,
           }}
         >
-          {state.isMuted ? <MicOff className="h-3 w-3" /> : state.isDeafened ? <VolumeX className="h-3 w-3" /> : `${Math.max(1, count)}/5`}
+          {state.isMuted ? (
+            <MicOff className="h-3 w-3" />
+          ) : state.isDeafened ? (
+            <VolumeX className="h-3 w-3" />
+          ) : (
+            `${count}/5`
+          )}
         </span>
       </div>
     </div>

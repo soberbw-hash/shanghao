@@ -47,7 +47,7 @@ curl -s http://127.0.0.1:43821/health
 健康检查中应出现：
 
 ```json
-{"ok":true,"turnConfigured":true}
+{ "ok": true, "turnConfigured": true }
 ```
 
 `turnConfigured` 只说明信令服务已经能下发临时 TURN 凭据。最终连通性还取决于腾讯云安全组和系统防火墙是否开放上述端口。

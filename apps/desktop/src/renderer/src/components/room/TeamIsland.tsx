@@ -1,5 +1,5 @@
 import { type CSSProperties, useEffect, useLayoutEffect, useRef, useState } from "react";
-import { Gamepad2, StickyNote, VolumeX } from "lucide-react";
+import { Gamepad2, VolumeX } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
 import { gsap } from "gsap";
 
@@ -8,13 +8,12 @@ import {
   type BuiltInAvatarId,
   type MemberActivity,
   type RoomMember,
-  type RoomNote,
   type SceneReaction,
   type SceneZoneId,
 } from "@private-voice/shared";
 
 import workstationArt from "../../assets/scenes/workstation-chibi.webp";
-import { avatarOptions } from "../../utils/profile";
+import { getStableAvatarId } from "../../utils/profile";
 import { motionDuration, motionEase } from "../../features/motion/motionSystem";
 import { AnimalSprite } from "./AnimalSprite";
 import { DeskAnimalSprite } from "./DeskAnimalSprite";
@@ -29,19 +28,17 @@ import { memberStatus } from "../../features/voice-scene/activityRules";
 import { usePrefersReducedMotion } from "../../hooks/usePrefersReducedMotion";
 
 const assignVisibleAvatars = (members: RoomMember[]): Map<string, BuiltInAvatarId> => {
-  const result = new Map<string, BuiltInAvatarId>();
-  const available = avatarOptions.map((avatar) => avatar.id);
-  for (const member of members) {
-    const preferred = member.avatarId;
-    const selected =
-      preferred && available.includes(preferred)
-        ? preferred
-        : available[0] ?? preferred ?? "fox";
-    result.set(member.id, selected);
-    const index = available.indexOf(selected);
-    if (index >= 0) available.splice(index, 1);
-  }
-  return result;
+  return new Map(
+    members.map((member) => [member.id, getStableAvatarId(member.id, member.avatarId)]),
+  );
+};
+
+const getLatencyTone = (latencyMs?: number) => {
+  if (typeof latencyMs !== "number") return "unknown";
+  if (latencyMs < 80) return "good";
+  if (latencyMs < 150) return "fair";
+  if (latencyMs < 250) return "slow";
+  return "poor";
 };
 
 const SceneCharacter = ({
@@ -53,6 +50,7 @@ const SceneCharacter = ({
   zone,
   reaction,
   onReact,
+  onVolumeChange,
 }: {
   member: RoomMember;
   avatarId: BuiltInAvatarId;
@@ -62,6 +60,7 @@ const SceneCharacter = ({
   zone: SceneZoneId;
   reaction?: SceneReaction;
   onReact?: (targetPeerId: string, emoji: SceneReaction["emoji"]) => void;
+  onVolumeChange?: (memberId: string, volume: number) => void;
 }) => {
   const status = memberStatus(member);
   const [visibleReaction, setVisibleReaction] = useState<SceneReaction>();
@@ -128,9 +127,7 @@ const SceneCharacter = ({
         scale: 0.82,
       }}
       transition={{
-        layout: shouldReduceMotion
-          ? { duration: 0 }
-          : { type: "spring", ...APPLE_MOTION_SPRING },
+        layout: shouldReduceMotion ? { duration: 0 } : { type: "spring", ...APPLE_MOTION_SPRING },
         opacity: { duration: shouldReduceMotion ? 0 : motionDuration.feedback },
       }}
       className="pointer-events-none absolute"
@@ -143,10 +140,12 @@ const SceneCharacter = ({
       <div className="-translate-x-1/2" data-gsap-character>
         <div
           className="scene-character-anchor relative"
-          style={{
-            "--character-scale": position.scale,
-            "--label-offset-y": `${position.labelOffsetY ?? 0}px`,
-          } as CSSProperties & Record<string, string | number>}
+          style={
+            {
+              "--character-scale": position.scale,
+              "--label-offset-y": `${position.labelOffsetY ?? 0}px`,
+            } as CSSProperties & Record<string, string | number>
+          }
         >
           <div
             className={`room-character-sprite relative ${
@@ -161,11 +160,7 @@ const SceneCharacter = ({
                 isMoving={isMoving}
               />
             ) : (
-              <AnimalSprite
-                avatarId={avatarId}
-                state="away"
-                isMoving={isMoving}
-              />
+              <AnimalSprite avatarId={avatarId} state="away" isMoving={isMoving} />
             )}
             {member.isDeafened ? (
               <span className="room-character-deafened-badge" aria-label="已关闭扬声器">
@@ -175,9 +170,20 @@ const SceneCharacter = ({
           </div>
 
           <div className={`room-character-label ${status.tone}`}>
-            {status.icon ? <status.icon className={`h-3 w-3 ${isReconnecting ? "animate-spin" : ""}`} /> : null}
-            <span className="max-w-[118px] truncate">
-              {member.customStatus ? `${status.label} · ${member.customStatus}` : status.label}
+            <span className="room-character-identity">
+              <strong className="room-character-nickname" title={member.nickname}>
+                {member.nickname}
+              </strong>
+              <span aria-hidden="true">·</span>
+              <span className={`room-character-latency ${getLatencyTone(member.latencyMs)}`}>
+                {typeof member.latencyMs === "number" ? Math.round(member.latencyMs) : "--"} ms
+              </span>
+            </span>
+            <span className="room-character-state">
+              {status.icon ? (
+                <status.icon className={`h-3 w-3 ${isReconnecting ? "animate-spin" : ""}`} />
+              ) : null}
+              <span className="max-w-[118px] truncate">{status.label}</span>
             </span>
           </div>
           {visibleReaction ? (
@@ -203,6 +209,20 @@ const SceneCharacter = ({
                   {emoji}
                 </button>
               ))}
+              <label
+                className="scene-member-volume"
+                title={`${member.nickname} 音量 ${Math.round(member.volume * 100)}%`}
+              >
+                <span>音量</span>
+                <input
+                  type="range"
+                  min={0}
+                  max={2}
+                  step={0.05}
+                  value={member.volume}
+                  onChange={(event) => onVolumeChange?.(member.id, Number(event.target.value))}
+                />
+              </label>
             </div>
           ) : null}
         </div>
@@ -215,18 +235,16 @@ export const TeamIsland = ({
   members,
   onZoneSelect,
   onReact,
+  onVolumeChange,
   reactions = [],
-  roomNote,
-  onRoomNoteChange,
   knockPulse = 0,
   reduceMotion = false,
 }: {
   members: RoomMember[];
   onZoneSelect?: (zone: SceneZoneId, activity: MemberActivity) => void;
   onReact?: (targetPeerId: string, emoji: SceneReaction["emoji"]) => void;
+  onVolumeChange?: (memberId: string, volume: number) => void;
   reactions?: SceneReaction[];
-  roomNote?: RoomNote;
-  onRoomNoteChange?: (content: string) => void;
   knockPulse?: number;
   reduceMotion?: boolean;
 }) => {
@@ -234,7 +252,6 @@ export const TeamIsland = ({
   const visibleMembers = members.filter((member) => !member.isEmptySlot).slice(0, 5);
   const visibleAvatars = assignVisibleAvatars(visibleMembers);
   const shouldReduceMotion = usePrefersReducedMotion(reduceMotion);
-  const [noteDraft, setNoteDraft] = useState(roomNote?.content ?? "");
   const [ambient, setAmbient] = useState<"day" | "evening" | "night">("day");
   const resolvedMemberZones = resolveMemberSceneZones(visibleMembers);
   const occupiedSeatIds = new Set<SceneZoneId>();
@@ -245,9 +262,8 @@ export const TeamIsland = ({
   const memberBySeat = new Map(
     visibleMembers
       .map((member) => [resolvedMemberZones.get(member.id), member] as const)
-      .filter(
-        (entry): entry is readonly [SceneZoneId, RoomMember] =>
-          Boolean(entry[0] && isSeatZone(entry[0])),
+      .filter((entry): entry is readonly [SceneZoneId, RoomMember] =>
+        Boolean(entry[0] && isSeatZone(entry[0])),
       ),
   );
   const localMember = visibleMembers.find((member) => member.isLocal);
@@ -258,10 +274,6 @@ export const TeamIsland = ({
   const memberMotionKey = visibleMembers
     .map((member) => `${member.id}:${resolvedMemberZones.get(member.id) ?? "gameDesk1"}`)
     .join("|");
-
-  useEffect(() => {
-    setNoteDraft(roomNote?.content ?? "");
-  }, [roomNote?.content]);
 
   useEffect(() => {
     const updateAmbient = () => {
@@ -349,7 +361,9 @@ export const TeamIsland = ({
                   draggable={false}
                   decoding="async"
                 />
-                <span className={`scene-workstation-screen ${occupant ? "online" : ""} ${occupant?.gameName ? "gaming" : ""}`}>
+                <span
+                  className={`scene-workstation-screen ${occupant ? "online" : ""} ${occupant?.gameName ? "gaming" : ""}`}
+                >
                   {occupant?.gameName ? <Gamepad2 aria-hidden="true" /> : null}
                   <span>{occupant?.gameName ?? (occupant ? "上号" : "")}</span>
                 </span>
@@ -358,26 +372,6 @@ export const TeamIsland = ({
           );
         })}
       </div>
-      <div className="absolute left-5 top-5 z-30 rounded-full border border-white/90 bg-white/72 px-3 py-1.5 text-xs font-semibold text-[#66778e] shadow-sm backdrop-blur-xl">
-        {visibleMembers.length}/5 在线
-      </div>
-      <label className="scene-note-wall">
-        <span><StickyNote aria-hidden="true" /> 便签</span>
-        <input
-          value={noteDraft}
-          maxLength={80}
-          placeholder="周五晚上，老时间"
-          onChange={(event) => setNoteDraft(event.target.value)}
-          onBlur={() => onRoomNoteChange?.(noteDraft)}
-          onKeyDown={(event) => {
-            if (event.key === "Enter") {
-              event.currentTarget.blur();
-            }
-          }}
-        />
-        {roomNote?.authorName ? <small>{roomNote.authorName} 留下</small> : null}
-      </label>
-
       <div className="pointer-events-none absolute inset-0 z-[48]">
         {seatSlots.map((slot) => {
           const occupied = occupiedSeatIds.has(slot.id);
@@ -412,11 +406,7 @@ export const TeamIsland = ({
               height: `${zone.height}%`,
             }}
             aria-label={`移动到${zone.label}`}
-            disabled={
-              zone.kind === "seat" &&
-              occupiedSeatIds.has(zone.id) &&
-              localZone !== zone.id
-            }
+            disabled={zone.kind === "seat" && occupiedSeatIds.has(zone.id) && localZone !== zone.id}
             onClick={() => onZoneSelect?.(zone.id, zone.activity)}
           >
             <span>{zone.label}</span>
@@ -445,6 +435,7 @@ export const TeamIsland = ({
                     Date.now() - Date.parse(reaction.createdAt) < 4_000,
                 )}
               onReact={onReact}
+              onVolumeChange={onVolumeChange}
             />
           );
         })}

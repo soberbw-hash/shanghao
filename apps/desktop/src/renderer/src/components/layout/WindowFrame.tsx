@@ -22,7 +22,10 @@ export const WindowFrame = () => (
       <IconButton onClick={() => void desktopApi.window.hide()}>
         <Square className="h-3.5 w-3.5" />
       </IconButton>
-      <IconButton className="hover:bg-[#FEF2F2] hover:text-[#DC2626]" onClick={() => void desktopApi.window.close()}>
+      <IconButton
+        className="hover:bg-[#FEF2F2] hover:text-[#DC2626]"
+        onClick={() => void desktopApi.window.close()}
+      >
         <X className="h-4 w-4" />
       </IconButton>
     </div>

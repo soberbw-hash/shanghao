@@ -8,12 +8,12 @@ import { IPC_CHANNELS, type OverlayState } from "@private-voice/shared";
 import { sendToWindow } from "./safe-web-contents";
 
 const devServerUrl = "http://127.0.0.1:5173";
-const OVERLAY_AVATAR_SIZE = 28;
+const OVERLAY_AVATAR_SIZE = 34;
 const OVERLAY_GAP = 4;
 const OVERLAY_PADDING_X = 8;
 const OVERLAY_STATUS_WIDTH = 24;
 const OVERLAY_SHADOW_MARGIN = 0;
-const OVERLAY_PILL_HEIGHT = 38;
+const OVERLAY_PILL_HEIGHT = 44;
 const OVERLAY_HEIGHT = OVERLAY_PILL_HEIGHT + OVERLAY_SHADOW_MARGIN * 2;
 const OVERLAY_MIN_PILL_WIDTH = 88;
 const OVERLAY_MIN_WIDTH = OVERLAY_MIN_PILL_WIDTH + OVERLAY_SHADOW_MARGIN * 2;
@@ -112,9 +112,10 @@ export class OverlayWindowController {
       minimizable: false,
       maximizable: false,
       webPreferences: {
-        preload: path.join(__dirname, "../preload/index.cjs"),
+        preload: path.join(__dirname, "../preload/overlay.cjs"),
         contextIsolation: true,
         nodeIntegration: false,
+        sandbox: true,
       },
     });
 
@@ -139,7 +140,12 @@ export class OverlayWindowController {
     const saveBounds = () => {
       try {
         const bounds = window.getBounds();
-        window.setBounds({ x: this.snapX, y: bounds.y, width: bounds.width, height: bounds.height });
+        window.setBounds({
+          x: this.snapX,
+          y: bounds.y,
+          width: bounds.width,
+          height: bounds.height,
+        });
         writeFileSync(boundsPath, JSON.stringify({ y: bounds.y }), "utf8");
       } catch {
         // ignore

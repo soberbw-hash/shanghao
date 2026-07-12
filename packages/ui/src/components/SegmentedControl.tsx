@@ -11,11 +11,7 @@ interface SegmentedControlProps {
   onChange: (value: string) => void;
 }
 
-export const SegmentedControl = ({
-  value,
-  options,
-  onChange,
-}: SegmentedControlProps) => (
+export const SegmentedControl = ({ value, options, onChange }: SegmentedControlProps) => (
   <div className="inline-flex rounded-[14px] border border-[#E7ECF2] bg-[#F8FAFC] p-1">
     {options.map((option) => (
       <button

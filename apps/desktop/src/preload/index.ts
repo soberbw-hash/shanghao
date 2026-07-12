@@ -5,12 +5,17 @@ import { IPC_CHANNELS, type DesktopApi } from "@private-voice/shared";
 const desktopApi: DesktopApi = {
   app: {
     getRuntimeInfo: () => ipcRenderer.invoke(IPC_CHANNELS.app.getRuntimeInfo),
+    getSystemIdleSeconds: () => ipcRenderer.invoke(IPC_CHANNELS.app.getSystemIdleSeconds),
     writeLog: (payload) => ipcRenderer.invoke(IPC_CHANNELS.app.writeLog, payload),
-    openPath: (targetPath) => ipcRenderer.invoke(IPC_CHANNELS.app.openPath, targetPath),
     notify: (payload) => ipcRenderer.invoke(IPC_CHANNELS.app.notify, payload),
   },
   clipboard: {
     writeText: (text) => ipcRenderer.invoke(IPC_CHANNELS.clipboard.writeText, text),
+  },
+  screenCapture: {
+    listSources: () => ipcRenderer.invoke(IPC_CHANNELS.screenCapture.listSources),
+    selectSource: (sourceId) =>
+      ipcRenderer.invoke(IPC_CHANNELS.screenCapture.selectSource, sourceId),
   },
   window: {
     minimize: () => ipcRenderer.invoke(IPC_CHANNELS.window.minimize),
@@ -49,24 +54,21 @@ const desktopApi: DesktopApi = {
   profile: {
     pickAvatar: () => ipcRenderer.invoke(IPC_CHANNELS.profile.pickAvatar),
     readAvatar: (avatarPath) => ipcRenderer.invoke(IPC_CHANNELS.profile.readAvatar, avatarPath),
-    clearAvatar: (avatarPath) =>
-      ipcRenderer.invoke(IPC_CHANNELS.profile.clearAvatar, avatarPath),
+    clearAvatar: (avatarPath) => ipcRenderer.invoke(IPC_CHANNELS.profile.clearAvatar, avatarPath),
   },
   diagnostics: {
     snapshot: () => ipcRenderer.invoke(IPC_CHANNELS.diagnostics.snapshot),
+    testServer: (serverUrl) => ipcRenderer.invoke(IPC_CHANNELS.diagnostics.testServer, serverUrl),
     exportLogs: () => ipcRenderer.invoke(IPC_CHANNELS.diagnostics.exportLogs),
-    exportBundle: (rendererState) => ipcRenderer.invoke(IPC_CHANNELS.diagnostics.exportBundle, rendererState),
+    exportBundle: (rendererState) =>
+      ipcRenderer.invoke(IPC_CHANNELS.diagnostics.exportBundle, rendererState),
     openLogsDirectory: () => ipcRenderer.invoke(IPC_CHANNELS.diagnostics.openLogsDirectory),
   },
   shortcuts: {
     configureMute: (accelerator) =>
       ipcRenderer.invoke(IPC_CHANNELS.shortcuts.configureMute, accelerator),
     configurePushToTalk: (accelerator, enabled) =>
-      ipcRenderer.invoke(
-        IPC_CHANNELS.shortcuts.configurePushToTalk,
-        accelerator,
-        enabled,
-      ),
+      ipcRenderer.invoke(IPC_CHANNELS.shortcuts.configurePushToTalk, accelerator, enabled),
     onMuteTriggered: (listener) => {
       const wrapped = () => listener();
       ipcRenderer.on(IPC_CHANNELS.shortcuts.muteTriggered, wrapped);
@@ -76,22 +78,15 @@ const desktopApi: DesktopApi = {
       const wrapped = (_event: Electron.IpcRendererEvent, isPressed: boolean) =>
         listener(isPressed);
       ipcRenderer.on(IPC_CHANNELS.shortcuts.pushToTalkState, wrapped);
-      return () =>
-        ipcRenderer.removeListener(IPC_CHANNELS.shortcuts.pushToTalkState, wrapped);
+      return () => ipcRenderer.removeListener(IPC_CHANNELS.shortcuts.pushToTalkState, wrapped);
     },
     configureRecordingMarker: (accelerator) =>
-      ipcRenderer.invoke(
-        IPC_CHANNELS.shortcuts.configureRecordingMarker,
-        accelerator,
-      ),
+      ipcRenderer.invoke(IPC_CHANNELS.shortcuts.configureRecordingMarker, accelerator),
     onRecordingMarkerTriggered: (listener) => {
       const wrapped = () => listener();
       ipcRenderer.on(IPC_CHANNELS.shortcuts.recordingMarkerTriggered, wrapped);
       return () =>
-        ipcRenderer.removeListener(
-          IPC_CHANNELS.shortcuts.recordingMarkerTriggered,
-          wrapped,
-        );
+        ipcRenderer.removeListener(IPC_CHANNELS.shortcuts.recordingMarkerTriggered, wrapped);
     },
   },
   updates: {
@@ -123,10 +118,6 @@ const desktopApi: DesktopApi = {
     export: (payload) => ipcRenderer.invoke(IPC_CHANNELS.recording.export, payload),
     saveMarkers: (filePath, markers) =>
       ipcRenderer.invoke(IPC_CHANNELS.recording.saveMarkers, filePath, markers),
-  },
-  llm: {
-    chat: (payload) => ipcRenderer.invoke(IPC_CHANNELS.llm.chat, payload),
-    health: () => ipcRenderer.invoke(IPC_CHANNELS.llm.health),
   },
 };
 

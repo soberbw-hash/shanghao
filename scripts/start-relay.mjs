@@ -13,7 +13,10 @@ const loadLocalEnv = async () => {
         continue;
       }
       const key = line.slice(0, separator).trim();
-      const value = line.slice(separator + 1).trim().replace(/^(['"])(.*)\1$/, "$2");
+      const value = line
+        .slice(separator + 1)
+        .trim()
+        .replace(/^(['"])(.*)\1$/, "$2");
       if (process.env[key] === undefined) {
         process.env[key] = value;
       }

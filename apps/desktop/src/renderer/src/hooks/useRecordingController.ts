@@ -15,10 +15,7 @@ export const useRecordingController = () => {
   const addHistory = useRecordingStore((state) => state.addHistory);
   const serviceRef = useRef<RecordingService | null>(null);
   const mixRef = useRef<ReturnType<typeof createMixedCallStream> | null>(null);
-  const remoteStreams = useMemo(
-    () => Object.values(remoteStreamsByPeer),
-    [remoteStreamsByPeer],
-  );
+  const remoteStreams = useMemo(() => Object.values(remoteStreamsByPeer), [remoteStreamsByPeer]);
 
   const recordingService = useMemo(() => {
     if (serviceRef.current) {
@@ -36,7 +33,7 @@ export const useRecordingController = () => {
     });
 
     return serviceRef.current;
-  }, []);
+  }, [setStatus]);
 
   const startRecording = () => {
     mixRef.current = createMixedCallStream(localStream, remoteStreams);

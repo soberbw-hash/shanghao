@@ -3,24 +3,45 @@ import test from "node:test";
 
 import { buildGameDetectionProbeCommand, matchKnownGame } from "../src/main/game-detection";
 
-test("game detection exposes only known friendly game names", () => {
-  assert.equal(matchKnownGame("LostCastle2\r\nexplorer"), "失落城堡2");
-  assert.equal(matchKnownGame("Lost Castle 2\r\nSteam"), "失落城堡2");
-  assert.equal(
-    matchKnownGame('{"ProcessName":"LostCastle2-Win64-Shipping","Path":"D:\\\\Steam\\\\Lost Castle 2\\\\LostCastle2.exe"}'),
-    "失落城堡2",
-  );
-  assert.equal(matchKnownGame("DeltaForce\r\nexplorer"), "三角洲行动");
-  assert.equal(matchKnownGame("LeagueClient\r\nDiscord"), "英雄联盟");
-  assert.equal(matchKnownGame("League of Legends\r\nRiotClientServices"), "英雄联盟");
-  assert.equal(
-    matchKnownGame('{"ProcessName":"LeagueClientUxRender","MainWindowTitle":"英雄联盟"}'),
-    "英雄联盟",
-  );
-  assert.equal(matchKnownGame("notepad\r\nprivate-window-title"), undefined);
+const snapshot = (ProcessName: string, MainWindowTitle = "", Path = ""): string =>
+  JSON.stringify({ ProcessName, MainWindowTitle, Path });
+
+test("game detection uses structured exact process matches", () => {
+  assert.equal(matchKnownGame(snapshot("LostCastle2-Win64-Shipping")), "失落城堡 2");
+  assert.equal(matchKnownGame(snapshot("DeltaForceClient-Win64-Shipping")), "三角洲行动");
+  assert.equal(matchKnownGame(snapshot("League of Legends")), "英雄联盟");
+  assert.equal(matchKnownGame(snapshot("SlayTheSpire")), "杀戮尖塔");
+  assert.equal(matchKnownGame(snapshot("eldenring")), "艾尔登法环");
+  assert.equal(matchKnownGame(snapshot("RDR2")), "荒野大镖客 2");
+  assert.equal(matchKnownGame(snapshot("notepad", "League of Legends 攻略")), undefined);
+  assert.equal(matchKnownGame("LostCastle2\r\nexplorer"), undefined);
 });
 
-test("game detection probes process names, window titles, and readable paths", () => {
+test("generic Java does not falsely report Minecraft", () => {
+  assert.equal(
+    matchKnownGame(snapshot("javaw", "IntelliJ IDEA", "C:\\Java\\bin\\javaw.exe")),
+    undefined,
+  );
+  assert.equal(
+    matchKnownGame(
+      snapshot("javaw", "Minecraft 1.21.5", "C:\\Games\\.minecraft\\runtime\\javaw.exe"),
+    ),
+    "我的世界",
+  );
+  assert.equal(matchKnownGame(snapshot("Minecraft.Windows")), "我的世界");
+  assert.equal(
+    matchKnownGame(
+      snapshot(
+        "Minecraft.Windows",
+        "Minecraft",
+        "C:\\Program Files\\Minecraft\\Minecraft.Windows.exe",
+      ),
+    ),
+    "我的世界",
+  );
+});
+
+test("game detection probes process names, window titles, and readable paths every eight seconds", () => {
   const command = buildGameDetectionProbeCommand();
 
   assert.equal(command.includes("MainWindowTitle"), true);

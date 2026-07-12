@@ -1,84 +1,78 @@
-# 自部署上号固定频道
+# 部署上号固定频道
 
-固定频道适合 3–5 个好友长期使用。所有客户端连接同一台公网服务器，不要求任何一位好友拥有公网 IP，也不需要在玩家电脑上做端口映射。
+上号客户端只连接这一台固定服务器，不再包含房主直连或 Tailscale。正式使用推荐 `wss://`，裸公网 `ws://` 只用于短时间排障。
 
-## 推荐服务器
+## 准备
 
-- Ubuntu 22.04 LTS 或更新版本
+- Ubuntu 22.04/24.04 公网服务器
 - 2 核 2 GB 起步
-- 3 Mbps 起步，5 Mbps 更稳
-- 公网 IPv4
-- 安全组开放 TCP `43821`
-- 推荐同时开放 TURN：TCP/UDP `3478` 与 UDP `49160-49220`
+- 一个已解析到服务器公网 IP 的域名，例如 `voice.example.com`
+- 腾讯云安全组开放 TCP `80`、`443`
+- 使用 TURN 时额外开放 TCP/UDP `3478` 与 UDP `49160-49220`
 
-## 首次部署
-
-```bash
-sudo apt update
-sudo apt install -y git curl
-curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -
-sudo apt install -y nodejs
-sudo corepack enable
-
-sudo mkdir -p /opt/shanghao
-sudo chown "$USER":"$USER" /opt/shanghao
-git clone https://github.com/soberbw-hash/shanghao.git /opt/shanghao
-cd /opt/shanghao
-corepack pnpm install --frozen-lockfile
-corepack pnpm relay:build
-cp .env.example .env
-```
-
-编辑 `/opt/shanghao/.env`：
-
-```dotenv
-PORT=43821
-ROOM_NAME=ShangHao
-TURN_URLS=turn:服务器公网IP:3478?transport=udp,turn:服务器公网IP:3478?transport=tcp
-TURN_SHARED_SECRET=由安装脚本生成的随机密钥
-TURN_CREDENTIAL_TTL_SECONDS=86400
-```
-
-`.env` 已被 Git 忽略。`TURN_SHARED_SECRET` 只保存在服务器上，健康检查与日志不会返回它。
-
-跨地区、跨运营商语音建议继续执行 [TURN 部署步骤](./deploy-turn.md)。只启动信令服务也能使用低带宽语音兜底，但 TURN 能让媒体链路延迟更低、多人时更稳定。
-
-安装 systemd 服务：
+## 一键安装 Relay + WSS
 
 ```bash
-sudo cp docs/shanghao-relay.service /etc/systemd/system/shanghao-relay.service
-sudo systemctl daemon-reload
-sudo systemctl enable --now shanghao-relay
-sudo systemctl status shanghao-relay
+sudo SHANGHAO_DOMAIN=voice.example.com bash scripts/deploy-relay-ubuntu.sh
 ```
 
-## 验证
+脚本会检查 Ubuntu 和 Node 22、启用 Corepack、创建不可登录的 `shanghao` 系统用户、安装依赖、构建 Relay、写入强化的 systemd 服务、配置 Caddy、启动服务并执行 `/health` 检查。
 
-```bash
-curl http://127.0.0.1:43821/health
-curl http://服务器公网IP:43821/health
-journalctl -u shanghao-relay -f
-```
+应用目录为 `/opt/shanghao`，聊天数据位于 `/opt/shanghao/data`。首次安装会生成 `/opt/shanghao/.env` 和 64 位十六进制 Relay Token；再次运行绝不会覆盖已有 `.env`。
 
-看到 `"ok":true` 后，在每位好友的上号设置页填写：
+把服务器上的 Token 组合进客户端地址：
 
 ```text
-ws://服务器公网IP:43821
+wss://voice.example.com/?token=你的RELAY_ACCESS_TOKEN
 ```
 
-长期使用建议通过 Caddy 或 Nginx 将连接升级为 `wss://voice.example.com`。
+客户端首页只显示域名和端口，诊断包与日志会清理查询参数，不会记录 Token。
 
-## 更新服务器
+## 没有域名时临时测试
 
-客户端和服务器必须使用同一个 GitHub Release/tag。协议版本不同会被明确拒绝，避免出现“看似在线但没有声音”。
+```bash
+sudo bash scripts/deploy-relay-ubuntu.sh
+```
+
+临时开放 TCP `43821`，客户端填写：
+
+```text
+ws://服务器公网IP:43821/?token=你的RELAY_ACCESS_TOKEN
+```
+
+公网 `ws://` 没有 TLS，只应用于测试。长期使用请配置域名后重新执行带 `SHANGHAO_DOMAIN` 的命令。
+
+## Caddy 反向代理
+
+一键脚本会生成同等配置，手工部署时可使用 [`deploy/Caddyfile.example`](../deploy/Caddyfile.example)：
+
+```caddyfile
+voice.example.com {
+  encode zstd gzip
+  reverse_proxy 127.0.0.1:43821
+}
+```
+
+WebSocket Upgrade 由 Caddy 自动处理，证书也会自动申请和续期。
+
+## 验证和维护
+
+```bash
+curl -fsS http://127.0.0.1:43821/health
+sudo systemctl status shanghao-relay --no-pager
+sudo journalctl -u shanghao-relay -f
+sudo systemctl restart shanghao-relay
+```
+
+`/health` 会显示最终 `maxRoomMembers`、协议、构建、在线人数、TURN 配置和丢帧计数，不会返回 Token 或 TURN 密钥。
+
+## 安装 TURN
+
+不同省份、运营商或严格 NAT 下，建议继续执行 [TURN 部署](./deploy-turn.md)：
 
 ```bash
 cd /opt/shanghao
-git pull
-corepack pnpm install --frozen-lockfile
-corepack pnpm relay:build
-sudo systemctl restart shanghao-relay
-curl -i http://127.0.0.1:43821/health
+sudo bash scripts/install-turn.sh
 ```
 
-`/health` 会返回 `protocolVersion`、`buildNumber`、`packageVersion`、`activeRooms`、`connectedPeers`、`turnConfigured` 与实时丢帧计数，但不会返回 TURN 密钥。
+Relay 只下发有时效的临时 TURN 凭据，共享密钥始终留在服务器。

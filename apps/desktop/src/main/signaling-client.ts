@@ -1,53 +1,47 @@
 import { EventEmitter } from "node:events";
+import { WebSocket as NodeWebSocket, type RawData } from "ws";
 
 import type { RendererLogPayload, SignalingEventPayload } from "@private-voice/shared";
 
-type BridgeSocket = {
-  once(event: "open" | "close", listener: (...args: any[]) => void): void;
-  on(event: "message" | "close" | "error", listener: (...args: any[]) => void): void;
-  send(payload: string): void;
-  close(): void;
-  readyState: number;
-  bufferedAmount: number;
+const sanitizeSignalingUrl = (value: string): string => {
+  try {
+    const url = new URL(value);
+    url.search = "";
+    url.hash = "";
+    return url.toString();
+  } catch {
+    return "invalid";
+  }
 };
-
-type WebSocketConstructor = {
-  new (url: string, options?: { handshakeTimeout?: number }): BridgeSocket;
-  OPEN: number;
-};
-
-const NodeWebSocket = require("ws") as WebSocketConstructor;
 
 export class SignalingClientBridge extends EventEmitter {
-  private socket?: BridgeSocket;
+  private socket?: NodeWebSocket;
   private maxBufferedAmount = 0;
   private droppedByBackpressure = 0;
   private sentAudioChunks = 0;
   private skippedAudioChunks = 0;
   private lastBackpressureLogAt = 0;
 
-  constructor(
-    private readonly writeLog: (payload: RendererLogPayload) => Promise<void>,
-  ) {
+  constructor(private readonly writeLog: (payload: RendererLogPayload) => Promise<void>) {
     super();
   }
 
   async connect(signalingUrl: string): Promise<void> {
     await this.close();
-    const mode =
-      (() => {
-        try {
-          return new URL(signalingUrl).searchParams.get("mode") ?? "unknown";
-        } catch {
-          return "unknown";
-        }
-      })();
+    const mode = (() => {
+      try {
+        return new URL(signalingUrl).searchParams.get("mode") ?? "unknown";
+      } catch {
+        return "unknown";
+      }
+    })();
+    const safeSignalingUrl = sanitizeSignalingUrl(signalingUrl);
 
     await this.writeLog({
       category: mode === "relay" ? "relay" : "signaling",
       level: "info",
       message: "Opening signaling bridge socket",
-      context: { signalingUrl, mode },
+      context: { signalingUrl: safeSignalingUrl, mode },
     });
 
     await new Promise<void>((resolve, reject) => {
@@ -62,15 +56,15 @@ export class SignalingClientBridge extends EventEmitter {
           category: mode === "relay" ? "relay" : "signaling",
           level: "info",
           message: "Signaling bridge socket opened",
-          context: { signalingUrl, mode },
+          context: { signalingUrl: safeSignalingUrl, mode },
         });
         resolve();
       });
 
-      socket.on("message", (data: string | Buffer) => {
+      socket.on("message", (data: RawData) => {
         this.emitEvent({
           type: "message",
-          data: typeof data === "string" ? data : data.toString(),
+          data: data.toString(),
         });
       });
 

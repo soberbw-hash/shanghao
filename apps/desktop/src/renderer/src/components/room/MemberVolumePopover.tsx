@@ -13,7 +13,7 @@ export const MemberVolumePopover = ({
     <Volume2 className="h-4 w-4 text-[#667085]" />
     <Slider
       min={0}
-      max={1}
+      max={2}
       step={0.01}
       value={value}
       onChange={(event) => onChange(Number(event.target.value))}

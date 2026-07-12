@@ -1,8 +1,4 @@
-import type {
-  MemberActivity,
-  RoomMember,
-  SceneZoneId,
-} from "@private-voice/shared";
+import type { MemberActivity, RoomMember, SceneZoneId } from "@private-voice/shared";
 
 export interface SceneZone {
   id: SceneZoneId;
@@ -25,15 +21,74 @@ export interface CharacterPosition {
 }
 
 export const seatSlots: SceneZone[] = [
-  { id: "gameDesk1", label: "1 号位", shortLabel: "1", kind: "seat", activity: "gaming", left: 30, top: 31, width: 18, height: 22 },
-  { id: "gameDesk2", label: "2 号位", shortLabel: "2", kind: "seat", activity: "gaming", left: 52, top: 31, width: 18, height: 22 },
-  { id: "gameDesk3", label: "3 号位", shortLabel: "3", kind: "seat", activity: "gaming", left: 74, top: 31, width: 18, height: 22 },
-  { id: "gameDesk4", label: "4 号位", shortLabel: "4", kind: "seat", activity: "gaming", left: 40, top: 67, width: 18, height: 22 },
-  { id: "gameDesk5", label: "5 号位", shortLabel: "5", kind: "seat", activity: "gaming", left: 65, top: 67, width: 18, height: 22 },
+  {
+    id: "gameDesk1",
+    label: "1 号位",
+    shortLabel: "1",
+    kind: "seat",
+    activity: "gaming",
+    left: 30,
+    top: 31,
+    width: 18,
+    height: 22,
+  },
+  {
+    id: "gameDesk2",
+    label: "2 号位",
+    shortLabel: "2",
+    kind: "seat",
+    activity: "gaming",
+    left: 52,
+    top: 31,
+    width: 18,
+    height: 22,
+  },
+  {
+    id: "gameDesk3",
+    label: "3 号位",
+    shortLabel: "3",
+    kind: "seat",
+    activity: "gaming",
+    left: 74,
+    top: 31,
+    width: 18,
+    height: 22,
+  },
+  {
+    id: "gameDesk4",
+    label: "4 号位",
+    shortLabel: "4",
+    kind: "seat",
+    activity: "gaming",
+    left: 40,
+    top: 67,
+    width: 18,
+    height: 22,
+  },
+  {
+    id: "gameDesk5",
+    label: "5 号位",
+    shortLabel: "5",
+    kind: "seat",
+    activity: "gaming",
+    left: 65,
+    top: 67,
+    width: 18,
+    height: 22,
+  },
 ];
 
 export const activityZones: SceneZone[] = [
-  { id: "restroomZone", label: "离开一下", kind: "activity", activity: "restroom", left: 12, top: 80, width: 20, height: 25 },
+  {
+    id: "restroomZone",
+    label: "离开一下",
+    kind: "activity",
+    activity: "restroom",
+    left: 12,
+    top: 80,
+    width: 20,
+    height: 25,
+  },
 ];
 
 export const sceneZones: SceneZone[] = [...seatSlots, ...activityZones];
@@ -54,8 +109,7 @@ export const resolveMemberSceneZones = (
   const result = new Map<string, SceneZoneId>();
   const occupiedSeats = new Set<SceneZoneId>();
   const orderedMembers = [...members].sort(
-    (left, right) =>
-      left.joinedAt.localeCompare(right.joinedAt) || left.id.localeCompare(right.id),
+    (left, right) => left.joinedAt.localeCompare(right.joinedAt) || left.id.localeCompare(right.id),
   );
 
   orderedMembers.forEach((member) => {
@@ -68,7 +122,7 @@ export const resolveMemberSceneZones = (
     const resolvedZone =
       requestedZone && !occupiedSeats.has(requestedZone)
         ? requestedZone
-        : defaultMemberZones.find((zone) => !occupiedSeats.has(zone)) ?? "restroomZone";
+        : (defaultMemberZones.find((zone) => !occupiedSeats.has(zone)) ?? "restroomZone");
     result.set(member.id, resolvedZone);
     if (isSeatZone(resolvedZone)) {
       occupiedSeats.add(resolvedZone);

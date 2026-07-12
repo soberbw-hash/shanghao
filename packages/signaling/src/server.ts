@@ -1,5 +1,5 @@
 import { EventEmitter } from "node:events";
-import { createHash, createHmac } from "node:crypto";
+import { createHash, createHmac, randomUUID, timingSafeEqual } from "node:crypto";
 import { createServer, type Server as HttpServer } from "node:http";
 
 import {
@@ -16,6 +16,7 @@ import type {
   AudioResyncRequestMessage,
   AvatarUpdateMessage,
   ChatMessage,
+  ChatHistoryMessage,
   ErrorMessage,
   IceCandidateMessage,
   JoinChannelMessage,
@@ -33,12 +34,12 @@ import type {
   ScreenFrameMessage,
   ScreenShareStateMessage,
   SceneReactionMessage,
-  RoomNoteUpdateMessage,
+  ServerChatMessage,
   SignalEnvelope,
 } from "./protocol";
 import { isSignalEnvelope } from "./protocol";
+import { ChatHistoryStore } from "./chat-history-store";
 import { RoomManager } from "./room-manager";
-import { getLlmModel, isLlmConfigured, isLlmProxyRequest, proxyLlmChat } from "./llm-proxy";
 
 interface SignalingServerOptions {
   port?: number;
@@ -54,13 +55,41 @@ const MAX_SCREEN_FRAME_BYTES = 220 * 1024;
 const MAX_REALTIME_SOCKET_BUFFER_BYTES = 256 * 1024;
 const MAX_SOCKET_BUFFER_BYTES = 8 * 1024 * 1024;
 const BACKPRESSURE_LOG_INTERVAL_MS = 5_000;
-const SEAT_ZONES: SceneZoneId[] = [
-  "gameDesk1",
-  "gameDesk2",
-  "gameDesk3",
-  "gameDesk4",
-  "gameDesk5",
-];
+const MAX_INVALID_MESSAGES = 3;
+const MAX_GLOBAL_CONNECTIONS = Math.max(5, Number(process.env.MAX_CONNECTIONS ?? 100) || 100);
+const SERVER_ONLY_MESSAGE_TYPES = new Set([
+  "pong",
+  "join_ack",
+  "room_snapshot",
+  "channel_snapshot",
+  "chat_history",
+  "avatar_update",
+  "error",
+]);
+
+interface SocketSession {
+  roomId: string;
+  peerId: string;
+  invalidMessages: number;
+  rateWindows: Map<string, { startedAt: number; count: number }>;
+}
+
+const RATE_LIMITS: Record<string, { windowMs: number; limit: number }> = {
+  chat_message: { windowMs: 10_000, limit: 8 },
+  knock_event: { windowMs: 10_000, limit: 3 },
+  scene_reaction: { windowMs: 10_000, limit: 12 },
+  member_state: { windowMs: 10_000, limit: 40 },
+  peer_offer: { windowMs: 10_000, limit: 40 },
+  peer_answer: { windowMs: 10_000, limit: 40 },
+  peer_restart_request: { windowMs: 10_000, limit: 20 },
+  ice_candidate: { windowMs: 10_000, limit: 160 },
+  audio_chunk: { windowMs: 1_000, limit: 120 },
+  audio_resync_request: { windowMs: 10_000, limit: 20 },
+  audio_resync_ack: { windowMs: 10_000, limit: 20 },
+  screen_frame: { windowMs: 1_000, limit: 24 },
+  screen_share_state: { windowMs: 10_000, limit: 10 },
+};
+const SEAT_ZONES: SceneZoneId[] = ["gameDesk1", "gameDesk2", "gameDesk3", "gameDesk4", "gameDesk5"];
 
 const resolveSceneZone = (
   occupiedZones: Array<{ peerId: string; sceneZone?: SceneZoneId; disconnectedAt?: number }>,
@@ -109,13 +138,17 @@ const buildIceServersForPeer = (peerId: string): IceServerConfig[] | undefined =
   const sharedSecret = process.env.TURN_SHARED_SECRET?.trim();
   if (sharedSecret) {
     const requestedTtl = Number(process.env.TURN_CREDENTIAL_TTL_SECONDS ?? 86_400);
-    const ttl = Number.isFinite(requestedTtl) ? Math.min(604_800, Math.max(3_600, requestedTtl)) : 86_400;
+    const ttl = Number.isFinite(requestedTtl)
+      ? Math.min(604_800, Math.max(3_600, requestedTtl))
+      : 86_400;
     const username = `${Math.floor(Date.now() / 1_000) + ttl}:${peerId}`;
-    return [{
-      urls,
-      username,
-      credential: createHmac("sha1", sharedSecret).update(username).digest("base64"),
-    }];
+    return [
+      {
+        urls,
+        username,
+        credential: createHmac("sha1", sharedSecret).update(username).digest("base64"),
+      },
+    ];
   }
 
   const username = process.env.TURN_USERNAME?.trim();
@@ -133,13 +166,24 @@ export class SignalingServer extends EventEmitter {
   private audioServerSequence = 0;
   private droppedRealtimeMessages = 0;
   private lastBackpressureLogAt = 0;
+  private readonly sessions = new WeakMap<WebSocket, SocketSession>();
+  private readonly invalidMessages = new WeakMap<WebSocket, number>();
+  private readonly chatHistory: Promise<ChatHistoryStore>;
 
   constructor(private readonly options: SignalingServerOptions) {
     super();
     this.roomName = options.roomName;
     this.logger = options.logger;
+    this.chatHistory = ChatHistoryStore.create(process.env.CHAT_HISTORY_FILE, this.logger);
     this.httpServer = createServer();
     this.httpServer.on("request", (request, response) => {
+      const contentLength = Number(request.headers["content-length"] ?? 0);
+      if (Number.isFinite(contentLength) && contentLength > 8 * 1024) {
+        response.writeHead(413, { "content-type": "text/plain; charset=utf-8" });
+        response.end("Payload too large");
+        request.destroy();
+        return;
+      }
       if (request.url?.startsWith("/health")) {
         const stats = this.roomManager.getStats();
         response.writeHead(200, { "content-type": "application/json; charset=utf-8" });
@@ -150,16 +194,20 @@ export class SignalingServer extends EventEmitter {
             roomName: this.roomName,
             protocolVersion: APP_PROTOCOL_VERSION,
             buildNumber: APP_BUILD_NUMBER,
-            packageVersion: this.options.packageVersion ?? process.env.npm_package_version ?? "unknown",
+            packageVersion:
+              this.options.packageVersion ?? process.env.npm_package_version ?? "unknown",
             uptime: process.uptime(),
             activeRooms: stats.activeRooms,
             connectedPeers: stats.connectedPeers,
+            maxRoomMembers: this.roomManager.getMaxRoomMembers(),
             currentOnlineCount: stats.connectedPeers,
             droppedRealtimeMessages: this.droppedRealtimeMessages,
-            turnConfigured: getTurnUrls().length > 0 && Boolean(
-              process.env.TURN_SHARED_SECRET?.trim() ||
-              (process.env.TURN_USERNAME?.trim() && process.env.TURN_CREDENTIAL?.trim()),
-            ),
+            turnConfigured:
+              getTurnUrls().length > 0 &&
+              Boolean(
+                process.env.TURN_SHARED_SECRET?.trim() ||
+                (process.env.TURN_USERNAME?.trim() && process.env.TURN_CREDENTIAL?.trim()),
+              ),
             now: new Date().toISOString(),
             serverTime: Date.now(),
           }),
@@ -167,26 +215,24 @@ export class SignalingServer extends EventEmitter {
         return;
       }
 
-      const normalizedPathname = normalizeRequestPathname(request.url);
-
-      if (normalizedPathname === "/llm/chat" && request.method === "POST") {
-        this.handleLlmProxy(request, response);
-        return;
-      }
-
-      if (normalizedPathname === "/llm/health" && request.method === "GET") {
-        const configured = isLlmConfigured();
-        const model = getLlmModel();
-        response.writeHead(200, { "content-type": "application/json; charset=utf-8" });
-        response.end(JSON.stringify({ ok: true, configured, model }));
-        return;
-      }
-
       response.writeHead(404, { "content-type": "text/plain; charset=utf-8" });
       response.end("ShangHao signaling server");
     });
-    this.wss = new WebSocketServer({ server: this.httpServer });
-    this.wss.on("connection", (socket) => this.handleConnection(socket));
+    this.wss = new WebSocketServer({
+      server: this.httpServer,
+      maxPayload: MAX_SIGNALING_PAYLOAD_BYTES,
+    });
+    this.wss.on("connection", (socket, request) => {
+      if (!this.isAuthorizedRequest(request.url)) {
+        socket.close(4401, "unauthorized");
+        return;
+      }
+      if (this.wss.clients.size > MAX_GLOBAL_CONNECTIONS) {
+        socket.close(4429, "server_busy");
+        return;
+      }
+      this.handleConnection(socket);
+    });
   }
 
   async listen(): Promise<number> {
@@ -233,6 +279,8 @@ export class SignalingServer extends EventEmitter {
     for (const client of this.wss.clients) {
       client.close();
     }
+
+    await (await this.chatHistory).flush();
 
     await new Promise<void>((resolve, reject) => {
       this.httpServer.close((error) => {
@@ -289,20 +337,67 @@ export class SignalingServer extends EventEmitter {
     });
   }
 
+  private isAuthorizedRequest(requestUrl?: string): boolean {
+    const expectedToken = process.env.RELAY_ACCESS_TOKEN?.trim();
+    if (!expectedToken) return true;
+
+    try {
+      const suppliedToken =
+        new URL(requestUrl ?? "/", "ws://localhost").searchParams.get("token") ?? "";
+      const expected = Buffer.from(expectedToken, "utf8");
+      const supplied = Buffer.from(suppliedToken, "utf8");
+      return expected.length === supplied.length && timingSafeEqual(expected, supplied);
+    } catch {
+      return false;
+    }
+  }
+
+  private rejectInvalid(socket: WebSocket, code: string, message: string): void {
+    const nextCount = (this.invalidMessages.get(socket) ?? 0) + 1;
+    this.invalidMessages.set(socket, nextCount);
+    const session = this.sessions.get(socket);
+    if (session) session.invalidMessages = nextCount;
+    this.safeSend(socket, { type: "error", code, message });
+    if (nextCount >= MAX_INVALID_MESSAGES) socket.close(4400, "too_many_invalid_messages");
+  }
+
+  private consumeRateLimit(socket: WebSocket, session: SocketSession, type: string): boolean {
+    const limit = RATE_LIMITS[type];
+    if (!limit) return true;
+
+    const now = Date.now();
+    const current = session.rateWindows.get(type);
+    if (!current || now - current.startedAt >= limit.windowMs) {
+      session.rateWindows.set(type, { startedAt: now, count: 1 });
+      return true;
+    }
+    current.count += 1;
+    if (current.count <= limit.limit) return true;
+
+    this.safeSend(socket, {
+      type: "error",
+      code: "rate_limited",
+      message: "Too many messages. Please slow down.",
+    });
+    if (current.count > limit.limit * 2) socket.close(4429, "rate_limited");
+    return false;
+  }
+
   private handleConnection(socket: WebSocket): void {
     socket.on("message", (raw) => {
       try {
         const payloadText = raw.toString();
         if (Buffer.byteLength(payloadText, "utf8") > MAX_SIGNALING_PAYLOAD_BYTES) {
-          this.safeSend(socket, {
-            type: "error",
-            code: "payload_too_large",
-            message: "Signaling message exceeds the 256KB limit.",
-          });
+          this.rejectInvalid(
+            socket,
+            "payload_too_large",
+            "Signaling message exceeds the 256KB limit.",
+          );
           return;
         }
         const payload = JSON.parse(payloadText) as unknown;
         if (!isSignalEnvelope(payload)) {
+          this.rejectInvalid(socket, "invalid_payload", "Invalid signaling message.");
           return;
         }
         this.handleSignal(socket, payload);
@@ -312,13 +407,14 @@ export class SignalingServer extends EventEmitter {
           code: "invalid_payload",
           message: error instanceof Error ? error.message : "Unknown signaling error",
         };
-        this.safeSend(socket, message);
+        this.rejectInvalid(socket, message.code, message.message);
       }
     });
 
     socket.on("close", (code, reason) => {
-      const roomId = Reflect.get(socket, "__roomId") as string | undefined;
-      const peerId = Reflect.get(socket, "__peerId") as string | undefined;
+      const session = this.sessions.get(socket);
+      const roomId = session?.roomId;
+      const peerId = session?.peerId;
 
       if (roomId && peerId) {
         const marked = this.roomManager.markPeerDisconnected(roomId, peerId, socket);
@@ -337,73 +433,103 @@ export class SignalingServer extends EventEmitter {
   }
 
   private handleSignal(socket: WebSocket, message: SignalEnvelope): void {
-    if (message.roomId && message.peerId) {
-      this.roomManager.getRoom(message.roomId)?.peers.updateHeartbeat(message.peerId);
+    if (message.type === "join_channel") {
+      if (this.sessions.has(socket)) {
+        this.rejectInvalid(socket, "already_joined", "Socket has already joined a channel.");
+        return;
+      }
+      this.handleJoin(socket, message);
+      return;
     }
 
-    switch (message.type) {
-      case "join_channel":
-        this.handleJoin(socket, message);
-        return;
+    if (SERVER_ONLY_MESSAGE_TYPES.has(message.type)) {
+      this.rejectInvalid(
+        socket,
+        "server_message_not_allowed",
+        "Client cannot send this message type.",
+      );
+      return;
+    }
+
+    const session = this.sessions.get(socket);
+    if (!session) {
+      this.rejectInvalid(socket, "join_required", "Join the channel before sending messages.");
+      return;
+    }
+    if (message.roomId && message.roomId !== session.roomId) {
+      this.rejectInvalid(
+        socket,
+        "room_mismatch",
+        "Message room does not match the socket session.",
+      );
+      return;
+    }
+    if (!this.consumeRateLimit(socket, session, message.type)) return;
+
+    const authoritative = {
+      ...message,
+      roomId: session.roomId,
+      peerId: session.peerId,
+      ...(message.type === "audio_chunk" || message.type === "screen_frame"
+        ? { sourcePeerId: session.peerId }
+        : {}),
+    } as SignalEnvelope;
+    this.roomManager.getRoom(session.roomId)?.peers.updateHeartbeat(session.peerId);
+
+    switch (authoritative.type) {
       case "leave_channel":
-        this.handleLeave(message);
+        this.handleLeave(socket, authoritative);
         return;
       case "heartbeat":
-        this.roomManager.getRoom(message.roomId)?.peers.updateHeartbeat(message.peerId);
+        this.roomManager.getRoom(authoritative.roomId)?.peers.updateHeartbeat(authoritative.peerId);
         this.safeSend(socket, {
           type: "pong",
-          roomId: message.roomId,
-          peerId: message.peerId,
-          sentAt: message.sentAt ?? Date.now(),
+          roomId: authoritative.roomId,
+          peerId: authoritative.peerId,
+          sentAt: authoritative.sentAt ?? Date.now(),
           serverTime: Date.now(),
         });
         return;
       case "request_snapshot":
-        this.handleSnapshotRequest(socket, message);
+        this.handleSnapshotRequest(socket, authoritative);
         return;
       case "peer_offer":
       case "peer_answer":
       case "peer_restart_request":
       case "ice_candidate":
-        this.forwardPeerSignal(message);
+        this.forwardPeerSignal(authoritative);
         return;
       case "member_state":
-        this.handleMemberState(message);
+        this.handleMemberState(authoritative);
         return;
       case "chat_message":
-        this.broadcastChatMessage(message);
+        this.broadcastChatMessage(authoritative);
         return;
       case "knock_event":
-        this.broadcastKnockEvent(message);
+        this.broadcastKnockEvent(authoritative);
         return;
       case "audio_chunk":
-        this.broadcastAudioChunk(message);
+        this.broadcastAudioChunk(authoritative);
         return;
       case "audio_resync_request":
       case "audio_resync_ack":
-        this.forwardAudioResync(message);
+        this.forwardAudioResync(authoritative);
         return;
       case "screen_frame":
-        this.broadcastScreenFrame(message);
+        this.broadcastScreenFrame(authoritative);
         return;
       case "screen_share_state":
-        this.broadcastScreenShareState(message);
+        this.broadcastScreenShareState(authoritative);
         return;
       case "scene_reaction":
-        this.broadcastSceneReaction(message);
-        return;
-      case "room_note_update":
-        this.updateRoomNote(message);
+        this.broadcastSceneReaction(authoritative);
         return;
       default:
         return;
     }
   }
 
-  private handleJoin(
-    socket: WebSocket,
-    message: JoinChannelMessage,
-  ): void {
+  private handleJoin(socket: WebSocket, message: JoinChannelMessage): void {
     if (message.protocolVersion !== APP_PROTOCOL_VERSION) {
       const mismatchMessage: ErrorMessage = {
         type: "error",
@@ -430,8 +556,12 @@ export class SignalingServer extends EventEmitter {
       return;
     }
 
-    Reflect.set(socket, "__roomId", message.roomId);
-    Reflect.set(socket, "__peerId", message.peerId);
+    this.sessions.set(socket, {
+      roomId: message.roomId,
+      peerId: message.peerId,
+      invalidMessages: 0,
+      rateWindows: new Map(),
+    });
     if (existingPeer && existingPeer.socket !== socket) {
       try {
         existingPeer.socket.close(4001, "peer_reconnected");
@@ -449,32 +579,25 @@ export class SignalingServer extends EventEmitter {
       message.peerId,
       existingPeer?.sceneZone,
     );
-    const room = this.roomManager.addPeer(
-      message.roomId,
-      this.roomName,
-      {
-        id: message.peerId,
-        nickname: message.nickname,
-        avatarDataUrl: existingPeer?.avatarDataUrl,
-        avatarHash: existingPeer?.avatarHash,
-        avatarId: message.avatarId ?? existingPeer?.avatarId,
-        socket,
-        isHost: false,
-        isMuted: existingPeer?.isMuted ?? false,
-        isSpeaking: existingPeer?.isSpeaking ?? false,
-        isDeafened: existingPeer?.isDeafened ?? false,
-        activity:
-          assignedSceneZone === "restroomZone"
-            ? "restroom"
-            : existingPeer?.activity ?? "idle",
-        sceneZone: assignedSceneZone,
-        gameName: existingPeer?.gameName,
-        customStatus: message.customStatus?.trim().slice(0, 32) || existingPeer?.customStatus,
-        joinedAt: existingPeer?.joinedAt ?? new Date().toISOString(),
-        lastHeartbeatAt: Date.now(),
-        disconnectedAt: undefined,
-      },
-    );
+    const room = this.roomManager.addPeer(message.roomId, this.roomName, {
+      id: message.peerId,
+      nickname: message.nickname,
+      avatarDataUrl: existingPeer?.avatarDataUrl,
+      avatarHash: existingPeer?.avatarHash,
+      avatarId: message.avatarId ?? existingPeer?.avatarId,
+      socket,
+      isHost: false,
+      isMuted: existingPeer?.isMuted ?? false,
+      isSpeaking: existingPeer?.isSpeaking ?? false,
+      isDeafened: existingPeer?.isDeafened ?? false,
+      activity:
+        assignedSceneZone === "restroomZone" ? "restroom" : (existingPeer?.activity ?? "idle"),
+      sceneZone: assignedSceneZone,
+      gameName: existingPeer?.gameName,
+      joinedAt: existingPeer?.joinedAt ?? new Date().toISOString(),
+      lastHeartbeatAt: Date.now(),
+      disconnectedAt: undefined,
+    });
 
     room.appVersion = message.appVersion;
     room.protocolVersion = APP_PROTOCOL_VERSION;
@@ -498,12 +621,14 @@ export class SignalingServer extends EventEmitter {
       iceServers: buildIceServersForPeer(message.peerId),
     };
     this.safeSend(socket, joinAck);
+    void this.sendChatHistory(socket, room.roomId);
     this.broadcastSnapshot(message.roomId);
   }
 
-  private handleLeave(message: LeaveChannelMessage): void {
+  private handleLeave(socket: WebSocket, message: LeaveChannelMessage): void {
     this.logger?.("peer left", { roomId: message.roomId, peerId: message.peerId });
     this.roomManager.removePeer(message.roomId, message.peerId);
+    this.sessions.delete(socket);
     this.broadcastSnapshot(message.roomId);
   }
 
@@ -537,7 +662,6 @@ export class SignalingServer extends EventEmitter {
       avatarDataUrl: normalizedAvatar.avatarDataUrl,
       avatarHash: normalizedAvatar.avatarHash,
       avatarId: message.avatarId,
-      customStatus: message.customStatus?.trim().slice(0, 32),
     });
     const payload: MemberStateMessage = {
       type: "member_state",
@@ -551,7 +675,6 @@ export class SignalingServer extends EventEmitter {
       gameName: message.gameName,
       nickname: message.nickname,
       avatarId: message.avatarId,
-      customStatus: message.customStatus?.trim().slice(0, 32),
     };
     for (const peer of room.peers.listConnectedPeers()) {
       this.safeSend(peer.socket, payload);
@@ -563,37 +686,55 @@ export class SignalingServer extends EventEmitter {
 
   private broadcastChatMessage(message: ChatMessage): void {
     const room = this.roomManager.getRoom(message.roomId);
-    if (!room) {
+    const author = message.peerId ? room?.peers.getPeer(message.peerId) : undefined;
+    const content = message.content.trim().slice(0, 500);
+    if (!room || !author || !content) {
       return;
     }
 
+    const storedMessage: ServerChatMessage = {
+      id: randomUUID(),
+      peerId: author.id,
+      nickname: author.nickname,
+      avatarId: author.avatarId,
+      content,
+      createdAt: new Date().toISOString(),
+    };
     const payload: ChatMessage = {
       type: "chat_message",
       roomId: message.roomId,
-      peerId: message.peerId,
-      nickname: message.nickname,
-      avatarId: message.avatarId,
-      content: message.content,
-      createdAt: message.createdAt,
+      ...storedMessage,
     };
+
+    void this.chatHistory.then((store) => store.append(message.roomId, storedMessage));
 
     for (const peer of room.peers.listConnectedPeers()) {
       this.safeSend(peer.socket, payload);
     }
   }
 
+  private async sendChatHistory(socket: WebSocket, roomId: string): Promise<void> {
+    const payload: ChatHistoryMessage = {
+      type: "chat_history",
+      roomId,
+      messages: (await this.chatHistory).get(roomId),
+    };
+    this.safeSend(socket, payload);
+  }
+
   private broadcastKnockEvent(message: KnockEventMessage): void {
     const room = this.roomManager.getRoom(message.roomId);
-    if (!room) {
+    const author = room?.peers.getPeer(message.peerId);
+    if (!room || !author) {
       return;
     }
 
     const payload: KnockEventMessage = {
       type: "knock_event",
       roomId: message.roomId,
-      peerId: message.peerId,
-      nickname: message.nickname,
-      createdAt: message.createdAt,
+      peerId: author.id,
+      nickname: author.nickname,
+      createdAt: new Date().toISOString(),
     };
 
     for (const peer of room.peers.listConnectedPeers()) {
@@ -603,10 +744,7 @@ export class SignalingServer extends EventEmitter {
 
   private broadcastAudioChunk(message: AudioChunkMessage): void {
     const room = this.roomManager.getRoom(message.roomId);
-    if (
-      !room ||
-      Buffer.byteLength(message.data, "utf8") > MAX_AUDIO_CHUNK_BYTES
-    ) {
+    if (!room || Buffer.byteLength(message.data, "utf8") > MAX_AUDIO_CHUNK_BYTES) {
       return;
     }
 
@@ -638,9 +776,7 @@ export class SignalingServer extends EventEmitter {
     }
   }
 
-  private forwardAudioResync(
-    message: AudioResyncRequestMessage | AudioResyncAckMessage,
-  ): void {
+  private forwardAudioResync(message: AudioResyncRequestMessage | AudioResyncAckMessage): void {
     const room = this.roomManager.getRoom(message.roomId);
     const targetPeer = room?.peers.getPeer(message.targetPeerId);
     if (targetPeer && !targetPeer.disconnectedAt) {
@@ -656,10 +792,7 @@ export class SignalingServer extends EventEmitter {
 
   private broadcastScreenFrame(message: ScreenFrameMessage): void {
     const room = this.roomManager.getRoom(message.roomId);
-    if (
-      !room ||
-      Buffer.byteLength(message.data, "utf8") > MAX_SCREEN_FRAME_BYTES
-    ) {
+    if (!room || Buffer.byteLength(message.data, "utf8") > MAX_SCREEN_FRAME_BYTES) {
       return;
     }
 
@@ -717,28 +850,6 @@ export class SignalingServer extends EventEmitter {
     }
   }
 
-  private updateRoomNote(message: RoomNoteUpdateMessage): void {
-    const room = this.roomManager.getRoom(message.roomId);
-    const author = room?.peers.getPeer(message.peerId);
-    if (!room || !author) {
-      return;
-    }
-    room.roomNote = {
-      content: message.note.content.trim().slice(0, 80),
-      authorName: author.nickname,
-      updatedAt: new Date().toISOString(),
-    };
-    const payload: RoomNoteUpdateMessage = {
-      type: "room_note_update",
-      roomId: room.roomId,
-      peerId: message.peerId,
-      note: room.roomNote,
-    };
-    for (const peer of room.peers.listConnectedPeers()) {
-      this.safeSend(peer.socket, payload);
-    }
-  }
-
   private forwardPeerSignal(
     message: PeerOfferMessage | PeerAnswerMessage | PeerRestartRequestMessage | IceCandidateMessage,
   ): void {
@@ -768,7 +879,6 @@ export class SignalingServer extends EventEmitter {
         appVersion: room.appVersion,
         protocolVersion: room.protocolVersion,
         buildNumber: room.buildNumber,
-        roomNote: room.roomNote,
       };
       this.safeSend(peer.socket, payload);
       this.emit("snapshot", payload);
@@ -813,7 +923,6 @@ export class SignalingServer extends EventEmitter {
       appVersion: room.appVersion,
       protocolVersion: room.protocolVersion,
       buildNumber: room.buildNumber,
-      roomNote: room.roomNote,
     };
     this.safeSend(socket, payload);
     this.emit("snapshot", payload);
@@ -909,60 +1018,4 @@ export class SignalingServer extends EventEmitter {
       return false;
     }
   }
-
-  /**
-   * HTTP POST /llm/chat — AI 代理端点。
-   * 客户端不带 MiMo key，只有用户消息以“问”开头时才会调用。
-   */
-  private handleLlmProxy(
-    request: import("node:http").IncomingMessage,
-    response: import("node:http").ServerResponse,
-  ): void {
-    const chunks: Buffer[] = [];
-    request.on("data", (chunk: Buffer) => chunks.push(chunk));
-    request.on("end", () => {
-      const body = Buffer.concat(chunks).toString("utf8");
-
-      if (Buffer.byteLength(body, "utf8") > 64 * 1024) {
-        response.writeHead(413, { "content-type": "application/json; charset=utf-8" });
-        response.end(JSON.stringify({ ok: false, reason: "payload_too_large" }));
-        return;
-      }
-
-      let payload: unknown;
-      try {
-        payload = JSON.parse(body);
-      } catch {
-        response.writeHead(400, { "content-type": "application/json; charset=utf-8" });
-        response.end(JSON.stringify({ ok: false, reason: "invalid_json" }));
-        return;
-      }
-
-      if (!isLlmProxyRequest(payload)) {
-        response.writeHead(400, { "content-type": "application/json; charset=utf-8" });
-        response.end(JSON.stringify({ ok: false, reason: "bad_request" }));
-        return;
-      }
-
-      void proxyLlmChat(payload)
-        .then((result) => {
-          response.writeHead(200, { "content-type": "application/json; charset=utf-8" });
-          response.end(JSON.stringify(result));
-        })
-        .catch(() => {
-          response.writeHead(500, { "content-type": "application/json; charset=utf-8" });
-          response.end(JSON.stringify({ ok: false, reason: "internal_error" }));
-        });
-    });
-
-    request.on("error", () => {
-      response.writeHead(400, { "content-type": "application/json; charset=utf-8" });
-      response.end(JSON.stringify({ ok: false, reason: "read_error" }));
-    });
-  }
 }
-
-const normalizeRequestPathname = (url?: string): string => {
-  const pathname = (url ?? "/").split("?")[0] || "/";
-  return "/" + pathname.split("/").filter(Boolean).join("/");
-};

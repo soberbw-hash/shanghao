@@ -11,8 +11,7 @@ import {
   type UpdateStatus,
 } from "@private-voice/shared";
 
-const RELEASES_API_URL =
-  "https://api.github.com/repos/soberbw-hash/shanghao/releases/latest";
+const RELEASES_API_URL = "https://api.github.com/repos/soberbw-hash/shanghao/releases/latest";
 
 interface GitHubReleaseResponse {
   tag_name?: string;
@@ -124,13 +123,13 @@ export class UpdateService {
       const policy = parsePolicy(release.body);
       const hasUpdate = Boolean(
         latestVersion &&
-          semver.valid(latestVersion) &&
-          semver.gt(latestVersion, this.currentVersion),
+        semver.valid(latestVersion) &&
+        semver.gt(latestVersion, this.currentVersion),
       );
       const belowMinimum = Boolean(
         policy.minSupportedVersion &&
-          semver.valid(policy.minSupportedVersion) &&
-          semver.lt(this.currentVersion, policy.minSupportedVersion),
+        semver.valid(policy.minSupportedVersion) &&
+        semver.lt(this.currentVersion, policy.minSupportedVersion),
       );
       const forceUpdate = hasUpdate && (policy.forceUpdate === true || belowMinimum);
 
@@ -159,7 +158,11 @@ export class UpdateService {
         latestVersion,
         forceUpdate,
       });
-      await this.log("info", "update check completed", result as unknown as Record<string, unknown>);
+      await this.log(
+        "info",
+        "update check completed",
+        result as unknown as Record<string, unknown>,
+      );
       return result;
     } catch (error) {
       const result: UpdateCheckResult = {

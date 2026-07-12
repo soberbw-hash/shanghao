@@ -26,38 +26,42 @@ const openPeer = async (peerId) => {
       });
     }
   });
-  socket.send(JSON.stringify({
-    type: "join_channel",
-    roomId: "main",
-    channelId: "main",
-    peerId,
-    nickname: peerId,
-    avatarId: "fox",
-    appVersion: "dev",
-    protocolVersion: APP_PROTOCOL_VERSION,
-    buildNumber: "three-peer-check",
-  }));
+  socket.send(
+    JSON.stringify({
+      type: "join_channel",
+      roomId: "main",
+      channelId: "main",
+      peerId,
+      nickname: peerId,
+      avatarId: "fox",
+      appVersion: "dev",
+      protocolVersion: APP_PROTOCOL_VERSION,
+      buildNumber: "three-peer-check",
+    }),
+  );
   peers.set(peerId, socket);
   return socket;
 };
 
 const sendToneFrame = (peerId, sequence) => {
-  peers.get(peerId).send(JSON.stringify({
-    type: "audio_chunk",
-    roomId: "main",
-    peerId,
-    sourcePeerId: peerId,
-    audioSessionId: `session-${peerId}`,
-    audioStreamEpoch: 1,
-    audioPath: "relay",
-    sequence,
-    sentAt: Date.now() - 60_000,
-    capturedAtMonotonic: performance.now(),
-    durationMs: 40,
-    sampleRate: 48_000,
-    channelCount: 1,
-    data: "AAAA",
-  }));
+  peers.get(peerId).send(
+    JSON.stringify({
+      type: "audio_chunk",
+      roomId: "main",
+      peerId,
+      sourcePeerId: peerId,
+      audioSessionId: `session-${peerId}`,
+      audioStreamEpoch: 1,
+      audioPath: "relay",
+      sequence,
+      sentAt: Date.now() - 60_000,
+      capturedAtMonotonic: performance.now(),
+      durationMs: 40,
+      sampleRate: 48_000,
+      channelCount: 1,
+      data: "AAAA",
+    }),
+  );
 };
 
 try {

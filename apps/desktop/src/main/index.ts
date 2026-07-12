@@ -16,7 +16,7 @@ import { UpdateService } from "./updates";
 import { createMainWindow } from "./window";
 import { OverlayWindowController } from "./overlay-window";
 import { GameDetectionController } from "./game-detection";
-import { LlmService } from "./llm-service";
+import { applyLaunchOnStartup } from "./launch-on-startup";
 
 let mainWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
@@ -123,10 +123,7 @@ const showBootstrapError = async (error: unknown) => {
   showWindow();
 };
 
-const clickButtonByLabel = async (
-  window: BrowserWindow,
-  label: string,
-): Promise<boolean> => {
+const clickButtonByLabel = async (window: BrowserWindow, label: string): Promise<boolean> => {
   return window.webContents.executeJavaScript(
     `
       (() => {
@@ -170,10 +167,7 @@ const maybeCaptureScreenshot = async (window: BrowserWindow | null): Promise<voi
   }
 
   if (mode !== "home") {
-    const label =
-      mode === "settings"
-        ? "\u8BBE\u7F6E"
-        : "";
+    const label = mode === "settings" ? "\u8BBE\u7F6E" : "";
 
     if (label) {
       await clickButtonByLabel(window, label);
@@ -218,8 +212,21 @@ const bootstrap = async (): Promise<void> => {
     message: "Main process bootstrap started",
   });
 
-  settingsStore = new SettingsStore((payload) => diagnostics?.writeLog(payload) ?? Promise.resolve());
+  settingsStore = new SettingsStore(
+    (payload) => diagnostics?.writeLog(payload) ?? Promise.resolve(),
+  );
   const settings = await settingsStore.load();
+  try {
+    applyLaunchOnStartup(settings.launchOnStartup);
+  } catch (error) {
+    await diagnostics.writeLog({
+      category: "app",
+      level: "warn",
+      message: "launch on startup setup failed",
+      context: { error: error instanceof Error ? error.message : String(error) },
+    });
+    await settingsStore.save({ launchOnStartup: false });
+  }
 
   const signalingClient = new SignalingClientBridge(
     (payload) => diagnostics?.writeLog(payload) ?? Promise.resolve(),
@@ -243,11 +250,6 @@ const bootstrap = async (): Promise<void> => {
   overlayController = overlay;
   gameDetectionController = gameDetection;
 
-  const llm = new LlmService({
-    getRelayServerUrl: () => settingsStore?.getSnapshot().relayServerUrl,
-    writeLog: (payload) => diagnostics?.writeLog(payload) ?? Promise.resolve(),
-  });
-
   registerIpcHandlers({
     getMainWindow: () => mainWindow,
     settingsStore,
@@ -257,7 +259,6 @@ const bootstrap = async (): Promise<void> => {
     updates,
     overlay,
     gameDetection,
-    llm,
   });
 
   mainWindow = createMainWindow({

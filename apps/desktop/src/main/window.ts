@@ -1,9 +1,10 @@
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
-import { app, BrowserWindow, desktopCapturer, screen } from "electron";
+import { app, BrowserWindow, desktopCapturer, screen, type Rectangle } from "electron";
 
-import { APP_ID, APP_NAME } from "@private-voice/shared";
+import { APP_NAME, type ScreenCaptureSourceDescriptor } from "@private-voice/shared";
 
 const devServerUrl = "http://127.0.0.1:5173";
 
@@ -22,6 +23,30 @@ const getBuildAssetPath = (fileName: string) =>
     : path.join(app.getAppPath(), "build", fileName);
 
 const getIconPath = () => getBuildAssetPath("shanghao-icon-v3.ico");
+
+let pendingScreenCaptureSourceId: string | undefined;
+
+const enumerateScreenCaptureSources = async (withThumbnails: boolean) =>
+  desktopCapturer.getSources({
+    types: ["screen", "window"],
+    thumbnailSize: withThumbnails ? { width: 320, height: 180 } : { width: 0, height: 0 },
+    fetchWindowIcons: withThumbnails,
+  });
+
+export const listScreenCaptureSources = async (): Promise<ScreenCaptureSourceDescriptor[]> => {
+  const sources = await enumerateScreenCaptureSources(true);
+  return sources.slice(0, 40).map((source) => ({
+    id: source.id,
+    name: source.name.slice(0, 120),
+    kind: source.id.startsWith("screen:") ? "screen" : "window",
+    thumbnailDataUrl: source.thumbnail.toDataURL(),
+    appIconDataUrl: source.appIcon?.toDataURL(),
+  }));
+};
+
+export const selectScreenCaptureSource = (sourceId: string): void => {
+  pendingScreenCaptureSourceId = sourceId;
+};
 
 const createFallbackHtml = (
   title: string,
@@ -55,9 +80,40 @@ export const createMainWindow = ({
   log,
   logsDirectory,
 }: CreateMainWindowOptions = {}): BrowserWindow => {
+  const boundsPath = path.join(app.getPath("userData"), "window-bounds.json");
+  let savedBounds: Partial<Rectangle> = {};
+  try {
+    if (existsSync(boundsPath)) savedBounds = JSON.parse(readFileSync(boundsPath, "utf8"));
+  } catch {
+    savedBounds = {};
+  }
+  const display = screen.getDisplayMatching({
+    x: savedBounds.x ?? 0,
+    y: savedBounds.y ?? 0,
+    width: savedBounds.width ?? 1,
+    height: savedBounds.height ?? 1,
+  });
+  const width = Math.min(display.workArea.width, Math.max(1120, savedBounds.width ?? 1440));
+  const height = Math.min(display.workArea.height, Math.max(720, savedBounds.height ?? 900));
+  const x = Math.min(
+    display.workArea.x + display.workArea.width - width,
+    Math.max(
+      display.workArea.x,
+      savedBounds.x ?? display.workArea.x + Math.round((display.workArea.width - width) / 2),
+    ),
+  );
+  const y = Math.min(
+    display.workArea.y + display.workArea.height - height,
+    Math.max(
+      display.workArea.y,
+      savedBounds.y ?? display.workArea.y + Math.round((display.workArea.height - height) / 2),
+    ),
+  );
   const window = new BrowserWindow({
-    width: 1280,
-    height: 800,
+    width,
+    height,
+    x,
+    y,
     minWidth: 1120,
     minHeight: 720,
     backgroundColor: "#EEF5FF",
@@ -70,6 +126,7 @@ export const createMainWindow = ({
       preload: path.join(__dirname, "../preload/index.cjs"),
       contextIsolation: true,
       nodeIntegration: false,
+      sandbox: true,
     },
   });
 
@@ -116,7 +173,7 @@ export const createMainWindow = ({
         "\u8F6F\u4EF6\u542F\u52A8\u5931\u8D25",
         "\u4E0A\u53F7\u6CA1\u80FD\u987A\u5229\u6253\u5F00\u754C\u9762\uFF0C\u8BF7\u67E5\u770B\u65E5\u5FD7\u540E\u91CD\u8BD5\u3002",
         {
-        error: error instanceof Error ? error.message : String(error),
+          error: error instanceof Error ? error.message : String(error),
         },
       );
     }
@@ -133,10 +190,10 @@ export const createMainWindow = ({
         "\u754C\u9762\u52A0\u8F7D\u5931\u8D25",
         "\u4E0A\u53F7\u6CA1\u80FD\u987A\u5229\u52A0\u8F7D\u4E3B\u754C\u9762\uFF0C\u8BF7\u7A0D\u540E\u91CD\u8BD5\u3002",
         {
-        errorCode,
-        errorDescription,
-        validatedURL,
-        targetUrl,
+          errorCode,
+          errorDescription,
+          validatedURL,
+          targetUrl,
         },
       );
     },
@@ -147,8 +204,8 @@ export const createMainWindow = ({
       "\u754C\u9762\u610F\u5916\u9000\u51FA",
       "\u6E32\u67D3\u8FDB\u7A0B\u5DF2\u7ECF\u9000\u51FA\uFF0C\u8BF7\u6839\u636E\u65E5\u5FD7\u68C0\u67E5\u542F\u52A8\u95EE\u9898\u3002",
       {
-      reason: details.reason,
-      exitCode: details.exitCode,
+        reason: details.reason,
+        exitCode: details.exitCode,
       },
     );
   });
@@ -168,21 +225,34 @@ export const createMainWindow = ({
 
   window.setMenuBarVisibility(false);
   window.setAutoHideMenuBar(true);
-  window.webContents.session.setPermissionRequestHandler((_webContents, permission, callback) => {
-    callback(permission === "media" || permission === "display-capture");
-  });
-  window.webContents.session.setDisplayMediaRequestHandler(async (_request, callback) => {
+  const isTrustedRendererUrl = (url: string) =>
+    app.isPackaged ? url.startsWith("file:") : url.startsWith(devServerUrl);
+  window.webContents.session.setPermissionRequestHandler(
+    (webContents, permission, callback, details) => {
+      callback(
+        webContents.id === window.webContents.id &&
+          isTrustedRendererUrl(details.requestingUrl) &&
+          (permission === "media" || permission === "display-capture"),
+      );
+    },
+  );
+  window.webContents.session.setDisplayMediaRequestHandler(async (request, callback) => {
     try {
-      const sources = await desktopCapturer.getSources({
-        types: ["screen", "window"],
-        thumbnailSize: { width: 0, height: 0 },
-        fetchWindowIcons: false,
-      });
+      const requestingUrl = request.frame?.url ?? request.securityOrigin;
+      if (!request.frame || !isTrustedRendererUrl(requestingUrl)) {
+        log?.("warn", "Blocked screen capture from untrusted frame");
+        callback({});
+        return;
+      }
+
+      const sources = await enumerateScreenCaptureSources(false);
       const primaryDisplayId = String(screen.getPrimaryDisplay().id);
       const selectedSource =
+        sources.find((source) => source.id === pendingScreenCaptureSourceId) ??
         sources.find((source) => source.display_id === primaryDisplayId) ??
         sources.find((source) => source.id.startsWith("screen:")) ??
         sources[0];
+      pendingScreenCaptureSourceId = undefined;
 
       if (!selectedSource) {
         log?.("error", "Screen share source enumeration returned no sources");
@@ -191,8 +261,7 @@ export const createMainWindow = ({
       }
 
       log?.("info", "Approved screen capture request", {
-        sourceId: selectedSource.id,
-        sourceName: selectedSource.name,
+        sourceKind: selectedSource.id.startsWith("screen:") ? "screen" : "window",
         primaryDisplayId,
       });
       callback({
@@ -214,6 +283,23 @@ export const createMainWindow = ({
   window.webContents.once("dom-ready", () => {
     log?.("info", "Renderer DOM ready");
   });
+
+  let saveBoundsTimer: NodeJS.Timeout | undefined;
+  const saveBounds = () => {
+    if (window.isMaximized() || window.isMinimized()) return;
+    if (saveBoundsTimer) clearTimeout(saveBoundsTimer);
+    saveBoundsTimer = setTimeout(() => {
+      try {
+        writeFileSync(boundsPath, JSON.stringify(window.getBounds()), "utf8");
+      } catch (error) {
+        log?.("warn", "Failed to persist window bounds", {
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }, 250);
+  };
+  window.on("resize", saveBounds);
+  window.on("move", saveBounds);
 
   setTimeout(() => {
     if (!window.isVisible()) {

@@ -41,17 +41,6 @@ export interface SignalingEventPayload {
   message?: string;
 }
 
-export interface LlmChatRequest {
-  message: string;
-  history: Array<{ role: "user" | "assistant"; content: string }>;
-}
-
-export interface LlmChatResponse {
-  ok: boolean;
-  reply?: string;
-  reason?: "not_configured" | "request_failed" | "empty";
-}
-
 export interface OverlayState {
   members: RoomMember[];
   isMuted: boolean;
@@ -59,8 +48,41 @@ export interface OverlayState {
   connectionState: string;
 }
 
+export interface ScreenCaptureSourceDescriptor {
+  id: string;
+  name: string;
+  kind: "screen" | "window";
+  thumbnailDataUrl: string;
+  appIconDataUrl?: string;
+}
+
 export interface GameDetectionSnapshot {
-  gameName?: "失落城堡2" | "三角洲行动" | "英雄联盟" | "无畏契约" | "CS2" | "原神" | "永劫无间" | "Apex英雄" | "绝地求生" | "守望先锋" | "蛋仔派对" | "我的世界" | "Roblox";
+  gameName?:
+    | "我的世界"
+    | "王国保卫战"
+    | "杀戮尖塔"
+    | "英雄联盟"
+    | "无畏契约"
+    | "三角洲行动"
+    | "CS2"
+    | "Dota 2"
+    | "Apex 英雄"
+    | "绝地求生"
+    | "守望先锋"
+    | "永劫无间"
+    | "原神"
+    | "崩坏：星穹铁道"
+    | "Fortnite"
+    | "GTA V"
+    | "彩虹六号：围攻"
+    | "怪物猎人"
+    | "黑神话：悟空"
+    | "失落城堡 2"
+    | "艾尔登法环"
+    | "双人成行"
+    | "幻兽帕鲁"
+    | "胡闹厨房"
+    | "荒野大镖客 2";
   detectedAt?: string;
   checkedAt: string;
 }
@@ -68,12 +90,16 @@ export interface GameDetectionSnapshot {
 export interface DesktopApi {
   app: {
     getRuntimeInfo: () => Promise<RuntimeInfo>;
+    getSystemIdleSeconds: () => Promise<number>;
     writeLog: (payload: RendererLogPayload) => Promise<void>;
-    openPath: (targetPath: string) => Promise<void>;
     notify: (payload: { title: string; body: string }) => Promise<void>;
   };
   clipboard: {
     writeText: (text: string) => Promise<void>;
+  };
+  screenCapture: {
+    listSources: () => Promise<ScreenCaptureSourceDescriptor[]>;
+    selectSource: (sourceId: string) => Promise<void>;
   };
   window: {
     minimize: () => Promise<void>;
@@ -104,6 +130,7 @@ export interface DesktopApi {
   };
   diagnostics: {
     snapshot: () => Promise<DiagnosticsSnapshot>;
+    testServer: (serverUrl: string) => Promise<import("./settings.types").RelayStatusSnapshot>;
     exportLogs: () => Promise<DiagnosticsSnapshot>;
     exportBundle: (rendererState?: RendererDiagnosticsSummary) => Promise<DiagnosticsSnapshot>;
     openLogsDirectory: () => Promise<void>;
@@ -130,13 +157,7 @@ export interface DesktopApi {
     onEvent: (listener: (payload: SignalingEventPayload) => void) => () => void;
   };
   recording: {
-    export: (
-      payload: RecordingExportPayload,
-    ) => Promise<RecordingExportResponse>;
+    export: (payload: RecordingExportPayload) => Promise<RecordingExportResponse>;
     saveMarkers: (filePath: string, markers: RecordingMarker[]) => Promise<string>;
-  };
-  llm: {
-    chat: (payload: LlmChatRequest) => Promise<LlmChatResponse>;
-    health: () => Promise<{ ok: boolean; configured: boolean; reason?: string }>;
   };
 }

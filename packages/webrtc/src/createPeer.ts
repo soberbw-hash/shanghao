@@ -1,7 +1,4 @@
-import type {
-  IceCandidatePayload,
-  SessionDescriptionPayload,
-} from "@private-voice/signaling";
+import type { IceCandidatePayload, SessionDescriptionPayload } from "@private-voice/signaling";
 
 export interface MeshPeerOptions {
   peerId: string;
@@ -11,7 +8,8 @@ export interface MeshPeerOptions {
   onRemoteStream: (stream: MediaStream) => void;
   onConnectionStateChange?: (state: RTCPeerConnectionState) => void;
   onDiagnosticEvent?: (
-    event: "connection_state" | "ice_connection_state" | "ice_gathering_state" | "ice_candidate_queue",
+    event:
+      "connection_state" | "ice_connection_state" | "ice_gathering_state" | "ice_candidate_queue",
     context: Record<string, unknown>,
   ) => void;
 }
@@ -184,14 +182,16 @@ export class MeshPeerConnection {
     await this.screenTransceiver.sender.replaceTrack(nextTrack ?? null);
     if (nextTrack) {
       nextTrack.contentHint = "detail";
-      await nextTrack.applyConstraints({
-        width: { max: profile.maxWidth },
-        height: { max: profile.maxHeight },
-        frameRate: {
-          ideal: Math.max(10, profile.maxFramerate - 3),
-          max: profile.maxFramerate,
-        },
-      }).catch(() => undefined);
+      await nextTrack
+        .applyConstraints({
+          width: { max: profile.maxWidth },
+          height: { max: profile.maxHeight },
+          frameRate: {
+            ideal: Math.max(10, profile.maxFramerate - 3),
+            max: profile.maxFramerate,
+          },
+        })
+        .catch(() => undefined);
       await this.configureScreenSender(profile);
     }
   }

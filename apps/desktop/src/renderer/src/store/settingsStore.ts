@@ -58,6 +58,9 @@ const fallbackSettings: AppSettings = {
   hasCompletedProfileSetup: false,
   minimizeToTray: false,
   reduceMotion: false,
+  reduceTransparency: false,
+  increaseContrast: false,
+  uiScale: 100,
   launchOnStartup: false,
   isHardwareAccelerationEnabled: true,
   isOverlayEnabled: true,
@@ -66,7 +69,7 @@ const fallbackSettings: AppSettings = {
   preferredSampleRate: "32000",
   inputLevelThreshold: 0.4,
   micEqualizerGains: [0, 0, 0, 0, 0],
-  isLowCutEnabled: true,
+  lowCutFrequency: "90",
   globalMuteShortcut: "",
   pushToTalkShortcut: "Space",
   recordingMarkerShortcut: "F8",
@@ -76,8 +79,10 @@ const fallbackSettings: AppSettings = {
   isPushToTalkEnabled: false,
   micMonitorMode: "processed",
   relayServerUrl: "",
-  customStatus: "",
+  memberVolumes: {},
+  soundVolume: 0.72,
   screenShareQuality: "smooth",
+  screenShareFitMode: "contain",
   isScreenShareSystemAudioEnabled: true,
   isSystemNotificationEnabled: true,
   isMicOnSoundEnabled: true,
@@ -168,10 +173,7 @@ export const useSettingsStore = create<SettingsStoreState>((set, get) => ({
       });
     });
     await desktopApi.shortcuts
-      .configurePushToTalk(
-        settings.pushToTalkShortcut,
-        settings.isPushToTalkEnabled,
-      )
+      .configurePushToTalk(settings.pushToTalkShortcut, settings.isPushToTalkEnabled)
       .catch(async (error) => {
         await writeRendererLog(
           "renderer-startup",
@@ -185,7 +187,9 @@ export const useSettingsStore = create<SettingsStoreState>((set, get) => ({
       .catch(() => false);
 
     if (settings.isBackgroundUpdateCheckEnabled) {
-      void get().checkUpdates().catch(() => undefined);
+      void get()
+        .checkUpdates()
+        .catch(() => undefined);
     }
 
     await writeRendererLog("renderer-startup", "info", "Renderer hydrated settings", {
@@ -203,19 +207,14 @@ export const useSettingsStore = create<SettingsStoreState>((set, get) => ({
   saveSettings: async (partial) => {
     const settings = await desktopApi.settings.save(partial);
     set({ settings, avatarDataUrl: undefined });
-    if (
-      "pushToTalkShortcut" in partial ||
-      "isPushToTalkEnabled" in partial
-    ) {
+    if ("pushToTalkShortcut" in partial || "isPushToTalkEnabled" in partial) {
       await desktopApi.shortcuts.configurePushToTalk(
         settings.pushToTalkShortcut,
         settings.isPushToTalkEnabled,
       );
     }
     if ("recordingMarkerShortcut" in partial) {
-      await desktopApi.shortcuts.configureRecordingMarker(
-        settings.recordingMarkerShortcut,
-      );
+      await desktopApi.shortcuts.configureRecordingMarker(settings.recordingMarkerShortcut);
     }
     return settings;
   },

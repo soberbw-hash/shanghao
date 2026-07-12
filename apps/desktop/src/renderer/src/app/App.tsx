@@ -53,9 +53,25 @@ export const App = () => {
       avatarPath: settings.avatarPath,
       avatarDataUrl,
       avatarId: settings.avatarId,
-      customStatus: settings.customStatus,
     });
   }, [avatarDataUrl, bootstrapPhase, settings, syncLocalProfile]);
+
+  useEffect(() => {
+    const root = document.documentElement;
+    root.classList.toggle("reduce-motion", settings?.reduceMotion === true);
+    root.classList.toggle("reduce-transparency", settings?.reduceTransparency === true);
+    root.classList.toggle("increase-contrast", settings?.increaseContrast === true);
+    root.style.fontSize = `${settings?.uiScale ?? 100}%`;
+    return () => {
+      root.classList.remove("reduce-motion", "reduce-transparency", "increase-contrast");
+      root.style.removeProperty("font-size");
+    };
+  }, [
+    settings?.increaseContrast,
+    settings?.reduceMotion,
+    settings?.reduceTransparency,
+    settings?.uiScale,
+  ]);
 
   useEffect(() => {
     const handleError = (event: ErrorEvent) => {

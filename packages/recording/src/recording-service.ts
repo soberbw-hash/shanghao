@@ -59,10 +59,7 @@ export class RecordingService {
         this.stateMachine.transition(RecordingState.Failed, {
           startedAt: undefined,
           durationMs: 0,
-          message:
-            error instanceof Error
-              ? error.message
-              : "这台设备暂时无法开始录音。",
+          message: error instanceof Error ? error.message : "这台设备暂时无法开始录音。",
         }),
       );
     }

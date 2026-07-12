@@ -23,7 +23,6 @@ export interface PeerSession {
   activity: MemberActivity;
   sceneZone?: SceneZoneId;
   gameName?: string;
-  customStatus?: string;
   joinedAt: string;
   lastHeartbeatAt: number;
   disconnectedAt?: number;
@@ -80,7 +79,6 @@ export class PeerManager {
         | "activity"
         | "sceneZone"
         | "gameName"
-        | "customStatus"
         | "nickname"
         | "avatarDataUrl"
         | "avatarHash"
@@ -111,7 +109,6 @@ export class PeerManager {
       activity: peer.activity,
       sceneZone: peer.sceneZone,
       gameName: peer.gameName,
-      customStatus: peer.customStatus,
       presenceState: peer.disconnectedAt
         ? MemberPresenceState.Reconnecting
         : MemberPresenceState.Online,

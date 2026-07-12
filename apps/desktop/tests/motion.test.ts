@@ -7,7 +7,10 @@ const packagePath = path.resolve(process.cwd(), "package.json");
 const homePath = path.resolve(process.cwd(), "src/renderer/src/pages/HomePage.tsx");
 const roomPath = path.resolve(process.cwd(), "src/renderer/src/pages/RoomPage.tsx");
 const settingsPath = path.resolve(process.cwd(), "src/renderer/src/pages/SettingsPage.tsx");
-const chatPath = path.resolve(process.cwd(), "src/renderer/src/components/chat/TemporaryChatPanel.tsx");
+const chatPath = path.resolve(
+  process.cwd(),
+  "src/renderer/src/components/chat/TemporaryChatPanel.tsx",
+);
 const islandPath = path.resolve(process.cwd(), "src/renderer/src/components/room/TeamIsland.tsx");
 const animalPath = path.resolve(process.cwd(), "src/renderer/src/components/room/AnimalSprite.tsx");
 const hookPath = path.resolve(process.cwd(), "src/renderer/src/hooks/usePrefersReducedMotion.ts");
@@ -57,14 +60,16 @@ test("gsap motion is wired across the main surfaces with reduced-motion fallback
   assert.equal(animalSource.includes("layered-animal"), true);
   assert.equal(animalSource.includes("avatarLayerAssets"), true);
   assert.equal(animalSource.includes("LayerPart"), true);
-  assert.equal(animalSource.includes("isMoving ? \"walk\""), true);
+  assert.equal(animalSource.includes('isMoving ? "walk"'), true);
   assert.equal(islandSource.includes("SceneCharacter"), true);
   assert.equal(islandSource.includes("setIsMoving(true)"), true);
   assert.equal(stylesSource.includes("@keyframes layered-body-walk"), true);
   assert.equal(stylesSource.includes(".layered-animal-head"), true);
   assert.equal(islandSource.includes('layout="position"'), true);
   assert.equal(readFileSync(motionSystemPath, "utf8").includes("force3D: true"), true);
-  assert.equal(readFileSync(motionSystemPath, "utf8").includes("power3.out"), true);
+  assert.equal(readFileSync(motionSystemPath, "utf8").includes("CustomEase"), true);
+  assert.equal(readFileSync(motionSystemPath, "utf8").includes("0.23,1,0.32,1"), true);
+  assert.equal(readFileSync(motionSystemPath, "utf8").includes("back.out"), false);
   assert.equal(readFileSync(motionSystemPath, "utf8").includes("APPLE_MOTION_DURATION"), true);
 });
 

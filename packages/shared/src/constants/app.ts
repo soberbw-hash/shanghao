@@ -10,10 +10,10 @@ export const HEARTBEAT_INTERVAL_MS = 10_000;
 export const SIGNALING_PING_TIMEOUT_MS = 30_000;
 export const DEFAULT_RECONNECT_DELAYS_MS = [1_000, 2_000, 4_000, 8_000, 12_000, 16_000];
 export const DEFAULT_SIGNALING_PORT = 43_821;
-export const APP_PROTOCOL_VERSION = "4";
-export const APP_BUILD_NUMBER = "2026.07.11.1";
-export const SETTINGS_SCHEMA_VERSION = 11;
-export const PROFILE_SCHEMA_VERSION = 1;
+export const APP_PROTOCOL_VERSION = "5";
+export const APP_BUILD_NUMBER = "2026.07.12.1";
+export const SETTINGS_SCHEMA_VERSION = 13;
+export const PROFILE_SCHEMA_VERSION = 2;
 export const DEFAULT_RELEASES_URL = "https://github.com/soberbw-hash/shanghao/releases";
 
 export const LOG_CATEGORIES = [

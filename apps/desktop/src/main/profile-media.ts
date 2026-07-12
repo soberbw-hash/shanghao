@@ -1,4 +1,4 @@
-import { copyFile, mkdir, readFile, rm } from "node:fs/promises";
+import { mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
@@ -8,7 +8,8 @@ import type { ProfileAvatarSelection } from "@private-voice/shared";
 
 const avatarDirectory = path.join(app.getPath("userData"), "avatars");
 
-const supportedImageExtensions = new Set([".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp"]);
+const MAX_AVATAR_FILE_BYTES = 4 * 1024 * 1024;
+const supportedImageExtensions = new Set([".png", ".jpg", ".jpeg", ".webp", ".gif"]);
 
 const mimeTypeByExtension: Record<string, string> = {
   ".png": "image/png",
@@ -16,7 +17,6 @@ const mimeTypeByExtension: Record<string, string> = {
   ".jpeg": "image/jpeg",
   ".webp": "image/webp",
   ".gif": "image/gif",
-  ".bmp": "image/bmp",
 };
 
 const copy = {
@@ -33,13 +33,44 @@ const isManagedAvatarPath = (avatarPath?: string): avatarPath is string => {
     return false;
   }
 
-  const normalizedAvatarPath = path.resolve(avatarPath);
-  const normalizedAvatarDirectory = path.resolve(avatarDirectory);
-  return normalizedAvatarPath.startsWith(normalizedAvatarDirectory);
+  const relative = path.relative(path.resolve(avatarDirectory), path.resolve(avatarPath));
+  return Boolean(relative && !relative.startsWith("..") && !path.isAbsolute(relative));
+};
+
+const detectImageFormat = (buffer: Buffer): { extension: string; mimeType: string } | undefined => {
+  if (buffer.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))) {
+    return { extension: ".png", mimeType: "image/png" };
+  }
+  if (buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff) {
+    return { extension: ".jpg", mimeType: "image/jpeg" };
+  }
+  if (
+    buffer.subarray(0, 4).toString("ascii") === "RIFF" &&
+    buffer.subarray(8, 12).toString("ascii") === "WEBP"
+  ) {
+    return { extension: ".webp", mimeType: "image/webp" };
+  }
+  if (["GIF87a", "GIF89a"].includes(buffer.subarray(0, 6).toString("ascii"))) {
+    return { extension: ".gif", mimeType: "image/gif" };
+  }
+  return undefined;
+};
+
+const readValidatedImage = async (
+  imagePath: string,
+): Promise<{ buffer: Buffer; extension: string; mimeType: string }> => {
+  const fileStats = await stat(imagePath);
+  if (!fileStats.isFile() || fileStats.size <= 0 || fileStats.size > MAX_AVATAR_FILE_BYTES) {
+    throw new Error("头像文件必须小于 4 MB。");
+  }
+  const buffer = await readFile(imagePath);
+  const format = detectImageFormat(buffer);
+  if (!format) throw new Error(copy.unsupportedType);
+  return { buffer, ...format };
 };
 
 const readAvatarAsDataUrl = async (avatarPath?: string): Promise<string | undefined> => {
-  if (!avatarPath) {
+  if (!avatarPath || !isManagedAvatarPath(avatarPath)) {
     return undefined;
   }
 
@@ -50,8 +81,8 @@ const readAvatarAsDataUrl = async (avatarPath?: string): Promise<string | undefi
     return undefined;
   }
 
-  const buffer = await readFile(avatarPath);
-  return `data:${mimeType};base64,${buffer.toString("base64")}`;
+  const validated = await readValidatedImage(avatarPath);
+  return `data:${validated.mimeType || mimeType};base64,${validated.buffer.toString("base64")}`;
 };
 
 export const pickAvatarImage = async (
@@ -63,7 +94,7 @@ export const pickAvatarImage = async (
     filters: [
       {
         name: copy.imageFilter,
-        extensions: ["png", "jpg", "jpeg", "webp", "gif", "bmp"],
+        extensions: ["png", "jpg", "jpeg", "webp", "gif"],
       },
     ],
   });
@@ -83,9 +114,10 @@ export const pickAvatarImage = async (
     throw new Error(copy.unsupportedType);
   }
 
+  const validated = await readValidatedImage(sourcePath);
   await mkdir(avatarDirectory, { recursive: true });
-  const avatarPath = path.join(avatarDirectory, `${crypto.randomUUID()}${extension}`);
-  await copyFile(sourcePath, avatarPath);
+  const avatarPath = path.join(avatarDirectory, `${crypto.randomUUID()}${validated.extension}`);
+  await writeFile(avatarPath, validated.buffer, { flag: "wx" });
 
   if (currentAvatarPath && currentAvatarPath !== avatarPath) {
     await clearAvatarImage(currentAvatarPath);
@@ -116,4 +148,4 @@ export const clearAvatarImage = async (avatarPath?: string): Promise<void> => {
 };
 
 export const toAvatarFileUrl = (avatarPath?: string): string | undefined =>
-  avatarPath ? pathToFileURL(avatarPath).toString() : undefined;
+  isManagedAvatarPath(avatarPath) ? pathToFileURL(avatarPath).toString() : undefined;

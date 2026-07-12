@@ -115,9 +115,7 @@ export const replaceAudioTrack = async (
   peerConnection: RTCPeerConnection,
   nextTrack: MediaStreamTrack,
 ): Promise<void> => {
-  const sender = peerConnection
-    .getSenders()
-    .find((candidate) => candidate.track?.kind === "audio");
+  const sender = peerConnection.getSenders().find((candidate) => candidate.track?.kind === "audio");
 
   if (sender) {
     await sender.replaceTrack(nextTrack);

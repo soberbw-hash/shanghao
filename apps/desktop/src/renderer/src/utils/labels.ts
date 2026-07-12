@@ -1,8 +1,4 @@
-import {
-  MemberPresenceState,
-  RecordingState,
-  RoomConnectionState,
-} from "@private-voice/shared";
+import { MemberPresenceState, RecordingState, RoomConnectionState } from "@private-voice/shared";
 
 const roomConnectionLabels: Record<RoomConnectionState, string> = {
   [RoomConnectionState.Idle]: "待命",

@@ -18,6 +18,14 @@ files:
   - "dist-electron/**"
   - "package.json"
 extraResources:
+  - from: ../../THIRD_PARTY_NOTICES.md
+    to: licenses/THIRD_PARTY_NOTICES.md
+  - from: node_modules/@shiguredo/rnnoise-wasm/LICENSE
+    to: licenses/rnnoise-wasm-APACHE-2.0.txt
+  - from: ../../licenses/RNNOISE-BSD.txt
+    to: licenses/RNNOISE-BSD.txt
+  - from: node_modules/@fontsource-variable/noto-sans-sc/LICENSE
+    to: licenses/NotoSansSC-OFL-1.1.txt
   - from: build
     to: build
     filter:

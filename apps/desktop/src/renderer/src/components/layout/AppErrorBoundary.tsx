@@ -10,10 +10,7 @@ interface AppErrorBoundaryState {
   hasError: boolean;
 }
 
-export class AppErrorBoundary extends Component<
-  PropsWithChildren,
-  AppErrorBoundaryState
-> {
+export class AppErrorBoundary extends Component<PropsWithChildren, AppErrorBoundaryState> {
   override state: AppErrorBoundaryState = {
     hasError: false,
   };

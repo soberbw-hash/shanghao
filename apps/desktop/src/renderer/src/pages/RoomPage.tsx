@@ -22,10 +22,10 @@ import { gsap } from "gsap";
 import {
   RecordingEncoderState,
   RecordingState,
-  MemberSpeakingState,
   RoomConnectionState,
   type GameDetectionSnapshot,
   type MemberActivity,
+  type ScreenCaptureSourceDescriptor,
   type SceneZoneId,
   type ScreenShareQuality,
 } from "@private-voice/shared";
@@ -38,8 +38,8 @@ import { TemporaryChatPanel } from "../components/chat/TemporaryChatPanel";
 import { TopStatusBar } from "../components/layout/TopStatusBar";
 import { TeamIsland } from "../components/room/TeamIsland";
 import { playUiSound } from "../features/audio/uiSound";
-import { chatWithLLM, shouldCallLLM, type LlmHistoryEntry } from "../features/chat/llmService";
 import { motionDuration, motionEase } from "../features/motion/motionSystem";
+import { decideAutoAway, IDLE_POLL_INTERVAL_MS } from "../features/room/autoAway";
 import { isSeatZone } from "../features/voice-scene/sceneZones";
 import { usePrefersReducedMotion } from "../hooks/usePrefersReducedMotion";
 import { useRecordingController } from "../hooks/useRecordingController";
@@ -51,10 +51,15 @@ import { useRoomStore } from "../store/roomStore";
 import { useSettingsStore } from "../store/settingsStore";
 
 const KNOCK_COOLDOWN_MS = 5_000;
-const SCREEN_SHARE_PROFILES: Record<
-  ScreenShareQuality,
-  ScreenShareEncodingProfile
-> = {
+
+interface AwaySession {
+  method: "auto" | "manual";
+  seat: SceneZoneId;
+  activity: MemberActivity;
+  gameName?: string;
+  enteredAt: string;
+}
+const SCREEN_SHARE_PROFILES: Record<ScreenShareQuality, ScreenShareEncodingProfile> = {
   smooth: {
     maxBitrate: 420_000,
     maxFramerate: 15,
@@ -83,7 +88,13 @@ interface ScreenShareItem {
   transport: "webrtc" | "relay";
 }
 
-const ScreenShareVideo = ({ stream }: { stream: MediaStream }) => {
+const ScreenShareVideo = ({
+  stream,
+  fitMode,
+}: {
+  stream: MediaStream;
+  fitMode: "contain" | "cover";
+}) => {
   const videoRef = useRef<HTMLVideoElement>(null);
 
   useEffect(() => {
@@ -102,21 +113,27 @@ const ScreenShareVideo = ({ stream }: { stream: MediaStream }) => {
       autoPlay
       playsInline
       muted
-      className="screen-share-video"
+      className={`screen-share-video ${fitMode === "cover" ? "screen-share-video-cover" : ""}`}
     />
   );
 };
 
-const ScreenShareMedia = ({ item }: { item: ScreenShareItem }) => {
+const ScreenShareMedia = ({
+  item,
+  fitMode,
+}: {
+  item: ScreenShareItem;
+  fitMode: "contain" | "cover";
+}) => {
   if (item.stream) {
-    return <ScreenShareVideo stream={item.stream} />;
+    return <ScreenShareVideo stream={item.stream} fitMode={fitMode} />;
   }
 
   return (
     <img
       src={item.frameDataUrl}
       alt=""
-      className="screen-share-video"
+      className={`screen-share-video ${fitMode === "cover" ? "screen-share-video-cover" : ""}`}
       draggable={false}
     />
   );
@@ -127,11 +144,15 @@ const ScreenSharePanel = ({
   onStopLocalShare,
   isExpanded,
   onToggleExpanded,
+  fitMode,
+  onToggleFitMode,
 }: {
   items: ScreenShareItem[];
   onStopLocalShare: () => void;
   isExpanded: boolean;
   onToggleExpanded: () => void;
+  fitMode: "contain" | "cover";
+  onToggleFitMode: () => void;
 }) => {
   const panelRef = useRef<HTMLDivElement>(null);
   const [position, setPosition] = useState({ x: 0, y: 0 });
@@ -202,9 +223,7 @@ const ScreenSharePanel = ({
       className={`screen-share-panel ${isExpanded ? "screen-share-panel-expanded" : ""}`}
       data-testid="screen-share-panel"
       style={
-        isExpanded
-          ? undefined
-          : { transform: `translate3d(${position.x}px, ${position.y}px, 0)` }
+        isExpanded ? undefined : { transform: `translate3d(${position.x}px, ${position.y}px, 0)` }
       }
     >
       <div
@@ -223,6 +242,14 @@ const ScreenSharePanel = ({
           </span>
         </div>
         <div className="screen-share-panel-actions">
+          <button
+            type="button"
+            className="screen-share-icon-action screen-share-fit-action"
+            onClick={onToggleFitMode}
+            title={fitMode === "contain" ? "填满画面" : "显示完整画面"}
+          >
+            {fitMode === "contain" ? "填满" : "完整"}
+          </button>
           <button
             type="button"
             className="screen-share-icon-action"
@@ -244,7 +271,7 @@ const ScreenSharePanel = ({
         </div>
       </div>
       <div className="screen-share-video-shell">
-        <ScreenShareMedia item={primaryItem} />
+        <ScreenShareMedia item={primaryItem} fitMode={fitMode} />
       </div>
       {items.length > 1 ? (
         <div className="screen-share-stack" role="tablist" aria-label="切换共享画面">
@@ -273,10 +300,10 @@ export const RoomPage = () => {
     sendChatMessage,
     sendKnock,
     sendSceneReaction,
-    updateRoomNote,
     replaceInputDevice,
     copyInviteLink,
     moveLocalMember,
+    setMemberVolume,
     startScreenShare,
     stopScreenShare,
   } = useRoomState();
@@ -287,7 +314,15 @@ export const RoomPage = () => {
   const remoteStreams = useRoomStore((state) => state.remoteStreams);
   const remoteScreenFrames = useRoomStore((state) => state.remoteScreenFrames);
   const sceneReactions = useRoomStore((state) => state.sceneReactions);
-  const { inputDevices, outputDevices, isMuted, isDeafened, toggleMute, toggleDeafen } = useAudioStore();
+  const {
+    inputDevices,
+    outputDevices,
+    isMuted,
+    isDeafened,
+    toggleMicrophone,
+    toggleDeafen,
+    setMuted,
+  } = useAudioStore();
   const recordingStatus = useRecordingStore((state) => state.status);
   const recordingMarkers = useRecordingStore((state) => state.markers);
   const addRecordingMarker = useRecordingStore((state) => state.addMarker);
@@ -296,20 +331,22 @@ export const RoomPage = () => {
   const pageRef = useRef<HTMLDivElement>(null);
   const voicePulseRef = useRef<HTMLDivElement>(null);
   const [chatInput, setChatInput] = useState("");
-  const [isLLMLoading, setIsLLMLoading] = useState(false);
   const [localScreenShareStream, setLocalScreenShareStream] = useState<MediaStream>();
   const [isScreenShareStarting, setIsScreenShareStarting] = useState(false);
   const [isScreenShareExpanded, setIsScreenShareExpanded] = useState(false);
+  const [screenCaptureSources, setScreenCaptureSources] = useState<ScreenCaptureSourceDescriptor[]>(
+    [],
+  );
+  const [isScreenSourcePickerOpen, setIsScreenSourcePickerOpen] = useState(false);
   const [isOverlayOpen, setIsOverlayOpen] = useState(false);
-  const lastSpokeAtRef = useRef(Date.now());
   const lastSeatZoneRef = useRef<SceneZoneId>("gameDesk1");
+  const awaySessionRef = useRef<AwaySession>();
   const lastKnockAt = useRef(0);
   const detectedGameRef = useRef<string>();
   const screenShareStoppingRef = useRef(false);
   const localScreenShareActiveRef = useRef(false);
   const moveLocalMemberRef = useRef(moveLocalMember);
   moveLocalMemberRef.current = moveLocalMember;
-  const llmHistoryRef = useRef<LlmHistoryEntry[]>([]);
   const reduceMotion = usePrefersReducedMotion(settings?.reduceMotion ?? false);
 
   const canSend =
@@ -457,49 +494,82 @@ export const RoomPage = () => {
     if (localMember.sceneZone && isSeatZone(localMember.sceneZone)) {
       lastSeatZoneRef.current = localMember.sceneZone;
     }
-    if (localMember.speakingState === MemberSpeakingState.Speaking) {
-      lastSpokeAtRef.current = Date.now();
-      if (localMember.sceneZone === "restroomZone") {
-        moveLocalMemberRef.current(
-          lastSeatZoneRef.current,
-          localMember.gameName ? "gaming" : "idle",
-          localMember.gameName,
-        );
-      }
-    }
-  }, [
-    localMember?.gameName,
-    localMember?.sceneZone,
-    localMember?.speakingState,
-  ]);
+  }, [localMember]);
 
   useEffect(() => {
-    const timer = window.setInterval(() => {
+    let disposed = false;
+    const checkIdleState = async () => {
+      const idleSeconds = await window.desktopApi.app.getSystemIdleSeconds().catch(() => 0);
+      if (disposed) return;
       const currentLocalMember = useRoomStore
         .getState()
         .room.members.find((member) => member.isLocal);
-      if (
-        currentLocalMember &&
-        currentLocalMember.sceneZone !== "restroomZone" &&
-        !currentLocalMember.gameName &&
-        !localScreenShareActiveRef.current &&
-        Date.now() - lastSpokeAtRef.current >= 5 * 60_000
-      ) {
+      if (!currentLocalMember) return;
+
+      const decision = decideAutoAway({
+        idleSeconds,
+        isInAwayZone: currentLocalMember.sceneZone === "restroomZone",
+        awayMethod: awaySessionRef.current?.method,
+      });
+
+      if (decision === "auto_away") {
+        const currentZone = currentLocalMember.sceneZone ?? lastSeatZoneRef.current;
+        const seat = isSeatZone(currentZone) ? currentZone : lastSeatZoneRef.current;
+        awaySessionRef.current = {
+          method: "auto",
+          seat,
+          activity: currentLocalMember.activity ?? "idle",
+          gameName: currentLocalMember.gameName,
+          enteredAt: new Date().toISOString(),
+        };
+        setMuted(true);
         moveLocalMemberRef.current("restroomZone", "restroom");
         void window.desktopApi.app.writeLog({
           category: "app",
           level: "info",
-          message: "Moved local member to away zone after five minutes of silence",
+          message: "auto_away",
+          context: { idleSeconds, seat, gameName: currentLocalMember.gameName },
         });
         pushToast({
           tone: "neutral",
-          title: "已切到离开一下",
-          description: "5 分钟没有说话，开麦后会自动回到座位。",
+          title: "30 分钟没有操作，已切到离开一下。",
+          description: "重新操作电脑后会自动回到原来的位置。",
+        });
+        return;
+      }
+
+      const awaySession = awaySessionRef.current;
+      if (decision === "auto_return" && awaySession?.method === "auto") {
+        awaySessionRef.current = undefined;
+        if (!useAudioStore.getState().isDeafened) setMuted(false);
+        moveLocalMemberRef.current(
+          awaySession.seat,
+          awaySession.gameName ? "gaming" : awaySession.activity,
+          awaySession.gameName,
+        );
+        void window.desktopApi.app.writeLog({
+          category: "app",
+          level: "info",
+          message: "auto_return",
+          context: { seat: awaySession.seat, awaySince: awaySession.enteredAt },
+        });
+        pushToast({
+          tone: "success",
+          title: "欢迎回来，已回到原来的位置。",
+          description: useAudioStore.getState().isDeafened
+            ? "扬声器仍关闭，麦克风保持静音。"
+            : "麦克风已恢复。",
         });
       }
-    }, 15_000);
-    return () => window.clearInterval(timer);
-  }, []);
+    };
+
+    void checkIdleState();
+    const timer = window.setInterval(() => void checkIdleState(), IDLE_POLL_INTERVAL_MS);
+    return () => {
+      disposed = true;
+      window.clearInterval(timer);
+    };
+  }, [pushToast, setMuted]);
 
   useEffect(() => {
     const applyGameDetection = (snapshot: GameDetectionSnapshot) => {
@@ -509,10 +579,17 @@ export const RoomPage = () => {
       const currentZone = localMember?.sceneZone ?? "gameDesk1";
 
       if (snapshot.gameName) {
-        const gameZone = currentZone.startsWith("gameDesk") ? currentZone : "gameDesk1";
-        moveLocalMemberRef.current(gameZone, "gaming", snapshot.gameName);
+        if (currentZone === "restroomZone") {
+          moveLocalMemberRef.current("restroomZone", "restroom", snapshot.gameName);
+        } else {
+          const gameZone = currentZone.startsWith("gameDesk") ? currentZone : "gameDesk1";
+          moveLocalMemberRef.current(gameZone, "gaming", snapshot.gameName);
+        }
       } else if (previousGame) {
-        moveLocalMemberRef.current(currentZone, "idle");
+        moveLocalMemberRef.current(
+          currentZone,
+          currentZone === "restroomZone" ? "restroom" : "idle",
+        );
       }
     };
 
@@ -525,42 +602,6 @@ export const RoomPage = () => {
     await sendChatMessage(content);
     playUiSound("send-message");
     if (content === chatInput) setChatInput("");
-
-    if (shouldCallLLM(content) && !isLLMLoading) {
-      setIsLLMLoading(true);
-      const { addChatMessage } = useRoomStore.getState();
-      const placeholderId = "llm-thinking-" + Date.now();
-
-      addChatMessage({
-        id: placeholderId,
-        peerId: "llm-assistant",
-        nickname: "上号",
-        content: "上号正在想…",
-        createdAt: new Date().toISOString(),
-        isLocal: false,
-        kind: "chat",
-        isBot: true,
-      });
-
-      try {
-        const reply = await chatWithLLM(content, llmHistoryRef.current);
-        llmHistoryRef.current.push(
-          { role: "user", content },
-          { role: "assistant", content: reply },
-        );
-        if (llmHistoryRef.current.length > 20) {
-          llmHistoryRef.current.splice(0, llmHistoryRef.current.length - 20);
-        }
-
-        const { replaceChatMessage } = useRoomStore.getState();
-        replaceChatMessage(placeholderId, reply);
-      } catch {
-        const { replaceChatMessage } = useRoomStore.getState();
-        replaceChatMessage(placeholderId, "助手没接通，稍后再试。");
-      } finally {
-        setIsLLMLoading(false);
-      }
-    }
   };
 
   const knock = async () => {
@@ -582,10 +623,7 @@ export const RoomPage = () => {
       if (recordingStatus.state === RecordingState.Recording) {
         const result = await stopRecording();
         if (recordingMarkers.length) {
-          await window.desktopApi.recording.saveMarkers(
-            result.filePath,
-            recordingMarkers,
-          );
+          await window.desktopApi.recording.saveMarkers(result.filePath, recordingMarkers);
         }
         clearRecordingMarkers();
         playUiSound("record-stop");
@@ -605,10 +643,12 @@ export const RoomPage = () => {
     await leaveRoom();
   };
 
-  const startSharingScreen = async () => {
+  const startSharingScreen = async (sourceId: string) => {
     let requestedStream: MediaStream | undefined;
     setIsScreenShareStarting(true);
     try {
+      await window.desktopApi.screenCapture.selectSource(sourceId);
+      setIsScreenSourcePickerOpen(false);
       const quality = settings?.screenShareQuality ?? "smooth";
       const profile = SCREEN_SHARE_PROFILES[quality];
       const stream = await navigator.mediaDevices.getDisplayMedia({
@@ -686,6 +726,32 @@ export const RoomPage = () => {
     }
   };
 
+  const openScreenSourcePicker = async () => {
+    setIsScreenShareStarting(true);
+    try {
+      const sources = await window.desktopApi.screenCapture.listSources();
+      if (!sources.length) {
+        throw new Error("screen_source_missing");
+      }
+      setScreenCaptureSources(sources);
+      setIsScreenSourcePickerOpen(true);
+    } catch (error) {
+      await window.desktopApi.app.writeLog({
+        category: "webrtc",
+        level: "error",
+        message: "Failed to enumerate screen capture sources",
+        context: { error: error instanceof Error ? error.message : String(error) },
+      });
+      pushToast({
+        tone: "danger",
+        title: "没有找到可分享的画面",
+        description: "请确认 Windows 允许上号进行屏幕捕获后重试。",
+      });
+    } finally {
+      setIsScreenShareStarting(false);
+    }
+  };
+
   const stopSharingScreen = async () => {
     screenShareStoppingRef.current = true;
     try {
@@ -721,9 +787,46 @@ export const RoomPage = () => {
   const handleZoneSelect = (zone: SceneZoneId, activity: MemberActivity) => {
     if (isSeatZone(zone)) {
       lastSeatZoneRef.current = zone;
-      lastSpokeAtRef.current = Date.now();
+      const wasAway = awaySessionRef.current || localMember?.sceneZone === "restroomZone";
+      awaySessionRef.current = undefined;
+      if (wasAway && !isDeafened) setMuted(false);
+      if (wasAway) {
+        void window.desktopApi.app.writeLog({
+          category: "app",
+          level: "info",
+          message: "manual_return",
+          context: { seat: zone },
+        });
+      }
+    } else if (zone === "restroomZone") {
+      awaySessionRef.current = {
+        method: "manual",
+        seat: lastSeatZoneRef.current,
+        activity: localMember?.activity ?? "idle",
+        gameName: localMember?.gameName,
+        enteredAt: new Date().toISOString(),
+      };
+      setMuted(true);
+      void window.desktopApi.app.writeLog({
+        category: "app",
+        level: "info",
+        message: "manual_away",
+        context: { seat: lastSeatZoneRef.current },
+      });
     }
     moveLocalMember(zone, activity);
+  };
+
+  const handleToggleMicrophone = () => {
+    if (isDeafened && isMuted) {
+      pushToast({
+        tone: "warning",
+        title: "先打开扬声器后才能开麦。",
+        description: "关闭扬声器时会同时关闭麦克风。",
+      });
+      return;
+    }
+    toggleMicrophone();
   };
 
   return (
@@ -743,9 +846,8 @@ export const RoomPage = () => {
             members={room.members}
             onZoneSelect={handleZoneSelect}
             onReact={(targetPeerId, emoji) => void sendSceneReaction(targetPeerId, emoji)}
+            onVolumeChange={setMemberVolume}
             reactions={sceneReactions}
-            roomNote={room.roomNote}
-            onRoomNoteChange={(content) => void updateRoomNote(content)}
             knockPulse={chatMessages.filter((message) => message.kind === "system").length}
             reduceMotion={settings?.reduceMotion ?? false}
           />
@@ -754,6 +856,12 @@ export const RoomPage = () => {
             onStopLocalShare={() => void stopSharingScreen()}
             isExpanded={isScreenShareExpanded}
             onToggleExpanded={() => setIsScreenShareExpanded((current) => !current)}
+            fitMode={settings?.screenShareFitMode ?? "contain"}
+            onToggleFitMode={() =>
+              void saveSettings({
+                screenShareFitMode: settings?.screenShareFitMode === "cover" ? "contain" : "cover",
+              })
+            }
           />
         </section>
         <div data-gsap-room="chat" className="min-h-0">
@@ -771,9 +879,56 @@ export const RoomPage = () => {
         </div>
       </main>
 
-      <footer ref={voicePulseRef} data-gsap-room="dock" className="voice-dock flex items-center gap-2 px-3 py-2.5">
+      {isScreenSourcePickerOpen ? (
+        <div
+          className="screen-source-picker-backdrop"
+          role="dialog"
+          aria-modal="true"
+          aria-label="选择要分享的画面"
+          onPointerDown={(event) => {
+            if (event.target === event.currentTarget) setIsScreenSourcePickerOpen(false);
+          }}
+        >
+          <section className="screen-source-picker-panel">
+            <header>
+              <div>
+                <h2>分享哪个画面？</h2>
+                <p>选择显示器或窗口。分享系统声音时请保持“系统音频”设置开启。</p>
+              </div>
+              <Button variant="ghost" onClick={() => setIsScreenSourcePickerOpen(false)}>
+                取消
+              </Button>
+            </header>
+            <div className="screen-source-picker-grid">
+              {screenCaptureSources.map((source) => (
+                <button
+                  key={source.id}
+                  type="button"
+                  className="screen-source-picker-item"
+                  onClick={() => void startSharingScreen(source.id)}
+                >
+                  <span className="screen-source-thumbnail">
+                    <img src={source.thumbnailDataUrl} alt="" draggable={false} />
+                  </span>
+                  <span className="screen-source-name">
+                    {source.appIconDataUrl ? <img src={source.appIconDataUrl} alt="" /> : null}
+                    <span>{source.name}</span>
+                    <small>{source.kind === "screen" ? "显示器" : "窗口"}</small>
+                  </span>
+                </button>
+              ))}
+            </div>
+          </section>
+        </div>
+      ) : null}
+
+      <footer
+        ref={voicePulseRef}
+        data-gsap-room="dock"
+        className="voice-dock flex items-center gap-2 px-3 py-2.5"
+      >
         <span data-gsap-voice="primary" className="inline-flex">
-          <MuteButton isMuted={isMuted} onClick={toggleMute} />
+          <MuteButton isMuted={isMuted} onClick={handleToggleMicrophone} />
         </span>
         <Button
           variant={isDeafened ? "danger" : "ghost"}
@@ -795,7 +950,9 @@ export const RoomPage = () => {
           >
             <option value="">默认麦克风</option>
             {inputDevices.map((device) => (
-              <option key={device.id} value={device.id}>{device.label || "麦克风"}</option>
+              <option key={device.id} value={device.id}>
+                {device.label || "麦克风"}
+              </option>
             ))}
           </select>
         </label>
@@ -807,7 +964,9 @@ export const RoomPage = () => {
           >
             <option value="">默认扬声器</option>
             {outputDevices.map((device) => (
-              <option key={device.id} value={device.id}>{device.label || "扬声器"}</option>
+              <option key={device.id} value={device.id}>
+                {device.label || "扬声器"}
+              </option>
             ))}
           </select>
         </label>
@@ -847,16 +1006,12 @@ export const RoomPage = () => {
               void stopSharingScreen();
               return;
             }
-            void startSharingScreen();
+            void openScreenSourcePicker();
           }}
         >
           <MonitorUp className="h-4 w-4" />
           <span className="voice-action-label">
-            {isScreenShareStarting
-              ? "正在开启…"
-              : localScreenShareStream
-                ? "正在分享"
-                : "屏幕分享"}
+            {isScreenShareStarting ? "正在开启…" : localScreenShareStream ? "正在分享" : "屏幕分享"}
           </span>
         </Button>
         <Button
@@ -879,7 +1034,6 @@ export const RoomPage = () => {
           <span className="voice-action-label">退出</span>
         </Button>
       </footer>
-
     </div>
   );
 };

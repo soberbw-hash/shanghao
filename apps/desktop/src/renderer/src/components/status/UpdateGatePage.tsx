@@ -1,12 +1,10 @@
-import { Download, RefreshCcw, CheckCircle, AlertCircle } from "lucide-react";
+import { Download, RefreshCcw, AlertCircle } from "lucide-react";
 
 import brandMarkUrl from "../../assets/brand-mark.svg";
 import { Button } from "../base/Button";
-import { useAppStore } from "../../store/appStore";
 import { useSettingsStore } from "../../store/settingsStore";
 
 export const UpdateGatePage = () => {
-  const dismissUpdateGate = useAppStore((state) => state.dismissUpdateGate);
   const updateInfo = useSettingsStore((state) => state.updateInfo);
   const updateStatus = useSettingsStore((state) => state.updateStatus);
   const downloadUpdate = useSettingsStore((state) => state.downloadUpdate);
@@ -15,7 +13,6 @@ export const UpdateGatePage = () => {
   const latestVersion = updateInfo?.latestVersion ?? updateStatus.latestVersion ?? "";
   const isForced = Boolean(updateInfo?.forceUpdate || updateStatus.forceUpdate);
   const isDownloading = updateStatus.phase === "downloading";
-  const isDownloaded = updateStatus.phase === "downloaded";
   const isInstalling = updateStatus.phase === "installing";
   const isError = updateStatus.phase === "error";
 
@@ -32,7 +29,13 @@ export const UpdateGatePage = () => {
         </div>
 
         <div className="mt-5 text-center text-xs font-semibold tracking-[0.18em] text-[#7B8798]">
-          {isInstalling ? "正在安装" : isDownloading ? "正在更新" : isForced ? "需要更新" : "发现新版"}
+          {isInstalling
+            ? "正在安装"
+            : isDownloading
+              ? "正在更新"
+              : isForced
+                ? "需要更新"
+                : "发现新版"}
         </div>
         <h2 className="mt-2 text-center text-[28px] font-[740] tracking-[-0.04em] text-[#172033]">
           上号 {latestVersion}
@@ -55,8 +58,10 @@ export const UpdateGatePage = () => {
             </div>
             <div className="h-2 overflow-hidden rounded-full bg-[#edf2f8]">
               <div
-                className="h-full rounded-full bg-[#4DA3FF] transition-[width] duration-300"
-                style={{ width: `${updateStatus.percent ?? 0}%` }}
+                className="h-full origin-left rounded-full bg-[#4DA3FF] transition-transform duration-300"
+                style={{
+                  transform: `scaleX(${Math.max(0, Math.min(1, (updateStatus.percent ?? 0) / 100))})`,
+                }}
               />
             </div>
           </div>
@@ -82,11 +87,7 @@ export const UpdateGatePage = () => {
           </div>
         ) : (
           <div className="mt-6">
-            <Button
-              isFullWidth
-              disabled={isDownloading}
-              onClick={() => void downloadUpdate()}
-            >
+            <Button isFullWidth disabled={isDownloading} onClick={() => void downloadUpdate()}>
               <Download className="h-4 w-4" />
               {isDownloading ? "正在更新…" : "立即更新"}
             </Button>

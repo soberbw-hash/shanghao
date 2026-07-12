@@ -1,4 +1,4 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import { app } from "electron";
@@ -18,35 +18,40 @@ export class SettingsStore {
   constructor(private readonly writeLog?: (payload: RendererLogPayload) => Promise<void>) {}
 
   async load(): Promise<AppSettings> {
-    try {
-      const fileContent = await readFile(this.filePath, "utf8");
-      const parsed = JSON.parse(this.stripBom(fileContent)) as RawSettings;
-      const { settings, migrated, previousVersion } = migrateSettings(parsed);
-      if (migrated) {
-        await writeFile(this.backupFilePath, this.stripBom(fileContent), { encoding: "utf8" });
-        await clearAvatarImage(parsed.avatarPath);
+    const candidates = [this.filePath, this.backupFilePath];
+    for (const candidate of candidates) {
+      try {
+        const fileContent = await readFile(candidate, "utf8");
+        const parsed = JSON.parse(this.stripBom(fileContent)) as RawSettings;
+        const { settings, migrated, previousVersion } = migrateSettings(parsed);
+        this.cachedSettings = settings;
+        await this.persist(this.cachedSettings, candidate === this.filePath);
+        if (migrated) await clearAvatarImage(parsed.avatarPath);
+        await this.log("info", "settings loaded", {
+          source: candidate === this.filePath ? "primary" : "backup",
+          schemaVersion: settings.settingsSchemaVersion,
+          previousVersion,
+          migrated,
+          avatarId: settings.avatarId,
+          profileSchemaVersion: settings.profileSchemaVersion,
+          profileReady: settings.hasCompletedProfileSetup,
+          serverConfigured: Boolean(settings.relayServerUrl?.trim()),
+        });
+        return this.cachedSettings;
+      } catch (error) {
+        await this.log("warn", "settings candidate failed", {
+          source: candidate === this.filePath ? "primary" : "backup",
+          error: error instanceof Error ? error.message : String(error),
+        });
       }
-      this.cachedSettings = settings;
-      await this.persist(this.cachedSettings);
-      await this.log("info", "settings loaded", {
-        schemaVersion: settings.settingsSchemaVersion,
-        previousVersion,
-        migrated,
-        avatarId: settings.avatarId,
-        profileSchemaVersion: settings.profileSchemaVersion,
-        profileReady: settings.hasCompletedProfileSetup,
-        serverConfigured: Boolean(settings.relayServerUrl?.trim()),
-      });
-      return this.cachedSettings;
-    } catch (error) {
-      this.cachedSettings = defaultSettings;
-      await this.persist(defaultSettings);
-      await this.log("warn", "settings fallback", {
-        error: error instanceof Error ? error.message : String(error),
-        schemaVersion: defaultSettings.settingsSchemaVersion,
-      });
-      return this.cachedSettings;
     }
+
+    this.cachedSettings = structuredClone(defaultSettings);
+    await this.persist(this.cachedSettings, false);
+    await this.log("warn", "settings safe defaults restored", {
+      schemaVersion: defaultSettings.settingsSchemaVersion,
+    });
+    return this.cachedSettings;
   }
 
   getSnapshot(): AppSettings {
@@ -63,13 +68,12 @@ export class SettingsStore {
     await this.log("info", "settings saved", {
       schemaVersion: this.cachedSettings.settingsSchemaVersion,
       avatarId: this.cachedSettings.avatarId,
-      nickname: this.cachedSettings.nickname,
       serverConfigured: Boolean(this.cachedSettings.relayServerUrl?.trim()),
       preferredSampleRate: this.cachedSettings.preferredSampleRate,
       micMonitorMode: this.cachedSettings.micMonitorMode,
       inputLevelThreshold: this.cachedSettings.inputLevelThreshold,
       micEqualizerGains: this.cachedSettings.micEqualizerGains,
-      isLowCutEnabled: this.cachedSettings.isLowCutEnabled,
+      lowCutFrequency: this.cachedSettings.lowCutFrequency,
       isHardwareAccelerationEnabled: this.cachedSettings.isHardwareAccelerationEnabled,
       isOverlayEnabled: this.cachedSettings.isOverlayEnabled,
     });
@@ -90,11 +94,17 @@ export class SettingsStore {
     return value.startsWith(SETTINGS_BOM) ? value.slice(1) : value;
   }
 
-  private async persist(settings: AppSettings): Promise<void> {
+  private async persist(settings: AppSettings, backupExisting = true): Promise<void> {
     await mkdir(path.dirname(this.filePath), { recursive: true });
-    await writeFile(this.filePath, JSON.stringify(settings, null, 2), {
+    const temporaryPath = `${this.filePath}.${process.pid}.${Date.now()}.tmp`;
+    await writeFile(temporaryPath, JSON.stringify(settings, null, 2), {
       encoding: "utf8",
+      flag: "wx",
     });
+    if (backupExisting) {
+      await copyFile(this.filePath, this.backupFilePath).catch(() => undefined);
+    }
+    await rename(temporaryPath, this.filePath);
   }
 
   private async log(

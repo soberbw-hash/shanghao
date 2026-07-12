@@ -1,8 +1,4 @@
-import {
-  AudioDeviceState,
-  MicPermissionState,
-  PushToTalkState,
-} from "../enums/app.enums";
+import { AudioDeviceState, MicPermissionState, PushToTalkState } from "../enums/app.enums";
 
 export type AudioDeviceKind = "audioinput" | "audiooutput";
 
@@ -36,5 +32,9 @@ export interface LocalAudioDiagnostics {
   echoCancellation?: boolean;
   noiseSuppression?: boolean;
   autoGainControl?: boolean;
+  noiseProcessor?: "rnnoise_active" | "browser_fallback" | "bypass";
+  processorOverruns?: number;
+  averageProcessingMs?: number;
+  maxProcessingMs?: number;
   permissionState: MicPermissionState;
 }

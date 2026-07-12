@@ -2,23 +2,51 @@ import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 const sampleRate = 44_100;
-const outputDirectory = path.resolve(
-  "apps/desktop/src/renderer/src/assets/sounds",
-);
+const outputDirectory = path.resolve("apps/desktop/src/renderer/src/assets/sounds");
 
 const sounds = {
   "button-click": [[720, 55]],
-  "enter-room": [[523, 80], [659, 95]],
-  "leave-room": [[523, 75], [392, 110]],
-  "knock-bell": [[784, 80], [988, 120]],
-  "popup-open": [[660, 60], [880, 80]],
-  "copy-success": [[740, 55], [988, 80]],
-  "device-switch": [[560, 60], [700, 75]],
+  "enter-room": [
+    [523, 80],
+    [659, 95],
+  ],
+  "leave-room": [
+    [523, 75],
+    [392, 110],
+  ],
+  "knock-bell": [
+    [784, 80],
+    [988, 120],
+  ],
+  "popup-open": [
+    [660, 60],
+    [880, 80],
+  ],
+  "copy-success": [
+    [740, 55],
+    [988, 80],
+  ],
+  "device-switch": [
+    [560, 60],
+    [700, 75],
+  ],
   "send-message": [[760, 70]],
-  "receive-message": [[620, 55], [820, 65]],
-  "connection-restored": [[659, 70], [784, 90]],
-  "connection-failed": [[440, 90], [349, 140]],
-  "mic-error": [[320, 100], [270, 160]],
+  "receive-message": [
+    [620, 55],
+    [820, 65],
+  ],
+  "connection-restored": [
+    [659, 70],
+    [784, 90],
+  ],
+  "connection-failed": [
+    [440, 90],
+    [349, 140],
+  ],
+  "mic-error": [
+    [320, 100],
+    [270, 160],
+  ],
   "record-start": [[650, 95]],
   "record-stop": [[420, 110]],
   "mic-on": [[660, 90]],

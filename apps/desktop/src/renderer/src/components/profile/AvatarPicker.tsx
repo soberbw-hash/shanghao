@@ -27,13 +27,16 @@ export const CharacterPicker = ({
             key={avatar.id}
             type="button"
             className={`relative rounded-full p-1.5 transition-[transform,opacity,background-color] duration-150 ${
-              isSelected
-                ? "bg-[#EAF4FF]"
-                : "hover:bg-[#f5f7fb] opacity-60 hover:opacity-100"
+              isSelected ? "bg-[#EAF4FF]" : "hover:bg-[#f5f7fb] opacity-60 hover:opacity-100"
             }`}
             onClick={() => onChange(avatar.id)}
           >
-            <img src={avatar.src} alt="" className="h-[58px] w-[58px] object-contain" draggable={false} />
+            <img
+              src={avatar.src}
+              alt=""
+              className="h-[58px] w-[58px] object-contain"
+              draggable={false}
+            />
             {isSelected && (
               <span className="absolute -bottom-0.5 left-1/2 -translate-x-1/2 h-1 w-1 rounded-full bg-[#4DA3FF]" />
             )}

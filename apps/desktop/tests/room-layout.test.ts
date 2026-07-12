@@ -12,9 +12,18 @@ const overlayPagePath = path.resolve(process.cwd(), "src/renderer/src/pages/Over
 const mainWindowPath = path.resolve(process.cwd(), "src/main/window.ts");
 const rendererMainPath = path.resolve(process.cwd(), "src/renderer/src/main.tsx");
 const stylesPath = path.resolve(process.cwd(), "src/renderer/src/styles/index.css");
-const chatPanelPath = path.resolve(process.cwd(), "src/renderer/src/components/chat/TemporaryChatPanel.tsx");
-const teamIslandPath = path.resolve(process.cwd(), "src/renderer/src/components/room/TeamIsland.tsx");
-const sceneZonesPath = path.resolve(process.cwd(), "src/renderer/src/features/voice-scene/sceneZones.ts");
+const chatPanelPath = path.resolve(
+  process.cwd(),
+  "src/renderer/src/components/chat/TemporaryChatPanel.tsx",
+);
+const teamIslandPath = path.resolve(
+  process.cwd(),
+  "src/renderer/src/components/room/TeamIsland.tsx",
+);
+const sceneZonesPath = path.resolve(
+  process.cwd(),
+  "src/renderer/src/features/voice-scene/sceneZones.ts",
+);
 const sharedOverlaysPath = path.resolve(process.cwd(), "src/renderer/src/pages/SharedOverlays.tsx");
 const installerPath = path.resolve(process.cwd(), "electron-builder.yml");
 const appPath = path.resolve(process.cwd(), "src/renderer/src/app/App.tsx");
@@ -152,9 +161,18 @@ test("client-side scene arbitration keeps duplicate member seats visually unique
 
 test("screen sharing is wired through the room page and WebRTC peer layer", () => {
   const roomSource = readFileSync(roomPagePath, "utf8");
-  const hookSource = readFileSync(path.resolve(process.cwd(), "src/renderer/src/hooks/useRoomState.ts"), "utf8");
-  const clientSource = readFileSync(path.resolve(process.cwd(), "src/renderer/src/features/room/roomClient.ts"), "utf8");
-  const peerSource = readFileSync(path.resolve(process.cwd(), "../../packages/webrtc/src/createPeer.ts"), "utf8");
+  const hookSource = readFileSync(
+    path.resolve(process.cwd(), "src/renderer/src/hooks/useRoomState.ts"),
+    "utf8",
+  );
+  const clientSource = readFileSync(
+    path.resolve(process.cwd(), "src/renderer/src/features/room/roomClient.ts"),
+    "utf8",
+  );
+  const peerSource = readFileSync(
+    path.resolve(process.cwd(), "../../packages/webrtc/src/createPeer.ts"),
+    "utf8",
+  );
   const stylesSource = readFileSync(stylesPath, "utf8");
   const mainWindowSource = readFileSync(mainWindowPath, "utf8");
 
@@ -190,7 +208,8 @@ test("room scene supports clickable seats and silent-away without daily summarie
   assert.equal(teamIslandSource.includes("onZoneSelect?.(zone.id, zone.activity)"), true);
   assert.equal(teamIslandSource.includes("disabled={"), true);
   assert.equal(teamIslandSource.includes("DeskAnimalSprite"), true);
-  assert.equal(roomSource.includes("5 * 60_000"), true);
+  assert.equal(roomSource.includes("decideAutoAway"), true);
+  assert.equal(roomSource.includes("lastSpokeAtRef"), false);
   assert.equal(roomSource.includes('moveLocalMemberRef.current("restroomZone", "restroom")'), true);
   assert.equal(roomSource.includes("recordDailySession"), false);
   assert.equal(homeSource.includes("今日开黑小结"), false);
@@ -207,7 +226,12 @@ test("entering a channel does not replay the whole home entrance animation", () 
   assert.equal(homeSource.includes("[reduceMotion, settings]"), false);
   assert.equal(homeSource.includes("const [isSubmitting, setIsSubmitting]"), true);
   assert.equal(homeSource.includes("hasSavedEntry"), true);
-  assert.equal(homeSource.includes("今晚也一起？"), true);
+  assert.equal(homeSource.includes("今晚也一起？"), false);
+  assert.equal(homeSource.includes("固定频道已准备好"), false);
+  assert.equal(homeSource.includes("欢迎回来"), false);
+  assert.equal(homeSource.includes("更换昵称或服务器"), true);
+  assert.equal(homeSource.includes("testServer"), true);
+  assert.equal(homeSource.includes("normalizeRelayServerUrl"), true);
   assert.equal(appSource.includes("const roomPagePromise = loadRoomPage()"), true);
   assert.equal(roomSource.includes("{ autoAlpha: 0.94, y: 5 }"), true);
   assert.equal(roomSource.includes("[data-gsap-room='island']"), false);

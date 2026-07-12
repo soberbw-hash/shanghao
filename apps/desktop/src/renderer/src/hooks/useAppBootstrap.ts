@@ -32,9 +32,7 @@ export const useAppBootstrap = (): void => {
   const hydrate = useSettingsStore((state) => state.hydrate);
   const settings = useSettingsStore((state) => state.settings);
   const refreshDevices = useAudioStore((state) => state.refreshDevices);
-  const setNoiseSuppressionEnabled = useAudioStore(
-    (state) => state.setNoiseSuppressionEnabled,
-  );
+  const setNoiseSuppressionEnabled = useAudioStore((state) => state.setNoiseSuppressionEnabled);
   const setPushToTalkEnabled = useAudioStore((state) => state.setPushToTalkEnabled);
   const beginBootstrap = useAppStore((state) => state.beginBootstrap);
   const completeBootstrap = useAppStore((state) => state.completeBootstrap);
@@ -97,14 +95,59 @@ export const useAppBootstrap = (): void => {
     void bootstrap();
 
     const handleDeviceChange = () => {
-      void refreshDevices();
+      void (async () => {
+        const previousSettings = useSettingsStore.getState().settings;
+        await refreshDevices();
+        if (!previousSettings) return;
+
+        const { inputDevices, outputDevices } = useAudioStore.getState();
+        const patch: {
+          preferredInputDeviceId?: undefined;
+          preferredOutputDeviceId?: undefined;
+        } = {};
+        const missingInput =
+          Boolean(previousSettings.preferredInputDeviceId) &&
+          !inputDevices.some((device) => device.id === previousSettings.preferredInputDeviceId);
+        const missingOutput =
+          Boolean(previousSettings.preferredOutputDeviceId) &&
+          !outputDevices.some((device) => device.id === previousSettings.preferredOutputDeviceId);
+
+        if (missingInput) patch.preferredInputDeviceId = undefined;
+        if (missingOutput) patch.preferredOutputDeviceId = undefined;
+        if (!missingInput && !missingOutput) return;
+
+        await useSettingsStore.getState().saveSettings(patch);
+        useAppStore.getState().pushToast({
+          tone: "warning",
+          title: "音频设备已断开",
+          description:
+            missingInput && missingOutput
+              ? "输入和输出设备已切回系统默认。"
+              : missingInput
+                ? "麦克风已切回系统默认。"
+                : "扬声器已切回系统默认。",
+        });
+        await writeRendererLog("devices", "warn", "Preferred audio device disappeared", {
+          missingInput,
+          missingOutput,
+        });
+      })();
     };
 
     navigator.mediaDevices?.addEventListener("devicechange", handleDeviceChange);
+    const handleAudioProcessorFallback = () => {
+      useAppStore.getState().pushToast({
+        tone: "warning",
+        title: "设备负载较高，已切换为基础降噪",
+        description: "麦克风会继续正常传输。",
+      });
+    };
+    window.addEventListener("shanghao:audio-processor-fallback", handleAudioProcessorFallback);
 
     return () => {
       isDisposed = true;
       navigator.mediaDevices?.removeEventListener("devicechange", handleDeviceChange);
+      window.removeEventListener("shanghao:audio-processor-fallback", handleAudioProcessorFallback);
     };
   }, [
     beginBootstrap,

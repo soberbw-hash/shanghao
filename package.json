@@ -1,20 +1,26 @@
 {
   "name": "shanghao-workspace",
-  "version": "0.1.49",
+  "version": "0.1.50",
   "private": true,
   "packageManager": "pnpm@10.0.0",
   "scripts": {
     "dev": "corepack pnpm --dir apps/desktop dev",
     "build": "corepack pnpm -r --filter @private-voice/shared --filter @private-voice/ui --filter @private-voice/signaling --filter @private-voice/webrtc --filter @private-voice/recording --filter shanghao-desktop run build",
     "typecheck": "corepack pnpm -r --filter @private-voice/shared --filter @private-voice/ui --filter @private-voice/signaling --filter @private-voice/webrtc --filter @private-voice/recording --filter shanghao-desktop run typecheck",
-    "lint": "corepack pnpm -r --filter @private-voice/shared --filter @private-voice/ui --filter @private-voice/signaling --filter @private-voice/webrtc --filter @private-voice/recording --filter shanghao-desktop run lint",
+    "lint": "eslint . --max-warnings=0 && corepack pnpm format:check",
+    "format": "prettier --no-error-on-unmatched-pattern --write \"apps/**/*.{ts,tsx,css}\" \"packages/**/src/**/*.{ts,tsx}\" \"scripts/*.{mjs,cjs,js}\" \"docs/**/*.md\" \"deploy/**/*.{md,yml,yaml}\" \"*.{json,md,mjs}\" \".github/**/*.{yml,yaml}\"",
+    "format:check": "prettier --no-error-on-unmatched-pattern --check \"apps/**/*.{ts,tsx,css}\" \"packages/**/src/**/*.{ts,tsx}\" \"scripts/*.{mjs,cjs,js}\" \"docs/**/*.md\" \"deploy/**/*.{md,yml,yaml}\" \"*.{json,md,mjs}\" \".github/**/*.{yml,yaml}\"",
+    "test": "corepack pnpm --dir apps/desktop test:smoke",
     "dist": "corepack pnpm --filter shanghao-desktop dist",
     "dist:win": "corepack pnpm --filter shanghao-desktop dist:win",
     "dist:mac": "corepack pnpm --filter shanghao-desktop dist:mac",
     "dist:mac:x64": "corepack pnpm --filter shanghao-desktop dist:mac:x64",
     "dist:mac:arm64": "corepack pnpm --filter shanghao-desktop dist:mac:arm64",
     "clean": "node scripts/clean.mjs",
-    "release": "corepack pnpm typecheck && corepack pnpm --dir apps/desktop test:smoke && corepack pnpm dist",
+    "release": "corepack pnpm lint && corepack pnpm typecheck && corepack pnpm test && corepack pnpm test:three-peer-audio && corepack pnpm build && corepack pnpm dist:win",
+    "release:verify": "node scripts/verify-release-metadata.mjs",
+    "release:verify-package": "node scripts/verify-packaged-runtime.mjs",
+    "release:checksums": "node scripts/generate-checksums.mjs",
     "relay": "corepack pnpm relay:start",
     "relay:dev": "corepack pnpm relay:build && node --watch scripts/start-relay.mjs",
     "relay:build": "corepack pnpm --filter @private-voice/shared build && corepack pnpm --filter @private-voice/signaling build",
@@ -33,7 +39,16 @@
     ]
   },
   "devDependencies": {
+    "@electron/asar": "3.4.1",
+    "@eslint/js": "10.0.1",
+    "eslint": "10.7.0",
+    "eslint-plugin-promise": "7.3.0",
+    "eslint-plugin-react-hooks": "7.1.1",
+    "eslint-plugin-security": "4.0.1",
+    "globals": "16.5.0",
+    "prettier": "3.9.5",
     "turbo": "^2.5.0",
-    "typescript": "^5.8.3"
+    "typescript": "^5.8.3",
+    "typescript-eslint": "8.63.0"
   }
 }

@@ -28,25 +28,19 @@
 
 在 [GitHub Releases](https://github.com/soberbw-hash/shanghao/releases) 下载 Windows 安装包：`ShangHao-版本-Setup-x64.exe`。
 
-## 部署固定频道
+## 一键部署固定频道
 
 ```bash
-corepack enable
-corepack pnpm install --frozen-lockfile
-copy .env.example .env
-corepack pnpm relay:start
+sudo SHANGHAO_DOMAIN=voice.example.com bash scripts/deploy-relay-ubuntu.sh
 ```
 
-`.env` 示例：
+脚本会使用独立 `shanghao` 用户运行服务、保留已有 `.env`、持久化最近 100 条普通聊天，并配置 systemd 安全限制。提供域名时会自动配置 Caddy，客户端填写：
 
-```dotenv
-PORT=43821
-ROOM_NAME=ShangHao
-TURN_URLS=turn:服务器公网IP:3478?transport=udp,turn:服务器公网IP:3478?transport=tcp
-TURN_SHARED_SECRET=使用随机生成的长密钥
+```text
+wss://voice.example.com/?token=服务器生成的RELAY_ACCESS_TOKEN
 ```
 
-`TURN_SHARED_SECRET` 只保存在服务器上，不会下发给客户端；客户端只收到有有效期的临时凭据。公网长期使用建议通过域名和 TLS 暴露为 `wss://voice.example.com`。
+`RELAY_ACCESS_TOKEN` 和 `TURN_SHARED_SECRET` 只保存在服务器；日志与诊断包不会输出它们。公网裸 `ws://` 只用于临时测试。
 
 详细步骤见 [部署固定频道](./docs/deploy-relay-server.md) 与 [部署 TURN](./docs/deploy-turn.md)。
 

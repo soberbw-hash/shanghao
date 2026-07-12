@@ -13,33 +13,51 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.0.0
+          run_install: false
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - run: corepack enable
-      - run: corepack prepare pnpm@10.0.0 --activate
+          cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - shell: bash
+        run: bash -n scripts/deploy-relay-ubuntu.sh
+      - run: pnpm release:verify
+      - run: pnpm lint
       - run: pnpm typecheck
-      - run: pnpm --dir apps/desktop test:smoke
+      - run: pnpm test
       - run: pnpm test:three-peer-audio
+      - run: pnpm build
       - run: pnpm dist:win
+      - run: pnpm release:verify-package
+      - run: pnpm release:checksums
       - uses: actions/upload-artifact@v4
         with:
-          name: windows
+          name: windows-v0.1.50
+          if-no-files-found: error
           path: |
             apps/desktop/release/*.exe
             apps/desktop/release/*.blockmap
             apps/desktop/release/latest*.yml
+            apps/desktop/release/SHA256SUMS.txt
 
   publish:
     needs: [windows]
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
           path: artifacts
           merge-multiple: true
       - uses: softprops/action-gh-release@v2
         with:
-          files: artifacts/*
-          generate_release_notes: true
+          body_path: docs/release-notes/v0.1.50.md
+          fail_on_unmatched_files: true
+          files: |
+            artifacts/*.exe
+            artifacts/*.blockmap
+            artifacts/latest*.yml
+            artifacts/SHA256SUMS.txt

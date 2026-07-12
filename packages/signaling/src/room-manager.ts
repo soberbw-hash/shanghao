@@ -4,7 +4,6 @@ import {
   HEARTBEAT_INTERVAL_MS,
   MAX_ROOM_MEMBERS,
   SIGNALING_PING_TIMEOUT_MS,
-  type RoomNote,
 } from "@private-voice/shared";
 
 import type { PeerSession } from "./peer-manager";
@@ -18,11 +17,14 @@ export interface SignalingRoom {
   appVersion: string;
   protocolVersion: string;
   buildNumber: string;
-  roomNote?: RoomNote;
 }
 
 export class RoomManager {
   private readonly rooms = new Map<string, SignalingRoom>();
+  private readonly maxRoomMembers = Math.min(
+    MAX_ROOM_MEMBERS,
+    Math.max(2, Number(process.env.MAX_ROOM_MEMBERS ?? MAX_ROOM_MEMBERS) || MAX_ROOM_MEMBERS),
+  );
 
   getOrCreateRoom(roomId: string, roomName: string): SignalingRoom {
     const existing = this.rooms.get(roomId);
@@ -58,6 +60,10 @@ export class RoomManager {
     };
   }
 
+  getMaxRoomMembers(): number {
+    return this.maxRoomMembers;
+  }
+
   addPeer(roomId: string, roomName: string, session: PeerSession): SignalingRoom {
     const room = this.getOrCreateRoom(roomId, roomName);
     room.peers.addPeer(session);
@@ -86,7 +92,7 @@ export class RoomManager {
       return true;
     }
 
-    return room.peers.listPeers().length < MAX_ROOM_MEMBERS;
+    return room.peers.listPeers().length < this.maxRoomMembers;
   }
 
   collectStalePeers(): Array<{ roomId: string; peerId: string }> {

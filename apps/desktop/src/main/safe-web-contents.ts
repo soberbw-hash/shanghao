@@ -13,10 +13,7 @@ export const sendToWindow = (
     window.webContents.send(channel, ...args);
     return true;
   } catch (error) {
-    if (
-      error instanceof Error &&
-      /destroyed/i.test(error.message)
-    ) {
+    if (error instanceof Error && /destroyed/i.test(error.message)) {
       return false;
     }
     throw error;

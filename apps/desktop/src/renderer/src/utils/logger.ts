@@ -11,6 +11,6 @@ export const writeRendererLog = async (
   try {
     await desktopApi.app.writeLog({ category, level, message, context });
   } catch {
-    console[level === "debug" ? "log" : level](message, context);
+    // Logging must never interrupt the renderer or expose context to DevTools.
   }
 };

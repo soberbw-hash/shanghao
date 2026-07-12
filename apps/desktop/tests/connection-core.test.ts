@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import test from "node:test";
 
@@ -22,7 +22,10 @@ test("room client marks webrtc ready from connection state instead of remote str
 
   assert.equal(source.includes('if (state === "connected")'), true);
   assert.equal(source.includes("this.webrtcReadyPeerIds.add(targetPeerId)"), true);
-  assert.equal(source.includes('this.audioRelay?.markPeerPath(targetPeerId, "webrtc", "webrtc_connected")'), true);
+  assert.equal(
+    source.includes('this.audioRelay?.markPeerPath(targetPeerId, "webrtc", "webrtc_connected")'),
+    true,
+  );
   assert.equal(source.includes('state === "closed"'), true);
   assert.equal(relay.includes("RELAY_SAMPLE_RATE = 16_000"), true);
   assert.equal(relay.includes("MAX_PACKET_AGE_MS = 3_000"), true);
@@ -52,6 +55,17 @@ test("room flow is fixed-channel only", () => {
   assert.equal(hook.includes("startHost"), false);
   assert.equal(protocol.includes("JoinChannelMessage"), true);
   assert.equal(protocol.includes("JoinRoomMessage"), false);
+});
+
+test("webrtc diagnostics report selected path, packet loss, and jitter", () => {
+  const source = read("packages/webrtc/src/stats.ts");
+
+  assert.equal(source.includes("packetsReceived"), true);
+  assert.equal(source.includes("packetLossPercent"), true);
+  assert.equal(source.includes('candidateType === "relay"'), true);
+  assert.equal(source.includes("connectionType ="), true);
+  assert.equal(source.includes("selected === true"), true);
+  assert.equal(source.includes("nominated === true"), true);
 });
 
 test("relay status checks both health endpoint and websocket", () => {
@@ -88,7 +102,10 @@ test("audio backpressure drops realtime frames instead of queueing stale audio",
   assert.equal(bridge.includes("maxBufferedAmount"), true);
   assert.equal(server.includes("MAX_REALTIME_SOCKET_BUFFER_BYTES"), true);
   assert.equal(server.includes("dropping stale realtime payload for slow client"), true);
-  assert.equal(server.includes('payload.type === "audio_chunk" || payload.type === "screen_frame"'), true);
+  assert.equal(
+    server.includes('payload.type === "audio_chunk" || payload.type === "screen_frame"'),
+    true,
+  );
 });
 
 test("room joining uses acknowledgement and snapshot recovery without logging raw signaling data", () => {
@@ -118,16 +135,22 @@ test("windows executable and shortcut use cache-busting v3 icons", () => {
   assert.equal(installer.includes("shanghao-shortcut-v3.ico"), true);
 });
 
-test("llm chat accepts slash commands and joins proxy paths safely", () => {
-  const rendererLlm = read("apps/desktop/src/renderer/src/features/chat/llmService.ts");
-  const mainLlm = read("apps/desktop/src/main/llm-service.ts");
-  const signaling = read("packages/signaling/src/server.ts");
-
-  assert.equal(rendererLlm.includes("/(?:ai|llm)"), true);
-  assert.equal(rendererLlm.includes("你想问什么呀？"), true);
-  assert.equal(mainLlm.includes("joinHttpPath(httpUrl, \"/llm/chat\")"), true);
-  assert.equal(mainLlm.includes("replace(/\\/+$/, \"\")"), true);
-  assert.equal(signaling.includes("normalizeRequestPathname"), true);
+test("AI and LLM code paths are completely removed", () => {
+  assert.equal(existsSync(path.join(root, "apps/desktop/src/main/llm-service.ts")), false);
+  assert.equal(
+    existsSync(path.join(root, "apps/desktop/src/renderer/src/features/chat/llmService.ts")),
+    false,
+  );
+  assert.equal(existsSync(path.join(root, "packages/signaling/src/llm-proxy.ts")), false);
+  for (const sourcePath of [
+    "packages/shared/src/constants/ipc.ts",
+    "packages/shared/src/types/ipc.types.ts",
+    "packages/signaling/src/server.ts",
+    "apps/desktop/src/preload/index.ts",
+  ]) {
+    const source = read(sourcePath);
+    assert.equal(/chatWithLLM|shouldCallLLM|SHANGHAO_LLM|\/llm\//i.test(source), false);
+  }
 });
 
 test("main process guards ipc pushes after windows are destroyed", () => {
@@ -160,8 +183,16 @@ test("installer and updater quit paths clean background surfaces", () => {
   assert.equal(updates.includes("setTimeout(() => app.exit(0), 4_000)"), true);
   assert.equal(installer.includes("--shanghao-quit-for-install"), true);
   assert.equal(installer.includes('${nsProcess::FindProcess} "${PROCESS_NAME}" $R8'), true);
-  assert.equal(installer.includes("Exec '\"${EXECUTABLE_PATH}\" --shanghao-quit-for-install'"), true);
-  assert.equal(installer.includes("nsExec::ExecToLog '\"$INSTDIR\\ShangHao.exe\" --shanghao-quit-for-install'"), false);
+  assert.equal(
+    installer.includes("Exec '\"${EXECUTABLE_PATH}\" --shanghao-quit-for-install'"),
+    true,
+  );
+  assert.equal(
+    installer.includes(
+      "nsExec::ExecToLog '\"$INSTDIR\\ShangHao.exe\" --shanghao-quit-for-install'",
+    ),
+    false,
+  );
   assert.equal(installer.includes("migrateBrokenLegacyInstaller"), true);
   assert.equal(installer.includes("!macro customRemoveFiles"), true);
   assert.equal(installer.includes('SetOutPath "$TEMP"'), true);
@@ -205,9 +236,7 @@ test("desktop clipboard writes go through the electron main process", () => {
 
 test("global push-to-talk listens for keydown and keyup outside the app", () => {
   const shortcuts = read("apps/desktop/src/main/shortcuts.ts");
-  const transport = read(
-    "apps/desktop/src/renderer/src/hooks/useLocalAudioTransport.ts",
-  );
+  const transport = read("apps/desktop/src/renderer/src/hooks/useLocalAudioTransport.ts");
   assert.equal(shortcuts.includes('uIOhook.on("keydown"'), true);
   assert.equal(shortcuts.includes('uIOhook.on("keyup"'), true);
   assert.equal(shortcuts.includes("pushToTalkState"), true);

@@ -1,0 +1,12 @@
+node_modules
+dist
+dist-electron
+release
+artifacts
+tmp
+.pnpm-store
+.turbo
+apps/desktop/build
+apps/desktop/src/renderer/src/assets
+docs/release-notes
+pnpm-lock.yaml

@@ -1,10 +1,10 @@
 import type {
   BuiltInAvatarId,
   MemberActivity,
-  RoomNote,
   RoomMember,
   SceneZoneId,
 } from "@private-voice/shared";
+import { isBuiltInAvatarId } from "@private-voice/shared";
 
 export interface SessionDescriptionPayload {
   type: "offer" | "answer" | "pranswer" | "rollback";
@@ -34,6 +34,7 @@ export type SignalEnvelope =
   | IceCandidateMessage
   | MemberStateMessage
   | ChatMessage
+  | ChatHistoryMessage
   | KnockEventMessage
   | AudioChunkMessage
   | AudioResyncRequestMessage
@@ -41,7 +42,6 @@ export type SignalEnvelope =
   | ScreenFrameMessage
   | ScreenShareStateMessage
   | SceneReactionMessage
-  | RoomNoteUpdateMessage
   | ErrorMessage;
 
 interface BaseMessage {
@@ -69,7 +69,6 @@ export interface JoinChannelMessage extends BaseMessage, VersionedMessage {
   peerId: string;
   nickname: string;
   avatarId: BuiltInAvatarId;
-  customStatus?: string;
 }
 
 export interface LeaveChannelMessage extends BaseMessage {
@@ -116,7 +115,6 @@ export interface RoomSnapshotMessage extends BaseMessage, VersionedMessage {
   members: RoomMember[];
   revision: number;
   serverTime: number;
-  roomNote?: RoomNote;
 }
 
 export interface ChannelSnapshotMessage extends Omit<RoomSnapshotMessage, "type"> {
@@ -177,18 +175,29 @@ export interface MemberStateMessage extends BaseMessage {
   nickname?: string;
   avatarDataUrl?: string;
   avatarId?: BuiltInAvatarId;
-  customStatus?: string;
 }
 
 export interface ChatMessage extends BaseMessage {
   type: "chat_message";
   roomId: string;
-  peerId: string;
-  nickname: string;
+  id?: string;
+  peerId?: string;
+  nickname?: string;
   avatarDataUrl?: string;
   avatarId?: BuiltInAvatarId;
   content: string;
-  createdAt: string;
+  createdAt?: string;
+}
+
+export type ServerChatMessage = Required<
+  Pick<ChatMessage, "id" | "peerId" | "nickname" | "content" | "createdAt">
+> &
+  Pick<ChatMessage, "avatarId" | "avatarDataUrl">;
+
+export interface ChatHistoryMessage extends BaseMessage {
+  type: "chat_history";
+  roomId: string;
+  messages: ServerChatMessage[];
 }
 
 export interface KnockEventMessage extends BaseMessage {
@@ -270,23 +279,217 @@ export interface SceneReactionMessage extends BaseMessage {
   createdAt: string;
 }
 
-export interface RoomNoteUpdateMessage extends BaseMessage {
-  type: "room_note_update";
-  roomId: string;
-  peerId: string;
-  note: RoomNote;
-}
-
 export interface ErrorMessage extends BaseMessage {
   type: "error";
   code: string;
   message: string;
 }
 
-export const isSignalEnvelope = (value: unknown): value is SignalEnvelope => {
-  if (!value || typeof value !== "object") {
-    return false;
-  }
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  Boolean(value && typeof value === "object" && !Array.isArray(value));
 
-  return "type" in value;
+const isText = (value: unknown, maxLength: number, allowEmpty = false): value is string =>
+  typeof value === "string" && value.length <= maxLength && (allowEmpty || value.trim().length > 0);
+
+const isFiniteNumber = (value: unknown): value is number =>
+  typeof value === "number" && Number.isFinite(value);
+
+const isIntegerInRange = (value: unknown, minimum: number, maximum: number): value is number =>
+  Number.isSafeInteger(value) && Number(value) >= minimum && Number(value) <= maximum;
+
+const isOptionalBoolean = (value: unknown): boolean =>
+  value === undefined || typeof value === "boolean";
+
+const isIdentifier = (value: unknown, maxLength: number): value is string =>
+  isText(value, maxLength) && /^[A-Za-z0-9._:-]+$/.test(value);
+
+const isTimestamp = (value: unknown): value is number =>
+  isFiniteNumber(value) && Math.abs(value - Date.now()) <= 24 * 60 * 60 * 1_000;
+
+const isBase64 = (value: unknown, maxLength: number): value is string =>
+  typeof value === "string" &&
+  value.length > 0 &&
+  value.length <= maxLength &&
+  value.length % 4 === 0 &&
+  /^[A-Za-z0-9+/]+={0,2}$/.test(value);
+
+const SCENE_ZONES = new Set([
+  "restroomZone",
+  "gameDesk1",
+  "gameDesk2",
+  "gameDesk3",
+  "gameDesk4",
+  "gameDesk5",
+]);
+const MEMBER_ACTIVITIES = new Set(["idle", "gaming", "drinking", "fitness", "restroom"]);
+
+export const isValidNickname = (value: unknown): value is string => {
+  if (typeof value !== "string") return false;
+  const trimmed = value.trim();
+  return (
+    trimmed === value &&
+    Array.from(trimmed).length >= 1 &&
+    Array.from(trimmed).length <= 16 &&
+    // Intentional control-character rejection for user-visible identity fields.
+    // eslint-disable-next-line no-control-regex
+    !/[\u0000-\u001F\u007F\r\n]/.test(trimmed)
+  );
+};
+
+const hasRoom = (value: Record<string, unknown>): boolean => isIdentifier(value.roomId, 64);
+
+const hasPeer = (value: Record<string, unknown>): boolean => isIdentifier(value.peerId, 128);
+
+const hasTarget = (value: Record<string, unknown>): boolean =>
+  isIdentifier(value.targetPeerId, 128);
+
+export const isSignalEnvelope = (value: unknown): value is SignalEnvelope => {
+  if (!isRecord(value) || !isText(value.type, 64)) return false;
+
+  switch (value.type) {
+    case "join_channel":
+      return (
+        hasRoom(value) &&
+        hasPeer(value) &&
+        isIdentifier(value.channelId, 64) &&
+        isValidNickname(value.nickname) &&
+        isBuiltInAvatarId(value.avatarId) &&
+        isText(value.appVersion, 32) &&
+        isText(value.protocolVersion, 32) &&
+        isText(value.buildNumber, 64)
+      );
+    case "leave_channel":
+    case "request_snapshot":
+      return hasRoom(value) && hasPeer(value);
+    case "heartbeat":
+      return (
+        hasRoom(value) &&
+        hasPeer(value) &&
+        (value.sentAt === undefined || isTimestamp(value.sentAt))
+      );
+    case "pong":
+      return (
+        hasRoom(value) &&
+        hasPeer(value) &&
+        isFiniteNumber(value.sentAt) &&
+        isFiniteNumber(value.serverTime)
+      );
+    case "join_ack":
+      return (
+        hasRoom(value) &&
+        hasPeer(value) &&
+        isFiniteNumber(value.serverTime) &&
+        isFiniteNumber(value.revision)
+      );
+    case "room_snapshot":
+    case "channel_snapshot":
+      return (
+        hasRoom(value) &&
+        Array.isArray(value.members) &&
+        isFiniteNumber(value.revision) &&
+        isFiniteNumber(value.serverTime)
+      );
+    case "avatar_update":
+      return (
+        hasRoom(value) &&
+        hasPeer(value) &&
+        (value.avatarId === undefined || isBuiltInAvatarId(value.avatarId)) &&
+        (value.avatarDataUrl === undefined ||
+          (isText(value.avatarDataUrl, 180_000) &&
+            /^data:image\/(?:png|jpeg|webp);base64,/.test(value.avatarDataUrl)))
+      );
+    case "peer_offer":
+    case "peer_answer":
+      return (
+        hasRoom(value) &&
+        hasPeer(value) &&
+        hasTarget(value) &&
+        isRecord(value.sdp) &&
+        ["offer", "answer", "pranswer", "rollback"].includes(String(value.sdp.type)) &&
+        (value.sdp.sdp === undefined ||
+          value.sdp.sdp === null ||
+          isText(value.sdp.sdp, 220_000, true))
+      );
+    case "peer_restart_request":
+      return hasRoom(value) && hasPeer(value) && hasTarget(value) && isText(value.reason, 160);
+    case "ice_candidate":
+      return (
+        hasRoom(value) &&
+        hasPeer(value) &&
+        hasTarget(value) &&
+        isRecord(value.candidate) &&
+        isText(value.candidate.candidate, 16_384, true) &&
+        (value.candidate.sdpMid === undefined ||
+          value.candidate.sdpMid === null ||
+          isText(value.candidate.sdpMid, 256, true)) &&
+        (value.candidate.sdpMLineIndex === undefined ||
+          value.candidate.sdpMLineIndex === null ||
+          isIntegerInRange(value.candidate.sdpMLineIndex, 0, 128))
+      );
+    case "member_state":
+      return (
+        hasRoom(value) &&
+        hasPeer(value) &&
+        isOptionalBoolean(value.isMuted) &&
+        isOptionalBoolean(value.isSpeaking) &&
+        isOptionalBoolean(value.isDeafened) &&
+        (value.activity === undefined || MEMBER_ACTIVITIES.has(String(value.activity))) &&
+        (value.sceneZone === undefined || SCENE_ZONES.has(String(value.sceneZone))) &&
+        (value.gameName === undefined || isText(value.gameName, 64)) &&
+        (value.nickname === undefined || isValidNickname(value.nickname)) &&
+        (value.avatarId === undefined || isBuiltInAvatarId(value.avatarId)) &&
+        (value.avatarDataUrl === undefined ||
+          (isText(value.avatarDataUrl, 180_000) &&
+            /^data:image\/(?:png|jpeg|webp);base64,/.test(value.avatarDataUrl)))
+      );
+    case "chat_message":
+      return hasRoom(value) && isText(value.content, 500);
+    case "chat_history":
+      return hasRoom(value) && Array.isArray(value.messages) && value.messages.length <= 100;
+    case "knock_event":
+      return hasRoom(value) && hasPeer(value);
+    case "audio_chunk":
+      return (
+        hasRoom(value) &&
+        hasPeer(value) &&
+        isBase64(value.data, 128_000) &&
+        isIdentifier(value.audioSessionId, 128) &&
+        isIntegerInRange(value.audioStreamEpoch, 0, Number.MAX_SAFE_INTEGER) &&
+        isIntegerInRange(value.sequence, 0, Number.MAX_SAFE_INTEGER) &&
+        isTimestamp(value.sentAt) &&
+        isFiniteNumber(value.durationMs) &&
+        value.durationMs > 0 &&
+        value.durationMs <= 200 &&
+        isIntegerInRange(value.sampleRate, 8_000, 48_000) &&
+        value.channelCount === 1 &&
+        (value.codec === undefined || value.codec === "pcm_s16le" || value.codec === "mulaw")
+      );
+    case "audio_resync_request":
+    case "audio_resync_ack":
+      return hasRoom(value) && hasPeer(value) && hasTarget(value);
+    case "screen_frame":
+      return (
+        hasRoom(value) &&
+        hasPeer(value) &&
+        isText(value.data, 220_000) &&
+        /^data:image\/(?:jpeg|webp);base64,/.test(value.data) &&
+        isIntegerInRange(value.sequence, 0, Number.MAX_SAFE_INTEGER) &&
+        isTimestamp(value.sentAt) &&
+        isIntegerInRange(value.width, 1, 4_096) &&
+        isIntegerInRange(value.height, 1, 2_160)
+      );
+    case "screen_share_state":
+      return hasRoom(value) && hasPeer(value) && typeof value.isSharing === "boolean";
+    case "scene_reaction":
+      return (
+        hasRoom(value) &&
+        hasPeer(value) &&
+        hasTarget(value) &&
+        ["👍", "🔥", "😂", "❤️"].includes(String(value.emoji))
+      );
+    case "error":
+      return isText(value.code, 64) && isText(value.message, 500);
+    default:
+      return false;
+  }
 };

@@ -1,10 +1,9 @@
-import { useLayoutEffect, useRef } from "react";
+import { Fragment, useLayoutEffect, useRef, useState } from "react";
 import { Send } from "lucide-react";
 import { gsap } from "gsap";
 
 import type { ChatMessage } from "@private-voice/shared";
 
-import brandMarkUrl from "../../assets/brand-mark.svg";
 import { getAvatarSrc } from "../../utils/profile";
 import { motionDuration, motionEase } from "../../features/motion/motionSystem";
 import { AvatarPlaceholder } from "../base/AvatarPlaceholder";
@@ -23,6 +22,12 @@ const formatMessageTime = (value?: string) => {
     minute: "2-digit",
     hour12: false,
   });
+};
+
+const formatMessageDate = (value?: string) => {
+  const date = value ? new Date(value) : new Date();
+  if (Number.isNaN(date.getTime())) return "";
+  return date.toLocaleDateString("zh-CN", { month: "long", day: "numeric" });
 };
 
 export const TemporaryChatPanel = ({
@@ -51,6 +56,7 @@ export const TemporaryChatPanel = ({
   const lastQuickSendAt = useRef(0);
   const listRef = useRef<HTMLDivElement>(null);
   const previousMessageCount = useRef(messages.length);
+  const [unreadCount, setUnreadCount] = useState(0);
   const shouldReduceMotion = usePrefersReducedMotion(reduceMotion);
 
   useLayoutEffect(() => {
@@ -59,7 +65,14 @@ export const TemporaryChatPanel = ({
 
     const previous = previousMessageCount.current;
     previousMessageCount.current = messages.length;
-    list.scrollTo({ top: list.scrollHeight, behavior: shouldReduceMotion ? "auto" : "smooth" });
+    const wasNearBottom = list.scrollHeight - list.scrollTop - list.clientHeight < 96;
+    const latestMessage = messages[messages.length - 1];
+    if (wasNearBottom || latestMessage?.isLocal || previous === 0) {
+      list.scrollTop = list.scrollHeight;
+      setUnreadCount(0);
+    } else if (messages.length > previous) {
+      setUnreadCount((count) => count + messages.length - previous);
+    }
 
     if (shouldReduceMotion || messages.length <= previous) return;
 
@@ -80,7 +93,7 @@ export const TemporaryChatPanel = ({
         force3D: true,
       },
     );
-  }, [messages.length, shouldReduceMotion]);
+  }, [messages, shouldReduceMotion]);
 
   const handleQuickSend = (reply: string) => {
     const now = Date.now();
@@ -111,71 +124,113 @@ export const TemporaryChatPanel = ({
         </div>
       </div>
 
-      <div ref={listRef} className="mt-2.5 min-h-0 flex-1 space-y-2.5 overflow-y-auto pr-1">
-        {messages.length === 0 ? (
-          <div className="grid h-full min-h-[100px] place-items-center px-4 text-center text-[11px] leading-5 text-[#a0aec0]">
-            {emptyMessage}
-          </div>
-        ) : (
-          messages.slice(-32).map((message) =>
-            message.kind === "system" ? (
-              <div
-                key={message.id}
-                data-gsap-chat-message
-                className="mx-auto w-fit max-w-[90%] rounded-full bg-[#f5f7fb] px-3 py-1 text-center text-[10px] text-[#8492a5]"
-              >
-                {message.content}
-                <span className="ml-1.5 text-[9px] text-[#b0b8c4]">{formatMessageTime(message.createdAt)}</span>
-              </div>
-            ) : (
-              <div
-                key={message.id}
-                data-gsap-chat-message
-                className={`flex items-end gap-1.5 ${message.isLocal ? "justify-end" : ""}`}
-              >
-                {!message.isLocal ? (
-                  message.isBot ? (
-                    <img
-                      src={brandMarkUrl}
-                      alt="上号"
-                      draggable={false}
-                      className="h-7 w-7 shrink-0 rounded-[10px] object-contain bg-[#EAF4FF]"
-                    />
-                  ) : (
-                    <AvatarPlaceholder
-                      name={message.nickname}
-                      src={message.avatarDataUrl || getAvatarSrc(message.avatarId)}
-                      size="sm"
-                      className="h-7 w-7 shrink-0 rounded-[10px]"
-                    />
-                  )
-                ) : null}
-                <div className={`max-w-[78%] ${message.isLocal ? "items-end" : "items-start"} flex flex-col`}>
-                  {!message.isLocal && !message.isBot ? (
-                    <span className="mb-0.5 px-1 text-[9px] font-medium text-[#a0aec0]">
-                      {message.nickname}
-                      <span className="ml-1 text-[#b8c4d0]">{formatMessageTime(message.createdAt)}</span>
-                    </span>
+      <div className="relative mt-2.5 min-h-0 flex-1">
+        <div
+          ref={listRef}
+          className="h-full min-h-0 space-y-2.5 overflow-y-auto pr-1"
+          onScroll={(event) => {
+            const list = event.currentTarget;
+            if (list.scrollHeight - list.scrollTop - list.clientHeight < 64) setUnreadCount(0);
+          }}
+        >
+          {messages.length === 0 ? (
+            <div className="grid h-full min-h-[100px] place-items-center px-4 text-center text-[13px] leading-5 text-[#71839a]">
+              {emptyMessage}
+            </div>
+          ) : (
+            messages.slice(-100).map((message, index, visibleMessages) => {
+              const previousMessage = visibleMessages[index - 1];
+              const showDate =
+                !previousMessage ||
+                formatMessageDate(previousMessage.createdAt) !==
+                  formatMessageDate(message.createdAt);
+              const previousAt = previousMessage
+                ? new Date(previousMessage.createdAt).getTime()
+                : 0;
+              const currentAt = new Date(message.createdAt).getTime();
+              const isGrouped = Boolean(
+                previousMessage &&
+                previousMessage.kind !== "system" &&
+                message.kind !== "system" &&
+                previousMessage.peerId === message.peerId &&
+                previousMessage.isLocal === message.isLocal &&
+                currentAt - previousAt >= 0 &&
+                currentAt - previousAt < 5 * 60 * 1_000 &&
+                !showDate,
+              );
+              return (
+                <Fragment key={message.id}>
+                  {showDate ? (
+                    <div className="chat-date-divider">{formatMessageDate(message.createdAt)}</div>
                   ) : null}
-                  <span
-                    className={`rounded-[14px] px-3 py-1.5 text-[13px] leading-[1.4] ${
-                      message.isLocal
-                        ? "rounded-br-[4px] bg-[#EAF4FF] text-[#2F6FCC]"
-                        : message.isBot
-                          ? "rounded-bl-[4px] bg-[#F0F7FF] text-[#2F6FCC] border border-[rgba(45,111,204,0.18)]"
-                          : "rounded-bl-[4px] bg-white text-[#374151] border border-[rgba(220,230,242,0.5)]"
-                    }`}
-                  >
-                    {message.content}
-                  </span>
-                  <span className={`mt-0.5 text-[9px] text-[#b0b8c4] ${message.isLocal ? "text-right" : ""}`}>
-                    {formatMessageTime(message.createdAt)}
-                  </span>
-                </div>
-              </div>
-            ),
-          )
-        )}
+                  {message.kind === "system" ? (
+                    <div
+                      data-gsap-chat-message
+                      className="mx-auto w-fit max-w-[90%] rounded-full bg-[#f5f7fb] px-3 py-1 text-center text-[12px] leading-4 text-[#718096]"
+                    >
+                      {message.content}
+                      <span className="ml-1.5 text-[11px] tabular-nums text-[#94a3b8]">
+                        {formatMessageTime(message.createdAt)}
+                      </span>
+                    </div>
+                  ) : (
+                    <div
+                      data-gsap-chat-message
+                      className={`flex items-end gap-1.5 ${message.isLocal ? "justify-end" : ""}`}
+                    >
+                      {!message.isLocal && !isGrouped ? (
+                        <AvatarPlaceholder
+                          name={message.nickname}
+                          src={message.avatarDataUrl || getAvatarSrc(message.avatarId)}
+                          size="sm"
+                          className="h-7 w-7 shrink-0 rounded-[10px]"
+                        />
+                      ) : !message.isLocal ? (
+                        <span className="h-7 w-7 shrink-0" aria-hidden="true" />
+                      ) : null}
+                      <div
+                        className={`max-w-[78%] ${message.isLocal ? "items-end" : "items-start"} flex flex-col`}
+                      >
+                        {!message.isLocal && !isGrouped ? (
+                          <span className="mb-0.5 px-1 text-[12px] font-medium leading-4 text-[#718096]">
+                            {message.nickname}
+                          </span>
+                        ) : null}
+                        <span
+                          className={`rounded-[14px] px-3 py-1.5 text-[13px] leading-[1.4] ${
+                            message.isLocal
+                              ? "rounded-br-[4px] bg-[#EAF4FF] text-[#2F6FCC]"
+                              : "rounded-bl-[4px] bg-white text-[#374151] border border-[rgba(220,230,242,0.5)]"
+                          }`}
+                        >
+                          {message.content}
+                        </span>
+                        <span
+                          className={`mt-0.5 text-[11px] tabular-nums text-[#94a3b8] ${message.isLocal ? "text-right" : ""}`}
+                        >
+                          {formatMessageTime(message.createdAt)}
+                        </span>
+                      </div>
+                    </div>
+                  )}
+                </Fragment>
+              );
+            })
+          )}
+        </div>
+        {unreadCount > 0 ? (
+          <button
+            type="button"
+            className="chat-unread-button"
+            onClick={() => {
+              const list = listRef.current;
+              if (list) list.scrollTop = list.scrollHeight;
+              setUnreadCount(0);
+            }}
+          >
+            {unreadCount} 条新消息
+          </button>
+        ) : null}
       </div>
 
       <div className="mt-2.5 flex items-center gap-2 border-t border-[rgba(220,230,242,0.6)] pt-2.5">

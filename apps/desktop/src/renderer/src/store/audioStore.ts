@@ -24,8 +24,11 @@ interface AudioStoreState {
   isPushToTalkEnabled: boolean;
   pushToTalkState: PushToTalkState;
   refreshDevices: () => Promise<void>;
-  toggleMute: () => void;
+  toggleMicrophone: () => void;
   toggleDeafen: () => void;
+  deafenAndMute: () => void;
+  undeafenAndUnmute: () => void;
+  setAudioState: (state: { isMuted: boolean; isDeafened: boolean }) => void;
   setMuted: (isMuted: boolean) => void;
   setDeafened: (isDeafened: boolean) => void;
   setNoiseSuppressionEnabled: (isEnabled: boolean) => void;
@@ -61,8 +64,7 @@ export const useAudioStore = create<AudioStoreState>((set) => ({
         outputDevices,
         permissionState,
         inputState: inputDevices.length > 0 ? AudioDeviceState.Ready : AudioDeviceState.Missing,
-        outputState:
-          outputDevices.length > 0 ? AudioDeviceState.Ready : AudioDeviceState.Missing,
+        outputState: outputDevices.length > 0 ? AudioDeviceState.Ready : AudioDeviceState.Missing,
       });
 
       await writeRendererLog("devices", "info", "Enumerated audio devices", {
@@ -84,12 +86,25 @@ export const useAudioStore = create<AudioStoreState>((set) => ({
       });
     }
   },
-  toggleMute: () => set((state) => ({ isMuted: !state.isMuted })),
-  toggleDeafen: () => set((state) => ({ isDeafened: !state.isDeafened })),
-  setMuted: (isMuted) => set({ isMuted }),
-  setDeafened: (isDeafened) => set({ isDeafened }),
-  setNoiseSuppressionEnabled: (isNoiseSuppressionEnabled) =>
-    set({ isNoiseSuppressionEnabled }),
+  toggleMicrophone: () => set((state) => (state.isDeafened ? state : { isMuted: !state.isMuted })),
+  toggleDeafen: () =>
+    set((state) =>
+      state.isDeafened
+        ? { isMuted: false, isDeafened: false }
+        : { isMuted: true, isDeafened: true },
+    ),
+  deafenAndMute: () => set({ isMuted: true, isDeafened: true }),
+  undeafenAndUnmute: () => set({ isMuted: false, isDeafened: false }),
+  setAudioState: ({ isMuted, isDeafened }) =>
+    set({ isDeafened, isMuted: isDeafened ? true : isMuted }),
+  setMuted: (isMuted) => set((state) => ({ isMuted: state.isDeafened ? true : isMuted })),
+  setDeafened: (isDeafened) =>
+    set((state) =>
+      isDeafened
+        ? { isMuted: true, isDeafened: true }
+        : { isMuted: state.isMuted, isDeafened: false },
+    ),
+  setNoiseSuppressionEnabled: (isNoiseSuppressionEnabled) => set({ isNoiseSuppressionEnabled }),
   setPushToTalkEnabled: (isPushToTalkEnabled) => set({ isPushToTalkEnabled }),
   setPushToTalkState: (pushToTalkState) => set({ pushToTalkState }),
   setLocalDiagnostics: (localDiagnostics) => set({ localDiagnostics }),

@@ -2,6 +2,8 @@ export type UiSound =
   | "button-click"
   | "enter-room"
   | "leave-room"
+  | "member-join"
+  | "member-leave"
   | "knock-bell"
   | "popup-open"
   | "copy-success"
@@ -22,13 +24,16 @@ const soundUrls: Record<UiSound, string> = {
   "button-click": new URL("../../assets/sounds/button-click.wav", import.meta.url).href,
   "enter-room": new URL("../../assets/sounds/enter-room.wav", import.meta.url).href,
   "leave-room": new URL("../../assets/sounds/leave-room.wav", import.meta.url).href,
+  "member-join": new URL("../../assets/sounds/enter-room.wav", import.meta.url).href,
+  "member-leave": new URL("../../assets/sounds/leave-room.wav", import.meta.url).href,
   "knock-bell": new URL("../../assets/sounds/knock-bell.wav", import.meta.url).href,
   "popup-open": new URL("../../assets/sounds/popup-open.wav", import.meta.url).href,
   "copy-success": new URL("../../assets/sounds/copy-success.wav", import.meta.url).href,
   "device-switch": new URL("../../assets/sounds/device-switch.wav", import.meta.url).href,
   "send-message": new URL("../../assets/sounds/send-message.wav", import.meta.url).href,
   "receive-message": new URL("../../assets/sounds/receive-message.wav", import.meta.url).href,
-  "connection-restored": new URL("../../assets/sounds/connection-restored.wav", import.meta.url).href,
+  "connection-restored": new URL("../../assets/sounds/connection-restored.wav", import.meta.url)
+    .href,
   "connection-failed": new URL("../../assets/sounds/connection-failed.wav", import.meta.url).href,
   "mic-error": new URL("../../assets/sounds/mic-error.wav", import.meta.url).href,
   "record-start": new URL("../../assets/sounds/record-start.wav", import.meta.url).href,
@@ -41,9 +46,14 @@ const soundUrls: Record<UiSound, string> = {
 
 const audioCache = new Map<UiSound, HTMLAudioElement>();
 let isEnabled = true;
+let masterVolume = 0.72;
 
 export const setUiSoundEnabled = (enabled: boolean): void => {
   isEnabled = enabled;
+};
+
+export const setUiSoundVolume = (volume: number): void => {
+  masterVolume = Math.max(0, Math.min(1, volume));
 };
 
 export const playUiSound = (sound: UiSound): void => {
@@ -51,7 +61,7 @@ export const playUiSound = (sound: UiSound): void => {
   try {
     const template = audioCache.get(sound) ?? new Audio(soundUrls[sound]);
     template.preload = "auto";
-    template.volume = 0.2;
+    template.volume = 0.28 * masterVolume;
     audioCache.set(sound, template);
     const playback = template.cloneNode(true) as HTMLAudioElement;
     playback.volume = template.volume;

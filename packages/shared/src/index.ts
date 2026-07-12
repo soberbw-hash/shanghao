@@ -10,3 +10,4 @@ export * from "./types/recording.types";
 export * from "./types/room.types";
 export * from "./types/settings.types";
 export * from "./utils/time";
+export * from "./utils/relayUrl";

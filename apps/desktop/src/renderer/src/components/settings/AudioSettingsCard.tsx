@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { ChevronDown } from "lucide-react";
 
 import type { AppSettings, AudioDeviceDescriptor } from "@private-voice/shared";
+import type { MicTestPhase } from "../../hooks/useMicTest";
 
 import { MICROPHONE_EQ_FREQUENCIES } from "../../features/audio/microphoneProcessor";
 import { InputDevicePicker } from "../audio/InputDevicePicker";
@@ -19,6 +20,9 @@ export const AudioSettingsCard = ({
   outputDevices,
   isMicTesting,
   micTestLevel,
+  micTestPhase,
+  isMicClipping,
+  micTestError,
   onToggleMicTest,
   onChange,
 }: {
@@ -27,6 +31,9 @@ export const AudioSettingsCard = ({
   outputDevices: AudioDeviceDescriptor[];
   isMicTesting: boolean;
   micTestLevel: number;
+  micTestPhase: MicTestPhase;
+  isMicClipping: boolean;
+  micTestError?: string;
   onToggleMicTest: () => void;
   onChange: (patch: Partial<AppSettings>) => void;
 }) => {
@@ -38,12 +45,16 @@ export const AudioSettingsCard = ({
     setEqualizerDraft(settings.micEqualizerGains);
   }, [settings.inputLevelThreshold, settings.micEqualizerGains]);
   const micHealth = !isMicTesting
-    ? "点击开始，听听朋友会听到的声音"
-    : micTestLevel > 0.18
-      ? "麦克风正常"
-      : micTestLevel > 0.035
-        ? "声音有点小"
-        : "听不到你";
+    ? micTestError || "录制 5 秒后自动回放，音频只保留在本机"
+    : micTestPhase === "playback"
+      ? "正在回放刚才的 5 秒录音"
+      : isMicClipping
+        ? "输入过高，已经出现削波"
+        : micTestLevel > 0.18
+          ? "麦克风正常"
+          : micTestLevel > 0.035
+            ? "声音有点小"
+            : "听不到你";
 
   return (
     <SettingsSection title="音频" description="选择设备并确认麦克风状态。">
@@ -72,7 +83,10 @@ export const AudioSettingsCard = ({
             onChange={(value) => onChange({ isPushToTalkEnabled: value === "ptt" })}
           />
         </SettingsItemRow>
-        <SettingsItemRow label="降噪">
+        <SettingsItemRow
+          label="智能降噪"
+          description="本地处理风扇、键盘和环境底噪，不会上传声音。"
+        >
           <Switch
             isChecked={settings.isNoiseSuppressionEnabled}
             onChange={(isNoiseSuppressionEnabled) => onChange({ isNoiseSuppressionEnabled })}
@@ -93,12 +107,16 @@ export const AudioSettingsCard = ({
         <SettingsItemRow label="麦克风体检" description={micHealth}>
           <div className="min-w-[280px] space-y-3">
             <Button variant={isMicTesting ? "danger" : "secondary"} onClick={onToggleMicTest}>
-              {isMicTesting ? "停止试音" : "开始试音"}
+              {micTestPhase === "recording"
+                ? "停止录制"
+                : micTestPhase === "playback"
+                  ? "停止回放"
+                  : "开始 5 秒试音"}
             </Button>
             <div className="h-2 overflow-hidden rounded-full bg-[#E9EEF5]">
               <div
-                className="h-full rounded-full bg-[#4DA3FF] transition-[width] duration-150"
-                style={{ width: `${Math.max(6, micTestLevel * 100)}%` }}
+                className={`h-full w-full origin-left rounded-full transition-transform duration-150 ${isMicClipping ? "bg-[#E5484D]" : "bg-[#4DA3FF]"}`}
+                style={{ transform: `scaleX(${Math.max(0.06, micTestLevel)})` }}
               />
             </div>
           </div>
@@ -133,7 +151,8 @@ export const AudioSettingsCard = ({
                   ]}
                   onChange={(preferredSampleRate) =>
                     onChange({
-                      preferredSampleRate: preferredSampleRate as AppSettings["preferredSampleRate"],
+                      preferredSampleRate:
+                        preferredSampleRate as AppSettings["preferredSampleRate"],
                     })
                   }
                 />
@@ -151,12 +170,21 @@ export const AudioSettingsCard = ({
                 />
               </SettingsItemRow>
               <SettingsItemRow
-                label="低切滤波"
-                description="削弱风扇、桌面震动和低频轰鸣，默认 80 Hz。"
+                label="低频风噪抑制"
+                description="四阶高通削弱风扇、桌面震动和低频轰鸣，默认标准。"
               >
-                <Switch
-                  isChecked={settings.isLowCutEnabled}
-                  onChange={(isLowCutEnabled) => onChange({ isLowCutEnabled })}
+                <SegmentedControl
+                  value={settings.lowCutFrequency}
+                  options={[
+                    { value: "off", label: "关闭" },
+                    { value: "90", label: "标准 90 Hz" },
+                    { value: "120", label: "强力 120 Hz" },
+                  ]}
+                  onChange={(lowCutFrequency) =>
+                    onChange({
+                      lowCutFrequency: lowCutFrequency as AppSettings["lowCutFrequency"],
+                    })
+                  }
                 />
               </SettingsItemRow>
               <SettingsItemRow label="输入阈值">
@@ -186,10 +214,12 @@ export const AudioSettingsCard = ({
                 <div className="grid min-w-[420px] grid-cols-2 gap-x-4 gap-y-2">
                   {MICROPHONE_EQ_FREQUENCIES.map((frequency, index) => {
                     const gain = equalizerDraft[index] ?? 0;
-                    const label =
-                      frequency >= 1_000 ? `${frequency / 1_000}k` : String(frequency);
+                    const label = frequency >= 1_000 ? `${frequency / 1_000}k` : String(frequency);
                     return (
-                      <label key={frequency} className="grid grid-cols-[34px_1fr_42px] items-center gap-2">
+                      <label
+                        key={frequency}
+                        className="grid grid-cols-[34px_1fr_42px] items-center gap-2"
+                      >
                         <span className="text-[11px] font-semibold text-[#667085]">{label}</span>
                         <Slider
                           min={-12}
@@ -197,23 +227,30 @@ export const AudioSettingsCard = ({
                           step={1}
                           value={gain}
                           onChange={(event) => {
-                            const nextGains = [...equalizerDraft] as AppSettings["micEqualizerGains"];
+                            const nextGains = [
+                              ...equalizerDraft,
+                            ] as AppSettings["micEqualizerGains"];
                             nextGains[index] = Number(event.currentTarget.value);
                             setEqualizerDraft(nextGains);
                           }}
                           onPointerUp={(event) => {
-                            const nextGains = [...equalizerDraft] as AppSettings["micEqualizerGains"];
+                            const nextGains = [
+                              ...equalizerDraft,
+                            ] as AppSettings["micEqualizerGains"];
                             nextGains[index] = Number(event.currentTarget.value);
                             onChange({ micEqualizerGains: nextGains });
                           }}
                           onKeyUp={(event) => {
-                            const nextGains = [...equalizerDraft] as AppSettings["micEqualizerGains"];
+                            const nextGains = [
+                              ...equalizerDraft,
+                            ] as AppSettings["micEqualizerGains"];
                             nextGains[index] = Number(event.currentTarget.value);
                             onChange({ micEqualizerGains: nextGains });
                           }}
                         />
                         <span className="text-right text-[11px] tabular-nums text-[#98A2B3]">
-                          {gain > 0 ? "+" : ""}{gain} dB
+                          {gain > 0 ? "+" : ""}
+                          {gain} dB
                         </span>
                       </label>
                     );

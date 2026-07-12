@@ -9,6 +9,10 @@ const audioCardPath = path.resolve(
 );
 const settingsPagePath = path.resolve(process.cwd(), "src/renderer/src/pages/SettingsPage.tsx");
 const homePagePath = path.resolve(process.cwd(), "src/renderer/src/pages/HomePage.tsx");
+const diagnosticsCardPath = path.resolve(
+  process.cwd(),
+  "src/renderer/src/components/settings/DiagnosticsSettingsCard.tsx",
+);
 
 test("appearance settings no longer expose fixed prompt sound toggles", () => {
   const source = readFileSync(settingsPagePath, "utf8");
@@ -18,7 +22,7 @@ test("appearance settings no longer expose fixed prompt sound toggles", () => {
   assert.equal(source.includes("成员进入提示音"), false);
   assert.equal(source.includes("成员退出提示音"), false);
   assert.equal(source.includes("连接成功"), false);
-  assert.equal(source.includes("界面提示音"), true);
+  assert.equal(source.includes("提示音音量"), true);
   assert.equal(source.includes("关闭窗口时留在后台"), true);
 });
 
@@ -40,20 +44,31 @@ test("advanced audio settings are collapsed by default", () => {
   assert.equal(source.includes("isAdvancedOpen ?"), true);
   assert.equal(source.includes('value: "32000"'), true);
   assert.equal(source.includes("五段声音塑形"), true);
-  assert.equal(source.includes("低切滤波"), true);
+  assert.equal(source.includes("智能降噪"), true);
+  assert.equal(source.includes("低频风噪抑制"), true);
   assert.equal(source.includes("thresholdDraft"), true);
   assert.equal(source.includes("equalizerDraft"), true);
 });
 
 test("settings keep only everyday voice controls and remove advanced connection", () => {
   const source = readFileSync(settingsPagePath, "utf8");
+  const diagnosticsSource = readFileSync(diagnosticsCardPath, "utf8");
 
   for (const label of ["语音", "通知", "更新", "诊断"]) {
     assert.equal(source.includes(label), true);
   }
   assert.equal(source.includes('id: "recording"'), false);
-  for (const removed of ["资料", "悬浮小窗", "高级连接", "NetworkSettingsCard", "ProfileSettingsCard"]) {
+  for (const removed of [
+    "资料",
+    "悬浮小窗",
+    "高级连接",
+    "NetworkSettingsCard",
+    "ProfileSettingsCard",
+  ]) {
     assert.equal(source.includes(removed), false);
   }
   assert.equal(source.includes('useState<SettingsSectionId>("audio")'), true);
+  for (const diagnostic of ["Relay 延迟", "TURN", "WebRTC", "当前语音路径", "丢包", "抖动"]) {
+    assert.equal(diagnosticsSource.includes(diagnostic), true);
+  }
 });

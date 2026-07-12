@@ -2,11 +2,7 @@ import { useState } from "react";
 import { ChevronDown, MicOff } from "lucide-react";
 import { motion } from "framer-motion";
 
-import {
-  MemberPresenceState,
-  MemberSpeakingState,
-  type RoomMember,
-} from "@private-voice/shared";
+import { MemberPresenceState, MemberSpeakingState, type RoomMember } from "@private-voice/shared";
 
 import { AvatarPlaceholder } from "../base/AvatarPlaceholder";
 import { MemberVolumePopover } from "./MemberVolumePopover";
@@ -46,7 +42,11 @@ export const MemberCard = ({
       <SpeakingGlow isSpeaking={isSpeaking} />
       <div className="flex min-h-[52px] items-center gap-3">
         <div className="shrink-0">
-          <AvatarPlaceholder name={member.nickname} src={member.avatarDataUrl || getAvatarSrc(member.avatarId)} size="md" />
+          <AvatarPlaceholder
+            name={member.nickname}
+            src={member.avatarDataUrl || getAvatarSrc(member.avatarId)}
+            size="md"
+          />
         </div>
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">

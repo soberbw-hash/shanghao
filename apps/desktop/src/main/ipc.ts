@@ -1,4 +1,4 @@
-import { app, clipboard, ipcMain, Notification, shell, type BrowserWindow } from "electron";
+import { app, clipboard, ipcMain, Notification, powerMonitor, type BrowserWindow } from "electron";
 import { writeFile } from "node:fs/promises";
 
 import {
@@ -9,9 +9,8 @@ import {
   type AppSettings,
   type DiagnosticsSnapshot,
   type GameDetectionSnapshot,
-  type LlmChatRequest,
-  type LlmChatResponse,
   type OverlayState,
+  type RelayStatusSnapshot,
   type RecordingExportPayload,
   type RecordingExportResponse,
   type RecordingMarker,
@@ -23,7 +22,6 @@ import {
 } from "@private-voice/shared";
 
 import { DiagnosticsService } from "./diagnostics";
-import { LlmService } from "./llm-service";
 import { clearAvatarImage, pickAvatarImage, readAvatarImage } from "./profile-media";
 import { exportRecordingFromMain } from "./recording-main";
 import { readRelayStatus } from "./relay-status";
@@ -34,6 +32,8 @@ import { SignalingClientBridge } from "./signaling-client";
 import { UpdateService } from "./updates";
 import { OverlayWindowController } from "./overlay-window";
 import { GameDetectionController } from "./game-detection";
+import { applyLaunchOnStartup } from "./launch-on-startup";
+import { listScreenCaptureSources, selectScreenCaptureSource } from "./window";
 
 interface MainProcessServices {
   getMainWindow: () => BrowserWindow | null;
@@ -44,8 +44,28 @@ interface MainProcessServices {
   updates: UpdateService;
   overlay: OverlayWindowController;
   gameDetection: GameDetectionController;
-  llm: LlmService;
 }
+
+const requireString = (value: unknown, maximumLength: number, label: string): string => {
+  if (typeof value !== "string" || value.length > maximumLength) {
+    throw new Error(`invalid_${label}`);
+  }
+  return value;
+};
+
+const sanitizeServerUrl = (value?: string): string | undefined => {
+  if (!value) return undefined;
+  try {
+    const url = new URL(value);
+    url.username = "";
+    url.password = "";
+    url.search = "";
+    url.hash = "";
+    return url.toString();
+  } catch {
+    return undefined;
+  }
+};
 
 export const registerIpcHandlers = ({
   getMainWindow,
@@ -56,7 +76,6 @@ export const registerIpcHandlers = ({
   updates,
   overlay,
   gameDetection,
-  llm,
 }: MainProcessServices): void => {
   signalingClient.on("event", (payload: SignalingEventPayload) => {
     sendToWindow(getMainWindow(), IPC_CHANNELS.signaling.event, payload);
@@ -68,28 +87,32 @@ export const registerIpcHandlers = ({
     sendToWindow(getMainWindow(), IPC_CHANNELS.games.detected, snapshot);
   });
 
-  ipcMain.handle(
-    IPC_CHANNELS.app.getRuntimeInfo,
-    async (): Promise<RuntimeInfo> => ({
-      appName: APP_NAME,
-      version: app.getVersion(),
-      platform: process.platform,
-      protocolVersion: APP_PROTOCOL_VERSION,
-      buildNumber: APP_BUILD_NUMBER,
-    }),
+  ipcMain.handle(IPC_CHANNELS.app.getRuntimeInfo, async (): Promise<RuntimeInfo> => ({
+    appName: APP_NAME,
+    version: app.getVersion(),
+    platform: process.platform,
+    protocolVersion: APP_PROTOCOL_VERSION,
+    buildNumber: APP_BUILD_NUMBER,
+  }));
+
+  ipcMain.handle(IPC_CHANNELS.app.getSystemIdleSeconds, async (): Promise<number> =>
+    Math.max(0, powerMonitor.getSystemIdleTime()),
   );
 
-  ipcMain.handle(IPC_CHANNELS.app.writeLog, async (_event, payload: RendererLogPayload): Promise<void> => {
-    await diagnostics.writeLog(payload);
-  });
-
-  ipcMain.handle(IPC_CHANNELS.app.openPath, async (_event, targetPath: string): Promise<void> => {
-    await shell.openPath(targetPath);
-  });
+  ipcMain.handle(
+    IPC_CHANNELS.app.writeLog,
+    async (_event, payload: RendererLogPayload): Promise<void> => {
+      if (!payload || typeof payload !== "object") throw new Error("invalid_log_payload");
+      requireString(payload.message, 500, "log_message");
+      await diagnostics.writeLog(payload);
+    },
+  );
 
   ipcMain.handle(
     IPC_CHANNELS.app.notify,
     async (_event, payload: { title: string; body: string }): Promise<void> => {
+      requireString(payload?.title, 80, "notification_title");
+      requireString(payload?.body, 180, "notification_body");
       if (!Notification.isSupported()) {
         return;
       }
@@ -116,6 +139,7 @@ export const registerIpcHandlers = ({
   );
 
   ipcMain.handle(IPC_CHANNELS.clipboard.writeText, async (_event, text: string): Promise<void> => {
+    requireString(text, 4_096, "clipboard_text");
     clipboard.writeText(text);
     await diagnostics.writeLog({
       category: "app",
@@ -124,6 +148,14 @@ export const registerIpcHandlers = ({
       context: { length: text.length },
     });
   });
+
+  ipcMain.handle(IPC_CHANNELS.screenCapture.listSources, async () => listScreenCaptureSources());
+  ipcMain.handle(
+    IPC_CHANNELS.screenCapture.selectSource,
+    async (_event, sourceId: unknown): Promise<void> => {
+      selectScreenCaptureSource(requireString(sourceId, 256, "screen_source_id"));
+    },
+  );
 
   ipcMain.handle(IPC_CHANNELS.window.minimize, async (): Promise<void> => {
     getMainWindow()?.minimize();
@@ -151,11 +183,36 @@ export const registerIpcHandlers = ({
     window.focus();
   });
 
-  ipcMain.handle(IPC_CHANNELS.settings.get, async (): Promise<AppSettings> => settingsStore.getSnapshot());
+  ipcMain.handle(IPC_CHANNELS.settings.get, async (): Promise<AppSettings> =>
+    settingsStore.getSnapshot(),
+  );
 
   ipcMain.handle(
     IPC_CHANNELS.settings.save,
     async (_event, partial: Partial<AppSettings>): Promise<AppSettings> => {
+      if (
+        !partial ||
+        typeof partial !== "object" ||
+        Array.isArray(partial) ||
+        JSON.stringify(partial).length > 32_768
+      ) {
+        throw new Error("invalid_settings_patch");
+      }
+      if (typeof partial.launchOnStartup === "boolean") {
+        try {
+          applyLaunchOnStartup(partial.launchOnStartup);
+        } catch (error) {
+          await diagnostics.writeLog({
+            category: "app",
+            level: "error",
+            message: "launch on startup setup failed",
+            context: { error: error instanceof Error ? error.message : String(error) },
+          });
+          throw new Error("无法设置开机启动，请检查 Windows 启动应用权限。", {
+            cause: error,
+          });
+        }
+      }
       const settings = await settingsStore.save(partial);
       const registered = await shortcuts.configureGlobalMute(settings.globalMuteShortcut);
       if (!registered && settings.globalMuteShortcut) {
@@ -171,54 +228,100 @@ export const registerIpcHandlers = ({
     return settings;
   });
 
-  ipcMain.handle(IPC_CHANNELS.profile.pickAvatar, async () => pickAvatarImage(settingsStore.getSnapshot().avatarPath));
-  ipcMain.handle(IPC_CHANNELS.profile.readAvatar, async (_event, avatarPath?: string) => readAvatarImage(avatarPath));
+  ipcMain.handle(IPC_CHANNELS.profile.pickAvatar, async () =>
+    pickAvatarImage(settingsStore.getSnapshot().avatarPath),
+  );
+  ipcMain.handle(IPC_CHANNELS.profile.readAvatar, async (_event, avatarPath?: string) =>
+    readAvatarImage(avatarPath),
+  );
   ipcMain.handle(IPC_CHANNELS.profile.clearAvatar, async (_event, avatarPath?: string) => {
     await clearAvatarImage(avatarPath ?? settingsStore.getSnapshot().avatarPath);
   });
 
-  ipcMain.handle(IPC_CHANNELS.diagnostics.snapshot, async (): Promise<DiagnosticsSnapshot> => diagnostics.getSnapshot());
-  ipcMain.handle(IPC_CHANNELS.diagnostics.exportLogs, async (): Promise<DiagnosticsSnapshot> => diagnostics.exportLogs());
+  ipcMain.handle(IPC_CHANNELS.diagnostics.snapshot, async (): Promise<DiagnosticsSnapshot> =>
+    diagnostics.getSnapshot(),
+  );
+  ipcMain.handle(
+    IPC_CHANNELS.diagnostics.testServer,
+    async (_event, serverUrl: unknown): Promise<RelayStatusSnapshot> => {
+      if (typeof serverUrl !== "string" || serverUrl.length > 2_048) {
+        throw new Error("invalid_server_url");
+      }
+      return readRelayStatus({
+        relayServerUrl: serverUrl,
+        writeLog: (payload) => diagnostics.writeLog(payload),
+      });
+    },
+  );
+  ipcMain.handle(IPC_CHANNELS.diagnostics.exportLogs, async (): Promise<DiagnosticsSnapshot> =>
+    diagnostics.exportLogs(),
+  );
 
-  ipcMain.handle(IPC_CHANNELS.diagnostics.exportBundle, async (_event, rendererState): Promise<DiagnosticsSnapshot> => {
-    const settings = settingsStore.getSnapshot();
-    const relay = await readRelayStatus({
-      relayServerUrl: settings.relayServerUrl,
-      writeLog: (payload) => diagnostics.writeLog(payload),
-    });
-    const summary = {
-      appVersion: app.getVersion(),
-      protocolVersion: APP_PROTOCOL_VERSION,
-      buildNumber: APP_BUILD_NUMBER,
-      serverUrl: settings.relayServerUrl,
-      currentRoomId: rendererState?.currentRoomId,
-      currentPeerId: rendererState?.currentPeerId,
-      relay,
-      exportedAt: new Date().toISOString(),
-    };
+  ipcMain.handle(
+    IPC_CHANNELS.diagnostics.exportBundle,
+    async (_event, rendererState): Promise<DiagnosticsSnapshot> => {
+      const settings = settingsStore.getSnapshot();
+      const relay = await readRelayStatus({
+        relayServerUrl: settings.relayServerUrl,
+        writeLog: (payload) => diagnostics.writeLog(payload),
+      });
+      const safeServerUrl = sanitizeServerUrl(settings.relayServerUrl);
+      const safeRelay = { ...relay, serverUrl: sanitizeServerUrl(relay.serverUrl) };
+      const settingsSummary = {
+        settingsSchemaVersion: settings.settingsSchemaVersion,
+        profileSchemaVersion: settings.profileSchemaVersion,
+        profileReady: settings.hasCompletedProfileSetup,
+        preferredSampleRate: settings.preferredSampleRate,
+        lowCutFrequency: settings.lowCutFrequency,
+        micEqualizerGains: settings.micEqualizerGains,
+        inputLevelThreshold: settings.inputLevelThreshold,
+        isNoiseSuppressionEnabled: settings.isNoiseSuppressionEnabled,
+        isEchoCancellationEnabled: settings.isEchoCancellationEnabled,
+        isAutoGainControlEnabled: settings.isAutoGainControlEnabled,
+        isPushToTalkEnabled: settings.isPushToTalkEnabled,
+        isOverlayEnabled: settings.isOverlayEnabled,
+        serverUrl: safeServerUrl,
+      };
+      const safeRendererState = rendererState
+        ? { ...rendererState, serverUrl: sanitizeServerUrl(rendererState.serverUrl) }
+        : null;
+      const summary = {
+        appVersion: app.getVersion(),
+        protocolVersion: APP_PROTOCOL_VERSION,
+        buildNumber: APP_BUILD_NUMBER,
+        serverUrl: safeServerUrl,
+        currentRoomId: rendererState?.currentRoomId,
+        currentPeerId: rendererState?.currentPeerId,
+        relay: safeRelay,
+        exportedAt: new Date().toISOString(),
+      };
 
-    return diagnostics.exportBundle([
-      { name: "settings.json", content: JSON.stringify(settings, null, 2) },
-      { name: "relay.json", content: JSON.stringify(relay, null, 2) },
-      { name: "summary.json", content: JSON.stringify(summary, null, 2) },
-      {
-        name: "renderer-session.json",
-        content: JSON.stringify(rendererState ?? null, null, 2),
-      },
-      {
-        name: "audio-timeline.json",
-        content: JSON.stringify(rendererState?.audioTimeline ?? [], null, 2),
-      },
-    ]);
-  });
+      return diagnostics.exportBundle([
+        { name: "settings-summary.json", content: JSON.stringify(settingsSummary, null, 2) },
+        { name: "relay.json", content: JSON.stringify(safeRelay, null, 2) },
+        { name: "summary.json", content: JSON.stringify(summary, null, 2) },
+        {
+          name: "renderer-session.json",
+          content: JSON.stringify(safeRendererState, null, 2),
+        },
+        {
+          name: "audio-timeline.json",
+          content: JSON.stringify(rendererState?.audioTimeline ?? [], null, 2),
+        },
+      ]);
+    },
+  );
 
   ipcMain.handle(IPC_CHANNELS.diagnostics.openLogsDirectory, async (): Promise<void> => {
     await diagnostics.openLogsDirectory();
   });
 
-  ipcMain.handle(IPC_CHANNELS.shortcuts.configureMute, async (_event, accelerator: string): Promise<void> => {
-    await shortcuts.configureGlobalMute(accelerator);
-  });
+  ipcMain.handle(
+    IPC_CHANNELS.shortcuts.configureMute,
+    async (_event, accelerator: string): Promise<void> => {
+      await shortcuts.configureGlobalMute(accelerator);
+    },
+  );
   ipcMain.handle(
     IPC_CHANNELS.shortcuts.configurePushToTalk,
     async (_event, accelerator: string, enabled: boolean): Promise<boolean> =>
@@ -237,12 +340,16 @@ export const registerIpcHandlers = ({
   ipcMain.handle(IPC_CHANNELS.overlay.show, async (): Promise<boolean> => overlay.show());
   ipcMain.handle(IPC_CHANNELS.overlay.toggle, async (): Promise<boolean> => overlay.toggle());
   ipcMain.handle(IPC_CHANNELS.overlay.close, async (): Promise<void> => overlay.close());
-  ipcMain.handle(IPC_CHANNELS.overlay.update, async (_event, state: OverlayState): Promise<void> => {
-    overlay.update(state);
-  });
   ipcMain.handle(
-    IPC_CHANNELS.games.getSnapshot,
-    async (): Promise<GameDetectionSnapshot> => gameDetection.getSnapshot(),
+    IPC_CHANNELS.overlay.update,
+    async (_event, state: OverlayState): Promise<void> => {
+      if (!state || !Array.isArray(state.members) || state.members.length > 5)
+        throw new Error("invalid_overlay_state");
+      overlay.update(state);
+    },
+  );
+  ipcMain.handle(IPC_CHANNELS.games.getSnapshot, async (): Promise<GameDetectionSnapshot> =>
+    gameDetection.getSnapshot(),
   );
   ipcMain.handle(IPC_CHANNELS.updates.download, async (): Promise<void> => {
     await updates.download();
@@ -252,10 +359,17 @@ export const registerIpcHandlers = ({
   });
 
   ipcMain.handle(IPC_CHANNELS.signaling.connect, async (_event, signalingUrl: string) => {
-    await signalingClient.connect(signalingUrl);
+    const url = new URL(requireString(signalingUrl, 2_048, "signaling_url"));
+    if (url.protocol !== "ws:" && url.protocol !== "wss:")
+      throw new Error("invalid_signaling_protocol");
+    await signalingClient.connect(url.toString());
   });
   ipcMain.handle(IPC_CHANNELS.signaling.send, async (_event, payload: string) => {
-    await signalingClient.send(payload);
+    const serialized = requireString(payload, 256 * 1024, "signaling_payload");
+    const parsed = JSON.parse(serialized) as unknown;
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed))
+      throw new Error("invalid_signaling_payload");
+    await signalingClient.send(serialized);
   });
   ipcMain.handle(IPC_CHANNELS.signaling.close, async () => {
     await signalingClient.close();
@@ -268,11 +382,7 @@ export const registerIpcHandlers = ({
   );
   ipcMain.handle(
     IPC_CHANNELS.recording.saveMarkers,
-    async (
-      _event,
-      filePath: string,
-      markers: RecordingMarker[],
-    ): Promise<string> => {
+    async (_event, filePath: string, markers: RecordingMarker[]): Promise<string> => {
       const markerPath = `${filePath}.markers.json`;
       await writeFile(
         markerPath,
@@ -281,15 +391,5 @@ export const registerIpcHandlers = ({
       );
       return markerPath;
     },
-  );
-
-  ipcMain.handle(
-    IPC_CHANNELS.llm.chat,
-    async (_event, payload: LlmChatRequest): Promise<LlmChatResponse> => llm.chat(payload),
-  );
-
-  ipcMain.handle(
-    IPC_CHANNELS.llm.health,
-    async () => llm.health(),
   );
 };

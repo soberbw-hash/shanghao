@@ -4,7 +4,10 @@ import { desktopApi } from "../utils/desktopApi";
 import { useAudioStore } from "../store/audioStore";
 
 export const useGlobalMuteSync = (): void => {
-  const toggleMute = useAudioStore((state) => state.toggleMute);
+  const toggleMicrophone = useAudioStore((state) => state.toggleMicrophone);
 
-  useEffect(() => desktopApi.shortcuts.onMuteTriggered(() => toggleMute()), [toggleMute]);
+  useEffect(
+    () => desktopApi.shortcuts.onMuteTriggered(() => toggleMicrophone()),
+    [toggleMicrophone],
+  );
 };

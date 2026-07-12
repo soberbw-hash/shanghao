@@ -8,7 +8,10 @@ module.exports = async (context) => {
   }
 
   const projectDir = context.packager.projectDir;
-  const executablePath = path.join(context.appOutDir, `${context.packager.appInfo.productFilename}.exe`);
+  const executablePath = path.join(
+    context.appOutDir,
+    `${context.packager.appInfo.productFilename}.exe`,
+  );
   const iconPath = path.join(projectDir, "build", "shanghao-icon-v3.ico");
   const rceditModulePath = path.join(projectDir, "node_modules", "rcedit", "lib", "index.js");
   const { rcedit } = await import(pathToFileURL(rceditModulePath).href);

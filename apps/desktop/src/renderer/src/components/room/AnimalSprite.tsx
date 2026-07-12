@@ -28,11 +28,16 @@ const layerSrc = (avatarId: BuiltInAvatarId, part: LayerPart): string | undefine
 
 const activityToAnimationState = (activity: MemberActivity): AnimationState => {
   switch (activity) {
-    case "gaming": return "gaming";
-    case "drinking": return "drinking";
-    case "fitness": return "fitness";
-    case "restroom": return "away";
-    default: return "idle";
+    case "gaming":
+      return "gaming";
+    case "drinking":
+      return "drinking";
+    case "fitness":
+      return "fitness";
+    case "restroom":
+      return "away";
+    default:
+      return "idle";
   }
 };
 
@@ -52,9 +57,10 @@ export const AnimalSprite = ({
   const [currentSrc, setCurrentSrc] = useState<string>("");
   const [hasError, setHasError] = useState(false);
 
-  const resolvedState = typeof state === "string" && animationStates.includes(state as AnimationState)
-    ? state as AnimationState
-    : activityToAnimationState(state as MemberActivity);
+  const resolvedState =
+    typeof state === "string" && animationStates.includes(state as AnimationState)
+      ? (state as AnimationState)
+      : activityToAnimationState(state as MemberActivity);
   const animationState = isMoving ? "walk" : resolvedState;
 
   useEffect(() => {
@@ -71,7 +77,9 @@ export const AnimalSprite = ({
       <div
         aria-hidden="true"
         className={`layered-animal layered-animal-${animationState} ${isMoving ? "is-moving" : ""} ${className}`}
-        style={{ "--layer-count": layers.length } as CSSProperties & Record<string, string | number>}
+        style={
+          { "--layer-count": layers.length } as CSSProperties & Record<string, string | number>
+        }
       >
         <span className="layered-animal-shadow" />
         {layers.map(({ part, src }) => (

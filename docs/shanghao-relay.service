@@ -5,13 +5,24 @@ Wants=network-online.target
 
 [Service]
 Type=simple
+User=shanghao
+Group=shanghao
 WorkingDirectory=/opt/shanghao
 Environment=NODE_ENV=production
-EnvironmentFile=-/opt/shanghao/.env
+EnvironmentFile=/opt/shanghao/.env
 ExecStart=/usr/bin/node /opt/shanghao/scripts/start-relay.mjs
 Restart=always
 RestartSec=3
-User=root
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+ReadWritePaths=/opt/shanghao/data /var/log/shanghao
 
 [Install]
 WantedBy=multi-user.target

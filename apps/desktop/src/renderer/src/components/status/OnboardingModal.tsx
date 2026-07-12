@@ -8,13 +8,7 @@ const steps = [
   "底部随时可以静音，按键说话也在同一排。",
 ];
 
-export const OnboardingModal = ({
-  isOpen,
-  onClose,
-}: {
-  isOpen: boolean;
-  onClose: () => void;
-}) =>
+export const OnboardingModal = ({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) =>
   isOpen ? (
     <div className="pointer-events-auto fixed inset-0 flex items-center justify-center bg-[rgba(17,24,39,0.12)] px-6 backdrop-blur-[3px]">
       <motion.div

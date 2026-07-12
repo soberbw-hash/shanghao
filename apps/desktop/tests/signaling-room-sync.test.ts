@@ -1,6 +1,5 @@
 import assert from "node:assert/strict";
 import { createHmac } from "node:crypto";
-import { createServer } from "node:http";
 import test from "node:test";
 
 import { APP_BUILD_NUMBER, APP_PROTOCOL_VERSION } from "@private-voice/shared";
@@ -67,7 +66,11 @@ test("fixed channel acknowledges join before sending the channel snapshot", asyn
     const snapshotReceived = new Promise<void>((resolve, reject) => {
       const timer = setTimeout(() => reject(new Error("message_timeout")), 4_000);
       socket.on("message", (raw) => {
-        const payload = JSON.parse(raw.toString()) as { type?: string; peerId?: string; memberCount?: number };
+        const payload = JSON.parse(raw.toString()) as {
+          type?: string;
+          peerId?: string;
+          memberCount?: number;
+        };
         if (payload.type) messageTypes.push(payload.type);
         if (payload.type === "join_ack") {
           assert.equal(payload.peerId, "ack-peer");
@@ -105,7 +108,9 @@ test("join acknowledgement provides short-lived TURN credentials when configured
   try {
     const acknowledgement = waitForMessage(
       socket,
-      (payload): payload is {
+      (
+        payload,
+      ): payload is {
         type: "join_ack";
         iceServers: Array<{ urls: string[]; username: string; credential: string }>;
       } =>
@@ -171,7 +176,10 @@ test("fixed channel syncs members after two peers join", async () => {
     );
 
     assert.deepEqual(snapshot.members.map((member) => member.id).sort(), ["cat", "fox"]);
-    assert.equal(snapshot.members.some((member) => member.isHost), false);
+    assert.equal(
+      snapshot.members.some((member) => member.isHost),
+      false,
+    );
   } finally {
     first.close();
     second.close();
@@ -207,7 +215,9 @@ test("fixed channel forwards peer media restart requests to the target only", as
 
     const forwarded = waitForMessage(
       receiver,
-      (payload): payload is {
+      (
+        payload,
+      ): payload is {
         type: "peer_restart_request";
         peerId: string;
         targetPeerId: string;
@@ -217,13 +227,15 @@ test("fixed channel forwards peer media restart requests to the target only", as
         payload !== null &&
         (payload as { type?: string }).type === "peer_restart_request",
     );
-    sender.send(JSON.stringify({
-      type: "peer_restart_request",
-      roomId: "main",
-      peerId: "restart-sender",
-      targetPeerId: "restart-receiver",
-      reason: "connection_timeout",
-    }));
+    sender.send(
+      JSON.stringify({
+        type: "peer_restart_request",
+        roomId: "main",
+        peerId: "restart-sender",
+        targetPeerId: "restart-receiver",
+        reason: "connection_timeout",
+      }),
+    );
     const message = await forwarded;
     assert.equal(message.peerId, "restart-sender");
     assert.equal(message.targetPeerId, "restart-receiver");
@@ -263,16 +275,18 @@ test("fixed channel assigns unique seats and arbitrates simultaneous seat reques
     );
     assert.equal(new Set(joined.members.map((member) => member.sceneZone)).size, 2);
 
-    first.send(JSON.stringify({
-      type: "member_state",
-      roomId: "main",
-      peerId: "seat-first",
-      sceneZone: "gameDesk3",
-      activity: "gaming",
-      isMuted: false,
-      isSpeaking: false,
-      isDeafened: false,
-    }));
+    first.send(
+      JSON.stringify({
+        type: "member_state",
+        roomId: "main",
+        peerId: "seat-first",
+        sceneZone: "gameDesk3",
+        activity: "gaming",
+        isMuted: false,
+        isSpeaking: false,
+        isDeafened: false,
+      }),
+    );
     await waitForMessage(
       second,
       (payload): payload is { peerId: string; sceneZone: string } =>
@@ -283,16 +297,18 @@ test("fixed channel assigns unique seats and arbitrates simultaneous seat reques
         (payload as { sceneZone?: string }).sceneZone === "gameDesk3",
     );
 
-    second.send(JSON.stringify({
-      type: "member_state",
-      roomId: "main",
-      peerId: "seat-second",
-      sceneZone: "gameDesk3",
-      activity: "gaming",
-      isMuted: false,
-      isSpeaking: false,
-      isDeafened: false,
-    }));
+    second.send(
+      JSON.stringify({
+        type: "member_state",
+        roomId: "main",
+        peerId: "seat-second",
+        sceneZone: "gameDesk3",
+        activity: "gaming",
+        isMuted: false,
+        isSpeaking: false,
+        isDeafened: false,
+      }),
+    );
     const arbitrated = await waitForMessage(
       first,
       (payload): payload is { peerId: string; sceneZone: string } =>
@@ -383,86 +399,6 @@ test("fixed channel keeps main room alive after everyone leaves", async () => {
   }
 });
 
-test("llm health endpoint tolerates duplicate slashes from client url joins", async () => {
-  const server = new SignalingServer({ roomName: "固定频道" });
-  const port = await server.listen();
-
-  try {
-    const health = (await fetch(`http://127.0.0.1:${port}//llm/health`).then((response) =>
-      response.json(),
-    )) as { ok: boolean; configured: boolean };
-
-    assert.equal(health.ok, true);
-    assert.equal(typeof health.configured, "boolean");
-  } finally {
-    await server.close();
-  }
-});
-
-test("llm chat reads cloud api env that is loaded after module import", async () => {
-  const previousKey = process.env.SHANGHAO_LLM_API_KEY;
-  const previousUrl = process.env.SHANGHAO_LLM_API_URL;
-  const previousModel = process.env.SHANGHAO_LLM_MODEL;
-
-  const upstreamRequests: Array<{ authorization?: string; model?: string }> = [];
-  const upstream = createServer((request, response) => {
-    const chunks: Buffer[] = [];
-    request.on("data", (chunk: Buffer) => chunks.push(chunk));
-    request.on("end", () => {
-      const body = JSON.parse(Buffer.concat(chunks).toString("utf8")) as { model?: string };
-      upstreamRequests.push({
-        authorization: request.headers.authorization,
-        model: body.model,
-      });
-      response.writeHead(200, { "content-type": "application/json; charset=utf-8" });
-      response.end(JSON.stringify({ choices: [{ message: { content: "OK" } }] }));
-    });
-  });
-
-  await new Promise<void>((resolve) => upstream.listen(0, "127.0.0.1", () => resolve()));
-  const upstreamAddress = upstream.address();
-  assert.equal(typeof upstreamAddress, "object");
-  const upstreamPort = upstreamAddress?.port;
-
-  process.env.SHANGHAO_LLM_API_KEY = "late-loaded-key";
-  process.env.SHANGHAO_LLM_API_URL = `http://127.0.0.1:${upstreamPort}/v1/chat/completions`;
-  process.env.SHANGHAO_LLM_MODEL = "late-loaded-model";
-
-  const server = new SignalingServer({ roomName: "固定频道" });
-  const port = await server.listen();
-
-  try {
-    const result = (await fetch(`http://127.0.0.1:${port}/llm/chat`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ message: "只回复 OK", history: [] }),
-    }).then((response) => response.json())) as { ok: boolean; reply?: string };
-
-    assert.deepEqual(result, { ok: true, reply: "OK" });
-    assert.deepEqual(upstreamRequests, [
-      { authorization: "Bearer late-loaded-key", model: "late-loaded-model" },
-    ]);
-  } finally {
-    await server.close();
-    await new Promise<void>((resolve) => upstream.close(() => resolve()));
-    if (previousKey === undefined) {
-      delete process.env.SHANGHAO_LLM_API_KEY;
-    } else {
-      process.env.SHANGHAO_LLM_API_KEY = previousKey;
-    }
-    if (previousUrl === undefined) {
-      delete process.env.SHANGHAO_LLM_API_URL;
-    } else {
-      process.env.SHANGHAO_LLM_API_URL = previousUrl;
-    }
-    if (previousModel === undefined) {
-      delete process.env.SHANGHAO_LLM_MODEL;
-    } else {
-      process.env.SHANGHAO_LLM_MODEL = previousModel;
-    }
-  }
-});
-
 test("fixed channel broadcasts text chat and knock events", async () => {
   const server = new SignalingServer({ roomName: "固定频道" });
   const port = await server.listen();
@@ -471,7 +407,7 @@ test("fixed channel broadcasts text chat and knock events", async () => {
   const receiver = await openSocket(url);
 
   try {
-    joinChannel(sender, "sender");
+    joinChannel(sender, "sender", "小狐狸");
     joinChannel(receiver, "receiver");
     await waitForMessage(
       receiver,
@@ -502,7 +438,7 @@ test("fixed channel broadcasts text chat and knock events", async () => {
     );
     assert.equal(message.content, "上号");
 
-    const createdAt = new Date().toISOString();
+    const createdAt = "2000-01-01T00:00:00.000Z";
     sender.send(
       JSON.stringify({
         type: "knock_event",
@@ -520,7 +456,7 @@ test("fixed channel broadcasts text chat and knock events", async () => {
         (payload as { type?: string }).type === "knock_event",
     );
     assert.equal(knock.nickname, "小狐狸");
-    assert.equal(knock.createdAt, createdAt);
+    assert.notEqual(knock.createdAt, createdAt);
   } finally {
     sender.close();
     receiver.close();
@@ -568,7 +504,9 @@ test("fixed channel relays fallback audio chunks to other peers only", async () 
 
     const chunk = await waitForMessage(
       receiver,
-      (payload): payload is { sourcePeerId: string; data: string; codec: string; serverSequence: number } =>
+      (
+        payload,
+      ): payload is { sourcePeerId: string; data: string; codec: string; serverSequence: number } =>
         typeof payload === "object" &&
         payload !== null &&
         (payload as { type?: string }).type === "audio_chunk",
@@ -619,7 +557,9 @@ test("fixed channel relays fallback screen frames and stop state to other peers 
 
     const frame = await waitForMessage(
       receiver,
-      (payload): payload is { type: string; sourcePeerId: string; sequence: number; data: string } =>
+      (
+        payload,
+      ): payload is { type: string; sourcePeerId: string; sequence: number; data: string } =>
         typeof payload === "object" &&
         payload !== null &&
         (payload as { type?: string }).type === "screen_frame",
@@ -674,7 +614,9 @@ test("fixed channel keeps a reconnecting member during grace and replaces same p
     joinChannel(peer, "peer");
     const joined = await waitForMessage(
       first,
-      (payload): payload is { revision: number; members: Array<{ id: string; presenceState: string }> } =>
+      (
+        payload,
+      ): payload is { revision: number; members: Array<{ id: string; presenceState: string }> } =>
         typeof payload === "object" &&
         payload !== null &&
         (payload as { type?: string }).type === "channel_snapshot" &&
@@ -684,7 +626,9 @@ test("fixed channel keeps a reconnecting member during grace and replaces same p
     peer.close();
     const reconnecting = await waitForMessage(
       first,
-      (payload): payload is { revision: number; members: Array<{ id: string; presenceState: string }> } =>
+      (
+        payload,
+      ): payload is { revision: number; members: Array<{ id: string; presenceState: string }> } =>
         typeof payload === "object" &&
         payload !== null &&
         (payload as { type?: string }).type === "channel_snapshot" &&
@@ -715,7 +659,7 @@ test("fixed channel keeps a reconnecting member during grace and replaces same p
   }
 });
 
-test("fixed channel syncs custom status, reactions, and the shared note", async () => {
+test("fixed channel broadcasts lightweight scene reactions", async () => {
   const server = new SignalingServer({ roomName: "固定频道" });
   const port = await server.listen();
   const url = `ws://127.0.0.1:${port}`;
@@ -731,36 +675,20 @@ test("fixed channel syncs custom status, reactions, and the shared note", async 
         payload !== null &&
         (payload as { type?: string }).type === "channel_snapshot",
     );
-    second.send(
-      JSON.stringify({
-        type: "join_channel",
-        roomId: "main",
-        channelId: "main",
-        peerId: "cat",
-        nickname: "团团",
-        avatarId: "cat",
-        customStatus: "排位中",
-        appVersion: "0.1.48",
-        protocolVersion: APP_PROTOCOL_VERSION,
-        buildNumber: APP_BUILD_NUMBER,
-      }),
-    );
-    const snapshot = await waitForMessage(
+    joinChannel(second, "cat", "团团");
+    await waitForMessage(
       first,
-      (payload): payload is {
+      (
+        payload,
+      ): payload is {
         type: "channel_snapshot";
-        members: Array<{ id: string; customStatus?: string }>;
+        members: Array<{ id: string }>;
       } =>
         typeof payload === "object" &&
         payload !== null &&
         (payload as { type?: string }).type === "channel_snapshot" &&
         (payload as { members?: unknown[] }).members?.length === 2,
     );
-    assert.equal(
-      snapshot.members.find((member) => member.id === "cat")?.customStatus,
-      "排位中",
-    );
-
     const reactionPromise = waitForMessage(
       second,
       (payload): payload is { type: "scene_reaction"; emoji: string } =>
@@ -779,32 +707,6 @@ test("fixed channel syncs custom status, reactions, and the shared note", async 
       }),
     );
     assert.equal((await reactionPromise).emoji, "🔥");
-
-    const notePromise = waitForMessage(
-      second,
-      (payload): payload is {
-        type: "room_note_update";
-        note: { content: string; authorName: string };
-      } =>
-        typeof payload === "object" &&
-        payload !== null &&
-        (payload as { type?: string }).type === "room_note_update",
-    );
-    first.send(
-      JSON.stringify({
-        type: "room_note_update",
-        roomId: "main",
-        peerId: "fox",
-        note: {
-          content: "周五晚上，老时间",
-          authorName: "客户端伪造值",
-          updatedAt: new Date().toISOString(),
-        },
-      }),
-    );
-    const noteMessage = await notePromise;
-    assert.equal(noteMessage.note.content, "周五晚上，老时间");
-    assert.equal(noteMessage.note.authorName, "橘子");
   } finally {
     first.close();
     second.close();

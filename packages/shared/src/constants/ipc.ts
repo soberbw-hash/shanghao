@@ -1,12 +1,16 @@
 export const IPC_CHANNELS = {
   app: {
     getRuntimeInfo: "app:get-runtime-info",
+    getSystemIdleSeconds: "app:get-system-idle-seconds",
     writeLog: "app:write-log",
-    openPath: "app:open-path",
     notify: "app:notify",
   },
   clipboard: {
     writeText: "clipboard:write-text",
+  },
+  screenCapture: {
+    listSources: "screen-capture:list-sources",
+    selectSource: "screen-capture:select-source",
   },
   window: {
     minimize: "window:minimize",
@@ -37,6 +41,7 @@ export const IPC_CHANNELS = {
   },
   diagnostics: {
     snapshot: "diagnostics:snapshot",
+    testServer: "diagnostics:test-server",
     exportLogs: "diagnostics:export-logs",
     exportBundle: "diagnostics:export-bundle",
     openLogsDirectory: "diagnostics:open-logs-directory",
@@ -65,9 +70,5 @@ export const IPC_CHANNELS = {
   recording: {
     export: "recording:export",
     saveMarkers: "recording:save-markers",
-  },
-  llm: {
-    chat: "llm:chat",
-    health: "llm:health",
   },
 } as const;

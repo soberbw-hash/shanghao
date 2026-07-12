@@ -5,9 +5,7 @@ import type {
 } from "@private-voice/shared";
 
 export interface RecordingExporter {
-  exportRecording: (
-    payload: RecordingExportPayload,
-  ) => Promise<RecordingExportResponse>;
+  exportRecording: (payload: RecordingExportPayload) => Promise<RecordingExportResponse>;
 }
 
 export const toRecordingResult = (
@@ -16,12 +14,7 @@ export const toRecordingResult = (
   durationMs: number,
   sampleRate: number,
 ): RecordingResult => {
-  if (
-    !response.ok ||
-    !response.filePath ||
-    response.fileSize === undefined ||
-    !response.mimeType
-  ) {
+  if (!response.ok || !response.filePath || response.fileSize === undefined || !response.mimeType) {
     throw new Error(response.errorMessage ?? "录音导出失败。");
   }
 

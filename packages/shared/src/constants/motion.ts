@@ -11,4 +11,4 @@ export const APPLE_MOTION_DURATION = {
   color: 0.13,
 } as const;
 
-export const APPLE_MOTION_EASE = [0.22, 1, 0.36, 1] as const;
+export const APPLE_MOTION_EASE = [0.23, 1, 0.32, 1] as const;

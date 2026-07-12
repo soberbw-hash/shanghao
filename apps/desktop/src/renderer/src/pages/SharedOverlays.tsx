@@ -35,10 +35,7 @@ export const SharedOverlays = () => {
         />
       ) : null}
       <ModalHost>
-        <OnboardingModal
-          isOpen={isOnboardingOpen}
-          onClose={() => setOnboardingOpen(false)}
-        />
+        <OnboardingModal isOpen={isOnboardingOpen} onClose={() => setOnboardingOpen(false)} />
         <RecordingSaveDialog
           isOpen={recordingStatus.state === RecordingState.Saved}
           filePath={recordingStatus.result?.filePath}

@@ -1,7 +1,4 @@
-import {
-  TARGET_CHANNEL_COUNT,
-  type PreferredSampleRate,
-} from "@private-voice/shared";
+import { TARGET_CHANNEL_COUNT, type PreferredSampleRate } from "@private-voice/shared";
 
 export interface AudioConstraintOverrides {
   deviceId?: string;

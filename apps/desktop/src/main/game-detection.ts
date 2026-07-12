@@ -1,85 +1,159 @@
 import { execFile } from "node:child_process";
+import path from "node:path";
 import { promisify } from "node:util";
 
 import type { GameDetectionSnapshot, RendererLogPayload } from "@private-voice/shared";
 
 const execFileAsync = promisify(execFile);
-const POLL_INTERVAL_MS = 4000;
+const POLL_INTERVAL_MS = 8_000;
 
-const KNOWN_GAMES: Array<{ name: string; aliases: string[] }> = [
+export interface ProcessSnapshot {
+  ProcessName?: string;
+  MainWindowTitle?: string;
+  Path?: string;
+}
+
+interface GameRule {
+  name: NonNullable<GameDetectionSnapshot["gameName"]>;
+  processNames: string[];
+  titleNeedles?: string[];
+  pathNeedles?: string[];
+  evidenceRequiredProcessNames?: string[];
+}
+
+const GAME_RULES: GameRule[] = [
   {
-    name: "失落城堡2",
-    aliases: [
-      "lostcastle2",
-      "lost castle 2",
-      "lostcastleii",
-      "lost castle ii",
-      "lostcastle2-win64-shipping",
-      "失落城堡2",
-      "失落城堡 2",
+    name: "我的世界",
+    processNames: ["minecraft.windows", "minecraftlauncher", "minecraft launcher", "javaw"],
+    titleNeedles: ["minecraft", "我的世界"],
+    pathNeedles: [".minecraft", "minecraft launcher", "minecraft\\runtime"],
+    evidenceRequiredProcessNames: ["javaw"],
+  },
+  {
+    name: "王国保卫战",
+    processNames: [
+      "kingdom rush",
+      "kingdom rush frontiers",
+      "kingdom rush origins",
+      "kingdom rush vengeance",
+      "kingdom rush 5 alliance",
+      "kingdomrush",
     ],
   },
-  { name: "三角洲行动", aliases: ["deltaforce", "delta force"] },
+  { name: "杀戮尖塔", processNames: ["slaythespire"] },
+  { name: "英雄联盟", processNames: ["league of legends", "leagueoflegends"] },
+  { name: "无畏契约", processNames: ["valorant-win64-shipping"] },
   {
-    name: "英雄联盟",
-    aliases: [
-      "leagueclient",
-      "leagueclientux",
-      "leagueclientuxrender",
-      "league of legends",
-      "league of legends.exe",
-      "lolclient",
-      "lol.launcher",
-      "riotclientservices",
-      "riot client",
-      "英雄联盟",
-    ],
+    name: "三角洲行动",
+    processNames: ["deltaforce", "deltaforceclient-win64-shipping", "delta force"],
   },
-  { name: "无畏契约", aliases: ["valorant"] },
-  { name: "CS2", aliases: ["cs2", "counter-strike"] },
-  { name: "原神", aliases: ["genshin", "mihoyo"] },
-  { name: "永劫无间", aliases: ["narakabladepoint", "nablauncher"] },
-  { name: "Apex英雄", aliases: ["r5apex", "apex"] },
-  { name: "绝地求生", aliases: ["tslgame", "pubg"] },
-  { name: "守望先锋", aliases: ["overwatch"] },
-  { name: "蛋仔派对", aliases: ["eggy"] },
-  { name: "我的世界", aliases: ["minecraft", "javaw"] },
-  { name: "Roblox", aliases: ["roblox"] },
+  { name: "CS2", processNames: ["cs2"] },
+  { name: "Dota 2", processNames: ["dota2"] },
+  { name: "Apex 英雄", processNames: ["r5apex"] },
+  { name: "绝地求生", processNames: ["tslgame"] },
+  { name: "守望先锋", processNames: ["overwatch"] },
+  { name: "永劫无间", processNames: ["narakabladepoint", "naraka"] },
+  { name: "原神", processNames: ["yuanshen", "genshinimpact"] },
+  { name: "崩坏：星穹铁道", processNames: ["starrail"] },
+  { name: "Fortnite", processNames: ["fortniteclient-win64-shipping"] },
+  { name: "GTA V", processNames: ["gta5", "playgtav"] },
+  {
+    name: "彩虹六号：围攻",
+    processNames: ["rainbowsix", "rainbowsix_vulkan", "rainbowsix_be"],
+  },
+  {
+    name: "怪物猎人",
+    processNames: ["monsterhunterworld", "monsterhunterrise", "monsterhunterwilds"],
+  },
+  { name: "黑神话：悟空", processNames: ["b1-win64-shipping", "b1"] },
+  { name: "失落城堡 2", processNames: ["lostcastle2", "lostcastle2-win64-shipping"] },
+  { name: "艾尔登法环", processNames: ["eldenring"] },
+  { name: "双人成行", processNames: ["ittakestwo"] },
+  { name: "幻兽帕鲁", processNames: ["palworld-win64-shipping", "pal"] },
+  { name: "胡闹厨房", processNames: ["overcooked2", "overcooked all you can eat"] },
+  { name: "荒野大镖客 2", processNames: ["rdr2"] },
 ];
 
-export const buildGameDetectionProbeCommand = (): string => [
-  "$ErrorActionPreference='SilentlyContinue'",
-  "Get-Process | ForEach-Object {",
-  "  $processPath = ''",
-  "  try { $processPath = $_.Path } catch {}",
-  "  [PSCustomObject]@{ ProcessName=$_.ProcessName; MainWindowTitle=$_.MainWindowTitle; Path=$processPath }",
-  "} | ConvertTo-Json -Compress",
-].join("; ");
+const normalizeProcessName = (value?: string): string =>
+  (value ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/\.exe$/i, "");
 
-export const matchKnownGame = (processSnapshot: string): GameDetectionSnapshot["gameName"] => {
-  const normalized = processSnapshot.toLowerCase();
-  for (const game of KNOWN_GAMES) {
-    for (const alias of game.aliases) {
-      if (normalized.includes(alias)) {
-        return game.name as GameDetectionSnapshot["gameName"];
+const parseProcessSnapshot = (raw: string): ProcessSnapshot[] => {
+  if (!raw.trim()) return [];
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    const entries = Array.isArray(parsed) ? parsed : [parsed];
+    return entries.filter(
+      (entry): entry is ProcessSnapshot =>
+        Boolean(entry) && typeof entry === "object" && !Array.isArray(entry),
+    );
+  } catch {
+    return [];
+  }
+};
+
+const includesAny = (value: string, needles: string[] = []): boolean =>
+  needles.some((needle) => value.includes(needle.toLowerCase()));
+
+export const matchKnownGame = (
+  processSnapshot: string | ProcessSnapshot[],
+): GameDetectionSnapshot["gameName"] => {
+  const processes = Array.isArray(processSnapshot)
+    ? processSnapshot
+    : parseProcessSnapshot(processSnapshot);
+
+  for (const processInfo of processes) {
+    const processName = normalizeProcessName(processInfo.ProcessName);
+    const executableName = normalizeProcessName(
+      processInfo.Path ? path.basename(processInfo.Path) : undefined,
+    );
+    const title = (processInfo.MainWindowTitle ?? "").toLowerCase();
+    const processPath = (processInfo.Path ?? "").toLowerCase();
+
+    for (const rule of GAME_RULES) {
+      const processMatched = rule.processNames.some((candidate) => {
+        const normalizedCandidate = normalizeProcessName(candidate);
+        return processName === normalizedCandidate || executableName === normalizedCandidate;
+      });
+      if (!processMatched) continue;
+
+      const requiresEvidence = rule.evidenceRequiredProcessNames?.some((candidate) => {
+        const normalizedCandidate = normalizeProcessName(candidate);
+        return processName === normalizedCandidate || executableName === normalizedCandidate;
+      });
+      if (
+        requiresEvidence &&
+        !includesAny(title, rule.titleNeedles) &&
+        !includesAny(processPath, rule.pathNeedles)
+      ) {
+        continue;
       }
+      return rule.name;
     }
   }
   return undefined;
 };
 
+export const buildGameDetectionProbeCommand = (): string =>
+  [
+    "$ErrorActionPreference='SilentlyContinue'",
+    "Get-Process | ForEach-Object {",
+    "  $processPath = ''",
+    "  try { $processPath = $_.Path } catch {}",
+    "  [PSCustomObject]@{ ProcessName=$_.ProcessName; MainWindowTitle=$_.MainWindowTitle; Path=$processPath }",
+    "} | ConvertTo-Json -Compress",
+  ].join("; ");
+
 const detectKnownGame = async (): Promise<GameDetectionSnapshot["gameName"]> => {
-  if (process.platform !== "win32") {
-    return undefined;
-  }
+  if (process.platform !== "win32") return undefined;
 
   const result = await execFileAsync(
     "powershell.exe",
     ["-NoProfile", "-NonInteractive", "-Command", buildGameDetectionProbeCommand()],
-    { windowsHide: true, maxBuffer: 1024 * 1024, timeout: 3000 },
-  ).catch(() => {
-    return { stdout: "" };
-  });
+    { windowsHide: true, maxBuffer: 2 * 1024 * 1024, timeout: 5_000 },
+  ).catch(() => ({ stdout: "" }));
 
   return matchKnownGame(result.stdout);
 };
@@ -116,7 +190,7 @@ export class GameDetectionController {
     const previousGame = this.snapshot.gameName;
     const gameName = await detectKnownGame();
     this.snapshot = {
-      gameName: gameName,
+      gameName,
       detectedAt: gameName
         ? previousGame === gameName
           ? this.snapshot.detectedAt
@@ -130,10 +204,8 @@ export class GameDetectionController {
       category: "app",
       level: "info",
       message: gameName ? "Known game detected" : "Known game no longer detected",
-      context: { gameName: gameName },
+      context: { gameName },
     });
-    for (const listener of this.listeners) {
-      listener(this.snapshot);
-    }
+    for (const listener of this.listeners) listener(this.snapshot);
   }
 }

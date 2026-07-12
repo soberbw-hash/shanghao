@@ -17,14 +17,6 @@ export interface ChatMessage {
   createdAt: string;
   isLocal?: boolean;
   kind?: "chat" | "system";
-  /** 内置 AI 助手消息：头像使用软件品牌图标，昵称固定为"上号"。 */
-  isBot?: boolean;
-}
-
-export interface RoomNote {
-  content: string;
-  authorName: string;
-  updatedAt: string;
 }
 
 export interface SceneReaction {
@@ -36,12 +28,7 @@ export interface SceneReaction {
 }
 
 export type SceneZoneId =
-  | "restroomZone"
-  | "gameDesk1"
-  | "gameDesk2"
-  | "gameDesk3"
-  | "gameDesk4"
-  | "gameDesk5";
+  "restroomZone" | "gameDesk1" | "gameDesk2" | "gameDesk3" | "gameDesk4" | "gameDesk5";
 
 export type MemberActivity = "idle" | "gaming" | "drinking" | "fitness" | "restroom";
 
@@ -60,7 +47,7 @@ export interface RoomMember {
   activity?: MemberActivity;
   sceneZone?: SceneZoneId;
   gameName?: string;
-  customStatus?: string;
+  latencyMs?: number;
   presenceState: MemberPresenceState;
   speakingState: MemberSpeakingState;
   joinState?: MemberJoinState;
@@ -88,7 +75,6 @@ export interface RoomSummary {
   latestFailureReason?: string;
   recentRoomEvents?: RoomEvent[];
   relayStatus?: RelayStatusSnapshot;
-  roomNote?: RoomNote;
 }
 
 export interface ConnectionHealth {
@@ -96,5 +82,8 @@ export interface ConnectionHealth {
   jitterMs: number;
   packetLossPercent: number;
   reconnectAttempt: number;
+  voicePath?: "webrtc_direct" | "webrtc_turn" | "signaling_relay" | "unknown";
+  turnConfigured?: boolean;
+  relayFallbackActive?: boolean;
   lastUpdatedAt?: string;
 }

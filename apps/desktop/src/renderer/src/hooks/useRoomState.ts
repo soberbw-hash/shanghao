@@ -98,12 +98,8 @@ const normalizeRoomError = (error: unknown, fallback: string): string => {
   return fallback;
 };
 
-export const buildChannelInviteText = ({
-  serverUrl,
-}: {
-  channelId: string;
-  serverUrl: string;
-}) => serverUrl;
+export const buildChannelInviteText = ({ serverUrl }: { channelId: string; serverUrl: string }) =>
+  serverUrl;
 
 const collectMemberEvents = (members: RoomMember[]) => {
   const nextIds = new Set(
@@ -161,9 +157,11 @@ export const useRoomState = () => {
   const pushRoomEvent = useRoomStore((state) => state.pushRoomEvent);
   const clearRoomEvents = useRoomStore((state) => state.clearRoomEvents);
   const addChatMessage = useRoomStore((state) => state.addChatMessage);
+  const mergeChatHistory = useRoomStore((state) => state.mergeChatHistory);
   const addSceneReaction = useRoomStore((state) => state.addSceneReaction);
-  const clearChatMessages = useRoomStore((state) => state.clearChatMessages);
   const setConnectionHealth = useRoomStore((state) => state.setConnectionHealth);
+  const updatePeerLatency = useRoomStore((state) => state.updatePeerLatency);
+  const updateMemberVolume = useRoomStore((state) => state.updateMemberVolume);
   const updateLocalPresence = useRoomStore((state) => state.updateLocalPresence);
   const setLocalDiagnostics = useAudioStore((state) => state.setLocalDiagnostics);
   const isMuted = useAudioStore((state) => state.isMuted);
@@ -186,24 +184,25 @@ export const useRoomState = () => {
     );
   }, [isDeafened, updateLocalPresence]);
 
+  const profileNickname = settings?.nickname;
+  const profileAvatarId = settings?.avatarId;
   useEffect(() => {
-    if (!settings) {
+    if (!profileNickname) {
       return;
     }
 
-    activeClient?.updateProfile(
-      settings.nickname,
-      avatarDataUrl,
-      settings.avatarId,
-      settings.customStatus,
-    );
-  }, [avatarDataUrl, settings?.avatarId, settings?.customStatus, settings?.nickname]);
+    activeClient?.updateProfile(profileNickname, avatarDataUrl, profileAvatarId);
+  }, [avatarDataUrl, profileAvatarId, profileNickname]);
 
   const startSpeakingDetector = (stream: MediaStream) => {
     activeSpeakingDetector?.destroy();
-    activeSpeakingDetector = createSpeakingDetector(stream, (isSpeaking) => {
-      activeClient?.updateMuteState(useAudioStore.getState().isMuted, isSpeaking);
-    }, useSettingsStore.getState().settings?.inputLevelThreshold ?? 0.4);
+    activeSpeakingDetector = createSpeakingDetector(
+      stream,
+      (isSpeaking) => {
+        activeClient?.updateMuteState(useAudioStore.getState().isMuted, isSpeaking);
+      },
+      useSettingsStore.getState().settings?.inputLevelThreshold ?? 0.4,
+    );
   };
 
   const stopLocalMedia = () => {
@@ -211,7 +210,10 @@ export const useRoomState = () => {
     activeSpeakingDetector = null;
     activeProcessedMicrophone?.dispose();
     activeProcessedMicrophone = null;
-    useRoomStore.getState().localStream?.getTracks().forEach((track) => track.stop());
+    useRoomStore
+      .getState()
+      .localStream?.getTracks()
+      .forEach((track) => track.stop());
     setLocalStream(undefined);
   };
 
@@ -238,23 +240,24 @@ export const useRoomState = () => {
     try {
       const { stream: inputStream, diagnostics } = await requestMicrophoneStream({
         deviceId: preferredInputDeviceId ?? currentSettings?.preferredInputDeviceId,
-        noiseSuppression: currentSettings?.isNoiseSuppressionEnabled ?? true,
+        // RNNoise owns suppression in an AudioWorklet. Browser suppression is enabled only
+        // if the worklet cannot initialize, avoiding two aggressive processors in series.
+        noiseSuppression: false,
         echoCancellation: currentSettings?.isEchoCancellationEnabled ?? true,
         autoGainControl: currentSettings?.isAutoGainControlEnabled ?? true,
         preferredSampleRate: currentSettings?.preferredSampleRate ?? "auto",
       });
       const processedMicrophone = await createProcessedMicrophoneStream(inputStream, {
-        micEqualizerGains:
-          currentSettings?.micEqualizerGains ?? [0, 0, 0, 0, 0],
+        micEqualizerGains: currentSettings?.micEqualizerGains ?? [0, 0, 0, 0, 0],
         preferredSampleRate: currentSettings?.preferredSampleRate ?? "auto",
-        isLowCutEnabled: currentSettings?.isLowCutEnabled ?? true,
+        lowCutFrequency: currentSettings?.lowCutFrequency ?? "90",
         isNoiseSuppressionEnabled: currentSettings?.isNoiseSuppressionEnabled ?? true,
       });
       activeProcessedMicrophone = processedMicrophone;
       const stream = processedMicrophone.stream;
 
       setLocalStream(stream);
-      setLocalDiagnostics(diagnostics);
+      setLocalDiagnostics({ ...diagnostics, ...processedMicrophone.processorDiagnostics });
       await writeRendererLog("audio", "info", "Acquired local microphone stream", {
         ...diagnostics,
       });
@@ -270,7 +273,9 @@ export const useRoomState = () => {
       await writeRendererLog("audio", "error", "Failed to acquire local microphone stream", {
         error: error instanceof Error ? error.message : String(error),
       });
-      throw new Error(normalizeRoomError(error, copy.microphoneUnavailable));
+      throw new Error(normalizeRoomError(error, copy.microphoneUnavailable), {
+        cause: error,
+      });
     }
   };
 
@@ -287,7 +292,6 @@ export const useRoomState = () => {
       nickname: currentSettings?.nickname || "我",
       avatarDataUrl: undefined,
       avatarId: currentSettings?.avatarId,
-      customStatus: currentSettings?.customStatus,
       localStream: stream,
       appVersion: runtimeInfo?.version ?? "0.0.0",
       protocolVersion: runtimeInfo?.protocolVersion ?? "1",
@@ -295,7 +299,15 @@ export const useRoomState = () => {
       onMembers: (members) => {
         const { joined, left } = collectMemberEvents(members);
         const previousMembers = useRoomStore.getState().room.members;
-        setMembers(members);
+        const savedVolumes = useSettingsStore.getState().settings?.memberVolumes ?? {};
+        const membersWithVolume = members.map((member) => ({
+          ...member,
+          volume: Math.max(0, Math.min(2, savedVolumes[member.nickname] ?? member.volume ?? 1)),
+        }));
+        for (const member of membersWithVolume) {
+          if (!member.isLocal) activeClient?.setPeerVolume(member.id, member.volume);
+        }
+        setMembers(membersWithVolume);
 
         joined.forEach((member) => {
           pushRoomEvent({
@@ -343,7 +355,8 @@ export const useRoomState = () => {
           peerId,
           error: error.message,
         });
-        void cleanupPreviousSession({ resetStore: true }).then(() => {
+        void (async () => {
+          await cleanupPreviousSession({ resetStore: true });
           setConnectionState(RoomConnectionState.Failed, "连接已断开，请重新进入频道。");
           setLifecycleState(RoomLifecycleState.Failed);
           pushToast({
@@ -352,7 +365,7 @@ export const useRoomState = () => {
             description: "自动重连未成功，音频已经安全停止，请重新进入频道。",
           });
           useAppStore.getState().navigate("home");
-        });
+        })();
       },
       onSnapshotRevision: (revision) => {
         setConnectionHealth({ lastUpdatedAt: new Date().toISOString() });
@@ -364,15 +377,35 @@ export const useRoomState = () => {
       },
       onRtt: (latencyMs) => {
         setConnectionHealth({ latencyMs, lastUpdatedAt: new Date().toISOString() });
+        updatePeerLatency(peerId, latencyMs);
+      },
+      onPeerLatency: updatePeerLatency,
+      onPeerStats: (statsByPeer) => {
+        const snapshots = Object.values(statsByPeer);
+        const jitterMs = snapshots.reduce(
+          (highest, snapshot) => Math.max(highest, snapshot.jitterMs ?? 0),
+          0,
+        );
+        const packetLossPercent = snapshots.reduce(
+          (highest, snapshot) => Math.max(highest, snapshot.packetLossPercent ?? 0),
+          0,
+        );
+        const usesTurn = snapshots.some((snapshot) => snapshot.connectionType === "relay");
+        setConnectionHealth({
+          jitterMs,
+          packetLossPercent,
+          voicePath:
+            snapshots.length === 0 ? "unknown" : usesTurn ? "webrtc_turn" : "webrtc_direct",
+          turnConfigured: getRoomRuntimeDiagnostics()?.turnConfigured ?? false,
+          relayFallbackActive: false,
+          lastUpdatedAt: new Date().toISOString(),
+        });
       },
       onRemoteStream: (remotePeerId, remoteStream) => {
         setRemoteStream(remotePeerId, remoteStream);
       },
       onRemoteScreenFrame: (remotePeerId, frame) => {
         setRemoteScreenFrame(remotePeerId, frame);
-      },
-      onRoomNote: (roomNote) => {
-        setRoom({ roomNote });
       },
       onSceneReaction: (reaction) => {
         addSceneReaction(reaction);
@@ -386,6 +419,7 @@ export const useRoomState = () => {
           playUiSound("receive-message");
         }
       },
+      onChatHistory: (messages) => mergeChatHistory(messages),
       onKnock: (message) => {
         addChatMessage(message);
         playUiSound("knock-bell");
@@ -457,7 +491,6 @@ export const useRoomState = () => {
     setConnectionState(RoomConnectionState.Joining);
     setLifecycleState(RoomLifecycleState.Opening);
     clearRoomEvents();
-    clearChatMessages();
     pushRoomEvent({ level: "info", message: "正在进入固定频道" });
 
     try {
@@ -502,12 +535,12 @@ export const useRoomState = () => {
     try {
       const { stream: inputStream, diagnostics } = await requestMicrophoneStream({
         deviceId: preferredInputDeviceId ?? settings.preferredInputDeviceId,
-        noiseSuppression: settings.isNoiseSuppressionEnabled,
+        noiseSuppression: false,
         echoCancellation: settings.isEchoCancellationEnabled,
         autoGainControl: settings.isAutoGainControlEnabled,
         preferredSampleRate: settings.preferredSampleRate,
       });
-    const processedMicrophone = await createProcessedMicrophoneStream(inputStream, settings);
+      const processedMicrophone = await createProcessedMicrophoneStream(inputStream, settings);
       const stream = processedMicrophone.stream;
       const [nextTrack] = stream.getAudioTracks();
       if (!nextTrack) {
@@ -517,7 +550,7 @@ export const useRoomState = () => {
 
       activeProcessedMicrophone?.dispose();
       activeProcessedMicrophone = processedMicrophone;
-      setLocalDiagnostics(diagnostics);
+      setLocalDiagnostics({ ...diagnostics, ...processedMicrophone.processorDiagnostics });
       setLocalStream(stream);
       await activeClient.replaceInputTrack(nextTrack);
       startSpeakingDetector(stream);
@@ -552,7 +585,6 @@ export const useRoomState = () => {
           avatarPath: settings.avatarPath,
           avatarDataUrl,
           avatarId: settings.avatarId,
-          customStatus: settings.customStatus,
         });
       }
       useAppStore.getState().navigate("home");
@@ -652,27 +684,14 @@ export const useRoomState = () => {
     await activeClient.sendKnock();
   };
 
-  const sendSceneReaction = async (
-    targetPeerId: string,
-    emoji: "👍" | "🔥" | "😂" | "❤️",
-  ) => {
+  const sendSceneReaction = async (targetPeerId: string, emoji: "👍" | "🔥" | "😂" | "❤️") => {
     if (!activeClient?.canSendChat()) {
       return;
     }
     await activeClient.sendSceneReaction(targetPeerId, emoji);
   };
 
-  const updateRoomNote = async (content: string) => {
-    if (!activeClient?.canSendChat()) {
-      return;
-    }
-    await activeClient.updateRoomNote(content);
-  };
-
-  const startScreenShare = async (
-    stream: MediaStream,
-    profile?: ScreenShareEncodingProfile,
-  ) => {
+  const startScreenShare = async (stream: MediaStream, profile?: ScreenShareEncodingProfile) => {
     if (!activeClient) {
       stream.getTracks().forEach((track) => track.stop());
       throw new Error("room_not_connected");
@@ -689,11 +708,7 @@ export const useRoomState = () => {
     await writeRendererLog("webrtc", "info", "Screen share stopped from room state");
   };
 
-  const moveLocalMember = (
-    sceneZone: SceneZoneId,
-    activity: MemberActivity,
-    gameName?: string,
-  ) => {
+  const moveLocalMember = (sceneZone: SceneZoneId, activity: MemberActivity, gameName?: string) => {
     if (sceneZone === "restroomZone") {
       useAudioStore.getState().setMuted(true);
       activeClient?.updateMuteState(true, false);
@@ -707,6 +722,25 @@ export const useRoomState = () => {
     });
   };
 
+  const setMemberVolume = (memberId: string, volume: number) => {
+    const normalizedVolume = Math.max(0, Math.min(2, volume));
+    const member = useRoomStore
+      .getState()
+      .room.members.find((candidate) => candidate.id === memberId);
+    if (!member || member.isLocal || member.isEmptySlot) return;
+    updateMemberVolume(memberId, normalizedVolume);
+    activeClient?.setPeerVolume(memberId, normalizedVolume);
+    const currentSettings = useSettingsStore.getState().settings;
+    if (currentSettings) {
+      void useSettingsStore.getState().saveSettings({
+        memberVolumes: {
+          ...currentSettings.memberVolumes,
+          [member.nickname]: normalizedVolume,
+        },
+      });
+    }
+  };
+
   return {
     room,
     localStream,
@@ -717,9 +751,9 @@ export const useRoomState = () => {
     sendChatMessage,
     sendKnock,
     sendSceneReaction,
-    updateRoomNote,
     startScreenShare,
     stopScreenShare,
     moveLocalMember,
+    setMemberVolume,
   };
 };

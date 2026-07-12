@@ -7,7 +7,6 @@ import {
   type ChatMessage,
   type MemberActivity,
   type RoomMember,
-  type RoomNote,
   type SceneReaction,
   type SceneZoneId,
   type SignalingEventPayload,
@@ -16,6 +15,7 @@ import type {
   AudioChunkMessage,
   AvatarUpdateMessage,
   ChatMessage as SignalChatMessage,
+  ChatHistoryMessage,
   ErrorMessage,
   IceCandidateMessage,
   JoinAckMessage,
@@ -30,7 +30,6 @@ import type {
   ScreenFrameMessage,
   ScreenShareStateMessage,
   SceneReactionMessage,
-  RoomNoteUpdateMessage,
   SignalEnvelope,
 } from "@private-voice/signaling";
 import {
@@ -38,6 +37,8 @@ import {
   DEFAULT_SCREEN_SHARE_PROFILE,
   ExponentialBackoff,
   MeshPeerConnection,
+  collectPeerAudioStats,
+  type PeerAudioStats,
   type ScreenShareEncodingProfile,
 } from "@private-voice/webrtc";
 
@@ -51,7 +52,6 @@ interface RoomClientOptions {
   nickname: string;
   avatarDataUrl?: string;
   avatarId?: BuiltInAvatarId;
-  customStatus?: string;
   localStream: MediaStream;
   appVersion: string;
   protocolVersion: string;
@@ -61,15 +61,17 @@ interface RoomClientOptions {
   onConnectionState: (state: RoomConnectionState) => void;
   onRemoteStream: (peerId: string, stream: MediaStream | undefined) => void;
   onChatMessage: (message: ChatMessage) => void;
+  onChatHistory: (messages: ChatMessage[]) => void;
   onKnock: (message: ChatMessage) => void;
   onRemoteScreenFrame: (peerId: string, frame?: RemoteScreenFrame) => void;
-  onRoomNote: (note?: RoomNote) => void;
   onSceneReaction: (reaction: SceneReaction) => void;
   onDiagnosticEvent?: (payload: SignalingEventPayload) => void;
   onReconnectAttempt?: (attempt: number) => void;
   onReconnectExhausted?: (error: Error) => void;
   onSnapshotRevision?: (revision: number) => void;
   onRtt?: (rttMs: number) => void;
+  onPeerLatency?: (peerId: string, latencyMs?: number) => void;
+  onPeerStats?: (stats: Record<string, PeerAudioStats>) => void;
 }
 
 interface PendingConnection {
@@ -96,7 +98,9 @@ const SCREEN_FRAME_MAX_BYTES = 64 * 1024;
 export class RoomClient {
   private readonly backoff = new ExponentialBackoff(DEFAULT_RECONNECT_DELAYS_MS);
   private readonly peers = new Map<string, MeshPeerConnection>();
+  private readonly peerVolumes = new Map<string, number>();
   private heartbeatTimer?: number;
+  private peerStatsTimer?: number;
   private snapshotRetryTimer?: number;
   private reconnectTimer?: number;
   private shouldReconnect = true;
@@ -104,7 +108,6 @@ export class RoomClient {
   private nickname: string;
   private avatarDataUrl?: string;
   private avatarId?: BuiltInAvatarId;
-  private customStatus?: string;
   private lastPublishedMuteState?: boolean;
   private lastPublishedSpeakingState?: boolean;
   private lastPublishedDeafenState?: boolean;
@@ -114,7 +117,6 @@ export class RoomClient {
   private lastPublishedNickname: string;
   private lastPublishedAvatarDataUrl?: string;
   private lastPublishedAvatarId?: BuiltInAvatarId;
-  private lastPublishedCustomStatus?: string;
   private pendingConnection?: PendingConnection;
   private hasJoinedOnce = false;
   private unsubscribeEvents?: () => void;
@@ -124,6 +126,7 @@ export class RoomClient {
   private readonly peerRecoveryTimers = new Map<string, number>();
   private readonly peerConnectionWatchdogs = new Map<string, number>();
   private readonly peerRecoveryAttempts = new Map<string, number>();
+  private readonly peerStats = new Map<string, PeerAudioStats>();
   private reconnectAttempts = 0;
   private lastSnapshotRevision = 0;
   private isSignalingConnected = false;
@@ -159,11 +162,9 @@ export class RoomClient {
     this.nickname = options.nickname;
     this.avatarDataUrl = options.avatarDataUrl;
     this.avatarId = options.avatarId;
-    this.customStatus = options.customStatus;
     this.lastPublishedNickname = options.nickname;
     this.lastPublishedAvatarDataUrl = options.avatarDataUrl;
     this.lastPublishedAvatarId = options.avatarId;
-    this.lastPublishedCustomStatus = options.customStatus;
   }
 
   connect(): Promise<void> {
@@ -180,6 +181,7 @@ export class RoomClient {
     this.clearPendingConnection();
     this.stopSnapshotRecovery();
     this.stopHeartbeat();
+    this.stopPeerStats();
     if (this.reconnectTimer) {
       window.clearTimeout(this.reconnectTimer);
     }
@@ -233,6 +235,7 @@ export class RoomClient {
       audioRelayDiagnostics: this.audioRelay?.getDiagnostics(),
       webrtcReadyPeerCount: this.webrtcReadyPeerIds.size,
       peerRecoveryAttempts: Object.fromEntries(this.peerRecoveryAttempts),
+      peerConnectionStats: Object.fromEntries(this.peerStats),
       turnConfigured: this.hasTurnServer,
     };
   }
@@ -254,17 +257,11 @@ export class RoomClient {
     });
   }
 
-  updateProfile(
-    nickname: string,
-    avatarDataUrl?: string,
-    avatarId?: BuiltInAvatarId,
-    customStatus?: string,
-  ): void {
+  updateProfile(nickname: string, avatarDataUrl?: string, avatarId?: BuiltInAvatarId): void {
     if (
       this.lastPublishedNickname === nickname &&
       this.lastPublishedAvatarDataUrl === avatarDataUrl &&
-      this.lastPublishedAvatarId === avatarId &&
-      this.lastPublishedCustomStatus === customStatus
+      this.lastPublishedAvatarId === avatarId
     ) {
       return;
     }
@@ -272,11 +269,9 @@ export class RoomClient {
     this.nickname = nickname;
     this.avatarDataUrl = avatarDataUrl;
     this.avatarId = avatarId;
-    this.customStatus = customStatus;
     this.lastPublishedNickname = nickname;
     this.lastPublishedAvatarDataUrl = avatarDataUrl;
     this.lastPublishedAvatarId = avatarId;
-    this.lastPublishedCustomStatus = customStatus;
 
     void this.safeSend({
       type: "member_state",
@@ -284,7 +279,6 @@ export class RoomClient {
       peerId: this.options.peerId,
       nickname,
       avatarId,
-      customStatus,
     });
   }
 
@@ -302,8 +296,14 @@ export class RoomClient {
     }
   }
 
+  setPeerVolume(peerId: string, volume: number): void {
+    this.peerVolumes.set(peerId, Math.max(0, Math.min(2, volume)));
+  }
+
   private openSocket(isReconnect: boolean): Promise<void> {
-    this.options.onConnectionState(isReconnect ? RoomConnectionState.Reconnecting : RoomConnectionState.Joining);
+    this.options.onConnectionState(
+      isReconnect ? RoomConnectionState.Reconnecting : RoomConnectionState.Joining,
+    );
     this.joinStage = "websocket_open";
     this.wsOpened = false;
     this.joinChannelSent = false;
@@ -350,7 +350,6 @@ export class RoomClient {
         peerId: this.options.peerId,
         nickname: this.nickname,
         avatarId: this.avatarId ?? "fox",
-        customStatus: this.customStatus,
         appVersion: this.options.appVersion,
         protocolVersion: this.options.protocolVersion,
         buildNumber: this.options.buildNumber,
@@ -437,6 +436,9 @@ export class RoomClient {
       case "chat_message":
         this.handleChatMessage(payload);
         return;
+      case "chat_history":
+        this.handleChatHistory(payload);
+        return;
       case "knock_event":
         this.handleKnockEvent(payload);
         return;
@@ -457,9 +459,6 @@ export class RoomClient {
         return;
       case "scene_reaction":
         this.handleSceneReaction(payload);
-        return;
-      case "room_note_update":
-        this.options.onRoomNote(payload.note);
         return;
       case "member_state":
         this.handleMemberState(payload);
@@ -583,15 +582,14 @@ export class RoomClient {
     this.options.onConnectionState(RoomConnectionState.WaitingSnapshot);
     this.resolvePendingConnection();
     this.startSnapshotRecovery();
-    const relayIceServers = payload.iceServers?.map((server) => ({
-      urls: server.urls,
-      username: server.username,
-      credential: server.credential,
-    })) ?? [];
+    const relayIceServers =
+      payload.iceServers?.map((server) => ({
+        urls: server.urls,
+        username: server.username,
+        credential: server.credential,
+      })) ?? [];
     this.hasTurnServer = relayIceServers.length > 0;
-    this.iceServers = this.hasTurnServer
-      ? [...DEFAULT_ICE_SERVERS, ...relayIceServers]
-      : undefined;
+    this.iceServers = this.hasTurnServer ? [...DEFAULT_ICE_SERVERS, ...relayIceServers] : undefined;
     void writeRendererLog("signaling", "info", "Join acknowledgement received", {
       roomId: payload.roomId,
       peerId: payload.peerId,
@@ -604,7 +602,9 @@ export class RoomClient {
     });
   }
 
-  private async handleRoomSnapshot(snapshot: RoomSnapshotMessage | ChannelSnapshotMessage): Promise<void> {
+  private async handleRoomSnapshot(
+    snapshot: RoomSnapshotMessage | ChannelSnapshotMessage,
+  ): Promise<void> {
     if (snapshot.revision <= this.lastSnapshotRevision) {
       void writeRendererLog("signaling", "warn", "Ignored stale room snapshot", {
         roomId: snapshot.roomId,
@@ -619,7 +619,6 @@ export class RoomClient {
     this.stopSnapshotRecovery();
     this.options.onSnapshotRevision?.(snapshot.revision);
     this.options.onRoomName(snapshot.roomName);
-    this.options.onRoomNote(snapshot.roomNote);
     const normalizedMembers = snapshot.members.map((member) => ({
       ...member,
       avatarDataUrl: this.avatarCache.get(member.id)?.avatarDataUrl,
@@ -629,7 +628,7 @@ export class RoomClient {
           : member.presenceState,
       speakingState: member.isMuted
         ? MemberSpeakingState.Muted
-        : member.speakingState ?? MemberSpeakingState.Silent,
+        : (member.speakingState ?? MemberSpeakingState.Silent),
     }));
 
     this.currentMembers = normalizedMembers;
@@ -758,11 +757,7 @@ export class RoomClient {
       await this.send({
         type: "chat_message",
         roomId: this.options.roomId,
-        peerId: this.options.peerId,
-        nickname: this.nickname,
-        avatarId: this.avatarId,
         content: trimmed,
-        createdAt: new Date().toISOString(),
       });
     } catch (error) {
       this.chatSendFailures += 1;
@@ -784,10 +779,7 @@ export class RoomClient {
     });
   }
 
-  async sendSceneReaction(
-    targetPeerId: string,
-    emoji: SceneReaction["emoji"],
-  ): Promise<void> {
+  async sendSceneReaction(targetPeerId: string, emoji: SceneReaction["emoji"]): Promise<void> {
     if (!this.canSendChat()) {
       throw new Error("signaling_not_connected");
     }
@@ -801,25 +793,10 @@ export class RoomClient {
     });
   }
 
-  async updateRoomNote(content: string): Promise<void> {
-    if (!this.canSendChat()) {
-      throw new Error("signaling_not_connected");
-    }
-    await this.send({
-      type: "room_note_update",
-      roomId: this.options.roomId,
-      peerId: this.options.peerId,
-      note: {
-        content: content.trim().slice(0, 80),
-        authorName: this.nickname,
-        updatedAt: new Date().toISOString(),
-      },
-    });
-  }
-
   private handleChatMessage(payload: SignalChatMessage): void {
+    if (!payload.id || !payload.peerId || !payload.nickname || !payload.createdAt) return;
     this.options.onChatMessage({
-      id: `${payload.peerId}-${payload.createdAt}`,
+      id: payload.id,
       peerId: payload.peerId,
       nickname: payload.nickname,
       avatarDataUrl: payload.avatarDataUrl,
@@ -830,15 +807,23 @@ export class RoomClient {
     });
   }
 
+  private handleChatHistory(payload: ChatHistoryMessage): void {
+    this.options.onChatHistory(
+      payload.messages.map((message) => ({
+        ...message,
+        isLocal: message.peerId === this.options.peerId,
+        kind: "chat" as const,
+      })),
+    );
+  }
+
   private handleKnockEvent(payload: KnockEventMessage): void {
     this.options.onKnock({
       id: `knock-${payload.peerId}-${payload.createdAt}`,
       peerId: payload.peerId,
       nickname: payload.nickname,
       content:
-        payload.peerId === this.options.peerId
-          ? "你敲了一下"
-          : `${payload.nickname} 敲了一下`,
+        payload.peerId === this.options.peerId ? "你敲了一下" : `${payload.nickname} 敲了一下`,
       createdAt: payload.createdAt,
       isLocal: payload.peerId === this.options.peerId,
       kind: "system",
@@ -898,11 +883,7 @@ export class RoomClient {
         isDeafened: payload.isDeafened ?? member.isDeafened,
         activity: payload.activity ?? member.activity,
         sceneZone: payload.sceneZone ?? member.sceneZone,
-        gameName:
-          payload.gameName === ""
-            ? undefined
-            : payload.gameName ?? member.gameName,
-        customStatus: payload.customStatus ?? member.customStatus,
+        gameName: payload.gameName === "" ? undefined : (payload.gameName ?? member.gameName),
         isMuted,
         speakingState: isMuted
           ? MemberSpeakingState.Muted
@@ -952,6 +933,7 @@ export class RoomClient {
       localStream: this.localStream,
       send: (message) => this.send(message),
       shouldPlayPeer: (peerId) => !this.webrtcReadyPeerIds.has(peerId),
+      getPeerVolume: (peerId) => this.peerVolumes.get(peerId) ?? 1,
       onLog: (level, message, context) => {
         void writeRendererLog("audio", level, message, context);
       },
@@ -994,8 +976,7 @@ export class RoomClient {
   }
 
   private createPeer(targetPeerId: string): MeshPeerConnection {
-    let peer: MeshPeerConnection;
-    peer = new MeshPeerConnection({
+    const peer = new MeshPeerConnection({
       peerId: targetPeerId,
       localStream: this.localStream,
       iceServers: this.iceServers,
@@ -1041,11 +1022,16 @@ export class RoomClient {
           if (this.isSignalingConnected && this.remotePeerIds.has(targetPeerId)) {
             this.options.onConnectionState(RoomConnectionState.Degraded);
           }
-          void writeRendererLog("webrtc", "warn", "Peer connection unavailable, audio relay fallback enabled", {
-            targetPeerId,
-            state,
-            audioRelayFallbackEnabled: true,
-          });
+          void writeRendererLog(
+            "webrtc",
+            "warn",
+            "Peer connection unavailable, audio relay fallback enabled",
+            {
+              targetPeerId,
+              state,
+              audioRelayFallbackEnabled: true,
+            },
+          );
           if (state !== "closed") {
             this.schedulePeerRecovery(targetPeerId, `connection_${state}`);
           }
@@ -1217,6 +1203,7 @@ export class RoomClient {
 
   private startHeartbeat(): void {
     this.stopHeartbeat();
+    this.startPeerStats();
     this.heartbeatTimer = window.setInterval(() => {
       void this.safeSend({
         type: "heartbeat",
@@ -1230,7 +1217,38 @@ export class RoomClient {
   private stopHeartbeat(): void {
     if (this.heartbeatTimer) {
       window.clearInterval(this.heartbeatTimer);
+      this.heartbeatTimer = undefined;
     }
+    this.stopPeerStats();
+  }
+
+  private startPeerStats(): void {
+    this.stopPeerStats();
+    const collect = async () => {
+      await Promise.all(
+        [...this.peers.entries()].map(async ([peerId, peer]) => {
+          try {
+            const stats = await collectPeerAudioStats(peer.connection);
+            this.peerStats.set(peerId, stats);
+            this.options.onPeerLatency?.(peerId, stats.roundTripTimeMs);
+          } catch {
+            this.peerStats.delete(peerId);
+            this.options.onPeerLatency?.(peerId, undefined);
+          }
+        }),
+      );
+      this.options.onPeerStats?.(Object.fromEntries(this.peerStats));
+    };
+    void collect();
+    this.peerStatsTimer = window.setInterval(() => void collect(), 5_000);
+  }
+
+  private stopPeerStats(): void {
+    if (this.peerStatsTimer) {
+      window.clearInterval(this.peerStatsTimer);
+      this.peerStatsTimer = undefined;
+    }
+    this.peerStats.clear();
   }
 
   private handlePong(payload: PongMessage): void {
@@ -1332,12 +1350,8 @@ export class RoomClient {
       context = new AudioContext({ latencyHint: "interactive" });
     }
     const destination = context.createMediaStreamDestination();
-    const microphoneSource = context.createMediaStreamSource(
-      new MediaStream([microphoneTrack]),
-    );
-    const systemSource = context.createMediaStreamSource(
-      new MediaStream([systemAudioTrack]),
-    );
+    const microphoneSource = context.createMediaStreamSource(new MediaStream([microphoneTrack]));
+    const systemSource = context.createMediaStreamSource(new MediaStream([systemAudioTrack]));
     const microphoneGain = context.createGain();
     const systemGain = context.createGain();
     microphoneGain.gain.value = 1;
@@ -1399,11 +1413,9 @@ export class RoomClient {
     this.screenFrameVideo = video;
     this.screenFrameCanvas = canvas;
     this.screenFrameIntervalMs = intervalMs;
-    video.addEventListener(
-      "loadeddata",
-      () => void this.captureAndSendScreenFrame(),
-      { once: true },
-    );
+    video.addEventListener("loadeddata", () => void this.captureAndSendScreenFrame(), {
+      once: true,
+    });
     void video.play().catch(() => undefined);
     this.screenFrameTimer = window.setInterval(
       () => void this.captureAndSendScreenFrame(),

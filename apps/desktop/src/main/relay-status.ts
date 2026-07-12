@@ -92,6 +92,7 @@ export const readRelayStatus = async ({
     };
   }
 
+  const startedAt = performance.now();
   try {
     const parsed = new URL(normalizedUrl);
     const port = Number(parsed.port || (parsed.protocol === "wss:" ? "443" : "80"));
@@ -120,6 +121,7 @@ export const readRelayStatus = async ({
       uptime: health?.uptime,
       activeRooms: health?.activeRooms,
       connectedPeers: health?.connectedPeers,
+      latencyMs: Math.max(0, Math.round(performance.now() - startedAt)),
       turnConfigured: health?.turnConfigured,
       droppedRealtimeMessages: health?.droppedRealtimeMessages,
       hasVersionMismatch,
@@ -128,8 +130,8 @@ export const readRelayStatus = async ({
         ? hasVersionMismatch
           ? `服务器版本 ${health?.protocolVersion ?? "未知"} / ${health?.buildNumber ?? "未知"} 与客户端 ${APP_PROTOCOL_VERSION} / ${APP_BUILD_NUMBER} 不一致，请更新中继服务。`
           : isHealthReachable
-          ? `服务器可用，协议 ${health?.protocolVersion ?? "未知"}，构建 ${health?.buildNumber ?? "未知"}，客户端构建 ${APP_BUILD_NUMBER}。`
-          : "服务器可连接，但 /health 返回异常；WebSocket 可正常使用。"
+            ? `服务器可用，协议 ${health?.protocolVersion ?? "未知"}，构建 ${health?.buildNumber ?? "未知"}，客户端构建 ${APP_BUILD_NUMBER}。`
+            : "服务器可连接，但 /health 返回异常；WebSocket 可正常使用。"
         : tcpReachable
           ? isHealthReachable
             ? "服务器健康检查正常，但 WebSocket 无法打开。"
@@ -141,7 +143,14 @@ export const readRelayStatus = async ({
       category: "relay",
       level: isReachable ? "info" : "warn",
       message: "relay status checked",
-      context: result as unknown as Record<string, unknown>,
+      context: {
+        isReachable,
+        isHealthReachable,
+        isWebSocketReachable,
+        hasVersionMismatch,
+        turnConfigured: health?.turnConfigured,
+        latencyMs: result.latencyMs,
+      },
     });
 
     return result;
@@ -151,7 +160,6 @@ export const readRelayStatus = async ({
       level: "warn",
       message: "relay status check failed",
       context: {
-        relayServerUrl: normalizedUrl,
         error: error instanceof Error ? error.message : String(error),
       },
     });
@@ -160,6 +168,7 @@ export const readRelayStatus = async ({
       serverUrl: normalizedUrl,
       isConfigured: true,
       isReachable: false,
+      latencyMs: Math.max(0, Math.round(performance.now() - startedAt)),
       lastCheckedAt: new Date().toISOString(),
       message: "固定服务器地址格式不正确。",
     };

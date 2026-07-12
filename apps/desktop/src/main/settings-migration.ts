@@ -9,9 +9,10 @@ import {
 
 import { normalizeRelayServerUrl } from "./relay-url";
 
-export type RawSettings = Partial<AppSettings> & Record<string, unknown> & {
-  settingsSchemaVersion?: number;
-};
+export type RawSettings = Partial<AppSettings> &
+  Record<string, unknown> & {
+    settingsSchemaVersion?: number;
+  };
 
 export const defaultSettings: AppSettings = {
   settingsSchemaVersion: SETTINGS_SCHEMA_VERSION,
@@ -23,6 +24,9 @@ export const defaultSettings: AppSettings = {
   hasCompletedProfileSetup: false,
   minimizeToTray: false,
   reduceMotion: false,
+  reduceTransparency: false,
+  increaseContrast: false,
+  uiScale: 100,
   launchOnStartup: false,
   isHardwareAccelerationEnabled: true,
   isOverlayEnabled: true,
@@ -31,7 +35,7 @@ export const defaultSettings: AppSettings = {
   preferredSampleRate: "32000",
   inputLevelThreshold: 0.4,
   micEqualizerGains: [0, 0, 0, 0, 0],
-  isLowCutEnabled: true,
+  lowCutFrequency: "90",
   globalMuteShortcut: "",
   pushToTalkShortcut: "Space",
   recordingMarkerShortcut: "F8",
@@ -41,8 +45,10 @@ export const defaultSettings: AppSettings = {
   isPushToTalkEnabled: false,
   micMonitorMode: "processed",
   relayServerUrl: "",
-  customStatus: "",
+  memberVolumes: {},
+  soundVolume: 0.72,
   screenShareQuality: "smooth",
+  screenShareFitMode: "contain",
   isScreenShareSystemAudioEnabled: true,
   isSystemNotificationEnabled: true,
   isMicOnSoundEnabled: true,
@@ -89,10 +95,25 @@ const normalizeSampleRate = (
 const normalizeMonitorMode = (value?: string): AppSettings["micMonitorMode"] =>
   value === "raw" ? "raw" : "processed";
 
-const normalizeScreenShareQuality = (
-  value?: string,
-): AppSettings["screenShareQuality"] =>
+const normalizeScreenShareQuality = (value?: string): AppSettings["screenShareQuality"] =>
   value === "balanced" || value === "clear" ? value : "smooth";
+
+const normalizeScreenShareFitMode = (value?: string): AppSettings["screenShareFitMode"] =>
+  value === "cover" ? "cover" : "contain";
+
+const normalizeLowCutFrequency = (raw: RawSettings): AppSettings["lowCutFrequency"] => {
+  if (
+    raw.lowCutFrequency === "off" ||
+    raw.lowCutFrequency === "90" ||
+    raw.lowCutFrequency === "120"
+  ) {
+    return raw.lowCutFrequency;
+  }
+  if (raw.isLowCutEnabled === false) {
+    return "off";
+  }
+  return defaultSettings.lowCutFrequency;
+};
 
 const normalizeAvatarId = (value: unknown): AppSettings["avatarId"] => {
   if (value === "penguin") return "duck";
@@ -125,11 +146,16 @@ export const migrateSettings = (raw: RawSettings): MigrationResult => {
     typeof raw.settingsSchemaVersion === "number" && Number.isFinite(raw.settingsSchemaVersion)
       ? raw.settingsSchemaVersion
       : 0;
+  const previousProfileVersion =
+    typeof raw.profileSchemaVersion === "number" && Number.isFinite(raw.profileSchemaVersion)
+      ? raw.profileSchemaVersion
+      : 0;
 
   const merged: AppSettings = {
     settingsSchemaVersion: SETTINGS_SCHEMA_VERSION,
     profileSchemaVersion: PROFILE_SCHEMA_VERSION,
-    nickname: trimText(raw.nickname) ?? "",
+    nickname:
+      previousProfileVersion === PROFILE_SCHEMA_VERSION ? (trimText(raw.nickname) ?? "") : "",
     roomName: trimText(raw.roomName) ?? DEFAULT_ROOM_NAME,
     avatarId: normalizeAvatarId(raw.avatarId),
     avatarPath: undefined,
@@ -139,6 +165,12 @@ export const migrateSettings = (raw: RawSettings): MigrationResult => {
     ),
     minimizeToTray: normalizeBoolean(raw.minimizeToTray, defaultSettings.minimizeToTray),
     reduceMotion: normalizeBoolean(raw.reduceMotion, defaultSettings.reduceMotion),
+    reduceTransparency: normalizeBoolean(
+      raw.reduceTransparency,
+      defaultSettings.reduceTransparency,
+    ),
+    increaseContrast: normalizeBoolean(raw.increaseContrast, defaultSettings.increaseContrast),
+    uiScale: raw.uiScale === 110 || raw.uiScale === 125 ? raw.uiScale : 100,
     launchOnStartup: normalizeBoolean(raw.launchOnStartup, defaultSettings.launchOnStartup),
     isHardwareAccelerationEnabled: normalizeBoolean(
       raw.isHardwareAccelerationEnabled,
@@ -151,14 +183,30 @@ export const migrateSettings = (raw: RawSettings): MigrationResult => {
     pushToTalkShortcut:
       trimUnknownText(raw.pushToTalkShortcut) ?? defaultSettings.pushToTalkShortcut,
     recordingMarkerShortcut:
-      trimUnknownText(raw.recordingMarkerShortcut) ??
-      defaultSettings.recordingMarkerShortcut,
+      trimUnknownText(raw.recordingMarkerShortcut) ?? defaultSettings.recordingMarkerShortcut,
     relayServerUrl:
-      normalizeRelayServerUrl(trimUnknownText(raw.relayServerUrl)) ?? defaultSettings.relayServerUrl,
-    customStatus: trimUnknownText(raw.customStatus)?.slice(0, 32) ?? "",
-    screenShareQuality: normalizeScreenShareQuality(
-      trimUnknownText(raw.screenShareQuality),
-    ),
+      normalizeRelayServerUrl(trimUnknownText(raw.relayServerUrl)) ??
+      defaultSettings.relayServerUrl,
+    memberVolumes:
+      raw.memberVolumes &&
+      typeof raw.memberVolumes === "object" &&
+      !Array.isArray(raw.memberVolumes)
+        ? Object.fromEntries(
+            Object.entries(raw.memberVolumes)
+              .filter(
+                ([name, value]) =>
+                  name.trim() && typeof value === "number" && Number.isFinite(value),
+              )
+              .slice(0, 50)
+              .map(([name, value]) => [name.slice(0, 24), Math.max(0, Math.min(2, Number(value)))]),
+          )
+        : {},
+    soundVolume:
+      typeof raw.soundVolume === "number" && Number.isFinite(raw.soundVolume)
+        ? Math.max(0, Math.min(1, raw.soundVolume))
+        : defaultSettings.soundVolume,
+    screenShareQuality: normalizeScreenShareQuality(trimUnknownText(raw.screenShareQuality)),
+    screenShareFitMode: normalizeScreenShareFitMode(trimUnknownText(raw.screenShareFitMode)),
     isScreenShareSystemAudioEnabled: normalizeBoolean(
       raw.isScreenShareSystemAudioEnabled,
       defaultSettings.isScreenShareSystemAudioEnabled,
@@ -172,7 +220,7 @@ export const migrateSettings = (raw: RawSettings): MigrationResult => {
       previousVersion,
     ),
     micEqualizerGains: normalizeEqualizerGains(raw.micEqualizerGains),
-    isLowCutEnabled: normalizeBoolean(raw.isLowCutEnabled, defaultSettings.isLowCutEnabled),
+    lowCutFrequency: normalizeLowCutFrequency(raw),
     micMonitorMode: normalizeMonitorMode(trimUnknownText(raw.micMonitorMode)),
     isNoiseSuppressionEnabled: raw.isNoiseSuppressionEnabled !== false,
     isEchoCancellationEnabled: raw.isEchoCancellationEnabled !== false,
@@ -201,10 +249,6 @@ export const migrateSettings = (raw: RawSettings): MigrationResult => {
         : defaultSettings.inputLevelThreshold,
   };
 
-  const previousProfileVersion =
-    typeof raw.profileSchemaVersion === "number" && Number.isFinite(raw.profileSchemaVersion)
-      ? raw.profileSchemaVersion
-      : 0;
   const isProfileReady = merged.nickname.length > 0 && isBuiltInAvatarId(merged.avatarId);
   merged.hasCompletedProfileSetup =
     !raw.avatarPath &&

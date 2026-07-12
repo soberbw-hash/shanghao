@@ -5,7 +5,7 @@ import { RoomConnectionState } from "@private-voice/shared";
 import { useAudioStore } from "../store/audioStore";
 import { useRoomStore } from "../store/roomStore";
 import { useSettingsStore } from "../store/settingsStore";
-import { playUiSound, setUiSoundEnabled } from "../features/audio/uiSound";
+import { playUiSound, setUiSoundEnabled, setUiSoundVolume } from "../features/audio/uiSound";
 
 let lastClickAt = 0;
 
@@ -21,12 +21,13 @@ export const useUiFeedbackSounds = (): void => {
   const previousDeafenRef = useRef(isDeafened);
   const previousConnectionRef = useRef(connectionState);
   const previousMemberIdsRef = useRef(
-    members.filter((member) => !member.isEmptySlot).map((member) => member.id),
+    members.filter((member) => !member.isEmptySlot && !member.isLocal).map((member) => member.id),
   );
 
   useEffect(() => {
     setUiSoundEnabled(settings?.isUiSoundEnabled !== false);
-  }, [settings?.isUiSoundEnabled]);
+    setUiSoundVolume(settings?.soundVolume ?? 0.72);
+  }, [settings?.isUiSoundEnabled, settings?.soundVolume]);
 
   useEffect(() => {
     if (!settings?.isUiSoundEnabled) {
@@ -61,7 +62,7 @@ export const useUiFeedbackSounds = (): void => {
       previousDeafenRef.current = isDeafened;
       previousConnectionRef.current = connectionState;
       previousMemberIdsRef.current = members
-        .filter((member) => !member.isEmptySlot)
+        .filter((member) => !member.isEmptySlot && !member.isLocal)
         .map((member) => member.id);
       return;
     }
@@ -90,17 +91,16 @@ export const useUiFeedbackSounds = (): void => {
     }
 
     const currentMemberIds = members
-      .filter((member) => !member.isEmptySlot)
+      .filter((member) => !member.isEmptySlot && !member.isLocal)
       .map((member) => member.id);
     const previousMemberIds = previousMemberIdsRef.current;
+    const currentSet = new Set(currentMemberIds);
+    const previousSet = new Set(previousMemberIds);
+    const joined = currentMemberIds.filter((id) => !previousSet.has(id));
+    const left = previousMemberIds.filter((id) => !currentSet.has(id));
 
-    if (currentMemberIds.length > previousMemberIds.length && settings.isMemberJoinSoundEnabled) {
-      playUiSound("enter-room");
-    }
-
-    if (currentMemberIds.length < previousMemberIds.length && settings.isMemberLeaveSoundEnabled) {
-      playUiSound("leave-room");
-    }
+    if (joined.length) playUiSound("member-join");
+    if (left.length) playUiSound("member-leave");
 
     previousMemberIdsRef.current = currentMemberIds;
   }, [members, settings]);

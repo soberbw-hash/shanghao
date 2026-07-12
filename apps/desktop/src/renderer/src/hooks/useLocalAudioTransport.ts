@@ -73,6 +73,7 @@ const matchesShortcut = (event: KeyboardEvent, shortcut: string): boolean => {
 export const useLocalAudioTransport = (): void => {
   const localStream = useRoomStore((state) => state.localStream);
   const isMuted = useAudioStore((state) => state.isMuted);
+  const isDeafened = useAudioStore((state) => state.isDeafened);
   const isPushToTalkEnabled = useAudioStore((state) => state.isPushToTalkEnabled);
   const pushToTalkShortcut =
     useSettingsStore((state) => state.settings?.pushToTalkShortcut) || "Space";
@@ -86,7 +87,7 @@ export const useLocalAudioTransport = (): void => {
     }
 
     if (!isPushToTalkEnabled) {
-      track.enabled = !isMuted;
+      track.enabled = !isMuted && !isDeafened;
       setPushToTalkState(PushToTalkState.Off);
       return;
     }
@@ -96,7 +97,7 @@ export const useLocalAudioTransport = (): void => {
 
     const handleKeyDown = (event: KeyboardEvent) => {
       if (matchesShortcut(event, pushToTalkShortcut)) {
-        track.enabled = !isMuted;
+        track.enabled = !isMuted && !isDeafened;
         setPushToTalkState(PushToTalkState.Pressed);
       }
     };
@@ -107,13 +108,12 @@ export const useLocalAudioTransport = (): void => {
         setPushToTalkState(PushToTalkState.Armed);
       }
     };
-    const unsubscribeGlobalPushToTalk =
-      window.desktopApi.shortcuts.onPushToTalkState((isPressed) => {
-        track.enabled = isPressed && !isMuted;
-        setPushToTalkState(
-          isPressed ? PushToTalkState.Pressed : PushToTalkState.Armed,
-        );
-      });
+    const unsubscribeGlobalPushToTalk = window.desktopApi.shortcuts.onPushToTalkState(
+      (isPressed) => {
+        track.enabled = isPressed && !isMuted && !isDeafened;
+        setPushToTalkState(isPressed ? PushToTalkState.Pressed : PushToTalkState.Armed);
+      },
+    );
 
     window.addEventListener("keydown", handleKeyDown);
     window.addEventListener("keyup", handleKeyUp);
@@ -123,5 +123,12 @@ export const useLocalAudioTransport = (): void => {
       window.removeEventListener("keyup", handleKeyUp);
       unsubscribeGlobalPushToTalk();
     };
-  }, [isMuted, isPushToTalkEnabled, localStream, pushToTalkShortcut, setPushToTalkState]);
+  }, [
+    isDeafened,
+    isMuted,
+    isPushToTalkEnabled,
+    localStream,
+    pushToTalkShortcut,
+    setPushToTalkState,
+  ]);
 };

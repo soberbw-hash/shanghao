@@ -39,10 +39,7 @@ test("desktop release configuration publishes automatic update metadata", () => 
 test("room scene and feedback sound assets are bundled", () => {
   assert.equal(
     existsSync(
-      path.join(
-        root,
-        "apps/desktop/src/renderer/src/assets/scenes/workstation-chibi.webp",
-      ),
+      path.join(root, "apps/desktop/src/renderer/src/assets/scenes/workstation-chibi.webp"),
     ),
     true,
     "missing premium workstation asset",
@@ -55,22 +52,33 @@ test("room scene and feedback sound assets are bundled", () => {
 
   for (const avatar of ["fox", "cat", "duck", "panda", "corgi"]) {
     assert.equal(
-      existsSync(path.join(root, `apps/desktop/src/renderer/src/assets/avatars/${avatar}-scene.png`)),
+      existsSync(
+        path.join(root, `apps/desktop/src/renderer/src/assets/avatars/${avatar}-scene.png`),
+      ),
       true,
     );
     assert.equal(
-      existsSync(path.join(root, `apps/desktop/src/renderer/src/assets/avatars/motion/${avatar}-motion.png`)),
+      existsSync(
+        path.join(root, `apps/desktop/src/renderer/src/assets/avatars/motion/${avatar}-motion.png`),
+      ),
       true,
       `missing motion spritesheet: ${avatar}`,
     );
     assert.equal(
-      existsSync(path.join(root, `apps/desktop/src/renderer/src/assets/avatars/rear/${avatar}-rear.png`)),
+      existsSync(
+        path.join(root, `apps/desktop/src/renderer/src/assets/avatars/rear/${avatar}-rear.png`),
+      ),
       true,
       `missing rear workstation avatar: ${avatar}`,
     );
     for (const part of ["tail", "body", "feet", "head"]) {
       assert.equal(
-        existsSync(path.join(root, `apps/desktop/src/renderer/src/assets/avatars/layers/${avatar}-${part}.png`)),
+        existsSync(
+          path.join(
+            root,
+            `apps/desktop/src/renderer/src/assets/avatars/layers/${avatar}-${part}.png`,
+          ),
+        ),
         true,
         `missing layered avatar part: ${avatar}-${part}`,
       );

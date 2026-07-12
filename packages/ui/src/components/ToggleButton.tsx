@@ -12,7 +12,7 @@ export const ToggleButton = ({
   ...props
 }: PropsWithChildren<ToggleButtonProps>) => (
   <Button
-    variant={isActive ? "primary" : variant ?? "secondary"}
+    variant={isActive ? "primary" : (variant ?? "secondary")}
     aria-pressed={isActive}
     {...props}
   />

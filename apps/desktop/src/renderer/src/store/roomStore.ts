@@ -24,7 +24,6 @@ interface LocalProfilePayload {
   avatarPath?: string;
   avatarDataUrl?: string;
   avatarId?: BuiltInAvatarId;
-  customStatus?: string;
 }
 
 export interface RemoteScreenFrame {
@@ -52,11 +51,11 @@ interface RoomStoreState {
   setRemoteScreenFrame: (peerId: string, frame?: RemoteScreenFrame) => void;
   setConnectionHealth: (health: Partial<ConnectionHealth>) => void;
   addChatMessage: (message: ChatMessage) => void;
-  replaceChatMessage: (id: string, content: string) => void;
-  clearChatMessages: () => void;
+  mergeChatHistory: (messages: ChatMessage[]) => void;
   addSceneReaction: (reaction: SceneReaction) => void;
   syncLocalProfile: (profile: LocalProfilePayload) => void;
   updateMemberVolume: (memberId: string, volume: number) => void;
+  updatePeerLatency: (memberId: string, latencyMs?: number) => void;
   updateLocalPresence: (presence: {
     isDeafened?: boolean;
     activity?: MemberActivity;
@@ -95,7 +94,6 @@ const createLocalPreviewMember = (profile?: LocalProfilePayload): RoomMember => 
   avatarPath: profile?.avatarPath,
   avatarDataUrl: profile?.avatarDataUrl,
   avatarId: profile?.avatarId,
-  customStatus: profile?.customStatus,
   isHost: false,
   isLocal: true,
   isMuted: false,
@@ -252,16 +250,25 @@ export const useRoomStore = create<RoomStoreState>((set) => ({
       },
     })),
   addChatMessage: (message) =>
-    set((state) => ({
-      chatMessages: [...state.chatMessages, message].slice(-80),
-    })),
-  replaceChatMessage: (id, content) =>
-    set((state) => ({
-      chatMessages: state.chatMessages.map((message) =>
-        message.id === id ? { ...message, content } : message,
-      ),
-    })),
-  clearChatMessages: () => set({ chatMessages: [] }),
+    set((state) => {
+      const byId = new Map(state.chatMessages.map((item) => [item.id, item]));
+      byId.set(message.id, message);
+      return {
+        chatMessages: [...byId.values()]
+          .sort((left, right) => left.createdAt.localeCompare(right.createdAt))
+          .slice(-100),
+      };
+    }),
+  mergeChatHistory: (messages) =>
+    set((state) => {
+      const byId = new Map(state.chatMessages.map((item) => [item.id, item]));
+      for (const message of messages) byId.set(message.id, message);
+      return {
+        chatMessages: [...byId.values()]
+          .sort((left, right) => left.createdAt.localeCompare(right.createdAt))
+          .slice(-100),
+      };
+    }),
   addSceneReaction: (reaction) =>
     set((state) => ({
       sceneReactions: [...state.sceneReactions, reaction].slice(-20),
@@ -270,8 +277,7 @@ export const useRoomStore = create<RoomStoreState>((set) => ({
     set((state) => {
       const members = state.room.members.filter((member) => !member.isEmptySlot);
       const localMemberIndex = members.findIndex((member) => member.isLocal);
-      const existingLocalMember =
-        localMemberIndex >= 0 ? members[localMemberIndex] : undefined;
+      const existingLocalMember = localMemberIndex >= 0 ? members[localMemberIndex] : undefined;
       const baseMember = existingLocalMember ?? createLocalPreviewMember(profile);
       const nextLocalMember: RoomMember = {
         ...baseMember,
@@ -279,7 +285,6 @@ export const useRoomStore = create<RoomStoreState>((set) => ({
         avatarPath: profile.avatarPath,
         avatarDataUrl: profile.avatarDataUrl,
         avatarId: profile.avatarId,
-        customStatus: profile.customStatus ?? baseMember.customStatus,
       };
 
       if (localMemberIndex >= 0) {
@@ -307,6 +312,15 @@ export const useRoomStore = create<RoomStoreState>((set) => ({
         ...state.room,
         members: state.room.members.map((member) =>
           member.id === memberId ? { ...member, volume } : member,
+        ),
+      },
+    })),
+  updatePeerLatency: (memberId, latencyMs) =>
+    set((state) => ({
+      room: {
+        ...state.room,
+        members: state.room.members.map((member) =>
+          member.id === memberId ? { ...member, latencyMs } : member,
         ),
       },
     })),

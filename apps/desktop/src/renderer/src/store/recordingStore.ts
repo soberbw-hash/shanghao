@@ -59,8 +59,7 @@ export const useRecordingStore = create<RecordingStoreState>((set, get) => ({
     saveRecordings(newHistory);
     set({ history: newHistory });
   },
-  addMarker: (marker) =>
-    set((state) => ({ markers: [...state.markers, marker] })),
+  addMarker: (marker) => set((state) => ({ markers: [...state.markers, marker] })),
   clearMarkers: () => set({ markers: [] }),
   resetStatus: () =>
     set({

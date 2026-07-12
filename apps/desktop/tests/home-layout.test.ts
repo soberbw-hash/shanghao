@@ -13,7 +13,8 @@ test("home page is a full-screen fixed-channel entry page", () => {
   const source = readFileSync(sourcePath, "utf8");
 
   assert.equal(source.includes("entry-page"), true);
-  assert.equal(source.includes("进入开黑频道"), true);
+  assert.equal(source.includes("固定好友语音"), true);
+  assert.equal(source.includes("测试服务器"), true);
   assert.equal(source.includes("AvatarPicker"), true);
   assert.equal(source.includes("选择角色"), true);
   assert.equal(source.includes("选一个头像"), false);

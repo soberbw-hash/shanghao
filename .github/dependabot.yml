@@ -1,0 +1,25 @@
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "04:00"
+      timezone: Asia/Shanghai
+    open-pull-requests-limit: 5
+    groups:
+      javascript-runtime:
+        patterns:
+          - "react*"
+          - "electron*"
+          - "vite*"
+          - "typescript*"
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "04:30"
+      timezone: Asia/Shanghai
+    open-pull-requests-limit: 3

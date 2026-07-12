@@ -1,5 +1,7 @@
 import { ExportTaskState } from "../enums/app.enums";
 import type { RoomConnectionState, RoomLifecycleState } from "../enums/app.enums";
+import type { LocalAudioDiagnostics } from "./audio.types";
+import type { ConnectionHealth } from "./room.types";
 import type { RelayStatusSnapshot } from "./settings.types";
 
 export type LogCategory =
@@ -40,6 +42,18 @@ export interface DiagnosticsSnapshot {
   lastUpdateCheckMessage?: string;
 }
 
+export interface PeerConnectionDiagnostics {
+  jitterMs?: number;
+  packetsLost?: number;
+  packetsReceived?: number;
+  packetLossPercent?: number;
+  roundTripTimeMs?: number;
+  audioLevel?: number;
+  localCandidateType?: string;
+  remoteCandidateType?: string;
+  connectionType?: "p2p" | "relay" | "unknown";
+}
+
 export interface RendererDiagnosticsSummary {
   roomLifecycleState: RoomLifecycleState;
   roomConnectionState: RoomConnectionState;
@@ -70,5 +84,10 @@ export interface RendererDiagnosticsSummary {
   droppedExpiredChunks?: number;
   droppedSendChunks?: number;
   perPeerAudioStatus?: Array<Record<string, unknown>>;
+  peerConnectionStats?: Record<string, PeerConnectionDiagnostics>;
+  connectionHealth?: ConnectionHealth;
+  localAudioDiagnostics?: LocalAudioDiagnostics;
+  relayStatus?: RelayStatusSnapshot;
+  screenShareRelayState?: "active" | "inactive";
   audioTimeline?: Array<Record<string, unknown>>;
 }

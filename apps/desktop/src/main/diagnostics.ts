@@ -50,11 +50,7 @@ const zipDirectory = async (sourceDir: string, targetPath: string): Promise<void
     }
   } catch {
     // Fallback: tar.gz for any platform where zip isn't available
-    const files = await readdir(sourceDir, { recursive: true });
-    const tar = await import("node:child_process").then((m) =>
-      promisify(m.execFile)("tar", ["-czf", targetPath, "-C", sourceDir, "."]),
-    );
-    await tar;
+    await execFileAsync("tar", ["-czf", targetPath, "-C", sourceDir, "."]);
   }
 };
 
@@ -140,7 +136,9 @@ export class DiagnosticsService {
     }
   }
 
-  async exportBundle(extraFiles: Array<{ name: string; content: string }>): Promise<DiagnosticsSnapshot> {
+  async exportBundle(
+    extraFiles: Array<{ name: string; content: string }>,
+  ): Promise<DiagnosticsSnapshot> {
     this.snapshot = { ...this.snapshot, lastExportState: ExportTaskState.Running };
 
     const result = await dialog.showOpenDialog({
@@ -206,7 +204,9 @@ export class DiagnosticsService {
   }
 
   private async rotateLogIfNeeded(filePath: string, incomingBytes: number): Promise<void> {
-    const currentSize = await stat(filePath).then((value) => value.size).catch(() => 0);
+    const currentSize = await stat(filePath)
+      .then((value) => value.size)
+      .catch(() => 0);
     if (currentSize + incomingBytes <= MAX_LOG_FILE_BYTES) {
       return;
     }
@@ -218,7 +218,9 @@ export class DiagnosticsService {
     await rename(filePath, `${filePath}.1`).catch(() => undefined);
   }
 
-  private async exportLogsToDirectory(targetDirectory: string): Promise<
+  private async exportLogsToDirectory(
+    targetDirectory: string,
+  ): Promise<
     Array<{ file: string; originalSize: number; exportedSize: number; truncated: boolean }>
   > {
     await mkdir(targetDirectory, { recursive: true });

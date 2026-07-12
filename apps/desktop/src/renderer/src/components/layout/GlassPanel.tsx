@@ -7,13 +7,7 @@ export const GlassPanel = ({
   className,
   ...props
 }: PropsWithChildren<HTMLAttributes<HTMLDivElement>>) => (
-  <div
-    className={cn(
-      "glass-panel rounded-[20px]",
-      className,
-    )}
-    {...props}
-  >
+  <div className={cn("glass-panel rounded-[20px]", className)} {...props}>
     {children}
   </div>
 );

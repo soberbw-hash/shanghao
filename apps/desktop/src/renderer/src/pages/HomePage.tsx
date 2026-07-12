@@ -1,16 +1,23 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
+  Activity,
   ArrowRight,
   ChevronDown,
-  Dices,
+  CircleAlert,
+  CircleCheck,
+  LoaderCircle,
   Mic,
   MicOff,
   Server,
-  Sparkles,
 } from "lucide-react";
 import { gsap } from "gsap";
 
-import { MicPermissionState, type BuiltInAvatarId } from "@private-voice/shared";
+import {
+  MicPermissionState,
+  normalizeRelayServerUrl,
+  type BuiltInAvatarId,
+  type RelayStatusSnapshot,
+} from "@private-voice/shared";
 
 import { Button } from "../components/base/Button";
 import { Input } from "../components/base/Input";
@@ -23,16 +30,9 @@ import { useRoomState } from "../hooks/useRoomState";
 import { useAppStore } from "../store/appStore";
 import { useAudioStore } from "../store/audioStore";
 import { useSettingsStore } from "../store/settingsStore";
-import { getAvatarSrc, randomNickname } from "../utils/profile";
+import { getAvatarSrc } from "../utils/profile";
 
-const isValidServerAddress = (value: string) => {
-  try {
-    const url = new URL(value);
-    return url.protocol === "ws:" || url.protocol === "wss:";
-  } catch {
-    return false;
-  }
-};
+const isValidServerAddress = (value: string) => Boolean(normalizeRelayServerUrl(value));
 
 const formatServerLabel = (value: string): string => {
   try {
@@ -58,21 +58,26 @@ export const HomePage = () => {
   const [serverAddress, setServerAddress] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isEditingSetup, setIsEditingSetup] = useState(false);
+  const [isTestingServer, setIsTestingServer] = useState(false);
+  const [serverTestResult, setServerTestResult] = useState<RelayStatusSnapshot>();
   const reduceMotion = usePrefersReducedMotion(settings?.reduceMotion ?? false);
   const isSettingsReady = Boolean(settings);
+  const savedNickname = settings?.nickname;
+  const savedAvatarId = settings?.avatarId;
+  const savedServerAddress = settings?.relayServerUrl;
   const hasSavedEntry = Boolean(
     settings?.hasCompletedProfileSetup &&
-      nickname.trim() &&
-      isValidServerAddress(serverAddress.trim()),
+    nickname.trim() &&
+    isValidServerAddress(serverAddress.trim()),
   );
   const isQuickEntry = hasSavedEntry && !isEditingSetup;
 
   useEffect(() => {
-    if (!settings) return;
-    setNickname(settings.nickname);
-    setAvatarId(settings.avatarId || "fox");
-    setServerAddress(settings.relayServerUrl || "");
-  }, [settings?.avatarId, settings?.nickname, settings?.relayServerUrl]);
+    if (!isSettingsReady) return;
+    setNickname(savedNickname ?? "");
+    setAvatarId(savedAvatarId || "fox");
+    setServerAddress(savedServerAddress || "");
+  }, [isSettingsReady, savedAvatarId, savedNickname, savedServerAddress]);
 
   useLayoutEffect(() => {
     if (!isSettingsReady || !pageRef.current) return;
@@ -166,7 +171,7 @@ export const HomePage = () => {
         : { title: "麦克风正常", tone: "good" };
 
   const enterChannel = async () => {
-    const trimmedAddress = serverAddress.trim();
+    const normalizedAddress = normalizeRelayServerUrl(serverAddress);
     const trimmedNickname = nickname.trim();
     if (!trimmedNickname) {
       pushToast({
@@ -177,11 +182,11 @@ export const HomePage = () => {
       return;
     }
 
-    if (!isValidServerAddress(trimmedAddress)) {
+    if (!normalizedAddress) {
       pushToast({
         tone: "warning",
         title: "服务器地址不对",
-        description: "请检查后再试，地址应以 ws:// 或 wss:// 开头。",
+        description: "可填写 IP:端口、ws:// 地址或 wss:// 域名。",
       });
       return;
     }
@@ -189,23 +194,79 @@ export const HomePage = () => {
     setIsSubmitting(true);
     try {
       await saveSettings({
-        nickname: trimmedNickname.slice(0, 24),
+        nickname: trimmedNickname.slice(0, 16),
         avatarId,
         avatarPath: undefined,
-        relayServerUrl: trimmedAddress,
+        relayServerUrl: normalizedAddress,
         hasCompletedProfileSetup: true,
       });
-      await joinChannel(trimmedAddress);
+      await joinChannel(normalizedAddress);
     } finally {
       setIsSubmitting(false);
     }
   };
 
+  const testServer = async () => {
+    const normalizedAddress = normalizeRelayServerUrl(serverAddress);
+    if (!normalizedAddress) {
+      setServerTestResult(undefined);
+      pushToast({
+        tone: "warning",
+        title: "服务器地址不对",
+        description: "可填写 IP:端口、ws:// 地址或 wss:// 域名。",
+      });
+      return;
+    }
+
+    setIsTestingServer(true);
+    setServerTestResult(undefined);
+    try {
+      const result = await window.desktopApi.diagnostics.testServer(normalizedAddress);
+      setServerTestResult(result);
+      pushToast({
+        tone: result.isReachable ? "success" : "warning",
+        title: result.isReachable
+          ? `服务器正常${typeof result.latencyMs === "number" ? ` · ${result.latencyMs} ms` : ""}`
+          : "服务器暂时不可用",
+        description: result.message,
+      });
+    } catch {
+      setServerTestResult({
+        serverUrl: normalizedAddress,
+        isConfigured: true,
+        isReachable: false,
+        message: "测试请求失败，请稍后重试。",
+      });
+    } finally {
+      setIsTestingServer(false);
+    }
+  };
+
   const isJoining = isSubmitting || roomAction === "joining";
   const avatarSrc = getAvatarSrc(avatarId);
+  const serverTestStatus = serverTestResult ? (
+    <div
+      className={`entry-server-test-result ${serverTestResult.isReachable ? "success" : "danger"}`}
+      role="status"
+    >
+      {serverTestResult.isReachable ? (
+        <CircleCheck className="h-4 w-4" />
+      ) : (
+        <CircleAlert className="h-4 w-4" />
+      )}
+      <span>
+        {serverTestResult.isReachable
+          ? `服务器正常${typeof serverTestResult.latencyMs === "number" ? ` · ${serverTestResult.latencyMs} ms` : ""}`
+          : serverTestResult.message}
+      </span>
+    </div>
+  ) : null;
 
   return (
-    <div ref={pageRef} className="entry-page relative flex h-full items-center justify-center overflow-hidden px-6 py-7">
+    <div
+      ref={pageRef}
+      className="entry-page relative flex h-full items-center justify-center overflow-hidden px-6 py-7"
+    >
       <main
         data-gsap-entry="card"
         className={`entry-card relative z-10 flex w-full flex-col px-9 py-8 ${
@@ -218,19 +279,10 @@ export const HomePage = () => {
         >
           <BrandMark size={isQuickEntry ? "md" : "lg"} />
           <div>
-            {isQuickEntry ? (
-              <>
-                <div className="entry-eyebrow">固定频道已准备好</div>
-                <h1 className="mt-0.5 text-[26px] font-[720] tracking-[-0.035em] text-[#172033]">
-                  今晚也一起？
-                </h1>
-              </>
-            ) : (
-              <>
-                <h1 className="text-[30px] font-[720] tracking-[-0.035em] text-[#172033]">进入开黑频道</h1>
-                <div className="mt-1 text-xs font-semibold tracking-[0.24em] text-[#9aa7b8]">SHANGHAO</div>
-              </>
-            )}
+            <h1 className="text-[22px] font-[680] leading-[30px] tracking-[-0.02em] text-[#172033]">
+              上号
+            </h1>
+            <div className="text-[12px] font-medium leading-4 text-[#718198]">固定好友语音</div>
           </div>
           <button
             type="button"
@@ -238,7 +290,11 @@ export const HomePage = () => {
             className="entry-mic-status interactive-surface ml-auto flex items-center gap-2 rounded-full px-3.5 py-2 text-xs font-semibold text-[#60738b]"
           >
             <span className={micCopy.tone === "good" ? "text-[#18b669]" : "text-[#d18b19]"}>
-              {micCopy.tone === "good" ? <Mic className="h-4 w-4" /> : <MicOff className="h-4 w-4" />}
+              {micCopy.tone === "good" ? (
+                <Mic className="h-4 w-4" />
+              ) : (
+                <MicOff className="h-4 w-4" />
+              )}
             </span>
             {micCopy.title}
           </button>
@@ -246,7 +302,11 @@ export const HomePage = () => {
 
         {isQuickEntry ? (
           <section className="entry-ready-layout min-h-0 flex-1">
-            <div data-gsap-entry="ready-avatar" className="entry-ready-avatar-stage" aria-hidden="true">
+            <div
+              data-gsap-entry="ready-avatar"
+              className="entry-ready-avatar-stage"
+              aria-hidden="true"
+            >
               <span className="entry-ready-orbit entry-ready-orbit-one" />
               <span className="entry-ready-orbit entry-ready-orbit-two" />
               {avatarSrc ? (
@@ -255,38 +315,53 @@ export const HomePage = () => {
             </div>
 
             <div data-gsap-entry="ready-copy" className="flex min-w-0 flex-col justify-center">
-              <div className="inline-flex w-fit items-center gap-1.5 rounded-full bg-[rgba(77,163,255,.1)] px-2.5 py-1 text-[11px] font-semibold text-[#2f6fcc]">
-                <Sparkles className="h-3 w-3" />
-                欢迎回来
-              </div>
-              <h2 className="mt-3 truncate text-[34px] font-[740] tracking-[-0.045em] text-[#162033]">
+              <div className="text-[13px] font-medium leading-[18px] text-[#718198]">昵称</div>
+              <h2 className="mt-1 truncate text-[34px] font-[740] leading-[42px] tracking-[-0.035em] text-[#162033]">
                 {nickname}
               </h2>
-              <p className="mt-2 max-w-[360px] text-[13px] leading-6 text-[#718198]">
-                身份和固定频道都记住了。点一下就能回到朋友身边。
-              </p>
-              <div className="entry-ready-server mt-5">
-                <span className="entry-ready-server-icon"><Server className="h-4 w-4" /></span>
+              <div className="entry-ready-server mt-4" title={serverAddress}>
+                <span className="entry-ready-server-icon">
+                  <Server className="h-4 w-4" />
+                </span>
                 <span className="min-w-0">
                   <small>固定服务器</small>
                   <strong>{formatServerLabel(serverAddress)}</strong>
                 </span>
               </div>
-              <Button
-                isFullWidth
-                className="mt-6 h-[54px] rounded-[18px] text-[15px]"
-                disabled={isJoining || !serverAddress.trim()}
-                onClick={() => void enterChannel()}
-              >
-                {isJoining ? "正在回到频道..." : "上号"}
-                <ArrowRight className="h-4 w-4" />
-              </Button>
+              {serverTestStatus}
+              <div className="mt-5 flex flex-wrap items-center gap-2.5">
+                <Button
+                  className="h-[50px] min-w-[188px] rounded-[16px] text-[15px]"
+                  disabled={isJoining || !serverAddress.trim()}
+                  onClick={() => void enterChannel()}
+                >
+                  {isJoining ? "正在进入..." : "上号"}
+                  {isJoining ? (
+                    <LoaderCircle className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <ArrowRight className="h-4 w-4" />
+                  )}
+                </Button>
+                <Button
+                  variant="secondary"
+                  className="h-[50px] rounded-[16px] px-4"
+                  disabled={isTestingServer || isJoining}
+                  onClick={() => void testServer()}
+                >
+                  {isTestingServer ? (
+                    <LoaderCircle className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Activity className="h-4 w-4" />
+                  )}
+                  {isTestingServer ? "测试中" : "测试服务器"}
+                </Button>
+              </div>
               <button
                 type="button"
                 className="entry-edit-button mx-auto mt-3"
                 onClick={() => setIsEditingSetup(true)}
               >
-                更换身份或服务器
+                更换昵称或服务器
                 <ChevronDown className="h-3.5 w-3.5" />
               </button>
             </div>
@@ -301,37 +376,55 @@ export const HomePage = () => {
             <div data-gsap-entry="form" className="flex min-w-0 flex-col gap-5">
               <label className="space-y-2">
                 <span className="text-xs font-semibold text-[#52657d]">昵称</span>
-                <div className="flex gap-2">
+                <div className="flex">
                   <Input
                     value={nickname}
-                    maxLength={24}
+                    maxLength={16}
                     placeholder="朋友怎么叫你"
                     onChange={(event) => setNickname(event.target.value)}
                   />
-                  <Button variant="secondary" className="shrink-0" onClick={() => setNickname(randomNickname())}>
-                    <Dices className="h-4 w-4" />
-                    随机
-                  </Button>
                 </div>
               </label>
               <label className="space-y-2">
                 <span className="text-xs font-semibold text-[#52657d]">服务器地址</span>
                 <Input
                   value={serverAddress}
-                  placeholder="ws://你的服务器地址:端口"
-                  onChange={(event) => setServerAddress(event.target.value)}
+                  placeholder="118.25.103.107:43821"
+                  onChange={(event) => {
+                    setServerAddress(event.target.value);
+                    setServerTestResult(undefined);
+                  }}
                 />
               </label>
+              {serverTestStatus}
               <div className="mt-auto" data-gsap-entry="cta">
-                <Button
-                  isFullWidth
-                  className="h-[52px] rounded-[18px] text-[15px]"
-                  disabled={isJoining || !serverAddress.trim()}
-                  onClick={() => void enterChannel()}
-                >
-                  {isJoining ? "正在进入..." : "进入频道"}
-                  <ArrowRight className="h-4 w-4" />
-                </Button>
+                <div className="flex flex-wrap gap-2.5">
+                  <Button
+                    className="h-[52px] min-w-[188px] rounded-[16px] text-[15px]"
+                    disabled={isJoining || !serverAddress.trim()}
+                    onClick={() => void enterChannel()}
+                  >
+                    {isJoining ? "正在进入..." : "进入频道"}
+                    {isJoining ? (
+                      <LoaderCircle className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <ArrowRight className="h-4 w-4" />
+                    )}
+                  </Button>
+                  <Button
+                    variant="secondary"
+                    className="h-[52px] rounded-[16px] px-4"
+                    disabled={isTestingServer || isJoining || !serverAddress.trim()}
+                    onClick={() => void testServer()}
+                  >
+                    {isTestingServer ? (
+                      <LoaderCircle className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <Activity className="h-4 w-4" />
+                    )}
+                    {isTestingServer ? "测试中" : "测试服务器"}
+                  </Button>
+                </div>
                 {hasSavedEntry ? (
                   <button
                     type="button"

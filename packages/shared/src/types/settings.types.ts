@@ -1,14 +1,11 @@
 export type PreferredSampleRate = "auto" | "32000" | "44100" | "48000";
 export type MicMonitorMode = "processed" | "raw";
+export type LowCutFrequency = "off" | "90" | "120";
 export type ScreenShareQuality = "smooth" | "balanced" | "clear";
+export type ScreenShareFitMode = "contain" | "cover";
+export type UiScale = 100 | 110 | 125;
 export type BuiltInAvatarId = "fox" | "cat" | "duck" | "panda" | "corgi";
-export type MicEqualizerGains = [
-  number,
-  number,
-  number,
-  number,
-  number,
-];
+export type MicEqualizerGains = [number, number, number, number, number];
 
 export interface AppSettings {
   settingsSchemaVersion: number;
@@ -20,6 +17,9 @@ export interface AppSettings {
   hasCompletedProfileSetup: boolean;
   minimizeToTray: boolean;
   reduceMotion: boolean;
+  reduceTransparency: boolean;
+  increaseContrast: boolean;
+  uiScale: UiScale;
   launchOnStartup: boolean;
   isHardwareAccelerationEnabled: boolean;
   isOverlayEnabled: boolean;
@@ -28,7 +28,7 @@ export interface AppSettings {
   preferredSampleRate: PreferredSampleRate;
   inputLevelThreshold: number;
   micEqualizerGains: MicEqualizerGains;
-  isLowCutEnabled: boolean;
+  lowCutFrequency: LowCutFrequency;
   globalMuteShortcut: string;
   pushToTalkShortcut: string;
   recordingMarkerShortcut: string;
@@ -38,8 +38,10 @@ export interface AppSettings {
   isPushToTalkEnabled: boolean;
   micMonitorMode: MicMonitorMode;
   relayServerUrl?: string;
-  customStatus: string;
+  memberVolumes: Record<string, number>;
+  soundVolume: number;
   screenShareQuality: ScreenShareQuality;
+  screenShareFitMode: ScreenShareFitMode;
   isScreenShareSystemAudioEnabled: boolean;
   isSystemNotificationEnabled: boolean;
   isMicOnSoundEnabled: boolean;
@@ -67,6 +69,7 @@ export interface RelayStatusSnapshot {
   uptime?: number;
   activeRooms?: number;
   connectedPeers?: number;
+  latencyMs?: number;
   turnConfigured?: boolean;
   droppedRealtimeMessages?: number;
   hasVersionMismatch?: boolean;

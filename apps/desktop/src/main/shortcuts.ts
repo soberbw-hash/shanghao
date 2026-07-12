@@ -1,9 +1,5 @@
 import { globalShortcut, type BrowserWindow } from "electron";
-import {
-  UiohookKey,
-  uIOhook,
-  type UiohookKeyboardEvent,
-} from "uiohook-napi";
+import { UiohookKey, uIOhook, type UiohookKeyboardEvent } from "uiohook-napi";
 
 import { IPC_CHANNELS, type RendererLogPayload } from "@private-voice/shared";
 
@@ -28,18 +24,11 @@ export class ShortcutController {
   ) {}
 
   private readonly handleGlobalKeyDown = (event: UiohookKeyboardEvent): void => {
-    if (
-      this.pushToTalkPressed ||
-      !this.matchesPushToTalkBinding(event)
-    ) {
+    if (this.pushToTalkPressed || !this.matchesPushToTalkBinding(event)) {
       return;
     }
     this.pushToTalkPressed = true;
-    sendToWindow(
-      this.windowProvider(),
-      IPC_CHANNELS.shortcuts.pushToTalkState,
-      true,
-    );
+    sendToWindow(this.windowProvider(), IPC_CHANNELS.shortcuts.pushToTalkState, true);
   };
 
   private readonly handleGlobalKeyUp = (event: UiohookKeyboardEvent): void => {
@@ -155,10 +144,7 @@ export class ShortcutController {
     }
     try {
       const registered = globalShortcut.register(accelerator, () => {
-        sendToWindow(
-          this.windowProvider(),
-          IPC_CHANNELS.shortcuts.recordingMarkerTriggered,
-        );
+        sendToWindow(this.windowProvider(), IPC_CHANNELS.shortcuts.recordingMarkerTriggered);
       });
       if (!registered) {
         throw new Error(`Failed to register recording marker shortcut: ${accelerator}`);
@@ -194,8 +180,7 @@ export class ShortcutController {
     if (!keyToken) {
       return undefined;
     }
-    const normalizedKey =
-      keyToken.length === 1 ? keyToken.toUpperCase() : keyToken;
+    const normalizedKey = keyToken.length === 1 ? keyToken.toUpperCase() : keyToken;
     const keycode = UiohookKey[normalizedKey as keyof typeof UiohookKey];
     if (typeof keycode !== "number") {
       return undefined;
@@ -205,10 +190,7 @@ export class ShortcutController {
       ctrlKey: modifiers.has("ctrl") || modifiers.has("control"),
       altKey: modifiers.has("alt") || modifiers.has("option"),
       shiftKey: modifiers.has("shift"),
-      metaKey:
-        modifiers.has("meta") ||
-        modifiers.has("cmd") ||
-        modifiers.has("command"),
+      metaKey: modifiers.has("meta") || modifiers.has("cmd") || modifiers.has("command"),
     };
   }
 
@@ -216,11 +198,11 @@ export class ShortcutController {
     const binding = this.pushToTalkBinding;
     return Boolean(
       binding &&
-        event.keycode === binding.keycode &&
-        event.ctrlKey === binding.ctrlKey &&
-        event.altKey === binding.altKey &&
-        event.shiftKey === binding.shiftKey &&
-        event.metaKey === binding.metaKey,
+      event.keycode === binding.keycode &&
+      event.ctrlKey === binding.ctrlKey &&
+      event.altKey === binding.altKey &&
+      event.shiftKey === binding.shiftKey &&
+      event.metaKey === binding.metaKey,
     );
   }
 
@@ -249,11 +231,7 @@ export class ShortcutController {
       return;
     }
     this.pushToTalkPressed = false;
-    sendToWindow(
-      this.windowProvider(),
-      IPC_CHANNELS.shortcuts.pushToTalkState,
-      false,
-    );
+    sendToWindow(this.windowProvider(), IPC_CHANNELS.shortcuts.pushToTalkState, false);
   }
 
   dispose(): void {

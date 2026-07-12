@@ -6,11 +6,11 @@
       name="viewport"
       content="width=device-width, initial-scale=1.0"
     />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob:; connect-src 'self' ws: wss: http://127.0.0.1:*; worker-src 'self' blob:;"
+    />
     <title>上号</title>
-    <script>
-      document.documentElement.dataset.renderer =
-        new URLSearchParams(window.location.search).get("overlay") === "1" ? "overlay" : "main";
-    </script>
     <style>
       :root {
         color-scheme: light;
