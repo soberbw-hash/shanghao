@@ -5,6 +5,7 @@ import {
   AUTO_AWAY_IDLE_SECONDS,
   IDLE_POLL_INTERVAL_MS,
   decideAutoAway,
+  shouldMuteAfterAwayReturn,
 } from "../src/renderer/src/features/room/autoAway";
 
 test("OS idle polling has a strict 30 minute boundary", () => {
@@ -27,6 +28,12 @@ test("only automatically-away members return on OS activity", () => {
     decideAutoAway({ idleSeconds: 1_900, isInAwayZone: true, awayMethod: "auto" }),
     "none",
   );
+});
+
+test("returning from away never unmutes a player who was already muted", () => {
+  assert.equal(shouldMuteAfterAwayReturn({ wasMuted: true, isDeafened: false }), true);
+  assert.equal(shouldMuteAfterAwayReturn({ wasMuted: false, isDeafened: true }), true);
+  assert.equal(shouldMuteAfterAwayReturn({ wasMuted: false, isDeafened: false }), false);
 });
 
 test("deafen and microphone state changes are atomic", async () => {

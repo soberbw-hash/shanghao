@@ -39,7 +39,11 @@ import { TopStatusBar } from "../components/layout/TopStatusBar";
 import { TeamIsland } from "../components/room/TeamIsland";
 import { playUiSound } from "../features/audio/uiSound";
 import { motionDuration, motionEase } from "../features/motion/motionSystem";
-import { decideAutoAway, IDLE_POLL_INTERVAL_MS } from "../features/room/autoAway";
+import {
+  decideAutoAway,
+  IDLE_POLL_INTERVAL_MS,
+  shouldMuteAfterAwayReturn,
+} from "../features/room/autoAway";
 import { isSeatZone } from "../features/voice-scene/sceneZones";
 import { usePrefersReducedMotion } from "../hooks/usePrefersReducedMotion";
 import { useRecordingController } from "../hooks/useRecordingController";
@@ -57,6 +61,7 @@ interface AwaySession {
   seat: SceneZoneId;
   activity: MemberActivity;
   gameName?: string;
+  wasMuted: boolean;
   enteredAt: string;
 }
 const SCREEN_SHARE_PROFILES: Record<ScreenShareQuality, ScreenShareEncodingProfile> = {
@@ -520,6 +525,7 @@ export const RoomPage = () => {
           seat,
           activity: currentLocalMember.activity ?? "idle",
           gameName: currentLocalMember.gameName,
+          wasMuted: useAudioStore.getState().isMuted,
           enteredAt: new Date().toISOString(),
         };
         setMuted(true);
@@ -541,7 +547,11 @@ export const RoomPage = () => {
       const awaySession = awaySessionRef.current;
       if (decision === "auto_return" && awaySession?.method === "auto") {
         awaySessionRef.current = undefined;
-        if (!useAudioStore.getState().isDeafened) setMuted(false);
+        const shouldRemainMuted = shouldMuteAfterAwayReturn({
+          wasMuted: awaySession.wasMuted,
+          isDeafened: useAudioStore.getState().isDeafened,
+        });
+        setMuted(shouldRemainMuted);
         moveLocalMemberRef.current(
           awaySession.seat,
           awaySession.gameName ? "gaming" : awaySession.activity,
@@ -556,9 +566,7 @@ export const RoomPage = () => {
         pushToast({
           tone: "success",
           title: "欢迎回来，已回到原来的位置。",
-          description: useAudioStore.getState().isDeafened
-            ? "扬声器仍关闭，麦克风保持静音。"
-            : "麦克风已恢复。",
+          description: shouldRemainMuted ? "麦克风保持离开前的静音状态。" : "麦克风已恢复。",
         });
       }
     };
@@ -787,9 +795,17 @@ export const RoomPage = () => {
   const handleZoneSelect = (zone: SceneZoneId, activity: MemberActivity) => {
     if (isSeatZone(zone)) {
       lastSeatZoneRef.current = zone;
-      const wasAway = awaySessionRef.current || localMember?.sceneZone === "restroomZone";
+      const awaySession = awaySessionRef.current;
+      const wasAway = Boolean(awaySession || localMember?.sceneZone === "restroomZone");
       awaySessionRef.current = undefined;
-      if (wasAway && !isDeafened) setMuted(false);
+      if (wasAway) {
+        setMuted(
+          shouldMuteAfterAwayReturn({
+            wasMuted: awaySession?.wasMuted ?? true,
+            isDeafened,
+          }),
+        );
+      }
       if (wasAway) {
         void window.desktopApi.app.writeLog({
           category: "app",
@@ -804,6 +820,7 @@ export const RoomPage = () => {
         seat: lastSeatZoneRef.current,
         activity: localMember?.activity ?? "idle",
         gameName: localMember?.gameName,
+        wasMuted: useAudioStore.getState().isMuted,
         enteredAt: new Date().toISOString(),
       };
       setMuted(true);

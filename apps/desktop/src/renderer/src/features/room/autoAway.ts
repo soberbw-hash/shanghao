@@ -4,6 +4,14 @@ export const IDLE_POLL_INTERVAL_MS = 10_000;
 
 export type AutoAwayDecision = "none" | "auto_away" | "auto_return";
 
+export const shouldMuteAfterAwayReturn = ({
+  wasMuted,
+  isDeafened,
+}: {
+  wasMuted: boolean;
+  isDeafened: boolean;
+}) => wasMuted || isDeafened;
+
 export const decideAutoAway = ({
   idleSeconds,
   isInAwayZone,
