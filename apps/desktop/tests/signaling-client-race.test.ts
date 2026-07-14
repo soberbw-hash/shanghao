@@ -34,7 +34,10 @@ test("a stale signaling session cannot close or receive events from the active s
     );
 
     const activeSessionEvents = events.filter((event) => event.sessionId === "session-two");
-    assert.equal(activeSessionEvents.some((event) => event.type === "close"), false);
+    assert.equal(
+      activeSessionEvents.some((event) => event.type === "close"),
+      false,
+    );
   } finally {
     await bridge.close("session-two");
     await new Promise<void>((resolve) => server.close(() => resolve()));

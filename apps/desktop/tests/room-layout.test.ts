@@ -210,7 +210,7 @@ test("screen sharing is wired through the room page and WebRTC peer layer", () =
   assert.equal(roomSource.includes("local-share-safe-preview"), true);
   assert.equal(roomSource.includes("本地预览已隐藏，避免画面无限套娃"), true);
   assert.equal(roomSource.includes("isDetaching || primaryItem.isLocal"), false);
-  assert.equal(roomSource.includes('disabled={isDetaching}'), true);
+  assert.equal(roomSource.includes("disabled={isDetaching}"), true);
   assert.equal(mainWindowSource.includes("openScreenShareViewer"), true);
   assert.equal(mainWindowSource.includes("viewer.maximize()"), false);
   assert.equal(mainWindowSource.includes("setBounds(workArea, false)"), true);

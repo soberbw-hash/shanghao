@@ -8,16 +8,16 @@ import { APP_BUILD_NUMBER, APP_PROTOCOL_VERSION } from "@private-voice/shared";
 const root = path.resolve(process.cwd(), "../..");
 const read = (relativePath: string) => readFileSync(path.join(root, relativePath), "utf8");
 
-test("v1.0.0 release metadata and safeguards are complete", () => {
+test("v1.0.1 release metadata and safeguards are complete", () => {
   const rootPackage = JSON.parse(read("package.json")) as { version: string };
   const desktopPackage = JSON.parse(read("apps/desktop/package.json")) as { version: string };
   const release = read(".github/workflows/release.yml");
 
-  assert.equal(rootPackage.version, "1.0.0");
-  assert.equal(desktopPackage.version, "1.0.0");
+  assert.equal(rootPackage.version, "1.0.1");
+  assert.equal(desktopPackage.version, "1.0.1");
   assert.equal(APP_PROTOCOL_VERSION, "5");
-  assert.equal(APP_BUILD_NUMBER, "2026.07.14.1");
-  assert.equal(existsSync(path.join(root, "docs/release-notes/v1.0.0.md")), true);
+  assert.equal(APP_BUILD_NUMBER, "2026.07.15.1");
+  assert.equal(existsSync(path.join(root, "docs/release-notes/v1.0.1.md")), true);
   assert.equal(release.includes("windows-${{ github.ref_name }}"), true);
   assert.equal(release.includes("docs/release-notes/${{ github.ref_name }}.md"), true);
   assert.equal(release.includes("pnpm lint"), true);

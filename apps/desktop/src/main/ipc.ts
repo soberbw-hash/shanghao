@@ -409,10 +409,7 @@ export const registerIpcHandlers = ({
       const parsed = JSON.parse(serialized) as unknown;
       if (!parsed || typeof parsed !== "object" || Array.isArray(parsed))
         throw new Error("invalid_signaling_payload");
-      await signalingClient.send(
-        serialized,
-        requireString(sessionId, 128, "signaling_session_id"),
-      );
+      await signalingClient.send(serialized, requireString(sessionId, 128, "signaling_session_id"));
     },
   );
   ipcMain.handle(IPC_CHANNELS.signaling.close, async (_event, sessionId: string) => {

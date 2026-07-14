@@ -35,10 +35,6 @@ const RemoteAudioTrack = ({
       gain.connect(context.destination);
       contextRef.current = context;
       gainRef.current = gain;
-      gain.gain.value = isDeafened ? 0 : Math.max(0, Math.min(2, volume));
-      if (outputDeviceId && context.setSinkId) {
-        void context.setSinkId(outputDeviceId).catch(() => undefined);
-      }
       void context.resume().catch(() => undefined);
     } catch (error) {
       void writeRendererLog("audio", "error", "Failed to attach remote audio stream", {
@@ -64,14 +60,14 @@ const RemoteAudioTrack = ({
       context.currentTime,
       0.012,
     );
-  }, [isDeafened, volume]);
+  }, [isDeafened, stream, volume]);
 
   useEffect(() => {
     const context = contextRef.current;
     if (outputDeviceId && context?.setSinkId) {
       void context.setSinkId(outputDeviceId).catch(() => undefined);
     }
-  }, [outputDeviceId]);
+  }, [outputDeviceId, stream]);
 
   return null;
 };
