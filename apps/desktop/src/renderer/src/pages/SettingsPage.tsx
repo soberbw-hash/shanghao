@@ -73,7 +73,7 @@ export const SettingsPage = () => {
   const [relayDiagnostics, setRelayDiagnostics] = useState<RelayStatusSnapshot>();
   const [saveNotice, setSaveNotice] = useState("设置会自动保存");
   const pageRef = useRef<HTMLDivElement>(null);
-  const reduceMotion = usePrefersReducedMotion(settings?.reduceMotion ?? false);
+  const reduceMotion = usePrefersReducedMotion();
   const isSettingsReady = Boolean(settings);
 
   const micTest = useMicTest({
@@ -148,8 +148,8 @@ export const SettingsPage = () => {
         {
           autoAlpha: 1,
           x: 0,
-          duration: 0.22,
-          ease: motionEase.standard,
+          duration: motionDuration.message,
+          ease: motionEase.spatial,
           overwrite: true,
           force3D: true,
         },
@@ -284,9 +284,8 @@ export const SettingsPage = () => {
                 });
               }}
             >
-              <option value="smooth">流畅（720p / 15fps）</option>
-              <option value="balanced">均衡（900p / 20fps）</option>
-              <option value="clear">清晰（1080p / 24fps）</option>
+              <option value="720p">720p（流畅，推荐）</option>
+              <option value="1080p">1080p（清晰）</option>
             </select>
           </SettingsItemRow>
           <SettingsItemRow
@@ -315,30 +314,6 @@ export const SettingsPage = () => {
               onChange={(isHardwareAccelerationEnabled) =>
                 void handleSaveSettings({ isHardwareAccelerationEnabled })
               }
-            />
-          </SettingsItemRow>
-          <SettingsItemRow
-            label="减少动态效果"
-            description="关闭大部分位移和缩放，保留必要状态反馈。"
-          >
-            <Switch
-              isChecked={settings.reduceMotion}
-              onChange={(reduceMotion) => void handleSaveSettings({ reduceMotion })}
-            />
-          </SettingsItemRow>
-          <SettingsItemRow
-            label="减少透明效果"
-            description="将玻璃面板换成更稳定的不透明表面，也能降低显卡压力。"
-          >
-            <Switch
-              isChecked={settings.reduceTransparency}
-              onChange={(reduceTransparency) => void handleSaveSettings({ reduceTransparency })}
-            />
-          </SettingsItemRow>
-          <SettingsItemRow label="增强对比度" description="加深文字、描边和焦点状态。">
-            <Switch
-              isChecked={settings.increaseContrast}
-              onChange={(increaseContrast) => void handleSaveSettings({ increaseContrast })}
             />
           </SettingsItemRow>
           <SettingsItemRow label="界面大小" description="不缩放位图，按排版系统重新布局。">
@@ -371,6 +346,26 @@ export const SettingsPage = () => {
           isMicClipping={micTest.isClipping}
           micTestError={micTest.error}
           onToggleMicTest={() => void micTest.toggle()}
+          onAutoCalibrate={() => {
+            void micTest
+              .calibrate()
+              .then(async (inputLevelThreshold) => {
+                await handleSaveSettings({ inputLevelThreshold });
+                pushToast({
+                  tone: "success",
+                  title: "麦克风校准完成",
+                  description: `输入阈值已自动设为 ${Math.round(inputLevelThreshold * 100)}。`,
+                });
+              })
+              .catch((error) => {
+                if (error instanceof Error && error.message === "mic_calibration_cancelled") return;
+                pushToast({
+                  tone: "danger",
+                  title: "校准失败",
+                  description: "请确认麦克风权限后重试。",
+                });
+              });
+          }}
           onChange={(patch) => void handleSaveSettings(patch)}
         />
         <ShortcutSettingsCard
@@ -449,7 +444,7 @@ export const SettingsPage = () => {
   };
 
   return (
-    <PageContainer className="overflow-y-auto">
+    <PageContainer className="settings-page overflow-y-auto">
       <div ref={pageRef} className="contents">
         <div data-gsap-settings="header">
           <SettingsPageHeader onBack={() => navigate(settingsReturnTo)} />

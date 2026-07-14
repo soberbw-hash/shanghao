@@ -56,6 +56,16 @@ export const setUiSoundVolume = (volume: number): void => {
   masterVolume = Math.max(0, Math.min(1, volume));
 };
 
+export const prepareUiSounds = (): void => {
+  for (const sound of Object.keys(soundUrls) as UiSound[]) {
+    if (audioCache.has(sound)) continue;
+    const audio = new Audio(soundUrls[sound]);
+    audio.preload = "auto";
+    audio.load();
+    audioCache.set(sound, audio);
+  }
+};
+
 export const playUiSound = (sound: UiSound): void => {
   if (!isEnabled) return;
   try {

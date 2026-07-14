@@ -17,8 +17,21 @@ const desktopApi: DesktopApi = {
     selectSource: (sourceId) =>
       ipcRenderer.invoke(IPC_CHANNELS.screenCapture.selectSource, sourceId),
   },
+  screenShareViewer: {
+    open: (title) => ipcRenderer.invoke(IPC_CHANNELS.screenShareViewer.open, title),
+    updateFrame: (frame) => ipcRenderer.invoke(IPC_CHANNELS.screenShareViewer.updateFrame, frame),
+    close: () => ipcRenderer.invoke(IPC_CHANNELS.screenShareViewer.close),
+    onFrame: (listener) => {
+      const wrapped = (_event: Electron.IpcRendererEvent, frame: unknown) => {
+        listener(frame as Parameters<typeof listener>[0]);
+      };
+      ipcRenderer.on(IPC_CHANNELS.screenShareViewer.frame, wrapped);
+      return () => ipcRenderer.removeListener(IPC_CHANNELS.screenShareViewer.frame, wrapped);
+    },
+  },
   window: {
     minimize: () => ipcRenderer.invoke(IPC_CHANNELS.window.minimize),
+    toggleMaximize: () => ipcRenderer.invoke(IPC_CHANNELS.window.toggleMaximize),
     hide: () => ipcRenderer.invoke(IPC_CHANNELS.window.hide),
     close: () => ipcRenderer.invoke(IPC_CHANNELS.window.close),
     show: () => ipcRenderer.invoke(IPC_CHANNELS.window.show),
@@ -67,18 +80,10 @@ const desktopApi: DesktopApi = {
   shortcuts: {
     configureMute: (accelerator) =>
       ipcRenderer.invoke(IPC_CHANNELS.shortcuts.configureMute, accelerator),
-    configurePushToTalk: (accelerator, enabled) =>
-      ipcRenderer.invoke(IPC_CHANNELS.shortcuts.configurePushToTalk, accelerator, enabled),
     onMuteTriggered: (listener) => {
       const wrapped = () => listener();
       ipcRenderer.on(IPC_CHANNELS.shortcuts.muteTriggered, wrapped);
       return () => ipcRenderer.removeListener(IPC_CHANNELS.shortcuts.muteTriggered, wrapped);
-    },
-    onPushToTalkState: (listener) => {
-      const wrapped = (_event: Electron.IpcRendererEvent, isPressed: boolean) =>
-        listener(isPressed);
-      ipcRenderer.on(IPC_CHANNELS.shortcuts.pushToTalkState, wrapped);
-      return () => ipcRenderer.removeListener(IPC_CHANNELS.shortcuts.pushToTalkState, wrapped);
     },
     configureRecordingMarker: (accelerator) =>
       ipcRenderer.invoke(IPC_CHANNELS.shortcuts.configureRecordingMarker, accelerator),

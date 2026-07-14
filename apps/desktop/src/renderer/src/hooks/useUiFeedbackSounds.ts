@@ -5,7 +5,12 @@ import { RoomConnectionState } from "@private-voice/shared";
 import { useAudioStore } from "../store/audioStore";
 import { useRoomStore } from "../store/roomStore";
 import { useSettingsStore } from "../store/settingsStore";
-import { playUiSound, setUiSoundEnabled, setUiSoundVolume } from "../features/audio/uiSound";
+import {
+  playUiSound,
+  prepareUiSounds,
+  setUiSoundEnabled,
+  setUiSoundVolume,
+} from "../features/audio/uiSound";
 
 let lastClickAt = 0;
 
@@ -30,6 +35,16 @@ export const useUiFeedbackSounds = (): void => {
   }, [settings?.isUiSoundEnabled, settings?.soundVolume]);
 
   useEffect(() => {
+    const prepare = () => prepareUiSounds();
+    window.addEventListener("pointerdown", prepare, { once: true, passive: true });
+    window.addEventListener("keydown", prepare, { once: true });
+    return () => {
+      window.removeEventListener("pointerdown", prepare);
+      window.removeEventListener("keydown", prepare);
+    };
+  }, []);
+
+  useEffect(() => {
     if (!settings?.isUiSoundEnabled) {
       return;
     }
@@ -37,6 +52,9 @@ export const useUiFeedbackSounds = (): void => {
     const handleClick = (event: MouseEvent) => {
       const target = event.target instanceof Element ? event.target.closest("button") : null;
       if (!(target instanceof HTMLButtonElement) || target.disabled) {
+        return;
+      }
+      if (target.dataset.uiSound === "handled") {
         return;
       }
       const now = Date.now();

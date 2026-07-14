@@ -23,9 +23,6 @@ export const defaultSettings: AppSettings = {
   avatarPath: undefined,
   hasCompletedProfileSetup: false,
   minimizeToTray: false,
-  reduceMotion: false,
-  reduceTransparency: false,
-  increaseContrast: false,
   uiScale: 100,
   launchOnStartup: false,
   isHardwareAccelerationEnabled: true,
@@ -47,8 +44,7 @@ export const defaultSettings: AppSettings = {
   relayServerUrl: "",
   memberVolumes: {},
   soundVolume: 0.72,
-  screenShareQuality: "smooth",
-  screenShareFitMode: "contain",
+  screenShareQuality: "720p",
   isScreenShareSystemAudioEnabled: true,
   isSystemNotificationEnabled: true,
   isMicOnSoundEnabled: true,
@@ -96,10 +92,7 @@ const normalizeMonitorMode = (value?: string): AppSettings["micMonitorMode"] =>
   value === "raw" ? "raw" : "processed";
 
 const normalizeScreenShareQuality = (value?: string): AppSettings["screenShareQuality"] =>
-  value === "balanced" || value === "clear" ? value : "smooth";
-
-const normalizeScreenShareFitMode = (value?: string): AppSettings["screenShareFitMode"] =>
-  value === "cover" ? "cover" : "contain";
+  value === "1080p" || value === "clear" ? "1080p" : "720p";
 
 const normalizeLowCutFrequency = (raw: RawSettings): AppSettings["lowCutFrequency"] => {
   if (
@@ -164,12 +157,6 @@ export const migrateSettings = (raw: RawSettings): MigrationResult => {
       defaultSettings.hasCompletedProfileSetup,
     ),
     minimizeToTray: normalizeBoolean(raw.minimizeToTray, defaultSettings.minimizeToTray),
-    reduceMotion: normalizeBoolean(raw.reduceMotion, defaultSettings.reduceMotion),
-    reduceTransparency: normalizeBoolean(
-      raw.reduceTransparency,
-      defaultSettings.reduceTransparency,
-    ),
-    increaseContrast: normalizeBoolean(raw.increaseContrast, defaultSettings.increaseContrast),
     uiScale: raw.uiScale === 110 || raw.uiScale === 125 ? raw.uiScale : 100,
     launchOnStartup: normalizeBoolean(raw.launchOnStartup, defaultSettings.launchOnStartup),
     isHardwareAccelerationEnabled: normalizeBoolean(
@@ -206,7 +193,6 @@ export const migrateSettings = (raw: RawSettings): MigrationResult => {
         ? Math.max(0, Math.min(1, raw.soundVolume))
         : defaultSettings.soundVolume,
     screenShareQuality: normalizeScreenShareQuality(trimUnknownText(raw.screenShareQuality)),
-    screenShareFitMode: normalizeScreenShareFitMode(trimUnknownText(raw.screenShareFitMode)),
     isScreenShareSystemAudioEnabled: normalizeBoolean(
       raw.isScreenShareSystemAudioEnabled,
       defaultSettings.isScreenShareSystemAudioEnabled,

@@ -56,6 +56,11 @@ export interface ScreenCaptureSourceDescriptor {
   appIconDataUrl?: string;
 }
 
+export interface ScreenShareViewerFrame {
+  title: string;
+  dataUrl: string;
+}
+
 export interface GameDetectionSnapshot {
   gameName?:
     | "我的世界"
@@ -101,8 +106,15 @@ export interface DesktopApi {
     listSources: () => Promise<ScreenCaptureSourceDescriptor[]>;
     selectSource: (sourceId: string) => Promise<void>;
   };
+  screenShareViewer: {
+    open: (title: string) => Promise<void>;
+    updateFrame: (frame: ScreenShareViewerFrame) => Promise<boolean>;
+    close: () => Promise<void>;
+    onFrame: (listener: (frame: ScreenShareViewerFrame) => void) => () => void;
+  };
   window: {
     minimize: () => Promise<void>;
+    toggleMaximize: () => Promise<boolean>;
     hide: () => Promise<void>;
     close: () => Promise<void>;
     show: () => Promise<void>;
@@ -138,8 +150,6 @@ export interface DesktopApi {
   shortcuts: {
     configureMute: (accelerator: string) => Promise<void>;
     onMuteTriggered: (listener: () => void) => () => void;
-    configurePushToTalk: (accelerator: string, enabled: boolean) => Promise<boolean>;
-    onPushToTalkState: (listener: (isPressed: boolean) => void) => () => void;
     configureRecordingMarker: (accelerator: string) => Promise<boolean>;
     onRecordingMarkerTriggered: (listener: () => void) => () => void;
   };

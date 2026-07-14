@@ -4,9 +4,9 @@ import path from "node:path";
 import test from "node:test";
 
 const sourcePath = path.resolve(process.cwd(), "src/renderer/src/pages/HomePage.tsx");
-const memberGridPath = path.resolve(
+const sceneZonesPath = path.resolve(
   process.cwd(),
-  "src/renderer/src/components/room/MemberGrid.tsx",
+  "src/renderer/src/features/voice-scene/sceneZones.ts",
 );
 
 test("home page is a full-screen fixed-channel entry page", () => {
@@ -37,9 +37,9 @@ test("home page no longer renders a home mic-test panel", () => {
   assert.equal(source.includes("麦克风正常"), true);
 });
 
-test("member grid stays in a single five-column row instead of wrapping", () => {
-  const source = readFileSync(memberGridPath, "utf8");
+test("room scene keeps exactly five stable workstation slots", () => {
+  const source = readFileSync(sceneZonesPath, "utf8");
 
-  assert.equal(source.includes("grid-cols-5"), true);
-  assert.equal(source.includes("auto-fit"), false);
+  assert.equal((source.match(/id: "gameDesk/g) ?? []).length, 5);
+  assert.equal(source.includes("defaultMemberZones"), true);
 });

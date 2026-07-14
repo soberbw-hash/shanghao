@@ -16,8 +16,10 @@ type ProcessorMode = "loading" | "active" | "failed";
 
 const RNNOISE_SAMPLE_RATE = 48_000;
 const PCM_SCALE = 32_768;
-const OVERLOAD_WINDOW_FRAMES = 100;
-const OVERLOAD_FRAME_LIMIT = 20;
+const OVERLOAD_WARMUP_FRAMES = 300;
+const OVERLOAD_WINDOW_FRAMES = 300;
+const OVERLOAD_FRAME_LIMIT = 90;
+const OVERLOAD_STRIKE_LIMIT = 2;
 const FRAME_BUDGET_MS = 10;
 
 class ShangHaoRnnoiseProcessor extends AudioWorkletProcessor {
@@ -35,6 +37,7 @@ class ShangHaoRnnoiseProcessor extends AudioWorkletProcessor {
   private maxProcessingMs = 0;
   private overloadWindowFrames = 0;
   private overloadWindowCount = 0;
+  private overloadStrikeCount = 0;
 
   constructor() {
     super();
@@ -129,10 +132,8 @@ class ShangHaoRnnoiseProcessor extends AudioWorkletProcessor {
       this.processedFrames += 1;
       this.totalProcessingMs += processingMs;
       this.maxProcessingMs = Math.max(this.maxProcessingMs, processingMs);
-      this.overloadWindowFrames += 1;
       if (processingMs > FRAME_BUDGET_MS) {
         this.processorOverruns += 1;
-        this.overloadWindowCount += 1;
       }
 
       if (this.processedFrames % 100 === 0) {
@@ -144,8 +145,22 @@ class ShangHaoRnnoiseProcessor extends AudioWorkletProcessor {
         });
       }
 
+      // Ignore startup/JIT spikes, then require two sustained overloaded windows
+      // before falling back. A single slow frame should never alarm the user.
+      if (this.processedFrames > OVERLOAD_WARMUP_FRAMES) {
+        this.overloadWindowFrames += 1;
+        if (processingMs > FRAME_BUDGET_MS) {
+          this.overloadWindowCount += 1;
+        }
+      }
+
       if (this.overloadWindowFrames >= OVERLOAD_WINDOW_FRAMES) {
-        if (this.overloadWindowCount >= OVERLOAD_FRAME_LIMIT) {
+        this.overloadStrikeCount =
+          this.overloadWindowCount >= OVERLOAD_FRAME_LIMIT ? this.overloadStrikeCount + 1 : 0;
+        this.overloadWindowFrames = 0;
+        this.overloadWindowCount = 0;
+
+        if (this.overloadStrikeCount >= OVERLOAD_STRIKE_LIMIT) {
           this.mode = "failed";
           this.denoiseState?.destroy();
           this.denoiseState = undefined;
@@ -157,8 +172,6 @@ class ShangHaoRnnoiseProcessor extends AudioWorkletProcessor {
           });
           return;
         }
-        this.overloadWindowFrames = 0;
-        this.overloadWindowCount = 0;
       }
     }
 

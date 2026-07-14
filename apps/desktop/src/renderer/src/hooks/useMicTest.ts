@@ -19,7 +19,7 @@ interface UseMicTestOptions {
   lowCutFrequency?: LowCutFrequency;
 }
 
-export type MicTestPhase = "idle" | "recording" | "playback";
+export type MicTestPhase = "idle" | "monitoring" | "calibrating";
 
 interface UseMicTestResult {
   isTesting: boolean;
@@ -30,9 +30,8 @@ interface UseMicTestResult {
   start: () => Promise<void>;
   stop: () => void;
   toggle: () => Promise<void>;
+  calibrate: () => Promise<number>;
 }
-
-const TEST_DURATION_MS = 5_000;
 
 export const useMicTest = ({
   inputDeviceId,
@@ -53,11 +52,11 @@ export const useMicTest = ({
   const processedStreamRef = useRef<ProcessedMicrophoneStream>();
   const contextRef = useRef<AudioContext>();
   const analyserRef = useRef<AnalyserNode>();
-  const recorderRef = useRef<MediaRecorder>();
   const audioRef = useRef<HTMLAudioElement>();
-  const objectUrlRef = useRef<string>();
   const rafRef = useRef<number>();
-  const stopTimerRef = useRef<number>();
+  const calibrationSamplesRef = useRef<number[]>([]);
+  const isCalibratingRef = useRef(false);
+  const calibrationRunRef = useRef(0);
 
   const clearMeter = useCallback(() => {
     if (rafRef.current !== undefined) window.cancelAnimationFrame(rafRef.current);
@@ -68,8 +67,6 @@ export const useMicTest = ({
   }, []);
 
   const releaseCapture = useCallback(() => {
-    if (stopTimerRef.current !== undefined) window.clearTimeout(stopTimerRef.current);
-    stopTimerRef.current = undefined;
     clearMeter();
     processedStreamRef.current?.dispose();
     processedStreamRef.current = undefined;
@@ -80,22 +77,16 @@ export const useMicTest = ({
   }, [clearMeter]);
 
   const stop = useCallback(() => {
-    const recorder = recorderRef.current;
-    recorderRef.current = undefined;
-    if (recorder?.state === "recording") {
-      recorder.onstop = null;
-      recorder.stop();
-    }
+    calibrationRunRef.current += 1;
+    isCalibratingRef.current = false;
+    calibrationSamplesRef.current = [];
     releaseCapture();
 
     if (audioRef.current) {
-      audioRef.current.onended = null;
       audioRef.current.pause();
-      audioRef.current.src = "";
+      audioRef.current.srcObject = null;
       audioRef.current = undefined;
     }
-    if (objectUrlRef.current) URL.revokeObjectURL(objectUrlRef.current);
-    objectUrlRef.current = undefined;
     setPhase("idle");
     setIsClipping(false);
   }, [releaseCapture]);
@@ -111,7 +102,12 @@ export const useMicTest = ({
       for (const value of sampleBuffer) {
         peak = Math.max(peak, Math.abs((value - 128) / 128));
       }
-      setLevel(Math.min(1, peak * 2.4));
+      const normalizedLevel = Math.min(1, peak * 2.4);
+      setLevel(normalizedLevel);
+      if (isCalibratingRef.current) {
+        calibrationSamplesRef.current.push(normalizedLevel);
+        if (calibrationSamplesRef.current.length > 240) calibrationSamplesRef.current.shift();
+      }
       if (peak >= 0.98) setIsClipping(true);
       rafRef.current = window.requestAnimationFrame(tick);
     };
@@ -124,7 +120,6 @@ export const useMicTest = ({
     setIsClipping(false);
 
     try {
-      if (typeof MediaRecorder === "undefined") throw new Error("media_recorder_unavailable");
       const inputStream = await navigator.mediaDevices.getUserMedia({
         audio: {
           deviceId: inputDeviceId ? { exact: inputDeviceId } : undefined,
@@ -150,7 +145,7 @@ export const useMicTest = ({
             })
           : undefined;
       processedStreamRef.current = processedStream;
-      const recordedStream = processedStream?.stream ?? inputStream;
+      const monitoredStream = processedStream?.stream ?? inputStream;
 
       const context = new AudioContext({
         sampleRate: preferredSampleRate === "auto" ? undefined : Number(preferredSampleRate),
@@ -158,59 +153,25 @@ export const useMicTest = ({
       });
       await context.resume();
       contextRef.current = context;
-      const source = context.createMediaStreamSource(recordedStream);
+      const source = context.createMediaStreamSource(monitoredStream);
       const analyser = context.createAnalyser();
       analyser.fftSize = 512;
       source.connect(analyser);
       analyserRef.current = analyser;
 
-      const mimeType = ["audio/webm;codecs=opus", "audio/webm"].find((candidate) =>
-        MediaRecorder.isTypeSupported(candidate),
-      );
-      const recorder = new MediaRecorder(recordedStream, mimeType ? { mimeType } : undefined);
-      const chunks: Blob[] = [];
-      recorder.ondataavailable = (event) => {
-        if (event.data.size) chunks.push(event.data);
-      };
-      recorder.onerror = () => {
-        setError("试音录制失败，请重新选择麦克风后再试。");
-        stop();
-      };
-      recorder.onstop = () => {
-        recorderRef.current = undefined;
-        releaseCapture();
-        if (!chunks.length) {
-          setError("没有录到声音，请检查麦克风权限和输入设备。");
-          setPhase("idle");
-          return;
-        }
-
-        const blob = new Blob(chunks, { type: mimeType ?? "audio/webm" });
-        const objectUrl = URL.createObjectURL(blob);
-        objectUrlRef.current = objectUrl;
-        const audio = new Audio(objectUrl);
-        audioRef.current = audio;
-        audio.volume = 1;
-        if (outputDeviceId && "setSinkId" in audio) {
-          void (audio as HTMLAudioElement & { setSinkId: (id: string) => Promise<void> })
-            .setSinkId(outputDeviceId)
-            .catch(() => undefined);
-        }
-        audio.onended = stop;
-        setPhase("playback");
-        void audio.play().catch((playbackError) => {
-          setError(playbackError instanceof Error ? playbackError.message : String(playbackError));
-          stop();
-        });
-      };
-
-      recorderRef.current = recorder;
-      recorder.start(250);
-      setPhase("recording");
+      const audio = new Audio();
+      audioRef.current = audio;
+      audio.srcObject = monitoredStream;
+      audio.autoplay = true;
+      audio.volume = 1;
+      if (outputDeviceId && "setSinkId" in audio) {
+        await (audio as HTMLAudioElement & { setSinkId: (id: string) => Promise<void> })
+          .setSinkId(outputDeviceId)
+          .catch(() => undefined);
+      }
+      await audio.play();
+      setPhase("monitoring");
       startMeter();
-      stopTimerRef.current = window.setTimeout(() => {
-        if (recorder.state === "recording") recorder.stop();
-      }, TEST_DURATION_MS);
     } catch (nextError) {
       setError(nextError instanceof Error ? nextError.message : String(nextError));
       stop();
@@ -226,7 +187,6 @@ export const useMicTest = ({
     noiseSuppression,
     outputDeviceId,
     preferredSampleRate,
-    releaseCapture,
     startMeter,
     stop,
   ]);
@@ -237,6 +197,41 @@ export const useMicTest = ({
       return;
     }
     await start();
+  }, [phase, start, stop]);
+
+  const calibrate = useCallback(async (): Promise<number> => {
+    const shouldStopAfterCalibration = phase === "idle";
+    if (shouldStopAfterCalibration) await start();
+
+    const runId = calibrationRunRef.current + 1;
+    calibrationRunRef.current = runId;
+    calibrationSamplesRef.current = [];
+    isCalibratingRef.current = true;
+    const audio = audioRef.current;
+    const previousVolume = audio?.volume ?? 1;
+    if (audio) audio.volume = 0;
+    setPhase("calibrating");
+
+    await new Promise<void>((resolve) => window.setTimeout(resolve, 2_400));
+    if (calibrationRunRef.current !== runId) throw new Error("mic_calibration_cancelled");
+
+    isCalibratingRef.current = false;
+    const samples = calibrationSamplesRef.current.slice().sort((a, b) => a - b);
+    const percentileIndex = Math.min(
+      samples.length - 1,
+      Math.max(0, Math.floor(samples.length * 0.75)),
+    );
+    const ambientLevel = samples[percentileIndex] ?? 0;
+    const suggestedThreshold =
+      Math.round(Math.min(0.68, Math.max(0.32, ambientLevel * 1.35 + 0.12)) * 100) / 100;
+
+    if (shouldStopAfterCalibration) {
+      stop();
+    } else {
+      if (audio) audio.volume = previousVolume;
+      setPhase("monitoring");
+    }
+    return suggestedThreshold;
   }, [phase, start, stop]);
 
   useEffect(() => stop, [stop]);
@@ -250,5 +245,6 @@ export const useMicTest = ({
     start,
     stop,
     toggle,
+    calibrate,
   };
 };

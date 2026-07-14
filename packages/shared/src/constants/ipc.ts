@@ -12,8 +12,15 @@ export const IPC_CHANNELS = {
     listSources: "screen-capture:list-sources",
     selectSource: "screen-capture:select-source",
   },
+  screenShareViewer: {
+    open: "screen-share-viewer:open",
+    updateFrame: "screen-share-viewer:update-frame",
+    close: "screen-share-viewer:close",
+    frame: "screen-share-viewer:frame",
+  },
   window: {
     minimize: "window:minimize",
+    toggleMaximize: "window:toggle-maximize",
     hide: "window:hide",
     close: "window:close",
     show: "window:show",
@@ -49,8 +56,6 @@ export const IPC_CHANNELS = {
   shortcuts: {
     configureMute: "shortcuts:configure-mute",
     muteTriggered: "shortcuts:mute-triggered",
-    configurePushToTalk: "shortcuts:configure-push-to-talk",
-    pushToTalkState: "shortcuts:push-to-talk-state",
     configureRecordingMarker: "shortcuts:configure-recording-marker",
     recordingMarkerTriggered: "shortcuts:recording-marker-triggered",
   },

@@ -4,7 +4,12 @@ import { pathToFileURL } from "node:url";
 
 import { app, BrowserWindow, desktopCapturer, screen, type Rectangle } from "electron";
 
-import { APP_NAME, type ScreenCaptureSourceDescriptor } from "@private-voice/shared";
+import {
+  APP_NAME,
+  IPC_CHANNELS,
+  type ScreenCaptureSourceDescriptor,
+  type ScreenShareViewerFrame,
+} from "@private-voice/shared";
 
 const devServerUrl = "http://127.0.0.1:5173";
 
@@ -25,6 +30,8 @@ const getBuildAssetPath = (fileName: string) =>
 const getIconPath = () => getBuildAssetPath("shanghao-icon-v3.ico");
 
 let pendingScreenCaptureSourceId: string | undefined;
+let screenShareViewerWindow: BrowserWindow | null = null;
+let latestScreenShareViewerFrame: ScreenShareViewerFrame | undefined;
 
 const enumerateScreenCaptureSources = async (withThumbnails: boolean) =>
   desktopCapturer.getSources({
@@ -46,6 +53,80 @@ export const listScreenCaptureSources = async (): Promise<ScreenCaptureSourceDes
 
 export const selectScreenCaptureSource = (sourceId: string): void => {
   pendingScreenCaptureSourceId = sourceId;
+};
+
+const getRendererEntryPath = () => path.join(__dirname, "../../dist/index.html");
+
+export const openScreenShareViewer = async (title: string): Promise<void> => {
+  const workArea = screen.getDisplayNearestPoint(screen.getCursorScreenPoint()).workArea;
+  if (screenShareViewerWindow && !screenShareViewerWindow.isDestroyed()) {
+    // Keep the detached viewer out of display capture to avoid a hall-of-mirrors loop
+    // when the user shares the same monitor that contains this window.
+    screenShareViewerWindow.setContentProtection(true);
+    screenShareViewerWindow.setTitle(title);
+    if (screenShareViewerWindow.isMinimized()) screenShareViewerWindow.restore();
+    screenShareViewerWindow.setBounds(workArea, false);
+    screenShareViewerWindow.show();
+    screenShareViewerWindow.focus();
+    return;
+  }
+
+  const viewer = new BrowserWindow({
+    ...workArea,
+    minWidth: 640,
+    minHeight: 420,
+    title,
+    show: false,
+    backgroundColor: "#0A0D12",
+    icon: getIconPath(),
+    resizable: true,
+    maximizable: true,
+    minimizable: true,
+    webPreferences: {
+      preload: path.join(__dirname, "../preload/index.cjs"),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+    },
+  });
+  screenShareViewerWindow = viewer;
+  viewer.setContentProtection(true);
+  viewer.setMenuBarVisibility(false);
+  viewer.setAutoHideMenuBar(true);
+  viewer.on("closed", () => {
+    if (screenShareViewerWindow === viewer) {
+      screenShareViewerWindow = null;
+      latestScreenShareViewerFrame = undefined;
+    }
+  });
+
+  if (app.isPackaged) {
+    await viewer.loadFile(getRendererEntryPath(), { query: { screenViewer: "1" } });
+  } else {
+    await viewer.loadURL(`${devServerUrl}?screenViewer=1`);
+  }
+  if (latestScreenShareViewerFrame) {
+    viewer.webContents.send(IPC_CHANNELS.screenShareViewer.frame, latestScreenShareViewerFrame);
+  }
+  viewer.setBounds(workArea, false);
+  viewer.show();
+  viewer.focus();
+};
+
+export const updateScreenShareViewer = (frame: ScreenShareViewerFrame): boolean => {
+  const viewer = screenShareViewerWindow;
+  if (!viewer || viewer.isDestroyed()) return false;
+  latestScreenShareViewerFrame = frame;
+  viewer.setTitle(frame.title);
+  viewer.webContents.send(IPC_CHANNELS.screenShareViewer.frame, frame);
+  return true;
+};
+
+export const closeScreenShareViewer = (): void => {
+  latestScreenShareViewerFrame = undefined;
+  const viewer = screenShareViewerWindow;
+  screenShareViewerWindow = null;
+  if (viewer && !viewer.isDestroyed()) viewer.close();
 };
 
 const createFallbackHtml = (

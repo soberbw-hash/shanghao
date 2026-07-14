@@ -435,7 +435,9 @@ export const isSignalEnvelope = (value: unknown): value is SignalEnvelope => {
         isOptionalBoolean(value.isDeafened) &&
         (value.activity === undefined || MEMBER_ACTIVITIES.has(String(value.activity))) &&
         (value.sceneZone === undefined || SCENE_ZONES.has(String(value.sceneZone))) &&
-        (value.gameName === undefined || isText(value.gameName, 64)) &&
+        // v0.1.50 sent an empty game name when no game was detected. Accept it on the
+        // wire for backwards compatibility; the server normalizes it to undefined.
+        (value.gameName === undefined || isText(value.gameName, 64, true)) &&
         (value.nickname === undefined || isValidNickname(value.nickname)) &&
         (value.avatarId === undefined || isBuiltInAvatarId(value.avatarId)) &&
         (value.avatarDataUrl === undefined ||

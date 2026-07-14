@@ -42,6 +42,7 @@ export const useAppBootstrap = (): void => {
 
   useEffect(() => {
     let isDisposed = false;
+    let hasReportedAudioOverload = false;
 
     beginBootstrap("正在准备上号…");
 
@@ -135,11 +136,20 @@ export const useAppBootstrap = (): void => {
     };
 
     navigator.mediaDevices?.addEventListener("devicechange", handleDeviceChange);
-    const handleAudioProcessorFallback = () => {
+    const handleAudioProcessorFallback = (event: Event) => {
+      const reason = (event as CustomEvent<{ reason?: string }>).detail?.reason ?? "unknown";
+      void writeRendererLog("audio", "warn", "Microphone processor switched to browser fallback", {
+        reason,
+      });
+
+      // Missing/unsupported RNNoise is a compatibility fallback, not evidence that
+      // the user's machine is overloaded. Only surface a proven sustained overload.
+      if (reason !== "processor_overloaded" || hasReportedAudioOverload) return;
+      hasReportedAudioOverload = true;
       useAppStore.getState().pushToast({
         tone: "warning",
-        title: "设备负载较高，已切换为基础降噪",
-        description: "麦克风会继续正常传输。",
+        title: "高级降噪已自动减负",
+        description: "检测到持续音频压力，已平稳切换为系统降噪，语音不会中断。",
       });
     };
     window.addEventListener("shanghao:audio-processor-fallback", handleAudioProcessorFallback);

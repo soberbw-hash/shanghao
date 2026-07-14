@@ -4,7 +4,7 @@ import { gsap } from "gsap";
 
 import { MemberPresenceState, MemberSpeakingState, type OverlayState } from "@private-voice/shared";
 
-import { motionEase } from "../features/motion/motionSystem";
+import { motionDuration, motionEase } from "../features/motion/motionSystem";
 import { getAvatarFaceStyle, getAvatarSrc, getStableAvatarId } from "../utils/profile";
 
 const AVATAR_SIZE = 34;
@@ -77,19 +77,31 @@ export const OverlayPage = () => {
           x: 0,
           scale: 1,
           filter: "blur(0px)",
-          duration: 0.28,
+          duration: motionDuration.message,
           ease: motionEase.spatial,
         },
       );
       gsap.fromTo(
         "[data-overlay-avatar]",
         { autoAlpha: 0, y: 4, scale: 0.82 },
-        { autoAlpha: 1, y: 0, scale: 1, duration: 0.22, ease: motionEase.spatial, stagger: 0.025 },
+        {
+          autoAlpha: 1,
+          y: 0,
+          scale: 1,
+          duration: motionDuration.feedback,
+          ease: motionEase.spatial,
+          stagger: 0.025,
+        },
       );
       gsap.fromTo(
         "[data-overlay-status]",
         { autoAlpha: 0, x: -3 },
-        { autoAlpha: 1, x: 0, duration: 0.22, ease: "power3.out" },
+        {
+          autoAlpha: 1,
+          x: 0,
+          duration: motionDuration.feedback,
+          ease: motionEase.standard,
+        },
       );
     }, root);
 
@@ -175,7 +187,7 @@ export const OverlayPage = () => {
                     : "0 2px 7px rgba(30, 45, 70, 0.10)",
                   opacity: isOffline ? 0.5 : 1,
                   transition:
-                    "border-color 180ms cubic-bezier(0.23,1,0.32,1), box-shadow 180ms cubic-bezier(0.23,1,0.32,1), opacity 150ms linear",
+                    "border-color 220ms cubic-bezier(0.16,1,0.3,1), box-shadow 220ms cubic-bezier(0.16,1,0.3,1), opacity 160ms linear",
                 }}
               >
                 <img

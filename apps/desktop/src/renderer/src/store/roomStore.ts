@@ -57,6 +57,7 @@ interface RoomStoreState {
   updateMemberVolume: (memberId: string, volume: number) => void;
   updatePeerLatency: (memberId: string, latencyMs?: number) => void;
   updateLocalPresence: (presence: {
+    isMuted?: boolean;
     isDeafened?: boolean;
     activity?: MemberActivity;
     sceneZone?: SceneZoneId;
@@ -208,7 +209,20 @@ export const useRoomStore = create<RoomStoreState>((set) => ({
     })),
   setMembers: (members) =>
     set((state) => {
-      const normalizedMembers = normalizeMembers(members);
+      const previousById = new Map(
+        state.room.members
+          .filter((member) => !member.isEmptySlot)
+          .map((member) => [member.id, member]),
+      );
+      const normalizedMembers = normalizeMembers(
+        members.map((member) => {
+          const previous = previousById.get(member.id);
+          return {
+            ...member,
+            latencyMs: member.latencyMs ?? previous?.latencyMs,
+          };
+        }),
+      );
       if (areMembersEqual(state.room.members, normalizedMembers)) {
         return state;
       }

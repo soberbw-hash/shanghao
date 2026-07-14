@@ -9,7 +9,11 @@ export interface MeshPeerOptions {
   onConnectionStateChange?: (state: RTCPeerConnectionState) => void;
   onDiagnosticEvent?: (
     event:
-      "connection_state" | "ice_connection_state" | "ice_gathering_state" | "ice_candidate_queue",
+      | "connection_state"
+      | "ice_connection_state"
+      | "ice_gathering_state"
+      | "ice_candidate_queue"
+      | "network_adaptation",
     context: Record<string, unknown>,
   ) => void;
 }
@@ -20,6 +24,117 @@ export interface ScreenShareEncodingProfile {
   maxWidth: number;
   maxHeight: number;
 }
+
+export interface NetworkAdaptationSample {
+  packetLossPercent?: number;
+  roundTripTimeMs?: number;
+  jitterMs?: number;
+}
+
+export type NetworkAdaptationTier = "healthy" | "constrained" | "critical";
+
+interface NetworkTierProfile {
+  audioBitrate: number;
+  screenBitrateScale: number;
+  screenMaxFramerate: number;
+  screenScaleResolutionDownBy: number;
+}
+
+const NETWORK_TIER_PROFILES: Record<NetworkAdaptationTier, NetworkTierProfile> = {
+  healthy: {
+    audioBitrate: 24_000,
+    screenBitrateScale: 1,
+    screenMaxFramerate: 30,
+    screenScaleResolutionDownBy: 1,
+  },
+  constrained: {
+    audioBitrate: 20_000,
+    screenBitrateScale: 0.72,
+    screenMaxFramerate: 13,
+    screenScaleResolutionDownBy: 1.25,
+  },
+  critical: {
+    audioBitrate: 16_000,
+    screenBitrateScale: 0.48,
+    screenMaxFramerate: 10,
+    screenScaleResolutionDownBy: 1.6,
+  },
+};
+
+const NETWORK_TIER_SEVERITY: Record<NetworkAdaptationTier, number> = {
+  healthy: 0,
+  constrained: 1,
+  critical: 2,
+};
+
+const OPUS_FMTP_PARAMETERS = [
+  "minptime=10",
+  "useinbandfec=1",
+  "usedtx=1",
+  "stereo=0",
+  "sprop-stereo=0",
+  "maxaveragebitrate=24000",
+  "maxplaybackrate=32000",
+  "sprop-maxcapturerate=32000",
+];
+
+export const tuneOpusSdp = (sdp?: string): string | undefined => {
+  if (!sdp) return sdp;
+  const lineBreak = sdp.includes("\r\n") ? "\r\n" : "\n";
+  const lines = sdp.split(lineBreak);
+  const opusLineIndex = lines.findIndex((line) => {
+    const normalized = line.trim().toLowerCase();
+    const separatorIndex = normalized.indexOf(" ");
+    return (
+      normalized.startsWith("a=rtpmap:") &&
+      separatorIndex > "a=rtpmap:".length &&
+      normalized.slice(separatorIndex + 1).startsWith("opus/48000")
+    );
+  });
+  if (opusLineIndex < 0) return sdp;
+
+  const opusLine = lines[opusLineIndex];
+  if (!opusLine) return sdp;
+  const payloadType = opusLine.trim().slice("a=rtpmap:".length).split(" ", 1)[0]?.trim();
+  if (!payloadType || [...payloadType].some((value) => value < "0" || value > "9")) return sdp;
+
+  const fmtpPrefix = `a=fmtp:${payloadType}`;
+  const fmtpLineIndex = lines.findIndex((line) => {
+    const normalized = line.trim();
+    return (
+      normalized.startsWith(fmtpPrefix) &&
+      (normalized.length === fmtpPrefix.length || normalized[fmtpPrefix.length] === " ")
+    );
+  });
+  const retainedParameters = (
+    fmtpLineIndex >= 0 ? (lines[fmtpLineIndex]?.trim().slice(fmtpPrefix.length) ?? "") : ""
+  )
+    .trim()
+    .split(";")
+    .map((value) => value.trim())
+    .filter(Boolean)
+    .filter(
+      (value) =>
+        !OPUS_FMTP_PARAMETERS.some((parameter) => parameter.split("=")[0] === value.split("=")[0]),
+    );
+  const nextFmtp = [...retainedParameters, ...OPUS_FMTP_PARAMETERS].join(";");
+
+  if (fmtpLineIndex >= 0) {
+    lines[fmtpLineIndex] = `${fmtpPrefix} ${nextFmtp}`;
+  } else {
+    lines.splice(opusLineIndex + 1, 0, `${fmtpPrefix} ${nextFmtp}`);
+  }
+  return lines.join(lineBreak);
+};
+
+const selectNetworkTier = (sample: NetworkAdaptationSample): NetworkAdaptationTier => {
+  const packetLoss = sample.packetLossPercent ?? 0;
+  const roundTripTime = sample.roundTripTimeMs ?? 0;
+  const jitter = sample.jitterMs ?? 0;
+  if (packetLoss >= 8 || roundTripTime >= 420 || jitter >= 90) return "critical";
+  if (packetLoss >= 3 || roundTripTime >= 220 || jitter >= 45) return "constrained";
+  return "healthy";
+};
 
 export const DEFAULT_SCREEN_SHARE_PROFILE: ScreenShareEncodingProfile = {
   maxBitrate: 420_000,
@@ -41,6 +156,9 @@ export class MeshPeerConnection {
   private readonly remoteStream = new MediaStream();
   private readonly screenTransceiver: RTCRtpTransceiver;
   private screenShareProfile = DEFAULT_SCREEN_SHARE_PROFILE;
+  private networkAdaptationTier: NetworkAdaptationTier = "healthy";
+  private pendingRecoveryTier?: NetworkAdaptationTier;
+  private pendingRecoverySamples = 0;
 
   constructor(private readonly options: MeshPeerOptions) {
     this.connection = new RTCPeerConnection({
@@ -116,11 +234,15 @@ export class MeshPeerConnection {
       offerToReceiveAudio: true,
       offerToReceiveVideo: true,
     });
-    await this.connection.setLocalDescription(offer);
+    const tunedOffer: RTCSessionDescriptionInit = {
+      type: offer.type,
+      sdp: tuneOpusSdp(offer.sdp),
+    };
+    await this.connection.setLocalDescription(tunedOffer);
     await this.configureOutgoingSenders();
     return {
-      type: offer.type,
-      sdp: offer.sdp,
+      type: tunedOffer.type,
+      sdp: tunedOffer.sdp,
     };
   }
 
@@ -131,12 +253,16 @@ export class MeshPeerConnection {
     });
     await this.flushPendingIceCandidates();
     const answer = await this.connection.createAnswer();
-    await this.connection.setLocalDescription(answer);
+    const tunedAnswer: RTCSessionDescriptionInit = {
+      type: answer.type,
+      sdp: tuneOpusSdp(answer.sdp),
+    };
+    await this.connection.setLocalDescription(tunedAnswer);
     await this.configureOutgoingSenders();
 
     return {
-      type: answer.type,
-      sdp: answer.sdp,
+      type: tunedAnswer.type,
+      sdp: tunedAnswer.sdp,
     };
   }
 
@@ -196,6 +322,41 @@ export class MeshPeerConnection {
     }
   }
 
+  async adaptToNetwork(sample: NetworkAdaptationSample): Promise<NetworkAdaptationTier> {
+    const measuredTier = selectNetworkTier(sample);
+    const isDegrading =
+      NETWORK_TIER_SEVERITY[measuredTier] > NETWORK_TIER_SEVERITY[this.networkAdaptationTier];
+
+    if (measuredTier === this.networkAdaptationTier) {
+      this.pendingRecoveryTier = undefined;
+      this.pendingRecoverySamples = 0;
+      return this.networkAdaptationTier;
+    }
+
+    if (!isDegrading) {
+      if (this.pendingRecoveryTier !== measuredTier) {
+        this.pendingRecoveryTier = measuredTier;
+        this.pendingRecoverySamples = 1;
+        return this.networkAdaptationTier;
+      }
+      this.pendingRecoverySamples += 1;
+      if (this.pendingRecoverySamples < 3) return this.networkAdaptationTier;
+    }
+
+    const previousTier = this.networkAdaptationTier;
+    this.networkAdaptationTier = measuredTier;
+    this.pendingRecoveryTier = undefined;
+    this.pendingRecoverySamples = 0;
+    await this.configureOutgoingSenders();
+    this.options.onDiagnosticEvent?.("network_adaptation", {
+      peerId: this.options.peerId,
+      previousTier,
+      tier: measuredTier,
+      ...sample,
+    });
+    return measuredTier;
+  }
+
   destroy(): void {
     this.pendingIceCandidates.length = 0;
     void this.screenTransceiver.sender.replaceTrack(null).catch(() => undefined);
@@ -247,7 +408,7 @@ export class MeshPeerConnection {
         dtx?: "enabled" | "disabled";
         networkPriority?: RTCPriorityType;
       };
-      encoding.maxBitrate = 24_000;
+      encoding.maxBitrate = NETWORK_TIER_PROFILES[this.networkAdaptationTier].audioBitrate;
       encoding.priority = "high";
       encoding.networkPriority = "high";
       encoding.dtx = "enabled";
@@ -271,8 +432,10 @@ export class MeshPeerConnection {
       const encoding = parameters.encodings[0] as RTCRtpEncodingParameters & {
         networkPriority?: RTCPriorityType;
       };
-      encoding.maxBitrate = profile.maxBitrate;
-      encoding.maxFramerate = profile.maxFramerate;
+      const networkProfile = NETWORK_TIER_PROFILES[this.networkAdaptationTier];
+      encoding.maxBitrate = Math.round(profile.maxBitrate * networkProfile.screenBitrateScale);
+      encoding.maxFramerate = Math.min(profile.maxFramerate, networkProfile.screenMaxFramerate);
+      encoding.scaleResolutionDownBy = networkProfile.screenScaleResolutionDownBy;
       encoding.priority = "low";
       encoding.networkPriority = "low";
       await sender.setParameters(parameters);

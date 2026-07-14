@@ -16,6 +16,7 @@ export default tseslint.config(
       "tmp/**",
       ".pnpm-store/**",
       ".turbo/**",
+      "**/.local-*-build/**",
       "apps/desktop/build/**",
       "apps/desktop/src/renderer/src/assets/**",
     ],

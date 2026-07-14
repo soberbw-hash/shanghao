@@ -16,7 +16,7 @@ const expectedVersion =
   cliVersion?.replace(/^v/, "") ?? process.env.GITHUB_REF_NAME?.replace(/^v/, "");
 
 if (!expectedVersion) {
-  throw new Error("Pass the expected version, for example: pnpm release:verify -- 0.1.50");
+  throw new Error("Pass the expected version, for example: pnpm release:verify -- 1.0.0");
 }
 if (rootPackage.version !== expectedVersion || desktopPackage.version !== expectedVersion) {
   throw new Error(

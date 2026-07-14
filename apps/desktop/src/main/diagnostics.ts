@@ -30,6 +30,20 @@ const MAX_LOG_FILES = 5;
 const EXPORT_LOG_TRUNCATE_THRESHOLD_BYTES = 20 * 1024 * 1024;
 const EXPORT_LOG_TAIL_BYTES = 2 * 1024 * 1024;
 
+const isRotatedLogFile = (fileName: string): boolean => {
+  if (fileName.endsWith(".log")) return true;
+
+  const markerIndex = fileName.lastIndexOf(".log.");
+  if (markerIndex <= 0) return false;
+
+  const suffix = fileName.slice(markerIndex + 5);
+  return (
+    suffix.length > 0 &&
+    suffix.length <= 3 &&
+    [...suffix].every((character) => character >= "0" && character <= "9")
+  );
+};
+
 const zipDirectory = async (sourceDir: string, targetPath: string): Promise<void> => {
   try {
     // On Windows use PowerShell; macOS/Linux use system zip
@@ -64,6 +78,7 @@ export class DiagnosticsService {
 
   async init(): Promise<void> {
     await mkdir(this.logsDirectory, { recursive: true });
+    await this.compactOversizedLogs();
   }
 
   getSnapshot(): DiagnosticsSnapshot {
@@ -216,6 +231,40 @@ export class DiagnosticsService {
       await rename(`${filePath}.${index}`, `${filePath}.${index + 1}`).catch(() => undefined);
     }
     await rename(filePath, `${filePath}.1`).catch(() => undefined);
+  }
+
+  private async compactOversizedLogs(): Promise<void> {
+    const entries = await readdir(this.logsDirectory, { withFileTypes: true });
+    for (const entry of entries) {
+      if (!entry.isFile() || !isRotatedLogFile(entry.name)) continue;
+
+      const filePath = path.join(this.logsDirectory, entry.name);
+      const originalSize = await stat(filePath)
+        .then((value) => value.size)
+        .catch(() => 0);
+      if (originalSize <= MAX_LOG_FILE_BYTES) continue;
+
+      const tailBytes = Math.min(originalSize, MAX_LOG_FILE_BYTES);
+      const handle = await open(filePath, "r+");
+      try {
+        const buffer = Buffer.alloc(tailBytes);
+        const { bytesRead } = await handle.read(
+          buffer,
+          0,
+          tailBytes,
+          Math.max(0, originalSize - tailBytes),
+        );
+        let tail = buffer.subarray(0, bytesRead);
+        if (originalSize > tailBytes) {
+          const firstLineBreak = tail.indexOf(0x0a);
+          if (firstLineBreak >= 0) tail = tail.subarray(firstLineBreak + 1);
+        }
+        await handle.write(tail, 0, tail.length, 0);
+        await handle.truncate(tail.length);
+      } finally {
+        await handle.close();
+      }
+    }
   }
 
   private async exportLogsToDirectory(

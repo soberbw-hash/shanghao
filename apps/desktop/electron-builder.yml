@@ -8,7 +8,6 @@ generateUpdatesFilesForAllChannels: true
 asar: true
 npmRebuild: false
 asarUnpack:
-  - "**/node_modules/uiohook-napi/**"
 afterPack: ../../scripts/after-pack.cjs
 directories:
   output: release

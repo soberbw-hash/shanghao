@@ -14,6 +14,9 @@ test("game detection uses structured exact process matches", () => {
   assert.equal(matchKnownGame(snapshot("eldenring")), "艾尔登法环");
   assert.equal(matchKnownGame(snapshot("RDR2")), "荒野大镖客 2");
   assert.equal(matchKnownGame(snapshot("notepad", "League of Legends 攻略")), undefined);
+  assert.equal(matchKnownGame(snapshot("pal")), undefined);
+  assert.equal(matchKnownGame(snapshot("b1")), undefined);
+  assert.equal(matchKnownGame(snapshot("playgtav")), undefined);
   assert.equal(matchKnownGame("LostCastle2\r\nexplorer"), undefined);
 });
 

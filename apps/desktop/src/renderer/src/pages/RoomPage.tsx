@@ -3,20 +3,10 @@ import {
   useLayoutEffect,
   useRef,
   useState,
+  type CSSProperties,
   type PointerEvent as ReactPointerEvent,
 } from "react";
-import {
-  GripHorizontal,
-  BookmarkPlus,
-  Headphones,
-  LogOut,
-  Maximize2,
-  Minimize2,
-  MonitorUp,
-  PictureInPicture2,
-  Volume2,
-  VolumeX,
-} from "lucide-react";
+import { GripHorizontal } from "lucide-react";
 import { gsap } from "gsap";
 
 import {
@@ -33,6 +23,7 @@ import type { ScreenShareEncodingProfile } from "@private-voice/webrtc";
 
 import { MuteButton } from "../components/audio/MuteButton";
 import { RecordingButton } from "../components/audio/RecordingButton";
+import { AnimatedControlIcon } from "../components/icons/AnimatedControlIcon";
 import { Button } from "../components/base/Button";
 import { TemporaryChatPanel } from "../components/chat/TemporaryChatPanel";
 import { TopStatusBar } from "../components/layout/TopStatusBar";
@@ -65,21 +56,15 @@ interface AwaySession {
   enteredAt: string;
 }
 const SCREEN_SHARE_PROFILES: Record<ScreenShareQuality, ScreenShareEncodingProfile> = {
-  smooth: {
-    maxBitrate: 420_000,
+  "720p": {
+    maxBitrate: 360_000,
     maxFramerate: 15,
     maxWidth: 1_280,
     maxHeight: 720,
   },
-  balanced: {
-    maxBitrate: 680_000,
-    maxFramerate: 20,
-    maxWidth: 1_600,
-    maxHeight: 900,
-  },
-  clear: {
-    maxBitrate: 1_050_000,
-    maxFramerate: 24,
+  "1080p": {
+    maxBitrate: 650_000,
+    maxFramerate: 18,
     maxWidth: 1_920,
     maxHeight: 1_080,
   },
@@ -93,13 +78,7 @@ interface ScreenShareItem {
   transport: "webrtc" | "relay";
 }
 
-const ScreenShareVideo = ({
-  stream,
-  fitMode,
-}: {
-  stream: MediaStream;
-  fitMode: "contain" | "cover";
-}) => {
+const ScreenShareVideo = ({ stream }: { stream: MediaStream }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
 
   useEffect(() => {
@@ -112,56 +91,43 @@ const ScreenShareVideo = ({
     void video.play().catch(() => undefined);
   }, [stream]);
 
-  return (
-    <video
-      ref={videoRef}
-      autoPlay
-      playsInline
-      muted
-      className={`screen-share-video ${fitMode === "cover" ? "screen-share-video-cover" : ""}`}
-    />
-  );
+  return <video ref={videoRef} autoPlay playsInline muted className="screen-share-video" />;
 };
 
-const ScreenShareMedia = ({
-  item,
-  fitMode,
-}: {
-  item: ScreenShareItem;
-  fitMode: "contain" | "cover";
-}) => {
-  if (item.stream) {
-    return <ScreenShareVideo stream={item.stream} fitMode={fitMode} />;
+const ScreenShareMedia = ({ item }: { item: ScreenShareItem }) => {
+  if (item.isLocal) {
+    return (
+      <div className="screen-share-local-placeholder" data-testid="local-share-safe-preview">
+        <span className="screen-share-local-placeholder-icon">
+          <AnimatedControlIcon name="screen-share" active className="h-5 w-5" />
+        </span>
+        <strong>你的屏幕正在分享</strong>
+        <span>本地预览已隐藏，避免画面无限套娃</span>
+      </div>
+    );
   }
 
-  return (
-    <img
-      src={item.frameDataUrl}
-      alt=""
-      className={`screen-share-video ${fitMode === "cover" ? "screen-share-video-cover" : ""}`}
-      draggable={false}
-    />
-  );
+  if (item.stream) {
+    return <ScreenShareVideo stream={item.stream} />;
+  }
+
+  return <img src={item.frameDataUrl} alt="" className="screen-share-video" draggable={false} />;
 };
 
 const ScreenSharePanel = ({
   items,
   onStopLocalShare,
-  isExpanded,
-  onToggleExpanded,
-  fitMode,
-  onToggleFitMode,
+  onOpenDetached,
 }: {
   items: ScreenShareItem[];
   onStopLocalShare: () => void;
-  isExpanded: boolean;
-  onToggleExpanded: () => void;
-  fitMode: "contain" | "cover";
-  onToggleFitMode: () => void;
+  onOpenDetached: (item: ScreenShareItem) => Promise<void>;
 }) => {
   const panelRef = useRef<HTMLDivElement>(null);
   const [position, setPosition] = useState({ x: 0, y: 0 });
   const [selectedId, setSelectedId] = useState<string>();
+  const [isDetaching, setIsDetaching] = useState(false);
+  const [isDragging, setIsDragging] = useState(false);
   const dragStateRef = useRef<{
     pointerId: number;
     startX: number;
@@ -184,7 +150,7 @@ const ScreenSharePanel = ({
   if (!primaryItem) return null;
 
   const handlePointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
-    if (isExpanded || (event.target as Element).closest("button")) return;
+    if ((event.target as Element).closest("button")) return;
     dragStateRef.current = {
       pointerId: event.pointerId,
       startX: event.clientX,
@@ -192,6 +158,7 @@ const ScreenSharePanel = ({
       baseX: position.x,
       baseY: position.y,
     };
+    setIsDragging(true);
     event.currentTarget.setPointerCapture(event.pointerId);
   };
 
@@ -219,16 +186,33 @@ const ScreenSharePanel = ({
   const stopDragging = (event: ReactPointerEvent<HTMLDivElement>) => {
     if (dragStateRef.current?.pointerId !== event.pointerId) return;
     dragStateRef.current = undefined;
+    setIsDragging(false);
     event.currentTarget.releasePointerCapture(event.pointerId);
+  };
+
+  const openDetachedViewer = async () => {
+    if (isDetaching || primaryItem.isLocal) return;
+    setIsDetaching(true);
+    const minimumHandoff = new Promise<void>((resolve) => {
+      window.setTimeout(resolve, motionDuration.panel * 1_000);
+    });
+    try {
+      await Promise.all([onOpenDetached(primaryItem), minimumHandoff]);
+    } finally {
+      setIsDetaching(false);
+    }
   };
 
   return (
     <div
       ref={panelRef}
-      className={`screen-share-panel ${isExpanded ? "screen-share-panel-expanded" : ""}`}
+      className={`screen-share-panel ${isDetaching ? "is-detaching" : ""} ${isDragging ? "is-dragging" : ""}`}
       data-testid="screen-share-panel"
       style={
-        isExpanded ? undefined : { transform: `translate3d(${position.x}px, ${position.y}px, 0)` }
+        {
+          "--screen-share-x": `${position.x}px`,
+          "--screen-share-y": `${position.y}px`,
+        } as CSSProperties & Record<string, string>
       }
     >
       <div
@@ -249,24 +233,18 @@ const ScreenSharePanel = ({
         <div className="screen-share-panel-actions">
           <button
             type="button"
-            className="screen-share-icon-action screen-share-fit-action"
-            onClick={onToggleFitMode}
-            title={fitMode === "contain" ? "填满画面" : "显示完整画面"}
-          >
-            {fitMode === "contain" ? "填满" : "完整"}
-          </button>
-          <button
-            type="button"
             className="screen-share-icon-action"
-            onClick={onToggleExpanded}
-            title={isExpanded ? "缩小屏幕分享" : "放大屏幕分享"}
-            aria-label={isExpanded ? "缩小屏幕分享" : "放大屏幕分享"}
+            data-icon-motion="expand"
+            disabled={isDetaching || primaryItem.isLocal}
+            onClick={() => void openDetachedViewer()}
+            title={
+              primaryItem.isLocal ? "本机预览已隐藏，避免分享画面无限套娃" : "在独立窗口中观看"
+            }
+            aria-label={
+              primaryItem.isLocal ? "本机预览已隐藏，避免分享画面无限套娃" : "在独立窗口中观看"
+            }
           >
-            {isExpanded ? (
-              <Minimize2 className="h-3.5 w-3.5" />
-            ) : (
-              <Maximize2 className="h-3.5 w-3.5" />
-            )}
+            <AnimatedControlIcon name="overlay" className="h-3.5 w-3.5" />
           </button>
           {primaryItem.isLocal ? (
             <button type="button" className="screen-share-stop" onClick={onStopLocalShare}>
@@ -276,7 +254,7 @@ const ScreenSharePanel = ({
         </div>
       </div>
       <div className="screen-share-video-shell">
-        <ScreenShareMedia item={primaryItem} fitMode={fitMode} />
+        <ScreenShareMedia item={primaryItem} />
       </div>
       {items.length > 1 ? (
         <div className="screen-share-stack" role="tablist" aria-label="切换共享画面">
@@ -338,7 +316,9 @@ export const RoomPage = () => {
   const [chatInput, setChatInput] = useState("");
   const [localScreenShareStream, setLocalScreenShareStream] = useState<MediaStream>();
   const [isScreenShareStarting, setIsScreenShareStarting] = useState(false);
-  const [isScreenShareExpanded, setIsScreenShareExpanded] = useState(false);
+  const [detachedViewerId, setDetachedViewerId] = useState<string>();
+  const [pendingScreenShareQuality, setPendingScreenShareQuality] =
+    useState<ScreenShareQuality>("720p");
   const [screenCaptureSources, setScreenCaptureSources] = useState<ScreenCaptureSourceDescriptor[]>(
     [],
   );
@@ -352,7 +332,7 @@ export const RoomPage = () => {
   const localScreenShareActiveRef = useRef(false);
   const moveLocalMemberRef = useRef(moveLocalMember);
   moveLocalMemberRef.current = moveLocalMember;
-  const reduceMotion = usePrefersReducedMotion(settings?.reduceMotion ?? false);
+  const reduceMotion = usePrefersReducedMotion();
 
   const canSend =
     room.connectionState === RoomConnectionState.Connected ||
@@ -403,11 +383,88 @@ export const RoomPage = () => {
   ];
   const localMember = room.members.find((member) => member.isLocal);
 
+  const detachedViewerItem = detachedViewerId
+    ? screenShareItems.find((item) => item.id === detachedViewerId)
+    : undefined;
+  const hasDetachedViewerItem = Boolean(detachedViewerItem);
+
   useEffect(() => {
-    if (screenShareItems.length === 0) {
-      setIsScreenShareExpanded(false);
-    }
-  }, [screenShareItems.length]);
+    if (!detachedViewerId) return;
+    if (hasDetachedViewerItem) return;
+    setDetachedViewerId(undefined);
+    void window.desktopApi.screenShareViewer.close();
+  }, [detachedViewerId, hasDetachedViewerItem]);
+
+  useEffect(() => {
+    if (!detachedViewerId || !detachedViewerItem?.frameDataUrl) return;
+    void window.desktopApi.screenShareViewer
+      .updateFrame({ title: detachedViewerItem.title, dataUrl: detachedViewerItem.frameDataUrl })
+      .then((isOpen) => {
+        if (!isOpen) setDetachedViewerId(undefined);
+      })
+      .catch(() => setDetachedViewerId(undefined));
+  }, [detachedViewerId, detachedViewerItem?.frameDataUrl, detachedViewerItem?.title]);
+
+  useEffect(() => {
+    const stream = detachedViewerItem?.stream;
+    if (!detachedViewerId || !stream) return;
+    const video = document.createElement("video");
+    const canvas = document.createElement("canvas");
+    const context = canvas.getContext("2d", { alpha: false });
+    if (!context) return;
+    let disposed = false;
+    let sending = false;
+    video.srcObject = stream;
+    video.muted = true;
+    video.playsInline = true;
+    void video.play().catch(() => undefined);
+
+    const sendFrame = async () => {
+      if (disposed || sending || video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) return;
+      const sourceWidth = video.videoWidth;
+      const sourceHeight = video.videoHeight;
+      if (!sourceWidth || !sourceHeight) return;
+      const maxWidth = settings?.screenShareQuality === "1080p" ? 1_440 : 1_120;
+      const scale = Math.min(1, maxWidth / sourceWidth);
+      const targetWidth = Math.max(1, Math.round(sourceWidth * scale));
+      const targetHeight = Math.max(1, Math.round(sourceHeight * scale));
+      if (canvas.width !== targetWidth) canvas.width = targetWidth;
+      if (canvas.height !== targetHeight) canvas.height = targetHeight;
+      context.drawImage(video, 0, 0, canvas.width, canvas.height);
+      sending = true;
+      try {
+        const isOpen = await window.desktopApi.screenShareViewer.updateFrame({
+          title: detachedViewerItem.title,
+          dataUrl: canvas.toDataURL("image/jpeg", 0.78),
+        });
+        if (!isOpen && !disposed) setDetachedViewerId(undefined);
+      } catch {
+        if (!disposed) setDetachedViewerId(undefined);
+      } finally {
+        sending = false;
+      }
+    };
+    const timer = window.setInterval(() => void sendFrame(), 160);
+    void sendFrame();
+    return () => {
+      disposed = true;
+      window.clearInterval(timer);
+      video.pause();
+      video.srcObject = null;
+    };
+  }, [
+    detachedViewerId,
+    detachedViewerItem?.stream,
+    detachedViewerItem?.title,
+    settings?.screenShareQuality,
+  ]);
+
+  useEffect(
+    () => () => {
+      void window.desktopApi.screenShareViewer.close();
+    },
+    [],
+  );
 
   useLayoutEffect(() => {
     if (!pageRef.current) return;
@@ -424,7 +481,7 @@ export const RoomPage = () => {
         {
           autoAlpha: 1,
           y: 0,
-          duration: 0.26,
+          duration: motionDuration.message,
           ease: motionEase.spatial,
           force3D: true,
           clearProps: "transform,opacity,visibility",
@@ -651,13 +708,12 @@ export const RoomPage = () => {
     await leaveRoom();
   };
 
-  const startSharingScreen = async (sourceId: string) => {
+  const startSharingScreen = async (sourceId: string, quality: ScreenShareQuality) => {
     let requestedStream: MediaStream | undefined;
     setIsScreenShareStarting(true);
     try {
       await window.desktopApi.screenCapture.selectSource(sourceId);
       setIsScreenSourcePickerOpen(false);
-      const quality = settings?.screenShareQuality ?? "smooth";
       const profile = SCREEN_SHARE_PROFILES[quality];
       const stream = await navigator.mediaDevices.getDisplayMedia({
         video: {
@@ -678,6 +734,9 @@ export const RoomPage = () => {
       }
 
       await startScreenShare(stream, profile);
+      if (settings?.screenShareQuality !== quality) {
+        void saveSettings({ screenShareQuality: quality }).catch(() => undefined);
+      }
       localScreenShareActiveRef.current = true;
       setLocalScreenShareStream(stream);
       playUiSound("popup-open");
@@ -742,6 +801,7 @@ export const RoomPage = () => {
         throw new Error("screen_source_missing");
       }
       setScreenCaptureSources(sources);
+      setPendingScreenShareQuality(settings?.screenShareQuality ?? "720p");
       setIsScreenSourcePickerOpen(true);
     } catch (error) {
       await window.desktopApi.app.writeLog({
@@ -857,31 +917,39 @@ export const RoomPage = () => {
         <TopStatusBar onKnock={() => void knock()} onInvite={() => void copyInviteLink()} />
       </div>
 
-      <main className="grid min-h-0 flex-1 gap-2.5 lg:grid-cols-[minmax(0,1.44fr)_minmax(280px,.56fr)]">
-        <section data-gsap-room="island" className="island-panel min-h-0 overflow-hidden">
+      <main className="room-main-grid grid min-h-0 flex-1 gap-2.5 lg:grid-cols-[minmax(0,1.44fr)_minmax(280px,.56fr)]">
+        <section
+          data-gsap-room="island"
+          className="room-scene-column island-panel min-h-0 overflow-hidden"
+        >
           <TeamIsland
             members={room.members}
             onZoneSelect={handleZoneSelect}
             onReact={(targetPeerId, emoji) => void sendSceneReaction(targetPeerId, emoji)}
             onVolumeChange={setMemberVolume}
             reactions={sceneReactions}
-            knockPulse={chatMessages.filter((message) => message.kind === "system").length}
-            reduceMotion={settings?.reduceMotion ?? false}
+            knockPulse={chatMessages.filter((message) => message.id.startsWith("knock-")).length}
+            reduceMotion={reduceMotion}
           />
           <ScreenSharePanel
             items={screenShareItems}
             onStopLocalShare={() => void stopSharingScreen()}
-            isExpanded={isScreenShareExpanded}
-            onToggleExpanded={() => setIsScreenShareExpanded((current) => !current)}
-            fitMode={settings?.screenShareFitMode ?? "contain"}
-            onToggleFitMode={() =>
-              void saveSettings({
-                screenShareFitMode: settings?.screenShareFitMode === "cover" ? "contain" : "cover",
-              })
-            }
+            onOpenDetached={async (item) => {
+              try {
+                await window.desktopApi.screenShareViewer.open(`上号 · ${item.title}`);
+                setDetachedViewerId(item.id);
+              } catch {
+                setDetachedViewerId(undefined);
+                pushToast({
+                  tone: "danger",
+                  title: "无法打开独立观看窗口",
+                  description: "共享仍在继续，可以稍后重试。",
+                });
+              }
+            }}
           />
         </section>
-        <div data-gsap-room="chat" className="min-h-0">
+        <div data-gsap-room="chat" className="room-chat-column min-h-0">
           <TemporaryChatPanel
             className="h-full"
             messages={chatMessages}
@@ -891,7 +959,7 @@ export const RoomPage = () => {
             onQuickSend={(message) => void send(message)}
             canSend={canSend}
             unavailableLabel="正在重连..."
-            reduceMotion={settings?.reduceMotion ?? false}
+            reduceMotion={reduceMotion}
           />
         </div>
       </main>
@@ -916,13 +984,28 @@ export const RoomPage = () => {
                 取消
               </Button>
             </header>
+            <div className="screen-source-quality" aria-label="屏幕分享画质">
+              <span>画质</span>
+              {(["720p", "1080p"] as const).map((quality) => (
+                <button
+                  key={quality}
+                  type="button"
+                  className={pendingScreenShareQuality === quality ? "active" : ""}
+                  aria-pressed={pendingScreenShareQuality === quality}
+                  onClick={() => setPendingScreenShareQuality(quality)}
+                >
+                  {quality}
+                  <small>{quality === "720p" ? "流畅" : "清晰"}</small>
+                </button>
+              ))}
+            </div>
             <div className="screen-source-picker-grid">
               {screenCaptureSources.map((source) => (
                 <button
                   key={source.id}
                   type="button"
                   className="screen-source-picker-item"
-                  onClick={() => void startSharingScreen(source.id)}
+                  onClick={() => void startSharingScreen(source.id, pendingScreenShareQuality)}
                 >
                   <span className="screen-source-thumbnail">
                     <img src={source.thumbnailDataUrl} alt="" draggable={false} />
@@ -949,15 +1032,22 @@ export const RoomPage = () => {
         </span>
         <Button
           variant={isDeafened ? "danger" : "ghost"}
+          data-icon-motion="speaker"
           data-gsap-voice="primary"
+          data-ui-sound="handled"
           className={`voice-action-button-with-text voice-main-control ${isDeafened ? "voice-main-control-danger" : ""}`}
           onClick={toggleDeafen}
         >
-          {isDeafened ? <VolumeX className="h-4 w-4" /> : <Volume2 className="h-4 w-4" />}
+          <AnimatedControlIcon
+            name="speaker"
+            muted={isDeafened}
+            active={!isDeafened}
+            className="h-4 w-4"
+          />
           <span className="voice-action-label">{isDeafened ? "扬声器关" : "扬声器开"}</span>
         </Button>
-        <label className="device-select" title="选择麦克风">
-          <Headphones className="h-4 w-4" />
+        <label className="device-select" data-icon-motion="device" title="选择麦克风">
+          <AnimatedControlIcon name="headphones" className="h-4 w-4" />
           <select
             value={settings?.preferredInputDeviceId || ""}
             onChange={(event) => {
@@ -973,8 +1063,8 @@ export const RoomPage = () => {
             ))}
           </select>
         </label>
-        <label className="device-select" title="选择扬声器">
-          <Volume2 className="h-4 w-4" />
+        <label className="device-select" data-icon-motion="device" title="选择扬声器">
+          <AnimatedControlIcon name="speaker" active className="h-4 w-4" />
           <select
             value={settings?.preferredOutputDeviceId || ""}
             onChange={(event) => void switchOutputDevice(event.target.value || undefined)}
@@ -996,6 +1086,7 @@ export const RoomPage = () => {
         {recordingStatus.state === RecordingState.Recording ? (
           <Button
             variant="ghost"
+            data-icon-motion="bookmark"
             className="voice-action-button-with-text"
             onClick={() => {
               const startedAt = recordingStatus.startedAt ?? Date.now();
@@ -1007,12 +1098,13 @@ export const RoomPage = () => {
               playUiSound("button-click");
             }}
           >
-            <BookmarkPlus className="h-4 w-4" />
+            <AnimatedControlIcon name="bookmark" className="h-4 w-4" />
             <span className="voice-action-label">标记 {recordingMarkers.length}</span>
           </Button>
         ) : null}
         <Button
           variant={localScreenShareStream ? "secondary" : "ghost"}
+          data-icon-motion="screen-share"
           className={`voice-action-button-with-text ${
             localScreenShareStream || isScreenShareStarting ? "screen-share-active-button" : ""
           }`}
@@ -1026,28 +1118,34 @@ export const RoomPage = () => {
             void openScreenSourcePicker();
           }}
         >
-          <MonitorUp className="h-4 w-4" />
+          <AnimatedControlIcon
+            name="screen-share"
+            active={Boolean(localScreenShareStream)}
+            className="h-4 w-4"
+          />
           <span className="voice-action-label">
             {isScreenShareStarting ? "正在开启…" : localScreenShareStream ? "正在分享" : "屏幕分享"}
           </span>
         </Button>
         <Button
           variant={isOverlayOpen ? "secondary" : "ghost"}
+          data-icon-motion="overlay"
           className={`voice-action-button-with-text ${isOverlayOpen ? "overlay-active-button" : ""}`}
           onClick={() => {
             playUiSound("popup-open");
             void window.desktopApi.overlay.toggle().then(setIsOverlayOpen);
           }}
         >
-          <PictureInPicture2 className="h-4 w-4" />
+          <AnimatedControlIcon name="overlay" active={isOverlayOpen} className="h-4 w-4" />
           <span className="voice-action-label">{isOverlayOpen ? "悬浮窗开" : "悬浮窗关"}</span>
         </Button>
         <Button
           variant="danger"
+          data-icon-motion="exit"
           className="voice-action-button-with-text voice-exit-button"
           onClick={() => void leave()}
         >
-          <LogOut className="h-4 w-4" />
+          <AnimatedControlIcon name="exit" className="h-4 w-4" />
           <span className="voice-action-label">退出</span>
         </Button>
       </footer>

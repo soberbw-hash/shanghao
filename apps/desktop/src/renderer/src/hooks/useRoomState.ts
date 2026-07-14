@@ -2,6 +2,7 @@ import { useEffect } from "react";
 
 import {
   DEFAULT_CHANNEL_ID,
+  MemberSpeakingState,
   RoomConnectionState,
   RoomLifecycleState,
   type MemberActivity,
@@ -31,6 +32,13 @@ let activeClient: RoomClient | null = null;
 let activeSpeakingDetector: ReturnType<typeof createSpeakingDetector> | null = null;
 let activeProcessedMicrophone: ProcessedMicrophoneStream | null = null;
 let previousMemberIds = new Set<string>();
+
+const ROUTINE_SIGNAL_MESSAGE_TYPES = new Set([
+  "audio_chunk",
+  "member_state",
+  "pong",
+  "screen_frame",
+]);
 
 export const getRoomRuntimeDiagnostics = () => activeClient?.getDiagnostics();
 
@@ -135,6 +143,11 @@ const summarizeSignalingEvent = (payload: SignalingEventPayload): Record<string,
     summary.targetPeerId = message.targetPeerId;
     summary.revision = message.revision;
     summary.memberCount = Array.isArray(message.members) ? message.members.length : undefined;
+    if (message.type === "error") {
+      summary.serverErrorCode = message.code;
+      summary.serverErrorMessage =
+        typeof message.message === "string" ? message.message.slice(0, 240) : undefined;
+    }
   } catch {
     summary.messageType = "invalid_json";
   }
@@ -170,19 +183,16 @@ export const useRoomState = () => {
   const setRoomAction = useAppStore((state) => state.setRoomAction);
 
   useEffect(() => {
-    activeClient?.updateMuteState(isMuted, false);
-  }, [isMuted]);
-
-  useEffect(() => {
-    updateLocalPresence({ isDeafened });
+    updateLocalPresence({ isMuted, isDeafened });
     const localMember = useRoomStore.getState().room.members.find((member) => member.isLocal);
+    activeClient?.updateMuteState(isMuted, false);
     activeClient?.updatePresenceState(
       isDeafened,
       localMember?.activity ?? "idle",
       localMember?.sceneZone,
       localMember?.gameName,
     );
-  }, [isDeafened, updateLocalPresence]);
+  }, [isDeafened, isMuted, updateLocalPresence]);
 
   const profileNickname = settings?.nickname;
   const profileAvatarId = settings?.avatarId;
@@ -300,10 +310,26 @@ export const useRoomState = () => {
         const { joined, left } = collectMemberEvents(members);
         const previousMembers = useRoomStore.getState().room.members;
         const savedVolumes = useSettingsStore.getState().settings?.memberVolumes ?? {};
-        const membersWithVolume = members.map((member) => ({
-          ...member,
-          volume: Math.max(0, Math.min(2, savedVolumes[member.nickname] ?? member.volume ?? 1)),
-        }));
+        const audioState = useAudioStore.getState();
+        const membersWithVolume = members.map((member) => {
+          const volume = Math.max(
+            0,
+            Math.min(2, savedVolumes[member.nickname] ?? member.volume ?? 1),
+          );
+          if (!member.isLocal) return { ...member, volume };
+
+          return {
+            ...member,
+            volume,
+            isMuted: audioState.isMuted,
+            isDeafened: audioState.isDeafened,
+            speakingState: audioState.isMuted
+              ? MemberSpeakingState.Muted
+              : member.speakingState === MemberSpeakingState.Muted
+                ? MemberSpeakingState.Silent
+                : member.speakingState,
+          };
+        });
         for (const member of membersWithVolume) {
           if (!member.isLocal) activeClient?.setPeerVolume(member.id, member.volume);
         }
@@ -350,6 +376,7 @@ export const useRoomState = () => {
         pushRoomEvent({ level: "warning", message: `连接有波动，正在第 ${attempt} 次重连…` });
       },
       onReconnectExhausted: (error) => {
+        const protocolRejected = error.message === "signaling_protocol_rejected";
         void writeRendererLog("signaling", "error", "Signaling reconnect exhausted", {
           roomId: DEFAULT_CHANNEL_ID,
           peerId,
@@ -361,8 +388,10 @@ export const useRoomState = () => {
           setLifecycleState(RoomLifecycleState.Failed);
           pushToast({
             tone: "danger",
-            title: "连接已断开",
-            description: "自动重连未成功，音频已经安全停止，请重新进入频道。",
+            title: protocolRejected ? "连接数据被服务器拒绝" : "连接已断开",
+            description: protocolRejected
+              ? "客户端与服务器的数据格式不一致，已停止反复重连。请导出诊断包后再试。"
+              : "自动重连未成功，音频已经安全停止，请重新进入频道。",
           });
           useAppStore.getState().navigate("home");
         })();
@@ -438,9 +467,21 @@ export const useRoomState = () => {
         }
       },
       onDiagnosticEvent: (payload) => {
-        void writeRendererLog("signaling", "info", "Signaling bridge event", {
-          ...summarizeSignalingEvent(payload),
-        });
+        const summary = summarizeSignalingEvent(payload);
+        if (
+          payload.type === "message" &&
+          typeof summary.messageType === "string" &&
+          ROUTINE_SIGNAL_MESSAGE_TYPES.has(summary.messageType)
+        ) {
+          return;
+        }
+        const isError = payload.type === "error" || summary.messageType === "error";
+        void writeRendererLog(
+          "signaling",
+          isError ? "warn" : "info",
+          "Signaling bridge event",
+          summary,
+        );
       },
     });
 

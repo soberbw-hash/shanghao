@@ -57,9 +57,6 @@ const fallbackSettings: AppSettings = {
   avatarPath: undefined,
   hasCompletedProfileSetup: false,
   minimizeToTray: false,
-  reduceMotion: false,
-  reduceTransparency: false,
-  increaseContrast: false,
   uiScale: 100,
   launchOnStartup: false,
   isHardwareAccelerationEnabled: true,
@@ -81,8 +78,7 @@ const fallbackSettings: AppSettings = {
   relayServerUrl: "",
   memberVolumes: {},
   soundVolume: 0.72,
-  screenShareQuality: "smooth",
-  screenShareFitMode: "contain",
+  screenShareQuality: "720p",
   isScreenShareSystemAudioEnabled: true,
   isSystemNotificationEnabled: true,
   isMicOnSoundEnabled: true,
@@ -173,16 +169,6 @@ export const useSettingsStore = create<SettingsStoreState>((set, get) => ({
       });
     });
     await desktopApi.shortcuts
-      .configurePushToTalk(settings.pushToTalkShortcut, settings.isPushToTalkEnabled)
-      .catch(async (error) => {
-        await writeRendererLog(
-          "renderer-startup",
-          "warn",
-          "Failed to configure push-to-talk shortcut",
-          { error: error instanceof Error ? error.message : String(error) },
-        );
-      });
-    await desktopApi.shortcuts
       .configureRecordingMarker(settings.recordingMarkerShortcut)
       .catch(() => false);
 
@@ -207,12 +193,6 @@ export const useSettingsStore = create<SettingsStoreState>((set, get) => ({
   saveSettings: async (partial) => {
     const settings = await desktopApi.settings.save(partial);
     set({ settings, avatarDataUrl: undefined });
-    if ("pushToTalkShortcut" in partial || "isPushToTalkEnabled" in partial) {
-      await desktopApi.shortcuts.configurePushToTalk(
-        settings.pushToTalkShortcut,
-        settings.isPushToTalkEnabled,
-      );
-    }
     if ("recordingMarkerShortcut" in partial) {
       await desktopApi.shortcuts.configureRecordingMarker(settings.recordingMarkerShortcut);
     }

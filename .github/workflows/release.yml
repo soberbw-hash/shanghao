@@ -35,7 +35,7 @@ jobs:
       - run: pnpm release:checksums
       - uses: actions/upload-artifact@v4
         with:
-          name: windows-v0.1.50
+          name: windows-${{ github.ref_name }}
           if-no-files-found: error
           path: |
             apps/desktop/release/*.exe
@@ -54,7 +54,7 @@ jobs:
           merge-multiple: true
       - uses: softprops/action-gh-release@v2
         with:
-          body_path: docs/release-notes/v0.1.50.md
+          body_path: docs/release-notes/${{ github.ref_name }}.md
           fail_on_unmatched_files: true
           files: |
             artifacts/*.exe

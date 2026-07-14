@@ -56,7 +56,7 @@ const GAME_RULES: GameRule[] = [
   { name: "原神", processNames: ["yuanshen", "genshinimpact"] },
   { name: "崩坏：星穹铁道", processNames: ["starrail"] },
   { name: "Fortnite", processNames: ["fortniteclient-win64-shipping"] },
-  { name: "GTA V", processNames: ["gta5", "playgtav"] },
+  { name: "GTA V", processNames: ["gta5"] },
   {
     name: "彩虹六号：围攻",
     processNames: ["rainbowsix", "rainbowsix_vulkan", "rainbowsix_be"],
@@ -65,11 +65,11 @@ const GAME_RULES: GameRule[] = [
     name: "怪物猎人",
     processNames: ["monsterhunterworld", "monsterhunterrise", "monsterhunterwilds"],
   },
-  { name: "黑神话：悟空", processNames: ["b1-win64-shipping", "b1"] },
+  { name: "黑神话：悟空", processNames: ["b1-win64-shipping"] },
   { name: "失落城堡 2", processNames: ["lostcastle2", "lostcastle2-win64-shipping"] },
   { name: "艾尔登法环", processNames: ["eldenring"] },
   { name: "双人成行", processNames: ["ittakestwo"] },
-  { name: "幻兽帕鲁", processNames: ["palworld-win64-shipping", "pal"] },
+  { name: "幻兽帕鲁", processNames: ["palworld-win64-shipping"] },
   { name: "胡闹厨房", processNames: ["overcooked2", "overcooked all you can eat"] },
   { name: "荒野大镖客 2", processNames: ["rdr2"] },
 ];

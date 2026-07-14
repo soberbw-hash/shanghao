@@ -24,6 +24,7 @@ export const AudioSettingsCard = ({
   isMicClipping,
   micTestError,
   onToggleMicTest,
+  onAutoCalibrate,
   onChange,
 }: {
   settings: AppSettings;
@@ -35,6 +36,7 @@ export const AudioSettingsCard = ({
   isMicClipping: boolean;
   micTestError?: string;
   onToggleMicTest: () => void;
+  onAutoCalibrate: () => void;
   onChange: (patch: Partial<AppSettings>) => void;
 }) => {
   const [isAdvancedOpen, setIsAdvancedOpen] = useState(false);
@@ -44,17 +46,18 @@ export const AudioSettingsCard = ({
     setThresholdDraft(settings.inputLevelThreshold);
     setEqualizerDraft(settings.micEqualizerGains);
   }, [settings.inputLevelThreshold, settings.micEqualizerGains]);
-  const micHealth = !isMicTesting
-    ? micTestError || "录制 5 秒后自动回放，音频只保留在本机"
-    : micTestPhase === "playback"
-      ? "正在回放刚才的 5 秒录音"
-      : isMicClipping
-        ? "输入过高，已经出现削波"
-        : micTestLevel > 0.18
-          ? "麦克风正常"
-          : micTestLevel > 0.035
-            ? "声音有点小"
-            : "听不到你";
+  const micHealth =
+    micTestPhase === "calibrating"
+      ? "正在采集环境底噪，请保持安静"
+      : !isMicTesting
+        ? micTestError || "实时监听麦克风，建议佩戴耳机避免回授"
+        : isMicClipping
+          ? "输入过高，已经出现削波"
+          : micTestLevel > 0.18
+            ? "麦克风正常"
+            : micTestLevel > 0.035
+              ? "声音有点小"
+              : "听不到你";
 
   return (
     <SettingsSection title="音频" description="选择设备并确认麦克风状态。">
@@ -106,13 +109,22 @@ export const AudioSettingsCard = ({
         </SettingsItemRow>
         <SettingsItemRow label="麦克风体检" description={micHealth}>
           <div className="min-w-[280px] space-y-3">
-            <Button variant={isMicTesting ? "danger" : "secondary"} onClick={onToggleMicTest}>
-              {micTestPhase === "recording"
-                ? "停止录制"
-                : micTestPhase === "playback"
-                  ? "停止回放"
-                  : "开始 5 秒试音"}
-            </Button>
+            <div className="flex gap-2">
+              <Button
+                variant={isMicTesting ? "danger" : "secondary"}
+                onClick={onToggleMicTest}
+                disabled={micTestPhase === "calibrating"}
+              >
+                {micTestPhase === "monitoring" ? "停止实时试音" : "开始实时试音"}
+              </Button>
+              <Button
+                variant="secondary"
+                onClick={onAutoCalibrate}
+                disabled={micTestPhase === "calibrating"}
+              >
+                {micTestPhase === "calibrating" ? "正在听环境…" : "智能校准"}
+              </Button>
+            </div>
             <div className="h-2 overflow-hidden rounded-full bg-[#E9EEF5]">
               <div
                 className={`h-full w-full origin-left rounded-full transition-transform duration-150 ${isMicClipping ? "bg-[#E5484D]" : "bg-[#4DA3FF]"}`}

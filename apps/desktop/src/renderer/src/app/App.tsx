@@ -1,4 +1,11 @@
 import { lazy, Suspense, useEffect } from "react";
+import { AnimatePresence, motion } from "framer-motion";
+
+import {
+  APPLE_MOTION_DURATION,
+  APPLE_MOTION_EASE,
+  APPLE_MOTION_SPATIAL_EASE,
+} from "@private-voice/shared";
 
 import { AppErrorBoundary } from "../components/layout/AppErrorBoundary";
 import { AppShell } from "../components/layout/AppShell";
@@ -58,20 +65,11 @@ export const App = () => {
 
   useEffect(() => {
     const root = document.documentElement;
-    root.classList.toggle("reduce-motion", settings?.reduceMotion === true);
-    root.classList.toggle("reduce-transparency", settings?.reduceTransparency === true);
-    root.classList.toggle("increase-contrast", settings?.increaseContrast === true);
     root.style.fontSize = `${settings?.uiScale ?? 100}%`;
     return () => {
-      root.classList.remove("reduce-motion", "reduce-transparency", "increase-contrast");
       root.style.removeProperty("font-size");
     };
-  }, [
-    settings?.increaseContrast,
-    settings?.reduceMotion,
-    settings?.reduceTransparency,
-    settings?.uiScale,
-  ]);
+  }, [settings?.uiScale]);
 
   useEffect(() => {
     const handleError = (event: ErrorEvent) => {
@@ -144,7 +142,28 @@ export const App = () => {
             className={`app-page-layer app-page-base ${isSettingsOpen ? "is-obscured" : ""}`}
             aria-hidden={isSettingsOpen || undefined}
           >
-            {basePage === "room" ? <RoomPage /> : <HomePage />}
+            <AnimatePresence initial={false} mode="popLayout">
+              <motion.div
+                key={basePage}
+                className="app-route-motion"
+                initial={{ opacity: 0, x: basePage === "room" ? 18 : -12, scale: 0.992 }}
+                animate={{ opacity: 1, x: 0, scale: 1 }}
+                exit={{ opacity: 0, x: basePage === "room" ? -10 : 10, scale: 0.996 }}
+                transition={{
+                  opacity: { duration: APPLE_MOTION_DURATION.panel, ease: APPLE_MOTION_EASE },
+                  x: {
+                    duration: APPLE_MOTION_DURATION.page,
+                    ease: APPLE_MOTION_SPATIAL_EASE,
+                  },
+                  scale: {
+                    duration: APPLE_MOTION_DURATION.page,
+                    ease: APPLE_MOTION_SPATIAL_EASE,
+                  },
+                }}
+              >
+                {basePage === "room" ? <RoomPage /> : <HomePage />}
+              </motion.div>
+            </AnimatePresence>
           </div>
           {isSettingsOpen ? (
             <div className="app-page-layer app-page-settings">

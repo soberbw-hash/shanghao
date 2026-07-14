@@ -1,9 +1,10 @@
 import { type CSSProperties, useEffect, useLayoutEffect, useRef, useState } from "react";
-import { Gamepad2, VolumeX } from "lucide-react";
+import { Fish, Gamepad2, VolumeX } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
 import { gsap } from "gsap";
 
 import {
+  APPLE_MOTION_EASE,
   APPLE_MOTION_SPRING,
   type BuiltInAvatarId,
   type MemberActivity,
@@ -12,11 +13,11 @@ import {
   type SceneZoneId,
 } from "@private-voice/shared";
 
-import workstationArt from "../../assets/scenes/workstation-chibi.webp";
 import { getStableAvatarId } from "../../utils/profile";
 import { motionDuration, motionEase } from "../../features/motion/motionSystem";
 import { AnimalSprite } from "./AnimalSprite";
-import { DeskAnimalSprite } from "./DeskAnimalSprite";
+import { DeskAnimalSprite, type DeskAnimalIdleAction } from "./DeskAnimalSprite";
+import { WorkstationArt } from "./WorkstationArt";
 import {
   characterPositions,
   isSeatZone,
@@ -40,6 +41,25 @@ const getLatencyTone = (latencyMs?: number) => {
   if (latencyMs < 250) return "slow";
   return "poor";
 };
+
+const stableMotionPhase = (memberId: string): number => {
+  let hash = 0;
+  for (let index = 0; index < memberId.length; index += 1) {
+    hash = (hash * 31 + memberId.charCodeAt(index)) >>> 0;
+  }
+  return -((hash % 2400) / 1000);
+};
+
+const stableMotionSeed = (memberId: string): number => {
+  let hash = 2_166_136_261;
+  for (let index = 0; index < memberId.length; index += 1) {
+    hash ^= memberId.charCodeAt(index);
+    hash = Math.imul(hash, 16_777_619);
+  }
+  return hash >>> 0;
+};
+
+const IDLE_ACTIONS: DeskAnimalIdleAction[] = ["look", "stretch", "sip"];
 
 const SceneCharacter = ({
   member,
@@ -96,6 +116,7 @@ const SceneCharacter = ({
   }, [reaction]);
   const lastZoneRef = useRef<SceneZoneId>(zone);
   const [isMoving, setIsMoving] = useState(false);
+  const [idleAction, setIdleAction] = useState<DeskAnimalIdleAction>("none");
 
   useEffect(() => {
     if (shouldReduceMotion) {
@@ -108,17 +129,60 @@ const SceneCharacter = ({
 
     lastZoneRef.current = zone;
     setIsMoving(true);
-    const timer = window.setTimeout(() => setIsMoving(false), 760);
+    const timer = window.setTimeout(
+      () => setIsMoving(false),
+      Math.round(motionDuration.scene * 1_000 + 100),
+    );
     return () => window.clearTimeout(timer);
   }, [shouldReduceMotion, zone]);
+
+  useEffect(() => {
+    if (
+      shouldReduceMotion ||
+      isMoving ||
+      isSpeaking ||
+      member.activity === "gaming" ||
+      zone === "restroomZone"
+    ) {
+      setIdleAction("none");
+      return;
+    }
+
+    const seed = stableMotionSeed(member.id);
+    let actionIndex = seed % IDLE_ACTIONS.length;
+    let actionTimer: number | undefined;
+    let resetTimer: number | undefined;
+    const schedule = (delay: number) => {
+      actionTimer = window.setTimeout(() => {
+        const nextAction = IDLE_ACTIONS[actionIndex % IDLE_ACTIONS.length] ?? "look";
+        actionIndex += 1;
+        setIdleAction(nextAction);
+        resetTimer = window.setTimeout(
+          () => {
+            setIdleAction("none");
+            schedule(8_800 + ((seed + actionIndex * 997) % 4_800));
+          },
+          nextAction === "stretch" ? 2_100 : 1_700,
+        );
+      }, delay);
+    };
+
+    schedule(4_800 + (seed % 4_600));
+    return () => {
+      if (actionTimer !== undefined) window.clearTimeout(actionTimer);
+      if (resetTimer !== undefined) window.clearTimeout(resetTimer);
+    };
+  }, [isMoving, isSpeaking, member.activity, member.id, shouldReduceMotion, zone]);
 
   return (
     <motion.div
       key={member.id}
       layout="position"
-      initial={{ opacity: 0 }}
+      initial={shouldReduceMotion ? { opacity: 1 } : { opacity: 0, y: 16, scale: 0.92 }}
       animate={{
         opacity: isOffline ? 0.45 : 1,
+        y: 0,
+        scale: 1,
       }}
       exit={{
         opacity: 0,
@@ -129,6 +193,8 @@ const SceneCharacter = ({
       transition={{
         layout: shouldReduceMotion ? { duration: 0 } : { type: "spring", ...APPLE_MOTION_SPRING },
         opacity: { duration: shouldReduceMotion ? 0 : motionDuration.feedback },
+        y: shouldReduceMotion ? { duration: 0 } : { type: "spring", ...APPLE_MOTION_SPRING },
+        scale: shouldReduceMotion ? { duration: 0 } : { type: "spring", ...APPLE_MOTION_SPRING },
       }}
       className="pointer-events-none absolute"
       style={{
@@ -144,6 +210,7 @@ const SceneCharacter = ({
             {
               "--character-scale": position.scale,
               "--label-offset-y": `${position.labelOffsetY ?? 0}px`,
+              "--character-motion-delay": `${stableMotionPhase(member.id)}s`,
             } as CSSProperties & Record<string, string | number>
           }
         >
@@ -158,6 +225,8 @@ const SceneCharacter = ({
                 activity={member.activity ?? "idle"}
                 isSpeaking={isSpeaking}
                 isMoving={isMoving}
+                isMuted={member.isMuted}
+                idleAction={idleAction}
               />
             ) : (
               <AnimalSprite avatarId={avatarId} state="away" isMoving={isMoving} />
@@ -169,34 +238,59 @@ const SceneCharacter = ({
             ) : null}
           </div>
 
-          <div className={`room-character-label ${status.tone}`}>
-            <span className="room-character-identity">
-              <strong className="room-character-nickname" title={member.nickname}>
-                {member.nickname}
-              </strong>
-              <span aria-hidden="true">·</span>
-              <span className={`room-character-latency ${getLatencyTone(member.latencyMs)}`}>
-                {typeof member.latencyMs === "number" ? Math.round(member.latencyMs) : "--"} ms
+          {zone === "restroomZone" ? (
+            <div className="room-character-away-label" title={member.nickname}>
+              {member.nickname}
+            </div>
+          ) : (
+            <div className={`room-character-label ${status.tone}`}>
+              <span className="room-character-identity">
+                <strong className="room-character-nickname" title={member.nickname}>
+                  {member.nickname}
+                </strong>
+                <span aria-hidden="true">·</span>
+                <span className={`room-character-latency ${getLatencyTone(member.latencyMs)}`}>
+                  {typeof member.latencyMs === "number" ? Math.round(member.latencyMs) : "--"} ms
+                </span>
               </span>
-            </span>
-            <span className="room-character-state">
-              {status.icon ? (
-                <status.icon className={`h-3 w-3 ${isReconnecting ? "animate-spin" : ""}`} />
-              ) : null}
-              <span className="max-w-[118px] truncate">{status.label}</span>
-            </span>
-          </div>
-          {visibleReaction ? (
-            <motion.div
-              key={visibleReaction.id}
-              className="scene-character-reaction"
-              initial={{ opacity: 0, y: 8, scale: 0.72 }}
-              animate={{ opacity: 1, y: -6, scale: 1 }}
-              exit={{ opacity: 0, y: -20, scale: 0.84 }}
-            >
-              {visibleReaction.emoji}
-            </motion.div>
-          ) : null}
+              <span className="room-character-state">
+                <AnimatePresence initial={false} mode="popLayout">
+                  <motion.span
+                    key={`${status.tone}-${status.label}`}
+                    className="inline-flex min-w-0 items-center gap-1"
+                    initial={shouldReduceMotion ? false : { opacity: 0, y: 2 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={shouldReduceMotion ? undefined : { opacity: 0, y: -2 }}
+                    transition={{
+                      duration: shouldReduceMotion ? 0 : motionDuration.color,
+                      ease: APPLE_MOTION_EASE,
+                    }}
+                  >
+                    {status.icon ? (
+                      <status.icon className={`h-3 w-3 ${isReconnecting ? "animate-spin" : ""}`} />
+                    ) : null}
+                    <span className="max-w-[118px] truncate">{status.label}</span>
+                  </motion.span>
+                </AnimatePresence>
+              </span>
+            </div>
+          )}
+          <AnimatePresence mode="popLayout">
+            {visibleReaction ? (
+              <motion.div
+                key={visibleReaction.id}
+                className="scene-character-reaction"
+                initial={{ opacity: 0, y: 8, scale: 0.72, rotate: -8 }}
+                animate={{ opacity: 1, y: -6, scale: 1, rotate: 0 }}
+                exit={{ opacity: 0, y: -24, scale: 0.82, rotate: 7 }}
+                transition={
+                  shouldReduceMotion ? { duration: 0 } : { type: "spring", ...APPLE_MOTION_SPRING }
+                }
+              >
+                {visibleReaction.emoji}
+              </motion.div>
+            ) : null}
+          </AnimatePresence>
           {!member.isLocal ? (
             <div className="scene-reaction-picker" aria-label={`给${member.nickname}发送表情`}>
               {(["👍", "🔥", "😂", "❤️"] as const).map((emoji) => (
@@ -253,6 +347,7 @@ export const TeamIsland = ({
   const visibleAvatars = assignVisibleAvatars(visibleMembers);
   const shouldReduceMotion = usePrefersReducedMotion(reduceMotion);
   const [ambient, setAmbient] = useState<"day" | "evening" | "night">("day");
+  const [hoveredZone, setHoveredZone] = useState<SceneZoneId>();
   const resolvedMemberZones = resolveMemberSceneZones(visibleMembers);
   const occupiedSeatIds = new Set<SceneZoneId>();
   visibleMembers.forEach((member) => {
@@ -271,10 +366,6 @@ export const TeamIsland = ({
   const awayMembers = visibleMembers.filter(
     (member) => resolvedMemberZones.get(member.id) === "restroomZone",
   );
-  const memberMotionKey = visibleMembers
-    .map((member) => `${member.id}:${resolvedMemberZones.get(member.id) ?? "gameDesk1"}`)
-    .join("|");
-
   useEffect(() => {
     const updateAmbient = () => {
       const hour = new Date().getHours();
@@ -288,47 +379,73 @@ export const TeamIsland = ({
   useLayoutEffect(() => {
     if (shouldReduceMotion || !islandRef.current || knockPulse <= 0) return;
     const context = gsap.context(() => {
-      gsap.fromTo(
-        ".scene-workstation",
-        { x: 0, rotation: 0 },
-        {
-          keyframes: [
-            { x: -2, rotation: -0.35, duration: 0.05 },
-            { x: 2.5, rotation: 0.4, duration: 0.06 },
-            { x: 0, rotation: 0, duration: 0.1 },
-          ],
-          ease: motionEase.feedback,
-          stagger: 0.018,
-          overwrite: true,
-        },
-      );
+      const timeline = gsap.timeline({ defaults: { overwrite: true } });
+      timeline
+        .fromTo(
+          "[data-knock-wave]",
+          { autoAlpha: 0.48, scale: 0.48 },
+          { autoAlpha: 0, scale: 2.4, duration: 0.52, ease: motionEase.spatial },
+          0,
+        )
+        .to(
+          ".scene-workstation.is-occupied .scene-workstation-art-frame",
+          {
+            keyframes: [
+              { y: -3, rotation: -0.7, duration: 0.055 },
+              { y: 1.5, rotation: 0.8, duration: 0.065 },
+              { y: -1, rotation: -0.28, duration: 0.06 },
+              { y: 0, rotation: 0, duration: 0.12 },
+            ],
+            transformOrigin: "50% 82%",
+            ease: motionEase.feedback,
+            stagger: { each: 0.022, from: "center" },
+          },
+          0.015,
+        )
+        .to(
+          ".scene-workstation.is-occupied .scene-workstation-screen",
+          {
+            keyframes: [
+              { scale: 1.055, filter: "brightness(1.28)", duration: 0.07 },
+              { scale: 0.985, filter: "brightness(1.06)", duration: 0.08 },
+              { scale: 1, filter: "brightness(1)", duration: 0.12 },
+            ],
+            transformOrigin: "50% 60%",
+            stagger: { each: 0.022, from: "center" },
+          },
+          0.025,
+        )
+        .to(
+          ".scene-workstation.is-occupied .scene-desk-shadow",
+          {
+            keyframes: [
+              { scaleX: 1.16, opacity: 0.58, duration: 0.08 },
+              { scaleX: 1, opacity: 1, duration: 0.18 },
+            ],
+            stagger: { each: 0.022, from: "center" },
+          },
+          0.03,
+        )
+        .to(
+          "[data-gsap-character] .desk-animal",
+          {
+            keyframes: [
+              { y: -5, rotation: -1.8, scale: 1.025, duration: 0.07 },
+              { y: 1, rotation: 1.2, scale: 0.995, duration: 0.08 },
+              { y: 0, rotation: 0, scale: 1, duration: 0.16 },
+            ],
+            transformOrigin: "50% 100%",
+            stagger: { each: 0.028, from: "center" },
+          },
+          0.055,
+        )
+        .set(
+          ".scene-workstation-art-frame, .scene-workstation-screen, .scene-desk-shadow, [data-gsap-character] .desk-animal",
+          { clearProps: "transform,filter,opacity" },
+        );
     }, islandRef);
     return () => context.revert();
   }, [knockPulse, shouldReduceMotion]);
-
-  useLayoutEffect(() => {
-    if (shouldReduceMotion || !islandRef.current || !memberMotionKey) return;
-
-    const context = gsap.context(() => {
-      gsap.fromTo(
-        "[data-gsap-character]",
-        { autoAlpha: 0, y: 12, scale: 0.94, rotation: -1.5 },
-        {
-          autoAlpha: 1,
-          y: 0,
-          scale: 1,
-          rotation: 0,
-          duration: 0.34,
-          ease: motionEase.feedback,
-          stagger: 0.045,
-          overwrite: true,
-          force3D: true,
-        },
-      );
-    }, islandRef);
-
-    return () => context.revert();
-  }, [memberMotionKey, shouldReduceMotion]);
 
   return (
     <div
@@ -336,16 +453,23 @@ export const TeamIsland = ({
       className={`team-island ambient-${ambient} relative h-full min-h-[420px] overflow-hidden`}
       data-testid="team-island"
     >
+      <span className="scene-knock-wave" data-knock-wave aria-hidden="true" />
       <div className="team-island-stage absolute inset-0" aria-hidden="true">
         <div className="scene-service-zone scene-service-restroom">
           <span>离开一下</span>
         </div>
         {seatSlots.map((slot) => {
           const occupant = memberBySeat.get(slot.id);
+          const occupantTone = occupant ? memberStatus(occupant).tone : undefined;
           return (
             <div
               key={slot.id}
-              className="scene-workstation"
+              className={`scene-workstation ${hoveredZone === slot.id ? "is-hovered" : ""} ${
+                localZone === slot.id ? "is-current" : ""
+              } ${occupant ? "is-occupied" : ""} ${
+                occupantTone === "reconnecting" ? "is-reconnecting" : ""
+              }`}
+              data-seat-zone={slot.id}
               style={{
                 left: `${slot.left}%`,
                 top: `${slot.top}%`,
@@ -354,18 +478,18 @@ export const TeamIsland = ({
             >
               <div className="scene-desk-shadow" />
               <div className="scene-workstation-art-frame">
-                <img
-                  src={workstationArt}
-                  alt=""
-                  className="scene-workstation-art"
-                  draggable={false}
-                  decoding="async"
-                />
+                <WorkstationArt className="scene-workstation-art" />
                 <span
                   className={`scene-workstation-screen ${occupant ? "online" : ""} ${occupant?.gameName ? "gaming" : ""}`}
                 >
-                  {occupant?.gameName ? <Gamepad2 aria-hidden="true" /> : null}
-                  <span>{occupant?.gameName ?? (occupant ? "上号" : "")}</span>
+                  {occupant?.gameName ? (
+                    <>
+                      <Gamepad2 aria-hidden="true" />
+                      <span>{occupant.gameName}</span>
+                    </>
+                  ) : occupant ? (
+                    <Fish className="scene-workstation-idle-fish" aria-label="摸鱼中" />
+                  ) : null}
                 </span>
               </div>
             </div>
@@ -407,6 +531,12 @@ export const TeamIsland = ({
             }}
             aria-label={`移动到${zone.label}`}
             disabled={zone.kind === "seat" && occupiedSeatIds.has(zone.id) && localZone !== zone.id}
+            onPointerEnter={() => setHoveredZone(zone.id)}
+            onPointerLeave={() =>
+              setHoveredZone((current) => (current === zone.id ? undefined : current))
+            }
+            onFocus={() => setHoveredZone(zone.id)}
+            onBlur={() => setHoveredZone((current) => (current === zone.id ? undefined : current))}
             onClick={() => onZoneSelect?.(zone.id, zone.activity)}
           >
             <span>{zone.label}</span>

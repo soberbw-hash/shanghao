@@ -1,11 +1,13 @@
 import { motion } from "framer-motion";
 
+import { APPLE_MOTION_DURATION, APPLE_MOTION_SPATIAL_EASE } from "@private-voice/shared";
+
 import { Button } from "../base/Button";
 
 const steps = [
-  "点“开启房间”，把地址发给朋友。",
-  "收到地址后粘贴到首页右侧，点“立即加入”。",
-  "底部随时可以静音，按键说话也在同一排。",
+  "先设置自己的昵称和角色，好友能一眼认出你。",
+  "确认服务器地址后进入固定频道，邀请时会直接复制这个地址。",
+  "底部可静音、按键说话、分享屏幕；右侧聊天只在当前频道使用。",
 ];
 
 export const OnboardingModal = ({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) =>
@@ -14,12 +16,15 @@ export const OnboardingModal = ({ isOpen, onClose }: { isOpen: boolean; onClose:
       <motion.div
         initial={{ opacity: 0, y: 10 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.18 }}
+        transition={{
+          duration: APPLE_MOTION_DURATION.panel,
+          ease: APPLE_MOTION_SPATIAL_EASE,
+        }}
         className="w-full max-w-xl rounded-[24px] border border-[#E7ECF2] bg-white p-6 shadow-[0_24px_48px_rgba(17,24,39,0.12)]"
       >
         <div className="space-y-4">
           <div>
-            <div className="text-[22px] font-semibold text-[#111827]">第一次用就看这三步</div>
+            <div className="text-[22px] font-semibold text-[#111827]">第一次进入频道</div>
             <p className="mt-1 text-sm text-[#667085]">一分钟就能上手。</p>
           </div>
           <div className="space-y-3">

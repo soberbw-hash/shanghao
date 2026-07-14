@@ -231,6 +231,58 @@ test("three invalid messages close a socket without crashing the server", async 
   }
 });
 
+test("legacy empty game names stay connected and normalize to an omitted value", async () => {
+  const server = new SignalingServer({ roomName: "固定频道" });
+  const port = await server.listen();
+  const socket = await openSocket(`ws://127.0.0.1:${port}`);
+  try {
+    const snapshot = waitForMemberCount(socket, 1);
+    join(socket, "legacy-peer", "小狐狸");
+    await snapshot;
+
+    for (let index = 0; index < 3; index += 1) {
+      const state = waitForMessage(
+        socket,
+        (payload): payload is { type: "member_state"; gameName?: string } =>
+          typeof payload === "object" &&
+          payload !== null &&
+          (payload as { type?: string }).type === "member_state",
+      );
+      socket.send(
+        JSON.stringify({
+          type: "member_state",
+          roomId: "main",
+          peerId: "legacy-peer",
+          activity: "idle",
+          gameName: "",
+        }),
+      );
+      assert.equal((await state).gameName, undefined);
+    }
+
+    const pong = waitForMessage(
+      socket,
+      (payload): payload is { type: "pong" } =>
+        typeof payload === "object" &&
+        payload !== null &&
+        (payload as { type?: string }).type === "pong",
+    );
+    socket.send(
+      JSON.stringify({
+        type: "heartbeat",
+        roomId: "main",
+        peerId: "legacy-peer",
+        sentAt: Date.now(),
+      }),
+    );
+    await pong;
+    assert.equal(socket.readyState, WebSocket.OPEN);
+  } finally {
+    socket.close();
+    await server.close();
+  }
+});
+
 test("chat history keeps 100 messages and survives a restart", async () => {
   const memoryStore = await ChatHistoryStore.create();
   for (let index = 0; index < 101; index += 1) {

@@ -27,6 +27,11 @@ const motionSystemPath = path.resolve(
   process.cwd(),
   "src/renderer/src/features/motion/motionSystem.ts",
 );
+const sharedButtonPath = path.resolve(process.cwd(), "../../packages/ui/src/components/Button.tsx");
+const animatedIconPath = path.resolve(
+  process.cwd(),
+  "src/renderer/src/components/icons/AnimatedControlIcon.tsx",
+);
 
 test("gsap motion is wired across the main surfaces with reduced-motion fallback", () => {
   const packageJson = JSON.parse(readFileSync(packagePath, "utf8")) as {
@@ -41,6 +46,8 @@ test("gsap motion is wired across the main surfaces with reduced-motion fallback
   const hookSource = readFileSync(hookPath, "utf8");
   const stylesSource = readFileSync(stylesPath, "utf8");
   const appStoreSource = readFileSync(appStorePath, "utf8");
+  const sharedButtonSource = readFileSync(sharedButtonPath, "utf8");
+  const animatedIconSource = readFileSync(animatedIconPath, "utf8");
 
   assert.match(packageJson.dependencies?.gsap ?? "", /^\^3\./);
   assert.equal(homeSource.includes('from "gsap"'), true);
@@ -68,9 +75,37 @@ test("gsap motion is wired across the main surfaces with reduced-motion fallback
   assert.equal(islandSource.includes('layout="position"'), true);
   assert.equal(readFileSync(motionSystemPath, "utf8").includes("force3D: true"), true);
   assert.equal(readFileSync(motionSystemPath, "utf8").includes("CustomEase"), true);
-  assert.equal(readFileSync(motionSystemPath, "utf8").includes("0.23,1,0.32,1"), true);
+  assert.equal(readFileSync(motionSystemPath, "utf8").includes("0.16,1,0.3,1"), true);
+  assert.equal(readFileSync(motionSystemPath, "utf8").includes("0.22,1,0.36,1"), true);
   assert.equal(readFileSync(motionSystemPath, "utf8").includes("back.out"), false);
   assert.equal(readFileSync(motionSystemPath, "utf8").includes("APPLE_MOTION_DURATION"), true);
+  assert.equal(sharedButtonSource.includes("--button-pointer-x"), true);
+  assert.equal(sharedButtonSource.includes("requestAnimationFrame"), true);
+  assert.equal(sharedButtonSource.includes("radial-gradient(100px circle"), true);
+  assert.equal(
+    chatSource.includes('behavior: shouldReduceMotion || previous === 0 ? "auto" : "smooth"'),
+    true,
+  );
+  assert.equal(chatSource.includes("motionEase.spatial"), true);
+  assert.equal(chatSource.includes('data-icon-motion="send"'), true);
+  assert.equal(islandSource.includes("data-knock-wave"), true);
+  assert.equal(islandSource.includes("scene-workstation-art-frame"), true);
+  assert.equal(islandSource.includes("WorkstationArt"), true);
+  assert.equal(islandSource.includes("desk-animal-muted"), false);
+  assert.equal(stylesSource.includes(".desk-animal-muted"), true);
+  assert.equal(stylesSource.includes("--character-motion-delay"), true);
+  assert.equal(roomSource.includes('message.id.startsWith("knock-")'), true);
+  assert.equal(roomSource.includes("AnimatedControlIcon"), true);
+  assert.equal(animatedIconSource.includes("animated-icon__speaker-wave--one"), true);
+  assert.equal(animatedIconSource.includes("animated-icon__bell-clapper"), true);
+  assert.equal(animatedIconSource.includes("animated-icon__settings-knob--three"), true);
+  assert.equal(stylesSource.includes("@keyframes animated-speaker-wave"), true);
+  assert.equal(stylesSource.includes("@keyframes animated-bell-shell"), true);
+  assert.equal(stylesSource.includes(".desk-animal-action-look"), true);
+  assert.equal(stylesSource.includes(".desk-animal-action-stretch"), true);
+  assert.equal(stylesSource.includes(".desk-animal-action-sip"), true);
+  assert.equal(stylesSource.includes("character-voice-halo"), true);
+  assert.equal(stylesSource.includes("@keyframes icon-audio-hover"), false);
 });
 
 test("startup paints immediately and keeps network work off the critical path", () => {

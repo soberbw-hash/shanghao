@@ -31,6 +31,7 @@ import { useAppStore } from "../store/appStore";
 import { useAudioStore } from "../store/audioStore";
 import { useSettingsStore } from "../store/settingsStore";
 import { getAvatarSrc } from "../utils/profile";
+import { getNicknameValidationError } from "../utils/nickname";
 
 const isValidServerAddress = (value: string) => Boolean(normalizeRelayServerUrl(value));
 
@@ -60,7 +61,7 @@ export const HomePage = () => {
   const [isEditingSetup, setIsEditingSetup] = useState(false);
   const [isTestingServer, setIsTestingServer] = useState(false);
   const [serverTestResult, setServerTestResult] = useState<RelayStatusSnapshot>();
-  const reduceMotion = usePrefersReducedMotion(settings?.reduceMotion ?? false);
+  const reduceMotion = usePrefersReducedMotion();
   const isSettingsReady = Boolean(settings);
   const savedNickname = settings?.nickname;
   const savedAvatarId = settings?.avatarId;
@@ -103,7 +104,12 @@ export const HomePage = () => {
         .fromTo(
           "[data-gsap-entry='brand']",
           { autoAlpha: 0, y: -8 },
-          { autoAlpha: 1, y: 0, duration: 0.28, ease: motionEase.standard },
+          {
+            autoAlpha: 1,
+            y: 0,
+            duration: motionDuration.message,
+            ease: motionEase.standard,
+          },
           "-=0.34",
         );
 
@@ -173,11 +179,12 @@ export const HomePage = () => {
   const enterChannel = async () => {
     const normalizedAddress = normalizeRelayServerUrl(serverAddress);
     const trimmedNickname = nickname.trim();
-    if (!trimmedNickname) {
+    const nicknameError = getNicknameValidationError(trimmedNickname);
+    if (nicknameError) {
       pushToast({
         tone: "warning",
-        title: "先填一个昵称",
-        description: "朋友需要靠昵称认出你。",
+        title: "昵称不能这样用",
+        description: nicknameError,
       });
       return;
     }

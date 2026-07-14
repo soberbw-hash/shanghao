@@ -80,3 +80,21 @@ test("migrateSettings normalizes relay server urls for non-technical users", () 
     "wss://relay.example.com/",
   );
 });
+
+test("screen sharing settings migrate to two simple quality levels and drop old visual flags", () => {
+  const clear = migrateSettings({
+    screenShareQuality: "clear" as never,
+    screenShareFitMode: "cover",
+    reduceMotion: true,
+    reduceTransparency: true,
+    increaseContrast: true,
+  });
+  const balanced = migrateSettings({ screenShareQuality: "balanced" as never });
+
+  assert.equal(clear.settings.screenShareQuality, "1080p");
+  assert.equal(balanced.settings.screenShareQuality, "720p");
+  assert.equal("screenShareFitMode" in clear.settings, false);
+  assert.equal("reduceMotion" in clear.settings, false);
+  assert.equal("reduceTransparency" in clear.settings, false);
+  assert.equal("increaseContrast" in clear.settings, false);
+});

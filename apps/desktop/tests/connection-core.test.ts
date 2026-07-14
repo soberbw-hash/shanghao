@@ -16,6 +16,21 @@ test("webrtc prefers domestic stun and buffers early ICE candidates", () => {
   assert.equal(source.includes("flushPendingIceCandidates"), true);
 });
 
+test("webrtc voice and screen transport adapt to weak networks", () => {
+  const peer = read("packages/webrtc/src/createPeer.ts");
+  const roomClient = read("apps/desktop/src/renderer/src/features/room/roomClient.ts");
+
+  assert.equal(peer.includes("useinbandfec=1"), true);
+  assert.equal(peer.includes("usedtx=1"), true);
+  assert.equal(peer.includes("maxplaybackrate=32000"), true);
+  assert.equal(peer.includes("maxaveragebitrate=24000"), true);
+  assert.equal(peer.includes("NetworkAdaptationTier"), true);
+  assert.equal(peer.includes("scaleResolutionDownBy"), true);
+  assert.equal(peer.includes("this.pendingRecoverySamples < 3"), true);
+  assert.equal(roomClient.includes("peer.adaptToNetwork(stats)"), true);
+  assert.equal(roomClient.includes("Peer network adaptation changed"), true);
+});
+
 test("room client marks webrtc ready from connection state instead of remote stream", () => {
   const source = read("apps/desktop/src/renderer/src/features/room/roomClient.ts");
   const relay = read("apps/desktop/src/renderer/src/features/room/signalingAudioRelay.ts");
@@ -118,8 +133,15 @@ test("room joining uses acknowledgement and snapshot recovery without logging ra
   assert.equal(client.includes("RoomConnectionState.WaitingSnapshot"), true);
   assert.equal(client.includes('new Error(this.wsOpened ? "join_ack_timeout"'), true);
   assert.equal(hook.includes("summarizeSignalingEvent"), true);
+  assert.equal(hook.includes("ROUTINE_SIGNAL_MESSAGE_TYPES"), true);
   assert.equal(hook.includes("...payload,"), false);
+  assert.equal(client.includes("normalizePresenceGameName(gameName)"), true);
+  assert.equal(client.includes('gameName: gameName ?? ""'), false);
+  assert.equal(client.includes("payload.code === 4400"), true);
+  assert.equal(client.includes('new Error("signaling_protocol_rejected")'), true);
+  assert.equal(client.includes("this.rejectPendingConnection(error)"), true);
   assert.equal(diagnostics.includes("MAX_LOG_FILE_BYTES"), true);
+  assert.equal(diagnostics.includes("compactOversizedLogs"), true);
   assert.equal(diagnostics.includes("EXPORT_LOG_TAIL_BYTES"), true);
   assert.equal(diagnostics.includes('"log-stats.json"'), true);
 });
@@ -234,13 +256,15 @@ test("desktop clipboard writes go through the electron main process", () => {
   assert.equal(copyField.includes("navigator.clipboard"), false);
 });
 
-test("global push-to-talk listens for keydown and keyup outside the app", () => {
+test("push-to-talk avoids low-level global hooks that can conflict with anti-cheat", () => {
   const shortcuts = read("apps/desktop/src/main/shortcuts.ts");
   const transport = read("apps/desktop/src/renderer/src/hooks/useLocalAudioTransport.ts");
-  assert.equal(shortcuts.includes('uIOhook.on("keydown"'), true);
-  assert.equal(shortcuts.includes('uIOhook.on("keyup"'), true);
-  assert.equal(shortcuts.includes("pushToTalkState"), true);
-  assert.equal(transport.includes("onPushToTalkState"), true);
+  const packageSource = read("apps/desktop/package.json");
+  assert.equal(shortcuts.includes("uIOhook"), false);
+  assert.equal(packageSource.includes("uiohook-napi"), false);
+  assert.equal(transport.includes('window.addEventListener("keydown"'), true);
+  assert.equal(transport.includes('window.addEventListener("keyup"'), true);
+  assert.equal(transport.includes("onPushToTalkState"), false);
 });
 
 test("native notifications and recording markers use main process IPC", () => {
@@ -248,5 +272,7 @@ test("native notifications and recording markers use main process IPC", () => {
   const room = read("apps/desktop/src/renderer/src/pages/RoomPage.tsx");
   assert.equal(ipc.includes("Notification.isSupported"), true);
   assert.equal(ipc.includes("recording.saveMarkers"), true);
+  assert.equal(ipc.includes("-精彩时刻.txt"), true);
+  assert.equal(ipc.includes(".markers.json"), false);
   assert.equal(room.includes("onRecordingMarkerTriggered"), true);
 });

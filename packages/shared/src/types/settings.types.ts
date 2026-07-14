@@ -1,8 +1,7 @@
 export type PreferredSampleRate = "auto" | "32000" | "44100" | "48000";
 export type MicMonitorMode = "processed" | "raw";
 export type LowCutFrequency = "off" | "90" | "120";
-export type ScreenShareQuality = "smooth" | "balanced" | "clear";
-export type ScreenShareFitMode = "contain" | "cover";
+export type ScreenShareQuality = "720p" | "1080p";
 export type UiScale = 100 | 110 | 125;
 export type BuiltInAvatarId = "fox" | "cat" | "duck" | "panda" | "corgi";
 export type MicEqualizerGains = [number, number, number, number, number];
@@ -16,9 +15,6 @@ export interface AppSettings {
   avatarPath?: string;
   hasCompletedProfileSetup: boolean;
   minimizeToTray: boolean;
-  reduceMotion: boolean;
-  reduceTransparency: boolean;
-  increaseContrast: boolean;
   uiScale: UiScale;
   launchOnStartup: boolean;
   isHardwareAccelerationEnabled: boolean;
@@ -41,7 +37,6 @@ export interface AppSettings {
   memberVolumes: Record<string, number>;
   soundVolume: number;
   screenShareQuality: ScreenShareQuality;
-  screenShareFitMode: ScreenShareFitMode;
   isScreenShareSystemAudioEnabled: boolean;
   isSystemNotificationEnabled: boolean;
   isMicOnSoundEnabled: boolean;

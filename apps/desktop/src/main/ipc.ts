@@ -1,5 +1,6 @@
 import { app, clipboard, ipcMain, Notification, powerMonitor, type BrowserWindow } from "electron";
 import { writeFile } from "node:fs/promises";
+import path from "node:path";
 
 import {
   APP_BUILD_NUMBER,
@@ -16,6 +17,7 @@ import {
   type RecordingMarker,
   type RendererLogPayload,
   type RuntimeInfo,
+  type ScreenShareViewerFrame,
   type SignalingEventPayload,
   type UpdateCheckResult,
   type UpdateStatus,
@@ -33,7 +35,13 @@ import { UpdateService } from "./updates";
 import { OverlayWindowController } from "./overlay-window";
 import { GameDetectionController } from "./game-detection";
 import { applyLaunchOnStartup } from "./launch-on-startup";
-import { listScreenCaptureSources, selectScreenCaptureSource } from "./window";
+import {
+  closeScreenShareViewer,
+  listScreenCaptureSources,
+  openScreenShareViewer,
+  selectScreenCaptureSource,
+  updateScreenShareViewer,
+} from "./window";
 
 interface MainProcessServices {
   getMainWindow: () => BrowserWindow | null;
@@ -157,8 +165,38 @@ export const registerIpcHandlers = ({
     },
   );
 
+  ipcMain.handle(
+    IPC_CHANNELS.screenShareViewer.open,
+    async (_event, title: unknown): Promise<void> =>
+      openScreenShareViewer(requireString(title, 160, "screen_viewer_title")),
+  );
+  ipcMain.handle(
+    IPC_CHANNELS.screenShareViewer.updateFrame,
+    async (_event, frame: ScreenShareViewerFrame): Promise<boolean> => {
+      if (!frame || typeof frame !== "object") throw new Error("invalid_screen_viewer_frame");
+      return updateScreenShareViewer({
+        title: requireString(frame.title, 160, "screen_viewer_title"),
+        dataUrl: requireString(frame.dataUrl, 8 * 1024 * 1024, "screen_viewer_frame"),
+      });
+    },
+  );
+  ipcMain.handle(IPC_CHANNELS.screenShareViewer.close, async (): Promise<void> => {
+    closeScreenShareViewer();
+  });
+
   ipcMain.handle(IPC_CHANNELS.window.minimize, async (): Promise<void> => {
     getMainWindow()?.minimize();
+  });
+
+  ipcMain.handle(IPC_CHANNELS.window.toggleMaximize, async (): Promise<boolean> => {
+    const window = getMainWindow();
+    if (!window) return false;
+    if (window.isMaximized()) {
+      window.unmaximize();
+      return false;
+    }
+    window.maximize();
+    return true;
   });
 
   ipcMain.handle(IPC_CHANNELS.window.hide, async (): Promise<void> => {
@@ -322,12 +360,6 @@ export const registerIpcHandlers = ({
       await shortcuts.configureGlobalMute(accelerator);
     },
   );
-  ipcMain.handle(
-    IPC_CHANNELS.shortcuts.configurePushToTalk,
-    async (_event, accelerator: string, enabled: boolean): Promise<boolean> =>
-      shortcuts.configurePushToTalk(accelerator, enabled),
-  );
-
   ipcMain.handle(IPC_CHANNELS.updates.check, async (): Promise<UpdateCheckResult> => {
     const result = await updates.check();
     diagnostics.setLastUpdateCheckMessage(result.message);
@@ -383,12 +415,24 @@ export const registerIpcHandlers = ({
   ipcMain.handle(
     IPC_CHANNELS.recording.saveMarkers,
     async (_event, filePath: string, markers: RecordingMarker[]): Promise<string> => {
-      const markerPath = `${filePath}.markers.json`;
-      await writeFile(
-        markerPath,
-        JSON.stringify({ recordingFile: filePath, markers }, null, 2),
-        "utf8",
-      );
+      const parsedPath = path.parse(filePath);
+      const markerPath = path.join(parsedPath.dir, `${parsedPath.name}-精彩时刻.txt`);
+      const formatOffset = (offsetMs: number) => {
+        const totalSeconds = Math.max(0, Math.round(offsetMs / 1_000));
+        const hours = Math.floor(totalSeconds / 3_600);
+        const minutes = Math.floor((totalSeconds % 3_600) / 60);
+        const seconds = totalSeconds % 60;
+        return [hours, minutes, seconds].map((value) => String(value).padStart(2, "0")).join(":");
+      };
+      const content = [
+        "上号录音 · 精彩时刻",
+        `录音文件：${path.basename(filePath)}`,
+        "",
+        ...markers.map((marker, index) => `${index + 1}. ${formatOffset(marker.offsetMs)}`),
+        "",
+        "打开录音并跳到对应时间即可回看。",
+      ].join("\r\n");
+      await writeFile(markerPath, content, "utf8");
       return markerPath;
     },
   );

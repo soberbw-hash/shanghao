@@ -2,6 +2,8 @@ import type { BuiltInAvatarId, MemberActivity } from "@private-voice/shared";
 
 import chairArt from "../../assets/scenes/chair-chibi.webp";
 
+export type DeskAnimalIdleAction = "none" | "look" | "stretch" | "sip";
+
 const rearAvatarModules = import.meta.glob<string>("../../assets/avatars/rear/*-rear.png", {
   eager: true,
   query: "?url",
@@ -22,23 +24,32 @@ export const DeskAnimalSprite = ({
   activity,
   isSpeaking,
   isMoving,
+  isMuted,
+  idleAction = "none",
 }: {
   avatarId: BuiltInAvatarId;
   activity: MemberActivity;
   isSpeaking: boolean;
   isMoving: boolean;
+  isMuted: boolean;
+  idleAction?: DeskAnimalIdleAction;
 }) => {
   const source = rearAvatarSources[avatarId] ?? rearAvatarSources.fox;
   const motionState = isMoving
     ? "moving"
-    : isSpeaking
-      ? "speaking"
-      : activity === "gaming"
-        ? "gaming"
-        : "idle";
+    : isMuted
+      ? "muted"
+      : isSpeaking
+        ? "speaking"
+        : activity === "gaming"
+          ? "gaming"
+          : "idle";
 
   return (
-    <div className={`desk-animal desk-animal-${motionState}`} aria-hidden="true">
+    <div
+      className={`desk-animal desk-animal-${motionState} desk-animal-action-${idleAction}`}
+      aria-hidden="true"
+    >
       <span className="desk-animal-ground-shadow" />
       <img
         className="desk-animal-chair desk-animal-chair-back"

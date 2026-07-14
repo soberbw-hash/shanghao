@@ -357,6 +357,12 @@ export class SignalingServer extends EventEmitter {
     this.invalidMessages.set(socket, nextCount);
     const session = this.sessions.get(socket);
     if (session) session.invalidMessages = nextCount;
+    this.logger?.("invalid signaling message", {
+      code,
+      invalidMessageCount: nextCount,
+      roomId: session?.roomId,
+      peerId: session?.peerId,
+    });
     this.safeSend(socket, { type: "error", code, message });
     if (nextCount >= MAX_INVALID_MESSAGES) socket.close(4400, "too_many_invalid_messages");
   }
@@ -650,6 +656,7 @@ export class SignalingServer extends EventEmitter {
       : undefined;
     const normalizedActivity =
       normalizedSceneZone === "restroomZone" ? "restroom" : message.activity;
+    const normalizedGameName = message.gameName?.trim() || undefined;
     const normalizedAvatar = normalizeAvatar(message.avatarDataUrl);
     room.peers.updateMemberState(message.peerId, {
       isMuted: message.isMuted,
@@ -657,7 +664,7 @@ export class SignalingServer extends EventEmitter {
       isDeafened: message.isDeafened,
       activity: normalizedActivity,
       sceneZone: normalizedSceneZone,
-      gameName: message.gameName,
+      gameName: normalizedGameName,
       nickname: message.nickname,
       avatarDataUrl: normalizedAvatar.avatarDataUrl,
       avatarHash: normalizedAvatar.avatarHash,
@@ -672,7 +679,7 @@ export class SignalingServer extends EventEmitter {
       isDeafened: message.isDeafened,
       activity: normalizedActivity,
       sceneZone: normalizedSceneZone,
-      gameName: message.gameName,
+      gameName: normalizedGameName,
       nickname: message.nickname,
       avatarId: message.avatarId,
     };

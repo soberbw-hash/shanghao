@@ -4,12 +4,13 @@ import { CustomEase } from "gsap/CustomEase";
 import { APPLE_MOTION_DURATION } from "@private-voice/shared";
 
 gsap.registerPlugin(CustomEase);
-CustomEase.create("shanghao-out", "0.23,1,0.32,1");
-CustomEase.create("shanghao-in-out", "0.77,0,0.175,1");
-CustomEase.create("shanghao-drawer", "0.32,0.72,0,1");
+CustomEase.create("shanghao-out", "0.16,1,0.3,1");
+CustomEase.create("shanghao-spatial", "0.22,1,0.36,1");
+CustomEase.create("shanghao-in-out", "0.45,0,0.55,1");
+CustomEase.create("shanghao-drawer", "0.2,0.82,0.22,1");
 
 export const motionEase = {
-  spatial: "shanghao-out",
+  spatial: "shanghao-spatial",
   standard: "shanghao-out",
   feedback: "shanghao-out",
   inOut: "shanghao-in-out",

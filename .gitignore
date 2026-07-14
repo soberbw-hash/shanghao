@@ -12,3 +12,5 @@ Thumbs.db
 apps/desktop/release/
 apps/desktop/dist/
 apps/desktop/dist-electron/
+apps/desktop/.local-reconnect-build/
+apps/desktop/local-test/

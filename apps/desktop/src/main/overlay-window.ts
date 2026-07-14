@@ -120,6 +120,8 @@ export class OverlayWindowController {
     });
 
     this.window = window;
+    // The always-on-top buddy should not be embedded into the shared display.
+    window.setContentProtection(true);
     window.setAlwaysOnTop(true, "screen-saver");
     window.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
     window.setMovable(false);

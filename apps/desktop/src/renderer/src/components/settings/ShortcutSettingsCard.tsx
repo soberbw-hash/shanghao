@@ -17,7 +17,7 @@ export const ShortcutSettingsCard = ({
     settings.globalMuteShortcut === settings.pushToTalkShortcut;
 
   return (
-    <SettingsSection title="快捷键" description="游戏中也能全局触发。">
+    <SettingsSection title="快捷键" description="不注入按键、不挂接游戏进程，优先保护账号安全。">
       <div className="space-y-3">
         <SettingsItemRow
           label="全局静音快捷键"
@@ -29,7 +29,7 @@ export const ShortcutSettingsCard = ({
             placeholder="未启用"
           />
         </SettingsItemRow>
-        <SettingsItemRow label="PTT 按键" description="按住说话，松开闭麦。">
+        <SettingsItemRow label="PTT 按键" description="上号窗口聚焦时按住说话，松开闭麦。">
           <ShortcutInput
             value={settings.pushToTalkShortcut}
             onChange={(pushToTalkShortcut) => onChange({ pushToTalkShortcut })}
@@ -37,7 +37,10 @@ export const ShortcutSettingsCard = ({
             conflictMessage={hasConflict ? "PTT 按键不能和全局静音快捷键重复。" : undefined}
           />
         </SettingsItemRow>
-        <SettingsItemRow label="标记精彩时刻" description="录音中按一下，在同目录写入时间点标记。">
+        <SettingsItemRow
+          label="标记精彩时刻"
+          description="录音中按一下，在录音旁生成可直接阅读的精彩时刻文本。"
+        >
           <ShortcutInput
             value={settings.recordingMarkerShortcut}
             onChange={(recordingMarkerShortcut) => onChange({ recordingMarkerShortcut })}
