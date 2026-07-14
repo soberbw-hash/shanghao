@@ -98,6 +98,7 @@ const SCREEN_FRAME_MAX_WIDTH = 480;
 const SCREEN_FRAME_MAX_BYTES = 48 * 1024;
 
 export class RoomClient {
+  private readonly signalingSessionId = crypto.randomUUID();
   private readonly backoff = new ExponentialBackoff(DEFAULT_RECONNECT_DELAYS_MS);
   private readonly peers = new Map<string, MeshPeerConnection>();
   private readonly peerVolumes = new Map<string, number>();
@@ -209,7 +210,7 @@ export class RoomClient {
     this.unsubscribeEvents?.();
     this.unsubscribeEvents = undefined;
     this.isSignalingConnected = false;
-    await window.desktopApi.signaling.close().catch(() => undefined);
+    await window.desktopApi.signaling.close(this.signalingSessionId).catch(() => undefined);
     this.options.onConnectionState(RoomConnectionState.Disconnected);
   }
 
@@ -320,21 +321,24 @@ export class RoomClient {
       const timeout = window.setTimeout(() => {
         const error = new Error(this.wsOpened ? "join_ack_timeout" : "network_unreachable");
         this.rejectPendingConnection(error);
-        void window.desktopApi.signaling.close();
+        void window.desktopApi.signaling.close(this.signalingSessionId);
       }, INITIAL_CONNECT_TIMEOUT_MS);
 
       this.pendingConnection = { resolve, reject, timeout };
       this.unsubscribeEvents?.();
       this.unsubscribeEvents = window.desktopApi.signaling.onEvent((payload) => {
+        if (payload.sessionId !== this.signalingSessionId) return;
         this.options.onDiagnosticEvent?.(payload);
         void this.handleBridgeEvent(payload).catch((error) => {
           this.handleBridgeFailure(error);
         });
       });
 
-      void window.desktopApi.signaling.connect(this.options.signalingUrl).catch((error) => {
-        this.rejectPendingConnection(error instanceof Error ? error : new Error(String(error)));
-      });
+      void window.desktopApi.signaling
+        .connect(this.options.signalingUrl, this.signalingSessionId)
+        .catch((error) => {
+          this.rejectPendingConnection(error instanceof Error ? error : new Error(String(error)));
+        });
     });
   }
 
@@ -1195,7 +1199,7 @@ export class RoomClient {
     if (!this.isSignalingConnected) {
       throw new Error("signaling_not_connected");
     }
-    await window.desktopApi.signaling.send(JSON.stringify(payload));
+    await window.desktopApi.signaling.send(JSON.stringify(payload), this.signalingSessionId);
   }
 
   private handleBridgeFailure(error: unknown): void {
@@ -1207,7 +1211,7 @@ export class RoomClient {
     });
     this.isSignalingConnected = false;
     this.rejectPendingConnection(normalizedError);
-    void window.desktopApi.signaling.close().catch(() => undefined);
+    void window.desktopApi.signaling.close(this.signalingSessionId).catch(() => undefined);
   }
 
   private async safeSend(payload: SignalEnvelope): Promise<boolean> {

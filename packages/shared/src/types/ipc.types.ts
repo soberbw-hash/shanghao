@@ -33,6 +33,7 @@ export interface RendererLogPayload {
 }
 
 export interface SignalingEventPayload {
+  sessionId: string;
   type: "open" | "message" | "close" | "error";
   data?: string;
   code?: number;
@@ -161,9 +162,9 @@ export interface DesktopApi {
     openReleases: () => Promise<void>;
   };
   signaling: {
-    connect: (signalingUrl: string) => Promise<void>;
-    send: (payload: string) => Promise<void>;
-    close: () => Promise<void>;
+    connect: (signalingUrl: string, sessionId: string) => Promise<void>;
+    send: (payload: string, sessionId: string) => Promise<void>;
+    close: (sessionId: string) => Promise<void>;
     onEvent: (listener: (payload: SignalingEventPayload) => void) => () => void;
   };
   recording: {

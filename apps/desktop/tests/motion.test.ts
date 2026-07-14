@@ -97,6 +97,7 @@ test("gsap motion is wired across the main surfaces with reduced-motion fallback
   assert.equal(roomSource.includes('message.id.startsWith("knock-")'), true);
   assert.equal(roomSource.includes("AnimatedControlIcon"), true);
   assert.equal(animatedIconSource.includes("animated-icon__speaker-wave--one"), true);
+  assert.equal(animatedIconSource.includes("animated-icon__speaker-mute"), true);
   assert.equal(animatedIconSource.includes("animated-icon__bell-clapper"), true);
   assert.equal(animatedIconSource.includes("animated-icon__settings-knob--three"), true);
   assert.equal(stylesSource.includes("@keyframes animated-speaker-wave"), true);

@@ -3,6 +3,7 @@ import { useEffect, useRef } from "react";
 import { useAudioStore } from "../../store/audioStore";
 import { useRoomStore } from "../../store/roomStore";
 import { useSettingsStore } from "../../store/settingsStore";
+import { writeRendererLog } from "../../utils/logger";
 
 type SinkAwareAudioContext = AudioContext & {
   setSinkId?: (sinkId: string) => Promise<void>;
@@ -19,37 +20,40 @@ const RemoteAudioTrack = ({
   isDeafened: boolean;
   outputDeviceId?: string;
 }) => {
-  const elementRef = useRef<HTMLAudioElement>(null);
   const contextRef = useRef<SinkAwareAudioContext>();
   const gainRef = useRef<GainNode>();
 
   useEffect(() => {
-    const element = elementRef.current;
-    if (!element) return;
-
-    const context = new AudioContext({ latencyHint: "interactive" }) as SinkAwareAudioContext;
-    const source = context.createMediaElementSource(element);
-    const gain = context.createGain();
-    source.connect(gain);
-    gain.connect(context.destination);
-    element.srcObject = stream;
-    element.volume = 1;
-    contextRef.current = context;
-    gainRef.current = gain;
-    void context
-      .resume()
-      .then(() => element.play())
-      .catch(() => undefined);
+    let context: SinkAwareAudioContext | undefined;
+    let source: MediaStreamAudioSourceNode | undefined;
+    let gain: GainNode | undefined;
+    try {
+      context = new AudioContext({ latencyHint: "interactive" }) as SinkAwareAudioContext;
+      source = context.createMediaStreamSource(stream);
+      gain = context.createGain();
+      source.connect(gain);
+      gain.connect(context.destination);
+      contextRef.current = context;
+      gainRef.current = gain;
+      gain.gain.value = isDeafened ? 0 : Math.max(0, Math.min(2, volume));
+      if (outputDeviceId && context.setSinkId) {
+        void context.setSinkId(outputDeviceId).catch(() => undefined);
+      }
+      void context.resume().catch(() => undefined);
+    } catch (error) {
+      void writeRendererLog("audio", "error", "Failed to attach remote audio stream", {
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
 
     return () => {
-      element.srcObject = null;
-      source.disconnect();
-      gain.disconnect();
+      source?.disconnect();
+      gain?.disconnect();
       contextRef.current = undefined;
       gainRef.current = undefined;
-      void context.close().catch(() => undefined);
+      void context?.close().catch(() => undefined);
     };
-  }, [stream]);
+  }, [stream]); // Audio nodes are recreated only when the remote MediaStream identity changes.
 
   useEffect(() => {
     const gain = gainRef.current;
@@ -69,7 +73,7 @@ const RemoteAudioTrack = ({
     }
   }, [outputDeviceId]);
 
-  return <audio ref={elementRef} autoPlay playsInline className="hidden" />;
+  return null;
 };
 
 export const RemoteAudioRenderer = () => {

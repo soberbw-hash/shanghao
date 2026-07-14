@@ -390,21 +390,33 @@ export const registerIpcHandlers = ({
     updates.install();
   });
 
-  ipcMain.handle(IPC_CHANNELS.signaling.connect, async (_event, signalingUrl: string) => {
-    const url = new URL(requireString(signalingUrl, 2_048, "signaling_url"));
-    if (url.protocol !== "ws:" && url.protocol !== "wss:")
-      throw new Error("invalid_signaling_protocol");
-    await signalingClient.connect(url.toString());
-  });
-  ipcMain.handle(IPC_CHANNELS.signaling.send, async (_event, payload: string) => {
-    const serialized = requireString(payload, 256 * 1024, "signaling_payload");
-    const parsed = JSON.parse(serialized) as unknown;
-    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed))
-      throw new Error("invalid_signaling_payload");
-    await signalingClient.send(serialized);
-  });
-  ipcMain.handle(IPC_CHANNELS.signaling.close, async () => {
-    await signalingClient.close();
+  ipcMain.handle(
+    IPC_CHANNELS.signaling.connect,
+    async (_event, signalingUrl: string, sessionId: string) => {
+      const url = new URL(requireString(signalingUrl, 2_048, "signaling_url"));
+      if (url.protocol !== "ws:" && url.protocol !== "wss:")
+        throw new Error("invalid_signaling_protocol");
+      await signalingClient.connect(
+        url.toString(),
+        requireString(sessionId, 128, "signaling_session_id"),
+      );
+    },
+  );
+  ipcMain.handle(
+    IPC_CHANNELS.signaling.send,
+    async (_event, payload: string, sessionId: string) => {
+      const serialized = requireString(payload, 256 * 1024, "signaling_payload");
+      const parsed = JSON.parse(serialized) as unknown;
+      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed))
+        throw new Error("invalid_signaling_payload");
+      await signalingClient.send(
+        serialized,
+        requireString(sessionId, 128, "signaling_session_id"),
+      );
+    },
+  );
+  ipcMain.handle(IPC_CHANNELS.signaling.close, async (_event, sessionId: string) => {
+    await signalingClient.close(requireString(sessionId, 128, "signaling_session_id"));
   });
 
   ipcMain.handle(

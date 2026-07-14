@@ -16,6 +16,8 @@ const sanitizeSignalingUrl = (value: string): string => {
 
 export class SignalingClientBridge extends EventEmitter {
   private socket?: NodeWebSocket;
+  private sessionId?: string;
+  private socketGeneration = 0;
   private maxBufferedAmount = 0;
   private droppedByBackpressure = 0;
   private sentAudioChunks = 0;
@@ -26,8 +28,15 @@ export class SignalingClientBridge extends EventEmitter {
     super();
   }
 
-  async connect(signalingUrl: string): Promise<void> {
-    await this.close();
+  async connect(signalingUrl: string, sessionId: string): Promise<void> {
+    const generation = ++this.socketGeneration;
+    // Claim the bridge before closing the previous socket so a late close request
+    // from the old renderer session cannot cancel the replacement connection.
+    this.sessionId = sessionId;
+    await this.closeSocket();
+    if (generation !== this.socketGeneration || this.sessionId !== sessionId) {
+      throw new Error("signaling_session_superseded");
+    }
     const mode = (() => {
       try {
         return new URL(signalingUrl).searchParams.get("mode") ?? "unknown";
@@ -49,27 +58,62 @@ export class SignalingClientBridge extends EventEmitter {
         handshakeTimeout: 8_000,
       });
       this.socket = socket;
+      let settled = false;
+      let opened = false;
+      const isCurrentSocket = () =>
+        this.socket === socket &&
+        this.sessionId === sessionId &&
+        this.socketGeneration === generation;
+      const resolveOnce = () => {
+        if (settled) return;
+        settled = true;
+        resolve();
+      };
+      const rejectOnce = (error: Error) => {
+        if (settled) return;
+        settled = true;
+        reject(error);
+      };
 
       socket.once("open", () => {
-        this.emitEvent({ type: "open" });
+        if (!isCurrentSocket()) {
+          rejectOnce(new Error("signaling_session_superseded"));
+          socket.close();
+          return;
+        }
+        opened = true;
+        this.emitEvent(sessionId, { type: "open" });
         void this.writeLog({
           category: mode === "relay" ? "relay" : "signaling",
           level: "info",
           message: "Signaling bridge socket opened",
           context: { signalingUrl: safeSignalingUrl, mode },
         });
-        resolve();
+        resolveOnce();
       });
 
       socket.on("message", (data: RawData) => {
-        this.emitEvent({
+        if (!isCurrentSocket()) return;
+        this.emitEvent(sessionId, {
           type: "message",
           data: data.toString(),
         });
       });
 
       socket.on("close", (code: number, reason: Buffer) => {
-        this.emitEvent({
+        if (!isCurrentSocket()) {
+          rejectOnce(new Error("signaling_session_superseded"));
+          void this.writeLog({
+            category: mode === "relay" ? "relay" : "signaling",
+            level: "info",
+            message: "Ignored stale signaling bridge close event",
+            context: { code, mode },
+          });
+          return;
+        }
+        this.socket = undefined;
+        if (!opened) rejectOnce(new Error("signaling_socket_closed"));
+        this.emitEvent(sessionId, {
           type: "close",
           code,
           reason: reason.toString(),
@@ -83,7 +127,11 @@ export class SignalingClientBridge extends EventEmitter {
       });
 
       socket.on("error", (error: Error) => {
-        this.emitEvent({
+        if (!isCurrentSocket()) {
+          rejectOnce(new Error("signaling_session_superseded"));
+          return;
+        }
+        this.emitEvent(sessionId, {
           type: "error",
           message: error.message,
         });
@@ -93,12 +141,15 @@ export class SignalingClientBridge extends EventEmitter {
           message: "Signaling bridge socket error",
           context: { error: error.message, mode },
         });
-        reject(error);
+        rejectOnce(error);
       });
     });
   }
 
-  async send(payload: string): Promise<void> {
+  async send(payload: string, sessionId: string): Promise<void> {
+    if (sessionId !== this.sessionId) {
+      throw new Error("signaling_session_superseded");
+    }
     if (!this.socket || this.socket.readyState !== NodeWebSocket.OPEN) {
       throw new Error("signaling_not_connected");
     }
@@ -145,25 +196,46 @@ export class SignalingClientBridge extends EventEmitter {
     this.skippedAudioChunks = 0;
   }
 
-  async close(): Promise<void> {
-    if (!this.socket) {
+  async close(sessionId: string): Promise<void> {
+    if (this.sessionId && this.sessionId !== sessionId) {
+      await this.writeLog({
+        category: "signaling",
+        level: "info",
+        message: "Ignored close request from stale signaling session",
+      });
       return;
     }
+    this.socketGeneration += 1;
+    this.sessionId = undefined;
+    await this.closeSocket();
+  }
+
+  private async closeSocket(): Promise<void> {
+    if (!this.socket) return;
 
     const socket = this.socket;
     this.socket = undefined;
 
     await new Promise<void>((resolve) => {
-      socket.once("close", () => resolve());
+      if (socket.readyState === NodeWebSocket.CLOSED) {
+        resolve();
+        return;
+      }
+      const fallback = setTimeout(resolve, 1_500);
+      socket.once("close", () => {
+        clearTimeout(fallback);
+        resolve();
+      });
       try {
         socket.close();
       } catch {
+        clearTimeout(fallback);
         resolve();
       }
     });
   }
 
-  private emitEvent(payload: SignalingEventPayload): void {
-    this.emit("event", payload);
+  private emitEvent(sessionId: string, payload: Omit<SignalingEventPayload, "sessionId">): void {
+    this.emit("event", { ...payload, sessionId } satisfies SignalingEventPayload);
   }
 }

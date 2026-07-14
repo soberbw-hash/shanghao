@@ -108,9 +108,11 @@ const desktopApi: DesktopApi = {
     openReleases: () => ipcRenderer.invoke(IPC_CHANNELS.updates.openReleases),
   },
   signaling: {
-    connect: (signalingUrl) => ipcRenderer.invoke(IPC_CHANNELS.signaling.connect, signalingUrl),
-    send: (payload) => ipcRenderer.invoke(IPC_CHANNELS.signaling.send, payload),
-    close: () => ipcRenderer.invoke(IPC_CHANNELS.signaling.close),
+    connect: (signalingUrl, sessionId) =>
+      ipcRenderer.invoke(IPC_CHANNELS.signaling.connect, signalingUrl, sessionId),
+    send: (payload, sessionId) =>
+      ipcRenderer.invoke(IPC_CHANNELS.signaling.send, payload, sessionId),
+    close: (sessionId) => ipcRenderer.invoke(IPC_CHANNELS.signaling.close, sessionId),
     onEvent: (listener) => {
       const wrapped = (_event: Electron.IpcRendererEvent, payload: unknown) => {
         listener(payload as Parameters<typeof listener>[0]);

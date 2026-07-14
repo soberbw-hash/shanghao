@@ -45,15 +45,23 @@ const iconArtwork = (name: AnimatedControlIconName, active: boolean, muted: bool
       return (
         <>
           <path className="animated-icon__speaker-body" d="M4 9h4l5-4v14l-5-4H4z" />
-          <path
-            className="animated-icon__speaker-wave animated-icon__speaker-wave--one"
-            d="M16 9.2a4 4 0 0 1 0 5.6"
-          />
-          <path
-            className="animated-icon__speaker-wave animated-icon__speaker-wave--two"
-            d="M18.7 6.7a7.5 7.5 0 0 1 0 10.6"
-          />
-          {muted ? <path className="animated-icon__slash" d="M15.5 8.5l5 7" /> : null}
+          {muted ? (
+            <g className="animated-icon__speaker-mute">
+              <path d="m16 9 5 6" />
+              <path d="m21 9-5 6" />
+            </g>
+          ) : (
+            <>
+              <path
+                className="animated-icon__speaker-wave animated-icon__speaker-wave--one"
+                d="M16 9.2a4 4 0 0 1 0 5.6"
+              />
+              <path
+                className="animated-icon__speaker-wave animated-icon__speaker-wave--two"
+                d="M18.7 6.7a7.5 7.5 0 0 1 0 10.6"
+              />
+            </>
+          )}
         </>
       );
     case "bell":

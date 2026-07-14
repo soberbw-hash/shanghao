@@ -43,3 +43,14 @@ test("RNNoise runs in an AudioWorklet and has an explicit browser fallback", () 
     true,
   );
 });
+
+test("remote audio attaches directly to MediaStream without reusing an audio element", () => {
+  const renderer = readFileSync(
+    path.join(root, "apps/desktop/src/renderer/src/features/audio/RemoteAudioRenderer.tsx"),
+    "utf8",
+  );
+
+  assert.equal(renderer.includes("createMediaElementSource"), false);
+  assert.equal(renderer.includes("createMediaStreamSource(stream)"), true);
+  assert.equal(renderer.includes("Failed to attach remote audio stream"), true);
+});

@@ -29,6 +29,7 @@ import { useSettingsStore } from "../store/settingsStore";
 import { writeRendererLog } from "../utils/logger";
 
 let activeClient: RoomClient | null = null;
+let activeJoinPromise: Promise<void> | null = null;
 let activeSpeakingDetector: ReturnType<typeof createSpeakingDetector> | null = null;
 let activeProcessedMicrophone: ProcessedMicrophoneStream | null = null;
 let previousMemberIds = new Set<string>();
@@ -513,59 +514,77 @@ export const useRoomState = () => {
     startSpeakingDetector(stream);
   };
 
-  const joinChannel = async (serverUrlOverride?: string) => {
-    const currentSettings = useSettingsStore.getState().settings ?? settings;
-    if (!currentSettings) {
-      return;
+  const joinChannel = (serverUrlOverride?: string): Promise<void> => {
+    if (activeJoinPromise) {
+      void writeRendererLog("signaling", "info", "Ignored duplicate fixed channel join request");
+      return activeJoinPromise;
     }
 
-    let serverUrl: string;
-    try {
-      serverUrl = normalizeServerUrl(serverUrlOverride || currentSettings.relayServerUrl);
-    } catch (error) {
-      const description = normalizeRoomError(error, copy.joinTitle);
-      pushToast({ tone: "warning", title: copy.joinTitle, description });
-      return;
-    }
+    const joinPromise = (async () => {
+      const currentSettings = useSettingsStore.getState().settings ?? settings;
+      if (!currentSettings) {
+        return;
+      }
 
-    setRoomAction("joining");
-    setConnectionState(RoomConnectionState.Joining);
-    setLifecycleState(RoomLifecycleState.Opening);
-    clearRoomEvents();
-    pushRoomEvent({ level: "info", message: "正在进入固定频道" });
+      let serverUrl: string;
+      try {
+        serverUrl = normalizeServerUrl(serverUrlOverride || currentSettings.relayServerUrl);
+      } catch (error) {
+        const description = normalizeRoomError(error, copy.joinTitle);
+        pushToast({ tone: "warning", title: copy.joinTitle, description });
+        return;
+      }
 
-    try {
-      await cleanupPreviousSession();
-      await writeRendererLog("signaling", "info", "Joining fixed channel", {
-        serverUrl,
-        channelId: DEFAULT_CHANNEL_ID,
-      });
-      await connectToFixedChannel(serverUrl);
-      useAppStore.getState().navigate("room");
-      pushToast({
-        tone: "success",
-        title: copy.joinedTitle,
-        description: copy.joinedDescription,
-      });
-    } catch (error) {
-      const description = normalizeRoomError(error, copy.networkFailed);
-      await writeRendererLog("signaling", "error", "Failed to join fixed channel", {
-        serverUrl,
-        channelId: DEFAULT_CHANNEL_ID,
-        error: error instanceof Error ? error.message : String(error),
-        ...activeClient?.getDiagnostics(),
-      });
-      await cleanupPreviousSession();
-      setConnectionState(RoomConnectionState.Failed, description);
-      setRoom({
-        lifecycleState: RoomLifecycleState.Failed,
-        signalingUrl: serverUrl,
-      });
-      pushRoomEvent({ level: "error", message: description });
-      pushToast({ tone: "danger", title: copy.joinTitle, description });
-    } finally {
-      setRoomAction("idle");
-    }
+      setRoomAction("joining");
+      setConnectionState(RoomConnectionState.Joining);
+      setLifecycleState(RoomLifecycleState.Opening);
+      clearRoomEvents();
+      pushRoomEvent({ level: "info", message: "正在进入固定频道" });
+
+      try {
+        await cleanupPreviousSession();
+        await writeRendererLog("signaling", "info", "Joining fixed channel", {
+          serverUrl,
+          channelId: DEFAULT_CHANNEL_ID,
+        });
+        await connectToFixedChannel(serverUrl);
+        useAppStore.getState().navigate("room");
+        pushToast({
+          tone: "success",
+          title: copy.joinedTitle,
+          description: copy.joinedDescription,
+        });
+      } catch (error) {
+        const description = normalizeRoomError(error, copy.networkFailed);
+        await writeRendererLog("signaling", "error", "Failed to join fixed channel", {
+          serverUrl,
+          channelId: DEFAULT_CHANNEL_ID,
+          error: error instanceof Error ? error.message : String(error),
+          ...activeClient?.getDiagnostics(),
+        });
+        await cleanupPreviousSession();
+        setConnectionState(RoomConnectionState.Failed, description);
+        setRoom({
+          lifecycleState: RoomLifecycleState.Failed,
+          signalingUrl: serverUrl,
+        });
+        pushRoomEvent({ level: "error", message: description });
+        pushToast({ tone: "danger", title: copy.joinTitle, description });
+      } finally {
+        setRoomAction("idle");
+      }
+    })();
+
+    activeJoinPromise = joinPromise;
+    void joinPromise.then(
+      () => {
+        if (activeJoinPromise === joinPromise) activeJoinPromise = null;
+      },
+      () => {
+        if (activeJoinPromise === joinPromise) activeJoinPromise = null;
+      },
+    );
+    return joinPromise;
   };
 
   const replaceInputDevice = async (preferredInputDeviceId?: string) => {

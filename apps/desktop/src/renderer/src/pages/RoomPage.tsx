@@ -191,7 +191,7 @@ const ScreenSharePanel = ({
   };
 
   const openDetachedViewer = async () => {
-    if (isDetaching || primaryItem.isLocal) return;
+    if (isDetaching) return;
     setIsDetaching(true);
     const minimumHandoff = new Promise<void>((resolve) => {
       window.setTimeout(resolve, motionDuration.panel * 1_000);
@@ -235,14 +235,10 @@ const ScreenSharePanel = ({
             type="button"
             className="screen-share-icon-action"
             data-icon-motion="expand"
-            disabled={isDetaching || primaryItem.isLocal}
+            disabled={isDetaching}
             onClick={() => void openDetachedViewer()}
-            title={
-              primaryItem.isLocal ? "本机预览已隐藏，避免分享画面无限套娃" : "在独立窗口中观看"
-            }
-            aria-label={
-              primaryItem.isLocal ? "本机预览已隐藏，避免分享画面无限套娃" : "在独立窗口中观看"
-            }
+            title="在独立窗口中观看"
+            aria-label="在独立窗口中观看"
           >
             <AnimatedControlIcon name="overlay" className="h-3.5 w-3.5" />
           </button>
