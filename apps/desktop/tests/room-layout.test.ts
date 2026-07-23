@@ -24,6 +24,10 @@ const workstationArtPath = path.resolve(
   process.cwd(),
   "src/renderer/src/components/room/WorkstationArt.tsx",
 );
+const sceneAmbientDecorPath = path.resolve(
+  process.cwd(),
+  "src/renderer/src/components/room/SceneAmbientDecor.tsx",
+);
 const sceneZonesPath = path.resolve(
   process.cwd(),
   "src/renderer/src/features/voice-scene/sceneZones.ts",
@@ -68,13 +72,15 @@ test("room uses a real always-on-top overlay and a five-second knock cooldown", 
   assert.equal(overlaySource.includes("alwaysOnTop: true"), true);
   assert.equal(overlaySource.includes("skipTaskbar: true"), true);
   assert.equal(overlaySource.includes("overlay-bounds.json"), true);
-  assert.equal(overlaySource.includes("OVERLAY_MIN_PILL_WIDTH = 88"), true);
+  assert.equal(overlaySource.includes("OVERLAY_AVATAR_SIZE = 24"), true);
+  assert.equal(overlaySource.includes("OVERLAY_PILL_HEIGHT = 32"), true);
+  assert.equal(overlaySource.includes("OVERLAY_MIN_PILL_WIDTH = 64"), true);
   assert.equal(overlaySource.includes("OVERLAY_SHADOW_MARGIN = 0"), true);
   assert.equal(overlaySource.includes("show(): boolean"), true);
   assert.equal(overlaySource.includes("focusable: false"), true);
   assert.equal(overlaySource.includes("setIgnoreMouseEvents(true"), true);
   assert.equal(overlaySource.includes("setMovable(false)"), true);
-  assert.equal(overlaySource.includes("setContentProtection(true)"), true);
+  assert.equal(overlaySource.includes("setContentProtection(true)"), false);
   assert.equal(overlaySource.includes("resizable: false"), true);
   assert.equal(overlayPageSource.includes("data-overlay-pill"), true);
   assert.equal(overlayPageSource.includes("gsap.fromTo"), true);
@@ -93,7 +99,10 @@ test("room uses a real always-on-top overlay and a five-second knock cooldown", 
   assert.equal(sceneZonesSource.includes("activityZones"), true);
   assert.equal(sceneZonesSource.includes('kind: "seat"'), true);
   assert.equal(sceneZonesSource.includes('kind: "activity"'), true);
-  assert.equal(teamIslandSource.includes("scale: ["), false);
+  assert.equal(teamIslandSource.includes("duration: travelDuration * 0.46"), false);
+  assert.equal(teamIslandSource.includes("duration: travelDuration * 0.54"), false);
+  assert.equal(teamIslandSource.includes("middleLeft"), false);
+  assert.equal(teamIslandSource.includes("planCharacterRoute"), true);
 });
 
 test("desktop build includes custom nsis shortcut icon wiring", () => {
@@ -123,24 +132,35 @@ test("scene seats align with the marked workstation positions", () => {
   const stylesSource = readFileSync(stylesPath, "utf8");
   const teamIslandSource = readFileSync(teamIslandPath, "utf8");
   const workstationSource = readFileSync(workstationArtPath, "utf8");
+  const ambientDecorSource = readFileSync(sceneAmbientDecorPath, "utf8");
 
   assert.equal(stylesSource.includes(".scene-workstation"), true);
   assert.equal(stylesSource.includes(".scene-workstation-art-frame"), true);
   assert.equal(stylesSource.includes(".scene-workstation-art"), true);
-  assert.equal(stylesSource.includes("left: 33.7%"), true);
-  assert.equal(stylesSource.includes("top: 9.4%"), true);
-  assert.equal(stylesSource.includes("width: 32.6%"), true);
+  assert.equal(stylesSource.includes("left: 29.35%"), true);
+  assert.equal(stylesSource.includes("top: 8.7%"), true);
+  assert.equal(stylesSource.includes("width: 41.3%"), true);
   assert.equal(teamIslandSource.includes("WorkstationArt"), true);
   assert.equal(teamIslandSource.includes("workstation-chibi.webp"), false);
   assert.equal(workstationSource.includes('viewBox="0 0 184 138"'), true);
   assert.equal(stylesSource.includes("transform: translate(-50%, -50%);"), true);
   assert.equal(stylesSource.includes("translateY(-3px) scale(1.018)"), false);
   assert.equal(teamIslandSource.includes("scene-restroom-door"), false);
+  assert.equal(teamIslandSource.includes("scene-shared-table"), false);
+  assert.equal(teamIslandSource.includes("SceneWindowNook"), true);
+  assert.equal(teamIslandSource.includes("SceneFloorLamp"), true);
+  assert.equal(stylesSource.includes(".scene-window-nook"), true);
+  assert.equal(stylesSource.includes(".scene-floor-lamp"), true);
+  assert.equal(ambientDecorSource.includes('viewBox="0 0 180 110"'), true);
+  assert.equal(ambientDecorSource.includes('viewBox="0 0 94 218"'), true);
+  assert.equal(teamIslandSource.includes("chatMessages?: ChatMessage[]"), false);
+  assert.equal(teamIslandSource.includes("WalkingAnimalSprite"), true);
   assert.equal(stylesSource.includes(".desk-animal-layer"), true);
   assert.equal(stylesSource.includes(".desk-animal-chair-front"), false);
-  assert.equal(sceneZonesSource.includes("gameDesk5: { left: 65, top: 74"), true);
-  assert.equal(sceneZonesSource.includes("gameDesk4: { left: 40, top: 74"), true);
-  assert.equal(sceneZonesSource.includes("gameDesk1: { left: 30, top: 38"), true);
+  assert.equal(sceneZonesSource.includes("gameDesk5: { left: 65, top: 75"), true);
+  assert.equal(sceneZonesSource.includes("gameDesk4: { left: 40, top: 75"), true);
+  assert.equal(sceneZonesSource.includes("gameDesk1: { left: 30, top: 39"), true);
+  assert.equal(sceneZonesSource.includes("restroomZone: { left: 13, top: 74"), true);
   assert.equal(sceneZonesSource.includes("scale: 0.86"), true);
 });
 
@@ -208,13 +228,21 @@ test("screen sharing is wired through the room page and WebRTC peer layer", () =
   assert.equal(stylesSource.includes(".screen-share-panel-expanded"), false);
   assert.equal(roomSource.includes("screenShareViewer"), true);
   assert.equal(roomSource.includes("local-share-safe-preview"), true);
-  assert.equal(roomSource.includes("本地预览已隐藏，避免画面无限套娃"), true);
+  assert.equal(roomSource.includes("本地预览已隐藏，避免画面无限套娃"), false);
+  assert.equal(roomSource.includes("<ScreenShareVideo stream={item.stream} />"), true);
+  assert.equal(roomSource.includes("setContentProtection(true)"), true);
+  assert.equal(roomSource.includes("setContentProtection(false)"), true);
   assert.equal(roomSource.includes("isDetaching || primaryItem.isLocal"), false);
   assert.equal(roomSource.includes("disabled={isDetaching}"), true);
   assert.equal(mainWindowSource.includes("openScreenShareViewer"), true);
   assert.equal(mainWindowSource.includes("viewer.maximize()"), false);
   assert.equal(mainWindowSource.includes("setBounds(workArea, false)"), true);
-  assert.equal(mainWindowSource.includes("viewer.setContentProtection(true)"), true);
+  assert.equal(mainWindowSource.includes("setContentProtection(true)"), true);
+  assert.equal(mainWindowSource.includes("setScreenCaptureContentProtection"), true);
+  assert.equal(mainWindowSource.includes("appWindowSourceIds"), true);
+  assert.equal(mainWindowSource.includes("sendScreenShareViewerSignal"), true);
+  assert.equal(roomSource.includes("DetachedScreenSharePublisher"), true);
+  assert.equal(roomSource.includes("toDataURL"), false);
   assert.equal(roomSource.includes('["720p", "1080p"]'), true);
   assert.equal(roomSource.includes("screen-share-fit-action"), false);
   assert.equal(roomSource.includes("screen-share-drag-handle"), true);

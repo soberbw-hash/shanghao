@@ -420,10 +420,20 @@ export const useRoomState = () => {
           (highest, snapshot) => Math.max(highest, snapshot.packetLossPercent ?? 0),
           0,
         );
+        const availableOutgoingBitrateKbps = snapshots.reduce<number | undefined>(
+          (lowest, snapshot) => {
+            const bitrate = snapshot.availableOutgoingBitrateBps;
+            if (typeof bitrate !== "number" || bitrate <= 0) return lowest;
+            const kbps = Math.round(bitrate / 1_000);
+            return lowest === undefined ? kbps : Math.min(lowest, kbps);
+          },
+          undefined,
+        );
         const usesTurn = snapshots.some((snapshot) => snapshot.connectionType === "relay");
         setConnectionHealth({
           jitterMs,
           packetLossPercent,
+          availableOutgoingBitrateKbps,
           voicePath:
             snapshots.length === 0 ? "unknown" : usesTurn ? "webrtc_turn" : "webrtc_direct",
           turnConfigured: getRoomRuntimeDiagnostics()?.turnConfigured ?? false,
@@ -455,14 +465,14 @@ export const useRoomState = () => {
         playUiSound("knock-bell");
         if (!message.isLocal) {
           pushToast({
-            tone: "neutral",
+            tone: "warning",
             title: `${message.nickname} 敲了敲你`,
-            description: "上号啦",
+            description: "快来上号，朋友正在等你。",
           });
           if (useSettingsStore.getState().settings?.isSystemNotificationEnabled !== false) {
             void window.desktopApi.app.notify({
               title: `${message.nickname} 敲了敲你`,
-              body: "上号啦",
+              body: "快来上号，朋友正在等你。",
             });
           }
         }

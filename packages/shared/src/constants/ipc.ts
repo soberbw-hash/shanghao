@@ -11,12 +11,13 @@ export const IPC_CHANNELS = {
   screenCapture: {
     listSources: "screen-capture:list-sources",
     selectSource: "screen-capture:select-source",
+    setContentProtection: "screen-capture:set-content-protection",
   },
   screenShareViewer: {
     open: "screen-share-viewer:open",
-    updateFrame: "screen-share-viewer:update-frame",
+    sendSignal: "screen-share-viewer:send-signal",
     close: "screen-share-viewer:close",
-    frame: "screen-share-viewer:frame",
+    signal: "screen-share-viewer:signal",
   },
   window: {
     minimize: "window:minimize",

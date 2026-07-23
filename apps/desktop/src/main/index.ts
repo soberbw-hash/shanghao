@@ -143,6 +143,45 @@ const clickButtonByLabel = async (window: BrowserWindow, label: string): Promise
   );
 };
 
+const prepareProfileForCapture = async (window: BrowserWindow): Promise<void> => {
+  await window.webContents.executeJavaScript(
+    `
+      (() => {
+        const inputs = Array.from(document.querySelectorAll("input"));
+        const nicknameInput = inputs.find((input) => input.placeholder === "朋友怎么叫你");
+        if (!(nicknameInput instanceof HTMLInputElement) || nicknameInput.value.trim()) return;
+        const valueSetter = Object.getOwnPropertyDescriptor(
+          HTMLInputElement.prototype,
+          "value",
+        )?.set;
+        valueSetter?.call(nicknameInput, "Sober");
+        nicknameInput.dispatchEvent(new Event("input", { bubbles: true }));
+        nicknameInput.dispatchEvent(new Event("change", { bubbles: true }));
+      })();
+    `,
+    true,
+  );
+};
+
+const waitForLocalSceneCharacter = async (
+  window: BrowserWindow,
+  phase: "idle" | "walking",
+  timeoutMs = 5_000,
+): Promise<boolean> => {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const found = await window.webContents
+      .executeJavaScript(
+        `Boolean(document.querySelector('[data-scene-member-key="local-member"][data-motion-phase="${phase}"]'))`,
+        true,
+      )
+      .catch(() => false);
+    if (found) return true;
+    await sleep(100);
+  }
+  return false;
+};
+
 const maybeCaptureScreenshot = async (window: BrowserWindow | null): Promise<void> => {
   const outputPath = process.env.SHANGHAO_CAPTURE_PATH;
   const mode = process.env.SHANGHAO_CAPTURE_MODE ?? "home";
@@ -159,11 +198,25 @@ const maybeCaptureScreenshot = async (window: BrowserWindow | null): Promise<voi
 
   await sleep(5200);
   if (mode !== "home") {
+    await prepareProfileForCapture(window);
+    await sleep(300);
     const usedQuickEntry = await clickButtonByLabel(window, "\u4E0A\u53F7");
     if (!usedQuickEntry) {
       await clickButtonByLabel(window, "\u8FDB\u5165\u9891\u9053");
     }
-    await sleep(mode === "room" ? 3600 : 700);
+    const needsSettledRoom = [
+      "room",
+      "room-seat",
+      "room-away",
+      "screen-share",
+      "screen-share-expanded",
+    ].includes(mode);
+    if (needsSettledRoom) {
+      await waitForLocalSceneCharacter(window, "idle", 5_500);
+      await sleep(180);
+    } else {
+      await sleep(700);
+    }
   }
 
   if (mode !== "home") {
@@ -177,11 +230,12 @@ const maybeCaptureScreenshot = async (window: BrowserWindow | null): Promise<voi
 
   if (mode === "room-seat") {
     await clickButtonByLabel(window, "2 \u53F7\u4F4D");
-    await sleep(900);
+    await waitForLocalSceneCharacter(window, "walking", 1_200);
+    await sleep(420);
   }
   if (mode === "room-away") {
     await clickButtonByLabel(window, "\u79BB\u5F00\u4E00\u4E0B");
-    await sleep(900);
+    await sleep(2200);
   }
 
   if (mode === "screen-share" || mode === "screen-share-expanded") {
@@ -323,6 +377,7 @@ if (!shouldUseHardwareAcceleration()) {
   app.disableHardwareAcceleration();
 }
 if (process.platform === "win32") app.setAppUserModelId(APP_ID);
+app.commandLine.appendSwitch("autoplay-policy", "no-user-gesture-required");
 app.commandLine.appendSwitch(
   "proxy-bypass-list",
   ".ts.net;100.64.0.0/10;<local>;localhost;127.0.0.1;10.*;172.16.*;172.17.*;172.18.*;172.19.*;172.20.*;172.21.*;172.22.*;172.23.*;172.24.*;172.25.*;172.26.*;172.27.*;172.28.*;172.29.*;172.30.*;172.31.*;192.168.*",

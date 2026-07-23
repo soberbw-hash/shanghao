@@ -12,6 +12,7 @@ import { WebSocket, WebSocketServer } from "ws";
 
 import type {
   AudioChunkMessage,
+  AudioPathStateMessage,
   AudioResyncAckMessage,
   AudioResyncRequestMessage,
   AvatarUpdateMessage,
@@ -32,6 +33,7 @@ import type {
   RoomSnapshotMessage,
   RequestSnapshotMessage,
   ScreenFrameMessage,
+  ScreenPathStateMessage,
   ScreenShareStateMessage,
   SceneReactionMessage,
   ServerChatMessage,
@@ -84,10 +86,12 @@ const RATE_LIMITS: Record<string, { windowMs: number; limit: number }> = {
   peer_restart_request: { windowMs: 10_000, limit: 20 },
   ice_candidate: { windowMs: 10_000, limit: 160 },
   audio_chunk: { windowMs: 1_000, limit: 120 },
+  audio_path_state: { windowMs: 10_000, limit: 40 },
   audio_resync_request: { windowMs: 10_000, limit: 20 },
   audio_resync_ack: { windowMs: 10_000, limit: 20 },
   screen_frame: { windowMs: 1_000, limit: 24 },
   screen_share_state: { windowMs: 10_000, limit: 10 },
+  screen_path_state: { windowMs: 10_000, limit: 30 },
 };
 const SEAT_ZONES: SceneZoneId[] = ["gameDesk1", "gameDesk2", "gameDesk3", "gameDesk4", "gameDesk5"];
 
@@ -503,6 +507,8 @@ export class SignalingServer extends EventEmitter {
       case "peer_answer":
       case "peer_restart_request":
       case "ice_candidate":
+      case "audio_path_state":
+      case "screen_path_state":
         this.forwardPeerSignal(authoritative);
         return;
       case "member_state":
@@ -773,11 +779,15 @@ export class SignalingServer extends EventEmitter {
       sampleRate: message.sampleRate,
       channelCount: 1,
       codec: message.codec ?? "pcm_s16le",
+      targetPeerIds: message.targetPeerIds,
       data: message.data,
     };
 
+    const targetPeerIds = message.targetPeerIds?.length
+      ? new Set(message.targetPeerIds.slice(0, 5))
+      : undefined;
     for (const peer of room.peers.listConnectedPeers()) {
-      if (peer.id !== message.peerId) {
+      if (peer.id !== message.peerId && (!targetPeerIds || targetPeerIds.has(peer.id))) {
         this.safeSend(peer.socket, payload);
       }
     }
@@ -813,10 +823,12 @@ export class SignalingServer extends EventEmitter {
       width: message.width,
       height: message.height,
       data: message.data,
+      targetPeerIds: message.targetPeerIds,
     };
 
+    const targetPeerIds = message.targetPeerIds ? new Set(message.targetPeerIds) : undefined;
     for (const peer of room.peers.listConnectedPeers()) {
-      if (peer.id !== message.peerId) {
+      if (peer.id !== message.peerId && (!targetPeerIds || targetPeerIds.has(peer.id))) {
         this.safeSend(peer.socket, payload);
       }
     }
@@ -858,7 +870,13 @@ export class SignalingServer extends EventEmitter {
   }
 
   private forwardPeerSignal(
-    message: PeerOfferMessage | PeerAnswerMessage | PeerRestartRequestMessage | IceCandidateMessage,
+    message:
+      | PeerOfferMessage
+      | PeerAnswerMessage
+      | PeerRestartRequestMessage
+      | IceCandidateMessage
+      | AudioPathStateMessage
+      | ScreenPathStateMessage,
   ): void {
     const room = this.roomManager.getRoom(message.roomId);
     const targetPeer = room?.peers.getPeer(message.targetPeerId);

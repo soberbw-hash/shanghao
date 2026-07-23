@@ -19,7 +19,7 @@ interface UseMicTestOptions {
   lowCutFrequency?: LowCutFrequency;
 }
 
-export type MicTestPhase = "idle" | "monitoring" | "calibrating";
+export type MicTestPhase = "idle" | "monitoring";
 
 interface UseMicTestResult {
   isTesting: boolean;
@@ -30,7 +30,6 @@ interface UseMicTestResult {
   start: () => Promise<void>;
   stop: () => void;
   toggle: () => Promise<void>;
-  calibrate: () => Promise<number>;
 }
 
 export const useMicTest = ({
@@ -54,9 +53,6 @@ export const useMicTest = ({
   const analyserRef = useRef<AnalyserNode>();
   const audioRef = useRef<HTMLAudioElement>();
   const rafRef = useRef<number>();
-  const calibrationSamplesRef = useRef<number[]>([]);
-  const isCalibratingRef = useRef(false);
-  const calibrationRunRef = useRef(0);
 
   const clearMeter = useCallback(() => {
     if (rafRef.current !== undefined) window.cancelAnimationFrame(rafRef.current);
@@ -77,9 +73,6 @@ export const useMicTest = ({
   }, [clearMeter]);
 
   const stop = useCallback(() => {
-    calibrationRunRef.current += 1;
-    isCalibratingRef.current = false;
-    calibrationSamplesRef.current = [];
     releaseCapture();
 
     if (audioRef.current) {
@@ -104,10 +97,6 @@ export const useMicTest = ({
       }
       const normalizedLevel = Math.min(1, peak * 2.4);
       setLevel(normalizedLevel);
-      if (isCalibratingRef.current) {
-        calibrationSamplesRef.current.push(normalizedLevel);
-        if (calibrationSamplesRef.current.length > 240) calibrationSamplesRef.current.shift();
-      }
       if (peak >= 0.98) setIsClipping(true);
       rafRef.current = window.requestAnimationFrame(tick);
     };
@@ -199,41 +188,6 @@ export const useMicTest = ({
     await start();
   }, [phase, start, stop]);
 
-  const calibrate = useCallback(async (): Promise<number> => {
-    const shouldStopAfterCalibration = phase === "idle";
-    if (shouldStopAfterCalibration) await start();
-
-    const runId = calibrationRunRef.current + 1;
-    calibrationRunRef.current = runId;
-    calibrationSamplesRef.current = [];
-    isCalibratingRef.current = true;
-    const audio = audioRef.current;
-    const previousVolume = audio?.volume ?? 1;
-    if (audio) audio.volume = 0;
-    setPhase("calibrating");
-
-    await new Promise<void>((resolve) => window.setTimeout(resolve, 2_400));
-    if (calibrationRunRef.current !== runId) throw new Error("mic_calibration_cancelled");
-
-    isCalibratingRef.current = false;
-    const samples = calibrationSamplesRef.current.slice().sort((a, b) => a - b);
-    const percentileIndex = Math.min(
-      samples.length - 1,
-      Math.max(0, Math.floor(samples.length * 0.75)),
-    );
-    const ambientLevel = samples[percentileIndex] ?? 0;
-    const suggestedThreshold =
-      Math.round(Math.min(0.68, Math.max(0.32, ambientLevel * 1.35 + 0.12)) * 100) / 100;
-
-    if (shouldStopAfterCalibration) {
-      stop();
-    } else {
-      if (audio) audio.volume = previousVolume;
-      setPhase("monitoring");
-    }
-    return suggestedThreshold;
-  }, [phase, start, stop]);
-
   useEffect(() => stop, [stop]);
 
   return {
@@ -245,6 +199,5 @@ export const useMicTest = ({
     start,
     stop,
     toggle,
-    calibrate,
   };
 };

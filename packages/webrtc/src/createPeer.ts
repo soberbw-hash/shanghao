@@ -29,6 +29,7 @@ export interface NetworkAdaptationSample {
   packetLossPercent?: number;
   roundTripTimeMs?: number;
   jitterMs?: number;
+  availableOutgoingBitrateBps?: number;
 }
 
 export type NetworkAdaptationTier = "healthy" | "constrained" | "critical";
@@ -127,12 +128,30 @@ export const tuneOpusSdp = (sdp?: string): string | undefined => {
   return lines.join(lineBreak);
 };
 
-const selectNetworkTier = (sample: NetworkAdaptationSample): NetworkAdaptationTier => {
+export const selectNetworkTier = (sample: NetworkAdaptationSample): NetworkAdaptationTier => {
   const packetLoss = sample.packetLossPercent ?? 0;
   const roundTripTime = sample.roundTripTimeMs ?? 0;
   const jitter = sample.jitterMs ?? 0;
-  if (packetLoss >= 8 || roundTripTime >= 420 || jitter >= 90) return "critical";
-  if (packetLoss >= 3 || roundTripTime >= 220 || jitter >= 45) return "constrained";
+  const availableOutgoingBitrate =
+    typeof sample.availableOutgoingBitrateBps === "number" && sample.availableOutgoingBitrateBps > 0
+      ? sample.availableOutgoingBitrateBps
+      : Number.POSITIVE_INFINITY;
+  if (
+    packetLoss >= 8 ||
+    roundTripTime >= 420 ||
+    jitter >= 90 ||
+    availableOutgoingBitrate < 100_000
+  ) {
+    return "critical";
+  }
+  if (
+    packetLoss >= 3 ||
+    roundTripTime >= 220 ||
+    jitter >= 45 ||
+    availableOutgoingBitrate < 240_000
+  ) {
+    return "constrained";
+  }
   return "healthy";
 };
 
@@ -393,7 +412,7 @@ export class MeshPeerConnection {
   }
 
   private publishRemoteStream(): void {
-    this.options.onRemoteStream(new MediaStream(this.remoteStream.getTracks()));
+    this.options.onRemoteStream(this.remoteStream);
   }
 
   private async configureAudioSender(sender: RTCRtpSender): Promise<void> {

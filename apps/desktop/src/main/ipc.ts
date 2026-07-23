@@ -17,7 +17,8 @@ import {
   type RecordingMarker,
   type RendererLogPayload,
   type RuntimeInfo,
-  type ScreenShareViewerFrame,
+  type ScreenShareViewerOpenRequest,
+  type ScreenShareViewerSignal,
   type SignalingEventPayload,
   type UpdateCheckResult,
   type UpdateStatus,
@@ -37,10 +38,12 @@ import { GameDetectionController } from "./game-detection";
 import { applyLaunchOnStartup } from "./launch-on-startup";
 import {
   closeScreenShareViewer,
+  isScreenShareViewerSender,
   listScreenCaptureSources,
   openScreenShareViewer,
+  setScreenCaptureContentProtection,
+  sendScreenShareViewerSignal,
   selectScreenCaptureSource,
-  updateScreenShareViewer,
 } from "./window";
 
 interface MainProcessServices {
@@ -127,7 +130,7 @@ export const registerIpcHandlers = ({
       const notification = new Notification({
         title: payload.title.slice(0, 80),
         body: payload.body.slice(0, 180),
-        silent: true,
+        silent: false,
       });
       notification.on("click", () => {
         const mainWindow = getMainWindow();
@@ -164,20 +167,67 @@ export const registerIpcHandlers = ({
       selectScreenCaptureSource(requireString(sourceId, 256, "screen_source_id"));
     },
   );
-
   ipcMain.handle(
-    IPC_CHANNELS.screenShareViewer.open,
-    async (_event, title: unknown): Promise<void> =>
-      openScreenShareViewer(requireString(title, 160, "screen_viewer_title")),
+    IPC_CHANNELS.screenCapture.setContentProtection,
+    async (_event, enabled: unknown): Promise<void> => {
+      if (typeof enabled !== "boolean") throw new Error("invalid_content_protection_state");
+      setScreenCaptureContentProtection(enabled);
+    },
   );
   ipcMain.handle(
-    IPC_CHANNELS.screenShareViewer.updateFrame,
-    async (_event, frame: ScreenShareViewerFrame): Promise<boolean> => {
-      if (!frame || typeof frame !== "object") throw new Error("invalid_screen_viewer_frame");
-      return updateScreenShareViewer({
-        title: requireString(frame.title, 160, "screen_viewer_title"),
-        dataUrl: requireString(frame.dataUrl, 8 * 1024 * 1024, "screen_viewer_frame"),
+    IPC_CHANNELS.screenShareViewer.open,
+    async (_event, request: ScreenShareViewerOpenRequest): Promise<void> => {
+      if (!request || typeof request !== "object") throw new Error("invalid_screen_viewer_open");
+      await openScreenShareViewer({
+        title: requireString(request.title, 160, "screen_viewer_title"),
+        sessionId: requireString(request.sessionId, 128, "screen_viewer_session"),
       });
+    },
+  );
+  ipcMain.handle(
+    IPC_CHANNELS.screenShareViewer.sendSignal,
+    async (event, signal: ScreenShareViewerSignal): Promise<boolean> => {
+      if (!signal || typeof signal !== "object") throw new Error("invalid_screen_viewer_signal");
+      const sessionId = requireString(signal.sessionId, 128, "screen_viewer_session");
+      const sender = signal.sender;
+      const type = signal.type;
+      if (!(["host", "viewer"] as const).includes(sender)) {
+        throw new Error("invalid_screen_viewer_sender");
+      }
+      if (
+        !(["ready", "offer", "answer", "ice", "fallback-frame", "closed"] as const).includes(type)
+      ) {
+        throw new Error("invalid_screen_viewer_signal_type");
+      }
+      const mainWindow = getMainWindow();
+      if (sender === "host") {
+        if (!mainWindow || event.sender.id !== mainWindow.webContents.id) {
+          throw new Error("invalid_screen_viewer_host");
+        }
+      } else if (!isScreenShareViewerSender(event.sender.id, sessionId)) {
+        throw new Error("invalid_screen_viewer_client");
+      }
+
+      const safeSignal: ScreenShareViewerSignal = {
+        sessionId,
+        sender,
+        type,
+        title: signal.title ? requireString(signal.title, 160, "screen_viewer_title") : undefined,
+        sdp: signal.sdp ? requireString(signal.sdp, 128_000, "screen_viewer_sdp") : undefined,
+        candidate: signal.candidate
+          ? requireString(signal.candidate, 8_192, "screen_viewer_candidate")
+          : undefined,
+        sdpMid: typeof signal.sdpMid === "string" ? signal.sdpMid.slice(0, 128) : signal.sdpMid,
+        sdpMLineIndex:
+          typeof signal.sdpMLineIndex === "number" ? signal.sdpMLineIndex : signal.sdpMLineIndex,
+        frameDataUrl: signal.frameDataUrl
+          ? requireString(signal.frameDataUrl, 8 * 1024 * 1024, "screen_viewer_frame")
+          : undefined,
+      };
+
+      if (sender === "host") return sendScreenShareViewerSignal(safeSignal);
+      sendToWindow(mainWindow, IPC_CHANNELS.screenShareViewer.signal, safeSignal);
+      return Boolean(mainWindow && !mainWindow.isDestroyed());
     },
   );
   ipcMain.handle(IPC_CHANNELS.screenShareViewer.close, async (): Promise<void> => {

@@ -13,18 +13,21 @@
 
 固定频道 `main` 会一直存在，没有房主；第一个人退出后频道也不会消失。客户端只保留服务器连接，不再包含房主直连、Tailscale 或临时公网入口。
 
-## 1.0 正式版重点
+## 2.0 动画与稳定性重点
 
 - `join_channel / channel_snapshot / leave_channel` 固定频道协议
 - 3–5 人 WebRTC mesh，服务端可下发短期 TURN 凭据
+- 第四、第五位好友加入时主动校验双向收音路径，WebRTC 不可用时按成员精确启用语音兜底
+- 共享远端音频混音器，减少多人房间的 AudioContext 数量和设备切换故障
 - WebRTC 失败自动重新协商，信令断线持续退避重连
 - μ-law 低带宽语音兜底、音频 epoch 隔离、自动 resync 与背压丢帧
 - ping/pong 延迟估算与房间内连接质量反馈
 - Opus FEC/DTX、32 kHz 语音链路与分级弱网自适应
 - RNNoise 智能降噪、低切、语音均衡和麦克风环境校准
-- 5 个轻量内置动物头像，不再上传大图
-- 720p/1080p 屏幕分享、系统音频和独立可缩放观看窗口
-- 统一的慢速非线性动效、动态图标、场景反馈与原生通知
+- 5 个内置动物角色，带八帧交替步态、可打断最短路径、入场和离场动作
+- 720p/1080p 屏幕分享、系统音频、直接媒体流和独立可缩放观看窗口
+- 统一的非线性动效、动态图标、场景反馈、可读玻璃材质与原生通知
+- Toast 自动去重并限制同时显示数量，重连和弹窗不再遮挡核心操作
 - 独立 `audio-timeline.json` 诊断时间线
 - 回访用户一步上号；内容区与控制区采用克制的分层材质
 
@@ -55,11 +58,11 @@ corepack pnpm install
 corepack pnpm dev
 corepack pnpm typecheck
 corepack pnpm --dir apps/desktop test:smoke
-corepack pnpm test:three-peer-audio
+corepack pnpm test:five-peer-audio
 corepack pnpm dist:win
 ```
 
-`test:three-peer-audio` 会自动创建 A/B/C 三个客户端，验证每个人的兜底音频都能路由给另外两个人，并验证第三人退出后 A/B 仍可继续收音。
+`test:five-peer-audio` 会自动创建 A–E 五个客户端，验证每个人的兜底音频都能路由给另外四个人，并验证第五人退出后现有成员仍可继续收音。旧的 `test:three-peer-audio` 命令保留为兼容别名。
 
 ## 诊断
 
@@ -67,4 +70,4 @@ corepack pnpm dist:win
 
 ## 技术栈
 
-Electron、React、TypeScript、Vite、Tailwind CSS、Framer Motion、Zustand、Node.js、ws、WebRTC 纯音频。
+Electron、React、TypeScript、Vite、Tailwind CSS、Framer Motion、Zustand、Node.js、ws、WebRTC 语音与屏幕媒体。

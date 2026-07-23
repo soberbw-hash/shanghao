@@ -21,6 +21,8 @@ const OVERLOAD_WINDOW_FRAMES = 300;
 const OVERLOAD_FRAME_LIMIT = 90;
 const OVERLOAD_STRIKE_LIMIT = 2;
 const FRAME_BUDGET_MS = 10;
+const VOICE_HOLD_FRAMES = 18;
+const RESIDUAL_GATE_FLOOR = 0.08;
 
 class ShangHaoRnnoiseProcessor extends AudioWorkletProcessor {
   private mode: ProcessorMode = "loading";
@@ -30,7 +32,18 @@ class ShangHaoRnnoiseProcessor extends AudioWorkletProcessor {
   private inputReadOffset = 0;
   private outputAtNativeRate: number[] = [];
   private outputReadOffset = 0;
-  private inputResampleCarry = 0;
+  private inputResamplePosition = 1;
+  private outputResamplePosition = 1;
+  private previousNativeSample = 0;
+  private previous48kSample = 0;
+  private hasNativeHistory = false;
+  private has48kHistory = false;
+  private noiseGateGain = 1;
+  private noiseGateHoldFrames = 0;
+  private smoothedVadProbability = 0;
+  private noiseFloorRms = 0.0025;
+  private previousFramePeak = 0;
+  private transientHoldFrames = 0;
   private processedFrames = 0;
   private processorOverruns = 0;
   private totalProcessingMs = 0;
@@ -73,19 +86,23 @@ class ShangHaoRnnoiseProcessor extends AudioWorkletProcessor {
       return;
     }
 
-    const exactLength = this.inputResampleCarry + (input.length * RNNOISE_SAMPLE_RATE) / sampleRate;
-    const outputLength = Math.floor(exactLength);
-    this.inputResampleCarry = exactLength - outputLength;
-
-    for (let index = 0; index < outputLength; index += 1) {
-      const sourcePosition = (index * (input.length - 1)) / Math.max(1, outputLength - 1);
-      const leftIndex = Math.floor(sourcePosition);
-      const rightIndex = Math.min(input.length - 1, leftIndex + 1);
-      const fraction = sourcePosition - leftIndex;
-      const left = input[leftIndex] ?? 0;
-      const right = input[rightIndex] ?? left;
-      this.inputAt48k.push(left + (right - left) * fraction);
+    if (!input.length) return;
+    if (!this.hasNativeHistory) {
+      this.previousNativeSample = input[0] ?? 0;
+      this.hasNativeHistory = true;
     }
+    const sourceStep = sampleRate / RNNOISE_SAMPLE_RATE;
+    while (this.inputResamplePosition < input.length) {
+      const leftIndex = Math.floor(this.inputResamplePosition);
+      const rightIndex = Math.min(input.length, leftIndex + 1);
+      const fraction = this.inputResamplePosition - leftIndex;
+      const left = leftIndex <= 0 ? this.previousNativeSample : (input[leftIndex - 1] ?? 0);
+      const right = input[rightIndex - 1] ?? left;
+      this.inputAt48k.push(left + (right - left) * fraction);
+      this.inputResamplePosition += sourceStep;
+    }
+    this.inputResamplePosition -= input.length;
+    this.previousNativeSample = input[input.length - 1] ?? this.previousNativeSample;
   }
 
   private resampleFrom48k(frame: Float32Array): void {
@@ -96,15 +113,88 @@ class ShangHaoRnnoiseProcessor extends AudioWorkletProcessor {
       return;
     }
 
-    const outputLength = Math.max(1, Math.round((frame.length * sampleRate) / RNNOISE_SAMPLE_RATE));
-    for (let index = 0; index < outputLength; index += 1) {
-      const sourcePosition = (index * (frame.length - 1)) / Math.max(1, outputLength - 1);
-      const leftIndex = Math.floor(sourcePosition);
-      const rightIndex = Math.min(frame.length - 1, leftIndex + 1);
-      const fraction = sourcePosition - leftIndex;
-      const left = frame[leftIndex] ?? 0;
-      const right = frame[rightIndex] ?? left;
+    if (!frame.length) return;
+    if (!this.has48kHistory) {
+      this.previous48kSample = frame[0] ?? 0;
+      this.has48kHistory = true;
+    }
+    const sourceStep = RNNOISE_SAMPLE_RATE / sampleRate;
+    while (this.outputResamplePosition < frame.length) {
+      const leftIndex = Math.floor(this.outputResamplePosition);
+      const rightIndex = Math.min(frame.length, leftIndex + 1);
+      const fraction = this.outputResamplePosition - leftIndex;
+      const left = leftIndex <= 0 ? this.previous48kSample : (frame[leftIndex - 1] ?? 0);
+      const right = frame[rightIndex - 1] ?? left;
       this.outputAtNativeRate.push(left + (right - left) * fraction);
+      this.outputResamplePosition += sourceStep;
+    }
+    this.outputResamplePosition -= frame.length;
+    this.previous48kSample = frame[frame.length - 1] ?? this.previous48kSample;
+  }
+
+  private applyResidualNoiseGateAndLimiter(frame: Float32Array, vadProbability: number): void {
+    let energy = 0;
+    let peak = 0;
+    for (const sample of frame) {
+      energy += sample * sample;
+      peak = Math.max(peak, Math.abs(sample));
+    }
+    const rms = Math.sqrt(energy / Math.max(1, frame.length));
+    const normalizedVad = Math.max(0, Math.min(1, vadProbability));
+    const vadSmoothing = normalizedVad > this.smoothedVadProbability ? 0.45 : 0.08;
+    this.smoothedVadProbability += (normalizedVad - this.smoothedVadProbability) * vadSmoothing;
+
+    const crestFactor = peak / Math.max(0.000_01, rms);
+    const isKeyboardLikeTransient =
+      normalizedVad < 0.18 &&
+      this.smoothedVadProbability < 0.24 &&
+      peak > 0.075 &&
+      crestFactor > 6.5 &&
+      peak > Math.max(0.02, this.previousFramePeak * 1.7);
+    this.previousFramePeak = peak;
+    if (isKeyboardLikeTransient) this.transientHoldFrames = 2;
+    else if (this.transientHoldFrames > 0) this.transientHoldFrames -= 1;
+
+    // Learn the remaining room-noise floor only while RNNoise is confident that
+    // there is no speech. This keeps the gate useful for fans and keyboards
+    // without cutting quiet syllables after the user starts talking.
+    if (this.smoothedVadProbability < 0.18 && !isKeyboardLikeTransient && rms < 0.04) {
+      const noiseLearningRate = rms > this.noiseFloorRms ? 0.012 : 0.035;
+      this.noiseFloorRms += (rms - this.noiseFloorRms) * noiseLearningRate;
+      this.noiseFloorRms = Math.max(0.000_8, Math.min(0.018, this.noiseFloorRms));
+    }
+
+    const voiceDetected =
+      normalizedVad >= 0.52 ||
+      this.smoothedVadProbability >= 0.38 ||
+      rms >= Math.max(0.012, this.noiseFloorRms * 4.2);
+    if (voiceDetected) this.noiseGateHoldFrames = VOICE_HOLD_FRAMES;
+    else if (this.noiseGateHoldFrames > 0) this.noiseGateHoldFrames -= 1;
+
+    const closeThreshold = Math.max(0.0022, this.noiseFloorRms * 1.28);
+    const openThreshold = Math.max(0.0065, this.noiseFloorRms * 2.6);
+    let targetGain: number;
+    if (this.noiseGateHoldFrames > 0) {
+      targetGain = 1;
+    } else if (this.smoothedVadProbability >= 0.24) {
+      targetGain = 0.66 + this.smoothedVadProbability * 0.34;
+    } else if (rms <= closeThreshold) {
+      targetGain = RESIDUAL_GATE_FLOOR;
+    } else if (rms < openThreshold) {
+      const progress = (rms - closeThreshold) / Math.max(0.000_1, openThreshold - closeThreshold);
+      targetGain = RESIDUAL_GATE_FLOOR + progress * 0.58;
+    } else {
+      targetGain = 0.72;
+    }
+    if (this.transientHoldFrames > 0 && this.noiseGateHoldFrames === 0) {
+      targetGain = Math.min(targetGain, 0.3);
+    }
+
+    const limiterGain = peak > 0.96 ? 0.96 / peak : 1;
+    const smoothing = targetGain > this.noiseGateGain ? 0.022 : 0.0028;
+    for (let index = 0; index < frame.length; index += 1) {
+      this.noiseGateGain += (targetGain - this.noiseGateGain) * smoothing;
+      frame[index] = (frame[index] ?? 0) * this.noiseGateGain * limiterGain;
     }
   }
 
@@ -122,10 +212,11 @@ class ShangHaoRnnoiseProcessor extends AudioWorkletProcessor {
       }
       this.inputReadOffset += this.frameSize;
 
-      denoiseState.processFrame(frame);
+      const vadProbability = denoiseState.processFrame(frame);
       for (let index = 0; index < frame.length; index += 1) {
         frame[index] = Math.max(-1, Math.min(1, (frame[index] ?? 0) / PCM_SCALE));
       }
+      this.applyResidualNoiseGateAndLimiter(frame, vadProbability);
       this.resampleFrom48k(frame);
 
       const processingMs = performance.now() - startedAt;
@@ -142,6 +233,8 @@ class ShangHaoRnnoiseProcessor extends AudioWorkletProcessor {
           processorOverruns: this.processorOverruns,
           averageProcessingMs: this.totalProcessingMs / this.processedFrames,
           maxProcessingMs: this.maxProcessingMs,
+          vadProbability: this.smoothedVadProbability,
+          noiseFloorRms: this.noiseFloorRms,
         });
       }
 
@@ -209,7 +302,7 @@ class ShangHaoRnnoiseProcessor extends AudioWorkletProcessor {
     }
 
     if (this.outputAtNativeRate.length - this.outputReadOffset < output.length) {
-      output.set(input);
+      output.fill(0);
       return true;
     }
 

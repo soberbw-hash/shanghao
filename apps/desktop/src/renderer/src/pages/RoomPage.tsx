@@ -7,6 +7,7 @@ import {
   type PointerEvent as ReactPointerEvent,
 } from "react";
 import { GripHorizontal } from "lucide-react";
+import { AnimatePresence, motion } from "framer-motion";
 import { gsap } from "gsap";
 
 import {
@@ -31,6 +32,13 @@ import { TeamIsland } from "../components/room/TeamIsland";
 import { playUiSound } from "../features/audio/uiSound";
 import { motionDuration, motionEase } from "../features/motion/motionSystem";
 import {
+  dialogSurfaceVariants,
+  overlayScrimVariants,
+  reducedFadeVariants,
+} from "../features/motion/motionPresets";
+import { summarizeConnectionHealth } from "../features/network/networkDiagnostics";
+import { DetachedScreenSharePublisher } from "../features/screen-share/DetachedScreenSharePublisher";
+import {
   decideAutoAway,
   IDLE_POLL_INTERVAL_MS,
   shouldMuteAfterAwayReturn,
@@ -44,6 +52,7 @@ import { useAudioStore } from "../store/audioStore";
 import { useRecordingStore } from "../store/recordingStore";
 import { useRoomStore } from "../store/roomStore";
 import { useSettingsStore } from "../store/settingsStore";
+import donateQr from "../assets/donate-qr.jpg";
 
 const KNOCK_COOLDOWN_MS = 5_000;
 
@@ -95,14 +104,11 @@ const ScreenShareVideo = ({ stream }: { stream: MediaStream }) => {
 };
 
 const ScreenShareMedia = ({ item }: { item: ScreenShareItem }) => {
-  if (item.isLocal) {
+  if (item.isLocal && item.stream) {
     return (
-      <div className="screen-share-local-placeholder" data-testid="local-share-safe-preview">
-        <span className="screen-share-local-placeholder-icon">
-          <AnimatedControlIcon name="screen-share" active className="h-5 w-5" />
-        </span>
-        <strong>你的屏幕正在分享</strong>
-        <span>本地预览已隐藏，避免画面无限套娃</span>
+      <div className="screen-share-self-preview" data-testid="local-share-safe-preview">
+        <ScreenShareVideo stream={item.stream} />
+        <span className="screen-share-self-badge">你的分享</span>
       </div>
     );
   }
@@ -292,6 +298,7 @@ export const RoomPage = () => {
   const chatMessages = useRoomStore((state) => state.chatMessages);
   const remoteStreams = useRoomStore((state) => state.remoteStreams);
   const remoteScreenFrames = useRoomStore((state) => state.remoteScreenFrames);
+  const connectionHealth = useRoomStore((state) => state.connectionHealth);
   const sceneReactions = useRoomStore((state) => state.sceneReactions);
   const {
     inputDevices,
@@ -313,6 +320,7 @@ export const RoomPage = () => {
   const [localScreenShareStream, setLocalScreenShareStream] = useState<MediaStream>();
   const [isScreenShareStarting, setIsScreenShareStarting] = useState(false);
   const [detachedViewerId, setDetachedViewerId] = useState<string>();
+  const [detachedViewerSessionId, setDetachedViewerSessionId] = useState<string>();
   const [pendingScreenShareQuality, setPendingScreenShareQuality] =
     useState<ScreenShareQuality>("720p");
   const [screenCaptureSources, setScreenCaptureSources] = useState<ScreenCaptureSourceDescriptor[]>(
@@ -320,6 +328,8 @@ export const RoomPage = () => {
   );
   const [isScreenSourcePickerOpen, setIsScreenSourcePickerOpen] = useState(false);
   const [isOverlayOpen, setIsOverlayOpen] = useState(false);
+  const [isDonationOpen, setIsDonationOpen] = useState(false);
+  const [localKnockPulse, setLocalKnockPulse] = useState(0);
   const lastSeatZoneRef = useRef<SceneZoneId>("gameDesk1");
   const awaySessionRef = useRef<AwaySession>();
   const lastKnockAt = useRef(0);
@@ -329,6 +339,14 @@ export const RoomPage = () => {
   const moveLocalMemberRef = useRef(moveLocalMember);
   moveLocalMemberRef.current = moveLocalMember;
   const reduceMotion = usePrefersReducedMotion();
+
+  useEffect(
+    () => () => {
+      // Navigation or a renderer reload may interrupt the normal stop path.
+      void window.desktopApi.screenCapture.setContentProtection(false).catch(() => undefined);
+    },
+    [],
+  );
 
   const canSend =
     room.connectionState === RoomConnectionState.Connected ||
@@ -378,6 +396,18 @@ export const RoomPage = () => {
       }),
   ];
   const localMember = room.members.find((member) => member.isLocal);
+  const connectionQuality = summarizeConnectionHealth(connectionHealth);
+  const screenSharingPeerIds = [
+    ...(localScreenShareStream && localMember ? [localMember.id] : []),
+    ...Object.entries(remoteStreams)
+      .filter(([, stream]) =>
+        stream.getVideoTracks().some((track) => track.readyState === "live" && !track.muted),
+      )
+      .map(([peerId]) => peerId),
+    ...Object.entries(remoteScreenFrames)
+      .filter(([, frame]) => Boolean(frame.data))
+      .map(([peerId]) => peerId),
+  ].filter((peerId, index, peers) => peers.indexOf(peerId) === index);
 
   const detachedViewerItem = detachedViewerId
     ? screenShareItems.find((item) => item.id === detachedViewerId)
@@ -388,72 +418,49 @@ export const RoomPage = () => {
     if (!detachedViewerId) return;
     if (hasDetachedViewerItem) return;
     setDetachedViewerId(undefined);
+    setDetachedViewerSessionId(undefined);
     void window.desktopApi.screenShareViewer.close();
   }, [detachedViewerId, hasDetachedViewerItem]);
 
   useEffect(() => {
-    if (!detachedViewerId || !detachedViewerItem?.frameDataUrl) return;
+    if (!detachedViewerSessionId || !detachedViewerItem?.frameDataUrl) return;
     void window.desktopApi.screenShareViewer
-      .updateFrame({ title: detachedViewerItem.title, dataUrl: detachedViewerItem.frameDataUrl })
-      .then((isOpen) => {
-        if (!isOpen) setDetachedViewerId(undefined);
+      .sendSignal({
+        sessionId: detachedViewerSessionId,
+        sender: "host",
+        type: "fallback-frame",
+        title: detachedViewerItem.title,
+        frameDataUrl: detachedViewerItem.frameDataUrl,
       })
-      .catch(() => setDetachedViewerId(undefined));
-  }, [detachedViewerId, detachedViewerItem?.frameDataUrl, detachedViewerItem?.title]);
+      .then((isOpen) => {
+        if (!isOpen) {
+          setDetachedViewerId(undefined);
+          setDetachedViewerSessionId(undefined);
+        }
+      })
+      .catch(() => {
+        setDetachedViewerId(undefined);
+        setDetachedViewerSessionId(undefined);
+      });
+  }, [detachedViewerItem?.frameDataUrl, detachedViewerItem?.title, detachedViewerSessionId]);
 
   useEffect(() => {
     const stream = detachedViewerItem?.stream;
-    if (!detachedViewerId || !stream) return;
-    const video = document.createElement("video");
-    const canvas = document.createElement("canvas");
-    const context = canvas.getContext("2d", { alpha: false });
-    if (!context) return;
-    let disposed = false;
-    let sending = false;
-    video.srcObject = stream;
-    video.muted = true;
-    video.playsInline = true;
-    void video.play().catch(() => undefined);
-
-    const sendFrame = async () => {
-      if (disposed || sending || video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) return;
-      const sourceWidth = video.videoWidth;
-      const sourceHeight = video.videoHeight;
-      if (!sourceWidth || !sourceHeight) return;
-      const maxWidth = settings?.screenShareQuality === "1080p" ? 1_440 : 1_120;
-      const scale = Math.min(1, maxWidth / sourceWidth);
-      const targetWidth = Math.max(1, Math.round(sourceWidth * scale));
-      const targetHeight = Math.max(1, Math.round(sourceHeight * scale));
-      if (canvas.width !== targetWidth) canvas.width = targetWidth;
-      if (canvas.height !== targetHeight) canvas.height = targetHeight;
-      context.drawImage(video, 0, 0, canvas.width, canvas.height);
-      sending = true;
-      try {
-        const isOpen = await window.desktopApi.screenShareViewer.updateFrame({
-          title: detachedViewerItem.title,
-          dataUrl: canvas.toDataURL("image/jpeg", 0.78),
-        });
-        if (!isOpen && !disposed) setDetachedViewerId(undefined);
-      } catch {
-        if (!disposed) setDetachedViewerId(undefined);
-      } finally {
-        sending = false;
-      }
-    };
-    const timer = window.setInterval(() => void sendFrame(), 160);
-    void sendFrame();
+    if (!detachedViewerSessionId || !stream) return;
+    const publisher = new DetachedScreenSharePublisher({
+      sessionId: detachedViewerSessionId,
+      title: detachedViewerItem.title,
+      stream,
+      onClosed: () => {
+        setDetachedViewerId(undefined);
+        setDetachedViewerSessionId(undefined);
+      },
+    });
+    publisher.start();
     return () => {
-      disposed = true;
-      window.clearInterval(timer);
-      video.pause();
-      video.srcObject = null;
+      publisher.destroy();
     };
-  }, [
-    detachedViewerId,
-    detachedViewerItem?.stream,
-    detachedViewerItem?.title,
-    settings?.screenShareQuality,
-  ]);
+  }, [detachedViewerItem?.stream, detachedViewerItem?.title, detachedViewerSessionId]);
 
   useEffect(
     () => () => {
@@ -568,6 +575,11 @@ export const RoomPage = () => {
         idleSeconds,
         isInAwayZone: currentLocalMember.sceneZone === "restroomZone",
         awayMethod: awaySessionRef.current?.method,
+        isProtectedActivity:
+          currentLocalMember.activity === "gaming" ||
+          Boolean(currentLocalMember.gameName) ||
+          localScreenShareActiveRef.current ||
+          currentLocalMember.speakingState === "speaking",
       });
 
       if (decision === "auto_away") {
@@ -676,6 +688,7 @@ export const RoomPage = () => {
       return;
     }
     lastKnockAt.current = Date.now();
+    setLocalKnockPulse((current) => current + 1);
     await sendKnock();
   };
 
@@ -709,6 +722,7 @@ export const RoomPage = () => {
     setIsScreenShareStarting(true);
     try {
       await window.desktopApi.screenCapture.selectSource(sourceId);
+      await window.desktopApi.screenCapture.setContentProtection(true);
       setIsScreenSourcePickerOpen(false);
       const profile = SCREEN_SHARE_PROFILES[quality];
       const stream = await navigator.mediaDevices.getDisplayMedia({
@@ -752,7 +766,7 @@ export const RoomPage = () => {
           }
           setLocalScreenShareStream(undefined);
           localScreenShareActiveRef.current = false;
-          void stopScreenShare();
+          void stopSharingScreen();
         },
         { once: true },
       );
@@ -767,6 +781,8 @@ export const RoomPage = () => {
         },
       });
       if (error instanceof DOMException && error.name === "NotAllowedError") {
+        requestedStream?.getTracks().forEach((track) => track.stop());
+        await window.desktopApi.screenCapture.setContentProtection(false).catch(() => undefined);
         pushToast({
           tone: "neutral",
           title: "已取消屏幕分享",
@@ -776,6 +792,7 @@ export const RoomPage = () => {
       }
 
       requestedStream?.getTracks().forEach((track) => track.stop());
+      await window.desktopApi.screenCapture.setContentProtection(false).catch(() => undefined);
       pushToast({
         tone: "danger",
         title: "屏幕分享失败",
@@ -822,6 +839,7 @@ export const RoomPage = () => {
       setLocalScreenShareStream(undefined);
       localScreenShareActiveRef.current = false;
       await stopScreenShare();
+      await window.desktopApi.screenCapture.setContentProtection(false).catch(() => undefined);
       playUiSound("popup-open");
       pushToast({
         tone: "neutral",
@@ -910,7 +928,11 @@ export const RoomPage = () => {
       }`}
     >
       <div data-gsap-room="topbar">
-        <TopStatusBar onKnock={() => void knock()} onInvite={() => void copyInviteLink()} />
+        <TopStatusBar
+          onDonate={() => setIsDonationOpen(true)}
+          onKnock={() => void knock()}
+          onInvite={() => void copyInviteLink()}
+        />
       </div>
 
       <main className="room-main-grid grid min-h-0 flex-1 gap-2.5 lg:grid-cols-[minmax(0,1.44fr)_minmax(280px,.56fr)]">
@@ -923,8 +945,13 @@ export const RoomPage = () => {
             onZoneSelect={handleZoneSelect}
             onReact={(targetPeerId, emoji) => void sendSceneReaction(targetPeerId, emoji)}
             onVolumeChange={setMemberVolume}
+            screenSharingPeerIds={screenSharingPeerIds}
+            networkQuality={connectionQuality.level}
             reactions={sceneReactions}
-            knockPulse={chatMessages.filter((message) => message.id.startsWith("knock-")).length}
+            knockPulse={
+              localKnockPulse +
+              chatMessages.filter((message) => message.id.startsWith("knock-")).length
+            }
             reduceMotion={reduceMotion}
           />
           <ScreenSharePanel
@@ -932,10 +959,16 @@ export const RoomPage = () => {
             onStopLocalShare={() => void stopSharingScreen()}
             onOpenDetached={async (item) => {
               try {
-                await window.desktopApi.screenShareViewer.open(`上号 · ${item.title}`);
+                const sessionId = crypto.randomUUID();
+                await window.desktopApi.screenShareViewer.open({
+                  title: `上号 · ${item.title}`,
+                  sessionId,
+                });
+                setDetachedViewerSessionId(sessionId);
                 setDetachedViewerId(item.id);
               } catch {
                 setDetachedViewerId(undefined);
+                setDetachedViewerSessionId(undefined);
                 pushToast({
                   tone: "danger",
                   title: "无法打开独立观看窗口",
@@ -960,63 +993,117 @@ export const RoomPage = () => {
         </div>
       </main>
 
-      {isScreenSourcePickerOpen ? (
-        <div
-          className="screen-source-picker-backdrop"
-          role="dialog"
-          aria-modal="true"
-          aria-label="选择要分享的画面"
-          onPointerDown={(event) => {
-            if (event.target === event.currentTarget) setIsScreenSourcePickerOpen(false);
-          }}
-        >
-          <section className="screen-source-picker-panel">
-            <header>
-              <div>
-                <h2>分享哪个画面？</h2>
-                <p>选择显示器或窗口。分享系统声音时请保持“系统音频”设置开启。</p>
+      <AnimatePresence>
+        {isScreenSourcePickerOpen ? (
+          <motion.div
+            key="screen-source-picker"
+            className="screen-source-picker-backdrop"
+            variants={reduceMotion ? reducedFadeVariants : overlayScrimVariants}
+            initial="initial"
+            animate="open"
+            exit="closed"
+            role="presentation"
+            onPointerDown={(event) => {
+              if (event.target === event.currentTarget) setIsScreenSourcePickerOpen(false);
+            }}
+          >
+            <motion.section
+              className="screen-source-picker-panel modal-surface"
+              variants={reduceMotion ? reducedFadeVariants : dialogSurfaceVariants}
+              initial="initial"
+              animate="open"
+              exit="closed"
+              role="dialog"
+              aria-modal="true"
+              aria-label="选择要分享的画面"
+            >
+              <header>
+                <div>
+                  <h2>分享哪个画面？</h2>
+                  <p>选择显示器或窗口。分享系统声音时请保持“系统音频”设置开启。</p>
+                </div>
+                <Button variant="ghost" onClick={() => setIsScreenSourcePickerOpen(false)}>
+                  取消
+                </Button>
+              </header>
+              <div className="screen-source-quality" aria-label="屏幕分享画质">
+                <span>画质</span>
+                {(["720p", "1080p"] as const).map((quality) => (
+                  <button
+                    key={quality}
+                    type="button"
+                    className={pendingScreenShareQuality === quality ? "active" : ""}
+                    aria-pressed={pendingScreenShareQuality === quality}
+                    onClick={() => setPendingScreenShareQuality(quality)}
+                  >
+                    {quality}
+                    <small>{quality === "720p" ? "流畅" : "清晰"}</small>
+                  </button>
+                ))}
               </div>
-              <Button variant="ghost" onClick={() => setIsScreenSourcePickerOpen(false)}>
-                取消
-              </Button>
-            </header>
-            <div className="screen-source-quality" aria-label="屏幕分享画质">
-              <span>画质</span>
-              {(["720p", "1080p"] as const).map((quality) => (
-                <button
-                  key={quality}
-                  type="button"
-                  className={pendingScreenShareQuality === quality ? "active" : ""}
-                  aria-pressed={pendingScreenShareQuality === quality}
-                  onClick={() => setPendingScreenShareQuality(quality)}
-                >
-                  {quality}
-                  <small>{quality === "720p" ? "流畅" : "清晰"}</small>
-                </button>
-              ))}
-            </div>
-            <div className="screen-source-picker-grid">
-              {screenCaptureSources.map((source) => (
-                <button
-                  key={source.id}
-                  type="button"
-                  className="screen-source-picker-item"
-                  onClick={() => void startSharingScreen(source.id, pendingScreenShareQuality)}
-                >
-                  <span className="screen-source-thumbnail">
-                    <img src={source.thumbnailDataUrl} alt="" draggable={false} />
-                  </span>
-                  <span className="screen-source-name">
-                    {source.appIconDataUrl ? <img src={source.appIconDataUrl} alt="" /> : null}
-                    <span>{source.name}</span>
-                    <small>{source.kind === "screen" ? "显示器" : "窗口"}</small>
-                  </span>
-                </button>
-              ))}
-            </div>
-          </section>
-        </div>
-      ) : null}
+              <div className="screen-source-picker-grid">
+                {screenCaptureSources.map((source) => (
+                  <button
+                    key={source.id}
+                    type="button"
+                    className="screen-source-picker-item"
+                    onClick={() => void startSharingScreen(source.id, pendingScreenShareQuality)}
+                  >
+                    <span className="screen-source-thumbnail">
+                      <img src={source.thumbnailDataUrl} alt="" draggable={false} />
+                    </span>
+                    <span className="screen-source-name">
+                      {source.appIconDataUrl ? <img src={source.appIconDataUrl} alt="" /> : null}
+                      <span>{source.name}</span>
+                      <small>{source.kind === "screen" ? "显示器" : "窗口"}</small>
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </motion.section>
+          </motion.div>
+        ) : null}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {isDonationOpen ? (
+          <motion.div
+            className="donation-modal-backdrop modal-scrim"
+            role="presentation"
+            variants={reduceMotion ? reducedFadeVariants : overlayScrimVariants}
+            initial="initial"
+            animate="open"
+            exit="closed"
+            onPointerDown={(event) => {
+              if (event.target === event.currentTarget) setIsDonationOpen(false);
+            }}
+          >
+            <motion.section
+              className="donation-modal-panel modal-surface"
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="donation-modal-title"
+              variants={reduceMotion ? reducedFadeVariants : dialogSurfaceVariants}
+              initial="initial"
+              animate="open"
+              exit="closed"
+            >
+              <span className="donation-modal-kicker">小惊喜</span>
+              <h2 id="donation-modal-title">请作者喝杯咖啡</h2>
+              <p>如果上号让你和朋友多开了一局，就请我补充一点续航。</p>
+              <div className="donation-qr-shell">
+                <img src={donateQr} alt="请作者喝咖啡的收款二维码" draggable={false} />
+              </div>
+              <div className="donation-modal-actions">
+                <span>微信扫码，心意随缘</span>
+                <Button variant="secondary" onClick={() => setIsDonationOpen(false)}>
+                  收下啦
+                </Button>
+              </div>
+            </motion.section>
+          </motion.div>
+        ) : null}
+      </AnimatePresence>
 
       <footer
         ref={voicePulseRef}

@@ -57,9 +57,21 @@ export interface ScreenCaptureSourceDescriptor {
   appIconDataUrl?: string;
 }
 
-export interface ScreenShareViewerFrame {
+export interface ScreenShareViewerOpenRequest {
   title: string;
-  dataUrl: string;
+  sessionId: string;
+}
+
+export interface ScreenShareViewerSignal {
+  sessionId: string;
+  sender: "host" | "viewer";
+  type: "ready" | "offer" | "answer" | "ice" | "fallback-frame" | "closed";
+  title?: string;
+  sdp?: string;
+  candidate?: string;
+  sdpMid?: string | null;
+  sdpMLineIndex?: number | null;
+  frameDataUrl?: string;
 }
 
 export interface GameDetectionSnapshot {
@@ -106,12 +118,13 @@ export interface DesktopApi {
   screenCapture: {
     listSources: () => Promise<ScreenCaptureSourceDescriptor[]>;
     selectSource: (sourceId: string) => Promise<void>;
+    setContentProtection: (enabled: boolean) => Promise<void>;
   };
   screenShareViewer: {
-    open: (title: string) => Promise<void>;
-    updateFrame: (frame: ScreenShareViewerFrame) => Promise<boolean>;
+    open: (request: ScreenShareViewerOpenRequest) => Promise<void>;
+    sendSignal: (signal: ScreenShareViewerSignal) => Promise<boolean>;
     close: () => Promise<void>;
-    onFrame: (listener: (frame: ScreenShareViewerFrame) => void) => () => void;
+    onSignal: (listener: (signal: ScreenShareViewerSignal) => void) => () => void;
   };
   window: {
     minimize: () => Promise<void>;

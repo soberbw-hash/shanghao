@@ -16,12 +16,14 @@ export const decideAutoAway = ({
   idleSeconds,
   isInAwayZone,
   awayMethod,
+  isProtectedActivity = false,
 }: {
   idleSeconds: number;
   isInAwayZone: boolean;
   awayMethod?: "auto" | "manual";
+  isProtectedActivity?: boolean;
 }): AutoAwayDecision => {
-  if (idleSeconds >= AUTO_AWAY_IDLE_SECONDS && !isInAwayZone) {
+  if (idleSeconds >= AUTO_AWAY_IDLE_SECONDS && !isInAwayZone && !isProtectedActivity) {
     return "auto_away";
   }
   if (idleSeconds < AUTO_RETURN_ACTIVE_SECONDS && isInAwayZone && awayMethod === "auto") {

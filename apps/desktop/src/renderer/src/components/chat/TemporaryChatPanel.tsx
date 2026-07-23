@@ -75,14 +75,19 @@ export const TemporaryChatPanel = ({
     const latest = messageItems.item(messageItems.length - 1);
     if (!latest) return;
 
-    gsap.fromTo(
+    const isSystemMessage = latestMessage?.kind === "system";
+    const copy = latest.querySelector<HTMLElement>(".chat-message-copy");
+    const avatar = latest.querySelector<HTMLElement>(".chat-message-avatar");
+    const timeline = gsap.timeline({ defaults: { overwrite: true, force3D: true } });
+
+    timeline.fromTo(
       latest,
       {
         autoAlpha: 0,
-        x: latestMessage?.kind === "system" ? 0 : latestMessage?.isLocal ? 12 : -9,
-        y: latestMessage?.kind === "system" ? 4 : 7,
-        scale: latestMessage?.kind === "system" ? 0.99 : 0.975,
-        transformOrigin: latestMessage?.kind === "system" ? "50% 100%" : "0% 100%",
+        x: isSystemMessage ? 0 : latestMessage?.isLocal ? 10 : -8,
+        y: isSystemMessage ? 3 : 6,
+        scale: isSystemMessage ? 0.99 : 0.94,
+        transformOrigin: isSystemMessage ? "50% 100%" : "0% 65%",
       },
       {
         autoAlpha: 1,
@@ -90,12 +95,48 @@ export const TemporaryChatPanel = ({
         y: 0,
         scale: 1,
         duration: motionDuration.message,
-        ease: motionEase.spatial,
-        overwrite: true,
-        force3D: true,
+        ease: motionEase.jelly,
         clearProps: "transform,opacity,visibility",
       },
     );
+
+    if (copy && !isSystemMessage) {
+      timeline.fromTo(
+        copy,
+        {
+          x: latestMessage?.isLocal ? 7 : -5,
+          scale: 0.96,
+          transformOrigin: "0% 65%",
+        },
+        {
+          x: 0,
+          scale: 1,
+          duration: motionDuration.message * 0.9,
+          ease: motionEase.jelly,
+          clearProps: "transform",
+        },
+        0,
+      );
+    }
+
+    if (avatar && !isSystemMessage) {
+      timeline.fromTo(
+        avatar,
+        { autoAlpha: 0, scale: 0.78, y: 4 },
+        {
+          autoAlpha: 1,
+          scale: 1,
+          y: 0,
+          duration: motionDuration.icon,
+          ease: motionEase.jelly,
+          clearProps: "transform,opacity,visibility",
+        },
+        0.035,
+      );
+    }
+    return () => {
+      timeline.kill();
+    };
   }, [messages, shouldReduceMotion]);
 
   const animateSendFeedback = (source?: HTMLElement) => {
@@ -208,7 +249,11 @@ export const TemporaryChatPanel = ({
                       {message.content}
                     </div>
                   ) : (
-                    <div data-gsap-chat-message className="chat-message-row flex items-start gap-2">
+                    <div
+                      data-gsap-chat-message
+                      data-chat-direction={message.isLocal ? "outgoing" : "incoming"}
+                      className="chat-message-row flex items-start gap-2"
+                    >
                       <AvatarPlaceholder
                         name={message.nickname}
                         src={message.avatarDataUrl || getAvatarSrc(message.avatarId)}

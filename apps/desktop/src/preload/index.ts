@@ -16,17 +16,19 @@ const desktopApi: DesktopApi = {
     listSources: () => ipcRenderer.invoke(IPC_CHANNELS.screenCapture.listSources),
     selectSource: (sourceId) =>
       ipcRenderer.invoke(IPC_CHANNELS.screenCapture.selectSource, sourceId),
+    setContentProtection: (enabled) =>
+      ipcRenderer.invoke(IPC_CHANNELS.screenCapture.setContentProtection, enabled),
   },
   screenShareViewer: {
-    open: (title) => ipcRenderer.invoke(IPC_CHANNELS.screenShareViewer.open, title),
-    updateFrame: (frame) => ipcRenderer.invoke(IPC_CHANNELS.screenShareViewer.updateFrame, frame),
+    open: (request) => ipcRenderer.invoke(IPC_CHANNELS.screenShareViewer.open, request),
+    sendSignal: (signal) => ipcRenderer.invoke(IPC_CHANNELS.screenShareViewer.sendSignal, signal),
     close: () => ipcRenderer.invoke(IPC_CHANNELS.screenShareViewer.close),
-    onFrame: (listener) => {
-      const wrapped = (_event: Electron.IpcRendererEvent, frame: unknown) => {
-        listener(frame as Parameters<typeof listener>[0]);
+    onSignal: (listener) => {
+      const wrapped = (_event: Electron.IpcRendererEvent, signal: unknown) => {
+        listener(signal as Parameters<typeof listener>[0]);
       };
-      ipcRenderer.on(IPC_CHANNELS.screenShareViewer.frame, wrapped);
-      return () => ipcRenderer.removeListener(IPC_CHANNELS.screenShareViewer.frame, wrapped);
+      ipcRenderer.on(IPC_CHANNELS.screenShareViewer.signal, wrapped);
+      return () => ipcRenderer.removeListener(IPC_CHANNELS.screenShareViewer.signal, wrapped);
     },
   },
   window: {

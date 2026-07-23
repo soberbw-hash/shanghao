@@ -26,26 +26,39 @@ test("webrtc voice and screen transport adapt to weak networks", () => {
   assert.equal(peer.includes("maxaveragebitrate=24000"), true);
   assert.equal(peer.includes("NetworkAdaptationTier"), true);
   assert.equal(peer.includes("scaleResolutionDownBy"), true);
+  assert.equal(peer.includes("availableOutgoingBitrateBps"), true);
+  assert.equal(peer.includes("availableOutgoingBitrate < 100_000"), true);
   assert.equal(peer.includes("this.pendingRecoverySamples < 3"), true);
   assert.equal(roomClient.includes("peer.adaptToNetwork(stats)"), true);
   assert.equal(roomClient.includes("Peer network adaptation changed"), true);
 });
 
-test("room client marks webrtc ready from connection state instead of remote stream", () => {
+test("room client keeps relay playback until connected WebRTC audio is actually playable", () => {
   const source = read("apps/desktop/src/renderer/src/features/room/roomClient.ts");
   const relay = read("apps/desktop/src/renderer/src/features/room/signalingAudioRelay.ts");
+  const mixer = read("apps/desktop/src/renderer/src/features/audio/RemoteAudioMixer.ts");
+  const trackPolicy = read("apps/desktop/src/renderer/src/features/audio/remoteAudioTrack.ts");
 
   assert.equal(source.includes('if (state === "connected")'), true);
-  assert.equal(source.includes("this.webrtcReadyPeerIds.add(targetPeerId)"), true);
+  assert.equal(source.includes("this.webrtcConnectedPeerIds.add(targetPeerId)"), true);
+  assert.equal(source.includes("this.webrtcAudioPeerIds.add(targetPeerId)"), true);
+  assert.equal(source.includes("syncPeerMediaPath(targetPeerId"), true);
+  assert.equal(source.includes("remoteAudioTrackReady"), true);
+  assert.equal(source.includes("hasPlayableAudioTrack(stream)"), true);
+  assert.equal(source.includes('type: "audio_path_state"'), true);
+  assert.equal(source.includes("relayRequestedByPeerIds"), true);
+  assert.equal(source.includes("advertiseAudioPathState"), true);
   assert.equal(
-    source.includes('this.audioRelay?.markPeerPath(targetPeerId, "webrtc", "webrtc_connected")'),
+    source.includes('this.audioRelay?.markPeerPath(targetPeerId, "webrtc", reason)'),
     true,
   );
   assert.equal(source.includes('state === "closed"'), true);
   assert.equal(relay.includes("RELAY_SAMPLE_RATE = 16_000"), true);
   assert.equal(relay.includes("MAX_PACKET_AGE_MS = 3_000"), true);
-  assert.equal(relay.includes("MAX_QUEUE_DURATION_MS = 700"), true);
-  assert.equal(relay.includes("MAX_QUEUE_CHUNKS = 36"), true);
+  assert.equal(mixer.includes("MAX_RELAY_QUEUE_DURATION_MS = 700"), true);
+  assert.equal(mixer.includes("MAX_RELAY_QUEUE_CHUNKS = 36"), true);
+  assert.equal(trackPolicy.includes('track.readyState === "live" && track.enabled'), true);
+  assert.equal(trackPolicy.includes("track.muted"), false);
   assert.equal(relay.includes('codec: "mulaw"'), true);
   assert.equal(relay.includes('message.codec === "mulaw"'), true);
   assert.equal(relay.includes("new AudioWorkletNode"), true);
@@ -54,7 +67,8 @@ test("room client marks webrtc ready from connection state instead of remote str
   assert.equal(relay.includes("serverClockOffsetMs"), true);
   assert.equal(relay.includes("audioStreamEpoch"), true);
   assert.equal(relay.includes("audio_resync_request"), true);
-  assert.equal(relay.includes("this.context.currentTime"), true);
+  assert.equal(mixer.includes("context.currentTime"), true);
+  assert.equal(relay.includes("private readonly context = new AudioContext"), false);
 });
 
 test("room flow is fixed-channel only", () => {
@@ -81,6 +95,7 @@ test("webrtc diagnostics report selected path, packet loss, and jitter", () => {
   assert.equal(source.includes("connectionType ="), true);
   assert.equal(source.includes("selected === true"), true);
   assert.equal(source.includes("nominated === true"), true);
+  assert.equal(source.includes("availableOutgoingBitrate"), true);
 });
 
 test("relay status checks both health endpoint and websocket", () => {
@@ -271,8 +286,24 @@ test("native notifications and recording markers use main process IPC", () => {
   const ipc = read("apps/desktop/src/main/ipc.ts");
   const room = read("apps/desktop/src/renderer/src/pages/RoomPage.tsx");
   assert.equal(ipc.includes("Notification.isSupported"), true);
+  assert.equal(ipc.includes("silent: false"), true);
   assert.equal(ipc.includes("recording.saveMarkers"), true);
   assert.equal(ipc.includes("-精彩时刻.txt"), true);
   assert.equal(ipc.includes(".markers.json"), false);
   assert.equal(room.includes("onRecordingMarkerTriggered"), true);
+});
+
+test("knock feedback is intentionally louder than routine UI sounds", () => {
+  const sounds = read("apps/desktop/src/renderer/src/features/audio/uiSound.ts");
+  assert.equal(sounds.includes('"knock-bell": 2'), true);
+  assert.equal(sounds.includes("soundVolumeMultiplier[sound]"), true);
+});
+
+test("late room members serialize signaling and retain early ICE candidates", () => {
+  const client = read("apps/desktop/src/renderer/src/features/room/roomClient.ts");
+
+  assert.equal(client.includes("bridgeEventQueue"), true);
+  assert.equal(client.includes("ICE candidate buffered before peer creation"), true);
+  assert.equal(client.includes("Buffered ICE candidates handed to peer"), true);
+  assert.equal(client.includes("pending.slice(-64)"), true);
 });

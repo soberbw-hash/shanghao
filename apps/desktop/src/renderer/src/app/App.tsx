@@ -1,5 +1,5 @@
 import { lazy, Suspense, useEffect } from "react";
-import { AnimatePresence, motion } from "framer-motion";
+import { motion } from "framer-motion";
 
 import {
   APPLE_MOTION_DURATION,
@@ -107,6 +107,9 @@ export const App = () => {
 
     const preloadPages = () => {
       void loadSettingsPage();
+      void import("../components/room/DeskAnimalSprite").then(({ preloadCharacterSpriteAssets }) =>
+        preloadCharacterSpriteAssets(),
+      );
     };
 
     const requestId = window.requestIdleCallback(preloadPages, { timeout: 1_200 });
@@ -142,28 +145,25 @@ export const App = () => {
             className={`app-page-layer app-page-base ${isSettingsOpen ? "is-obscured" : ""}`}
             aria-hidden={isSettingsOpen || undefined}
           >
-            <AnimatePresence initial={false} mode="popLayout">
-              <motion.div
-                key={basePage}
-                className="app-route-motion"
-                initial={{ opacity: 0, x: basePage === "room" ? 18 : -12, scale: 0.992 }}
-                animate={{ opacity: 1, x: 0, scale: 1 }}
-                exit={{ opacity: 0, x: basePage === "room" ? -10 : 10, scale: 0.996 }}
-                transition={{
-                  opacity: { duration: APPLE_MOTION_DURATION.panel, ease: APPLE_MOTION_EASE },
-                  x: {
-                    duration: APPLE_MOTION_DURATION.page,
-                    ease: APPLE_MOTION_SPATIAL_EASE,
-                  },
-                  scale: {
-                    duration: APPLE_MOTION_DURATION.page,
-                    ease: APPLE_MOTION_SPATIAL_EASE,
-                  },
-                }}
-              >
-                {basePage === "room" ? <RoomPage /> : <HomePage />}
-              </motion.div>
-            </AnimatePresence>
+            <motion.div
+              key={basePage}
+              className="app-route-motion"
+              initial={{ opacity: 0, x: basePage === "room" ? 18 : -12, scale: 0.992 }}
+              animate={{ opacity: 1, x: 0, scale: 1 }}
+              transition={{
+                opacity: { duration: APPLE_MOTION_DURATION.panel, ease: APPLE_MOTION_EASE },
+                x: {
+                  duration: APPLE_MOTION_DURATION.page,
+                  ease: APPLE_MOTION_SPATIAL_EASE,
+                },
+                scale: {
+                  duration: APPLE_MOTION_DURATION.page,
+                  ease: APPLE_MOTION_SPATIAL_EASE,
+                },
+              }}
+            >
+              {basePage === "room" ? <RoomPage /> : <HomePage />}
+            </motion.div>
           </div>
           {isSettingsOpen ? (
             <div className="app-page-layer app-page-settings">

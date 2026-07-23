@@ -1,13 +1,34 @@
-import { AnimatePresence, motion } from "framer-motion";
+import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { AlertTriangle, CheckCircle2, Info, XCircle } from "lucide-react";
 
 import { useAppStore } from "../../store/appStore";
+import { reducedFadeVariants, toastItemVariants } from "../../features/motion/motionPresets";
 
 const toneClasses = {
-  neutral: "border-white/75 bg-white/82 text-[#243247]",
-  success: "border-[#BDE9D0]/80 bg-[#ECFDF3]/88 text-[#147A43]",
-  warning: "border-[#F7D999]/80 bg-[#FFF8E8]/90 text-[#A66208]",
-  danger: "border-[#F2C4C1]/80 bg-[#FFF0EF]/90 text-[#B42318]",
+  neutral: {
+    card: "toast-neutral",
+    icon: "text-[#40546B]",
+    title: "text-[#243247]",
+    description: "text-[#475569]",
+  },
+  success: {
+    card: "toast-success",
+    icon: "text-[#0A7A44]",
+    title: "text-[#0D6B3A]",
+    description: "text-[#315D49]",
+  },
+  warning: {
+    card: "toast-warning",
+    icon: "text-[#9A5B05]",
+    title: "text-[#8A5004]",
+    description: "text-[#704A1A]",
+  },
+  danger: {
+    card: "toast-danger",
+    icon: "text-[#B42318]",
+    title: "text-[#A61B13]",
+    description: "text-[#71302B]",
+  },
 } as const;
 
 const toneIcons = {
@@ -20,6 +41,7 @@ const toneIcons = {
 export const ToastRegion = () => {
   const toasts = useAppStore((state) => state.toasts);
   const dismissToast = useAppStore((state) => state.dismissToast);
+  const shouldReduceMotion = useReducedMotion();
 
   return (
     <div
@@ -27,27 +49,38 @@ export const ToastRegion = () => {
       aria-live="polite"
       aria-atomic="false"
     >
-      <AnimatePresence>
+      <AnimatePresence initial={false} mode="popLayout">
         {toasts.map((toast) => {
           const tone = toast.tone ?? "neutral";
           const ToneIcon = toneIcons[tone];
+          const classes = toneClasses[tone];
           return (
             <motion.button
               key={toast.id}
-              initial={{ opacity: 0, y: -10, scale: 0.97 }}
-              animate={{ opacity: 1, y: 0, scale: 1 }}
-              exit={{ opacity: 0, y: -6, scale: 0.985 }}
-              transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
-              className={`pointer-events-auto flex items-start gap-3 rounded-[18px] border px-3.5 py-3 text-left shadow-[0_16px_40px_rgba(48,80,122,0.14),inset_0_1px_0_rgba(255,255,255,.9)] backdrop-blur-xl ${toneClasses[tone]}`}
+              layout="position"
+              variants={shouldReduceMotion ? reducedFadeVariants : toastItemVariants}
+              initial="initial"
+              animate="open"
+              exit="closed"
+              className={`toast-card pointer-events-auto flex items-start gap-3 rounded-[18px] px-3.5 py-3 text-left ${classes.card}`}
               onClick={() => dismissToast(toast.id)}
             >
-              <span className="mt-0.5 grid h-7 w-7 shrink-0 place-items-center rounded-full bg-white/68 shadow-sm">
+              <span
+                className={`toast-icon mt-0.5 grid h-7 w-7 shrink-0 place-items-center rounded-full ${classes.icon}`}
+              >
                 <ToneIcon className="h-4 w-4" />
               </span>
               <span className="min-w-0">
-                <span className="block text-[13px] font-bold">{toast.title}</span>
+                <span className={`block text-[13px] font-bold ${classes.title}`}>
+                  {toast.title}
+                  {(toast.repeatCount ?? 1) > 1 ? (
+                    <span className="toast-repeat-count">×{toast.repeatCount}</span>
+                  ) : null}
+                </span>
                 {toast.description ? (
-                  <span className="mt-0.5 block text-[12px] leading-[18px] opacity-75">
+                  <span
+                    className={`mt-0.5 block text-[12px] leading-[18px] ${classes.description}`}
+                  >
                     {toast.description}
                   </span>
                 ) : null}

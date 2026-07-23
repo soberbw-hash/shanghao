@@ -4,6 +4,8 @@ import type {
   AudioResyncRequestMessage,
 } from "@private-voice/signaling";
 
+import { getRemoteAudioMixer } from "../audio/RemoteAudioMixer";
+
 type AudioRelayMessage = AudioChunkMessage | AudioResyncRequestMessage | AudioResyncAckMessage;
 type AudioTimelineEvent = {
   time: string;
@@ -24,6 +26,7 @@ interface SignalingAudioRelayOptions {
   localStream: MediaStream;
   send: (message: AudioRelayMessage) => Promise<void>;
   shouldPlayPeer: (peerId: string) => boolean;
+  getTargetPeerIds: () => string[];
   getPeerVolume: (peerId: string) => number;
   onLog?: (
     level: "info" | "warn" | "error",
@@ -36,12 +39,6 @@ interface PlaybackStats {
   queueLength: number;
   queueDurationMs: number;
   droppedOldChunks: number;
-}
-
-interface ScheduledChunk {
-  source: AudioBufferSourceNode;
-  startsAt: number;
-  durationMs: number;
 }
 
 interface PeerAudioState {
@@ -64,9 +61,6 @@ const CHUNK_SIZE = 1024;
 const RELAY_SAMPLE_RATE = 16_000;
 const MIN_SEND_INTERVAL_MS = 20;
 const MAX_PACKET_AGE_MS = 3_000;
-const MAX_QUEUE_DURATION_MS = 700;
-const MAX_QUEUE_CHUNKS = 36;
-const PLAYBACK_LEAD_SECONDS = 0.08;
 const METRICS_LOG_INTERVAL_MS = 5_000;
 const RESYNC_DROP_THRESHOLD = 20;
 const RELAY_CAPTURE_WORKLET = "shanghao-relay-capture";
@@ -193,124 +187,47 @@ const downsampleMono = (
 };
 
 class FallbackAudioPlayer {
-  private readonly context = new AudioContext({ latencyHint: "interactive" });
-  private readonly gain = this.context.createGain();
-  private nextPlaybackTime = 0;
-  private droppedOldChunks = 0;
-  private readonly scheduled: ScheduledChunk[] = [];
+  private readonly mixer = getRemoteAudioMixer();
+  private volume = 1;
+  private lastStats: PlaybackStats = {
+    queueLength: 0,
+    queueDurationMs: 0,
+    droppedOldChunks: 0,
+  };
 
-  constructor() {
-    this.gain.connect(this.context.destination);
-  }
+  constructor(private readonly peerId: string) {}
 
   setVolume(volume: number): void {
-    this.gain.gain.setTargetAtTime(
-      Math.max(0, Math.min(2, volume)),
-      this.context.currentTime,
-      0.012,
-    );
+    this.volume = Math.max(0, Math.min(2, volume));
   }
 
   play(message: AudioChunkMessage): PlaybackStats {
     const samples = decodeRelaySamples(message);
     if (samples.length === 0) {
-      return this.getStats();
+      return this.lastStats;
     }
 
-    const now = this.context.currentTime;
-    this.pruneFinished(now);
-    if (this.nextPlaybackTime < now) {
-      this.nextPlaybackTime = now + PLAYBACK_LEAD_SECONDS;
-    }
-    if (this.nextPlaybackTime - now > MAX_QUEUE_DURATION_MS / 1_000) {
-      this.clear();
-    }
-
-    const incomingDurationMs =
-      message.durationMs > 0 ? message.durationMs : (samples.length / message.sampleRate) * 1_000;
-    while (
-      this.scheduled.length >= MAX_QUEUE_CHUNKS ||
-      Math.max(0, this.nextPlaybackTime - now) * 1_000 + incomingDurationMs > MAX_QUEUE_DURATION_MS
-    ) {
-      if (!this.dropOldest()) {
-        break;
-      }
-    }
-    if (this.scheduled.length === 0) {
-      this.nextPlaybackTime = this.context.currentTime + PLAYBACK_LEAD_SECONDS;
-    }
-
-    const buffer = this.context.createBuffer(1, samples.length, message.sampleRate);
-    buffer.getChannelData(0).set(samples);
-    const source = this.context.createBufferSource();
-    source.buffer = buffer;
-    source.connect(this.gain);
-    source.start(this.nextPlaybackTime);
-    this.scheduled.push({
-      source,
-      startsAt: this.nextPlaybackTime,
-      durationMs: buffer.duration * 1_000,
-    });
-    this.nextPlaybackTime += buffer.duration;
-    return this.getStats();
+    this.lastStats = this.mixer.playRelaySamples(
+      this.peerId,
+      samples,
+      message.sampleRate,
+      message.durationMs,
+      this.volume,
+    );
+    return this.lastStats;
   }
 
   async resume(): Promise<void> {
-    if (this.context.state === "suspended") {
-      await this.context.resume();
-    }
+    await this.mixer.unlock("signaling-audio-relay");
   }
 
   clear(): void {
-    for (const chunk of this.scheduled.splice(0)) {
-      try {
-        chunk.source.stop();
-      } catch {
-        // Already stopped.
-      }
-      chunk.source.disconnect();
-    }
-    this.nextPlaybackTime = this.context.currentTime + PLAYBACK_LEAD_SECONDS;
+    this.mixer.clearRelayPeer(this.peerId);
+    this.lastStats = { ...this.lastStats, queueLength: 0, queueDurationMs: 0 };
   }
 
   destroy(): void {
-    this.clear();
-    this.gain.disconnect();
-    void this.context.close().catch(() => undefined);
-  }
-
-  getStats(): PlaybackStats {
-    return {
-      queueLength: this.scheduled.length,
-      queueDurationMs: Math.max(0, this.nextPlaybackTime - this.context.currentTime) * 1_000,
-      droppedOldChunks: this.droppedOldChunks,
-    };
-  }
-
-  private pruneFinished(now: number): void {
-    while (this.scheduled[0]) {
-      const first = this.scheduled[0];
-      if (first.startsAt + first.durationMs / 1_000 > now) {
-        break;
-      }
-      first.source.disconnect();
-      this.scheduled.shift();
-    }
-  }
-
-  private dropOldest(): boolean {
-    const oldest = this.scheduled.shift();
-    if (!oldest) {
-      return false;
-    }
-    try {
-      oldest.source.stop();
-    } catch {
-      // Already stopped.
-    }
-    oldest.source.disconnect();
-    this.droppedOldChunks += 1;
-    return true;
+    this.mixer.removeRelayPeer(this.peerId);
   }
 }
 
@@ -469,7 +386,7 @@ export class SignalingAudioRelay {
     }
 
     state.lastSequence = message.sequence;
-    const player = this.players.get(message.peerId) ?? new FallbackAudioPlayer();
+    const player = this.players.get(message.peerId) ?? new FallbackAudioPlayer(message.peerId);
     this.players.set(message.peerId, player);
     player.setVolume(this.options.getPeerVolume(message.peerId));
     void player
@@ -619,6 +536,10 @@ export class SignalingAudioRelay {
 
     const durationMs = (input.length / sourceSampleRate) * 1_000;
     const relaySamples = downsampleMono(input, sourceSampleRate, RELAY_SAMPLE_RATE);
+    const targetPeerIds = this.options.getTargetPeerIds();
+    if (targetPeerIds.length === 0) {
+      return;
+    }
     this.isSendInFlight = true;
     this.lastSendAt = monotonicNow;
     this.sentSinceMetricsLog += 1;
@@ -638,6 +559,7 @@ export class SignalingAudioRelay {
         sampleRate: RELAY_SAMPLE_RATE,
         channelCount: 1,
         codec: "mulaw",
+        targetPeerIds,
         data: encodeBytesToBase64(floatToMuLaw(relaySamples)),
       })
       .catch((error) => {

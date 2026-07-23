@@ -81,6 +81,7 @@ export interface ConnectionHealth {
   latencyMs: number;
   jitterMs: number;
   packetLossPercent: number;
+  availableOutgoingBitrateKbps?: number;
   reconnectAttempt: number;
   voicePath?: "webrtc_direct" | "webrtc_turn" | "signaling_relay" | "unknown";
   turnConfigured?: boolean;

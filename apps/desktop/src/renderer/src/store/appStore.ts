@@ -12,6 +12,7 @@ interface ToastMessage {
   title: string;
   description?: string;
   tone?: ToastTone;
+  repeatCount?: number;
 }
 
 export interface StartupIssue {
@@ -114,17 +115,29 @@ export const useAppStore = create<AppStoreState>((set, get) => ({
     }),
   pushToast: (toast) => {
     const id = crypto.randomUUID();
-    set((state) => ({
-      toasts: [
-        ...state.toasts,
-        {
-          id,
-          title: toast.title,
-          description: toast.description,
-          tone: toast.tone ?? "neutral",
-        },
-      ],
-    }));
+    const tone = toast.tone ?? "neutral";
+    set((state) => {
+      const duplicate = state.toasts.find(
+        (item) =>
+          item.title === toast.title &&
+          item.description === toast.description &&
+          (item.tone ?? "neutral") === tone,
+      );
+      const uniqueToasts = state.toasts.filter((item) => item.id !== duplicate?.id);
+
+      return {
+        toasts: [
+          ...uniqueToasts,
+          {
+            id,
+            title: toast.title,
+            description: toast.description,
+            tone,
+            repeatCount: duplicate ? (duplicate.repeatCount ?? 1) + 1 : 1,
+          },
+        ].slice(-3),
+      };
+    });
 
     window.setTimeout(() => {
       get().dismissToast(id);

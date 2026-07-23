@@ -60,11 +60,27 @@ test("local speaker and microphone state are applied atomically before server ec
   assert.equal(source.includes("isDeafened: audioState.isDeafened"), true);
 });
 
-test("insulting family-title nicknames are rejected", () => {
-  for (const nickname of ["daddy", "超级 Daddy", "父亲", "爷爷", "叫我爸爸"]) {
+test("abusive, suggestive and family-title nickname variants are rejected", () => {
+  for (const nickname of [
+    "daddy",
+    "d@d",
+    "超级 D4ddy",
+    "b-a-b-a",
+    "粑粑",
+    "拔拔",
+    "爹地",
+    "父亲",
+    "爷爷",
+    "叫我爸爸",
+    "煞笔",
+    "n.m.s.l",
+    "约炮",
+    "p0rn",
+  ]) {
     assert.ok(getNicknameValidationError(nickname));
   }
   assert.equal(getNicknameValidationError("摸鱼小猫"), undefined);
+  assert.equal(getNicknameValidationError("Sober"), undefined);
 });
 
 test("chat messages are uniformly left aligned with avatar and no per-message clock", () => {

@@ -14,3 +14,28 @@ apps/desktop/dist/
 apps/desktop/dist-electron/
 apps/desktop/.local-reconnect-build/
 apps/desktop/local-test/
+
+# Local experiments and repair utilities are intentionally outside the product workspace.
+apps/desktop-pet/
+apps/network-repair/
+desktop-pet-research-sources.md
+insider-exit-backup-*/
+leave_insider_keep_apps.done
+leave_insider_keep_apps.ps1
+repair_windows.ps1
+reset_update_cache.done
+reset_update_cache.ps1
+reset_update_cache_admin.cmd
+windows_repair.done
+
+# Keep the curated product captures only; local visual-debug captures stay untracked.
+artifacts/*
+!artifacts/current-round-room.png
+!artifacts/room-1280.png
+!artifacts/room-1280-final.png
+
+# Superseded character-export candidates. The app uses rear-v2 and run-cycles-v2.
+apps/desktop/src/renderer/src/assets/avatars/rear-v2-final/
+apps/desktop/src/renderer/src/assets/avatars/rear-v2-safe/
+apps/desktop/src/renderer/src/assets/avatars/run/
+apps/desktop/src/renderer/src/assets/avatars/run-cycles/

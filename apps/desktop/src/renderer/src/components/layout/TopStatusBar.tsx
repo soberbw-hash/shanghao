@@ -1,4 +1,4 @@
-import { Users, Wifi } from "lucide-react";
+import { Coffee, Users, Wifi } from "lucide-react";
 import { motion } from "framer-motion";
 
 import {
@@ -9,6 +9,7 @@ import {
 } from "@private-voice/shared";
 
 import { useAppStore } from "../../store/appStore";
+import { summarizeConnectionHealth } from "../../features/network/networkDiagnostics";
 import { useRoomStore } from "../../store/roomStore";
 import { Button } from "../base/Button";
 import { AnimatedControlIcon } from "../icons/AnimatedControlIcon";
@@ -49,16 +50,18 @@ const statusTone = (state: RoomConnectionState) => {
 };
 
 export const TopStatusBar = ({
+  onDonate,
   onKnock,
   onInvite,
 }: {
+  onDonate?: () => void;
   onKnock?: () => void;
   onInvite?: () => void;
 }) => {
   const navigate = useAppStore((state) => state.navigate);
   const setSettingsReturnTo = useAppStore((state) => state.setSettingsReturnTo);
   const room = useRoomStore((state) => state.room);
-  const latencyMs = useRoomStore((state) => state.connectionHealth.latencyMs);
+  const connectionHealth = useRoomStore((state) => state.connectionHealth);
   const speaking = room.members.find(
     (member) => !member.isEmptySlot && member.speakingState === MemberSpeakingState.Speaking,
   );
@@ -67,9 +70,7 @@ export const TopStatusBar = ({
     setSettingsReturnTo("room");
     navigate("settings");
   };
-  const hasLatency = Number.isFinite(latencyMs) && latencyMs > 0;
-  const roundedLatency = Math.max(0, Math.round(latencyMs));
-  const latencyTone = roundedLatency <= 80 ? "good" : roundedLatency <= 180 ? "fair" : "poor";
+  const connectionQuality = summarizeConnectionHealth(connectionHealth);
 
   return (
     <header
@@ -97,18 +98,27 @@ export const TopStatusBar = ({
         </motion.div>
       </div>
       <div className="topbar-controls">
+        <Button
+          variant="ghost"
+          className="topbar-action topbar-donate h-8 whitespace-nowrap px-3 text-[12px]"
+          onClick={onDonate}
+          aria-label="投喂作者"
+        >
+          <Coffee className="h-3.5 w-3.5" />
+          <span>投喂</span>
+        </Button>
         <div className="topbar-metrics" aria-label="频道状态">
           <div className="status-capsule topbar-metric">
             <Users className="h-3 w-3" />
             {room.memberCount}/5
           </div>
           <div
-            className={`connection-quality-capsule topbar-metric ${hasLatency ? latencyTone : "pending"}`}
-            title={hasLatency ? `服务器往返延迟 ${roundedLatency} 毫秒` : "正在获取服务器延迟"}
-            aria-label={hasLatency ? `服务器延迟 ${roundedLatency} 毫秒` : "正在获取服务器延迟"}
+            className={`connection-quality-capsule topbar-metric ${connectionQuality.level}`}
+            title={connectionQuality.detail}
+            aria-label={`网络质量${connectionQuality.label}，${connectionQuality.detail}`}
           >
             <Wifi className="h-3 w-3" />
-            {hasLatency ? `${roundedLatency} ms` : "-- ms"}
+            {connectionQuality.label}
           </div>
         </div>
         <div className="topbar-actions">

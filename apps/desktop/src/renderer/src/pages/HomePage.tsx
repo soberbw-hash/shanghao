@@ -25,6 +25,7 @@ import { BrandMark } from "../components/brand/BrandMark";
 import { CharacterPicker } from "../components/profile/AvatarPicker";
 import { StartupSplashPage } from "../components/status/StartupSplashPage";
 import { motionDuration, motionEase } from "../features/motion/motionSystem";
+import { getRemoteAudioMixer } from "../features/audio/RemoteAudioMixer";
 import { usePrefersReducedMotion } from "../hooks/usePrefersReducedMotion";
 import { useRoomState } from "../hooks/useRoomState";
 import { useAppStore } from "../store/appStore";
@@ -198,6 +199,9 @@ export const HomePage = () => {
       return;
     }
 
+    // Keep this call inside the click event so Chromium grants remote audio playback
+    // before settings/network awaits consume the user activation.
+    void getRemoteAudioMixer().unlock("enter-channel");
     setIsSubmitting(true);
     try {
       await saveSettings({

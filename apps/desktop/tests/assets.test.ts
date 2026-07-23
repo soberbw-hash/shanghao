@@ -33,7 +33,7 @@ test("desktop release configuration publishes automatic update metadata", () => 
   assert.equal(builder.includes("generateUpdatesFilesForAllChannels: true"), true);
   assert.equal(workflow.includes("latest*.yml"), true);
   assert.equal(workflow.includes("*.blockmap"), true);
-  assert.equal(workflow.includes("pnpm test:three-peer-audio"), true);
+  assert.equal(workflow.includes("pnpm test:five-peer-audio"), true);
 });
 
 test("room scene and feedback sound assets are bundled", () => {

@@ -84,10 +84,10 @@ export const activityZones: SceneZone[] = [
     label: "离开一下",
     kind: "activity",
     activity: "restroom",
-    left: 12,
-    top: 80,
-    width: 20,
-    height: 25,
+    left: 13,
+    top: 81,
+    width: 18,
+    height: 22,
   },
 ];
 
@@ -133,10 +133,10 @@ export const resolveMemberSceneZones = (
 };
 
 export const characterPositions: Record<SceneZoneId, CharacterPosition> = {
-  restroomZone: { left: 12, top: 65, zIndex: 38, scale: 0.42 },
-  gameDesk1: { left: 30, top: 38, zIndex: 24, scale: 0.86 },
-  gameDesk2: { left: 52, top: 38, zIndex: 25, scale: 0.86 },
-  gameDesk3: { left: 74, top: 38, zIndex: 26, scale: 0.86 },
-  gameDesk4: { left: 40, top: 74, zIndex: 34, scale: 0.94 },
-  gameDesk5: { left: 65, top: 74, zIndex: 35, scale: 0.94 },
+  restroomZone: { left: 13, top: 74, zIndex: 38, scale: 0.42 },
+  gameDesk1: { left: 30, top: 39, zIndex: 24, scale: 0.86 },
+  gameDesk2: { left: 52, top: 39, zIndex: 25, scale: 0.86 },
+  gameDesk3: { left: 74, top: 39, zIndex: 26, scale: 0.86 },
+  gameDesk4: { left: 40, top: 75, zIndex: 34, scale: 0.92 },
+  gameDesk5: { left: 65, top: 75, zIndex: 35, scale: 0.92 },
 };

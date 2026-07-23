@@ -37,10 +37,12 @@ export type SignalEnvelope =
   | ChatHistoryMessage
   | KnockEventMessage
   | AudioChunkMessage
+  | AudioPathStateMessage
   | AudioResyncRequestMessage
   | AudioResyncAckMessage
   | ScreenFrameMessage
   | ScreenShareStateMessage
+  | ScreenPathStateMessage
   | SceneReactionMessage
   | ErrorMessage;
 
@@ -226,6 +228,7 @@ export interface AudioChunkMessage extends BaseMessage {
   sampleRate: number;
   channelCount: 1;
   codec?: "pcm_s16le" | "mulaw";
+  targetPeerIds?: string[];
   data: string;
   createdAt?: string;
 }
@@ -239,6 +242,15 @@ export interface AudioResyncRequestMessage extends BaseMessage {
   currentAudioStreamEpoch: number;
   lastGoodSequence: number;
   droppedCount: number;
+}
+
+export interface AudioPathStateMessage extends BaseMessage {
+  type: "audio_path_state";
+  roomId: string;
+  peerId: string;
+  targetPeerId: string;
+  needsRelay: boolean;
+  reason: string;
 }
 
 export interface AudioResyncAckMessage extends BaseMessage {
@@ -261,6 +273,7 @@ export interface ScreenFrameMessage extends BaseMessage {
   width: number;
   height: number;
   data: string;
+  targetPeerIds?: string[];
 }
 
 export interface ScreenShareStateMessage extends BaseMessage {
@@ -268,6 +281,15 @@ export interface ScreenShareStateMessage extends BaseMessage {
   roomId: string;
   peerId: string;
   isSharing: boolean;
+}
+
+export interface ScreenPathStateMessage extends BaseMessage {
+  type: "screen_path_state";
+  roomId: string;
+  peerId: string;
+  targetPeerId: string;
+  needsRelay: boolean;
+  reason: string;
 }
 
 export interface SceneReactionMessage extends BaseMessage {
@@ -464,11 +486,23 @@ export const isSignalEnvelope = (value: unknown): value is SignalEnvelope => {
         value.durationMs <= 200 &&
         isIntegerInRange(value.sampleRate, 8_000, 48_000) &&
         value.channelCount === 1 &&
-        (value.codec === undefined || value.codec === "pcm_s16le" || value.codec === "mulaw")
+        (value.codec === undefined || value.codec === "pcm_s16le" || value.codec === "mulaw") &&
+        (value.targetPeerIds === undefined ||
+          (Array.isArray(value.targetPeerIds) &&
+            value.targetPeerIds.length <= 5 &&
+            value.targetPeerIds.every((peerId) => isText(peerId, 128))))
       );
     case "audio_resync_request":
     case "audio_resync_ack":
       return hasRoom(value) && hasPeer(value) && hasTarget(value);
+    case "audio_path_state":
+      return (
+        hasRoom(value) &&
+        hasPeer(value) &&
+        hasTarget(value) &&
+        typeof value.needsRelay === "boolean" &&
+        isText(value.reason, 128)
+      );
     case "screen_frame":
       return (
         hasRoom(value) &&
@@ -478,10 +512,22 @@ export const isSignalEnvelope = (value: unknown): value is SignalEnvelope => {
         isIntegerInRange(value.sequence, 0, Number.MAX_SAFE_INTEGER) &&
         isTimestamp(value.sentAt) &&
         isIntegerInRange(value.width, 1, 4_096) &&
-        isIntegerInRange(value.height, 1, 2_160)
+        isIntegerInRange(value.height, 1, 2_160) &&
+        (value.targetPeerIds === undefined ||
+          (Array.isArray(value.targetPeerIds) &&
+            value.targetPeerIds.length <= 5 &&
+            value.targetPeerIds.every((peerId) => isText(peerId, 128))))
       );
     case "screen_share_state":
       return hasRoom(value) && hasPeer(value) && typeof value.isSharing === "boolean";
+    case "screen_path_state":
+      return (
+        hasRoom(value) &&
+        hasPeer(value) &&
+        hasTarget(value) &&
+        typeof value.needsRelay === "boolean" &&
+        isText(value.reason, 128)
+      );
     case "scene_reaction":
       return (
         hasRoom(value) &&

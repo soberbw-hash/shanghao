@@ -187,6 +187,117 @@ test("fixed channel syncs members after two peers join", async () => {
   }
 });
 
+test("fixed channel keeps five peers on unique seats and broadcasts screen sharing", async () => {
+  const server = new SignalingServer({ roomName: "固定频道" });
+  const port = await server.listen();
+  const url = `ws://127.0.0.1:${port}`;
+  const sockets = await Promise.all(Array.from({ length: 5 }, () => openSocket(url)));
+
+  try {
+    for (let index = 0; index < sockets.length; index += 1) {
+      const socket = sockets[index];
+      if (!socket) continue;
+      const expectedMemberCount = index + 1;
+      const snapshotPromise = waitForMessage(
+        sockets[0]!,
+        (
+          payload,
+        ): payload is {
+          members: Array<{ id: string; sceneZone?: string; presenceState?: string }>;
+        } =>
+          typeof payload === "object" &&
+          payload !== null &&
+          (payload as { type?: string }).type === "channel_snapshot" &&
+          (payload as { members?: unknown[] }).members?.length === expectedMemberCount,
+      );
+      joinChannel(socket, `peer-${expectedMemberCount}`);
+      await snapshotPromise;
+    }
+
+    const stableSnapshotPromise = waitForMessage(
+      sockets[4]!,
+      (
+        payload,
+      ): payload is {
+        members: Array<{ id: string; sceneZone?: string; presenceState?: string }>;
+      } =>
+        typeof payload === "object" &&
+        payload !== null &&
+        (payload as { type?: string }).type === "channel_snapshot" &&
+        (payload as { members?: unknown[] }).members?.length === 5,
+    );
+    sockets[4]!.send(
+      JSON.stringify({ type: "request_snapshot", roomId: "main", peerId: "peer-5" }),
+    );
+    const stableSnapshot = await stableSnapshotPromise;
+    assert.equal(new Set(stableSnapshot.members.map((member) => member.id)).size, 5);
+    assert.equal(new Set(stableSnapshot.members.map((member) => member.sceneZone)).size, 5);
+    assert.equal(
+      stableSnapshot.members.every((member) => member.presenceState === "online"),
+      true,
+    );
+
+    const newestPeerOffers = Array.from({ length: 4 }, (_, index) =>
+      waitForMessage(
+        sockets[4]!,
+        (payload): payload is { peerId: string; targetPeerId: string; sdp: { type: string } } =>
+          typeof payload === "object" &&
+          payload !== null &&
+          (payload as { type?: string }).type === "peer_offer" &&
+          (payload as { peerId?: string }).peerId === `peer-${index + 1}` &&
+          (payload as { targetPeerId?: string }).targetPeerId === "peer-5",
+      ),
+    );
+    for (let index = 0; index < 4; index += 1) {
+      sockets[index]!.send(
+        JSON.stringify({
+          type: "peer_offer",
+          roomId: "main",
+          peerId: `peer-${index + 1}`,
+          targetPeerId: "peer-5",
+          sdp: { type: "offer", sdp: "v=0\r\n" },
+        }),
+      );
+    }
+    const forwardedOffers = await Promise.all(newestPeerOffers);
+    assert.deepEqual(forwardedOffers.map((offer) => offer.peerId).sort(), [
+      "peer-1",
+      "peer-2",
+      "peer-3",
+      "peer-4",
+    ]);
+
+    const shareNotifications = sockets
+      .slice(1)
+      .map((socket) =>
+        waitForMessage(
+          socket,
+          (payload): payload is { peerId: string; isSharing: boolean } =>
+            typeof payload === "object" &&
+            payload !== null &&
+            (payload as { type?: string }).type === "screen_share_state" &&
+            (payload as { peerId?: string }).peerId === "peer-1",
+        ),
+      );
+    sockets[0]!.send(
+      JSON.stringify({
+        type: "screen_share_state",
+        roomId: "main",
+        peerId: "peer-1",
+        isSharing: true,
+      }),
+    );
+    const notifications = await Promise.all(shareNotifications);
+    assert.equal(
+      notifications.every((notification) => notification.isSharing),
+      true,
+    );
+  } finally {
+    for (const socket of sockets) socket.close();
+    await server.close();
+  }
+});
+
 test("fixed channel forwards peer media restart requests to the target only", async () => {
   const server = new SignalingServer({ roomName: "固定频道" });
   const port = await server.listen();
@@ -522,6 +633,74 @@ test("fixed channel relays fallback audio chunks to other peers only", async () 
   }
 });
 
+test("fallback audio can target only the peers whose WebRTC audio path is stalled", async () => {
+  const server = new SignalingServer({ roomName: "定向音频兜底" });
+  const port = await server.listen();
+  const url = `ws://127.0.0.1:${port}`;
+  const sender = await openSocket(url);
+  const receiver = await openSocket(url);
+  const bystander = await openSocket(url);
+  const bystanderChunks: unknown[] = [];
+  const onBystanderMessage = (raw: Buffer) => {
+    const payload = JSON.parse(raw.toString()) as { type?: string };
+    if (payload.type === "audio_chunk") bystanderChunks.push(payload);
+  };
+  bystander.on("message", onBystanderMessage);
+
+  try {
+    joinChannel(sender, "sender");
+    joinChannel(receiver, "receiver");
+    joinChannel(bystander, "bystander");
+    await waitForMessage(
+      bystander,
+      (payload): payload is { members: unknown[] } =>
+        typeof payload === "object" &&
+        payload !== null &&
+        (payload as { type?: string }).type === "channel_snapshot" &&
+        (payload as { members?: unknown[] }).members?.length === 3,
+    );
+
+    const targetedChunk = waitForMessage(
+      receiver,
+      (payload): payload is { sourcePeerId: string; targetPeerIds: string[]; data: string } =>
+        typeof payload === "object" &&
+        payload !== null &&
+        (payload as { type?: string }).type === "audio_chunk",
+    );
+    sender.send(
+      JSON.stringify({
+        type: "audio_chunk",
+        roomId: "main",
+        peerId: "sender",
+        sourcePeerId: "sender",
+        audioSessionId: "session-targeted",
+        audioStreamEpoch: 1,
+        audioPath: "relay",
+        sequence: 1,
+        sentAt: Date.now(),
+        durationMs: 40,
+        sampleRate: 32_000,
+        channelCount: 1,
+        codec: "mulaw",
+        targetPeerIds: ["receiver"],
+        data: "AAAA",
+      }),
+    );
+
+    const chunk = await targetedChunk;
+    assert.equal(chunk.sourcePeerId, "sender");
+    assert.deepEqual(chunk.targetPeerIds, ["receiver"]);
+    await wait(120);
+    assert.equal(bystanderChunks.length, 0);
+  } finally {
+    bystander.off("message", onBystanderMessage);
+    sender.close();
+    receiver.close();
+    bystander.close();
+    await server.close();
+  }
+});
+
 test("fixed channel relays fallback screen frames and stop state to other peers only", async () => {
   const server = new SignalingServer({ roomName: "固定频道" });
   const port = await server.listen();
@@ -552,6 +731,7 @@ test("fixed channel relays fallback screen frames and stop state to other peers 
         width: 320,
         height: 180,
         data: "data:image/jpeg;base64,AAAA",
+        targetPeerIds: ["receiver"],
       }),
     );
 
@@ -559,7 +739,13 @@ test("fixed channel relays fallback screen frames and stop state to other peers 
       receiver,
       (
         payload,
-      ): payload is { type: string; sourcePeerId: string; sequence: number; data: string } =>
+      ): payload is {
+        type: string;
+        sourcePeerId: string;
+        sequence: number;
+        data: string;
+        targetPeerIds?: string[];
+      } =>
         typeof payload === "object" &&
         payload !== null &&
         (payload as { type?: string }).type === "screen_frame",
@@ -567,6 +753,28 @@ test("fixed channel relays fallback screen frames and stop state to other peers 
     assert.equal(frame.sourcePeerId, "sender");
     assert.equal(frame.sequence, 7);
     assert.equal(frame.data, "data:image/jpeg;base64,AAAA");
+    assert.deepEqual(frame.targetPeerIds, ["receiver"]);
+
+    const pathRequest = waitForMessage(
+      sender,
+      (payload): payload is { type: string; peerId: string; needsRelay: boolean } =>
+        typeof payload === "object" &&
+        payload !== null &&
+        (payload as { type?: string }).type === "screen_path_state",
+    );
+    receiver.send(
+      JSON.stringify({
+        type: "screen_path_state",
+        roomId: "main",
+        peerId: "receiver",
+        targetPeerId: "sender",
+        needsRelay: true,
+        reason: "webrtc_screen_track_unavailable",
+      }),
+    );
+    const requested = await pathRequest;
+    assert.equal(requested.peerId, "receiver");
+    assert.equal(requested.needsRelay, true);
 
     sender.send(
       JSON.stringify({
@@ -710,6 +918,91 @@ test("fixed channel broadcasts lightweight scene reactions", async () => {
   } finally {
     first.close();
     second.close();
+    await server.close();
+  }
+});
+
+test("late joiner can request and release one-way audio relay from every existing peer", async () => {
+  const server = new SignalingServer({ roomName: "固定频道" });
+  const port = await server.listen();
+  const sockets = await Promise.all(
+    Array.from({ length: 5 }, () => openSocket(`ws://127.0.0.1:${port}`)),
+  );
+
+  try {
+    for (const [index, socket] of sockets.entries()) {
+      const joined = waitForMessage(
+        socket,
+        (payload): payload is { type: "join_ack" } =>
+          typeof payload === "object" &&
+          payload !== null &&
+          (payload as { type?: string }).type === "join_ack",
+      );
+      joinChannel(socket, `peer-${index + 1}`);
+      await joined;
+    }
+
+    const lateJoiner = sockets[4]!;
+    for (let index = 0; index < 4; index += 1) {
+      const existingPeer = sockets[index]!;
+      const targetPeerId = `peer-${index + 1}`;
+      const requested = waitForMessage(
+        existingPeer,
+        (
+          payload,
+        ): payload is {
+          type: "audio_path_state";
+          peerId: string;
+          targetPeerId: string;
+          needsRelay: boolean;
+        } =>
+          typeof payload === "object" &&
+          payload !== null &&
+          (payload as { type?: string }).type === "audio_path_state",
+      );
+      lateJoiner.send(
+        JSON.stringify({
+          type: "audio_path_state",
+          roomId: "main",
+          peerId: "peer-5",
+          targetPeerId,
+          needsRelay: true,
+          reason: "remote_audio_track_unavailable",
+        }),
+      );
+      const request = await requested;
+      assert.equal(request.peerId, "peer-5");
+      assert.equal(request.targetPeerId, targetPeerId);
+      assert.equal(request.needsRelay, true);
+    }
+
+    const released = waitForMessage(
+      sockets[0]!,
+      (
+        payload,
+      ): payload is {
+        type: "audio_path_state";
+        peerId: string;
+        targetPeerId: string;
+        needsRelay: boolean;
+      } =>
+        typeof payload === "object" &&
+        payload !== null &&
+        (payload as { type?: string }).type === "audio_path_state",
+    );
+    lateJoiner.send(
+      JSON.stringify({
+        type: "audio_path_state",
+        roomId: "main",
+        peerId: "peer-5",
+        targetPeerId: "peer-1",
+        needsRelay: false,
+        reason: "remote_audio_track_playable",
+      }),
+    );
+    assert.equal((await released).needsRelay, false);
+  } finally {
+    for (const socket of sockets) socket.close();
     await server.close();
   }
 });

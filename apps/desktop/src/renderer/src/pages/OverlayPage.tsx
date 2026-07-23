@@ -7,13 +7,13 @@ import { MemberPresenceState, MemberSpeakingState, type OverlayState } from "@pr
 import { motionDuration, motionEase } from "../features/motion/motionSystem";
 import { getAvatarFaceStyle, getAvatarSrc, getStableAvatarId } from "../utils/profile";
 
-const AVATAR_SIZE = 34;
-const GAP = 4;
-const PADDING_X = 8;
-const STATUS_WIDTH = 24;
+const AVATAR_SIZE = 24;
+const GAP = 3;
+const PADDING_X = 5;
+const STATUS_WIDTH = 18;
 const SHADOW_MARGIN = 0;
-const PILL_HEIGHT = 44;
-const MIN_PILL_WIDTH = 88;
+const PILL_HEIGHT = 32;
+const MIN_PILL_WIDTH = 64;
 
 export const OverlayPage = () => {
   const rootRef = useRef<HTMLDivElement>(null);
@@ -71,7 +71,7 @@ export const OverlayPage = () => {
 
       gsap.fromTo(
         "[data-overlay-pill]",
-        { autoAlpha: 0, x: -8, scale: 0.92, filter: "blur(4px)" },
+        { autoAlpha: 0, x: -5, scale: 0.94, filter: "blur(3px)" },
         {
           autoAlpha: 1,
           x: 0,
@@ -83,7 +83,7 @@ export const OverlayPage = () => {
       );
       gsap.fromTo(
         "[data-overlay-avatar]",
-        { autoAlpha: 0, y: 4, scale: 0.82 },
+        { autoAlpha: 0, y: 3, scale: 0.86 },
         {
           autoAlpha: 1,
           y: 0,
@@ -95,7 +95,7 @@ export const OverlayPage = () => {
       );
       gsap.fromTo(
         "[data-overlay-status]",
-        { autoAlpha: 0, x: -3 },
+        { autoAlpha: 0, x: -2 },
         {
           autoAlpha: 1,
           x: 0,
@@ -133,8 +133,8 @@ export const OverlayPage = () => {
           borderRadius: "999px",
           background: "linear-gradient(180deg, rgba(255,255,255,0.76), rgba(235,244,255,0.48))",
           border: "1px solid rgba(214, 226, 244, 0.74)",
-          backdropFilter: "blur(24px) saturate(185%)",
-          WebkitBackdropFilter: "blur(24px) saturate(185%)",
+          backdropFilter: "blur(18px) saturate(175%)",
+          WebkitBackdropFilter: "blur(18px) saturate(175%)",
           boxShadow: "inset 0 1px 0 rgba(255,255,255,0.90), inset 0 -1px 0 rgba(120,150,190,0.12)",
           display: "flex",
           alignItems: "center",
@@ -148,7 +148,7 @@ export const OverlayPage = () => {
           style={{
             position: "absolute",
             inset: "1px 1px auto 1px",
-            height: "42%",
+            height: "40%",
             borderRadius: "999px",
             background: "linear-gradient(180deg, rgba(255,255,255,0.66), rgba(255,255,255,0))",
           }}
@@ -180,11 +180,11 @@ export const OverlayPage = () => {
                   overflow: "hidden",
                   background: "rgba(255,255,255,0.88)",
                   border: isSpeaking
-                    ? "2px solid rgba(77, 163, 255, 0.70)"
+                    ? "1.5px solid rgba(77, 163, 255, 0.70)"
                     : "1px solid rgba(255, 255, 255, 0.82)",
                   boxShadow: isSpeaking
-                    ? "0 0 0 3px rgba(77, 163, 255, 0.13), 0 0 14px rgba(77, 163, 255, 0.42), 0 2px 7px rgba(30, 45, 70, 0.10)"
-                    : "0 2px 7px rgba(30, 45, 70, 0.10)",
+                    ? "0 0 0 2px rgba(77, 163, 255, 0.13), 0 0 10px rgba(77, 163, 255, 0.36), 0 2px 5px rgba(30, 45, 70, 0.10)"
+                    : "0 2px 5px rgba(30, 45, 70, 0.10)",
                   opacity: isOffline ? 0.5 : 1,
                   transition:
                     "border-color 220ms cubic-bezier(0.16,1,0.3,1), box-shadow 220ms cubic-bezier(0.16,1,0.3,1), opacity 160ms linear",
@@ -204,10 +204,10 @@ export const OverlayPage = () => {
                 <span
                   style={{
                     position: "absolute",
-                    bottom: -2,
-                    right: -2,
-                    width: 13,
-                    height: 13,
+                    bottom: -1,
+                    right: -1,
+                    width: 10,
+                    height: 10,
                     borderRadius: "50%",
                     background: "white",
                     display: "flex",
@@ -216,17 +216,17 @@ export const OverlayPage = () => {
                     boxShadow: "0 1px 4px rgba(0,0,0,0.15)",
                   }}
                 >
-                  <MicOff className="h-2 w-2 text-[#FF5A5A]" />
+                  <MicOff className="h-[7px] w-[7px] text-[#FF5A5A]" />
                 </span>
               )}
               {isDeafened && !isReconnecting && (
                 <span
                   style={{
                     position: "absolute",
-                    bottom: -2,
-                    right: -2,
-                    width: 13,
-                    height: 13,
+                    bottom: -1,
+                    right: -1,
+                    width: 10,
+                    height: 10,
                     borderRadius: "50%",
                     background: "white",
                     display: "flex",
@@ -235,17 +235,17 @@ export const OverlayPage = () => {
                     boxShadow: "0 1px 4px rgba(0,0,0,0.15)",
                   }}
                 >
-                  <VolumeX className="h-2 w-2 text-[#6366f1]" />
+                  <VolumeX className="h-[7px] w-[7px] text-[#6366f1]" />
                 </span>
               )}
               {isReconnecting && (
                 <span
                   style={{
                     position: "absolute",
-                    bottom: -2,
-                    right: -2,
-                    width: 13,
-                    height: 13,
+                    bottom: -1,
+                    right: -1,
+                    width: 10,
+                    height: 10,
                     borderRadius: "50%",
                     background: "white",
                     display: "flex",
@@ -254,7 +254,7 @@ export const OverlayPage = () => {
                     boxShadow: "0 1px 4px rgba(0,0,0,0.15)",
                   }}
                 >
-                  <RotateCw className="h-2 w-2 text-[#F59E0B] animate-spin" />
+                  <RotateCw className="h-[7px] w-[7px] text-[#F59E0B] animate-spin" />
                 </span>
               )}
             </div>
@@ -266,7 +266,7 @@ export const OverlayPage = () => {
             zIndex: 1,
             marginLeft: "auto",
             width: `${STATUS_WIDTH}px`,
-            height: "22px",
+            height: "17px",
             borderRadius: "999px",
             display: "inline-flex",
             alignItems: "center",
@@ -279,14 +279,14 @@ export const OverlayPage = () => {
                 : "rgba(77,163,255,0.12)",
             border: "1px solid rgba(255,255,255,0.62)",
             boxShadow: "inset 0 1px 0 rgba(255,255,255,0.72)",
-            fontSize: "11px",
+            fontSize: "9px",
             fontWeight: 700,
           }}
         >
           {state.isMuted ? (
-            <MicOff className="h-3 w-3" />
+            <MicOff className="h-2.5 w-2.5" />
           ) : state.isDeafened ? (
-            <VolumeX className="h-3 w-3" />
+            <VolumeX className="h-2.5 w-2.5" />
           ) : (
             `${count}/5`
           )}

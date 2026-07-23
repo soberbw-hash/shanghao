@@ -346,26 +346,6 @@ export const SettingsPage = () => {
           isMicClipping={micTest.isClipping}
           micTestError={micTest.error}
           onToggleMicTest={() => void micTest.toggle()}
-          onAutoCalibrate={() => {
-            void micTest
-              .calibrate()
-              .then(async (inputLevelThreshold) => {
-                await handleSaveSettings({ inputLevelThreshold });
-                pushToast({
-                  tone: "success",
-                  title: "麦克风校准完成",
-                  description: `输入阈值已自动设为 ${Math.round(inputLevelThreshold * 100)}。`,
-                });
-              })
-              .catch((error) => {
-                if (error instanceof Error && error.message === "mic_calibration_cancelled") return;
-                pushToast({
-                  tone: "danger",
-                  title: "校准失败",
-                  description: "请确认麦克风权限后重试。",
-                });
-              });
-          }}
           onChange={(patch) => void handleSaveSettings(patch)}
         />
         <ShortcutSettingsCard

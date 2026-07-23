@@ -1,77 +1,42 @@
-# ShangHao current round checkpoint
+# ShangHao 2.0 release checkpoint
 
-Updated: 2026-06-15
+Updated: 2026-07-23
 
-## Objective
+## Release scope
 
-Continue refining the existing ShangHao desktop app without changing the voice connection architecture.
+ShangHao 2.0 is the first animation-focused major release. It keeps the fixed-server Windows
+architecture and concentrates on reliable five-person voice, direct-media screen sharing,
+interruptible character movement, readable glass materials, and consistent nonlinear motion.
 
-The source brief is `C:\Users\sober\Desktop\优化方案.txt`.
+## Included
 
-## Baseline already completed
+- Shared remote audio mixer for all remote members.
+- Bidirectional late-join audio-path verification for the fourth and fifth members.
+- Selective signaling-audio fallback that stops after a playable WebRTC track is confirmed.
+- Eight-frame character run cycles, left-edge entry, shortest collision-safe routes, and
+  interruptible seat changes.
+- Direct-media detached screen viewer with self-window filtering.
+- 720p and 1080p screen-share presets with system-audio support.
+- RNNoise, low-cut filtering, voice EQ, 32 kHz audio, FEC/DTX, and weak-network adaptation.
+- Readable glacier glass, unified motion tokens, animated controls, deduplicated toasts, and
+  delayed reconnect overlays.
+- Fixed-server-only client flow; no direct-host or Tailscale product paths.
 
-- White miniature office scene is integrated.
-- Five character identities are migrated to fox, cat, duck, panda, and corgi.
-- The entry page uses a locally saved server address.
-- The room page contains lightweight chat, recording, device controls, and a real Electron overlay window.
-- `knock_event` is a dedicated signaling event with a five-second client cooldown.
-- Settings are already reduced to everyday controls.
-- Verification before this round:
-  - `corepack pnpm typecheck`: passed.
-  - `corepack pnpm --dir apps/desktop test:smoke`: passed, 54 tests.
-  - `corepack pnpm test:three-peer-audio`: passed.
-  - `corepack pnpm dist:win`: passed.
+## Release verification
 
-## This round checklist
+- `corepack pnpm lint`
+- `corepack pnpm typecheck`
+- `corepack pnpm test`
+- `corepack pnpm test:five-peer-audio`
+- `corepack pnpm build`
+- `corepack pnpm dist:win`
+- `corepack pnpm release:verify-package`
 
-- [x] Replace scene avatar cards with transparent character sprites and no white UI container.
-- [x] Remove character scaling/bouncing and move speaking feedback onto the character.
-- [x] Remove the footer green audio meter.
-- [x] Add speaker-off/deafen state, local audio behavior, signaling sync, and character icon.
-- [x] Add eight percentage-based clickable scene zones.
-- [x] Add local Windows detection for Delta Force and League of Legends.
-- [x] Add simple activity/zone state and slow random idle assignment.
-- [x] Enforce unique visible avatar identities.
-- [x] Improve scene cover/cropping while keeping zones aligned.
-- [x] Change entry copy from avatar selection to character selection and remove character cards.
-- [x] Remove recording from Settings.
-- [x] Redesign overlay into a tiny left-side speaking avatar widget without a close button.
-- [x] Add generated short sound assets and centralized playback for all required actions.
-- [x] Expand quick replies to include 上号, 开麦, 等我, 来了, and 冲.
-- [x] Add or update smoke tests for these behaviors.
-- [x] Run typecheck, smoke tests, three-peer audio verification, and Windows packaging.
+Real-device acceptance remains required for every future release: two independent Windows PCs,
+then a three-to-five-person room, reconnect, audio-device switching, and screen sharing.
 
-## Save strategy
+## Repository boundary
 
-- Update this file after each completed feature group.
-- Create local Git checkpoint commits before risky or broad changes.
-- Do not stage or modify these unrelated local scripts:
-  - `enable-low-latency-profile.ps1`
-  - `gaming-optimize-admin.ps1`
-  - `run-low-latency-profile-admin.cmd`
-
-## Checkpoint 2026-06-15 / scene presence
-
-- Added transparent scene-specific character assets.
-- Added synchronized deafen, activity, scene zone, and game name member fields.
-- Added eight clickable percentage-positioned room zones.
-- Replaced the large overlay panel with a 72x76 left-side speaking character widget.
-- Removed the room audio meter and the Settings recording section.
-- Verification: `corepack pnpm typecheck` passed.
-
-## Checkpoint 2026-06-15 / activity and feedback
-
-- Added a privacy-bounded Windows game detector that polls every four seconds and emits only known friendly game names.
-- Added detected-game activity, user-selected scene movement, and slow natural idle movement.
-- Added 16 generated low-volume WAV feedback assets and a single centralized playback manager.
-- Added regression coverage for scene/deafen synchronization, game matching, sound assets, overlay size, and simplified Settings.
-- Verification: `corepack pnpm --dir apps/desktop test:smoke` passed, 57 tests.
-
-## Final verification
-
-- `corepack pnpm typecheck`: passed.
-- `corepack pnpm --dir apps/desktop test:smoke`: passed, 57 tests.
-- `corepack pnpm test:three-peer-audio`: passed with no missing audio routes.
-- `corepack pnpm dist:win`: passed.
-- Packaged scene screenshot: `artifacts/current-round-room.png`.
-- Installer: `apps/desktop/release/ShangHao-0.1.26-Setup-x64.exe`.
+The release workspace contains only `apps/desktop` and `packages/*`. Local Windows repair tools,
+experimental pet projects, generated visual-debug captures, and superseded character export
+candidates are intentionally excluded from Git and the pnpm workspace.

@@ -13,6 +13,14 @@ test("OS idle polling has a strict 30 minute boundary", () => {
   assert.equal(AUTO_AWAY_IDLE_SECONDS, 1_800);
   assert.equal(decideAutoAway({ idleSeconds: 1_799, isInAwayZone: false }), "none");
   assert.equal(decideAutoAway({ idleSeconds: 1_800, isInAwayZone: false }), "auto_away");
+  assert.equal(
+    decideAutoAway({
+      idleSeconds: 3_600,
+      isInAwayZone: false,
+      isProtectedActivity: true,
+    }),
+    "none",
+  );
 });
 
 test("only automatically-away members return on OS activity", () => {

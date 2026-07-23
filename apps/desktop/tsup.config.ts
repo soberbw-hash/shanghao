@@ -20,7 +20,9 @@ export default defineConfig({
     };
   },
   platform: "node",
-  sourcemap: true,
+  // Keep source maps for the watched developer process, but do not ship them
+  // inside production installers. Runtime logs already preserve useful stacks.
+  sourcemap: process.argv.includes("--watch"),
   splitting: false,
   external: [/^electron($|\/)/, "ffmpeg-static", "ffprobe-static"],
   noExternal: [/^@private-voice\//, "ws"],

@@ -1,6 +1,6 @@
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import { pathToFileURL } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { app, BrowserWindow, desktopCapturer, screen, type Rectangle } from "electron";
 
@@ -8,7 +8,8 @@ import {
   APP_NAME,
   IPC_CHANNELS,
   type ScreenCaptureSourceDescriptor,
-  type ScreenShareViewerFrame,
+  type ScreenShareViewerOpenRequest,
+  type ScreenShareViewerSignal,
 } from "@private-voice/shared";
 
 const devServerUrl = "http://127.0.0.1:5173";
@@ -31,7 +32,7 @@ const getIconPath = () => getBuildAssetPath("shanghao-icon-v3.ico");
 
 let pendingScreenCaptureSourceId: string | undefined;
 let screenShareViewerWindow: BrowserWindow | null = null;
-let latestScreenShareViewerFrame: ScreenShareViewerFrame | undefined;
+let screenShareViewerSessionId: string | undefined;
 
 const enumerateScreenCaptureSources = async (withThumbnails: boolean) =>
   desktopCapturer.getSources({
@@ -42,33 +43,75 @@ const enumerateScreenCaptureSources = async (withThumbnails: boolean) =>
 
 export const listScreenCaptureSources = async (): Promise<ScreenCaptureSourceDescriptor[]> => {
   const sources = await enumerateScreenCaptureSources(true);
-  return sources.slice(0, 40).map((source) => ({
-    id: source.id,
-    name: source.name.slice(0, 120),
-    kind: source.id.startsWith("screen:") ? "screen" : "window",
-    thumbnailDataUrl: source.thumbnail.toDataURL(),
-    appIconDataUrl: source.appIcon?.toDataURL(),
-  }));
+  const appWindowSourceIds = new Set(
+    BrowserWindow.getAllWindows().flatMap((window) => {
+      try {
+        return [window.getMediaSourceId()];
+      } catch {
+        return [];
+      }
+    }),
+  );
+  return sources
+    .filter((source) => source.id.startsWith("screen:") || !appWindowSourceIds.has(source.id))
+    .slice(0, 40)
+    .map((source) => ({
+      id: source.id,
+      name: source.name.slice(0, 120),
+      kind: source.id.startsWith("screen:") ? "screen" : "window",
+      thumbnailDataUrl: source.thumbnail.toDataURL(),
+      appIconDataUrl: source.appIcon?.toDataURL(),
+    }));
 };
 
 export const selectScreenCaptureSource = (sourceId: string): void => {
   pendingScreenCaptureSourceId = sourceId;
 };
 
+export const setScreenCaptureContentProtection = (enabled: boolean): void => {
+  for (const window of BrowserWindow.getAllWindows()) {
+    if (!window.isDestroyed()) window.setContentProtection(enabled);
+  }
+};
+
 const getRendererEntryPath = () => path.join(__dirname, "../../dist/index.html");
 
-export const openScreenShareViewer = async (title: string): Promise<void> => {
+const isTrustedRendererUrl = (value: string): boolean => {
+  try {
+    const url = new URL(value);
+    if (!app.isPackaged) {
+      const devUrl = new URL(devServerUrl);
+      return url.origin === devUrl.origin && url.pathname === "/";
+    }
+    return (
+      url.protocol === "file:" &&
+      path.resolve(fileURLToPath(url)) === path.resolve(getRendererEntryPath())
+    );
+  } catch {
+    return false;
+  }
+};
+
+export const openScreenShareViewer = async ({
+  title,
+  sessionId,
+}: ScreenShareViewerOpenRequest): Promise<void> => {
   const workArea = screen.getDisplayNearestPoint(screen.getCursorScreenPoint()).workArea;
-  if (screenShareViewerWindow && !screenShareViewerWindow.isDestroyed()) {
-    // Keep the detached viewer out of display capture to avoid a hall-of-mirrors loop
-    // when the user shares the same monitor that contains this window.
-    screenShareViewerWindow.setContentProtection(true);
+  if (
+    screenShareViewerWindow &&
+    !screenShareViewerWindow.isDestroyed() &&
+    screenShareViewerSessionId === sessionId
+  ) {
     screenShareViewerWindow.setTitle(title);
     if (screenShareViewerWindow.isMinimized()) screenShareViewerWindow.restore();
     screenShareViewerWindow.setBounds(workArea, false);
     screenShareViewerWindow.show();
     screenShareViewerWindow.focus();
     return;
+  }
+
+  if (screenShareViewerWindow && !screenShareViewerWindow.isDestroyed()) {
+    screenShareViewerWindow.destroy();
   }
 
   const viewer = new BrowserWindow({
@@ -90,50 +133,80 @@ export const openScreenShareViewer = async (title: string): Promise<void> => {
     },
   });
   screenShareViewerWindow = viewer;
+  screenShareViewerSessionId = sessionId;
+  // The detached viewer must never be captured into its own stream. Without
+  // content protection, sharing a display creates the familiar infinite mirror.
   viewer.setContentProtection(true);
   viewer.setMenuBarVisibility(false);
   viewer.setAutoHideMenuBar(true);
+  viewer.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
+  viewer.webContents.on("will-navigate", (event, url) => {
+    if (!isTrustedRendererUrl(url)) event.preventDefault();
+  });
   viewer.on("closed", () => {
     if (screenShareViewerWindow === viewer) {
       screenShareViewerWindow = null;
-      latestScreenShareViewerFrame = undefined;
+      screenShareViewerSessionId = undefined;
     }
   });
 
   if (app.isPackaged) {
-    await viewer.loadFile(getRendererEntryPath(), { query: { screenViewer: "1" } });
+    await viewer.loadFile(getRendererEntryPath(), {
+      query: { screenViewer: "1", screenViewerSession: sessionId },
+    });
   } else {
-    await viewer.loadURL(`${devServerUrl}?screenViewer=1`);
-  }
-  if (latestScreenShareViewerFrame) {
-    viewer.webContents.send(IPC_CHANNELS.screenShareViewer.frame, latestScreenShareViewerFrame);
+    await viewer.loadURL(
+      `${devServerUrl}?screenViewer=1&screenViewerSession=${encodeURIComponent(sessionId)}`,
+    );
   }
   viewer.setBounds(workArea, false);
   viewer.show();
   viewer.focus();
 };
 
-export const updateScreenShareViewer = (frame: ScreenShareViewerFrame): boolean => {
+export const sendScreenShareViewerSignal = (signal: ScreenShareViewerSignal): boolean => {
   const viewer = screenShareViewerWindow;
-  if (!viewer || viewer.isDestroyed()) return false;
-  latestScreenShareViewerFrame = frame;
-  viewer.setTitle(frame.title);
-  viewer.webContents.send(IPC_CHANNELS.screenShareViewer.frame, frame);
+  if (
+    !viewer ||
+    viewer.isDestroyed() ||
+    signal.sessionId !== screenShareViewerSessionId ||
+    viewer.webContents.isDestroyed()
+  ) {
+    return false;
+  }
+  if (signal.title) viewer.setTitle(signal.title);
+  viewer.webContents.send(IPC_CHANNELS.screenShareViewer.signal, signal);
   return true;
 };
 
+export const isScreenShareViewerSender = (webContentsId: number, sessionId: string): boolean =>
+  Boolean(
+    screenShareViewerWindow &&
+    !screenShareViewerWindow.isDestroyed() &&
+    screenShareViewerSessionId === sessionId &&
+    screenShareViewerWindow.webContents.id === webContentsId,
+  );
+
 export const closeScreenShareViewer = (): void => {
-  latestScreenShareViewerFrame = undefined;
+  screenShareViewerSessionId = undefined;
   const viewer = screenShareViewerWindow;
   screenShareViewerWindow = null;
   if (viewer && !viewer.isDestroyed()) viewer.close();
 };
 
-const createFallbackHtml = (
-  title: string,
-  description: string,
-  logsDirectory?: string,
-) => `<!doctype html>
+const createFallbackHtml = (title: string, description: string, logsDirectory?: string) => {
+  const escapeHtml = (value: string) =>
+    value.replace(
+      /[&<>"']/g,
+      (character) =>
+        ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[character] ??
+        character,
+    );
+  const safeTitle = escapeHtml(title);
+  const safeDescription = escapeHtml(description);
+  const safeLogsDirectory = logsDirectory ? escapeHtml(logsDirectory) : undefined;
+
+  return `<!doctype html>
 <html lang="zh-CN">
   <head>
     <meta charset="UTF-8" />
@@ -150,12 +223,13 @@ const createFallbackHtml = (
   </head>
   <body>
     <div class="card">
-      <h1>${title}</h1>
-      <p>${description}</p>
-      ${logsDirectory ? `<code>\u65E5\u5FD7\u76EE\u5F55\uFF1A${logsDirectory}</code>` : ""}
+      <h1>${safeTitle}</h1>
+      <p>${safeDescription}</p>
+      ${safeLogsDirectory ? `<code>\u65E5\u5FD7\u76EE\u5F55\uFF1A${safeLogsDirectory}</code>` : ""}
     </div>
   </body>
 </html>`;
+};
 
 export const createMainWindow = ({
   log,
@@ -210,7 +284,6 @@ export const createMainWindow = ({
       sandbox: true,
     },
   });
-
   // NOTE: BrowserWindow#setAppDetails is a 36+ API that has stub types in
   // 35.x but no runtime implementation, so calling it crashes startup.
   // On macOS the dock icon is handled by the bundle, on Windows use
@@ -306,8 +379,11 @@ export const createMainWindow = ({
 
   window.setMenuBarVisibility(false);
   window.setAutoHideMenuBar(true);
-  const isTrustedRendererUrl = (url: string) =>
-    app.isPackaged ? url.startsWith("file:") : url.startsWith(devServerUrl);
+  window.webContents.on("will-navigate", (event, url) => {
+    if (isTrustedRendererUrl(url)) return;
+    event.preventDefault();
+    log?.("warn", "Blocked unexpected renderer navigation", { url });
+  });
   window.webContents.session.setPermissionRequestHandler(
     (webContents, permission, callback, details) => {
       callback(
