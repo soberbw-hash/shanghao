@@ -3,6 +3,11 @@ import test from "node:test";
 
 import { evaluateInboundAudioFlow, selectNetworkTier } from "@private-voice/webrtc";
 
+import {
+  isPeerAudioPathReady,
+  shouldUseAudioRelay,
+} from "../src/renderer/src/features/room/peerAudioPath";
+
 test("network adaptation ignores an unavailable zero bitrate estimate", () => {
   assert.equal(
     selectNetworkTier({
@@ -49,7 +54,7 @@ test("inbound audio flow detects a connected peer that silently stopped receivin
     undefined,
     { nowMs: connectedAtMs, connectedAtMs, isRemoteMuted: false },
   );
-  assert.equal(progress.status, "warming");
+  assert.equal(progress.status, "flowing");
 
   for (const nowMs of [5_100, 6_100]) {
     progress = evaluateInboundAudioFlow(
@@ -73,6 +78,44 @@ test("inbound audio flow detects a connected peer that silently stopped receivin
   );
   assert.equal(progress.status, "flowing");
   assert.equal(progress.next.stagnantSamples, 0);
+});
+
+test("a live WebRTC track cannot disable relay before inbound RTP is verified", () => {
+  const trackOnly = {
+    isConnected: true,
+    hasAudioTrack: true,
+    hasInboundRtpFlow: false,
+    isStalled: false,
+  };
+  assert.equal(isPeerAudioPathReady(trackOnly), false);
+  assert.equal(shouldUseAudioRelay(trackOnly), true);
+
+  const verified = { ...trackOnly, hasInboundRtpFlow: true };
+  assert.equal(isPeerAudioPathReady(verified), true);
+  assert.equal(shouldUseAudioRelay(verified), false);
+
+  const stalled = { ...verified, isStalled: true };
+  assert.equal(isPeerAudioPathReady(stalled), false);
+  assert.equal(shouldUseAudioRelay(stalled), true);
+});
+
+test("five-person rooms keep every unverified directed audio route on relay", () => {
+  const peerIds = ["A", "B", "C", "D", "E"];
+  const routes = peerIds.flatMap((source) =>
+    peerIds.filter((target) => target !== source).map((target) => `${source}->${target}`),
+  );
+  assert.equal(routes.length, 20);
+
+  const verifiedRoutes = new Set(routes.filter((route) => !route.endsWith("->E")));
+  const relayRoutes = routes.filter((route) =>
+    shouldUseAudioRelay({
+      isConnected: true,
+      hasAudioTrack: true,
+      hasInboundRtpFlow: verifiedRoutes.has(route),
+      isStalled: false,
+    }),
+  );
+  assert.deepEqual(relayRoutes.sort(), ["A->E", "B->E", "C->E", "D->E"]);
 });
 
 test("inbound audio flow never treats a muted peer or reset RTP counter as broken", () => {

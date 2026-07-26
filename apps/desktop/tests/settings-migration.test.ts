@@ -39,12 +39,13 @@ test("migrateSettings falls back to safe defaults for damaged legacy config", ()
   assert.equal("channelAccessCode" in result.settings, false);
   assert.equal("manualDirectHost" in result.settings, false);
   assert.equal("connectionMode" in result.settings, false);
-  assert.equal(result.settings.isMicOnSoundEnabled, true);
-  assert.equal(result.settings.isMicOffSoundEnabled, true);
-  assert.equal(result.settings.isMemberJoinSoundEnabled, true);
-  assert.equal(result.settings.isMemberLeaveSoundEnabled, true);
-  assert.equal(result.settings.isConnectionSoundEnabled, true);
+  assert.equal("isMicOnSoundEnabled" in result.settings, false);
+  assert.equal("isMicOffSoundEnabled" in result.settings, false);
+  assert.equal("isMemberJoinSoundEnabled" in result.settings, false);
+  assert.equal("isMemberLeaveSoundEnabled" in result.settings, false);
+  assert.equal("isConnectionSoundEnabled" in result.settings, false);
   assert.equal(result.settings.isUiSoundEnabled, false);
+  assert.equal(result.settings.isGameDetectionEnabled, true);
   assert.equal(result.settings.isHardwareAccelerationEnabled, true);
   assert.equal(result.settings.isOverlayEnabled, true);
   assert.deepEqual(result.settings.micEqualizerGains, [12, -12, 3, 0, 0]);

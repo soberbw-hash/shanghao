@@ -71,6 +71,7 @@ export interface JoinChannelMessage extends BaseMessage, VersionedMessage {
   peerId: string;
   nickname: string;
   avatarId: BuiltInAvatarId;
+  sessionToken?: string;
 }
 
 export interface LeaveChannelMessage extends BaseMessage {
@@ -101,6 +102,7 @@ export interface JoinAckMessage extends BaseMessage, VersionedMessage {
   serverTime: number;
   revision: number;
   memberCount: number;
+  sessionToken: string;
   iceServers?: IceServerConfig[];
 }
 
@@ -378,7 +380,8 @@ export const isSignalEnvelope = (value: unknown): value is SignalEnvelope => {
         isBuiltInAvatarId(value.avatarId) &&
         isText(value.appVersion, 32) &&
         isText(value.protocolVersion, 32) &&
-        isText(value.buildNumber, 64)
+        isText(value.buildNumber, 64) &&
+        (value.sessionToken === undefined || isText(value.sessionToken, 128))
       );
     case "leave_channel":
     case "request_snapshot":
@@ -401,7 +404,8 @@ export const isSignalEnvelope = (value: unknown): value is SignalEnvelope => {
         hasRoom(value) &&
         hasPeer(value) &&
         isFiniteNumber(value.serverTime) &&
-        isFiniteNumber(value.revision)
+        isFiniteNumber(value.revision) &&
+        isText(value.sessionToken, 128)
       );
     case "room_snapshot":
     case "channel_snapshot":

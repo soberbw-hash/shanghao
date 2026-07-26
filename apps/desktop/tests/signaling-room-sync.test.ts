@@ -40,7 +40,12 @@ const openSocket = async (url: string): Promise<WebSocket> => {
   return socket;
 };
 
-const joinChannel = (socket: WebSocket, peerId: string, nickname = peerId) => {
+const joinChannel = (
+  socket: WebSocket,
+  peerId: string,
+  nickname = peerId,
+  sessionToken?: string,
+) => {
   socket.send(
     JSON.stringify({
       type: "join_channel",
@@ -52,6 +57,7 @@ const joinChannel = (socket: WebSocket, peerId: string, nickname = peerId) => {
       appVersion: "0.1.40",
       protocolVersion: APP_PROTOCOL_VERSION,
       buildNumber: APP_BUILD_NUMBER,
+      sessionToken,
     }),
   );
 };
@@ -819,7 +825,17 @@ test("fixed channel keeps a reconnecting member during grace and replaces same p
         (payload as { members?: unknown[] }).members?.length === 1,
     );
 
+    const peerAcknowledgement = waitForMessage(
+      peer,
+      (payload): payload is { type: "join_ack"; peerId: string; sessionToken: string } =>
+        typeof payload === "object" &&
+        payload !== null &&
+        (payload as { type?: string }).type === "join_ack" &&
+        (payload as { peerId?: string }).peerId === "peer" &&
+        typeof (payload as { sessionToken?: unknown }).sessionToken === "string",
+    );
     joinChannel(peer, "peer");
+    const { sessionToken } = await peerAcknowledgement;
     const joined = await waitForMessage(
       first,
       (
@@ -848,7 +864,7 @@ test("fixed channel keeps a reconnecting member during grace and replaces same p
     assert.equal(reconnecting.members.length, 2);
 
     const replacement = await openSocket(url);
-    joinChannel(replacement, "peer");
+    joinChannel(replacement, "peer", "peer", sessionToken);
     const restored = await waitForMessage(
       first,
       (payload): payload is { members: Array<{ id: string; presenceState: string }> } =>

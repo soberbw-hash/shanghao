@@ -102,6 +102,8 @@ test("room scene and feedback sound assets are bundled", () => {
     "record-stop",
     "speaker-muted",
     "speaker-unmuted",
+    "member-join",
+    "member-leave",
   ]) {
     assert.equal(
       existsSync(path.join(root, `apps/desktop/src/renderer/src/assets/sounds/${sound}.wav`)),

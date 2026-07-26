@@ -16,11 +16,9 @@ import {
   RoomConnectionState,
   type GameDetectionSnapshot,
   type MemberActivity,
-  type ScreenCaptureSourceDescriptor,
   type SceneZoneId,
   type ScreenShareQuality,
 } from "@private-voice/shared";
-import type { ScreenShareEncodingProfile } from "@private-voice/webrtc";
 
 import { MuteButton } from "../components/audio/MuteButton";
 import { RecordingButton } from "../components/audio/RecordingButton";
@@ -37,7 +35,8 @@ import {
   reducedFadeVariants,
 } from "../features/motion/motionPresets";
 import { summarizeConnectionHealth } from "../features/network/networkDiagnostics";
-import { DetachedScreenSharePublisher } from "../features/screen-share/DetachedScreenSharePublisher";
+import type { ScreenShareItem } from "../features/screen-share/types";
+import { useScreenShare } from "../features/screen-share/useScreenShare";
 import {
   decideAutoAway,
   IDLE_POLL_INTERVAL_MS,
@@ -61,30 +60,7 @@ interface AwaySession {
   seat: SceneZoneId;
   activity: MemberActivity;
   gameName?: string;
-  wasMuted: boolean;
   enteredAt: string;
-}
-const SCREEN_SHARE_PROFILES: Record<ScreenShareQuality, ScreenShareEncodingProfile> = {
-  "720p": {
-    maxBitrate: 360_000,
-    maxFramerate: 15,
-    maxWidth: 1_280,
-    maxHeight: 720,
-  },
-  "1080p": {
-    maxBitrate: 650_000,
-    maxFramerate: 18,
-    maxWidth: 1_920,
-    maxHeight: 1_080,
-  },
-};
-interface ScreenShareItem {
-  id: string;
-  title: string;
-  stream?: MediaStream;
-  frameDataUrl?: string;
-  isLocal?: boolean;
-  transport: "webrtc" | "relay";
 }
 
 const ScreenShareVideo = ({ stream }: { stream: MediaStream }) => {
@@ -293,6 +269,28 @@ export const RoomPage = () => {
     stopScreenShare,
   } = useRoomState();
   const pushToast = useAppStore((state) => state.pushToast);
+  const {
+    localStream: localScreenShareStream,
+    status: screenShareStatus,
+    sources: screenCaptureSources,
+    detachedItemId: detachedViewerId,
+    openSourcePicker: prepareScreenSourcePicker,
+    startShare: startManagedScreenShare,
+    stopShare: stopManagedScreenShare,
+    openDetachedViewer,
+    syncDetachedItem,
+  } = useScreenShare({
+    startPublishing: startScreenShare,
+    stopPublishing: stopScreenShare,
+    onSourceEnded: () => {
+      playUiSound("popup-open");
+      pushToast({
+        tone: "neutral",
+        title: "屏幕分享已停止",
+        description: "共享来源已经关闭。",
+      });
+    },
+  });
   const settings = useSettingsStore((state) => state.settings);
   const saveSettings = useSettingsStore((state) => state.saveSettings);
   const chatMessages = useRoomStore((state) => state.chatMessages);
@@ -317,15 +315,8 @@ export const RoomPage = () => {
   const pageRef = useRef<HTMLDivElement>(null);
   const voicePulseRef = useRef<HTMLDivElement>(null);
   const [chatInput, setChatInput] = useState("");
-  const [localScreenShareStream, setLocalScreenShareStream] = useState<MediaStream>();
-  const [isScreenShareStarting, setIsScreenShareStarting] = useState(false);
-  const [detachedViewerId, setDetachedViewerId] = useState<string>();
-  const [detachedViewerSessionId, setDetachedViewerSessionId] = useState<string>();
   const [pendingScreenShareQuality, setPendingScreenShareQuality] =
     useState<ScreenShareQuality>("720p");
-  const [screenCaptureSources, setScreenCaptureSources] = useState<ScreenCaptureSourceDescriptor[]>(
-    [],
-  );
   const [isScreenSourcePickerOpen, setIsScreenSourcePickerOpen] = useState(false);
   const [isOverlayOpen, setIsOverlayOpen] = useState(false);
   const [isDonationOpen, setIsDonationOpen] = useState(false);
@@ -334,19 +325,13 @@ export const RoomPage = () => {
   const awaySessionRef = useRef<AwaySession>();
   const lastKnockAt = useRef(0);
   const detectedGameRef = useRef<string>();
-  const screenShareStoppingRef = useRef(false);
-  const localScreenShareActiveRef = useRef(false);
   const moveLocalMemberRef = useRef(moveLocalMember);
   moveLocalMemberRef.current = moveLocalMember;
   const reduceMotion = usePrefersReducedMotion();
-
-  useEffect(
-    () => () => {
-      // Navigation or a renderer reload may interrupt the normal stop path.
-      void window.desktopApi.screenCapture.setContentProtection(false).catch(() => undefined);
-    },
-    [],
-  );
+  const isScreenShareStarting =
+    screenShareStatus === "enumerating" ||
+    screenShareStatus === "starting" ||
+    screenShareStatus === "stopping";
 
   const canSend =
     room.connectionState === RoomConnectionState.Connected ||
@@ -412,62 +397,36 @@ export const RoomPage = () => {
   const detachedViewerItem = detachedViewerId
     ? screenShareItems.find((item) => item.id === detachedViewerId)
     : undefined;
-  const hasDetachedViewerItem = Boolean(detachedViewerItem);
+  const detachedViewerSnapshot = {
+    id: detachedViewerItem?.id,
+    title: detachedViewerItem?.title,
+    stream: detachedViewerItem?.stream,
+    frameDataUrl: detachedViewerItem?.frameDataUrl,
+    isLocal: detachedViewerItem?.isLocal,
+    transport: detachedViewerItem?.transport,
+  };
 
   useEffect(() => {
-    if (!detachedViewerId) return;
-    if (hasDetachedViewerItem) return;
-    setDetachedViewerId(undefined);
-    setDetachedViewerSessionId(undefined);
-    void window.desktopApi.screenShareViewer.close();
-  }, [detachedViewerId, hasDetachedViewerItem]);
-
-  useEffect(() => {
-    if (!detachedViewerSessionId || !detachedViewerItem?.frameDataUrl) return;
-    void window.desktopApi.screenShareViewer
-      .sendSignal({
-        sessionId: detachedViewerSessionId,
-        sender: "host",
-        type: "fallback-frame",
-        title: detachedViewerItem.title,
-        frameDataUrl: detachedViewerItem.frameDataUrl,
-      })
-      .then((isOpen) => {
-        if (!isOpen) {
-          setDetachedViewerId(undefined);
-          setDetachedViewerSessionId(undefined);
+    const item: ScreenShareItem | undefined = detachedViewerSnapshot.id
+      ? {
+          id: detachedViewerSnapshot.id,
+          title: detachedViewerSnapshot.title ?? "屏幕分享",
+          stream: detachedViewerSnapshot.stream,
+          frameDataUrl: detachedViewerSnapshot.frameDataUrl,
+          isLocal: detachedViewerSnapshot.isLocal,
+          transport: detachedViewerSnapshot.transport ?? "webrtc",
         }
-      })
-      .catch(() => {
-        setDetachedViewerId(undefined);
-        setDetachedViewerSessionId(undefined);
-      });
-  }, [detachedViewerItem?.frameDataUrl, detachedViewerItem?.title, detachedViewerSessionId]);
-
-  useEffect(() => {
-    const stream = detachedViewerItem?.stream;
-    if (!detachedViewerSessionId || !stream) return;
-    const publisher = new DetachedScreenSharePublisher({
-      sessionId: detachedViewerSessionId,
-      title: detachedViewerItem.title,
-      stream,
-      onClosed: () => {
-        setDetachedViewerId(undefined);
-        setDetachedViewerSessionId(undefined);
-      },
-    });
-    publisher.start();
-    return () => {
-      publisher.destroy();
-    };
-  }, [detachedViewerItem?.stream, detachedViewerItem?.title, detachedViewerSessionId]);
-
-  useEffect(
-    () => () => {
-      void window.desktopApi.screenShareViewer.close();
-    },
-    [],
-  );
+      : undefined;
+    void syncDetachedItem(item);
+  }, [
+    detachedViewerSnapshot.frameDataUrl,
+    detachedViewerSnapshot.id,
+    detachedViewerSnapshot.isLocal,
+    detachedViewerSnapshot.stream,
+    detachedViewerSnapshot.title,
+    detachedViewerSnapshot.transport,
+    syncDetachedItem,
+  ]);
 
   useLayoutEffect(() => {
     if (!pageRef.current) return;
@@ -570,16 +529,17 @@ export const RoomPage = () => {
         .getState()
         .room.members.find((member) => member.isLocal);
       if (!currentLocalMember) return;
+      const currentConnectionState = useRoomStore.getState().room.connectionState;
+      const isConnectionValid =
+        currentConnectionState === RoomConnectionState.Connected ||
+        currentConnectionState === RoomConnectionState.WaitingPeer ||
+        currentConnectionState === RoomConnectionState.WaitingSnapshot;
 
       const decision = decideAutoAway({
         idleSeconds,
         isInAwayZone: currentLocalMember.sceneZone === "restroomZone",
         awayMethod: awaySessionRef.current?.method,
-        isProtectedActivity:
-          currentLocalMember.activity === "gaming" ||
-          Boolean(currentLocalMember.gameName) ||
-          localScreenShareActiveRef.current ||
-          currentLocalMember.speakingState === "speaking",
+        isConnectionValid,
       });
 
       if (decision === "auto_away") {
@@ -590,7 +550,6 @@ export const RoomPage = () => {
           seat,
           activity: currentLocalMember.activity ?? "idle",
           gameName: currentLocalMember.gameName,
-          wasMuted: useAudioStore.getState().isMuted,
           enteredAt: new Date().toISOString(),
         };
         setMuted(true);
@@ -613,7 +572,6 @@ export const RoomPage = () => {
       if (decision === "auto_return" && awaySession?.method === "auto") {
         awaySessionRef.current = undefined;
         const shouldRemainMuted = shouldMuteAfterAwayReturn({
-          wasMuted: awaySession.wasMuted,
           isDeafened: useAudioStore.getState().isDeafened,
         });
         setMuted(shouldRemainMuted);
@@ -631,7 +589,7 @@ export const RoomPage = () => {
         pushToast({
           tone: "success",
           title: "欢迎回来，已回到原来的位置。",
-          description: shouldRemainMuted ? "麦克风保持离开前的静音状态。" : "麦克风已恢复。",
+          description: shouldRemainMuted ? "扬声器仍关闭，麦克风保持静音。" : "麦克风已自动恢复。",
         });
       }
     };
@@ -718,37 +676,16 @@ export const RoomPage = () => {
   };
 
   const startSharingScreen = async (sourceId: string, quality: ScreenShareQuality) => {
-    let requestedStream: MediaStream | undefined;
-    setIsScreenShareStarting(true);
     try {
-      await window.desktopApi.screenCapture.selectSource(sourceId);
-      await window.desktopApi.screenCapture.setContentProtection(true);
       setIsScreenSourcePickerOpen(false);
-      const profile = SCREEN_SHARE_PROFILES[quality];
-      const stream = await navigator.mediaDevices.getDisplayMedia({
-        video: {
-          width: { ideal: profile.maxWidth, max: profile.maxWidth },
-          height: { ideal: profile.maxHeight, max: profile.maxHeight },
-          frameRate: {
-            ideal: Math.max(10, profile.maxFramerate - 3),
-            max: profile.maxFramerate,
-          },
-        },
-        audio: settings?.isScreenShareSystemAudioEnabled !== false,
+      const stream = await startManagedScreenShare({
+        sourceId,
+        quality,
+        includeSystemAudio: settings?.isScreenShareSystemAudioEnabled !== false,
       });
-      requestedStream = stream;
-      const [videoTrack] = stream.getVideoTracks();
-      if (!videoTrack) {
-        stream.getTracks().forEach((track) => track.stop());
-        throw new Error("screen_track_missing");
-      }
-
-      await startScreenShare(stream, profile);
       if (settings?.screenShareQuality !== quality) {
         void saveSettings({ screenShareQuality: quality }).catch(() => undefined);
       }
-      localScreenShareActiveRef.current = true;
-      setLocalScreenShareStream(stream);
       playUiSound("popup-open");
       pushToast({
         tone: "success",
@@ -757,32 +694,8 @@ export const RoomPage = () => {
           ? "好友现在可以看到画面并听到系统声音。"
           : "好友现在可以看到画面；本次未捕获到系统声音。",
       });
-
-      videoTrack.addEventListener(
-        "ended",
-        () => {
-          if (screenShareStoppingRef.current) {
-            return;
-          }
-          setLocalScreenShareStream(undefined);
-          localScreenShareActiveRef.current = false;
-          void stopSharingScreen();
-        },
-        { once: true },
-      );
     } catch (error) {
-      await window.desktopApi.app.writeLog({
-        category: "webrtc",
-        level: "error",
-        message: "Screen share request failed",
-        context: {
-          name: error instanceof DOMException ? error.name : undefined,
-          error: error instanceof Error ? error.message : String(error),
-        },
-      });
       if (error instanceof DOMException && error.name === "NotAllowedError") {
-        requestedStream?.getTracks().forEach((track) => track.stop());
-        await window.desktopApi.screenCapture.setContentProtection(false).catch(() => undefined);
         pushToast({
           tone: "neutral",
           title: "已取消屏幕分享",
@@ -791,8 +704,6 @@ export const RoomPage = () => {
         return;
       }
 
-      requestedStream?.getTracks().forEach((track) => track.stop());
-      await window.desktopApi.screenCapture.setContentProtection(false).catch(() => undefined);
       pushToast({
         tone: "danger",
         title: "屏幕分享失败",
@@ -801,56 +712,31 @@ export const RoomPage = () => {
             ? "没有找到可分享的显示器或窗口。"
             : "桌面捕获没有启动，请重试；错误详情已经写入诊断日志。",
       });
-    } finally {
-      setIsScreenShareStarting(false);
     }
   };
 
   const openScreenSourcePicker = async () => {
-    setIsScreenShareStarting(true);
     try {
-      const sources = await window.desktopApi.screenCapture.listSources();
-      if (!sources.length) {
-        throw new Error("screen_source_missing");
-      }
-      setScreenCaptureSources(sources);
+      await prepareScreenSourcePicker();
       setPendingScreenShareQuality(settings?.screenShareQuality ?? "720p");
       setIsScreenSourcePickerOpen(true);
-    } catch (error) {
-      await window.desktopApi.app.writeLog({
-        category: "webrtc",
-        level: "error",
-        message: "Failed to enumerate screen capture sources",
-        context: { error: error instanceof Error ? error.message : String(error) },
-      });
+    } catch {
       pushToast({
         tone: "danger",
         title: "没有找到可分享的画面",
         description: "请确认 Windows 允许上号进行屏幕捕获后重试。",
       });
-    } finally {
-      setIsScreenShareStarting(false);
     }
   };
 
   const stopSharingScreen = async () => {
-    screenShareStoppingRef.current = true;
-    try {
-      setLocalScreenShareStream(undefined);
-      localScreenShareActiveRef.current = false;
-      await stopScreenShare();
-      await window.desktopApi.screenCapture.setContentProtection(false).catch(() => undefined);
-      playUiSound("popup-open");
-      pushToast({
-        tone: "neutral",
-        title: "屏幕分享已停止",
-        description: "好友不再看到你的屏幕。",
-      });
-    } finally {
-      window.setTimeout(() => {
-        screenShareStoppingRef.current = false;
-      }, 0);
-    }
+    await stopManagedScreenShare("user");
+    playUiSound("popup-open");
+    pushToast({
+      tone: "neutral",
+      title: "屏幕分享已停止",
+      description: "好友不再看到你的屏幕。",
+    });
   };
 
   const switchInputDevice = async (preferredInputDeviceId?: string) => {
@@ -873,12 +759,7 @@ export const RoomPage = () => {
       const wasAway = Boolean(awaySession || localMember?.sceneZone === "restroomZone");
       awaySessionRef.current = undefined;
       if (wasAway) {
-        setMuted(
-          shouldMuteAfterAwayReturn({
-            wasMuted: awaySession?.wasMuted ?? true,
-            isDeafened,
-          }),
-        );
+        setMuted(shouldMuteAfterAwayReturn({ isDeafened }));
       }
       if (wasAway) {
         void window.desktopApi.app.writeLog({
@@ -894,7 +775,6 @@ export const RoomPage = () => {
         seat: lastSeatZoneRef.current,
         activity: localMember?.activity ?? "idle",
         gameName: localMember?.gameName,
-        wasMuted: useAudioStore.getState().isMuted,
         enteredAt: new Date().toISOString(),
       };
       setMuted(true);
@@ -959,16 +839,11 @@ export const RoomPage = () => {
             onStopLocalShare={() => void stopSharingScreen()}
             onOpenDetached={async (item) => {
               try {
-                const sessionId = crypto.randomUUID();
-                await window.desktopApi.screenShareViewer.open({
+                await openDetachedViewer({
+                  ...item,
                   title: `上号 · ${item.title}`,
-                  sessionId,
                 });
-                setDetachedViewerSessionId(sessionId);
-                setDetachedViewerId(item.id);
               } catch {
-                setDetachedViewerId(undefined);
-                setDetachedViewerSessionId(undefined);
                 pushToast({
                   tone: "danger",
                   title: "无法打开独立观看窗口",

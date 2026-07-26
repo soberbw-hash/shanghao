@@ -18,6 +18,11 @@ sudo SHANGHAO_DOMAIN=voice.example.com bash scripts/deploy-relay-ubuntu.sh
 
 脚本会检查 Ubuntu 和 Node 22、启用 Corepack、创建不可登录的 `shanghao` 系统用户、安装依赖、构建 Relay、写入强化的 systemd 服务、配置 Caddy、启动服务并执行 `/health` 检查。
 
+脚本不会覆盖现有 `/etc/caddy/Caddyfile`。它只确保主配置包含一次
+`import /etc/caddy/conf.d/*`，并把上号站点写到独立的
+`/etc/caddy/conf.d/shanghao.caddy`。修改前会备份主配置；若 `caddy validate`
+失败，会同时恢复主配置和原有上号片段。
+
 应用目录为 `/opt/shanghao`，聊天数据位于 `/opt/shanghao/data`。首次安装会生成 `/opt/shanghao/.env` 和 64 位十六进制 Relay Token；再次运行绝不会覆盖已有 `.env`。
 
 把服务器上的 Token 组合进客户端地址：

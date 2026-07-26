@@ -20,7 +20,7 @@ export const ScreenShareViewerPage = () => {
     const pendingCandidates: RTCIceCandidateInit[] = [];
     let disposed = false;
     const send = (signal: Omit<ScreenShareViewerSignal, "sessionId" | "sender">) =>
-      window.desktopApi.screenShareViewer
+      window.screenShareViewerApi
         .sendSignal({
           ...signal,
           sessionId,
@@ -50,7 +50,7 @@ export const ScreenShareViewerPage = () => {
         sdpMLineIndex: json.sdpMLineIndex,
       });
     };
-    const unsubscribe = window.desktopApi.screenShareViewer.onSignal((signal) => {
+    const unsubscribe = window.screenShareViewerApi.onSignal((signal) => {
       if (signal.sessionId !== sessionId || signal.sender !== "host") return;
       void (async () => {
         if (signal.type === "ready") {

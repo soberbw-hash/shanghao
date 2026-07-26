@@ -9,6 +9,11 @@ export default defineConfig({
     "main/index": path.join(currentDirectory, "src/main/index.ts"),
     "preload/index": path.join(currentDirectory, "src/preload/index.ts"),
     "preload/overlay": path.join(currentDirectory, "src/preload/overlay.ts"),
+    "preload/screen-share-viewer": path.join(
+      currentDirectory,
+      "src/preload/screen-share-viewer.ts",
+    ),
+    "tests/visual/capture-ui": path.join(currentDirectory, "tests/visual/capture-ui.ts"),
   },
   clean: true,
   dts: false,

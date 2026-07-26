@@ -10,6 +10,7 @@ import { WebSocket } from "ws";
 
 import { ChatHistoryStore } from "../../../packages/signaling/src/chat-history-store";
 import { isSignalEnvelope } from "../../../packages/signaling/src/protocol";
+import { SessionTokenStore } from "../../../packages/signaling/src/session-token-store";
 
 const openSocket = async (url: string): Promise<WebSocket> => {
   const socket = new WebSocket(url);
@@ -39,7 +40,7 @@ const waitForMessage = <T>(
 const waitForClose = (socket: WebSocket): Promise<number> =>
   new Promise((resolve) => socket.once("close", (code) => resolve(code)));
 
-const join = (socket: WebSocket, peerId: string, nickname: string) => {
+const join = (socket: WebSocket, peerId: string, nickname: string, sessionToken?: string) => {
   socket.send(
     JSON.stringify({
       type: "join_channel",
@@ -51,9 +52,20 @@ const join = (socket: WebSocket, peerId: string, nickname: string) => {
       appVersion: "0.1.50",
       protocolVersion: APP_PROTOCOL_VERSION,
       buildNumber: APP_BUILD_NUMBER,
+      sessionToken,
     }),
   );
 };
+
+const waitForJoinAck = (socket: WebSocket) =>
+  waitForMessage(
+    socket,
+    (payload): payload is { type: "join_ack"; peerId: string; sessionToken: string } =>
+      typeof payload === "object" &&
+      payload !== null &&
+      (payload as { type?: string }).type === "join_ack" &&
+      typeof (payload as { sessionToken?: unknown }).sessionToken === "string",
+  );
 
 const waitForMemberCount = (socket: WebSocket, count: number) =>
   waitForMessage(
@@ -211,6 +223,72 @@ test("socket identity overrides spoofed peer, nickname, and audio source", async
     second.close();
     await server.close();
   }
+});
+
+test("reconnect session token rotates and an invalid token cannot replace the old peer", async () => {
+  const server = new SignalingServer({ roomName: "固定频道" });
+  const port = await server.listen();
+  const first = await openSocket(`ws://127.0.0.1:${port}`);
+
+  try {
+    const firstAckPromise = waitForJoinAck(first);
+    join(first, "stable-peer", "小狐狸");
+    const firstAck = await firstAckPromise;
+    assert.equal(firstAck.peerId, "stable-peer");
+    assert.ok(firstAck.sessionToken.length >= 40);
+
+    const attacker = await openSocket(`ws://127.0.0.1:${port}`);
+    const rejection = waitForMessage(
+      attacker,
+      (payload): payload is { type: "error"; code: string } =>
+        typeof payload === "object" &&
+        payload !== null &&
+        (payload as { type?: string }).type === "error" &&
+        (payload as { code?: string }).code === "reconnect_session_invalid",
+    );
+    join(attacker, "stable-peer", "冒充者", "wrong-token");
+    assert.equal((await rejection).code, "reconnect_session_invalid");
+
+    const pong = waitForMessage(
+      first,
+      (payload): payload is { type: "pong" } =>
+        typeof payload === "object" &&
+        payload !== null &&
+        (payload as { type?: string }).type === "pong",
+    );
+    first.send(
+      JSON.stringify({
+        type: "heartbeat",
+        roomId: "main",
+        peerId: "stable-peer",
+        sentAt: Date.now(),
+      }),
+    );
+    await pong;
+    assert.equal(first.readyState, WebSocket.OPEN);
+    attacker.close();
+
+    first.close();
+    await new Promise<void>((resolve) => first.once("close", () => resolve()));
+
+    const resumed = await openSocket(`ws://127.0.0.1:${port}`);
+    const resumedAckPromise = waitForJoinAck(resumed);
+    join(resumed, "stable-peer", "小狐狸", firstAck.sessionToken);
+    const resumedAck = await resumedAckPromise;
+    assert.notEqual(resumedAck.sessionToken, firstAck.sessionToken);
+    resumed.close();
+  } finally {
+    first.close();
+    await server.close();
+  }
+});
+
+test("expired reconnect session tokens cannot be resumed", () => {
+  const store = new SessionTokenStore(20_000);
+  const token = store.issue("main", "peer-a", 1_000);
+  store.markDisconnected("main", "peer-a", 2_000);
+  assert.equal(store.resume("main", "peer-a", token, 22_001).status, "expired");
+  assert.equal(store.resume("main", "peer-a", token, 22_002).status, "missing");
 });
 
 test("three invalid messages close a socket without crashing the server", async () => {

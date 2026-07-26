@@ -4,26 +4,21 @@ export const IDLE_POLL_INTERVAL_MS = 10_000;
 
 export type AutoAwayDecision = "none" | "auto_away" | "auto_return";
 
-export const shouldMuteAfterAwayReturn = ({
-  wasMuted,
-  isDeafened,
-}: {
-  wasMuted: boolean;
-  isDeafened: boolean;
-}) => wasMuted || isDeafened;
+export const shouldMuteAfterAwayReturn = ({ isDeafened }: { isDeafened: boolean }) => isDeafened;
 
 export const decideAutoAway = ({
   idleSeconds,
   isInAwayZone,
   awayMethod,
-  isProtectedActivity = false,
+  isConnectionValid = true,
 }: {
   idleSeconds: number;
   isInAwayZone: boolean;
   awayMethod?: "auto" | "manual";
-  isProtectedActivity?: boolean;
+  isConnectionValid?: boolean;
 }): AutoAwayDecision => {
-  if (idleSeconds >= AUTO_AWAY_IDLE_SECONDS && !isInAwayZone && !isProtectedActivity) {
+  if (!isConnectionValid) return "none";
+  if (idleSeconds >= AUTO_AWAY_IDLE_SECONDS && !isInAwayZone) {
     return "auto_away";
   }
   if (idleSeconds < AUTO_RETURN_ACTIVE_SECONDS && isInAwayZone && awayMethod === "auto") {

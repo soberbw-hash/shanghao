@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
-import { mkdir, writeFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
+import { pathToFileURL } from "node:url";
 
 import { app, BrowserWindow, Tray, dialog } from "electron";
 
@@ -29,8 +29,6 @@ let gameDetectionController: GameDetectionController | null = null;
 
 const QUIT_FOR_INSTALL_ARG = "--shanghao-quit-for-install";
 const shouldQuitForInstall = process.argv.includes(QUIT_FOR_INSTALL_ARG);
-
-const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 const shouldUseHardwareAcceleration = (): boolean => {
   try {
@@ -123,138 +121,31 @@ const showBootstrapError = async (error: unknown) => {
   showWindow();
 };
 
-const clickButtonByLabel = async (window: BrowserWindow, label: string): Promise<boolean> => {
-  return window.webContents.executeJavaScript(
-    `
-      (() => {
-        const buttons = Array.from(document.querySelectorAll("button"));
-        const target = buttons.find((button) =>
-          (button.textContent || "").replace(/\\s+/g, " ").includes(${JSON.stringify(label)}) ||
-          (button.getAttribute("aria-label") || "").includes(${JSON.stringify(label)}),
-        );
-        if (target instanceof HTMLButtonElement) {
-          target.click();
-          return true;
-        }
-        return false;
-      })();
-    `,
-    true,
-  );
-};
-
-const prepareProfileForCapture = async (window: BrowserWindow): Promise<void> => {
-  await window.webContents.executeJavaScript(
-    `
-      (() => {
-        const inputs = Array.from(document.querySelectorAll("input"));
-        const nicknameInput = inputs.find((input) => input.placeholder === "朋友怎么叫你");
-        if (!(nicknameInput instanceof HTMLInputElement) || nicknameInput.value.trim()) return;
-        const valueSetter = Object.getOwnPropertyDescriptor(
-          HTMLInputElement.prototype,
-          "value",
-        )?.set;
-        valueSetter?.call(nicknameInput, "Sober");
-        nicknameInput.dispatchEvent(new Event("input", { bubbles: true }));
-        nicknameInput.dispatchEvent(new Event("change", { bubbles: true }));
-      })();
-    `,
-    true,
-  );
-};
-
-const waitForLocalSceneCharacter = async (
-  window: BrowserWindow,
-  phase: "idle" | "walking",
-  timeoutMs = 5_000,
-): Promise<boolean> => {
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
-    const found = await window.webContents
-      .executeJavaScript(
-        `Boolean(document.querySelector('[data-scene-member-key="local-member"][data-motion-phase="${phase}"]'))`,
-        true,
-      )
-      .catch(() => false);
-    if (found) return true;
-    await sleep(100);
-  }
-  return false;
-};
-
-const maybeCaptureScreenshot = async (window: BrowserWindow | null): Promise<void> => {
+const maybeRunVisualCapture = async (window: BrowserWindow | null): Promise<void> => {
   const outputPath = process.env.SHANGHAO_CAPTURE_PATH;
-  const mode = process.env.SHANGHAO_CAPTURE_MODE ?? "home";
-
-  if (!window || !outputPath) {
+  if (app.isPackaged || !window || !outputPath) {
     return;
   }
 
-  if (window.webContents.isLoadingMainFrame()) {
-    await new Promise<void>((resolve) => {
-      window.webContents.once("did-finish-load", () => resolve());
-    });
-  }
-
-  await sleep(5200);
-  if (mode !== "home") {
-    await prepareProfileForCapture(window);
-    await sleep(300);
-    const usedQuickEntry = await clickButtonByLabel(window, "\u4E0A\u53F7");
-    if (!usedQuickEntry) {
-      await clickButtonByLabel(window, "\u8FDB\u5165\u9891\u9053");
-    }
-    const needsSettledRoom = [
-      "room",
-      "room-seat",
-      "room-away",
-      "screen-share",
-      "screen-share-expanded",
-    ].includes(mode);
-    if (needsSettledRoom) {
-      await waitForLocalSceneCharacter(window, "idle", 5_500);
-      await sleep(180);
-    } else {
-      await sleep(700);
-    }
-  }
-
-  if (mode !== "home") {
-    const label = mode === "settings" ? "\u8BBE\u7F6E" : "";
-
-    if (label) {
-      await clickButtonByLabel(window, label);
-      await sleep(mode === "room" ? 2400 : 900);
-    }
-  }
-
-  if (mode === "room-seat") {
-    await clickButtonByLabel(window, "2 \u53F7\u4F4D");
-    await waitForLocalSceneCharacter(window, "walking", 1_200);
-    await sleep(420);
-  }
-  if (mode === "room-away") {
-    await clickButtonByLabel(window, "\u79BB\u5F00\u4E00\u4E0B");
-    await sleep(2200);
-  }
-
-  if (mode === "screen-share" || mode === "screen-share-expanded") {
-    await clickButtonByLabel(window, "\u5C4F\u5E55\u5206\u4EAB");
-    await sleep(1800);
-  }
-  if (mode === "screen-share-expanded") {
-    await clickButtonByLabel(window, "\u653E\u5927\u5C4F\u5E55\u5206\u4EAB");
-    await sleep(800);
-  }
-
-  const image = await window.capturePage();
-  await mkdir(dirname(outputPath), { recursive: true });
-  await writeFile(outputPath, image.toPNG());
-
-  if (process.env.SHANGHAO_CAPTURE_EXIT !== "0") {
-    isQuitting = true;
-    app.quit();
-  }
+  const visualCapture = (await import(
+    pathToFileURL(join(__dirname, "../tests/visual/capture-ui.cjs")).href
+  )) as typeof import("../../tests/visual/capture-ui");
+  await visualCapture.captureUi(window, {
+    mode: (process.env.SHANGHAO_CAPTURE_MODE ?? "home") as
+      | "home"
+      | "room"
+      | "room-seat"
+      | "room-away"
+      | "screen-share"
+      | "screen-share-expanded"
+      | "settings",
+    outputPath,
+    exitAfterCapture: process.env.SHANGHAO_CAPTURE_EXIT !== "0",
+    onExit: () => {
+      isQuitting = true;
+      app.quit();
+    },
+  });
 };
 
 const bootstrap = async (): Promise<void> => {
@@ -299,7 +190,7 @@ const bootstrap = async (): Promise<void> => {
   const gameDetection = new GameDetectionController(
     (payload) => diagnostics?.writeLog(payload) ?? Promise.resolve(),
   );
-  gameDetection.start();
+  await gameDetection.setEnabled(settings.isGameDetectionEnabled);
   shortcutsController = shortcuts;
   overlayController = overlay;
   gameDetectionController = gameDetection;
@@ -332,7 +223,19 @@ const bootstrap = async (): Promise<void> => {
     level: "info",
     message: "Main window created",
   });
-  void maybeCaptureScreenshot(mainWindow);
+  void maybeRunVisualCapture(mainWindow).catch(async (error) => {
+    await diagnostics?.writeLog({
+      category: "app",
+      level: "error",
+      message: "Visual capture failed",
+      context: {
+        error: error instanceof Error ? error.message : String(error),
+        stack: error instanceof Error ? error.stack : undefined,
+      },
+    });
+    isQuitting = true;
+    app.quit();
+  });
 
   mainWindow.on("close", (event) => {
     if (!isQuitting && settingsStore?.getSnapshot().minimizeToTray) {
@@ -411,7 +314,5 @@ if (!hasSingleInstanceLock) {
 }
 
 app.on("window-all-closed", () => {
-  if (process.platform !== "darwin") {
-    app.quit();
-  }
+  app.quit();
 });

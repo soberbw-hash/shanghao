@@ -1,19 +1,31 @@
 import type { Variants } from "framer-motion";
 
-import { APPLE_MOTION_EASE } from "@private-voice/shared";
+import { motionCurve, motionDuration, motionSpring } from "./motionSystem";
 
 const exitEase = [0.4, 0, 1, 1] as const;
 
 export const reducedFadeVariants: Variants = {
   initial: { opacity: 0 },
-  open: { opacity: 1, transition: { duration: 0.14, ease: APPLE_MOTION_EASE } },
-  closed: { opacity: 0, transition: { duration: 0.12, ease: exitEase } },
+  open: {
+    opacity: 1,
+    transition: { duration: motionDuration.fast, ease: motionCurve.enter },
+  },
+  closed: {
+    opacity: 0,
+    transition: { duration: motionDuration.instant, ease: exitEase },
+  },
 };
 
 export const overlayScrimVariants: Variants = {
   initial: { opacity: 0 },
-  open: { opacity: 1, transition: { duration: 0.18, ease: APPLE_MOTION_EASE } },
-  closed: { opacity: 0, transition: { duration: 0.15, ease: exitEase } },
+  open: {
+    opacity: 1,
+    transition: { duration: motionDuration.compact, ease: motionCurve.enter },
+  },
+  closed: {
+    opacity: 0,
+    transition: { duration: motionDuration.fast, ease: exitEase },
+  },
 };
 
 export const dialogSurfaceVariants: Variants = {
@@ -22,13 +34,13 @@ export const dialogSurfaceVariants: Variants = {
     opacity: 1,
     y: 0,
     scale: 1,
-    transition: { type: "spring", stiffness: 360, damping: 32, mass: 0.78 },
+    transition: { type: "spring", ...motionSpring.soft },
   },
   closed: {
     opacity: 0,
     y: 6,
     scale: 0.985,
-    transition: { duration: 0.18, ease: exitEase },
+    transition: { duration: motionDuration.compact, ease: exitEase },
   },
 };
 
@@ -38,13 +50,13 @@ export const popoverSurfaceVariants: Variants = {
     opacity: 1,
     y: 0,
     scale: 1,
-    transition: { type: "spring", stiffness: 440, damping: 34, mass: 0.68 },
+    transition: { type: "spring", ...motionSpring.compact },
   },
   closed: {
     opacity: 0,
     y: 3,
     scale: 0.985,
-    transition: { duration: 0.14, ease: exitEase },
+    transition: { duration: motionDuration.fast, ease: exitEase },
   },
 };
 
@@ -54,12 +66,12 @@ export const toastItemVariants: Variants = {
     opacity: 1,
     y: 0,
     scale: 1,
-    transition: { type: "spring", stiffness: 420, damping: 34, mass: 0.72 },
+    transition: { type: "spring", ...motionSpring.compact },
   },
   closed: {
     opacity: 0,
     y: -4,
     scale: 0.99,
-    transition: { duration: 0.16, ease: exitEase },
+    transition: { duration: motionDuration.fast, ease: exitEase },
   },
 };

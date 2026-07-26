@@ -45,6 +45,8 @@ export const App = () => {
   const startupIssue = useAppStore((state) => state.startupIssue);
   const retryBootstrap = useAppStore((state) => state.retryBootstrap);
   const completeBootstrap = useAppStore((state) => state.completeBootstrap);
+  const navigate = useAppStore((state) => state.navigate);
+  const setSettingsReturnTo = useAppStore((state) => state.setSettingsReturnTo);
   const isHydrating = useSettingsStore((state) => state.isHydrating);
   const settings = useSettingsStore((state) => state.settings);
   const avatarDataUrl = useSettingsStore((state) => state.avatarDataUrl);
@@ -115,6 +117,18 @@ export const App = () => {
     const requestId = window.requestIdleCallback(preloadPages, { timeout: 1_200 });
     return () => window.cancelIdleCallback(requestId);
   }, [bootstrapPhase]);
+
+  useEffect(() => {
+    if (!import.meta.env.DEV || bootstrapPhase !== "ready") {
+      return;
+    }
+
+    const visualCapturePage = new URLSearchParams(window.location.search).get("visualCapture");
+    if (visualCapturePage === "settings") {
+      setSettingsReturnTo("home");
+      navigate("settings");
+    }
+  }, [bootstrapPhase, navigate, setSettingsReturnTo]);
 
   const renderPage = () => {
     if (bootstrapPhase === "booting" || bootstrapPhase === "checking-update" || isHydrating) {

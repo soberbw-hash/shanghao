@@ -12,6 +12,18 @@ const chatPath = path.resolve(
   "src/renderer/src/components/chat/TemporaryChatPanel.tsx",
 );
 const islandPath = path.resolve(process.cwd(), "src/renderer/src/components/room/TeamIsland.tsx");
+const sceneCharacterPath = path.resolve(
+  process.cwd(),
+  "src/renderer/src/components/room/SceneCharacter.tsx",
+);
+const characterRuntimePath = path.resolve(
+  process.cwd(),
+  "src/renderer/src/features/voice-scene/characterMotionRuntime.ts",
+);
+const characterPersonalityPath = path.resolve(
+  process.cwd(),
+  "src/renderer/src/features/voice-scene/characterPersonality.ts",
+);
 const animalPath = path.resolve(process.cwd(), "src/renderer/src/components/room/AnimalSprite.tsx");
 const deskAnimalPath = path.resolve(
   process.cwd(),
@@ -71,6 +83,9 @@ test("gsap motion is wired across the main surfaces with reduced-motion fallback
   const settingsSource = readFileSync(settingsPath, "utf8");
   const chatSource = readFileSync(chatPath, "utf8");
   const islandSource = readFileSync(islandPath, "utf8");
+  const sceneCharacterSource = readFileSync(sceneCharacterPath, "utf8");
+  const characterRuntimeSource = readFileSync(characterRuntimePath, "utf8");
+  const characterPersonalitySource = readFileSync(characterPersonalityPath, "utf8");
   const animalSource = readFileSync(animalPath, "utf8");
   const deskAnimalSource = readFileSync(deskAnimalPath, "utf8");
   const hookSource = readFileSync(hookPath, "utf8");
@@ -103,7 +118,7 @@ test("gsap motion is wired across the main surfaces with reduced-motion fallback
   assert.equal(roomSource.includes("data-gsap-room"), true);
   assert.equal(settingsSource.includes("data-gsap-settings"), true);
   assert.equal(chatSource.includes("data-gsap-chat-message"), true);
-  assert.equal(islandSource.includes("data-gsap-character"), true);
+  assert.equal(sceneCharacterSource.includes("data-gsap-character"), true);
   assert.equal(hookSource.includes("prefers-reduced-motion: reduce"), true);
   assert.equal(stylesSource.includes("[data-gsap-entry],"), false);
   assert.equal(stylesSource.includes("@media (prefers-reduced-motion: reduce)"), true);
@@ -113,14 +128,16 @@ test("gsap motion is wired across the main surfaces with reduced-motion fallback
   assert.equal(animalSource.includes("LayerPart"), true);
   assert.equal(animalSource.includes('isMoving ? "walk"'), true);
   assert.equal(islandSource.includes("SceneCharacter"), true);
-  assert.equal(islandSource.includes("type CharacterMotionPhase ="), true);
-  assert.equal(islandSource.includes('setMotionPhase("walking")'), true);
-  assert.equal(islandSource.includes('setMotionPhase("approaching")'), true);
-  assert.equal(islandSource.includes('setMotionPhase("turning")'), true);
-  assert.equal(islandSource.includes('setMotionPhase("standing-up")'), true);
-  assert.equal(islandSource.includes('setMotionPhase("sitting")'), true);
-  assert.equal(islandSource.includes('setMotionPhase("leaving")'), true);
-  assert.equal(islandSource.includes("WalkingAnimalSprite"), true);
+  assert.equal(characterRuntimeSource.includes("type CharacterMotionPhase ="), true);
+  assert.equal(sceneCharacterSource.includes('setMotionPhase("walking")'), true);
+  assert.equal(sceneCharacterSource.includes('setMotionPhase("approaching")'), true);
+  assert.equal(sceneCharacterSource.includes('setMotionPhase("turning")'), true);
+  assert.equal(sceneCharacterSource.includes('setMotionPhase("standing-up")'), true);
+  assert.equal(sceneCharacterSource.includes('setMotionPhase("sitting")'), true);
+  assert.equal(sceneCharacterSource.includes('setMotionPhase("leaving")'), true);
+  assert.equal(sceneCharacterSource.includes("WalkingAnimalSprite"), true);
+  assert.equal(sceneCharacterSource.includes("applyCharacterPersonality"), true);
+  assert.equal(characterPersonalitySource.includes("CHARACTER_PERSONALITIES"), true);
   assert.equal(deskAnimalSource.includes("runCycleSources"), true);
   assert.equal(deskAnimalSource.includes('data-run-cycle-frames="8"'), true);
   assert.equal(deskAnimalSource.includes("walking-animal-run-cycle-strip"), true);
@@ -141,41 +158,42 @@ test("gsap motion is wired across the main surfaces with reduced-motion fallback
   assert.equal(deskAnimalSource.includes("runningAvatarSources"), false);
   assert.equal(deskAnimalSource.includes("../../assets/avatars/run-cycles-v2/fox.png"), true);
   assert.equal(deskAnimalSource.includes("../../assets/avatars/rear-v2/fox-rear.png"), true);
-  assert.equal(islandSource.includes("const sceneXFor"), true);
-  assert.equal(islandSource.includes("const sceneYFor"), true);
-  assert.equal(islandSource.includes("sceneEntryPoint().left"), true);
+  assert.equal(characterRuntimeSource.includes("const sceneXFor"), true);
+  assert.equal(characterRuntimeSource.includes("const sceneYFor"), true);
+  assert.equal(sceneCharacterSource.includes("sceneEntryPoint().left"), true);
   assert.equal(stylesSource.includes("container-type: size"), true);
   assert.equal(stylesSource.includes("will-change: left, top"), false);
   assert.equal(stylesSource.includes("will-change: transform, opacity"), true);
-  assert.equal(islandSource.includes("planCharacterRoute"), true);
-  assert.equal(islandSource.includes("routeAnimation"), true);
-  assert.equal(islandSource.includes("const middleLeft"), false);
-  assert.equal(islandSource.includes("destinationWalkingTop"), false);
-  assert.equal(islandSource.includes("travelDuration * 0.46"), false);
+  assert.equal(sceneCharacterSource.includes("planCharacterRoute"), true);
+  assert.equal(sceneCharacterSource.includes("routeAnimation"), true);
+  assert.equal(sceneCharacterSource.includes("const middleLeft"), false);
+  assert.equal(sceneCharacterSource.includes("destinationWalkingTop"), false);
+  assert.equal(sceneCharacterSource.includes("travelDuration * 0.46"), false);
   assert.equal(stylesSource.includes("@keyframes runner-leg-far-stride"), false);
   assert.equal(stylesSource.includes("@keyframes runner-leg-near-stride"), false);
   assert.equal(stylesSource.includes("@keyframes runner-arm-far-stride"), false);
   assert.equal(stylesSource.includes("@keyframes runner-arm-near-stride"), false);
-  assert.equal(islandSource.includes("movementDirection"), true);
-  assert.equal(islandSource.includes("entryRevision"), true);
-  assert.equal(islandSource.includes("didFinishEntryRef.current"), true);
+  assert.equal(sceneCharacterSource.includes("movementDirection"), true);
+  assert.equal(sceneCharacterSource.includes("entryRevision"), true);
+  assert.equal(sceneCharacterSource.includes("didFinishEntryRef.current"), true);
   assert.equal(stylesSource.includes("@keyframes layered-body-walk"), true);
   assert.equal(stylesSource.includes(".layered-animal-head"), true);
-  assert.equal(islandSource.includes("useAnimationControls"), true);
-  assert.equal(islandSource.includes("usePresence"), true);
-  assert.equal(islandSource.includes("currentPositionRef.current"), true);
-  assert.equal(islandSource.includes("onUpdate={(latest)"), true);
+  assert.equal(sceneCharacterSource.includes("useAnimationControls"), true);
+  assert.equal(sceneCharacterSource.includes("usePresence"), true);
+  assert.equal(sceneCharacterSource.includes("currentPositionRef.current"), true);
+  assert.equal(sceneCharacterSource.includes("onUpdate={(latest)"), true);
   assert.equal(
-    islandSource.includes('data-zone-transitioning={isZoneTransitioning ? "true"'),
+    sceneCharacterSource.includes('data-zone-transitioning={isZoneTransitioning ? "true"'),
     true,
   );
   assert.equal(stylesSource.includes('data-zone-transitioning="true"'), true);
   assert.equal(readFileSync(motionSystemPath, "utf8").includes("force3D: true"), true);
   assert.equal(readFileSync(motionSystemPath, "utf8").includes("CustomEase"), true);
-  assert.equal(readFileSync(motionSystemPath, "utf8").includes("0.16,1,0.3,1"), true);
+  assert.equal(readFileSync(motionSystemPath, "utf8").includes("0.16,1,0.3,1"), false);
   assert.equal(readFileSync(motionSystemPath, "utf8").includes("0.22,1,0.36,1"), true);
   assert.equal(readFileSync(motionSystemPath, "utf8").includes("back.out"), false);
   assert.equal(readFileSync(motionSystemPath, "utf8").includes("APPLE_MOTION_DURATION"), true);
+  assert.equal(readFileSync(motionSystemPath, "utf8").includes("APPLE_MOTION_SPRINGS"), true);
   assert.equal(sharedButtonSource.includes("--button-pointer-x"), true);
   assert.equal(sharedButtonSource.includes("requestAnimationFrame"), true);
   assert.equal(sharedButtonSource.includes("radial-gradient(100px circle"), true);
@@ -218,7 +236,9 @@ test("gsap motion is wired across the main surfaces with reduced-motion fallback
   assert.equal(stylesSource.includes("@keyframes icon-audio-hover"), false);
   assert.equal(motionPresetsSource.includes("dialogSurfaceVariants"), true);
   assert.equal(motionPresetsSource.includes("toastItemVariants"), true);
-  assert.equal(motionPresetsSource.includes("stiffness: 420, damping: 34, mass: 0.72"), true);
+  assert.equal(motionPresetsSource.includes("motionSpring.soft"), true);
+  assert.equal(motionPresetsSource.includes("motionSpring.compact"), true);
+  assert.equal(motionPresetsSource.includes("stiffness:"), false);
   assert.equal(toastRegionSource.includes('mode="popLayout"'), true);
   assert.equal(toastRegionSource.includes('layout="position"'), true);
   assert.equal(toastRegionSource.includes("opacity-75"), false);
@@ -283,8 +303,9 @@ test("dialogs use interruptible compositor motion without full-screen blur anima
 
 test("local scene identity survives placeholder-to-server peer replacement", () => {
   const islandSource = readFileSync(islandPath, "utf8");
+  const sceneCharacterSource = readFileSync(sceneCharacterPath, "utf8");
 
-  assert.equal(islandSource.includes('member.isLocal ? "local-member" : member.id'), true);
+  assert.equal(sceneCharacterSource.includes('member.isLocal ? "local-member" : member.id'), true);
   assert.equal(islandSource.includes("key={sceneMemberKey(member)}"), true);
   assert.equal(islandSource.includes("key={member.id}"), false);
 });

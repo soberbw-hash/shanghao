@@ -42,6 +42,7 @@ import type {
 import { isSignalEnvelope } from "./protocol";
 import { ChatHistoryStore } from "./chat-history-store";
 import { RoomManager } from "./room-manager";
+import { SessionTokenStore } from "./session-token-store";
 
 interface SignalingServerOptions {
   port?: number;
@@ -173,6 +174,7 @@ export class SignalingServer extends EventEmitter {
   private readonly sessions = new WeakMap<WebSocket, SocketSession>();
   private readonly invalidMessages = new WeakMap<WebSocket, number>();
   private readonly chatHistory: Promise<ChatHistoryStore>;
+  private readonly sessionTokens = new SessionTokenStore();
 
   constructor(private readonly options: SignalingServerOptions) {
     super();
@@ -263,6 +265,7 @@ export class SignalingServer extends EventEmitter {
 
     this.heartbeatTimer = setInterval(() => {
       for (const stale of this.roomManager.collectStalePeers()) {
+        this.sessionTokens.invalidate(stale.roomId, stale.peerId);
         this.roomManager.removePeer(stale.roomId, stale.peerId);
         this.broadcastSnapshot(stale.roomId);
       }
@@ -285,6 +288,7 @@ export class SignalingServer extends EventEmitter {
     }
 
     await (await this.chatHistory).flush();
+    this.sessionTokens.clear();
 
     await new Promise<void>((resolve, reject) => {
       this.httpServer.close((error) => {
@@ -436,6 +440,7 @@ export class SignalingServer extends EventEmitter {
           reconnectGraceActive: marked,
         });
         if (marked) {
+          this.sessionTokens.markDisconnected(roomId, peerId);
           this.broadcastSnapshot(roomId);
         }
       }
@@ -556,7 +561,35 @@ export class SignalingServer extends EventEmitter {
 
     const existingRoom = this.roomManager.getRoom(message.roomId);
     const existingPeer = existingRoom?.peers.getPeer(message.peerId);
+    let sessionToken: string;
+    if (existingPeer) {
+      const tokenValidation = this.sessionTokens.resume(
+        message.roomId,
+        message.peerId,
+        message.sessionToken,
+      );
+      if (tokenValidation.status !== "valid") {
+        this.safeSend(socket, {
+          type: "error",
+          code:
+            tokenValidation.status === "expired"
+              ? "reconnect_session_expired"
+              : "reconnect_session_invalid",
+          roomId: message.roomId,
+          peerId: message.peerId,
+          message:
+            tokenValidation.status === "expired"
+              ? "重连凭证已过期，请重新进入频道。"
+              : "无法验证本次重连，请稍后重新进入频道。",
+        });
+        return;
+      }
+      sessionToken = tokenValidation.sessionToken;
+    } else {
+      sessionToken = this.sessionTokens.issue(message.roomId, message.peerId);
+    }
     if (!existingPeer && !this.roomManager.canJoin(message.roomId)) {
+      this.sessionTokens.invalidate(message.roomId, message.peerId);
       const roomFullMessage: ErrorMessage = {
         type: "error",
         code: "room_full",
@@ -627,6 +660,7 @@ export class SignalingServer extends EventEmitter {
       serverTime: Date.now(),
       revision: room.revision + 1,
       memberCount: room.peers.listPeers().length,
+      sessionToken,
       appVersion: room.appVersion,
       protocolVersion: room.protocolVersion,
       buildNumber: room.buildNumber,
@@ -640,6 +674,7 @@ export class SignalingServer extends EventEmitter {
   private handleLeave(socket: WebSocket, message: LeaveChannelMessage): void {
     this.logger?.("peer left", { roomId: message.roomId, peerId: message.peerId });
     this.roomManager.removePeer(message.roomId, message.peerId);
+    this.sessionTokens.invalidate(message.roomId, message.peerId);
     this.sessions.delete(socket);
     this.broadcastSnapshot(message.roomId);
   }

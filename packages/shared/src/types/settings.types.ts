@@ -39,11 +39,7 @@ export interface AppSettings {
   screenShareQuality: ScreenShareQuality;
   isScreenShareSystemAudioEnabled: boolean;
   isSystemNotificationEnabled: boolean;
-  isMicOnSoundEnabled: boolean;
-  isMicOffSoundEnabled: boolean;
-  isMemberJoinSoundEnabled: boolean;
-  isMemberLeaveSoundEnabled: boolean;
-  isConnectionSoundEnabled: boolean;
+  isGameDetectionEnabled: boolean;
   isUiSoundEnabled: boolean;
   isBackgroundUpdateCheckEnabled: boolean;
   isAutoDownloadUpdateEnabled?: boolean;

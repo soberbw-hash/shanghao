@@ -1,19 +1,47 @@
 param(
-  [string]$ExecutableDirectory = "apps/desktop/release/win-unpacked",
   [string]$OutputDirectory = "docs/assets"
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
-$resolvedExeDirectory = Resolve-Path $ExecutableDirectory
-$resolvedExe = Get-ChildItem $resolvedExeDirectory -Filter "*.exe" -File |
-  Where-Object { $_.Name -notlike "*Setup*" -and $_.Name -notlike "*unins*" } |
-  Sort-Object Name |
-  Select-Object -First 1 -ExpandProperty FullName
+$workspaceRoot = Resolve-Path (Join-Path $PSScriptRoot "..")
+$desktopDirectory = Join-Path $workspaceRoot "apps/desktop"
+$electronCommand = Join-Path $desktopDirectory "node_modules/.bin/electron.cmd"
+$viteCommand = Join-Path $desktopDirectory "node_modules/.bin/vite.cmd"
+$rendererUrl = "http://127.0.0.1:5173"
 
-if (-not $resolvedExe) {
-  throw "未找到可用于截图的程序：$resolvedExeDirectory"
+if (-not (Test-Path $electronCommand)) {
+  throw "Electron runtime not found. Run corepack pnpm install first."
+}
+
+if (-not (Test-Path $viteCommand)) {
+  throw "Vite runtime not found. Run corepack pnpm install first."
+}
+
+function Test-RendererReady {
+  try {
+    $response = Invoke-WebRequest -Uri $rendererUrl -UseBasicParsing -TimeoutSec 1
+    return $response.StatusCode -ge 200 -and $response.StatusCode -lt 500
+  } catch {
+    return $false
+  }
+}
+
+function Stop-ProcessTree {
+  param([int]$ProcessId)
+
+  $children = Get-CimInstance Win32_Process -Filter "ParentProcessId = $ProcessId" -ErrorAction SilentlyContinue
+  foreach ($child in $children) {
+    Stop-ProcessTree -ProcessId $child.ProcessId
+  }
+
+  Stop-Process -Id $ProcessId -Force -ErrorAction SilentlyContinue
+}
+
+& corepack pnpm --dir $desktopDirectory build
+if ($LASTEXITCODE -ne 0) {
+  throw "Visual test build failed."
 }
 $resolvedOutput = Resolve-Path $OutputDirectory -ErrorAction SilentlyContinue
 
@@ -27,41 +55,85 @@ $captures = @(
   @{ Mode = "settings"; File = "release-settings.png" }
 )
 
-foreach ($capture in $captures) {
-  $target = Join-Path $resolvedOutput $capture.File
+$viteProcess = $null
 
-  if (Test-Path $target) {
-    Remove-Item $target -Force
+try {
+  if (-not (Test-RendererReady)) {
+    $viteProcess = Start-Process -FilePath $viteCommand `
+      -ArgumentList "--host", "127.0.0.1", "--port", "5173", "--strictPort" `
+      -WorkingDirectory $desktopDirectory `
+      -WindowStyle Hidden `
+      -PassThru
+
+    for ($index = 0; $index -lt 60; $index++) {
+      if (Test-RendererReady) {
+        break
+      }
+
+      if ($viteProcess.HasExited) {
+        throw "Vite renderer server exited early with code $($viteProcess.ExitCode)."
+      }
+
+      Start-Sleep -Milliseconds 250
+    }
   }
 
-  $env:SHANGHAO_CAPTURE_MODE = $capture.Mode
-  $env:SHANGHAO_CAPTURE_PATH = $target
-  $env:SHANGHAO_CAPTURE_EXIT = "1"
+  if (-not (Test-RendererReady)) {
+    throw "Vite renderer server did not become ready at $rendererUrl."
+  }
 
-  $process = Start-Process -FilePath $resolvedExe `
-    -WorkingDirectory (Split-Path $resolvedExe) `
-    -PassThru
+  foreach ($capture in $captures) {
+    $target = Join-Path $resolvedOutput $capture.File
 
-  for ($index = 0; $index -lt 40; $index++) {
     if (Test-Path $target) {
-      break
+      Remove-Item $target -Force
     }
 
-    Start-Sleep -Milliseconds 500
-  }
+    $env:SHANGHAO_CAPTURE_MODE = $capture.Mode
+    $env:SHANGHAO_CAPTURE_PATH = $target
+    $env:SHANGHAO_CAPTURE_EXIT = "1"
+    $captureUrl = if ($capture.Mode -eq "settings") {
+      "$rendererUrl/?visualCapture=settings"
+    } else {
+      "$rendererUrl/"
+    }
+    $env:VITE_DEV_SERVER_URL = $captureUrl
 
-  if (-not (Test-Path $target)) {
-    try {
-      Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
-    } catch {
+    $process = Start-Process -FilePath $electronCommand `
+      -ArgumentList "." `
+      -WorkingDirectory $desktopDirectory `
+      -PassThru
+
+    for ($index = 0; $index -lt 60; $index++) {
+      if (Test-Path $target) {
+        break
+      }
+
+      if ($process.HasExited) {
+        throw "Capture process for $($capture.Mode) exited early with code $($process.ExitCode)."
+      }
+
+      Start-Sleep -Milliseconds 500
     }
 
-    throw "截图生成失败：$($capture.Mode)"
-  }
+    if (-not (Test-Path $target)) {
+      Stop-ProcessTree -ProcessId $process.Id
+      throw "Capture failed for $($capture.Mode)."
+    }
 
+    if (-not $process.WaitForExit(5000)) {
+      Stop-ProcessTree -ProcessId $process.Id
+    }
+  }
+} finally {
   Remove-Item Env:SHANGHAO_CAPTURE_MODE -ErrorAction SilentlyContinue
   Remove-Item Env:SHANGHAO_CAPTURE_PATH -ErrorAction SilentlyContinue
   Remove-Item Env:SHANGHAO_CAPTURE_EXIT -ErrorAction SilentlyContinue
+  Remove-Item Env:VITE_DEV_SERVER_URL -ErrorAction SilentlyContinue
+
+  if ($viteProcess -and -not $viteProcess.HasExited) {
+    Stop-ProcessTree -ProcessId $viteProcess.Id
+  }
 }
 
 Write-Host "Generated release screenshots in $resolvedOutput"

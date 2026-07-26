@@ -6,7 +6,8 @@ import type {
 
 import { getRemoteAudioMixer } from "../audio/RemoteAudioMixer";
 
-type AudioRelayMessage = AudioChunkMessage | AudioResyncRequestMessage | AudioResyncAckMessage;
+export type AudioRelayMessage =
+  AudioChunkMessage | AudioResyncRequestMessage | AudioResyncAckMessage;
 type AudioTimelineEvent = {
   time: string;
   event: string;
@@ -20,7 +21,7 @@ type AudioTimelineEvent = {
   serverClockOffsetMs?: number;
 };
 
-interface SignalingAudioRelayOptions {
+export interface SignalingAudioRelayOptions {
   roomId: string;
   peerId: string;
   localStream: MediaStream;
@@ -228,10 +229,12 @@ class FallbackAudioPlayer {
 
   destroy(): void {
     this.mixer.removeRelayPeer(this.peerId);
+    this.mixer.forgetPeerMediaPath(this.peerId);
   }
 }
 
 export class SignalingAudioRelay {
+  private readonly mixer = getRemoteAudioMixer();
   private context?: AudioContext;
   private processor?: ScriptProcessorNode;
   private workletNode?: AudioWorkletNode;
@@ -452,9 +455,11 @@ export class SignalingAudioRelay {
     if (state) {
       this.resetPeerQueue(peerId, state, reason);
     }
+    this.mixer.forgetPeerMediaPath(peerId);
   }
 
   markPeerPath(peerId: string, path: "webrtc" | "relay", reason: string): void {
+    this.mixer.setPeerMediaPath(peerId, path);
     const state = this.getPeerState(peerId);
     this.resetPeerQueue(peerId, state, reason);
     state.fallbackEnabledAt = performance.now();
@@ -510,6 +515,9 @@ export class SignalingAudioRelay {
     void this.context?.close().catch(() => undefined);
     for (const player of this.players.values()) {
       player.destroy();
+    }
+    for (const peerId of this.peerStates.keys()) {
+      this.mixer.forgetPeerMediaPath(peerId);
     }
     this.players.clear();
     this.recordTimeline("mic_stopped");

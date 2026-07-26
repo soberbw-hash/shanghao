@@ -266,6 +266,17 @@ export class MeshPeerConnection {
   }
 
   async acceptOffer(offer: SessionDescriptionPayload): Promise<SessionDescriptionPayload> {
+    if (this.connection.signalingState === "have-local-offer") {
+      await this.connection.setLocalDescription({ type: "rollback" });
+      this.options.onDiagnosticEvent?.("connection_state", {
+        peerId: this.options.peerId,
+        state: this.connection.connectionState,
+        negotiationAction: "rolled_back_local_offer",
+      });
+    }
+    if (this.connection.signalingState !== "stable") {
+      throw new Error(`peer_offer_invalid_state:${this.connection.signalingState}`);
+    }
     await this.connection.setRemoteDescription({
       type: offer.type,
       sdp: offer.sdp ?? undefined,
@@ -286,6 +297,17 @@ export class MeshPeerConnection {
   }
 
   async acceptAnswer(answer: SessionDescriptionPayload): Promise<void> {
+    if (this.connection.signalingState === "stable") {
+      this.options.onDiagnosticEvent?.("connection_state", {
+        peerId: this.options.peerId,
+        state: this.connection.connectionState,
+        negotiationAction: "ignored_stale_answer",
+      });
+      return;
+    }
+    if (this.connection.signalingState !== "have-local-offer") {
+      throw new Error(`peer_answer_invalid_state:${this.connection.signalingState}`);
+    }
     await this.connection.setRemoteDescription({
       type: answer.type,
       sdp: answer.sdp ?? undefined,

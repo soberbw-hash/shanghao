@@ -20,6 +20,7 @@ import { SettingsPageHeader } from "../components/settings/SettingsPageHeader";
 import { SettingsSection } from "../components/settings/SettingsSection";
 import { ShortcutSettingsCard } from "../components/settings/ShortcutSettingsCard";
 import { StartupSplashPage } from "../components/status/StartupSplashPage";
+import { playUiSound } from "../features/audio/uiSound";
 import { useMicTest } from "../hooks/useMicTest";
 import { usePrefersReducedMotion } from "../hooks/usePrefersReducedMotion";
 import { getRoomRuntimeDiagnostics } from "../hooks/useRoomState";
@@ -308,6 +309,17 @@ export const SettingsPage = () => {
               onChange={(isOverlayEnabled) => void handleSaveSettings({ isOverlayEnabled })}
             />
           </SettingsItemRow>
+          <SettingsItemRow
+            label="自动识别游戏"
+            description="开启后每 8 秒识别一次已知游戏；关闭后不会再启动系统检测进程。"
+          >
+            <Switch
+              isChecked={settings.isGameDetectionEnabled}
+              onChange={(isGameDetectionEnabled) =>
+                void handleSaveSettings({ isGameDetectionEnabled })
+              }
+            />
+          </SettingsItemRow>
           <SettingsItemRow label="硬件加速" description="默认开启。修改后下次启动生效。">
             <Switch
               isChecked={settings.isHardwareAccelerationEnabled}
@@ -357,18 +369,35 @@ export const SettingsPage = () => {
     notifications: (
       <SettingsSection title="通知与提示音" description="保留必要的轻提示，不打扰开黑。">
         <div className="space-y-3">
-          <SettingsItemRow label="提示音音量" description="加入、离开、消息和操作提示统一调节。">
-            <input
-              type="range"
-              min={0}
-              max={1}
-              step={0.05}
-              value={settings.soundVolume}
-              aria-label="提示音音量"
-              onChange={(event) =>
-                void handleSaveSettings({ soundVolume: Number(event.target.value) })
-              }
+          <SettingsItemRow label="界面提示音" description="统一控制操作、成员和连接提示音。">
+            <Switch
+              isChecked={settings.isUiSoundEnabled}
+              onChange={(isUiSoundEnabled) => void handleSaveSettings({ isUiSoundEnabled })}
             />
+          </SettingsItemRow>
+          <SettingsItemRow label="提示音音量" description="加入、离开、消息和操作提示统一调节。">
+            <div className="flex items-center gap-2">
+              <input
+                type="range"
+                min={0}
+                max={1}
+                step={0.05}
+                value={settings.soundVolume}
+                aria-label="提示音音量"
+                disabled={!settings.isUiSoundEnabled}
+                onChange={(event) =>
+                  void handleSaveSettings({ soundVolume: Number(event.target.value) })
+                }
+              />
+              <Button
+                variant="ghost"
+                data-ui-sound="handled"
+                disabled={!settings.isUiSoundEnabled}
+                onClick={() => playUiSound("popup-open")}
+              >
+                试听
+              </Button>
+            </div>
           </SettingsItemRow>
           <SettingsItemRow label="系统通知" description="全屏游戏时提醒好友上线或敲你。">
             <Switch

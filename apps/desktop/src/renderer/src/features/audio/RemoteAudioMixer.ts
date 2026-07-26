@@ -12,6 +12,7 @@ interface RemoteAudioChannel {
   audioTrackId: string;
   source: MediaStreamAudioSourceNode;
   gain: GainNode;
+  volume: number;
 }
 
 interface ScheduledRelayChunk {
@@ -25,6 +26,7 @@ interface RelayAudioChannel {
   nextPlaybackTime: number;
   droppedOldChunks: number;
   scheduled: ScheduledRelayChunk[];
+  volume: number;
 }
 
 export interface RemoteAudioMixInput {
@@ -53,6 +55,7 @@ export class RemoteAudioMixer {
   private compressor?: DynamicsCompressorNode;
   private channels = new Map<string, RemoteAudioChannel>();
   private relayChannels = new Map<string, RelayAudioChannel>();
+  private peerMediaPaths = new Map<string, "webrtc" | "relay">();
   private isDeafened = false;
   private outputDeviceId?: string;
   private resumeInFlight?: Promise<boolean>;
@@ -133,14 +136,19 @@ export class RemoteAudioMixer {
       }
       if (!existing || existing.audioTrackId !== audioTrackId) {
         this.removeChannel(input.peerId);
-        this.clearRelayPeer(input.peerId);
         try {
           const context = this.ensureGraph();
           const source = context.createMediaStreamSource(input.stream);
           const gain = context.createGain();
           source.connect(gain);
           gain.connect(this.masterGain!);
-          this.channels.set(input.peerId, { stream: input.stream, audioTrackId, source, gain });
+          this.channels.set(input.peerId, {
+            stream: input.stream,
+            audioTrackId,
+            source,
+            gain,
+            volume: input.volume,
+          });
         } catch (error) {
           void writeRendererLog("audio", "error", "Failed to add remote stream to audio mixer", {
             peerId: input.peerId,
@@ -153,8 +161,11 @@ export class RemoteAudioMixer {
       const channel = this.channels.get(input.peerId);
       const context = this.context;
       if (channel && context) {
+        channel.volume = input.volume;
         channel.gain.gain.setTargetAtTime(
-          Math.max(0, Math.min(2, input.volume)),
+          this.peerMediaPaths.get(input.peerId) === "webrtc"
+            ? Math.max(0, Math.min(2, input.volume))
+            : 0,
           context.currentTime,
           0.012,
         );
@@ -186,7 +197,12 @@ export class RemoteAudioMixer {
     const channel = this.getOrCreateRelayChannel(peerId, context);
     const now = context.currentTime;
     this.pruneRelayChannel(channel, now);
-    channel.gain.gain.setTargetAtTime(Math.max(0, Math.min(2, volume)), context.currentTime, 0.012);
+    channel.volume = volume;
+    channel.gain.gain.setTargetAtTime(
+      this.peerMediaPaths.get(peerId) === "webrtc" ? 0 : Math.max(0, Math.min(2, volume)),
+      context.currentTime,
+      0.012,
+    );
 
     if (channel.nextPlaybackTime < now) {
       channel.nextPlaybackTime = now + RELAY_PLAYBACK_LEAD_SECONDS;
@@ -235,6 +251,36 @@ export class RemoteAudioMixer {
     this.resetRelayQueue(channel, this.context);
   }
 
+  setPeerMediaPath(peerId: string, path: "webrtc" | "relay"): void {
+    this.peerMediaPaths.set(peerId, path);
+    const context = this.context;
+    if (!context) return;
+
+    const webrtcChannel = this.channels.get(peerId);
+    if (webrtcChannel) {
+      webrtcChannel.gain.gain.setTargetAtTime(
+        path === "webrtc" ? Math.max(0, Math.min(2, webrtcChannel.volume)) : 0,
+        context.currentTime,
+        0.018,
+      );
+    }
+    const relayChannel = this.relayChannels.get(peerId);
+    if (relayChannel) {
+      relayChannel.gain.gain.setTargetAtTime(
+        path === "relay" ? Math.max(0, Math.min(2, relayChannel.volume)) : 0,
+        context.currentTime,
+        0.018,
+      );
+      if (path === "webrtc") {
+        this.resetRelayQueue(relayChannel, context);
+      }
+    }
+  }
+
+  forgetPeerMediaPath(peerId: string): void {
+    this.peerMediaPaths.delete(peerId);
+  }
+
   removeRelayPeer(peerId: string): void {
     const channel = this.relayChannels.get(peerId);
     if (!channel) return;
@@ -253,6 +299,7 @@ export class RemoteAudioMixer {
     this.masterGain = undefined;
     this.compressor = undefined;
     this.resumeInFlight = undefined;
+    this.peerMediaPaths.clear();
     void context?.close().catch(() => undefined);
   }
 
@@ -277,6 +324,7 @@ export class RemoteAudioMixer {
       nextPlaybackTime: context.currentTime + RELAY_PLAYBACK_LEAD_SECONDS,
       droppedOldChunks: 0,
       scheduled: [],
+      volume: 1,
     };
     this.relayChannels.set(peerId, created);
     return created;

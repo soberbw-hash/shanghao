@@ -49,9 +49,11 @@ export const evaluateInboundAudioFlow = (
     packetsReceived: stats.packetsReceived,
   };
   if (!previous) {
+    const hasReceivedAudio =
+      Math.max(0, stats.bytesReceived ?? 0) > 0 || Math.max(0, stats.packetsReceived ?? 0) > 0;
     return {
-      status: context.isRemoteMuted ? "muted" : "warming",
-      progressed: false,
+      status: context.isRemoteMuted ? "muted" : hasReceivedAudio ? "flowing" : "warming",
+      progressed: !context.isRemoteMuted && hasReceivedAudio,
       next: { ...nextCounters, stagnantSamples: 0 },
     };
   }

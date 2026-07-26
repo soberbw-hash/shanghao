@@ -12,7 +12,7 @@ import {
   type ScreenShareViewerSignal,
 } from "@private-voice/shared";
 
-const devServerUrl = "http://127.0.0.1:5173";
+const devServerUrl = process.env.VITE_DEV_SERVER_URL?.trim() || "http://127.0.0.1:5173";
 
 interface CreateMainWindowOptions {
   log?: (
@@ -126,7 +126,7 @@ export const openScreenShareViewer = async ({
     maximizable: true,
     minimizable: true,
     webPreferences: {
-      preload: path.join(__dirname, "../preload/index.cjs"),
+      preload: path.join(__dirname, "../preload/screen-share-viewer.cjs"),
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
@@ -286,8 +286,8 @@ export const createMainWindow = ({
   });
   // NOTE: BrowserWindow#setAppDetails is a 36+ API that has stub types in
   // 35.x but no runtime implementation, so calling it crashes startup.
-  // On macOS the dock icon is handled by the bundle, on Windows use
-  // app.setAppUserModelId() before app.whenReady() if needed.
+  // Windows taskbar identity is configured with app.setAppUserModelId()
+  // before app.whenReady(); BrowserWindow uses the packaged multi-size icon.
 
   const targetUrl = !app.isPackaged
     ? devServerUrl

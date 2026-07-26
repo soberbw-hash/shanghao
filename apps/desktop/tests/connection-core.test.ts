@@ -18,7 +18,7 @@ test("webrtc prefers domestic stun and buffers early ICE candidates", () => {
 
 test("webrtc voice and screen transport adapt to weak networks", () => {
   const peer = read("packages/webrtc/src/createPeer.ts");
-  const roomClient = read("apps/desktop/src/renderer/src/features/room/roomClient.ts");
+  const peerStatsMonitor = read("apps/desktop/src/renderer/src/features/room/PeerStatsMonitor.ts");
 
   assert.equal(peer.includes("useinbandfec=1"), true);
   assert.equal(peer.includes("usedtx=1"), true);
@@ -29,15 +29,17 @@ test("webrtc voice and screen transport adapt to weak networks", () => {
   assert.equal(peer.includes("availableOutgoingBitrateBps"), true);
   assert.equal(peer.includes("availableOutgoingBitrate < 100_000"), true);
   assert.equal(peer.includes("this.pendingRecoverySamples < 3"), true);
-  assert.equal(roomClient.includes("peer.adaptToNetwork(stats)"), true);
-  assert.equal(roomClient.includes("Peer network adaptation changed"), true);
+  assert.equal(peerStatsMonitor.includes("peer.adaptToNetwork(stats)"), true);
+  assert.equal(peerStatsMonitor.includes("onAdaptationChanged"), true);
 });
 
 test("room client keeps relay playback until connected WebRTC audio is actually playable", () => {
   const source = read("apps/desktop/src/renderer/src/features/room/roomClient.ts");
   const relay = read("apps/desktop/src/renderer/src/features/room/signalingAudioRelay.ts");
+  const fallback = read("apps/desktop/src/renderer/src/features/audio/AudioFallbackController.ts");
   const mixer = read("apps/desktop/src/renderer/src/features/audio/RemoteAudioMixer.ts");
   const trackPolicy = read("apps/desktop/src/renderer/src/features/audio/remoteAudioTrack.ts");
+  const pathPolicy = read("apps/desktop/src/renderer/src/features/room/peerAudioPath.ts");
 
   assert.equal(source.includes('if (state === "connected")'), true);
   assert.equal(source.includes("this.webrtcConnectedPeerIds.add(targetPeerId)"), true);
@@ -45,13 +47,20 @@ test("room client keeps relay playback until connected WebRTC audio is actually 
   assert.equal(source.includes("syncPeerMediaPath(targetPeerId"), true);
   assert.equal(source.includes("remoteAudioTrackReady"), true);
   assert.equal(source.includes("hasPlayableAudioTrack(stream)"), true);
+  assert.equal(source.includes("webrtcFlowingPeerIds"), true);
+  assert.equal(source.includes("Remote audio RTP is flowing"), true);
+  assert.equal(source.includes("isPeerAudioPathReady"), true);
   assert.equal(source.includes('type: "audio_path_state"'), true);
   assert.equal(source.includes("relayRequestedByPeerIds"), true);
   assert.equal(source.includes("advertiseAudioPathState"), true);
   assert.equal(
-    source.includes('this.audioRelay?.markPeerPath(targetPeerId, "webrtc", reason)'),
+    source.includes('this.audioFallback?.markPeerPath(targetPeerId, "webrtc", reason)'),
     true,
   );
+  assert.equal(fallback.includes("class AudioFallbackController"), true);
+  assert.equal(fallback.includes("markPeerPath"), true);
+  assert.equal(pathPolicy.includes("hasInboundRtpFlow"), true);
+  assert.equal(pathPolicy.includes("isStalled"), true);
   assert.equal(source.includes('state === "closed"'), true);
   assert.equal(relay.includes("RELAY_SAMPLE_RATE = 16_000"), true);
   assert.equal(relay.includes("MAX_PACKET_AGE_MS = 3_000"), true);

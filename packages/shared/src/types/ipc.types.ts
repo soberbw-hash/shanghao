@@ -74,6 +74,12 @@ export interface ScreenShareViewerSignal {
   frameDataUrl?: string;
 }
 
+export interface ScreenShareViewerApi {
+  sendSignal: (signal: ScreenShareViewerSignal) => Promise<boolean>;
+  close: () => Promise<void>;
+  onSignal: (listener: (signal: ScreenShareViewerSignal) => void) => () => void;
+}
+
 export interface GameDetectionSnapshot {
   gameName?:
     | "我的世界"
@@ -120,11 +126,8 @@ export interface DesktopApi {
     selectSource: (sourceId: string) => Promise<void>;
     setContentProtection: (enabled: boolean) => Promise<void>;
   };
-  screenShareViewer: {
+  screenShareViewer: ScreenShareViewerApi & {
     open: (request: ScreenShareViewerOpenRequest) => Promise<void>;
-    sendSignal: (signal: ScreenShareViewerSignal) => Promise<boolean>;
-    close: () => Promise<void>;
-    onSignal: (listener: (signal: ScreenShareViewerSignal) => void) => () => void;
   };
   window: {
     minimize: () => Promise<void>;

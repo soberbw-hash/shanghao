@@ -160,18 +160,45 @@ const detectKnownGame = async (): Promise<GameDetectionSnapshot["gameName"]> => 
 
 export class GameDetectionController {
   private timer: NodeJS.Timeout | undefined;
+  private enabled = false;
+  private checkInFlight = false;
   private listeners = new Set<(snapshot: GameDetectionSnapshot) => void>();
   private snapshot: GameDetectionSnapshot = { checkedAt: new Date(0).toISOString() };
 
   constructor(private readonly writeLog: (payload: RendererLogPayload) => Promise<void>) {}
 
   start(): void {
-    if (this.timer) return;
+    void this.setEnabled(true);
+  }
+
+  async setEnabled(enabled: boolean): Promise<void> {
+    if (this.enabled === enabled) return;
+    this.enabled = enabled;
+
+    if (!enabled) {
+      if (this.timer) clearInterval(this.timer);
+      this.timer = undefined;
+      this.snapshot = { checkedAt: new Date().toISOString() };
+      for (const listener of this.listeners) listener(this.snapshot);
+      await this.writeLog({
+        category: "app",
+        level: "info",
+        message: "game_detection_disabled",
+      });
+      return;
+    }
+
+    await this.writeLog({
+      category: "app",
+      level: "info",
+      message: "game_detection_enabled",
+    });
     void this.check();
     this.timer = setInterval(() => void this.check(), POLL_INTERVAL_MS);
   }
 
   stop(): void {
+    this.enabled = false;
     if (this.timer) clearInterval(this.timer);
     this.timer = undefined;
     this.listeners.clear();
@@ -187,8 +214,13 @@ export class GameDetectionController {
   }
 
   private async check(): Promise<void> {
+    if (!this.enabled || this.checkInFlight) return;
+    this.checkInFlight = true;
     const previousGame = this.snapshot.gameName;
-    const gameName = await detectKnownGame();
+    const gameName = await detectKnownGame().finally(() => {
+      this.checkInFlight = false;
+    });
+    if (!this.enabled) return;
     this.snapshot = {
       gameName,
       detectedAt: gameName

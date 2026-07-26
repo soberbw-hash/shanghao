@@ -86,13 +86,7 @@ export const useUiFeedbackSounds = (): void => {
     }
 
     if (isMuted !== previousMuteRef.current) {
-      if (isMuted && settings.isMicOffSoundEnabled) {
-        playUiSound("mic-off");
-      }
-
-      if (!isMuted && settings.isMicOnSoundEnabled) {
-        playUiSound("mic-on");
-      }
+      playUiSound(isMuted ? "mic-off" : "mic-on");
 
       previousMuteRef.current = isMuted;
     }
@@ -107,6 +101,10 @@ export const useUiFeedbackSounds = (): void => {
     if (!settings || !didInitRef.current) {
       return;
     }
+    const isStableConnection =
+      connectionState === RoomConnectionState.Connected ||
+      connectionState === RoomConnectionState.WaitingPeer;
+    if (!isStableConnection) return;
 
     const currentMemberIds = members
       .filter((member) => !member.isEmptySlot && !member.isLocal)
@@ -121,7 +119,7 @@ export const useUiFeedbackSounds = (): void => {
     if (left.length) playUiSound("member-leave");
 
     previousMemberIdsRef.current = currentMemberIds;
-  }, [members, settings]);
+  }, [connectionState, members, settings]);
 
   useEffect(() => {
     if (!settings || !didInitRef.current) {
@@ -130,16 +128,14 @@ export const useUiFeedbackSounds = (): void => {
 
     if (
       connectionState === RoomConnectionState.Connected &&
-      previousConnectionRef.current !== RoomConnectionState.Connected &&
-      settings.isConnectionSoundEnabled
+      previousConnectionRef.current !== RoomConnectionState.Connected
     ) {
       playUiSound("connection-restored");
     }
 
     if (
       connectionState === RoomConnectionState.Failed &&
-      previousConnectionRef.current !== RoomConnectionState.Failed &&
-      settings.isConnectionSoundEnabled
+      previousConnectionRef.current !== RoomConnectionState.Failed
     ) {
       playUiSound("connection-failed");
     }

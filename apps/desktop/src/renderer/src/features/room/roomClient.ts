@@ -39,18 +39,18 @@ import {
   DEFAULT_SCREEN_SHARE_PROFILE,
   ExponentialBackoff,
   MeshPeerConnection,
-  collectPeerAudioStats,
-  evaluateInboundAudioFlow,
-  type InboundAudioProgress,
-  type NetworkAdaptationTier,
+  type InboundAudioFlowEvaluation,
   type PeerAudioStats,
   type ScreenShareEncodingProfile,
 } from "@private-voice/webrtc";
 
 import { writeRendererLog } from "../../utils/logger";
+import { AudioFallbackController } from "../audio/AudioFallbackController";
 import { hasPlayableAudioTrack } from "../audio/remoteAudioTrack";
+import { PeerStatsMonitor } from "./PeerStatsMonitor";
+import { buildRoomDiagnostics } from "./RoomDiagnostics";
+import { isPeerAudioPathReady } from "./peerAudioPath";
 import { normalizePresenceGameName } from "./presenceSignal";
-import { SignalingAudioRelay } from "./signalingAudioRelay";
 
 interface RoomClientOptions {
   signalingUrl: string;
@@ -100,7 +100,6 @@ const SNAPSHOT_RETRY_TIMEOUT_MS = 5_000;
 const SCREEN_FRAME_INTERVAL_MS = 2_500;
 const SCREEN_FRAME_MAX_WIDTH = 480;
 const SCREEN_FRAME_MAX_BYTES = 48 * 1024;
-const PEER_AUDIO_HEALTH_INTERVAL_MS = 1_000;
 
 export class RoomClient {
   private readonly signalingSessionId = crypto.randomUUID();
@@ -108,7 +107,6 @@ export class RoomClient {
   private readonly peers = new Map<string, MeshPeerConnection>();
   private readonly peerVolumes = new Map<string, number>();
   private heartbeatTimer?: number;
-  private peerStatsTimer?: number;
   private snapshotRetryTimer?: number;
   private reconnectTimer?: number;
   private shouldReconnect = true;
@@ -128,10 +126,11 @@ export class RoomClient {
   private pendingConnection?: PendingConnection;
   private hasJoinedOnce = false;
   private unsubscribeEvents?: () => void;
-  private audioRelay?: SignalingAudioRelay;
+  private audioFallback?: AudioFallbackController;
   private readonly remotePeerIds = new Set<string>();
   private readonly webrtcConnectedPeerIds = new Set<string>();
   private readonly webrtcAudioPeerIds = new Set<string>();
+  private readonly webrtcFlowingPeerIds = new Set<string>();
   private readonly webrtcReadyPeerIds = new Set<string>();
   private readonly webrtcStalledPeerIds = new Set<string>();
   private readonly webrtcScreenPeerIds = new Set<string>();
@@ -143,11 +142,9 @@ export class RoomClient {
   private readonly peerRecoveryTimers = new Map<string, number>();
   private readonly peerConnectionWatchdogs = new Map<string, number>();
   private readonly peerRecoveryAttempts = new Map<string, number>();
+  private readonly peerOperationQueues = new Map<string, Promise<void>>();
   private readonly pendingIceCandidates = new Map<string, IceCandidateMessage["candidate"][]>();
-  private readonly peerStats = new Map<string, PeerAudioStats>();
-  private readonly peerAudioProgress = new Map<string, InboundAudioProgress>();
-  private readonly peerConnectedAt = new Map<string, number>();
-  private readonly peerAdaptationTiers = new Map<string, NetworkAdaptationTier>();
+  private readonly peerStatsMonitor: PeerStatsMonitor;
   private reconnectAttempts = 0;
   private lastSnapshotRevision = 0;
   private isSignalingConnected = false;
@@ -177,6 +174,7 @@ export class RoomClient {
   private iceServers?: RTCIceServer[];
   private hasTurnServer = false;
   private bridgeEventQueue: Promise<void> = Promise.resolve();
+  private reconnectSessionToken?: string;
 
   constructor(private readonly options: RoomClientOptions) {
     this.localStream = options.localStream;
@@ -187,6 +185,30 @@ export class RoomClient {
     this.lastPublishedNickname = options.nickname;
     this.lastPublishedAvatarDataUrl = options.avatarDataUrl;
     this.lastPublishedAvatarId = options.avatarId;
+    this.peerStatsMonitor = new PeerStatsMonitor({
+      getPeers: () => this.peers,
+      getPeerState: (peerId) => ({
+        isRemotePeer: this.remotePeerIds.has(peerId),
+        isConnected: this.webrtcConnectedPeerIds.has(peerId),
+        hasRemoteAudio: this.webrtcAudioPeerIds.has(peerId),
+        isRemoteMuted: this.currentMembers.find((member) => member.id === peerId)?.isMuted ?? false,
+      }),
+      onLatency: (peerId, latencyMs) => this.options.onPeerLatency?.(peerId, latencyMs),
+      onStats: (stats) => this.options.onPeerStats?.(stats),
+      onFlowEvaluation: (peerId, stats, evaluation) =>
+        this.handlePeerAudioFlowEvaluation(peerId, stats, evaluation),
+      onAdaptationChanged: (peerId, previousTier, nextTier, stats) => {
+        void writeRendererLog("webrtc", "info", "Peer network adaptation changed", {
+          peerId,
+          previousTier,
+          nextTier,
+          packetLossPercent: stats.packetLossPercent,
+          jitterMs: stats.jitterMs,
+          roundTripTimeMs: stats.roundTripTimeMs,
+          availableOutgoingBitrateBps: stats.availableOutgoingBitrateBps,
+        });
+      },
+    });
   }
 
   connect(): Promise<void> {
@@ -221,11 +243,12 @@ export class RoomClient {
       await this.restorePrimaryInputTrack();
     }
     this.stopScreenShareTracks();
-    this.audioRelay?.destroy();
-    this.audioRelay = undefined;
+    this.audioFallback?.destroy();
+    this.audioFallback = undefined;
     this.remotePeerIds.clear();
     this.webrtcConnectedPeerIds.clear();
     this.webrtcAudioPeerIds.clear();
+    this.webrtcFlowingPeerIds.clear();
     this.webrtcReadyPeerIds.clear();
     this.webrtcStalledPeerIds.clear();
     this.webrtcScreenPeerIds.clear();
@@ -234,11 +257,11 @@ export class RoomClient {
     this.remoteSharingPeerIds.clear();
     this.screenRelayRequestedByPeerIds.clear();
     this.advertisedScreenRelayNeeds.clear();
-    this.peerAudioProgress.clear();
-    this.peerConnectedAt.clear();
+    this.peerStatsMonitor.stop();
     this.unsubscribeEvents?.();
     this.unsubscribeEvents = undefined;
     this.pendingIceCandidates.clear();
+    this.peerOperationQueues.clear();
     this.bridgeEventQueue = Promise.resolve();
     this.isSignalingConnected = false;
     await window.desktopApi.signaling.close(this.signalingSessionId).catch(() => undefined);
@@ -250,13 +273,13 @@ export class RoomClient {
   }
 
   getDiagnostics() {
-    return {
+    return buildRoomDiagnostics({
       currentPeerId: this.options.peerId,
       reconnectAttempts: this.reconnectAttempts,
       lastSocketCloseCode: this.lastSocketCloseCode,
       lastSocketCloseReason: this.lastSocketCloseReason,
       lastSocketClosedAt: this.lastSocketClosedAt,
-      audioRelayState: this.audioRelay ? ("active" as const) : ("inactive" as const),
+      audioRelayActive: Boolean(this.audioFallback),
       remotePeerCount: this.remotePeerIds.size,
       roomSnapshotRevision: this.lastSnapshotRevision,
       chatSendFailures: this.chatSendFailures,
@@ -266,17 +289,18 @@ export class RoomClient {
       joinAckReceived: this.joinAckReceived,
       roomSnapshotReceived: this.roomSnapshotReceived,
       lastServerError: this.lastServerError,
-      screenShareRelayState: this.screenFrameTimer ? ("active" as const) : ("inactive" as const),
+      screenShareRelayActive: Boolean(this.screenFrameTimer),
       screenShareRelayTargetCount: this.getScreenRelayTargetPeerIds().length,
-      audioRelayDiagnostics: this.audioRelay?.getDiagnostics(),
+      audioRelayDiagnostics: this.audioFallback?.getDiagnostics(),
       webrtcReadyPeerCount: this.webrtcReadyPeerIds.size,
       webrtcConnectedPeerCount: this.webrtcConnectedPeerIds.size,
       webrtcAudioPeerCount: this.webrtcAudioPeerIds.size,
+      webrtcFlowingPeerCount: this.webrtcFlowingPeerIds.size,
       peerRecoveryAttempts: Object.fromEntries(this.peerRecoveryAttempts),
-      peerConnectionStats: Object.fromEntries(this.peerStats),
-      peerAdaptationTiers: Object.fromEntries(this.peerAdaptationTiers),
+      peerConnectionStats: this.peerStatsMonitor.getStats(),
+      peerAdaptationTiers: this.peerStatsMonitor.getAdaptationTiers(),
       turnConfigured: this.hasTurnServer,
-    };
+    });
   }
 
   updateMuteState(isMuted: boolean, isSpeaking: boolean): void {
@@ -286,7 +310,7 @@ export class RoomClient {
 
     this.lastPublishedMuteState = isMuted;
     this.lastPublishedSpeakingState = isSpeaking;
-    this.audioRelay?.setMuted(isMuted);
+    this.audioFallback?.setMuted(isMuted);
     void this.safeSend({
       type: "member_state",
       roomId: this.options.roomId,
@@ -397,6 +421,7 @@ export class RoomClient {
         appVersion: this.options.appVersion,
         protocolVersion: this.options.protocolVersion,
         buildNumber: this.options.buildNumber,
+        sessionToken: this.reconnectSessionToken,
       });
       this.joinChannelSent = true;
       this.startHeartbeat();
@@ -429,7 +454,7 @@ export class RoomClient {
       this.isSignalingConnected = false;
       this.joinAckReceived = false;
       this.advertisedRelayNeeds.clear();
-      this.audioRelay?.resetTransport("signaling_socket_closed");
+      this.audioFallback?.resetTransport("signaling_socket_closed");
 
       if (payload.code === 4400) {
         const error = new Error("signaling_protocol_rejected");
@@ -503,10 +528,10 @@ export class RoomClient {
         this.handleAudioPathState(payload);
         return;
       case "audio_resync_request":
-        this.audioRelay?.handleResyncRequest(payload);
+        this.audioFallback?.handleResyncRequest(payload);
         return;
       case "audio_resync_ack":
-        this.audioRelay?.handleResyncAck(payload);
+        this.audioFallback?.handleResyncAck(payload);
         return;
       case "screen_frame":
         this.handleScreenFrame(payload);
@@ -640,6 +665,7 @@ export class RoomClient {
     }
 
     this.joinAckReceived = true;
+    this.reconnectSessionToken = payload.sessionToken;
     this.hasJoinedOnce = true;
     this.joinStage = "join_ack_received";
     this.options.onConnectionState(RoomConnectionState.WaitingSnapshot);
@@ -739,14 +765,12 @@ export class RoomClient {
       if (!activePeerIds.has(peerId)) {
         const peer = this.peers.get(peerId);
         this.peers.delete(peerId);
-        this.peerStats.delete(peerId);
-        this.peerAudioProgress.delete(peerId);
-        this.peerConnectedAt.delete(peerId);
-        this.peerAdaptationTiers.delete(peerId);
+        this.peerStatsMonitor.forgetPeer(peerId);
         this.clearPeerRecovery(peerId, true);
         peer?.destroy();
         this.webrtcConnectedPeerIds.delete(peerId);
         this.webrtcAudioPeerIds.delete(peerId);
+        this.webrtcFlowingPeerIds.delete(peerId);
         this.webrtcReadyPeerIds.delete(peerId);
         this.webrtcStalledPeerIds.delete(peerId);
         this.webrtcScreenPeerIds.delete(peerId);
@@ -756,7 +780,7 @@ export class RoomClient {
         this.remoteSharingPeerIds.delete(peerId);
         this.screenRelayRequestedByPeerIds.delete(peerId);
         this.advertisedScreenRelayNeeds.delete(peerId);
-        this.audioRelay?.clearPeer(peerId, "peer_left_room");
+        this.audioFallback?.clearPeer(peerId, "peer_left_room");
         this.options.onRemoteStream(peerId, undefined);
         this.options.onRemoteScreenFrame(peerId, undefined);
       }
@@ -768,75 +792,110 @@ export class RoomClient {
       }
 
       if (this.options.peerId < member.id) {
-        const peer = this.createPeer(member.id);
-        await this.applyScreenShareToPeer(peer);
-        const offer = await peer.createOffer();
-        await this.send({
-          type: "peer_offer",
-          roomId: this.options.roomId,
-          peerId: this.options.peerId,
-          targetPeerId: member.id,
-          sdp: offer,
+        await this.enqueuePeerOperation(member.id, "snapshot_offer", async () => {
+          if (!this.remotePeerIds.has(member.id) || this.peers.has(member.id)) {
+            return;
+          }
+          const peer = this.createPeer(member.id);
+          await this.applyScreenShareToPeer(peer);
+          const offer = await peer.createOffer();
+          await this.send({
+            type: "peer_offer",
+            roomId: this.options.roomId,
+            peerId: this.options.peerId,
+            targetPeerId: member.id,
+            sdp: offer,
+          });
         });
       }
     }
   }
 
   private async handlePeerOffer(payload: PeerOfferMessage): Promise<void> {
-    const existing = this.peers.get(payload.peerId);
-    const peer =
-      existing && existing.connection.connectionState === "connected"
-        ? existing
-        : this.replacePeer(payload.peerId);
-    await this.applyScreenShareToPeer(peer);
-    const answer = await peer.acceptOffer(payload.sdp);
+    await this.enqueuePeerOperation(payload.peerId, "accept_offer", async () => {
+      if (!this.remotePeerIds.has(payload.peerId)) {
+        return;
+      }
+      const existing = this.peers.get(payload.peerId);
+      let peer =
+        !existing ||
+        existing.connection.connectionState === "failed" ||
+        existing.connection.connectionState === "closed"
+          ? this.replacePeer(payload.peerId)
+          : existing;
+      await this.applyScreenShareToPeer(peer);
+      let answer;
+      try {
+        answer = await peer.acceptOffer(payload.sdp);
+      } catch (error) {
+        if (this.peers.get(payload.peerId) !== peer) {
+          return;
+        }
+        void writeRendererLog("webrtc", "warn", "Retrying peer offer on a clean connection", {
+          peerId: payload.peerId,
+          signalingState: peer.connection.signalingState,
+          error: error instanceof Error ? error.message : String(error),
+        });
+        peer = this.replacePeer(payload.peerId);
+        await this.applyScreenShareToPeer(peer);
+        answer = await peer.acceptOffer(payload.sdp);
+      }
 
-    await this.send({
-      type: "peer_answer",
-      roomId: this.options.roomId,
-      peerId: this.options.peerId,
-      targetPeerId: payload.peerId,
-      sdp: answer,
+      await this.send({
+        type: "peer_answer",
+        roomId: this.options.roomId,
+        peerId: this.options.peerId,
+        targetPeerId: payload.peerId,
+        sdp: answer,
+      });
     });
   }
 
   private async handlePeerAnswer(payload: PeerAnswerMessage): Promise<void> {
-    const peer = this.peers.get(payload.peerId);
-    if (!peer) {
-      return;
-    }
-
-    await peer.acceptAnswer(payload.sdp);
+    await this.enqueuePeerOperation(payload.peerId, "accept_answer", async () => {
+      const peer = this.peers.get(payload.peerId);
+      if (!peer || !this.remotePeerIds.has(payload.peerId)) {
+        return;
+      }
+      await peer.acceptAnswer(payload.sdp);
+    });
   }
 
   private async handlePeerRestartRequest(payload: PeerRestartRequestMessage): Promise<void> {
     if (payload.targetPeerId !== this.options.peerId || !this.remotePeerIds.has(payload.peerId)) {
       return;
     }
-    void writeRendererLog("webrtc", "warn", "Peer requested a fresh media negotiation", {
-      targetPeerId: payload.peerId,
-      reason: payload.reason,
+    await this.enqueuePeerOperation(payload.peerId, "restart_request", async () => {
+      if (!this.remotePeerIds.has(payload.peerId)) {
+        return;
+      }
+      void writeRendererLog("webrtc", "warn", "Peer requested a fresh media negotiation", {
+        targetPeerId: payload.peerId,
+        reason: payload.reason,
+      });
+      const peer = this.replacePeer(payload.peerId);
+      if (this.options.peerId < payload.peerId) {
+        await this.sendFreshOffer(payload.peerId, peer, `remote_request:${payload.reason}`);
+      }
     });
-    const peer = this.replacePeer(payload.peerId);
-    if (this.options.peerId < payload.peerId) {
-      await this.sendFreshOffer(payload.peerId, peer, `remote_request:${payload.reason}`);
-    }
   }
 
   private async handleIceCandidate(payload: IceCandidateMessage): Promise<void> {
-    const peer = this.peers.get(payload.peerId);
-    if (!peer) {
-      const pending = this.pendingIceCandidates.get(payload.peerId) ?? [];
-      pending.push(payload.candidate);
-      this.pendingIceCandidates.set(payload.peerId, pending.slice(-64));
-      void writeRendererLog("webrtc", "info", "ICE candidate buffered before peer creation", {
-        peerId: payload.peerId,
-        pendingCount: pending.length,
-      });
-      return;
-    }
+    await this.enqueuePeerOperation(payload.peerId, "ice_candidate", async () => {
+      const peer = this.peers.get(payload.peerId);
+      if (!peer) {
+        const pending = this.pendingIceCandidates.get(payload.peerId) ?? [];
+        pending.push(payload.candidate);
+        this.pendingIceCandidates.set(payload.peerId, pending.slice(-64));
+        void writeRendererLog("webrtc", "info", "ICE candidate buffered before peer creation", {
+          peerId: payload.peerId,
+          pendingCount: pending.length,
+        });
+        return;
+      }
 
-    await peer.addIceCandidate(payload.candidate);
+      await peer.addIceCandidate(payload.candidate);
+    });
   }
 
   private handleErrorMessage(payload: ErrorMessage): void {
@@ -845,7 +904,9 @@ export class RoomClient {
     const isProtocolRejected =
       payload.code === "4400" ||
       payload.code === "invalid_message" ||
-      payload.code === "unsupported_protocol";
+      payload.code === "unsupported_protocol" ||
+      payload.code === "reconnect_session_invalid" ||
+      payload.code === "reconnect_session_expired";
     const error = new Error(
       isProtocolRejected ? "signaling_protocol_rejected" : payload.message || payload.code,
     );
@@ -944,7 +1005,7 @@ export class RoomClient {
     if (payload.targetPeerIds && !payload.targetPeerIds.includes(this.options.peerId)) {
       return;
     }
-    this.audioRelay?.handleRemoteChunk(payload);
+    this.audioFallback?.handleRemoteChunk(payload);
   }
 
   private handleAudioPathState(payload: AudioPathStateMessage): void {
@@ -1088,11 +1149,11 @@ export class RoomClient {
   }
 
   private startAudioRelay(): void {
-    if (this.audioRelay) {
+    if (this.audioFallback) {
       return;
     }
 
-    this.audioRelay = new SignalingAudioRelay({
+    this.audioFallback = new AudioFallbackController({
       roomId: this.options.roomId,
       peerId: this.options.peerId,
       localStream: this.localStream,
@@ -1104,8 +1165,8 @@ export class RoomClient {
         void writeRendererLog("audio", level, message, context);
       },
     });
-    this.audioRelay.setMuted(this.lastPublishedMuteState ?? false);
-    void this.audioRelay.start().catch((error) => {
+    this.audioFallback.setMuted(this.lastPublishedMuteState ?? false);
+    void this.audioFallback.start().catch((error) => {
       void writeRendererLog("audio", "warn", "Failed to start signaling audio relay", {
         error: error instanceof Error ? error.message : String(error),
       });
@@ -1113,7 +1174,7 @@ export class RoomClient {
   }
 
   private updateAudioRelaySending(): void {
-    this.audioRelay?.setShouldSend(this.getAudioRelayTargetPeerIds().length > 0);
+    this.audioFallback?.setShouldSend(this.getAudioRelayTargetPeerIds().length > 0);
     this.updateScreenFrameRelaySending();
   }
 
@@ -1151,6 +1212,9 @@ export class RoomClient {
       localStream: this.localStream,
       iceServers: this.iceServers,
       onRemoteStream: (stream) => {
+        if (this.peers.get(targetPeerId) !== peer) {
+          return;
+        }
         const hasPlayableAudio = hasPlayableAudioTrack(stream);
         const hasLiveScreen = stream
           .getVideoTracks()
@@ -1159,6 +1223,7 @@ export class RoomClient {
           this.webrtcAudioPeerIds.add(targetPeerId);
         } else {
           this.webrtcAudioPeerIds.delete(targetPeerId);
+          this.webrtcFlowingPeerIds.delete(targetPeerId);
         }
         if (hasLiveScreen) {
           this.webrtcScreenPeerIds.add(targetPeerId);
@@ -1179,6 +1244,9 @@ export class RoomClient {
         this.options.onRemoteStream(targetPeerId, stream);
       },
       onIceCandidate: (candidate) => {
+        if (this.peers.get(targetPeerId) !== peer) {
+          return;
+        }
         void this.safeSend({
           type: "ice_candidate",
           roomId: this.options.roomId,
@@ -1193,8 +1261,8 @@ export class RoomClient {
         }
         if (state === "connected") {
           this.webrtcConnectedPeerIds.add(targetPeerId);
-          this.peerConnectedAt.set(targetPeerId, Date.now());
-          this.peerAudioProgress.delete(targetPeerId);
+          this.webrtcFlowingPeerIds.delete(targetPeerId);
+          this.peerStatsMonitor.markConnected(targetPeerId);
           this.webrtcStalledPeerIds.delete(targetPeerId);
           this.syncPeerMediaPath(targetPeerId, "webrtc_connected");
           void writeRendererLog("webrtc", "info", "Peer connection connected", {
@@ -1208,12 +1276,12 @@ export class RoomClient {
         if (state === "failed" || state === "disconnected" || state === "closed") {
           this.webrtcConnectedPeerIds.delete(targetPeerId);
           this.webrtcAudioPeerIds.delete(targetPeerId);
+          this.webrtcFlowingPeerIds.delete(targetPeerId);
           this.webrtcReadyPeerIds.delete(targetPeerId);
           this.webrtcStalledPeerIds.delete(targetPeerId);
           this.webrtcScreenPeerIds.delete(targetPeerId);
-          this.peerAudioProgress.delete(targetPeerId);
-          this.peerConnectedAt.delete(targetPeerId);
-          this.audioRelay?.markPeerPath(targetPeerId, "relay", `webrtc_${state}`);
+          this.peerStatsMonitor.markDisconnected(targetPeerId);
+          this.audioFallback?.markPeerPath(targetPeerId, "relay", `webrtc_${state}`);
           this.updateAudioRelaySending();
           this.options.onRemoteStream(targetPeerId, undefined);
           if (this.isSignalingConnected && this.remotePeerIds.has(targetPeerId)) {
@@ -1278,13 +1346,11 @@ export class RoomClient {
       this.peers.delete(targetPeerId);
       existing.destroy();
     }
-    this.peerStats.delete(targetPeerId);
-    this.peerAudioProgress.delete(targetPeerId);
-    this.peerConnectedAt.delete(targetPeerId);
-    this.peerAdaptationTiers.delete(targetPeerId);
+    this.peerStatsMonitor.forgetPeer(targetPeerId);
     this.clearPeerRecovery(targetPeerId);
     this.webrtcConnectedPeerIds.delete(targetPeerId);
     this.webrtcAudioPeerIds.delete(targetPeerId);
+    this.webrtcFlowingPeerIds.delete(targetPeerId);
     this.webrtcReadyPeerIds.delete(targetPeerId);
     this.webrtcStalledPeerIds.delete(targetPeerId);
     this.webrtcScreenPeerIds.delete(targetPeerId);
@@ -1313,7 +1379,9 @@ export class RoomClient {
     });
     const timer = window.setTimeout(() => {
       this.peerRecoveryTimers.delete(targetPeerId);
-      void this.recoverPeer(targetPeerId, reason).catch((error) => {
+      void this.enqueuePeerOperation(targetPeerId, "recover_peer", () =>
+        this.recoverPeer(targetPeerId, reason),
+      ).catch((error) => {
         void writeRendererLog("webrtc", "warn", "Peer media recovery failed", {
           targetPeerId,
           attempt,
@@ -1327,10 +1395,12 @@ export class RoomClient {
   }
 
   private syncPeerMediaPath(targetPeerId: string, reason: string): void {
-    const isReady =
-      this.webrtcConnectedPeerIds.has(targetPeerId) &&
-      this.webrtcAudioPeerIds.has(targetPeerId) &&
-      !this.webrtcStalledPeerIds.has(targetPeerId);
+    const isReady = isPeerAudioPathReady({
+      isConnected: this.webrtcConnectedPeerIds.has(targetPeerId),
+      hasAudioTrack: this.webrtcAudioPeerIds.has(targetPeerId),
+      hasInboundRtpFlow: this.webrtcFlowingPeerIds.has(targetPeerId),
+      isStalled: this.webrtcStalledPeerIds.has(targetPeerId),
+    });
     const wasReady = this.webrtcReadyPeerIds.has(targetPeerId);
 
     if (isReady) {
@@ -1338,8 +1408,8 @@ export class RoomClient {
       this.advertiseAudioPathState(targetPeerId, false, reason);
       this.clearPeerRecovery(targetPeerId, true);
       if (!wasReady) {
-        this.audioRelay?.markPeerPath(targetPeerId, "webrtc", reason);
-        void writeRendererLog("webrtc", "info", "Remote audio track is playable", {
+        this.audioFallback?.markPeerPath(targetPeerId, "webrtc", reason);
+        void writeRendererLog("webrtc", "info", "Remote audio RTP flow is verified", {
           targetPeerId,
           reason,
           audioRelayFallbackEnabled: false,
@@ -1358,7 +1428,7 @@ export class RoomClient {
     this.webrtcReadyPeerIds.delete(targetPeerId);
     this.advertiseAudioPathState(targetPeerId, true, reason);
     if (wasReady) {
-      this.audioRelay?.markPeerPath(targetPeerId, "relay", reason);
+      this.audioFallback?.markPeerPath(targetPeerId, "relay", reason);
       this.updateAudioRelaySending();
       if (this.isSignalingConnected && this.remotePeerIds.has(targetPeerId)) {
         this.options.onConnectionState(RoomConnectionState.Degraded);
@@ -1523,66 +1593,17 @@ export class RoomClient {
   }
 
   private startPeerStats(): void {
-    this.stopPeerStats();
-    const collect = async () => {
-      await Promise.all(
-        [...this.peers.entries()].map(async ([peerId, peer]) => {
-          try {
-            const stats = await collectPeerAudioStats(peer.connection);
-            this.monitorPeerAudioFlow(peerId, stats);
-            this.peerStats.set(peerId, stats);
-            this.options.onPeerLatency?.(peerId, stats.roundTripTimeMs);
-            const previousTier = this.peerAdaptationTiers.get(peerId);
-            const nextTier = await peer.adaptToNetwork(stats);
-            this.peerAdaptationTiers.set(peerId, nextTier);
-            if (previousTier && previousTier !== nextTier) {
-              void writeRendererLog("webrtc", "info", "Peer network adaptation changed", {
-                peerId,
-                previousTier,
-                nextTier,
-                packetLossPercent: stats.packetLossPercent,
-                jitterMs: stats.jitterMs,
-                roundTripTimeMs: stats.roundTripTimeMs,
-                availableOutgoingBitrateBps: stats.availableOutgoingBitrateBps,
-              });
-            }
-          } catch {
-            this.peerStats.delete(peerId);
-            this.peerAdaptationTiers.delete(peerId);
-            this.options.onPeerLatency?.(peerId, undefined);
-          }
-        }),
-      );
-      this.options.onPeerStats?.(Object.fromEntries(this.peerStats));
-    };
-    void collect();
-    this.peerStatsTimer = window.setInterval(() => void collect(), PEER_AUDIO_HEALTH_INTERVAL_MS);
+    this.peerStatsMonitor.start();
   }
 
-  private monitorPeerAudioFlow(peerId: string, stats: PeerAudioStats): void {
-    if (
-      !this.remotePeerIds.has(peerId) ||
-      !this.webrtcConnectedPeerIds.has(peerId) ||
-      !this.webrtcAudioPeerIds.has(peerId)
-    ) {
-      return;
-    }
-
-    const nowMs = Date.now();
-    const connectedAtMs = this.peerConnectedAt.get(peerId) ?? nowMs;
-    this.peerConnectedAt.set(peerId, connectedAtMs);
-    const isRemoteMuted =
-      this.currentMembers.find((member) => member.id === peerId)?.isMuted ?? false;
-    const evaluation = evaluateInboundAudioFlow(stats, this.peerAudioProgress.get(peerId), {
-      nowMs,
-      connectedAtMs,
-      isRemoteMuted,
-    });
-    stats.inboundAudioFlow = evaluation.status;
-    this.peerAudioProgress.set(peerId, evaluation.next);
-
+  private handlePeerAudioFlowEvaluation(
+    peerId: string,
+    stats: PeerAudioStats,
+    evaluation: InboundAudioFlowEvaluation,
+  ): void {
     const wasStalled = this.webrtcStalledPeerIds.has(peerId);
     if (evaluation.status === "stalled") {
+      this.webrtcFlowingPeerIds.delete(peerId);
       this.webrtcStalledPeerIds.add(peerId);
       this.syncPeerMediaPath(peerId, "inbound_rtp_stalled");
       if (!wasStalled) {
@@ -1602,36 +1623,31 @@ export class RoomClient {
       return;
     }
 
-    if (wasStalled && (evaluation.status === "flowing" || evaluation.status === "muted")) {
+    if (evaluation.status === "flowing") {
+      const wasFlowing = this.webrtcFlowingPeerIds.has(peerId);
+      this.webrtcFlowingPeerIds.add(peerId);
       this.webrtcStalledPeerIds.delete(peerId);
-      this.syncPeerMediaPath(
-        peerId,
-        evaluation.status === "muted" ? "remote_muted" : "inbound_rtp_resumed",
-      );
-      void writeRendererLog("webrtc", "info", "Remote audio RTP resumed", {
-        peerId,
-        status: evaluation.status,
-        packetsReceived: stats.packetsReceived,
-        bytesReceived: stats.bytesReceived,
-      });
+      this.syncPeerMediaPath(peerId, wasStalled ? "inbound_rtp_resumed" : "inbound_rtp_verified");
+      if (!wasFlowing || wasStalled) {
+        void writeRendererLog("webrtc", "info", "Remote audio RTP is flowing", {
+          peerId,
+          status: evaluation.status,
+          packetsReceived: stats.packetsReceived,
+          bytesReceived: stats.bytesReceived,
+        });
+      }
     }
   }
 
   private stopPeerStats(): void {
-    if (this.peerStatsTimer) {
-      window.clearInterval(this.peerStatsTimer);
-      this.peerStatsTimer = undefined;
-    }
-    this.peerStats.clear();
-    this.peerAudioProgress.clear();
-    this.peerAdaptationTiers.clear();
+    this.peerStatsMonitor.stop();
   }
 
   private handlePong(payload: PongMessage): void {
     const rttMs = Math.max(0, Date.now() - payload.sentAt);
     const midpoint = payload.sentAt + rttMs / 2;
     const serverClockOffsetMs = payload.serverTime - midpoint;
-    this.audioRelay?.setServerClockOffsetMs(serverClockOffsetMs);
+    this.audioFallback?.setServerClockOffsetMs(serverClockOffsetMs);
     this.options.onRtt?.(rttMs);
   }
 
@@ -1702,16 +1718,15 @@ export class RoomClient {
       this.options.onRemoteStream(peerId, undefined);
       this.options.onRemoteScreenFrame(peerId, undefined);
     }
-    this.peerStats.clear();
-    this.peerAdaptationTiers.clear();
+    this.peerStatsMonitor.stop();
     this.webrtcConnectedPeerIds.clear();
     this.webrtcAudioPeerIds.clear();
+    this.webrtcFlowingPeerIds.clear();
     this.webrtcReadyPeerIds.clear();
     this.webrtcStalledPeerIds.clear();
     this.webrtcScreenPeerIds.clear();
-    this.peerAudioProgress.clear();
-    this.peerConnectedAt.clear();
     this.pendingIceCandidates.clear();
+    this.peerOperationQueues.clear();
     this.relayRequestedByPeerIds.clear();
     this.advertisedRelayNeeds.clear();
     this.remoteSharingPeerIds.clear();
@@ -1721,11 +1736,36 @@ export class RoomClient {
     this.updateAudioRelaySending();
   }
 
+  private enqueuePeerOperation(
+    peerId: string,
+    operationName: string,
+    operation: () => Promise<void>,
+  ): Promise<void> {
+    const previous = this.peerOperationQueues.get(peerId) ?? Promise.resolve();
+    const current = previous.catch(() => undefined).then(operation);
+    this.peerOperationQueues.set(peerId, current);
+    void current
+      .finally(() => {
+        if (this.peerOperationQueues.get(peerId) === current) {
+          this.peerOperationQueues.delete(peerId);
+        }
+      })
+      .catch(() => undefined);
+    return current.catch((error) => {
+      void writeRendererLog("webrtc", "warn", "Serialized peer operation failed", {
+        peerId,
+        operationName,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      throw error;
+    });
+  }
+
   private async applyOutgoingAudioTrack(track: MediaStreamTrack): Promise<void> {
     const nextStream = new MediaStream([track]);
     this.localStream = nextStream;
     await Promise.all([...this.peers.values()].map((peer) => peer.replaceLocalTrack(track)));
-    await this.audioRelay?.replaceLocalStream(nextStream);
+    await this.audioFallback?.replaceLocalStream(nextStream);
   }
 
   private async applyScreenAudioMix(

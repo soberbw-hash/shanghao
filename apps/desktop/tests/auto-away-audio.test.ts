@@ -17,7 +17,7 @@ test("OS idle polling has a strict 30 minute boundary", () => {
     decideAutoAway({
       idleSeconds: 3_600,
       isInAwayZone: false,
-      isProtectedActivity: true,
+      isConnectionValid: false,
     }),
     "none",
   );
@@ -38,10 +38,9 @@ test("only automatically-away members return on OS activity", () => {
   );
 });
 
-test("returning from away never unmutes a player who was already muted", () => {
-  assert.equal(shouldMuteAfterAwayReturn({ wasMuted: true, isDeafened: false }), true);
-  assert.equal(shouldMuteAfterAwayReturn({ wasMuted: false, isDeafened: true }), true);
-  assert.equal(shouldMuteAfterAwayReturn({ wasMuted: false, isDeafened: false }), false);
+test("returning from away is muted only while deafened", () => {
+  assert.equal(shouldMuteAfterAwayReturn({ isDeafened: true }), true);
+  assert.equal(shouldMuteAfterAwayReturn({ isDeafened: false }), false);
 });
 
 test("deafen and microphone state changes are atomic", async () => {

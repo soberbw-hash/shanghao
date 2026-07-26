@@ -42,17 +42,22 @@
   --sg-shadow-control: 0 6px 20px rgba(63, 102, 160, 0.1), inset 0 1px 0 rgba(255, 255, 255, 0.84);
 
   /* Legacy compatibility */
-  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
   --ease-spatial: cubic-bezier(0.22, 1, 0.36, 1);
-  --ease-in-out: cubic-bezier(0.45, 0, 0.55, 1);
-  --ease-drawer: cubic-bezier(0.2, 0.82, 0.22, 1);
+  --ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
+  --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
+  --ease-standard: cubic-bezier(0.2, 0, 0, 1);
   --ease-organic: cubic-bezier(0.45, 0, 0.55, 1);
   --ease-out-soft: var(--ease-out);
   --ease-in-out-soft: var(--ease-in-out);
-  --duration-fast: 160ms;
-  --duration-normal: 220ms;
-  --duration-slow: 360ms;
-  --duration-page: 480ms;
+  --duration-instant: 100ms;
+  --duration-fast: 150ms;
+  --duration-compact: 200ms;
+  --duration-normal: 280ms;
+  --duration-relaxed: 360ms;
+  --duration-slow: 520ms;
+  --duration-scene: 650ms;
+  --duration-page: 360ms;
   --blur-glass: var(--sg-glass-blur);
   --color-blue: var(--sg-blue);
   --color-blue-light: #eaf4ff;

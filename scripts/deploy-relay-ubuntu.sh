@@ -119,15 +119,47 @@ EOF
 
 if [[ -n "${DOMAIN}" ]]; then
   apt-get install -y caddy
-  cat >/etc/caddy/Caddyfile <<EOF
+  CADDY_MAIN="/etc/caddy/Caddyfile"
+  CADDY_CONF_DIR="/etc/caddy/conf.d"
+  CADDY_FRAGMENT="${CADDY_CONF_DIR}/shanghao.caddy"
+  CADDY_BACKUP="${CADDY_MAIN}.shanghao.$(date +%Y%m%d%H%M%S).bak"
+  FRAGMENT_BACKUP="$(mktemp)"
+  HAD_FRAGMENT=0
+
+  mkdir -p "${CADDY_CONF_DIR}"
+  touch "${CADDY_MAIN}"
+  cp -a "${CADDY_MAIN}" "${CADDY_BACKUP}"
+  if [[ -f "${CADDY_FRAGMENT}" ]]; then
+    cp -a "${CADDY_FRAGMENT}" "${FRAGMENT_BACKUP}"
+    HAD_FRAGMENT=1
+  fi
+
+  if ! grep -Fqx 'import /etc/caddy/conf.d/*' "${CADDY_MAIN}"; then
+    printf '\nimport /etc/caddy/conf.d/*\n' >>"${CADDY_MAIN}"
+  fi
+
+  cat >"${CADDY_FRAGMENT}" <<EOF
 ${DOMAIN} {
   encode zstd gzip
   reverse_proxy 127.0.0.1:${PORT}
 }
 EOF
-  caddy validate --config /etc/caddy/Caddyfile
+
+  if ! caddy validate --config "${CADDY_MAIN}"; then
+    cp -a "${CADDY_BACKUP}" "${CADDY_MAIN}"
+    if [[ "${HAD_FRAGMENT}" == "1" ]]; then
+      cp -a "${FRAGMENT_BACKUP}" "${CADDY_FRAGMENT}"
+    else
+      rm -f "${CADDY_FRAGMENT}"
+    fi
+    rm -f "${FRAGMENT_BACKUP}"
+    echo "Caddy validation failed; previous configuration was restored." >&2
+    exit 1
+  fi
+
+  rm -f "${FRAGMENT_BACKUP}"
   systemctl enable --now caddy
-  systemctl restart caddy
+  systemctl reload caddy
 fi
 
 systemctl daemon-reload

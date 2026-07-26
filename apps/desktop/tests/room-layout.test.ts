@@ -20,6 +20,26 @@ const teamIslandPath = path.resolve(
   process.cwd(),
   "src/renderer/src/components/room/TeamIsland.tsx",
 );
+const sceneCharacterPath = path.resolve(
+  process.cwd(),
+  "src/renderer/src/components/room/SceneCharacter.tsx",
+);
+const characterMotionPath = path.resolve(
+  process.cwd(),
+  "src/renderer/src/features/voice-scene/characterMotion.ts",
+);
+const screenShareManagerPath = path.resolve(
+  process.cwd(),
+  "src/renderer/src/features/screen-share/ScreenShareManager.ts",
+);
+const screenShareHookPath = path.resolve(
+  process.cwd(),
+  "src/renderer/src/features/screen-share/useScreenShare.ts",
+);
+const screenShareViewerPreloadPath = path.resolve(
+  process.cwd(),
+  "src/preload/screen-share-viewer.ts",
+);
 const workstationArtPath = path.resolve(
   process.cwd(),
   "src/renderer/src/components/room/WorkstationArt.tsx",
@@ -47,7 +67,7 @@ test("room page uses the V5 island, light responses, and voice dock", () => {
   assert.equal(source.includes("TemporaryChatPanel"), true);
   assert.equal(source.includes("TeamIsland"), true);
   assert.equal(source.includes("desktopApi.overlay.toggle"), true);
-  assert.equal(source.includes("getDisplayMedia"), true);
+  assert.equal(source.includes("useScreenShare"), true);
   assert.equal(source.includes("ScreenSharePanel"), true);
   assert.equal(source.includes("voice-dock"), true);
   assert.equal(source.includes("房间地址"), false);
@@ -65,6 +85,8 @@ test("room uses a real always-on-top overlay and a five-second knock cooldown", 
   const stylesSource = readFileSync(stylesPath, "utf8");
   const chatSource = readFileSync(chatPanelPath, "utf8");
   const teamIslandSource = readFileSync(teamIslandPath, "utf8");
+  const sceneCharacterSource = readFileSync(sceneCharacterPath, "utf8");
+  const characterMotionSource = readFileSync(characterMotionPath, "utf8");
   const sceneZonesSource = readFileSync(sceneZonesPath, "utf8");
 
   assert.equal(roomSource.includes("KNOCK_COOLDOWN_MS = 5_000"), true);
@@ -102,7 +124,8 @@ test("room uses a real always-on-top overlay and a five-second knock cooldown", 
   assert.equal(teamIslandSource.includes("duration: travelDuration * 0.46"), false);
   assert.equal(teamIslandSource.includes("duration: travelDuration * 0.54"), false);
   assert.equal(teamIslandSource.includes("middleLeft"), false);
-  assert.equal(teamIslandSource.includes("planCharacterRoute"), true);
+  assert.equal(sceneCharacterSource.includes("planCharacterRoute"), true);
+  assert.equal(characterMotionSource.includes("export const planCharacterRoute"), true);
 });
 
 test("desktop build includes custom nsis shortcut icon wiring", () => {
@@ -133,6 +156,7 @@ test("scene seats align with the marked workstation positions", () => {
   const teamIslandSource = readFileSync(teamIslandPath, "utf8");
   const workstationSource = readFileSync(workstationArtPath, "utf8");
   const ambientDecorSource = readFileSync(sceneAmbientDecorPath, "utf8");
+  const sceneCharacterSource = readFileSync(sceneCharacterPath, "utf8");
 
   assert.equal(stylesSource.includes(".scene-workstation"), true);
   assert.equal(stylesSource.includes(".scene-workstation-art-frame"), true);
@@ -154,7 +178,7 @@ test("scene seats align with the marked workstation positions", () => {
   assert.equal(ambientDecorSource.includes('viewBox="0 0 180 110"'), true);
   assert.equal(ambientDecorSource.includes('viewBox="0 0 94 218"'), true);
   assert.equal(teamIslandSource.includes("chatMessages?: ChatMessage[]"), false);
-  assert.equal(teamIslandSource.includes("WalkingAnimalSprite"), true);
+  assert.equal(sceneCharacterSource.includes("WalkingAnimalSprite"), true);
   assert.equal(stylesSource.includes(".desk-animal-layer"), true);
   assert.equal(stylesSource.includes(".desk-animal-chair-front"), false);
   assert.equal(sceneZonesSource.includes("gameDesk5: { left: 65, top: 75"), true);
@@ -204,10 +228,15 @@ test("screen sharing is wired through the room page and WebRTC peer layer", () =
   );
   const stylesSource = readFileSync(stylesPath, "utf8");
   const mainWindowSource = readFileSync(mainWindowPath, "utf8");
+  const managerSource = readFileSync(screenShareManagerPath, "utf8");
+  const screenShareHookSource = readFileSync(screenShareHookPath, "utf8");
+  const viewerPreloadSource = readFileSync(screenShareViewerPreloadPath, "utf8");
 
-  assert.equal(roomSource.includes("navigator.mediaDevices.getDisplayMedia"), true);
+  assert.equal(managerSource.includes("navigator.mediaDevices.getDisplayMedia"), true);
   assert.equal(roomSource.includes("screen-share-panel"), true);
   assert.equal(roomSource.includes("remoteScreenFrames"), true);
+  assert.equal(roomSource.includes("useScreenShare"), true);
+  assert.equal(screenShareHookSource.includes("new ScreenShareManager"), true);
   assert.equal(hookSource.includes("startScreenShare"), true);
   assert.equal(hookSource.includes("setRemoteScreenFrame"), true);
   assert.equal(clientSource.includes("renegotiateAllPeers"), false);
@@ -226,12 +255,12 @@ test("screen sharing is wired through the room page and WebRTC peer layer", () =
   assert.equal(peerSource.includes("setScreenTrack"), true);
   assert.equal(stylesSource.includes(".screen-share-video"), true);
   assert.equal(stylesSource.includes(".screen-share-panel-expanded"), false);
-  assert.equal(roomSource.includes("screenShareViewer"), true);
+  assert.equal(managerSource.includes("screenShareViewer"), true);
   assert.equal(roomSource.includes("local-share-safe-preview"), true);
   assert.equal(roomSource.includes("本地预览已隐藏，避免画面无限套娃"), false);
   assert.equal(roomSource.includes("<ScreenShareVideo stream={item.stream} />"), true);
-  assert.equal(roomSource.includes("setContentProtection(true)"), true);
-  assert.equal(roomSource.includes("setContentProtection(false)"), true);
+  assert.equal(managerSource.includes("setContentProtection(true)"), true);
+  assert.equal(managerSource.includes("setContentProtection(false)"), true);
   assert.equal(roomSource.includes("isDetaching || primaryItem.isLocal"), false);
   assert.equal(roomSource.includes("disabled={isDetaching}"), true);
   assert.equal(mainWindowSource.includes("openScreenShareViewer"), true);
@@ -241,9 +270,11 @@ test("screen sharing is wired through the room page and WebRTC peer layer", () =
   assert.equal(mainWindowSource.includes("setScreenCaptureContentProtection"), true);
   assert.equal(mainWindowSource.includes("appWindowSourceIds"), true);
   assert.equal(mainWindowSource.includes("sendScreenShareViewerSignal"), true);
-  assert.equal(roomSource.includes("DetachedScreenSharePublisher"), true);
-  assert.equal(roomSource.includes("toDataURL"), false);
-  assert.equal(roomSource.includes('["720p", "1080p"]'), true);
+  assert.equal(managerSource.includes("DetachedScreenSharePublisher"), true);
+  assert.equal(managerSource.includes("toDataURL"), false);
+  assert.equal(managerSource.includes("SCREEN_SHARE_PROFILES"), true);
+  assert.equal(viewerPreloadSource.includes("screenShareViewerApi"), true);
+  assert.equal(viewerPreloadSource.includes("desktopApi"), false);
   assert.equal(roomSource.includes("screen-share-fit-action"), false);
   assert.equal(roomSource.includes("screen-share-drag-handle"), true);
   assert.equal(mainWindowSource.includes("setDisplayMediaRequestHandler"), true);
@@ -257,10 +288,11 @@ test("room scene supports clickable seats and silent-away without daily summarie
   const roomSource = readFileSync(roomPagePath, "utf8");
   const homeSource = readFileSync(homePagePath, "utf8");
   const teamIslandSource = readFileSync(teamIslandPath, "utf8");
+  const sceneCharacterSource = readFileSync(sceneCharacterPath, "utf8");
 
   assert.equal(teamIslandSource.includes("onZoneSelect?.(zone.id, zone.activity)"), true);
   assert.equal(teamIslandSource.includes("disabled={"), true);
-  assert.equal(teamIslandSource.includes("DeskAnimalSprite"), true);
+  assert.equal(sceneCharacterSource.includes("DeskAnimalSprite"), true);
   assert.equal(roomSource.includes("decideAutoAway"), true);
   assert.equal(roomSource.includes("lastSpokeAtRef"), false);
   assert.equal(roomSource.includes('moveLocalMemberRef.current("restroomZone", "restroom")'), true);

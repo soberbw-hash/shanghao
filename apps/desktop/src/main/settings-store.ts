@@ -76,6 +76,9 @@ export class SettingsStore {
       lowCutFrequency: this.cachedSettings.lowCutFrequency,
       isHardwareAccelerationEnabled: this.cachedSettings.isHardwareAccelerationEnabled,
       isOverlayEnabled: this.cachedSettings.isOverlayEnabled,
+      isGameDetectionEnabled: this.cachedSettings.isGameDetectionEnabled,
+      isUiSoundEnabled: this.cachedSettings.isUiSoundEnabled,
+      soundVolume: this.cachedSettings.soundVolume,
     });
     return this.cachedSettings;
   }

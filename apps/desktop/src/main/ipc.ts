@@ -302,6 +302,9 @@ export const registerIpcHandlers = ({
         }
       }
       const settings = await settingsStore.save(partial);
+      if (typeof partial.isGameDetectionEnabled === "boolean") {
+        await gameDetection.setEnabled(settings.isGameDetectionEnabled);
+      }
       const registered = await shortcuts.configureGlobalMute(settings.globalMuteShortcut);
       if (!registered && settings.globalMuteShortcut) {
         return settingsStore.save({ globalMuteShortcut: "" });
@@ -312,6 +315,7 @@ export const registerIpcHandlers = ({
 
   ipcMain.handle(IPC_CHANNELS.settings.reset, async (): Promise<AppSettings> => {
     const settings = await settingsStore.reset();
+    await gameDetection.setEnabled(settings.isGameDetectionEnabled);
     await shortcuts.configureGlobalMute(settings.globalMuteShortcut);
     return settings;
   });

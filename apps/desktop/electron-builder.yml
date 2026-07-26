@@ -17,6 +17,7 @@ files:
   - "dist-electron/**"
   - "!dist/**/*.map"
   - "!dist-electron/**/*.map"
+  - "!dist-electron/tests/**"
   - "!node_modules/**/*.map"
   - "package.json"
 extraResources:
@@ -31,7 +32,6 @@ extraResources:
   - from: build
     to: build
     filter:
-      - "shanghao-icon.icns"
       - "shanghao-icon-v3.ico"
       - "shanghao-shortcut-v3.ico"
       - "tray-dark.png"
@@ -39,21 +39,6 @@ extraResources:
 extraMetadata:
   name: shanghao
   main: dist-electron/main/index.cjs
-
-mac:
-  category: public.app-category.social-networking
-  icon: shanghao-icon.icns
-  artifactName: ShangHao-${version}-mac-${arch}.${ext}
-  identity: null
-  target:
-    - target: dmg
-      arch:
-        - x64
-        - arm64
-    - target: zip
-      arch:
-        - x64
-        - arm64
 
 win:
   executableName: ShangHao

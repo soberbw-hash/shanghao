@@ -46,7 +46,7 @@ const isRotatedLogFile = (fileName: string): boolean => {
 
 const zipDirectory = async (sourceDir: string, targetPath: string): Promise<void> => {
   try {
-    // On Windows use PowerShell; macOS/Linux use system zip
+    // The Windows app uses Compress-Archive; keep the generic fallback for development tools.
     if (process.platform === "win32") {
       await execFileAsync(
         "powershell",
