@@ -4,12 +4,17 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 
-import { APP_BUILD_NUMBER, APP_PROTOCOL_VERSION } from "@private-voice/shared";
+import {
+  APP_BUILD_NUMBER,
+  APP_PROTOCOL_VERSION,
+  BUILT_IN_AVATAR_IDS,
+  type BuiltInAvatarId,
+} from "@private-voice/shared";
 import { SignalingServer } from "@private-voice/signaling";
 import { WebSocket } from "ws";
 
 import { ChatHistoryStore } from "../../../packages/signaling/src/chat-history-store";
-import { isSignalEnvelope } from "../../../packages/signaling/src/protocol";
+import { isSignalEnvelope, isValidNickname } from "../../../packages/signaling/src/protocol";
 import { SessionTokenStore } from "../../../packages/signaling/src/session-token-store";
 
 const openSocket = async (url: string): Promise<WebSocket> => {
@@ -40,7 +45,14 @@ const waitForMessage = <T>(
 const waitForClose = (socket: WebSocket): Promise<number> =>
   new Promise((resolve) => socket.once("close", (code) => resolve(code)));
 
-const join = (socket: WebSocket, peerId: string, nickname: string, sessionToken?: string) => {
+let nextAvatarIndex = 0;
+const join = (
+  socket: WebSocket,
+  peerId: string,
+  nickname: string,
+  sessionToken?: string,
+  avatarId: BuiltInAvatarId = BUILT_IN_AVATAR_IDS[nextAvatarIndex++ % BUILT_IN_AVATAR_IDS.length]!,
+) => {
   socket.send(
     JSON.stringify({
       type: "join_channel",
@@ -48,7 +60,7 @@ const join = (socket: WebSocket, peerId: string, nickname: string, sessionToken?
       channelId: "main",
       peerId,
       nickname,
-      avatarId: "fox",
+      avatarId,
       appVersion: "0.1.50",
       protocolVersion: APP_PROTOCOL_VERSION,
       buildNumber: APP_BUILD_NUMBER,
@@ -443,6 +455,10 @@ test("chat history recovers from the exact backup when the primary file is damag
 });
 
 test("strict protocol validator rejects dangerous payload shapes", () => {
+  assert.equal(isValidNickname("摸鱼小猫"), true);
+  assert.equal(isValidNickname("D.A.D.D.Y"), false);
+  assert.equal(isValidNickname("习 近 平"), false);
+  assert.equal(isValidNickname("8964"), false);
   assert.equal(
     isSignalEnvelope({ type: "member_state", roomId: "main", peerId: "a", isMuted: "yes" }),
     false,

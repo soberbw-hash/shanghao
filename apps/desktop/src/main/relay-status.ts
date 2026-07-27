@@ -4,6 +4,8 @@ import { WebSocket } from "ws";
 import {
   APP_BUILD_NUMBER,
   APP_PROTOCOL_VERSION,
+  isBuiltInAvatarId,
+  type BuiltInAvatarId,
   type RelayStatusSnapshot,
   type RendererLogPayload,
 } from "@private-voice/shared";
@@ -53,6 +55,7 @@ interface RelayHealthPayload {
   connectedPeers?: number;
   turnConfigured?: boolean;
   droppedRealtimeMessages?: number;
+  occupiedAvatarIds?: BuiltInAvatarId[];
 }
 
 const probeHealth = async (url: string): Promise<RelayHealthPayload | undefined> => {
@@ -70,6 +73,9 @@ const probeHealth = async (url: string): Promise<RelayHealthPayload | undefined>
       return undefined;
     }
     const payload = (await response.json()) as RelayHealthPayload;
+    if (payload.occupiedAvatarIds) {
+      payload.occupiedAvatarIds = payload.occupiedAvatarIds.filter(isBuiltInAvatarId);
+    }
     return payload.ok === true ? payload : undefined;
   } catch {
     return undefined;
@@ -124,6 +130,7 @@ export const readRelayStatus = async ({
       latencyMs: Math.max(0, Math.round(performance.now() - startedAt)),
       turnConfigured: health?.turnConfigured,
       droppedRealtimeMessages: health?.droppedRealtimeMessages,
+      occupiedAvatarIds: health?.occupiedAvatarIds,
       hasVersionMismatch,
       lastCheckedAt: new Date().toISOString(),
       message: isReachable

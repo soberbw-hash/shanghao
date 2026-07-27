@@ -6,6 +6,7 @@ const server = new SignalingServer({ roomName: "five-peer-audio-check" });
 const port = await server.listen();
 const url = `ws://127.0.0.1:${port}`;
 const peerIds = ["A", "B", "C", "D", "E"];
+const avatarIds = ["fox", "cat", "duck", "panda", "corgi"];
 const peers = new Map();
 const received = Object.fromEntries(peerIds.map((peerId) => [peerId, []]));
 const relayRequests = Object.fromEntries(peerIds.map((peerId) => [peerId, new Set()]));
@@ -43,7 +44,7 @@ const openPeer = async (peerId) => {
       channelId: "main",
       peerId,
       nickname: peerId,
-      avatarId: "fox",
+      avatarId: avatarIds[peerIds.indexOf(peerId)],
       appVersion: "dev",
       protocolVersion: APP_PROTOCOL_VERSION,
       buildNumber: "five-peer-check",

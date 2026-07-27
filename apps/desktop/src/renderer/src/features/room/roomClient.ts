@@ -46,6 +46,7 @@ import {
 
 import { writeRendererLog } from "../../utils/logger";
 import { AudioFallbackController } from "../audio/AudioFallbackController";
+import { clampMemberVolume } from "../audio/memberVolume";
 import { hasPlayableAudioTrack } from "../audio/remoteAudioTrack";
 import { PeerStatsMonitor } from "./PeerStatsMonitor";
 import { buildRoomDiagnostics } from "./RoomDiagnostics";
@@ -75,6 +76,7 @@ interface RoomClientOptions {
   onDiagnosticEvent?: (payload: SignalingEventPayload) => void;
   onReconnectAttempt?: (attempt: number) => void;
   onReconnectExhausted?: (error: Error) => void;
+  onAvatarConflict?: (availableAvatarIds: BuiltInAvatarId[]) => void;
   onSnapshotRevision?: (revision: number) => void;
   onRtt?: (rttMs: number) => void;
   onPeerLatency?: (peerId: string, latencyMs?: number) => void;
@@ -360,7 +362,7 @@ export class RoomClient {
   }
 
   setPeerVolume(peerId: string, volume: number): void {
-    this.peerVolumes.set(peerId, Math.max(0, Math.min(2, volume)));
+    this.peerVolumes.set(peerId, clampMemberVolume(volume));
   }
 
   private openSocket(isReconnect: boolean): Promise<void> {
@@ -900,6 +902,15 @@ export class RoomClient {
 
   private handleErrorMessage(payload: ErrorMessage): void {
     this.lastServerError = `${payload.code}:${payload.message}`;
+    if (payload.code === "avatar_taken" && this.hasJoinedOnce) {
+      this.options.onAvatarConflict?.(payload.availableAvatarIds ?? []);
+      void writeRendererLog("signaling", "warn", "Avatar update rejected because it is occupied", {
+        avatarId: payload.avatarId,
+        availableAvatarIds: payload.availableAvatarIds,
+      });
+      return;
+    }
+
     this.options.onConnectionState(RoomConnectionState.Failed);
     const isProtocolRejected =
       payload.code === "4400" ||
@@ -908,9 +919,13 @@ export class RoomClient {
       payload.code === "reconnect_session_invalid" ||
       payload.code === "reconnect_session_expired";
     const error = new Error(
-      isProtocolRejected ? "signaling_protocol_rejected" : payload.message || payload.code,
+      isProtocolRejected
+        ? "signaling_protocol_rejected"
+        : payload.code === "avatar_taken"
+          ? "avatar_taken"
+          : payload.message || payload.code,
     );
-    if (isProtocolRejected) this.shouldReconnect = false;
+    if (isProtocolRejected || payload.code === "avatar_taken") this.shouldReconnect = false;
     this.rejectPendingConnection(error);
   }
 

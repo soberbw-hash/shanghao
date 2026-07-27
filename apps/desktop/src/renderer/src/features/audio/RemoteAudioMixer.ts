@@ -1,4 +1,5 @@
 import { writeRendererLog } from "../../utils/logger";
+import { clampMemberVolume } from "./memberVolume";
 import { hasPlayableAudioTrack } from "./remoteAudioTrack";
 
 export { hasPlayableAudioTrack } from "./remoteAudioTrack";
@@ -163,9 +164,7 @@ export class RemoteAudioMixer {
       if (channel && context) {
         channel.volume = input.volume;
         channel.gain.gain.setTargetAtTime(
-          this.peerMediaPaths.get(input.peerId) === "webrtc"
-            ? Math.max(0, Math.min(2, input.volume))
-            : 0,
+          this.peerMediaPaths.get(input.peerId) === "webrtc" ? clampMemberVolume(input.volume) : 0,
           context.currentTime,
           0.012,
         );
@@ -199,7 +198,7 @@ export class RemoteAudioMixer {
     this.pruneRelayChannel(channel, now);
     channel.volume = volume;
     channel.gain.gain.setTargetAtTime(
-      this.peerMediaPaths.get(peerId) === "webrtc" ? 0 : Math.max(0, Math.min(2, volume)),
+      this.peerMediaPaths.get(peerId) === "webrtc" ? 0 : clampMemberVolume(volume),
       context.currentTime,
       0.012,
     );
@@ -259,7 +258,7 @@ export class RemoteAudioMixer {
     const webrtcChannel = this.channels.get(peerId);
     if (webrtcChannel) {
       webrtcChannel.gain.gain.setTargetAtTime(
-        path === "webrtc" ? Math.max(0, Math.min(2, webrtcChannel.volume)) : 0,
+        path === "webrtc" ? clampMemberVolume(webrtcChannel.volume) : 0,
         context.currentTime,
         0.018,
       );
@@ -267,7 +266,7 @@ export class RemoteAudioMixer {
     const relayChannel = this.relayChannels.get(peerId);
     if (relayChannel) {
       relayChannel.gain.gain.setTargetAtTime(
-        path === "relay" ? Math.max(0, Math.min(2, relayChannel.volume)) : 0,
+        path === "relay" ? clampMemberVolume(relayChannel.volume) : 0,
         context.currentTime,
         0.018,
       );

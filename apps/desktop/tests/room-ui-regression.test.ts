@@ -64,23 +64,58 @@ test("abusive, suggestive and family-title nickname variants are rejected", () =
   for (const nickname of [
     "daddy",
     "d@d",
+    "D.A.D",
     "超级 D4ddy",
     "b-a-b-a",
+    "m0mmy",
     "粑粑",
     "拔拔",
+    "爸 比",
+    "霸币",
     "爹地",
     "父亲",
+    "义-父",
     "爷爷",
     "叫我爸爸",
+    "叫我奶奶",
     "煞笔",
     "n.m.s.l",
     "约炮",
     "p0rn",
+    "习 近 平",
+    "习近苹",
+    "Xi-Jin-Ping",
+    "xjp",
+    "中国共产党",
+    "8964",
   ]) {
     assert.ok(getNicknameValidationError(nickname));
   }
   assert.equal(getNicknameValidationError("摸鱼小猫"), undefined);
   assert.equal(getNicknameValidationError("Sober"), undefined);
+  assert.equal(getNicknameValidationError("小习惯"), undefined);
+  assert.equal(
+    getNicknameValidationError("爸爸去哪儿"),
+    "这个昵称包含不适合公开展示的内容，换一个正常称呼吧。",
+  );
+});
+
+test("home avatar picker disables roles occupied on the fixed server", () => {
+  const homeSource = readFileSync(
+    path.resolve(process.cwd(), "src/renderer/src/pages/HomePage.tsx"),
+    "utf8",
+  );
+  const pickerSource = readFileSync(
+    path.resolve(process.cwd(), "src/renderer/src/components/profile/AvatarPicker.tsx"),
+    "utf8",
+  );
+  const relaySource = readFileSync(path.resolve(process.cwd(), "src/main/relay-status.ts"), "utf8");
+
+  assert.equal(homeSource.includes("occupiedAvatarIds={occupiedAvatarIds}"), true);
+  assert.equal(homeSource.includes("isSelectedAvatarOccupied"), true);
+  assert.equal(pickerSource.includes("disabled={isOccupied}"), true);
+  assert.equal(pickerSource.includes("已被朋友选择"), true);
+  assert.equal(relaySource.includes("occupiedAvatarIds: health?.occupiedAvatarIds"), true);
 });
 
 test("chat messages are uniformly left aligned with avatar and no per-message clock", () => {

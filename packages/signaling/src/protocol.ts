@@ -4,7 +4,7 @@ import type {
   RoomMember,
   SceneZoneId,
 } from "@private-voice/shared";
-import { isBuiltInAvatarId } from "@private-voice/shared";
+import { isAllowedNickname, isBuiltInAvatarId } from "@private-voice/shared";
 
 export interface SessionDescriptionPayload {
   type: "offer" | "answer" | "pranswer" | "rollback";
@@ -307,6 +307,8 @@ export interface ErrorMessage extends BaseMessage {
   type: "error";
   code: string;
   message: string;
+  avatarId?: BuiltInAvatarId;
+  availableAvatarIds?: BuiltInAvatarId[];
 }
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -354,6 +356,7 @@ export const isValidNickname = (value: unknown): value is string => {
     trimmed === value &&
     Array.from(trimmed).length >= 1 &&
     Array.from(trimmed).length <= 16 &&
+    isAllowedNickname(trimmed) &&
     // Intentional control-character rejection for user-visible identity fields.
     // eslint-disable-next-line no-control-regex
     !/[\u0000-\u001F\u007F\r\n]/.test(trimmed)
@@ -540,7 +543,15 @@ export const isSignalEnvelope = (value: unknown): value is SignalEnvelope => {
         ["👍", "🔥", "😂", "❤️"].includes(String(value.emoji))
       );
     case "error":
-      return isText(value.code, 64) && isText(value.message, 500);
+      return (
+        isText(value.code, 64) &&
+        isText(value.message, 500) &&
+        (value.avatarId === undefined || isBuiltInAvatarId(value.avatarId)) &&
+        (value.availableAvatarIds === undefined ||
+          (Array.isArray(value.availableAvatarIds) &&
+            value.availableAvatarIds.length <= 5 &&
+            value.availableAvatarIds.every(isBuiltInAvatarId)))
+      );
     default:
       return false;
   }

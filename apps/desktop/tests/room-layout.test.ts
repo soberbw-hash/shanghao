@@ -24,6 +24,7 @@ const sceneCharacterPath = path.resolve(
   process.cwd(),
   "src/renderer/src/components/room/SceneCharacter.tsx",
 );
+const roomStateHookPath = path.resolve(process.cwd(), "src/renderer/src/hooks/useRoomState.ts");
 const characterMotionPath = path.resolve(
   process.cwd(),
   "src/renderer/src/features/voice-scene/characterMotion.ts",
@@ -126,6 +127,21 @@ test("room uses a real always-on-top overlay and a five-second knock cooldown", 
   assert.equal(teamIslandSource.includes("middleLeft"), false);
   assert.equal(sceneCharacterSource.includes("planCharacterRoute"), true);
   assert.equal(characterMotionSource.includes("export const planCharacterRoute"), true);
+});
+
+test("each remote member has compact local-only volume and mute controls", () => {
+  const sceneCharacterSource = readFileSync(sceneCharacterPath, "utf8");
+  const roomStateSource = readFileSync(roomStateHookPath, "utf8");
+  const stylesSource = readFileSync(stylesPath, "utf8");
+
+  assert.equal(sceneCharacterSource.includes("member-audio-popover"), true);
+  assert.equal(sceneCharacterSource.includes("仅我静音"), true);
+  assert.equal(sceneCharacterSource.includes("max={200}"), true);
+  assert.equal(sceneCharacterSource.includes("toggleLocalMemberMute"), true);
+  assert.equal(roomStateSource.includes("runtimeMemberVolumes"), true);
+  assert.equal(roomStateSource.includes("pendingMemberVolumeSaves"), true);
+  assert.equal(roomStateSource.includes("activeClient?.setPeerVolume"), true);
+  assert.equal(stylesSource.includes("width: 252px"), true);
 });
 
 test("desktop build includes custom nsis shortcut icon wiring", () => {

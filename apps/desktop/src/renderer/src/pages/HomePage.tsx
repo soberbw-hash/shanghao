@@ -81,6 +81,33 @@ export const HomePage = () => {
     setServerAddress(savedServerAddress || "");
   }, [isSettingsReady, savedAvatarId, savedNickname, savedServerAddress]);
 
+  useEffect(() => {
+    const normalizedAddress = normalizeRelayServerUrl(serverAddress);
+    if (!normalizedAddress) {
+      return;
+    }
+
+    let isCancelled = false;
+    const refreshAvailability = async () => {
+      try {
+        const result = await window.desktopApi.diagnostics.testServer(normalizedAddress);
+        if (!isCancelled) {
+          setServerTestResult(result);
+        }
+      } catch {
+        // The explicit test button remains responsible for surfacing network errors.
+      }
+    };
+
+    const refreshTimer = window.setTimeout(() => void refreshAvailability(), 350);
+    const interval = window.setInterval(() => void refreshAvailability(), 5_000);
+    return () => {
+      isCancelled = true;
+      if (refreshTimer) window.clearTimeout(refreshTimer);
+      window.clearInterval(interval);
+    };
+  }, [serverAddress]);
+
   useLayoutEffect(() => {
     if (!isSettingsReady || !pageRef.current) return;
 
@@ -254,6 +281,8 @@ export const HomePage = () => {
   };
 
   const isJoining = isSubmitting || roomAction === "joining";
+  const occupiedAvatarIds = serverTestResult?.occupiedAvatarIds ?? [];
+  const isSelectedAvatarOccupied = occupiedAvatarIds.includes(avatarId);
   const avatarSrc = getAvatarSrc(avatarId);
   const serverTestStatus = serverTestResult ? (
     <div
@@ -340,10 +369,16 @@ export const HomePage = () => {
                 </span>
               </div>
               {serverTestStatus}
+              {isSelectedAvatarOccupied ? (
+                <div className="entry-server-test-result danger" role="status">
+                  <CircleAlert className="h-4 w-4" />
+                  <span>这个角色已经被朋友选择，请先更换角色。</span>
+                </div>
+              ) : null}
               <div className="mt-5 flex flex-wrap items-center gap-2.5">
                 <Button
                   className="h-[50px] min-w-[188px] rounded-[16px] text-[15px]"
-                  disabled={isJoining || !serverAddress.trim()}
+                  disabled={isJoining || !serverAddress.trim() || isSelectedAvatarOccupied}
                   onClick={() => void enterChannel()}
                 >
                   {isJoining ? "正在进入..." : "上号"}
@@ -381,7 +416,11 @@ export const HomePage = () => {
           <section className="mt-6 grid min-h-0 flex-1 gap-7 md:grid-cols-[1.05fr_.95fr]">
             <div data-gsap-entry="role-picker" className="p-2">
               <div className="mb-4 text-sm font-semibold text-[#314158]">选择角色</div>
-              <CharacterPicker value={avatarId} onChange={setAvatarId} />
+              <CharacterPicker
+                value={avatarId}
+                occupiedAvatarIds={occupiedAvatarIds}
+                onChange={setAvatarId}
+              />
             </div>
 
             <div data-gsap-entry="form" className="flex min-w-0 flex-col gap-5">
@@ -408,11 +447,17 @@ export const HomePage = () => {
                 />
               </label>
               {serverTestStatus}
+              {isSelectedAvatarOccupied ? (
+                <div className="entry-server-test-result danger" role="status">
+                  <CircleAlert className="h-4 w-4" />
+                  <span>这个角色已经被朋友选择，请换一个未占用的角色。</span>
+                </div>
+              ) : null}
               <div className="mt-auto" data-gsap-entry="cta">
                 <div className="flex flex-wrap gap-2.5">
                   <Button
                     className="h-[52px] min-w-[188px] rounded-[16px] text-[15px]"
-                    disabled={isJoining || !serverAddress.trim()}
+                    disabled={isJoining || !serverAddress.trim() || isSelectedAvatarOccupied}
                     onClick={() => void enterChannel()}
                   >
                     {isJoining ? "正在进入..." : "进入频道"}

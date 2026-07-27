@@ -11,3 +11,4 @@ export * from "./types/room.types";
 export * from "./types/settings.types";
 export * from "./utils/time";
 export * from "./utils/relayUrl";
+export * from "./utils/nickname";

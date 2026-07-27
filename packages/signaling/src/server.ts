@@ -5,7 +5,10 @@ import { createServer, type Server as HttpServer } from "node:http";
 import {
   APP_BUILD_NUMBER,
   APP_PROTOCOL_VERSION,
+  BUILT_IN_AVATAR_IDS,
+  DEFAULT_CHANNEL_ID,
   HEARTBEAT_INTERVAL_MS,
+  type BuiltInAvatarId,
   type SceneZoneId,
 } from "@private-voice/shared";
 import { WebSocket, WebSocketServer } from "ws";
@@ -42,6 +45,7 @@ import type {
 import { isSignalEnvelope } from "./protocol";
 import { ChatHistoryStore } from "./chat-history-store";
 import { RoomManager } from "./room-manager";
+import type { SignalingRoom } from "./room-manager";
 import { SessionTokenStore } from "./session-token-store";
 
 interface SignalingServerOptions {
@@ -95,6 +99,25 @@ const RATE_LIMITS: Record<string, { windowMs: number; limit: number }> = {
   screen_path_state: { windowMs: 10_000, limit: 30 },
 };
 const SEAT_ZONES: SceneZoneId[] = ["gameDesk1", "gameDesk2", "gameDesk3", "gameDesk4", "gameDesk5"];
+
+const getOccupiedAvatarIds = (
+  room: SignalingRoom | undefined,
+  excludingPeerId?: string,
+): Set<BuiltInAvatarId> =>
+  new Set(
+    room?.peers
+      .listPeers()
+      .filter((peer) => peer.id !== excludingPeerId && peer.avatarId)
+      .map((peer) => peer.avatarId as BuiltInAvatarId) ?? [],
+  );
+
+const getAvailableAvatarIds = (
+  room: SignalingRoom | undefined,
+  excludingPeerId?: string,
+): BuiltInAvatarId[] => {
+  const occupied = getOccupiedAvatarIds(room, excludingPeerId);
+  return BUILT_IN_AVATAR_IDS.filter((avatarId) => !occupied.has(avatarId));
+};
 
 const resolveSceneZone = (
   occupiedZones: Array<{ peerId: string; sceneZone?: SceneZoneId; disconnectedAt?: number }>,
@@ -192,6 +215,9 @@ export class SignalingServer extends EventEmitter {
       }
       if (request.url?.startsWith("/health")) {
         const stats = this.roomManager.getStats();
+        const occupiedAvatarIds = [
+          ...getOccupiedAvatarIds(this.roomManager.getRoom(DEFAULT_CHANNEL_ID)),
+        ];
         response.writeHead(200, { "content-type": "application/json; charset=utf-8" });
         response.end(
           JSON.stringify({
@@ -207,6 +233,7 @@ export class SignalingServer extends EventEmitter {
             connectedPeers: stats.connectedPeers,
             maxRoomMembers: this.roomManager.getMaxRoomMembers(),
             currentOnlineCount: stats.connectedPeers,
+            occupiedAvatarIds,
             droppedRealtimeMessages: this.droppedRealtimeMessages,
             turnConfigured:
               getTurnUrls().length > 0 &&
@@ -601,6 +628,31 @@ export class SignalingServer extends EventEmitter {
       return;
     }
 
+    const requestedAvatarId = existingPeer?.avatarId ?? message.avatarId;
+    const occupiedAvatarIds = getOccupiedAvatarIds(existingRoom, message.peerId);
+    if (occupiedAvatarIds.has(requestedAvatarId)) {
+      if (!existingPeer) {
+        this.sessionTokens.invalidate(message.roomId, message.peerId);
+      }
+      const availableAvatarIds = getAvailableAvatarIds(existingRoom, message.peerId);
+      this.logger?.("avatar selection rejected", {
+        roomId: message.roomId,
+        peerId: message.peerId,
+        avatarId: requestedAvatarId,
+        availableAvatarIds,
+      });
+      this.safeSend(socket, {
+        type: "error",
+        code: "avatar_taken",
+        roomId: message.roomId,
+        peerId: message.peerId,
+        avatarId: requestedAvatarId,
+        availableAvatarIds,
+        message: "这个角色刚被朋友选走了，请换一个角色再进入频道。",
+      });
+      return;
+    }
+
     this.sessions.set(socket, {
       roomId: message.roomId,
       peerId: message.peerId,
@@ -629,7 +681,7 @@ export class SignalingServer extends EventEmitter {
       nickname: message.nickname,
       avatarDataUrl: existingPeer?.avatarDataUrl,
       avatarHash: existingPeer?.avatarHash,
-      avatarId: message.avatarId ?? existingPeer?.avatarId,
+      avatarId: requestedAvatarId,
       socket,
       isHost: false,
       isMuted: existingPeer?.isMuted ?? false,
@@ -682,6 +734,28 @@ export class SignalingServer extends EventEmitter {
   private handleMemberState(message: MemberStateMessage): void {
     const room = this.roomManager.getRoom(message.roomId);
     if (!room) {
+      return;
+    }
+    if (message.avatarId && getOccupiedAvatarIds(room, message.peerId).has(message.avatarId)) {
+      const author = room.peers.getPeer(message.peerId);
+      const availableAvatarIds = getAvailableAvatarIds(room, message.peerId);
+      this.logger?.("avatar update rejected", {
+        roomId: message.roomId,
+        peerId: message.peerId,
+        avatarId: message.avatarId,
+        availableAvatarIds,
+      });
+      if (author) {
+        this.safeSend(author.socket, {
+          type: "error",
+          code: "avatar_taken",
+          roomId: message.roomId,
+          peerId: message.peerId,
+          avatarId: message.avatarId,
+          availableAvatarIds,
+          message: "这个角色已经被朋友使用，请换一个角色。",
+        });
+      }
       return;
     }
     const normalizedSceneZone = message.sceneZone

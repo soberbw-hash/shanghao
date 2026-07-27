@@ -1,6 +1,6 @@
 import { type CSSProperties, useEffect, useLayoutEffect, useRef, useState } from "react";
-import { VolumeX } from "lucide-react";
-import { motion, useAnimationControls, usePresence } from "framer-motion";
+import { HeadphoneOff, Mic, MicOff, RotateCcw, Volume2, VolumeX } from "lucide-react";
+import { AnimatePresence, motion, useAnimationControls, usePresence } from "framer-motion";
 
 import type {
   BuiltInAvatarId,
@@ -9,6 +9,7 @@ import type {
   SceneZoneId,
 } from "@private-voice/shared";
 
+import { memberVolumeToPercent, toggleLocalMemberMute } from "../../features/audio/memberVolume";
 import { motionCurve } from "../../features/motion/motionSystem";
 import { memberStatus } from "../../features/voice-scene/activityRules";
 import { planCharacterRoute, sceneEntryPoint } from "../../features/voice-scene/characterMotion";
@@ -86,9 +87,13 @@ export const SceneCharacter = ({
   const status = memberStatus(member);
   const personality = getCharacterPersonality(avatarId);
   const [visibleReaction, setVisibleReaction] = useState<SceneReactionModel>();
+  const [isAudioControlsOpen, setIsAudioControlsOpen] = useState(false);
   const isSpeaking = status.tone === "speaking";
   const isReconnecting = status.tone === "reconnecting";
   const isOffline = status.tone === "offline";
+  const isLocallyMuted = !member.isLocal && member.volume <= 0.001;
+  const memberControlsRef = useRef<HTMLDivElement>(null);
+  const previousAudibleVolumeRef = useRef(member.volume > 0 ? member.volume : 1);
   const basePosition = characterPositions[zone];
   const awayZone = sceneZones.find((candidate) => candidate.id === "restroomZone");
   const awayColumnCount = Math.min(3, Math.max(1, awayCount));
@@ -116,6 +121,29 @@ export const SceneCharacter = ({
   const didFinishEntryRef = useRef(shouldReduceMotion);
   const didStartEntryRef = useRef(shouldReduceMotion);
   const operationIdRef = useRef(0);
+
+  useEffect(() => {
+    if (member.volume > 0.001) previousAudibleVolumeRef.current = member.volume;
+  }, [member.volume]);
+
+  useEffect(() => {
+    if (!isAudioControlsOpen) return;
+
+    const closeWhenClickingOutside = (event: PointerEvent) => {
+      if (!memberControlsRef.current?.contains(event.target as Node)) {
+        setIsAudioControlsOpen(false);
+      }
+    };
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setIsAudioControlsOpen(false);
+    };
+    document.addEventListener("pointerdown", closeWhenClickingOutside, true);
+    document.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.removeEventListener("pointerdown", closeWhenClickingOutside, true);
+      document.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [isAudioControlsOpen]);
   const motionPhaseRef = useRef<CharacterMotionPhase>(motionPhase);
   const lastZoneRef = useRef<SceneZoneId>(zone);
   const activeTargetZoneRef = useRef<SceneZoneId>(zone);
@@ -439,7 +467,10 @@ export const SceneCharacter = ({
     >
       <div className="-translate-x-1/2" data-gsap-character>
         <div
-          className="scene-character-anchor relative"
+          ref={memberControlsRef}
+          className={`scene-character-anchor relative ${
+            isAudioControlsOpen ? "is-audio-controls-open" : ""
+          }`}
           style={
             {
               "--character-scale": renderedCharacterScale,
@@ -449,38 +480,65 @@ export const SceneCharacter = ({
           }
         >
           <div
-            className={`room-character-sprite relative ${
-              isSpeaking ? "room-character-speaking" : ""
-            } ${member.isMuted ? "room-character-muted" : ""} ${
-              member.isDeafened ? "room-character-deafened" : ""
-            } ${isReconnecting ? "room-character-reconnecting" : ""}`}
+            className={`room-character-interaction-target ${
+              member.isLocal ? "" : "is-interactive pointer-events-auto"
+            }`}
+            role={member.isLocal ? undefined : "button"}
+            tabIndex={member.isLocal ? undefined : 0}
+            aria-label={member.isLocal ? undefined : `调整${member.nickname}的本地音量`}
+            aria-expanded={member.isLocal ? undefined : isAudioControlsOpen}
+            onClick={
+              member.isLocal ? undefined : () => setIsAudioControlsOpen((current) => !current)
+            }
+            onKeyDown={
+              member.isLocal
+                ? undefined
+                : (event) => {
+                    if (event.key !== "Enter" && event.key !== " ") return;
+                    event.preventDefault();
+                    setIsAudioControlsOpen((current) => !current);
+                  }
+            }
           >
-            {isWalkingVisual ? (
-              <WalkingAnimalSprite
-                avatarId={avatarId}
-                direction={movementDirection}
-                strideDurationMs={strideDurationMs}
-                paused={motionPhase === "turning"}
-              />
-            ) : isSeatZone(displayZone) ? (
-              <DeskAnimalSprite
-                avatarId={avatarId}
-                activity={member.activity ?? "idle"}
-                isSpeaking={isSpeaking}
-                isMoving={isMoving}
-                isMuted={member.isMuted}
-                isScreenSharing={isScreenSharing}
-                isWelcoming={isWelcoming}
-                idleAction={idleAction}
-              />
-            ) : (
-              <AnimalSprite avatarId={avatarId} state="away" isMoving={isMoving} />
-            )}
-            {member.isDeafened ? (
-              <span className="room-character-deafened-badge" aria-label="已关闭扬声器">
-                <VolumeX className="h-3 w-3" />
-              </span>
-            ) : null}
+            <div
+              className={`room-character-sprite relative ${
+                isSpeaking ? "room-character-speaking" : ""
+              } ${member.isMuted ? "room-character-muted" : ""} ${
+                member.isDeafened ? "room-character-deafened" : ""
+              } ${isReconnecting ? "room-character-reconnecting" : ""}`}
+            >
+              {isWalkingVisual ? (
+                <WalkingAnimalSprite
+                  avatarId={avatarId}
+                  direction={movementDirection}
+                  strideDurationMs={strideDurationMs}
+                  paused={motionPhase === "turning"}
+                />
+              ) : isSeatZone(displayZone) ? (
+                <DeskAnimalSprite
+                  avatarId={avatarId}
+                  activity={member.activity ?? "idle"}
+                  isSpeaking={isSpeaking}
+                  isMoving={isMoving}
+                  isMuted={member.isMuted}
+                  isScreenSharing={isScreenSharing}
+                  isWelcoming={isWelcoming}
+                  idleAction={idleAction}
+                />
+              ) : (
+                <AnimalSprite avatarId={avatarId} state="away" isMoving={isMoving} />
+              )}
+              {member.isDeafened ? (
+                <span className="room-character-deafened-badge" aria-label="已关闭扬声器">
+                  <HeadphoneOff className="h-3 w-3" />
+                </span>
+              ) : null}
+              {isLocallyMuted ? (
+                <span className="room-character-local-muted-badge" aria-label="已在本机静音">
+                  <VolumeX className="h-3 w-3" />
+                </span>
+              ) : null}
+            </div>
           </div>
 
           <SceneCharacterLabel
@@ -496,28 +554,112 @@ export const SceneCharacter = ({
                 <button
                   key={emoji}
                   type="button"
-                  onClick={() => onReact?.(member.id, emoji)}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onReact?.(member.id, emoji);
+                  }}
                   aria-label={`发送${emoji}`}
                 >
                   {emoji}
                 </button>
               ))}
-              <label
-                className="scene-member-volume"
-                title={`${member.nickname} 音量 ${Math.round(member.volume * 100)}%`}
+              <button
+                type="button"
+                className={`scene-member-volume-trigger ${isLocallyMuted ? "is-muted" : ""}`}
+                title={`${member.nickname} 本地音量 ${memberVolumeToPercent(member.volume)}%`}
+                aria-label={`调整${member.nickname}的本地音量`}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  setIsAudioControlsOpen((current) => !current);
+                }}
               >
-                <span>音量</span>
-                <input
-                  type="range"
-                  min={0}
-                  max={2}
-                  step={0.05}
-                  value={member.volume}
-                  onChange={(event) => onVolumeChange?.(member.id, Number(event.target.value))}
-                />
-              </label>
+                {isLocallyMuted ? (
+                  <VolumeX className="h-3.5 w-3.5" />
+                ) : (
+                  <Volume2 className="h-3.5 w-3.5" />
+                )}
+              </button>
             </div>
           ) : null}
+
+          <AnimatePresence>
+            {!member.isLocal && isAudioControlsOpen ? (
+              <motion.div
+                className="member-audio-popover pointer-events-auto"
+                role="dialog"
+                aria-label={`${member.nickname}的本地声音设置`}
+                initial={shouldReduceMotion ? false : { opacity: 0, y: 7, scale: 0.96 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                exit={shouldReduceMotion ? undefined : { opacity: 0, y: 5, scale: 0.97 }}
+                transition={{
+                  duration: shouldReduceMotion ? 0 : 0.2,
+                  ease: motionCurve.enter,
+                }}
+                onClick={(event) => event.stopPropagation()}
+              >
+                <div className="member-audio-popover-header">
+                  <span className="min-w-0">
+                    <strong title={member.nickname}>{member.nickname}</strong>
+                    <small>
+                      {member.isMuted
+                        ? "对方已闭麦"
+                        : member.isDeafened
+                          ? "对方已关闭扬声器"
+                          : "麦克风正常"}
+                    </small>
+                  </span>
+                  <span className={`member-audio-percent ${isLocallyMuted ? "is-muted" : ""}`}>
+                    {memberVolumeToPercent(member.volume)}%
+                  </span>
+                </div>
+
+                <label className="member-audio-slider">
+                  <span className="sr-only">他的声音</span>
+                  {member.isMuted ? (
+                    <MicOff className="h-4 w-4" aria-hidden="true" />
+                  ) : (
+                    <Mic className="h-4 w-4" aria-hidden="true" />
+                  )}
+                  <input
+                    type="range"
+                    min={0}
+                    max={200}
+                    step={5}
+                    value={memberVolumeToPercent(member.volume)}
+                    aria-label={`${member.nickname}本地播放音量`}
+                    onChange={(event) =>
+                      onVolumeChange?.(member.id, Number(event.target.value) / 100)
+                    }
+                  />
+                  <Volume2 className="h-4 w-4" aria-hidden="true" />
+                </label>
+
+                <div className="member-audio-actions">
+                  <button
+                    type="button"
+                    className={isLocallyMuted ? "is-muted" : ""}
+                    onClick={() =>
+                      onVolumeChange?.(
+                        member.id,
+                        toggleLocalMemberMute(member.volume, previousAudibleVolumeRef.current),
+                      )
+                    }
+                  >
+                    <VolumeX className="h-3.5 w-3.5" />
+                    {isLocallyMuted ? "取消静音" : "仅我静音"}
+                  </button>
+                  <button
+                    type="button"
+                    disabled={Math.abs(member.volume - 1) < 0.001}
+                    onClick={() => onVolumeChange?.(member.id, 1)}
+                  >
+                    <RotateCcw className="h-3.5 w-3.5" />
+                    恢复 100%
+                  </button>
+                </div>
+              </motion.div>
+            ) : null}
+          </AnimatePresence>
         </div>
       </div>
     </motion.div>

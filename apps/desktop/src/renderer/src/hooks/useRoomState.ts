@@ -20,6 +20,7 @@ import {
   createProcessedMicrophoneStream,
   type ProcessedMicrophoneStream,
 } from "../features/audio/microphoneProcessor";
+import { clampMemberVolume } from "../features/audio/memberVolume";
 import { playUiSound } from "../features/audio/uiSound";
 import { RoomClient } from "../features/room/roomClient";
 import { useAppStore } from "../store/appStore";
@@ -33,6 +34,27 @@ let activeJoinPromise: Promise<void> | null = null;
 let activeSpeakingDetector: ReturnType<typeof createSpeakingDetector> | null = null;
 let activeProcessedMicrophone: ProcessedMicrophoneStream | null = null;
 let previousMemberIds = new Set<string>();
+const runtimeMemberVolumes = new Map<string, number>();
+const pendingMemberVolumeSaves = new Map<string, number>();
+let memberVolumeSaveTimer: number | undefined;
+
+const scheduleMemberVolumeSave = (nickname: string, volume: number) => {
+  pendingMemberVolumeSaves.set(nickname, volume);
+  if (memberVolumeSaveTimer !== undefined) window.clearTimeout(memberVolumeSaveTimer);
+  memberVolumeSaveTimer = window.setTimeout(() => {
+    memberVolumeSaveTimer = undefined;
+    const currentSettings = useSettingsStore.getState().settings;
+    if (!currentSettings) return;
+    const pendingVolumes = Object.fromEntries(pendingMemberVolumeSaves);
+    pendingMemberVolumeSaves.clear();
+    void useSettingsStore.getState().saveSettings({
+      memberVolumes: {
+        ...currentSettings.memberVolumes,
+        ...pendingVolumes,
+      },
+    });
+  }, 320);
+};
 
 const ROUTINE_SIGNAL_MESSAGE_TYPES = new Set([
   "audio_chunk",
@@ -96,6 +118,7 @@ const normalizeRoomError = (error: unknown, fallback: string): string => {
     }
     if (message.includes("version")) return copy.versionMismatch;
     if (message.includes("room_full")) return copy.roomFull;
+    if (message === "avatar_taken") return "这个角色刚被朋友选走了，请换一个角色再进入频道。";
     if (message === "network_unreachable") return copy.networkFailed;
     if (message === "signaling_socket_closed") return copy.socketClosed;
     if (message === "join_ack_timeout") return copy.joinAckTimeout;
@@ -313,9 +336,11 @@ export const useRoomState = () => {
         const savedVolumes = useSettingsStore.getState().settings?.memberVolumes ?? {};
         const audioState = useAudioStore.getState();
         const membersWithVolume = members.map((member) => {
-          const volume = Math.max(
-            0,
-            Math.min(2, savedVolumes[member.nickname] ?? member.volume ?? 1),
+          const volume = clampMemberVolume(
+            runtimeMemberVolumes.get(member.nickname) ??
+              savedVolumes[member.nickname] ??
+              member.volume ??
+              1,
           );
           if (!member.isLocal) return { ...member, volume };
 
@@ -396,6 +421,22 @@ export const useRoomState = () => {
           });
           useAppStore.getState().navigate("home");
         })();
+      },
+      onAvatarConflict: (availableAvatarIds) => {
+        const localMember = useRoomStore
+          .getState()
+          .room.members.find((member) => member.isLocal && !member.isEmptySlot);
+        if (localMember?.avatarId) {
+          void useSettingsStore.getState().saveSettings({ avatarId: localMember.avatarId });
+        }
+        pushToast({
+          tone: "warning",
+          title: "角色已被朋友选择",
+          description:
+            availableAvatarIds.length > 0
+              ? "已保留你原来的角色；下次更换时请选择未占用的角色。"
+              : "频道里的角色都已被占用。",
+        });
       },
       onSnapshotRevision: (revision) => {
         setConnectionHealth({ lastUpdatedAt: new Date().toISOString() });
@@ -793,22 +834,15 @@ export const useRoomState = () => {
   };
 
   const setMemberVolume = (memberId: string, volume: number) => {
-    const normalizedVolume = Math.max(0, Math.min(2, volume));
+    const normalizedVolume = clampMemberVolume(volume);
     const member = useRoomStore
       .getState()
       .room.members.find((candidate) => candidate.id === memberId);
     if (!member || member.isLocal || member.isEmptySlot) return;
+    runtimeMemberVolumes.set(member.nickname, normalizedVolume);
     updateMemberVolume(memberId, normalizedVolume);
     activeClient?.setPeerVolume(memberId, normalizedVolume);
-    const currentSettings = useSettingsStore.getState().settings;
-    if (currentSettings) {
-      void useSettingsStore.getState().saveSettings({
-        memberVolumes: {
-          ...currentSettings.memberVolumes,
-          [member.nickname]: normalizedVolume,
-        },
-      });
-    }
+    scheduleMemberVolumeSave(member.nickname, normalizedVolume);
   };
 
   return {

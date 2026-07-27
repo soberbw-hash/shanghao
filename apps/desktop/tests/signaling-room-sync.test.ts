@@ -2,7 +2,12 @@ import assert from "node:assert/strict";
 import { createHmac } from "node:crypto";
 import test from "node:test";
 
-import { APP_BUILD_NUMBER, APP_PROTOCOL_VERSION } from "@private-voice/shared";
+import {
+  APP_BUILD_NUMBER,
+  APP_PROTOCOL_VERSION,
+  BUILT_IN_AVATAR_IDS,
+  type BuiltInAvatarId,
+} from "@private-voice/shared";
 import { SignalingServer } from "@private-voice/signaling";
 import { WebSocket } from "ws";
 
@@ -40,11 +45,13 @@ const openSocket = async (url: string): Promise<WebSocket> => {
   return socket;
 };
 
+let nextAvatarIndex = 0;
 const joinChannel = (
   socket: WebSocket,
   peerId: string,
   nickname = peerId,
   sessionToken?: string,
+  avatarId: BuiltInAvatarId = BUILT_IN_AVATAR_IDS[nextAvatarIndex++ % BUILT_IN_AVATAR_IDS.length]!,
 ) => {
   socket.send(
     JSON.stringify({
@@ -53,7 +60,7 @@ const joinChannel = (
       channelId: "main",
       peerId,
       nickname,
-      avatarId: "fox",
+      avatarId,
       appVersion: "0.1.40",
       protocolVersion: APP_PROTOCOL_VERSION,
       buildNumber: APP_BUILD_NUMBER,
@@ -61,6 +68,144 @@ const joinChannel = (
     }),
   );
 };
+
+test("fixed channel reserves each built-in avatar atomically and releases it on leave", async () => {
+  const server = new SignalingServer({ roomName: "固定频道" });
+  const port = await server.listen();
+  const url = `ws://127.0.0.1:${port}`;
+  const first = await openSocket(url);
+  const conflicting = await openSocket(url);
+  const replacement = await openSocket(url);
+
+  try {
+    joinChannel(first, "avatar-first", "狐狸一号", undefined, "fox");
+    await waitForMessage(
+      first,
+      (payload): payload is { type: "channel_snapshot"; members: unknown[] } =>
+        typeof payload === "object" &&
+        payload !== null &&
+        (payload as { type?: string }).type === "channel_snapshot" &&
+        (payload as { members?: unknown[] }).members?.length === 1,
+    );
+
+    joinChannel(conflicting, "avatar-conflict", "狐狸二号", undefined, "fox");
+    const conflict = await waitForMessage(
+      conflicting,
+      (
+        payload,
+      ): payload is {
+        type: "error";
+        code: "avatar_taken";
+        avatarId: BuiltInAvatarId;
+        availableAvatarIds: BuiltInAvatarId[];
+      } =>
+        typeof payload === "object" &&
+        payload !== null &&
+        (payload as { type?: string }).type === "error" &&
+        (payload as { code?: string }).code === "avatar_taken",
+    );
+    assert.equal(conflict.avatarId, "fox");
+    assert.equal(conflict.availableAvatarIds.includes("fox"), false);
+    assert.equal(conflict.availableAvatarIds.length, 4);
+
+    const health = (await fetch(`http://127.0.0.1:${port}/health`).then((response) =>
+      response.json(),
+    )) as { occupiedAvatarIds: BuiltInAvatarId[] };
+    assert.deepEqual(health.occupiedAvatarIds, ["fox"]);
+
+    first.send(JSON.stringify({ type: "leave_channel", roomId: "main", peerId: "avatar-first" }));
+    await wait(80);
+    joinChannel(replacement, "avatar-replacement", "新狐狸", undefined, "fox");
+    const joined = await waitForMessage(
+      replacement,
+      (payload): payload is { type: "join_ack" } =>
+        typeof payload === "object" &&
+        payload !== null &&
+        (payload as { type?: string }).type === "join_ack",
+    );
+    assert.equal(joined.type, "join_ack");
+  } finally {
+    first.close();
+    conflicting.close();
+    replacement.close();
+    await server.close();
+  }
+});
+
+test("fixed channel rejects an occupied avatar update without disconnecting the member", async () => {
+  const server = new SignalingServer({ roomName: "固定频道" });
+  const port = await server.listen();
+  const url = `ws://127.0.0.1:${port}`;
+  const first = await openSocket(url);
+  const second = await openSocket(url);
+
+  try {
+    joinChannel(first, "avatar-owner", "小狐狸", undefined, "fox");
+    await waitForMessage(
+      first,
+      (payload): payload is { type: "channel_snapshot"; members: unknown[] } =>
+        typeof payload === "object" &&
+        payload !== null &&
+        (payload as { type?: string }).type === "channel_snapshot" &&
+        (payload as { members?: unknown[] }).members?.length === 1,
+    );
+    joinChannel(second, "avatar-updater", "小猫", undefined, "cat");
+    await waitForMessage(
+      second,
+      (payload): payload is { type: "channel_snapshot"; members: unknown[] } =>
+        typeof payload === "object" &&
+        payload !== null &&
+        (payload as { type?: string }).type === "channel_snapshot" &&
+        (payload as { members?: unknown[] }).members?.length === 2,
+    );
+
+    second.send(
+      JSON.stringify({
+        type: "member_state",
+        roomId: "main",
+        peerId: "avatar-updater",
+        avatarId: "fox",
+      }),
+    );
+    const conflict = await waitForMessage(
+      second,
+      (payload): payload is { type: "error"; code: "avatar_taken" } =>
+        typeof payload === "object" &&
+        payload !== null &&
+        (payload as { type?: string }).type === "error" &&
+        (payload as { code?: string }).code === "avatar_taken",
+    );
+    assert.equal(conflict.code, "avatar_taken");
+
+    second.send(
+      JSON.stringify({
+        type: "request_snapshot",
+        roomId: "main",
+        peerId: "avatar-updater",
+      }),
+    );
+    const snapshot = await waitForMessage(
+      second,
+      (
+        payload,
+      ): payload is {
+        type: "channel_snapshot";
+        members: Array<{ id: string; avatarId?: BuiltInAvatarId }>;
+      } =>
+        typeof payload === "object" &&
+        payload !== null &&
+        (payload as { type?: string }).type === "channel_snapshot",
+    );
+    assert.equal(
+      snapshot.members.find((member) => member.id === "avatar-updater")?.avatarId,
+      "cat",
+    );
+  } finally {
+    first.close();
+    second.close();
+    await server.close();
+  }
+});
 
 test("fixed channel acknowledges join before sending the channel snapshot", async () => {
   const server = new SignalingServer({ roomName: "固定频道" });

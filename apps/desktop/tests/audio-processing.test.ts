@@ -7,6 +7,11 @@ import {
   FOURTH_ORDER_BUTTERWORTH_Q,
   fourthOrderHighPassMagnitude,
 } from "../src/renderer/src/features/audio/filterMath";
+import {
+  clampMemberVolume,
+  memberVolumeToPercent,
+  toggleLocalMemberMute,
+} from "../src/renderer/src/features/audio/memberVolume";
 import { hasPlayableAudioTrack } from "../src/renderer/src/features/audio/remoteAudioTrack";
 
 const root = path.resolve(process.cwd(), "../..");
@@ -75,6 +80,8 @@ test("remote audio uses one shared mixer without reusing audio elements", () => 
   assert.equal(mixer.includes("new AudioContext"), true);
   assert.equal(mixer.includes("createMediaStreamSource(input.stream)"), true);
   assert.equal(mixer.includes("createDynamicsCompressor"), true);
+  assert.equal(mixer.includes("this.isDeafened ? 0 : 1"), true);
+  assert.equal(mixer.includes("clampMemberVolume(input.volume)"), true);
   assert.equal(mixer.includes("channels = new Map"), true);
   assert.equal(mixer.includes("relayChannels = new Map"), true);
   assert.equal(mixer.includes("playRelaySamples"), true);
@@ -86,6 +93,16 @@ test("remote audio uses one shared mixer without reusing audio elements", () => 
   assert.equal(relay.includes('unlock("signaling-audio-relay")'), true);
   assert.equal(relay.includes("new FallbackAudioPlayer(message.peerId)"), true);
   assert.equal(main.includes('appendSwitch("autoplay-policy", "no-user-gesture-required")'), true);
+});
+
+test("member playback volume is local, bounded to 200%, and restores after local mute", () => {
+  assert.equal(clampMemberVolume(-1), 0);
+  assert.equal(clampMemberVolume(1.35), 1.35);
+  assert.equal(clampMemberVolume(3), 2);
+  assert.equal(memberVolumeToPercent(2), 200);
+  assert.equal(toggleLocalMemberMute(1.35, 1), 0);
+  assert.equal(toggleLocalMemberMute(0, 1.35), 1.35);
+  assert.equal(toggleLocalMemberMute(0, 0), 1);
 });
 
 test("late-join remote audio stays attached while Chromium temporarily mutes the live track", () => {

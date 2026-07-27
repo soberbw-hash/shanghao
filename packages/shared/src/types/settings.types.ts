@@ -63,6 +63,7 @@ export interface RelayStatusSnapshot {
   latencyMs?: number;
   turnConfigured?: boolean;
   droppedRealtimeMessages?: number;
+  occupiedAvatarIds?: BuiltInAvatarId[];
   hasVersionMismatch?: boolean;
   lastCheckedAt?: string;
   message: string;
