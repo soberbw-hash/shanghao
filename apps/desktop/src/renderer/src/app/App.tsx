@@ -162,7 +162,7 @@ export const App = () => {
             <motion.div
               key={basePage}
               className="app-route-motion"
-              initial={{ opacity: 0, x: basePage === "room" ? 18 : -12, scale: 0.992 }}
+              initial={basePage === "room" ? { opacity: 0, x: 18, scale: 0.992 } : false}
               animate={{ opacity: 1, x: 0, scale: 1 }}
               transition={{
                 opacity: { duration: APPLE_MOTION_DURATION.panel, ease: APPLE_MOTION_EASE },

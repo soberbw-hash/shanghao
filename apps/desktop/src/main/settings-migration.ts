@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+
 import {
   DEFAULT_ROOM_NAME,
   PROFILE_SCHEMA_VERSION,
@@ -9,14 +11,16 @@ import {
 
 import { normalizeRelayServerUrl } from "./relay-url";
 
-export type RawSettings = Partial<AppSettings> &
-  Record<string, unknown> & {
-    settingsSchemaVersion?: number;
-  };
+export type RawSettings = Partial<AppSettings> & {
+  settingsSchemaVersion?: number;
+  isLowCutEnabled?: boolean;
+  preferredSampleRate?: unknown;
+};
 
 export const defaultSettings: AppSettings = {
   settingsSchemaVersion: SETTINGS_SCHEMA_VERSION,
   profileSchemaVersion: PROFILE_SCHEMA_VERSION,
+  profileId: "",
   nickname: "",
   roomName: DEFAULT_ROOM_NAME,
   avatarId: "fox",
@@ -29,7 +33,6 @@ export const defaultSettings: AppSettings = {
   isOverlayEnabled: true,
   preferredInputDeviceId: undefined,
   preferredOutputDeviceId: undefined,
-  preferredSampleRate: "32000",
   inputLevelThreshold: 0.4,
   micEqualizerGains: [0, 0, 0, 0, 0],
   lowCutFrequency: "90",
@@ -68,21 +71,15 @@ const trimText = (value?: string): string | undefined => {
 const trimUnknownText = (value: unknown): string | undefined =>
   typeof value === "string" ? trimText(value) : undefined;
 
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+const normalizeProfileId = (value: unknown): string => {
+  const candidate = trimUnknownText(value);
+  return candidate && UUID_PATTERN.test(candidate) ? candidate : randomUUID();
+};
+
 const normalizeBoolean = (value: unknown, fallback: boolean): boolean =>
   typeof value === "boolean" ? value : fallback;
-
-const normalizeSampleRate = (
-  value: string | undefined,
-  previousVersion: number,
-): AppSettings["preferredSampleRate"] => {
-  if (previousVersion < 10 && (!value || value === "auto")) {
-    return "32000";
-  }
-  if (value === "auto" || value === "32000" || value === "44100" || value === "48000") {
-    return value;
-  }
-  return defaultSettings.preferredSampleRate;
-};
 
 const normalizeMonitorMode = (value?: string): AppSettings["micMonitorMode"] =>
   value === "raw" ? "raw" : "processed";
@@ -143,6 +140,7 @@ export const migrateSettings = (raw: RawSettings): MigrationResult => {
   const merged: AppSettings = {
     settingsSchemaVersion: SETTINGS_SCHEMA_VERSION,
     profileSchemaVersion: PROFILE_SCHEMA_VERSION,
+    profileId: normalizeProfileId(raw.profileId),
     nickname:
       previousProfileVersion === PROFILE_SCHEMA_VERSION ? (trimText(raw.nickname) ?? "") : "",
     roomName: trimText(raw.roomName) ?? DEFAULT_ROOM_NAME,
@@ -184,27 +182,14 @@ export const migrateSettings = (raw: RawSettings): MigrationResult => {
               .map(([name, value]) => [name.slice(0, 24), Math.max(0, Math.min(2, Number(value)))]),
           )
         : {},
-    soundVolume:
-      typeof raw.soundVolume === "number" && Number.isFinite(raw.soundVolume)
-        ? Math.max(0, Math.min(1, raw.soundVolume))
-        : defaultSettings.soundVolume,
+    soundVolume: defaultSettings.soundVolume,
     screenShareQuality: normalizeScreenShareQuality(trimUnknownText(raw.screenShareQuality)),
     isScreenShareSystemAudioEnabled: normalizeBoolean(
       raw.isScreenShareSystemAudioEnabled,
       defaultSettings.isScreenShareSystemAudioEnabled,
     ),
-    isSystemNotificationEnabled: normalizeBoolean(
-      raw.isSystemNotificationEnabled,
-      defaultSettings.isSystemNotificationEnabled,
-    ),
-    isGameDetectionEnabled: normalizeBoolean(
-      raw.isGameDetectionEnabled,
-      defaultSettings.isGameDetectionEnabled,
-    ),
-    preferredSampleRate: normalizeSampleRate(
-      trimUnknownText(raw.preferredSampleRate),
-      previousVersion,
-    ),
+    isSystemNotificationEnabled: true,
+    isGameDetectionEnabled: true,
     micEqualizerGains: normalizeEqualizerGains(raw.micEqualizerGains),
     lowCutFrequency: normalizeLowCutFrequency(raw),
     micMonitorMode: normalizeMonitorMode(trimUnknownText(raw.micMonitorMode)),
@@ -212,7 +197,7 @@ export const migrateSettings = (raw: RawSettings): MigrationResult => {
     isEchoCancellationEnabled: raw.isEchoCancellationEnabled !== false,
     isAutoGainControlEnabled: raw.isAutoGainControlEnabled !== false,
     isPushToTalkEnabled: raw.isPushToTalkEnabled === true,
-    isUiSoundEnabled: raw.isUiSoundEnabled !== false,
+    isUiSoundEnabled: true,
     isBackgroundUpdateCheckEnabled: raw.isBackgroundUpdateCheckEnabled !== false,
     isAutoDownloadUpdateEnabled:
       typeof raw.isAutoDownloadUpdateEnabled === "boolean"

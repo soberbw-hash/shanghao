@@ -678,6 +678,7 @@ export class SignalingServer extends EventEmitter {
     );
     const room = this.roomManager.addPeer(message.roomId, this.roomName, {
       id: message.peerId,
+      profileId: existingPeer?.profileId ?? message.profileId,
       nickname: message.nickname,
       avatarDataUrl: existingPeer?.avatarDataUrl,
       avatarHash: existingPeer?.avatarHash,

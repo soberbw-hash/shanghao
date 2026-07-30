@@ -39,7 +39,7 @@ This file is the durable checkpoint for the v0.1.50 product pass. It is updated 
 - Lint, Prettier, and all six workspace TypeScript projects passed.
 - All 76 desktop regression tests passed, including protocol compatibility, auto-away boundaries, microphone-state restoration, secure signaling, chat history recovery, duplicate-seat arbitration, screen sharing, updates, and asset packaging.
 - The three-client audio matrix passed every peer route and the signaling-audio fallback path without stale frames.
-- The packaged runtime contains the RNNoise AudioWorklet, 199 offline Noto Sans SC font files, and every required third-party license.
+- The current packaged runtime contains the local DeepFilterNet model and WASM runtime, offline Noto Sans SC fonts, and every required third-party license.
 - Windows NSIS coverage installation passed twice. The second pass started with six ShangHao processes and ended with zero locked processes, exit code 0, and installed product version 0.1.50.
 - SHA256 checksums were generated for exactly the installer, blockmap, and `latest.yml` update metadata.
 - GitHub Actions run `29189486282` rebuilt the package on a clean Windows runner and published the final `v0.1.50` release: <https://github.com/soberbw-hash/shanghao/releases/tag/v0.1.50>.

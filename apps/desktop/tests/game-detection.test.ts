@@ -1,5 +1,8 @@
 import assert from "node:assert/strict";
+import { readFileSync, statSync } from "node:fs";
+import path from "node:path";
 import test from "node:test";
+import { fileURLToPath } from "node:url";
 
 import { buildGameDetectionProbeCommand, matchKnownGame } from "../src/main/game-detection";
 
@@ -50,4 +53,48 @@ test("game detection probes process names, window titles, and readable paths eve
   assert.equal(command.includes("MainWindowTitle"), true);
   assert.equal(command.includes("Path"), true);
   assert.equal(command.includes("ConvertTo-Json"), true);
+});
+
+test("every detected game has bundled monitor artwork and a readable fallback label", () => {
+  const artworkComponentPath = fileURLToPath(
+    new URL("../src/renderer/src/components/room/GameMonitorContent.tsx", import.meta.url),
+  );
+  const artworkDirectory = fileURLToPath(
+    new URL("../src/renderer/src/assets/games/", import.meta.url),
+  );
+  const componentSource = readFileSync(artworkComponentPath, "utf8");
+  const expectedArtwork = [
+    ["我的世界", "minecraft.png"],
+    ["王国保卫战", "kingdom-rush.jpg"],
+    ["杀戮尖塔", "slay-the-spire.jpg"],
+    ["英雄联盟", "league-of-legends.svg"],
+    ["无畏契约", "valorant.png"],
+    ["三角洲行动", "delta-force.jpg"],
+    ["CS2", "counter-strike-2.jpg"],
+    ["Dota 2", "dota-2.jpg"],
+    ["Apex 英雄", "apex-legends.jpg"],
+    ["绝地求生", "pubg.jpg"],
+    ["守望先锋", "overwatch-2.jpg"],
+    ["永劫无间", "naraka.jpg"],
+    ["原神", "genshin-impact.ico"],
+    ["崩坏：星穹铁道", "honkai-star-rail.ico"],
+    ["Fortnite", "fortnite.png"],
+    ["GTA V", "gta-v.jpg"],
+    ["彩虹六号：围攻", "rainbow-six-siege.jpg"],
+    ["怪物猎人", "monster-hunter.jpg"],
+    ["黑神话：悟空", "black-myth-wukong.jpg"],
+    ["失落城堡 2", "lost-castle-2.jpg"],
+    ["艾尔登法环", "elden-ring.jpg"],
+    ["双人成行", "it-takes-two.jpg"],
+    ["幻兽帕鲁", "palworld.jpg"],
+    ["胡闹厨房", "overcooked-2.jpg"],
+    ["荒野大镖客 2", "red-dead-redemption-2.jpg"],
+  ] as const;
+
+  for (const [gameName, filename] of expectedArtwork) {
+    assert.equal(componentSource.includes(gameName), true, `${gameName} is missing from catalog`);
+    assert.ok(statSync(path.join(artworkDirectory, filename)).size > 500);
+  }
+
+  assert.equal(componentSource.includes("scene-game-monitor-content--fallback"), true);
 });

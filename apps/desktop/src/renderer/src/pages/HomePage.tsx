@@ -10,6 +10,7 @@ import {
   MicOff,
   Server,
 } from "lucide-react";
+import { AnimatePresence, motion } from "framer-motion";
 import { gsap } from "gsap";
 
 import {
@@ -24,7 +25,7 @@ import { Input } from "../components/base/Input";
 import { BrandMark } from "../components/brand/BrandMark";
 import { CharacterPicker } from "../components/profile/AvatarPicker";
 import { StartupSplashPage } from "../components/status/StartupSplashPage";
-import { motionDuration, motionEase } from "../features/motion/motionSystem";
+import { motionCurve, motionDuration, motionEase } from "../features/motion/motionSystem";
 import { getRemoteAudioMixer } from "../features/audio/RemoteAudioMixer";
 import { usePrefersReducedMotion } from "../hooks/usePrefersReducedMotion";
 import { useRoomState } from "../hooks/useRoomState";
@@ -35,6 +36,13 @@ import { getAvatarSrc } from "../utils/profile";
 import { getNicknameValidationError } from "../utils/nickname";
 
 const isValidServerAddress = (value: string) => Boolean(normalizeRelayServerUrl(value));
+const SERVER_CHECK_HEALTHY_INTERVAL_MS = 45_000;
+const SERVER_CHECK_RETRY_INTERVALS_MS = [5_000, 15_000, 30_000, 60_000] as const;
+const getServerCheckRetryInterval = (retryIndex: number): number =>
+  SERVER_CHECK_RETRY_INTERVALS_MS[
+    Math.min(retryIndex, SERVER_CHECK_RETRY_INTERVALS_MS.length - 1)
+  ] ?? 60_000;
+let hasPlayedHomeEntrance = false;
 
 const formatServerLabel = (value: string): string => {
   try {
@@ -84,27 +92,63 @@ export const HomePage = () => {
   useEffect(() => {
     const normalizedAddress = normalizeRelayServerUrl(serverAddress);
     if (!normalizedAddress) {
+      setServerTestResult(undefined);
       return;
     }
 
     let isCancelled = false;
+    let isRefreshing = false;
+    let retryIndex = 0;
+    let refreshTimer: number | undefined;
+
+    const scheduleRefresh = (delayMs: number) => {
+      if (refreshTimer !== undefined) window.clearTimeout(refreshTimer);
+      refreshTimer = window.setTimeout(() => void refreshAvailability(), delayMs);
+    };
+
     const refreshAvailability = async () => {
+      if (isCancelled || isRefreshing) return;
+      if (document.visibilityState === "hidden") {
+        scheduleRefresh(SERVER_CHECK_RETRY_INTERVALS_MS[0]);
+        return;
+      }
+
+      isRefreshing = true;
+      let nextDelayMs: number = SERVER_CHECK_HEALTHY_INTERVAL_MS;
       try {
         const result = await window.desktopApi.diagnostics.testServer(normalizedAddress);
         if (!isCancelled) {
           setServerTestResult(result);
+          if (result.isReachable) {
+            retryIndex = 0;
+          } else {
+            nextDelayMs = getServerCheckRetryInterval(retryIndex);
+            retryIndex += 1;
+          }
         }
       } catch {
         // The explicit test button remains responsible for surfacing network errors.
+        nextDelayMs = getServerCheckRetryInterval(retryIndex);
+        retryIndex += 1;
+      } finally {
+        isRefreshing = false;
+        if (!isCancelled) scheduleRefresh(nextDelayMs);
       }
     };
 
-    const refreshTimer = window.setTimeout(() => void refreshAvailability(), 350);
-    const interval = window.setInterval(() => void refreshAvailability(), 5_000);
+    const refreshWhenVisible = () => {
+      if (document.visibilityState === "visible") scheduleRefresh(0);
+    };
+    const refreshWhenFocused = () => scheduleRefresh(0);
+
+    scheduleRefresh(350);
+    document.addEventListener("visibilitychange", refreshWhenVisible);
+    window.addEventListener("focus", refreshWhenFocused);
     return () => {
       isCancelled = true;
-      if (refreshTimer) window.clearTimeout(refreshTimer);
-      window.clearInterval(interval);
+      if (refreshTimer !== undefined) window.clearTimeout(refreshTimer);
+      document.removeEventListener("visibilitychange", refreshWhenVisible);
+      window.removeEventListener("focus", refreshWhenFocused);
     };
   }, [serverAddress]);
 
@@ -112,10 +156,11 @@ export const HomePage = () => {
     if (!isSettingsReady || !pageRef.current) return;
 
     const context = gsap.context(() => {
-      if (reduceMotion) {
+      if (reduceMotion || hasPlayedHomeEntrance) {
         gsap.set("[data-gsap-entry]", { clearProps: "all" });
         return;
       }
+      hasPlayedHomeEntrance = true;
 
       const targets = "[data-gsap-entry]";
       const timeline = gsap.timeline({
@@ -141,57 +186,35 @@ export const HomePage = () => {
           "-=0.34",
         );
 
-      if (isQuickEntry) {
-        timeline
-          .fromTo(
-            "[data-gsap-entry='ready-avatar']",
-            { autoAlpha: 0, x: -16, scale: 0.94 },
-            {
-              autoAlpha: 1,
-              x: 0,
-              scale: 1,
-              duration: motionDuration.panel,
-              ease: motionEase.spatial,
-            },
-            "-=0.18",
-          )
-          .fromTo(
-            "[data-gsap-entry='ready-copy'] > *",
-            { autoAlpha: 0, x: 14 },
-            {
-              autoAlpha: 1,
-              x: 0,
-              duration: motionDuration.panel,
-              stagger: 0.035,
-              ease: motionEase.spatial,
-            },
-            "-=0.2",
-          );
-      } else {
-        timeline
-          .fromTo(
-            "[data-gsap-entry='role-picker']",
-            { autoAlpha: 0, x: -18 },
-            { autoAlpha: 1, x: 0, duration: motionDuration.panel, ease: motionEase.spatial },
-            "-=0.18",
-          )
-          .fromTo(
-            "[data-gsap-entry='form'] > *",
-            { autoAlpha: 0, x: 18 },
-            {
-              autoAlpha: 1,
-              x: 0,
-              duration: motionDuration.panel,
-              stagger: 0.04,
-              ease: motionEase.spatial,
-            },
-            "-=0.24",
-          );
-      }
+      timeline
+        .fromTo(
+          "[data-gsap-entry='ready-avatar'], [data-gsap-entry='role-picker']",
+          { autoAlpha: 0, x: -16, scale: 0.96 },
+          {
+            autoAlpha: 1,
+            x: 0,
+            scale: 1,
+            duration: motionDuration.panel,
+            ease: motionEase.spatial,
+          },
+          "-=0.18",
+        )
+        .fromTo(
+          "[data-gsap-entry='ready-copy'] > *, [data-gsap-entry='form'] > *",
+          { autoAlpha: 0, x: 14 },
+          {
+            autoAlpha: 1,
+            x: 0,
+            duration: motionDuration.panel,
+            stagger: 0.035,
+            ease: motionEase.spatial,
+          },
+          "-=0.2",
+        );
     }, pageRef);
 
     return () => context.revert();
-  }, [isQuickEntry, isSettingsReady, reduceMotion]);
+  }, [isSettingsReady, reduceMotion]);
 
   if (!settings) {
     return <StartupSplashPage message="正在准备开黑频道..." />;
@@ -257,7 +280,6 @@ export const HomePage = () => {
     }
 
     setIsTestingServer(true);
-    setServerTestResult(undefined);
     try {
       const result = await window.desktopApi.diagnostics.testServer(normalizedAddress);
       setServerTestResult(result);
@@ -284,23 +306,41 @@ export const HomePage = () => {
   const occupiedAvatarIds = serverTestResult?.occupiedAvatarIds ?? [];
   const isSelectedAvatarOccupied = occupiedAvatarIds.includes(avatarId);
   const avatarSrc = getAvatarSrc(avatarId);
-  const serverTestStatus = serverTestResult ? (
-    <div
-      className={`entry-server-test-result ${serverTestResult.isReachable ? "success" : "danger"}`}
-      role="status"
-    >
-      {serverTestResult.isReachable ? (
-        <CircleCheck className="h-4 w-4" />
+  const serverTestStatus = (
+    <div className="entry-server-status-slot" aria-live="polite">
+      {isTestingServer ? (
+        <div className="entry-server-test-result checking" role="status">
+          <LoaderCircle className="h-4 w-4 animate-spin" />
+          <span>正在复查服务器...</span>
+        </div>
+      ) : isSelectedAvatarOccupied ? (
+        <div className="entry-server-test-result danger" role="status">
+          <CircleAlert className="h-4 w-4" />
+          <span>服务器正常，但这个角色已被朋友选择。</span>
+        </div>
+      ) : serverTestResult ? (
+        <div
+          className={`entry-server-test-result ${serverTestResult.isReachable ? "success" : "danger"}`}
+          role="status"
+        >
+          {serverTestResult.isReachable ? (
+            <CircleCheck className="h-4 w-4" />
+          ) : (
+            <CircleAlert className="h-4 w-4" />
+          )}
+          <span>
+            {serverTestResult.isReachable
+              ? `服务器正常${typeof serverTestResult.latencyMs === "number" ? ` · ${serverTestResult.latencyMs} ms` : ""}`
+              : serverTestResult.message}
+          </span>
+        </div>
       ) : (
-        <CircleAlert className="h-4 w-4" />
+        <span className="entry-server-status-placeholder" aria-hidden="true">
+          正在等待服务器状态
+        </span>
       )}
-      <span>
-        {serverTestResult.isReachable
-          ? `服务器正常${typeof serverTestResult.latencyMs === "number" ? ` · ${serverTestResult.latencyMs} ms` : ""}`
-          : serverTestResult.message}
-      </span>
     </div>
-  ) : null;
+  );
 
   return (
     <div
@@ -340,127 +380,53 @@ export const HomePage = () => {
           </button>
         </header>
 
-        {isQuickEntry ? (
-          <section className="entry-ready-layout min-h-0 flex-1">
-            <div
-              data-gsap-entry="ready-avatar"
-              className="entry-ready-avatar-stage"
-              aria-hidden="true"
+        <AnimatePresence initial={false} mode="wait">
+          {isQuickEntry ? (
+            <motion.section
+              key="quick-entry"
+              className="entry-ready-layout min-h-0 flex-1"
+              initial={reduceMotion ? false : { opacity: 0, x: -14 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={reduceMotion ? undefined : { opacity: 0, x: 10 }}
+              transition={{
+                duration: reduceMotion ? 0 : motionDuration.panel,
+                ease: motionCurve.enter,
+              }}
             >
-              <span className="entry-ready-orbit entry-ready-orbit-one" />
-              <span className="entry-ready-orbit entry-ready-orbit-two" />
-              {avatarSrc ? (
-                <img src={avatarSrc} alt="" className="entry-ready-avatar" draggable={false} />
-              ) : null}
-            </div>
-
-            <div data-gsap-entry="ready-copy" className="flex min-w-0 flex-col justify-center">
-              <div className="text-[13px] font-medium leading-[18px] text-[#718198]">昵称</div>
-              <h2 className="mt-1 truncate text-[34px] font-[740] leading-[42px] tracking-[-0.035em] text-[#162033]">
-                {nickname}
-              </h2>
-              <div className="entry-ready-server mt-4" title={serverAddress}>
-                <span className="entry-ready-server-icon">
-                  <Server className="h-4 w-4" />
-                </span>
-                <span className="min-w-0">
-                  <small>固定服务器</small>
-                  <strong>{formatServerLabel(serverAddress)}</strong>
-                </span>
-              </div>
-              {serverTestStatus}
-              {isSelectedAvatarOccupied ? (
-                <div className="entry-server-test-result danger" role="status">
-                  <CircleAlert className="h-4 w-4" />
-                  <span>这个角色已经被朋友选择，请先更换角色。</span>
-                </div>
-              ) : null}
-              <div className="mt-5 flex flex-wrap items-center gap-2.5">
-                <Button
-                  className="h-[50px] min-w-[188px] rounded-[16px] text-[15px]"
-                  disabled={isJoining || !serverAddress.trim() || isSelectedAvatarOccupied}
-                  onClick={() => void enterChannel()}
-                >
-                  {isJoining ? "正在进入..." : "上号"}
-                  {isJoining ? (
-                    <LoaderCircle className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <ArrowRight className="h-4 w-4" />
-                  )}
-                </Button>
-                <Button
-                  variant="secondary"
-                  className="h-[50px] rounded-[16px] px-4"
-                  disabled={isTestingServer || isJoining}
-                  onClick={() => void testServer()}
-                >
-                  {isTestingServer ? (
-                    <LoaderCircle className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <Activity className="h-4 w-4" />
-                  )}
-                  {isTestingServer ? "测试中" : "测试服务器"}
-                </Button>
-              </div>
-              <button
-                type="button"
-                className="entry-edit-button mx-auto mt-3"
-                onClick={() => setIsEditingSetup(true)}
+              <div
+                data-gsap-entry="ready-avatar"
+                className="entry-ready-avatar-stage"
+                aria-hidden="true"
               >
-                更换昵称或服务器
-                <ChevronDown className="h-3.5 w-3.5" />
-              </button>
-            </div>
-          </section>
-        ) : (
-          <section className="mt-6 grid min-h-0 flex-1 gap-7 md:grid-cols-[1.05fr_.95fr]">
-            <div data-gsap-entry="role-picker" className="p-2">
-              <div className="mb-4 text-sm font-semibold text-[#314158]">选择角色</div>
-              <CharacterPicker
-                value={avatarId}
-                occupiedAvatarIds={occupiedAvatarIds}
-                onChange={setAvatarId}
-              />
-            </div>
+                <span className="entry-ready-orbit entry-ready-orbit-one" />
+                <span className="entry-ready-orbit entry-ready-orbit-two" />
+                {avatarSrc ? (
+                  <img src={avatarSrc} alt="" className="entry-ready-avatar" draggable={false} />
+                ) : null}
+              </div>
 
-            <div data-gsap-entry="form" className="flex min-w-0 flex-col gap-5">
-              <label className="space-y-2">
-                <span className="text-xs font-semibold text-[#52657d]">昵称</span>
-                <div className="flex">
-                  <Input
-                    value={nickname}
-                    maxLength={16}
-                    placeholder="朋友怎么叫你"
-                    onChange={(event) => setNickname(event.target.value)}
-                  />
+              <div data-gsap-entry="ready-copy" className="flex min-w-0 flex-col justify-center">
+                <div className="text-[13px] font-medium leading-[18px] text-[#718198]">昵称</div>
+                <h2 className="mt-1 truncate text-[34px] font-[740] leading-[42px] tracking-[-0.035em] text-[#162033]">
+                  {nickname}
+                </h2>
+                <div className="entry-ready-server mt-4" title={serverAddress}>
+                  <span className="entry-ready-server-icon">
+                    <Server className="h-4 w-4" />
+                  </span>
+                  <span className="min-w-0">
+                    <small>固定服务器</small>
+                    <strong>{formatServerLabel(serverAddress)}</strong>
+                  </span>
                 </div>
-              </label>
-              <label className="space-y-2">
-                <span className="text-xs font-semibold text-[#52657d]">服务器地址</span>
-                <Input
-                  value={serverAddress}
-                  placeholder="118.25.103.107:43821"
-                  onChange={(event) => {
-                    setServerAddress(event.target.value);
-                    setServerTestResult(undefined);
-                  }}
-                />
-              </label>
-              {serverTestStatus}
-              {isSelectedAvatarOccupied ? (
-                <div className="entry-server-test-result danger" role="status">
-                  <CircleAlert className="h-4 w-4" />
-                  <span>这个角色已经被朋友选择，请换一个未占用的角色。</span>
-                </div>
-              ) : null}
-              <div className="mt-auto" data-gsap-entry="cta">
-                <div className="flex flex-wrap gap-2.5">
+                {serverTestStatus}
+                <div className="mt-5 flex flex-wrap items-center gap-2.5">
                   <Button
-                    className="h-[52px] min-w-[188px] rounded-[16px] text-[15px]"
+                    className="h-[50px] min-w-[188px] rounded-[16px] text-[15px]"
                     disabled={isJoining || !serverAddress.trim() || isSelectedAvatarOccupied}
                     onClick={() => void enterChannel()}
                   >
-                    {isJoining ? "正在进入..." : "进入频道"}
+                    {isJoining ? "正在进入..." : "上号"}
                     {isJoining ? (
                       <LoaderCircle className="h-4 w-4 animate-spin" />
                     ) : (
@@ -469,8 +435,8 @@ export const HomePage = () => {
                   </Button>
                   <Button
                     variant="secondary"
-                    className="h-[52px] rounded-[16px] px-4"
-                    disabled={isTestingServer || isJoining || !serverAddress.trim()}
+                    className="h-[50px] min-w-[132px] rounded-[16px] px-4"
+                    disabled={isTestingServer || isJoining}
                     onClick={() => void testServer()}
                   >
                     {isTestingServer ? (
@@ -481,20 +447,104 @@ export const HomePage = () => {
                     {isTestingServer ? "测试中" : "测试服务器"}
                   </Button>
                 </div>
-                {hasSavedEntry ? (
-                  <button
-                    type="button"
-                    className="entry-edit-button mx-auto mt-3"
-                    onClick={() => setIsEditingSetup(false)}
-                  >
-                    返回快捷入口
-                    <ArrowRight className="h-3.5 w-3.5" />
-                  </button>
-                ) : null}
+                <button
+                  type="button"
+                  className="entry-edit-button mx-auto mt-3"
+                  onClick={() => setIsEditingSetup(true)}
+                >
+                  更换昵称或服务器
+                  <ChevronDown className="h-3.5 w-3.5" />
+                </button>
               </div>
-            </div>
-          </section>
-        )}
+            </motion.section>
+          ) : (
+            <motion.section
+              key="edit-entry"
+              className="mt-6 grid min-h-0 flex-1 gap-7 md:grid-cols-[1.05fr_.95fr]"
+              initial={reduceMotion ? false : { opacity: 0, x: 14 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={reduceMotion ? undefined : { opacity: 0, x: -10 }}
+              transition={{
+                duration: reduceMotion ? 0 : motionDuration.panel,
+                ease: motionCurve.enter,
+              }}
+            >
+              <div data-gsap-entry="role-picker" className="p-2">
+                <div className="mb-4 text-sm font-semibold text-[#314158]">选择角色</div>
+                <CharacterPicker
+                  value={avatarId}
+                  occupiedAvatarIds={occupiedAvatarIds}
+                  onChange={setAvatarId}
+                />
+              </div>
+
+              <div data-gsap-entry="form" className="flex min-w-0 flex-col gap-5">
+                <label className="space-y-2">
+                  <span className="text-xs font-semibold text-[#52657d]">昵称</span>
+                  <div className="flex">
+                    <Input
+                      value={nickname}
+                      maxLength={16}
+                      placeholder="朋友怎么叫你"
+                      onChange={(event) => setNickname(event.target.value)}
+                    />
+                  </div>
+                </label>
+                <label className="space-y-2">
+                  <span className="text-xs font-semibold text-[#52657d]">服务器地址</span>
+                  <Input
+                    value={serverAddress}
+                    placeholder="118.25.103.107:43821"
+                    onChange={(event) => {
+                      setServerAddress(event.target.value);
+                      setServerTestResult(undefined);
+                    }}
+                  />
+                </label>
+                {serverTestStatus}
+                <div className="mt-auto" data-gsap-entry="cta">
+                  <div className="flex flex-wrap gap-2.5">
+                    <Button
+                      className="h-[52px] min-w-[188px] rounded-[16px] text-[15px]"
+                      disabled={isJoining || !serverAddress.trim() || isSelectedAvatarOccupied}
+                      onClick={() => void enterChannel()}
+                    >
+                      {isJoining ? "正在进入..." : "进入频道"}
+                      {isJoining ? (
+                        <LoaderCircle className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <ArrowRight className="h-4 w-4" />
+                      )}
+                    </Button>
+                    <Button
+                      variant="secondary"
+                      className="h-[52px] min-w-[132px] rounded-[16px] px-4"
+                      disabled={isTestingServer || isJoining || !serverAddress.trim()}
+                      onClick={() => void testServer()}
+                    >
+                      {isTestingServer ? (
+                        <LoaderCircle className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <Activity className="h-4 w-4" />
+                      )}
+                      {isTestingServer ? "测试中" : "测试服务器"}
+                    </Button>
+                  </div>
+                  {hasSavedEntry ? (
+                    <button
+                      type="button"
+                      className="entry-edit-button mx-auto mt-3"
+                      onClick={() => setIsEditingSetup(false)}
+                    >
+                      返回快捷入口
+                      <ArrowRight className="h-3.5 w-3.5" />
+                    </button>
+                  ) : null}
+                </div>
+              </div>
+            </motion.section>
+          )}
+        </AnimatePresence>
       </main>
     </div>
   );

@@ -7,6 +7,7 @@ export type AnimatedControlIconName =
   | "headphones"
   | "invite"
   | "mic"
+  | "noise"
   | "overlay"
   | "record"
   | "screen-share"
@@ -39,6 +40,35 @@ const iconArtwork = (name: AnimatedControlIconName, active: boolean, muted: bool
             d="M20.3 8.8a9.2 9.2 0 0 1 0 4.4"
           />
           {muted ? <path className="animated-icon__slash" d="M4 4l16 16" /> : null}
+        </>
+      );
+    case "noise":
+      return (
+        <>
+          <rect
+            className="animated-icon__noise-bar animated-icon__noise-bar--one"
+            x="5.5"
+            y="8.5"
+            width="3"
+            height="7"
+            rx="1.5"
+          />
+          <rect
+            className="animated-icon__noise-bar animated-icon__noise-bar--two"
+            x="10.5"
+            y="4.5"
+            width="3"
+            height="15"
+            rx="1.5"
+          />
+          <rect
+            className="animated-icon__noise-bar animated-icon__noise-bar--three"
+            x="15.5"
+            y="7"
+            width="3"
+            height="10"
+            rx="1.5"
+          />
         </>
       );
     case "speaker":

@@ -5,6 +5,7 @@ import { evaluateInboundAudioFlow, selectNetworkTier } from "@private-voice/webr
 
 import {
   isPeerAudioPathReady,
+  shouldSendAudioRelay,
   shouldUseAudioRelay,
 } from "../src/renderer/src/features/room/peerAudioPath";
 
@@ -97,6 +98,33 @@ test("a live WebRTC track cannot disable relay before inbound RTP is verified", 
   const stalled = { ...verified, isStalled: true };
   assert.equal(isPeerAudioPathReady(stalled), false);
   assert.equal(shouldUseAudioRelay(stalled), true);
+  assert.equal(
+    shouldSendAudioRelay({
+      evidence: verified,
+      isRelayRequested: false,
+      nowMs: 1_000,
+      relayWarmupUntilMs: 5_000,
+    }),
+    true,
+  );
+  assert.equal(
+    shouldSendAudioRelay({
+      evidence: verified,
+      isRelayRequested: false,
+      nowMs: 5_001,
+      relayWarmupUntilMs: 5_000,
+    }),
+    false,
+  );
+  assert.equal(
+    shouldSendAudioRelay({
+      evidence: verified,
+      isRelayRequested: true,
+      nowMs: 5_001,
+      relayWarmupUntilMs: 5_000,
+    }),
+    true,
+  );
 });
 
 test("five-person rooms keep every unverified directed audio route on relay", () => {

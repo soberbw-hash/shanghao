@@ -1,6 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import type { LowCutFrequency, MicEqualizerGains } from "@private-voice/shared";
+import {
+  MICROPHONE_PROCESSING_SAMPLE_RATE,
+  type LowCutFrequency,
+  type MicEqualizerGains,
+} from "@private-voice/shared";
 
 import {
   createProcessedMicrophoneStream,
@@ -13,7 +17,6 @@ interface UseMicTestOptions {
   echoCancellation?: boolean;
   noiseSuppression?: boolean;
   autoGainControl?: boolean;
-  preferredSampleRate?: "auto" | "32000" | "44100" | "48000";
   monitorMode?: "processed" | "raw";
   equalizerGains?: number[];
   lowCutFrequency?: LowCutFrequency;
@@ -38,7 +41,6 @@ export const useMicTest = ({
   echoCancellation = true,
   noiseSuppression = true,
   autoGainControl = true,
-  preferredSampleRate = "auto",
   monitorMode = "processed",
   equalizerGains = [],
   lowCutFrequency = "90",
@@ -115,7 +117,7 @@ export const useMicTest = ({
           echoCancellation: monitorMode === "processed" ? echoCancellation : false,
           noiseSuppression: false,
           autoGainControl: monitorMode === "processed" ? autoGainControl : false,
-          sampleRate: preferredSampleRate === "auto" ? undefined : Number(preferredSampleRate),
+          sampleRate: MICROPHONE_PROCESSING_SAMPLE_RATE,
           channelCount: 1,
         },
       });
@@ -128,7 +130,6 @@ export const useMicTest = ({
                 { length: 5 },
                 (_, index) => equalizerGains[index] ?? 0,
               ) as MicEqualizerGains,
-              preferredSampleRate,
               lowCutFrequency,
               isNoiseSuppressionEnabled: noiseSuppression,
             })
@@ -137,7 +138,7 @@ export const useMicTest = ({
       const monitoredStream = processedStream?.stream ?? inputStream;
 
       const context = new AudioContext({
-        sampleRate: preferredSampleRate === "auto" ? undefined : Number(preferredSampleRate),
+        sampleRate: MICROPHONE_PROCESSING_SAMPLE_RATE,
         latencyHint: "interactive",
       });
       await context.resume();
@@ -175,7 +176,6 @@ export const useMicTest = ({
     monitorMode,
     noiseSuppression,
     outputDeviceId,
-    preferredSampleRate,
     startMeter,
     stop,
   ]);

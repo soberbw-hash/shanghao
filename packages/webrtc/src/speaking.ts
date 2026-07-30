@@ -6,6 +6,7 @@ export const createSpeakingDetector = (
   stream: MediaStream,
   onSpeakingChange: (isSpeaking: boolean, level: number) => void,
   inputThreshold = 0.4,
+  onLevel?: (level: number) => void,
 ): SpeakingDetectorControls => {
   const audioContext = new AudioContext();
   const analyser = audioContext.createAnalyser();
@@ -17,16 +18,26 @@ export const createSpeakingDetector = (
   const data = new Uint8Array(analyser.frequencyBinCount);
   let frameId = 0;
   let previousState = false;
+  let lastLevelPublishedAt = 0;
+  let smoothedLevel = 0;
 
   const tick = (): void => {
     analyser.getByteFrequencyData(data);
     const average = data.reduce((sum, value) => sum + value, 0) / Math.max(data.length, 1);
     const normalizedLevel = average / 255;
+    const visualLevel = Math.min(1, normalizedLevel * 6);
+    const smoothing = visualLevel > smoothedLevel ? 0.48 : 0.12;
+    smoothedLevel += (visualLevel - smoothedLevel) * smoothing;
     const isSpeaking = normalizedLevel > Math.max(0.01, Math.min(0.2, inputThreshold * 0.2));
 
     if (isSpeaking !== previousState) {
       previousState = isSpeaking;
       onSpeakingChange(isSpeaking, normalizedLevel);
+    }
+    const now = performance.now();
+    if (onLevel && now - lastLevelPublishedAt >= 66) {
+      lastLevelPublishedAt = now;
+      onLevel(smoothedLevel < 0.01 ? 0 : smoothedLevel);
     }
 
     frameId = window.requestAnimationFrame(tick);

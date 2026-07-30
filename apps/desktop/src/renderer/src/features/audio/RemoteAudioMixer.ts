@@ -13,6 +13,8 @@ interface RemoteAudioChannel {
   audioTrackId: string;
   source: MediaStreamAudioSourceNode;
   gain: GainNode;
+  analyser: AnalyserNode;
+  sampleBuffer: Float32Array<ArrayBuffer>;
   volume: number;
 }
 
@@ -24,6 +26,8 @@ interface ScheduledRelayChunk {
 
 interface RelayAudioChannel {
   gain: GainNode;
+  analyser: AnalyserNode;
+  sampleBuffer: Float32Array<ArrayBuffer>;
   nextPlaybackTime: number;
   droppedOldChunks: number;
   scheduled: ScheduledRelayChunk[];
@@ -42,9 +46,30 @@ export interface RemoteAudioPlaybackStats {
   droppedOldChunks: number;
 }
 
+export interface RemoteAudioMixerDiagnostics {
+  contextState: AudioContextState | "not_started";
+  isDeafened: boolean;
+  outputDeviceId: string;
+  peers: Record<
+    string,
+    {
+      selectedPath: "webrtc" | "relay";
+      hasWebRtcTrack: boolean;
+      hasRelayChannel: boolean;
+      relayQueueLength: number;
+      relayQueueDurationMs: number;
+      droppedRelayChunks: number;
+      volume: number;
+    }
+  >;
+}
+
 const RELAY_PLAYBACK_LEAD_SECONDS = 0.08;
 const MAX_RELAY_QUEUE_DURATION_MS = 700;
 const MAX_RELAY_QUEUE_CHUNKS = 36;
+const AUDIO_LEVEL_SAMPLE_INTERVAL_MS = 66;
+const PLAYBACK_WATCHDOG_INTERVAL_MS = 2_000;
+export const REMOTE_AUDIO_LEVEL_EVENT = "shanghao:remote-audio-level";
 
 /**
  * Owns one renderer-wide audio graph. Each remote member gets an isolated gain
@@ -60,6 +85,9 @@ export class RemoteAudioMixer {
   private isDeafened = false;
   private outputDeviceId?: string;
   private resumeInFlight?: Promise<boolean>;
+  private audioLevelTimer?: number;
+  private playbackWatchdogTimer?: number;
+  private readonly smoothedPeerLevels = new Map<string, number>();
 
   private ensureGraph(): SinkAwareAudioContext {
     if (this.context && this.masterGain && this.compressor) return this.context;
@@ -79,6 +107,19 @@ export class RemoteAudioMixer {
     this.masterGain = masterGain;
     this.compressor = compressor;
     masterGain.gain.value = this.isDeafened ? 0 : 1;
+    context.onstatechange = () => {
+      void writeRendererLog(
+        "audio",
+        context.state === "running" ? "info" : "warn",
+        "Shared audio mixer state changed",
+        {
+          state: context.state,
+          webrtcChannelCount: this.channels.size,
+          relayChannelCount: this.relayChannels.size,
+        },
+      );
+    };
+    this.startMaintenanceTimers();
     void this.applyOutputDevice();
     return context;
   }
@@ -141,13 +182,17 @@ export class RemoteAudioMixer {
           const context = this.ensureGraph();
           const source = context.createMediaStreamSource(input.stream);
           const gain = context.createGain();
+          const analyser = this.createAnalyser(context);
           source.connect(gain);
-          gain.connect(this.masterGain!);
+          gain.connect(analyser);
+          analyser.connect(this.masterGain!);
           this.channels.set(input.peerId, {
             stream: input.stream,
             audioTrackId,
             source,
             gain,
+            analyser,
+            sampleBuffer: new Float32Array(analyser.fftSize),
             volume: input.volume,
           });
         } catch (error) {
@@ -183,6 +228,41 @@ export class RemoteAudioMixer {
   setOutputDevice(outputDeviceId?: string): void {
     this.outputDeviceId = outputDeviceId;
     void this.applyOutputDevice();
+  }
+
+  getDiagnostics(): RemoteAudioMixerDiagnostics {
+    const peerIds = new Set([
+      ...this.channels.keys(),
+      ...this.relayChannels.keys(),
+      ...this.peerMediaPaths.keys(),
+    ]);
+    const now = this.context?.currentTime ?? 0;
+    return {
+      contextState: this.context?.state ?? "not_started",
+      isDeafened: this.isDeafened,
+      outputDeviceId: this.outputDeviceId || "default",
+      peers: Object.fromEntries(
+        [...peerIds].map((peerId) => {
+          const webRtcChannel = this.channels.get(peerId);
+          const relayChannel = this.relayChannels.get(peerId);
+          const relayStats = relayChannel
+            ? this.getRelayStats(relayChannel, now)
+            : { queueLength: 0, queueDurationMs: 0, droppedOldChunks: 0 };
+          return [
+            peerId,
+            {
+              selectedPath: this.peerMediaPaths.get(peerId) ?? "relay",
+              hasWebRtcTrack: Boolean(webRtcChannel),
+              hasRelayChannel: Boolean(relayChannel),
+              relayQueueLength: relayStats.queueLength,
+              relayQueueDurationMs: Math.round(relayStats.queueDurationMs),
+              droppedRelayChunks: relayStats.droppedOldChunks,
+              volume: webRtcChannel?.volume ?? relayChannel?.volume ?? 1,
+            },
+          ];
+        }),
+      ),
+    };
   }
 
   playRelaySamples(
@@ -285,7 +365,9 @@ export class RemoteAudioMixer {
     if (!channel) return;
     if (this.context) this.resetRelayQueue(channel, this.context);
     channel.gain.disconnect();
+    channel.analyser.disconnect();
     this.relayChannels.delete(peerId);
+    if (!this.channels.has(peerId)) this.publishPeerLevel(peerId, 0, true);
   }
 
   destroy(): void {
@@ -293,12 +375,14 @@ export class RemoteAudioMixer {
     for (const [peerId] of this.relayChannels) this.removeRelayPeer(peerId);
     this.masterGain?.disconnect();
     this.compressor?.disconnect();
+    this.stopMaintenanceTimers();
     const context = this.context;
     this.context = undefined;
     this.masterGain = undefined;
     this.compressor = undefined;
     this.resumeInFlight = undefined;
     this.peerMediaPaths.clear();
+    this.smoothedPeerLevels.clear();
     void context?.close().catch(() => undefined);
   }
 
@@ -307,7 +391,9 @@ export class RemoteAudioMixer {
     if (!channel) return;
     channel.source.disconnect();
     channel.gain.disconnect();
+    channel.analyser.disconnect();
     this.channels.delete(peerId);
+    if (!this.relayChannels.has(peerId)) this.publishPeerLevel(peerId, 0, true);
   }
 
   private getOrCreateRelayChannel(
@@ -317,9 +403,13 @@ export class RemoteAudioMixer {
     const existing = this.relayChannels.get(peerId);
     if (existing) return existing;
     const gain = context.createGain();
-    gain.connect(this.masterGain!);
+    const analyser = this.createAnalyser(context);
+    gain.connect(analyser);
+    analyser.connect(this.masterGain!);
     const created: RelayAudioChannel = {
       gain,
+      analyser,
+      sampleBuffer: new Float32Array(analyser.fftSize),
       nextPlaybackTime: context.currentTime + RELAY_PLAYBACK_LEAD_SECONDS,
       droppedOldChunks: 0,
       scheduled: [],
@@ -327,6 +417,79 @@ export class RemoteAudioMixer {
     };
     this.relayChannels.set(peerId, created);
     return created;
+  }
+
+  private createAnalyser(context: BaseAudioContext): AnalyserNode {
+    const analyser = context.createAnalyser();
+    analyser.fftSize = 256;
+    analyser.smoothingTimeConstant = 0.55;
+    return analyser;
+  }
+
+  private startMaintenanceTimers(): void {
+    if (!this.audioLevelTimer) {
+      this.audioLevelTimer = window.setInterval(
+        () => this.samplePeerLevels(),
+        AUDIO_LEVEL_SAMPLE_INTERVAL_MS,
+      );
+    }
+    if (!this.playbackWatchdogTimer) {
+      this.playbackWatchdogTimer = window.setInterval(() => {
+        if (
+          this.context &&
+          this.context.state !== "running" &&
+          (this.channels.size > 0 || this.relayChannels.size > 0)
+        ) {
+          void this.unlock("playback-watchdog");
+        }
+      }, PLAYBACK_WATCHDOG_INTERVAL_MS);
+    }
+  }
+
+  private stopMaintenanceTimers(): void {
+    if (this.audioLevelTimer) {
+      window.clearInterval(this.audioLevelTimer);
+      this.audioLevelTimer = undefined;
+    }
+    if (this.playbackWatchdogTimer) {
+      window.clearInterval(this.playbackWatchdogTimer);
+      this.playbackWatchdogTimer = undefined;
+    }
+  }
+
+  private samplePeerLevels(): void {
+    const peerIds = new Set([...this.channels.keys(), ...this.relayChannels.keys()]);
+    for (const peerId of peerIds) {
+      const path = this.peerMediaPaths.get(peerId) ?? "relay";
+      const channel =
+        path === "webrtc" ? this.channels.get(peerId) : this.relayChannels.get(peerId);
+      if (!channel) {
+        this.publishPeerLevel(peerId, 0);
+        continue;
+      }
+      channel.analyser.getFloatTimeDomainData(channel.sampleBuffer);
+      let energy = 0;
+      for (const sample of channel.sampleBuffer) energy += sample * sample;
+      const rms = Math.sqrt(energy / Math.max(1, channel.sampleBuffer.length));
+      const normalized = Math.min(1, rms * 5.2);
+      this.publishPeerLevel(peerId, normalized);
+    }
+  }
+
+  private publishPeerLevel(peerId: string, nextLevel: number, force = false): void {
+    const previous = this.smoothedPeerLevels.get(peerId) ?? 0;
+    const smoothing = nextLevel > previous ? 0.52 : 0.14;
+    const smoothed =
+      nextLevel < 0.002 ? previous * 0.72 : previous + (nextLevel - previous) * smoothing;
+    const level = smoothed < 0.004 ? 0 : Math.max(0, Math.min(1, smoothed));
+    if (!force && Math.abs(level - previous) < 0.004) return;
+    if (level === 0 && force) this.smoothedPeerLevels.delete(peerId);
+    else this.smoothedPeerLevels.set(peerId, level);
+    window.dispatchEvent(
+      new CustomEvent(REMOTE_AUDIO_LEVEL_EVENT, {
+        detail: { peerId, level },
+      }),
+    );
   }
 
   private pruneRelayChannel(channel: RelayAudioChannel, now: number): void {

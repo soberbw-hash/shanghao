@@ -26,31 +26,33 @@ test("fourth-order low cut suppresses rumble without removing speech", () => {
   assert.ok(fourthOrderHighPassMagnitude(1_000, 90) > 0.999);
 });
 
-test("RNNoise runs in an AudioWorklet and has an explicit browser fallback", () => {
+test("DeepFilterNet is the only suppression engine and keeps raw audio on model failure", () => {
   const processor = readFileSync(
     path.join(root, "apps/desktop/src/renderer/src/features/audio/microphoneProcessor.ts"),
     "utf8",
   );
-  const worklet = readFileSync(
-    path.join(root, "apps/desktop/src/renderer/src/features/audio/rnnoiseProcessor.worklet.ts"),
+  const packageJson = readFileSync(path.join(root, "apps/desktop/package.json"), "utf8");
+  const rendererHtml = readFileSync(
+    path.join(root, "apps/desktop/src/renderer/index.html"),
     "utf8",
   );
-  assert.equal(processor.includes("new AudioWorkletNode"), true);
-  assert.equal(processor.includes("enableBrowserNoiseSuppression"), true);
-  assert.equal(processor.includes('diagnostics.noiseProcessor = "browser_fallback"'), true);
-  assert.equal(processor.includes("audio-processor-fallback"), true);
-  assert.equal(worklet.includes("import { Rnnoise"), true);
-  assert.equal(worklet.includes('registerProcessor("shanghao-rnnoise"'), true);
-  assert.equal(worklet.includes("PCM_SCALE"), true);
-  assert.equal(worklet.includes('type: "overloaded"'), true);
-  assert.equal(worklet.includes("denoiseState.processFrame(frame)"), true);
-  assert.equal(worklet.includes("vadProbability"), true);
-  assert.equal(worklet.includes("noiseFloorRms"), true);
-  assert.equal(worklet.includes("isKeyboardLikeTransient"), true);
-  assert.equal(worklet.includes("applyResidualNoiseGateAndLimiter"), true);
-  assert.equal(worklet.includes("output.fill(0)"), true);
+  assert.equal(processor.includes("DeepFilterNet3Core"), true);
+  assert.equal(processor.includes("getDeepFilterAssets"), true);
+  assert.equal(processor.includes('noiseProcessor = "deepfilter_active"'), true);
+  assert.equal(processor.includes('noiseProcessor = "deepfilter_unavailable"'), true);
+  assert.equal(processor.includes("crossfade(context, gain, rawGain)"), true);
+  assert.equal(processor.includes("enableBrowserNoiseSuppression"), false);
+  assert.equal(processor.includes("RNNoise"), false);
+  assert.equal(processor.includes("MICROPHONE_PROCESSING_SAMPLE_RATE"), true);
+  assert.equal(processor.includes("prewarmDeepFilterAssets"), true);
+  assert.equal(processor.includes("ready: Promise<"), true);
+  assert.match(rendererHtml, /script-src 'self' 'wasm-unsafe-eval' blob:/);
+  assert.doesNotMatch(rendererHtml, /script-src[^;]*\s'unsafe-eval'/);
+  assert.equal(packageJson.includes('"deepfilternet3-noise-filter": "1.2.1"'), true);
+  assert.equal(packageJson.includes("@shiguredo/rnnoise-wasm"), false);
+  assert.equal(existsSync(path.join(root, "apps/desktop/resources/deepfilter/df_bg.wasm")), true);
   assert.equal(
-    existsSync(path.join(root, "apps/desktop/node_modules/@shiguredo/rnnoise-wasm/LICENSE")),
+    existsSync(path.join(root, "apps/desktop/resources/deepfilter/DeepFilterNet3_onnx.tar.gz")),
     true,
   );
 });
@@ -86,6 +88,7 @@ test("remote audio uses one shared mixer without reusing audio elements", () => 
   assert.equal(mixer.includes("relayChannels = new Map"), true);
   assert.equal(mixer.includes("playRelaySamples"), true);
   assert.equal(mixer.includes("getRemoteAudioMixer"), true);
+  assert.equal(mixer.includes("getDiagnostics(): RemoteAudioMixerDiagnostics"), true);
   assert.equal(mixer.includes(".suspend()"), false);
   assert.equal(mixer.includes('this.outputDeviceId || "default"'), true);
   assert.equal(home.includes('unlock("enter-channel")'), true);
@@ -93,6 +96,19 @@ test("remote audio uses one shared mixer without reusing audio elements", () => 
   assert.equal(relay.includes('unlock("signaling-audio-relay")'), true);
   assert.equal(relay.includes("new FallbackAudioPlayer(message.peerId)"), true);
   assert.equal(main.includes('appendSwitch("autoplay-policy", "no-user-gesture-required")'), true);
+});
+
+test("legacy screen-frame fallback is isolated from audio readiness", () => {
+  const roomClient = readFileSync(
+    path.join(root, "apps/desktop/src/renderer/src/features/room/roomClient.ts"),
+    "utf8",
+  );
+
+  const start = roomClient.indexOf("private getScreenRelayTargetPeerIds");
+  const end = roomClient.indexOf("private createPeer", start);
+  const targetSelection = roomClient.slice(start, end);
+  assert.equal(targetSelection.includes("screenRelayRequestedByPeerIds"), true);
+  assert.equal(targetSelection.includes("webrtcReadyPeerIds"), false);
 });
 
 test("member playback volume is local, bounded to 200%, and restores after local mute", () => {

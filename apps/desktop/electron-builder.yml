@@ -23,12 +23,15 @@ files:
 extraResources:
   - from: ../../THIRD_PARTY_NOTICES.md
     to: licenses/THIRD_PARTY_NOTICES.md
-  - from: node_modules/@shiguredo/rnnoise-wasm/LICENSE
-    to: licenses/rnnoise-wasm-APACHE-2.0.txt
-  - from: ../../licenses/RNNOISE-BSD.txt
-    to: licenses/RNNOISE-BSD.txt
+  - from: node_modules/deepfilternet3-noise-filter/LICENSE-APACHE
+    to: licenses/deepfilternet3-noise-filter-APACHE-2.0.txt
   - from: node_modules/@fontsource-variable/noto-sans-sc/LICENSE
     to: licenses/NotoSansSC-OFL-1.1.txt
+  - from: resources/deepfilter
+    to: deepfilter
+    filter:
+      - "df_bg.wasm"
+      - "DeepFilterNet3_onnx.tar.gz"
   - from: build
     to: build
     filter:

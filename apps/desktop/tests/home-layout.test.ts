@@ -19,6 +19,8 @@ test("home page is a full-screen fixed-channel entry page", () => {
   assert.equal(source.includes("选择角色"), true);
   assert.equal(source.includes("选一个头像"), false);
   assert.equal(source.includes("TemporaryChatPanel"), false);
+  assert.equal(source.includes("entry-server-status-slot"), true);
+  assert.equal(source.includes("setServerTestResult(undefined);\n    try"), false);
 });
 
 test("home page hides legacy connection mode tabs from the primary flow", () => {

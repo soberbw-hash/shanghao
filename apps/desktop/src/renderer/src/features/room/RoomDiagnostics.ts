@@ -1,5 +1,6 @@
 import type { NetworkAdaptationTier, PeerAudioStats } from "@private-voice/webrtc";
 import type { AudioFallbackController } from "../audio/AudioFallbackController";
+import type { RemoteAudioMixerDiagnostics } from "../audio/RemoteAudioMixer";
 
 export interface RoomDiagnosticsInput {
   currentPeerId: string;
@@ -27,6 +28,8 @@ export interface RoomDiagnosticsInput {
   peerRecoveryAttempts: Record<string, number>;
   peerConnectionStats: Record<string, PeerAudioStats>;
   peerAdaptationTiers: Record<string, NetworkAdaptationTier>;
+  peerAudioPaths: Record<string, "webrtc" | "relay">;
+  remoteAudioMixer: RemoteAudioMixerDiagnostics;
   turnConfigured: boolean;
 }
 
@@ -56,5 +59,7 @@ export const buildRoomDiagnostics = (input: RoomDiagnosticsInput) => ({
   peerRecoveryAttempts: input.peerRecoveryAttempts,
   peerConnectionStats: input.peerConnectionStats,
   peerAdaptationTiers: input.peerAdaptationTiers,
+  peerAudioPaths: input.peerAudioPaths,
+  remoteAudioMixer: input.remoteAudioMixer,
   turnConfigured: input.turnConfigured,
 });

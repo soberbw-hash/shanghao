@@ -8,6 +8,7 @@ import {
   APP_PROTOCOL_VERSION,
   IPC_CHANNELS,
   type AppSettings,
+  type DeepFilterAssets,
   type DiagnosticsSnapshot,
   type GameDetectionSnapshot,
   type OverlayState,
@@ -25,6 +26,7 @@ import {
 } from "@private-voice/shared";
 
 import { DiagnosticsService } from "./diagnostics";
+import { readDeepFilterAssets } from "./deepfilter-assets";
 import { clearAvatarImage, pickAvatarImage, readAvatarImage } from "./profile-media";
 import { exportRecordingFromMain } from "./recording-main";
 import { readRelayStatus } from "./relay-status";
@@ -158,6 +160,32 @@ export const registerIpcHandlers = ({
       message: "Copied text through native clipboard",
       context: { length: text.length },
     });
+  });
+
+  ipcMain.handle(IPC_CHANNELS.audio.getDeepFilterAssets, async (): Promise<DeepFilterAssets> => {
+    try {
+      const assets = await readDeepFilterAssets();
+      await diagnostics.writeLog({
+        category: "audio",
+        level: "info",
+        message: "Loaded local DeepFilterNet assets",
+        context: {
+          wasmBytes: assets.wasm.byteLength,
+          modelBytes: assets.model.byteLength,
+        },
+      });
+      return assets;
+    } catch (error) {
+      await diagnostics.writeLog({
+        category: "audio",
+        level: "error",
+        message: "Failed to load local DeepFilterNet assets",
+        context: {
+          error: error instanceof Error ? error.message : String(error),
+        },
+      });
+      throw error;
+    }
   });
 
   ipcMain.handle(IPC_CHANNELS.screenCapture.listSources, async () => listScreenCaptureSources());
@@ -363,7 +391,7 @@ export const registerIpcHandlers = ({
         settingsSchemaVersion: settings.settingsSchemaVersion,
         profileSchemaVersion: settings.profileSchemaVersion,
         profileReady: settings.hasCompletedProfileSetup,
-        preferredSampleRate: settings.preferredSampleRate,
+        microphoneProcessingSampleRate: 48_000,
         lowCutFrequency: settings.lowCutFrequency,
         micEqualizerGains: settings.micEqualizerGains,
         inputLevelThreshold: settings.inputLevelThreshold,

@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { Activity, Bell, Headphones, MonitorCog, RefreshCw } from "lucide-react";
+import { Activity, Headphones, MonitorCog, RefreshCw } from "lucide-react";
 import { gsap } from "gsap";
 
 import type {
@@ -20,7 +20,6 @@ import { SettingsPageHeader } from "../components/settings/SettingsPageHeader";
 import { SettingsSection } from "../components/settings/SettingsSection";
 import { ShortcutSettingsCard } from "../components/settings/ShortcutSettingsCard";
 import { StartupSplashPage } from "../components/status/StartupSplashPage";
-import { playUiSound } from "../features/audio/uiSound";
 import { useMicTest } from "../hooks/useMicTest";
 import { usePrefersReducedMotion } from "../hooks/usePrefersReducedMotion";
 import { getRoomRuntimeDiagnostics } from "../hooks/useRoomState";
@@ -29,12 +28,11 @@ import { useAudioStore } from "../store/audioStore";
 import { useRoomStore } from "../store/roomStore";
 import { useSettingsStore } from "../store/settingsStore";
 
-type SettingsSectionId = "general" | "audio" | "notifications" | "updates" | "diagnostics";
+type SettingsSectionId = "general" | "audio" | "updates" | "diagnostics";
 
 const sections = [
   { id: "general", label: "通用", icon: MonitorCog },
   { id: "audio", label: "语音", icon: Headphones },
-  { id: "notifications", label: "通知", icon: Bell },
   { id: "updates", label: "更新", icon: RefreshCw },
   { id: "diagnostics", label: "诊断", icon: Activity },
 ] satisfies Array<{ id: SettingsSectionId; label: string; icon: typeof Headphones }>;
@@ -83,7 +81,6 @@ export const SettingsPage = () => {
     echoCancellation: settings?.isEchoCancellationEnabled,
     noiseSuppression: settings?.isNoiseSuppressionEnabled,
     autoGainControl: settings?.isAutoGainControlEnabled,
-    preferredSampleRate: settings?.preferredSampleRate,
     monitorMode: settings?.micMonitorMode,
     equalizerGains: settings?.micEqualizerGains,
     lowCutFrequency: settings?.lowCutFrequency,
@@ -309,17 +306,6 @@ export const SettingsPage = () => {
               onChange={(isOverlayEnabled) => void handleSaveSettings({ isOverlayEnabled })}
             />
           </SettingsItemRow>
-          <SettingsItemRow
-            label="自动识别游戏"
-            description="开启后每 8 秒识别一次已知游戏；关闭后不会再启动系统检测进程。"
-          >
-            <Switch
-              isChecked={settings.isGameDetectionEnabled}
-              onChange={(isGameDetectionEnabled) =>
-                void handleSaveSettings({ isGameDetectionEnabled })
-              }
-            />
-          </SettingsItemRow>
           <SettingsItemRow label="硬件加速" description="默认开启。修改后下次启动生效。">
             <Switch
               isChecked={settings.isHardwareAccelerationEnabled}
@@ -343,6 +329,12 @@ export const SettingsPage = () => {
               <option value={125}>125%</option>
             </select>
           </SettingsItemRow>
+          <SettingsItemRow label="关闭窗口时留在后台">
+            <Switch
+              isChecked={settings.minimizeToTray}
+              onChange={(minimizeToTray) => void handleSaveSettings({ minimizeToTray })}
+            />
+          </SettingsItemRow>
         </div>
       </SettingsSection>
     ),
@@ -365,56 +357,6 @@ export const SettingsPage = () => {
           onChange={(patch) => void handleSaveSettings(patch)}
         />
       </div>
-    ),
-    notifications: (
-      <SettingsSection title="通知与提示音" description="保留必要的轻提示，不打扰开黑。">
-        <div className="space-y-3">
-          <SettingsItemRow label="界面提示音" description="统一控制操作、成员和连接提示音。">
-            <Switch
-              isChecked={settings.isUiSoundEnabled}
-              onChange={(isUiSoundEnabled) => void handleSaveSettings({ isUiSoundEnabled })}
-            />
-          </SettingsItemRow>
-          <SettingsItemRow label="提示音音量" description="加入、离开、消息和操作提示统一调节。">
-            <div className="flex items-center gap-2">
-              <input
-                type="range"
-                min={0}
-                max={1}
-                step={0.05}
-                value={settings.soundVolume}
-                aria-label="提示音音量"
-                disabled={!settings.isUiSoundEnabled}
-                onChange={(event) =>
-                  void handleSaveSettings({ soundVolume: Number(event.target.value) })
-                }
-              />
-              <Button
-                variant="ghost"
-                data-ui-sound="handled"
-                disabled={!settings.isUiSoundEnabled}
-                onClick={() => playUiSound("popup-open")}
-              >
-                试听
-              </Button>
-            </div>
-          </SettingsItemRow>
-          <SettingsItemRow label="系统通知" description="全屏游戏时提醒好友上线或敲你。">
-            <Switch
-              isChecked={settings.isSystemNotificationEnabled}
-              onChange={(isSystemNotificationEnabled) =>
-                void handleSaveSettings({ isSystemNotificationEnabled })
-              }
-            />
-          </SettingsItemRow>
-          <SettingsItemRow label="关闭窗口时留在后台">
-            <Switch
-              isChecked={settings.minimizeToTray}
-              onChange={(minimizeToTray) => void handleSaveSettings({ minimizeToTray })}
-            />
-          </SettingsItemRow>
-        </div>
-      </SettingsSection>
     ),
     updates: (
       <SettingsSection title="更新" description={`当前版本 ${runtimeInfo?.version ?? "读取中..."}`}>

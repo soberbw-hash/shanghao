@@ -32,6 +32,11 @@ export interface RendererLogPayload {
   context?: Record<string, unknown>;
 }
 
+export interface DeepFilterAssets {
+  wasm: ArrayBuffer;
+  model: ArrayBuffer;
+}
+
 export interface SignalingEventPayload {
   sessionId: string;
   type: "open" | "message" | "close" | "error";
@@ -120,6 +125,9 @@ export interface DesktopApi {
   };
   clipboard: {
     writeText: (text: string) => Promise<void>;
+  };
+  audio: {
+    getDeepFilterAssets: () => Promise<DeepFilterAssets>;
   };
   screenCapture: {
     listSources: () => Promise<ScreenCaptureSourceDescriptor[]>;

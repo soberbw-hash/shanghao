@@ -1,19 +1,17 @@
 # Third-party notices
 
-## RNNoise WebAssembly
+## DeepFilterNet 3 noise suppression
 
-- Package: `@shiguredo/rnnoise-wasm` `2025.1.5`
-- Source: https://github.com/shiguredo/rnnoise-wasm
-- Fixed tag commit: `fa34e6b1d32db0bfedfa5130d744f2fc5cff2af0`
-- License: Apache License 2.0
-- Copyright 2021-2025 Takeru Ohta and Shiguredo Inc.
+- Package: `deepfilternet3-noise-filter` `1.2.1`
+- Package source: https://github.com/mezonai/mezon-noise-suppression
+- Model source: https://github.com/Rikorose/DeepFilterNet
+- License: Apache License 2.0 or MIT
 
-The package embeds RNNoise from the Xiph.Org Foundation. RNNoise is distributed
-under its BSD-style license. The complete Apache and RNNoise license texts are
-included with the packaged application under `resources/licenses/`.
-
-ShangHao runs RNNoise locally inside an AudioWorklet. Microphone samples are not
-uploaded for noise suppression.
+ShangHao uses the Apache License 2.0 option. The package license text is included
+with the packaged application under `resources/licenses/`. The matching
+DeepFilterNet 3 WebAssembly runtime and ONNX model are distributed locally with
+the application. Microphone samples are processed on the user's computer and are
+not uploaded to a noise-suppression service.
 
 ## Noto Sans SC Variable
 
@@ -24,3 +22,11 @@ uploaded for noise suppression.
 
 The complete license text is included with the packaged application under
 `resources/licenses/NotoSansSC-OFL-1.1.txt`.
+
+## Game identification artwork
+
+ShangHao bundles small official-site or official-store artwork solely to identify
+a locally detected game on a member's workstation monitor. Game names, logos,
+trademarks, and artwork remain the property of their respective publishers and
+are not used to imply sponsorship or endorsement. Source details are recorded in
+`apps/desktop/src/renderer/src/assets/games/SOURCES.md`.

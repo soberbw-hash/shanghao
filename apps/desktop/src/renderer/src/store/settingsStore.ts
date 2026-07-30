@@ -51,6 +51,7 @@ const fallbackRuntimeInfo: RuntimeInfo = {
 const fallbackSettings: AppSettings = {
   settingsSchemaVersion: SETTINGS_SCHEMA_VERSION,
   profileSchemaVersion: PROFILE_SCHEMA_VERSION,
+  profileId: "",
   nickname: "",
   roomName: DEFAULT_ROOM_NAME,
   avatarId: "fox",
@@ -63,7 +64,6 @@ const fallbackSettings: AppSettings = {
   isOverlayEnabled: true,
   preferredInputDeviceId: undefined,
   preferredOutputDeviceId: undefined,
-  preferredSampleRate: "32000",
   inputLevelThreshold: 0.4,
   micEqualizerGains: [0, 0, 0, 0, 0],
   lowCutFrequency: "90",

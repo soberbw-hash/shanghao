@@ -1,4 +1,3 @@
-export type PreferredSampleRate = "auto" | "32000" | "44100" | "48000";
 export type MicMonitorMode = "processed" | "raw";
 export type LowCutFrequency = "off" | "90" | "120";
 export type ScreenShareQuality = "720p" | "1080p";
@@ -9,6 +8,7 @@ export type MicEqualizerGains = [number, number, number, number, number];
 export interface AppSettings {
   settingsSchemaVersion: number;
   profileSchemaVersion: number;
+  profileId: string;
   nickname: string;
   roomName: string;
   avatarId: BuiltInAvatarId;
@@ -21,7 +21,6 @@ export interface AppSettings {
   isOverlayEnabled: boolean;
   preferredInputDeviceId?: string;
   preferredOutputDeviceId?: string;
-  preferredSampleRate: PreferredSampleRate;
   inputLevelThreshold: number;
   micEqualizerGains: MicEqualizerGains;
   lowCutFrequency: LowCutFrequency;

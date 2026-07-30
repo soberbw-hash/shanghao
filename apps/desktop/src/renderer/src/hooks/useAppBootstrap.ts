@@ -3,6 +3,7 @@ import { useEffect } from "react";
 import { useAudioStore } from "../store/audioStore";
 import { useAppStore } from "../store/appStore";
 import { useSettingsStore } from "../store/settingsStore";
+import { prewarmDeepFilterAssets } from "../features/audio/microphoneProcessor";
 import { writeRendererLog } from "../utils/logger";
 
 const BOOTSTRAP_TIMEOUT_MS = 8_000;
@@ -42,8 +43,6 @@ export const useAppBootstrap = (): void => {
 
   useEffect(() => {
     let isDisposed = false;
-    let hasReportedAudioOverload = false;
-
     beginBootstrap("正在准备上号…");
 
     const bootstrap = async () => {
@@ -74,6 +73,23 @@ export const useAppBootstrap = (): void => {
         // Device enumeration and update checks continue in the background.
         completeBootstrap();
         await writeRendererLog("app", "info", "Renderer bootstrap completed");
+        if (useSettingsStore.getState().settings?.isNoiseSuppressionEnabled) {
+          const startPrewarm = () => {
+            void prewarmDeepFilterAssets()
+              .then(() => writeRendererLog("audio", "info", "DeepFilterNet assets prewarmed"))
+              .catch((error) =>
+                writeRendererLog("audio", "warn", "DeepFilterNet asset prewarm deferred", {
+                  error: error instanceof Error ? error.message : String(error),
+                }),
+              );
+          };
+          const scheduleIdle = window.requestIdleCallback?.bind(window);
+          if (scheduleIdle) {
+            scheduleIdle(startPrewarm, { timeout: 1_500 });
+          } else {
+            globalThis.setTimeout(startPrewarm, 250);
+          }
+        }
       } catch (error) {
         if (isDisposed) {
           return;
@@ -136,28 +152,18 @@ export const useAppBootstrap = (): void => {
     };
 
     navigator.mediaDevices?.addEventListener("devicechange", handleDeviceChange);
-    const handleAudioProcessorFallback = (event: Event) => {
+    const handleDeepFilterUnavailable = (event: Event) => {
       const reason = (event as CustomEvent<{ reason?: string }>).detail?.reason ?? "unknown";
-      void writeRendererLog("audio", "warn", "Microphone processor switched to browser fallback", {
+      void writeRendererLog("audio", "error", "DeepFilterNet became unavailable", {
         reason,
       });
-
-      // Missing/unsupported RNNoise is a compatibility fallback, not evidence that
-      // the user's machine is overloaded. Only surface a proven sustained overload.
-      if (reason !== "processor_overloaded" || hasReportedAudioOverload) return;
-      hasReportedAudioOverload = true;
-      useAppStore.getState().pushToast({
-        tone: "warning",
-        title: "高级降噪已自动减负",
-        description: "检测到持续音频压力，已平稳切换为系统降噪，语音不会中断。",
-      });
     };
-    window.addEventListener("shanghao:audio-processor-fallback", handleAudioProcessorFallback);
+    window.addEventListener("shanghao:deepfilter-unavailable", handleDeepFilterUnavailable);
 
     return () => {
       isDisposed = true;
       navigator.mediaDevices?.removeEventListener("devicechange", handleDeviceChange);
-      window.removeEventListener("shanghao:audio-processor-fallback", handleAudioProcessorFallback);
+      window.removeEventListener("shanghao:deepfilter-unavailable", handleDeepFilterUnavailable);
     };
   }, [
     beginBootstrap,

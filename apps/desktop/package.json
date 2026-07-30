@@ -1,6 +1,6 @@
 {
   "name": "shanghao-desktop",
-  "version": "2.1.1",
+  "version": "2.2.0",
   "private": true,
   "description": "ShangHao desktop voice app for private friends group chat",
   "author": "Sober",
@@ -27,7 +27,7 @@
     "@private-voice/signaling": "workspace:*",
     "@private-voice/ui": "workspace:*",
     "@private-voice/webrtc": "workspace:*",
-    "@shiguredo/rnnoise-wasm": "2025.1.5",
+    "deepfilternet3-noise-filter": "1.2.1",
     "electron-updater": "6.6.2",
     "ffmpeg-static": "^5.2.0",
     "framer-motion": "^11.18.2",

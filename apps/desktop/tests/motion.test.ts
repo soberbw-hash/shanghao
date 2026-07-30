@@ -115,6 +115,7 @@ test("gsap motion is wired across the main surfaces with reduced-motion fallback
   assert.equal(chatSource.includes('from "gsap"'), true);
   assert.equal(islandSource.includes('from "gsap"'), true);
   assert.equal(homeSource.includes("data-gsap-entry"), true);
+  assert.equal(homeSource.includes("hasPlayedHomeEntrance"), true);
   assert.equal(roomSource.includes("data-gsap-room"), true);
   assert.equal(settingsSource.includes("data-gsap-settings"), true);
   assert.equal(chatSource.includes("data-gsap-chat-message"), true);
@@ -232,7 +233,9 @@ test("gsap motion is wired across the main surfaces with reduced-motion fallback
   assert.equal(stylesSource.includes(".runner-leg-near"), false);
   assert.equal(stylesSource.includes("@keyframes walking-animal-step"), false);
   assert.equal(stylesSource.includes(".scene-character-chat-bubble"), false);
-  assert.equal(stylesSource.includes("character-voice-halo"), true);
+  assert.equal(stylesSource.includes("character-voice-halo"), false);
+  assert.equal(stylesSource.includes("--voice-halo-opacity"), true);
+  assert.equal(stylesSource.includes("--voice-glow-radius"), true);
   assert.equal(stylesSource.includes("@keyframes icon-audio-hover"), false);
   assert.equal(motionPresetsSource.includes("dialogSurfaceVariants"), true);
   assert.equal(motionPresetsSource.includes("toastItemVariants"), true);
@@ -271,6 +274,10 @@ test("route transitions remove the previous translucent page instead of stacking
 
   assert.equal(appSource.includes("AnimatePresence"), false);
   assert.equal(appSource.includes("key={basePage}"), true);
+  assert.equal(
+    appSource.includes('basePage === "room" ? { opacity: 0, x: 18, scale: 0.992 } : false'),
+    true,
+  );
 });
 
 test("dialogs use interruptible compositor motion without full-screen blur animation", () => {

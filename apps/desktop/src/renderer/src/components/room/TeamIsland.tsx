@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { Fish, Gamepad2 } from "lucide-react";
+import { Fish } from "lucide-react";
 import { AnimatePresence } from "framer-motion";
 import { gsap } from "gsap";
 
@@ -13,8 +13,16 @@ import {
 
 import { getStableAvatarId } from "../../utils/profile";
 import { motionEase } from "../../features/motion/motionSystem";
-import { SceneFloorLamp, SceneWindowNook } from "./SceneAmbientDecor";
+import {
+  SceneFloorLamp,
+  SceneLowTable,
+  SceneTallPlant,
+  SceneWallClock,
+  SceneWallShelf,
+  SceneWindowNook,
+} from "./SceneAmbientDecor";
 import { SceneCharacter, sceneMemberKey } from "./SceneCharacter";
+import { GameMonitorContent } from "./GameMonitorContent";
 import { WorkstationArt } from "./WorkstationArt";
 import {
   characterPositions,
@@ -185,14 +193,24 @@ export const TeamIsland = ({
     >
       <span className="scene-knock-wave" data-knock-wave aria-hidden="true" />
       <div className="team-island-stage absolute inset-0" aria-hidden="true">
+        <div className="scene-wall-backdrop" />
+        <div className="scene-wall-baseboard" />
         <div className="scene-window-light" />
         <div className="scene-rug" />
         <div className="scene-brand-arc" />
         <div className="scene-window-nook">
           <SceneWindowNook />
         </div>
-        <div className="scene-floor-lamp">
-          <SceneFloorLamp />
+        <div className="scene-wall-shelf">
+          <SceneWallShelf />
+        </div>
+        <div className="scene-wall-clock">
+          <SceneWallClock />
+        </div>
+        <div className="scene-lounge-corner">
+          <SceneTallPlant className="scene-lounge-plant" />
+          <SceneLowTable className="scene-lounge-table" />
+          <SceneFloorLamp className="scene-lounge-lamp" />
         </div>
         <div className="scene-service-zone scene-service-restroom">
           <span>离开一下</span>
@@ -228,10 +246,7 @@ export const TeamIsland = ({
                   {screenSharingSet.has(occupant?.id ?? "") ? (
                     <span className="scene-workstation-sharing-mark">共享中</span>
                   ) : occupant?.gameName ? (
-                    <>
-                      <Gamepad2 aria-hidden="true" />
-                      <span>{occupant.gameName}</span>
-                    </>
+                    <GameMonitorContent gameName={occupant.gameName} />
                   ) : occupant ? (
                     <Fish className="scene-workstation-idle-fish" aria-label="摸鱼中" />
                   ) : null}
@@ -305,13 +320,13 @@ export const TeamIsland = ({
               arrivalIndex={memberIndex}
               isWelcoming={welcomingMemberIds.has(member.id)}
               isScreenSharing={screenSharingSet.has(member.id)}
-              reaction={[...reactions]
-                .reverse()
-                .find(
+              reactions={reactions
+                .filter(
                   (reaction) =>
                     reaction.targetPeerId === member.id &&
-                    Date.now() - Date.parse(reaction.createdAt) < 4_000,
-                )}
+                    Date.now() - Date.parse(reaction.createdAt) < 2_000,
+                )
+                .slice(-3)}
               onReact={onReact}
               onVolumeChange={onVolumeChange}
             />

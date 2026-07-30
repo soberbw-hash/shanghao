@@ -27,5 +27,7 @@ jobs:
       - run: pnpm typecheck
       - run: pnpm lint
       - run: pnpm test
+      - run: xvfb-run -a pnpm test:audio-worklet
       - run: pnpm test:five-peer-audio
+      - run: xvfb-run -a pnpm test:five-peer-media
       - run: pnpm build

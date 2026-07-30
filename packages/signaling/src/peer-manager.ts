@@ -11,6 +11,7 @@ import type { WebSocket } from "ws";
 
 export interface PeerSession {
   id: string;
+  profileId?: string;
   nickname: string;
   avatarDataUrl?: string;
   avatarHash?: string;
@@ -99,6 +100,7 @@ export class PeerManager {
   toRoomMembers(localPeerId?: string): RoomMember[] {
     return this.listPeers().map((peer) => ({
       id: peer.id,
+      profileId: peer.profileId,
       nickname: peer.nickname,
       avatarHash: peer.avatarHash,
       avatarId: peer.avatarId,

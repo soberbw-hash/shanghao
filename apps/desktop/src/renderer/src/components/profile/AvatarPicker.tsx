@@ -31,7 +31,7 @@ export const CharacterPicker = ({
             type="button"
             className={`relative rounded-full p-1.5 transition-[transform,opacity,background-color] duration-150 ${
               isOccupied
-                ? "cursor-not-allowed bg-[#f2f4f7] opacity-35 grayscale"
+                ? "cursor-not-allowed bg-[#f1f6fc] opacity-70"
                 : isSelected
                   ? "bg-[#EAF4FF]"
                   : "hover:bg-[#f5f7fb] opacity-60 hover:opacity-100"
@@ -44,16 +44,22 @@ export const CharacterPicker = ({
             <img
               src={avatar.src}
               alt=""
-              className="h-[58px] w-[58px] object-contain"
+              className={`h-[58px] w-[58px] object-contain ${isOccupied ? "saturate-[0.72]" : ""}`}
               draggable={false}
             />
             {isSelected && (
               <span className="absolute -bottom-0.5 left-1/2 -translate-x-1/2 h-1 w-1 rounded-full bg-[#4DA3FF]" />
             )}
             {isOccupied ? (
-              <span className="absolute inset-x-1 -bottom-4 text-center text-[9px] font-semibold text-[#7b8798]">
-                已占用
-              </span>
+              <>
+                <span
+                  className="absolute right-0.5 top-0.5 h-2.5 w-2.5 rounded-full border-2 border-white bg-[#18b66a] shadow-[0_1px_4px_rgba(24,182,106,0.34)]"
+                  aria-hidden="true"
+                />
+                <span className="absolute inset-x-0 -bottom-4 text-center text-[9px] font-semibold text-[#65758a]">
+                  朋友在用
+                </span>
+              </>
             ) : null}
           </button>
         );

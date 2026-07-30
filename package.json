@@ -1,6 +1,6 @@
 {
   "name": "shanghao-workspace",
-  "version": "2.1.1",
+  "version": "2.2.0",
   "private": true,
   "packageManager": "pnpm@10.0.0",
   "scripts": {
@@ -14,7 +14,7 @@
     "dist": "corepack pnpm --filter shanghao-desktop dist",
     "dist:win": "corepack pnpm --filter shanghao-desktop dist:win",
     "clean": "node scripts/clean.mjs",
-    "release": "corepack pnpm lint && corepack pnpm typecheck && corepack pnpm test && corepack pnpm test:five-peer-audio && corepack pnpm build && corepack pnpm dist:win",
+    "release": "corepack pnpm lint && corepack pnpm typecheck && corepack pnpm test && corepack pnpm test:audio-worklet && corepack pnpm test:five-peer-audio && corepack pnpm test:five-peer-media && corepack pnpm build && corepack pnpm dist:win",
     "release:verify": "node scripts/verify-release-metadata.mjs",
     "release:verify-package": "node scripts/verify-packaged-runtime.mjs",
     "release:checksums": "node scripts/generate-checksums.mjs",
@@ -23,7 +23,9 @@
     "relay:build": "corepack pnpm --filter @private-voice/shared build && corepack pnpm --filter @private-voice/signaling build",
     "relay:start": "corepack pnpm relay:build && node scripts/start-relay.mjs",
     "relay:health": "node -e \"fetch('http://127.0.0.1:43821/health').then(r=>r.text()).then(console.log)\"",
-    "test:five-peer-audio": "corepack pnpm relay:build && node scripts/verify-three-peer-audio.mjs",
+    "test:five-peer-audio": "corepack pnpm relay:build && node scripts/verify-five-peer-audio.mjs",
+    "test:five-peer-media": "node scripts/verify-five-peer-media.mjs",
+    "test:audio-worklet": "corepack pnpm --dir apps/desktop exec electron tests/electron-audio-worklet-smoke.cjs",
     "test:three-peer-audio": "corepack pnpm test:five-peer-audio"
   },
   "pnpm": {

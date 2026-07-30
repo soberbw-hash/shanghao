@@ -2,13 +2,10 @@
 <html lang="zh-CN">
   <head>
     <meta charset="UTF-8" />
-    <meta
-      name="viewport"
-      content="width=device-width, initial-scale=1.0"
-    />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob:; connect-src 'self' ws: wss: http://127.0.0.1:*; worker-src 'self' blob:;"
+      content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval' blob:; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob:; connect-src 'self' ws: wss: http://127.0.0.1:*; worker-src 'self' blob:;"
     />
     <title>上号</title>
     <style>
@@ -98,19 +95,38 @@
       }
 
       @keyframes preboot-mark-enter {
-        from { opacity: 0; transform: translateY(8px) scale(0.9); }
-        72% { opacity: 1; transform: translateY(0) scale(1.015); }
-        to { opacity: 1; transform: translateY(0) scale(1); }
+        from {
+          opacity: 0;
+          transform: translateY(8px) scale(0.9);
+        }
+        72% {
+          opacity: 1;
+          transform: translateY(0) scale(1.015);
+        }
+        to {
+          opacity: 1;
+          transform: translateY(0) scale(1);
+        }
       }
 
       @keyframes preboot-copy-enter {
-        from { opacity: 0; transform: translateY(5px); }
-        to { opacity: 1; transform: translateY(0); }
+        from {
+          opacity: 0;
+          transform: translateY(5px);
+        }
+        to {
+          opacity: 1;
+          transform: translateY(0);
+        }
       }
 
       @keyframes preboot-progress {
-        from { transform: translateX(-110%); }
-        to { transform: translateX(225%); }
+        from {
+          transform: translateX(-110%);
+        }
+        to {
+          transform: translateX(225%);
+        }
       }
 
       @media (prefers-reduced-motion: reduce) {

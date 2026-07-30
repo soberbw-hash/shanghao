@@ -10,6 +10,7 @@ import type {
 } from "@private-voice/shared";
 
 import { memberVolumeToPercent, toggleLocalMemberMute } from "../../features/audio/memberVolume";
+import { REMOTE_AUDIO_LEVEL_EVENT } from "../../features/audio/RemoteAudioMixer";
 import { motionCurve } from "../../features/motion/motionSystem";
 import { memberStatus } from "../../features/voice-scene/activityRules";
 import { planCharacterRoute, sceneEntryPoint } from "../../features/voice-scene/characterMotion";
@@ -65,7 +66,7 @@ export interface SceneCharacterProps {
   arrivalIndex: number;
   isWelcoming: boolean;
   isScreenSharing: boolean;
-  reaction?: SceneReactionModel;
+  reactions?: SceneReactionModel[];
   onReact?: (targetPeerId: string, emoji: SceneReactionModel["emoji"]) => void;
   onVolumeChange?: (memberId: string, volume: number) => void;
 }
@@ -80,13 +81,12 @@ export const SceneCharacter = ({
   arrivalIndex,
   isWelcoming,
   isScreenSharing,
-  reaction,
+  reactions = [],
   onReact,
   onVolumeChange,
 }: SceneCharacterProps) => {
   const status = memberStatus(member);
   const personality = getCharacterPersonality(avatarId);
-  const [visibleReaction, setVisibleReaction] = useState<SceneReactionModel>();
   const [isAudioControlsOpen, setIsAudioControlsOpen] = useState(false);
   const isSpeaking = status.tone === "speaking";
   const isReconnecting = status.tone === "reconnecting";
@@ -127,6 +127,33 @@ export const SceneCharacter = ({
   }, [member.volume]);
 
   useEffect(() => {
+    const expectedPeerId = member.isLocal ? "local-member" : member.id;
+    const handleAudioLevel = (event: Event) => {
+      const detail = (event as CustomEvent<{ peerId?: string; level?: number }>).detail;
+      if (detail?.peerId !== expectedPeerId || !memberControlsRef.current) return;
+      const level = Math.max(0, Math.min(1, Number(detail.level) || 0));
+      memberControlsRef.current.style.setProperty("--voice-level", level.toFixed(3));
+      memberControlsRef.current.style.setProperty("--voice-scale", (1 + level * 0.038).toFixed(4));
+      memberControlsRef.current.style.setProperty(
+        "--voice-halo-opacity",
+        (0.16 + level * 0.7).toFixed(3),
+      );
+      memberControlsRef.current.style.setProperty(
+        "--voice-halo-scale",
+        (0.82 + level * 0.3).toFixed(3),
+      );
+      memberControlsRef.current.style.setProperty(
+        "--voice-glow-radius",
+        `${Math.round(7 + level * 15)}px`,
+      );
+    };
+    window.addEventListener(REMOTE_AUDIO_LEVEL_EVENT, handleAudioLevel);
+    return () => {
+      window.removeEventListener(REMOTE_AUDIO_LEVEL_EVENT, handleAudioLevel);
+    };
+  }, [member.id, member.isLocal]);
+
+  useEffect(() => {
     if (!isAudioControlsOpen) return;
 
     const closeWhenClickingOutside = (event: PointerEvent) => {
@@ -163,20 +190,6 @@ export const SceneCharacter = ({
   useEffect(() => {
     motionPhaseRef.current = motionPhase;
   }, [motionPhase]);
-
-  useEffect(() => {
-    if (!reaction) {
-      setVisibleReaction(undefined);
-      return;
-    }
-    setVisibleReaction(reaction);
-    const elapsed = Date.now() - Date.parse(reaction.createdAt);
-    const timeout = window.setTimeout(
-      () => setVisibleReaction((current) => (current?.id === reaction.id ? undefined : current)),
-      Math.max(200, 4_000 - elapsed),
-    );
-    return () => window.clearTimeout(timeout);
-  }, [reaction]);
 
   useLayoutEffect(() => {
     if (didFinishEntryRef.current) return;
@@ -476,6 +489,11 @@ export const SceneCharacter = ({
               "--character-scale": renderedCharacterScale,
               "--label-offset-y": `${position.labelOffsetY ?? 0}px`,
               "--character-motion-delay": `${stableMotionPhase(member.id)}s`,
+              "--voice-level": 0,
+              "--voice-scale": 1,
+              "--voice-halo-opacity": 0.16,
+              "--voice-halo-scale": 0.82,
+              "--voice-glow-radius": "7px",
             } as CSSProperties & Record<string, string | number>
           }
         >
@@ -546,41 +564,7 @@ export const SceneCharacter = ({
             isAway={displayZone === "restroomZone"}
             shouldReduceMotion={shouldReduceMotion}
           />
-          <SceneReaction reaction={visibleReaction} shouldReduceMotion={shouldReduceMotion} />
-
-          {!member.isLocal ? (
-            <div className="scene-reaction-picker" aria-label={`给${member.nickname}发送表情`}>
-              {(["👍", "🔥", "😂", "❤️"] as const).map((emoji) => (
-                <button
-                  key={emoji}
-                  type="button"
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    onReact?.(member.id, emoji);
-                  }}
-                  aria-label={`发送${emoji}`}
-                >
-                  {emoji}
-                </button>
-              ))}
-              <button
-                type="button"
-                className={`scene-member-volume-trigger ${isLocallyMuted ? "is-muted" : ""}`}
-                title={`${member.nickname} 本地音量 ${memberVolumeToPercent(member.volume)}%`}
-                aria-label={`调整${member.nickname}的本地音量`}
-                onClick={(event) => {
-                  event.stopPropagation();
-                  setIsAudioControlsOpen((current) => !current);
-                }}
-              >
-                {isLocallyMuted ? (
-                  <VolumeX className="h-3.5 w-3.5" />
-                ) : (
-                  <Volume2 className="h-3.5 w-3.5" />
-                )}
-              </button>
-            </div>
-          ) : null}
+          <SceneReaction reactions={reactions} shouldReduceMotion={shouldReduceMotion} />
 
           <AnimatePresence>
             {!member.isLocal && isAudioControlsOpen ? (
@@ -605,11 +589,18 @@ export const SceneCharacter = ({
                         ? "对方已闭麦"
                         : member.isDeafened
                           ? "对方已关闭扬声器"
-                          : "麦克风正常"}
+                          : member.gameName || "麦克风正常"}
                     </small>
                   </span>
-                  <span className={`member-audio-percent ${isLocallyMuted ? "is-muted" : ""}`}>
-                    {memberVolumeToPercent(member.volume)}%
+                  <span>
+                    {typeof member.latencyMs === "number" ? (
+                      <small className="member-audio-latency">
+                        {Math.round(member.latencyMs)} ms
+                      </small>
+                    ) : null}
+                    <span className={`member-audio-percent ${isLocallyMuted ? "is-muted" : ""}`}>
+                      {memberVolumeToPercent(member.volume)}%
+                    </span>
                   </span>
                 </div>
 
@@ -656,6 +647,23 @@ export const SceneCharacter = ({
                     <RotateCcw className="h-3.5 w-3.5" />
                     恢复 100%
                   </button>
+                </div>
+                <div
+                  className="member-reaction-actions"
+                  aria-label={`给${member.nickname}发送表情`}
+                >
+                  {(["👍", "🔥", "😂", "❤️", "👏", "😭", "😮", "💀", "🎉", "👀"] as const).map(
+                    (emoji) => (
+                      <button
+                        key={emoji}
+                        type="button"
+                        onClick={() => onReact?.(member.id, emoji)}
+                        aria-label={`发送${emoji}`}
+                      >
+                        {emoji}
+                      </button>
+                    ),
+                  )}
                 </div>
               </motion.div>
             ) : null}

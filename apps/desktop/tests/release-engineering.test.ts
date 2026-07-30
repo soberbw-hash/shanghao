@@ -8,7 +8,7 @@ import { APP_BUILD_NUMBER, APP_PROTOCOL_VERSION } from "@private-voice/shared";
 const root = path.resolve(process.cwd(), "../..");
 const read = (relativePath: string) => readFileSync(path.join(root, relativePath), "utf8");
 
-test("v2.1.1 release metadata and safeguards are complete", () => {
+test("v2.2.0 release metadata and safeguards are complete", () => {
   const rootPackage = JSON.parse(read("package.json")) as { version: string };
   const desktopPackage = JSON.parse(read("apps/desktop/package.json")) as { version: string };
   const release = read(".github/workflows/release.yml");
@@ -16,19 +16,21 @@ test("v2.1.1 release metadata and safeguards are complete", () => {
   const changelog = read("CHANGELOG.md");
   const architecture = read("docs/architecture.md");
 
-  assert.equal(rootPackage.version, "2.1.1");
-  assert.equal(desktopPackage.version, "2.1.1");
+  assert.equal(rootPackage.version, "2.2.0");
+  assert.equal(desktopPackage.version, "2.2.0");
   assert.equal(APP_PROTOCOL_VERSION, "6");
-  assert.equal(APP_BUILD_NUMBER, "2026.07.27.1");
-  assert.equal(existsSync(path.join(root, "docs/release-notes/v2.1.1.md")), true);
-  assert.equal(changelog.includes("## 2.1.1"), true);
+  assert.equal(APP_BUILD_NUMBER, "2026.07.30.1");
+  assert.equal(existsSync(path.join(root, "docs/release-notes/v2.2.0.md")), true);
+  assert.equal(changelog.includes("## 2.2.0"), true);
   assert.equal(architecture.includes("ScreenShareManager"), true);
   assert.equal(desktopBuilder.includes("mac:"), false);
   assert.equal(desktopBuilder.includes("shanghao-icon.icns"), false);
   assert.equal(release.includes("windows-${{ github.ref_name }}"), true);
   assert.equal(release.includes("docs/release-notes/${{ github.ref_name }}.md"), true);
   assert.equal(release.includes("pnpm lint"), true);
+  assert.equal(release.includes("pnpm test:audio-worklet"), true);
   assert.equal(release.includes("pnpm test:five-peer-audio"), true);
+  assert.equal(release.includes("pnpm test:five-peer-media"), true);
   assert.equal(release.includes("pnpm release:verify-package"), true);
   assert.equal(release.includes("SHA256SUMS.txt"), true);
 });
@@ -41,6 +43,8 @@ test("main CI, CodeQL, and Dependabot guard the repository", () => {
   assert.equal(ci.includes("branches: [main]"), true);
   assert.equal(ci.includes("pnpm install --frozen-lockfile"), true);
   assert.equal(ci.includes("pnpm build"), true);
+  assert.equal(ci.includes("xvfb-run -a pnpm test:audio-worklet"), true);
+  assert.equal(ci.includes("xvfb-run -a pnpm test:five-peer-media"), true);
   assert.equal(codeql.includes("javascript-typescript"), true);
   assert.equal(dependabot.includes("package-ecosystem: npm"), true);
   assert.equal(dependabot.includes("package-ecosystem: github-actions"), true);

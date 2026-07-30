@@ -69,6 +69,7 @@ export interface JoinChannelMessage extends BaseMessage, VersionedMessage {
   roomId: string;
   channelId: string;
   peerId: string;
+  profileId?: string;
   nickname: string;
   avatarId: BuiltInAvatarId;
   sessionToken?: string;
@@ -299,7 +300,7 @@ export interface SceneReactionMessage extends BaseMessage {
   roomId: string;
   peerId: string;
   targetPeerId: string;
-  emoji: "👍" | "🔥" | "😂" | "❤️";
+  emoji: "👍" | "🔥" | "😂" | "❤️" | "👏" | "😭" | "😮" | "💀" | "🎉" | "👀";
   createdAt: string;
 }
 
@@ -378,6 +379,11 @@ export const isSignalEnvelope = (value: unknown): value is SignalEnvelope => {
       return (
         hasRoom(value) &&
         hasPeer(value) &&
+        (value.profileId === undefined ||
+          (isText(value.profileId, 64) &&
+            /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+              value.profileId,
+            ))) &&
         isIdentifier(value.channelId, 64) &&
         isValidNickname(value.nickname) &&
         isBuiltInAvatarId(value.avatarId) &&
@@ -540,7 +546,7 @@ export const isSignalEnvelope = (value: unknown): value is SignalEnvelope => {
         hasRoom(value) &&
         hasPeer(value) &&
         hasTarget(value) &&
-        ["👍", "🔥", "😂", "❤️"].includes(String(value.emoji))
+        ["👍", "🔥", "😂", "❤️", "👏", "😭", "😮", "💀", "🎉", "👀"].includes(String(value.emoji))
       );
     case "error":
       return (

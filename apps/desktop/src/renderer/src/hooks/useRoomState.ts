@@ -20,6 +20,7 @@ import {
   createProcessedMicrophoneStream,
   type ProcessedMicrophoneStream,
 } from "../features/audio/microphoneProcessor";
+import { REMOTE_AUDIO_LEVEL_EVENT } from "../features/audio/RemoteAudioMixer";
 import { clampMemberVolume } from "../features/audio/memberVolume";
 import { playUiSound } from "../features/audio/uiSound";
 import { RoomClient } from "../features/room/roomClient";
@@ -36,22 +37,43 @@ let activeProcessedMicrophone: ProcessedMicrophoneStream | null = null;
 let previousMemberIds = new Set<string>();
 const runtimeMemberVolumes = new Map<string, number>();
 const pendingMemberVolumeSaves = new Map<string, number>();
+const pendingMemberVolumeDeletes = new Set<string>();
 let memberVolumeSaveTimer: number | undefined;
+const SCENE_REACTION_SOUND_COOLDOWN_MS = 320;
+let lastSceneReactionSoundAt = 0;
 
-const scheduleMemberVolumeSave = (nickname: string, volume: number) => {
-  pendingMemberVolumeSaves.set(nickname, volume);
+const playSceneReactionSound = (sound: "receive-message" | "send-message") => {
+  const now = Date.now();
+  if (now - lastSceneReactionSoundAt < SCENE_REACTION_SOUND_COOLDOWN_MS) return;
+  lastSceneReactionSoundAt = now;
+  playUiSound(sound);
+};
+
+const scheduleMemberVolumeSave = (
+  storageKey: string,
+  volume: number,
+  legacyStorageKey?: string,
+) => {
+  pendingMemberVolumeSaves.set(storageKey, volume);
+  if (legacyStorageKey && legacyStorageKey !== storageKey) {
+    pendingMemberVolumeDeletes.add(legacyStorageKey);
+  }
   if (memberVolumeSaveTimer !== undefined) window.clearTimeout(memberVolumeSaveTimer);
   memberVolumeSaveTimer = window.setTimeout(() => {
     memberVolumeSaveTimer = undefined;
     const currentSettings = useSettingsStore.getState().settings;
     if (!currentSettings) return;
-    const pendingVolumes = Object.fromEntries(pendingMemberVolumeSaves);
+    const nextMemberVolumes = { ...currentSettings.memberVolumes };
+    for (const key of pendingMemberVolumeDeletes) {
+      delete nextMemberVolumes[key];
+    }
+    for (const [key, pendingVolume] of pendingMemberVolumeSaves) {
+      nextMemberVolumes[key] = pendingVolume;
+    }
     pendingMemberVolumeSaves.clear();
+    pendingMemberVolumeDeletes.clear();
     void useSettingsStore.getState().saveSettings({
-      memberVolumes: {
-        ...currentSettings.memberVolumes,
-        ...pendingVolumes,
-      },
+      memberVolumes: nextMemberVolumes,
     });
   }, 320);
 };
@@ -236,6 +258,13 @@ export const useRoomState = () => {
         activeClient?.updateMuteState(useAudioStore.getState().isMuted, isSpeaking);
       },
       useSettingsStore.getState().settings?.inputLevelThreshold ?? 0.4,
+      (level) => {
+        window.dispatchEvent(
+          new CustomEvent(REMOTE_AUDIO_LEVEL_EVENT, {
+            detail: { peerId: "local-member", level },
+          }),
+        );
+      },
     );
   };
 
@@ -274,16 +303,14 @@ export const useRoomState = () => {
     try {
       const { stream: inputStream, diagnostics } = await requestMicrophoneStream({
         deviceId: preferredInputDeviceId ?? currentSettings?.preferredInputDeviceId,
-        // RNNoise owns suppression in an AudioWorklet. Browser suppression is enabled only
-        // if the worklet cannot initialize, avoiding two aggressive processors in series.
+        // DeepFilterNet is the only suppression engine. Browser suppression stays off so
+        // a failed model load can safely preserve unprocessed microphone audio.
         noiseSuppression: false,
         echoCancellation: currentSettings?.isEchoCancellationEnabled ?? true,
         autoGainControl: currentSettings?.isAutoGainControlEnabled ?? true,
-        preferredSampleRate: currentSettings?.preferredSampleRate ?? "auto",
       });
       const processedMicrophone = await createProcessedMicrophoneStream(inputStream, {
         micEqualizerGains: currentSettings?.micEqualizerGains ?? [0, 0, 0, 0, 0],
-        preferredSampleRate: currentSettings?.preferredSampleRate ?? "auto",
         lowCutFrequency: currentSettings?.lowCutFrequency ?? "90",
         isNoiseSuppressionEnabled: currentSettings?.isNoiseSuppressionEnabled ?? true,
       });
@@ -292,6 +319,10 @@ export const useRoomState = () => {
 
       setLocalStream(stream);
       setLocalDiagnostics({ ...diagnostics, ...processedMicrophone.processorDiagnostics });
+      void processedMicrophone.ready.then((processorDiagnostics) => {
+        if (activeProcessedMicrophone !== processedMicrophone) return;
+        setLocalDiagnostics({ ...diagnostics, ...processorDiagnostics });
+      });
       await writeRendererLog("audio", "info", "Acquired local microphone stream", {
         ...diagnostics,
       });
@@ -317,12 +348,17 @@ export const useRoomState = () => {
     const currentSettings = useSettingsStore.getState().settings ?? settings;
     const stream = await ensureLocalStream();
     const peerId = crypto.randomUUID();
+    const profileId = currentSettings?.profileId || crypto.randomUUID();
+    if (currentSettings && !currentSettings.profileId) {
+      await useSettingsStore.getState().saveSettings({ profileId });
+    }
     const roomName = currentSettings?.roomName ?? room.roomName;
 
     activeClient = new RoomClient({
       signalingUrl: serverUrl,
       roomId: DEFAULT_CHANNEL_ID,
       peerId,
+      profileId,
       nickname: currentSettings?.nickname || "我",
       avatarDataUrl: undefined,
       avatarId: currentSettings?.avatarId,
@@ -335,10 +371,25 @@ export const useRoomState = () => {
         const previousMembers = useRoomStore.getState().room.members;
         const savedVolumes = useSettingsStore.getState().settings?.memberVolumes ?? {};
         const audioState = useAudioStore.getState();
+        const nicknameCounts = new Map<string, number>();
+        for (const member of members) {
+          nicknameCounts.set(member.nickname, (nicknameCounts.get(member.nickname) ?? 0) + 1);
+        }
         const membersWithVolume = members.map((member) => {
+          const storageKey = member.profileId || member.nickname;
+          const legacyNicknameVolume =
+            member.profileId &&
+            nicknameCounts.get(member.nickname) === 1 &&
+            savedVolumes[member.profileId] === undefined
+              ? savedVolumes[member.nickname]
+              : undefined;
+          if (member.profileId && legacyNicknameVolume !== undefined) {
+            scheduleMemberVolumeSave(member.profileId, legacyNicknameVolume, member.nickname);
+          }
           const volume = clampMemberVolume(
-            runtimeMemberVolumes.get(member.nickname) ??
-              savedVolumes[member.nickname] ??
+            runtimeMemberVolumes.get(storageKey) ??
+              savedVolumes[storageKey] ??
+              legacyNicknameVolume ??
               member.volume ??
               1,
           );
@@ -491,7 +542,7 @@ export const useRoomState = () => {
       onSceneReaction: (reaction) => {
         addSceneReaction(reaction);
         if (reaction.targetPeerId === peerId && reaction.peerId !== peerId) {
-          playUiSound("receive-message");
+          playSceneReactionSound("receive-message");
         }
       },
       onChatMessage: (message) => {
@@ -639,19 +690,22 @@ export const useRoomState = () => {
   };
 
   const replaceInputDevice = async (preferredInputDeviceId?: string) => {
-    if (!activeClient || !settings) {
+    const currentSettings = useSettingsStore.getState().settings ?? settings;
+    if (!activeClient || !currentSettings) {
       return;
     }
 
     try {
       const { stream: inputStream, diagnostics } = await requestMicrophoneStream({
-        deviceId: preferredInputDeviceId ?? settings.preferredInputDeviceId,
+        deviceId: preferredInputDeviceId ?? currentSettings.preferredInputDeviceId,
         noiseSuppression: false,
-        echoCancellation: settings.isEchoCancellationEnabled,
-        autoGainControl: settings.isAutoGainControlEnabled,
-        preferredSampleRate: settings.preferredSampleRate,
+        echoCancellation: currentSettings.isEchoCancellationEnabled,
+        autoGainControl: currentSettings.isAutoGainControlEnabled,
       });
-      const processedMicrophone = await createProcessedMicrophoneStream(inputStream, settings);
+      const processedMicrophone = await createProcessedMicrophoneStream(
+        inputStream,
+        currentSettings,
+      );
       const stream = processedMicrophone.stream;
       const [nextTrack] = stream.getAudioTracks();
       if (!nextTrack) {
@@ -662,6 +716,10 @@ export const useRoomState = () => {
       activeProcessedMicrophone?.dispose();
       activeProcessedMicrophone = processedMicrophone;
       setLocalDiagnostics({ ...diagnostics, ...processedMicrophone.processorDiagnostics });
+      void processedMicrophone.ready.then((processorDiagnostics) => {
+        if (activeProcessedMicrophone !== processedMicrophone) return;
+        setLocalDiagnostics({ ...diagnostics, ...processorDiagnostics });
+      });
       setLocalStream(stream);
       await activeClient.replaceInputTrack(nextTrack);
       startSpeakingDetector(stream);
@@ -795,11 +853,15 @@ export const useRoomState = () => {
     await activeClient.sendKnock();
   };
 
-  const sendSceneReaction = async (targetPeerId: string, emoji: "👍" | "🔥" | "😂" | "❤️") => {
+  const sendSceneReaction = async (
+    targetPeerId: string,
+    emoji: import("@private-voice/shared").SceneReaction["emoji"],
+  ) => {
     if (!activeClient?.canSendChat()) {
       return;
     }
     await activeClient.sendSceneReaction(targetPeerId, emoji);
+    playSceneReactionSound("send-message");
   };
 
   const startScreenShare = async (stream: MediaStream, profile?: ScreenShareEncodingProfile) => {
@@ -839,10 +901,11 @@ export const useRoomState = () => {
       .getState()
       .room.members.find((candidate) => candidate.id === memberId);
     if (!member || member.isLocal || member.isEmptySlot) return;
-    runtimeMemberVolumes.set(member.nickname, normalizedVolume);
+    const storageKey = member.profileId || member.nickname;
+    runtimeMemberVolumes.set(storageKey, normalizedVolume);
     updateMemberVolume(memberId, normalizedVolume);
     activeClient?.setPeerVolume(memberId, normalizedVolume);
-    scheduleMemberVolumeSave(member.nickname, normalizedVolume);
+    scheduleMemberVolumeSave(storageKey, normalizedVolume);
   };
 
   return {

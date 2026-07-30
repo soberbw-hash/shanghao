@@ -76,6 +76,8 @@ test("room page uses the V5 island, light responses, and voice dock", () => {
   assert.equal(source.includes("进入开黑频道"), false);
   assert.equal(source.includes("audio-level-bars"), false);
   assert.equal(source.includes("扬声器关"), true);
+  assert.equal(source.includes('name="noise"'), true);
+  assert.equal(source.includes("降噪"), true);
 });
 
 test("room uses a real always-on-top overlay and a five-second knock cooldown", () => {
@@ -189,8 +191,19 @@ test("scene seats align with the marked workstation positions", () => {
   assert.equal(teamIslandSource.includes("scene-shared-table"), false);
   assert.equal(teamIslandSource.includes("SceneWindowNook"), true);
   assert.equal(teamIslandSource.includes("SceneFloorLamp"), true);
+  assert.equal(teamIslandSource.includes("SceneWallShelf"), true);
+  assert.equal(teamIslandSource.includes("SceneWallClock"), true);
+  assert.equal(teamIslandSource.includes("SceneTallPlant"), true);
+  assert.equal(teamIslandSource.includes("SceneLowTable"), true);
+  assert.equal(teamIslandSource.includes("scene-wall-backdrop"), true);
+  assert.equal(teamIslandSource.includes("scene-wall-baseboard"), true);
+  assert.equal(teamIslandSource.includes("scene-lounge-corner"), true);
   assert.equal(stylesSource.includes(".scene-window-nook"), true);
-  assert.equal(stylesSource.includes(".scene-floor-lamp"), true);
+  assert.equal(stylesSource.includes(".scene-wall-shelf"), true);
+  assert.equal(stylesSource.includes(".scene-wall-clock"), true);
+  assert.equal(stylesSource.includes(".scene-lounge-plant"), true);
+  assert.equal(stylesSource.includes(".scene-lounge-table"), true);
+  assert.equal(stylesSource.includes(".scene-lounge-lamp"), true);
   assert.equal(ambientDecorSource.includes('viewBox="0 0 180 110"'), true);
   assert.equal(ambientDecorSource.includes('viewBox="0 0 94 218"'), true);
   assert.equal(teamIslandSource.includes("chatMessages?: ChatMessage[]"), false);
@@ -323,7 +336,12 @@ test("entering a channel does not replay the whole home entrance animation", () 
   const roomSource = readFileSync(roomPagePath, "utf8");
 
   assert.equal(homeSource.includes("const isSettingsReady = Boolean(settings)"), true);
-  assert.equal(homeSource.includes("[isQuickEntry, isSettingsReady, reduceMotion]"), true);
+  assert.equal(homeSource.includes("[isQuickEntry, isSettingsReady, reduceMotion]"), false);
+  assert.equal(homeSource.includes("[isSettingsReady, reduceMotion]"), true);
+  assert.equal(homeSource.includes('<AnimatePresence initial={false} mode="wait">'), true);
+  assert.equal(homeSource.includes('layout="size"'), false);
+  assert.equal(homeSource.includes("hasPlayedHomeEntrance"), true);
+  assert.equal(homeSource.includes("entry-server-status-slot"), true);
   assert.equal(homeSource.includes("[reduceMotion, settings]"), false);
   assert.equal(homeSource.includes("const [isSubmitting, setIsSubmitting]"), true);
   assert.equal(homeSource.includes("hasSavedEntry"), true);
@@ -333,6 +351,9 @@ test("entering a channel does not replay the whole home entrance animation", () 
   assert.equal(homeSource.includes("更换昵称或服务器"), true);
   assert.equal(homeSource.includes("testServer"), true);
   assert.equal(homeSource.includes("normalizeRelayServerUrl"), true);
+  assert.equal(homeSource.includes("SERVER_CHECK_HEALTHY_INTERVAL_MS = 45_000"), true);
+  assert.equal(homeSource.includes("window.setInterval"), false);
+  assert.equal(homeSource.includes('document.addEventListener("visibilitychange"'), true);
   assert.equal(appSource.includes("const roomPagePromise = loadRoomPage()"), true);
   assert.equal(roomSource.includes("{ autoAlpha: 0.94, y: 5 }"), true);
   assert.equal(roomSource.includes("[data-gsap-room='island']"), false);

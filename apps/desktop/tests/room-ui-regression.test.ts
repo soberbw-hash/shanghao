@@ -131,18 +131,20 @@ test("chat messages are uniformly left aligned with avatar and no per-message cl
   assert.equal(source.includes('clearProps: "transform,opacity,visibility"'), true);
 });
 
-test("audio fallback only warns after sustained processor overload", () => {
+test("DeepFilterNet failure keeps the microphone live without interrupting the room", () => {
   const bootstrapSource = readFileSync(
     path.resolve(process.cwd(), "src/renderer/src/hooks/useAppBootstrap.ts"),
     "utf8",
   );
-  const workletSource = readFileSync(
-    path.resolve(process.cwd(), "src/renderer/src/features/audio/rnnoiseProcessor.worklet.ts"),
+  const processorSource = readFileSync(
+    path.resolve(process.cwd(), "src/renderer/src/features/audio/microphoneProcessor.ts"),
     "utf8",
   );
 
-  assert.equal(bootstrapSource.includes('reason !== "processor_overloaded"'), true);
-  assert.equal(bootstrapSource.includes("hasReportedAudioOverload"), true);
-  assert.equal(workletSource.includes("OVERLOAD_WARMUP_FRAMES = 300"), true);
-  assert.equal(workletSource.includes("OVERLOAD_STRIKE_LIMIT = 2"), true);
+  assert.equal(bootstrapSource.includes("shanghao:deepfilter-unavailable"), true);
+  assert.equal(bootstrapSource.includes('pushToast({\n        tone: "warning"'), false);
+  assert.equal(bootstrapSource.includes("prewarmDeepFilterAssets"), true);
+  assert.equal(processorSource.includes("crossfade(context, gain, rawGain)"), true);
+  assert.equal(processorSource.includes("ready: Promise<"), true);
+  assert.equal(processorSource.includes("browser_fallback"), false);
 });

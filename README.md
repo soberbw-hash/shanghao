@@ -15,7 +15,7 @@
 
 固定频道 `main` 会一直存在，没有房主；第一个人退出后频道也不会消失。客户端只保留服务器连接，不再包含房主直连、Tailscale 或临时公网入口。
 
-## 2.1 动画与稳定性重点
+## 2.2 五人语音与降噪重点
 
 - `join_channel / channel_snapshot / leave_channel` 固定频道协议与重连会话令牌
 - 3–5 人 WebRTC mesh，服务端可下发短期 TURN 凭据
@@ -24,8 +24,9 @@
 - WebRTC 失败自动重新协商，信令断线持续退避重连
 - μ-law 低带宽语音兜底、音频 epoch 隔离、自动 resync 与背压丢帧
 - ping/pong 延迟估算与房间内连接质量反馈
-- Opus FEC/DTX、32 kHz 语音链路与分级弱网自适应
-- RNNoise 智能降噪、低切、语音均衡和麦克风环境校准
+- Opus FEC/DTX、分级弱网自适应与按成员独立自愈
+- 麦克风采集与 DeepFilterNet 固定使用 48 kHz；录音导出目标为 32 kHz，两条链路互不混用
+- 单一 DeepFilterNet 智能降噪、低切和语音均衡；启动后后台预热模型，引擎异常时仅原声直通，不切换其他降噪
 - 5 个内置动物角色，带八帧交替步态、可打断最短路径、入场和离场动作
 - 720p/1080p 屏幕分享、系统音频、直接媒体流和独立可缩放观看窗口
 - 屏幕分享由单一 Manager 管理，独立观看窗口使用最小权限 Preload
@@ -61,11 +62,21 @@ corepack pnpm install
 corepack pnpm dev
 corepack pnpm typecheck
 corepack pnpm --dir apps/desktop test:smoke
+corepack pnpm test:audio-worklet
 corepack pnpm test:five-peer-audio
+corepack pnpm test:five-peer-media
 corepack pnpm dist:win
 ```
 
 `test:five-peer-audio` 会自动创建 A–E 五个客户端，验证每个人的兜底音频都能路由给另外四个人，并验证第五人退出后现有成员仍可继续收音。旧的 `test:three-peer-audio` 命令保留为兼容别名。
+
+`test:five-peer-media` 会启动五个相互隔离的 Electron 页面，建立 10 条全互联
+WebRTC 连接并核对 20 条定向入站 RTP 流；测试还会让第五位成员晚加入，并销毁、
+重建一组连接验证双向恢复。它是发布闸门的一部分，但不能替代两台真实 Windows
+电脑和真实公网的最终验收。
+
+`test:audio-worklet` 会在真实 Electron 渲染进程中创建 48 kHz AudioContext 和
+AudioWorklet 节点，提前发现运行时或安全策略导致的降噪处理节点不可用。
 
 ## 诊断
 

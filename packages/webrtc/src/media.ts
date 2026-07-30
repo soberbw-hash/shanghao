@@ -1,5 +1,6 @@
 import {
   AudioDeviceState,
+  MICROPHONE_PROCESSING_SAMPLE_RATE,
   MicPermissionState,
   type AudioDeviceDescriptor,
   type AudioDeviceKind,
@@ -14,26 +15,27 @@ export const requestMicrophoneStream = async (
   stream: MediaStream;
   diagnostics: LocalAudioDiagnostics;
 }> => {
-  const requestedSampleRate =
-    overrides.preferredSampleRate && overrides.preferredSampleRate !== "auto"
-      ? Number(overrides.preferredSampleRate)
-      : 0;
+  const requestedSampleRate = MICROPHONE_PROCESSING_SAMPLE_RATE;
   let sampleRateFallbackApplied = false;
   let stream: MediaStream;
   try {
     stream = await navigator.mediaDevices.getUserMedia(createAudioConstraints(overrides));
   } catch (error) {
     const canRetryWithoutSampleRate =
-      requestedSampleRate > 0 &&
       error instanceof DOMException &&
       (error.name === "OverconstrainedError" || error.name === "NotReadableError");
     if (!canRetryWithoutSampleRate) {
       throw error;
     }
     sampleRateFallbackApplied = true;
-    stream = await navigator.mediaDevices.getUserMedia(
-      createAudioConstraints({ ...overrides, preferredSampleRate: "auto" }),
-    );
+    const fallbackConstraints = createAudioConstraints(overrides);
+    stream = await navigator.mediaDevices.getUserMedia({
+      ...fallbackConstraints,
+      audio: {
+        ...(fallbackConstraints.audio as MediaTrackConstraints),
+        sampleRate: undefined,
+      },
+    });
   }
   const [track] = stream.getAudioTracks();
   const settings = track?.getSettings() ?? {};
@@ -41,7 +43,7 @@ export const requestMicrophoneStream = async (
   return {
     stream,
     diagnostics: {
-      requestedSampleRate: requestedSampleRate || settings.sampleRate || 0,
+      requestedSampleRate,
       actualSampleRate: settings.sampleRate,
       sampleRateFallbackApplied,
       actualChannelCount: settings.channelCount,

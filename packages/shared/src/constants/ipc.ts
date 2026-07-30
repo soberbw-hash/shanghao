@@ -8,6 +8,9 @@ export const IPC_CHANNELS = {
   clipboard: {
     writeText: "clipboard:write-text",
   },
+  audio: {
+    getDeepFilterAssets: "audio:get-deepfilter-assets",
+  },
   screenCapture: {
     listSources: "screen-capture:list-sources",
     selectSource: "screen-capture:select-source",

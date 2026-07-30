@@ -319,6 +319,7 @@ export const RoomPage = () => {
     useState<ScreenShareQuality>("720p");
   const [isScreenSourcePickerOpen, setIsScreenSourcePickerOpen] = useState(false);
   const [isOverlayOpen, setIsOverlayOpen] = useState(false);
+  const [isNoiseSuppressionSwitching, setIsNoiseSuppressionSwitching] = useState(false);
   const [isDonationOpen, setIsDonationOpen] = useState(false);
   const [localKnockPulse, setLocalKnockPulse] = useState(0);
   const lastSeatZoneRef = useRef<SceneZoneId>("gameDesk1");
@@ -746,6 +747,44 @@ export const RoomPage = () => {
     pushToast({ tone: "success", title: "麦克风已切换", description: "新的输入设备已经生效。" });
   };
 
+  const toggleNoiseSuppression = async () => {
+    if (!settings || isNoiseSuppressionSwitching) return;
+    const isNoiseSuppressionEnabled = !settings.isNoiseSuppressionEnabled;
+    setIsNoiseSuppressionSwitching(true);
+    try {
+      await saveSettings({ isNoiseSuppressionEnabled });
+      await replaceInputDevice(settings.preferredInputDeviceId);
+      playUiSound("button-click");
+      pushToast({
+        tone: isNoiseSuppressionEnabled ? "success" : "neutral",
+        title: isNoiseSuppressionEnabled ? "降噪已开启" : "降噪已关闭",
+        description: isNoiseSuppressionEnabled
+          ? "DeepFilterNet 正在本机实时处理麦克风。"
+          : "现在发送麦克风原声。",
+      });
+      await window.desktopApi.app.writeLog({
+        category: "audio",
+        level: "info",
+        message: "deepfilter_user_toggle",
+        context: { enabled: isNoiseSuppressionEnabled },
+      });
+    } catch (error) {
+      pushToast({
+        tone: "danger",
+        title: "降噪切换失败",
+        description: "麦克风仍保持可用，请稍后重试。",
+      });
+      await window.desktopApi.app.writeLog({
+        category: "audio",
+        level: "error",
+        message: "deepfilter_user_toggle_failed",
+        context: { error: error instanceof Error ? error.message : String(error) },
+      });
+    } finally {
+      setIsNoiseSuppressionSwitching(false);
+    }
+  };
+
   const switchOutputDevice = async (preferredOutputDeviceId?: string) => {
     await saveSettings({ preferredOutputDeviceId });
     playUiSound("device-switch");
@@ -1036,6 +1075,26 @@ export const RoomPage = () => {
           </select>
         </label>
         <div className="flex-1" />
+        <Button
+          variant={settings?.isNoiseSuppressionEnabled ? "secondary" : "ghost"}
+          data-icon-motion="noise"
+          data-ui-sound="handled"
+          className={`voice-action-button-with-text noise-suppression-button ${
+            settings?.isNoiseSuppressionEnabled ? "is-active" : ""
+          }`}
+          disabled={!settings || isNoiseSuppressionSwitching}
+          aria-pressed={settings?.isNoiseSuppressionEnabled ?? false}
+          onClick={() => void toggleNoiseSuppression()}
+        >
+          <AnimatedControlIcon
+            name="noise"
+            active={settings?.isNoiseSuppressionEnabled}
+            className="h-4 w-4"
+          />
+          <span className="voice-action-label">
+            {isNoiseSuppressionSwitching ? "切换中" : "降噪"}
+          </span>
+        </Button>
         <RecordingButton
           isRecording={recordingStatus.state === RecordingState.Recording}
           onClick={() => void toggleRecording()}

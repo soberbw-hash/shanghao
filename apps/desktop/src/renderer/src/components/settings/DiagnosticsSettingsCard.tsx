@@ -52,11 +52,13 @@ export const DiagnosticsSettingsCard = ({
           ["抖动", `${Math.round(connectionHealth.jitterMs)} ms`],
           [
             "本地降噪",
-            localAudioDiagnostics?.noiseProcessor === "rnnoise_active"
-              ? "RNNoise 正常"
-              : localAudioDiagnostics?.noiseProcessor === "browser_fallback"
-                ? "浏览器基础降噪"
-                : "未启用",
+            localAudioDiagnostics?.noiseProcessor === "deepfilter_active"
+              ? "DeepFilterNet 正常"
+              : localAudioDiagnostics?.noiseProcessor === "deepfilter_loading"
+                ? "DeepFilterNet 加载中"
+                : localAudioDiagnostics?.noiseProcessor === "deepfilter_unavailable"
+                  ? "不可用，原声直通"
+                  : "已关闭",
           ],
         ].map(([label, value]) => (
           <div

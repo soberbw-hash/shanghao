@@ -11,7 +11,7 @@ import { defaultSettings, migrateSettings, type RawSettings } from "./settings-m
 const SETTINGS_BOM = "\uFEFF";
 
 export class SettingsStore {
-  private cachedSettings: AppSettings = defaultSettings;
+  private cachedSettings: AppSettings = migrateSettings(defaultSettings).settings;
   private readonly filePath = path.join(app.getPath("userData"), "settings.json");
   private readonly backupFilePath = path.join(app.getPath("userData"), "settings.backup.json");
 
@@ -46,7 +46,7 @@ export class SettingsStore {
       }
     }
 
-    this.cachedSettings = structuredClone(defaultSettings);
+    this.cachedSettings = migrateSettings(defaultSettings).settings;
     await this.persist(this.cachedSettings, false);
     await this.log("warn", "settings safe defaults restored", {
       schemaVersion: defaultSettings.settingsSchemaVersion,
@@ -69,7 +69,7 @@ export class SettingsStore {
       schemaVersion: this.cachedSettings.settingsSchemaVersion,
       avatarId: this.cachedSettings.avatarId,
       serverConfigured: Boolean(this.cachedSettings.relayServerUrl?.trim()),
-      preferredSampleRate: this.cachedSettings.preferredSampleRate,
+      microphoneProcessingSampleRate: 48_000,
       micMonitorMode: this.cachedSettings.micMonitorMode,
       inputLevelThreshold: this.cachedSettings.inputLevelThreshold,
       micEqualizerGains: this.cachedSettings.micEqualizerGains,
@@ -85,10 +85,10 @@ export class SettingsStore {
 
   async reset(): Promise<AppSettings> {
     await clearAvatarImage(this.cachedSettings.avatarPath);
-    this.cachedSettings = defaultSettings;
-    await this.persist(defaultSettings);
+    this.cachedSettings = migrateSettings(defaultSettings).settings;
+    await this.persist(this.cachedSettings);
     await this.log("info", "settings reset", {
-      schemaVersion: defaultSettings.settingsSchemaVersion,
+      schemaVersion: this.cachedSettings.settingsSchemaVersion,
     });
     return this.cachedSettings;
   }

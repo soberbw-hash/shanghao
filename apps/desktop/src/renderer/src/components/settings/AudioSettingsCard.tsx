@@ -81,15 +81,6 @@ export const AudioSettingsCard = ({
             onChange={(value) => onChange({ isPushToTalkEnabled: value === "ptt" })}
           />
         </SettingsItemRow>
-        <SettingsItemRow
-          label="智能降噪"
-          description="本地处理风扇、键盘和环境底噪，不会上传声音。"
-        >
-          <Switch
-            isChecked={settings.isNoiseSuppressionEnabled}
-            onChange={(isNoiseSuppressionEnabled) => onChange({ isNoiseSuppressionEnabled })}
-          />
-        </SettingsItemRow>
         <SettingsItemRow label="回声消除">
           <Switch
             isChecked={settings.isEchoCancellationEnabled}
@@ -136,22 +127,13 @@ export const AudioSettingsCard = ({
 
           {isAdvancedOpen ? (
             <div className="space-y-3 border-t border-[#E7ECF2] bg-white/70 p-3">
-              <SettingsItemRow label="采样率" description="设备不支持时会自动回退。">
-                <SegmentedControl
-                  value={settings.preferredSampleRate}
-                  options={[
-                    { value: "auto", label: "自动" },
-                    { value: "32000", label: "32 kHz" },
-                    { value: "44100", label: "44.1 kHz" },
-                    { value: "48000", label: "48 kHz" },
-                  ]}
-                  onChange={(preferredSampleRate) =>
-                    onChange({
-                      preferredSampleRate:
-                        preferredSampleRate as AppSettings["preferredSampleRate"],
-                    })
-                  }
-                />
+              <SettingsItemRow
+                label="降噪处理"
+                description="DeepFilterNet 固定使用 48 kHz，本地处理后再压缩传输。"
+              >
+                <span className="rounded-full border border-[#DCE8F5] bg-white px-3 py-1.5 text-xs font-semibold text-[#526579]">
+                  48 kHz
+                </span>
               </SettingsItemRow>
               <SettingsItemRow label="试音模式">
                 <SegmentedControl

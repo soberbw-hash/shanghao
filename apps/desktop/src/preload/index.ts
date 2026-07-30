@@ -12,6 +12,9 @@ const desktopApi: DesktopApi = {
   clipboard: {
     writeText: (text) => ipcRenderer.invoke(IPC_CHANNELS.clipboard.writeText, text),
   },
+  audio: {
+    getDeepFilterAssets: () => ipcRenderer.invoke(IPC_CHANNELS.audio.getDeepFilterAssets),
+  },
   screenCapture: {
     listSources: () => ipcRenderer.invoke(IPC_CHANNELS.screenCapture.listSources),
     selectSource: (sourceId) =>

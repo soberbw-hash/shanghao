@@ -1,4 +1,4 @@
-import { access, readFile } from "node:fs/promises";
+import { access, readFile, stat } from "node:fs/promises";
 import path from "node:path";
 
 import { listPackage } from "@electron/asar";
@@ -12,17 +12,23 @@ const entries = listPackage(archivePath, { isPack: false }).map((entry) =>
   entry.replaceAll("\\", "/"),
 );
 const fontEntries = entries.filter((entry) => entry.endsWith(".woff2"));
-const rnnoiseBundled =
-  entries.some((entry) => /\/dist\/assets\/rnnoiseProcessor\.worklet-.*\.js$/.test(entry)) &&
-  entries.includes("/node_modules/@shiguredo/rnnoise-wasm/dist/rnnoise.js");
 
 if (fontEntries.length === 0) throw new Error("Offline Noto Sans SC font was not bundled");
-if (!rnnoiseBundled) throw new Error("RNNoise runtime was not found in the packaged renderer");
+
+for (const [assetName, minimumBytes] of [
+  ["df_bg.wasm", 9_000_000],
+  ["DeepFilterNet3_onnx.tar.gz", 7_000_000],
+]) {
+  const assetPath = path.join(resourcesDirectory, "deepfilter", assetName);
+  await access(assetPath);
+  if ((await stat(assetPath)).size < minimumBytes) {
+    throw new Error(`DeepFilterNet asset is incomplete: ${assetName}`);
+  }
+}
 
 for (const licenseName of [
   "THIRD_PARTY_NOTICES.md",
-  "rnnoise-wasm-APACHE-2.0.txt",
-  "RNNOISE-BSD.txt",
+  "deepfilternet3-noise-filter-APACHE-2.0.txt",
   "NotoSansSC-OFL-1.1.txt",
 ]) {
   const licensePath = path.join(resourcesDirectory, "licenses", licenseName);
@@ -33,5 +39,5 @@ for (const licenseName of [
 }
 
 console.log(
-  `Packaged runtime verified: ${fontEntries.length} font files, RNNoise runtime, and all licenses`,
+  `Packaged runtime verified: ${fontEntries.length} font files, DeepFilterNet assets, and all licenses`,
 );

@@ -23,7 +23,7 @@ export interface SceneReaction {
   id: string;
   peerId: string;
   targetPeerId: string;
-  emoji: "👍" | "🔥" | "😂" | "❤️";
+  emoji: "👍" | "🔥" | "😂" | "❤️" | "👏" | "😭" | "😮" | "💀" | "🎉" | "👀";
   createdAt: string;
 }
 
@@ -34,6 +34,7 @@ export type MemberActivity = "idle" | "gaming" | "drinking" | "fitness" | "restr
 
 export interface RoomMember {
   id: string;
+  profileId?: string;
   nickname: string;
   avatarPath?: string;
   avatarDataUrl?: string;

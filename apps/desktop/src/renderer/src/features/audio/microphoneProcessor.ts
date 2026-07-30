@@ -1,11 +1,13 @@
 import type {
   AppSettings,
+  DeepFilterAssets,
   LocalAudioDiagnostics,
   LowCutFrequency,
   MicEqualizerGains,
 } from "@private-voice/shared";
+import { MICROPHONE_PROCESSING_SAMPLE_RATE } from "@private-voice/shared";
+import { DeepFilterNet3Core } from "deepfilternet3-noise-filter";
 
-import rnnoiseWorkletUrl from "./rnnoiseProcessor.worklet.ts?worker&url";
 import { FOURTH_ORDER_BUTTERWORTH_Q } from "./filterMath";
 
 export const MICROPHONE_EQ_FREQUENCIES = [80, 250, 1_000, 4_000, 12_000] as const;
@@ -16,28 +18,95 @@ export interface ProcessedMicrophoneStream {
     LocalAudioDiagnostics,
     "noiseProcessor" | "processorOverruns" | "averageProcessingMs" | "maxProcessingMs"
   >;
+  ready: Promise<ProcessedMicrophoneStream["processorDiagnostics"]>;
   dispose: () => void;
 }
 
-interface RnnoiseNodeResult {
+interface DeepFilterAssetLoader {
+  getAssetUrls: () => {
+    wasm: string;
+    model: string;
+  };
+  fetchAsset: (url: string) => Promise<ArrayBuffer>;
+}
+
+interface DeepFilterCoreInternals {
+  assetLoader: DeepFilterAssetLoader;
+}
+
+interface DeepFilterNodeResult {
+  core: DeepFilterNet3Core;
   node: AudioWorkletNode;
-  dispose: () => void;
 }
 
-interface RnnoiseMessage {
-  type?: "ready" | "failed" | "diagnostics" | "overloaded";
-  error?: string;
-  processorOverruns?: number;
-  averageProcessingMs?: number;
-  maxProcessingMs?: number;
-}
+const DEEPFILTER_SAMPLE_RATE = MICROPHONE_PROCESSING_SAMPLE_RATE;
+const DEEPFILTER_SUPPRESSION_LEVEL = 80;
+const PROCESSOR_CROSSFADE_SECONDS = 0.06;
 
-const RNNOISE_INIT_TIMEOUT_MS = 5_000;
+let deepFilterAssetsPromise: Promise<DeepFilterAssets> | undefined;
 
-const announceBrowserFallback = (reason: string): void => {
-  window.dispatchEvent(
-    new CustomEvent("shanghao:audio-processor-fallback", { detail: { reason } }),
-  );
+const loadDeepFilterAssets = (): Promise<DeepFilterAssets> => {
+  deepFilterAssetsPromise ??= window.desktopApi.audio.getDeepFilterAssets().catch((error) => {
+    deepFilterAssetsPromise = undefined;
+    throw error;
+  });
+  return deepFilterAssetsPromise;
+};
+
+export const prewarmDeepFilterAssets = async (): Promise<void> => {
+  const assets = await loadDeepFilterAssets();
+  if (assets.wasm.byteLength === 0 || assets.model.byteLength === 0) {
+    deepFilterAssetsPromise = undefined;
+    throw new Error("deepfilter_assets_empty");
+  }
+};
+
+const announceDeepFilterUnavailable = (reason: string): void => {
+  window.dispatchEvent(new CustomEvent("shanghao:deepfilter-unavailable", { detail: { reason } }));
+};
+
+const crossfade = (context: AudioContext, from: GainNode, to: GainNode): void => {
+  const now = context.currentTime;
+  from.gain.cancelScheduledValues(now);
+  to.gain.cancelScheduledValues(now);
+  from.gain.setValueAtTime(from.gain.value, now);
+  to.gain.setValueAtTime(to.gain.value, now);
+  from.gain.linearRampToValueAtTime(0, now + PROCESSOR_CROSSFADE_SECONDS);
+  to.gain.linearRampToValueAtTime(1, now + PROCESSOR_CROSSFADE_SECONDS);
+};
+
+const createDeepFilterNode = async (context: AudioContext): Promise<DeepFilterNodeResult> => {
+  if (!context.audioWorklet) {
+    throw new Error("audio_worklet_unavailable");
+  }
+
+  const core = new DeepFilterNet3Core({
+    sampleRate: DEEPFILTER_SAMPLE_RATE,
+    noiseReductionLevel: DEEPFILTER_SUPPRESSION_LEVEL,
+    assetConfig: { cdnUrl: "shanghao://deepfilter" },
+  });
+  const loader: DeepFilterAssetLoader = {
+    getAssetUrls: () => ({
+      wasm: "shanghao://deepfilter/df_bg.wasm",
+      model: "shanghao://deepfilter/DeepFilterNet3_onnx.tar.gz",
+    }),
+    fetchAsset: async (url) => {
+      const assets = await loadDeepFilterAssets();
+      return url.endsWith(".wasm") ? assets.wasm : assets.model;
+    },
+  };
+  (core as unknown as DeepFilterCoreInternals).assetLoader = loader;
+
+  try {
+    await core.initialize();
+    const node = await core.createAudioWorkletNode(context);
+    core.setNoiseSuppressionEnabled(true);
+    core.setSuppressionLevel(DEEPFILTER_SUPPRESSION_LEVEL);
+    return { core, node };
+  } catch (error) {
+    core.destroy();
+    throw error;
+  }
 };
 
 export const normalizeEqualizerGains = (gains?: number[]): MicEqualizerGains =>
@@ -89,94 +158,16 @@ export const connectMicrophoneEqualizer = (
   return currentNode;
 };
 
-const enableBrowserNoiseSuppression = async (stream: MediaStream): Promise<void> => {
-  const [track] = stream.getAudioTracks();
-  if (!track) {
-    return;
-  }
-  await track.applyConstraints({ noiseSuppression: true }).catch(() => undefined);
-};
-
-const createRnnoiseNode = async (
-  context: AudioContext,
-  inputStream: MediaStream,
-  diagnostics: ProcessedMicrophoneStream["processorDiagnostics"],
-): Promise<RnnoiseNodeResult> => {
-  if (!context.audioWorklet) {
-    throw new Error("audio_worklet_unavailable");
-  }
-
-  await context.audioWorklet.addModule(rnnoiseWorkletUrl);
-  const node = new AudioWorkletNode(context, "shanghao-rnnoise", {
-    numberOfInputs: 1,
-    numberOfOutputs: 1,
-    outputChannelCount: [1],
-    channelCount: 1,
-  });
-
-  const ready = new Promise<void>((resolve, reject) => {
-    const timeout = window.setTimeout(() => {
-      reject(new Error("rnnoise_init_timeout"));
-    }, RNNOISE_INIT_TIMEOUT_MS);
-
-    node.port.onmessage = (event: MessageEvent<RnnoiseMessage>) => {
-      const message = event.data;
-      if (message.type === "ready") {
-        window.clearTimeout(timeout);
-        diagnostics.noiseProcessor = "rnnoise_active";
-        resolve();
-        return;
-      }
-      if (message.type === "failed") {
-        window.clearTimeout(timeout);
-        diagnostics.noiseProcessor = "browser_fallback";
-        void enableBrowserNoiseSuppression(inputStream);
-        reject(new Error(message.error || "rnnoise_init_failed"));
-        return;
-      }
-      if (message.type === "diagnostics") {
-        diagnostics.processorOverruns = message.processorOverruns ?? 0;
-        diagnostics.averageProcessingMs = message.averageProcessingMs ?? 0;
-        diagnostics.maxProcessingMs = message.maxProcessingMs ?? 0;
-        return;
-      }
-      if (message.type === "overloaded") {
-        diagnostics.noiseProcessor = "browser_fallback";
-        diagnostics.processorOverruns = message.processorOverruns ?? 0;
-        diagnostics.averageProcessingMs = message.averageProcessingMs ?? 0;
-        diagnostics.maxProcessingMs = message.maxProcessingMs ?? 0;
-        void enableBrowserNoiseSuppression(inputStream);
-        announceBrowserFallback("processor_overloaded");
-      }
-    };
-  });
-
-  try {
-    await ready;
-    return {
-      node,
-      dispose: () => {
-        node.port.postMessage({ type: "dispose" });
-        node.disconnect();
-      },
-    };
-  } catch (error) {
-    node.port.postMessage({ type: "dispose" });
-    node.disconnect();
-    throw error;
-  }
-};
-
 export const createProcessedMicrophoneStream = async (
   inputStream: MediaStream,
   settings: Pick<
     AppSettings,
-    "micEqualizerGains" | "preferredSampleRate" | "lowCutFrequency" | "isNoiseSuppressionEnabled"
+    "micEqualizerGains" | "lowCutFrequency" | "isNoiseSuppressionEnabled"
   >,
 ): Promise<ProcessedMicrophoneStream> => {
   const gains = normalizeEqualizerGains(settings.micEqualizerGains);
   const processorDiagnostics: ProcessedMicrophoneStream["processorDiagnostics"] = {
-    noiseProcessor: settings.isNoiseSuppressionEnabled ? "browser_fallback" : "bypass",
+    noiseProcessor: settings.isNoiseSuppressionEnabled ? "deepfilter_loading" : "bypass",
     processorOverruns: 0,
     averageProcessingMs: 0,
     maxProcessingMs: 0,
@@ -190,41 +181,94 @@ export const createProcessedMicrophoneStream = async (
     return {
       stream: inputStream,
       processorDiagnostics,
+      ready: Promise.resolve({ ...processorDiagnostics }),
       dispose: () => inputStream.getTracks().forEach((track) => track.stop()),
     };
   }
 
   const context = new AudioContext({
     latencyHint: "interactive",
-    sampleRate:
-      settings.preferredSampleRate === "auto" ? undefined : Number(settings.preferredSampleRate),
+    sampleRate: DEEPFILTER_SAMPLE_RATE,
   });
   await context.resume();
+
   const source = context.createMediaStreamSource(inputStream);
   const destination = context.createMediaStreamDestination();
   const filtered = connectMicrophoneEqualizer(context, source, gains, settings.lowCutFrequency);
+  const rawGain = context.createGain();
+  rawGain.gain.value = 1;
+  filtered.connect(rawGain);
+  rawGain.connect(destination);
 
-  let output: AudioNode = filtered;
-  let disposeProcessor: () => void = () => undefined;
+  let disposed = false;
+  let activeProcessor: DeepFilterNodeResult | undefined;
+  let processedGain: GainNode | undefined;
+  let resolveReady:
+    ((diagnostics: ProcessedMicrophoneStream["processorDiagnostics"]) => void) | undefined;
+  const ready = new Promise<ProcessedMicrophoneStream["processorDiagnostics"]>((resolve) => {
+    resolveReady = resolve;
+  });
+
   if (settings.isNoiseSuppressionEnabled) {
-    try {
-      const rnnoise = await createRnnoiseNode(context, inputStream, processorDiagnostics);
-      filtered.connect(rnnoise.node);
-      output = rnnoise.node;
-      disposeProcessor = rnnoise.dispose;
-    } catch {
-      processorDiagnostics.noiseProcessor = "browser_fallback";
-      await enableBrowserNoiseSuppression(inputStream);
-      announceBrowserFallback("processor_unavailable");
-    }
+    void createDeepFilterNode(context)
+      .then((processor) => {
+        if (disposed) {
+          processor.core.destroy();
+          return;
+        }
+
+        const gain = context.createGain();
+        gain.gain.value = 0;
+        filtered.connect(processor.node);
+        processor.node.connect(gain);
+        gain.connect(destination);
+        activeProcessor = processor;
+        processedGain = gain;
+        processorDiagnostics.noiseProcessor = "deepfilter_active";
+        crossfade(context, rawGain, gain);
+        resolveReady?.({ ...processorDiagnostics });
+        resolveReady = undefined;
+
+        processor.node.onprocessorerror = () => {
+          if (disposed || processorDiagnostics.noiseProcessor === "deepfilter_unavailable") {
+            return;
+          }
+          processorDiagnostics.noiseProcessor = "deepfilter_unavailable";
+          crossfade(context, gain, rawGain);
+          resolveReady?.({ ...processorDiagnostics });
+          resolveReady = undefined;
+          announceDeepFilterUnavailable("processor_runtime_error");
+        };
+      })
+      .catch((error) => {
+        if (disposed) return;
+        processorDiagnostics.noiseProcessor = "deepfilter_unavailable";
+        resolveReady?.({ ...processorDiagnostics });
+        resolveReady = undefined;
+        announceDeepFilterUnavailable(
+          error instanceof Error ? error.message : "processor_initialization_failed",
+        );
+      });
+  } else {
+    resolveReady?.({ ...processorDiagnostics });
+    resolveReady = undefined;
   }
-  output.connect(destination);
 
   return {
     stream: destination.stream,
     processorDiagnostics,
+    ready,
     dispose: () => {
-      disposeProcessor();
+      disposed = true;
+      resolveReady?.({ ...processorDiagnostics });
+      resolveReady = undefined;
+      if (activeProcessor) {
+        activeProcessor.node.onprocessorerror = null;
+        activeProcessor.node.disconnect();
+        activeProcessor.core.destroy();
+      }
+      processedGain?.disconnect();
+      rawGain.disconnect();
       inputStream.getTracks().forEach((track) => track.stop());
       destination.stream.getTracks().forEach((track) => track.stop());
       void context.close().catch(() => undefined);

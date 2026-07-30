@@ -47,16 +47,18 @@ import {
 import { writeRendererLog } from "../../utils/logger";
 import { AudioFallbackController } from "../audio/AudioFallbackController";
 import { clampMemberVolume } from "../audio/memberVolume";
+import { getRemoteAudioMixer } from "../audio/RemoteAudioMixer";
 import { hasPlayableAudioTrack } from "../audio/remoteAudioTrack";
 import { PeerStatsMonitor } from "./PeerStatsMonitor";
 import { buildRoomDiagnostics } from "./RoomDiagnostics";
-import { isPeerAudioPathReady } from "./peerAudioPath";
+import { isPeerAudioPathReady, shouldSendAudioRelay } from "./peerAudioPath";
 import { normalizePresenceGameName } from "./presenceSignal";
 
 interface RoomClientOptions {
   signalingUrl: string;
   roomId: string;
   peerId: string;
+  profileId: string;
   nickname: string;
   avatarDataUrl?: string;
   avatarId?: BuiltInAvatarId;
@@ -99,6 +101,8 @@ export interface RemoteScreenFrame {
 
 const INITIAL_CONNECT_TIMEOUT_MS = 10_000;
 const SNAPSHOT_RETRY_TIMEOUT_MS = 5_000;
+const AUDIO_PATH_SYNC_INTERVAL_MS = 3_000;
+const AUDIO_RELAY_WARMUP_MS = 12_000;
 const SCREEN_FRAME_INTERVAL_MS = 2_500;
 const SCREEN_FRAME_MAX_WIDTH = 480;
 const SCREEN_FRAME_MAX_BYTES = 48 * 1024;
@@ -109,6 +113,7 @@ export class RoomClient {
   private readonly peers = new Map<string, MeshPeerConnection>();
   private readonly peerVolumes = new Map<string, number>();
   private heartbeatTimer?: number;
+  private audioPathSyncTimer?: number;
   private snapshotRetryTimer?: number;
   private reconnectTimer?: number;
   private shouldReconnect = true;
@@ -138,6 +143,7 @@ export class RoomClient {
   private readonly webrtcScreenPeerIds = new Set<string>();
   private readonly relayRequestedByPeerIds = new Set<string>();
   private readonly advertisedRelayNeeds = new Map<string, boolean>();
+  private readonly relayWarmupUntilByPeerId = new Map<string, number>();
   private readonly remoteSharingPeerIds = new Set<string>();
   private readonly screenRelayRequestedByPeerIds = new Set<string>();
   private readonly advertisedScreenRelayNeeds = new Map<string, boolean>();
@@ -227,6 +233,7 @@ export class RoomClient {
     this.clearPendingConnection();
     this.stopSnapshotRecovery();
     this.stopHeartbeat();
+    this.stopAudioPathSync();
     this.stopPeerStats();
     if (this.reconnectTimer) {
       window.clearTimeout(this.reconnectTimer);
@@ -301,6 +308,13 @@ export class RoomClient {
       peerRecoveryAttempts: Object.fromEntries(this.peerRecoveryAttempts),
       peerConnectionStats: this.peerStatsMonitor.getStats(),
       peerAdaptationTiers: this.peerStatsMonitor.getAdaptationTiers(),
+      peerAudioPaths: Object.fromEntries(
+        [...this.remotePeerIds].map((peerId) => [
+          peerId,
+          this.webrtcReadyPeerIds.has(peerId) ? "webrtc" : "relay",
+        ]),
+      ),
+      remoteAudioMixer: getRemoteAudioMixer().getDiagnostics(),
       turnConfigured: this.hasTurnServer,
     });
   }
@@ -418,6 +432,7 @@ export class RoomClient {
         roomId: this.options.roomId,
         channelId: this.options.roomId,
         peerId: this.options.peerId,
+        profileId: this.options.profileId,
         nickname: this.nickname,
         avatarId: this.avatarId ?? "fox",
         appVersion: this.options.appVersion,
@@ -452,6 +467,7 @@ export class RoomClient {
       this.lastSocketCloseReason = payload.reason;
       this.lastSocketClosedAt = new Date().toISOString();
       this.stopHeartbeat();
+      this.stopAudioPathSync();
       this.stopSnapshotRecovery();
       this.isSignalingConnected = false;
       this.joinAckReceived = false;
@@ -740,13 +756,23 @@ export class RoomClient {
         .filter((member) => member.id !== this.options.peerId)
         .map((member) => member.id),
     );
+    const previousRemotePeerIds = new Set(this.remotePeerIds);
     this.remotePeerIds.clear();
     activePeerIds.forEach((peerId) => this.remotePeerIds.add(peerId));
+    const now = Date.now();
+    for (const peerId of activePeerIds) {
+      if (!previousRemotePeerIds.has(peerId)) {
+        this.relayWarmupUntilByPeerId.set(peerId, now + AUDIO_RELAY_WARMUP_MS);
+      }
+    }
     for (const peerId of [...this.relayRequestedByPeerIds]) {
       if (!activePeerIds.has(peerId)) this.relayRequestedByPeerIds.delete(peerId);
     }
     for (const peerId of [...this.advertisedRelayNeeds.keys()]) {
       if (!activePeerIds.has(peerId)) this.advertisedRelayNeeds.delete(peerId);
+    }
+    for (const peerId of [...this.relayWarmupUntilByPeerId.keys()]) {
+      if (!activePeerIds.has(peerId)) this.relayWarmupUntilByPeerId.delete(peerId);
     }
     for (const peerId of [...this.remoteSharingPeerIds]) {
       if (!activePeerIds.has(peerId)) this.remoteSharingPeerIds.delete(peerId);
@@ -758,6 +784,7 @@ export class RoomClient {
       if (!activePeerIds.has(peerId)) this.advertisedScreenRelayNeeds.delete(peerId);
     }
     this.startAudioRelay();
+    this.startAudioPathSync();
     this.updateAudioRelaySending();
     for (const peerId of activePeerIds) {
       this.advertiseAudioPathState(peerId, !this.webrtcReadyPeerIds.has(peerId), "snapshot_sync");
@@ -779,6 +806,7 @@ export class RoomClient {
         this.pendingIceCandidates.delete(peerId);
         this.relayRequestedByPeerIds.delete(peerId);
         this.advertisedRelayNeeds.delete(peerId);
+        this.relayWarmupUntilByPeerId.delete(peerId);
         this.remoteSharingPeerIds.delete(peerId);
         this.screenRelayRequestedByPeerIds.delete(peerId);
         this.advertisedScreenRelayNeeds.delete(peerId);
@@ -1194,8 +1222,19 @@ export class RoomClient {
   }
 
   private getAudioRelayTargetPeerIds(): string[] {
-    return [...this.remotePeerIds].filter(
-      (peerId) => !this.webrtcReadyPeerIds.has(peerId) || this.relayRequestedByPeerIds.has(peerId),
+    const now = Date.now();
+    return [...this.remotePeerIds].filter((peerId) =>
+      shouldSendAudioRelay({
+        evidence: {
+          isConnected: this.webrtcConnectedPeerIds.has(peerId),
+          hasAudioTrack: this.webrtcAudioPeerIds.has(peerId),
+          hasInboundRtpFlow: this.webrtcFlowingPeerIds.has(peerId),
+          isStalled: this.webrtcStalledPeerIds.has(peerId),
+        },
+        isRelayRequested: this.relayRequestedByPeerIds.has(peerId),
+        nowMs: now,
+        relayWarmupUntilMs: this.relayWarmupUntilByPeerId.get(peerId),
+      }),
     );
   }
 
@@ -1215,9 +1254,8 @@ export class RoomClient {
   }
 
   private getScreenRelayTargetPeerIds(): string[] {
-    return [...this.remotePeerIds].filter(
-      (peerId) =>
-        !this.webrtcReadyPeerIds.has(peerId) || this.screenRelayRequestedByPeerIds.has(peerId),
+    return [...this.screenRelayRequestedByPeerIds].filter((peerId) =>
+      this.remotePeerIds.has(peerId),
     );
   }
 
@@ -1457,9 +1495,14 @@ export class RoomClient {
     }
   }
 
-  private advertiseAudioPathState(targetPeerId: string, needsRelay: boolean, reason: string): void {
+  private advertiseAudioPathState(
+    targetPeerId: string,
+    needsRelay: boolean,
+    reason: string,
+    force = false,
+  ): void {
     if (!this.isSignalingConnected || !this.remotePeerIds.has(targetPeerId)) return;
-    if (this.advertisedRelayNeeds.get(targetPeerId) === needsRelay) return;
+    if (!force && this.advertisedRelayNeeds.get(targetPeerId) === needsRelay) return;
     this.advertisedRelayNeeds.set(targetPeerId, needsRelay);
     void this.safeSend({
       type: "audio_path_state",
@@ -1607,6 +1650,33 @@ export class RoomClient {
     this.stopPeerStats();
   }
 
+  private startAudioPathSync(): void {
+    if (this.audioPathSyncTimer) return;
+    this.refreshAudioPathHandshake("path_sync_started");
+    this.audioPathSyncTimer = window.setInterval(
+      () => this.refreshAudioPathHandshake("path_sync_heartbeat"),
+      AUDIO_PATH_SYNC_INTERVAL_MS,
+    );
+  }
+
+  private stopAudioPathSync(): void {
+    if (this.audioPathSyncTimer) {
+      window.clearInterval(this.audioPathSyncTimer);
+      this.audioPathSyncTimer = undefined;
+    }
+  }
+
+  private refreshAudioPathHandshake(reason: string): void {
+    const now = Date.now();
+    for (const [peerId, warmupUntil] of this.relayWarmupUntilByPeerId) {
+      if (warmupUntil <= now) this.relayWarmupUntilByPeerId.delete(peerId);
+    }
+    for (const peerId of this.remotePeerIds) {
+      this.advertiseAudioPathState(peerId, !this.webrtcReadyPeerIds.has(peerId), reason, true);
+    }
+    this.updateAudioRelaySending();
+  }
+
   private startPeerStats(): void {
     this.peerStatsMonitor.start();
   }
@@ -1725,6 +1795,7 @@ export class RoomClient {
   }
 
   private clearPeers(): void {
+    this.stopAudioPathSync();
     const existingPeers = [...this.peers];
     this.peers.clear();
     for (const [peerId, peer] of existingPeers) {
@@ -1744,6 +1815,7 @@ export class RoomClient {
     this.peerOperationQueues.clear();
     this.relayRequestedByPeerIds.clear();
     this.advertisedRelayNeeds.clear();
+    this.relayWarmupUntilByPeerId.clear();
     this.remoteSharingPeerIds.clear();
     this.screenRelayRequestedByPeerIds.clear();
     this.advertisedScreenRelayNeeds.clear();
