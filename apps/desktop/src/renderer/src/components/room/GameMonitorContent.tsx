@@ -36,7 +36,7 @@ interface GameArtwork {
   layout: "capsule" | "mark";
 }
 
-export const gameArtworkCatalog: Record<SupportedGameName, GameArtwork> = {
+export const gameArtworkCatalog: Partial<Record<SupportedGameName, GameArtwork>> = {
   我的世界: { src: minecraftArtwork, shortLabel: "我的世界", layout: "mark" },
   王国保卫战: { src: kingdomRushArtwork, shortLabel: "王国保卫战", layout: "capsule" },
   杀戮尖塔: { src: slayTheSpireArtwork, shortLabel: "杀戮尖塔", layout: "capsule" },
@@ -80,11 +80,9 @@ export const gameArtworkCatalog: Record<SupportedGameName, GameArtwork> = {
   },
 };
 
-const isSupportedGameName = (gameName: string): gameName is SupportedGameName =>
-  Object.prototype.hasOwnProperty.call(gameArtworkCatalog, gameName);
-
 export const GameMonitorContent = ({ gameName }: { gameName: string }) => {
-  if (!isSupportedGameName(gameName)) {
+  const artwork = gameArtworkCatalog[gameName as SupportedGameName];
+  if (!artwork) {
     return (
       <span className="scene-game-monitor-content scene-game-monitor-content--fallback">
         <Gamepad2 aria-hidden="true" />
@@ -93,7 +91,6 @@ export const GameMonitorContent = ({ gameName }: { gameName: string }) => {
     );
   }
 
-  const artwork = gameArtworkCatalog[gameName];
   return (
     <span
       className={`scene-game-monitor-content scene-game-monitor-content--${artwork.layout}`}

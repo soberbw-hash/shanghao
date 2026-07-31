@@ -11,6 +11,7 @@ export interface ProcessSnapshot {
   ProcessName?: string;
   MainWindowTitle?: string;
   Path?: string;
+  CommandLine?: string;
 }
 
 interface GameRule {
@@ -18,10 +19,78 @@ interface GameRule {
   processNames: string[];
   titleNeedles?: string[];
   pathNeedles?: string[];
+  commandLineNeedles?: string[];
   evidenceRequiredProcessNames?: string[];
 }
 
+const KK_SHARED_GAME_HOSTS = [
+  "war3",
+  "war3n",
+  "warcraft iii",
+  "warcraft_iii",
+  "y3",
+  "y3game",
+  "game",
+  "game_x64h",
+];
+
 const GAME_RULES: GameRule[] = [
+  {
+    name: "向魔兽开炮",
+    processNames: KK_SHARED_GAME_HOSTS,
+    titleNeedles: ["向魔兽开炮", "205715"],
+    pathNeedles: ["向魔兽开炮", "205715"],
+    commandLineNeedles: ["向魔兽开炮", "205715"],
+    evidenceRequiredProcessNames: KK_SHARED_GAME_HOSTS,
+  },
+  {
+    name: "尸潮庇护所",
+    processNames: KK_SHARED_GAME_HOSTS,
+    titleNeedles: ["尸潮庇护所", "最后的避难所3", "最后的避难所 3", "199168"],
+    pathNeedles: ["尸潮庇护所", "最后的避难所3", "最后的避难所 3", "199168"],
+    commandLineNeedles: ["尸潮庇护所", "最后的避难所3", "最后的避难所 3", "199168"],
+    evidenceRequiredProcessNames: KK_SHARED_GAME_HOSTS,
+  },
+  {
+    name: "DotA 1",
+    processNames: ["war3", "war3n", "warcraft iii", "warcraft_iii"],
+    titleNeedles: ["dota allstars", "dota 1", "dota1"],
+    pathNeedles: ["dota allstars", "dota1"],
+    commandLineNeedles: ["dota allstars", "dota 1", "dota1"],
+    evidenceRequiredProcessNames: ["war3", "war3n", "warcraft iii", "warcraft_iii"],
+  },
+  {
+    name: "魔兽争霸 3",
+    processNames: ["war3", "war3n", "warcraft iii", "warcraft_iii"],
+  },
+  {
+    name: "KK RPG",
+    processNames: ["game_x64h"],
+  },
+  {
+    name: "CS 1.6",
+    processNames: ["hl", "cstrike", "cs16"],
+    titleNeedles: ["counter-strike", "反恐精英", "cs 1.6", "cs1.6"],
+    pathNeedles: ["counter-strike", "cstrike", "cs1.6"],
+    commandLineNeedles: ["-game cstrike", "counter-strike", "cs1.6"],
+    evidenceRequiredProcessNames: ["hl"],
+  },
+  {
+    name: "红色警戒 2",
+    processNames: ["gamemd", "ra2", "ra2md", "redalert2"],
+  },
+  {
+    name: "拳皇 97",
+    processNames: ["kkemulator", "mame32", "mame64", "winkawaks", "kawaks"],
+    titleNeedles: ["拳皇", "kof97", "king of fighters"],
+    pathNeedles: ["kof97", "king of fighters"],
+    commandLineNeedles: ["kof97", "king of fighters"],
+    evidenceRequiredProcessNames: ["kkemulator", "mame32", "mame64", "winkawaks", "kawaks"],
+  },
+  {
+    name: "星际争霸",
+    processNames: ["starcraft", "starcraft remastered", "starcraftremastered"],
+  },
   {
     name: "我的世界",
     processNames: ["minecraft.windows", "minecraftlauncher", "minecraft launcher", "javaw"],
@@ -46,6 +115,34 @@ const GAME_RULES: GameRule[] = [
   {
     name: "三角洲行动",
     processNames: ["deltaforce", "deltaforceclient-win64-shipping", "delta force"],
+  },
+  { name: "穿越火线", processNames: ["crossfire", "crossfire_cn", "crossfire64"] },
+  { name: "地下城与勇士", processNames: ["dnf", "dnfchina", "dnfmain"] },
+  {
+    name: "魔兽世界",
+    processNames: ["wow", "wowclassic", "wowclassicera", "wowclassic_t"],
+  },
+  { name: "炉石传说", processNames: ["hearthstone"] },
+  { name: "燕云十六声", processNames: ["wherewindsmeet", "where winds meet"] },
+  {
+    name: "鸣潮",
+    processNames: ["wutheringwaves", "wuthering waves", "wutheringwaves-win64-shipping"],
+  },
+  { name: "绝区零", processNames: ["zenlesszonezero", "zenless zone zero"] },
+  {
+    name: "暗区突围：无限",
+    processNames: ["uagame", "uagame-win64-shipping", "arenabreakoutinfinite"],
+  },
+  { name: "逃离塔科夫", processNames: ["escapefromtarkov"] },
+  {
+    name: "极限竞速：地平线 5",
+    processNames: ["forzahorizon5", "forza horizon 5"],
+  },
+  { name: "赛博朋克 2077", processNames: ["cyberpunk2077"] },
+  { name: "巫师 3", processNames: ["witcher3"] },
+  {
+    name: "战地风云",
+    processNames: ["bf1", "bfv", "bf2042", "battlefield2042", "battlefield 2042"],
   },
   { name: "CS2", processNames: ["cs2"] },
   { name: "Dota 2", processNames: ["dota2"] },
@@ -111,6 +208,7 @@ export const matchKnownGame = (
     );
     const title = (processInfo.MainWindowTitle ?? "").toLowerCase();
     const processPath = (processInfo.Path ?? "").toLowerCase();
+    const commandLine = (processInfo.CommandLine ?? "").toLowerCase();
 
     for (const rule of GAME_RULES) {
       const processMatched = rule.processNames.some((candidate) => {
@@ -126,7 +224,8 @@ export const matchKnownGame = (
       if (
         requiresEvidence &&
         !includesAny(title, rule.titleNeedles) &&
-        !includesAny(processPath, rule.pathNeedles)
+        !includesAny(processPath, rule.pathNeedles) &&
+        !includesAny(commandLine, rule.commandLineNeedles)
       ) {
         continue;
       }
@@ -136,15 +235,32 @@ export const matchKnownGame = (
   return undefined;
 };
 
-export const buildGameDetectionProbeCommand = (): string =>
-  [
+export const buildGameDetectionProbeCommand = (): string => {
+  const commandLineProcessNames = Array.from(
+    new Set(
+      GAME_RULES.flatMap((rule) => rule.evidenceRequiredProcessNames ?? []).map(
+        normalizeProcessName,
+      ),
+    ),
+  );
+  const processNameArray = commandLineProcessNames
+    .map((processName) => `'${processName.replace(/'/g, "''")}'`)
+    .join(",");
+
+  return [
     "$ErrorActionPreference='SilentlyContinue'",
+    `$commandLineProcessNames=@(${processNameArray})`,
     "Get-Process | ForEach-Object {",
     "  $processPath = ''",
+    "  $commandLine = ''",
     "  try { $processPath = $_.Path } catch {}",
-    "  [PSCustomObject]@{ ProcessName=$_.ProcessName; MainWindowTitle=$_.MainWindowTitle; Path=$processPath }",
+    "  if ($commandLineProcessNames -contains $_.ProcessName.ToLowerInvariant()) {",
+    '    try { $processDetails = Get-CimInstance Win32_Process -Filter "ProcessId=$($_.Id)"; $commandLine = $processDetails.CommandLine; if (-not $processPath) { $processPath = $processDetails.ExecutablePath } } catch {}',
+    "  }",
+    "  [PSCustomObject]@{ ProcessName=$_.ProcessName; MainWindowTitle=$_.MainWindowTitle; Path=$processPath; CommandLine=$commandLine }",
     "} | ConvertTo-Json -Compress",
   ].join("; ");
+};
 
 const detectKnownGame = async (): Promise<GameDetectionSnapshot["gameName"]> => {
   if (process.platform !== "win32") return undefined;

@@ -6,8 +6,8 @@ import { fileURLToPath } from "node:url";
 
 import { buildGameDetectionProbeCommand, matchKnownGame } from "../src/main/game-detection";
 
-const snapshot = (ProcessName: string, MainWindowTitle = "", Path = ""): string =>
-  JSON.stringify({ ProcessName, MainWindowTitle, Path });
+const snapshot = (ProcessName: string, MainWindowTitle = "", Path = "", CommandLine = ""): string =>
+  JSON.stringify({ ProcessName, MainWindowTitle, Path, CommandLine });
 
 test("game detection uses structured exact process matches", () => {
   assert.equal(matchKnownGame(snapshot("LostCastle2-Win64-Shipping")), "失落城堡 2");
@@ -21,6 +21,103 @@ test("game detection uses structured exact process matches", () => {
   assert.equal(matchKnownGame(snapshot("b1")), undefined);
   assert.equal(matchKnownGame(snapshot("playgtav")), undefined);
   assert.equal(matchKnownGame("LostCastle2\r\nexplorer"), undefined);
+});
+
+test("KK launcher alone never reports a game", () => {
+  assert.equal(
+    matchKnownGame(
+      snapshot(
+        "KK",
+        "KK 对战平台 - 向魔兽开炮",
+        "C:\\Program Files\\KK\\KK.exe",
+        '"C:\\Program Files\\KK\\KK.exe" --map 向魔兽开炮',
+      ),
+    ),
+    undefined,
+  );
+  assert.equal(
+    matchKnownGame(snapshot("KKGameBox", "尸潮庇护所", "C:\\Games\\KK\\KKGameBox.exe")),
+    undefined,
+  );
+  assert.equal(
+    matchKnownGame(
+      snapshot(
+        "Platform",
+        "KK 官方对战平台 - 向魔兽开炮",
+        "C:\\Program Files (x86)\\kkduizhan\\Platform.exe",
+      ),
+    ),
+    undefined,
+  );
+});
+
+test("KK hosted games require a real game process and prefer the exact map", () => {
+  assert.equal(
+    matchKnownGame(
+      snapshot(
+        "war3",
+        "",
+        "D:\\KK\\Games\\Warcraft III\\war3.exe",
+        '"D:\\KK\\Games\\Warcraft III\\war3.exe" -loadfile "向魔兽开炮"',
+      ),
+    ),
+    "向魔兽开炮",
+  );
+  assert.equal(
+    matchKnownGame(
+      snapshot(
+        "game",
+        "最后的避难所3",
+        "D:\\KK\\Games\\y3\\2.0\\game\\game.exe",
+        '"D:\\KK\\Games\\y3\\2.0\\game\\game.exe" --map 尸潮庇护所',
+      ),
+    ),
+    "尸潮庇护所",
+  );
+  assert.equal(
+    matchKnownGame(snapshot("war3", "DotA Allstars", "D:\\KK\\Games\\war3.exe")),
+    "DotA 1",
+  );
+  assert.equal(
+    matchKnownGame(
+      snapshot(
+        "Game_x64h",
+        "",
+        "C:\\Program Files (x86)\\kkduizhan\\Games\\y3\\2.0\\game\\Engine\\Binaries\\Win64\\Game_x64h.exe",
+        '"Game_x64h.exe" --project 205715',
+      ),
+    ),
+    "向魔兽开炮",
+  );
+  assert.equal(
+    matchKnownGame(
+      snapshot(
+        "Game_x64h",
+        "",
+        "C:\\Program Files (x86)\\kkduizhan\\Games\\y3\\2.0\\game\\Engine\\Binaries\\Win64\\Game_x64h.exe",
+      ),
+    ),
+    "KK RPG",
+  );
+  assert.equal(matchKnownGame(snapshot("war3", "Warcraft III")), "魔兽争霸 3");
+  assert.equal(matchKnownGame(snapshot("game", "普通应用")), undefined);
+});
+
+test("KK classic games use their actual processes instead of the platform process", () => {
+  assert.equal(
+    matchKnownGame(
+      snapshot("hl", "Counter-Strike 1.6", "D:\\KK\\Games\\CS1.6\\hl.exe", "-game cstrike"),
+    ),
+    "CS 1.6",
+  );
+  assert.equal(matchKnownGame(snapshot("hl", "Half-Life SDK")), undefined);
+  assert.equal(matchKnownGame(snapshot("gamemd")), "红色警戒 2");
+  assert.equal(
+    matchKnownGame(snapshot("mame64", "The King of Fighters '97", "D:\\Games\\KOF97")),
+    "拳皇 97",
+  );
+  assert.equal(matchKnownGame(snapshot("mame64", "Arcade")), undefined);
+  assert.equal(matchKnownGame(snapshot("StarCraft")), "星际争霸");
 });
 
 test("generic Java does not falsely report Minecraft", () => {
@@ -47,15 +144,19 @@ test("generic Java does not falsely report Minecraft", () => {
   );
 });
 
-test("game detection probes process names, window titles, and readable paths every eight seconds", () => {
+test("game detection probes shared hosts for command-line evidence without probing KK itself", () => {
   const command = buildGameDetectionProbeCommand();
 
   assert.equal(command.includes("MainWindowTitle"), true);
   assert.equal(command.includes("Path"), true);
+  assert.equal(command.includes("CommandLine"), true);
+  assert.equal(command.includes("Get-CimInstance Win32_Process"), true);
+  assert.equal(command.includes("'war3'"), true);
+  assert.equal(command.includes("'kk'"), false);
   assert.equal(command.includes("ConvertTo-Json"), true);
 });
 
-test("every detected game has bundled monitor artwork and a readable fallback label", () => {
+test("bundled monitor artwork stays valid and newly detected games use a readable fallback", () => {
   const artworkComponentPath = fileURLToPath(
     new URL("../src/renderer/src/components/room/GameMonitorContent.tsx", import.meta.url),
   );
@@ -97,4 +198,5 @@ test("every detected game has bundled monitor artwork and a readable fallback la
   }
 
   assert.equal(componentSource.includes("scene-game-monitor-content--fallback"), true);
+  assert.equal(componentSource.includes("Partial<Record<SupportedGameName"), true);
 });
