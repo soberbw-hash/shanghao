@@ -55,7 +55,11 @@ interface PeerAudioState {
   lastPlayedAt?: number;
   resyncPending: boolean;
   fallbackStatus:
-    "observing" | "relay_active" | "relay_receiving_but_dropping" | "relay_no_audio_received";
+    | "observing"
+    | "webrtc_active"
+    | "relay_active"
+    | "relay_receiving_but_dropping"
+    | "relay_no_audio_received";
 }
 
 const CHUNK_SIZE = 1024;
@@ -461,11 +465,15 @@ export class SignalingAudioRelay {
   markPeerPath(peerId: string, path: "webrtc" | "relay", reason: string): void {
     this.mixer.setPeerMediaPath(peerId, path);
     const state = this.getPeerState(peerId);
-    this.resetPeerQueue(peerId, state, reason);
-    state.fallbackEnabledAt = performance.now();
-    state.lastReceivedAt = undefined;
-    state.lastPlayedAt = undefined;
-    state.fallbackStatus = "observing";
+    if (path === "relay") {
+      this.resetPeerQueue(peerId, state, reason);
+      state.fallbackEnabledAt = performance.now();
+      state.lastReceivedAt = undefined;
+      state.lastPlayedAt = undefined;
+      state.fallbackStatus = "observing";
+    } else {
+      state.fallbackStatus = "webrtc_active";
+    }
     this.recordTimeline(path === "relay" ? "relay_fallback_enabled" : "webrtc_connected", {
       peerId,
       fromPath: path === "relay" ? "webrtc" : "relay",
@@ -668,6 +676,10 @@ export class SignalingAudioRelay {
   private runWatchdog(): void {
     const now = performance.now();
     for (const [peerId, state] of this.peerStates) {
+      if (this.mixer.getEffectivePeerPath(peerId) === "webrtc") {
+        state.fallbackStatus = "webrtc_active";
+        continue;
+      }
       if (state.lastReceivedAt && (!state.lastPlayedAt || now - state.lastPlayedAt > 3_000)) {
         state.fallbackStatus = "relay_receiving_but_dropping";
         this.requestResync(peerId, state, "relay_silent_timeout");

@@ -13,6 +13,7 @@ import {
   toggleLocalMemberMute,
 } from "../src/renderer/src/features/audio/memberVolume";
 import { hasPlayableAudioTrack } from "../src/renderer/src/features/audio/remoteAudioTrack";
+import { resolveRemoteAudioPath } from "../src/renderer/src/features/audio/remoteAudioPathSelection";
 
 const root = path.resolve(process.cwd(), "../..");
 
@@ -57,7 +58,7 @@ test("DeepFilterNet is the only suppression engine and keeps raw audio on model 
   );
 });
 
-test("remote audio uses one shared mixer without reusing audio elements", () => {
+test("remote audio uses one shared mixer with silent per-stream decoder pumps", () => {
   const renderer = readFileSync(
     path.join(root, "apps/desktop/src/renderer/src/features/audio/RemoteAudioRenderer.tsx"),
     "utf8",
@@ -81,21 +82,62 @@ test("remote audio uses one shared mixer without reusing audio elements", () => 
   assert.equal(renderer.includes('mixer.unlock("window-user-activation")'), true);
   assert.equal(mixer.includes("new AudioContext"), true);
   assert.equal(mixer.includes("createMediaStreamSource(input.stream)"), true);
+  assert.equal(mixer.includes("createDecoderPump(input.peerId, input.stream)"), true);
+  assert.equal(mixer.includes('document.createElement("audio")'), true);
+  assert.equal(mixer.includes("element.muted = true"), true);
+  assert.equal(mixer.includes("channel.decoderPump.srcObject = null"), true);
   assert.equal(mixer.includes("createDynamicsCompressor"), true);
   assert.equal(mixer.includes("this.isDeafened ? 0 : 1"), true);
-  assert.equal(mixer.includes("clampMemberVolume(input.volume)"), true);
+  assert.equal(mixer.includes("clampMemberVolume(webRtcChannel.volume)"), true);
   assert.equal(mixer.includes("channels = new Map"), true);
   assert.equal(mixer.includes("relayChannels = new Map"), true);
   assert.equal(mixer.includes("playRelaySamples"), true);
   assert.equal(mixer.includes("getRemoteAudioMixer"), true);
   assert.equal(mixer.includes("getDiagnostics(): RemoteAudioMixerDiagnostics"), true);
+  assert.equal(mixer.includes("hasWebRtcPlaybackChannel"), true);
+  assert.equal(mixer.includes("hasVerifiedWebRtcPlayback"), true);
+  assert.equal(mixer.includes("WebRTC playback graph verified by audio"), true);
+  assert.equal(mixer.includes("source.connect(analyser)"), true);
+  assert.equal(mixer.includes("analyser.connect(gain)"), true);
+  assert.equal(mixer.includes("Shared audio mixer fell back to default output"), true);
+  assert.equal(mixer.includes("this.resetRelayQueue(relayChannel, context)"), false);
   assert.equal(mixer.includes(".suspend()"), false);
   assert.equal(mixer.includes('this.outputDeviceId || "default"'), true);
   assert.equal(home.includes('unlock("enter-channel")'), true);
+  assert.equal(renderer.includes('addEventListener?.("devicechange", recoverOutput)'), true);
   assert.equal(relay.includes("getRemoteAudioMixer"), true);
   assert.equal(relay.includes('unlock("signaling-audio-relay")'), true);
   assert.equal(relay.includes("new FallbackAudioPlayer(message.peerId)"), true);
   assert.equal(main.includes('appendSwitch("autoplay-policy", "no-user-gesture-required")'), true);
+});
+
+test("remote audio never silences an available path while the requested path is not playable", () => {
+  assert.equal(
+    resolveRemoteAudioPath({
+      requestedPath: "webrtc",
+      hasWebRtcChannel: false,
+      hasVerifiedWebRtcAudio: false,
+      hasRelayChannel: true,
+    }),
+    "relay",
+  );
+  assert.equal(
+    resolveRemoteAudioPath({
+      requestedPath: "relay",
+      hasWebRtcChannel: true,
+      hasVerifiedWebRtcAudio: true,
+      hasRelayChannel: false,
+    }),
+    "webrtc",
+  );
+  assert.equal(
+    resolveRemoteAudioPath({
+      hasWebRtcChannel: true,
+      hasVerifiedWebRtcAudio: true,
+      hasRelayChannel: true,
+    }),
+    "webrtc",
+  );
 });
 
 test("legacy screen-frame fallback is isolated from audio readiness", () => {

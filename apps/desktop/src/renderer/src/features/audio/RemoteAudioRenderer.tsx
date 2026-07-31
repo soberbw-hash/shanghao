@@ -30,14 +30,17 @@ export const RemoteAudioRenderer = () => {
     const resumeWhenVisible = () => {
       if (document.visibilityState === "visible") void mixer.unlock("window-visible");
     };
+    const recoverOutput = () => mixer.recoverOutputDevice();
     window.addEventListener("pointerdown", unlock, true);
     window.addEventListener("keydown", unlock, true);
     document.addEventListener("visibilitychange", resumeWhenVisible);
+    navigator.mediaDevices?.addEventListener?.("devicechange", recoverOutput);
     void mixer.unlock("renderer-ready");
     return () => {
       window.removeEventListener("pointerdown", unlock, true);
       window.removeEventListener("keydown", unlock, true);
       document.removeEventListener("visibilitychange", resumeWhenVisible);
+      navigator.mediaDevices?.removeEventListener?.("devicechange", recoverOutput);
     };
   }, [mixer]);
 

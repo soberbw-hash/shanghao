@@ -115,7 +115,7 @@ export const SceneCharacter = ({
     shouldReduceMotion ? (zone === "restroomZone" ? "away-idle" : "idle") : "entering",
   );
   const [movementDirection, setMovementDirection] = useState<"left" | "right">("right");
-  const [strideDurationMs, setStrideDurationMs] = useState(520);
+  const [strideDurationMs, setStrideDurationMs] = useState(480);
   const [displayZone, setDisplayZone] = useState<SceneZoneId>(zone);
   const [entryRevision, setEntryRevision] = useState(shouldReduceMotion ? 1 : 0);
   const didFinishEntryRef = useRef(shouldReduceMotion);
@@ -366,9 +366,6 @@ export const SceneCharacter = ({
     const operationId = ++operationIdRef.current;
     const isCurrentOperation = () => operationIdRef.current === operationId;
     const leave = async () => {
-      setMotionPhase("standing-up");
-      if (!shouldReduceMotion) await waitForMotionPhase(220);
-      if (!isCurrentOperation()) return;
       setMovementDirection("left");
       setMotionPhase("leaving");
       if (!shouldReduceMotion) {
@@ -383,14 +380,21 @@ export const SceneCharacter = ({
           personality,
         );
         setStrideDurationMs(route.strideDurationMs);
-        const animation = routeAnimation(route);
+        // Exit directly from the character's current rendered position. Keeping
+        // velocity through intermediate waypoints avoids the visible stop that
+        // used to happen between the stand-up phase and the route animation.
+        const animation = routeAnimation(route, true);
         await controls.start({
           ...animation,
           opacity: 0,
           scale: 1,
           transition: {
             ...animation.transition,
-            opacity: { duration: 0.3, delay: Math.max(0, route.duration - 0.3) },
+            opacity: {
+              duration: 0.28,
+              delay: Math.max(0, route.duration - 0.28),
+              ease: motionCurve.enter,
+            },
           },
         });
       }

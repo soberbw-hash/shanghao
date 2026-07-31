@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import path from "node:path";
 import test from "node:test";
 
 import {
@@ -99,6 +101,8 @@ test("away and exit routes use only the shortest required desk detour", () => {
     fromZone: "restroomZone",
   });
   assert.deepEqual(exitRoute.points, [characterPositions.restroomZone, { left: -9, top: 56 }]);
+  assert.equal(exitRoute.strideDurationMs >= 430, true);
+  assert.equal(exitRoute.strideDurationMs <= 500, true);
 });
 
 test("an interrupted route can leave the footprint it currently occupies", () => {
@@ -114,4 +118,19 @@ test("an interrupted route can leave the footprint it currently occupies", () =>
   assert.deepEqual(route.points.at(-1), characterPositions.gameDesk5);
   assert.equal(route.times[0], 0);
   assert.equal(route.times.at(-1), 1);
+});
+
+test("channel exit continues from the rendered position without a fixed stand-up pause", () => {
+  const source = readFileSync(
+    path.resolve(process.cwd(), "src/renderer/src/components/room/SceneCharacter.tsx"),
+    "utf8",
+  );
+  const leaveStart = source.indexOf("const leave = async () => {");
+  const leaveEnd = source.indexOf("void leave();", leaveStart);
+  const leaveFlow = source.slice(leaveStart, leaveEnd);
+
+  assert.equal(leaveStart >= 0 && leaveEnd > leaveStart, true);
+  assert.equal(leaveFlow.includes('setMotionPhase("leaving")'), true);
+  assert.equal(leaveFlow.includes("waitForMotionPhase(220)"), false);
+  assert.equal(leaveFlow.includes("routeAnimation(route, true)"), true);
 });

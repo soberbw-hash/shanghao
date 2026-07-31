@@ -1828,7 +1828,7 @@ a,
   contain: layout paint style;
   isolation: isolate;
   --run-facing: 1;
-  --run-cycle-duration: 520ms;
+  --run-cycle-duration: 480ms;
 }
 
 .walking-animal-left {

@@ -1201,7 +1201,7 @@ export class RoomClient {
       peerId: this.options.peerId,
       localStream: this.localStream,
       send: (message) => this.send(message),
-      shouldPlayPeer: (peerId) => !this.webrtcReadyPeerIds.has(peerId),
+      shouldPlayPeer: (peerId) => !getRemoteAudioMixer().hasVerifiedWebRtcPlayback(peerId),
       getTargetPeerIds: () => this.getAudioRelayTargetPeerIds(),
       getPeerVolume: (peerId) => this.peerVolumes.get(peerId) ?? 1,
       onLog: (level, message, context) => {
@@ -1229,6 +1229,7 @@ export class RoomClient {
           isConnected: this.webrtcConnectedPeerIds.has(peerId),
           hasAudioTrack: this.webrtcAudioPeerIds.has(peerId),
           hasInboundRtpFlow: this.webrtcFlowingPeerIds.has(peerId),
+          hasPlaybackChannel: getRemoteAudioMixer().hasVerifiedWebRtcPlayback(peerId),
           isStalled: this.webrtcStalledPeerIds.has(peerId),
         },
         isRelayRequested: this.relayRequestedByPeerIds.has(peerId),
@@ -1290,11 +1291,20 @@ export class RoomClient {
             hasLiveScreen ? "webrtc_screen_track_ready" : "webrtc_screen_track_unavailable",
           );
         }
+        this.options.onRemoteStream(targetPeerId, stream);
         this.syncPeerMediaPath(
           targetPeerId,
           hasPlayableAudio ? "remote_audio_track_playable" : "remote_audio_track_unavailable",
         );
-        this.options.onRemoteStream(targetPeerId, stream);
+        if (hasPlayableAudio) {
+          for (const delayMs of [0, 160]) {
+            window.setTimeout(() => {
+              if (this.peers.get(targetPeerId) === peer && this.remotePeerIds.has(targetPeerId)) {
+                this.syncPeerMediaPath(targetPeerId, "remote_playback_graph_sync");
+              }
+            }, delayMs);
+          }
+        }
       },
       onIceCandidate: (candidate) => {
         if (this.peers.get(targetPeerId) !== peer) {
@@ -1452,6 +1462,7 @@ export class RoomClient {
       isConnected: this.webrtcConnectedPeerIds.has(targetPeerId),
       hasAudioTrack: this.webrtcAudioPeerIds.has(targetPeerId),
       hasInboundRtpFlow: this.webrtcFlowingPeerIds.has(targetPeerId),
+      hasPlaybackChannel: getRemoteAudioMixer().hasVerifiedWebRtcPlayback(targetPeerId),
       isStalled: this.webrtcStalledPeerIds.has(targetPeerId),
     });
     const wasReady = this.webrtcReadyPeerIds.has(targetPeerId);
@@ -1672,6 +1683,7 @@ export class RoomClient {
       if (warmupUntil <= now) this.relayWarmupUntilByPeerId.delete(peerId);
     }
     for (const peerId of this.remotePeerIds) {
+      this.syncPeerMediaPath(peerId, reason);
       this.advertiseAudioPathState(peerId, !this.webrtcReadyPeerIds.has(peerId), reason, true);
     }
     this.updateAudioRelaySending();

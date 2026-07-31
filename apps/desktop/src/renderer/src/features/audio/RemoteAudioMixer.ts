@@ -1,5 +1,6 @@
 import { writeRendererLog } from "../../utils/logger";
 import { clampMemberVolume } from "./memberVolume";
+import { resolveRemoteAudioPath, type RemoteAudioMediaPath } from "./remoteAudioPathSelection";
 import { hasPlayableAudioTrack } from "./remoteAudioTrack";
 
 export { hasPlayableAudioTrack } from "./remoteAudioTrack";
@@ -11,11 +12,13 @@ type SinkAwareAudioContext = AudioContext & {
 interface RemoteAudioChannel {
   stream: MediaStream;
   audioTrackId: string;
+  decoderPump: HTMLAudioElement;
   source: MediaStreamAudioSourceNode;
   gain: GainNode;
   analyser: AnalyserNode;
   sampleBuffer: Float32Array<ArrayBuffer>;
   volume: number;
+  hasObservedAudio: boolean;
 }
 
 interface ScheduledRelayChunk {
@@ -55,6 +58,10 @@ export interface RemoteAudioMixerDiagnostics {
     {
       selectedPath: "webrtc" | "relay";
       hasWebRtcTrack: boolean;
+      webRtcTrackMuted: boolean;
+      webRtcGraphReady: boolean;
+      webRtcPlaybackReady: boolean;
+      decoderPumpReady: boolean;
       hasRelayChannel: boolean;
       relayQueueLength: number;
       relayQueueDurationMs: number;
@@ -69,6 +76,7 @@ const MAX_RELAY_QUEUE_DURATION_MS = 700;
 const MAX_RELAY_QUEUE_CHUNKS = 36;
 const AUDIO_LEVEL_SAMPLE_INTERVAL_MS = 66;
 const PLAYBACK_WATCHDOG_INTERVAL_MS = 2_000;
+const WEBRTC_AUDIO_PROOF_RMS = 0.0008;
 export const REMOTE_AUDIO_LEVEL_EVENT = "shanghao:remote-audio-level";
 
 /**
@@ -81,7 +89,7 @@ export class RemoteAudioMixer {
   private compressor?: DynamicsCompressorNode;
   private channels = new Map<string, RemoteAudioChannel>();
   private relayChannels = new Map<string, RelayAudioChannel>();
-  private peerMediaPaths = new Map<string, "webrtc" | "relay">();
+  private peerMediaPaths = new Map<string, RemoteAudioMediaPath>();
   private isDeafened = false;
   private outputDeviceId?: string;
   private resumeInFlight?: Promise<boolean>;
@@ -108,6 +116,12 @@ export class RemoteAudioMixer {
     this.compressor = compressor;
     masterGain.gain.value = this.isDeafened ? 0 : 1;
     context.onstatechange = () => {
+      const peerIds = new Set([
+        ...this.channels.keys(),
+        ...this.relayChannels.keys(),
+        ...this.peerMediaPaths.keys(),
+      ]);
+      for (const peerId of peerIds) this.refreshPeerGains(peerId);
       void writeRendererLog(
         "audio",
         context.state === "running" ? "info" : "warn",
@@ -126,6 +140,7 @@ export class RemoteAudioMixer {
 
   async unlock(reason = "user-activation"): Promise<boolean> {
     const context = this.ensureGraph();
+    this.resumeDecoderPumps(reason);
     if (context.state === "running") return true;
     if (this.resumeInFlight) return this.resumeInFlight;
 
@@ -183,18 +198,26 @@ export class RemoteAudioMixer {
           const source = context.createMediaStreamSource(input.stream);
           const gain = context.createGain();
           const analyser = this.createAnalyser(context);
-          source.connect(gain);
-          gain.connect(analyser);
-          analyser.connect(this.masterGain!);
+          // Observe the decoded WebRTC waveform before the path gain. During
+          // relay fallback the WebRTC gain is intentionally zero, but we still
+          // need proof that Chromium has started decoding real audio before we
+          // retire the audible relay path.
+          source.connect(analyser);
+          analyser.connect(gain);
+          gain.connect(this.masterGain!);
+          const decoderPump = this.createDecoderPump(input.peerId, input.stream);
           this.channels.set(input.peerId, {
             stream: input.stream,
             audioTrackId,
+            decoderPump,
             source,
             gain,
             analyser,
             sampleBuffer: new Float32Array(analyser.fftSize),
             volume: input.volume,
+            hasObservedAudio: false,
           });
+          this.refreshPeerGains(input.peerId);
         } catch (error) {
           void writeRendererLog("audio", "error", "Failed to add remote stream to audio mixer", {
             peerId: input.peerId,
@@ -208,11 +231,7 @@ export class RemoteAudioMixer {
       const context = this.context;
       if (channel && context) {
         channel.volume = input.volume;
-        channel.gain.gain.setTargetAtTime(
-          this.peerMediaPaths.get(input.peerId) === "webrtc" ? clampMemberVolume(input.volume) : 0,
-          context.currentTime,
-          0.012,
-        );
+        this.refreshPeerGains(input.peerId);
       }
     }
 
@@ -230,6 +249,39 @@ export class RemoteAudioMixer {
     void this.applyOutputDevice();
   }
 
+  recoverOutputDevice(): void {
+    void this.applyOutputDevice();
+    void this.unlock("audio-device-change");
+  }
+
+  hasWebRtcPlaybackChannel(peerId: string): boolean {
+    const channel = this.channels.get(peerId);
+    const audioTrack = channel?.stream.getAudioTracks()[0];
+    return Boolean(
+      channel &&
+      this.context?.state === "running" &&
+      audioTrack &&
+      audioTrack.readyState === "live" &&
+      audioTrack.enabled &&
+      !audioTrack.muted,
+    );
+  }
+
+  hasVerifiedWebRtcPlayback(peerId: string): boolean {
+    return Boolean(
+      this.hasWebRtcPlaybackChannel(peerId) && this.channels.get(peerId)?.hasObservedAudio,
+    );
+  }
+
+  getEffectivePeerPath(peerId: string): RemoteAudioMediaPath {
+    return resolveRemoteAudioPath({
+      requestedPath: this.peerMediaPaths.get(peerId),
+      hasWebRtcChannel: this.hasWebRtcPlaybackChannel(peerId),
+      hasVerifiedWebRtcAudio: this.hasVerifiedWebRtcPlayback(peerId),
+      hasRelayChannel: this.relayChannels.has(peerId),
+    });
+  }
+
   getDiagnostics(): RemoteAudioMixerDiagnostics {
     const peerIds = new Set([
       ...this.channels.keys(),
@@ -244,6 +296,7 @@ export class RemoteAudioMixer {
       peers: Object.fromEntries(
         [...peerIds].map((peerId) => {
           const webRtcChannel = this.channels.get(peerId);
+          const webRtcAudioTrack = webRtcChannel?.stream.getAudioTracks()[0];
           const relayChannel = this.relayChannels.get(peerId);
           const relayStats = relayChannel
             ? this.getRelayStats(relayChannel, now)
@@ -251,8 +304,16 @@ export class RemoteAudioMixer {
           return [
             peerId,
             {
-              selectedPath: this.peerMediaPaths.get(peerId) ?? "relay",
+              selectedPath: this.getEffectivePeerPath(peerId),
               hasWebRtcTrack: Boolean(webRtcChannel),
+              webRtcTrackMuted: webRtcAudioTrack?.muted ?? true,
+              webRtcGraphReady: this.hasWebRtcPlaybackChannel(peerId),
+              webRtcPlaybackReady: this.hasVerifiedWebRtcPlayback(peerId),
+              decoderPumpReady: Boolean(
+                webRtcChannel &&
+                !webRtcChannel.decoderPump.paused &&
+                webRtcChannel.decoderPump.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA,
+              ),
               hasRelayChannel: Boolean(relayChannel),
               relayQueueLength: relayStats.queueLength,
               relayQueueDurationMs: Math.round(relayStats.queueDurationMs),
@@ -277,11 +338,7 @@ export class RemoteAudioMixer {
     const now = context.currentTime;
     this.pruneRelayChannel(channel, now);
     channel.volume = volume;
-    channel.gain.gain.setTargetAtTime(
-      this.peerMediaPaths.get(peerId) === "webrtc" ? 0 : clampMemberVolume(volume),
-      context.currentTime,
-      0.012,
-    );
+    this.refreshPeerGains(peerId);
 
     if (channel.nextPlaybackTime < now) {
       channel.nextPlaybackTime = now + RELAY_PLAYBACK_LEAD_SECONDS;
@@ -330,30 +387,9 @@ export class RemoteAudioMixer {
     this.resetRelayQueue(channel, this.context);
   }
 
-  setPeerMediaPath(peerId: string, path: "webrtc" | "relay"): void {
+  setPeerMediaPath(peerId: string, path: RemoteAudioMediaPath): void {
     this.peerMediaPaths.set(peerId, path);
-    const context = this.context;
-    if (!context) return;
-
-    const webrtcChannel = this.channels.get(peerId);
-    if (webrtcChannel) {
-      webrtcChannel.gain.gain.setTargetAtTime(
-        path === "webrtc" ? clampMemberVolume(webrtcChannel.volume) : 0,
-        context.currentTime,
-        0.018,
-      );
-    }
-    const relayChannel = this.relayChannels.get(peerId);
-    if (relayChannel) {
-      relayChannel.gain.gain.setTargetAtTime(
-        path === "relay" ? clampMemberVolume(relayChannel.volume) : 0,
-        context.currentTime,
-        0.018,
-      );
-      if (path === "webrtc") {
-        this.resetRelayQueue(relayChannel, context);
-      }
-    }
+    this.refreshPeerGains(peerId);
   }
 
   forgetPeerMediaPath(peerId: string): void {
@@ -367,6 +403,7 @@ export class RemoteAudioMixer {
     channel.gain.disconnect();
     channel.analyser.disconnect();
     this.relayChannels.delete(peerId);
+    this.refreshPeerGains(peerId);
     if (!this.channels.has(peerId)) this.publishPeerLevel(peerId, 0, true);
   }
 
@@ -389,11 +426,56 @@ export class RemoteAudioMixer {
   private removeChannel(peerId: string): void {
     const channel = this.channels.get(peerId);
     if (!channel) return;
+    channel.decoderPump.pause();
+    channel.decoderPump.srcObject = null;
+    channel.decoderPump.remove();
     channel.source.disconnect();
     channel.gain.disconnect();
     channel.analyser.disconnect();
     this.channels.delete(peerId);
+    this.refreshPeerGains(peerId);
     if (!this.relayChannels.has(peerId)) this.publishPeerLevel(peerId, 0, true);
+  }
+
+  /**
+   * Chromium can expose a live WebRTC track and growing RTP counters without
+   * scheduling decoded PCM for a Web Audio-only consumer. A muted media
+   * element keeps that decoder active, while the shared mixer remains the
+   * sole audible output and continues to own volume/device routing.
+   */
+  private createDecoderPump(peerId: string, stream: MediaStream): HTMLAudioElement {
+    const element = document.createElement("audio");
+    element.autoplay = true;
+    element.muted = true;
+    element.setAttribute("playsinline", "true");
+    element.controls = false;
+    element.tabIndex = -1;
+    element.setAttribute("aria-hidden", "true");
+    element.style.cssText =
+      "position:fixed;left:-10000px;top:-10000px;width:1px;height:1px;opacity:0;pointer-events:none";
+    element.srcObject = stream;
+    document.body.appendChild(element);
+    this.startDecoderPump(peerId, element, "remote-stream-sync");
+    return element;
+  }
+
+  private resumeDecoderPumps(reason: string): void {
+    for (const [peerId, channel] of this.channels) {
+      if (channel.decoderPump.paused) {
+        this.startDecoderPump(peerId, channel.decoderPump, reason);
+      }
+    }
+  }
+
+  private startDecoderPump(peerId: string, element: HTMLAudioElement, reason: string): void {
+    void element.play().catch((error) => {
+      void writeRendererLog("audio", "warn", "Remote audio decoder pump start failed", {
+        peerId,
+        reason,
+        readyState: element.readyState,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    });
   }
 
   private getOrCreateRelayChannel(
@@ -416,6 +498,7 @@ export class RemoteAudioMixer {
       volume: 1,
     };
     this.relayChannels.set(peerId, created);
+    this.refreshPeerGains(peerId);
     return created;
   }
 
@@ -460,20 +543,37 @@ export class RemoteAudioMixer {
   private samplePeerLevels(): void {
     const peerIds = new Set([...this.channels.keys(), ...this.relayChannels.keys()]);
     for (const peerId of peerIds) {
-      const path = this.peerMediaPaths.get(peerId) ?? "relay";
+      const webRtcChannel = this.channels.get(peerId);
+      if (webRtcChannel && this.hasWebRtcPlaybackChannel(peerId)) {
+        const webRtcRms = this.measureChannelLevel(webRtcChannel);
+        if (!webRtcChannel.hasObservedAudio && webRtcRms >= WEBRTC_AUDIO_PROOF_RMS) {
+          webRtcChannel.hasObservedAudio = true;
+          this.peerMediaPaths.set(peerId, "webrtc");
+          this.refreshPeerGains(peerId);
+          void writeRendererLog("audio", "info", "WebRTC playback graph verified by audio", {
+            peerId,
+            rms: Number(webRtcRms.toFixed(5)),
+          });
+        }
+      }
+      const path = this.getEffectivePeerPath(peerId);
       const channel =
         path === "webrtc" ? this.channels.get(peerId) : this.relayChannels.get(peerId);
       if (!channel) {
         this.publishPeerLevel(peerId, 0);
         continue;
       }
-      channel.analyser.getFloatTimeDomainData(channel.sampleBuffer);
-      let energy = 0;
-      for (const sample of channel.sampleBuffer) energy += sample * sample;
-      const rms = Math.sqrt(energy / Math.max(1, channel.sampleBuffer.length));
+      const rms = this.measureChannelLevel(channel);
       const normalized = Math.min(1, rms * 5.2);
       this.publishPeerLevel(peerId, normalized);
     }
+  }
+
+  private measureChannelLevel(channel: RemoteAudioChannel | RelayAudioChannel): number {
+    channel.analyser.getFloatTimeDomainData(channel.sampleBuffer);
+    let energy = 0;
+    for (const sample of channel.sampleBuffer) energy += sample * sample;
+    return Math.sqrt(energy / Math.max(1, channel.sampleBuffer.length));
   }
 
   private publishPeerLevel(peerId: string, nextLevel: number, force = false): void {
@@ -536,16 +636,51 @@ export class RemoteAudioMixer {
     };
   }
 
+  private refreshPeerGains(peerId: string): void {
+    const context = this.context;
+    if (!context) return;
+    const effectivePath = this.getEffectivePeerPath(peerId);
+    const webRtcChannel = this.channels.get(peerId);
+    if (webRtcChannel) {
+      webRtcChannel.gain.gain.setTargetAtTime(
+        effectivePath === "webrtc" ? clampMemberVolume(webRtcChannel.volume) : 0,
+        context.currentTime,
+        0.018,
+      );
+    }
+    const relayChannel = this.relayChannels.get(peerId);
+    if (relayChannel) {
+      relayChannel.gain.gain.setTargetAtTime(
+        effectivePath === "relay" ? clampMemberVolume(relayChannel.volume) : 0,
+        context.currentTime,
+        0.018,
+      );
+    }
+  }
+
   private async applyOutputDevice(): Promise<void> {
     const context = this.context;
     if (!context?.setSinkId) return;
     try {
       await context.setSinkId(this.outputDeviceId || "default");
     } catch (error) {
+      const failedOutputDeviceId = this.outputDeviceId;
       void writeRendererLog("audio", "warn", "Failed to route shared audio mixer output", {
-        outputDeviceId: this.outputDeviceId || "default",
+        outputDeviceId: failedOutputDeviceId || "default",
         error: error instanceof Error ? error.message : String(error),
       });
+      if (!failedOutputDeviceId) return;
+      try {
+        await context.setSinkId("default");
+        this.outputDeviceId = undefined;
+        void writeRendererLog("audio", "warn", "Shared audio mixer fell back to default output", {
+          failedOutputDeviceId,
+        });
+      } catch (fallbackError) {
+        void writeRendererLog("audio", "error", "Default audio output fallback failed", {
+          error: fallbackError instanceof Error ? fallbackError.message : String(fallbackError),
+        });
+      }
     }
   }
 }

@@ -234,7 +234,7 @@ export const planCharacterRoute = ({
     times: routeTimes(points),
     length,
     duration,
-    strideDurationMs: Math.round(clamp(600 - (speed - 18) * 8, 480, 580)),
+    strideDurationMs: Math.round(clamp(520 - (speed - 18) * 5, 430, 500)),
     direction: kind === "enter" ? "right" : kind === "exit" ? "left" : movementDirection(points),
   };
 };

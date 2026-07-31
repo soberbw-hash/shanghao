@@ -290,6 +290,20 @@ const normalizeNickname = (value: string): string =>
 
 const getLatinRuns = (value: string): string[] => value.match(/[a-z0-9]+/g) ?? [];
 
+const isBlockedShortLatinToken = (token: string): boolean => {
+  if (BLOCKED_SHORT_LATIN_TOKENS.has(token)) return true;
+
+  // Numeric prefixes and suffixes are commonly appended to a blocked short
+  // title (for example dad123 or 520mom) to bypass exact-token checks.
+  const core = token
+    .replace(/^\d+|\d+$/g, "")
+    .replace(/4/g, "a")
+    .replace(/0/g, "o")
+    .replace(/[5$]/g, "s")
+    .replace(/7/g, "t");
+  return core !== token && BLOCKED_SHORT_LATIN_TOKENS.has(core);
+};
+
 export const getNicknameValidationError = (value: string): string | undefined => {
   const trimmed = value.trim();
   const compact = compactNickname(trimmed).replace(/[^\p{L}\p{N}]/gu, "");
@@ -297,8 +311,8 @@ export const getNicknameValidationError = (value: string): string | undefined =>
   if (!normalized) return "先填一个昵称。";
 
   const containsBlockedFragment = BLOCKED_FRAGMENTS.some((term) => normalized.includes(term));
-  const containsBlockedShortToken = getLatinRuns(normalized).some((token) =>
-    BLOCKED_SHORT_LATIN_TOKENS.has(token),
+  const containsBlockedShortToken = [...getLatinRuns(compact), ...getLatinRuns(normalized)].some(
+    isBlockedShortLatinToken,
   );
   const matchesBlockedHomophone = BLOCKED_HOMOPHONE_PATTERNS.some((pattern) =>
     pattern.test(normalized),

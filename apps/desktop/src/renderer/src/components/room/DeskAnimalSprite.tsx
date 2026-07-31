@@ -60,7 +60,7 @@ export const preloadCharacterSpriteAssets = (): Promise<void> => {
 export const WalkingAnimalSprite = ({
   avatarId,
   direction = "right",
-  strideDurationMs = 520,
+  strideDurationMs = 480,
   paused = false,
 }: {
   avatarId: BuiltInAvatarId;

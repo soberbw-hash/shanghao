@@ -86,12 +86,17 @@ test("a live WebRTC track cannot disable relay before inbound RTP is verified", 
     isConnected: true,
     hasAudioTrack: true,
     hasInboundRtpFlow: false,
+    hasPlaybackChannel: false,
     isStalled: false,
   };
   assert.equal(isPeerAudioPathReady(trackOnly), false);
   assert.equal(shouldUseAudioRelay(trackOnly), true);
 
-  const verified = { ...trackOnly, hasInboundRtpFlow: true };
+  const rtpOnly = { ...trackOnly, hasInboundRtpFlow: true };
+  assert.equal(isPeerAudioPathReady(rtpOnly), false);
+  assert.equal(shouldUseAudioRelay(rtpOnly), true);
+
+  const verified = { ...rtpOnly, hasPlaybackChannel: true };
   assert.equal(isPeerAudioPathReady(verified), true);
   assert.equal(shouldUseAudioRelay(verified), false);
 
@@ -140,6 +145,7 @@ test("five-person rooms keep every unverified directed audio route on relay", ()
       isConnected: true,
       hasAudioTrack: true,
       hasInboundRtpFlow: verifiedRoutes.has(route),
+      hasPlaybackChannel: verifiedRoutes.has(route),
       isStalled: false,
     }),
   );
