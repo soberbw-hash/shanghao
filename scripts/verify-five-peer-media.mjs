@@ -8,8 +8,10 @@ const electronExecutable =
     ? path.join(root, "apps", "desktop", "node_modules", "electron", "dist", "electron.exe")
     : path.join(root, "apps", "desktop", "node_modules", ".bin", "electron");
 const harness = path.join(root, "apps", "desktop", "tests", "electron-five-peer-media-smoke.cjs");
+const electronArguments =
+  process.platform === "linux" && process.env.CI ? ["--no-sandbox", harness] : [harness];
 
-const result = spawnSync(electronExecutable, [harness], {
+const result = spawnSync(electronExecutable, electronArguments, {
   cwd: root,
   encoding: "utf8",
   stdio: "pipe",
