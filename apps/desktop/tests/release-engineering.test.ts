@@ -43,7 +43,12 @@ test("main CI, CodeQL, and Dependabot guard the repository", () => {
   assert.equal(ci.includes("branches: [main]"), true);
   assert.equal(ci.includes("pnpm install --frozen-lockfile"), true);
   assert.equal(ci.includes("pnpm build"), true);
-  assert.equal(ci.includes("xvfb-run -a pnpm test:audio-worklet"), true);
+  assert.equal(
+    ci.includes(
+      "xvfb-run -a pnpm --dir apps/desktop exec electron --no-sandbox tests/electron-audio-worklet-smoke.cjs",
+    ),
+    true,
+  );
   assert.equal(ci.includes("xvfb-run -a pnpm test:five-peer-media"), true);
   assert.equal(codeql.includes("javascript-typescript"), true);
   assert.equal(dependabot.includes("package-ecosystem: npm"), true);
