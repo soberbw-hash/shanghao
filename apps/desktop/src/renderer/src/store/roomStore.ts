@@ -12,7 +12,9 @@ import {
   type ChatMessage,
   type ConnectionHealth,
   type MemberActivity,
+  type MusicActivity,
   type RoomEvent,
+  type RoomCollectionItem,
   type RoomMember,
   type RoomSummary,
   type SceneZoneId,
@@ -41,6 +43,7 @@ interface RoomStoreState {
   remoteScreenFrames: Record<string, RemoteScreenFrame>;
   connectionHealth: ConnectionHealth;
   chatMessages: ChatMessage[];
+  collectionItems: RoomCollectionItem[];
   sceneReactions: SceneReaction[];
   setConnectionState: (state: RoomConnectionState, reason?: string) => void;
   setLifecycleState: (state: RoomLifecycleState) => void;
@@ -52,6 +55,7 @@ interface RoomStoreState {
   setConnectionHealth: (health: Partial<ConnectionHealth>) => void;
   addChatMessage: (message: ChatMessage) => void;
   mergeChatHistory: (messages: ChatMessage[]) => void;
+  setCollectionItems: (items: RoomCollectionItem[]) => void;
   addSceneReaction: (reaction: SceneReaction) => void;
   syncLocalProfile: (profile: LocalProfilePayload) => void;
   updateMemberVolume: (memberId: string, volume: number) => void;
@@ -62,6 +66,7 @@ interface RoomStoreState {
     activity?: MemberActivity;
     sceneZone?: SceneZoneId;
     gameName?: string;
+    musicActivity?: MusicActivity;
   }) => void;
   pushRoomEvent: (event: Omit<RoomEvent, "id" | "createdAt">) => void;
   clearRoomEvents: () => void;
@@ -179,6 +184,7 @@ export const useRoomStore = create<RoomStoreState>((set) => ({
     reconnectAttempt: 0,
   },
   chatMessages: [],
+  collectionItems: [],
   sceneReactions: [],
   setConnectionState: (connectionState, reason) =>
     set((state) => ({
@@ -283,6 +289,12 @@ export const useRoomStore = create<RoomStoreState>((set) => ({
           .slice(-100),
       };
     }),
+  setCollectionItems: (collectionItems) =>
+    set({
+      collectionItems: [...collectionItems]
+        .sort((left, right) => left.createdAt.localeCompare(right.createdAt))
+        .slice(-30),
+    }),
   addSceneReaction: (reaction) =>
     set((state) => ({
       sceneReactions: [...state.sceneReactions, reaction].slice(-20),
@@ -375,6 +387,7 @@ export const useRoomStore = create<RoomStoreState>((set) => ({
       remoteStreams: {},
       remoteScreenFrames: {},
       chatMessages: [],
+      collectionItems: [],
       sceneReactions: [],
       connectionHealth: {
         latencyMs: 0,

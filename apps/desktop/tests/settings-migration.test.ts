@@ -24,6 +24,7 @@ test("migrateSettings falls back to safe defaults for damaged legacy config", ()
     isHardwareAccelerationEnabled: "invalid" as never,
     isOverlayEnabled: "invalid" as never,
     micEqualizerGains: [99, -99, 3, Number.NaN] as never,
+    colorTheme: "dark",
   });
 
   assert.equal(result.settings.settingsSchemaVersion, SETTINGS_SCHEMA_VERSION);
@@ -37,12 +38,14 @@ test("migrateSettings falls back to safe defaults for damaged legacy config", ()
   assert.equal(result.settings.nickname, "");
   assert.equal(result.settings.globalMuteShortcut, "Ctrl+Shift+M");
   assert.equal("preferredSampleRate" in result.settings, false);
-  assert.equal(result.settings.inputLevelThreshold, defaultSettings.inputLevelThreshold);
+  assert.equal("inputLevelThreshold" in result.settings, false);
+  assert.equal(result.settings.isVoiceEnhancementEnabled, true);
   assert.equal(result.settings.hasCompletedProfileSetup, false);
   assert.equal("shouldAutoCopyInviteLink" in result.settings, false);
   assert.equal("channelAccessCode" in result.settings, false);
   assert.equal("manualDirectHost" in result.settings, false);
   assert.equal("connectionMode" in result.settings, false);
+  assert.equal("colorTheme" in result.settings, false);
   assert.equal("isMicOnSoundEnabled" in result.settings, false);
   assert.equal("isMicOffSoundEnabled" in result.settings, false);
   assert.equal("isMemberJoinSoundEnabled" in result.settings, false);
@@ -115,20 +118,20 @@ test("migrateSettings normalizes relay server urls for non-technical users", () 
   );
 });
 
-test("screen sharing settings migrate to two simple quality levels and drop old visual flags", () => {
-  const clear = migrateSettings({
+test("screen sharing migration drops obsolete quality, audio, and visual settings", () => {
+  const migrated = migrateSettings({
     screenShareQuality: "clear" as never,
+    isScreenShareSystemAudioEnabled: true,
     screenShareFitMode: "cover",
     reduceMotion: true,
     reduceTransparency: true,
     increaseContrast: true,
   });
-  const balanced = migrateSettings({ screenShareQuality: "balanced" as never });
 
-  assert.equal(clear.settings.screenShareQuality, "1080p");
-  assert.equal(balanced.settings.screenShareQuality, "720p");
-  assert.equal("screenShareFitMode" in clear.settings, false);
-  assert.equal("reduceMotion" in clear.settings, false);
-  assert.equal("reduceTransparency" in clear.settings, false);
-  assert.equal("increaseContrast" in clear.settings, false);
+  assert.equal("screenShareQuality" in migrated.settings, false);
+  assert.equal("isScreenShareSystemAudioEnabled" in migrated.settings, false);
+  assert.equal("screenShareFitMode" in migrated.settings, false);
+  assert.equal("reduceMotion" in migrated.settings, false);
+  assert.equal("reduceTransparency" in migrated.settings, false);
+  assert.equal("increaseContrast" in migrated.settings, false);
 });

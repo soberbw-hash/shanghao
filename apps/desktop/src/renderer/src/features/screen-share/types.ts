@@ -1,19 +1,11 @@
-import type { ScreenCaptureSourceDescriptor, ScreenShareQuality } from "@private-voice/shared";
+import type { ScreenCaptureSourceDescriptor } from "@private-voice/shared";
 import type { ScreenShareEncodingProfile } from "@private-voice/webrtc";
 
-export const SCREEN_SHARE_PROFILES: Record<ScreenShareQuality, ScreenShareEncodingProfile> = {
-  "720p": {
-    maxBitrate: 360_000,
-    maxFramerate: 15,
-    maxWidth: 1_280,
-    maxHeight: 720,
-  },
-  "1080p": {
-    maxBitrate: 650_000,
-    maxFramerate: 18,
-    maxWidth: 1_920,
-    maxHeight: 1_080,
-  },
+export const SCREEN_SHARE_PROFILE: ScreenShareEncodingProfile = {
+  maxBitrate: 2_400_000,
+  maxFramerate: 24,
+  maxWidth: 2_560,
+  maxHeight: 1_440,
 };
 
 export type ScreenShareManagerStatus =
@@ -35,7 +27,6 @@ export interface ScreenShareManagerSnapshot {
   sources: ScreenCaptureSourceDescriptor[];
   selectedSourceId?: string;
   localStream?: MediaStream;
-  quality: ScreenShareQuality;
   hasSystemAudio: boolean;
   displayMode: ScreenShareDisplayMode;
   detachedItemId?: string;
@@ -44,6 +35,5 @@ export interface ScreenShareManagerSnapshot {
 
 export interface StartScreenShareRequest {
   sourceId: string;
-  quality: ScreenShareQuality;
   includeSystemAudio: boolean;
 }

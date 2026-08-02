@@ -9,6 +9,7 @@ import {
   DEFAULT_CHANNEL_ID,
   HEARTBEAT_INTERVAL_MS,
   type BuiltInAvatarId,
+  type RoomCollectionItem,
   type SceneZoneId,
 } from "@private-voice/shared";
 import { WebSocket, WebSocketServer } from "ws";
@@ -21,6 +22,9 @@ import type {
   AvatarUpdateMessage,
   ChatMessage,
   ChatHistoryMessage,
+  RoomCollectionAddMessage,
+  RoomCollectionRemoveMessage,
+  RoomCollectionSnapshotMessage,
   ErrorMessage,
   IceCandidateMessage,
   JoinChannelMessage,
@@ -44,6 +48,7 @@ import type {
 } from "./protocol";
 import { isSignalEnvelope } from "./protocol";
 import { ChatHistoryStore } from "./chat-history-store";
+import { RoomCollectionStore } from "./room-collection-store";
 import { RoomManager } from "./room-manager";
 import type { SignalingRoom } from "./room-manager";
 import { SessionTokenStore } from "./session-token-store";
@@ -70,6 +75,7 @@ const SERVER_ONLY_MESSAGE_TYPES = new Set([
   "room_snapshot",
   "channel_snapshot",
   "chat_history",
+  "room_collection_snapshot",
   "avatar_update",
   "error",
 ]);
@@ -83,6 +89,8 @@ interface SocketSession {
 
 const RATE_LIMITS: Record<string, { windowMs: number; limit: number }> = {
   chat_message: { windowMs: 10_000, limit: 8 },
+  room_collection_add: { windowMs: 10_000, limit: 6 },
+  room_collection_remove: { windowMs: 10_000, limit: 10 },
   knock_event: { windowMs: 10_000, limit: 3 },
   scene_reaction: { windowMs: 10_000, limit: 12 },
   member_state: { windowMs: 10_000, limit: 40 },
@@ -197,6 +205,7 @@ export class SignalingServer extends EventEmitter {
   private readonly sessions = new WeakMap<WebSocket, SocketSession>();
   private readonly invalidMessages = new WeakMap<WebSocket, number>();
   private readonly chatHistory: Promise<ChatHistoryStore>;
+  private readonly roomCollection: Promise<RoomCollectionStore>;
   private readonly sessionTokens = new SessionTokenStore();
 
   constructor(private readonly options: SignalingServerOptions) {
@@ -204,6 +213,13 @@ export class SignalingServer extends EventEmitter {
     this.roomName = options.roomName;
     this.logger = options.logger;
     this.chatHistory = ChatHistoryStore.create(process.env.CHAT_HISTORY_FILE, this.logger);
+    this.roomCollection = RoomCollectionStore.create(
+      process.env.ROOM_COLLECTION_FILE ??
+        (process.env.CHAT_HISTORY_FILE
+          ? `${process.env.CHAT_HISTORY_FILE}.collection.json`
+          : undefined),
+      this.logger,
+    );
     this.httpServer = createServer();
     this.httpServer.on("request", (request, response) => {
       const contentLength = Number(request.headers["content-length"] ?? 0);
@@ -315,6 +331,7 @@ export class SignalingServer extends EventEmitter {
     }
 
     await (await this.chatHistory).flush();
+    await (await this.roomCollection).flush();
     this.sessionTokens.clear();
 
     await new Promise<void>((resolve, reject) => {
@@ -549,6 +566,12 @@ export class SignalingServer extends EventEmitter {
       case "chat_message":
         this.broadcastChatMessage(authoritative);
         return;
+      case "room_collection_add":
+        this.addRoomCollectionItem(authoritative);
+        return;
+      case "room_collection_remove":
+        this.removeRoomCollectionItem(authoritative);
+        return;
       case "knock_event":
         this.broadcastKnockEvent(authoritative);
         return;
@@ -586,7 +609,34 @@ export class SignalingServer extends EventEmitter {
       return;
     }
 
-    const existingRoom = this.roomManager.getRoom(message.roomId);
+    let existingRoom = this.roomManager.getRoom(message.roomId);
+    const supersededProfilePeer = message.profileId
+      ? existingRoom?.peers
+          .listPeers()
+          .find((peer) => peer.profileId === message.profileId && peer.id !== message.peerId)
+      : undefined;
+
+    // A desktop restart creates a new peer id while retaining the stable profile id.
+    // Replace the old grace-period session immediately so it cannot occupy a seat,
+    // reserve an avatar, or participate in the next mesh negotiation as a ghost peer.
+    if (supersededProfilePeer) {
+      this.sessions.delete(supersededProfilePeer.socket);
+      this.roomManager.removePeer(message.roomId, supersededProfilePeer.id);
+      this.sessionTokens.invalidate(message.roomId, supersededProfilePeer.id);
+      try {
+        supersededProfilePeer.socket.close(4001, "profile_session_replaced");
+      } catch {
+        // The new profile session remains authoritative if the old socket already closed.
+      }
+      this.logger?.("superseded stale profile session", {
+        roomId: message.roomId,
+        profileId: message.profileId,
+        previousPeerId: supersededProfilePeer.id,
+        peerId: message.peerId,
+      });
+      existingRoom = this.roomManager.getRoom(message.roomId);
+    }
+
     const existingPeer = existingRoom?.peers.getPeer(message.peerId);
     let sessionToken: string;
     if (existingPeer) {
@@ -721,6 +771,7 @@ export class SignalingServer extends EventEmitter {
     };
     this.safeSend(socket, joinAck);
     void this.sendChatHistory(socket, room.roomId);
+    void this.sendRoomCollection(socket, room.roomId);
     this.broadcastSnapshot(message.roomId);
   }
 
@@ -773,6 +824,16 @@ export class SignalingServer extends EventEmitter {
     const normalizedActivity =
       normalizedSceneZone === "restroomZone" ? "restroom" : message.activity;
     const normalizedGameName = message.gameName?.trim() || undefined;
+    const normalizedMusicActivity = message.musicActivity
+      ? {
+          provider: message.musicActivity.provider,
+          providerName: message.musicActivity.providerName.trim().slice(0, 32),
+          trackTitle: message.musicActivity.trackTitle.trim().slice(0, 160),
+          artist: message.musicActivity.artist?.trim().slice(0, 100) || undefined,
+        }
+      : message.musicActivity === null
+        ? null
+        : undefined;
     const normalizedAvatar = normalizeAvatar(message.avatarDataUrl);
     room.peers.updateMemberState(message.peerId, {
       isMuted: message.isMuted,
@@ -781,6 +842,7 @@ export class SignalingServer extends EventEmitter {
       activity: normalizedActivity,
       sceneZone: normalizedSceneZone,
       gameName: normalizedGameName,
+      musicActivity: normalizedMusicActivity,
       nickname: message.nickname,
       avatarDataUrl: normalizedAvatar.avatarDataUrl,
       avatarHash: normalizedAvatar.avatarHash,
@@ -796,6 +858,7 @@ export class SignalingServer extends EventEmitter {
       activity: normalizedActivity,
       sceneZone: normalizedSceneZone,
       gameName: normalizedGameName,
+      musicActivity: normalizedMusicActivity,
       nickname: message.nickname,
       avatarId: message.avatarId,
     };
@@ -843,6 +906,56 @@ export class SignalingServer extends EventEmitter {
       messages: (await this.chatHistory).get(roomId),
     };
     this.safeSend(socket, payload);
+  }
+
+  private addRoomCollectionItem(message: RoomCollectionAddMessage): void {
+    const room = this.roomManager.getRoom(message.roomId);
+    const author = message.peerId ? room?.peers.getPeer(message.peerId) : undefined;
+    const title = message.title?.trim().slice(0, 80);
+    const content = message.content?.trim().slice(0, 2_000);
+    if (!room || !author || !message.kind || !title || !content) return;
+
+    const item: RoomCollectionItem = {
+      id: randomUUID(),
+      kind: message.kind,
+      title,
+      content,
+      createdByPeerId: author.id,
+      createdByNickname: author.nickname,
+      createdAt: new Date().toISOString(),
+    };
+    void this.roomCollection.then((store) => {
+      store.add(message.roomId, item);
+      this.broadcastRoomCollection(message.roomId, store.get(message.roomId));
+    });
+  }
+
+  private removeRoomCollectionItem(message: RoomCollectionRemoveMessage): void {
+    const room = this.roomManager.getRoom(message.roomId);
+    if (!room?.peers.getPeer(message.peerId ?? "")) return;
+    void this.roomCollection.then(async (store) => {
+      store.remove(message.roomId, message.itemId);
+      this.broadcastRoomCollection(message.roomId, store.get(message.roomId));
+    });
+  }
+
+  private async sendRoomCollection(socket: WebSocket, roomId: string): Promise<void> {
+    this.safeSend(socket, {
+      type: "room_collection_snapshot",
+      roomId,
+      items: (await this.roomCollection).get(roomId),
+    });
+  }
+
+  private broadcastRoomCollection(roomId: string, items: RoomCollectionItem[]): void {
+    const room = this.roomManager.getRoom(roomId);
+    if (!room) return;
+    const payload: RoomCollectionSnapshotMessage = {
+      type: "room_collection_snapshot",
+      roomId,
+      items,
+    };
+    for (const peer of room.peers.listConnectedPeers()) this.safeSend(peer.socket, payload);
   }
 
   private broadcastKnockEvent(message: KnockEventMessage): void {

@@ -97,15 +97,15 @@ test("gsap motion is wired across the main surfaces with reduced-motion fallback
   const toastRegionSource = readFileSync(toastRegionPath, "utf8");
 
   for (const avatarId of ["fox", "cat", "duck", "panda", "corgi"]) {
-    assert.equal(
-      existsSync(
-        path.resolve(
-          process.cwd(),
-          `src/renderer/src/assets/avatars/run-cycles-v2/${avatarId}.png`,
-        ),
-      ),
-      true,
+    const runCyclePath = path.resolve(
+      process.cwd(),
+      `src/renderer/src/assets/avatars/run-cycles-v2/${avatarId}.png`,
     );
+    assert.equal(existsSync(runCyclePath), true);
+    const png = readFileSync(runCyclePath);
+    assert.equal(png.subarray(1, 4).toString("ascii"), "PNG");
+    assert.equal(png.readUInt32BE(16), 16 * 256);
+    assert.equal(png.readUInt32BE(20), 256);
   }
 
   assert.match(packageJson.dependencies?.gsap ?? "", /^\^3\./);
@@ -130,9 +130,12 @@ test("gsap motion is wired across the main surfaces with reduced-motion fallback
   assert.equal(animalSource.includes('isMoving ? "walk"'), true);
   assert.equal(islandSource.includes("SceneCharacter"), true);
   assert.equal(characterRuntimeSource.includes("type CharacterMotionPhase ="), true);
-  assert.equal(sceneCharacterSource.includes('setMotionPhase("walking")'), true);
-  assert.equal(sceneCharacterSource.includes('setMotionPhase("approaching")'), true);
-  assert.equal(sceneCharacterSource.includes('setMotionPhase("turning")'), true);
+  assert.equal(
+    sceneCharacterSource.includes('setMotionPhase(isFirstRoute ? "entering" : "walking")'),
+    true,
+  );
+  assert.equal(sceneCharacterSource.includes('setMotionPhase("approaching")'), false);
+  assert.equal(sceneCharacterSource.includes('setMotionPhase("turning")'), false);
   assert.equal(sceneCharacterSource.includes('setMotionPhase("standing-up")'), true);
   assert.equal(sceneCharacterSource.includes('setMotionPhase("sitting")'), true);
   assert.equal(sceneCharacterSource.includes('setMotionPhase("leaving")'), true);
@@ -140,13 +143,22 @@ test("gsap motion is wired across the main surfaces with reduced-motion fallback
   assert.equal(sceneCharacterSource.includes("applyCharacterPersonality"), true);
   assert.equal(characterPersonalitySource.includes("CHARACTER_PERSONALITIES"), true);
   assert.equal(deskAnimalSource.includes("runCycleSources"), true);
-  assert.equal(deskAnimalSource.includes('data-run-cycle-frames="8"'), true);
+  assert.equal(deskAnimalSource.includes('data-run-cycle-frames="16"'), true);
+  assert.equal(deskAnimalSource.includes('data-run-cycle-fps="50"'), true);
   assert.equal(deskAnimalSource.includes("walking-animal-run-cycle-strip"), true);
   assert.equal(stylesSource.includes("@keyframes walking-animal-run-cycle"), true);
-  assert.equal(stylesSource.includes("var(--run-cycle-duration) steps(8, end)"), true);
+  assert.equal(stylesSource.includes("--run-cycle-duration: 320ms"), true);
+  assert.equal(stylesSource.includes("width: 1600%"), true);
+  assert.equal(
+    stylesSource.includes(
+      "animation: walking-animal-run-cycle var(--run-cycle-duration) linear infinite",
+    ),
+    true,
+  );
   assert.equal(deskAnimalSource.includes("preloadCharacterSpriteAssets"), true);
   assert.equal(stylesSource.includes("contain: layout paint style"), true);
-  assert.equal(stylesSource.includes("translate3d(-100%, 0, 0)"), true);
+  assert.equal(stylesSource.includes("translate3d(-93.75%, 0, 0)"), true);
+  assert.equal(sceneCharacterSource.includes("{ opacity: 0, y: 2"), false);
   assert.equal(stylesSource.includes("will-change: background-position"), false);
   assert.equal(stylesSource.includes("@keyframes walking-animal-shadow-step"), false);
   assert.equal(deskAnimalSource.includes("walking-animal-rig"), false);
@@ -175,8 +187,9 @@ test("gsap motion is wired across the main surfaces with reduced-motion fallback
   assert.equal(stylesSource.includes("@keyframes runner-arm-far-stride"), false);
   assert.equal(stylesSource.includes("@keyframes runner-arm-near-stride"), false);
   assert.equal(sceneCharacterSource.includes("movementDirection"), true);
-  assert.equal(sceneCharacterSource.includes("entryRevision"), true);
-  assert.equal(sceneCharacterSource.includes("didFinishEntryRef.current"), true);
+  assert.equal(sceneCharacterSource.includes("entryRevision"), false);
+  assert.equal(sceneCharacterSource.includes("operationIdRef.current"), true);
+  assert.equal(sceneCharacterSource.includes("didStartEntryRef.current"), true);
   assert.equal(stylesSource.includes("@keyframes layered-body-walk"), true);
   assert.equal(stylesSource.includes(".layered-animal-head"), true);
   assert.equal(sceneCharacterSource.includes("useAnimationControls"), true);
@@ -274,10 +287,8 @@ test("route transitions remove the previous translucent page instead of stacking
 
   assert.equal(appSource.includes("AnimatePresence"), false);
   assert.equal(appSource.includes("key={basePage}"), true);
-  assert.equal(
-    appSource.includes('basePage === "room" ? { opacity: 0, x: 18, scale: 0.992 } : false'),
-    true,
-  );
+  assert.equal(appSource.includes('basePage === "room" ? { opacity: 0, x: 8 } : false'), true);
+  assert.equal(appSource.includes("scale: 0.992"), false);
 });
 
 test("dialogs use interruptible compositor motion without full-screen blur animation", () => {
@@ -314,5 +325,5 @@ test("local scene identity survives placeholder-to-server peer replacement", () 
 
   assert.equal(sceneCharacterSource.includes('member.isLocal ? "local-member" : member.id'), true);
   assert.equal(islandSource.includes("key={sceneMemberKey(member)}"), true);
-  assert.equal(islandSource.includes("key={member.id}"), false);
+  assert.doesNotMatch(islandSource, /<SceneCharacter\s+key=\{member\.id\}/);
 });

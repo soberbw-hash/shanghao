@@ -2,16 +2,25 @@ import { execFile } from "node:child_process";
 import path from "node:path";
 import { promisify } from "node:util";
 
-import type { GameDetectionSnapshot, RendererLogPayload } from "@private-voice/shared";
+import type {
+  GameDetectionSnapshot,
+  MusicActivity,
+  MusicProviderId,
+  RendererLogPayload,
+} from "@private-voice/shared";
 
 const execFileAsync = promisify(execFile);
 const POLL_INTERVAL_MS = 8_000;
+const MUSIC_ACTIVITY_MISS_TOLERANCE = 3;
 
 export interface ProcessSnapshot {
   ProcessName?: string;
   MainWindowTitle?: string;
   Path?: string;
   CommandLine?: string;
+  MainWindowTitleBase64?: string;
+  PathBase64?: string;
+  CommandLineBase64?: string;
 }
 
 interface GameRule {
@@ -22,6 +31,40 @@ interface GameRule {
   commandLineNeedles?: string[];
   evidenceRequiredProcessNames?: string[];
 }
+
+interface MusicRule {
+  provider: MusicProviderId;
+  providerName: string;
+  processNames: string[];
+  genericTitles: string[];
+}
+
+const MUSIC_RULES: MusicRule[] = [
+  {
+    provider: "spotify",
+    providerName: "Spotify",
+    processNames: ["spotify"],
+    genericTitles: ["spotify", "spotify premium"],
+  },
+  {
+    provider: "netease",
+    providerName: "网易云音乐",
+    processNames: ["cloudmusic", "orpheus"],
+    genericTitles: ["网易云音乐", "cloudmusic"],
+  },
+  {
+    provider: "qqmusic",
+    providerName: "QQ 音乐",
+    processNames: ["qqmusic"],
+    genericTitles: ["qq音乐", "qq music", "qqmusic"],
+  },
+  {
+    provider: "applemusic",
+    providerName: "Apple Music",
+    processNames: ["applemusic", "itunes"],
+    genericTitles: ["apple music", "itunes"],
+  },
+];
 
 const KK_SHARED_GAME_HOSTS = [
   "war3",
@@ -182,12 +225,28 @@ const parseProcessSnapshot = (raw: string): ProcessSnapshot[] => {
   try {
     const parsed: unknown = JSON.parse(raw);
     const entries = Array.isArray(parsed) ? parsed : [parsed];
-    return entries.filter(
-      (entry): entry is ProcessSnapshot =>
-        Boolean(entry) && typeof entry === "object" && !Array.isArray(entry),
-    );
+    return entries
+      .filter(
+        (entry): entry is ProcessSnapshot =>
+          Boolean(entry) && typeof entry === "object" && !Array.isArray(entry),
+      )
+      .map((entry) => ({
+        ...entry,
+        MainWindowTitle: decodeUtf8Base64(entry.MainWindowTitleBase64) ?? entry.MainWindowTitle,
+        Path: decodeUtf8Base64(entry.PathBase64) ?? entry.Path,
+        CommandLine: decodeUtf8Base64(entry.CommandLineBase64) ?? entry.CommandLine,
+      }));
   } catch {
     return [];
+  }
+};
+
+const decodeUtf8Base64 = (value?: string): string | undefined => {
+  if (!value) return undefined;
+  try {
+    return Buffer.from(value, "base64").toString("utf8");
+  } catch {
+    return undefined;
   }
 };
 
@@ -235,6 +294,66 @@ export const matchKnownGame = (
   return undefined;
 };
 
+const cleanMusicTitle = (title: string, rule: MusicRule): string => {
+  let cleaned = title.trim();
+  for (const suffix of [rule.providerName, ...rule.genericTitles]) {
+    if (!cleaned.toLocaleLowerCase().endsWith(suffix.toLocaleLowerCase())) continue;
+    const prefix = cleaned.slice(0, -suffix.length).trimEnd();
+    const delimiter = prefix.at(-1);
+    if (delimiter === "-" || delimiter === "—" || delimiter === "|" || delimiter === "·") {
+      cleaned = prefix.slice(0, -1).trimEnd();
+    }
+  }
+  return cleaned;
+};
+
+export const matchMusicActivity = (
+  processSnapshot: string | ProcessSnapshot[],
+): MusicActivity | undefined => {
+  const processes = Array.isArray(processSnapshot)
+    ? processSnapshot
+    : parseProcessSnapshot(processSnapshot);
+
+  for (const processInfo of processes) {
+    const processName = normalizeProcessName(processInfo.ProcessName);
+    const executableName = normalizeProcessName(
+      processInfo.Path ? path.basename(processInfo.Path) : undefined,
+    );
+    const rule = MUSIC_RULES.find((candidate) =>
+      candidate.processNames.some((name) => {
+        const normalized = normalizeProcessName(name);
+        return normalized === processName || normalized === executableName;
+      }),
+    );
+    if (!rule) continue;
+
+    const rawTitle = processInfo.MainWindowTitle?.trim() ?? "";
+    const cleanedTitle = cleanMusicTitle(rawTitle, rule);
+    const isGeneric = rule.genericTitles.some(
+      (title) => cleanedTitle.toLowerCase() === title.toLowerCase(),
+    );
+    if (!cleanedTitle || isGeneric) continue;
+
+    const parts = cleanedTitle.split(/\s+(?:-|—|–|·)\s+/).filter(Boolean);
+    return {
+      provider: rule.provider,
+      providerName: rule.providerName,
+      trackTitle: parts[0]?.slice(0, 160) || cleanedTitle.slice(0, 160),
+      artist: parts.length > 1 ? parts.slice(1).join(" · ").slice(0, 100) : undefined,
+    };
+  }
+  return undefined;
+};
+
+export const resolveStableMusicActivity = (
+  detected: MusicActivity | undefined,
+  previous: MusicActivity | undefined,
+  consecutiveMisses: number,
+): MusicActivity | undefined => {
+  if (detected) return detected;
+  return consecutiveMisses <= MUSIC_ACTIVITY_MISS_TOLERANCE ? previous : undefined;
+};
+
 export const buildGameDetectionProbeCommand = (): string => {
   const commandLineProcessNames = Array.from(
     new Set(
@@ -249,6 +368,9 @@ export const buildGameDetectionProbeCommand = (): string => {
 
   return [
     "$ErrorActionPreference='SilentlyContinue'",
+    "[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false)",
+    "$OutputEncoding = [Console]::OutputEncoding",
+    "function ConvertTo-Utf8Base64([string]$Value) { if ([string]::IsNullOrEmpty($Value)) { return ''; }; return [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($Value)); }",
     `$commandLineProcessNames=@(${processNameArray})`,
     "Get-Process | ForEach-Object {",
     "  $processPath = ''",
@@ -257,13 +379,15 @@ export const buildGameDetectionProbeCommand = (): string => {
     "  if ($commandLineProcessNames -contains $_.ProcessName.ToLowerInvariant()) {",
     '    try { $processDetails = Get-CimInstance Win32_Process -Filter "ProcessId=$($_.Id)"; $commandLine = $processDetails.CommandLine; if (-not $processPath) { $processPath = $processDetails.ExecutablePath } } catch {}',
     "  }",
-    "  [PSCustomObject]@{ ProcessName=$_.ProcessName; MainWindowTitle=$_.MainWindowTitle; Path=$processPath; CommandLine=$commandLine }",
+    "  [PSCustomObject]@{ ProcessName=$_.ProcessName; MainWindowTitleBase64=(ConvertTo-Utf8Base64 $_.MainWindowTitle); PathBase64=(ConvertTo-Utf8Base64 $processPath); CommandLineBase64=(ConvertTo-Utf8Base64 $commandLine) }",
     "} | ConvertTo-Json -Compress",
   ].join("; ");
 };
 
-const detectKnownGame = async (): Promise<GameDetectionSnapshot["gameName"]> => {
-  if (process.platform !== "win32") return undefined;
+const detectActivities = async (): Promise<
+  Pick<GameDetectionSnapshot, "gameName" | "musicActivity">
+> => {
+  if (process.platform !== "win32") return {};
 
   const result = await execFileAsync(
     "powershell.exe",
@@ -271,13 +395,18 @@ const detectKnownGame = async (): Promise<GameDetectionSnapshot["gameName"]> => 
     { windowsHide: true, maxBuffer: 2 * 1024 * 1024, timeout: 5_000 },
   ).catch(() => ({ stdout: "" }));
 
-  return matchKnownGame(result.stdout);
+  const processes = parseProcessSnapshot(result.stdout);
+  return {
+    gameName: matchKnownGame(processes),
+    musicActivity: matchMusicActivity(processes),
+  };
 };
 
 export class GameDetectionController {
   private timer: NodeJS.Timeout | undefined;
   private enabled = false;
   private checkInFlight = false;
+  private musicActivityMisses = 0;
   private listeners = new Set<(snapshot: GameDetectionSnapshot) => void>();
   private snapshot: GameDetectionSnapshot = { checkedAt: new Date(0).toISOString() };
 
@@ -294,6 +423,7 @@ export class GameDetectionController {
     if (!enabled) {
       if (this.timer) clearInterval(this.timer);
       this.timer = undefined;
+      this.musicActivityMisses = 0;
       this.snapshot = { checkedAt: new Date().toISOString() };
       for (const listener of this.listeners) listener(this.snapshot);
       await this.writeLog({
@@ -317,6 +447,7 @@ export class GameDetectionController {
     this.enabled = false;
     if (this.timer) clearInterval(this.timer);
     this.timer = undefined;
+    this.musicActivityMisses = 0;
     this.listeners.clear();
   }
 
@@ -333,12 +464,22 @@ export class GameDetectionController {
     if (!this.enabled || this.checkInFlight) return;
     this.checkInFlight = true;
     const previousGame = this.snapshot.gameName;
-    const gameName = await detectKnownGame().finally(() => {
-      this.checkInFlight = false;
-    });
+    const previousMusicKey = JSON.stringify(this.snapshot.musicActivity ?? null);
+    const { gameName, musicActivity: detectedMusicActivity } = await detectActivities().finally(
+      () => {
+        this.checkInFlight = false;
+      },
+    );
     if (!this.enabled) return;
+    this.musicActivityMisses = detectedMusicActivity ? 0 : this.musicActivityMisses + 1;
+    const musicActivity = resolveStableMusicActivity(
+      detectedMusicActivity,
+      this.snapshot.musicActivity,
+      this.musicActivityMisses,
+    );
     this.snapshot = {
       gameName,
+      musicActivity,
       detectedAt: gameName
         ? previousGame === gameName
           ? this.snapshot.detectedAt
@@ -347,12 +488,13 @@ export class GameDetectionController {
       checkedAt: new Date().toISOString(),
     };
 
-    if (previousGame === gameName) return;
+    const musicKey = JSON.stringify(musicActivity ?? null);
+    if (previousGame === gameName && previousMusicKey === musicKey) return;
     await this.writeLog({
       category: "app",
       level: "info",
-      message: gameName ? "Known game detected" : "Known game no longer detected",
-      context: { gameName },
+      message: "Desktop activity changed",
+      context: { gameName, musicProvider: musicActivity?.provider },
     });
     for (const listener of this.listeners) listener(this.snapshot);
   }

@@ -66,6 +66,32 @@ const requireString = (value: unknown, maximumLength: number, label: string): st
   return value;
 };
 
+let attentionResetTimer: NodeJS.Timeout | undefined;
+let restoreAlwaysOnTop = false;
+
+const bringWindowToFront = (mainWindow: BrowserWindow | null, attention = false): void => {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  if (mainWindow.isMinimized()) mainWindow.restore();
+  mainWindow.show();
+  mainWindow.moveTop();
+  mainWindow.focus();
+  if (!attention) return;
+
+  if (!attentionResetTimer) restoreAlwaysOnTop = mainWindow.isAlwaysOnTop();
+  mainWindow.setAlwaysOnTop(true, "floating");
+  mainWindow.flashFrame(true);
+  if (attentionResetTimer) clearTimeout(attentionResetTimer);
+  attentionResetTimer = setTimeout(() => {
+    if (!mainWindow.isDestroyed()) {
+      mainWindow.flashFrame(false);
+      if (!restoreAlwaysOnTop) mainWindow.setAlwaysOnTop(false);
+    }
+    attentionResetTimer = undefined;
+    restoreAlwaysOnTop = false;
+  }, 1_800);
+  attentionResetTimer.unref?.();
+};
+
 const sanitizeServerUrl = (value?: string): string | undefined => {
   if (!value) return undefined;
   try {
@@ -123,9 +149,14 @@ export const registerIpcHandlers = ({
 
   ipcMain.handle(
     IPC_CHANNELS.app.notify,
-    async (_event, payload: { title: string; body: string }): Promise<void> => {
+    async (
+      _event,
+      payload: { title: string; body: string; attention?: boolean },
+    ): Promise<void> => {
       requireString(payload?.title, 80, "notification_title");
       requireString(payload?.body, 180, "notification_body");
+      const mainWindow = getMainWindow();
+      if (payload.attention === true) bringWindowToFront(mainWindow, true);
       if (!Notification.isSupported()) {
         return;
       }
@@ -135,12 +166,7 @@ export const registerIpcHandlers = ({
         silent: false,
       });
       notification.on("click", () => {
-        const mainWindow = getMainWindow();
-        if (mainWindow?.isMinimized()) {
-          mainWindow.restore();
-        }
-        mainWindow?.show();
-        mainWindow?.focus();
+        bringWindowToFront(getMainWindow());
       });
       notification.show();
     },
@@ -394,7 +420,7 @@ export const registerIpcHandlers = ({
         microphoneProcessingSampleRate: 48_000,
         lowCutFrequency: settings.lowCutFrequency,
         micEqualizerGains: settings.micEqualizerGains,
-        inputLevelThreshold: settings.inputLevelThreshold,
+        isVoiceEnhancementEnabled: settings.isVoiceEnhancementEnabled,
         isNoiseSuppressionEnabled: settings.isNoiseSuppressionEnabled,
         isEchoCancellationEnabled: settings.isEchoCancellationEnabled,
         isAutoGainControlEnabled: settings.isAutoGainControlEnabled,

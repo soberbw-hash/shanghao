@@ -6,7 +6,9 @@ import {
   type BuiltInAvatarId,
   type ChatMessage,
   type MemberActivity,
+  type MusicActivity,
   type RoomMember,
+  type RoomCollectionItem,
   type SceneReaction,
   type SceneZoneId,
   type SignalingEventPayload,
@@ -17,6 +19,7 @@ import type {
   AvatarUpdateMessage,
   ChatMessage as SignalChatMessage,
   ChatHistoryMessage,
+  RoomCollectionSnapshotMessage,
   ErrorMessage,
   IceCandidateMessage,
   JoinAckMessage,
@@ -72,6 +75,7 @@ interface RoomClientOptions {
   onRemoteStream: (peerId: string, stream: MediaStream | undefined) => void;
   onChatMessage: (message: ChatMessage) => void;
   onChatHistory: (messages: ChatMessage[]) => void;
+  onRoomCollection: (items: RoomCollectionItem[]) => void;
   onKnock: (message: ChatMessage) => void;
   onRemoteScreenFrame: (peerId: string, frame?: RemoteScreenFrame) => void;
   onSceneReaction: (reaction: SceneReaction) => void;
@@ -89,6 +93,15 @@ interface PendingConnection {
   resolve: () => void;
   reject: (error: Error) => void;
   timeout: number;
+}
+
+interface DesiredPresenceState {
+  isDeafened: boolean;
+  activity: MemberActivity;
+  sceneZone?: SceneZoneId;
+  gameName?: string;
+  musicActivity?: MusicActivity;
+  key: string;
 }
 
 export interface RemoteScreenFrame {
@@ -123,10 +136,10 @@ export class RoomClient {
   private avatarId?: BuiltInAvatarId;
   private lastPublishedMuteState?: boolean;
   private lastPublishedSpeakingState?: boolean;
-  private lastPublishedDeafenState?: boolean;
-  private lastPublishedActivity?: MemberActivity;
-  private lastPublishedSceneZone?: SceneZoneId;
-  private lastPublishedGameName?: string;
+  private desiredPresenceState?: DesiredPresenceState;
+  private lastPublishedPresenceStateKey?: string;
+  private pendingPresenceStateKey?: string;
+  private presencePublicationGeneration = 0;
   private lastPublishedNickname: string;
   private lastPublishedAvatarDataUrl?: string;
   private lastPublishedAvatarId?: BuiltInAvatarId;
@@ -389,6 +402,9 @@ export class RoomClient {
     this.joinAckReceived = false;
     this.roomSnapshotReceived = false;
     this.lastServerError = undefined;
+    this.presencePublicationGeneration += 1;
+    this.lastPublishedPresenceStateKey = undefined;
+    this.pendingPresenceStateKey = undefined;
 
     return new Promise((resolve, reject) => {
       this.clearPendingConnection();
@@ -536,6 +552,9 @@ export class RoomClient {
       case "chat_history":
         this.handleChatHistory(payload);
         return;
+      case "room_collection_snapshot":
+        this.handleRoomCollection(payload);
+        return;
       case "knock_event":
         this.handleKnockEvent(payload);
         return;
@@ -579,30 +598,64 @@ export class RoomClient {
     activity: MemberActivity,
     sceneZone?: SceneZoneId,
     gameName?: string,
+    musicActivity?: MusicActivity,
   ): void {
     const normalizedGameName = normalizePresenceGameName(gameName);
-    if (
-      this.lastPublishedDeafenState === isDeafened &&
-      this.lastPublishedActivity === activity &&
-      this.lastPublishedSceneZone === sceneZone &&
-      this.lastPublishedGameName === normalizedGameName
-    ) {
-      return;
-    }
-
-    this.lastPublishedDeafenState = isDeafened;
-    this.lastPublishedActivity = activity;
-    this.lastPublishedSceneZone = sceneZone;
-    this.lastPublishedGameName = normalizedGameName;
-    void this.safeSend({
-      type: "member_state",
-      roomId: this.options.roomId,
-      peerId: this.options.peerId,
+    const musicActivityKey = musicActivity ? JSON.stringify(musicActivity) : "";
+    const key = JSON.stringify([
+      isDeafened,
+      activity,
+      sceneZone ?? null,
+      normalizedGameName ?? null,
+      musicActivityKey,
+    ]);
+    this.desiredPresenceState = {
       isDeafened,
       activity,
       sceneZone,
       gameName: normalizedGameName,
+      musicActivity,
+      key,
+    };
+    void this.publishDesiredPresence();
+  }
+
+  private async publishDesiredPresence(): Promise<void> {
+    const desired = this.desiredPresenceState;
+    if (
+      !desired ||
+      !this.isSignalingConnected ||
+      !this.joinAckReceived ||
+      this.lastPublishedPresenceStateKey === desired.key ||
+      this.pendingPresenceStateKey
+    ) {
+      return;
+    }
+
+    const publicationGeneration = this.presencePublicationGeneration;
+    this.pendingPresenceStateKey = desired.key;
+    const sent = await this.safeSend({
+      type: "member_state",
+      roomId: this.options.roomId,
+      peerId: this.options.peerId,
+      isDeafened: desired.isDeafened,
+      activity: desired.activity,
+      sceneZone: desired.sceneZone,
+      gameName: desired.gameName,
+      musicActivity: desired.musicActivity ?? null,
     });
+
+    if (publicationGeneration !== this.presencePublicationGeneration) return;
+    if (this.pendingPresenceStateKey === desired.key) {
+      this.pendingPresenceStateKey = undefined;
+    }
+    if (sent) {
+      this.lastPublishedPresenceStateKey = desired.key;
+    }
+
+    if (this.desiredPresenceState?.key !== desired.key) {
+      void this.publishDesiredPresence();
+    }
   }
 
   async startScreenShare(
@@ -689,6 +742,7 @@ export class RoomClient {
     this.options.onConnectionState(RoomConnectionState.WaitingSnapshot);
     this.resolvePendingConnection();
     this.startSnapshotRecovery();
+    void this.publishDesiredPresence();
     const relayIceServers =
       payload.iceServers?.map((server) => ({
         urls: server.urls,
@@ -979,6 +1033,30 @@ export class RoomClient {
     }
   }
 
+  async addRoomCollectionItem(
+    kind: RoomCollectionItem["kind"],
+    title: string,
+    content: string,
+  ): Promise<void> {
+    if (!this.canSendChat()) throw new Error("signaling_not_connected");
+    await this.send({
+      type: "room_collection_add",
+      roomId: this.options.roomId,
+      kind,
+      title: title.trim().slice(0, 80),
+      content: content.trim().slice(0, 2_000),
+    });
+  }
+
+  async removeRoomCollectionItem(itemId: string): Promise<void> {
+    if (!this.canSendChat()) throw new Error("signaling_not_connected");
+    await this.send({
+      type: "room_collection_remove",
+      roomId: this.options.roomId,
+      itemId,
+    });
+  }
+
   async sendKnock(): Promise<void> {
     if (!this.canSendChat()) {
       throw new Error("signaling_not_connected");
@@ -1029,6 +1107,10 @@ export class RoomClient {
         kind: "chat" as const,
       })),
     );
+  }
+
+  private handleRoomCollection(payload: RoomCollectionSnapshotMessage): void {
+    this.options.onRoomCollection(payload.items);
   }
 
   private handleKnockEvent(payload: KnockEventMessage): void {
@@ -1153,6 +1235,10 @@ export class RoomClient {
         activity: payload.activity ?? member.activity,
         sceneZone: payload.sceneZone ?? member.sceneZone,
         gameName: payload.gameName === "" ? undefined : (payload.gameName ?? member.gameName),
+        musicActivity:
+          payload.musicActivity === null
+            ? undefined
+            : (payload.musicActivity ?? member.musicActivity),
         isMuted,
         speakingState: isMuted
           ? MemberSpeakingState.Muted

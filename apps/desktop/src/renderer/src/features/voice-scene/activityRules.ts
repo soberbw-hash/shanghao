@@ -11,7 +11,7 @@ export const activityLabels: Record<MemberActivity, string> = {
   gaming: "游戏中",
   drinking: "喝水中",
   fitness: "运动中",
-  restroom: "离开一下",
+  restroom: "离开",
 };
 
 export interface MemberStatus {

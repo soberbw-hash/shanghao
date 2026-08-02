@@ -4,6 +4,7 @@ import {
   MemberSpeakingState,
   type BuiltInAvatarId,
   type MemberActivity,
+  type MusicActivity,
   type RoomMember,
   type SceneZoneId,
 } from "@private-voice/shared";
@@ -24,6 +25,7 @@ export interface PeerSession {
   activity: MemberActivity;
   sceneZone?: SceneZoneId;
   gameName?: string;
+  musicActivity?: MusicActivity;
   joinedAt: string;
   lastHeartbeatAt: number;
   disconnectedAt?: number;
@@ -85,11 +87,15 @@ export class PeerManager {
         | "avatarHash"
         | "avatarId"
       >
-    >,
+    > & { musicActivity?: MusicActivity | null },
   ): void {
     const peer = this.peers.get(peerId);
     if (peer) {
       for (const [key, value] of Object.entries(nextState)) {
+        if (key === "musicActivity" && value === null) {
+          peer.musicActivity = undefined;
+          continue;
+        }
         if (value !== undefined) {
           Object.assign(peer, { [key]: value });
         }
@@ -111,6 +117,7 @@ export class PeerManager {
       activity: peer.activity,
       sceneZone: peer.sceneZone,
       gameName: peer.gameName,
+      musicActivity: peer.musicActivity,
       presenceState: peer.disconnectedAt
         ? MemberPresenceState.Reconnecting
         : MemberPresenceState.Online,

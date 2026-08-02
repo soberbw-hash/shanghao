@@ -4,7 +4,12 @@ import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 
-import { buildGameDetectionProbeCommand, matchKnownGame } from "../src/main/game-detection";
+import {
+  buildGameDetectionProbeCommand,
+  matchKnownGame,
+  matchMusicActivity,
+  resolveStableMusicActivity,
+} from "../src/main/game-detection";
 
 const snapshot = (ProcessName: string, MainWindowTitle = "", Path = "", CommandLine = ""): string =>
   JSON.stringify({ ProcessName, MainWindowTitle, Path, CommandLine });
@@ -21,6 +26,36 @@ test("game detection uses structured exact process matches", () => {
   assert.equal(matchKnownGame(snapshot("b1")), undefined);
   assert.equal(matchKnownGame(snapshot("playgtav")), undefined);
   assert.equal(matchKnownGame("LostCastle2\r\nexplorer"), undefined);
+});
+
+test("music detection reports the active track without treating an idle player as music", () => {
+  assert.deepEqual(matchMusicActivity(snapshot("Spotify", "Midnight City - M83 - Spotify")), {
+    provider: "spotify",
+    providerName: "Spotify",
+    trackTitle: "Midnight City",
+    artist: "M83",
+  });
+  assert.deepEqual(matchMusicActivity(snapshot("cloudmusic", "晴天 - 周杰伦 - 网易云音乐")), {
+    provider: "netease",
+    providerName: "网易云音乐",
+    trackTitle: "晴天",
+    artist: "周杰伦",
+  });
+  assert.equal(matchMusicActivity(snapshot("QQMusic", "QQ音乐")), undefined);
+  assert.equal(matchMusicActivity(snapshot("explorer", "Spotify playlist")), undefined);
+});
+
+test("music activity survives transient title misses without becoming permanently stale", () => {
+  const activity = matchMusicActivity(snapshot("cloudmusic", "晴天 - 周杰伦 - 网易云音乐"));
+
+  assert.ok(activity);
+  assert.equal(resolveStableMusicActivity(undefined, activity, 1), activity);
+  assert.equal(resolveStableMusicActivity(undefined, activity, 2), activity);
+  assert.equal(resolveStableMusicActivity(undefined, activity, 3), activity);
+  assert.equal(resolveStableMusicActivity(undefined, activity, 4), undefined);
+
+  const changed = matchMusicActivity(snapshot("cloudmusic", "夜曲 - 周杰伦 - 网易云音乐"));
+  assert.equal(resolveStableMusicActivity(changed, activity, 0), changed);
 });
 
 test("KK launcher alone never reports a game", () => {
@@ -153,6 +188,10 @@ test("game detection probes shared hosts for command-line evidence without probi
   assert.equal(command.includes("Get-CimInstance Win32_Process"), true);
   assert.equal(command.includes("'war3'"), true);
   assert.equal(command.includes("'kk'"), false);
+  assert.equal(command.includes("[Console]::OutputEncoding"), true);
+  assert.equal(command.includes("UTF8Encoding"), true);
+  assert.equal(command.includes("ConvertTo-Utf8Base64"), true);
+  assert.equal(command.includes("MainWindowTitleBase64"), true);
   assert.equal(command.includes("ConvertTo-Json"), true);
 });
 

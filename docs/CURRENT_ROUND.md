@@ -1,10 +1,10 @@
-# ShangHao 2.2 release checkpoint
+# ShangHao 2.3 release checkpoint
 
-Updated: 2026-07-30
+Updated: 2026-08-02
 
 ## Release scope
 
-ShangHao 2.2 keeps the fixed-server Windows architecture and concentrates on verified
+ShangHao 2.3 keeps the fixed-server Windows architecture and concentrates on verified
 five-person voice, DeepFilterNet readiness, direct-media screen sharing, interruptible
 character movement, readable glass materials, and consistent nonlinear motion.
 
@@ -16,7 +16,7 @@ character movement, readable glass materials, and consistent nonlinear motion.
 - Eight-frame character run cycles, left-edge entry, shortest collision-safe routes, and
   interruptible seat changes.
 - Direct-media detached screen viewer with self-window filtering.
-- 720p and 1080p screen-share presets with system-audio support.
+- Fixed 1440p screen sharing with a per-share system-audio choice.
 - One local DeepFilterNet denoiser, 48 kHz microphone processing, low-cut filtering, voice EQ,
   FEC/DTX, and weak-network adaptation. If the model is unavailable, the microphone stays on
   raw passthrough instead of switching to a second denoiser.
@@ -25,6 +25,9 @@ character movement, readable glass materials, and consistent nonlinear motion.
 - Readable glacier glass, unified motion tokens, animated controls, deduplicated toasts, and
   delayed reconnect overlays.
 - Fixed-server-only client flow; no direct-host or Tailscale product paths.
+- Home-page microphone and speaker selection with real device readiness checks before joining.
+- Persistent per-room collection for short text, links, and image references.
+- Vertical compact overlay with per-member speaking and muted states.
 
 ## Release verification
 

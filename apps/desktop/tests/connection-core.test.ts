@@ -293,9 +293,13 @@ test("push-to-talk avoids low-level global hooks that can conflict with anti-che
 
 test("native notifications and recording markers use main process IPC", () => {
   const ipc = read("apps/desktop/src/main/ipc.ts");
+  const roomState = read("apps/desktop/src/renderer/src/hooks/useRoomState.ts");
   const room = read("apps/desktop/src/renderer/src/pages/RoomPage.tsx");
   assert.equal(ipc.includes("Notification.isSupported"), true);
   assert.equal(ipc.includes("silent: false"), true);
+  assert.equal(ipc.includes("mainWindow.flashFrame(true)"), true);
+  assert.equal(ipc.includes('mainWindow.setAlwaysOnTop(true, "floating")'), true);
+  assert.equal(roomState.includes("attention: true"), true);
   assert.equal(ipc.includes("recording.saveMarkers"), true);
   assert.equal(ipc.includes("-精彩时刻.txt"), true);
   assert.equal(ipc.includes(".markers.json"), false);

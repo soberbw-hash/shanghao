@@ -29,12 +29,12 @@ export const ShortcutSettingsCard = ({
             placeholder="未启用"
           />
         </SettingsItemRow>
-        <SettingsItemRow label="PTT 按键" description="上号窗口聚焦时按住说话，松开闭麦。">
+        <SettingsItemRow label="按键说话" description="上号窗口聚焦时按住说话，松开闭麦。">
           <ShortcutInput
             value={settings.pushToTalkShortcut}
             onChange={(pushToTalkShortcut) => onChange({ pushToTalkShortcut })}
             defaultValue="Space"
-            conflictMessage={hasConflict ? "PTT 按键不能和全局静音快捷键重复。" : undefined}
+            conflictMessage={hasConflict ? "按键说话不能和全局静音快捷键重复。" : undefined}
           />
         </SettingsItemRow>
         <SettingsItemRow

@@ -1,6 +1,6 @@
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Fish } from "lucide-react";
-import { AnimatePresence } from "framer-motion";
+import { AnimatePresence, motion } from "framer-motion";
 import { gsap } from "gsap";
 
 import {
@@ -23,6 +23,7 @@ import {
 } from "./SceneAmbientDecor";
 import { SceneCharacter, sceneMemberKey } from "./SceneCharacter";
 import { GameMonitorContent } from "./GameMonitorContent";
+import { MusicActivityBadge } from "./MusicActivityBadge";
 import { WorkstationArt } from "./WorkstationArt";
 import {
   characterPositions,
@@ -69,8 +70,10 @@ export const TeamIsland = ({
   const [ambient, setAmbient] = useState<"day" | "evening" | "night">("day");
   const [hoveredZone, setHoveredZone] = useState<SceneZoneId>();
   const [welcomingMemberIds, setWelcomingMemberIds] = useState<Set<string>>(new Set());
+  const [settledMemberZones, setSettledMemberZones] = useState<Record<string, SceneZoneId>>({});
   const previousMemberIdsRef = useRef<string[]>();
   const memberSignature = visibleMembers.map(sceneMemberKey).join("|");
+  const visibleMemberIdSignature = visibleMembers.map((member) => member.id).join("|");
   const screenSharingSet = new Set(screenSharingPeerIds);
   const resolvedMemberZones = resolveMemberSceneZones(visibleMembers);
   const occupiedSeatIds = new Set<SceneZoneId>();
@@ -90,6 +93,21 @@ export const TeamIsland = ({
   const awayMembers = visibleMembers.filter(
     (member) => resolvedMemberZones.get(member.id) === "restroomZone",
   );
+  const handleMemberSettled = useCallback((memberId: string, zone: SceneZoneId) => {
+    setSettledMemberZones((current) =>
+      current[memberId] === zone ? current : { ...current, [memberId]: zone },
+    );
+  }, []);
+
+  useEffect(() => {
+    const activeMemberIds = new Set(visibleMemberIdSignature.split("|").filter(Boolean));
+    setSettledMemberZones((current) => {
+      const entries = Object.entries(current).filter(([memberId]) => activeMemberIds.has(memberId));
+      return entries.length === Object.keys(current).length
+        ? current
+        : (Object.fromEntries(entries) as Record<string, SceneZoneId>);
+    });
+  }, [visibleMemberIdSignature]);
 
   useEffect(() => {
     const currentIds = memberSignature ? memberSignature.split("|") : [];
@@ -194,7 +212,6 @@ export const TeamIsland = ({
       <span className="scene-knock-wave" data-knock-wave aria-hidden="true" />
       <div className="team-island-stage absolute inset-0" aria-hidden="true">
         <div className="scene-wall-backdrop" />
-        <div className="scene-wall-baseboard" />
         <div className="scene-window-light" />
         <div className="scene-rug" />
         <div className="scene-brand-arc" />
@@ -213,11 +230,14 @@ export const TeamIsland = ({
           <SceneFloorLamp className="scene-lounge-lamp" />
         </div>
         <div className="scene-service-zone scene-service-restroom">
-          <span>离开一下</span>
+          <span>离开</span>
         </div>
         {seatSlots.map((slot) => {
           const occupant = memberBySeat.get(slot.id);
+          const settledOccupant =
+            occupant && settledMemberZones[occupant.id] === slot.id ? occupant : undefined;
           const occupantTone = occupant ? memberStatus(occupant).tone : undefined;
+          const isScreenSharing = screenSharingSet.has(settledOccupant?.id ?? "");
           return (
             <div
               key={slot.id}
@@ -237,19 +257,32 @@ export const TeamIsland = ({
               <div className="scene-workstation-art-frame">
                 <WorkstationArt className="scene-workstation-art" />
                 <span
-                  className={`scene-workstation-screen ${occupant ? "online" : ""} ${
-                    occupant?.gameName ? "gaming" : ""
-                  } ${screenSharingSet.has(occupant?.id ?? "") ? "sharing" : ""} ${
-                    networkQuality === "poor" && occupant ? "network-unstable" : ""
+                  className={`scene-workstation-screen ${settledOccupant ? "online" : ""} ${
+                    settledOccupant?.gameName ? "gaming" : ""
+                  } ${isScreenSharing ? "sharing" : ""} ${
+                    networkQuality === "poor" && settledOccupant ? "network-unstable" : ""
                   }`}
                 >
-                  {screenSharingSet.has(occupant?.id ?? "") ? (
-                    <span className="scene-workstation-sharing-mark">共享中</span>
-                  ) : occupant?.gameName ? (
-                    <GameMonitorContent gameName={occupant.gameName} />
-                  ) : occupant ? (
-                    <Fish className="scene-workstation-idle-fish" aria-label="摸鱼中" />
-                  ) : null}
+                  <AnimatePresence mode="wait" initial={false}>
+                    {settledOccupant ? (
+                      <motion.span
+                        key={`${settledOccupant.id}:${slot.id}:${isScreenSharing ? "sharing" : (settledOccupant.gameName ?? "idle")}`}
+                        className="scene-workstation-screen-content"
+                        initial={{ opacity: 0, scale: 0.96 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        exit={{ opacity: 0, scale: 0.98 }}
+                        transition={{ duration: 0.26, ease: [0.22, 1, 0.36, 1] }}
+                      >
+                        {isScreenSharing ? (
+                          <span className="scene-workstation-sharing-mark">共享中</span>
+                        ) : settledOccupant.gameName ? (
+                          <GameMonitorContent gameName={settledOccupant.gameName} />
+                        ) : (
+                          <Fish className="scene-workstation-idle-fish" aria-label="摸鱼中" />
+                        )}
+                      </motion.span>
+                    ) : null}
+                  </AnimatePresence>
                 </span>
               </div>
             </div>
@@ -304,6 +337,31 @@ export const TeamIsland = ({
         ))}
       </div>
 
+      <div className="music-activity-overlay pointer-events-none absolute inset-0 z-[62]">
+        <AnimatePresence initial={false}>
+          {seatSlots.map((slot) => {
+            const occupant = memberBySeat.get(slot.id);
+            if (!occupant?.musicActivity || settledMemberZones[occupant.id] !== slot.id)
+              return null;
+            return (
+              <motion.div
+                key={`${occupant.id}:${slot.id}`}
+                className="music-activity-position"
+                style={{ left: `${slot.left}%`, top: `${slot.top}%` }}
+                initial={{ opacity: 0, scale: 0.82 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.9 }}
+                transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
+              >
+                <div className="music-activity-anchor" data-seat-zone={slot.id}>
+                  <MusicActivityBadge activity={occupant.musicActivity} />
+                </div>
+              </motion.div>
+            );
+          })}
+        </AnimatePresence>
+      </div>
+
       <AnimatePresence>
         {visibleMembers.map((member, memberIndex) => {
           const zone = resolvedMemberZones.get(member.id) ?? "gameDesk1";
@@ -329,6 +387,7 @@ export const TeamIsland = ({
                 .slice(-3)}
               onReact={onReact}
               onVolumeChange={onVolumeChange}
+              onSettled={handleMemberSettled}
             />
           );
         })}

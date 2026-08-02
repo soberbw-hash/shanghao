@@ -204,6 +204,144 @@ def normalize_frames(frames: list[Image.Image]) -> list[Image.Image]:
     return normalized
 
 
+def interpolate_motion_frame(
+    frame: Image.Image,
+    next_frame: Image.Image,
+    amount: float,
+) -> Image.Image:
+    """Warp adjacent poses toward each other before blending their pixels."""
+    try:
+        import cv2
+        import numpy as np
+    except ImportError as error:
+        raise RuntimeError(
+            "Motion-aware in-betweens require opencv-python-headless. "
+            "Install it with: python -m pip install opencv-python-headless"
+        ) from error
+
+    source = np.asarray(frame, dtype=np.float32) / 255.0
+    target = np.asarray(next_frame, dtype=np.float32) / 255.0
+    source_alpha = source[:, :, 3:4]
+    target_alpha = target[:, :, 3:4]
+
+    # Optical flow needs an opaque image. A neutral background preserves both
+    # the silhouette edge and dark clothing without adding a chroma-key halo.
+    source_opaque = source[:, :, :3] * source_alpha + 0.5 * (1.0 - source_alpha)
+    target_opaque = target[:, :, :3] * target_alpha + 0.5 * (1.0 - target_alpha)
+    source_gray = cv2.cvtColor(
+        np.clip(source_opaque * 255.0, 0, 255).astype(np.uint8),
+        cv2.COLOR_RGB2GRAY,
+    )
+    target_gray = cv2.cvtColor(
+        np.clip(target_opaque * 255.0, 0, 255).astype(np.uint8),
+        cv2.COLOR_RGB2GRAY,
+    )
+    source_gray = cv2.addWeighted(
+        source_gray,
+        0.72,
+        np.clip(source_alpha[:, :, 0] * 255.0, 0, 255).astype(np.uint8),
+        0.28,
+        0,
+    )
+    target_gray = cv2.addWeighted(
+        target_gray,
+        0.72,
+        np.clip(target_alpha[:, :, 0] * 255.0, 0, 255).astype(np.uint8),
+        0.28,
+        0,
+    )
+
+    flow_to_target = cv2.calcOpticalFlowFarneback(
+        source_gray,
+        target_gray,
+        None,
+        0.5,
+        5,
+        19,
+        4,
+        7,
+        1.5,
+        0,
+    )
+    flow_to_source = cv2.calcOpticalFlowFarneback(
+        target_gray,
+        source_gray,
+        None,
+        0.5,
+        5,
+        19,
+        4,
+        7,
+        1.5,
+        0,
+    )
+    height, width = source_gray.shape
+    grid_x, grid_y = np.meshgrid(
+        np.arange(width, dtype=np.float32),
+        np.arange(height, dtype=np.float32),
+    )
+
+    def warp(image: "np.ndarray", flow: "np.ndarray", progress: float) -> "np.ndarray":
+        return cv2.remap(
+            image,
+            grid_x - flow[:, :, 0] * progress,
+            grid_y - flow[:, :, 1] * progress,
+            cv2.INTER_CUBIC,
+            borderMode=cv2.BORDER_CONSTANT,
+            borderValue=0,
+        )
+
+    source_premultiplied = source[:, :, :3] * source_alpha
+    target_premultiplied = target[:, :, :3] * target_alpha
+    warped_source_alpha = warp(source_alpha, flow_to_target, amount)
+    warped_target_alpha = warp(target_alpha, flow_to_source, 1.0 - amount)
+    if warped_source_alpha.ndim == 2:
+        warped_source_alpha = warped_source_alpha[:, :, np.newaxis]
+    if warped_target_alpha.ndim == 2:
+        warped_target_alpha = warped_target_alpha[:, :, np.newaxis]
+    warped_source_rgb = warp(source_premultiplied, flow_to_target, amount)
+    warped_target_rgb = warp(target_premultiplied, flow_to_source, 1.0 - amount)
+
+    alpha = warped_source_alpha * (1.0 - amount) + warped_target_alpha * amount
+    premultiplied = warped_source_rgb * (1.0 - amount) + warped_target_rgb * amount
+    rgb = np.divide(
+        premultiplied,
+        np.maximum(alpha, 1.0 / 255.0),
+        out=np.zeros_like(premultiplied),
+        where=alpha > 1.0 / 255.0,
+    )
+    output = np.concatenate((rgb, alpha), axis=2)
+    return clear_transparent_rgb(
+        Image.fromarray(np.clip(output * 255.0, 0, 255).astype(np.uint8), "RGBA")
+    )
+
+
+def add_inbetween_frames(
+    frames: list[Image.Image],
+    inbetweens: int,
+    interpolation: str,
+) -> list[Image.Image]:
+    """Create transition poses without changing the full gait duration."""
+    if inbetweens <= 0:
+        return frames
+
+    interpolated: list[Image.Image] = []
+    for index, frame in enumerate(frames):
+        next_frame = frames[(index + 1) % len(frames)]
+        interpolated.append(frame)
+        for step in range(1, inbetweens + 1):
+            amount = step / (inbetweens + 1)
+            if interpolation == "motion":
+                interpolated.append(interpolate_motion_frame(frame, next_frame, amount))
+            else:
+                premultiplied = frame.convert("RGBa")
+                next_premultiplied = next_frame.convert("RGBa")
+                blended = Image.blend(premultiplied, next_premultiplied, amount).convert("RGBA")
+                interpolated.append(clear_transparent_rgb(blended))
+
+    return interpolated
+
+
 def save_sprite_strip(frames: list[Image.Image], output_path: Path) -> None:
     strip = Image.new("RGBA", (FRAME_SIZE * len(frames), FRAME_SIZE), (0, 0, 0, 0))
     for index, frame in enumerate(frames):
@@ -212,7 +350,7 @@ def save_sprite_strip(frames: list[Image.Image], output_path: Path) -> None:
     strip.save(output_path, optimize=True)
 
 
-def save_preview(frames: list[Image.Image], output_path: Path) -> None:
+def save_preview(frames: list[Image.Image], output_path: Path, fps: int) -> None:
     preview_frames = []
     for frame in frames:
         background = Image.new("RGBA", frame.size, (236, 245, 255, 255))
@@ -224,7 +362,7 @@ def save_preview(frames: list[Image.Image], output_path: Path) -> None:
         output_path,
         save_all=True,
         append_images=preview_frames[1:],
-        duration=64,
+        duration=max(1, round(1000 / fps)),
         loop=0,
         disposal=2,
         optimize=False,
@@ -236,6 +374,12 @@ def main() -> None:
     parser.add_argument("input", type=Path, help="Transparent horizontal source strip")
     parser.add_argument("output", type=Path, help="Normalized transparent PNG sprite strip")
     parser.add_argument("--preview", type=Path, help="Optional animated GIF preview")
+    parser.add_argument(
+        "--preview-fps",
+        type=int,
+        default=50,
+        help="Animated preview frame rate (default: 50)",
+    )
     parser.add_argument("--columns", type=int, default=8, help="Source sheet column count")
     parser.add_argument("--rows", type=int, default=1, help="Source sheet row count")
     parser.add_argument(
@@ -248,6 +392,18 @@ def main() -> None:
         type=int,
         default=0,
         help="Remove the top-left background color within this RGB tolerance",
+    )
+    parser.add_argument(
+        "--inbetweens",
+        type=int,
+        default=0,
+        help="Add this many alpha-correct transition frames between each source pose",
+    )
+    parser.add_argument(
+        "--interpolation",
+        choices=("motion", "blend"),
+        default="motion",
+        help="Use motion-aware warping (recommended) or a basic alpha blend",
     )
     args = parser.parse_args()
 
@@ -263,10 +419,16 @@ def main() -> None:
         source_frames = split_horizontal_alpha_runs(source, args.columns)
     else:
         source_frames = split_frames(source, args.columns, args.rows)
-    frames = normalize_frames(source_frames)
+    frames = add_inbetween_frames(
+        normalize_frames(source_frames),
+        args.inbetweens,
+        args.interpolation,
+    )
     save_sprite_strip(frames, args.output)
     if args.preview:
-        save_preview(frames, args.preview)
+        if args.preview_fps <= 0:
+            raise ValueError("--preview-fps must be greater than zero")
+        save_preview(frames, args.preview, args.preview_fps)
 
 
 if __name__ == "__main__":

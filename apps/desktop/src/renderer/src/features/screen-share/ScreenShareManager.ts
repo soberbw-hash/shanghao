@@ -1,8 +1,9 @@
+import type { ScreenCaptureSourceDescriptor } from "@private-voice/shared";
 import type { ScreenShareEncodingProfile } from "@private-voice/webrtc";
 
 import { DetachedScreenSharePublisher } from "./DetachedScreenSharePublisher";
 import {
-  SCREEN_SHARE_PROFILES,
+  SCREEN_SHARE_PROFILE,
   type ScreenShareDisplayMode,
   type ScreenShareItem,
   type ScreenShareManagerSnapshot,
@@ -25,7 +26,6 @@ type ScreenShareListener = (snapshot: ScreenShareManagerSnapshot) => void;
 const initialSnapshot: ScreenShareManagerSnapshot = {
   status: "idle",
   sources: [],
-  quality: "720p",
   hasSystemAudio: false,
   displayMode: "inline",
 };
@@ -57,18 +57,23 @@ export class ScreenShareManager {
     return () => this.listeners.delete(listener);
   }
 
-  async openSourcePicker(): Promise<void> {
+  async openSourcePicker(): Promise<ScreenCaptureSourceDescriptor[]> {
     const operationId = ++this.operationId;
     this.patch({ status: "enumerating", error: undefined });
     try {
+      await window.desktopApi.screenCapture.setContentProtection(false);
       const sources = await window.desktopApi.screenCapture.listSources();
-      if (operationId !== this.operationId || this.isDisposed) return;
+      if (operationId !== this.operationId || this.isDisposed) {
+        throw new Error("screen_source_superseded");
+      }
       if (sources.length === 0) throw new Error("screen_source_missing");
       this.patch({ status: "source-ready", sources });
+      return sources;
     } catch (error) {
-      if (operationId !== this.operationId || this.isDisposed) return;
-      this.patch({ status: "failed", error: this.errorMessage(error) });
-      await this.log("error", "Failed to enumerate screen capture sources", error);
+      if (operationId === this.operationId && !this.isDisposed) {
+        this.patch({ status: "failed", error: this.errorMessage(error) });
+        await this.log("error", "Failed to enumerate screen capture sources", error);
+      }
       throw error;
     }
   }
@@ -81,15 +86,13 @@ export class ScreenShareManager {
     this.patch({
       status: "starting",
       selectedSourceId: request.sourceId,
-      quality: request.quality,
       error: undefined,
     });
 
     let stream: MediaStream | undefined;
     try {
-      const profile = SCREEN_SHARE_PROFILES[request.quality];
+      const profile = SCREEN_SHARE_PROFILE;
       await window.desktopApi.screenCapture.selectSource(request.sourceId);
-      await window.desktopApi.screenCapture.setContentProtection(true);
       stream = await navigator.mediaDevices.getDisplayMedia({
         video: {
           width: { ideal: profile.maxWidth, max: profile.maxWidth },
@@ -128,8 +131,9 @@ export class ScreenShareManager {
         localStream: stream,
         hasSystemAudio: stream.getAudioTracks().some((track) => track.readyState === "live"),
       });
+      await window.desktopApi.screenCapture.setContentProtection(true);
       await this.log("info", "Screen share started", {
-        quality: request.quality,
+        quality: "1440p",
         hasSystemAudio: this.snapshot.hasSystemAudio,
         videoTrackSettings: videoTrack.getSettings(),
       });

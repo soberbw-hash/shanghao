@@ -17,6 +17,7 @@ interface UseMicTestOptions {
   echoCancellation?: boolean;
   noiseSuppression?: boolean;
   autoGainControl?: boolean;
+  voiceEnhancement?: boolean;
   monitorMode?: "processed" | "raw";
   equalizerGains?: number[];
   lowCutFrequency?: LowCutFrequency;
@@ -41,6 +42,7 @@ export const useMicTest = ({
   echoCancellation = true,
   noiseSuppression = true,
   autoGainControl = true,
+  voiceEnhancement = true,
   monitorMode = "processed",
   equalizerGains = [],
   lowCutFrequency = "90",
@@ -132,6 +134,7 @@ export const useMicTest = ({
               ) as MicEqualizerGains,
               lowCutFrequency,
               isNoiseSuppressionEnabled: noiseSuppression,
+              isVoiceEnhancementEnabled: voiceEnhancement,
             })
           : undefined;
       processedStreamRef.current = processedStream;
@@ -178,6 +181,7 @@ export const useMicTest = ({
     outputDeviceId,
     startMeter,
     stop,
+    voiceEnhancement,
   ]);
 
   const toggle = useCallback(async () => {

@@ -6,7 +6,7 @@ import {
   type CSSProperties,
   type PointerEvent as ReactPointerEvent,
 } from "react";
-import { GripHorizontal } from "lucide-react";
+import { Copy, FolderHeart, GripHorizontal, Plus, Trash2 } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
 import { gsap } from "gsap";
 
@@ -16,8 +16,8 @@ import {
   RoomConnectionState,
   type GameDetectionSnapshot,
   type MemberActivity,
+  type ScreenCaptureSourceDescriptor,
   type SceneZoneId,
-  type ScreenShareQuality,
 } from "@private-voice/shared";
 
 import { MuteButton } from "../components/audio/MuteButton";
@@ -60,6 +60,7 @@ interface AwaySession {
   seat: SceneZoneId;
   activity: MemberActivity;
   gameName?: string;
+  musicActivity?: GameDetectionSnapshot["musicActivity"];
   enteredAt: string;
 }
 
@@ -267,12 +268,13 @@ export const RoomPage = () => {
     setMemberVolume,
     startScreenShare,
     stopScreenShare,
+    addRoomCollectionItem,
+    removeRoomCollectionItem,
   } = useRoomState();
   const pushToast = useAppStore((state) => state.pushToast);
   const {
     localStream: localScreenShareStream,
     status: screenShareStatus,
-    sources: screenCaptureSources,
     detachedItemId: detachedViewerId,
     openSourcePicker: prepareScreenSourcePicker,
     startShare: startManagedScreenShare,
@@ -298,6 +300,7 @@ export const RoomPage = () => {
   const remoteScreenFrames = useRoomStore((state) => state.remoteScreenFrames);
   const connectionHealth = useRoomStore((state) => state.connectionHealth);
   const sceneReactions = useRoomStore((state) => state.sceneReactions);
+  const collectionItems = useRoomStore((state) => state.collectionItems);
   const {
     inputDevices,
     outputDevices,
@@ -315,17 +318,24 @@ export const RoomPage = () => {
   const pageRef = useRef<HTMLDivElement>(null);
   const voicePulseRef = useRef<HTMLDivElement>(null);
   const [chatInput, setChatInput] = useState("");
-  const [pendingScreenShareQuality, setPendingScreenShareQuality] =
-    useState<ScreenShareQuality>("720p");
+  const [pendingIncludeSystemAudio, setPendingIncludeSystemAudio] = useState(true);
   const [isScreenSourcePickerOpen, setIsScreenSourcePickerOpen] = useState(false);
+  const [screenSourcePickerSources, setScreenSourcePickerSources] = useState<
+    ScreenCaptureSourceDescriptor[]
+  >([]);
   const [isOverlayOpen, setIsOverlayOpen] = useState(false);
   const [isNoiseSuppressionSwitching, setIsNoiseSuppressionSwitching] = useState(false);
   const [isDonationOpen, setIsDonationOpen] = useState(false);
+  const [isCollectionOpen, setIsCollectionOpen] = useState(false);
+  const [collectionDraft, setCollectionDraft] = useState("");
+  const [isCollectionSaving, setIsCollectionSaving] = useState(false);
   const [localKnockPulse, setLocalKnockPulse] = useState(0);
   const lastSeatZoneRef = useRef<SceneZoneId>("gameDesk1");
   const awaySessionRef = useRef<AwaySession>();
   const lastKnockAt = useRef(0);
   const detectedGameRef = useRef<string>();
+  const detectedMusicRef = useRef<GameDetectionSnapshot["musicActivity"]>();
+  const hasDetectionSnapshotRef = useRef(false);
   const moveLocalMemberRef = useRef(moveLocalMember);
   moveLocalMemberRef.current = moveLocalMember;
   const reduceMotion = usePrefersReducedMotion();
@@ -382,6 +392,7 @@ export const RoomPage = () => {
       }),
   ];
   const localMember = room.members.find((member) => member.isLocal);
+  const localMusicActivityKey = JSON.stringify(localMember?.musicActivity ?? null);
   const connectionQuality = summarizeConnectionHealth(connectionHealth);
   const screenSharingPeerIds = [
     ...(localScreenShareStream && localMember ? [localMember.id] : []),
@@ -551,10 +562,16 @@ export const RoomPage = () => {
           seat,
           activity: currentLocalMember.activity ?? "idle",
           gameName: currentLocalMember.gameName,
+          musicActivity: currentLocalMember.musicActivity,
           enteredAt: new Date().toISOString(),
         };
         setMuted(true);
-        moveLocalMemberRef.current("restroomZone", "restroom");
+        moveLocalMemberRef.current(
+          "restroomZone",
+          "restroom",
+          currentLocalMember.gameName,
+          currentLocalMember.musicActivity,
+        );
         void window.desktopApi.app.writeLog({
           category: "app",
           level: "info",
@@ -563,7 +580,7 @@ export const RoomPage = () => {
         });
         pushToast({
           tone: "neutral",
-          title: "30 分钟没有操作，已切到离开一下。",
+          title: "30 分钟没有操作，已切到离开。",
           description: "重新操作电脑后会自动回到原来的位置。",
         });
         return;
@@ -580,6 +597,7 @@ export const RoomPage = () => {
           awaySession.seat,
           awaySession.gameName ? "gaming" : awaySession.activity,
           awaySession.gameName,
+          awaySession.musicActivity,
         );
         void window.desktopApi.app.writeLog({
           category: "app",
@@ -605,22 +623,38 @@ export const RoomPage = () => {
 
   useEffect(() => {
     const applyGameDetection = (snapshot: GameDetectionSnapshot) => {
+      hasDetectionSnapshotRef.current = true;
       const previousGame = detectedGameRef.current;
       detectedGameRef.current = snapshot.gameName;
+      detectedMusicRef.current = snapshot.musicActivity;
       const localMember = useRoomStore.getState().room.members.find((member) => member.isLocal);
       const currentZone = localMember?.sceneZone ?? "gameDesk1";
 
       if (snapshot.gameName) {
         if (currentZone === "restroomZone") {
-          moveLocalMemberRef.current("restroomZone", "restroom", snapshot.gameName);
+          moveLocalMemberRef.current(
+            "restroomZone",
+            "restroom",
+            snapshot.gameName,
+            snapshot.musicActivity,
+          );
         } else {
           const gameZone = currentZone.startsWith("gameDesk") ? currentZone : "gameDesk1";
-          moveLocalMemberRef.current(gameZone, "gaming", snapshot.gameName);
+          moveLocalMemberRef.current(gameZone, "gaming", snapshot.gameName, snapshot.musicActivity);
         }
       } else if (previousGame) {
         moveLocalMemberRef.current(
           currentZone,
           currentZone === "restroomZone" ? "restroom" : "idle",
+          undefined,
+          snapshot.musicActivity,
+        );
+      } else {
+        moveLocalMemberRef.current(
+          currentZone,
+          currentZone === "restroomZone" ? "restroom" : (localMember?.activity ?? "idle"),
+          undefined,
+          snapshot.musicActivity,
         );
       }
     };
@@ -628,6 +662,25 @@ export const RoomPage = () => {
     void window.desktopApi.games.getSnapshot().then(applyGameDetection);
     return window.desktopApi.games.onDetected(applyGameDetection);
   }, []);
+
+  useEffect(() => {
+    if (!hasDetectionSnapshotRef.current || !localMember) return;
+
+    const detectedMusicActivityKey = JSON.stringify(detectedMusicRef.current ?? null);
+    if (detectedMusicActivityKey === localMusicActivityKey) return;
+
+    const sceneZone = localMember.sceneZone ?? "gameDesk1";
+    moveLocalMemberRef.current(
+      sceneZone,
+      sceneZone === "restroomZone"
+        ? "restroom"
+        : detectedGameRef.current
+          ? "gaming"
+          : (localMember.activity ?? "idle"),
+      detectedGameRef.current,
+      detectedMusicRef.current,
+    );
+  }, [localMember, localMusicActivityKey, room.connectionState]);
 
   const send = async (content = chatInput) => {
     if (!content.trim()) return;
@@ -676,17 +729,14 @@ export const RoomPage = () => {
     await leaveRoom();
   };
 
-  const startSharingScreen = async (sourceId: string, quality: ScreenShareQuality) => {
+  const startSharingScreen = async (sourceId: string) => {
     try {
       setIsScreenSourcePickerOpen(false);
+      setScreenSourcePickerSources([]);
       const stream = await startManagedScreenShare({
         sourceId,
-        quality,
-        includeSystemAudio: settings?.isScreenShareSystemAudioEnabled !== false,
+        includeSystemAudio: pendingIncludeSystemAudio,
       });
-      if (settings?.screenShareQuality !== quality) {
-        void saveSettings({ screenShareQuality: quality }).catch(() => undefined);
-      }
       playUiSound("popup-open");
       pushToast({
         tone: "success",
@@ -718,8 +768,9 @@ export const RoomPage = () => {
 
   const openScreenSourcePicker = async () => {
     try {
-      await prepareScreenSourcePicker();
-      setPendingScreenShareQuality(settings?.screenShareQuality ?? "720p");
+      const sources = await prepareScreenSourcePicker();
+      setScreenSourcePickerSources(sources);
+      setPendingIncludeSystemAudio(true);
       setIsScreenSourcePickerOpen(true);
     } catch {
       pushToast({
@@ -791,6 +842,50 @@ export const RoomPage = () => {
     pushToast({ tone: "success", title: "扬声器已切换", description: "新的输出设备已经生效。" });
   };
 
+  const saveCollectionDraft = async () => {
+    const content = collectionDraft.trim();
+    if (!content || isCollectionSaving) return;
+    let parsedUrl: URL | undefined;
+    try {
+      const candidate = new URL(content);
+      if (candidate.protocol === "http:" || candidate.protocol === "https:") parsedUrl = candidate;
+    } catch {
+      parsedUrl = undefined;
+    }
+    const isLink = parsedUrl !== undefined;
+    const normalizedPath = parsedUrl?.pathname.toLocaleLowerCase() ?? "";
+    const isImage = [".png", ".jpg", ".jpeg", ".webp", ".gif"].some((extension) =>
+      normalizedPath.endsWith(extension),
+    );
+    let title = content.slice(0, 36);
+    if (parsedUrl) title = parsedUrl.hostname.replace(/^www\./, "") || "频道链接";
+
+    setIsCollectionSaving(true);
+    try {
+      await addRoomCollectionItem(isImage ? "image" : isLink ? "link" : "text", title, content);
+      setCollectionDraft("");
+      playUiSound("send-message");
+    } catch {
+      pushToast({
+        tone: "danger",
+        title: "珍藏失败",
+        description: "连接还没有恢复，请稍后再试。",
+      });
+    } finally {
+      setIsCollectionSaving(false);
+    }
+  };
+
+  const copyCollectionItem = async (content: string) => {
+    try {
+      await navigator.clipboard.writeText(content);
+      playUiSound("button-click");
+      pushToast({ tone: "success", title: "已复制", description: "珍藏内容已放进剪贴板。" });
+    } catch {
+      pushToast({ tone: "danger", title: "复制失败", description: "请稍后再试。" });
+    }
+  };
+
   const handleZoneSelect = (zone: SceneZoneId, activity: MemberActivity) => {
     if (isSeatZone(zone)) {
       lastSeatZoneRef.current = zone;
@@ -814,6 +909,7 @@ export const RoomPage = () => {
         seat: lastSeatZoneRef.current,
         activity: localMember?.activity ?? "idle",
         gameName: localMember?.gameName,
+        musicActivity: localMember?.musicActivity,
         enteredAt: new Date().toISOString(),
       };
       setMuted(true);
@@ -824,7 +920,12 @@ export const RoomPage = () => {
         context: { seat: lastSeatZoneRef.current },
       });
     }
-    moveLocalMember(zone, activity);
+    moveLocalMember(
+      zone,
+      activity,
+      detectedGameRef.current,
+      detectedMusicRef.current ?? localMember?.musicActivity,
+    );
   };
 
   const handleToggleMicrophone = () => {
@@ -934,37 +1035,42 @@ export const RoomPage = () => {
               <header>
                 <div>
                   <h2>分享哪个画面？</h2>
-                  <p>选择显示器或窗口。分享系统声音时请保持“系统音频”设置开启。</p>
+                  <p>固定使用 1440p 清晰画质。显示器已编号，窗口会显示应用名称。</p>
                 </div>
                 <Button variant="ghost" onClick={() => setIsScreenSourcePickerOpen(false)}>
                   取消
                 </Button>
               </header>
-              <div className="screen-source-quality" aria-label="屏幕分享画质">
-                <span>画质</span>
-                {(["720p", "1080p"] as const).map((quality) => (
-                  <button
-                    key={quality}
-                    type="button"
-                    className={pendingScreenShareQuality === quality ? "active" : ""}
-                    aria-pressed={pendingScreenShareQuality === quality}
-                    onClick={() => setPendingScreenShareQuality(quality)}
-                  >
-                    {quality}
-                    <small>{quality === "720p" ? "流畅" : "清晰"}</small>
-                  </button>
-                ))}
+              <div className="screen-source-options">
+                <span className="screen-source-quality-badge">1440p · 清晰</span>
+                <button
+                  type="button"
+                  className={`screen-audio-toggle ${pendingIncludeSystemAudio ? "active" : ""}`}
+                  aria-pressed={pendingIncludeSystemAudio}
+                  onClick={() => setPendingIncludeSystemAudio((current) => !current)}
+                >
+                  <span aria-hidden="true">{pendingIncludeSystemAudio ? "✓" : ""}</span>
+                  系统音频
+                </button>
               </div>
               <div className="screen-source-picker-grid">
-                {screenCaptureSources.map((source) => (
+                {screenSourcePickerSources.map((source, index) => (
                   <button
                     key={source.id}
                     type="button"
                     className="screen-source-picker-item"
-                    onClick={() => void startSharingScreen(source.id, pendingScreenShareQuality)}
+                    onClick={() => void startSharingScreen(source.id)}
                   >
                     <span className="screen-source-thumbnail">
-                      <img src={source.thumbnailDataUrl} alt="" draggable={false} />
+                      <strong className="screen-source-identity">
+                        {source.displayLabel ??
+                          (source.kind === "screen" ? `显示器 ${index + 1}` : "窗口")}
+                      </strong>
+                      {source.thumbnailDataUrl ? (
+                        <img src={source.thumbnailDataUrl} alt="" draggable={false} />
+                      ) : (
+                        <span className="screen-source-thumbnail-fallback">暂无预览</span>
+                      )}
                     </span>
                     <span className="screen-source-name">
                       {source.appIconDataUrl ? <img src={source.appIconDataUrl} alt="" /> : null}
@@ -1013,6 +1119,109 @@ export const RoomPage = () => {
                 <Button variant="secondary" onClick={() => setIsDonationOpen(false)}>
                   收下啦
                 </Button>
+              </div>
+            </motion.section>
+          </motion.div>
+        ) : null}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {isCollectionOpen ? (
+          <motion.div
+            key="room-collection"
+            className="collection-modal-backdrop modal-scrim"
+            role="presentation"
+            variants={reduceMotion ? reducedFadeVariants : overlayScrimVariants}
+            initial="initial"
+            animate="open"
+            exit="closed"
+            onPointerDown={(event) => {
+              if (event.target === event.currentTarget) setIsCollectionOpen(false);
+            }}
+          >
+            <motion.section
+              className="collection-modal-panel modal-surface"
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="collection-modal-title"
+              variants={reduceMotion ? reducedFadeVariants : dialogSurfaceVariants}
+              initial="initial"
+              animate="open"
+              exit="closed"
+            >
+              <header className="collection-modal-header">
+                <div>
+                  <span>朋友的小收藏箱</span>
+                  <h2 id="collection-modal-title">频道珍藏</h2>
+                  <p>留下一句话或链接，最多保留最近 30 条。</p>
+                </div>
+                <Button variant="ghost" onClick={() => setIsCollectionOpen(false)}>
+                  收起
+                </Button>
+              </header>
+
+              <div className="collection-composer">
+                <textarea
+                  value={collectionDraft}
+                  maxLength={2_000}
+                  placeholder="写一句约定，或贴一个链接…"
+                  onChange={(event) => setCollectionDraft(event.target.value)}
+                  onKeyDown={(event) => {
+                    if ((event.ctrlKey || event.metaKey) && event.key === "Enter") {
+                      event.preventDefault();
+                      void saveCollectionDraft();
+                    }
+                  }}
+                />
+                <Button
+                  variant="primary"
+                  disabled={!collectionDraft.trim() || isCollectionSaving}
+                  onClick={() => void saveCollectionDraft()}
+                >
+                  <Plus className="h-4 w-4" aria-hidden="true" />
+                  {isCollectionSaving ? "保存中" : "珍藏"}
+                </Button>
+              </div>
+
+              <div className="collection-list">
+                {collectionItems.length ? (
+                  [...collectionItems].reverse().map((item) => (
+                    <article key={item.id} className="collection-item">
+                      <div className="collection-item-copy">
+                        <span>
+                          {item.kind === "text" ? "便笺" : item.kind === "game" ? "游戏" : "链接"}
+                        </span>
+                        <strong>{item.title}</strong>
+                        <p>{item.content}</p>
+                        <small>由 {item.createdByNickname} 留下</small>
+                      </div>
+                      <div className="collection-item-actions">
+                        <button
+                          type="button"
+                          title="复制"
+                          aria-label={`复制 ${item.title}`}
+                          onClick={() => void copyCollectionItem(item.content)}
+                        >
+                          <Copy aria-hidden="true" />
+                        </button>
+                        <button
+                          type="button"
+                          title="删除"
+                          aria-label={`删除 ${item.title}`}
+                          onClick={() => void removeRoomCollectionItem(item.id)}
+                        >
+                          <Trash2 aria-hidden="true" />
+                        </button>
+                      </div>
+                    </article>
+                  ))
+                ) : (
+                  <div className="collection-empty">
+                    <FolderHeart aria-hidden="true" />
+                    <strong>这里还空着</strong>
+                    <span>把下次开黑时间、攻略链接或一句约定留在这里。</span>
+                  </div>
+                )}
               </div>
             </motion.section>
           </motion.div>
@@ -1094,6 +1303,25 @@ export const RoomPage = () => {
           <span className="voice-action-label">
             {isNoiseSuppressionSwitching ? "切换中" : "降噪"}
           </span>
+        </Button>
+        <Button
+          variant={isCollectionOpen ? "secondary" : "ghost"}
+          data-icon-motion="collection"
+          className="voice-action-button-with-text collection-button"
+          aria-pressed={isCollectionOpen}
+          onClick={() => {
+            playUiSound("popup-open");
+            setIsCollectionOpen(true);
+          }}
+        >
+          <motion.span
+            className="collection-button-icon"
+            whileHover={reduceMotion ? undefined : { rotate: -7, scale: 1.08 }}
+            transition={{ type: "spring", stiffness: 360, damping: 28, mass: 0.55 }}
+          >
+            <FolderHeart className="h-4 w-4" aria-hidden="true" />
+          </motion.span>
+          <span className="voice-action-label">珍藏</span>
         </Button>
         <RecordingButton
           isRecording={recordingStatus.state === RecordingState.Recording}

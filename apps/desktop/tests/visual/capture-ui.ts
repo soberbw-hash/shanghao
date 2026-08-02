@@ -208,7 +208,7 @@ export const captureUi = async (
     await sleep(420);
   }
   if (options.mode === "room-away") {
-    await clickButtonByLabel(window, "离开一下");
+    await clickButtonByLabel(window, "离开");
     await sleep(2_200);
   }
 

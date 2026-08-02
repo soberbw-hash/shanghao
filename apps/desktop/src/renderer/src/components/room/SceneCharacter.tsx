@@ -69,6 +69,7 @@ export interface SceneCharacterProps {
   reactions?: SceneReactionModel[];
   onReact?: (targetPeerId: string, emoji: SceneReactionModel["emoji"]) => void;
   onVolumeChange?: (memberId: string, volume: number) => void;
+  onSettled?: (memberId: string, zone: SceneZoneId) => void;
 }
 
 export const SceneCharacter = ({
@@ -78,12 +79,12 @@ export const SceneCharacter = ({
   awayIndex,
   awayCount,
   zone,
-  arrivalIndex,
   isWelcoming,
   isScreenSharing,
   reactions = [],
   onReact,
   onVolumeChange,
+  onSettled,
 }: SceneCharacterProps) => {
   const status = memberStatus(member);
   const personality = getCharacterPersonality(avatarId);
@@ -115,12 +116,10 @@ export const SceneCharacter = ({
     shouldReduceMotion ? (zone === "restroomZone" ? "away-idle" : "idle") : "entering",
   );
   const [movementDirection, setMovementDirection] = useState<"left" | "right">("right");
-  const [strideDurationMs, setStrideDurationMs] = useState(480);
   const [displayZone, setDisplayZone] = useState<SceneZoneId>(zone);
-  const [entryRevision, setEntryRevision] = useState(shouldReduceMotion ? 1 : 0);
-  const didFinishEntryRef = useRef(shouldReduceMotion);
   const didStartEntryRef = useRef(shouldReduceMotion);
   const operationIdRef = useRef(0);
+  const onSettledRef = useRef(onSettled);
 
   useEffect(() => {
     if (member.volume > 0.001) previousAudibleVolumeRef.current = member.volume;
@@ -182,7 +181,7 @@ export const SceneCharacter = ({
   );
   const isMoving = isWalkingVisual || motionPhase === "standing-up" || motionPhase === "sitting";
   const displayPosition = displayZone === zone ? position : characterPositions[displayZone];
-  const renderedCharacterScale = isWalkingVisual ? 0.86 : displayPosition.scale;
+  const renderedCharacterScale = displayPosition.scale;
   const isZoneTransitioning = displayZone !== zone;
   const targetLeft = position.left;
   const targetTop = position.top;
@@ -191,11 +190,15 @@ export const SceneCharacter = ({
     motionPhaseRef.current = motionPhase;
   }, [motionPhase]);
 
+  useEffect(() => {
+    onSettledRef.current = onSettled;
+  }, [onSettled]);
+
   useLayoutEffect(() => {
-    if (didFinishEntryRef.current) return;
+    if (!isPresent) return;
     const operationId = ++operationIdRef.current;
     const isCurrentOperation = () => operationIdRef.current === operationId;
-    const isFirstLeg = !didStartEntryRef.current;
+    const isFirstRoute = !didStartEntryRef.current;
     didStartEntryRef.current = true;
 
     if (shouldReduceMotion) {
@@ -205,92 +208,23 @@ export const SceneCharacter = ({
         scale: 1,
       });
       currentPositionRef.current = { left: targetLeft, top: targetTop };
-      setDisplayZone(zone);
-      setMotionPhase(zone === "restroomZone" ? "away-idle" : "idle");
-      didFinishEntryRef.current = true;
-      setEntryRevision(1);
-      return;
-    }
-
-    const enter = async () => {
-      if (isFirstLeg && arrivalIndex > 0) {
-        await waitForMotionPhase(Math.min(arrivalIndex, 4) * 110);
-      }
-      if (!isCurrentOperation()) return;
-      setMotionPhase("entering");
-      const routeKind = isFirstLeg ? "enter" : "move";
-      const route = applyCharacterPersonality(
-        planCharacterRoute({
-          kind: routeKind,
-          from: currentPositionRef.current,
-          to: { left: targetLeft, top: targetTop },
-          fromZone: isFirstLeg ? undefined : activeTargetZoneRef.current,
-          toZone: zone,
-        }),
-        routeKind,
-        personality,
-      );
-      activeTargetZoneRef.current = zone;
-      setMovementDirection(route.direction);
-      setStrideDurationMs(route.strideDurationMs);
-      const animation = routeAnimation(route, !isFirstLeg);
-      await controls.start({
-        ...animation,
-        opacity: 1,
-        scale: 1,
-        transition: {
-          ...animation.transition,
-          opacity: { duration: 0.32, ease: motionCurve.enter },
-        },
-      });
-      if (!isCurrentOperation()) return;
-      setMotionPhase("approaching");
-      await waitForMotionPhase(120);
-      if (!isCurrentOperation()) return;
-      setMotionPhase("turning");
-      await waitForMotionPhase(personality.turnPauseMs);
-      if (!isCurrentOperation()) return;
-      setDisplayZone(zone);
-      setMotionPhase("sitting");
-      await waitForMotionPhase(personality.landingSpring === "physical" ? 330 : 270);
-      if (!isCurrentOperation()) return;
-      didFinishEntryRef.current = true;
       lastZoneRef.current = zone;
-      currentPositionRef.current = { left: targetLeft, top: targetTop };
+      activeTargetZoneRef.current = zone;
+      setDisplayZone(zone);
       setMotionPhase(zone === "restroomZone" ? "away-idle" : "idle");
-      setEntryRevision((value) => value + 1);
-    };
-
-    void enter();
-    return () => {
-      if (operationIdRef.current === operationId) operationIdRef.current += 1;
-      controls.stop();
-    };
-  }, [arrivalIndex, controls, personality, shouldReduceMotion, targetLeft, targetTop, zone]);
-
-  useEffect(() => {
-    if (!isPresent || !didFinishEntryRef.current) return;
-    const previousZone = lastZoneRef.current;
-    const previousPosition = currentPositionRef.current;
-    if (
-      previousZone === zone &&
-      previousPosition.left === targetLeft &&
-      previousPosition.top === targetTop
-    ) {
+      onSettledRef.current?.(member.id, zone);
       return;
     }
 
-    const operationId = ++operationIdRef.current;
-    const isCurrentOperation = () => operationIdRef.current === operationId;
-    const move = async () => {
-      if (shouldReduceMotion) {
-        controls.set({
-          ...scenePosition(targetLeft, targetTop),
-          opacity: 1,
-          scale: 1,
-        });
-        currentPositionRef.current = { left: targetLeft, top: targetTop };
-        lastZoneRef.current = zone;
+    const travel = async () => {
+      const previousZone = lastZoneRef.current;
+      const previousPosition = currentPositionRef.current;
+      const isAlreadyAtTarget =
+        !isFirstRoute &&
+        previousZone === zone &&
+        Math.abs(previousPosition.left - targetLeft) < 0.02 &&
+        Math.abs(previousPosition.top - targetTop) < 0.02;
+      if (isAlreadyAtTarget) {
         setDisplayZone(zone);
         setMotionPhase(zone === "restroomZone" ? "away-idle" : "idle");
         return;
@@ -304,56 +238,62 @@ export const SceneCharacter = ({
         "turning",
         "leaving",
       ].includes(motionPhaseRef.current);
-      if (!wasAlreadyMoving) {
+
+      if (!isFirstRoute && !wasAlreadyMoving) {
         setMotionPhase("standing-up");
-        await waitForMotionPhase(210);
+        await waitForMotionPhase(72);
         if (!isCurrentOperation()) return;
       }
 
+      const routeKind = isFirstRoute ? "enter" : "move";
       const route = applyCharacterPersonality(
         planCharacterRoute({
-          kind: "move",
+          kind: routeKind,
           from: currentPositionRef.current,
           to: { left: targetLeft, top: targetTop },
-          fromZone: wasAlreadyMoving ? activeTargetZoneRef.current : previousZone,
+          fromZone: isFirstRoute
+            ? undefined
+            : wasAlreadyMoving
+              ? activeTargetZoneRef.current
+              : previousZone,
           toZone: zone,
         }),
-        "move",
+        routeKind,
         personality,
       );
       activeTargetZoneRef.current = zone;
       setMovementDirection(route.direction);
-      setStrideDurationMs(route.strideDurationMs);
-      setMotionPhase("walking");
+      setMotionPhase(isFirstRoute ? "entering" : "walking");
+      const animation = routeAnimation(route, !isFirstRoute || wasAlreadyMoving);
       await controls.start({
-        ...routeAnimation(route, wasAlreadyMoving),
+        ...animation,
+        opacity: 1,
         scale: 1,
+        transition: {
+          ...animation.transition,
+          opacity: { duration: 0.32, ease: motionCurve.enter },
+        },
       });
-      if (!isCurrentOperation()) return;
-      setMotionPhase("approaching");
-      await waitForMotionPhase(120);
-      if (!isCurrentOperation()) return;
-      setMotionPhase("turning");
-      await waitForMotionPhase(personality.turnPauseMs);
       if (!isCurrentOperation()) return;
       lastZoneRef.current = zone;
       currentPositionRef.current = { left: targetLeft, top: targetTop };
       setDisplayZone(zone);
       setMotionPhase("sitting");
-      await waitForMotionPhase(personality.landingSpring === "physical" ? 320 : 250);
-      if (isCurrentOperation()) {
-        setMotionPhase(zone === "restroomZone" ? "away-idle" : "idle");
-      }
+      await waitForMotionPhase(personality.landingSpring === "physical" ? 132 : 108);
+      if (!isCurrentOperation()) return;
+      setMotionPhase(zone === "restroomZone" ? "away-idle" : "idle");
+      onSettledRef.current?.(member.id, zone);
     };
-    void move();
+
+    void travel();
     return () => {
       if (operationIdRef.current === operationId) operationIdRef.current += 1;
       controls.stop();
     };
   }, [
     controls,
-    entryRevision,
     isPresent,
+    member.id,
     personality,
     shouldReduceMotion,
     targetLeft,
@@ -379,7 +319,6 @@ export const SceneCharacter = ({
           "exit",
           personality,
         );
-        setStrideDurationMs(route.strideDurationMs);
         // Exit directly from the character's current rendered position. Keeping
         // velocity through intermediate waypoints avoids the visible stop that
         // used to happen between the stand-up phase and the route animation.
@@ -529,27 +468,64 @@ export const SceneCharacter = ({
                 member.isDeafened ? "room-character-deafened" : ""
               } ${isReconnecting ? "room-character-reconnecting" : ""}`}
             >
-              {isWalkingVisual ? (
-                <WalkingAnimalSprite
-                  avatarId={avatarId}
-                  direction={movementDirection}
-                  strideDurationMs={strideDurationMs}
-                  paused={motionPhase === "turning"}
-                />
-              ) : isSeatZone(displayZone) ? (
-                <DeskAnimalSprite
-                  avatarId={avatarId}
-                  activity={member.activity ?? "idle"}
-                  isSpeaking={isSpeaking}
-                  isMoving={isMoving}
-                  isMuted={member.isMuted}
-                  isScreenSharing={isScreenSharing}
-                  isWelcoming={isWelcoming}
-                  idleAction={idleAction}
-                />
-              ) : (
-                <AnimalSprite avatarId={avatarId} state="away" isMoving={isMoving} />
-              )}
+              <AnimatePresence initial={false} mode="sync">
+                {isWalkingVisual ? (
+                  <motion.span
+                    key="walking"
+                    className="room-character-visual-layer"
+                    initial={shouldReduceMotion ? false : { opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={shouldReduceMotion ? undefined : { opacity: 0 }}
+                    transition={{
+                      duration: shouldReduceMotion ? 0 : 0.12,
+                      ease: motionCurve.enter,
+                    }}
+                  >
+                    <WalkingAnimalSprite
+                      avatarId={avatarId}
+                      direction={movementDirection}
+                      paused={motionPhase === "turning"}
+                    />
+                  </motion.span>
+                ) : isSeatZone(displayZone) ? (
+                  <motion.span
+                    key="seated"
+                    className="room-character-visual-layer"
+                    initial={shouldReduceMotion ? false : { opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={shouldReduceMotion ? undefined : { opacity: 0 }}
+                    transition={{
+                      duration: shouldReduceMotion ? 0 : 0.14,
+                      ease: motionCurve.enter,
+                    }}
+                  >
+                    <DeskAnimalSprite
+                      avatarId={avatarId}
+                      activity={member.activity ?? "idle"}
+                      isSpeaking={isSpeaking}
+                      isMoving={isMoving}
+                      isMuted={member.isMuted}
+                      isScreenSharing={isScreenSharing}
+                      isWelcoming={isWelcoming}
+                      idleAction={idleAction}
+                    />
+                  </motion.span>
+                ) : (
+                  <motion.span
+                    key="away"
+                    className="room-character-visual-layer"
+                    initial={shouldReduceMotion ? false : { opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={shouldReduceMotion ? undefined : { opacity: 0 }}
+                    transition={{
+                      duration: shouldReduceMotion ? 0 : 0.12,
+                      ease: motionCurve.enter,
+                    }}
+                  >
+                    <AnimalSprite avatarId={avatarId} state="away" isMoving={isMoving} />
+                  </motion.span>
+                )}
+              </AnimatePresence>
               {member.isDeafened ? (
                 <span className="room-character-deafened-badge" aria-label="已关闭扬声器">
                   <HeadphoneOff className="h-3 w-3" />

@@ -19,6 +19,18 @@ export interface ChatMessage {
   kind?: "chat" | "system";
 }
 
+export type RoomCollectionItemKind = "text" | "link" | "image" | "game";
+
+export interface RoomCollectionItem {
+  id: string;
+  kind: RoomCollectionItemKind;
+  title: string;
+  content: string;
+  createdByPeerId: string;
+  createdByNickname: string;
+  createdAt: string;
+}
+
 export interface SceneReaction {
   id: string;
   peerId: string;
@@ -31,6 +43,15 @@ export type SceneZoneId =
   "restroomZone" | "gameDesk1" | "gameDesk2" | "gameDesk3" | "gameDesk4" | "gameDesk5";
 
 export type MemberActivity = "idle" | "gaming" | "drinking" | "fitness" | "restroom";
+
+export type MusicProviderId = "spotify" | "netease" | "qqmusic" | "applemusic";
+
+export interface MusicActivity {
+  provider: MusicProviderId;
+  providerName: string;
+  trackTitle: string;
+  artist?: string;
+}
 
 export interface RoomMember {
   id: string;
@@ -48,6 +69,7 @@ export interface RoomMember {
   activity?: MemberActivity;
   sceneZone?: SceneZoneId;
   gameName?: string;
+  musicActivity?: MusicActivity;
   latencyMs?: number;
   presenceState: MemberPresenceState;
   speakingState: MemberSpeakingState;

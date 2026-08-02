@@ -11,6 +11,7 @@ import { DeepFilterNet3Core } from "deepfilternet3-noise-filter";
 import { FOURTH_ORDER_BUTTERWORTH_Q } from "./filterMath";
 
 export const MICROPHONE_EQ_FREQUENCIES = [80, 250, 1_000, 4_000, 12_000] as const;
+const VOICE_ENHANCEMENT_EQ_GAINS: MicEqualizerGains = [-2, -1, 0, 2, 1];
 
 export interface ProcessedMicrophoneStream {
   stream: MediaStream;
@@ -162,10 +163,18 @@ export const createProcessedMicrophoneStream = async (
   inputStream: MediaStream,
   settings: Pick<
     AppSettings,
-    "micEqualizerGains" | "lowCutFrequency" | "isNoiseSuppressionEnabled"
+    | "micEqualizerGains"
+    | "lowCutFrequency"
+    | "isNoiseSuppressionEnabled"
+    | "isVoiceEnhancementEnabled"
   >,
 ): Promise<ProcessedMicrophoneStream> => {
-  const gains = normalizeEqualizerGains(settings.micEqualizerGains);
+  const userGains = normalizeEqualizerGains(settings.micEqualizerGains);
+  const gains = normalizeEqualizerGains(
+    userGains.map((gain, index) =>
+      settings.isVoiceEnhancementEnabled ? gain + (VOICE_ENHANCEMENT_EQ_GAINS[index] ?? 0) : gain,
+    ),
+  );
   const processorDiagnostics: ProcessedMicrophoneStream["processorDiagnostics"] = {
     noiseProcessor: settings.isNoiseSuppressionEnabled ? "deepfilter_loading" : "bypass",
     processorOverruns: 0,

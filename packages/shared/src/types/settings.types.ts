@@ -1,6 +1,5 @@
 export type MicMonitorMode = "processed" | "raw";
 export type LowCutFrequency = "off" | "90" | "120";
-export type ScreenShareQuality = "720p" | "1080p";
 export type UiScale = 100 | 110 | 125;
 export type BuiltInAvatarId = "fox" | "cat" | "duck" | "panda" | "corgi";
 export type MicEqualizerGains = [number, number, number, number, number];
@@ -21,7 +20,6 @@ export interface AppSettings {
   isOverlayEnabled: boolean;
   preferredInputDeviceId?: string;
   preferredOutputDeviceId?: string;
-  inputLevelThreshold: number;
   micEqualizerGains: MicEqualizerGains;
   lowCutFrequency: LowCutFrequency;
   globalMuteShortcut: string;
@@ -30,13 +28,12 @@ export interface AppSettings {
   isNoiseSuppressionEnabled: boolean;
   isEchoCancellationEnabled: boolean;
   isAutoGainControlEnabled: boolean;
+  isVoiceEnhancementEnabled: boolean;
   isPushToTalkEnabled: boolean;
   micMonitorMode: MicMonitorMode;
   relayServerUrl?: string;
   memberVolumes: Record<string, number>;
   soundVolume: number;
-  screenShareQuality: ScreenShareQuality;
-  isScreenShareSystemAudioEnabled: boolean;
   isSystemNotificationEnabled: boolean;
   isGameDetectionEnabled: boolean;
   isUiSoundEnabled: boolean;

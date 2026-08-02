@@ -1,5 +1,3 @@
-import type { CSSProperties } from "react";
-
 import type { BuiltInAvatarId, MemberActivity } from "@private-voice/shared";
 
 import chairArt from "../../assets/scenes/chair-chibi.webp";
@@ -60,12 +58,10 @@ export const preloadCharacterSpriteAssets = (): Promise<void> => {
 export const WalkingAnimalSprite = ({
   avatarId,
   direction = "right",
-  strideDurationMs = 480,
   paused = false,
 }: {
   avatarId: BuiltInAvatarId;
   direction?: "left" | "right";
-  strideDurationMs?: number;
   paused?: boolean;
 }) => {
   const runCycleSource = runCycleSources[avatarId] ?? runCycleSources.fox;
@@ -74,8 +70,8 @@ export const WalkingAnimalSprite = ({
     <div
       className={`walking-animal walking-animal-${direction} ${paused ? "is-paused" : ""}`}
       data-run-cycle-avatar={avatarId}
-      data-run-cycle-frames="8"
-      style={{ "--run-cycle-duration": `${strideDurationMs}ms` } as CSSProperties}
+      data-run-cycle-frames="16"
+      data-run-cycle-fps="50"
       aria-hidden="true"
     >
       <span className="walking-animal-shadow" />
@@ -128,6 +124,7 @@ export const DeskAnimalSprite = ({
       className={`desk-animal desk-animal-${motionState} desk-animal-action-${idleAction} ${
         isScreenSharing ? "desk-animal-screen-sharing" : ""
       } ${isWelcoming ? "desk-animal-welcoming" : ""}`}
+      data-avatar-id={avatarId}
       aria-hidden="true"
     >
       <span className="desk-animal-ground-shadow" />

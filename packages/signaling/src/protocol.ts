@@ -1,7 +1,9 @@
 import type {
   BuiltInAvatarId,
   MemberActivity,
+  MusicActivity,
   RoomMember,
+  RoomCollectionItem,
   SceneZoneId,
 } from "@private-voice/shared";
 import { isAllowedNickname, isBuiltInAvatarId } from "@private-voice/shared";
@@ -35,6 +37,9 @@ export type SignalEnvelope =
   | MemberStateMessage
   | ChatMessage
   | ChatHistoryMessage
+  | RoomCollectionSnapshotMessage
+  | RoomCollectionAddMessage
+  | RoomCollectionRemoveMessage
   | KnockEventMessage
   | AudioChunkMessage
   | AudioPathStateMessage
@@ -177,6 +182,7 @@ export interface MemberStateMessage extends BaseMessage {
   activity?: MemberActivity;
   sceneZone?: SceneZoneId;
   gameName?: string;
+  musicActivity?: MusicActivity | null;
   nickname?: string;
   avatarDataUrl?: string;
   avatarId?: BuiltInAvatarId;
@@ -203,6 +209,29 @@ export interface ChatHistoryMessage extends BaseMessage {
   type: "chat_history";
   roomId: string;
   messages: ServerChatMessage[];
+}
+
+export interface RoomCollectionSnapshotMessage extends BaseMessage {
+  type: "room_collection_snapshot";
+  roomId: string;
+  items: RoomCollectionItem[];
+}
+
+export interface RoomCollectionAddMessage extends BaseMessage {
+  type: "room_collection_add";
+  roomId: string;
+  peerId?: string;
+  item?: RoomCollectionItem;
+  kind?: RoomCollectionItem["kind"];
+  title?: string;
+  content?: string;
+}
+
+export interface RoomCollectionRemoveMessage extends BaseMessage {
+  type: "room_collection_remove";
+  roomId: string;
+  peerId?: string;
+  itemId: string;
 }
 
 export interface KnockEventMessage extends BaseMessage {
@@ -473,6 +502,16 @@ export const isSignalEnvelope = (value: unknown): value is SignalEnvelope => {
         // v0.1.50 sent an empty game name when no game was detected. Accept it on the
         // wire for backwards compatibility; the server normalizes it to undefined.
         (value.gameName === undefined || isText(value.gameName, 64, true)) &&
+        (value.musicActivity === undefined ||
+          value.musicActivity === null ||
+          (isRecord(value.musicActivity) &&
+            ["spotify", "netease", "qqmusic", "applemusic"].includes(
+              String(value.musicActivity.provider),
+            ) &&
+            isText(value.musicActivity.providerName, 32) &&
+            isText(value.musicActivity.trackTitle, 160) &&
+            (value.musicActivity.artist === undefined ||
+              isText(value.musicActivity.artist, 100, true)))) &&
         (value.nickname === undefined || isValidNickname(value.nickname)) &&
         (value.avatarId === undefined || isBuiltInAvatarId(value.avatarId)) &&
         (value.avatarDataUrl === undefined ||
@@ -483,6 +522,17 @@ export const isSignalEnvelope = (value: unknown): value is SignalEnvelope => {
       return hasRoom(value) && isText(value.content, 500);
     case "chat_history":
       return hasRoom(value) && Array.isArray(value.messages) && value.messages.length <= 100;
+    case "room_collection_snapshot":
+      return hasRoom(value) && Array.isArray(value.items) && value.items.length <= 30;
+    case "room_collection_add":
+      return (
+        hasRoom(value) &&
+        ["text", "link", "image", "game"].includes(String(value.kind)) &&
+        isText(value.title, 80) &&
+        isText(value.content, 2_000)
+      );
+    case "room_collection_remove":
+      return hasRoom(value) && isIdentifier(value.itemId, 128);
     case "knock_event":
       return hasRoom(value) && hasPeer(value);
     case "audio_chunk":

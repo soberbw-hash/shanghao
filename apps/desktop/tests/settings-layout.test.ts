@@ -48,11 +48,13 @@ test("advanced audio settings are collapsed by default", () => {
   assert.equal(source.includes('value: "32000"'), false);
   assert.equal(source.includes("32 kHz"), false);
   assert.equal(source.includes("44.1 kHz"), false);
-  assert.equal(source.includes("DeepFilterNet 固定使用 48 kHz"), true);
+  assert.equal(source.includes("DeepFilterNet 固定使用 48 kHz"), false);
   assert.equal(source.includes("五段声音塑形"), true);
   assert.equal(source.includes("智能降噪"), false);
   assert.equal(source.includes("低频风噪抑制"), true);
-  assert.equal(source.includes("thresholdDraft"), true);
+  assert.equal(source.includes("人声增强"), true);
+  assert.equal(source.includes("isVoiceEnhancementEnabled"), true);
+  assert.equal(source.includes("thresholdDraft"), false);
   assert.equal(source.includes("equalizerDraft"), true);
 });
 

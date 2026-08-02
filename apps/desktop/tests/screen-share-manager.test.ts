@@ -83,11 +83,12 @@ test("screen share manager owns publishing and cleans every track", async () => 
     },
   });
 
-  await manager.openSourcePicker();
+  const sources = await manager.openSourcePicker();
+  assert.equal(sources.length, 1);
+  assert.equal(sources[0]?.id, "screen:1");
   assert.equal(manager.getSnapshot().sources.length, 1);
   await manager.startShare({
     sourceId: "screen:1",
-    quality: "720p",
     includeSystemAudio: true,
   });
   assert.equal(startCount, 1);
@@ -98,7 +99,7 @@ test("screen share manager owns publishing and cleans every track", async () => 
   assert.equal(stopCount, 1);
   assert.equal(environment.videoTrack.stopped, true);
   assert.equal(environment.audioTrack.stopped, true);
-  assert.deepEqual(environment.protection, [true, false]);
+  assert.deepEqual(environment.protection, [false, true, false]);
   assert.equal(manager.getSnapshot().status, "idle");
 });
 
@@ -111,7 +112,6 @@ test("screen share manager keeps video when system audio is disabled", async () 
 
   await manager.startShare({
     sourceId: "screen:1",
-    quality: "1080p",
     includeSystemAudio: false,
   });
   assert.equal(environment.captureRequests[0]?.audio, false);

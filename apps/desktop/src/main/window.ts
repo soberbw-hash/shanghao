@@ -41,8 +41,32 @@ const enumerateScreenCaptureSources = async (withThumbnails: boolean) =>
     fetchWindowIcons: withThumbnails,
   });
 
+const waitForScreenCaptureSources = async (withThumbnails: boolean) => {
+  let lastError: unknown;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try {
+      const sources = await enumerateScreenCaptureSources(withThumbnails);
+      if (sources.length > 0) return sources;
+    } catch (error) {
+      lastError = error;
+    }
+    await new Promise<void>((resolve) => setTimeout(resolve, 120 * (attempt + 1)));
+  }
+  if (lastError) throw lastError;
+  return [];
+};
+
 export const listScreenCaptureSources = async (): Promise<ScreenCaptureSourceDescriptor[]> => {
-  const sources = await enumerateScreenCaptureSources(true);
+  // Content protection also hides ShangHao from Chromium's desktop capturer. Disable it
+  // while enumerating, then enable it only after a stream has actually been acquired.
+  setScreenCaptureContentProtection(false);
+  let sources = await waitForScreenCaptureSources(true);
+  if (sources.length === 0) {
+    sources = await waitForScreenCaptureSources(false);
+  }
+  const screenSourceIds = sources
+    .filter((source) => source.id.startsWith("screen:"))
+    .map((source) => source.id);
   const appWindowSourceIds = new Set(
     BrowserWindow.getAllWindows().flatMap((window) => {
       try {
@@ -55,13 +79,20 @@ export const listScreenCaptureSources = async (): Promise<ScreenCaptureSourceDes
   return sources
     .filter((source) => source.id.startsWith("screen:") || !appWindowSourceIds.has(source.id))
     .slice(0, 40)
-    .map((source) => ({
-      id: source.id,
-      name: source.name.slice(0, 120),
-      kind: source.id.startsWith("screen:") ? "screen" : "window",
-      thumbnailDataUrl: source.thumbnail.toDataURL(),
-      appIconDataUrl: source.appIcon?.toDataURL(),
-    }));
+    .map((source) => {
+      const isScreen = source.id.startsWith("screen:");
+      const screenIndex = isScreen ? screenSourceIds.indexOf(source.id) + 1 : 0;
+      return {
+        id: source.id,
+        name: source.name.slice(0, 120),
+        kind: isScreen ? "screen" : "window",
+        displayId: source.display_id || undefined,
+        displayLabel: isScreen ? `显示器 ${Math.max(1, screenIndex)} · 全屏` : undefined,
+        thumbnailDataUrl: source.thumbnail.isEmpty() ? "" : source.thumbnail.toDataURL(),
+        appIconDataUrl:
+          source.appIcon && !source.appIcon.isEmpty() ? source.appIcon.toDataURL() : undefined,
+      };
+    });
 };
 
 export const selectScreenCaptureSource = (sourceId: string): void => {
@@ -97,6 +128,12 @@ export const openScreenShareViewer = async ({
   sessionId,
 }: ScreenShareViewerOpenRequest): Promise<void> => {
   const workArea = screen.getDisplayNearestPoint(screen.getCursorScreenPoint()).workArea;
+  const viewerBounds = {
+    width: Math.max(640, Math.round(workArea.width * 0.85)),
+    height: Math.max(420, Math.round(workArea.height * 0.85)),
+    x: workArea.x + Math.round(workArea.width * 0.075),
+    y: workArea.y + Math.round(workArea.height * 0.075),
+  };
   if (
     screenShareViewerWindow &&
     !screenShareViewerWindow.isDestroyed() &&
@@ -104,7 +141,7 @@ export const openScreenShareViewer = async ({
   ) {
     screenShareViewerWindow.setTitle(title);
     if (screenShareViewerWindow.isMinimized()) screenShareViewerWindow.restore();
-    screenShareViewerWindow.setBounds(workArea, false);
+    screenShareViewerWindow.setBounds(viewerBounds, false);
     screenShareViewerWindow.show();
     screenShareViewerWindow.focus();
     return;
@@ -115,7 +152,7 @@ export const openScreenShareViewer = async ({
   }
 
   const viewer = new BrowserWindow({
-    ...workArea,
+    ...viewerBounds,
     minWidth: 640,
     minHeight: 420,
     title,
@@ -159,7 +196,7 @@ export const openScreenShareViewer = async ({
       `${devServerUrl}?screenViewer=1&screenViewerSession=${encodeURIComponent(sessionId)}`,
     );
   }
-  viewer.setBounds(workArea, false);
+  viewer.setBounds(viewerBounds, false);
   viewer.show();
   viewer.focus();
 };
@@ -402,7 +439,7 @@ export const createMainWindow = ({
         return;
       }
 
-      const sources = await enumerateScreenCaptureSources(false);
+      const sources = await waitForScreenCaptureSources(false);
       const primaryDisplayId = String(screen.getPrimaryDisplay().id);
       const selectedSource =
         sources.find((source) => source.id === pendingScreenCaptureSourceId) ??

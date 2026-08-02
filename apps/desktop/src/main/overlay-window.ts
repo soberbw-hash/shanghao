@@ -8,15 +8,12 @@ import { IPC_CHANNELS, type OverlayState } from "@private-voice/shared";
 import { sendToWindow } from "./safe-web-contents";
 
 const devServerUrl = "http://127.0.0.1:5173";
-const OVERLAY_AVATAR_SIZE = 24;
-const OVERLAY_GAP = 3;
-const OVERLAY_PADDING_X = 5;
-const OVERLAY_STATUS_WIDTH = 18;
-const OVERLAY_SHADOW_MARGIN = 0;
-const OVERLAY_PILL_HEIGHT = 32;
-const OVERLAY_HEIGHT = OVERLAY_PILL_HEIGHT + OVERLAY_SHADOW_MARGIN * 2;
-const OVERLAY_MIN_PILL_WIDTH = 64;
-const OVERLAY_MIN_WIDTH = OVERLAY_MIN_PILL_WIDTH + OVERLAY_SHADOW_MARGIN * 2;
+const OVERLAY_WIDTH = 142;
+const OVERLAY_ROW_HEIGHT = 36;
+const OVERLAY_GAP = 4;
+const OVERLAY_PADDING = 5;
+const OVERLAY_MIN_HEIGHT = OVERLAY_ROW_HEIGHT + OVERLAY_PADDING * 2;
+const OVERLAY_MAX_HEIGHT = OVERLAY_ROW_HEIGHT * 5 + OVERLAY_GAP * 4 + OVERLAY_PADDING * 2;
 
 export class OverlayWindowController {
   private window: BrowserWindow | null = null;
@@ -57,20 +54,20 @@ export class OverlayWindowController {
     if (!this.window || this.window.isDestroyed()) return;
 
     const count = Math.max(1, Math.min(onlineCount, 5));
-    const pillWidth =
-      OVERLAY_PADDING_X * 2 +
-      count * OVERLAY_AVATAR_SIZE +
-      Math.max(0, count - 1) * OVERLAY_GAP +
-      OVERLAY_GAP +
-      OVERLAY_STATUS_WIDTH;
-    const width = Math.max(OVERLAY_MIN_WIDTH, pillWidth + OVERLAY_SHADOW_MARGIN * 2);
-    const height = OVERLAY_HEIGHT;
+    const height =
+      OVERLAY_PADDING * 2 + count * OVERLAY_ROW_HEIGHT + Math.max(0, count - 1) * OVERLAY_GAP;
 
     const bounds = this.window.getBounds();
+    const display = screen.getDisplayMatching(bounds);
+    const centeredY = bounds.y + Math.round((bounds.height - height) / 2);
+    const y = Math.max(
+      display.workArea.y + 6,
+      Math.min(centeredY, display.workArea.y + display.workArea.height - height - 6),
+    );
     this.window.setBounds({
       x: this.snapX,
-      y: bounds.y,
-      width,
+      y,
+      width: OVERLAY_WIDTH,
       height,
     });
   }
@@ -89,17 +86,17 @@ export class OverlayWindowController {
 
     const workArea = screen.getPrimaryDisplay().workArea;
     this.snapX = workArea.x + 6;
-    const y = savedY ?? workArea.y + Math.round((workArea.height - OVERLAY_HEIGHT) / 2);
+    const y = savedY ?? workArea.y + Math.round((workArea.height - OVERLAY_MIN_HEIGHT) / 2);
 
     const window = new BrowserWindow({
-      width: OVERLAY_MIN_WIDTH,
-      height: OVERLAY_HEIGHT,
+      width: OVERLAY_WIDTH,
+      height: OVERLAY_MIN_HEIGHT,
       x: this.snapX,
       y,
-      minWidth: OVERLAY_MIN_WIDTH,
-      minHeight: OVERLAY_HEIGHT,
-      maxWidth: 172,
-      maxHeight: OVERLAY_HEIGHT,
+      minWidth: OVERLAY_WIDTH,
+      minHeight: OVERLAY_MIN_HEIGHT,
+      maxWidth: OVERLAY_WIDTH,
+      maxHeight: OVERLAY_MAX_HEIGHT,
       frame: false,
       transparent: true,
       backgroundColor: "#00000000",

@@ -24,6 +24,10 @@ const sceneCharacterPath = path.resolve(
   process.cwd(),
   "src/renderer/src/components/room/SceneCharacter.tsx",
 );
+const musicActivityBadgePath = path.resolve(
+  process.cwd(),
+  "src/renderer/src/components/room/MusicActivityBadge.tsx",
+);
 const roomStateHookPath = path.resolve(process.cwd(), "src/renderer/src/hooks/useRoomState.ts");
 const characterMotionPath = path.resolve(
   process.cwd(),
@@ -97,17 +101,17 @@ test("room uses a real always-on-top overlay and a five-second knock cooldown", 
   assert.equal(overlaySource.includes("alwaysOnTop: true"), true);
   assert.equal(overlaySource.includes("skipTaskbar: true"), true);
   assert.equal(overlaySource.includes("overlay-bounds.json"), true);
-  assert.equal(overlaySource.includes("OVERLAY_AVATAR_SIZE = 24"), true);
-  assert.equal(overlaySource.includes("OVERLAY_PILL_HEIGHT = 32"), true);
-  assert.equal(overlaySource.includes("OVERLAY_MIN_PILL_WIDTH = 64"), true);
-  assert.equal(overlaySource.includes("OVERLAY_SHADOW_MARGIN = 0"), true);
+  assert.equal(overlaySource.includes("OVERLAY_WIDTH = 142"), true);
+  assert.equal(overlaySource.includes("OVERLAY_ROW_HEIGHT = 36"), true);
+  assert.equal(overlaySource.includes("OVERLAY_MAX_HEIGHT"), true);
+  assert.equal(overlayPageSource.includes('flexDirection: "column"'), true);
   assert.equal(overlaySource.includes("show(): boolean"), true);
   assert.equal(overlaySource.includes("focusable: false"), true);
   assert.equal(overlaySource.includes("setIgnoreMouseEvents(true"), true);
   assert.equal(overlaySource.includes("setMovable(false)"), true);
   assert.equal(overlaySource.includes("setContentProtection(true)"), false);
   assert.equal(overlaySource.includes("resizable: false"), true);
-  assert.equal(overlayPageSource.includes("data-overlay-pill"), true);
+  assert.equal(overlayPageSource.includes("data-overlay-list"), true);
   assert.equal(overlayPageSource.includes("gsap.fromTo"), true);
   assert.equal(rendererMainSource.includes("overlay-renderer"), true);
   assert.equal(stylesSource.includes("html.overlay-renderer"), true);
@@ -119,7 +123,7 @@ test("room uses a real always-on-top overlay and a five-second knock cooldown", 
   assert.equal(teamIslandSource.includes("team-island-stage"), true);
   assert.equal(teamIslandSource.includes("scene-workstation"), true);
   assert.equal(sceneZonesSource.includes("restroomZone"), true);
-  assert.equal(sceneZonesSource.includes('label: "离开一下"'), true);
+  assert.equal(sceneZonesSource.includes('label: "离开"'), true);
   assert.equal(sceneZonesSource.includes("seatSlots"), true);
   assert.equal(sceneZonesSource.includes("activityZones"), true);
   assert.equal(sceneZonesSource.includes('kind: "seat"'), true);
@@ -144,6 +148,24 @@ test("each remote member has compact local-only volume and mute controls", () =>
   assert.equal(roomStateSource.includes("pendingMemberVolumeSaves"), true);
   assert.equal(roomStateSource.includes("activeClient?.setPeerVolume"), true);
   assert.equal(stylesSource.includes("width: 252px"), true);
+});
+
+test("music activity stays attached to a member while seats change", () => {
+  const teamIslandSource = readFileSync(teamIslandPath, "utf8");
+  const badgeSource = readFileSync(musicActivityBadgePath, "utf8");
+  const roomSource = readFileSync(roomPagePath, "utf8");
+  const stylesSource = readFileSync(stylesPath, "utf8");
+
+  assert.equal(teamIslandSource.includes("const occupant = memberBySeat.get(slot.id)"), true);
+  assert.equal(teamIslandSource.includes("settledMemberZones[occupant.id] === slot.id"), true);
+  assert.equal(teamIslandSource.includes("onSettled={handleMemberSettled}"), true);
+  assert.equal(teamIslandSource.includes("occupant.musicActivity"), true);
+  assert.equal(badgeSource.includes("is-tooltip-open"), true);
+  assert.equal(badgeSource.includes("scheduleTooltipClose"), true);
+  assert.equal(stylesSource.includes("pointer-events: none"), true);
+  assert.equal(roomSource.includes("detectedMusicRef.current ?? localMember?.musicActivity"), true);
+  assert.equal(roomSource.includes("hasDetectionSnapshotRef.current = true"), true);
+  assert.equal(roomSource.includes("detectedMusicActivityKey === localMusicActivityKey"), true);
 });
 
 test("desktop build includes custom nsis shortcut icon wiring", () => {
@@ -196,7 +218,7 @@ test("scene seats align with the marked workstation positions", () => {
   assert.equal(teamIslandSource.includes("SceneTallPlant"), true);
   assert.equal(teamIslandSource.includes("SceneLowTable"), true);
   assert.equal(teamIslandSource.includes("scene-wall-backdrop"), true);
-  assert.equal(teamIslandSource.includes("scene-wall-baseboard"), true);
+  assert.equal(teamIslandSource.includes("scene-wall-baseboard"), false);
   assert.equal(teamIslandSource.includes("scene-lounge-corner"), true);
   assert.equal(stylesSource.includes(".scene-window-nook"), true);
   assert.equal(stylesSource.includes(".scene-wall-shelf"), true);
@@ -294,14 +316,15 @@ test("screen sharing is wired through the room page and WebRTC peer layer", () =
   assert.equal(roomSource.includes("disabled={isDetaching}"), true);
   assert.equal(mainWindowSource.includes("openScreenShareViewer"), true);
   assert.equal(mainWindowSource.includes("viewer.maximize()"), false);
-  assert.equal(mainWindowSource.includes("setBounds(workArea, false)"), true);
+  assert.equal(mainWindowSource.includes("workArea.width * 0.85"), true);
+  assert.equal(mainWindowSource.includes("workArea.height * 0.85"), true);
   assert.equal(mainWindowSource.includes("setContentProtection(true)"), true);
   assert.equal(mainWindowSource.includes("setScreenCaptureContentProtection"), true);
   assert.equal(mainWindowSource.includes("appWindowSourceIds"), true);
   assert.equal(mainWindowSource.includes("sendScreenShareViewerSignal"), true);
   assert.equal(managerSource.includes("DetachedScreenSharePublisher"), true);
   assert.equal(managerSource.includes("toDataURL"), false);
-  assert.equal(managerSource.includes("SCREEN_SHARE_PROFILES"), true);
+  assert.equal(managerSource.includes("SCREEN_SHARE_PROFILE"), true);
   assert.equal(viewerPreloadSource.includes("screenShareViewerApi"), true);
   assert.equal(viewerPreloadSource.includes("desktopApi"), false);
   assert.equal(roomSource.includes("screen-share-fit-action"), false);
@@ -309,8 +332,9 @@ test("screen sharing is wired through the room page and WebRTC peer layer", () =
   assert.equal(mainWindowSource.includes("setDisplayMediaRequestHandler"), true);
   assert.equal(mainWindowSource.includes("desktopCapturer.getSources"), true);
   assert.equal(mainWindowSource.includes('"loopback"'), true);
-  assert.equal(roomSource.includes("screenShareQuality"), true);
-  assert.equal(roomSource.includes("aria-selected"), true);
+  assert.equal(roomSource.includes("screenShareQuality"), false);
+  assert.equal(roomSource.includes("1440p · 清晰"), true);
+  assert.equal(roomSource.includes("aria-pressed={pendingIncludeSystemAudio}"), true);
 });
 
 test("room scene supports clickable seats and silent-away without daily summaries", () => {
@@ -324,7 +348,7 @@ test("room scene supports clickable seats and silent-away without daily summarie
   assert.equal(sceneCharacterSource.includes("DeskAnimalSprite"), true);
   assert.equal(roomSource.includes("decideAutoAway"), true);
   assert.equal(roomSource.includes("lastSpokeAtRef"), false);
-  assert.equal(roomSource.includes('moveLocalMemberRef.current("restroomZone", "restroom")'), true);
+  assert.match(roomSource, /moveLocalMemberRef\.current\(\s*"restroomZone",\s*"restroom"/);
   assert.equal(roomSource.includes("recordDailySession"), false);
   assert.equal(homeSource.includes("今日开黑小结"), false);
   assert.equal(homeSource.includes("dailySummary"), false);

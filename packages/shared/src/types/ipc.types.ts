@@ -58,6 +58,8 @@ export interface ScreenCaptureSourceDescriptor {
   id: string;
   name: string;
   kind: "screen" | "window";
+  displayId?: string;
+  displayLabel?: string;
   thumbnailDataUrl: string;
   appIconDataUrl?: string;
 }
@@ -135,6 +137,7 @@ export interface GameDetectionSnapshot {
     | "胡闹厨房"
     | "荒野大镖客 2";
   detectedAt?: string;
+  musicActivity?: import("./room.types").MusicActivity;
   checkedAt: string;
 }
 
@@ -143,7 +146,7 @@ export interface DesktopApi {
     getRuntimeInfo: () => Promise<RuntimeInfo>;
     getSystemIdleSeconds: () => Promise<number>;
     writeLog: (payload: RendererLogPayload) => Promise<void>;
-    notify: (payload: { title: string; body: string }) => Promise<void>;
+    notify: (payload: { title: string; body: string; attention?: boolean }) => Promise<void>;
   };
   clipboard: {
     writeText: (text: string) => Promise<void>;

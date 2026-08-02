@@ -107,12 +107,11 @@ export const App = () => {
       return;
     }
 
-    const preloadPages = () => {
-      void loadSettingsPage();
-      void import("../components/room/DeskAnimalSprite").then(({ preloadCharacterSpriteAssets }) =>
-        preloadCharacterSpriteAssets(),
-      );
-    };
+    void import("../components/room/DeskAnimalSprite").then(({ preloadCharacterSpriteAssets }) =>
+      preloadCharacterSpriteAssets(),
+    );
+
+    const preloadPages = () => void loadSettingsPage();
 
     const requestId = window.requestIdleCallback(preloadPages, { timeout: 1_200 });
     return () => window.cancelIdleCallback(requestId);
@@ -162,15 +161,11 @@ export const App = () => {
             <motion.div
               key={basePage}
               className="app-route-motion"
-              initial={basePage === "room" ? { opacity: 0, x: 18, scale: 0.992 } : false}
-              animate={{ opacity: 1, x: 0, scale: 1 }}
+              initial={basePage === "room" ? { opacity: 0, x: 8 } : false}
+              animate={{ opacity: 1, x: 0 }}
               transition={{
                 opacity: { duration: APPLE_MOTION_DURATION.panel, ease: APPLE_MOTION_EASE },
                 x: {
-                  duration: APPLE_MOTION_DURATION.page,
-                  ease: APPLE_MOTION_SPATIAL_EASE,
-                },
-                scale: {
                   duration: APPLE_MOTION_DURATION.page,
                   ease: APPLE_MOTION_SPATIAL_EASE,
                 },

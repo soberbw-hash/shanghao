@@ -81,6 +81,7 @@ export const SettingsPage = () => {
     echoCancellation: settings?.isEchoCancellationEnabled,
     noiseSuppression: settings?.isNoiseSuppressionEnabled,
     autoGainControl: settings?.isAutoGainControlEnabled,
+    voiceEnhancement: settings?.isVoiceEnhancementEnabled,
     monitorMode: settings?.micMonitorMode,
     equalizerGains: settings?.micEqualizerGains,
     lowCutFrequency: settings?.lowCutFrequency,
@@ -272,31 +273,6 @@ export const SettingsPage = () => {
     general: (
       <SettingsSection title="应用" description="控制窗口、悬浮窗与图形渲染。">
         <div className="space-y-3">
-          <SettingsItemRow label="屏幕分享画质" description="服务器带宽有限时推荐“流畅”。">
-            <select
-              value={settings.screenShareQuality}
-              className="settings-inline-select"
-              onChange={(event) => {
-                void handleSaveSettings({
-                  screenShareQuality: event.target.value as AppSettings["screenShareQuality"],
-                });
-              }}
-            >
-              <option value="720p">720p（流畅，推荐）</option>
-              <option value="1080p">1080p（清晰）</option>
-            </select>
-          </SettingsItemRow>
-          <SettingsItemRow
-            label="共享系统音频"
-            description="Windows 分享屏幕时，同时让好友听到游戏或视频声音。"
-          >
-            <Switch
-              isChecked={settings.isScreenShareSystemAudioEnabled}
-              onChange={(isScreenShareSystemAudioEnabled) =>
-                void handleSaveSettings({ isScreenShareSystemAudioEnabled })
-              }
-            />
-          </SettingsItemRow>
           <SettingsItemRow
             label="进入频道时显示悬浮窗"
             description="默认开启，进入频道后自动显示胶囊悬浮窗。"

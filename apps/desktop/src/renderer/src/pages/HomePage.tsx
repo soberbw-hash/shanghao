@@ -9,6 +9,7 @@ import {
   Mic,
   MicOff,
   Server,
+  Volume2,
 } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
 import { gsap } from "gsap";
@@ -27,6 +28,7 @@ import { CharacterPicker } from "../components/profile/AvatarPicker";
 import { StartupSplashPage } from "../components/status/StartupSplashPage";
 import { motionCurve, motionDuration, motionEase } from "../features/motion/motionSystem";
 import { getRemoteAudioMixer } from "../features/audio/RemoteAudioMixer";
+import { requestMicrophoneStream } from "@private-voice/webrtc";
 import { usePrefersReducedMotion } from "../hooks/usePrefersReducedMotion";
 import { useRoomState } from "../hooks/useRoomState";
 import { useAppStore } from "../store/appStore";
@@ -61,6 +63,7 @@ export const HomePage = () => {
   const pushToast = useAppStore((state) => state.pushToast);
   const permissionState = useAudioStore((state) => state.permissionState);
   const inputDevices = useAudioStore((state) => state.inputDevices);
+  const outputDevices = useAudioStore((state) => state.outputDevices);
   const refreshDevices = useAudioStore((state) => state.refreshDevices);
   const pageRef = useRef<HTMLDivElement>(null);
   const [nickname, setNickname] = useState("");
@@ -70,6 +73,7 @@ export const HomePage = () => {
   const [isEditingSetup, setIsEditingSetup] = useState(false);
   const [isTestingServer, setIsTestingServer] = useState(false);
   const [serverTestResult, setServerTestResult] = useState<RelayStatusSnapshot>();
+  const [isCheckingAudio, setIsCheckingAudio] = useState(false);
   const reduceMotion = usePrefersReducedMotion();
   const isSettingsReady = Boolean(settings);
   const savedNickname = settings?.nickname;
@@ -227,6 +231,69 @@ export const HomePage = () => {
         ? { title: "听不到你", tone: "warn" }
         : { title: "麦克风正常", tone: "good" };
 
+  const hasSelectedInput = settings.preferredInputDeviceId
+    ? inputDevices.some((device) => device.id === settings.preferredInputDeviceId)
+    : inputDevices.length > 0;
+  const hasSelectedOutput = settings.preferredOutputDeviceId
+    ? outputDevices.some((device) => device.id === settings.preferredOutputDeviceId)
+    : outputDevices.length > 0;
+
+  const verifyAudioDevices = async (): Promise<boolean> => {
+    setIsCheckingAudio(true);
+    try {
+      await refreshDevices();
+      const audioState = useAudioStore.getState();
+      const inputDeviceId = settings.preferredInputDeviceId;
+      const outputDeviceId = settings.preferredOutputDeviceId;
+      const inputExists = inputDeviceId
+        ? audioState.inputDevices.some((device) => device.id === inputDeviceId)
+        : audioState.inputDevices.length > 0;
+      const outputExists = outputDeviceId
+        ? audioState.outputDevices.some((device) => device.id === outputDeviceId)
+        : audioState.outputDevices.length > 0;
+
+      if (!inputExists || !outputExists) {
+        pushToast({
+          tone: "warning",
+          title: "先选好声音设备",
+          description: !inputExists ? "没有找到所选麦克风。" : "没有找到所选扬声器。",
+        });
+        return false;
+      }
+
+      const { stream } = await requestMicrophoneStream({
+        deviceId: inputDeviceId,
+        echoCancellation: settings.isEchoCancellationEnabled,
+        noiseSuppression: settings.isNoiseSuppressionEnabled,
+        autoGainControl: settings.isAutoGainControlEnabled,
+      });
+      stream.getTracks().forEach((track) => track.stop());
+
+      const outputContext = new AudioContext({ latencyHint: "interactive" }) as AudioContext & {
+        setSinkId?: (sinkId: string) => Promise<void>;
+      };
+      try {
+        await outputContext.setSinkId?.(outputDeviceId || "default");
+      } finally {
+        await outputContext.close();
+      }
+      getRemoteAudioMixer().setOutputDevice(outputDeviceId);
+      return true;
+    } catch (error) {
+      pushToast({
+        tone: "warning",
+        title: "声音设备还没准备好",
+        description:
+          error instanceof DOMException && error.name === "NotAllowedError"
+            ? "请允许上号使用麦克风后再进入。"
+            : "无法打开所选麦克风或扬声器，请换一个设备重试。",
+      });
+      return false;
+    } finally {
+      setIsCheckingAudio(false);
+    }
+  };
+
   const enterChannel = async () => {
     const normalizedAddress = normalizeRelayServerUrl(serverAddress);
     const trimmedNickname = nickname.trim();
@@ -254,6 +321,7 @@ export const HomePage = () => {
     void getRemoteAudioMixer().unlock("enter-channel");
     setIsSubmitting(true);
     try {
+      if (!(await verifyAudioDevices())) return;
       await saveSettings({
         nickname: trimmedNickname.slice(0, 16),
         avatarId,
@@ -341,6 +409,48 @@ export const HomePage = () => {
       )}
     </div>
   );
+  const audioDeviceControls = (
+    <div className="entry-audio-devices" aria-label="进入频道声音设备">
+      <label>
+        <Mic className="h-4 w-4" />
+        <span>麦克风</span>
+        <select
+          value={settings.preferredInputDeviceId || ""}
+          onChange={(event) =>
+            void saveSettings({ preferredInputDeviceId: event.target.value || undefined })
+          }
+        >
+          <option value="">系统默认</option>
+          {inputDevices.map((device) => (
+            <option key={device.id} value={device.id}>
+              {device.label || "未命名麦克风"}
+            </option>
+          ))}
+        </select>
+        <i className={hasSelectedInput ? "is-ready" : "is-missing"} aria-hidden="true" />
+      </label>
+      <label>
+        <Volume2 className="h-4 w-4" />
+        <span>扬声器</span>
+        <select
+          value={settings.preferredOutputDeviceId || ""}
+          onChange={(event) => {
+            const preferredOutputDeviceId = event.target.value || undefined;
+            getRemoteAudioMixer().setOutputDevice(preferredOutputDeviceId);
+            void saveSettings({ preferredOutputDeviceId });
+          }}
+        >
+          <option value="">系统默认</option>
+          {outputDevices.map((device) => (
+            <option key={device.id} value={device.id}>
+              {device.label || "未命名扬声器"}
+            </option>
+          ))}
+        </select>
+        <i className={hasSelectedOutput ? "is-ready" : "is-missing"} aria-hidden="true" />
+      </label>
+    </div>
+  );
 
   return (
     <div
@@ -419,14 +529,22 @@ export const HomePage = () => {
                     <strong>{formatServerLabel(serverAddress)}</strong>
                   </span>
                 </div>
+                {audioDeviceControls}
                 {serverTestStatus}
                 <div className="mt-5 flex flex-wrap items-center gap-2.5">
                   <Button
                     className="h-[50px] min-w-[188px] rounded-[16px] text-[15px]"
-                    disabled={isJoining || !serverAddress.trim() || isSelectedAvatarOccupied}
+                    disabled={
+                      isJoining ||
+                      isCheckingAudio ||
+                      !serverAddress.trim() ||
+                      isSelectedAvatarOccupied ||
+                      !hasSelectedInput ||
+                      !hasSelectedOutput
+                    }
                     onClick={() => void enterChannel()}
                   >
-                    {isJoining ? "正在进入..." : "上号"}
+                    {isCheckingAudio ? "正在检查设备..." : isJoining ? "正在进入..." : "上号"}
                     {isJoining ? (
                       <LoaderCircle className="h-4 w-4 animate-spin" />
                     ) : (
@@ -501,15 +619,23 @@ export const HomePage = () => {
                     }}
                   />
                 </label>
+                {audioDeviceControls}
                 {serverTestStatus}
                 <div className="mt-auto" data-gsap-entry="cta">
                   <div className="flex flex-wrap gap-2.5">
                     <Button
                       className="h-[52px] min-w-[188px] rounded-[16px] text-[15px]"
-                      disabled={isJoining || !serverAddress.trim() || isSelectedAvatarOccupied}
+                      disabled={
+                        isJoining ||
+                        isCheckingAudio ||
+                        !serverAddress.trim() ||
+                        isSelectedAvatarOccupied ||
+                        !hasSelectedInput ||
+                        !hasSelectedOutput
+                      }
                       onClick={() => void enterChannel()}
                     >
-                      {isJoining ? "正在进入..." : "进入频道"}
+                      {isCheckingAudio ? "正在检查设备..." : isJoining ? "正在进入..." : "进入频道"}
                       {isJoining ? (
                         <LoaderCircle className="h-4 w-4 animate-spin" />
                       ) : (

@@ -81,7 +81,7 @@ export const seatSlots: SceneZone[] = [
 export const activityZones: SceneZone[] = [
   {
     id: "restroomZone",
-    label: "离开一下",
+    label: "离开",
     kind: "activity",
     activity: "restroom",
     left: 13,

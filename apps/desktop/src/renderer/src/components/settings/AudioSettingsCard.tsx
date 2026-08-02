@@ -38,12 +38,10 @@ export const AudioSettingsCard = ({
   onChange: (patch: Partial<AppSettings>) => void;
 }) => {
   const [isAdvancedOpen, setIsAdvancedOpen] = useState(false);
-  const [thresholdDraft, setThresholdDraft] = useState(settings.inputLevelThreshold);
   const [equalizerDraft, setEqualizerDraft] = useState(settings.micEqualizerGains);
   useEffect(() => {
-    setThresholdDraft(settings.inputLevelThreshold);
     setEqualizerDraft(settings.micEqualizerGains);
-  }, [settings.inputLevelThreshold, settings.micEqualizerGains]);
+  }, [settings.micEqualizerGains]);
   const micHealth = !isMicTesting
     ? micTestError || "实时监听麦克风，建议佩戴耳机避免回授"
     : isMicClipping
@@ -93,6 +91,15 @@ export const AudioSettingsCard = ({
             onChange={(isAutoGainControlEnabled) => onChange({ isAutoGainControlEnabled })}
           />
         </SettingsItemRow>
+        <SettingsItemRow
+          label="人声增强"
+          description="轻微削减浑浊低频并提升语音清晰度，默认开启。"
+        >
+          <Switch
+            isChecked={settings.isVoiceEnhancementEnabled}
+            onChange={(isVoiceEnhancementEnabled) => onChange({ isVoiceEnhancementEnabled })}
+          />
+        </SettingsItemRow>
         <SettingsItemRow label="麦克风体检" description={micHealth}>
           <div className="min-w-[280px] space-y-3">
             <div className="flex gap-2">
@@ -127,14 +134,6 @@ export const AudioSettingsCard = ({
 
           {isAdvancedOpen ? (
             <div className="space-y-3 border-t border-[#E7ECF2] bg-white/70 p-3">
-              <SettingsItemRow
-                label="降噪处理"
-                description="DeepFilterNet 固定使用 48 kHz，本地处理后再压缩传输。"
-              >
-                <span className="rounded-full border border-[#DCE8F5] bg-white px-3 py-1.5 text-xs font-semibold text-[#526579]">
-                  48 kHz
-                </span>
-              </SettingsItemRow>
               <SettingsItemRow label="试音模式">
                 <SegmentedControl
                   value={settings.micMonitorMode}
@@ -164,26 +163,6 @@ export const AudioSettingsCard = ({
                     })
                   }
                 />
-              </SettingsItemRow>
-              <SettingsItemRow label="输入阈值">
-                <div className="min-w-[280px] space-y-2">
-                  <Slider
-                    min={0.05}
-                    max={0.8}
-                    step={0.01}
-                    value={thresholdDraft}
-                    onChange={(event) => setThresholdDraft(Number(event.currentTarget.value))}
-                    onPointerUp={(event) =>
-                      onChange({ inputLevelThreshold: Number(event.currentTarget.value) })
-                    }
-                    onKeyUp={(event) =>
-                      onChange({ inputLevelThreshold: Number(event.currentTarget.value) })
-                    }
-                  />
-                  <div className="text-xs text-[#98A2B3]">
-                    当前：{Math.round(thresholdDraft * 100)}
-                  </div>
-                </div>
               </SettingsItemRow>
               <SettingsItemRow
                 label="五段声音塑形"

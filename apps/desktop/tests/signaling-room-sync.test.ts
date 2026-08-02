@@ -52,6 +52,7 @@ const joinChannel = (
   nickname = peerId,
   sessionToken?: string,
   avatarId: BuiltInAvatarId = BUILT_IN_AVATAR_IDS[nextAvatarIndex++ % BUILT_IN_AVATAR_IDS.length]!,
+  profileId?: string,
 ) => {
   socket.send(
     JSON.stringify({
@@ -59,6 +60,7 @@ const joinChannel = (
       roomId: "main",
       channelId: "main",
       peerId,
+      profileId,
       nickname,
       avatarId,
       appVersion: "0.1.40",
@@ -68,6 +70,53 @@ const joinChannel = (
     }),
   );
 };
+
+test("a restarted desktop replaces the stale peer with the same stable profile", async () => {
+  const server = new SignalingServer({ roomName: "固定频道" });
+  const port = await server.listen();
+  const url = `ws://127.0.0.1:${port}`;
+  const previous = await openSocket(url);
+  const restarted = await openSocket(url);
+  const stableProfileId = "3be6f23c-2c54-4a8c-b67e-c6a45148aa85";
+
+  try {
+    const previousJoined = waitForMessage(
+      previous,
+      (payload): payload is { type: "join_ack" } =>
+        typeof payload === "object" &&
+        payload !== null &&
+        (payload as { type?: string }).type === "join_ack",
+    );
+    joinChannel(previous, "peer-before-restart", "同一个人", undefined, "fox", stableProfileId);
+    await previousJoined;
+
+    const restartedSnapshot = waitForMessage(
+      restarted,
+      (payload): payload is { type: "channel_snapshot"; members: Array<{ id: string }> } =>
+        typeof payload === "object" &&
+        payload !== null &&
+        (payload as { type?: string }).type === "channel_snapshot" &&
+        (payload as { members?: Array<{ id: string }> }).members?.length === 1,
+    );
+    joinChannel(restarted, "peer-after-restart", "同一个人", undefined, "fox", stableProfileId);
+    await restartedSnapshot.then((snapshot) => {
+      assert.deepEqual(
+        snapshot.members.map((member) => member.id),
+        ["peer-after-restart"],
+      );
+    });
+
+    const health = (await fetch(`http://127.0.0.1:${port}/health`).then((response) =>
+      response.json(),
+    )) as { connectedPeers: number; occupiedAvatarIds: BuiltInAvatarId[] };
+    assert.equal(health.connectedPeers, 1);
+    assert.deepEqual(health.occupiedAvatarIds, ["fox"]);
+  } finally {
+    previous.close();
+    restarted.close();
+    await server.close();
+  }
+});
 
 test("fixed channel reserves each built-in avatar atomically and releases it on leave", async () => {
   const server = new SignalingServer({ roomName: "固定频道" });

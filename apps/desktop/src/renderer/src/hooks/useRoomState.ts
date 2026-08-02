@@ -6,6 +6,7 @@ import {
   RoomConnectionState,
   RoomLifecycleState,
   type MemberActivity,
+  type RoomCollectionItem,
   type RoomMember,
   type SceneZoneId,
   type SignalingEventPayload,
@@ -217,6 +218,7 @@ export const useRoomState = () => {
   const clearRoomEvents = useRoomStore((state) => state.clearRoomEvents);
   const addChatMessage = useRoomStore((state) => state.addChatMessage);
   const mergeChatHistory = useRoomStore((state) => state.mergeChatHistory);
+  const setCollectionItems = useRoomStore((state) => state.setCollectionItems);
   const addSceneReaction = useRoomStore((state) => state.addSceneReaction);
   const setConnectionHealth = useRoomStore((state) => state.setConnectionHealth);
   const updatePeerLatency = useRoomStore((state) => state.updatePeerLatency);
@@ -237,6 +239,7 @@ export const useRoomState = () => {
       localMember?.activity ?? "idle",
       localMember?.sceneZone,
       localMember?.gameName,
+      localMember?.musicActivity,
     );
   }, [isDeafened, isMuted, updateLocalPresence]);
 
@@ -257,7 +260,6 @@ export const useRoomState = () => {
       (isSpeaking) => {
         activeClient?.updateMuteState(useAudioStore.getState().isMuted, isSpeaking);
       },
-      useSettingsStore.getState().settings?.inputLevelThreshold ?? 0.4,
       (level) => {
         window.dispatchEvent(
           new CustomEvent(REMOTE_AUDIO_LEVEL_EVENT, {
@@ -313,6 +315,7 @@ export const useRoomState = () => {
         micEqualizerGains: currentSettings?.micEqualizerGains ?? [0, 0, 0, 0, 0],
         lowCutFrequency: currentSettings?.lowCutFrequency ?? "90",
         isNoiseSuppressionEnabled: currentSettings?.isNoiseSuppressionEnabled ?? true,
+        isVoiceEnhancementEnabled: currentSettings?.isVoiceEnhancementEnabled ?? true,
       });
       activeProcessedMicrophone = processedMicrophone;
       const stream = processedMicrophone.stream;
@@ -552,6 +555,7 @@ export const useRoomState = () => {
         }
       },
       onChatHistory: (messages) => mergeChatHistory(messages),
+      onRoomCollection: (items) => setCollectionItems(items),
       onKnock: (message) => {
         addChatMessage(message);
         playUiSound("knock-bell");
@@ -565,6 +569,7 @@ export const useRoomState = () => {
             void window.desktopApi.app.notify({
               title: `${message.nickname} 敲了敲你`,
               body: "快来上号，朋友正在等你。",
+              attention: true,
             });
           }
         }
@@ -604,6 +609,7 @@ export const useRoomState = () => {
       localMember?.activity ?? "idle",
       localMember?.sceneZone,
       localMember?.gameName,
+      localMember?.musicActivity,
     );
     playUiSound("enter-room");
     setRoom({
@@ -881,17 +887,23 @@ export const useRoomState = () => {
     await writeRendererLog("webrtc", "info", "Screen share stopped from room state");
   };
 
-  const moveLocalMember = (sceneZone: SceneZoneId, activity: MemberActivity, gameName?: string) => {
+  const moveLocalMember = (
+    sceneZone: SceneZoneId,
+    activity: MemberActivity,
+    gameName?: string,
+    musicActivity?: RoomMember["musicActivity"],
+  ) => {
     if (sceneZone === "restroomZone") {
       useAudioStore.getState().setMuted(true);
       activeClient?.updateMuteState(true, false);
     }
-    updateLocalPresence({ sceneZone, activity, gameName });
-    activeClient?.updatePresenceState(isDeafened, activity, sceneZone, gameName);
+    updateLocalPresence({ sceneZone, activity, gameName, musicActivity });
+    activeClient?.updatePresenceState(isDeafened, activity, sceneZone, gameName, musicActivity);
     void writeRendererLog("app", "info", "Local member moved in scene", {
       sceneZone,
       activity,
       gameName,
+      musicProvider: musicActivity?.provider,
     });
   };
 
@@ -908,6 +920,27 @@ export const useRoomState = () => {
     scheduleMemberVolumeSave(storageKey, normalizedVolume);
   };
 
+  const addRoomCollectionItem = async (
+    kind: RoomCollectionItem["kind"],
+    title: string,
+    content: string,
+  ) => {
+    if (!activeClient) throw new Error("signaling_not_connected");
+    await activeClient.addRoomCollectionItem(kind, title, content);
+    await writeRendererLog("signaling", "info", "Room collection item requested", {
+      kind,
+      title: title.slice(0, 80),
+    });
+  };
+
+  const removeRoomCollectionItem = async (itemId: string) => {
+    if (!activeClient) throw new Error("signaling_not_connected");
+    await activeClient.removeRoomCollectionItem(itemId);
+    await writeRendererLog("signaling", "info", "Room collection item removal requested", {
+      itemId,
+    });
+  };
+
   return {
     room,
     localStream,
@@ -922,5 +955,7 @@ export const useRoomState = () => {
     stopScreenShare,
     moveLocalMember,
     setMemberVolume,
+    addRoomCollectionItem,
+    removeRoomCollectionItem,
   };
 };
