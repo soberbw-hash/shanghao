@@ -4,6 +4,7 @@ import {
   MemberSpeakingState,
   RoomConnectionState,
   type BuiltInAvatarId,
+  type ChatImageAttachment,
   type ChatMessage,
   type MemberActivity,
   type MusicActivity,
@@ -19,6 +20,7 @@ import type {
   AvatarUpdateMessage,
   ChatMessage as SignalChatMessage,
   ChatHistoryMessage,
+  ChannelCountsMessage,
   RoomCollectionSnapshotMessage,
   ErrorMessage,
   IceCandidateMessage,
@@ -75,7 +77,8 @@ interface RoomClientOptions {
   onRemoteStream: (peerId: string, stream: MediaStream | undefined) => void;
   onChatMessage: (message: ChatMessage) => void;
   onChatHistory: (messages: ChatMessage[]) => void;
-  onRoomCollection: (items: RoomCollectionItem[]) => void;
+  onChannelCounts: (counts: ChannelCountsMessage["counts"]) => void;
+  onRoomCollection: (items: RoomCollectionItem[], replace: boolean) => void;
   onKnock: (message: ChatMessage) => void;
   onRemoteScreenFrame: (peerId: string, frame?: RemoteScreenFrame) => void;
   onSceneReaction: (reaction: SceneReaction) => void;
@@ -115,7 +118,6 @@ export interface RemoteScreenFrame {
 const INITIAL_CONNECT_TIMEOUT_MS = 10_000;
 const SNAPSHOT_RETRY_TIMEOUT_MS = 5_000;
 const AUDIO_PATH_SYNC_INTERVAL_MS = 3_000;
-const AUDIO_RELAY_WARMUP_MS = 12_000;
 const SCREEN_FRAME_INTERVAL_MS = 2_500;
 const SCREEN_FRAME_MAX_WIDTH = 480;
 const SCREEN_FRAME_MAX_BYTES = 48 * 1024;
@@ -156,7 +158,6 @@ export class RoomClient {
   private readonly webrtcScreenPeerIds = new Set<string>();
   private readonly relayRequestedByPeerIds = new Set<string>();
   private readonly advertisedRelayNeeds = new Map<string, boolean>();
-  private readonly relayWarmupUntilByPeerId = new Map<string, number>();
   private readonly remoteSharingPeerIds = new Set<string>();
   private readonly screenRelayRequestedByPeerIds = new Set<string>();
   private readonly advertisedScreenRelayNeeds = new Map<string, boolean>();
@@ -552,6 +553,9 @@ export class RoomClient {
       case "chat_history":
         this.handleChatHistory(payload);
         return;
+      case "channel_counts":
+        this.options.onChannelCounts(payload.counts);
+        return;
       case "room_collection_snapshot":
         this.handleRoomCollection(payload);
         return;
@@ -810,23 +814,13 @@ export class RoomClient {
         .filter((member) => member.id !== this.options.peerId)
         .map((member) => member.id),
     );
-    const previousRemotePeerIds = new Set(this.remotePeerIds);
     this.remotePeerIds.clear();
     activePeerIds.forEach((peerId) => this.remotePeerIds.add(peerId));
-    const now = Date.now();
-    for (const peerId of activePeerIds) {
-      if (!previousRemotePeerIds.has(peerId)) {
-        this.relayWarmupUntilByPeerId.set(peerId, now + AUDIO_RELAY_WARMUP_MS);
-      }
-    }
     for (const peerId of [...this.relayRequestedByPeerIds]) {
       if (!activePeerIds.has(peerId)) this.relayRequestedByPeerIds.delete(peerId);
     }
     for (const peerId of [...this.advertisedRelayNeeds.keys()]) {
       if (!activePeerIds.has(peerId)) this.advertisedRelayNeeds.delete(peerId);
-    }
-    for (const peerId of [...this.relayWarmupUntilByPeerId.keys()]) {
-      if (!activePeerIds.has(peerId)) this.relayWarmupUntilByPeerId.delete(peerId);
     }
     for (const peerId of [...this.remoteSharingPeerIds]) {
       if (!activePeerIds.has(peerId)) this.remoteSharingPeerIds.delete(peerId);
@@ -860,7 +854,6 @@ export class RoomClient {
         this.pendingIceCandidates.delete(peerId);
         this.relayRequestedByPeerIds.delete(peerId);
         this.advertisedRelayNeeds.delete(peerId);
-        this.relayWarmupUntilByPeerId.delete(peerId);
         this.remoteSharingPeerIds.delete(peerId);
         this.screenRelayRequestedByPeerIds.delete(peerId);
         this.advertisedScreenRelayNeeds.delete(peerId);
@@ -953,12 +946,24 @@ export class RoomClient {
       if (!this.remotePeerIds.has(payload.peerId)) {
         return;
       }
-      void writeRendererLog("webrtc", "warn", "Peer requested a fresh media negotiation", {
+      const forceRebuild = payload.reason.startsWith("rebuild:");
+      void writeRendererLog("webrtc", "warn", "Peer requested media recovery", {
         targetPeerId: payload.peerId,
         reason: payload.reason,
+        recoveryAction: forceRebuild ? "peer_rebuild" : "ice_restart",
       });
-      const peer = this.replacePeer(payload.peerId);
       if (this.options.peerId < payload.peerId) {
+        const existing = this.peers.get(payload.peerId);
+        if (!forceRebuild && existing) {
+          await this.sendIceRestartOffer(
+            payload.peerId,
+            existing,
+            `remote_request:${payload.reason}`,
+          );
+          this.schedulePeerRebuildAfterIceRestart(payload.peerId, payload.reason);
+          return;
+        }
+        const peer = this.replacePeer(payload.peerId);
         await this.sendFreshOffer(payload.peerId, peer, `remote_request:${payload.reason}`);
       }
     });
@@ -1011,9 +1016,9 @@ export class RoomClient {
     this.rejectPendingConnection(error);
   }
 
-  async sendChatMessage(content: string): Promise<void> {
+  async sendChatMessage(content: string, image?: ChatImageAttachment): Promise<void> {
     const trimmed = content.trim();
-    if (!trimmed) {
+    if (!trimmed && !image) {
       throw new Error("empty_chat_message");
     }
 
@@ -1026,6 +1031,7 @@ export class RoomClient {
         type: "chat_message",
         roomId: this.options.roomId,
         content: trimmed,
+        image,
       });
     } catch (error) {
       this.chatSendFailures += 1;
@@ -1094,6 +1100,7 @@ export class RoomClient {
       avatarDataUrl: payload.avatarDataUrl,
       avatarId: payload.avatarId,
       content: payload.content,
+      image: payload.image,
       createdAt: payload.createdAt,
       isLocal: payload.peerId === this.options.peerId,
     });
@@ -1110,7 +1117,7 @@ export class RoomClient {
   }
 
   private handleRoomCollection(payload: RoomCollectionSnapshotMessage): void {
-    this.options.onRoomCollection(payload.items);
+    this.options.onRoomCollection(payload.items, payload.replace !== false);
   }
 
   private handleKnockEvent(payload: KnockEventMessage): void {
@@ -1308,7 +1315,6 @@ export class RoomClient {
   }
 
   private getAudioRelayTargetPeerIds(): string[] {
-    const now = Date.now();
     return [...this.remotePeerIds].filter((peerId) =>
       shouldSendAudioRelay({
         evidence: {
@@ -1319,8 +1325,6 @@ export class RoomClient {
           isStalled: this.webrtcStalledPeerIds.has(peerId),
         },
         isRelayRequested: this.relayRequestedByPeerIds.has(peerId),
-        nowMs: now,
-        relayWarmupUntilMs: this.relayWarmupUntilByPeerId.get(peerId),
       }),
     );
   }
@@ -1633,10 +1637,31 @@ export class RoomClient {
     });
   }
 
-  private async recoverPeer(targetPeerId: string, reason: string): Promise<void> {
+  private async recoverPeer(
+    targetPeerId: string,
+    reason: string,
+    forceRebuild = false,
+  ): Promise<void> {
     if (!this.isSignalingConnected || !this.remotePeerIds.has(targetPeerId)) {
       return;
     }
+    const existing = this.peers.get(targetPeerId);
+    if (!forceRebuild && existing) {
+      if (this.options.peerId < targetPeerId) {
+        await this.sendIceRestartOffer(targetPeerId, existing, reason);
+      } else {
+        await this.send({
+          type: "peer_restart_request",
+          roomId: this.options.roomId,
+          peerId: this.options.peerId,
+          targetPeerId,
+          reason: `ice_restart:${reason}`,
+        });
+      }
+      this.schedulePeerRebuildAfterIceRestart(targetPeerId, reason);
+      return;
+    }
+
     const peer = this.replacePeer(targetPeerId);
     if (this.options.peerId < targetPeerId) {
       await this.sendFreshOffer(targetPeerId, peer, reason);
@@ -1647,8 +1672,53 @@ export class RoomClient {
       roomId: this.options.roomId,
       peerId: this.options.peerId,
       targetPeerId,
+      reason: `rebuild:${reason}`,
+    });
+  }
+
+  private async sendIceRestartOffer(
+    targetPeerId: string,
+    peer: MeshPeerConnection,
+    reason: string,
+  ): Promise<void> {
+    await this.applyScreenShareToPeer(peer);
+    const offer = await peer.createIceRestartOffer();
+    await this.send({
+      type: "peer_offer",
+      roomId: this.options.roomId,
+      peerId: this.options.peerId,
+      targetPeerId,
+      sdp: offer,
+    });
+    void writeRendererLog("webrtc", "info", "ICE restart offer sent", {
+      targetPeerId,
       reason,
     });
+  }
+
+  private schedulePeerRebuildAfterIceRestart(targetPeerId: string, reason: string): void {
+    const existingTimer = this.peerRecoveryTimers.get(targetPeerId);
+    if (existingTimer) window.clearTimeout(existingTimer);
+    const timer = window.setTimeout(() => {
+      this.peerRecoveryTimers.delete(targetPeerId);
+      if (
+        !this.webrtcReadyPeerIds.has(targetPeerId) &&
+        this.isSignalingConnected &&
+        this.remotePeerIds.has(targetPeerId)
+      ) {
+        void this.enqueuePeerOperation(targetPeerId, "rebuild_after_ice_restart", () =>
+          this.recoverPeer(targetPeerId, `ice_restart_timeout:${reason}`, true),
+        ).catch((error) => {
+          void writeRendererLog("webrtc", "warn", "Peer rebuild after ICE restart failed", {
+            targetPeerId,
+            reason,
+            error: error instanceof Error ? error.message : String(error),
+          });
+          this.schedulePeerRecovery(targetPeerId, "peer_rebuild_failed");
+        });
+      }
+    }, 5_500);
+    this.peerRecoveryTimers.set(targetPeerId, timer);
   }
 
   private async sendFreshOffer(
@@ -1764,10 +1834,6 @@ export class RoomClient {
   }
 
   private refreshAudioPathHandshake(reason: string): void {
-    const now = Date.now();
-    for (const [peerId, warmupUntil] of this.relayWarmupUntilByPeerId) {
-      if (warmupUntil <= now) this.relayWarmupUntilByPeerId.delete(peerId);
-    }
     for (const peerId of this.remotePeerIds) {
       this.syncPeerMediaPath(peerId, reason);
       this.advertiseAudioPathState(peerId, !this.webrtcReadyPeerIds.has(peerId), reason, true);
@@ -1913,7 +1979,6 @@ export class RoomClient {
     this.peerOperationQueues.clear();
     this.relayRequestedByPeerIds.clear();
     this.advertisedRelayNeeds.clear();
-    this.relayWarmupUntilByPeerId.clear();
     this.remoteSharingPeerIds.clear();
     this.screenRelayRequestedByPeerIds.clear();
     this.advertisedScreenRelayNeeds.clear();

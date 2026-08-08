@@ -7,6 +7,7 @@ import { ReconnectOverlay } from "../components/status/ReconnectOverlay";
 import { RecordingSaveDialog } from "../components/status/RecordingSaveDialog";
 import { SafeModeBanner } from "../components/status/SafeModeBanner";
 import { UpdateModal } from "../components/status/UpdateModal";
+import { ReleaseNotesModal } from "../components/status/ReleaseNotesModal";
 import { useAppStore } from "../store/appStore";
 import { useRecordingStore } from "../store/recordingStore";
 import { useRoomStore } from "../store/roomStore";
@@ -26,6 +27,7 @@ export const SharedOverlays = () => {
   return (
     <>
       <ToastRegion />
+      {bootstrapPhase === "ready" ? <ReleaseNotesModal /> : null}
       {bootstrapPhase === "ready" ? <UpdateModal /> : null}
       {isSafeMode && bootstrapPhase === "ready" ? (
         <SafeModeBanner

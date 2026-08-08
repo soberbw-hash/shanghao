@@ -7,6 +7,16 @@ import {
 } from "../enums/app.enums";
 import type { BuiltInAvatarId, RelayStatusSnapshot } from "./settings.types";
 
+export type ChatImageMimeType = "image/png" | "image/jpeg" | "image/webp";
+
+export interface ChatImageAttachment {
+  dataUrl: string;
+  mimeType: ChatImageMimeType;
+  width: number;
+  height: number;
+  fileName?: string;
+}
+
 export interface ChatMessage {
   id: string;
   peerId: string;
@@ -14,6 +24,7 @@ export interface ChatMessage {
   avatarDataUrl?: string;
   avatarId?: BuiltInAvatarId;
   content: string;
+  image?: ChatImageAttachment;
   createdAt: string;
   isLocal?: boolean;
   kind?: "chat" | "system";

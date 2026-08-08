@@ -1,6 +1,6 @@
 import { EventEmitter } from "node:events";
 import { createHash, createHmac, randomUUID, timingSafeEqual } from "node:crypto";
-import { createServer, type Server as HttpServer } from "node:http";
+import { createServer, type IncomingMessage, type Server as HttpServer } from "node:http";
 
 import {
   APP_BUILD_NUMBER,
@@ -22,6 +22,7 @@ import type {
   AvatarUpdateMessage,
   ChatMessage,
   ChatHistoryMessage,
+  ChannelCountsMessage,
   RoomCollectionAddMessage,
   RoomCollectionRemoveMessage,
   RoomCollectionSnapshotMessage,
@@ -61,6 +62,52 @@ interface SignalingServerOptions {
 }
 
 const MAX_SIGNALING_PAYLOAD_BYTES = 256 * 1024;
+const CHAT_HISTORY_PAYLOAD_BUDGET_BYTES = MAX_SIGNALING_PAYLOAD_BYTES - 8 * 1024;
+const ROOM_COLLECTION_PAYLOAD_BUDGET_BYTES = MAX_SIGNALING_PAYLOAD_BYTES - 8 * 1024;
+const ROOM_COLLECTION_CHUNK_SIZE = 128;
+
+function buildRoomCollectionSnapshots(
+  roomId: string,
+  items: RoomCollectionItem[],
+): RoomCollectionSnapshotMessage[] {
+  if (items.length === 0) {
+    return [{ type: "room_collection_snapshot", roomId, items: [], replace: true }];
+  }
+
+  const snapshots: RoomCollectionSnapshotMessage[] = [];
+  let chunk: RoomCollectionItem[] = [];
+
+  const flush = (): void => {
+    if (chunk.length === 0) return;
+    snapshots.push({
+      type: "room_collection_snapshot",
+      roomId,
+      items: chunk,
+      replace: snapshots.length === 0,
+    });
+    chunk = [];
+  };
+
+  for (const item of items) {
+    const candidate = [...chunk, item];
+    const payload = JSON.stringify({
+      type: "room_collection_snapshot",
+      roomId,
+      items: candidate,
+      replace: snapshots.length === 0,
+    });
+    if (
+      chunk.length > 0 &&
+      (candidate.length > ROOM_COLLECTION_CHUNK_SIZE ||
+        Buffer.byteLength(payload, "utf8") > ROOM_COLLECTION_PAYLOAD_BUDGET_BYTES)
+    ) {
+      flush();
+    }
+    chunk.push(item);
+  }
+  flush();
+  return snapshots;
+}
 const MAX_AVATAR_BYTES = 128 * 1024;
 const MAX_AUDIO_CHUNK_BYTES = 96 * 1024;
 const MAX_SCREEN_FRAME_BYTES = 220 * 1024;
@@ -68,6 +115,8 @@ const MAX_REALTIME_SOCKET_BUFFER_BYTES = 256 * 1024;
 const MAX_SOCKET_BUFFER_BYTES = 8 * 1024 * 1024;
 const BACKPRESSURE_LOG_INTERVAL_MS = 5_000;
 const MAX_INVALID_MESSAGES = 3;
+const ICE_CONFIG_RATE_LIMIT_WINDOW_MS = 60_000;
+const ICE_CONFIG_RATE_LIMIT = 30;
 const MAX_GLOBAL_CONNECTIONS = Math.max(5, Number(process.env.MAX_CONNECTIONS ?? 100) || 100);
 const SERVER_ONLY_MESSAGE_TYPES = new Set([
   "pong",
@@ -75,6 +124,7 @@ const SERVER_ONLY_MESSAGE_TYPES = new Set([
   "room_snapshot",
   "channel_snapshot",
   "chat_history",
+  "channel_counts",
   "room_collection_snapshot",
   "avatar_update",
   "error",
@@ -167,6 +217,22 @@ const getTurnUrls = (): string[] =>
     .map((value) => value.trim())
     .filter((value) => value.startsWith("turn:") || value.startsWith("turns:"));
 
+const getSupportedTurnTransports = (): string[] => {
+  const transports = new Set<string>();
+  for (const value of getTurnUrls()) {
+    if (value.startsWith("turns:")) {
+      transports.add("tls");
+      continue;
+    }
+    const transport = new URL(
+      value.replace(/^turn:/, "http:"),
+      "http://localhost",
+    ).searchParams.get("transport");
+    transports.add(transport === "tcp" ? "tcp" : "udp");
+  }
+  return [...transports];
+};
+
 const buildIceServersForPeer = (peerId: string): IceServerConfig[] | undefined => {
   const urls = getTurnUrls();
   if (urls.length === 0) return undefined;
@@ -207,6 +273,7 @@ export class SignalingServer extends EventEmitter {
   private readonly chatHistory: Promise<ChatHistoryStore>;
   private readonly roomCollection: Promise<RoomCollectionStore>;
   private readonly sessionTokens = new SessionTokenStore();
+  private readonly iceConfigRateWindows = new Map<string, { startedAt: number; count: number }>();
 
   constructor(private readonly options: SignalingServerOptions) {
     super();
@@ -257,8 +324,49 @@ export class SignalingServer extends EventEmitter {
                 process.env.TURN_SHARED_SECRET?.trim() ||
                 (process.env.TURN_USERNAME?.trim() && process.env.TURN_CREDENTIAL?.trim()),
               ),
+            supportedTurnTransports: getSupportedTurnTransports(),
             now: new Date().toISOString(),
             serverTime: Date.now(),
+          }),
+        );
+        return;
+      }
+
+      if (request.method === "GET" && request.url?.startsWith("/ice-config")) {
+        if (!this.isAuthorizedHttpRequest(request)) {
+          response.writeHead(401, {
+            "cache-control": "no-store",
+            "content-type": "application/json; charset=utf-8",
+          });
+          response.end(JSON.stringify({ error: "unauthorized" }));
+          return;
+        }
+        if (!this.consumeIceConfigRateLimit(request)) {
+          response.writeHead(429, {
+            "cache-control": "no-store",
+            "content-type": "application/json; charset=utf-8",
+            "retry-after": "60",
+          });
+          response.end(JSON.stringify({ error: "rate_limited" }));
+          return;
+        }
+
+        const requestUrl = new URL(request.url, "http://localhost");
+        const peerId =
+          (requestUrl.searchParams.get("peerId") ?? "diagnostic-peer")
+            .replace(/[^a-zA-Z0-9._-]/g, "")
+            .slice(0, 64) || "diagnostic-peer";
+        const iceServers = buildIceServersForPeer(peerId) ?? [];
+        response.writeHead(200, {
+          "cache-control": "no-store",
+          "content-type": "application/json; charset=utf-8",
+        });
+        response.end(
+          JSON.stringify({
+            iceServers,
+            serverTime: Date.now(),
+            turnConfigured: iceServers.length > 0,
+            supportedTurnTransports: getSupportedTurnTransports(),
           }),
         );
         return;
@@ -402,6 +510,37 @@ export class SignalingServer extends EventEmitter {
     } catch {
       return false;
     }
+  }
+
+  private isAuthorizedHttpRequest(request: IncomingMessage): boolean {
+    const expectedToken = process.env.RELAY_ACCESS_TOKEN?.trim();
+    if (!expectedToken) return true;
+
+    try {
+      const authorization = request.headers.authorization?.trim() ?? "";
+      const bearerToken = authorization.toLowerCase().startsWith("bearer ")
+        ? authorization.slice(7).trim()
+        : "";
+      const queryToken = new URL(request.url ?? "/", "http://localhost").searchParams.get("token");
+      const suppliedToken = bearerToken || queryToken || "";
+      const expected = Buffer.from(expectedToken, "utf8");
+      const supplied = Buffer.from(suppliedToken, "utf8");
+      return expected.length === supplied.length && timingSafeEqual(expected, supplied);
+    } catch {
+      return false;
+    }
+  }
+
+  private consumeIceConfigRateLimit(request: IncomingMessage): boolean {
+    const now = Date.now();
+    const key = request.socket.remoteAddress ?? "unknown";
+    const current = this.iceConfigRateWindows.get(key);
+    if (!current || now - current.startedAt >= ICE_CONFIG_RATE_LIMIT_WINDOW_MS) {
+      this.iceConfigRateWindows.set(key, { startedAt: now, count: 1 });
+      return true;
+    }
+    current.count += 1;
+    return current.count <= ICE_CONFIG_RATE_LIMIT;
   }
 
   private rejectInvalid(socket: WebSocket, code: string, message: string): void {
@@ -874,7 +1013,7 @@ export class SignalingServer extends EventEmitter {
     const room = this.roomManager.getRoom(message.roomId);
     const author = message.peerId ? room?.peers.getPeer(message.peerId) : undefined;
     const content = message.content.trim().slice(0, 500);
-    if (!room || !author || !content) {
+    if (!room || !author || (!content && !message.image)) {
       return;
     }
 
@@ -884,6 +1023,7 @@ export class SignalingServer extends EventEmitter {
       nickname: author.nickname,
       avatarId: author.avatarId,
       content,
+      image: message.image,
       createdAt: new Date().toISOString(),
     };
     const payload: ChatMessage = {
@@ -900,11 +1040,31 @@ export class SignalingServer extends EventEmitter {
   }
 
   private async sendChatHistory(socket: WebSocket, roomId: string): Promise<void> {
+    const storedMessages = (await this.chatHistory).get(roomId);
+    const messages: ServerChatMessage[] = [];
+    for (let index = storedMessages.length - 1; index >= 0; index -= 1) {
+      const storedMessage = storedMessages[index];
+      if (!storedMessage) continue;
+      const candidate = [storedMessage, ...messages];
+      const candidateBytes = Buffer.byteLength(
+        JSON.stringify({ type: "chat_history", roomId, messages: candidate }),
+        "utf8",
+      );
+      if (candidateBytes > CHAT_HISTORY_PAYLOAD_BUDGET_BYTES) break;
+      messages.unshift(storedMessage);
+    }
     const payload: ChatHistoryMessage = {
       type: "chat_history",
       roomId,
-      messages: (await this.chatHistory).get(roomId),
+      messages,
     };
+    if (messages.length < storedMessages.length) {
+      this.logger?.("chat history trimmed to signaling payload budget", {
+        roomId,
+        sent: messages.length,
+        omitted: storedMessages.length - messages.length,
+      });
+    }
     this.safeSend(socket, payload);
   }
 
@@ -940,22 +1100,19 @@ export class SignalingServer extends EventEmitter {
   }
 
   private async sendRoomCollection(socket: WebSocket, roomId: string): Promise<void> {
-    this.safeSend(socket, {
-      type: "room_collection_snapshot",
-      roomId,
-      items: (await this.roomCollection).get(roomId),
-    });
+    const items = (await this.roomCollection).get(roomId);
+    for (const payload of buildRoomCollectionSnapshots(roomId, items)) {
+      this.safeSend(socket, payload);
+    }
   }
 
   private broadcastRoomCollection(roomId: string, items: RoomCollectionItem[]): void {
     const room = this.roomManager.getRoom(roomId);
     if (!room) return;
-    const payload: RoomCollectionSnapshotMessage = {
-      type: "room_collection_snapshot",
-      roomId,
-      items,
-    };
-    for (const peer of room.peers.listConnectedPeers()) this.safeSend(peer.socket, payload);
+    const payloads = buildRoomCollectionSnapshots(roomId, items);
+    for (const peer of room.peers.listConnectedPeers()) {
+      for (const payload of payloads) this.safeSend(peer.socket, payload);
+    }
   }
 
   private broadcastKnockEvent(message: KnockEventMessage): void {
@@ -1111,6 +1268,7 @@ export class SignalingServer extends EventEmitter {
   private broadcastSnapshot(roomId: string): void {
     const room = this.roomManager.getRoom(roomId);
     if (!room) {
+      this.broadcastChannelCounts();
       return;
     }
 
@@ -1137,6 +1295,23 @@ export class SignalingServer extends EventEmitter {
       memberCount: room.peers.listPeers().length,
       connectedPeerCount: room.peers.listConnectedPeers().length,
     });
+    this.broadcastChannelCounts();
+  }
+
+  private broadcastChannelCounts(): void {
+    const payload: ChannelCountsMessage = {
+      type: "channel_counts",
+      counts: {
+        main: this.roomManager.getConnectedPeerCount("main"),
+        side: this.roomManager.getConnectedPeerCount("side"),
+      },
+    };
+
+    for (const socket of this.wss.clients) {
+      if (socket.readyState === WebSocket.OPEN && this.sessions.has(socket)) {
+        this.safeSend(socket, payload);
+      }
+    }
   }
 
   private handleSnapshotRequest(socket: WebSocket, message: RequestSnapshotMessage): void {

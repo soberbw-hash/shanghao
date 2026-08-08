@@ -1,4 +1,12 @@
-import { app, clipboard, ipcMain, Notification, powerMonitor, type BrowserWindow } from "electron";
+import {
+  app,
+  clipboard,
+  ipcMain,
+  Notification,
+  powerMonitor,
+  shell,
+  type BrowserWindow,
+} from "electron";
 import { writeFile } from "node:fs/promises";
 import path from "node:path";
 
@@ -23,6 +31,7 @@ import {
   type SignalingEventPayload,
   type UpdateCheckResult,
   type UpdateStatus,
+  type WindowsIntegrationStatus,
 } from "@private-voice/shared";
 
 import { DiagnosticsService } from "./diagnostics";
@@ -38,6 +47,12 @@ import { UpdateService } from "./updates";
 import { OverlayWindowController } from "./overlay-window";
 import { GameDetectionController } from "./game-detection";
 import { applyLaunchOnStartup } from "./launch-on-startup";
+import { readWindowsElevationStatus } from "./windows-elevation";
+import {
+  readWindowsIntegrationStatus,
+  removeWindowsIntegrationFirewall,
+  repairWindowsIntegrationFirewall,
+} from "./windows-integration";
 import {
   closeScreenShareViewer,
   isScreenShareViewerSender,
@@ -126,13 +141,19 @@ export const registerIpcHandlers = ({
     sendToWindow(getMainWindow(), IPC_CHANNELS.games.detected, snapshot);
   });
 
-  ipcMain.handle(IPC_CHANNELS.app.getRuntimeInfo, async (): Promise<RuntimeInfo> => ({
-    appName: APP_NAME,
-    version: app.getVersion(),
-    platform: process.platform,
-    protocolVersion: APP_PROTOCOL_VERSION,
-    buildNumber: APP_BUILD_NUMBER,
-  }));
+  ipcMain.handle(IPC_CHANNELS.app.getRuntimeInfo, async (): Promise<RuntimeInfo> => {
+    const elevation = await readWindowsElevationStatus();
+    return {
+      appName: APP_NAME,
+      version: app.getVersion(),
+      platform: process.platform,
+      protocolVersion: APP_PROTOCOL_VERSION,
+      buildNumber: APP_BUILD_NUMBER,
+      isStartupLaunch: process.argv.includes("--shanghao-startup"),
+      isElevated: elevation.isElevated,
+      requestedExecutionLevel: app.isPackaged ? "requireAdministrator" : "asInvoker",
+    };
+  });
 
   ipcMain.handle(IPC_CHANNELS.app.getSystemIdleSeconds, async (): Promise<number> =>
     Math.max(0, powerMonitor.getSystemIdleTime()),
@@ -171,6 +192,15 @@ export const registerIpcHandlers = ({
       notification.show();
     },
   );
+  ipcMain.handle(IPC_CHANNELS.app.openExternal, async (_event, rawUrl: string): Promise<void> => {
+    requireString(rawUrl, 2_048, "external_url");
+    const url = new URL(rawUrl);
+    if (url.protocol !== "http:" && url.protocol !== "https:") {
+      throw new Error("external_url_protocol_not_allowed");
+    }
+    if (url.username || url.password) throw new Error("external_url_credentials_not_allowed");
+    await shell.openExternal(url.toString());
+  });
   ipcMain.handle(
     IPC_CHANNELS.shortcuts.configureRecordingMarker,
     async (_event, accelerator: string): Promise<boolean> =>
@@ -342,7 +372,7 @@ export const registerIpcHandlers = ({
       }
       if (typeof partial.launchOnStartup === "boolean") {
         try {
-          applyLaunchOnStartup(partial.launchOnStartup);
+          await applyLaunchOnStartup(partial.launchOnStartup);
         } catch (error) {
           await diagnostics.writeLog({
             category: "app",
@@ -387,6 +417,29 @@ export const registerIpcHandlers = ({
   ipcMain.handle(IPC_CHANNELS.diagnostics.snapshot, async (): Promise<DiagnosticsSnapshot> =>
     diagnostics.getSnapshot(),
   );
+  ipcMain.handle(IPC_CHANNELS.windows.getStatus, async (): Promise<WindowsIntegrationStatus> =>
+    readWindowsIntegrationStatus(),
+  );
+  ipcMain.handle(IPC_CHANNELS.windows.repairFirewall, async () => {
+    const status = await repairWindowsIntegrationFirewall();
+    await diagnostics.writeLog({
+      category: "app",
+      level: status.healthy ? "info" : "warn",
+      message: "Windows firewall rules repaired",
+      context: { ...status },
+    });
+    return status;
+  });
+  ipcMain.handle(IPC_CHANNELS.windows.removeFirewall, async () => {
+    const status = await removeWindowsIntegrationFirewall();
+    await diagnostics.writeLog({
+      category: "app",
+      level: "info",
+      message: "Windows firewall rules removed",
+      context: { ...status },
+    });
+    return status;
+  });
   ipcMain.handle(
     IPC_CHANNELS.diagnostics.testServer,
     async (_event, serverUrl: unknown): Promise<RelayStatusSnapshot> => {
@@ -441,11 +494,16 @@ export const registerIpcHandlers = ({
         relay: safeRelay,
         exportedAt: new Date().toISOString(),
       };
+      const windowsIntegration = await readWindowsIntegrationStatus();
 
       return diagnostics.exportBundle([
         { name: "settings-summary.json", content: JSON.stringify(settingsSummary, null, 2) },
         { name: "relay.json", content: JSON.stringify(safeRelay, null, 2) },
         { name: "summary.json", content: JSON.stringify(summary, null, 2) },
+        {
+          name: "windows-integration.json",
+          content: JSON.stringify(windowsIntegration, null, 2),
+        },
         {
           name: "renderer-session.json",
           content: JSON.stringify(safeRendererState, null, 2),

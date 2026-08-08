@@ -53,12 +53,13 @@ const joinChannel = (
   sessionToken?: string,
   avatarId: BuiltInAvatarId = BUILT_IN_AVATAR_IDS[nextAvatarIndex++ % BUILT_IN_AVATAR_IDS.length]!,
   profileId?: string,
+  roomId: "main" | "side" = "main",
 ) => {
   socket.send(
     JSON.stringify({
       type: "join_channel",
-      roomId: "main",
-      channelId: "main",
+      roomId,
+      channelId: roomId,
       peerId,
       profileId,
       nickname,
@@ -70,6 +71,99 @@ const joinChannel = (
     }),
   );
 };
+
+test("main and side channels isolate content while sharing online counts", async () => {
+  const server = new SignalingServer({ roomName: "固定频道" });
+  const port = await server.listen();
+  const url = `ws://127.0.0.1:${port}`;
+  const mainOne = await openSocket(url);
+  const mainTwo = await openSocket(url);
+  const sideOne = await openSocket(url);
+  const sideChatSeenInMain: unknown[] = [];
+  const onMainMessage = (raw: Buffer) => {
+    const payload = JSON.parse(raw.toString()) as { type?: string; content?: string };
+    if (payload.type === "chat_message" && payload.content === "副房消息") {
+      sideChatSeenInMain.push(payload);
+    }
+  };
+  mainOne.on("message", onMainMessage);
+
+  try {
+    for (const [socket, peerId, roomId] of [
+      [mainOne, "main-one", "main"],
+      [mainTwo, "main-two", "main"],
+    ] as const) {
+      const joined = waitForMessage(
+        socket,
+        (payload): payload is { type: "join_ack" } =>
+          typeof payload === "object" &&
+          payload !== null &&
+          (payload as { type?: string }).type === "join_ack",
+      );
+      joinChannel(socket, peerId, peerId, undefined, undefined, undefined, roomId);
+      await joined;
+    }
+
+    const mainCounts = waitForMessage(
+      mainOne,
+      (payload): payload is { type: "channel_counts"; counts: { main: number; side: number } } =>
+        typeof payload === "object" &&
+        payload !== null &&
+        (payload as { type?: string }).type === "channel_counts" &&
+        (payload as { counts?: { main?: number; side?: number } }).counts?.main === 2 &&
+        (payload as { counts?: { main?: number; side?: number } }).counts?.side === 1,
+    );
+    const sideCounts = waitForMessage(
+      sideOne,
+      (payload): payload is { type: "channel_counts"; counts: { main: number; side: number } } =>
+        typeof payload === "object" &&
+        payload !== null &&
+        (payload as { type?: string }).type === "channel_counts" &&
+        (payload as { counts?: { main?: number; side?: number } }).counts?.main === 2 &&
+        (payload as { counts?: { main?: number; side?: number } }).counts?.side === 1,
+    );
+    const sideJoined = waitForMessage(
+      sideOne,
+      (payload): payload is { type: "join_ack" } =>
+        typeof payload === "object" &&
+        payload !== null &&
+        (payload as { type?: string }).type === "join_ack",
+    );
+    joinChannel(sideOne, "side-one", "side-one", undefined, undefined, undefined, "side");
+    await Promise.all([sideJoined, mainCounts, sideCounts]);
+
+    const sideChat = waitForMessage(
+      sideOne,
+      (payload): payload is { type: "chat_message"; content: string } =>
+        typeof payload === "object" &&
+        payload !== null &&
+        (payload as { type?: string }).type === "chat_message" &&
+        (payload as { content?: string }).content === "副房消息",
+    );
+    sideOne.send(JSON.stringify({ type: "chat_message", roomId: "side", content: "副房消息" }));
+    assert.equal((await sideChat).content, "副房消息");
+    await wait(120);
+    assert.equal(sideChatSeenInMain.length, 0);
+
+    const sideEmptied = waitForMessage(
+      mainOne,
+      (payload): payload is { type: "channel_counts"; counts: { main: number; side: number } } =>
+        typeof payload === "object" &&
+        payload !== null &&
+        (payload as { type?: string }).type === "channel_counts" &&
+        (payload as { counts?: { main?: number; side?: number } }).counts?.main === 2 &&
+        (payload as { counts?: { main?: number; side?: number } }).counts?.side === 0,
+    );
+    sideOne.close();
+    assert.deepEqual((await sideEmptied).counts, { main: 2, side: 0 });
+  } finally {
+    mainOne.off("message", onMainMessage);
+    mainOne.close();
+    mainTwo.close();
+    sideOne.close();
+    await server.close();
+  }
+});
 
 test("a restarted desktop replaces the stale peer with the same stable profile", async () => {
   const server = new SignalingServer({ roomName: "固定频道" });

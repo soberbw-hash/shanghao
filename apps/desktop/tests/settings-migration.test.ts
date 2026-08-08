@@ -54,12 +54,23 @@ test("migrateSettings falls back to safe defaults for damaged legacy config", ()
   assert.equal(result.settings.isUiSoundEnabled, true);
   assert.equal(result.settings.isSystemNotificationEnabled, true);
   assert.equal(result.settings.isGameDetectionEnabled, true);
+  assert.equal(result.settings.launchOnStartup, true);
+  assert.equal(result.settings.lastReleaseNotesVersionSeen, undefined);
   assert.equal(result.settings.soundVolume, defaultSettings.soundVolume);
   assert.equal(result.settings.isHardwareAccelerationEnabled, true);
   assert.equal(result.settings.isOverlayEnabled, true);
   assert.deepEqual(result.settings.micEqualizerGains, [12, -12, 3, 0, 0]);
   assert.equal(result.settings.lowCutFrequency, "90");
   assert.equal(result.migrated, true);
+});
+
+test("migrateSettings preserves the release notes version already shown", () => {
+  const result = migrateSettings({
+    ...defaultSettings,
+    lastReleaseNotesVersionSeen: "2.4.0",
+  });
+
+  assert.equal(result.settings.lastReleaseNotesVersionSeen, "2.4.0");
 });
 
 test("legacy sample-rate preferences are removed because microphone processing is fixed at 48 kHz", () => {

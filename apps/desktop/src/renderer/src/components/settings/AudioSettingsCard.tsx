@@ -100,6 +100,15 @@ export const AudioSettingsCard = ({
             onChange={(isVoiceEnhancementEnabled) => onChange({ isVoiceEnhancementEnabled })}
           />
         </SettingsItemRow>
+        <SettingsItemRow
+          label="加入频道时自动录音"
+          description="默认关闭。开启后会自动录制混合语音，退出前让你选择保存位置。"
+        >
+          <Switch
+            isChecked={settings.isAutoRecordOnJoinEnabled}
+            onChange={(isAutoRecordOnJoinEnabled) => onChange({ isAutoRecordOnJoinEnabled })}
+          />
+        </SettingsItemRow>
         <SettingsItemRow label="麦克风体检" description={micHealth}>
           <div className="min-w-[280px] space-y-3">
             <div className="flex gap-2">

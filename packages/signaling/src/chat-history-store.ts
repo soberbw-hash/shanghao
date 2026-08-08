@@ -1,7 +1,7 @@
 import { copyFile, mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
 import { dirname, join, parse } from "node:path";
 
-import type { ServerChatMessage } from "./protocol";
+import { isChatImageAttachment, type ServerChatMessage } from "./protocol";
 
 interface PersistedChatHistory {
   version: 1;
@@ -13,6 +13,11 @@ const EMPTY_HISTORY: PersistedChatHistory = { version: 1, rooms: {} };
 const isStoredMessage = (value: unknown): value is ServerChatMessage => {
   if (!value || typeof value !== "object" || Array.isArray(value)) return false;
   const message = value as Partial<ServerChatMessage>;
+  const hasContent =
+    typeof message.content === "string" &&
+    message.content.trim().length > 0 &&
+    message.content.length <= 500;
+  const hasImage = isChatImageAttachment(message.image);
   return (
     typeof message.id === "string" &&
     message.id.length <= 128 &&
@@ -21,8 +26,9 @@ const isStoredMessage = (value: unknown): value is ServerChatMessage => {
     typeof message.nickname === "string" &&
     message.nickname.length <= 32 &&
     typeof message.content === "string" &&
-    message.content.trim().length > 0 &&
     message.content.length <= 500 &&
+    (hasContent || hasImage) &&
+    (message.image === undefined || hasImage) &&
     typeof message.createdAt === "string" &&
     Number.isFinite(Date.parse(message.createdAt))
   );

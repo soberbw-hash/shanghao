@@ -6,6 +6,7 @@ import {
   RoomConnectionState,
   RoomLifecycleState,
   type MemberActivity,
+  type ChatImageAttachment,
   type RoomCollectionItem,
   type RoomMember,
   type SceneZoneId,
@@ -41,6 +42,8 @@ const pendingMemberVolumeSaves = new Map<string, number>();
 const pendingMemberVolumeDeletes = new Set<string>();
 let memberVolumeSaveTimer: number | undefined;
 const SCENE_REACTION_SOUND_COOLDOWN_MS = 320;
+type ChannelId = "main" | "side";
+const CHANNEL_IDS = new Set<ChannelId>(["main", "side"]);
 let lastSceneReactionSoundAt = 0;
 
 const playSceneReactionSound = (sound: "receive-message" | "send-message") => {
@@ -219,7 +222,10 @@ export const useRoomState = () => {
   const addChatMessage = useRoomStore((state) => state.addChatMessage);
   const mergeChatHistory = useRoomStore((state) => state.mergeChatHistory);
   const setCollectionItems = useRoomStore((state) => state.setCollectionItems);
+  const mergeCollectionItems = useRoomStore((state) => state.mergeCollectionItems);
   const addSceneReaction = useRoomStore((state) => state.addSceneReaction);
+  const setChannelCounts = useRoomStore((state) => state.setChannelCounts);
+  const clearChannelContent = useRoomStore((state) => state.clearChannelContent);
   const setConnectionHealth = useRoomStore((state) => state.setConnectionHealth);
   const updatePeerLatency = useRoomStore((state) => state.updatePeerLatency);
   const updateMemberVolume = useRoomStore((state) => state.updateMemberVolume);
@@ -316,6 +322,7 @@ export const useRoomState = () => {
         lowCutFrequency: currentSettings?.lowCutFrequency ?? "90",
         isNoiseSuppressionEnabled: currentSettings?.isNoiseSuppressionEnabled ?? true,
         isVoiceEnhancementEnabled: currentSettings?.isVoiceEnhancementEnabled ?? true,
+        microphoneSendVolume: currentSettings?.microphoneSendVolume ?? 1,
       });
       activeProcessedMicrophone = processedMicrophone;
       const stream = processedMicrophone.stream;
@@ -347,7 +354,7 @@ export const useRoomState = () => {
     }
   };
 
-  const connectToFixedChannel = async (serverUrl: string) => {
+  const connectToFixedChannel = async (serverUrl: string, channelId: ChannelId) => {
     const currentSettings = useSettingsStore.getState().settings ?? settings;
     const stream = await ensureLocalStream();
     const peerId = crypto.randomUUID();
@@ -359,7 +366,7 @@ export const useRoomState = () => {
 
     activeClient = new RoomClient({
       signalingUrl: serverUrl,
-      roomId: DEFAULT_CHANNEL_ID,
+      roomId: channelId,
       peerId,
       profileId,
       nickname: currentSettings?.nickname || "我",
@@ -458,7 +465,7 @@ export const useRoomState = () => {
       onReconnectExhausted: (error) => {
         const protocolRejected = error.message === "signaling_protocol_rejected";
         void writeRendererLog("signaling", "error", "Signaling reconnect exhausted", {
-          roomId: DEFAULT_CHANNEL_ID,
+          roomId: channelId,
           peerId,
           error: error.message,
         });
@@ -495,7 +502,7 @@ export const useRoomState = () => {
       onSnapshotRevision: (revision) => {
         setConnectionHealth({ lastUpdatedAt: new Date().toISOString() });
         void writeRendererLog("signaling", "info", "Applied fixed channel snapshot", {
-          roomId: DEFAULT_CHANNEL_ID,
+          roomId: channelId,
           peerId,
           revision,
         });
@@ -555,7 +562,11 @@ export const useRoomState = () => {
         }
       },
       onChatHistory: (messages) => mergeChatHistory(messages),
-      onRoomCollection: (items) => setCollectionItems(items),
+      onChannelCounts: setChannelCounts,
+      onRoomCollection: (items, replace) => {
+        if (replace) setCollectionItems(items);
+        else mergeCollectionItems(items);
+      },
       onKnock: (message) => {
         addChatMessage(message);
         playUiSound("knock-bell");
@@ -594,7 +605,7 @@ export const useRoomState = () => {
     });
 
     setRoom({
-      roomId: DEFAULT_CHANNEL_ID,
+      roomId: channelId,
       roomName,
       lifecycleState: RoomLifecycleState.Opening,
       signalingUrl: serverUrl,
@@ -613,7 +624,7 @@ export const useRoomState = () => {
     );
     playUiSound("enter-room");
     setRoom({
-      roomId: DEFAULT_CHANNEL_ID,
+      roomId: channelId,
       roomName,
       lifecycleState: RoomLifecycleState.Open,
       signalingUrl: serverUrl,
@@ -622,7 +633,10 @@ export const useRoomState = () => {
     startSpeakingDetector(stream);
   };
 
-  const joinChannel = (serverUrlOverride?: string): Promise<void> => {
+  const joinChannel = (
+    serverUrlOverride?: string,
+    requestedChannelId: ChannelId = DEFAULT_CHANNEL_ID,
+  ): Promise<void> => {
     if (activeJoinPromise) {
       void writeRendererLog("signaling", "info", "Ignored duplicate fixed channel join request");
       return activeJoinPromise;
@@ -633,6 +647,9 @@ export const useRoomState = () => {
       if (!currentSettings) {
         return;
       }
+      const channelId = CHANNEL_IDS.has(requestedChannelId)
+        ? requestedChannelId
+        : DEFAULT_CHANNEL_ID;
 
       let serverUrl: string;
       try {
@@ -647,15 +664,19 @@ export const useRoomState = () => {
       setConnectionState(RoomConnectionState.Joining);
       setLifecycleState(RoomLifecycleState.Opening);
       clearRoomEvents();
-      pushRoomEvent({ level: "info", message: "正在进入固定频道" });
+      pushRoomEvent({
+        level: "info",
+        message: `正在进入${channelId === "main" ? "一号房" : "二号房"}`,
+      });
 
       try {
         await cleanupPreviousSession();
+        clearChannelContent();
         await writeRendererLog("signaling", "info", "Joining fixed channel", {
           serverUrl,
-          channelId: DEFAULT_CHANNEL_ID,
+          channelId,
         });
-        await connectToFixedChannel(serverUrl);
+        await connectToFixedChannel(serverUrl, channelId);
         useAppStore.getState().navigate("room");
         pushToast({
           tone: "success",
@@ -666,7 +687,7 @@ export const useRoomState = () => {
         const description = normalizeRoomError(error, copy.networkFailed);
         await writeRendererLog("signaling", "error", "Failed to join fixed channel", {
           serverUrl,
-          channelId: DEFAULT_CHANNEL_ID,
+          channelId,
           error: error instanceof Error ? error.message : String(error),
           ...activeClient?.getDiagnostics(),
         });
@@ -693,6 +714,11 @@ export const useRoomState = () => {
       },
     );
     return joinPromise;
+  };
+
+  const switchChannel = (channelId: ChannelId): Promise<void> => {
+    if (channelId === room.roomId && activeClient) return Promise.resolve();
+    return joinChannel(room.signalingUrl || settings?.relayServerUrl, channelId);
   };
 
   const replaceInputDevice = async (preferredInputDeviceId?: string) => {
@@ -746,6 +772,10 @@ export const useRoomState = () => {
       });
       playUiSound("mic-error");
     }
+  };
+
+  const setMicrophoneSendVolume = (volume: number) => {
+    activeProcessedMicrophone?.setSendVolume(volume);
   };
 
   const leaveRoom = async () => {
@@ -807,9 +837,9 @@ export const useRoomState = () => {
     }
   };
 
-  const sendChatMessage = async (content: string) => {
+  const sendChatMessage = async (content: string, image?: ChatImageAttachment) => {
     const trimmed = content.trim();
-    if (!trimmed || !settings) {
+    if ((!trimmed && !image) || !settings) {
       return;
     }
 
@@ -832,7 +862,7 @@ export const useRoomState = () => {
     }
 
     try {
-      await activeClient.sendChatMessage(trimmed);
+      await activeClient.sendChatMessage(trimmed, image);
     } catch (error) {
       await writeRendererLog("signaling", "warn", "Chat message send failed", {
         error: error instanceof Error ? error.message : String(error),
@@ -945,8 +975,10 @@ export const useRoomState = () => {
     room,
     localStream,
     joinChannel,
+    switchChannel,
     leaveRoom,
     replaceInputDevice,
+    setMicrophoneSendVolume,
     copyInviteLink,
     sendChatMessage,
     sendKnock,

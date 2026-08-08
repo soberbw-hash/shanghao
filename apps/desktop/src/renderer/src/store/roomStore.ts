@@ -45,6 +45,7 @@ interface RoomStoreState {
   chatMessages: ChatMessage[];
   collectionItems: RoomCollectionItem[];
   sceneReactions: SceneReaction[];
+  channelCounts: { main: number; side: number };
   setConnectionState: (state: RoomConnectionState, reason?: string) => void;
   setLifecycleState: (state: RoomLifecycleState) => void;
   setRoom: (room: Partial<RoomSummary>) => void;
@@ -56,7 +57,10 @@ interface RoomStoreState {
   addChatMessage: (message: ChatMessage) => void;
   mergeChatHistory: (messages: ChatMessage[]) => void;
   setCollectionItems: (items: RoomCollectionItem[]) => void;
+  mergeCollectionItems: (items: RoomCollectionItem[]) => void;
   addSceneReaction: (reaction: SceneReaction) => void;
+  setChannelCounts: (counts: { main: number; side: number }) => void;
+  clearChannelContent: () => void;
   syncLocalProfile: (profile: LocalProfilePayload) => void;
   updateMemberVolume: (memberId: string, volume: number) => void;
   updatePeerLatency: (memberId: string, latencyMs?: number) => void;
@@ -186,6 +190,7 @@ export const useRoomStore = create<RoomStoreState>((set) => ({
   chatMessages: [],
   collectionItems: [],
   sceneReactions: [],
+  channelCounts: { main: 0, side: 0 },
   setConnectionState: (connectionState, reason) =>
     set((state) => ({
       room: {
@@ -291,14 +296,29 @@ export const useRoomStore = create<RoomStoreState>((set) => ({
     }),
   setCollectionItems: (collectionItems) =>
     set({
-      collectionItems: [...collectionItems]
-        .sort((left, right) => left.createdAt.localeCompare(right.createdAt))
-        .slice(-30),
+      collectionItems: [...collectionItems].sort((left, right) =>
+        left.createdAt.localeCompare(right.createdAt),
+      ),
     }),
+  mergeCollectionItems: (items) =>
+    set((state) => ({
+      collectionItems: [
+        ...new Map([...state.collectionItems, ...items].map((item) => [item.id, item])).values(),
+      ].sort((left, right) => left.createdAt.localeCompare(right.createdAt)),
+    })),
   addSceneReaction: (reaction) =>
     set((state) => ({
       sceneReactions: [...state.sceneReactions, reaction].slice(-20),
     })),
+  setChannelCounts: (channelCounts) => set({ channelCounts }),
+  clearChannelContent: () =>
+    set({
+      remoteStreams: {},
+      remoteScreenFrames: {},
+      chatMessages: [],
+      collectionItems: [],
+      sceneReactions: [],
+    }),
   syncLocalProfile: (profile) =>
     set((state) => {
       const members = state.room.members.filter((member) => !member.isEmptySlot);

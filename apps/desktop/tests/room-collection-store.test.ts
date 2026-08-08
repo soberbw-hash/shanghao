@@ -18,7 +18,7 @@ const makeItem = (index: number): RoomCollectionItem => ({
   createdAt: new Date(Date.UTC(2026, 7, 2, 0, 0, index)).toISOString(),
 });
 
-test("room collection persists safely, caps items, and restores from backup", async () => {
+test("room collection persists all items and restores from backup", async () => {
   const directory = await mkdtemp(path.join(os.tmpdir(), "shanghao-collection-"));
   const filePath = path.join(directory, "room-collection.json");
 
@@ -31,8 +31,8 @@ test("room collection persists safely, caps items, and restores from backup", as
 
     const persisted = await readFile(filePath, "utf8");
     assert.equal(persisted.charCodeAt(0) === 0xfeff, false);
-    assert.equal(store.get("main").length, 30);
-    assert.equal(store.get("main")[0]?.id, "item-1");
+    assert.equal(store.get("main").length, 31);
+    assert.equal(store.get("main")[0]?.id, "item-0");
 
     store.remove("main", "item-1");
     await store.flush();
@@ -43,8 +43,13 @@ test("room collection persists safely, caps items, and restores from backup", as
 
     await writeFile(filePath, "{broken-json", "utf8");
     const restored = await RoomCollectionStore.create(filePath);
-    assert.equal(restored.get("main").length, 30);
-    assert.equal(restored.get("main")[0]?.id, "item-1");
+    // The atomic backup is the previous complete snapshot, before the latest removal.
+    assert.equal(restored.get("main").length, 31);
+    assert.equal(restored.get("main")[0]?.id, "item-0");
+    assert.equal(
+      restored.get("main").some((item) => item.id === "item-1"),
+      true,
+    );
   } finally {
     await rm(directory, { recursive: true, force: true });
   }

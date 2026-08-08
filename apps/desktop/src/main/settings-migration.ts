@@ -30,11 +30,13 @@ export const defaultSettings: AppSettings = {
   hasCompletedProfileSetup: false,
   minimizeToTray: false,
   uiScale: 100,
-  launchOnStartup: false,
+  launchOnStartup: true,
   isHardwareAccelerationEnabled: true,
   isOverlayEnabled: true,
   preferredInputDeviceId: undefined,
   preferredOutputDeviceId: undefined,
+  microphoneSendVolume: 1,
+  speakerMasterVolume: 1,
   micEqualizerGains: [0, 0, 0, 0, 0],
   lowCutFrequency: "90",
   globalMuteShortcut: "",
@@ -45,6 +47,7 @@ export const defaultSettings: AppSettings = {
   isAutoGainControlEnabled: true,
   isVoiceEnhancementEnabled: true,
   isPushToTalkEnabled: false,
+  isAutoRecordOnJoinEnabled: false,
   micMonitorMode: "processed",
   relayServerUrl: "",
   memberVolumes: {},
@@ -53,8 +56,11 @@ export const defaultSettings: AppSettings = {
   isGameDetectionEnabled: true,
   isUiSoundEnabled: true,
   isBackgroundUpdateCheckEnabled: true,
+  lastCollectionViewedAt: undefined,
+  hasInitializedCollectionReadState: false,
   lastUpdateCheckAt: undefined,
   lastUpdateVersionSeen: undefined,
+  lastReleaseNotesVersionSeen: undefined,
 };
 
 export interface MigrationResult {
@@ -80,6 +86,11 @@ const normalizeProfileId = (value: unknown): string => {
 
 const normalizeBoolean = (value: unknown, fallback: boolean): boolean =>
   typeof value === "boolean" ? value : fallback;
+
+const normalizeNumber = (value: unknown, fallback: number, min: number, max: number): number =>
+  typeof value === "number" && Number.isFinite(value)
+    ? Math.max(min, Math.min(max, value))
+    : fallback;
 
 const normalizeMonitorMode = (value?: string): AppSettings["micMonitorMode"] =>
   value === "raw" ? "raw" : "processed";
@@ -157,6 +168,18 @@ export const migrateSettings = (raw: RawSettings): MigrationResult => {
     isOverlayEnabled: normalizeBoolean(raw.isOverlayEnabled, defaultSettings.isOverlayEnabled),
     preferredInputDeviceId: trimUnknownText(raw.preferredInputDeviceId),
     preferredOutputDeviceId: trimUnknownText(raw.preferredOutputDeviceId),
+    microphoneSendVolume: normalizeNumber(
+      raw.microphoneSendVolume,
+      defaultSettings.microphoneSendVolume,
+      0.5,
+      1.5,
+    ),
+    speakerMasterVolume: normalizeNumber(
+      raw.speakerMasterVolume,
+      defaultSettings.speakerMasterVolume,
+      0,
+      2,
+    ),
     globalMuteShortcut: trimUnknownText(raw.globalMuteShortcut) ?? "",
     pushToTalkShortcut:
       trimUnknownText(raw.pushToTalkShortcut) ?? defaultSettings.pushToTalkShortcut,
@@ -190,8 +213,11 @@ export const migrateSettings = (raw: RawSettings): MigrationResult => {
     isAutoGainControlEnabled: raw.isAutoGainControlEnabled !== false,
     isVoiceEnhancementEnabled: raw.isVoiceEnhancementEnabled !== false,
     isPushToTalkEnabled: raw.isPushToTalkEnabled === true,
+    isAutoRecordOnJoinEnabled: raw.isAutoRecordOnJoinEnabled === true,
     isUiSoundEnabled: true,
     isBackgroundUpdateCheckEnabled: raw.isBackgroundUpdateCheckEnabled !== false,
+    lastCollectionViewedAt: trimUnknownText(raw.lastCollectionViewedAt),
+    hasInitializedCollectionReadState: raw.hasInitializedCollectionReadState === true,
     isAutoDownloadUpdateEnabled:
       typeof raw.isAutoDownloadUpdateEnabled === "boolean"
         ? raw.isAutoDownloadUpdateEnabled
@@ -202,6 +228,7 @@ export const migrateSettings = (raw: RawSettings): MigrationResult => {
         : defaultSettings.isAutoInstallUpdateEnabled,
     lastUpdateCheckAt: trimUnknownText(raw.lastUpdateCheckAt),
     lastUpdateVersionSeen: trimUnknownText(raw.lastUpdateVersionSeen),
+    lastReleaseNotesVersionSeen: trimUnknownText(raw.lastReleaseNotesVersionSeen),
   };
 
   const isProfileReady = merged.nickname.length > 0 && isBuiltInAvatarId(merged.avatarId);

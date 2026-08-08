@@ -1,7 +1,8 @@
-import { useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef } from "react";
 
 import { TARGET_SAMPLE_RATE } from "@private-voice/shared";
 import { RecordingService } from "@private-voice/recording";
+import { RecordingState } from "@private-voice/shared";
 
 import { createMixedCallStream } from "../features/recording/mixRoomAudio";
 import { useRecordingStore } from "../store/recordingStore";
@@ -15,7 +16,10 @@ export const useRecordingController = () => {
   const addHistory = useRecordingStore((state) => state.addHistory);
   const serviceRef = useRef<RecordingService | null>(null);
   const mixRef = useRef<ReturnType<typeof createMixedCallStream> | null>(null);
-  const remoteStreams = useMemo(() => Object.values(remoteStreamsByPeer), [remoteStreamsByPeer]);
+
+  useEffect(() => {
+    mixRef.current?.sync(localStream, remoteStreamsByPeer);
+  }, [localStream, remoteStreamsByPeer]);
 
   const recordingService = useMemo(() => {
     if (serviceRef.current) {
@@ -36,9 +40,15 @@ export const useRecordingController = () => {
   }, [setStatus]);
 
   const startRecording = () => {
-    mixRef.current = createMixedCallStream(localStream, remoteStreams);
+    if (mixRef.current) return recordingService.getState();
+    mixRef.current = createMixedCallStream(localStream, remoteStreamsByPeer);
     const status = recordingService.start(mixRef.current.stream);
+    if (status.state !== RecordingState.Recording) {
+      mixRef.current.dispose();
+      mixRef.current = null;
+    }
     setStatus(status);
+    return status;
   };
 
   const stopRecording = async () => {

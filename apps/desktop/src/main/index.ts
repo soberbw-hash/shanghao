@@ -17,6 +17,7 @@ import { createMainWindow } from "./window";
 import { OverlayWindowController } from "./overlay-window";
 import { GameDetectionController } from "./game-detection";
 import { applyLaunchOnStartup } from "./launch-on-startup";
+import { ensureWindowsFirewallRules } from "./windows-integration";
 
 let mainWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
@@ -162,7 +163,7 @@ const bootstrap = async (): Promise<void> => {
   );
   const settings = await settingsStore.load();
   try {
-    applyLaunchOnStartup(settings.launchOnStartup);
+    await applyLaunchOnStartup(settings.launchOnStartup);
   } catch (error) {
     await diagnostics.writeLog({
       category: "app",
@@ -171,6 +172,25 @@ const bootstrap = async (): Promise<void> => {
       context: { error: error instanceof Error ? error.message : String(error) },
     });
     await settingsStore.save({ launchOnStartup: false });
+  }
+
+  if (app.isPackaged && process.platform === "win32") {
+    try {
+      const firewall = await ensureWindowsFirewallRules();
+      await diagnostics.writeLog({
+        category: "app",
+        level: firewall.healthy ? "info" : "warn",
+        message: "Windows firewall integration checked",
+        context: firewall,
+      });
+    } catch (error) {
+      await diagnostics.writeLog({
+        category: "app",
+        level: "warn",
+        message: "Windows firewall integration failed",
+        context: { error: error instanceof Error ? error.message : String(error) },
+      });
+    }
   }
 
   const signalingClient = new SignalingClientBridge(

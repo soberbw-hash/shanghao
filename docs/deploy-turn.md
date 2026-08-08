@@ -9,6 +9,7 @@
 - TCP `43821`：上号 WebSocket 服务
 - UDP `3478`：TURN 首选传输
 - TCP `3478`：UDP 不可用时的 TURN 备用传输
+- TCP `5349`：配置证书后的 TURNS 标准端口
 - UDP `49160-49220`：TURN 媒体端口池
 
 来源可先设为 `0.0.0.0/0`。服务器只通过短期 HMAC 凭据允许 TURN 分配，不使用公开固定密码。
@@ -36,6 +37,18 @@ sudo bash scripts/install-turn.sh
 sudo TURN_EXTERNAL_IP=118.25.103.107 bash scripts/install-turn.sh
 ```
 
+如果域名已经有可读证书和私钥，可同时启用 TURNS：
+
+```bash
+sudo TURN_HOST=voice.example.com \
+  TURN_CERT_FILE=/etc/letsencrypt/live/voice.example.com/fullchain.pem \
+  TURN_KEY_FILE=/etc/letsencrypt/live/voice.example.com/privkey.pem \
+  bash scripts/install-turn.sh
+```
+
+只有确认 TCP `443` 没有被 Caddy、Nginx 或其他 HTTPS 服务占用时，才额外传入
+`TURN_ALT_TLS_PORT=443`。脚本发现端口已占用会直接停止，不会抢占现有网站。
+
 ## 3. 验证
 
 ```bash
@@ -47,10 +60,21 @@ curl -s http://127.0.0.1:43821/health
 健康检查中应出现：
 
 ```json
-{ "ok": true, "turnConfigured": true }
+{ "ok": true, "turnConfigured": true, "supportedTurnTransports": ["udp", "tcp", "tls"] }
 ```
 
 `turnConfigured` 只说明信令服务已经能下发临时 TURN 凭据。最终连通性还取决于腾讯云安全组和系统防火墙是否开放上述端口。
+
+可以使用固定频道 Token 验证临时凭据接口。返回值必须带 `cache-control: no-store`，
+凭据用户名应包含过期时间，且不应出现 `TURN_SHARED_SECRET`：
+
+```bash
+curl -sS -H "Authorization: Bearer 你的RELAY_ACCESS_TOKEN" \
+  "http://127.0.0.1:43821/ice-config?peerId=deployment-check"
+```
+
+该接口每个来源地址每分钟最多 30 次，仅用于受控诊断；正常加入频道时服务器仍会在
+信令握手中下发对应成员的临时 ICE 配置。
 
 ## 4. 日志排查
 

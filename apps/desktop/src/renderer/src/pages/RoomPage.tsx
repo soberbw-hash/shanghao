@@ -6,7 +6,15 @@ import {
   type CSSProperties,
   type PointerEvent as ReactPointerEvent,
 } from "react";
-import { Copy, FolderHeart, GripHorizontal, Plus, Trash2 } from "lucide-react";
+import {
+  Copy,
+  ExternalLink,
+  FolderHeart,
+  GripHorizontal,
+  Plus,
+  Trash2,
+  Volume2,
+} from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
 import { gsap } from "gsap";
 
@@ -15,6 +23,7 @@ import {
   RecordingState,
   RoomConnectionState,
   type GameDetectionSnapshot,
+  type AudioDeviceDescriptor,
   type MemberActivity,
   type ScreenCaptureSourceDescriptor,
   type SceneZoneId,
@@ -24,10 +33,12 @@ import { MuteButton } from "../components/audio/MuteButton";
 import { RecordingButton } from "../components/audio/RecordingButton";
 import { AnimatedControlIcon } from "../components/icons/AnimatedControlIcon";
 import { Button } from "../components/base/Button";
+import { Slider } from "../components/base/Slider";
 import { TemporaryChatPanel } from "../components/chat/TemporaryChatPanel";
 import { TopStatusBar } from "../components/layout/TopStatusBar";
 import { TeamIsland } from "../components/room/TeamIsland";
 import { playUiSound } from "../features/audio/uiSound";
+import { getRemoteAudioMixer } from "../features/audio/RemoteAudioMixer";
 import { motionDuration, motionEase } from "../features/motion/motionSystem";
 import {
   dialogSurfaceVariants,
@@ -51,9 +62,11 @@ import { useAudioStore } from "../store/audioStore";
 import { useRecordingStore } from "../store/recordingStore";
 import { useRoomStore } from "../store/roomStore";
 import { useSettingsStore } from "../store/settingsStore";
+import { prepareChatImage } from "../utils/chatImage";
 import donateQr from "../assets/donate-qr.jpg";
 
 const KNOCK_COOLDOWN_MS = 5_000;
+const STALE_SCREEN_FRAME_MS = 6_000;
 
 interface AwaySession {
   method: "auto" | "manual";
@@ -255,14 +268,102 @@ const ScreenSharePanel = ({
   );
 };
 
+const AudioControlPopover = ({
+  title,
+  devices,
+  deviceId,
+  volume,
+  min,
+  max,
+  onDeviceChange,
+  onVolumePreview,
+  onVolumeCommit,
+  onTest,
+  onReset,
+}: {
+  title: string;
+  devices: AudioDeviceDescriptor[];
+  deviceId?: string;
+  volume: number;
+  min: number;
+  max: number;
+  onDeviceChange: (deviceId?: string) => void;
+  onVolumePreview: (volume: number) => void;
+  onVolumeCommit: (volume: number) => void;
+  onTest?: () => void;
+  onReset: () => void;
+}) => {
+  const [draftVolume, setDraftVolume] = useState(volume);
+  useEffect(() => setDraftVolume(volume), [volume]);
+
+  const commit = () => onVolumeCommit(draftVolume);
+
+  return (
+    <motion.div
+      className="audio-control-popover"
+      initial={{ opacity: 0, y: 8, scale: 0.97 }}
+      animate={{ opacity: 1, y: 0, scale: 1 }}
+      exit={{ opacity: 0, y: 5, scale: 0.98 }}
+      transition={{ type: "spring", stiffness: 360, damping: 30, mass: 0.55 }}
+    >
+      <div className="audio-control-popover-heading">
+        <strong>{title}</strong>
+        <span>{Math.round(draftVolume * 100)}%</span>
+      </div>
+      <select
+        value={deviceId || ""}
+        aria-label={`${title}设备`}
+        onChange={(event) => onDeviceChange(event.currentTarget.value || undefined)}
+      >
+        <option value="">系统默认</option>
+        {devices.map((device) => (
+          <option key={device.id} value={device.id}>
+            {device.label || title}
+          </option>
+        ))}
+      </select>
+      <div className="audio-control-popover-slider">
+        <Slider
+          min={min}
+          max={max}
+          step={0.05}
+          value={draftVolume}
+          aria-label={`${title}音量`}
+          onChange={(event) => {
+            const nextVolume = Number(event.currentTarget.value);
+            setDraftVolume(nextVolume);
+            onVolumePreview(nextVolume);
+          }}
+          onPointerUp={commit}
+          onKeyUp={commit}
+        />
+      </div>
+      <div className="audio-control-popover-actions">
+        {onTest ? (
+          <button type="button" className="audio-control-test" onClick={onTest}>
+            <Volume2 aria-hidden="true" />
+            播放测试音
+          </button>
+        ) : null}
+        <button type="button" className="audio-control-reset" onClick={onReset}>
+          恢复 100%
+        </button>
+      </div>
+    </motion.div>
+  );
+};
+
 export const RoomPage = () => {
   const {
     room,
     leaveRoom,
+    switchChannel,
     sendChatMessage,
     sendKnock,
     sendSceneReaction,
     replaceInputDevice,
+    setMicrophoneSendVolume,
+    localStream,
     copyInviteLink,
     moveLocalMember,
     setMemberVolume,
@@ -272,6 +373,7 @@ export const RoomPage = () => {
     removeRoomCollectionItem,
   } = useRoomState();
   const pushToast = useAppStore((state) => state.pushToast);
+  const roomAction = useAppStore((state) => state.roomAction);
   const {
     localStream: localScreenShareStream,
     status: screenShareStatus,
@@ -279,6 +381,7 @@ export const RoomPage = () => {
     openSourcePicker: prepareScreenSourcePicker,
     startShare: startManagedScreenShare,
     stopShare: stopManagedScreenShare,
+    shutdown: shutdownScreenShare,
     openDetachedViewer,
     syncDetachedItem,
   } = useScreenShare({
@@ -301,6 +404,7 @@ export const RoomPage = () => {
   const connectionHealth = useRoomStore((state) => state.connectionHealth);
   const sceneReactions = useRoomStore((state) => state.sceneReactions);
   const collectionItems = useRoomStore((state) => state.collectionItems);
+  const channelCounts = useRoomStore((state) => state.channelCounts);
   const {
     inputDevices,
     outputDevices,
@@ -318,7 +422,7 @@ export const RoomPage = () => {
   const pageRef = useRef<HTMLDivElement>(null);
   const voicePulseRef = useRef<HTMLDivElement>(null);
   const [chatInput, setChatInput] = useState("");
-  const [pendingIncludeSystemAudio, setPendingIncludeSystemAudio] = useState(true);
+  const [pendingIncludeSystemAudio, setPendingIncludeSystemAudio] = useState(false);
   const [isScreenSourcePickerOpen, setIsScreenSourcePickerOpen] = useState(false);
   const [screenSourcePickerSources, setScreenSourcePickerSources] = useState<
     ScreenCaptureSourceDescriptor[]
@@ -330,12 +434,19 @@ export const RoomPage = () => {
   const [collectionDraft, setCollectionDraft] = useState("");
   const [isCollectionSaving, setIsCollectionSaving] = useState(false);
   const [localKnockPulse, setLocalKnockPulse] = useState(0);
+  const [activeAudioPanel, setActiveAudioPanel] = useState<"microphone" | "speaker">();
+  const [screenFrameNow, setScreenFrameNow] = useState(Date.now());
+  const [isLeaving, setIsLeaving] = useState(false);
   const lastSeatZoneRef = useRef<SceneZoneId>("gameDesk1");
   const awaySessionRef = useRef<AwaySession>();
   const lastKnockAt = useRef(0);
   const detectedGameRef = useRef<string>();
   const detectedMusicRef = useRef<GameDetectionSnapshot["musicActivity"]>();
   const hasDetectionSnapshotRef = useRef(false);
+  const hasAutoStartedRecordingRef = useRef(false);
+  const autoRecordRetryCountRef = useRef(0);
+  const autoRecordRetryTimerRef = useRef<number>();
+  const hasInitializedCollectionReadStateRef = useRef(false);
   const moveLocalMemberRef = useRef(moveLocalMember);
   moveLocalMemberRef.current = moveLocalMember;
   const reduceMotion = usePrefersReducedMotion();
@@ -348,6 +459,16 @@ export const RoomPage = () => {
     room.connectionState === RoomConnectionState.Connected ||
     room.connectionState === RoomConnectionState.WaitingPeer ||
     room.connectionState === RoomConnectionState.WaitingSnapshot;
+  useEffect(() => {
+    if (Object.keys(remoteScreenFrames).length === 0) return;
+    const timer = window.setInterval(() => setScreenFrameNow(Date.now()), 1_000);
+    return () => window.clearInterval(timer);
+  }, [remoteScreenFrames]);
+
+  const isFreshScreenFrame = (receivedAt: string) => {
+    const timestamp = Date.parse(receivedAt);
+    return Number.isFinite(timestamp) && screenFrameNow - timestamp <= STALE_SCREEN_FRAME_MS;
+  };
   const screenShareItems: ScreenShareItem[] = [
     ...(localScreenShareStream
       ? [
@@ -379,7 +500,7 @@ export const RoomPage = () => {
         const hasLiveVideo = stream
           ?.getVideoTracks()
           .some((track) => track.readyState === "live" && !track.muted);
-        return Boolean(frame.data) && !hasLiveVideo;
+        return Boolean(frame.data) && isFreshScreenFrame(frame.receivedAt) && !hasLiveVideo;
       })
       .map(([peerId, frame]) => {
         const member = room.members.find((candidate) => candidate.id === peerId);
@@ -394,6 +515,17 @@ export const RoomPage = () => {
   const localMember = room.members.find((member) => member.isLocal);
   const localMusicActivityKey = JSON.stringify(localMember?.musicActivity ?? null);
   const connectionQuality = summarizeConnectionHealth(connectionHealth);
+  const lastCollectionViewedAt = settings?.lastCollectionViewedAt
+    ? Date.parse(settings.lastCollectionViewedAt)
+    : 0;
+  const hasUnreadCollectionItems = Boolean(
+    settings?.hasInitializedCollectionReadState &&
+    collectionItems.some(
+      (item) =>
+        item.createdByPeerId !== localMember?.id &&
+        Date.parse(item.createdAt) > lastCollectionViewedAt,
+    ),
+  );
   const screenSharingPeerIds = [
     ...(localScreenShareStream && localMember ? [localMember.id] : []),
     ...Object.entries(remoteStreams)
@@ -402,7 +534,7 @@ export const RoomPage = () => {
       )
       .map(([peerId]) => peerId),
     ...Object.entries(remoteScreenFrames)
-      .filter(([, frame]) => Boolean(frame.data))
+      .filter(([, frame]) => Boolean(frame.data) && isFreshScreenFrame(frame.receivedAt))
       .map(([peerId]) => peerId),
   ].filter((peerId, index, peers) => peers.indexOf(peerId) === index);
 
@@ -492,8 +624,143 @@ export const RoomPage = () => {
       isMuted,
       isDeafened,
       connectionState: room.connectionState,
+      isRecording: recordingStatus.state === RecordingState.Recording,
+      isScreenSharing: Boolean(localScreenShareStream),
+      hasSystemAudio: Boolean(
+        localScreenShareStream?.getAudioTracks().some((track) => track.readyState === "live"),
+      ),
     });
-  }, [isDeafened, isMuted, room.connectionState, room.members]);
+  }, [
+    isDeafened,
+    isMuted,
+    localScreenShareStream,
+    recordingStatus.state,
+    room.connectionState,
+    room.members,
+  ]);
+
+  useEffect(() => {
+    if (!activeAudioPanel) return;
+
+    const closeOnOutsidePointer = (event: PointerEvent) => {
+      const target = event.target;
+      if (target instanceof Element && target.closest("[data-audio-control-root]")) return;
+      setActiveAudioPanel(undefined);
+    };
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setActiveAudioPanel(undefined);
+    };
+
+    document.addEventListener("pointerdown", closeOnOutsidePointer);
+    document.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.removeEventListener("pointerdown", closeOnOutsidePointer);
+      document.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [activeAudioPanel]);
+
+  useEffect(() => {
+    if (
+      !settings ||
+      settings.hasInitializedCollectionReadState ||
+      hasInitializedCollectionReadStateRef.current
+    ) {
+      return;
+    }
+
+    hasInitializedCollectionReadStateRef.current = true;
+    const newestCreatedAt = collectionItems.reduce(
+      (latest, item) => Math.max(latest, Date.parse(item.createdAt) || 0),
+      Date.now(),
+    );
+    void saveSettings({
+      hasInitializedCollectionReadState: true,
+      lastCollectionViewedAt: new Date(newestCreatedAt).toISOString(),
+    });
+  }, [collectionItems, saveSettings, settings]);
+
+  useEffect(() => {
+    hasAutoStartedRecordingRef.current = false;
+    autoRecordRetryCountRef.current = 0;
+    if (autoRecordRetryTimerRef.current !== undefined) {
+      window.clearTimeout(autoRecordRetryTimerRef.current);
+      autoRecordRetryTimerRef.current = undefined;
+    }
+  }, [room.roomId]);
+
+  useEffect(() => {
+    const hasLiveMicrophone = localStream
+      ?.getAudioTracks()
+      .some((track) => track.readyState === "live");
+    const canAutoRecord =
+      settings?.isAutoRecordOnJoinEnabled &&
+      canSend &&
+      hasLiveMicrophone &&
+      recordingStatus.state === RecordingState.Idle &&
+      capability.encoderState !== RecordingEncoderState.Unsupported;
+
+    if (!canAutoRecord || hasAutoStartedRecordingRef.current) return;
+
+    const attemptAutoRecord = () => {
+      hasAutoStartedRecordingRef.current = true;
+      try {
+        clearRecordingMarkers();
+        const status = startRecording();
+        if (status.state !== RecordingState.Recording) {
+          throw new Error(status.message || "recording_start_failed");
+        }
+        autoRecordRetryCountRef.current = 0;
+        autoRecordRetryTimerRef.current = undefined;
+        playUiSound("record-start");
+        pushToast({
+          tone: "neutral",
+          title: "已自动开始录音",
+          description: "退出频道或手动停止时会让你选择保存位置。",
+        });
+        void window.desktopApi.app.writeLog({
+          category: "recording",
+          level: "info",
+          message: "auto_record_started",
+        });
+      } catch (error) {
+        hasAutoStartedRecordingRef.current = false;
+        autoRecordRetryCountRef.current += 1;
+        const retryCount = autoRecordRetryCountRef.current;
+        void window.desktopApi.app.writeLog({
+          category: "recording",
+          level: retryCount >= 5 ? "error" : "warn",
+          message: retryCount >= 5 ? "auto_record_start_failed" : "auto_record_start_retry",
+          context: {
+            retryCount,
+            error: error instanceof Error ? error.message : String(error),
+          },
+        });
+        if (retryCount < 5) {
+          autoRecordRetryTimerRef.current = window.setTimeout(
+            attemptAutoRecord,
+            600 + retryCount * 250,
+          );
+        }
+      }
+    };
+
+    autoRecordRetryTimerRef.current = window.setTimeout(attemptAutoRecord, 450);
+    return () => {
+      if (autoRecordRetryTimerRef.current !== undefined) {
+        window.clearTimeout(autoRecordRetryTimerRef.current);
+        autoRecordRetryTimerRef.current = undefined;
+      }
+    };
+  }, [
+    canSend,
+    capability.encoderState,
+    clearRecordingMarkers,
+    localStream,
+    pushToast,
+    recordingStatus.state,
+    settings?.isAutoRecordOnJoinEnabled,
+    startRecording,
+  ]);
 
   useEffect(() => {
     if (settings?.isOverlayEnabled === false) {
@@ -689,6 +956,21 @@ export const RoomPage = () => {
     if (content === chatInput) setChatInput("");
   };
 
+  const sendImage = async (file: File) => {
+    if (!canSend) return;
+    try {
+      const image = await prepareChatImage(file);
+      await sendChatMessage("", image);
+      playUiSound("send-message");
+    } catch (error) {
+      pushToast({
+        tone: "warning",
+        title: "图片没有发出去",
+        description: error instanceof Error ? error.message : "请换一张图片重试。",
+      });
+    }
+  };
+
   const knock = async () => {
     const remaining = KNOCK_COOLDOWN_MS - (Date.now() - lastKnockAt.current);
     if (remaining > 0) {
@@ -717,7 +999,10 @@ export const RoomPage = () => {
       }
 
       clearRecordingMarkers();
-      startRecording();
+      const status = startRecording();
+      if (status.state !== RecordingState.Recording) {
+        throw new Error(status.message || "recording_start_failed");
+      }
       playUiSound("record-start");
     } catch {
       pushToast({ tone: "danger", title: "录音失败", description: "请稍后再试。" });
@@ -725,8 +1010,37 @@ export const RoomPage = () => {
   };
 
   const leave = async () => {
-    await window.desktopApi.overlay.close();
-    await leaveRoom();
+    if (isLeaving) return;
+    setIsLeaving(true);
+    try {
+      if (recordingStatus.state === RecordingState.Recording) {
+        const result = await stopRecording();
+        if (recordingMarkers.length) {
+          await window.desktopApi.recording.saveMarkers(result.filePath, recordingMarkers);
+        }
+        clearRecordingMarkers();
+        playUiSound("record-stop");
+      }
+      await shutdownScreenShare();
+      await window.desktopApi.overlay.close();
+      await leaveRoom();
+    } catch (error) {
+      setIsLeaving(false);
+      pushToast({
+        tone: "danger",
+        title: "暂时无法退出",
+        description:
+          recordingStatus.state === RecordingState.Recording
+            ? "录音还没有保存完成，请处理保存窗口后再试。"
+            : "清理房间资源失败，请再试一次。",
+      });
+      await window.desktopApi.app.writeLog({
+        category: "app",
+        level: "error",
+        message: "room_leave_cleanup_failed",
+        context: { error: error instanceof Error ? error.message : String(error) },
+      });
+    }
   };
 
   const startSharingScreen = async (sourceId: string) => {
@@ -770,7 +1084,7 @@ export const RoomPage = () => {
     try {
       const sources = await prepareScreenSourcePicker();
       setScreenSourcePickerSources(sources);
-      setPendingIncludeSystemAudio(true);
+      setPendingIncludeSystemAudio(false);
       setIsScreenSourcePickerOpen(true);
     } catch {
       pushToast({
@@ -837,9 +1151,58 @@ export const RoomPage = () => {
   };
 
   const switchOutputDevice = async (preferredOutputDeviceId?: string) => {
-    await saveSettings({ preferredOutputDeviceId });
-    playUiSound("device-switch");
-    pushToast({ tone: "success", title: "扬声器已切换", description: "新的输出设备已经生效。" });
+    try {
+      await getRemoteAudioMixer().setOutputDevice(preferredOutputDeviceId);
+      await saveSettings({ preferredOutputDeviceId });
+      playUiSound("device-switch");
+      pushToast({
+        tone: "success",
+        title: "扬声器已切换",
+        description: "新的输出设备已经生效。",
+      });
+    } catch (error) {
+      pushToast({
+        tone: "danger",
+        title: "扬声器切换失败",
+        description: "请确认设备仍然连接后重试。",
+      });
+      await window.desktopApi.app.writeLog({
+        category: "audio",
+        level: "error",
+        message: "output_device_switch_failed",
+        context: { error: error instanceof Error ? error.message : String(error) },
+      });
+    }
+  };
+
+  const openCollection = () => {
+    playUiSound("popup-open");
+    setIsCollectionOpen(true);
+    if (!settings) return;
+    void saveSettings({
+      hasInitializedCollectionReadState: true,
+      lastCollectionViewedAt: new Date().toISOString(),
+    });
+  };
+
+  const openCollectionItem = async (content: string) => {
+    try {
+      const url = new URL(content);
+      if (url.protocol !== "http:" && url.protocol !== "https:") return;
+      await window.desktopApi.app.openExternal(url.toString());
+    } catch (error) {
+      pushToast({
+        tone: "danger",
+        title: "链接无法打开",
+        description: "这个链接格式不正确，已阻止打开。",
+      });
+      await window.desktopApi.app.writeLog({
+        category: "app",
+        level: "warn",
+        message: "collection_external_link_rejected",
+        context: { error: error instanceof Error ? error.message : String(error) },
+      });
+    }
   };
 
   const saveCollectionDraft = async () => {
@@ -949,6 +1312,10 @@ export const RoomPage = () => {
     >
       <div data-gsap-room="topbar">
         <TopStatusBar
+          currentChannelId={room.roomId === "side" ? "side" : "main"}
+          channelCounts={channelCounts}
+          isSwitchingChannel={roomAction === "joining"}
+          onSwitchChannel={(channelId) => void switchChannel(channelId)}
           onDonate={() => setIsDonationOpen(true)}
           onKnock={() => void knock()}
           onInvite={() => void copyInviteLink()}
@@ -1001,6 +1368,7 @@ export const RoomPage = () => {
             onChatInputChange={setChatInput}
             onSend={() => void send()}
             onQuickSend={(message) => void send(message)}
+            onSendImage={sendImage}
             canSend={canSend}
             unavailableLabel="正在重连..."
             reduceMotion={reduceMotion}
@@ -1153,7 +1521,7 @@ export const RoomPage = () => {
                 <div>
                   <span>朋友的小收藏箱</span>
                   <h2 id="collection-modal-title">频道珍藏</h2>
-                  <p>留下一句话或链接，最多保留最近 30 条。</p>
+                  <p>留下一句话或链接，会一直保留，直到有人手动删除。</p>
                 </div>
                 <Button variant="ghost" onClick={() => setIsCollectionOpen(false)}>
                   收起
@@ -1196,6 +1564,16 @@ export const RoomPage = () => {
                         <small>由 {item.createdByNickname} 留下</small>
                       </div>
                       <div className="collection-item-actions">
+                        {item.kind === "link" || item.kind === "image" ? (
+                          <button
+                            type="button"
+                            title="在浏览器中打开"
+                            aria-label={`打开 ${item.title}`}
+                            onClick={() => void openCollectionItem(item.content)}
+                          >
+                            <ExternalLink aria-hidden="true" />
+                          </button>
+                        ) : null}
                         <button
                           type="button"
                           title="复制"
@@ -1252,37 +1630,79 @@ export const RoomPage = () => {
           />
           <span className="voice-action-label">{isDeafened ? "扬声器关" : "扬声器开"}</span>
         </Button>
-        <label className="device-select" data-icon-motion="device" title="选择麦克风">
-          <AnimatedControlIcon name="headphones" className="h-4 w-4" />
-          <select
-            value={settings?.preferredInputDeviceId || ""}
-            onChange={(event) => {
-              const preferredInputDeviceId = event.target.value || undefined;
-              void switchInputDevice(preferredInputDeviceId);
-            }}
+        <div className="audio-control-anchor" data-audio-control-root>
+          <button
+            type="button"
+            className={`audio-control-trigger ${activeAudioPanel === "microphone" ? "is-active" : ""}`}
+            data-icon-motion="device"
+            title="麦克风设备与发送音量"
+            aria-label="麦克风设备与发送音量"
+            aria-expanded={activeAudioPanel === "microphone"}
+            onClick={() =>
+              setActiveAudioPanel((current) =>
+                current === "microphone" ? undefined : "microphone",
+              )
+            }
           >
-            <option value="">默认麦克风</option>
-            {inputDevices.map((device) => (
-              <option key={device.id} value={device.id}>
-                {device.label || "麦克风"}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="device-select" data-icon-motion="device" title="选择扬声器">
-          <AnimatedControlIcon name="speaker" active className="h-4 w-4" />
-          <select
-            value={settings?.preferredOutputDeviceId || ""}
-            onChange={(event) => void switchOutputDevice(event.target.value || undefined)}
+            <AnimatedControlIcon name="headphones" className="h-4 w-4" />
+          </button>
+          <AnimatePresence>
+            {activeAudioPanel === "microphone" && settings ? (
+              <AudioControlPopover
+                title="麦克风"
+                devices={inputDevices}
+                deviceId={settings.preferredInputDeviceId}
+                volume={settings.microphoneSendVolume}
+                min={0.5}
+                max={1.5}
+                onDeviceChange={(deviceId) => void switchInputDevice(deviceId)}
+                onVolumePreview={setMicrophoneSendVolume}
+                onVolumeCommit={(microphoneSendVolume) =>
+                  void saveSettings({ microphoneSendVolume })
+                }
+                onReset={() => {
+                  setMicrophoneSendVolume(1);
+                  void saveSettings({ microphoneSendVolume: 1 });
+                }}
+              />
+            ) : null}
+          </AnimatePresence>
+        </div>
+        <div className="audio-control-anchor" data-audio-control-root>
+          <button
+            type="button"
+            className={`audio-control-trigger ${activeAudioPanel === "speaker" ? "is-active" : ""}`}
+            data-icon-motion="device"
+            title="扬声器设备与总音量"
+            aria-label="扬声器设备与总音量"
+            aria-expanded={activeAudioPanel === "speaker"}
+            onClick={() =>
+              setActiveAudioPanel((current) => (current === "speaker" ? undefined : "speaker"))
+            }
           >
-            <option value="">默认扬声器</option>
-            {outputDevices.map((device) => (
-              <option key={device.id} value={device.id}>
-                {device.label || "扬声器"}
-              </option>
-            ))}
-          </select>
-        </label>
+            <AnimatedControlIcon name="speaker" active className="h-4 w-4" />
+          </button>
+          <AnimatePresence>
+            {activeAudioPanel === "speaker" && settings ? (
+              <AudioControlPopover
+                title="扬声器"
+                devices={outputDevices}
+                deviceId={settings.preferredOutputDeviceId}
+                volume={settings.speakerMasterVolume}
+                min={0}
+                max={2}
+                onDeviceChange={(deviceId) => void switchOutputDevice(deviceId)}
+                onVolumePreview={(volume) => getRemoteAudioMixer().setMasterVolume(volume)}
+                onVolumeCommit={(speakerMasterVolume) => void saveSettings({ speakerMasterVolume })}
+                onTest={() => void getRemoteAudioMixer().playTestTone()}
+                onReset={() => {
+                  getRemoteAudioMixer().setMasterVolume(1);
+                  void saveSettings({ speakerMasterVolume: 1 });
+                }}
+              />
+            ) : null}
+          </AnimatePresence>
+        </div>
         <div className="flex-1" />
         <Button
           variant={settings?.isNoiseSuppressionEnabled ? "secondary" : "ghost"}
@@ -1309,10 +1729,7 @@ export const RoomPage = () => {
           data-icon-motion="collection"
           className="voice-action-button-with-text collection-button"
           aria-pressed={isCollectionOpen}
-          onClick={() => {
-            playUiSound("popup-open");
-            setIsCollectionOpen(true);
-          }}
+          onClick={openCollection}
         >
           <motion.span
             className="collection-button-icon"
@@ -1322,6 +1739,9 @@ export const RoomPage = () => {
             <FolderHeart className="h-4 w-4" aria-hidden="true" />
           </motion.span>
           <span className="voice-action-label">珍藏</span>
+          {hasUnreadCollectionItems ? (
+            <span className="collection-unread-dot" aria-label="有新珍藏" />
+          ) : null}
         </Button>
         <RecordingButton
           isRecording={recordingStatus.state === RecordingState.Recording}
@@ -1388,10 +1808,11 @@ export const RoomPage = () => {
           variant="danger"
           data-icon-motion="exit"
           className="voice-action-button-with-text voice-exit-button"
+          disabled={isLeaving}
           onClick={() => void leave()}
         >
           <AnimatedControlIcon name="exit" className="h-4 w-4" />
-          <span className="voice-action-label">退出</span>
+          <span className="voice-action-label">{isLeaving ? "退出中" : "退出"}</span>
         </Button>
       </footer>
     </div>

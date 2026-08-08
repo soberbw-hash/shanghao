@@ -44,7 +44,7 @@ module.exports = async (context) => {
     icon: iconPath,
     "file-version": context.packager.appInfo.version,
     "product-version": context.packager.appInfo.version,
-    "requested-execution-level": "asInvoker",
+    "requested-execution-level": "requireAdministrator",
     "version-string": {
       CompanyName: "Sober",
       FileDescription: "上号",

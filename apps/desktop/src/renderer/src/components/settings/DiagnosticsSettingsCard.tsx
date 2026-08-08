@@ -3,6 +3,7 @@ import type {
   DiagnosticsSnapshot,
   LocalAudioDiagnostics,
   RelayStatusSnapshot,
+  WindowsIntegrationStatus,
 } from "@private-voice/shared";
 
 import { Button } from "../base/Button";
@@ -16,9 +17,12 @@ export const DiagnosticsSettingsCard = ({
   webrtcReadyPeerCount,
   remotePeerCount,
   audioRelayActive,
+  windowsStatus,
   onOpenLogs,
   onExportBundle,
   onCopySummary,
+  onRefreshWindows,
+  onRepairFirewall,
 }: {
   diagnostics?: DiagnosticsSnapshot;
   relay?: RelayStatusSnapshot;
@@ -27,9 +31,12 @@ export const DiagnosticsSettingsCard = ({
   webrtcReadyPeerCount: number;
   remotePeerCount: number;
   audioRelayActive: boolean;
+  windowsStatus?: WindowsIntegrationStatus;
   onOpenLogs: () => void;
   onExportBundle: () => void;
   onCopySummary: () => void;
+  onRefreshWindows: () => void;
+  onRepairFirewall: () => void;
 }) => (
   <SettingsSection title="日志与诊断" description="出问题时导出诊断包发给开发者。">
     <div className="space-y-3">
@@ -69,6 +76,34 @@ export const DiagnosticsSettingsCard = ({
             <div className="mt-1 text-[13px] font-semibold text-[#344054]">{value}</div>
           </div>
         ))}
+      </div>
+      <div className="rounded-[16px] border border-[#DCE8F5] bg-[#F7FAFE] p-4">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <div className="text-[13px] font-semibold text-[#344054]">Windows 网络权限</div>
+            <div className="mt-1 text-xs leading-5 text-[#667085]">
+              管理员权限：{windowsStatus?.elevation.isElevated ? "已启用" : "未启用或读取中"}
+              <span className="mx-2 text-[#CBD5E1]">·</span>
+              防火墙：
+              {windowsStatus?.firewall.healthy
+                ? `${windowsStatus.firewall.ruleCount}/${windowsStatus.firewall.expectedRuleCount} 条正常`
+                : "需要检查"}
+              <span className="mx-2 text-[#CBD5E1]">·</span>
+              开机任务：{windowsStatus?.startupTask.enabled ? "正常" : "未启用"}
+            </div>
+            <div className="mt-1 text-[11px] text-[#98A2B3]">
+              {windowsStatus?.firewall.message ?? "正在读取 Windows 集成状态…"}
+            </div>
+          </div>
+          <div className="flex gap-2">
+            <Button variant="ghost" onClick={onRefreshWindows}>
+              刷新
+            </Button>
+            <Button variant="secondary" onClick={onRepairFirewall}>
+              修复防火墙
+            </Button>
+          </div>
+        </div>
       </div>
       <div className="rounded-[16px] border border-[#E7ECF2] bg-[#F8FAFC] p-4 text-sm text-[#667085]">
         <div>日志目录：{diagnostics?.logsDirectory || "读取中…"}</div>

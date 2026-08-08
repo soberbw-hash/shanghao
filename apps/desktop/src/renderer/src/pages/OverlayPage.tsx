@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { MicOff, RotateCw, VolumeX } from "lucide-react";
+import { AudioLines, Circle, MicOff, MonitorUp, RotateCw, VolumeX } from "lucide-react";
 import { gsap } from "gsap";
 
 import { MemberPresenceState, MemberSpeakingState, type OverlayState } from "@private-voice/shared";
@@ -20,6 +20,9 @@ export const OverlayPage = () => {
     isMuted: false,
     isDeafened: false,
     connectionState: "idle",
+    isRecording: false,
+    isScreenSharing: false,
+    hasSystemAudio: false,
   });
 
   useEffect(() => window.desktopApi.overlay.onState(setState), []);
@@ -52,22 +55,20 @@ export const OverlayPage = () => {
 
       gsap.fromTo(
         "[data-overlay-list]",
-        { autoAlpha: 0, x: -8, scale: 0.96 },
+        { autoAlpha: 0, x: -8 },
         {
           autoAlpha: 1,
           x: 0,
-          scale: 1,
           duration: motionDuration.message,
           ease: motionEase.spatial,
         },
       );
       gsap.fromTo(
         "[data-overlay-row]",
-        { autoAlpha: 0, x: -7, scale: 0.97 },
+        { autoAlpha: 0, x: -7 },
         {
           autoAlpha: 1,
           x: 0,
-          scale: 1,
           duration: motionDuration.feedback,
           ease: motionEase.spatial,
           stagger: 0.035,
@@ -113,6 +114,72 @@ export const OverlayPage = () => {
           const isDeafened = member.isDeafened;
           const isReconnecting = member.presenceState === MemberPresenceState.Reconnecting;
           const isOffline = member.presenceState === MemberPresenceState.Offline;
+          const statusColor = isReconnecting
+            ? "#F59E0B"
+            : isOffline
+              ? "#98A2B3"
+              : isDeafened
+                ? "#6366F1"
+                : isMuted
+                  ? "#E5484D"
+                  : isSpeaking
+                    ? "#21B877"
+                    : "#A8B6C8";
+          const statusSurface = isReconnecting
+            ? {
+                background:
+                  "linear-gradient(180deg, rgba(255,249,231,0.94), rgba(255,241,204,0.84))",
+                border: "rgba(245,158,11,0.48)",
+              }
+            : isOffline
+              ? {
+                  background:
+                    "linear-gradient(180deg, rgba(247,249,252,0.92), rgba(232,237,244,0.82))",
+                  border: "rgba(152,162,179,0.42)",
+                }
+              : isDeafened
+                ? {
+                    background:
+                      "linear-gradient(180deg, rgba(242,242,255,0.94), rgba(228,229,255,0.84))",
+                    border: "rgba(99,102,241,0.46)",
+                  }
+                : isMuted
+                  ? {
+                      background:
+                        "linear-gradient(180deg, rgba(255,244,245,0.95), rgba(255,226,229,0.86))",
+                      border: "rgba(229,72,77,0.46)",
+                    }
+                  : isSpeaking
+                    ? {
+                        background:
+                          "linear-gradient(180deg, rgba(240,255,249,0.96), rgba(218,247,235,0.86))",
+                        border: "rgba(33,184,119,0.5)",
+                      }
+                    : {
+                        background:
+                          "linear-gradient(180deg, rgba(255,255,255,0.88), rgba(235,244,255,0.72))",
+                        border: "rgba(168,182,200,0.42)",
+                      };
+          const localActivityFlags = member.isLocal
+            ? [
+                state.isRecording
+                  ? { key: "recording", title: "正在录音", Icon: Circle, color: "#E5484D" }
+                  : undefined,
+                state.isScreenSharing
+                  ? { key: "screen", title: "正在分享屏幕", Icon: MonitorUp, color: "#2F80ED" }
+                  : undefined,
+                state.hasSystemAudio
+                  ? {
+                      key: "system-audio",
+                      title: "正在分享系统音频",
+                      Icon: AudioLines,
+                      color: "#21A66D",
+                    }
+                  : undefined,
+              ]
+                .filter((flag): flag is NonNullable<typeof flag> => Boolean(flag))
+                .slice(0, 2)
+            : [];
 
           return (
             <div
@@ -128,20 +195,11 @@ export const OverlayPage = () => {
                 gap: 8,
                 padding: "4px 8px 4px 5px",
                 borderRadius: 12,
-                background:
-                  "linear-gradient(180deg, rgba(255,255,255,0.82), rgba(235,244,255,0.66))",
-                border: isSpeaking
-                  ? "1px solid rgba(55, 188, 126, 0.58)"
-                  : isMuted || isDeafened
-                    ? "1px solid rgba(255, 90, 90, 0.45)"
-                    : "1px solid rgba(214, 226, 244, 0.80)",
+                background: statusSurface.background,
+                border: `1px solid ${statusSurface.border}`,
                 backdropFilter: "blur(14px) saturate(155%)",
                 WebkitBackdropFilter: "blur(14px) saturate(155%)",
-                boxShadow: isSpeaking
-                  ? "inset 0 1px 0 rgba(255,255,255,0.92), 0 3px 12px rgba(34, 177, 112, 0.16)"
-                  : isMuted || isDeafened
-                    ? "inset 0 1px 0 rgba(255,255,255,0.92), 0 3px 12px rgba(255, 90, 90, 0.13)"
-                    : "inset 0 1px 0 rgba(255,255,255,0.92), 0 3px 10px rgba(47, 79, 120, 0.10)",
+                boxShadow: `inset 0 1px 0 rgba(255,255,255,0.92), 0 3px 12px ${statusColor}24`,
                 overflow: "hidden",
               }}
             >
@@ -179,7 +237,7 @@ export const OverlayPage = () => {
                 style={{
                   minWidth: 0,
                   flex: 1,
-                  color: isMuted || isDeafened ? "#C83F4A" : "#31435B",
+                  color: isOffline ? "#8290A3" : "#31435B",
                   fontSize: 11,
                   fontWeight: 700,
                   lineHeight: 1,
@@ -190,7 +248,20 @@ export const OverlayPage = () => {
               >
                 {member.nickname || "好友"}
               </span>
-              {isMuted && !isDeafened && !isReconnecting && (
+              {localActivityFlags.map(({ key, title, Icon, color }) => (
+                <span
+                  key={key}
+                  title={title}
+                  aria-label={title}
+                  style={{ display: "inline-flex", color, flexShrink: 0 }}
+                >
+                  <Icon
+                    className="h-2.5 w-2.5"
+                    fill={key === "recording" ? "currentColor" : "none"}
+                  />
+                </span>
+              ))}
+              {isMuted && !isDeafened && !isReconnecting && !isOffline && (
                 <span
                   style={{
                     width: 18,
@@ -206,7 +277,7 @@ export const OverlayPage = () => {
                   <MicOff className="h-2.5 w-2.5 text-[#FF5A5A]" />
                 </span>
               )}
-              {isDeafened && !isReconnecting && (
+              {isDeafened && !isReconnecting && !isOffline && (
                 <span
                   style={{
                     width: 18,
@@ -222,7 +293,7 @@ export const OverlayPage = () => {
                   <VolumeX className="h-2.5 w-2.5 text-[#6366f1]" />
                 </span>
               )}
-              {isReconnecting && (
+              {isReconnecting && !isOffline && (
                 <span
                   style={{
                     width: 18,
@@ -238,14 +309,14 @@ export const OverlayPage = () => {
                   <RotateCw className="h-2.5 w-2.5 text-[#F59E0B] animate-spin" />
                 </span>
               )}
-              {!isMuted && !isDeafened && !isReconnecting && (
+              {!isMuted && !isDeafened && !isReconnecting && localActivityFlags.length === 0 && (
                 <span
                   style={{
                     width: 7,
                     height: 7,
                     flexShrink: 0,
                     borderRadius: "50%",
-                    background: isSpeaking ? "#21B877" : "#A8B6C8",
+                    background: statusColor,
                     boxShadow: isSpeaking ? "0 0 0 3px rgba(33,184,119,0.14)" : "none",
                     transition:
                       "background-color 160ms linear, box-shadow 200ms cubic-bezier(0.16,1,0.3,1)",

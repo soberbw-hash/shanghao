@@ -1,0 +1,42 @@
+import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
+import test from "node:test";
+
+const read = (path: string) => readFile(new URL(path, import.meta.url), "utf8");
+
+test("packaged Windows executable requires administrator without uiAccess", async () => {
+  const afterPack = await read("../../../scripts/after-pack.cjs");
+  const verifier = await read("../../../scripts/verify-windows-execution-level.mjs");
+  assert.match(afterPack, /["']requested-execution-level["']:\s*["']requireAdministrator["']/);
+  assert.doesNotMatch(afterPack, /requested-execution-level["'],\s*["']asInvoker/);
+  assert.match(verifier, /uiAccess\\s\*=/);
+  assert.match(verifier, /false/);
+  assert.match(verifier, /asInvoker/);
+});
+
+test("startup task is current-user interactive, delayed and highest available", async () => {
+  const startupTask = await read("../src/main/windows-startup-task.ts");
+  assert.match(startupTask, /ShangHao Auto Start/);
+  assert.match(startupTask, /LogonType Interactive/);
+  assert.match(startupTask, /RunLevel Highest/);
+  assert.match(startupTask, /PT5S/);
+  assert.match(startupTask, /--shanghao-startup/);
+  assert.doesNotMatch(startupTask, /-UserId\s+['"]?SYSTEM/i);
+});
+
+test("firewall repair owns exactly four program-scoped TCP and UDP rules", async () => {
+  const firewall = await read("../src/main/windows-firewall.ts");
+  assert.match(firewall, /ShangHao Network/);
+  assert.equal((firewall.match(/New-NetFirewallRule/g) ?? []).length, 4);
+  assert.match(firewall, /-Program \$exePath -Protocol UDP/);
+  assert.match(firewall, /-Program \$exePath -Protocol TCP/);
+  assert.match(firewall, /EdgeTraversalPolicy Allow/);
+  assert.match(firewall, /-Profile Any/);
+});
+
+test("uninstaller removes only ShangHao startup and firewall integration", async () => {
+  const installer = await read("../build/installer.nsh");
+  assert.match(installer, /ShangHao Auto Start/);
+  assert.match(installer, /ShangHao Network/);
+  assert.doesNotMatch(installer, /Get-NetFirewallRule\s+\|/);
+});

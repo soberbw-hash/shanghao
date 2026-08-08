@@ -38,6 +38,7 @@ export class ScreenShareManager {
   private detachedSessionId?: string;
   private operationId = 0;
   private isDisposed = false;
+  private shutdownPromise?: Promise<void>;
 
   constructor(options: ScreenShareManagerOptions) {
     this.options = options;
@@ -218,6 +219,26 @@ export class ScreenShareManager {
     this.detachedSessionId = undefined;
     void window.desktopApi.screenShareViewer.close().catch(() => undefined);
     this.patch({ displayMode: "inline", detachedItemId: undefined });
+  }
+
+  async shutdown(reason = "room-exit"): Promise<void> {
+    if (this.isDisposed) return;
+    if (this.shutdownPromise) return this.shutdownPromise;
+    this.shutdownPromise = (async () => {
+      try {
+        await this.stopShare(reason);
+      } catch (error) {
+        await this.log("warn", "Screen share shutdown continued after stop failure", error);
+      } finally {
+        this.closeDetachedViewer();
+        this.stopLocalTracks();
+        await window.desktopApi.screenCapture.setContentProtection(false).catch(() => undefined);
+        if (!this.isDisposed) this.patch({ ...initialSnapshot });
+      }
+    })().finally(() => {
+      this.shutdownPromise = undefined;
+    });
+    return this.shutdownPromise;
   }
 
   destroy(): void {

@@ -41,6 +41,26 @@ test("music detection reports the active track without treating an idle player a
     trackTitle: "晴天",
     artist: "周杰伦",
   });
+  assert.deepEqual(
+    matchMusicActivity(snapshot("AppleMusic", "Bad Guy - Billie Eilish - Apple Music")),
+    {
+      provider: "applemusic",
+      providerName: "Apple Music",
+      trackTitle: "Bad Guy",
+      artist: "Billie Eilish",
+    },
+  );
+  assert.deepEqual(
+    matchMusicActivity(
+      snapshot("ApplicationFrameHost", "Blinding Lights - The Weeknd - Apple Music"),
+    ),
+    {
+      provider: "applemusic",
+      providerName: "Apple Music",
+      trackTitle: "Blinding Lights",
+      artist: "The Weeknd",
+    },
+  );
   assert.equal(matchMusicActivity(snapshot("QQMusic", "QQ音乐")), undefined);
   assert.equal(matchMusicActivity(snapshot("explorer", "Spotify playlist")), undefined);
 });

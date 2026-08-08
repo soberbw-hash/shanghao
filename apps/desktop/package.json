@@ -1,6 +1,6 @@
 {
   "name": "shanghao-desktop",
-  "version": "2.3.0",
+  "version": "2.4.0",
   "private": true,
   "description": "ShangHao desktop voice app for private friends group chat",
   "author": "Sober",
@@ -17,8 +17,8 @@
     "lint": "tsc --project tsconfig.json --noEmit",
     "test:smoke": "node --import tsx --test tests/*.test.ts",
     "clean": "node ../../scripts/clean.mjs",
-    "dist": "corepack pnpm build && node ../../scripts/run-electron-builder.mjs --config electron-builder.yml --win nsis",
-    "dist:win": "corepack pnpm build && node ../../scripts/run-electron-builder.mjs --config electron-builder.yml --win nsis"
+    "dist": "corepack pnpm build && node ../../scripts/run-electron-builder.mjs --config electron-builder.yml --win nsis && node ../../scripts/verify-windows-execution-level.mjs release/win-unpacked/ShangHao.exe",
+    "dist:win": "corepack pnpm build && node ../../scripts/run-electron-builder.mjs --config electron-builder.yml --win nsis && node ../../scripts/verify-windows-execution-level.mjs release/win-unpacked/ShangHao.exe"
   },
   "dependencies": {
     "@fontsource-variable/noto-sans-sc": "5.2.10",

@@ -8,7 +8,7 @@
 - 2 核 2 GB 起步
 - 一个已解析到服务器公网 IP 的域名，例如 `voice.example.com`
 - 腾讯云安全组开放 TCP `80`、`443`
-- 使用 TURN 时额外开放 TCP/UDP `3478` 与 UDP `49160-49220`
+- 使用 TURN 时额外开放 TCP/UDP `3478`、UDP `49160-49220`，配置 TURNS 时开放 TCP `5349`
 
 ## 一键安装 Relay + WSS
 
@@ -69,7 +69,9 @@ sudo journalctl -u shanghao-relay -f
 sudo systemctl restart shanghao-relay
 ```
 
-`/health` 会显示最终 `maxRoomMembers`、协议、构建、在线人数、TURN 配置和丢帧计数，不会返回 Token 或 TURN 密钥。
+`/health` 会显示最终 `maxRoomMembers`、协议、构建、在线人数、TURN 配置、支持的
+TURN 传输和丢帧计数，不会返回 Token 或 TURN 密钥。受 Token 保护的 `/ice-config`
+可用于检查短期 TURN 凭据，详见 [TURN 部署](./deploy-turn.md)。
 
 ## 安装 TURN
 

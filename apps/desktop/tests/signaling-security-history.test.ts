@@ -124,6 +124,56 @@ test("relay token is required and never appears in logs", async () => {
   }
 });
 
+test("temporary ICE configuration is authenticated and reports TURN transports", async () => {
+  const previousToken = process.env.RELAY_ACCESS_TOKEN;
+  const previousUrls = process.env.TURN_URLS;
+  const previousSecret = process.env.TURN_SHARED_SECRET;
+  process.env.RELAY_ACCESS_TOKEN = "ice-config-test-token";
+  process.env.TURN_URLS = [
+    "turn:relay.example.com:3478?transport=udp",
+    "turn:relay.example.com:3478?transport=tcp",
+    "turns:relay.example.com:5349?transport=tcp",
+  ].join(",");
+  process.env.TURN_SHARED_SECRET = "ice-config-turn-secret";
+  const logs: string[] = [];
+  const server = new SignalingServer({
+    roomName: "固定频道",
+    logger: (message, context) => logs.push(JSON.stringify({ message, context })),
+  });
+  const port = await server.listen();
+
+  try {
+    const missing = await fetch(`http://127.0.0.1:${port}/ice-config?peerId=test-peer`);
+    assert.equal(missing.status, 401);
+
+    const response = await fetch(`http://127.0.0.1:${port}/ice-config?peerId=test-peer`, {
+      headers: { authorization: `Bearer ${process.env.RELAY_ACCESS_TOKEN}` },
+    });
+    assert.equal(response.status, 200);
+    assert.equal(response.headers.get("cache-control"), "no-store");
+    const payload = (await response.json()) as {
+      iceServers: Array<{ urls: string[]; username: string; credential: string }>;
+      serverTime: number;
+      turnConfigured: boolean;
+      supportedTurnTransports: string[];
+    };
+    assert.equal(payload.turnConfigured, true);
+    assert.equal(Number.isFinite(payload.serverTime), true);
+    assert.deepEqual(payload.supportedTurnTransports.sort(), ["tcp", "tls", "udp"]);
+    assert.match(payload.iceServers[0]?.username ?? "", /^\d+:test-peer$/);
+    assert.equal(logs.join("\n").includes("ice-config-test-token"), false);
+    assert.equal(logs.join("\n").includes("ice-config-turn-secret"), false);
+  } finally {
+    await server.close();
+    if (previousToken === undefined) delete process.env.RELAY_ACCESS_TOKEN;
+    else process.env.RELAY_ACCESS_TOKEN = previousToken;
+    if (previousUrls === undefined) delete process.env.TURN_URLS;
+    else process.env.TURN_URLS = previousUrls;
+    if (previousSecret === undefined) delete process.env.TURN_SHARED_SECRET;
+    else process.env.TURN_SHARED_SECRET = previousSecret;
+  }
+});
+
 test("socket identity overrides spoofed peer, nickname, and audio source", async () => {
   const server = new SignalingServer({ roomName: "固定频道" });
   const port = await server.listen();
@@ -457,6 +507,8 @@ test("chat history recovers from the exact backup when the primary file is damag
 test("strict protocol validator rejects dangerous payload shapes", () => {
   assert.equal(isValidNickname("摸鱼小猫"), true);
   assert.equal(isValidNickname("D.A.D.D.Y"), false);
+  assert.equal(isValidNickname("yourdada123"), false);
+  assert.equal(isValidNickname("your-d4ddy-123"), false);
   assert.equal(isValidNickname("习 近 平"), false);
   assert.equal(isValidNickname("8964"), false);
   assert.equal(
@@ -465,6 +517,49 @@ test("strict protocol validator rejects dangerous payload shapes", () => {
   );
   assert.equal(
     isSignalEnvelope({ type: "chat_message", roomId: "main", content: " ".repeat(4) }),
+    false,
+  );
+  assert.equal(
+    isSignalEnvelope({
+      type: "chat_message",
+      roomId: "main",
+      content: "",
+      image: {
+        mimeType: "image/webp",
+        dataUrl: "data:image/webp;base64,UklGRgAAAABXRUJQ",
+        width: 640,
+        height: 360,
+        fileName: "截图.webp",
+      },
+    }),
+    true,
+  );
+  assert.equal(
+    isSignalEnvelope({
+      type: "chat_message",
+      roomId: "main",
+      content: "",
+      image: {
+        mimeType: "image/webp",
+        dataUrl: "data:image/webp;base64,AAAA",
+        width: 640,
+        height: 360,
+      },
+    }),
+    false,
+  );
+  assert.equal(
+    isSignalEnvelope({
+      type: "chat_message",
+      roomId: "main",
+      content: "",
+      image: {
+        mimeType: "image/gif",
+        dataUrl: "https://example.com/tracker.gif",
+        width: 640,
+        height: 360,
+      },
+    }),
     false,
   );
   assert.equal(

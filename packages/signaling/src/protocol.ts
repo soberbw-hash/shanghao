@@ -1,5 +1,6 @@
 import type {
   BuiltInAvatarId,
+  ChatImageAttachment,
   MemberActivity,
   MusicActivity,
   RoomMember,
@@ -37,6 +38,7 @@ export type SignalEnvelope =
   | MemberStateMessage
   | ChatMessage
   | ChatHistoryMessage
+  | ChannelCountsMessage
   | RoomCollectionSnapshotMessage
   | RoomCollectionAddMessage
   | RoomCollectionRemoveMessage
@@ -197,13 +199,14 @@ export interface ChatMessage extends BaseMessage {
   avatarDataUrl?: string;
   avatarId?: BuiltInAvatarId;
   content: string;
+  image?: ChatImageAttachment;
   createdAt?: string;
 }
 
 export type ServerChatMessage = Required<
   Pick<ChatMessage, "id" | "peerId" | "nickname" | "content" | "createdAt">
 > &
-  Pick<ChatMessage, "avatarId" | "avatarDataUrl">;
+  Pick<ChatMessage, "avatarId" | "avatarDataUrl" | "image">;
 
 export interface ChatHistoryMessage extends BaseMessage {
   type: "chat_history";
@@ -211,10 +214,19 @@ export interface ChatHistoryMessage extends BaseMessage {
   messages: ServerChatMessage[];
 }
 
+export interface ChannelCountsMessage extends BaseMessage {
+  type: "channel_counts";
+  counts: {
+    main: number;
+    side: number;
+  };
+}
+
 export interface RoomCollectionSnapshotMessage extends BaseMessage {
   type: "room_collection_snapshot";
   roomId: string;
   items: RoomCollectionItem[];
+  replace?: boolean;
 }
 
 export interface RoomCollectionAddMessage extends BaseMessage {
@@ -369,6 +381,69 @@ const isBase64 = (value: unknown, maxLength: number): value is string =>
   value.length % 4 === 0 &&
   /^[A-Za-z0-9+/]+={0,2}$/.test(value);
 
+const decodeBase64Prefix = (value: string, maxBytes: number): number[] => {
+  const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+  const bytes: number[] = [];
+  let buffer = 0;
+  let bitCount = 0;
+
+  for (const character of value) {
+    if (character === "=" || bytes.length >= maxBytes) break;
+    const index = alphabet.indexOf(character);
+    if (index < 0) return [];
+    buffer = (buffer << 6) | index;
+    bitCount += 6;
+    if (bitCount < 8) continue;
+    bitCount -= 8;
+    bytes.push((buffer >> bitCount) & 0xff);
+    buffer &= bitCount === 0 ? 0 : (1 << bitCount) - 1;
+  }
+
+  return bytes;
+};
+
+const hasChatImageSignature = (mimeType: string, base64Payload: string): boolean => {
+  const bytes = decodeBase64Prefix(base64Payload, 12);
+  if (mimeType === "image/png") {
+    return [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a].every(
+      (byte, index) => bytes[index] === byte,
+    );
+  }
+  if (mimeType === "image/jpeg") {
+    return bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff;
+  }
+  if (mimeType === "image/webp") {
+    return (
+      bytes[0] === 0x52 &&
+      bytes[1] === 0x49 &&
+      bytes[2] === 0x46 &&
+      bytes[3] === 0x46 &&
+      bytes[8] === 0x57 &&
+      bytes[9] === 0x45 &&
+      bytes[10] === 0x42 &&
+      bytes[11] === 0x50
+    );
+  }
+  return false;
+};
+
+export const isChatImageAttachment = (value: unknown): value is ChatImageAttachment => {
+  if (!isRecord(value)) return false;
+  const mimeType = String(value.mimeType);
+  const dataUrl = String(value.dataUrl);
+  const prefix = `data:${mimeType};base64,`;
+  const base64Payload = dataUrl.startsWith(prefix) ? dataUrl.slice(prefix.length) : "";
+  return (
+    ["image/png", "image/jpeg", "image/webp"].includes(mimeType) &&
+    isText(dataUrl, 180_000) &&
+    isBase64(base64Payload, 180_000) &&
+    hasChatImageSignature(mimeType, base64Payload) &&
+    isIntegerInRange(value.width, 1, 1_600) &&
+    isIntegerInRange(value.height, 1, 1_600) &&
+    (value.fileName === undefined || isText(value.fileName, 80))
+  );
+};
+
 const SCENE_ZONES = new Set([
   "restroomZone",
   "gameDesk1",
@@ -518,12 +593,32 @@ export const isSignalEnvelope = (value: unknown): value is SignalEnvelope => {
           (isText(value.avatarDataUrl, 180_000) &&
             /^data:image\/(?:png|jpeg|webp);base64,/.test(value.avatarDataUrl)))
       );
-    case "chat_message":
-      return hasRoom(value) && isText(value.content, 500);
+    case "chat_message": {
+      const hasContent = isText(value.content, 500);
+      const hasImage = isChatImageAttachment(value.image);
+      return (
+        hasRoom(value) &&
+        typeof value.content === "string" &&
+        value.content.length <= 500 &&
+        (value.image === undefined || hasImage) &&
+        (hasContent || hasImage)
+      );
+    }
     case "chat_history":
       return hasRoom(value) && Array.isArray(value.messages) && value.messages.length <= 100;
+    case "channel_counts":
+      return (
+        isRecord(value.counts) &&
+        isIntegerInRange(value.counts.main, 0, 5) &&
+        isIntegerInRange(value.counts.side, 0, 5)
+      );
     case "room_collection_snapshot":
-      return hasRoom(value) && Array.isArray(value.items) && value.items.length <= 30;
+      return (
+        hasRoom(value) &&
+        Array.isArray(value.items) &&
+        value.items.length <= 128 &&
+        (value.replace === undefined || typeof value.replace === "boolean")
+      );
     case "room_collection_add":
       return (
         hasRoom(value) &&

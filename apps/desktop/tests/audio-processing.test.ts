@@ -87,7 +87,7 @@ test("remote audio uses one shared mixer with silent per-stream decoder pumps", 
   assert.equal(mixer.includes("element.muted = true"), true);
   assert.equal(mixer.includes("channel.decoderPump.srcObject = null"), true);
   assert.equal(mixer.includes("createDynamicsCompressor"), true);
-  assert.equal(mixer.includes("this.isDeafened ? 0 : 1"), true);
+  assert.equal(mixer.includes("this.isDeafened ? 0 : this.masterVolume"), true);
   assert.equal(mixer.includes("clampMemberVolume(webRtcChannel.volume)"), true);
   assert.equal(mixer.includes("channels = new Map"), true);
   assert.equal(mixer.includes("relayChannels = new Map"), true);

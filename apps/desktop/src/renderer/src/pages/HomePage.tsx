@@ -2,16 +2,13 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
   Activity,
   ArrowRight,
-  ChevronDown,
   CircleAlert,
   CircleCheck,
   LoaderCircle,
   Mic,
   MicOff,
-  Server,
-  Volume2,
 } from "lucide-react";
-import { AnimatePresence, motion } from "framer-motion";
+import { motion } from "framer-motion";
 import { gsap } from "gsap";
 
 import {
@@ -34,10 +31,8 @@ import { useRoomState } from "../hooks/useRoomState";
 import { useAppStore } from "../store/appStore";
 import { useAudioStore } from "../store/audioStore";
 import { useSettingsStore } from "../store/settingsStore";
-import { getAvatarSrc } from "../utils/profile";
 import { getNicknameValidationError } from "../utils/nickname";
 
-const isValidServerAddress = (value: string) => Boolean(normalizeRelayServerUrl(value));
 const SERVER_CHECK_HEALTHY_INTERVAL_MS = 45_000;
 const SERVER_CHECK_RETRY_INTERVALS_MS = [5_000, 15_000, 30_000, 60_000] as const;
 const getServerCheckRetryInterval = (retryIndex: number): number =>
@@ -46,18 +41,10 @@ const getServerCheckRetryInterval = (retryIndex: number): number =>
   ] ?? 60_000;
 let hasPlayedHomeEntrance = false;
 
-const formatServerLabel = (value: string): string => {
-  try {
-    const url = new URL(value);
-    return url.host || value;
-  } catch {
-    return value;
-  }
-};
-
 export const HomePage = () => {
   const { joinChannel } = useRoomState();
   const settings = useSettingsStore((state) => state.settings);
+  const runtimeInfo = useSettingsStore((state) => state.runtimeInfo);
   const saveSettings = useSettingsStore((state) => state.saveSettings);
   const roomAction = useAppStore((state) => state.roomAction);
   const pushToast = useAppStore((state) => state.pushToast);
@@ -65,12 +52,14 @@ export const HomePage = () => {
   const inputDevices = useAudioStore((state) => state.inputDevices);
   const outputDevices = useAudioStore((state) => state.outputDevices);
   const refreshDevices = useAudioStore((state) => state.refreshDevices);
+  const setMuted = useAudioStore((state) => state.setMuted);
   const pageRef = useRef<HTMLDivElement>(null);
+  const hasAttemptedStartupJoinRef = useRef(false);
+  const microphoneSelectRef = useRef<HTMLSelectElement>(null);
   const [nickname, setNickname] = useState("");
   const [avatarId, setAvatarId] = useState<BuiltInAvatarId>("fox");
   const [serverAddress, setServerAddress] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [isEditingSetup, setIsEditingSetup] = useState(false);
   const [isTestingServer, setIsTestingServer] = useState(false);
   const [serverTestResult, setServerTestResult] = useState<RelayStatusSnapshot>();
   const [isCheckingAudio, setIsCheckingAudio] = useState(false);
@@ -79,12 +68,6 @@ export const HomePage = () => {
   const savedNickname = settings?.nickname;
   const savedAvatarId = settings?.avatarId;
   const savedServerAddress = settings?.relayServerUrl;
-  const hasSavedEntry = Boolean(
-    settings?.hasCompletedProfileSetup &&
-    nickname.trim() &&
-    isValidServerAddress(serverAddress.trim()),
-  );
-  const isQuickEntry = hasSavedEntry && !isEditingSetup;
 
   useEffect(() => {
     if (!isSettingsReady) return;
@@ -92,6 +75,31 @@ export const HomePage = () => {
     setAvatarId(savedAvatarId || "fox");
     setServerAddress(savedServerAddress || "");
   }, [isSettingsReady, savedAvatarId, savedNickname, savedServerAddress]);
+
+  useEffect(() => {
+    if (hasAttemptedStartupJoinRef.current || !settings || !runtimeInfo?.isStartupLaunch) return;
+    hasAttemptedStartupJoinRef.current = true;
+
+    const normalizedAddress = normalizeRelayServerUrl(settings.relayServerUrl);
+    if (
+      !settings.launchOnStartup ||
+      !settings.hasCompletedProfileSetup ||
+      !normalizedAddress ||
+      getNicknameValidationError(settings.nickname)
+    ) {
+      return;
+    }
+
+    // Startup joins are intentionally muted so Windows login never opens the microphone.
+    setMuted(true);
+    void window.desktopApi.app.writeLog({
+      category: "app",
+      level: "info",
+      message: "startup_auto_join_requested",
+      context: { roomId: "main", muted: true },
+    });
+    void joinChannel(normalizedAddress, "main");
+  }, [joinChannel, runtimeInfo?.isStartupLaunch, setMuted, settings]);
 
   useEffect(() => {
     const normalizedAddress = normalizeRelayServerUrl(serverAddress);
@@ -234,9 +242,7 @@ export const HomePage = () => {
   const hasSelectedInput = settings.preferredInputDeviceId
     ? inputDevices.some((device) => device.id === settings.preferredInputDeviceId)
     : inputDevices.length > 0;
-  const hasSelectedOutput = settings.preferredOutputDeviceId
-    ? outputDevices.some((device) => device.id === settings.preferredOutputDeviceId)
-    : outputDevices.length > 0;
+  const hasAudioOutput = outputDevices.length > 0;
 
   const verifyAudioDevices = async (): Promise<boolean> => {
     setIsCheckingAudio(true);
@@ -244,13 +250,15 @@ export const HomePage = () => {
       await refreshDevices();
       const audioState = useAudioStore.getState();
       const inputDeviceId = settings.preferredInputDeviceId;
-      const outputDeviceId = settings.preferredOutputDeviceId;
+      const outputDeviceId = audioState.outputDevices.some(
+        (device) => device.id === settings.preferredOutputDeviceId,
+      )
+        ? settings.preferredOutputDeviceId
+        : undefined;
       const inputExists = inputDeviceId
         ? audioState.inputDevices.some((device) => device.id === inputDeviceId)
         : audioState.inputDevices.length > 0;
-      const outputExists = outputDeviceId
-        ? audioState.outputDevices.some((device) => device.id === outputDeviceId)
-        : audioState.outputDevices.length > 0;
+      const outputExists = audioState.outputDevices.length > 0;
 
       if (!inputExists || !outputExists) {
         pushToast({
@@ -373,7 +381,6 @@ export const HomePage = () => {
   const isJoining = isSubmitting || roomAction === "joining";
   const occupiedAvatarIds = serverTestResult?.occupiedAvatarIds ?? [];
   const isSelectedAvatarOccupied = occupiedAvatarIds.includes(avatarId);
-  const avatarSrc = getAvatarSrc(avatarId);
   const serverTestStatus = (
     <div className="entry-server-status-slot" aria-live="polite">
       {isTestingServer ? (
@@ -409,12 +416,13 @@ export const HomePage = () => {
       )}
     </div>
   );
-  const audioDeviceControls = (
-    <div className="entry-audio-devices" aria-label="进入频道声音设备">
+  const microphoneDeviceControl = (
+    <div className="entry-audio-devices entry-audio-devices-single" aria-label="进入频道麦克风">
       <label>
         <Mic className="h-4 w-4" />
         <span>麦克风</span>
         <select
+          ref={microphoneSelectRef}
           value={settings.preferredInputDeviceId || ""}
           onChange={(event) =>
             void saveSettings({ preferredInputDeviceId: event.target.value || undefined })
@@ -429,26 +437,6 @@ export const HomePage = () => {
         </select>
         <i className={hasSelectedInput ? "is-ready" : "is-missing"} aria-hidden="true" />
       </label>
-      <label>
-        <Volume2 className="h-4 w-4" />
-        <span>扬声器</span>
-        <select
-          value={settings.preferredOutputDeviceId || ""}
-          onChange={(event) => {
-            const preferredOutputDeviceId = event.target.value || undefined;
-            getRemoteAudioMixer().setOutputDevice(preferredOutputDeviceId);
-            void saveSettings({ preferredOutputDeviceId });
-          }}
-        >
-          <option value="">系统默认</option>
-          {outputDevices.map((device) => (
-            <option key={device.id} value={device.id}>
-              {device.label || "未命名扬声器"}
-            </option>
-          ))}
-        </select>
-        <i className={hasSelectedOutput ? "is-ready" : "is-missing"} aria-hidden="true" />
-      </label>
     </div>
   );
 
@@ -459,15 +447,13 @@ export const HomePage = () => {
     >
       <main
         data-gsap-entry="card"
-        className={`entry-card relative z-10 flex w-full flex-col px-9 py-8 ${
-          isQuickEntry ? "entry-card-ready max-w-[760px]" : "max-w-[900px]"
-        }`}
+        className="entry-card relative z-10 flex w-full max-w-[900px] flex-col px-9 py-8"
       >
         <header
           data-gsap-entry="brand"
           className="flex items-center gap-3.5 border-b border-[rgba(214,225,239,.68)] pb-5"
         >
-          <BrandMark size={isQuickEntry ? "md" : "lg"} />
+          <BrandMark size="lg" />
           <div>
             <h1 className="text-[22px] font-[680] leading-[30px] tracking-[-0.02em] text-[#172033]">
               上号
@@ -476,7 +462,10 @@ export const HomePage = () => {
           </div>
           <button
             type="button"
-            onClick={() => void refreshDevices()}
+            onClick={() => {
+              void refreshDevices();
+              window.setTimeout(() => microphoneSelectRef.current?.focus(), 0);
+            }}
             className="entry-mic-status interactive-surface ml-auto flex items-center gap-2 rounded-full px-3.5 py-2 text-xs font-semibold text-[#60738b]"
           >
             <span className={micCopy.tone === "good" ? "text-[#18b669]" : "text-[#d18b19]"}>
@@ -490,187 +479,89 @@ export const HomePage = () => {
           </button>
         </header>
 
-        <AnimatePresence initial={false} mode="wait">
-          {isQuickEntry ? (
-            <motion.section
-              key="quick-entry"
-              className="entry-ready-layout min-h-0 flex-1"
-              initial={reduceMotion ? false : { opacity: 0, x: -14 }}
-              animate={{ opacity: 1, x: 0 }}
-              exit={reduceMotion ? undefined : { opacity: 0, x: 10 }}
-              transition={{
-                duration: reduceMotion ? 0 : motionDuration.panel,
-                ease: motionCurve.enter,
-              }}
-            >
-              <div
-                data-gsap-entry="ready-avatar"
-                className="entry-ready-avatar-stage"
-                aria-hidden="true"
-              >
-                <span className="entry-ready-orbit entry-ready-orbit-one" />
-                <span className="entry-ready-orbit entry-ready-orbit-two" />
-                {avatarSrc ? (
-                  <img src={avatarSrc} alt="" className="entry-ready-avatar" draggable={false} />
-                ) : null}
-              </div>
+        <motion.section
+          key="entry"
+          className="mt-6 grid min-h-0 flex-1 gap-7 md:grid-cols-[1.05fr_.95fr]"
+          initial={reduceMotion ? false : { opacity: 0, x: 14 }}
+          animate={{ opacity: 1, x: 0 }}
+          exit={reduceMotion ? undefined : { opacity: 0, x: -10 }}
+          transition={{
+            duration: reduceMotion ? 0 : motionDuration.panel,
+            ease: motionCurve.enter,
+          }}
+        >
+          <div data-gsap-entry="role-picker" className="p-2">
+            <div className="mb-4 text-sm font-semibold text-[#314158]">选择角色</div>
+            <CharacterPicker
+              value={avatarId}
+              occupiedAvatarIds={occupiedAvatarIds}
+              onChange={setAvatarId}
+            />
+          </div>
 
-              <div data-gsap-entry="ready-copy" className="flex min-w-0 flex-col justify-center">
-                <div className="text-[13px] font-medium leading-[18px] text-[#718198]">昵称</div>
-                <h2 className="mt-1 truncate text-[34px] font-[740] leading-[42px] tracking-[-0.035em] text-[#162033]">
-                  {nickname}
-                </h2>
-                <div className="entry-ready-server mt-4" title={serverAddress}>
-                  <span className="entry-ready-server-icon">
-                    <Server className="h-4 w-4" />
-                  </span>
-                  <span className="min-w-0">
-                    <small>固定服务器</small>
-                    <strong>{formatServerLabel(serverAddress)}</strong>
-                  </span>
-                </div>
-                {audioDeviceControls}
-                {serverTestStatus}
-                <div className="mt-5 flex flex-wrap items-center gap-2.5">
-                  <Button
-                    className="h-[50px] min-w-[188px] rounded-[16px] text-[15px]"
-                    disabled={
-                      isJoining ||
-                      isCheckingAudio ||
-                      !serverAddress.trim() ||
-                      isSelectedAvatarOccupied ||
-                      !hasSelectedInput ||
-                      !hasSelectedOutput
-                    }
-                    onClick={() => void enterChannel()}
-                  >
-                    {isCheckingAudio ? "正在检查设备..." : isJoining ? "正在进入..." : "上号"}
-                    {isJoining ? (
-                      <LoaderCircle className="h-4 w-4 animate-spin" />
-                    ) : (
-                      <ArrowRight className="h-4 w-4" />
-                    )}
-                  </Button>
-                  <Button
-                    variant="secondary"
-                    className="h-[50px] min-w-[132px] rounded-[16px] px-4"
-                    disabled={isTestingServer || isJoining}
-                    onClick={() => void testServer()}
-                  >
-                    {isTestingServer ? (
-                      <LoaderCircle className="h-4 w-4 animate-spin" />
-                    ) : (
-                      <Activity className="h-4 w-4" />
-                    )}
-                    {isTestingServer ? "测试中" : "测试服务器"}
-                  </Button>
-                </div>
-                <button
-                  type="button"
-                  className="entry-edit-button mx-auto mt-3"
-                  onClick={() => setIsEditingSetup(true)}
-                >
-                  更换昵称或服务器
-                  <ChevronDown className="h-3.5 w-3.5" />
-                </button>
-              </div>
-            </motion.section>
-          ) : (
-            <motion.section
-              key="edit-entry"
-              className="mt-6 grid min-h-0 flex-1 gap-7 md:grid-cols-[1.05fr_.95fr]"
-              initial={reduceMotion ? false : { opacity: 0, x: 14 }}
-              animate={{ opacity: 1, x: 0 }}
-              exit={reduceMotion ? undefined : { opacity: 0, x: -10 }}
-              transition={{
-                duration: reduceMotion ? 0 : motionDuration.panel,
-                ease: motionCurve.enter,
-              }}
-            >
-              <div data-gsap-entry="role-picker" className="p-2">
-                <div className="mb-4 text-sm font-semibold text-[#314158]">选择角色</div>
-                <CharacterPicker
-                  value={avatarId}
-                  occupiedAvatarIds={occupiedAvatarIds}
-                  onChange={setAvatarId}
+          <div data-gsap-entry="form" className="flex min-w-0 flex-col gap-5">
+            <label className="space-y-2">
+              <span className="text-xs font-semibold text-[#52657d]">昵称</span>
+              <div className="flex">
+                <Input
+                  value={nickname}
+                  maxLength={16}
+                  placeholder="朋友怎么叫你"
+                  onChange={(event) => setNickname(event.target.value)}
                 />
               </div>
-
-              <div data-gsap-entry="form" className="flex min-w-0 flex-col gap-5">
-                <label className="space-y-2">
-                  <span className="text-xs font-semibold text-[#52657d]">昵称</span>
-                  <div className="flex">
-                    <Input
-                      value={nickname}
-                      maxLength={16}
-                      placeholder="朋友怎么叫你"
-                      onChange={(event) => setNickname(event.target.value)}
-                    />
-                  </div>
-                </label>
-                <label className="space-y-2">
-                  <span className="text-xs font-semibold text-[#52657d]">服务器地址</span>
-                  <Input
-                    value={serverAddress}
-                    placeholder="118.25.103.107:43821"
-                    onChange={(event) => {
-                      setServerAddress(event.target.value);
-                      setServerTestResult(undefined);
-                    }}
-                  />
-                </label>
-                {audioDeviceControls}
-                {serverTestStatus}
-                <div className="mt-auto" data-gsap-entry="cta">
-                  <div className="flex flex-wrap gap-2.5">
-                    <Button
-                      className="h-[52px] min-w-[188px] rounded-[16px] text-[15px]"
-                      disabled={
-                        isJoining ||
-                        isCheckingAudio ||
-                        !serverAddress.trim() ||
-                        isSelectedAvatarOccupied ||
-                        !hasSelectedInput ||
-                        !hasSelectedOutput
-                      }
-                      onClick={() => void enterChannel()}
-                    >
-                      {isCheckingAudio ? "正在检查设备..." : isJoining ? "正在进入..." : "进入频道"}
-                      {isJoining ? (
-                        <LoaderCircle className="h-4 w-4 animate-spin" />
-                      ) : (
-                        <ArrowRight className="h-4 w-4" />
-                      )}
-                    </Button>
-                    <Button
-                      variant="secondary"
-                      className="h-[52px] min-w-[132px] rounded-[16px] px-4"
-                      disabled={isTestingServer || isJoining || !serverAddress.trim()}
-                      onClick={() => void testServer()}
-                    >
-                      {isTestingServer ? (
-                        <LoaderCircle className="h-4 w-4 animate-spin" />
-                      ) : (
-                        <Activity className="h-4 w-4" />
-                      )}
-                      {isTestingServer ? "测试中" : "测试服务器"}
-                    </Button>
-                  </div>
-                  {hasSavedEntry ? (
-                    <button
-                      type="button"
-                      className="entry-edit-button mx-auto mt-3"
-                      onClick={() => setIsEditingSetup(false)}
-                    >
-                      返回快捷入口
-                      <ArrowRight className="h-3.5 w-3.5" />
-                    </button>
-                  ) : null}
-                </div>
+            </label>
+            <label className="space-y-2">
+              <span className="text-xs font-semibold text-[#52657d]">服务器地址</span>
+              <Input
+                value={serverAddress}
+                placeholder="118.25.103.107:43821"
+                onChange={(event) => {
+                  setServerAddress(event.target.value);
+                  setServerTestResult(undefined);
+                }}
+              />
+            </label>
+            {microphoneDeviceControl}
+            {serverTestStatus}
+            <div className="mt-auto" data-gsap-entry="cta">
+              <div className="flex flex-wrap gap-2.5">
+                <Button
+                  className="h-[52px] min-w-[188px] rounded-[16px] text-[15px]"
+                  disabled={
+                    isJoining ||
+                    isCheckingAudio ||
+                    !serverAddress.trim() ||
+                    isSelectedAvatarOccupied ||
+                    !hasSelectedInput ||
+                    !hasAudioOutput
+                  }
+                  onClick={() => void enterChannel()}
+                >
+                  {isCheckingAudio ? "正在检查设备..." : isJoining ? "正在进入..." : "进入频道"}
+                  {isJoining ? (
+                    <LoaderCircle className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <ArrowRight className="h-4 w-4" />
+                  )}
+                </Button>
+                <Button
+                  variant="secondary"
+                  className="h-[52px] min-w-[132px] rounded-[16px] px-4"
+                  disabled={isTestingServer || isJoining || !serverAddress.trim()}
+                  onClick={() => void testServer()}
+                >
+                  {isTestingServer ? (
+                    <LoaderCircle className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Activity className="h-4 w-4" />
+                  )}
+                  {isTestingServer ? "测试中" : "测试服务器"}
+                </Button>
               </div>
-            </motion.section>
-          )}
-        </AnimatePresence>
+            </div>
+          </div>
+        </motion.section>
       </main>
     </div>
   );

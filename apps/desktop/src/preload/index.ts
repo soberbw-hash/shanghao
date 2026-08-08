@@ -8,6 +8,7 @@ const desktopApi: DesktopApi = {
     getSystemIdleSeconds: () => ipcRenderer.invoke(IPC_CHANNELS.app.getSystemIdleSeconds),
     writeLog: (payload) => ipcRenderer.invoke(IPC_CHANNELS.app.writeLog, payload),
     notify: (payload) => ipcRenderer.invoke(IPC_CHANNELS.app.notify, payload),
+    openExternal: (url) => ipcRenderer.invoke(IPC_CHANNELS.app.openExternal, url),
   },
   clipboard: {
     writeText: (text) => ipcRenderer.invoke(IPC_CHANNELS.clipboard.writeText, text),
@@ -81,6 +82,11 @@ const desktopApi: DesktopApi = {
     exportBundle: (rendererState) =>
       ipcRenderer.invoke(IPC_CHANNELS.diagnostics.exportBundle, rendererState),
     openLogsDirectory: () => ipcRenderer.invoke(IPC_CHANNELS.diagnostics.openLogsDirectory),
+  },
+  windows: {
+    getStatus: () => ipcRenderer.invoke(IPC_CHANNELS.windows.getStatus),
+    repairFirewall: () => ipcRenderer.invoke(IPC_CHANNELS.windows.repairFirewall),
+    removeFirewall: () => ipcRenderer.invoke(IPC_CHANNELS.windows.removeFirewall),
   },
   shortcuts: {
     configureMute: (accelerator) =>

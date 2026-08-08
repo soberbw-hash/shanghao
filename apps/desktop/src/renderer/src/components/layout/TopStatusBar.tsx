@@ -50,10 +50,18 @@ const statusTone = (state: RoomConnectionState) => {
 };
 
 export const TopStatusBar = ({
+  currentChannelId,
+  channelCounts,
+  isSwitchingChannel,
+  onSwitchChannel,
   onDonate,
   onKnock,
   onInvite,
 }: {
+  currentChannelId: "main" | "side";
+  channelCounts: { main: number; side: number };
+  isSwitchingChannel?: boolean;
+  onSwitchChannel: (channelId: "main" | "side") => void;
   onDonate?: () => void;
   onKnock?: () => void;
   onInvite?: () => void;
@@ -78,14 +86,32 @@ export const TopStatusBar = ({
       data-testid="channel-status-bar"
     >
       <div className="topbar-channel min-w-0 flex-1">
-        <div className="topbar-channel-title flex items-center gap-2">
+        <div className="topbar-channel-title flex items-center gap-2.5">
           <h1 className="whitespace-nowrap text-[15px] font-[700] tracking-[-0.02em] text-[#1a2332]">
-            开黑频道
+            {currentChannelId === "main" ? "一号房" : "二号房"}
           </h1>
           <span
             className={`channel-status-dot ${statusTone(room.connectionState)}`}
             aria-label={statusCopy(room.connectionState)}
           />
+          <div className="channel-switcher" aria-label="切换房间">
+            {(["main", "side"] as const).map((channelId, index) => {
+              const isSelected = currentChannelId === channelId;
+              return (
+                <button
+                  key={channelId}
+                  type="button"
+                  className={`channel-switch-option ${isSelected ? "is-selected" : ""}`}
+                  disabled={isSelected || isSwitchingChannel}
+                  onClick={() => onSwitchChannel(channelId)}
+                  aria-current={isSelected ? "page" : undefined}
+                >
+                  <span>{index + 1} 房</span>
+                  <strong>{channelCounts[channelId]}/5</strong>
+                </button>
+              );
+            })}
+          </div>
         </div>
         <motion.div
           key={speaking?.id || statusCopy(room.connectionState)}

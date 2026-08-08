@@ -249,9 +249,24 @@ export class MeshPeerConnection {
   }
 
   async createOffer(): Promise<SessionDescriptionPayload> {
+    return this.createOfferInternal(false);
+  }
+
+  async createIceRestartOffer(): Promise<SessionDescriptionPayload> {
+    this.connection.restartIce();
+    this.options.onDiagnosticEvent?.("ice_connection_state", {
+      peerId: this.options.peerId,
+      state: this.connection.iceConnectionState,
+      recoveryAction: "ice_restart_requested",
+    });
+    return this.createOfferInternal(true);
+  }
+
+  private async createOfferInternal(iceRestart: boolean): Promise<SessionDescriptionPayload> {
     const offer = await this.connection.createOffer({
       offerToReceiveAudio: true,
       offerToReceiveVideo: true,
+      iceRestart,
     });
     const tunedOffer: RTCSessionDescriptionInit = {
       type: offer.type,

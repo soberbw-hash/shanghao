@@ -10,7 +10,8 @@
 powershell -ExecutionPolicy Bypass -File scripts/verify-local-acceptance.ps1 -Package
 ```
 
-通过标准：类型检查、桌面端回归、三人信令音频路由、生产构建、Windows 打包和包内资源校验全部为绿色。
+通过标准：类型检查、桌面端回归、五人信令与真实媒体路由、生产构建、Windows 打包、
+管理员执行级别和包内资源校验全部为绿色。
 
 ## 2. 设备准备
 
@@ -34,6 +35,9 @@ powershell -ExecutionPolicy Bypass -File scripts/verify-local-acceptance.ps1 -Pa
 2. 三人同时说话 30 秒，确认共享 AudioMixer 不丢失任意成员。
 3. 有条件时加入 D、E，确认五个工位唯一、没有角色叠座。
 4. 连续通话至少 60 分钟，记录 CPU、GPU、内存峰值和是否出现音频卡顿。
+5. 每位成员都必须分别说话并分别听到另外四人，不能只验证“有人发出了 RTP”。
+6. 触发单个成员网络故障，确认先进行 ICE restart；恢复失败时只重建该成员，不让其他
+   四人的声音中断。
 
 ## 5. 断线和代理恢复
 
@@ -41,6 +45,8 @@ powershell -ExecutionPolicy Bypass -File scripts/verify-local-acceptance.ps1 -Pa
 2. B 从 Wi-Fi 切到手机热点，确认无需重启软件即可恢复。
 3. 开启和关闭 Clash/Mihomo/TUN 各一次，确认固定国内服务器仍能恢复连接。
 4. 网络恶化时界面只显示“流畅 / 一般 / 不稳定”，语音优先于屏幕画质降级。
+5. 有 Linux 测试机时按 [4 Mbps 网络验收](./network-bandwidth-acceptance.md) 人工限速，
+   确认静默时定向语音兜底不持续占用带宽，结束后必须恢复 qdisc。
 
 ## 6. 屏幕分享
 

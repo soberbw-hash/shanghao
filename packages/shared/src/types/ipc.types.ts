@@ -23,6 +23,36 @@ export interface RuntimeInfo {
   platform: string;
   protocolVersion: string;
   buildNumber: string;
+  isStartupLaunch: boolean;
+  isElevated?: boolean;
+  requestedExecutionLevel?: "asInvoker" | "requireAdministrator";
+}
+
+export interface WindowsIntegrationStatus {
+  platform: string;
+  isPackaged: boolean;
+  elevation: {
+    isElevated: boolean;
+    identity?: string;
+    method: "windows-token" | "not-windows" | "unavailable";
+  };
+  startupTask: {
+    supported: boolean;
+    enabled: boolean;
+    taskName: string;
+    executablePath?: string;
+    arguments?: string;
+    runLevel?: string;
+    message: string;
+  };
+  firewall: {
+    supported: boolean;
+    healthy: boolean;
+    ruleCount: number;
+    expectedRuleCount: number;
+    executablePath?: string;
+    message: string;
+  };
 }
 
 export interface RendererLogPayload {
@@ -52,6 +82,9 @@ export interface OverlayState {
   isMuted: boolean;
   isDeafened: boolean;
   connectionState: string;
+  isRecording?: boolean;
+  isScreenSharing?: boolean;
+  hasSystemAudio?: boolean;
 }
 
 export interface ScreenCaptureSourceDescriptor {
@@ -147,6 +180,7 @@ export interface DesktopApi {
     getSystemIdleSeconds: () => Promise<number>;
     writeLog: (payload: RendererLogPayload) => Promise<void>;
     notify: (payload: { title: string; body: string; attention?: boolean }) => Promise<void>;
+    openExternal: (url: string) => Promise<void>;
   };
   clipboard: {
     writeText: (text: string) => Promise<void>;
@@ -196,6 +230,11 @@ export interface DesktopApi {
     exportLogs: () => Promise<DiagnosticsSnapshot>;
     exportBundle: (rendererState?: RendererDiagnosticsSummary) => Promise<DiagnosticsSnapshot>;
     openLogsDirectory: () => Promise<void>;
+  };
+  windows: {
+    getStatus: () => Promise<WindowsIntegrationStatus>;
+    repairFirewall: () => Promise<WindowsIntegrationStatus["firewall"]>;
+    removeFirewall: () => Promise<WindowsIntegrationStatus["firewall"]>;
   };
   shortcuts: {
     configureMute: (accelerator: string) => Promise<void>;

@@ -10,6 +10,7 @@ export const RemoteAudioRenderer = () => {
   const members = useRoomStore((state) => state.room.members);
   const isDeafened = useAudioStore((state) => state.isDeafened);
   const outputDeviceId = useSettingsStore((state) => state.settings?.preferredOutputDeviceId);
+  const masterVolume = useSettingsStore((state) => state.settings?.speakerMasterVolume ?? 1);
   const mixer = getRemoteAudioMixer();
 
   useEffect(() => {
@@ -23,7 +24,10 @@ export const RemoteAudioRenderer = () => {
   }, [members, mixer, remoteStreams]);
 
   useEffect(() => mixer.setDeafened(isDeafened), [isDeafened, mixer]);
-  useEffect(() => mixer.setOutputDevice(outputDeviceId), [mixer, outputDeviceId]);
+  useEffect(() => {
+    void mixer.setOutputDevice(outputDeviceId);
+  }, [mixer, outputDeviceId]);
+  useEffect(() => mixer.setMasterVolume(masterVolume), [masterVolume, mixer]);
 
   useEffect(() => {
     const unlock = () => void mixer.unlock("window-user-activation");

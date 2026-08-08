@@ -20,6 +20,8 @@ export interface ProcessedMicrophoneStream {
     "noiseProcessor" | "processorOverruns" | "averageProcessingMs" | "maxProcessingMs"
   >;
   ready: Promise<ProcessedMicrophoneStream["processorDiagnostics"]>;
+  setSendVolume: (volume: number) => void;
+  getSendVolume: () => number;
   dispose: () => void;
 }
 
@@ -41,7 +43,7 @@ interface DeepFilterNodeResult {
 }
 
 const DEEPFILTER_SAMPLE_RATE = MICROPHONE_PROCESSING_SAMPLE_RATE;
-const DEEPFILTER_SUPPRESSION_LEVEL = 80;
+const DEEPFILTER_SUPPRESSION_LEVEL = 75;
 const PROCESSOR_CROSSFADE_SECONDS = 0.06;
 
 let deepFilterAssetsPromise: Promise<DeepFilterAssets> | undefined;
@@ -167,7 +169,7 @@ export const createProcessedMicrophoneStream = async (
     | "lowCutFrequency"
     | "isNoiseSuppressionEnabled"
     | "isVoiceEnhancementEnabled"
-  >,
+  > & { microphoneSendVolume?: number },
 ): Promise<ProcessedMicrophoneStream> => {
   const userGains = normalizeEqualizerGains(settings.micEqualizerGains);
   const gains = normalizeEqualizerGains(
@@ -181,19 +183,7 @@ export const createProcessedMicrophoneStream = async (
     averageProcessingMs: 0,
     maxProcessingMs: 0,
   };
-
-  if (
-    gains.every((gain) => gain === 0) &&
-    settings.lowCutFrequency === "off" &&
-    !settings.isNoiseSuppressionEnabled
-  ) {
-    return {
-      stream: inputStream,
-      processorDiagnostics,
-      ready: Promise.resolve({ ...processorDiagnostics }),
-      dispose: () => inputStream.getTracks().forEach((track) => track.stop()),
-    };
-  }
+  const sendVolume = Math.max(0.5, Math.min(1.5, settings.microphoneSendVolume ?? 1));
 
   const context = new AudioContext({
     latencyHint: "interactive",
@@ -203,11 +193,21 @@ export const createProcessedMicrophoneStream = async (
 
   const source = context.createMediaStreamSource(inputStream);
   const destination = context.createMediaStreamDestination();
+  const outputGain = context.createGain();
+  const outputLimiter = context.createDynamicsCompressor();
+  outputGain.gain.value = sendVolume;
+  outputLimiter.threshold.value = -3;
+  outputLimiter.knee.value = 4;
+  outputLimiter.ratio.value = 12;
+  outputLimiter.attack.value = 0.003;
+  outputLimiter.release.value = 0.12;
+  outputGain.connect(outputLimiter);
+  outputLimiter.connect(destination);
   const filtered = connectMicrophoneEqualizer(context, source, gains, settings.lowCutFrequency);
   const rawGain = context.createGain();
   rawGain.gain.value = 1;
   filtered.connect(rawGain);
-  rawGain.connect(destination);
+  rawGain.connect(outputGain);
 
   let disposed = false;
   let activeProcessor: DeepFilterNodeResult | undefined;
@@ -230,7 +230,7 @@ export const createProcessedMicrophoneStream = async (
         gain.gain.value = 0;
         filtered.connect(processor.node);
         processor.node.connect(gain);
-        gain.connect(destination);
+        gain.connect(outputGain);
         activeProcessor = processor;
         processedGain = gain;
         processorDiagnostics.noiseProcessor = "deepfilter_active";
@@ -267,6 +267,14 @@ export const createProcessedMicrophoneStream = async (
     stream: destination.stream,
     processorDiagnostics,
     ready,
+    setSendVolume: (volume) => {
+      if (disposed) return;
+      const normalized = Math.max(0.5, Math.min(1.5, Number.isFinite(volume) ? volume : 1));
+      const now = context.currentTime;
+      outputGain.gain.cancelScheduledValues(now);
+      outputGain.gain.setTargetAtTime(normalized, now, 0.018);
+    },
+    getSendVolume: () => outputGain.gain.value,
     dispose: () => {
       disposed = true;
       resolveReady?.({ ...processorDiagnostics });
@@ -278,6 +286,8 @@ export const createProcessedMicrophoneStream = async (
       }
       processedGain?.disconnect();
       rawGain.disconnect();
+      outputGain.disconnect();
+      outputLimiter.disconnect();
       inputStream.getTracks().forEach((track) => track.stop());
       destination.stream.getTracks().forEach((track) => track.stop());
       void context.close().catch(() => undefined);

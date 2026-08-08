@@ -9,7 +9,6 @@ interface PersistedRoomCollection {
 }
 
 const EMPTY_COLLECTION: PersistedRoomCollection = { version: 1, rooms: {} };
-const MAX_ITEMS_PER_ROOM = 30;
 
 const isStoredItem = (value: unknown): value is RoomCollectionItem => {
   if (!value || typeof value !== "object" || Array.isArray(value)) return false;
@@ -51,8 +50,7 @@ const parseCollection = (text: string): PersistedRoomCollection => {
           roomId,
           (items as unknown[])
             .filter(isStoredItem)
-            .sort((left, right) => left.createdAt.localeCompare(right.createdAt))
-            .slice(-MAX_ITEMS_PER_ROOM),
+            .sort((left, right) => left.createdAt.localeCompare(right.createdAt)),
         ]),
     ),
   };
@@ -77,13 +75,13 @@ export class RoomCollectionStore {
   }
 
   get(roomId: string): RoomCollectionItem[] {
-    return [...(this.collection.rooms[roomId] ?? [])]
-      .sort((left, right) => left.createdAt.localeCompare(right.createdAt))
-      .slice(-MAX_ITEMS_PER_ROOM);
+    return [...(this.collection.rooms[roomId] ?? [])].sort((left, right) =>
+      left.createdAt.localeCompare(right.createdAt),
+    );
   }
 
   add(roomId: string, item: RoomCollectionItem): void {
-    this.collection.rooms[roomId] = [...this.get(roomId), item].slice(-MAX_ITEMS_PER_ROOM);
+    this.collection.rooms[roomId] = [...this.get(roomId), item];
     this.queueWrite();
   }
 

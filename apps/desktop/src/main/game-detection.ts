@@ -61,7 +61,7 @@ const MUSIC_RULES: MusicRule[] = [
   {
     provider: "applemusic",
     providerName: "Apple Music",
-    processNames: ["applemusic", "itunes"],
+    processNames: ["applemusic", "applemusicpreview", "itunes"],
     genericTitles: ["apple music", "itunes"],
   },
 ];
@@ -319,15 +319,21 @@ export const matchMusicActivity = (
     const executableName = normalizeProcessName(
       processInfo.Path ? path.basename(processInfo.Path) : undefined,
     );
-    const rule = MUSIC_RULES.find((candidate) =>
-      candidate.processNames.some((name) => {
-        const normalized = normalizeProcessName(name);
-        return normalized === processName || normalized === executableName;
-      }),
-    );
+    const rawTitle = processInfo.MainWindowTitle?.trim() ?? "";
+    const normalizedTitle = rawTitle.toLocaleLowerCase();
+    const isAppleMusicHostedWindow =
+      (processName === "applicationframehost" || executableName === "applicationframehost") &&
+      (normalizedTitle.includes("apple music") || normalizedTitle.includes("itunes"));
+    const rule = isAppleMusicHostedWindow
+      ? MUSIC_RULES.find((candidate) => candidate.provider === "applemusic")
+      : MUSIC_RULES.find((candidate) =>
+          candidate.processNames.some((name) => {
+            const normalized = normalizeProcessName(name);
+            return normalized === processName || normalized === executableName;
+          }),
+        );
     if (!rule) continue;
 
-    const rawTitle = processInfo.MainWindowTitle?.trim() ?? "";
     const cleanedTitle = cleanMusicTitle(rawTitle, rule);
     const isGeneric = rule.genericTitles.some(
       (title) => cleanedTitle.toLowerCase() === title.toLowerCase(),

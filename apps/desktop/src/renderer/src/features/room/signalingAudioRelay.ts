@@ -5,6 +5,7 @@ import type {
 } from "@private-voice/signaling";
 
 import { getRemoteAudioMixer } from "../audio/RemoteAudioMixer";
+import { RelayVoiceActivityGate } from "../audio/RelayVoiceActivityGate";
 
 export type AudioRelayMessage =
   AudioChunkMessage | AudioResyncRequestMessage | AudioResyncAckMessage;
@@ -239,6 +240,7 @@ class FallbackAudioPlayer {
 
 export class SignalingAudioRelay {
   private readonly mixer = getRemoteAudioMixer();
+  private readonly activityGate = new RelayVoiceActivityGate();
   private context?: AudioContext;
   private processor?: ScriptProcessorNode;
   private workletNode?: AudioWorkletNode;
@@ -329,6 +331,7 @@ export class SignalingAudioRelay {
 
   setMuted(isMuted: boolean): void {
     this.isMuted = isMuted;
+    if (isMuted) this.activityGate.reset();
   }
 
   setShouldSend(shouldSend: boolean): void {
@@ -338,6 +341,7 @@ export class SignalingAudioRelay {
     const fromPath = this.shouldSendAudio ? "relay" : "webrtc";
     const toPath = shouldSend ? "relay" : "webrtc";
     this.shouldSendAudio = shouldSend;
+    if (!shouldSend) this.activityGate.reset();
     this.bumpEpoch(`audio_path_switched:${fromPath}_to_${toPath}`);
     this.recordTimeline("audio_path_switched", { fromPath, toPath });
   }
@@ -498,6 +502,7 @@ export class SignalingAudioRelay {
       serverClockOffsetMs: this.serverClockOffsetMs,
       droppedExpiredChunks: this.droppedExpiredChunks,
       droppedSendChunks: this.droppedSendChunks,
+      activityGate: this.activityGate.getDiagnostics(),
       perPeerAudioStatus: [...this.peerStates].map(([peerId, state]) => ({ peerId, ...state })),
       audioTimeline: this.timeline,
     };
@@ -550,12 +555,23 @@ export class SignalingAudioRelay {
       return;
     }
 
-    const durationMs = (input.length / sourceSampleRate) * 1_000;
-    const relaySamples = downsampleMono(input, sourceSampleRate, RELAY_SAMPLE_RATE);
     const targetPeerIds = this.options.getTargetPeerIds();
     if (targetPeerIds.length === 0) {
+      this.activityGate.reset();
       return;
     }
+    const durationMs = (input.length / sourceSampleRate) * 1_000;
+    const gated = this.activityGate.process(input, durationMs);
+    if (!gated.samples) {
+      return;
+    }
+    if (gated.opened || gated.closed) {
+      this.recordTimeline(gated.opened ? "relay_voice_gate_opened" : "relay_voice_gate_closed", {
+        reason: `level_db:${this.activityGate.getDiagnostics().lastLevelDb.toFixed(1)}`,
+      });
+    }
+    const relaySamples = downsampleMono(gated.samples, sourceSampleRate, RELAY_SAMPLE_RATE);
+    const gatedDurationMs = (gated.samples.length / sourceSampleRate) * 1_000;
     this.isSendInFlight = true;
     this.lastSendAt = monotonicNow;
     this.sentSinceMetricsLog += 1;
@@ -571,7 +587,7 @@ export class SignalingAudioRelay {
         sequence: this.sequence++,
         sentAt: Date.now(),
         capturedAtMonotonic: monotonicNow,
-        durationMs,
+        durationMs: gatedDurationMs,
         sampleRate: RELAY_SAMPLE_RATE,
         channelCount: 1,
         codec: "mulaw",

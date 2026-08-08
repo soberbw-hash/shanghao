@@ -34,18 +34,24 @@ let pendingScreenCaptureSourceId: string | undefined;
 let screenShareViewerWindow: BrowserWindow | null = null;
 let screenShareViewerSessionId: string | undefined;
 
-const enumerateScreenCaptureSources = async (withThumbnails: boolean) =>
+const enumerateScreenCaptureSources = async (
+  withThumbnails: boolean,
+  fetchWindowIcons = withThumbnails,
+) =>
   desktopCapturer.getSources({
     types: ["screen", "window"],
     thumbnailSize: withThumbnails ? { width: 320, height: 180 } : { width: 0, height: 0 },
-    fetchWindowIcons: withThumbnails,
+    fetchWindowIcons,
   });
 
-const waitForScreenCaptureSources = async (withThumbnails: boolean) => {
+const waitForScreenCaptureSources = async (
+  withThumbnails: boolean,
+  fetchWindowIcons = withThumbnails,
+) => {
   let lastError: unknown;
   for (let attempt = 0; attempt < 3; attempt += 1) {
     try {
-      const sources = await enumerateScreenCaptureSources(withThumbnails);
+      const sources = await enumerateScreenCaptureSources(withThumbnails, fetchWindowIcons);
       if (sources.length > 0) return sources;
     } catch (error) {
       lastError = error;
@@ -60,9 +66,17 @@ export const listScreenCaptureSources = async (): Promise<ScreenCaptureSourceDes
   // Content protection also hides ShangHao from Chromium's desktop capturer. Disable it
   // while enumerating, then enable it only after a stream has actually been acquired.
   setScreenCaptureContentProtection(false);
-  let sources = await waitForScreenCaptureSources(true);
+  await new Promise<void>((resolve) => setTimeout(resolve, 80));
+
+  let sources: Awaited<ReturnType<typeof enumerateScreenCaptureSources>>;
+  try {
+    sources = await waitForScreenCaptureSources(true, true);
+  } catch {
+    // Some Windows graphics drivers fail only when Electron requests process icons.
+    sources = await waitForScreenCaptureSources(true, false).catch(() => []);
+  }
   if (sources.length === 0) {
-    sources = await waitForScreenCaptureSources(false);
+    sources = await waitForScreenCaptureSources(false, false);
   }
   const screenSourceIds = sources
     .filter((source) => source.id.startsWith("screen:"))

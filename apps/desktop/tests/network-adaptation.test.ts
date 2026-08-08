@@ -107,17 +107,6 @@ test("a live WebRTC track cannot disable relay before inbound RTP is verified", 
     shouldSendAudioRelay({
       evidence: verified,
       isRelayRequested: false,
-      nowMs: 1_000,
-      relayWarmupUntilMs: 5_000,
-    }),
-    true,
-  );
-  assert.equal(
-    shouldSendAudioRelay({
-      evidence: verified,
-      isRelayRequested: false,
-      nowMs: 5_001,
-      relayWarmupUntilMs: 5_000,
     }),
     false,
   );
@@ -125,8 +114,6 @@ test("a live WebRTC track cannot disable relay before inbound RTP is verified", 
     shouldSendAudioRelay({
       evidence: verified,
       isRelayRequested: true,
-      nowMs: 5_001,
-      relayWarmupUntilMs: 5_000,
     }),
     true,
   );

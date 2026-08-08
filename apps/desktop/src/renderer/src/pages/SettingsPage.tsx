@@ -7,6 +7,7 @@ import type {
   DiagnosticsSnapshot,
   RelayStatusSnapshot,
   RendererDiagnosticsSummary,
+  WindowsIntegrationStatus,
 } from "@private-voice/shared";
 
 import { Button } from "../components/base/Button";
@@ -20,6 +21,7 @@ import { SettingsPageHeader } from "../components/settings/SettingsPageHeader";
 import { SettingsSection } from "../components/settings/SettingsSection";
 import { ShortcutSettingsCard } from "../components/settings/ShortcutSettingsCard";
 import { StartupSplashPage } from "../components/status/StartupSplashPage";
+import { RELEASE_HISTORY } from "../components/status/releaseHistory";
 import { useMicTest } from "../hooks/useMicTest";
 import { usePrefersReducedMotion } from "../hooks/usePrefersReducedMotion";
 import { getRoomRuntimeDiagnostics } from "../hooks/useRoomState";
@@ -70,6 +72,7 @@ export const SettingsPage = () => {
   const [activeSection, setActiveSection] = useState<SettingsSectionId>("audio");
   const [diagnostics, setDiagnostics] = useState<DiagnosticsSnapshot>();
   const [relayDiagnostics, setRelayDiagnostics] = useState<RelayStatusSnapshot>();
+  const [windowsDiagnostics, setWindowsDiagnostics] = useState<WindowsIntegrationStatus>();
   const [saveNotice, setSaveNotice] = useState("设置会自动保存");
   const pageRef = useRef<HTMLDivElement>(null);
   const reduceMotion = usePrefersReducedMotion();
@@ -106,6 +109,22 @@ export const SettingsPage = () => {
       cancelled = true;
     };
   }, [activeSection, settings?.relayServerUrl]);
+
+  useEffect(() => {
+    if (activeSection !== "diagnostics") return;
+    let cancelled = false;
+    void window.desktopApi.windows
+      .getStatus()
+      .then((snapshot) => {
+        if (!cancelled) setWindowsDiagnostics(snapshot);
+      })
+      .catch(() => {
+        if (!cancelled) setWindowsDiagnostics(undefined);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [activeSection]);
 
   useLayoutEffect(() => {
     if (!isSettingsReady || !pageRef.current) return;
@@ -164,6 +183,27 @@ export const SettingsPage = () => {
 
   const refreshDiagnostics = () =>
     void window.desktopApi.diagnostics.snapshot().then(setDiagnostics);
+  const refreshWindowsDiagnostics = () =>
+    void window.desktopApi.windows.getStatus().then(setWindowsDiagnostics);
+  const handleRepairFirewall = () => {
+    void window.desktopApi.windows
+      .repairFirewall()
+      .then((firewall) => {
+        setWindowsDiagnostics((current) => (current ? { ...current, firewall } : current));
+        pushToast({
+          tone: firewall.healthy ? "success" : "danger",
+          title: firewall.healthy ? "防火墙规则已修复" : "防火墙修复未完成",
+          description: firewall.message,
+        });
+      })
+      .catch((error) =>
+        pushToast({
+          tone: "danger",
+          title: "防火墙修复失败",
+          description: error instanceof Error ? error.message : "请确认管理员权限后重试。",
+        }),
+      );
+  };
   const handleSaveSettings = async (patch: Partial<AppSettings>) => {
     setSaveNotice("正在保存...");
     try {
@@ -255,6 +295,8 @@ export const SettingsPage = () => {
       `丢包：${connectionHealth.packetLossPercent.toFixed(1)}%`,
       `抖动：${Math.round(connectionHealth.jitterMs)} ms`,
       `降噪：${localAudioDiagnostics?.noiseProcessor ?? "unknown"}`,
+      `管理员权限：${windowsDiagnostics?.elevation.isElevated ? "已启用" : "未启用"}`,
+      `防火墙：${windowsDiagnostics?.firewall.healthy ? "正常" : "需要修复"}`,
     ].join("\n");
     void window.desktopApi.clipboard
       .writeText(summary)
@@ -280,6 +322,15 @@ export const SettingsPage = () => {
             <Switch
               isChecked={settings.isOverlayEnabled}
               onChange={(isOverlayEnabled) => void handleSaveSettings({ isOverlayEnabled })}
+            />
+          </SettingsItemRow>
+          <SettingsItemRow
+            label="开机自动上号"
+            description="开机后自动打开上号并进入上次使用的房间；为避免打扰，麦克风会保持关闭。"
+          >
+            <Switch
+              isChecked={settings.launchOnStartup}
+              onChange={(launchOnStartup) => void handleSaveSettings({ launchOnStartup })}
             />
           </SettingsItemRow>
           <SettingsItemRow label="硬件加速" description="默认开启。修改后下次启动生效。">
@@ -336,7 +387,7 @@ export const SettingsPage = () => {
     ),
     updates: (
       <SettingsSection title="更新" description={`当前版本 ${runtimeInfo?.version ?? "读取中..."}`}>
-        <div className="flex items-center justify-between gap-3">
+        <div className="flex items-center justify-between gap-3 border-b border-[#dbe8f7]/80 pb-4">
           <div className="text-sm text-[#718096]">{updateInfo?.message ?? "还没有检查更新"}</div>
           <div className="flex gap-2">
             <Button variant="secondary" onClick={() => void checkUpdates()}>
@@ -346,6 +397,35 @@ export const SettingsPage = () => {
               查看发布页
             </Button>
           </div>
+        </div>
+        <div className="mt-4 grid gap-3" aria-label="最近五个版本更新记录">
+          {RELEASE_HISTORY.map((release, index) => (
+            <article
+              key={release.version}
+              className="rounded-[18px] border border-[#dbe8f7]/80 bg-white/58 px-4 py-3.5"
+            >
+              <div className="flex flex-wrap items-baseline justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <strong className="text-sm text-[#26364d]">上号 {release.version}</strong>
+                  {index === 0 ? (
+                    <span className="rounded-full bg-[#e8f2ff] px-2 py-0.5 text-[11px] font-bold text-[#3974d8]">
+                      最新
+                    </span>
+                  ) : null}
+                </div>
+                <time className="text-xs text-[#8a9ab0]">{release.date}</time>
+              </div>
+              <div className="mt-1 text-sm font-semibold text-[#52647b]">{release.title}</div>
+              <ul className="mt-2 grid gap-1 text-[13px] leading-5 text-[#718096]">
+                {release.highlights.map((highlight) => (
+                  <li key={highlight} className="flex gap-2">
+                    <span className="mt-[8px] h-1 w-1 shrink-0 rounded-full bg-[#6da6ef]" />
+                    <span>{highlight}</span>
+                  </li>
+                ))}
+              </ul>
+            </article>
+          ))}
         </div>
       </SettingsSection>
     ),
@@ -359,9 +439,12 @@ export const SettingsPage = () => {
           webrtcReadyPeerCount={runtimeDiagnostics?.webrtcReadyPeerCount ?? 0}
           remotePeerCount={runtimeDiagnostics?.remotePeerCount ?? 0}
           audioRelayActive={isAudioRelayActive}
+          windowsStatus={windowsDiagnostics}
           onOpenLogs={() => void window.desktopApi.diagnostics.openLogsDirectory()}
           onExportBundle={handleExportBundle}
           onCopySummary={handleCopyDiagnostics}
+          onRefreshWindows={refreshWindowsDiagnostics}
+          onRepairFirewall={handleRepairFirewall}
         />
         <Button variant="danger" onClick={() => void resetSettings().then(refreshDiagnostics)}>
           安全重置设置

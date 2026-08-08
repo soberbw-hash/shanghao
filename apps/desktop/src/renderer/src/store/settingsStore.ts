@@ -46,6 +46,7 @@ const fallbackRuntimeInfo: RuntimeInfo = {
   platform: typeof navigator === "undefined" ? "unknown" : navigator.platform,
   protocolVersion: "1",
   buildNumber: "unknown",
+  isStartupLaunch: false,
 };
 
 const fallbackSettings: AppSettings = {
@@ -59,11 +60,13 @@ const fallbackSettings: AppSettings = {
   hasCompletedProfileSetup: false,
   minimizeToTray: false,
   uiScale: 100,
-  launchOnStartup: false,
+  launchOnStartup: true,
   isHardwareAccelerationEnabled: true,
   isOverlayEnabled: true,
   preferredInputDeviceId: undefined,
   preferredOutputDeviceId: undefined,
+  microphoneSendVolume: 1,
+  speakerMasterVolume: 1,
   micEqualizerGains: [0, 0, 0, 0, 0],
   lowCutFrequency: "90",
   globalMuteShortcut: "",
@@ -74,6 +77,7 @@ const fallbackSettings: AppSettings = {
   isAutoGainControlEnabled: true,
   isVoiceEnhancementEnabled: true,
   isPushToTalkEnabled: false,
+  isAutoRecordOnJoinEnabled: false,
   micMonitorMode: "processed",
   relayServerUrl: "",
   memberVolumes: {},
@@ -82,8 +86,11 @@ const fallbackSettings: AppSettings = {
   isGameDetectionEnabled: true,
   isUiSoundEnabled: true,
   isBackgroundUpdateCheckEnabled: true,
+  lastCollectionViewedAt: undefined,
+  hasInitializedCollectionReadState: false,
   lastUpdateCheckAt: undefined,
   lastUpdateVersionSeen: undefined,
+  lastReleaseNotesVersionSeen: undefined,
 };
 
 const withTimeout = async <T>(

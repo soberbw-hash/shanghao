@@ -64,6 +64,10 @@ export class RoomManager {
     return this.maxRoomMembers;
   }
 
+  getConnectedPeerCount(roomId: string): number {
+    return this.rooms.get(roomId)?.peers.listConnectedPeers().length ?? 0;
+  }
+
   addPeer(roomId: string, roomName: string, session: PeerSession): SignalingRoom {
     const room = this.getOrCreateRoom(roomId, roomName);
     room.peers.addPeer(session);

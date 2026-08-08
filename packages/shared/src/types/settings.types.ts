@@ -20,6 +20,8 @@ export interface AppSettings {
   isOverlayEnabled: boolean;
   preferredInputDeviceId?: string;
   preferredOutputDeviceId?: string;
+  microphoneSendVolume: number;
+  speakerMasterVolume: number;
   micEqualizerGains: MicEqualizerGains;
   lowCutFrequency: LowCutFrequency;
   globalMuteShortcut: string;
@@ -30,6 +32,7 @@ export interface AppSettings {
   isAutoGainControlEnabled: boolean;
   isVoiceEnhancementEnabled: boolean;
   isPushToTalkEnabled: boolean;
+  isAutoRecordOnJoinEnabled: boolean;
   micMonitorMode: MicMonitorMode;
   relayServerUrl?: string;
   memberVolumes: Record<string, number>;
@@ -38,10 +41,13 @@ export interface AppSettings {
   isGameDetectionEnabled: boolean;
   isUiSoundEnabled: boolean;
   isBackgroundUpdateCheckEnabled: boolean;
+  lastCollectionViewedAt?: string;
+  hasInitializedCollectionReadState: boolean;
   isAutoDownloadUpdateEnabled?: boolean;
   isAutoInstallUpdateEnabled?: boolean;
   lastUpdateCheckAt?: string;
   lastUpdateVersionSeen?: string;
+  lastReleaseNotesVersionSeen?: string;
 }
 
 export interface RelayStatusSnapshot {

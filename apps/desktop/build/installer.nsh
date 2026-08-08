@@ -17,6 +17,9 @@
 !macroend
 
 !macro customUnInstall
+  DetailPrint "正在移除上号开机任务和专属防火墙规则..."
+  nsExec::ExecToLog `"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "Get-ScheduledTask -TaskName 'ShangHao Auto Start' -ErrorAction SilentlyContinue | Unregister-ScheduledTask -Confirm:$$false -ErrorAction SilentlyContinue; Get-NetFirewallRule -Group 'ShangHao Network' -ErrorAction SilentlyContinue | Remove-NetFirewallRule -ErrorAction SilentlyContinue"`
+  Pop $0
   System::Call 'shell32::SHChangeNotify(i 0x08000000, i 0, p 0, p 0)'
 !macroend
 

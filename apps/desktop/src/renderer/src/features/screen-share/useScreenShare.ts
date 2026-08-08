@@ -46,7 +46,12 @@ export const useScreenShare = ({
   const [snapshot, setSnapshot] = useState<ScreenShareManagerSnapshot>(() => manager.getSnapshot());
 
   useEffect(() => manager.subscribe(setSnapshot), [manager]);
-  useEffect(() => () => manager.destroy(), [manager]);
+  useEffect(
+    () => () => {
+      void manager.shutdown("component-unmount").finally(() => manager.destroy());
+    },
+    [manager],
+  );
 
   const openSourcePicker = useCallback(() => manager.openSourcePicker(), [manager]);
   const startShare = useCallback(
@@ -54,6 +59,7 @@ export const useScreenShare = ({
     [manager],
   );
   const stopShare = useCallback((reason?: string) => manager.stopShare(reason), [manager]);
+  const shutdown = useCallback((reason?: string) => manager.shutdown(reason), [manager]);
   const openDetachedViewer = useCallback(
     (item: ScreenShareItem) => manager.openDetachedViewer(item),
     [manager],
@@ -73,6 +79,7 @@ export const useScreenShare = ({
     openSourcePicker,
     startShare,
     stopShare,
+    shutdown,
     openDetachedViewer,
     syncDetachedItem,
     closeDetachedViewer,

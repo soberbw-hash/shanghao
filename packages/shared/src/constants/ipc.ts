@@ -4,6 +4,7 @@ export const IPC_CHANNELS = {
     getSystemIdleSeconds: "app:get-system-idle-seconds",
     writeLog: "app:write-log",
     notify: "app:notify",
+    openExternal: "app:open-external",
   },
   clipboard: {
     writeText: "clipboard:write-text",
@@ -56,6 +57,11 @@ export const IPC_CHANNELS = {
     exportLogs: "diagnostics:export-logs",
     exportBundle: "diagnostics:export-bundle",
     openLogsDirectory: "diagnostics:open-logs-directory",
+  },
+  windows: {
+    getStatus: "windows:get-status",
+    repairFirewall: "windows:repair-firewall",
+    removeFirewall: "windows:remove-firewall",
   },
   shortcuts: {
     configureMute: "shortcuts:configure-mute",

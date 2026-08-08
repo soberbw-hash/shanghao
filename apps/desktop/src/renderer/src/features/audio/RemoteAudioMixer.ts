@@ -52,6 +52,7 @@ export interface RemoteAudioPlaybackStats {
 export interface RemoteAudioMixerDiagnostics {
   contextState: AudioContextState | "not_started";
   isDeafened: boolean;
+  masterVolume: number;
   outputDeviceId: string;
   peers: Record<
     string,
@@ -91,6 +92,7 @@ export class RemoteAudioMixer {
   private relayChannels = new Map<string, RelayAudioChannel>();
   private peerMediaPaths = new Map<string, RemoteAudioMediaPath>();
   private isDeafened = false;
+  private masterVolume = 1;
   private outputDeviceId?: string;
   private resumeInFlight?: Promise<boolean>;
   private audioLevelTimer?: number;
@@ -114,7 +116,7 @@ export class RemoteAudioMixer {
     this.context = context;
     this.masterGain = masterGain;
     this.compressor = compressor;
-    masterGain.gain.value = this.isDeafened ? 0 : 1;
+    masterGain.gain.value = this.getEffectiveMasterVolume();
     context.onstatechange = () => {
       const peerIds = new Set([
         ...this.channels.keys(),
@@ -240,13 +242,42 @@ export class RemoteAudioMixer {
 
   setDeafened(isDeafened: boolean): void {
     this.isDeafened = isDeafened;
-    if (!this.context || !this.masterGain) return;
-    this.masterGain.gain.setTargetAtTime(isDeafened ? 0 : 1, this.context.currentTime, 0.012);
+    this.applyMasterVolume();
   }
 
-  setOutputDevice(outputDeviceId?: string): void {
+  setMasterVolume(volume: number): void {
+    this.masterVolume = Math.max(0, Math.min(2, Number.isFinite(volume) ? volume : 1));
+    this.applyMasterVolume();
+  }
+
+  setOutputDevice(outputDeviceId?: string): Promise<void> {
     this.outputDeviceId = outputDeviceId;
-    void this.applyOutputDevice();
+    return this.applyOutputDevice();
+  }
+
+  async playTestTone(): Promise<void> {
+    const context = this.ensureGraph();
+    await this.unlock("speaker-test");
+    const oscillator = context.createOscillator();
+    const toneGain = context.createGain();
+    const now = context.currentTime;
+    oscillator.type = "sine";
+    oscillator.frequency.setValueAtTime(660, now);
+    toneGain.gain.setValueAtTime(0.0001, now);
+    toneGain.gain.exponentialRampToValueAtTime(0.14, now + 0.018);
+    toneGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.22);
+    oscillator.connect(toneGain);
+    toneGain.connect(this.masterGain!);
+    oscillator.start(now);
+    oscillator.stop(now + 0.24);
+    oscillator.addEventListener(
+      "ended",
+      () => {
+        oscillator.disconnect();
+        toneGain.disconnect();
+      },
+      { once: true },
+    );
   }
 
   recoverOutputDevice(): void {
@@ -292,6 +323,7 @@ export class RemoteAudioMixer {
     return {
       contextState: this.context?.state ?? "not_started",
       isDeafened: this.isDeafened,
+      masterVolume: this.masterVolume,
       outputDeviceId: this.outputDeviceId || "default",
       peers: Object.fromEntries(
         [...peerIds].map((peerId) => {
@@ -656,6 +688,19 @@ export class RemoteAudioMixer {
         0.018,
       );
     }
+  }
+
+  private getEffectiveMasterVolume(): number {
+    return this.isDeafened ? 0 : this.masterVolume;
+  }
+
+  private applyMasterVolume(): void {
+    if (!this.context || !this.masterGain) return;
+    this.masterGain.gain.setTargetAtTime(
+      this.getEffectiveMasterVolume(),
+      this.context.currentTime,
+      0.012,
+    );
   }
 
   private async applyOutputDevice(): Promise<void> {
