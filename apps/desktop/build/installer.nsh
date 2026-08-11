@@ -1,5 +1,34 @@
+!macro writeShangHaoInstallMarker
+  FileOpen $R6 "$INSTDIR\.shanghao-install-root" w
+  FileWrite $R6 "ShangHao.InstallRoot.v1$\r$\n"
+  FileClose $R6
+!macroend
+
+!macro ensureShangHaoInstallMarker
+  ${ifNot} ${FileExists} "$INSTDIR\.shanghao-install-root"
+    ; 2.4.0 及更早版本还没有目录标记。仅在完整旧版程序清单同时存在时迁移一次，
+    ; 单独出现同名 EXE 绝不能让一个普通自定义目录获得清理权限。
+    ${if} ${FileExists} "$INSTDIR\ShangHao.exe"
+    ${andIf} ${FileExists} "$INSTDIR\resources\app.asar"
+    ${andIf} ${FileExists} "$INSTDIR\Uninstall*.exe"
+      !insertmacro writeShangHaoInstallMarker
+    ${else}
+      Abort "当前安装目录不是上号专属目录。为保护你的文件，安装器已停止清理；请改用单独的上号安装目录。"
+    ${endif}
+  ${endif}
+
+  FileOpen $R6 "$INSTDIR\.shanghao-install-root" r
+  FileRead $R6 $R5
+  FileClose $R6
+  StrCmp $R5 "ShangHao.InstallRoot.v1$\r$\n" +2
+  Abort "上号安装目录标记无效。为保护你的文件，安装器已停止清理。"
+!macroend
+
 !macro customInstall
   StrCpy $0 "$INSTDIR\resources\build\shanghao-shortcut-v3.ico"
+
+  ; 后续覆盖安装只允许清理带有该标记的上号专属目录。
+  !insertmacro writeShangHaoInstallMarker
 
   ${if} ${FileExists} "$newDesktopLink"
     Delete "$newDesktopLink"
@@ -23,19 +52,62 @@
   System::Call 'shell32::SHChangeNotify(i 0x08000000, i 0, p 0, p 0)'
 !macroend
 
+!macro removeShangHaoInstallFilesSafely
+  ${if} ${FileExists} "$INSTDIR\*.*"
+    !insertmacro ensureShangHaoInstallMarker
+    ; 只清理 Electron/上号已知产物。即使专属目录旁边存在用户文件，也不会删除它们。
+    Delete "$INSTDIR\.shanghao-install-root"
+    Delete "$INSTDIR\ShangHao.exe"
+    Delete "$INSTDIR\上号.exe"
+    Delete "$INSTDIR\PrivateVoice.exe"
+    Delete "$INSTDIR\Uninstall*.exe"
+    Delete "$INSTDIR\chrome_100_percent.pak"
+    Delete "$INSTDIR\chrome_200_percent.pak"
+    Delete "$INSTDIR\d3dcompiler_47.dll"
+    Delete "$INSTDIR\ffmpeg.dll"
+    Delete "$INSTDIR\icudtl.dat"
+    Delete "$INSTDIR\libEGL.dll"
+    Delete "$INSTDIR\libGLESv2.dll"
+    Delete "$INSTDIR\LICENSE.electron.txt"
+    Delete "$INSTDIR\LICENSES.chromium.html"
+    Delete "$INSTDIR\resources.pak"
+    Delete "$INSTDIR\snapshot_blob.bin"
+    Delete "$INSTDIR\v8_context_snapshot.bin"
+    Delete "$INSTDIR\vk_swiftshader.dll"
+    Delete "$INSTDIR\vk_swiftshader_icd.json"
+    Delete "$INSTDIR\vulkan-1.dll"
+    Delete "$INSTDIR\locales\en-US.pak"
+    Delete "$INSTDIR\locales\zh-CN.pak"
+    RMDir "$INSTDIR\locales"
+    Delete "$INSTDIR\resources\app-update.yml"
+    Delete "$INSTDIR\resources\app.asar"
+    Delete "$INSTDIR\resources\elevate.exe"
+    RMDir /r "$INSTDIR\resources\app.asar.unpacked"
+    RMDir /r "$INSTDIR\resources\build"
+    RMDir /r "$INSTDIR\resources\deepfilter"
+    RMDir /r "$INSTDIR\resources\licenses"
+    RMDir "$INSTDIR\resources"
+    Delete "$INSTDIR\swiftshader\libEGL.dll"
+    Delete "$INSTDIR\swiftshader\libGLESv2.dll"
+    RMDir "$INSTDIR\swiftshader"
+    RMDir "$INSTDIR"
+  ${endif}
+!macroend
+
 ; electron-builder 的 --updated 路径默认会先原子重命名整个安装目录。
 ; 某些 Windows 环境会因目录句柄返回错误 2。进程已在前置阶段清理，
 ; 因此这里直接从 TEMP 删除程序目录；Roaming 下的用户数据不受影响。
 !macro customRemoveFiles
   DetailPrint "正在替换旧版上号程序文件..."
+  !insertmacro shutdownShangHaoProcesses
   SetOutPath "$TEMP"
-  RMDir /r "$INSTDIR"
+  !insertmacro removeShangHaoInstallFilesSafely
   Sleep 300
 
   ${if} ${FileExists} "$INSTDIR\ShangHao.exe"
     !insertmacro shutdownShangHaoProcesses
     SetOutPath "$TEMP"
-    RMDir /r "$INSTDIR"
+    !insertmacro removeShangHaoInstallFilesSafely
   ${endif}
 
   ${if} ${FileExists} "$INSTDIR\ShangHao.exe"
@@ -61,11 +133,6 @@
   !insertmacro requestShangHaoQuitByName "PrivateVoice.exe" "$INSTDIR\PrivateVoice.exe"
 !macroend
 
-!macro killShangHaoProcessByName PROCESS_NAME
-  nsExec::ExecToLog '"$SYSDIR\taskkill.exe" /IM "${PROCESS_NAME}" /T /F'
-  Pop $0
-!macroend
-
 !macro killShangHaoProcessByInstallDir
   System::Call 'kernel32::GetCurrentProcessId() i .r9'
   nsExec::ExecToLog `"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "$$dir = '$INSTDIR'; $$installerPid = $R9; Get-CimInstance Win32_Process | Where-Object { $$_.ProcessId -ne $$installerPid -and $$_.ExecutablePath -and $$_.ExecutablePath.StartsWith($$dir, [System.StringComparison]::OrdinalIgnoreCase) } | ForEach-Object { Stop-Process -Id $$_.ProcessId -Force -ErrorAction SilentlyContinue }"`
@@ -76,10 +143,7 @@
   !insertmacro requestShangHaoQuit
 
   ; 老版本可能还不认识 --shanghao-quit-for-install，或被托盘/悬浮窗留在后台。
-  ; 所以同时按进程名和安装目录兜底清理，避免覆盖安装时文件被锁。
-  !insertmacro killShangHaoProcessByName "ShangHao.exe"
-  !insertmacro killShangHaoProcessByName "上号.exe"
-  !insertmacro killShangHaoProcessByName "PrivateVoice.exe"
+  ; 只终止当前安装目录内的进程，避免误杀其他目录中同名的程序。
   !insertmacro killShangHaoProcessByInstallDir
   Sleep 500
 !macroend
@@ -96,7 +160,7 @@
     DeleteRegKey ${ROOT_KEY} "${UNINSTALL_REGISTRY_KEY}"
     DeleteRegKey ${ROOT_KEY} "${INSTALL_REGISTRY_KEY}"
     SetOutPath "$TEMP"
-    RMDir /r "$INSTDIR"
+    !insertmacro removeShangHaoInstallFilesSafely
     CreateDirectory "$INSTDIR"
   ${endif}
 !macroend

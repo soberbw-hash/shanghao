@@ -40,3 +40,14 @@ test("uninstaller removes only ShangHao startup and firewall integration", async
   assert.match(installer, /ShangHao Network/);
   assert.doesNotMatch(installer, /Get-NetFirewallRule\s+\|/);
 });
+
+test("installer validates the owned-directory marker and never recursively removes install root", async () => {
+  const installer = await read("../build/installer.nsh");
+  assert.match(installer, /ShangHao\.InstallRoot\.v1/);
+  assert.match(installer, /ensureShangHaoInstallMarker/);
+  assert.match(installer, /resources\\app\.asar/);
+  assert.match(installer, /Uninstall\*\.exe/);
+  assert.doesNotMatch(installer, /RMDir\s+\/r\s+"\$INSTDIR"/);
+  assert.doesNotMatch(installer, /RMDir\s+\/r\s+"\$INSTDIR\\(?:locales|resources|swiftshader)"/);
+  assert.doesNotMatch(installer, /taskkill\.exe/i);
+});

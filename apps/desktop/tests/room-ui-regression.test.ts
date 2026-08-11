@@ -138,6 +138,30 @@ test("chat messages are uniformly left aligned with avatar and no per-message cl
   assert.equal(source.includes('clearProps: "transform,opacity,visibility"'), true);
 });
 
+test("channel switching is exclusive and clears screen-share state before joining", () => {
+  const roomPageSource = readFileSync(
+    path.resolve(process.cwd(), "src/renderer/src/pages/RoomPage.tsx"),
+    "utf8",
+  );
+  const roomStateSource = readFileSync(
+    path.resolve(process.cwd(), "src/renderer/src/hooks/useRoomState.ts"),
+    "utf8",
+  );
+
+  assert.equal(roomPageSource.includes("channelSwitchInFlightRef.current"), true);
+  assert.equal(roomPageSource.includes("await shutdownScreenShare()"), true);
+  assert.equal(
+    roomPageSource.indexOf("await shutdownScreenShare()") <
+      roomPageSource.indexOf("await switchChannel(channelId)"),
+    true,
+  );
+  assert.equal(
+    roomStateSource.includes("await cleanupPreviousSession();\n        clearChannelContent();"),
+    true,
+  );
+  assert.equal(roomStateSource.includes("previousMemberIds = new Set<string>();"), true);
+});
+
 test("DeepFilterNet failure keeps the microphone live without interrupting the room", () => {
   const bootstrapSource = readFileSync(
     path.resolve(process.cwd(), "src/renderer/src/hooks/useAppBootstrap.ts"),

@@ -21,6 +21,7 @@ import type {
   AudioResyncRequestMessage,
   AvatarUpdateMessage,
   ChatMessage,
+  ChatRecallMessage,
   ChatHistoryMessage,
   ChannelCountsMessage,
   RoomCollectionAddMessage,
@@ -139,6 +140,7 @@ interface SocketSession {
 
 const RATE_LIMITS: Record<string, { windowMs: number; limit: number }> = {
   chat_message: { windowMs: 10_000, limit: 8 },
+  chat_recall: { windowMs: 10_000, limit: 12 },
   room_collection_add: { windowMs: 10_000, limit: 6 },
   room_collection_remove: { windowMs: 10_000, limit: 10 },
   knock_event: { windowMs: 10_000, limit: 3 },
@@ -705,6 +707,9 @@ export class SignalingServer extends EventEmitter {
       case "chat_message":
         this.broadcastChatMessage(authoritative);
         return;
+      case "chat_recall":
+        this.recallChatMessage(authoritative);
+        return;
       case "room_collection_add":
         this.addRoomCollectionItem(authoritative);
         return;
@@ -1066,6 +1071,26 @@ export class SignalingServer extends EventEmitter {
       });
     }
     this.safeSend(socket, payload);
+  }
+
+  private recallChatMessage(message: ChatRecallMessage): void {
+    const room = this.roomManager.getRoom(message.roomId);
+    const author = message.peerId ? room?.peers.getPeer(message.peerId) : undefined;
+    if (!room || !author) return;
+
+    void this.chatHistory.then((store) => {
+      if (!store.remove(message.roomId, message.messageId, author.id)) return;
+      const payload: ChatRecallMessage = {
+        type: "chat_recall",
+        roomId: message.roomId,
+        peerId: author.id,
+        messageId: message.messageId,
+        recalledAt: new Date().toISOString(),
+      };
+      for (const peer of room.peers.listConnectedPeers()) {
+        this.safeSend(peer.socket, payload);
+      }
+    });
   }
 
   private addRoomCollectionItem(message: RoomCollectionAddMessage): void {

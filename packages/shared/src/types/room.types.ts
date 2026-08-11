@@ -30,6 +30,12 @@ export interface ChatMessage {
   kind?: "chat" | "system";
 }
 
+export interface ChatRecallEvent {
+  messageId: string;
+  peerId: string;
+  recalledAt: string;
+}
+
 export type RoomCollectionItemKind = "text" | "link" | "image" | "game";
 
 export interface RoomCollectionItem {

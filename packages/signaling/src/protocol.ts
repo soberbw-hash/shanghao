@@ -37,6 +37,7 @@ export type SignalEnvelope =
   | IceCandidateMessage
   | MemberStateMessage
   | ChatMessage
+  | ChatRecallMessage
   | ChatHistoryMessage
   | ChannelCountsMessage
   | RoomCollectionSnapshotMessage
@@ -212,6 +213,14 @@ export interface ChatHistoryMessage extends BaseMessage {
   type: "chat_history";
   roomId: string;
   messages: ServerChatMessage[];
+}
+
+export interface ChatRecallMessage extends BaseMessage {
+  type: "chat_recall";
+  roomId: string;
+  peerId?: string;
+  messageId: string;
+  recalledAt?: string;
 }
 
 export interface ChannelCountsMessage extends BaseMessage {
@@ -604,6 +613,8 @@ export const isSignalEnvelope = (value: unknown): value is SignalEnvelope => {
         (hasContent || hasImage)
       );
     }
+    case "chat_recall":
+      return hasRoom(value) && isIdentifier(value.messageId, 128);
     case "chat_history":
       return hasRoom(value) && Array.isArray(value.messages) && value.messages.length <= 100;
     case "channel_counts":

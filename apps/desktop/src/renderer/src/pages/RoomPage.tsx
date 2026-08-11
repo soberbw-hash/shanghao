@@ -359,6 +359,7 @@ export const RoomPage = () => {
     leaveRoom,
     switchChannel,
     sendChatMessage,
+    recallChatMessage,
     sendKnock,
     sendSceneReaction,
     replaceInputDevice,
@@ -379,6 +380,7 @@ export const RoomPage = () => {
     status: screenShareStatus,
     detachedItemId: detachedViewerId,
     openSourcePicker: prepareScreenSourcePicker,
+    cancelSourcePicker,
     startShare: startManagedScreenShare,
     stopShare: stopManagedScreenShare,
     shutdown: shutdownScreenShare,
@@ -437,6 +439,7 @@ export const RoomPage = () => {
   const [activeAudioPanel, setActiveAudioPanel] = useState<"microphone" | "speaker">();
   const [screenFrameNow, setScreenFrameNow] = useState(Date.now());
   const [isLeaving, setIsLeaving] = useState(false);
+  const [isSwitchingChannelLocally, setIsSwitchingChannelLocally] = useState(false);
   const lastSeatZoneRef = useRef<SceneZoneId>("gameDesk1");
   const awaySessionRef = useRef<AwaySession>();
   const lastKnockAt = useRef(0);
@@ -448,6 +451,8 @@ export const RoomPage = () => {
   const autoRecordRetryTimerRef = useRef<number>();
   const hasInitializedCollectionReadStateRef = useRef(false);
   const moveLocalMemberRef = useRef(moveLocalMember);
+  const screenPickerRequestIdRef = useRef(0);
+  const channelSwitchInFlightRef = useRef(false);
   moveLocalMemberRef.current = moveLocalMember;
   const reduceMotion = usePrefersReducedMotion();
   const isScreenShareStarting =
@@ -1009,44 +1014,81 @@ export const RoomPage = () => {
     }
   };
 
+  const closeScreenSourcePicker = (cancelManager = true) => {
+    screenPickerRequestIdRef.current += 1;
+    setIsScreenSourcePickerOpen(false);
+    setScreenSourcePickerSources([]);
+    if (cancelManager) void cancelSourcePicker();
+  };
+
   const leave = async () => {
     if (isLeaving) return;
     setIsLeaving(true);
-    try {
-      if (recordingStatus.state === RecordingState.Recording) {
+    closeScreenSourcePicker();
+
+    if (recordingStatus.state === RecordingState.Recording) {
+      try {
         const result = await stopRecording();
         if (recordingMarkers.length) {
           await window.desktopApi.recording.saveMarkers(result.filePath, recordingMarkers);
         }
         clearRecordingMarkers();
         playUiSound("record-stop");
+      } catch (error) {
+        void window.desktopApi.app
+          .writeLog({
+            category: "app",
+            level: "warn",
+            message: "room_leave_recording_cleanup_failed",
+            context: { error: error instanceof Error ? error.message : String(error) },
+          })
+          .catch(() => undefined);
       }
-      await shutdownScreenShare();
-      await window.desktopApi.overlay.close();
+    }
+
+    const cleanupResults = await Promise.allSettled([
+      shutdownScreenShare(),
+      window.desktopApi.overlay.close(),
+    ]);
+    const cleanupErrors = cleanupResults
+      .filter((result): result is PromiseRejectedResult => result.status === "rejected")
+      .map((result) =>
+        result.reason instanceof Error ? result.reason.message : String(result.reason),
+      );
+    if (cleanupErrors.length) {
+      void window.desktopApi.app
+        .writeLog({
+          category: "app",
+          level: "warn",
+          message: "room_leave_background_cleanup_failed",
+          context: { errors: cleanupErrors },
+        })
+        .catch(() => undefined);
+    }
+
+    try {
       await leaveRoom();
     } catch (error) {
       setIsLeaving(false);
       pushToast({
         tone: "danger",
         title: "暂时无法退出",
-        description:
-          recordingStatus.state === RecordingState.Recording
-            ? "录音还没有保存完成，请处理保存窗口后再试。"
-            : "清理房间资源失败，请再试一次。",
+        description: "房间连接还没有完全断开，请再试一次。",
       });
-      await window.desktopApi.app.writeLog({
-        category: "app",
-        level: "error",
-        message: "room_leave_cleanup_failed",
-        context: { error: error instanceof Error ? error.message : String(error) },
-      });
+      void window.desktopApi.app
+        .writeLog({
+          category: "app",
+          level: "error",
+          message: "room_leave_failed",
+          context: { error: error instanceof Error ? error.message : String(error) },
+        })
+        .catch(() => undefined);
     }
   };
 
   const startSharingScreen = async (sourceId: string) => {
     try {
-      setIsScreenSourcePickerOpen(false);
-      setScreenSourcePickerSources([]);
+      closeScreenSourcePicker(false);
       const stream = await startManagedScreenShare({
         sourceId,
         includeSystemAudio: pendingIncludeSystemAudio,
@@ -1081,17 +1123,70 @@ export const RoomPage = () => {
   };
 
   const openScreenSourcePicker = async () => {
+    const requestId = ++screenPickerRequestIdRef.current;
     try {
       const sources = await prepareScreenSourcePicker();
+      if (requestId !== screenPickerRequestIdRef.current) return;
+      if (!sources.length) {
+        pushToast({
+          tone: "danger",
+          title: "没有找到可分享的画面",
+          description: "请确认 Windows 允许上号进行屏幕捕获后重试。",
+        });
+        return;
+      }
       setScreenSourcePickerSources(sources);
       setPendingIncludeSystemAudio(false);
       setIsScreenSourcePickerOpen(true);
     } catch {
+      if (requestId !== screenPickerRequestIdRef.current) return;
       pushToast({
         tone: "danger",
         title: "没有找到可分享的画面",
         description: "请确认 Windows 允许上号进行屏幕捕获后重试。",
       });
+    }
+  };
+
+  const handleSwitchChannel = async (channelId: "main" | "side") => {
+    const currentChannelId = room.roomId === "side" ? "side" : "main";
+    if (channelSwitchInFlightRef.current || currentChannelId === channelId) return;
+
+    channelSwitchInFlightRef.current = true;
+    setIsSwitchingChannelLocally(true);
+    closeScreenSourcePicker();
+    try {
+      await shutdownScreenShare().catch((error: unknown) => {
+        void window.desktopApi.app
+          .writeLog({
+            category: "webrtc",
+            level: "warn",
+            message: "channel_switch_screen_share_cleanup_failed",
+            context: { error: error instanceof Error ? error.message : String(error) },
+          })
+          .catch(() => undefined);
+      });
+      await switchChannel(channelId);
+    } catch (error) {
+      pushToast({
+        tone: "danger",
+        title: "暂时无法切换房间",
+        description: "当前连接还在收尾，请稍后再试。",
+      });
+      void window.desktopApi.app
+        .writeLog({
+          category: "signaling",
+          level: "error",
+          message: "channel_switch_failed",
+          context: {
+            channelId,
+            error: error instanceof Error ? error.message : String(error),
+          },
+        })
+        .catch(() => undefined);
+    } finally {
+      channelSwitchInFlightRef.current = false;
+      setIsSwitchingChannelLocally(false);
     }
   };
 
@@ -1314,8 +1409,8 @@ export const RoomPage = () => {
         <TopStatusBar
           currentChannelId={room.roomId === "side" ? "side" : "main"}
           channelCounts={channelCounts}
-          isSwitchingChannel={roomAction === "joining"}
-          onSwitchChannel={(channelId) => void switchChannel(channelId)}
+          isSwitchingChannel={isSwitchingChannelLocally || roomAction === "joining"}
+          onSwitchChannel={(channelId) => void handleSwitchChannel(channelId)}
           onDonate={() => setIsDonationOpen(true)}
           onKnock={() => void knock()}
           onInvite={() => void copyInviteLink()}
@@ -1369,6 +1464,17 @@ export const RoomPage = () => {
             onSend={() => void send()}
             onQuickSend={(message) => void send(message)}
             onSendImage={sendImage}
+            onRecall={async (messageId) => {
+              try {
+                await recallChatMessage(messageId);
+              } catch {
+                pushToast({
+                  tone: "danger",
+                  title: "撤回失败",
+                  description: "连接恢复后再试一次。",
+                });
+              }
+            }}
             canSend={canSend}
             unavailableLabel="正在重连..."
             reduceMotion={reduceMotion}
@@ -1387,7 +1493,7 @@ export const RoomPage = () => {
             exit="closed"
             role="presentation"
             onPointerDown={(event) => {
-              if (event.target === event.currentTarget) setIsScreenSourcePickerOpen(false);
+              if (event.target === event.currentTarget) closeScreenSourcePicker();
             }}
           >
             <motion.section
@@ -1405,7 +1511,7 @@ export const RoomPage = () => {
                   <h2>分享哪个画面？</h2>
                   <p>固定使用 1440p 清晰画质。显示器已编号，窗口会显示应用名称。</p>
                 </div>
-                <Button variant="ghost" onClick={() => setIsScreenSourcePickerOpen(false)}>
+                <Button variant="ghost" onClick={() => closeScreenSourcePicker()}>
                   取消
                 </Button>
               </header>

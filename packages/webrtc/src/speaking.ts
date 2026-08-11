@@ -2,6 +2,39 @@ export interface SpeakingDetectorControls {
   destroy: () => void;
 }
 
+export interface SpeakingActivityState {
+  isSpeaking: boolean;
+  noiseFloor: number;
+  holdUntil: number;
+}
+
+export const createSpeakingActivityState = (): SpeakingActivityState => ({
+  isSpeaking: false,
+  noiseFloor: 0.008,
+  holdUntil: 0,
+});
+
+export const advanceSpeakingActivity = (
+  previous: SpeakingActivityState,
+  normalizedLevel: number,
+  now: number,
+): SpeakingActivityState => {
+  let noiseFloor = previous.noiseFloor;
+  if (normalizedLevel < Math.max(0.08, noiseFloor * 3.5)) {
+    // A steady fan or virtual-device floor may initially cross the open threshold.
+    // Keep learning it slowly while active so the UI cannot remain green forever.
+    const smoothing = previous.isSpeaking ? 0.004 : 0.018;
+    noiseFloor += (normalizedLevel - noiseFloor) * smoothing;
+  }
+  const openThreshold = Math.max(0.012, Math.min(0.14, noiseFloor * 2.8 + 0.006));
+  const closeThreshold = Math.max(0.009, openThreshold * 0.62);
+  const holdUntil = normalizedLevel >= openThreshold ? now + 180 : previous.holdUntil;
+  const isSpeaking = previous.isSpeaking
+    ? normalizedLevel >= closeThreshold || now < holdUntil
+    : normalizedLevel >= openThreshold;
+  return { isSpeaking, noiseFloor, holdUntil };
+};
+
 export const createSpeakingDetector = (
   stream: MediaStream,
   onSpeakingChange: (isSpeaking: boolean, level: number) => void,
@@ -17,11 +50,9 @@ export const createSpeakingDetector = (
 
   const data = new Uint8Array(analyser.frequencyBinCount);
   let frameId = 0;
-  let previousState = false;
+  let activityState = createSpeakingActivityState();
   let lastLevelPublishedAt = 0;
   let smoothedLevel = 0;
-  let noiseFloor = 0.008;
-  let speakingHoldUntil = 0;
 
   const tick = (): void => {
     analyser.getByteFrequencyData(data);
@@ -31,22 +62,13 @@ export const createSpeakingDetector = (
     const smoothing = visualLevel > smoothedLevel ? 0.48 : 0.12;
     smoothedLevel += (visualLevel - smoothedLevel) * smoothing;
     const now = performance.now();
-    if (!previousState && normalizedLevel < Math.max(0.08, noiseFloor * 3.5)) {
-      noiseFloor += (normalizedLevel - noiseFloor) * 0.018;
-    }
-    const openThreshold = Math.max(0.012, Math.min(0.14, noiseFloor * 2.8 + 0.006));
-    const closeThreshold = Math.max(0.009, openThreshold * 0.62);
-    if (normalizedLevel >= openThreshold) {
-      speakingHoldUntil = now + 180;
-    }
-    const isSpeaking = previousState
-      ? normalizedLevel >= closeThreshold || now < speakingHoldUntil
-      : normalizedLevel >= openThreshold;
+    const nextActivityState = advanceSpeakingActivity(activityState, normalizedLevel, now);
+    const isSpeaking = nextActivityState.isSpeaking;
 
-    if (isSpeaking !== previousState) {
-      previousState = isSpeaking;
+    if (isSpeaking !== activityState.isSpeaking) {
       onSpeakingChange(isSpeaking, normalizedLevel);
     }
+    activityState = nextActivityState;
     if (onLevel && now - lastLevelPublishedAt >= 66) {
       lastLevelPublishedAt = now;
       onLevel(smoothedLevel < 0.01 ? 0 : smoothedLevel);

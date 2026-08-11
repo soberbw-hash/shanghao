@@ -220,6 +220,7 @@ export const useRoomState = () => {
   const pushRoomEvent = useRoomStore((state) => state.pushRoomEvent);
   const clearRoomEvents = useRoomStore((state) => state.clearRoomEvents);
   const addChatMessage = useRoomStore((state) => state.addChatMessage);
+  const removeChatMessage = useRoomStore((state) => state.removeChatMessage);
   const mergeChatHistory = useRoomStore((state) => state.mergeChatHistory);
   const setCollectionItems = useRoomStore((state) => state.setCollectionItems);
   const mergeCollectionItems = useRoomStore((state) => state.mergeCollectionItems);
@@ -561,6 +562,7 @@ export const useRoomState = () => {
           playUiSound("receive-message");
         }
       },
+      onChatRecall: ({ messageId }) => removeChatMessage(messageId),
       onChatHistory: (messages) => mergeChatHistory(messages),
       onChannelCounts: setChannelCounts,
       onRoomCollection: (items, replace) => {
@@ -889,6 +891,13 @@ export const useRoomState = () => {
     await activeClient.sendKnock();
   };
 
+  const recallChatMessage = async (messageId: string) => {
+    if (!activeClient?.canSendChat()) {
+      throw new Error("signaling_not_connected");
+    }
+    await activeClient.recallChatMessage(messageId);
+  };
+
   const sendSceneReaction = async (
     targetPeerId: string,
     emoji: import("@private-voice/shared").SceneReaction["emoji"],
@@ -981,6 +990,7 @@ export const useRoomState = () => {
     setMicrophoneSendVolume,
     copyInviteLink,
     sendChatMessage,
+    recallChatMessage,
     sendKnock,
     sendSceneReaction,
     startScreenShare,

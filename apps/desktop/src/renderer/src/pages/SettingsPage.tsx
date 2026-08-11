@@ -74,6 +74,9 @@ export const SettingsPage = () => {
   const [relayDiagnostics, setRelayDiagnostics] = useState<RelayStatusSnapshot>();
   const [windowsDiagnostics, setWindowsDiagnostics] = useState<WindowsIntegrationStatus>();
   const [saveNotice, setSaveNotice] = useState("设置会自动保存");
+  const [expandedReleaseVersions, setExpandedReleaseVersions] = useState(
+    () => new Set(RELEASE_HISTORY.slice(0, 4).map((release) => release.version)),
+  );
   const pageRef = useRef<HTMLDivElement>(null);
   const reduceMotion = usePrefersReducedMotion();
   const isSettingsReady = Boolean(settings);
@@ -398,32 +401,53 @@ export const SettingsPage = () => {
             </Button>
           </div>
         </div>
-        <div className="mt-4 grid gap-3" aria-label="最近五个版本更新记录">
+        <div className="mt-4 grid gap-3" aria-label="最近十个版本更新记录">
           {RELEASE_HISTORY.map((release, index) => (
             <article
               key={release.version}
               className="rounded-[18px] border border-[#dbe8f7]/80 bg-white/58 px-4 py-3.5"
             >
-              <div className="flex flex-wrap items-baseline justify-between gap-2">
-                <div className="flex items-center gap-2">
-                  <strong className="text-sm text-[#26364d]">上号 {release.version}</strong>
-                  {index === 0 ? (
-                    <span className="rounded-full bg-[#e8f2ff] px-2 py-0.5 text-[11px] font-bold text-[#3974d8]">
-                      最新
-                    </span>
-                  ) : null}
+              <button
+                type="button"
+                className="w-full text-left"
+                aria-expanded={expandedReleaseVersions.has(release.version)}
+                onClick={() =>
+                  setExpandedReleaseVersions((current) => {
+                    const next = new Set(current);
+                    if (next.has(release.version)) next.delete(release.version);
+                    else next.add(release.version);
+                    return next;
+                  })
+                }
+              >
+                <div className="flex flex-wrap items-baseline justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <strong className="text-sm text-[#26364d]">上号 {release.version}</strong>
+                    {index === 0 ? (
+                      <span className="rounded-full bg-[#e8f2ff] px-2 py-0.5 text-[11px] font-bold text-[#3974d8]">
+                        最新
+                      </span>
+                    ) : null}
+                  </div>
+                  <time className="text-xs text-[#8a9ab0]">{release.date}</time>
                 </div>
-                <time className="text-xs text-[#8a9ab0]">{release.date}</time>
-              </div>
-              <div className="mt-1 text-sm font-semibold text-[#52647b]">{release.title}</div>
-              <ul className="mt-2 grid gap-1 text-[13px] leading-5 text-[#718096]">
-                {release.highlights.map((highlight) => (
-                  <li key={highlight} className="flex gap-2">
-                    <span className="mt-[8px] h-1 w-1 shrink-0 rounded-full bg-[#6da6ef]" />
-                    <span>{highlight}</span>
-                  </li>
-                ))}
-              </ul>
+                <div className="mt-1 text-sm font-semibold text-[#52647b]">
+                  {release.title}
+                  <span className="ml-2 text-xs font-normal text-[#8a9ab0]">
+                    {expandedReleaseVersions.has(release.version) ? "收起说明" : "查看详情"}
+                  </span>
+                </div>
+              </button>
+              {expandedReleaseVersions.has(release.version) ? (
+                <ul className="mt-2 grid gap-1 text-[13px] leading-5 text-[#718096]">
+                  {release.highlights.map((highlight) => (
+                    <li key={highlight} className="flex gap-2">
+                      <span className="mt-[8px] h-1 w-1 shrink-0 rounded-full bg-[#6da6ef]" />
+                      <span>{highlight}</span>
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
             </article>
           ))}
         </div>

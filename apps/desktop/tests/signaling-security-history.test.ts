@@ -436,6 +436,12 @@ test("chat history keeps 100 messages and survives a restart", async () => {
   }
   assert.equal(memoryStore.get("main").length, 100);
   assert.equal(memoryStore.get("main")[0]?.id, "message-1");
+  assert.equal(memoryStore.remove("main", "message-100", "different-peer"), false);
+  assert.equal(memoryStore.remove("main", "message-100", "peer-a"), true);
+  assert.equal(
+    memoryStore.get("main").some((message) => message.id === "message-100"),
+    false,
+  );
 
   const directory = await mkdtemp(path.join(os.tmpdir(), "shanghao-chat-"));
   const filePath = path.join(directory, "chat-history.json");

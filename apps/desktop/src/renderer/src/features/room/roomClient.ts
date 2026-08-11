@@ -6,6 +6,7 @@ import {
   type BuiltInAvatarId,
   type ChatImageAttachment,
   type ChatMessage,
+  type ChatRecallEvent,
   type MemberActivity,
   type MusicActivity,
   type RoomMember,
@@ -19,6 +20,7 @@ import type {
   AudioPathStateMessage,
   AvatarUpdateMessage,
   ChatMessage as SignalChatMessage,
+  ChatRecallMessage,
   ChatHistoryMessage,
   ChannelCountsMessage,
   RoomCollectionSnapshotMessage,
@@ -76,6 +78,7 @@ interface RoomClientOptions {
   onConnectionState: (state: RoomConnectionState) => void;
   onRemoteStream: (peerId: string, stream: MediaStream | undefined) => void;
   onChatMessage: (message: ChatMessage) => void;
+  onChatRecall: (event: ChatRecallEvent) => void;
   onChatHistory: (messages: ChatMessage[]) => void;
   onChannelCounts: (counts: ChannelCountsMessage["counts"]) => void;
   onRoomCollection: (items: RoomCollectionItem[], replace: boolean) => void;
@@ -549,6 +552,9 @@ export class RoomClient {
         return;
       case "chat_message":
         this.handleChatMessage(payload);
+        return;
+      case "chat_recall":
+        this.handleChatRecall(payload);
         return;
       case "chat_history":
         this.handleChatHistory(payload);
@@ -1039,6 +1045,15 @@ export class RoomClient {
     }
   }
 
+  async recallChatMessage(messageId: string): Promise<void> {
+    if (!this.canSendChat()) throw new Error("signaling_not_connected");
+    await this.send({
+      type: "chat_recall",
+      roomId: this.options.roomId,
+      messageId,
+    });
+  }
+
   async addRoomCollectionItem(
     kind: RoomCollectionItem["kind"],
     title: string,
@@ -1114,6 +1129,15 @@ export class RoomClient {
         kind: "chat" as const,
       })),
     );
+  }
+
+  private handleChatRecall(payload: ChatRecallMessage): void {
+    if (!payload.peerId || !payload.recalledAt) return;
+    this.options.onChatRecall({
+      messageId: payload.messageId,
+      peerId: payload.peerId,
+      recalledAt: payload.recalledAt,
+    });
   }
 
   private handleRoomCollection(payload: RoomCollectionSnapshotMessage): void {

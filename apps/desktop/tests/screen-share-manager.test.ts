@@ -120,6 +120,61 @@ test("screen share manager keeps video when system audio is disabled", async () 
   await manager.stopShare();
 });
 
+test("screen source enumeration can be cancelled without reviving stale picker state", async () => {
+  const environment = installCaptureEnvironment({ includeAudio: false });
+  let resolveSources:
+    | ((sources: Awaited<ReturnType<typeof window.desktopApi.screenCapture.listSources>>) => void)
+    | undefined;
+  const pendingSources = new Promise<
+    Awaited<ReturnType<typeof window.desktopApi.screenCapture.listSources>>
+  >((resolve) => {
+    resolveSources = resolve;
+  });
+  window.desktopApi.screenCapture.listSources = () => pendingSources;
+  const manager = new ScreenShareManager({
+    startPublishing: async () => undefined,
+    stopPublishing: async () => undefined,
+  });
+
+  const openRequest = manager.openSourcePicker();
+  await Promise.resolve();
+  assert.equal(manager.getSnapshot().status, "enumerating");
+  await manager.cancelSourcePicker();
+  resolveSources?.([
+    {
+      id: "screen:stale",
+      name: "过期显示器",
+      kind: "screen",
+      thumbnailDataUrl: "data:image/png;base64,AA==",
+    },
+  ]);
+
+  assert.deepEqual(await openRequest, []);
+  assert.equal(manager.getSnapshot().status, "idle");
+  assert.deepEqual(manager.getSnapshot().sources, []);
+  assert.deepEqual(environment.protection, [false, false]);
+});
+
+test("screen source enumeration can retry after a failure", async () => {
+  installCaptureEnvironment({ includeAudio: false });
+  const listSources = window.desktopApi.screenCapture.listSources;
+  let attempt = 0;
+  window.desktopApi.screenCapture.listSources = async () => {
+    attempt += 1;
+    if (attempt === 1) throw new Error("temporary_enumeration_failure");
+    return listSources();
+  };
+  const manager = new ScreenShareManager({
+    startPublishing: async () => undefined,
+    stopPublishing: async () => undefined,
+  });
+
+  await assert.rejects(manager.openSourcePicker(), /temporary_enumeration_failure/);
+  assert.equal(manager.getSnapshot().status, "failed");
+  assert.equal((await manager.openSourcePicker()).length, 1);
+  assert.equal(manager.getSnapshot().status, "source-ready");
+});
+
 test("viewer preload exposes only the screen-share viewer bridge", () => {
   const preload = readFileSync(
     new URL("../src/preload/screen-share-viewer.ts", import.meta.url),

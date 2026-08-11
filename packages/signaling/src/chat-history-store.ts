@@ -88,6 +88,15 @@ export class ChatHistoryStore {
     this.queueWrite();
   }
 
+  remove(roomId: string, messageId: string, peerId: string): boolean {
+    const messages = this.get(roomId);
+    const message = messages.find((candidate) => candidate.id === messageId);
+    if (!message || message.peerId !== peerId) return false;
+    this.history.rooms[roomId] = messages.filter((candidate) => candidate.id !== messageId);
+    this.queueWrite();
+    return true;
+  }
+
   async flush(): Promise<void> {
     await this.writeQueue;
   }

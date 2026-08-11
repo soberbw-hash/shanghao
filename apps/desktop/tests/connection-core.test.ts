@@ -246,7 +246,9 @@ test("installer and updater quit paths clean background surfaces", () => {
   assert.equal(installer.includes('$R7 == "0.1.45"'), true);
   assert.equal(installer.includes('$R7 == "0.1.48"'), true);
   assert.equal(installer.includes('DeleteRegKey ${ROOT_KEY} "${UNINSTALL_REGISTRY_KEY}"'), true);
-  assert.equal(installer.includes("taskkill.exe"), true);
+  assert.equal(installer.includes("taskkill.exe"), false);
+  assert.equal(installer.includes("killShangHaoProcessByInstallDir"), true);
+  assert.equal(installer.includes("ExecutablePath.StartsWith($$dir"), true);
 });
 
 test("room invite copies only the server address with a visible success toast", () => {

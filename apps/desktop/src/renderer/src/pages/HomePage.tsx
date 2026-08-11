@@ -20,6 +20,7 @@ import {
 
 import { Button } from "../components/base/Button";
 import { Input } from "../components/base/Input";
+import { Switch } from "../components/base/Switch";
 import { BrandMark } from "../components/brand/BrandMark";
 import { CharacterPicker } from "../components/profile/AvatarPicker";
 import { StartupSplashPage } from "../components/status/StartupSplashPage";
@@ -417,7 +418,10 @@ export const HomePage = () => {
     </div>
   );
   const microphoneDeviceControl = (
-    <div className="entry-audio-devices entry-audio-devices-single" aria-label="进入频道麦克风">
+    <div
+      className="entry-audio-devices entry-audio-devices-single grid gap-2"
+      aria-label="进入频道麦克风"
+    >
       <label>
         <Mic className="h-4 w-4" />
         <span>麦克风</span>
@@ -437,6 +441,16 @@ export const HomePage = () => {
         </select>
         <i className={hasSelectedInput ? "is-ready" : "is-missing"} aria-hidden="true" />
       </label>
+      <div className="flex items-center justify-between gap-4 rounded-[12px] border border-[#e4ebf4] bg-white/70 px-3 py-2">
+        <span>
+          <span className="block text-xs font-semibold text-[#52657d]">自动增益</span>
+          <span className="mt-0.5 block text-[11px] text-[#8a9ab0]">自动平衡说话音量</span>
+        </span>
+        <Switch
+          isChecked={settings.isAutoGainControlEnabled}
+          onChange={(isAutoGainControlEnabled) => void saveSettings({ isAutoGainControlEnabled })}
+        />
+      </div>
     </div>
   );
 

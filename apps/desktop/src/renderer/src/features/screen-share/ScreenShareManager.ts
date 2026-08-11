@@ -65,18 +65,32 @@ export class ScreenShareManager {
       await window.desktopApi.screenCapture.setContentProtection(false);
       const sources = await window.desktopApi.screenCapture.listSources();
       if (operationId !== this.operationId || this.isDisposed) {
-        throw new Error("screen_source_superseded");
+        return [];
       }
       if (sources.length === 0) throw new Error("screen_source_missing");
       this.patch({ status: "source-ready", sources });
       return sources;
     } catch (error) {
-      if (operationId === this.operationId && !this.isDisposed) {
-        this.patch({ status: "failed", error: this.errorMessage(error) });
-        await this.log("error", "Failed to enumerate screen capture sources", error);
+      if (operationId !== this.operationId || this.isDisposed) {
+        return [];
       }
+      this.patch({ status: "failed", error: this.errorMessage(error) });
+      await this.log("error", "Failed to enumerate screen capture sources", error);
       throw error;
     }
+  }
+
+  async cancelSourcePicker(): Promise<void> {
+    if (!["enumerating", "source-ready", "failed"].includes(this.snapshot.status)) return;
+    this.operationId += 1;
+    this.patch({
+      status: "idle",
+      sources: [],
+      selectedSourceId: undefined,
+      error: undefined,
+    });
+    await window.desktopApi.screenCapture.setContentProtection(false).catch(() => undefined);
+    await this.log("info", "Screen source picker cancelled");
   }
 
   async startShare(request: StartScreenShareRequest): Promise<MediaStream> {
@@ -159,24 +173,33 @@ export class ScreenShareManager {
     const operationId = ++this.operationId;
     const previousStream = this.snapshot.localStream;
     if (!previousStream && this.snapshot.status === "idle") return;
-    this.patch({ status: "stopping" });
+
+    previousStream?.getTracks().forEach((track) => track.stop());
+    this.closeDetachedViewer();
+    if (operationId === this.operationId && !this.isDisposed) {
+      this.patch({
+        status: "idle",
+        sources: [],
+        localStream: undefined,
+        hasSystemAudio: false,
+        selectedSourceId: undefined,
+        displayMode: "inline",
+        detachedItemId: undefined,
+        error: undefined,
+      });
+    }
+
     try {
       await this.options.stopPublishing();
-    } finally {
-      previousStream?.getTracks().forEach((track) => track.stop());
-      await window.desktopApi.screenCapture.setContentProtection(false).catch(() => undefined);
-      this.closeDetachedViewer();
-      if (operationId === this.operationId && !this.isDisposed) {
-        this.patch({
-          status: "idle",
-          localStream: undefined,
-          hasSystemAudio: false,
-          selectedSourceId: undefined,
-          displayMode: "inline",
-        });
-      }
-      await this.log("info", "Screen share stopped", { reason });
+    } catch (error) {
+      await this.log("warn", "Failed to stop publishing screen share cleanly", {
+        reason,
+        error: this.errorMessage(error),
+      });
     }
+
+    await window.desktopApi.screenCapture.setContentProtection(false).catch(() => undefined);
+    await this.log("info", "Screen share stopped", { reason });
   }
 
   async openDetachedViewer(item: ScreenShareItem): Promise<void> {

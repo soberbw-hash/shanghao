@@ -8,7 +8,7 @@ import { APP_BUILD_NUMBER, APP_PROTOCOL_VERSION } from "@private-voice/shared";
 const root = path.resolve(process.cwd(), "../..");
 const read = (relativePath: string) => readFileSync(path.join(root, relativePath), "utf8");
 
-test("v2.4.0 release metadata and safeguards are complete", () => {
+test("v2.5.0 release metadata and safeguards are complete", () => {
   const rootPackage = JSON.parse(read("package.json")) as { version: string };
   const desktopPackage = JSON.parse(read("apps/desktop/package.json")) as { version: string };
   const release = read(".github/workflows/release.yml");
@@ -16,12 +16,12 @@ test("v2.4.0 release metadata and safeguards are complete", () => {
   const changelog = read("CHANGELOG.md");
   const architecture = read("docs/architecture.md");
 
-  assert.equal(rootPackage.version, "2.4.0");
-  assert.equal(desktopPackage.version, "2.4.0");
-  assert.equal(APP_PROTOCOL_VERSION, "6");
-  assert.equal(APP_BUILD_NUMBER, "2026.08.08.1");
-  assert.equal(existsSync(path.join(root, "docs/release-notes/v2.4.0.md")), true);
-  assert.equal(changelog.includes("## 2.4.0"), true);
+  assert.equal(rootPackage.version, "2.5.0");
+  assert.equal(desktopPackage.version, "2.5.0");
+  assert.equal(APP_PROTOCOL_VERSION, "7");
+  assert.equal(APP_BUILD_NUMBER, "2026.08.11.1");
+  assert.equal(existsSync(path.join(root, "docs/release-notes/v2.5.0.md")), true);
+  assert.equal(changelog.includes("## 2.5.0"), true);
   assert.equal(architecture.includes("ScreenShareManager"), true);
   assert.equal(desktopBuilder.includes("mac:"), false);
   assert.equal(desktopBuilder.includes("shanghao-icon.icns"), false);

@@ -869,6 +869,71 @@ test("fixed channel broadcasts text chat and knock events", async () => {
   }
 });
 
+test("chat recall is authorized by the server and synchronized to every client", async () => {
+  const server = new SignalingServer({ roomName: "固定频道" });
+  const port = await server.listen();
+  const url = `ws://127.0.0.1:${port}`;
+  const sender = await openSocket(url);
+  const receiver = await openSocket(url);
+
+  try {
+    joinChannel(sender, "recall-sender", "小狐狸");
+    joinChannel(receiver, "recall-receiver", "小熊");
+    await waitForMessage(
+      receiver,
+      (payload): payload is { members: unknown[] } =>
+        typeof payload === "object" &&
+        payload !== null &&
+        (payload as { type?: string }).type === "channel_snapshot" &&
+        (payload as { members?: unknown[] }).members?.length === 2,
+    );
+
+    const senderMessage = waitForMessage(
+      sender,
+      (payload): payload is { type: "chat_message"; id: string; content: string } =>
+        typeof payload === "object" &&
+        payload !== null &&
+        (payload as { type?: string }).type === "chat_message" &&
+        (payload as { content?: string }).content === "需要撤回",
+    );
+    const receiverMessage = waitForMessage(
+      receiver,
+      (payload): payload is { type: "chat_message"; id: string; content: string } =>
+        typeof payload === "object" &&
+        payload !== null &&
+        (payload as { type?: string }).type === "chat_message" &&
+        (payload as { content?: string }).content === "需要撤回",
+    );
+    sender.send(JSON.stringify({ type: "chat_message", roomId: "main", content: "需要撤回" }));
+    const [ownMessage, remoteMessage] = await Promise.all([senderMessage, receiverMessage]);
+    assert.equal(ownMessage.id, remoteMessage.id);
+
+    const senderRecall = waitForMessage(
+      sender,
+      (payload): payload is { type: "chat_recall"; messageId: string; peerId: string } =>
+        typeof payload === "object" &&
+        payload !== null &&
+        (payload as { type?: string }).type === "chat_recall",
+    );
+    const receiverRecall = waitForMessage(
+      receiver,
+      (payload): payload is { type: "chat_recall"; messageId: string; peerId: string } =>
+        typeof payload === "object" &&
+        payload !== null &&
+        (payload as { type?: string }).type === "chat_recall",
+    );
+    sender.send(JSON.stringify({ type: "chat_recall", roomId: "main", messageId: ownMessage.id }));
+    const [ownRecall, remoteRecall] = await Promise.all([senderRecall, receiverRecall]);
+    assert.equal(ownRecall.messageId, ownMessage.id);
+    assert.deepEqual(remoteRecall, ownRecall);
+    assert.equal(ownRecall.peerId, "recall-sender");
+  } finally {
+    sender.close();
+    receiver.close();
+    await server.close();
+  }
+});
+
 test("fixed channel relays fallback audio chunks to other peers only", async () => {
   const server = new SignalingServer({ roomName: "固定频道" });
   const port = await server.listen();

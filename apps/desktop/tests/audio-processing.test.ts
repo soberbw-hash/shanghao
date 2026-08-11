@@ -14,6 +14,10 @@ import {
 } from "../src/renderer/src/features/audio/memberVolume";
 import { hasPlayableAudioTrack } from "../src/renderer/src/features/audio/remoteAudioTrack";
 import { resolveRemoteAudioPath } from "../src/renderer/src/features/audio/remoteAudioPathSelection";
+import {
+  advanceSpeakingActivity,
+  createSpeakingActivityState,
+} from "../../../packages/webrtc/src/speaking";
 
 const root = path.resolve(process.cwd(), "../..");
 
@@ -25,6 +29,19 @@ test("fourth-order low cut suppresses rumble without removing speech", () => {
   assert.ok(fourthOrderHighPassMagnitude(30, 90) < 0.02);
   assert.ok(fourthOrderHighPassMagnitude(90, 90) > 0.7);
   assert.ok(fourthOrderHighPassMagnitude(1_000, 90) > 0.999);
+});
+
+test("speaking activity learns steady background noise and still opens for real voice", () => {
+  let state = createSpeakingActivityState();
+  for (let now = 0; now <= 12_000; now += 16) {
+    state = advanceSpeakingActivity(state, 0.035, now);
+  }
+  assert.equal(state.isSpeaking, false);
+
+  state = advanceSpeakingActivity(state, 0.12, 12_016);
+  assert.equal(state.isSpeaking, true);
+  state = advanceSpeakingActivity(state, 0, 12_250);
+  assert.equal(state.isSpeaking, false);
 });
 
 test("DeepFilterNet is the only suppression engine and keeps raw audio on model failure", () => {

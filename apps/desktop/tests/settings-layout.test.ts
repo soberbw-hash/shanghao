@@ -3,6 +3,8 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import test from "node:test";
 
+import { RELEASE_HISTORY } from "../src/renderer/src/components/status/releaseHistory";
+
 const audioCardPath = path.resolve(
   process.cwd(),
   "src/renderer/src/components/settings/AudioSettingsCard.tsx",
@@ -80,4 +82,17 @@ test("settings keep only everyday voice controls and remove advanced connection"
   for (const diagnostic of ["Relay 延迟", "TURN", "WebRTC", "当前语音路径", "丢包", "抖动"]) {
     assert.equal(diagnosticsSource.includes(diagnostic), true);
   }
+});
+
+test("auto gain is shared by home and settings while release history keeps ten entries", () => {
+  const homeSource = readFileSync(homePagePath, "utf8");
+  const settingsSource = readFileSync(settingsPagePath, "utf8");
+
+  assert.equal(homeSource.includes("settings.isAutoGainControlEnabled"), true);
+  assert.equal(homeSource.includes("saveSettings({ isAutoGainControlEnabled })"), true);
+  assert.equal(readFileSync(audioCardPath, "utf8").includes("isAutoGainControlEnabled"), true);
+  assert.equal(RELEASE_HISTORY.length, 10);
+  assert.equal(RELEASE_HISTORY[0]?.version, "2.5.0");
+  assert.equal(settingsSource.includes("RELEASE_HISTORY.slice(0, 4)"), true);
+  assert.equal(settingsSource.includes("查看详情"), true);
 });

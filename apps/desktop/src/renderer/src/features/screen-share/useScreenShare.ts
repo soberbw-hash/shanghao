@@ -54,6 +54,7 @@ export const useScreenShare = ({
   );
 
   const openSourcePicker = useCallback(() => manager.openSourcePicker(), [manager]);
+  const cancelSourcePicker = useCallback(() => manager.cancelSourcePicker(), [manager]);
   const startShare = useCallback(
     (request: StartScreenShareRequest) => manager.startShare(request),
     [manager],
@@ -77,6 +78,7 @@ export const useScreenShare = ({
   return {
     ...snapshot,
     openSourcePicker,
+    cancelSourcePicker,
     startShare,
     stopShare,
     shutdown,

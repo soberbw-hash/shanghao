@@ -55,6 +55,7 @@ interface RoomStoreState {
   setRemoteScreenFrame: (peerId: string, frame?: RemoteScreenFrame) => void;
   setConnectionHealth: (health: Partial<ConnectionHealth>) => void;
   addChatMessage: (message: ChatMessage) => void;
+  removeChatMessage: (messageId: string) => void;
   mergeChatHistory: (messages: ChatMessage[]) => void;
   setCollectionItems: (items: RoomCollectionItem[]) => void;
   mergeCollectionItems: (items: RoomCollectionItem[]) => void;
@@ -284,6 +285,10 @@ export const useRoomStore = create<RoomStoreState>((set) => ({
           .slice(-100),
       };
     }),
+  removeChatMessage: (messageId) =>
+    set((state) => ({
+      chatMessages: state.chatMessages.filter((message) => message.id !== messageId),
+    })),
   mergeChatHistory: (messages) =>
     set((state) => {
       const byId = new Map(state.chatMessages.map((item) => [item.id, item]));

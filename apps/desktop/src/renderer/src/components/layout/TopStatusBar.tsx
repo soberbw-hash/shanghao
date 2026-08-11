@@ -1,12 +1,6 @@
 import { Coffee, Users, Wifi } from "lucide-react";
-import { motion } from "framer-motion";
 
-import {
-  APPLE_MOTION_DURATION,
-  APPLE_MOTION_EASE,
-  MemberSpeakingState,
-  RoomConnectionState,
-} from "@private-voice/shared";
+import { RoomConnectionState } from "@private-voice/shared";
 
 import { useAppStore } from "../../store/appStore";
 import { summarizeConnectionHealth } from "../../features/network/networkDiagnostics";
@@ -70,10 +64,6 @@ export const TopStatusBar = ({
   const setSettingsReturnTo = useAppStore((state) => state.setSettingsReturnTo);
   const room = useRoomStore((state) => state.room);
   const connectionHealth = useRoomStore((state) => state.connectionHealth);
-  const speaking = room.members.find(
-    (member) => !member.isEmptySlot && member.speakingState === MemberSpeakingState.Speaking,
-  );
-
   const openSettings = () => {
     setSettingsReturnTo("room");
     navigate("settings");
@@ -113,15 +103,9 @@ export const TopStatusBar = ({
             })}
           </div>
         </div>
-        <motion.div
-          key={speaking?.id || statusCopy(room.connectionState)}
-          initial={{ opacity: 0, y: 2 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: APPLE_MOTION_DURATION.feedback, ease: APPLE_MOTION_EASE }}
-          className="topbar-channel-copy mt-0.5 truncate text-[11px] text-[#8494a7]"
-        >
-          {speaking ? `${speaking.nickname} 说话中` : statusCopy(room.connectionState)}
-        </motion.div>
+        <div className="topbar-channel-copy mt-0.5 truncate text-[11px] text-[#8494a7]">
+          {statusCopy(room.connectionState)}
+        </div>
       </div>
       <div className="topbar-controls">
         <Button

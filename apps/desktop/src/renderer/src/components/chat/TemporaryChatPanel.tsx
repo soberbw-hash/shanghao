@@ -1,6 +1,6 @@
 import { Fragment, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { LoaderCircle, Send, X } from "lucide-react";
+import { LoaderCircle, RotateCcw, Send, X } from "lucide-react";
 import { gsap } from "gsap";
 
 import type { ChatMessage } from "@private-voice/shared";
@@ -60,6 +60,7 @@ export const TemporaryChatPanel = ({
   onSend,
   onQuickSend,
   onSendImage,
+  onRecall,
   className = "",
   emptyMessage = "频道里还很安静，先说一句吧。",
   canSend = false,
@@ -72,6 +73,7 @@ export const TemporaryChatPanel = ({
   onSend: () => void;
   onQuickSend?: (message: string) => void;
   onSendImage?: (file: File) => Promise<void>;
+  onRecall?: (messageId: string) => Promise<void>;
   className?: string;
   emptyMessage?: string;
   canSend?: boolean;
@@ -356,8 +358,21 @@ export const TemporaryChatPanel = ({
                           className="chat-message-avatar mt-0.5 h-7 w-7 shrink-0 rounded-[10px]"
                         />
                         <div className="chat-message-copy flex min-w-0 max-w-[82%] flex-col items-start">
-                          <span className="chat-message-name mb-0.5 px-1 text-[12px] font-medium leading-4 text-[#718096]">
-                            {message.nickname}
+                          <span className="chat-message-meta mb-0.5 flex min-w-0 items-center gap-2 px-1">
+                            <span className="chat-message-name min-w-0 truncate text-[12px] font-medium leading-4 text-[#718096]">
+                              {message.nickname}
+                            </span>
+                            {message.isLocal && onRecall ? (
+                              <button
+                                type="button"
+                                className="chat-message-recall-button inline-flex items-center gap-1 text-[11px] text-[#8a9ab0] hover:text-[#3974d8]"
+                                onClick={() => void onRecall(message.id)}
+                                title="撤回这条消息"
+                              >
+                                <RotateCcw className="h-3 w-3" />
+                                撤回
+                              </button>
+                            ) : null}
                           </span>
                           {message.image ? (
                             <button
