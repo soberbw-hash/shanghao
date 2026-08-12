@@ -17,6 +17,6 @@
   "devDependencies": {
     "@types/ws": "^8.5.15",
     "tsup": "^8.4.0",
-    "typescript": "^5.8.3"
+    "typescript": "^7.0.2"
   }
 }
