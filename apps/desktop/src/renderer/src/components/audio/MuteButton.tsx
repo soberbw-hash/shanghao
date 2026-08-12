@@ -1,7 +1,7 @@
 import { cn } from "@private-voice/ui";
+import { Mic, MicOff } from "lucide-react";
 
 import { ToggleButton } from "../base/ToggleButton";
-import { AnimatedControlIcon } from "../icons/AnimatedControlIcon";
 
 export const MuteButton = ({
   isMuted,
@@ -23,7 +23,11 @@ export const MuteButton = ({
     data-ui-sound="handled"
     onClick={onClick}
   >
-    <AnimatedControlIcon name="mic" muted={isMuted} active={!isMuted} className="h-4 w-4" />
+    {isMuted ? (
+      <MicOff className="voice-primary-icon" aria-hidden="true" />
+    ) : (
+      <Mic className="voice-primary-icon" aria-hidden="true" />
+    )}
     <span className="voice-action-label">{isMuted ? "已静音" : "麦克风"}</span>
   </ToggleButton>
 );

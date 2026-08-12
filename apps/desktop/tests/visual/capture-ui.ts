@@ -5,12 +5,17 @@ import type { BrowserWindow } from "electron";
 
 type CaptureMode =
   | "home"
+  | "home-mic"
   | "room"
+  | "room-mic"
+  | "member-volume"
+  | "recording-stop"
   | "room-seat"
   | "room-away"
   | "screen-share"
   | "screen-share-expanded"
-  | "settings";
+  | "settings"
+  | "settings-detail";
 
 interface CaptureUiOptions {
   mode: CaptureMode;
@@ -25,12 +30,21 @@ const clickButtonByLabel = async (window: BrowserWindow, label: string): Promise
   return window.webContents.executeJavaScript(
     `
       (() => {
-        const buttons = Array.from(document.querySelectorAll("button"));
-        const target = buttons.find((button) =>
-          (button.textContent || "").replace(/\\s+/g, " ").includes(${JSON.stringify(label)}) ||
-          (button.getAttribute("aria-label") || "").includes(${JSON.stringify(label)}),
-        );
-        if (target instanceof HTMLButtonElement) {
+        const buttons = Array.from(document.querySelectorAll("button, [role='button']"));
+        const readText = (button) => (button.textContent || "").replace(/\\s+/g, " ").trim();
+        const readLabel = (button) => (button.getAttribute("aria-label") || "").trim();
+        const target =
+          buttons.find(
+            (button) =>
+              readText(button) === ${JSON.stringify(label)} ||
+              readLabel(button) === ${JSON.stringify(label)},
+          ) ||
+          buttons.find(
+            (button) =>
+              readText(button).includes(${JSON.stringify(label)}) ||
+              readLabel(button).includes(${JSON.stringify(label)}),
+          );
+        if (target instanceof HTMLElement) {
           target.click();
           return true;
         }
@@ -39,6 +53,55 @@ const clickButtonByLabel = async (window: BrowserWindow, label: string): Promise
     `,
     true,
   );
+};
+
+const clickButtonByLabelWithMouse = async (
+  window: BrowserWindow,
+  label: string,
+): Promise<boolean> => {
+  const point = (await window.webContents.executeJavaScript(
+    `
+      (() => {
+        const buttons = Array.from(document.querySelectorAll("button, [role='button']"));
+        const readText = (button) => (button.textContent || "").replace(/\\s+/g, " ").trim();
+        const readLabel = (button) => (button.getAttribute("aria-label") || "").trim();
+        const target =
+          buttons.find(
+            (button) =>
+              readText(button) === ${JSON.stringify(label)} ||
+              readLabel(button) === ${JSON.stringify(label)},
+          ) ||
+          buttons.find(
+            (button) =>
+              readText(button).includes(${JSON.stringify(label)}) ||
+              readLabel(button).includes(${JSON.stringify(label)}),
+          );
+        if (!(target instanceof HTMLElement)) return null;
+        const bounds = target.getBoundingClientRect();
+        return {
+          x: Math.round(bounds.left + bounds.width / 2),
+          y: Math.round(bounds.top + bounds.height / 2),
+        };
+      })();
+    `,
+    true,
+  )) as { x: number; y: number } | null;
+  if (!point) return false;
+
+  window.webContents.sendInputEvent({ type: "mouseMove", ...point });
+  window.webContents.sendInputEvent({
+    type: "mouseDown",
+    button: "left",
+    clickCount: 1,
+    ...point,
+  });
+  window.webContents.sendInputEvent({
+    type: "mouseUp",
+    button: "left",
+    clickCount: 1,
+    ...point,
+  });
+  return true;
 };
 
 const prepareProfileForCapture = async (window: BrowserWindow): Promise<void> => {
@@ -165,19 +228,26 @@ export const captureUi = async (
   }
 
   await sleep(5_200);
-  if (options.mode !== "home" && options.mode !== "settings") {
+  const dismissedReleaseNotes = await clickButtonByLabel(window, "知道了，开始上号");
+  if (dismissedReleaseNotes) await sleep(350);
+  if (options.mode !== "home" && options.mode !== "home-mic") {
     await prepareProfileForCapture(window);
     await sleep(300);
-    const usedQuickEntry = await clickButtonByLabel(window, "上号");
-    if (!usedQuickEntry) {
-      await clickButtonByLabel(window, "进入频道");
+    const usedChannelEntry = await clickButtonByLabel(window, "进入频道");
+    if (!usedChannelEntry) {
+      await clickButtonByLabel(window, "上号");
     }
     const needsSettledRoom = [
       "room",
+      "room-mic",
+      "member-volume",
+      "recording-stop",
       "room-seat",
       "room-away",
       "screen-share",
       "screen-share-expanded",
+      "settings",
+      "settings-detail",
     ].includes(options.mode);
     if (needsSettledRoom) {
       await waitForLocalSceneCharacter(window, "idle", 5_500);
@@ -187,7 +257,7 @@ export const captureUi = async (
     }
   }
 
-  if (options.mode === "settings") {
+  if (options.mode === "settings" || options.mode === "settings-detail") {
     const isAlreadyOpen = await waitForVisibleSelector(window, ".settings-page-header", 3_000);
     const openedSettings = isAlreadyOpen || (await clickButtonByLabel(window, "设置"));
     if (!openedSettings || !(await waitForVisibleSelector(window, ".settings-page-header"))) {
@@ -199,7 +269,45 @@ export const captureUi = async (
         })}`,
       );
     }
+    await clickButtonByLabel(window, "更新");
     await sleep(300);
+    if (options.mode === "settings-detail") {
+      await clickButtonByLabel(window, "查看每一项具体改动");
+      await sleep(300);
+    }
+  }
+
+  if (options.mode === "home-mic") {
+    await clickButtonByLabel(window, "麦克风正常");
+    await sleep(250);
+  }
+
+  if (options.mode === "room-mic") {
+    await clickButtonByLabel(window, "打开麦克风设备");
+    await sleep(250);
+  }
+
+  if (options.mode === "member-volume") {
+    const clicked = await clickButtonByLabelWithMouse(window, "的本地音量");
+    const opened =
+      clicked && (await waitForVisibleSelector(window, ".member-audio-popover", 1_500));
+    if (!opened) {
+      const failedImage = await window.capturePage();
+      await mkdir(dirname(options.outputPath), { recursive: true });
+      await writeFile(options.outputPath, failedImage.toPNG());
+      throw new Error("真实鼠标点击好友角色后，本地音量窗口没有打开");
+    }
+    await sleep(250);
+  }
+
+  if (options.mode === "recording-stop") {
+    const stoppedAutomaticRecording = await clickButtonByLabel(window, "录音中");
+    if (!stoppedAutomaticRecording) {
+      await clickButtonByLabel(window, "录音");
+      await sleep(300);
+      await clickButtonByLabel(window, "录音中");
+    }
+    await sleep(250);
   }
 
   if (options.mode === "room-seat") {

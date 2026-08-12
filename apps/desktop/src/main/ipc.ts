@@ -1,13 +1,17 @@
 import {
   app,
   clipboard,
+  dialog,
   ipcMain,
+  net,
+  nativeImage,
   Notification,
   powerMonitor,
   shell,
   type BrowserWindow,
+  type OpenDialogOptions,
 } from "electron";
-import { writeFile } from "node:fs/promises";
+import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import {
@@ -16,13 +20,16 @@ import {
   APP_PROTOCOL_VERSION,
   IPC_CHANNELS,
   type AppSettings,
+  type ChatMessage,
   type DeepFilterAssets,
+  type DeepLinkInvite,
   type DiagnosticsSnapshot,
   type GameDetectionSnapshot,
   type OverlayState,
   type RelayStatusSnapshot,
   type RecordingExportPayload,
   type RecordingExportResponse,
+  type RecordingLibrarySnapshot,
   type RecordingMarker,
   type RendererLogPayload,
   type RuntimeInfo,
@@ -38,6 +45,8 @@ import { DiagnosticsService } from "./diagnostics";
 import { readDeepFilterAssets } from "./deepfilter-assets";
 import { clearAvatarImage, pickAvatarImage, readAvatarImage } from "./profile-media";
 import { exportRecordingFromMain } from "./recording-main";
+import { resolveRecordingDirectory } from "./recording-path";
+import { deleteRecording, enforceRecordingQuota, readRecordingLibrary } from "./recording-library";
 import { readRelayStatus } from "./relay-status";
 import { sendToWindow } from "./safe-web-contents";
 import { SettingsStore } from "./settings-store";
@@ -47,6 +56,7 @@ import { UpdateService } from "./updates";
 import { OverlayWindowController } from "./overlay-window";
 import { GameDetectionController } from "./game-detection";
 import { applyLaunchOnStartup } from "./launch-on-startup";
+import { ChatHistoryStore } from "./chat-history-store";
 import { readWindowsElevationStatus } from "./windows-elevation";
 import {
   readWindowsIntegrationStatus,
@@ -72,6 +82,7 @@ interface MainProcessServices {
   updates: UpdateService;
   overlay: OverlayWindowController;
   gameDetection: GameDetectionController;
+  consumePendingDeepLink: () => DeepLinkInvite | undefined;
 }
 
 const requireString = (value: unknown, maximumLength: number, label: string): string => {
@@ -83,6 +94,55 @@ const requireString = (value: unknown, maximumLength: number, label: string): st
 
 let attentionResetTimer: NodeJS.Timeout | undefined;
 let restoreAlwaysOnTop = false;
+const linkPreviewIconCache = new Map<string, string | null>();
+
+const readLinkPreviewIcon = async (rawUrl: string): Promise<string | undefined> => {
+  const url = new URL(rawUrl);
+  if (url.protocol !== "http:" && url.protocol !== "https:") {
+    throw new Error("link_preview_url_protocol_not_allowed");
+  }
+  if (url.username || url.password) throw new Error("link_preview_url_credentials_not_allowed");
+
+  const cacheKey = url.origin;
+  if (linkPreviewIconCache.has(cacheKey)) {
+    return linkPreviewIconCache.get(cacheKey) ?? undefined;
+  }
+
+  try {
+    const faviconUrl = `https://www.google.com/s2/favicons?domain_url=${encodeURIComponent(
+      url.origin,
+    )}&sz=128`;
+    const response = await net.fetch(faviconUrl, {
+      headers: { Accept: "image/avif,image/webp,image/png,image/*" },
+      signal: AbortSignal.timeout(5_000),
+    });
+    const contentType = response.headers.get("content-type")?.split(";")[0]?.trim();
+    const contentLength = Number(response.headers.get("content-length") ?? 0);
+    if (
+      !response.ok ||
+      !contentType?.startsWith("image/") ||
+      (contentLength > 0 && contentLength > 256 * 1024)
+    ) {
+      linkPreviewIconCache.set(cacheKey, null);
+      return undefined;
+    }
+    const bytes = Buffer.from(await response.arrayBuffer());
+    if (bytes.byteLength === 0 || bytes.byteLength > 256 * 1024) {
+      linkPreviewIconCache.set(cacheKey, null);
+      return undefined;
+    }
+    const dataUrl = `data:${contentType};base64,${bytes.toString("base64")}`;
+    if (linkPreviewIconCache.size >= 128) {
+      const oldestKey = linkPreviewIconCache.keys().next().value;
+      if (oldestKey) linkPreviewIconCache.delete(oldestKey);
+    }
+    linkPreviewIconCache.set(cacheKey, dataUrl);
+    return dataUrl;
+  } catch {
+    linkPreviewIconCache.set(cacheKey, null);
+    return undefined;
+  }
+};
 
 const bringWindowToFront = (mainWindow: BrowserWindow | null, attention = false): void => {
   if (!mainWindow || mainWindow.isDestroyed()) return;
@@ -121,6 +181,20 @@ const sanitizeServerUrl = (value?: string): string | undefined => {
   }
 };
 
+const createChatHistoryRoomKey = (serverUrl: unknown, channelId: unknown): string => {
+  const rawServerUrl = requireString(serverUrl, 2_048, "chat_history_server_url");
+  const safeChannelId = requireString(channelId, 64, "chat_history_channel_id");
+  const url = new URL(rawServerUrl);
+  if (url.protocol !== "ws:" && url.protocol !== "wss:") {
+    throw new Error("invalid_chat_history_server_protocol");
+  }
+  url.username = "";
+  url.password = "";
+  url.search = "";
+  url.hash = "";
+  return `${url.toString()}|${safeChannelId}`;
+};
+
 export const registerIpcHandlers = ({
   getMainWindow,
   settingsStore,
@@ -130,7 +204,9 @@ export const registerIpcHandlers = ({
   updates,
   overlay,
   gameDetection,
+  consumePendingDeepLink,
 }: MainProcessServices): void => {
+  const chatHistoryStore = new ChatHistoryStore(app.getPath("userData"));
   signalingClient.on("event", (payload: SignalingEventPayload) => {
     sendToWindow(getMainWindow(), IPC_CHANNELS.signaling.event, payload);
   });
@@ -155,8 +231,14 @@ export const registerIpcHandlers = ({
     };
   });
 
-  ipcMain.handle(IPC_CHANNELS.app.getSystemIdleSeconds, async (): Promise<number> =>
-    Math.max(0, powerMonitor.getSystemIdleTime()),
+  ipcMain.handle(IPC_CHANNELS.app.getSystemIdleSeconds, async (): Promise<number> => {
+    // Deterministic visual captures should exercise the seated room state even
+    // when the development machine itself has been idle for over 30 minutes.
+    if (process.env.SHANGHAO_CAPTURE_PATH) return 0;
+    return Math.max(0, powerMonitor.getSystemIdleTime());
+  });
+  ipcMain.handle(IPC_CHANNELS.app.consumeDeepLink, async (): Promise<DeepLinkInvite | undefined> =>
+    consumePendingDeepLink(),
   );
 
   ipcMain.handle(
@@ -192,6 +274,27 @@ export const registerIpcHandlers = ({
       notification.show();
     },
   );
+  ipcMain.handle(
+    IPC_CHANNELS.app.readChatHistory,
+    async (_event, payload: { serverUrl?: unknown; channelId?: unknown }): Promise<ChatMessage[]> =>
+      chatHistoryStore.read(createChatHistoryRoomKey(payload?.serverUrl, payload?.channelId)),
+  );
+  ipcMain.handle(
+    IPC_CHANNELS.app.saveChatHistory,
+    async (
+      _event,
+      payload: { serverUrl?: unknown; channelId?: unknown; messages?: unknown },
+    ): Promise<void> => {
+      if (!Array.isArray(payload?.messages)) throw new Error("invalid_chat_history_messages");
+      if (JSON.stringify(payload.messages).length > 28 * 1024 * 1024) {
+        throw new Error("chat_history_payload_too_large");
+      }
+      await chatHistoryStore.save(
+        createChatHistoryRoomKey(payload.serverUrl, payload.channelId),
+        payload.messages as ChatMessage[],
+      );
+    },
+  );
   ipcMain.handle(IPC_CHANNELS.app.openExternal, async (_event, rawUrl: string): Promise<void> => {
     requireString(rawUrl, 2_048, "external_url");
     const url = new URL(rawUrl);
@@ -201,6 +304,13 @@ export const registerIpcHandlers = ({
     if (url.username || url.password) throw new Error("external_url_credentials_not_allowed");
     await shell.openExternal(url.toString());
   });
+  ipcMain.handle(
+    IPC_CHANNELS.app.getLinkPreviewIcon,
+    async (_event, rawUrl: string): Promise<string | undefined> => {
+      requireString(rawUrl, 2_048, "link_preview_url");
+      return readLinkPreviewIcon(rawUrl);
+    },
+  );
   ipcMain.handle(
     IPC_CHANNELS.shortcuts.configureRecordingMarker,
     async (_event, accelerator: string): Promise<boolean> =>
@@ -217,6 +327,18 @@ export const registerIpcHandlers = ({
       context: { length: text.length },
     });
   });
+  ipcMain.handle(
+    IPC_CHANNELS.clipboard.writeImage,
+    async (_event, dataUrl: string): Promise<void> => {
+      requireString(dataUrl, 12 * 1024 * 1024, "clipboard_image");
+      if (!/^data:image\/(?:png|jpeg|webp);base64,/.test(dataUrl)) {
+        throw new Error("invalid_clipboard_image");
+      }
+      const image = nativeImage.createFromDataURL(dataUrl);
+      if (image.isEmpty()) throw new Error("invalid_clipboard_image");
+      clipboard.writeImage(image);
+    },
+  );
 
   ipcMain.handle(IPC_CHANNELS.audio.getDeepFilterAssets, async (): Promise<DeepFilterAssets> => {
     try {
@@ -584,9 +706,39 @@ export const registerIpcHandlers = ({
 
   ipcMain.handle(
     IPC_CHANNELS.recording.export,
-    async (_event, payload: RecordingExportPayload): Promise<RecordingExportResponse> =>
-      exportRecordingFromMain(payload, (logPayload) => diagnostics.writeLog(logPayload)),
+    async (_event, payload: RecordingExportPayload): Promise<RecordingExportResponse> => {
+      const settings = settingsStore.getSnapshot();
+      const result = await exportRecordingFromMain(
+        payload,
+        settings.recordingSaveDirectory,
+        (logPayload) => diagnostics.writeLog(logPayload),
+      );
+      if (result.ok) {
+        await enforceRecordingQuota(
+          settings.recordingSaveDirectory,
+          settings.recordingLibraryQuotaGb,
+        );
+      }
+      return result;
+    },
   );
+  ipcMain.handle(IPC_CHANNELS.recording.chooseDirectory, async (): Promise<string | undefined> => {
+    const currentDirectory = resolveRecordingDirectory(
+      settingsStore.getSnapshot().recordingSaveDirectory,
+      app.getPath("documents"),
+    );
+    const options: OpenDialogOptions = {
+      title: "选择录音保存位置",
+      buttonLabel: "使用这个文件夹",
+      defaultPath: currentDirectory,
+      properties: ["openDirectory", "createDirectory"],
+    };
+    const mainWindow = getMainWindow();
+    const result = mainWindow
+      ? await dialog.showOpenDialog(mainWindow, options)
+      : await dialog.showOpenDialog(options);
+    return result.canceled ? undefined : result.filePaths[0];
+  });
   ipcMain.handle(
     IPC_CHANNELS.recording.saveMarkers,
     async (_event, filePath: string, markers: RecordingMarker[]): Promise<string> => {
@@ -611,4 +763,23 @@ export const registerIpcHandlers = ({
       return markerPath;
     },
   );
+  ipcMain.handle(IPC_CHANNELS.recording.list, async (): Promise<RecordingLibrarySnapshot> => {
+    const settings = settingsStore.getSnapshot();
+    return readRecordingLibrary(settings.recordingSaveDirectory, settings.recordingLibraryQuotaGb);
+  });
+  ipcMain.handle(IPC_CHANNELS.recording.openDirectory, async (): Promise<void> => {
+    const directory = resolveRecordingDirectory(
+      settingsStore.getSnapshot().recordingSaveDirectory,
+      app.getPath("documents"),
+    );
+    await mkdir(directory, { recursive: true });
+    const error = await shell.openPath(directory);
+    if (error) throw new Error(error);
+  });
+  ipcMain.handle(IPC_CHANNELS.recording.delete, async (_event, filePath: string): Promise<void> => {
+    await deleteRecording(
+      settingsStore.getSnapshot().recordingSaveDirectory,
+      requireString(filePath, 2_048, "recording_file_path"),
+    );
+  });
 };

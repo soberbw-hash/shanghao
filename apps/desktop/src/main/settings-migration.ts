@@ -42,18 +42,21 @@ export const defaultSettings: AppSettings = {
   globalMuteShortcut: "",
   pushToTalkShortcut: "Space",
   recordingMarkerShortcut: "F8",
+  recordingSaveDirectory: undefined,
+  recordingLibraryQuotaGb: 5,
   isNoiseSuppressionEnabled: true,
   isEchoCancellationEnabled: true,
   isAutoGainControlEnabled: true,
   isVoiceEnhancementEnabled: true,
   isPushToTalkEnabled: false,
-  isAutoRecordOnJoinEnabled: false,
+  isAutoRecordOnJoinEnabled: true,
   micMonitorMode: "processed",
   relayServerUrl: "",
   memberVolumes: {},
   soundVolume: 0.72,
   isSystemNotificationEnabled: true,
   isGameDetectionEnabled: true,
+  isWorkActivityVisible: true,
   isUiSoundEnabled: true,
   isBackgroundUpdateCheckEnabled: true,
   lastCollectionViewedAt: undefined,
@@ -61,6 +64,7 @@ export const defaultSettings: AppSettings = {
   lastUpdateCheckAt: undefined,
   lastUpdateVersionSeen: undefined,
   lastReleaseNotesVersionSeen: undefined,
+  lastDailyRoomReportSeen: undefined,
 };
 
 export interface MigrationResult {
@@ -185,6 +189,8 @@ export const migrateSettings = (raw: RawSettings): MigrationResult => {
       trimUnknownText(raw.pushToTalkShortcut) ?? defaultSettings.pushToTalkShortcut,
     recordingMarkerShortcut:
       trimUnknownText(raw.recordingMarkerShortcut) ?? defaultSettings.recordingMarkerShortcut,
+    recordingSaveDirectory: trimUnknownText(raw.recordingSaveDirectory),
+    recordingLibraryQuotaGb: normalizeNumber(raw.recordingLibraryQuotaGb, 5, 1, 100),
     relayServerUrl:
       normalizeRelayServerUrl(trimUnknownText(raw.relayServerUrl)) ??
       defaultSettings.relayServerUrl,
@@ -199,12 +205,13 @@ export const migrateSettings = (raw: RawSettings): MigrationResult => {
                   name.trim() && typeof value === "number" && Number.isFinite(value),
               )
               .slice(0, 50)
-              .map(([name, value]) => [name.slice(0, 24), Math.max(0, Math.min(2, Number(value)))]),
+              .map(([name, value]) => [name.slice(0, 24), Math.max(0, Math.min(3, Number(value)))]),
           )
         : {},
     soundVolume: defaultSettings.soundVolume,
     isSystemNotificationEnabled: true,
     isGameDetectionEnabled: true,
+    isWorkActivityVisible: normalizeBoolean(raw.isWorkActivityVisible, true),
     micEqualizerGains: normalizeEqualizerGains(raw.micEqualizerGains),
     lowCutFrequency: normalizeLowCutFrequency(raw),
     micMonitorMode: normalizeMonitorMode(trimUnknownText(raw.micMonitorMode)),
@@ -213,7 +220,7 @@ export const migrateSettings = (raw: RawSettings): MigrationResult => {
     isAutoGainControlEnabled: raw.isAutoGainControlEnabled !== false,
     isVoiceEnhancementEnabled: raw.isVoiceEnhancementEnabled !== false,
     isPushToTalkEnabled: raw.isPushToTalkEnabled === true,
-    isAutoRecordOnJoinEnabled: raw.isAutoRecordOnJoinEnabled === true,
+    isAutoRecordOnJoinEnabled: normalizeBoolean(raw.isAutoRecordOnJoinEnabled, true),
     isUiSoundEnabled: true,
     isBackgroundUpdateCheckEnabled: raw.isBackgroundUpdateCheckEnabled !== false,
     lastCollectionViewedAt: trimUnknownText(raw.lastCollectionViewedAt),
@@ -229,6 +236,13 @@ export const migrateSettings = (raw: RawSettings): MigrationResult => {
     lastUpdateCheckAt: trimUnknownText(raw.lastUpdateCheckAt),
     lastUpdateVersionSeen: trimUnknownText(raw.lastUpdateVersionSeen),
     lastReleaseNotesVersionSeen: trimUnknownText(raw.lastReleaseNotesVersionSeen),
+    lastDailyRoomReportSeen:
+      raw.lastDailyRoomReportSeen && typeof raw.lastDailyRoomReportSeen === "object"
+        ? {
+            main: trimUnknownText(raw.lastDailyRoomReportSeen.main),
+            side: trimUnknownText(raw.lastDailyRoomReportSeen.side),
+          }
+        : undefined,
   };
 
   const isProfileReady = merged.nickname.length > 0 && isBuiltInAvatarId(merged.avatarId);

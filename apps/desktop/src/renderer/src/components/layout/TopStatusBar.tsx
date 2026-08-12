@@ -20,7 +20,7 @@ const statusCopy = (state: RoomConnectionState) => {
   )
     return "进入中...";
   if (state === RoomConnectionState.WaitingPeer) return "等待好友上线";
-  if (state === RoomConnectionState.Connected) return "频道空闲中";
+  if (state === RoomConnectionState.Connected) return "";
   return "开黑频道";
 };
 
@@ -82,7 +82,7 @@ export const TopStatusBar = ({
           </h1>
           <span
             className={`channel-status-dot ${statusTone(room.connectionState)}`}
-            aria-label={statusCopy(room.connectionState)}
+            aria-label={statusCopy(room.connectionState) || "频道已连接"}
           />
           <div className="channel-switcher" aria-label="切换房间">
             {(["main", "side"] as const).map((channelId, index) => {
@@ -103,9 +103,11 @@ export const TopStatusBar = ({
             })}
           </div>
         </div>
-        <div className="topbar-channel-copy mt-0.5 truncate text-[11px] text-[#8494a7]">
-          {statusCopy(room.connectionState)}
-        </div>
+        {statusCopy(room.connectionState) ? (
+          <div className="topbar-channel-copy mt-0.5 truncate text-[11px] text-[#8494a7]">
+            {statusCopy(room.connectionState)}
+          </div>
+        ) : null}
       </div>
       <div className="topbar-controls">
         <Button

@@ -7,8 +7,10 @@ import {
   type ChatImageAttachment,
   type ChatMessage,
   type ChatRecallEvent,
+  type DailyRoomReport,
   type MemberActivity,
   type MusicActivity,
+  type WorkActivity,
   type RoomMember,
   type RoomCollectionItem,
   type SceneReaction,
@@ -81,9 +83,11 @@ interface RoomClientOptions {
   onChatRecall: (event: ChatRecallEvent) => void;
   onChatHistory: (messages: ChatMessage[]) => void;
   onChannelCounts: (counts: ChannelCountsMessage["counts"]) => void;
+  onDailyRoomReports: (roomId: "main" | "side", reports: DailyRoomReport[]) => void;
   onRoomCollection: (items: RoomCollectionItem[], replace: boolean) => void;
   onKnock: (message: ChatMessage) => void;
   onRemoteScreenFrame: (peerId: string, frame?: RemoteScreenFrame) => void;
+  onRemoteScreenShareState: (peerId: string, isSharing: boolean) => void;
   onSceneReaction: (reaction: SceneReaction) => void;
   onDiagnosticEvent?: (payload: SignalingEventPayload) => void;
   onReconnectAttempt?: (attempt: number) => void;
@@ -106,7 +110,9 @@ interface DesiredPresenceState {
   activity: MemberActivity;
   sceneZone?: SceneZoneId;
   gameName?: string;
+  gameIconDataUrl?: string;
   musicActivity?: MusicActivity;
+  workActivity?: WorkActivity;
   key: string;
 }
 
@@ -124,6 +130,22 @@ const AUDIO_PATH_SYNC_INTERVAL_MS = 3_000;
 const SCREEN_FRAME_INTERVAL_MS = 2_500;
 const SCREEN_FRAME_MAX_WIDTH = 480;
 const SCREEN_FRAME_MAX_BYTES = 48 * 1024;
+
+const DAILY_ROOM_REPORTS_MIN_BUILD = "2026.08.12.1";
+
+export const serverBuildSupportsDailyRoomReports = (buildNumber?: string): boolean => {
+  if (!buildNumber) return false;
+  const parse = (value: string) => value.split(".").map((part) => Number.parseInt(part, 10));
+  const current = parse(buildNumber);
+  const minimum = parse(DAILY_ROOM_REPORTS_MIN_BUILD);
+  if (current.some((part) => !Number.isFinite(part))) return false;
+  for (let index = 0; index < Math.max(current.length, minimum.length); index += 1) {
+    const currentPart = current[index] ?? 0;
+    const minimumPart = minimum[index] ?? 0;
+    if (currentPart !== minimumPart) return currentPart > minimumPart;
+  }
+  return true;
+};
 
 export class RoomClient {
   private readonly signalingSessionId = crypto.randomUUID();
@@ -150,6 +172,7 @@ export class RoomClient {
   private lastPublishedAvatarId?: BuiltInAvatarId;
   private pendingConnection?: PendingConnection;
   private hasJoinedOnce = false;
+  private serverBuildNumber?: string;
   private unsubscribeEvents?: () => void;
   private audioFallback?: AudioFallbackController;
   private readonly remotePeerIds = new Set<string>();
@@ -562,6 +585,9 @@ export class RoomClient {
       case "channel_counts":
         this.options.onChannelCounts(payload.counts);
         return;
+      case "daily_room_reports":
+        this.options.onDailyRoomReports(payload.targetRoomId, payload.reports);
+        return;
       case "room_collection_snapshot":
         this.handleRoomCollection(payload);
         return;
@@ -609,22 +635,29 @@ export class RoomClient {
     sceneZone?: SceneZoneId,
     gameName?: string,
     musicActivity?: MusicActivity,
+    gameIconDataUrl?: string,
+    workActivity?: WorkActivity,
   ): void {
     const normalizedGameName = normalizePresenceGameName(gameName);
     const musicActivityKey = musicActivity ? JSON.stringify(musicActivity) : "";
+    const workActivityKey = workActivity ? JSON.stringify(workActivity) : "";
     const key = JSON.stringify([
       isDeafened,
       activity,
       sceneZone ?? null,
       normalizedGameName ?? null,
+      gameIconDataUrl ?? null,
       musicActivityKey,
+      workActivityKey,
     ]);
     this.desiredPresenceState = {
       isDeafened,
       activity,
       sceneZone,
       gameName: normalizedGameName,
+      gameIconDataUrl,
       musicActivity,
+      workActivity,
       key,
     };
     void this.publishDesiredPresence();
@@ -652,7 +685,9 @@ export class RoomClient {
       activity: desired.activity,
       sceneZone: desired.sceneZone,
       gameName: desired.gameName,
+      gameIconDataUrl: desired.gameIconDataUrl ?? null,
       musicActivity: desired.musicActivity ?? null,
+      workActivity: desired.workActivity ?? null,
     });
 
     if (publicationGeneration !== this.presencePublicationGeneration) return;
@@ -746,6 +781,7 @@ export class RoomClient {
     }
 
     this.joinAckReceived = true;
+    this.serverBuildNumber = payload.buildNumber;
     this.reconnectSessionToken = payload.sessionToken;
     this.hasJoinedOnce = true;
     this.joinStage = "join_ack_received";
@@ -829,7 +865,10 @@ export class RoomClient {
       if (!activePeerIds.has(peerId)) this.advertisedRelayNeeds.delete(peerId);
     }
     for (const peerId of [...this.remoteSharingPeerIds]) {
-      if (!activePeerIds.has(peerId)) this.remoteSharingPeerIds.delete(peerId);
+      if (!activePeerIds.has(peerId)) {
+        this.remoteSharingPeerIds.delete(peerId);
+        this.options.onRemoteScreenShareState(peerId, false);
+      }
     }
     for (const peerId of [...this.screenRelayRequestedByPeerIds]) {
       if (!activePeerIds.has(peerId)) this.screenRelayRequestedByPeerIds.delete(peerId);
@@ -866,6 +905,7 @@ export class RoomClient {
         this.audioFallback?.clearPeer(peerId, "peer_left_room");
         this.options.onRemoteStream(peerId, undefined);
         this.options.onRemoteScreenFrame(peerId, undefined);
+        this.options.onRemoteScreenShareState(peerId, false);
       }
     }
 
@@ -1004,6 +1044,18 @@ export class RoomClient {
       return;
     }
 
+    // The deployed v2.5 server reports unknown additive requests as
+    // `invalid_payload`. Once a room join has already succeeded, treating that
+    // compatibility reply as a fatal connection failure would unnecessarily
+    // disable chat and quick replies. Required join/protocol failures still
+    // take the fatal path below.
+    if (payload.code === "invalid_payload" && this.hasJoinedOnce && this.joinAckReceived) {
+      void writeRendererLog("signaling", "warn", "Legacy server ignored an additive request", {
+        message: payload.message,
+      });
+      return;
+    }
+
     this.options.onConnectionState(RoomConnectionState.Failed);
     const isProtocolRejected =
       payload.code === "4400" ||
@@ -1043,6 +1095,21 @@ export class RoomClient {
       this.chatSendFailures += 1;
       throw error;
     }
+  }
+
+  async requestDailyRoomReports(targetRoomId: "main" | "side"): Promise<boolean> {
+    if (!this.canSendChat()) throw new Error("signaling_not_connected");
+    // 2.5.x servers share protocol 7 but do not know this additive message.
+    // Sending it would make the legacy server return invalid_payload, which in
+    // turn marks the entire room connection failed and disables chat.
+    if (!serverBuildSupportsDailyRoomReports(this.serverBuildNumber)) return false;
+    await this.send({
+      type: "request_daily_room_reports",
+      roomId: this.options.roomId,
+      peerId: this.options.peerId,
+      targetRoomId,
+    });
+    return true;
   }
 
   async recallChatMessage(messageId: string): Promise<void> {
@@ -1206,6 +1273,7 @@ export class RoomClient {
 
     if (payload.isSharing) {
       this.remoteSharingPeerIds.add(payload.peerId);
+      this.options.onRemoteScreenShareState(payload.peerId, true);
       this.advertiseScreenPathState(
         payload.peerId,
         !this.webrtcScreenPeerIds.has(payload.peerId),
@@ -1216,6 +1284,7 @@ export class RoomClient {
 
     this.remoteSharingPeerIds.delete(payload.peerId);
     this.webrtcScreenPeerIds.delete(payload.peerId);
+    this.options.onRemoteScreenShareState(payload.peerId, false);
     this.advertiseScreenPathState(payload.peerId, false, "screen_share_stopped");
     this.options.onRemoteScreenFrame(payload.peerId, undefined);
   }
@@ -1266,10 +1335,16 @@ export class RoomClient {
         activity: payload.activity ?? member.activity,
         sceneZone: payload.sceneZone ?? member.sceneZone,
         gameName: payload.gameName === "" ? undefined : (payload.gameName ?? member.gameName),
+        gameIconDataUrl:
+          payload.gameIconDataUrl === null
+            ? undefined
+            : (payload.gameIconDataUrl ?? member.gameIconDataUrl),
         musicActivity:
           payload.musicActivity === null
             ? undefined
             : (payload.musicActivity ?? member.musicActivity),
+        workActivity:
+          payload.workActivity === null ? undefined : (payload.workActivity ?? member.workActivity),
         isMuted,
         speakingState: isMuted
           ? MemberSpeakingState.Muted
@@ -1751,6 +1826,14 @@ export class RoomClient {
     reason: string,
   ): Promise<void> {
     await this.applyScreenShareToPeer(peer);
+    if (this.screenShareStream) {
+      void this.safeSend({
+        type: "screen_share_state",
+        roomId: this.options.roomId,
+        peerId: this.options.peerId,
+        isSharing: true,
+      });
+    }
     const offer = await peer.createOffer();
     await this.send({
       type: "peer_offer",
@@ -1991,6 +2074,7 @@ export class RoomClient {
       peer.destroy();
       this.options.onRemoteStream(peerId, undefined);
       this.options.onRemoteScreenFrame(peerId, undefined);
+      this.options.onRemoteScreenShareState(peerId, false);
     }
     this.peerStatsMonitor.stop();
     this.webrtcConnectedPeerIds.clear();

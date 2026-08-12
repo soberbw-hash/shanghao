@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
   Activity,
   ArrowRight,
+  ChevronDown,
   CircleAlert,
   CircleCheck,
   LoaderCircle,
@@ -20,7 +21,6 @@ import {
 
 import { Button } from "../components/base/Button";
 import { Input } from "../components/base/Input";
-import { Switch } from "../components/base/Switch";
 import { BrandMark } from "../components/brand/BrandMark";
 import { CharacterPicker } from "../components/profile/AvatarPicker";
 import { StartupSplashPage } from "../components/status/StartupSplashPage";
@@ -57,6 +57,7 @@ export const HomePage = () => {
   const pageRef = useRef<HTMLDivElement>(null);
   const hasAttemptedStartupJoinRef = useRef(false);
   const microphoneSelectRef = useRef<HTMLSelectElement>(null);
+  const microphoneMenuRef = useRef<HTMLDivElement>(null);
   const [nickname, setNickname] = useState("");
   const [avatarId, setAvatarId] = useState<BuiltInAvatarId>("fox");
   const [serverAddress, setServerAddress] = useState("");
@@ -64,6 +65,7 @@ export const HomePage = () => {
   const [isTestingServer, setIsTestingServer] = useState(false);
   const [serverTestResult, setServerTestResult] = useState<RelayStatusSnapshot>();
   const [isCheckingAudio, setIsCheckingAudio] = useState(false);
+  const [isMicrophoneMenuOpen, setIsMicrophoneMenuOpen] = useState(false);
   const reduceMotion = usePrefersReducedMotion();
   const isSettingsReady = Boolean(settings);
   const savedNickname = settings?.nickname;
@@ -164,6 +166,26 @@ export const HomePage = () => {
       window.removeEventListener("focus", refreshWhenFocused);
     };
   }, [serverAddress]);
+
+  useEffect(() => {
+    if (!isMicrophoneMenuOpen) return;
+
+    const closeWhenClickingOutside = (event: PointerEvent) => {
+      if (!microphoneMenuRef.current?.contains(event.target as Node)) {
+        setIsMicrophoneMenuOpen(false);
+      }
+    };
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setIsMicrophoneMenuOpen(false);
+    };
+
+    document.addEventListener("pointerdown", closeWhenClickingOutside, true);
+    document.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.removeEventListener("pointerdown", closeWhenClickingOutside, true);
+      document.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [isMicrophoneMenuOpen]);
 
   useLayoutEffect(() => {
     if (!isSettingsReady || !pageRef.current) return;
@@ -417,43 +439,6 @@ export const HomePage = () => {
       )}
     </div>
   );
-  const microphoneDeviceControl = (
-    <div
-      className="entry-audio-devices entry-audio-devices-single grid gap-2"
-      aria-label="进入频道麦克风"
-    >
-      <label>
-        <Mic className="h-4 w-4" />
-        <span>麦克风</span>
-        <select
-          ref={microphoneSelectRef}
-          value={settings.preferredInputDeviceId || ""}
-          onChange={(event) =>
-            void saveSettings({ preferredInputDeviceId: event.target.value || undefined })
-          }
-        >
-          <option value="">系统默认</option>
-          {inputDevices.map((device) => (
-            <option key={device.id} value={device.id}>
-              {device.label || "未命名麦克风"}
-            </option>
-          ))}
-        </select>
-        <i className={hasSelectedInput ? "is-ready" : "is-missing"} aria-hidden="true" />
-      </label>
-      <div className="flex items-center justify-between gap-4 rounded-[12px] border border-[#e4ebf4] bg-white/70 px-3 py-2">
-        <span>
-          <span className="block text-xs font-semibold text-[#52657d]">自动增益</span>
-          <span className="mt-0.5 block text-[11px] text-[#8a9ab0]">自动平衡说话音量</span>
-        </span>
-        <Switch
-          isChecked={settings.isAutoGainControlEnabled}
-          onChange={(isAutoGainControlEnabled) => void saveSettings({ isAutoGainControlEnabled })}
-        />
-      </div>
-    </div>
-  );
-
   return (
     <div
       ref={pageRef}
@@ -461,11 +446,11 @@ export const HomePage = () => {
     >
       <main
         data-gsap-entry="card"
-        className="entry-card relative z-10 flex w-full max-w-[900px] flex-col px-9 py-8"
+        className="entry-card entry-card-entry relative z-10 flex w-full max-w-[840px] flex-col px-10 py-8"
       >
         <header
           data-gsap-entry="brand"
-          className="flex items-center gap-3.5 border-b border-[rgba(214,225,239,.68)] pb-5"
+          className="entry-card-header relative z-30 flex items-center gap-3.5 border-b border-[rgba(214,225,239,.68)] pb-5"
         >
           <BrandMark size="lg" />
           <div>
@@ -474,28 +459,63 @@ export const HomePage = () => {
             </h1>
             <div className="text-[12px] font-medium leading-4 text-[#718198]">固定好友语音</div>
           </div>
-          <button
-            type="button"
-            onClick={() => {
-              void refreshDevices();
-              window.setTimeout(() => microphoneSelectRef.current?.focus(), 0);
-            }}
-            className="entry-mic-status interactive-surface ml-auto flex items-center gap-2 rounded-full px-3.5 py-2 text-xs font-semibold text-[#60738b]"
-          >
-            <span className={micCopy.tone === "good" ? "text-[#18b669]" : "text-[#d18b19]"}>
-              {micCopy.tone === "good" ? (
-                <Mic className="h-4 w-4" />
-              ) : (
-                <MicOff className="h-4 w-4" />
-              )}
-            </span>
-            {micCopy.title}
-          </button>
+          <div ref={microphoneMenuRef} className="entry-mic-control ml-auto">
+            <button
+              type="button"
+              onClick={() => {
+                void refreshDevices();
+                setIsMicrophoneMenuOpen((current) => !current);
+              }}
+              className="entry-mic-status interactive-surface flex items-center gap-2 rounded-full px-3.5 py-2 text-xs font-semibold text-[#60738b]"
+              aria-haspopup="dialog"
+              aria-expanded={isMicrophoneMenuOpen}
+            >
+              <span className={micCopy.tone === "good" ? "text-[#18b669]" : "text-[#d18b19]"}>
+                {micCopy.tone === "good" ? (
+                  <Mic className="h-4 w-4" />
+                ) : (
+                  <MicOff className="h-4 w-4" />
+                )}
+              </span>
+              {micCopy.title}
+              <ChevronDown
+                className={`h-3.5 w-3.5 transition-transform ${isMicrophoneMenuOpen ? "rotate-180" : ""}`}
+                aria-hidden="true"
+              />
+            </button>
+            {isMicrophoneMenuOpen ? (
+              <div className="entry-mic-menu" role="dialog" aria-label="选择进入频道使用的麦克风">
+                <div>
+                  <strong>进入频道使用</strong>
+                  <span>选择麦克风设备</span>
+                </div>
+                <label>
+                  <Mic className="h-4 w-4" aria-hidden="true" />
+                  <select
+                    ref={microphoneSelectRef}
+                    value={settings.preferredInputDeviceId || ""}
+                    aria-label="麦克风设备"
+                    onChange={(event) =>
+                      void saveSettings({ preferredInputDeviceId: event.target.value || undefined })
+                    }
+                  >
+                    <option value="">系统默认</option>
+                    {inputDevices.map((device) => (
+                      <option key={device.id} value={device.id}>
+                        {device.label || "未命名麦克风"}
+                      </option>
+                    ))}
+                  </select>
+                  <i className={hasSelectedInput ? "is-ready" : "is-missing"} aria-hidden="true" />
+                </label>
+              </div>
+            ) : null}
+          </div>
         </header>
 
         <motion.section
           key="entry"
-          className="mt-6 grid min-h-0 flex-1 gap-7 md:grid-cols-[1.05fr_.95fr]"
+          className="entry-profile-layout relative z-0 mt-6 grid min-h-0 flex-1 gap-10 md:grid-cols-[.95fr_1.05fr]"
           initial={reduceMotion ? false : { opacity: 0, x: 14 }}
           animate={{ opacity: 1, x: 0 }}
           exit={reduceMotion ? undefined : { opacity: 0, x: -10 }}
@@ -504,8 +524,8 @@ export const HomePage = () => {
             ease: motionCurve.enter,
           }}
         >
-          <div data-gsap-entry="role-picker" className="p-2">
-            <div className="mb-4 text-sm font-semibold text-[#314158]">选择角色</div>
+          <div data-gsap-entry="role-picker" className="flex h-full flex-col justify-center p-2">
+            <div className="mb-3 text-center text-sm font-semibold text-[#314158]">选择角色</div>
             <CharacterPicker
               value={avatarId}
               occupiedAvatarIds={occupiedAvatarIds}
@@ -513,7 +533,7 @@ export const HomePage = () => {
             />
           </div>
 
-          <div data-gsap-entry="form" className="flex min-w-0 flex-col gap-5">
+          <div data-gsap-entry="form" className="entry-profile-form flex min-w-0 flex-col gap-4">
             <label className="space-y-2">
               <span className="text-xs font-semibold text-[#52657d]">昵称</span>
               <div className="flex">
@@ -536,9 +556,8 @@ export const HomePage = () => {
                 }}
               />
             </label>
-            {microphoneDeviceControl}
             {serverTestStatus}
-            <div className="mt-auto" data-gsap-entry="cta">
+            <div className="pt-1" data-gsap-entry="cta">
               <div className="flex flex-wrap gap-2.5">
                 <Button
                   className="h-[52px] min-w-[188px] rounded-[16px] text-[15px]"

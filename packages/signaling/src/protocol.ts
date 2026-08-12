@@ -3,8 +3,10 @@ import type {
   ChatImageAttachment,
   MemberActivity,
   MusicActivity,
+  WorkActivity,
   RoomMember,
   RoomCollectionItem,
+  DailyRoomReport,
   SceneZoneId,
 } from "@private-voice/shared";
 import { isAllowedNickname, isBuiltInAvatarId } from "@private-voice/shared";
@@ -43,6 +45,8 @@ export type SignalEnvelope =
   | RoomCollectionSnapshotMessage
   | RoomCollectionAddMessage
   | RoomCollectionRemoveMessage
+  | RequestDailyRoomReportsMessage
+  | DailyRoomReportsMessage
   | KnockEventMessage
   | AudioChunkMessage
   | AudioPathStateMessage
@@ -185,7 +189,9 @@ export interface MemberStateMessage extends BaseMessage {
   activity?: MemberActivity;
   sceneZone?: SceneZoneId;
   gameName?: string;
+  gameIconDataUrl?: string | null;
   musicActivity?: MusicActivity | null;
+  workActivity?: WorkActivity | null;
   nickname?: string;
   avatarDataUrl?: string;
   avatarId?: BuiltInAvatarId;
@@ -229,6 +235,20 @@ export interface ChannelCountsMessage extends BaseMessage {
     main: number;
     side: number;
   };
+}
+
+export interface RequestDailyRoomReportsMessage extends BaseMessage {
+  type: "request_daily_room_reports";
+  roomId: string;
+  peerId: string;
+  targetRoomId: "main" | "side";
+}
+
+export interface DailyRoomReportsMessage extends BaseMessage {
+  type: "daily_room_reports";
+  roomId: string;
+  targetRoomId: "main" | "side";
+  reports: DailyRoomReport[];
 }
 
 export interface RoomCollectionSnapshotMessage extends BaseMessage {
@@ -463,6 +483,19 @@ const SCENE_ZONES = new Set([
 ]);
 const MEMBER_ACTIVITIES = new Set(["idle", "gaming", "drinking", "fitness", "restroom"]);
 
+const isActivityIconDataUrl = (value: unknown): value is string =>
+  isText(value, 48_000) && /^data:image\/png;base64,/.test(value);
+
+const isWorkActivity = (value: unknown): value is WorkActivity =>
+  isRecord(value) &&
+  isText(value.id, 48) &&
+  /^[a-z0-9-]+$/.test(value.id) &&
+  isText(value.name, 48) &&
+  ["development", "design", "engineering", "office", "data", "media"].includes(
+    String(value.category),
+  ) &&
+  (value.iconDataUrl === undefined || isActivityIconDataUrl(value.iconDataUrl));
+
 export const isValidNickname = (value: unknown): value is string => {
   if (typeof value !== "string") return false;
   const trimmed = value.trim();
@@ -586,6 +619,9 @@ export const isSignalEnvelope = (value: unknown): value is SignalEnvelope => {
         // v0.1.50 sent an empty game name when no game was detected. Accept it on the
         // wire for backwards compatibility; the server normalizes it to undefined.
         (value.gameName === undefined || isText(value.gameName, 64, true)) &&
+        (value.gameIconDataUrl === undefined ||
+          value.gameIconDataUrl === null ||
+          isActivityIconDataUrl(value.gameIconDataUrl)) &&
         (value.musicActivity === undefined ||
           value.musicActivity === null ||
           (isRecord(value.musicActivity) &&
@@ -596,6 +632,9 @@ export const isSignalEnvelope = (value: unknown): value is SignalEnvelope => {
             isText(value.musicActivity.trackTitle, 160) &&
             (value.musicActivity.artist === undefined ||
               isText(value.musicActivity.artist, 100, true)))) &&
+        (value.workActivity === undefined ||
+          value.workActivity === null ||
+          isWorkActivity(value.workActivity)) &&
         (value.nickname === undefined || isValidNickname(value.nickname)) &&
         (value.avatarId === undefined || isBuiltInAvatarId(value.avatarId)) &&
         (value.avatarDataUrl === undefined ||
@@ -622,6 +661,17 @@ export const isSignalEnvelope = (value: unknown): value is SignalEnvelope => {
         isRecord(value.counts) &&
         isIntegerInRange(value.counts.main, 0, 5) &&
         isIntegerInRange(value.counts.side, 0, 5)
+      );
+    case "request_daily_room_reports":
+      return (
+        hasRoom(value) && hasPeer(value) && ["main", "side"].includes(String(value.targetRoomId))
+      );
+    case "daily_room_reports":
+      return (
+        hasRoom(value) &&
+        ["main", "side"].includes(String(value.targetRoomId)) &&
+        Array.isArray(value.reports) &&
+        value.reports.length <= 14
       );
     case "room_collection_snapshot":
       return (

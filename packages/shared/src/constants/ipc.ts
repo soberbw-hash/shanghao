@@ -4,10 +4,16 @@ export const IPC_CHANNELS = {
     getSystemIdleSeconds: "app:get-system-idle-seconds",
     writeLog: "app:write-log",
     notify: "app:notify",
+    readChatHistory: "app:read-chat-history",
+    saveChatHistory: "app:save-chat-history",
     openExternal: "app:open-external",
+    getLinkPreviewIcon: "app:get-link-preview-icon",
+    consumeDeepLink: "app:consume-deep-link",
+    deepLink: "app:deep-link",
   },
   clipboard: {
     writeText: "clipboard:write-text",
+    writeImage: "clipboard:write-image",
   },
   audio: {
     getDeepFilterAssets: "audio:get-deepfilter-assets",
@@ -84,6 +90,10 @@ export const IPC_CHANNELS = {
   },
   recording: {
     export: "recording:export",
+    chooseDirectory: "recording:choose-directory",
     saveMarkers: "recording:save-markers",
+    list: "recording:list",
+    openDirectory: "recording:open-directory",
+    delete: "recording:delete",
   },
 } as const;

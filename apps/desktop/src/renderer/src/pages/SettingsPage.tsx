@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { Activity, Headphones, MonitorCog, RefreshCw } from "lucide-react";
+import { Activity, CalendarDays, Headphones, Library, MonitorCog, RefreshCw } from "lucide-react";
 import { gsap } from "gsap";
 
 import type {
@@ -20,8 +20,11 @@ import { SettingsItemRow } from "../components/settings/SettingsItemRow";
 import { SettingsPageHeader } from "../components/settings/SettingsPageHeader";
 import { SettingsSection } from "../components/settings/SettingsSection";
 import { ShortcutSettingsCard } from "../components/settings/ShortcutSettingsCard";
+import { RecordingLibrarySettingsCard } from "../components/settings/RecordingLibrarySettingsCard";
+import { RoomHistorySettingsCard } from "../components/settings/RoomHistorySettingsCard";
 import { StartupSplashPage } from "../components/status/StartupSplashPage";
-import { RELEASE_HISTORY } from "../components/status/releaseHistory";
+import { ReleaseDetailModal } from "../components/status/ReleaseDetailModal";
+import { RELEASE_HISTORY, type ReleaseHistoryEntry } from "../components/status/releaseHistory";
 import { useMicTest } from "../hooks/useMicTest";
 import { usePrefersReducedMotion } from "../hooks/usePrefersReducedMotion";
 import { getRoomRuntimeDiagnostics } from "../hooks/useRoomState";
@@ -30,11 +33,14 @@ import { useAudioStore } from "../store/audioStore";
 import { useRoomStore } from "../store/roomStore";
 import { useSettingsStore } from "../store/settingsStore";
 
-type SettingsSectionId = "general" | "audio" | "updates" | "diagnostics";
+type SettingsSectionId =
+  "general" | "audio" | "recordings" | "roomHistory" | "updates" | "diagnostics";
 
 const sections = [
   { id: "general", label: "通用", icon: MonitorCog },
   { id: "audio", label: "语音", icon: Headphones },
+  { id: "recordings", label: "录音库", icon: Library },
+  { id: "roomHistory", label: "房间记录", icon: CalendarDays },
   { id: "updates", label: "更新", icon: RefreshCw },
   { id: "diagnostics", label: "诊断", icon: Activity },
 ] satisfies Array<{ id: SettingsSectionId; label: string; icon: typeof Headphones }>;
@@ -74,9 +80,7 @@ export const SettingsPage = () => {
   const [relayDiagnostics, setRelayDiagnostics] = useState<RelayStatusSnapshot>();
   const [windowsDiagnostics, setWindowsDiagnostics] = useState<WindowsIntegrationStatus>();
   const [saveNotice, setSaveNotice] = useState("设置会自动保存");
-  const [expandedReleaseVersions, setExpandedReleaseVersions] = useState(
-    () => new Set(RELEASE_HISTORY.slice(0, 4).map((release) => release.version)),
-  );
+  const [selectedRelease, setSelectedRelease] = useState<ReleaseHistoryEntry>();
   const pageRef = useRef<HTMLDivElement>(null);
   const reduceMotion = usePrefersReducedMotion();
   const isSettingsReady = Boolean(settings);
@@ -365,6 +369,17 @@ export const SettingsPage = () => {
               onChange={(minimizeToTray) => void handleSaveSettings({ minimizeToTray })}
             />
           </SettingsItemRow>
+          <SettingsItemRow
+            label="显示好友正在进行的工作"
+            description="默认开启。只显示当前正在使用的常见工作软件；音乐状态始终显示。"
+          >
+            <Switch
+              isChecked={settings.isWorkActivityVisible}
+              onChange={(isWorkActivityVisible) =>
+                void handleSaveSettings({ isWorkActivityVisible })
+              }
+            />
+          </SettingsItemRow>
         </div>
       </SettingsSection>
     ),
@@ -388,6 +403,14 @@ export const SettingsPage = () => {
         />
       </div>
     ),
+    recordings: (
+      <RecordingLibrarySettingsCard
+        settings={settings}
+        onChange={handleSaveSettings}
+        pushToast={pushToast}
+      />
+    ),
+    roomHistory: <RoomHistorySettingsCard settings={settings} onChange={handleSaveSettings} />,
     updates: (
       <SettingsSection title="更新" description={`当前版本 ${runtimeInfo?.version ?? "读取中..."}`}>
         <div className="flex items-center justify-between gap-3 border-b border-[#dbe8f7]/80 pb-4">
@@ -405,20 +428,13 @@ export const SettingsPage = () => {
           {RELEASE_HISTORY.map((release, index) => (
             <article
               key={release.version}
-              className="rounded-[18px] border border-[#dbe8f7]/80 bg-white/58 px-4 py-3.5"
+              className="overflow-hidden rounded-[18px] border border-[#dbe8f7]/80 bg-white/58"
             >
               <button
                 type="button"
-                className="w-full text-left"
-                aria-expanded={expandedReleaseVersions.has(release.version)}
-                onClick={() =>
-                  setExpandedReleaseVersions((current) => {
-                    const next = new Set(current);
-                    if (next.has(release.version)) next.delete(release.version);
-                    else next.add(release.version);
-                    return next;
-                  })
-                }
+                className="w-full px-4 py-3.5 text-left transition-colors hover:bg-white/62"
+                aria-haspopup="dialog"
+                onClick={() => setSelectedRelease(release)}
               >
                 <div className="flex flex-wrap items-baseline justify-between gap-2">
                   <div className="flex items-center gap-2">
@@ -431,14 +447,7 @@ export const SettingsPage = () => {
                   </div>
                   <time className="text-xs text-[#8a9ab0]">{release.date}</time>
                 </div>
-                <div className="mt-1 text-sm font-semibold text-[#52647b]">
-                  {release.title}
-                  <span className="ml-2 text-xs font-normal text-[#8a9ab0]">
-                    {expandedReleaseVersions.has(release.version) ? "收起说明" : "查看详情"}
-                  </span>
-                </div>
-              </button>
-              {expandedReleaseVersions.has(release.version) ? (
+                <div className="mt-1 text-sm font-semibold text-[#52647b]">{release.title}</div>
                 <ul className="mt-2 grid gap-1 text-[13px] leading-5 text-[#718096]">
                   {release.highlights.map((highlight) => (
                     <li key={highlight} className="flex gap-2">
@@ -447,7 +456,10 @@ export const SettingsPage = () => {
                     </li>
                   ))}
                 </ul>
-              ) : null}
+                <span className="mt-2.5 inline-flex text-xs font-semibold text-[#3974d8]">
+                  查看详细信息
+                </span>
+              </button>
             </article>
           ))}
         </div>
@@ -478,40 +490,43 @@ export const SettingsPage = () => {
   };
 
   return (
-    <PageContainer className="settings-page overflow-y-auto">
-      <div ref={pageRef} className="contents">
-        <div data-gsap-settings="header">
-          <SettingsPageHeader onBack={() => navigate(settingsReturnTo)} />
-        </div>
-        <div className="mt-5 grid gap-5 lg:grid-cols-[168px_minmax(0,1fr)]">
-          <nav
-            data-gsap-settings="nav"
-            className="settings-nav glass-panel h-fit rounded-[22px] p-2"
-          >
-            {sections.map(({ id, label, icon: Icon }) => (
-              <button
-                key={id}
-                type="button"
-                onClick={() => setActiveSection(id)}
-                className={`flex w-full items-center gap-3 whitespace-nowrap rounded-[14px] px-3 py-2.5 text-left text-sm font-semibold transition ${
-                  activeSection === id
-                    ? "bg-[#eaf1ff] text-[#3f6ed7]"
-                    : "text-[#718096] hover:bg-white/70"
-                }`}
-              >
-                <Icon className="h-4 w-4" />
-                {label}
-              </button>
-            ))}
-          </nav>
-          <div data-gsap-settings="content" className="min-w-0">
-            <div className="mb-2 text-right text-xs text-[#7c8da2]" aria-live="polite">
-              {saveNotice}
+    <>
+      <PageContainer className="settings-page overflow-y-auto">
+        <div ref={pageRef} className="contents">
+          <div data-gsap-settings="header">
+            <SettingsPageHeader onBack={() => navigate(settingsReturnTo)} />
+          </div>
+          <div className="mt-5 grid gap-5 lg:grid-cols-[168px_minmax(0,1fr)]">
+            <nav
+              data-gsap-settings="nav"
+              className="settings-nav glass-panel h-fit rounded-[22px] p-2"
+            >
+              {sections.map(({ id, label, icon: Icon }) => (
+                <button
+                  key={id}
+                  type="button"
+                  onClick={() => setActiveSection(id)}
+                  className={`flex w-full items-center gap-3 whitespace-nowrap rounded-[14px] px-3 py-2.5 text-left text-sm font-semibold transition ${
+                    activeSection === id
+                      ? "bg-[#eaf1ff] text-[#3f6ed7]"
+                      : "text-[#718096] hover:bg-white/70"
+                  }`}
+                >
+                  <Icon className="h-4 w-4" />
+                  {label}
+                </button>
+              ))}
+            </nav>
+            <div data-gsap-settings="content" className="min-w-0">
+              <div className="mb-2 text-right text-xs text-[#7c8da2]" aria-live="polite">
+                {saveNotice}
+              </div>
+              {content[activeSection]}
             </div>
-            {content[activeSection]}
           </div>
         </div>
-      </div>
-    </PageContainer>
+      </PageContainer>
+      <ReleaseDetailModal release={selectedRelease} onClose={() => setSelectedRelease(undefined)} />
+    </>
   );
 };

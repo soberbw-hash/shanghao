@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 
 import {
   DEFAULT_CHANNEL_ID,
@@ -7,6 +7,7 @@ import {
   RoomLifecycleState,
   type MemberActivity,
   type ChatImageAttachment,
+  type ChatMessage,
   type RoomCollectionItem,
   type RoomMember,
   type SceneZoneId,
@@ -30,6 +31,7 @@ import { useAppStore } from "../store/appStore";
 import { useAudioStore } from "../store/audioStore";
 import { useRoomStore } from "../store/roomStore";
 import { useSettingsStore } from "../store/settingsStore";
+import { useDailyRoomReportStore } from "../store/dailyRoomReportStore";
 import { writeRendererLog } from "../utils/logger";
 
 let activeClient: RoomClient | null = null;
@@ -41,10 +43,63 @@ const runtimeMemberVolumes = new Map<string, number>();
 const pendingMemberVolumeSaves = new Map<string, number>();
 const pendingMemberVolumeDeletes = new Set<string>();
 let memberVolumeSaveTimer: number | undefined;
+let chatHistoryWriteQueue: Promise<void> = Promise.resolve();
 const SCENE_REACTION_SOUND_COOLDOWN_MS = 320;
 type ChannelId = "main" | "side";
 const CHANNEL_IDS = new Set<ChannelId>(["main", "side"]);
 let lastSceneReactionSoundAt = 0;
+
+const createPersistableChatHistory = (messages: ChatMessage[]): ChatMessage[] => {
+  const persisted: ChatMessage[] = [];
+  let serializedLength = 2;
+  for (let index = messages.length - 1; index >= 0 && persisted.length < 500; index -= 1) {
+    const message = messages[index];
+    if (!message) continue;
+    const nextLength = JSON.stringify(message).length + (persisted.length > 0 ? 1 : 0);
+    if (serializedLength + nextLength > 24 * 1024 * 1024) break;
+    serializedLength += nextLength;
+    persisted.unshift(message);
+  }
+  return persisted;
+};
+
+const persistChatHistory = (serverUrl: string, channelId: ChannelId): void => {
+  const saveChatHistory = window.desktopApi?.app?.saveChatHistory;
+  if (typeof saveChatHistory !== "function") return;
+  const messages = createPersistableChatHistory(useRoomStore.getState().chatMessages);
+  chatHistoryWriteQueue = chatHistoryWriteQueue
+    .catch(() => undefined)
+    .then(() =>
+      saveChatHistory({
+        serverUrl,
+        channelId,
+        messages,
+      }),
+    )
+    .catch((error) => {
+      void writeRendererLog("app", "warn", "Failed to persist local chat history", {
+        channelId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    });
+};
+
+const describeChatNotification = (message: ChatMessage): string => {
+  const content = message.content.replace(/\s+/g, " ").trim();
+  if (content && message.image) return `${content.slice(0, 145)} · 图片`;
+  if (content) return content.slice(0, 160);
+  if (message.image) return "发来了一张图片";
+  return "发来了一条消息";
+};
+
+const sendSystemNotification = (payload: {
+  title: string;
+  body: string;
+  attention?: boolean;
+}): void => {
+  const notify = window.desktopApi?.app?.notify;
+  if (typeof notify === "function") void notify(payload);
+};
 
 const playSceneReactionSound = (sound: "receive-message" | "send-message") => {
   const now = Date.now();
@@ -108,8 +163,7 @@ const copy = {
   microphoneMissing: "没有找到可用的麦克风。",
   microphoneBusy: "麦克风正在被其他程序占用。",
   inputDeviceFailed: "输入设备切换失败",
-  copiedInviteTitle: "服务器地址已复制",
-  copiedInviteDescription: "把这个地址发给朋友，填写后即可进入同一个频道。",
+  copiedInviteDescription: "把链接发给朋友，点击就会打开上号并进入当前房间。",
 } as const;
 
 const normalizeServerUrl = (value?: string): string => {
@@ -156,8 +210,18 @@ const normalizeRoomError = (error: unknown, fallback: string): string => {
   return fallback;
 };
 
-export const buildChannelInviteText = ({ serverUrl }: { channelId: string; serverUrl: string }) =>
-  serverUrl;
+export const buildChannelInviteText = ({
+  channelId,
+  serverUrl,
+}: {
+  channelId: string;
+  serverUrl: string;
+}) => {
+  const invite = new URL("shanghao://join");
+  invite.searchParams.set("server", normalizeServerUrl(serverUrl));
+  invite.searchParams.set("room", CHANNEL_IDS.has(channelId as ChannelId) ? channelId : "main");
+  return invite.toString();
+};
 
 const collectMemberEvents = (members: RoomMember[]) => {
   const nextIds = new Set(
@@ -205,6 +269,9 @@ const summarizeSignalingEvent = (payload: SignalingEventPayload): Record<string,
 };
 
 export const useRoomState = () => {
+  const joinChannelRef = useRef<(serverUrl?: string, channelId?: ChannelId) => Promise<void>>(
+    async () => undefined,
+  );
   const runtimeInfo = useSettingsStore((state) => state.runtimeInfo);
   const settings = useSettingsStore((state) => state.settings);
   const avatarDataUrl = useSettingsStore((state) => state.avatarDataUrl);
@@ -217,6 +284,7 @@ export const useRoomState = () => {
   const setLocalStream = useRoomStore((state) => state.setLocalStream);
   const setRemoteStream = useRoomStore((state) => state.setRemoteStream);
   const setRemoteScreenFrame = useRoomStore((state) => state.setRemoteScreenFrame);
+  const setRemoteScreenSharing = useRoomStore((state) => state.setRemoteScreenSharing);
   const pushRoomEvent = useRoomStore((state) => state.pushRoomEvent);
   const clearRoomEvents = useRoomStore((state) => state.clearRoomEvents);
   const addChatMessage = useRoomStore((state) => state.addChatMessage);
@@ -238,15 +306,29 @@ export const useRoomState = () => {
   const setRoomAction = useAppStore((state) => state.setRoomAction);
 
   useEffect(() => {
-    updateLocalPresence({ isMuted, isDeafened });
+    const localSpeakingState = useRoomStore
+      .getState()
+      .room.members.find((member) => member.isLocal)?.speakingState;
+    const isSpeaking = !isMuted && localSpeakingState === MemberSpeakingState.Speaking;
+    updateLocalPresence({
+      isMuted,
+      isDeafened,
+      speakingState: isMuted
+        ? MemberSpeakingState.Muted
+        : isSpeaking
+          ? MemberSpeakingState.Speaking
+          : MemberSpeakingState.Silent,
+    });
     const localMember = useRoomStore.getState().room.members.find((member) => member.isLocal);
-    activeClient?.updateMuteState(isMuted, false);
+    activeClient?.updateMuteState(isMuted, isSpeaking);
     activeClient?.updatePresenceState(
       isDeafened,
       localMember?.activity ?? "idle",
       localMember?.sceneZone,
       localMember?.gameName,
       localMember?.musicActivity,
+      localMember?.gameIconDataUrl,
+      localMember?.workActivity,
     );
   }, [isDeafened, isMuted, updateLocalPresence]);
 
@@ -265,7 +347,15 @@ export const useRoomState = () => {
     activeSpeakingDetector = createSpeakingDetector(
       stream,
       (isSpeaking) => {
-        activeClient?.updateMuteState(useAudioStore.getState().isMuted, isSpeaking);
+        const muted = useAudioStore.getState().isMuted;
+        updateLocalPresence({
+          speakingState: muted
+            ? MemberSpeakingState.Muted
+            : isSpeaking
+              ? MemberSpeakingState.Speaking
+              : MemberSpeakingState.Silent,
+        });
+        activeClient?.updateMuteState(muted, !muted && isSpeaking);
       },
       (level) => {
         window.dispatchEvent(
@@ -433,7 +523,7 @@ export const useRoomState = () => {
             !member.isLocal &&
             useSettingsStore.getState().settings?.isSystemNotificationEnabled !== false
           ) {
-            void window.desktopApi.app.notify({
+            sendSystemNotification({
               title: "好友上线",
               body: `${member.nickname} 进入了开黑频道`,
             });
@@ -550,6 +640,7 @@ export const useRoomState = () => {
       onRemoteScreenFrame: (remotePeerId, frame) => {
         setRemoteScreenFrame(remotePeerId, frame);
       },
+      onRemoteScreenShareState: setRemoteScreenSharing,
       onSceneReaction: (reaction) => {
         addSceneReaction(reaction);
         if (reaction.targetPeerId === peerId && reaction.peerId !== peerId) {
@@ -558,19 +649,35 @@ export const useRoomState = () => {
       },
       onChatMessage: (message) => {
         addChatMessage(message);
+        persistChatHistory(serverUrl, channelId);
         if (!message.isLocal) {
           playUiSound("receive-message");
+          if (useSettingsStore.getState().settings?.isSystemNotificationEnabled !== false) {
+            sendSystemNotification({
+              title: `${message.nickname} 发来消息`,
+              body: describeChatNotification(message),
+            });
+          }
         }
       },
-      onChatRecall: ({ messageId }) => removeChatMessage(messageId),
-      onChatHistory: (messages) => mergeChatHistory(messages),
+      onChatRecall: ({ messageId }) => {
+        removeChatMessage(messageId);
+        persistChatHistory(serverUrl, channelId);
+      },
+      onChatHistory: (messages) => {
+        mergeChatHistory(messages);
+        persistChatHistory(serverUrl, channelId);
+      },
       onChannelCounts: setChannelCounts,
+      onDailyRoomReports: (targetRoomId, reports) =>
+        useDailyRoomReportStore.getState().setReports(targetRoomId, reports),
       onRoomCollection: (items, replace) => {
         if (replace) setCollectionItems(items);
         else mergeCollectionItems(items);
       },
       onKnock: (message) => {
         addChatMessage(message);
+        persistChatHistory(serverUrl, channelId);
         playUiSound("knock-bell");
         if (!message.isLocal) {
           pushToast({
@@ -579,7 +686,7 @@ export const useRoomState = () => {
             description: "快来上号，朋友正在等你。",
           });
           if (useSettingsStore.getState().settings?.isSystemNotificationEnabled !== false) {
-            void window.desktopApi.app.notify({
+            sendSystemNotification({
               title: `${message.nickname} 敲了敲你`,
               body: "快来上号，朋友正在等你。",
               attention: true,
@@ -615,6 +722,18 @@ export const useRoomState = () => {
     });
 
     await activeClient.connect();
+    useDailyRoomReportStore.getState().beginLoading();
+    const reportRequests = await Promise.allSettled([
+      activeClient.requestDailyRoomReports("main"),
+      activeClient.requestDailyRoomReports("side"),
+    ]);
+    const unavailableRooms = (["main", "side"] as const).filter((_, index) => {
+      const result = reportRequests[index];
+      return result?.status === "rejected" || result?.value === false;
+    });
+    if (unavailableRooms.length) {
+      useDailyRoomReportStore.getState().setUnavailable([...unavailableRooms]);
+    }
     const localMember = useRoomStore.getState().room.members.find((member) => member.isLocal);
     activeClient.updateMuteState(useAudioStore.getState().isMuted, false);
     activeClient.updatePresenceState(
@@ -623,6 +742,8 @@ export const useRoomState = () => {
       localMember?.sceneZone,
       localMember?.gameName,
       localMember?.musicActivity,
+      localMember?.gameIconDataUrl,
+      localMember?.workActivity,
     );
     playUiSound("enter-room");
     setRoom({
@@ -664,7 +785,12 @@ export const useRoomState = () => {
 
       setRoomAction("joining");
       setConnectionState(RoomConnectionState.Joining);
-      setLifecycleState(RoomLifecycleState.Opening);
+      setRoom({
+        roomId: channelId,
+        roomName: channelId === "main" ? "一号房" : "二号房",
+        lifecycleState: RoomLifecycleState.Opening,
+        signalingUrl: serverUrl,
+      });
       clearRoomEvents();
       pushRoomEvent({
         level: "info",
@@ -674,6 +800,18 @@ export const useRoomState = () => {
       try {
         await cleanupPreviousSession();
         clearChannelContent();
+        const readChatHistory = window.desktopApi?.app?.readChatHistory;
+        const cachedMessages =
+          typeof readChatHistory === "function"
+            ? await readChatHistory({ serverUrl, channelId }).catch((error) => {
+                void writeRendererLog("app", "warn", "Failed to restore local chat history", {
+                  channelId,
+                  error: error instanceof Error ? error.message : String(error),
+                });
+                return [];
+              })
+            : [];
+        mergeChatHistory(cachedMessages);
         await writeRendererLog("signaling", "info", "Joining fixed channel", {
           serverUrl,
           channelId,
@@ -722,6 +860,53 @@ export const useRoomState = () => {
     if (channelId === room.roomId && activeClient) return Promise.resolve();
     return joinChannel(room.signalingUrl || settings?.relayServerUrl, channelId);
   };
+
+  joinChannelRef.current = joinChannel;
+
+  useEffect(() => {
+    let isDisposed = false;
+    const openInvite = async (invite: { channelId: ChannelId; serverUrl: string }) => {
+      if (isDisposed) return;
+      try {
+        const normalizedServerUrl = normalizeServerUrl(invite.serverUrl);
+        if (useSettingsStore.getState().settings?.relayServerUrl !== normalizedServerUrl) {
+          await useSettingsStore.getState().saveSettings({ relayServerUrl: normalizedServerUrl });
+        }
+        if (isDisposed) return;
+        await joinChannelRef.current(normalizedServerUrl, invite.channelId);
+      } catch (error) {
+        pushToast({
+          tone: "warning",
+          title: "邀请链接无法打开",
+          description: normalizeRoomError(error, "请让朋友重新发送邀请链接。"),
+        });
+      }
+    };
+
+    const onDeepLink = window.desktopApi?.app?.onDeepLink;
+    const consumeDeepLink = window.desktopApi?.app?.consumeDeepLink;
+    if (typeof onDeepLink !== "function" || typeof consumeDeepLink !== "function") {
+      return () => {
+        isDisposed = true;
+      };
+    }
+
+    const unsubscribe = onDeepLink((invite) => {
+      void consumeDeepLink()
+        .catch(() => undefined)
+        .finally(() => void openInvite(invite));
+    });
+    void consumeDeepLink()
+      .then((invite) => {
+        if (invite) void openInvite(invite);
+      })
+      .catch(() => undefined);
+
+    return () => {
+      isDisposed = true;
+      unsubscribe();
+    };
+  }, [pushToast]);
 
   const replaceInputDevice = async (preferredInputDeviceId?: string) => {
     const currentSettings = useSettingsStore.getState().settings ?? settings;
@@ -827,7 +1012,7 @@ export const useRoomState = () => {
       });
       pushToast({
         tone: "success",
-        title: copy.copiedInviteTitle,
+        title: "邀请链接已复制",
         description: copy.copiedInviteDescription,
       });
     } catch {
@@ -931,18 +1116,36 @@ export const useRoomState = () => {
     activity: MemberActivity,
     gameName?: string,
     musicActivity?: RoomMember["musicActivity"],
+    gameIconDataUrl?: string,
+    workActivity?: RoomMember["workActivity"],
   ) => {
     if (sceneZone === "restroomZone") {
       useAudioStore.getState().setMuted(true);
       activeClient?.updateMuteState(true, false);
     }
-    updateLocalPresence({ sceneZone, activity, gameName, musicActivity });
-    activeClient?.updatePresenceState(isDeafened, activity, sceneZone, gameName, musicActivity);
+    updateLocalPresence({
+      sceneZone,
+      activity,
+      gameName,
+      gameIconDataUrl,
+      musicActivity,
+      workActivity,
+    });
+    activeClient?.updatePresenceState(
+      isDeafened,
+      activity,
+      sceneZone,
+      gameName,
+      musicActivity,
+      gameIconDataUrl,
+      workActivity,
+    );
     void writeRendererLog("app", "info", "Local member moved in scene", {
       sceneZone,
       activity,
       gameName,
       musicProvider: musicActivity?.provider,
+      workApp: workActivity?.id,
     });
   };
 

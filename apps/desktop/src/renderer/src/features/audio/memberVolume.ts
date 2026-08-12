@@ -1,5 +1,5 @@
 export const MEMBER_VOLUME_MIN = 0;
-export const MEMBER_VOLUME_MAX = 2;
+export const MEMBER_VOLUME_MAX = 3;
 export const MEMBER_VOLUME_DEFAULT = 1;
 
 export const clampMemberVolume = (volume: number): number => {

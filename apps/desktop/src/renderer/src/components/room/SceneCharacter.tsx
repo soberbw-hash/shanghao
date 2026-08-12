@@ -1,5 +1,5 @@
 import { type CSSProperties, useEffect, useLayoutEffect, useRef, useState } from "react";
-import { HeadphoneOff, Mic, MicOff, RotateCcw, Volume2, VolumeX } from "lucide-react";
+import { HeadphoneOff, VolumeX } from "lucide-react";
 import { AnimatePresence, motion, useAnimationControls, usePresence } from "framer-motion";
 
 import type {
@@ -35,6 +35,7 @@ import {
 } from "./DeskAnimalSprite";
 import { SceneCharacterLabel } from "./SceneCharacterLabel";
 import { SceneReaction } from "./SceneReaction";
+import { Slider } from "../base/Slider";
 
 export const sceneMemberKey = (member: Pick<RoomMember, "id" | "isLocal">): string =>
   member.isLocal ? "local-member" : member.id;
@@ -82,7 +83,6 @@ export const SceneCharacter = ({
   isWelcoming,
   isScreenSharing,
   reactions = [],
-  onReact,
   onVolumeChange,
   onSettled,
 }: SceneCharacterProps) => {
@@ -161,7 +161,9 @@ export const SceneCharacter = ({
       }
     };
     const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setIsAudioControlsOpen(false);
+      if (event.key === "Escape") {
+        setIsAudioControlsOpen(false);
+      }
     };
     document.addEventListener("pointerdown", closeWhenClickingOutside, true);
     document.addEventListener("keydown", closeOnEscape);
@@ -418,7 +420,7 @@ export const SceneCharacter = ({
       }}
       style={{
         opacity: isOffline ? 0.45 : undefined,
-        zIndex: position.zIndex,
+        zIndex: isAudioControlsOpen ? 80 : position.zIndex,
       }}
     >
       <div className="-translate-x-1/2" data-gsap-character>
@@ -427,6 +429,7 @@ export const SceneCharacter = ({
           className={`scene-character-anchor relative ${
             isAudioControlsOpen ? "is-audio-controls-open" : ""
           }`}
+          data-scene-zone={displayZone}
           style={
             {
               "--character-scale": renderedCharacterScale,
@@ -447,9 +450,14 @@ export const SceneCharacter = ({
             role={member.isLocal ? undefined : "button"}
             tabIndex={member.isLocal ? undefined : 0}
             aria-label={member.isLocal ? undefined : `调整${member.nickname}的本地音量`}
+            title={member.isLocal ? undefined : `点击调整${member.nickname}在本机的音量`}
             aria-expanded={member.isLocal ? undefined : isAudioControlsOpen}
             onClick={
-              member.isLocal ? undefined : () => setIsAudioControlsOpen((current) => !current)
+              member.isLocal
+                ? undefined
+                : () => {
+                    setIsAudioControlsOpen((current) => !current);
+                  }
             }
             onKeyDown={
               member.isLocal
@@ -537,19 +545,18 @@ export const SceneCharacter = ({
                 </span>
               ) : null}
             </div>
+            <SceneCharacterLabel
+              member={member}
+              isAway={displayZone === "restroomZone"}
+              shouldReduceMotion={shouldReduceMotion}
+            />
           </div>
-
-          <SceneCharacterLabel
-            member={member}
-            isAway={displayZone === "restroomZone"}
-            shouldReduceMotion={shouldReduceMotion}
-          />
           <SceneReaction reactions={reactions} shouldReduceMotion={shouldReduceMotion} />
 
           <AnimatePresence>
             {!member.isLocal && isAudioControlsOpen ? (
               <motion.div
-                className="member-audio-popover pointer-events-auto"
+                className="member-audio-popover is-label-control pointer-events-auto"
                 role="dialog"
                 aria-label={`${member.nickname}的本地声音设置`}
                 initial={shouldReduceMotion ? false : { opacity: 0, y: 7, scale: 0.96 }}
@@ -561,90 +568,43 @@ export const SceneCharacter = ({
                 }}
                 onClick={(event) => event.stopPropagation()}
               >
-                <div className="member-audio-popover-header">
-                  <span className="min-w-0">
-                    <strong title={member.nickname}>{member.nickname}</strong>
-                    <small>
-                      {member.isMuted
-                        ? "对方已闭麦"
-                        : member.isDeafened
-                          ? "对方已关闭扬声器"
-                          : member.gameName || "麦克风正常"}
-                    </small>
-                  </span>
-                  <span>
-                    {typeof member.latencyMs === "number" ? (
-                      <small className="member-audio-latency">
-                        {Math.round(member.latencyMs)} ms
-                      </small>
-                    ) : null}
-                    <span className={`member-audio-percent ${isLocallyMuted ? "is-muted" : ""}`}>
-                      {memberVolumeToPercent(member.volume)}%
-                    </span>
-                  </span>
-                </div>
-
-                <label className="member-audio-slider">
+                <button
+                  type="button"
+                  className={`member-audio-mute-toggle ${isLocallyMuted ? "is-muted" : ""}`}
+                  aria-label={
+                    isLocallyMuted ? `取消静音${member.nickname}` : `仅在本机静音${member.nickname}`
+                  }
+                  title={isLocallyMuted ? "取消静音" : "仅在本机静音"}
+                  onClick={() =>
+                    onVolumeChange?.(
+                      member.id,
+                      toggleLocalMemberMute(member.volume, previousAudibleVolumeRef.current),
+                    )
+                  }
+                >
+                  <VolumeX aria-hidden="true" />
+                </button>
+                <label className="member-audio-slider" title={`${member.nickname}的本地音量`}>
                   <span className="sr-only">他的声音</span>
-                  {member.isMuted ? (
-                    <MicOff className="h-4 w-4" aria-hidden="true" />
-                  ) : (
-                    <Mic className="h-4 w-4" aria-hidden="true" />
-                  )}
-                  <input
-                    type="range"
+                  <Slider
                     min={0}
-                    max={200}
+                    max={300}
                     step={5}
                     value={memberVolumeToPercent(member.volume)}
+                    referenceValue={100}
+                    snapThreshold={10}
                     aria-label={`${member.nickname}本地播放音量`}
                     onChange={(event) =>
                       onVolumeChange?.(member.id, Number(event.target.value) / 100)
                     }
                   />
-                  <Volume2 className="h-4 w-4" aria-hidden="true" />
                 </label>
-
-                <div className="member-audio-actions">
-                  <button
-                    type="button"
-                    className={isLocallyMuted ? "is-muted" : ""}
-                    onClick={() =>
-                      onVolumeChange?.(
-                        member.id,
-                        toggleLocalMemberMute(member.volume, previousAudibleVolumeRef.current),
-                      )
-                    }
-                  >
-                    <VolumeX className="h-3.5 w-3.5" />
-                    {isLocallyMuted ? "取消静音" : "仅我静音"}
-                  </button>
-                  <button
-                    type="button"
-                    disabled={Math.abs(member.volume - 1) < 0.001}
-                    onClick={() => onVolumeChange?.(member.id, 1)}
-                  >
-                    <RotateCcw className="h-3.5 w-3.5" />
-                    恢复 100%
-                  </button>
-                </div>
-                <div
-                  className="member-reaction-actions"
-                  aria-label={`给${member.nickname}发送表情`}
+                <output
+                  className={`member-audio-percent ${isLocallyMuted ? "is-muted" : ""}`}
+                  aria-live="polite"
                 >
-                  {(["👍", "🔥", "😂", "❤️", "👏", "😭", "😮", "💀", "🎉", "👀"] as const).map(
-                    (emoji) => (
-                      <button
-                        key={emoji}
-                        type="button"
-                        onClick={() => onReact?.(member.id, emoji)}
-                        aria-label={`发送${emoji}`}
-                      >
-                        {emoji}
-                      </button>
-                    ),
-                  )}
-                </div>
+                  {memberVolumeToPercent(member.volume)}%
+                </output>
               </motion.div>
             ) : null}
           </AnimatePresence>

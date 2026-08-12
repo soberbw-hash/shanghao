@@ -1,5 +1,9 @@
 appId: com.sober.shanghao
 productName: "上号"
+protocols:
+  - name: "上号房间邀请"
+    schemes:
+      - shanghao
 publish:
   provider: github
   owner: soberbw-hash

@@ -1,15 +1,17 @@
 import { spawn } from "node:child_process";
-import { mkdir, stat, unlink, writeFile, copyFile } from "node:fs/promises";
+import { copyFile, mkdir, stat, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import ffmpegPath from "ffmpeg-static";
-import { app, dialog } from "electron";
+import { app } from "electron";
 
 import type {
   RecordingExportPayload,
   RecordingExportResponse,
   RendererLogPayload,
 } from "@private-voice/shared";
+
+import { resolveAvailableRecordingPath, resolveRecordingDirectory } from "./recording-path";
 
 const inferExtensionFromMime = (mimeType: string): string => {
   if (mimeType.includes("mp4") || mimeType.includes("aac")) {
@@ -26,20 +28,22 @@ const shouldCopyWithoutTranscode = (mimeType: string): boolean =>
 
 export const exportRecordingFromMain = async (
   payload: RecordingExportPayload,
+  configuredDirectory: string | undefined,
   writeLog: (payload: RendererLogPayload) => Promise<void>,
 ): Promise<RecordingExportResponse> => {
-  const saveDialogResult = await dialog.showSaveDialog({
-    title: "保存房间录音",
-    defaultPath: payload.suggestedFileName,
-    filters: [{ name: "AAC 录音", extensions: ["m4a"] }],
-  });
-
-  if (saveDialogResult.canceled || !saveDialogResult.filePath) {
-    return {
-      ok: false,
-      errorMessage: "已取消保存录音。",
-    };
-  }
+  const recordingDirectory = resolveRecordingDirectory(
+    configuredDirectory,
+    app.getPath("documents"),
+  );
+  await mkdir(recordingDirectory, { recursive: true });
+  const outputPath = await resolveAvailableRecordingPath(
+    recordingDirectory,
+    payload.suggestedFileName,
+    async (candidate) =>
+      stat(candidate)
+        .then(() => true)
+        .catch(() => false),
+  );
 
   const tempDirectory = path.join(app.getPath("temp"), "shanghao-recordings");
   await mkdir(tempDirectory, { recursive: true });
@@ -54,7 +58,7 @@ export const exportRecordingFromMain = async (
 
   try {
     if (shouldCopyWithoutTranscode(payload.sourceMimeType)) {
-      await copyFile(inputPath, saveDialogResult.filePath);
+      await copyFile(inputPath, outputPath);
     } else {
       await new Promise<void>((resolve, reject) => {
         const ffmpeg = spawn(
@@ -73,7 +77,7 @@ export const exportRecordingFromMain = async (
             "160k",
             "-movflags",
             "+faststart",
-            saveDialogResult.filePath,
+            outputPath,
           ],
           { windowsHide: true },
         );
@@ -89,7 +93,7 @@ export const exportRecordingFromMain = async (
       });
     }
 
-    const savedFile = await stat(saveDialogResult.filePath);
+    const savedFile = await stat(outputPath);
     await unlink(inputPath).catch(() => undefined);
 
     await writeLog({
@@ -97,7 +101,7 @@ export const exportRecordingFromMain = async (
       level: "info",
       message: "Recording export completed",
       context: {
-        filePath: saveDialogResult.filePath,
+        filePath: outputPath,
         sampleRate: payload.sampleRate,
         sourceMimeType: payload.sourceMimeType,
         fileSize: savedFile.size,
@@ -106,7 +110,7 @@ export const exportRecordingFromMain = async (
 
     return {
       ok: true,
-      filePath: saveDialogResult.filePath,
+      filePath: outputPath,
       mimeType: "audio/mp4",
       fileSize: savedFile.size,
     };

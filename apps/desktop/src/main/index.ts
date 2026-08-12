@@ -2,9 +2,9 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 
-import { app, BrowserWindow, Tray, dialog } from "electron";
+import { app, BrowserWindow, Tray, dialog, net, protocol } from "electron";
 
-import { APP_ID } from "@private-voice/shared";
+import { APP_ID, IPC_CHANNELS, type DeepLinkInvite } from "@private-voice/shared";
 
 import { DiagnosticsService } from "./diagnostics";
 import { registerIpcHandlers } from "./ipc";
@@ -18,6 +18,13 @@ import { OverlayWindowController } from "./overlay-window";
 import { GameDetectionController } from "./game-detection";
 import { applyLaunchOnStartup } from "./launch-on-startup";
 import { ensureWindowsFirewallRules } from "./windows-integration";
+import { findDeepLinkInvite, parseDeepLinkInvite, SHANGHAO_PROTOCOL } from "./deep-link";
+import { sendToWindow } from "./safe-web-contents";
+import {
+  decodeRecordingMediaUrl,
+  isAllowedRecordingMediaPath,
+  RECORDING_MEDIA_PROTOCOL,
+} from "./recording-library";
 
 let mainWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
@@ -27,6 +34,7 @@ let settingsStore: SettingsStore | null = null;
 let shortcutsController: ShortcutController | null = null;
 let overlayController: OverlayWindowController | null = null;
 let gameDetectionController: GameDetectionController | null = null;
+let pendingDeepLink = findDeepLinkInvite(process.argv);
 
 const QUIT_FOR_INSTALL_ARG = "--shanghao-quit-for-install";
 const shouldQuitForInstall = process.argv.includes(QUIT_FOR_INSTALL_ARG);
@@ -57,6 +65,19 @@ const showWindow = () => {
   }
 
   mainWindow.focus();
+};
+
+const consumePendingDeepLink = (): DeepLinkInvite | undefined => {
+  const invite = pendingDeepLink;
+  pendingDeepLink = undefined;
+  return invite;
+};
+
+const dispatchDeepLink = (invite: DeepLinkInvite): void => {
+  pendingDeepLink = invite;
+  showWindow();
+  if (!mainWindow || mainWindow.webContents.isLoadingMainFrame()) return;
+  sendToWindow(mainWindow, IPC_CHANNELS.app.deepLink, invite);
 };
 
 const prepareForQuit = (reason: string) => {
@@ -134,12 +155,17 @@ const maybeRunVisualCapture = async (window: BrowserWindow | null): Promise<void
   await visualCapture.captureUi(window, {
     mode: (process.env.SHANGHAO_CAPTURE_MODE ?? "home") as
       | "home"
+      | "home-mic"
       | "room"
+      | "room-mic"
+      | "member-volume"
+      | "recording-stop"
       | "room-seat"
       | "room-away"
       | "screen-share"
       | "screen-share-expanded"
-      | "settings",
+      | "settings"
+      | "settings-detail",
     outputPath,
     exitAfterCapture: process.env.SHANGHAO_CAPTURE_EXIT !== "0",
     onExit: () => {
@@ -162,6 +188,18 @@ const bootstrap = async (): Promise<void> => {
     (payload) => diagnostics?.writeLog(payload) ?? Promise.resolve(),
   );
   const settings = await settingsStore.load();
+  protocol.handle(RECORDING_MEDIA_PROTOCOL, async (request) => {
+    const filePath = decodeRecordingMediaUrl(request.url);
+    if (
+      !filePath ||
+      !isAllowedRecordingMediaPath(settingsStore?.getSnapshot().recordingSaveDirectory, filePath)
+    ) {
+      return new Response("Not found", { status: 404 });
+    }
+    return net.fetch(pathToFileURL(filePath).toString(), {
+      headers: request.headers,
+    });
+  });
   try {
     await applyLaunchOnStartup(settings.launchOnStartup);
   } catch (error) {
@@ -224,6 +262,7 @@ const bootstrap = async (): Promise<void> => {
     updates,
     overlay,
     gameDetection,
+    consumePendingDeepLink,
   });
 
   mainWindow = createMainWindow({
@@ -300,6 +339,18 @@ if (!shouldUseHardwareAcceleration()) {
   app.disableHardwareAcceleration();
 }
 if (process.platform === "win32") app.setAppUserModelId(APP_ID);
+protocol.registerSchemesAsPrivileged([
+  {
+    scheme: RECORDING_MEDIA_PROTOCOL,
+    privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true },
+  },
+]);
+if (process.defaultApp) {
+  app.removeAsDefaultProtocolClient(SHANGHAO_PROTOCOL);
+  app.setAsDefaultProtocolClient(SHANGHAO_PROTOCOL, process.execPath, [app.getAppPath()]);
+} else {
+  app.setAsDefaultProtocolClient(SHANGHAO_PROTOCOL);
+}
 app.commandLine.appendSwitch("autoplay-policy", "no-user-gesture-required");
 app.commandLine.appendSwitch(
   "proxy-bypass-list",
@@ -312,7 +363,19 @@ app.on("second-instance", (_event, commandLine) => {
     return;
   }
 
+  const invite = findDeepLinkInvite(commandLine);
+  if (invite) {
+    dispatchDeepLink(invite);
+    return;
+  }
+
   showWindow();
+});
+
+app.on("open-url", (event, rawUrl) => {
+  event.preventDefault();
+  const invite = parseDeepLinkInvite(rawUrl);
+  if (invite) dispatchDeepLink(invite);
 });
 
 const hasSingleInstanceLock = app.requestSingleInstanceLock();

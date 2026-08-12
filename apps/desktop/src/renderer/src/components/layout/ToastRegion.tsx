@@ -57,21 +57,20 @@ export const ToastRegion = () => {
           return (
             <motion.button
               key={toast.id}
-              layout="position"
               variants={shouldReduceMotion ? reducedFadeVariants : toastItemVariants}
               initial="initial"
               animate="open"
               exit="closed"
-              className={`toast-card pointer-events-auto flex items-start gap-3 rounded-[18px] px-3.5 py-3 text-left ${classes.card}`}
+              className={`toast-card pointer-events-auto flex min-h-14 items-center gap-3 rounded-[18px] px-3.5 py-2.5 text-left ${classes.card}`}
               onClick={() => dismissToast(toast.id)}
             >
               <span
-                className={`toast-icon mt-0.5 grid h-7 w-7 shrink-0 place-items-center rounded-full ${classes.icon}`}
+                className={`toast-icon grid h-7 w-7 shrink-0 place-items-center rounded-full ${classes.icon}`}
               >
                 <ToneIcon className="h-4 w-4" />
               </span>
-              <span className="min-w-0">
-                <span className={`block text-[13px] font-bold ${classes.title}`}>
+              <span className="toast-copy min-w-0">
+                <span className={`toast-title block text-[13px] font-bold ${classes.title}`}>
                   {toast.title}
                   {(toast.repeatCount ?? 1) > 1 ? (
                     <span className="toast-repeat-count">×{toast.repeatCount}</span>

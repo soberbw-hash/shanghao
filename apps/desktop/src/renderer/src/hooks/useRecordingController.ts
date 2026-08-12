@@ -28,7 +28,23 @@ export const useRecordingController = () => {
 
     serviceRef.current = new RecordingService({
       exporter: {
-        exportRecording: (payload) => window.desktopApi.recording.export(payload),
+        exportRecording: (payload) => {
+          const roomId = useRoomStore.getState().room.roomId === "side" ? "side" : "main";
+          const roomLabel = roomId === "side" ? "二号房" : "一号房";
+          const now = new Date();
+          const stamp = [
+            now.getFullYear(),
+            String(now.getMonth() + 1).padStart(2, "0"),
+            String(now.getDate()).padStart(2, "0"),
+            String(now.getHours()).padStart(2, "0"),
+            String(now.getMinutes()).padStart(2, "0"),
+            String(now.getSeconds()).padStart(2, "0"),
+          ].join("-");
+          return window.desktopApi.recording.export({
+            ...payload,
+            suggestedFileName: `上号-${roomLabel}-${stamp}.m4a`,
+          });
+        },
       },
       onStateChange: (snapshot) => setStatus(snapshot),
       logger: (message, context) => {
@@ -72,9 +88,20 @@ export const useRecordingController = () => {
     }
   };
 
+  const discardRecording = async () => {
+    try {
+      await recordingService.discard();
+      setStatus(recordingService.getState());
+    } finally {
+      mixRef.current?.dispose();
+      mixRef.current = null;
+    }
+  };
+
   return {
     capability: recordingService.getCapability(),
     startRecording,
     stopRecording,
+    discardRecording,
   };
 };

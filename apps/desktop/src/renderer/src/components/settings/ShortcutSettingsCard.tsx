@@ -17,7 +17,7 @@ export const ShortcutSettingsCard = ({
     settings.globalMuteShortcut === settings.pushToTalkShortcut;
 
   return (
-    <SettingsSection title="快捷键" description="不注入按键、不挂接游戏进程，优先保护账号安全。">
+    <SettingsSection title="快捷键">
       <div className="space-y-3">
         <SettingsItemRow
           label="全局静音快捷键"

@@ -1,7 +1,8 @@
 {
   "name": "shanghao-desktop",
-  "version": "2.5.0",
+  "version": "2.6.0",
   "private": true,
+  "license": "AGPL-3.0-or-later",
   "description": "ShangHao desktop voice app for private friends group chat",
   "author": "Sober",
   "main": "dist-electron/main/index.cjs",

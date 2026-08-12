@@ -41,6 +41,12 @@
 
 在 [GitHub Releases](https://github.com/soberbw-hash/shanghao/releases) 下载 Windows 安装包：`ShangHao-版本-Setup-x64.exe`。
 
+## 支持的游戏与工作软件
+
+上号会识别正在运行的受支持游戏，并可选显示好友当前位于前台的工作软件。游戏和工作软件图标直接读取本机对应程序的 Windows 图标，不上传文件内容、窗口正文或项目名称。
+
+完整且与当前代码同步的名单见 [支持的游戏与工作软件](./docs/supported-activities.md)。
+
 ## 一键部署固定频道
 
 ```bash
@@ -87,3 +93,9 @@ AudioWorklet 节点，提前发现运行时或安全策略导致的降噪处理�
 ## 技术栈
 
 Electron、React、TypeScript、Vite、Tailwind CSS、Framer Motion、Zustand、Node.js、ws、WebRTC 语音与屏幕媒体。
+
+## 开源许可与品牌
+
+代码按 [GNU AGPL v3 或更高版本](./LICENSE.md) 开源。分发修改版，或通过网络向他人提供修改版服务时，必须保留许可证和版权声明、明确标注修改，并向对应用户提供完整源代码。项目作者为 Sober，具体第三方声明见 [NOTICE](./NOTICE.md)。
+
+“上号 / ShangHao”的名称、图标和品牌标识不因源代码许可证而自动授权；衍生发行版不得冒充官方版本，详见 [品牌说明](./TRADEMARKS.md)。

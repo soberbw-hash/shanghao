@@ -61,17 +61,15 @@ export const popoverSurfaceVariants: Variants = {
 };
 
 export const toastItemVariants: Variants = {
-  initial: { opacity: 0, y: -8, scale: 0.975 },
+  initial: { opacity: 0, y: -8 },
   open: {
     opacity: 1,
     y: 0,
-    scale: 1,
     transition: { type: "spring", ...motionSpring.compact },
   },
   closed: {
     opacity: 0,
     y: -4,
-    scale: 0.99,
     transition: { duration: motionDuration.fast, ease: exitEase },
   },
 };

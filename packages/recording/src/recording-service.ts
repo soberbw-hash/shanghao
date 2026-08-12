@@ -121,4 +121,23 @@ export class RecordingService {
 
     return result;
   }
+
+  async discard(): Promise<void> {
+    this.emitState(
+      this.stateMachine.transition(RecordingState.Stopping, {
+        message: "正在结束录音",
+      }),
+    );
+
+    await this.encoder.stop();
+    this.emitState(
+      this.stateMachine.transition(RecordingState.Idle, {
+        startedAt: undefined,
+        durationMs: 0,
+        result: undefined,
+        message: "录音未保存",
+      }),
+    );
+    this.options.logger?.("recording discarded by user");
+  }
 }

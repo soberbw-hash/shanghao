@@ -11,9 +11,14 @@ const audioCardPath = path.resolve(
 );
 const settingsPagePath = path.resolve(process.cwd(), "src/renderer/src/pages/SettingsPage.tsx");
 const homePagePath = path.resolve(process.cwd(), "src/renderer/src/pages/HomePage.tsx");
+const roomPagePath = path.resolve(process.cwd(), "src/renderer/src/pages/RoomPage.tsx");
 const diagnosticsCardPath = path.resolve(
   process.cwd(),
   "src/renderer/src/components/settings/DiagnosticsSettingsCard.tsx",
+);
+const roomHistoryCardPath = path.resolve(
+  process.cwd(),
+  "src/renderer/src/components/settings/RoomHistorySettingsCard.tsx",
 );
 
 test("fixed sounds, game detection, and system notifications stay out of settings", () => {
@@ -54,8 +59,8 @@ test("advanced audio settings are collapsed by default", () => {
   assert.equal(source.includes("五段声音塑形"), true);
   assert.equal(source.includes("智能降噪"), false);
   assert.equal(source.includes("低频风噪抑制"), true);
-  assert.equal(source.includes("人声增强"), true);
-  assert.equal(source.includes("isVoiceEnhancementEnabled"), true);
+  assert.equal(source.includes("人声增强"), false);
+  assert.equal(source.includes("isVoiceEnhancementEnabled"), false);
   assert.equal(source.includes("thresholdDraft"), false);
   assert.equal(source.includes("equalizerDraft"), true);
 });
@@ -84,15 +89,38 @@ test("settings keep only everyday voice controls and remove advanced connection"
   }
 });
 
-test("auto gain is shared by home and settings while release history keeps ten entries", () => {
+test("microphone processing lives in the room panel while release history keeps ten detailed entries", () => {
   const homeSource = readFileSync(homePagePath, "utf8");
+  const roomSource = readFileSync(roomPagePath, "utf8");
   const settingsSource = readFileSync(settingsPagePath, "utf8");
 
-  assert.equal(homeSource.includes("settings.isAutoGainControlEnabled"), true);
-  assert.equal(homeSource.includes("saveSettings({ isAutoGainControlEnabled })"), true);
-  assert.equal(readFileSync(audioCardPath, "utf8").includes("isAutoGainControlEnabled"), true);
+  assert.equal(homeSource.includes("自动增益"), false);
+  assert.equal(homeSource.includes('from "../components/base/Switch"'), false);
+  assert.equal(homeSource.includes("entry-mic-menu"), true);
+  assert.equal(roomSource.includes("autoGainEnabled={settings.isAutoGainControlEnabled}"), true);
+  assert.equal(
+    roomSource.includes("echoCancellationEnabled={settings.isEchoCancellationEnabled}"),
+    true,
+  );
+  assert.equal(
+    roomSource.includes("voiceEnhancementEnabled={settings.isVoiceEnhancementEnabled}"),
+    true,
+  );
+  assert.equal(roomSource.includes("voice-segmented-arrow"), true);
+  assert.equal(readFileSync(audioCardPath, "utf8").includes("isAutoGainControlEnabled"), false);
   assert.equal(RELEASE_HISTORY.length, 10);
-  assert.equal(RELEASE_HISTORY[0]?.version, "2.5.0");
-  assert.equal(settingsSource.includes("RELEASE_HISTORY.slice(0, 4)"), true);
-  assert.equal(settingsSource.includes("查看详情"), true);
+  assert.equal(RELEASE_HISTORY[0]?.version, "2.6.0");
+  assert.equal(
+    RELEASE_HISTORY.every((release) => release.details.length > 0),
+    true,
+  );
+  assert.equal(settingsSource.includes("查看详细信息"), true);
+  assert.equal(settingsSource.includes("查看每一项具体改动"), false);
+  assert.equal(settingsSource.includes("ReleaseDetailModal"), true);
+});
+
+test("room history leaves loading state on legacy servers", () => {
+  const source = readFileSync(roomHistoryCardPath, "utf8");
+  assert.equal(source.includes("当前服务器暂不支持房间记录"), true);
+  assert.equal(source.includes("暂无房间记录"), true);
 });

@@ -41,6 +41,7 @@ interface RoomStoreState {
   localStream?: MediaStream;
   remoteStreams: Record<string, MediaStream>;
   remoteScreenFrames: Record<string, RemoteScreenFrame>;
+  remoteScreenSharing: Record<string, true>;
   connectionHealth: ConnectionHealth;
   chatMessages: ChatMessage[];
   collectionItems: RoomCollectionItem[];
@@ -53,6 +54,7 @@ interface RoomStoreState {
   setLocalStream: (stream?: MediaStream) => void;
   setRemoteStream: (peerId: string, stream?: MediaStream) => void;
   setRemoteScreenFrame: (peerId: string, frame?: RemoteScreenFrame) => void;
+  setRemoteScreenSharing: (peerId: string, isSharing: boolean) => void;
   setConnectionHealth: (health: Partial<ConnectionHealth>) => void;
   addChatMessage: (message: ChatMessage) => void;
   removeChatMessage: (messageId: string) => void;
@@ -68,10 +70,13 @@ interface RoomStoreState {
   updateLocalPresence: (presence: {
     isMuted?: boolean;
     isDeafened?: boolean;
+    speakingState?: MemberSpeakingState;
     activity?: MemberActivity;
     sceneZone?: SceneZoneId;
     gameName?: string;
+    gameIconDataUrl?: string;
     musicActivity?: MusicActivity;
+    workActivity?: import("@private-voice/shared").WorkActivity;
   }) => void;
   pushRoomEvent: (event: Omit<RoomEvent, "id" | "createdAt">) => void;
   clearRoomEvents: () => void;
@@ -80,6 +85,23 @@ interface RoomStoreState {
 
 const localMemberLabel = "我";
 const emptySlotLabel = "空位";
+const MAX_LOCAL_CHAT_MESSAGES = 500;
+
+export const stabilizePeerLatency = (
+  previousLatencyMs: number | undefined,
+  measuredLatencyMs: number | undefined,
+): number | undefined => {
+  if (typeof measuredLatencyMs !== "number" || !Number.isFinite(measuredLatencyMs)) {
+    return previousLatencyMs;
+  }
+
+  const measured = Math.max(0, Math.round(measuredLatencyMs));
+  if (typeof previousLatencyMs !== "number" || !Number.isFinite(previousLatencyMs)) {
+    return measured;
+  }
+  if (Math.abs(measured - previousLatencyMs) <= 4) return previousLatencyMs;
+  return Math.round(previousLatencyMs * 0.72 + measured * 0.28);
+};
 
 const createEmptySlot = (index: number): RoomMember => ({
   id: `empty-slot-${index}`,
@@ -182,6 +204,7 @@ export const useRoomStore = create<RoomStoreState>((set) => ({
   localStream: undefined,
   remoteStreams: {},
   remoteScreenFrames: {},
+  remoteScreenSharing: {},
   connectionHealth: {
     latencyMs: 0,
     jitterMs: 0,
@@ -268,6 +291,13 @@ export const useRoomStore = create<RoomStoreState>((set) => ({
       }
       return { remoteScreenFrames: nextRemoteScreenFrames };
     }),
+  setRemoteScreenSharing: (peerId, isSharing) =>
+    set((state) => {
+      const remoteScreenSharing = { ...state.remoteScreenSharing };
+      if (isSharing) remoteScreenSharing[peerId] = true;
+      else delete remoteScreenSharing[peerId];
+      return { remoteScreenSharing };
+    }),
   setConnectionHealth: (healthPatch) =>
     set((state) => ({
       connectionHealth: {
@@ -282,7 +312,7 @@ export const useRoomStore = create<RoomStoreState>((set) => ({
       return {
         chatMessages: [...byId.values()]
           .sort((left, right) => left.createdAt.localeCompare(right.createdAt))
-          .slice(-100),
+          .slice(-MAX_LOCAL_CHAT_MESSAGES),
       };
     }),
   removeChatMessage: (messageId) =>
@@ -296,7 +326,7 @@ export const useRoomStore = create<RoomStoreState>((set) => ({
       return {
         chatMessages: [...byId.values()]
           .sort((left, right) => left.createdAt.localeCompare(right.createdAt))
-          .slice(-100),
+          .slice(-MAX_LOCAL_CHAT_MESSAGES),
       };
     }),
   setCollectionItems: (collectionItems) =>
@@ -320,6 +350,7 @@ export const useRoomStore = create<RoomStoreState>((set) => ({
     set({
       remoteStreams: {},
       remoteScreenFrames: {},
+      remoteScreenSharing: {},
       chatMessages: [],
       collectionItems: [],
       sceneReactions: [],
@@ -370,9 +401,11 @@ export const useRoomStore = create<RoomStoreState>((set) => ({
     set((state) => ({
       room: {
         ...state.room,
-        members: state.room.members.map((member) =>
-          member.id === memberId ? { ...member, latencyMs } : member,
-        ),
+        members: state.room.members.map((member) => {
+          if (member.id !== memberId) return member;
+          const nextLatency = stabilizePeerLatency(member.latencyMs, latencyMs);
+          return nextLatency === member.latencyMs ? member : { ...member, latencyMs: nextLatency };
+        }),
       },
     })),
   updateLocalPresence: (presence) =>
@@ -411,6 +444,7 @@ export const useRoomStore = create<RoomStoreState>((set) => ({
       localStream: undefined,
       remoteStreams: {},
       remoteScreenFrames: {},
+      remoteScreenSharing: {},
       chatMessages: [],
       collectionItems: [],
       sceneReactions: [],

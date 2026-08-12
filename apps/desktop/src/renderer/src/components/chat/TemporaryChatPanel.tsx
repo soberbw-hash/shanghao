@@ -1,19 +1,26 @@
 import { Fragment, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { LoaderCircle, RotateCcw, Send, X } from "lucide-react";
+import { ExternalLink, Link2, LoaderCircle, RotateCcw, Send, X } from "lucide-react";
 import { gsap } from "gsap";
 
 import type { ChatMessage } from "@private-voice/shared";
 
 import { getAvatarSrc } from "../../utils/profile";
+import {
+  findFirstMessageUrl,
+  formatCompactUrl,
+  getMessageUrlDetails,
+  isMessageOnlyUrl,
+} from "../../features/chat/linkPreview";
 import { motionDuration, motionEase } from "../../features/motion/motionSystem";
+import { useAppStore } from "../../store/appStore";
 import { AvatarPlaceholder } from "../base/AvatarPlaceholder";
 import { Button } from "../base/Button";
 import { Input } from "../base/Input";
 import { usePrefersReducedMotion } from "../../hooks/usePrefersReducedMotion";
 
-const quickReplies = ["👍", "上号", "开麦", "等我"];
-const urlPattern = /https?:\/\/[^\s<]+/gi;
+const quickReplies = ["👌", "上号", "开麦", "等我", "听得到吗"];
+const urlPattern = /https?:\/\/[^\s<，。！？；：）】》」]+/gi;
 const trailingUrlPunctuation = /[.,!?，。！？;；:：)\]}>》」】]+$/;
 
 const formatMessageDate = (value?: string) => {
@@ -22,7 +29,7 @@ const formatMessageDate = (value?: string) => {
   return date.toLocaleDateString("zh-CN", { month: "long", day: "numeric" });
 };
 
-const renderMessageContent = (content: string) => {
+const renderMessageContent = (content: string, onCopyLink: (url: string) => void) => {
   const result: ReactNode[] = [];
   let cursor = 0;
 
@@ -41,8 +48,12 @@ const renderMessageContent = (content: string) => {
           event.preventDefault();
           void window.desktopApi.app.openExternal(url);
         }}
+        onContextMenu={(event) => {
+          event.preventDefault();
+          onCopyLink(url);
+        }}
       >
-        {url}
+        {formatCompactUrl(url)}
       </a>,
     );
     if (suffix) result.push(suffix);
@@ -51,6 +62,65 @@ const renderMessageContent = (content: string) => {
 
   if (cursor < content.length) result.push(content.slice(cursor));
   return result.length > 0 ? result : content;
+};
+
+const MessageLinkPreview = ({ url, onCopy }: { url: string; onCopy: (url: string) => void }) => {
+  const details = getMessageUrlDetails(url);
+  const [iconSrc, setIconSrc] = useState<string>();
+  const [didIconFail, setDidIconFail] = useState(false);
+
+  useEffect(() => {
+    let isCurrent = true;
+    setIconSrc(undefined);
+    setDidIconFail(false);
+    const getLinkPreviewIcon = window.desktopApi?.app?.getLinkPreviewIcon;
+    if (typeof getLinkPreviewIcon !== "function") {
+      setDidIconFail(true);
+      return () => {
+        isCurrent = false;
+      };
+    }
+    void getLinkPreviewIcon(url)
+      .then((value) => {
+        if (isCurrent) setIconSrc(value);
+      })
+      .catch(() => {
+        if (isCurrent) setDidIconFail(true);
+      });
+    return () => {
+      isCurrent = false;
+    };
+  }, [url]);
+
+  if (!details) return null;
+  const compactUrl = formatCompactUrl(url);
+
+  return (
+    <button
+      type="button"
+      className="chat-link-preview"
+      aria-label={`在浏览器中打开 ${details.hostname}`}
+      title={url}
+      onClick={() => void window.desktopApi.app.openExternal(url)}
+      onContextMenu={(event) => {
+        event.preventDefault();
+        onCopy(url);
+      }}
+    >
+      <span className="chat-link-preview-image" aria-hidden="true">
+        {iconSrc && !didIconFail ? (
+          <img src={iconSrc} alt="" draggable={false} onError={() => setDidIconFail(true)} />
+        ) : (
+          <Link2 />
+        )}
+      </span>
+      <span className="chat-link-preview-copy">
+        <strong>{details.hostname}</strong>
+        <small>{compactUrl === details.hostname ? "点击打开网页" : compactUrl}</small>
+      </span>
+      <ExternalLink className="chat-link-preview-open" aria-hidden="true" />
+    </button>
+  );
 };
 
 export const TemporaryChatPanel = ({
@@ -80,6 +150,7 @@ export const TemporaryChatPanel = ({
   unavailableLabel?: string;
   reduceMotion?: boolean;
 }) => {
+  const pushToast = useAppStore((state) => state.pushToast);
   const lastQuickSendAt = useRef(0);
   const listRef = useRef<HTMLDivElement>(null);
   const sendControlRef = useRef<HTMLSpanElement>(null);
@@ -110,9 +181,14 @@ export const TemporaryChatPanel = ({
     const latestMessage = messages[messages.length - 1];
     if (wasNearBottom || latestMessage?.isLocal || previous === 0) {
       window.requestAnimationFrame(() => {
-        list.scrollTo({
-          top: list.scrollHeight,
-          behavior: shouldReduceMotion || previous === 0 ? "auto" : "smooth",
+        const behavior =
+          shouldReduceMotion || previous === 0 || latestMessage?.isLocal ? "auto" : "smooth";
+        list.scrollTo({ top: list.scrollHeight, behavior });
+        // Link cards and compressed-image previews can finish layout one frame
+        // after the message row. Pin a locally sent message to the true bottom
+        // again so the composer never clips its lower half.
+        window.requestAnimationFrame(() => {
+          if (latestMessage?.isLocal || previous === 0) list.scrollTop = list.scrollHeight;
         });
       });
       setUnreadCount(0);
@@ -260,6 +336,28 @@ export const TemporaryChatPanel = ({
     return imageItem?.getAsFile() ?? undefined;
   };
 
+  const copyLink = (url: string) => {
+    void window.desktopApi.clipboard.writeText(url).then(
+      () => pushToast({ tone: "success", title: "已复制链接" }),
+      () => pushToast({ tone: "danger", title: "复制失败", description: "请稍后再试。" }),
+    );
+  };
+
+  const copyText = (text: string) => {
+    if (!text.trim()) return;
+    void window.desktopApi.clipboard.writeText(text).then(
+      () => pushToast({ tone: "success", title: "已复制消息" }),
+      () => pushToast({ tone: "danger", title: "复制失败", description: "请稍后再试。" }),
+    );
+  };
+
+  const copyImage = (dataUrl: string) => {
+    void window.desktopApi.clipboard.writeImage(dataUrl).then(
+      () => pushToast({ tone: "success", title: "已复制图片" }),
+      () => pushToast({ tone: "danger", title: "复制失败", description: "请稍后再试。" }),
+    );
+  };
+
   return (
     <>
       <div
@@ -331,6 +429,24 @@ export const TemporaryChatPanel = ({
                   !previousMessage ||
                   formatMessageDate(previousMessage.createdAt) !==
                     formatMessageDate(message.createdAt);
+                const linkPreviewUrl = message.content
+                  ? findFirstMessageUrl(message.content)
+                  : undefined;
+                const shouldShowMessageBubble = Boolean(
+                  message.content && !(linkPreviewUrl && isMessageOnlyUrl(message.content)),
+                );
+                const previousCreatedAt = Date.parse(previousMessage?.createdAt ?? "");
+                const createdAt = Date.parse(message.createdAt);
+                const isGrouped = Boolean(
+                  previousMessage &&
+                  previousMessage.kind !== "system" &&
+                  previousMessage.peerId === message.peerId &&
+                  formatMessageDate(previousMessage.createdAt) ===
+                    formatMessageDate(message.createdAt) &&
+                  Number.isFinite(previousCreatedAt) &&
+                  Number.isFinite(createdAt) &&
+                  createdAt - previousCreatedAt <= 5 * 60 * 1_000,
+                );
                 return (
                   <Fragment key={message.id}>
                     {showDate ? (
@@ -342,6 +458,10 @@ export const TemporaryChatPanel = ({
                       <div
                         data-gsap-chat-message
                         className="chat-system-message mx-auto w-fit max-w-[90%] rounded-full bg-[#f5f7fb] px-3 py-1 text-center text-[12px] leading-4 text-[#718096]"
+                        onContextMenu={(event) => {
+                          event.preventDefault();
+                          copyText(message.content);
+                        }}
                       >
                         {message.content}
                       </div>
@@ -349,36 +469,50 @@ export const TemporaryChatPanel = ({
                       <div
                         data-gsap-chat-message
                         data-chat-direction={message.isLocal ? "outgoing" : "incoming"}
-                        className="chat-message-row flex min-w-0 items-start gap-2"
+                        className={`chat-message-row flex min-w-0 items-start gap-2 ${isGrouped ? "is-grouped" : ""}`}
                       >
-                        <AvatarPlaceholder
-                          name={message.nickname}
-                          src={message.avatarDataUrl || getAvatarSrc(message.avatarId)}
-                          size="sm"
-                          className="chat-message-avatar mt-0.5 h-7 w-7 shrink-0 rounded-[10px]"
-                        />
+                        {isGrouped ? (
+                          <span className="chat-message-avatar-spacer h-7 w-7 shrink-0" />
+                        ) : (
+                          <AvatarPlaceholder
+                            name={message.nickname}
+                            src={message.avatarDataUrl || getAvatarSrc(message.avatarId)}
+                            size="sm"
+                            className="chat-message-avatar mt-0.5 h-7 w-7 shrink-0 rounded-[10px]"
+                          />
+                        )}
                         <div className="chat-message-copy flex min-w-0 max-w-[82%] flex-col items-start">
-                          <span className="chat-message-meta mb-0.5 flex min-w-0 items-center gap-2 px-1">
-                            <span className="chat-message-name min-w-0 truncate text-[12px] font-medium leading-4 text-[#718096]">
-                              {message.nickname}
+                          {!isGrouped || (message.isLocal && onRecall) ? (
+                            <span
+                              className={`chat-message-meta mb-0.5 flex min-w-0 items-center gap-2 px-1 ${isGrouped ? "is-grouped" : ""}`}
+                            >
+                              {!isGrouped ? (
+                                <span className="chat-message-name min-w-0 truncate text-[12px] font-medium leading-4 text-[#718096]">
+                                  {message.nickname}
+                                </span>
+                              ) : null}
+                              {message.isLocal && onRecall ? (
+                                <button
+                                  type="button"
+                                  className="chat-message-recall-button inline-flex items-center gap-1 text-[11px] text-[#8a9ab0] hover:text-[#3974d8]"
+                                  onClick={() => void onRecall(message.id)}
+                                  title="撤回这条消息"
+                                >
+                                  <RotateCcw className="h-3 w-3" />
+                                  撤回
+                                </button>
+                              ) : null}
                             </span>
-                            {message.isLocal && onRecall ? (
-                              <button
-                                type="button"
-                                className="chat-message-recall-button inline-flex items-center gap-1 text-[11px] text-[#8a9ab0] hover:text-[#3974d8]"
-                                onClick={() => void onRecall(message.id)}
-                                title="撤回这条消息"
-                              >
-                                <RotateCcw className="h-3 w-3" />
-                                撤回
-                              </button>
-                            ) : null}
-                          </span>
+                          ) : null}
                           {message.image ? (
                             <button
                               type="button"
                               className="chat-image-thumbnail-button"
                               onClick={() => setPreviewImage(message.image ?? null)}
+                              onContextMenu={(event) => {
+                                event.preventDefault();
+                                copyImage(message.image?.dataUrl ?? "");
+                              }}
                               aria-label={`查看图片：${message.image.fileName || "聊天图片"}`}
                             >
                               <img
@@ -392,16 +526,23 @@ export const TemporaryChatPanel = ({
                               />
                             </button>
                           ) : null}
-                          {message.content ? (
+                          {shouldShowMessageBubble ? (
                             <span
                               className={`chat-message-bubble max-w-full whitespace-pre-wrap break-words rounded-[14px] px-3 py-1.5 text-[13px] leading-[1.4] [overflow-wrap:anywhere] ${
                                 message.isLocal
                                   ? "is-local rounded-tl-[4px] bg-[#EAF4FF] text-[#2F6FCC] border border-[rgba(126,184,249,0.25)]"
                                   : "is-remote rounded-bl-[4px] bg-white text-[#374151] border border-[rgba(220,230,242,0.5)]"
                               }`}
+                              onContextMenu={(event) => {
+                                event.preventDefault();
+                                copyText(message.content);
+                              }}
                             >
-                              {renderMessageContent(message.content)}
+                              {renderMessageContent(message.content, copyLink)}
                             </span>
+                          ) : null}
+                          {linkPreviewUrl ? (
+                            <MessageLinkPreview url={linkPreviewUrl} onCopy={copyLink} />
                           ) : null}
                         </div>
                       </div>
@@ -490,6 +631,10 @@ export const TemporaryChatPanel = ({
                   width={previewImage.width}
                   height={previewImage.height}
                   draggable={false}
+                  onContextMenu={(event) => {
+                    event.preventDefault();
+                    copyImage(previewImage.dataUrl);
+                  }}
                 />
               </div>
             </div>,

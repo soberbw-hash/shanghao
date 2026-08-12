@@ -70,6 +70,16 @@ export interface MusicActivity {
   artist?: string;
 }
 
+export type WorkActivityCategory =
+  "development" | "design" | "engineering" | "office" | "data" | "media";
+
+export interface WorkActivity {
+  id: string;
+  name: string;
+  category: WorkActivityCategory;
+  iconDataUrl?: string;
+}
+
 export interface RoomMember {
   id: string;
   profileId?: string;
@@ -86,7 +96,9 @@ export interface RoomMember {
   activity?: MemberActivity;
   sceneZone?: SceneZoneId;
   gameName?: string;
+  gameIconDataUrl?: string;
   musicActivity?: MusicActivity;
+  workActivity?: WorkActivity;
   latencyMs?: number;
   presenceState: MemberPresenceState;
   speakingState: MemberSpeakingState;
@@ -127,4 +139,26 @@ export interface ConnectionHealth {
   turnConfigured?: boolean;
   relayFallbackActive?: boolean;
   lastUpdatedAt?: string;
+}
+
+export interface DailyRoomGameSummary {
+  name: string;
+  participantCount: number;
+}
+
+export interface DailyRoomReport {
+  roomId: "main" | "side";
+  date: string;
+  hadActivity: boolean;
+  participantCount: number;
+  participantNicknames: string[];
+  activeDurationMs: number;
+  peakConcurrent: number;
+  messageCount: number;
+  screenShareCount: number;
+  games: DailyRoomGameSummary[];
+  lastExit?: {
+    nickname: string;
+    at: string;
+  };
 }

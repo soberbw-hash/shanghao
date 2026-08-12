@@ -14,6 +14,7 @@ import type { RoomMember } from "./room.types";
 import type {
   RecordingExportPayload,
   RecordingExportResponse,
+  RecordingLibrarySnapshot,
   RecordingMarker,
 } from "./recording.types";
 
@@ -26,6 +27,11 @@ export interface RuntimeInfo {
   isStartupLaunch: boolean;
   isElevated?: boolean;
   requestedExecutionLevel?: "asInvoker" | "requireAdministrator";
+}
+
+export interface DeepLinkInvite {
+  channelId: "main" | "side";
+  serverUrl: string;
 }
 
 export interface WindowsIntegrationStatus {
@@ -162,6 +168,16 @@ export interface GameDetectionSnapshot {
     | "GTA V"
     | "彩虹六号：围攻"
     | "怪物猎人"
+    | "失控进化"
+    | "逆战：未来"
+    | "王者荣耀世界"
+    | "异人之下"
+    | "命运方舟"
+    | "塔瑞斯世界"
+    | "剑灵 2"
+    | "终极角逐"
+    | "洛克王国：世界"
+    | "粒粒的小人国"
     | "黑神话：悟空"
     | "失落城堡 2"
     | "艾尔登法环"
@@ -169,8 +185,10 @@ export interface GameDetectionSnapshot {
     | "幻兽帕鲁"
     | "胡闹厨房"
     | "荒野大镖客 2";
+  gameIconDataUrl?: string;
   detectedAt?: string;
   musicActivity?: import("./room.types").MusicActivity;
+  workActivity?: import("./room.types").WorkActivity;
   checkedAt: string;
 }
 
@@ -180,10 +198,23 @@ export interface DesktopApi {
     getSystemIdleSeconds: () => Promise<number>;
     writeLog: (payload: RendererLogPayload) => Promise<void>;
     notify: (payload: { title: string; body: string; attention?: boolean }) => Promise<void>;
+    readChatHistory: (payload: {
+      serverUrl: string;
+      channelId: string;
+    }) => Promise<import("./room.types").ChatMessage[]>;
+    saveChatHistory: (payload: {
+      serverUrl: string;
+      channelId: string;
+      messages: import("./room.types").ChatMessage[];
+    }) => Promise<void>;
     openExternal: (url: string) => Promise<void>;
+    getLinkPreviewIcon: (url: string) => Promise<string | undefined>;
+    consumeDeepLink: () => Promise<DeepLinkInvite | undefined>;
+    onDeepLink: (listener: (invite: DeepLinkInvite) => void) => () => void;
   };
   clipboard: {
     writeText: (text: string) => Promise<void>;
+    writeImage: (dataUrl: string) => Promise<void>;
   };
   audio: {
     getDeepFilterAssets: () => Promise<DeepFilterAssets>;
@@ -257,6 +288,10 @@ export interface DesktopApi {
   };
   recording: {
     export: (payload: RecordingExportPayload) => Promise<RecordingExportResponse>;
+    chooseDirectory: () => Promise<string | undefined>;
     saveMarkers: (filePath: string, markers: RecordingMarker[]) => Promise<string>;
+    list: () => Promise<RecordingLibrarySnapshot>;
+    openDirectory: () => Promise<void>;
+    delete: (filePath: string) => Promise<void>;
   };
 }

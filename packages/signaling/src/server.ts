@@ -11,6 +11,7 @@ import {
   type BuiltInAvatarId,
   type RoomCollectionItem,
   type SceneZoneId,
+  type DailyRoomReport,
 } from "@private-voice/shared";
 import { WebSocket, WebSocketServer } from "ws";
 
@@ -24,6 +25,7 @@ import type {
   ChatRecallMessage,
   ChatHistoryMessage,
   ChannelCountsMessage,
+  DailyRoomReportsMessage,
   RoomCollectionAddMessage,
   RoomCollectionRemoveMessage,
   RoomCollectionSnapshotMessage,
@@ -41,6 +43,7 @@ import type {
   ChannelSnapshotMessage,
   RoomSnapshotMessage,
   RequestSnapshotMessage,
+  RequestDailyRoomReportsMessage,
   ScreenFrameMessage,
   ScreenPathStateMessage,
   ScreenShareStateMessage,
@@ -54,6 +57,7 @@ import { RoomCollectionStore } from "./room-collection-store";
 import { RoomManager } from "./room-manager";
 import type { SignalingRoom } from "./room-manager";
 import { SessionTokenStore } from "./session-token-store";
+import { DailyRoomReportStore } from "./daily-room-report-store";
 
 interface SignalingServerOptions {
   port?: number;
@@ -126,6 +130,7 @@ const SERVER_ONLY_MESSAGE_TYPES = new Set([
   "channel_snapshot",
   "chat_history",
   "channel_counts",
+  "daily_room_reports",
   "room_collection_snapshot",
   "avatar_update",
   "error",
@@ -157,6 +162,7 @@ const RATE_LIMITS: Record<string, { windowMs: number; limit: number }> = {
   screen_frame: { windowMs: 1_000, limit: 24 },
   screen_share_state: { windowMs: 10_000, limit: 10 },
   screen_path_state: { windowMs: 10_000, limit: 30 },
+  request_daily_room_reports: { windowMs: 10_000, limit: 6 },
 };
 const SEAT_ZONES: SceneZoneId[] = ["gameDesk1", "gameDesk2", "gameDesk3", "gameDesk4", "gameDesk5"];
 
@@ -274,6 +280,7 @@ export class SignalingServer extends EventEmitter {
   private readonly invalidMessages = new WeakMap<WebSocket, number>();
   private readonly chatHistory: Promise<ChatHistoryStore>;
   private readonly roomCollection: Promise<RoomCollectionStore>;
+  private readonly dailyRoomReports: Promise<DailyRoomReportStore>;
   private readonly sessionTokens = new SessionTokenStore();
   private readonly iceConfigRateWindows = new Map<string, { startedAt: number; count: number }>();
 
@@ -286,6 +293,13 @@ export class SignalingServer extends EventEmitter {
       process.env.ROOM_COLLECTION_FILE ??
         (process.env.CHAT_HISTORY_FILE
           ? `${process.env.CHAT_HISTORY_FILE}.collection.json`
+          : undefined),
+      this.logger,
+    );
+    this.dailyRoomReports = DailyRoomReportStore.create(
+      process.env.DAILY_ROOM_REPORT_FILE ??
+        (process.env.CHAT_HISTORY_FILE
+          ? `${process.env.CHAT_HISTORY_FILE}.daily-reports.json`
           : undefined),
       this.logger,
     );
@@ -418,8 +432,19 @@ export class SignalingServer extends EventEmitter {
 
     this.heartbeatTimer = setInterval(() => {
       for (const stale of this.roomManager.collectStalePeers()) {
+        const peer = this.roomManager.getRoom(stale.roomId)?.peers.getPeer(stale.peerId);
         this.sessionTokens.invalidate(stale.roomId, stale.peerId);
         this.roomManager.removePeer(stale.roomId, stale.peerId);
+        if (peer) {
+          void this.dailyRoomReports.then((store) =>
+            store.recordLeave(
+              stale.roomId,
+              stale.peerId,
+              peer.nickname,
+              this.roomManager.getConnectedPeerCount(stale.roomId),
+            ),
+          );
+        }
         this.broadcastSnapshot(stale.roomId);
       }
     }, HEARTBEAT_INTERVAL_MS);
@@ -442,6 +467,7 @@ export class SignalingServer extends EventEmitter {
 
     await (await this.chatHistory).flush();
     await (await this.roomCollection).flush();
+    await (await this.dailyRoomReports).flush();
     this.sessionTokens.clear();
 
     await new Promise<void>((resolve, reject) => {
@@ -693,6 +719,9 @@ export class SignalingServer extends EventEmitter {
       case "request_snapshot":
         this.handleSnapshotRequest(socket, authoritative);
         return;
+      case "request_daily_room_reports":
+        void this.sendDailyRoomReports(socket, authoritative);
+        return;
       case "peer_offer":
       case "peer_answer":
       case "peer_restart_request":
@@ -886,6 +915,9 @@ export class SignalingServer extends EventEmitter {
         assignedSceneZone === "restroomZone" ? "restroom" : (existingPeer?.activity ?? "idle"),
       sceneZone: assignedSceneZone,
       gameName: existingPeer?.gameName,
+      gameIconDataUrl: existingPeer?.gameIconDataUrl,
+      musicActivity: existingPeer?.musicActivity,
+      workActivity: existingPeer?.workActivity,
       joinedAt: existingPeer?.joinedAt ?? new Date().toISOString(),
       lastHeartbeatAt: Date.now(),
       disconnectedAt: undefined,
@@ -899,6 +931,16 @@ export class SignalingServer extends EventEmitter {
       peerId: message.peerId,
       memberCount: room.peers.listPeers().length,
     });
+    if (!existingPeer) {
+      void this.dailyRoomReports.then((store) =>
+        store.recordJoin(
+          message.roomId,
+          message.peerId,
+          message.nickname,
+          room.peers.listConnectedPeers().length,
+        ),
+      );
+    }
 
     const joinAck: JoinAckMessage = {
       type: "join_ack",
@@ -921,7 +963,18 @@ export class SignalingServer extends EventEmitter {
 
   private handleLeave(socket: WebSocket, message: LeaveChannelMessage): void {
     this.logger?.("peer left", { roomId: message.roomId, peerId: message.peerId });
+    const peer = this.roomManager.getRoom(message.roomId)?.peers.getPeer(message.peerId);
     this.roomManager.removePeer(message.roomId, message.peerId);
+    if (peer) {
+      void this.dailyRoomReports.then((store) =>
+        store.recordLeave(
+          message.roomId,
+          message.peerId,
+          peer.nickname,
+          this.roomManager.getConnectedPeerCount(message.roomId),
+        ),
+      );
+    }
     this.sessionTokens.invalidate(message.roomId, message.peerId);
     this.sessions.delete(socket);
     this.broadcastSnapshot(message.roomId);
@@ -968,6 +1021,7 @@ export class SignalingServer extends EventEmitter {
     const normalizedActivity =
       normalizedSceneZone === "restroomZone" ? "restroom" : message.activity;
     const normalizedGameName = message.gameName?.trim() || undefined;
+    const normalizedGameIconDataUrl = message.gameIconDataUrl;
     const normalizedMusicActivity = message.musicActivity
       ? {
           provider: message.musicActivity.provider,
@@ -978,6 +1032,16 @@ export class SignalingServer extends EventEmitter {
       : message.musicActivity === null
         ? null
         : undefined;
+    const normalizedWorkActivity = message.workActivity
+      ? {
+          id: message.workActivity.id,
+          name: message.workActivity.name.trim().slice(0, 48),
+          category: message.workActivity.category,
+          iconDataUrl: message.workActivity.iconDataUrl,
+        }
+      : message.workActivity === null
+        ? null
+        : undefined;
     const normalizedAvatar = normalizeAvatar(message.avatarDataUrl);
     room.peers.updateMemberState(message.peerId, {
       isMuted: message.isMuted,
@@ -986,12 +1050,17 @@ export class SignalingServer extends EventEmitter {
       activity: normalizedActivity,
       sceneZone: normalizedSceneZone,
       gameName: normalizedGameName,
+      gameIconDataUrl: normalizedGameIconDataUrl,
       musicActivity: normalizedMusicActivity,
+      workActivity: normalizedWorkActivity,
       nickname: message.nickname,
       avatarDataUrl: normalizedAvatar.avatarDataUrl,
       avatarHash: normalizedAvatar.avatarHash,
       avatarId: message.avatarId,
     });
+    void this.dailyRoomReports.then((store) =>
+      store.recordGame(message.roomId, message.peerId, normalizedGameName),
+    );
     const payload: MemberStateMessage = {
       type: "member_state",
       roomId: message.roomId,
@@ -1002,7 +1071,9 @@ export class SignalingServer extends EventEmitter {
       activity: normalizedActivity,
       sceneZone: normalizedSceneZone,
       gameName: normalizedGameName,
+      gameIconDataUrl: normalizedGameIconDataUrl,
       musicActivity: normalizedMusicActivity,
+      workActivity: normalizedWorkActivity,
       nickname: message.nickname,
       avatarId: message.avatarId,
     };
@@ -1038,6 +1109,7 @@ export class SignalingServer extends EventEmitter {
     };
 
     void this.chatHistory.then((store) => store.append(message.roomId, storedMessage));
+    void this.dailyRoomReports.then((store) => store.recordMessage(message.roomId));
 
     for (const peer of room.peers.listConnectedPeers()) {
       this.safeSend(peer.socket, payload);
@@ -1251,12 +1323,31 @@ export class SignalingServer extends EventEmitter {
       peerId: message.peerId,
       isSharing: message.isSharing,
     };
+    void this.dailyRoomReports.then((store) =>
+      store.recordScreenShare(message.roomId, message.peerId, message.isSharing),
+    );
 
     for (const peer of room.peers.listConnectedPeers()) {
       if (peer.id !== message.peerId) {
         this.safeSend(peer.socket, payload);
       }
     }
+  }
+
+  private async sendDailyRoomReports(
+    socket: WebSocket,
+    message: RequestDailyRoomReportsMessage,
+  ): Promise<void> {
+    const reports: DailyRoomReport[] = (await this.dailyRoomReports).getHistory(
+      message.targetRoomId,
+    );
+    const payload: DailyRoomReportsMessage = {
+      type: "daily_room_reports",
+      roomId: message.roomId,
+      targetRoomId: message.targetRoomId,
+      reports,
+    };
+    this.safeSend(socket, payload);
   }
 
   private broadcastSceneReaction(message: SceneReactionMessage): void {

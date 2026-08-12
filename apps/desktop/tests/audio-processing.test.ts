@@ -55,6 +55,8 @@ test("DeepFilterNet is the only suppression engine and keeps raw audio on model 
     "utf8",
   );
   assert.equal(processor.includes("DeepFilterNet3Core"), true);
+  assert.equal(processor.includes("const DEEPFILTER_SUPPRESSION_LEVEL = 50"), true);
+  assert.equal(processor.includes("core.setSuppressionLevel(DEEPFILTER_SUPPRESSION_LEVEL)"), true);
   assert.equal(processor.includes("getDeepFilterAssets"), true);
   assert.equal(processor.includes('noiseProcessor = "deepfilter_active"'), true);
   assert.equal(processor.includes('noiseProcessor = "deepfilter_unavailable"'), true);
@@ -170,11 +172,11 @@ test("legacy screen-frame fallback is isolated from audio readiness", () => {
   assert.equal(targetSelection.includes("webrtcReadyPeerIds"), false);
 });
 
-test("member playback volume is local, bounded to 200%, and restores after local mute", () => {
+test("member playback volume is local, bounded to 300%, and restores after local mute", () => {
   assert.equal(clampMemberVolume(-1), 0);
   assert.equal(clampMemberVolume(1.35), 1.35);
-  assert.equal(clampMemberVolume(3), 2);
-  assert.equal(memberVolumeToPercent(2), 200);
+  assert.equal(clampMemberVolume(3.5), 3);
+  assert.equal(memberVolumeToPercent(3), 300);
   assert.equal(toggleLocalMemberMute(1.35, 1), 0);
   assert.equal(toggleLocalMemberMute(0, 1.35), 1.35);
   assert.equal(toggleLocalMemberMute(0, 0), 1);

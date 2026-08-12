@@ -251,14 +251,17 @@ test("installer and updater quit paths clean background surfaces", () => {
   assert.equal(installer.includes("ExecutablePath.StartsWith($$dir"), true);
 });
 
-test("room invite copies only the server address with a visible success toast", () => {
+test("room invite copies an app deep link with a visible success toast", () => {
   const hook = read("apps/desktop/src/renderer/src/hooks/useRoomState.ts");
   const roomPage = read("apps/desktop/src/renderer/src/pages/RoomPage.tsx");
 
   assert.equal(hook.includes("buildChannelInviteText"), true);
   assert.equal(hook.includes("上号频道码："), false);
   assert.equal(hook.includes("服务器地址："), false);
-  assert.equal(hook.includes("服务器地址已复制"), true);
+  assert.equal(hook.includes('new URL("shanghao://join")'), true);
+  assert.equal(hook.includes("邀请链接已复制"), true);
+  assert.equal(hook.includes("consumeDeepLink"), true);
+  assert.equal(hook.includes("onDeepLink"), true);
   assert.equal(hook.includes('playUiSound("copy-success")'), true);
   assert.equal(hook.includes("Copied fixed channel invite"), true);
   assert.equal(hook.includes("desktopApi.clipboard.writeText"), true);

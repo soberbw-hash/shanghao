@@ -27,6 +27,8 @@ export interface AppSettings {
   globalMuteShortcut: string;
   pushToTalkShortcut: string;
   recordingMarkerShortcut: string;
+  recordingSaveDirectory?: string;
+  recordingLibraryQuotaGb: number;
   isNoiseSuppressionEnabled: boolean;
   isEchoCancellationEnabled: boolean;
   isAutoGainControlEnabled: boolean;
@@ -39,6 +41,7 @@ export interface AppSettings {
   soundVolume: number;
   isSystemNotificationEnabled: boolean;
   isGameDetectionEnabled: boolean;
+  isWorkActivityVisible: boolean;
   isUiSoundEnabled: boolean;
   isBackgroundUpdateCheckEnabled: boolean;
   lastCollectionViewedAt?: string;
@@ -48,6 +51,7 @@ export interface AppSettings {
   lastUpdateCheckAt?: string;
   lastUpdateVersionSeen?: string;
   lastReleaseNotesVersionSeen?: string;
+  lastDailyRoomReportSeen?: Partial<Record<"main" | "side", string>>;
 }
 
 export interface RelayStatusSnapshot {

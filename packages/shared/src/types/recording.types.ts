@@ -54,3 +54,22 @@ export interface RecordingExportResponse {
   fileSize?: number;
   errorMessage?: string;
 }
+
+export interface RecordingLibraryItem {
+  id: string;
+  fileName: string;
+  filePath: string;
+  mediaUrl: string;
+  createdAt: string;
+  modifiedAt: string;
+  fileSize: number;
+  roomId?: "main" | "side";
+  markers: RecordingMarker[];
+}
+
+export interface RecordingLibrarySnapshot {
+  directory: string;
+  totalBytes: number;
+  quotaBytes: number;
+  items: RecordingLibraryItem[];
+}

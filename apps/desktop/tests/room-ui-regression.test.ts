@@ -11,7 +11,7 @@ import {
 } from "@private-voice/shared";
 
 import { seatSlots } from "../src/renderer/src/features/voice-scene/sceneZones";
-import { useRoomStore } from "../src/renderer/src/store/roomStore";
+import { stabilizePeerLatency, useRoomStore } from "../src/renderer/src/store/roomStore";
 import { getNicknameValidationError } from "../src/renderer/src/utils/nickname";
 
 const member = (latencyMs?: number): RoomMember => ({
@@ -43,6 +43,22 @@ test("seat state updates preserve the last valid peer latency", () => {
   assert.equal(updated?.sceneZone, "gameDesk3");
 });
 
+test("peer latency keeps the last value and smooths noisy measurements", () => {
+  assert.equal(stabilizePeerLatency(48, undefined), 48);
+  assert.equal(stabilizePeerLatency(48, Number.NaN), 48);
+  assert.equal(stabilizePeerLatency(48, 51), 48);
+  assert.equal(stabilizePeerLatency(48, 88), 59);
+
+  useRoomStore.getState().resetRoom();
+  useRoomStore.getState().setMembers([member(48)]);
+  useRoomStore.getState().updatePeerLatency("peer-latency", undefined);
+  assert.equal(
+    useRoomStore.getState().room.members.find((candidate) => candidate.id === "peer-latency")
+      ?.latencyMs,
+    48,
+  );
+});
+
 test("ordinary workstation selection is idle until a real game is detected", () => {
   assert.equal(
     seatSlots.every((slot) => slot.activity === "idle"),
@@ -55,9 +71,160 @@ test("local speaker and microphone state are applied atomically before server ec
     path.resolve(process.cwd(), "src/renderer/src/hooks/useRoomState.ts"),
     "utf8",
   );
-  assert.equal(source.includes("updateLocalPresence({ isMuted, isDeafened })"), true);
+  assert.equal(source.includes("speakingState: isMuted"), true);
+  assert.equal(source.includes("activeClient?.updateMuteState(isMuted, isSpeaking)"), true);
+  assert.equal(source.includes("updateLocalPresence({\n          speakingState: muted"), true);
   assert.equal(source.includes("isMuted: audioState.isMuted"), true);
   assert.equal(source.includes("isDeafened: audioState.isDeafened"), true);
+});
+
+test("speaking state changes never move the local character to another seat", () => {
+  useRoomStore.getState().resetRoom();
+  useRoomStore.getState().setMembers([
+    {
+      ...member(36),
+      id: "local-speaker",
+      isLocal: true,
+      sceneZone: "gameDesk4",
+    },
+  ]);
+
+  useRoomStore.getState().updateLocalPresence({
+    speakingState: MemberSpeakingState.Speaking,
+  });
+
+  const local = useRoomStore.getState().room.members.find((candidate) => candidate.isLocal);
+  assert.equal(local?.sceneZone, "gameDesk4");
+
+  const source = readFileSync(
+    path.resolve(process.cwd(), "src/renderer/src/pages/RoomPage.tsx"),
+    "utf8",
+  );
+  assert.equal(source.includes("[localMember]"), false);
+  assert.equal(source.includes("localMember?.sceneZone"), true);
+});
+
+test("new additive room requests are not sent to the deployed 2.5 server", () => {
+  const source = readFileSync(
+    path.resolve(process.cwd(), "src/renderer/src/features/room/roomClient.ts"),
+    "utf8",
+  );
+  assert.equal(source.includes('DAILY_ROOM_REPORTS_MIN_BUILD = "2026.08.12.1"'), true);
+  assert.equal(
+    source.includes("serverBuildSupportsDailyRoomReports(this.serverBuildNumber)"),
+    true,
+  );
+  assert.equal(
+    source.includes(
+      'payload.code === "invalid_payload" && this.hasJoinedOnce && this.joinAckReceived',
+    ),
+    true,
+  );
+});
+
+test("screen-share UI requires an explicit current-room sharing announcement", () => {
+  useRoomStore.getState().resetRoom();
+  useRoomStore.getState().setRemoteScreenSharing("peer-screen", true);
+  assert.equal(useRoomStore.getState().remoteScreenSharing["peer-screen"], true);
+  useRoomStore.getState().clearChannelContent();
+  assert.equal(useRoomStore.getState().remoteScreenSharing["peer-screen"], undefined);
+
+  const roomSource = readFileSync(
+    path.resolve(process.cwd(), "src/renderer/src/pages/RoomPage.tsx"),
+    "utf8",
+  );
+  const clientSource = readFileSync(
+    path.resolve(process.cwd(), "src/renderer/src/features/room/roomClient.ts"),
+    "utf8",
+  );
+  assert.equal(roomSource.includes("remoteScreenSharing[peerId] &&"), true);
+  assert.equal(clientSource.includes("onRemoteScreenShareState(payload.peerId, true)"), true);
+  assert.equal(clientSource.includes("onRemoteScreenShareState(payload.peerId, false)"), true);
+});
+
+test("collection composer is fixed-size and primary audio controls use matching crisp icons", () => {
+  const styles = readFileSync(
+    path.resolve(process.cwd(), "src/renderer/src/styles/index.css"),
+    "utf8",
+  );
+  const muteButton = readFileSync(
+    path.resolve(process.cwd(), "src/renderer/src/components/audio/MuteButton.tsx"),
+    "utf8",
+  );
+  const roomSource = readFileSync(
+    path.resolve(process.cwd(), "src/renderer/src/pages/RoomPage.tsx"),
+    "utf8",
+  );
+  assert.match(styles, /\.collection-composer textarea \{[\s\S]*?resize: none;/);
+  assert.equal(muteButton.includes('className="voice-primary-icon"'), true);
+  assert.equal(roomSource.includes('<Volume2 className="voice-primary-icon"'), true);
+  assert.equal(roomSource.includes('<VolumeX className="voice-primary-icon"'), true);
+});
+
+test("chat history persists across updates and live messages use Windows notifications", () => {
+  const roomStateSource = readFileSync(
+    path.resolve(process.cwd(), "src/renderer/src/hooks/useRoomState.ts"),
+    "utf8",
+  );
+  const preloadSource = readFileSync(path.resolve(process.cwd(), "src/preload/index.ts"), "utf8");
+  const ipcSource = readFileSync(path.resolve(process.cwd(), "src/main/ipc.ts"), "utf8");
+  const roomStoreSource = readFileSync(
+    path.resolve(process.cwd(), "src/renderer/src/store/roomStore.ts"),
+    "utf8",
+  );
+
+  assert.equal(roomStateSource.includes("readChatHistory({ serverUrl, channelId })"), true);
+  assert.equal(roomStateSource.includes("saveChatHistory({"), true);
+  assert.equal(roomStoreSource.includes("MAX_LOCAL_CHAT_MESSAGES = 500"), true);
+  assert.equal(roomStateSource.includes("title: `${message.nickname} 发来消息`"), true);
+  assert.equal(preloadSource.includes("IPC_CHANNELS.app.readChatHistory"), true);
+  assert.equal(ipcSource.includes('app.getPath("userData")'), true);
+});
+
+test("locally sent link previews stay fully visible above the composer", () => {
+  const chatSource = readFileSync(
+    path.resolve(process.cwd(), "src/renderer/src/components/chat/TemporaryChatPanel.tsx"),
+    "utf8",
+  );
+
+  assert.equal(chatSource.includes('latestMessage?.isLocal ? "auto" : "smooth"'), true);
+  assert.equal(chatSource.includes("list.scrollTop = list.scrollHeight"), true);
+});
+
+test("the seated duck stays centered over its compact chair", () => {
+  const styles = readFileSync(
+    path.resolve(process.cwd(), "src/renderer/src/styles/index.css"),
+    "utf8",
+  );
+
+  assert.match(
+    styles,
+    /\.desk-animal\[data-avatar-id="duck"\] \.desk-animal-chair \{[\s\S]*?left: 50%;[\s\S]*?width: 76px;[\s\S]*?height: 76px;/,
+  );
+  assert.doesNotMatch(
+    styles,
+    /\.desk-animal\[data-avatar-id="duck"\] \.desk-animal-chair \{[\s\S]*?left: 54%;/,
+  );
+});
+
+test("volume sliders expose and snap to the 100 percent reference node", () => {
+  const roomSource = readFileSync(
+    path.resolve(process.cwd(), "src/renderer/src/pages/RoomPage.tsx"),
+    "utf8",
+  );
+  const characterSource = readFileSync(
+    path.resolve(process.cwd(), "src/renderer/src/components/room/SceneCharacter.tsx"),
+    "utf8",
+  );
+  const sliderSource = readFileSync(
+    path.resolve(process.cwd(), "../../packages/ui/src/components/Slider.tsx"),
+    "utf8",
+  );
+
+  assert.equal(roomSource.includes("referenceValue={1}"), true);
+  assert.equal(characterSource.includes("referenceValue={100}"), true);
+  assert.equal(sliderSource.includes("slider-reference-node"), true);
+  assert.equal(sliderSource.includes("event.currentTarget.value = String(referenceValue)"), true);
 });
 
 test("abusive, suggestive and family-title nickname variants are rejected", () => {

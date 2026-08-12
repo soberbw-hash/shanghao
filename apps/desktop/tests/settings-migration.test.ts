@@ -73,6 +73,15 @@ test("migrateSettings preserves the release notes version already shown", () => 
   assert.equal(result.settings.lastReleaseNotesVersionSeen, "2.4.0");
 });
 
+test("migrateSettings preserves the locally selected recording directory", () => {
+  const result = migrateSettings({
+    ...defaultSettings,
+    recordingSaveDirectory: " D:\\Friends\\Voice Records ",
+  });
+
+  assert.equal(result.settings.recordingSaveDirectory, "D:\\Friends\\Voice Records");
+});
+
 test("legacy sample-rate preferences are removed because microphone processing is fixed at 48 kHz", () => {
   for (const preferredSampleRate of ["auto", "32000", "44100", "48000"]) {
     const result = migrateSettings({

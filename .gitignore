@@ -18,6 +18,10 @@ apps/desktop/.local-reconnect-build/
 apps/desktop/local-test/
 apps/desktop/.tmp/
 
+# Local visual QA captures are generated during review and are not release assets.
+design-qa*.png
+apps/desktop/design-qa*.png
+
 # Local experiments and repair utilities are intentionally outside the product workspace.
 apps/desktop-pet/
 apps/network-repair/

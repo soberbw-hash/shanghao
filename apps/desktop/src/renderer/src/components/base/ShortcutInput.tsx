@@ -13,6 +13,18 @@ const modifierLabels: Record<string, string> = {
 
 const ignoredKeys = new Set(["Tab"]);
 
+export const formatShortcutForDisplay = (value: string): string =>
+  value
+    .split("+")
+    .map((part) => {
+      const normalized = part.trim();
+      if (normalized === "CommandOrControl" || normalized === "Control") return "Ctrl";
+      if (normalized === "Meta" || normalized === "Super") return "Win";
+      return normalized;
+    })
+    .filter(Boolean)
+    .join(" + ");
+
 const normalizeKey = (event: KeyboardEvent<HTMLInputElement>) => {
   const modifiers = [
     event.ctrlKey ? "Ctrl" : "",
@@ -57,18 +69,19 @@ export const ShortcutInput = ({
       return "请直接按下快捷键";
     }
 
-    return value;
+    return formatShortcutForDisplay(value);
   }, [isCapturing, value]);
 
   return (
-    <div className="w-full space-y-2">
+    <div className="shortcut-input-wrap w-full space-y-2">
       <div className="flex items-center gap-3">
         <div className="relative flex-1">
           <Keyboard className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#98A2B3]" />
           <Input
             readOnly
-            className="pl-10"
+            className="shortcut-input-field pl-10"
             value={displayValue}
+            title={displayValue}
             placeholder={placeholder}
             onFocus={() => setIsCapturing(true)}
             onBlur={() => setIsCapturing(false)}

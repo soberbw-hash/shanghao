@@ -1,5 +1,5 @@
+import { useRef } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-
 import type { RoomMember } from "@private-voice/shared";
 
 import { motionCurve, motionDuration } from "../../features/motion/motionSystem";
@@ -24,11 +24,16 @@ export const SceneCharacterLabel = ({
 }) => {
   const status = memberStatus(member);
   const isReconnecting = status.tone === "reconnecting";
+  const lastLatencyRef = useRef<number>();
+  if (typeof member.latencyMs === "number") {
+    lastLatencyRef.current = Math.round(member.latencyMs / 5) * 5;
+  }
+  const displayedLatency = lastLatencyRef.current;
 
   if (isAway) {
     return (
       <div className="room-character-away-label" title={member.nickname}>
-        {member.nickname}
+        <span>{member.nickname}</span>
       </div>
     );
   }
@@ -41,7 +46,7 @@ export const SceneCharacterLabel = ({
         </strong>
         <span aria-hidden="true">·</span>
         <span className={`room-character-latency ${getLatencyTone(member.latencyMs)}`}>
-          {typeof member.latencyMs === "number" ? Math.round(member.latencyMs) : "--"} ms
+          {typeof displayedLatency === "number" ? `${displayedLatency} ms` : "—"}
         </span>
       </span>
       <span className="room-character-state">

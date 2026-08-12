@@ -80,12 +80,27 @@ export const gameArtworkCatalog: Partial<Record<SupportedGameName, GameArtwork>>
   },
 };
 
-export const GameMonitorContent = ({ gameName }: { gameName: string }) => {
+export const GameMonitorContent = ({
+  gameName,
+  iconDataUrl,
+}: {
+  gameName: string;
+  iconDataUrl?: string;
+}) => {
   const artwork = gameArtworkCatalog[gameName as SupportedGameName];
   if (!artwork) {
     return (
       <span className="scene-game-monitor-content scene-game-monitor-content--fallback">
-        <Gamepad2 aria-hidden="true" />
+        {iconDataUrl ? (
+          <img
+            className="scene-game-monitor-runtime-icon"
+            src={iconDataUrl}
+            alt=""
+            aria-hidden="true"
+          />
+        ) : (
+          <Gamepad2 aria-hidden="true" />
+        )}
         <span className="scene-game-monitor-label">{gameName}</span>
       </span>
     );

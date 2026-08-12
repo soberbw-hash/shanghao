@@ -8,10 +8,22 @@ const desktopApi: DesktopApi = {
     getSystemIdleSeconds: () => ipcRenderer.invoke(IPC_CHANNELS.app.getSystemIdleSeconds),
     writeLog: (payload) => ipcRenderer.invoke(IPC_CHANNELS.app.writeLog, payload),
     notify: (payload) => ipcRenderer.invoke(IPC_CHANNELS.app.notify, payload),
+    readChatHistory: (payload) => ipcRenderer.invoke(IPC_CHANNELS.app.readChatHistory, payload),
+    saveChatHistory: (payload) => ipcRenderer.invoke(IPC_CHANNELS.app.saveChatHistory, payload),
     openExternal: (url) => ipcRenderer.invoke(IPC_CHANNELS.app.openExternal, url),
+    getLinkPreviewIcon: (url) => ipcRenderer.invoke(IPC_CHANNELS.app.getLinkPreviewIcon, url),
+    consumeDeepLink: () => ipcRenderer.invoke(IPC_CHANNELS.app.consumeDeepLink),
+    onDeepLink: (listener) => {
+      const wrapped = (_event: Electron.IpcRendererEvent, invite: unknown) => {
+        listener(invite as Parameters<typeof listener>[0]);
+      };
+      ipcRenderer.on(IPC_CHANNELS.app.deepLink, wrapped);
+      return () => ipcRenderer.removeListener(IPC_CHANNELS.app.deepLink, wrapped);
+    },
   },
   clipboard: {
     writeText: (text) => ipcRenderer.invoke(IPC_CHANNELS.clipboard.writeText, text),
+    writeImage: (dataUrl) => ipcRenderer.invoke(IPC_CHANNELS.clipboard.writeImage, dataUrl),
   },
   audio: {
     getDeepFilterAssets: () => ipcRenderer.invoke(IPC_CHANNELS.audio.getDeepFilterAssets),
@@ -134,8 +146,12 @@ const desktopApi: DesktopApi = {
   },
   recording: {
     export: (payload) => ipcRenderer.invoke(IPC_CHANNELS.recording.export, payload),
+    chooseDirectory: () => ipcRenderer.invoke(IPC_CHANNELS.recording.chooseDirectory),
     saveMarkers: (filePath, markers) =>
       ipcRenderer.invoke(IPC_CHANNELS.recording.saveMarkers, filePath, markers),
+    list: () => ipcRenderer.invoke(IPC_CHANNELS.recording.list),
+    openDirectory: () => ipcRenderer.invoke(IPC_CHANNELS.recording.openDirectory),
+    delete: (filePath) => ipcRenderer.invoke(IPC_CHANNELS.recording.delete, filePath),
   },
 };
 

@@ -7,6 +7,7 @@ import {
   type PointerEvent as ReactPointerEvent,
 } from "react";
 import {
+  ChevronDown,
   Copy,
   ExternalLink,
   FolderHeart,
@@ -14,6 +15,7 @@ import {
   Plus,
   Trash2,
   Volume2,
+  VolumeX,
 } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
 import { gsap } from "gsap";
@@ -22,21 +24,25 @@ import {
   RecordingEncoderState,
   RecordingState,
   RoomConnectionState,
+  type AppSettings,
   type GameDetectionSnapshot,
   type AudioDeviceDescriptor,
   type MemberActivity,
   type ScreenCaptureSourceDescriptor,
   type SceneZoneId,
 } from "@private-voice/shared";
+import { cn } from "@private-voice/ui";
 
 import { MuteButton } from "../components/audio/MuteButton";
 import { RecordingButton } from "../components/audio/RecordingButton";
 import { AnimatedControlIcon } from "../components/icons/AnimatedControlIcon";
 import { Button } from "../components/base/Button";
 import { Slider } from "../components/base/Slider";
+import { Switch } from "../components/base/Switch";
 import { TemporaryChatPanel } from "../components/chat/TemporaryChatPanel";
 import { TopStatusBar } from "../components/layout/TopStatusBar";
 import { TeamIsland } from "../components/room/TeamIsland";
+import { RecordingStopDialog } from "../components/status/RecordingStopDialog";
 import { playUiSound } from "../features/audio/uiSound";
 import { getRemoteAudioMixer } from "../features/audio/RemoteAudioMixer";
 import { motionDuration, motionEase } from "../features/motion/motionSystem";
@@ -73,7 +79,9 @@ interface AwaySession {
   seat: SceneZoneId;
   activity: MemberActivity;
   gameName?: string;
+  gameIconDataUrl?: string;
   musicActivity?: GameDetectionSnapshot["musicActivity"];
+  workActivity?: GameDetectionSnapshot["workActivity"];
   enteredAt: string;
 }
 
@@ -280,6 +288,15 @@ const AudioControlPopover = ({
   onVolumeCommit,
   onTest,
   onReset,
+  autoGainEnabled,
+  onAutoGainChange,
+  noiseSuppressionEnabled,
+  isNoiseSuppressionSwitching,
+  onNoiseSuppressionChange,
+  echoCancellationEnabled,
+  onEchoCancellationChange,
+  voiceEnhancementEnabled,
+  onVoiceEnhancementChange,
 }: {
   title: string;
   devices: AudioDeviceDescriptor[];
@@ -292,42 +309,123 @@ const AudioControlPopover = ({
   onVolumeCommit: (volume: number) => void;
   onTest?: () => void;
   onReset: () => void;
+  autoGainEnabled?: boolean;
+  onAutoGainChange?: (enabled: boolean) => void;
+  noiseSuppressionEnabled?: boolean;
+  isNoiseSuppressionSwitching?: boolean;
+  onNoiseSuppressionChange?: (enabled: boolean) => void;
+  echoCancellationEnabled?: boolean;
+  onEchoCancellationChange?: (enabled: boolean) => void;
+  voiceEnhancementEnabled?: boolean;
+  onVoiceEnhancementChange?: (enabled: boolean) => void;
 }) => {
   const [draftVolume, setDraftVolume] = useState(volume);
   useEffect(() => setDraftVolume(volume), [volume]);
 
   const commit = () => onVolumeCommit(draftVolume);
+  const hasMicrophoneProcessing =
+    typeof noiseSuppressionEnabled === "boolean" ||
+    typeof autoGainEnabled === "boolean" ||
+    typeof echoCancellationEnabled === "boolean" ||
+    typeof voiceEnhancementEnabled === "boolean";
+  const deviceSelect = (
+    <select
+      value={deviceId || ""}
+      aria-label={`${title}设备`}
+      onChange={(event) => onDeviceChange(event.currentTarget.value || undefined)}
+    >
+      <option value="">系统默认</option>
+      {devices.map((device) => (
+        <option key={device.id} value={device.id}>
+          {device.label || title}
+        </option>
+      ))}
+    </select>
+  );
 
   return (
     <motion.div
       className="audio-control-popover"
-      initial={{ opacity: 0, y: 8, scale: 0.97 }}
-      animate={{ opacity: 1, y: 0, scale: 1 }}
-      exit={{ opacity: 0, y: 5, scale: 0.98 }}
-      transition={{ type: "spring", stiffness: 360, damping: 30, mass: 0.55 }}
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      transition={{ duration: 0.14, ease: "easeOut" }}
     >
       <div className="audio-control-popover-heading">
         <strong>{title}</strong>
         <span>{Math.round(draftVolume * 100)}%</span>
       </div>
-      <select
-        value={deviceId || ""}
-        aria-label={`${title}设备`}
-        onChange={(event) => onDeviceChange(event.currentTarget.value || undefined)}
-      >
-        <option value="">系统默认</option>
-        {devices.map((device) => (
-          <option key={device.id} value={device.id}>
-            {device.label || title}
-          </option>
-        ))}
-      </select>
+      {hasMicrophoneProcessing ? null : deviceSelect}
+      {typeof noiseSuppressionEnabled === "boolean" && onNoiseSuppressionChange ? (
+        <div
+          className="audio-control-processing-option"
+          data-audio-setting="noise-suppression"
+          aria-busy={isNoiseSuppressionSwitching}
+        >
+          <span>
+            <strong>降噪</strong>
+            <small>{isNoiseSuppressionSwitching ? "正在切换" : "减少环境噪声"}</small>
+          </span>
+          <Switch
+            isChecked={noiseSuppressionEnabled}
+            isDisabled={isNoiseSuppressionSwitching}
+            ariaLabel="切换降噪"
+            onChange={(enabled) => {
+              if (!isNoiseSuppressionSwitching) onNoiseSuppressionChange(enabled);
+            }}
+          />
+        </div>
+      ) : null}
+      {typeof echoCancellationEnabled === "boolean" && onEchoCancellationChange ? (
+        <div className="audio-control-processing-option" data-audio-setting="echo-cancellation">
+          <span>
+            <strong>回声消除</strong>
+            <small>减少扬声器声音回传</small>
+          </span>
+          <Switch
+            isChecked={Boolean(echoCancellationEnabled)}
+            isDisabled={isNoiseSuppressionSwitching}
+            ariaLabel="切换回声消除"
+            onChange={onEchoCancellationChange}
+          />
+        </div>
+      ) : null}
+      {typeof voiceEnhancementEnabled === "boolean" && onVoiceEnhancementChange ? (
+        <div className="audio-control-processing-option" data-audio-setting="voice-enhancement">
+          <span>
+            <strong>人声增强</strong>
+            <small>让说话更清楚</small>
+          </span>
+          <Switch
+            isChecked={voiceEnhancementEnabled}
+            isDisabled={isNoiseSuppressionSwitching}
+            ariaLabel="切换人声增强"
+            onChange={onVoiceEnhancementChange}
+          />
+        </div>
+      ) : null}
+      {typeof autoGainEnabled === "boolean" && onAutoGainChange ? (
+        <div className="audio-control-processing-option" data-audio-setting="auto-gain">
+          <span>
+            <strong>自动增益</strong>
+            <small>自动平衡说话音量</small>
+          </span>
+          <Switch
+            isChecked={autoGainEnabled}
+            ariaLabel="切换自动增益"
+            onChange={onAutoGainChange}
+          />
+        </div>
+      ) : null}
+      {hasMicrophoneProcessing ? deviceSelect : null}
       <div className="audio-control-popover-slider">
         <Slider
           min={min}
           max={max}
           step={0.05}
           value={draftVolume}
+          referenceValue={1}
+          snapThreshold={0.05}
           aria-label={`${title}音量`}
           onChange={(event) => {
             const nextVolume = Number(event.currentTarget.value);
@@ -403,6 +501,7 @@ export const RoomPage = () => {
   const chatMessages = useRoomStore((state) => state.chatMessages);
   const remoteStreams = useRoomStore((state) => state.remoteStreams);
   const remoteScreenFrames = useRoomStore((state) => state.remoteScreenFrames);
+  const remoteScreenSharing = useRoomStore((state) => state.remoteScreenSharing);
   const connectionHealth = useRoomStore((state) => state.connectionHealth);
   const sceneReactions = useRoomStore((state) => state.sceneReactions);
   const collectionItems = useRoomStore((state) => state.collectionItems);
@@ -420,7 +519,8 @@ export const RoomPage = () => {
   const recordingMarkers = useRecordingStore((state) => state.markers);
   const addRecordingMarker = useRecordingStore((state) => state.addMarker);
   const clearRecordingMarkers = useRecordingStore((state) => state.clearMarkers);
-  const { capability, startRecording, stopRecording } = useRecordingController();
+  const resetRecordingStatus = useRecordingStore((state) => state.resetStatus);
+  const { capability, startRecording, stopRecording, discardRecording } = useRecordingController();
   const pageRef = useRef<HTMLDivElement>(null);
   const voicePulseRef = useRef<HTMLDivElement>(null);
   const [chatInput, setChatInput] = useState("");
@@ -431,6 +531,7 @@ export const RoomPage = () => {
   >([]);
   const [isOverlayOpen, setIsOverlayOpen] = useState(false);
   const [isNoiseSuppressionSwitching, setIsNoiseSuppressionSwitching] = useState(false);
+  const [isAutoGainSwitching, setIsAutoGainSwitching] = useState(false);
   const [isDonationOpen, setIsDonationOpen] = useState(false);
   const [isCollectionOpen, setIsCollectionOpen] = useState(false);
   const [collectionDraft, setCollectionDraft] = useState("");
@@ -439,12 +540,17 @@ export const RoomPage = () => {
   const [activeAudioPanel, setActiveAudioPanel] = useState<"microphone" | "speaker">();
   const [screenFrameNow, setScreenFrameNow] = useState(Date.now());
   const [isLeaving, setIsLeaving] = useState(false);
+  const [recordingStopIntent, setRecordingStopIntent] = useState<"stop" | "leave">();
+  const [isFinalizingRecording, setIsFinalizingRecording] = useState(false);
+  const [isChoosingRecordingDirectory, setIsChoosingRecordingDirectory] = useState(false);
   const [isSwitchingChannelLocally, setIsSwitchingChannelLocally] = useState(false);
   const lastSeatZoneRef = useRef<SceneZoneId>("gameDesk1");
   const awaySessionRef = useRef<AwaySession>();
   const lastKnockAt = useRef(0);
   const detectedGameRef = useRef<string>();
+  const detectedGameIconRef = useRef<string>();
   const detectedMusicRef = useRef<GameDetectionSnapshot["musicActivity"]>();
+  const detectedWorkRef = useRef<GameDetectionSnapshot["workActivity"]>();
   const hasDetectionSnapshotRef = useRef(false);
   const hasAutoStartedRecordingRef = useRef(false);
   const autoRecordRetryCountRef = useRef(0);
@@ -487,8 +593,10 @@ export const RoomPage = () => {
         ]
       : []),
     ...Object.entries(remoteStreams)
-      .filter(([, stream]) =>
-        stream.getVideoTracks().some((track) => track.readyState === "live" && !track.muted),
+      .filter(
+        ([peerId, stream]) =>
+          remoteScreenSharing[peerId] &&
+          stream.getVideoTracks().some((track) => track.readyState === "live" && !track.muted),
       )
       .map(([peerId, stream]) => {
         const member = room.members.find((candidate) => candidate.id === peerId);
@@ -505,7 +613,12 @@ export const RoomPage = () => {
         const hasLiveVideo = stream
           ?.getVideoTracks()
           .some((track) => track.readyState === "live" && !track.muted);
-        return Boolean(frame.data) && isFreshScreenFrame(frame.receivedAt) && !hasLiveVideo;
+        return (
+          Boolean(remoteScreenSharing[peerId]) &&
+          Boolean(frame.data) &&
+          isFreshScreenFrame(frame.receivedAt) &&
+          !hasLiveVideo
+        );
       })
       .map(([peerId, frame]) => {
         const member = room.members.find((candidate) => candidate.id === peerId);
@@ -518,7 +631,12 @@ export const RoomPage = () => {
       }),
   ];
   const localMember = room.members.find((member) => member.isLocal);
+  const localMemberId = localMember?.id;
+  const localSceneZone = localMember?.sceneZone;
+  const localActivity = localMember?.activity;
   const localMusicActivityKey = JSON.stringify(localMember?.musicActivity ?? null);
+  const localWorkActivityKey = JSON.stringify(localMember?.workActivity ?? null);
+  const localGameIconKey = localMember?.gameIconDataUrl ?? "";
   const connectionQuality = summarizeConnectionHealth(connectionHealth);
   const lastCollectionViewedAt = settings?.lastCollectionViewedAt
     ? Date.parse(settings.lastCollectionViewedAt)
@@ -534,12 +652,19 @@ export const RoomPage = () => {
   const screenSharingPeerIds = [
     ...(localScreenShareStream && localMember ? [localMember.id] : []),
     ...Object.entries(remoteStreams)
-      .filter(([, stream]) =>
-        stream.getVideoTracks().some((track) => track.readyState === "live" && !track.muted),
+      .filter(
+        ([peerId, stream]) =>
+          remoteScreenSharing[peerId] &&
+          stream.getVideoTracks().some((track) => track.readyState === "live" && !track.muted),
       )
       .map(([peerId]) => peerId),
     ...Object.entries(remoteScreenFrames)
-      .filter(([, frame]) => Boolean(frame.data) && isFreshScreenFrame(frame.receivedAt))
+      .filter(
+        ([peerId, frame]) =>
+          remoteScreenSharing[peerId] &&
+          Boolean(frame.data) &&
+          isFreshScreenFrame(frame.receivedAt),
+      )
       .map(([peerId]) => peerId),
   ].filter((peerId, index, peers) => peers.indexOf(peerId) === index);
 
@@ -720,7 +845,7 @@ export const RoomPage = () => {
         pushToast({
           tone: "neutral",
           title: "已自动开始录音",
-          description: "退出频道或手动停止时会让你选择保存位置。",
+          description: "退出频道时会直接保存到录音库。",
         });
         void window.desktopApi.app.writeLog({
           category: "recording",
@@ -798,11 +923,10 @@ export const RoomPage = () => {
   );
 
   useEffect(() => {
-    if (!localMember) return;
-    if (localMember.sceneZone && isSeatZone(localMember.sceneZone)) {
-      lastSeatZoneRef.current = localMember.sceneZone;
+    if (localSceneZone && isSeatZone(localSceneZone)) {
+      lastSeatZoneRef.current = localSceneZone;
     }
-  }, [localMember]);
+  }, [localSceneZone]);
 
   useEffect(() => {
     let disposed = false;
@@ -834,7 +958,9 @@ export const RoomPage = () => {
           seat,
           activity: currentLocalMember.activity ?? "idle",
           gameName: currentLocalMember.gameName,
+          gameIconDataUrl: currentLocalMember.gameIconDataUrl,
           musicActivity: currentLocalMember.musicActivity,
+          workActivity: currentLocalMember.workActivity,
           enteredAt: new Date().toISOString(),
         };
         setMuted(true);
@@ -843,6 +969,8 @@ export const RoomPage = () => {
           "restroom",
           currentLocalMember.gameName,
           currentLocalMember.musicActivity,
+          currentLocalMember.gameIconDataUrl,
+          currentLocalMember.workActivity,
         );
         void window.desktopApi.app.writeLog({
           category: "app",
@@ -870,6 +998,8 @@ export const RoomPage = () => {
           awaySession.gameName ? "gaming" : awaySession.activity,
           awaySession.gameName,
           awaySession.musicActivity,
+          awaySession.gameIconDataUrl,
+          awaySession.workActivity,
         );
         void window.desktopApi.app.writeLog({
           category: "app",
@@ -898,7 +1028,12 @@ export const RoomPage = () => {
       hasDetectionSnapshotRef.current = true;
       const previousGame = detectedGameRef.current;
       detectedGameRef.current = snapshot.gameName;
+      detectedGameIconRef.current = snapshot.gameIconDataUrl;
       detectedMusicRef.current = snapshot.musicActivity;
+      const workActivity = useSettingsStore.getState().settings?.isWorkActivityVisible
+        ? snapshot.workActivity
+        : undefined;
+      detectedWorkRef.current = workActivity;
       const localMember = useRoomStore.getState().room.members.find((member) => member.isLocal);
       const currentZone = localMember?.sceneZone ?? "gameDesk1";
 
@@ -909,10 +1044,19 @@ export const RoomPage = () => {
             "restroom",
             snapshot.gameName,
             snapshot.musicActivity,
+            snapshot.gameIconDataUrl,
+            workActivity,
           );
         } else {
           const gameZone = currentZone.startsWith("gameDesk") ? currentZone : "gameDesk1";
-          moveLocalMemberRef.current(gameZone, "gaming", snapshot.gameName, snapshot.musicActivity);
+          moveLocalMemberRef.current(
+            gameZone,
+            "gaming",
+            snapshot.gameName,
+            snapshot.musicActivity,
+            snapshot.gameIconDataUrl,
+            workActivity,
+          );
         }
       } else if (previousGame) {
         moveLocalMemberRef.current(
@@ -920,6 +1064,8 @@ export const RoomPage = () => {
           currentZone === "restroomZone" ? "restroom" : "idle",
           undefined,
           snapshot.musicActivity,
+          undefined,
+          workActivity,
         );
       } else {
         moveLocalMemberRef.current(
@@ -927,6 +1073,8 @@ export const RoomPage = () => {
           currentZone === "restroomZone" ? "restroom" : (localMember?.activity ?? "idle"),
           undefined,
           snapshot.musicActivity,
+          undefined,
+          workActivity,
         );
       }
     };
@@ -936,23 +1084,64 @@ export const RoomPage = () => {
   }, []);
 
   useEffect(() => {
-    if (!hasDetectionSnapshotRef.current || !localMember) return;
+    if (!hasDetectionSnapshotRef.current) return;
+    void window.desktopApi.games.getSnapshot().then((snapshot) => {
+      const workActivity = settings?.isWorkActivityVisible ? snapshot.workActivity : undefined;
+      detectedWorkRef.current = workActivity;
+      const currentLocalMember = useRoomStore
+        .getState()
+        .room.members.find((member) => member.isLocal);
+      if (!currentLocalMember) return;
+      const sceneZone = currentLocalMember.sceneZone ?? "gameDesk1";
+      moveLocalMemberRef.current(
+        sceneZone,
+        sceneZone === "restroomZone"
+          ? "restroom"
+          : snapshot.gameName
+            ? "gaming"
+            : (currentLocalMember.activity ?? "idle"),
+        snapshot.gameName,
+        snapshot.musicActivity,
+        snapshot.gameIconDataUrl,
+        workActivity,
+      );
+    });
+  }, [settings?.isWorkActivityVisible]);
+
+  useEffect(() => {
+    if (!hasDetectionSnapshotRef.current || !localMemberId) return;
 
     const detectedMusicActivityKey = JSON.stringify(detectedMusicRef.current ?? null);
-    if (detectedMusicActivityKey === localMusicActivityKey) return;
+    const detectedWorkActivityKey = JSON.stringify(detectedWorkRef.current ?? null);
+    const detectedGameIconKey = detectedGameIconRef.current ?? "";
+    if (
+      detectedMusicActivityKey === localMusicActivityKey &&
+      detectedWorkActivityKey === localWorkActivityKey &&
+      detectedGameIconKey === localGameIconKey
+    )
+      return;
 
-    const sceneZone = localMember.sceneZone ?? "gameDesk1";
+    const sceneZone = localSceneZone ?? "gameDesk1";
     moveLocalMemberRef.current(
       sceneZone,
       sceneZone === "restroomZone"
         ? "restroom"
         : detectedGameRef.current
           ? "gaming"
-          : (localMember.activity ?? "idle"),
+          : (localActivity ?? "idle"),
       detectedGameRef.current,
       detectedMusicRef.current,
+      detectedGameIconRef.current,
+      detectedWorkRef.current,
     );
-  }, [localMember, localMusicActivityKey, room.connectionState]);
+  }, [
+    localGameIconKey,
+    localActivity,
+    localMemberId,
+    localSceneZone,
+    localMusicActivityKey,
+    localWorkActivityKey,
+  ]);
 
   const send = async (content = chatInput) => {
     if (!content.trim()) return;
@@ -994,12 +1183,8 @@ export const RoomPage = () => {
   const toggleRecording = async () => {
     try {
       if (recordingStatus.state === RecordingState.Recording) {
-        const result = await stopRecording();
-        if (recordingMarkers.length) {
-          await window.desktopApi.recording.saveMarkers(result.filePath, recordingMarkers);
-        }
-        clearRecordingMarkers();
-        playUiSound("record-stop");
+        setRecordingStopIntent("stop");
+        playUiSound("popup-open");
         return;
       }
 
@@ -1021,30 +1206,10 @@ export const RoomPage = () => {
     if (cancelManager) void cancelSourcePicker();
   };
 
-  const leave = async () => {
+  const performLeave = async () => {
     if (isLeaving) return;
     setIsLeaving(true);
     closeScreenSourcePicker();
-
-    if (recordingStatus.state === RecordingState.Recording) {
-      try {
-        const result = await stopRecording();
-        if (recordingMarkers.length) {
-          await window.desktopApi.recording.saveMarkers(result.filePath, recordingMarkers);
-        }
-        clearRecordingMarkers();
-        playUiSound("record-stop");
-      } catch (error) {
-        void window.desktopApi.app
-          .writeLog({
-            category: "app",
-            level: "warn",
-            message: "room_leave_recording_cleanup_failed",
-            context: { error: error instanceof Error ? error.message : String(error) },
-          })
-          .catch(() => undefined);
-      }
-    }
 
     const cleanupResults = await Promise.allSettled([
       shutdownScreenShare(),
@@ -1083,6 +1248,84 @@ export const RoomPage = () => {
           context: { error: error instanceof Error ? error.message : String(error) },
         })
         .catch(() => undefined);
+    }
+  };
+
+  const leave = async () => {
+    if (isLeaving) return;
+    if (recordingStatus.state === RecordingState.Recording) {
+      if (settings?.isAutoRecordOnJoinEnabled) {
+        setIsFinalizingRecording(true);
+        try {
+          const result = await stopRecording();
+          if (recordingMarkers.length) {
+            await window.desktopApi.recording.saveMarkers(result.filePath, recordingMarkers);
+          }
+          clearRecordingMarkers();
+          resetRecordingStatus();
+          playUiSound("record-stop");
+          await performLeave();
+        } catch (error) {
+          pushToast({
+            tone: "danger",
+            title: "录音保存失败",
+            description: error instanceof Error ? error.message : "请稍后再试。",
+          });
+        } finally {
+          setIsFinalizingRecording(false);
+        }
+        return;
+      }
+      setRecordingStopIntent("leave");
+      playUiSound("popup-open");
+      return;
+    }
+    await performLeave();
+  };
+
+  const finalizeRecording = async (shouldSave: boolean) => {
+    if (!recordingStopIntent || isFinalizingRecording) return;
+    const intent = recordingStopIntent;
+    setIsFinalizingRecording(true);
+    try {
+      if (shouldSave) {
+        const result = await stopRecording();
+        if (recordingMarkers.length) {
+          await window.desktopApi.recording.saveMarkers(result.filePath, recordingMarkers);
+        }
+      } else {
+        await discardRecording();
+      }
+      clearRecordingMarkers();
+      setRecordingStopIntent(undefined);
+      playUiSound("record-stop");
+      if (intent === "leave") await performLeave();
+    } catch (error) {
+      pushToast({
+        tone: "danger",
+        title: shouldSave ? "录音保存失败" : "录音结束失败",
+        description: error instanceof Error ? error.message : "请稍后再试。",
+      });
+    } finally {
+      setIsFinalizingRecording(false);
+    }
+  };
+
+  const changeRecordingDirectory = async () => {
+    if (isChoosingRecordingDirectory || isFinalizingRecording) return;
+    setIsChoosingRecordingDirectory(true);
+    try {
+      const directory = await window.desktopApi.recording.chooseDirectory();
+      if (!directory) return;
+      await saveSettings({ recordingSaveDirectory: directory });
+    } catch (error) {
+      pushToast({
+        tone: "danger",
+        title: "无法更改保存位置",
+        description: error instanceof Error ? error.message : "请稍后再试。",
+      });
+    } finally {
+      setIsChoosingRecordingDirectory(false);
     }
   };
 
@@ -1245,6 +1488,68 @@ export const RoomPage = () => {
     }
   };
 
+  const updateMicrophoneProcessing = async (
+    patch: Partial<Pick<AppSettings, "isEchoCancellationEnabled" | "isVoiceEnhancementEnabled">>,
+    enabledTitle: string,
+    disabledTitle: string,
+  ) => {
+    if (!settings || isNoiseSuppressionSwitching) return;
+    setIsNoiseSuppressionSwitching(true);
+    try {
+      await saveSettings(patch);
+      await replaceInputDevice(settings.preferredInputDeviceId);
+      const enabled = Object.values(patch)[0] === true;
+      playUiSound("button-click");
+      pushToast({
+        tone: enabled ? "success" : "neutral",
+        title: enabled ? enabledTitle : disabledTitle,
+      });
+    } catch (error) {
+      pushToast({
+        tone: "danger",
+        title: "麦克风设置切换失败",
+        description: "麦克风仍保持可用，请稍后重试。",
+      });
+      await window.desktopApi.app.writeLog({
+        category: "audio",
+        level: "error",
+        message: "microphone_processing_user_toggle_failed",
+        context: { error: error instanceof Error ? error.message : String(error) },
+      });
+    } finally {
+      setIsNoiseSuppressionSwitching(false);
+    }
+  };
+
+  const toggleAutoGain = async (isAutoGainControlEnabled: boolean) => {
+    if (!settings || isAutoGainSwitching) return;
+    setIsAutoGainSwitching(true);
+    try {
+      await saveSettings({ isAutoGainControlEnabled });
+      await replaceInputDevice(settings.preferredInputDeviceId);
+      playUiSound("button-click");
+      pushToast({
+        tone: isAutoGainControlEnabled ? "success" : "neutral",
+        title: isAutoGainControlEnabled ? "自动增益已开启" : "自动增益已关闭",
+        description: "麦克风已经按新设置重新连接。",
+      });
+    } catch (error) {
+      pushToast({
+        tone: "danger",
+        title: "自动增益切换失败",
+        description: "麦克风仍保持可用，请稍后重试。",
+      });
+      await window.desktopApi.app.writeLog({
+        category: "audio",
+        level: "error",
+        message: "auto_gain_user_toggle_failed",
+        context: { error: error instanceof Error ? error.message : String(error) },
+      });
+    } finally {
+      setIsAutoGainSwitching(false);
+    }
+  };
+
   const switchOutputDevice = async (preferredOutputDeviceId?: string) => {
     try {
       await getRemoteAudioMixer().setOutputDevice(preferredOutputDeviceId);
@@ -1326,7 +1631,7 @@ export const RoomPage = () => {
     } catch {
       pushToast({
         tone: "danger",
-        title: "珍藏失败",
+        title: "收藏失败",
         description: "连接还没有恢复，请稍后再试。",
       });
     } finally {
@@ -1338,7 +1643,7 @@ export const RoomPage = () => {
     try {
       await navigator.clipboard.writeText(content);
       playUiSound("button-click");
-      pushToast({ tone: "success", title: "已复制", description: "珍藏内容已放进剪贴板。" });
+      pushToast({ tone: "success", title: "已复制", description: "收藏内容已放进剪贴板。" });
     } catch {
       pushToast({ tone: "danger", title: "复制失败", description: "请稍后再试。" });
     }
@@ -1367,7 +1672,9 @@ export const RoomPage = () => {
         seat: lastSeatZoneRef.current,
         activity: localMember?.activity ?? "idle",
         gameName: localMember?.gameName,
+        gameIconDataUrl: localMember?.gameIconDataUrl,
         musicActivity: localMember?.musicActivity,
+        workActivity: localMember?.workActivity,
         enteredAt: new Date().toISOString(),
       };
       setMuted(true);
@@ -1383,6 +1690,8 @@ export const RoomPage = () => {
       activity,
       detectedGameRef.current,
       detectedMusicRef.current ?? localMember?.musicActivity,
+      detectedGameIconRef.current ?? localMember?.gameIconDataUrl,
+      detectedWorkRef.current ?? localMember?.workActivity,
     );
   };
 
@@ -1423,6 +1732,7 @@ export const RoomPage = () => {
           className="room-scene-column island-panel min-h-0 overflow-hidden"
         >
           <TeamIsland
+            key={room.roomId}
             members={room.members}
             onZoneSelect={handleZoneSelect}
             onReact={(targetPeerId, emoji) => void sendSceneReaction(targetPeerId, emoji)}
@@ -1582,7 +1892,6 @@ export const RoomPage = () => {
               animate="open"
               exit="closed"
             >
-              <span className="donation-modal-kicker">小惊喜</span>
               <h2 id="donation-modal-title">请作者喝杯咖啡</h2>
               <p>如果上号让你和朋友多开了一局，就请我补充一点续航。</p>
               <div className="donation-qr-shell">
@@ -1624,11 +1933,7 @@ export const RoomPage = () => {
               exit="closed"
             >
               <header className="collection-modal-header">
-                <div>
-                  <span>朋友的小收藏箱</span>
-                  <h2 id="collection-modal-title">频道珍藏</h2>
-                  <p>留下一句话或链接，会一直保留，直到有人手动删除。</p>
-                </div>
+                <h2 id="collection-modal-title">收藏</h2>
                 <Button variant="ghost" onClick={() => setIsCollectionOpen(false)}>
                   收起
                 </Button>
@@ -1638,7 +1943,7 @@ export const RoomPage = () => {
                 <textarea
                   value={collectionDraft}
                   maxLength={2_000}
-                  placeholder="写一句约定，或贴一个链接…"
+                  placeholder="输入一句话或粘贴链接…"
                   onChange={(event) => setCollectionDraft(event.target.value)}
                   onKeyDown={(event) => {
                     if ((event.ctrlKey || event.metaKey) && event.key === "Enter") {
@@ -1653,7 +1958,7 @@ export const RoomPage = () => {
                   onClick={() => void saveCollectionDraft()}
                 >
                   <Plus className="h-4 w-4" aria-hidden="true" />
-                  {isCollectionSaving ? "保存中" : "珍藏"}
+                  {isCollectionSaving ? "保存中" : "添加收藏"}
                 </Button>
               </div>
 
@@ -1702,8 +2007,8 @@ export const RoomPage = () => {
                 ) : (
                   <div className="collection-empty">
                     <FolderHeart aria-hidden="true" />
-                    <strong>这里还空着</strong>
-                    <span>把下次开黑时间、攻略链接或一句约定留在这里。</span>
+                    <strong>还没有收藏</strong>
+                    <span>在上方添加第一条</span>
                   </div>
                 )}
               </div>
@@ -1712,214 +2017,247 @@ export const RoomPage = () => {
         ) : null}
       </AnimatePresence>
 
+      <RecordingStopDialog
+        isOpen={Boolean(recordingStopIntent)}
+        isWorking={isFinalizingRecording}
+        isChoosingDirectory={isChoosingRecordingDirectory}
+        saveDirectory={settings?.recordingSaveDirectory ?? "文档 / 上号录音"}
+        onChangeDirectory={() => void changeRecordingDirectory()}
+        onContinue={() => setRecordingStopIntent(undefined)}
+        onDiscard={() => void finalizeRecording(false)}
+        onSave={() => void finalizeRecording(true)}
+      />
+
       <footer
         ref={voicePulseRef}
         data-gsap-room="dock"
         className="voice-dock flex items-center gap-2 px-3 py-2.5"
       >
-        <span data-gsap-voice="primary" className="inline-flex">
-          <MuteButton isMuted={isMuted} onClick={handleToggleMicrophone} />
-        </span>
-        <Button
-          variant={isDeafened ? "danger" : "ghost"}
-          data-icon-motion="speaker"
-          data-gsap-voice="primary"
-          data-ui-sound="handled"
-          className={`voice-action-button-with-text voice-main-control ${isDeafened ? "voice-main-control-danger" : ""}`}
-          onClick={toggleDeafen}
-        >
-          <AnimatedControlIcon
-            name="speaker"
-            muted={isDeafened}
-            active={!isDeafened}
-            className="h-4 w-4"
-          />
-          <span className="voice-action-label">{isDeafened ? "扬声器关" : "扬声器开"}</span>
-        </Button>
-        <div className="audio-control-anchor" data-audio-control-root>
-          <button
-            type="button"
-            className={`audio-control-trigger ${activeAudioPanel === "microphone" ? "is-active" : ""}`}
-            data-icon-motion="device"
-            title="麦克风设备与发送音量"
-            aria-label="麦克风设备与发送音量"
-            aria-expanded={activeAudioPanel === "microphone"}
-            onClick={() =>
-              setActiveAudioPanel((current) =>
-                current === "microphone" ? undefined : "microphone",
-              )
-            }
-          >
-            <AnimatedControlIcon name="headphones" className="h-4 w-4" />
-          </button>
-          <AnimatePresence>
-            {activeAudioPanel === "microphone" && settings ? (
-              <AudioControlPopover
-                title="麦克风"
-                devices={inputDevices}
-                deviceId={settings.preferredInputDeviceId}
-                volume={settings.microphoneSendVolume}
-                min={0.5}
-                max={1.5}
-                onDeviceChange={(deviceId) => void switchInputDevice(deviceId)}
-                onVolumePreview={setMicrophoneSendVolume}
-                onVolumeCommit={(microphoneSendVolume) =>
-                  void saveSettings({ microphoneSendVolume })
-                }
-                onReset={() => {
-                  setMicrophoneSendVolume(1);
-                  void saveSettings({ microphoneSendVolume: 1 });
-                }}
-              />
-            ) : null}
-          </AnimatePresence>
-        </div>
-        <div className="audio-control-anchor" data-audio-control-root>
-          <button
-            type="button"
-            className={`audio-control-trigger ${activeAudioPanel === "speaker" ? "is-active" : ""}`}
-            data-icon-motion="device"
-            title="扬声器设备与总音量"
-            aria-label="扬声器设备与总音量"
-            aria-expanded={activeAudioPanel === "speaker"}
-            onClick={() =>
-              setActiveAudioPanel((current) => (current === "speaker" ? undefined : "speaker"))
-            }
-          >
-            <AnimatedControlIcon name="speaker" active className="h-4 w-4" />
-          </button>
-          <AnimatePresence>
-            {activeAudioPanel === "speaker" && settings ? (
-              <AudioControlPopover
-                title="扬声器"
-                devices={outputDevices}
-                deviceId={settings.preferredOutputDeviceId}
-                volume={settings.speakerMasterVolume}
-                min={0}
-                max={2}
-                onDeviceChange={(deviceId) => void switchOutputDevice(deviceId)}
-                onVolumePreview={(volume) => getRemoteAudioMixer().setMasterVolume(volume)}
-                onVolumeCommit={(speakerMasterVolume) => void saveSettings({ speakerMasterVolume })}
-                onTest={() => void getRemoteAudioMixer().playTestTone()}
-                onReset={() => {
-                  getRemoteAudioMixer().setMasterVolume(1);
-                  void saveSettings({ speakerMasterVolume: 1 });
-                }}
-              />
-            ) : null}
-          </AnimatePresence>
+        <div className="voice-primary-controls" data-gsap-voice="primary">
+          <div className="voice-segmented-control audio-control-anchor" data-audio-control-root>
+            <MuteButton
+              isMuted={isMuted}
+              onClick={handleToggleMicrophone}
+              className="voice-segmented-main"
+            />
+            <button
+              type="button"
+              className={cn(
+                "audio-control-trigger voice-segmented-arrow",
+                activeAudioPanel === "microphone" && "is-active",
+              )}
+              title="麦克风设备、降噪、自动增益与发送音量"
+              aria-label="打开麦克风设备、降噪、自动增益与发送音量"
+              aria-expanded={activeAudioPanel === "microphone"}
+              onClick={() =>
+                setActiveAudioPanel((current) =>
+                  current === "microphone" ? undefined : "microphone",
+                )
+              }
+            >
+              <ChevronDown className="h-4 w-4" aria-hidden="true" />
+            </button>
+            <AnimatePresence>
+              {activeAudioPanel === "microphone" && settings ? (
+                <AudioControlPopover
+                  title="麦克风"
+                  devices={inputDevices}
+                  deviceId={settings.preferredInputDeviceId}
+                  volume={settings.microphoneSendVolume}
+                  min={0.5}
+                  max={1.5}
+                  onDeviceChange={(deviceId) => void switchInputDevice(deviceId)}
+                  onVolumePreview={setMicrophoneSendVolume}
+                  onVolumeCommit={(microphoneSendVolume) =>
+                    void saveSettings({ microphoneSendVolume })
+                  }
+                  noiseSuppressionEnabled={settings.isNoiseSuppressionEnabled}
+                  isNoiseSuppressionSwitching={isNoiseSuppressionSwitching}
+                  onNoiseSuppressionChange={() => void toggleNoiseSuppression()}
+                  echoCancellationEnabled={settings.isEchoCancellationEnabled}
+                  onEchoCancellationChange={(isEchoCancellationEnabled) =>
+                    void updateMicrophoneProcessing(
+                      { isEchoCancellationEnabled },
+                      "回声消除已开启",
+                      "回声消除已关闭",
+                    )
+                  }
+                  voiceEnhancementEnabled={settings.isVoiceEnhancementEnabled}
+                  onVoiceEnhancementChange={(isVoiceEnhancementEnabled) =>
+                    void updateMicrophoneProcessing(
+                      { isVoiceEnhancementEnabled },
+                      "人声增强已开启",
+                      "人声增强已关闭",
+                    )
+                  }
+                  autoGainEnabled={settings.isAutoGainControlEnabled}
+                  onAutoGainChange={(isAutoGainControlEnabled) =>
+                    void toggleAutoGain(isAutoGainControlEnabled)
+                  }
+                  onReset={() => {
+                    setMicrophoneSendVolume(1);
+                    void saveSettings({ microphoneSendVolume: 1 });
+                  }}
+                />
+              ) : null}
+            </AnimatePresence>
+          </div>
+          <div className="voice-segmented-control audio-control-anchor" data-audio-control-root>
+            <Button
+              variant={isDeafened ? "danger" : "ghost"}
+              data-icon-motion="speaker"
+              data-ui-sound="handled"
+              className={cn(
+                "voice-action-button-with-text voice-main-control voice-segmented-main",
+                isDeafened && "voice-main-control-danger",
+              )}
+              onClick={toggleDeafen}
+            >
+              {isDeafened ? (
+                <VolumeX className="voice-primary-icon" aria-hidden="true" />
+              ) : (
+                <Volume2 className="voice-primary-icon" aria-hidden="true" />
+              )}
+              <span className="voice-action-label">{isDeafened ? "扬声器关" : "扬声器开"}</span>
+            </Button>
+            <button
+              type="button"
+              className={cn(
+                "audio-control-trigger voice-segmented-arrow",
+                activeAudioPanel === "speaker" && "is-active",
+              )}
+              title="扬声器设备与总音量"
+              aria-label="打开扬声器设备与总音量"
+              aria-expanded={activeAudioPanel === "speaker"}
+              onClick={() =>
+                setActiveAudioPanel((current) => (current === "speaker" ? undefined : "speaker"))
+              }
+            >
+              <ChevronDown className="h-4 w-4" aria-hidden="true" />
+            </button>
+            <AnimatePresence>
+              {activeAudioPanel === "speaker" && settings ? (
+                <AudioControlPopover
+                  title="扬声器"
+                  devices={outputDevices}
+                  deviceId={settings.preferredOutputDeviceId}
+                  volume={settings.speakerMasterVolume}
+                  min={0}
+                  max={2}
+                  onDeviceChange={(deviceId) => void switchOutputDevice(deviceId)}
+                  onVolumePreview={(volume) => getRemoteAudioMixer().setMasterVolume(volume)}
+                  onVolumeCommit={(speakerMasterVolume) =>
+                    void saveSettings({ speakerMasterVolume })
+                  }
+                  onTest={() => void getRemoteAudioMixer().playTestTone()}
+                  onReset={() => {
+                    getRemoteAudioMixer().setMasterVolume(1);
+                    void saveSettings({ speakerMasterVolume: 1 });
+                  }}
+                />
+              ) : null}
+            </AnimatePresence>
+          </div>
         </div>
         <div className="flex-1" />
-        <Button
-          variant={settings?.isNoiseSuppressionEnabled ? "secondary" : "ghost"}
-          data-icon-motion="noise"
-          data-ui-sound="handled"
-          className={`voice-action-button-with-text noise-suppression-button ${
-            settings?.isNoiseSuppressionEnabled ? "is-active" : ""
-          }`}
-          disabled={!settings || isNoiseSuppressionSwitching}
-          aria-pressed={settings?.isNoiseSuppressionEnabled ?? false}
-          onClick={() => void toggleNoiseSuppression()}
-        >
-          <AnimatedControlIcon
-            name="noise"
-            active={settings?.isNoiseSuppressionEnabled}
-            className="h-4 w-4"
-          />
-          <span className="voice-action-label">
-            {isNoiseSuppressionSwitching ? "切换中" : "降噪"}
-          </span>
-        </Button>
-        <Button
-          variant={isCollectionOpen ? "secondary" : "ghost"}
-          data-icon-motion="collection"
-          className="voice-action-button-with-text collection-button"
-          aria-pressed={isCollectionOpen}
-          onClick={openCollection}
-        >
-          <motion.span
-            className="collection-button-icon"
-            whileHover={reduceMotion ? undefined : { rotate: -7, scale: 1.08 }}
-            transition={{ type: "spring", stiffness: 360, damping: 28, mass: 0.55 }}
-          >
-            <FolderHeart className="h-4 w-4" aria-hidden="true" />
-          </motion.span>
-          <span className="voice-action-label">珍藏</span>
-          {hasUnreadCollectionItems ? (
-            <span className="collection-unread-dot" aria-label="有新珍藏" />
-          ) : null}
-        </Button>
-        <RecordingButton
-          isRecording={recordingStatus.state === RecordingState.Recording}
-          onClick={() => void toggleRecording()}
-          disabled={capability.encoderState === RecordingEncoderState.Unsupported}
-        />
-        {recordingStatus.state === RecordingState.Recording ? (
+        <div className="voice-action-group" aria-label="频道操作">
           <Button
-            variant="ghost"
-            data-icon-motion="bookmark"
-            className="voice-action-button-with-text"
+            variant={isCollectionOpen ? "secondary" : "ghost"}
+            data-icon-motion="collection"
+            className="voice-action-button-with-text collection-button"
+            aria-pressed={isCollectionOpen}
+            onClick={openCollection}
+          >
+            <motion.span
+              className="collection-button-icon"
+              whileHover={reduceMotion ? undefined : { rotate: -7, scale: 1.08 }}
+              transition={{ type: "spring", stiffness: 360, damping: 28, mass: 0.55 }}
+            >
+              <FolderHeart className="h-4 w-4" aria-hidden="true" />
+            </motion.span>
+            <span className="voice-action-label">收藏</span>
+            {hasUnreadCollectionItems ? (
+              <span className="collection-unread-dot" aria-label="有新收藏" />
+            ) : null}
+          </Button>
+          <RecordingButton
+            isRecording={recordingStatus.state === RecordingState.Recording}
+            onClick={() => void toggleRecording()}
+            disabled={capability.encoderState === RecordingEncoderState.Unsupported}
+          />
+          {recordingStatus.state === RecordingState.Recording ? (
+            <Button
+              variant="ghost"
+              data-icon-motion="bookmark"
+              className="voice-action-button-with-text"
+              onClick={() => {
+                const startedAt = recordingStatus.startedAt ?? Date.now();
+                addRecordingMarker({
+                  id: crypto.randomUUID(),
+                  offsetMs: Math.max(0, Date.now() - startedAt),
+                  createdAt: new Date().toISOString(),
+                });
+                playUiSound("button-click");
+              }}
+            >
+              <AnimatedControlIcon name="bookmark" className="h-4 w-4" />
+              <span className="voice-action-label">标记 {recordingMarkers.length}</span>
+            </Button>
+          ) : null}
+          <Button
+            variant={localScreenShareStream ? "secondary" : "ghost"}
+            data-icon-motion="screen-share"
+            className={`voice-action-button-with-text ${
+              localScreenShareStream || isScreenShareStarting ? "screen-share-active-button" : ""
+            }`}
+            disabled={isScreenShareStarting}
+            aria-pressed={Boolean(localScreenShareStream)}
             onClick={() => {
-              const startedAt = recordingStatus.startedAt ?? Date.now();
-              addRecordingMarker({
-                id: crypto.randomUUID(),
-                offsetMs: Math.max(0, Date.now() - startedAt),
-                createdAt: new Date().toISOString(),
-              });
-              playUiSound("button-click");
+              if (localScreenShareStream) {
+                void stopSharingScreen();
+                return;
+              }
+              void openScreenSourcePicker();
             }}
           >
-            <AnimatedControlIcon name="bookmark" className="h-4 w-4" />
-            <span className="voice-action-label">标记 {recordingMarkers.length}</span>
+            <AnimatedControlIcon
+              name="screen-share"
+              active={Boolean(localScreenShareStream)}
+              className="h-4 w-4"
+            />
+            <span className="voice-action-label">
+              {isScreenShareStarting
+                ? "正在开启…"
+                : localScreenShareStream
+                  ? "正在分享"
+                  : "屏幕分享"}
+            </span>
           </Button>
-        ) : null}
-        <Button
-          variant={localScreenShareStream ? "secondary" : "ghost"}
-          data-icon-motion="screen-share"
-          className={`voice-action-button-with-text ${
-            localScreenShareStream || isScreenShareStarting ? "screen-share-active-button" : ""
-          }`}
-          disabled={isScreenShareStarting}
-          aria-pressed={Boolean(localScreenShareStream)}
-          onClick={() => {
-            if (localScreenShareStream) {
-              void stopSharingScreen();
-              return;
-            }
-            void openScreenSourcePicker();
-          }}
-        >
-          <AnimatedControlIcon
-            name="screen-share"
-            active={Boolean(localScreenShareStream)}
-            className="h-4 w-4"
-          />
-          <span className="voice-action-label">
-            {isScreenShareStarting ? "正在开启…" : localScreenShareStream ? "正在分享" : "屏幕分享"}
-          </span>
-        </Button>
-        <Button
-          variant={isOverlayOpen ? "secondary" : "ghost"}
-          data-icon-motion="overlay"
-          className={`voice-action-button-with-text ${isOverlayOpen ? "overlay-active-button" : ""}`}
-          onClick={() => {
-            playUiSound("popup-open");
-            void window.desktopApi.overlay.toggle().then(setIsOverlayOpen);
-          }}
-        >
-          <AnimatedControlIcon name="overlay" active={isOverlayOpen} className="h-4 w-4" />
-          <span className="voice-action-label">{isOverlayOpen ? "悬浮窗开" : "悬浮窗关"}</span>
-        </Button>
-        <Button
-          variant="danger"
-          data-icon-motion="exit"
-          className="voice-action-button-with-text voice-exit-button"
-          disabled={isLeaving}
-          onClick={() => void leave()}
-        >
-          <AnimatedControlIcon name="exit" className="h-4 w-4" />
-          <span className="voice-action-label">{isLeaving ? "退出中" : "退出"}</span>
-        </Button>
+        </div>
+        <div className="voice-action-group voice-window-actions" aria-label="窗口与退出">
+          <Button
+            variant={isOverlayOpen ? "secondary" : "ghost"}
+            data-icon-motion="overlay"
+            className={`voice-action-button-with-text ${isOverlayOpen ? "overlay-active-button" : ""}`}
+            onClick={() => {
+              playUiSound("popup-open");
+              void window.desktopApi.overlay.toggle().then(setIsOverlayOpen);
+            }}
+          >
+            <AnimatedControlIcon name="overlay" active={isOverlayOpen} className="h-4 w-4" />
+            <span className="voice-action-label">{isOverlayOpen ? "悬浮窗开" : "悬浮窗关"}</span>
+          </Button>
+          <Button
+            variant="danger"
+            data-icon-motion="exit"
+            className="voice-action-button-with-text voice-exit-button"
+            disabled={isLeaving}
+            onClick={() => void leave()}
+          >
+            <AnimatedControlIcon name="exit" className="h-4 w-4" />
+            <span className="voice-action-label">{isLeaving ? "退出中" : "退出"}</span>
+          </Button>
+        </div>
       </footer>
     </div>
   );

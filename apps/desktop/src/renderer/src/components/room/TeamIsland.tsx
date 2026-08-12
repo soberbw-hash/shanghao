@@ -24,6 +24,7 @@ import {
 import { SceneCharacter, sceneMemberKey } from "./SceneCharacter";
 import { GameMonitorContent } from "./GameMonitorContent";
 import { MusicActivityBadge } from "./MusicActivityBadge";
+import { WorkActivityBadge } from "./WorkActivityBadge";
 import { WorkstationArt } from "./WorkstationArt";
 import {
   characterPositions,
@@ -276,7 +277,10 @@ export const TeamIsland = ({
                         {isScreenSharing ? (
                           <span className="scene-workstation-sharing-mark">共享中</span>
                         ) : settledOccupant.gameName ? (
-                          <GameMonitorContent gameName={settledOccupant.gameName} />
+                          <GameMonitorContent
+                            gameName={settledOccupant.gameName}
+                            iconDataUrl={settledOccupant.gameIconDataUrl}
+                          />
                         ) : (
                           <Fish className="scene-workstation-idle-fish" aria-label="摸鱼中" />
                         )}
@@ -308,14 +312,14 @@ export const TeamIsland = ({
         })}
       </div>
 
-      <div className="absolute inset-0 z-50">
+      <div className="pointer-events-none absolute inset-0 z-[18]">
         {sceneZones.map((zone) => (
           <button
             key={zone.id}
             type="button"
-            className={`scene-zone-hotspot ${zone.kind === "seat" ? "seat" : "activity"} ${
-              localZone === zone.id ? "current" : ""
-            }`}
+            className={`scene-zone-hotspot pointer-events-auto ${
+              zone.kind === "seat" ? "seat" : "activity"
+            } ${localZone === zone.id ? "current" : ""}`}
             style={{
               left: `${zone.left - zone.width / 2}%`,
               top: `${zone.top - zone.height / 2}%`,
@@ -341,7 +345,11 @@ export const TeamIsland = ({
         <AnimatePresence initial={false}>
           {seatSlots.map((slot) => {
             const occupant = memberBySeat.get(slot.id);
-            if (!occupant?.musicActivity || settledMemberZones[occupant.id] !== slot.id)
+            if (
+              !occupant ||
+              (!occupant.musicActivity && !occupant.workActivity) ||
+              settledMemberZones[occupant.id] !== slot.id
+            )
               return null;
             return (
               <motion.div
@@ -353,8 +361,13 @@ export const TeamIsland = ({
                 exit={{ opacity: 0, scale: 0.9 }}
                 transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
               >
-                <div className="music-activity-anchor" data-seat-zone={slot.id}>
-                  <MusicActivityBadge activity={occupant.musicActivity} />
+                <div className="activity-badge-stack" data-seat-zone={slot.id}>
+                  {occupant.musicActivity ? (
+                    <MusicActivityBadge activity={occupant.musicActivity} />
+                  ) : null}
+                  {occupant.workActivity ? (
+                    <WorkActivityBadge activity={occupant.workActivity} />
+                  ) : null}
                 </div>
               </motion.div>
             );

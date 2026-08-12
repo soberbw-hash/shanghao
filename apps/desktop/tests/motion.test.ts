@@ -212,7 +212,9 @@ test("gsap motion is wired across the main surfaces with reduced-motion fallback
   assert.equal(sharedButtonSource.includes("requestAnimationFrame"), true);
   assert.equal(sharedButtonSource.includes("radial-gradient(100px circle"), true);
   assert.equal(
-    chatSource.includes('behavior: shouldReduceMotion || previous === 0 ? "auto" : "smooth"'),
+    chatSource.includes(
+      'shouldReduceMotion || previous === 0 || latestMessage?.isLocal ? "auto" : "smooth"',
+    ),
     true,
   );
   assert.equal(chatSource.includes("motionEase.jelly"), true);
@@ -256,7 +258,7 @@ test("gsap motion is wired across the main surfaces with reduced-motion fallback
   assert.equal(motionPresetsSource.includes("motionSpring.compact"), true);
   assert.equal(motionPresetsSource.includes("stiffness:"), false);
   assert.equal(toastRegionSource.includes('mode="popLayout"'), true);
-  assert.equal(toastRegionSource.includes('layout="position"'), true);
+  assert.equal(toastRegionSource.includes('layout="position"'), false);
   assert.equal(toastRegionSource.includes("opacity-75"), false);
   assert.equal(appStoreSource.includes("repeatCount"), true);
   assert.equal(appStoreSource.includes(".slice(-3)"), true);

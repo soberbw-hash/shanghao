@@ -43,7 +43,7 @@ interface DeepFilterNodeResult {
 }
 
 const DEEPFILTER_SAMPLE_RATE = MICROPHONE_PROCESSING_SAMPLE_RATE;
-const DEEPFILTER_SUPPRESSION_LEVEL = 75;
+const DEEPFILTER_SUPPRESSION_LEVEL = 50;
 const PROCESSOR_CROSSFADE_SECONDS = 0.06;
 
 let deepFilterAssetsPromise: Promise<DeepFilterAssets> | undefined;

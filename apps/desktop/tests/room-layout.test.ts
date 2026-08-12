@@ -16,6 +16,10 @@ const chatPanelPath = path.resolve(
   process.cwd(),
   "src/renderer/src/components/chat/TemporaryChatPanel.tsx",
 );
+const chatLinkPreviewPath = path.resolve(
+  process.cwd(),
+  "src/renderer/src/features/chat/linkPreview.ts",
+);
 const teamIslandPath = path.resolve(
   process.cwd(),
   "src/renderer/src/components/room/TeamIsland.tsx",
@@ -23,6 +27,10 @@ const teamIslandPath = path.resolve(
 const sceneCharacterPath = path.resolve(
   process.cwd(),
   "src/renderer/src/components/room/SceneCharacter.tsx",
+);
+const sceneCharacterLabelPath = path.resolve(
+  process.cwd(),
+  "src/renderer/src/components/room/SceneCharacterLabel.tsx",
 );
 const musicActivityBadgePath = path.resolve(
   process.cwd(),
@@ -80,8 +88,24 @@ test("room page uses the V5 island, light responses, and voice dock", () => {
   assert.equal(source.includes("进入开黑频道"), false);
   assert.equal(source.includes("audio-level-bars"), false);
   assert.equal(source.includes("扬声器关"), true);
-  assert.equal(source.includes('name="noise"'), true);
   assert.equal(source.includes("降噪"), true);
+  assert.equal(source.includes('data-audio-setting="noise-suppression"'), true);
+  assert.equal(source.includes('data-audio-setting="echo-cancellation"'), true);
+  assert.equal(source.includes('data-audio-setting="voice-enhancement"'), true);
+  assert.equal(source.includes('ariaLabel="切换回声消除"'), true);
+  assert.equal(source.includes('ariaLabel="切换人声增强"'), true);
+  assert.equal(source.includes("noise-suppression-button"), false);
+  assert.equal(source.includes('ariaLabel="切换降噪"'), true);
+  assert.equal(source.includes("hasMicrophoneProcessing ? deviceSelect : null"), true);
+  assert.equal(
+    source.indexOf("hasMicrophoneProcessing ? deviceSelect : null") <
+      source.indexOf('className="audio-control-popover-slider"'),
+    true,
+  );
+  assert.equal(source.includes("朋友的小收藏箱"), false);
+  assert.equal(source.includes("留下一句话或链接，会一直保留"), false);
+  assert.equal(source.includes("把下次开黑时间、攻略链接"), false);
+  assert.equal(source.includes('className="voice-action-label">收藏'), true);
 });
 
 test("room uses a real always-on-top overlay and a five-second knock cooldown", () => {
@@ -91,6 +115,7 @@ test("room uses a real always-on-top overlay and a five-second knock cooldown", 
   const rendererMainSource = readFileSync(rendererMainPath, "utf8");
   const stylesSource = readFileSync(stylesPath, "utf8");
   const chatSource = readFileSync(chatPanelPath, "utf8");
+  const chatLinkPreviewSource = readFileSync(chatLinkPreviewPath, "utf8");
   const teamIslandSource = readFileSync(teamIslandPath, "utf8");
   const sceneCharacterSource = readFileSync(sceneCharacterPath, "utf8");
   const characterMotionSource = readFileSync(characterMotionPath, "utf8");
@@ -118,6 +143,10 @@ test("room uses a real always-on-top overlay and a five-second knock cooldown", 
   assert.equal(stylesSource.includes("background: transparent !important"), true);
   assert.equal(chatSource.includes('message.kind === "system"'), true);
   assert.equal(chatSource.includes("AvatarPlaceholder"), true);
+  assert.equal(chatSource.includes("MessageLinkPreview"), true);
+  assert.equal(chatSource.includes("formatCompactUrl"), true);
+  assert.equal(chatLinkPreviewSource.includes("getMessageUrlDetails"), true);
+  assert.equal(chatSource.includes("<Link2 />"), true);
   assert.equal(teamIslandSource.includes("scene-zone-hotspot"), true);
   assert.equal(teamIslandSource.includes("scene-seat-marker"), true);
   assert.equal(teamIslandSource.includes("team-island-stage"), true);
@@ -137,17 +166,43 @@ test("room uses a real always-on-top overlay and a five-second knock cooldown", 
 
 test("each remote member has compact local-only volume and mute controls", () => {
   const sceneCharacterSource = readFileSync(sceneCharacterPath, "utf8");
+  const sceneCharacterLabelSource = readFileSync(sceneCharacterLabelPath, "utf8");
+  const teamIslandSource = readFileSync(teamIslandPath, "utf8");
   const roomStateSource = readFileSync(roomStateHookPath, "utf8");
   const stylesSource = readFileSync(stylesPath, "utf8");
 
   assert.equal(sceneCharacterSource.includes("member-audio-popover"), true);
-  assert.equal(sceneCharacterSource.includes("仅我静音"), true);
-  assert.equal(sceneCharacterSource.includes("max={200}"), true);
+  assert.equal(sceneCharacterLabelSource.includes("room-character-volume-hint"), false);
+  assert.equal(sceneCharacterLabelSource.includes("room-character-volume-entry"), false);
+  assert.equal(sceneCharacterSource.includes("点击调整${member.nickname}在本机的音量"), true);
+  assert.equal(sceneCharacterSource.includes("member-audio-mute-toggle"), true);
+  assert.equal(sceneCharacterSource.includes("max={300}"), true);
+  assert.equal(sceneCharacterSource.includes("只调整你听到的声音"), false);
+  assert.equal(sceneCharacterSource.includes("恢复默认"), false);
+  assert.equal(sceneCharacterSource.includes("member-audio-scale"), false);
+  assert.equal(sceneCharacterSource.includes("zIndex: isAudioControlsOpen ? 80"), true);
+  assert.equal(sceneCharacterSource.includes("member-audio-popover is-label-control"), true);
+  assert.equal(sceneCharacterSource.includes("shouldPlaceAudioPopoverAbove"), false);
   assert.equal(sceneCharacterSource.includes("toggleLocalMemberMute"), true);
   assert.equal(roomStateSource.includes("runtimeMemberVolumes"), true);
   assert.equal(roomStateSource.includes("pendingMemberVolumeSaves"), true);
   assert.equal(roomStateSource.includes("activeClient?.setPeerVolume"), true);
-  assert.equal(stylesSource.includes("width: 252px"), true);
+  assert.equal(stylesSource.includes("width: 194px"), true);
+  assert.equal(stylesSource.includes("top: calc(100% + 6px)"), true);
+  assert.equal(stylesSource.includes(".scene-character-anchor.is-audio-controls-open"), true);
+  assert.equal(stylesSource.includes("scale: calc(1 / var(--character-scale))"), true);
+  assert.match(stylesSource, /\.scene-zone-hotspot:disabled\s*\{[^}]*pointer-events:\s*none;/s);
+  assert.equal(
+    teamIslandSource.includes('className="pointer-events-none absolute inset-0 z-[18]"'),
+    true,
+  );
+  assert.equal(teamIslandSource.includes("scene-zone-hotspot pointer-events-auto"), true);
+  assert.equal(
+    stylesSource.includes(
+      ".room-character-interaction-target.is-interactive .room-character-label",
+    ),
+    true,
+  );
 });
 
 test("music activity stays attached to a member while seats change", () => {
@@ -162,6 +217,10 @@ test("music activity stays attached to a member while seats change", () => {
   assert.equal(teamIslandSource.includes("occupant.musicActivity"), true);
   assert.equal(badgeSource.includes("is-tooltip-open"), true);
   assert.equal(badgeSource.includes("scheduleTooltipClose"), true);
+  assert.equal(badgeSource.includes('activity.provider === "applemusic"'), true);
+  assert.equal(badgeSource.includes("<Headphones"), false);
+  assert.equal(badgeSource.includes("providerPath[activity.provider]"), true);
+  assert.equal(badgeSource.includes("apple-music.png"), true);
   assert.equal(stylesSource.includes("pointer-events: none"), true);
   assert.equal(roomSource.includes("detectedMusicRef.current ?? localMember?.musicActivity"), true);
   assert.equal(roomSource.includes("hasDetectionSnapshotRef.current = true"), true);
@@ -232,11 +291,14 @@ test("scene seats align with the marked workstation positions", () => {
   assert.equal(sceneCharacterSource.includes("WalkingAnimalSprite"), true);
   assert.equal(stylesSource.includes(".desk-animal-layer"), true);
   assert.equal(stylesSource.includes(".desk-animal-chair-front"), false);
-  assert.equal(sceneZonesSource.includes("gameDesk5: { left: 65, top: 75"), true);
-  assert.equal(sceneZonesSource.includes("gameDesk4: { left: 40, top: 75"), true);
-  assert.equal(sceneZonesSource.includes("gameDesk1: { left: 30, top: 39"), true);
+  assert.equal(sceneZonesSource.includes("gameDesk5: { left: 65, top: 68.9"), true);
+  assert.equal(sceneZonesSource.includes("gameDesk4: { left: 40, top: 68.9"), true);
+  assert.equal(sceneZonesSource.includes("gameDesk1: { left: 30, top: 32.9"), true);
   assert.equal(sceneZonesSource.includes("restroomZone: { left: 13, top: 74"), true);
-  assert.equal(sceneZonesSource.includes("scale: 0.86"), true);
+  assert.equal(
+    sceneZonesSource.includes("gameDesk1: { left: 30, top: 32.9, zIndex: 24, scale: 1"),
+    true,
+  );
 });
 
 test("client-side scene arbitration keeps duplicate member seats visually unique", () => {
@@ -409,9 +471,14 @@ test("Windows package keeps only needed locales and recording no longer ships ff
   const installerSource = readFileSync(installerPath, "utf8");
   const packageSource = readFileSync(path.resolve(process.cwd(), "package.json"), "utf8");
   const recordingSource = readFileSync(recordingMainPath, "utf8");
+  const roomSource = readFileSync(roomPagePath, "utf8");
 
   assert.equal(installerSource.includes("electronLanguages:"), true);
   assert.equal(installerSource.includes("- zh-CN"), true);
   assert.equal(packageSource.includes('"ffprobe-static"'), false);
   assert.equal(recordingSource.includes('from "ffprobe-static"'), false);
+  assert.equal(recordingSource.includes("showSaveDialog"), false);
+  assert.equal(recordingSource.includes("resolveRecordingDirectory"), true);
+  assert.equal(roomSource.includes("chooseDirectory"), true);
+  assert.equal(roomSource.includes("recordingSaveDirectory"), true);
 });

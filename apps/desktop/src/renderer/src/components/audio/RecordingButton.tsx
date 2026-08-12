@@ -13,7 +13,7 @@ export const RecordingButton = ({
   <Button
     variant={isRecording ? "danger" : "secondary"}
     data-icon-motion="record"
-    className={`voice-action-button-with-text ${isRecording ? "bg-[#FFF0F0] text-[#FF5A5A] border-[rgba(255,90,90,0.25)]" : ""}`}
+    className={`voice-action-button-with-text recording-button ${isRecording ? "is-recording bg-[#FFF0F0] text-[#FF5A5A] border-[rgba(255,90,90,0.25)]" : ""}`}
     data-ui-sound="handled"
     onClick={onClick}
     disabled={disabled}

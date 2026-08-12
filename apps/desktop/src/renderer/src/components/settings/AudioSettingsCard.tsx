@@ -79,30 +79,9 @@ export const AudioSettingsCard = ({
             onChange={(value) => onChange({ isPushToTalkEnabled: value === "ptt" })}
           />
         </SettingsItemRow>
-        <SettingsItemRow label="回声消除">
-          <Switch
-            isChecked={settings.isEchoCancellationEnabled}
-            onChange={(isEchoCancellationEnabled) => onChange({ isEchoCancellationEnabled })}
-          />
-        </SettingsItemRow>
-        <SettingsItemRow label="自动增益">
-          <Switch
-            isChecked={settings.isAutoGainControlEnabled}
-            onChange={(isAutoGainControlEnabled) => onChange({ isAutoGainControlEnabled })}
-          />
-        </SettingsItemRow>
         <SettingsItemRow
-          label="人声增强"
-          description="轻微削减浑浊低频并提升语音清晰度，默认开启。"
-        >
-          <Switch
-            isChecked={settings.isVoiceEnhancementEnabled}
-            onChange={(isVoiceEnhancementEnabled) => onChange({ isVoiceEnhancementEnabled })}
-          />
-        </SettingsItemRow>
-        <SettingsItemRow
-          label="加入频道时自动录音"
-          description="默认关闭。开启后会自动录制混合语音，退出前让你选择保存位置。"
+          label="自动录音并保存"
+          description="默认开启。进入频道后自动录音，退出时直接保存到录音库。"
         >
           <Switch
             isChecked={settings.isAutoRecordOnJoinEnabled}

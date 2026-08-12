@@ -6,13 +6,23 @@ import { fileURLToPath } from "node:url";
 
 import {
   buildGameDetectionProbeCommand,
+  buildMediaSessionProbeCommand,
   matchKnownGame,
+  matchKnownWorkActivity,
+  matchMediaSessionMusicActivity,
   matchMusicActivity,
   resolveStableMusicActivity,
+  SUPPORTED_GAME_NAMES,
+  WORK_ACTIVITY_RULES,
 } from "../src/main/game-detection";
 
-const snapshot = (ProcessName: string, MainWindowTitle = "", Path = "", CommandLine = ""): string =>
-  JSON.stringify({ ProcessName, MainWindowTitle, Path, CommandLine });
+const snapshot = (
+  ProcessName: string,
+  MainWindowTitle = "",
+  Path = "",
+  CommandLine = "",
+  IsForeground = false,
+): string => JSON.stringify({ ProcessName, MainWindowTitle, Path, CommandLine, IsForeground });
 
 test("game detection uses structured exact process matches", () => {
   assert.equal(matchKnownGame(snapshot("LostCastle2-Win64-Shipping")), "失落城堡 2");
@@ -26,6 +36,123 @@ test("game detection uses structured exact process matches", () => {
   assert.equal(matchKnownGame(snapshot("b1")), undefined);
   assert.equal(matchKnownGame(snapshot("playgtav")), undefined);
   assert.equal(matchKnownGame("LostCastle2\r\nexplorer"), undefined);
+});
+
+test("Tencent PC additions and Lost Control Evolution are detected by exact executable", () => {
+  assert.equal(matchKnownGame(snapshot("Evolution-Win64-Shipping")), "失控进化");
+  assert.equal(matchKnownGame(snapshot("NZFuture-Win64-Shipping")), "逆战：未来");
+  assert.equal(matchKnownGame(snapshot("RocoKingdomWorld")), "洛克王国：世界");
+  assert.equal(matchKnownGame(snapshot("AnimulaNook")), "粒粒的小人国");
+  assert.equal(SUPPORTED_GAME_NAMES.includes("王者荣耀世界"), true);
+  assert.equal(SUPPORTED_GAME_NAMES.includes("暗区突围：无限"), true);
+});
+
+test("work activity is private to the foreground app and covers common creator tools", () => {
+  assert.deepEqual(matchKnownWorkActivity(snapshot("Code", "", "", "", true)), {
+    id: "vscode",
+    name: "Visual Studio Code",
+    category: "development",
+  });
+  assert.deepEqual(matchKnownWorkActivity(snapshot("Photoshop", "", "", "", true)), {
+    id: "photoshop",
+    name: "Photoshop",
+    category: "design",
+  });
+  assert.deepEqual(matchKnownWorkActivity(snapshot("MATLAB", "", "", "", true)), {
+    id: "matlab",
+    name: "MATLAB",
+    category: "data",
+  });
+  assert.deepEqual(matchKnownWorkActivity(snapshot("pythonw", "", "", "", true)), {
+    id: "python",
+    name: "Python",
+    category: "development",
+  });
+  assert.equal(matchKnownWorkActivity(snapshot("Code", "", "", "", false)), undefined);
+  assert.deepEqual(
+    matchKnownWorkActivity(
+      snapshot(
+        "ChatGPT",
+        "ChatGPT",
+        "C:\\Program Files\\WindowsApps\\OpenAI.Codex_26.803.10989.0_x64__2p2nqsd0c76g0\\app\\ChatGPT.exe",
+        "",
+        false,
+      ),
+    ),
+    { id: "codex", name: "Codex", category: "development" },
+  );
+  assert.equal(
+    matchKnownWorkActivity(
+      snapshot(
+        "ChatGPT",
+        "ChatGPT",
+        "C:\\Program Files\\WindowsApps\\OpenAI.ChatGPT_1.0.0.0_x64__test\\app\\ChatGPT.exe",
+        "",
+        false,
+      ),
+    ),
+    undefined,
+  );
+});
+
+test("repository documentation lists every supported game and work application", () => {
+  const documentation = readFileSync(
+    path.resolve(process.cwd(), "../../docs/supported-activities.md"),
+    "utf8",
+  );
+  assert.equal(SUPPORTED_GAME_NAMES.length, 57);
+  assert.equal(WORK_ACTIVITY_RULES.length, 62);
+  for (const gameName of SUPPORTED_GAME_NAMES) {
+    assert.equal(
+      documentation.includes(gameName),
+      true,
+      `${gameName} is missing from documentation`,
+    );
+  }
+  for (const work of WORK_ACTIVITY_RULES) {
+    assert.equal(
+      documentation.includes(work.name),
+      true,
+      `${work.name} is missing from documentation`,
+    );
+  }
+});
+
+test("Apple Music Store metadata comes from the Windows media session", () => {
+  assert.deepEqual(
+    matchMediaSessionMusicActivity([
+      {
+        SourceAppUserModelId: "AppleInc.AppleMusicWin_nzyj5cx40ttqa!App",
+        Title: "Exchange",
+        Artist: "Bryson Tiller — T R A P S O U L (Deluxe)",
+        PlaybackStatus: "Playing",
+      },
+    ]),
+    {
+      provider: "applemusic",
+      providerName: "Apple Music",
+      trackTitle: "Exchange",
+      artist: "Bryson Tiller",
+    },
+  );
+  assert.equal(
+    matchMediaSessionMusicActivity([
+      {
+        SourceAppUserModelId: "AppleInc.AppleMusicWin_nzyj5cx40ttqa!App",
+        Title: "Exchange",
+        Artist: "Bryson Tiller",
+        PlaybackStatus: "Paused",
+      },
+    ]),
+    undefined,
+  );
+
+  const command = buildMediaSessionProbeCommand();
+  assert.equal(command.includes("GlobalSystemMediaTransportControlsSessionManager"), true);
+  assert.equal(command.includes("TryGetMediaPropertiesAsync"), true);
+  assert.equal(command.includes("SourceAppUserModelId"), true);
+  assert.equal(command.includes("PlaybackStatus"), true);
+  assert.equal(command.includes("TitleBase64"), true);
 });
 
 test("music detection reports the active track without treating an idle player as music", () => {
@@ -203,6 +330,7 @@ test("game detection probes shared hosts for command-line evidence without probi
   const command = buildGameDetectionProbeCommand();
 
   assert.equal(command.includes("MainWindowTitle"), true);
+  assert.equal(command.includes("IsForeground"), true);
   assert.equal(command.includes("Path"), true);
   assert.equal(command.includes("CommandLine"), true);
   assert.equal(command.includes("Get-CimInstance Win32_Process"), true);

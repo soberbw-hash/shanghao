@@ -90,7 +90,7 @@ test("away and exit routes use only the shortest required desk detour", () => {
     fromZone: "gameDesk2",
     toZone: "restroomZone",
   });
-  assert.equal(awayRoute.points.length, 3);
+  assert.equal(awayRoute.points.length, 2);
   assert.deepEqual(awayRoute.points[0], characterPositions.gameDesk2);
   assert.deepEqual(awayRoute.points.at(-1), characterPositions.restroomZone);
 
