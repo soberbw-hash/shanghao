@@ -4,6 +4,7 @@ export * from "./constants/profile";
 export * from "./constants/ipc";
 export * from "./enums/app.enums";
 export * from "./types/audio.types";
+export * from "./types/ai.types";
 export * from "./types/diagnostics.types";
 export * from "./types/ipc.types";
 export * from "./types/recording.types";

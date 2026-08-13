@@ -7,6 +7,7 @@ import {
   nativeImage,
   Notification,
   powerMonitor,
+  screen,
   shell,
   type BrowserWindow,
   type OpenDialogOptions,
@@ -20,6 +21,9 @@ import {
   APP_PROTOCOL_VERSION,
   IPC_CHANNELS,
   type AppSettings,
+  type AiModelAction,
+  type AiModelId,
+  type AiVoiceMemorySnapshot,
   type ChatMessage,
   type DeepFilterAssets,
   type DeepLinkInvite,
@@ -46,7 +50,12 @@ import { readDeepFilterAssets } from "./deepfilter-assets";
 import { clearAvatarImage, pickAvatarImage, readAvatarImage } from "./profile-media";
 import { exportRecordingFromMain } from "./recording-main";
 import { resolveRecordingDirectory } from "./recording-path";
-import { deleteRecording, enforceRecordingQuota, readRecordingLibrary } from "./recording-library";
+import {
+  deleteRecording,
+  enforceRecordingQuota,
+  readRecordingLibrary,
+  setRecordingFavorite,
+} from "./recording-library";
 import { readRelayStatus } from "./relay-status";
 import { sendToWindow } from "./safe-web-contents";
 import { SettingsStore } from "./settings-store";
@@ -55,10 +64,12 @@ import { SignalingClientBridge } from "./signaling-client";
 import { UpdateService } from "./updates";
 import { OverlayWindowController } from "./overlay-window";
 import { GameDetectionController } from "./game-detection";
+import { AiModelManager } from "./ai-model-manager";
 import { applyLaunchOnStartup } from "./launch-on-startup";
 import { ChatHistoryStore } from "./chat-history-store";
 import { readWindowsElevationStatus } from "./windows-elevation";
 import {
+  configureWindowsIconOverlays,
   readWindowsIntegrationStatus,
   removeWindowsIntegrationFirewall,
   repairWindowsIntegrationFirewall,
@@ -82,6 +93,7 @@ interface MainProcessServices {
   updates: UpdateService;
   overlay: OverlayWindowController;
   gameDetection: GameDetectionController;
+  aiModels: AiModelManager;
   consumePendingDeepLink: () => DeepLinkInvite | undefined;
 }
 
@@ -94,6 +106,7 @@ const requireString = (value: unknown, maximumLength: number, label: string): st
 
 let attentionResetTimer: NodeJS.Timeout | undefined;
 let restoreAlwaysOnTop = false;
+let windowShakeTimer: NodeJS.Timeout | undefined;
 const linkPreviewIconCache = new Map<string, string | null>();
 
 const readLinkPreviewIcon = async (rawUrl: string): Promise<string | undefined> => {
@@ -167,6 +180,41 @@ const bringWindowToFront = (mainWindow: BrowserWindow | null, attention = false)
   attentionResetTimer.unref?.();
 };
 
+const shakeMainWindow = (mainWindow: BrowserWindow | null): void => {
+  if (
+    !mainWindow ||
+    mainWindow.isDestroyed() ||
+    mainWindow.isMaximized() ||
+    mainWindow.isFullScreen()
+  )
+    return;
+  if (windowShakeTimer) clearInterval(windowShakeTimer);
+  const original = mainWindow.getBounds();
+  const display = screen.getDisplayMatching(original).workArea;
+  const offsets = [-14, 14, -12, 12, -9, 9, -5, 5, 0];
+  let index = 0;
+  windowShakeTimer = setInterval(() => {
+    if (mainWindow.isDestroyed()) {
+      if (windowShakeTimer) clearInterval(windowShakeTimer);
+      windowShakeTimer = undefined;
+      return;
+    }
+    const offset = offsets[index] ?? 0;
+    const x = Math.max(
+      display.x,
+      Math.min(original.x + offset, display.x + display.width - original.width),
+    );
+    mainWindow.setPosition(x, original.y, false);
+    index += 1;
+    if (index >= offsets.length) {
+      if (windowShakeTimer) clearInterval(windowShakeTimer);
+      windowShakeTimer = undefined;
+      mainWindow.setPosition(original.x, original.y, false);
+    }
+  }, 42);
+  windowShakeTimer.unref?.();
+};
+
 const sanitizeServerUrl = (value?: string): string | undefined => {
   if (!value) return undefined;
   try {
@@ -204,6 +252,7 @@ export const registerIpcHandlers = ({
   updates,
   overlay,
   gameDetection,
+  aiModels,
   consumePendingDeepLink,
 }: MainProcessServices): void => {
   const chatHistoryStore = new ChatHistoryStore(app.getPath("userData"));
@@ -215,6 +264,9 @@ export const registerIpcHandlers = ({
   });
   gameDetection.onDetected((snapshot) => {
     sendToWindow(getMainWindow(), IPC_CHANNELS.games.detected, snapshot);
+  });
+  aiModels.onStatus((snapshot) => {
+    sendToWindow(getMainWindow(), IPC_CHANNELS.ai.status, snapshot);
   });
 
   ipcMain.handle(IPC_CHANNELS.app.getRuntimeInfo, async (): Promise<RuntimeInfo> => {
@@ -254,12 +306,20 @@ export const registerIpcHandlers = ({
     IPC_CHANNELS.app.notify,
     async (
       _event,
-      payload: { title: string; body: string; attention?: boolean },
+      payload: {
+        title: string;
+        body: string;
+        attention?: boolean;
+        shakeWindow?: boolean;
+        showNotification?: boolean;
+      },
     ): Promise<void> => {
       requireString(payload?.title, 80, "notification_title");
       requireString(payload?.body, 180, "notification_body");
       const mainWindow = getMainWindow();
       if (payload.attention === true) bringWindowToFront(mainWindow, true);
+      if (payload.shakeWindow === true) shakeMainWindow(mainWindow);
+      if (payload.showNotification === false) return;
       if (!Notification.isSupported()) {
         return;
       }
@@ -508,6 +568,7 @@ export const registerIpcHandlers = ({
         }
       }
       const settings = await settingsStore.save(partial);
+      if (partial.aiProcessingMode) aiModels.setProcessingMode(settings.aiProcessingMode);
       if (typeof partial.isGameDetectionEnabled === "boolean") {
         await gameDetection.setEnabled(settings.isGameDetectionEnabled);
       }
@@ -521,6 +582,7 @@ export const registerIpcHandlers = ({
 
   ipcMain.handle(IPC_CHANNELS.settings.reset, async (): Promise<AppSettings> => {
     const settings = await settingsStore.reset();
+    aiModels.setProcessingMode(settings.aiProcessingMode);
     await gameDetection.setEnabled(settings.isGameDetectionEnabled);
     await shortcuts.configureGlobalMute(settings.globalMuteShortcut);
     return settings;
@@ -562,6 +624,20 @@ export const registerIpcHandlers = ({
     });
     return status;
   });
+  ipcMain.handle(
+    IPC_CHANNELS.windows.setIconOverlaysHidden,
+    async (_event, hidden: unknown): Promise<WindowsIntegrationStatus["iconOverlays"]> => {
+      if (typeof hidden !== "boolean") throw new Error("invalid_icon_overlay_state");
+      const status = await configureWindowsIconOverlays(hidden);
+      await diagnostics.writeLog({
+        category: "app",
+        level: "info",
+        message: hidden ? "Windows icon overlays hidden" : "Windows icon overlays restored",
+        context: { ...status },
+      });
+      return status;
+    },
+  );
   ipcMain.handle(
     IPC_CHANNELS.diagnostics.testServer,
     async (_event, serverUrl: unknown): Promise<RelayStatusSnapshot> => {
@@ -661,6 +737,16 @@ export const registerIpcHandlers = ({
   ipcMain.handle(IPC_CHANNELS.overlay.toggle, async (): Promise<boolean> => overlay.toggle());
   ipcMain.handle(IPC_CHANNELS.overlay.close, async (): Promise<void> => overlay.close());
   ipcMain.handle(
+    IPC_CHANNELS.overlay.setInteractive,
+    async (_event, interactive: boolean): Promise<void> => overlay.setInteractive(interactive),
+  );
+  ipcMain.handle(IPC_CHANNELS.overlay.moveTo, async (_event, screenY: number): Promise<void> =>
+    overlay.moveTo(screenY),
+  );
+  ipcMain.handle(IPC_CHANNELS.overlay.resetPosition, async (): Promise<void> =>
+    overlay.resetPosition(),
+  );
+  ipcMain.handle(
     IPC_CHANNELS.overlay.update,
     async (_event, state: OverlayState): Promise<void> => {
       if (!state || !Array.isArray(state.members) || state.members.length > 5)
@@ -670,6 +756,19 @@ export const registerIpcHandlers = ({
   );
   ipcMain.handle(IPC_CHANNELS.games.getSnapshot, async (): Promise<GameDetectionSnapshot> =>
     gameDetection.getSnapshot(),
+  );
+  ipcMain.handle(IPC_CHANNELS.ai.getSnapshot, async (): Promise<AiVoiceMemorySnapshot> =>
+    aiModels.getSnapshot(),
+  );
+  ipcMain.handle(
+    IPC_CHANNELS.ai.controlModel,
+    async (_event, modelId: AiModelId, action: AiModelAction): Promise<AiVoiceMemorySnapshot> => {
+      if (modelId !== "vibevoice" && modelId !== "qwen35-4b") throw new Error("invalid_ai_model");
+      if (!["download", "pause", "resume", "delete"].includes(action)) {
+        throw new Error("invalid_ai_model_action");
+      }
+      return aiModels.controlModel(modelId, action);
+    },
   );
   ipcMain.handle(IPC_CHANNELS.updates.download, async (): Promise<void> => {
     await updates.download();
@@ -767,6 +866,17 @@ export const registerIpcHandlers = ({
     const settings = settingsStore.getSnapshot();
     return readRecordingLibrary(settings.recordingSaveDirectory, settings.recordingLibraryQuotaGb);
   });
+  ipcMain.handle(
+    IPC_CHANNELS.recording.setFavorite,
+    async (_event, filePath: string, isFavorite: boolean): Promise<void> => {
+      if (typeof isFavorite !== "boolean") throw new Error("invalid_recording_favorite");
+      await setRecordingFavorite(
+        settingsStore.getSnapshot().recordingSaveDirectory,
+        requireString(filePath, 2_048, "recording_file_path"),
+        isFavorite,
+      );
+    },
+  );
   ipcMain.handle(IPC_CHANNELS.recording.openDirectory, async (): Promise<void> => {
     const directory = resolveRecordingDirectory(
       settingsStore.getSnapshot().recordingSaveDirectory,

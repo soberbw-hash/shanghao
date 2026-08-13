@@ -39,6 +39,40 @@ export const sanitizeRecordingFileName = (suggestedFileName: string): string => 
   return `${withoutExtension}.m4a`;
 };
 
+const formatLocalDatePart = (date: Date): string =>
+  [date.getFullYear(), date.getMonth() + 1, date.getDate()]
+    .map((value, index) => String(value).padStart(index === 0 ? 4 : 2, "0"))
+    .join("-");
+
+const formatLocalTimePart = (date: Date): string =>
+  [date.getHours(), date.getMinutes(), date.getSeconds()]
+    .map((value) => String(value).padStart(2, "0"))
+    .join("-");
+
+export const createNumberedRecordingFileName = (
+  roomLabel: "一号房" | "二号房",
+  createdAt: Date,
+  existingFileNames: string[],
+): string => {
+  const datePart = formatLocalDatePart(createdAt);
+  const matchingNames = existingFileNames.filter(
+    (fileName) =>
+      fileName.toLowerCase().endsWith(".m4a") &&
+      fileName.includes(`-${roomLabel}-`) &&
+      fileName.includes(datePart),
+  );
+  const numberedPrefix = `上号-${datePart}-${roomLabel}-`;
+  const numberedTailPattern = /^(\d{2,3})-\d{2}-\d{2}-\d{2}\.m4a$/i;
+  const largestExistingNumber = matchingNames.reduce((largest, fileName) => {
+    const match = fileName.startsWith(numberedPrefix)
+      ? numberedTailPattern.exec(fileName.slice(numberedPrefix.length))
+      : null;
+    return match?.[1] ? Math.max(largest, Number(match[1])) : largest;
+  }, 0);
+  const sequence = Math.max(matchingNames.length, largestExistingNumber) + 1;
+  return `上号-${datePart}-${roomLabel}-${String(sequence).padStart(2, "0")}-${formatLocalTimePart(createdAt)}.m4a`;
+};
+
 export const resolveAvailableRecordingPath = async (
   directory: string,
   suggestedFileName: string,

@@ -2,9 +2,12 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { isSignalEnvelope } from "../../../packages/signaling/src/protocol";
-import { normalizePresenceGameName } from "../src/renderer/src/features/room/presenceSignal";
+import {
+  normalizePresenceGameName,
+  resolvePresenceGameNameUpdate,
+} from "../src/renderer/src/features/room/presenceSignal";
 
-test("presence game names omit empty values and stay within protocol limits", () => {
+test("presence game names send an explicit empty value and stay within protocol limits", () => {
   assert.equal(normalizePresenceGameName(), undefined);
   assert.equal(normalizePresenceGameName("   "), undefined);
   assert.equal(normalizePresenceGameName("  英雄联盟  "), "英雄联盟");
@@ -14,11 +17,18 @@ test("presence game names omit empty values and stay within protocol limits", ()
     type: "member_state",
     roomId: "main",
     peerId: "peer-a",
-    gameName: normalizePresenceGameName("   "),
+    gameName: normalizePresenceGameName("   ") ?? "",
   } as const;
   const serialized = JSON.parse(JSON.stringify(payload)) as Record<string, unknown>;
-  assert.equal("gameName" in serialized, false);
+  assert.equal(serialized.gameName, "");
   assert.equal(isSignalEnvelope(serialized), true);
+});
+
+test("presence clears stale game state from current and legacy server broadcasts", () => {
+  assert.equal(resolvePresenceGameNameUpdate("KK 对战平台", "", "idle"), undefined);
+  assert.equal(resolvePresenceGameNameUpdate("KK 对战平台", undefined, "idle"), undefined);
+  assert.equal(resolvePresenceGameNameUpdate("KK 对战平台", undefined, undefined), "KK 对战平台");
+  assert.equal(resolvePresenceGameNameUpdate(undefined, "  英雄联盟  ", "gaming"), "英雄联盟");
 });
 
 test("server protocol remains compatible with the v0.1.50 empty game name", () => {

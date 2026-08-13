@@ -32,6 +32,7 @@ interface AppStoreState {
   bootstrapAttempt: number;
   bootstrapMessage: string;
   startupIssue?: StartupIssue;
+  requiredUpdate?: { requiredVersion: string; currentVersion: string };
   isSafeMode: boolean;
   navigate: (page: AppPage) => void;
   setSettingsReturnTo: (target: SettingsReturnTarget) => void;
@@ -45,6 +46,7 @@ interface AppStoreState {
   dismissStartupIssue: () => void;
   retryBootstrap: () => void;
   enterUpdateGate: () => void;
+  requireUpdate: (requiredVersion: string, currentVersion: string) => void;
   dismissUpdateGate: () => void;
   pushToast: (toast: Omit<ToastMessage, "id">) => void;
   dismissToast: (id: string) => void;
@@ -61,6 +63,7 @@ export const useAppStore = create<AppStoreState>((set, get) => ({
   bootstrapAttempt: 0,
   bootstrapMessage: "正在准备上号…",
   startupIssue: undefined,
+  requiredUpdate: undefined,
   isSafeMode: false,
   navigate: (page) => {
     startTransition(() => set({ currentPage: page }));
@@ -107,6 +110,12 @@ export const useAppStore = create<AppStoreState>((set, get) => ({
     set({
       bootstrapPhase: "update-gate",
       bootstrapMessage: "正在检查更新…",
+    }),
+  requireUpdate: (requiredVersion, currentVersion) =>
+    set({
+      bootstrapPhase: "update-gate",
+      bootstrapMessage: "需要更新后才能进入频道",
+      requiredUpdate: { requiredVersion, currentVersion },
     }),
   dismissUpdateGate: () =>
     set({

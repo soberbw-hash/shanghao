@@ -1,7 +1,7 @@
 import { Sparkles } from "lucide-react";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 
-import { Button } from "../base/Button";
+import { DetailedReleaseNotesViewer } from "./DetailedReleaseNotesViewer";
 import {
   dialogSurfaceVariants,
   overlayScrimVariants,
@@ -60,32 +60,7 @@ export const ReleaseNotesModal = () => {
             >
               上号 {version} 更新好了
             </h2>
-            <p className="mt-2 text-sm leading-6 text-[#66758b]">
-              这次主要把朋友一起开黑时最常用的体验做得更稳、更顺手。
-            </p>
-
-            <div className="mt-6 grid gap-3">
-              {release.highlights.map((description, index) => (
-                <div
-                  key={description}
-                  className="flex items-start gap-3 rounded-[20px] border border-[#dbe8f7]/80 bg-white/66 p-4"
-                >
-                  <span className="grid h-9 w-9 shrink-0 place-items-center rounded-[13px] bg-[#e8f2ff] text-[#3f82e8]">
-                    <span className="text-sm font-extrabold">{index + 1}</span>
-                  </span>
-                  <div>
-                    <div className="text-sm font-bold text-[#26364d]">
-                      {index === 0 ? release.title : "体验改进"}
-                    </div>
-                    <div className="mt-1 text-sm leading-5 text-[#718096]">{description}</div>
-                  </div>
-                </div>
-              ))}
-            </div>
-
-            <Button isFullWidth className="mt-6" onClick={dismiss}>
-              知道了，开始上号
-            </Button>
+            <DetailedReleaseNotesViewer release={release} onComplete={dismiss} />
           </motion.section>
         </motion.div>
       ) : null}

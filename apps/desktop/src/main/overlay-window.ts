@@ -19,6 +19,7 @@ export class OverlayWindowController {
   private window: BrowserWindow | null = null;
   private state?: OverlayState;
   private snapX = 0;
+  private readonly gridSize = 16;
 
   show(): boolean {
     if (!this.window || this.window.isDestroyed()) {
@@ -40,6 +41,29 @@ export class OverlayWindowController {
   close(): void {
     this.window?.destroy();
     this.window = null;
+  }
+
+  setInteractive(interactive: boolean): void {
+    if (!this.window || this.window.isDestroyed()) return;
+    this.window.setIgnoreMouseEvents(!interactive, { forward: true });
+  }
+
+  moveTo(desiredTopY: number): void {
+    if (!this.window || this.window.isDestroyed() || !Number.isFinite(desiredTopY)) return;
+    const bounds = this.window.getBounds();
+    const display = screen.getDisplayMatching(bounds);
+    const minY = display.workArea.y + 6;
+    const maxY = display.workArea.y + display.workArea.height - bounds.height - 6;
+    const snappedY = Math.round(desiredTopY / this.gridSize) * this.gridSize;
+    this.window.setPosition(this.snapX, Math.max(minY, Math.min(snappedY, maxY)), false);
+  }
+
+  resetPosition(): void {
+    if (!this.window || this.window.isDestroyed()) return;
+    const bounds = this.window.getBounds();
+    const display = screen.getDisplayMatching(bounds);
+    const y = display.workArea.y + Math.round((display.workArea.height - bounds.height) / 2);
+    this.window.setPosition(this.snapX, y, false);
   }
 
   update(state: OverlayState): void {

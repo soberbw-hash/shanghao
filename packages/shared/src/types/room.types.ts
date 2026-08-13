@@ -19,6 +19,7 @@ export interface ChatImageAttachment {
 
 export interface ChatMessage {
   id: string;
+  clientMessageId?: string;
   peerId: string;
   nickname: string;
   avatarDataUrl?: string;
@@ -28,6 +29,9 @@ export interface ChatMessage {
   createdAt: string;
   isLocal?: boolean;
   kind?: "chat" | "system";
+  deliveryState?: "sending" | "sent" | "failed";
+  failureReason?: string;
+  retryCount?: number;
 }
 
 export interface ChatRecallEvent {
@@ -54,6 +58,16 @@ export interface SceneReaction {
   targetPeerId: string;
   emoji: "👍" | "🔥" | "😂" | "❤️" | "👏" | "😭" | "😮" | "💀" | "🎉" | "👀";
   createdAt: string;
+}
+
+export interface RoomQuickMessage {
+  id: string;
+  peerId: string;
+  nickname: string;
+  avatarId?: BuiltInAvatarId;
+  content: string;
+  createdAt: string;
+  isLocal?: boolean;
 }
 
 export type SceneZoneId =
@@ -146,6 +160,12 @@ export interface DailyRoomGameSummary {
   participantCount: number;
 }
 
+export interface DailyRoomGameActivity {
+  nickname: string;
+  gameName: string;
+  durationMs: number;
+}
+
 export interface DailyRoomReport {
   roomId: "main" | "side";
   date: string;
@@ -157,6 +177,7 @@ export interface DailyRoomReport {
   messageCount: number;
   screenShareCount: number;
   games: DailyRoomGameSummary[];
+  gameActivities: DailyRoomGameActivity[];
   lastExit?: {
     nickname: string;
     at: string;

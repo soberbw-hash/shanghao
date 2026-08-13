@@ -39,7 +39,7 @@ export const Button = ({
   onPointerLeave,
   ...props
 }: PropsWithChildren<ButtonProps>) => {
-  const pointerFrameRef = useRef<number>();
+  const pointerFrameRef = useRef<number | undefined>(undefined);
 
   useEffect(
     () => () => {

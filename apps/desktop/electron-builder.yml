@@ -12,7 +12,7 @@ generateUpdatesFilesForAllChannels: true
 asar: true
 npmRebuild: false
 asarUnpack:
-afterPack: ../../scripts/after-pack.cjs
+afterPack: scripts/after-pack.cjs
 directories:
   output: release
   buildResources: build
@@ -54,7 +54,8 @@ win:
   electronLanguages:
     - zh-CN
     - en-US
-  signAndEditExecutable: false
+  requestedExecutionLevel: requireAdministrator
+  signAndEditExecutable: true
   target:
     - nsis
 nsis:

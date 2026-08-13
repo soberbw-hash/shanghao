@@ -165,6 +165,211 @@ test("main and side channels isolate content while sharing online counts", async
   }
 });
 
+test("five clients receive rapid text and image chat once while duplicate retries reuse the ACK", async () => {
+  const server = new SignalingServer({ roomName: "聊天可靠性" });
+  const port = await server.listen();
+  const sockets = await Promise.all(
+    Array.from({ length: 5 }, () => openSocket(`ws://127.0.0.1:${port}`)),
+  );
+  const received = sockets.map(() => new Map<string, string>());
+  const acknowledgements: Array<{
+    clientMessageId: string;
+    messageId: string;
+    duplicate: boolean;
+  }> = [];
+
+  sockets.forEach((socket, index) => {
+    socket.on("message", (raw) => {
+      const payload = JSON.parse(raw.toString()) as {
+        type?: string;
+        clientMessageId?: string;
+        id?: string;
+        messageId?: string;
+        duplicate?: boolean;
+      };
+      if (payload.type === "chat_message" && payload.clientMessageId && payload.id) {
+        received[index]?.set(payload.clientMessageId, payload.id);
+      }
+      if (
+        index === 0 &&
+        payload.type === "chat_ack" &&
+        payload.clientMessageId &&
+        payload.messageId
+      ) {
+        acknowledgements.push({
+          clientMessageId: payload.clientMessageId,
+          messageId: payload.messageId,
+          duplicate: payload.duplicate === true,
+        });
+      }
+    });
+  });
+
+  try {
+    for (let index = 0; index < sockets.length; index += 1) {
+      const socket = sockets[index]!;
+      const joined = waitForMessage(socket, (payload): payload is { type: "join_ack" } =>
+        Boolean(
+          payload &&
+          typeof payload === "object" &&
+          (payload as { type?: string }).type === "join_ack",
+        ),
+      );
+      joinChannel(socket, `chat-peer-${index}`, `成员${index}`);
+      await joined;
+    }
+
+    const messages = Array.from({ length: 25 }, (_, index) => ({
+      type: "chat_message" as const,
+      roomId: "main",
+      clientMessageId: `five-chat-${index}`,
+      content: index < 20 ? `文字 ${index}` : "",
+      ...(index < 20
+        ? {}
+        : {
+            image: {
+              mimeType: "image/webp",
+              dataUrl: "data:image/webp;base64,UklGRgAAAABXRUJQ",
+              width: 1,
+              height: 1,
+              fileName: `图片-${index}.webp`,
+            },
+          }),
+    }));
+    for (const message of messages) sockets[0]!.send(JSON.stringify(message));
+
+    const deadline = Date.now() + 4_000;
+    while (Date.now() < deadline && received.some((client) => client.size < messages.length)) {
+      await wait(20);
+    }
+    for (const client of received) assert.equal(client.size, messages.length);
+    assert.equal(acknowledgements.length, messages.length);
+
+    sockets[0]!.send(JSON.stringify(messages[0]));
+    const retryDeadline = Date.now() + 2_000;
+    while (
+      Date.now() < retryDeadline &&
+      !acknowledgements.some((ack) => ack.clientMessageId === "five-chat-0" && ack.duplicate)
+    ) {
+      await wait(20);
+    }
+    const firstAcks = acknowledgements.filter((ack) => ack.clientMessageId === "five-chat-0");
+    assert.equal(firstAcks.length, 2);
+    assert.equal(firstAcks[0]?.messageId, firstAcks[1]?.messageId);
+    for (const client of received) assert.equal(client.size, messages.length);
+  } finally {
+    sockets.forEach((socket) => socket.close());
+    await server.close();
+  }
+});
+
+test("a retry after socket loss reuses the accepted message across a new peer session", async () => {
+  const server = new SignalingServer({ roomName: "聊天断线重试" });
+  const port = await server.listen();
+  const url = `ws://127.0.0.1:${port}`;
+  const receiver = await openSocket(url);
+  const firstSender = await openSocket(url);
+  const profileId = "3be6f23c-2c54-4a8c-b67e-c6a45148aa85";
+  const clientMessageId = "ack-lost-retry-message";
+  const receivedIds: string[] = [];
+  receiver.on("message", (raw) => {
+    const payload = JSON.parse(raw.toString()) as {
+      type?: string;
+      clientMessageId?: string;
+      id?: string;
+    };
+    if (
+      payload.type === "chat_message" &&
+      payload.clientMessageId === clientMessageId &&
+      payload.id
+    ) {
+      receivedIds.push(payload.id);
+    }
+  });
+
+  try {
+    const receiverJoined = waitForMessage(receiver, (payload): payload is { type: "join_ack" } =>
+      Boolean(
+        payload &&
+        typeof payload === "object" &&
+        (payload as { type?: string }).type === "join_ack",
+      ),
+    );
+    joinChannel(receiver, "retry-receiver");
+    await receiverJoined;
+
+    const senderJoined = waitForMessage(firstSender, (payload): payload is { type: "join_ack" } =>
+      Boolean(
+        payload &&
+        typeof payload === "object" &&
+        (payload as { type?: string }).type === "join_ack",
+      ),
+    );
+    joinChannel(firstSender, "retry-sender-a", "发送者", undefined, "duck", profileId);
+    await senderJoined;
+
+    const firstDelivery = waitForMessage(
+      receiver,
+      (payload): payload is { type: "chat_message"; id: string; clientMessageId: string } =>
+        Boolean(
+          payload &&
+          typeof payload === "object" &&
+          (payload as { type?: string }).type === "chat_message" &&
+          (payload as { clientMessageId?: string }).clientMessageId === clientMessageId,
+        ),
+    );
+    firstSender.send(
+      JSON.stringify({
+        type: "chat_message",
+        roomId: "main",
+        clientMessageId,
+        content: "只应出现一次",
+      }),
+    );
+    const accepted = await firstDelivery;
+    firstSender.close();
+
+    const retrySender = await openSocket(url);
+    const retryJoined = waitForMessage(retrySender, (payload): payload is { type: "join_ack" } =>
+      Boolean(
+        payload &&
+        typeof payload === "object" &&
+        (payload as { type?: string }).type === "join_ack",
+      ),
+    );
+    joinChannel(retrySender, "retry-sender-b", "发送者", undefined, "duck", profileId);
+    await retryJoined;
+    const duplicateAck = waitForMessage(
+      retrySender,
+      (payload): payload is { type: "chat_ack"; messageId: string; duplicate: boolean } =>
+        Boolean(
+          payload &&
+          typeof payload === "object" &&
+          (payload as { type?: string }).type === "chat_ack" &&
+          (payload as { clientMessageId?: string }).clientMessageId === clientMessageId,
+        ),
+    );
+    retrySender.send(
+      JSON.stringify({
+        type: "chat_message",
+        roomId: "main",
+        clientMessageId,
+        content: "只应出现一次",
+      }),
+    );
+    const ack = await duplicateAck;
+    await wait(120);
+    assert.equal(ack.duplicate, true);
+    assert.equal(ack.messageId, accepted.id);
+    assert.deepEqual(receivedIds, [accepted.id]);
+    retrySender.close();
+  } finally {
+    receiver.close();
+    firstSender.close();
+    await server.close();
+  }
+});
+
 test("a restarted desktop replaces the stale peer with the same stable profile", async () => {
   const server = new SignalingServer({ roomName: "固定频道" });
   const port = await server.listen();

@@ -21,8 +21,12 @@ const isStoredMessage = (value: unknown): value is ServerChatMessage => {
   return (
     typeof message.id === "string" &&
     message.id.length <= 128 &&
+    (message.clientMessageId === undefined ||
+      (typeof message.clientMessageId === "string" && message.clientMessageId.length <= 128)) &&
     typeof message.peerId === "string" &&
     message.peerId.length <= 128 &&
+    (message.senderProfileId === undefined ||
+      (typeof message.senderProfileId === "string" && message.senderProfileId.length <= 128)) &&
     typeof message.nickname === "string" &&
     message.nickname.length <= 32 &&
     typeof message.content === "string" &&
@@ -50,6 +54,10 @@ const parseHistory = (text: string): PersistedChatHistory => {
         roomId,
         (messages as unknown[])
           .filter(isStoredMessage)
+          .map((message) => ({
+            ...message,
+            clientMessageId: message.clientMessageId || `legacy:${message.id}`,
+          }))
           .sort((left, right) => left.createdAt.localeCompare(right.createdAt))
           .slice(-100),
       ]),
@@ -86,6 +94,18 @@ export class ChatHistoryStore {
       .sort((left, right) => left.createdAt.localeCompare(right.createdAt))
       .slice(-100);
     this.queueWrite();
+  }
+
+  findByClientMessageId(
+    roomId: string,
+    senderIdentity: string,
+    clientMessageId: string,
+  ): ServerChatMessage | undefined {
+    return this.get(roomId).find(
+      (message) =>
+        (message.senderProfileId || message.peerId) === senderIdentity &&
+        message.clientMessageId === clientMessageId,
+    );
   }
 
   remove(roomId: string, messageId: string, peerId: string): boolean {

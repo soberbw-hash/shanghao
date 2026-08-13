@@ -1,10 +1,12 @@
 import { useEffect, useState } from "react";
 import { ChevronDown, MessageCircle, MonitorUp, Users } from "lucide-react";
+import { AnimatePresence } from "framer-motion";
 
 import type { AppSettings, DailyRoomReport } from "@private-voice/shared";
 
 import { useDailyRoomReportStore } from "../../store/dailyRoomReportStore";
 import { useRoomStore } from "../../store/roomStore";
+import { DailyRoomReportModal } from "../status/DailyRoomReportModal";
 
 const yesterday = (): string => {
   const date = new Date(Date.now() - 86_400_000);
@@ -16,28 +18,57 @@ const formatDuration = (milliseconds: number): string => {
   return minutes >= 60 ? `${Math.floor(minutes / 60)} 小时 ${minutes % 60} 分` : `${minutes} 分钟`;
 };
 
-const ReportDetails = ({ report }: { report: DailyRoomReport }) => (
-  <div className="room-history-details">
-    <span>
-      <Users />
-      {report.participantCount} 人 · 最高 {report.peakConcurrent} 人
-    </span>
-    <span>
-      <MessageCircle />
-      {report.messageCount} 条消息
-    </span>
-    <span>
-      <MonitorUp />
-      {report.screenShareCount} 次分享
-    </span>
-    <span>活跃 {formatDuration(report.activeDurationMs)}</span>
-    {report.games.length ? (
-      <span className="col-span-full">
-        玩过：{report.games.map((game) => game.name).join("、")}
+const formatParticipantNames = (report: DailyRoomReport): string =>
+  report.participantNicknames
+    .map((nickname) => nickname.trim())
+    .filter(Boolean)
+    .join("、");
+
+const ReportDetails = ({ report, onOpen }: { report: DailyRoomReport; onOpen: () => void }) => {
+  const participantNames = formatParticipantNames(report);
+  const gameActivities = report.gameActivities ?? [];
+
+  return (
+    <div className="room-history-details">
+      {participantNames ? (
+        <span className="room-history-friends">
+          <Users />
+          来过：{participantNames}
+        </span>
+      ) : null}
+      <span>
+        <Users />
+        {report.participantCount} 人 · 最高 {report.peakConcurrent} 人
       </span>
-    ) : null}
-  </div>
-);
+      <span>
+        <MessageCircle />
+        {report.messageCount} 条消息
+      </span>
+      <span>
+        <MonitorUp />
+        {report.screenShareCount} 次分享
+      </span>
+      <span>活跃 {formatDuration(report.activeDurationMs)}</span>
+      {gameActivities.length ? (
+        <div className="room-history-game-activities">
+          {gameActivities.map((activity, index) => (
+            <span key={`${activity.nickname}-${activity.gameName}-${index}`}>
+              <strong>{activity.nickname}</strong> 玩了《{activity.gameName}》·{" "}
+              {formatDuration(activity.durationMs)}
+            </span>
+          ))}
+        </div>
+      ) : report.games.length ? (
+        <span className="col-span-full">
+          玩过：{report.games.map((game) => game.name).join("、")}
+        </span>
+      ) : null}
+      <button type="button" className="room-history-replay" onClick={onOpen}>
+        重看昨日房间
+      </button>
+    </div>
+  );
+};
 
 export const RoomHistorySettingsCard = ({
   settings,
@@ -52,6 +83,7 @@ export const RoomHistorySettingsCard = ({
   const loaded = useDailyRoomReportStore((state) => state.loaded[roomId]);
   const unavailable = useDailyRoomReportStore((state) => state.unavailable[roomId]);
   const [expandedDate, setExpandedDate] = useState<string>();
+  const [previewReport, setPreviewReport] = useState<DailyRoomReport>();
 
   useEffect(() => {
     setExpandedDate(reports[0]?.date);
@@ -111,14 +143,16 @@ export const RoomHistorySettingsCard = ({
                   <span>
                     <strong>{report.date}</strong>
                     <small>
-                      {report.hadActivity ? `${report.participantCount} 人来过` : "安静的一天"}
+                      {report.hadActivity
+                        ? formatParticipantNames(report) || `${report.participantCount} 人来过`
+                        : "安静的一天"}
                     </small>
                   </span>
                   <ChevronDown className={expanded ? "rotate-180" : ""} />
                 </button>
                 {expanded ? (
                   report.hadActivity ? (
-                    <ReportDetails report={report} />
+                    <ReportDetails report={report} onOpen={() => setPreviewReport(report)} />
                   ) : (
                     <div className="room-history-quiet">这天没有实际房间活动。</div>
                   )
@@ -127,6 +161,14 @@ export const RoomHistorySettingsCard = ({
             );
           })}
       </div>
+      <AnimatePresence>
+        {previewReport ? (
+          <DailyRoomReportModal
+            report={previewReport}
+            onClose={() => setPreviewReport(undefined)}
+          />
+        ) : null}
+      </AnimatePresence>
     </section>
   );
 };

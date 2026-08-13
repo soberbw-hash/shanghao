@@ -14,7 +14,7 @@
     "src/renderer/src/**/*.tsx",
     "src/renderer/src/**/*.d.ts",
     "tsup.config.ts",
-    "tailwind.config.ts",
-    "vite.config.ts"
+    "tailwind.config.mts",
+    "vite.config.mts"
   ]
 }

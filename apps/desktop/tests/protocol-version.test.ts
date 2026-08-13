@@ -112,3 +112,60 @@ test("signaling server accepts a different build number when protocol is compati
     await server.close();
   }
 });
+
+test("local signaling minimum-version gate rejects old or missing versions and accepts current", async () => {
+  const server = new SignalingServer({ roomName: "测试房间", requiredClientVersion: "2.6.1" });
+  const port = await server.listen();
+
+  const attempt = async (peerId: string, appVersion?: string) => {
+    const socket = new WebSocket(`ws://127.0.0.1:${port}`);
+    await new Promise((resolve, reject) => {
+      socket.once("open", resolve);
+      socket.once("error", reject);
+    });
+    const result = new Promise<Record<string, unknown>>((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error("message_timeout")), 4_000);
+      socket.on("message", (raw) => {
+        const payload = JSON.parse(raw.toString()) as Record<string, unknown>;
+        if (payload.type === "error" || payload.type === "join_ack") {
+          clearTimeout(timer);
+          resolve(payload);
+        }
+      });
+    });
+    socket.send(
+      JSON.stringify({
+        type: "join_channel",
+        roomId: "main",
+        channelId: "main",
+        peerId,
+        nickname: peerId,
+        avatarId: "fox",
+        ...(appVersion ? { appVersion } : {}),
+        protocolVersion: APP_PROTOCOL_VERSION,
+        buildNumber: APP_BUILD_NUMBER,
+      }),
+    );
+    const payload = await result;
+    socket.close();
+    return payload;
+  };
+
+  try {
+    const old = await attempt("old-client", "2.6.0");
+    assert.equal(old.code, "CLIENT_UPDATE_REQUIRED");
+    assert.equal(old.requiredVersion, "2.6.1");
+    assert.equal(old.currentVersion, "2.6.0");
+
+    const missing = await attempt("missing-client");
+    assert.equal(missing.code, "CLIENT_UPDATE_REQUIRED");
+
+    const malformed = await attempt("malformed-client", "2.6.1-preview");
+    assert.equal(malformed.code, "CLIENT_UPDATE_REQUIRED");
+
+    const current = await attempt("current-client", "2.6.1");
+    assert.equal(current.type, "join_ack");
+  } finally {
+    await server.close();
+  }
+});

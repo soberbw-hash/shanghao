@@ -10,6 +10,10 @@ import type {
   SceneZoneId,
 } from "@private-voice/shared";
 import { isAllowedNickname, isBuiltInAvatarId } from "@private-voice/shared";
+import {
+  MAX_ROOM_COLLECTION_IMAGE_LENGTH,
+  MAX_ROOM_COLLECTION_TEXT_LENGTH,
+} from "@private-voice/shared";
 
 export interface SessionDescriptionPayload {
   type: "offer" | "answer" | "pranswer" | "rollback";
@@ -39,6 +43,8 @@ export type SignalEnvelope =
   | IceCandidateMessage
   | MemberStateMessage
   | ChatMessage
+  | ChatAckMessage
+  | ChatRejectedMessage
   | ChatRecallMessage
   | ChatHistoryMessage
   | ChannelCountsMessage
@@ -206,14 +212,36 @@ export interface ChatMessage extends BaseMessage {
   avatarDataUrl?: string;
   avatarId?: BuiltInAvatarId;
   content: string;
+  clientMessageId?: string;
   image?: ChatImageAttachment;
   createdAt?: string;
 }
 
 export type ServerChatMessage = Required<
   Pick<ChatMessage, "id" | "peerId" | "nickname" | "content" | "createdAt">
-> &
-  Pick<ChatMessage, "avatarId" | "avatarDataUrl" | "image">;
+> & { clientMessageId: string } & { senderProfileId?: string } & Pick<
+    ChatMessage,
+    "avatarId" | "avatarDataUrl" | "image"
+  >;
+
+export interface ChatAckMessage extends BaseMessage {
+  type: "chat_ack";
+  roomId: string;
+  peerId: string;
+  clientMessageId: string;
+  messageId: string;
+  acceptedAt: string;
+  duplicate: boolean;
+}
+
+export interface ChatRejectedMessage extends BaseMessage {
+  type: "chat_rejected";
+  roomId: string;
+  peerId?: string;
+  clientMessageId: string;
+  code: "invalid_chat" | "payload_too_large" | "rate_limited" | "room_unavailable";
+  message: string;
+}
 
 export interface ChatHistoryMessage extends BaseMessage {
   type: "chat_history";
@@ -380,6 +408,8 @@ export interface ErrorMessage extends BaseMessage {
   message: string;
   avatarId?: BuiltInAvatarId;
   availableAvatarIds?: BuiltInAvatarId[];
+  requiredVersion?: string;
+  currentVersion?: string;
 }
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -533,7 +563,7 @@ export const isSignalEnvelope = (value: unknown): value is SignalEnvelope => {
         isIdentifier(value.channelId, 64) &&
         isValidNickname(value.nickname) &&
         isBuiltInAvatarId(value.avatarId) &&
-        isText(value.appVersion, 32) &&
+        (value.appVersion === undefined || isText(value.appVersion, 32)) &&
         isText(value.protocolVersion, 32) &&
         isText(value.buildNumber, 64) &&
         (value.sessionToken === undefined || isText(value.sessionToken, 128))
@@ -646,12 +676,32 @@ export const isSignalEnvelope = (value: unknown): value is SignalEnvelope => {
       const hasImage = isChatImageAttachment(value.image);
       return (
         hasRoom(value) &&
+        (value.clientMessageId === undefined || isIdentifier(value.clientMessageId, 128)) &&
         typeof value.content === "string" &&
         value.content.length <= 500 &&
         (value.image === undefined || hasImage) &&
         (hasContent || hasImage)
       );
     }
+    case "chat_ack":
+      return (
+        hasRoom(value) &&
+        hasPeer(value) &&
+        isIdentifier(value.clientMessageId, 128) &&
+        isIdentifier(value.messageId, 128) &&
+        typeof value.acceptedAt === "string" &&
+        Number.isFinite(Date.parse(value.acceptedAt)) &&
+        typeof value.duplicate === "boolean"
+      );
+    case "chat_rejected":
+      return (
+        hasRoom(value) &&
+        isIdentifier(value.clientMessageId, 128) &&
+        ["invalid_chat", "payload_too_large", "rate_limited", "room_unavailable"].includes(
+          String(value.code),
+        ) &&
+        isText(value.message, 500)
+      );
     case "chat_recall":
       return hasRoom(value) && isIdentifier(value.messageId, 128);
     case "chat_history":
@@ -685,7 +735,12 @@ export const isSignalEnvelope = (value: unknown): value is SignalEnvelope => {
         hasRoom(value) &&
         ["text", "link", "image", "game"].includes(String(value.kind)) &&
         isText(value.title, 80) &&
-        isText(value.content, 2_000)
+        isText(
+          value.content,
+          value.kind === "image"
+            ? MAX_ROOM_COLLECTION_IMAGE_LENGTH
+            : MAX_ROOM_COLLECTION_TEXT_LENGTH,
+        )
       );
     case "room_collection_remove":
       return hasRoom(value) && isIdentifier(value.itemId, 128);
@@ -762,7 +817,9 @@ export const isSignalEnvelope = (value: unknown): value is SignalEnvelope => {
         (value.availableAvatarIds === undefined ||
           (Array.isArray(value.availableAvatarIds) &&
             value.availableAvatarIds.length <= 5 &&
-            value.availableAvatarIds.every(isBuiltInAvatarId)))
+            value.availableAvatarIds.every(isBuiltInAvatarId))) &&
+        (value.requiredVersion === undefined || isText(value.requiredVersion, 32)) &&
+        (value.currentVersion === undefined || isText(value.currentVersion, 32))
       );
     default:
       return false;

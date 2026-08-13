@@ -51,12 +51,12 @@ export const useMicTest = ({
   const [level, setLevel] = useState(0);
   const [isClipping, setIsClipping] = useState(false);
   const [error, setError] = useState<string>();
-  const inputStreamRef = useRef<MediaStream>();
-  const processedStreamRef = useRef<ProcessedMicrophoneStream>();
-  const contextRef = useRef<AudioContext>();
-  const analyserRef = useRef<AnalyserNode>();
-  const audioRef = useRef<HTMLAudioElement>();
-  const rafRef = useRef<number>();
+  const inputStreamRef = useRef<MediaStream | undefined>(undefined);
+  const processedStreamRef = useRef<ProcessedMicrophoneStream | undefined>(undefined);
+  const contextRef = useRef<AudioContext | undefined>(undefined);
+  const analyserRef = useRef<AnalyserNode | undefined>(undefined);
+  const audioRef = useRef<HTMLAudioElement | undefined>(undefined);
+  const rafRef = useRef<number | undefined>(undefined);
 
   const clearMeter = useCallback(() => {
     if (rafRef.current !== undefined) window.cancelAnimationFrame(rafRef.current);

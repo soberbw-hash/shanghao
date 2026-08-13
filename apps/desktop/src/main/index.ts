@@ -1,8 +1,8 @@
 import { readFileSync } from "node:fs";
-import { join } from "node:path";
+import path, { join } from "node:path";
 import { pathToFileURL } from "node:url";
 
-import { app, BrowserWindow, Tray, dialog, net, protocol } from "electron";
+import { app, BrowserWindow, Tray, dialog, protocol } from "electron";
 
 import { APP_ID, IPC_CHANNELS, type DeepLinkInvite } from "@private-voice/shared";
 
@@ -16,11 +16,13 @@ import { UpdateService } from "./updates";
 import { createMainWindow } from "./window";
 import { OverlayWindowController } from "./overlay-window";
 import { GameDetectionController } from "./game-detection";
+import { AiModelManager } from "./ai-model-manager";
 import { applyLaunchOnStartup } from "./launch-on-startup";
 import { ensureWindowsFirewallRules } from "./windows-integration";
 import { findDeepLinkInvite, parseDeepLinkInvite, SHANGHAO_PROTOCOL } from "./deep-link";
 import { sendToWindow } from "./safe-web-contents";
 import {
+  createRecordingMediaResponse,
   decodeRecordingMediaUrl,
   isAllowedRecordingMediaPath,
   RECORDING_MEDIA_PROTOCOL,
@@ -34,10 +36,17 @@ let settingsStore: SettingsStore | null = null;
 let shortcutsController: ShortcutController | null = null;
 let overlayController: OverlayWindowController | null = null;
 let gameDetectionController: GameDetectionController | null = null;
+let aiModelManager: AiModelManager | null = null;
 let pendingDeepLink = findDeepLinkInvite(process.argv);
 
 const QUIT_FOR_INSTALL_ARG = "--shanghao-quit-for-install";
 const shouldQuitForInstall = process.argv.includes(QUIT_FOR_INSTALL_ARG);
+
+if (!app.isPackaged && process.env.SHANGHAO_CAPTURE_PATH) {
+  const capturePath = process.env.SHANGHAO_CAPTURE_PATH;
+  const captureName = path.basename(capturePath, path.extname(capturePath));
+  app.setPath("userData", path.join(path.dirname(capturePath), `.user-data-${captureName}`));
+}
 
 const shouldUseHardwareAcceleration = (): boolean => {
   try {
@@ -196,9 +205,21 @@ const bootstrap = async (): Promise<void> => {
     ) {
       return new Response("Not found", { status: 404 });
     }
-    return net.fetch(pathToFileURL(filePath).toString(), {
-      headers: request.headers,
-    });
+    try {
+      return await createRecordingMediaResponse(filePath, request.headers.get("range"));
+    } catch (error) {
+      void diagnostics?.writeLog({
+        category: "app",
+        level: "warn",
+        message: "Recording media request failed",
+        context: {
+          fileName: path.basename(filePath),
+          range: request.headers.get("range") ?? undefined,
+          error: error instanceof Error ? error.message : String(error),
+        },
+      });
+      return new Response("Not found", { status: 404 });
+    }
   });
   try {
     await applyLaunchOnStartup(settings.launchOnStartup);
@@ -249,9 +270,16 @@ const bootstrap = async (): Promise<void> => {
     (payload) => diagnostics?.writeLog(payload) ?? Promise.resolve(),
   );
   await gameDetection.setEnabled(settings.isGameDetectionEnabled);
+  const aiModels = new AiModelManager(
+    path.join(app.getPath("userData"), "ai-models"),
+    gameDetection,
+    (payload) => diagnostics?.writeLog(payload) ?? Promise.resolve(),
+  );
+  await aiModels.initialize(settings.aiProcessingMode);
   shortcutsController = shortcuts;
   overlayController = overlay;
   gameDetectionController = gameDetection;
+  aiModelManager = aiModels;
 
   registerIpcHandlers({
     getMainWindow: () => mainWindow,
@@ -262,6 +290,7 @@ const bootstrap = async (): Promise<void> => {
     updates,
     overlay,
     gameDetection,
+    aiModels,
     consumePendingDeepLink,
   });
 
@@ -312,6 +341,7 @@ const bootstrap = async (): Promise<void> => {
   );
 
   app.on("before-quit", () => {
+    aiModelManager?.stop();
     prepareForQuit("before-quit");
   });
 

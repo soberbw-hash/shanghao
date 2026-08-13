@@ -21,7 +21,7 @@ const snapshot = (
   MainWindowTitle = "",
   Path = "",
   CommandLine = "",
-  IsForeground = false,
+  IsForeground?: boolean,
 ): string => JSON.stringify({ ProcessName, MainWindowTitle, Path, CommandLine, IsForeground });
 
 test("game detection uses structured exact process matches", () => {
@@ -76,7 +76,7 @@ test("work activity is private to the foreground app and covers common creator t
         "ChatGPT",
         "C:\\Program Files\\WindowsApps\\OpenAI.Codex_26.803.10989.0_x64__2p2nqsd0c76g0\\app\\ChatGPT.exe",
         "",
-        false,
+        true,
       ),
     ),
     { id: "codex", name: "Codex", category: "development" },
@@ -95,12 +95,20 @@ test("work activity is private to the foreground app and covers common creator t
   );
 });
 
+test("Codex work detection keeps the official Appx manifest path as its identity evidence", () => {
+  const source = readFileSync(path.resolve(process.cwd(), "src/main/game-detection.ts"), "utf8");
+  assert.equal(source.includes("AppxManifest.xml"), true);
+  assert.equal(source.includes("Square44x44Logo"), true);
+  assert.equal(source.includes("targetsize-64_altform-unplated"), true);
+  assert.equal(source.includes('activityId === "codex"'), true);
+});
+
 test("repository documentation lists every supported game and work application", () => {
   const documentation = readFileSync(
     path.resolve(process.cwd(), "../../docs/supported-activities.md"),
     "utf8",
   );
-  assert.equal(SUPPORTED_GAME_NAMES.length, 57);
+  assert.equal(SUPPORTED_GAME_NAMES.length, 49);
   assert.equal(WORK_ACTIVITY_RULES.length, 62);
   for (const gameName of SUPPORTED_GAME_NAMES) {
     assert.equal(
@@ -205,7 +213,7 @@ test("music activity survives transient title misses without becoming permanentl
   assert.equal(resolveStableMusicActivity(changed, activity, 0), changed);
 });
 
-test("KK launcher alone never reports a game", () => {
+test("KK launcher alone stays hidden while a real foreground hosted process reports KK", () => {
   assert.equal(
     matchKnownGame(
       snapshot(
@@ -231,75 +239,47 @@ test("KK launcher alone never reports a game", () => {
     ),
     undefined,
   );
-});
-
-test("KK hosted games require a real game process and prefer the exact map", () => {
   assert.equal(
-    matchKnownGame(
-      snapshot(
-        "war3",
-        "",
-        "D:\\KK\\Games\\Warcraft III\\war3.exe",
-        '"D:\\KK\\Games\\Warcraft III\\war3.exe" -loadfile "向魔兽开炮"',
-      ),
-    ),
-    "向魔兽开炮",
-  );
-  assert.equal(
-    matchKnownGame(
-      snapshot(
-        "game",
-        "最后的避难所3",
-        "D:\\KK\\Games\\y3\\2.0\\game\\game.exe",
-        '"D:\\KK\\Games\\y3\\2.0\\game\\game.exe" --map 尸潮庇护所',
-      ),
-    ),
-    "尸潮庇护所",
-  );
-  assert.equal(
-    matchKnownGame(snapshot("war3", "DotA Allstars", "D:\\KK\\Games\\war3.exe")),
-    "DotA 1",
+    matchKnownGame([
+      JSON.parse(snapshot("KK", "KK 对战平台", "C:\\Program Files\\KK\\KK.exe", "", false)),
+      JSON.parse(snapshot("DeltaForceClient-Win64-Shipping", "", "", "", true)),
+    ]),
+    "三角洲行动",
   );
   assert.equal(
     matchKnownGame(
       snapshot(
         "Game_x64h",
+        "英雄三国",
+        "C:\\Program Files (x86)\\kkduizhan\\Games\\Hero\\Game_x64h.exe",
         "",
-        "C:\\Program Files (x86)\\kkduizhan\\Games\\y3\\2.0\\game\\Engine\\Binaries\\Win64\\Game_x64h.exe",
-        '"Game_x64h.exe" --project 205715',
+        true,
       ),
     ),
-    "向魔兽开炮",
+    "KK 对战平台",
   );
   assert.equal(
     matchKnownGame(
       snapshot(
         "Game_x64h",
+        "英雄三国",
+        "C:\\Program Files (x86)\\kkduizhan\\Games\\Hero\\Game_x64h.exe",
         "",
-        "C:\\Program Files (x86)\\kkduizhan\\Games\\y3\\2.0\\game\\Engine\\Binaries\\Win64\\Game_x64h.exe",
+        false,
       ),
     ),
-    "KK RPG",
+    undefined,
   );
-  assert.equal(matchKnownGame(snapshot("war3", "Warcraft III")), "魔兽争霸 3");
+  assert.equal(matchKnownGame(snapshot("Game_x64h", "KK RPG")), undefined);
+  assert.equal(matchKnownGame(snapshot("war3", "Warcraft III")), undefined);
   assert.equal(matchKnownGame(snapshot("game", "普通应用")), undefined);
 });
 
-test("KK classic games use their actual processes instead of the platform process", () => {
-  assert.equal(
-    matchKnownGame(
-      snapshot("hl", "Counter-Strike 1.6", "D:\\KK\\Games\\CS1.6\\hl.exe", "-game cstrike"),
-    ),
-    "CS 1.6",
-  );
+test("KK hosted and classic game processes are no longer reported separately", () => {
   assert.equal(matchKnownGame(snapshot("hl", "Half-Life SDK")), undefined);
-  assert.equal(matchKnownGame(snapshot("gamemd")), "红色警戒 2");
-  assert.equal(
-    matchKnownGame(snapshot("mame64", "The King of Fighters '97", "D:\\Games\\KOF97")),
-    "拳皇 97",
-  );
+  assert.equal(matchKnownGame(snapshot("gamemd")), undefined);
   assert.equal(matchKnownGame(snapshot("mame64", "Arcade")), undefined);
-  assert.equal(matchKnownGame(snapshot("StarCraft")), "星际争霸");
+  assert.equal(matchKnownGame(snapshot("StarCraft")), undefined);
 });
 
 test("generic Java does not falsely report Minecraft", () => {
@@ -326,7 +306,7 @@ test("generic Java does not falsely report Minecraft", () => {
   );
 });
 
-test("game detection probes shared hosts for command-line evidence without probing KK itself", () => {
+test("game detection resolves the foreground PID and probes KK hosted process evidence", () => {
   const command = buildGameDetectionProbeCommand();
 
   assert.equal(command.includes("MainWindowTitle"), true);
@@ -335,7 +315,9 @@ test("game detection probes shared hosts for command-line evidence without probi
   assert.equal(command.includes("CommandLine"), true);
   assert.equal(command.includes("Get-CimInstance Win32_Process"), true);
   assert.equal(command.includes("'war3'"), true);
-  assert.equal(command.includes("'kk'"), false);
+  assert.equal(command.includes("'platform'"), false);
+  assert.equal(command.includes("GetWindowThreadProcessId"), true);
+  assert.equal(command.includes("$foregroundProcessId"), true);
   assert.equal(command.includes("[Console]::OutputEncoding"), true);
   assert.equal(command.includes("UTF8Encoding"), true);
   assert.equal(command.includes("ConvertTo-Utf8Base64"), true);
@@ -344,6 +326,10 @@ test("game detection probes shared hosts for command-line evidence without probi
 });
 
 test("bundled monitor artwork stays valid and newly detected games use a readable fallback", () => {
+  const detectorSource = readFileSync(
+    path.resolve(process.cwd(), "src/main/game-detection.ts"),
+    "utf8",
+  );
   const artworkComponentPath = fileURLToPath(
     new URL("../src/renderer/src/components/room/GameMonitorContent.tsx", import.meta.url),
   );
@@ -384,6 +370,15 @@ test("bundled monitor artwork stays valid and newly detected games use a readabl
     assert.ok(statSync(path.join(artworkDirectory, filename)).size > 500);
   }
 
-  assert.equal(componentSource.includes("scene-game-monitor-content--fallback"), true);
+  assert.equal(componentSource.includes('artwork?.layout ?? "fallback"'), true);
   assert.equal(componentSource.includes("Partial<Record<SupportedGameName"), true);
+  assert.equal(componentSource.includes("scene-game-monitor-label"), false);
+  assert.equal(
+    componentSource.indexOf("iconDataUrl ? (") < componentSource.indexOf(") : artwork ? ("),
+    true,
+  );
+  assert.equal(componentSource.includes("data-game-scan"), true);
+  assert.equal(componentSource.includes("shouldReduceMotion"), true);
+  assert.equal(detectorSource.includes('getFileIcon(executablePath, { size: "large" })'), true);
+  assert.equal(detectorSource.includes('resize({ width: 64, height: 64, quality: "best" })'), true);
 });

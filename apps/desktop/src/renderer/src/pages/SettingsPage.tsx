@@ -1,5 +1,13 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { Activity, CalendarDays, Headphones, Library, MonitorCog, RefreshCw } from "lucide-react";
+import {
+  Activity,
+  CalendarDays,
+  Headphones,
+  Library,
+  MonitorCog,
+  RefreshCw,
+  Sparkles,
+} from "lucide-react";
 import { gsap } from "gsap";
 
 import type {
@@ -21,6 +29,7 @@ import { SettingsPageHeader } from "../components/settings/SettingsPageHeader";
 import { SettingsSection } from "../components/settings/SettingsSection";
 import { ShortcutSettingsCard } from "../components/settings/ShortcutSettingsCard";
 import { RecordingLibrarySettingsCard } from "../components/settings/RecordingLibrarySettingsCard";
+import { AiVoiceMemorySettingsCard } from "../components/settings/AiVoiceMemorySettingsCard";
 import { RoomHistorySettingsCard } from "../components/settings/RoomHistorySettingsCard";
 import { StartupSplashPage } from "../components/status/StartupSplashPage";
 import { ReleaseDetailModal } from "../components/status/ReleaseDetailModal";
@@ -34,12 +43,13 @@ import { useRoomStore } from "../store/roomStore";
 import { useSettingsStore } from "../store/settingsStore";
 
 type SettingsSectionId =
-  "general" | "audio" | "recordings" | "roomHistory" | "updates" | "diagnostics";
+  "general" | "audio" | "recordings" | "ai" | "roomHistory" | "updates" | "diagnostics";
 
 const sections = [
   { id: "general", label: "通用", icon: MonitorCog },
   { id: "audio", label: "语音", icon: Headphones },
   { id: "recordings", label: "录音库", icon: Library },
+  { id: "ai", label: "AI 功能", icon: Sparkles },
   { id: "roomHistory", label: "房间记录", icon: CalendarDays },
   { id: "updates", label: "更新", icon: RefreshCw },
   { id: "diagnostics", label: "诊断", icon: Activity },
@@ -56,6 +66,8 @@ const sanitizeDiagnosticsServerUrl = (value?: string): string | undefined => {
     return "地址格式不可识别";
   }
 };
+
+let cachedWindowsDiagnostics: WindowsIntegrationStatus | undefined;
 
 export const SettingsPage = () => {
   const navigate = useAppStore((state) => state.navigate);
@@ -78,7 +90,11 @@ export const SettingsPage = () => {
   const [activeSection, setActiveSection] = useState<SettingsSectionId>("audio");
   const [diagnostics, setDiagnostics] = useState<DiagnosticsSnapshot>();
   const [relayDiagnostics, setRelayDiagnostics] = useState<RelayStatusSnapshot>();
-  const [windowsDiagnostics, setWindowsDiagnostics] = useState<WindowsIntegrationStatus>();
+  const [windowsDiagnostics, setWindowsDiagnostics] = useState<
+    WindowsIntegrationStatus | undefined
+  >(cachedWindowsDiagnostics);
+  const [isWindowsDiagnosticsLoading, setIsWindowsDiagnosticsLoading] =
+    useState(!cachedWindowsDiagnostics);
   const [saveNotice, setSaveNotice] = useState("设置会自动保存");
   const [selectedRelease, setSelectedRelease] = useState<ReleaseHistoryEntry>();
   const pageRef = useRef<HTMLDivElement>(null);
@@ -118,20 +134,25 @@ export const SettingsPage = () => {
   }, [activeSection, settings?.relayServerUrl]);
 
   useEffect(() => {
-    if (activeSection !== "diagnostics") return;
     let cancelled = false;
+    setIsWindowsDiagnosticsLoading(!cachedWindowsDiagnostics);
     void window.desktopApi.windows
       .getStatus()
       .then((snapshot) => {
-        if (!cancelled) setWindowsDiagnostics(snapshot);
+        if (cancelled) return;
+        cachedWindowsDiagnostics = snapshot;
+        setWindowsDiagnostics(snapshot);
       })
       .catch(() => {
-        if (!cancelled) setWindowsDiagnostics(undefined);
+        if (!cancelled && !cachedWindowsDiagnostics) setWindowsDiagnostics(undefined);
+      })
+      .finally(() => {
+        if (!cancelled) setIsWindowsDiagnosticsLoading(false);
       });
     return () => {
       cancelled = true;
     };
-  }, [activeSection]);
+  }, []);
 
   useLayoutEffect(() => {
     if (!isSettingsReady || !pageRef.current) return;
@@ -190,8 +211,16 @@ export const SettingsPage = () => {
 
   const refreshDiagnostics = () =>
     void window.desktopApi.diagnostics.snapshot().then(setDiagnostics);
-  const refreshWindowsDiagnostics = () =>
-    void window.desktopApi.windows.getStatus().then(setWindowsDiagnostics);
+  const refreshWindowsDiagnostics = () => {
+    setIsWindowsDiagnosticsLoading(true);
+    void window.desktopApi.windows
+      .getStatus()
+      .then((snapshot) => {
+        cachedWindowsDiagnostics = snapshot;
+        setWindowsDiagnostics(snapshot);
+      })
+      .finally(() => setIsWindowsDiagnosticsLoading(false));
+  };
   const handleRepairFirewall = () => {
     void window.desktopApi.windows
       .repairFirewall()
@@ -208,6 +237,32 @@ export const SettingsPage = () => {
           tone: "danger",
           title: "防火墙修复失败",
           description: error instanceof Error ? error.message : "请确认管理员权限后重试。",
+        }),
+      );
+  };
+  const handleIconOverlayChange = (hidden: boolean) => {
+    void window.desktopApi.windows
+      .setIconOverlaysHidden(hidden)
+      .then((iconOverlays) => {
+        setWindowsDiagnostics((current) => {
+          if (!current) return current;
+          const next = { ...current, iconOverlays };
+          cachedWindowsDiagnostics = next;
+          return next;
+        });
+        pushToast({
+          tone: "success",
+          title: hidden ? "桌面图标标记已隐藏" : "桌面图标标记已恢复",
+          description: hidden
+            ? "快捷方式小箭头和管理员盾牌已隐藏，软件仍会正常请求管理员权限。"
+            : "已恢复修改前的 Windows 图标标记。",
+        });
+      })
+      .catch((error) =>
+        pushToast({
+          tone: "danger",
+          title: hidden ? "隐藏失败" : "恢复失败",
+          description: error instanceof Error ? error.message : "请允许 Windows 管理员确认后重试。",
         }),
       );
   };
@@ -380,6 +435,29 @@ export const SettingsPage = () => {
               }
             />
           </SettingsItemRow>
+          <SettingsItemRow
+            label="桌面图标标记"
+            description="隐藏 Windows 桌面所有快捷方式的小箭头和管理员盾牌；不删除图标，也不取消管理员启动。"
+          >
+            <div className="flex flex-wrap gap-2">
+              <Button
+                variant="secondary"
+                disabled={isWindowsDiagnosticsLoading || windowsDiagnostics?.iconOverlays.hidden}
+                onClick={() => handleIconOverlayChange(true)}
+              >
+                {isWindowsDiagnosticsLoading ? "读取状态…" : "一键隐藏"}
+              </Button>
+              <Button
+                variant="ghost"
+                disabled={
+                  isWindowsDiagnosticsLoading || windowsDiagnostics?.iconOverlays.hidden !== true
+                }
+                onClick={() => handleIconOverlayChange(false)}
+              >
+                恢复默认
+              </Button>
+            </div>
+          </SettingsItemRow>
         </div>
       </SettingsSection>
     ),
@@ -410,6 +488,13 @@ export const SettingsPage = () => {
         pushToast={pushToast}
       />
     ),
+    ai: (
+      <AiVoiceMemorySettingsCard
+        settings={settings}
+        onChange={handleSaveSettings}
+        pushToast={pushToast}
+      />
+    ),
     roomHistory: <RoomHistorySettingsCard settings={settings} onChange={handleSaveSettings} />,
     updates: (
       <SettingsSection title="更新" description={`当前版本 ${runtimeInfo?.version ?? "读取中..."}`}>
@@ -424,7 +509,7 @@ export const SettingsPage = () => {
             </Button>
           </div>
         </div>
-        <div className="mt-4 grid gap-3" aria-label="最近十个版本更新记录">
+        <div className="mt-4 grid gap-3" aria-label="完整版本更新记录">
           {RELEASE_HISTORY.map((release, index) => (
             <article
               key={release.version}

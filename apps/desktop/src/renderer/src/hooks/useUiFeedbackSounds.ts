@@ -11,6 +11,7 @@ import {
   setUiSoundEnabled,
   setUiSoundVolume,
 } from "../features/audio/uiSound";
+import { prepareAnimalCalls } from "../features/audio/animalCall";
 
 let lastClickAt = 0;
 
@@ -35,7 +36,10 @@ export const useUiFeedbackSounds = (): void => {
   }, [settings?.isUiSoundEnabled, settings?.soundVolume]);
 
   useEffect(() => {
-    const prepare = () => prepareUiSounds();
+    const prepare = () => {
+      prepareUiSounds();
+      prepareAnimalCalls();
+    };
     window.addEventListener("pointerdown", prepare, { once: true, passive: true });
     window.addEventListener("keydown", prepare, { once: true });
     return () => {

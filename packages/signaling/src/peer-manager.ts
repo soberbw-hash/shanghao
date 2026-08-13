@@ -99,6 +99,10 @@ export class PeerManager {
     const peer = this.peers.get(peerId);
     if (peer) {
       for (const [key, value] of Object.entries(nextState)) {
+        if (key === "gameName" && value === "") {
+          peer.gameName = undefined;
+          continue;
+        }
         if (key === "musicActivity" && value === null) {
           peer.musicActivity = undefined;
           continue;

@@ -1,17 +1,11 @@
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
-  useEffect,
-  useLayoutEffect,
-  useRef,
-  useState,
-  type CSSProperties,
-  type PointerEvent as ReactPointerEvent,
-} from "react";
-import {
+  Archive,
   ChevronDown,
   Copy,
   ExternalLink,
   FolderHeart,
-  GripHorizontal,
+  PackageOpen,
   Plus,
   Trash2,
   Volume2,
@@ -26,7 +20,6 @@ import {
   RoomConnectionState,
   type AppSettings,
   type GameDetectionSnapshot,
-  type AudioDeviceDescriptor,
   type MemberActivity,
   type ScreenCaptureSourceDescriptor,
   type SceneZoneId,
@@ -35,12 +28,12 @@ import { cn } from "@private-voice/ui";
 
 import { MuteButton } from "../components/audio/MuteButton";
 import { RecordingButton } from "../components/audio/RecordingButton";
+import { AudioControlPopover } from "../components/audio/AudioControlPopover";
 import { AnimatedControlIcon } from "../components/icons/AnimatedControlIcon";
 import { Button } from "../components/base/Button";
-import { Slider } from "../components/base/Slider";
-import { Switch } from "../components/base/Switch";
 import { TemporaryChatPanel } from "../components/chat/TemporaryChatPanel";
 import { TopStatusBar } from "../components/layout/TopStatusBar";
+import { ScreenSharePanel } from "../components/room/ScreenSharePanel";
 import { TeamIsland } from "../components/room/TeamIsland";
 import { RecordingStopDialog } from "../components/status/RecordingStopDialog";
 import { playUiSound } from "../features/audio/uiSound";
@@ -69,6 +62,11 @@ import { useRecordingStore } from "../store/recordingStore";
 import { useRoomStore } from "../store/roomStore";
 import { useSettingsStore } from "../store/settingsStore";
 import { prepareChatImage } from "../utils/chatImage";
+import {
+  readRoomCollectionDragPayload,
+  ROOM_COLLECTION_DRAG_TYPE,
+  type RoomCollectionDragPayload,
+} from "../features/chat/collectionDrag";
 import donateQr from "../assets/donate-qr.jpg";
 
 const KNOCK_COOLDOWN_MS = 5_000;
@@ -85,372 +83,6 @@ interface AwaySession {
   enteredAt: string;
 }
 
-const ScreenShareVideo = ({ stream }: { stream: MediaStream }) => {
-  const videoRef = useRef<HTMLVideoElement>(null);
-
-  useEffect(() => {
-    const video = videoRef.current;
-    if (!video) return;
-    if (video.srcObject !== stream) {
-      video.srcObject = stream;
-    }
-    video.muted = true;
-    void video.play().catch(() => undefined);
-  }, [stream]);
-
-  return <video ref={videoRef} autoPlay playsInline muted className="screen-share-video" />;
-};
-
-const ScreenShareMedia = ({ item }: { item: ScreenShareItem }) => {
-  if (item.isLocal && item.stream) {
-    return (
-      <div className="screen-share-self-preview" data-testid="local-share-safe-preview">
-        <ScreenShareVideo stream={item.stream} />
-        <span className="screen-share-self-badge">你的分享</span>
-      </div>
-    );
-  }
-
-  if (item.stream) {
-    return <ScreenShareVideo stream={item.stream} />;
-  }
-
-  return <img src={item.frameDataUrl} alt="" className="screen-share-video" draggable={false} />;
-};
-
-const ScreenSharePanel = ({
-  items,
-  onStopLocalShare,
-  onOpenDetached,
-}: {
-  items: ScreenShareItem[];
-  onStopLocalShare: () => void;
-  onOpenDetached: (item: ScreenShareItem) => Promise<void>;
-}) => {
-  const panelRef = useRef<HTMLDivElement>(null);
-  const [position, setPosition] = useState({ x: 0, y: 0 });
-  const [selectedId, setSelectedId] = useState<string>();
-  const [isDetaching, setIsDetaching] = useState(false);
-  const [isDragging, setIsDragging] = useState(false);
-  const dragStateRef = useRef<{
-    pointerId: number;
-    startX: number;
-    startY: number;
-    baseX: number;
-    baseY: number;
-  }>();
-  useEffect(() => {
-    if (!items.length) {
-      setSelectedId(undefined);
-      return;
-    }
-    if (!selectedId || !items.some((item) => item.id === selectedId)) {
-      setSelectedId(items[0]?.id);
-    }
-  }, [items, selectedId]);
-  if (items.length === 0) return null;
-
-  const primaryItem = items.find((item) => item.id === selectedId) ?? items[0];
-  if (!primaryItem) return null;
-
-  const handlePointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
-    if ((event.target as Element).closest("button")) return;
-    dragStateRef.current = {
-      pointerId: event.pointerId,
-      startX: event.clientX,
-      startY: event.clientY,
-      baseX: position.x,
-      baseY: position.y,
-    };
-    setIsDragging(true);
-    event.currentTarget.setPointerCapture(event.pointerId);
-  };
-
-  const handlePointerMove = (event: ReactPointerEvent<HTMLDivElement>) => {
-    const dragState = dragStateRef.current;
-    const panel = panelRef.current;
-    const parent = panel?.offsetParent as HTMLElement | null;
-    if (!dragState || dragState.pointerId !== event.pointerId || !panel || !parent) return;
-
-    const parentRect = parent.getBoundingClientRect();
-    const baseLeft = parentRect.width - panel.offsetWidth - 14;
-    const desiredLeft = baseLeft + dragState.baseX + event.clientX - dragState.startX;
-    const desiredTop = 14 + dragState.baseY + event.clientY - dragState.startY;
-    const clampedLeft = Math.min(
-      Math.max(10, desiredLeft),
-      Math.max(10, parentRect.width - panel.offsetWidth - 10),
-    );
-    const clampedTop = Math.min(
-      Math.max(10, desiredTop),
-      Math.max(10, parentRect.height - panel.offsetHeight - 10),
-    );
-    setPosition({ x: clampedLeft - baseLeft, y: clampedTop - 14 });
-  };
-
-  const stopDragging = (event: ReactPointerEvent<HTMLDivElement>) => {
-    if (dragStateRef.current?.pointerId !== event.pointerId) return;
-    dragStateRef.current = undefined;
-    setIsDragging(false);
-    event.currentTarget.releasePointerCapture(event.pointerId);
-  };
-
-  const openDetachedViewer = async () => {
-    if (isDetaching) return;
-    setIsDetaching(true);
-    const minimumHandoff = new Promise<void>((resolve) => {
-      window.setTimeout(resolve, motionDuration.panel * 1_000);
-    });
-    try {
-      await Promise.all([onOpenDetached(primaryItem), minimumHandoff]);
-    } finally {
-      setIsDetaching(false);
-    }
-  };
-
-  return (
-    <div
-      ref={panelRef}
-      className={`screen-share-panel ${isDetaching ? "is-detaching" : ""} ${isDragging ? "is-dragging" : ""}`}
-      data-testid="screen-share-panel"
-      style={
-        {
-          "--screen-share-x": `${position.x}px`,
-          "--screen-share-y": `${position.y}px`,
-        } as CSSProperties & Record<string, string>
-      }
-    >
-      <div
-        className="screen-share-panel-header"
-        onPointerDown={handlePointerDown}
-        onPointerMove={handlePointerMove}
-        onPointerUp={stopDragging}
-        onPointerCancel={stopDragging}
-      >
-        <GripHorizontal className="screen-share-drag-handle" aria-hidden="true" />
-        <div>
-          <p className="screen-share-kicker">屏幕分享</p>
-          <strong>{primaryItem.title}</strong>
-          <span className="screen-share-transport">
-            {primaryItem.transport === "webrtc" ? "实时视频" : "服务器兜底"}
-          </span>
-        </div>
-        <div className="screen-share-panel-actions">
-          <button
-            type="button"
-            className="screen-share-icon-action"
-            data-icon-motion="expand"
-            disabled={isDetaching}
-            onClick={() => void openDetachedViewer()}
-            title="在独立窗口中观看"
-            aria-label="在独立窗口中观看"
-          >
-            <AnimatedControlIcon name="overlay" className="h-3.5 w-3.5" />
-          </button>
-          {primaryItem.isLocal ? (
-            <button type="button" className="screen-share-stop" onClick={onStopLocalShare}>
-              停止
-            </button>
-          ) : null}
-        </div>
-      </div>
-      <div className="screen-share-video-shell">
-        <ScreenShareMedia item={primaryItem} />
-      </div>
-      {items.length > 1 ? (
-        <div className="screen-share-stack" role="tablist" aria-label="切换共享画面">
-          {items.map((item) => (
-            <button
-              key={item.id}
-              type="button"
-              role="tab"
-              aria-selected={item.id === primaryItem.id}
-              className={item.id === primaryItem.id ? "active" : ""}
-              onClick={() => setSelectedId(item.id)}
-            >
-              {item.title.replace(" 正在分享", "").replace("你正在分享", "你")}
-            </button>
-          ))}
-        </div>
-      ) : null}
-    </div>
-  );
-};
-
-const AudioControlPopover = ({
-  title,
-  devices,
-  deviceId,
-  volume,
-  min,
-  max,
-  onDeviceChange,
-  onVolumePreview,
-  onVolumeCommit,
-  onTest,
-  onReset,
-  autoGainEnabled,
-  onAutoGainChange,
-  noiseSuppressionEnabled,
-  isNoiseSuppressionSwitching,
-  onNoiseSuppressionChange,
-  echoCancellationEnabled,
-  onEchoCancellationChange,
-  voiceEnhancementEnabled,
-  onVoiceEnhancementChange,
-}: {
-  title: string;
-  devices: AudioDeviceDescriptor[];
-  deviceId?: string;
-  volume: number;
-  min: number;
-  max: number;
-  onDeviceChange: (deviceId?: string) => void;
-  onVolumePreview: (volume: number) => void;
-  onVolumeCommit: (volume: number) => void;
-  onTest?: () => void;
-  onReset: () => void;
-  autoGainEnabled?: boolean;
-  onAutoGainChange?: (enabled: boolean) => void;
-  noiseSuppressionEnabled?: boolean;
-  isNoiseSuppressionSwitching?: boolean;
-  onNoiseSuppressionChange?: (enabled: boolean) => void;
-  echoCancellationEnabled?: boolean;
-  onEchoCancellationChange?: (enabled: boolean) => void;
-  voiceEnhancementEnabled?: boolean;
-  onVoiceEnhancementChange?: (enabled: boolean) => void;
-}) => {
-  const [draftVolume, setDraftVolume] = useState(volume);
-  useEffect(() => setDraftVolume(volume), [volume]);
-
-  const commit = () => onVolumeCommit(draftVolume);
-  const hasMicrophoneProcessing =
-    typeof noiseSuppressionEnabled === "boolean" ||
-    typeof autoGainEnabled === "boolean" ||
-    typeof echoCancellationEnabled === "boolean" ||
-    typeof voiceEnhancementEnabled === "boolean";
-  const deviceSelect = (
-    <select
-      value={deviceId || ""}
-      aria-label={`${title}设备`}
-      onChange={(event) => onDeviceChange(event.currentTarget.value || undefined)}
-    >
-      <option value="">系统默认</option>
-      {devices.map((device) => (
-        <option key={device.id} value={device.id}>
-          {device.label || title}
-        </option>
-      ))}
-    </select>
-  );
-
-  return (
-    <motion.div
-      className="audio-control-popover"
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
-      transition={{ duration: 0.14, ease: "easeOut" }}
-    >
-      <div className="audio-control-popover-heading">
-        <strong>{title}</strong>
-        <span>{Math.round(draftVolume * 100)}%</span>
-      </div>
-      {hasMicrophoneProcessing ? null : deviceSelect}
-      {typeof noiseSuppressionEnabled === "boolean" && onNoiseSuppressionChange ? (
-        <div
-          className="audio-control-processing-option"
-          data-audio-setting="noise-suppression"
-          aria-busy={isNoiseSuppressionSwitching}
-        >
-          <span>
-            <strong>降噪</strong>
-            <small>{isNoiseSuppressionSwitching ? "正在切换" : "减少环境噪声"}</small>
-          </span>
-          <Switch
-            isChecked={noiseSuppressionEnabled}
-            isDisabled={isNoiseSuppressionSwitching}
-            ariaLabel="切换降噪"
-            onChange={(enabled) => {
-              if (!isNoiseSuppressionSwitching) onNoiseSuppressionChange(enabled);
-            }}
-          />
-        </div>
-      ) : null}
-      {typeof echoCancellationEnabled === "boolean" && onEchoCancellationChange ? (
-        <div className="audio-control-processing-option" data-audio-setting="echo-cancellation">
-          <span>
-            <strong>回声消除</strong>
-            <small>减少扬声器声音回传</small>
-          </span>
-          <Switch
-            isChecked={Boolean(echoCancellationEnabled)}
-            isDisabled={isNoiseSuppressionSwitching}
-            ariaLabel="切换回声消除"
-            onChange={onEchoCancellationChange}
-          />
-        </div>
-      ) : null}
-      {typeof voiceEnhancementEnabled === "boolean" && onVoiceEnhancementChange ? (
-        <div className="audio-control-processing-option" data-audio-setting="voice-enhancement">
-          <span>
-            <strong>人声增强</strong>
-            <small>让说话更清楚</small>
-          </span>
-          <Switch
-            isChecked={voiceEnhancementEnabled}
-            isDisabled={isNoiseSuppressionSwitching}
-            ariaLabel="切换人声增强"
-            onChange={onVoiceEnhancementChange}
-          />
-        </div>
-      ) : null}
-      {typeof autoGainEnabled === "boolean" && onAutoGainChange ? (
-        <div className="audio-control-processing-option" data-audio-setting="auto-gain">
-          <span>
-            <strong>自动增益</strong>
-            <small>自动平衡说话音量</small>
-          </span>
-          <Switch
-            isChecked={autoGainEnabled}
-            ariaLabel="切换自动增益"
-            onChange={onAutoGainChange}
-          />
-        </div>
-      ) : null}
-      {hasMicrophoneProcessing ? deviceSelect : null}
-      <div className="audio-control-popover-slider">
-        <Slider
-          min={min}
-          max={max}
-          step={0.05}
-          value={draftVolume}
-          referenceValue={1}
-          snapThreshold={0.05}
-          aria-label={`${title}音量`}
-          onChange={(event) => {
-            const nextVolume = Number(event.currentTarget.value);
-            setDraftVolume(nextVolume);
-            onVolumePreview(nextVolume);
-          }}
-          onPointerUp={commit}
-          onKeyUp={commit}
-        />
-      </div>
-      <div className="audio-control-popover-actions">
-        {onTest ? (
-          <button type="button" className="audio-control-test" onClick={onTest}>
-            <Volume2 aria-hidden="true" />
-            播放测试音
-          </button>
-        ) : null}
-        <button type="button" className="audio-control-reset" onClick={onReset}>
-          恢复 100%
-        </button>
-      </div>
-    </motion.div>
-  );
-};
-
 export const RoomPage = () => {
   const {
     room,
@@ -460,6 +92,7 @@ export const RoomPage = () => {
     recallChatMessage,
     sendKnock,
     sendSceneReaction,
+    sendQuickMessage,
     replaceInputDevice,
     setMicrophoneSendVolume,
     localStream,
@@ -499,6 +132,47 @@ export const RoomPage = () => {
   const settings = useSettingsStore((state) => state.settings);
   const saveSettings = useSettingsStore((state) => state.saveSettings);
   const chatMessages = useRoomStore((state) => state.chatMessages);
+  const roomQuickMessages = useRoomStore((state) => state.quickMessages);
+  const characterChatBubbles = useMemo(() => {
+    const latestByPeerId = new Map<
+      string,
+      { id: string; peerId: string; content: string; createdAt: string }
+    >();
+
+    const messages = [
+      ...chatMessages
+        .filter(
+          (message) =>
+            message.kind !== "system" &&
+            message.deliveryState !== "failed" &&
+            Boolean(message.content.trim()),
+        )
+        .map((message) => ({
+          id: message.clientMessageId ?? message.id,
+          peerId: message.peerId,
+          content: message.content.trim(),
+          createdAt: message.createdAt,
+        })),
+      ...roomQuickMessages.map((message) => ({
+        id: message.id,
+        peerId: message.peerId,
+        content: message.content,
+        createdAt: message.createdAt,
+      })),
+    ].sort((left, right) => right.createdAt.localeCompare(left.createdAt));
+
+    for (const message of messages) {
+      if (
+        latestByPeerId.has(message.peerId) ||
+        Date.now() - Date.parse(message.createdAt) > 4_200
+      ) {
+        continue;
+      }
+      latestByPeerId.set(message.peerId, message);
+    }
+
+    return [...latestByPeerId.values()];
+  }, [chatMessages, roomQuickMessages]);
   const remoteStreams = useRoomStore((state) => state.remoteStreams);
   const remoteScreenFrames = useRoomStore((state) => state.remoteScreenFrames);
   const remoteScreenSharing = useRoomStore((state) => state.remoteScreenSharing);
@@ -535,6 +209,7 @@ export const RoomPage = () => {
   const [isDonationOpen, setIsDonationOpen] = useState(false);
   const [isCollectionOpen, setIsCollectionOpen] = useState(false);
   const [collectionDraft, setCollectionDraft] = useState("");
+  const [isCollectionDragOver, setIsCollectionDragOver] = useState(false);
   const [isCollectionSaving, setIsCollectionSaving] = useState(false);
   const [localKnockPulse, setLocalKnockPulse] = useState(0);
   const [activeAudioPanel, setActiveAudioPanel] = useState<"microphone" | "speaker">();
@@ -545,16 +220,16 @@ export const RoomPage = () => {
   const [isChoosingRecordingDirectory, setIsChoosingRecordingDirectory] = useState(false);
   const [isSwitchingChannelLocally, setIsSwitchingChannelLocally] = useState(false);
   const lastSeatZoneRef = useRef<SceneZoneId>("gameDesk1");
-  const awaySessionRef = useRef<AwaySession>();
+  const awaySessionRef = useRef<AwaySession | undefined>(undefined);
   const lastKnockAt = useRef(0);
-  const detectedGameRef = useRef<string>();
-  const detectedGameIconRef = useRef<string>();
-  const detectedMusicRef = useRef<GameDetectionSnapshot["musicActivity"]>();
-  const detectedWorkRef = useRef<GameDetectionSnapshot["workActivity"]>();
+  const detectedGameRef = useRef<string | undefined>(undefined);
+  const detectedGameIconRef = useRef<string | undefined>(undefined);
+  const detectedMusicRef = useRef<GameDetectionSnapshot["musicActivity"] | undefined>(undefined);
+  const detectedWorkRef = useRef<GameDetectionSnapshot["workActivity"] | undefined>(undefined);
   const hasDetectionSnapshotRef = useRef(false);
   const hasAutoStartedRecordingRef = useRef(false);
   const autoRecordRetryCountRef = useRef(0);
-  const autoRecordRetryTimerRef = useRef<number>();
+  const autoRecordRetryTimerRef = useRef<number | undefined>(undefined);
   const hasInitializedCollectionReadStateRef = useRef(false);
   const moveLocalMemberRef = useRef(moveLocalMember);
   const screenPickerRequestIdRef = useRef(0);
@@ -749,7 +424,7 @@ export const RoomPage = () => {
   }, [isDeafened, isMuted, reduceMotion]);
 
   useEffect(() => {
-    void window.desktopApi.overlay.update({
+    const overlayState = {
       members: room.members,
       isMuted,
       isDeafened,
@@ -759,7 +434,15 @@ export const RoomPage = () => {
       hasSystemAudio: Boolean(
         localScreenShareStream?.getAudioTracks().some((track) => track.readyState === "live"),
       ),
-    });
+    };
+    void window.desktopApi.overlay.update(overlayState);
+    const heartbeat = window.setInterval(() => {
+      void window.desktopApi.overlay.update({
+        ...overlayState,
+        members: useRoomStore.getState().room.members,
+      });
+    }, 250);
+    return () => window.clearInterval(heartbeat);
   }, [
     isDeafened,
     isMuted,
@@ -1145,9 +828,14 @@ export const RoomPage = () => {
 
   const send = async (content = chatInput) => {
     if (!content.trim()) return;
-    await sendChatMessage(content);
-    playUiSound("send-message");
-    if (content === chatInput) setChatInput("");
+    const isComposerMessage = content === chatInput;
+    if (isComposerMessage) setChatInput("");
+    try {
+      await sendChatMessage(content);
+      playUiSound("send-message");
+    } catch {
+      // sendChatMessage already exposes a user-facing retry state.
+    }
   };
 
   const sendImage = async (file: File) => {
@@ -1211,25 +899,25 @@ export const RoomPage = () => {
     setIsLeaving(true);
     closeScreenSourcePicker();
 
-    const cleanupResults = await Promise.allSettled([
-      shutdownScreenShare(),
-      window.desktopApi.overlay.close(),
-    ]);
-    const cleanupErrors = cleanupResults
-      .filter((result): result is PromiseRejectedResult => result.status === "rejected")
-      .map((result) =>
-        result.reason instanceof Error ? result.reason.message : String(result.reason),
-      );
-    if (cleanupErrors.length) {
-      void window.desktopApi.app
-        .writeLog({
-          category: "app",
-          level: "warn",
-          message: "room_leave_background_cleanup_failed",
-          context: { errors: cleanupErrors },
-        })
-        .catch(() => undefined);
-    }
+    void Promise.allSettled([shutdownScreenShare(), window.desktopApi.overlay.close()]).then(
+      (cleanupResults) => {
+        const cleanupErrors = cleanupResults
+          .filter((result): result is PromiseRejectedResult => result.status === "rejected")
+          .map((result) =>
+            result.reason instanceof Error ? result.reason.message : String(result.reason),
+          );
+        if (cleanupErrors.length) {
+          void window.desktopApi.app
+            .writeLog({
+              category: "app",
+              level: "warn",
+              message: "room_leave_background_cleanup_failed",
+              context: { errors: cleanupErrors },
+            })
+            .catch(() => undefined);
+        }
+      },
+    );
 
     try {
       await leaveRoom();
@@ -1639,11 +1327,45 @@ export const RoomPage = () => {
     }
   };
 
-  const copyCollectionItem = async (content: string) => {
+  const saveDraggedCollection = async (payload: RoomCollectionDragPayload) => {
+    if (isCollectionSaving) return;
+    setIsCollectionSaving(true);
     try {
-      await navigator.clipboard.writeText(content);
+      await addRoomCollectionItem(payload.kind, payload.title, payload.content);
+      playUiSound("send-message");
+      pushToast({
+        tone: "success",
+        title: "已放入收藏",
+        description: payload.kind === "image" ? "这张图片会一直保留。" : payload.title,
+      });
+    } catch {
+      pushToast({
+        tone: "danger",
+        title: "收藏失败",
+        description: "连接还没有恢复，请稍后再拖一次。",
+      });
+    } finally {
+      setIsCollectionSaving(false);
+      setIsCollectionDragOver(false);
+    }
+  };
+
+  const copyCollectionItem = async (
+    content: string,
+    kind: "text" | "link" | "image" | "game" = "text",
+  ) => {
+    try {
+      if (kind === "image") {
+        await window.desktopApi.clipboard.writeImage(content);
+      } else {
+        await window.desktopApi.clipboard.writeText(content);
+      }
       playUiSound("button-click");
-      pushToast({ tone: "success", title: "已复制", description: "收藏内容已放进剪贴板。" });
+      pushToast({
+        tone: "success",
+        title: kind === "image" ? "已复制图片" : "已复制",
+        description: "收藏内容已放进剪贴板。",
+      });
     } catch {
       pushToast({ tone: "danger", title: "复制失败", description: "请稍后再试。" });
     }
@@ -1740,6 +1462,7 @@ export const RoomPage = () => {
             screenSharingPeerIds={screenSharingPeerIds}
             networkQuality={connectionQuality.level}
             reactions={sceneReactions}
+            chatBubbles={characterChatBubbles}
             knockPulse={
               localKnockPulse +
               chatMessages.filter((message) => message.id.startsWith("knock-")).length
@@ -1772,7 +1495,15 @@ export const RoomPage = () => {
             chatInput={chatInput}
             onChatInputChange={setChatInput}
             onSend={() => void send()}
-            onQuickSend={(message) => void send(message)}
+            onQuickSend={(message) => {
+              void sendQuickMessage(message).catch(() => {
+                pushToast({
+                  tone: "warning",
+                  title: "提醒没有发出去",
+                  description: "连接恢复后再试一次。",
+                });
+              });
+            }}
             onSendImage={sendImage}
             onRecall={async (messageId) => {
               try {
@@ -1784,6 +1515,10 @@ export const RoomPage = () => {
                   description: "连接恢复后再试一次。",
                 });
               }
+            }}
+            onRetry={async (message) => {
+              if (!message.clientMessageId) return;
+              await sendChatMessage(message.content, message.image, message.clientMessageId);
             }}
             canSend={canSend}
             unavailableLabel="正在重连..."
@@ -1965,17 +1700,36 @@ export const RoomPage = () => {
               <div className="collection-list">
                 {collectionItems.length ? (
                   [...collectionItems].reverse().map((item) => (
-                    <article key={item.id} className="collection-item">
+                    <article
+                      key={item.id}
+                      className={cn("collection-item", item.kind === "image" && "is-image")}
+                    >
                       <div className="collection-item-copy">
                         <span>
-                          {item.kind === "text" ? "便笺" : item.kind === "game" ? "游戏" : "链接"}
+                          {item.kind === "text"
+                            ? "便笺"
+                            : item.kind === "game"
+                              ? "游戏"
+                              : item.kind === "image"
+                                ? "图片"
+                                : "链接"}
                         </span>
                         <strong>{item.title}</strong>
-                        <p>{item.content}</p>
+                        {item.kind === "image" ? (
+                          <img
+                            className="collection-item-image"
+                            src={item.content}
+                            alt={item.title}
+                            loading="lazy"
+                            draggable={false}
+                          />
+                        ) : (
+                          <p>{item.content}</p>
+                        )}
                         <small>由 {item.createdByNickname} 留下</small>
                       </div>
                       <div className="collection-item-actions">
-                        {item.kind === "link" || item.kind === "image" ? (
+                        {item.kind === "link" ? (
                           <button
                             type="button"
                             title="在浏览器中打开"
@@ -1989,7 +1743,7 @@ export const RoomPage = () => {
                           type="button"
                           title="复制"
                           aria-label={`复制 ${item.title}`}
-                          onClick={() => void copyCollectionItem(item.content)}
+                          onClick={() => void copyCollectionItem(item.content, item.kind)}
                         >
                           <Copy aria-hidden="true" />
                         </button>
@@ -2164,18 +1918,52 @@ export const RoomPage = () => {
           <Button
             variant={isCollectionOpen ? "secondary" : "ghost"}
             data-icon-motion="collection"
-            className="voice-action-button-with-text collection-button"
+            className={cn(
+              "voice-action-button-with-text collection-button",
+              isCollectionDragOver && "is-drop-target",
+            )}
             aria-pressed={isCollectionOpen}
             onClick={openCollection}
+            onDragEnter={(event) => {
+              if (!event.dataTransfer.types.includes(ROOM_COLLECTION_DRAG_TYPE)) return;
+              event.preventDefault();
+              setIsCollectionDragOver(true);
+            }}
+            onDragOver={(event) => {
+              if (!event.dataTransfer.types.includes(ROOM_COLLECTION_DRAG_TYPE)) return;
+              event.preventDefault();
+              event.dataTransfer.dropEffect = "copy";
+              setIsCollectionDragOver(true);
+            }}
+            onDragLeave={(event) => {
+              const nextTarget = event.relatedTarget;
+              if (nextTarget instanceof Node && event.currentTarget.contains(nextTarget)) return;
+              setIsCollectionDragOver(false);
+            }}
+            onDrop={(event) => {
+              event.preventDefault();
+              const payload = readRoomCollectionDragPayload(event.dataTransfer);
+              setIsCollectionDragOver(false);
+              if (payload) void saveDraggedCollection(payload);
+            }}
           >
             <motion.span
               className="collection-button-icon"
-              whileHover={reduceMotion ? undefined : { rotate: -7, scale: 1.08 }}
+              animate={
+                reduceMotion || !isCollectionDragOver
+                  ? { rotate: 0, scale: 1, y: 0 }
+                  : { rotate: -5, scale: 1.12, y: -1 }
+              }
+              whileHover={reduceMotion ? undefined : { rotate: -5, scale: 1.08 }}
               transition={{ type: "spring", stiffness: 360, damping: 28, mass: 0.55 }}
             >
-              <FolderHeart className="h-4 w-4" aria-hidden="true" />
+              {isCollectionDragOver ? (
+                <PackageOpen className="h-4 w-4" aria-hidden="true" />
+              ) : (
+                <Archive className="h-4 w-4" aria-hidden="true" />
+              )}
             </motion.span>
-            <span className="voice-action-label">收藏</span>
+            <span className="voice-action-label">{isCollectionDragOver ? "松开放入" : "收藏"}</span>
             {hasUnreadCollectionItems ? (
               <span className="collection-unread-dot" aria-label="有新收藏" />
             ) : null}
@@ -2185,25 +1973,6 @@ export const RoomPage = () => {
             onClick={() => void toggleRecording()}
             disabled={capability.encoderState === RecordingEncoderState.Unsupported}
           />
-          {recordingStatus.state === RecordingState.Recording ? (
-            <Button
-              variant="ghost"
-              data-icon-motion="bookmark"
-              className="voice-action-button-with-text"
-              onClick={() => {
-                const startedAt = recordingStatus.startedAt ?? Date.now();
-                addRecordingMarker({
-                  id: crypto.randomUUID(),
-                  offsetMs: Math.max(0, Date.now() - startedAt),
-                  createdAt: new Date().toISOString(),
-                });
-                playUiSound("button-click");
-              }}
-            >
-              <AnimatedControlIcon name="bookmark" className="h-4 w-4" />
-              <span className="voice-action-label">标记 {recordingMarkers.length}</span>
-            </Button>
-          ) : null}
           <Button
             variant={localScreenShareStream ? "secondary" : "ghost"}
             data-icon-motion="screen-share"

@@ -1,4 +1,4 @@
-import { useId } from "react";
+import { useEffect, useId, useState } from "react";
 
 export const SceneWindowNook = ({ className = "" }: { className?: string }) => {
   const id = useId().replace(/:/g, "");
@@ -146,20 +146,100 @@ export const SceneWallShelf = ({ className = "" }: { className?: string }) => {
   );
 };
 
-export const SceneWallClock = ({ className = "" }: { className?: string }) => (
-  <svg viewBox="0 0 88 88" className={className} aria-hidden="true" focusable="false">
-    <circle cx="44" cy="47" r="34" fill="#6f8aa3" opacity="0.12" />
-    <circle cx="44" cy="42" r="32" fill="#ffffff" opacity="0.92" />
-    <circle cx="44" cy="42" r="27" fill="#eaf5fb" stroke="#d2e4f0" strokeWidth="2" />
-    <path d="M44 42V27M44 42l12 7" stroke="#72a9d8" strokeWidth="3.5" strokeLinecap="round" />
-    <circle cx="44" cy="42" r="3.5" fill="#72a9d8" />
+const getShanghaiClock = () => {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "Asia/Shanghai",
+    hour12: false,
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  }).formatToParts(new Date());
+  const read = (type: Intl.DateTimeFormatPartTypes) =>
+    Number(parts.find((part) => part.type === type)?.value ?? 0);
+  return { hour: read("hour") % 12, minute: read("minute"), second: read("second") };
+};
+
+export const SceneWallClock = ({ className = "" }: { className?: string }) => {
+  const [time, setTime] = useState(getShanghaiClock);
+  useEffect(() => {
+    const timer = window.setInterval(() => setTime(getShanghaiClock()), 1_000);
+    return () => window.clearInterval(timer);
+  }, []);
+  const secondAngle = time.second * 6;
+  const minuteAngle = time.minute * 6 + time.second * 0.1;
+  const hourAngle = time.hour * 30 + time.minute * 0.5;
+
+  return (
+    <svg viewBox="0 0 88 88" className={className} aria-label="北京时间" role="img">
+      <circle cx="44" cy="47" r="34" fill="#6f8aa3" opacity="0.12" />
+      <circle cx="44" cy="42" r="32" fill="#ffffff" opacity="0.92" />
+      <circle cx="44" cy="42" r="27" fill="#eaf5fb" stroke="#d2e4f0" strokeWidth="2" />
+      <path
+        d="M44 17v4M44 63v4M19 42h4M65 42h4"
+        stroke="#aac9df"
+        strokeWidth="2"
+        strokeLinecap="round"
+      />
+      <path
+        d="M44 42V29"
+        stroke="#5f91bd"
+        strokeWidth="4"
+        strokeLinecap="round"
+        transform={`rotate(${hourAngle} 44 42)`}
+      />
+      <path
+        d="M44 42V23"
+        stroke="#72a9d8"
+        strokeWidth="3"
+        strokeLinecap="round"
+        transform={`rotate(${minuteAngle} 44 42)`}
+      />
+      <path
+        d="M44 46V20"
+        stroke="#e06b72"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+        transform={`rotate(${secondAngle} 44 42)`}
+      />
+      <circle cx="44" cy="42" r="3.5" fill="#72a9d8" />
+    </svg>
+  );
+};
+
+export const SceneExitDoor = ({ className = "" }: { className?: string }) => (
+  <svg viewBox="0 0 180 190" className={className} aria-hidden="true" focusable="false">
+    <ellipse cx="90" cy="176" rx="64" ry="8" fill="#71879d" opacity="0.1" />
     <path
-      d="M28 62c10 5 23 5 32 0"
-      stroke="#ffffff"
-      strokeWidth="2"
+      d="M42 166V35c0-13 10-23 23-23h50c13 0 23 10 23 23v131"
+      fill="#edf3f8"
+      stroke="#d4e1ec"
+      strokeWidth="6"
       strokeLinecap="round"
-      opacity="0.8"
     />
+    <rect
+      x="51"
+      y="22"
+      width="78"
+      height="144"
+      rx="15"
+      fill="#f7fafc"
+      stroke="#e0e9f1"
+      strokeWidth="2"
+    />
+    <path d="M58 70h64M58 124h64" stroke="#e7eef5" strokeWidth="2" />
+    <rect x="67" y="39" width="46" height="27" rx="10" fill="#e6f1fb" />
+    <path
+      d="M82 52h15m0 0-5-5m5 5-5 5"
+      fill="none"
+      stroke="#6e9dca"
+      strokeWidth="2.5"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    />
+    <circle cx="113" cy="99" r="5" fill="#9fb7cb" />
+    <circle cx="111.5" cy="97.5" r="1.7" fill="#f8fbfd" opacity="0.9" />
+    <path d="M34 168h112" stroke="#cedce8" strokeWidth="5" strokeLinecap="round" />
+    <path d="M46 169h88" stroke="#f9fbfd" strokeWidth="2" strokeLinecap="round" />
   </svg>
 );
 

@@ -1,5 +1,14 @@
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { AudioLines, Circle, MicOff, MonitorUp, RotateCw, VolumeX } from "lucide-react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import {
+  AudioLines,
+  Circle,
+  GripVertical,
+  MicOff,
+  MonitorUp,
+  RotateCcw,
+  RotateCw,
+  VolumeX,
+} from "lucide-react";
 import { gsap } from "gsap";
 
 import { MemberPresenceState, MemberSpeakingState, type OverlayState } from "@private-voice/shared";
@@ -12,9 +21,19 @@ const AVATAR_SIZE = 26;
 const ROW_HEIGHT = 36;
 const GAP = 4;
 const PADDING = 5;
+const TOOLS_REVEAL_SECONDS = 3;
+const POINTER_STILL_THRESHOLD = 3;
 
 export const OverlayPage = () => {
   const rootRef = useRef<HTMLDivElement>(null);
+  const progressRef = useRef<SVGRectElement>(null);
+  const progressTweenRef = useRef<gsap.core.Tween | undefined>(undefined);
+  const hideTimerRef = useRef<number | undefined>(undefined);
+  const lastPointerRef = useRef<{ x: number; y: number } | undefined>(undefined);
+  const dragPointerOffsetRef = useRef(0);
+  const isDraggingRef = useRef(false);
+  const toolsVisibleRef = useRef(false);
+  const [toolsVisible, setToolsVisible] = useState(false);
   const [state, setState] = useState<OverlayState>({
     members: [],
     isMuted: false,
@@ -32,6 +51,108 @@ export const OverlayPage = () => {
     document.addEventListener("contextmenu", handler);
     return () => document.removeEventListener("contextmenu", handler);
   }, []);
+
+  useEffect(
+    () => () => {
+      progressTweenRef.current?.kill();
+      if (hideTimerRef.current) window.clearTimeout(hideTimerRef.current);
+      void window.desktopApi.overlay.setInteractive(false);
+    },
+    [],
+  );
+
+  const revealTools = useCallback(() => {
+    toolsVisibleRef.current = true;
+    setToolsVisible(true);
+    void window.desktopApi.overlay.setInteractive(true);
+  }, []);
+
+  const startRevealProgress = useCallback(() => {
+    const progress = progressRef.current;
+    if (!progress || toolsVisibleRef.current || isDraggingRef.current) return;
+    progressTweenRef.current?.kill();
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      gsap.set(progress, { strokeDashoffset: 0, opacity: 0.62 });
+      progressTweenRef.current = gsap.delayedCall(TOOLS_REVEAL_SECONDS, () => {
+        gsap.set(progress, { opacity: 0 });
+        revealTools();
+      });
+      return;
+    }
+    gsap.set(progress, { strokeDashoffset: 1, opacity: 1 });
+    progressTweenRef.current = gsap.to(progress, {
+      strokeDashoffset: 0,
+      duration: TOOLS_REVEAL_SECONDS,
+      ease: "none",
+      onComplete: () => {
+        gsap.to(progress, { opacity: 0, duration: 0.18, ease: "power2.out" });
+        revealTools();
+      },
+    });
+  }, [revealTools]);
+
+  const cancelRevealProgress = useCallback(() => {
+    progressTweenRef.current?.kill();
+    progressTweenRef.current = undefined;
+    if (progressRef.current) gsap.set(progressRef.current, { strokeDashoffset: 1, opacity: 0 });
+  }, []);
+
+  const armStationaryTools = (event: React.MouseEvent<HTMLDivElement>) => {
+    if (hideTimerRef.current) window.clearTimeout(hideTimerRef.current);
+    if (toolsVisibleRef.current || isDraggingRef.current) return;
+    const previous = lastPointerRef.current;
+    const next = { x: event.screenX, y: event.screenY };
+    lastPointerRef.current = next;
+    if (!previous) {
+      startRevealProgress();
+      return;
+    }
+    if (Math.hypot(next.x - previous.x, next.y - previous.y) >= POINTER_STILL_THRESHOLD) {
+      startRevealProgress();
+    }
+  };
+
+  const hideTools = useCallback(() => {
+    if (isDraggingRef.current) return;
+    cancelRevealProgress();
+    lastPointerRef.current = undefined;
+    toolsVisibleRef.current = false;
+    setToolsVisible(false);
+    void window.desktopApi.overlay.setInteractive(false);
+  }, [cancelRevealProgress]);
+
+  const scheduleHideTools = () => {
+    if (isDraggingRef.current) return;
+    if (hideTimerRef.current) window.clearTimeout(hideTimerRef.current);
+    hideTimerRef.current = window.setTimeout(() => {
+      hideTimerRef.current = undefined;
+      hideTools();
+    }, 220);
+  };
+
+  const keepToolsOpen = () => {
+    if (hideTimerRef.current) {
+      window.clearTimeout(hideTimerRef.current);
+      hideTimerRef.current = undefined;
+    }
+    if (!toolsVisibleRef.current && !isDraggingRef.current) startRevealProgress();
+  };
+
+  const finishDrag = (target?: HTMLButtonElement, pointerId?: number) => {
+    isDraggingRef.current = false;
+    if (target && typeof pointerId === "number" && target.hasPointerCapture(pointerId)) {
+      target.releasePointerCapture(pointerId);
+    }
+  };
+
+  const showToolsImmediately = () => {
+    cancelRevealProgress();
+    if (!toolsVisibleRef.current) {
+      setToolsVisible(true);
+      toolsVisibleRef.current = true;
+      void window.desktopApi.overlay.setInteractive(true);
+    }
+  };
 
   const onlineMembers = state.members.filter((m) => !m.isEmptySlot).slice(0, 5);
   const onlineMemberIds = onlineMembers.map((member) => member.id).join("|");
@@ -83,6 +204,9 @@ export const OverlayPage = () => {
     <div
       ref={rootRef}
       onContextMenu={(e) => e.preventDefault()}
+      onMouseMove={armStationaryTools}
+      onMouseEnter={keepToolsOpen}
+      onMouseLeave={scheduleHideTools}
       style={{
         width: `${OVERLAY_WIDTH}px`,
         height: `${windowHeight}px`,
@@ -92,10 +216,33 @@ export const OverlayPage = () => {
         alignItems: "stretch",
         justifyContent: "flex-start",
         position: "relative",
-        pointerEvents: "none",
+        pointerEvents: "auto",
         userSelect: "none",
       }}
     >
+      <svg
+        className="overlay-still-progress"
+        viewBox={`0 0 ${OVERLAY_WIDTH} ${windowHeight}`}
+        preserveAspectRatio="none"
+        aria-hidden="true"
+      >
+        <defs>
+          <linearGradient id="overlay-still-progress-gradient" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0" stopColor="#74D9FF" />
+            <stop offset="0.48" stopColor="#4DA3FF" />
+            <stop offset="1" stopColor="#8FE7C4" />
+          </linearGradient>
+        </defs>
+        <rect
+          ref={progressRef}
+          x="2"
+          y="2"
+          width={OVERLAY_WIDTH - 4}
+          height={Math.max(1, windowHeight - 4)}
+          rx="13"
+          pathLength="1"
+        />
+      </svg>
       <div
         data-overlay-list
         style={{
@@ -240,10 +387,10 @@ export const OverlayPage = () => {
                   color: isOffline ? "#8290A3" : "#31435B",
                   fontSize: 11,
                   fontWeight: 700,
-                  lineHeight: 1,
-                  whiteSpace: "nowrap",
-                  overflow: "hidden",
-                  textOverflow: "ellipsis",
+                  lineHeight: onlineMembers.length === 1 ? 1.1 : 1,
+                  whiteSpace: onlineMembers.length === 1 ? "normal" : "nowrap",
+                  overflow: onlineMembers.length === 1 ? "visible" : "hidden",
+                  textOverflow: onlineMembers.length === 1 ? "clip" : "ellipsis",
                 }}
               >
                 {member.nickname || "好友"}
@@ -326,6 +473,45 @@ export const OverlayPage = () => {
             </div>
           );
         })}
+      </div>
+      <div
+        className={`overlay-position-tools ${toolsVisible ? "is-visible" : ""}`}
+        aria-hidden={!toolsVisible}
+      >
+        <button
+          type="button"
+          aria-label="上下移动悬浮窗"
+          title="上下移动"
+          onPointerDown={(event) => {
+            isDraggingRef.current = true;
+            showToolsImmediately();
+            dragPointerOffsetRef.current = event.clientY;
+            event.currentTarget.setPointerCapture(event.pointerId);
+            void window.desktopApi.overlay.moveTo(event.screenY - dragPointerOffsetRef.current);
+          }}
+          onPointerMove={(event) => {
+            if (isDraggingRef.current) {
+              void window.desktopApi.overlay.moveTo(event.screenY - dragPointerOffsetRef.current);
+            }
+          }}
+          onPointerUp={(event) => {
+            finishDrag(event.currentTarget, event.pointerId);
+          }}
+          onPointerCancel={(event) => finishDrag(event.currentTarget, event.pointerId)}
+        >
+          <GripVertical aria-hidden="true" />
+        </button>
+        <button
+          type="button"
+          aria-label="恢复悬浮窗默认位置"
+          title="恢复默认位置"
+          onClick={() => {
+            showToolsImmediately();
+            void window.desktopApi.overlay.resetPosition();
+          }}
+        >
+          <RotateCcw aria-hidden="true" />
+        </button>
       </div>
     </div>
   );

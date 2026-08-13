@@ -11,7 +11,7 @@
     "lint": "tsc --project tsconfig.json --noEmit"
   },
   "devDependencies": {
-    "tsup": "^8.4.0",
-    "typescript": "^5.8.3"
+    "tsup": "8.5.1",
+    "typescript": "5.9.3"
   }
 }

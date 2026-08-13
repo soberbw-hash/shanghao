@@ -17,6 +17,7 @@ import type {
   RecordingLibrarySnapshot,
   RecordingMarker,
 } from "./recording.types";
+import type { AiModelAction, AiModelId, AiVoiceMemorySnapshot } from "./ai.types";
 
 export interface RuntimeInfo {
   appName: string;
@@ -57,6 +58,13 @@ export interface WindowsIntegrationStatus {
     ruleCount: number;
     expectedRuleCount: number;
     executablePath?: string;
+    message: string;
+  };
+  iconOverlays: {
+    supported: boolean;
+    hidden: boolean;
+    arrowHidden: boolean;
+    shieldHidden: boolean;
     message: string;
   };
 }
@@ -134,15 +142,7 @@ export interface GameDetectionSnapshot {
     | "英雄联盟"
     | "无畏契约"
     | "三角洲行动"
-    | "向魔兽开炮"
-    | "尸潮庇护所"
-    | "魔兽争霸 3"
-    | "KK RPG"
-    | "DotA 1"
-    | "CS 1.6"
-    | "红色警戒 2"
-    | "拳皇 97"
-    | "星际争霸"
+    | "KK 对战平台"
     | "穿越火线"
     | "地下城与勇士"
     | "魔兽世界"
@@ -197,7 +197,13 @@ export interface DesktopApi {
     getRuntimeInfo: () => Promise<RuntimeInfo>;
     getSystemIdleSeconds: () => Promise<number>;
     writeLog: (payload: RendererLogPayload) => Promise<void>;
-    notify: (payload: { title: string; body: string; attention?: boolean }) => Promise<void>;
+    notify: (payload: {
+      title: string;
+      body: string;
+      attention?: boolean;
+      shakeWindow?: boolean;
+      showNotification?: boolean;
+    }) => Promise<void>;
     readChatHistory: (payload: {
       serverUrl: string;
       channelId: string;
@@ -239,11 +245,19 @@ export interface DesktopApi {
     toggle: () => Promise<boolean>;
     close: () => Promise<void>;
     update: (state: OverlayState) => Promise<void>;
+    setInteractive: (interactive: boolean) => Promise<void>;
+    moveTo: (screenY: number) => Promise<void>;
+    resetPosition: () => Promise<void>;
     onState: (listener: (state: OverlayState) => void) => () => void;
   };
   games: {
     getSnapshot: () => Promise<GameDetectionSnapshot>;
     onDetected: (listener: (snapshot: GameDetectionSnapshot) => void) => () => void;
+  };
+  ai: {
+    getSnapshot: () => Promise<AiVoiceMemorySnapshot>;
+    controlModel: (modelId: AiModelId, action: AiModelAction) => Promise<AiVoiceMemorySnapshot>;
+    onStatus: (listener: (snapshot: AiVoiceMemorySnapshot) => void) => () => void;
   };
   settings: {
     get: () => Promise<AppSettings>;
@@ -266,6 +280,7 @@ export interface DesktopApi {
     getStatus: () => Promise<WindowsIntegrationStatus>;
     repairFirewall: () => Promise<WindowsIntegrationStatus["firewall"]>;
     removeFirewall: () => Promise<WindowsIntegrationStatus["firewall"]>;
+    setIconOverlaysHidden: (hidden: boolean) => Promise<WindowsIntegrationStatus["iconOverlays"]>;
   };
   shortcuts: {
     configureMute: (accelerator: string) => Promise<void>;
@@ -291,6 +306,7 @@ export interface DesktopApi {
     chooseDirectory: () => Promise<string | undefined>;
     saveMarkers: (filePath: string, markers: RecordingMarker[]) => Promise<string>;
     list: () => Promise<RecordingLibrarySnapshot>;
+    setFavorite: (filePath: string, isFavorite: boolean) => Promise<void>;
     openDirectory: () => Promise<void>;
     delete: (filePath: string) => Promise<void>;
   };

@@ -4,6 +4,20 @@ const ALLOWED_IMAGE_TYPES = new Set<ChatImageMimeType>(["image/jpeg", "image/png
 const MAX_SOURCE_BYTES = 8 * 1024 * 1024;
 const MAX_DATA_URL_LENGTH = 170_000;
 const MAX_IMAGE_SIDE = 1_600;
+const IMAGE_TYPE_BY_EXTENSION: Record<string, ChatImageMimeType> = {
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".png": "image/png",
+  ".webp": "image/webp",
+};
+
+export const isSupportedChatImageFile = (file: File): boolean => {
+  if (ALLOWED_IMAGE_TYPES.has(file.type as ChatImageMimeType)) return true;
+  const normalizedName = file.name.toLocaleLowerCase();
+  return Object.keys(IMAGE_TYPE_BY_EXTENSION).some((extension) =>
+    normalizedName.endsWith(extension),
+  );
+};
 
 const canvasToDataUrl = (canvas: HTMLCanvasElement, quality: number): Promise<string> =>
   new Promise((resolve, reject) => {
@@ -24,7 +38,7 @@ const canvasToDataUrl = (canvas: HTMLCanvasElement, quality: number): Promise<st
   });
 
 export const prepareChatImage = async (file: File): Promise<ChatImageAttachment> => {
-  if (!ALLOWED_IMAGE_TYPES.has(file.type as ChatImageMimeType)) {
+  if (!isSupportedChatImageFile(file)) {
     throw new Error("仅支持 PNG、JPG 和 WebP 图片。");
   }
   if (file.size > MAX_SOURCE_BYTES) {

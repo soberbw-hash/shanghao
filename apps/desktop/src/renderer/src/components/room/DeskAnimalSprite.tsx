@@ -1,6 +1,5 @@
 import type { BuiltInAvatarId, MemberActivity } from "@private-voice/shared";
 
-import chairArt from "../../assets/scenes/chair-chibi.webp";
 import catRear from "../../assets/avatars/rear-v2/cat-rear.png";
 import corgiRear from "../../assets/avatars/rear-v2/corgi-rear.png";
 import duckRear from "../../assets/avatars/rear-v2/duck-rear.png";
@@ -128,15 +127,11 @@ export const DeskAnimalSprite = ({
       aria-hidden="true"
     >
       <span className="desk-animal-ground-shadow" />
-      <img
-        className="desk-animal-chair desk-animal-chair-back"
-        src={chairArt}
-        alt=""
-        draggable={false}
-      />
-      <img className="desk-animal-layer desk-animal-body" src={source} alt="" draggable={false} />
-      <img className="desk-animal-layer desk-animal-head" src={source} alt="" draggable={false} />
-      <img className="desk-animal-layer desk-animal-arm" src={source} alt="" draggable={false} />
+      <span className="desk-animal-art">
+        <img className="desk-animal-layer desk-animal-body" src={source} alt="" draggable={false} />
+        <img className="desk-animal-layer desk-animal-head" src={source} alt="" draggable={false} />
+        <img className="desk-animal-layer desk-animal-arm" src={source} alt="" draggable={false} />
+      </span>
     </div>
   );
 };

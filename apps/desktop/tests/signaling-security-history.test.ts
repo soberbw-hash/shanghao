@@ -371,7 +371,7 @@ test("three invalid messages close a socket without crashing the server", async 
   }
 });
 
-test("legacy empty game names stay connected and normalize to an omitted value", async () => {
+test("legacy empty game names stay connected and explicitly clear stale state", async () => {
   const server = new SignalingServer({ roomName: "固定频道" });
   const port = await server.listen();
   const socket = await openSocket(`ws://127.0.0.1:${port}`);
@@ -379,6 +379,24 @@ test("legacy empty game names stay connected and normalize to an omitted value",
     const snapshot = waitForMemberCount(socket, 1);
     join(socket, "legacy-peer", "小狐狸");
     await snapshot;
+
+    const activeState = waitForMessage(
+      socket,
+      (payload): payload is { type: "member_state"; gameName?: string } =>
+        typeof payload === "object" &&
+        payload !== null &&
+        (payload as { type?: string }).type === "member_state",
+    );
+    socket.send(
+      JSON.stringify({
+        type: "member_state",
+        roomId: "main",
+        peerId: "legacy-peer",
+        activity: "gaming",
+        gameName: "KK 对战平台",
+      }),
+    );
+    assert.equal((await activeState).gameName, "KK 对战平台");
 
     for (let index = 0; index < 3; index += 1) {
       const state = waitForMessage(
@@ -397,8 +415,29 @@ test("legacy empty game names stay connected and normalize to an omitted value",
           gameName: "",
         }),
       );
-      assert.equal((await state).gameName, undefined);
+      assert.equal((await state).gameName, "");
     }
+
+    const clearedSnapshot = waitForMessage(
+      socket,
+      (
+        payload,
+      ): payload is {
+        type: "channel_snapshot";
+        members: Array<{ id: string; gameName?: string }>;
+      } =>
+        typeof payload === "object" &&
+        payload !== null &&
+        (payload as { type?: string }).type === "channel_snapshot",
+    );
+    socket.send(
+      JSON.stringify({
+        type: "request_snapshot",
+        roomId: "main",
+        peerId: "legacy-peer",
+      }),
+    );
+    assert.equal((await clearedSnapshot).members[0]?.gameName, undefined);
 
     const pong = waitForMessage(
       socket,
@@ -522,13 +561,19 @@ test("strict protocol validator rejects dangerous payload shapes", () => {
     false,
   );
   assert.equal(
-    isSignalEnvelope({ type: "chat_message", roomId: "main", content: " ".repeat(4) }),
+    isSignalEnvelope({
+      type: "chat_message",
+      roomId: "main",
+      clientMessageId: "invalid-empty",
+      content: " ".repeat(4),
+    }),
     false,
   );
   assert.equal(
     isSignalEnvelope({
       type: "chat_message",
       roomId: "main",
+      clientMessageId: "valid-image",
       content: "",
       image: {
         mimeType: "image/webp",
@@ -544,6 +589,7 @@ test("strict protocol validator rejects dangerous payload shapes", () => {
     isSignalEnvelope({
       type: "chat_message",
       roomId: "main",
+      clientMessageId: "bad-signature",
       content: "",
       image: {
         mimeType: "image/webp",
@@ -558,6 +604,7 @@ test("strict protocol validator rejects dangerous payload shapes", () => {
     isSignalEnvelope({
       type: "chat_message",
       roomId: "main",
+      clientMessageId: "bad-mime",
       content: "",
       image: {
         mimeType: "image/gif",

@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect } from "react";
 
 import {
   DEFAULT_CHANNEL_ID,
@@ -7,7 +7,6 @@ import {
   RoomLifecycleState,
   type MemberActivity,
   type ChatImageAttachment,
-  type ChatMessage,
   type RoomCollectionItem,
   type RoomMember,
   type SceneZoneId,
@@ -26,7 +25,20 @@ import {
 import { REMOTE_AUDIO_LEVEL_EVENT } from "../features/audio/RemoteAudioMixer";
 import { clampMemberVolume } from "../features/audio/memberVolume";
 import { playUiSound } from "../features/audio/uiSound";
+import { playAnimalCall } from "../features/audio/animalCall";
 import { RoomClient } from "../features/room/roomClient";
+import { encodeQuickReplyTarget, QUICK_REPLY_COOLDOWN_MS } from "../features/chat/quickReplies";
+import { persistChatHistory, type ChannelId } from "../features/chat/chatPersistence";
+import {
+  runtimeMemberVolumes,
+  scheduleMemberVolumeSave,
+} from "../features/room/memberVolumePersistence";
+import {
+  describeChatNotification,
+  playSceneReactionSound,
+  sendSystemNotification,
+} from "../features/room/roomNotifications";
+import { useRoomDeepLink } from "../features/room/useRoomDeepLink";
 import { useAppStore } from "../store/appStore";
 import { useAudioStore } from "../store/audioStore";
 import { useRoomStore } from "../store/roomStore";
@@ -39,104 +51,8 @@ let activeJoinPromise: Promise<void> | null = null;
 let activeSpeakingDetector: ReturnType<typeof createSpeakingDetector> | null = null;
 let activeProcessedMicrophone: ProcessedMicrophoneStream | null = null;
 let previousMemberIds = new Set<string>();
-const runtimeMemberVolumes = new Map<string, number>();
-const pendingMemberVolumeSaves = new Map<string, number>();
-const pendingMemberVolumeDeletes = new Set<string>();
-let memberVolumeSaveTimer: number | undefined;
-let chatHistoryWriteQueue: Promise<void> = Promise.resolve();
-const SCENE_REACTION_SOUND_COOLDOWN_MS = 320;
-type ChannelId = "main" | "side";
 const CHANNEL_IDS = new Set<ChannelId>(["main", "side"]);
-let lastSceneReactionSoundAt = 0;
-
-const createPersistableChatHistory = (messages: ChatMessage[]): ChatMessage[] => {
-  const persisted: ChatMessage[] = [];
-  let serializedLength = 2;
-  for (let index = messages.length - 1; index >= 0 && persisted.length < 500; index -= 1) {
-    const message = messages[index];
-    if (!message) continue;
-    const nextLength = JSON.stringify(message).length + (persisted.length > 0 ? 1 : 0);
-    if (serializedLength + nextLength > 24 * 1024 * 1024) break;
-    serializedLength += nextLength;
-    persisted.unshift(message);
-  }
-  return persisted;
-};
-
-const persistChatHistory = (serverUrl: string, channelId: ChannelId): void => {
-  const saveChatHistory = window.desktopApi?.app?.saveChatHistory;
-  if (typeof saveChatHistory !== "function") return;
-  const messages = createPersistableChatHistory(useRoomStore.getState().chatMessages);
-  chatHistoryWriteQueue = chatHistoryWriteQueue
-    .catch(() => undefined)
-    .then(() =>
-      saveChatHistory({
-        serverUrl,
-        channelId,
-        messages,
-      }),
-    )
-    .catch((error) => {
-      void writeRendererLog("app", "warn", "Failed to persist local chat history", {
-        channelId,
-        error: error instanceof Error ? error.message : String(error),
-      });
-    });
-};
-
-const describeChatNotification = (message: ChatMessage): string => {
-  const content = message.content.replace(/\s+/g, " ").trim();
-  if (content && message.image) return `${content.slice(0, 145)} · 图片`;
-  if (content) return content.slice(0, 160);
-  if (message.image) return "发来了一张图片";
-  return "发来了一条消息";
-};
-
-const sendSystemNotification = (payload: {
-  title: string;
-  body: string;
-  attention?: boolean;
-}): void => {
-  const notify = window.desktopApi?.app?.notify;
-  if (typeof notify === "function") void notify(payload);
-};
-
-const playSceneReactionSound = (sound: "receive-message" | "send-message") => {
-  const now = Date.now();
-  if (now - lastSceneReactionSoundAt < SCENE_REACTION_SOUND_COOLDOWN_MS) return;
-  lastSceneReactionSoundAt = now;
-  playUiSound(sound);
-};
-
-const scheduleMemberVolumeSave = (
-  storageKey: string,
-  volume: number,
-  legacyStorageKey?: string,
-) => {
-  pendingMemberVolumeSaves.set(storageKey, volume);
-  if (legacyStorageKey && legacyStorageKey !== storageKey) {
-    pendingMemberVolumeDeletes.add(legacyStorageKey);
-  }
-  if (memberVolumeSaveTimer !== undefined) window.clearTimeout(memberVolumeSaveTimer);
-  memberVolumeSaveTimer = window.setTimeout(() => {
-    memberVolumeSaveTimer = undefined;
-    const currentSettings = useSettingsStore.getState().settings;
-    if (!currentSettings) return;
-    const nextMemberVolumes = { ...currentSettings.memberVolumes };
-    for (const key of pendingMemberVolumeDeletes) {
-      delete nextMemberVolumes[key];
-    }
-    for (const [key, pendingVolume] of pendingMemberVolumeSaves) {
-      nextMemberVolumes[key] = pendingVolume;
-    }
-    pendingMemberVolumeSaves.clear();
-    pendingMemberVolumeDeletes.clear();
-    void useSettingsStore.getState().saveSettings({
-      memberVolumes: nextMemberVolumes,
-    });
-  }, 320);
-};
-
+let lastQuickMessageSentAt = 0;
 const ROUTINE_SIGNAL_MESSAGE_TYPES = new Set([
   "audio_chunk",
   "member_state",
@@ -269,9 +185,6 @@ const summarizeSignalingEvent = (payload: SignalingEventPayload): Record<string,
 };
 
 export const useRoomState = () => {
-  const joinChannelRef = useRef<(serverUrl?: string, channelId?: ChannelId) => Promise<void>>(
-    async () => undefined,
-  );
   const runtimeInfo = useSettingsStore((state) => state.runtimeInfo);
   const settings = useSettingsStore((state) => state.settings);
   const avatarDataUrl = useSettingsStore((state) => state.avatarDataUrl);
@@ -288,11 +201,13 @@ export const useRoomState = () => {
   const pushRoomEvent = useRoomStore((state) => state.pushRoomEvent);
   const clearRoomEvents = useRoomStore((state) => state.clearRoomEvents);
   const addChatMessage = useRoomStore((state) => state.addChatMessage);
+  const updateChatDelivery = useRoomStore((state) => state.updateChatDelivery);
   const removeChatMessage = useRoomStore((state) => state.removeChatMessage);
   const mergeChatHistory = useRoomStore((state) => state.mergeChatHistory);
   const setCollectionItems = useRoomStore((state) => state.setCollectionItems);
   const mergeCollectionItems = useRoomStore((state) => state.mergeCollectionItems);
   const addSceneReaction = useRoomStore((state) => state.addSceneReaction);
+  const addQuickMessage = useRoomStore((state) => state.addQuickMessage);
   const setChannelCounts = useRoomStore((state) => state.setChannelCounts);
   const clearChannelContent = useRoomStore((state) => state.clearChannelContent);
   const setConnectionHealth = useRoomStore((state) => state.setConnectionHealth);
@@ -420,6 +335,10 @@ export const useRoomState = () => {
 
       setLocalStream(stream);
       setLocalDiagnostics({ ...diagnostics, ...processedMicrophone.processorDiagnostics });
+      processedMicrophone.onDiagnostics((processorDiagnostics) => {
+        if (activeProcessedMicrophone !== processedMicrophone) return;
+        setLocalDiagnostics({ ...diagnostics, ...processorDiagnostics });
+      });
       void processedMicrophone.ready.then((processorDiagnostics) => {
         if (activeProcessedMicrophone !== processedMicrophone) return;
         setLocalDiagnostics({ ...diagnostics, ...processorDiagnostics });
@@ -574,6 +493,9 @@ export const useRoomState = () => {
           useAppStore.getState().navigate("home");
         })();
       },
+      onUpdateRequired: (requiredVersion, currentVersion) => {
+        useAppStore.getState().requireUpdate(requiredVersion, currentVersion);
+      },
       onAvatarConflict: (availableAvatarIds) => {
         const localMember = useRoomStore
           .getState()
@@ -647,6 +569,20 @@ export const useRoomState = () => {
           playSceneReactionSound("receive-message");
         }
       },
+      onQuickMessage: (message) => {
+        addQuickMessage(message);
+        const currentSettings = useSettingsStore.getState().settings;
+        if (currentSettings?.isUiSoundEnabled !== false) {
+          playAnimalCall(message.avatarId, currentSettings?.soundVolume ?? 0.72);
+        }
+        if (!message.isLocal && currentSettings?.isSystemNotificationEnabled !== false) {
+          sendSystemNotification({
+            title: `${message.nickname} 提醒你`,
+            body: message.content,
+            attention: true,
+          });
+        }
+      },
       onChatMessage: (message) => {
         addChatMessage(message);
         persistChatHistory(serverUrl, channelId);
@@ -679,19 +615,21 @@ export const useRoomState = () => {
         addChatMessage(message);
         persistChatHistory(serverUrl, channelId);
         playUiSound("knock-bell");
+        window.setTimeout(() => playUiSound("knock-bell"), 190);
         if (!message.isLocal) {
           pushToast({
             tone: "warning",
             title: `${message.nickname} 敲了敲你`,
             description: "快来上号，朋友正在等你。",
           });
-          if (useSettingsStore.getState().settings?.isSystemNotificationEnabled !== false) {
-            sendSystemNotification({
-              title: `${message.nickname} 敲了敲你`,
-              body: "快来上号，朋友正在等你。",
-              attention: true,
-            });
-          }
+          sendSystemNotification({
+            title: `${message.nickname} 敲了敲你`,
+            body: "快来上号，朋友正在等你。",
+            attention: true,
+            shakeWindow: true,
+            showNotification:
+              useSettingsStore.getState().settings?.isSystemNotificationEnabled !== false,
+          });
         }
       },
       onDiagnosticEvent: (payload) => {
@@ -770,6 +708,10 @@ export const useRoomState = () => {
       if (!currentSettings) {
         return;
       }
+      if (useAppStore.getState().requiredUpdate) {
+        useAppStore.getState().enterUpdateGate();
+        return;
+      }
       const channelId = CHANNEL_IDS.has(requestedChannelId)
         ? requestedChannelId
         : DEFAULT_CHANNEL_ID;
@@ -824,6 +766,10 @@ export const useRoomState = () => {
           description: copy.joinedDescription,
         });
       } catch (error) {
+        if (error instanceof Error && error.message === "CLIENT_UPDATE_REQUIRED") {
+          await cleanupPreviousSession();
+          return;
+        }
         const description = normalizeRoomError(error, copy.networkFailed);
         await writeRendererLog("signaling", "error", "Failed to join fixed channel", {
           serverUrl,
@@ -861,52 +807,22 @@ export const useRoomState = () => {
     return joinChannel(room.signalingUrl || settings?.relayServerUrl, channelId);
   };
 
-  joinChannelRef.current = joinChannel;
-
-  useEffect(() => {
-    let isDisposed = false;
-    const openInvite = async (invite: { channelId: ChannelId; serverUrl: string }) => {
-      if (isDisposed) return;
-      try {
-        const normalizedServerUrl = normalizeServerUrl(invite.serverUrl);
-        if (useSettingsStore.getState().settings?.relayServerUrl !== normalizedServerUrl) {
-          await useSettingsStore.getState().saveSettings({ relayServerUrl: normalizedServerUrl });
-        }
-        if (isDisposed) return;
-        await joinChannelRef.current(normalizedServerUrl, invite.channelId);
-      } catch (error) {
-        pushToast({
-          tone: "warning",
-          title: "邀请链接无法打开",
-          description: normalizeRoomError(error, "请让朋友重新发送邀请链接。"),
-        });
+  useRoomDeepLink({
+    onInvite: async (invite) => {
+      const normalizedServerUrl = normalizeServerUrl(invite.serverUrl);
+      if (useSettingsStore.getState().settings?.relayServerUrl !== normalizedServerUrl) {
+        await useSettingsStore.getState().saveSettings({ relayServerUrl: normalizedServerUrl });
       }
-    };
-
-    const onDeepLink = window.desktopApi?.app?.onDeepLink;
-    const consumeDeepLink = window.desktopApi?.app?.consumeDeepLink;
-    if (typeof onDeepLink !== "function" || typeof consumeDeepLink !== "function") {
-      return () => {
-        isDisposed = true;
-      };
-    }
-
-    const unsubscribe = onDeepLink((invite) => {
-      void consumeDeepLink()
-        .catch(() => undefined)
-        .finally(() => void openInvite(invite));
-    });
-    void consumeDeepLink()
-      .then((invite) => {
-        if (invite) void openInvite(invite);
-      })
-      .catch(() => undefined);
-
-    return () => {
-      isDisposed = true;
-      unsubscribe();
-    };
-  }, [pushToast]);
+      await joinChannel(normalizedServerUrl, invite.channelId);
+    },
+    onError: (error) => {
+      pushToast({
+        tone: "warning",
+        title: "邀请链接无法打开",
+        description: normalizeRoomError(error, "请让朋友重新发送邀请链接。"),
+      });
+    },
+  });
 
   const replaceInputDevice = async (preferredInputDeviceId?: string) => {
     const currentSettings = useSettingsStore.getState().settings ?? settings;
@@ -935,6 +851,10 @@ export const useRoomState = () => {
       activeProcessedMicrophone?.dispose();
       activeProcessedMicrophone = processedMicrophone;
       setLocalDiagnostics({ ...diagnostics, ...processedMicrophone.processorDiagnostics });
+      processedMicrophone.onDiagnostics((processorDiagnostics) => {
+        if (activeProcessedMicrophone !== processedMicrophone) return;
+        setLocalDiagnostics({ ...diagnostics, ...processorDiagnostics });
+      });
       void processedMicrophone.ready.then((processorDiagnostics) => {
         if (activeProcessedMicrophone !== processedMicrophone) return;
         setLocalDiagnostics({ ...diagnostics, ...processorDiagnostics });
@@ -1024,7 +944,11 @@ export const useRoomState = () => {
     }
   };
 
-  const sendChatMessage = async (content: string, image?: ChatImageAttachment) => {
+  const sendChatMessage = async (
+    content: string,
+    image?: ChatImageAttachment,
+    existingClientMessageId?: string,
+  ) => {
     const trimmed = content.trim();
     if ((!trimmed && !image) || !settings) {
       return;
@@ -1048,16 +972,65 @@ export const useRoomState = () => {
       throw new Error("signaling_not_connected");
     }
 
+    const clientMessageId = existingClientMessageId ?? crypto.randomUUID();
+    const localPeer = useRoomStore.getState().room.members.find((member) => member.isLocal);
+    const existing = useRoomStore
+      .getState()
+      .chatMessages.find((message) => message.clientMessageId === clientMessageId);
+    if (!existing) {
+      addChatMessage({
+        id: `local:${clientMessageId}`,
+        clientMessageId,
+        peerId: localPeer?.id ?? "local-member",
+        nickname: localPeer?.nickname ?? settings.nickname,
+        avatarDataUrl: localPeer?.avatarDataUrl,
+        avatarId: localPeer?.avatarId,
+        content: trimmed,
+        image,
+        createdAt: new Date().toISOString(),
+        isLocal: true,
+        kind: "chat",
+        deliveryState: "sending",
+        retryCount: 0,
+      });
+    } else {
+      updateChatDelivery(clientMessageId, {
+        deliveryState: "sending",
+        failureReason: undefined,
+        retryCount: (existing.retryCount ?? 0) + 1,
+      });
+    }
+
     try {
-      await activeClient.sendChatMessage(trimmed, image);
+      const ack = await activeClient.sendChatMessage(trimmed, image, clientMessageId);
+      updateChatDelivery(clientMessageId, {
+        id: ack.messageId,
+        createdAt: ack.acceptedAt,
+        deliveryState: "sent",
+        failureReason: undefined,
+      });
+      const activeRoom = useRoomStore.getState().room;
+      const historyServerUrl = activeRoom.signalingUrl ?? settings.relayServerUrl;
+      if (historyServerUrl) {
+        persistChatHistory(
+          historyServerUrl,
+          CHANNEL_IDS.has(activeRoom.roomId as ChannelId)
+            ? (activeRoom.roomId as ChannelId)
+            : "main",
+        );
+      }
     } catch (error) {
+      updateChatDelivery(clientMessageId, {
+        deliveryState: "failed",
+        failureReason: error instanceof Error ? error.message : "chat_send_failed",
+      });
       await writeRendererLog("signaling", "warn", "Chat message send failed", {
         error: error instanceof Error ? error.message : String(error),
       });
       pushToast({
         tone: "danger",
         title: "消息发送失败",
-        description: "正在重连，请稍后再试。",
+        description: "消息已保留，点击消息旁的“重新发送”即可重试。",
       });
       throw error;
     }
@@ -1092,6 +1065,17 @@ export const useRoomState = () => {
     }
     await activeClient.sendSceneReaction(targetPeerId, emoji);
     playSceneReactionSound("send-message");
+  };
+
+  const sendQuickMessage = async (content: string) => {
+    const targetPeerId = encodeQuickReplyTarget(content);
+    if (!targetPeerId || !activeClient?.canSendChat()) {
+      throw new Error("signaling_not_connected");
+    }
+    const now = Date.now();
+    if (now - lastQuickMessageSentAt < QUICK_REPLY_COOLDOWN_MS) return;
+    lastQuickMessageSentAt = now;
+    await activeClient.sendSceneReaction(targetPeerId, "👍");
   };
 
   const startScreenShare = async (stream: MediaStream, profile?: ScreenShareEncodingProfile) => {
@@ -1196,6 +1180,7 @@ export const useRoomState = () => {
     recallChatMessage,
     sendKnock,
     sendSceneReaction,
+    sendQuickMessage,
     startScreenShare,
     stopScreenShare,
     moveLocalMember,

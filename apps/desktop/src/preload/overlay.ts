@@ -4,6 +4,10 @@ import { IPC_CHANNELS, type OverlayState } from "@private-voice/shared";
 
 const overlayBridge = {
   overlay: {
+    setInteractive: (interactive: boolean) =>
+      ipcRenderer.invoke(IPC_CHANNELS.overlay.setInteractive, interactive),
+    moveTo: (screenY: number) => ipcRenderer.invoke(IPC_CHANNELS.overlay.moveTo, screenY),
+    resetPosition: () => ipcRenderer.invoke(IPC_CHANNELS.overlay.resetPosition),
     onState: (listener: (state: OverlayState) => void) => {
       const wrapped = (_event: Electron.IpcRendererEvent, state: OverlayState) => listener(state);
       ipcRenderer.on(IPC_CHANNELS.overlay.state, wrapped);

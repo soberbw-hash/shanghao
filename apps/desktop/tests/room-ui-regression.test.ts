@@ -109,7 +109,15 @@ test("new additive room requests are not sent to the deployed 2.5 server", () =>
     path.resolve(process.cwd(), "src/renderer/src/features/room/roomClient.ts"),
     "utf8",
   );
-  assert.equal(source.includes('DAILY_ROOM_REPORTS_MIN_BUILD = "2026.08.12.1"'), true);
+  const capabilities = readFileSync(
+    path.resolve(process.cwd(), "src/renderer/src/features/chat/serverCapabilities.ts"),
+    "utf8",
+  );
+  const chatTransport = readFileSync(
+    path.resolve(process.cwd(), "src/renderer/src/features/chat/ReliableChatTransport.ts"),
+    "utf8",
+  );
+  assert.equal(capabilities.includes('DAILY_ROOM_REPORTS_MIN_BUILD = "2026.08.12.1"'), true);
   assert.equal(
     source.includes("serverBuildSupportsDailyRoomReports(this.serverBuildNumber)"),
     true,
@@ -118,6 +126,18 @@ test("new additive room requests are not sent to the deployed 2.5 server", () =>
     source.includes(
       'payload.code === "invalid_payload" && this.hasJoinedOnce && this.joinAckReceived',
     ),
+    true,
+  );
+  assert.equal(capabilities.includes('RELIABLE_CHAT_ACK_MIN_BUILD = "2026.08.12.1"'), true);
+  assert.equal(
+    chatTransport.includes("serverBuildSupportsReliableChat(this.options.getServerBuildNumber())"),
+    true,
+  );
+  assert.equal(chatTransport.includes("scheduleLegacyConfirmation"), true);
+  assert.equal(chatTransport.includes("findLegacyPending"), true);
+  assert.equal(chatTransport.includes("legacy_chat_confirmation_lost"), true);
+  assert.equal(
+    capabilities.includes("serverBuildAtLeast(buildNumber, RELIABLE_CHAT_ACK_MIN_BUILD)"),
     true,
   );
 });
@@ -172,9 +192,16 @@ test("chat history persists across updates and live messages use Windows notific
     path.resolve(process.cwd(), "src/renderer/src/store/roomStore.ts"),
     "utf8",
   );
+  const persistenceSource = readFileSync(
+    path.resolve(process.cwd(), "src/renderer/src/features/chat/chatPersistence.ts"),
+    "utf8",
+  );
 
   assert.equal(roomStateSource.includes("readChatHistory({ serverUrl, channelId })"), true);
-  assert.equal(roomStateSource.includes("saveChatHistory({"), true);
+  assert.equal(
+    persistenceSource.includes("saveChatHistory({ serverUrl, channelId, messages })"),
+    true,
+  );
   assert.equal(roomStoreSource.includes("MAX_LOCAL_CHAT_MESSAGES = 500"), true);
   assert.equal(roomStateSource.includes("title: `${message.nickname} 发来消息`"), true);
   assert.equal(preloadSource.includes("IPC_CHANNELS.app.readChatHistory"), true);
@@ -208,8 +235,8 @@ test("the seated duck stays centered over its compact chair", () => {
 });
 
 test("volume sliders expose and snap to the 100 percent reference node", () => {
-  const roomSource = readFileSync(
-    path.resolve(process.cwd(), "src/renderer/src/pages/RoomPage.tsx"),
+  const audioPopoverSource = readFileSync(
+    path.resolve(process.cwd(), "src/renderer/src/components/audio/AudioControlPopover.tsx"),
     "utf8",
   );
   const characterSource = readFileSync(
@@ -221,7 +248,7 @@ test("volume sliders expose and snap to the 100 percent reference node", () => {
     "utf8",
   );
 
-  assert.equal(roomSource.includes("referenceValue={1}"), true);
+  assert.equal(audioPopoverSource.includes("referenceValue={1}"), true);
   assert.equal(characterSource.includes("referenceValue={100}"), true);
   assert.equal(sliderSource.includes("slider-reference-node"), true);
   assert.equal(sliderSource.includes("event.currentTarget.value = String(referenceValue)"), true);
@@ -342,7 +369,7 @@ test("DeepFilterNet failure keeps the microphone live without interrupting the r
   assert.equal(bootstrapSource.includes("shanghao:deepfilter-unavailable"), true);
   assert.equal(bootstrapSource.includes('pushToast({\n        tone: "warning"'), false);
   assert.equal(bootstrapSource.includes("prewarmDeepFilterAssets"), true);
-  assert.equal(processorSource.includes("crossfade(context, gain, rawGain)"), true);
+  assert.equal(processorSource.includes("crossfade(context, processedGain, rawGain)"), true);
   assert.equal(processorSource.includes("ready: Promise<"), true);
   assert.equal(processorSource.includes("browser_fallback"), false);
 });

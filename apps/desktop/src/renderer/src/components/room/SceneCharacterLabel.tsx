@@ -24,11 +24,12 @@ export const SceneCharacterLabel = ({
 }) => {
   const status = memberStatus(member);
   const isReconnecting = status.tone === "reconnecting";
-  const lastLatencyRef = useRef<number>();
+  const lastLatencyRef = useRef<number | undefined>(undefined);
   if (typeof member.latencyMs === "number") {
     lastLatencyRef.current = Math.round(member.latencyMs / 5) * 5;
   }
   const displayedLatency = lastLatencyRef.current;
+  const nicknameLength = Array.from(member.nickname.trim()).length;
 
   if (isAway) {
     return (
@@ -41,7 +42,11 @@ export const SceneCharacterLabel = ({
   return (
     <div className={`room-character-label ${status.tone}`}>
       <span className="room-character-identity">
-        <strong className="room-character-nickname" title={member.nickname}>
+        <strong
+          className="room-character-nickname"
+          data-length={nicknameLength > 12 ? "long" : nicknameLength > 8 ? "medium" : "short"}
+          title={member.nickname}
+        >
           {member.nickname}
         </strong>
         <span aria-hidden="true">·</span>
@@ -65,7 +70,7 @@ export const SceneCharacterLabel = ({
             {status.icon ? (
               <status.icon className={`h-3 w-3 ${isReconnecting ? "animate-spin" : ""}`} />
             ) : null}
-            <span className="max-w-[118px] truncate">{status.label}</span>
+            <span>{status.label}</span>
           </motion.span>
         </AnimatePresence>
       </span>

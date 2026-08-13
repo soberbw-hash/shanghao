@@ -1,8 +1,9 @@
 import { execFile } from "node:child_process";
+import { readFile, readdir } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
 
-import { app } from "electron";
+import { app, nativeImage } from "electron";
 
 import type {
   GameDetectionSnapshot,
@@ -220,74 +221,7 @@ export const WORK_ACTIVITY_RULES: WorkRule[] = [
   { id: "obsidian", name: "Obsidian", category: "office", processNames: ["obsidian"] },
 ];
 
-const KK_SHARED_GAME_HOSTS = [
-  "war3",
-  "war3n",
-  "warcraft iii",
-  "warcraft_iii",
-  "y3",
-  "y3game",
-  "game",
-  "game_x64h",
-];
-
 const GAME_RULES: GameRule[] = [
-  {
-    name: "向魔兽开炮",
-    processNames: KK_SHARED_GAME_HOSTS,
-    titleNeedles: ["向魔兽开炮", "205715"],
-    pathNeedles: ["向魔兽开炮", "205715"],
-    commandLineNeedles: ["向魔兽开炮", "205715"],
-    evidenceRequiredProcessNames: KK_SHARED_GAME_HOSTS,
-  },
-  {
-    name: "尸潮庇护所",
-    processNames: KK_SHARED_GAME_HOSTS,
-    titleNeedles: ["尸潮庇护所", "最后的避难所3", "最后的避难所 3", "199168"],
-    pathNeedles: ["尸潮庇护所", "最后的避难所3", "最后的避难所 3", "199168"],
-    commandLineNeedles: ["尸潮庇护所", "最后的避难所3", "最后的避难所 3", "199168"],
-    evidenceRequiredProcessNames: KK_SHARED_GAME_HOSTS,
-  },
-  {
-    name: "DotA 1",
-    processNames: ["war3", "war3n", "warcraft iii", "warcraft_iii"],
-    titleNeedles: ["dota allstars", "dota 1", "dota1"],
-    pathNeedles: ["dota allstars", "dota1"],
-    commandLineNeedles: ["dota allstars", "dota 1", "dota1"],
-    evidenceRequiredProcessNames: ["war3", "war3n", "warcraft iii", "warcraft_iii"],
-  },
-  {
-    name: "魔兽争霸 3",
-    processNames: ["war3", "war3n", "warcraft iii", "warcraft_iii"],
-  },
-  {
-    name: "KK RPG",
-    processNames: ["game_x64h"],
-  },
-  {
-    name: "CS 1.6",
-    processNames: ["hl", "cstrike", "cs16"],
-    titleNeedles: ["counter-strike", "反恐精英", "cs 1.6", "cs1.6"],
-    pathNeedles: ["counter-strike", "cstrike", "cs1.6"],
-    commandLineNeedles: ["-game cstrike", "counter-strike", "cs1.6"],
-    evidenceRequiredProcessNames: ["hl"],
-  },
-  {
-    name: "红色警戒 2",
-    processNames: ["gamemd", "ra2", "ra2md", "redalert2"],
-  },
-  {
-    name: "拳皇 97",
-    processNames: ["kkemulator", "mame32", "mame64", "winkawaks", "kawaks"],
-    titleNeedles: ["拳皇", "kof97", "king of fighters"],
-    pathNeedles: ["kof97", "king of fighters"],
-    commandLineNeedles: ["kof97", "king of fighters"],
-    evidenceRequiredProcessNames: ["kkemulator", "mame32", "mame64", "winkawaks", "kawaks"],
-  },
-  {
-    name: "星际争霸",
-    processNames: ["starcraft", "starcraft remastered", "starcraftremastered"],
-  },
   {
     name: "我的世界",
     processNames: ["minecraft.windows", "minecraftlauncher", "minecraft launcher", "javaw"],
@@ -387,6 +321,13 @@ const GAME_RULES: GameRule[] = [
   { name: "幻兽帕鲁", processNames: ["palworld-win64-shipping"] },
   { name: "胡闹厨房", processNames: ["overcooked2", "overcooked all you can eat"] },
   { name: "荒野大镖客 2", processNames: ["rdr2"] },
+  {
+    name: "KK 对战平台",
+    processNames: ["game_x64h", "war3", "war3n", "warcraft iii", "warcraft_iii"],
+    pathNeedles: ["kkduizhan", "\\kk\\", "\\kkgame\\", "\\games\\y3\\"],
+    commandLineNeedles: ["kkduizhan", "\\kk\\", "\\kkgame\\", "\\games\\y3\\"],
+    evidenceRequiredProcessNames: ["game_x64h", "war3", "war3n", "warcraft iii", "warcraft_iii"],
+  },
 ];
 
 export const SUPPORTED_GAME_NAMES = GAME_RULES.map((rule) => rule.name);
@@ -450,23 +391,33 @@ const decodeUtf8Base64 = (value?: string): string | undefined => {
 const includesAny = (value: string, needles: string[] = []): boolean =>
   needles.some((needle) => value.includes(needle.toLowerCase()));
 
+const selectForegroundActivityProcesses = (processes: ProcessSnapshot[]): ProcessSnapshot[] => {
+  const hasForegroundMetadata = processes.some(
+    (processInfo) => typeof processInfo.IsForeground === "boolean",
+  );
+  return hasForegroundMetadata
+    ? processes.filter((processInfo) => processInfo.IsForeground === true)
+    : processes;
+};
+
 export const matchKnownGame = (
   processSnapshot: string | ProcessSnapshot[],
 ): GameDetectionSnapshot["gameName"] => {
   const processes = Array.isArray(processSnapshot)
     ? processSnapshot
     : parseProcessSnapshot(processSnapshot);
+  const foregroundProcesses = selectForegroundActivityProcesses(processes);
 
-  for (const processInfo of processes) {
-    const processName = normalizeProcessName(processInfo.ProcessName);
-    const executableName = normalizeProcessName(
-      processInfo.Path ? path.basename(processInfo.Path) : undefined,
-    );
-    const title = (processInfo.MainWindowTitle ?? "").toLowerCase();
-    const processPath = (processInfo.Path ?? "").toLowerCase();
-    const commandLine = (processInfo.CommandLine ?? "").toLowerCase();
+  for (const rule of GAME_RULES) {
+    for (const processInfo of foregroundProcesses) {
+      const processName = normalizeProcessName(processInfo.ProcessName);
+      const executableName = normalizeProcessName(
+        processInfo.Path ? path.basename(processInfo.Path) : undefined,
+      );
+      const title = (processInfo.MainWindowTitle ?? "").toLowerCase();
+      const processPath = (processInfo.Path ?? "").toLowerCase();
+      const commandLine = (processInfo.CommandLine ?? "").toLowerCase();
 
-    for (const rule of GAME_RULES) {
       const processMatched = rule.processNames.some((candidate) => {
         const normalizedCandidate = normalizeProcessName(candidate);
         return processName === normalizedCandidate || executableName === normalizedCandidate;
@@ -494,22 +445,32 @@ export const matchKnownGame = (
 const matchKnownGameActivity = (
   processes: ProcessSnapshot[],
 ): MatchedActivity<NonNullable<GameDetectionSnapshot["gameName"]>> | undefined => {
-  for (const processInfo of processes) {
-    const gameName = matchKnownGame([processInfo]);
-    if (gameName) return { activity: gameName, executablePath: processInfo.Path };
+  const foregroundProcesses = selectForegroundActivityProcesses(processes);
+  const gameName = matchKnownGame(foregroundProcesses);
+  if (!gameName) return undefined;
+  const rule = GAME_RULES.find((candidate) => candidate.name === gameName);
+  if (!rule) return { activity: gameName };
+  for (const processInfo of foregroundProcesses) {
+    const processName = normalizeProcessName(processInfo.ProcessName);
+    const executableName = normalizeProcessName(
+      processInfo.Path ? path.basename(processInfo.Path) : undefined,
+    );
+    if (
+      rule.processNames.some((candidate) => {
+        const normalizedCandidate = normalizeProcessName(candidate);
+        return processName === normalizedCandidate || executableName === normalizedCandidate;
+      })
+    ) {
+      return { activity: gameName, executablePath: processInfo.Path };
+    }
   }
-  return undefined;
+  return { activity: gameName };
 };
 
 const matchKnownWorkActivityWithProcess = (
   processes: ProcessSnapshot[],
 ): MatchedActivity<WorkActivity> | undefined => {
-  const visibleProcesses = [
-    ...processes.filter((processInfo) => processInfo.IsForeground),
-    ...processes.filter(
-      (processInfo) => !processInfo.IsForeground && Boolean(processInfo.MainWindowTitle?.trim()),
-    ),
-  ];
+  const visibleProcesses = selectForegroundActivityProcesses(processes);
 
   for (const processInfo of visibleProcesses) {
     const processName = normalizeProcessName(processInfo.ProcessName);
@@ -551,11 +512,50 @@ export const matchKnownWorkActivity = (
   return matchKnownWorkActivityWithProcess(processes)?.activity;
 };
 
-const loadExecutableIcon = async (executablePath?: string): Promise<string | undefined> => {
+const loadCodexManifestIcon = async (executablePath: string): Promise<string | undefined> => {
+  const normalizedPath = executablePath.toLocaleLowerCase().replaceAll("/", "\\");
+  if (!normalizedPath.includes("\\windowsapps\\openai.codex_")) return undefined;
+
+  try {
+    const packageRoot = path.dirname(path.dirname(executablePath));
+    const manifest = await readFile(path.join(packageRoot, "AppxManifest.xml"), "utf8");
+    const manifestLogo =
+      manifest.match(/Square44x44Logo="([^"]+)"/i)?.[1] ??
+      manifest.match(/<Logo>([^<]+)<\/Logo>/i)?.[1];
+    if (!manifestLogo) return undefined;
+
+    const relativeLogo = manifestLogo.replaceAll("/", path.sep).replaceAll("\\", path.sep);
+    const exactLogoPath = path.join(packageRoot, relativeLogo);
+    const parsedLogo = path.parse(exactLogoPath);
+    const siblingNames = await readdir(parsedLogo.dir).catch(() => [] as string[]);
+    const preferredName = siblingNames.find(
+      (name) =>
+        name.toLocaleLowerCase() ===
+        `${parsedLogo.name}.targetsize-64_altform-unplated${parsedLogo.ext}`.toLocaleLowerCase(),
+    );
+    const icon = nativeImage.createFromPath(
+      preferredName ? path.join(parsedLogo.dir, preferredName) : exactLogoPath,
+    );
+    if (icon.isEmpty()) return undefined;
+    const dataUrl = icon.resize({ width: 32, height: 32, quality: "good" }).toDataURL();
+    return dataUrl.length <= MAX_ACTIVITY_ICON_DATA_URL_LENGTH ? dataUrl : undefined;
+  } catch {
+    return undefined;
+  }
+};
+
+const loadExecutableIcon = async (
+  executablePath?: string,
+  activityId?: string,
+): Promise<string | undefined> => {
   if (!executablePath || process.platform !== "win32") return undefined;
   try {
-    const icon = await app.getFileIcon(executablePath, { size: "small" });
-    const dataUrl = icon.resize({ width: 32, height: 32, quality: "good" }).toDataURL();
+    if (activityId === "codex") {
+      const manifestIcon = await loadCodexManifestIcon(executablePath);
+      if (manifestIcon) return manifestIcon;
+    }
+    const icon = await app.getFileIcon(executablePath, { size: "large" });
+    const dataUrl = icon.resize({ width: 64, height: 64, quality: "best" }).toDataURL();
     return dataUrl.length <= MAX_ACTIVITY_ICON_DATA_URL_LENGTH ? dataUrl : undefined;
   } catch {
     return undefined;
@@ -685,8 +685,9 @@ export const buildGameDetectionProbeCommand = (): string => {
     "$ErrorActionPreference='SilentlyContinue'",
     "[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false)",
     "$OutputEncoding = [Console]::OutputEncoding",
-    "Add-Type -Namespace ShangHaoWin32 -Name NativeMethods -MemberDefinition '[DllImport(\"user32.dll\")] public static extern IntPtr GetForegroundWindow();'",
+    'Add-Type -Namespace ShangHaoWin32 -Name NativeMethods -MemberDefinition \'[DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow(); [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint processId);\'',
     "$foregroundHandle=[ShangHaoWin32.NativeMethods]::GetForegroundWindow()",
+    "$foregroundProcessId=0; if ($foregroundHandle -ne [IntPtr]::Zero) { [void][ShangHaoWin32.NativeMethods]::GetWindowThreadProcessId($foregroundHandle, [ref]$foregroundProcessId) }",
     "function ConvertTo-Utf8Base64([string]$Value) { if ([string]::IsNullOrEmpty($Value)) { return ''; }; return [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($Value)); }",
     `$commandLineProcessNames=@(${processNameArray})`,
     "Get-Process | ForEach-Object {",
@@ -696,7 +697,7 @@ export const buildGameDetectionProbeCommand = (): string => {
     "  if ($commandLineProcessNames -contains $_.ProcessName.ToLowerInvariant()) {",
     '    try { $processDetails = Get-CimInstance Win32_Process -Filter "ProcessId=$($_.Id)"; $commandLine = $processDetails.CommandLine; if (-not $processPath) { $processPath = $processDetails.ExecutablePath } } catch {}',
     "  }",
-    "  [PSCustomObject]@{ ProcessName=$_.ProcessName; MainWindowTitleBase64=(ConvertTo-Utf8Base64 $_.MainWindowTitle); PathBase64=(ConvertTo-Utf8Base64 $processPath); CommandLineBase64=(ConvertTo-Utf8Base64 $commandLine); IsForeground=($_.MainWindowHandle -ne 0 -and $_.MainWindowHandle -eq $foregroundHandle) }",
+    "  [PSCustomObject]@{ ProcessName=$_.ProcessName; MainWindowTitleBase64=(ConvertTo-Utf8Base64 $_.MainWindowTitle); PathBase64=(ConvertTo-Utf8Base64 $processPath); CommandLineBase64=(ConvertTo-Utf8Base64 $commandLine); IsForeground=($_.Id -eq $foregroundProcessId) }",
     "} | ConvertTo-Json -Compress",
   ].join("; ");
 };
@@ -739,7 +740,7 @@ const detectActivities = async (): Promise<
   const work = matchKnownWorkActivityWithProcess(processes);
   const [gameIconDataUrl, workIconDataUrl] = await Promise.all([
     loadExecutableIcon(game?.executablePath),
-    loadExecutableIcon(work?.executablePath),
+    loadExecutableIcon(work?.executablePath, work?.activity.id),
   ]);
   return {
     gameName: game?.activity,

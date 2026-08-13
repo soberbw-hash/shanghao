@@ -8,6 +8,8 @@ import {
   BUILT_IN_AVATAR_IDS,
   DEFAULT_CHANNEL_ID,
   HEARTBEAT_INTERVAL_MS,
+  MAX_ROOM_COLLECTION_IMAGE_LENGTH,
+  MAX_ROOM_COLLECTION_TEXT_LENGTH,
   type BuiltInAvatarId,
   type RoomCollectionItem,
   type SceneZoneId,
@@ -22,6 +24,8 @@ import type {
   AudioResyncRequestMessage,
   AvatarUpdateMessage,
   ChatMessage,
+  ChatAckMessage,
+  ChatRejectedMessage,
   ChatRecallMessage,
   ChatHistoryMessage,
   ChannelCountsMessage,
@@ -64,7 +68,29 @@ interface SignalingServerOptions {
   roomName: string;
   packageVersion?: string;
   logger?: (message: string, context?: Record<string, unknown>) => void;
+  requiredClientVersion?: string;
 }
+
+const compareVersions = (left: string, right: string): number => {
+  const parse = (value: string) => {
+    const match = /^(\d+)\.(\d+)\.(\d+)$/.exec(value.trim());
+    return match ? match.slice(1).map((part) => Number.parseInt(part, 10)) : [];
+  };
+  const leftParts = parse(left);
+  const rightParts = parse(right);
+  if (
+    leftParts.length < 3 ||
+    rightParts.length < 3 ||
+    [...leftParts, ...rightParts].some((part) => !Number.isFinite(part))
+  ) {
+    return Number.NaN;
+  }
+  for (let index = 0; index < Math.max(leftParts.length, rightParts.length); index += 1) {
+    const difference = (leftParts[index] ?? 0) - (rightParts[index] ?? 0);
+    if (difference !== 0) return difference;
+  }
+  return 0;
+};
 
 const MAX_SIGNALING_PAYLOAD_BYTES = 256 * 1024;
 const CHAT_HISTORY_PAYLOAD_BUDGET_BYTES = MAX_SIGNALING_PAYLOAD_BYTES - 8 * 1024;
@@ -129,6 +155,8 @@ const SERVER_ONLY_MESSAGE_TYPES = new Set([
   "room_snapshot",
   "channel_snapshot",
   "chat_history",
+  "chat_ack",
+  "chat_rejected",
   "channel_counts",
   "daily_room_reports",
   "room_collection_snapshot",
@@ -144,7 +172,7 @@ interface SocketSession {
 }
 
 const RATE_LIMITS: Record<string, { windowMs: number; limit: number }> = {
-  chat_message: { windowMs: 10_000, limit: 8 },
+  chat_message: { windowMs: 10_000, limit: 40 },
   chat_recall: { windowMs: 10_000, limit: 12 },
   room_collection_add: { windowMs: 10_000, limit: 6 },
   room_collection_remove: { windowMs: 10_000, limit: 10 },
@@ -439,7 +467,7 @@ export class SignalingServer extends EventEmitter {
           void this.dailyRoomReports.then((store) =>
             store.recordLeave(
               stale.roomId,
-              stale.peerId,
+              peer.profileId || stale.peerId,
               peer.nickname,
               this.roomManager.getConnectedPeerCount(stale.roomId),
             ),
@@ -599,11 +627,13 @@ export class SignalingServer extends EventEmitter {
     current.count += 1;
     if (current.count <= limit.limit) return true;
 
-    this.safeSend(socket, {
-      type: "error",
-      code: "rate_limited",
-      message: "Too many messages. Please slow down.",
-    });
+    if (type !== "chat_message") {
+      this.safeSend(socket, {
+        type: "error",
+        code: "rate_limited",
+        message: "Too many messages. Please slow down.",
+      });
+    }
     if (current.count > limit.limit * 2) socket.close(4429, "rate_limited");
     return false;
   }
@@ -690,7 +720,19 @@ export class SignalingServer extends EventEmitter {
       );
       return;
     }
-    if (!this.consumeRateLimit(socket, session, message.type)) return;
+    if (!this.consumeRateLimit(socket, session, message.type)) {
+      if (message.type === "chat_message") {
+        this.safeSend(socket, {
+          type: "chat_rejected",
+          roomId: session.roomId,
+          peerId: session.peerId,
+          clientMessageId: message.clientMessageId || `legacy:${randomUUID()}`,
+          code: "rate_limited",
+          message: "发送太快，请稍后重试。",
+        });
+      }
+      return;
+    }
 
     const authoritative = {
       ...message,
@@ -734,7 +776,7 @@ export class SignalingServer extends EventEmitter {
         this.handleMemberState(authoritative);
         return;
       case "chat_message":
-        this.broadcastChatMessage(authoritative);
+        void this.acceptChatMessage(socket, authoritative);
         return;
       case "chat_recall":
         this.recallChatMessage(authoritative);
@@ -770,6 +812,25 @@ export class SignalingServer extends EventEmitter {
   }
 
   private handleJoin(socket: WebSocket, message: JoinChannelMessage): void {
+    const requiredClientVersion =
+      this.options.requiredClientVersion?.trim() || process.env.REQUIRED_CLIENT_VERSION?.trim();
+    if (
+      requiredClientVersion &&
+      (!message.appVersion ||
+        !Number.isFinite(compareVersions(message.appVersion, requiredClientVersion)) ||
+        compareVersions(message.appVersion, requiredClientVersion) < 0)
+    ) {
+      this.safeSend(socket, {
+        type: "error",
+        code: "CLIENT_UPDATE_REQUIRED",
+        roomId: message.roomId,
+        peerId: message.peerId,
+        requiredVersion: requiredClientVersion,
+        currentVersion: message.appVersion || "未知",
+        message: "当前版本已经不能进入频道，请更新后再试。",
+      });
+      return;
+    }
     if (message.protocolVersion !== APP_PROTOCOL_VERSION) {
       const mismatchMessage: ErrorMessage = {
         type: "error",
@@ -935,7 +996,7 @@ export class SignalingServer extends EventEmitter {
       void this.dailyRoomReports.then((store) =>
         store.recordJoin(
           message.roomId,
-          message.peerId,
+          message.profileId || message.peerId,
           message.nickname,
           room.peers.listConnectedPeers().length,
         ),
@@ -969,7 +1030,7 @@ export class SignalingServer extends EventEmitter {
       void this.dailyRoomReports.then((store) =>
         store.recordLeave(
           message.roomId,
-          message.peerId,
+          peer.profileId || message.peerId,
           peer.nickname,
           this.roomManager.getConnectedPeerCount(message.roomId),
         ),
@@ -1049,7 +1110,7 @@ export class SignalingServer extends EventEmitter {
       isDeafened: message.isDeafened,
       activity: normalizedActivity,
       sceneZone: normalizedSceneZone,
-      gameName: normalizedGameName,
+      gameName: message.gameName === undefined ? undefined : (normalizedGameName ?? ""),
       gameIconDataUrl: normalizedGameIconDataUrl,
       musicActivity: normalizedMusicActivity,
       workActivity: normalizedWorkActivity,
@@ -1059,7 +1120,12 @@ export class SignalingServer extends EventEmitter {
       avatarId: message.avatarId,
     });
     void this.dailyRoomReports.then((store) =>
-      store.recordGame(message.roomId, message.peerId, normalizedGameName),
+      store.recordGame(
+        message.roomId,
+        room.peers.getPeer(message.peerId)?.profileId || message.peerId,
+        room.peers.getPeer(message.peerId)?.nickname || message.nickname || "朋友",
+        normalizedGameName,
+      ),
     );
     const payload: MemberStateMessage = {
       type: "member_state",
@@ -1070,7 +1136,7 @@ export class SignalingServer extends EventEmitter {
       isDeafened: message.isDeafened,
       activity: normalizedActivity,
       sceneZone: normalizedSceneZone,
-      gameName: normalizedGameName,
+      gameName: message.gameName === undefined ? undefined : (normalizedGameName ?? ""),
       gameIconDataUrl: normalizedGameIconDataUrl,
       musicActivity: normalizedMusicActivity,
       workActivity: normalizedWorkActivity,
@@ -1085,17 +1151,46 @@ export class SignalingServer extends EventEmitter {
     }
   }
 
-  private broadcastChatMessage(message: ChatMessage): void {
+  private async acceptChatMessage(socket: WebSocket, message: ChatMessage): Promise<void> {
     const room = this.roomManager.getRoom(message.roomId);
     const author = message.peerId ? room?.peers.getPeer(message.peerId) : undefined;
     const content = message.content.trim().slice(0, 500);
+    const clientMessageId = message.clientMessageId || `legacy:${randomUUID()}`;
     if (!room || !author || (!content && !message.image)) {
+      const rejected: ChatRejectedMessage = {
+        type: "chat_rejected",
+        roomId: message.roomId,
+        peerId: message.peerId,
+        clientMessageId,
+        code: room && author ? "invalid_chat" : "room_unavailable",
+        message: room && author ? "消息内容无效。" : "当前房间不可用，请重连后重试。",
+      };
+      this.safeSend(socket, rejected);
+      return;
+    }
+
+    const history = await this.chatHistory;
+    const senderIdentity = author.profileId || author.id;
+    const existing = history.findByClientMessageId(message.roomId, senderIdentity, clientMessageId);
+    if (existing) {
+      const ack: ChatAckMessage = {
+        type: "chat_ack",
+        roomId: message.roomId,
+        peerId: author.id,
+        clientMessageId: existing.clientMessageId,
+        messageId: existing.id,
+        acceptedAt: existing.createdAt,
+        duplicate: true,
+      };
+      this.safeSend(socket, ack);
       return;
     }
 
     const storedMessage: ServerChatMessage = {
       id: randomUUID(),
+      clientMessageId,
       peerId: author.id,
+      senderProfileId: author.profileId,
       nickname: author.nickname,
       avatarId: author.avatarId,
       content,
@@ -1108,12 +1203,30 @@ export class SignalingServer extends EventEmitter {
       ...storedMessage,
     };
 
-    void this.chatHistory.then((store) => store.append(message.roomId, storedMessage));
+    history.append(message.roomId, storedMessage);
     void this.dailyRoomReports.then((store) => store.recordMessage(message.roomId));
 
     for (const peer of room.peers.listConnectedPeers()) {
       this.safeSend(peer.socket, payload);
     }
+    const ack: ChatAckMessage = {
+      type: "chat_ack",
+      roomId: message.roomId,
+      peerId: author.id,
+      clientMessageId: storedMessage.clientMessageId,
+      messageId: storedMessage.id,
+      acceptedAt: storedMessage.createdAt,
+      duplicate: false,
+    };
+    this.safeSend(socket, ack);
+    this.logger?.("chat accepted", {
+      roomId: message.roomId,
+      peerId: author.id,
+      clientMessageId: storedMessage.clientMessageId,
+      messageId: storedMessage.id,
+      kind: storedMessage.image ? "image" : "text",
+      payloadBytes: Buffer.byteLength(JSON.stringify(message), "utf8"),
+    });
   }
 
   private async sendChatHistory(socket: WebSocket, roomId: string): Promise<void> {
@@ -1169,7 +1282,14 @@ export class SignalingServer extends EventEmitter {
     const room = this.roomManager.getRoom(message.roomId);
     const author = message.peerId ? room?.peers.getPeer(message.peerId) : undefined;
     const title = message.title?.trim().slice(0, 80);
-    const content = message.content?.trim().slice(0, 2_000);
+    const content = message.content
+      ?.trim()
+      .slice(
+        0,
+        message.kind === "image"
+          ? MAX_ROOM_COLLECTION_IMAGE_LENGTH
+          : MAX_ROOM_COLLECTION_TEXT_LENGTH,
+      );
     if (!room || !author || !message.kind || !title || !content) return;
 
     const item: RoomCollectionItem = {

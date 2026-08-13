@@ -6,16 +6,30 @@ import type { DailyRoomReport } from "@private-voice/shared";
 type DailyRoomId = DailyRoomReport["roomId"];
 
 interface PersistedDailyRoomReports {
-  version: 1;
+  version: 2 | 3;
   rooms: Partial<Record<DailyRoomId, Record<string, DailyRoomReport>>>;
+  participants: Partial<Record<DailyRoomId, Record<string, Record<string, string>>>>;
+  gameParticipants: Partial<Record<DailyRoomId, Record<string, Record<string, string[]>>>>;
 }
 
 interface ActiveRoomState {
   count: number;
   activeSince?: number;
+  participants: Map<string, string>;
 }
 
-const EMPTY_REPORTS: PersistedDailyRoomReports = { version: 1, rooms: {} };
+interface ActiveGameState {
+  gameName: string;
+  nickname: string;
+  startedAt: number;
+}
+
+const EMPTY_REPORTS: PersistedDailyRoomReports = {
+  version: 3,
+  rooms: {},
+  participants: {},
+  gameParticipants: {},
+};
 const RETAIN_DAYS = 14;
 
 export const getShanghaiDate = (timestamp = Date.now()): string =>
@@ -44,6 +58,7 @@ const createEmptyReport = (roomId: DailyRoomId, date: string): DailyRoomReport =
   messageCount: 0,
   screenShareCount: 0,
   games: [],
+  gameActivities: [],
 });
 
 const sanitizeReport = (value: unknown, roomId: DailyRoomId, date: string): DailyRoomReport => {
@@ -70,6 +85,21 @@ const sanitizeReport = (value: unknown, roomId: DailyRoomId, date: string): Dail
           }))
           .slice(0, 20)
       : [],
+    gameActivities: Array.isArray(source.gameActivities)
+      ? source.gameActivities
+          .filter(
+            (activity) =>
+              activity &&
+              typeof activity.nickname === "string" &&
+              typeof activity.gameName === "string",
+          )
+          .map((activity) => ({
+            nickname: activity.nickname.slice(0, 32),
+            gameName: activity.gameName.slice(0, 64),
+            durationMs: Math.max(0, Number(activity.durationMs) || 0),
+          }))
+          .slice(0, 100)
+      : [],
     lastExit:
       source.lastExit &&
       typeof source.lastExit.nickname === "string" &&
@@ -85,6 +115,7 @@ export class DailyRoomReportStore {
   private reports: PersistedDailyRoomReports = structuredClone(EMPTY_REPORTS);
   private readonly activeRooms = new Map<DailyRoomId, ActiveRoomState>();
   private readonly gamesByDay = new Map<string, Map<string, Set<string>>>();
+  private readonly activeGames = new Map<string, ActiveGameState>();
   private readonly sharingPeers = new Set<string>();
   private writeQueue = Promise.resolve();
 
@@ -104,6 +135,7 @@ export class DailyRoomReportStore {
 
   getHistory(roomId: DailyRoomId, now = Date.now()): DailyRoomReport[] {
     this.closeActiveTime(roomId, now, false);
+    this.closeActiveGames(roomId, now, false);
     const today = getShanghaiDate(now);
     return Array.from({ length: RETAIN_DAYS }, (_, index) =>
       shiftShanghaiDate(today, -(index + 1)),
@@ -112,19 +144,22 @@ export class DailyRoomReportStore {
 
   recordJoin(
     roomIdValue: string,
-    peerId: string,
+    identityId: string,
     nickname: string,
     concurrent: number,
     now = Date.now(),
   ): void {
     if (!isRoomId(roomIdValue)) return;
+    this.closeActiveTime(roomIdValue, now, false);
     const report = this.getMutableReport(roomIdValue, now);
-    if (!report.participantNicknames.includes(nickname))
-      report.participantNicknames.push(nickname.slice(0, 32));
-    report.participantCount = report.participantNicknames.length;
+    const active = this.activeRooms.get(roomIdValue) ?? {
+      count: 0,
+      participants: new Map<string, string>(),
+    };
+    active.participants.set(identityId, nickname.slice(0, 32));
+    this.addParticipants(roomIdValue, report.date, active.participants);
     report.peakConcurrent = Math.max(report.peakConcurrent, concurrent);
     report.hadActivity = true;
-    const active = this.activeRooms.get(roomIdValue) ?? { count: 0 };
     if (active.count === 0) active.activeSince = now;
     active.count = concurrent;
     this.activeRooms.set(roomIdValue, active);
@@ -133,17 +168,23 @@ export class DailyRoomReportStore {
 
   recordLeave(
     roomIdValue: string,
-    peerId: string,
+    identityId: string,
     nickname: string,
     concurrent: number,
     now = Date.now(),
   ): void {
     if (!isRoomId(roomIdValue)) return;
+    this.closeActiveTime(roomIdValue, now, false);
     const report = this.getMutableReport(roomIdValue, now);
     report.hadActivity = true;
     report.lastExit = { nickname: nickname.slice(0, 32), at: new Date(now).toISOString() };
-    this.sharingPeers.delete(`${roomIdValue}:${peerId}`);
-    const active = this.activeRooms.get(roomIdValue) ?? { count: concurrent };
+    this.closeActiveGame(roomIdValue, identityId, now, true);
+    this.sharingPeers.delete(`${roomIdValue}:${identityId}`);
+    const active = this.activeRooms.get(roomIdValue) ?? {
+      count: concurrent,
+      participants: new Map<string, string>(),
+    };
+    active.participants.delete(identityId);
     active.count = concurrent;
     if (concurrent === 0 && active.activeSince) {
       report.activeDurationMs += Math.max(0, now - active.activeSince);
@@ -163,20 +204,39 @@ export class DailyRoomReportStore {
 
   recordGame(
     roomIdValue: string,
-    peerId: string,
+    identityId: string,
+    nickname: string,
     gameName: string | undefined,
     now = Date.now(),
   ): void {
-    if (!isRoomId(roomIdValue) || !gameName) return;
+    if (!isRoomId(roomIdValue)) return;
+    const activeKey = `${roomIdValue}:${identityId}`;
+    const active = this.activeGames.get(activeKey);
+    const normalizedGameName = gameName?.trim().slice(0, 64) || undefined;
+    const normalizedNickname = nickname.trim().slice(0, 32) || "朋友";
+    if (active && active.gameName === normalizedGameName) {
+      active.nickname = normalizedNickname;
+      return;
+    }
+    if (active) this.closeActiveGame(roomIdValue, identityId, now, true);
+    if (!normalizedGameName) return;
     const report = this.getMutableReport(roomIdValue, now);
     const key = `${roomIdValue}:${report.date}`;
     const dayGames = this.gamesByDay.get(key) ?? new Map<string, Set<string>>();
-    const players = dayGames.get(gameName) ?? new Set<string>();
-    players.add(peerId);
-    dayGames.set(gameName, players);
+    const players = dayGames.get(normalizedGameName) ?? new Set<string>();
+    players.add(identityId);
+    dayGames.set(normalizedGameName, players);
     this.gamesByDay.set(key, dayGames);
+    const roomGames = (this.reports.gameParticipants[roomIdValue] ??= {});
+    const persistedDayGames = (roomGames[report.date] ??= {});
+    persistedDayGames[normalizedGameName] = [...players];
     report.games = [...dayGames].map(([name, peers]) => ({ name, participantCount: peers.size }));
     report.hadActivity = true;
+    this.activeGames.set(activeKey, {
+      gameName: normalizedGameName,
+      nickname: normalizedNickname,
+      startedAt: now,
+    });
     this.queueWrite();
   }
 
@@ -200,8 +260,57 @@ export class DailyRoomReportStore {
   }
 
   async flush(): Promise<void> {
-    for (const roomId of ["main", "side"] as const) this.closeActiveTime(roomId, Date.now(), true);
+    const now = Date.now();
+    for (const roomId of ["main", "side"] as const) {
+      this.closeActiveTime(roomId, now, true);
+      this.closeActiveGames(roomId, now, true);
+    }
     await this.writeQueue;
+  }
+
+  private closeActiveGames(roomId: DailyRoomId, now: number, stop: boolean): void {
+    for (const key of [...this.activeGames.keys()]) {
+      if (key.startsWith(`${roomId}:`)) {
+        this.closeActiveGame(roomId, key.slice(roomId.length + 1), now, stop);
+      }
+    }
+  }
+
+  private closeActiveGame(
+    roomId: DailyRoomId,
+    identityId: string,
+    now: number,
+    stop: boolean,
+  ): void {
+    const key = `${roomId}:${identityId}`;
+    const active = this.activeGames.get(key);
+    if (!active) return;
+    let cursor = active.startedAt;
+    while (cursor < now) {
+      const date = getShanghaiDate(cursor);
+      const nextDate = shiftShanghaiDate(date, 1);
+      const midnight = Date.parse(`${nextDate}T00:00:00+08:00`);
+      const segmentEnd = Math.min(now, midnight);
+      const report = this.getMutableReport(roomId, cursor);
+      const existing = report.gameActivities.find(
+        (activity) =>
+          activity.nickname === active.nickname && activity.gameName === active.gameName,
+      );
+      if (existing) {
+        existing.durationMs += Math.max(0, segmentEnd - cursor);
+      } else {
+        report.gameActivities.push({
+          nickname: active.nickname,
+          gameName: active.gameName,
+          durationMs: Math.max(0, segmentEnd - cursor),
+        });
+      }
+      report.gameActivities.sort((left, right) => right.durationMs - left.durationMs);
+      cursor = segmentEnd;
+    }
+    if (stop) this.activeGames.delete(key);
+    else active.startedAt = now;
+    this.queueWrite();
   }
 
   private getMutableReport(roomId: DailyRoomId, now: number): DailyRoomReport {
@@ -215,10 +324,34 @@ export class DailyRoomReportStore {
   private closeActiveTime(roomId: DailyRoomId, now: number, stop: boolean): void {
     const active = this.activeRooms.get(roomId);
     if (!active?.activeSince) return;
-    const report = this.getMutableReport(roomId, now);
-    report.activeDurationMs += Math.max(0, now - active.activeSince);
+    let cursor = active.activeSince;
+    while (cursor < now) {
+      const date = getShanghaiDate(cursor);
+      const nextDate = shiftShanghaiDate(date, 1);
+      const midnight = Date.parse(`${nextDate}T00:00:00+08:00`);
+      const segmentEnd = Math.min(now, midnight);
+      const report = this.getMutableReport(roomId, cursor);
+      report.activeDurationMs += Math.max(0, segmentEnd - cursor);
+      report.hadActivity = true;
+      report.peakConcurrent = Math.max(report.peakConcurrent, active.count);
+      this.addParticipants(roomId, date, active.participants);
+      cursor = segmentEnd;
+    }
     active.activeSince = stop ? undefined : now;
     this.queueWrite();
+  }
+
+  private addParticipants(
+    roomId: DailyRoomId,
+    date: string,
+    participants: Map<string, string>,
+  ): void {
+    const roomParticipants = (this.reports.participants[roomId] ??= {});
+    const dayParticipants = (roomParticipants[date] ??= {});
+    for (const [identityId, nickname] of participants) dayParticipants[identityId] = nickname;
+    const report = this.getMutableReport(roomId, Date.parse(`${date}T12:00:00+08:00`));
+    report.participantNicknames = Object.values(dayParticipants);
+    report.participantCount = Object.keys(dayParticipants).length;
   }
 
   private prune(roomId: DailyRoomId, today: string): void {
@@ -239,7 +372,12 @@ export class DailyRoomReportStore {
         ) as PersistedDailyRoomReports;
         if (!parsed?.rooms || typeof parsed.rooms !== "object")
           throw new Error("invalid_daily_room_reports");
-        this.reports = { version: 1, rooms: {} };
+        this.reports = {
+          version: 3,
+          rooms: {},
+          participants: {},
+          gameParticipants: {},
+        };
         for (const roomId of ["main", "side"] as const) {
           const source = parsed.rooms[roomId];
           if (!source || typeof source !== "object") continue;
@@ -249,6 +387,34 @@ export class DailyRoomReportStore {
               sanitizeReport(value, roomId, date),
             ]),
           );
+          const persistedParticipants = parsed.participants?.[roomId];
+          if (persistedParticipants && typeof persistedParticipants === "object") {
+            this.reports.participants[roomId] = structuredClone(persistedParticipants);
+          } else {
+            this.reports.participants[roomId] = Object.fromEntries(
+              Object.entries(this.reports.rooms[roomId] ?? {}).map(([date, report]) => [
+                date,
+                Object.fromEntries(
+                  report.participantNicknames.map((nickname, index) => [
+                    `legacy:${index}:${nickname}`,
+                    nickname,
+                  ]),
+                ),
+              ]),
+            );
+          }
+          const persistedGames = parsed.gameParticipants?.[roomId];
+          if (persistedGames && typeof persistedGames === "object") {
+            this.reports.gameParticipants[roomId] = structuredClone(persistedGames);
+            for (const [date, games] of Object.entries(persistedGames)) {
+              this.gamesByDay.set(
+                `${roomId}:${date}`,
+                new Map(
+                  Object.entries(games).map(([name, identities]) => [name, new Set(identities)]),
+                ),
+              );
+            }
+          }
         }
         return;
       } catch (error) {

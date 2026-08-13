@@ -12,11 +12,11 @@
   },
   "dependencies": {
     "@private-voice/shared": "workspace:*",
-    "ws": "^8.18.1"
+    "ws": "8.21.3"
   },
   "devDependencies": {
-    "@types/ws": "^8.5.15",
-    "tsup": "^8.4.0",
-    "typescript": "^5.8.3"
+    "@types/ws": "8.18.1",
+    "tsup": "8.5.1",
+    "typescript": "5.9.3"
   }
 }

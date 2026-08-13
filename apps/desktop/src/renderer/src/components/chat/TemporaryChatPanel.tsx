@@ -1,6 +1,15 @@
 import { Fragment, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { ExternalLink, Link2, LoaderCircle, RotateCcw, Send, X } from "lucide-react";
+import {
+  ChevronLeft,
+  ChevronRight,
+  ExternalLink,
+  Link2,
+  LoaderCircle,
+  RotateCcw,
+  Send,
+  X,
+} from "lucide-react";
 import { gsap } from "gsap";
 
 import type { ChatMessage } from "@private-voice/shared";
@@ -12,14 +21,16 @@ import {
   getMessageUrlDetails,
   isMessageOnlyUrl,
 } from "../../features/chat/linkPreview";
+import { writeRoomCollectionDragPayload } from "../../features/chat/collectionDrag";
+import { QUICK_REPLIES, QUICK_REPLY_COOLDOWN_MS } from "../../features/chat/quickReplies";
 import { motionDuration, motionEase } from "../../features/motion/motionSystem";
 import { useAppStore } from "../../store/appStore";
 import { AvatarPlaceholder } from "../base/AvatarPlaceholder";
 import { Button } from "../base/Button";
 import { Input } from "../base/Input";
 import { usePrefersReducedMotion } from "../../hooks/usePrefersReducedMotion";
+import { isSupportedChatImageFile } from "../../utils/chatImage";
 
-const quickReplies = ["👌", "上号", "开麦", "等我", "听得到吗"];
 const urlPattern = /https?:\/\/[^\s<，。！？；：）】》」]+/gi;
 const trailingUrlPunctuation = /[.,!?，。！？;；:：)\]}>》」】]+$/;
 
@@ -99,12 +110,20 @@ const MessageLinkPreview = ({ url, onCopy }: { url: string; onCopy: (url: string
     <button
       type="button"
       className="chat-link-preview"
+      draggable
       aria-label={`在浏览器中打开 ${details.hostname}`}
       title={url}
       onClick={() => void window.desktopApi.app.openExternal(url)}
       onContextMenu={(event) => {
         event.preventDefault();
         onCopy(url);
+      }}
+      onDragStart={(event) => {
+        writeRoomCollectionDragPayload(event.dataTransfer, {
+          kind: "link",
+          title: details.hostname,
+          content: url,
+        });
       }}
     >
       <span className="chat-link-preview-image" aria-hidden="true">
@@ -131,6 +150,7 @@ export const TemporaryChatPanel = ({
   onQuickSend,
   onSendImage,
   onRecall,
+  onRetry,
   className = "",
   emptyMessage = "频道里还很安静，先说一句吧。",
   canSend = false,
@@ -144,6 +164,7 @@ export const TemporaryChatPanel = ({
   onQuickSend?: (message: string) => void;
   onSendImage?: (file: File) => Promise<void>;
   onRecall?: (messageId: string) => Promise<void>;
+  onRetry?: (message: ChatMessage) => Promise<void>;
   className?: string;
   emptyMessage?: string;
   canSend?: boolean;
@@ -152,6 +173,7 @@ export const TemporaryChatPanel = ({
 }) => {
   const pushToast = useAppStore((state) => state.pushToast);
   const lastQuickSendAt = useRef(0);
+  const quickSendCooldownTimer = useRef<number | undefined>(undefined);
   const listRef = useRef<HTMLDivElement>(null);
   const sendControlRef = useRef<HTMLSpanElement>(null);
   const dragDepthRef = useRef(0);
@@ -160,6 +182,7 @@ export const TemporaryChatPanel = ({
   const [isSendingImage, setIsSendingImage] = useState(false);
   const [isDraggingImage, setIsDraggingImage] = useState(false);
   const [previewImage, setPreviewImage] = useState<NonNullable<ChatMessage["image"]> | null>(null);
+  const [isQuickSendCoolingDown, setIsQuickSendCoolingDown] = useState(false);
   const shouldReduceMotion = usePrefersReducedMotion(reduceMotion);
 
   useEffect(() => {
@@ -170,6 +193,15 @@ export const TemporaryChatPanel = ({
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [previewImage]);
+
+  useEffect(
+    () => () => {
+      if (quickSendCooldownTimer.current !== undefined) {
+        window.clearTimeout(quickSendCooldownTimer.current);
+      }
+    },
+    [],
+  );
 
   useLayoutEffect(() => {
     const list = listRef.current;
@@ -313,14 +345,22 @@ export const TemporaryChatPanel = ({
 
   const handleQuickSend = (reply: string, source: HTMLButtonElement) => {
     const now = Date.now();
-    if (now - lastQuickSendAt.current < 500) return;
+    if (now - lastQuickSendAt.current < QUICK_REPLY_COOLDOWN_MS) return;
     lastQuickSendAt.current = now;
+    setIsQuickSendCoolingDown(true);
+    if (quickSendCooldownTimer.current !== undefined) {
+      window.clearTimeout(quickSendCooldownTimer.current);
+    }
+    quickSendCooldownTimer.current = window.setTimeout(() => {
+      quickSendCooldownTimer.current = undefined;
+      setIsQuickSendCoolingDown(false);
+    }, QUICK_REPLY_COOLDOWN_MS);
     animateSendFeedback(source);
     onQuickSend?.(reply);
   };
 
   const sendImageFile = (file?: File) => {
-    if (!file || !file.type.startsWith("image/") || !canSend || !onSendImage || isSendingImage) {
+    if (!file || !isSupportedChatImageFile(file) || !canSend || !onSendImage || isSendingImage) {
       return;
     }
     setIsSendingImage(true);
@@ -328,7 +368,7 @@ export const TemporaryChatPanel = ({
   };
 
   const findClipboardImage = (clipboardData: DataTransfer) => {
-    const file = Array.from(clipboardData.files).find((item) => item.type.startsWith("image/"));
+    const file = Array.from(clipboardData.files).find(isSupportedChatImageFile);
     if (file) return file;
     const imageItem = Array.from(clipboardData.items).find(
       (item) => item.kind === "file" && item.type.startsWith("image/"),
@@ -352,10 +392,34 @@ export const TemporaryChatPanel = ({
   };
 
   const copyImage = (dataUrl: string) => {
-    void window.desktopApi.clipboard.writeImage(dataUrl).then(
+    if (!dataUrl) return;
+    void (async () => {
+      const source = new Image();
+      source.decoding = "async";
+      source.src = dataUrl;
+      await source.decode();
+      const canvas = document.createElement("canvas");
+      canvas.width = source.naturalWidth;
+      canvas.height = source.naturalHeight;
+      const context = canvas.getContext("2d");
+      if (!context) throw new Error("clipboard_canvas_unavailable");
+      context.drawImage(source, 0, 0);
+      await window.desktopApi.clipboard.writeImage(canvas.toDataURL("image/png"));
+    })().then(
       () => pushToast({ tone: "success", title: "已复制图片" }),
-      () => pushToast({ tone: "danger", title: "复制失败", description: "请稍后再试。" }),
+      () =>
+        pushToast({ tone: "danger", title: "复制失败", description: "图片暂时无法写入剪贴板。" }),
     );
+  };
+
+  const previewImages = messages.flatMap((message) => (message.image ? [message.image] : []));
+  const previewIndex = previewImage
+    ? previewImages.findIndex((image) => image.dataUrl === previewImage.dataUrl)
+    : -1;
+  const showPreviewImage = (offset: number) => {
+    if (previewIndex < 0 || previewImages.length < 2) return;
+    const nextIndex = (previewIndex + offset + previewImages.length) % previewImages.length;
+    setPreviewImage(previewImages[nextIndex] ?? null);
   };
 
   return (
@@ -364,14 +428,22 @@ export const TemporaryChatPanel = ({
         className={`temporary-chat-panel response-panel flex min-h-0 flex-col p-3 ${isDraggingImage ? "is-dragging-image" : ""} ${className}`.trim()}
         data-testid="temporary-chat-panel"
         onDragEnter={(event) => {
-          if (!Array.from(event.dataTransfer.items).some((item) => item.type.startsWith("image/")))
+          if (
+            !Array.from(event.dataTransfer.items).some(
+              (item) => item.kind === "file" && (!item.type || item.type.startsWith("image/")),
+            )
+          )
             return;
           event.preventDefault();
           dragDepthRef.current += 1;
           setIsDraggingImage(true);
         }}
         onDragOver={(event) => {
-          if (!Array.from(event.dataTransfer.items).some((item) => item.type.startsWith("image/")))
+          if (
+            !Array.from(event.dataTransfer.items).some(
+              (item) => item.kind === "file" && (!item.type || item.type.startsWith("image/")),
+            )
+          )
             return;
           event.preventDefault();
           event.dataTransfer.dropEffect = "copy";
@@ -385,9 +457,7 @@ export const TemporaryChatPanel = ({
           event.preventDefault();
           dragDepthRef.current = 0;
           setIsDraggingImage(false);
-          sendImageFile(
-            Array.from(event.dataTransfer.files).find((file) => file.type.startsWith("image/")),
-          );
+          sendImageFile(Array.from(event.dataTransfer.files).find(isSupportedChatImageFile));
         }}
       >
         <div className="chat-panel-header flex items-center justify-between gap-2 border-b border-[rgba(220,230,242,0.6)] pb-2.5">
@@ -395,12 +465,12 @@ export const TemporaryChatPanel = ({
             聊天
           </div>
           <div className="chat-quick-replies flex justify-end gap-1">
-            {quickReplies.map((reply) => (
+            {QUICK_REPLIES.map((reply) => (
               <button
                 key={reply}
                 type="button"
-                disabled={!canSend}
-                className="chat-quick-reply interactive-surface min-h-[28px] min-w-[28px] rounded-[10px] border border-[rgba(220,230,242,0.8)] bg-white px-2 text-[11px] font-medium text-[#52657d] disabled:opacity-35 hover:bg-[#f5f7fb]"
+                disabled={!canSend || isQuickSendCoolingDown}
+                className="chat-quick-reply interactive-surface rounded-[9px] border border-[rgba(220,230,242,0.8)] bg-white font-medium text-[#52657d] disabled:opacity-35 hover:bg-[#f5f7fb]"
                 onClick={(event) => handleQuickSend(reply, event.currentTarget)}
               >
                 {reply}
@@ -457,7 +527,15 @@ export const TemporaryChatPanel = ({
                     {message.kind === "system" ? (
                       <div
                         data-gsap-chat-message
+                        draggable
                         className="chat-system-message mx-auto w-fit max-w-[90%] rounded-full bg-[#f5f7fb] px-3 py-1 text-center text-[12px] leading-4 text-[#718096]"
+                        onDragStart={(event) => {
+                          writeRoomCollectionDragPayload(event.dataTransfer, {
+                            kind: "text",
+                            title: message.content.slice(0, 36),
+                            content: message.content,
+                          });
+                        }}
                         onContextMenu={(event) => {
                           event.preventDefault();
                           copyText(message.content);
@@ -508,10 +586,18 @@ export const TemporaryChatPanel = ({
                             <button
                               type="button"
                               className="chat-image-thumbnail-button"
+                              draggable
                               onClick={() => setPreviewImage(message.image ?? null)}
                               onContextMenu={(event) => {
                                 event.preventDefault();
                                 copyImage(message.image?.dataUrl ?? "");
+                              }}
+                              onDragStart={(event) => {
+                                writeRoomCollectionDragPayload(event.dataTransfer, {
+                                  kind: "image",
+                                  title: message.image?.fileName || `${message.nickname} 的图片`,
+                                  content: message.image?.dataUrl ?? "",
+                                });
                               }}
                               aria-label={`查看图片：${message.image.fileName || "聊天图片"}`}
                             >
@@ -533,6 +619,14 @@ export const TemporaryChatPanel = ({
                                   ? "is-local rounded-tl-[4px] bg-[#EAF4FF] text-[#2F6FCC] border border-[rgba(126,184,249,0.25)]"
                                   : "is-remote rounded-bl-[4px] bg-white text-[#374151] border border-[rgba(220,230,242,0.5)]"
                               }`}
+                              draggable
+                              onDragStart={(event) => {
+                                writeRoomCollectionDragPayload(event.dataTransfer, {
+                                  kind: "text",
+                                  title: message.content.slice(0, 36),
+                                  content: message.content,
+                                });
+                              }}
                               onContextMenu={(event) => {
                                 event.preventDefault();
                                 copyText(message.content);
@@ -543,6 +637,20 @@ export const TemporaryChatPanel = ({
                           ) : null}
                           {linkPreviewUrl ? (
                             <MessageLinkPreview url={linkPreviewUrl} onCopy={copyLink} />
+                          ) : null}
+                          {message.isLocal && message.deliveryState === "sending" ? (
+                            <span className="chat-delivery-state is-sending" aria-live="polite">
+                              发送中…
+                            </span>
+                          ) : null}
+                          {message.isLocal && message.deliveryState === "failed" ? (
+                            <button
+                              type="button"
+                              className="chat-delivery-state is-failed"
+                              onClick={() => void onRetry?.(message)}
+                            >
+                              发送失败 · 重新发送
+                            </button>
                           ) : null}
                         </div>
                       </div>
@@ -574,7 +682,7 @@ export const TemporaryChatPanel = ({
             </span>
           ) : null}
           <Input
-            placeholder={canSend ? "发一句，或粘贴 / 拖入图片..." : unavailableLabel}
+            placeholder={canSend ? "发送消息，最多保留最近 100 条" : unavailableLabel}
             value={chatInput}
             disabled={!canSend}
             onChange={(event) => onChatInputChange(event.target.value)}
@@ -612,10 +720,25 @@ export const TemporaryChatPanel = ({
               role="dialog"
               aria-modal="true"
               aria-label="图片预览"
+              onKeyDown={(event) => {
+                if (event.key === "ArrowLeft") showPreviewImage(-1);
+                if (event.key === "ArrowRight") showPreviewImage(1);
+                if (event.key === "Escape") setPreviewImage(null);
+              }}
               onMouseDown={(event) => {
                 if (event.target === event.currentTarget) setPreviewImage(null);
               }}
             >
+              {previewImages.length > 1 ? (
+                <button
+                  type="button"
+                  className="chat-image-preview-nav is-previous"
+                  onClick={() => showPreviewImage(-1)}
+                  aria-label="查看上一张图片"
+                >
+                  <ChevronLeft aria-hidden="true" />
+                </button>
+              ) : null}
               <div className="chat-image-preview-surface">
                 <button
                   type="button"
@@ -636,7 +759,22 @@ export const TemporaryChatPanel = ({
                     copyImage(previewImage.dataUrl);
                   }}
                 />
+                {previewImages.length > 1 ? (
+                  <span className="chat-image-preview-count">
+                    {previewIndex + 1} / {previewImages.length}
+                  </span>
+                ) : null}
               </div>
+              {previewImages.length > 1 ? (
+                <button
+                  type="button"
+                  className="chat-image-preview-nav is-next"
+                  onClick={() => showPreviewImage(1)}
+                  aria-label="查看下一张图片"
+                >
+                  <ChevronRight aria-hidden="true" />
+                </button>
+              ) : null}
             </div>,
             document.body,
           )

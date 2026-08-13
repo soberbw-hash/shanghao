@@ -64,6 +64,7 @@ export interface RecordingLibraryItem {
   modifiedAt: string;
   fileSize: number;
   roomId?: "main" | "side";
+  isFavorite: boolean;
   markers: RecordingMarker[];
 }
 

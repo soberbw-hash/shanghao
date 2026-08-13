@@ -15,6 +15,7 @@ import { motionCurve } from "../../features/motion/motionSystem";
 import { memberStatus } from "../../features/voice-scene/activityRules";
 import { planCharacterRoute, sceneEntryPoint } from "../../features/voice-scene/characterMotion";
 import {
+  characterMotionTiming,
   readSceneUnit,
   routeAnimation,
   scenePosition,
@@ -39,6 +40,68 @@ import { Slider } from "../base/Slider";
 
 export const sceneMemberKey = (member: Pick<RoomMember, "id" | "isLocal">): string =>
   member.isLocal ? "local-member" : member.id;
+
+export interface SceneCharacterQuickMessage {
+  id: string;
+  content: string;
+  createdAt: string;
+}
+
+const CHAT_BUBBLE_VISIBLE_MS = 4_200;
+
+const CharacterChatBubble = ({
+  message,
+  shouldReduceMotion,
+}: {
+  message?: SceneCharacterQuickMessage;
+  shouldReduceMotion: boolean;
+}) => {
+  const [visibleMessage, setVisibleMessage] = useState<SceneCharacterQuickMessage>();
+
+  useEffect(() => {
+    if (!message) {
+      setVisibleMessage(undefined);
+      return;
+    }
+
+    const createdAt = Date.parse(message.createdAt);
+    const elapsed = Number.isFinite(createdAt) ? Math.max(0, Date.now() - createdAt) : 0;
+    const remaining = CHAT_BUBBLE_VISIBLE_MS - elapsed;
+    if (remaining <= 0) {
+      setVisibleMessage(undefined);
+      return;
+    }
+
+    setVisibleMessage(message);
+    const timeout = window.setTimeout(() => {
+      setVisibleMessage((current) => (current?.id === message.id ? undefined : current));
+    }, remaining);
+    return () => window.clearTimeout(timeout);
+  }, [message]);
+
+  return (
+    <div className="scene-character-chat-bubble-position" aria-live="polite">
+      <AnimatePresence initial={false} mode="wait">
+        {visibleMessage ? (
+          <motion.div
+            key={visibleMessage.id}
+            className="scene-character-chat-bubble"
+            role="status"
+            initial={shouldReduceMotion ? false : { opacity: 0, y: 4, scale: 0.96 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={shouldReduceMotion ? undefined : { opacity: 0, y: -3, scale: 0.98 }}
+            transition={{
+              duration: shouldReduceMotion ? 0 : characterMotionTiming.chatBubbleSeconds,
+              ease: motionCurve.enter,
+            }}
+          >
+            {visibleMessage.content}
+          </motion.div>
+        ) : null}
+      </AnimatePresence>
+    </div>
+  );
+};
 
 const stableMotionPhase = (memberId: string): number => {
   let hash = 0;
@@ -68,6 +131,7 @@ export interface SceneCharacterProps {
   isWelcoming: boolean;
   isScreenSharing: boolean;
   reactions?: SceneReactionModel[];
+  chatBubble?: SceneCharacterQuickMessage;
   onReact?: (targetPeerId: string, emoji: SceneReactionModel["emoji"]) => void;
   onVolumeChange?: (memberId: string, volume: number) => void;
   onSettled?: (memberId: string, zone: SceneZoneId) => void;
@@ -83,6 +147,7 @@ export const SceneCharacter = ({
   isWelcoming,
   isScreenSharing,
   reactions = [],
+  chatBubble,
   onVolumeChange,
   onSettled,
 }: SceneCharacterProps) => {
@@ -273,7 +338,10 @@ export const SceneCharacter = ({
         scale: 1,
         transition: {
           ...animation.transition,
-          opacity: { duration: 0.32, ease: motionCurve.enter },
+          opacity: {
+            duration: characterMotionTiming.routeOpacitySeconds,
+            ease: motionCurve.enter,
+          },
         },
       });
       if (!isCurrentOperation()) return;
@@ -281,7 +349,11 @@ export const SceneCharacter = ({
       currentPositionRef.current = { left: targetLeft, top: targetTop };
       setDisplayZone(zone);
       setMotionPhase("sitting");
-      await waitForMotionPhase(personality.landingSpring === "physical" ? 132 : 108);
+      await waitForMotionPhase(
+        personality.landingSpring === "physical"
+          ? characterMotionTiming.landingPhysicalMs
+          : characterMotionTiming.landingSoftMs,
+      );
       if (!isCurrentOperation()) return;
       setMotionPhase(zone === "restroomZone" ? "away-idle" : "idle");
       onSettledRef.current?.(member.id, zone);
@@ -332,8 +404,8 @@ export const SceneCharacter = ({
           transition: {
             ...animation.transition,
             opacity: {
-              duration: 0.28,
-              delay: Math.max(0, route.duration - 0.28),
+              duration: characterMotionTiming.exitOpacitySeconds,
+              delay: Math.max(0, route.duration - characterMotionTiming.exitOpacitySeconds),
               ease: motionCurve.enter,
             },
           },
@@ -551,6 +623,7 @@ export const SceneCharacter = ({
               shouldReduceMotion={shouldReduceMotion}
             />
           </div>
+          <CharacterChatBubble message={chatBubble} shouldReduceMotion={shouldReduceMotion} />
           <SceneReaction reactions={reactions} shouldReduceMotion={shouldReduceMotion} />
 
           <AnimatePresence>

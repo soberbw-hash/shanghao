@@ -8,6 +8,7 @@ import {
   sceneEntryPoint,
 } from "../src/renderer/src/features/voice-scene/characterMotion";
 import { characterPositions } from "../src/renderer/src/features/voice-scene/sceneZones";
+import { readSceneUnit } from "../src/renderer/src/features/voice-scene/characterMotionRuntime";
 
 test("same-row seat changes stay horizontal and last at least one second", () => {
   const route = planCharacterRoute({
@@ -118,6 +119,13 @@ test("an interrupted route can leave the footprint it currently occupies", () =>
   assert.deepEqual(route.points.at(-1), characterPositions.gameDesk5);
   assert.equal(route.times[0], 0);
   assert.equal(route.times.at(-1), 1);
+});
+
+test("pixel-valued animation callbacks never overwrite scene container units", () => {
+  assert.equal(readSceneUnit("40cqw", 12), 40);
+  assert.equal(readSceneUnit("68.9cqh", 12), 68.9);
+  assert.equal(readSceneUnit(712, 40), 40);
+  assert.equal(readSceneUnit("712px", 68.9), 68.9);
 });
 
 test("channel exit continues from the rendered position without a fixed stand-up pause", () => {

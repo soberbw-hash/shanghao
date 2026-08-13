@@ -5,15 +5,22 @@ import type { RecordingLibrarySnapshot } from "@private-voice/shared";
 import { resolveRecordingDirectory } from "./recording-path";
 import {
   decodeRecordingMediaUrl,
+  createRecordingMediaResponse,
   deleteRecordingInDirectory,
   enforceRecordingQuotaInDirectory,
   isAllowedRecordingPathInDirectory,
   readRecordingLibraryFromDirectory,
   RECORDING_MEDIA_PROTOCOL,
+  setRecordingFavoriteInDirectory,
   toRecordingMediaUrl,
 } from "./recording-library-core";
 
-export { decodeRecordingMediaUrl, RECORDING_MEDIA_PROTOCOL, toRecordingMediaUrl };
+export {
+  createRecordingMediaResponse,
+  decodeRecordingMediaUrl,
+  RECORDING_MEDIA_PROTOCOL,
+  toRecordingMediaUrl,
+};
 
 export const getRecordingDirectory = (configuredDirectory?: string): string =>
   resolveRecordingDirectory(configuredDirectory, app.getPath("documents"));
@@ -39,6 +46,18 @@ export const deleteRecording = async (
 ): Promise<void> => {
   const directory = getRecordingDirectory(configuredDirectory);
   await deleteRecordingInDirectory(directory, filePath);
+};
+
+export const setRecordingFavorite = async (
+  configuredDirectory: string | undefined,
+  filePath: string,
+  isFavorite: boolean,
+): Promise<void> => {
+  await setRecordingFavoriteInDirectory(
+    getRecordingDirectory(configuredDirectory),
+    filePath,
+    isFavorite,
+  );
 };
 
 export const isAllowedRecordingMediaPath = (

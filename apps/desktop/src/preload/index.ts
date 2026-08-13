@@ -59,6 +59,10 @@ const desktopApi: DesktopApi = {
     toggle: () => ipcRenderer.invoke(IPC_CHANNELS.overlay.toggle),
     close: () => ipcRenderer.invoke(IPC_CHANNELS.overlay.close),
     update: (state) => ipcRenderer.invoke(IPC_CHANNELS.overlay.update, state),
+    setInteractive: (interactive) =>
+      ipcRenderer.invoke(IPC_CHANNELS.overlay.setInteractive, interactive),
+    moveTo: (screenY) => ipcRenderer.invoke(IPC_CHANNELS.overlay.moveTo, screenY),
+    resetPosition: () => ipcRenderer.invoke(IPC_CHANNELS.overlay.resetPosition),
     onState: (listener) => {
       const wrapped = (_event: Electron.IpcRendererEvent, state: unknown) => {
         listener(state as Parameters<typeof listener>[0]);
@@ -75,6 +79,18 @@ const desktopApi: DesktopApi = {
       };
       ipcRenderer.on(IPC_CHANNELS.games.detected, wrapped);
       return () => ipcRenderer.removeListener(IPC_CHANNELS.games.detected, wrapped);
+    },
+  },
+  ai: {
+    getSnapshot: () => ipcRenderer.invoke(IPC_CHANNELS.ai.getSnapshot),
+    controlModel: (modelId, action) =>
+      ipcRenderer.invoke(IPC_CHANNELS.ai.controlModel, modelId, action),
+    onStatus: (listener) => {
+      const wrapped = (_event: Electron.IpcRendererEvent, snapshot: unknown) => {
+        listener(snapshot as Parameters<typeof listener>[0]);
+      };
+      ipcRenderer.on(IPC_CHANNELS.ai.status, wrapped);
+      return () => ipcRenderer.removeListener(IPC_CHANNELS.ai.status, wrapped);
     },
   },
   settings: {
@@ -99,6 +115,8 @@ const desktopApi: DesktopApi = {
     getStatus: () => ipcRenderer.invoke(IPC_CHANNELS.windows.getStatus),
     repairFirewall: () => ipcRenderer.invoke(IPC_CHANNELS.windows.repairFirewall),
     removeFirewall: () => ipcRenderer.invoke(IPC_CHANNELS.windows.removeFirewall),
+    setIconOverlaysHidden: (hidden) =>
+      ipcRenderer.invoke(IPC_CHANNELS.windows.setIconOverlaysHidden, hidden),
   },
   shortcuts: {
     configureMute: (accelerator) =>
@@ -150,6 +168,8 @@ const desktopApi: DesktopApi = {
     saveMarkers: (filePath, markers) =>
       ipcRenderer.invoke(IPC_CHANNELS.recording.saveMarkers, filePath, markers),
     list: () => ipcRenderer.invoke(IPC_CHANNELS.recording.list),
+    setFavorite: (filePath, isFavorite) =>
+      ipcRenderer.invoke(IPC_CHANNELS.recording.setFavorite, filePath, isFavorite),
     openDirectory: () => ipcRenderer.invoke(IPC_CHANNELS.recording.openDirectory),
     delete: (filePath) => ipcRenderer.invoke(IPC_CHANNELS.recording.delete, filePath),
   },

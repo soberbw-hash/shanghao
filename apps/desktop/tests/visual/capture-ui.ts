@@ -26,6 +26,37 @@ interface CaptureUiOptions {
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
+const dismissReleaseNotes = async (window: BrowserWindow, timeoutMs = 4_000): Promise<boolean> => {
+  const deadline = Date.now() + timeoutMs;
+  let sawViewer = false;
+  while (Date.now() < deadline) {
+    const viewerVisible = await waitForVisibleSelector(window, ".release-notes-viewer", 150);
+    if (!viewerVisible) {
+      if (sawViewer) return true;
+      await sleep(100);
+      continue;
+    }
+    sawViewer = true;
+    if (await clickButtonByLabel(window, "知道了，开始上号")) {
+      await sleep(180);
+      continue;
+    }
+    if (await clickButtonByLabel(window, "下一页")) {
+      await sleep(180);
+      continue;
+    }
+    await sleep(100);
+  }
+  return !sawViewer;
+};
+
+const dismissDailyReport = async (window: BrowserWindow): Promise<void> => {
+  if (await waitForVisibleSelector(window, '[aria-labelledby="daily-room-report-title"]', 350)) {
+    await clickButtonByLabel(window, "知道了");
+    await sleep(180);
+  }
+};
+
 const clickButtonByLabel = async (window: BrowserWindow, label: string): Promise<boolean> => {
   return window.webContents.executeJavaScript(
     `
@@ -105,23 +136,46 @@ const clickButtonByLabelWithMouse = async (
 };
 
 const prepareProfileForCapture = async (window: BrowserWindow): Promise<void> => {
-  await window.webContents.executeJavaScript(
-    `
+  const captureServerUrl = process.env.SHANGHAO_CAPTURE_SERVER_URL?.trim();
+  if (captureServerUrl) {
+    await window.webContents.executeJavaScript(
+      `window.desktopApi.settings.save({ relayServerUrl: ${JSON.stringify(captureServerUrl)} })`,
+      true,
+    );
+  }
+  const prepared = async (): Promise<boolean> =>
+    window.webContents.executeJavaScript(
+      `
       (() => {
         const inputs = Array.from(document.querySelectorAll("input"));
         const nicknameInput = inputs.find((input) => input.placeholder === "朋友怎么叫你");
-        if (!(nicknameInput instanceof HTMLInputElement) || nicknameInput.value.trim()) return;
         const valueSetter = Object.getOwnPropertyDescriptor(
           HTMLInputElement.prototype,
           "value",
         )?.set;
-        valueSetter?.call(nicknameInput, "Sober");
-        nicknameInput.dispatchEvent(new Event("input", { bubbles: true }));
-        nicknameInput.dispatchEvent(new Event("change", { bubbles: true }));
+        if (nicknameInput instanceof HTMLInputElement && !nicknameInput.value.trim()) {
+          valueSetter?.call(nicknameInput, "Sober");
+          nicknameInput.dispatchEvent(new Event("input", { bubbles: true }));
+          nicknameInput.dispatchEvent(new Event("change", { bubbles: true }));
+        }
+
+        const captureServerUrl = ${JSON.stringify(captureServerUrl)};
+        if (!captureServerUrl) return true;
+        const serverInput = inputs.find(
+          (input) => input !== nicknameInput && input.type === "text",
+        );
+        if (!(serverInput instanceof HTMLInputElement)) return false;
+        valueSetter?.call(serverInput, captureServerUrl);
+        serverInput.dispatchEvent(new Event("input", { bubbles: true }));
+        serverInput.dispatchEvent(new Event("change", { bubbles: true }));
+        return serverInput.value === captureServerUrl;
       })();
     `,
-    true,
-  );
+      true,
+    ) as Promise<boolean>;
+  const deadline = Date.now() + 3_000;
+  while (!(await prepared()) && Date.now() < deadline) await sleep(100);
+  await sleep(150);
 };
 
 const waitForLocalSceneCharacter = async (
@@ -228,15 +282,23 @@ export const captureUi = async (
   }
 
   await sleep(5_200);
-  const dismissedReleaseNotes = await clickButtonByLabel(window, "知道了，开始上号");
-  if (dismissedReleaseNotes) await sleep(350);
+  await dismissReleaseNotes(window);
+  await dismissDailyReport(window);
   if (options.mode !== "home" && options.mode !== "home-mic") {
     await prepareProfileForCapture(window);
+    await dismissReleaseNotes(window, 1_500);
+    await dismissDailyReport(window);
     await sleep(300);
+    if (process.env.SHANGHAO_CAPTURE_SERVER_URL) {
+      await clickButtonByLabel(window, "选择鸭子");
+      await sleep(120);
+    }
     const usedChannelEntry = await clickButtonByLabel(window, "进入频道");
     if (!usedChannelEntry) {
       await clickButtonByLabel(window, "上号");
     }
+    await dismissReleaseNotes(window, 2_000);
+    await dismissDailyReport(window);
     const needsSettledRoom = [
       "room",
       "room-mic",
@@ -251,7 +313,7 @@ export const captureUi = async (
     ].includes(options.mode);
     if (needsSettledRoom) {
       await waitForLocalSceneCharacter(window, "idle", 5_500);
-      await sleep(180);
+      await sleep(3_400);
     } else {
       await sleep(700);
     }
@@ -272,7 +334,7 @@ export const captureUi = async (
     await clickButtonByLabel(window, "更新");
     await sleep(300);
     if (options.mode === "settings-detail") {
-      await clickButtonByLabel(window, "查看每一项具体改动");
+      await clickButtonByLabel(window, "查看详细信息");
       await sleep(300);
     }
   }

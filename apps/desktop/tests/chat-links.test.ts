@@ -50,3 +50,31 @@ test("right-clicking a link preview copies immediately and reports success", () 
   assert.equal(source.includes('title: "已复制链接"'), true);
   assert.equal(source.includes("window.desktopApi?.app?.getLinkPreviewIcon"), true);
 });
+
+test("chat text, images and links can be dragged into the persistent room collection", () => {
+  const source = readFileSync(
+    path.resolve(process.cwd(), "src/renderer/src/components/chat/TemporaryChatPanel.tsx"),
+    "utf8",
+  );
+  const roomSource = readFileSync(
+    path.resolve(process.cwd(), "src/renderer/src/pages/RoomPage.tsx"),
+    "utf8",
+  );
+  assert.equal(source.includes("writeRoomCollectionDragPayload"), true);
+  assert.equal(source.includes('kind: "image"'), true);
+  assert.equal(source.includes('kind: "link"'), true);
+  assert.equal(source.includes('kind: "text"'), true);
+  assert.equal(roomSource.includes("readRoomCollectionDragPayload"), true);
+  assert.equal(roomSource.includes('title: "已放入收藏"'), true);
+  assert.equal(roomSource.includes("<PackageOpen"), true);
+});
+
+test("desktop image files can be dropped even when Windows omits the MIME type", () => {
+  const source = readFileSync(
+    path.resolve(process.cwd(), "src/renderer/src/utils/chatImage.ts"),
+    "utf8",
+  );
+  assert.equal(source.includes("isSupportedChatImageFile"), true);
+  assert.equal(source.includes('".png": "image/png"'), true);
+  assert.equal(source.includes('".jpg": "image/jpeg"'), true);
+});

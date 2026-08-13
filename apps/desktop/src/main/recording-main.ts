@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { copyFile, mkdir, stat, unlink, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, readdir, stat, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import ffmpegPath from "ffmpeg-static";
@@ -11,7 +11,11 @@ import type {
   RendererLogPayload,
 } from "@private-voice/shared";
 
-import { resolveAvailableRecordingPath, resolveRecordingDirectory } from "./recording-path";
+import {
+  createNumberedRecordingFileName,
+  resolveAvailableRecordingPath,
+  resolveRecordingDirectory,
+} from "./recording-path";
 
 const inferExtensionFromMime = (mimeType: string): string => {
   if (mimeType.includes("mp4") || mimeType.includes("aac")) {
@@ -36,9 +40,22 @@ export const exportRecordingFromMain = async (
     app.getPath("documents"),
   );
   await mkdir(recordingDirectory, { recursive: true });
+  const roomLabel = payload.suggestedFileName.includes("二号房")
+    ? "二号房"
+    : payload.suggestedFileName.includes("一号房")
+      ? "一号房"
+      : undefined;
+  const existingFileNames = roomLabel
+    ? (await readdir(recordingDirectory, { withFileTypes: true }))
+        .filter((entry) => entry.isFile())
+        .map((entry) => entry.name)
+    : [];
+  const designedFileName = roomLabel
+    ? createNumberedRecordingFileName(roomLabel, new Date(), existingFileNames)
+    : payload.suggestedFileName;
   const outputPath = await resolveAvailableRecordingPath(
     recordingDirectory,
-    payload.suggestedFileName,
+    designedFileName,
     async (candidate) =>
       stat(candidate)
         .then(() => true)

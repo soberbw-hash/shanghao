@@ -4,7 +4,20 @@ import {
   type MemberActivity,
   type RoomMember,
 } from "@private-voice/shared";
-import { Headphones, MicOff, RotateCw, VolumeX, WifiOff } from "lucide-react";
+import {
+  BarChart3,
+  Clapperboard,
+  Code2,
+  DraftingCompass,
+  FileText,
+  Gamepad2,
+  Headphones,
+  MicOff,
+  Palette,
+  RotateCw,
+  VolumeX,
+  WifiOff,
+} from "lucide-react";
 
 export const activityLabels: Record<MemberActivity, string> = {
   idle: "等待中",
@@ -16,7 +29,15 @@ export const activityLabels: Record<MemberActivity, string> = {
 
 export interface MemberStatus {
   label: string;
-  tone: "speaking" | "muted" | "deafened" | "reconnecting" | "offline" | "online";
+  tone:
+    | "speaking"
+    | "muted"
+    | "deafened"
+    | "reconnecting"
+    | "offline"
+    | "gaming"
+    | "working"
+    | "online";
   icon?: typeof Headphones;
 }
 
@@ -36,8 +57,26 @@ export const memberStatus = (member: RoomMember): MemberStatus => {
   if (member.speakingState === MemberSpeakingState.Speaking) {
     return { label: "正在说话", tone: "speaking", icon: Headphones };
   }
+  if (member.gameName) {
+    return { label: `正在玩 ${member.gameName}`, tone: "gaming", icon: Gamepad2 };
+  }
+  if (member.workActivity) {
+    const workStatus = {
+      development: { verb: "开发", icon: Code2 },
+      design: { verb: "设计", icon: Palette },
+      media: { verb: "创作", icon: Clapperboard },
+      engineering: { verb: "工作", icon: DraftingCompass },
+      data: { verb: "分析", icon: BarChart3 },
+      office: { verb: "办公", icon: FileText },
+    }[member.workActivity.category];
+    return {
+      label: `${member.workActivity.name} ${workStatus.verb}中`,
+      tone: "working",
+      icon: workStatus.icon,
+    };
+  }
   return {
-    label: member.gameName || activityLabels[member.activity ?? "idle"],
+    label: activityLabels[member.activity ?? "idle"],
     tone: "online",
   };
 };

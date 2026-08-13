@@ -1,3 +1,5 @@
+import type { AiProcessingMode } from "./ai.types";
+
 export type MicMonitorMode = "processed" | "raw";
 export type LowCutFrequency = "off" | "90" | "120";
 export type UiScale = 100 | 110 | 125;
@@ -29,6 +31,9 @@ export interface AppSettings {
   recordingMarkerShortcut: string;
   recordingSaveDirectory?: string;
   recordingLibraryQuotaGb: number;
+  aiProcessingMode: AiProcessingMode;
+  isAiAutoTranscribeEnabled: boolean;
+  isAiAutoOrganizeEnabled: boolean;
   isNoiseSuppressionEnabled: boolean;
   isEchoCancellationEnabled: boolean;
   isAutoGainControlEnabled: boolean;

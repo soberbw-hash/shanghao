@@ -20,6 +20,18 @@ const roomHistoryCardPath = path.resolve(
   process.cwd(),
   "src/renderer/src/components/settings/RoomHistorySettingsCard.tsx",
 );
+const detailedReleaseNotesPath = path.resolve(
+  process.cwd(),
+  "src/renderer/src/components/status/DetailedReleaseNotesViewer.tsx",
+);
+const recordingLibraryCardPath = path.resolve(
+  process.cwd(),
+  "src/renderer/src/components/settings/RecordingLibrarySettingsCard.tsx",
+);
+const aiVoiceMemoryCardPath = path.resolve(
+  process.cwd(),
+  "src/renderer/src/components/settings/AiVoiceMemorySettingsCard.tsx",
+);
 
 test("fixed sounds, game detection, and system notifications stay out of settings", () => {
   const source = readFileSync(settingsPagePath, "utf8");
@@ -89,7 +101,7 @@ test("settings keep only everyday voice controls and remove advanced connection"
   }
 });
 
-test("microphone processing lives in the room panel while release history keeps ten detailed entries", () => {
+test("microphone processing lives in the room panel while release history remains complete", () => {
   const homeSource = readFileSync(homePagePath, "utf8");
   const roomSource = readFileSync(roomPagePath, "utf8");
   const settingsSource = readFileSync(settingsPagePath, "utf8");
@@ -108,8 +120,20 @@ test("microphone processing lives in the room panel while release history keeps 
   );
   assert.equal(roomSource.includes("voice-segmented-arrow"), true);
   assert.equal(readFileSync(audioCardPath, "utf8").includes("isAutoGainControlEnabled"), false);
-  assert.equal(RELEASE_HISTORY.length, 10);
-  assert.equal(RELEASE_HISTORY[0]?.version, "2.6.0");
+  assert.equal(RELEASE_HISTORY.length, 64);
+  assert.equal(RELEASE_HISTORY[0]?.version, "2.8.0");
+  assert.equal(RELEASE_HISTORY.at(-1)?.version, "0.1.1");
+  assert.equal(
+    new Set(RELEASE_HISTORY.map((release) => release.version)).size,
+    RELEASE_HISTORY.length,
+  );
+  assert.equal(
+    RELEASE_HISTORY.every(
+      (release, index) =>
+        index === 0 || Date.parse(RELEASE_HISTORY[index - 1]!.date) >= Date.parse(release.date),
+    ),
+    true,
+  );
   assert.equal(
     RELEASE_HISTORY.every((release) => release.details.length > 0),
     true,
@@ -117,10 +141,54 @@ test("microphone processing lives in the room panel while release history keeps 
   assert.equal(settingsSource.includes("查看详细信息"), true);
   assert.equal(settingsSource.includes("查看每一项具体改动"), false);
   assert.equal(settingsSource.includes("ReleaseDetailModal"), true);
+  assert.equal(settingsSource.includes("slice(0, 10)"), false);
+  assert.equal(settingsSource.includes("完整版本更新记录"), true);
 });
 
 test("room history leaves loading state on legacy servers", () => {
   const source = readFileSync(roomHistoryCardPath, "utf8");
   assert.equal(source.includes("当前服务器暂不支持房间记录"), true);
   assert.equal(source.includes("暂无房间记录"), true);
+  assert.equal(source.includes("formatParticipantNames(report)"), true);
+  assert.equal(source.includes("来过：{participantNames}"), true);
+});
+
+test("release notes emphasize only the leading keyword", () => {
+  const source = readFileSync(detailedReleaseNotesPath, "utf8");
+  assert.equal(source.includes('className="release-notes-detail-keyword"'), true);
+  assert.equal(source.includes('item.indexOf("：")'), true);
+});
+
+test("recording library can clean recordings shorter than ten seconds", () => {
+  const source = readFileSync(recordingLibraryCardPath, "utf8");
+  assert.equal(source.includes("SHORT_RECORDING_SECONDS = 10"), true);
+  assert.equal(source.includes("清理短录音"), true);
+  assert.equal(source.includes('role="alertdialog"'), true);
+  assert.equal(source.includes("window.desktopApi.recording.delete(item.filePath)"), true);
+});
+
+test("AI voice memory keeps first install manual and disables unavailable automation", () => {
+  const source = readFileSync(aiVoiceMemoryCardPath, "utf8");
+  const settingsSource = readFileSync(settingsPagePath, "utf8");
+  const recordingSource = readFileSync(recordingLibraryCardPath, "utf8");
+  assert.equal(source.includes("首次使用由你手动下载"), true);
+  assert.equal(source.includes("下载模型"), true);
+  assert.equal(source.includes("isDisabled={!vibeInstalled}"), true);
+  assert.equal(source.includes("isDisabled={!qwenInstalled || !vibeInstalled}"), true);
+  assert.equal(source.includes('value="after_game"'), true);
+  assert.equal(source.includes("游戏中已降速"), true);
+  assert.equal(settingsSource.includes('{ id: "ai", label: "AI 功能"'), true);
+  assert.equal(settingsSource.includes("<AiVoiceMemorySettingsCard"), true);
+  assert.equal(recordingSource.includes("AiVoiceMemorySettingsCard"), false);
+});
+
+test("desktop icon overlay controls wait for the real Windows state", () => {
+  const source = readFileSync(settingsPagePath, "utf8");
+
+  assert.equal(source.includes("cachedWindowsDiagnostics = snapshot"), true);
+  assert.equal(
+    source.includes("isWindowsDiagnosticsLoading || windowsDiagnostics?.iconOverlays.hidden"),
+    true,
+  );
+  assert.equal(source.includes('{isWindowsDiagnosticsLoading ? "读取状态…" : "一键隐藏"}'), true);
 });

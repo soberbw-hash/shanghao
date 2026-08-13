@@ -111,4 +111,20 @@ test("room scene and feedback sound assets are bundled", () => {
       `missing sound: ${sound}`,
     );
   }
+
+  for (const animalCall of [
+    "cat-meow.wav",
+    "duck-quack.wav",
+    "panda-bear-growl.wav",
+    "corgi-bark.wav",
+    "fox-call.wav",
+  ]) {
+    assert.equal(
+      existsSync(
+        path.join(root, `apps/desktop/src/renderer/src/assets/sounds/animals/${animalCall}`),
+      ),
+      true,
+      `missing animal call: ${animalCall}`,
+    );
+  }
 });

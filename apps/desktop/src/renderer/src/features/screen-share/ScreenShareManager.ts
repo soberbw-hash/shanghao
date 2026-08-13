@@ -30,6 +30,16 @@ const initialSnapshot: ScreenShareManagerSnapshot = {
   displayMode: "inline",
 };
 
+const WINDOWS_CAPTURE_RETRY_DELAY_MS = 180;
+
+export const isRetryableDisplayCaptureError = (error: unknown): boolean =>
+  error instanceof DOMException
+    ? error.name === "NotReadableError" || error.name === "AbortError"
+    : error instanceof Error &&
+      (error.name === "NotReadableError" ||
+        error.name === "AbortError" ||
+        error.message.includes("Could not start video source"));
+
 export class ScreenShareManager {
   private options: ScreenShareManagerOptions;
   private snapshot: ScreenShareManagerSnapshot = initialSnapshot;
@@ -107,18 +117,38 @@ export class ScreenShareManager {
     let stream: MediaStream | undefined;
     try {
       const profile = SCREEN_SHARE_PROFILE;
-      await window.desktopApi.screenCapture.selectSource(request.sourceId);
-      stream = await navigator.mediaDevices.getDisplayMedia({
-        video: {
-          width: { ideal: profile.maxWidth, max: profile.maxWidth },
-          height: { ideal: profile.maxHeight, max: profile.maxHeight },
-          frameRate: {
-            ideal: Math.max(10, profile.maxFramerate - 3),
-            max: profile.maxFramerate,
+      const requestStream = async (includeSystemAudio: boolean): Promise<MediaStream> => {
+        await window.desktopApi.screenCapture.selectSource(request.sourceId);
+        return navigator.mediaDevices.getDisplayMedia({
+          video: {
+            width: { ideal: profile.maxWidth, max: profile.maxWidth },
+            height: { ideal: profile.maxHeight, max: profile.maxHeight },
+            frameRate: {
+              ideal: Math.max(10, profile.maxFramerate - 3),
+              max: profile.maxFramerate,
+            },
           },
-        },
-        audio: request.includeSystemAudio,
-      });
+          audio: includeSystemAudio,
+        });
+      };
+
+      try {
+        stream = await requestStream(request.includeSystemAudio);
+      } catch (error) {
+        if (!isRetryableDisplayCaptureError(error)) throw error;
+        await this.log(
+          "warn",
+          "Windows screen capture source was temporarily unavailable; retrying",
+          {
+            sourceId: request.sourceId,
+            includeSystemAudio: request.includeSystemAudio,
+            error: this.errorMessage(error),
+          },
+        );
+        await window.desktopApi.screenCapture.setContentProtection(false).catch(() => undefined);
+        await new Promise((resolve) => window.setTimeout(resolve, WINDOWS_CAPTURE_RETRY_DELAY_MS));
+        stream = await requestStream(false);
+      }
       if (operationId !== this.operationId || this.isDisposed) {
         stream.getTracks().forEach((track) => track.stop());
         throw new Error("screen_share_superseded");

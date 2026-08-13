@@ -2,6 +2,7 @@ export interface ReleaseHistoryEntry {
   version: string;
   date: string;
   title: string;
+  summary?: string;
   highlights: readonly string[];
   details: readonly {
     title: string;
@@ -9,7 +10,145 @@ export interface ReleaseHistoryEntry {
   }[];
 }
 
+interface HistoricalReleaseEvidence {
+  version: string;
+  date: string;
+  title: string;
+}
+
+const HISTORICAL_RELEASE_EVIDENCE: readonly HistoricalReleaseEvidence[] = [
+  { version: "1.0.1", date: "2026-07-15", title: "多人加入热修复" },
+  { version: "1.0.0", date: "2026-07-14", title: "首个正式版本" },
+  { version: "0.1.50", date: "2026-07-12", title: "离开状态与麦克风保持" },
+  { version: "0.1.49", date: "2026-07-11", title: "Windows 无缝更新" },
+  { version: "0.1.48", date: "2026-07-11", title: "连接恢复与视觉精修" },
+  { version: "0.1.47", date: "2026-07-02", title: "媒体与交互精修" },
+  { version: "0.1.46", date: "2026-07-02", title: "稳定性维护" },
+  { version: "0.1.45", date: "2026-06-24", title: "屏幕分享与房间场景" },
+  { version: "0.1.44", date: "2026-06-23", title: "角色素材与主进程稳定性" },
+  { version: "0.1.43", date: "2026-06-22", title: "主进程 IPC 发送保护" },
+  { version: "0.1.42", date: "2026-06-22", title: "悬浮窗音频与助手体验" },
+  { version: "0.1.41", date: "2026-06-21", title: "固定频道连接" },
+  { version: "0.1.40", date: "2026-06-17", title: "启动、更新与安装修复" },
+  { version: "0.1.39", date: "2026-06-17", title: "窗口拖动、字体与角色比例" },
+  { version: "0.1.38", date: "2026-06-17", title: "液态玻璃悬浮窗与场景" },
+  { version: "0.1.37", date: "2026-06-17", title: "聊天、提示音与更新修复" },
+  { version: "0.1.36", date: "2026-06-17", title: "NSIS 安装初始化修复" },
+  { version: "0.1.35", date: "2026-06-17", title: "频道码与安装维护" },
+  { version: "0.1.34", date: "2026-06-17", title: "代理、安全、更新门槛与安装" },
+  { version: "0.1.33", date: "2026-06-16", title: "语音中继容错" },
+  { version: "0.1.32", date: "2026-06-16", title: "助手模型与提示词" },
+  { version: "0.1.31", date: "2026-06-16", title: "助手配置修复" },
+  { version: "0.1.30", date: "2026-06-16", title: "通用助手体验" },
+  { version: "0.1.29", date: "2026-06-16", title: "游戏识别与助手扩展" },
+  { version: "0.1.28", date: "2026-06-16", title: "扬声器状态与悬浮窗" },
+  { version: "0.1.27", date: "2026-06-16", title: "动效、录音与房间反馈" },
+  { version: "0.1.26", date: "2026-06-14", title: "固定频道体验" },
+  { version: "0.1.25", date: "2026-06-14", title: "固定频道与音频自愈" },
+  { version: "0.1.24", date: "2026-06-13", title: "加入频道稳定性" },
+  { version: "0.1.23", date: "2026-06-13", title: "断线重连稳定性" },
+  { version: "0.1.22", date: "2026-06-13", title: "实时语音稳定性" },
+  { version: "0.1.21", date: "2026-06-13", title: "跨网连接稳定性" },
+  { version: "0.1.20", date: "2026-06-10", title: "Electron 启动崩溃修复" },
+  { version: "0.1.19-mac-fix", date: "2026-06-09", title: "跨平台构建热修复" },
+  { version: "0.1.19", date: "2026-05-22", title: "中继服务器地址规范化" },
+  { version: "0.1.18", date: "2026-05-01", title: "中继健康检查" },
+  { version: "0.1.17", date: "2026-05-01", title: "房间连接回退" },
+  { version: "0.1.16", date: "2026-04-21", title: "直连邀请地址回退" },
+  { version: "0.1.15", date: "2026-04-21", title: "主机启动与图标资产" },
+  { version: "0.1.14", date: "2026-04-20", title: "邀请生成与快捷方式图标" },
+  { version: "0.1.13", date: "2026-04-14", title: "房间布局与安装图标" },
+  { version: "0.1.12", date: "2026-04-13", title: "主机房间邀请地址修复" },
+  { version: "0.1.11", date: "2026-04-13", title: "主机启动与首页布局" },
+  { version: "0.1.10", date: "2026-04-13", title: "首页流程与软件品牌" },
+  { version: "0.1.9", date: "2026-04-13", title: "安装后启动与图标链" },
+  { version: "0.1.8", date: "2026-04-12", title: "网络与稳定性升级" },
+  { version: "0.1.7", date: "2026-04-12", title: "早期发布维护" },
+  { version: "0.1.6", date: "2026-04-12", title: "启动恢复与连接模式" },
+  { version: "0.1.5", date: "2026-04-12", title: "启动加固" },
+  { version: "0.1.4", date: "2026-04-11", title: "早期发布版" },
+  { version: "0.1.3", date: "2026-04-11", title: "桌面版本维护" },
+  { version: "0.1.2", date: "2026-04-11", title: "早期功能迭代" },
+  { version: "0.1.1", date: "2026-04-11", title: "首个可确认版本" },
+];
+
 export const RELEASE_HISTORY: readonly ReleaseHistoryEntry[] = [
+  {
+    version: "2.8.0",
+    date: "2026-08-13",
+    title: "聊天、录音、Windows 与房间体验集中升级",
+    summary:
+      "2.8.0 合并了 2.6.0 之后的全部本地改进：消息更可靠、录音库更完整、屏幕分享更稳，同时完成 Windows 底层升级和房间代码整理。",
+    highlights: [
+      "聊天会等待服务器确认，短暂断线自动重试，同一条消息不会重复出现。",
+      "录音库补齐前后切换、倍速、收藏、短录音清理和 10 GB 默认空间上限。",
+      "Windows 屏幕分享修复捕获源启动失败，并保留窗口、显示器和系统声音选择。",
+      "升级桌面运行环境和安全安装机制，同时完整保留五人语音、现有界面与动画。",
+    ],
+    details: [
+      {
+        title: "聊天与日常沟通",
+        items: [
+          "发送确认：文字、图片和链接只有在服务器确认收到后才显示发送成功。",
+          "断线重试：网络短暂波动时会使用同一条消息安全重试，不重复写入聊天记录。",
+          "失败提示：确实没有发出去时会保留原消息并显示重新发送入口。",
+          "图片复制：修复聊天图片右键复制失败，常见格式会自动转换后写入剪贴板。",
+          "最新消息：发送链接或图片后自动滚到完整内容，图片可前后翻看，链接和内容可快速复制或收藏。",
+          "房间记录：升级后继续保留聊天和最近 14 天房间记录，更新软件不会清空历史。",
+        ],
+      },
+      {
+        title: "录音库与昨日房间",
+        items: [
+          "播放修复：修复部分 M4A 一直读取、无法拖动或不能完整播放的问题，出错不会删除原文件。",
+          "前后切换：播放器可以点上一条和下一条；倍速按钮按 1 倍、1.5 倍、2 倍循环。",
+          "整理录音：录音按日期、房间和当天编号命名，可收藏筛选，并能一键清理不足 10 秒的片段。",
+          "空间管理：自动清理默认上限为 10 GB，超过后从最旧的未收藏录音开始整理。",
+          "保存入口：录音完成后显示简洁路径，并可直接打开所在文件夹。",
+          "昨日房间：记录具体好友、游戏与时长、消息、分享和最后离开的人，可在设置中再次查看。",
+        ],
+      },
+      {
+        title: "房间、语音与屏幕分享",
+        items: [
+          "五人语音：继续保护后加入成员互听、ICE 恢复、TURN、弱网兜底和每位好友的本地音量。",
+          "人声处理：保留回声消除、DeepFilter 降噪、自动增益、人声增强、低切与说话状态同步。",
+          "角色位置：修复说话或状态刷新后跑错工位、切房卡在奔跑途中和动画残留。",
+          "屏幕分享：修复 Windows 把未请求的系统声音强行加入捕获而导致分享启动失败的问题；临时失败会重试同一来源。",
+          "退出体验：停止分享、关闭悬浮窗和断开房间改为并行收尾，离开不再先卡住等待。",
+          "弹窗动画：昨日房间和设置切换移除大面积实时模糊，只保留轻量淡入与位移动画。",
+        ],
+      },
+      {
+        title: "AI 模型与本地数据",
+        items: [
+          "首次下载：VibeVoice 约 1.6 GB，Qwen3.5-4B 约 8.7 GB，均由用户主动下载，不随安装包偷偷安装。",
+          "进度可见：模型卡片会显示预计大小、已下载大小和实时百分比，暂停或退出后可以继续。",
+          "游戏优先：检测到游戏时自动降低模型下载和后台任务优先级，不抢语音、游戏和屏幕分享资源。",
+          "升级保护：模型、转录、总结、录音、聊天、收藏、设备和音量设置都与程序安装目录分离。",
+        ],
+      },
+      {
+        title: "Windows 与安装更新",
+        items: [
+          "底层升级：更新 Electron、React、Vite、Tailwind、TypeScript 和 Windows 打包工具，界面与操作方式保持不变。",
+          "安全覆盖：安装清单只记录上号自己的程序文件，覆盖更新不会递归删除整个自定义目录。",
+          "兼容旧版：没有安装清单的旧版本也能直接覆盖升级，不要求先卸载重装。",
+          "数据保护：昵称、设备、音量、聊天、收藏、录音、昨日房间和 AI 模型不属于安装器清理范围。",
+          "桌面能力：托盘、开机启动、深链、系统通知、悬浮窗、自动更新和版本门禁继续保留。",
+        ],
+      },
+      {
+        title: "长期稳定与维护",
+        items: [
+          "模块整理：聊天、连接、屏幕分享和本地保存按职责拆分，外部操作入口保持一致。",
+          "功能不减：五人语音、屏幕分享、录音、AI、角色动画和当前 UI 都完整保留。",
+          "安全边界：页面不能直接访问文件系统、Node 或任意 Electron API，系统能力继续通过受限接口调用。",
+          "回归保护：新增架构、安装安全、聊天、屏幕分享和模型下载测试，减少以后改一项影响其它功能。",
+        ],
+      },
+    ],
+  },
   {
     version: "2.6.0",
     date: "2026-08-12",
@@ -292,6 +431,20 @@ export const RELEASE_HISTORY: readonly ReleaseHistoryEntry[] = [
       },
     ],
   },
+  ...HISTORICAL_RELEASE_EVIDENCE.map<ReleaseHistoryEntry>((release) => ({
+    ...release,
+    summary: "这一条历史根据仓库标签、标签日期与对应提交说明恢复。",
+    highlights: [release.title],
+    details: [
+      {
+        title: "历史记录",
+        items: [
+          `${release.date} 的 v${release.version} 标签确认了这个版本。`,
+          `仓库对应提交说明：${release.title}。早期版本没有更完整的用户公告，因此这里只保留可核验内容。`,
+        ],
+      },
+    ],
+  })),
 ] as const;
 
 export const getReleaseHistoryEntry = (version: string): ReleaseHistoryEntry =>

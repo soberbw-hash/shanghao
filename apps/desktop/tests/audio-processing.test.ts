@@ -15,6 +15,18 @@ import {
 import { hasPlayableAudioTrack } from "../src/renderer/src/features/audio/remoteAudioTrack";
 import { resolveRemoteAudioPath } from "../src/renderer/src/features/audio/remoteAudioPathSelection";
 import {
+  DEEPFILTER_BASE_SUPPRESSION_LEVEL,
+  DEEPFILTER_SPEECH_SUPPRESSION_LEVEL,
+  SPEECH_PROCESSED_MIX,
+  SPEECH_RAW_MIX,
+} from "../src/renderer/src/features/audio/microphoneProcessor";
+import {
+  advanceSpeechProtection,
+  approachSuppressionLevel,
+  createSpeechProtectionState,
+  SPEECH_PROTECTION_HANGOVER_MS,
+} from "../src/renderer/src/features/audio/speechProtection";
+import {
   advanceSpeakingActivity,
   createSpeakingActivityState,
 } from "../../../packages/webrtc/src/speaking";
@@ -44,6 +56,35 @@ test("speaking activity learns steady background noise and still opens for real 
   assert.equal(state.isSpeaking, false);
 });
 
+test("speech protection attacks quickly, holds sentence endings, and releases smoothly", () => {
+  let state = createSpeechProtectionState();
+  for (let now = 0; now < 2_000; now += 16) {
+    state = advanceSpeechProtection(state, 0.004, now);
+  }
+  assert.equal(state.active, false);
+
+  state = advanceSpeechProtection(state, 0.025, 2_016);
+  assert.equal(state.active, true);
+  state = advanceSpeechProtection(state, 0.001, 2_016 + SPEECH_PROTECTION_HANGOVER_MS - 1);
+  assert.equal(state.active, true);
+  state = advanceSpeechProtection(state, 0.001, 2_016 + SPEECH_PROTECTION_HANGOVER_MS + 1);
+  assert.equal(state.active, false);
+
+  const firstAttack = approachSuppressionLevel(
+    DEEPFILTER_BASE_SUPPRESSION_LEVEL,
+    DEEPFILTER_SPEECH_SUPPRESSION_LEVEL,
+    true,
+  );
+  const firstRelease = approachSuppressionLevel(
+    DEEPFILTER_SPEECH_SUPPRESSION_LEVEL,
+    DEEPFILTER_BASE_SUPPRESSION_LEVEL,
+    false,
+  );
+  assert.ok(firstAttack < 28);
+  assert.ok(firstRelease < 26);
+  assert.equal(SPEECH_RAW_MIX + SPEECH_PROCESSED_MIX, 1);
+});
+
 test("DeepFilterNet is the only suppression engine and keeps raw audio on model failure", () => {
   const processor = readFileSync(
     path.join(root, "apps/desktop/src/renderer/src/features/audio/microphoneProcessor.ts"),
@@ -54,14 +95,25 @@ test("DeepFilterNet is the only suppression engine and keeps raw audio on model 
     path.join(root, "apps/desktop/src/renderer/index.html"),
     "utf8",
   );
+  const constraints = readFileSync(
+    path.join(root, "packages/webrtc/src/audioConstraints.ts"),
+    "utf8",
+  );
   assert.equal(processor.includes("DeepFilterNet3Core"), true);
-  assert.equal(processor.includes("const DEEPFILTER_SUPPRESSION_LEVEL = 50"), true);
-  assert.equal(processor.includes("core.setSuppressionLevel(DEEPFILTER_SUPPRESSION_LEVEL)"), true);
+  assert.equal(processor.includes("DEEPFILTER_BASE_SUPPRESSION_LEVEL = 34"), true);
+  assert.equal(processor.includes("DEEPFILTER_SPEECH_SUPPRESSION_LEVEL = 24"), true);
+  assert.equal(processor.includes("advanceSpeechProtection"), true);
+  assert.equal(processor.includes("DEEPFILTER_RAW_ALIGNMENT_SECONDS"), true);
+  assert.equal(processor.includes("rawProcessedMix"), true);
   assert.equal(processor.includes("getDeepFilterAssets"), true);
   assert.equal(processor.includes('noiseProcessor = "deepfilter_active"'), true);
   assert.equal(processor.includes('noiseProcessor = "deepfilter_unavailable"'), true);
-  assert.equal(processor.includes("crossfade(context, gain, rawGain)"), true);
+  assert.equal(processor.includes("crossfade(context, processedGain, rawGain)"), true);
   assert.equal(processor.includes("enableBrowserNoiseSuppression"), false);
+  assert.equal(
+    constraints.includes("googTypingNoiseDetection: overrides.noiseSuppression ?? true"),
+    true,
+  );
   assert.equal(processor.includes("RNNoise"), false);
   assert.equal(processor.includes("MICROPHONE_PROCESSING_SAMPLE_RATE"), true);
   assert.equal(processor.includes("prewarmDeepFilterAssets"), true);

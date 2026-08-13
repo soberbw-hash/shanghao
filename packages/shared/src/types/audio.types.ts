@@ -33,6 +33,12 @@ export interface LocalAudioDiagnostics {
   noiseSuppression?: boolean;
   autoGainControl?: boolean;
   noiseProcessor?: "deepfilter_loading" | "deepfilter_active" | "deepfilter_unavailable" | "bypass";
+  speechProtection?: "active" | "inactive";
+  currentSuppressionLevel?: number;
+  rawProcessedMix?: {
+    raw: number;
+    processed: number;
+  };
   processorOverruns?: number;
   averageProcessingMs?: number;
   maxProcessingMs?: number;

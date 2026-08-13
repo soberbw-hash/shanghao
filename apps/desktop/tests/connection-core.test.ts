@@ -160,7 +160,7 @@ test("room joining uses acknowledgement and snapshot recovery without logging ra
   assert.equal(hook.includes("ROUTINE_SIGNAL_MESSAGE_TYPES"), true);
   assert.equal(hook.includes("...payload,"), false);
   assert.equal(client.includes("normalizePresenceGameName(gameName)"), true);
-  assert.equal(client.includes('gameName: gameName ?? ""'), false);
+  assert.equal(client.includes('gameName: desired.gameName ?? ""'), true);
   assert.equal(client.includes("payload.code === 4400"), true);
   assert.equal(client.includes('new Error("signaling_protocol_rejected")'), true);
   assert.equal(client.includes("this.rejectPendingConnection(error)"), true);
@@ -173,12 +173,17 @@ test("room joining uses acknowledgement and snapshot recovery without logging ra
 test("windows executable and shortcut use cache-busting v3 icons", () => {
   const builder = read("apps/desktop/electron-builder.yml");
   const installer = read("apps/desktop/build/installer.nsh");
+  const mainWindow = read("apps/desktop/src/main/window.ts");
 
   assert.equal(builder.includes("icon: shanghao-icon-v3.ico"), true);
-  assert.equal(builder.includes("signAndEditExecutable: false"), true);
-  assert.equal(builder.includes("afterPack: ../../scripts/after-pack.cjs"), true);
-  assert.equal(read("scripts/after-pack.cjs").includes("shanghao-icon-v3.ico"), true);
+  assert.equal(builder.includes("signAndEditExecutable: true"), true);
+  assert.equal(builder.includes("requestedExecutionLevel: requireAdministrator"), true);
+  assert.equal(builder.includes("afterPack: scripts/after-pack.cjs"), true);
+  assert.equal(read("apps/desktop/scripts/after-pack.cjs").includes("writeInstallManifest"), true);
   assert.equal(installer.includes("shanghao-shortcut-v3.ico"), true);
+  assert.equal(mainWindow.includes("window.setAppDetails({"), true);
+  assert.equal(mainWindow.includes("appIconPath: getIconPath()"), true);
+  assert.equal(mainWindow.includes("appId: APP_ID"), true);
 });
 
 test("AI and LLM code paths are completely removed", () => {
@@ -253,6 +258,7 @@ test("installer and updater quit paths clean background surfaces", () => {
 
 test("room invite copies an app deep link with a visible success toast", () => {
   const hook = read("apps/desktop/src/renderer/src/hooks/useRoomState.ts");
+  const deepLink = read("apps/desktop/src/renderer/src/features/room/useRoomDeepLink.ts");
   const roomPage = read("apps/desktop/src/renderer/src/pages/RoomPage.tsx");
 
   assert.equal(hook.includes("buildChannelInviteText"), true);
@@ -260,8 +266,8 @@ test("room invite copies an app deep link with a visible success toast", () => {
   assert.equal(hook.includes("服务器地址："), false);
   assert.equal(hook.includes('new URL("shanghao://join")'), true);
   assert.equal(hook.includes("邀请链接已复制"), true);
-  assert.equal(hook.includes("consumeDeepLink"), true);
-  assert.equal(hook.includes("onDeepLink"), true);
+  assert.equal(deepLink.includes("consumeDeepLink"), true);
+  assert.equal(deepLink.includes("onDeepLink"), true);
   assert.equal(hook.includes('playUiSound("copy-success")'), true);
   assert.equal(hook.includes("Copied fixed channel invite"), true);
   assert.equal(hook.includes("desktopApi.clipboard.writeText"), true);
@@ -313,14 +319,21 @@ test("native notifications and recording markers use main process IPC", () => {
 
 test("knock feedback is intentionally louder than routine UI sounds", () => {
   const sounds = read("apps/desktop/src/renderer/src/features/audio/uiSound.ts");
-  assert.equal(sounds.includes('"knock-bell": 2'), true);
-  assert.equal(sounds.includes("soundVolumeMultiplier[sound]"), true);
+  const roomState = read("apps/desktop/src/renderer/src/hooks/useRoomState.ts");
+  const ipc = read("apps/desktop/src/main/ipc.ts");
+  assert.equal(sounds.includes('"knock-bell": 1.35'), true);
+  assert.equal(sounds.includes("soundMix[sound]"), true);
+  assert.equal(roomState.includes('window.setTimeout(() => playUiSound("knock-bell"), 190)'), true);
+  assert.equal(roomState.includes("shakeWindow: true"), true);
+  assert.equal(ipc.includes("const shakeMainWindow"), true);
+  assert.equal(ipc.includes("mainWindow.setPosition(x, original.y, false)"), true);
 });
 
 test("late room members serialize signaling and retain early ICE candidates", () => {
   const client = read("apps/desktop/src/renderer/src/features/room/roomClient.ts");
+  const bridge = read("apps/desktop/src/renderer/src/features/room/SignalingBridge.ts");
 
-  assert.equal(client.includes("bridgeEventQueue"), true);
+  assert.equal(bridge.includes("eventQueue"), true);
   assert.equal(client.includes("ICE candidate buffered before peer creation"), true);
   assert.equal(client.includes("Buffered ICE candidates handed to peer"), true);
   assert.equal(client.includes("pending.slice(-64)"), true);

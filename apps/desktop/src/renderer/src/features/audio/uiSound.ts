@@ -45,8 +45,17 @@ const soundUrls: Record<UiSound, string> = {
 };
 
 const audioCache = new Map<UiSound, HTMLAudioElement>();
-const soundVolumeMultiplier: Partial<Record<UiSound, number>> = {
-  "knock-bell": 2,
+const soundMix: Partial<Record<UiSound, number>> = {
+  "button-click": 0.55,
+  "send-message": 0.74,
+  "receive-message": 0.78,
+  "member-join": 0.8,
+  "member-leave": 0.72,
+  "knock-bell": 1.35,
+  "connection-failed": 0.92,
+  "mic-error": 0.9,
+  "record-start": 0.88,
+  "record-stop": 0.82,
 };
 let isEnabled = true;
 let masterVolume = 0.72;
@@ -74,7 +83,7 @@ export const playUiSound = (sound: UiSound): void => {
   try {
     const template = audioCache.get(sound) ?? new Audio(soundUrls[sound]);
     template.preload = "auto";
-    template.volume = Math.min(1, 0.28 * masterVolume * (soundVolumeMultiplier[sound] ?? 1));
+    template.volume = Math.min(1, 0.64 * masterVolume * (soundMix[sound] ?? 0.76));
     audioCache.set(sound, template);
     const playback = template.cloneNode(true) as HTMLAudioElement;
     playback.volume = template.volume;

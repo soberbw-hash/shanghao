@@ -15,14 +15,16 @@ import { getStableAvatarId } from "../../utils/profile";
 import { motionEase } from "../../features/motion/motionSystem";
 import {
   SceneFloorLamp,
+  SceneExitDoor,
   SceneLowTable,
   SceneTallPlant,
   SceneWallClock,
   SceneWallShelf,
   SceneWindowNook,
 } from "./SceneAmbientDecor";
-import { SceneCharacter, sceneMemberKey } from "./SceneCharacter";
+import { SceneCharacter, sceneMemberKey, type SceneCharacterQuickMessage } from "./SceneCharacter";
 import { GameMonitorContent } from "./GameMonitorContent";
+import { WorkMonitorContent } from "./WorkMonitorContent";
 import { MusicActivityBadge } from "./MusicActivityBadge";
 import { WorkActivityBadge } from "./WorkActivityBadge";
 import { WorkstationArt } from "./WorkstationArt";
@@ -51,6 +53,7 @@ export const TeamIsland = ({
   screenSharingPeerIds = [],
   networkQuality = "pending",
   reactions = [],
+  chatBubbles = [],
   knockPulse = 0,
   reduceMotion = false,
 }: {
@@ -61,6 +64,7 @@ export const TeamIsland = ({
   screenSharingPeerIds?: string[];
   networkQuality?: ConnectionQualityLevel;
   reactions?: SceneReaction[];
+  chatBubbles?: Array<SceneCharacterQuickMessage & { peerId: string }>;
   knockPulse?: number;
   reduceMotion?: boolean;
 }) => {
@@ -72,10 +76,13 @@ export const TeamIsland = ({
   const [hoveredZone, setHoveredZone] = useState<SceneZoneId>();
   const [welcomingMemberIds, setWelcomingMemberIds] = useState<Set<string>>(new Set());
   const [settledMemberZones, setSettledMemberZones] = useState<Record<string, SceneZoneId>>({});
-  const previousMemberIdsRef = useRef<string[]>();
+  const previousMemberIdsRef = useRef<string[] | undefined>(undefined);
   const memberSignature = visibleMembers.map(sceneMemberKey).join("|");
   const visibleMemberIdSignature = visibleMembers.map((member) => member.id).join("|");
   const screenSharingSet = new Set(screenSharingPeerIds);
+  const chatBubbleByPeerId = new Map(
+    chatBubbles.map((message) => [message.peerId, message] as const),
+  );
   const resolvedMemberZones = resolveMemberSceneZones(visibleMembers);
   const occupiedSeatIds = new Set<SceneZoneId>();
   visibleMembers.forEach((member) => {
@@ -230,8 +237,13 @@ export const TeamIsland = ({
           <SceneLowTable className="scene-lounge-table" />
           <SceneFloorLamp className="scene-lounge-lamp" />
         </div>
-        <div className="scene-service-zone scene-service-restroom">
-          <span>离开</span>
+        <div
+          className={`scene-service-zone scene-service-restroom ${
+            hoveredZone === "restroomZone" ? "is-hovered" : ""
+          } ${localZone === "restroomZone" ? "is-current" : ""}`}
+        >
+          <SceneExitDoor className="scene-exit-door" />
+          <span className="scene-exit-label">离开</span>
         </div>
         {seatSlots.map((slot) => {
           const occupant = memberBySeat.get(slot.id);
@@ -260,14 +272,20 @@ export const TeamIsland = ({
                 <span
                   className={`scene-workstation-screen ${settledOccupant ? "online" : ""} ${
                     settledOccupant?.gameName ? "gaming" : ""
-                  } ${isScreenSharing ? "sharing" : ""} ${
-                    networkQuality === "poor" && settledOccupant ? "network-unstable" : ""
-                  }`}
+                  } ${settledOccupant?.workActivity && !settledOccupant.gameName ? "working" : ""} ${
+                    isScreenSharing ? "sharing" : ""
+                  } ${networkQuality === "poor" && settledOccupant ? "network-unstable" : ""}`}
                 >
                   <AnimatePresence mode="wait" initial={false}>
                     {settledOccupant ? (
                       <motion.span
-                        key={`${settledOccupant.id}:${slot.id}:${isScreenSharing ? "sharing" : (settledOccupant.gameName ?? "idle")}`}
+                        key={`${settledOccupant.id}:${slot.id}:${
+                          isScreenSharing
+                            ? "sharing"
+                            : (settledOccupant.gameName ??
+                              settledOccupant.workActivity?.id ??
+                              "idle")
+                        }`}
                         className="scene-workstation-screen-content"
                         initial={{ opacity: 0, scale: 0.96 }}
                         animate={{ opacity: 1, scale: 1 }}
@@ -280,6 +298,12 @@ export const TeamIsland = ({
                           <GameMonitorContent
                             gameName={settledOccupant.gameName}
                             iconDataUrl={settledOccupant.gameIconDataUrl}
+                            shouldReduceMotion={shouldReduceMotion}
+                          />
+                        ) : settledOccupant.workActivity ? (
+                          <WorkMonitorContent
+                            activity={settledOccupant.workActivity}
+                            shouldReduceMotion={shouldReduceMotion}
                           />
                         ) : (
                           <Fish className="scene-workstation-idle-fish" aria-label="摸鱼中" />
@@ -398,6 +422,7 @@ export const TeamIsland = ({
                     Date.now() - Date.parse(reaction.createdAt) < 2_000,
                 )
                 .slice(-3)}
+              chatBubble={chatBubbleByPeerId.get(member.id)}
               onReact={onReact}
               onVolumeChange={onVolumeChange}
               onSettled={handleMemberSettled}

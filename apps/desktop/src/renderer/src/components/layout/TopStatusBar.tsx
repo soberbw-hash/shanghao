@@ -112,7 +112,7 @@ export const TopStatusBar = ({
       <div className="topbar-controls">
         <Button
           variant="ghost"
-          className="topbar-action topbar-donate h-8 whitespace-nowrap px-3 text-[12px]"
+          className="topbar-action topbar-donate whitespace-nowrap"
           onClick={onDonate}
           aria-label="投喂作者"
         >
@@ -137,7 +137,7 @@ export const TopStatusBar = ({
           <Button
             variant="ghost"
             data-icon-motion="knock"
-            className="topbar-action h-8 whitespace-nowrap px-3 text-[12px]"
+            className="topbar-action whitespace-nowrap"
             onClick={onKnock}
           >
             <AnimatedControlIcon name="bell" className="h-3.5 w-3.5" />
@@ -146,7 +146,7 @@ export const TopStatusBar = ({
           <Button
             variant="ghost"
             data-icon-motion="invite"
-            className="topbar-action h-8 whitespace-nowrap px-3 text-[12px]"
+            className="topbar-action whitespace-nowrap"
             onClick={onInvite}
           >
             <AnimatedControlIcon name="invite" className="h-3.5 w-3.5" />
@@ -155,7 +155,7 @@ export const TopStatusBar = ({
           <Button
             variant="ghost"
             data-icon-motion="settings"
-            className="topbar-action h-8 whitespace-nowrap px-3 text-[12px]"
+            className="topbar-action whitespace-nowrap"
             onClick={openSettings}
           >
             <AnimatedControlIcon name="settings" className="h-3.5 w-3.5" />

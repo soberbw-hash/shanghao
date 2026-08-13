@@ -1,4 +1,6 @@
+import { useLayoutEffect, useRef } from "react";
 import { Gamepad2 } from "lucide-react";
+import { gsap } from "gsap";
 
 import type { GameDetectionSnapshot } from "@private-voice/shared";
 
@@ -32,50 +34,45 @@ type SupportedGameName = NonNullable<GameDetectionSnapshot["gameName"]>;
 
 interface GameArtwork {
   src: string;
-  shortLabel: string;
   layout: "capsule" | "mark";
 }
 
 export const gameArtworkCatalog: Partial<Record<SupportedGameName, GameArtwork>> = {
-  我的世界: { src: minecraftArtwork, shortLabel: "我的世界", layout: "mark" },
-  王国保卫战: { src: kingdomRushArtwork, shortLabel: "王国保卫战", layout: "capsule" },
-  杀戮尖塔: { src: slayTheSpireArtwork, shortLabel: "杀戮尖塔", layout: "capsule" },
-  英雄联盟: { src: leagueOfLegendsArtwork, shortLabel: "英雄联盟", layout: "mark" },
-  无畏契约: { src: valorantArtwork, shortLabel: "无畏契约", layout: "mark" },
-  三角洲行动: { src: deltaForceArtwork, shortLabel: "三角洲行动", layout: "capsule" },
-  CS2: { src: counterStrike2Artwork, shortLabel: "CS2", layout: "capsule" },
-  "Dota 2": { src: dota2Artwork, shortLabel: "Dota 2", layout: "capsule" },
-  "Apex 英雄": { src: apexLegendsArtwork, shortLabel: "Apex 英雄", layout: "capsule" },
-  绝地求生: { src: pubgArtwork, shortLabel: "绝地求生", layout: "capsule" },
-  守望先锋: { src: overwatch2Artwork, shortLabel: "守望先锋", layout: "capsule" },
-  永劫无间: { src: narakaArtwork, shortLabel: "永劫无间", layout: "capsule" },
-  原神: { src: genshinImpactArtwork, shortLabel: "原神", layout: "mark" },
+  我的世界: { src: minecraftArtwork, layout: "mark" },
+  王国保卫战: { src: kingdomRushArtwork, layout: "capsule" },
+  杀戮尖塔: { src: slayTheSpireArtwork, layout: "capsule" },
+  英雄联盟: { src: leagueOfLegendsArtwork, layout: "mark" },
+  无畏契约: { src: valorantArtwork, layout: "mark" },
+  三角洲行动: { src: deltaForceArtwork, layout: "capsule" },
+  CS2: { src: counterStrike2Artwork, layout: "capsule" },
+  "Dota 2": { src: dota2Artwork, layout: "capsule" },
+  "Apex 英雄": { src: apexLegendsArtwork, layout: "capsule" },
+  绝地求生: { src: pubgArtwork, layout: "capsule" },
+  守望先锋: { src: overwatch2Artwork, layout: "capsule" },
+  永劫无间: { src: narakaArtwork, layout: "capsule" },
+  原神: { src: genshinImpactArtwork, layout: "mark" },
   "崩坏：星穹铁道": {
     src: honkaiStarRailArtwork,
-    shortLabel: "星穹铁道",
     layout: "mark",
   },
-  Fortnite: { src: fortniteArtwork, shortLabel: "Fortnite", layout: "mark" },
-  "GTA V": { src: gtaVArtwork, shortLabel: "GTA V", layout: "capsule" },
+  Fortnite: { src: fortniteArtwork, layout: "mark" },
+  "GTA V": { src: gtaVArtwork, layout: "capsule" },
   "彩虹六号：围攻": {
     src: rainbowSixSiegeArtwork,
-    shortLabel: "彩虹六号",
     layout: "capsule",
   },
-  怪物猎人: { src: monsterHunterArtwork, shortLabel: "怪物猎人", layout: "capsule" },
+  怪物猎人: { src: monsterHunterArtwork, layout: "capsule" },
   "黑神话：悟空": {
     src: blackMythWukongArtwork,
-    shortLabel: "黑神话",
     layout: "capsule",
   },
-  "失落城堡 2": { src: lostCastle2Artwork, shortLabel: "失落城堡 2", layout: "capsule" },
-  艾尔登法环: { src: eldenRingArtwork, shortLabel: "艾尔登法环", layout: "capsule" },
-  双人成行: { src: itTakesTwoArtwork, shortLabel: "双人成行", layout: "capsule" },
-  幻兽帕鲁: { src: palworldArtwork, shortLabel: "幻兽帕鲁", layout: "capsule" },
-  胡闹厨房: { src: overcooked2Artwork, shortLabel: "胡闹厨房", layout: "capsule" },
+  "失落城堡 2": { src: lostCastle2Artwork, layout: "capsule" },
+  艾尔登法环: { src: eldenRingArtwork, layout: "capsule" },
+  双人成行: { src: itTakesTwoArtwork, layout: "capsule" },
+  幻兽帕鲁: { src: palworldArtwork, layout: "capsule" },
+  胡闹厨房: { src: overcooked2Artwork, layout: "capsule" },
   "荒野大镖客 2": {
     src: redDeadRedemption2Artwork,
-    shortLabel: "荒野大镖客 2",
     layout: "capsule",
   },
 };
@@ -83,42 +80,81 @@ export const gameArtworkCatalog: Partial<Record<SupportedGameName, GameArtwork>>
 export const GameMonitorContent = ({
   gameName,
   iconDataUrl,
+  shouldReduceMotion = false,
 }: {
   gameName: string;
   iconDataUrl?: string;
+  shouldReduceMotion?: boolean;
 }) => {
+  const rootRef = useRef<HTMLSpanElement>(null);
   const artwork = gameArtworkCatalog[gameName as SupportedGameName];
-  if (!artwork) {
-    return (
-      <span className="scene-game-monitor-content scene-game-monitor-content--fallback">
-        {iconDataUrl ? (
-          <img
-            className="scene-game-monitor-runtime-icon"
-            src={iconDataUrl}
-            alt=""
-            aria-hidden="true"
-          />
-        ) : (
-          <Gamepad2 aria-hidden="true" />
-        )}
-        <span className="scene-game-monitor-label">{gameName}</span>
-      </span>
-    );
-  }
+
+  useLayoutEffect(() => {
+    const root = rootRef.current;
+    if (!root) return;
+    let observer: IntersectionObserver | undefined;
+    const context = gsap.context(() => {
+      gsap.set("[data-game-mark]", { opacity: 1, scale: 1, y: 0 });
+      gsap.set("[data-game-scan]", { opacity: shouldReduceMotion ? 0.38 : 0, x: -28 });
+      if (shouldReduceMotion) return;
+
+      const timeline = gsap
+        .timeline({ repeat: -1, repeatDelay: 0.7 })
+        .fromTo(
+          "[data-game-mark]",
+          { opacity: 0.7, scale: 0.94, y: 1 },
+          { opacity: 1, scale: 1, y: 0, duration: 0.52, ease: "power2.out" },
+        )
+        .fromTo(
+          "[data-game-scan]",
+          { opacity: 0, x: -28 },
+          { opacity: 0.64, x: 32, duration: 0.9, ease: "power1.inOut" },
+          0.08,
+        )
+        .to("[data-game-scan]", { opacity: 0, duration: 0.18 });
+
+      observer = new IntersectionObserver(
+        ([entry]) => (entry?.isIntersecting ? timeline.play() : timeline.pause()),
+        { threshold: 0.05 },
+      );
+      observer.observe(root);
+    }, rootRef);
+    return () => {
+      observer?.disconnect();
+      context.revert();
+    };
+  }, [shouldReduceMotion]);
+
+  const layout = iconDataUrl ? "runtime" : (artwork?.layout ?? "fallback");
 
   return (
     <span
-      className={`scene-game-monitor-content scene-game-monitor-content--${artwork.layout}`}
+      ref={rootRef}
+      className={`scene-game-monitor-content scene-game-monitor-content--${layout}`}
       aria-label={`正在玩 ${gameName}`}
     >
-      <img
-        className="scene-game-monitor-art"
-        src={artwork.src}
-        alt=""
-        draggable={false}
-        aria-hidden="true"
-      />
-      <span className="scene-game-monitor-label">{artwork.shortLabel}</span>
+      {iconDataUrl ? (
+        <img
+          className="scene-game-monitor-runtime-icon"
+          src={iconDataUrl}
+          alt=""
+          draggable={false}
+          aria-hidden="true"
+          data-game-mark
+        />
+      ) : artwork ? (
+        <img
+          className="scene-game-monitor-art"
+          src={artwork.src}
+          alt=""
+          draggable={false}
+          aria-hidden="true"
+          data-game-mark
+        />
+      ) : (
+        <Gamepad2 aria-hidden="true" data-game-mark />
+      )}
+      <span className="scene-game-monitor-scan" data-game-scan aria-hidden="true" />
     </span>
   );
 };

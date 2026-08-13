@@ -67,6 +67,12 @@ export const DiagnosticsSettingsCard = ({
                   ? "不可用，原声直通"
                   : "已关闭",
           ],
+          [
+            "人声保护",
+            localAudioDiagnostics?.noiseProcessor === "deepfilter_active"
+              ? `${localAudioDiagnostics.speechProtection === "active" ? "保护中" : "待命"} · ${localAudioDiagnostics.currentSuppressionLevel ?? "--"} · 原声 ${Math.round((localAudioDiagnostics.rawProcessedMix?.raw ?? 0) * 100)}%`
+              : "未启用",
+          ],
         ].map(([label, value]) => (
           <div
             key={label}

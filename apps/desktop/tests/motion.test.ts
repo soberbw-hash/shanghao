@@ -130,6 +130,8 @@ test("gsap motion is wired across the main surfaces with reduced-motion fallback
   assert.equal(animalSource.includes('isMoving ? "walk"'), true);
   assert.equal(islandSource.includes("SceneCharacter"), true);
   assert.equal(characterRuntimeSource.includes("type CharacterMotionPhase ="), true);
+  assert.equal(characterRuntimeSource.includes("characterMotionTiming"), true);
+  assert.equal(characterRuntimeSource.includes("landingPhysicalMs"), true);
   assert.equal(
     sceneCharacterSource.includes('setMotionPhase(isFirstRoute ? "entering" : "walking")'),
     true,
@@ -189,6 +191,7 @@ test("gsap motion is wired across the main surfaces with reduced-motion fallback
   assert.equal(sceneCharacterSource.includes("movementDirection"), true);
   assert.equal(sceneCharacterSource.includes("entryRevision"), false);
   assert.equal(sceneCharacterSource.includes("operationIdRef.current"), true);
+  assert.equal(sceneCharacterSource.includes("controls.stop()"), true);
   assert.equal(sceneCharacterSource.includes("didStartEntryRef.current"), true);
   assert.equal(stylesSource.includes("@keyframes layered-body-walk"), true);
   assert.equal(stylesSource.includes(".layered-animal-head"), true);
@@ -247,7 +250,8 @@ test("gsap motion is wired across the main surfaces with reduced-motion fallback
   assert.equal(stylesSource.includes(".runner-leg-far"), false);
   assert.equal(stylesSource.includes(".runner-leg-near"), false);
   assert.equal(stylesSource.includes("@keyframes walking-animal-step"), false);
-  assert.equal(stylesSource.includes(".scene-character-chat-bubble"), false);
+  // Quick replies and ordinary chat intentionally use the current character bubble.
+  assert.equal(stylesSource.includes(".scene-character-chat-bubble"), true);
   assert.equal(stylesSource.includes("character-voice-halo"), false);
   assert.equal(stylesSource.includes("--voice-halo-opacity"), true);
   assert.equal(stylesSource.includes("--voice-glow-radius"), true);

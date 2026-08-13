@@ -1,0 +1,759 @@
+import { randomUUID } from "node:crypto";
+import { createWriteStream } from "node:fs";
+import { mkdir, readFile, rename, rm, stat, statfs, unlink, writeFile } from "node:fs/promises";
+import path from "node:path";
+import { Readable, Transform } from "node:stream";
+import { pipeline } from "node:stream/promises";
+
+import type {
+  AiModelAction,
+  AiModelId,
+  AiModelStatus,
+  AiProcessingMode,
+  AiTaskCheckpoint,
+  AiTaskKind,
+  AiVoiceMemorySnapshot,
+  RendererLogPayload,
+} from "@private-voice/shared";
+
+import type { GameDetectionController } from "./game-detection";
+
+interface ModelDefinition {
+  id: AiModelId;
+  name: string;
+  purpose: string;
+  repository: string;
+  approximateBytes: number;
+}
+
+interface RemoteModelFile {
+  rfilename: string;
+  size?: number;
+}
+
+interface RemoteModelManifest {
+  sha: string;
+  siblings: RemoteModelFile[];
+}
+
+interface ModelSource {
+  name: string;
+  baseUrl: string;
+}
+
+interface PersistedModelState {
+  userInstalled: boolean;
+  activeRevision?: string;
+  pendingRevision?: string;
+  phase?: AiModelStatus["phase"];
+  downloadedBytes?: number;
+  totalBytes?: number;
+  errorMessage?: string;
+}
+
+interface PersistedAiState {
+  models: Partial<Record<AiModelId, PersistedModelState>>;
+  taskCheckpoints: Record<string, AiTaskCheckpoint>;
+}
+
+const MODEL_DEFINITIONS: readonly ModelDefinition[] = [
+  {
+    id: "vibevoice",
+    name: "VibeVoice",
+    purpose: "录音转文字",
+    repository: "microsoft/VibeVoice-ASR-BitNet",
+    approximateBytes: 1_695_957_664,
+  },
+  {
+    id: "qwen35-4b",
+    name: "Qwen3.5-4B",
+    purpose: "总结、章节、问答与精彩片段",
+    repository: "Qwen/Qwen3.5-4B",
+    approximateBytes: 9_319_828_096,
+  },
+] as const;
+
+export const NORMAL_DOWNLOAD_BYTES_PER_SECOND = 2 * 1024 * 1024;
+export const GAMING_DOWNLOAD_BYTES_PER_SECOND = 256 * 1024;
+const QWEN_IDLE_RELEASE_MS = 90_000;
+const METADATA_FILE = "state.json";
+const MODEL_REQUEST_TIMEOUT_MS = 12_000;
+
+// Hugging Face is frequently unreachable on otherwise healthy mainland networks.
+// Keep the mirror first for a fast default path and retain the canonical host as
+// an automatic fallback. Both endpoints expose the same immutable revision files.
+export const MODEL_SOURCES: readonly ModelSource[] = [
+  { name: "Hugging Face 镜像", baseUrl: "https://hf-mirror.com" },
+  { name: "Hugging Face", baseUrl: "https://huggingface.co" },
+] as const;
+
+const modelDefinition = (id: AiModelId): ModelDefinition => {
+  const definition = MODEL_DEFINITIONS.find((candidate) => candidate.id === id);
+  if (!definition) throw new Error("unknown_ai_model");
+  return definition;
+};
+
+const emptyState = (): PersistedAiState => ({ models: {}, taskCheckpoints: {} });
+
+export const safeRelativeModelPath = (value: string): string => {
+  const normalized = value.replaceAll("\\", "/");
+  const segments = normalized.split("/");
+  if (
+    !normalized ||
+    normalized.startsWith("/") ||
+    normalized.includes("\0") ||
+    segments.some(
+      (segment) => !segment || segment === "." || segment === ".." || segment.includes(":"),
+    )
+  ) {
+    throw new Error("unsafe_ai_model_path");
+  }
+  return normalized;
+};
+
+export const buildResumeHeaders = (offset: number): Record<string, string> | undefined =>
+  offset > 0 ? { Range: `bytes=${offset}-` } : undefined;
+
+export const describeAiModelError = (error: unknown): string => {
+  const message = error instanceof Error ? error.message : String(error);
+  if (
+    message === "fetch failed" ||
+    message.includes("ai_model_source_unreachable") ||
+    message.includes("ENETUNREACH") ||
+    message.includes("ECONNREFUSED") ||
+    message.includes("ETIMEDOUT")
+  ) {
+    return "无法连接模型下载源。已尝试 Hugging Face 和国内镜像，请检查网络或代理后重试。";
+  }
+  if (message === "ai_model_disk_space_insufficient")
+    return "磁盘剩余空间不足，请释放空间或调整模型存放位置后重试。";
+  if (message === "ai_model_manifest_empty" || message === "ai_model_required_files_missing")
+    return "模型文件清单不完整，请稍后重试。";
+  if (message === "ai_model_file_incomplete" || message === "ai_model_weight_size_mismatch")
+    return "模型文件下载不完整，点击重试会从已下载的位置继续。";
+  const httpStatus = message.match(/ai_model_(?:manifest_)?http_(\d{3})/)?.[1];
+  if (httpStatus) return `模型下载源暂时不可用（HTTP ${httpStatus}），请稍后重试。`;
+  return "模型下载失败，请检查网络后重试；已下载的部分会保留。";
+};
+
+class DownloadPausedError extends Error {
+  constructor() {
+    super("ai_model_download_paused");
+  }
+}
+
+export class AiModelManager {
+  private readonly listeners = new Set<(snapshot: AiVoiceMemorySnapshot) => void>();
+  private readonly abortControllers = new Map<AiModelId, AbortController>();
+  private readonly runningDownloads = new Map<AiModelId, Promise<void>>();
+  private readonly downloadStartedAt = new Map<AiModelId, number>();
+  private persisted: PersistedAiState = emptyState();
+  private processingMode: AiProcessingMode = "after_game";
+  private gameActive = false;
+  private qwenLoaded = false;
+  private qwenReleaseTimer?: NodeJS.Timeout;
+  private queuedTasks = 0;
+  private runningTask?: string;
+  private persistQueue: Promise<void> = Promise.resolve();
+  private throttleQueue: Promise<void> = Promise.resolve();
+  private throttleWindowStartedAt = Date.now();
+  private throttleWindowBytes = 0;
+
+  constructor(
+    private readonly rootDirectory: string,
+    private readonly gameDetection: GameDetectionController,
+    private readonly writeLog: (payload: RendererLogPayload) => Promise<void>,
+  ) {}
+
+  async initialize(processingMode: AiProcessingMode): Promise<void> {
+    this.processingMode = processingMode;
+    await mkdir(this.rootDirectory, { recursive: true });
+    this.persisted = await this.readState();
+    this.gameActive = Boolean(this.gameDetection.getSnapshot().gameName);
+    this.gameDetection.onDetected((snapshot) => {
+      const nextGameActive = Boolean(snapshot.gameName);
+      if (nextGameActive === this.gameActive) return;
+      this.gameActive = nextGameActive;
+      if (this.gameActive) this.releaseQwenResources("game_started");
+      this.emit();
+    });
+    const interruptedDownloads: AiModelId[] = [];
+    for (const definition of MODEL_DEFINITIONS) {
+      const model = this.persisted.models[definition.id];
+      if (model?.phase === "downloading" || model?.phase === "checking") {
+        model.phase = "paused";
+        interruptedDownloads.push(definition.id);
+      }
+      if (model?.userInstalled && model.activeRevision) {
+        void this.checkForRecommendedUpdate(definition.id);
+      }
+    }
+    await this.persist();
+    for (const id of interruptedDownloads) {
+      this.startDownload(id, Boolean(this.persisted.models[id]?.activeRevision));
+    }
+  }
+
+  stop(): void {
+    for (const controller of this.abortControllers.values()) controller.abort();
+    this.abortControllers.clear();
+    if (this.qwenReleaseTimer) clearTimeout(this.qwenReleaseTimer);
+    this.releaseQwenResources("app_stopping");
+  }
+
+  setProcessingMode(mode: AiProcessingMode): void {
+    this.processingMode = mode;
+    if (this.gameActive && mode === "after_game") this.releaseQwenResources("processing_deferred");
+    this.emit();
+  }
+
+  onStatus(listener: (snapshot: AiVoiceMemorySnapshot) => void): () => void {
+    this.listeners.add(listener);
+    return () => this.listeners.delete(listener);
+  }
+
+  getSnapshot(): AiVoiceMemorySnapshot {
+    return {
+      models: MODEL_DEFINITIONS.map((definition) => this.buildModelStatus(definition)),
+      scheduler: {
+        processingMode: this.processingMode,
+        gameActive: this.gameActive,
+        downloadsThrottled: this.gameActive,
+        aiTasksPausedForGame: this.gameActive && this.processingMode === "after_game",
+        qwenLoaded: this.qwenLoaded,
+        queuedTasks: this.queuedTasks,
+        runningTask: this.runningTask,
+      },
+      checkedAt: new Date().toISOString(),
+    };
+  }
+
+  async controlModel(id: AiModelId, action: AiModelAction): Promise<AiVoiceMemorySnapshot> {
+    const current = this.ensureModelState(id);
+    if (action === "download") {
+      current.userInstalled = true;
+      await this.persist();
+      this.startDownload(id, Boolean(current.activeRevision));
+    } else if (action === "pause") {
+      current.phase = "paused";
+      this.abortControllers.get(id)?.abort();
+      await this.persist();
+      this.emit();
+    } else if (action === "resume") {
+      current.userInstalled = true;
+      this.abortControllers.get(id)?.abort();
+      await this.runningDownloads.get(id)?.catch(() => undefined);
+      this.startDownload(id, Boolean(current.activeRevision));
+    } else {
+      this.abortControllers.get(id)?.abort();
+      await this.runningDownloads.get(id)?.catch(() => undefined);
+      await rm(this.modelDirectory(id), { recursive: true, force: true });
+      this.persisted.models[id] = { userInstalled: false, phase: "not_installed" };
+      if (id === "qwen35-4b") this.releaseQwenResources("model_deleted");
+      await this.persist();
+      this.emit();
+    }
+    return this.getSnapshot();
+  }
+
+  private async checkForRecommendedUpdate(id: AiModelId): Promise<void> {
+    const current = this.ensureModelState(id);
+    try {
+      const manifest = await this.fetchManifest(modelDefinition(id));
+      if (current.activeRevision === manifest.sha) return;
+      current.pendingRevision = manifest.sha;
+      await this.persist();
+      this.startDownload(id, true);
+    } catch (error) {
+      await this.log("warn", "ai_model_update_check_failed", id, error);
+    }
+  }
+
+  private startDownload(id: AiModelId, isUpdate: boolean): void {
+    if (this.runningDownloads.has(id)) return;
+    const operation = this.downloadModel(id, isUpdate)
+      .catch((error) => {
+        if (error instanceof DownloadPausedError || (error as Error).name === "AbortError") return;
+        const current = this.ensureModelState(id);
+        current.phase = "error";
+        current.errorMessage = describeAiModelError(error);
+        void this.persist();
+        void this.log("error", "ai_model_download_failed", id, error);
+      })
+      .finally(() => {
+        this.abortControllers.delete(id);
+        this.runningDownloads.delete(id);
+        this.downloadStartedAt.delete(id);
+        this.emit();
+      });
+    this.runningDownloads.set(id, operation);
+    this.downloadStartedAt.set(id, Date.now());
+    this.emit();
+  }
+
+  private async downloadModel(id: AiModelId, isUpdate: boolean): Promise<void> {
+    const definition = modelDefinition(id);
+    const current = this.ensureModelState(id);
+    const controller = new AbortController();
+    this.abortControllers.set(id, controller);
+    current.phase = "checking";
+    current.errorMessage = undefined;
+    this.emit();
+
+    const manifest = await this.fetchManifest(definition);
+    const files = manifest.siblings
+      .filter(
+        (file) =>
+          typeof file.size === "number" &&
+          file.size > 0 &&
+          (definition.id !== "vibevoice" || this.isVibeVoiceRuntimeFile(file.rfilename)),
+      )
+      .map((file) => ({ ...file, rfilename: safeRelativeModelPath(file.rfilename) }));
+    if (!files.length) throw new Error("ai_model_manifest_empty");
+    current.pendingRevision = manifest.sha;
+    current.totalBytes = files.reduce((total, file) => total + (file.size ?? 0), 0);
+    current.downloadedBytes = await this.readDownloadedBytes(id, manifest.sha, files);
+    await this.ensureDiskCapacity((current.totalBytes ?? 0) - (current.downloadedBytes ?? 0));
+    current.phase = "downloading";
+    await this.persist();
+
+    for (const file of files) {
+      if (controller.signal.aborted) throw new DownloadPausedError();
+      await this.downloadFile(definition, manifest.sha, file, controller.signal, current);
+    }
+
+    const revisionDirectory = this.revisionDirectory(id, manifest.sha);
+    await this.validateRevision(definition, manifest.sha, files);
+    await writeFile(
+      path.join(revisionDirectory, "model.ready.json"),
+      JSON.stringify({ repository: definition.repository, revision: manifest.sha, files }, null, 2),
+      "utf8",
+    );
+    const previousRevision = current.activeRevision;
+    current.activeRevision = manifest.sha;
+    current.pendingRevision = undefined;
+    current.phase = "installed";
+    current.downloadedBytes = current.totalBytes;
+    current.errorMessage = undefined;
+    await this.persist();
+    this.emit();
+
+    if (isUpdate && previousRevision && previousRevision !== manifest.sha) {
+      await rm(this.revisionDirectory(id, previousRevision), { recursive: true, force: true });
+    }
+    await this.log("info", "ai_model_ready", id, undefined, { revision: manifest.sha });
+  }
+
+  private async downloadFile(
+    definition: ModelDefinition,
+    revision: string,
+    file: Required<Pick<RemoteModelFile, "rfilename">> & RemoteModelFile,
+    signal: AbortSignal,
+    state: PersistedModelState,
+  ): Promise<void> {
+    const destination = path.join(this.revisionDirectory(definition.id, revision), file.rfilename);
+    const partial = `${destination}.part`;
+    await mkdir(path.dirname(destination), { recursive: true });
+    const expectedSize = file.size ?? 0;
+    const completedSize = await stat(destination)
+      .then((value) => value.size)
+      .catch(() => 0);
+    if (expectedSize > 0 && completedSize === expectedSize) return;
+
+    let offset = await stat(partial)
+      .then((value) => value.size)
+      .catch(() => 0);
+    if (offset > expectedSize) {
+      await unlink(partial).catch(() => undefined);
+      offset = 0;
+    }
+    const relativeUrl = `${definition.repository}/resolve/${revision}/${file.rfilename
+      .split("/")
+      .map(encodeURIComponent)
+      .join("/")}`;
+    const { response, release } = await this.fetchFromModelSources(relativeUrl, {
+      headers: buildResumeHeaders(offset),
+      signal,
+      acceptedStatuses: [200, 206],
+      errorPrefix: "ai_model_http",
+    });
+    try {
+      if (offset && response.status === 200) {
+        await unlink(partial).catch(() => undefined);
+        state.downloadedBytes = Math.max(0, (state.downloadedBytes ?? 0) - offset);
+        offset = 0;
+      }
+      if (!response.body) throw new Error("ai_model_empty_response");
+
+      const throttle = this.createThrottle();
+      let received = offset;
+      let lastPersistedAt = Date.now();
+      const progress = new Transform({
+        transform: (chunk: Buffer, _encoding, callback) => {
+          received += chunk.length;
+          state.downloadedBytes = Math.min(
+            state.totalBytes ?? Number.MAX_SAFE_INTEGER,
+            (state.downloadedBytes ?? 0) + chunk.length,
+          );
+          const now = Date.now();
+          if (now - lastPersistedAt >= 1_000) {
+            lastPersistedAt = now;
+            void this.persist();
+            this.emit();
+          }
+          callback(null, chunk);
+        },
+      });
+      await pipeline(
+        Readable.fromWeb(response.body as never),
+        throttle,
+        progress,
+        createWriteStream(partial, { flags: offset ? "a" : "w" }),
+        { signal },
+      );
+      if (expectedSize && received !== expectedSize) throw new Error("ai_model_file_incomplete");
+      await rename(partial, destination);
+    } finally {
+      release();
+    }
+  }
+
+  private createThrottle(): Transform {
+    return new Transform({
+      transform: (chunk: Buffer, _encoding, callback) => {
+        const operation = this.throttleQueue
+          .catch(() => undefined)
+          .then(async () => {
+            const now = Date.now();
+            if (now - this.throttleWindowStartedAt >= 1_000) {
+              this.throttleWindowStartedAt = now;
+              this.throttleWindowBytes = 0;
+            }
+            this.throttleWindowBytes += chunk.length;
+            const limit = this.gameActive
+              ? GAMING_DOWNLOAD_BYTES_PER_SECOND
+              : NORMAL_DOWNLOAD_BYTES_PER_SECOND;
+            const delay = Math.max(
+              0,
+              Math.ceil(
+                (this.throttleWindowBytes / limit) * 1_000 - (now - this.throttleWindowStartedAt),
+              ),
+            );
+            if (delay > 0) await new Promise((resolve) => setTimeout(resolve, delay));
+          });
+        this.throttleQueue = operation;
+        void operation.then(() => callback(null, chunk), callback);
+      },
+    });
+  }
+
+  private async validateRevision(
+    definition: ModelDefinition,
+    revision: string,
+    files: RemoteModelFile[],
+  ): Promise<void> {
+    const directory = this.revisionDirectory(definition.id, revision);
+    const weightFiles = files.filter(
+      (file) => file.rfilename.endsWith(".safetensors") || file.rfilename.endsWith(".gguf"),
+    );
+    if (!weightFiles.length) throw new Error("ai_model_required_files_missing");
+    if (definition.id === "vibevoice") {
+      const names = new Set(weightFiles.map((file) => path.basename(file.rfilename)));
+      if (
+        !names.has("vibeasr-lm-i2_s-embed-q6_k.gguf") ||
+        !names.has("vibeasr-vae-encoder-i8_s.gguf")
+      ) {
+        throw new Error("ai_model_required_files_missing");
+      }
+    } else {
+      const config = JSON.parse(
+        await readFile(path.join(directory, "config.json"), "utf8"),
+      ) as unknown;
+      if (!config || typeof config !== "object") throw new Error("ai_model_config_invalid");
+    }
+    for (const file of weightFiles) {
+      const size = await stat(path.join(directory, file.rfilename)).then((value) => value.size);
+      if (file.size && size !== file.size) throw new Error("ai_model_weight_size_mismatch");
+    }
+  }
+
+  private isVibeVoiceRuntimeFile(fileName: string): boolean {
+    return (
+      fileName === "vibeasr-lm-i2_s-embed-q6_k.gguf" || fileName === "vibeasr-vae-encoder-i8_s.gguf"
+    );
+  }
+
+  private async fetchManifest(definition: ModelDefinition): Promise<RemoteModelManifest> {
+    const { response, release } = await this.fetchFromModelSources(
+      `api/models/${definition.repository}?blobs=true`,
+      {
+        acceptedStatuses: [200],
+        errorPrefix: "ai_model_manifest_http",
+      },
+    );
+    try {
+      const manifest = (await response.json()) as RemoteModelManifest;
+      if (!manifest.sha || !Array.isArray(manifest.siblings))
+        throw new Error("ai_model_manifest_invalid");
+      return manifest;
+    } finally {
+      release();
+    }
+  }
+
+  private async fetchFromModelSources(
+    relativeUrl: string,
+    options: {
+      headers?: Record<string, string>;
+      signal?: AbortSignal;
+      acceptedStatuses: number[];
+      errorPrefix: string;
+    },
+  ): Promise<{ response: Response; release: () => void }> {
+    let lastError: unknown;
+    for (const source of MODEL_SOURCES) {
+      if (options.signal?.aborted) throw new DownloadPausedError();
+      const controller = new AbortController();
+      const forwardAbort = () => controller.abort();
+      options.signal?.addEventListener("abort", forwardAbort, { once: true });
+      const timeout = setTimeout(() => controller.abort(), MODEL_REQUEST_TIMEOUT_MS);
+      try {
+        const response = await fetch(`${source.baseUrl}/${relativeUrl}`, {
+          headers: options.headers,
+          redirect: "follow",
+          signal: controller.signal,
+        });
+        clearTimeout(timeout);
+        if (!options.acceptedStatuses.includes(response.status)) {
+          lastError = new Error(`${options.errorPrefix}_${response.status}`);
+          await response.body?.cancel().catch(() => undefined);
+          options.signal?.removeEventListener("abort", forwardAbort);
+          continue;
+        }
+        return {
+          response,
+          release: () => options.signal?.removeEventListener("abort", forwardAbort),
+        };
+      } catch (error) {
+        clearTimeout(timeout);
+        options.signal?.removeEventListener("abort", forwardAbort);
+        if (options.signal?.aborted) throw new DownloadPausedError();
+        lastError = error;
+      }
+    }
+    if (lastError instanceof Error && lastError.message.startsWith(options.errorPrefix))
+      throw lastError;
+    throw new Error("ai_model_source_unreachable", { cause: lastError });
+  }
+
+  private async readDownloadedBytes(
+    id: AiModelId,
+    revision: string,
+    files: RemoteModelFile[],
+  ): Promise<number> {
+    let total = 0;
+    for (const file of files) {
+      const destination = path.join(this.revisionDirectory(id, revision), file.rfilename);
+      const expected = file.size ?? 0;
+      const complete = await stat(destination)
+        .then((value) => value.size)
+        .catch(() => 0);
+      const partial = await stat(`${destination}.part`)
+        .then((value) => value.size)
+        .catch(() => 0);
+      total += Math.min(expected, complete === expected ? complete : partial);
+    }
+    return total;
+  }
+
+  private buildModelStatus(definition: ModelDefinition): AiModelStatus {
+    const current = this.persisted.models[definition.id];
+    const totalBytes = current?.totalBytes ?? 0;
+    const downloadedBytes = current?.downloadedBytes ?? 0;
+    return {
+      ...definition,
+      phase: current?.phase ?? (current?.activeRevision ? "installed" : "not_installed"),
+      userInstalled: current?.userInstalled === true,
+      activeRevision: current?.activeRevision,
+      pendingRevision: current?.pendingRevision,
+      downloadedBytes,
+      totalBytes,
+      progress: totalBytes ? Math.min(100, (downloadedBytes / totalBytes) * 100) : 0,
+      bytesPerSecond: this.downloadStartedAt.has(definition.id)
+        ? this.gameActive
+          ? GAMING_DOWNLOAD_BYTES_PER_SECOND
+          : NORMAL_DOWNLOAD_BYTES_PER_SECOND
+        : undefined,
+      errorMessage: current?.errorMessage,
+      updateInProgress: Boolean(
+        current?.activeRevision &&
+        current.pendingRevision &&
+        current.activeRevision !== current.pendingRevision,
+      ),
+    };
+  }
+
+  private ensureModelState(id: AiModelId): PersistedModelState {
+    return (this.persisted.models[id] ??= { userInstalled: false, phase: "not_installed" });
+  }
+
+  private modelDirectory(id: AiModelId): string {
+    return path.join(this.rootDirectory, id);
+  }
+
+  private revisionDirectory(id: AiModelId, revision: string): string {
+    return path.join(this.modelDirectory(id), revision);
+  }
+
+  private async readState(): Promise<PersistedAiState> {
+    try {
+      const parsed = JSON.parse(
+        await readFile(path.join(this.rootDirectory, METADATA_FILE), "utf8"),
+      ) as Partial<PersistedAiState>;
+      return {
+        models: parsed.models && typeof parsed.models === "object" ? parsed.models : {},
+        taskCheckpoints:
+          parsed.taskCheckpoints && typeof parsed.taskCheckpoints === "object"
+            ? parsed.taskCheckpoints
+            : {},
+      };
+    } catch {
+      return emptyState();
+    }
+  }
+
+  private async ensureDiskCapacity(remainingBytes: number): Promise<void> {
+    if (remainingBytes <= 0) return;
+    const disk = await statfs(this.rootDirectory);
+    const availableBytes = Number(disk.bavail) * Number(disk.bsize);
+    const safetyMargin = 512 * 1024 * 1024;
+    if (availableBytes < remainingBytes + safetyMargin) {
+      throw new Error("ai_model_disk_space_insufficient");
+    }
+  }
+
+  private persist(): Promise<void> {
+    const serialized = JSON.stringify(this.persisted, null, 2);
+    const operation = this.persistQueue
+      .catch(() => undefined)
+      .then(async () => {
+        await mkdir(this.rootDirectory, { recursive: true });
+        const file = path.join(this.rootDirectory, METADATA_FILE);
+        const temporary = `${file}.${process.pid}.${randomUUID()}.tmp`;
+        await writeFile(temporary, serialized, "utf8");
+        await rename(temporary, file);
+      });
+    this.persistQueue = operation;
+    return operation;
+  }
+
+  private emit(): void {
+    const snapshot = this.getSnapshot();
+    for (const listener of this.listeners) listener(snapshot);
+  }
+
+  private releaseQwenResources(reason: string): void {
+    if (this.qwenReleaseTimer) clearTimeout(this.qwenReleaseTimer);
+    this.qwenReleaseTimer = undefined;
+    if (!this.qwenLoaded) return;
+    this.qwenLoaded = false;
+    void this.log("info", "ai_qwen_resources_released", "qwen35-4b", undefined, { reason });
+  }
+
+  markQwenTaskFinished(): void {
+    if (this.qwenReleaseTimer) clearTimeout(this.qwenReleaseTimer);
+    this.qwenReleaseTimer = setTimeout(
+      () => this.releaseQwenResources("idle_timeout"),
+      QWEN_IDLE_RELEASE_MS,
+    );
+  }
+
+  markQwenTaskStarted(taskName: string): void {
+    if (this.qwenReleaseTimer) clearTimeout(this.qwenReleaseTimer);
+    this.qwenReleaseTimer = undefined;
+    this.qwenLoaded = true;
+    this.runningTask = taskName;
+    this.emit();
+  }
+
+  markAiTaskFinished(): void {
+    this.runningTask = undefined;
+    this.markQwenTaskFinished();
+    this.emit();
+  }
+
+  canRunTask(
+    kind: AiTaskKind,
+    manualRequest = false,
+  ): {
+    runnable: boolean;
+    reason?: string;
+    resourceMode: "low" | "normal";
+  } {
+    const requiredModel = kind === "transcription" ? "vibevoice" : "qwen35-4b";
+    if (!this.persisted.models[requiredModel]?.activeRevision) {
+      return {
+        runnable: false,
+        reason: `model_${requiredModel}_not_installed`,
+        resourceMode: "low",
+      };
+    }
+    if (this.processingMode === "manual" && !manualRequest)
+      return { runnable: false, reason: "manual_only", resourceMode: "low" };
+    if (this.gameActive && this.processingMode === "after_game") {
+      return {
+        runnable: false,
+        reason: "waiting_for_game_to_finish",
+        resourceMode: "low",
+      };
+    }
+    if (this.gameActive && this.processingMode === "immediate" && !manualRequest) {
+      return {
+        runnable: false,
+        reason: "manual_confirmation_required_during_game",
+        resourceMode: "low",
+      };
+    }
+    return {
+      runnable: true,
+      resourceMode: this.processingMode === "low_resource" || this.gameActive ? "low" : "normal",
+    };
+  }
+
+  async saveTaskCheckpoint(checkpoint: AiTaskCheckpoint): Promise<void> {
+    if (!checkpoint.taskId || !checkpoint.recordingId || checkpoint.totalUnits < 1) {
+      throw new Error("invalid_ai_task_checkpoint");
+    }
+    this.persisted.taskCheckpoints[checkpoint.taskId] = {
+      ...checkpoint,
+      completedUnits: Math.max(0, Math.min(checkpoint.totalUnits, checkpoint.completedUnits)),
+      updatedAt: new Date().toISOString(),
+    };
+    await this.persist();
+  }
+
+  getTaskCheckpoint(taskId: string): AiTaskCheckpoint | undefined {
+    const checkpoint = this.persisted.taskCheckpoints[taskId];
+    return checkpoint ? { ...checkpoint } : undefined;
+  }
+
+  private async log(
+    level: RendererLogPayload["level"],
+    message: string,
+    modelId: AiModelId,
+    error?: unknown,
+    context?: Record<string, unknown>,
+  ): Promise<void> {
+    await this.writeLog({
+      category: "recording",
+      level,
+      message,
+      context: {
+        modelId,
+        gameActive: this.gameActive,
+        ...context,
+        error: error instanceof Error ? error.message : error ? String(error) : undefined,
+      },
+    });
+  }
+}

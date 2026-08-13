@@ -43,7 +43,10 @@ export const defaultSettings: AppSettings = {
   pushToTalkShortcut: "Space",
   recordingMarkerShortcut: "F8",
   recordingSaveDirectory: undefined,
-  recordingLibraryQuotaGb: 5,
+  recordingLibraryQuotaGb: 10,
+  aiProcessingMode: "after_game",
+  isAiAutoTranscribeEnabled: false,
+  isAiAutoOrganizeEnabled: false,
   isNoiseSuppressionEnabled: true,
   isEchoCancellationEnabled: true,
   isAutoGainControlEnabled: true,
@@ -190,7 +193,18 @@ export const migrateSettings = (raw: RawSettings): MigrationResult => {
     recordingMarkerShortcut:
       trimUnknownText(raw.recordingMarkerShortcut) ?? defaultSettings.recordingMarkerShortcut,
     recordingSaveDirectory: trimUnknownText(raw.recordingSaveDirectory),
-    recordingLibraryQuotaGb: normalizeNumber(raw.recordingLibraryQuotaGb, 5, 1, 100),
+    recordingLibraryQuotaGb:
+      previousVersion < 24 && raw.recordingLibraryQuotaGb === 5
+        ? 10
+        : normalizeNumber(raw.recordingLibraryQuotaGb, 10, 1, 100),
+    aiProcessingMode:
+      raw.aiProcessingMode === "low_resource" ||
+      raw.aiProcessingMode === "immediate" ||
+      raw.aiProcessingMode === "manual"
+        ? raw.aiProcessingMode
+        : "after_game",
+    isAiAutoTranscribeEnabled: normalizeBoolean(raw.isAiAutoTranscribeEnabled, false),
+    isAiAutoOrganizeEnabled: normalizeBoolean(raw.isAiAutoOrganizeEnabled, false),
     relayServerUrl:
       normalizeRelayServerUrl(trimUnknownText(raw.relayServerUrl)) ??
       defaultSettings.relayServerUrl,

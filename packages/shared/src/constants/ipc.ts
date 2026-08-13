@@ -41,11 +41,19 @@ export const IPC_CHANNELS = {
     toggle: "overlay:toggle",
     close: "overlay:close",
     update: "overlay:update",
+    setInteractive: "overlay:set-interactive",
+    moveTo: "overlay:move-to",
+    resetPosition: "overlay:reset-position",
     state: "overlay:state",
   },
   games: {
     getSnapshot: "games:get-snapshot",
     detected: "games:detected",
+  },
+  ai: {
+    getSnapshot: "ai:get-snapshot",
+    controlModel: "ai:control-model",
+    status: "ai:status",
   },
   settings: {
     get: "settings:get",
@@ -68,6 +76,7 @@ export const IPC_CHANNELS = {
     getStatus: "windows:get-status",
     repairFirewall: "windows:repair-firewall",
     removeFirewall: "windows:remove-firewall",
+    setIconOverlaysHidden: "windows:set-icon-overlays-hidden",
   },
   shortcuts: {
     configureMute: "shortcuts:configure-mute",
@@ -93,6 +102,7 @@ export const IPC_CHANNELS = {
     chooseDirectory: "recording:choose-directory",
     saveMarkers: "recording:save-markers",
     list: "recording:list",
+    setFavorite: "recording:set-favorite",
     openDirectory: "recording:open-directory",
     delete: "recording:delete",
   },

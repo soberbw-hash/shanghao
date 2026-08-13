@@ -5,10 +5,10 @@ import test from "node:test";
 const read = (path: string) => readFile(new URL(path, import.meta.url), "utf8");
 
 test("packaged Windows executable requires administrator without uiAccess", async () => {
-  const afterPack = await read("../../../scripts/after-pack.cjs");
+  const builder = await read("../electron-builder.yml");
   const verifier = await read("../../../scripts/verify-windows-execution-level.mjs");
-  assert.match(afterPack, /["']requested-execution-level["']:\s*["']requireAdministrator["']/);
-  assert.doesNotMatch(afterPack, /requested-execution-level["'],\s*["']asInvoker/);
+  assert.match(builder, /requestedExecutionLevel:\s*requireAdministrator/);
+  assert.match(builder, /signAndEditExecutable:\s*true/);
   assert.match(verifier, /uiAccess\\s\*=/);
   assert.match(verifier, /false/);
   assert.match(verifier, /asInvoker/);

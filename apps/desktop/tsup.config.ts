@@ -14,6 +14,10 @@ export default defineConfig({
       "src/preload/screen-share-viewer.ts",
     ),
     "tests/visual/capture-ui": path.join(currentDirectory, "tests/visual/capture-ui.ts"),
+    "tests/electron-recording-playback-smoke": path.join(
+      currentDirectory,
+      "tests/electron-recording-playback-smoke.ts",
+    ),
   },
   clean: true,
   dts: false,

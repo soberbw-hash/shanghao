@@ -28,7 +28,7 @@ export const MusicActivityBadge = ({ activity }: { activity: MusicActivity }) =>
   const tooltipId = useId();
   const marqueeRef = useRef<HTMLSpanElement>(null);
   const textRef = useRef<HTMLSpanElement>(null);
-  const closeTimerRef = useRef<number>();
+  const closeTimerRef = useRef<number | undefined>(undefined);
   const [shouldScroll, setShouldScroll] = useState(false);
   const [isTooltipOpen, setIsTooltipOpen] = useState(false);
 

@@ -16,6 +16,7 @@ import {
   type RoomEvent,
   type RoomCollectionItem,
   type RoomMember,
+  type RoomQuickMessage,
   type RoomSummary,
   type SceneZoneId,
   type SceneReaction,
@@ -46,6 +47,7 @@ interface RoomStoreState {
   chatMessages: ChatMessage[];
   collectionItems: RoomCollectionItem[];
   sceneReactions: SceneReaction[];
+  quickMessages: RoomQuickMessage[];
   channelCounts: { main: number; side: number };
   setConnectionState: (state: RoomConnectionState, reason?: string) => void;
   setLifecycleState: (state: RoomLifecycleState) => void;
@@ -57,11 +59,18 @@ interface RoomStoreState {
   setRemoteScreenSharing: (peerId: string, isSharing: boolean) => void;
   setConnectionHealth: (health: Partial<ConnectionHealth>) => void;
   addChatMessage: (message: ChatMessage) => void;
+  updateChatDelivery: (
+    clientMessageId: string,
+    patch: Partial<
+      Pick<ChatMessage, "id" | "createdAt" | "deliveryState" | "failureReason" | "retryCount">
+    >,
+  ) => void;
   removeChatMessage: (messageId: string) => void;
   mergeChatHistory: (messages: ChatMessage[]) => void;
   setCollectionItems: (items: RoomCollectionItem[]) => void;
   mergeCollectionItems: (items: RoomCollectionItem[]) => void;
   addSceneReaction: (reaction: SceneReaction) => void;
+  addQuickMessage: (message: RoomQuickMessage) => void;
   setChannelCounts: (counts: { main: number; side: number }) => void;
   clearChannelContent: () => void;
   syncLocalProfile: (profile: LocalProfilePayload) => void;
@@ -214,6 +223,7 @@ export const useRoomStore = create<RoomStoreState>((set) => ({
   chatMessages: [],
   collectionItems: [],
   sceneReactions: [],
+  quickMessages: [],
   channelCounts: { main: 0, side: 0 },
   setConnectionState: (connectionState, reason) =>
     set((state) => ({
@@ -307,14 +317,26 @@ export const useRoomStore = create<RoomStoreState>((set) => ({
     })),
   addChatMessage: (message) =>
     set((state) => {
+      const existingByClientId = message.clientMessageId
+        ? state.chatMessages.find((item) => item.clientMessageId === message.clientMessageId)
+        : undefined;
       const byId = new Map(state.chatMessages.map((item) => [item.id, item]));
-      byId.set(message.id, message);
+      if (existingByClientId && existingByClientId.id !== message.id) {
+        byId.delete(existingByClientId.id);
+      }
+      byId.set(message.id, existingByClientId ? { ...existingByClientId, ...message } : message);
       return {
         chatMessages: [...byId.values()]
           .sort((left, right) => left.createdAt.localeCompare(right.createdAt))
           .slice(-MAX_LOCAL_CHAT_MESSAGES),
       };
     }),
+  updateChatDelivery: (clientMessageId, patch) =>
+    set((state) => ({
+      chatMessages: state.chatMessages.map((message) =>
+        message.clientMessageId === clientMessageId ? { ...message, ...patch } : message,
+      ),
+    })),
   removeChatMessage: (messageId) =>
     set((state) => ({
       chatMessages: state.chatMessages.filter((message) => message.id !== messageId),
@@ -322,7 +344,15 @@ export const useRoomStore = create<RoomStoreState>((set) => ({
   mergeChatHistory: (messages) =>
     set((state) => {
       const byId = new Map(state.chatMessages.map((item) => [item.id, item]));
-      for (const message of messages) byId.set(message.id, message);
+      for (const message of messages) {
+        if (message.clientMessageId) {
+          const optimistic = [...byId.values()].find(
+            (candidate) => candidate.clientMessageId === message.clientMessageId,
+          );
+          if (optimistic && optimistic.id !== message.id) byId.delete(optimistic.id);
+        }
+        byId.set(message.id, { ...message, deliveryState: "sent" });
+      }
       return {
         chatMessages: [...byId.values()]
           .sort((left, right) => left.createdAt.localeCompare(right.createdAt))
@@ -345,6 +375,13 @@ export const useRoomStore = create<RoomStoreState>((set) => ({
     set((state) => ({
       sceneReactions: [...state.sceneReactions, reaction].slice(-20),
     })),
+  addQuickMessage: (message) =>
+    set((state) => ({
+      quickMessages: [
+        ...state.quickMessages.filter((item) => item.id !== message.id),
+        message,
+      ].slice(-20),
+    })),
   setChannelCounts: (channelCounts) => set({ channelCounts }),
   clearChannelContent: () =>
     set({
@@ -354,6 +391,7 @@ export const useRoomStore = create<RoomStoreState>((set) => ({
       chatMessages: [],
       collectionItems: [],
       sceneReactions: [],
+      quickMessages: [],
     }),
   syncLocalProfile: (profile) =>
     set((state) => {
@@ -448,6 +486,7 @@ export const useRoomStore = create<RoomStoreState>((set) => ({
       chatMessages: [],
       collectionItems: [],
       sceneReactions: [],
+      quickMessages: [],
       connectionHealth: {
         latencyMs: 0,
         jitterMs: 0,

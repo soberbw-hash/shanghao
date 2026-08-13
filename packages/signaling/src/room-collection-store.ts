@@ -1,7 +1,11 @@
 import { copyFile, mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
 import { dirname, join, parse } from "node:path";
 
-import type { RoomCollectionItem } from "@private-voice/shared";
+import {
+  MAX_ROOM_COLLECTION_IMAGE_LENGTH,
+  MAX_ROOM_COLLECTION_TEXT_LENGTH,
+  type RoomCollectionItem,
+} from "@private-voice/shared";
 
 interface PersistedRoomCollection {
   version: 1;
@@ -22,7 +26,10 @@ const isStoredItem = (value: unknown): value is RoomCollectionItem => {
     item.title.length <= 80 &&
     typeof item.content === "string" &&
     item.content.trim().length > 0 &&
-    item.content.length <= 2_000 &&
+    item.content.length <=
+      (item.kind === "image"
+        ? MAX_ROOM_COLLECTION_IMAGE_LENGTH
+        : MAX_ROOM_COLLECTION_TEXT_LENGTH) &&
     typeof item.createdByPeerId === "string" &&
     item.createdByPeerId.length <= 128 &&
     typeof item.createdByNickname === "string" &&

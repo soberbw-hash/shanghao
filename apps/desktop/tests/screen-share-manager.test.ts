@@ -2,7 +2,10 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 
-import { ScreenShareManager } from "../src/renderer/src/features/screen-share/ScreenShareManager";
+import {
+  isRetryableDisplayCaptureError,
+  ScreenShareManager,
+} from "../src/renderer/src/features/screen-share/ScreenShareManager";
 
 class FakeTrack extends EventTarget {
   readyState: MediaStreamTrackState = "live";
@@ -32,6 +35,7 @@ const installCaptureEnvironment = ({ includeAudio }: { includeAudio: boolean }) 
   Object.defineProperty(globalThis, "window", {
     configurable: true,
     value: {
+      setTimeout,
       desktopApi: {
         screenCapture: {
           listSources: async () => [
@@ -120,6 +124,44 @@ test("screen share manager keeps video when system audio is disabled", async () 
   await manager.stopShare();
 });
 
+test("screen share manager retries a temporarily unreadable Windows source without loopback audio", async () => {
+  const environment = installCaptureEnvironment({ includeAudio: false });
+  let attempts = 0;
+  const originalCapture = navigator.mediaDevices.getDisplayMedia;
+  navigator.mediaDevices.getDisplayMedia = async (request) => {
+    attempts += 1;
+    if (attempts === 1) {
+      const error = new Error("Could not start video source");
+      error.name = "NotReadableError";
+      throw error;
+    }
+    return originalCapture.call(navigator.mediaDevices, request);
+  };
+  const selectedSources: string[] = [];
+  window.desktopApi.screenCapture.selectSource = async (sourceId) => {
+    selectedSources.push(sourceId);
+  };
+  const manager = new ScreenShareManager({
+    startPublishing: async () => undefined,
+    stopPublishing: async () => undefined,
+  });
+
+  await manager.startShare({ sourceId: "window:42", includeSystemAudio: true });
+
+  assert.equal(attempts, 2);
+  assert.deepEqual(selectedSources, ["window:42", "window:42"]);
+  assert.equal(environment.captureRequests[0]?.audio, false);
+  assert.equal(manager.getSnapshot().status, "sharing");
+  await manager.stopShare();
+});
+
+test("display capture retry only covers transient source startup failures", () => {
+  const unreadable = new Error("Could not start video source");
+  unreadable.name = "NotReadableError";
+  assert.equal(isRetryableDisplayCaptureError(unreadable), true);
+  assert.equal(isRetryableDisplayCaptureError(new Error("permission_denied")), false);
+});
+
 test("screen source enumeration can be cancelled without reviving stale picker state", async () => {
   const environment = installCaptureEnvironment({ includeAudio: false });
   let resolveSources:
@@ -185,4 +227,13 @@ test("viewer preload exposes only the screen-share viewer bridge", () => {
   assert.match(preload, /sendSignal/);
   assert.match(preload, /onSignal/);
   assert.match(preload, /close/);
+});
+
+test("Windows capture handler only requests loopback audio when the renderer asks for it", () => {
+  const source = readFileSync(new URL("../src/main/window.ts", import.meta.url), "utf8");
+  assert.match(source, /request\.audioRequested && process\.platform === "win32"/);
+  assert.match(
+    source,
+    /requestedSourceId[\s\S]*sources\.find\(\(source\) => source\.id === requestedSourceId\)/,
+  );
 });

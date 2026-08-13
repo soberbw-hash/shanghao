@@ -5,6 +5,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { app, BrowserWindow, desktopCapturer, screen, type Rectangle } from "electron";
 
 import {
+  APP_ID,
   APP_NAME,
   IPC_CHANNELS,
   type ScreenCaptureSourceDescriptor,
@@ -335,10 +336,14 @@ export const createMainWindow = ({
       sandbox: true,
     },
   });
-  // NOTE: BrowserWindow#setAppDetails is a 36+ API that has stub types in
-  // 35.x but no runtime implementation, so calling it crashes startup.
-  // Windows taskbar identity is configured with app.setAppUserModelId()
-  // before app.whenReady(); BrowserWindow uses the packaged multi-size icon.
+  if (process.platform === "win32") {
+    window.setAppDetails({
+      appId: APP_ID,
+      appIconPath: getIconPath(),
+      appIconIndex: 0,
+      relaunchDisplayName: APP_NAME,
+    });
+  }
 
   const targetUrl = !app.isPackaged
     ? devServerUrl
@@ -453,17 +458,21 @@ export const createMainWindow = ({
         return;
       }
 
+      const requestedSourceId = pendingScreenCaptureSourceId;
+      pendingScreenCaptureSourceId = undefined;
       const sources = await waitForScreenCaptureSources(false);
       const primaryDisplayId = String(screen.getPrimaryDisplay().id);
-      const selectedSource =
-        sources.find((source) => source.id === pendingScreenCaptureSourceId) ??
-        sources.find((source) => source.display_id === primaryDisplayId) ??
-        sources.find((source) => source.id.startsWith("screen:")) ??
-        sources[0];
-      pendingScreenCaptureSourceId = undefined;
+      const selectedSource = requestedSourceId
+        ? sources.find((source) => source.id === requestedSourceId)
+        : (sources.find((source) => source.display_id === primaryDisplayId) ??
+          sources.find((source) => source.id.startsWith("screen:")) ??
+          sources[0]);
 
       if (!selectedSource) {
-        log?.("error", "Screen share source enumeration returned no sources");
+        log?.("error", "Requested screen share source is no longer available", {
+          requestedSourceId,
+          sourceCount: sources.length,
+        });
         callback({});
         return;
       }
@@ -471,10 +480,11 @@ export const createMainWindow = ({
       log?.("info", "Approved screen capture request", {
         sourceKind: selectedSource.id.startsWith("screen:") ? "screen" : "window",
         primaryDisplayId,
+        audioRequested: request.audioRequested,
       });
       callback({
         video: selectedSource,
-        audio: process.platform === "win32" ? "loopback" : undefined,
+        audio: request.audioRequested && process.platform === "win32" ? "loopback" : undefined,
       });
     } catch (error) {
       log?.("error", "Failed to approve screen capture request", {

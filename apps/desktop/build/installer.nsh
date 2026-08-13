@@ -55,41 +55,57 @@
 !macro removeShangHaoInstallFilesSafely
   ${if} ${FileExists} "$INSTDIR\*.*"
     !insertmacro ensureShangHaoInstallMarker
-    ; 只清理 Electron/上号已知产物。即使专属目录旁边存在用户文件，也不会删除它们。
+    ${if} ${FileExists} "$INSTDIR\.shanghao-install-manifest"
+      DetailPrint "正在按上号安装清单清理旧版程序文件..."
+      ; 清单由打包阶段从 win-unpacked 生成。根目录通过环境变量传给 PowerShell，
+      ; 避免自定义安装路径里的引号被解释为命令；每个目标仍需通过 GetFullPath
+      ; 与根目录前缀校验。目录删除不使用 -Recurse，所以用户文件会被完整保留。
+      System::Call 'kernel32::SetEnvironmentVariable(t "SHANGHAO_INSTALL_ROOT", t "$INSTDIR")'
+      nsExec::ExecToLog `"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "$$root = [IO.Path]::GetFullPath($$env:SHANGHAO_INSTALL_ROOT); $$prefix = $$root.TrimEnd([IO.Path]::DirectorySeparatorChar) + [IO.Path]::DirectorySeparatorChar; $$manifest = Join-Path $$root '.shanghao-install-manifest'; $$entries = @(Get-Content -LiteralPath $$manifest -Encoding UTF8 -ErrorAction Stop); if ($$entries.Count -lt 1 -or $$entries[0] -ne 'ShangHao.InstallManifest.v1') { throw 'Invalid ShangHao install manifest' }; foreach ($$entry in $$entries) { if ($$entry.StartsWith('F|')) { $$relative = $$entry.Substring(2); $$target = [IO.Path]::GetFullPath((Join-Path $$root $$relative)); if ($$target.StartsWith($$prefix, [StringComparison]::OrdinalIgnoreCase)) { Remove-Item -LiteralPath $$target -Force -ErrorAction SilentlyContinue } } }; foreach ($$entry in $$entries) { if ($$entry.StartsWith('D|')) { $$relative = $$entry.Substring(2); $$target = [IO.Path]::GetFullPath((Join-Path $$root $$relative)); if ($$target.StartsWith($$prefix, [StringComparison]::OrdinalIgnoreCase)) { Remove-Item -LiteralPath $$target -Force -ErrorAction SilentlyContinue } } }"`
+      Pop $0
+      System::Call 'kernel32::SetEnvironmentVariable(t "SHANGHAO_INSTALL_ROOT", p 0)'
+      ${if} $0 != 0
+        Abort "上号安装清单读取失败。为保护你的文件，安装器已停止清理。"
+      ${endif}
+      Delete "$INSTDIR\.shanghao-install-manifest"
+    ${else}
+      ; 2.6.1 及更早版本没有安装清单。只清理 Electron/上号已知产物，
+      ; 即使专属目录旁边存在用户文件，也不会删除它们。
+      Delete "$INSTDIR\chrome_100_percent.pak"
+      Delete "$INSTDIR\chrome_200_percent.pak"
+      Delete "$INSTDIR\d3dcompiler_47.dll"
+      Delete "$INSTDIR\ffmpeg.dll"
+      Delete "$INSTDIR\icudtl.dat"
+      Delete "$INSTDIR\libEGL.dll"
+      Delete "$INSTDIR\libGLESv2.dll"
+      Delete "$INSTDIR\LICENSE.electron.txt"
+      Delete "$INSTDIR\LICENSES.chromium.html"
+      Delete "$INSTDIR\resources.pak"
+      Delete "$INSTDIR\snapshot_blob.bin"
+      Delete "$INSTDIR\v8_context_snapshot.bin"
+      Delete "$INSTDIR\vk_swiftshader.dll"
+      Delete "$INSTDIR\vk_swiftshader_icd.json"
+      Delete "$INSTDIR\vulkan-1.dll"
+      Delete "$INSTDIR\locales\en-US.pak"
+      Delete "$INSTDIR\locales\zh-CN.pak"
+      RMDir "$INSTDIR\locales"
+      Delete "$INSTDIR\resources\app-update.yml"
+      Delete "$INSTDIR\resources\app.asar"
+      Delete "$INSTDIR\resources\elevate.exe"
+      RMDir /r "$INSTDIR\resources\app.asar.unpacked"
+      RMDir /r "$INSTDIR\resources\build"
+      RMDir /r "$INSTDIR\resources\deepfilter"
+      RMDir /r "$INSTDIR\resources\licenses"
+      RMDir "$INSTDIR\resources"
+      Delete "$INSTDIR\swiftshader\libEGL.dll"
+      Delete "$INSTDIR\swiftshader\libGLESv2.dll"
+      RMDir "$INSTDIR\swiftshader"
+    ${endif}
     Delete "$INSTDIR\.shanghao-install-root"
     Delete "$INSTDIR\ShangHao.exe"
     Delete "$INSTDIR\上号.exe"
     Delete "$INSTDIR\PrivateVoice.exe"
     Delete "$INSTDIR\Uninstall*.exe"
-    Delete "$INSTDIR\chrome_100_percent.pak"
-    Delete "$INSTDIR\chrome_200_percent.pak"
-    Delete "$INSTDIR\d3dcompiler_47.dll"
-    Delete "$INSTDIR\ffmpeg.dll"
-    Delete "$INSTDIR\icudtl.dat"
-    Delete "$INSTDIR\libEGL.dll"
-    Delete "$INSTDIR\libGLESv2.dll"
-    Delete "$INSTDIR\LICENSE.electron.txt"
-    Delete "$INSTDIR\LICENSES.chromium.html"
-    Delete "$INSTDIR\resources.pak"
-    Delete "$INSTDIR\snapshot_blob.bin"
-    Delete "$INSTDIR\v8_context_snapshot.bin"
-    Delete "$INSTDIR\vk_swiftshader.dll"
-    Delete "$INSTDIR\vk_swiftshader_icd.json"
-    Delete "$INSTDIR\vulkan-1.dll"
-    Delete "$INSTDIR\locales\en-US.pak"
-    Delete "$INSTDIR\locales\zh-CN.pak"
-    RMDir "$INSTDIR\locales"
-    Delete "$INSTDIR\resources\app-update.yml"
-    Delete "$INSTDIR\resources\app.asar"
-    Delete "$INSTDIR\resources\elevate.exe"
-    RMDir /r "$INSTDIR\resources\app.asar.unpacked"
-    RMDir /r "$INSTDIR\resources\build"
-    RMDir /r "$INSTDIR\resources\deepfilter"
-    RMDir /r "$INSTDIR\resources\licenses"
-    RMDir "$INSTDIR\resources"
-    Delete "$INSTDIR\swiftshader\libEGL.dll"
-    Delete "$INSTDIR\swiftshader\libGLESv2.dll"
-    RMDir "$INSTDIR\swiftshader"
     RMDir "$INSTDIR"
   ${endif}
 !macroend

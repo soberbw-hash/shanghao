@@ -23,7 +23,9 @@ export const createAudioConstraints = (
     googNoiseSuppression: overrides.noiseSuppression ?? true,
     googHighpassFilter: true,
     googAutoGainControl: overrides.autoGainControl ?? true,
-    googTypingNoiseDetection: true,
+    // DeepFilterNet is the only standalone suppression stage. Keep Chromium's
+    // typing-noise suppressor aligned with its main noise-suppression switch.
+    googTypingNoiseDetection: overrides.noiseSuppression ?? true,
   } as MediaTrackConstraints;
 
   return {

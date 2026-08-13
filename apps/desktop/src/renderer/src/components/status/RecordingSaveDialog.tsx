@@ -1,4 +1,5 @@
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
+import { FolderOpen } from "lucide-react";
 
 import { Button } from "../base/Button";
 import {
@@ -42,10 +43,17 @@ export const RecordingSaveDialog = ({
             <div id="recording-save-title" className="text-[20px] font-semibold text-[#111827]">
               录音已保存
             </div>
-            <p className="mt-2 text-sm leading-6 text-[#667085]">
-              {filePath || "房间录音已经导出为 .m4a 文件。"}
-            </p>
-            <div className="mt-5">
+            <p className="mt-2 text-sm leading-6 text-[#667085]">房间录音已经保存到本机。</p>
+            {filePath ? (
+              <p className="recording-save-path" title={filePath}>
+                {filePath}
+              </p>
+            ) : null}
+            <div className="mt-5 flex flex-wrap items-center gap-2">
+              <Button onClick={() => void window.desktopApi.recording.openDirectory()}>
+                <FolderOpen className="size-4" aria-hidden="true" />
+                打开文件夹
+              </Button>
               <Button variant="secondary" onClick={onClose}>
                 关闭
               </Button>

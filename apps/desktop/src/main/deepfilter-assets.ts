@@ -1,5 +1,5 @@
 import { app } from "electron";
-import { readFile } from "node:fs/promises";
+import { access, readFile } from "node:fs/promises";
 import path from "node:path";
 
 import type { DeepFilterAssets } from "@private-voice/shared";
@@ -12,13 +12,28 @@ let cachedAssets: Promise<DeepFilterAssets> | undefined;
 const toExactArrayBuffer = (buffer: Buffer): ArrayBuffer =>
   buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength) as ArrayBuffer;
 
-const resolveAssetDirectory = (): string =>
-  app.isPackaged
-    ? path.join(process.resourcesPath, "deepfilter")
-    : path.join(app.getAppPath(), "resources", "deepfilter");
+const resolveAssetDirectory = async (): Promise<string> => {
+  if (app.isPackaged) return path.join(process.resourcesPath, "deepfilter");
+
+  const candidates = [
+    path.join(app.getAppPath(), "resources", "deepfilter"),
+    path.join(process.cwd(), "resources", "deepfilter"),
+    path.join(process.cwd(), "apps", "desktop", "resources", "deepfilter"),
+  ];
+  for (const candidate of candidates) {
+    try {
+      await access(path.join(candidate, "df_bg.wasm"));
+      await access(path.join(candidate, "DeepFilterNet3_onnx.tar.gz"));
+      return candidate;
+    } catch {
+      // Continue through the known development working-directory layouts.
+    }
+  }
+  return candidates[0] ?? path.join(app.getAppPath(), "resources", "deepfilter");
+};
 
 const readAssets = async (): Promise<DeepFilterAssets> => {
-  const directory = resolveAssetDirectory();
+  const directory = await resolveAssetDirectory();
   const [wasm, model] = await Promise.all([
     readFile(path.join(directory, "df_bg.wasm")),
     readFile(path.join(directory, "DeepFilterNet3_onnx.tar.gz")),

@@ -1,5 +1,7 @@
 import {
   DEFAULT_RECONNECT_DELAYS_MS,
+  MAX_ROOM_COLLECTION_IMAGE_LENGTH,
+  MAX_ROOM_COLLECTION_TEXT_LENGTH,
   MemberPresenceState,
   MemberSpeakingState,
   RoomConnectionState,
@@ -12,6 +14,7 @@ import {
   type MusicActivity,
   type WorkActivity,
   type RoomMember,
+  type RoomQuickMessage,
   type RoomCollectionItem,
   type SceneReaction,
   type SceneZoneId,
@@ -21,9 +24,7 @@ import type {
   AudioChunkMessage,
   AudioPathStateMessage,
   AvatarUpdateMessage,
-  ChatMessage as SignalChatMessage,
-  ChatRecallMessage,
-  ChatHistoryMessage,
+  ChatAckMessage,
   ChannelCountsMessage,
   RoomCollectionSnapshotMessage,
   ErrorMessage,
@@ -59,9 +60,19 @@ import { clampMemberVolume } from "../audio/memberVolume";
 import { getRemoteAudioMixer } from "../audio/RemoteAudioMixer";
 import { hasPlayableAudioTrack } from "../audio/remoteAudioTrack";
 import { PeerStatsMonitor } from "./PeerStatsMonitor";
+import { PeerOperationQueue } from "./PeerOperationQueue";
+import { SignalingBridge } from "./SignalingBridge";
 import { buildRoomDiagnostics } from "./RoomDiagnostics";
 import { isPeerAudioPathReady, shouldSendAudioRelay } from "./peerAudioPath";
-import { normalizePresenceGameName } from "./presenceSignal";
+import { normalizePresenceGameName, resolvePresenceGameNameUpdate } from "./presenceSignal";
+import { decodeQuickReplyTarget } from "../chat/quickReplies";
+import { ReliableChatTransport } from "../chat/ReliableChatTransport";
+import { ScreenAudioMixer } from "../screen-share/ScreenAudioMixer";
+import { ScreenFrameRelay } from "../screen-share/ScreenFrameRelay";
+import {
+  serverBuildSupportsDailyRoomReports,
+  serverBuildSupportsReliableChat,
+} from "../chat/serverCapabilities";
 
 interface RoomClientOptions {
   signalingUrl: string;
@@ -89,9 +100,11 @@ interface RoomClientOptions {
   onRemoteScreenFrame: (peerId: string, frame?: RemoteScreenFrame) => void;
   onRemoteScreenShareState: (peerId: string, isSharing: boolean) => void;
   onSceneReaction: (reaction: SceneReaction) => void;
+  onQuickMessage: (message: RoomQuickMessage) => void;
   onDiagnosticEvent?: (payload: SignalingEventPayload) => void;
   onReconnectAttempt?: (attempt: number) => void;
   onReconnectExhausted?: (error: Error) => void;
+  onUpdateRequired?: (requiredVersion: string, currentVersion: string) => void;
   onAvatarConflict?: (availableAvatarIds: BuiltInAvatarId[]) => void;
   onSnapshotRevision?: (revision: number) => void;
   onRtt?: (rttMs: number) => void;
@@ -128,27 +141,10 @@ const INITIAL_CONNECT_TIMEOUT_MS = 10_000;
 const SNAPSHOT_RETRY_TIMEOUT_MS = 5_000;
 const AUDIO_PATH_SYNC_INTERVAL_MS = 3_000;
 const SCREEN_FRAME_INTERVAL_MS = 2_500;
-const SCREEN_FRAME_MAX_WIDTH = 480;
-const SCREEN_FRAME_MAX_BYTES = 48 * 1024;
-
-const DAILY_ROOM_REPORTS_MIN_BUILD = "2026.08.12.1";
-
-export const serverBuildSupportsDailyRoomReports = (buildNumber?: string): boolean => {
-  if (!buildNumber) return false;
-  const parse = (value: string) => value.split(".").map((part) => Number.parseInt(part, 10));
-  const current = parse(buildNumber);
-  const minimum = parse(DAILY_ROOM_REPORTS_MIN_BUILD);
-  if (current.some((part) => !Number.isFinite(part))) return false;
-  for (let index = 0; index < Math.max(current.length, minimum.length); index += 1) {
-    const currentPart = current[index] ?? 0;
-    const minimumPart = minimum[index] ?? 0;
-    if (currentPart !== minimumPart) return currentPart > minimumPart;
-  }
-  return true;
-};
+export { serverBuildSupportsDailyRoomReports, serverBuildSupportsReliableChat };
 
 export class RoomClient {
-  private readonly signalingSessionId = crypto.randomUUID();
+  private readonly signalingBridge = new SignalingBridge();
   private readonly backoff = new ExponentialBackoff(DEFAULT_RECONNECT_DELAYS_MS);
   private readonly peers = new Map<string, MeshPeerConnection>();
   private readonly peerVolumes = new Map<string, number>();
@@ -173,7 +169,6 @@ export class RoomClient {
   private pendingConnection?: PendingConnection;
   private hasJoinedOnce = false;
   private serverBuildNumber?: string;
-  private unsubscribeEvents?: () => void;
   private audioFallback?: AudioFallbackController;
   private readonly remotePeerIds = new Set<string>();
   private readonly webrtcConnectedPeerIds = new Set<string>();
@@ -190,7 +185,7 @@ export class RoomClient {
   private readonly peerRecoveryTimers = new Map<string, number>();
   private readonly peerConnectionWatchdogs = new Map<string, number>();
   private readonly peerRecoveryAttempts = new Map<string, number>();
-  private readonly peerOperationQueues = new Map<string, Promise<void>>();
+  private readonly peerOperationQueue = new PeerOperationQueue();
   private readonly pendingIceCandidates = new Map<string, IceCandidateMessage["candidate"][]>();
   private readonly peerStatsMonitor: PeerStatsMonitor;
   private reconnectAttempts = 0;
@@ -200,7 +195,9 @@ export class RoomClient {
   private lastSocketCloseCode?: number;
   private lastSocketCloseReason?: string;
   private lastSocketClosedAt?: string;
-  private chatSendFailures = 0;
+  private readonly chatTransport: ReliableChatTransport;
+  private readonly screenAudioMixer = new ScreenAudioMixer();
+  private readonly screenFrameRelay: ScreenFrameRelay;
   private currentMembers: RoomMember[] = [];
   private readonly avatarCache = new Map<string, { avatarHash?: string; avatarDataUrl?: string }>();
   private joinStage = "idle";
@@ -212,16 +209,8 @@ export class RoomClient {
   private screenShareStream?: MediaStream;
   private screenShareProfile = DEFAULT_SCREEN_SHARE_PROFILE;
   private primaryInputTrack?: MediaStreamTrack;
-  private screenAudioContext?: AudioContext;
-  private mixedScreenAudioTrack?: MediaStreamTrack;
-  private screenFrameVideo?: HTMLVideoElement;
-  private screenFrameCanvas?: HTMLCanvasElement;
-  private screenFrameTimer?: number;
-  private screenFrameIntervalMs?: number;
-  private screenFrameSequence = 0;
   private iceServers?: RTCIceServer[];
   private hasTurnServer = false;
-  private bridgeEventQueue: Promise<void> = Promise.resolve();
   private reconnectSessionToken?: string;
 
   constructor(private readonly options: RoomClientOptions) {
@@ -233,6 +222,24 @@ export class RoomClient {
     this.lastPublishedNickname = options.nickname;
     this.lastPublishedAvatarDataUrl = options.avatarDataUrl;
     this.lastPublishedAvatarId = options.avatarId;
+    this.chatTransport = new ReliableChatTransport({
+      roomId: options.roomId,
+      peerId: options.peerId,
+      canSend: () => this.canSendChat(),
+      getServerBuildNumber: () => this.serverBuildNumber,
+      send: (payload) => this.send(payload),
+      onMessage: options.onChatMessage,
+      onHistory: options.onChatHistory,
+      onRecall: options.onChatRecall,
+    });
+    this.screenFrameRelay = new ScreenFrameRelay({
+      roomId: options.roomId,
+      peerId: options.peerId,
+      getTargetPeerIds: () => this.getScreenRelayTargetPeerIds(),
+      send: async (payload) => {
+        await this.safeSend(payload);
+      },
+    });
     this.peerStatsMonitor = new PeerStatsMonitor({
       getPeers: () => this.peers,
       getPeerState: (peerId) => ({
@@ -307,13 +314,11 @@ export class RoomClient {
     this.screenRelayRequestedByPeerIds.clear();
     this.advertisedScreenRelayNeeds.clear();
     this.peerStatsMonitor.stop();
-    this.unsubscribeEvents?.();
-    this.unsubscribeEvents = undefined;
     this.pendingIceCandidates.clear();
-    this.peerOperationQueues.clear();
-    this.bridgeEventQueue = Promise.resolve();
+    this.peerOperationQueue.clear();
+    this.chatTransport.rejectPending("room_client_disconnected");
     this.isSignalingConnected = false;
-    await window.desktopApi.signaling.close(this.signalingSessionId).catch(() => undefined);
+    await this.signalingBridge.close();
     this.options.onConnectionState(RoomConnectionState.Disconnected);
   }
 
@@ -331,14 +336,14 @@ export class RoomClient {
       audioRelayActive: Boolean(this.audioFallback),
       remotePeerCount: this.remotePeerIds.size,
       roomSnapshotRevision: this.lastSnapshotRevision,
-      chatSendFailures: this.chatSendFailures,
+      chatSendFailures: this.chatTransport.getFailureCount(),
       joinStage: this.joinStage,
       wsOpened: this.wsOpened,
       joinChannelSent: this.joinChannelSent,
       joinAckReceived: this.joinAckReceived,
       roomSnapshotReceived: this.roomSnapshotReceived,
       lastServerError: this.lastServerError,
-      screenShareRelayActive: Boolean(this.screenFrameTimer),
+      screenShareRelayActive: this.screenFrameRelay.isActive(),
       screenShareRelayTargetCount: this.getScreenRelayTargetPeerIds().length,
       audioRelayDiagnostics: this.audioFallback?.getDiagnostics(),
       webrtcReadyPeerCount: this.webrtcReadyPeerIds.size,
@@ -438,23 +443,19 @@ export class RoomClient {
       const timeout = window.setTimeout(() => {
         const error = new Error(this.wsOpened ? "join_ack_timeout" : "network_unreachable");
         this.rejectPendingConnection(error);
-        void window.desktopApi.signaling.close(this.signalingSessionId);
+        void this.signalingBridge.close();
       }, INITIAL_CONNECT_TIMEOUT_MS);
 
       this.pendingConnection = { resolve, reject, timeout };
-      this.unsubscribeEvents?.();
-      this.unsubscribeEvents = window.desktopApi.signaling.onEvent((payload) => {
-        if (payload.sessionId !== this.signalingSessionId) return;
-        this.options.onDiagnosticEvent?.(payload);
-        this.bridgeEventQueue = this.bridgeEventQueue
-          .then(() => this.handleBridgeEvent(payload))
-          .catch((error) => {
-            this.handleBridgeFailure(error);
-          });
-      });
-
-      void window.desktopApi.signaling
-        .connect(this.options.signalingUrl, this.signalingSessionId)
+      void this.signalingBridge
+        .connect(
+          this.options.signalingUrl,
+          async (payload) => {
+            this.options.onDiagnosticEvent?.(payload);
+            await this.handleBridgeEvent(payload);
+          },
+          (error) => this.handleBridgeFailure(error),
+        )
         .catch((error) => {
           this.rejectPendingConnection(error instanceof Error ? error : new Error(String(error)));
         });
@@ -574,13 +575,19 @@ export class RoomClient {
         this.handleErrorMessage(payload);
         return;
       case "chat_message":
-        this.handleChatMessage(payload);
+        this.chatTransport.handleMessage(payload);
+        return;
+      case "chat_ack":
+        this.chatTransport.handleAck(payload);
+        return;
+      case "chat_rejected":
+        this.chatTransport.handleRejected(payload);
         return;
       case "chat_recall":
-        this.handleChatRecall(payload);
+        this.chatTransport.handleRecall(payload);
         return;
       case "chat_history":
-        this.handleChatHistory(payload);
+        this.chatTransport.handleHistory(payload);
         return;
       case "channel_counts":
         this.options.onChannelCounts(payload.counts);
@@ -684,7 +691,7 @@ export class RoomClient {
       isDeafened: desired.isDeafened,
       activity: desired.activity,
       sceneZone: desired.sceneZone,
-      gameName: desired.gameName,
+      gameName: desired.gameName ?? "",
       gameIconDataUrl: desired.gameIconDataUrl ?? null,
       musicActivity: desired.musicActivity ?? null,
       workActivity: desired.workActivity ?? null,
@@ -757,7 +764,7 @@ export class RoomClient {
     const previousStream = this.screenShareStream;
     this.screenShareStream = undefined;
     this.screenRelayRequestedByPeerIds.clear();
-    this.stopScreenFrameRelay();
+    this.screenFrameRelay.stop();
 
     await Promise.all([...this.peers.values()].map((peer) => peer.setScreenTrack(undefined)));
     await this.restorePrimaryInputTrack();
@@ -789,6 +796,7 @@ export class RoomClient {
     this.resolvePendingConnection();
     this.startSnapshotRecovery();
     void this.publishDesiredPresence();
+    this.chatTransport.retryPending();
     const relayIceServers =
       payload.iceServers?.map((server) => ({
         urls: server.urls,
@@ -1035,6 +1043,17 @@ export class RoomClient {
 
   private handleErrorMessage(payload: ErrorMessage): void {
     this.lastServerError = `${payload.code}:${payload.message}`;
+    if (payload.code === "CLIENT_UPDATE_REQUIRED") {
+      this.shouldReconnect = false;
+      this.options.onUpdateRequired?.(
+        payload.requiredVersion ?? "未知",
+        payload.currentVersion ?? this.options.appVersion,
+      );
+      const error = new Error("CLIENT_UPDATE_REQUIRED");
+      this.rejectPendingConnection(error);
+      this.options.onConnectionState(RoomConnectionState.Failed);
+      return;
+    }
     if (payload.code === "avatar_taken" && this.hasJoinedOnce) {
       this.options.onAvatarConflict?.(payload.availableAvatarIds ?? []);
       void writeRendererLog("signaling", "warn", "Avatar update rejected because it is occupied", {
@@ -1074,27 +1093,12 @@ export class RoomClient {
     this.rejectPendingConnection(error);
   }
 
-  async sendChatMessage(content: string, image?: ChatImageAttachment): Promise<void> {
-    const trimmed = content.trim();
-    if (!trimmed && !image) {
-      throw new Error("empty_chat_message");
-    }
-
-    if (!this.canSendChat()) {
-      throw new Error("signaling_not_connected");
-    }
-
-    try {
-      await this.send({
-        type: "chat_message",
-        roomId: this.options.roomId,
-        content: trimmed,
-        image,
-      });
-    } catch (error) {
-      this.chatSendFailures += 1;
-      throw error;
-    }
+  async sendChatMessage(
+    content: string,
+    image?: ChatImageAttachment,
+    clientMessageId: string = crypto.randomUUID(),
+  ): Promise<ChatAckMessage> {
+    return this.chatTransport.sendMessage(content, image, clientMessageId);
   }
 
   async requestDailyRoomReports(targetRoomId: "main" | "side"): Promise<boolean> {
@@ -1132,7 +1136,12 @@ export class RoomClient {
       roomId: this.options.roomId,
       kind,
       title: title.trim().slice(0, 80),
-      content: content.trim().slice(0, 2_000),
+      content: content
+        .trim()
+        .slice(
+          0,
+          kind === "image" ? MAX_ROOM_COLLECTION_IMAGE_LENGTH : MAX_ROOM_COLLECTION_TEXT_LENGTH,
+        ),
     });
   }
 
@@ -1170,40 +1179,6 @@ export class RoomClient {
       targetPeerId,
       emoji,
       createdAt: new Date().toISOString(),
-    });
-  }
-
-  private handleChatMessage(payload: SignalChatMessage): void {
-    if (!payload.id || !payload.peerId || !payload.nickname || !payload.createdAt) return;
-    this.options.onChatMessage({
-      id: payload.id,
-      peerId: payload.peerId,
-      nickname: payload.nickname,
-      avatarDataUrl: payload.avatarDataUrl,
-      avatarId: payload.avatarId,
-      content: payload.content,
-      image: payload.image,
-      createdAt: payload.createdAt,
-      isLocal: payload.peerId === this.options.peerId,
-    });
-  }
-
-  private handleChatHistory(payload: ChatHistoryMessage): void {
-    this.options.onChatHistory(
-      payload.messages.map((message) => ({
-        ...message,
-        isLocal: message.peerId === this.options.peerId,
-        kind: "chat" as const,
-      })),
-    );
-  }
-
-  private handleChatRecall(payload: ChatRecallMessage): void {
-    if (!payload.peerId || !payload.recalledAt) return;
-    this.options.onChatRecall({
-      messageId: payload.messageId,
-      peerId: payload.peerId,
-      recalledAt: payload.recalledAt,
     });
   }
 
@@ -1308,6 +1283,20 @@ export class RoomClient {
   }
 
   private handleSceneReaction(payload: SceneReactionMessage): void {
+    const quickContent = decodeQuickReplyTarget(payload.targetPeerId);
+    if (quickContent) {
+      const author = this.currentMembers.find((member) => member.id === payload.peerId);
+      this.options.onQuickMessage({
+        id: `quick-${payload.peerId}-${payload.createdAt}`,
+        peerId: payload.peerId,
+        nickname: author?.nickname ?? "朋友",
+        avatarId: author?.avatarId,
+        content: quickContent,
+        createdAt: payload.createdAt,
+        isLocal: payload.peerId === this.options.peerId,
+      });
+      return;
+    }
     this.options.onSceneReaction({
       id: `${payload.peerId}-${payload.targetPeerId}-${payload.createdAt}`,
       peerId: payload.peerId,
@@ -1334,7 +1323,11 @@ export class RoomClient {
         isDeafened: payload.isDeafened ?? member.isDeafened,
         activity: payload.activity ?? member.activity,
         sceneZone: payload.sceneZone ?? member.sceneZone,
-        gameName: payload.gameName === "" ? undefined : (payload.gameName ?? member.gameName),
+        gameName: resolvePresenceGameNameUpdate(
+          member.gameName,
+          payload.gameName,
+          payload.activity,
+        ),
         gameIconDataUrl:
           payload.gameIconDataUrl === null
             ? undefined
@@ -1433,13 +1426,16 @@ export class RoomClient {
     if (
       this.screenShareStream &&
       targetPeerIds.length > 0 &&
-      (!this.screenFrameTimer || this.screenFrameIntervalMs !== SCREEN_FRAME_INTERVAL_MS)
+      !this.screenFrameRelay.isRunningAt(SCREEN_FRAME_INTERVAL_MS)
     ) {
-      this.startScreenFrameRelay(this.screenShareStream, SCREEN_FRAME_INTERVAL_MS);
+      this.screenFrameRelay.start(this.screenShareStream, SCREEN_FRAME_INTERVAL_MS);
       return;
     }
-    if ((!this.screenShareStream || targetPeerIds.length === 0) && this.screenFrameTimer) {
-      this.stopScreenFrameRelay();
+    if (
+      (!this.screenShareStream || targetPeerIds.length === 0) &&
+      this.screenFrameRelay.isActive()
+    ) {
+      this.screenFrameRelay.stop();
     }
   }
 
@@ -1871,7 +1867,7 @@ export class RoomClient {
     if (!this.isSignalingConnected) {
       throw new Error("signaling_not_connected");
     }
-    await window.desktopApi.signaling.send(JSON.stringify(payload), this.signalingSessionId);
+    await this.signalingBridge.send(payload);
   }
 
   private handleBridgeFailure(error: unknown): void {
@@ -1883,7 +1879,7 @@ export class RoomClient {
     });
     this.isSignalingConnected = false;
     this.rejectPendingConnection(normalizedError);
-    void window.desktopApi.signaling.close(this.signalingSessionId).catch(() => undefined);
+    void this.signalingBridge.close();
   }
 
   private async safeSend(payload: SignalEnvelope): Promise<boolean> {
@@ -2084,7 +2080,7 @@ export class RoomClient {
     this.webrtcStalledPeerIds.clear();
     this.webrtcScreenPeerIds.clear();
     this.pendingIceCandidates.clear();
-    this.peerOperationQueues.clear();
+    this.peerOperationQueue.clear();
     this.relayRequestedByPeerIds.clear();
     this.advertisedRelayNeeds.clear();
     this.remoteSharingPeerIds.clear();
@@ -2099,24 +2095,7 @@ export class RoomClient {
     operationName: string,
     operation: () => Promise<void>,
   ): Promise<void> {
-    const previous = this.peerOperationQueues.get(peerId) ?? Promise.resolve();
-    const current = previous.catch(() => undefined).then(operation);
-    this.peerOperationQueues.set(peerId, current);
-    void current
-      .finally(() => {
-        if (this.peerOperationQueues.get(peerId) === current) {
-          this.peerOperationQueues.delete(peerId);
-        }
-      })
-      .catch(() => undefined);
-    return current.catch((error) => {
-      void writeRendererLog("webrtc", "warn", "Serialized peer operation failed", {
-        peerId,
-        operationName,
-        error: error instanceof Error ? error.message : String(error),
-      });
-      throw error;
-    });
+    return this.peerOperationQueue.enqueue(peerId, operationName, operation);
   }
 
   private async applyOutgoingAudioTrack(track: MediaStreamTrack): Promise<void> {
@@ -2130,154 +2109,23 @@ export class RoomClient {
     microphoneTrack: MediaStreamTrack,
     systemAudioTrack: MediaStreamTrack,
   ): Promise<void> {
-    this.disposeScreenAudioMixer();
-    let context: AudioContext;
-    try {
-      context = new AudioContext({ latencyHint: "interactive", sampleRate: 32_000 });
-    } catch {
-      context = new AudioContext({ latencyHint: "interactive" });
-    }
-    const destination = context.createMediaStreamDestination();
-    const microphoneSource = context.createMediaStreamSource(new MediaStream([microphoneTrack]));
-    const systemSource = context.createMediaStreamSource(new MediaStream([systemAudioTrack]));
-    const microphoneGain = context.createGain();
-    const systemGain = context.createGain();
-    microphoneGain.gain.value = 1;
-    systemGain.gain.value = 0.72;
-    microphoneSource.connect(microphoneGain).connect(destination);
-    systemSource.connect(systemGain).connect(destination);
-    const mixedTrack = destination.stream.getAudioTracks()[0];
-    if (!mixedTrack) {
-      await context.close();
-      return;
-    }
-    mixedTrack.contentHint = "speech";
-    this.screenAudioContext = context;
-    this.mixedScreenAudioTrack = mixedTrack;
-    await this.applyOutgoingAudioTrack(mixedTrack);
-    void writeRendererLog("audio", "info", "Screen system audio mixed with microphone", {
-      contextSampleRate: context.sampleRate,
-      systemTrackLabel: systemAudioTrack.label,
-    });
+    const mixedTrack = await this.screenAudioMixer.mix(microphoneTrack, systemAudioTrack);
+    if (mixedTrack) await this.applyOutgoingAudioTrack(mixedTrack);
   }
 
   private async restorePrimaryInputTrack(): Promise<void> {
     const primaryTrack = this.primaryInputTrack;
-    if (primaryTrack?.readyState === "live" && this.mixedScreenAudioTrack) {
+    if (primaryTrack?.readyState === "live" && this.screenAudioMixer.hasActiveMix()) {
       await this.applyOutgoingAudioTrack(primaryTrack);
     }
-    this.disposeScreenAudioMixer();
-  }
-
-  private disposeScreenAudioMixer(): void {
-    this.mixedScreenAudioTrack?.stop();
-    this.mixedScreenAudioTrack = undefined;
-    if (this.screenAudioContext) {
-      void this.screenAudioContext.close().catch(() => undefined);
-      this.screenAudioContext = undefined;
-    }
+    this.screenAudioMixer.dispose();
   }
 
   private stopScreenShareTracks(): void {
-    this.stopScreenFrameRelay();
-    this.disposeScreenAudioMixer();
+    this.screenFrameRelay.stop();
+    this.screenAudioMixer.dispose();
     this.screenShareStream?.getTracks().forEach((track) => track.stop());
     this.screenShareStream = undefined;
-  }
-
-  private startScreenFrameRelay(stream: MediaStream, intervalMs: number): void {
-    this.stopScreenFrameRelay();
-
-    const [videoTrack] = stream.getVideoTracks();
-    if (!videoTrack) {
-      return;
-    }
-
-    const video = document.createElement("video");
-    video.muted = true;
-    video.playsInline = true;
-    video.srcObject = stream;
-    const canvas = document.createElement("canvas");
-    this.screenFrameVideo = video;
-    this.screenFrameCanvas = canvas;
-    this.screenFrameIntervalMs = intervalMs;
-    video.addEventListener("loadeddata", () => void this.captureAndSendScreenFrame(), {
-      once: true,
-    });
-    void video.play().catch(() => undefined);
-    this.screenFrameTimer = window.setInterval(
-      () => void this.captureAndSendScreenFrame(),
-      intervalMs,
-    );
-    void this.captureAndSendScreenFrame();
-  }
-
-  private stopScreenFrameRelay(): void {
-    if (this.screenFrameTimer) {
-      window.clearInterval(this.screenFrameTimer);
-      this.screenFrameTimer = undefined;
-    }
-    this.screenFrameIntervalMs = undefined;
-
-    if (this.screenFrameVideo) {
-      this.screenFrameVideo.pause();
-      this.screenFrameVideo.srcObject = null;
-      this.screenFrameVideo = undefined;
-    }
-    this.screenFrameCanvas = undefined;
-  }
-
-  private async captureAndSendScreenFrame(): Promise<void> {
-    const video = this.screenFrameVideo;
-    const canvas = this.screenFrameCanvas;
-    const targetPeerIds = this.getScreenRelayTargetPeerIds();
-    if (!video || !canvas || video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) {
-      return;
-    }
-    if (targetPeerIds.length === 0) {
-      this.stopScreenFrameRelay();
-      return;
-    }
-
-    const sourceWidth = video.videoWidth || 1280;
-    const sourceHeight = video.videoHeight || 720;
-    let width = Math.min(SCREEN_FRAME_MAX_WIDTH, sourceWidth);
-    let height = Math.max(1, Math.round((width / sourceWidth) * sourceHeight));
-    canvas.width = width;
-    canvas.height = height;
-
-    const context = canvas.getContext("2d", { alpha: false });
-    if (!context) {
-      return;
-    }
-
-    context.drawImage(video, 0, 0, width, height);
-    let data = canvas.toDataURL("image/jpeg", 0.38);
-    if (new TextEncoder().encode(data).byteLength > SCREEN_FRAME_MAX_BYTES) {
-      width = Math.min(480, sourceWidth);
-      height = Math.max(1, Math.round((width / sourceWidth) * sourceHeight));
-      canvas.width = width;
-      canvas.height = height;
-      const retryContext = canvas.getContext("2d", { alpha: false });
-      retryContext?.drawImage(video, 0, 0, width, height);
-      data = canvas.toDataURL("image/jpeg", 0.26);
-      if (new TextEncoder().encode(data).byteLength > SCREEN_FRAME_MAX_BYTES) {
-        return;
-      }
-    }
-
-    await this.safeSend({
-      type: "screen_frame",
-      roomId: this.options.roomId,
-      peerId: this.options.peerId,
-      sourcePeerId: this.options.peerId,
-      sequence: ++this.screenFrameSequence,
-      sentAt: Date.now(),
-      width,
-      height,
-      data,
-      targetPeerIds,
-    });
   }
 
   private clearPendingConnection(): void {

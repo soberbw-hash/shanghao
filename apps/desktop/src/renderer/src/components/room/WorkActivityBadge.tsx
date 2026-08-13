@@ -23,6 +23,7 @@ export const WorkActivityBadge = ({ activity }: { activity: WorkActivity }) => {
   return (
     <span
       className="work-activity-badge"
+      data-activity-id={activity.id}
       title={`正在使用 ${activity.name}`}
       aria-label={`正在使用 ${activity.name}`}
     >

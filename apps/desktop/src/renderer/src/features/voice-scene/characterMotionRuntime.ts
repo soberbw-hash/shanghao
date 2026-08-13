@@ -11,6 +11,16 @@ export type CharacterMotionPhase =
   | "away-idle"
   | "leaving";
 
+// Character timings are intentionally separate from generic panel tokens. They
+// preserve the existing scene rhythm while keeping phase transitions out of UI components.
+export const characterMotionTiming = {
+  chatBubbleSeconds: 0.18,
+  routeOpacitySeconds: 0.32,
+  exitOpacitySeconds: 0.28,
+  landingPhysicalMs: 132,
+  landingSoftMs: 108,
+} as const;
+
 const sceneXFor = (left: number): string => `${left}cqw`;
 const sceneYFor = (top: number): string => `${top}cqh`;
 
@@ -46,8 +56,8 @@ export const scenePosition = (left: number, top: number) => ({
 });
 
 export const readSceneUnit = (value: unknown, fallback: number): number => {
-  if (typeof value === "number" && Number.isFinite(value)) return value;
   if (typeof value !== "string") return fallback;
+  if (!value.endsWith("cqw") && !value.endsWith("cqh")) return fallback;
   const parsed = Number.parseFloat(value);
   return Number.isFinite(parsed) ? parsed : fallback;
 };

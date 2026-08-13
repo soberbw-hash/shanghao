@@ -1,10 +1,10 @@
 import { useEffect } from "react";
-import { CheckCircle2, Sparkles, X } from "lucide-react";
+import { Sparkles, X } from "lucide-react";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 
 import type { ReleaseHistoryEntry } from "./releaseHistory";
 
-import { Button } from "../base/Button";
+import { DetailedReleaseNotesViewer } from "./DetailedReleaseNotesViewer";
 import {
   dialogSurfaceVariants,
   overlayScrimVariants,
@@ -79,36 +79,13 @@ export const ReleaseDetailModal = ({
               </button>
             </header>
 
-            <div className="max-h-[58vh] space-y-4 overflow-y-auto px-6 py-5">
-              {release.details.map((section) => (
-                <section
-                  key={section.title}
-                  className="rounded-[18px] border border-[#dbe8f7]/80 bg-white/72 p-4"
-                >
-                  <h3 className="text-sm font-bold text-[#314158]">{section.title}</h3>
-                  <ul className="mt-3 grid gap-2.5">
-                    {section.items.map((item) => (
-                      <li
-                        key={item}
-                        className="flex items-start gap-2.5 text-sm leading-6 text-[#66758b]"
-                      >
-                        <CheckCircle2
-                          className="mt-1 size-4 shrink-0 text-[#4d91e6]"
-                          aria-hidden="true"
-                        />
-                        <span className="text-pretty">{item}</span>
-                      </li>
-                    ))}
-                  </ul>
-                </section>
-              ))}
+            <div className="max-h-[62vh] overflow-y-auto px-6 py-5">
+              <DetailedReleaseNotesViewer
+                release={release}
+                onComplete={onClose}
+                completeLabel="看完了"
+              />
             </div>
-
-            <footer className="flex justify-end border-t border-[#dbe8f7]/80 px-6 py-4">
-              <Button variant="secondary" onClick={onClose}>
-                看完了
-              </Button>
-            </footer>
           </motion.section>
         </motion.div>
       ) : null}
