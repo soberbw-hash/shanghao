@@ -40,6 +40,14 @@ test("chat link previews normalize the displayed hostname", () => {
   assert.equal(getMessageUrlDetails("https://www.example.com/guide")?.hostname, "example.com");
 });
 
+test("Douyin live-room links keep their room path and query instead of becoming the homepage", () => {
+  const liveRoomUrl = "https://live.douyin.com/47199585587?from_search=true&is_aweme_tied=1";
+  assert.equal(findFirstMessageUrl(liveRoomUrl), liveRoomUrl);
+  assert.equal(getMessageUrlDetails(liveRoomUrl)?.hostname, "live.douyin.com");
+  assert.equal(formatCompactUrl(liveRoomUrl), "live.douyin.com/47199585587");
+  assert.notEqual(findFirstMessageUrl(liveRoomUrl), "https://www.douyin.com/?recommend=1");
+});
+
 test("right-clicking a link preview copies immediately and reports success", () => {
   const source = readFileSync(
     path.resolve(process.cwd(), "src/renderer/src/components/chat/TemporaryChatPanel.tsx"),

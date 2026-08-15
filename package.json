@@ -1,6 +1,6 @@
 {
   "name": "shanghao-workspace",
-  "version": "2.9.0",
+  "version": "2.9.1",
   "private": true,
   "license": "AGPL-3.0-or-later",
   "packageManager": "pnpm@10.34.5",
@@ -27,6 +27,7 @@
     "test:five-peer-audio": "corepack pnpm relay:build && node scripts/verify-five-peer-audio.mjs",
     "test:five-peer-media": "node scripts/verify-five-peer-media.mjs",
     "test:audio-worklet": "corepack pnpm --dir apps/desktop exec electron tests/electron-audio-worklet-smoke.cjs",
+    "test:screen-capture": "corepack pnpm --dir apps/desktop exec electron tests/electron-screen-capture-smoke.mjs",
     "test:three-peer-audio": "corepack pnpm test:five-peer-audio"
   },
   "devDependencies": {

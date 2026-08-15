@@ -74,6 +74,35 @@ const HISTORICAL_RELEASE_EVIDENCE: readonly HistoricalReleaseEvidence[] = [
 
 export const RELEASE_HISTORY: readonly ReleaseHistoryEntry[] = [
   {
+    version: "2.9.1",
+    date: "2026-08-15",
+    title: "Windows 屏幕分享恢复",
+    summary:
+      "2.9.1 修复部分长时间运行的 Windows 会话中，显示器和窗口已经获准却无法启动画面采集的问题。",
+    highlights: [
+      "屏幕分享增加精确源兼容采集，在 Chromium 显示采集连续失败时仍可分享所选画面。",
+      "优先保证画面可用；兼容路径不支持系统声音时会明确提示，而不是让整个分享失败。",
+      "新增真实 Electron 显示采集验证和抖音直播间链接完整性回归测试。",
+    ],
+    details: [
+      {
+        title: "屏幕分享",
+        items: [
+          "保留正常显示采集和无系统声音重试，并在 Windows WGC 无法启动时使用所选 sourceId 进入兼容路径。",
+          "兼容路径不会静默改为其他窗口或整个桌面，仍严格分享用户在选择器中点击的来源。",
+          "采集恢复期间保持内容保护和媒体轨道清理，避免失败流残留影响下一次尝试。",
+        ],
+      },
+      {
+        title: "链接验证",
+        items: [
+          "抖音直播间地址会保留 live.douyin.com 后的房间号与查询参数。",
+          "如果收到的是 www.douyin.com 首页地址，客户端会按原地址打开，不会自行猜测直播间。",
+        ],
+      },
+    ],
+  },
+  {
     version: "2.9.0",
     date: "2026-08-15",
     title: "房间场景、好友响度与本地语音记忆",

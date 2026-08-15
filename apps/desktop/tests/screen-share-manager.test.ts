@@ -30,6 +30,7 @@ const installCaptureEnvironment = ({ includeAudio }: { includeAudio: boolean }) 
     getTracks: () => (includeAudio ? [videoTrack, audioTrack] : [videoTrack]),
   } as unknown as MediaStream;
   const captureRequests: DisplayMediaStreamOptions[] = [];
+  const legacyCaptureRequests: MediaStreamConstraints[] = [];
   const protection: boolean[] = [];
 
   Object.defineProperty(globalThis, "window", {
@@ -67,11 +68,22 @@ const installCaptureEnvironment = ({ includeAudio }: { includeAudio: boolean }) 
           captureRequests.push(request);
           return stream;
         },
+        getUserMedia: async (request: MediaStreamConstraints) => {
+          legacyCaptureRequests.push(request);
+          return stream;
+        },
       },
     },
   });
 
-  return { videoTrack, audioTrack, stream, captureRequests, protection };
+  return {
+    videoTrack,
+    audioTrack,
+    stream,
+    captureRequests,
+    legacyCaptureRequests,
+    protection,
+  };
 };
 
 test("screen share manager owns publishing and cleans every track", async () => {
@@ -152,6 +164,35 @@ test("screen share manager retries a temporarily unreadable Windows source witho
   assert.deepEqual(selectedSources, ["window:42", "window:42"]);
   assert.equal(environment.captureRequests[0]?.audio, false);
   assert.equal(manager.getSnapshot().status, "sharing");
+  await manager.stopShare();
+});
+
+test("screen share manager falls back to the exact Electron desktop source after repeated Windows failures", async () => {
+  const environment = installCaptureEnvironment({ includeAudio: false });
+  navigator.mediaDevices.getDisplayMedia = async () => {
+    const error = new Error("Could not start video source");
+    error.name = "NotReadableError";
+    throw error;
+  };
+  const manager = new ScreenShareManager({
+    startPublishing: async () => undefined,
+    stopPublishing: async () => undefined,
+  });
+
+  await manager.startShare({ sourceId: "screen:0:0", includeSystemAudio: true });
+
+  assert.equal(environment.legacyCaptureRequests.length, 1);
+  assert.deepEqual(environment.legacyCaptureRequests[0]?.audio, false);
+  assert.equal(
+    (
+      environment.legacyCaptureRequests[0]?.video as MediaTrackConstraints & {
+        mandatory?: { chromeMediaSourceId?: string };
+      }
+    ).mandatory?.chromeMediaSourceId,
+    "screen:0:0",
+  );
+  assert.equal(manager.getSnapshot().status, "sharing");
+  assert.equal(manager.getSnapshot().hasSystemAudio, false);
   await manager.stopShare();
 });
 

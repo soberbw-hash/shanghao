@@ -30,7 +30,18 @@ const initialSnapshot: ScreenShareManagerSnapshot = {
   displayMode: "inline",
 };
 
-const WINDOWS_CAPTURE_RETRY_DELAY_MS = 180;
+const WINDOWS_CAPTURE_RETRY_DELAY_MS = 320;
+const WINDOWS_LEGACY_CAPTURE_DELAY_MS = 680;
+
+interface ElectronDesktopVideoConstraints extends MediaTrackConstraints {
+  mandatory: {
+    chromeMediaSource: "desktop";
+    chromeMediaSourceId: string;
+    maxWidth: number;
+    maxHeight: number;
+    maxFrameRate: number;
+  };
+}
 
 export const isRetryableDisplayCaptureError = (error: unknown): boolean =>
   error instanceof DOMException
@@ -131,6 +142,24 @@ export class ScreenShareManager {
           audio: includeSystemAudio,
         });
       };
+      const requestExactSourceFallback = async (): Promise<MediaStream> => {
+        const video: ElectronDesktopVideoConstraints = {
+          mandatory: {
+            chromeMediaSource: "desktop",
+            chromeMediaSourceId: request.sourceId,
+            maxWidth: profile.maxWidth,
+            maxHeight: profile.maxHeight,
+            maxFrameRate: profile.maxFramerate,
+          },
+        };
+        return navigator.mediaDevices.getUserMedia({
+          // Electron explicitly supports DesktopCapturerSource ids through
+          // chromeMediaSourceId. This bypasses Chromium's display-media broker when
+          // a long-running Windows session leaves that broker unable to start a source.
+          video: video as MediaTrackConstraints,
+          audio: false,
+        });
+      };
 
       try {
         stream = await requestStream(request.includeSystemAudio);
@@ -147,7 +176,28 @@ export class ScreenShareManager {
         );
         await window.desktopApi.screenCapture.setContentProtection(false).catch(() => undefined);
         await new Promise((resolve) => window.setTimeout(resolve, WINDOWS_CAPTURE_RETRY_DELAY_MS));
-        stream = await requestStream(false);
+        try {
+          stream = await requestStream(false);
+        } catch (retryError) {
+          if (!isRetryableDisplayCaptureError(retryError)) throw retryError;
+          await this.log(
+            "warn",
+            "Windows display-media retry failed; using the exact desktop source fallback",
+            {
+              sourceId: request.sourceId,
+              error: this.errorMessage(retryError),
+            },
+          );
+          await window.desktopApi.screenCapture.setContentProtection(false).catch(() => undefined);
+          await new Promise((resolve) =>
+            window.setTimeout(resolve, WINDOWS_LEGACY_CAPTURE_DELAY_MS),
+          );
+          stream = await requestExactSourceFallback();
+          await this.log("info", "Exact desktop source fallback started", {
+            sourceId: request.sourceId,
+            systemAudioOmitted: request.includeSystemAudio,
+          });
+        }
       }
       if (operationId !== this.operationId || this.isDisposed) {
         stream.getTracks().forEach((track) => track.stop());
