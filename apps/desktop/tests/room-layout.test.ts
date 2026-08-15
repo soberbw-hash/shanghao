@@ -517,6 +517,13 @@ test("screen sharing is wired through the room page and WebRTC peer layer", () =
     ),
     "utf8",
   );
+  const detachedPublisherSource = readFileSync(
+    path.resolve(
+      process.cwd(),
+      "src/renderer/src/features/screen-share/DetachedScreenSharePublisher.ts",
+    ),
+    "utf8",
+  );
 
   assert.equal(managerSource.includes("navigator.mediaDevices.getDisplayMedia"), true);
   assert.equal(screenPanelSource.includes("screen-share-panel"), true);
@@ -527,6 +534,13 @@ test("screen sharing is wired through the room page and WebRTC peer layer", () =
   assert.equal(hookSource.includes("setRemoteScreenFrame"), true);
   assert.equal(clientSource.includes("renegotiateAllPeers"), false);
   assert.equal(screenRelaySource.includes("screen_frame"), true);
+  assert.equal(screenRelaySource.includes("const MAX_WIDTH = 1_280"), true);
+  assert.equal(screenRelaySource.includes("const MAX_BYTES = 180 * 1024"), true);
+  assert.equal(detachedPublisherSource.includes("maxBitrate = 12_000_000"), true);
+  assert.equal(
+    detachedPublisherSource.includes('degradationPreference = "maintain-resolution"'),
+    true,
+  );
   assert.equal(screenCoordinatorSource.includes("SCREEN_FRAME_INTERVAL_MS"), true);
   assert.equal(peerSource.includes('addTransceiver("video"'), true);
   assert.equal(peerSource.includes('direction: "sendrecv"'), true);
@@ -537,6 +551,11 @@ test("screen sharing is wired through the room page and WebRTC peer layer", () =
     true,
   );
   assert.equal(peerSource.includes("DEFAULT_SCREEN_SHARE_PROFILE"), true);
+  assert.equal(
+    peerSource.includes('parameters.degradationPreference = "maintain-resolution"'),
+    true,
+  );
+  assert.equal(peerSource.includes("screenScaleResolutionDownBy: 1"), true);
   assert.equal(peerSource.includes("offerToReceiveVideo: true"), true);
   assert.equal(peerSource.includes("setScreenTrack"), true);
   assert.equal(stylesSource.includes(".screen-share-video"), true);

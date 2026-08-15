@@ -32,6 +32,20 @@ test("firewall repair owns exactly four program-scoped TCP and UDP rules", async
   assert.match(firewall, /-Program \$exePath -Protocol TCP/);
   assert.match(firewall, /EdgeTraversalPolicy Allow/);
   assert.match(firewall, /-Profile Any/);
+  assert.match(firewall, /queueFirewallOperation/);
+  assert.match(firewall, /-Name \$expectedRuleNames\[0\]/);
+  assert.match(firewall, /firewallOperationQueue = result\.then/);
+});
+
+test("firewall repair UI blocks repeated clicks while the serialized repair is running", async () => {
+  const settings = await read("../src/renderer/src/pages/SettingsPage.tsx");
+  const diagnosticsCard = await read(
+    "../src/renderer/src/components/settings/DiagnosticsSettingsCard.tsx",
+  );
+  assert.match(settings, /if \(isRepairingFirewall\) return/);
+  assert.match(settings, /\.finally\(\(\) => setIsRepairingFirewall\(false\)\)/);
+  assert.match(diagnosticsCard, /disabled=\{isRepairingFirewall\}/);
+  assert.match(diagnosticsCard, /修复中…/);
 });
 
 test("uninstaller removes only ShangHao startup and firewall integration", async () => {

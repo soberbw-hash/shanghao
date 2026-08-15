@@ -23,6 +23,7 @@ export const DiagnosticsSettingsCard = ({
   onCopySummary,
   onRefreshWindows,
   onRepairFirewall,
+  isRepairingFirewall,
 }: {
   diagnostics?: DiagnosticsSnapshot;
   relay?: RelayStatusSnapshot;
@@ -37,6 +38,7 @@ export const DiagnosticsSettingsCard = ({
   onCopySummary: () => void;
   onRefreshWindows: () => void;
   onRepairFirewall: () => void;
+  isRepairingFirewall: boolean;
 }) => (
   <SettingsSection title="日志与诊断" description="出问题时导出诊断包发给开发者。">
     <div className="space-y-3">
@@ -117,8 +119,8 @@ export const DiagnosticsSettingsCard = ({
             <Button variant="ghost" onClick={onRefreshWindows}>
               刷新
             </Button>
-            <Button variant="secondary" onClick={onRepairFirewall}>
-              修复防火墙
+            <Button variant="secondary" onClick={onRepairFirewall} disabled={isRepairingFirewall}>
+              {isRepairingFirewall ? "修复中…" : "修复防火墙"}
             </Button>
           </div>
         </div>

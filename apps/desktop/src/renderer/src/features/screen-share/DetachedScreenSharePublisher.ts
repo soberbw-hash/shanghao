@@ -84,6 +84,7 @@ export class DetachedScreenSharePublisher {
     if (this.hasOffered || this.isDisposed) return;
     this.hasOffered = true;
     try {
+      await this.configureVideoSender();
       const offer = await this.peer.createOffer();
       await this.peer.setLocalDescription(offer);
       await this.send({ type: "offer", sdp: offer.sdp });
@@ -91,6 +92,23 @@ export class DetachedScreenSharePublisher {
       this.hasOffered = false;
       this.options.onClosed();
     }
+  }
+
+  private async configureVideoSender(): Promise<void> {
+    const sender = this.peer.getSenders().find((candidate) => candidate.track?.kind === "video");
+    if (!sender) return;
+    const parameters = sender.getParameters();
+    parameters.degradationPreference = "maintain-resolution";
+    parameters.encodings ??= [{}];
+    const encoding = parameters.encodings[0] as RTCRtpEncodingParameters & {
+      networkPriority?: RTCPriorityType;
+    };
+    encoding.maxBitrate = 12_000_000;
+    encoding.maxFramerate = 30;
+    encoding.scaleResolutionDownBy = 1;
+    encoding.priority = "high";
+    encoding.networkPriority = "high";
+    await sender.setParameters(parameters);
   }
 
   private async flushCandidates(): Promise<void> {

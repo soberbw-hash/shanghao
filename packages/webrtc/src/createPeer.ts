@@ -52,13 +52,13 @@ const NETWORK_TIER_PROFILES: Record<NetworkAdaptationTier, NetworkTierProfile> =
     audioBitrate: 20_000,
     screenBitrateScale: 0.72,
     screenMaxFramerate: 13,
-    screenScaleResolutionDownBy: 1.25,
+    screenScaleResolutionDownBy: 1,
   },
   critical: {
     audioBitrate: 16_000,
     screenBitrateScale: 0.48,
     screenMaxFramerate: 10,
-    screenScaleResolutionDownBy: 1.6,
+    screenScaleResolutionDownBy: 1,
   },
 };
 
@@ -489,10 +489,11 @@ export class MeshPeerConnection {
         networkPriority?: RTCPriorityType;
       };
       const networkProfile = NETWORK_TIER_PROFILES[this.networkAdaptationTier];
+      parameters.degradationPreference = "maintain-resolution";
       encoding.maxBitrate = Math.round(profile.maxBitrate * networkProfile.screenBitrateScale);
       encoding.maxFramerate = Math.min(profile.maxFramerate, networkProfile.screenMaxFramerate);
       encoding.scaleResolutionDownBy = networkProfile.screenScaleResolutionDownBy;
-      encoding.priority = "low";
+      encoding.priority = "medium";
       encoding.networkPriority = "low";
       await sender.setParameters(parameters);
     } catch (error) {

@@ -74,6 +74,36 @@ const HISTORICAL_RELEASE_EVIDENCE: readonly HistoricalReleaseEvidence[] = [
 
 export const RELEASE_HISTORY: readonly ReleaseHistoryEntry[] = [
   {
+    version: "2.9.2",
+    date: "2026-08-15",
+    title: "屏幕分享清晰度与防火墙修复",
+    summary:
+      "2.9.2 修复屏幕分享放大后像缩略图一样模糊，以及防火墙连续修复后规则重复、一直失败的问题。",
+    highlights: [
+      "放大窗口和实时分享优先保持原始分辨率，提高桌面文字与界面细节清晰度。",
+      "服务器兜底画面最高提升至 1280 像素宽，并根据数据大小自动调整质量。",
+      "防火墙操作严格串行，修复按钮防重复点击，现有重复规则可一次清理并重建。",
+    ],
+    details: [
+      {
+        title: "屏幕分享",
+        items: [
+          "独立观看窗口使用高质量本机编码，不再依赖默认低优先级二次压缩。",
+          "网络波动时优先降低帧率而不是分辨率，健康网络下细节码率提高至 4 Mbps。",
+          "信令兜底仍以连接可靠为主，但画面宽度由 480 提高到最高 1280 像素。",
+        ],
+      },
+      {
+        title: "Windows 防火墙",
+        items: [
+          "读取、修复和移除任务统一进入串行队列，避免并发删除和新增规则。",
+          "四条 TCP/UDP 双向规则使用稳定内部名称，修复期间按钮不可重复点击。",
+          "修复只管理 ShangHao Network 组，不扫描或修改其他软件的规则。",
+        ],
+      },
+    ],
+  },
+  {
     version: "2.9.1",
     date: "2026-08-15",
     title: "Windows 屏幕分享恢复",

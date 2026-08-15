@@ -22,6 +22,12 @@ $expectedNames = @(
   'ShangHao TCP Inbound',
   'ShangHao TCP Outbound'
 )
+$expectedRuleNames = @(
+  'ShangHao-UDP-Inbound',
+  'ShangHao-UDP-Outbound',
+  'ShangHao-TCP-Inbound',
+  'ShangHao-TCP-Outbound'
+)
 
 if ($operation -eq 'remove' -or $operation -eq 'repair') {
   Get-NetFirewallRule -Group $group -ErrorAction SilentlyContinue |
@@ -32,10 +38,10 @@ if ($operation -eq 'repair') {
   if (-not $exePath -or -not (Test-Path -LiteralPath $exePath)) {
     throw 'firewall_executable_not_found'
   }
-  New-NetFirewallRule -DisplayName $expectedNames[0] -Group $group -Direction Inbound -Action Allow -Enabled True -Profile Any -Program $exePath -Protocol UDP -EdgeTraversalPolicy Allow | Out-Null
-  New-NetFirewallRule -DisplayName $expectedNames[1] -Group $group -Direction Outbound -Action Allow -Enabled True -Profile Any -Program $exePath -Protocol UDP | Out-Null
-  New-NetFirewallRule -DisplayName $expectedNames[2] -Group $group -Direction Inbound -Action Allow -Enabled True -Profile Any -Program $exePath -Protocol TCP -EdgeTraversalPolicy Allow | Out-Null
-  New-NetFirewallRule -DisplayName $expectedNames[3] -Group $group -Direction Outbound -Action Allow -Enabled True -Profile Any -Program $exePath -Protocol TCP | Out-Null
+  New-NetFirewallRule -Name $expectedRuleNames[0] -DisplayName $expectedNames[0] -Group $group -Direction Inbound -Action Allow -Enabled True -Profile Any -Program $exePath -Protocol UDP -EdgeTraversalPolicy Allow | Out-Null
+  New-NetFirewallRule -Name $expectedRuleNames[1] -DisplayName $expectedNames[1] -Group $group -Direction Outbound -Action Allow -Enabled True -Profile Any -Program $exePath -Protocol UDP | Out-Null
+  New-NetFirewallRule -Name $expectedRuleNames[2] -DisplayName $expectedNames[2] -Group $group -Direction Inbound -Action Allow -Enabled True -Profile Any -Program $exePath -Protocol TCP -EdgeTraversalPolicy Allow | Out-Null
+  New-NetFirewallRule -Name $expectedRuleNames[3] -DisplayName $expectedNames[3] -Group $group -Direction Outbound -Action Allow -Enabled True -Profile Any -Program $exePath -Protocol TCP | Out-Null
 }
 
 $rules = @(Get-NetFirewallRule -Group $group -ErrorAction SilentlyContinue)
@@ -50,6 +56,17 @@ $items = @($rules | ForEach-Object {
 })
 @{ count = $items.Count; items = $items } | ConvertTo-Json -Compress -Depth 4
 `;
+
+let firewallOperationQueue: Promise<void> = Promise.resolve();
+
+const queueFirewallOperation = <T>(operation: () => Promise<T>): Promise<T> => {
+  const result = firewallOperationQueue.then(operation, operation);
+  firewallOperationQueue = result.then(
+    () => undefined,
+    () => undefined,
+  );
+  return result;
+};
 
 const unsupportedStatus = (): WindowsFirewallStatus => ({
   supported: false,
@@ -103,10 +120,10 @@ const runFirewallOperation = async (
 };
 
 export const readWindowsFirewallStatus = async (): Promise<WindowsFirewallStatus> =>
-  runFirewallOperation("inspect");
+  queueFirewallOperation(() => runFirewallOperation("inspect"));
 
 export const repairWindowsFirewallRules = async (): Promise<WindowsFirewallStatus> =>
-  runFirewallOperation("repair");
+  queueFirewallOperation(() => runFirewallOperation("repair"));
 
 export const removeWindowsFirewallRules = async (): Promise<WindowsFirewallStatus> =>
-  runFirewallOperation("remove");
+  queueFirewallOperation(() => runFirewallOperation("remove"));

@@ -2,7 +2,7 @@ import type { ScreenCaptureSourceDescriptor } from "@private-voice/shared";
 import type { ScreenShareEncodingProfile } from "@private-voice/webrtc";
 
 export const SCREEN_SHARE_PROFILE: ScreenShareEncodingProfile = {
-  maxBitrate: 2_400_000,
+  maxBitrate: 4_000_000,
   maxFramerate: 24,
   maxWidth: 2_560,
   maxHeight: 1_440,

@@ -97,6 +97,7 @@ export const SettingsPage = () => {
   >(cachedWindowsDiagnostics);
   const [isWindowsDiagnosticsLoading, setIsWindowsDiagnosticsLoading] =
     useState(!cachedWindowsDiagnostics);
+  const [isRepairingFirewall, setIsRepairingFirewall] = useState(false);
   const [saveNotice, setSaveNotice] = useState("设置会自动保存");
   const [selectedRelease, setSelectedRelease] = useState<ReleaseHistoryEntry>();
   const pageRef = useRef<HTMLDivElement>(null);
@@ -228,6 +229,8 @@ export const SettingsPage = () => {
       .finally(() => setIsWindowsDiagnosticsLoading(false));
   };
   const handleRepairFirewall = () => {
+    if (isRepairingFirewall) return;
+    setIsRepairingFirewall(true);
     void window.desktopApi.windows
       .repairFirewall()
       .then((firewall) => {
@@ -244,7 +247,8 @@ export const SettingsPage = () => {
           title: "防火墙修复失败",
           description: error instanceof Error ? error.message : "请确认管理员权限后重试。",
         }),
-      );
+      )
+      .finally(() => setIsRepairingFirewall(false));
   };
   const handleIconOverlayChange = (hidden: boolean) => {
     void window.desktopApi.windows
@@ -579,6 +583,7 @@ export const SettingsPage = () => {
           onCopySummary={handleCopyDiagnostics}
           onRefreshWindows={refreshWindowsDiagnostics}
           onRepairFirewall={handleRepairFirewall}
+          isRepairingFirewall={isRepairingFirewall}
         />
         <Button variant="danger" onClick={() => void resetSettings().then(refreshDiagnostics)}>
           安全重置设置

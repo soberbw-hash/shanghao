@@ -16,7 +16,7 @@ export const DEFAULT_SIGNALING_PORT = 43_821;
 // 2.6 only adds optional message fields and request types. Keep protocol 7 so
 // existing 2.5 clients can still share the fixed server while people update.
 export const APP_PROTOCOL_VERSION = "7";
-export const APP_BUILD_NUMBER = "2026.08.15.2";
+export const APP_BUILD_NUMBER = "2026.08.15.3";
 export const SETTINGS_SCHEMA_VERSION = 26;
 export const PROFILE_SCHEMA_VERSION = 2;
 export const DEFAULT_RELEASES_URL = "https://github.com/soberbw-hash/shanghao/releases";

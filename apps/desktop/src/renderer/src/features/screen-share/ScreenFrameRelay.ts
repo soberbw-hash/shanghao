@@ -1,7 +1,13 @@
 import type { SignalEnvelope } from "@private-voice/signaling";
 
-const MAX_WIDTH = 480;
-const MAX_BYTES = 48 * 1024;
+const MAX_WIDTH = 1_280;
+const MAX_BYTES = 180 * 1024;
+const FRAME_ENCODINGS = [
+  { width: 1_280, quality: 0.72 },
+  { width: 960, quality: 0.66 },
+  { width: 720, quality: 0.58 },
+  { width: 480, quality: 0.48 },
+] as const;
 
 interface ScreenFrameRelayOptions {
   roomId: string;
@@ -68,25 +74,22 @@ export class ScreenFrameRelay {
 
     const sourceWidth = video.videoWidth || 1280;
     const sourceHeight = video.videoHeight || 720;
-    let width = Math.min(MAX_WIDTH, sourceWidth);
-    let height = Math.max(1, Math.round((width / sourceWidth) * sourceHeight));
-    canvas.width = width;
-    canvas.height = height;
-    const context = canvas.getContext("2d", { alpha: false });
-    if (!context) return;
-
-    context.drawImage(video, 0, 0, width, height);
-    let data = canvas.toDataURL("image/jpeg", 0.38);
-    if (new TextEncoder().encode(data).byteLength > MAX_BYTES) {
-      width = Math.min(MAX_WIDTH, sourceWidth);
-      height = Math.max(1, Math.round((width / sourceWidth) * sourceHeight));
+    let encodedFrame: { data: string; width: number; height: number } | undefined;
+    for (const encoding of FRAME_ENCODINGS) {
+      const width = Math.min(MAX_WIDTH, encoding.width, sourceWidth);
+      const height = Math.max(1, Math.round((width / sourceWidth) * sourceHeight));
       canvas.width = width;
       canvas.height = height;
-      const retryContext = canvas.getContext("2d", { alpha: false });
-      retryContext?.drawImage(video, 0, 0, width, height);
-      data = canvas.toDataURL("image/jpeg", 0.26);
-      if (new TextEncoder().encode(data).byteLength > MAX_BYTES) return;
+      const context = canvas.getContext("2d", { alpha: false });
+      if (!context) return;
+      context.drawImage(video, 0, 0, width, height);
+      const data = canvas.toDataURL("image/jpeg", encoding.quality);
+      if (new TextEncoder().encode(data).byteLength <= MAX_BYTES) {
+        encodedFrame = { data, width, height };
+        break;
+      }
     }
+    if (!encodedFrame) return;
 
     await this.options.send({
       type: "screen_frame",
@@ -95,9 +98,9 @@ export class ScreenFrameRelay {
       sourcePeerId: this.options.peerId,
       sequence: ++this.sequence,
       sentAt: Date.now(),
-      width,
-      height,
-      data,
+      width: encodedFrame.width,
+      height: encodedFrame.height,
+      data: encodedFrame.data,
       targetPeerIds,
     });
   }

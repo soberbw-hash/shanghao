@@ -171,8 +171,8 @@ test("microphone processing lives in the room panel while release history remain
   assert.equal(audioCardSource.includes("isAutoGainControlEnabled"), false);
   assert.equal(audioCardSource.includes("isFriendLoudnessBalanceEnabled"), false);
   assert.equal(roomDockSource.includes("settings.isFriendLoudnessBalanceEnabled"), true);
-  assert.equal(RELEASE_HISTORY.length, 66);
-  assert.equal(RELEASE_HISTORY[0]?.version, "2.9.1");
+  assert.equal(RELEASE_HISTORY.length, 67);
+  assert.equal(RELEASE_HISTORY[0]?.version, "2.9.2");
   assert.equal(RELEASE_HISTORY.at(-1)?.version, "0.1.1");
   assert.equal(
     new Set(RELEASE_HISTORY.map((release) => release.version)).size,
