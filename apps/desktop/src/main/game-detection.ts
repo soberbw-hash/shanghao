@@ -221,6 +221,11 @@ export const WORK_ACTIVITY_RULES: WorkRule[] = [
   { id: "obsidian", name: "Obsidian", category: "office", processNames: ["obsidian"] },
 ];
 
+const KK_PLATFORM_GAME_NAME: NonNullable<GameDetectionSnapshot["gameName"]> = "KK 对战平台";
+const KK_HOSTED_PROCESS_NAMES = ["game_x64h", "war3", "war3n", "warcraft iii", "warcraft_iii"];
+const KK_LAUNCHER_PROCESS_NAMES = new Set(["kk", "kkgamebox", "platform"]);
+const KK_PATH_NEEDLES = ["kkduizhan", "\\kk\\", "\\kkgame\\", "\\games\\y3\\"];
+
 const GAME_RULES: GameRule[] = [
   {
     name: "我的世界",
@@ -322,11 +327,12 @@ const GAME_RULES: GameRule[] = [
   { name: "胡闹厨房", processNames: ["overcooked2", "overcooked all you can eat"] },
   { name: "荒野大镖客 2", processNames: ["rdr2"] },
   {
-    name: "KK 对战平台",
-    processNames: ["game_x64h", "war3", "war3n", "warcraft iii", "warcraft_iii"],
-    pathNeedles: ["kkduizhan", "\\kk\\", "\\kkgame\\", "\\games\\y3\\"],
-    commandLineNeedles: ["kkduizhan", "\\kk\\", "\\kkgame\\", "\\games\\y3\\"],
-    evidenceRequiredProcessNames: ["game_x64h", "war3", "war3n", "warcraft iii", "warcraft_iii"],
+    name: KK_PLATFORM_GAME_NAME,
+    processNames: KK_HOSTED_PROCESS_NAMES,
+    titleNeedles: ["kk rpg", "kkrpg", "kk 对战平台", "kk官方对战平台"],
+    pathNeedles: KK_PATH_NEEDLES,
+    commandLineNeedles: KK_PATH_NEEDLES,
+    evidenceRequiredProcessNames: ["war3", "war3n", "warcraft iii", "warcraft_iii"],
   },
 ];
 
@@ -391,6 +397,35 @@ const decodeUtf8Base64 = (value?: string): string | undefined => {
 const includesAny = (value: string, needles: string[] = []): boolean =>
   needles.some((needle) => value.includes(needle.toLowerCase()));
 
+const isKkHostedGameProcess = (processInfo: ProcessSnapshot): boolean => {
+  const processName = normalizeProcessName(processInfo.ProcessName);
+  const executableName = normalizeProcessName(
+    processInfo.Path ? path.basename(processInfo.Path) : undefined,
+  );
+  const identity = processName || executableName;
+  if (identity === "game_x64h") return true;
+  if (KK_LAUNCHER_PROCESS_NAMES.has(identity)) return false;
+
+  const evidence = `${processInfo.MainWindowTitle ?? ""}\n${processInfo.Path ?? ""}\n${
+    processInfo.CommandLine ?? ""
+  }`
+    .toLowerCase()
+    .replaceAll("/", "\\");
+  const hasKkEvidence = includesAny(evidence, [
+    ...KK_PATH_NEEDLES,
+    "kk rpg",
+    "kkrpg",
+    "kk 对战平台",
+    "kk官方对战平台",
+  ]);
+  if (!hasKkEvidence) return false;
+
+  const isKnownHostedProcess = KK_HOSTED_PROCESS_NAMES.some(
+    (candidate) => normalizeProcessName(candidate) === identity,
+  );
+  return isKnownHostedProcess || evidence.includes("\\games\\");
+};
+
 const selectForegroundActivityProcesses = (processes: ProcessSnapshot[]): ProcessSnapshot[] => {
   const hasForegroundMetadata = processes.some(
     (processInfo) => typeof processInfo.IsForeground === "boolean",
@@ -407,6 +442,8 @@ export const matchKnownGame = (
     ? processSnapshot
     : parseProcessSnapshot(processSnapshot);
   const foregroundProcesses = selectForegroundActivityProcesses(processes);
+
+  if (foregroundProcesses.some(isKkHostedGameProcess)) return KK_PLATFORM_GAME_NAME;
 
   for (const rule of GAME_RULES) {
     for (const processInfo of foregroundProcesses) {
@@ -450,6 +487,10 @@ const matchKnownGameActivity = (
   if (!gameName) return undefined;
   const rule = GAME_RULES.find((candidate) => candidate.name === gameName);
   if (!rule) return { activity: gameName };
+  // KK hosts many games inside its own process tree. Exposing the hosted
+  // executable icon would leak the concrete game (for example 英雄三国) even
+  // though the public activity is intentionally unified as KK 对战平台.
+  if (gameName === KK_PLATFORM_GAME_NAME) return { activity: gameName };
   for (const processInfo of foregroundProcesses) {
     const processName = normalizeProcessName(processInfo.ProcessName);
     const executableName = normalizeProcessName(
@@ -816,6 +857,7 @@ export class GameDetectionController {
     if (!this.enabled || this.checkInFlight) return;
     this.checkInFlight = true;
     const previousGame = this.snapshot.gameName;
+    const previousGameIconDataUrl = this.snapshot.gameIconDataUrl;
     const previousMusicKey = JSON.stringify(this.snapshot.musicActivity ?? null);
     const previousWorkKey = JSON.stringify(this.snapshot.workActivity ?? null);
     const {
@@ -854,7 +896,12 @@ export class GameDetectionController {
 
     const musicKey = JSON.stringify(musicActivity ?? null);
     const workKey = JSON.stringify(workActivity ?? null);
-    if (previousGame === gameName && previousMusicKey === musicKey && previousWorkKey === workKey)
+    if (
+      previousGame === gameName &&
+      previousGameIconDataUrl === gameIconDataUrl &&
+      previousMusicKey === musicKey &&
+      previousWorkKey === workKey
+    )
       return;
     await this.writeLog({
       category: "app",

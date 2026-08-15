@@ -66,6 +66,27 @@ test("ordinary workstation selection is idle until a real game is detected", () 
   );
 });
 
+test("room exposes one plainly named ask and voice-memory entry", () => {
+  const topbarSource = readFileSync(
+    path.resolve(process.cwd(), "src/renderer/src/components/layout/TopStatusBar.tsx"),
+    "utf8",
+  );
+  const dialogSource = readFileSync(
+    path.resolve(process.cwd(), "src/renderer/src/components/room/RoomAskDialog.tsx"),
+    "utf8",
+  );
+  assert.equal(topbarSource.includes("搜索语音记忆或提问"), true);
+  assert.equal(topbarSource.includes("<span>问</span>"), true);
+  assert.equal(dialogSource.includes("搜索记忆"), true);
+  assert.equal(dialogSource.includes("问千问"), false);
+  assert.equal(dialogSource.includes('pending === "ask" ? "正在想…" : "问"'), true);
+  assert.equal(dialogSource.includes("window.desktopApi.ai.askMemory"), true);
+  assert.equal(dialogSource.includes("onOpenResult"), true);
+  assert.equal(dialogSource.includes('className="room-ask-popover"'), true);
+  assert.equal(dialogSource.includes('aria-modal="true"'), false);
+  assert.equal(dialogSource.includes("fixed inset-0"), false);
+});
+
 test("local speaker and microphone state are applied atomically before server echoes", () => {
   const source = readFileSync(
     path.resolve(process.cwd(), "src/renderer/src/hooks/useRoomState.ts"),
@@ -117,14 +138,18 @@ test("new additive room requests are not sent to the deployed 2.5 server", () =>
     path.resolve(process.cwd(), "src/renderer/src/features/chat/ReliableChatTransport.ts"),
     "utf8",
   );
+  const signalingErrorPolicy = readFileSync(
+    path.resolve(process.cwd(), "src/renderer/src/features/room/signalingErrorPolicy.ts"),
+    "utf8",
+  );
   assert.equal(capabilities.includes('DAILY_ROOM_REPORTS_MIN_BUILD = "2026.08.12.1"'), true);
   assert.equal(
     source.includes("serverBuildSupportsDailyRoomReports(this.serverBuildNumber)"),
     true,
   );
   assert.equal(
-    source.includes(
-      'payload.code === "invalid_payload" && this.hasJoinedOnce && this.joinAckReceived',
+    signalingErrorPolicy.includes(
+      'payload.code === "invalid_payload" && context.hasJoinedOnce && context.joinAckReceived',
     ),
     true,
   );
@@ -149,17 +174,20 @@ test("screen-share UI requires an explicit current-room sharing announcement", (
   useRoomStore.getState().clearChannelContent();
   assert.equal(useRoomStore.getState().remoteScreenSharing["peer-screen"], undefined);
 
-  const roomSource = readFileSync(
-    path.resolve(process.cwd(), "src/renderer/src/pages/RoomPage.tsx"),
-    "utf8",
-  );
   const clientSource = readFileSync(
-    path.resolve(process.cwd(), "src/renderer/src/features/room/roomClient.ts"),
+    path.resolve(
+      process.cwd(),
+      "src/renderer/src/features/screen-share/RoomScreenShareCoordinator.ts",
+    ),
     "utf8",
   );
-  assert.equal(roomSource.includes("remoteScreenSharing[peerId] &&"), true);
-  assert.equal(clientSource.includes("onRemoteScreenShareState(payload.peerId, true)"), true);
-  assert.equal(clientSource.includes("onRemoteScreenShareState(payload.peerId, false)"), true);
+  const viewModelSource = readFileSync(
+    path.resolve(process.cwd(), "src/renderer/src/features/room/roomViewModel.ts"),
+    "utf8",
+  );
+  assert.equal(viewModelSource.includes("!remoteSharing[peerId]"), true);
+  assert.equal(clientSource.includes("onRemoteState(payload.peerId, true)"), true);
+  assert.equal(clientSource.includes("onRemoteState(payload.peerId, false)"), true);
 });
 
 test("collection composer is fixed-size and primary audio controls use matching crisp icons", () => {
@@ -172,7 +200,7 @@ test("collection composer is fixed-size and primary audio controls use matching 
     "utf8",
   );
   const roomSource = readFileSync(
-    path.resolve(process.cwd(), "src/renderer/src/pages/RoomPage.tsx"),
+    path.resolve(process.cwd(), "src/renderer/src/components/room/RoomDock.tsx"),
     "utf8",
   );
   assert.match(styles, /\.collection-composer textarea \{[\s\S]*?resize: none;/);
@@ -213,9 +241,56 @@ test("locally sent link previews stay fully visible above the composer", () => {
     path.resolve(process.cwd(), "src/renderer/src/components/chat/TemporaryChatPanel.tsx"),
     "utf8",
   );
+  const styles = readFileSync(
+    path.resolve(process.cwd(), "src/renderer/src/styles/index.css"),
+    "utf8",
+  );
 
   assert.equal(chatSource.includes('latestMessage?.isLocal ? "auto" : "smooth"'), true);
   assert.equal(chatSource.includes("list.scrollTop = list.scrollHeight"), true);
+  assert.match(styles, /\.chat-message-list \{[\s\S]*?padding-bottom: 12px;/);
+  assert.equal(styles.includes("contain-intrinsic-size: auto 64px"), false);
+});
+
+test("fast chat acknowledgements do not flash a transient sending label", () => {
+  const chatSource = readFileSync(
+    path.resolve(process.cwd(), "src/renderer/src/components/chat/TemporaryChatPanel.tsx"),
+    "utf8",
+  );
+
+  assert.equal(chatSource.includes("发送中…"), false);
+  assert.equal(chatSource.includes("发送失败 · 重新发送"), true);
+});
+
+test("the shanghao quick reply uses its own voice sound for every avatar", () => {
+  const soundSource = readFileSync(
+    path.resolve(process.cwd(), "src/renderer/src/features/audio/animalCall.ts"),
+    "utf8",
+  );
+  const roomStateSource = readFileSync(
+    path.resolve(process.cwd(), "src/renderer/src/hooks/useRoomState.ts"),
+    "utf8",
+  );
+
+  assert.equal(soundSource.includes("quick-reply-chirp.wav"), true);
+  assert.equal(soundSource.includes("quick-reply-shanghao.wav"), true);
+  assert.equal(soundSource.includes('quickReplyContent.trim() === "上号"'), true);
+  assert.equal(roomStateSource.includes("message.content,"), true);
+  assert.equal(
+    roomStateSource.includes(
+      "if (!message.isLocal && currentSettings?.isUiSoundEnabled !== false)",
+    ),
+    true,
+  );
+  const localQuickSend = roomStateSource.slice(
+    roomStateSource.indexOf("const sendQuickMessage"),
+    roomStateSource.indexOf("const startScreenShare"),
+  );
+  assert.equal(localQuickSend.includes("playAnimalCall("), true);
+  assert.equal(localQuickSend.includes("currentSettings?.avatarId"), true);
+  assert.equal(localQuickSend.includes(", content)"), true);
+  assert.equal(soundSource.includes("cat-meow.wav"), false);
+  assert.equal(soundSource.includes("duck-quack.wav"), false);
 });
 
 test("the seated duck stays centered over its compact chair", () => {
@@ -252,6 +327,21 @@ test("volume sliders expose and snap to the 100 percent reference node", () => {
   assert.equal(characterSource.includes("referenceValue={100}"), true);
   assert.equal(sliderSource.includes("slider-reference-node"), true);
   assert.equal(sliderSource.includes("event.currentTarget.value = String(referenceValue)"), true);
+});
+
+test("speaker controls expose friend loudness balance without replacing per-friend volume", () => {
+  const popover = readFileSync(
+    path.resolve(process.cwd(), "src/renderer/src/components/audio/AudioControlPopover.tsx"),
+    "utf8",
+  );
+  const dock = readFileSync(
+    path.resolve(process.cwd(), "src/renderer/src/components/room/RoomDock.tsx"),
+    "utf8",
+  );
+  assert.equal(popover.includes("好友响度平衡"), true);
+  assert.equal(popover.includes("约 -14 LUFS"), true);
+  assert.equal(dock.includes("settings.isFriendLoudnessBalanceEnabled"), true);
+  assert.equal(dock.includes("打开扬声器设备、好友响度平衡与总音量"), true);
 });
 
 test("abusive, suggestive and family-title nickname variants are rejected", () => {
@@ -354,6 +444,37 @@ test("channel switching is exclusive and clears screen-share state before joinin
     true,
   );
   assert.equal(roomStateSource.includes("previousMemberIds = new Set<string>();"), true);
+});
+
+test("stopping a recording suppresses automatic restart for the current room", () => {
+  const roomPageSource = readFileSync(
+    path.resolve(process.cwd(), "src/renderer/src/pages/RoomPage.tsx"),
+    "utf8",
+  );
+  const finalizeBlock = roomPageSource.slice(
+    roomPageSource.indexOf("const finalizeRecording"),
+    roomPageSource.indexOf("const changeRecordingDirectory"),
+  );
+
+  assert.equal(roomPageSource.includes("const isAutoRecordSuppressedRef = useRef(false)"), true);
+  assert.equal(roomPageSource.includes("isAutoRecordSuppressedRef.current = false"), true);
+  assert.equal(
+    roomPageSource.includes(
+      "!canAutoRecord || hasAutoStartedRecordingRef.current || isAutoRecordSuppressedRef.current",
+    ),
+    true,
+  );
+  assert.equal(finalizeBlock.includes('if (intent === "stop")'), true);
+  assert.equal(finalizeBlock.includes("isAutoRecordSuppressedRef.current = true"), true);
+  assert.equal(
+    finalizeBlock.includes("window.clearTimeout(autoRecordRetryTimerRef.current)"),
+    true,
+  );
+  assert.equal(
+    finalizeBlock.indexOf("isAutoRecordSuppressedRef.current = true") <
+      finalizeBlock.indexOf("await discardRecording()"),
+    true,
+  );
 });
 
 test("DeepFilterNet failure keeps the microphone live without interrupting the room", () => {

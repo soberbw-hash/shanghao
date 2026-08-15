@@ -23,6 +23,7 @@ import {
   type ProcessedMicrophoneStream,
 } from "../features/audio/microphoneProcessor";
 import { REMOTE_AUDIO_LEVEL_EVENT } from "../features/audio/RemoteAudioMixer";
+import { getRemoteAudioMixer } from "../features/audio/RemoteAudioMixer";
 import { clampMemberVolume } from "../features/audio/memberVolume";
 import { playUiSound } from "../features/audio/uiSound";
 import { playAnimalCall } from "../features/audio/animalCall";
@@ -126,16 +127,10 @@ const normalizeRoomError = (error: unknown, fallback: string): string => {
   return fallback;
 };
 
-export const buildChannelInviteText = ({
-  channelId,
-  serverUrl,
-}: {
-  channelId: string;
-  serverUrl: string;
-}) => {
+export const buildChannelInviteText = ({ channelId }: { channelId: string }) => {
   const invite = new URL("shanghao://join");
-  invite.searchParams.set("server", normalizeServerUrl(serverUrl));
   invite.searchParams.set("room", CHANNEL_IDS.has(channelId as ChannelId) ? channelId : "main");
+  invite.searchParams.set("expires", String(Date.now() + 10 * 60_000));
   return invite.toString();
 };
 
@@ -329,6 +324,7 @@ export const useRoomState = () => {
         isNoiseSuppressionEnabled: currentSettings?.isNoiseSuppressionEnabled ?? true,
         isVoiceEnhancementEnabled: currentSettings?.isVoiceEnhancementEnabled ?? true,
         microphoneSendVolume: currentSettings?.microphoneSendVolume ?? 1,
+        getRemoteReferenceLevel: () => getRemoteAudioMixer().getRemoteReferenceLevel(),
       });
       activeProcessedMicrophone = processedMicrophone;
       const stream = processedMicrophone.stream;
@@ -572,14 +568,13 @@ export const useRoomState = () => {
       onQuickMessage: (message) => {
         addQuickMessage(message);
         const currentSettings = useSettingsStore.getState().settings;
-        if (currentSettings?.isUiSoundEnabled !== false) {
-          playAnimalCall(message.avatarId, currentSettings?.soundVolume ?? 0.72);
+        if (!message.isLocal && currentSettings?.isUiSoundEnabled !== false) {
+          playAnimalCall(message.avatarId, currentSettings?.soundVolume ?? 0.72, message.content);
         }
         if (!message.isLocal && currentSettings?.isSystemNotificationEnabled !== false) {
           sendSystemNotification({
             title: `${message.nickname} 提醒你`,
             body: message.content,
-            attention: true,
           });
         }
       },
@@ -809,8 +804,10 @@ export const useRoomState = () => {
 
   useRoomDeepLink({
     onInvite: async (invite) => {
-      const normalizedServerUrl = normalizeServerUrl(invite.serverUrl);
-      if (useSettingsStore.getState().settings?.relayServerUrl !== normalizedServerUrl) {
+      const storedServerUrl = useSettingsStore.getState().settings?.relayServerUrl;
+      const normalizedServerUrl = normalizeServerUrl(invite.serverUrl || storedServerUrl);
+      if (!normalizedServerUrl) throw new Error("missing_saved_server");
+      if (invite.serverUrl && storedServerUrl !== normalizedServerUrl) {
         await useSettingsStore.getState().saveSettings({ relayServerUrl: normalizedServerUrl });
       }
       await joinChannel(normalizedServerUrl, invite.channelId);
@@ -908,27 +905,15 @@ export const useRoomState = () => {
   };
 
   const copyInviteLink = async () => {
-    const serverUrl = room.signalingUrl || settings?.relayServerUrl?.trim();
-
-    if (!serverUrl) {
-      pushToast({
-        tone: "warning",
-        title: "还没有服务器地址",
-        description: "填写服务器地址并进入频道后再复制。",
-      });
-      return;
-    }
-
     try {
       const inviteText = buildChannelInviteText({
         channelId: room.roomId || DEFAULT_CHANNEL_ID,
-        serverUrl,
       });
       await window.desktopApi.clipboard.writeText(inviteText);
       playUiSound("copy-success");
       await writeRendererLog("app", "info", "Copied fixed channel invite", {
         channelId: room.roomId || DEFAULT_CHANNEL_ID,
-        hasServerUrl: true,
+        temporary: true,
       });
       pushToast({
         tone: "success",
@@ -1075,6 +1060,11 @@ export const useRoomState = () => {
     const now = Date.now();
     if (now - lastQuickMessageSentAt < QUICK_REPLY_COOLDOWN_MS) return;
     lastQuickMessageSentAt = now;
+
+    const currentSettings = useSettingsStore.getState().settings;
+    if (currentSettings?.isUiSoundEnabled !== false) {
+      playAnimalCall(currentSettings?.avatarId, currentSettings?.soundVolume ?? 0.72, content);
+    }
     await activeClient.sendSceneReaction(targetPeerId, "👍");
   };
 

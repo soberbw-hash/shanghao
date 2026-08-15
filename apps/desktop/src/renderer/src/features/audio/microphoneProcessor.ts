@@ -14,6 +14,11 @@ import {
   approachSuppressionLevel,
   createSpeechProtectionState,
 } from "./speechProtection";
+import {
+  advanceVoiceProcessingState,
+  createVoiceProcessingState,
+  targetsForVoiceProcessingMode,
+} from "./voiceProcessingState";
 
 export const MICROPHONE_EQ_FREQUENCIES = [80, 250, 1_000, 4_000, 12_000] as const;
 const VOICE_ENHANCEMENT_EQ_GAINS: MicEqualizerGains = [-2, -1, 0, 2, 1];
@@ -24,6 +29,12 @@ export interface ProcessedMicrophoneStream {
     LocalAudioDiagnostics,
     | "noiseProcessor"
     | "speechProtection"
+    | "voiceActivity"
+    | "processingMode"
+    | "doubleTalkDetected"
+    | "remoteEchoDetected"
+    | "speechProbability"
+    | "remoteReferenceLevel"
     | "currentSuppressionLevel"
     | "rawProcessedMix"
     | "processorOverruns"
@@ -189,7 +200,7 @@ export const createProcessedMicrophoneStream = async (
     | "lowCutFrequency"
     | "isNoiseSuppressionEnabled"
     | "isVoiceEnhancementEnabled"
-  > & { microphoneSendVolume?: number },
+  > & { microphoneSendVolume?: number; getRemoteReferenceLevel?: () => number },
 ): Promise<ProcessedMicrophoneStream> => {
   const userGains = normalizeEqualizerGains(settings.micEqualizerGains);
   const gains = normalizeEqualizerGains(
@@ -200,6 +211,12 @@ export const createProcessedMicrophoneStream = async (
   const processorDiagnostics: ProcessedMicrophoneStream["processorDiagnostics"] = {
     noiseProcessor: settings.isNoiseSuppressionEnabled ? "deepfilter_loading" : "bypass",
     speechProtection: "inactive",
+    voiceActivity: "inactive",
+    processingMode: "noise",
+    doubleTalkDetected: false,
+    remoteEchoDetected: false,
+    speechProbability: 0,
+    remoteReferenceLevel: 0,
     currentSuppressionLevel: settings.isNoiseSuppressionEnabled
       ? DEEPFILTER_BASE_SUPPRESSION_LEVEL
       : undefined,
@@ -250,6 +267,11 @@ export const createProcessedMicrophoneStream = async (
   let protectionSilentGain: GainNode | undefined;
   let protectionFrameId = 0;
   let protectionState = createSpeechProtectionState();
+  let voiceProcessingState = createVoiceProcessingState();
+  let previousMicRms = 0;
+  let previousProcessingMode = voiceProcessingState.mode;
+  const micLevelHistory: number[] = [];
+  const remoteLevelHistory: number[] = [];
   let currentSuppressionLevel = DEEPFILTER_BASE_SUPPRESSION_LEVEL;
   let lastAppliedSuppressionLevel = DEEPFILTER_BASE_SUPPRESSION_LEVEL;
   const diagnosticsListeners = new Set<
@@ -259,7 +281,7 @@ export const createProcessedMicrophoneStream = async (
     const snapshot = { ...processorDiagnostics };
     for (const listener of diagnosticsListeners) listener(snapshot);
   };
-  const setMix = (protectingSpeech: boolean, immediate = false) => {
+  const setMix = (protectingSpeech: boolean, immediate = false, rawTargetOverride?: number) => {
     if (!processedGain) return;
     const now = context.currentTime;
     const timeConstant = immediate
@@ -267,8 +289,8 @@ export const createProcessedMicrophoneStream = async (
       : protectingSpeech
         ? SPEECH_MIX_ATTACK_SECONDS
         : SPEECH_MIX_RELEASE_SECONDS;
-    const rawTarget = protectingSpeech ? SPEECH_RAW_MIX : 0;
-    const processedTarget = protectingSpeech ? SPEECH_PROCESSED_MIX : 1;
+    const rawTarget = rawTargetOverride ?? (protectingSpeech ? SPEECH_RAW_MIX : 0);
+    const processedTarget = Math.max(0, 1 - rawTarget);
     rawGain.gain.cancelScheduledValues(now);
     processedGain.gain.cancelScheduledValues(now);
     rawGain.gain.setTargetAtTime(rawTarget, now, timeConstant);
@@ -350,18 +372,78 @@ export const createProcessedMicrophoneStream = async (
       let squareTotal = 0;
       for (const sample of samples) squareTotal += sample * sample;
       const rms = Math.sqrt(squareTotal / Math.max(1, samples.length));
+      let zeroCrossings = 0;
+      for (let index = 1; index < samples.length; index += 1) {
+        if ((samples[index - 1] ?? 0) * (samples[index] ?? 0) < 0) zeroCrossings += 1;
+      }
+      const zeroCrossingRate = zeroCrossings / samples.length;
+      const continuity = Math.min(1, rms / Math.max(0.002, Math.abs(rms - previousMicRms) * 4));
+      const speechProbability = Math.max(
+        0,
+        Math.min(
+          1,
+          (rms - protectionState.noiseFloor * 1.45) * 36 +
+            continuity * 0.34 +
+            (zeroCrossingRate > 0.02 && zeroCrossingRate < 0.28 ? 0.28 : 0),
+        ),
+      );
+      const remoteLevel = Math.max(0, settings.getRemoteReferenceLevel?.() ?? 0);
+      micLevelHistory.push(rms);
+      remoteLevelHistory.push(remoteLevel);
+      if (micLevelHistory.length > 14) micLevelHistory.shift();
+      if (remoteLevelHistory.length > 14) remoteLevelHistory.shift();
+      const micMean =
+        micLevelHistory.reduce((sum, value) => sum + value, 0) / micLevelHistory.length;
+      const remoteMean =
+        remoteLevelHistory.reduce((sum, value) => sum + value, 0) / remoteLevelHistory.length;
+      let covariance = 0;
+      let micVariance = 0;
+      let remoteVariance = 0;
+      for (let index = 0; index < micLevelHistory.length; index += 1) {
+        const micDelta = (micLevelHistory[index] ?? 0) - micMean;
+        const remoteDelta = (remoteLevelHistory[index] ?? 0) - remoteMean;
+        covariance += micDelta * remoteDelta;
+        micVariance += micDelta * micDelta;
+        remoteVariance += remoteDelta * remoteDelta;
+      }
+      const echoCorrelation =
+        remoteLevel > 0.002 && micLevelHistory.length >= 6
+          ? Math.max(
+              0,
+              Math.min(1, covariance / Math.sqrt(Math.max(1e-9, micVariance * remoteVariance))),
+            )
+          : 0;
+      previousMicRms = rms;
+      voiceProcessingState = advanceVoiceProcessingState(voiceProcessingState, {
+        micRms: rms,
+        speechProbability,
+        remoteLevel,
+        echoCorrelation,
+        now: performance.now(),
+      });
+      const targets = targetsForVoiceProcessingMode(voiceProcessingState.mode);
+      processorDiagnostics.voiceActivity = speechProbability >= 0.58 ? "active" : "inactive";
+      processorDiagnostics.processingMode = voiceProcessingState.mode;
+      processorDiagnostics.doubleTalkDetected = voiceProcessingState.mode === "double_talk";
+      processorDiagnostics.remoteEchoDetected = voiceProcessingState.mode === "echo";
+      processorDiagnostics.speechProbability = speechProbability;
+      processorDiagnostics.remoteReferenceLevel = remoteLevel;
       const previousActive = protectionState.active;
       protectionState = advanceSpeechProtection(protectionState, rms, performance.now());
 
-      if (previousActive !== protectionState.active) {
+      const processingModeChanged = previousProcessingMode !== voiceProcessingState.mode;
+      previousProcessingMode = voiceProcessingState.mode;
+      if (previousActive !== protectionState.active || processingModeChanged) {
         processorDiagnostics.speechProtection = protectionState.active ? "active" : "inactive";
-        setMix(protectionState.active);
+        const protectsNearVoice =
+          protectionState.active ||
+          voiceProcessingState.mode === "near_speech" ||
+          voiceProcessingState.mode === "double_talk";
+        setMix(protectsNearVoice, false, targets.rawMix);
         publishDiagnostics();
       }
 
-      const targetSuppression = protectionState.active
-        ? DEEPFILTER_SPEECH_SUPPRESSION_LEVEL
-        : DEEPFILTER_BASE_SUPPRESSION_LEVEL;
+      const targetSuppression = targets.suppression;
       currentSuppressionLevel = approachSuppressionLevel(
         currentSuppressionLevel,
         targetSuppression,

@@ -14,8 +14,19 @@ export const avatarOptions: Array<{ id: BuiltInAvatarId; label: string; src: str
   { id: "corgi", label: "柯基", src: corgiAvatar },
 ];
 
-export const getAvatarSrc = (avatarId?: BuiltInAvatarId): string | undefined =>
-  avatarOptions.find((avatar) => avatar.id === avatarId)?.src;
+export const getAvatarSrc = (avatarId?: BuiltInAvatarId): string =>
+  avatarOptions.find((avatar) => avatar.id === avatarId)?.src ?? foxAvatar;
+
+export const getAvatarEmoji = (avatarId?: BuiltInAvatarId): string => {
+  const emojis: Record<BuiltInAvatarId, string> = {
+    fox: "🦊",
+    cat: "🐱",
+    duck: "🐤",
+    panda: "🐼",
+    corgi: "🐶",
+  };
+  return emojis[avatarId ?? "fox"] ?? emojis.fox;
+};
 
 export const getStableAvatarId = (peerId: string, avatarId?: BuiltInAvatarId): BuiltInAvatarId => {
   if (avatarId && BUILT_IN_AVATAR_IDS.includes(avatarId)) return avatarId;

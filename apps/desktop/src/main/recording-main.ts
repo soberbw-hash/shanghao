@@ -14,7 +14,7 @@ import type {
 import {
   createNumberedRecordingFileName,
   resolveAvailableRecordingPath,
-  resolveRecordingDirectory,
+  resolveUsableRecordingDirectory,
 } from "./recording-path";
 
 const inferExtensionFromMime = (mimeType: string): string => {
@@ -35,24 +35,15 @@ export const exportRecordingFromMain = async (
   configuredDirectory: string | undefined,
   writeLog: (payload: RendererLogPayload) => Promise<void>,
 ): Promise<RecordingExportResponse> => {
-  const recordingDirectory = resolveRecordingDirectory(
+  const recordingDirectory = await resolveUsableRecordingDirectory(
     configuredDirectory,
     app.getPath("documents"),
   );
   await mkdir(recordingDirectory, { recursive: true });
-  const roomLabel = payload.suggestedFileName.includes("二号房")
-    ? "二号房"
-    : payload.suggestedFileName.includes("一号房")
-      ? "一号房"
-      : undefined;
-  const existingFileNames = roomLabel
-    ? (await readdir(recordingDirectory, { withFileTypes: true }))
-        .filter((entry) => entry.isFile())
-        .map((entry) => entry.name)
-    : [];
-  const designedFileName = roomLabel
-    ? createNumberedRecordingFileName(roomLabel, new Date(), existingFileNames)
-    : payload.suggestedFileName;
+  const existingFileNames = (await readdir(recordingDirectory, { withFileTypes: true }))
+    .filter((entry) => entry.isFile())
+    .map((entry) => entry.name);
+  const designedFileName = createNumberedRecordingFileName(new Date(), existingFileNames);
   const outputPath = await resolveAvailableRecordingPath(
     recordingDirectory,
     designedFileName,

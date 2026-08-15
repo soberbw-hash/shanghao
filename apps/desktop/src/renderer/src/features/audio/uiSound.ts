@@ -46,7 +46,7 @@ const soundUrls: Record<UiSound, string> = {
 
 const audioCache = new Map<UiSound, HTMLAudioElement>();
 const soundMix: Partial<Record<UiSound, number>> = {
-  "button-click": 0.55,
+  "button-click": 0.34,
   "send-message": 0.74,
   "receive-message": 0.78,
   "member-join": 0.8,

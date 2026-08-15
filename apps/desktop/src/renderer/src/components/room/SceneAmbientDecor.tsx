@@ -156,7 +156,13 @@ const getShanghaiClock = () => {
   }).formatToParts(new Date());
   const read = (type: Intl.DateTimeFormatPartTypes) =>
     Number(parts.find((part) => part.type === type)?.value ?? 0);
-  return { hour: read("hour") % 12, minute: read("minute"), second: read("second") };
+  const displayHour = read("hour");
+  return {
+    hour: displayHour % 12,
+    displayHour,
+    minute: read("minute"),
+    second: read("second"),
+  };
 };
 
 export const SceneWallClock = ({ className = "" }: { className?: string }) => {
@@ -168,41 +174,49 @@ export const SceneWallClock = ({ className = "" }: { className?: string }) => {
   const secondAngle = time.second * 6;
   const minuteAngle = time.minute * 6 + time.second * 0.1;
   const hourAngle = time.hour * 30 + time.minute * 0.5;
+  const timeLabel = [time.displayHour, time.minute, time.second]
+    .map((part) => String(part).padStart(2, "0"))
+    .join(":");
 
   return (
-    <svg viewBox="0 0 88 88" className={className} aria-label="北京时间" role="img">
-      <circle cx="44" cy="47" r="34" fill="#6f8aa3" opacity="0.12" />
-      <circle cx="44" cy="42" r="32" fill="#ffffff" opacity="0.92" />
-      <circle cx="44" cy="42" r="27" fill="#eaf5fb" stroke="#d2e4f0" strokeWidth="2" />
-      <path
-        d="M44 17v4M44 63v4M19 42h4M65 42h4"
-        stroke="#aac9df"
-        strokeWidth="2"
-        strokeLinecap="round"
-      />
-      <path
-        d="M44 42V29"
-        stroke="#5f91bd"
-        strokeWidth="4"
-        strokeLinecap="round"
-        transform={`rotate(${hourAngle} 44 42)`}
-      />
-      <path
-        d="M44 42V23"
-        stroke="#72a9d8"
-        strokeWidth="3"
-        strokeLinecap="round"
-        transform={`rotate(${minuteAngle} 44 42)`}
-      />
-      <path
-        d="M44 46V20"
-        stroke="#e06b72"
-        strokeWidth="1.5"
-        strokeLinecap="round"
-        transform={`rotate(${secondAngle} 44 42)`}
-      />
-      <circle cx="44" cy="42" r="3.5" fill="#72a9d8" />
-    </svg>
+    <div className={`scene-wall-clock-content ${className}`}>
+      <svg viewBox="0 0 88 88" aria-label={`北京时间 ${timeLabel}`} role="img">
+        <circle cx="44" cy="47" r="34" fill="#6f8aa3" opacity="0.12" />
+        <circle cx="44" cy="42" r="32" fill="#ffffff" opacity="0.92" />
+        <circle cx="44" cy="42" r="27" fill="#eaf5fb" stroke="#d2e4f0" strokeWidth="2" />
+        <path
+          d="M44 17v4M44 63v4M19 42h4M65 42h4"
+          stroke="#aac9df"
+          strokeWidth="2"
+          strokeLinecap="round"
+        />
+        <path
+          d="M44 42V29"
+          stroke="#5f91bd"
+          strokeWidth="4"
+          strokeLinecap="round"
+          transform={`rotate(${hourAngle} 44 42)`}
+        />
+        <path
+          d="M44 42V23"
+          stroke="#72a9d8"
+          strokeWidth="3"
+          strokeLinecap="round"
+          transform={`rotate(${minuteAngle} 44 42)`}
+        />
+        <path
+          d="M44 46V20"
+          stroke="#e06b72"
+          strokeWidth="1.5"
+          strokeLinecap="round"
+          transform={`rotate(${secondAngle} 44 42)`}
+        />
+        <circle cx="44" cy="42" r="3.5" fill="#72a9d8" />
+      </svg>
+      <span className="scene-ambient-tooltip scene-clock-tooltip" aria-hidden="true">
+        北京时间 · {timeLabel}
+      </span>
+    </div>
   );
 };
 

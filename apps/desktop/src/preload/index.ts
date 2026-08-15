@@ -10,6 +10,9 @@ const desktopApi: DesktopApi = {
     notify: (payload) => ipcRenderer.invoke(IPC_CHANNELS.app.notify, payload),
     readChatHistory: (payload) => ipcRenderer.invoke(IPC_CHANNELS.app.readChatHistory, payload),
     saveChatHistory: (payload) => ipcRenderer.invoke(IPC_CHANNELS.app.saveChatHistory, payload),
+    readDailyRoomReports: () => ipcRenderer.invoke(IPC_CHANNELS.app.readDailyRoomReports),
+    saveDailyRoomReports: (reports) =>
+      ipcRenderer.invoke(IPC_CHANNELS.app.saveDailyRoomReports, reports),
     openExternal: (url) => ipcRenderer.invoke(IPC_CHANNELS.app.openExternal, url),
     getLinkPreviewIcon: (url) => ipcRenderer.invoke(IPC_CHANNELS.app.getLinkPreviewIcon, url),
     consumeDeepLink: () => ipcRenderer.invoke(IPC_CHANNELS.app.consumeDeepLink),
@@ -70,6 +73,13 @@ const desktopApi: DesktopApi = {
       ipcRenderer.on(IPC_CHANNELS.overlay.state, wrapped);
       return () => ipcRenderer.removeListener(IPC_CHANNELS.overlay.state, wrapped);
     },
+    onHoverState: (listener) => {
+      const wrapped = (_event: Electron.IpcRendererEvent, inside: unknown) => {
+        listener(inside === true);
+      };
+      ipcRenderer.on(IPC_CHANNELS.overlay.hoverState, wrapped);
+      return () => ipcRenderer.removeListener(IPC_CHANNELS.overlay.hoverState, wrapped);
+    },
   },
   games: {
     getSnapshot: () => ipcRenderer.invoke(IPC_CHANNELS.games.getSnapshot),
@@ -81,16 +91,42 @@ const desktopApi: DesktopApi = {
       return () => ipcRenderer.removeListener(IPC_CHANNELS.games.detected, wrapped);
     },
   },
+  weather: {
+    getSnapshot: (request) => ipcRenderer.invoke(IPC_CHANNELS.weather.getSnapshot, request),
+  },
   ai: {
     getSnapshot: () => ipcRenderer.invoke(IPC_CHANNELS.ai.getSnapshot),
     controlModel: (modelId, action) =>
       ipcRenderer.invoke(IPC_CHANNELS.ai.controlModel, modelId, action),
+    getRuntimeStatus: () => ipcRenderer.invoke(IPC_CHANNELS.ai.runtimeStatus),
+    getVoiceMemory: (recordingId) =>
+      ipcRenderer.invoke(IPC_CHANNELS.ai.getVoiceMemory, recordingId),
+    listVoiceMemories: () => ipcRenderer.invoke(IPC_CHANNELS.ai.listVoiceMemories),
+    processRecording: (request) => ipcRenderer.invoke(IPC_CHANNELS.ai.processRecording, request),
+    pauseTask: (recordingId) => ipcRenderer.invoke(IPC_CHANNELS.ai.pauseTask, recordingId),
+    resumeTask: (recordingId) => ipcRenderer.invoke(IPC_CHANNELS.ai.resumeTask, recordingId),
+    assignSpeaker: (recordingId, speakerId, memberId, nickname) =>
+      ipcRenderer.invoke(IPC_CHANNELS.ai.assignSpeaker, recordingId, speakerId, memberId, nickname),
+    updateMarkerTitle: (recordingId, markerId, title) =>
+      ipcRenderer.invoke(IPC_CHANNELS.ai.updateMarkerTitle, recordingId, markerId, title),
+    askRecording: (request) => ipcRenderer.invoke(IPC_CHANNELS.ai.askRecording, request),
+    askMemory: (request) => ipcRenderer.invoke(IPC_CHANNELS.ai.askMemory, request),
+    searchMemory: (request) => ipcRenderer.invoke(IPC_CHANNELS.ai.searchMemory, request),
+    updateRuntimePressure: (pressure) =>
+      ipcRenderer.invoke(IPC_CHANNELS.ai.updateRuntimePressure, pressure),
     onStatus: (listener) => {
       const wrapped = (_event: Electron.IpcRendererEvent, snapshot: unknown) => {
         listener(snapshot as Parameters<typeof listener>[0]);
       };
       ipcRenderer.on(IPC_CHANNELS.ai.status, wrapped);
       return () => ipcRenderer.removeListener(IPC_CHANNELS.ai.status, wrapped);
+    },
+    onVoiceMemoryStatus: (listener) => {
+      const wrapped = (_event: Electron.IpcRendererEvent, record: unknown) => {
+        listener(record as Parameters<typeof listener>[0]);
+      };
+      ipcRenderer.on(IPC_CHANNELS.ai.voiceMemoryStatus, wrapped);
+      return () => ipcRenderer.removeListener(IPC_CHANNELS.ai.voiceMemoryStatus, wrapped);
     },
   },
   settings: {
@@ -168,10 +204,19 @@ const desktopApi: DesktopApi = {
     saveMarkers: (filePath, markers) =>
       ipcRenderer.invoke(IPC_CHANNELS.recording.saveMarkers, filePath, markers),
     list: () => ipcRenderer.invoke(IPC_CHANNELS.recording.list),
+    scanWaste: () => ipcRenderer.invoke(IPC_CHANNELS.recording.scanWaste),
+    onScanWasteProgress: (listener) => {
+      const wrapped = (_event: Electron.IpcRendererEvent, progress: unknown) => {
+        listener(progress as Parameters<typeof listener>[0]);
+      };
+      ipcRenderer.on(IPC_CHANNELS.recording.scanWasteProgress, wrapped);
+      return () => ipcRenderer.removeListener(IPC_CHANNELS.recording.scanWasteProgress, wrapped);
+    },
     setFavorite: (filePath, isFavorite) =>
       ipcRenderer.invoke(IPC_CHANNELS.recording.setFavorite, filePath, isFavorite),
     openDirectory: () => ipcRenderer.invoke(IPC_CHANNELS.recording.openDirectory),
     delete: (filePath) => ipcRenderer.invoke(IPC_CHANNELS.recording.delete, filePath),
+    deleteMany: (filePaths) => ipcRenderer.invoke(IPC_CHANNELS.recording.deleteMany, filePaths),
   },
 };
 

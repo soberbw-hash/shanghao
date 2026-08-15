@@ -1,4 +1,5 @@
 import type { AiProcessingMode } from "./ai.types";
+import type { WeatherEffectMode, WeatherLocationMode } from "./weather.types";
 
 export type MicMonitorMode = "processed" | "raw";
 export type LowCutFrequency = "off" | "90" | "120";
@@ -24,6 +25,7 @@ export interface AppSettings {
   preferredOutputDeviceId?: string;
   microphoneSendVolume: number;
   speakerMasterVolume: number;
+  isFriendLoudnessBalanceEnabled: boolean;
   micEqualizerGains: MicEqualizerGains;
   lowCutFrequency: LowCutFrequency;
   globalMuteShortcut: string;
@@ -47,6 +49,10 @@ export interface AppSettings {
   isSystemNotificationEnabled: boolean;
   isGameDetectionEnabled: boolean;
   isWorkActivityVisible: boolean;
+  isDynamicWeatherEnabled: boolean;
+  weatherLocationMode: WeatherLocationMode;
+  weatherManualCity: string;
+  weatherEffectMode: WeatherEffectMode;
   isUiSoundEnabled: boolean;
   isBackgroundUpdateCheckEnabled: boolean;
   lastCollectionViewedAt?: string;

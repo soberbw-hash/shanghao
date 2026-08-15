@@ -63,3 +63,67 @@ export const buildRoomDiagnostics = (input: RoomDiagnosticsInput) => ({
   remoteAudioMixer: input.remoteAudioMixer,
   turnConfigured: input.turnConfigured,
 });
+
+export interface RoomDiagnosticsSources {
+  currentPeerId: string;
+  reconnectAttempts: number;
+  socket: Pick<
+    RoomDiagnosticsInput,
+    "lastSocketCloseCode" | "lastSocketCloseReason" | "lastSocketClosedAt"
+  >;
+  audioRelayActive: boolean;
+  remotePeerIds: Set<string>;
+  roomSnapshotRevision: number;
+  chatSendFailures: number;
+  join: Pick<
+    RoomDiagnosticsInput,
+    | "joinStage"
+    | "wsOpened"
+    | "joinChannelSent"
+    | "joinAckReceived"
+    | "roomSnapshotReceived"
+    | "lastServerError"
+  >;
+  screenShareRelayActive: boolean;
+  screenShareRelayTargetCount: number;
+  audioRelayDiagnostics?: RoomDiagnosticsInput["audioRelayDiagnostics"];
+  webrtcReadyPeerIds: Set<string>;
+  webrtcConnectedPeerIds: Set<string>;
+  webrtcAudioPeerIds: Set<string>;
+  webrtcFlowingPeerIds: Set<string>;
+  peerRecoveryAttempts: ReadonlyMap<string, number>;
+  peerConnectionStats: RoomDiagnosticsInput["peerConnectionStats"];
+  peerAdaptationTiers: RoomDiagnosticsInput["peerAdaptationTiers"];
+  remoteAudioMixer: RemoteAudioMixerDiagnostics;
+  turnConfigured: boolean;
+}
+
+export const buildRoomDiagnosticsFromSources = (source: RoomDiagnosticsSources) =>
+  buildRoomDiagnostics({
+    currentPeerId: source.currentPeerId,
+    reconnectAttempts: source.reconnectAttempts,
+    ...source.socket,
+    audioRelayActive: source.audioRelayActive,
+    remotePeerCount: source.remotePeerIds.size,
+    roomSnapshotRevision: source.roomSnapshotRevision,
+    chatSendFailures: source.chatSendFailures,
+    ...source.join,
+    screenShareRelayActive: source.screenShareRelayActive,
+    screenShareRelayTargetCount: source.screenShareRelayTargetCount,
+    audioRelayDiagnostics: source.audioRelayDiagnostics,
+    webrtcReadyPeerCount: source.webrtcReadyPeerIds.size,
+    webrtcConnectedPeerCount: source.webrtcConnectedPeerIds.size,
+    webrtcAudioPeerCount: source.webrtcAudioPeerIds.size,
+    webrtcFlowingPeerCount: source.webrtcFlowingPeerIds.size,
+    peerRecoveryAttempts: Object.fromEntries(source.peerRecoveryAttempts),
+    peerConnectionStats: source.peerConnectionStats,
+    peerAdaptationTiers: source.peerAdaptationTiers,
+    peerAudioPaths: Object.fromEntries(
+      [...source.remotePeerIds].map((peerId) => [
+        peerId,
+        source.webrtcReadyPeerIds.has(peerId) ? "webrtc" : "relay",
+      ]),
+    ),
+    remoteAudioMixer: source.remoteAudioMixer,
+    turnConfigured: source.turnConfigured,
+  });

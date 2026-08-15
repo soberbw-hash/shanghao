@@ -11,6 +11,9 @@ export const RemoteAudioRenderer = () => {
   const isDeafened = useAudioStore((state) => state.isDeafened);
   const outputDeviceId = useSettingsStore((state) => state.settings?.preferredOutputDeviceId);
   const masterVolume = useSettingsStore((state) => state.settings?.speakerMasterVolume ?? 1);
+  const loudnessBalanceEnabled = useSettingsStore(
+    (state) => state.settings?.isFriendLoudnessBalanceEnabled ?? true,
+  );
   const mixer = getRemoteAudioMixer();
 
   useEffect(() => {
@@ -28,6 +31,10 @@ export const RemoteAudioRenderer = () => {
     void mixer.setOutputDevice(outputDeviceId);
   }, [mixer, outputDeviceId]);
   useEffect(() => mixer.setMasterVolume(masterVolume), [masterVolume, mixer]);
+  useEffect(
+    () => mixer.setLoudnessBalanceEnabled(loudnessBalanceEnabled),
+    [loudnessBalanceEnabled, mixer],
+  );
 
   useEffect(() => {
     const unlock = () => void mixer.unlock("window-user-activation");

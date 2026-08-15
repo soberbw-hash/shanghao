@@ -261,6 +261,18 @@ test("KK launcher alone stays hidden while a real foreground hosted process repo
   assert.equal(
     matchKnownGame(
       snapshot(
+        "League of Legends",
+        "英雄联盟",
+        "C:\\Program Files (x86)\\kkduizhan\\Games\\League\\League of Legends.exe",
+        "",
+        true,
+      ),
+    ),
+    "KK 对战平台",
+  );
+  assert.equal(
+    matchKnownGame(
+      snapshot(
         "Game_x64h",
         "英雄三国",
         "C:\\Program Files (x86)\\kkduizhan\\Games\\Hero\\Game_x64h.exe",
@@ -270,7 +282,7 @@ test("KK launcher alone stays hidden while a real foreground hosted process repo
     ),
     undefined,
   );
-  assert.equal(matchKnownGame(snapshot("Game_x64h", "KK RPG")), undefined);
+  assert.equal(matchKnownGame(snapshot("Game_x64h", "KK RPG")), "KK 对战平台");
   assert.equal(matchKnownGame(snapshot("war3", "Warcraft III")), undefined);
   assert.equal(matchKnownGame(snapshot("game", "普通应用")), undefined);
 });
@@ -379,6 +391,16 @@ test("bundled monitor artwork stays valid and newly detected games use a readabl
   );
   assert.equal(componentSource.includes("data-game-scan"), true);
   assert.equal(componentSource.includes("shouldReduceMotion"), true);
+  assert.equal(
+    componentSource.includes("normalizePresenceGameIconDataUrl(gameName, iconDataUrl)"),
+    true,
+  );
+  assert.equal(
+    detectorSource.includes(
+      "if (gameName === KK_PLATFORM_GAME_NAME) return { activity: gameName };",
+    ),
+    true,
+  );
   assert.equal(detectorSource.includes('getFileIcon(executablePath, { size: "large" })'), true);
   assert.equal(detectorSource.includes('resize({ width: 64, height: 64, quality: "best" })'), true);
 });

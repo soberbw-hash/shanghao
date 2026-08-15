@@ -23,7 +23,7 @@ interface UseMicTestOptions {
   lowCutFrequency?: LowCutFrequency;
 }
 
-export type MicTestPhase = "idle" | "monitoring";
+export type MicTestPhase = "idle" | "recording" | "ready" | "playing_system" | "playing_processed";
 
 interface UseMicTestResult {
   isTesting: boolean;
@@ -34,7 +34,15 @@ interface UseMicTestResult {
   start: () => Promise<void>;
   stop: () => void;
   toggle: () => Promise<void>;
+  playSystemCapture: () => Promise<void>;
+  playProcessed: () => Promise<void>;
 }
+
+const TEST_DURATION_MS = 9_000;
+const recorderMimeType = (): string | undefined =>
+  ["audio/webm;codecs=opus", "audio/webm", "audio/ogg;codecs=opus"].find((type) =>
+    MediaRecorder.isTypeSupported(type),
+  );
 
 export const useMicTest = ({
   inputDeviceId,
@@ -43,7 +51,6 @@ export const useMicTest = ({
   noiseSuppression = true,
   autoGainControl = true,
   voiceEnhancement = true,
-  monitorMode = "processed",
   equalizerGains = [],
   lowCutFrequency = "90",
 }: UseMicTestOptions): UseMicTestResult => {
@@ -55,8 +62,10 @@ export const useMicTest = ({
   const processedStreamRef = useRef<ProcessedMicrophoneStream | undefined>(undefined);
   const contextRef = useRef<AudioContext | undefined>(undefined);
   const analyserRef = useRef<AnalyserNode | undefined>(undefined);
-  const audioRef = useRef<HTMLAudioElement | undefined>(undefined);
+  const playbackRef = useRef<HTMLAudioElement | undefined>(undefined);
+  const recordingTimerRef = useRef<number | undefined>(undefined);
   const rafRef = useRef<number | undefined>(undefined);
+  const urlsRef = useRef<{ system?: string; processed?: string }>({});
 
   const clearMeter = useCallback(() => {
     if (rafRef.current !== undefined) window.cancelAnimationFrame(rafRef.current);
@@ -76,69 +85,91 @@ export const useMicTest = ({
     contextRef.current = undefined;
   }, [clearMeter]);
 
-  const stop = useCallback(() => {
-    releaseCapture();
-
-    if (audioRef.current) {
-      audioRef.current.pause();
-      audioRef.current.srcObject = null;
-      audioRef.current = undefined;
+  const clearPlayback = useCallback((revokeUrls: boolean) => {
+    playbackRef.current?.pause();
+    playbackRef.current = undefined;
+    if (revokeUrls) {
+      if (urlsRef.current.system) URL.revokeObjectURL(urlsRef.current.system);
+      if (urlsRef.current.processed) URL.revokeObjectURL(urlsRef.current.processed);
+      urlsRef.current = {};
     }
+  }, []);
+
+  const stop = useCallback(() => {
+    if (recordingTimerRef.current !== undefined) window.clearTimeout(recordingTimerRef.current);
+    recordingTimerRef.current = undefined;
+    releaseCapture();
+    clearPlayback(true);
     setPhase("idle");
     setIsClipping(false);
-  }, [releaseCapture]);
+  }, [clearPlayback, releaseCapture]);
 
   const startMeter = useCallback(() => {
     const analyser = analyserRef.current;
     if (!analyser) return;
-
-    const sampleBuffer = new Uint8Array(analyser.fftSize);
+    const samples = new Uint8Array(analyser.fftSize);
     const tick = () => {
-      analyser.getByteTimeDomainData(sampleBuffer);
+      analyser.getByteTimeDomainData(samples);
       let peak = 0;
-      for (const value of sampleBuffer) {
-        peak = Math.max(peak, Math.abs((value - 128) / 128));
-      }
-      const normalizedLevel = Math.min(1, peak * 2.4);
-      setLevel(normalizedLevel);
+      for (const value of samples) peak = Math.max(peak, Math.abs((value - 128) / 128));
+      setLevel(Math.min(1, peak * 2.4));
       if (peak >= 0.98) setIsClipping(true);
       rafRef.current = window.requestAnimationFrame(tick);
     };
     tick();
   }, []);
 
+  const recordStream = useCallback(
+    (stream: MediaStream): { recorder: MediaRecorder; done: Promise<Blob> } => {
+      const chunks: BlobPart[] = [];
+      const mimeType = recorderMimeType();
+      const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
+      const done = new Promise<Blob>((resolve, reject) => {
+        recorder.addEventListener(
+          "dataavailable",
+          (event) => event.data.size && chunks.push(event.data),
+        );
+        recorder.addEventListener("error", () => reject(new Error("mic_test_recording_failed")), {
+          once: true,
+        });
+        recorder.addEventListener(
+          "stop",
+          () => resolve(new Blob(chunks, { type: recorder.mimeType })),
+          { once: true },
+        );
+      });
+      recorder.start(500);
+      return { recorder, done };
+    },
+    [],
+  );
+
   const start = useCallback(async () => {
     stop();
     setError(undefined);
     setIsClipping(false);
-
     try {
       const inputStream = await navigator.mediaDevices.getUserMedia({
         audio: {
           deviceId: inputDeviceId ? { exact: inputDeviceId } : undefined,
-          echoCancellation: monitorMode === "processed" ? echoCancellation : false,
+          echoCancellation,
           noiseSuppression: false,
-          autoGainControl: monitorMode === "processed" ? autoGainControl : false,
+          autoGainControl,
           sampleRate: MICROPHONE_PROCESSING_SAMPLE_RATE,
           channelCount: 1,
         },
       });
       inputStreamRef.current = inputStream;
-
-      const processedStream =
-        monitorMode === "processed"
-          ? await createProcessedMicrophoneStream(inputStream, {
-              micEqualizerGains: Array.from(
-                { length: 5 },
-                (_, index) => equalizerGains[index] ?? 0,
-              ) as MicEqualizerGains,
-              lowCutFrequency,
-              isNoiseSuppressionEnabled: noiseSuppression,
-              isVoiceEnhancementEnabled: voiceEnhancement,
-            })
-          : undefined;
+      const processedStream = await createProcessedMicrophoneStream(inputStream.clone(), {
+        micEqualizerGains: Array.from(
+          { length: 5 },
+          (_, index) => equalizerGains[index] ?? 0,
+        ) as MicEqualizerGains,
+        lowCutFrequency,
+        isNoiseSuppressionEnabled: noiseSuppression,
+        isVoiceEnhancementEnabled: voiceEnhancement,
+      });
       processedStreamRef.current = processedStream;
-      const monitoredStream = processedStream?.stream ?? inputStream;
 
       const context = new AudioContext({
         sampleRate: MICROPHONE_PROCESSING_SAMPLE_RATE,
@@ -146,29 +177,33 @@ export const useMicTest = ({
       });
       await context.resume();
       contextRef.current = context;
-      const source = context.createMediaStreamSource(monitoredStream);
       const analyser = context.createAnalyser();
       analyser.fftSize = 512;
-      source.connect(analyser);
+      context.createMediaStreamSource(processedStream.stream).connect(analyser);
       analyserRef.current = analyser;
-
-      const audio = new Audio();
-      audioRef.current = audio;
-      audio.srcObject = monitoredStream;
-      audio.autoplay = true;
-      audio.volume = 1;
-      if (outputDeviceId && "setSinkId" in audio) {
-        await (audio as HTMLAudioElement & { setSinkId: (id: string) => Promise<void> })
-          .setSinkId(outputDeviceId)
-          .catch(() => undefined);
-      }
-      await audio.play();
-      setPhase("monitoring");
       startMeter();
-    } catch (nextError) {
-      setError(nextError instanceof Error ? nextError.message : String(nextError));
-      stop();
-      throw nextError;
+
+      const systemRecording = recordStream(inputStream);
+      const processedRecording = recordStream(processedStream.stream);
+      setPhase("recording");
+      recordingTimerRef.current = window.setTimeout(async () => {
+        systemRecording.recorder.stop();
+        processedRecording.recorder.stop();
+        const [systemBlob, processedBlob] = await Promise.all([
+          systemRecording.done,
+          processedRecording.done,
+        ]);
+        releaseCapture();
+        urlsRef.current = {
+          system: URL.createObjectURL(systemBlob),
+          processed: URL.createObjectURL(processedBlob),
+        };
+        setPhase("ready");
+      }, TEST_DURATION_MS);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+      releaseCapture();
+      setPhase("idle");
     }
   }, [
     autoGainControl,
@@ -176,20 +211,36 @@ export const useMicTest = ({
     equalizerGains,
     inputDeviceId,
     lowCutFrequency,
-    monitorMode,
     noiseSuppression,
-    outputDeviceId,
+    recordStream,
+    releaseCapture,
     startMeter,
     stop,
     voiceEnhancement,
   ]);
 
+  const play = useCallback(
+    async (kind: "system" | "processed") => {
+      const url = urlsRef.current[kind];
+      if (!url) return;
+      clearPlayback(false);
+      const audio = new Audio(url);
+      playbackRef.current = audio;
+      if (outputDeviceId && "setSinkId" in audio) {
+        await (audio as HTMLAudioElement & { setSinkId: (id: string) => Promise<void> })
+          .setSinkId(outputDeviceId)
+          .catch(() => undefined);
+      }
+      audio.addEventListener("ended", () => setPhase("ready"), { once: true });
+      setPhase(kind === "system" ? "playing_system" : "playing_processed");
+      await audio.play();
+    },
+    [clearPlayback, outputDeviceId],
+  );
+
   const toggle = useCallback(async () => {
-    if (phase !== "idle") {
-      stop();
-      return;
-    }
-    await start();
+    if (phase === "recording") stop();
+    else await start();
   }, [phase, start, stop]);
 
   useEffect(() => stop, [stop]);
@@ -203,5 +254,7 @@ export const useMicTest = ({
     start,
     stop,
     toggle,
+    playSystemCapture: () => play("system"),
+    playProcessed: () => play("processed"),
   };
 };

@@ -31,6 +31,7 @@ import { ShortcutSettingsCard } from "../components/settings/ShortcutSettingsCar
 import { RecordingLibrarySettingsCard } from "../components/settings/RecordingLibrarySettingsCard";
 import { AiVoiceMemorySettingsCard } from "../components/settings/AiVoiceMemorySettingsCard";
 import { RoomHistorySettingsCard } from "../components/settings/RoomHistorySettingsCard";
+import { WeatherSettingsCard } from "../components/settings/WeatherSettingsCard";
 import { StartupSplashPage } from "../components/status/StartupSplashPage";
 import { ReleaseDetailModal } from "../components/status/ReleaseDetailModal";
 import { RELEASE_HISTORY, type ReleaseHistoryEntry } from "../components/status/releaseHistory";
@@ -73,6 +74,7 @@ export const SettingsPage = () => {
   const navigate = useAppStore((state) => state.navigate);
   const settingsReturnTo = useAppStore((state) => state.settingsReturnTo);
   const pushToast = useAppStore((state) => state.pushToast);
+  const voiceMemoryOpenTarget = useAppStore((state) => state.voiceMemoryOpenTarget);
   const settings = useSettingsStore((state) => state.settings);
   const runtimeInfo = useSettingsStore((state) => state.runtimeInfo);
   const updateInfo = useSettingsStore((state) => state.updateInfo);
@@ -87,7 +89,7 @@ export const SettingsPage = () => {
   const connectionHealth = useRoomStore((state) => state.connectionHealth);
   const localStream = useRoomStore((state) => state.localStream);
   const remoteStreams = useRoomStore((state) => state.remoteStreams);
-  const [activeSection, setActiveSection] = useState<SettingsSectionId>("audio");
+  const [activeSection, setActiveSection] = useState<SettingsSectionId>("general");
   const [diagnostics, setDiagnostics] = useState<DiagnosticsSnapshot>();
   const [relayDiagnostics, setRelayDiagnostics] = useState<RelayStatusSnapshot>();
   const [windowsDiagnostics, setWindowsDiagnostics] = useState<
@@ -116,6 +118,10 @@ export const SettingsPage = () => {
   useEffect(() => {
     void window.desktopApi.diagnostics.snapshot().then(setDiagnostics);
   }, []);
+
+  useEffect(() => {
+    if (voiceMemoryOpenTarget) setActiveSection("recordings");
+  }, [voiceMemoryOpenTarget]);
 
   useEffect(() => {
     if (activeSection !== "diagnostics" || !settings?.relayServerUrl) return;
@@ -458,6 +464,10 @@ export const SettingsPage = () => {
               </Button>
             </div>
           </SettingsItemRow>
+          <WeatherSettingsCard
+            settings={settings}
+            onChange={(patch) => void handleSaveSettings(patch)}
+          />
         </div>
       </SettingsSection>
     ),
@@ -473,6 +483,8 @@ export const SettingsPage = () => {
           isMicClipping={micTest.isClipping}
           micTestError={micTest.error}
           onToggleMicTest={() => void micTest.toggle()}
+          onPlaySystemCapture={() => void micTest.playSystemCapture()}
+          onPlayProcessed={() => void micTest.playProcessed()}
           onChange={(patch) => void handleSaveSettings(patch)}
         />
         <ShortcutSettingsCard
@@ -486,6 +498,7 @@ export const SettingsPage = () => {
         settings={settings}
         onChange={handleSaveSettings}
         pushToast={pushToast}
+        openTarget={voiceMemoryOpenTarget}
       />
     ),
     ai: (

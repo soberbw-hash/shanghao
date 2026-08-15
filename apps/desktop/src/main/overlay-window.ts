@@ -5,6 +5,13 @@ import { app, BrowserWindow, screen } from "electron";
 
 import { IPC_CHANNELS, type OverlayState } from "@private-voice/shared";
 
+import {
+  centerOverlayTop,
+  clampOverlayTop,
+  isPointInsideOverlay,
+  resizeOverlayKeepingTop,
+  snapOverlayTop,
+} from "./overlay-bounds";
 import { sendToWindow } from "./safe-web-contents";
 
 const devServerUrl = "http://127.0.0.1:5173";
@@ -20,6 +27,12 @@ export class OverlayWindowController {
   private state?: OverlayState;
   private snapX = 0;
   private readonly gridSize = 16;
+  private boundsPath = "";
+  private boundsSaveTimer?: NodeJS.Timeout;
+  private hoverPollTimer?: NodeJS.Timeout;
+  private cursorInside = false;
+  private rendererInteractionLock = false;
+  private mouseEventsEnabled = false;
 
   show(): boolean {
     if (!this.window || this.window.isDestroyed()) {
@@ -39,31 +52,35 @@ export class OverlayWindowController {
   }
 
   close(): void {
+    this.persistBoundsNow();
+    this.stopHoverTracking();
     this.window?.destroy();
     this.window = null;
   }
 
   setInteractive(interactive: boolean): void {
-    if (!this.window || this.window.isDestroyed()) return;
-    this.window.setIgnoreMouseEvents(!interactive, { forward: true });
+    this.rendererInteractionLock = interactive;
+    this.applyMouseEventMode();
   }
 
   moveTo(desiredTopY: number): void {
     if (!this.window || this.window.isDestroyed() || !Number.isFinite(desiredTopY)) return;
     const bounds = this.window.getBounds();
     const display = screen.getDisplayMatching(bounds);
-    const minY = display.workArea.y + 6;
-    const maxY = display.workArea.y + display.workArea.height - bounds.height - 6;
-    const snappedY = Math.round(desiredTopY / this.gridSize) * this.gridSize;
-    this.window.setPosition(this.snapX, Math.max(minY, Math.min(snappedY, maxY)), false);
+    const snappedY = snapOverlayTop(desiredTopY, bounds.height, display.workArea, this.gridSize);
+    if (bounds.x === this.snapX && bounds.y === snappedY) return;
+    this.window.setPosition(this.snapX, snappedY, false);
+    this.scheduleBoundsSave();
   }
 
   resetPosition(): void {
     if (!this.window || this.window.isDestroyed()) return;
     const bounds = this.window.getBounds();
     const display = screen.getDisplayMatching(bounds);
-    const y = display.workArea.y + Math.round((display.workArea.height - bounds.height) / 2);
+    const y = centerOverlayTop(bounds.height, display.workArea);
+    if (bounds.x === this.snapX && bounds.y === y) return;
     this.window.setPosition(this.snapX, y, false);
+    this.scheduleBoundsSave();
   }
 
   update(state: OverlayState): void {
@@ -83,26 +100,32 @@ export class OverlayWindowController {
 
     const bounds = this.window.getBounds();
     const display = screen.getDisplayMatching(bounds);
-    const centeredY = bounds.y + Math.round((bounds.height - height) / 2);
-    const y = Math.max(
-      display.workArea.y + 6,
-      Math.min(centeredY, display.workArea.y + display.workArea.height - height - 6),
-    );
-    this.window.setBounds({
-      x: this.snapX,
-      y,
-      width: OVERLAY_WIDTH,
+    const nextBounds = resizeOverlayKeepingTop(
+      bounds,
       height,
-    });
+      display.workArea,
+      this.snapX,
+      OVERLAY_WIDTH,
+    );
+    if (
+      bounds.x === nextBounds.x &&
+      bounds.y === nextBounds.y &&
+      bounds.width === nextBounds.width &&
+      bounds.height === nextBounds.height
+    ) {
+      return;
+    }
+    this.window.setBounds(nextBounds, false);
+    if (bounds.y !== nextBounds.y) this.scheduleBoundsSave();
   }
 
   private create(): void {
-    const boundsPath = path.join(app.getPath("userData"), "overlay-bounds.json");
+    this.boundsPath = path.join(app.getPath("userData"), "overlay-bounds.json");
     let savedY: number | undefined;
     try {
-      if (existsSync(boundsPath)) {
-        const saved = JSON.parse(readFileSync(boundsPath, "utf8")) as { y?: number };
-        savedY = saved.y;
+      if (existsSync(this.boundsPath)) {
+        const saved = JSON.parse(readFileSync(this.boundsPath, "utf8")) as { y?: number };
+        if (typeof saved.y === "number" && Number.isFinite(saved.y)) savedY = saved.y;
       }
     } catch {
       // ignore
@@ -110,7 +133,10 @@ export class OverlayWindowController {
 
     const workArea = screen.getPrimaryDisplay().workArea;
     this.snapX = workArea.x + 6;
-    const y = savedY ?? workArea.y + Math.round((workArea.height - OVERLAY_MIN_HEIGHT) / 2);
+    const y =
+      savedY === undefined
+        ? centerOverlayTop(OVERLAY_MIN_HEIGHT, workArea)
+        : clampOverlayTop(savedY, OVERLAY_MIN_HEIGHT, workArea);
 
     const window = new BrowserWindow({
       width: OVERLAY_WIDTH,
@@ -141,12 +167,16 @@ export class OverlayWindowController {
     });
 
     this.window = window;
+    this.cursorInside = false;
+    this.rendererInteractionLock = false;
+    this.mouseEventsEnabled = false;
     window.setAlwaysOnTop(true, "screen-saver");
     window.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
     window.setMovable(false);
     window.setIgnoreMouseEvents(true, { forward: true });
 
     window.on("closed", () => {
+      this.stopHoverTracking();
       if (this.window === window) {
         this.window = null;
       }
@@ -158,27 +188,13 @@ export class OverlayWindowController {
       }
     });
 
-    const saveBounds = () => {
-      try {
-        const bounds = window.getBounds();
-        window.setBounds({
-          x: this.snapX,
-          y: bounds.y,
-          width: bounds.width,
-          height: bounds.height,
-        });
-        writeFileSync(boundsPath, JSON.stringify({ y: bounds.y }), "utf8");
-      } catch {
-        // ignore
-      }
-    };
-    window.on("moved", saveBounds);
     window.webContents.once("did-finish-load", () => {
       if (this.state) {
         sendToWindow(window, IPC_CHANNELS.overlay.state, this.state);
         this.resizeForMembers(this.state.members.filter((m) => !m.isEmptySlot).length);
       }
       window.showInactive();
+      this.startHoverTracking();
     });
 
     if (!app.isPackaged) {
@@ -187,6 +203,58 @@ export class OverlayWindowController {
       void window.loadFile(path.join(__dirname, "../../dist/index.html"), {
         query: { overlay: "1" },
       });
+    }
+  }
+
+  private applyMouseEventMode(): void {
+    if (!this.window || this.window.isDestroyed()) return;
+    const shouldEnable = this.cursorInside || this.rendererInteractionLock;
+    if (shouldEnable === this.mouseEventsEnabled) return;
+    this.mouseEventsEnabled = shouldEnable;
+    this.window.setIgnoreMouseEvents(!shouldEnable, { forward: true });
+  }
+
+  private startHoverTracking(): void {
+    this.stopHoverTracking();
+    const updateHoverState = () => {
+      if (!this.window || this.window.isDestroyed() || !this.window.isVisible()) return;
+      const isInside = isPointInsideOverlay(screen.getCursorScreenPoint(), this.window.getBounds());
+      if (isInside === this.cursorInside) return;
+      this.cursorInside = isInside;
+      this.applyMouseEventMode();
+      sendToWindow(this.window, IPC_CHANNELS.overlay.hoverState, isInside);
+    };
+    updateHoverState();
+    this.hoverPollTimer = setInterval(updateHoverState, 80);
+  }
+
+  private stopHoverTracking(): void {
+    if (this.hoverPollTimer) clearInterval(this.hoverPollTimer);
+    this.hoverPollTimer = undefined;
+    this.cursorInside = false;
+    this.rendererInteractionLock = false;
+    if (this.window && !this.window.isDestroyed()) {
+      this.mouseEventsEnabled = false;
+      this.window.setIgnoreMouseEvents(true, { forward: true });
+    }
+  }
+
+  private scheduleBoundsSave(): void {
+    if (this.boundsSaveTimer) clearTimeout(this.boundsSaveTimer);
+    this.boundsSaveTimer = setTimeout(() => {
+      this.boundsSaveTimer = undefined;
+      this.persistBoundsNow();
+    }, 120);
+  }
+
+  private persistBoundsNow(): void {
+    if (this.boundsSaveTimer) clearTimeout(this.boundsSaveTimer);
+    this.boundsSaveTimer = undefined;
+    if (!this.boundsPath || !this.window || this.window.isDestroyed()) return;
+    try {
+      writeFileSync(this.boundsPath, JSON.stringify({ y: this.window.getBounds().y }), "utf8");
+    } catch {
+      // The overlay remains usable even if its optional position preference cannot be saved.
     }
   }
 }

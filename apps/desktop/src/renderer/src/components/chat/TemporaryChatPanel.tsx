@@ -638,11 +638,6 @@ export const TemporaryChatPanel = ({
                           {linkPreviewUrl ? (
                             <MessageLinkPreview url={linkPreviewUrl} onCopy={copyLink} />
                           ) : null}
-                          {message.isLocal && message.deliveryState === "sending" ? (
-                            <span className="chat-delivery-state is-sending" aria-live="polite">
-                              发送中…
-                            </span>
-                          ) : null}
                           {message.isLocal && message.deliveryState === "failed" ? (
                             <button
                               type="button"

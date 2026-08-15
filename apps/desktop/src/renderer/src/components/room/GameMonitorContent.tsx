@@ -4,6 +4,8 @@ import { gsap } from "gsap";
 
 import type { GameDetectionSnapshot } from "@private-voice/shared";
 
+import { normalizePresenceGameIconDataUrl } from "../../features/room/presenceSignal";
+
 import apexLegendsArtwork from "../../assets/games/apex-legends.jpg";
 import blackMythWukongArtwork from "../../assets/games/black-myth-wukong.jpg";
 import counterStrike2Artwork from "../../assets/games/counter-strike-2.jpg";
@@ -88,6 +90,7 @@ export const GameMonitorContent = ({
 }) => {
   const rootRef = useRef<HTMLSpanElement>(null);
   const artwork = gameArtworkCatalog[gameName as SupportedGameName];
+  const runtimeIconDataUrl = normalizePresenceGameIconDataUrl(gameName, iconDataUrl);
 
   useLayoutEffect(() => {
     const root = rootRef.current;
@@ -125,7 +128,7 @@ export const GameMonitorContent = ({
     };
   }, [shouldReduceMotion]);
 
-  const layout = iconDataUrl ? "runtime" : (artwork?.layout ?? "fallback");
+  const layout = runtimeIconDataUrl ? "runtime" : (artwork?.layout ?? "fallback");
 
   return (
     <span
@@ -133,10 +136,10 @@ export const GameMonitorContent = ({
       className={`scene-game-monitor-content scene-game-monitor-content--${layout}`}
       aria-label={`正在玩 ${gameName}`}
     >
-      {iconDataUrl ? (
+      {runtimeIconDataUrl ? (
         <img
           className="scene-game-monitor-runtime-icon"
-          src={iconDataUrl}
+          src={runtimeIconDataUrl}
           alt=""
           draggable={false}
           aria-hidden="true"

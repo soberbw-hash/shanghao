@@ -1,44 +1,33 @@
-# ShangHao 2.4 local review checkpoint
+# ShangHao 当前开发阶段
 
-Updated: 2026-08-08
+## 当前基线
 
-## Scope
+- 当前本地综合开发成果整理为 v2.9.0，构建号为 `2026.08.15.1`。
+- 本地工作区仍是唯一最新基线；本次提交保留并汇总现有全部产品修改，不从远端回灌代码。
+- 本轮经产品负责人明确授权：更新版本说明、生成 Windows 安装包并推送源码到 GitHub `main`。
+- 本轮不创建 Git Tag 或 GitHub Release，不部署信令服务器，也不改变协议版本和生产服务器版本门禁。
 
-This local review build keeps the fixed-server Windows product and the verified five-person
-audio topology. The round focuses on selective recovery, bandwidth discipline, Windows startup
-and firewall reliability, TURN transport coverage, and a small set of daily-use controls.
+## 本轮交付重点
 
-## Audio invariants kept intact
+- 五人 WebRTC Mesh、后加入成员音频、ICE recovery、TURN 与信令回退路径。
+- 好友响度平衡、降噪与双讲保护、独立音量和本地静音。
+- 房间角色、座位切换、空闲屏幕、天气、日期挂历和悬浮窗交互。
+- 聊天 ACK、重试、去重、图片、链接、收藏和快捷语音。
+- 自动录音、录音库批量管理、Marker、本地 AI 转录和结果质量门控。
+- 屏幕分享、设置页位置选择和现有用户本地数据兼容。
 
-- Five isolated Electron clients still verify all 20 directed WebRTC audio paths.
-- Every remote member continues through one shared `RemoteAudioMixer`.
-- RTP arrival alone is not considered success; decoded playable PCM remains the proof used to
-  retire signaling-audio fallback.
-- Late join, one-peer teardown, bidirectional recovery, unique seats, and stale-session cleanup
-  remain release gates.
+## 验证边界
 
-## New in this checkpoint
+- 自动化测试通过只说明代码路径和约束符合预期，不等同于真实设备听感已经验证。
+- 音质、回声、吞字、降噪强度、双讲保护及五套不同设备组合，仍需真实设备试听。
+- 长录音转录质量和多显示器屏幕分享声音，仍需在目标 Windows 设备上继续体验验证。
+- AI 模型、转录数据、录音、聊天记录和用户设置均保持为本地数据，不纳入源码提交和安装包替换范围。
 
-- Signaling-audio fallback is targeted per peer and only active while that peer lacks verified
-  WebRTC playback or explicitly requests recovery.
-- Relay voice activity uses an adaptive floor, pre-roll, hangover, and transient rejection so
-  keyboard taps do not continuously consume server bandwidth.
-- A failed peer receives an ICE restart before its peer connection is rebuilt.
-- Production Windows builds request administrator privileges. Startup uses a delayed,
-  current-user, highest-available scheduled task; application-scoped firewall rules are grouped
-  under `ShangHao Network` and can be inspected or repaired from Settings.
-- TURN deployment supports UDP/TCP and optional TLS transports. `/ice-config` returns temporary
-  credentials without exposing the shared secret.
-- Microphone send gain, speaker master gain, automatic room recording, collection unread state,
-  overlay activity indicators, and idempotent screen-share cleanup are included.
-- A manual 4 Mbps Linux acceptance script is available and never runs in production by itself.
+## v2.9.0 发布范围
 
-## Local review gate
+- 源码提交并推送到 GitHub `main`。
+- 生成本地 Windows x64 安装包并完成包内运行时与安装权限校验。
+- 更新 README、CHANGELOG、版本历史和 `docs/release-notes/v2.9.0.md`。
+- 不创建公开 Release Asset；安装包仅保留在本地工作区的忽略目录中。
 
-Run lint, typecheck, the complete desktop test suite, AudioWorklet smoke, five-peer signaling and
-media tests, production build, Windows packaging, execution-level verification, and packaged
-runtime verification. Real-device acceptance remains required before publishing: two independent
-Windows PCs first, then four- and five-person rooms, device switching, network interruption,
-screen sharing, and a one-hour voice session.
-
-This checkpoint must remain local until the owner approves it. Do not push or create a release.
+此文档应在开发或发布阶段变化时同步更新，不能继续停留在旧版本 checkpoint。

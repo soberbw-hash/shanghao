@@ -14,6 +14,17 @@ test("room invitation deep links keep only a websocket server and known room", (
   });
 });
 
+test("temporary room links keep server configuration private and expire", () => {
+  const expires = Date.now() + 5 * 60_000;
+  assert.deepEqual(parseDeepLinkInvite(`shanghao://join?room=main&expires=${expires}`), {
+    channelId: "main",
+  });
+  assert.equal(
+    parseDeepLinkInvite(`shanghao://join?room=main&expires=${Date.now() - 1}`),
+    undefined,
+  );
+});
+
 test("room invitation deep links reject unsafe or unknown destinations", () => {
   assert.equal(parseDeepLinkInvite("https://example.com/?room=main"), undefined);
   assert.equal(

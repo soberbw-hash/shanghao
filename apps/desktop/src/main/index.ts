@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import path, { join } from "node:path";
 import { pathToFileURL } from "node:url";
 
@@ -17,6 +17,10 @@ import { createMainWindow } from "./window";
 import { OverlayWindowController } from "./overlay-window";
 import { GameDetectionController } from "./game-detection";
 import { AiModelManager } from "./ai-model-manager";
+import { AiRuntimeManager } from "./ai-runtime-manager";
+import { AiVoiceMemoryService } from "./ai-voice-memory-service";
+import { preparePersistentAiStorage } from "./ai-storage";
+import { VoiceMemoryStore } from "./voice-memory-store";
 import { applyLaunchOnStartup } from "./launch-on-startup";
 import { ensureWindowsFirewallRules } from "./windows-integration";
 import { findDeepLinkInvite, parseDeepLinkInvite, SHANGHAO_PROTOCOL } from "./deep-link";
@@ -25,6 +29,7 @@ import {
   createRecordingMediaResponse,
   decodeRecordingMediaUrl,
   isAllowedRecordingMediaPath,
+  readRecordingLibrary,
   RECORDING_MEDIA_PROTOCOL,
 } from "./recording-library";
 
@@ -270,12 +275,65 @@ const bootstrap = async (): Promise<void> => {
     (payload) => diagnostics?.writeLog(payload) ?? Promise.resolve(),
   );
   await gameDetection.setEnabled(settings.isGameDetectionEnabled);
+  const aiStorage = await preparePersistentAiStorage({
+    userDataDirectory: app.getPath("userData"),
+    appDataDirectory: app.getPath("appData"),
+    localAppDataDirectory: process.env.LOCALAPPDATA,
+    isolateDirectory:
+      !app.isPackaged && process.env.SHANGHAO_CAPTURE_PATH
+        ? path.dirname(process.env.SHANGHAO_CAPTURE_PATH)
+        : undefined,
+    writeLog: (payload) => diagnostics?.writeLog(payload) ?? Promise.resolve(),
+  });
   const aiModels = new AiModelManager(
-    path.join(app.getPath("userData"), "ai-models"),
+    aiStorage.models,
     gameDetection,
     (payload) => diagnostics?.writeLog(payload) ?? Promise.resolve(),
   );
   await aiModels.initialize(settings.aiProcessingMode);
+  const aiRuntimeDirectory = aiStorage.runtimes;
+  const bundledRunner = app.isPackaged
+    ? path.join(process.resourcesPath, "ai", "qwen-runner.py")
+    : path.join(app.getAppPath(), "scripts", "qwen-runner.py");
+  const runtimeRunner = path.join(aiRuntimeDirectory, "qwen-runner.py");
+  if (existsSync(bundledRunner) && readFileSync(bundledRunner).length > 0) {
+    const { mkdir, copyFile } = await import("node:fs/promises");
+    await mkdir(aiRuntimeDirectory, { recursive: true });
+    await copyFile(bundledRunner, runtimeRunner);
+  }
+  const aiRuntime = new AiRuntimeManager(aiRuntimeDirectory, {
+    vibevoice: () => aiModels.getActiveModelDirectory("vibevoice"),
+    qwen: () => aiModels.getActiveModelDirectory("qwen35-4b"),
+  });
+  const voiceMemory = new AiVoiceMemoryService(
+    aiModels,
+    aiRuntime,
+    new VoiceMemoryStore(path.join(app.getPath("userData"), "voice-memory")),
+    (payload) => diagnostics?.writeLog(payload) ?? Promise.resolve(),
+  );
+  await voiceMemory.initialize();
+  if (settings.isAiAutoTranscribeEnabled) {
+    void readRecordingLibrary(settings.recordingSaveDirectory, settings.recordingLibraryQuotaGb)
+      .then((library) =>
+        voiceMemory.queueRecordings(
+          library.items.map((item) => ({
+            filePath: item.filePath,
+            fileSize: item.fileSize,
+            roomId: item.roomId,
+            markers: item.markers.map((marker) => ({ id: marker.id, offsetMs: marker.offsetMs })),
+          })),
+          settings.isAiAutoOrganizeEnabled,
+        ),
+      )
+      .catch((error) =>
+        diagnostics?.writeLog({
+          category: "app",
+          level: "warn",
+          message: "voice_memory_library_queue_failed",
+          context: { error: error instanceof Error ? error.message : String(error) },
+        }),
+      );
+  }
   shortcutsController = shortcuts;
   overlayController = overlay;
   gameDetectionController = gameDetection;
@@ -291,6 +349,7 @@ const bootstrap = async (): Promise<void> => {
     overlay,
     gameDetection,
     aiModels,
+    voiceMemory,
     consumePendingDeepLink,
   });
 

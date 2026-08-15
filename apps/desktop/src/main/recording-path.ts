@@ -1,3 +1,5 @@
+import { constants } from "node:fs";
+import { access, mkdir } from "node:fs/promises";
 import path from "node:path";
 
 export const RECORDING_DIRECTORY_NAME = "上号录音";
@@ -21,6 +23,31 @@ export const resolveRecordingDirectory = (
   return candidate && path.isAbsolute(candidate)
     ? path.normalize(candidate)
     : path.join(documentsDirectory, RECORDING_DIRECTORY_NAME);
+};
+
+type EnsureRecordingDirectory = (directory: string) => Promise<void>;
+
+const ensureRecordingDirectory: EnsureRecordingDirectory = async (directory) => {
+  await mkdir(directory, { recursive: true });
+  await access(directory, constants.R_OK | constants.W_OK);
+};
+
+export const resolveUsableRecordingDirectory = async (
+  configuredDirectory: string | undefined,
+  documentsDirectory: string,
+  ensureDirectory: EnsureRecordingDirectory = ensureRecordingDirectory,
+): Promise<string> => {
+  const fallbackDirectory = path.join(documentsDirectory, RECORDING_DIRECTORY_NAME);
+  const preferredDirectory = resolveRecordingDirectory(configuredDirectory, documentsDirectory);
+
+  try {
+    await ensureDirectory(preferredDirectory);
+    return preferredDirectory;
+  } catch (error) {
+    if (preferredDirectory === fallbackDirectory) throw error;
+    await ensureDirectory(fallbackDirectory);
+    return fallbackDirectory;
+  }
 };
 
 export const sanitizeRecordingFileName = (suggestedFileName: string): string => {
@@ -50,27 +77,20 @@ const formatLocalTimePart = (date: Date): string =>
     .join("-");
 
 export const createNumberedRecordingFileName = (
-  roomLabel: "一号房" | "二号房",
   createdAt: Date,
   existingFileNames: string[],
 ): string => {
   const datePart = formatLocalDatePart(createdAt);
   const matchingNames = existingFileNames.filter(
-    (fileName) =>
-      fileName.toLowerCase().endsWith(".m4a") &&
-      fileName.includes(`-${roomLabel}-`) &&
-      fileName.includes(datePart),
+    (fileName) => fileName.toLowerCase().endsWith(".m4a") && fileName.includes(datePart),
   );
-  const numberedPrefix = `上号-${datePart}-${roomLabel}-`;
-  const numberedTailPattern = /^(\d{2,3})-\d{2}-\d{2}-\d{2}\.m4a$/i;
+  const numberedTailPattern = /-(?:语音|一号房|二号房)-(\d{2,3})-\d{2}-\d{2}-\d{2}\.m4a$/i;
   const largestExistingNumber = matchingNames.reduce((largest, fileName) => {
-    const match = fileName.startsWith(numberedPrefix)
-      ? numberedTailPattern.exec(fileName.slice(numberedPrefix.length))
-      : null;
+    const match = numberedTailPattern.exec(fileName);
     return match?.[1] ? Math.max(largest, Number(match[1])) : largest;
   }, 0);
   const sequence = Math.max(matchingNames.length, largestExistingNumber) + 1;
-  return `上号-${datePart}-${roomLabel}-${String(sequence).padStart(2, "0")}-${formatLocalTimePart(createdAt)}.m4a`;
+  return `上号-${datePart}-语音-${String(sequence).padStart(2, "0")}-${formatLocalTimePart(createdAt)}.m4a`;
 };
 
 export const resolveAvailableRecordingPath = async (

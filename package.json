@@ -1,6 +1,6 @@
 {
   "name": "shanghao-workspace",
-  "version": "2.8.0",
+  "version": "2.9.0",
   "private": true,
   "license": "AGPL-3.0-or-later",
   "packageManager": "pnpm@10.34.5",

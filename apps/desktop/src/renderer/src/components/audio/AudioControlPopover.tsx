@@ -30,6 +30,8 @@ interface AudioControlPopoverProps {
   onEchoCancellationChange?: (enabled: boolean) => void;
   voiceEnhancementEnabled?: boolean;
   onVoiceEnhancementChange?: (enabled: boolean) => void;
+  loudnessBalanceEnabled?: boolean;
+  onLoudnessBalanceChange?: (enabled: boolean) => void;
 }
 
 export const AudioControlPopover = ({
@@ -53,6 +55,8 @@ export const AudioControlPopover = ({
   onEchoCancellationChange,
   voiceEnhancementEnabled,
   onVoiceEnhancementChange,
+  loudnessBalanceEnabled,
+  onLoudnessBalanceChange,
 }: AudioControlPopoverProps) => {
   const [draftVolume, setDraftVolume] = useState(volume);
   useEffect(() => setDraftVolume(volume), [volume]);
@@ -153,6 +157,19 @@ export const AudioControlPopover = ({
         </div>
       ) : null}
       {hasMicrophoneProcessing ? deviceSelect : null}
+      {typeof loudnessBalanceEnabled === "boolean" && onLoudnessBalanceChange ? (
+        <div className="audio-control-processing-option" data-audio-setting="loudness-balance">
+          <span>
+            <strong>好友响度平衡</strong>
+            <small>将好友说话响度稳定在约 -14 LUFS</small>
+          </span>
+          <Switch
+            isChecked={loudnessBalanceEnabled}
+            ariaLabel="切换好友响度平衡"
+            onChange={onLoudnessBalanceChange}
+          />
+        </div>
+      ) : null}
       <div className="audio-control-popover-slider">
         <Slider
           min={min}

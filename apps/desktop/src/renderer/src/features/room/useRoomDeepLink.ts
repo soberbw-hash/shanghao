@@ -4,7 +4,7 @@ import type { ChannelId } from "../chat/chatPersistence";
 
 interface RoomInvite {
   channelId: ChannelId;
-  serverUrl: string;
+  serverUrl?: string;
 }
 
 export const useRoomDeepLink = ({

@@ -7,6 +7,12 @@ export type RoomActionState = "idle" | "starting" | "joining";
 export type ToastTone = "neutral" | "success" | "warning" | "danger";
 export type BootstrapPhase = "booting" | "checking-update" | "update-gate" | "recovery" | "ready";
 
+export interface VoiceMemoryOpenTarget {
+  filePath: string;
+  startMs: number;
+  requestId: number;
+}
+
 interface ToastMessage {
   id: string;
   title: string;
@@ -33,11 +39,13 @@ interface AppStoreState {
   bootstrapMessage: string;
   startupIssue?: StartupIssue;
   requiredUpdate?: { requiredVersion: string; currentVersion: string };
+  voiceMemoryOpenTarget?: VoiceMemoryOpenTarget;
   isSafeMode: boolean;
   navigate: (page: AppPage) => void;
   setSettingsReturnTo: (target: SettingsReturnTarget) => void;
   setOnboardingOpen: (isOpen: boolean) => void;
   setRecordingSaveDialogOpen: (isOpen: boolean) => void;
+  setVoiceMemoryOpenTarget: (target?: Omit<VoiceMemoryOpenTarget, "requestId">) => void;
   setRoomAction: (roomAction: RoomActionState) => void;
   beginBootstrap: (message?: string) => void;
   completeBootstrap: () => void;
@@ -71,6 +79,10 @@ export const useAppStore = create<AppStoreState>((set, get) => ({
   setSettingsReturnTo: (settingsReturnTo) => set({ settingsReturnTo }),
   setOnboardingOpen: (isOnboardingOpen) => set({ isOnboardingOpen }),
   setRecordingSaveDialogOpen: (isRecordingSaveDialogOpen) => set({ isRecordingSaveDialogOpen }),
+  setVoiceMemoryOpenTarget: (target) =>
+    set({
+      voiceMemoryOpenTarget: target ? { ...target, requestId: Date.now() } : undefined,
+    }),
   setRoomAction: (roomAction) => set({ roomAction }),
   beginBootstrap: (message = "正在准备上号…") =>
     set((state) => ({

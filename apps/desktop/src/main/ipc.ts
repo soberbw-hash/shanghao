@@ -8,11 +8,12 @@ import {
   Notification,
   powerMonitor,
   screen,
+  session,
   shell,
   type BrowserWindow,
   type OpenDialogOptions,
 } from "electron";
-import { mkdir, writeFile } from "node:fs/promises";
+import { writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import {
@@ -23,16 +24,21 @@ import {
   type AppSettings,
   type AiModelAction,
   type AiModelId,
+  type AiRuntimePressure,
+  type AiRuntimeStatus,
   type AiVoiceMemorySnapshot,
   type ChatMessage,
   type DeepFilterAssets,
   type DeepLinkInvite,
+  type DailyRoomReport,
   type DiagnosticsSnapshot,
   type GameDetectionSnapshot,
   type OverlayState,
   type RelayStatusSnapshot,
   type RecordingExportPayload,
   type RecordingExportResponse,
+  type RecordingCleanupScan,
+  type RecordingBatchDeleteResult,
   type RecordingLibrarySnapshot,
   type RecordingMarker,
   type RendererLogPayload,
@@ -42,6 +48,15 @@ import {
   type SignalingEventPayload,
   type UpdateCheckResult,
   type UpdateStatus,
+  type VoiceMemoryAnswer,
+  type VoiceMemoryGlobalQuestionRequest,
+  type VoiceMemoryProcessRequest,
+  type VoiceMemoryQuestionRequest,
+  type VoiceMemoryRecord,
+  type VoiceMemorySearchRequest,
+  type VoiceMemorySearchResult,
+  type LocalWeatherRequest,
+  type LocalWeatherSnapshot,
   type WindowsIntegrationStatus,
 } from "@private-voice/shared";
 
@@ -53,7 +68,9 @@ import { resolveRecordingDirectory } from "./recording-path";
 import {
   deleteRecording,
   enforceRecordingQuota,
+  getUsableRecordingDirectory,
   readRecordingLibrary,
+  scanWasteRecordings,
   setRecordingFavorite,
 } from "./recording-library";
 import { readRelayStatus } from "./relay-status";
@@ -65,8 +82,11 @@ import { UpdateService } from "./updates";
 import { OverlayWindowController } from "./overlay-window";
 import { GameDetectionController } from "./game-detection";
 import { AiModelManager } from "./ai-model-manager";
+import { AiVoiceMemoryService } from "./ai-voice-memory-service";
 import { applyLaunchOnStartup } from "./launch-on-startup";
 import { ChatHistoryStore } from "./chat-history-store";
+import { DailyRoomReportCache } from "./daily-room-report-cache";
+import { LocalWeatherService } from "./weather-service";
 import { readWindowsElevationStatus } from "./windows-elevation";
 import {
   configureWindowsIconOverlays,
@@ -94,6 +114,7 @@ interface MainProcessServices {
   overlay: OverlayWindowController;
   gameDetection: GameDetectionController;
   aiModels: AiModelManager;
+  voiceMemory: AiVoiceMemoryService;
   consumePendingDeepLink: () => DeepLinkInvite | undefined;
 }
 
@@ -253,9 +274,19 @@ export const registerIpcHandlers = ({
   overlay,
   gameDetection,
   aiModels,
+  voiceMemory,
   consumePendingDeepLink,
 }: MainProcessServices): void => {
   const chatHistoryStore = new ChatHistoryStore(app.getPath("userData"));
+  const dailyRoomReportCache = new DailyRoomReportCache(app.getPath("userData"));
+  const weatherSession = session.fromPartition("shanghao-weather-direct", { cache: false });
+  const weatherNetworkReady = weatherSession.setProxy({ mode: "direct" });
+  const localWeather = new LocalWeatherService(app.getPath("userData"), {
+    fetcher: async (input, init) => {
+      await weatherNetworkReady;
+      return weatherSession.fetch(input instanceof URL ? input.toString() : input, init);
+    },
+  });
   signalingClient.on("event", (payload: SignalingEventPayload) => {
     sendToWindow(getMainWindow(), IPC_CHANNELS.signaling.event, payload);
   });
@@ -267,6 +298,9 @@ export const registerIpcHandlers = ({
   });
   aiModels.onStatus((snapshot) => {
     sendToWindow(getMainWindow(), IPC_CHANNELS.ai.status, snapshot);
+  });
+  voiceMemory.onStatus((record) => {
+    sendToWindow(getMainWindow(), IPC_CHANNELS.ai.voiceMemoryStatus, record);
   });
 
   ipcMain.handle(IPC_CHANNELS.app.getRuntimeInfo, async (): Promise<RuntimeInfo> => {
@@ -353,6 +387,22 @@ export const registerIpcHandlers = ({
         createChatHistoryRoomKey(payload.serverUrl, payload.channelId),
         payload.messages as ChatMessage[],
       );
+    },
+  );
+  ipcMain.handle(
+    IPC_CHANNELS.app.readDailyRoomReports,
+    async (): Promise<Record<"main" | "side", DailyRoomReport[]>> => dailyRoomReportCache.read(),
+  );
+  ipcMain.handle(
+    IPC_CHANNELS.app.saveDailyRoomReports,
+    async (_event, reports: Record<"main" | "side", DailyRoomReport[]>): Promise<void> => {
+      if (!reports || typeof reports !== "object") {
+        throw new Error("invalid_daily_room_reports");
+      }
+      if (JSON.stringify(reports).length > 2 * 1024 * 1024) {
+        throw new Error("daily_room_reports_payload_too_large");
+      }
+      await dailyRoomReportCache.save(reports);
     },
   );
   ipcMain.handle(IPC_CHANNELS.app.openExternal, async (_event, rawUrl: string): Promise<void> => {
@@ -569,6 +619,29 @@ export const registerIpcHandlers = ({
       }
       const settings = await settingsStore.save(partial);
       if (partial.aiProcessingMode) aiModels.setProcessingMode(settings.aiProcessingMode);
+      if (partial.isAiAutoTranscribeEnabled === true) {
+        const library = await readRecordingLibrary(
+          settings.recordingSaveDirectory,
+          settings.recordingLibraryQuotaGb,
+        );
+        void voiceMemory
+          .queueRecordings(
+            library.items.map((item) => ({
+              filePath: item.filePath,
+              roomId: item.roomId,
+              markers: item.markers.map((marker) => ({ id: marker.id, offsetMs: marker.offsetMs })),
+            })),
+            settings.isAiAutoOrganizeEnabled,
+          )
+          .catch((error) =>
+            diagnostics.writeLog({
+              category: "app",
+              level: "warn",
+              message: "voice_memory_library_queue_failed",
+              context: { error: error instanceof Error ? error.message : String(error) },
+            }),
+          );
+      }
       if (typeof partial.isGameDetectionEnabled === "boolean") {
         await gameDetection.setEnabled(settings.isGameDetectionEnabled);
       }
@@ -757,6 +830,11 @@ export const registerIpcHandlers = ({
   ipcMain.handle(IPC_CHANNELS.games.getSnapshot, async (): Promise<GameDetectionSnapshot> =>
     gameDetection.getSnapshot(),
   );
+  ipcMain.handle(
+    IPC_CHANNELS.weather.getSnapshot,
+    async (_event, request: LocalWeatherRequest): Promise<LocalWeatherSnapshot> =>
+      localWeather.getSnapshot(request),
+  );
   ipcMain.handle(IPC_CHANNELS.ai.getSnapshot, async (): Promise<AiVoiceMemorySnapshot> =>
     aiModels.getSnapshot(),
   );
@@ -768,6 +846,102 @@ export const registerIpcHandlers = ({
         throw new Error("invalid_ai_model_action");
       }
       return aiModels.controlModel(modelId, action);
+    },
+  );
+  ipcMain.handle(IPC_CHANNELS.ai.runtimeStatus, async (): Promise<AiRuntimeStatus> =>
+    voiceMemory.getRuntimeStatus(),
+  );
+  ipcMain.handle(
+    IPC_CHANNELS.ai.getVoiceMemory,
+    async (_event, recordingId: string): Promise<VoiceMemoryRecord | undefined> =>
+      voiceMemory.get(requireString(recordingId, 2_048, "recording_id")),
+  );
+  ipcMain.handle(IPC_CHANNELS.ai.listVoiceMemories, async (): Promise<VoiceMemoryRecord[]> =>
+    voiceMemory.list(),
+  );
+  ipcMain.handle(
+    IPC_CHANNELS.ai.processRecording,
+    async (_event, request: VoiceMemoryProcessRequest): Promise<VoiceMemoryRecord> =>
+      voiceMemory.start({
+        ...request,
+        recordingId: requireString(request.recordingId, 2_048, "recording_id"),
+        filePath: requireString(request.filePath, 2_048, "recording_file_path"),
+      }),
+  );
+  ipcMain.handle(IPC_CHANNELS.ai.pauseTask, async (_event, recordingId: string): Promise<void> => {
+    voiceMemory.pause(requireString(recordingId, 2_048, "recording_id"));
+  });
+  ipcMain.handle(
+    IPC_CHANNELS.ai.resumeTask,
+    async (_event, recordingId: string): Promise<VoiceMemoryRecord> =>
+      voiceMemory.resume(requireString(recordingId, 2_048, "recording_id")),
+  );
+  ipcMain.handle(
+    IPC_CHANNELS.ai.assignSpeaker,
+    async (
+      _event,
+      recordingId: string,
+      speakerId: string,
+      memberId: string,
+      nickname: string,
+    ): Promise<VoiceMemoryRecord> =>
+      voiceMemory.assignSpeaker(
+        requireString(recordingId, 2_048, "recording_id"),
+        requireString(speakerId, 100, "speaker_id"),
+        requireString(memberId, 180, "member_id"),
+        requireString(nickname, 80, "nickname"),
+      ),
+  );
+  ipcMain.handle(
+    IPC_CHANNELS.ai.updateMarkerTitle,
+    async (
+      _event,
+      recordingId: string,
+      markerId: string,
+      title: string,
+    ): Promise<VoiceMemoryRecord> =>
+      voiceMemory.updateMarkerTitle(
+        requireString(recordingId, 2_048, "recording_id"),
+        requireString(markerId, 180, "marker_id"),
+        requireString(title, 120, "marker_title"),
+      ),
+  );
+  ipcMain.handle(
+    IPC_CHANNELS.ai.askRecording,
+    async (_event, request: VoiceMemoryQuestionRequest): Promise<VoiceMemoryAnswer> =>
+      voiceMemory.ask({
+        recordingId: requireString(request.recordingId, 2_048, "recording_id"),
+        question: requireString(request.question, 500, "recording_question"),
+      }),
+  );
+  ipcMain.handle(
+    IPC_CHANNELS.ai.askMemory,
+    async (_event, request: VoiceMemoryGlobalQuestionRequest): Promise<VoiceMemoryAnswer> =>
+      voiceMemory.askMemory({
+        question: requireString(request.question, 500, "memory_question"),
+      }),
+  );
+  ipcMain.handle(
+    IPC_CHANNELS.ai.searchMemory,
+    async (_event, request: VoiceMemorySearchRequest): Promise<VoiceMemorySearchResult[]> =>
+      voiceMemory.search({
+        ...request,
+        query: requireString(request.query, 500, "voice_memory_search"),
+      }),
+  );
+  ipcMain.handle(
+    IPC_CHANNELS.ai.updateRuntimePressure,
+    async (_event, pressure: AiRuntimePressure): Promise<void> => {
+      if (!pressure || typeof pressure !== "object") throw new Error("invalid_ai_runtime_pressure");
+      aiModels.updateRuntimePressure({
+        inVoiceRoom: Boolean(pressure.inVoiceRoom),
+        screenSharing: Boolean(pressure.screenSharing),
+        peerRecovering: Boolean(pressure.peerRecovering),
+        latencyMs: Math.max(0, Math.min(60_000, Number(pressure.latencyMs) || 0)),
+        packetLossPercent: Math.max(0, Math.min(100, Number(pressure.packetLossPercent) || 0)),
+        rendererMemoryPressure: Boolean(pressure.rendererMemoryPressure),
+        updatedAt: Math.max(0, Number(pressure.updatedAt) || Date.now()),
+      });
     },
   );
   ipcMain.handle(IPC_CHANNELS.updates.download, async (): Promise<void> => {
@@ -866,6 +1040,18 @@ export const registerIpcHandlers = ({
     const settings = settingsStore.getSnapshot();
     return readRecordingLibrary(settings.recordingSaveDirectory, settings.recordingLibraryQuotaGb);
   });
+  ipcMain.handle(IPC_CHANNELS.recording.scanWaste, async (): Promise<RecordingCleanupScan> => {
+    const settings = settingsStore.getSnapshot();
+    return scanWasteRecordings(
+      settings.recordingSaveDirectory,
+      settings.recordingLibraryQuotaGb,
+      (processed, total) =>
+        sendToWindow(getMainWindow(), IPC_CHANNELS.recording.scanWasteProgress, {
+          processed,
+          total,
+        }),
+    );
+  });
   ipcMain.handle(
     IPC_CHANNELS.recording.setFavorite,
     async (_event, filePath: string, isFavorite: boolean): Promise<void> => {
@@ -878,18 +1064,76 @@ export const registerIpcHandlers = ({
     },
   );
   ipcMain.handle(IPC_CHANNELS.recording.openDirectory, async (): Promise<void> => {
-    const directory = resolveRecordingDirectory(
+    const directory = await getUsableRecordingDirectory(
       settingsStore.getSnapshot().recordingSaveDirectory,
-      app.getPath("documents"),
     );
-    await mkdir(directory, { recursive: true });
     const error = await shell.openPath(directory);
     if (error) throw new Error(error);
   });
   ipcMain.handle(IPC_CHANNELS.recording.delete, async (_event, filePath: string): Promise<void> => {
-    await deleteRecording(
-      settingsStore.getSnapshot().recordingSaveDirectory,
-      requireString(filePath, 2_048, "recording_file_path"),
-    );
+    const recordingId = requireString(filePath, 2_048, "recording_file_path");
+    await deleteRecording(settingsStore.getSnapshot().recordingSaveDirectory, recordingId);
+    try {
+      await voiceMemory.delete(recordingId);
+    } catch (error) {
+      await diagnostics.writeLog({
+        category: "recording",
+        level: "warn",
+        message: "Recording deleted but voice-memory cleanup failed",
+        context: {
+          recordingId,
+          error: error instanceof Error ? error.message : String(error),
+        },
+      });
+    }
   });
+  ipcMain.handle(
+    IPC_CHANNELS.recording.deleteMany,
+    async (_event, filePaths: unknown): Promise<RecordingBatchDeleteResult> => {
+      if (!Array.isArray(filePaths) || filePaths.length > 500) {
+        throw new Error("invalid_recording_delete_batch");
+      }
+      const requested = [
+        ...new Set(
+          filePaths.map((filePath) => requireString(filePath, 2_048, "recording_file_path")),
+        ),
+      ];
+      const result: RecordingBatchDeleteResult = { deletedFilePaths: [], failed: [] };
+      for (let index = 0; index < requested.length; index += 4) {
+        const batch = requested.slice(index, index + 4);
+        const settled = await Promise.allSettled(
+          batch.map(async (recordingId) => {
+            await deleteRecording(settingsStore.getSnapshot().recordingSaveDirectory, recordingId);
+            try {
+              await voiceMemory.delete(recordingId);
+            } catch (error) {
+              await diagnostics.writeLog({
+                category: "recording",
+                level: "warn",
+                message: "Recording deleted but voice-memory cleanup failed",
+                context: {
+                  recordingId,
+                  error: error instanceof Error ? error.message : String(error),
+                },
+              });
+            }
+            return recordingId;
+          }),
+        );
+        settled.forEach((entry, entryIndex) => {
+          const filePath = batch[entryIndex];
+          if (!filePath) return;
+          if (entry.status === "fulfilled") {
+            result.deletedFilePaths.push(filePath);
+          } else {
+            result.failed.push({
+              filePath,
+              message: entry.reason instanceof Error ? entry.reason.message : String(entry.reason),
+            });
+          }
+        });
+      }
+      return result;
+    },
+  );
 };

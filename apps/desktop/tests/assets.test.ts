@@ -23,6 +23,16 @@ test("desktop branding assets exist for app, tray, and github", () => {
   files.forEach((filePath) => {
     assert.equal(existsSync(filePath), true, `missing asset: ${filePath}`);
   });
+
+  const windowSource = readFileSync(path.join(root, "apps/desktop/src/main/window.ts"), "utf8");
+  assert.equal(
+    windowSource.includes(
+      'getBuildAssetPath(app.isPackaged ? "shanghao-icon-v3.ico" : "icon.png")',
+    ),
+    true,
+  );
+  assert.equal(windowSource.includes("nativeImage.createFromPath(iconPath)"), true);
+  assert.equal(windowSource.includes("window.setIcon(windowIcon)"), true);
 });
 
 test("desktop release configuration publishes automatic update metadata", () => {
@@ -112,12 +122,23 @@ test("room scene and feedback sound assets are bundled", () => {
     );
   }
 
+  const buttonClick = readFileSync(
+    path.join(root, "apps/desktop/src/renderer/src/assets/sounds/button-click.wav"),
+  );
+  const sampleRate = buttonClick.readUInt32LE(24);
+  const dataLength = buttonClick.readUInt32LE(40);
+  const duration = dataLength / (sampleRate * 2);
+  assert.equal(sampleRate, 48_000);
+  assert.equal(duration >= 0.06 && duration <= 0.09, true, "routine click must stay brief");
+
   for (const animalCall of [
     "cat-meow.wav",
     "duck-quack.wav",
     "panda-bear-growl.wav",
     "corgi-bark.wav",
     "fox-call.wav",
+    "quick-reply-chirp.wav",
+    "quick-reply-shanghao.wav",
   ]) {
     assert.equal(
       existsSync(

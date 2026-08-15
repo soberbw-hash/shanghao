@@ -56,17 +56,21 @@ test("chat text, images and links can be dragged into the persistent room collec
     path.resolve(process.cwd(), "src/renderer/src/components/chat/TemporaryChatPanel.tsx"),
     "utf8",
   );
-  const roomSource = readFileSync(
-    path.resolve(process.cwd(), "src/renderer/src/pages/RoomPage.tsx"),
+  const shelfSource = readFileSync(
+    path.resolve(process.cwd(), "src/renderer/src/components/room/RoomCollectionShelf.tsx"),
     "utf8",
   );
   assert.equal(source.includes("writeRoomCollectionDragPayload"), true);
   assert.equal(source.includes('kind: "image"'), true);
   assert.equal(source.includes('kind: "link"'), true);
   assert.equal(source.includes('kind: "text"'), true);
-  assert.equal(roomSource.includes("readRoomCollectionDragPayload"), true);
-  assert.equal(roomSource.includes('title: "已放入收藏"'), true);
-  assert.equal(roomSource.includes("<PackageOpen"), true);
+  assert.equal(shelfSource.includes("readRoomCollectionDragPayload"), true);
+  const collectionSource = readFileSync(
+    path.resolve(process.cwd(), "src/renderer/src/hooks/useRoomCollection.ts"),
+    "utf8",
+  );
+  assert.equal(collectionSource.includes('title: "已放入收藏"'), true);
+  assert.equal(shelfSource.includes("松开放入收藏"), true);
 });
 
 test("desktop image files can be dropped even when Windows omits the MIME type", () => {

@@ -13,6 +13,32 @@ import {
   setRecordingFavoriteInDirectory,
   toRecordingMediaUrl,
 } from "../src/main/recording-library-core";
+import {
+  parseRecordingProbeOutput,
+  SHORT_RECORDING_MS,
+  SILENT_RECORDING_PEAK_DB,
+} from "../src/main/recording-cleanup";
+
+test("recording cleanup only marks short, silent, or unreadable media as waste", () => {
+  assert.equal(SHORT_RECORDING_MS, 10_000);
+  assert.equal(SILENT_RECORDING_PEAK_DB, -60);
+  assert.equal(
+    parseRecordingProbeOutput("Duration: 00:00:08.40, start: 0.000000\nmax_volume: -12.0 dB", 0)
+      .reason,
+    "too_short",
+  );
+  assert.equal(
+    parseRecordingProbeOutput("Duration: 00:00:16.06, start: 0.000000\nmax_volume: -80.8 dB", 0)
+      .reason,
+    "silent",
+  );
+  assert.equal(
+    parseRecordingProbeOutput("Duration: 00:00:30.00, start: 0.000000\nmax_volume: -8.0 dB", 0)
+      .reason,
+    undefined,
+  );
+  assert.equal(parseRecordingProbeOutput("invalid media", 1).reason, "unreadable");
+});
 
 test("recording library lists old and room-aware recordings with marker points", async () => {
   const directory = await mkdtemp(path.join(os.tmpdir(), "shanghao-recordings-"));

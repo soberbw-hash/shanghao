@@ -14,10 +14,27 @@ import type { RoomMember } from "./room.types";
 import type {
   RecordingExportPayload,
   RecordingExportResponse,
+  RecordingBatchDeleteResult,
+  RecordingCleanupProgress,
+  RecordingCleanupScan,
   RecordingLibrarySnapshot,
   RecordingMarker,
 } from "./recording.types";
-import type { AiModelAction, AiModelId, AiVoiceMemorySnapshot } from "./ai.types";
+import type {
+  AiModelAction,
+  AiModelId,
+  AiRuntimePressure,
+  AiRuntimeStatus,
+  AiVoiceMemorySnapshot,
+  VoiceMemoryAnswer,
+  VoiceMemoryGlobalQuestionRequest,
+  VoiceMemoryProcessRequest,
+  VoiceMemoryQuestionRequest,
+  VoiceMemoryRecord,
+  VoiceMemorySearchRequest,
+  VoiceMemorySearchResult,
+} from "./ai.types";
+import type { LocalWeatherRequest, LocalWeatherSnapshot } from "./weather.types";
 
 export interface RuntimeInfo {
   appName: string;
@@ -32,7 +49,7 @@ export interface RuntimeInfo {
 
 export interface DeepLinkInvite {
   channelId: "main" | "side";
-  serverUrl: string;
+  serverUrl?: string;
 }
 
 export interface WindowsIntegrationStatus {
@@ -213,6 +230,12 @@ export interface DesktopApi {
       channelId: string;
       messages: import("./room.types").ChatMessage[];
     }) => Promise<void>;
+    readDailyRoomReports: () => Promise<
+      Record<"main" | "side", import("./room.types").DailyRoomReport[]>
+    >;
+    saveDailyRoomReports: (
+      reports: Record<"main" | "side", import("./room.types").DailyRoomReport[]>,
+    ) => Promise<void>;
     openExternal: (url: string) => Promise<void>;
     getLinkPreviewIcon: (url: string) => Promise<string | undefined>;
     consumeDeepLink: () => Promise<DeepLinkInvite | undefined>;
@@ -249,15 +272,41 @@ export interface DesktopApi {
     moveTo: (screenY: number) => Promise<void>;
     resetPosition: () => Promise<void>;
     onState: (listener: (state: OverlayState) => void) => () => void;
+    onHoverState: (listener: (inside: boolean) => void) => () => void;
   };
   games: {
     getSnapshot: () => Promise<GameDetectionSnapshot>;
     onDetected: (listener: (snapshot: GameDetectionSnapshot) => void) => () => void;
   };
+  weather: {
+    getSnapshot: (request: LocalWeatherRequest) => Promise<LocalWeatherSnapshot>;
+  };
   ai: {
     getSnapshot: () => Promise<AiVoiceMemorySnapshot>;
     controlModel: (modelId: AiModelId, action: AiModelAction) => Promise<AiVoiceMemorySnapshot>;
+    getRuntimeStatus: () => Promise<AiRuntimeStatus>;
+    getVoiceMemory: (recordingId: string) => Promise<VoiceMemoryRecord | undefined>;
+    listVoiceMemories: () => Promise<VoiceMemoryRecord[]>;
+    processRecording: (request: VoiceMemoryProcessRequest) => Promise<VoiceMemoryRecord>;
+    pauseTask: (recordingId: string) => Promise<void>;
+    resumeTask: (recordingId: string) => Promise<VoiceMemoryRecord>;
+    assignSpeaker: (
+      recordingId: string,
+      speakerId: string,
+      memberId: string,
+      nickname: string,
+    ) => Promise<VoiceMemoryRecord>;
+    updateMarkerTitle: (
+      recordingId: string,
+      markerId: string,
+      title: string,
+    ) => Promise<VoiceMemoryRecord>;
+    askRecording: (request: VoiceMemoryQuestionRequest) => Promise<VoiceMemoryAnswer>;
+    askMemory: (request: VoiceMemoryGlobalQuestionRequest) => Promise<VoiceMemoryAnswer>;
+    searchMemory: (request: VoiceMemorySearchRequest) => Promise<VoiceMemorySearchResult[]>;
+    updateRuntimePressure: (pressure: AiRuntimePressure) => Promise<void>;
     onStatus: (listener: (snapshot: AiVoiceMemorySnapshot) => void) => () => void;
+    onVoiceMemoryStatus: (listener: (record: VoiceMemoryRecord) => void) => () => void;
   };
   settings: {
     get: () => Promise<AppSettings>;
@@ -306,8 +355,11 @@ export interface DesktopApi {
     chooseDirectory: () => Promise<string | undefined>;
     saveMarkers: (filePath: string, markers: RecordingMarker[]) => Promise<string>;
     list: () => Promise<RecordingLibrarySnapshot>;
+    scanWaste: () => Promise<RecordingCleanupScan>;
+    onScanWasteProgress: (listener: (progress: RecordingCleanupProgress) => void) => () => void;
     setFavorite: (filePath: string, isFavorite: boolean) => Promise<void>;
     openDirectory: () => Promise<void>;
     delete: (filePath: string) => Promise<void>;
+    deleteMany: (filePaths: string[]) => Promise<RecordingBatchDeleteResult>;
   };
 }

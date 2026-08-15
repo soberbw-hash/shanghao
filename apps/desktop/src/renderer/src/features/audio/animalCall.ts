@@ -1,58 +1,58 @@
 import type { BuiltInAvatarId } from "@private-voice/shared";
 
-const animalCallUrls: Record<BuiltInAvatarId, string> = {
-  cat: new URL("../../assets/sounds/animals/cat-meow.wav", import.meta.url).href,
-  duck: new URL("../../assets/sounds/animals/duck-quack.wav", import.meta.url).href,
-  panda: new URL("../../assets/sounds/animals/panda-bear-growl.wav", import.meta.url).href,
-  corgi: new URL("../../assets/sounds/animals/corgi-bark.wav", import.meta.url).href,
-  fox: new URL("../../assets/sounds/animals/fox-call.wav", import.meta.url).href,
-};
+const quickReplyCallUrl = new URL(
+  "../../assets/sounds/animals/quick-reply-chirp.wav",
+  import.meta.url,
+).href;
+const shanghaoCallUrl = new URL(
+  "../../assets/sounds/animals/quick-reply-shanghao.wav",
+  import.meta.url,
+).href;
 
-const playbackDuration: Record<BuiltInAvatarId, number> = {
-  cat: 0.78,
-  duck: 1.75,
-  panda: 1.8,
-  corgi: 1.4,
-  fox: 1.8,
-};
+const defaultSound = { url: quickReplyCallUrl, duration: 0.74 } as const;
+const shanghaoSound = { url: shanghaoCallUrl, duration: 1.62 } as const;
 
 let sharedAudioContext: AudioContext | undefined;
-const audioCache = new Map<BuiltInAvatarId, HTMLAudioElement>();
+const cachedAudio = new Map<string, HTMLAudioElement>();
 
 const getAudioContext = (): AudioContext => {
   sharedAudioContext ??= new AudioContext();
   return sharedAudioContext;
 };
 
-const getTemplate = (avatarId: BuiltInAvatarId): HTMLAudioElement => {
-  const cached = audioCache.get(avatarId);
+const getTemplate = (url: string): HTMLAudioElement => {
+  const cached = cachedAudio.get(url);
   if (cached) return cached;
-  const audio = new Audio(animalCallUrls[avatarId]);
+  const audio = new Audio(url);
   audio.preload = "auto";
   audio.load();
-  audioCache.set(avatarId, audio);
+  cachedAudio.set(url, audio);
   return audio;
 };
 
 export const prepareAnimalCalls = (): void => {
-  for (const avatarId of Object.keys(animalCallUrls) as BuiltInAvatarId[]) {
-    getTemplate(avatarId);
-  }
+  getTemplate(defaultSound.url);
+  getTemplate(shanghaoSound.url);
 };
 
-export const playAnimalCall = (avatarId: BuiltInAvatarId = "fox", volume = 0.72): void => {
+export const playAnimalCall = (
+  _avatarId: BuiltInAvatarId = "fox",
+  volume = 0.72,
+  quickReplyContent = "",
+): void => {
   const requestedVolume = Math.max(0, Math.min(1, volume));
   if (requestedVolume <= 0) return;
 
   try {
+    const sound = quickReplyContent.trim() === "上号" ? shanghaoSound : defaultSound;
     const context = getAudioContext();
-    const audio = getTemplate(avatarId).cloneNode(true) as HTMLAudioElement;
+    const audio = getTemplate(sound.url).cloneNode(true) as HTMLAudioElement;
     const source = context.createMediaElementSource(audio);
     const lowCut = context.createBiquadFilter();
     const body = context.createBiquadFilter();
     const compressor = context.createDynamicsCompressor();
     const envelope = context.createGain();
-    const duration = playbackDuration[avatarId];
+    const duration = sound.duration;
     const now = context.currentTime + 0.012;
 
     lowCut.type = "highpass";

@@ -6,6 +6,12 @@ import test from "node:test";
 const packagePath = path.resolve(process.cwd(), "package.json");
 const homePath = path.resolve(process.cwd(), "src/renderer/src/pages/HomePage.tsx");
 const roomPath = path.resolve(process.cwd(), "src/renderer/src/pages/RoomPage.tsx");
+const overlayPath = path.resolve(process.cwd(), "src/renderer/src/pages/OverlayPage.tsx");
+const roomDockPath = path.resolve(process.cwd(), "src/renderer/src/components/room/RoomDock.tsx");
+const roomOverlaysPath = path.resolve(
+  process.cwd(),
+  "src/renderer/src/components/room/RoomOverlays.tsx",
+);
 const settingsPath = path.resolve(process.cwd(), "src/renderer/src/pages/SettingsPage.tsx");
 const chatPath = path.resolve(
   process.cwd(),
@@ -15,6 +21,10 @@ const islandPath = path.resolve(process.cwd(), "src/renderer/src/components/room
 const sceneCharacterPath = path.resolve(
   process.cwd(),
   "src/renderer/src/components/room/SceneCharacter.tsx",
+);
+const sceneCharacterLabelPath = path.resolve(
+  process.cwd(),
+  "src/renderer/src/components/room/SceneCharacterLabel.tsx",
 );
 const characterRuntimePath = path.resolve(
   process.cwd(),
@@ -84,6 +94,7 @@ test("gsap motion is wired across the main surfaces with reduced-motion fallback
   const chatSource = readFileSync(chatPath, "utf8");
   const islandSource = readFileSync(islandPath, "utf8");
   const sceneCharacterSource = readFileSync(sceneCharacterPath, "utf8");
+  const sceneCharacterLabelSource = readFileSync(sceneCharacterLabelPath, "utf8");
   const characterRuntimeSource = readFileSync(characterRuntimePath, "utf8");
   const characterPersonalitySource = readFileSync(characterPersonalityPath, "utf8");
   const animalSource = readFileSync(animalPath, "utf8");
@@ -193,17 +204,30 @@ test("gsap motion is wired across the main surfaces with reduced-motion fallback
   assert.equal(sceneCharacterSource.includes("operationIdRef.current"), true);
   assert.equal(sceneCharacterSource.includes("controls.stop()"), true);
   assert.equal(sceneCharacterSource.includes("didStartEntryRef.current"), true);
+  assert.equal(sceneCharacterSource.includes('!wasAlreadyMoving && zone !== "restroomZone"'), true);
+  assert.equal(
+    sceneCharacterSource.includes('previousZone === "restroomZone" && isSeatZone(zone)'),
+    true,
+  );
+  assert.equal(sceneCharacterSource.includes("member={displayedMember}"), true);
+  assert.equal(stylesSource.includes("transition: transform 420ms var(--ease-out-soft)"), true);
   assert.equal(stylesSource.includes("@keyframes layered-body-walk"), true);
   assert.equal(stylesSource.includes(".layered-animal-head"), true);
   assert.equal(sceneCharacterSource.includes("useAnimationControls"), true);
   assert.equal(sceneCharacterSource.includes("usePresence"), true);
   assert.equal(sceneCharacterSource.includes("currentPositionRef.current"), true);
   assert.equal(sceneCharacterSource.includes("onUpdate={(latest)"), true);
+  assert.equal(sceneCharacterSource.includes("room-character-walking-layer"), true);
+  assert.equal(sceneCharacterSource.includes("room-character-seated-layer"), true);
+  assert.equal(sceneCharacterSource.includes("room-character-away-layer"), true);
   assert.equal(
-    sceneCharacterSource.includes('data-zone-transitioning={isZoneTransitioning ? "true"'),
-    true,
+    sceneCharacterSource.includes('<AnimatePresence initial={false} mode="sync">'),
+    false,
   );
-  assert.equal(stylesSource.includes('data-zone-transitioning="true"'), true);
+  assert.equal(stylesSource.includes(".room-character-visual-layer.is-active"), true);
+  assert.equal(stylesSource.includes('data-zone-transitioning="true"'), false);
+  assert.equal(sceneCharacterLabelSource.includes("if (isAway)"), false);
+  assert.equal(sceneCharacterLabelSource.includes("room-character-away-name"), true);
   assert.equal(readFileSync(motionSystemPath, "utf8").includes("force3D: true"), true);
   assert.equal(readFileSync(motionSystemPath, "utf8").includes("CustomEase"), true);
   assert.equal(readFileSync(motionSystemPath, "utf8").includes("0.16,1,0.3,1"), false);
@@ -229,11 +253,17 @@ test("gsap motion is wired across the main surfaces with reduced-motion fallback
   assert.equal(islandSource.includes("scene-workstation-art-frame"), true);
   assert.equal(islandSource.includes('".scene-workstation .scene-workstation-art-frame"'), true);
   assert.equal(islandSource.includes("WorkstationArt"), true);
+  assert.equal(islandSource.includes("settledMemberBySeat.get(slot.id)"), true);
+  assert.equal(islandSource.includes('mode="sync"'), true);
+  assert.match(
+    stylesSource,
+    /\.scene-workstation-screen-content\s*\{[^}]*position:\s*absolute;[^}]*will-change:\s*transform, opacity;/s,
+  );
   assert.equal(islandSource.includes("desk-animal-muted"), false);
   assert.equal(stylesSource.includes(".desk-animal-muted"), true);
   assert.equal(stylesSource.includes("--character-motion-delay"), true);
   assert.equal(roomSource.includes('message.id.startsWith("knock-")'), true);
-  assert.equal(roomSource.includes("AnimatedControlIcon"), true);
+  assert.equal(readFileSync(roomDockPath, "utf8").includes("AnimatedControlIcon"), true);
   assert.equal(animatedIconSource.includes("animated-icon__speaker-wave--one"), true);
   assert.equal(animatedIconSource.includes("animated-icon__speaker-mute"), true);
   assert.equal(animatedIconSource.includes("animated-icon__bell-clapper"), true);
@@ -320,7 +350,7 @@ test("dialogs use interruptible compositor motion without full-screen blur anima
   assert.equal(reconnectSource.includes("RECONNECT_SHOW_DELAY_MS = 350"), true);
   assert.equal(reconnectSource.includes("RECONNECT_MIN_VISIBLE_MS = 600"), true);
 
-  const roomSource = readFileSync(roomPath, "utf8");
+  const roomSource = readFileSync(roomOverlaysPath, "utf8");
   assert.equal(roomSource.includes('key="screen-source-picker"'), true);
   assert.equal(roomSource.includes("dialogSurfaceVariants"), true);
 });
@@ -332,4 +362,29 @@ test("local scene identity survives placeholder-to-server peer replacement", () 
   assert.equal(sceneCharacterSource.includes('member.isLocal ? "local-member" : member.id'), true);
   assert.equal(islandSource.includes("key={sceneMemberKey(member)}"), true);
   assert.doesNotMatch(islandSource, /<SceneCharacter\s+key=\{member\.id\}/);
+});
+
+test("late joiners keep a visible avatar while character textures finish loading", () => {
+  const deskAnimalSource = readFileSync(deskAnimalPath, "utf8");
+  const sceneCharacterSource = readFileSync(sceneCharacterPath, "utf8");
+  const overlaySource = readFileSync(overlayPath, "utf8");
+  const stylesSource = readFileSync(stylesPath, "utf8");
+
+  assert.equal(deskAnimalSource.includes("walking-animal-static-fallback"), true);
+  assert.equal(deskAnimalSource.includes("desk-animal-static-fallback"), true);
+  assert.equal(
+    deskAnimalSource.includes("const isRunCycleReady = readyRunCycleSource === runCycleSource"),
+    true,
+  );
+  assert.equal(deskAnimalSource.includes("const isRearReady = readyRearSource === source"), true);
+  assert.equal(deskAnimalSource.includes("setIsRearReady(false)"), false);
+  assert.equal(stylesSource.includes(".walking-animal-run-cycle-strip.is-ready"), true);
+  assert.equal(stylesSource.includes(".desk-animal-art.is-ready"), true);
+  assert.equal(sceneCharacterSource.includes("await Promise.race(["), true);
+  assert.equal(
+    sceneCharacterSource.includes("waitForMotionPhase(Math.ceil(route.duration * 1_000) + 480)"),
+    true,
+  );
+  assert.equal(overlaySource.includes("getAvatarEmoji(avatarId)"), true);
+  assert.equal(overlaySource.includes("opacity: isLoaded ? 1 : 0"), true);
 });

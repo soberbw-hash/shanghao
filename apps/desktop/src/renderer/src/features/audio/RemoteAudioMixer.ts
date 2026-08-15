@@ -1,5 +1,11 @@
 import { writeRendererLog } from "../../utils/logger";
 import { clampMemberVolume } from "./memberVolume";
+import {
+  advanceLoudnessBalance,
+  applyLoudnessBalanceToMemberVolume,
+  createLoudnessBalanceState,
+  type LoudnessBalanceState,
+} from "./loudnessBalance";
 import { resolveRemoteAudioPath, type RemoteAudioMediaPath } from "./remoteAudioPathSelection";
 import { hasPlayableAudioTrack } from "./remoteAudioTrack";
 
@@ -53,6 +59,7 @@ export interface RemoteAudioMixerDiagnostics {
   contextState: AudioContextState | "not_started";
   isDeafened: boolean;
   masterVolume: number;
+  loudnessBalanceEnabled: boolean;
   outputDeviceId: string;
   peers: Record<
     string,
@@ -68,6 +75,8 @@ export interface RemoteAudioMixerDiagnostics {
       relayQueueDurationMs: number;
       droppedRelayChunks: number;
       volume: number;
+      loudnessGain: number;
+      estimatedLufs?: number;
     }
   >;
 }
@@ -93,11 +102,13 @@ export class RemoteAudioMixer {
   private peerMediaPaths = new Map<string, RemoteAudioMediaPath>();
   private isDeafened = false;
   private masterVolume = 1;
+  private loudnessBalanceEnabled = false;
   private outputDeviceId?: string;
   private resumeInFlight?: Promise<boolean>;
   private audioLevelTimer?: number;
   private playbackWatchdogTimer?: number;
   private readonly smoothedPeerLevels = new Map<string, number>();
+  private readonly peerLoudnessStates = new Map<string, LoudnessBalanceState>();
 
   private ensureGraph(): SinkAwareAudioContext {
     if (this.context && this.masterGain && this.compressor) return this.context;
@@ -105,9 +116,9 @@ export class RemoteAudioMixer {
     const context = new AudioContext({ latencyHint: "interactive" }) as SinkAwareAudioContext;
     const masterGain = context.createGain();
     const compressor = context.createDynamicsCompressor();
-    compressor.threshold.value = -8;
-    compressor.knee.value = 8;
-    compressor.ratio.value = 3;
+    compressor.threshold.value = this.loudnessBalanceEnabled ? -3 : -8;
+    compressor.knee.value = this.loudnessBalanceEnabled ? 3 : 8;
+    compressor.ratio.value = this.loudnessBalanceEnabled ? 12 : 3;
     compressor.attack.value = 0.003;
     compressor.release.value = 0.12;
     masterGain.connect(compressor);
@@ -250,6 +261,26 @@ export class RemoteAudioMixer {
     this.applyMasterVolume();
   }
 
+  setLoudnessBalanceEnabled(enabled: boolean): void {
+    if (this.loudnessBalanceEnabled === enabled) return;
+    this.loudnessBalanceEnabled = enabled;
+    if (!enabled) this.peerLoudnessStates.clear();
+    if (this.compressor) {
+      this.compressor.threshold.value = enabled ? -3 : -8;
+      this.compressor.knee.value = enabled ? 3 : 8;
+      this.compressor.ratio.value = enabled ? 12 : 3;
+    }
+    for (const peerId of new Set([...this.channels.keys(), ...this.relayChannels.keys()])) {
+      this.refreshPeerGains(peerId);
+    }
+  }
+
+  getRemoteReferenceLevel(): number {
+    let combinedSquare = 0;
+    for (const level of this.smoothedPeerLevels.values()) combinedSquare += level * level;
+    return Math.min(1, Math.sqrt(combinedSquare));
+  }
+
   setOutputDevice(outputDeviceId?: string): Promise<void> {
     this.outputDeviceId = outputDeviceId;
     return this.applyOutputDevice();
@@ -324,6 +355,7 @@ export class RemoteAudioMixer {
       contextState: this.context?.state ?? "not_started",
       isDeafened: this.isDeafened,
       masterVolume: this.masterVolume,
+      loudnessBalanceEnabled: this.loudnessBalanceEnabled,
       outputDeviceId: this.outputDeviceId || "default",
       peers: Object.fromEntries(
         [...peerIds].map((peerId) => {
@@ -351,6 +383,8 @@ export class RemoteAudioMixer {
               relayQueueDurationMs: Math.round(relayStats.queueDurationMs),
               droppedRelayChunks: relayStats.droppedOldChunks,
               volume: webRtcChannel?.volume ?? relayChannel?.volume ?? 1,
+              loudnessGain: this.peerLoudnessStates.get(peerId)?.gain ?? 1,
+              estimatedLufs: this.peerLoudnessStates.get(peerId)?.estimatedLufs,
             },
           ];
         }),
@@ -396,7 +430,7 @@ export class RemoteAudioMixer {
     buffer.getChannelData(0).set(samples);
     const source = context.createBufferSource();
     source.buffer = buffer;
-    source.connect(channel.gain);
+    source.connect(channel.analyser);
     const scheduledChunk: ScheduledRelayChunk = {
       source,
       startsAt: channel.nextPlaybackTime,
@@ -436,7 +470,10 @@ export class RemoteAudioMixer {
     channel.analyser.disconnect();
     this.relayChannels.delete(peerId);
     this.refreshPeerGains(peerId);
-    if (!this.channels.has(peerId)) this.publishPeerLevel(peerId, 0, true);
+    if (!this.channels.has(peerId)) {
+      this.peerLoudnessStates.delete(peerId);
+      this.publishPeerLevel(peerId, 0, true);
+    }
   }
 
   destroy(): void {
@@ -452,6 +489,7 @@ export class RemoteAudioMixer {
     this.resumeInFlight = undefined;
     this.peerMediaPaths.clear();
     this.smoothedPeerLevels.clear();
+    this.peerLoudnessStates.clear();
     void context?.close().catch(() => undefined);
   }
 
@@ -466,7 +504,10 @@ export class RemoteAudioMixer {
     channel.analyser.disconnect();
     this.channels.delete(peerId);
     this.refreshPeerGains(peerId);
-    if (!this.relayChannels.has(peerId)) this.publishPeerLevel(peerId, 0, true);
+    if (!this.relayChannels.has(peerId)) {
+      this.peerLoudnessStates.delete(peerId);
+      this.publishPeerLevel(peerId, 0, true);
+    }
   }
 
   /**
@@ -518,8 +559,8 @@ export class RemoteAudioMixer {
     if (existing) return existing;
     const gain = context.createGain();
     const analyser = this.createAnalyser(context);
-    gain.connect(analyser);
-    analyser.connect(this.masterGain!);
+    analyser.connect(gain);
+    gain.connect(this.masterGain!);
     const created: RelayAudioChannel = {
       gain,
       analyser,
@@ -576,15 +617,16 @@ export class RemoteAudioMixer {
     const peerIds = new Set([...this.channels.keys(), ...this.relayChannels.keys()]);
     for (const peerId of peerIds) {
       const webRtcChannel = this.channels.get(peerId);
+      let webRtcMeasurement: { rms: number; peak: number } | undefined;
       if (webRtcChannel && this.hasWebRtcPlaybackChannel(peerId)) {
-        const webRtcRms = this.measureChannelLevel(webRtcChannel);
-        if (!webRtcChannel.hasObservedAudio && webRtcRms >= WEBRTC_AUDIO_PROOF_RMS) {
+        webRtcMeasurement = this.measureChannelLevel(webRtcChannel);
+        if (!webRtcChannel.hasObservedAudio && webRtcMeasurement.rms >= WEBRTC_AUDIO_PROOF_RMS) {
           webRtcChannel.hasObservedAudio = true;
           this.peerMediaPaths.set(peerId, "webrtc");
           this.refreshPeerGains(peerId);
           void writeRendererLog("audio", "info", "WebRTC playback graph verified by audio", {
             peerId,
-            rms: Number(webRtcRms.toFixed(5)),
+            rms: Number(webRtcMeasurement.rms.toFixed(5)),
           });
         }
       }
@@ -595,17 +637,43 @@ export class RemoteAudioMixer {
         this.publishPeerLevel(peerId, 0);
         continue;
       }
-      const rms = this.measureChannelLevel(channel);
-      const normalized = Math.min(1, rms * 5.2);
+      const measurement =
+        channel === webRtcChannel && webRtcMeasurement
+          ? webRtcMeasurement
+          : this.measureChannelLevel(channel);
+      this.updatePeerLoudness(peerId, measurement);
+      const normalized = Math.min(1, measurement.rms * 5.2);
       this.publishPeerLevel(peerId, normalized);
     }
   }
 
-  private measureChannelLevel(channel: RemoteAudioChannel | RelayAudioChannel): number {
+  private measureChannelLevel(channel: RemoteAudioChannel | RelayAudioChannel): {
+    rms: number;
+    peak: number;
+  } {
     channel.analyser.getFloatTimeDomainData(channel.sampleBuffer);
     let energy = 0;
-    for (const sample of channel.sampleBuffer) energy += sample * sample;
-    return Math.sqrt(energy / Math.max(1, channel.sampleBuffer.length));
+    let peak = 0;
+    for (const sample of channel.sampleBuffer) {
+      energy += sample * sample;
+      peak = Math.max(peak, Math.abs(sample));
+    }
+    return {
+      rms: Math.sqrt(energy / Math.max(1, channel.sampleBuffer.length)),
+      peak,
+    };
+  }
+
+  private updatePeerLoudness(peerId: string, measurement: { rms: number; peak: number }): void {
+    const previous = this.peerLoudnessStates.get(peerId) ?? createLoudnessBalanceState();
+    const next = advanceLoudnessBalance(previous, {
+      ...measurement,
+      now: performance.now(),
+      enabled: this.loudnessBalanceEnabled,
+    });
+    if (next === previous) return;
+    this.peerLoudnessStates.set(peerId, next);
+    if (Math.abs(next.gain - previous.gain) >= 0.003) this.refreshPeerGains(peerId);
   }
 
   private publishPeerLevel(peerId: string, nextLevel: number, force = false): void {
@@ -672,10 +740,17 @@ export class RemoteAudioMixer {
     const context = this.context;
     if (!context) return;
     const effectivePath = this.getEffectivePeerPath(peerId);
+    const loudnessGain = this.peerLoudnessStates.get(peerId)?.gain ?? 1;
     const webRtcChannel = this.channels.get(peerId);
     if (webRtcChannel) {
       webRtcChannel.gain.gain.setTargetAtTime(
-        effectivePath === "webrtc" ? clampMemberVolume(webRtcChannel.volume) : 0,
+        effectivePath === "webrtc"
+          ? applyLoudnessBalanceToMemberVolume(
+              clampMemberVolume(webRtcChannel.volume),
+              loudnessGain,
+              this.loudnessBalanceEnabled,
+            )
+          : 0,
         context.currentTime,
         0.018,
       );
@@ -683,7 +758,13 @@ export class RemoteAudioMixer {
     const relayChannel = this.relayChannels.get(peerId);
     if (relayChannel) {
       relayChannel.gain.gain.setTargetAtTime(
-        effectivePath === "relay" ? clampMemberVolume(relayChannel.volume) : 0,
+        effectivePath === "relay"
+          ? applyLoudnessBalanceToMemberVolume(
+              clampMemberVolume(relayChannel.volume),
+              loudnessGain,
+              this.loudnessBalanceEnabled,
+            )
+          : 0,
         context.currentTime,
         0.018,
       );

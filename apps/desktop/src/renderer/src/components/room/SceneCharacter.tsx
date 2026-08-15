@@ -249,7 +249,10 @@ export const SceneCharacter = ({
   const isMoving = isWalkingVisual || motionPhase === "standing-up" || motionPhase === "sitting";
   const displayPosition = displayZone === zone ? position : characterPositions[displayZone];
   const renderedCharacterScale = displayPosition.scale;
-  const isZoneTransitioning = displayZone !== zone;
+  const displayedActivity =
+    displayZone === zone ? member.activity : displayZone === "restroomZone" ? "restroom" : "idle";
+  const displayedMember =
+    displayedActivity === member.activity ? member : { ...member, activity: displayedActivity };
   const targetLeft = position.left;
   const targetTop = position.top;
 
@@ -306,7 +309,10 @@ export const SceneCharacter = ({
         "leaving",
       ].includes(motionPhaseRef.current);
 
-      if (!isFirstRoute && !wasAlreadyMoving) {
+      // Going to the away area should hand directly from the seated pose to the
+      // walking pose. The old 72 ms stand-up phase cut a longer CSS animation
+      // mid-frame and caused the small visible twitch when clicking “离开”.
+      if (!isFirstRoute && !wasAlreadyMoving && zone !== "restroomZone") {
         setMotionPhase("standing-up");
         await waitForMotionPhase(72);
         if (!isCurrentOperation()) return;
@@ -330,21 +336,36 @@ export const SceneCharacter = ({
       );
       activeTargetZoneRef.current = zone;
       setMovementDirection(route.direction);
+      // Restore normal size during the first couple of return steps instead of
+      // keeping the away-area scale for the entire walk and popping at the desk.
+      if (previousZone === "restroomZone" && isSeatZone(zone)) setDisplayZone(zone);
       setMotionPhase(isFirstRoute ? "entering" : "walking");
       const animation = routeAnimation(route, !isFirstRoute || wasAlreadyMoving);
-      await controls.start({
-        ...animation,
+      await Promise.race([
+        controls
+          .start({
+            ...animation,
+            opacity: 1,
+            scale: 1,
+            transition: {
+              ...animation.transition,
+              opacity: {
+                duration: characterMotionTiming.routeOpacitySeconds,
+                ease: motionCurve.enter,
+              },
+            },
+          })
+          .catch(() => undefined),
+        waitForMotionPhase(Math.ceil(route.duration * 1_000) + 480),
+      ]);
+      if (!isCurrentOperation()) return;
+      // Renderer throttling or an interrupted texture decode must not leave a
+      // late joiner suspended on its entry frame. Finish at the assigned seat.
+      controls.set({
+        ...scenePosition(targetLeft, targetTop),
         opacity: 1,
         scale: 1,
-        transition: {
-          ...animation.transition,
-          opacity: {
-            duration: characterMotionTiming.routeOpacitySeconds,
-            ease: motionCurve.enter,
-          },
-        },
       });
-      if (!isCurrentOperation()) return;
       lastZoneRef.current = zone;
       currentPositionRef.current = { left: targetLeft, top: targetTop };
       setDisplayZone(zone);
@@ -482,7 +503,6 @@ export const SceneCharacter = ({
       data-greeting-style={personality.greetingStyle}
       data-scene-member-key={sceneMemberKey(member)}
       data-motion-phase={motionPhase}
-      data-zone-transitioning={isZoneTransitioning ? "true" : "false"}
       onUpdate={(latest) => {
         const current = currentPositionRef.current;
         currentPositionRef.current = {
@@ -548,64 +568,46 @@ export const SceneCharacter = ({
                 member.isDeafened ? "room-character-deafened" : ""
               } ${isReconnecting ? "room-character-reconnecting" : ""}`}
             >
-              <AnimatePresence initial={false} mode="sync">
-                {isWalkingVisual ? (
-                  <motion.span
-                    key="walking"
-                    className="room-character-visual-layer"
-                    initial={shouldReduceMotion ? false : { opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    exit={shouldReduceMotion ? undefined : { opacity: 0 }}
-                    transition={{
-                      duration: shouldReduceMotion ? 0 : 0.12,
-                      ease: motionCurve.enter,
-                    }}
-                  >
-                    <WalkingAnimalSprite
-                      avatarId={avatarId}
-                      direction={movementDirection}
-                      paused={motionPhase === "turning"}
-                    />
-                  </motion.span>
-                ) : isSeatZone(displayZone) ? (
-                  <motion.span
-                    key="seated"
-                    className="room-character-visual-layer"
-                    initial={shouldReduceMotion ? false : { opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    exit={shouldReduceMotion ? undefined : { opacity: 0 }}
-                    transition={{
-                      duration: shouldReduceMotion ? 0 : 0.14,
-                      ease: motionCurve.enter,
-                    }}
-                  >
-                    <DeskAnimalSprite
-                      avatarId={avatarId}
-                      activity={member.activity ?? "idle"}
-                      isSpeaking={isSpeaking}
-                      isMoving={isMoving}
-                      isMuted={member.isMuted}
-                      isScreenSharing={isScreenSharing}
-                      isWelcoming={isWelcoming}
-                      idleAction={idleAction}
-                    />
-                  </motion.span>
-                ) : (
-                  <motion.span
-                    key="away"
-                    className="room-character-visual-layer"
-                    initial={shouldReduceMotion ? false : { opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    exit={shouldReduceMotion ? undefined : { opacity: 0 }}
-                    transition={{
-                      duration: shouldReduceMotion ? 0 : 0.12,
-                      ease: motionCurve.enter,
-                    }}
-                  >
-                    <AnimalSprite avatarId={avatarId} state="away" isMoving={isMoving} />
-                  </motion.span>
-                )}
-              </AnimatePresence>
+              {/* Keep every pose mounted so the decoded character texture survives a seat
+                  change. Only the active layer changes opacity; there is never a frame with
+                  no character while seated, walking and away poses hand off. */}
+              <span
+                className={`room-character-visual-layer room-character-walking-layer ${
+                  isWalkingVisual ? "is-active" : ""
+                }`}
+                aria-hidden={!isWalkingVisual}
+              >
+                <WalkingAnimalSprite
+                  avatarId={avatarId}
+                  direction={movementDirection}
+                  paused={motionPhase === "turning"}
+                />
+              </span>
+              <span
+                className={`room-character-visual-layer room-character-seated-layer ${
+                  !isWalkingVisual && isSeatZone(displayZone) ? "is-active" : ""
+                }`}
+                aria-hidden={isWalkingVisual || !isSeatZone(displayZone)}
+              >
+                <DeskAnimalSprite
+                  avatarId={avatarId}
+                  activity={displayedActivity ?? "idle"}
+                  isSpeaking={isSpeaking}
+                  isMoving={isMoving}
+                  isMuted={member.isMuted}
+                  isScreenSharing={isScreenSharing}
+                  isWelcoming={isWelcoming}
+                  idleAction={idleAction}
+                />
+              </span>
+              <span
+                className={`room-character-visual-layer room-character-away-layer ${
+                  !isWalkingVisual && !isSeatZone(displayZone) ? "is-active" : ""
+                }`}
+                aria-hidden={isWalkingVisual || isSeatZone(displayZone)}
+              >
+                <AnimalSprite avatarId={avatarId} state="away" isMoving={isMoving} />
+              </span>
               {member.isDeafened ? (
                 <span className="room-character-deafened-badge" aria-label="已关闭扬声器">
                   <HeadphoneOff className="h-3 w-3" />
@@ -618,7 +620,7 @@ export const SceneCharacter = ({
               ) : null}
             </div>
             <SceneCharacterLabel
-              member={member}
+              member={displayedMember}
               isAway={displayZone === "restroomZone"}
               shouldReduceMotion={shouldReduceMotion}
             />

@@ -24,6 +24,8 @@ export const AudioSettingsCard = ({
   isMicClipping,
   micTestError,
   onToggleMicTest,
+  onPlaySystemCapture,
+  onPlayProcessed,
   onChange,
 }: {
   settings: AppSettings;
@@ -35,6 +37,8 @@ export const AudioSettingsCard = ({
   isMicClipping: boolean;
   micTestError?: string;
   onToggleMicTest: () => void;
+  onPlaySystemCapture: () => void;
+  onPlayProcessed: () => void;
   onChange: (patch: Partial<AppSettings>) => void;
 }) => {
   const [isAdvancedOpen, setIsAdvancedOpen] = useState(false);
@@ -43,7 +47,7 @@ export const AudioSettingsCard = ({
     setEqualizerDraft(settings.micEqualizerGains);
   }, [settings.micEqualizerGains]);
   const micHealth = !isMicTesting
-    ? micTestError || "实时监听麦克风，建议佩戴耳机避免回授"
+    ? micTestError || "录制 9 秒后，可对比系统采集与上号处理后的声音"
     : isMicClipping
       ? "输入过高，已经出现削波"
       : micTestLevel > 0.18
@@ -92,8 +96,18 @@ export const AudioSettingsCard = ({
           <div className="min-w-[280px] space-y-3">
             <div className="flex gap-2">
               <Button variant={isMicTesting ? "danger" : "secondary"} onClick={onToggleMicTest}>
-                {micTestPhase === "monitoring" ? "停止实时试音" : "开始实时试音"}
+                {micTestPhase === "recording" ? "停止录制" : "重新录制 9 秒"}
               </Button>
+              {micTestPhase === "ready" || micTestPhase.startsWith("playing_") ? (
+                <>
+                  <Button variant="ghost" onClick={onPlaySystemCapture}>
+                    播放系统采集
+                  </Button>
+                  <Button variant="secondary" onClick={onPlayProcessed}>
+                    播放上号处理后
+                  </Button>
+                </>
+              ) : null}
             </div>
             <div className="h-2 overflow-hidden rounded-full bg-[#E9EEF5]">
               <div

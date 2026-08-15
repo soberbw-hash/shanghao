@@ -20,6 +20,7 @@ export default tseslint.config(
       "apps/desktop-pet/**",
       "apps/network-repair/**",
       "apps/desktop/build/**",
+      "apps/desktop/work/**",
       "apps/desktop/src/renderer/src/assets/**",
     ],
   },

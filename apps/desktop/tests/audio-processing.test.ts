@@ -12,6 +12,12 @@ import {
   memberVolumeToPercent,
   toggleLocalMemberMute,
 } from "../src/renderer/src/features/audio/memberVolume";
+import {
+  advanceLoudnessBalance,
+  applyLoudnessBalanceToMemberVolume,
+  createLoudnessBalanceState,
+  FRIEND_LOUDNESS_TARGET_LUFS,
+} from "../src/renderer/src/features/audio/loudnessBalance";
 import { hasPlayableAudioTrack } from "../src/renderer/src/features/audio/remoteAudioTrack";
 import { resolveRemoteAudioPath } from "../src/renderer/src/features/audio/remoteAudioPathSelection";
 import {
@@ -212,15 +218,18 @@ test("remote audio never silences an available path while the requested path is 
 });
 
 test("legacy screen-frame fallback is isolated from audio readiness", () => {
-  const roomClient = readFileSync(
-    path.join(root, "apps/desktop/src/renderer/src/features/room/roomClient.ts"),
+  const screenShareCoordinator = readFileSync(
+    path.join(
+      root,
+      "apps/desktop/src/renderer/src/features/screen-share/RoomScreenShareCoordinator.ts",
+    ),
     "utf8",
   );
 
-  const start = roomClient.indexOf("private getScreenRelayTargetPeerIds");
-  const end = roomClient.indexOf("private createPeer", start);
-  const targetSelection = roomClient.slice(start, end);
-  assert.equal(targetSelection.includes("screenRelayRequestedByPeerIds"), true);
+  const start = screenShareCoordinator.indexOf("private getRelayTargets");
+  const end = screenShareCoordinator.indexOf("private updateRelay", start);
+  const targetSelection = screenShareCoordinator.slice(start, end);
+  assert.equal(targetSelection.includes("relayRequestedByPeerIds"), true);
   assert.equal(targetSelection.includes("webrtcReadyPeerIds"), false);
 });
 
@@ -232,6 +241,45 @@ test("member playback volume is local, bounded to 300%, and restores after local
   assert.equal(toggleLocalMemberMute(1.35, 1), 0);
   assert.equal(toggleLocalMemberMute(0, 1.35), 1.35);
   assert.equal(toggleLocalMemberMute(0, 0), 1);
+});
+
+test("friend loudness balance learns speech without lifting silence or overriding local volume", () => {
+  let silent = createLoudnessBalanceState();
+  for (let index = 0; index < 100; index += 1) {
+    silent = advanceLoudnessBalance(silent, {
+      rms: 0.001,
+      peak: 0.004,
+      now: index * 66,
+      enabled: true,
+    });
+  }
+  assert.equal(silent.gain, 1);
+
+  let quiet = createLoudnessBalanceState();
+  for (let index = 0; index < 120; index += 1) {
+    quiet = advanceLoudnessBalance(quiet, {
+      rms: 0.05,
+      peak: 0.14,
+      now: index * 66,
+      enabled: true,
+    });
+  }
+  assert.equal(FRIEND_LOUDNESS_TARGET_LUFS, -14);
+  assert.ok(quiet.gain > 1.8);
+
+  let loud = createLoudnessBalanceState();
+  for (let index = 0; index < 60; index += 1) {
+    loud = advanceLoudnessBalance(loud, {
+      rms: 0.35,
+      peak: 0.8,
+      now: index * 66,
+      enabled: true,
+    });
+  }
+  assert.ok(loud.gain < 0.8);
+  assert.equal(applyLoudnessBalanceToMemberVolume(0, quiet.gain, true), 0);
+  assert.equal(applyLoudnessBalanceToMemberVolume(1.5, 2, true), 3);
+  assert.equal(applyLoudnessBalanceToMemberVolume(1.5, 2, false), 1.5);
 });
 
 test("late-join remote audio stays attached while Chromium temporarily mutes the live track", () => {

@@ -59,9 +59,38 @@ test("migrateSettings falls back to safe defaults for damaged legacy config", ()
   assert.equal(result.settings.soundVolume, defaultSettings.soundVolume);
   assert.equal(result.settings.isHardwareAccelerationEnabled, true);
   assert.equal(result.settings.isOverlayEnabled, true);
+  assert.equal(result.settings.isDynamicWeatherEnabled, true);
+  assert.equal(result.settings.isFriendLoudnessBalanceEnabled, true);
+  assert.equal(result.settings.weatherLocationMode, "auto");
+  assert.equal(result.settings.weatherManualCity, "");
+  assert.equal(result.settings.weatherEffectMode, "standard");
   assert.deepEqual(result.settings.micEqualizerGains, [12, -12, 3, 0, 0]);
   assert.equal(result.settings.lowCutFrequency, "90");
   assert.equal(result.migrated, true);
+});
+
+test("friend loudness balance is on by default and explicit choices survive migration", () => {
+  assert.equal(migrateSettings({}).settings.isFriendLoudnessBalanceEnabled, true);
+  assert.equal(
+    migrateSettings({ ...defaultSettings, isFriendLoudnessBalanceEnabled: false }).settings
+      .isFriendLoudnessBalanceEnabled,
+    false,
+  );
+});
+
+test("weather preferences migrate and remain local settings", () => {
+  const result = migrateSettings({
+    ...defaultSettings,
+    weatherLocationMode: "manual",
+    weatherManualCity: " 杭州 ",
+    weatherEffectMode: "reduced",
+    isDynamicWeatherEnabled: false,
+  });
+
+  assert.equal(result.settings.weatherLocationMode, "manual");
+  assert.equal(result.settings.weatherManualCity, "杭州");
+  assert.equal(result.settings.weatherEffectMode, "reduced");
+  assert.equal(result.settings.isDynamicWeatherEnabled, false);
 });
 
 test("migrateSettings preserves the release notes version already shown", () => {

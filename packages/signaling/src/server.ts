@@ -176,7 +176,7 @@ const RATE_LIMITS: Record<string, { windowMs: number; limit: number }> = {
   chat_recall: { windowMs: 10_000, limit: 12 },
   room_collection_add: { windowMs: 10_000, limit: 6 },
   room_collection_remove: { windowMs: 10_000, limit: 10 },
-  knock_event: { windowMs: 10_000, limit: 3 },
+  knock_event: { windowMs: 10_000, limit: 1 },
   scene_reaction: { windowMs: 10_000, limit: 12 },
   member_state: { windowMs: 10_000, limit: 40 },
   peer_offer: { windowMs: 10_000, limit: 40 },

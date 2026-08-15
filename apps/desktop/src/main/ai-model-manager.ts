@@ -10,6 +10,7 @@ import type {
   AiModelId,
   AiModelStatus,
   AiProcessingMode,
+  AiRuntimePressure,
   AiTaskCheckpoint,
   AiTaskKind,
   AiVoiceMemorySnapshot,
@@ -75,6 +76,7 @@ const MODEL_DEFINITIONS: readonly ModelDefinition[] = [
 
 export const NORMAL_DOWNLOAD_BYTES_PER_SECOND = 2 * 1024 * 1024;
 export const GAMING_DOWNLOAD_BYTES_PER_SECOND = 256 * 1024;
+export const REALTIME_PRESSURE_DOWNLOAD_BYTES_PER_SECOND = 128 * 1024;
 const QWEN_IDLE_RELEASE_MS = 90_000;
 const METADATA_FILE = "state.json";
 const MODEL_REQUEST_TIMEOUT_MS = 12_000;
@@ -150,6 +152,18 @@ export class AiModelManager {
   private persisted: PersistedAiState = emptyState();
   private processingMode: AiProcessingMode = "after_game";
   private gameActive = false;
+  private runtimePressure: AiRuntimePressure = {
+    inVoiceRoom: false,
+    screenSharing: false,
+    peerRecovering: false,
+    latencyMs: 0,
+    packetLossPercent: 0,
+    rendererMemoryPressure: false,
+    updatedAt: 0,
+  };
+  private realtimePressureHigh = false;
+  private pressureReason?: string;
+  private pressureReleaseTimer?: NodeJS.Timeout;
   private qwenLoaded = false;
   private qwenReleaseTimer?: NodeJS.Timeout;
   private queuedTasks = 0;
@@ -158,6 +172,7 @@ export class AiModelManager {
   private throttleQueue: Promise<void> = Promise.resolve();
   private throttleWindowStartedAt = Date.now();
   private throttleWindowBytes = 0;
+  private runtimeStatus: Partial<Record<AiModelId, { ready: boolean; message?: string }>> = {};
 
   constructor(
     private readonly rootDirectory: string,
@@ -198,6 +213,7 @@ export class AiModelManager {
     for (const controller of this.abortControllers.values()) controller.abort();
     this.abortControllers.clear();
     if (this.qwenReleaseTimer) clearTimeout(this.qwenReleaseTimer);
+    if (this.pressureReleaseTimer) clearTimeout(this.pressureReleaseTimer);
     this.releaseQwenResources("app_stopping");
   }
 
@@ -205,6 +221,35 @@ export class AiModelManager {
     this.processingMode = mode;
     if (this.gameActive && mode === "after_game") this.releaseQwenResources("processing_deferred");
     this.emit();
+  }
+
+  updateRuntimePressure(pressure: AiRuntimePressure): void {
+    this.runtimePressure = pressure;
+    const reason = pressure.peerRecovering
+      ? "peer_recovery"
+      : pressure.screenSharing && (pressure.latencyMs > 180 || pressure.packetLossPercent > 3)
+        ? "screen_share_network_pressure"
+        : pressure.inVoiceRoom && (pressure.latencyMs > 260 || pressure.packetLossPercent > 5)
+          ? "voice_network_pressure"
+          : pressure.rendererMemoryPressure
+            ? "memory_pressure"
+            : undefined;
+    if (reason) {
+      if (this.pressureReleaseTimer) clearTimeout(this.pressureReleaseTimer);
+      this.pressureReleaseTimer = undefined;
+      this.realtimePressureHigh = true;
+      this.pressureReason = reason;
+      this.releaseQwenResources(reason);
+      this.emit();
+      return;
+    }
+    if (!this.realtimePressureHigh || this.pressureReleaseTimer) return;
+    this.pressureReleaseTimer = setTimeout(() => {
+      this.pressureReleaseTimer = undefined;
+      this.realtimePressureHigh = false;
+      this.pressureReason = undefined;
+      this.emit();
+    }, 8_000);
   }
 
   onStatus(listener: (snapshot: AiVoiceMemorySnapshot) => void): () => void {
@@ -220,12 +265,19 @@ export class AiModelManager {
         gameActive: this.gameActive,
         downloadsThrottled: this.gameActive,
         aiTasksPausedForGame: this.gameActive && this.processingMode === "after_game",
+        realtimePressureHigh: this.realtimePressureHigh,
+        pressureReason: this.pressureReason,
         qwenLoaded: this.qwenLoaded,
         queuedTasks: this.queuedTasks,
         runningTask: this.runningTask,
       },
       checkedAt: new Date().toISOString(),
     };
+  }
+
+  setRuntimeStatus(id: AiModelId, ready: boolean, message?: string): void {
+    this.runtimeStatus[id] = { ready, message };
+    this.emit();
   }
 
   async controlModel(id: AiModelId, action: AiModelAction): Promise<AiVoiceMemorySnapshot> {
@@ -430,9 +482,11 @@ export class AiModelManager {
               this.throttleWindowBytes = 0;
             }
             this.throttleWindowBytes += chunk.length;
-            const limit = this.gameActive
-              ? GAMING_DOWNLOAD_BYTES_PER_SECOND
-              : NORMAL_DOWNLOAD_BYTES_PER_SECOND;
+            const limit = this.realtimePressureHigh
+              ? REALTIME_PRESSURE_DOWNLOAD_BYTES_PER_SECOND
+              : this.gameActive
+                ? GAMING_DOWNLOAD_BYTES_PER_SECOND
+                : NORMAL_DOWNLOAD_BYTES_PER_SECOND;
             const delay = Math.max(
               0,
               Math.ceil(
@@ -580,11 +634,15 @@ export class AiModelManager {
       totalBytes,
       progress: totalBytes ? Math.min(100, (downloadedBytes / totalBytes) * 100) : 0,
       bytesPerSecond: this.downloadStartedAt.has(definition.id)
-        ? this.gameActive
-          ? GAMING_DOWNLOAD_BYTES_PER_SECOND
-          : NORMAL_DOWNLOAD_BYTES_PER_SECOND
+        ? this.realtimePressureHigh
+          ? REALTIME_PRESSURE_DOWNLOAD_BYTES_PER_SECOND
+          : this.gameActive
+            ? GAMING_DOWNLOAD_BYTES_PER_SECOND
+            : NORMAL_DOWNLOAD_BYTES_PER_SECOND
         : undefined,
       errorMessage: current?.errorMessage,
+      runtimeReady: this.runtimeStatus[definition.id]?.ready === true,
+      runtimeMessage: this.runtimeStatus[definition.id]?.message,
       updateInProgress: Boolean(
         current?.activeRevision &&
         current.pendingRevision &&
@@ -599,6 +657,11 @@ export class AiModelManager {
 
   private modelDirectory(id: AiModelId): string {
     return path.join(this.rootDirectory, id);
+  }
+
+  getActiveModelDirectory(id: AiModelId): string | undefined {
+    const revision = this.persisted.models[id]?.activeRevision;
+    return revision ? this.revisionDirectory(id, revision) : undefined;
   }
 
   private revisionDirectory(id: AiModelId, revision: string): string {
@@ -700,23 +763,28 @@ export class AiModelManager {
     }
     if (this.processingMode === "manual" && !manualRequest)
       return { runnable: false, reason: "manual_only", resourceMode: "low" };
-    if (this.gameActive && this.processingMode === "after_game") {
+    if (this.realtimePressureHigh && !manualRequest) {
+      return {
+        runnable: false,
+        reason: this.pressureReason ?? "realtime_pressure",
+        resourceMode: "low",
+      };
+    }
+    if (this.gameActive && this.processingMode === "after_game" && !manualRequest) {
       return {
         runnable: false,
         reason: "waiting_for_game_to_finish",
         resourceMode: "low",
       };
     }
-    if (this.gameActive && this.processingMode === "immediate" && !manualRequest) {
-      return {
-        runnable: false,
-        reason: "manual_confirmation_required_during_game",
-        resourceMode: "low",
-      };
-    }
     return {
       runnable: true,
-      resourceMode: this.processingMode === "low_resource" || this.gameActive ? "low" : "normal",
+      resourceMode:
+        this.processingMode === "low_resource" ||
+        this.gameActive ||
+        this.runtimePressure.inVoiceRoom
+          ? "low"
+          : "normal",
     };
   }
 
@@ -735,6 +803,12 @@ export class AiModelManager {
   getTaskCheckpoint(taskId: string): AiTaskCheckpoint | undefined {
     const checkpoint = this.persisted.taskCheckpoints[taskId];
     return checkpoint ? { ...checkpoint } : undefined;
+  }
+
+  async clearTaskCheckpoint(taskId: string): Promise<void> {
+    if (!(taskId in this.persisted.taskCheckpoints)) return;
+    delete this.persisted.taskCheckpoints[taskId];
+    await this.persist();
   }
 
   private async log(

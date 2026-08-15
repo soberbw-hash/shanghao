@@ -93,11 +93,35 @@ def chord(track: np.ndarray, start: float, notes: list[float], duration: float, 
 def sound_pack() -> dict[str, np.ndarray]:
     sounds: dict[str, np.ndarray] = {}
 
-    track = make(0.13)
-    add_tone(track, 0, 0.09, 310, 0.62, target=250, release=0.065)
-    add_tone(track, 0.012, 0.075, 920, 0.24, target=690, release=0.055)
-    add_soft_noise(track, 0, 0.045, 0.16)
-    sounds["button-click"] = finish(track, room=0.045, peak=0.72)
+    # Routine controls need a restrained tactile cue: two short, rounded
+    # resonances without the low thump or reverb used by larger room events.
+    track = make(0.075)
+    add_tone(
+        track,
+        0,
+        0.068,
+        560,
+        0.34,
+        target=510,
+        attack=0.0015,
+        release=0.058,
+        harmonics=(1.0, 0.08),
+    )
+    add_tone(
+        track,
+        0.002,
+        0.046,
+        940,
+        0.12,
+        target=850,
+        attack=0.001,
+        release=0.038,
+        harmonics=(1.0,),
+    )
+    # Keep the generator's seeded draw count stable so regenerating this cue
+    # cannot alter the later alert sounds in the pack.
+    add_soft_noise(track, 0, 0.045, 0.006)
+    sounds["button-click"] = finish(track, room=0, peak=0.46)
 
     track = make(0.72)
     for at, note in ((0, 261.63), (0.13, 329.63), (0.27, 392.0)):
@@ -199,6 +223,17 @@ def sound_pack() -> dict[str, np.ndarray]:
     return sounds
 
 
+def quick_reply_chirp() -> np.ndarray:
+    """A short, warm reminder shared by all five character avatars."""
+    track = make(0.74)
+    add_tone(track, 0.0, 0.25, 620, 0.46, target=860, release=0.16)
+    add_tone(track, 0.035, 0.21, 1_240, 0.16, target=1_720, release=0.15)
+    add_tone(track, 0.24, 0.34, 780, 0.48, target=1_080, release=0.25)
+    add_tone(track, 0.275, 0.29, 1_560, 0.14, target=2_160, release=0.22)
+    add_soft_noise(track, 0.0, 0.025, 0.055)
+    return finish(track, room=0.13, peak=0.84)
+
+
 def write_wav(path: Path, samples: np.ndarray) -> None:
     pcm = np.clip(samples * 32_767, -32_768, 32_767).astype("<i2")
     with wave.open(str(path), "wb") as handle:
@@ -213,6 +248,11 @@ def main() -> None:
     for name, samples in sound_pack().items():
         write_wav(OUTPUT / f"{name}.wav", samples)
         print(f"{name:22} {len(samples) / RATE:.2f}s")
+    animal_output = OUTPUT / "animals"
+    animal_output.mkdir(parents=True, exist_ok=True)
+    reminder = quick_reply_chirp()
+    write_wav(animal_output / "quick-reply-chirp.wav", reminder)
+    print(f"{'quick-reply-chirp':22} {len(reminder) / RATE:.2f}s")
 
 
 if __name__ == "__main__":

@@ -30,7 +30,11 @@ const dismissReleaseNotes = async (window: BrowserWindow, timeoutMs = 4_000): Pr
   const deadline = Date.now() + timeoutMs;
   let sawViewer = false;
   while (Date.now() < deadline) {
-    const viewerVisible = await waitForVisibleSelector(window, ".release-notes-viewer", 150);
+    const viewerVisible = await waitForVisibleSelector(
+      window,
+      '[aria-labelledby="release-notes-title"]',
+      150,
+    );
     if (!viewerVisible) {
       if (sawViewer) return true;
       await sleep(100);
@@ -389,6 +393,35 @@ export const captureUi = async (
   if (options.mode === "screen-share-expanded") {
     await clickButtonByLabel(window, "放大屏幕分享");
     await sleep(800);
+  }
+
+  const hoverSelector = process.env.SHANGHAO_CAPTURE_HOVER_SELECTOR?.trim();
+  if (hoverSelector) {
+    const hoverPoint = (await window.webContents.executeJavaScript(
+      `
+        (() => {
+          const element = document.querySelector(${JSON.stringify(hoverSelector)});
+          if (!(element instanceof HTMLElement)) return null;
+          const bounds = element.getBoundingClientRect();
+          return {
+            x: Math.round(bounds.left + bounds.width / 2),
+            y: Math.round(bounds.top + bounds.height / 2),
+          };
+        })()
+      `,
+      true,
+    )) as { x: number; y: number } | null;
+    if (hoverPoint) {
+      window.webContents.sendInputEvent({ type: "mouseMove", ...hoverPoint });
+      await sleep(250);
+      const isHovered = await window.webContents.executeJavaScript(
+        `Boolean(document.querySelector(${JSON.stringify(hoverSelector)})?.matches(":hover"))`,
+        true,
+      );
+      if (!isHovered) {
+        throw new Error(`无法将真实鼠标移动到视觉捕获目标：${hoverSelector}`);
+      }
+    }
   }
 
   const image = await window.capturePage();

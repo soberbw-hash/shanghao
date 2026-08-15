@@ -229,6 +229,15 @@ test("viewer preload exposes only the screen-share viewer bridge", () => {
   assert.match(preload, /close/);
 });
 
+test("screen share hook survives React StrictMode effect replay", () => {
+  const hookSource = readFileSync(
+    new URL("../src/renderer/src/features/screen-share/useScreenShare.ts", import.meta.url),
+    "utf8",
+  );
+  assert.match(hookSource, /manager\.shutdown\("component-unmount"\)/);
+  assert.doesNotMatch(hookSource, /manager\.destroy\(\)/);
+});
+
 test("Windows capture handler only requests loopback audio when the renderer asks for it", () => {
   const source = readFileSync(new URL("../src/main/window.ts", import.meta.url), "utf8");
   assert.match(source, /request\.audioRequested && process\.platform === "win32"/);

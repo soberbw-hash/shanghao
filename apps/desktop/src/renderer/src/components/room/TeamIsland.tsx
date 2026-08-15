@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
-import { Fish } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
 import { gsap } from "gsap";
 
 import {
   type BuiltInAvatarId,
   type MemberActivity,
+  type RoomCollectionItem,
   type RoomMember,
   type SceneReaction,
   type SceneZoneId,
@@ -13,21 +13,18 @@ import {
 
 import { getStableAvatarId } from "../../utils/profile";
 import { motionEase } from "../../features/motion/motionSystem";
-import {
-  SceneFloorLamp,
-  SceneExitDoor,
-  SceneLowTable,
-  SceneTallPlant,
-  SceneWallClock,
-  SceneWallShelf,
-  SceneWindowNook,
-} from "./SceneAmbientDecor";
+import { SceneExitDoor, SceneWallClock } from "./SceneAmbientDecor";
+import { DynamicWeatherWindow } from "./DynamicWeatherWindow";
+import { RoomDateCalendar } from "./RoomDateCalendar";
+import type { RoomCollectionDragPayload } from "../../features/chat/collectionDrag";
+import { RoomCollectionShelf } from "./RoomCollectionShelf";
 import { SceneCharacter, sceneMemberKey, type SceneCharacterQuickMessage } from "./SceneCharacter";
 import { GameMonitorContent } from "./GameMonitorContent";
 import { WorkMonitorContent } from "./WorkMonitorContent";
 import { MusicActivityBadge } from "./MusicActivityBadge";
 import { WorkActivityBadge } from "./WorkActivityBadge";
 import { WorkstationArt } from "./WorkstationArt";
+import { IdleMonitorContent } from "./IdleMonitorContent";
 import {
   characterPositions,
   isSeatZone,
@@ -38,6 +35,9 @@ import {
 import { memberStatus } from "../../features/voice-scene/activityRules";
 import { usePrefersReducedMotion } from "../../hooks/usePrefersReducedMotion";
 import type { ConnectionQualityLevel } from "../../features/network/networkDiagnostics";
+import { useSettingsStore } from "../../store/settingsStore";
+import { useWeatherStore } from "../../features/weather/weatherStore";
+import { resolveWeatherVisualTheme } from "../../features/weather/weatherTheme";
 
 const assignVisibleAvatars = (members: RoomMember[]): Map<string, BuiltInAvatarId> => {
   return new Map(
@@ -55,7 +55,15 @@ export const TeamIsland = ({
   reactions = [],
   chatBubbles = [],
   knockPulse = 0,
+  collectionItems = [],
+  isCollectionOpen = false,
+  isCollectionDragOver = false,
+  hasUnreadCollectionItems = false,
+  onOpenCollection,
+  onCollectionDragOverChange,
+  onSaveDraggedCollection,
   reduceMotion = false,
+  pauseVisualMotion = false,
 }: {
   members: RoomMember[];
   onZoneSelect?: (zone: SceneZoneId, activity: MemberActivity) => void;
@@ -66,9 +74,37 @@ export const TeamIsland = ({
   reactions?: SceneReaction[];
   chatBubbles?: Array<SceneCharacterQuickMessage & { peerId: string }>;
   knockPulse?: number;
+  collectionItems?: RoomCollectionItem[];
+  isCollectionOpen?: boolean;
+  isCollectionDragOver?: boolean;
+  hasUnreadCollectionItems?: boolean;
+  onOpenCollection?: () => void;
+  onCollectionDragOverChange?: (value: boolean) => void;
+  onSaveDraggedCollection?: (payload: RoomCollectionDragPayload) => void;
   reduceMotion?: boolean;
+  pauseVisualMotion?: boolean;
 }) => {
   const islandRef = useRef<HTMLDivElement>(null);
+  const settings = useSettingsStore((state) => state.settings);
+  const weatherSnapshot = useWeatherStore((state) => state.snapshot);
+  const weatherPreview = useWeatherStore((state) => state.preview);
+  const weatherTheme = resolveWeatherVisualTheme(
+    settings?.isDynamicWeatherEnabled
+      ? weatherPreview
+        ? {
+            ...weatherSnapshot,
+            ...weatherPreview,
+            fetchedAt: weatherSnapshot?.fetchedAt ?? "",
+            expiresAt: weatherSnapshot?.expiresAt ?? "",
+            source: weatherSnapshot?.source ?? "fallback",
+          }
+        : weatherSnapshot
+      : undefined,
+  );
+  const weatherRoomClass =
+    settings?.isDynamicWeatherEnabled === false
+      ? "weather-room-default"
+      : `weather-room-${weatherTheme.roomTone} weather-room-phase-${weatherTheme.phase}`;
   const visibleMembers = members.filter((member) => !member.isEmptySlot).slice(0, 5);
   const visibleAvatars = assignVisibleAvatars(visibleMembers);
   const shouldReduceMotion = usePrefersReducedMotion(reduceMotion);
@@ -96,8 +132,20 @@ export const TeamIsland = ({
         Boolean(entry[0] && isSeatZone(entry[0])),
       ),
   );
+  const visibleMemberById = new Map(visibleMembers.map((member) => [member.id, member] as const));
+  const settledMemberBySeat = new Map(
+    Object.entries(settledMemberZones)
+      .map(([memberId, zone]) => [zone, visibleMemberById.get(memberId)] as const)
+      .filter(
+        (entry): entry is readonly [SceneZoneId, RoomMember] =>
+          isSeatZone(entry[0]) && Boolean(entry[1]),
+      ),
+  );
   const localMember = visibleMembers.find((member) => member.isLocal);
   const localZone = localMember ? resolvedMemberZones.get(localMember.id) : undefined;
+  const localSettledZone = localMember
+    ? (settledMemberZones[localMember.id] ?? localZone)
+    : undefined;
   const awayMembers = visibleMembers.filter(
     (member) => resolvedMemberZones.get(member.id) === "restroomZone",
   );
@@ -214,28 +262,28 @@ export const TeamIsland = ({
   return (
     <div
       ref={islandRef}
-      className={`team-island ambient-${ambient} relative h-full min-h-[420px] overflow-hidden`}
+      className={`team-island ambient-${ambient} ${weatherRoomClass} ${
+        pauseVisualMotion ? "is-visual-motion-paused" : ""
+      } relative h-full min-h-[420px] overflow-hidden`}
       data-testid="team-island"
     >
       <span className="scene-knock-wave" data-knock-wave aria-hidden="true" />
       <div className="team-island-stage absolute inset-0" aria-hidden="true">
         <div className="scene-wall-backdrop" />
+        <div className="scene-weather-ambient" />
         <div className="scene-window-light" />
         <div className="scene-rug" />
         <div className="scene-brand-arc" />
         <div className="scene-window-nook">
-          <SceneWindowNook />
-        </div>
-        <div className="scene-wall-shelf">
-          <SceneWallShelf />
+          <DynamicWeatherWindow
+            isEnabled={settings?.isDynamicWeatherEnabled ?? true}
+            locationMode={settings?.weatherLocationMode ?? "auto"}
+            manualCity={settings?.weatherManualCity ?? ""}
+            effectMode={settings?.weatherEffectMode ?? "standard"}
+          />
         </div>
         <div className="scene-wall-clock">
           <SceneWallClock />
-        </div>
-        <div className="scene-lounge-corner">
-          <SceneTallPlant className="scene-lounge-plant" />
-          <SceneLowTable className="scene-lounge-table" />
-          <SceneFloorLamp className="scene-lounge-lamp" />
         </div>
         <div
           className={`scene-service-zone scene-service-restroom ${
@@ -245,17 +293,18 @@ export const TeamIsland = ({
           <SceneExitDoor className="scene-exit-door" />
           <span className="scene-exit-label">离开</span>
         </div>
-        {seatSlots.map((slot) => {
+        {seatSlots.map((slot, slotIndex) => {
           const occupant = memberBySeat.get(slot.id);
-          const settledOccupant =
-            occupant && settledMemberZones[occupant.id] === slot.id ? occupant : undefined;
+          // Presence publishes the destination immediately. Keep the old desk display stable
+          // until the character has physically completed the route away from that desk.
+          const settledOccupant = settledMemberBySeat.get(slot.id);
           const occupantTone = occupant ? memberStatus(occupant).tone : undefined;
           const isScreenSharing = screenSharingSet.has(settledOccupant?.id ?? "");
           return (
             <div
               key={slot.id}
               className={`scene-workstation ${hoveredZone === slot.id ? "is-hovered" : ""} ${
-                localZone === slot.id ? "is-current" : ""
+                localSettledZone === slot.id ? "is-current" : ""
               } ${occupant ? "is-occupied" : ""} ${
                 occupantTone === "reconnecting" ? "is-reconnecting" : ""
               }`}
@@ -276,7 +325,7 @@ export const TeamIsland = ({
                     isScreenSharing ? "sharing" : ""
                   } ${networkQuality === "poor" && settledOccupant ? "network-unstable" : ""}`}
                 >
-                  <AnimatePresence mode="wait" initial={false}>
+                  <AnimatePresence mode="sync" initial={false}>
                     {settledOccupant ? (
                       <motion.span
                         key={`${settledOccupant.id}:${slot.id}:${
@@ -306,7 +355,10 @@ export const TeamIsland = ({
                             shouldReduceMotion={shouldReduceMotion}
                           />
                         ) : (
-                          <Fish className="scene-workstation-idle-fish" aria-label="摸鱼中" />
+                          <IdleMonitorContent
+                            offsetSeconds={slotIndex * 48}
+                            shouldReduceMotion={shouldReduceMotion}
+                          />
                         )}
                       </motion.span>
                     ) : null}
@@ -317,6 +369,16 @@ export const TeamIsland = ({
           );
         })}
       </div>
+      <RoomDateCalendar />
+      <RoomCollectionShelf
+        items={collectionItems}
+        isOpen={isCollectionOpen}
+        isDragOver={isCollectionDragOver}
+        hasUnreadItems={hasUnreadCollectionItems}
+        onOpen={() => onOpenCollection?.()}
+        onDragOverChange={(value) => onCollectionDragOverChange?.(value)}
+        onSaveDragged={(payload) => onSaveDraggedCollection?.(payload)}
+      />
       <div className="pointer-events-none absolute inset-0 z-[48]">
         {seatSlots.map((slot) => {
           const occupied = occupiedSeatIds.has(slot.id);

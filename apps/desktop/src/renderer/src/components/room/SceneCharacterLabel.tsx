@@ -31,49 +31,50 @@ export const SceneCharacterLabel = ({
   const displayedLatency = lastLatencyRef.current;
   const nicknameLength = Array.from(member.nickname.trim()).length;
 
-  if (isAway) {
-    return (
-      <div className="room-character-away-label" title={member.nickname}>
-        <span>{member.nickname}</span>
-      </div>
-    );
-  }
-
   return (
-    <div className={`room-character-label ${status.tone}`}>
-      <span className="room-character-identity">
-        <strong
-          className="room-character-nickname"
-          data-length={nicknameLength > 12 ? "long" : nicknameLength > 8 ? "medium" : "short"}
-          title={member.nickname}
-        >
-          {member.nickname}
-        </strong>
-        <span aria-hidden="true">·</span>
-        <span className={`room-character-latency ${getLatencyTone(member.latencyMs)}`}>
-          {typeof displayedLatency === "number" ? `${displayedLatency} ms` : "—"}
-        </span>
-      </span>
-      <span className="room-character-state">
-        <AnimatePresence initial={false} mode="popLayout">
-          <motion.span
-            key={`${status.tone}-${status.label}`}
-            className="inline-flex min-w-0 items-center gap-1"
-            initial={shouldReduceMotion ? false : { opacity: 0, y: 2 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={shouldReduceMotion ? undefined : { opacity: 0, y: -2 }}
-            transition={{
-              duration: shouldReduceMotion ? 0 : motionDuration.color,
-              ease: motionCurve.enter,
-            }}
-          >
-            {status.icon ? (
-              <status.icon className={`h-3 w-3 ${isReconnecting ? "animate-spin" : ""}`} />
-            ) : null}
-            <span>{status.label}</span>
-          </motion.span>
-        </AnimatePresence>
-      </span>
+    <div
+      className={`room-character-label ${isAway ? "room-character-away-label is-away" : status.tone}`}
+      title={isAway ? member.nickname : undefined}
+    >
+      {isAway ? (
+        <span className="room-character-away-name">{member.nickname}</span>
+      ) : (
+        <>
+          <span className="room-character-identity">
+            <strong
+              className="room-character-nickname"
+              data-length={nicknameLength > 12 ? "long" : nicknameLength > 8 ? "medium" : "short"}
+              title={member.nickname}
+            >
+              {member.nickname}
+            </strong>
+            <span aria-hidden="true">·</span>
+            <span className={`room-character-latency ${getLatencyTone(member.latencyMs)}`}>
+              {typeof displayedLatency === "number" ? `${displayedLatency} ms` : "—"}
+            </span>
+          </span>
+          <span className="room-character-state">
+            <AnimatePresence initial={false} mode="popLayout">
+              <motion.span
+                key={`${status.tone}-${status.label}`}
+                className="inline-flex min-w-0 items-center gap-1"
+                initial={shouldReduceMotion ? false : { opacity: 0, y: 2 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={shouldReduceMotion ? undefined : { opacity: 0, y: -2 }}
+                transition={{
+                  duration: shouldReduceMotion ? 0 : motionDuration.color,
+                  ease: motionCurve.enter,
+                }}
+              >
+                {status.icon ? (
+                  <status.icon className={`h-3 w-3 ${isReconnecting ? "animate-spin" : ""}`} />
+                ) : null}
+                <span>{status.label}</span>
+              </motion.span>
+            </AnimatePresence>
+          </span>
+        </>
+      )}
     </div>
   );
 };

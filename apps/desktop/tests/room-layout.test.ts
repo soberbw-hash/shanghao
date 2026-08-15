@@ -28,9 +28,21 @@ const teamIslandPath = path.resolve(
   process.cwd(),
   "src/renderer/src/components/room/TeamIsland.tsx",
 );
+const dateCalendarPath = path.resolve(
+  process.cwd(),
+  "src/renderer/src/components/room/RoomDateCalendar.tsx",
+);
+const collectionShelfPath = path.resolve(
+  process.cwd(),
+  "src/renderer/src/components/room/RoomCollectionShelf.tsx",
+);
 const workMonitorPath = path.resolve(
   process.cwd(),
   "src/renderer/src/components/room/WorkMonitorContent.tsx",
+);
+const idleMonitorPath = path.resolve(
+  process.cwd(),
+  "src/renderer/src/components/room/IdleMonitorContent.tsx",
 );
 const activityRulesPath = path.resolve(
   process.cwd(),
@@ -92,6 +104,11 @@ const recordingMainPath = path.resolve(process.cwd(), "src/main/recording-main.t
 
 test("room page uses the V5 island, light responses, and voice dock", () => {
   const source = readFileSync(roomPagePath, "utf8");
+  const teamIslandSource = readFileSync(teamIslandPath, "utf8");
+  const dockSource = readFileSync(
+    path.resolve(process.cwd(), "src/renderer/src/components/room/RoomDock.tsx"),
+    "utf8",
+  );
   const audioPopoverSource = readFileSync(
     path.resolve(process.cwd(), "src/renderer/src/components/audio/AudioControlPopover.tsx"),
     "utf8",
@@ -102,12 +119,12 @@ test("room page uses the V5 island, light responses, and voice dock", () => {
   assert.equal(source.includes("desktopApi.overlay.toggle"), true);
   assert.equal(source.includes("useScreenShare"), true);
   assert.equal(source.includes("ScreenSharePanel"), true);
-  assert.equal(source.includes("voice-dock"), true);
+  assert.equal(dockSource.includes("voice-dock"), true);
   assert.equal(source.includes("房间地址"), false);
   assert.equal(source.includes("连接方式"), false);
   assert.equal(source.includes("进入开黑频道"), false);
   assert.equal(source.includes("audio-level-bars"), false);
-  assert.equal(source.includes("扬声器关"), true);
+  assert.equal(dockSource.includes("扬声器关"), true);
   assert.equal(audioPopoverSource.includes("降噪"), true);
   assert.equal(audioPopoverSource.includes('data-audio-setting="noise-suppression"'), true);
   assert.equal(audioPopoverSource.includes('data-audio-setting="echo-cancellation"'), true);
@@ -125,7 +142,14 @@ test("room page uses the V5 island, light responses, and voice dock", () => {
   assert.equal(source.includes("朋友的小收藏箱"), false);
   assert.equal(source.includes("留下一句话或链接，会一直保留"), false);
   assert.equal(source.includes("把下次开黑时间、攻略链接"), false);
-  assert.equal(source.includes('isCollectionDragOver ? "松开放入" : "收藏"'), true);
+  const collectionShelfSource = readFileSync(collectionShelfPath, "utf8");
+  assert.equal(dockSource.includes('data-icon-motion="collection"'), false);
+  assert.equal(collectionShelfSource.includes("room-collection-shelf"), true);
+  assert.equal(collectionShelfSource.includes("items.slice(-6)"), true);
+  assert.equal(collectionShelfSource.includes("room-collection-drop-feedback"), true);
+  assert.equal(collectionShelfSource.includes("松开放入"), true);
+  assert.equal(teamIslandSource.includes("<RoomCollectionShelf"), true);
+  assert.equal(teamIslandSource.includes("<SceneLowTable"), false);
 });
 
 test("seat switching uses the full visible workstation area", () => {
@@ -148,6 +172,7 @@ test("exit label stays clear of the door arrow", () => {
 test("work and game activities animate on the monitor without replacing voice state", () => {
   const teamIslandSource = readFileSync(teamIslandPath, "utf8");
   const workMonitorSource = readFileSync(workMonitorPath, "utf8");
+  const idleMonitorSource = readFileSync(idleMonitorPath, "utf8");
   const activityRulesSource = readFileSync(activityRulesPath, "utf8");
   const stylesSource = readFileSync(stylesPath, "utf8");
 
@@ -164,13 +189,18 @@ test("work and game activities animate on the monitor without replacing voice st
   assert.equal(workMonitorSource.includes("repeat: -1"), true);
   assert.equal(workMonitorSource.includes("observer?.disconnect()"), true);
   assert.equal(workMonitorSource.includes("context.revert()"), true);
+  assert.equal(teamIslandSource.includes("<IdleMonitorContent"), true);
+  assert.equal(teamIslandSource.includes("offsetSeconds={slotIndex * 48}"), true);
+  assert.equal(idleMonitorSource.includes("idle-monitors/aquarium.png"), true);
+  assert.equal(idleMonitorSource.includes("idle-monitors/window-sky.png"), true);
+  assert.equal(idleMonitorSource.includes("--idle-monitor-offset"), true);
   assert.equal(activityRulesSource.includes("正在玩"), true);
   assert.equal(activityRulesSource.includes("workActivity.name"), true);
   assert.equal(stylesSource.includes(".scene-workstation-screen.working"), true);
   assert.equal(stylesSource.includes(".scene-work-monitor"), true);
 });
 
-test("room uses a real always-on-top overlay and a five-second knock cooldown", () => {
+test("room uses a real always-on-top overlay and a ten-second knock cooldown", () => {
   const roomSource = readFileSync(roomPagePath, "utf8");
   const overlaySource = readFileSync(overlayWindowPath, "utf8");
   const overlayPageSource = readFileSync(overlayPagePath, "utf8");
@@ -186,7 +216,7 @@ test("room uses a real always-on-top overlay and a five-second knock cooldown", 
   const characterMotionSource = readFileSync(characterMotionPath, "utf8");
   const sceneZonesSource = readFileSync(sceneZonesPath, "utf8");
 
-  assert.equal(roomSource.includes("KNOCK_COOLDOWN_MS = 5_000"), true);
+  assert.equal(roomSource.includes("KNOCK_COOLDOWN_MS = 10_000"), true);
   assert.equal(roomSource.includes("desktopApi.overlay.toggle"), true);
   assert.equal(overlaySource.includes("alwaysOnTop: true"), true);
   assert.equal(overlaySource.includes("skipTaskbar: true"), true);
@@ -203,16 +233,23 @@ test("room uses a real always-on-top overlay and a five-second knock cooldown", 
   assert.equal(overlaySource.includes("resizable: false"), true);
   assert.equal(overlayPageSource.includes("data-overlay-list"), true);
   assert.equal(overlayPageSource.includes("gsap.fromTo"), true);
-  assert.equal(overlayPageSource.includes("TOOLS_REVEAL_SECONDS = 3"), true);
+  assert.equal(overlayPageSource.includes("TOOLS_REVEAL_SECONDS = 1"), true);
   assert.equal(overlayPageSource.includes("overlay-still-progress"), true);
-  assert.equal(overlayPageSource.includes('pathLength="1"'), true);
+  assert.equal(overlayPageSource.includes('pathLength="100"'), true);
   assert.equal(overlayPageSource.includes("strokeDashoffset: 0"), true);
   assert.equal(overlayPageSource.includes("dragPointerOffsetRef.current"), true);
   assert.equal(overlayPageSource.includes("event.screenY - dragPointerOffsetRef.current"), true);
   assert.equal(overlaySource.includes("gridSize = 16"), true);
-  assert.equal(overlaySource.includes("Math.round(desiredTopY / this.gridSize)"), true);
+  assert.equal(overlaySource.includes("snapOverlayTop("), true);
+  assert.equal(overlaySource.includes("resizeOverlayKeepingTop("), true);
+  assert.equal(overlaySource.includes('window.on("moved"'), false);
+  assert.equal(overlaySource.includes("screen.getCursorScreenPoint()"), true);
   assert.equal(overlaySource.includes("this.window.setPosition(this.snapX"), true);
-  assert.equal(stylesSource.includes(".overlay-still-progress rect"), true);
+  assert.equal(stylesSource.includes(".overlay-still-progress-value"), true);
+  assert.equal(roomSource.includes("pauseVisualMotion={roomCollection.isOpen}"), true);
+  assert.equal(stylesSource.includes(".team-island.is-visual-motion-paused *"), true);
+  assert.equal(stylesSource.includes(".collection-modal-panel.modal-surface"), true);
+  assert.equal(stylesSource.includes("contain-intrinsic-size: auto 86px"), true);
   assert.equal(rendererMainSource.includes("overlay-renderer"), true);
   assert.equal(stylesSource.includes("html.overlay-renderer"), true);
   assert.equal(stylesSource.includes("background: transparent !important"), true);
@@ -309,7 +346,8 @@ test("music activity stays attached to a member while seats change", () => {
   const stylesSource = readFileSync(stylesPath, "utf8");
 
   assert.equal(teamIslandSource.includes("const occupant = memberBySeat.get(slot.id)"), true);
-  assert.equal(teamIslandSource.includes("settledMemberZones[occupant.id] === slot.id"), true);
+  assert.equal(teamIslandSource.includes("const settledMemberBySeat = new Map"), true);
+  assert.equal(teamIslandSource.includes("settledMemberBySeat.get(slot.id)"), true);
   assert.equal(teamIslandSource.includes("onSettled={handleMemberSettled}"), true);
   assert.equal(teamIslandSource.includes("occupant.musicActivity"), true);
   assert.equal(badgeSource.includes("is-tooltip-open"), true);
@@ -350,6 +388,7 @@ test("scene seats align with the marked workstation positions", () => {
   const sceneZonesSource = readFileSync(sceneZonesPath, "utf8");
   const stylesSource = readFileSync(stylesPath, "utf8");
   const teamIslandSource = readFileSync(teamIslandPath, "utf8");
+  const dateCalendarSource = readFileSync(dateCalendarPath, "utf8");
   const workstationSource = readFileSync(workstationArtPath, "utf8");
   const ambientDecorSource = readFileSync(sceneAmbientDecorPath, "utf8");
   const sceneCharacterSource = readFileSync(sceneCharacterPath, "utf8");
@@ -367,23 +406,43 @@ test("scene seats align with the marked workstation positions", () => {
   assert.equal(stylesSource.includes("translateY(-3px) scale(1.018)"), false);
   assert.equal(teamIslandSource.includes("scene-restroom-door"), false);
   assert.equal(teamIslandSource.includes("scene-shared-table"), false);
-  assert.equal(teamIslandSource.includes("SceneWindowNook"), true);
-  assert.equal(teamIslandSource.includes("SceneFloorLamp"), true);
-  assert.equal(teamIslandSource.includes("SceneWallShelf"), true);
+  assert.equal(teamIslandSource.includes("DynamicWeatherWindow"), true);
+  assert.equal(teamIslandSource.includes("SceneFloorLamp"), false);
+  assert.equal(dateCalendarSource.includes("SceneWallShelf"), false);
+  assert.equal(teamIslandSource.includes("RoomDateCalendar"), true);
+  assert.equal(dateCalendarSource.includes("desktopApi.recording"), false);
+  assert.equal(dateCalendarSource.includes("DAY_FORMATTER"), true);
+  assert.equal(dateCalendarSource.includes('new Intl.DateTimeFormat("en-US"'), true);
+  assert.equal(dateCalendarSource.includes("room-date-calendar"), true);
+  assert.equal(dateCalendarSource.includes("FULL_DATE_FORMATTER"), true);
+  assert.equal(dateCalendarSource.includes("room-date-calendar-tooltip"), true);
   assert.equal(teamIslandSource.includes("SceneWallClock"), true);
   assert.equal(teamIslandSource.includes("SceneExitDoor"), true);
   assert.equal(teamIslandSource.includes('localZone === "restroomZone"'), true);
-  assert.equal(teamIslandSource.includes("SceneTallPlant"), true);
-  assert.equal(teamIslandSource.includes("SceneLowTable"), true);
+  assert.equal(teamIslandSource.includes("SceneTallPlant"), false);
+  assert.equal(teamIslandSource.includes("SceneLowTable"), false);
   assert.equal(teamIslandSource.includes("scene-wall-backdrop"), true);
   assert.equal(teamIslandSource.includes("scene-wall-baseboard"), false);
-  assert.equal(teamIslandSource.includes("scene-lounge-corner"), true);
+  assert.equal(teamIslandSource.includes("scene-lounge-corner"), false);
   assert.equal(stylesSource.includes(".scene-window-nook"), true);
+  assert.equal(stylesSource.includes(".dynamic-weather-window"), true);
+  assert.equal(stylesSource.includes("width: clamp(218px, 22.5%, 302px)"), true);
+  assert.equal(stylesSource.includes(".scene-weather-ambient"), true);
   assert.equal(stylesSource.includes(".scene-wall-shelf"), true);
   assert.equal(stylesSource.includes(".scene-wall-clock"), true);
-  assert.equal(stylesSource.includes(".scene-lounge-plant"), true);
-  assert.equal(stylesSource.includes(".scene-lounge-table"), true);
-  assert.equal(stylesSource.includes(".scene-lounge-lamp"), true);
+  assert.equal(stylesSource.includes(".weather-window-tooltip"), true);
+  assert.equal(stylesSource.includes(".scene-clock-tooltip"), true);
+  assert.equal(
+    stylesSource.includes(".room-date-calendar:hover .room-date-calendar-tooltip"),
+    true,
+  );
+  assert.match(
+    stylesSource,
+    /\.room-date-calendar-today strong\s*\{[^}]*font-family:\s*\n\s*"Noto Sans SC Variable"[^}]*font-variant-numeric:\s*tabular-nums;/s,
+  );
+  assert.equal(stylesSource.includes(".room-collection-shelf-position"), true);
+  assert.equal(teamIslandSource.includes("RoomCollectionShelf"), true);
+  assert.equal(stylesSource.includes(".room-collection-shelf-display"), true);
   assert.equal(ambientDecorSource.includes('viewBox="0 0 180 110"'), true);
   assert.equal(ambientDecorSource.includes('viewBox="0 0 94 218"'), true);
   assert.equal(teamIslandSource.includes("chatMessages?: ChatMessage[]"), false);
@@ -451,6 +510,13 @@ test("screen sharing is wired through the room page and WebRTC peer layer", () =
     path.resolve(process.cwd(), "src/renderer/src/features/screen-share/ScreenFrameRelay.ts"),
     "utf8",
   );
+  const screenCoordinatorSource = readFileSync(
+    path.resolve(
+      process.cwd(),
+      "src/renderer/src/features/screen-share/RoomScreenShareCoordinator.ts",
+    ),
+    "utf8",
+  );
 
   assert.equal(managerSource.includes("navigator.mediaDevices.getDisplayMedia"), true);
   assert.equal(screenPanelSource.includes("screen-share-panel"), true);
@@ -461,7 +527,7 @@ test("screen sharing is wired through the room page and WebRTC peer layer", () =
   assert.equal(hookSource.includes("setRemoteScreenFrame"), true);
   assert.equal(clientSource.includes("renegotiateAllPeers"), false);
   assert.equal(screenRelaySource.includes("screen_frame"), true);
-  assert.equal(clientSource.includes("SCREEN_FRAME_INTERVAL_MS"), true);
+  assert.equal(screenCoordinatorSource.includes("SCREEN_FRAME_INTERVAL_MS"), true);
   assert.equal(peerSource.includes('addTransceiver("video"'), true);
   assert.equal(peerSource.includes('direction: "sendrecv"'), true);
   assert.equal(
@@ -502,8 +568,12 @@ test("screen sharing is wired through the room page and WebRTC peer layer", () =
   assert.equal(mainWindowSource.includes("desktopCapturer.getSources"), true);
   assert.equal(mainWindowSource.includes('"loopback"'), true);
   assert.equal(roomSource.includes("screenShareQuality"), false);
-  assert.equal(roomSource.includes("1440p · 清晰"), true);
-  assert.equal(roomSource.includes("aria-pressed={pendingIncludeSystemAudio}"), true);
+  const overlaysSource = readFileSync(
+    path.resolve(process.cwd(), "src/renderer/src/components/room/RoomOverlays.tsx"),
+    "utf8",
+  );
+  assert.equal(overlaysSource.includes("1440p · 清晰"), true);
+  assert.equal(overlaysSource.includes("aria-pressed={includeSystemAudio}"), true);
 });
 
 test("room scene supports clickable seats and silent-away without daily summaries", () => {
@@ -585,7 +655,7 @@ test("Windows package keeps only needed locales and recording no longer ships ff
   assert.equal(packageSource.includes('"ffprobe-static"'), false);
   assert.equal(recordingSource.includes('from "ffprobe-static"'), false);
   assert.equal(recordingSource.includes("showSaveDialog"), false);
-  assert.equal(recordingSource.includes("resolveRecordingDirectory"), true);
+  assert.equal(recordingSource.includes("resolveUsableRecordingDirectory"), true);
   assert.equal(roomSource.includes("chooseDirectory"), true);
   assert.equal(roomSource.includes("recordingSaveDirectory"), true);
 });

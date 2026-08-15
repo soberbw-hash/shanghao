@@ -2,7 +2,15 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
-import { app, BrowserWindow, desktopCapturer, screen, type Rectangle } from "electron";
+import {
+  app,
+  BrowserWindow,
+  desktopCapturer,
+  nativeImage,
+  screen,
+  type NativeImage,
+  type Rectangle,
+} from "electron";
 
 import {
   APP_ID,
@@ -30,6 +38,12 @@ const getBuildAssetPath = (fileName: string) =>
     : path.join(app.getAppPath(), "build", fileName);
 
 const getIconPath = () => getBuildAssetPath("shanghao-icon-v3.ico");
+
+const getWindowIcon = (): NativeImage => {
+  const iconPath = getBuildAssetPath(app.isPackaged ? "shanghao-icon-v3.ico" : "icon.png");
+  const image = nativeImage.createFromPath(iconPath);
+  return image.isEmpty() ? nativeImage.createFromPath(getIconPath()) : image;
+};
 
 let pendingScreenCaptureSourceId: string | undefined;
 let screenShareViewerWindow: BrowserWindow | null = null;
@@ -316,6 +330,7 @@ export const createMainWindow = ({
       savedBounds.y ?? display.workArea.y + Math.round((display.workArea.height - height) / 2),
     ),
   );
+  const windowIcon = getWindowIcon();
   const window = new BrowserWindow({
     width,
     height,
@@ -328,7 +343,7 @@ export const createMainWindow = ({
     titleBarStyle: "hidden",
     title: APP_NAME,
     show: false,
-    icon: getIconPath(),
+    icon: windowIcon,
     webPreferences: {
       preload: path.join(__dirname, "../preload/index.cjs"),
       contextIsolation: true,
@@ -336,6 +351,7 @@ export const createMainWindow = ({
       sandbox: true,
     },
   });
+  window.setIcon(windowIcon);
   if (process.platform === "win32") {
     window.setAppDetails({
       appId: APP_ID,
@@ -425,6 +441,7 @@ export const createMainWindow = ({
   });
 
   window.once("ready-to-show", () => {
+    window.setIcon(windowIcon);
     window.show();
   });
 
@@ -445,7 +462,9 @@ export const createMainWindow = ({
       callback(
         webContents.id === window.webContents.id &&
           isTrustedRendererUrl(details.requestingUrl) &&
-          (permission === "media" || permission === "display-capture"),
+          (permission === "media" ||
+            permission === "display-capture" ||
+            permission === "geolocation"),
       );
     },
   );

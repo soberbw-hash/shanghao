@@ -11,7 +11,19 @@ export const parseDeepLinkInvite = (rawValue: string): DeepLinkInvite | undefine
 
     const channelId = url.searchParams.get("room") as DeepLinkInvite["channelId"] | null;
     const rawServerUrl = url.searchParams.get("server");
-    if (!channelId || !ALLOWED_CHANNEL_IDS.has(channelId) || !rawServerUrl) return undefined;
+    if (!channelId || !ALLOWED_CHANNEL_IDS.has(channelId)) return undefined;
+    const rawExpiresAt = url.searchParams.get("expires");
+    if (rawExpiresAt !== null) {
+      const expiresAt = Number(rawExpiresAt);
+      if (
+        !Number.isFinite(expiresAt) ||
+        expiresAt < Date.now() ||
+        expiresAt > Date.now() + 24 * 60 * 60_000
+      ) {
+        return undefined;
+      }
+    }
+    if (!rawServerUrl) return { channelId };
 
     const serverUrl = new URL(rawServerUrl);
     if (serverUrl.protocol !== "ws:" && serverUrl.protocol !== "wss:") return undefined;

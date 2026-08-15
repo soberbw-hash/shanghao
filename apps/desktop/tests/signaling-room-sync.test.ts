@@ -1074,6 +1074,58 @@ test("fixed channel broadcasts text chat and knock events", async () => {
   }
 });
 
+test("knock events are limited to once every ten seconds per connection", async () => {
+  const server = new SignalingServer({ roomName: "固定频道" });
+  const port = await server.listen();
+  const url = `ws://127.0.0.1:${port}`;
+  const sender = await openSocket(url);
+  const receiver = await openSocket(url);
+
+  try {
+    joinChannel(sender, "knock-sender", "小狐狸");
+    joinChannel(receiver, "knock-receiver", "小熊");
+    await waitForMessage(
+      receiver,
+      (payload): payload is { members: unknown[] } =>
+        typeof payload === "object" &&
+        payload !== null &&
+        (payload as { type?: string }).type === "channel_snapshot" &&
+        (payload as { members?: unknown[] }).members?.length === 2,
+    );
+
+    const knock = {
+      type: "knock_event",
+      roomId: "main",
+      peerId: "knock-sender",
+      nickname: "小狐狸",
+      createdAt: new Date().toISOString(),
+    };
+    sender.send(JSON.stringify(knock));
+    await waitForMessage(
+      receiver,
+      (payload): payload is { type: "knock_event" } =>
+        typeof payload === "object" &&
+        payload !== null &&
+        (payload as { type?: string }).type === "knock_event",
+    );
+
+    sender.send(JSON.stringify(knock));
+    const limited = await waitForMessage(
+      sender,
+      (payload): payload is { type: "error"; code: string } =>
+        typeof payload === "object" &&
+        payload !== null &&
+        (payload as { type?: string }).type === "error" &&
+        (payload as { code?: string }).code === "rate_limited",
+    );
+    assert.equal(limited.code, "rate_limited");
+  } finally {
+    sender.close();
+    receiver.close();
+    await server.close();
+  }
+});
+
 test("chat recall is authorized by the server and synchronized to every client", async () => {
   const server = new SignalingServer({ roomName: "固定频道" });
   const port = await server.listen();

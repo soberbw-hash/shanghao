@@ -73,6 +73,18 @@ export const DiagnosticsSettingsCard = ({
               ? `${localAudioDiagnostics.speechProtection === "active" ? "保护中" : "待命"} · ${localAudioDiagnostics.currentSuppressionLevel ?? "--"} · 原声 ${Math.round((localAudioDiagnostics.rawProcessedMix?.raw ?? 0) * 100)}%`
               : "未启用",
           ],
+          [
+            "语音判断",
+            localAudioDiagnostics
+              ? `${localAudioDiagnostics.processingMode ?? "noise"} · VAD ${Math.round((localAudioDiagnostics.speechProbability ?? 0) * 100)}%${localAudioDiagnostics.doubleTalkDetected ? " · 双讲" : ""}${localAudioDiagnostics.remoteEchoDetected ? " · 回声" : ""}`
+              : "等待麦克风",
+          ],
+          [
+            "处理负载",
+            localAudioDiagnostics
+              ? `平均 ${(localAudioDiagnostics.averageProcessingMs ?? 0).toFixed(1)} ms · 峰值 ${(localAudioDiagnostics.maxProcessingMs ?? 0).toFixed(1)} ms · 超时 ${localAudioDiagnostics.processorOverruns ?? 0}`
+              : "等待麦克风",
+          ],
         ].map(([label, value]) => (
           <div
             key={label}

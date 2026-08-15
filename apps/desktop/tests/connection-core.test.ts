@@ -119,11 +119,12 @@ test("relay status checks both health endpoint and websocket", () => {
 test("room client preserves peers and self-heals signaling and media indefinitely", () => {
   const source = read("apps/desktop/src/renderer/src/features/room/roomClient.ts");
   const hook = read("apps/desktop/src/renderer/src/hooks/useRoomState.ts");
+  const recovery = read("apps/desktop/src/renderer/src/features/room/PeerRecoveryCoordinator.ts");
 
   assert.equal(source.includes("MAX_RECONNECT_ATTEMPTS"), false);
-  assert.equal(source.includes('type: "peer_restart_request"'), true);
-  assert.equal(source.includes("schedulePeerRecovery"), true);
-  assert.equal(source.includes("connection_timeout"), true);
+  assert.equal(recovery.includes('type: "peer_restart_request"'), true);
+  assert.equal(recovery.includes("schedule("), true);
+  assert.equal(recovery.includes("connection_timeout"), true);
   assert.equal(source.includes("DEFAULT_ICE_SERVERS"), true);
   assert.equal(source.includes("[...DEFAULT_ICE_SERVERS, ...relayIceServers]"), true);
   assert.equal(source.includes("Ignored stale room snapshot"), true);
@@ -149,6 +150,7 @@ test("audio backpressure drops realtime frames instead of queueing stale audio",
 
 test("room joining uses acknowledgement and snapshot recovery without logging raw signaling data", () => {
   const client = read("apps/desktop/src/renderer/src/features/room/roomClient.ts");
+  const presence = read("apps/desktop/src/renderer/src/features/room/PresenceCoordinator.ts");
   const hook = read("apps/desktop/src/renderer/src/hooks/useRoomState.ts");
   const diagnostics = read("apps/desktop/src/main/diagnostics.ts");
 
@@ -159,8 +161,8 @@ test("room joining uses acknowledgement and snapshot recovery without logging ra
   assert.equal(hook.includes("summarizeSignalingEvent"), true);
   assert.equal(hook.includes("ROUTINE_SIGNAL_MESSAGE_TYPES"), true);
   assert.equal(hook.includes("...payload,"), false);
-  assert.equal(client.includes("normalizePresenceGameName(gameName)"), true);
-  assert.equal(client.includes('gameName: desired.gameName ?? ""'), true);
+  assert.equal(presence.includes("normalizePresenceGameName(gameName)"), true);
+  assert.equal(presence.includes('gameName: desired.gameName ?? ""'), true);
   assert.equal(client.includes("payload.code === 4400"), true);
   assert.equal(client.includes('new Error("signaling_protocol_rejected")'), true);
   assert.equal(client.includes("this.rejectPendingConnection(error)"), true);
@@ -186,7 +188,7 @@ test("windows executable and shortcut use cache-busting v3 icons", () => {
   assert.equal(mainWindow.includes("appId: APP_ID"), true);
 });
 
-test("AI and LLM code paths are completely removed", () => {
+test("AI voice memory remains local and legacy server LLM proxy paths stay removed", () => {
   assert.equal(existsSync(path.join(root, "apps/desktop/src/main/llm-service.ts")), false);
   assert.equal(
     existsSync(path.join(root, "apps/desktop/src/renderer/src/features/chat/llmService.ts")),
@@ -327,6 +329,12 @@ test("knock feedback is intentionally louder than routine UI sounds", () => {
   assert.equal(roomState.includes("shakeWindow: true"), true);
   assert.equal(ipc.includes("const shakeMainWindow"), true);
   assert.equal(ipc.includes("mainWindow.setPosition(x, original.y, false)"), true);
+  const quickMessageHandler = roomState.slice(
+    roomState.indexOf("onQuickMessage:"),
+    roomState.indexOf("onChatMessage:"),
+  );
+  assert.equal(quickMessageHandler.includes("attention: true"), false);
+  assert.equal(quickMessageHandler.includes("sendSystemNotification"), true);
 });
 
 test("late room members serialize signaling and retain early ICE candidates", () => {

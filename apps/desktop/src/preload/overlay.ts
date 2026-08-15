@@ -13,6 +13,13 @@ const overlayBridge = {
       ipcRenderer.on(IPC_CHANNELS.overlay.state, wrapped);
       return () => ipcRenderer.removeListener(IPC_CHANNELS.overlay.state, wrapped);
     },
+    onHoverState: (listener: (inside: boolean) => void) => {
+      const wrapped = (_event: Electron.IpcRendererEvent, inside: unknown) => {
+        listener(inside === true);
+      };
+      ipcRenderer.on(IPC_CHANNELS.overlay.hoverState, wrapped);
+      return () => ipcRenderer.removeListener(IPC_CHANNELS.overlay.hoverState, wrapped);
+    },
   },
 };
 

@@ -86,6 +86,84 @@ The side-by-side microphone comparison verifies the requested ordering: noise su
 
 final result: passed
 
+## 2026-08-15 Compact Room Calendar Refinement
+
+- Source visual truth: `C:/Users/sober/AppData/Local/Temp/codex-clipboard-1bcdefeb-da34-4f60-a266-6291aa2f4499.png`
+- User implementation feedback capture: `C:/Users/sober/AppData/Local/Temp/codex-clipboard-23de7537-4ae1-455d-8865-f894c5684c7f.png`
+- Implementation screenshot: unavailable after the compact refinement
+- Source pixels: 2308 x 1564. CSS viewport and device density were not available from the attachment.
+- State: connected room with the calendar in the upper-center wall-decoration slot.
+
+### Full-view comparison evidence
+
+The feedback capture showed the first implementation as a large floating feature card that competed with the room and overlapped the visual line of the upper workstations. The revised implementation reduces the default calendar to a 132-162px hanging-paper scale, removes the feature title, month controls, and footer, and lowers border, shadow, and material contrast so it reads as room decor.
+
+### Focused region comparison evidence
+
+The source and feedback captures were opened and compared around the upper-center wall slot. A post-fix focused capture could not be produced because the existing development renderer occupied the fixed Electron capture port and the isolated capture run did not complete. The code-level refinement therefore remains visually unverified.
+
+### Findings and comparison history
+
+- [P1 fixed in code, visual confirmation pending] The first calendar was too large and looked like a settings panel. It is now approximately half the previous width and has no dashboard copy or navigation chrome.
+- [P2 fixed in code, visual confirmation pending] The calendar had excessive elevation and glass treatment. It now uses a near-flat paper surface, a restrained wall shadow, small binding rings, and the existing decorative shelf asset.
+- [P2 fixed in code, visual confirmation pending] Recording status copy made the room feel functional instead of ambient. Recording linkage is now represented only by tiny date dots; details appear only after selecting a date that contains recordings.
+
+### Required fidelity surfaces
+
+- Fonts and typography: reduced to a compact month, year, weekday, and date hierarchy using the existing application font.
+- Spacing and layout rhythm: default width is capped at 162px and returns to the original wall-decoration footprint.
+- Colors and visual tokens: low-contrast white-blue paper and the existing room blue/mint recording indicator are retained.
+- Image quality and assets: the existing `SceneWallShelf` source asset is reused; no replacement illustration was introduced.
+- Copy and content: `场景日历`, month navigation, recording-count footer, and empty-state copy are absent from the default room view.
+
+### Runtime and interaction checks
+
+- Calendar month construction, Shanghai date grouping, room wiring, and recording-library navigation tests passed.
+- Typecheck passed.
+- Post-fix screenshot comparison remains blocked by the local capture runtime collision.
+
+final result: blocked
+
+## 2026-08-15 Compact Tear-Off Calendar And Idle Monitor Artwork
+
+- Calendar feedback source: `C:/Users/sober/AppData/Local/Temp/codex-clipboard-23de7537-4ae1-455d-8865-f894c5684c7f.png`
+- Selected idle-monitor source: `C:/Users/sober/AppData/Local/Temp/codex-clipboard-c32e652f-3ae8-4c5d-a9db-4251efa296ea.png`
+- Normal implementation screenshot: `C:/Users/sober/Documents/Codex/shanghao-calendar-room-normal.png`
+- Calendar hover screenshot: `C:/Users/sober/Documents/Codex/shanghao-calendar-room.png`
+- Calendar before/after comparison: `C:/Users/sober/Documents/Codex/shanghao-calendar-before-after.png`
+- Idle-monitor source/implementation comparison: `C:/Users/sober/Documents/Codex/shanghao-calendar-idle-comparison.png`
+- Captured Electron frame: 2176 x 1378 pixels at device scale factor 1.5.
+- State: connected two-person room, both occupied seats idle, calendar hovered in the interaction capture.
+
+### Full-view and focused comparison evidence
+
+The full month-grid panel has been replaced by a small room object that shows only `八月` and `15` in its resting state. The weather window, calendar, and clock now share one quiet upper-wall visual band. The two selected monitor directions are both visible in the same running-room capture: the first occupied seat uses the deep-blue aquarium artwork and the second uses the pale sky-window artwork.
+
+### Findings and comparison history
+
+- [P1 fixed] The former month calendar read as an application panel floating over the room. The replacement is a compact tear-off calendar with no controls, recording state, weekday, year, or supporting copy in its resting state.
+- [P1 fixed] The requested complete date was not reliably reachable through pointer hover while the calendar sat below the room interaction layer. Its stacking level now keeps the wall object pointer-reachable, and the real-mouse capture confirms the full date tooltip is displayed.
+- [P2 fixed] Chinese day formatting appended `日` to the large numeral. The visible value now renders as the requested bare `15`; `日` remains only in the accessible label and hover detail.
+- [P2 fixed] Adjacent occupied seats initially entered the same aquarium phase. Their stable 48-second phase offset now presents the two accepted artwork directions separately while retaining a slow opacity-only crossfade.
+
+### Required fidelity surfaces
+
+- Fonts and typography: one small month label and one condensed tabular day number; no secondary text is visible until hover.
+- Spacing and layout rhythm: the calendar is capped at 94px and visually aligns with the weather window and raised clock without covering a workstation.
+- Colors and visual tokens: the paper uses the existing muted blue-white room palette and restrained shadow; the tooltip reuses the weather/clock ambient-tooltip material.
+- Image quality and assets: both monitor scenes use dedicated 456 x 282 raster artwork matched to the workstation screen ratio, with no stretched screenshot or CSS placeholder art.
+- Motion: monitor changes are opacity-only over a 96-second cycle, staggered per seat, and become static when reduced motion is requested.
+
+### Runtime checks
+
+- Captured the normal connected-room state and compared it with both supplied visual references in shared comparison images.
+- Moved a real Electron mouse event onto `.room-date-calendar`, asserted that the element matched `:hover`, and captured the full-date tooltip.
+- Relevant room, UI-regression, asset, and motion checks passed: 47/47.
+- Typecheck passed.
+- `git diff --check` passed for the touched implementation and verification files.
+
+final result: passed
+
 ## 2026-08-12 Recording Library And Final Room Regression
 
 - Source visual truth: `C:/Users/sober/AppData/Local/Temp/codex-clipboard-c014fd43-10cf-452a-b814-a84af0f1945b.png`
@@ -319,3 +397,37 @@ The member-volume control now replaces the clicked member's existing identity la
 - Cleared and checked the Electron renderer log; no new console errors were observed.
 
 final result: passed
+
+## 2026-08-15 Tear-Off Room Calendar
+
+- Source visual truth: `C:/Users/sober/AppData/Local/Temp/codex-clipboard-1bcdefeb-da34-4f60-a266-6291aa2f4499.png`
+- User feedback capture: `C:/Users/sober/AppData/Local/Temp/codex-clipboard-23de7537-4ae1-455d-8865-f894c5684c7f.png`
+- Implementation screenshot: unavailable after the final tear-off-calendar refinement
+- Source pixels: 2308 x 1564. CSS viewport and device density were not available from the attachment.
+- State: connected room, upper wall decorations visible.
+
+### Full-view and focused comparison evidence
+
+The feedback capture established that a full month grid looked like a floating application panel and sat too heavily between the weather window and clock. The final implementation is a non-interactive tear-off calendar that shows only the current month, a large day number, weekday, and year. Recording data, indicators, navigation, expansion, and empty states were removed. The existing shelf asset remains as the physical room anchor.
+
+### Findings and comparison history
+
+- [P1 fixed in code, visual confirmation pending] The calendar is no longer a month-grid dashboard; it is a small current-date wall object.
+- [P2 fixed in code, visual confirmation pending] The date hierarchy now uses Bahnschrift/Segoe UI display numerals with separate Noto Sans SC labels, more paper space, and quieter blue-gray contrast.
+- [P2 fixed in code, visual confirmation pending] The clock moved upward and the weather window, calendar, and clock are positioned on one visual center band.
+
+### Required fidelity surfaces
+
+- Fonts and typography: display numerals, month label, weekday, and year have separate optical roles and no cramped inline punctuation.
+- Spacing and layout rhythm: the calendar is capped at 118px and the clock top position is reduced to 3.1%.
+- Colors and visual tokens: low-contrast paper white and room blue-gray are retained.
+- Image quality and assets: the existing `SceneWallShelf` asset is reused unchanged.
+- Copy and content: only today's date remains; there is no recording or feature copy.
+
+### Runtime checks
+
+- Room layout and UI regression tests passed: 39/39.
+- Typecheck passed.
+- Post-fix screenshot comparison remains blocked because the isolated Electron capture did not complete while the existing development renderer occupied its fixed port.
+
+final result: blocked

@@ -1,4 +1,8 @@
+import { useState } from "react";
+
 import type { BuiltInAvatarId, MemberActivity } from "@private-voice/shared";
+
+import { getAvatarSrc } from "../../utils/profile";
 
 import catRear from "../../assets/avatars/rear-v2/cat-rear.png";
 import corgiRear from "../../assets/avatars/rear-v2/corgi-rear.png";
@@ -64,6 +68,8 @@ export const WalkingAnimalSprite = ({
   paused?: boolean;
 }) => {
   const runCycleSource = runCycleSources[avatarId] ?? runCycleSources.fox;
+  const [readyRunCycleSource, setReadyRunCycleSource] = useState<string>();
+  const isRunCycleReady = readyRunCycleSource === runCycleSource;
 
   return (
     <div
@@ -74,13 +80,25 @@ export const WalkingAnimalSprite = ({
       aria-hidden="true"
     >
       <span className="walking-animal-shadow" />
+      <img
+        className={`walking-animal-static-fallback ${isRunCycleReady ? "is-hidden" : ""}`}
+        src={getAvatarSrc(avatarId)}
+        alt=""
+        draggable={false}
+      />
       <span className="walking-animal-facing">
         <span className="walking-animal-run-cycle">
           <img
-            className="walking-animal-run-cycle-strip"
+            className={`walking-animal-run-cycle-strip ${isRunCycleReady ? "is-ready" : ""}`}
             src={runCycleSource}
             alt=""
             draggable={false}
+            onLoad={() => setReadyRunCycleSource(runCycleSource)}
+            onError={() =>
+              setReadyRunCycleSource((current) =>
+                current === runCycleSource ? undefined : current,
+              )
+            }
           />
         </span>
       </span>
@@ -108,6 +126,9 @@ export const DeskAnimalSprite = ({
   idleAction?: DeskAnimalIdleAction;
 }) => {
   const source = rearAvatarSources[avatarId] ?? rearAvatarSources.fox;
+  const [readyRearSource, setReadyRearSource] = useState<string>();
+  const isRearReady = readyRearSource === source;
+
   const motionState = isMoving
     ? "moving"
     : isMuted
@@ -127,8 +148,23 @@ export const DeskAnimalSprite = ({
       aria-hidden="true"
     >
       <span className="desk-animal-ground-shadow" />
-      <span className="desk-animal-art">
-        <img className="desk-animal-layer desk-animal-body" src={source} alt="" draggable={false} />
+      <img
+        className={`desk-animal-static-fallback ${isRearReady ? "is-hidden" : ""}`}
+        src={getAvatarSrc(avatarId)}
+        alt=""
+        draggable={false}
+      />
+      <span className={`desk-animal-art ${isRearReady ? "is-ready" : ""}`}>
+        <img
+          className="desk-animal-layer desk-animal-body"
+          src={source}
+          alt=""
+          draggable={false}
+          onLoad={() => setReadyRearSource(source)}
+          onError={() =>
+            setReadyRearSource((current) => (current === source ? undefined : current))
+          }
+        />
         <img className="desk-animal-layer desk-animal-head" src={source} alt="" draggable={false} />
         <img className="desk-animal-layer desk-animal-arm" src={source} alt="" draggable={false} />
       </span>

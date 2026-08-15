@@ -1,4 +1,4 @@
-import { Coffee, Users, Wifi } from "lucide-react";
+import { Coffee, MessageCircleQuestion, Users, Wifi } from "lucide-react";
 
 import { RoomConnectionState } from "@private-voice/shared";
 
@@ -51,6 +51,7 @@ export const TopStatusBar = ({
   onDonate,
   onKnock,
   onInvite,
+  onAsk,
 }: {
   currentChannelId: "main" | "side";
   channelCounts: { main: number; side: number };
@@ -59,6 +60,7 @@ export const TopStatusBar = ({
   onDonate?: () => void;
   onKnock?: () => void;
   onInvite?: () => void;
+  onAsk?: () => void;
 }) => {
   const navigate = useAppStore((state) => state.navigate);
   const setSettingsReturnTo = useAppStore((state) => state.setSettingsReturnTo);
@@ -151,6 +153,15 @@ export const TopStatusBar = ({
           >
             <AnimatedControlIcon name="invite" className="h-3.5 w-3.5" />
             <span>邀请</span>
+          </Button>
+          <Button
+            variant="ghost"
+            className="topbar-action whitespace-nowrap"
+            onClick={onAsk}
+            aria-label="搜索语音记忆或提问"
+          >
+            <MessageCircleQuestion className="h-3.5 w-3.5" aria-hidden="true" />
+            <span>问</span>
           </Button>
           <Button
             variant="ghost"

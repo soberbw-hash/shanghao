@@ -34,6 +34,12 @@ export interface LocalAudioDiagnostics {
   autoGainControl?: boolean;
   noiseProcessor?: "deepfilter_loading" | "deepfilter_active" | "deepfilter_unavailable" | "bypass";
   speechProtection?: "active" | "inactive";
+  voiceActivity?: "active" | "inactive";
+  processingMode?: "noise" | "echo" | "near_speech" | "double_talk";
+  doubleTalkDetected?: boolean;
+  remoteEchoDetected?: boolean;
+  speechProbability?: number;
+  remoteReferenceLevel?: number;
   currentSuppressionLevel?: number;
   rawProcessedMix?: {
     raw: number;

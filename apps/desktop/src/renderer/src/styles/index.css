@@ -2112,6 +2112,64 @@ a,
   }
 }
 
+.scene-idle-monitor {
+  position: absolute;
+  inset: 0;
+  display: block;
+  overflow: hidden;
+  border-radius: inherit;
+  background: #8ec7f3;
+}
+
+.scene-idle-monitor-art {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  opacity: 0;
+  will-change: opacity;
+  animation: idle-monitor-crossfade 96s ease-in-out infinite;
+}
+
+.scene-idle-monitor-art--aquarium {
+  opacity: 1;
+  animation-delay: calc(0s - var(--idle-monitor-offset));
+}
+
+.scene-idle-monitor-art--window {
+  animation-delay: calc(-48s - var(--idle-monitor-offset));
+}
+
+.scene-idle-monitor.is-static-aquarium .scene-idle-monitor-art,
+.scene-idle-monitor.is-static-window .scene-idle-monitor-art {
+  animation: none;
+}
+
+.scene-idle-monitor.is-static-aquarium .scene-idle-monitor-art--aquarium,
+.scene-idle-monitor.is-static-window .scene-idle-monitor-art--window {
+  opacity: 1;
+}
+
+.scene-idle-monitor.is-static-aquarium .scene-idle-monitor-art--window,
+.scene-idle-monitor.is-static-window .scene-idle-monitor-art--aquarium {
+  opacity: 0;
+}
+
+@keyframes idle-monitor-crossfade {
+  0%,
+  46% {
+    opacity: 1;
+  }
+  50%,
+  96% {
+    opacity: 0;
+  }
+  100% {
+    opacity: 1;
+  }
+}
+
 .scene-workstation-screen svg {
   width: 10px;
   height: 10px;
@@ -2126,10 +2184,13 @@ a,
 }
 
 .scene-workstation-screen-content {
+  position: absolute;
+  inset: 0;
   display: grid;
   width: 100%;
   height: 100%;
   place-items: center;
+  will-change: transform, opacity;
 }
 
 .scene-workstation-screen.online {
@@ -2613,6 +2674,25 @@ a,
   backface-visibility: hidden;
 }
 
+.walking-animal-static-fallback,
+.desk-animal-static-fallback {
+  position: absolute;
+  z-index: 1;
+  left: 50%;
+  bottom: 0;
+  width: 94px;
+  height: 94px;
+  object-fit: contain;
+  object-position: center bottom;
+  pointer-events: none;
+  transform: translateX(-50%);
+}
+
+.walking-animal-static-fallback.is-hidden,
+.desk-animal-static-fallback.is-hidden {
+  opacity: 0;
+}
+
 .walking-animal-run-cycle {
   position: absolute;
   inset: -5px;
@@ -2632,6 +2712,11 @@ a,
   animation-delay: var(--character-motion-delay, 0s);
   backface-visibility: hidden;
   will-change: transform;
+  opacity: 0;
+}
+
+.walking-animal-run-cycle-strip.is-ready {
+  opacity: 1;
 }
 
 .walking-animal.is-paused .walking-animal-run-cycle-strip {
@@ -2746,6 +2831,11 @@ a,
   display: block;
   transform-origin: center bottom;
   pointer-events: none;
+  opacity: 0;
+}
+
+.desk-animal-art.is-ready {
+  opacity: 1;
 }
 
 .desk-animal-head {
@@ -2792,8 +2882,28 @@ a,
   width: 104px;
   height: 104px;
   place-items: end center;
+  opacity: 0;
+  pointer-events: none;
   transform-origin: center bottom;
-  will-change: transform, opacity;
+  transition: opacity 70ms linear;
+}
+
+.room-character-visual-layer.is-active {
+  z-index: 1;
+  opacity: 1;
+}
+
+.scene-character-motion:is(
+    .phase-entering,
+    .phase-standing-up,
+    .phase-walking,
+    .phase-approaching,
+    .phase-turning,
+    .phase-sitting,
+    .phase-leaving
+  )
+  .room-character-visual-layer {
+  will-change: opacity;
 }
 
 .desk-animal-ground-shadow {
@@ -3444,6 +3554,22 @@ a,
   white-space: nowrap;
   box-shadow: 0 3px 10px rgba(67, 92, 128, 0.08);
   pointer-events: none;
+}
+
+.room-character-label.room-character-away-label {
+  min-width: 0;
+  width: max-content;
+  flex-direction: row;
+  align-items: center;
+  margin-top: 3px;
+  padding: 2px 7px;
+}
+
+.room-character-away-name {
+  display: block;
+  max-width: 88px;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .room-character-away-label > span:first-child {
@@ -4642,6 +4768,7 @@ a,
   margin-top: 16px;
   overflow-y: auto;
   padding: 2px 3px 2px 0;
+  contain: layout paint;
 }
 
 .collection-item {
@@ -4660,6 +4787,8 @@ a,
     transform var(--duration-fast) var(--ease-out-soft),
     border-color var(--duration-fast) var(--ease-out-soft),
     box-shadow var(--duration-fast) var(--ease-out-soft);
+  content-visibility: auto;
+  contain-intrinsic-size: auto 86px;
 }
 
 .collection-item:hover {
@@ -5830,6 +5959,8 @@ a,
 
 .chat-message-list {
   scrollbar-gutter: stable;
+  scroll-padding-bottom: 12px;
+  padding-bottom: 12px;
 }
 
 .chat-empty-state {
@@ -5843,8 +5974,6 @@ a,
 
 .chat-message-row {
   padding-right: 4px;
-  content-visibility: auto;
-  contain-intrinsic-size: auto 64px;
 }
 
 .chat-message-avatar {
@@ -6332,14 +6461,61 @@ body::before {
 
 .scene-window-light {
   position: absolute;
-  top: -10%;
-  right: 3%;
-  width: 31%;
-  height: 52%;
-  transform: skewX(-12deg);
-  background: linear-gradient(145deg, rgba(255, 255, 255, 0.34), rgba(115, 190, 255, 0.035));
+  top: -8%;
+  left: 2%;
+  width: 37%;
+  height: 50%;
+  z-index: 1;
+  transform: skewX(10deg);
+  background: linear-gradient(155deg, rgba(255, 255, 255, 0.32), rgba(115, 190, 255, 0.025));
   filter: blur(8px);
   opacity: 0.72;
+}
+
+.scene-weather-ambient {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  opacity: 0.34;
+  background: rgba(208, 232, 252, 0.12);
+}
+
+.team-island.weather-room-bright .scene-weather-ambient {
+  background: rgba(255, 241, 205, 0.13);
+}
+
+.team-island.weather-room-neutral .scene-weather-ambient {
+  background: rgba(214, 231, 245, 0.13);
+}
+
+.team-island.weather-room-cool .scene-weather-ambient {
+  background: rgba(160, 196, 224, 0.14);
+}
+
+.team-island.weather-room-storm .scene-weather-ambient {
+  opacity: 0.48;
+  background: rgba(105, 139, 174, 0.16);
+}
+
+.team-island.weather-room-snow .scene-weather-ambient {
+  background: rgba(220, 242, 252, 0.18);
+}
+
+.team-island.weather-room-night .scene-weather-ambient {
+  opacity: 0.54;
+  background: rgba(63, 92, 132, 0.15);
+}
+
+.team-island.weather-room-phase-dawn .scene-weather-ambient,
+.team-island.weather-room-phase-dusk .scene-weather-ambient {
+  background: rgba(255, 218, 190, 0.12);
+}
+
+.team-island.weather-room-cool .scene-window-light,
+.team-island.weather-room-storm .scene-window-light,
+.team-island.weather-room-night .scene-window-light {
+  opacity: 0.36;
 }
 
 .scene-rug {
@@ -6383,10 +6559,12 @@ body::before {
 }
 
 .scene-window-nook {
-  left: 4.3%;
-  top: 3.7%;
-  width: clamp(118px, 13.5%, 172px);
-  opacity: 0.74;
+  left: 3.7%;
+  top: 2.7%;
+  width: clamp(218px, 22.5%, 302px);
+  aspect-ratio: 2.36;
+  opacity: 0.88;
+  pointer-events: auto;
   filter: drop-shadow(0 12px 22px rgba(72, 110, 143, 0.08));
 }
 
@@ -6396,6 +6574,637 @@ body::before {
   width: clamp(126px, 14.5%, 188px);
   opacity: 0.64;
   filter: drop-shadow(0 10px 18px rgba(72, 110, 143, 0.07));
+}
+
+.room-recording-calendar {
+  position: absolute;
+  left: 43.6%;
+  top: 2.1%;
+  z-index: 72;
+  width: clamp(222px, 20.5%, 286px);
+  color: #385570;
+  user-select: none;
+}
+
+.room-recording-calendar-board {
+  position: relative;
+  z-index: 2;
+  padding: 10px 11px 8px;
+  border: 1px solid rgba(190, 217, 238, 0.76);
+  border-radius: 15px;
+  background:
+    linear-gradient(145deg, rgba(252, 254, 255, 0.94), rgba(233, 245, 252, 0.91)),
+    rgba(244, 250, 254, 0.92);
+  box-shadow:
+    0 12px 25px rgba(74, 111, 145, 0.11),
+    inset 0 1px 0 rgba(255, 255, 255, 0.95);
+  backdrop-filter: blur(14px);
+}
+
+.room-recording-calendar-board::before {
+  position: absolute;
+  inset: 5px;
+  z-index: -1;
+  border: 1px solid rgba(255, 255, 255, 0.76);
+  border-radius: 11px;
+  content: "";
+  pointer-events: none;
+}
+
+.room-recording-calendar-head,
+.room-recording-calendar-detail-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.room-recording-calendar-head > div:first-child {
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+}
+
+.room-recording-calendar-head strong {
+  color: #284b69;
+  font-size: 13px;
+  font-weight: 780;
+  letter-spacing: 0.01em;
+}
+
+.room-recording-calendar-kicker {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: #6f8ba4;
+  font-size: 9px;
+  font-weight: 730;
+  letter-spacing: 0.08em;
+}
+
+.room-recording-calendar-kicker svg {
+  width: 11px;
+  height: 11px;
+  color: #56a7e8;
+}
+
+.room-recording-calendar-nav {
+  display: flex;
+  gap: 2px;
+}
+
+.room-recording-calendar-nav button,
+.room-recording-calendar-detail-head > button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  color: #6b88a1;
+  background: transparent;
+  cursor: pointer;
+}
+
+.room-recording-calendar-nav button {
+  width: 20px;
+  height: 20px;
+  border-radius: 7px;
+}
+
+.room-recording-calendar-nav button:hover,
+.room-recording-calendar-nav button:focus-visible,
+.room-recording-calendar-detail-head > button:hover,
+.room-recording-calendar-detail-head > button:focus-visible {
+  color: #2f77be;
+  background: rgba(213, 234, 250, 0.78);
+  outline: none;
+}
+
+.room-recording-calendar-nav svg {
+  width: 13px;
+  height: 13px;
+}
+
+.room-recording-calendar-weekdays,
+.room-recording-calendar-grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 2px;
+}
+
+.room-recording-calendar-weekdays {
+  margin-top: 6px;
+  padding-bottom: 2px;
+  color: #9aabbb;
+  font-size: 8px;
+  font-weight: 700;
+  text-align: center;
+}
+
+.room-recording-calendar-grid button {
+  position: relative;
+  display: grid;
+  height: 18px;
+  place-items: center;
+  border: 0;
+  border-radius: 6px;
+  color: #58718a;
+  background: transparent;
+  font-size: 8.5px;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.room-recording-calendar-grid button:hover,
+.room-recording-calendar-grid button:focus-visible {
+  color: #2f77be;
+  background: rgba(220, 238, 251, 0.86);
+  outline: none;
+}
+
+.room-recording-calendar-grid button.is-outside {
+  color: rgba(122, 147, 168, 0.34);
+}
+
+.room-recording-calendar-grid button.is-today {
+  color: #fff;
+  background: linear-gradient(145deg, #65b8ee, #4d8fe1);
+  box-shadow: 0 3px 8px rgba(74, 145, 219, 0.22);
+  font-weight: 800;
+}
+
+.room-recording-calendar-grid button.is-selected:not(.is-today) {
+  color: #2c78b7;
+  background: #e0f1fb;
+  box-shadow: inset 0 0 0 1px rgba(100, 175, 225, 0.35);
+  font-weight: 800;
+}
+
+.room-recording-calendar-grid button i {
+  position: absolute;
+  right: 2px;
+  bottom: 2px;
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: #68c9aa;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.72);
+}
+
+.room-recording-calendar-grid button.is-today i {
+  background: #d8fff1;
+}
+
+.room-recording-calendar-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 5px;
+  padding-top: 5px;
+  border-top: 1px solid rgba(190, 215, 234, 0.48);
+  color: #7890a5;
+  font-size: 8px;
+}
+
+.room-recording-calendar-foot button {
+  padding: 0;
+  border: 0;
+  color: #3d88c9;
+  background: transparent;
+  font-size: 8px;
+  font-weight: 720;
+  cursor: pointer;
+}
+
+.room-recording-calendar-foot button:hover,
+.room-recording-calendar-foot button:focus-visible {
+  color: #246ba9;
+  outline: none;
+  text-decoration: underline;
+}
+
+.room-recording-calendar-shelf {
+  position: absolute;
+  left: 10%;
+  right: 10%;
+  bottom: -18px;
+  z-index: 1;
+  opacity: 0.58;
+  pointer-events: none;
+  filter: drop-shadow(0 8px 14px rgba(72, 110, 143, 0.08));
+}
+
+.room-recording-calendar-shelf svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.room-recording-calendar-detail {
+  position: absolute;
+  top: calc(100% + 16px);
+  left: 50%;
+  z-index: 4;
+  width: min(310px, 38vw);
+  max-height: 218px;
+  padding: 12px;
+  overflow: hidden;
+  border: 1px solid rgba(179, 211, 237, 0.88);
+  border-radius: 16px;
+  background: rgba(249, 253, 255, 0.97);
+  box-shadow: 0 18px 42px rgba(62, 104, 141, 0.18);
+  transform: translateX(-50%);
+  backdrop-filter: blur(18px);
+}
+
+.room-recording-calendar-detail::before {
+  position: absolute;
+  top: -6px;
+  left: calc(50% - 6px);
+  width: 12px;
+  height: 12px;
+  border-top: 1px solid rgba(179, 211, 237, 0.88);
+  border-left: 1px solid rgba(179, 211, 237, 0.88);
+  background: rgba(249, 253, 255, 0.97);
+  content: "";
+  transform: rotate(45deg);
+}
+
+.room-recording-calendar-detail-head strong,
+.room-recording-calendar-detail-head span {
+  display: block;
+}
+
+.room-recording-calendar-detail-head strong {
+  color: #294b68;
+  font-size: 13px;
+  font-weight: 780;
+}
+
+.room-recording-calendar-detail-head span {
+  margin-top: 2px;
+  color: #8094a8;
+  font-size: 9px;
+}
+
+.room-recording-calendar-detail-head > button {
+  min-height: 25px;
+  padding: 0 8px;
+  border-radius: 8px;
+  font-size: 9px;
+  font-weight: 700;
+}
+
+.room-recording-calendar-recordings {
+  display: grid;
+  gap: 5px;
+  max-height: 160px;
+  margin-top: 9px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.room-recording-calendar-recordings > button {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  padding: 6px 7px;
+  border: 1px solid rgba(196, 219, 238, 0.68);
+  border-radius: 10px;
+  color: #526d86;
+  background: rgba(239, 248, 253, 0.74);
+  text-align: left;
+  cursor: pointer;
+}
+
+.room-recording-calendar-recordings > button:hover,
+.room-recording-calendar-recordings > button:focus-visible {
+  border-color: rgba(104, 169, 222, 0.64);
+  background: #edf7fe;
+  box-shadow: 0 6px 14px rgba(83, 135, 176, 0.1);
+  outline: none;
+}
+
+.room-recording-calendar-recording-icon {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  border-radius: 9px;
+  color: #428bd0;
+  background: linear-gradient(145deg, #e2f3ff, #d8f4eb);
+}
+
+.room-recording-calendar-recording-icon svg {
+  width: 13px;
+  height: 13px;
+}
+
+.room-recording-calendar-recording-copy {
+  min-width: 0;
+}
+
+.room-recording-calendar-recording-copy strong,
+.room-recording-calendar-recording-copy small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.room-recording-calendar-recording-copy strong {
+  color: #34536e;
+  font-size: 10px;
+  font-weight: 760;
+}
+
+.room-recording-calendar-recording-copy small {
+  margin-top: 2px;
+  color: #8297aa;
+  font-size: 8px;
+}
+
+.room-recording-calendar-recordings > button > svg {
+  width: 12px;
+  height: 12px;
+  color: #8ba1b4;
+}
+
+.room-recording-calendar-recordings > button > svg.is-favorite {
+  color: #e7a841;
+  fill: currentColor;
+}
+
+.room-recording-calendar-empty {
+  margin: 10px 0 0;
+  padding: 12px;
+  border-radius: 11px;
+  color: #7b91a5;
+  background: rgba(235, 246, 252, 0.72);
+  font-size: 9px;
+  line-height: 1.55;
+}
+
+@media (max-width: 1120px) {
+  .room-recording-calendar {
+    left: 42.4%;
+    width: clamp(204px, 21%, 238px);
+  }
+
+  .room-recording-calendar-grid button {
+    height: 16px;
+  }
+}
+
+/* A small wall calendar should read as room decor first. Recording dots retain
+   the library link without turning the scene into a settings dashboard. */
+.room-recording-calendar {
+  left: 47.1%;
+  top: 3.1%;
+  width: clamp(132px, 11.6%, 162px);
+}
+
+.room-recording-calendar-board {
+  padding: 9px 9px 8px;
+  border-color: rgba(188, 211, 229, 0.58);
+  border-radius: 8px 8px 11px 11px;
+  background: rgba(248, 252, 254, 0.9);
+  box-shadow:
+    0 6px 12px rgba(69, 101, 131, 0.075),
+    inset 0 1px 0 rgba(255, 255, 255, 0.88);
+  backdrop-filter: none;
+}
+
+.room-recording-calendar-board::before {
+  display: none;
+}
+
+.room-recording-calendar-head {
+  position: relative;
+  align-items: center;
+  justify-content: center;
+  min-height: 16px;
+  padding-bottom: 4px;
+  border-bottom: 1px solid rgba(178, 204, 224, 0.46);
+}
+
+.room-recording-calendar-head strong {
+  color: #4e6f8c;
+  font-size: 10px;
+  font-weight: 760;
+}
+
+.room-recording-calendar-head > span {
+  position: absolute;
+  right: 1px;
+  color: #9aabba;
+  font-size: 6px;
+  font-variant-numeric: tabular-nums;
+}
+
+.room-recording-calendar-rings {
+  position: absolute;
+  top: -14px;
+  left: 50%;
+  display: flex;
+  gap: 22px;
+  color: rgba(112, 145, 174, 0.72);
+  transform: translateX(-50%);
+}
+
+.room-recording-calendar-rings svg {
+  width: 8px;
+  height: 13px;
+  stroke-width: 2.2;
+  transform: scaleY(1.55);
+}
+
+.room-recording-calendar-weekdays {
+  margin-top: 4px;
+  padding-bottom: 1px;
+  font-size: 6px;
+}
+
+.room-recording-calendar-weekdays,
+.room-recording-calendar-grid {
+  gap: 1px;
+}
+
+.room-recording-calendar-grid button {
+  height: 12px;
+  border-radius: 4px;
+  font-size: 6.5px;
+}
+
+.room-recording-calendar-grid button:disabled {
+  cursor: default;
+}
+
+.room-recording-calendar-grid button.is-today {
+  background: rgba(91, 161, 220, 0.86);
+  box-shadow: none;
+}
+
+.room-recording-calendar-grid button.is-selected:not(.is-today) {
+  background: rgba(220, 238, 249, 0.76);
+  box-shadow: none;
+}
+
+.room-recording-calendar-grid button i {
+  right: 1px;
+  bottom: 1px;
+  width: 2px;
+  height: 2px;
+}
+
+.room-recording-calendar-shelf {
+  left: 2%;
+  right: 2%;
+  bottom: -13px;
+  opacity: 0.48;
+}
+
+.room-recording-calendar-detail {
+  top: calc(100% + 13px);
+  width: min(258px, 36vw);
+}
+
+@media (max-width: 1120px) {
+  .room-recording-calendar {
+    left: 46.8%;
+    width: clamp(122px, 12%, 146px);
+  }
+
+  .room-recording-calendar-grid button {
+    height: 11px;
+  }
+}
+
+/* Tear-off wall calendar: today's date is the room decoration. */
+.room-recording-calendar {
+  left: 48.7%;
+  top: 3.65%;
+  width: clamp(98px, 8.15%, 118px);
+  pointer-events: none;
+}
+
+.room-recording-calendar-board {
+  display: block;
+  width: 100%;
+  padding: 0;
+  overflow: visible;
+  border-color: rgba(183, 207, 227, 0.62);
+  border-radius: 9px 9px 12px 12px;
+  color: inherit;
+  background: rgba(250, 253, 255, 0.93);
+  box-shadow:
+    0 7px 16px rgba(66, 100, 132, 0.09),
+    inset 0 1px 0 rgba(255, 255, 255, 0.96);
+  font: inherit;
+  text-align: center;
+}
+
+.room-recording-calendar-board:disabled {
+  cursor: default;
+  opacity: 1;
+}
+
+.room-recording-calendar-head {
+  display: flex;
+  min-height: 25px;
+  padding: 8px 6px 5px;
+  border-bottom-color: rgba(158, 193, 220, 0.54);
+  border-radius: 8px 8px 0 0;
+  background: linear-gradient(180deg, rgba(215, 235, 248, 0.82), rgba(231, 244, 252, 0.72));
+}
+
+.room-recording-calendar-head strong {
+  color: #4d6d88;
+  font-family: "Noto Sans SC Variable", "Microsoft YaHei UI", sans-serif;
+  font-size: 9px;
+  font-weight: 720;
+  letter-spacing: 0.12em;
+}
+
+.room-recording-calendar-head > .room-recording-calendar-rings {
+  top: -10px;
+  right: auto;
+  left: 50%;
+  gap: 18px;
+  color: rgba(112, 145, 174, 0.72);
+  transform: translateX(-50%);
+}
+
+.room-recording-calendar-rings svg {
+  width: 7px;
+  height: 10px;
+  stroke-width: 2.2;
+  transform: scaleY(1.45);
+}
+
+.room-recording-calendar-today {
+  position: relative;
+  display: grid;
+  min-height: 72px;
+  place-items: center;
+  align-content: center;
+  padding: 4px 8px 8px;
+}
+
+.room-recording-calendar-today > strong {
+  color: #405f7a;
+  font-family: Bahnschrift, "Segoe UI Variable Display", "Segoe UI", sans-serif;
+  font-size: clamp(34px, 2.9vw, 42px);
+  font-stretch: condensed;
+  font-weight: 560;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.06em;
+  line-height: 0.9;
+}
+
+.room-recording-calendar-today > span {
+  margin-top: 6px;
+  color: #6f879d;
+  font-family: "Noto Sans SC Variable", "Microsoft YaHei UI", sans-serif;
+  font-size: 7px;
+  font-weight: 680;
+  letter-spacing: 0.08em;
+  white-space: nowrap;
+}
+
+.room-recording-calendar-today > small {
+  margin-top: 2px;
+  color: #a1b0bd;
+  font-family: Bahnschrift, "Segoe UI", sans-serif;
+  font-size: 6px;
+  font-weight: 500;
+  letter-spacing: 0.14em;
+  line-height: 1;
+}
+
+.room-recording-calendar-shelf {
+  left: -5%;
+  right: -5%;
+  bottom: -11px;
+  opacity: 0.42;
+}
+
+.room-recording-calendar-detail {
+  top: calc(100% + 12px);
+}
+
+@media (max-width: 1120px) {
+  .room-recording-calendar {
+    left: 48.5%;
+    width: clamp(92px, 8.25%, 106px);
+  }
+}
+
+.scene-wall-clock {
+  top: 4.35%;
 }
 
 .scene-wall-clock {
@@ -6447,6 +7256,820 @@ body::before {
 .scene-lounge-corner svg {
   display: block;
   height: auto;
+}
+
+.dynamic-weather-window {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  border: 5px solid rgba(249, 252, 255, 0.96);
+  border-radius: 22px;
+  background: #e4f2fb;
+  box-shadow:
+    0 12px 26px rgba(74, 111, 145, 0.1),
+    inset 0 0 0 1px rgba(185, 211, 231, 0.64);
+}
+
+.scene-ambient-tooltip {
+  position: absolute;
+  z-index: 6;
+  display: block;
+  max-width: calc(100% - 20px);
+  padding: 5px 9px;
+  overflow: hidden;
+  border: 1px solid rgba(184, 207, 228, 0.76);
+  border-radius: 9px;
+  color: #49647f;
+  background: rgba(247, 251, 254, 0.9);
+  box-shadow: 0 5px 12px rgba(55, 82, 109, 0.1);
+  font-size: 11px;
+  font-weight: 650;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  opacity: 0;
+  pointer-events: none;
+  transform: translate3d(-50%, 4px, 0);
+  transition:
+    transform 160ms ease-out,
+    opacity 160ms ease-out;
+}
+
+.weather-window-tooltip {
+  bottom: 8px;
+  left: 50%;
+}
+
+.dynamic-weather-window:hover .weather-window-tooltip {
+  opacity: 1;
+  transform: translate3d(-50%, 0, 0);
+}
+
+.weather-window-view {
+  position: absolute;
+  inset: 5px;
+  overflow: hidden;
+  border-radius: 15px;
+  background: linear-gradient(180deg, #b9dcf6 0%, #dff1fb 58%, #edf7f9 100%);
+}
+
+.weather-phase-dawn .weather-window-view {
+  background: linear-gradient(180deg, #bed8ef 0%, #f2d9c7 56%, #edf4f6 100%);
+}
+
+.weather-phase-dusk .weather-window-view {
+  background: linear-gradient(180deg, #9ebbd7 0%, #e8c9b9 58%, #dfe8ed 100%);
+}
+
+.weather-phase-night .weather-window-view {
+  background: linear-gradient(180deg, #253d61 0%, #3f5e7d 63%, #60778b 100%);
+}
+
+.weather-scene-overcast .weather-window-view,
+.weather-scene-light_rain .weather-window-view,
+.weather-scene-heavy_rain .weather-window-view,
+.weather-scene-thunderstorm .weather-window-view {
+  background: linear-gradient(180deg, #93aabd 0%, #bacbd7 62%, #dce6eb 100%);
+}
+
+.weather-scene-heavy_rain .weather-window-view,
+.weather-scene-thunderstorm .weather-window-view {
+  background: linear-gradient(180deg, #62788e 0%, #879cac 64%, #bccbd4 100%);
+}
+
+.weather-scene-snow .weather-window-view {
+  background: linear-gradient(180deg, #b9d1e3 0%, #dfeef5 58%, #f5fafc 100%);
+}
+
+.weather-scene-fog .weather-window-view {
+  background: linear-gradient(180deg, #c8d3d9 0%, #dce4e7 62%, #edf1f2 100%);
+}
+
+.weather-sky-orb {
+  position: absolute;
+  top: 13%;
+  right: 15%;
+  width: 18px;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  background: #fff3bd;
+  box-shadow: 0 0 18px rgba(255, 236, 174, 0.58);
+  opacity: 0.88;
+}
+
+.weather-phase-night .weather-sky-orb {
+  background: #eaf3fb;
+  box-shadow: 0 0 12px rgba(226, 242, 255, 0.35);
+  opacity: 0.8;
+}
+
+.weather-scene-overcast .weather-sky-orb,
+.weather-scene-light_rain .weather-sky-orb,
+.weather-scene-heavy_rain .weather-sky-orb,
+.weather-scene-thunderstorm .weather-sky-orb,
+.weather-scene-fog .weather-sky-orb {
+  opacity: 0;
+}
+
+.weather-distant-silhouette {
+  position: absolute;
+  right: 4%;
+  bottom: 0;
+  left: 4%;
+  display: flex;
+  align-items: flex-end;
+  gap: 3px;
+  height: 39%;
+  opacity: 0.25;
+}
+
+.weather-distant-silhouette span {
+  flex: 1;
+  min-width: 22px;
+  border-radius: 5px 5px 0 0;
+  background: #7d9eb6;
+}
+
+.weather-distant-silhouette span:nth-child(1) {
+  height: 58%;
+}
+.weather-distant-silhouette span:nth-child(2) {
+  height: 82%;
+}
+.weather-distant-silhouette span:nth-child(3) {
+  height: 66%;
+}
+.weather-distant-silhouette span:nth-child(4) {
+  height: 92%;
+}
+
+.weather-phase-night .weather-distant-silhouette {
+  opacity: 0.45;
+}
+
+.weather-phase-night .weather-distant-silhouette span {
+  background:
+    radial-gradient(circle at 30% 35%, rgba(255, 226, 145, 0.58) 0 1px, transparent 1.6px), #20364d;
+  background-size: 12px 12px;
+}
+
+.weather-cloud {
+  position: absolute;
+  width: 74px;
+  height: 19px;
+  border-radius: 999px;
+  background: rgba(247, 251, 253, 0.76);
+  box-shadow:
+    18px -8px 0 -2px rgba(247, 251, 253, 0.74),
+    40px -3px 0 -4px rgba(247, 251, 253, 0.7);
+  animation: weather-cloud-drift 22s linear infinite;
+}
+
+.weather-cloud-one {
+  top: 27%;
+  left: -24%;
+}
+.weather-cloud-two {
+  top: 50%;
+  left: 38%;
+  opacity: 0.72;
+  animation-duration: 30s;
+  animation-delay: -12s;
+}
+
+.weather-scene-overcast .weather-cloud,
+.weather-scene-light_rain .weather-cloud,
+.weather-scene-heavy_rain .weather-cloud,
+.weather-scene-thunderstorm .weather-cloud {
+  background: rgba(213, 224, 231, 0.82);
+  box-shadow:
+    18px -8px 0 -2px rgba(213, 224, 231, 0.82),
+    40px -3px 0 -4px rgba(213, 224, 231, 0.78);
+}
+
+.weather-rain-layer,
+.weather-snow-layer {
+  position: absolute;
+  inset: 0;
+}
+
+.weather-rain-layer span {
+  --weather-index: 0;
+  position: absolute;
+  top: -18%;
+  left: calc((var(--weather-index) * 7.4%));
+  width: 1px;
+  height: 18px;
+  border-radius: 999px;
+  background: rgba(225, 243, 253, 0.72);
+  transform: rotate(12deg);
+  animation: weather-rain-fall 1.15s linear infinite;
+  animation-delay: calc(var(--weather-index) * -0.13s);
+}
+
+.weather-scene-heavy_rain .weather-rain-layer span,
+.weather-scene-thunderstorm .weather-rain-layer span {
+  height: 25px;
+  opacity: 0.86;
+  animation-duration: 0.72s;
+}
+
+.weather-snow-layer span {
+  --weather-index: 0;
+  position: absolute;
+  top: -10%;
+  left: calc((var(--weather-index) * 9.2%));
+  width: 4px;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.88);
+  animation: weather-snow-fall 6.4s linear infinite;
+  animation-delay: calc(var(--weather-index) * -0.48s);
+}
+
+.weather-fog-layer {
+  position: absolute;
+  inset: 0;
+  background: rgba(239, 244, 246, 0.42);
+  animation: weather-fog-breathe 10s ease-in-out infinite alternate;
+}
+
+.weather-lightning {
+  position: absolute;
+  inset: 0;
+  background: rgba(224, 239, 255, 0.68);
+  opacity: 0;
+  animation: weather-lightning-pulse 14s linear infinite;
+}
+
+.weather-window-frame {
+  position: absolute;
+  inset: 0;
+  border: 1px solid rgba(189, 211, 229, 0.78);
+  border-radius: 18px;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.94);
+}
+
+.weather-window-mullion {
+  position: absolute;
+  top: 5px;
+  bottom: 16px;
+  left: 50%;
+  width: 4px;
+  transform: translateX(-50%);
+  border-radius: 999px;
+  background: rgba(250, 253, 255, 0.9);
+  box-shadow: 0 0 0 1px rgba(203, 220, 233, 0.4);
+}
+
+.weather-window-sill {
+  position: absolute;
+  right: -2px;
+  bottom: 2px;
+  left: -2px;
+  height: 15px;
+  border-radius: 7px 7px 12px 12px;
+  background: #f5fafc;
+  box-shadow:
+    inset 0 1px 0 #ffffff,
+    0 -1px 0 rgba(191, 213, 230, 0.66);
+}
+
+.weather-window-plants {
+  position: absolute;
+  right: 7%;
+  bottom: 7px;
+  left: 7%;
+  height: 24px;
+}
+
+.weather-plant {
+  position: absolute;
+  bottom: 0;
+  width: 20px;
+  height: 10px;
+  border-radius: 4px 4px 7px 7px;
+  background: #d8e7ee;
+}
+
+.weather-plant::before,
+.weather-plant::after {
+  position: absolute;
+  bottom: 7px;
+  width: 8px;
+  height: 16px;
+  border-radius: 80% 20% 70% 30%;
+  background: #8fd1b0;
+  content: "";
+}
+
+.weather-plant::before {
+  left: 4px;
+  transform: rotate(-22deg);
+}
+.weather-plant::after {
+  right: 3px;
+  transform: rotate(28deg);
+}
+.weather-plant-left {
+  left: 1%;
+}
+.weather-plant-right {
+  right: 1%;
+  transform: scale(0.82);
+}
+
+.dynamic-weather-window.is-motion-paused *,
+.dynamic-weather-window.is-motion-paused *::before,
+.dynamic-weather-window.is-motion-paused *::after {
+  animation-play-state: paused !important;
+}
+
+.team-island.is-visual-motion-paused *,
+.team-island.is-visual-motion-paused *::before,
+.team-island.is-visual-motion-paused *::after {
+  animation-play-state: paused !important;
+}
+
+@keyframes weather-cloud-drift {
+  from {
+    transform: translate3d(0, 0, 0);
+  }
+  to {
+    transform: translate3d(280px, 0, 0);
+  }
+}
+
+@keyframes weather-rain-fall {
+  from {
+    transform: translate3d(0, -15px, 0) rotate(12deg);
+    opacity: 0;
+  }
+  14% {
+    opacity: 0.82;
+  }
+  to {
+    transform: translate3d(-15px, 150px, 0) rotate(12deg);
+    opacity: 0.25;
+  }
+}
+
+@keyframes weather-snow-fall {
+  from {
+    transform: translate3d(0, -10px, 0);
+    opacity: 0;
+  }
+  12% {
+    opacity: 0.9;
+  }
+  to {
+    transform: translate3d(18px, 145px, 0);
+    opacity: 0.22;
+  }
+}
+
+@keyframes weather-fog-breathe {
+  from {
+    transform: translate3d(-5px, 0, 0);
+    opacity: 0.38;
+  }
+  to {
+    transform: translate3d(5px, 0, 0);
+    opacity: 0.54;
+  }
+}
+
+@keyframes weather-lightning-pulse {
+  0%,
+  72%,
+  74%,
+  100% {
+    opacity: 0;
+  }
+  72.5% {
+    opacity: 0.32;
+  }
+  73.1% {
+    opacity: 0.05;
+  }
+  73.5% {
+    opacity: 0.18;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dynamic-weather-window *,
+  .dynamic-weather-window *::before,
+  .dynamic-weather-window *::after {
+    animation-play-state: paused !important;
+  }
+}
+
+.weather-settings-block {
+  border-top: 1px solid rgba(219, 232, 247, 0.82);
+  padding-top: 12px;
+}
+
+.weather-location-controls {
+  display: flex;
+  min-width: 230px;
+  align-items: center;
+  gap: 8px;
+  color: #66809a;
+}
+
+.weather-location-trigger {
+  display: inline-flex;
+  min-width: 230px;
+  min-height: 48px;
+  align-items: center;
+  gap: 10px;
+  border: 1px solid rgba(156, 190, 224, 0.58);
+  border-radius: 14px;
+  background: rgba(249, 252, 255, 0.9);
+  padding: 7px 10px 7px 12px;
+  color: #55718e;
+  text-align: left;
+}
+
+.weather-location-trigger:hover {
+  border-color: rgba(77, 163, 255, 0.66);
+  background: #f2f8ff;
+}
+
+.weather-location-trigger-copy {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.weather-location-trigger-copy strong {
+  overflow: hidden;
+  color: #213b57;
+  font-size: 14px;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.weather-location-trigger-copy span {
+  color: #8095aa;
+  font-size: 11px;
+}
+
+.weather-location-trigger:focus-visible,
+.weather-city-dialog button:focus-visible,
+.weather-city-dialog input:focus-visible {
+  outline: 2px solid rgba(77, 163, 255, 0.34);
+  outline-offset: 2px;
+}
+
+.weather-city-dialog {
+  position: fixed;
+  inset: 0;
+  width: min(760px, calc(100vw - 48px));
+  height: min(650px, calc(100dvh - 64px));
+  max-width: none;
+  max-height: none;
+  margin: auto;
+  overflow: hidden;
+  border: 1px solid rgba(159, 194, 230, 0.66);
+  border-radius: 22px;
+  background: #f8fbff;
+  padding: 0;
+  color: #243b55;
+  box-shadow: 0 24px 70px rgba(39, 74, 111, 0.24);
+}
+
+.weather-city-dialog::backdrop {
+  background: rgba(31, 51, 73, 0.28);
+  backdrop-filter: blur(3px);
+}
+
+.weather-city-dialog-shell {
+  display: flex;
+  height: 100%;
+  min-height: 0;
+  flex-direction: column;
+}
+
+.weather-city-dialog-header {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 24px;
+  border-bottom: 1px solid rgba(205, 222, 240, 0.86);
+  padding: 24px 26px 18px;
+}
+
+.weather-city-dialog-header h2 {
+  margin: 0;
+  color: #1f3853;
+  font-size: 21px;
+  font-weight: 760;
+  letter-spacing: -0.02em;
+  text-wrap: balance;
+}
+
+.weather-city-dialog-header p {
+  margin: 5px 0 0;
+  color: #7890a8;
+  font-size: 13px;
+  line-height: 1.5;
+  text-wrap: pretty;
+}
+
+.weather-city-dialog-close {
+  display: inline-flex;
+  width: 36px;
+  height: 36px;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(179, 205, 232, 0.72);
+  border-radius: 11px;
+  background: #fff;
+  color: #68819a;
+}
+
+.weather-city-dialog-close:hover {
+  border-color: rgba(100, 161, 221, 0.72);
+  color: #347bc0;
+}
+
+.weather-city-dialog-search {
+  display: flex;
+  min-height: 48px;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 10px;
+  margin: 18px 26px;
+  border: 1px solid rgba(136, 181, 231, 0.66);
+  border-radius: 14px;
+  background: #fff;
+  padding: 0 15px;
+  color: #5791cb;
+}
+
+.weather-city-dialog-search:focus-within {
+  border-color: rgba(77, 163, 255, 0.9);
+  box-shadow: 0 0 0 3px rgba(77, 163, 255, 0.12);
+}
+
+.weather-city-dialog-search input {
+  min-width: 0;
+  flex: 1;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: #263f59;
+  font: inherit;
+  font-size: 14px;
+}
+
+.weather-city-dialog-search input::placeholder {
+  color: #96a9bb;
+}
+
+.weather-city-dialog-search input::-webkit-search-cancel-button {
+  cursor: pointer;
+}
+
+.weather-city-dialog-content {
+  display: grid;
+  min-height: 0;
+  flex: 1;
+  grid-template-columns: 156px minmax(0, 1fr);
+  border-top: 1px solid rgba(218, 231, 244, 0.76);
+}
+
+.weather-city-region-nav {
+  display: flex;
+  min-height: 0;
+  overflow-y: auto;
+  flex-direction: column;
+  gap: 4px;
+  border-right: 1px solid rgba(210, 225, 241, 0.82);
+  background: rgba(239, 246, 253, 0.72);
+  padding: 15px 12px;
+  overscroll-behavior: contain;
+}
+
+.weather-city-region-nav button {
+  min-height: 39px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  padding: 0 12px;
+  color: #667f99;
+  font-size: 13px;
+  font-weight: 650;
+  text-align: left;
+}
+
+.weather-city-region-nav button:hover {
+  background: rgba(255, 255, 255, 0.78);
+  color: #3578b7;
+}
+
+.weather-city-region-nav button[data-active="true"] {
+  background: #fff;
+  color: #287ac9;
+  box-shadow: 0 2px 9px rgba(61, 110, 159, 0.09);
+}
+
+.weather-city-dialog-results {
+  min-height: 0;
+  overflow-y: auto;
+  padding: 19px 22px 24px;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+
+.weather-city-results-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 14px;
+}
+
+.weather-city-results-heading h3 {
+  margin: 0;
+  color: #29445f;
+  font-size: 14px;
+  font-weight: 720;
+  text-wrap: balance;
+}
+
+.weather-city-results-heading span {
+  color: #8ca0b4;
+  font-size: 11px;
+}
+
+.weather-city-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.weather-city-grid button {
+  min-height: 40px;
+  overflow: hidden;
+  border: 1px solid rgba(188, 211, 234, 0.72);
+  border-radius: 11px;
+  background: rgba(255, 255, 255, 0.86);
+  padding: 0 10px;
+  color: #4b6782;
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.weather-city-grid button:hover {
+  border-color: rgba(82, 161, 237, 0.7);
+  background: #f0f7ff;
+  color: #2878c3;
+}
+
+.weather-city-grid button[data-selected="true"] {
+  border-color: rgba(77, 163, 255, 0.8);
+  background: #e8f4ff;
+  color: #2378c8;
+  font-weight: 700;
+}
+
+.weather-city-empty {
+  display: flex;
+  min-height: 150px;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 7px;
+  color: #8aa0b6;
+  text-align: center;
+}
+
+.weather-city-empty strong {
+  color: #55718c;
+  font-size: 14px;
+}
+
+.weather-city-empty span {
+  font-size: 12px;
+}
+
+.weather-city-custom {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  margin-top: 18px;
+  border-top: 1px solid rgba(215, 229, 243, 0.88);
+  padding-top: 16px;
+}
+
+.weather-city-custom > div {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.weather-city-custom strong {
+  color: #47637f;
+  font-size: 13px;
+}
+
+.weather-city-custom span {
+  color: #879caf;
+  font-size: 11px;
+}
+
+.weather-city-custom button,
+.weather-city-dialog-footer > button {
+  min-height: 36px;
+  flex: 0 0 auto;
+  border: 1px solid rgba(102, 168, 232, 0.66);
+  border-radius: 11px;
+  background: #eaf5ff;
+  padding: 0 13px;
+  color: #2c7bc5;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.weather-city-custom button:hover,
+.weather-city-dialog-footer > button:hover {
+  background: #dceeff;
+}
+
+.weather-city-dialog-footer {
+  display: flex;
+  min-height: 66px;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  border-top: 1px solid rgba(205, 222, 240, 0.86);
+  background: #fff;
+  padding: 0 26px;
+}
+
+.weather-city-dialog-footer > div {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+  color: #7189a1;
+  font-size: 12px;
+}
+
+@media (max-width: 720px) {
+  .weather-city-dialog {
+    width: calc(100vw - 24px);
+    height: calc(100dvh - 32px);
+    border-radius: 18px;
+  }
+
+  .weather-city-dialog-header {
+    padding: 20px 18px 15px;
+  }
+
+  .weather-city-dialog-search {
+    margin: 14px 18px;
+  }
+
+  .weather-city-dialog-content {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .weather-city-region-nav {
+    overflow-x: auto;
+    flex: 0 0 auto;
+    flex-direction: row;
+    border-right: 0;
+    border-bottom: 1px solid rgba(210, 225, 241, 0.82);
+    padding: 10px 12px;
+  }
+
+  .weather-city-region-nav button {
+    flex: 0 0 auto;
+    white-space: nowrap;
+  }
+
+  .weather-city-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .weather-city-dialog-footer {
+    padding: 0 18px;
+  }
 }
 
 .scene-service-zone {
@@ -6540,6 +8163,11 @@ body::before {
   will-change: transform, opacity;
 }
 
+.scene-character-motion:is(.phase-entering, .phase-walking, .phase-approaching, .phase-turning)
+  .scene-character-anchor {
+  transition: transform 420ms var(--ease-out-soft);
+}
+
 .scene-character-motion:is(.phase-sitting, .phase-away-idle) .scene-character-anchor {
   transition: transform 340ms var(--ease-out-soft);
 }
@@ -6564,14 +8192,6 @@ body::before {
   .room-character-away-label {
   opacity: 0.72;
   transform: translateX(-50%) translateY(2px);
-}
-
-/* A destination update may mute immediately. Hide the stale seat label while
-   the character is travelling so it never flashes an unrelated mute state. */
-.scene-character-motion[data-zone-transitioning="true"] .room-character-label,
-.scene-character-motion[data-zone-transitioning="true"] .room-character-away-label {
-  opacity: 0;
-  transform: translateX(-50%) translateY(4px) scale(0.96);
 }
 
 .scene-character-motion.phase-sitting .room-character-label,
@@ -6792,6 +8412,14 @@ body::before {
   min-height: 154px;
 }
 
+/* Scaling a large backdrop-filter surface forces Chromium to repaint it every frame. */
+.collection-modal-panel.modal-surface {
+  background: rgba(249, 252, 255, 0.985);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  contain: layout paint;
+}
+
 .scene-character-motion .scene-character-anchor.is-audio-controls-open .room-character-label,
 .scene-character-motion .scene-character-anchor.is-audio-controls-open .room-character-away-label {
   opacity: 0;
@@ -6825,11 +8453,11 @@ body::before {
 .recording-library-settings-grid {
   display: grid;
   grid-template-columns: minmax(0, 1.35fr) minmax(320px, 0.65fr);
-  gap: 12px;
+  gap: 10px;
 }
 
 .recording-library-settings-grid .settings-item-row {
-  min-height: 102px;
+  min-height: 78px;
   min-width: 0;
   overflow: hidden;
 }
@@ -6848,15 +8476,38 @@ body::before {
   overflow-wrap: anywhere;
 }
 
+.recording-library-page {
+  display: grid;
+  gap: 14px;
+}
+
+.recording-library-page > .settings-section-card {
+  padding: 14px 16px !important;
+}
+
+.recording-library-page > .settings-section-card .settings-section-heading {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin-bottom: 11px !important;
+  padding-bottom: 10px;
+}
+
+.recording-library-page > .settings-section-card .settings-section-heading p {
+  margin: 0;
+  font-size: 12px;
+}
+
 .recording-library-workspace {
   display: grid;
-  grid-template-columns: minmax(0, 1fr);
+  grid-template-columns: minmax(340px, 390px) minmax(0, 1fr);
   align-items: start;
   gap: 14px;
 }
 
 .recording-library-browser {
-  grid-row: 2;
+  grid-column: 1;
+  grid-row: 1;
   overflow: hidden;
   border: 1px solid rgba(181, 204, 230, 0.68);
   border-radius: 22px;
@@ -6919,9 +8570,45 @@ body::before {
   opacity: 0.48;
 }
 
-.recording-room-filters {
+.recording-browser-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.recording-selection-toggle {
+  display: inline-flex;
+  min-height: 34px;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid rgba(188, 207, 229, 0.72);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.66);
+  padding: 0 10px;
+  color: #63778f;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.recording-selection-toggle svg {
+  width: 14px;
+  height: 14px;
+}
+
+.recording-selection-toggle:is(:hover, .is-active):not(:disabled) {
+  border-color: rgba(79, 151, 235, 0.56);
+  background: rgba(235, 245, 255, 0.86);
+  color: #287fe4;
+}
+
+.recording-selection-toggle:disabled {
+  cursor: not-allowed;
+  opacity: 0.48;
+}
+
+.recording-library-filters {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 5px;
   margin: 0 12px 11px;
   padding: 4px;
@@ -6930,7 +8617,7 @@ body::before {
   background: rgba(235, 242, 250, 0.66);
 }
 
-.recording-room-filters button {
+.recording-library-filters button {
   display: flex;
   min-width: 0;
   min-height: 32px;
@@ -6943,21 +8630,58 @@ body::before {
   font-weight: 700;
 }
 
-.recording-room-filters button.is-active {
+.recording-library-filters button.is-active {
   background: rgba(255, 255, 255, 0.9);
   color: #2e7ed8;
   box-shadow: 0 4px 12px rgba(69, 116, 170, 0.1);
 }
 
-.recording-room-filters small {
+.recording-library-filters small {
   font-size: 10px;
   font-variant-numeric: tabular-nums;
 }
 
+.recording-bulk-toolbar {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 5px;
+  margin: -4px 12px 11px;
+  padding: 6px 7px 6px 10px;
+  border: 1px solid rgba(166, 198, 233, 0.66);
+  border-radius: 11px;
+  background: rgba(240, 247, 255, 0.82);
+  color: #60758e;
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+}
+
+.recording-bulk-toolbar button {
+  min-height: 26px;
+  border-radius: 8px;
+  padding: 0 8px;
+  color: #337ccf;
+}
+
+.recording-bulk-toolbar button:hover:not(:disabled) {
+  background: rgba(216, 236, 255, 0.8);
+}
+
+.recording-bulk-toolbar button.is-danger {
+  color: #c94552;
+}
+
+.recording-bulk-toolbar button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
 .recording-library-panel {
+  grid-column: 2;
   grid-row: 1;
   min-height: 0;
-  padding: 18px;
+  padding: 16px;
   border: 1px solid rgba(181, 204, 230, 0.68);
   border-radius: 22px;
   background: linear-gradient(145deg, rgba(255, 255, 255, 0.76), rgba(238, 246, 255, 0.62));
@@ -7037,7 +8761,7 @@ body::before {
 
 .recording-timeline-wrap {
   position: relative;
-  margin: 20px 4px 8px;
+  margin: 15px 4px 6px;
 }
 
 .recording-timeline {
@@ -7233,9 +8957,7 @@ body::before {
 .recording-library-list {
   display: grid;
   gap: 13px;
-  max-height: 430px;
   padding: 3px 10px 14px 12px;
-  overflow-y: auto;
 }
 
 .recording-date-group {
@@ -7265,7 +8987,7 @@ body::before {
 
 .recording-date-items {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 7px;
 }
 
@@ -7273,7 +8995,7 @@ body::before {
   position: relative;
   display: grid;
   min-width: 0;
-  min-height: 62px;
+  min-height: 72px;
   border: 1px solid rgba(201, 218, 238, 0.52);
   border-radius: 12px;
   background: rgba(255, 255, 255, 0.58);
@@ -7289,6 +9011,11 @@ body::before {
   box-shadow: 0 6px 16px rgba(72, 126, 187, 0.09);
 }
 
+.recording-date-item.is-selected {
+  border-color: rgba(74, 148, 232, 0.72);
+  background: rgba(229, 242, 255, 0.9);
+}
+
 .recording-item-select {
   display: grid;
   width: 100%;
@@ -7298,6 +9025,42 @@ body::before {
   gap: 3px;
   padding: 9px 30px 9px 10px;
   text-align: left;
+}
+
+.recording-date-item.is-selecting .recording-item-select {
+  padding-left: 38px;
+}
+
+.recording-item-check {
+  position: absolute;
+  top: 50%;
+  left: 9px;
+  z-index: 1;
+  display: grid;
+  width: 20px;
+  height: 20px;
+  transform: translateY(-50%);
+  place-items: center;
+  border: 1px solid rgba(144, 174, 209, 0.8);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.82);
+  color: white;
+}
+
+.recording-item-check[aria-pressed="true"] {
+  border-color: #489af0;
+  background: #489af0;
+}
+
+.recording-item-check:focus-visible {
+  outline: 2px solid rgba(72, 154, 240, 0.34);
+  outline-offset: 2px;
+}
+
+.recording-item-check svg {
+  width: 13px;
+  height: 13px;
+  stroke-width: 2.5;
 }
 
 .recording-item-favorite {
@@ -7341,6 +9104,44 @@ body::before {
   font-weight: 600;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.recording-item-ai-status {
+  display: grid;
+  gap: 4px;
+  color: #6c829a;
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+}
+
+.recording-item-ai-status.is-working {
+  color: #287fdc;
+}
+
+.recording-item-ai-status.is-ready {
+  color: #368769;
+}
+
+.recording-item-ai-status.is-error {
+  color: #d9515f;
+}
+
+.recording-item-ai-progress {
+  display: block;
+  height: 3px;
+  overflow: hidden;
+  border-radius: 99px;
+  background: rgba(183, 204, 228, 0.52);
+}
+
+.recording-item-ai-progress > span {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border-radius: inherit;
+  background: #4b98ed;
+  transform-origin: left center;
 }
 
 .recording-library-empty {
@@ -7443,6 +9244,40 @@ body::before {
 
   .recording-date-items {
     grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+/* Local Qwen stays available without blocking the room while a slower answer is generated. */
+.room-ask-popover {
+  position: absolute;
+  top: 72px;
+  right: clamp(360px, 27vw, 510px);
+  z-index: 60;
+  display: flex;
+  width: min(420px, calc(100% - 32px));
+  max-height: calc(100% - 156px - env(safe-area-inset-bottom));
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid rgba(190, 208, 230, 0.78);
+  border-radius: 18px;
+  background: rgba(248, 251, 255, 0.91);
+  box-shadow:
+    0 18px 42px rgba(48, 78, 115, 0.16),
+    inset 0 1px 0 rgba(255, 255, 255, 0.96);
+  backdrop-filter: blur(18px) saturate(128%);
+  -webkit-backdrop-filter: blur(18px) saturate(128%);
+}
+
+.room-ask-popover-body {
+  min-height: 0;
+  overflow-y: auto;
+  padding: 14px 16px 16px;
+  scrollbar-gutter: stable;
+}
+
+@media (max-width: 1180px) {
+  .room-ask-popover {
+    right: 16px;
   }
 }
 
@@ -7999,8 +9834,452 @@ body::before {
 }
 
 .scene-wall-clock {
-  width: clamp(58px, 5.5%, 78px);
+  right: 6.8%;
+  top: 3.1%;
+  width: clamp(94px, 9.2%, 130px);
+  opacity: 0.68;
+  pointer-events: auto;
+}
+
+.room-date-calendar {
+  position: absolute;
+  left: 49.15%;
+  top: 4.05%;
+  z-index: 4;
+  width: clamp(78px, 6.6%, 94px);
+  color: #547087;
+  pointer-events: auto;
+  user-select: none;
+}
+
+.room-date-calendar-paper {
+  position: relative;
+  overflow: visible;
+  border: 1px solid rgba(172, 203, 224, 0.52);
+  border-radius: 6px 6px 8px 8px;
+  background: rgba(232, 244, 250, 0.72);
   opacity: 0.78;
+  box-shadow:
+    0 3px 7px rgba(62, 93, 120, 0.045),
+    inset 0 1px 0 rgba(255, 255, 255, 0.72);
+}
+
+.room-date-calendar-head {
+  position: relative;
+  display: flex;
+  min-height: 18px;
+  align-items: center;
+  justify-content: center;
+  padding: 5px 5px 3px;
+  border-bottom: 1px solid rgba(165, 197, 220, 0.38);
+  border-radius: 5px 5px 0 0;
+  background: rgba(199, 224, 240, 0.36);
+}
+
+.room-date-calendar-rings {
+  position: absolute;
+  top: -6px;
+  left: 50%;
+  display: flex;
+  gap: 14px;
+  color: rgba(109, 143, 169, 0.58);
+  transform: translateX(-50%);
+}
+
+.room-date-calendar-rings svg {
+  width: 5px;
+  height: 7px;
+  stroke-width: 2.2;
+  transform: scaleY(1.35);
+}
+
+.room-date-calendar-today {
+  display: grid;
+  min-height: 49px;
+  place-items: center;
+  align-content: center;
+  padding: 5px 6px 7px;
+}
+
+.room-date-calendar-today strong {
+  color: #506d84;
+  font-family:
+    "Noto Sans SC Variable", "Segoe UI Variable Text", "Segoe UI", "Microsoft YaHei", sans-serif;
+  font-size: clamp(31px, 2.55vw, 37px);
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+  line-height: 0.9;
+}
+
+.room-date-calendar-tooltip {
+  top: calc(100% + 5px);
+  left: 50%;
+  width: max-content;
+  max-width: none;
+  opacity: 0;
+  transform: translate3d(-50%, 3px, 0);
+}
+
+.room-date-calendar:hover .room-date-calendar-tooltip {
+  opacity: 1;
+  transform: translate3d(-50%, 0, 0);
+}
+
+@media (max-width: 1120px) {
+  .room-date-calendar {
+    left: 48.8%;
+    width: clamp(74px, 6.75%, 86px);
+  }
+}
+
+.scene-wall-clock-content {
+  position: relative;
+  width: 100%;
+}
+
+.scene-clock-tooltip {
+  top: calc(100% - 2px);
+  left: 50%;
+  max-width: none;
+  font-variant-numeric: tabular-nums;
+}
+
+.scene-wall-clock-content:hover .scene-clock-tooltip {
+  opacity: 1;
+  transform: translate3d(-50%, 0, 0);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .scene-ambient-tooltip {
+    transition: none;
+  }
+}
+
+.room-collection-shelf-position {
+  position: absolute;
+  right: 3.2%;
+  bottom: 5.4%;
+  z-index: 46;
+  width: clamp(142px, 13.8%, 188px);
+  aspect-ratio: 1.48;
+}
+
+.room-collection-shelf {
+  position: relative;
+  display: block;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  border-radius: 20px;
+  color: #4e6983;
+  background: transparent;
+  cursor: pointer;
+  opacity: 0.68;
+  transition:
+    transform 180ms ease-out,
+    opacity 180ms ease-out;
+}
+
+.room-collection-shelf:hover,
+.room-collection-shelf:focus-visible,
+.room-collection-shelf.is-open,
+.room-collection-shelf.is-drop-target {
+  opacity: 0.94;
+  transform: translateY(-2px) scale(1.01);
+}
+
+.room-collection-shelf:focus-visible {
+  outline: 2px solid rgba(77, 163, 255, 0.7);
+  outline-offset: 4px;
+}
+
+.room-collection-shelf-shadow {
+  position: absolute;
+  inset: 15% 4% 10%;
+  border-radius: 18px;
+  background: rgba(74, 100, 127, 0.075);
+  filter: blur(7px);
+  transform: translateY(4px);
+}
+
+.room-collection-shelf-body {
+  position: absolute;
+  inset: 8% 3% 9%;
+  display: grid;
+  grid-template-rows: 8% 38% 7% 37% 8%;
+  overflow: visible;
+  border: 1px solid rgba(181, 207, 229, 0.48);
+  border-radius: 15px 15px 9px 9px;
+  background: rgba(235, 246, 252, 0.58);
+  box-shadow:
+    0 6px 14px rgba(62, 91, 120, 0.055),
+    inset 0 1px 0 rgba(255, 255, 255, 0.8);
+  transition:
+    transform 180ms ease-out,
+    opacity 180ms ease-out;
+}
+
+.room-collection-shelf-top {
+  margin: -3% -2% 0;
+  border: 1px solid rgba(176, 203, 225, 0.54);
+  border-radius: 9px 9px 3px 3px;
+  background: rgba(248, 252, 254, 0.84);
+  box-shadow: 0 2px 6px rgba(66, 96, 125, 0.05);
+  transition:
+    transform 160ms ease-out,
+    opacity 160ms ease-out;
+}
+
+.room-collection-shelf-display {
+  display: flex;
+  align-items: end;
+  justify-content: center;
+  gap: 5px;
+  min-width: 0;
+  padding: 5% 14% 0;
+  background: rgba(222, 237, 247, 0.42);
+  box-shadow: inset 0 5px 8px rgba(85, 112, 139, 0.035);
+  transition:
+    transform 160ms ease-out,
+    opacity 160ms ease-out;
+}
+
+.room-collection-shelf-board {
+  margin-inline: -2%;
+  border-block: 1px solid rgba(173, 202, 225, 0.48);
+  background: rgba(248, 252, 254, 0.84);
+  box-shadow: 0 2px 5px rgba(66, 96, 125, 0.05);
+  transition:
+    transform 160ms ease-out,
+    opacity 160ms ease-out;
+}
+
+.room-collection-shelf-display.is-lower {
+  align-items: center;
+  justify-content: flex-start;
+  padding: 3% 14%;
+}
+
+.room-collection-shelf-base {
+  margin: 0 -2% -3%;
+  border: 1px solid rgba(181, 207, 228, 0.54);
+  border-radius: 3px 3px 8px 8px;
+  background: rgba(248, 252, 254, 0.84);
+  box-shadow: 0 3px 7px rgba(66, 96, 125, 0.05);
+  transition:
+    transform 160ms ease-out,
+    opacity 160ms ease-out;
+}
+
+.room-collection-object {
+  position: relative;
+  display: grid;
+  flex: 0 1 25%;
+  min-width: 12px;
+  max-width: 27px;
+  height: 79%;
+  place-items: center;
+  overflow: hidden;
+  border: 1px solid rgba(130, 174, 210, 0.58);
+  border-radius: 4px 4px 2px 2px;
+  background: #b9d8f2;
+  color: #537ea5;
+  box-shadow: inset 1px 0 rgba(255, 255, 255, 0.48);
+}
+
+.room-collection-object:nth-child(2n) {
+  height: 92%;
+  background: #a9d8c5;
+  color: #477d68;
+}
+
+.room-collection-object:nth-child(3n) {
+  height: 70%;
+  background: #d5e1ed;
+}
+
+.room-collection-object svg {
+  width: 58%;
+  height: auto;
+  stroke-width: 1.8;
+}
+
+.room-collection-object.is-note {
+  flex-basis: 28%;
+  height: 62%;
+  border-radius: 3px;
+  background: #f3dfa1;
+  color: #9b7b2f;
+  transform: rotate(-2deg);
+}
+
+.room-collection-object.is-image {
+  flex-basis: 34%;
+  height: 72%;
+  border: 2px solid #f7fbfd;
+  border-radius: 3px;
+  background: #c8d9e7;
+  box-shadow: 0 2px 5px rgba(66, 91, 116, 0.12);
+}
+
+.room-collection-object.is-image img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.room-collection-object.is-image svg {
+  display: none;
+}
+
+.room-collection-empty-objects {
+  display: flex;
+  align-items: end;
+  gap: 4px;
+  width: 64%;
+  height: 72%;
+  opacity: 0.48;
+}
+
+.room-collection-empty-objects span {
+  flex: 1;
+  height: 72%;
+  border: 1px dashed rgba(125, 164, 197, 0.7);
+  border-radius: 4px 4px 2px 2px;
+}
+
+.room-collection-empty-objects span:nth-child(2) {
+  height: 100%;
+}
+
+.room-collection-decorative-books {
+  display: flex;
+  align-items: end;
+  gap: 5px;
+  width: 58%;
+  height: 74%;
+}
+
+.room-collection-decorative-books span {
+  width: 34%;
+  height: 86%;
+  border: 1px solid rgba(124, 170, 205, 0.54);
+  border-radius: 4px 4px 2px 2px;
+  background: #b6d6ef;
+  box-shadow: inset 1px 0 rgba(255, 255, 255, 0.45);
+}
+
+.room-collection-decorative-books span:last-child {
+  height: 66%;
+  background: #a8d6c2;
+}
+
+.room-collection-drop-feedback {
+  position: absolute;
+  inset: 23% 11% 20%;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border: 1px solid rgba(112, 172, 228, 0.58);
+  border-radius: 12px;
+  color: #397fc1;
+  background: rgba(241, 248, 254, 0.94);
+  box-shadow: 0 6px 14px rgba(59, 105, 151, 0.1);
+  font-size: 10px;
+  font-weight: 700;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(4px) scale(0.96);
+  transition:
+    transform 160ms ease-out,
+    opacity 160ms ease-out;
+}
+
+.room-collection-drop-feedback svg {
+  width: 14px;
+  height: 14px;
+  stroke-width: 1.9;
+}
+
+.room-collection-shelf-tooltip {
+  position: absolute;
+  right: 2%;
+  bottom: 100%;
+  max-width: 150px;
+  margin-bottom: 5px;
+  padding: 5px 8px;
+  overflow: hidden;
+  border: 1px solid rgba(179, 202, 223, 0.7);
+  border-radius: 8px;
+  color: #526c85;
+  background: rgba(247, 251, 254, 0.94);
+  box-shadow: 0 5px 12px rgba(55, 82, 109, 0.1);
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(3px);
+  transition:
+    transform 160ms ease-out,
+    opacity 160ms ease-out;
+}
+
+.room-collection-shelf:hover .room-collection-shelf-tooltip,
+.room-collection-shelf:focus-visible .room-collection-shelf-tooltip,
+.room-collection-shelf.is-drop-target .room-collection-shelf-tooltip {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.room-collection-shelf-unread {
+  position: absolute;
+  top: 5%;
+  right: 5%;
+  width: 8px;
+  height: 8px;
+  border: 2px solid #f7fbfd;
+  border-radius: 50%;
+  background: #4da3ff;
+  box-shadow: 0 2px 6px rgba(60, 132, 208, 0.3);
+}
+
+.room-collection-shelf.is-drop-target .room-collection-shelf-body {
+  border-color: rgba(77, 163, 255, 0.78);
+  transform: translateY(-2px) scale(1.015);
+}
+
+.room-collection-shelf.is-drop-target .room-collection-shelf-top,
+.room-collection-shelf.is-drop-target .room-collection-shelf-display,
+.room-collection-shelf.is-drop-target .room-collection-shelf-board,
+.room-collection-shelf.is-drop-target .room-collection-shelf-base {
+  opacity: 0.2;
+  transform: translateY(-2px) scale(0.98);
+}
+
+.room-collection-shelf.is-drop-target .room-collection-drop-feedback {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .room-collection-shelf,
+  .room-collection-shelf-body,
+  .room-collection-shelf-top,
+  .room-collection-shelf-display,
+  .room-collection-shelf-board,
+  .room-collection-shelf-base,
+  .room-collection-drop-feedback,
+  .room-collection-shelf-tooltip {
+    transition: none;
+  }
 }
 
 .overlay-position-tools {
@@ -8035,16 +10314,32 @@ body::before {
   pointer-events: none;
 }
 
-.overlay-still-progress rect {
+.overlay-still-progress-track,
+.overlay-still-progress-value {
   fill: none;
-  stroke: url(#overlay-still-progress-gradient);
-  stroke-width: 2;
   stroke-linecap: round;
-  stroke-dasharray: 1;
-  stroke-dashoffset: 1;
-  opacity: 0;
-  filter: drop-shadow(0 0 3px rgba(77, 163, 255, 0.72));
   vector-effect: non-scaling-stroke;
+}
+
+.overlay-still-progress-track {
+  stroke: rgba(129, 177, 224, 0.2);
+  stroke-width: 1.4;
+  opacity: 0;
+  transition: opacity 60ms ease-out;
+}
+
+.overlay-still-progress-value {
+  stroke: #4da3ff;
+  stroke-width: 2.7;
+  opacity: 0;
+}
+
+.overlay-still-progress.is-arming .overlay-still-progress-track {
+  opacity: 0.72;
+}
+
+.overlay-still-progress.is-arming .overlay-still-progress-value {
+  opacity: 1;
 }
 
 .room-history-replay {
@@ -8150,10 +10445,6 @@ body::before {
   font-size: 11px;
   font-weight: 650;
   line-height: 16px;
-}
-
-.chat-delivery-state.is-sending {
-  color: #8a9ab0;
 }
 
 .chat-delivery-state.is-failed {
@@ -8294,6 +10585,235 @@ body::before {
   outline: none;
 }
 
+.voice-memory-detail,
+.voice-memory-empty {
+  margin-top: 12px;
+  border: 1px solid rgb(199 218 241 / 78%);
+  border-radius: 20px;
+  background: rgb(255 255 255 / 54%);
+  box-shadow: 0 12px 28px rgb(69 105 145 / 7%);
+  padding: 16px;
+}
+
+.voice-memory-empty {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.voice-memory-empty > svg {
+  width: 24px;
+  color: #438eea;
+}
+.voice-memory-empty > div {
+  display: grid;
+  flex: 1;
+  gap: 3px;
+}
+.voice-memory-empty span {
+  color: #71839a;
+  font-size: 12px;
+}
+.voice-memory-empty button,
+.voice-memory-detail header button {
+  border-radius: 12px;
+  background: #438eea;
+  color: white;
+  padding: 8px 12px;
+  font-size: 12px;
+  font-weight: 650;
+}
+.voice-memory-empty p {
+  color: #df5360;
+  font-size: 12px;
+}
+.voice-memory-detail header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.voice-memory-detail header > div {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex: 1;
+}
+.voice-memory-detail header svg {
+  width: 17px;
+}
+.voice-memory-detail header > span {
+  font-size: 12px;
+  color: #6b7e95;
+}
+.voice-memory-header-actions {
+  display: inline-flex;
+  flex: 0 0 auto !important;
+  gap: 6px !important;
+}
+.voice-memory-detail header button {
+  display: inline-flex;
+  gap: 5px;
+  align-items: center;
+  background: rgb(235 244 255 / 90%);
+  color: #327dd9;
+}
+.voice-memory-detail header button.voice-memory-quiet-action {
+  border: 1px solid rgb(199 218 241 / 85%);
+  background: rgb(255 255 255 / 62%);
+  color: #526b87;
+}
+.voice-memory-progress {
+  height: 4px;
+  overflow: hidden;
+  margin-top: 12px;
+  border-radius: 99px;
+  background: #dce9f7;
+}
+.voice-memory-progress span {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border-radius: inherit;
+  background: #4395ef;
+  transform-origin: left center;
+}
+.voice-memory-error {
+  margin-top: 10px;
+  color: #dc4f5d;
+  font-size: 12px;
+}
+.voice-memory-timeline {
+  display: flex;
+  gap: 7px;
+  overflow-x: auto;
+  padding: 14px 0 4px;
+}
+.voice-memory-timeline button {
+  min-width: max-content;
+  display: grid;
+  gap: 2px;
+  border: 1px solid #cfdef0;
+  border-radius: 12px;
+  padding: 7px 10px;
+  text-align: left;
+}
+.voice-memory-timeline time {
+  color: #438eea;
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+}
+.voice-memory-timeline span {
+  color: #354b66;
+  font-size: 12px;
+}
+.voice-memory-transcript,
+.voice-memory-highlights,
+.voice-memory-summary,
+.voice-memory-speakers {
+  margin-top: 16px;
+}
+.voice-memory-detail h4 {
+  margin-bottom: 8px;
+  color: #24384f;
+  font-size: 13px;
+  font-weight: 750;
+}
+.voice-memory-transcript {
+  overflow: visible;
+}
+.voice-memory-transcript > button {
+  width: 100%;
+  display: grid;
+  grid-template-columns: 44px minmax(76px, auto) 1fr;
+  gap: 8px;
+  align-items: start;
+  border-radius: 10px;
+  padding: 7px 8px;
+  text-align: left;
+}
+.voice-memory-transcript > button:hover {
+  background: rgb(231 242 255 / 68%);
+}
+.voice-memory-transcript time {
+  color: #4188df;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+.voice-memory-transcript strong {
+  color: #40556e;
+  font-size: 11px;
+}
+.voice-memory-transcript span {
+  color: #283b51;
+  font-size: 12px;
+  line-height: 1.55;
+}
+.voice-memory-highlights {
+  display: grid;
+  gap: 7px;
+}
+.voice-memory-highlights > button {
+  display: grid;
+  gap: 3px;
+  border-radius: 12px;
+  background: rgb(239 246 255 / 70%);
+  padding: 10px;
+  text-align: left;
+}
+.voice-memory-highlights strong {
+  font-size: 12px;
+  color: #2d4766;
+}
+.voice-memory-highlights span {
+  font-size: 11px;
+  color: #71839a;
+}
+.voice-memory-summary {
+  border-left: 3px solid #72adf0;
+  padding-left: 11px;
+}
+.voice-memory-summary button {
+  display: block;
+  width: 100%;
+  padding: 4px 0;
+  color: #40546c;
+  font-size: 12px;
+  line-height: 1.55;
+  text-align: left;
+}
+.voice-memory-speakers {
+  display: grid;
+  gap: 7px;
+}
+.voice-memory-speakers > div {
+  display: grid;
+  grid-template-columns: minmax(80px, auto) 1fr auto;
+  align-items: center;
+  gap: 8px;
+}
+.voice-memory-speakers span {
+  color: #536b85;
+  font-size: 11px;
+}
+.voice-memory-speakers input {
+  min-width: 0;
+  height: 34px;
+  border: 1px solid #cfdef0;
+  border-radius: 10px;
+  background: rgb(255 255 255 / 72%);
+  padding: 0 10px;
+  color: #2d425b;
+  font-size: 12px;
+  outline: none;
+}
+.voice-memory-speakers button {
+  height: 34px;
+  border-radius: 10px;
+  background: #e9f3ff;
+  padding: 0 11px;
+  color: #347fd8;
+  font-size: 11px;
+  font-weight: 700;
+}
 .ai-processing-select:focus-visible {
   border-color: #58a3ef;
   box-shadow: 0 0 0 3px rgba(73, 151, 235, 0.14);
@@ -8302,5 +10822,24 @@ body::before {
 @media (max-width: 1180px) {
   .ai-voice-memory-models {
     grid-template-columns: 1fr;
+  }
+
+  .recording-library-settings-grid,
+  .recording-library-workspace {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .recording-library-panel {
+    grid-column: 1;
+    grid-row: 1;
+  }
+
+  .recording-library-browser {
+    grid-column: 1;
+    grid-row: 2;
+  }
+
+  .recording-date-items {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 }

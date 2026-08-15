@@ -14,15 +14,71 @@ import { gsap } from "gsap";
 import { MemberPresenceState, MemberSpeakingState, type OverlayState } from "@private-voice/shared";
 
 import { motionDuration, motionEase } from "../features/motion/motionSystem";
-import { getAvatarFaceStyle, getAvatarSrc, getStableAvatarId } from "../utils/profile";
+import {
+  getAvatarEmoji,
+  getAvatarFaceStyle,
+  getAvatarSrc,
+  getStableAvatarId,
+} from "../utils/profile";
 
 const OVERLAY_WIDTH = 142;
 const AVATAR_SIZE = 26;
 const ROW_HEIGHT = 36;
 const GAP = 4;
 const PADDING = 5;
-const TOOLS_REVEAL_SECONDS = 3;
+const TOOLS_REVEAL_SECONDS = 1;
 const POINTER_STILL_THRESHOLD = 3;
+
+const OverlayAvatar = ({
+  memberId,
+  nickname,
+  avatarId,
+  dimmed,
+}: {
+  memberId: string;
+  nickname: string;
+  avatarId: ReturnType<typeof getStableAvatarId>;
+  dimmed: boolean;
+}) => {
+  const source = getAvatarSrc(avatarId);
+  const [loadedSource, setLoadedSource] = useState<string>();
+  const isLoaded = loadedSource === source;
+
+  useEffect(() => {
+    setLoadedSource(undefined);
+  }, [memberId, source]);
+
+  return (
+    <>
+      <span
+        aria-hidden="true"
+        style={{
+          position: "absolute",
+          inset: 0,
+          display: "grid",
+          placeItems: "center",
+          fontSize: 17,
+          lineHeight: 1,
+          opacity: isLoaded ? 0 : 1,
+        }}
+      >
+        {getAvatarEmoji(avatarId)}
+      </span>
+      <img
+        src={source}
+        alt={nickname}
+        draggable={false}
+        onLoad={() => setLoadedSource(source)}
+        onError={() => setLoadedSource(undefined)}
+        style={{
+          ...getAvatarFaceStyle(avatarId),
+          opacity: isLoaded ? 1 : 0,
+          filter: dimmed ? "saturate(0.5)" : "none",
+        }}
+      />
+    </>
+  );
+};
 
 export const OverlayPage = () => {
   const rootRef = useRef<HTMLDivElement>(null);
@@ -34,6 +90,7 @@ export const OverlayPage = () => {
   const isDraggingRef = useRef(false);
   const toolsVisibleRef = useRef(false);
   const [toolsVisible, setToolsVisible] = useState(false);
+  const [isHoverArming, setIsHoverArming] = useState(false);
   const [state, setState] = useState<OverlayState>({
     members: [],
     isMuted: false,
@@ -62,6 +119,7 @@ export const OverlayPage = () => {
   );
 
   const revealTools = useCallback(() => {
+    setIsHoverArming(false);
     toolsVisibleRef.current = true;
     setToolsVisible(true);
     void window.desktopApi.overlay.setInteractive(true);
@@ -71,17 +129,20 @@ export const OverlayPage = () => {
     const progress = progressRef.current;
     if (!progress || toolsVisibleRef.current || isDraggingRef.current) return;
     progressTweenRef.current?.kill();
+    setIsHoverArming(true);
     if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
-      gsap.set(progress, { strokeDashoffset: 0, opacity: 0.62 });
+      gsap.set(progress, { attr: { strokeDashoffset: 0 }, opacity: 0.82 });
       progressTweenRef.current = gsap.delayedCall(TOOLS_REVEAL_SECONDS, () => {
         gsap.set(progress, { opacity: 0 });
         revealTools();
       });
       return;
     }
-    gsap.set(progress, { strokeDashoffset: 1, opacity: 1 });
+    // Keep a short visible head on the first frame. A mathematically empty
+    // dash looks like nothing happened even though the timer has started.
+    gsap.set(progress, { attr: { strokeDashoffset: 98 }, opacity: 1 });
     progressTweenRef.current = gsap.to(progress, {
-      strokeDashoffset: 0,
+      attr: { strokeDashoffset: 0 },
       duration: TOOLS_REVEAL_SECONDS,
       ease: "none",
       onComplete: () => {
@@ -94,7 +155,10 @@ export const OverlayPage = () => {
   const cancelRevealProgress = useCallback(() => {
     progressTweenRef.current?.kill();
     progressTweenRef.current = undefined;
-    if (progressRef.current) gsap.set(progressRef.current, { strokeDashoffset: 1, opacity: 0 });
+    setIsHoverArming(false);
+    if (progressRef.current) {
+      gsap.set(progressRef.current, { attr: { strokeDashoffset: 100 }, opacity: 0 });
+    }
   }, []);
 
   const armStationaryTools = (event: React.MouseEvent<HTMLDivElement>) => {
@@ -102,12 +166,13 @@ export const OverlayPage = () => {
     if (toolsVisibleRef.current || isDraggingRef.current) return;
     const previous = lastPointerRef.current;
     const next = { x: event.screenX, y: event.screenY };
-    lastPointerRef.current = next;
     if (!previous) {
+      lastPointerRef.current = next;
       startRevealProgress();
       return;
     }
     if (Math.hypot(next.x - previous.x, next.y - previous.y) >= POINTER_STILL_THRESHOLD) {
+      lastPointerRef.current = next;
       startRevealProgress();
     }
   };
@@ -121,22 +186,34 @@ export const OverlayPage = () => {
     void window.desktopApi.overlay.setInteractive(false);
   }, [cancelRevealProgress]);
 
-  const scheduleHideTools = () => {
+  const scheduleHideTools = useCallback(() => {
     if (isDraggingRef.current) return;
     if (hideTimerRef.current) window.clearTimeout(hideTimerRef.current);
     hideTimerRef.current = window.setTimeout(() => {
       hideTimerRef.current = undefined;
       hideTools();
     }, 220);
-  };
+  }, [hideTools]);
 
-  const keepToolsOpen = () => {
+  const keepToolsOpen = useCallback(() => {
     if (hideTimerRef.current) {
       window.clearTimeout(hideTimerRef.current);
       hideTimerRef.current = undefined;
     }
     if (!toolsVisibleRef.current && !isDraggingRef.current) startRevealProgress();
-  };
+  }, [startRevealProgress]);
+
+  useEffect(
+    () =>
+      window.desktopApi.overlay.onHoverState((inside) => {
+        if (inside) {
+          keepToolsOpen();
+          return;
+        }
+        scheduleHideTools();
+      }),
+    [keepToolsOpen, scheduleHideTools],
+  );
 
   const finishDrag = (target?: HTMLButtonElement, pointerId?: number) => {
     isDraggingRef.current = false;
@@ -221,26 +298,33 @@ export const OverlayPage = () => {
       }}
     >
       <svg
-        className="overlay-still-progress"
+        className={`overlay-still-progress ${isHoverArming ? "is-arming" : ""}`}
         viewBox={`0 0 ${OVERLAY_WIDTH} ${windowHeight}`}
         preserveAspectRatio="none"
         aria-hidden="true"
       >
-        <defs>
-          <linearGradient id="overlay-still-progress-gradient" x1="0" y1="0" x2="1" y2="1">
-            <stop offset="0" stopColor="#74D9FF" />
-            <stop offset="0.48" stopColor="#4DA3FF" />
-            <stop offset="1" stopColor="#8FE7C4" />
-          </linearGradient>
-        </defs>
         <rect
+          className="overlay-still-progress-track"
+          x="2"
+          y="2"
+          width={OVERLAY_WIDTH - 4}
+          height={Math.max(1, windowHeight - 4)}
+          rx="13"
+          pathLength="100"
+          strokeDasharray="100"
+          strokeDashoffset="0"
+        />
+        <rect
+          className="overlay-still-progress-value"
           ref={progressRef}
           x="2"
           y="2"
           width={OVERLAY_WIDTH - 4}
           height={Math.max(1, windowHeight - 4)}
           rx="13"
-          pathLength="1"
+          pathLength="100"
+          strokeDasharray="100"
+          strokeDashoffset="100"
         />
       </svg>
       <div
@@ -370,14 +454,11 @@ export const OverlayPage = () => {
                     "border-color 220ms cubic-bezier(0.16,1,0.3,1), box-shadow 220ms cubic-bezier(0.16,1,0.3,1), opacity 160ms linear",
                 }}
               >
-                <img
-                  src={getAvatarSrc(avatarId)}
-                  alt=""
-                  draggable={false}
-                  style={{
-                    ...getAvatarFaceStyle(avatarId),
-                    filter: isMuted || isDeafened ? "saturate(0.5)" : "none",
-                  }}
+                <OverlayAvatar
+                  memberId={member.id}
+                  nickname={member.nickname}
+                  avatarId={avatarId}
+                  dimmed={Boolean(isMuted || isDeafened)}
                 />
               </div>
               <span

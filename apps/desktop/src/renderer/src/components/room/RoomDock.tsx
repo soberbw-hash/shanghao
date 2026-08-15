@@ -1,0 +1,250 @@
+import type { Dispatch, RefObject, SetStateAction } from "react";
+import { ChevronDown, Volume2, VolumeX } from "lucide-react";
+import { AnimatePresence } from "framer-motion";
+
+import {
+  RecordingEncoderState,
+  RecordingState,
+  type AppSettings,
+  type AudioDeviceDescriptor,
+} from "@private-voice/shared";
+import { cn } from "@private-voice/ui";
+
+import { AudioControlPopover } from "../audio/AudioControlPopover";
+import { MuteButton } from "../audio/MuteButton";
+import { RecordingButton } from "../audio/RecordingButton";
+import { Button } from "../base/Button";
+import { AnimatedControlIcon } from "../icons/AnimatedControlIcon";
+
+type AudioPanel = "microphone" | "speaker" | undefined;
+
+interface RoomDockProps {
+  voicePulseRef: RefObject<HTMLDivElement | null>;
+  activeAudioPanel: AudioPanel;
+  setActiveAudioPanel: Dispatch<SetStateAction<AudioPanel>>;
+  settings?: AppSettings;
+  inputDevices: AudioDeviceDescriptor[];
+  outputDevices: AudioDeviceDescriptor[];
+  isMuted: boolean;
+  isDeafened: boolean;
+  isNoiseSuppressionSwitching: boolean;
+  recordingState: RecordingState;
+  recordingEncoderState: RecordingEncoderState;
+  localScreenShareActive: boolean;
+  isScreenShareStarting: boolean;
+  isOverlayOpen: boolean;
+  isLeaving: boolean;
+  onToggleMicrophone: () => void;
+  onToggleDeafen: () => void;
+  onSwitchInputDevice: (deviceId?: string) => void;
+  onMicrophoneVolumePreview: (volume: number) => void;
+  onMicrophoneVolumeCommit: (volume: number) => void;
+  onNoiseSuppressionChange: () => void;
+  onEchoCancellationChange: (value: boolean) => void;
+  onVoiceEnhancementChange: (value: boolean) => void;
+  onAutoGainChange: (value: boolean) => void;
+  onResetMicrophoneVolume: () => void;
+  onSwitchOutputDevice: (deviceId?: string) => void;
+  onSpeakerVolumePreview: (volume: number) => void;
+  onSpeakerVolumeCommit: (volume: number) => void;
+  onLoudnessBalanceChange: (enabled: boolean) => void;
+  onTestSpeaker: () => void;
+  onResetSpeakerVolume: () => void;
+  onToggleRecording: () => void;
+  onToggleScreenShare: () => void;
+  onToggleOverlay: () => void;
+  onLeave: () => void;
+}
+
+export const RoomDock = ({
+  voicePulseRef,
+  activeAudioPanel,
+  setActiveAudioPanel,
+  settings,
+  inputDevices,
+  outputDevices,
+  isMuted,
+  isDeafened,
+  isNoiseSuppressionSwitching,
+  recordingState,
+  recordingEncoderState,
+  localScreenShareActive,
+  isScreenShareStarting,
+  isOverlayOpen,
+  isLeaving,
+  onToggleMicrophone,
+  onToggleDeafen,
+  onSwitchInputDevice,
+  onMicrophoneVolumePreview,
+  onMicrophoneVolumeCommit,
+  onNoiseSuppressionChange,
+  onEchoCancellationChange,
+  onVoiceEnhancementChange,
+  onAutoGainChange,
+  onResetMicrophoneVolume,
+  onSwitchOutputDevice,
+  onSpeakerVolumePreview,
+  onSpeakerVolumeCommit,
+  onLoudnessBalanceChange,
+  onTestSpeaker,
+  onResetSpeakerVolume,
+  onToggleRecording,
+  onToggleScreenShare,
+  onToggleOverlay,
+  onLeave,
+}: RoomDockProps) => (
+  <footer
+    ref={voicePulseRef}
+    data-gsap-room="dock"
+    className="voice-dock flex items-center gap-2 px-3 py-2.5"
+  >
+    <div className="voice-primary-controls" data-gsap-voice="primary">
+      <div className="voice-segmented-control audio-control-anchor" data-audio-control-root>
+        <MuteButton
+          isMuted={isMuted}
+          onClick={onToggleMicrophone}
+          className="voice-segmented-main"
+        />
+        <button
+          type="button"
+          className={cn(
+            "audio-control-trigger voice-segmented-arrow",
+            activeAudioPanel === "microphone" && "is-active",
+          )}
+          title="麦克风设备、降噪、自动增益与发送音量"
+          aria-label="打开麦克风设备、降噪、自动增益与发送音量"
+          aria-expanded={activeAudioPanel === "microphone"}
+          onClick={() =>
+            setActiveAudioPanel((current) => (current === "microphone" ? undefined : "microphone"))
+          }
+        >
+          <ChevronDown className="h-4 w-4" aria-hidden="true" />
+        </button>
+        <AnimatePresence>
+          {activeAudioPanel === "microphone" && settings ? (
+            <AudioControlPopover
+              title="麦克风"
+              devices={inputDevices}
+              deviceId={settings.preferredInputDeviceId}
+              volume={settings.microphoneSendVolume}
+              min={0.5}
+              max={1.5}
+              onDeviceChange={onSwitchInputDevice}
+              onVolumePreview={onMicrophoneVolumePreview}
+              onVolumeCommit={onMicrophoneVolumeCommit}
+              noiseSuppressionEnabled={settings.isNoiseSuppressionEnabled}
+              isNoiseSuppressionSwitching={isNoiseSuppressionSwitching}
+              onNoiseSuppressionChange={onNoiseSuppressionChange}
+              echoCancellationEnabled={settings.isEchoCancellationEnabled}
+              onEchoCancellationChange={onEchoCancellationChange}
+              voiceEnhancementEnabled={settings.isVoiceEnhancementEnabled}
+              onVoiceEnhancementChange={onVoiceEnhancementChange}
+              autoGainEnabled={settings.isAutoGainControlEnabled}
+              onAutoGainChange={onAutoGainChange}
+              onReset={onResetMicrophoneVolume}
+            />
+          ) : null}
+        </AnimatePresence>
+      </div>
+      <div className="voice-segmented-control audio-control-anchor" data-audio-control-root>
+        <Button
+          variant={isDeafened ? "danger" : "ghost"}
+          data-icon-motion="speaker"
+          data-ui-sound="handled"
+          className={cn(
+            "voice-action-button-with-text voice-main-control voice-segmented-main",
+            isDeafened && "voice-main-control-danger",
+          )}
+          onClick={onToggleDeafen}
+        >
+          {isDeafened ? (
+            <VolumeX className="voice-primary-icon" aria-hidden="true" />
+          ) : (
+            <Volume2 className="voice-primary-icon" aria-hidden="true" />
+          )}
+          <span className="voice-action-label">{isDeafened ? "扬声器关" : "扬声器开"}</span>
+        </Button>
+        <button
+          type="button"
+          className={cn(
+            "audio-control-trigger voice-segmented-arrow",
+            activeAudioPanel === "speaker" && "is-active",
+          )}
+          title="扬声器设备、好友响度平衡与总音量"
+          aria-label="打开扬声器设备、好友响度平衡与总音量"
+          aria-expanded={activeAudioPanel === "speaker"}
+          onClick={() =>
+            setActiveAudioPanel((current) => (current === "speaker" ? undefined : "speaker"))
+          }
+        >
+          <ChevronDown className="h-4 w-4" aria-hidden="true" />
+        </button>
+        <AnimatePresence>
+          {activeAudioPanel === "speaker" && settings ? (
+            <AudioControlPopover
+              title="扬声器"
+              devices={outputDevices}
+              deviceId={settings.preferredOutputDeviceId}
+              volume={settings.speakerMasterVolume}
+              min={0}
+              max={2}
+              onDeviceChange={onSwitchOutputDevice}
+              onVolumePreview={onSpeakerVolumePreview}
+              onVolumeCommit={onSpeakerVolumeCommit}
+              loudnessBalanceEnabled={settings.isFriendLoudnessBalanceEnabled}
+              onLoudnessBalanceChange={onLoudnessBalanceChange}
+              onTest={onTestSpeaker}
+              onReset={onResetSpeakerVolume}
+            />
+          ) : null}
+        </AnimatePresence>
+      </div>
+    </div>
+    <div className="flex-1" />
+    <div className="voice-action-group" aria-label="频道操作">
+      <RecordingButton
+        isRecording={recordingState === RecordingState.Recording}
+        onClick={onToggleRecording}
+        disabled={recordingEncoderState === RecordingEncoderState.Unsupported}
+      />
+      <Button
+        variant={localScreenShareActive ? "secondary" : "ghost"}
+        data-icon-motion="screen-share"
+        className={`voice-action-button-with-text ${localScreenShareActive || isScreenShareStarting ? "screen-share-active-button" : ""}`}
+        disabled={isScreenShareStarting}
+        aria-pressed={localScreenShareActive}
+        onClick={onToggleScreenShare}
+      >
+        <AnimatedControlIcon
+          name="screen-share"
+          active={localScreenShareActive}
+          className="h-4 w-4"
+        />
+        <span className="voice-action-label">
+          {isScreenShareStarting ? "正在开启…" : localScreenShareActive ? "正在分享" : "屏幕分享"}
+        </span>
+      </Button>
+    </div>
+    <div className="voice-action-group voice-window-actions" aria-label="窗口与退出">
+      <Button
+        variant={isOverlayOpen ? "secondary" : "ghost"}
+        data-icon-motion="overlay"
+        className={`voice-action-button-with-text ${isOverlayOpen ? "overlay-active-button" : ""}`}
+        onClick={onToggleOverlay}
+      >
+        <AnimatedControlIcon name="overlay" active={isOverlayOpen} className="h-4 w-4" />
+        <span className="voice-action-label">{isOverlayOpen ? "悬浮窗开" : "悬浮窗关"}</span>
+      </Button>
+      <Button
+        variant="danger"
+        data-icon-motion="exit"
+        className="voice-action-button-with-text voice-exit-button"
+        disabled={isLeaving}
+        onClick={onLeave}
+      >
+        <AnimatedControlIcon name="exit" className="h-4 w-4" />
+        <span className="voice-action-label">{isLeaving ? "退出中" : "退出"}</span>
+      </Button>
+    </div>
+  </footer>
+);

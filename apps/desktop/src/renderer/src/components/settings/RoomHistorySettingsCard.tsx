@@ -86,6 +86,10 @@ export const RoomHistorySettingsCard = ({
   const [previewReport, setPreviewReport] = useState<DailyRoomReport>();
 
   useEffect(() => {
+    void useDailyRoomReportStore.getState().hydrate();
+  }, []);
+
+  useEffect(() => {
     setExpandedDate(reports[0]?.date);
   }, [reports, roomId]);
 
@@ -125,13 +129,16 @@ export const RoomHistorySettingsCard = ({
       <div className="mt-5 grid gap-2.5">
         {!loaded ? <div className="room-history-empty">正在读取…</div> : null}
         {unavailable ? (
-          <div className="room-history-empty">当前服务器暂不支持房间记录。</div>
+          <div className="room-history-empty">
+            {reports.length
+              ? "当前显示本地记录，服务器暂时无法刷新。"
+              : "当前服务器暂不支持房间记录。"}
+          </div>
         ) : null}
         {loaded && !unavailable && reports.length === 0 ? (
-          <div className="room-history-empty">暂无房间记录。</div>
+          <div className="room-history-empty">暂无本地记录，进入一次房间后会自动同步。</div>
         ) : null}
         {loaded &&
-          !unavailable &&
           reports.map((report) => {
             const expanded = expandedDate === report.date;
             return (

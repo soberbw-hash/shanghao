@@ -74,3 +74,27 @@ export interface RecordingLibrarySnapshot {
   quotaBytes: number;
   items: RecordingLibraryItem[];
 }
+
+export type RecordingCleanupReason = "too_short" | "silent" | "unreadable";
+
+export interface RecordingCleanupCandidate {
+  filePath: string;
+  reason: RecordingCleanupReason;
+  durationMs?: number;
+}
+
+export interface RecordingCleanupScan {
+  candidates: RecordingCleanupCandidate[];
+  /** Favorites and recordings with markers are never offered for bulk deletion. */
+  protectedCount: number;
+}
+
+export interface RecordingCleanupProgress {
+  processed: number;
+  total: number;
+}
+
+export interface RecordingBatchDeleteResult {
+  deletedFilePaths: string[];
+  failed: Array<{ filePath: string; message: string }>;
+}

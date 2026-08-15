@@ -48,7 +48,10 @@ export const useScreenShare = ({
   useEffect(() => manager.subscribe(setSnapshot), [manager]);
   useEffect(
     () => () => {
-      void manager.shutdown("component-unmount").finally(() => manager.destroy());
+      // React StrictMode replays effect setup/cleanup during development while retaining
+      // the same hook state. Permanently disposing this manager here makes every later
+      // source enumeration look stale and returns an empty picker.
+      void manager.shutdown("component-unmount");
     },
     [manager],
   );
