@@ -23,11 +23,19 @@ export class PeerRecoveryCoordinator {
   private readonly timers = new Map<string, number>();
   private readonly watchdogs = new Map<string, number>();
   private readonly attempts = new Map<string, number>();
+  private readonly lastRecoveryAt = new Map<string, string>();
 
   constructor(private readonly options: PeerRecoveryCoordinatorOptions) {}
 
   getAttempts(): ReadonlyMap<string, number> {
     return this.attempts;
+  }
+
+  getSnapshot(peerId: string): { count: number; lastRecoveryAt?: string } {
+    return {
+      count: this.attempts.get(peerId) ?? 0,
+      lastRecoveryAt: this.lastRecoveryAt.get(peerId),
+    };
   }
 
   watchConnection(peerId: string, peer: MeshPeerConnection): void {
@@ -66,6 +74,7 @@ export class PeerRecoveryCoordinator {
     });
     const timer = window.setTimeout(() => {
       this.timers.delete(peerId);
+      this.lastRecoveryAt.set(peerId, new Date().toISOString());
       void this.enqueue(peerId, "recover_peer", () => this.recover(peerId, reason)).catch(
         (error) => {
           void writeRendererLog("webrtc", "warn", "Peer media recovery failed", {
@@ -114,7 +123,10 @@ export class PeerRecoveryCoordinator {
     const watchdog = this.watchdogs.get(peerId);
     if (watchdog) window.clearTimeout(watchdog);
     this.watchdogs.delete(peerId);
-    if (resetAttempts) this.attempts.delete(peerId);
+    if (resetAttempts) {
+      this.attempts.delete(peerId);
+      this.lastRecoveryAt.delete(peerId);
+    }
   }
 
   clearAll(): void {

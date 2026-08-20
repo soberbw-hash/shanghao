@@ -281,9 +281,16 @@ test("screen share hook survives React StrictMode effect replay", () => {
 
 test("Windows capture handler only requests loopback audio when the renderer asks for it", () => {
   const source = readFileSync(new URL("../src/main/window.ts", import.meta.url), "utf8");
-  assert.match(source, /request\.audioRequested && process\.platform === "win32"/);
+  const service = readFileSync(
+    new URL("../src/main/screen-capture-service.ts", import.meta.url),
+    "utf8",
+  );
   assert.match(
     source,
+    /request\.audioRequested && platformService\.capabilities\.systemAudioLoopback/,
+  );
+  assert.match(
+    service,
     /requestedSourceId[\s\S]*sources\.find\(\(source\) => source\.id === requestedSourceId\)/,
   );
 });

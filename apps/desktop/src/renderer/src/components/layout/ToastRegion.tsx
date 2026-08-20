@@ -70,7 +70,9 @@ export const ToastRegion = () => {
                 <ToneIcon className="h-4 w-4" />
               </span>
               <span className="toast-copy min-w-0">
-                <span className={`toast-title block text-[13px] font-bold ${classes.title}`}>
+                <span
+                  className={`toast-title block text-balance text-[13px] font-bold ${classes.title}`}
+                >
                   {toast.title}
                   {(toast.repeatCount ?? 1) > 1 ? (
                     <span className="toast-repeat-count">×{toast.repeatCount}</span>
@@ -78,7 +80,7 @@ export const ToastRegion = () => {
                 </span>
                 {toast.description ? (
                   <span
-                    className={`mt-0.5 block text-[12px] leading-[18px] ${classes.description}`}
+                    className={`mt-0.5 block text-pretty text-[12px] leading-[18px] ${classes.description}`}
                   >
                     {toast.description}
                   </span>

@@ -2,6 +2,8 @@ import { execFile } from "node:child_process";
 import { join } from "node:path";
 import { promisify } from "node:util";
 
+import { platformService } from "./platform/PlatformService";
+
 const execFileAsync = promisify(execFile);
 
 export interface WindowsCommandResult {
@@ -13,7 +15,7 @@ export const runWindowsPowerShell = async (
   script: string,
   environment: Record<string, string | undefined> = {},
 ): Promise<WindowsCommandResult> => {
-  if (process.platform !== "win32") {
+  if (!platformService.isWindows) {
     throw new Error("windows_command_not_supported");
   }
 

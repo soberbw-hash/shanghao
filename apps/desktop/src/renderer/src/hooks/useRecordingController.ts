@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef } from "react";
+import { useCallback, useEffect, useMemo } from "react";
 
 import { TARGET_SAMPLE_RATE } from "@private-voice/shared";
 import { RecordingService } from "@private-voice/recording";
@@ -9,24 +9,25 @@ import { useRecordingStore } from "../store/recordingStore";
 import { useRoomStore } from "../store/roomStore";
 import { writeRendererLog } from "../utils/logger";
 
-export const useRecordingController = () => {
-  const localStream = useRoomStore((state) => state.localStream);
-  const remoteStreamsByPeer = useRoomStore((state) => state.remoteStreams);
-  const setStatus = useRecordingStore((state) => state.setStatus);
-  const addHistory = useRecordingStore((state) => state.addHistory);
-  const serviceRef = useRef<RecordingService | null>(null);
-  const mixRef = useRef<ReturnType<typeof createMixedCallStream> | null>(null);
+type MixedCallStream = ReturnType<typeof createMixedCallStream>;
 
-  useEffect(() => {
-    mixRef.current?.sync(localStream, remoteStreamsByPeer);
-  }, [localStream, remoteStreamsByPeer]);
+interface RecordingRuntime {
+  service: RecordingService;
+  mix: MixedCallStream | null;
+}
 
-  const recordingService = useMemo(() => {
-    if (serviceRef.current) {
-      return serviceRef.current;
-    }
+const RECORDING_RUNTIME_KEY = "__shanghaoRecordingRuntimeV2__";
 
-    serviceRef.current = new RecordingService({
+const getRecordingRuntime = (): RecordingRuntime => {
+  const host = globalThis as typeof globalThis & {
+    [RECORDING_RUNTIME_KEY]?: RecordingRuntime;
+  };
+  const existing = host[RECORDING_RUNTIME_KEY];
+  if (existing) return existing;
+
+  const runtime: RecordingRuntime = {
+    mix: null,
+    service: new RecordingService({
       exporter: {
         exportRecording: (payload) => {
           const roomId = useRoomStore.getState().room.roomId === "side" ? "side" : "main";
@@ -46,28 +47,67 @@ export const useRecordingController = () => {
           });
         },
       },
-      onStateChange: (snapshot) => setStatus(snapshot),
+      onStateChange: (snapshot) => useRecordingStore.getState().setStatus(snapshot),
       logger: (message, context) => {
         void writeRendererLog("recording", "info", message, context);
       },
-    });
+    }),
+  };
+  host[RECORDING_RUNTIME_KEY] = runtime;
+  return runtime;
+};
 
-    return serviceRef.current;
-  }, [setStatus]);
+export const useRecordingController = () => {
+  const localStream = useRoomStore((state) => state.localStream);
+  const remoteStreamsByPeer = useRoomStore((state) => state.remoteStreams);
+  const setStatus = useRecordingStore((state) => state.setStatus);
+  const addHistory = useRecordingStore((state) => state.addHistory);
+  const runtime = useMemo(getRecordingRuntime, []);
+  const recordingService = runtime.service;
 
-  const startRecording = () => {
-    if (mixRef.current) return recordingService.getState();
-    mixRef.current = createMixedCallStream(localStream, remoteStreamsByPeer);
-    const status = recordingService.start(mixRef.current.stream);
+  useEffect(() => {
+    runtime.mix?.sync(localStream, remoteStreamsByPeer);
+  }, [localStream, remoteStreamsByPeer, runtime]);
+
+  useEffect(() => {
+    const storedStatus = useRecordingStore.getState().status;
+    if (recordingService.hasRecording()) {
+      setStatus(recordingService.getState());
+      return;
+    }
+
+    if (storedStatus.state === RecordingState.Recording) {
+      setStatus({
+        state: RecordingState.Idle,
+        durationMs: 0,
+        message: "上一次录音会话已中断，请重新开始录音。",
+      });
+      void writeRendererLog("recording", "warn", "recording_runtime_state_reconciled", {
+        storedState: storedStatus.state,
+      });
+    }
+  }, [recordingService, setStatus]);
+
+  const startRecording = useCallback(() => {
+    if (recordingService.hasRecording()) {
+      const status = recordingService.getState();
+      setStatus(status);
+      return status;
+    }
+
+    runtime.mix?.dispose();
+    const roomState = useRoomStore.getState();
+    runtime.mix = createMixedCallStream(roomState.localStream, roomState.remoteStreams);
+    const status = recordingService.start(runtime.mix.stream);
     if (status.state !== RecordingState.Recording) {
-      mixRef.current.dispose();
-      mixRef.current = null;
+      runtime.mix.dispose();
+      runtime.mix = null;
     }
     setStatus(status);
     return status;
-  };
+  }, [recordingService, runtime, setStatus]);
 
-  const stopRecording = async () => {
+  const stopRecording = useCallback(async () => {
     try {
       const result = await recordingService.stop(
         {
@@ -83,20 +123,20 @@ export const useRecordingController = () => {
       setStatus(recordingService.getState());
       return result;
     } finally {
-      mixRef.current?.dispose();
-      mixRef.current = null;
+      runtime.mix?.dispose();
+      runtime.mix = null;
     }
-  };
+  }, [addHistory, recordingService, runtime, setStatus]);
 
-  const discardRecording = async () => {
+  const discardRecording = useCallback(async () => {
     try {
       await recordingService.discard();
       setStatus(recordingService.getState());
     } finally {
-      mixRef.current?.dispose();
-      mixRef.current = null;
+      runtime.mix?.dispose();
+      runtime.mix = null;
     }
-  };
+  }, [recordingService, runtime, setStatus]);
 
   return {
     capability: recordingService.getCapability(),

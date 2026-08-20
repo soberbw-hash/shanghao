@@ -619,11 +619,7 @@ export const SceneCharacter = ({
                 </span>
               ) : null}
             </div>
-            <SceneCharacterLabel
-              member={displayedMember}
-              isAway={displayZone === "restroomZone"}
-              shouldReduceMotion={shouldReduceMotion}
-            />
+            <SceneCharacterLabel member={displayedMember} isAway={displayZone === "restroomZone"} />
           </div>
           <CharacterChatBubble message={chatBubble} shouldReduceMotion={shouldReduceMotion} />
           <SceneReaction reactions={reactions} shouldReduceMotion={shouldReduceMotion} />

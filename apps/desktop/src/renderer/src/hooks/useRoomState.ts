@@ -9,6 +9,7 @@ import {
   type ChatImageAttachment,
   type RoomCollectionItem,
   type RoomMember,
+  type RealtimeFaultCommand,
   type SceneZoneId,
   type SignalingEventPayload,
 } from "@private-voice/shared";
@@ -62,6 +63,11 @@ const ROUTINE_SIGNAL_MESSAGE_TYPES = new Set([
 ]);
 
 export const getRoomRuntimeDiagnostics = () => activeClient?.getDiagnostics();
+
+export const injectRealtimeFault = async (command: RealtimeFaultCommand): Promise<void> => {
+  if (!activeClient) throw new Error("fault_lab_room_client_unavailable");
+  await activeClient.injectFault(command);
+};
 
 const copy = {
   joinTitle: "进入频道失败",
@@ -289,14 +295,19 @@ export const useRoomState = () => {
     setLocalStream(undefined);
   };
 
-  const cleanupPreviousSession = async ({ resetStore = false }: { resetStore?: boolean } = {}) => {
+  const cleanupPreviousSession = async ({
+    resetStore = false,
+    preserveLocalMedia = false,
+  }: { resetStore?: boolean; preserveLocalMedia?: boolean } = {}) => {
     const client = activeClient;
     activeClient = null;
     if (client) {
       await client.disconnect().catch(() => undefined);
     }
 
-    stopLocalMedia();
+    if (!preserveLocalMedia) {
+      stopLocalMedia();
+    }
     previousMemberIds = new Set<string>();
     setConnectionHealth({ reconnectAttempt: 0 });
     if (resetStore) {
@@ -304,7 +315,21 @@ export const useRoomState = () => {
     }
   };
 
-  const ensureLocalStream = async (preferredInputDeviceId?: string) => {
+  const ensureLocalStream = async (
+    preferredInputDeviceId?: string,
+    { reuseExisting = false }: { reuseExisting?: boolean } = {},
+  ) => {
+    if (reuseExisting) {
+      const existingStream =
+        activeProcessedMicrophone?.stream ?? useRoomStore.getState().localStream;
+      const hasLiveAudio = existingStream
+        ?.getAudioTracks()
+        .some((track) => track.readyState === "live");
+      if (existingStream && hasLiveAudio) {
+        return existingStream;
+      }
+    }
+
     const currentSettings = useSettingsStore.getState().settings ?? settings;
     activeProcessedMicrophone?.dispose();
     activeProcessedMicrophone = null;
@@ -360,9 +385,13 @@ export const useRoomState = () => {
     }
   };
 
-  const connectToFixedChannel = async (serverUrl: string, channelId: ChannelId) => {
+  const connectToFixedChannel = async (
+    serverUrl: string,
+    channelId: ChannelId,
+    { reuseLocalMedia = false }: { reuseLocalMedia?: boolean } = {},
+  ) => {
     const currentSettings = useSettingsStore.getState().settings ?? settings;
-    const stream = await ensureLocalStream();
+    const stream = await ensureLocalStream(undefined, { reuseExisting: reuseLocalMedia });
     const peerId = crypto.randomUUID();
     const profileId = currentSettings?.profileId || crypto.randomUUID();
     if (currentSettings && !currentSettings.profileId) {
@@ -656,17 +685,20 @@ export const useRoomState = () => {
 
     await activeClient.connect();
     useDailyRoomReportStore.getState().beginLoading();
-    const reportRequests = await Promise.allSettled([
-      activeClient.requestDailyRoomReports("main"),
-      activeClient.requestDailyRoomReports("side"),
-    ]);
-    const unavailableRooms = (["main", "side"] as const).filter((_, index) => {
-      const result = reportRequests[index];
-      return result?.status === "rejected" || result?.value === false;
+    const reportClient = activeClient;
+    void Promise.allSettled([
+      reportClient.requestDailyRoomReports("main"),
+      reportClient.requestDailyRoomReports("side"),
+    ]).then((reportRequests) => {
+      if (activeClient !== reportClient) return;
+      const unavailableRooms = (["main", "side"] as const).filter((_, index) => {
+        const result = reportRequests[index];
+        return result?.status === "rejected" || result?.value === false;
+      });
+      if (unavailableRooms.length) {
+        useDailyRoomReportStore.getState().setUnavailable([...unavailableRooms]);
+      }
     });
-    if (unavailableRooms.length) {
-      useDailyRoomReportStore.getState().setUnavailable([...unavailableRooms]);
-    }
     const localMember = useRoomStore.getState().room.members.find((member) => member.isLocal);
     activeClient.updateMuteState(useAudioStore.getState().isMuted, false);
     activeClient.updatePresenceState(
@@ -686,7 +718,9 @@ export const useRoomState = () => {
       signalingUrl: serverUrl,
       latestFailureReason: undefined,
     });
-    startSpeakingDetector(stream);
+    if (!reuseLocalMedia) {
+      startSpeakingDetector(stream);
+    }
   };
 
   const joinChannel = (
@@ -735,7 +769,13 @@ export const useRoomState = () => {
       });
 
       try {
-        await cleanupPreviousSession();
+        const reuseLocalMedia = Boolean(
+          activeClient &&
+          activeProcessedMicrophone?.stream
+            .getAudioTracks()
+            .some((track) => track.readyState === "live"),
+        );
+        await cleanupPreviousSession({ preserveLocalMedia: reuseLocalMedia });
         clearChannelContent();
         const readChatHistory = window.desktopApi?.app?.readChatHistory;
         const cachedMessages =
@@ -753,7 +793,7 @@ export const useRoomState = () => {
           serverUrl,
           channelId,
         });
-        await connectToFixedChannel(serverUrl, channelId);
+        await connectToFixedChannel(serverUrl, channelId, { reuseLocalMedia });
         useAppStore.getState().navigate("room");
         pushToast({
           tone: "success",
@@ -886,8 +926,6 @@ export const useRoomState = () => {
     try {
       playUiSound("leave-room");
       setLifecycleState(RoomLifecycleState.Closing);
-      await cleanupPreviousSession({ resetStore: true });
-      previousMemberIds = new Set<string>();
       if (settings) {
         useRoomStore.getState().syncLocalProfile({
           nickname: settings.nickname,
@@ -897,6 +935,8 @@ export const useRoomState = () => {
         });
       }
       useAppStore.getState().navigate("home");
+      await cleanupPreviousSession({ resetStore: true });
+      previousMemberIds = new Set<string>();
     } catch (error) {
       await writeRendererLog("signaling", "error", "Failed to leave room cleanly", {
         error: error instanceof Error ? error.message : String(error),

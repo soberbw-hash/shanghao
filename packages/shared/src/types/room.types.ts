@@ -161,12 +161,29 @@ export interface DailyRoomGameSummary {
 }
 
 export interface DailyRoomGameActivity {
+  identityId?: string;
   nickname: string;
   gameName: string;
   durationMs: number;
 }
 
+export interface DailyRoomParticipantSummary {
+  identityId: string;
+  nickname: string;
+  presenceDurationMs: number;
+  joinSessions: number;
+  gameDurationMs: number;
+  messageCount: number;
+  screenShareCount: number;
+  screenShareDurationMs: number;
+  firstSeenAt: string;
+  lastExitAt?: string;
+}
+
 export interface DailyRoomReport {
+  schemaVersion?: 1;
+  revision?: number;
+  updatedAt?: string;
   roomId: "main" | "side";
   date: string;
   hadActivity: boolean;
@@ -176,8 +193,11 @@ export interface DailyRoomReport {
   peakConcurrent: number;
   messageCount: number;
   screenShareCount: number;
+  screenShareDurationMs?: number;
   games: DailyRoomGameSummary[];
   gameActivities: DailyRoomGameActivity[];
+  participants?: DailyRoomParticipantSummary[];
+  peakConcurrentAt?: string;
   lastExit?: {
     nickname: string;
     at: string;

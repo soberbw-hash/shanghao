@@ -155,18 +155,30 @@ export const DeskAnimalSprite = ({
         draggable={false}
       />
       <span className={`desk-animal-art ${isRearReady ? "is-ready" : ""}`}>
-        <img
-          className="desk-animal-layer desk-animal-body"
-          src={source}
-          alt=""
-          draggable={false}
-          onLoad={() => setReadyRearSource(source)}
-          onError={() =>
-            setReadyRearSource((current) => (current === source ? undefined : current))
-          }
-        />
-        <img className="desk-animal-layer desk-animal-head" src={source} alt="" draggable={false} />
-        <img className="desk-animal-layer desk-animal-arm" src={source} alt="" draggable={false} />
+        <span className="desk-animal-body-rig">
+          <img
+            className="desk-animal-layer desk-animal-body"
+            src={source}
+            alt=""
+            draggable={false}
+            onLoad={() => setReadyRearSource(source)}
+            onError={() =>
+              setReadyRearSource((current) => (current === source ? undefined : current))
+            }
+          />
+          <img
+            className="desk-animal-layer desk-animal-head"
+            src={source}
+            alt=""
+            draggable={false}
+          />
+          <img
+            className="desk-animal-layer desk-animal-arm"
+            src={source}
+            alt=""
+            draggable={false}
+          />
+        </span>
       </span>
     </div>
   );

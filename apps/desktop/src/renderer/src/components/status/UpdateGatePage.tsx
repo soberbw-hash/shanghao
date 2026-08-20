@@ -13,6 +13,7 @@ export const UpdateGatePage = () => {
   const updateInfo = useSettingsStore((state) => state.updateInfo);
   const updateStatus = useSettingsStore((state) => state.updateStatus);
   const downloadUpdate = useSettingsStore((state) => state.downloadUpdate);
+  const installUpdate = useSettingsStore((state) => state.installUpdate);
   const checkUpdates = useSettingsStore((state) => state.checkUpdates);
   const requiredUpdate = useAppStore((state) => state.requiredUpdate);
 
@@ -24,6 +25,7 @@ export const UpdateGatePage = () => {
   const isForced = Boolean(requiredUpdate || updateInfo?.forceUpdate || updateStatus.forceUpdate);
   const isDownloading = updateStatus.phase === "downloading";
   const isInstalling = updateStatus.phase === "installing";
+  const isReady = updateStatus.phase === "ready_to_restart" || updateStatus.phase === "downloaded";
   const isError = updateStatus.phase === "error";
 
   return (
@@ -54,10 +56,12 @@ export const UpdateGatePage = () => {
           {isInstalling
             ? "安装完成后会自动重新打开。"
             : isDownloading
-              ? "下载完成后会自动安装并重启。"
-              : isForced
-                ? "更新后才能继续进入频道。"
-                : "新版已经准备好，点击更新后会自动安装并重新打开。"}
+              ? "正在后台下载，完成后需要你确认安装。"
+              : isReady
+                ? "新版已下载完成，确认后会安装并重新打开。"
+                : isForced
+                  ? "更新后才能继续进入频道。"
+                  : "新版会在后台下载，完成后由你决定何时安装。"}
         </p>
         {requiredUpdate ? (
           <div className="mt-4 rounded-2xl border border-[rgba(174,199,226,0.64)] bg-white/65 px-4 py-3 text-sm leading-6 text-[#44546A]">
@@ -106,9 +110,13 @@ export const UpdateGatePage = () => {
           </div>
         ) : (
           <div className="mt-6 grid gap-2">
-            <Button isFullWidth disabled={isDownloading} onClick={() => void downloadUpdate()}>
-              <Download className="h-4 w-4" />
-              {isDownloading ? "正在更新…" : "立即更新"}
+            <Button
+              isFullWidth
+              disabled={isDownloading}
+              onClick={() => void (isReady ? installUpdate() : downloadUpdate())}
+            >
+              {isReady ? <RefreshCcw className="h-4 w-4" /> : <Download className="h-4 w-4" />}
+              {isReady ? "安装并重新打开" : isDownloading ? "正在下载…" : "开始下载"}
             </Button>
             <Button isFullWidth variant="secondary" onClick={() => setIsReleaseNotesOpen(true)}>
               <FileText className="h-4 w-4" />

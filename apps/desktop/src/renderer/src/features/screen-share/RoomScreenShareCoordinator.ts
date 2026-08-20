@@ -13,8 +13,14 @@ import {
 import { writeRendererLog } from "../../utils/logger";
 import type { RemoteScreenFrame } from "../room/roomClient";
 import { ScreenFrameRelay } from "./ScreenFrameRelay";
+import {
+  ScreenSharePipelineController,
+  type ScreenSharePipelineSnapshot,
+} from "./ScreenSharePipelineController";
 
-const SCREEN_FRAME_INTERVAL_MS = 2_500;
+const SCREEN_FRAME_INTERVAL_MS = 750;
+const SCREEN_DIAGNOSTICS_INTERVAL_MS = 2_000;
+const SCREEN_TRACK_RECOVERY_DELAY_MS = 1_500;
 
 interface RoomScreenShareCoordinatorOptions {
   roomId: string;
@@ -31,6 +37,7 @@ interface RoomScreenShareCoordinatorOptions {
   safeSend: (payload: SignalEnvelope) => Promise<boolean>;
   onRemoteFrame: (peerId: string, frame?: RemoteScreenFrame) => void;
   onRemoteState: (peerId: string, isSharing: boolean) => void;
+  onScreenTrackLost: (peerId: string) => void;
 }
 
 /** Owns local/remote screen-share state and the signaling-frame fallback path. */
@@ -41,6 +48,9 @@ export class RoomScreenShareCoordinator {
   private readonly relayRequestedByPeerIds = new Set<string>();
   private readonly advertisedRelayNeeds = new Map<string, boolean>();
   private readonly relay: ScreenFrameRelay;
+  private readonly pipeline = new ScreenSharePipelineController();
+  private readonly screenRecoveryTimers = new Map<string, number>();
+  private diagnosticsTimer?: number;
 
   constructor(private readonly options: RoomScreenShareCoordinatorOptions) {
     this.relay = new ScreenFrameRelay({
@@ -65,6 +75,10 @@ export class RoomScreenShareCoordinator {
     return this.getRelayTargets().length;
   }
 
+  get diagnostics(): ScreenSharePipelineSnapshot {
+    return this.pipeline.snapshot();
+  }
+
   isRemoteSharing(peerId: string): boolean {
     return this.remoteSharingPeerIds.has(peerId);
   }
@@ -80,6 +94,8 @@ export class RoomScreenShareCoordinator {
     this.relayRequestedByPeerIds.clear();
     this.stream = stream;
     this.profile = profile;
+    this.pipeline.setLocalCapture(videoTrack, profile);
+    this.ensureDiagnosticsSampling();
     const systemAudioTrack = stream.getAudioTracks()[0];
     const microphoneTrack = this.options.getPrimaryInputTrack();
     if (systemAudioTrack && microphoneTrack) {
@@ -109,6 +125,7 @@ export class RoomScreenShareCoordinator {
     this.stream = undefined;
     this.relayRequestedByPeerIds.clear();
     this.relay.stop();
+    this.pipeline.clearLocalCapture();
     await Promise.all(
       [...this.options.getPeers().values()].map((peer) => peer.setScreenTrack(undefined)),
     );
@@ -123,6 +140,7 @@ export class RoomScreenShareCoordinator {
     void writeRendererLog("webrtc", "info", "Screen share track detached", {
       peerCount: this.options.getPeers().size,
     });
+    this.stopDiagnosticsSamplingIfIdle();
   }
 
   handleFrame(payload: ScreenFrameMessage): void {
@@ -142,6 +160,7 @@ export class RoomScreenShareCoordinator {
     if (payload.isSharing) {
       this.remoteSharingPeerIds.add(payload.peerId);
       this.options.onRemoteState(payload.peerId, true);
+      this.ensureDiagnosticsSampling();
       this.advertisePath(
         payload.peerId,
         !this.options.getWebRtcScreenPeerIds().has(payload.peerId),
@@ -154,6 +173,8 @@ export class RoomScreenShareCoordinator {
     this.options.onRemoteState(payload.peerId, false);
     this.advertisePath(payload.peerId, false, "screen_share_stopped");
     this.options.onRemoteFrame(payload.peerId, undefined);
+    this.clearScreenRecoveryTimer(payload.peerId);
+    this.stopDiagnosticsSamplingIfIdle();
   }
 
   handlePathState(payload: ScreenPathStateMessage): void {
@@ -170,6 +191,22 @@ export class RoomScreenShareCoordinator {
 
   syncPeerTrack(peerId: string, hasLiveScreen: boolean): void {
     if (!this.remoteSharingPeerIds.has(peerId)) return;
+    if (hasLiveScreen) {
+      this.clearScreenRecoveryTimer(peerId);
+    } else if (!this.screenRecoveryTimers.has(peerId)) {
+      this.screenRecoveryTimers.set(
+        peerId,
+        window.setTimeout(() => {
+          this.screenRecoveryTimers.delete(peerId);
+          if (
+            this.remoteSharingPeerIds.has(peerId) &&
+            !this.options.getWebRtcScreenPeerIds().has(peerId)
+          ) {
+            this.options.onScreenTrackLost(peerId);
+          }
+        }, SCREEN_TRACK_RECOVERY_DELAY_MS),
+      );
+    }
     this.advertisePath(
       peerId,
       !hasLiveScreen,
@@ -196,6 +233,8 @@ export class RoomScreenShareCoordinator {
     this.remoteSharingPeerIds.delete(peerId);
     this.relayRequestedByPeerIds.delete(peerId);
     this.advertisedRelayNeeds.delete(peerId);
+    this.clearScreenRecoveryTimer(peerId);
+    this.pipeline.clearPeer(peerId);
   }
 
   prune(activePeerIds: Set<string>): void {
@@ -217,12 +256,17 @@ export class RoomScreenShareCoordinator {
     this.relayRequestedByPeerIds.clear();
     this.advertisedRelayNeeds.clear();
     this.relay.stop();
+    for (const peerId of this.screenRecoveryTimers.keys()) this.clearScreenRecoveryTimer(peerId);
+    this.stopDiagnosticsSampling();
+    this.pipeline.clear();
   }
 
   stopTracks(): void {
     this.stream?.getTracks().forEach((track) => track.stop());
     this.stream = undefined;
     this.relay.stop();
+    this.pipeline.clearLocalCapture();
+    this.stopDiagnosticsSamplingIfIdle();
   }
 
   private advertisePath(peerId: string, needsRelay: boolean, reason: string): void {
@@ -254,5 +298,33 @@ export class RoomScreenShareCoordinator {
     } else if ((!this.stream || !targets.length) && this.relay.isActive()) {
       this.relay.stop();
     }
+    this.pipeline.setFallback(this.relay.isActive(), targets.length);
+  }
+
+  private ensureDiagnosticsSampling(): void {
+    if (this.diagnosticsTimer !== undefined) return;
+    const sample = () =>
+      void this.pipeline.sample(this.options.getPeers(), this.remoteSharingPeerIds).catch((error) =>
+        writeRendererLog("webrtc", "warn", "Screen share stats sampling failed", {
+          error: error instanceof Error ? error.message : String(error),
+        }),
+      );
+    sample();
+    this.diagnosticsTimer = window.setInterval(sample, SCREEN_DIAGNOSTICS_INTERVAL_MS);
+  }
+
+  private stopDiagnosticsSamplingIfIdle(): void {
+    if (!this.stream && this.remoteSharingPeerIds.size === 0) this.stopDiagnosticsSampling();
+  }
+
+  private stopDiagnosticsSampling(): void {
+    if (this.diagnosticsTimer !== undefined) window.clearInterval(this.diagnosticsTimer);
+    this.diagnosticsTimer = undefined;
+  }
+
+  private clearScreenRecoveryTimer(peerId: string): void {
+    const timer = this.screenRecoveryTimers.get(peerId);
+    if (timer !== undefined) window.clearTimeout(timer);
+    this.screenRecoveryTimers.delete(peerId);
   }
 }

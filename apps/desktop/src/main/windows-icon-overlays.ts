@@ -1,4 +1,5 @@
 import { parsePowerShellJson, runWindowsPowerShell } from "./windows-command";
+import { platformService } from "./platform/PlatformService";
 
 export interface WindowsIconOverlayStatus {
   supported: boolean;
@@ -87,7 +88,7 @@ if ($process.ExitCode -ne 0) { throw "elevated_command_failed_$($process.ExitCod
 };
 
 export const readWindowsIconOverlayStatus = async (): Promise<WindowsIconOverlayStatus> => {
-  if (process.platform !== "win32") return unsupported();
+  if (!platformService.isWindows) return unsupported();
   try {
     const parsed = parsePowerShellJson<{ arrowHidden?: boolean; shieldHidden?: boolean }>(
       (await runWindowsPowerShell(READ_SCRIPT)).stdout,
@@ -118,7 +119,7 @@ export const readWindowsIconOverlayStatus = async (): Promise<WindowsIconOverlay
 export const setWindowsIconOverlaysHidden = async (
   hidden: boolean,
 ): Promise<WindowsIconOverlayStatus> => {
-  if (process.platform !== "win32") return unsupported();
+  if (!platformService.isWindows) return unsupported();
   const script = hidden ? APPLY_SCRIPT : RESTORE_SCRIPT;
   await runElevatedPowerShell(script);
   return {

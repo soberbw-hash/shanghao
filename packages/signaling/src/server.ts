@@ -324,13 +324,17 @@ export class SignalingServer extends EventEmitter {
           : undefined),
       this.logger,
     );
-    this.dailyRoomReports = DailyRoomReportStore.create(
+    const dailyRoomReportFile =
       process.env.DAILY_ROOM_REPORT_FILE ??
-        (process.env.CHAT_HISTORY_FILE
-          ? `${process.env.CHAT_HISTORY_FILE}.daily-reports.json`
-          : undefined),
-      this.logger,
-    );
+      (process.env.CHAT_HISTORY_FILE
+        ? `${process.env.CHAT_HISTORY_FILE}.daily-reports.json`
+        : undefined);
+    if (process.env.NODE_ENV === "production" && !dailyRoomReportFile) {
+      this.logger?.("daily room reports are not using durable storage", {
+        action: "set DAILY_ROOM_REPORT_FILE or CHAT_HISTORY_FILE to a persistent volume",
+      });
+    }
+    this.dailyRoomReports = DailyRoomReportStore.create(dailyRoomReportFile, this.logger);
     this.httpServer = createServer();
     this.httpServer.on("request", (request, response) => {
       const contentLength = Number(request.headers["content-length"] ?? 0);
@@ -1204,7 +1208,9 @@ export class SignalingServer extends EventEmitter {
     };
 
     history.append(message.roomId, storedMessage);
-    void this.dailyRoomReports.then((store) => store.recordMessage(message.roomId));
+    void this.dailyRoomReports.then((store) =>
+      store.recordMessage(message.roomId, author.profileId || author.id, author.nickname),
+    );
 
     for (const peer of room.peers.listConnectedPeers()) {
       this.safeSend(peer.socket, payload);
@@ -1443,8 +1449,14 @@ export class SignalingServer extends EventEmitter {
       peerId: message.peerId,
       isSharing: message.isSharing,
     };
+    const sharingPeer = room.peers.getPeer(message.peerId);
     void this.dailyRoomReports.then((store) =>
-      store.recordScreenShare(message.roomId, message.peerId, message.isSharing),
+      store.recordScreenShare(
+        message.roomId,
+        sharingPeer?.profileId || message.peerId,
+        message.isSharing,
+        sharingPeer?.nickname || "朋友",
+      ),
     );
 
     for (const peer of room.peers.listConnectedPeers()) {

@@ -3,6 +3,8 @@ import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import test from "node:test";
 
+import { readRendererCss } from "./helpers/read-renderer-css";
+
 const packagePath = path.resolve(process.cwd(), "package.json");
 const homePath = path.resolve(process.cwd(), "src/renderer/src/pages/HomePage.tsx");
 const roomPath = path.resolve(process.cwd(), "src/renderer/src/pages/RoomPage.tsx");
@@ -40,7 +42,6 @@ const deskAnimalPath = path.resolve(
   "src/renderer/src/components/room/DeskAnimalSprite.tsx",
 );
 const hookPath = path.resolve(process.cwd(), "src/renderer/src/hooks/usePrefersReducedMotion.ts");
-const stylesPath = path.resolve(process.cwd(), "src/renderer/src/styles/index.css");
 const appStorePath = path.resolve(process.cwd(), "src/renderer/src/store/appStore.ts");
 const startupPath = path.resolve(
   process.cwd(),
@@ -84,7 +85,7 @@ const updateModalPath = path.resolve(
   "src/renderer/src/components/status/UpdateModal.tsx",
 );
 
-test("gsap motion is wired across the main surfaces with reduced-motion fallback", () => {
+test("gsap motion is scoped to intentional surfaces with reduced-motion fallback", () => {
   const packageJson = JSON.parse(readFileSync(packagePath, "utf8")) as {
     dependencies?: Record<string, string>;
   };
@@ -100,8 +101,9 @@ test("gsap motion is wired across the main surfaces with reduced-motion fallback
   const animalSource = readFileSync(animalPath, "utf8");
   const deskAnimalSource = readFileSync(deskAnimalPath, "utf8");
   const hookSource = readFileSync(hookPath, "utf8");
-  const stylesSource = readFileSync(stylesPath, "utf8");
+  const stylesSource = readRendererCss();
   const appStoreSource = readFileSync(appStorePath, "utf8");
+  const appSource = readFileSync(appPath, "utf8");
   const sharedButtonSource = readFileSync(sharedButtonPath, "utf8");
   const animatedIconSource = readFileSync(animatedIconPath, "utf8");
   const motionPresetsSource = readFileSync(motionPresetsPath, "utf8");
@@ -121,13 +123,13 @@ test("gsap motion is wired across the main surfaces with reduced-motion fallback
 
   assert.match(packageJson.dependencies?.gsap ?? "", /^\^3\./);
   assert.equal(homeSource.includes('from "gsap"'), true);
-  assert.equal(roomSource.includes('from "gsap"'), true);
+  assert.equal(roomSource.includes('from "gsap"'), false);
   assert.equal(settingsSource.includes('from "gsap"'), true);
   assert.equal(chatSource.includes('from "gsap"'), true);
   assert.equal(islandSource.includes('from "gsap"'), true);
   assert.equal(homeSource.includes("data-gsap-entry"), true);
   assert.equal(homeSource.includes("hasPlayedHomeEntrance"), true);
-  assert.equal(roomSource.includes("data-gsap-room"), true);
+  assert.equal(roomSource.includes("data-gsap-room"), false);
   assert.equal(settingsSource.includes("data-gsap-settings"), true);
   assert.equal(chatSource.includes("data-gsap-chat-message"), true);
   assert.equal(sceneCharacterSource.includes("data-gsap-character"), true);
@@ -135,6 +137,8 @@ test("gsap motion is wired across the main surfaces with reduced-motion fallback
   assert.equal(stylesSource.includes("[data-gsap-entry],"), false);
   assert.equal(stylesSource.includes("@media (prefers-reduced-motion: reduce)"), true);
   assert.equal(appStoreSource.includes("startTransition"), true);
+  assert.equal(appSource.includes('initial={basePage === "room" ? { opacity: 0, x: 8 }'), false);
+  assert.equal(appSource.includes("animate={{ opacity: 1, x: 0 }}"), false);
   assert.equal(animalSource.includes("layered-animal"), true);
   assert.equal(animalSource.includes("avatarLayerAssets"), true);
   assert.equal(animalSource.includes("LayerPart"), true);
@@ -220,11 +224,20 @@ test("gsap motion is wired across the main surfaces with reduced-motion fallback
   assert.equal(sceneCharacterSource.includes("room-character-walking-layer"), true);
   assert.equal(sceneCharacterSource.includes("room-character-seated-layer"), true);
   assert.equal(sceneCharacterSource.includes("room-character-away-layer"), true);
-  assert.equal(
-    sceneCharacterSource.includes('<AnimatePresence initial={false} mode="sync">'),
-    false,
+  assert.equal(sceneCharacterLabelSource.includes("AnimatePresence"), false);
+  assert.equal(sceneCharacterLabelSource.includes("motion.span"), false);
+  assert.equal(sceneCharacterLabelSource.includes("room-character-state-icon"), true);
+  assert.equal(sceneCharacterLabelSource.includes('status.icon ? "has-icon" : ""'), true);
+  assert.match(
+    stylesSource,
+    /\.room-character-label\s*\{[^}]*width:\s*148px;[^}]*min-width:\s*148px;[^}]*max-width:\s*148px;/s,
+  );
+  assert.match(
+    stylesSource,
+    /\.room-character-state\s*\{[^}]*display:\s*flex;[^}]*justify-content:\s*center;[^}]*gap:\s*4px;/s,
   );
   assert.equal(stylesSource.includes(".room-character-visual-layer.is-active"), true);
+  assert.equal(stylesSource.includes(".room-character-visual-layer:not(.is-active)"), true);
   assert.equal(stylesSource.includes('data-zone-transitioning="true"'), false);
   assert.equal(sceneCharacterLabelSource.includes("if (isAway)"), false);
   assert.equal(sceneCharacterLabelSource.includes("room-character-away-name"), true);
@@ -255,9 +268,10 @@ test("gsap motion is wired across the main surfaces with reduced-motion fallback
   assert.equal(islandSource.includes("WorkstationArt"), true);
   assert.equal(islandSource.includes("settledMemberBySeat.get(slot.id)"), true);
   assert.equal(islandSource.includes('mode="sync"'), true);
-  assert.match(
+  assert.match(stylesSource, /\.scene-workstation-screen-content\s*\{[^}]*position:\s*absolute;/s);
+  assert.doesNotMatch(
     stylesSource,
-    /\.scene-workstation-screen-content\s*\{[^}]*position:\s*absolute;[^}]*will-change:\s*transform, opacity;/s,
+    /\.scene-workstation-screen-content\s*\{[^}]*will-change:\s*transform, opacity;/s,
   );
   assert.equal(islandSource.includes("desk-animal-muted"), false);
   assert.equal(stylesSource.includes(".desk-animal-muted"), true);
@@ -305,7 +319,7 @@ test("startup paints immediately and keeps network work off the critical path", 
   const bootstrapSource = readFileSync(bootstrapPath, "utf8");
   const rendererHtml = readFileSync(rendererHtmlPath, "utf8");
   const mainWindowSource = readFileSync(mainWindowPath, "utf8");
-  const stylesSource = readFileSync(stylesPath, "utf8");
+  const stylesSource = readRendererCss();
 
   assert.equal(rendererHtml.includes("app-preboot"), true);
   assert.equal(rendererHtml.includes("preboot-mark-enter"), true);
@@ -323,7 +337,8 @@ test("route transitions remove the previous translucent page instead of stacking
 
   assert.equal(appSource.includes("AnimatePresence"), false);
   assert.equal(appSource.includes("key={basePage}"), true);
-  assert.equal(appSource.includes('basePage === "room" ? { opacity: 0, x: 8 } : false'), true);
+  assert.equal(appSource.includes('basePage === "room" ? { opacity: 0 } : false'), true);
+  assert.equal(appSource.includes("animate={{ opacity: 1, x: 0 }}"), false);
   assert.equal(appSource.includes("scale: 0.992"), false);
 });
 
@@ -368,7 +383,7 @@ test("late joiners keep a visible avatar while character textures finish loading
   const deskAnimalSource = readFileSync(deskAnimalPath, "utf8");
   const sceneCharacterSource = readFileSync(sceneCharacterPath, "utf8");
   const overlaySource = readFileSync(overlayPath, "utf8");
-  const stylesSource = readFileSync(stylesPath, "utf8");
+  const stylesSource = readRendererCss();
 
   assert.equal(deskAnimalSource.includes("walking-animal-static-fallback"), true);
   assert.equal(deskAnimalSource.includes("desk-animal-static-fallback"), true);

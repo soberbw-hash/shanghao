@@ -25,10 +25,40 @@ export interface ScreenShareEncodingProfile {
   maxHeight: number;
 }
 
+export interface ScreenShareSenderStats {
+  sampledAt: number;
+  width?: number;
+  height?: number;
+  framesPerSecond?: number;
+  framesEncoded?: number;
+  framesSent?: number;
+  bytesSent?: number;
+  bitrateBps?: number;
+  qualityLimitationReason?: string;
+  targetBitrateBps?: number;
+}
+
+export interface ScreenShareReceiverStats {
+  sampledAt: number;
+  width?: number;
+  height?: number;
+  framesPerSecond?: number;
+  framesDecoded?: number;
+  framesDropped?: number;
+  freezeCount?: number;
+  totalFreezesDurationMs?: number;
+  bytesReceived?: number;
+  bitrateBps?: number;
+  averageDecodeTimeMs?: number;
+  jitterBufferDelayMs?: number;
+}
+
 export interface NetworkAdaptationSample {
   packetLossPercent?: number;
   roundTripTimeMs?: number;
   jitterMs?: number;
+  concealmentPercent?: number;
+  averageJitterBufferDelayMs?: number;
   availableOutgoingBitrateBps?: number;
 }
 
@@ -51,14 +81,14 @@ const NETWORK_TIER_PROFILES: Record<NetworkAdaptationTier, NetworkTierProfile> =
   constrained: {
     audioBitrate: 20_000,
     screenBitrateScale: 0.72,
-    screenMaxFramerate: 13,
+    screenMaxFramerate: 30,
     screenScaleResolutionDownBy: 1,
   },
   critical: {
     audioBitrate: 16_000,
     screenBitrateScale: 0.48,
-    screenMaxFramerate: 10,
-    screenScaleResolutionDownBy: 1,
+    screenMaxFramerate: 18,
+    screenScaleResolutionDownBy: 1.5,
   },
 };
 
@@ -132,6 +162,8 @@ export const selectNetworkTier = (sample: NetworkAdaptationSample): NetworkAdapt
   const packetLoss = sample.packetLossPercent ?? 0;
   const roundTripTime = sample.roundTripTimeMs ?? 0;
   const jitter = sample.jitterMs ?? 0;
+  const concealment = sample.concealmentPercent ?? 0;
+  const jitterBufferDelay = sample.averageJitterBufferDelayMs ?? 0;
   const availableOutgoingBitrate =
     typeof sample.availableOutgoingBitrateBps === "number" && sample.availableOutgoingBitrateBps > 0
       ? sample.availableOutgoingBitrateBps
@@ -140,6 +172,8 @@ export const selectNetworkTier = (sample: NetworkAdaptationSample): NetworkAdapt
     packetLoss >= 8 ||
     roundTripTime >= 420 ||
     jitter >= 90 ||
+    concealment >= 12 ||
+    jitterBufferDelay >= 260 ||
     availableOutgoingBitrate < 100_000
   ) {
     return "critical";
@@ -148,6 +182,8 @@ export const selectNetworkTier = (sample: NetworkAdaptationSample): NetworkAdapt
     packetLoss >= 3 ||
     roundTripTime >= 220 ||
     jitter >= 45 ||
+    concealment >= 4 ||
+    jitterBufferDelay >= 140 ||
     availableOutgoingBitrate < 240_000
   ) {
     return "constrained";
@@ -156,10 +192,10 @@ export const selectNetworkTier = (sample: NetworkAdaptationSample): NetworkAdapt
 };
 
 export const DEFAULT_SCREEN_SHARE_PROFILE: ScreenShareEncodingProfile = {
-  maxBitrate: 420_000,
-  maxFramerate: 15,
-  maxWidth: 1_280,
-  maxHeight: 720,
+  maxBitrate: 6_000_000,
+  maxFramerate: 30,
+  maxWidth: 1_920,
+  maxHeight: 1_080,
 };
 
 export const DEFAULT_ICE_SERVERS: RTCIceServer[] = [
@@ -178,6 +214,8 @@ export class MeshPeerConnection {
   private networkAdaptationTier: NetworkAdaptationTier = "healthy";
   private pendingRecoveryTier?: NetworkAdaptationTier;
   private pendingRecoverySamples = 0;
+  private previousScreenSenderSample?: { timestamp: number; bytes: number };
+  private previousScreenReceiverSample?: { timestamp: number; bytes: number };
 
   constructor(private readonly options: MeshPeerOptions) {
     this.connection = new RTCPeerConnection({
@@ -413,10 +451,115 @@ export class MeshPeerConnection {
     return measuredTier;
   }
 
+  async getScreenShareSenderStats(): Promise<ScreenShareSenderStats | undefined> {
+    if (!this.screenTransceiver.sender.track) return undefined;
+    const report = await this.screenTransceiver.sender.getStats();
+    let outbound: Record<string, unknown> | undefined;
+    report.forEach((entry) => {
+      const stat = entry as unknown as Record<string, unknown>;
+      if (
+        stat.type === "outbound-rtp" &&
+        (stat.kind === "video" || stat.mediaType === "video") &&
+        stat.isRemote !== true
+      ) {
+        outbound = stat;
+      }
+    });
+    if (!outbound) return undefined;
+    const timestamp = this.numberStat(outbound.timestamp) ?? performance.now();
+    const bytes = this.numberStat(outbound.bytesSent);
+    const bitrateBps = this.calculateBitrate(this.previousScreenSenderSample, timestamp, bytes);
+    if (bytes !== undefined) this.previousScreenSenderSample = { timestamp, bytes };
+    return {
+      sampledAt: timestamp,
+      width: this.numberStat(outbound.frameWidth),
+      height: this.numberStat(outbound.frameHeight),
+      framesPerSecond: this.numberStat(outbound.framesPerSecond),
+      framesEncoded: this.numberStat(outbound.framesEncoded),
+      framesSent: this.numberStat(outbound.framesSent),
+      bytesSent: bytes,
+      bitrateBps,
+      qualityLimitationReason:
+        typeof outbound.qualityLimitationReason === "string"
+          ? outbound.qualityLimitationReason
+          : undefined,
+      targetBitrateBps: this.numberStat(outbound.targetBitrate),
+    };
+  }
+
+  async getScreenShareReceiverStats(): Promise<ScreenShareReceiverStats | undefined> {
+    const track = this.screenTransceiver.receiver.track;
+    if (!track || track.readyState !== "live") return undefined;
+    const report = await this.screenTransceiver.receiver.getStats();
+    let inbound: Record<string, unknown> | undefined;
+    report.forEach((entry) => {
+      const stat = entry as unknown as Record<string, unknown>;
+      if (
+        stat.type === "inbound-rtp" &&
+        (stat.kind === "video" || stat.mediaType === "video") &&
+        stat.isRemote !== true
+      ) {
+        inbound = stat;
+      }
+    });
+    if (!inbound) return undefined;
+    const timestamp = this.numberStat(inbound.timestamp) ?? performance.now();
+    const bytes = this.numberStat(inbound.bytesReceived);
+    const bitrateBps = this.calculateBitrate(this.previousScreenReceiverSample, timestamp, bytes);
+    if (bytes !== undefined) this.previousScreenReceiverSample = { timestamp, bytes };
+    const framesDecoded = this.numberStat(inbound.framesDecoded);
+    const totalDecodeTime = this.numberStat(inbound.totalDecodeTime);
+    const jitterBufferDelay = this.numberStat(inbound.jitterBufferDelay);
+    const jitterBufferEmittedCount = this.numberStat(inbound.jitterBufferEmittedCount);
+    return {
+      sampledAt: timestamp,
+      width: this.numberStat(inbound.frameWidth),
+      height: this.numberStat(inbound.frameHeight),
+      framesPerSecond: this.numberStat(inbound.framesPerSecond),
+      framesDecoded,
+      framesDropped: this.numberStat(inbound.framesDropped),
+      freezeCount: this.numberStat(inbound.freezeCount),
+      totalFreezesDurationMs:
+        this.numberStat(inbound.totalFreezesDuration) !== undefined
+          ? (this.numberStat(inbound.totalFreezesDuration) ?? 0) * 1_000
+          : undefined,
+      bytesReceived: bytes,
+      bitrateBps,
+      averageDecodeTimeMs:
+        totalDecodeTime !== undefined && framesDecoded
+          ? (totalDecodeTime / framesDecoded) * 1_000
+          : undefined,
+      jitterBufferDelayMs:
+        jitterBufferDelay !== undefined && jitterBufferEmittedCount
+          ? (jitterBufferDelay / jitterBufferEmittedCount) * 1_000
+          : undefined,
+    };
+  }
+
   destroy(): void {
     this.pendingIceCandidates.length = 0;
     void this.screenTransceiver.sender.replaceTrack(null).catch(() => undefined);
     this.connection.close();
+  }
+
+  private numberStat(value: unknown): number | undefined {
+    return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+  }
+
+  private calculateBitrate(
+    previous: { timestamp: number; bytes: number } | undefined,
+    timestamp: number,
+    bytes: number | undefined,
+  ): number | undefined {
+    if (
+      !previous ||
+      bytes === undefined ||
+      bytes < previous.bytes ||
+      timestamp <= previous.timestamp
+    ) {
+      return undefined;
+    }
+    return ((bytes - previous.bytes) * 8 * 1_000) / (timestamp - previous.timestamp);
   }
 
   private async flushPendingIceCandidates(): Promise<void> {
@@ -489,7 +632,7 @@ export class MeshPeerConnection {
         networkPriority?: RTCPriorityType;
       };
       const networkProfile = NETWORK_TIER_PROFILES[this.networkAdaptationTier];
-      parameters.degradationPreference = "maintain-resolution";
+      parameters.degradationPreference = "maintain-framerate";
       encoding.maxBitrate = Math.round(profile.maxBitrate * networkProfile.screenBitrateScale);
       encoding.maxFramerate = Math.min(profile.maxFramerate, networkProfile.screenMaxFramerate);
       encoding.scaleResolutionDownBy = networkProfile.screenScaleResolutionDownBy;

@@ -1,15 +1,14 @@
 import { lazy, Suspense, useEffect } from "react";
 import { motion } from "framer-motion";
 
-import {
-  APPLE_MOTION_DURATION,
-  APPLE_MOTION_EASE,
-  APPLE_MOTION_SPATIAL_EASE,
-} from "@private-voice/shared";
+import { APPLE_MOTION_DURATION, APPLE_MOTION_EASE } from "@private-voice/shared";
 
 import { AppErrorBoundary } from "../components/layout/AppErrorBoundary";
 import { AppShell } from "../components/layout/AppShell";
 import { RemoteAudioRenderer } from "../features/audio/RemoteAudioRenderer";
+import { rendererPerformanceMonitor } from "../features/diagnostics/rendererPerformanceMonitor";
+import { visualRuntimeController } from "../features/visual-runtime/VisualRuntimeController";
+import { displayRefreshRateService } from "../features/visual-runtime/DisplayRefreshRateService";
 import { useAppBootstrap } from "../hooks/useAppBootstrap";
 import { useGlobalMuteSync } from "../hooks/useGlobalMuteSync";
 import { useLocalAudioTransport } from "../hooks/useLocalAudioTransport";
@@ -37,6 +36,23 @@ export const App = () => {
   useGlobalMuteSync();
   useLocalAudioTransport();
   useUiFeedbackSounds();
+
+  useEffect(() => {
+    const stopVisualRuntime = visualRuntimeController.start();
+    const stopPerformanceMonitor = rendererPerformanceMonitor.start();
+    const handleDisplayLifecycle = (event: Event) => {
+      const reason = (event as CustomEvent<{ reason?: string }>).detail?.reason ?? "";
+      if (reason.startsWith("display-") || reason === "resume") {
+        displayRefreshRateService.reset();
+      }
+    };
+    window.addEventListener("shanghao:lifecycle-recovery", handleDisplayLifecycle);
+    return () => {
+      window.removeEventListener("shanghao:lifecycle-recovery", handleDisplayLifecycle);
+      stopPerformanceMonitor();
+      stopVisualRuntime();
+    };
+  }, []);
 
   const currentPage = useAppStore((state) => state.currentPage);
   const settingsReturnTo = useAppStore((state) => state.settingsReturnTo);
@@ -107,8 +123,10 @@ export const App = () => {
       return;
     }
 
-    void import("../components/room/DeskAnimalSprite").then(({ preloadCharacterSpriteAssets }) =>
-      preloadCharacterSpriteAssets(),
+    void visualRuntimeController.preloadAsset("character-sprites", () =>
+      import("../components/room/DeskAnimalSprite").then(({ preloadCharacterSpriteAssets }) =>
+        preloadCharacterSpriteAssets(),
+      ),
     );
 
     const preloadPages = () => void loadSettingsPage();
@@ -161,14 +179,10 @@ export const App = () => {
             <motion.div
               key={basePage}
               className="app-route-motion"
-              initial={basePage === "room" ? { opacity: 0, x: 8 } : false}
-              animate={{ opacity: 1, x: 0 }}
+              initial={basePage === "room" ? { opacity: 0 } : false}
+              animate={{ opacity: 1 }}
               transition={{
                 opacity: { duration: APPLE_MOTION_DURATION.panel, ease: APPLE_MOTION_EASE },
-                x: {
-                  duration: APPLE_MOTION_DURATION.page,
-                  ease: APPLE_MOTION_SPATIAL_EASE,
-                },
               }}
             >
               {basePage === "room" ? <RoomPage /> : <HomePage />}

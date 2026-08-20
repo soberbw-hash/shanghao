@@ -44,6 +44,7 @@ test("firewall repair UI blocks repeated clicks while the serialized repair is r
   );
   assert.match(settings, /if \(isRepairingFirewall\) return/);
   assert.match(settings, /\.finally\(\(\) => setIsRepairingFirewall\(false\)\)/);
+  assert.match(settings, /TCP\/UDP 双向规则已正常启用。/);
   assert.match(diagnosticsCard, /disabled=\{isRepairingFirewall\}/);
   assert.match(diagnosticsCard, /修复中…/);
 });

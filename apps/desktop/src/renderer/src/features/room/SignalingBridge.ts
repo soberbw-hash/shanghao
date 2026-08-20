@@ -1,5 +1,5 @@
 import type { SignalEnvelope } from "@private-voice/signaling";
-import type { SignalingEventPayload } from "@private-voice/shared";
+import type { RealtimeFaultCommand, SignalingEventPayload } from "@private-voice/shared";
 
 export class SignalingBridge {
   readonly sessionId = crypto.randomUUID();
@@ -28,5 +28,9 @@ export class SignalingBridge {
     this.unsubscribe = undefined;
     this.eventQueue = Promise.resolve();
     await window.desktopApi.signaling.close(this.sessionId).catch(() => undefined);
+  }
+
+  async injectFault(command: RealtimeFaultCommand): Promise<void> {
+    await window.desktopApi.signaling.injectFault(this.sessionId, command);
   }
 }

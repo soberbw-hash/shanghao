@@ -1,5 +1,5 @@
-import type { Dispatch, RefObject, SetStateAction } from "react";
-import { ChevronDown, Volume2, VolumeX } from "lucide-react";
+import type { Dispatch, SetStateAction } from "react";
+import { ChevronDown } from "lucide-react";
 import { AnimatePresence } from "framer-motion";
 
 import {
@@ -19,7 +19,6 @@ import { AnimatedControlIcon } from "../icons/AnimatedControlIcon";
 type AudioPanel = "microphone" | "speaker" | undefined;
 
 interface RoomDockProps {
-  voicePulseRef: RefObject<HTMLDivElement | null>;
   activeAudioPanel: AudioPanel;
   setActiveAudioPanel: Dispatch<SetStateAction<AudioPanel>>;
   settings?: AppSettings;
@@ -57,7 +56,6 @@ interface RoomDockProps {
 }
 
 export const RoomDock = ({
-  voicePulseRef,
   activeAudioPanel,
   setActiveAudioPanel,
   settings,
@@ -93,12 +91,8 @@ export const RoomDock = ({
   onToggleOverlay,
   onLeave,
 }: RoomDockProps) => (
-  <footer
-    ref={voicePulseRef}
-    data-gsap-room="dock"
-    className="voice-dock flex items-center gap-2 px-3 py-2.5"
-  >
-    <div className="voice-primary-controls" data-gsap-voice="primary">
+  <footer className="voice-dock flex items-center gap-2 px-3 py-2.5">
+    <div className="voice-primary-controls">
       <div className="voice-segmented-control audio-control-anchor" data-audio-control-root>
         <MuteButton
           isMuted={isMuted}
@@ -157,11 +151,7 @@ export const RoomDock = ({
           )}
           onClick={onToggleDeafen}
         >
-          {isDeafened ? (
-            <VolumeX className="voice-primary-icon" aria-hidden="true" />
-          ) : (
-            <Volume2 className="voice-primary-icon" aria-hidden="true" />
-          )}
+          <AnimatedControlIcon name="speaker" muted={isDeafened} className="voice-primary-icon" />
           <span className="voice-action-label">{isDeafened ? "扬声器关" : "扬声器开"}</span>
         </Button>
         <button

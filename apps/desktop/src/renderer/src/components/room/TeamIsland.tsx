@@ -34,10 +34,16 @@ import {
 } from "../../features/voice-scene/sceneZones";
 import { memberStatus } from "../../features/voice-scene/activityRules";
 import { usePrefersReducedMotion } from "../../hooks/usePrefersReducedMotion";
+import { useVisibleInterval } from "../../hooks/useVisualVisibility";
 import type { ConnectionQualityLevel } from "../../features/network/networkDiagnostics";
 import { useSettingsStore } from "../../store/settingsStore";
 import { useWeatherStore } from "../../features/weather/weatherStore";
 import { resolveWeatherVisualTheme } from "../../features/weather/weatherTheme";
+import { roomAnimationScheduler } from "../../features/visual-runtime/RoomAnimationScheduler";
+import {
+  defaultRoomSceneManifest,
+  sceneFeatureRegistry,
+} from "../../features/visual-runtime/sceneFeatureRegistry";
 
 const assignVisibleAvatars = (members: RoomMember[]): Map<string, BuiltInAvatarId> => {
   return new Map(
@@ -150,10 +156,17 @@ export const TeamIsland = ({
     (member) => resolvedMemberZones.get(member.id) === "restroomZone",
   );
   const handleMemberSettled = useCallback((memberId: string, zone: SceneZoneId) => {
-    setSettledMemberZones((current) =>
-      current[memberId] === zone ? current : { ...current, [memberId]: zone },
-    );
+    roomAnimationScheduler.enqueue({
+      key: `member-settled:${memberId}`,
+      write: () => {
+        setSettledMemberZones((current) =>
+          current[memberId] === zone ? current : { ...current, [memberId]: zone },
+        );
+      },
+    });
   }, []);
+
+  const wallFeatures = defaultRoomSceneManifest.composition;
 
   useEffect(() => {
     const activeMemberIds = new Set(visibleMemberIdSignature.split("|").filter(Boolean));
@@ -177,15 +190,10 @@ export const TeamIsland = ({
     return () => window.clearTimeout(timer);
   }, [memberSignature]);
 
-  useEffect(() => {
-    const updateAmbient = () => {
-      const hour = new Date().getHours();
-      setAmbient(hour >= 22 || hour < 6 ? "night" : hour >= 18 ? "evening" : "day");
-    };
-    updateAmbient();
-    const timer = window.setInterval(updateAmbient, 60_000);
-    return () => window.clearInterval(timer);
-  }, []);
+  useVisibleInterval(() => {
+    const hour = new Date().getHours();
+    setAmbient(hour >= 22 || hour < 6 ? "night" : hour >= 18 ? "evening" : "day");
+  }, 60_000);
 
   useLayoutEffect(() => {
     if (shouldReduceMotion || !islandRef.current || knockPulse <= 0) return;
@@ -274,17 +282,23 @@ export const TeamIsland = ({
         <div className="scene-window-light" />
         <div className="scene-rug" />
         <div className="scene-brand-arc" />
-        <div className="scene-window-nook">
-          <DynamicWeatherWindow
-            isEnabled={settings?.isDynamicWeatherEnabled ?? true}
-            locationMode={settings?.weatherLocationMode ?? "auto"}
-            manualCity={settings?.weatherManualCity ?? ""}
-            effectMode={settings?.weatherEffectMode ?? "standard"}
-          />
-        </div>
-        <div className="scene-wall-clock">
-          <SceneWallClock />
-        </div>
+        {wallFeatures["wall-left"].includes("weather-window") &&
+        sceneFeatureRegistry.has("weather-window") ? (
+          <div className="scene-window-nook">
+            <DynamicWeatherWindow
+              isEnabled={settings?.isDynamicWeatherEnabled ?? true}
+              locationMode={settings?.weatherLocationMode ?? "auto"}
+              manualCity={settings?.weatherManualCity ?? ""}
+              effectMode={settings?.weatherEffectMode ?? "standard"}
+            />
+          </div>
+        ) : null}
+        {wallFeatures["wall-right"].includes("wall-clock") &&
+        sceneFeatureRegistry.has("wall-clock") ? (
+          <div className="scene-wall-clock">
+            <SceneWallClock />
+          </div>
+        ) : null}
         <div
           className={`scene-service-zone scene-service-restroom ${
             hoveredZone === "restroomZone" ? "is-hovered" : ""
@@ -369,7 +383,10 @@ export const TeamIsland = ({
           );
         })}
       </div>
-      <RoomDateCalendar />
+      {wallFeatures["wall-center"].includes("date-calendar") &&
+      sceneFeatureRegistry.has("date-calendar") ? (
+        <RoomDateCalendar />
+      ) : null}
       <RoomCollectionShelf
         items={collectionItems}
         isOpen={isCollectionOpen}

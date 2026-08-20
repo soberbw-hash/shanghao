@@ -9,6 +9,9 @@ import type {
   LogCategory,
   LogEntry,
   RendererDiagnosticsSummary,
+  RendererRuntimeHealthInput,
+  RealtimeFaultCommand,
+  RuntimeHealthSnapshot,
 } from "./diagnostics.types";
 import type { RoomMember } from "./room.types";
 import type {
@@ -18,6 +21,7 @@ import type {
   RecordingCleanupProgress,
   RecordingCleanupScan,
   RecordingLibrarySnapshot,
+  RecordingLibraryItem,
   RecordingMarker,
 } from "./recording.types";
 import type {
@@ -100,6 +104,7 @@ export interface DeepFilterAssets {
 
 export interface SignalingEventPayload {
   sessionId: string;
+  generation?: number;
   type: "open" | "message" | "close" | "error";
   data?: string;
   code?: number;
@@ -221,6 +226,7 @@ export interface DesktopApi {
       shakeWindow?: boolean;
       showNotification?: boolean;
     }) => Promise<void>;
+    onLifecycleRecovery: (listener: (notice: { reason: string; at: string }) => void) => () => void;
     readChatHistory: (payload: {
       serverUrl: string;
       channelId: string;
@@ -320,6 +326,7 @@ export interface DesktopApi {
   };
   diagnostics: {
     snapshot: () => Promise<DiagnosticsSnapshot>;
+    runtimeHealth: (renderer?: RendererRuntimeHealthInput) => Promise<RuntimeHealthSnapshot>;
     testServer: (serverUrl: string) => Promise<import("./settings.types").RelayStatusSnapshot>;
     exportLogs: () => Promise<DiagnosticsSnapshot>;
     exportBundle: (rendererState?: RendererDiagnosticsSummary) => Promise<DiagnosticsSnapshot>;
@@ -348,6 +355,7 @@ export interface DesktopApi {
     connect: (signalingUrl: string, sessionId: string) => Promise<void>;
     send: (payload: string, sessionId: string) => Promise<void>;
     close: (sessionId: string) => Promise<void>;
+    injectFault: (sessionId: string, command: RealtimeFaultCommand) => Promise<void>;
     onEvent: (listener: (payload: SignalingEventPayload) => void) => () => void;
   };
   recording: {
@@ -358,6 +366,7 @@ export interface DesktopApi {
     scanWaste: () => Promise<RecordingCleanupScan>;
     onScanWasteProgress: (listener: (progress: RecordingCleanupProgress) => void) => () => void;
     setFavorite: (filePath: string, isFavorite: boolean) => Promise<void>;
+    rename: (recordingId: string, title: string) => Promise<RecordingLibraryItem>;
     openDirectory: () => Promise<void>;
     delete: (filePath: string) => Promise<void>;
     deleteMany: (filePaths: string[]) => Promise<RecordingBatchDeleteResult>;

@@ -21,7 +21,7 @@ interface AnimatedControlIconProps {
   className?: string;
 }
 
-const iconArtwork = (name: AnimatedControlIconName, active: boolean, muted: boolean) => {
+const iconArtwork = (name: AnimatedControlIconName, active: boolean) => {
   switch (name) {
     case "mic":
       return (
@@ -39,7 +39,7 @@ const iconArtwork = (name: AnimatedControlIconName, active: boolean, muted: bool
             className="animated-icon__mic-pulse animated-icon__mic-pulse--right"
             d="M20.3 8.8a9.2 9.2 0 0 1 0 4.4"
           />
-          {muted ? <path className="animated-icon__slash" d="M4 4l16 16" /> : null}
+          <path className="animated-icon__slash" d="M4 4l16 16" />
         </>
       );
     case "noise":
@@ -75,23 +75,18 @@ const iconArtwork = (name: AnimatedControlIconName, active: boolean, muted: bool
       return (
         <>
           <path className="animated-icon__speaker-body" d="M4 9h4l5-4v14l-5-4H4z" />
-          {muted ? (
-            <g className="animated-icon__speaker-mute">
-              <path d="m16 9 5 6" />
-              <path d="m21 9-5 6" />
-            </g>
-          ) : (
-            <>
-              <path
-                className="animated-icon__speaker-wave animated-icon__speaker-wave--one"
-                d="M16 9.2a4 4 0 0 1 0 5.6"
-              />
-              <path
-                className="animated-icon__speaker-wave animated-icon__speaker-wave--two"
-                d="M18.7 6.7a7.5 7.5 0 0 1 0 10.6"
-              />
-            </>
-          )}
+          <g className="animated-icon__speaker-mute">
+            <path d="m16 9 5 6" />
+            <path d="m21 9-5 6" />
+          </g>
+          <path
+            className="animated-icon__speaker-wave animated-icon__speaker-wave--one"
+            d="M16 9.2a4 4 0 0 1 0 5.6"
+          />
+          <path
+            className="animated-icon__speaker-wave animated-icon__speaker-wave--two"
+            d="M18.7 6.7a7.5 7.5 0 0 1 0 10.6"
+          />
         </>
       );
     case "bell":
@@ -253,6 +248,6 @@ export const AnimatedControlIcon = ({
     strokeLinecap="round"
     strokeLinejoin="round"
   >
-    {iconArtwork(name, active, muted)}
+    {iconArtwork(name, active)}
   </svg>
 );

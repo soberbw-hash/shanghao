@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Copy, ExternalLink, FolderHeart, Plus, Trash2 } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
 
@@ -8,10 +8,15 @@ import { cn } from "@private-voice/ui";
 import donateQr from "../../assets/donate-qr.jpg";
 import {
   dialogSurfaceVariants,
+  largeDialogSurfaceVariants,
   overlayScrimVariants,
   reducedFadeVariants,
 } from "../../features/motion/motionPresets";
 import { Button } from "../base/Button";
+import {
+  DEFAULT_SCREEN_SHARE_QUALITY,
+  type ScreenShareQuality,
+} from "../../features/screen-share/types";
 
 interface ScreenSourcePickerProps {
   isOpen: boolean;
@@ -19,7 +24,7 @@ interface ScreenSourcePickerProps {
   sources: ScreenCaptureSourceDescriptor[];
   includeSystemAudio: boolean;
   onIncludeSystemAudioChange: (value: boolean) => void;
-  onSelect: (sourceId: string) => void;
+  onSelect: (sourceId: string, quality: ScreenShareQuality) => void;
   onClose: () => void;
 }
 
@@ -31,84 +36,121 @@ export const ScreenSourcePicker = ({
   onIncludeSystemAudioChange,
   onSelect,
   onClose,
-}: ScreenSourcePickerProps) => (
-  <AnimatePresence>
-    {isOpen ? (
-      <motion.div
-        key="screen-source-picker"
-        className="screen-source-picker-backdrop"
-        variants={reduceMotion ? reducedFadeVariants : overlayScrimVariants}
-        initial="initial"
-        animate="open"
-        exit="closed"
-        role="presentation"
-        onPointerDown={(event) => {
-          if (event.target === event.currentTarget) onClose();
-        }}
-      >
-        <motion.section
-          className="screen-source-picker-panel modal-surface"
-          variants={reduceMotion ? reducedFadeVariants : dialogSurfaceVariants}
+}: ScreenSourcePickerProps) => {
+  const [quality, setQuality] = useState<ScreenShareQuality>(DEFAULT_SCREEN_SHARE_QUALITY);
+
+  useEffect(() => {
+    if (isOpen) setQuality(DEFAULT_SCREEN_SHARE_QUALITY);
+  }, [isOpen]);
+
+  return (
+    <AnimatePresence>
+      {isOpen ? (
+        <motion.div
+          key="screen-source-picker"
+          className="screen-source-picker-backdrop"
+          variants={reduceMotion ? reducedFadeVariants : overlayScrimVariants}
           initial="initial"
           animate="open"
           exit="closed"
-          role="dialog"
-          aria-modal="true"
-          aria-label="选择要分享的画面"
+          role="presentation"
+          onPointerDown={(event) => {
+            if (event.target === event.currentTarget) onClose();
+          }}
         >
-          <header>
-            <div>
-              <h2>分享哪个画面？</h2>
-              <p>固定使用 1440p 清晰画质。显示器已编号，窗口会显示应用名称。</p>
-            </div>
-            <Button variant="ghost" onClick={onClose}>
-              取消
-            </Button>
-          </header>
-          <div className="screen-source-options">
-            <span className="screen-source-quality-badge">1440p · 清晰</span>
-            <button
-              type="button"
-              className={`screen-audio-toggle ${includeSystemAudio ? "active" : ""}`}
-              aria-pressed={includeSystemAudio}
-              onClick={() => onIncludeSystemAudioChange(!includeSystemAudio)}
-            >
-              <span aria-hidden="true">{includeSystemAudio ? "✓" : ""}</span>
-              系统音频
-            </button>
-          </div>
-          <div className="screen-source-picker-grid">
-            {sources.map((source, index) => (
+          <motion.section
+            className="screen-source-picker-panel modal-surface"
+            variants={reduceMotion ? reducedFadeVariants : largeDialogSurfaceVariants}
+            initial="initial"
+            animate="open"
+            exit="closed"
+            role="dialog"
+            aria-modal="true"
+            aria-label="选择要分享的画面"
+          >
+            <header>
+              <div>
+                <h2>分享哪个画面？</h2>
+                <p>默认 1080p，也可以选择更省带宽的 720p。实际清晰度取决于来源窗口大小。</p>
+              </div>
+              <Button variant="ghost" onClick={onClose}>
+                取消
+              </Button>
+            </header>
+            <div className="screen-source-options">
+              <div className="screen-source-quality" aria-label="分享清晰度">
+                <span>清晰度</span>
+                {(["1080p", "720p"] as const).map((value) => (
+                  <button
+                    key={value}
+                    type="button"
+                    className={quality === value ? "active" : ""}
+                    aria-pressed={quality === value}
+                    onClick={() => setQuality(value)}
+                  >
+                    {value}
+                    <small>{value === "1080p" ? "默认" : "省带宽"}</small>
+                  </button>
+                ))}
+              </div>
               <button
-                key={source.id}
                 type="button"
-                className="screen-source-picker-item"
-                onClick={() => onSelect(source.id)}
+                className={`screen-audio-toggle ${includeSystemAudio ? "active" : ""}`}
+                aria-pressed={includeSystemAudio}
+                onClick={() => onIncludeSystemAudioChange(!includeSystemAudio)}
               >
-                <span className="screen-source-thumbnail">
-                  <strong className="screen-source-identity">
-                    {source.displayLabel ??
-                      (source.kind === "screen" ? `显示器 ${index + 1}` : "窗口")}
-                  </strong>
-                  {source.thumbnailDataUrl ? (
-                    <img src={source.thumbnailDataUrl} alt="" draggable={false} />
-                  ) : (
-                    <span className="screen-source-thumbnail-fallback">暂无预览</span>
-                  )}
-                </span>
-                <span className="screen-source-name">
-                  {source.appIconDataUrl ? <img src={source.appIconDataUrl} alt="" /> : null}
-                  <span>{source.name}</span>
-                  <small>{source.kind === "screen" ? "显示器" : "窗口"}</small>
-                </span>
+                <span aria-hidden="true">{includeSystemAudio ? "✓" : ""}</span>
+                系统音频
               </button>
-            ))}
-          </div>
-        </motion.section>
-      </motion.div>
-    ) : null}
-  </AnimatePresence>
-);
+            </div>
+            <div className="screen-source-picker-grid">
+              {sources.slice(0, 24).map((source, index) => (
+                <button
+                  key={source.id}
+                  type="button"
+                  className="screen-source-picker-item"
+                  onClick={() => onSelect(source.id, quality)}
+                >
+                  <span className="screen-source-thumbnail">
+                    <strong className="screen-source-identity">
+                      {source.displayLabel ??
+                        (source.kind === "screen" ? `显示器 ${index + 1}` : "窗口")}
+                    </strong>
+                    {source.thumbnailDataUrl ? (
+                      <img
+                        src={source.thumbnailDataUrl}
+                        alt=""
+                        loading="lazy"
+                        decoding="async"
+                        fetchPriority="low"
+                        draggable={false}
+                      />
+                    ) : (
+                      <span className="screen-source-thumbnail-fallback">暂无预览</span>
+                    )}
+                  </span>
+                  <span className="screen-source-name">
+                    {source.appIconDataUrl ? (
+                      <img
+                        src={source.appIconDataUrl}
+                        alt=""
+                        loading="lazy"
+                        decoding="async"
+                        fetchPriority="low"
+                      />
+                    ) : null}
+                    <span>{source.name}</span>
+                    <small>{source.kind === "screen" ? "显示器" : "窗口"}</small>
+                  </span>
+                </button>
+              ))}
+            </div>
+          </motion.section>
+        </motion.div>
+      ) : null}
+    </AnimatePresence>
+  );
+};
 
 interface DonationDialogProps {
   isOpen: boolean;
@@ -171,6 +213,8 @@ interface CollectionDialogProps {
   onClose: () => void;
 }
 
+const COLLECTION_RENDER_BATCH_SIZE = 24;
+
 export const CollectionDialog = ({
   isOpen,
   reduceMotion,
@@ -185,6 +229,12 @@ export const CollectionDialog = ({
   onClose,
 }: CollectionDialogProps) => {
   const orderedItems = useMemo(() => [...items].reverse(), [items]);
+  const [visibleItemCount, setVisibleItemCount] = useState(COLLECTION_RENDER_BATCH_SIZE);
+  const visibleItems = orderedItems.slice(0, visibleItemCount);
+
+  useEffect(() => {
+    if (isOpen) setVisibleItemCount(COLLECTION_RENDER_BATCH_SIZE);
+  }, [isOpen]);
 
   return (
     <AnimatePresence>
@@ -206,7 +256,7 @@ export const CollectionDialog = ({
             role="dialog"
             aria-modal="true"
             aria-labelledby="collection-modal-title"
-            variants={reduceMotion ? reducedFadeVariants : dialogSurfaceVariants}
+            variants={reduceMotion ? reducedFadeVariants : largeDialogSurfaceVariants}
             initial="initial"
             animate="open"
             exit="closed"
@@ -235,9 +285,18 @@ export const CollectionDialog = ({
                 {isSaving ? "保存中" : "添加收藏"}
               </Button>
             </div>
-            <div className="collection-list">
+            <div
+              className="collection-list"
+              onScroll={(event) => {
+                const list = event.currentTarget;
+                if (list.scrollHeight - list.scrollTop - list.clientHeight > 240) return;
+                setVisibleItemCount((current) =>
+                  Math.min(orderedItems.length, current + COLLECTION_RENDER_BATCH_SIZE),
+                );
+              }}
+            >
               {orderedItems.length ? (
-                orderedItems.map((item) => (
+                visibleItems.map((item) => (
                   <article
                     key={item.id}
                     className={cn("collection-item", item.kind === "image" && "is-image")}
@@ -259,6 +318,8 @@ export const CollectionDialog = ({
                           src={item.content}
                           alt={item.title}
                           loading="lazy"
+                          decoding="async"
+                          fetchPriority="low"
                           draggable={false}
                         />
                       ) : (

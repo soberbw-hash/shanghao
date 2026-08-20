@@ -1,12 +1,14 @@
 {
   "name": "shanghao-workspace",
-  "version": "2.9.2",
+  "version": "3.0.0",
   "private": true,
   "license": "AGPL-3.0-or-later",
   "packageManager": "pnpm@10.34.5",
   "scripts": {
     "dev": "corepack pnpm --dir apps/desktop dev",
-    "build": "corepack pnpm -r --filter @private-voice/shared --filter @private-voice/ui --filter @private-voice/signaling --filter @private-voice/webrtc --filter @private-voice/recording --filter shanghao-desktop run build",
+    "build": "corepack pnpm build:native && corepack pnpm -r --filter @private-voice/shared --filter @private-voice/ui --filter @private-voice/signaling --filter @private-voice/webrtc --filter @private-voice/recording --filter shanghao-desktop run build",
+    "build:native": "node scripts/build-rust-core.mjs",
+    "test:native": "cargo test --manifest-path native/Cargo.toml --workspace --locked",
     "typecheck": "corepack pnpm -r --filter @private-voice/shared --filter @private-voice/ui --filter @private-voice/signaling --filter @private-voice/webrtc --filter @private-voice/recording --filter shanghao-desktop run typecheck",
     "lint": "eslint . --max-warnings=0 && corepack pnpm format:check",
     "format": "prettier --no-error-on-unmatched-pattern --write \"apps/desktop/**/*.{ts,tsx,css}\" \"packages/**/src/**/*.{ts,tsx}\" \"scripts/*.{mjs,cjs,js}\" \"docs/**/*.md\" \"deploy/**/*.{md,yml,yaml}\" \"*.{json,md,mjs}\" \".github/**/*.{yml,yaml}\"",

@@ -233,7 +233,9 @@ test("installer and updater quit paths clean background surfaces", () => {
   assert.equal(updates.includes("before-quit-for-update"), true);
   assert.equal(updates.includes("beforeInstall?.()"), true);
   assert.equal(updates.includes("autoUpdater.quitAndInstall(true, true)"), true);
-  assert.equal(updates.includes("setTimeout(() => app.exit(0), 4_000)"), true);
+  assert.equal(updates.includes("autoUpdater.autoInstallOnAppQuit = false"), true);
+  assert.equal(updates.includes('phase: "ready_to_restart"'), true);
+  assert.equal(updates.includes("setTimeout(() => this.install()"), false);
   assert.equal(installer.includes("--shanghao-quit-for-install"), true);
   assert.equal(installer.includes('${nsProcess::FindProcess} "${PROCESS_NAME}" $R8'), true);
   assert.equal(

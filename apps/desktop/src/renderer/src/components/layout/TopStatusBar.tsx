@@ -71,6 +71,7 @@ export const TopStatusBar = ({
     navigate("settings");
   };
   const connectionQuality = summarizeConnectionHealth(connectionHealth);
+  const connectionStatus = statusCopy(room.connectionState);
 
   return (
     <header
@@ -105,11 +106,14 @@ export const TopStatusBar = ({
             })}
           </div>
         </div>
-        {statusCopy(room.connectionState) ? (
-          <div className="topbar-channel-copy mt-0.5 truncate text-[11px] text-[#8494a7]">
-            {statusCopy(room.connectionState)}
-          </div>
-        ) : null}
+        <div
+          className={`topbar-channel-copy mt-0.5 min-h-4 truncate text-[11px] text-[#8494a7] transition-opacity duration-150 ${
+            connectionStatus ? "opacity-100" : "opacity-0"
+          }`}
+          aria-hidden={!connectionStatus}
+        >
+          {connectionStatus || "频道状态正常"}
+        </div>
       </div>
       <div className="topbar-controls">
         <Button

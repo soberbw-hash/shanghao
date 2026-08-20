@@ -18,12 +18,20 @@ import type {
 } from "@private-voice/shared";
 
 import type { GameDetectionController } from "./game-detection";
+import { ResourceScheduler } from "./resource-scheduler";
+
+export {
+  GAMING_DOWNLOAD_BYTES_PER_SECOND,
+  NORMAL_DOWNLOAD_BYTES_PER_SECOND,
+  REALTIME_PRESSURE_DOWNLOAD_BYTES_PER_SECOND,
+} from "./resource-scheduler";
 
 interface ModelDefinition {
   id: AiModelId;
   name: string;
   purpose: string;
   repository: string;
+  revision: string;
   approximateBytes: number;
 }
 
@@ -57,12 +65,16 @@ interface PersistedAiState {
   taskCheckpoints: Record<string, AiTaskCheckpoint>;
 }
 
+const VIBEVOICE_MODEL_REVISION = "66e78021ab8f5f06133d1ab421ba4d348bda97c9";
+const QWEN_MODEL_REVISION = "851bf6e806efd8d0a36b00ddf55e13ccb7b8cd0a";
+
 const MODEL_DEFINITIONS: readonly ModelDefinition[] = [
   {
     id: "vibevoice",
     name: "VibeVoice",
     purpose: "录音转文字",
     repository: "microsoft/VibeVoice-ASR-BitNet",
+    revision: VIBEVOICE_MODEL_REVISION,
     approximateBytes: 1_695_957_664,
   },
   {
@@ -70,14 +82,16 @@ const MODEL_DEFINITIONS: readonly ModelDefinition[] = [
     name: "Qwen3.5-4B",
     purpose: "总结、章节、问答与精彩片段",
     repository: "Qwen/Qwen3.5-4B",
+    revision: QWEN_MODEL_REVISION,
     approximateBytes: 9_319_828_096,
   },
 ] as const;
 
-export const NORMAL_DOWNLOAD_BYTES_PER_SECOND = 2 * 1024 * 1024;
-export const GAMING_DOWNLOAD_BYTES_PER_SECOND = 256 * 1024;
-export const REALTIME_PRESSURE_DOWNLOAD_BYTES_PER_SECOND = 128 * 1024;
-const QWEN_IDLE_RELEASE_MS = 90_000;
+export const PINNED_MODEL_REVISIONS: Readonly<Record<AiModelId, string>> = {
+  vibevoice: VIBEVOICE_MODEL_REVISION,
+  "qwen35-4b": QWEN_MODEL_REVISION,
+};
+
 const METADATA_FILE = "state.json";
 const MODEL_REQUEST_TIMEOUT_MS = 12_000;
 
@@ -146,6 +160,8 @@ class DownloadPausedError extends Error {
 
 export class AiModelManager {
   private readonly listeners = new Set<(snapshot: AiVoiceMemorySnapshot) => void>();
+  private readonly qwenReleaseListeners = new Set<(reason: string) => void>();
+  private readonly scheduler = new ResourceScheduler();
   private readonly abortControllers = new Map<AiModelId, AbortController>();
   private readonly runningDownloads = new Map<AiModelId, Promise<void>>();
   private readonly downloadStartedAt = new Map<AiModelId, number>();
@@ -165,7 +181,6 @@ export class AiModelManager {
   private pressureReason?: string;
   private pressureReleaseTimer?: NodeJS.Timeout;
   private qwenLoaded = false;
-  private qwenReleaseTimer?: NodeJS.Timeout;
   private queuedTasks = 0;
   private runningTask?: string;
   private persistQueue: Promise<void> = Promise.resolve();
@@ -185,46 +200,63 @@ export class AiModelManager {
     await mkdir(this.rootDirectory, { recursive: true });
     this.persisted = await this.readState();
     this.gameActive = Boolean(this.gameDetection.getSnapshot().gameName);
+    this.scheduler.update({ processingMode, gameActive: this.gameActive });
     this.gameDetection.onDetected((snapshot) => {
       const nextGameActive = Boolean(snapshot.gameName);
       if (nextGameActive === this.gameActive) return;
       this.gameActive = nextGameActive;
+      this.scheduler.update({ gameActive: this.gameActive });
       if (this.gameActive) this.releaseQwenResources("game_started");
       this.emit();
     });
     const interruptedDownloads: AiModelId[] = [];
+    const missingOptInDownloads: AiModelId[] = [];
     for (const definition of MODEL_DEFINITIONS) {
       const model = this.persisted.models[definition.id];
       if (model?.phase === "downloading" || model?.phase === "checking") {
         model.phase = "paused";
         interruptedDownloads.push(definition.id);
       }
-      if (model?.userInstalled && model.activeRevision) {
-        void this.checkForRecommendedUpdate(definition.id);
+      if (
+        model?.userInstalled &&
+        !model.activeRevision &&
+        model.phase !== "error" &&
+        !interruptedDownloads.includes(definition.id)
+      ) {
+        missingOptInDownloads.push(definition.id);
+      }
+      if (
+        model?.userInstalled &&
+        model.activeRevision &&
+        model.activeRevision !== definition.revision
+      ) {
+        void this.ensurePinnedRevision(definition.id);
       }
     }
     await this.persist();
     for (const id of interruptedDownloads) {
       this.startDownload(id, Boolean(this.persisted.models[id]?.activeRevision));
     }
+    for (const id of missingOptInDownloads) this.startDownload(id, false);
   }
 
   stop(): void {
     for (const controller of this.abortControllers.values()) controller.abort();
     this.abortControllers.clear();
-    if (this.qwenReleaseTimer) clearTimeout(this.qwenReleaseTimer);
     if (this.pressureReleaseTimer) clearTimeout(this.pressureReleaseTimer);
     this.releaseQwenResources("app_stopping");
   }
 
   setProcessingMode(mode: AiProcessingMode): void {
     this.processingMode = mode;
+    this.scheduler.update({ processingMode: mode });
     if (this.gameActive && mode === "after_game") this.releaseQwenResources("processing_deferred");
     this.emit();
   }
 
   updateRuntimePressure(pressure: AiRuntimePressure): void {
     this.runtimePressure = pressure;
+    this.scheduler.update({ pressure });
     const reason = pressure.peerRecovering
       ? "peer_recovery"
       : pressure.screenSharing && (pressure.latencyMs > 180 || pressure.packetLossPercent > 3)
@@ -239,6 +271,7 @@ export class AiModelManager {
       this.pressureReleaseTimer = undefined;
       this.realtimePressureHigh = true;
       this.pressureReason = reason;
+      this.scheduler.update({ realtimePressureHigh: true, pressureReason: reason });
       this.releaseQwenResources(reason);
       this.emit();
       return;
@@ -248,6 +281,7 @@ export class AiModelManager {
       this.pressureReleaseTimer = undefined;
       this.realtimePressureHigh = false;
       this.pressureReason = undefined;
+      this.scheduler.update({ realtimePressureHigh: false, pressureReason: undefined });
       this.emit();
     }, 8_000);
   }
@@ -257,13 +291,19 @@ export class AiModelManager {
     return () => this.listeners.delete(listener);
   }
 
+  onQwenReleaseRequested(listener: (reason: string) => void): () => void {
+    this.qwenReleaseListeners.add(listener);
+    return () => this.qwenReleaseListeners.delete(listener);
+  }
+
   getSnapshot(): AiVoiceMemorySnapshot {
     return {
       models: MODEL_DEFINITIONS.map((definition) => this.buildModelStatus(definition)),
       scheduler: {
         processingMode: this.processingMode,
         gameActive: this.gameActive,
-        downloadsThrottled: this.gameActive,
+        downloadsThrottled:
+          this.gameActive || this.realtimePressureHigh || this.runtimePressure.inVoiceRoom,
         aiTasksPausedForGame: this.gameActive && this.processingMode === "after_game",
         realtimePressureHigh: this.realtimePressureHigh,
         pressureReason: this.pressureReason,
@@ -308,7 +348,7 @@ export class AiModelManager {
     return this.getSnapshot();
   }
 
-  private async checkForRecommendedUpdate(id: AiModelId): Promise<void> {
+  private async ensurePinnedRevision(id: AiModelId): Promise<void> {
     const current = this.ensureModelState(id);
     try {
       const manifest = await this.fetchManifest(modelDefinition(id));
@@ -317,7 +357,7 @@ export class AiModelManager {
       await this.persist();
       this.startDownload(id, true);
     } catch (error) {
-      await this.log("warn", "ai_model_update_check_failed", id, error);
+      await this.log("warn", "ai_model_pinned_revision_check_failed", id, error);
     }
   }
 
@@ -482,11 +522,7 @@ export class AiModelManager {
               this.throttleWindowBytes = 0;
             }
             this.throttleWindowBytes += chunk.length;
-            const limit = this.realtimePressureHigh
-              ? REALTIME_PRESSURE_DOWNLOAD_BYTES_PER_SECOND
-              : this.gameActive
-                ? GAMING_DOWNLOAD_BYTES_PER_SECOND
-                : NORMAL_DOWNLOAD_BYTES_PER_SECOND;
+            const limit = this.scheduler.downloadBytesPerSecond();
             const delay = Math.max(
               0,
               Math.ceil(
@@ -539,7 +575,7 @@ export class AiModelManager {
 
   private async fetchManifest(definition: ModelDefinition): Promise<RemoteModelManifest> {
     const { response, release } = await this.fetchFromModelSources(
-      `api/models/${definition.repository}?blobs=true`,
+      `api/models/${definition.repository}/revision/${definition.revision}?blobs=true`,
       {
         acceptedStatuses: [200],
         errorPrefix: "ai_model_manifest_http",
@@ -549,6 +585,7 @@ export class AiModelManager {
       const manifest = (await response.json()) as RemoteModelManifest;
       if (!manifest.sha || !Array.isArray(manifest.siblings))
         throw new Error("ai_model_manifest_invalid");
+      if (manifest.sha !== definition.revision) throw new Error("ai_model_revision_mismatch");
       return manifest;
     } finally {
       release();
@@ -634,11 +671,7 @@ export class AiModelManager {
       totalBytes,
       progress: totalBytes ? Math.min(100, (downloadedBytes / totalBytes) * 100) : 0,
       bytesPerSecond: this.downloadStartedAt.has(definition.id)
-        ? this.realtimePressureHigh
-          ? REALTIME_PRESSURE_DOWNLOAD_BYTES_PER_SECOND
-          : this.gameActive
-            ? GAMING_DOWNLOAD_BYTES_PER_SECOND
-            : NORMAL_DOWNLOAD_BYTES_PER_SECOND
+        ? this.scheduler.downloadBytesPerSecond()
         : undefined,
       errorMessage: current?.errorMessage,
       runtimeReady: this.runtimeStatus[definition.id]?.ready === true,
@@ -716,32 +749,28 @@ export class AiModelManager {
   }
 
   private releaseQwenResources(reason: string): void {
-    if (this.qwenReleaseTimer) clearTimeout(this.qwenReleaseTimer);
-    this.qwenReleaseTimer = undefined;
-    if (!this.qwenLoaded) return;
+    for (const listener of this.qwenReleaseListeners) listener(reason);
+    if (!this.qwenLoaded && this.queuedTasks === 0) return;
     this.qwenLoaded = false;
+    this.queuedTasks = 0;
     void this.log("info", "ai_qwen_resources_released", "qwen35-4b", undefined, { reason });
+    this.emit();
   }
 
-  markQwenTaskFinished(): void {
-    if (this.qwenReleaseTimer) clearTimeout(this.qwenReleaseTimer);
-    this.qwenReleaseTimer = setTimeout(
-      () => this.releaseQwenResources("idle_timeout"),
-      QWEN_IDLE_RELEASE_MS,
-    );
+  setQwenRuntimeState(loaded: boolean, queuedTasks: number): void {
+    if (this.qwenLoaded === loaded && this.queuedTasks === queuedTasks) return;
+    this.qwenLoaded = loaded;
+    this.queuedTasks = Math.max(0, queuedTasks);
+    this.emit();
   }
 
   markQwenTaskStarted(taskName: string): void {
-    if (this.qwenReleaseTimer) clearTimeout(this.qwenReleaseTimer);
-    this.qwenReleaseTimer = undefined;
-    this.qwenLoaded = true;
     this.runningTask = taskName;
     this.emit();
   }
 
   markAiTaskFinished(): void {
     this.runningTask = undefined;
-    this.markQwenTaskFinished();
     this.emit();
   }
 
@@ -761,31 +790,7 @@ export class AiModelManager {
         resourceMode: "low",
       };
     }
-    if (this.processingMode === "manual" && !manualRequest)
-      return { runnable: false, reason: "manual_only", resourceMode: "low" };
-    if (this.realtimePressureHigh && !manualRequest) {
-      return {
-        runnable: false,
-        reason: this.pressureReason ?? "realtime_pressure",
-        resourceMode: "low",
-      };
-    }
-    if (this.gameActive && this.processingMode === "after_game" && !manualRequest) {
-      return {
-        runnable: false,
-        reason: "waiting_for_game_to_finish",
-        resourceMode: "low",
-      };
-    }
-    return {
-      runnable: true,
-      resourceMode:
-        this.processingMode === "low_resource" ||
-        this.gameActive ||
-        this.runtimePressure.inVoiceRoom
-          ? "low"
-          : "normal",
-    };
+    return this.scheduler.aiDecision(kind, manualRequest);
   }
 
   async saveTaskCheckpoint(checkpoint: AiTaskCheckpoint): Promise<void> {

@@ -15,12 +15,14 @@ import type {
   DiagnosticsSnapshot,
   RelayStatusSnapshot,
   RendererDiagnosticsSummary,
+  RuntimeHealthSnapshot,
   WindowsIntegrationStatus,
 } from "@private-voice/shared";
 
 import { Button } from "../components/base/Button";
 import { Switch } from "../components/base/Switch";
 import { motionDuration, motionEase } from "../features/motion/motionSystem";
+import { rendererPerformanceMonitor } from "../features/diagnostics/rendererPerformanceMonitor";
 import { PageContainer } from "../components/layout/PageContainer";
 import { AudioSettingsCard } from "../components/settings/AudioSettingsCard";
 import { DiagnosticsSettingsCard } from "../components/settings/DiagnosticsSettingsCard";
@@ -37,7 +39,7 @@ import { ReleaseDetailModal } from "../components/status/ReleaseDetailModal";
 import { RELEASE_HISTORY, type ReleaseHistoryEntry } from "../components/status/releaseHistory";
 import { useMicTest } from "../hooks/useMicTest";
 import { usePrefersReducedMotion } from "../hooks/usePrefersReducedMotion";
-import { getRoomRuntimeDiagnostics } from "../hooks/useRoomState";
+import { getRoomRuntimeDiagnostics, injectRealtimeFault } from "../hooks/useRoomState";
 import { useAppStore } from "../store/appStore";
 import { useAudioStore } from "../store/audioStore";
 import { useRoomStore } from "../store/roomStore";
@@ -91,6 +93,7 @@ export const SettingsPage = () => {
   const remoteStreams = useRoomStore((state) => state.remoteStreams);
   const [activeSection, setActiveSection] = useState<SettingsSectionId>("general");
   const [diagnostics, setDiagnostics] = useState<DiagnosticsSnapshot>();
+  const [runtimeHealth, setRuntimeHealth] = useState<RuntimeHealthSnapshot>();
   const [relayDiagnostics, setRelayDiagnostics] = useState<RelayStatusSnapshot>();
   const [windowsDiagnostics, setWindowsDiagnostics] = useState<
     WindowsIntegrationStatus | undefined
@@ -139,6 +142,85 @@ export const SettingsPage = () => {
       cancelled = true;
     };
   }, [activeSection, settings?.relayServerUrl]);
+
+  useEffect(() => {
+    if (activeSection !== "diagnostics") return;
+    let cancelled = false;
+
+    const refresh = async () => {
+      const runtime = getRoomRuntimeDiagnostics();
+      const memory = performance as Performance & {
+        memory?: { usedJSHeapSize?: number; totalJSHeapSize?: number };
+      };
+      const trackCount = [localStream, ...Object.values(remoteStreams)].reduce(
+        (total, stream) => total + (stream?.getTracks().length ?? 0),
+        0,
+      );
+      const mixerHealth = runtime?.remoteAudioMixer;
+      const snapshot = await window.desktopApi.diagnostics.runtimeHealth({
+        performance: rendererPerformanceMonitor.snapshot(),
+        jsHeapUsedBytes: memory.memory?.usedJSHeapSize,
+        jsHeapTotalBytes: memory.memory?.totalJSHeapSize,
+        trackCount,
+        audioNodeCount: mixerHealth?.audioNodeCount,
+        audioContextCount: mixerHealth?.audioContextCount,
+        timerCount: mixerHealth?.timerCount,
+        screenShare: runtime?.screenShare
+          ? {
+              active: Boolean(
+                runtime.screenShare.requested ||
+                Object.keys(runtime.screenShare.receive).length ||
+                runtime.screenShare.fallback.active,
+              ),
+              fallbackActive: runtime.screenShare.fallback.active,
+              requestedWidth: runtime.screenShare.requested?.width,
+              requestedHeight: runtime.screenShare.requested?.height,
+              captureWidth: runtime.screenShare.capture?.width,
+              captureHeight: runtime.screenShare.capture?.height,
+              captureFps: runtime.screenShare.capture?.framesPerSecond,
+            }
+          : undefined,
+        room: {
+          roomLifecycleState: room.lifecycleState,
+          roomConnectionState: room.connectionState,
+          serverUrl: sanitizeDiagnosticsServerUrl(room.signalingUrl ?? settings?.relayServerUrl),
+          currentRoomId: room.roomId,
+          currentPeerId: runtime?.currentPeerId,
+          reconnectAttempts: runtime?.reconnectAttempts ?? 0,
+          connectionGeneration: runtime?.connectionGeneration,
+          reconnectEpisodeId: runtime?.reconnectEpisodeId,
+          reconnectEpisodeActive: runtime?.reconnectEpisodeActive,
+          reconnectStableSince: runtime?.reconnectStableSince,
+          activeClientExists: Boolean(runtime),
+          audioRelayState: runtime?.audioRelayState ?? "inactive",
+          localStreamActive: Boolean(
+            localStream?.getAudioTracks().some((track) => track.readyState === "live"),
+          ),
+          remotePeerCount: runtime?.remotePeerCount ?? Object.keys(remoteStreams).length,
+          screenShareRelayState: runtime?.screenShareRelayState,
+          roomSnapshotRevision: runtime?.roomSnapshotRevision ?? 0,
+          chatSendFailures: runtime?.chatSendFailures ?? 0,
+        },
+      });
+      if (!cancelled) setRuntimeHealth(snapshot);
+    };
+
+    void refresh().catch(() => undefined);
+    const timer = window.setInterval(() => void refresh().catch(() => undefined), 2_000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [
+    activeSection,
+    localStream,
+    remoteStreams,
+    room.connectionState,
+    room.lifecycleState,
+    room.roomId,
+    room.signalingUrl,
+    settings?.relayServerUrl,
+  ]);
 
   useEffect(() => {
     let cancelled = false;
@@ -197,14 +279,12 @@ export const SettingsPage = () => {
     const context = gsap.context(() => {
       gsap.fromTo(
         "[data-gsap-settings='content']",
-        { autoAlpha: 0, x: 10 },
+        { autoAlpha: 0 },
         {
           autoAlpha: 1,
-          x: 0,
           duration: motionDuration.message,
           ease: motionEase.spatial,
           overwrite: true,
-          force3D: true,
         },
       );
     }, pageRef);
@@ -238,7 +318,7 @@ export const SettingsPage = () => {
         pushToast({
           tone: firewall.healthy ? "success" : "danger",
           title: firewall.healthy ? "防火墙规则已修复" : "防火墙修复未完成",
-          description: firewall.message,
+          description: firewall.healthy ? "TCP/UDP 双向规则已正常启用。" : firewall.message,
         });
       })
       .catch((error) =>
@@ -301,6 +381,10 @@ export const SettingsPage = () => {
       currentRoomId: room.roomId,
       currentPeerId: runtime?.currentPeerId,
       reconnectAttempts: runtime?.reconnectAttempts ?? 0,
+      connectionGeneration: runtime?.connectionGeneration,
+      reconnectEpisodeId: runtime?.reconnectEpisodeId,
+      reconnectEpisodeActive: runtime?.reconnectEpisodeActive,
+      reconnectStableSince: runtime?.reconnectStableSince,
       lastSocketCloseCode: runtime?.lastSocketCloseCode,
       lastSocketCloseReason: runtime?.lastSocketCloseReason,
       lastSocketClosedAt: runtime?.lastSocketClosedAt,
@@ -314,6 +398,8 @@ export const SettingsPage = () => {
       turnConfigured: runtime?.turnConfigured,
       peerRecoveryAttempts: runtime?.peerRecoveryAttempts,
       peerConnectionStats: runtime?.peerConnectionStats,
+      peerHealth: runtime?.peerHealth,
+      longSessionAudio: runtime?.longSessionAudio,
       roomSnapshotRevision: runtime?.roomSnapshotRevision ?? 0,
       chatSendFailures: runtime?.chatSendFailures ?? 0,
       joinStage: runtime?.joinStage,
@@ -336,6 +422,7 @@ export const SettingsPage = () => {
           }
         : undefined,
       screenShareRelayState: runtime?.screenShareRelayState,
+      screenShare: runtime?.screenShare,
       audioTimeline: runtime?.audioRelayDiagnostics?.audioTimeline,
     };
   };
@@ -435,8 +522,8 @@ export const SettingsPage = () => {
             />
           </SettingsItemRow>
           <SettingsItemRow
-            label="显示好友正在进行的工作"
-            description="默认开启。只显示当前正在使用的常见工作软件；音乐状态始终显示。"
+            label="开启工作显示"
+            description="显示自己和好友持续使用的专业工作软件；游戏和音乐不受影响。"
           >
             <Switch
               isChecked={settings.isWorkActivityVisible}
@@ -571,12 +658,16 @@ export const SettingsPage = () => {
       <div className="space-y-4">
         <DiagnosticsSettingsCard
           diagnostics={diagnostics}
+          runtimeHealth={runtimeHealth}
           relay={relayDiagnostics}
           connectionHealth={connectionHealth}
           localAudioDiagnostics={localAudioDiagnostics}
           webrtcReadyPeerCount={runtimeDiagnostics?.webrtcReadyPeerCount ?? 0}
           remotePeerCount={runtimeDiagnostics?.remotePeerCount ?? 0}
           audioRelayActive={isAudioRelayActive}
+          peerHealth={runtimeDiagnostics?.peerHealth}
+          longSessionSampleCount={runtimeDiagnostics?.longSessionAudio.length ?? 0}
+          screenShare={runtimeDiagnostics?.screenShare}
           windowsStatus={windowsDiagnostics}
           onOpenLogs={() => void window.desktopApi.diagnostics.openLogsDirectory()}
           onExportBundle={handleExportBundle}
@@ -584,6 +675,23 @@ export const SettingsPage = () => {
           onRefreshWindows={refreshWindowsDiagnostics}
           onRepairFirewall={handleRepairFirewall}
           isRepairingFirewall={isRepairingFirewall}
+          onInjectFault={(kind) =>
+            void injectRealtimeFault({ kind })
+              .then(() =>
+                pushToast({
+                  tone: "success",
+                  title: "故障已注入",
+                  description: `Fault Lab：${kind}`,
+                }),
+              )
+              .catch((error) =>
+                pushToast({
+                  tone: "danger",
+                  title: "故障注入失败",
+                  description: error instanceof Error ? error.message : String(error),
+                }),
+              )
+          }
         />
         <Button variant="danger" onClick={() => void resetSettings().then(refreshDiagnostics)}>
           安全重置设置
@@ -594,12 +702,25 @@ export const SettingsPage = () => {
 
   return (
     <>
-      <PageContainer className="settings-page overflow-y-auto">
-        <div ref={pageRef} className="contents">
+      <PageContainer
+        className={`settings-page ${
+          activeSection === "recordings"
+            ? "settings-page--recording-library overflow-hidden"
+            : "overflow-y-auto"
+        }`}
+      >
+        <div
+          ref={pageRef}
+          className={activeSection === "recordings" ? "settings-recording-shell" : "contents"}
+        >
           <div data-gsap-settings="header">
             <SettingsPageHeader onBack={() => navigate(settingsReturnTo)} />
           </div>
-          <div className="mt-5 grid gap-5 lg:grid-cols-[168px_minmax(0,1fr)]">
+          <div
+            className={`mt-5 grid gap-5 lg:grid-cols-[168px_minmax(0,1fr)] ${
+              activeSection === "recordings" ? "settings-recording-layout" : ""
+            }`}
+          >
             <nav
               data-gsap-settings="nav"
               className="settings-nav glass-panel h-fit rounded-[22px] p-2"
@@ -620,7 +741,12 @@ export const SettingsPage = () => {
                 </button>
               ))}
             </nav>
-            <div data-gsap-settings="content" className="min-w-0">
+            <div
+              data-gsap-settings="content"
+              className={`min-w-0 ${
+                activeSection === "recordings" ? "settings-recording-content" : ""
+              }`}
+            >
               <div className="mb-2 text-right text-xs text-[#7c8da2]" aria-live="polite">
                 {saveNotice}
               </div>

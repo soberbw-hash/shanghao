@@ -5,7 +5,7 @@ const SILENCE_LABEL = /^(?:non[\s-]?speech|no[\s-]?speech|silence|silent|music|n
 const WORD = /[\p{L}\p{N}']+/gu;
 const transcriptReliabilityCache = new WeakMap<object, boolean>();
 
-export const CURRENT_TRANSCRIPTION_PIPELINE_VERSION = 5;
+export const CURRENT_TRANSCRIPTION_PIPELINE_VERSION = 6;
 
 const normalizedWords = (text: string): string[] =>
   text.normalize("NFKC").toLocaleLowerCase().match(WORD) ?? [];

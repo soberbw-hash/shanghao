@@ -4,6 +4,7 @@ import {
   mkdir,
   open,
   readdir,
+  readFile,
   rename,
   rm,
   stat,
@@ -15,6 +16,8 @@ import { promisify } from "node:util";
 
 import { app, dialog, shell } from "electron";
 
+import { platformService } from "./platform/PlatformService";
+
 import {
   APP_BUILD_NUMBER,
   APP_PROTOCOL_VERSION,
@@ -22,13 +25,36 @@ import {
   type DiagnosticsSnapshot,
   type LogEntry,
   type RendererLogPayload,
+  type RuntimeHealthSnapshot,
 } from "@private-voice/shared";
+
+import { FlightRecorder } from "./flight-recorder";
 
 const execFileAsync = promisify(execFile);
 const MAX_LOG_FILE_BYTES = 10 * 1024 * 1024;
 const MAX_LOG_FILES = 5;
 const EXPORT_LOG_TRUNCATE_THRESHOLD_BYTES = 20 * 1024 * 1024;
 const EXPORT_LOG_TAIL_BYTES = 2 * 1024 * 1024;
+const MAIN_WATCHDOG_INTERVAL_MS = 1_000;
+const MAIN_WATCHDOG_WARN_MS = 500;
+const SENSITIVE_DIAGNOSTIC_KEY =
+  /(path|file|recording|transcript|chat|messagebody|nickname|email|sid|token|authorization|cookie)/i;
+const WINDOWS_PATH = /[a-z]:\\[^\s"']+/gi;
+
+const sanitizeDiagnosticValue = (value: unknown, key = ""): unknown => {
+  if (SENSITIVE_DIAGNOSTIC_KEY.test(key)) return "[redacted]";
+  if (typeof value === "string") return value.replace(WINDOWS_PATH, "[local-path]");
+  if (Array.isArray(value)) return value.slice(0, 100).map((item) => sanitizeDiagnosticValue(item));
+  if (value && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>).map(([childKey, childValue]) => [
+        childKey,
+        sanitizeDiagnosticValue(childValue, childKey),
+      ]),
+    );
+  }
+  return value;
+};
 
 const isRotatedLogFile = (fileName: string): boolean => {
   if (fileName.endsWith(".log")) return true;
@@ -47,7 +73,7 @@ const isRotatedLogFile = (fileName: string): boolean => {
 const zipDirectory = async (sourceDir: string, targetPath: string): Promise<void> => {
   try {
     // The Windows app uses Compress-Archive; keep the generic fallback for development tools.
-    if (process.platform === "win32") {
+    if (platformService.isWindows) {
       await execFileAsync(
         "powershell",
         [
@@ -75,14 +101,26 @@ export class DiagnosticsService {
     lastExportState: ExportTaskState.Idle,
   };
   private logWriteQueue = Promise.resolve();
+  private lastRuntimeHealthSnapshot?: RuntimeHealthSnapshot;
+  private watchdogTimer?: NodeJS.Timeout;
+  readonly flightRecorder = new FlightRecorder();
 
   async init(): Promise<void> {
     await mkdir(this.logsDirectory, { recursive: true });
     await this.compactOversizedLogs();
+    this.startMainThreadWatchdog();
   }
 
   getSnapshot(): DiagnosticsSnapshot {
     return this.snapshot;
+  }
+
+  setRuntimeHealthSnapshot(snapshot: RuntimeHealthSnapshot): void {
+    this.lastRuntimeHealthSnapshot = snapshot;
+  }
+
+  getRuntimeHealthSnapshot(): RuntimeHealthSnapshot | undefined {
+    return this.lastRuntimeHealthSnapshot;
   }
 
   setLastUpdateCheckMessage(message: string): void {
@@ -97,6 +135,7 @@ export class DiagnosticsService {
       timestamp: new Date().toISOString(),
       ...payload,
     };
+    this.flightRecorder.recordLog(entry);
 
     const filePath = path.join(this.logsDirectory, `${payload.category}.log`);
     const line = `${JSON.stringify(entry)}\n`;
@@ -180,7 +219,7 @@ export class DiagnosticsService {
 
     try {
       await mkdir(bundleRoot, { recursive: true });
-      const logStats = await this.exportLogsToDirectory(path.join(bundleRoot, "logs"));
+      const logStats = await this.exportLogsToDirectory(path.join(bundleRoot, "logs"), true);
       await writeFile(
         path.join(bundleRoot, "log-stats.json"),
         JSON.stringify(logStats, null, 2),
@@ -269,6 +308,7 @@ export class DiagnosticsService {
 
   private async exportLogsToDirectory(
     targetDirectory: string,
+    sanitize = false,
   ): Promise<
     Array<{ file: string; originalSize: number; exportedSize: number; truncated: boolean }>
   > {
@@ -290,7 +330,21 @@ export class DiagnosticsService {
       const originalSize = (await stat(sourcePath)).size;
       const truncated = originalSize > EXPORT_LOG_TRUNCATE_THRESHOLD_BYTES;
 
-      if (!truncated) {
+      if (sanitize) {
+        const raw = await readFile(sourcePath, "utf8");
+        const safeLines = raw
+          .split(/\r?\n/u)
+          .filter(Boolean)
+          .map((line) => {
+            try {
+              return JSON.stringify(sanitizeDiagnosticValue(JSON.parse(line)));
+            } catch {
+              return JSON.stringify({ message: "[unparseable log entry omitted]" });
+            }
+          })
+          .join("\n");
+        await writeFile(targetPath, safeLines ? `${safeLines}\n` : "", "utf8");
+      } else if (!truncated) {
         await copyFile(sourcePath, targetPath);
       } else {
         const exportedSize = Math.min(EXPORT_LOG_TAIL_BYTES, originalSize);
@@ -309,5 +363,32 @@ export class DiagnosticsService {
     }
 
     return logStats;
+  }
+
+  private startMainThreadWatchdog(): void {
+    if (this.watchdogTimer) return;
+    let expectedAt = Date.now() + MAIN_WATCHDOG_INTERVAL_MS;
+    this.watchdogTimer = setInterval(() => {
+      const now = Date.now();
+      const delayMs = Math.max(0, now - expectedAt);
+      expectedAt = now + MAIN_WATCHDOG_INTERVAL_MS;
+      if (delayMs < MAIN_WATCHDOG_WARN_MS) return;
+      const memory = process.memoryUsage();
+      this.flightRecorder.record({
+        source: "main",
+        level: "warn",
+        event: "main_thread_watchdog_delay",
+        metrics: {
+          durationMs: delayMs,
+          heapUsedBytes: memory.heapUsed,
+          rssBytes: memory.rss,
+          activeResources:
+            typeof process.getActiveResourcesInfo === "function"
+              ? process.getActiveResourcesInfo().length
+              : null,
+        },
+      });
+    }, MAIN_WATCHDOG_INTERVAL_MS);
+    this.watchdogTimer.unref();
   }
 }

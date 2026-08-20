@@ -24,6 +24,9 @@ try {
   Invoke-Check "Workspace typecheck" {
     corepack pnpm typecheck
   }
+  Invoke-Check "Rust core tests" {
+    corepack pnpm test:native
+  }
   Invoke-Check "Desktop smoke tests" {
     corepack pnpm --dir apps/desktop test:smoke
   }

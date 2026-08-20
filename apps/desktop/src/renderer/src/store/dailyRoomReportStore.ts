@@ -18,6 +18,36 @@ interface DailyRoomReportStoreState {
 
 const emptyReports = (): Record<RoomId, DailyRoomReport[]> => ({ main: [], side: [] });
 
+export const mergeDailyRoomReports = (
+  local: DailyRoomReport[],
+  incoming: DailyRoomReport[],
+): DailyRoomReport[] => {
+  const byDate = new Map(
+    local.filter((report) => report.hadActivity).map((report) => [report.date, report]),
+  );
+  for (const report of incoming) {
+    if (!report.hadActivity) continue;
+    const cached = byDate.get(report.date);
+    if (!cached) {
+      byDate.set(report.date, report);
+      continue;
+    }
+    const incomingRevision = report.revision ?? 0;
+    const cachedRevision = cached.revision ?? 0;
+    const incomingUpdatedAt = Date.parse(report.updatedAt ?? "") || 0;
+    const cachedUpdatedAt = Date.parse(cached.updatedAt ?? "") || 0;
+    if (
+      incomingRevision > cachedRevision ||
+      (incomingRevision === cachedRevision && incomingUpdatedAt >= cachedUpdatedAt)
+    ) {
+      byDate.set(report.date, report);
+    }
+  }
+  return [...byDate.values()]
+    .sort((left, right) => right.date.localeCompare(left.date))
+    .slice(0, 14);
+};
+
 const persistReports = (reports: Record<RoomId, DailyRoomReport[]>): void => {
   void window.desktopApi.app.saveDailyRoomReports(reports).catch(() => undefined);
 };
@@ -34,8 +64,8 @@ export const useDailyRoomReportStore = create<DailyRoomReportStoreState>((set) =
       set((state) => {
         if (state.hydrated) return state;
         const reports = {
-          main: state.reports.main.length ? state.reports.main : cached.main,
-          side: state.reports.side.length ? state.reports.side : cached.side,
+          main: mergeDailyRoomReports(cached.main, state.reports.main),
+          side: mergeDailyRoomReports(cached.side, state.reports.side),
         };
         return {
           reports,
@@ -68,7 +98,7 @@ export const useDailyRoomReportStore = create<DailyRoomReportStoreState>((set) =
     set((state) => {
       const nextReports = {
         ...state.reports,
-        [roomId]: [...reports].sort((a, b) => b.date.localeCompare(a.date)),
+        [roomId]: mergeDailyRoomReports(state.reports[roomId], reports),
       };
       persistReports(nextReports);
       return {

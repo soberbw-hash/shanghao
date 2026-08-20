@@ -1,4 +1,5 @@
 import { parsePowerShellJson, runWindowsPowerShell } from "./windows-command";
+import { platformService } from "./platform/PlatformService";
 
 export const SHANGHAO_FIREWALL_GROUP = "ShangHao Network";
 
@@ -79,7 +80,7 @@ const unsupportedStatus = (): WindowsFirewallStatus => ({
 const runFirewallOperation = async (
   operation: "inspect" | "repair" | "remove",
 ): Promise<WindowsFirewallStatus> => {
-  if (process.platform !== "win32") return unsupportedStatus();
+  if (!platformService.isWindows) return unsupportedStatus();
   const executablePath = process.execPath;
   const result = await runWindowsPowerShell(FIREWALL_SCRIPT, {
     SHANGHAO_FIREWALL_OPERATION: operation,

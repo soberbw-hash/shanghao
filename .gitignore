@@ -1,4 +1,5 @@
 node_modules/
+native/target/
 .turbo/
 dist/
 dist-electron/
@@ -19,6 +20,7 @@ apps/desktop/local-test/
 apps/desktop/.tmp/
 # Local AI models, runtimes and inference work files can exceed many GB and are user data.
 apps/desktop/work/
+apps/desktop/resources/native/shanghao-core*
 
 # Local visual QA captures are generated during review and are not release assets.
 design-qa*.png

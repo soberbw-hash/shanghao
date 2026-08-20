@@ -152,6 +152,14 @@ export const useAppBootstrap = (): void => {
     };
 
     navigator.mediaDevices?.addEventListener("devicechange", handleDeviceChange);
+    const unsubscribeLifecycleRecovery = window.desktopApi.app.onLifecycleRecovery((notice) => {
+      handleDeviceChange();
+      window.dispatchEvent(
+        new CustomEvent("shanghao:lifecycle-recovery", {
+          detail: notice,
+        }),
+      );
+    });
     const handleDeepFilterUnavailable = (event: Event) => {
       const reason = (event as CustomEvent<{ reason?: string }>).detail?.reason ?? "unknown";
       void writeRendererLog("audio", "error", "DeepFilterNet became unavailable", {
@@ -162,6 +170,7 @@ export const useAppBootstrap = (): void => {
 
     return () => {
       isDisposed = true;
+      unsubscribeLifecycleRecovery();
       navigator.mediaDevices?.removeEventListener("devicechange", handleDeviceChange);
       window.removeEventListener("shanghao:deepfilter-unavailable", handleDeepFilterUnavailable);
     };

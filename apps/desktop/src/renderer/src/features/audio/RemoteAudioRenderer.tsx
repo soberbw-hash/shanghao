@@ -46,12 +46,14 @@ export const RemoteAudioRenderer = () => {
     window.addEventListener("keydown", unlock, true);
     document.addEventListener("visibilitychange", resumeWhenVisible);
     navigator.mediaDevices?.addEventListener?.("devicechange", recoverOutput);
+    window.addEventListener("shanghao:lifecycle-recovery", recoverOutput);
     void mixer.unlock("renderer-ready");
     return () => {
       window.removeEventListener("pointerdown", unlock, true);
       window.removeEventListener("keydown", unlock, true);
       document.removeEventListener("visibilitychange", resumeWhenVisible);
       navigator.mediaDevices?.removeEventListener?.("devicechange", recoverOutput);
+      window.removeEventListener("shanghao:lifecycle-recovery", recoverOutput);
     };
   }, [mixer]);
 

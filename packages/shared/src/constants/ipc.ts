@@ -12,6 +12,7 @@ export const IPC_CHANNELS = {
     getLinkPreviewIcon: "app:get-link-preview-icon",
     consumeDeepLink: "app:consume-deep-link",
     deepLink: "app:deep-link",
+    lifecycleRecovery: "app:lifecycle-recovery",
   },
   clipboard: {
     writeText: "clipboard:write-text",
@@ -86,6 +87,7 @@ export const IPC_CHANNELS = {
   },
   diagnostics: {
     snapshot: "diagnostics:snapshot",
+    runtimeHealth: "diagnostics:runtime-health",
     testServer: "diagnostics:test-server",
     exportLogs: "diagnostics:export-logs",
     exportBundle: "diagnostics:export-bundle",
@@ -114,6 +116,7 @@ export const IPC_CHANNELS = {
     connect: "signaling:connect",
     send: "signaling:send",
     close: "signaling:close",
+    injectFault: "signaling:inject-fault",
     event: "signaling:event",
   },
   recording: {
@@ -124,6 +127,7 @@ export const IPC_CHANNELS = {
     scanWaste: "recording:scan-waste",
     scanWasteProgress: "recording:scan-waste-progress",
     setFavorite: "recording:set-favorite",
+    rename: "recording:rename",
     openDirectory: "recording:open-directory",
     delete: "recording:delete",
     deleteMany: "recording:delete-many",

@@ -1,5 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { gsap } from "gsap";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import {
   RecordingEncoderState,
@@ -26,9 +25,8 @@ import { TeamIsland } from "../components/room/TeamIsland";
 import { RecordingStopDialog } from "../components/status/RecordingStopDialog";
 import { playUiSound } from "../features/audio/uiSound";
 import { getRemoteAudioMixer } from "../features/audio/RemoteAudioMixer";
-import { motionDuration, motionEase } from "../features/motion/motionSystem";
 import { summarizeConnectionHealth } from "../features/network/networkDiagnostics";
-import type { ScreenShareItem } from "../features/screen-share/types";
+import type { ScreenShareItem, ScreenShareQuality } from "../features/screen-share/types";
 import { useScreenShare } from "../features/screen-share/useScreenShare";
 import {
   decideAutoAway,
@@ -49,7 +47,6 @@ import { useSettingsStore } from "../store/settingsStore";
 import { prepareChatImage } from "../utils/chatImage";
 
 const KNOCK_COOLDOWN_MS = 10_000;
-
 interface AwaySession {
   method: "auto" | "manual";
   seat: SceneZoneId;
@@ -60,7 +57,6 @@ interface AwaySession {
   workActivity?: GameDetectionSnapshot["workActivity"];
   enteredAt: string;
 }
-
 export const RoomPage = () => {
   const {
     room,
@@ -140,7 +136,6 @@ export const RoomPage = () => {
   const resetRecordingStatus = useRecordingStore((state) => state.resetStatus);
   const { capability, startRecording, stopRecording, discardRecording } = useRecordingController();
   const pageRef = useRef<HTMLDivElement>(null);
-  const voicePulseRef = useRef<HTMLDivElement>(null);
   const [chatInput, setChatInput] = useState("");
   const [pendingIncludeSystemAudio, setPendingIncludeSystemAudio] = useState(false);
   const [isScreenSourcePickerOpen, setIsScreenSourcePickerOpen] = useState(false);
@@ -184,7 +179,6 @@ export const RoomPage = () => {
     screenShareStatus === "enumerating" ||
     screenShareStatus === "starting" ||
     screenShareStatus === "stopping";
-
   const canSend =
     room.connectionState === RoomConnectionState.Connected ||
     room.connectionState === RoomConnectionState.WaitingPeer ||
@@ -194,8 +188,16 @@ export const RoomPage = () => {
     const timer = window.setInterval(() => setScreenFrameNow(Date.now()), 1_000);
     return () => window.clearInterval(timer);
   }, [remoteScreenFrames]);
-
   const localMember = room.members.find((member) => member.isLocal);
+  const visibleMembers = useMemo(
+    () =>
+      settings?.isWorkActivityVisible === false
+        ? room.members.map((member) =>
+            member.workActivity ? { ...member, workActivity: undefined } : member,
+          )
+        : room.members,
+    [room.members, settings?.isWorkActivityVisible],
+  );
   const roomCollection = useRoomCollection({
     localMemberId: localMember?.id,
     addItem: addRoomCollectionItem,
@@ -207,7 +209,6 @@ export const RoomPage = () => {
   const localWorkActivityKey = JSON.stringify(localMember?.workActivity ?? null);
   const localGameIconKey = localMember?.gameIconDataUrl ?? "";
   const connectionQuality = summarizeConnectionHealth(connectionHealth);
-
   useEffect(() => {
     if (recordingStatus.state !== RecordingState.Recording || !recordingStatus.startedAt) return;
     const now = Date.now();
@@ -224,10 +225,13 @@ export const RoomPage = () => {
     }
   }, [recordingStatus.startedAt, recordingStatus.state, room.members]);
 
-  const queueVoiceMemory = (result: { filePath: string }, markers = recordingMarkers) => {
+  const queueVoiceMemory = (
+    result: { filePath: string; recordingId?: string },
+    markers = recordingMarkers,
+  ) => {
     if (!settings?.isAiAutoTranscribeEnabled || !window.desktopApi.ai?.processRecording) return;
     const request = {
-      recordingId: result.filePath,
+      recordingId: result.recordingId ?? result.filePath,
       filePath: result.filePath,
       roomId: room.roomId,
       roomName: room.roomName,
@@ -321,52 +325,6 @@ export const RoomPage = () => {
     detachedViewerSnapshot.transport,
     syncDetachedItem,
   ]);
-
-  useLayoutEffect(() => {
-    if (!pageRef.current) return;
-
-    const context = gsap.context(() => {
-      if (reduceMotion) {
-        gsap.set(pageRef.current, { clearProps: "all" });
-        return;
-      }
-
-      gsap.fromTo(
-        pageRef.current,
-        { autoAlpha: 0.94, y: 5 },
-        {
-          autoAlpha: 1,
-          y: 0,
-          duration: motionDuration.message,
-          ease: motionEase.spatial,
-          force3D: true,
-          clearProps: "transform,opacity,visibility",
-        },
-      );
-    }, pageRef);
-
-    return () => context.revert();
-  }, [reduceMotion]);
-
-  useLayoutEffect(() => {
-    if (reduceMotion || !voicePulseRef.current) return;
-
-    const context = gsap.context(() => {
-      gsap.fromTo(
-        "[data-gsap-voice='primary']",
-        { scale: 0.96 },
-        {
-          scale: 1,
-          duration: motionDuration.feedback,
-          ease: motionEase.feedback,
-          overwrite: true,
-          force3D: true,
-        },
-      );
-    }, voicePulseRef);
-
-    return () => context.revert();
-  }, [isDeafened, isMuted, reduceMotion]);
 
   useEffect(() => {
     const overlayState = {
@@ -966,12 +924,16 @@ export const RoomPage = () => {
     }
   };
 
-  const startSharingScreen = async (sourceId: string) => {
+  const startSharingScreen = async (sourceId: string, quality: ScreenShareQuality) => {
     try {
       closeScreenSourcePicker(false);
+      await new Promise<void>((resolve) => {
+        window.requestAnimationFrame(() => window.requestAnimationFrame(() => resolve()));
+      });
       const stream = await startManagedScreenShare({
         sourceId,
         includeSystemAudio: pendingIncludeSystemAudio,
+        quality,
       });
       playUiSound("popup-open");
       pushToast({
@@ -1277,7 +1239,7 @@ export const RoomPage = () => {
         localMember?.gameName ? "performance-gaming" : ""
       }`}
     >
-      <div data-gsap-room="topbar">
+      <div>
         <TopStatusBar
           currentChannelId={room.roomId === "side" ? "side" : "main"}
           channelCounts={channelCounts}
@@ -1291,13 +1253,9 @@ export const RoomPage = () => {
       </div>
 
       <main className="room-main-grid grid min-h-0 flex-1 gap-2.5 lg:grid-cols-[minmax(0,1.44fr)_minmax(280px,.56fr)]">
-        <section
-          data-gsap-room="island"
-          className="room-scene-column island-panel min-h-0 overflow-hidden"
-        >
+        <section className="room-scene-column island-panel min-h-0 overflow-hidden">
           <TeamIsland
-            key={room.roomId}
-            members={room.members}
+            members={visibleMembers}
             onZoneSelect={handleZoneSelect}
             onReact={(targetPeerId, emoji) => void sendSceneReaction(targetPeerId, emoji)}
             onVolumeChange={setMemberVolume}
@@ -1338,7 +1296,7 @@ export const RoomPage = () => {
             }}
           />
         </section>
-        <div data-gsap-room="chat" className="room-chat-column min-h-0">
+        <div className="room-chat-column min-h-0">
           <TemporaryChatPanel
             className="h-full"
             messages={chatMessages}
@@ -1383,7 +1341,7 @@ export const RoomPage = () => {
         sources={screenSourcePickerSources}
         includeSystemAudio={pendingIncludeSystemAudio}
         onIncludeSystemAudioChange={setPendingIncludeSystemAudio}
-        onSelect={(sourceId) => void startSharingScreen(sourceId)}
+        onSelect={(sourceId, quality) => void startSharingScreen(sourceId, quality)}
         onClose={() => closeScreenSourcePicker()}
       />
 
@@ -1429,7 +1387,6 @@ export const RoomPage = () => {
       />
 
       <RoomDock
-        voicePulseRef={voicePulseRef}
         activeAudioPanel={activeAudioPanel}
         setActiveAudioPanel={setActiveAudioPanel}
         settings={settings}
@@ -1462,8 +1419,8 @@ export const RoomPage = () => {
         onVoiceEnhancementChange={(isVoiceEnhancementEnabled) =>
           void updateMicrophoneProcessing(
             { isVoiceEnhancementEnabled },
-            "人声增强已开启",
-            "人声增强已关闭",
+            "自然人声已开启",
+            "自然人声已关闭",
           )
         }
         onAutoGainChange={(isAutoGainControlEnabled) =>

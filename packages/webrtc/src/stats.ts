@@ -5,7 +5,17 @@ export interface PeerAudioStats {
   bytesReceived?: number;
   totalSamplesReceived?: number;
   concealedSamples?: number;
+  concealmentEvents?: number;
+  silentConcealedSamples?: number;
   concealmentPercent?: number;
+  jitterBufferDelayMs?: number;
+  jitterBufferTargetDelayMs?: number;
+  jitterBufferEmittedCount?: number;
+  averageJitterBufferDelayMs?: number;
+  averageJitterBufferTargetDelayMs?: number;
+  packetsDiscarded?: number;
+  fecPacketsReceived?: number;
+  fecPacketsDiscarded?: number;
   lastPacketReceivedTimestampMs?: number;
   packetLossPercent?: number;
   roundTripTimeMs?: number;
@@ -149,6 +159,30 @@ export const collectPeerAudioStats = async (
         typeof report.totalSamplesReceived === "number" ? report.totalSamplesReceived : undefined;
       snapshot.concealedSamples =
         typeof report.concealedSamples === "number" ? report.concealedSamples : undefined;
+      snapshot.concealmentEvents =
+        typeof report.concealmentEvents === "number" ? report.concealmentEvents : undefined;
+      snapshot.silentConcealedSamples =
+        typeof report.silentConcealedSamples === "number"
+          ? report.silentConcealedSamples
+          : undefined;
+      snapshot.jitterBufferDelayMs =
+        typeof report.jitterBufferDelay === "number"
+          ? Math.round(report.jitterBufferDelay * 1_000)
+          : undefined;
+      snapshot.jitterBufferTargetDelayMs =
+        typeof report.jitterBufferTargetDelay === "number"
+          ? Math.round(report.jitterBufferTargetDelay * 1_000)
+          : undefined;
+      snapshot.jitterBufferEmittedCount =
+        typeof report.jitterBufferEmittedCount === "number"
+          ? report.jitterBufferEmittedCount
+          : undefined;
+      snapshot.packetsDiscarded =
+        typeof report.packetsDiscarded === "number" ? report.packetsDiscarded : undefined;
+      snapshot.fecPacketsReceived =
+        typeof report.fecPacketsReceived === "number" ? report.fecPacketsReceived : undefined;
+      snapshot.fecPacketsDiscarded =
+        typeof report.fecPacketsDiscarded === "number" ? report.fecPacketsDiscarded : undefined;
       snapshot.lastPacketReceivedTimestampMs =
         typeof report.lastPacketReceivedTimestamp === "number"
           ? report.lastPacketReceivedTimestamp
@@ -184,6 +218,15 @@ export const collectPeerAudioStats = async (
             1_000,
         ) / 10
       : 0;
+  const jitterBufferEmittedCount = snapshot.jitterBufferEmittedCount ?? 0;
+  snapshot.averageJitterBufferDelayMs =
+    jitterBufferEmittedCount > 0
+      ? Math.round((snapshot.jitterBufferDelayMs ?? 0) / jitterBufferEmittedCount)
+      : undefined;
+  snapshot.averageJitterBufferTargetDelayMs =
+    jitterBufferEmittedCount > 0
+      ? Math.round((snapshot.jitterBufferTargetDelayMs ?? 0) / jitterBufferEmittedCount)
+      : undefined;
 
   const localCandidate = candidatePair?.localCandidateId
     ? (stats.get(candidatePair.localCandidateId) as CandidateStats | undefined)

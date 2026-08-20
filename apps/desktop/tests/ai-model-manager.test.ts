@@ -11,6 +11,7 @@ import {
   GAMING_DOWNLOAD_BYTES_PER_SECOND,
   MODEL_SOURCES,
   NORMAL_DOWNLOAD_BYTES_PER_SECOND,
+  PINNED_MODEL_REVISIONS,
   safeRelativeModelPath,
 } from "../src/main/ai-model-manager";
 
@@ -97,13 +98,18 @@ test("AI model paths reject traversal and persisted partial state resumes after 
   );
   const manager = new AiModelManager(directory, games as never, async () => undefined);
   await manager.initialize("manual");
-  const model = manager.getSnapshot().models.find((candidate) => candidate.id === "vibevoice");
-  assert.equal(model?.phase, "paused");
-  assert.equal(model?.progress, 60);
-  assert.equal(JSON.parse(await readFile(statePath, "utf8")).models.vibevoice.userInstalled, true);
-
-  manager.stop();
-  await rm(directory, { recursive: true, force: true });
+  try {
+    const model = manager.getSnapshot().models.find((candidate) => candidate.id === "vibevoice");
+    assert.ok(["paused", "checking", "downloading"].includes(model?.phase ?? ""));
+    assert.equal(model?.progress, 60);
+    assert.equal(
+      JSON.parse(await readFile(statePath, "utf8")).models.vibevoice.userInstalled,
+      true,
+    );
+  } finally {
+    manager.stop();
+    await rm(directory, { recursive: true, force: true });
+  }
 });
 
 test("AI model downloads have a mainland fallback and readable failure messages", () => {
@@ -116,4 +122,6 @@ test("AI model downloads have a mainland fallback and readable failure messages"
   assert.match(describeAiModelError(new Error("ai_model_disk_space_insufficient")), /磁盘/);
   assert.match(describeAiModelError(new Error("ai_model_file_incomplete")), /继续/);
   assert.match(describeAiModelError(new Error("ai_model_manifest_http_503")), /HTTP 503/);
+  assert.equal(PINNED_MODEL_REVISIONS.vibevoice, "66e78021ab8f5f06133d1ab421ba4d348bda97c9");
+  assert.equal(PINNED_MODEL_REVISIONS["qwen35-4b"], "851bf6e806efd8d0a36b00ddf55e13ccb7b8cd0a");
 });

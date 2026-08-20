@@ -731,7 +731,7 @@ export const TemporaryChatPanel = ({
                   onClick={() => showPreviewImage(-1)}
                   aria-label="查看上一张图片"
                 >
-                  <ChevronLeft aria-hidden="true" />
+                  <ChevronLeft className="size-8" strokeWidth={2.4} aria-hidden="true" />
                 </button>
               ) : null}
               <div className="chat-image-preview-surface">
@@ -767,7 +767,7 @@ export const TemporaryChatPanel = ({
                   onClick={() => showPreviewImage(1)}
                   aria-label="查看下一张图片"
                 >
-                  <ChevronRight aria-hidden="true" />
+                  <ChevronRight className="size-8" strokeWidth={2.4} aria-hidden="true" />
                 </button>
               ) : null}
             </div>,

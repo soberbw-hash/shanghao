@@ -1,6 +1,10 @@
 import { app } from "electron";
 
-import type { RecordingCleanupScan, RecordingLibrarySnapshot } from "@private-voice/shared";
+import type {
+  RecordingCleanupScan,
+  RecordingLibraryItem,
+  RecordingLibrarySnapshot,
+} from "@private-voice/shared";
 
 import { resolveRecordingDirectory, resolveUsableRecordingDirectory } from "./recording-path";
 import {
@@ -10,6 +14,7 @@ import {
   enforceRecordingQuotaInDirectory,
   isAllowedRecordingPathInDirectory,
   readRecordingLibraryFromDirectory,
+  renameRecordingInDirectory,
   RECORDING_MEDIA_PROTOCOL,
   setRecordingFavoriteInDirectory,
   toRecordingMediaUrl,
@@ -88,6 +93,17 @@ export const setRecordingFavorite = async (
     isFavorite,
   );
 };
+
+export const renameRecording = async (
+  configuredDirectory: string | undefined,
+  recordingId: string,
+  title: string,
+): Promise<RecordingLibraryItem> =>
+  renameRecordingInDirectory(
+    await getUsableRecordingDirectory(configuredDirectory),
+    recordingId,
+    title,
+  );
 
 export const isAllowedRecordingMediaPath = (
   configuredDirectory: string | undefined,

@@ -5,6 +5,7 @@ import { createPortal } from "react-dom";
 import type { DailyRoomReport } from "@private-voice/shared";
 
 import { Button } from "../base/Button";
+import { buildDailyRoomReportHighlights } from "../../features/daily-report/dailyRoomReportHighlights";
 import { overlayScrimVariants, reducedFadeVariants } from "../../features/motion/motionPresets";
 
 const reportSurfaceVariants = {
@@ -43,6 +44,7 @@ export const DailyRoomReportModal = ({
   const participantNames = report.participantNicknames
     .map((nickname) => nickname.trim())
     .filter(Boolean);
+  const highlights = buildDailyRoomReportHighlights(report);
   const headline = gameActivities.length
     ? `${gameActivities[0]?.nickname} 昨天开了一局，房间里留下了游戏时间 🎮`
     : report.participantCount >= 4
@@ -122,22 +124,48 @@ export const DailyRoomReportModal = ({
             </div>
           </section>
         ) : null}
+        {highlights.length ? (
+          <section className="mt-5 grid grid-cols-2 gap-2.5" aria-label="昨日亮点">
+            {highlights.map((highlight) => (
+              <div
+                key={highlight.id}
+                className="rounded-2xl border border-[#d9e8f8] bg-white/55 p-3"
+              >
+                <small className="block text-[11px] font-bold text-[#7b91aa]">
+                  {highlight.label}
+                </small>
+                <strong className="mt-1 block truncate text-sm text-[#29435f]">
+                  {highlight.value}
+                </strong>
+                {highlight.detail ? (
+                  <span className="mt-0.5 block text-xs text-[#6c839d]">{highlight.detail}</span>
+                ) : null}
+              </div>
+            ))}
+          </section>
+        ) : null}
         <div className="mt-5 grid grid-cols-3 gap-3">
-          <div className="daily-report-stat">
-            <Users />
-            <strong>{report.participantCount}</strong>
-            <span>位朋友</span>
-          </div>
-          <div className="daily-report-stat">
-            <MessageCircle />
-            <strong>{report.messageCount}</strong>
-            <span>条消息</span>
-          </div>
-          <div className="daily-report-stat">
-            <MonitorUp />
-            <strong>{report.screenShareCount}</strong>
-            <span>次分享</span>
-          </div>
+          {report.participantCount ? (
+            <div className="daily-report-stat">
+              <Users />
+              <strong>{report.participantCount}</strong>
+              <span>位朋友</span>
+            </div>
+          ) : null}
+          {report.messageCount ? (
+            <div className="daily-report-stat">
+              <MessageCircle />
+              <strong>{report.messageCount}</strong>
+              <span>条消息</span>
+            </div>
+          ) : null}
+          {report.screenShareCount ? (
+            <div className="daily-report-stat">
+              <MonitorUp />
+              <strong>{report.screenShareCount}</strong>
+              <span>次分享</span>
+            </div>
+          ) : null}
         </div>
         <div className="daily-report-summary">
           <p>

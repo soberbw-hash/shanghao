@@ -21,7 +21,6 @@ import {
 } from "./voiceProcessingState";
 
 export const MICROPHONE_EQ_FREQUENCIES = [80, 250, 1_000, 4_000, 12_000] as const;
-const VOICE_ENHANCEMENT_EQ_GAINS: MicEqualizerGains = [-2, -1, 0, 2, 1];
 
 export interface ProcessedMicrophoneStream {
   stream: MediaStream;
@@ -192,6 +191,58 @@ export const connectMicrophoneEqualizer = (
   return currentNode;
 };
 
+const connectMicrophoneLowCut = (
+  context: AudioContext,
+  source: AudioNode,
+  lowCutFrequency: LowCutFrequency,
+): AudioNode => {
+  let currentNode = source;
+  if (lowCutFrequency === "off") return currentNode;
+  FOURTH_ORDER_BUTTERWORTH_Q.forEach((quality) => {
+    const lowCut = context.createBiquadFilter();
+    lowCut.type = "highpass";
+    lowCut.frequency.setValueAtTime(Number(lowCutFrequency), context.currentTime);
+    lowCut.Q.setValueAtTime(quality, context.currentTime);
+    currentNode.connect(lowCut);
+    currentNode = lowCut;
+  });
+  return currentNode;
+};
+
+interface NaturalVoiceEnhancer {
+  output: AudioNode;
+  presence?: BiquadFilterNode;
+  airRestraint?: BiquadFilterNode;
+  compressor?: DynamicsCompressorNode;
+}
+
+const connectNaturalVoiceEnhancer = (
+  context: AudioContext,
+  source: AudioNode,
+  enabled: boolean,
+): NaturalVoiceEnhancer => {
+  if (!enabled) return { output: source };
+  const presence = context.createBiquadFilter();
+  presence.type = "peaking";
+  presence.frequency.value = 2_400;
+  presence.Q.value = 0.75;
+  presence.gain.value = 0.45;
+  const airRestraint = context.createBiquadFilter();
+  airRestraint.type = "highshelf";
+  airRestraint.frequency.value = 6_500;
+  airRestraint.gain.value = -0.8;
+  const compressor = context.createDynamicsCompressor();
+  compressor.threshold.value = -18;
+  compressor.knee.value = 10;
+  compressor.ratio.value = 1.6;
+  compressor.attack.value = 0.012;
+  compressor.release.value = 0.18;
+  source.connect(presence);
+  presence.connect(airRestraint);
+  airRestraint.connect(compressor);
+  return { output: compressor, presence, airRestraint, compressor };
+};
+
 export const createProcessedMicrophoneStream = async (
   inputStream: MediaStream,
   settings: Pick<
@@ -203,11 +254,6 @@ export const createProcessedMicrophoneStream = async (
   > & { microphoneSendVolume?: number; getRemoteReferenceLevel?: () => number },
 ): Promise<ProcessedMicrophoneStream> => {
   const userGains = normalizeEqualizerGains(settings.micEqualizerGains);
-  const gains = normalizeEqualizerGains(
-    userGains.map((gain, index) =>
-      settings.isVoiceEnhancementEnabled ? gain + (VOICE_ENHANCEMENT_EQ_GAINS[index] ?? 0) : gain,
-    ),
-  );
   const processorDiagnostics: ProcessedMicrophoneStream["processorDiagnostics"] = {
     noiseProcessor: settings.isNoiseSuppressionEnabled ? "deepfilter_loading" : "bypass",
     speechProtection: "inactive",
@@ -247,7 +293,15 @@ export const createProcessedMicrophoneStream = async (
   outputLimiter.release.value = 0.12;
   outputGain.connect(outputLimiter);
   outputLimiter.connect(destination);
-  const filtered = connectMicrophoneEqualizer(context, source, gains, settings.lowCutFrequency);
+  const filtered = connectMicrophoneLowCut(context, source, settings.lowCutFrequency);
+  const blendBus = context.createGain();
+  const naturalEnhancer = connectNaturalVoiceEnhancer(
+    context,
+    blendBus,
+    settings.isVoiceEnhancementEnabled,
+  );
+  const equalized = connectMicrophoneEqualizer(context, naturalEnhancer.output, userGains, "off");
+  equalized.connect(outputGain);
   const rawGain = context.createGain();
   rawGain.gain.value = 1;
   const rawDelay = settings.isNoiseSuppressionEnabled ? context.createDelay(0.05) : undefined;
@@ -258,7 +312,7 @@ export const createProcessedMicrophoneStream = async (
   } else {
     filtered.connect(rawGain);
   }
-  rawGain.connect(outputGain);
+  rawGain.connect(blendBus);
 
   let disposed = false;
   let activeProcessor: DeepFilterNodeResult | undefined;
@@ -327,7 +381,7 @@ export const createProcessedMicrophoneStream = async (
         gain.gain.value = 0;
         filtered.connect(processor.node);
         processor.node.connect(gain);
-        gain.connect(outputGain);
+        gain.connect(blendBus);
         activeProcessor = processor;
         processedGain = gain;
         processorDiagnostics.noiseProcessor = "deepfilter_active";
@@ -428,6 +482,16 @@ export const createProcessedMicrophoneStream = async (
       processorDiagnostics.remoteEchoDetected = voiceProcessingState.mode === "echo";
       processorDiagnostics.speechProbability = speechProbability;
       processorDiagnostics.remoteReferenceLevel = remoteLevel;
+      if (naturalEnhancer.presence && naturalEnhancer.airRestraint) {
+        const now = context.currentTime;
+        const nearVoice = speechProbability >= 0.58;
+        naturalEnhancer.presence.gain.setTargetAtTime(nearVoice ? 0.7 : 0.2, now, 0.08);
+        naturalEnhancer.airRestraint.gain.setTargetAtTime(
+          voiceProcessingState.mode === "echo" ? -1.4 : nearVoice ? -0.45 : -0.9,
+          now,
+          0.1,
+        );
+      }
       const previousActive = protectionState.active;
       protectionState = advanceSpeechProtection(protectionState, rms, performance.now());
 
@@ -501,6 +565,10 @@ export const createProcessedMicrophoneStream = async (
       protectionSilentGain?.disconnect();
       rawDelay?.disconnect();
       rawGain.disconnect();
+      blendBus.disconnect();
+      naturalEnhancer.presence?.disconnect();
+      naturalEnhancer.airRestraint?.disconnect();
+      naturalEnhancer.compressor?.disconnect();
       outputGain.disconnect();
       outputLimiter.disconnect();
       inputStream.getTracks().forEach((track) => track.stop());

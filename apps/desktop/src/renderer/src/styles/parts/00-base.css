@@ -1,0 +1,171 @@
+@import "tailwindcss";
+@config "../../../../../tailwind.config.mts";
+
+html.is-visual-runtime-hidden *,
+html.is-visual-runtime-hidden *::before,
+html.is-visual-runtime-hidden *::after {
+  animation-play-state: paused !important;
+}
+
+/* Tailwind 4 uses currentColor for unqualified borders. Keep the v3 baseline so
+   the existing ice-blue surfaces do not change during this tooling migration. */
+@layer base {
+  *,
+  ::after,
+  ::before,
+  ::backdrop,
+  ::file-selector-button {
+    border-color: var(--color-gray-200, currentColor);
+  }
+}
+
+:root {
+  color-scheme: light;
+
+  /* ── 上号液态玻璃设计 token ── */
+  --sg-bg-0: #f3f7fc;
+  --sg-bg-1: #eaf1f8;
+  --sg-ink-0: #172235;
+  --sg-ink-1: #42536a;
+  --sg-ink-2: #78879a;
+
+  --sg-blue: #4da3ff;
+  --sg-blue-deep: #2f6fcc;
+  --sg-blue-soft: rgba(77, 163, 255, 0.16);
+
+  --sg-danger: #ff5a5a;
+  --sg-danger-soft: rgba(255, 90, 90, 0.14);
+  --sg-success: #18b66a;
+
+  --sg-glass-bg: rgba(252, 254, 255, 0.76);
+  --sg-glass-bg-strong: rgba(255, 255, 255, 0.9);
+  --sg-glass-bg-soft: rgba(247, 251, 255, 0.7);
+  --sg-glass-border: rgba(255, 255, 255, 0.84);
+  --sg-glass-stroke: rgba(187, 205, 226, 0.58);
+
+  --sg-glass-blur: 16px;
+  --sg-glass-saturate: 145%;
+
+  --sg-radius-sm: 12px;
+  --sg-radius-md: 16px;
+  --sg-radius-lg: 22px;
+  --sg-radius-xl: 30px;
+  --sg-radius-pill: 999px;
+
+  --sg-shadow-glass:
+    0 16px 44px rgba(63, 92, 132, 0.1), 0 2px 8px rgba(63, 92, 132, 0.05),
+    inset 0 1px 0 rgba(255, 255, 255, 0.88), inset 0 -1px 0 rgba(120, 150, 190, 0.07);
+
+  --sg-shadow-control: 0 6px 20px rgba(63, 102, 160, 0.1), inset 0 1px 0 rgba(255, 255, 255, 0.84);
+
+  /* Legacy compatibility */
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-spatial: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
+  --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
+  --ease-standard: cubic-bezier(0.2, 0, 0, 1);
+  --ease-organic: cubic-bezier(0.45, 0, 0.55, 1);
+  --ease-out-soft: var(--ease-out);
+  --ease-in-out-soft: var(--ease-in-out);
+  --duration-instant: 100ms;
+  --duration-fast: 150ms;
+  --duration-compact: 200ms;
+  --duration-normal: 280ms;
+  --duration-relaxed: 360ms;
+  --duration-slow: 520ms;
+  --duration-scene: 650ms;
+  --duration-page: 360ms;
+  --blur-glass: var(--sg-glass-blur);
+  --color-blue: var(--sg-blue);
+  --color-blue-light: #eaf4ff;
+  --color-blue-deep: var(--sg-blue-deep);
+  --color-danger: var(--sg-danger);
+  --color-danger-light: var(--sg-danger-soft);
+  --color-success: var(--sg-success);
+  --color-border: var(--sg-glass-stroke);
+  --shadow-button: var(--sg-shadow-control);
+  --shadow-button-hover:
+    0 10px 28px rgba(63, 102, 160, 0.14), inset 0 1px 0 rgba(255, 255, 255, 0.9);
+  --shadow-button-active: 0 2px 8px rgba(63, 102, 160, 0.06) inset;
+  --shadow-panel: var(--sg-shadow-glass);
+  --shadow-panel-hover:
+    0 22px 68px rgba(63, 102, 160, 0.16), inset 0 1px 0 rgba(255, 255, 255, 0.82);
+
+  font-family:
+    "Noto Sans SC Variable", "Segoe UI Variable Text", "Segoe UI", "PingFang SC", "Microsoft YaHei",
+    sans-serif;
+  background: var(--sg-bg-0);
+  color: var(--sg-ink-0);
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+html[data-renderer="screen-viewer"],
+html[data-renderer="screen-viewer"] body,
+html[data-renderer="screen-viewer"] #root {
+  background: #0a0d12;
+}
+
+.screen-share-viewer-page {
+  display: grid;
+  width: 100vw;
+  height: 100vh;
+  place-items: center;
+  overflow: hidden;
+  background: radial-gradient(circle at 50% 35%, #182131 0%, #0a0d12 68%);
+}
+
+.screen-share-viewer-page > :is(img, video) {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  user-select: none;
+}
+
+.screen-share-viewer-loading {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: rgba(244, 248, 255, 0.86);
+  font-size: 14px;
+}
+
+.screen-share-viewer-loading span {
+  width: 18px;
+  height: 18px;
+  border: 2px solid rgba(255, 255, 255, 0.2);
+  border-top-color: #75b7ff;
+  border-radius: 50%;
+  animation: screen-viewer-spin 0.8s linear infinite;
+}
+
+@keyframes screen-viewer-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+body {
+  overflow: hidden;
+  background:
+    radial-gradient(circle at 9% 3%, rgba(119, 177, 255, 0.14), transparent 32%),
+    radial-gradient(circle at 91% 88%, rgba(132, 225, 195, 0.1), transparent 31%),
+    linear-gradient(145deg, #f8fbff 0%, #edf3fa 52%, #f4f9f7 100%);
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+@media (prefers-contrast: more) {
+  :root {
+    --sg-ink-0: #0b1322;
+    --sg-ink-1: #27364a;
+    --sg-ink-2: #536176;
+    --sg-glass-stroke: rgba(79, 102, 135, 0.52);
+  }
+}

@@ -8,6 +8,13 @@ const desktopApi: DesktopApi = {
     getSystemIdleSeconds: () => ipcRenderer.invoke(IPC_CHANNELS.app.getSystemIdleSeconds),
     writeLog: (payload) => ipcRenderer.invoke(IPC_CHANNELS.app.writeLog, payload),
     notify: (payload) => ipcRenderer.invoke(IPC_CHANNELS.app.notify, payload),
+    onLifecycleRecovery: (listener) => {
+      const wrapped = (_event: Electron.IpcRendererEvent, notice: unknown) => {
+        listener(notice as Parameters<typeof listener>[0]);
+      };
+      ipcRenderer.on(IPC_CHANNELS.app.lifecycleRecovery, wrapped);
+      return () => ipcRenderer.removeListener(IPC_CHANNELS.app.lifecycleRecovery, wrapped);
+    },
     readChatHistory: (payload) => ipcRenderer.invoke(IPC_CHANNELS.app.readChatHistory, payload),
     saveChatHistory: (payload) => ipcRenderer.invoke(IPC_CHANNELS.app.saveChatHistory, payload),
     readDailyRoomReports: () => ipcRenderer.invoke(IPC_CHANNELS.app.readDailyRoomReports),
@@ -141,6 +148,8 @@ const desktopApi: DesktopApi = {
   },
   diagnostics: {
     snapshot: () => ipcRenderer.invoke(IPC_CHANNELS.diagnostics.snapshot),
+    runtimeHealth: (renderer) =>
+      ipcRenderer.invoke(IPC_CHANNELS.diagnostics.runtimeHealth, renderer),
     testServer: (serverUrl) => ipcRenderer.invoke(IPC_CHANNELS.diagnostics.testServer, serverUrl),
     exportLogs: () => ipcRenderer.invoke(IPC_CHANNELS.diagnostics.exportLogs),
     exportBundle: (rendererState) =>
@@ -190,6 +199,8 @@ const desktopApi: DesktopApi = {
     send: (payload, sessionId) =>
       ipcRenderer.invoke(IPC_CHANNELS.signaling.send, payload, sessionId),
     close: (sessionId) => ipcRenderer.invoke(IPC_CHANNELS.signaling.close, sessionId),
+    injectFault: (sessionId, command) =>
+      ipcRenderer.invoke(IPC_CHANNELS.signaling.injectFault, sessionId, command),
     onEvent: (listener) => {
       const wrapped = (_event: Electron.IpcRendererEvent, payload: unknown) => {
         listener(payload as Parameters<typeof listener>[0]);
@@ -214,6 +225,8 @@ const desktopApi: DesktopApi = {
     },
     setFavorite: (filePath, isFavorite) =>
       ipcRenderer.invoke(IPC_CHANNELS.recording.setFavorite, filePath, isFavorite),
+    rename: (recordingId, title) =>
+      ipcRenderer.invoke(IPC_CHANNELS.recording.rename, recordingId, title),
     openDirectory: () => ipcRenderer.invoke(IPC_CHANNELS.recording.openDirectory),
     delete: (filePath) => ipcRenderer.invoke(IPC_CHANNELS.recording.delete, filePath),
     deleteMany: (filePaths) => ipcRenderer.invoke(IPC_CHANNELS.recording.deleteMany, filePaths),

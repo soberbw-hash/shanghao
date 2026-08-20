@@ -69,6 +69,20 @@ test("VibeVoice timestamps become clickable structured transcript segments", () 
   assert.equal(segments[0]?.speakerId, "Speaker 2");
 });
 
+test("VibeVoice structured JSON preserves UTF-8 Chinese and native timestamps", () => {
+  const segments = parseVibeVoiceOutput(
+    '\uFEFF[{"Start":0.25,"End":2.5,"Speaker":2,"Content":"我们上号打游戏，稍后开 Discord。"}]',
+    "recording-json",
+    10_000,
+    4_000,
+  );
+  assert.equal(segments.length, 1);
+  assert.equal(segments[0]?.startMs, 10_250);
+  assert.equal(segments[0]?.endMs, 12_500);
+  assert.equal(segments[0]?.speakerId, "Speaker 2");
+  assert.equal(segments[0]?.text, "我们上号打游戏，稍后开 Discord。");
+});
+
 test("BitNet plain-text output becomes readable sentence-level seek segments", () => {
   const segments = parseVibeVoiceOutput(
     "第一句话。第二句话！\n---END---",

@@ -1,0 +1,44 @@
+name: Manual Long Session
+
+on:
+  workflow_dispatch:
+    inputs:
+      minutes:
+        description: "Bounded soak duration in minutes"
+        required: true
+        default: "120"
+
+permissions:
+  contents: read
+
+jobs:
+  realtime-soak:
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+    steps:
+      - uses: actions/checkout@v6
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.34.5
+          run_install: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm typecheck
+      - name: Repeated five-peer audio and fault regression
+        shell: bash
+        env:
+          SOAK_MINUTES: ${{ inputs.minutes }}
+        run: |
+          end=$((SECONDS + SOAK_MINUTES * 60))
+          run=0
+          while (( SECONDS < end )); do
+            run=$((run + 1))
+            echo "soak iteration $run"
+            pnpm test:five-peer-audio
+            pnpm --dir apps/desktop exec tsx --test tests/runtime-diagnostics.test.ts tests/network-adaptation.test.ts
+          done
+      - name: Final five-peer media regression
+        run: xvfb-run -a pnpm test:five-peer-media

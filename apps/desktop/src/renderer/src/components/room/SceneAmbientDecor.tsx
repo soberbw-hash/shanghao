@@ -1,4 +1,6 @@
-import { useEffect, useId, useState } from "react";
+import { useId, useState } from "react";
+
+import { useVisibleInterval } from "../../hooks/useVisualVisibility";
 
 export const SceneWindowNook = ({ className = "" }: { className?: string }) => {
   const id = useId().replace(/:/g, "");
@@ -167,10 +169,7 @@ const getShanghaiClock = () => {
 
 export const SceneWallClock = ({ className = "" }: { className?: string }) => {
   const [time, setTime] = useState(getShanghaiClock);
-  useEffect(() => {
-    const timer = window.setInterval(() => setTime(getShanghaiClock()), 1_000);
-    return () => window.clearInterval(timer);
-  }, []);
+  useVisibleInterval(() => setTime(getShanghaiClock()), 1_000);
   const secondAngle = time.second * 6;
   const minuteAngle = time.minute * 6 + time.second * 0.1;
   const hourAngle = time.hour * 30 + time.minute * 0.5;

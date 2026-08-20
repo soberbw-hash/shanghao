@@ -4,13 +4,15 @@ import { Menu, Tray, app, nativeImage, type BrowserWindow } from "electron";
 
 import { APP_NAME } from "@private-voice/shared";
 
+import { platformService } from "./platform/PlatformService";
+
 const getBuildAssetPath = (fileName: string) =>
   app.isPackaged
     ? path.join(process.resourcesPath, "build", fileName)
     : path.join(app.getAppPath(), "build", fileName);
 
 const getTrayImage = () => {
-  const fileName = process.platform === "win32" ? "tray-light.png" : "tray-dark.png";
+  const fileName = platformService.isWindows ? "tray-light.png" : "tray-dark.png";
   const image = nativeImage.createFromPath(getBuildAssetPath(fileName));
   return image.resize({ width: 18, height: 18 });
 };

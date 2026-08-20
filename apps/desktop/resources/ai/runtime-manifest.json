@@ -1,0 +1,40 @@
+{
+  "schemaVersion": 1,
+  "packageVersion": "3.0.0-dev.1",
+  "platform": "win32-x64",
+  "vibevoice": {
+    "source": "microsoft/VibeASR.cpp",
+    "revision": "5cbce71c65911a7e10639ac13b6ab6929e4c8f9e",
+    "files": [
+      {
+        "path": "vibevoice/asr_infer.exe",
+        "sha256": "3e7ef2aa49887080f429b19d5327544070d63ead9b61ddc760513e548fb7da29"
+      },
+      {
+        "path": "vibevoice/libgcc_s_seh-1.dll",
+        "sha256": "3974eaab76d816a2011dc313a8470b3ccd4ca88cbd5ba00c25815f8187dfa7cc"
+      },
+      {
+        "path": "vibevoice/libstdc++-6.dll",
+        "sha256": "0f6565d34f27f94f15de75bf9dab725be93fecf9b5fbb23130ea598536e6995d"
+      },
+      {
+        "path": "vibevoice/libwinpthread-1.dll",
+        "sha256": "05c11cf29aa7a1720e42e7004203f15d07ed409885050f5b7190ef4eed9e746d"
+      },
+      {
+        "path": "vibevoice/libgomp-1.dll",
+        "sha256": "5cbfbfbf8e9fa7507958a02c06cdc02b595a739399ac34228848fd6b54985383"
+      }
+    ]
+  },
+  "qwen": {
+    "pythonVersion": "3.12.10",
+    "torchVersion": "2.11.0+cu128",
+    "transformersVersion": "5.15.0",
+    "runner": {
+      "path": "qwen-runner.py",
+      "sha256": "08c92d975316524c6241a8da477be593b63abf8eeffe47791fd1462ec9b3b4c7"
+    }
+  }
+}

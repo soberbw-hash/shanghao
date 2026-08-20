@@ -132,13 +132,13 @@ export const AudioControlPopover = ({
       {typeof voiceEnhancementEnabled === "boolean" && onVoiceEnhancementChange ? (
         <div className="audio-control-processing-option" data-audio-setting="voice-enhancement">
           <span>
-            <strong>人声增强</strong>
-            <small>让说话更清楚</small>
+            <strong>自然人声</strong>
+            <small>温和平衡清晰度与刺耳感</small>
           </span>
           <Switch
             isChecked={voiceEnhancementEnabled}
             isDisabled={isNoiseSuppressionSwitching}
-            ariaLabel="切换人声增强"
+            ariaLabel="切换自然人声"
             onChange={onVoiceEnhancementChange}
           />
         </div>

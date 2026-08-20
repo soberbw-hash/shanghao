@@ -31,7 +31,7 @@ import { VoiceMemoryStore } from "./voice-memory-store";
 // preserve useful seek points and avoid asking one generation to represent several minutes.
 export const TRANSCRIPTION_CHUNK_MS = 30_000;
 const LEGACY_TRANSCRIPTION_CHUNK_MS = 10 * 60_000;
-// Version 5 rejects silent audio and repetitive/oversized model hallucinations. Partial results
+// Version 6 adds verified UTF-8/native JSON parsing and a pinned local runtime. Partial results
 // from older recognition runs must not be mixed into the guarded transcript.
 const TRANSCRIPTION_PIPELINE_VERSION = CURRENT_TRANSCRIPTION_PIPELINE_VERSION;
 
@@ -258,6 +258,57 @@ export class AiVoiceMemoryService {
     await this.store.delete(recordingId);
   }
 
+  async reconcileRecordingIdentity(
+    legacyRecordingId: string,
+    recordingId: string,
+    filePath: string,
+    markers: Array<{ id: string; offsetMs: number }> = [],
+  ): Promise<void> {
+    const stable = await this.store.get(recordingId);
+    const legacy =
+      legacyRecordingId !== recordingId ? await this.store.get(legacyRecordingId) : undefined;
+    const record = stable ?? legacy;
+    if (!record) return;
+    const activeIds = new Set([legacyRecordingId, recordingId]);
+    const running = [...activeIds].some((id) => this.pendingProcesses.has(id));
+    for (const id of activeIds) {
+      this.requestVersions.set(id, (this.requestVersions.get(id) ?? 0) + 1);
+      this.controllers.get(id)?.abort();
+    }
+    await Promise.all(
+      [...activeIds].map(async (id) => {
+        const pending = this.pendingProcesses.get(id);
+        if (!pending) return;
+        await Promise.race([
+          pending.catch(() => undefined),
+          new Promise<void>((resolve) => setTimeout(resolve, 4_000)),
+        ]);
+      }),
+    );
+    const migrated = await this.store.save({
+      ...record,
+      recordingId,
+      filePath,
+      transcript: record.transcript.map((segment) => ({ ...segment, recordingId })),
+      markerTitles: record.markerTitles.map((marker) => {
+        const current = markers.find((candidate) => candidate.offsetMs === marker.offsetMs);
+        return current ? { ...marker, markerId: current.id } : marker;
+      }),
+      phase: running ? "paused" : record.phase,
+    });
+    if (legacy && legacyRecordingId !== recordingId) await this.store.delete(legacyRecordingId);
+    if (running) {
+      void this.start({
+        recordingId,
+        filePath,
+        roomId: migrated.roomId,
+        roomName: migrated.roomName,
+        manual: true,
+        organize: true,
+      });
+    }
+  }
+
   async resume(recordingId: string): Promise<VoiceMemoryRecord> {
     const record = await this.store.get(recordingId);
     if (!record) throw new Error("voice_memory_not_found");
@@ -388,6 +439,7 @@ export class AiVoiceMemoryService {
 
   async queueRecordings(
     recordings: Array<{
+      recordingId?: string;
       filePath: string;
       fileSize?: number;
       roomId?: string;
@@ -399,15 +451,22 @@ export class AiVoiceMemoryService {
       (left, right) =>
         (left.fileSize ?? Number.MAX_SAFE_INTEGER) - (right.fileSize ?? Number.MAX_SAFE_INTEGER),
     )) {
-      const record = await this.store.get(recording.filePath);
+      const recordingId = recording.recordingId ?? recording.filePath;
+      await this.reconcileRecordingIdentity(
+        recording.filePath,
+        recordingId,
+        recording.filePath,
+        recording.markers,
+      );
+      const record = await this.store.get(recordingId);
       const isCurrentTerminalResult =
         record?.phase === "ready" &&
         record.transcriptionPipelineVersion === TRANSCRIPTION_PIPELINE_VERSION;
-      if (isCurrentTerminalResult || this.pendingProcesses.has(recording.filePath)) continue;
+      if (isCurrentTerminalResult || this.pendingProcesses.has(recordingId)) continue;
       await this.save({
         ...(record ??
           emptyRecord({
-            recordingId: recording.filePath,
+            recordingId,
             filePath: recording.filePath,
             roomId: recording.roomId,
             roomName: recording.roomId === "side" ? "二号房" : "一号房",
@@ -417,7 +476,7 @@ export class AiVoiceMemoryService {
         errorMessage: undefined,
       });
       this.queueAutomaticProcess({
-        recordingId: recording.filePath,
+        recordingId,
         filePath: recording.filePath,
         roomId: recording.roomId,
         roomName: recording.roomId === "side" ? "二号房" : "一号房",

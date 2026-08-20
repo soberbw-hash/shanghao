@@ -7,7 +7,7 @@ import {
 } from "@private-voice/shared";
 
 import { detectRecordingCapability } from "./mime-capability";
-import { BrowserRecordingEncoder } from "./recording-encoder";
+import { BrowserRecordingEncoder, type RecordingEncoder } from "./recording-encoder";
 import { type RecordingExporter, toRecordingResult } from "./recording-exporter";
 import { RecordingStateMachine } from "./recording-state-machine";
 
@@ -35,6 +35,10 @@ export class RecordingService {
 
   getState(): RecordingStatusSnapshot {
     return this.stateMachine.getState();
+  }
+
+  hasRecording(): boolean {
+    return this.encoder.hasRecording();
   }
 
   start(stream: MediaStream): RecordingStatusSnapshot {
@@ -66,13 +70,36 @@ export class RecordingService {
   }
 
   async stop(options: RecordingOptions, actualSampleRate: number): Promise<RecordingResult> {
+    if (!this.encoder.hasRecording()) {
+      const message = "录音会话已经中断，没有找到可保存的音频。请重新开始录音。";
+      this.emitState(
+        this.stateMachine.transition(RecordingState.Failed, {
+          startedAt: undefined,
+          durationMs: 0,
+          message,
+        }),
+      );
+      throw new Error(message);
+    }
+
     this.emitState(
       this.stateMachine.transition(RecordingState.Stopping, {
         message: "正在停止录音",
       }),
     );
 
-    const encoded = await this.encoder.stop();
+    let encoded: Awaited<ReturnType<RecordingEncoder["stop"]>>;
+    try {
+      encoded = await this.encoder.stop();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "录音编码器停止失败。";
+      this.emitState(
+        this.stateMachine.transition(RecordingState.Failed, {
+          message,
+        }),
+      );
+      throw error;
+    }
 
     this.emitState(
       this.stateMachine.transition(RecordingState.Saving, {
@@ -123,6 +150,18 @@ export class RecordingService {
   }
 
   async discard(): Promise<void> {
+    if (!this.encoder.hasRecording()) {
+      this.emitState(
+        this.stateMachine.transition(RecordingState.Idle, {
+          startedAt: undefined,
+          durationMs: 0,
+          result: undefined,
+          message: "录音会话已经结束",
+        }),
+      );
+      return;
+    }
+
     this.emitState(
       this.stateMachine.transition(RecordingState.Stopping, {
         message: "正在结束录音",

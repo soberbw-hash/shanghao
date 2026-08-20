@@ -100,9 +100,18 @@ export interface UpdateCheckResult {
 }
 
 export interface UpdateStatus {
-  phase: "idle" | "checking" | "available" | "downloading" | "downloaded" | "installing" | "error";
+  phase:
+    | "idle"
+    | "checking"
+    | "available"
+    | "downloading"
+    | "downloaded"
+    | "ready_to_restart"
+    | "installing"
+    | "error";
   message: string;
   percent?: number;
+  bytesPerSecond?: number;
   latestVersion?: string;
   forceUpdate?: boolean;
 }

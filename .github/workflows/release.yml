@@ -27,6 +27,8 @@ jobs:
       - run: pnpm release:verify
       - run: pnpm lint
       - run: pnpm typecheck
+      - run: cargo fmt --manifest-path native/Cargo.toml --all -- --check
+      - run: pnpm test:native
       - run: pnpm test
       - run: pnpm test:audio-worklet
       - run: pnpm test:five-peer-audio

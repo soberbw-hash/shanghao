@@ -60,7 +60,7 @@ export const VoiceMemoryDetail = ({ recording, roomName, onSeek }: VoiceMemoryDe
     let active = true;
     setRecord(undefined);
     setDetailsOpen(false);
-    void window.desktopApi.ai.getVoiceMemory(recording.filePath).then((value) => {
+    void window.desktopApi.ai.getVoiceMemory(recording.recordingId).then((value) => {
       if (!active) return;
       setRecord(value);
       setDetailsOpen(
@@ -72,7 +72,7 @@ export const VoiceMemoryDetail = ({ recording, roomName, onSeek }: VoiceMemoryDe
       );
     });
     const unsubscribe = window.desktopApi.ai.onVoiceMemoryStatus((value) => {
-      if (active && value.recordingId === recording.filePath) {
+      if (active && value.recordingId === recording.recordingId) {
         setRecord(value);
         if (value.phase === "transcribing" || value.phase === "organizing") setDetailsOpen(true);
       }
@@ -81,7 +81,7 @@ export const VoiceMemoryDetail = ({ recording, roomName, onSeek }: VoiceMemoryDe
       active = false;
       unsubscribe();
     };
-  }, [recording.filePath]);
+  }, [recording.filePath, recording.recordingId]);
 
   const process = async (restartTranscription = false) => {
     setBusy(true);
@@ -90,7 +90,7 @@ export const VoiceMemoryDetail = ({ recording, roomName, onSeek }: VoiceMemoryDe
     try {
       setRecord(
         await window.desktopApi.ai.processRecording({
-          recordingId: recording.filePath,
+          recordingId: recording.recordingId,
           filePath: recording.filePath,
           roomId: recording.roomId,
           roomName,

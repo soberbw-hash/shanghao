@@ -226,6 +226,22 @@ export interface VoiceMemorySpeakingObservation {
 }
 
 export interface AiRuntimeStatus {
-  vibevoice: { ready: boolean; executable?: string; message?: string };
-  qwen: { ready: boolean; executable?: string; message?: string };
+  vibevoice: {
+    ready: boolean;
+    executable?: string;
+    message?: string;
+    errorCode?: string;
+    outputSource?: "stdout" | "stderr" | "file";
+  };
+  qwen: {
+    ready: boolean;
+    executable?: string;
+    message?: string;
+    errorCode?: string;
+    workerPhase?: "stopped" | "starting" | "loading" | "ready" | "running" | "crashed";
+    loaded?: boolean;
+    processId?: number;
+    queuedJobs?: number;
+    lastError?: string;
+  };
 }

@@ -1,10 +1,17 @@
 import type { NetworkAdaptationTier, PeerAudioStats } from "@private-voice/webrtc";
+import type { PeerHealthSnapshot } from "@private-voice/webrtc";
+import type { LongSessionAudioSnapshot } from "./PeerStatsMonitor";
+import type { ScreenSharePipelineSnapshot } from "../screen-share/ScreenSharePipelineController";
 import type { AudioFallbackController } from "../audio/AudioFallbackController";
 import type { RemoteAudioMixerDiagnostics } from "../audio/RemoteAudioMixer";
 
 export interface RoomDiagnosticsInput {
   currentPeerId: string;
   reconnectAttempts: number;
+  connectionGeneration?: number;
+  reconnectEpisodeId?: number;
+  reconnectEpisodeActive?: boolean;
+  reconnectStableSince?: string;
   lastSocketCloseCode?: number;
   lastSocketCloseReason?: string;
   lastSocketClosedAt?: string;
@@ -20,6 +27,7 @@ export interface RoomDiagnosticsInput {
   lastServerError?: string;
   screenShareRelayActive: boolean;
   screenShareRelayTargetCount: number;
+  screenShare: ScreenSharePipelineSnapshot;
   audioRelayDiagnostics?: ReturnType<AudioFallbackController["getDiagnostics"]>;
   webrtcReadyPeerCount: number;
   webrtcConnectedPeerCount: number;
@@ -27,6 +35,8 @@ export interface RoomDiagnosticsInput {
   webrtcFlowingPeerCount: number;
   peerRecoveryAttempts: Record<string, number>;
   peerConnectionStats: Record<string, PeerAudioStats>;
+  peerHealth: Record<string, PeerHealthSnapshot>;
+  longSessionAudio: LongSessionAudioSnapshot[];
   peerAdaptationTiers: Record<string, NetworkAdaptationTier>;
   peerAudioPaths: Record<string, "webrtc" | "relay">;
   remoteAudioMixer: RemoteAudioMixerDiagnostics;
@@ -36,6 +46,10 @@ export interface RoomDiagnosticsInput {
 export const buildRoomDiagnostics = (input: RoomDiagnosticsInput) => ({
   currentPeerId: input.currentPeerId,
   reconnectAttempts: input.reconnectAttempts,
+  connectionGeneration: input.connectionGeneration,
+  reconnectEpisodeId: input.reconnectEpisodeId,
+  reconnectEpisodeActive: input.reconnectEpisodeActive,
+  reconnectStableSince: input.reconnectStableSince,
   lastSocketCloseCode: input.lastSocketCloseCode,
   lastSocketCloseReason: input.lastSocketCloseReason,
   lastSocketClosedAt: input.lastSocketClosedAt,
@@ -51,6 +65,7 @@ export const buildRoomDiagnostics = (input: RoomDiagnosticsInput) => ({
   lastServerError: input.lastServerError,
   screenShareRelayState: input.screenShareRelayActive ? ("active" as const) : ("inactive" as const),
   screenShareRelayTargetCount: input.screenShareRelayTargetCount,
+  screenShare: input.screenShare,
   audioRelayDiagnostics: input.audioRelayDiagnostics,
   webrtcReadyPeerCount: input.webrtcReadyPeerCount,
   webrtcConnectedPeerCount: input.webrtcConnectedPeerCount,
@@ -58,6 +73,8 @@ export const buildRoomDiagnostics = (input: RoomDiagnosticsInput) => ({
   webrtcFlowingPeerCount: input.webrtcFlowingPeerCount,
   peerRecoveryAttempts: input.peerRecoveryAttempts,
   peerConnectionStats: input.peerConnectionStats,
+  peerHealth: input.peerHealth,
+  longSessionAudio: input.longSessionAudio,
   peerAdaptationTiers: input.peerAdaptationTiers,
   peerAudioPaths: input.peerAudioPaths,
   remoteAudioMixer: input.remoteAudioMixer,
@@ -67,6 +84,10 @@ export const buildRoomDiagnostics = (input: RoomDiagnosticsInput) => ({
 export interface RoomDiagnosticsSources {
   currentPeerId: string;
   reconnectAttempts: number;
+  connectionGeneration?: number;
+  reconnectEpisodeId?: number;
+  reconnectEpisodeActive?: boolean;
+  reconnectStableSince?: string;
   socket: Pick<
     RoomDiagnosticsInput,
     "lastSocketCloseCode" | "lastSocketCloseReason" | "lastSocketClosedAt"
@@ -86,6 +107,7 @@ export interface RoomDiagnosticsSources {
   >;
   screenShareRelayActive: boolean;
   screenShareRelayTargetCount: number;
+  screenShare: ScreenSharePipelineSnapshot;
   audioRelayDiagnostics?: RoomDiagnosticsInput["audioRelayDiagnostics"];
   webrtcReadyPeerIds: Set<string>;
   webrtcConnectedPeerIds: Set<string>;
@@ -93,6 +115,8 @@ export interface RoomDiagnosticsSources {
   webrtcFlowingPeerIds: Set<string>;
   peerRecoveryAttempts: ReadonlyMap<string, number>;
   peerConnectionStats: RoomDiagnosticsInput["peerConnectionStats"];
+  peerHealth: RoomDiagnosticsInput["peerHealth"];
+  longSessionAudio: RoomDiagnosticsInput["longSessionAudio"];
   peerAdaptationTiers: RoomDiagnosticsInput["peerAdaptationTiers"];
   remoteAudioMixer: RemoteAudioMixerDiagnostics;
   turnConfigured: boolean;
@@ -102,6 +126,10 @@ export const buildRoomDiagnosticsFromSources = (source: RoomDiagnosticsSources) 
   buildRoomDiagnostics({
     currentPeerId: source.currentPeerId,
     reconnectAttempts: source.reconnectAttempts,
+    connectionGeneration: source.connectionGeneration,
+    reconnectEpisodeId: source.reconnectEpisodeId,
+    reconnectEpisodeActive: source.reconnectEpisodeActive,
+    reconnectStableSince: source.reconnectStableSince,
     ...source.socket,
     audioRelayActive: source.audioRelayActive,
     remotePeerCount: source.remotePeerIds.size,
@@ -110,6 +138,7 @@ export const buildRoomDiagnosticsFromSources = (source: RoomDiagnosticsSources) 
     ...source.join,
     screenShareRelayActive: source.screenShareRelayActive,
     screenShareRelayTargetCount: source.screenShareRelayTargetCount,
+    screenShare: source.screenShare,
     audioRelayDiagnostics: source.audioRelayDiagnostics,
     webrtcReadyPeerCount: source.webrtcReadyPeerIds.size,
     webrtcConnectedPeerCount: source.webrtcConnectedPeerIds.size,
@@ -117,6 +146,8 @@ export const buildRoomDiagnosticsFromSources = (source: RoomDiagnosticsSources) 
     webrtcFlowingPeerCount: source.webrtcFlowingPeerIds.size,
     peerRecoveryAttempts: Object.fromEntries(source.peerRecoveryAttempts),
     peerConnectionStats: source.peerConnectionStats,
+    peerHealth: source.peerHealth,
+    longSessionAudio: source.longSessionAudio,
     peerAdaptationTiers: source.peerAdaptationTiers,
     peerAudioPaths: Object.fromEntries(
       [...source.remotePeerIds].map((peerId) => [

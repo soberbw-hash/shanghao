@@ -73,6 +73,61 @@ stateDiagram-v2
 独立观看窗口使用专用最小 Preload，只暴露观看信令和关闭窗口能力，不拥有设置、
 文件、更新、诊断或主窗口控制权限。
 
+主进程的源枚举、源选择、内容保护与平台能力集中在 `ScreenCaptureService`。Windows
+继续使用已验证的 Electron `desktopCapturer` 与系统音频 loopback，不为了原生纯度
+重写采集链；Renderer 的 `ScreenShareManager` 仍是媒体 Track 的唯一所有者。
+
+## 3.0 Core 与平台边界
+
+Renderer 通过显式的 `shanghaoCore.*` 能力逐步访问桌面能力。每个命令有固定输入、
+返回值和错误边界，支持超时与取消；Preload 不暴露万能 channel invoke。
+
+```mermaid
+flowchart LR
+  Renderer["React / shanghaoCore.*"] --> Preload["Typed DesktopApi"]
+  Preload --> Electron["Electron Host"]
+  Electron --> Platform["PlatformService"]
+  Electron --> Native["Rust Core JSONL"]
+  Platform --> Capture["ScreenCaptureService"]
+  Native --> Activity["Win32 Activity"]
+  Native --> FileId["Stable File Identity"]
+  Native --> Supervisor["AI Process Supervisor"]
+```
+
+Rust Workspace 当前只有一个有实际职责的 `shanghao-core` crate，承担 Windows 前台
+活动查询、稳定文件身份和受控子进程生命周期。它不复制 WebRTC、DeepFilter、VAD、
+VibeVoice 或 Qwen 算法。Electron Host 继续负责 Chromium、窗口、WebRTC Host、托盘、
+更新、Deep Link 和 OS 集成。
+
+`PlatformService` 明确区分 Windows、macOS 和不支持平台。Windows 是当前正式支持并
+实测的平台；macOS 只建立能力边界，ScreenCaptureKit、系统音频、签名和公证在没有
+真机前不得标记为已验证。
+
+## 3.0 视觉运行时
+
+- `VisualRuntimeController` 提供共享、可见时才运行的 rAF 和有界资源预加载缓存。
+- `DisplayRefreshRateService` 从真实帧间隔估计显示器刷新率，不把目标 FPS 当作实测值。
+- `RoomAnimationScheduler` 在同一帧先批量读取再批量写入，按 key 合并更新；队列溢出
+  时丢弃最旧增量并触发一次全量校准。
+- Weather、Calendar、Clock 和角色环境动画在页面隐藏时暂停；信令、WebRTC、音频、
+  录音和模型任务不属于视觉暂停域。
+- `styles/index.css` 只保存有序导入，实际样式按基础、场景、角色、聊天录音、动效和
+  最终材质等职责拆分。架构测试限制入口与分片继续膨胀。
+
+## 工程守卫与验证
+
+`architecture-guard.test.ts` 对 CSS 入口/分片、RoomClient、RoomPage、SignalingServer、
+Core/Platform/视觉模块和 Preload 能力边界设置可执行约束。CI 保留原有 Release 工作流，
+增加 Rust 格式/单测；长会话工作流必须手动触发，不会在普通提交上自动消耗两小时。
+
+本地验收默认不打包：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/verify-local-acceptance.ps1
+```
+
+只有显式传入 `-Package` 才会生成 Windows 安装包。
+
 ## 动效边界
 
 - CSS 负责 Hover、Focus、颜色、边框和轻量图标状态。

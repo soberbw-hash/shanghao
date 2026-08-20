@@ -12,6 +12,7 @@ import {
   readWindowsIconOverlayStatus,
   setWindowsIconOverlaysHidden,
 } from "./windows-icon-overlays";
+import { platformService } from "./platform/PlatformService";
 
 export const readWindowsIntegrationStatus = async (): Promise<WindowsIntegrationStatus> => {
   const [elevationResult, startupTaskResult, firewallResult, iconOverlaysResult] =
@@ -29,7 +30,7 @@ export const readWindowsIntegrationStatus = async (): Promise<WindowsIntegration
     startupTaskResult.status === "fulfilled"
       ? startupTaskResult.value
       : {
-          supported: process.platform === "win32",
+          supported: platformService.isWindows,
           enabled: false,
           taskName: "ShangHao Auto Start",
           message: "无法读取开机启动任务状态。",
@@ -38,7 +39,7 @@ export const readWindowsIntegrationStatus = async (): Promise<WindowsIntegration
     firewallResult.status === "fulfilled"
       ? firewallResult.value
       : {
-          supported: process.platform === "win32",
+          supported: platformService.isWindows,
           healthy: false,
           ruleCount: 0,
           expectedRuleCount: 4,
@@ -48,14 +49,14 @@ export const readWindowsIntegrationStatus = async (): Promise<WindowsIntegration
     iconOverlaysResult.status === "fulfilled"
       ? iconOverlaysResult.value
       : {
-          supported: process.platform === "win32",
+          supported: platformService.isWindows,
           hidden: false,
           arrowHidden: false,
           shieldHidden: false,
           message: "无法读取桌面图标标记状态。",
         };
   return {
-    platform: process.platform,
+    platform: platformService.capabilities.nodePlatform,
     isPackaged: app.isPackaged,
     elevation,
     startupTask,

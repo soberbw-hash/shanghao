@@ -83,6 +83,17 @@ export class OverlayWindowController {
     this.scheduleBoundsSave();
   }
 
+  reconcileDisplayBounds(): void {
+    if (!this.window || this.window.isDestroyed()) return;
+    const bounds = this.window.getBounds();
+    const display = screen.getDisplayMatching(bounds);
+    this.snapX = display.workArea.x + 6;
+    const nextY = clampOverlayTop(bounds.y, bounds.height, display.workArea);
+    this.window.setPosition(this.snapX, nextY, false);
+    this.window.setAlwaysOnTop(true, "screen-saver");
+    this.scheduleBoundsSave();
+  }
+
   update(state: OverlayState): void {
     this.state = state;
     if (this.window && !this.window.isDestroyed() && !this.window.webContents.isLoading()) {

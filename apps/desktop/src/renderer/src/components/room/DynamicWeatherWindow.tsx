@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useState, type CSSProperties } from "react";
+import { useEffect, useMemo, type CSSProperties } from "react";
 
 import { cn } from "@private-voice/ui";
 import type { WeatherEffectMode, WeatherLocationMode } from "@private-voice/shared";
 
 import { usePrefersReducedMotion } from "../../hooks/usePrefersReducedMotion";
+import { useVisibleInterval, useVisualVisibility } from "../../hooks/useVisualVisibility";
 import { resolveWeatherVisualTheme } from "../../features/weather/weatherTheme";
 import { useWeatherStore } from "../../features/weather/weatherStore";
 
@@ -24,7 +25,7 @@ export const DynamicWeatherWindow = ({
   const preview = useWeatherStore((state) => state.preview);
   const refresh = useWeatherStore((state) => state.refresh);
   const clear = useWeatherStore((state) => state.clear);
-  const [isPageVisible, setIsPageVisible] = useState(() => document.visibilityState === "visible");
+  const isPageVisible = useVisualVisibility();
   const reduceMotion = usePrefersReducedMotion(effectMode === "reduced");
   const request = useMemo(() => ({ locationMode, manualCity }), [locationMode, manualCity]);
 
@@ -34,23 +35,11 @@ export const DynamicWeatherWindow = ({
       return;
     }
     void refresh(request).catch(() => undefined);
-    const timer = window.setInterval(() => {
-      if (document.visibilityState === "visible") {
-        void refresh({ ...request, forceRefresh: true }).catch(() => undefined);
-      }
-    }, REFRESH_INTERVAL_MS);
-    return () => window.clearInterval(timer);
   }, [clear, isEnabled, refresh, request]);
 
-  useEffect(() => {
-    const handleVisibility = () => {
-      const visible = document.visibilityState === "visible";
-      setIsPageVisible(visible);
-      if (visible && isEnabled) void refresh(request).catch(() => undefined);
-    };
-    document.addEventListener("visibilitychange", handleVisibility);
-    return () => document.removeEventListener("visibilitychange", handleVisibility);
-  }, [isEnabled, refresh, request]);
+  useVisibleInterval(() => {
+    if (isEnabled) void refresh({ ...request, forceRefresh: true }).catch(() => undefined);
+  }, REFRESH_INTERVAL_MS);
 
   const visualSnapshot = preview
     ? {

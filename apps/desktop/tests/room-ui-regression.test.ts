@@ -13,6 +13,7 @@ import {
 import { seatSlots } from "../src/renderer/src/features/voice-scene/sceneZones";
 import { stabilizePeerLatency, useRoomStore } from "../src/renderer/src/store/roomStore";
 import { getNicknameValidationError } from "../src/renderer/src/utils/nickname";
+import { readRendererCss } from "./helpers/read-renderer-css";
 
 const member = (latencyMs?: number): RoomMember => ({
   id: "peer-latency",
@@ -191,10 +192,7 @@ test("screen-share UI requires an explicit current-room sharing announcement", (
 });
 
 test("collection composer is fixed-size and primary audio controls use matching crisp icons", () => {
-  const styles = readFileSync(
-    path.resolve(process.cwd(), "src/renderer/src/styles/index.css"),
-    "utf8",
-  );
+  const styles = readRendererCss();
   const muteButton = readFileSync(
     path.resolve(process.cwd(), "src/renderer/src/components/audio/MuteButton.tsx"),
     "utf8",
@@ -203,10 +201,16 @@ test("collection composer is fixed-size and primary audio controls use matching 
     path.resolve(process.cwd(), "src/renderer/src/components/room/RoomDock.tsx"),
     "utf8",
   );
+  const roomPageSource = readFileSync(
+    path.resolve(process.cwd(), "src/renderer/src/pages/RoomPage.tsx"),
+    "utf8",
+  );
   assert.match(styles, /\.collection-composer textarea \{[\s\S]*?resize: none;/);
-  assert.equal(muteButton.includes('className="voice-primary-icon"'), true);
-  assert.equal(roomSource.includes('<Volume2 className="voice-primary-icon"'), true);
-  assert.equal(roomSource.includes('<VolumeX className="voice-primary-icon"'), true);
+  assert.equal(muteButton.includes('name="mic" muted={isMuted}'), true);
+  assert.equal(roomSource.includes('name="speaker"'), true);
+  assert.equal(roomSource.includes("muted={isDeafened}"), true);
+  assert.equal(roomSource.includes("data-gsap-voice"), false);
+  assert.equal(roomPageSource.includes("[data-gsap-voice='primary']"), false);
 });
 
 test("chat history persists across updates and live messages use Windows notifications", () => {
@@ -241,10 +245,7 @@ test("locally sent link previews stay fully visible above the composer", () => {
     path.resolve(process.cwd(), "src/renderer/src/components/chat/TemporaryChatPanel.tsx"),
     "utf8",
   );
-  const styles = readFileSync(
-    path.resolve(process.cwd(), "src/renderer/src/styles/index.css"),
-    "utf8",
-  );
+  const styles = readRendererCss();
 
   assert.equal(chatSource.includes('latestMessage?.isLocal ? "auto" : "smooth"'), true);
   assert.equal(chatSource.includes("list.scrollTop = list.scrollHeight"), true);
@@ -294,10 +295,7 @@ test("the shanghao quick reply uses its own voice sound for every avatar", () =>
 });
 
 test("the seated duck stays centered over its compact chair", () => {
-  const styles = readFileSync(
-    path.resolve(process.cwd(), "src/renderer/src/styles/index.css"),
-    "utf8",
-  );
+  const styles = readRendererCss();
 
   assert.match(
     styles,
@@ -422,6 +420,21 @@ test("chat messages are uniformly left aligned with avatar and no per-message cl
   assert.equal(source.includes('clearProps: "transform,opacity,visibility"'), true);
 });
 
+test("chat image preview keeps large navigation controls fixed at the left and right sides", () => {
+  const source = readFileSync(
+    path.resolve(process.cwd(), "src/renderer/src/components/chat/TemporaryChatPanel.tsx"),
+    "utf8",
+  );
+  const styles = readRendererCss();
+
+  assert.equal(source.includes('aria-label="查看上一张图片"'), true);
+  assert.equal(source.includes('aria-label="查看下一张图片"'), true);
+  assert.match(styles, /\.chat-image-preview-nav\s*\{[^}]*position:\s*fixed;/s);
+  assert.match(styles, /\.chat-image-preview-nav\s*\{[^}]*width:\s*64px;[^}]*height:\s*64px;/s);
+  assert.match(styles, /\.chat-image-preview-nav\.is-previous\s*\{[^}]*left:/s);
+  assert.match(styles, /\.chat-image-preview-nav\.is-next\s*\{[^}]*right:/s);
+});
+
 test("channel switching is exclusive and clears screen-share state before joining", () => {
   const roomPageSource = readFileSync(
     path.resolve(process.cwd(), "src/renderer/src/pages/RoomPage.tsx"),
@@ -439,11 +452,37 @@ test("channel switching is exclusive and clears screen-share state before joinin
       roomPageSource.indexOf("await switchChannel(channelId)"),
     true,
   );
-  assert.equal(
-    roomStateSource.includes("await cleanupPreviousSession();\n        clearChannelContent();"),
-    true,
-  );
+  assert.equal(roomStateSource.includes("preserveLocalMedia: reuseLocalMedia"), true);
+  assert.equal(roomStateSource.includes("reuseExisting: reuseLocalMedia"), true);
+  assert.equal(roomPageSource.includes("key={room.roomId}"), false);
   assert.equal(roomStateSource.includes("previousMemberIds = new Set<string>();"), true);
+});
+
+test("image-heavy overlays avoid scale repaints and defer offscreen image decoding", () => {
+  const overlaysSource = readFileSync(
+    path.resolve(process.cwd(), "src/renderer/src/components/room/RoomOverlays.tsx"),
+    "utf8",
+  );
+  const motionSource = readFileSync(
+    path.resolve(process.cwd(), "src/renderer/src/features/motion/motionPresets.ts"),
+    "utf8",
+  );
+  const styles = readRendererCss();
+
+  assert.equal(overlaysSource.includes("largeDialogSurfaceVariants"), true);
+  assert.equal(overlaysSource.includes('decoding="async"'), true);
+  assert.equal(overlaysSource.includes('fetchPriority="low"'), true);
+  assert.equal(overlaysSource.includes("COLLECTION_RENDER_BATCH_SIZE = 24"), true);
+  assert.equal(overlaysSource.includes("orderedItems.slice(0, visibleItemCount)"), true);
+  assert.equal(overlaysSource.includes("sources.slice(0, 24)"), true);
+  assert.equal(motionSource.includes("export const largeDialogSurfaceVariants"), true);
+  const largeDialogVariants = motionSource.slice(
+    motionSource.indexOf("export const largeDialogSurfaceVariants"),
+    motionSource.indexOf("export const popoverSurfaceVariants"),
+  );
+  assert.equal(largeDialogVariants.includes("scale:"), false);
+  assert.match(styles, /\.screen-source-picker-item\s*\{[^}]*content-visibility:\s*auto;/s);
+  assert.equal(styles.includes(".team-island.is-visual-motion-paused *\n"), false);
 });
 
 test("stopping a recording suppresses automatic restart for the current room", () => {

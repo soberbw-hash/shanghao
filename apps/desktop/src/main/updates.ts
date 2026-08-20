@@ -74,6 +74,8 @@ export class UpdateService {
   private lastResult?: UpdateCheckResult;
   private statusListener?: (status: UpdateStatus) => void;
   private installStarted = false;
+  private downloadStarted = false;
+  private downloadReady = false;
 
   constructor(
     private readonly currentVersion: string,
@@ -81,31 +83,34 @@ export class UpdateService {
     private readonly beforeInstall?: () => void,
   ) {
     autoUpdater.autoDownload = false;
-    autoUpdater.autoInstallOnAppQuit = true;
+    autoUpdater.autoInstallOnAppQuit = false;
     autoUpdater.on("download-progress", (progress) => {
+      const speedMb = Math.max(0, progress.bytesPerSecond / 1024 ** 2);
       this.emit({
         phase: "downloading",
-        message: `正在更新 ${Math.round(progress.percent)}%`,
+        message: `正在下载 ${Math.round(progress.percent)}% · ${speedMb.toFixed(1)} MB/s`,
         percent: progress.percent,
+        bytesPerSecond: progress.bytesPerSecond,
         latestVersion: this.lastResult?.latestVersion,
         forceUpdate: this.lastResult?.forceUpdate,
       });
     });
     autoUpdater.on("update-downloaded", () => {
+      this.downloadReady = true;
       this.emit({
-        phase: "downloaded",
-        message: "新版已经准备好，正在安装并重新打开。",
+        phase: "ready_to_restart",
+        message: "新版已下载，等你确认后安装。",
         percent: 100,
         latestVersion: this.lastResult?.latestVersion,
         forceUpdate: this.lastResult?.forceUpdate,
       });
-      setTimeout(() => this.install(), 900);
     });
     (autoUpdater as UpdaterWithQuitEvent).on("before-quit-for-update", () => {
       this.beforeInstall?.();
       void this.log("info", "automatic update requested app quit");
     });
     autoUpdater.on("error", (error) => {
+      this.downloadStarted = false;
       this.emit({ phase: "error", message: "更新失败，请稍后重试。" });
       void this.log("warn", "automatic update failed", { error: error.message });
     });
@@ -158,6 +163,9 @@ export class UpdateService {
         latestVersion,
         forceUpdate,
       });
+      if (hasUpdate && app.isPackaged) {
+        void this.download().catch(() => undefined);
+      }
       await this.log(
         "info",
         "update check completed",
@@ -185,6 +193,8 @@ export class UpdateService {
     if (!app.isPackaged) {
       throw new Error("开发环境不会下载真实更新");
     }
+    if (this.downloadReady || this.downloadStarted) return;
+    this.downloadStarted = true;
     this.emit({
       phase: "downloading",
       message: "正在准备更新…",
@@ -192,26 +202,34 @@ export class UpdateService {
       latestVersion: this.lastResult?.latestVersion,
       forceUpdate: this.lastResult?.forceUpdate,
     });
-    await autoUpdater.checkForUpdates();
-    await autoUpdater.downloadUpdate();
+    try {
+      await autoUpdater.checkForUpdates();
+      await autoUpdater.downloadUpdate();
+    } catch (error) {
+      this.downloadStarted = false;
+      throw error;
+    }
   }
 
   install(): void {
     if (!app.isPackaged || this.installStarted) {
       return;
     }
+    if (!this.downloadReady) {
+      this.emit({
+        phase: "error",
+        message: "新版还没有下载完成，请稍后再试。",
+        latestVersion: this.lastResult?.latestVersion,
+      });
+      return;
+    }
     this.installStarted = true;
     this.emit({ phase: "installing", message: "正在安装新版…" });
     this.beforeInstall?.();
-    void this.log("info", "starting silent automatic update install");
-
-    // quitAndInstall normally exits immediately. Keep a referenced fallback timer so
-    // tray windows, native hooks, or a stuck renderer cannot leave the installer waiting.
-    const forceExitTimer = setTimeout(() => app.exit(0), 4_000);
+    void this.log("info", "starting user-confirmed update install handoff");
     try {
       autoUpdater.quitAndInstall(true, true);
     } catch (error) {
-      clearTimeout(forceExitTimer);
       this.installStarted = false;
       this.emit({ phase: "error", message: "自动安装没有启动，请稍后重试。" });
       void this.log("error", "silent automatic update install failed", {

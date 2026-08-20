@@ -8,6 +8,7 @@ export interface RecordingOptions {
 }
 
 export interface RecordingResult {
+  recordingId?: string;
   filePath: string;
   mimeType: string;
   durationMs: number;
@@ -48,6 +49,7 @@ export interface RecordingExportPayload {
 
 export interface RecordingExportResponse {
   ok: boolean;
+  recordingId?: string;
   filePath?: string;
   keptTemporaryFilePath?: string;
   mimeType?: string;
@@ -57,6 +59,8 @@ export interface RecordingExportResponse {
 
 export interface RecordingLibraryItem {
   id: string;
+  recordingId: string;
+  title: string;
   fileName: string;
   filePath: string;
   mediaUrl: string;
@@ -97,4 +101,12 @@ export interface RecordingCleanupProgress {
 export interface RecordingBatchDeleteResult {
   deletedFilePaths: string[];
   failed: Array<{ filePath: string; message: string }>;
+}
+
+export interface RecordingRenameResult {
+  recordingId: string;
+  title: string;
+  fileName: string;
+  filePath: string;
+  mediaUrl: string;
 }

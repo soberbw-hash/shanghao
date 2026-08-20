@@ -54,4 +54,13 @@ export const configureMotionRuntime = (): void => {
     nullTargetWarn: false,
   });
   gsap.ticker.lagSmoothing(500, 33);
+
+  const syncVisibility = () => {
+    const hidden = document.visibilityState === "hidden";
+    document.documentElement.classList.toggle("is-visual-runtime-hidden", hidden);
+    if (hidden) gsap.ticker.sleep();
+    else gsap.ticker.wake();
+  };
+  document.addEventListener("visibilitychange", syncVisibility);
+  syncVisibility();
 };

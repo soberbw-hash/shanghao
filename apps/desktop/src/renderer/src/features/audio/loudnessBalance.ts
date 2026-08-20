@@ -6,12 +6,14 @@ const SPEECH_GATE_RMS = 0.008;
 const SPEECH_GATE_PEAK = 0.015;
 const MINIMUM_SPEECH_FRAMES = 8;
 const PEAK_HEADROOM = 10 ** (-1 / 20);
+export const FRIEND_LOUDNESS_HANGOVER_MS = 900;
 
 export interface LoudnessBalanceState {
   meanSquare: number;
   peakEnvelope: number;
   activeFrames: number;
   gain: number;
+  learnedGain: number;
   lastVoiceAt: number;
   estimatedLufs?: number;
 }
@@ -21,6 +23,7 @@ export const createLoudnessBalanceState = (): LoudnessBalanceState => ({
   peakEnvelope: 0,
   activeFrames: 0,
   gain: 1,
+  learnedGain: 1,
   lastVoiceAt: 0,
 });
 
@@ -43,8 +46,14 @@ export const advanceLoudnessBalance = (
   const hasSpeech = rms >= SPEECH_GATE_RMS && peak >= SPEECH_GATE_PEAK;
 
   if (!hasSpeech) {
-    if (!state.lastVoiceAt || input.now - state.lastVoiceAt < 15_000) return state;
-    return { ...state, gain: state.gain + (1 - state.gain) * 0.01 };
+    if (!state.lastVoiceAt || input.now - state.lastVoiceAt < FRIEND_LOUDNESS_HANGOVER_MS) {
+      return state;
+    }
+    return {
+      ...state,
+      peakEnvelope: state.peakEnvelope * 0.985,
+      gain: state.gain + (1 - state.gain) * 0.12,
+    };
   }
 
   const meanSquare =
@@ -76,12 +85,16 @@ export const advanceLoudnessBalance = (
       gainFromDecibels(correctionDb),
     ),
   );
-  const smoothing = desiredGain < state.gain ? 0.22 : 0.035;
+  const learnedGain = state.learnedGain + (desiredGain - state.learnedGain) * 0.08;
+  const reopening =
+    state.lastVoiceAt > 0 && input.now - state.lastVoiceAt > FRIEND_LOUDNESS_HANGOVER_MS;
+  const smoothing = desiredGain < state.gain ? 0.22 : reopening ? 0.28 : 0.035;
   return {
     meanSquare,
     peakEnvelope,
     activeFrames,
-    gain: state.gain + (desiredGain - state.gain) * smoothing,
+    gain: state.gain + (learnedGain - state.gain) * smoothing,
+    learnedGain,
     lastVoiceAt: input.now,
     estimatedLufs,
   };

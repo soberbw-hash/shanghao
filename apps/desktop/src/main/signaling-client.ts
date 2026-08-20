@@ -1,7 +1,11 @@
 import { EventEmitter } from "node:events";
 import { WebSocket as NodeWebSocket, type RawData } from "ws";
 
-import type { RendererLogPayload, SignalingEventPayload } from "@private-voice/shared";
+import type {
+  RealtimeFaultCommand,
+  RendererLogPayload,
+  SignalingEventPayload,
+} from "@private-voice/shared";
 
 const sanitizeSignalingUrl = (value: string): string => {
   try {
@@ -210,6 +214,33 @@ export class SignalingClientBridge extends EventEmitter {
     await this.closeSocket();
   }
 
+  injectFault(sessionId: string, command: RealtimeFaultCommand): void {
+    if (sessionId !== this.sessionId) throw new Error("signaling_session_superseded");
+    if (command.kind === "signal_disconnect") {
+      this.socket?.terminate();
+      return;
+    }
+    if (command.kind === "stale_socket_close") {
+      this.emitEvent(`${sessionId}:stale`, {
+        type: "close",
+        code: 4_001,
+        reason: "fault_lab_stale_socket_close",
+      });
+      return;
+    }
+    if (command.kind === "duplicate_socket_close") {
+      const payload = {
+        type: "close" as const,
+        code: 4_002,
+        reason: "fault_lab_duplicate_socket_close",
+      };
+      this.emitEvent(sessionId, payload);
+      this.emitEvent(sessionId, payload);
+      return;
+    }
+    throw new Error("fault_must_be_injected_in_renderer");
+  }
+
   private async closeSocket(): Promise<void> {
     if (!this.socket) return;
 
@@ -235,7 +266,14 @@ export class SignalingClientBridge extends EventEmitter {
     });
   }
 
-  private emitEvent(sessionId: string, payload: Omit<SignalingEventPayload, "sessionId">): void {
-    this.emit("event", { ...payload, sessionId } satisfies SignalingEventPayload);
+  private emitEvent(
+    sessionId: string,
+    payload: Omit<SignalingEventPayload, "sessionId" | "generation">,
+  ): void {
+    this.emit("event", {
+      ...payload,
+      sessionId,
+      generation: this.socketGeneration,
+    } satisfies SignalingEventPayload);
   }
 }

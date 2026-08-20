@@ -1,6 +1,5 @@
 import type { CSSProperties } from "react";
 
-import aquariumArtwork from "../../assets/scenes/idle-monitors/aquarium.png";
 import windowSkyArtwork from "../../assets/scenes/idle-monitors/window-sky.png";
 
 interface IdleMonitorStyle extends CSSProperties {
@@ -14,22 +13,13 @@ export const IdleMonitorContent = ({
   offsetSeconds: number;
   shouldReduceMotion: boolean;
 }) => {
-  const staticTheme = Math.round(offsetSeconds / 17) % 2 === 0 ? "aquarium" : "window";
-
   return (
     <span
-      className={`scene-idle-monitor ${shouldReduceMotion ? `is-static-${staticTheme}` : ""}`}
+      className={`scene-idle-monitor ${shouldReduceMotion ? "is-static-window" : ""}`}
       style={{ "--idle-monitor-offset": `${offsetSeconds}s` } as IdleMonitorStyle}
       role="img"
-      aria-label="空闲屏保"
+      aria-label="蓝天白云空闲屏保"
     >
-      <img
-        className="scene-idle-monitor-art scene-idle-monitor-art--aquarium"
-        src={aquariumArtwork}
-        alt=""
-        draggable={false}
-        aria-hidden="true"
-      />
       <img
         className="scene-idle-monitor-art scene-idle-monitor-art--window"
         src={windowSkyArtwork}

@@ -48,6 +48,26 @@ test("packet loss, jitter, and latency can independently trigger degradation", (
   assert.equal(selectNetworkTier({ roundTripTimeMs: 420 }), "critical");
 });
 
+test("concealment and jitter-buffer growth independently trigger degradation", () => {
+  assert.equal(selectNetworkTier({ concealmentPercent: 5 }), "constrained");
+  assert.equal(selectNetworkTier({ concealmentPercent: 14 }), "critical");
+  assert.equal(selectNetworkTier({ averageJitterBufferDelayMs: 150 }), "constrained");
+  assert.equal(selectNetworkTier({ averageJitterBufferDelayMs: 300 }), "critical");
+});
+
+test("repeatable weak-network matrix keeps the existing conservative bitrate tiers", () => {
+  const lossMatrix = [1, 3, 5, 8, 10, 15].map((packetLossPercent) => ({
+    packetLossPercent,
+    tier: selectNetworkTier({ packetLossPercent }),
+  }));
+  assert.deepEqual(
+    lossMatrix.map((sample) => sample.tier),
+    ["healthy", "constrained", "constrained", "critical", "critical", "critical"],
+  );
+  assert.equal(selectNetworkTier({ packetLossPercent: 5, jitterMs: 95 }), "critical");
+  assert.equal(selectNetworkTier({ packetLossPercent: 1, jitterMs: 50 }), "constrained");
+});
+
 test("inbound audio flow detects a connected peer that silently stopped receiving RTP", () => {
   const connectedAtMs = 1_000;
   let progress = evaluateInboundAudioFlow(

@@ -11,8 +11,25 @@ import { GripHorizontal } from "lucide-react";
 import { AnimatedControlIcon } from "../icons/AnimatedControlIcon";
 import { motionDuration } from "../../features/motion/motionSystem";
 import type { ScreenShareItem } from "../../features/screen-share/types";
+import { recordScreenSharePresentation } from "../../features/screen-share/screenSharePresentationMetrics";
 
-const ScreenShareVideo = ({ stream }: { stream: MediaStream }) => {
+interface VideoFrameCallbackMetadata {
+  width?: number;
+  height?: number;
+}
+
+const ScreenShareVideo = ({
+  stream,
+  onPresentation,
+}: {
+  stream: MediaStream;
+  onPresentation?: (stats: {
+    framesPerSecond?: number;
+    width?: number;
+    height?: number;
+    sampledAt: number;
+  }) => void;
+}) => {
   const videoRef = useRef<HTMLVideoElement>(null);
 
   useEffect(() => {
@@ -21,21 +38,66 @@ const ScreenShareVideo = ({ stream }: { stream: MediaStream }) => {
     if (video.srcObject !== stream) video.srcObject = stream;
     video.muted = true;
     void video.play().catch(() => undefined);
-  }, [stream]);
+    const measuredVideo = video as HTMLVideoElement & {
+      requestVideoFrameCallback?: (
+        callback: (now: number, metadata: VideoFrameCallbackMetadata) => void,
+      ) => number;
+      cancelVideoFrameCallback?: (id: number) => void;
+    };
+    if (!measuredVideo.requestVideoFrameCallback || !onPresentation) return;
+    let callbackId = 0;
+    let frames = 0;
+    let windowStartedAt = performance.now();
+    const measure = (now: number, metadata: VideoFrameCallbackMetadata) => {
+      frames += 1;
+      const elapsedMs = now - windowStartedAt;
+      if (elapsedMs >= 1_000) {
+        onPresentation({
+          framesPerSecond: (frames * 1_000) / elapsedMs,
+          width: metadata.width || video.videoWidth || undefined,
+          height: metadata.height || video.videoHeight || undefined,
+          sampledAt: Date.now(),
+        });
+        frames = 0;
+        windowStartedAt = now;
+      }
+      callbackId = measuredVideo.requestVideoFrameCallback?.(measure) ?? 0;
+    };
+    callbackId = measuredVideo.requestVideoFrameCallback(measure);
+    return () => measuredVideo.cancelVideoFrameCallback?.(callbackId);
+  }, [onPresentation, stream]);
 
   return <video ref={videoRef} autoPlay playsInline muted className="screen-share-video" />;
 };
 
-const ScreenShareMedia = ({ item }: { item: ScreenShareItem }) => {
+const ScreenShareMedia = ({
+  item,
+  onPresentation,
+}: {
+  item: ScreenShareItem;
+  onPresentation: (
+    item: ScreenShareItem,
+    stats: Parameters<NonNullable<Parameters<typeof ScreenShareVideo>[0]["onPresentation"]>>[0],
+  ) => void;
+}) => {
   if (item.isLocal && item.stream) {
     return (
       <div className="screen-share-self-preview" data-testid="local-share-safe-preview">
-        <ScreenShareVideo stream={item.stream} />
+        <ScreenShareVideo
+          stream={item.stream}
+          onPresentation={(stats) => onPresentation(item, stats)}
+        />
         <span className="screen-share-self-badge">你的分享</span>
       </div>
     );
   }
-  if (item.stream) return <ScreenShareVideo stream={item.stream} />;
+  if (item.stream)
+    return (
+      <ScreenShareVideo
+        stream={item.stream}
+        onPresentation={(stats) => onPresentation(item, stats)}
+      />
+    );
   return <img src={item.frameDataUrl} alt="" className="screen-share-video" draggable={false} />;
 };
 
@@ -179,7 +241,12 @@ export const ScreenSharePanel = ({
         </div>
       </div>
       <div className="screen-share-video-shell">
-        <ScreenShareMedia item={primaryItem} />
+        <ScreenShareMedia
+          item={primaryItem}
+          onPresentation={(item, stats) =>
+            recordScreenSharePresentation(item.id.replace(/-relay$/, ""), stats)
+          }
+        />
       </div>
       {items.length > 1 ? (
         <div className="screen-share-stack" role="tablist" aria-label="切换共享画面">

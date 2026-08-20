@@ -1,8 +1,6 @@
 import { useRef } from "react";
-import { AnimatePresence, motion } from "framer-motion";
 import type { RoomMember } from "@private-voice/shared";
 
-import { motionCurve, motionDuration } from "../../features/motion/motionSystem";
 import { memberStatus } from "../../features/voice-scene/activityRules";
 
 const getLatencyTone = (latencyMs?: number) => {
@@ -16,11 +14,9 @@ const getLatencyTone = (latencyMs?: number) => {
 export const SceneCharacterLabel = ({
   member,
   isAway,
-  shouldReduceMotion,
 }: {
   member: RoomMember;
   isAway: boolean;
-  shouldReduceMotion: boolean;
 }) => {
   const status = memberStatus(member);
   const isReconnecting = status.tone === "reconnecting";
@@ -54,24 +50,17 @@ export const SceneCharacterLabel = ({
             </span>
           </span>
           <span className="room-character-state">
-            <AnimatePresence initial={false} mode="popLayout">
-              <motion.span
-                key={`${status.tone}-${status.label}`}
-                className="inline-flex min-w-0 items-center gap-1"
-                initial={shouldReduceMotion ? false : { opacity: 0, y: 2 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={shouldReduceMotion ? undefined : { opacity: 0, y: -2 }}
-                transition={{
-                  duration: shouldReduceMotion ? 0 : motionDuration.color,
-                  ease: motionCurve.enter,
-                }}
-              >
-                {status.icon ? (
-                  <status.icon className={`h-3 w-3 ${isReconnecting ? "animate-spin" : ""}`} />
-                ) : null}
-                <span>{status.label}</span>
-              </motion.span>
-            </AnimatePresence>
+            <span
+              className={`room-character-state-icon ${status.icon ? "has-icon" : ""}`}
+              aria-hidden="true"
+            >
+              {status.icon ? (
+                <status.icon className={`h-3 w-3 ${isReconnecting ? "animate-spin" : ""}`} />
+              ) : null}
+            </span>
+            <span className="room-character-state-text" title={status.label}>
+              {status.label}
+            </span>
           </span>
         </>
       )}

@@ -74,6 +74,34 @@ const HISTORICAL_RELEASE_EVIDENCE: readonly HistoricalReleaseEvidence[] = [
 
 export const RELEASE_HISTORY: readonly ReleaseHistoryEntry[] = [
   {
+    version: "3.0.0",
+    date: "2026-08-20",
+    title: "3.0 Core 与房间体验整合",
+    summary:
+      "3.0.0 整合 Core/Platform、视觉运行时、五人语音恢复、屏幕分享、录音库与本地 AI，并修复角色状态卡切换时的文字跳动。",
+    highlights: [
+      "角色状态卡改为固定对齐槽位，等待中、静音和已关闭扬声器切换时不再横向抽动。",
+      "KK 相关游戏统一显示 KK 对战平台，房间场景、挂历、天气和时钟继续保持轻量。",
+      "录音库、屏幕分享、五人 Mesh、ICE/TURN/Relay 和本地 AI 数据链路保持向后兼容。",
+    ],
+    details: [
+      {
+        title: "3.0 架构",
+        items: [
+          "Renderer 使用显式 shanghaoCore.* 能力；Windows 平台服务与窄 Rust Core 各自负责清晰边界。",
+          "视觉运行时在页面隐藏时暂停纯视觉循环，不暂停实时语音、信令、录音和 WebRTC。",
+        ],
+      },
+      {
+        title: "房间与录音",
+        items: [
+          "角色状态文字不再因为旧文本和新文本同时占位而左右跳动。",
+          "录音库继续支持渐进加载、批量删除、失败重转和废录音清理保护。",
+        ],
+      },
+    ],
+  },
+  {
     version: "2.9.2",
     date: "2026-08-15",
     title: "屏幕分享清晰度与防火墙修复",

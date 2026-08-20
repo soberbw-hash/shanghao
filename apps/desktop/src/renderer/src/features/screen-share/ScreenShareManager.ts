@@ -1,9 +1,11 @@
 import type { ScreenCaptureSourceDescriptor } from "@private-voice/shared";
 import type { ScreenShareEncodingProfile } from "@private-voice/webrtc";
 
+import { shanghaoCore } from "../../core/shanghaoCore";
 import { DetachedScreenSharePublisher } from "./DetachedScreenSharePublisher";
 import {
-  SCREEN_SHARE_PROFILE,
+  DEFAULT_SCREEN_SHARE_QUALITY,
+  SCREEN_SHARE_PROFILES,
   type ScreenShareDisplayMode,
   type ScreenShareItem,
   type ScreenShareManagerSnapshot,
@@ -27,6 +29,7 @@ const initialSnapshot: ScreenShareManagerSnapshot = {
   status: "idle",
   sources: [],
   hasSystemAudio: false,
+  requestedQuality: DEFAULT_SCREEN_SHARE_QUALITY,
   displayMode: "inline",
 };
 
@@ -83,8 +86,8 @@ export class ScreenShareManager {
     const operationId = ++this.operationId;
     this.patch({ status: "enumerating", error: undefined });
     try {
-      await window.desktopApi.screenCapture.setContentProtection(false);
-      const sources = await window.desktopApi.screenCapture.listSources();
+      await shanghaoCore.screenCapture.setContentProtection(false);
+      const sources = await shanghaoCore.screenCapture.listSources({ timeoutMs: 8_000 });
       if (operationId !== this.operationId || this.isDisposed) {
         return [];
       }
@@ -110,7 +113,7 @@ export class ScreenShareManager {
       selectedSourceId: undefined,
       error: undefined,
     });
-    await window.desktopApi.screenCapture.setContentProtection(false).catch(() => undefined);
+    await shanghaoCore.screenCapture.setContentProtection(false).catch(() => undefined);
     await this.log("info", "Screen source picker cancelled");
   }
 
@@ -119,23 +122,26 @@ export class ScreenShareManager {
       throw new Error("screen_share_already_active");
     }
     const operationId = ++this.operationId;
+    const quality = request.quality ?? DEFAULT_SCREEN_SHARE_QUALITY;
+    const normalizedRequest: StartScreenShareRequest = { ...request, quality };
     this.patch({
       status: "starting",
       selectedSourceId: request.sourceId,
+      requestedQuality: quality,
       error: undefined,
     });
 
     let stream: MediaStream | undefined;
     try {
-      const profile = SCREEN_SHARE_PROFILE;
+      const profile = SCREEN_SHARE_PROFILES[quality];
       const requestStream = async (includeSystemAudio: boolean): Promise<MediaStream> => {
-        await window.desktopApi.screenCapture.selectSource(request.sourceId);
+        await shanghaoCore.screenCapture.selectSource(request.sourceId);
         return navigator.mediaDevices.getDisplayMedia({
           video: {
             width: { ideal: profile.maxWidth, max: profile.maxWidth },
             height: { ideal: profile.maxHeight, max: profile.maxHeight },
             frameRate: {
-              ideal: Math.max(10, profile.maxFramerate - 3),
+              ideal: profile.maxFramerate,
               max: profile.maxFramerate,
             },
           },
@@ -174,7 +180,7 @@ export class ScreenShareManager {
             error: this.errorMessage(error),
           },
         );
-        await window.desktopApi.screenCapture.setContentProtection(false).catch(() => undefined);
+        await shanghaoCore.screenCapture.setContentProtection(false).catch(() => undefined);
         await new Promise((resolve) => window.setTimeout(resolve, WINDOWS_CAPTURE_RETRY_DELAY_MS));
         try {
           stream = await requestStream(false);
@@ -188,7 +194,7 @@ export class ScreenShareManager {
               error: this.errorMessage(retryError),
             },
           );
-          await window.desktopApi.screenCapture.setContentProtection(false).catch(() => undefined);
+          await shanghaoCore.screenCapture.setContentProtection(false).catch(() => undefined);
           await new Promise((resolve) =>
             window.setTimeout(resolve, WINDOWS_LEGACY_CAPTURE_DELAY_MS),
           );
@@ -206,36 +212,36 @@ export class ScreenShareManager {
 
       const [videoTrack] = stream.getVideoTracks();
       if (!videoTrack) throw new Error("screen_track_missing");
+      const captureSettings = videoTrack.getSettings();
       await this.options.startPublishing(stream, profile);
       if (operationId !== this.operationId || this.isDisposed) {
         stream.getTracks().forEach((track) => track.stop());
         throw new Error("screen_share_superseded");
       }
 
-      videoTrack.addEventListener(
-        "ended",
-        () => {
-          if (this.snapshot.localStream !== stream || this.isDisposed) return;
-          this.options.onSourceEnded?.();
-          void this.stopShare("source-ended");
-        },
-        { once: true },
-      );
+      this.bindTrackRecovery(stream, normalizedRequest, profile);
       this.patch({
         status: "sharing",
         localStream: stream,
         hasSystemAudio: stream.getAudioTracks().some((track) => track.readyState === "live"),
+        capture: {
+          width: captureSettings.width,
+          height: captureSettings.height,
+          framesPerSecond: captureSettings.frameRate,
+        },
       });
-      await window.desktopApi.screenCapture.setContentProtection(true);
+      await shanghaoCore.screenCapture.setContentProtection(true);
       await this.log("info", "Screen share started", {
-        quality: "1440p",
+        requestedQuality: quality,
+        requestedWidth: profile.maxWidth,
+        requestedHeight: profile.maxHeight,
         hasSystemAudio: this.snapshot.hasSystemAudio,
-        videoTrackSettings: videoTrack.getSettings(),
+        videoTrackSettings: captureSettings,
       });
       return stream;
     } catch (error) {
       stream?.getTracks().forEach((track) => track.stop());
-      await window.desktopApi.screenCapture.setContentProtection(false).catch(() => undefined);
+      await shanghaoCore.screenCapture.setContentProtection(false).catch(() => undefined);
       if (operationId === this.operationId && !this.isDisposed) {
         this.patch({
           status: "failed",
@@ -263,6 +269,7 @@ export class ScreenShareManager {
         localStream: undefined,
         hasSystemAudio: false,
         selectedSourceId: undefined,
+        capture: undefined,
         displayMode: "inline",
         detachedItemId: undefined,
         error: undefined,
@@ -278,7 +285,7 @@ export class ScreenShareManager {
       });
     }
 
-    await window.desktopApi.screenCapture.setContentProtection(false).catch(() => undefined);
+    await shanghaoCore.screenCapture.setContentProtection(false).catch(() => undefined);
     await this.log("info", "Screen share stopped", { reason });
   }
 
@@ -335,7 +342,7 @@ export class ScreenShareManager {
       } finally {
         this.closeDetachedViewer();
         this.stopLocalTracks();
-        await window.desktopApi.screenCapture.setContentProtection(false).catch(() => undefined);
+        await shanghaoCore.screenCapture.setContentProtection(false).catch(() => undefined);
         if (!this.isDisposed) this.patch({ ...initialSnapshot });
       }
     })().finally(() => {
@@ -354,7 +361,7 @@ export class ScreenShareManager {
     this.stopLocalTracks();
     this.closeDetachedPublisher(true);
     this.detachedSessionId = undefined;
-    void window.desktopApi.screenCapture.setContentProtection(false).catch(() => undefined);
+    void shanghaoCore.screenCapture.setContentProtection(false).catch(() => undefined);
     void window.desktopApi.screenShareViewer.close().catch(() => undefined);
     this.listeners.clear();
   }
@@ -368,6 +375,102 @@ export class ScreenShareManager {
       title: item.title,
       frameDataUrl: item.frameDataUrl,
     });
+  }
+
+  private bindTrackRecovery(
+    stream: MediaStream,
+    request: StartScreenShareRequest,
+    profile: ScreenShareEncodingProfile,
+  ): void {
+    const [videoTrack] = stream.getVideoTracks();
+    videoTrack?.addEventListener(
+      "ended",
+      () => {
+        if (this.snapshot.localStream !== stream || this.isDisposed) return;
+        void this.recoverEndedTrack(request, profile, stream);
+      },
+      { once: true },
+    );
+  }
+
+  private async recoverEndedTrack(
+    request: StartScreenShareRequest,
+    profile: ScreenShareEncodingProfile,
+    endedStream: MediaStream,
+  ): Promise<void> {
+    const operationId = ++this.operationId;
+    this.patch({ status: "starting", error: undefined });
+    await this.log("warn", "Screen share track ended; attempting one automatic recovery", {
+      sourceId: request.sourceId,
+      requestedQuality: request.quality,
+    });
+    await this.options.stopPublishing().catch(() => undefined);
+    await new Promise((resolve) => window.setTimeout(resolve, WINDOWS_CAPTURE_RETRY_DELAY_MS));
+    if (operationId !== this.operationId || this.isDisposed) return;
+
+    let recoveredStream: MediaStream | undefined;
+    try {
+      await shanghaoCore.screenCapture.setContentProtection(false).catch(() => undefined);
+      await shanghaoCore.screenCapture.selectSource(request.sourceId);
+      try {
+        recoveredStream = await navigator.mediaDevices.getDisplayMedia({
+          video: {
+            width: { ideal: profile.maxWidth, max: profile.maxWidth },
+            height: { ideal: profile.maxHeight, max: profile.maxHeight },
+            frameRate: { ideal: profile.maxFramerate, max: profile.maxFramerate },
+          },
+          audio: request.includeSystemAudio,
+        });
+      } catch (error) {
+        if (!isRetryableDisplayCaptureError(error)) throw error;
+        const video: ElectronDesktopVideoConstraints = {
+          mandatory: {
+            chromeMediaSource: "desktop",
+            chromeMediaSourceId: request.sourceId,
+            maxWidth: profile.maxWidth,
+            maxHeight: profile.maxHeight,
+            maxFrameRate: profile.maxFramerate,
+          },
+        };
+        recoveredStream = await navigator.mediaDevices.getUserMedia({
+          video: video as MediaTrackConstraints,
+          audio: false,
+        });
+      }
+      if (operationId !== this.operationId || this.isDisposed) {
+        recoveredStream.getTracks().forEach((track) => track.stop());
+        return;
+      }
+      const [videoTrack] = recoveredStream.getVideoTracks();
+      if (!videoTrack) throw new Error("screen_track_missing_after_recovery");
+      const captureSettings = videoTrack.getSettings();
+      await this.options.startPublishing(recoveredStream, profile);
+      endedStream.getTracks().forEach((track) => track.stop());
+      this.bindTrackRecovery(recoveredStream, request, profile);
+      this.patch({
+        status: "sharing",
+        localStream: recoveredStream,
+        hasSystemAudio: recoveredStream
+          .getAudioTracks()
+          .some((track) => track.readyState === "live"),
+        capture: {
+          width: captureSettings.width,
+          height: captureSettings.height,
+          framesPerSecond: captureSettings.frameRate,
+        },
+      });
+      await shanghaoCore.screenCapture.setContentProtection(true);
+      await this.log("info", "Screen share track recovered", {
+        requestedQuality: request.quality,
+        videoTrackSettings: captureSettings,
+      });
+    } catch (error) {
+      recoveredStream?.getTracks().forEach((track) => track.stop());
+      if (operationId !== this.operationId || this.isDisposed) return;
+      this.options.onSourceEnded?.();
+      await this.log("error", "Screen share track recovery failed", error);
+      await this.stopShare("source-ended-recovery-failed");
+    }
   }
 
   private closeDetachedPublisher(notifyViewer: boolean): void {

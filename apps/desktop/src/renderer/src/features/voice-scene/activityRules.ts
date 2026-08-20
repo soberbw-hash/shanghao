@@ -58,7 +58,9 @@ export const memberStatus = (member: RoomMember): MemberStatus => {
     return { label: "正在说话", tone: "speaking", icon: Headphones };
   }
   if (member.gameName) {
-    return { label: `正在玩 ${member.gameName}`, tone: "gaming", icon: Gamepad2 };
+    const gameLabel =
+      member.gameName === "KK 对战平台" ? "KK 对战平台" : `正在玩 ${member.gameName}`;
+    return { label: gameLabel, tone: "gaming", icon: Gamepad2 };
   }
   if (member.workActivity) {
     const workStatus = {

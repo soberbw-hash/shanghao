@@ -17,6 +17,7 @@ import {
   applyLoudnessBalanceToMemberVolume,
   createLoudnessBalanceState,
   FRIEND_LOUDNESS_TARGET_LUFS,
+  FRIEND_LOUDNESS_HANGOVER_MS,
 } from "../src/renderer/src/features/audio/loudnessBalance";
 import { hasPlayableAudioTrack } from "../src/renderer/src/features/audio/remoteAudioTrack";
 import { resolveRemoteAudioPath } from "../src/renderer/src/features/audio/remoteAudioPathSelection";
@@ -280,6 +281,25 @@ test("friend loudness balance learns speech without lifting silence or overridin
   assert.equal(applyLoudnessBalanceToMemberVolume(0, quiet.gain, true), 0);
   assert.equal(applyLoudnessBalanceToMemberVolume(1.5, 2, true), 3);
   assert.equal(applyLoudnessBalanceToMemberVolume(1.5, 2, false), 1.5);
+
+  const learnedGain = quiet.gain;
+  for (let index = 0; index < 80; index += 1) {
+    quiet = advanceLoudnessBalance(quiet, {
+      rms: 0.001,
+      peak: 0.004,
+      now: 8_000 + FRIEND_LOUDNESS_HANGOVER_MS + index * 66,
+      enabled: true,
+    });
+  }
+  assert.ok(quiet.gain < learnedGain * 0.75);
+  const silentGain = quiet.gain;
+  quiet = advanceLoudnessBalance(quiet, {
+    rms: 0.05,
+    peak: 0.14,
+    now: 14_000,
+    enabled: true,
+  });
+  assert.ok(quiet.gain > silentGain);
 });
 
 test("late-join remote audio stays attached while Chromium temporarily mutes the live track", () => {

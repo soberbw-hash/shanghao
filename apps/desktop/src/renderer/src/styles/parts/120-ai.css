@@ -1,0 +1,270 @@
+/* Local Qwen stays available without blocking the room while a slower answer is generated. */
+.room-ask-popover {
+  position: absolute;
+  top: 72px;
+  right: clamp(360px, 27vw, 510px);
+  z-index: 60;
+  display: flex;
+  width: min(420px, calc(100% - 32px));
+  max-height: calc(100% - 156px - env(safe-area-inset-bottom));
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid rgba(190, 208, 230, 0.78);
+  border-radius: 18px;
+  background: rgba(248, 251, 255, 0.91);
+  box-shadow:
+    0 18px 42px rgba(48, 78, 115, 0.16),
+    inset 0 1px 0 rgba(255, 255, 255, 0.96);
+  backdrop-filter: blur(18px) saturate(128%);
+  -webkit-backdrop-filter: blur(18px) saturate(128%);
+}
+
+.room-ask-popover-body {
+  min-height: 0;
+  overflow-y: auto;
+  padding: 14px 16px 16px;
+  scrollbar-gutter: stable;
+}
+
+@media (max-width: 1180px) {
+  .room-ask-popover {
+    right: 16px;
+  }
+}
+
+@media (max-width: 760px) {
+  .recording-date-items {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.daily-report-stat {
+  display: grid;
+  min-height: 104px;
+  place-items: center;
+  align-content: center;
+  gap: 3px;
+  border: 1px solid rgba(181, 205, 233, 0.64);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.58);
+  color: #74849a;
+}
+
+.daily-report-stat svg {
+  width: 17px;
+  height: 17px;
+  color: #4c91e5;
+}
+
+.daily-report-stat strong {
+  color: #243852;
+  font-size: 22px;
+  line-height: 1.2;
+}
+
+.daily-report-stat span {
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.daily-report-games {
+  margin-top: 14px;
+  border: 1px solid rgba(181, 205, 233, 0.64);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.58);
+  padding: 12px 14px;
+}
+
+.daily-report-games-title {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: #405c7e;
+  font-size: 12px;
+}
+
+.daily-report-games-title svg {
+  width: 16px;
+  height: 16px;
+  color: #4c91e5;
+}
+
+.daily-report-game-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin-top: 9px;
+}
+
+.daily-report-game-list > span {
+  display: inline-flex;
+  min-height: 28px;
+  align-items: center;
+  gap: 7px;
+  border: 1px solid rgba(162, 195, 232, 0.56);
+  border-radius: 10px;
+  background: rgba(239, 247, 255, 0.78);
+  padding: 4px 9px;
+  color: #345879;
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.daily-report-game-list small {
+  color: #7290ae;
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.daily-report-game-activity {
+  display: grid;
+  grid-template-columns: minmax(72px, auto) minmax(0, 1fr) auto;
+  width: 100%;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid rgba(162, 195, 232, 0.56);
+  border-radius: 12px;
+  background: rgba(239, 247, 255, 0.72);
+  padding: 8px 10px;
+  color: #526b86;
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.daily-report-game-activity strong {
+  min-width: 0;
+  color: #286ebd;
+  font-weight: 750;
+  overflow-wrap: anywhere;
+}
+
+.daily-report-game-activity > span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.daily-report-game-activity small {
+  color: #476d96;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.room-history-switch {
+  display: inline-flex;
+  padding: 3px;
+  border: 1px solid rgba(178, 203, 231, 0.68);
+  border-radius: 13px;
+  background: rgba(244, 248, 253, 0.7);
+}
+
+.room-history-switch button {
+  min-height: 30px;
+  padding: 0 12px;
+  border-radius: 10px;
+  color: #7a8ba1;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.room-history-switch button.is-active {
+  background: rgba(255, 255, 255, 0.86);
+  color: #2d7edb;
+  box-shadow: 0 4px 12px rgba(75, 128, 186, 0.12);
+}
+
+.room-history-day {
+  overflow: hidden;
+  border: 1px solid rgba(185, 206, 230, 0.58);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.5);
+}
+
+.room-history-day > button {
+  display: flex;
+  width: 100%;
+  min-height: 58px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 15px;
+  color: #4d6078;
+  text-align: left;
+}
+
+.room-history-day > button span {
+  display: grid;
+  gap: 2px;
+}
+
+.room-history-day > button strong {
+  font-size: 13px;
+  color: #293b51;
+}
+.room-history-day > button small {
+  font-size: 11px;
+  color: #8392a7;
+}
+.room-history-day > button svg {
+  width: 16px;
+  transition: transform 160ms ease;
+}
+
+.room-history-details {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px 14px;
+  padding: 12px 15px 15px;
+  border-top: 1px solid rgba(198, 216, 237, 0.52);
+  color: #60738b;
+  font-size: 12px;
+}
+
+.room-history-details span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.room-history-details .room-history-friends {
+  grid-column: 1 / -1;
+  align-items: flex-start;
+  border: 1px solid rgba(166, 199, 235, 0.55);
+  border-radius: 11px;
+  background: rgba(239, 247, 255, 0.66);
+  padding: 8px 10px;
+  color: #356b9f;
+  font-weight: 700;
+  line-height: 18px;
+  overflow-wrap: anywhere;
+}
+
+.room-history-details svg {
+  width: 14px;
+  height: 14px;
+  color: #4a8fdf;
+}
+
+.room-history-game-activities {
+  display: grid;
+  grid-column: 1 / -1;
+  gap: 6px;
+}
+
+.room-history-game-activities > span {
+  display: block;
+  border-left: 2px solid rgba(74, 143, 223, 0.62);
+  padding: 3px 0 3px 9px;
+  line-height: 18px;
+  overflow-wrap: anywhere;
+}
+
+.room-history-game-activities strong {
+  color: #286ebd;
+  font-weight: 750;
+}
+.room-history-quiet,
+.room-history-empty {
+  padding: 18px;
+  color: #8190a4;
+  font-size: 12px;
+  text-align: center;
+}

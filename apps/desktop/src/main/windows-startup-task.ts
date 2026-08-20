@@ -1,4 +1,5 @@
 import { parsePowerShellJson, runWindowsPowerShell } from "./windows-command";
+import { platformService } from "./platform/PlatformService";
 
 export const STARTUP_TASK_NAME = "ShangHao Auto Start";
 const STARTUP_TASK_ARGUMENT = "--shanghao-startup";
@@ -64,7 +65,7 @@ const runStartupTaskOperation = async (
   operation: "query" | "enable" | "disable",
   executablePath = process.execPath,
 ): Promise<WindowsStartupTaskStatus> => {
-  if (process.platform !== "win32") return unsupportedStatus();
+  if (!platformService.isWindows) return unsupportedStatus();
   const result = await runWindowsPowerShell(STARTUP_TASK_SCRIPT, {
     SHANGHAO_STARTUP_OPERATION: operation,
     SHANGHAO_STARTUP_EXE: executablePath,

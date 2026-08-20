@@ -37,26 +37,37 @@ app.whenReady().then(async () => {
           if (!navigator.mediaDevices?.getDisplayMedia) {
             return { ok: false, error: "display_media_unavailable", protocol: location.protocol };
           }
-          const stream = await navigator.mediaDevices.getDisplayMedia({
-            video: {
-              width: { ideal: 2560, max: 2560 },
-              height: { ideal: 1440, max: 1440 },
-              frameRate: { ideal: 21, max: 24 },
-            },
-            audio: false,
-          });
-          const displayTrack = stream.getVideoTracks()[0];
-          const displaySettings = displayTrack?.getSettings?.() ?? {};
-          stream.getTracks().forEach((item) => item.stop());
-          await new Promise((resolve) => setTimeout(resolve, 250));
+          const profiles = [
+            { quality: "720p", width: 1280, height: 720, frameRate: 30 },
+            { quality: "1080p", width: 1920, height: 1080, frameRate: 30 },
+          ];
+          const captures = [];
+          for (const profile of profiles) {
+            const stream = await navigator.mediaDevices.getDisplayMedia({
+              video: {
+                width: { ideal: profile.width, max: profile.width },
+                height: { ideal: profile.height, max: profile.height },
+                frameRate: { ideal: profile.frameRate, max: profile.frameRate },
+              },
+              audio: false,
+            });
+            const displayTrack = stream.getVideoTracks()[0];
+            captures.push({
+              requested: profile,
+              actual: displayTrack?.getSettings?.() ?? {},
+              hasTrack: Boolean(displayTrack),
+            });
+            stream.getTracks().forEach((item) => item.stop());
+            await new Promise((resolve) => setTimeout(resolve, 250));
+          }
           const fallbackStream = await navigator.mediaDevices.getUserMedia({
             video: {
               mandatory: {
                 chromeMediaSource: "desktop",
                 chromeMediaSourceId: ${JSON.stringify(selectedSource?.id ?? "")},
-                maxWidth: 2560,
-                maxHeight: 1440,
-                maxFrameRate: 24,
+                maxWidth: 1920,
+                maxHeight: 1080,
+                maxFrameRate: 30,
               },
             },
             audio: false,
@@ -65,8 +76,8 @@ app.whenReady().then(async () => {
           const fallbackSettings = fallbackTrack?.getSettings?.() ?? {};
           fallbackStream.getTracks().forEach((item) => item.stop());
           return {
-            ok: Boolean(displayTrack && fallbackTrack),
-            displaySettings,
+            ok: captures.every((capture) => capture.hasTrack) && Boolean(fallbackTrack),
+            captures,
             fallbackSettings,
           };
         } catch (error) {

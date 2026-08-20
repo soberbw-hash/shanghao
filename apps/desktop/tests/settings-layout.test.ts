@@ -4,6 +4,7 @@ import path from "node:path";
 import test from "node:test";
 
 import { RELEASE_HISTORY } from "../src/renderer/src/components/status/releaseHistory";
+import { readRendererCss } from "./helpers/read-renderer-css";
 
 const audioCardPath = path.resolve(
   process.cwd(),
@@ -43,7 +44,9 @@ const voiceMemoryDetailPath = path.resolve(
   process.cwd(),
   "src/renderer/src/components/settings/VoiceMemoryDetail.tsx",
 );
-const stylesPath = path.resolve(process.cwd(), "src/renderer/src/styles/index.css");
+const ipcPath = path.resolve(process.cwd(), "src/main/ipc.ts");
+const aiRuntimeManagerPath = path.resolve(process.cwd(), "src/main/ai-runtime-manager.ts");
+const vibeVoiceRuntimePath = path.resolve(process.cwd(), "src/main/vibevoice-runtime.ts");
 
 test("fixed sounds, game detection, and system notifications stay out of settings", () => {
   const source = readFileSync(settingsPagePath, "utf8");
@@ -63,7 +66,7 @@ test("fixed sounds, game detection, and system notifications stay out of setting
 test("weather settings stay lightweight and hide technical provider details", () => {
   const source = readFileSync(weatherSettingsPath, "utf8");
   const pickerSource = readFileSync(weatherCityPickerPath, "utf8");
-  const styles = readFileSync(stylesPath, "utf8");
+  const styles = readRendererCss();
   assert.equal(source.includes("窗外天气"), true);
   assert.equal(source.includes("天气位置"), true);
   assert.equal(source.includes("Windows 系统定位"), true);
@@ -171,8 +174,8 @@ test("microphone processing lives in the room panel while release history remain
   assert.equal(audioCardSource.includes("isAutoGainControlEnabled"), false);
   assert.equal(audioCardSource.includes("isFriendLoudnessBalanceEnabled"), false);
   assert.equal(roomDockSource.includes("settings.isFriendLoudnessBalanceEnabled"), true);
-  assert.equal(RELEASE_HISTORY.length, 67);
-  assert.equal(RELEASE_HISTORY[0]?.version, "2.9.2");
+  assert.equal(RELEASE_HISTORY.length, 68);
+  assert.equal(RELEASE_HISTORY[0]?.version, "3.0.0");
   assert.equal(RELEASE_HISTORY.at(-1)?.version, "0.1.1");
   assert.equal(
     new Set(RELEASE_HISTORY.map((release) => release.version)).size,
@@ -216,7 +219,8 @@ test("recording library safely cleans verified waste recordings", () => {
   const source = readFileSync(recordingLibraryCardPath, "utf8");
   assert.equal(source.includes("window.desktopApi.recording.scanWaste()"), true);
   assert.equal(source.includes("清理录音"), true);
-  assert.equal(source.includes("清理废录音？"), true);
+  assert.equal(source.includes("清理录音？"), true);
+  assert.equal(source.includes("五分钟以下"), true);
   assert.equal(source.includes("收藏和带标记的录音不会被清理"), true);
   assert.equal(source.includes('role="alertdialog"'), true);
   assert.equal(source.includes("window.desktopApi.recording.deleteMany("), true);
@@ -234,20 +238,50 @@ test("recording library supports accessible multi-selection and confirmed batch 
   assert.equal(source.includes("aria-pressed={selectedRecordingIds.has(item.id)}"), true);
 });
 
-test("recording library keeps one page scroller and a desktop master-detail layout", () => {
+test("recording library keeps both desktop columns useful while browsing long lists", () => {
   const cardSource = readFileSync(recordingLibraryCardPath, "utf8");
-  const styles = readFileSync(stylesPath, "utf8");
+  const settingsSource = readFileSync(settingsPagePath, "utf8");
+  const styles = readRendererCss();
 
   assert.equal(cardSource.includes('className="recording-library-page"'), true);
+  assert.equal(settingsSource.includes("settings-page--recording-library overflow-hidden"), true);
+  assert.equal(settingsSource.includes("settings-recording-content"), true);
   assert.match(
     styles,
     /\.recording-library-workspace\s*\{[^}]*grid-template-columns:\s*minmax\(340px, 390px\) minmax\(0, 1fr\)/s,
   );
-  assert.doesNotMatch(styles, /\.recording-library-list\s*\{[^}]*overflow-y:\s*auto/s);
+  assert.match(styles, /\.recording-library-list\s*\{[^}]*overflow-y:\s*auto/s);
+  assert.match(styles, /\.recording-library-panel\s*\{[^}]*overflow-y:\s*auto/s);
   assert.doesNotMatch(styles, /\.voice-memory-transcript\s*\{[^}]*overflow:\s*auto/s);
   assert.equal(cardSource.includes('["main", "一号房"]'), false);
   assert.equal(cardSource.includes('["side", "二号房"]'), false);
   assert.equal(cardSource.includes("`语音 ${String(recordingNumbers.get(item.id)"), true);
+});
+
+test("recording library paints before deferred transcript status hydration", () => {
+  const cardSource = readFileSync(recordingLibraryCardPath, "utf8");
+  const settingsSource = readFileSync(settingsPagePath, "utf8");
+  const ipcSource = readFileSync(ipcPath, "utf8");
+  const listHandler = ipcSource.slice(
+    ipcSource.indexOf("IPC_CHANNELS.recording.list"),
+    ipcSource.indexOf("IPC_CHANNELS.recording.scanWaste"),
+  );
+
+  assert.equal(cardSource.includes("const RECORDING_RENDER_BATCH = 24"), true);
+  assert.equal(cardSource.includes("recording-library-loading"), true);
+  assert.equal(cardSource.includes("requestIdleCallback"), true);
+  assert.equal(settingsSource.includes("{ autoAlpha: 0, x: 10 }"), false);
+  assert.equal(listHandler.includes("reconcileRecordingIdentity"), false);
+});
+
+test("successful empty ASR units remain silence instead of failing the recording", () => {
+  const runtimeSource = readFileSync(aiRuntimeManagerPath, "utf8");
+  const vibeSource = readFileSync(vibeVoiceRuntimePath, "utf8");
+
+  assert.equal(runtimeSource.includes("if (!rawOutput) return [];"), true);
+  assert.equal(runtimeSource.includes("vibevoice_empty_output"), false);
+  assert.equal(vibeSource.includes("Mandarin Chinese voice chat"), false);
+  assert.equal(vibeSource.includes('"--prompt-format",\n          "text"'), true);
 });
 
 test("AI voice memory keeps first install manual and disables unavailable automation", () => {

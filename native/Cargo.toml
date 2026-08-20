@@ -1,0 +1,8 @@
+[workspace]
+members = ["crates/shanghao-core"]
+resolver = "2"
+
+[workspace.package]
+edition = "2024"
+license = "AGPL-3.0-or-later"
+rust-version = "1.85"

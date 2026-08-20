@@ -36,6 +36,14 @@ extraResources:
     filter:
       - "df_bg.wasm"
       - "DeepFilterNet3_onnx.tar.gz"
+  - from: resources/ai/runtime-manifest.json
+    to: ai/runtime-manifest.json
+  - from: resources/native
+    to: native
+    filter:
+      - "shanghao-core.exe"
+  - from: scripts/qwen-runner.py
+    to: ai/qwen-runner.py
   - from: build
     to: build
     filter:

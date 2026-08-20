@@ -4,14 +4,15 @@ import path from "node:path";
 import test from "node:test";
 
 import { resolveMemberSceneZones } from "../src/renderer/src/features/voice-scene/sceneZones";
+import { readRendererCss } from "./helpers/read-renderer-css";
 
 const roomPagePath = path.resolve(process.cwd(), "src/renderer/src/pages/RoomPage.tsx");
 const homePagePath = path.resolve(process.cwd(), "src/renderer/src/pages/HomePage.tsx");
 const overlayWindowPath = path.resolve(process.cwd(), "src/main/overlay-window.ts");
 const overlayPagePath = path.resolve(process.cwd(), "src/renderer/src/pages/OverlayPage.tsx");
 const mainWindowPath = path.resolve(process.cwd(), "src/main/window.ts");
+const screenCaptureServicePath = path.resolve(process.cwd(), "src/main/screen-capture-service.ts");
 const rendererMainPath = path.resolve(process.cwd(), "src/renderer/src/main.tsx");
-const stylesPath = path.resolve(process.cwd(), "src/renderer/src/styles/index.css");
 const chatPanelPath = path.resolve(
   process.cwd(),
   "src/renderer/src/components/chat/TemporaryChatPanel.tsx",
@@ -130,7 +131,7 @@ test("room page uses the V5 island, light responses, and voice dock", () => {
   assert.equal(audioPopoverSource.includes('data-audio-setting="echo-cancellation"'), true);
   assert.equal(audioPopoverSource.includes('data-audio-setting="voice-enhancement"'), true);
   assert.equal(audioPopoverSource.includes('ariaLabel="切换回声消除"'), true);
-  assert.equal(audioPopoverSource.includes('ariaLabel="切换人声增强"'), true);
+  assert.equal(audioPopoverSource.includes('ariaLabel="切换自然人声"'), true);
   assert.equal(source.includes("noise-suppression-button"), false);
   assert.equal(audioPopoverSource.includes('ariaLabel="切换降噪"'), true);
   assert.equal(audioPopoverSource.includes("hasMicrophoneProcessing ? deviceSelect : null"), true);
@@ -154,7 +155,7 @@ test("room page uses the V5 island, light responses, and voice dock", () => {
 
 test("seat switching uses the full visible workstation area", () => {
   const teamIslandSource = readFileSync(teamIslandPath, "utf8");
-  const stylesSource = readFileSync(stylesPath, "utf8");
+  const stylesSource = readRendererCss();
   const sceneZonesSource = readFileSync(sceneZonesPath, "utf8");
 
   assert.equal(teamIslandSource.includes("absolute inset-0 z-[18]"), true);
@@ -164,7 +165,7 @@ test("seat switching uses the full visible workstation area", () => {
 });
 
 test("exit label stays clear of the door arrow", () => {
-  const stylesSource = readFileSync(stylesPath, "utf8");
+  const stylesSource = readRendererCss();
 
   assert.match(stylesSource, /\.scene-service-restroom \.scene-exit-label\s*\{[^}]*top:\s*9%;/s);
 });
@@ -174,7 +175,7 @@ test("work and game activities animate on the monitor without replacing voice st
   const workMonitorSource = readFileSync(workMonitorPath, "utf8");
   const idleMonitorSource = readFileSync(idleMonitorPath, "utf8");
   const activityRulesSource = readFileSync(activityRulesPath, "utf8");
-  const stylesSource = readFileSync(stylesPath, "utf8");
+  const stylesSource = readRendererCss();
 
   assert.equal(teamIslandSource.includes("<WorkMonitorContent"), true);
   assert.equal(teamIslandSource.includes("settledOccupant.gameName"), true);
@@ -191,9 +192,9 @@ test("work and game activities animate on the monitor without replacing voice st
   assert.equal(workMonitorSource.includes("context.revert()"), true);
   assert.equal(teamIslandSource.includes("<IdleMonitorContent"), true);
   assert.equal(teamIslandSource.includes("offsetSeconds={slotIndex * 48}"), true);
-  assert.equal(idleMonitorSource.includes("idle-monitors/aquarium.png"), true);
   assert.equal(idleMonitorSource.includes("idle-monitors/window-sky.png"), true);
   assert.equal(idleMonitorSource.includes("--idle-monitor-offset"), true);
+  assert.equal(idleMonitorSource.includes("idle-monitors/aquarium.png"), false);
   assert.equal(activityRulesSource.includes("正在玩"), true);
   assert.equal(activityRulesSource.includes("workActivity.name"), true);
   assert.equal(stylesSource.includes(".scene-workstation-screen.working"), true);
@@ -205,7 +206,7 @@ test("room uses a real always-on-top overlay and a ten-second knock cooldown", (
   const overlaySource = readFileSync(overlayWindowPath, "utf8");
   const overlayPageSource = readFileSync(overlayPagePath, "utf8");
   const rendererMainSource = readFileSync(rendererMainPath, "utf8");
-  const stylesSource = readFileSync(stylesPath, "utf8");
+  const stylesSource = readRendererCss();
   const chatSource = readFileSync(chatPanelPath, "utf8");
   const chatLinkPreviewSource = readFileSync(chatLinkPreviewPath, "utf8");
   const quickRepliesSource = readFileSync(quickRepliesPath, "utf8");
@@ -247,7 +248,8 @@ test("room uses a real always-on-top overlay and a ten-second knock cooldown", (
   assert.equal(overlaySource.includes("this.window.setPosition(this.snapX"), true);
   assert.equal(stylesSource.includes(".overlay-still-progress-value"), true);
   assert.equal(roomSource.includes("pauseVisualMotion={roomCollection.isOpen}"), true);
-  assert.equal(stylesSource.includes(".team-island.is-visual-motion-paused *"), true);
+  assert.equal(stylesSource.includes(".team-island.is-visual-motion-paused *\n"), false);
+  assert.equal(stylesSource.includes(".team-island.is-visual-motion-paused .weather-cloud"), true);
   assert.equal(stylesSource.includes(".collection-modal-panel.modal-surface"), true);
   assert.equal(stylesSource.includes("contain-intrinsic-size: auto 86px"), true);
   assert.equal(rendererMainSource.includes("overlay-renderer"), true);
@@ -303,7 +305,7 @@ test("each remote member has compact local-only volume and mute controls", () =>
     path.resolve(process.cwd(), "src/renderer/src/features/room/memberVolumePersistence.ts"),
     "utf8",
   );
-  const stylesSource = readFileSync(stylesPath, "utf8");
+  const stylesSource = readRendererCss();
 
   assert.equal(sceneCharacterSource.includes("member-audio-popover"), true);
   assert.equal(sceneCharacterLabelSource.includes("room-character-volume-hint"), false);
@@ -343,7 +345,7 @@ test("music activity stays attached to a member while seats change", () => {
   const teamIslandSource = readFileSync(teamIslandPath, "utf8");
   const badgeSource = readFileSync(musicActivityBadgePath, "utf8");
   const roomSource = readFileSync(roomPagePath, "utf8");
-  const stylesSource = readFileSync(stylesPath, "utf8");
+  const stylesSource = readRendererCss();
 
   assert.equal(teamIslandSource.includes("const occupant = memberBySeat.get(slot.id)"), true);
   assert.equal(teamIslandSource.includes("const settledMemberBySeat = new Map"), true);
@@ -386,7 +388,7 @@ test("update gate owns update UI without the floating duplicate card", () => {
 
 test("scene seats align with the marked workstation positions", () => {
   const sceneZonesSource = readFileSync(sceneZonesPath, "utf8");
-  const stylesSource = readFileSync(stylesPath, "utf8");
+  const stylesSource = readRendererCss();
   const teamIslandSource = readFileSync(teamIslandPath, "utf8");
   const dateCalendarSource = readFileSync(dateCalendarPath, "utf8");
   const workstationSource = readFileSync(workstationArtPath, "utf8");
@@ -497,8 +499,9 @@ test("screen sharing is wired through the room page and WebRTC peer layer", () =
     path.resolve(process.cwd(), "../../packages/webrtc/src/createPeer.ts"),
     "utf8",
   );
-  const stylesSource = readFileSync(stylesPath, "utf8");
+  const stylesSource = readRendererCss();
   const mainWindowSource = readFileSync(mainWindowPath, "utf8");
+  const screenCaptureServiceSource = readFileSync(screenCaptureServicePath, "utf8");
   const managerSource = readFileSync(screenShareManagerPath, "utf8");
   const screenShareHookSource = readFileSync(screenShareHookPath, "utf8");
   const viewerPreloadSource = readFileSync(screenShareViewerPreloadPath, "utf8");
@@ -552,7 +555,7 @@ test("screen sharing is wired through the room page and WebRTC peer layer", () =
   );
   assert.equal(peerSource.includes("DEFAULT_SCREEN_SHARE_PROFILE"), true);
   assert.equal(
-    peerSource.includes('parameters.degradationPreference = "maintain-resolution"'),
+    peerSource.includes('parameters.degradationPreference = "maintain-framerate"'),
     true,
   );
   assert.equal(peerSource.includes("screenScaleResolutionDownBy: 1"), true);
@@ -563,7 +566,7 @@ test("screen sharing is wired through the room page and WebRTC peer layer", () =
   assert.equal(managerSource.includes("screenShareViewer"), true);
   assert.equal(screenPanelSource.includes("local-share-safe-preview"), true);
   assert.equal(roomSource.includes("本地预览已隐藏，避免画面无限套娃"), false);
-  assert.equal(screenPanelSource.includes("<ScreenShareVideo stream={item.stream} />"), true);
+  assert.equal(screenPanelSource.includes("requestVideoFrameCallback"), true);
   assert.equal(managerSource.includes("setContentProtection(true)"), true);
   assert.equal(managerSource.includes("setContentProtection(false)"), true);
   assert.equal(screenPanelSource.includes("isDetaching || primaryItem.isLocal"), false);
@@ -574,24 +577,26 @@ test("screen sharing is wired through the room page and WebRTC peer layer", () =
   assert.equal(mainWindowSource.includes("workArea.height * 0.85"), true);
   assert.equal(mainWindowSource.includes("setContentProtection(true)"), true);
   assert.equal(mainWindowSource.includes("setScreenCaptureContentProtection"), true);
-  assert.equal(mainWindowSource.includes("appWindowSourceIds"), true);
+  assert.equal(screenCaptureServiceSource.includes("appWindowSourceIds"), true);
   assert.equal(mainWindowSource.includes("sendScreenShareViewerSignal"), true);
   assert.equal(managerSource.includes("DetachedScreenSharePublisher"), true);
   assert.equal(managerSource.includes("toDataURL"), false);
-  assert.equal(managerSource.includes("SCREEN_SHARE_PROFILE"), true);
+  assert.equal(managerSource.includes("SCREEN_SHARE_PROFILES"), true);
   assert.equal(viewerPreloadSource.includes("screenShareViewerApi"), true);
   assert.equal(viewerPreloadSource.includes("desktopApi"), false);
   assert.equal(roomSource.includes("screen-share-fit-action"), false);
   assert.equal(screenPanelSource.includes("screen-share-drag-handle"), true);
   assert.equal(mainWindowSource.includes("setDisplayMediaRequestHandler"), true);
-  assert.equal(mainWindowSource.includes("desktopCapturer.getSources"), true);
+  assert.equal(screenCaptureServiceSource.includes("desktopCapturer.getSources"), true);
   assert.equal(mainWindowSource.includes('"loopback"'), true);
-  assert.equal(roomSource.includes("screenShareQuality"), false);
+  assert.equal(roomSource.includes("startSharingScreen(sourceId, quality)"), true);
   const overlaysSource = readFileSync(
     path.resolve(process.cwd(), "src/renderer/src/components/room/RoomOverlays.tsx"),
     "utf8",
   );
-  assert.equal(overlaysSource.includes("1440p · 清晰"), true);
+  assert.equal(overlaysSource.includes("1440p"), false);
+  assert.equal(overlaysSource.includes('(["1080p", "720p"] as const)'), true);
+  assert.equal(overlaysSource.includes("DEFAULT_SCREEN_SHARE_QUALITY"), true);
   assert.equal(overlaysSource.includes("aria-pressed={includeSystemAudio}"), true);
 });
 
@@ -637,14 +642,15 @@ test("entering a channel does not replay the whole home entrance animation", () 
   assert.equal(homeSource.includes("window.setInterval"), false);
   assert.equal(homeSource.includes('document.addEventListener("visibilitychange"'), true);
   assert.equal(appSource.includes("const roomPagePromise = loadRoomPage()"), true);
-  assert.equal(roomSource.includes("{ autoAlpha: 0.94, y: 5 }"), true);
+  assert.equal(roomSource.includes("{ autoAlpha: 0.94, y: 5 }"), false);
+  assert.equal(appSource.includes('basePage === "room" ? { opacity: 0 } : false'), true);
   assert.equal(roomSource.includes("[data-gsap-room='island']"), false);
 });
 
 test("room navigation stays mounted behind settings and lightweight motion avoids blur", () => {
   const appSource = readFileSync(appPath, "utf8");
   const roomSource = readFileSync(roomPagePath, "utf8");
-  const stylesSource = readFileSync(stylesPath, "utf8");
+  const stylesSource = readRendererCss();
 
   assert.equal(appSource.includes("app-page-base"), true);
   assert.equal(appSource.includes('basePage === "room" ? <RoomPage /> : <HomePage />'), true);

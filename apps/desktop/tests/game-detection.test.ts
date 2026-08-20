@@ -11,10 +11,13 @@ import {
   matchKnownWorkActivity,
   matchMediaSessionMusicActivity,
   matchMusicActivity,
+  resolveStableGameActivity,
   resolveStableMusicActivity,
+  StableWorkActivityResolver,
   SUPPORTED_GAME_NAMES,
   WORK_ACTIVITY_RULES,
 } from "../src/main/game-detection";
+import { AppIdentityResolver } from "../src/main/app-identity-resolver";
 
 const snapshot = (
   ProcessName: string,
@@ -63,11 +66,11 @@ test("work activity is private to the foreground app and covers common creator t
     name: "MATLAB",
     category: "data",
   });
-  assert.deepEqual(matchKnownWorkActivity(snapshot("pythonw", "", "", "", true)), {
-    id: "python",
-    name: "Python",
-    category: "development",
-  });
+  assert.equal(matchKnownWorkActivity(snapshot("pythonw", "", "", "", true)), undefined);
+  assert.equal(matchKnownWorkActivity(snapshot("WINWORD", "", "", "", true)), undefined);
+  assert.equal(matchKnownWorkActivity(snapshot("EXCEL", "", "", "", true)), undefined);
+  assert.equal(matchKnownWorkActivity(snapshot("POWERPNT", "", "", "", true)), undefined);
+  assert.equal(matchKnownWorkActivity(snapshot("wps", "", "", "", true)), undefined);
   assert.equal(matchKnownWorkActivity(snapshot("Code", "", "", "", false)), undefined);
   assert.deepEqual(
     matchKnownWorkActivity(
@@ -97,10 +100,14 @@ test("work activity is private to the foreground app and covers common creator t
 
 test("Codex work detection keeps the official Appx manifest path as its identity evidence", () => {
   const source = readFileSync(path.resolve(process.cwd(), "src/main/game-detection.ts"), "utf8");
-  assert.equal(source.includes("AppxManifest.xml"), true);
-  assert.equal(source.includes("Square44x44Logo"), true);
-  assert.equal(source.includes("targetsize-64_altform-unplated"), true);
-  assert.equal(source.includes('activityId === "codex"'), true);
+  const iconSource = readFileSync(
+    path.resolve(process.cwd(), "src/main/app-icon-resolver.ts"),
+    "utf8",
+  );
+  assert.equal(iconSource.includes("AppxManifest.xml"), true);
+  assert.equal(iconSource.includes("Square44x44Logo"), true);
+  assert.equal(iconSource.includes("targetsize-64"), true);
+  assert.equal(source.includes("openai.codex_"), true);
 });
 
 test("repository documentation lists every supported game and work application", () => {
@@ -109,7 +116,7 @@ test("repository documentation lists every supported game and work application",
     "utf8",
   );
   assert.equal(SUPPORTED_GAME_NAMES.length, 49);
-  assert.equal(WORK_ACTIVITY_RULES.length, 62);
+  assert.equal(WORK_ACTIVITY_RULES.length, 50);
   for (const gameName of SUPPORTED_GAME_NAMES) {
     assert.equal(
       documentation.includes(gameName),
@@ -211,6 +218,45 @@ test("music activity survives transient title misses without becoming permanentl
 
   const changed = matchMusicActivity(snapshot("cloudmusic", "夜曲 - 周杰伦 - 网易云音乐"));
   assert.equal(resolveStableMusicActivity(changed, activity, 0), changed);
+});
+
+test("professional work waits for sustained evidence and ignores brief app switches", () => {
+  const resolver = new StableWorkActivityResolver();
+  const premiere = { id: "premiere", name: "Premiere Pro", category: "media" } as const;
+  const codex = { id: "codex", name: "Codex", category: "development" } as const;
+
+  assert.equal(resolver.update(premiere), undefined);
+  assert.deepEqual(resolver.update(premiere), premiere);
+  assert.deepEqual(resolver.update(undefined), premiere);
+  assert.deepEqual(resolver.update(codex), premiere);
+  assert.deepEqual(resolver.update(undefined), premiere);
+  assert.deepEqual(resolver.update(codex), premiere);
+  assert.deepEqual(resolver.update(codex), codex);
+});
+
+test("game activity survives two fallback misses during a short Alt+Tab", () => {
+  assert.equal(resolveStableGameActivity(undefined, "CS2", 1), "CS2");
+  assert.equal(resolveStableGameActivity(undefined, "CS2", 2), "CS2");
+  assert.equal(resolveStableGameActivity(undefined, "CS2", 3), undefined);
+  assert.equal(resolveStableGameActivity("Dota 2", "CS2", 0), "Dota 2");
+});
+
+test("application identity combines package, path and version evidence", () => {
+  const identity = new AppIdentityResolver().resolve({
+    processName: "ChatGPT.exe",
+    executablePath:
+      "C:\\Program Files\\WindowsApps\\OpenAI.Codex_3.0.0.0_x64__2p2nqsd0c76g0\\app\\ChatGPT.exe",
+    productName: "Codex",
+    fileDescription: "OpenAI Codex",
+    packageFamilyName: "OpenAI.Codex_2p2nqsd0c76g0",
+    appUserModelId: "OpenAI.Codex_2p2nqsd0c76g0!App",
+  });
+
+  assert.ok(identity);
+  assert.equal(identity.processName, "chatgpt");
+  assert.equal(identity.productName, "Codex");
+  assert.ok(identity.packageRoot?.endsWith("OpenAI.Codex_3.0.0.0_x64__2p2nqsd0c76g0"));
+  assert.ok(identity.key.includes("openai.codex_2p2nqsd0c76g0"));
 });
 
 test("KK launcher alone stays hidden while a real foreground hosted process reports KK", () => {
@@ -342,6 +388,10 @@ test("bundled monitor artwork stays valid and newly detected games use a readabl
     path.resolve(process.cwd(), "src/main/game-detection.ts"),
     "utf8",
   );
+  const iconResolverSource = readFileSync(
+    path.resolve(process.cwd(), "src/main/app-icon-resolver.ts"),
+    "utf8",
+  );
   const artworkComponentPath = fileURLToPath(
     new URL("../src/renderer/src/components/room/GameMonitorContent.tsx", import.meta.url),
   );
@@ -401,6 +451,13 @@ test("bundled monitor artwork stays valid and newly detected games use a readabl
     ),
     true,
   );
-  assert.equal(detectorSource.includes('getFileIcon(executablePath, { size: "large" })'), true);
-  assert.equal(detectorSource.includes('resize({ width: 64, height: 64, quality: "best" })'), true);
+  assert.equal(
+    iconResolverSource.includes('getFileIcon(identity.executablePath, { size: "large" })'),
+    true,
+  );
+  assert.equal(
+    iconResolverSource.includes('resize({ width: 64, height: 64, quality: "best" })'),
+    true,
+  );
+  assert.equal(iconResolverSource.includes("private readonly cache"), true);
 });

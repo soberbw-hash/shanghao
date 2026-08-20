@@ -1,4 +1,5 @@
 import { createReadStream } from "node:fs";
+import { randomUUID } from "node:crypto";
 import { mkdir, readFile, readdir, rename, stat, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { Readable } from "node:stream";
@@ -13,8 +14,18 @@ export const RECORDING_MEDIA_PROTOCOL = "shanghao-recording";
 export const RECORDING_MEDIA_MIME_TYPE = "audio/mp4";
 export const RECORDING_LIBRARY_METADATA_FILE = ".shanghao-library.json";
 
+interface RecordingCatalogEntry {
+  recordingId: string;
+  fileName: string;
+  title: string;
+  createdAt: string;
+}
+
 interface RecordingLibraryMetadata {
+  version?: 1 | 2;
   favorites: string[];
+  favoriteRecordingIds?: string[];
+  recordings?: RecordingCatalogEntry[];
 }
 
 export interface RecordingByteRange {
@@ -94,19 +105,56 @@ export const markerPathFor = (filePath: string): string => {
 const metadataPathFor = (directory: string): string =>
   path.join(directory, RECORDING_LIBRARY_METADATA_FILE);
 
-const readFavoriteFileNames = async (directory: string): Promise<Set<string>> => {
+const emptyMetadata = (): RecordingLibraryMetadata => ({
+  version: 2,
+  favorites: [],
+  favoriteRecordingIds: [],
+  recordings: [],
+});
+
+const readLibraryMetadata = async (directory: string): Promise<RecordingLibraryMetadata> => {
   try {
     const parsed = JSON.parse(
       await readFile(metadataPathFor(directory), "utf8"),
     ) as Partial<RecordingLibraryMetadata>;
-    return new Set(
-      Array.isArray(parsed.favorites)
+    return {
+      version: 2,
+      favorites: Array.isArray(parsed.favorites)
         ? parsed.favorites.filter((value): value is string => typeof value === "string")
         : [],
-    );
+      favoriteRecordingIds: Array.isArray(parsed.favoriteRecordingIds)
+        ? parsed.favoriteRecordingIds.filter((value): value is string => typeof value === "string")
+        : [],
+      recordings: Array.isArray(parsed.recordings)
+        ? parsed.recordings.filter((entry): entry is RecordingCatalogEntry =>
+            Boolean(
+              entry &&
+              typeof entry.recordingId === "string" &&
+              typeof entry.fileName === "string" &&
+              typeof entry.title === "string" &&
+              typeof entry.createdAt === "string",
+            ),
+          )
+        : [],
+    };
   } catch {
-    return new Set();
+    return emptyMetadata();
   }
+};
+
+const writeLibraryMetadata = async (
+  directory: string,
+  metadata: RecordingLibraryMetadata,
+): Promise<void> => {
+  await mkdir(directory, { recursive: true });
+  const metadataPath = metadataPathFor(directory);
+  const temporaryPath = `${metadataPath}.${process.pid}.${Date.now()}.tmp`;
+  await writeFile(
+    temporaryPath,
+    `${JSON.stringify({ ...metadata, version: 2 }, null, 2)}\n`,
+    "utf8",
+  );
+  await rename(temporaryPath, metadataPath);
 };
 
 export const setRecordingFavoriteInDirectory = async (
@@ -123,16 +171,20 @@ export const setRecordingFavoriteInDirectory = async (
   }
 
   await mkdir(directory, { recursive: true });
-  const favorites = await readFavoriteFileNames(directory);
+  const metadata = await readLibraryMetadata(directory);
   const fileName = path.basename(filePath);
-  if (isFavorite) favorites.add(fileName);
-  else if (!favorites.delete(fileName)) return;
-
-  const metadataPath = metadataPathFor(directory);
-  const temporaryPath = `${metadataPath}.${process.pid}.tmp`;
-  const metadata: RecordingLibraryMetadata = { favorites: [...favorites].sort() };
-  await writeFile(temporaryPath, `${JSON.stringify(metadata, null, 2)}\n`, "utf8");
-  await rename(temporaryPath, metadataPath);
+  const entry = metadata.recordings?.find((recording) => recording.fileName === fileName);
+  const favoriteIds = new Set(metadata.favoriteRecordingIds ?? []);
+  const legacyFavorites = new Set(metadata.favorites);
+  if (entry) {
+    if (isFavorite) favoriteIds.add(entry.recordingId);
+    else favoriteIds.delete(entry.recordingId);
+  }
+  if (isFavorite) legacyFavorites.add(fileName);
+  else legacyFavorites.delete(fileName);
+  metadata.favoriteRecordingIds = [...favoriteIds].sort();
+  metadata.favorites = [...legacyFavorites].sort();
+  await writeLibraryMetadata(directory, metadata);
 };
 
 export const isInsideDirectory = (directory: string, candidate: string): boolean => {
@@ -140,11 +192,11 @@ export const isInsideDirectory = (directory: string, candidate: string): boolean
   return relative.length > 0 && !relative.startsWith("..") && !path.isAbsolute(relative);
 };
 
-const parseMarkers = async (filePath: string): Promise<RecordingMarker[]> => {
+const parseMarkers = async (filePath: string, recordingId: string): Promise<RecordingMarker[]> => {
   const source = await readFile(markerPathFor(filePath), "utf8").catch(() => "");
   const matches = [...source.matchAll(/(\d{2}):(\d{2}):(\d{2})/g)];
   return matches.map((match, index) => ({
-    id: `${path.basename(filePath)}-${index}`,
+    id: `${recordingId}-${index}`,
     offsetMs: (Number(match[1]) * 3_600 + Number(match[2]) * 60 + Number(match[3])) * 1_000,
     createdAt: new Date(0).toISOString(),
   }));
@@ -170,33 +222,71 @@ export const readRecordingLibraryItems = async (
 ): Promise<RecordingLibraryItem[]> => {
   await mkdir(directory, { recursive: true });
   const entries = await readdir(directory, { withFileTypes: true });
-  const favorites = await readFavoriteFileNames(directory);
+  const metadata = await readLibraryMetadata(directory);
+  const recordings = [...(metadata.recordings ?? [])];
+  const byFileName = new Map(recordings.map((entry) => [entry.fileName, entry]));
+  const legacyFavorites = new Set(metadata.favorites);
+  const favoriteRecordingIds = new Set(metadata.favoriteRecordingIds ?? []);
+  let metadataChanged = metadata.version !== 2;
   const items = await Promise.all(
     entries
       .filter((entry) => entry.isFile() && entry.name.toLowerCase().endsWith(".m4a"))
       .map(async (entry) => {
         const filePath = path.join(directory, entry.name);
         const fileStat = await stat(filePath);
+        let catalogEntry = byFileName.get(entry.name);
+        if (!catalogEntry) {
+          catalogEntry = {
+            recordingId: randomUUID(),
+            fileName: entry.name,
+            title: path.parse(entry.name).name,
+            createdAt: fileStat.birthtime.toISOString(),
+          };
+          recordings.push(catalogEntry);
+          byFileName.set(entry.name, catalogEntry);
+          metadataChanged = true;
+        }
+        if (
+          legacyFavorites.has(entry.name) &&
+          !favoriteRecordingIds.has(catalogEntry.recordingId)
+        ) {
+          favoriteRecordingIds.add(catalogEntry.recordingId);
+          metadataChanged = true;
+        }
         const roomId = entry.name.includes("-一号房-")
           ? "main"
           : entry.name.includes("-二号房-")
             ? "side"
             : undefined;
         return {
-          id: Buffer.from(entry.name, "utf8").toString("base64url"),
+          id: catalogEntry.recordingId,
+          recordingId: catalogEntry.recordingId,
+          title: catalogEntry.title,
           fileName: entry.name,
           filePath,
           mediaUrl: toRecordingMediaUrl(filePath),
-          createdAt: fileStat.birthtime.toISOString(),
+          createdAt: catalogEntry.createdAt,
           modifiedAt: fileStat.mtime.toISOString(),
           fileSize: fileStat.size,
           roomId,
-          isFavorite: favorites.has(entry.name),
-          markers: await parseMarkers(filePath),
+          isFavorite: favoriteRecordingIds.has(catalogEntry.recordingId),
+          markers: await parseMarkers(filePath, catalogEntry.recordingId),
         } satisfies RecordingLibraryItem;
       }),
   );
-  return items.sort((left, right) => right.modifiedAt.localeCompare(left.modifiedAt));
+  if (metadataChanged) {
+    await writeLibraryMetadata(directory, {
+      version: 2,
+      favorites: [...legacyFavorites].sort(),
+      favoriteRecordingIds: [...favoriteRecordingIds].sort(),
+      recordings,
+    });
+  }
+  return items.sort(
+    (left, right) =>
+      right.createdAt.localeCompare(left.createdAt) ||
+      left.recordingId.localeCompare(right.recordingId),
+  );
 };
 
 export const readRecordingLibraryFromDirectory = async (
@@ -212,6 +302,114 @@ export const readRecordingLibraryFromDirectory = async (
   };
 };
 
+export const registerRecordingInDirectory = async (
+  directory: string,
+  filePath: string,
+): Promise<string> => {
+  if (!isAllowedRecordingPathInDirectory(directory, filePath)) {
+    throw new Error("invalid_recording_path");
+  }
+  const fileStat = await stat(filePath);
+  if (!fileStat.isFile()) throw new Error("recording_not_found");
+  const metadata = await readLibraryMetadata(directory);
+  const fileName = path.basename(filePath);
+  const existing = metadata.recordings?.find((entry) => entry.fileName === fileName);
+  if (existing) return existing.recordingId;
+  const entry: RecordingCatalogEntry = {
+    recordingId: randomUUID(),
+    fileName,
+    title: path.parse(fileName).name,
+    createdAt: fileStat.birthtime.toISOString(),
+  };
+  metadata.recordings = [...(metadata.recordings ?? []), entry];
+  await writeLibraryMetadata(directory, metadata);
+  return entry.recordingId;
+};
+
+const validateRecordingTitle = (value: string): string => {
+  const title = value.trim();
+  if (!title || title.length > 120) throw new Error("invalid_recording_title");
+  const hasControlCharacter = Array.from(title).some((character) => character.charCodeAt(0) <= 31);
+  if (/[<>:"/\\|?*]/.test(title) || hasControlCharacter || /[. ]$/.test(title)) {
+    throw new Error("invalid_recording_title");
+  }
+  if (/^(con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i.test(title)) {
+    throw new Error("invalid_recording_title");
+  }
+  return title;
+};
+
+const resolveRenamedPath = async (
+  directory: string,
+  title: string,
+  currentPath: string,
+): Promise<string> => {
+  for (let index = 1; index < 10_000; index += 1) {
+    const suffix = index === 1 ? "" : ` (${index})`;
+    const candidate = path.join(directory, `${title}${suffix}.m4a`);
+    if (path.resolve(candidate).toLowerCase() === path.resolve(currentPath).toLowerCase()) {
+      return candidate;
+    }
+    const exists = await stat(candidate)
+      .then(() => true)
+      .catch(() => false);
+    if (!exists) return candidate;
+  }
+  throw new Error("recording_name_conflict");
+};
+
+export const renameRecordingInDirectory = async (
+  directory: string,
+  recordingId: string,
+  requestedTitle: string,
+): Promise<RecordingLibraryItem> => {
+  const title = validateRecordingTitle(requestedTitle.replace(/\.m4a$/i, ""));
+  const metadata = await readLibraryMetadata(directory);
+  const catalogEntry = metadata.recordings?.find((entry) => entry.recordingId === recordingId);
+  if (!catalogEntry) throw new Error("recording_not_found");
+  const sourcePath = path.join(directory, catalogEntry.fileName);
+  if (!isAllowedRecordingPathInDirectory(directory, sourcePath)) {
+    throw new Error("invalid_recording_path");
+  }
+  const targetPath = await resolveRenamedPath(directory, title, sourcePath);
+  const sourceMarkerPath = markerPathFor(sourcePath);
+  const targetMarkerPath = markerPathFor(targetPath);
+  const markerExists = await stat(sourceMarkerPath)
+    .then((value) => value.isFile())
+    .catch(() => false);
+  const originalEntry = { ...catalogEntry };
+  const legacyFavorites = new Set(metadata.favorites);
+  const wasLegacyFavorite = legacyFavorites.delete(catalogEntry.fileName);
+  if (wasLegacyFavorite) legacyFavorites.add(path.basename(targetPath));
+  let audioRenamed = false;
+  let markerRenamed = false;
+  try {
+    if (path.resolve(sourcePath).toLowerCase() !== path.resolve(targetPath).toLowerCase()) {
+      await rename(sourcePath, targetPath);
+      audioRenamed = true;
+      if (markerExists) {
+        await rename(sourceMarkerPath, targetMarkerPath);
+        markerRenamed = true;
+      }
+    }
+    catalogEntry.fileName = path.basename(targetPath);
+    catalogEntry.title = title;
+    metadata.favorites = [...legacyFavorites].sort();
+    await writeLibraryMetadata(directory, metadata);
+  } catch (error) {
+    catalogEntry.fileName = originalEntry.fileName;
+    catalogEntry.title = originalEntry.title;
+    if (markerRenamed) await rename(targetMarkerPath, sourceMarkerPath).catch(() => undefined);
+    if (audioRenamed) await rename(targetPath, sourcePath).catch(() => undefined);
+    throw error;
+  }
+  const [item] = (await readRecordingLibraryItems(directory)).filter(
+    (candidate) => candidate.recordingId === recordingId,
+  );
+  if (!item) throw new Error("recording_rename_verification_failed");
+  return item;
+};
+
 export const enforceRecordingQuotaInDirectory = async (
   directory: string,
   quotaGb: number,
@@ -222,9 +420,7 @@ export const enforceRecordingQuotaInDirectory = async (
   while (totalBytes > snapshot.quotaBytes && oldestFirst.length > 1) {
     const item = oldestFirst.shift();
     if (!item) break;
-    await unlink(item.filePath).catch(() => undefined);
-    await unlink(markerPathFor(item.filePath)).catch(() => undefined);
-    await setRecordingFavoriteInDirectory(directory, item.filePath, false).catch(() => undefined);
+    await deleteRecordingInDirectory(directory, item.filePath).catch(() => undefined);
     totalBytes -= item.fileSize;
   }
 };
@@ -238,7 +434,17 @@ export const deleteRecordingInDirectory = async (
   }
   await unlink(filePath);
   await unlink(markerPathFor(filePath)).catch(() => undefined);
-  await setRecordingFavoriteInDirectory(directory, filePath, false).catch(() => undefined);
+  const metadata = await readLibraryMetadata(directory);
+  const fileName = path.basename(filePath);
+  const entry = metadata.recordings?.find((recording) => recording.fileName === fileName);
+  metadata.recordings = metadata.recordings?.filter((recording) => recording.fileName !== fileName);
+  metadata.favorites = metadata.favorites.filter((favorite) => favorite !== fileName);
+  if (entry) {
+    metadata.favoriteRecordingIds = metadata.favoriteRecordingIds?.filter(
+      (recordingId) => recordingId !== entry.recordingId,
+    );
+  }
+  await writeLibraryMetadata(directory, metadata).catch(() => undefined);
 };
 
 export const isAllowedRecordingPathInDirectory = (directory: string, filePath: string): boolean =>

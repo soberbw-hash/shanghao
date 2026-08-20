@@ -1,5 +1,4 @@
 import {
-  DEFAULT_RECONNECT_DELAYS_MS,
   RoomConnectionState,
   type BuiltInAvatarId,
   type ChatImageAttachment,
@@ -12,6 +11,7 @@ import {
   type RoomMember,
   type RoomQuickMessage,
   type RoomCollectionItem,
+  type RealtimeFaultCommand,
   type SceneReaction,
   type SceneZoneId,
   type SignalingEventPayload,
@@ -38,7 +38,6 @@ import type {
 import {
   DEFAULT_ICE_SERVERS,
   DEFAULT_SCREEN_SHARE_PROFILE,
-  ExponentialBackoff,
   MeshPeerConnection,
   type InboundAudioFlowEvaluation,
   type PeerAudioStats,
@@ -50,7 +49,7 @@ import { AudioFallbackController } from "../audio/AudioFallbackController";
 import { clampMemberVolume } from "../audio/memberVolume";
 import { getRemoteAudioMixer } from "../audio/RemoteAudioMixer";
 import { hasPlayableAudioTrack } from "../audio/remoteAudioTrack";
-import { PeerStatsMonitor } from "./PeerStatsMonitor";
+import { logPeerNetworkAdaptation, PeerStatsMonitor } from "./PeerStatsMonitor";
 import { PeerOperationQueue } from "./PeerOperationQueue";
 import { PeerRecoveryCoordinator } from "./PeerRecoveryCoordinator";
 import { SignalingBridge } from "./SignalingBridge";
@@ -58,8 +57,13 @@ import { buildRoomDiagnosticsFromSources } from "./RoomDiagnostics";
 import { isPeerAudioPathReady, shouldSendAudioRelay } from "./peerAudioPath";
 import { PresenceCoordinator } from "./PresenceCoordinator";
 import { RoomMemberEventCoordinator } from "./RoomMemberEventCoordinator";
+import {
+  createSignalingReconnectCoordinator,
+  SignalingReconnectCoordinator,
+} from "./SignalingReconnectCoordinator";
 import { decideSignalingError } from "./signalingErrorPolicy";
 import { collectActivePeerIds, normalizeRoomMembers } from "./roomMemberSnapshot";
+import { collectLongSessionAudioResources } from "./longSessionAudioResources";
 import { ReliableChatTransport } from "../chat/ReliableChatTransport";
 import { RoomSocialTransport } from "../chat/RoomSocialTransport";
 import { ScreenAudioMixer } from "../screen-share/ScreenAudioMixer";
@@ -128,13 +132,11 @@ export { serverBuildSupportsDailyRoomReports, serverBuildSupportsReliableChat };
 
 export class RoomClient {
   private readonly signalingBridge = new SignalingBridge();
-  private readonly backoff = new ExponentialBackoff(DEFAULT_RECONNECT_DELAYS_MS);
   private readonly peers = new Map<string, MeshPeerConnection>();
   private readonly peerVolumes = new Map<string, number>();
   private heartbeatTimer?: number;
   private audioPathSyncTimer?: number;
   private snapshotRetryTimer?: number;
-  private reconnectTimer?: number;
   private shouldReconnect = true;
   private localStream: MediaStream;
   private nickname: string;
@@ -163,7 +165,8 @@ export class RoomClient {
   private readonly peerOperationQueue = new PeerOperationQueue();
   private readonly pendingIceCandidates = new Map<string, IceCandidateMessage["candidate"][]>();
   private readonly peerStatsMonitor: PeerStatsMonitor;
-  private reconnectAttempts = 0;
+  private connectionGeneration?: number;
+  private readonly reconnectCoordinator: SignalingReconnectCoordinator;
   private lastSnapshotRevision = 0;
   private isSignalingConnected = false;
   private isDisconnecting = false;
@@ -239,6 +242,7 @@ export class RoomClient {
       safeSend: (payload) => this.safeSend(payload),
       onRemoteFrame: options.onRemoteScreenFrame,
       onRemoteState: options.onRemoteScreenShareState,
+      onScreenTrackLost: (peerId) => this.peerRecovery.schedule(peerId, "screen_track_lost"),
     });
     this.peerStatsMonitor = new PeerStatsMonitor({
       getPeers: () => this.peers,
@@ -248,22 +252,15 @@ export class RoomClient {
         hasRemoteAudio: this.webrtcAudioPeerIds.has(peerId),
         isRemoteMuted:
           this.memberEvents.currentMembers.find((member) => member.id === peerId)?.isMuted ?? false,
+        iceState: this.peers.get(peerId)?.connection.iceConnectionState ?? "new",
       }),
+      getRecovery: (peerId) => this.peerRecovery.getSnapshot(peerId),
+      getResources: () => collectLongSessionAudioResources(this.localStream, this.peers),
       onLatency: (peerId, latencyMs) => this.options.onPeerLatency?.(peerId, latencyMs),
       onStats: (stats) => this.options.onPeerStats?.(stats),
       onFlowEvaluation: (peerId, stats, evaluation) =>
         this.handlePeerAudioFlowEvaluation(peerId, stats, evaluation),
-      onAdaptationChanged: (peerId, previousTier, nextTier, stats) => {
-        void writeRendererLog("webrtc", "info", "Peer network adaptation changed", {
-          peerId,
-          previousTier,
-          nextTier,
-          packetLossPercent: stats.packetLossPercent,
-          jitterMs: stats.jitterMs,
-          roundTripTimeMs: stats.roundTripTimeMs,
-          availableOutgoingBitrateBps: stats.availableOutgoingBitrateBps,
-        });
-      },
+      onAdaptationChanged: logPeerNetworkAdaptation,
     });
     this.peerRecovery = new PeerRecoveryCoordinator({
       localPeerId: options.peerId,
@@ -277,6 +274,12 @@ export class RoomClient {
       applyScreenShare: (peer) => this.screenShareCoordinator.applyToPeer(peer),
       notifyScreenShare: (peerId) => this.screenShareCoordinator.notifyPeer(peerId),
       send: (payload) => this.send(payload),
+    });
+    this.reconnectCoordinator = createSignalingReconnectCoordinator({
+      roomId: this.options.roomId,
+      peerId: this.options.peerId,
+      getConnectionGeneration: () => this.connectionGeneration,
+      onAttempt: (attempt) => this.options.onReconnectAttempt?.(attempt),
     });
   }
 
@@ -296,9 +299,7 @@ export class RoomClient {
     this.stopHeartbeat();
     this.stopAudioPathSync();
     this.stopPeerStats();
-    if (this.reconnectTimer) {
-      window.clearTimeout(this.reconnectTimer);
-    }
+    this.reconnectCoordinator.dispose();
 
     if (this.isSignalingConnected) {
       await this.safeSend({
@@ -339,9 +340,14 @@ export class RoomClient {
   }
 
   getDiagnostics() {
+    const reconnect = this.reconnectCoordinator.getSnapshot();
     return buildRoomDiagnosticsFromSources({
       currentPeerId: this.options.peerId,
-      reconnectAttempts: this.reconnectAttempts,
+      reconnectAttempts: reconnect.attempts,
+      connectionGeneration: this.connectionGeneration,
+      reconnectEpisodeId: reconnect.episodeId,
+      reconnectEpisodeActive: reconnect.episodeActive,
+      reconnectStableSince: reconnect.stableSince,
       socket: {
         lastSocketCloseCode: this.lastSocketCloseCode,
         lastSocketCloseReason: this.lastSocketCloseReason,
@@ -361,6 +367,7 @@ export class RoomClient {
       },
       screenShareRelayActive: this.screenShareCoordinator.relayActive,
       screenShareRelayTargetCount: this.screenShareCoordinator.relayTargetCount,
+      screenShare: this.screenShareCoordinator.diagnostics,
       audioRelayDiagnostics: this.audioFallback?.getDiagnostics(),
       webrtcReadyPeerIds: this.webrtcReadyPeerIds,
       webrtcConnectedPeerIds: this.webrtcConnectedPeerIds,
@@ -368,10 +375,41 @@ export class RoomClient {
       webrtcFlowingPeerIds: this.webrtcFlowingPeerIds,
       peerRecoveryAttempts: this.peerRecovery.getAttempts(),
       peerConnectionStats: this.peerStatsMonitor.getStats(),
+      peerHealth: this.peerStatsMonitor.getPeerHealth(),
+      longSessionAudio: this.peerStatsMonitor.getLongSessionAudioTrend(),
       peerAdaptationTiers: this.peerStatsMonitor.getAdaptationTiers(),
       remoteAudioMixer: getRemoteAudioMixer().getDiagnostics(),
       turnConfigured: this.hasTurnServer,
     });
+  }
+
+  async injectFault(command: RealtimeFaultCommand): Promise<void> {
+    if (!import.meta.env.DEV) throw new Error("fault_lab_unavailable_in_packaged_app");
+    if (
+      command.kind === "signal_disconnect" ||
+      command.kind === "stale_socket_close" ||
+      command.kind === "duplicate_socket_close"
+    ) {
+      await this.signalingBridge.injectFault(command);
+      return;
+    }
+    if (command.kind === "snapshot_timeout") {
+      this.roomSnapshotReceived = false;
+      this.startSnapshotRecovery();
+      return;
+    }
+    if (command.kind === "one_peer_audio_stall") {
+      const peerId = command.peerId ?? this.remotePeerIds.values().next().value;
+      if (!peerId) throw new Error("fault_lab_peer_required");
+      this.peerRecovery.schedule(peerId, "fault_lab_one_peer_audio_stall");
+      return;
+    }
+    if (command.kind === "screen_track_lost") {
+      const track = this.screenShareCoordinator.activeStream?.getVideoTracks()[0];
+      if (!track) throw new Error("fault_lab_screen_track_required");
+      track.stop();
+      track.dispatchEvent(new Event("ended"));
+    }
   }
 
   updateMuteState(isMuted: boolean, isSpeaking: boolean): void {
@@ -471,6 +509,7 @@ export class RoomClient {
   }
 
   private async handleBridgeEvent(payload: SignalingEventPayload): Promise<void> {
+    if (payload.generation !== undefined) this.connectionGeneration = payload.generation;
     if (payload.type === "open") {
       this.isSignalingConnected = true;
       this.wsOpened = true;
@@ -515,6 +554,20 @@ export class RoomClient {
     }
 
     if (payload.type === "close") {
+      const reconnect = this.reconnectCoordinator.getSnapshot();
+      if (!this.isSignalingConnected && (reconnect.reconnectPending || reconnect.episodeActive)) {
+        void writeRendererLog(
+          "signaling",
+          "info",
+          "Ignored duplicate socket close in reconnect episode",
+          {
+            code: payload.code,
+            reconnectEpisodeId: reconnect.episodeId,
+            connectionGeneration: this.connectionGeneration,
+          },
+        );
+        return;
+      }
       this.lastSocketCloseCode = payload.code;
       this.lastSocketCloseReason = payload.reason;
       this.lastSocketClosedAt = new Date().toISOString();
@@ -525,6 +578,7 @@ export class RoomClient {
       this.joinAckReceived = false;
       this.advertisedRelayNeeds.clear();
       this.audioFallback?.resetTransport("signaling_socket_closed");
+      this.reconnectCoordinator.cancelStableWindow();
 
       if (payload.code === 4400) {
         const error = new Error("signaling_protocol_rejected");
@@ -546,6 +600,7 @@ export class RoomClient {
       }
 
       this.clearPendingConnection();
+      this.reconnectCoordinator.beginEpisode();
       this.options.onConnectionState(
         this.webrtcReadyPeerIds.size > 0
           ? RoomConnectionState.Degraded
@@ -757,8 +812,9 @@ export class RoomClient {
         ? RoomConnectionState.WaitingPeer
         : RoomConnectionState.Connected,
     );
-    this.backoff.reset();
-    this.reconnectAttempts = 0;
+    this.reconnectCoordinator.beginStableWindow(
+      () => this.isSignalingConnected && this.roomSnapshotReceived,
+    );
     this.hasJoinedOnce = true;
     this.joinAckReceived = true;
     this.resolvePendingConnection();
@@ -1362,6 +1418,7 @@ export class RoomClient {
       this.webrtcStalledPeerIds.add(peerId);
       this.syncPeerMediaPath(peerId, "inbound_rtp_stalled");
       if (!wasStalled) {
+        void getRemoteAudioMixer().repairPeerPlayback(peerId);
         void writeRendererLog(
           "webrtc",
           "warn",
@@ -1435,33 +1492,10 @@ export class RoomClient {
   }
 
   private reconnect(): void {
-    if (this.reconnectTimer) {
-      window.clearTimeout(this.reconnectTimer);
-    }
-
-    this.reconnectAttempts += 1;
-    this.options.onReconnectAttempt?.(this.reconnectAttempts);
-    const baseDelay = this.backoff.nextDelay();
-    const delay = baseDelay + Math.floor(Math.random() * Math.max(250, baseDelay * 0.16));
-    void writeRendererLog("signaling", "warn", "Scheduling signaling reconnect", {
-      roomId: this.options.roomId,
-      peerId: this.options.peerId,
-      attempt: this.reconnectAttempts,
-      delay,
-    });
-    this.reconnectTimer = window.setTimeout(() => {
-      void this.openSocket(true).catch((error) => {
-        void writeRendererLog("signaling", "warn", "Signaling reconnect attempt failed", {
-          roomId: this.options.roomId,
-          peerId: this.options.peerId,
-          attempt: this.reconnectAttempts,
-          error: error instanceof Error ? error.message : String(error),
-        });
-        if (this.shouldReconnect) {
-          this.reconnect();
-        }
-      });
-    }, delay);
+    this.reconnectCoordinator.schedule(
+      () => this.openSocket(true),
+      () => this.shouldReconnect,
+    );
   }
 
   private clearPeers(): void {

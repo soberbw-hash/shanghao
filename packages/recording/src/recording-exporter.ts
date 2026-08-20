@@ -19,6 +19,7 @@ export const toRecordingResult = (
   }
 
   return {
+    recordingId: response.recordingId,
     filePath: response.filePath,
     mimeType: response.mimeType || mimeType,
     durationMs,

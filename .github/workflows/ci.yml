@@ -25,6 +25,8 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: bash -n scripts/deploy-relay-ubuntu.sh
       - run: pnpm typecheck
+      - run: cargo fmt --manifest-path native/Cargo.toml --all -- --check
+      - run: pnpm test:native
       - run: pnpm lint
       - run: pnpm test
       - run: xvfb-run -a pnpm --dir apps/desktop exec electron --no-sandbox tests/electron-audio-worklet-smoke.cjs

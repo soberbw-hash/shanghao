@@ -44,6 +44,23 @@ export const dialogSurfaceVariants: Variants = {
   },
 };
 
+// Large collection surfaces should not scale while their image-heavy contents are
+// being painted. A short translate keeps the entrance legible without forcing a
+// full-surface resample on every animation frame.
+export const largeDialogSurfaceVariants: Variants = {
+  initial: { opacity: 0, y: 6 },
+  open: {
+    opacity: 1,
+    y: 0,
+    transition: { duration: motionDuration.fast, ease: motionCurve.enter },
+  },
+  closed: {
+    opacity: 0,
+    y: 3,
+    transition: { duration: motionDuration.instant, ease: exitEase },
+  },
+};
+
 export const popoverSurfaceVariants: Variants = {
   initial: { opacity: 0, y: 6, scale: 0.97 },
   open: {

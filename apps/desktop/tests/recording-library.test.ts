@@ -10,6 +10,7 @@ import {
   isAllowedRecordingPathInDirectory,
   parseRecordingRange,
   readRecordingLibraryFromDirectory,
+  renameRecordingInDirectory,
   setRecordingFavoriteInDirectory,
   toRecordingMediaUrl,
 } from "../src/main/recording-library-core";
@@ -19,8 +20,8 @@ import {
   SILENT_RECORDING_PEAK_DB,
 } from "../src/main/recording-cleanup";
 
-test("recording cleanup only marks short, silent, or unreadable media as waste", () => {
-  assert.equal(SHORT_RECORDING_MS, 10_000);
+test("recording cleanup marks recordings below five minutes, silent media, or unreadable media", () => {
+  assert.equal(SHORT_RECORDING_MS, 5 * 60_000);
   assert.equal(SILENT_RECORDING_PEAK_DB, -60);
   assert.equal(
     parseRecordingProbeOutput("Duration: 00:00:08.40, start: 0.000000\nmax_volume: -12.0 dB", 0)
@@ -28,12 +29,17 @@ test("recording cleanup only marks short, silent, or unreadable media as waste",
     "too_short",
   );
   assert.equal(
-    parseRecordingProbeOutput("Duration: 00:00:16.06, start: 0.000000\nmax_volume: -80.8 dB", 0)
+    parseRecordingProbeOutput("Duration: 00:06:16.06, start: 0.000000\nmax_volume: -80.8 dB", 0)
       .reason,
     "silent",
   );
   assert.equal(
-    parseRecordingProbeOutput("Duration: 00:00:30.00, start: 0.000000\nmax_volume: -8.0 dB", 0)
+    parseRecordingProbeOutput("Duration: 00:04:59.99, start: 0.000000\nmax_volume: -8.0 dB", 0)
+      .reason,
+    "too_short",
+  );
+  assert.equal(
+    parseRecordingProbeOutput("Duration: 00:05:00.00, start: 0.000000\nmax_volume: -8.0 dB", 0)
       .reason,
     undefined,
   );
@@ -131,4 +137,46 @@ test("recording media URLs round-trip and directory traversal is rejected", () =
     isAllowedRecordingPathInDirectory(directory, path.join(directory, "note.txt")),
     false,
   );
+});
+
+test("recording identity, created time, favorite, and marker survive transactional rename", async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "shanghao-recording-rename-"));
+  try {
+    const sourcePath = path.join(directory, "上号-一号房-2026-08-13-10-20-30.m4a");
+    await writeFile(sourcePath, Buffer.from([1, 2, 3]));
+    await writeFile(
+      path.join(directory, "上号-一号房-2026-08-13-10-20-30-精彩时刻.txt"),
+      "1. 00:00:05\r\n",
+      "utf8",
+    );
+    await writeFile(path.join(directory, "会议.m4a"), Buffer.from([9]));
+    await setRecordingFavoriteInDirectory(directory, sourcePath, true);
+    const before = (await readRecordingLibraryFromDirectory(directory, 10)).items.find(
+      (item) => item.filePath === sourcePath,
+    );
+    assert.ok(before);
+
+    const renamed = await renameRecordingInDirectory(directory, before.recordingId, "会议.m4a");
+    assert.equal(renamed.recordingId, before.recordingId);
+    assert.equal(renamed.fileName, "会议 (2).m4a");
+    assert.equal(renamed.title, "会议");
+    assert.equal(renamed.createdAt, before.createdAt);
+    assert.equal(renamed.isFavorite, true);
+    assert.deepEqual(
+      renamed.markers.map((marker) => marker.offsetMs),
+      [5_000],
+    );
+    await assert.rejects(
+      renameRecordingInDirectory(directory, before.recordingId, "bad:name"),
+      /invalid_recording_title/,
+    );
+    assert.equal(
+      (await readRecordingLibraryFromDirectory(directory, 10)).items.some(
+        (item) => item.recordingId === before.recordingId && item.fileName === "会议 (2).m4a",
+      ),
+      true,
+    );
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
 });

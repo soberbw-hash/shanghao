@@ -1,4 +1,5 @@
 import { parsePowerShellJson, runWindowsPowerShell } from "./windows-command";
+import { platformService } from "./platform/PlatformService";
 
 export interface WindowsElevationStatus {
   isElevated: boolean;
@@ -19,7 +20,7 @@ export const readWindowsElevationStatus = async (
   refresh = false,
 ): Promise<WindowsElevationStatus> => {
   if (!refresh && cachedStatus) return cachedStatus;
-  if (process.platform !== "win32") {
+  if (!platformService.isWindows) {
     cachedStatus = { isElevated: false, method: "not-windows" };
     return cachedStatus;
   }

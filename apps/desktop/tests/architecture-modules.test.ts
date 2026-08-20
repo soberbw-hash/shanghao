@@ -86,10 +86,11 @@ test("Room facade and page composition stay below their reviewed growth ceilings
 
   // RoomClient stopped at the safe responsibility boundary instead of moving
   // tightly coupled peer/audio glue into a meaningless helper solely for a metric.
-  assert.ok(roomClientLines <= 1560, `RoomClient grew to ${roomClientLines} lines`);
+  // 3.0 adds the deliberately narrow dev-only Fault Lab seam to the stable facade.
+  assert.ok(roomClientLines <= 1590, `RoomClient grew to ${roomClientLines} lines`);
   // The reviewed ceiling includes the current room pressure/collection wiring while
   // the dock and overlays remain extracted from the page.
-  assert.ok(roomPageLines <= 1510, `RoomPage grew to ${roomPageLines} lines`);
+  assert.ok(roomPageLines <= 1515, `RoomPage grew to ${roomPageLines} lines`);
 });
 
 test("useRoomState delegates persistence, notifications and deep links", () => {

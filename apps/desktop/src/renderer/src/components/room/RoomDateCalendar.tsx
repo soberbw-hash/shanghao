@@ -1,5 +1,7 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Circle } from "lucide-react";
+
+import { useVisibleInterval } from "../../hooks/useVisualVisibility";
 
 const MONTH_FORMATTER = new Intl.DateTimeFormat("zh-CN", {
   timeZone: "Asia/Shanghai",
@@ -34,10 +36,7 @@ const FULL_DATE_FORMATTER = new Intl.DateTimeFormat("zh-CN", {
 export const RoomDateCalendar = () => {
   const [today, setToday] = useState(() => new Date());
 
-  useEffect(() => {
-    const timer = window.setInterval(() => setToday(new Date()), 60_000);
-    return () => window.clearInterval(timer);
-  }, []);
+  useVisibleInterval(() => setToday(new Date()), 60_000);
 
   return (
     <div

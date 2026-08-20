@@ -57,6 +57,11 @@ export interface RemoteAudioPlaybackStats {
 
 export interface RemoteAudioMixerDiagnostics {
   contextState: AudioContextState | "not_started";
+  audioContextCount: number;
+  audioNodeCount: number;
+  timerCount: number;
+  webrtcChannelCount: number;
+  relayChannelCount: number;
   isDeafened: boolean;
   masterVolume: number;
   loudnessBalanceEnabled: boolean;
@@ -316,6 +321,28 @@ export class RemoteAudioMixer {
     void this.unlock("audio-device-change");
   }
 
+  async repairPeerPlayback(peerId: string): Promise<boolean> {
+    const channel = this.channels.get(peerId);
+    const context = this.context;
+    if (!channel || !context || !this.masterGain) return false;
+    await this.unlock("targeted-peer-playback-repair");
+    channel.source.disconnect();
+    channel.analyser.disconnect();
+    channel.gain.disconnect();
+    channel.source.connect(channel.analyser);
+    channel.analyser.connect(channel.gain);
+    channel.gain.connect(this.masterGain);
+    channel.hasObservedAudio = false;
+    this.startDecoderPump(peerId, channel.decoderPump, "targeted-peer-playback-repair");
+    this.refreshPeerGains(peerId);
+    void writeRendererLog("audio", "info", "Repaired one peer playback graph before ICE recovery", {
+      peerId,
+      contextState: context.state,
+      audioTrackId: channel.audioTrackId,
+    });
+    return true;
+  }
+
   hasWebRtcPlaybackChannel(peerId: string): boolean {
     const channel = this.channels.get(peerId);
     const audioTrack = channel?.stream.getAudioTracks()[0];
@@ -353,6 +380,13 @@ export class RemoteAudioMixer {
     const now = this.context?.currentTime ?? 0;
     return {
       contextState: this.context?.state ?? "not_started",
+      audioContextCount: this.context ? 1 : 0,
+      audioNodeCount: (this.context ? 2 : 0) + this.channels.size * 3 + this.relayChannels.size * 2,
+      timerCount:
+        Number(this.audioLevelTimer !== undefined) +
+        Number(this.playbackWatchdogTimer !== undefined),
+      webrtcChannelCount: this.channels.size,
+      relayChannelCount: this.relayChannels.size,
       isDeafened: this.isDeafened,
       masterVolume: this.masterVolume,
       loudnessBalanceEnabled: this.loudnessBalanceEnabled,

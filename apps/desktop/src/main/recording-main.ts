@@ -16,6 +16,7 @@ import {
   resolveAvailableRecordingPath,
   resolveUsableRecordingDirectory,
 } from "./recording-path";
+import { registerRecordingInDirectory } from "./recording-library-core";
 
 const inferExtensionFromMime = (mimeType: string): string => {
   if (mimeType.includes("mp4") || mimeType.includes("aac")) {
@@ -102,6 +103,7 @@ export const exportRecordingFromMain = async (
     }
 
     const savedFile = await stat(outputPath);
+    const recordingId = await registerRecordingInDirectory(recordingDirectory, outputPath);
     await unlink(inputPath).catch(() => undefined);
 
     await writeLog({
@@ -118,6 +120,7 @@ export const exportRecordingFromMain = async (
 
     return {
       ok: true,
+      recordingId,
       filePath: outputPath,
       mimeType: "audio/mp4",
       fileSize: savedFile.size,

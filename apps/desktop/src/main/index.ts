@@ -16,11 +16,15 @@ import { UpdateService } from "./updates";
 import { createMainWindow } from "./window";
 import { OverlayWindowController } from "./overlay-window";
 import { GameDetectionController } from "./game-detection";
+import { platformService } from "./platform/PlatformService";
 import { AiModelManager } from "./ai-model-manager";
 import { AiRuntimeManager } from "./ai-runtime-manager";
 import { AiVoiceMemoryService } from "./ai-voice-memory-service";
 import { preparePersistentAiStorage } from "./ai-storage";
+import { prepareBundledAiRuntime } from "./ai-runtime-package";
 import { VoiceMemoryStore } from "./voice-memory-store";
+import { LifecycleRecoveryService } from "./lifecycle-recovery-service";
+import { ensurePre30DataSnapshot } from "./user-data-migration";
 import { applyLaunchOnStartup } from "./launch-on-startup";
 import { ensureWindowsFirewallRules } from "./windows-integration";
 import { findDeepLinkInvite, parseDeepLinkInvite, SHANGHAO_PROTOCOL } from "./deep-link";
@@ -42,6 +46,8 @@ let shortcutsController: ShortcutController | null = null;
 let overlayController: OverlayWindowController | null = null;
 let gameDetectionController: GameDetectionController | null = null;
 let aiModelManager: AiModelManager | null = null;
+let aiRuntimeManager: AiRuntimeManager | null = null;
+let lifecycleRecoveryService: LifecycleRecoveryService | null = null;
 let pendingDeepLink = findDeepLinkInvite(process.argv);
 
 const QUIT_FOR_INSTALL_ARG = "--shanghao-quit-for-install";
@@ -105,6 +111,8 @@ const prepareForQuit = (reason: string) => {
 
   overlayController?.close();
   gameDetectionController?.stop();
+  lifecycleRecoveryService?.stop();
+  aiRuntimeManager?.stop();
   shortcutsController?.dispose();
 
   if (tray && !tray.isDestroyed()) {
@@ -202,6 +210,13 @@ const bootstrap = async (): Promise<void> => {
     (payload) => diagnostics?.writeLog(payload) ?? Promise.resolve(),
   );
   const settings = await settingsStore.load();
+  await ensurePre30DataSnapshot({
+    userDataDirectory: app.getPath("userData"),
+    recordingDirectory:
+      settings.recordingSaveDirectory?.trim() || path.join(app.getPath("documents"), "上号录音"),
+    log: (message, context) =>
+      void diagnostics?.writeLog({ category: "app", level: "info", message, context }),
+  }).catch(() => undefined);
   protocol.handle(RECORDING_MEDIA_PROTOCOL, async (request) => {
     const filePath = decodeRecordingMediaUrl(request.url);
     if (
@@ -238,7 +253,7 @@ const bootstrap = async (): Promise<void> => {
     await settingsStore.save({ launchOnStartup: false });
   }
 
-  if (app.isPackaged && process.platform === "win32") {
+  if (app.isPackaged && platformService.isWindows) {
     try {
       const firewall = await ensureWindowsFirewallRules();
       await diagnostics.writeLog({
@@ -274,7 +289,23 @@ const bootstrap = async (): Promise<void> => {
   const gameDetection = new GameDetectionController(
     (payload) => diagnostics?.writeLog(payload) ?? Promise.resolve(),
   );
+  await gameDetection.setWorkActivityEnabled(settings.isWorkActivityVisible);
   await gameDetection.setEnabled(settings.isGameDetectionEnabled);
+  const lifecycleRecovery = new LifecycleRecoveryService(
+    async (reason) => {
+      overlay.reconcileDisplayBounds();
+      await gameDetection.reconcile(reason);
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        sendToWindow(mainWindow, IPC_CHANNELS.app.lifecycleRecovery, {
+          reason,
+          at: new Date().toISOString(),
+        });
+      }
+    },
+    (payload) => diagnostics?.writeLog(payload) ?? Promise.resolve(),
+  );
+  lifecycleRecovery.start();
+  lifecycleRecoveryService = lifecycleRecovery;
   const aiStorage = await preparePersistentAiStorage({
     userDataDirectory: app.getPath("userData"),
     appDataDirectory: app.getPath("appData"),
@@ -292,6 +323,13 @@ const bootstrap = async (): Promise<void> => {
   );
   await aiModels.initialize(settings.aiProcessingMode);
   const aiRuntimeDirectory = aiStorage.runtimes;
+  const bundledAiRuntimeRoot = app.isPackaged
+    ? path.join(process.resourcesPath, "ai")
+    : path.join(app.getAppPath(), "resources", "ai");
+  await prepareBundledAiRuntime({
+    runtimeRoot: aiRuntimeDirectory,
+    bundledRoot: bundledAiRuntimeRoot,
+  });
   const bundledRunner = app.isPackaged
     ? path.join(process.resourcesPath, "ai", "qwen-runner.py")
     : path.join(app.getAppPath(), "scripts", "qwen-runner.py");
@@ -305,6 +343,10 @@ const bootstrap = async (): Promise<void> => {
     vibevoice: () => aiModels.getActiveModelDirectory("vibevoice"),
     qwen: () => aiModels.getActiveModelDirectory("qwen35-4b"),
   });
+  aiRuntime.onQwenState((health) => {
+    aiModels.setQwenRuntimeState(health.loaded, health.queuedJobs);
+  });
+  aiModels.onQwenReleaseRequested((reason) => aiRuntime.releaseQwen(reason));
   const voiceMemory = new AiVoiceMemoryService(
     aiModels,
     aiRuntime,
@@ -317,6 +359,7 @@ const bootstrap = async (): Promise<void> => {
       .then((library) =>
         voiceMemory.queueRecordings(
           library.items.map((item) => ({
+            recordingId: item.recordingId,
             filePath: item.filePath,
             fileSize: item.fileSize,
             roomId: item.roomId,
@@ -338,6 +381,7 @@ const bootstrap = async (): Promise<void> => {
   overlayController = overlay;
   gameDetectionController = gameDetection;
   aiModelManager = aiModels;
+  aiRuntimeManager = aiRuntime;
 
   registerIpcHandlers({
     getMainWindow: () => mainWindow,
@@ -427,7 +471,7 @@ const bootstrap = async (): Promise<void> => {
 if (!shouldUseHardwareAcceleration()) {
   app.disableHardwareAcceleration();
 }
-if (process.platform === "win32") app.setAppUserModelId(APP_ID);
+if (platformService.isWindows) app.setAppUserModelId(APP_ID);
 protocol.registerSchemesAsPrivileged([
   {
     scheme: RECORDING_MEDIA_PROTOCOL,

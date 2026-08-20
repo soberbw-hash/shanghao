@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
+import { existsSync } from "node:fs";
 import { access, mkdir, readFile, rm, stat } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -11,6 +11,16 @@ import {
   type AiRuntimeStatus,
   type VoiceMemoryTranscriptSegment,
 } from "@private-voice/shared";
+
+import {
+  classifyLocalModelRuntimeError,
+  LocalModelRuntimeError,
+  type LocalModelRuntimeHealth,
+} from "./local-model-runtime";
+import { QwenRuntime } from "./qwen-runtime";
+import type { QwenWorkerHealth } from "./qwen-persistent-worker";
+import { runLocalProcess } from "./local-process";
+import { VibeVoiceRuntime } from "./vibevoice-runtime";
 
 interface RuntimeModelPaths {
   vibevoice: () => string | undefined;
@@ -32,67 +42,6 @@ const exists = (filePath: string): Promise<boolean> =>
 
 export const temporaryRecordingName = (recordingId: string): string =>
   createHash("sha256").update(recordingId).digest("hex").slice(0, 20);
-
-const runProcess = async (
-  executable: string,
-  args: string[],
-  options: {
-    cwd?: string;
-    env?: NodeJS.ProcessEnv;
-    signal?: AbortSignal;
-    timeoutMs: number;
-    input?: string;
-  },
-): Promise<{ stdout: string; stderr: string }> =>
-  new Promise((resolve, reject) => {
-    if (options.signal?.aborted) return reject(new Error("ai_task_paused"));
-    const child: ChildProcessWithoutNullStreams = spawn(executable, args, {
-      cwd: options.cwd,
-      env: options.env,
-      windowsHide: true,
-      stdio: ["pipe", "pipe", "pipe"],
-    });
-    let stdout = "";
-    let stderr = "";
-    let terminationReason: "paused" | "timeout" | undefined;
-    let terminationFallback: NodeJS.Timeout | undefined;
-    const terminate = (reason: "paused" | "timeout") => {
-      if (terminationReason) return;
-      terminationReason = reason;
-      if (process.platform === "win32" && child.pid) {
-        const killer = spawn("taskkill", ["/PID", String(child.pid), "/T", "/F"], {
-          windowsHide: true,
-          stdio: "ignore",
-        });
-        killer.unref();
-      } else {
-        child.kill("SIGKILL");
-      }
-      terminationFallback = setTimeout(() => {
-        options.signal?.removeEventListener("abort", abort);
-        reject(new Error(reason === "paused" ? "ai_task_paused" : "ai_runtime_timeout"));
-      }, 3_000);
-    };
-    const timeout = setTimeout(() => terminate("timeout"), options.timeoutMs);
-    const abort = () => terminate("paused");
-    options.signal?.addEventListener("abort", abort, { once: true });
-    child.stdout.setEncoding("utf8");
-    child.stderr.setEncoding("utf8");
-    child.stdout.on("data", (value: string) => (stdout += value));
-    child.stderr.on("data", (value: string) => (stderr += value));
-    child.stdin.end(options.input ?? "");
-    child.on("error", reject);
-    child.on("close", (code) => {
-      clearTimeout(timeout);
-      if (terminationFallback) clearTimeout(terminationFallback);
-      options.signal?.removeEventListener("abort", abort);
-      if (terminationReason === "paused" || options.signal?.aborted)
-        return reject(new Error("ai_task_paused"));
-      if (terminationReason === "timeout") return reject(new Error("ai_runtime_timeout"));
-      if (code !== 0) return reject(new Error(`ai_runtime_exit_${code}: ${stderr.slice(-500)}`));
-      resolve({ stdout, stderr });
-    });
-  });
 
 const parseTimestamp = (value: string): number => {
   const numeric = Number(value);
@@ -175,13 +124,60 @@ export const parseVibeVoiceOutput = (
   offsetMs: number,
   durationMs = 30_000,
 ): VoiceMemoryTranscriptSegment[] => {
+  let sanitizedOutput = "";
+  for (let index = 0; index < output.length; index += 1) {
+    if (output.charCodeAt(index) === 27 && output[index + 1] === "[") {
+      index += 2;
+      while (index < output.length && output.charCodeAt(index) < 64) index += 1;
+      continue;
+    }
+    sanitizedOutput += output[index] ?? "";
+  }
+  sanitizedOutput = sanitizedOutput.replace(/^\uFEFF/, "");
+  const jsonStart = sanitizedOutput.indexOf("[");
+  const jsonEnd = sanitizedOutput.lastIndexOf("]");
+  if (jsonStart >= 0 && jsonEnd > jsonStart) {
+    try {
+      const items = JSON.parse(sanitizedOutput.slice(jsonStart, jsonEnd + 1)) as Array<{
+        Start?: string | number;
+        End?: string | number;
+        Speaker?: string | number;
+        Content?: string;
+      }>;
+      if (Array.isArray(items)) {
+        const parsed = items.flatMap((item, index): VoiceMemoryTranscriptSegment[] => {
+          const text = typeof item.Content === "string" ? item.Content.trim() : "";
+          const startMs = offsetMs + parseTimestamp(String(item.Start ?? 0));
+          const endMs = Math.max(
+            startMs + 100,
+            offsetMs + parseTimestamp(String(item.End ?? durationMs / 1_000)),
+          );
+          if (!text || !isReliableTranscriptText(text, endMs - startMs)) return [];
+          return [
+            {
+              id: `${recordingId}-${startMs}-${index}`,
+              recordingId,
+              startMs,
+              endMs,
+              text,
+              speakerId: `Speaker ${item.Speaker ?? 1}`,
+              confidence: "pending",
+            },
+          ];
+        });
+        if (parsed.length) return parsed;
+      }
+    } catch {
+      // The BitNet text prompt can legitimately start with '[' without being JSON.
+    }
+  }
   // Local model output is parsed one line at a time, so the input is bounded.
   // eslint-disable-next-line security/detect-unsafe-regex
   const pattern = /^\[([^\]]+)\s+-\s+([^\]]+)\]\s+(?:Speaker\s+([^:]+):\s*)?(.+)$/gm;
   const segments: VoiceMemoryTranscriptSegment[] = [];
   let sawTimestampOutput = false;
   let match: RegExpExecArray | null;
-  while ((match = pattern.exec(output))) {
+  while ((match = pattern.exec(sanitizedOutput))) {
     sawTimestampOutput = true;
     const text = match[4]?.trim();
     if (!text) continue;
@@ -199,7 +195,7 @@ export const parseVibeVoiceOutput = (
       confidence: "pending",
     });
   }
-  const plain = output
+  const plain = sanitizedOutput
     .replace(/---END---/g, "")
     .replace(/^assistant\s*/i, "")
     .trim();
@@ -245,42 +241,124 @@ export class AiRuntimeManager {
   private readonly qwenRunner: string;
   private readonly vibeExecutable: string;
   private readonly mingwBin: string;
+  private readonly qwenWorker: QwenRuntime;
+  private readonly vibeRuntime: VibeVoiceRuntime;
 
   constructor(
     private readonly runtimeRoot: string,
     private readonly models: RuntimeModelPaths,
   ) {
-    this.pythonExecutable = path.join(runtimeRoot, "python", "Scripts", "python.exe");
+    const compactPython = path.join(runtimeRoot, "qwen", "python", "Scripts", "python.exe");
+    this.pythonExecutable = existsSync(compactPython)
+      ? compactPython
+      : path.join(runtimeRoot, "python", "Scripts", "python.exe");
     this.qwenRunner = path.join(runtimeRoot, "qwen-runner.py");
-    this.vibeExecutable = path.join(runtimeRoot, "VibeASR.cpp", "build", "bin", "asr_infer.exe");
-    this.mingwBin = path.join(runtimeRoot, "mingw64", "bin");
+    const compactVibe = path.join(runtimeRoot, "vibevoice", "asr_infer.exe");
+    this.vibeExecutable = existsSync(compactVibe)
+      ? compactVibe
+      : path.join(runtimeRoot, "VibeASR.cpp", "build", "bin", "asr_infer.exe");
+    this.mingwBin = existsSync(compactVibe)
+      ? path.dirname(compactVibe)
+      : path.join(runtimeRoot, "mingw64", "bin");
+    this.vibeRuntime = new VibeVoiceRuntime(
+      this.vibeExecutable,
+      this.mingwBin,
+      this.models.vibevoice,
+    );
+    this.qwenWorker = new QwenRuntime(this.pythonExecutable, this.qwenRunner, this.models.qwen);
+  }
+
+  onQwenState(listener: (health: QwenWorkerHealth) => void): () => void {
+    return this.qwenWorker.onState(listener);
+  }
+
+  releaseQwen(reason: string): void {
+    this.qwenWorker.release(reason);
+  }
+
+  stop(): void {
+    this.qwenWorker.release("app_stopping");
+    this.vibeRuntime.release("app_stopping");
+  }
+
+  async runtimeHealth(): Promise<LocalModelRuntimeHealth[]> {
+    const status = await this.status();
+    const vibe = await this.vibeRuntime.health();
+    const qwen = this.qwenWorker.workerHealth();
+    return [
+      {
+        id: "vibevoice",
+        phase: vibe.phase,
+        ready: status.vibevoice.ready,
+        loaded: vibe.loaded,
+        executable: status.vibevoice.executable,
+        queuedJobs: 0,
+        activeJobId: vibe.activeJobId,
+        lastError: vibe.lastError,
+        detail: status.vibevoice.message,
+      },
+      {
+        id: "qwen35-4b",
+        phase: status.qwen.ready
+          ? qwen.phase === "crashed"
+            ? "error"
+            : qwen.phase === "starting"
+              ? "preparing"
+              : qwen.phase
+          : "missing",
+        ready: status.qwen.ready,
+        loaded: qwen.loaded,
+        executable: status.qwen.executable,
+        processId: qwen.processId,
+        queuedJobs: qwen.queuedJobs,
+        activeJobId: qwen.activeJobId,
+        lastError: qwen.lastError ? classifyLocalModelRuntimeError(qwen.lastError) : undefined,
+        detail: qwen.lastError ?? status.qwen.message,
+      },
+    ];
   }
 
   async status(): Promise<AiRuntimeStatus> {
-    const vibevoice = this.models.vibevoice();
     const qwen = this.models.qwen();
-    const vibeReady = Boolean(
-      vibevoice &&
-      (await exists(this.vibeExecutable)) &&
-      (await exists(path.join(vibevoice, "vibeasr-vae-encoder-i8_s.gguf"))) &&
-      (await exists(path.join(vibevoice, "vibeasr-lm-i2_s-embed-q6_k.gguf"))),
-    );
+    const vibeHealth = await this.vibeRuntime.health();
+    const pythonRoot = path.dirname(path.dirname(this.pythonExecutable));
+    const pythonRuntimeExists = await exists(this.pythonExecutable);
+    const qwenRunnerExists = await exists(this.qwenRunner);
+    const qwenDependenciesReady =
+      (await exists(path.join(pythonRoot, "Lib", "site-packages", "torch", "__init__.py"))) &&
+      (await exists(path.join(pythonRoot, "Lib", "site-packages", "transformers", "__init__.py")));
+    const qwenModelReady = Boolean(qwen && (await exists(path.join(qwen, "config.json"))));
     const qwenReady = Boolean(
-      qwen &&
-      (await exists(this.pythonExecutable)) &&
-      (await exists(this.qwenRunner)) &&
-      (await exists(path.join(qwen, "config.json"))),
+      qwenModelReady && pythonRuntimeExists && qwenRunnerExists && qwenDependenciesReady,
     );
+    const qwenErrorCode = !qwenModelReady
+      ? "model_missing"
+      : !pythonRuntimeExists || !qwenRunnerExists || !qwenDependenciesReady
+        ? "runtime_missing"
+        : undefined;
+    const qwenWorker = this.qwenWorker.workerHealth();
     return {
       vibevoice: {
-        ready: vibeReady,
-        executable: vibeReady ? this.vibeExecutable : undefined,
-        message: vibeReady ? undefined : "VibeVoice 本地推理运行时尚未就绪。",
+        ready: vibeHealth.ready,
+        executable: vibeHealth.executable,
+        message: vibeHealth.ready
+          ? undefined
+          : (vibeHealth.detail ?? "VibeVoice 本地推理运行时尚未就绪。"),
+        errorCode: vibeHealth.lastError,
+        // The pinned microsoft/VibeASR.cpp asr_infer target writes the transcript to stdout;
+        // stderr contains timing/diagnostics and it has no output-file argument.
+        outputSource: "stdout",
       },
       qwen: {
         ready: qwenReady,
         executable: qwenReady ? this.pythonExecutable : undefined,
         message: qwenReady ? undefined : "Qwen 本地推理运行时尚未就绪。",
+        errorCode: qwenErrorCode,
+        workerPhase: qwenWorker.phase,
+        loaded: qwenWorker.loaded,
+        processId: qwenWorker.processId,
+        queuedJobs: qwenWorker.queuedJobs,
+        lastError: qwenWorker.lastError,
       },
     };
   }
@@ -293,9 +371,8 @@ export class AiRuntimeManager {
     signal?: AbortSignal;
     resourceMode: "low" | "normal";
   }): Promise<VoiceMemoryTranscriptSegment[]> {
-    const vibevoice = this.models.vibevoice();
-    if (!vibevoice) throw new Error("model_vibevoice_not_installed");
     if (!ffmpegPath) throw new Error("ffmpeg_runtime_unavailable");
+    await this.validateInputFile(options.filePath);
     const status = await this.status();
     if (!status.vibevoice.ready) throw new Error("vibevoice_runtime_unavailable");
     const temporaryDirectory = await mkdir(path.join(os.tmpdir(), "shanghao-voice-memory"), {
@@ -305,70 +382,63 @@ export class AiRuntimeManager {
       temporaryDirectory,
       `${temporaryRecordingName(options.recordingId)}-${options.offsetMs}-${process.pid}.wav`,
     );
-    await runProcess(
-      ffmpegPath,
-      [
-        "-y",
-        "-ss",
-        String(options.offsetMs / 1_000),
-        "-t",
-        String(options.durationMs / 1_000),
-        "-i",
-        options.filePath,
-        "-ac",
-        "1",
-        "-ar",
-        "24000",
-        "-c:a",
-        "pcm_s16le",
-        wavPath,
-      ],
-      { signal: options.signal, timeoutMs: 120_000 },
-    );
     try {
+      try {
+        await runLocalProcess(
+          ffmpegPath,
+          [
+            "-nostdin",
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-y",
+            "-ss",
+            String(options.offsetMs / 1_000),
+            "-t",
+            String(options.durationMs / 1_000),
+            "-i",
+            options.filePath,
+            "-vn",
+            "-ac",
+            "1",
+            "-ar",
+            "24000",
+            "-c:a",
+            "pcm_s16le",
+            wavPath,
+          ],
+          { signal: options.signal, timeoutMs: 120_000 },
+        );
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        if (message === "ai_task_paused") throw error;
+        throw new LocalModelRuntimeError("ffmpeg_failed", "ffmpeg_failed", message);
+      }
       const activity = analyzePcm16Wav(await readFile(wavPath));
       if (!activity.audible) return [];
-      const result = await runProcess(
-        this.vibeExecutable,
-        [
-          "--vae-model",
-          path.join(vibevoice, "vibeasr-vae-encoder-i8_s.gguf"),
-          "--lm-model",
-          path.join(vibevoice, "vibeasr-lm-i2_s-embed-q6_k.gguf"),
-          "--audio",
-          wavPath,
-          "-c",
-          "4096",
-          "-b",
-          "2048",
-          "--max-tokens",
-          "1024",
-          "-t",
-          String(
-            options.resourceMode === "low" ? 2 : Math.max(2, Math.min(6, os.cpus().length - 2)),
-          ),
-          "--greedy",
-          "--context",
-          // Keep argv ASCII-only: the native MinGW runtime parses Windows arguments with the
-          // active code page and rejects direct CJK context text before inference starts.
-          "Mandarin Chinese voice chat; prefer Simplified Chinese; preserve spoken English, game names, people names and software names.",
-          "--prompt-format",
-          // The installed BitNet runtime is the 1.5B model. Its official output mode is text;
-          // the JSON prompt targets the 7B model and can collapse into repeated phrases.
-          "text",
-        ],
-        {
-          signal: options.signal,
-          timeoutMs: Math.max(180_000, options.durationMs * 5),
-          env: { ...process.env, PATH: `${this.mingwBin};${process.env.PATH ?? ""}` },
-        },
-      );
-      return parseVibeVoiceOutput(
-        result.stdout,
+      const result = await this.vibeRuntime.run({
+        wavPath,
+        durationMs: options.durationMs,
+        signal: options.signal,
+        resourceMode: options.resourceMode,
+      });
+      const rawOutput = result.stdout.replace(/^\uFEFF/, "").trim();
+      // The native process already throws on a non-zero exit. A successful inference with no
+      // stdout means this audible unit did not contain speech the model could recognize. Empty
+      // conversational gaps are expected and must not fail a long recording after earlier units
+      // were durably transcribed.
+      if (!rawOutput) return [];
+      const segments = parseVibeVoiceOutput(
+        rawOutput,
         options.recordingId,
         options.offsetMs,
         options.durationMs,
       );
+      // A native inference can return only unreliable repetition for very quiet/non-speech
+      // chunks. Treat that as an empty transcript unit so one bad chunk cannot fail the whole
+      // recording or erase useful segments already persisted from adjacent chunks.
+      if (!segments.length) return [];
+      return segments;
     } finally {
       await rm(wavPath, { force: true }).catch(() => undefined);
     }
@@ -379,25 +449,14 @@ export class AiRuntimeManager {
     if (!qwen) throw new Error("model_qwen35-4b_not_installed");
     const status = await this.status();
     if (!status.qwen.ready) throw new Error("qwen_runtime_unavailable");
-    const result = await runProcess(
-      this.pythonExecutable,
-      [
-        this.qwenRunner,
-        "--model",
-        qwen,
-        "--max-new-tokens",
-        String(options.maxNewTokens ?? 1_024),
-        "--resource-mode",
-        options.resourceMode,
-      ],
-      {
-        signal: options.signal,
-        timeoutMs: 2 * 60_000,
-        input: options.prompt,
-        env: { ...process.env, PYTHONIOENCODING: "utf-8", PYTHONUTF8: "1" },
-      },
-    );
-    const trimmed = result.stdout.trim();
+    const output = await this.qwenWorker.run({
+      prompt: options.prompt,
+      maxNewTokens: options.maxNewTokens ?? 1_024,
+      resourceMode: options.resourceMode,
+      timeoutMs: 2 * 60_000,
+      signal: options.signal,
+    });
+    const trimmed = output.trim();
     const start = trimmed.indexOf("{");
     const end = trimmed.lastIndexOf("}");
     if (start < 0 || end < start) throw new Error("qwen_invalid_json_response");

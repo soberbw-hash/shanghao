@@ -4,7 +4,7 @@ import ffmpegPath from "ffmpeg-static";
 
 import type { RecordingCleanupCandidate, RecordingCleanupReason } from "@private-voice/shared";
 
-export const SHORT_RECORDING_MS = 10_000;
+export const SHORT_RECORDING_MS = 5 * 60_000;
 export const SILENT_RECORDING_PEAK_DB = -60;
 
 interface RecordingProbeResult {

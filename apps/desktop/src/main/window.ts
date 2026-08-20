@@ -5,7 +5,6 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import {
   app,
   BrowserWindow,
-  desktopCapturer,
   nativeImage,
   screen,
   type NativeImage,
@@ -20,6 +19,9 @@ import {
   type ScreenShareViewerOpenRequest,
   type ScreenShareViewerSignal,
 } from "@private-voice/shared";
+
+import { platformService } from "./platform/PlatformService";
+import { screenCaptureService } from "./screen-capture-service";
 
 const devServerUrl = process.env.VITE_DEV_SERVER_URL?.trim() || "http://127.0.0.1:5173";
 
@@ -45,93 +47,19 @@ const getWindowIcon = (): NativeImage => {
   return image.isEmpty() ? nativeImage.createFromPath(getIconPath()) : image;
 };
 
-let pendingScreenCaptureSourceId: string | undefined;
 let screenShareViewerWindow: BrowserWindow | null = null;
 let screenShareViewerSessionId: string | undefined;
 
-const enumerateScreenCaptureSources = async (
-  withThumbnails: boolean,
-  fetchWindowIcons = withThumbnails,
-) =>
-  desktopCapturer.getSources({
-    types: ["screen", "window"],
-    thumbnailSize: withThumbnails ? { width: 320, height: 180 } : { width: 0, height: 0 },
-    fetchWindowIcons,
-  });
-
-const waitForScreenCaptureSources = async (
-  withThumbnails: boolean,
-  fetchWindowIcons = withThumbnails,
-) => {
-  let lastError: unknown;
-  for (let attempt = 0; attempt < 3; attempt += 1) {
-    try {
-      const sources = await enumerateScreenCaptureSources(withThumbnails, fetchWindowIcons);
-      if (sources.length > 0) return sources;
-    } catch (error) {
-      lastError = error;
-    }
-    await new Promise<void>((resolve) => setTimeout(resolve, 120 * (attempt + 1)));
-  }
-  if (lastError) throw lastError;
-  return [];
-};
-
 export const listScreenCaptureSources = async (): Promise<ScreenCaptureSourceDescriptor[]> => {
-  // Content protection also hides ShangHao from Chromium's desktop capturer. Disable it
-  // while enumerating, then enable it only after a stream has actually been acquired.
-  setScreenCaptureContentProtection(false);
-  await new Promise<void>((resolve) => setTimeout(resolve, 80));
-
-  let sources: Awaited<ReturnType<typeof enumerateScreenCaptureSources>>;
-  try {
-    sources = await waitForScreenCaptureSources(true, true);
-  } catch {
-    // Some Windows graphics drivers fail only when Electron requests process icons.
-    sources = await waitForScreenCaptureSources(true, false).catch(() => []);
-  }
-  if (sources.length === 0) {
-    sources = await waitForScreenCaptureSources(false, false);
-  }
-  const screenSourceIds = sources
-    .filter((source) => source.id.startsWith("screen:"))
-    .map((source) => source.id);
-  const appWindowSourceIds = new Set(
-    BrowserWindow.getAllWindows().flatMap((window) => {
-      try {
-        return [window.getMediaSourceId()];
-      } catch {
-        return [];
-      }
-    }),
-  );
-  return sources
-    .filter((source) => source.id.startsWith("screen:") || !appWindowSourceIds.has(source.id))
-    .slice(0, 40)
-    .map((source) => {
-      const isScreen = source.id.startsWith("screen:");
-      const screenIndex = isScreen ? screenSourceIds.indexOf(source.id) + 1 : 0;
-      return {
-        id: source.id,
-        name: source.name.slice(0, 120),
-        kind: isScreen ? "screen" : "window",
-        displayId: source.display_id || undefined,
-        displayLabel: isScreen ? `显示器 ${Math.max(1, screenIndex)} · 全屏` : undefined,
-        thumbnailDataUrl: source.thumbnail.isEmpty() ? "" : source.thumbnail.toDataURL(),
-        appIconDataUrl:
-          source.appIcon && !source.appIcon.isEmpty() ? source.appIcon.toDataURL() : undefined,
-      };
-    });
+  return screenCaptureService.listSources();
 };
 
 export const selectScreenCaptureSource = (sourceId: string): void => {
-  pendingScreenCaptureSourceId = sourceId;
+  screenCaptureService.selectSource(sourceId);
 };
 
 export const setScreenCaptureContentProtection = (enabled: boolean): void => {
-  for (const window of BrowserWindow.getAllWindows()) {
-    if (!window.isDestroyed()) window.setContentProtection(enabled);
-  }
+  screenCaptureService.setContentProtection(enabled);
 };
 
 const getRendererEntryPath = () => path.join(__dirname, "../../dist/index.html");
@@ -352,7 +280,7 @@ export const createMainWindow = ({
     },
   });
   window.setIcon(windowIcon);
-  if (process.platform === "win32") {
+  if (platformService.isWindows) {
     window.setAppDetails({
       appId: APP_ID,
       appIconPath: getIconPath(),
@@ -477,33 +405,24 @@ export const createMainWindow = ({
         return;
       }
 
-      const requestedSourceId = pendingScreenCaptureSourceId;
-      pendingScreenCaptureSourceId = undefined;
-      const sources = await waitForScreenCaptureSources(false);
-      const primaryDisplayId = String(screen.getPrimaryDisplay().id);
-      const selectedSource = requestedSourceId
-        ? sources.find((source) => source.id === requestedSourceId)
-        : (sources.find((source) => source.display_id === primaryDisplayId) ??
-          sources.find((source) => source.id.startsWith("screen:")) ??
-          sources[0]);
+      const requestedSourceId = screenCaptureService.consumeSelectedSourceId();
+      const selectedSource = await screenCaptureService.resolveRequestedSource(requestedSourceId);
 
       if (!selectedSource) {
-        log?.("error", "Requested screen share source is no longer available", {
-          requestedSourceId,
-          sourceCount: sources.length,
-        });
         callback({});
         return;
       }
 
       log?.("info", "Approved screen capture request", {
         sourceKind: selectedSource.id.startsWith("screen:") ? "screen" : "window",
-        primaryDisplayId,
         audioRequested: request.audioRequested,
       });
       callback({
         video: selectedSource,
-        audio: request.audioRequested && process.platform === "win32" ? "loopback" : undefined,
+        audio:
+          request.audioRequested && platformService.capabilities.systemAudioLoopback
+            ? "loopback"
+            : undefined,
       });
     } catch (error) {
       log?.("error", "Failed to approve screen capture request", {

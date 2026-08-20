@@ -35,14 +35,18 @@ import {
   type GameDetectionSnapshot,
   type OverlayState,
   type RelayStatusSnapshot,
+  type RealtimeFaultCommand,
   type RecordingExportPayload,
   type RecordingExportResponse,
   type RecordingCleanupScan,
   type RecordingBatchDeleteResult,
   type RecordingLibrarySnapshot,
+  type RecordingLibraryItem,
   type RecordingMarker,
   type RendererLogPayload,
+  type RendererRuntimeHealthInput,
   type RuntimeInfo,
+  type RuntimeHealthSnapshot,
   type ScreenShareViewerOpenRequest,
   type ScreenShareViewerSignal,
   type SignalingEventPayload,
@@ -61,6 +65,7 @@ import {
 } from "@private-voice/shared";
 
 import { DiagnosticsService } from "./diagnostics";
+import { captureRuntimeHealth } from "./runtime-health";
 import { readDeepFilterAssets } from "./deepfilter-assets";
 import { clearAvatarImage, pickAvatarImage, readAvatarImage } from "./profile-media";
 import { exportRecordingFromMain } from "./recording-main";
@@ -70,6 +75,7 @@ import {
   enforceRecordingQuota,
   getUsableRecordingDirectory,
   readRecordingLibrary,
+  renameRecording,
   scanWasteRecordings,
   setRecordingFavorite,
 } from "./recording-library";
@@ -87,6 +93,7 @@ import { applyLaunchOnStartup } from "./launch-on-startup";
 import { ChatHistoryStore } from "./chat-history-store";
 import { DailyRoomReportCache } from "./daily-room-report-cache";
 import { LocalWeatherService } from "./weather-service";
+import { platformService } from "./platform/PlatformService";
 import { readWindowsElevationStatus } from "./windows-elevation";
 import {
   configureWindowsIconOverlays,
@@ -308,7 +315,7 @@ export const registerIpcHandlers = ({
     return {
       appName: APP_NAME,
       version: app.getVersion(),
-      platform: process.platform,
+      platform: platformService.capabilities.nodePlatform,
       protocolVersion: APP_PROTOCOL_VERSION,
       buildNumber: APP_BUILD_NUMBER,
       isStartupLaunch: process.argv.includes("--shanghao-startup"),
@@ -645,6 +652,9 @@ export const registerIpcHandlers = ({
       if (typeof partial.isGameDetectionEnabled === "boolean") {
         await gameDetection.setEnabled(settings.isGameDetectionEnabled);
       }
+      if (typeof partial.isWorkActivityVisible === "boolean") {
+        await gameDetection.setWorkActivityEnabled(settings.isWorkActivityVisible);
+      }
       const registered = await shortcuts.configureGlobalMute(settings.globalMuteShortcut);
       if (!registered && settings.globalMuteShortcut) {
         return settingsStore.save({ globalMuteShortcut: "" });
@@ -656,6 +666,7 @@ export const registerIpcHandlers = ({
   ipcMain.handle(IPC_CHANNELS.settings.reset, async (): Promise<AppSettings> => {
     const settings = await settingsStore.reset();
     aiModels.setProcessingMode(settings.aiProcessingMode);
+    await gameDetection.setWorkActivityEnabled(settings.isWorkActivityVisible);
     await gameDetection.setEnabled(settings.isGameDetectionEnabled);
     await shortcuts.configureGlobalMute(settings.globalMuteShortcut);
     return settings;
@@ -673,6 +684,18 @@ export const registerIpcHandlers = ({
 
   ipcMain.handle(IPC_CHANNELS.diagnostics.snapshot, async (): Promise<DiagnosticsSnapshot> =>
     diagnostics.getSnapshot(),
+  );
+  ipcMain.handle(
+    IPC_CHANNELS.diagnostics.runtimeHealth,
+    async (_event, renderer?: RendererRuntimeHealthInput): Promise<RuntimeHealthSnapshot> => {
+      const snapshot = await captureRuntimeHealth({
+        getMainWindow,
+        renderer,
+        flightRecorder: diagnostics.flightRecorder,
+      });
+      diagnostics.setRuntimeHealthSnapshot(snapshot);
+      return snapshot;
+    },
   );
   ipcMain.handle(IPC_CHANNELS.windows.getStatus, async (): Promise<WindowsIntegrationStatus> =>
     readWindowsIntegrationStatus(),
@@ -766,6 +789,12 @@ export const registerIpcHandlers = ({
         exportedAt: new Date().toISOString(),
       };
       const windowsIntegration = await readWindowsIntegrationStatus();
+      const runtimeHealth =
+        diagnostics.getRuntimeHealthSnapshot() ??
+        (await captureRuntimeHealth({
+          getMainWindow,
+          flightRecorder: diagnostics.flightRecorder,
+        }));
 
       return diagnostics.exportBundle([
         { name: "settings-summary.json", content: JSON.stringify(settingsSummary, null, 2) },
@@ -782,6 +811,14 @@ export const registerIpcHandlers = ({
         {
           name: "audio-timeline.json",
           content: JSON.stringify(rendererState?.audioTimeline ?? [], null, 2),
+        },
+        {
+          name: "runtime-health.json",
+          content: JSON.stringify(runtimeHealth, null, 2),
+        },
+        {
+          name: "flight-recorder.json",
+          content: JSON.stringify(diagnostics.flightRecorder.snapshot(), null, 2),
         },
       ]);
     },
@@ -976,6 +1013,19 @@ export const registerIpcHandlers = ({
   ipcMain.handle(IPC_CHANNELS.signaling.close, async (_event, sessionId: string) => {
     await signalingClient.close(requireString(sessionId, 128, "signaling_session_id"));
   });
+  ipcMain.handle(
+    IPC_CHANNELS.signaling.injectFault,
+    async (_event, sessionId: string, command: RealtimeFaultCommand): Promise<void> => {
+      if (app.isPackaged) throw new Error("fault_lab_unavailable_in_packaged_app");
+      if (!command || typeof command.kind !== "string") throw new Error("invalid_fault_command");
+      signalingClient.injectFault(requireString(sessionId, 128, "signaling_session_id"), command);
+      diagnostics.flightRecorder.record({
+        source: "realtime",
+        level: "warn",
+        event: `fault_lab:${command.kind}`,
+      });
+    },
+  );
 
   ipcMain.handle(
     IPC_CHANNELS.recording.export,
@@ -1063,6 +1113,43 @@ export const registerIpcHandlers = ({
       );
     },
   );
+  ipcMain.handle(
+    IPC_CHANNELS.recording.rename,
+    async (_event, recordingId: string, title: string): Promise<RecordingLibraryItem> => {
+      const settings = settingsStore.getSnapshot();
+      const stableId = requireString(recordingId, 180, "recording_id");
+      const nextTitle = requireString(title, 124, "recording_title");
+      const before = await readRecordingLibrary(
+        settings.recordingSaveDirectory,
+        settings.recordingLibraryQuotaGb,
+      );
+      const previous = before.items.find((item) => item.recordingId === stableId);
+      if (!previous) throw new Error("recording_not_found");
+      const renamed = await renameRecording(settings.recordingSaveDirectory, stableId, nextTitle);
+      try {
+        await voiceMemory.reconcileRecordingIdentity(
+          previous.filePath,
+          renamed.recordingId,
+          renamed.filePath,
+          renamed.markers,
+        );
+        await voiceMemory.reconcileRecordingIdentity(
+          renamed.recordingId,
+          renamed.recordingId,
+          renamed.filePath,
+          renamed.markers,
+        );
+        return renamed;
+      } catch (error) {
+        await renameRecording(
+          settings.recordingSaveDirectory,
+          stableId,
+          path.parse(previous.fileName).name,
+        ).catch(() => undefined);
+        throw error;
+      }
+    },
+  );
   ipcMain.handle(IPC_CHANNELS.recording.openDirectory, async (): Promise<void> => {
     const directory = await getUsableRecordingDirectory(
       settingsStore.getSnapshot().recordingSaveDirectory,
@@ -1071,17 +1158,24 @@ export const registerIpcHandlers = ({
     if (error) throw new Error(error);
   });
   ipcMain.handle(IPC_CHANNELS.recording.delete, async (_event, filePath: string): Promise<void> => {
-    const recordingId = requireString(filePath, 2_048, "recording_file_path");
-    await deleteRecording(settingsStore.getSnapshot().recordingSaveDirectory, recordingId);
+    const recordingPath = requireString(filePath, 2_048, "recording_file_path");
+    const settings = settingsStore.getSnapshot();
+    const library = await readRecordingLibrary(
+      settings.recordingSaveDirectory,
+      settings.recordingLibraryQuotaGb,
+    );
+    const item = library.items.find((candidate) => candidate.filePath === recordingPath);
+    await deleteRecording(settings.recordingSaveDirectory, recordingPath);
     try {
-      await voiceMemory.delete(recordingId);
+      if (item) await voiceMemory.delete(item.recordingId);
+      await voiceMemory.delete(recordingPath);
     } catch (error) {
       await diagnostics.writeLog({
         category: "recording",
         level: "warn",
         message: "Recording deleted but voice-memory cleanup failed",
         context: {
-          recordingId,
+          recordingId: item?.recordingId ?? recordingPath,
           error: error instanceof Error ? error.message : String(error),
         },
       });
@@ -1098,26 +1192,34 @@ export const registerIpcHandlers = ({
           filePaths.map((filePath) => requireString(filePath, 2_048, "recording_file_path")),
         ),
       ];
+      const deleteSettings = settingsStore.getSnapshot();
+      const deleteLibrary = await readRecordingLibrary(
+        deleteSettings.recordingSaveDirectory,
+        deleteSettings.recordingLibraryQuotaGb,
+      );
+      const itemsByPath = new Map(deleteLibrary.items.map((item) => [item.filePath, item]));
       const result: RecordingBatchDeleteResult = { deletedFilePaths: [], failed: [] };
       for (let index = 0; index < requested.length; index += 4) {
         const batch = requested.slice(index, index + 4);
         const settled = await Promise.allSettled(
-          batch.map(async (recordingId) => {
-            await deleteRecording(settingsStore.getSnapshot().recordingSaveDirectory, recordingId);
+          batch.map(async (recordingPath) => {
+            const item = itemsByPath.get(recordingPath);
+            await deleteRecording(deleteSettings.recordingSaveDirectory, recordingPath);
             try {
-              await voiceMemory.delete(recordingId);
+              if (item) await voiceMemory.delete(item.recordingId);
+              await voiceMemory.delete(recordingPath);
             } catch (error) {
               await diagnostics.writeLog({
                 category: "recording",
                 level: "warn",
                 message: "Recording deleted but voice-memory cleanup failed",
                 context: {
-                  recordingId,
+                  recordingId: item?.recordingId ?? recordingPath,
                   error: error instanceof Error ? error.message : String(error),
                 },
               });
             }
-            return recordingId;
+            return recordingPath;
           }),
         );
         settled.forEach((entry, entryIndex) => {

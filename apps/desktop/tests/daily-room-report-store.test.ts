@@ -8,7 +8,7 @@ import { DailyRoomReportStore } from "../../../packages/signaling/src/daily-room
 
 const at = (value: string): number => Date.parse(`${value}+08:00`);
 
-test("daily room reports retain 14 complete days and isolate the two rooms", async () => {
+test("daily room reports retain activity from the last 14 complete days without fake empty days", async () => {
   const directory = await mkdtemp(path.join(os.tmpdir(), "shanghao-daily-room-"));
   const filePath = path.join(directory, "daily-room.json");
   try {
@@ -25,19 +25,33 @@ test("daily room reports retain 14 complete days and isolate the two rooms", asy
     const reloaded = await DailyRoomReportStore.create(filePath);
     const main = reloaded.getHistory("main", at("2026-08-11T12:00:00"));
     const side = reloaded.getHistory("side", at("2026-08-11T12:00:00"));
-    assert.equal(main.length, 14);
+    assert.equal(main.length, 1);
     assert.equal(main[0]?.date, "2026-08-10");
     assert.equal(main[0]?.participantCount, 1);
     assert.deepEqual(main[0]?.participantNicknames, ["小明"]);
     assert.equal(main[0]?.messageCount, 1);
     assert.equal(main[0]?.screenShareCount, 1);
+    assert.equal(main[0]?.screenShareDurationMs, 45 * 60 * 1_000);
     assert.deepEqual(main[0]?.games, [{ name: "英雄联盟", participantCount: 1 }]);
     assert.deepEqual(main[0]?.gameActivities, [
       { nickname: "小明", gameName: "英雄联盟", durationMs: 48 * 60 * 1_000 },
     ]);
+    assert.deepEqual(main[0]?.participants, [
+      {
+        identityId: "peer-a",
+        nickname: "小明",
+        presenceDurationMs: 60 * 60 * 1_000,
+        joinSessions: 1,
+        gameDurationMs: 48 * 60 * 1_000,
+        messageCount: 0,
+        screenShareCount: 1,
+        screenShareDurationMs: 45 * 60 * 1_000,
+        firstSeenAt: "2026-08-10T12:00:00.000Z",
+        lastExitAt: "2026-08-10T13:00:00.000Z",
+      },
+    ]);
     assert.equal(side[0]?.participantNicknames[0], "小红");
-    assert.equal(main[1]?.hadActivity, false);
-    assert.equal(side[1]?.hadActivity, false);
+    assert.equal(side.length, 1);
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
@@ -54,6 +68,7 @@ test("screen sharing and reconnect-style duplicate joins are counted once", asyn
   const report = store.getHistory("main", at("2026-08-11T12:00:00"))[0];
   assert.equal(report?.participantCount, 1);
   assert.equal(report?.screenShareCount, 1);
+  assert.equal(report?.participants?.[0]?.joinSessions, 1);
 });
 
 test("cross-midnight sessions are split in Shanghai time without a fake leave", async () => {

@@ -19,7 +19,10 @@ export const UpdateModal = () => {
   const checkUpdates = useSettingsStore((state) => state.checkUpdates);
 
   const isVisible = Boolean(
-    updateInfo?.hasUpdate || status.phase === "downloading" || status.phase === "downloaded",
+    updateInfo?.hasUpdate ||
+    status.phase === "downloading" ||
+    status.phase === "downloaded" ||
+    status.phase === "ready_to_restart",
   );
 
   const latestVersion = updateInfo?.latestVersion ?? status.latestVersion ?? "";
@@ -67,7 +70,11 @@ export const UpdateModal = () => {
               上号 {latestVersion}
             </h2>
             <p className="mt-2 text-sm leading-6 text-[#667085]">
-              {isForced ? "更新后才能继续进入频道。" : "新版已经准备好，更新后会自动重新打开。"}
+              {status.phase === "ready_to_restart" || status.phase === "downloaded"
+                ? "新版已安全下载，确认后会安装并重新打开。"
+                : isForced
+                  ? "正在后台下载，完成后需要你确认安装。"
+                  : "正在后台准备新版，下载完成前可以继续使用。"}
             </p>
 
             {isDownloading ? (
@@ -88,7 +95,7 @@ export const UpdateModal = () => {
             ) : null}
 
             <div className="mt-6 flex gap-3">
-              {status.phase === "downloaded" ? (
+              {status.phase === "downloaded" || status.phase === "ready_to_restart" ? (
                 <Button isFullWidth onClick={() => void installUpdate()}>
                   <RefreshCcw className="h-4 w-4" />
                   安装并重新打开
