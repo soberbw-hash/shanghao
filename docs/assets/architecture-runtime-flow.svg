@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="520" viewBox="0 0 1200 520" role="img" aria-labelledby="title desc">
+  <title id="title">上号运行流转</title>
+  <desc id="desc">React 房间界面经过 RoomClient、固定频道信令和 WebRTC Mesh，最终输出到单一扬声器。</desc>
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto"><path d="M0 0L10 5L0 10Z" fill="#6685a7"/></marker>
+    <style>
+      .box{fill:#f8fbff;stroke:#b9cde3;stroke-width:2}.box.accent{fill:#edf5ff;stroke:#6da5e8}.box.relay{fill:#fff9ee;stroke:#e4bd75}.label{font:600 22px "Segoe UI","Microsoft YaHei",sans-serif;fill:#243b59}.small{font:16px "Segoe UI","Microsoft YaHei",sans-serif;fill:#637b98}.line{stroke:#6685a7;stroke-width:3;fill:none;marker-end:url(#arrow)}.dash{stroke:#d19b3f;stroke-width:3;stroke-dasharray:9 8;fill:none;marker-end:url(#arrow)}
+    </style>
+  </defs>
+  <rect width="1200" height="520" rx="24" fill="#ffffff"/>
+  <text x="48" y="58" class="label" font-size="30">运行流转</text>
+  <text x="48" y="88" class="small">固定频道负责发现与状态，媒体优先走成员间 Mesh，必要时按成员启用 Relay。</text>
+  <rect x="52" y="180" width="190" height="94" rx="16" class="box"/>
+  <text x="147" y="220" text-anchor="middle" class="label">React 房间界面</text><text x="147" y="248" text-anchor="middle" class="small">Room UI</text>
+  <rect x="300" y="180" width="180" height="94" rx="16" class="box accent"/>
+  <text x="390" y="220" text-anchor="middle" class="label">RoomClient</text><text x="390" y="248" text-anchor="middle" class="small">统一会话门面</text>
+  <rect x="538" y="104" width="220" height="84" rx="16" class="box"/>
+  <text x="648" y="140" text-anchor="middle" class="label">固定频道 WSS 信令</text><text x="648" y="166" text-anchor="middle" class="small">房间状态 / 成员快照</text>
+  <rect x="538" y="264" width="220" height="84" rx="16" class="box accent"/>
+  <text x="648" y="300" text-anchor="middle" class="label">WebRTC Mesh</text><text x="648" y="326" text-anchor="middle" class="small">3–5 人语音与屏幕媒体</text>
+  <rect x="538" y="404" width="220" height="84" rx="16" class="box relay"/>
+  <text x="648" y="440" text-anchor="middle" class="label">Relay 音频兜底</text><text x="648" y="466" text-anchor="middle" class="small">只替换受影响成员</text>
+  <rect x="830" y="264" width="220" height="84" rx="16" class="box"/>
+  <text x="940" y="300" text-anchor="middle" class="label">RemoteAudioMixer</text><text x="940" y="326" text-anchor="middle" class="small">共享远端混音</text>
+  <rect x="1090" y="264" width="88" height="84" rx="16" class="box"/>
+  <text x="1134" y="300" text-anchor="middle" class="label" font-size="18">单一</text><text x="1134" y="326" text-anchor="middle" class="small">扬声器</text>
+  <path d="M242 227H300" class="line"/><path d="M480 205L538 146" class="line"/><path d="M480 227H538" class="line"/><path d="M480 250L538 446" class="dash"/><path d="M758 306H830" class="line"/><path d="M758 446L830 326" class="dash"/><path d="M1050 306H1090" class="line"/>
+  <text x="492" y="151" class="small">加入频道</text><text x="492" y="218" class="small">建立媒体</text><text x="785" y="426" class="small" fill="#a87525">弱网 / RTP 停滞</text>
+</svg>

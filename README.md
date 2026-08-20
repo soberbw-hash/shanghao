@@ -342,7 +342,27 @@ flowchart TB
   <img src="./docs/assets/release-settings.png" width="49%" alt="上号设置与诊断界面" />
 </p>
 
-界面截图、WebRTC Mesh、Relay 回退、屏幕分享边界与 3.0 Core/Platform 分层的完整说明见 [架构文档](./docs/architecture.md)。文档中的 Mermaid 图可以直接在 GitHub 中查看，也方便二次开发时定位媒体、平台和视觉运行时的职责。
+下面三张图就是仓库架构文档中的核心图，直接放在 README，打开 GitHub 首页即可查看；对应的 Mermaid 源码和文字说明仍保留在 [架构文档](./docs/architecture.md)。
+
+#### 运行流转：信令、Mesh 与音频兜底
+
+<p align="center">
+  <img src="./docs/assets/architecture-runtime-flow.svg" width="92%" alt="上号运行流转：React 房间界面、RoomClient、固定频道信令、WebRTC Mesh、Relay 音频兜底与单一扬声器输出" />
+</p>
+
+#### 五人语音：WebRTC / Relay 恢复状态
+
+<p align="center">
+  <img src="./docs/assets/architecture-media-recovery.svg" width="86%" alt="五人语音 WebRTC 与 Relay 恢复状态图" />
+</p>
+
+#### 3.0 Core 与平台边界
+
+<p align="center">
+  <img src="./docs/assets/architecture-core-platform.svg" width="92%" alt="ShangHao 3.0 Core 与平台边界图" />
+</p>
+
+界面截图、WebRTC Mesh、Relay 回退、屏幕分享边界与 3.0 Core/Platform 分层的完整说明见 [架构文档](./docs/architecture.md)。
 
 <a id="server-deployment"></a>
 

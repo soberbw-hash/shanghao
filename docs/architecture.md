@@ -47,6 +47,8 @@ flowchart LR
   Mixer --> Output["单一扬声器输出"]
 ```
 
+![上号运行流转：信令、WebRTC Mesh 与 Relay 音频兜底](./assets/architecture-runtime-flow.svg)
+
 ## 五人语音路径
 
 每一位远端成员都拥有独立的协商队列和媒体路径状态。Offer、Answer、ICE、
@@ -65,6 +67,8 @@ stateDiagram-v2
   WebRTCVerified --> RelayFallback: RTP stalled
   RelayFallback --> WebRTCVerified: RTP resumed
 ```
+
+![五人语音 WebRTC / Relay 恢复状态](./assets/architecture-media-recovery.svg)
 
 ## 屏幕分享边界
 
@@ -93,6 +97,8 @@ flowchart LR
   Native --> FileId["Stable File Identity"]
   Native --> Supervisor["AI Process Supervisor"]
 ```
+
+![ShangHao 3.0 Core 与平台边界](./assets/architecture-core-platform.svg)
 
 Rust Workspace 当前只有一个有实际职责的 `shanghao-core` crate，承担 Windows 前台
 活动查询、稳定文件身份和受控子进程生命周期。它不复制 WebRTC、DeepFilter、VAD、
