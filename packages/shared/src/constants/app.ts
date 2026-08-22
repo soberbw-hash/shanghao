@@ -17,7 +17,7 @@ export const DEFAULT_SIGNALING_PORT = 43_821;
 // existing 2.5 clients can still share the fixed server while people update.
 export const APP_PROTOCOL_VERSION = "7";
 export const APP_BUILD_NUMBER = "2026.08.22.1";
-export const SETTINGS_SCHEMA_VERSION = 28;
+export const SETTINGS_SCHEMA_VERSION = 29;
 export const PROFILE_SCHEMA_VERSION = 2;
 export const DEFAULT_RELEASES_URL = "https://github.com/soberbw-hash/shanghao/releases";
 

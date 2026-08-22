@@ -345,7 +345,7 @@ export const useRoomState = () => {
       });
       const processedMicrophone = await createProcessedMicrophoneStream(inputStream, {
         micEqualizerGains: currentSettings?.micEqualizerGains ?? [0, 0, 0, 0, 0],
-        lowCutFrequency: currentSettings?.lowCutFrequency ?? "90",
+        lowCutFrequency: currentSettings?.lowCutFrequency ?? "75",
         isNoiseSuppressionEnabled: currentSettings?.isNoiseSuppressionEnabled ?? true,
         isVoiceEnhancementEnabled: currentSettings?.isVoiceEnhancementEnabled ?? true,
         microphoneSendVolume: currentSettings?.microphoneSendVolume ?? 1,

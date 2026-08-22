@@ -1,4 +1,7 @@
+import { useCallback, useEffect, useState } from "react";
+
 import type {
+  AiRuntimeStatus,
   ConnectionHealth,
   DiagnosticsSnapshot,
   LocalAudioDiagnostics,
@@ -24,6 +27,117 @@ const hasScreenShareMetrics = (screenShare: ScreenSharePipelineDiagnostics): boo
     Object.keys(screenShare.receive).length > 0 ||
     Object.keys(screenShare.present).length > 0,
   );
+
+const aiRuntimeLabel = (status?: AiRuntimeStatus["asr"]): string => {
+  if (!status) return "正在读取";
+  if (status.runtimePhase === "running") return "正在处理";
+  if (status.ready) return "可以使用";
+  if (status.runtimePhase === "missing") return "模型未安装";
+  if (status.runtimePhase === "error") return "运行异常";
+  return "等待任务";
+};
+
+const aiTaskStageLabel = (task: NonNullable<AiRuntimeStatus["lastTask"]>): string => {
+  const labels: Record<typeof task.stage, string> = {
+    recording: "等待录音保存",
+    audio_file: "读取录音文件",
+    preprocess: "检查录音内容",
+    convert: "转换录音格式",
+    asr: "识别语音",
+    transcript: "生成文字",
+    storage: "保存结果",
+    organize: "整理内容",
+  };
+  return labels[task.stage];
+};
+
+const AiRuntimeDiagnosticsPanel = () => {
+  const [status, setStatus] = useState<AiRuntimeStatus>();
+  const [loadError, setLoadError] = useState("");
+
+  const refresh = useCallback(async () => {
+    try {
+      const nextStatus = await window.desktopApi.ai.getRuntimeStatus();
+      setStatus(nextStatus);
+      setLoadError("");
+    } catch (error) {
+      setLoadError(error instanceof Error ? error.message : "ai_runtime_status_unavailable");
+    }
+  }, []);
+
+  useEffect(() => {
+    void refresh();
+  }, [refresh]);
+
+  const asr = status?.asr;
+  const task = status?.lastTask;
+  return (
+    <div className="rounded-[16px] border border-[#DCE8F5] bg-[#F7FAFE] p-4">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <div className="text-[13px] font-semibold text-[#344054]">AI 运行诊断</div>
+          <div className="mt-1 text-xs leading-5 text-[#667085]">
+            转录模型：{asr?.modelName ?? "正在读取"} · {aiRuntimeLabel(asr)}
+          </div>
+          <div className="mt-1 text-[11px] text-[#7A8CA5]">
+            {task ? `最近任务：${task.fileName} · ${aiTaskStageLabel(task)}` : "还没有转录任务"}
+          </div>
+          {task?.errorMessage || loadError ? (
+            <div className="mt-1 break-all text-[11px] text-[#C45151]">
+              原因：{task?.errorMessage || loadError}
+            </div>
+          ) : null}
+        </div>
+        <Button variant="ghost" onClick={() => void refresh()}>
+          刷新
+        </Button>
+      </div>
+      <details className="mt-3 border-t border-[#DCE8F5] pt-3 text-xs text-[#667085]">
+        <summary className="cursor-pointer select-none font-semibold text-[#52657D]">
+          技术参数
+        </summary>
+        <dl className="mt-2 grid gap-1 leading-5">
+          <div>
+            <dt className="inline font-semibold">模型版本：</dt>
+            <dd className="inline break-all">{asr?.modelVersion ?? "未加载"}</dd>
+          </div>
+          <div>
+            <dt className="inline font-semibold">模型位置：</dt>
+            <dd className="inline break-all">{asr?.modelPath ?? "未加载"}</dd>
+          </div>
+          <div>
+            <dt className="inline font-semibold">识别格式：</dt>
+            <dd className="inline">{asr?.asrInputFormat ?? "未确认"}</dd>
+          </div>
+          <div>
+            <dt className="inline font-semibold">内部状态：</dt>
+            <dd className="inline break-all">{asr?.message ?? "暂无"}</dd>
+          </div>
+          {task ? (
+            <>
+              <div>
+                <dt className="inline font-semibold">任务编号：</dt>
+                <dd className="inline break-all">{task.taskId}</dd>
+              </div>
+              <div>
+                <dt className="inline font-semibold">内部阶段：</dt>
+                <dd className="inline">
+                  {task.stage} / {task.status}
+                </dd>
+              </div>
+              {task.errorMessage ? (
+                <div>
+                  <dt className="inline font-semibold">原始错误：</dt>
+                  <dd className="inline break-all">{task.errorMessage}</dd>
+                </div>
+              ) : null}
+            </>
+          ) : null}
+        </dl>
+      </details>
+    </div>
+  );
+};
 
 export const DiagnosticsSettingsCard = ({
   diagnostics,
@@ -293,6 +407,7 @@ export const DiagnosticsSettingsCard = ({
           </div>
         </div>
       </div>
+      <AiRuntimeDiagnosticsPanel />
       <div className="rounded-[16px] border border-[#E7ECF2] bg-[#F8FAFC] p-4 text-sm text-[#667085]">
         <div>日志目录：{diagnostics?.logsDirectory || "读取中…"}</div>
         <div className="mt-2">

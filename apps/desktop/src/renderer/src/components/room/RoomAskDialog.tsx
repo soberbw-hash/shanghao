@@ -1,8 +1,8 @@
-import { useEffect, useRef, useState } from "react";
-import { BookOpenText, MessageCircleQuestion, Search, Sparkles, X } from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { History, MessageCircleQuestion, Sparkles, Square, X } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
 
-import type { VoiceMemoryAnswer, VoiceMemorySearchResult } from "@private-voice/shared";
+import type { VoiceMemoryAnswer } from "@private-voice/shared";
 
 import { popoverSurfaceVariants, reducedFadeVariants } from "../../features/motion/motionPresets";
 import { Button } from "../base/Button";
@@ -14,7 +14,65 @@ interface RoomAskDialogProps {
   onOpenResult: (target: { filePath: string; startMs: number }) => void;
 }
 
-type PendingAction = "search" | "ask";
+type PendingAction = "ask";
+
+interface RoomQuestionHistoryEntry {
+  id: string;
+  question: string;
+  answer: VoiceMemoryAnswer;
+  createdAt: string;
+}
+
+const ROOM_QUESTION_HISTORY_KEY = "shanghao:room-question-history:v1";
+const ROOM_QUESTION_HISTORY_LIMIT = 10;
+
+const readQuestionHistory = (): RoomQuestionHistoryEntry[] => {
+  try {
+    const parsed = JSON.parse(window.localStorage.getItem(ROOM_QUESTION_HISTORY_KEY) ?? "[]") as
+      RoomQuestionHistoryEntry[] | undefined;
+    if (!Array.isArray(parsed)) return [];
+    return parsed
+      .filter(
+        (entry) =>
+          typeof entry?.id === "string" &&
+          typeof entry.question === "string" &&
+          typeof entry.createdAt === "string" &&
+          typeof entry.answer?.text === "string" &&
+          Array.isArray(entry.answer.sources) &&
+          entry.answer.sources.every(
+            (source) =>
+              typeof source?.startMs === "number" &&
+              Number.isFinite(source.startMs) &&
+              typeof source.quote === "string",
+          ),
+      )
+      .slice(0, ROOM_QUESTION_HISTORY_LIMIT);
+  } catch {
+    return [];
+  }
+};
+
+const rememberQuestion = (
+  history: RoomQuestionHistoryEntry[],
+  question: string,
+  answer: VoiceMemoryAnswer,
+): RoomQuestionHistoryEntry[] => {
+  const next = [
+    {
+      id: crypto.randomUUID(),
+      question,
+      answer,
+      createdAt: new Date().toISOString(),
+    },
+    ...history,
+  ].slice(0, ROOM_QUESTION_HISTORY_LIMIT);
+  try {
+    window.localStorage.setItem(ROOM_QUESTION_HISTORY_KEY, JSON.stringify(next));
+  } catch {
+    // A full or unavailable local store must not block the current answer.
+  }
+  return next;
+};
 
 const formatOffset = (offsetMs: number): string => {
   const seconds = Math.max(0, Math.floor(offsetMs / 1_000));
@@ -27,6 +85,16 @@ const friendlyError = (error: unknown): string => {
   if (message.includes("model_qwen35-4b_not_installed"))
     return "需要先在设置的 AI 功能里下载问答模型。";
   if (message.includes("qwen_runtime_unavailable")) return "问答功能正在准备中，稍后再试。";
+  if (message.includes("cloud_ai_join_required")) return "请先进入一号房或二号房，再使用云端问答。";
+  if (message.includes("cloud_ai_not_configured")) return "房间云端 AI 还没有配置好。";
+  if (message.includes("cloud_ai_unsupported"))
+    return "房间服务器版本较旧，请更新服务器或切换本地模型。";
+  if (message.includes("cloud_ai_busy") || message.includes("cloud_ai_request_in_progress"))
+    return "云端 AI 正忙，请稍后再问。";
+  if (message.includes("custom_ai_not_configured")) return "请先在 AI 功能中保存自定义 API。";
+  if (message.includes("ai_task_paused") || message.includes("cloud_ai_cancelled"))
+    return "已经停止这次回答，可以继续使用房间或重新提问。";
+  if (message.includes("ai_question_in_progress")) return "上一条问题还在处理，可以先停止它。";
   if (message.includes("waiting_for_game_to_finish"))
     return "当前设置为游戏结束后处理，可以稍后再问。";
   if (message.includes("ai_runtime_exit") || message.includes("qwen_invalid_json_response"))
@@ -34,7 +102,7 @@ const friendlyError = (error: unknown): string => {
   return "这次没有得到结果，请稍后重试。";
 };
 
-/** One room-level entry for searching local voice memories or asking a question. */
+/** One room-level entry for asking a question without blocking the room. */
 export const RoomAskDialog = ({
   isOpen,
   reduceMotion,
@@ -42,58 +110,76 @@ export const RoomAskDialog = ({
   onOpenResult,
 }: RoomAskDialogProps) => {
   const inputRef = useRef<HTMLInputElement>(null);
+  const askSequenceRef = useRef(0);
   const [query, setQuery] = useState("");
   const [pending, setPending] = useState<PendingAction>();
-  const [results, setResults] = useState<VoiceMemorySearchResult[]>([]);
+  const [stopping, setStopping] = useState(false);
   const [answer, setAnswer] = useState<VoiceMemoryAnswer>();
   const [error, setError] = useState<string>();
-  const [completedAction, setCompletedAction] = useState<PendingAction>();
+  const [questionHistory, setQuestionHistory] =
+    useState<RoomQuestionHistoryEntry[]>(readQuestionHistory);
+
+  const closeDialog = useCallback(() => {
+    if (pending === "ask") {
+      askSequenceRef.current += 1;
+      void window.desktopApi.ai.cancelQuestion();
+      setPending(undefined);
+    }
+    onClose();
+  }, [onClose, pending]);
 
   useEffect(() => {
     if (!isOpen) return;
     const timer = window.setTimeout(() => inputRef.current?.focus(), 80);
     const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") onClose();
+      if (event.key === "Escape") closeDialog();
     };
     document.addEventListener("keydown", closeOnEscape);
     return () => {
       window.clearTimeout(timer);
       document.removeEventListener("keydown", closeOnEscape);
     };
-  }, [isOpen, onClose]);
+  }, [closeDialog, isOpen]);
 
-  const search = async () => {
-    const value = query.trim();
-    if (!value || pending) return;
-    setPending("search");
-    setError(undefined);
-    setCompletedAction(undefined);
-    setAnswer(undefined);
-    try {
-      setResults(await window.desktopApi.ai.searchMemory({ query: value, limit: 30 }));
-      setCompletedAction("search");
-    } catch (cause) {
-      setError(friendlyError(cause));
-    } finally {
-      setPending(undefined);
-    }
-  };
+  useEffect(() => {
+    if (isOpen || pending !== "ask") return;
+    void window.desktopApi.ai.cancelQuestion();
+  }, [isOpen, pending]);
 
   const ask = async () => {
     const value = query.trim();
     if (!value || pending) return;
+    const sequence = ++askSequenceRef.current;
     setPending("ask");
+    setStopping(false);
     setError(undefined);
-    setCompletedAction(undefined);
-    setResults([]);
     setAnswer(undefined);
     try {
-      setAnswer(await window.desktopApi.ai.askMemory({ question: value }));
-      setCompletedAction("ask");
+      const nextAnswer = await window.desktopApi.ai.askMemory({ question: value });
+      if (sequence !== askSequenceRef.current) return;
+      setAnswer(nextAnswer);
+      setQuestionHistory((current) => rememberQuestion(current, value, nextAnswer));
     } catch (cause) {
+      if (sequence !== askSequenceRef.current) return;
       setError(friendlyError(cause));
     } finally {
+      if (sequence === askSequenceRef.current) setPending(undefined);
+    }
+  };
+
+  const stopAsk = async () => {
+    if (pending !== "ask" || stopping) return;
+    setStopping(true);
+    try {
+      const stopped = await window.desktopApi.ai.cancelQuestion();
+      if (!stopped) return;
+      askSequenceRef.current += 1;
       setPending(undefined);
+      setError("已经停止这次回答，可以继续使用房间或重新提问。");
+    } catch {
+      setError("停止回答没有成功，请关闭提问窗口后重试。");
+    } finally {
+      setStopping(false);
     }
   };
 
@@ -111,25 +197,16 @@ export const RoomAskDialog = ({
           exit="closed"
         >
           <header className="flex items-center justify-between gap-3 border-b border-[#dbe8f7]/80 px-4 py-3">
-            <div className="min-w-0">
-              <h2
-                id="room-ask-title"
-                className="flex items-center gap-2 text-balance text-sm font-bold text-[#24344b]"
-              >
-                <Sparkles className="size-4 text-[#4a8de8]" aria-hidden="true" />问
-              </h2>
-              <p className="mt-0.5 truncate text-xs text-[#7d8da2]">
-                {pending === "ask"
-                  ? "正在本地思考，可以继续操作房间"
-                  : pending === "search"
-                    ? "正在查找，可以继续操作房间"
-                    : "回答和语音记录都只在本机处理"}
-              </p>
-            </div>
+            <h2
+              id="room-ask-title"
+              className="flex items-center gap-2 text-balance text-sm font-bold text-[#24344b]"
+            >
+              <Sparkles className="size-4 text-[#4a8de8]" aria-hidden="true" />问
+            </h2>
             <button
               type="button"
               aria-label="关闭提问浮窗"
-              onClick={onClose}
+              onClick={closeDialog}
               className="grid size-8 shrink-0 place-items-center rounded-[10px] border border-[#dbe8f7] bg-white/80 text-[#718096] transition-colors hover:bg-white hover:text-[#26364d]"
             >
               <X className="size-4" aria-hidden="true" />
@@ -146,8 +223,8 @@ export const RoomAskDialog = ({
                 ref={inputRef}
                 value={query}
                 maxLength={500}
-                aria-label="搜索或提问"
-                placeholder="例如：上次聊到的显卡是什么？"
+                aria-label="输入问题"
+                placeholder="想问什么？"
                 onChange={(event) => setQuery(event.target.value)}
                 onKeyDown={(event) => {
                   if (event.key === "Enter") void ask();
@@ -156,18 +233,21 @@ export const RoomAskDialog = ({
               />
             </div>
             <div className="mt-3 flex flex-wrap justify-end gap-2">
-              <Button
-                variant="secondary"
-                disabled={!query.trim() || Boolean(pending)}
-                onClick={() => void search()}
-              >
-                <Search className="size-4" aria-hidden="true" />
-                {pending === "search" ? "搜索中…" : "搜索记忆"}
-              </Button>
-              <Button disabled={!query.trim() || Boolean(pending)} onClick={() => void ask()}>
-                <Sparkles className="size-4" aria-hidden="true" />
-                {pending === "ask" ? "正在想…" : "问"}
-              </Button>
+              {pending === "ask" ? (
+                <Button
+                  variant="secondary"
+                  disabled={stopping}
+                  onClick={() => void stopAsk()}
+                  className="border-[#efcfd2] text-[#c44d57]"
+                >
+                  <Square className="size-3.5" aria-hidden="true" />
+                  {stopping ? "停止中…" : "停止回答"}
+                </Button>
+              ) : (
+                <Button disabled={!query.trim() || Boolean(pending)} onClick={() => void ask()}>
+                  <Sparkles className="size-4" aria-hidden="true" />问
+                </Button>
+              )}
             </div>
 
             {error ? (
@@ -210,44 +290,36 @@ export const RoomAskDialog = ({
               </article>
             ) : null}
 
-            {results.length ? (
-              <section className="mt-4" aria-label="语音记忆搜索结果">
-                <h3 className="flex items-center gap-2 text-sm font-bold text-[#26364d]">
-                  <BookOpenText className="size-4 text-[#4a8de8]" aria-hidden="true" /> 找到{" "}
-                  {results.length} 条
+            {questionHistory.length ? (
+              <section className="room-question-history" aria-label="最近提问">
+                <h3>
+                  <History aria-hidden="true" />
+                  最近提问
                 </h3>
-                <div className="mt-2 space-y-2">
-                  {results.map((result) => (
+                <div>
+                  {questionHistory.map((entry) => (
                     <button
                       type="button"
-                      onClick={() =>
-                        onOpenResult({ filePath: result.filePath, startMs: result.startMs })
-                      }
-                      key={`${result.recordingId}-${result.kind}-${result.startMs}`}
-                      className="block w-full rounded-[15px] border border-[#dbe8f7] bg-white/70 px-4 py-3 text-left transition-colors hover:bg-white"
+                      key={entry.id}
+                      onClick={() => {
+                        setQuery(entry.question);
+                        setAnswer(entry.answer);
+                        setError(undefined);
+                      }}
                     >
-                      <div className="flex items-center justify-between gap-3">
-                        <strong className="truncate text-sm text-[#26364d]">{result.title}</strong>
-                        <time className="shrink-0 text-xs font-semibold text-[#4a8de8]">
-                          {formatOffset(result.startMs)}
-                        </time>
-                      </div>
-                      <span className="mt-0.5 block text-xs text-[#8a9aaf]">
-                        {new Date(result.createdAt).toLocaleDateString("zh-CN")} ·{" "}
-                        {result.roomName ?? "房间"}
-                      </span>
-                      <p className="mt-1 text-sm leading-6 text-[#607187]">{result.excerpt}</p>
+                      <span>{entry.question}</span>
+                      <time dateTime={entry.createdAt}>
+                        {new Date(entry.createdAt).toLocaleString("zh-CN", {
+                          month: "numeric",
+                          day: "numeric",
+                          hour: "2-digit",
+                          minute: "2-digit",
+                        })}
+                      </time>
                     </button>
                   ))}
                 </div>
               </section>
-            ) : null}
-
-            {completedAction === "search" && !results.length && !error ? (
-              <p className="mt-4 text-center text-sm text-[#93a2b5]">没有找到相关语音记录。</p>
-            ) : null}
-            {!pending && !completedAction && query.trim() && !error ? (
-              <p className="mt-4 text-center text-sm text-[#93a2b5]">选择“搜索记忆”或“问”。</p>
             ) : null}
           </div>
         </motion.aside>

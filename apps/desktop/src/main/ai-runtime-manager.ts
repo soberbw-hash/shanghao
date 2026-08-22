@@ -5,6 +5,7 @@ import os from "node:os";
 import path from "node:path";
 
 import {
+  AI_ASR_MODEL_NAMES,
   isChinesePreferredTranscriptText,
   isReliableTranscriptText,
   type AiAsrModelId,
@@ -28,13 +29,10 @@ import {
   type AsrWorkerResult,
 } from "./asr-persistent-worker";
 import { runLocalProcess } from "./local-process";
-import { VibeVoiceRuntime } from "./vibevoice-runtime";
 import { resolveFfmpegExecutable } from "./media-runtime";
 
 interface RuntimeModelPaths {
-  vibevoice: () => string | undefined;
-  qwen3Asr: () => string | undefined;
-  paraformer: () => string | undefined;
+  model: (id: AiModelId) => string | undefined;
   qwen: () => string | undefined;
   activeAsr: () => AiAsrModelId;
 }
@@ -52,6 +50,28 @@ const exists = (filePath: string): Promise<boolean> =>
     () => true,
     () => false,
   );
+
+export interface TorchAudioInstallPlan {
+  version: string;
+  indexUrl?: string;
+}
+
+/** Keeps torchaudio ABI-compatible with the portable PyTorch build already shipped by ShangHao. */
+export const torchAudioInstallPlan = (torchVersion: string): TorchAudioInstallPlan => {
+  const normalized = torchVersion.trim();
+  const [version = "", build] = normalized.split("+", 2);
+  if (!/^\d+\.\d+\.\d+$/.test(version)) {
+    throw new Error(`unsupported_torch_version:${normalized || "missing"}`);
+  }
+  if (!build) return { version };
+  if (build === "cpu" || /^cu\d+$/.test(build)) {
+    return {
+      version,
+      indexUrl: `https://download.pytorch.org/whl/${build}`,
+    };
+  }
+  throw new Error(`unsupported_torch_build:${build}`);
+};
 
 export const temporaryRecordingName = (recordingId: string): string =>
   createHash("sha256").update(recordingId).digest("hex").slice(0, 20);
@@ -250,12 +270,11 @@ export class AiRuntimeManager {
   private readonly pythonExecutable: string;
   private readonly qwenRunner: string;
   private readonly asrRunner: string;
-  private readonly qwen3AsrPythonPath: string;
-  private readonly funasrPythonPath: string;
-  private readonly vibeExecutable: string;
-  private readonly mingwBin: string;
+  private readonly qwenAsrPythonPath: string;
+  private readonly funAsrPythonPath: string;
+  private readonly glmAsrPythonPath: string;
+  private readonly fireRedPythonPath: string;
   private readonly qwenWorker: QwenRuntime;
-  private readonly vibeRuntime: VibeVoiceRuntime;
   private readonly asrWorker: AsrPersistentWorker;
 
   constructor(
@@ -268,34 +287,10 @@ export class AiRuntimeManager {
       : path.join(runtimeRoot, "python", "Scripts", "python.exe");
     this.qwenRunner = path.join(runtimeRoot, "qwen-runner.py");
     this.asrRunner = path.join(runtimeRoot, "asr-runner.py");
-    this.qwen3AsrPythonPath = path.join(runtimeRoot, "qwen3-asr-python");
-    this.funasrPythonPath = path.join(runtimeRoot, "funasr-python");
-    const compactVibe = path.join(runtimeRoot, "vibevoice", "asr_infer.exe");
-    const compactMandarinVibe = path.join(runtimeRoot, "vibevoice", "asr_infer-mandarin.exe");
-    const sourceMandarinVibe = path.join(
-      runtimeRoot,
-      "VibeASR.cpp",
-      "build",
-      "bin",
-      "asr_infer-mandarin.exe",
-    );
-    const sourceVibe = path.join(runtimeRoot, "VibeASR.cpp", "build", "bin", "asr_infer.exe");
-    this.vibeExecutable = existsSync(compactMandarinVibe)
-      ? compactMandarinVibe
-      : existsSync(sourceMandarinVibe)
-        ? sourceMandarinVibe
-        : existsSync(compactVibe)
-          ? compactVibe
-          : sourceVibe;
-    this.mingwBin =
-      existsSync(compactMandarinVibe) || existsSync(compactVibe)
-        ? path.dirname(existsSync(compactMandarinVibe) ? compactMandarinVibe : compactVibe)
-        : path.join(runtimeRoot, "mingw64", "bin");
-    this.vibeRuntime = new VibeVoiceRuntime(
-      this.vibeExecutable,
-      this.mingwBin,
-      this.models.vibevoice,
-    );
+    this.qwenAsrPythonPath = path.join(runtimeRoot, "asr-python", "qwen");
+    this.funAsrPythonPath = path.join(runtimeRoot, "asr-python", "funasr");
+    this.glmAsrPythonPath = path.join(runtimeRoot, "asr-python", "glm");
+    this.fireRedPythonPath = path.join(runtimeRoot, "asr-python", "firered");
     this.qwenWorker = new QwenRuntime(this.pythonExecutable, this.qwenRunner, this.models.qwen);
     this.asrWorker = new AsrPersistentWorker(this.pythonExecutable, this.asrRunner);
   }
@@ -310,60 +305,37 @@ export class AiRuntimeManager {
 
   stop(): void {
     this.qwenWorker.release("app_stopping");
-    this.vibeRuntime.release("app_stopping");
     this.asrWorker.release("app_stopping");
   }
 
   async runtimeHealth(): Promise<LocalModelRuntimeHealth[]> {
-    const [vibeStatus, qwen3Status, paraformerStatus, qwenStatus] = await Promise.all([
-      this.asrStatus("vibevoice"),
-      this.asrStatus("qwen3-asr-0.6b"),
-      this.asrStatus("paraformer-zh"),
+    const modelIds: AiAsrModelId[] = [
+      "qwen3-asr-1.7b-force",
+      "qwen3-asr-0.6b-force",
+      "fun-asr-nano-2512",
+      "glm-asr-nano-2512",
+      "fireredasr2-aed",
+      "paraformer-zh",
+    ];
+    const [asrStatuses, qwenStatus] = await Promise.all([
+      Promise.all(modelIds.map((id) => this.asrStatus(id))),
       this.qwenOrganizerStatus(),
     ]);
-    const vibe = await this.vibeRuntime.health();
     const asrWorker = this.asrWorker.health();
     const qwen = this.qwenWorker.workerHealth();
     return [
-      {
-        id: "vibevoice",
-        phase: vibe.phase,
-        ready: vibeStatus.ready,
-        loaded: vibe.loaded,
-        executable: vibeStatus.executable,
-        queuedJobs: 0,
-        activeJobId: vibe.activeJobId,
-        lastError: vibe.lastError,
-        detail: vibeStatus.message,
-      },
-      {
-        id: "qwen3-asr-0.6b",
-        phase: qwen3Status.runtimePhase ?? "missing",
-        ready: qwen3Status.ready,
-        loaded: asrWorker.loaded && asrWorker.modelId === "qwen3-asr-0.6b",
-        executable: qwen3Status.executable,
-        processId: asrWorker.modelId === "qwen3-asr-0.6b" ? asrWorker.processId : undefined,
+      ...asrStatuses.map((status) => ({
+        id: status.modelId,
+        phase: status.runtimePhase ?? "missing",
+        ready: status.ready,
+        loaded: asrWorker.loaded && asrWorker.modelId === status.modelId,
+        executable: status.executable,
+        processId: asrWorker.modelId === status.modelId ? asrWorker.processId : undefined,
         queuedJobs: asrWorker.queuedJobs,
         activeJobId: asrWorker.activeJobId,
-        lastError: qwen3Status.errorCode
-          ? classifyLocalModelRuntimeError(qwen3Status.errorCode)
-          : undefined,
-        detail: qwen3Status.message,
-      },
-      {
-        id: "paraformer-zh",
-        phase: paraformerStatus.runtimePhase ?? "missing",
-        ready: paraformerStatus.ready,
-        loaded: asrWorker.loaded && asrWorker.modelId === "paraformer-zh",
-        executable: paraformerStatus.executable,
-        processId: asrWorker.modelId === "paraformer-zh" ? asrWorker.processId : undefined,
-        queuedJobs: asrWorker.queuedJobs,
-        activeJobId: asrWorker.activeJobId,
-        lastError: paraformerStatus.errorCode
-          ? classifyLocalModelRuntimeError(paraformerStatus.errorCode)
-          : undefined,
-        detail: paraformerStatus.message,
-      },
+        lastError: status.errorCode ? classifyLocalModelRuntimeError(status.errorCode) : undefined,
+        detail: status.message,
+      })),
       {
         id: "qwen35-4b",
         phase: qwenStatus.ready
@@ -385,142 +357,96 @@ export class AiRuntimeManager {
     ];
   }
 
-  async status(): Promise<AiRuntimeStatus> {
-    const activeAsr = this.models.activeAsr();
-    const [asr, vibevoice, qwen] = await Promise.all([
-      this.asrStatus(activeAsr),
-      this.asrStatus("vibevoice"),
-      this.qwenOrganizerStatus(),
-    ]);
-    return { asr, vibevoice, qwen };
+  async status(asrModelId?: AiAsrModelId): Promise<AiRuntimeStatus> {
+    const activeAsr = asrModelId ?? this.models.activeAsr();
+    const [asr, qwen] = await Promise.all([this.asrStatus(activeAsr), this.qwenOrganizerStatus()]);
+    return { asr, qwen };
   }
 
   async modelRuntimeStatuses(): Promise<Record<AiModelId, { ready: boolean; message?: string }>> {
-    const [vibevoice, qwen3, paraformer, qwen] = await Promise.all([
-      this.asrStatus("vibevoice"),
-      this.asrStatus("qwen3-asr-0.6b"),
-      this.asrStatus("paraformer-zh"),
+    const ids: AiAsrModelId[] = [
+      "qwen3-asr-1.7b-force",
+      "qwen3-asr-0.6b-force",
+      "fun-asr-nano-2512",
+      "glm-asr-nano-2512",
+      "fireredasr2-aed",
+      "paraformer-zh",
+    ];
+    const [statuses, qwen] = await Promise.all([
+      Promise.all(ids.map((id) => this.asrStatus(id))),
       this.qwenOrganizerStatus(),
     ]);
+    const result = Object.fromEntries(
+      statuses.map((status) => [status.modelId, { ready: status.ready, message: status.message }]),
+    ) as Record<AiModelId, { ready: boolean; message?: string }>;
+    const aligner = this.models.model("qwen3-forced-aligner-0.6b");
     return {
-      vibevoice: { ready: vibevoice.ready, message: vibevoice.message },
-      "qwen3-asr-0.6b": { ready: qwen3.ready, message: qwen3.message },
-      "paraformer-zh": { ready: paraformer.ready, message: paraformer.message },
+      ...result,
+      "qwen3-forced-aligner-0.6b": {
+        ready: Boolean(aligner),
+        message: aligner ? undefined : "Qwen 共用时间对齐组件尚未下载。",
+      },
       "qwen35-4b": { ready: qwen.ready, message: qwen.message },
     };
   }
 
   private async asrStatus(modelId: AiAsrModelId): Promise<AiAsrRuntimeStatus> {
-    if (modelId === "vibevoice") {
-      const vibeHealth = await this.vibeRuntime.health();
-      return {
-        modelId,
-        ready: vibeHealth.ready,
-        executable: vibeHealth.executable,
-        message: vibeHealth.ready
-          ? undefined
-          : (vibeHealth.detail ?? "VibeVoice 本地推理运行时尚未就绪。"),
-        errorCode: vibeHealth.lastError,
-        outputSource: "stdout",
-        modelName: "VibeVoice-ASR-BitNet",
-        modelVersion: this.models.vibevoice()
-          ? path.basename(this.models.vibevoice() as string)
-          : undefined,
-        modelPath: this.models.vibevoice(),
-        runtimePhase: vibeHealth.phase,
-        ffmpegPath: resolveFfmpegExecutable(),
-        asrInputFormat: "PCM16 WAV / 24000 Hz / mono",
-      };
-    }
-
     const worker = this.asrWorker.health();
     const pythonRuntimeExists = await exists(this.pythonExecutable);
     const runnerExists = await exists(this.asrRunner);
-    if (modelId === "qwen3-asr-0.6b") {
-      const model = this.models.qwen3Asr();
-      const pythonRoot = path.dirname(path.dirname(this.pythonExecutable));
-      const bundledTransformersReady = await exists(
-        path.join(
-          pythonRoot,
-          "Lib",
-          "site-packages",
-          "transformers",
-          "models",
-          "qwen3_asr",
-          "__init__.py",
-        ),
-      );
-      const repairedTransformersReady = await exists(
-        path.join(this.qwen3AsrPythonPath, "transformers", "models", "qwen3_asr", "__init__.py"),
-      );
-      const runtimeReady =
-        pythonRuntimeExists &&
-        runnerExists &&
-        (bundledTransformersReady || repairedTransformersReady);
-      const modelReady = Boolean(
-        model &&
-        (await exists(path.join(model, "config.json"))) &&
-        (await exists(path.join(model, "model.safetensors"))),
-      );
-      const ready = modelReady && runtimeReady;
-      return {
-        modelId,
-        ready,
-        executable: ready ? this.pythonExecutable : undefined,
-        message: !modelReady
-          ? "Qwen3-ASR 模型尚未下载完整。"
-          : !runtimeReady
-            ? "便携 Python 缺少 Qwen3-ASR 运行组件。"
-            : worker.modelId === modelId
-              ? worker.lastError
-              : undefined,
-        errorCode: !modelReady ? "model_missing" : !runtimeReady ? "runtime_missing" : undefined,
-        outputSource: "stdout",
-        modelName: "Qwen3-ASR-0.6B",
-        modelVersion: model ? path.basename(model) : undefined,
-        modelPath: model,
-        runtimePhase: ready
-          ? worker.modelId === modelId
-            ? worker.phase === "crashed"
-              ? "error"
-              : worker.phase === "starting"
-                ? "preparing"
-                : worker.phase
-            : "stopped"
-          : "missing",
-        ffmpegPath: resolveFfmpegExecutable(),
-        asrInputFormat: "PCM16 WAV / 16000 Hz / mono",
-      };
-    }
-
-    const bundle = this.models.paraformer();
+    const model = this.models.model(modelId);
+    const qwenModel = modelId.startsWith("qwen3-asr-");
+    const paraformer = modelId === "paraformer-zh";
+    const funAsr = modelId === "fun-asr-nano-2512" || paraformer;
+    const glm = modelId === "glm-asr-nano-2512";
+    const fireRed = modelId === "fireredasr2-aed";
+    const aligner = qwenModel ? this.models.model("qwen3-forced-aligner-0.6b") : undefined;
     const modelReady = Boolean(
-      bundle &&
-      (await exists(path.join(bundle, "asr", "model.pt"))) &&
-      (await exists(path.join(bundle, "vad", "model.pt"))) &&
-      (await exists(path.join(bundle, "punc", "model.pt"))),
+      model &&
+      (paraformer
+        ? (await exists(path.join(model, "asr", "model.pt"))) &&
+          (await exists(path.join(model, "vad", "model.pt"))) &&
+          (await exists(path.join(model, "punc", "model.pt")))
+        : await exists(path.join(model, "config.json"))),
     );
-    const runtimeReady =
-      pythonRuntimeExists &&
-      runnerExists &&
-      (await exists(path.join(this.funasrPythonPath, "funasr", "__init__.py")));
-    const ready = modelReady && runtimeReady;
+    const dependencyReady = !qwenModel || Boolean(aligner);
+    const packageReady = qwenModel
+      ? await exists(path.join(this.qwenAsrPythonPath, "qwen_asr", "__init__.py"))
+      : funAsr
+        ? (await exists(path.join(this.funAsrPythonPath, "funasr", "__init__.py"))) &&
+          (!paraformer ||
+            (await exists(path.join(this.funAsrPythonPath, "torchaudio", "__init__.py"))))
+        : glm
+          ? await exists(path.join(this.glmAsrPythonPath, "transformers", "__init__.py"))
+          : fireRed
+            ? await exists(path.join(this.fireRedPythonPath, "fireredasr2s", "__init__.py"))
+            : false;
+    const runtimeReady = pythonRuntimeExists && runnerExists && packageReady;
+    const ready = modelReady && dependencyReady && runtimeReady;
+    const missingMessage = !modelReady
+      ? `${AI_ASR_MODEL_NAMES[modelId]} 尚未下载完整。`
+      : !dependencyReady
+        ? "Qwen 共用的 ForcedAligner 时间对齐组件尚未下载。"
+        : !runtimeReady
+          ? `${AI_ASR_MODEL_NAMES[modelId]} 的官方运行组件尚未准备好。`
+          : worker.modelId === modelId
+            ? worker.lastError
+            : undefined;
     return {
       modelId,
       ready,
       executable: ready ? this.pythonExecutable : undefined,
-      message: !modelReady
-        ? "Paraformer 中文套件尚未下载完整。"
-        : !runtimeReady
-          ? "FunASR 运行组件尚未安装；点击修复组件后会在后台补齐。"
-          : worker.modelId === modelId
-            ? worker.lastError
+      message: missingMessage,
+      errorCode:
+        !modelReady || !dependencyReady
+          ? "model_missing"
+          : !runtimeReady
+            ? "runtime_missing"
             : undefined,
-      errorCode: !modelReady ? "model_missing" : !runtimeReady ? "runtime_missing" : undefined,
       outputSource: "stdout",
-      modelName: "Paraformer-zh + FSMN-VAD + CT-punc",
-      modelVersion: bundle ? path.basename(bundle) : undefined,
-      modelPath: bundle,
+      modelName: AI_ASR_MODEL_NAMES[modelId],
+      modelVersion: model ? path.basename(model) : undefined,
+      modelPath: model,
       runtimePhase: ready
         ? worker.modelId === modelId
           ? worker.phase === "crashed"
@@ -588,7 +514,7 @@ export class AiRuntimeManager {
     const modelId = options.modelId ?? this.models.activeAsr();
     const status = await this.asrStatus(modelId);
     if (!status.ready) throw new Error(`model_${modelId}_runtime_unavailable`);
-    const sampleRate = modelId === "vibevoice" ? 24_000 : 16_000;
+    const sampleRate = 16_000;
     const asrInputFormat = `PCM16 WAV / ${sampleRate} Hz / mono`;
     const temporaryDirectory = await mkdir(path.join(os.tmpdir(), "shanghao-voice-memory"), {
       recursive: true,
@@ -648,46 +574,24 @@ export class AiRuntimeManager {
         inputFormat: asrInputFormat,
         languagePolicy: "Mandarin Chinese only",
       });
-      let segments: VoiceMemoryTranscriptSegment[];
-      if (modelId === "vibevoice") {
-        const result = await this.vibeRuntime.run({
-          wavPath,
-          durationMs: options.durationMs,
-          signal: options.signal,
-          resourceMode: options.resourceMode,
-        });
-        const rawOutput = result.stdout.replace(/^\uFEFF/, "").trim();
-        options.onStage?.("transcript", {
-          stdoutBytes: Buffer.byteLength(result.stdout, "utf8"),
-          stderrBytes: Buffer.byteLength(result.stderr, "utf8"),
-        });
-        if (!rawOutput) return [];
-        segments = parseVibeVoiceOutput(
-          rawOutput,
-          options.recordingId,
-          options.offsetMs,
-          options.durationMs,
-        );
-      } else {
-        const result = await this.asrWorker.run({
-          launch: this.pythonAsrLaunch(modelId),
-          wavPath,
-          durationMs: options.durationMs,
-          resourceMode: options.resourceMode,
-          signal: options.signal,
-          timeoutMs: Math.max(240_000, options.durationMs * 8),
-        });
-        options.onStage?.("transcript", {
-          outputCharacters: result.text.length,
-          structuredSegments: result.segments?.length ?? 0,
-        });
-        segments = this.normalizePythonAsrResult(
-          result,
-          options.recordingId,
-          options.offsetMs,
-          options.durationMs,
-        );
-      }
+      const result = await this.asrWorker.run({
+        launch: this.pythonAsrLaunch(modelId),
+        wavPath,
+        durationMs: options.durationMs,
+        resourceMode: options.resourceMode,
+        signal: options.signal,
+        timeoutMs: Math.max(240_000, options.durationMs * 8),
+      });
+      options.onStage?.("transcript", {
+        outputCharacters: result.text.length,
+        structuredSegments: result.segments?.length ?? 0,
+      });
+      const segments = this.normalizePythonAsrResult(
+        result,
+        options.recordingId,
+        options.offsetMs,
+        options.durationMs,
+      );
       // A native inference can return only unreliable repetition for very quiet/non-speech
       // chunks. Treat that as an empty transcript unit so one bad chunk cannot fail the whole
       // recording or erase useful segments already persisted from adjacent chunks.
@@ -699,93 +603,130 @@ export class AiRuntimeManager {
   }
 
   async prepareModelRuntime(id: AiModelId): Promise<{ ready: boolean; message?: string }> {
-    if (id === "qwen3-asr-0.6b") {
-      const before = await this.asrStatus(id);
-      if (before.ready || before.errorCode === "model_missing") {
-        return { ready: before.ready, message: before.message };
-      }
-      if (!(await exists(this.pythonExecutable))) {
-        return { ready: false, message: "便携 Python 尚未安装，无法修复 Qwen3-ASR 运行组件。" };
-      }
-      await mkdir(this.qwen3AsrPythonPath, { recursive: true });
-      try {
-        await runLocalProcess(
-          this.pythonExecutable,
-          [
-            "-m",
-            "pip",
-            "install",
-            "--disable-pip-version-check",
-            "--no-input",
-            "--no-warn-script-location",
-            "--prefer-binary",
-            "--upgrade",
-            "--target",
-            this.qwen3AsrPythonPath,
-            "transformers==5.15.0",
-            "accelerate>=1.10,<2",
-          ],
-          { timeoutMs: 15 * 60_000 },
-        );
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        throw new Error(`Qwen3-ASR 运行组件安装失败：${message}`, { cause: error });
-      }
-      const after = await this.asrStatus(id);
-      return { ready: after.ready, message: after.message };
-    }
-    if (id === "paraformer-zh") {
-      const before = await this.asrStatus(id);
-      if (before.ready) return { ready: true };
-      if (before.errorCode === "model_missing") return { ready: false, message: before.message };
-      await mkdir(this.funasrPythonPath, { recursive: true });
-      try {
-        await runLocalProcess(
-          this.pythonExecutable,
-          [
-            "-m",
-            "pip",
-            "install",
-            "--disable-pip-version-check",
-            "--no-input",
-            "--no-warn-script-location",
-            "--prefer-binary",
-            "--upgrade",
-            "--target",
-            this.funasrPythonPath,
-            "funasr==1.4.3",
-          ],
-          { timeoutMs: 15 * 60_000 },
-        );
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        throw new Error(`FunASR 运行组件安装失败：${message}`, { cause: error });
-      }
-      const after = await this.asrStatus(id);
-      return { ready: after.ready, message: after.message };
+    if (id === "qwen3-forced-aligner-0.6b") {
+      const installed = Boolean(this.models.model(id));
+      return {
+        ready: installed,
+        message: installed ? undefined : "Qwen 共用时间对齐组件尚未下载。",
+      };
     }
     if (id === "qwen35-4b") {
       const status = await this.qwenOrganizerStatus();
       return { ready: status.ready, message: status.message };
     }
-    const status = await this.asrStatus(id);
-    return { ready: status.ready, message: status.message };
+    const before = await this.asrStatus(id);
+    if (before.ready || before.errorCode === "model_missing") {
+      return { ready: before.ready, message: before.message };
+    }
+    if (!(await exists(this.pythonExecutable))) {
+      return { ready: false, message: "便携 Python 尚未安装，无法准备转录运行组件。" };
+    }
+
+    const qwenModel = id.startsWith("qwen3-asr-");
+    const funAsrModel = id === "fun-asr-nano-2512" || id === "paraformer-zh";
+    const glmModel = id === "glm-asr-nano-2512";
+    const fireRedModel = id === "fireredasr2-aed";
+    const pythonPath = qwenModel
+      ? this.qwenAsrPythonPath
+      : funAsrModel
+        ? this.funAsrPythonPath
+        : glmModel
+          ? this.glmAsrPythonPath
+          : this.fireRedPythonPath;
+    await mkdir(pythonPath, { recursive: true });
+    const commonArgs = [
+      "-m",
+      "pip",
+      "install",
+      "--disable-pip-version-check",
+      "--no-input",
+      "--no-warn-script-location",
+      "--prefer-binary",
+      "--upgrade",
+      "--target",
+      pythonPath,
+    ];
+    try {
+      if (qwenModel) {
+        await runLocalProcess(this.pythonExecutable, [...commonArgs, "qwen-asr==0.0.6"], {
+          timeoutMs: 20 * 60_000,
+        });
+      } else if (funAsrModel) {
+        await runLocalProcess(this.pythonExecutable, [...commonArgs, "funasr==1.4.3"], {
+          timeoutMs: 20 * 60_000,
+        });
+        if (id === "paraformer-zh") {
+          const torchVersion = (
+            await runLocalProcess(
+              this.pythonExecutable,
+              ["-c", "import torch; print(torch.__version__)"],
+              { timeoutMs: 30_000 },
+            )
+          ).stdout.trim();
+          const torchaudio = torchAudioInstallPlan(torchVersion);
+          const torchaudioArgs = [...commonArgs, "--no-deps", `torchaudio==${torchaudio.version}`];
+          if (torchaudio.indexUrl) torchaudioArgs.push("--index-url", torchaudio.indexUrl);
+          await runLocalProcess(this.pythonExecutable, torchaudioArgs, {
+            timeoutMs: 20 * 60_000,
+          });
+        }
+      } else if (glmModel) {
+        await runLocalProcess(
+          this.pythonExecutable,
+          [...commonArgs, "transformers==5.0.0", "accelerate>=1.10,<2", "librosa>=0.11,<1"],
+          { timeoutMs: 20 * 60_000 },
+        );
+      } else if (fireRedModel) {
+        await runLocalProcess(
+          this.pythonExecutable,
+          [
+            ...commonArgs,
+            "https://github.com/FireRedTeam/FireRedASR2S/archive/4e7d9aaf4482a47cec1724807026b9b151926eb5.zip",
+          ],
+          { timeoutMs: 30 * 60_000 },
+        );
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(`${AI_ASR_MODEL_NAMES[id]} 官方运行组件安装失败：${message}`, {
+        cause: error,
+      });
+    }
+    const after = await this.asrStatus(id);
+    return { ready: after.ready, message: after.message };
   }
 
-  private pythonAsrLaunch(modelId: Exclude<AiAsrModelId, "vibevoice">): AsrWorkerLaunch {
-    if (modelId === "qwen3-asr-0.6b") {
-      const modelPath = this.models.qwen3Asr();
-      if (!modelPath) throw new Error("model_qwen3-asr-0.6b_not_installed");
-      return { modelId, modelPath, pythonPath: this.qwen3AsrPythonPath };
+  private pythonAsrLaunch(modelId: AiAsrModelId): AsrWorkerLaunch {
+    const modelPath = this.models.model(modelId);
+    if (!modelPath) throw new Error(`model_${modelId}_not_installed`);
+    if (modelId.startsWith("qwen3-asr-")) {
+      const alignerModelPath = this.models.model("qwen3-forced-aligner-0.6b");
+      if (!alignerModelPath) throw new Error("model_qwen3-forced-aligner-0.6b_not_installed");
+      return {
+        modelId,
+        modelPath,
+        alignerModelPath,
+        pythonPath: this.qwenAsrPythonPath,
+      };
     }
-    const bundle = this.models.paraformer();
-    if (!bundle) throw new Error("model_paraformer-zh_not_installed");
+    if (modelId === "paraformer-zh") {
+      return {
+        modelId,
+        modelPath: path.join(modelPath, "asr"),
+        vadModelPath: path.join(modelPath, "vad"),
+        puncModelPath: path.join(modelPath, "punc"),
+        pythonPath: this.funAsrPythonPath,
+      };
+    }
     return {
       modelId,
-      modelPath: path.join(bundle, "asr"),
-      vadModelPath: path.join(bundle, "vad"),
-      puncModelPath: path.join(bundle, "punc"),
-      pythonPath: this.funasrPythonPath,
+      modelPath,
+      pythonPath:
+        modelId === "fun-asr-nano-2512"
+          ? this.funAsrPythonPath
+          : modelId === "glm-asr-nano-2512"
+            ? this.glmAsrPythonPath
+            : this.fireRedPythonPath,
     };
   }
 
@@ -826,7 +767,27 @@ export class AiRuntimeManager {
       },
     );
     if (structured.length) return structured;
-    return parseVibeVoiceOutput(result.text, recordingId, offsetMs, durationMs);
+    const text = result.text.trim();
+    if (
+      !text ||
+      !isReliableTranscriptText(text, durationMs) ||
+      !isChinesePreferredTranscriptText(text)
+    ) {
+      return [];
+    }
+    // Models without a reliable timestamp API are represented as one coarse chunk.
+    // This is the real 30-second processing boundary, not a fabricated word/sentence alignment.
+    return [
+      {
+        id: `${recordingId}-${offsetMs}-coarse`,
+        recordingId,
+        startMs: offsetMs,
+        endMs: offsetMs + durationMs,
+        text,
+        speakerId: "Speaker 1",
+        confidence: "pending",
+      },
+    ];
   }
 
   async generateJson<T>(options: QwenGenerateOptions): Promise<T> {

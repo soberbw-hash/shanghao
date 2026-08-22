@@ -346,7 +346,7 @@ export const connectMicrophoneEqualizer = (
   context: AudioContext,
   source: AudioNode,
   gains: number[],
-  lowCutFrequency: LowCutFrequency = "90",
+  lowCutFrequency: LowCutFrequency = "75",
 ): AudioNode => {
   let currentNode = source;
   const normalizedGains = normalizeEqualizerGains(gains);

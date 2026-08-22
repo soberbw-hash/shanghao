@@ -804,6 +804,8 @@
   display: grid;
   min-height: 0;
   flex: 1;
+  grid-auto-rows: max-content;
+  align-content: start;
   overflow-y: auto;
   overscroll-behavior: contain;
   scrollbar-gutter: stable;
@@ -1011,6 +1013,15 @@
 
 .recording-item-ai-status.is-error {
   color: #d9515f;
+}
+
+.recording-item-ai-model {
+  display: block;
+  overflow: hidden;
+  color: #71869e;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .recording-item-ai-progress {

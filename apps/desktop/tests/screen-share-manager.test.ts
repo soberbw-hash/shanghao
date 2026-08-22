@@ -10,6 +10,7 @@ import {
 class FakeTrack extends EventTarget {
   readyState: MediaStreamTrackState = "live";
   stopped = false;
+  readonly appliedConstraints: MediaTrackConstraints[] = [];
 
   stop(): void {
     this.stopped = true;
@@ -18,6 +19,10 @@ class FakeTrack extends EventTarget {
 
   getSettings(): MediaTrackSettings {
     return { width: 1_280, height: 720, frameRate: 15 };
+  }
+
+  async applyConstraints(constraints: MediaTrackConstraints): Promise<void> {
+    this.appliedConstraints.push(constraints);
   }
 }
 
@@ -109,6 +114,11 @@ test("screen share manager owns publishing and cleans every track", async () => 
   });
   assert.equal(startCount, 1);
   assert.equal(environment.captureRequests[0]?.audio, true);
+  assert.equal(environment.captureRequests[0]?.video, true);
+  assert.deepEqual(environment.videoTrack.appliedConstraints[0]?.width, {
+    ideal: 1_920,
+    max: 1_920,
+  });
   assert.equal(manager.getSnapshot().hasSystemAudio, true);
 
   await manager.stopShare();
@@ -191,6 +201,14 @@ test("screen share manager falls back to the exact Electron desktop source after
     ).mandatory?.chromeMediaSourceId,
     "screen:0:0",
   );
+  const mandatory = (
+    environment.legacyCaptureRequests[0]?.video as MediaTrackConstraints & {
+      mandatory?: Record<string, unknown>;
+    }
+  ).mandatory;
+  assert.equal(mandatory?.maxWidth, undefined);
+  assert.equal(mandatory?.maxHeight, undefined);
+  assert.equal(mandatory?.maxFrameRate, undefined);
   assert.equal(manager.getSnapshot().status, "sharing");
   assert.equal(manager.getSnapshot().hasSystemAudio, false);
   await manager.stopShare();
@@ -289,8 +307,5 @@ test("Windows capture handler only requests loopback audio when the renderer ask
     source,
     /request\.audioRequested && platformService\.capabilities\.systemAudioLoopback/,
   );
-  assert.match(
-    service,
-    /requestedSourceId[\s\S]*sources\.find\(\(source\) => source\.id === requestedSourceId\)/,
-  );
+  assert.match(service, /requestedSourceId[\s\S]*sourceCache\.get\(requestedSourceId\)/);
 });

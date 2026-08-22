@@ -26,6 +26,9 @@ import type {
   RecordingMarker,
 } from "./recording.types";
 import type {
+  AiCustomProviderInput,
+  AiCustomProviderStatus,
+  AiAsrModelId,
   AiModelAction,
   AiModelId,
   AiRuntimePressure,
@@ -296,6 +299,7 @@ export interface DesktopApi {
     getVoiceMemory: (recordingId: string) => Promise<VoiceMemoryRecord | undefined>;
     listVoiceMemories: () => Promise<VoiceMemoryRecord[]>;
     processRecording: (request: VoiceMemoryProcessRequest) => Promise<VoiceMemoryRecord>;
+    selectTranscription: (recordingId: string, modelId: AiAsrModelId) => Promise<VoiceMemoryRecord>;
     pauseTask: (recordingId: string) => Promise<void>;
     resumeTask: (recordingId: string) => Promise<VoiceMemoryRecord>;
     assignSpeaker: (
@@ -311,7 +315,11 @@ export interface DesktopApi {
     ) => Promise<VoiceMemoryRecord>;
     askRecording: (request: VoiceMemoryQuestionRequest) => Promise<VoiceMemoryAnswer>;
     askMemory: (request: VoiceMemoryGlobalQuestionRequest) => Promise<VoiceMemoryAnswer>;
+    cancelQuestion: () => Promise<boolean>;
     searchMemory: (request: VoiceMemorySearchRequest) => Promise<VoiceMemorySearchResult[]>;
+    getCustomProvider: () => Promise<AiCustomProviderStatus>;
+    saveCustomProvider: (input: AiCustomProviderInput) => Promise<AiCustomProviderStatus>;
+    clearCustomProvider: () => Promise<void>;
     updateRuntimePressure: (pressure: AiRuntimePressure) => Promise<void>;
     onStatus: (listener: (snapshot: AiVoiceMemorySnapshot) => void) => () => void;
     onVoiceMemoryStatus: (listener: (record: VoiceMemoryRecord) => void) => () => void;

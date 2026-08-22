@@ -40,9 +40,6 @@ interface ElectronDesktopVideoConstraints extends MediaTrackConstraints {
   mandatory: {
     chromeMediaSource: "desktop";
     chromeMediaSourceId: string;
-    maxWidth: number;
-    maxHeight: number;
-    maxFrameRate: number;
   };
 }
 
@@ -137,14 +134,7 @@ export class ScreenShareManager {
       const requestStream = async (includeSystemAudio: boolean): Promise<MediaStream> => {
         await shanghaoCore.screenCapture.selectSource(request.sourceId);
         return navigator.mediaDevices.getDisplayMedia({
-          video: {
-            width: { ideal: profile.maxWidth, max: profile.maxWidth },
-            height: { ideal: profile.maxHeight, max: profile.maxHeight },
-            frameRate: {
-              ideal: profile.maxFramerate,
-              max: profile.maxFramerate,
-            },
-          },
+          video: true,
           audio: includeSystemAudio,
         });
       };
@@ -153,9 +143,6 @@ export class ScreenShareManager {
           mandatory: {
             chromeMediaSource: "desktop",
             chromeMediaSourceId: request.sourceId,
-            maxWidth: profile.maxWidth,
-            maxHeight: profile.maxHeight,
-            maxFrameRate: profile.maxFramerate,
           },
         };
         return navigator.mediaDevices.getUserMedia({
@@ -212,6 +199,7 @@ export class ScreenShareManager {
 
       const [videoTrack] = stream.getVideoTracks();
       if (!videoTrack) throw new Error("screen_track_missing");
+      await this.applyCaptureProfile(videoTrack, profile);
       const captureSettings = videoTrack.getSettings();
       await this.options.startPublishing(stream, profile);
       if (operationId !== this.operationId || this.isDisposed) {
@@ -414,11 +402,7 @@ export class ScreenShareManager {
       await shanghaoCore.screenCapture.selectSource(request.sourceId);
       try {
         recoveredStream = await navigator.mediaDevices.getDisplayMedia({
-          video: {
-            width: { ideal: profile.maxWidth, max: profile.maxWidth },
-            height: { ideal: profile.maxHeight, max: profile.maxHeight },
-            frameRate: { ideal: profile.maxFramerate, max: profile.maxFramerate },
-          },
+          video: true,
           audio: request.includeSystemAudio,
         });
       } catch (error) {
@@ -427,9 +411,6 @@ export class ScreenShareManager {
           mandatory: {
             chromeMediaSource: "desktop",
             chromeMediaSourceId: request.sourceId,
-            maxWidth: profile.maxWidth,
-            maxHeight: profile.maxHeight,
-            maxFrameRate: profile.maxFramerate,
           },
         };
         recoveredStream = await navigator.mediaDevices.getUserMedia({
@@ -443,6 +424,7 @@ export class ScreenShareManager {
       }
       const [videoTrack] = recoveredStream.getVideoTracks();
       if (!videoTrack) throw new Error("screen_track_missing_after_recovery");
+      await this.applyCaptureProfile(videoTrack, profile);
       const captureSettings = videoTrack.getSettings();
       await this.options.startPublishing(recoveredStream, profile);
       endedStream.getTracks().forEach((track) => track.stop());
@@ -480,6 +462,28 @@ export class ScreenShareManager {
 
   private stopLocalTracks(): void {
     this.snapshot.localStream?.getTracks().forEach((track) => track.stop());
+  }
+
+  private async applyCaptureProfile(
+    videoTrack: MediaStreamTrack,
+    profile: ScreenShareEncodingProfile,
+  ): Promise<void> {
+    try {
+      await videoTrack.applyConstraints({
+        width: { ideal: profile.maxWidth, max: profile.maxWidth },
+        height: { ideal: profile.maxHeight, max: profile.maxHeight },
+        frameRate: { ideal: profile.maxFramerate, max: profile.maxFramerate },
+      });
+    } catch (error) {
+      // A live desktop track is still usable when a Windows capture backend cannot
+      // resize it. The WebRTC sender profile continues to cap bitrate and framerate.
+      await this.log("warn", "Screen capture started but output constraints were not applied", {
+        error: this.errorMessage(error),
+        requestedWidth: profile.maxWidth,
+        requestedHeight: profile.maxHeight,
+        requestedFramerate: profile.maxFramerate,
+      });
+    }
   }
 
   private patch(patch: Partial<ScreenShareManagerSnapshot>): void {

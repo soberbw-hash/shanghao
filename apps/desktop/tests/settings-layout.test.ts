@@ -11,6 +11,10 @@ const audioCardPath = path.resolve(
   "src/renderer/src/components/settings/AudioSettingsCard.tsx",
 );
 const settingsPagePath = path.resolve(process.cwd(), "src/renderer/src/pages/SettingsPage.tsx");
+const shortcutSettingsPath = path.resolve(
+  process.cwd(),
+  "src/renderer/src/components/settings/ShortcutSettingsCard.tsx",
+);
 const settingsPageHeaderPath = path.resolve(
   process.cwd(),
   "src/renderer/src/components/settings/SettingsPageHeader.tsx",
@@ -49,10 +53,11 @@ const voiceMemoryDetailPath = path.resolve(
   "src/renderer/src/components/settings/VoiceMemoryDetail.tsx",
 );
 const roomPagePath = path.resolve(process.cwd(), "src/renderer/src/pages/RoomPage.tsx");
+const appPath = path.resolve(process.cwd(), "src/renderer/src/app/App.tsx");
 const ipcPath = path.resolve(process.cwd(), "src/main/ipc.ts");
 const aiRuntimeManagerPath = path.resolve(process.cwd(), "src/main/ai-runtime-manager.ts");
 const aiVoiceMemoryServicePath = path.resolve(process.cwd(), "src/main/ai-voice-memory-service.ts");
-const vibeVoiceRuntimePath = path.resolve(process.cwd(), "src/main/vibevoice-runtime.ts");
+const asrRunnerPath = path.resolve(process.cwd(), "scripts/asr-runner.py");
 
 test("fixed sounds, game detection, and system notifications stay out of settings", () => {
   const source = readFileSync(settingsPagePath, "utf8");
@@ -73,7 +78,8 @@ test("weather settings stay lightweight and hide technical provider details", ()
   const source = readFileSync(weatherSettingsPath, "utf8");
   const pickerSource = readFileSync(weatherCityPickerPath, "utf8");
   const styles = readRendererCss();
-  assert.equal(source.includes("窗外天气"), true);
+  assert.equal(source.includes("窗外天气"), false);
+  assert.equal(source.includes("isDynamicWeatherEnabled"), false);
   assert.equal(source.includes("天气位置"), true);
   assert.equal(source.includes("Windows 系统定位"), true);
   assert.equal(source.includes("公网 IP 自动定位"), false);
@@ -93,10 +99,24 @@ test("weather settings stay lightweight and hide technical provider details", ()
     /\.weather-city-dialog\s*\{[^}]*position:\s*fixed;[^}]*inset:\s*0;[^}]*margin:\s*auto;/s,
   );
   assert.match(styles, /\.weather-city-dialog-results\s*\{[^}]*overflow-y:\s*auto;/s);
-  assert.equal(source.includes("省资源"), true);
+  assert.equal(source.includes("省资源"), false);
+  assert.equal(source.includes("动态效果"), false);
   assert.equal(source.includes("API Key"), false);
   assert.equal(source.includes("latitude"), false);
   assert.equal(source.includes("longitude"), false);
+});
+
+test("fixed interface scale and always-on room overlay stay out of settings", () => {
+  const source = readFileSync(settingsPagePath, "utf8");
+  const roomSource = readFileSync(roomPagePath, "utf8");
+  const appSource = readFileSync(appPath, "utf8");
+
+  assert.equal(source.includes("界面大小"), false);
+  assert.equal(source.includes("进入频道时显示悬浮窗"), false);
+  assert.equal(source.includes("硬件加速"), false);
+  assert.equal(roomSource.includes("isOverlayEnabled"), false);
+  assert.equal(roomSource.includes("window.desktopApi.overlay.show()"), true);
+  assert.equal(appSource.includes("settings?.uiScale"), false);
 });
 
 test("home page exposes only the fixed channel server address entry", () => {
@@ -109,23 +129,27 @@ test("home page exposes only the fixed channel server address entry", () => {
   assert.equal(source.includes("开启房间"), false);
 });
 
-test("advanced audio settings are collapsed by default", () => {
+test("audio settings keep only everyday controls", () => {
   const source = readFileSync(audioCardPath, "utf8");
+  const shortcutSource = readFileSync(shortcutSettingsPath, "utf8");
 
-  assert.equal(source.includes("高级音频"), true);
-  assert.equal(source.includes("一般不需要修改"), true);
-  assert.equal(source.includes("isAdvancedOpen ?"), true);
+  assert.equal(source.includes("高级音频"), false);
+  assert.equal(source.includes("试音模式"), false);
+  assert.equal(source.includes("micMonitorMode"), false);
   assert.equal(source.includes('value: "32000"'), false);
   assert.equal(source.includes("32 kHz"), false);
   assert.equal(source.includes("44.1 kHz"), false);
   assert.equal(source.includes("DeepFilterNet 固定使用 48 kHz"), false);
-  assert.equal(source.includes("五段声音塑形"), true);
+  assert.equal(source.includes("五段声音塑形"), false);
   assert.equal(source.includes("智能降噪"), false);
-  assert.equal(source.includes("低频风噪抑制"), true);
+  assert.equal(source.includes("低频风噪抑制"), false);
+  assert.equal(shortcutSource.includes("全局快捷静音"), false);
   assert.equal(source.includes("人声增强"), false);
   assert.equal(source.includes("isVoiceEnhancementEnabled"), false);
   assert.equal(source.includes("thresholdDraft"), false);
-  assert.equal(source.includes("equalizerDraft"), true);
+  assert.equal(source.includes("equalizerDraft"), false);
+  assert.ok(source.indexOf("麦克风体检") > source.indexOf("preferredOutputDeviceId"));
+  assert.ok(source.indexOf("麦克风体检") < source.indexOf("说话模式"));
 });
 
 test("settings keep only everyday voice controls and remove advanced connection", () => {
@@ -245,7 +269,8 @@ test("recording library safely cleans verified waste recordings", () => {
   assert.equal(source.includes("录音占用"), true);
   assert.equal(source.includes("自动清理"), true);
   assert.equal(source.includes("上限"), true);
-  assert.equal(source.includes("立即清理"), true);
+  assert.equal(source.includes("立即清理"), false);
+  assert.equal(source.includes('                : "清理"'), true);
   assert.equal(source.includes("isRecordingWasteAutoCleanupEnabled"), true);
   assert.equal(source.includes("清理录音？"), true);
   assert.equal(source.includes("五分钟以下"), true);
@@ -290,6 +315,8 @@ test("recording library keeps both desktop columns useful while browsing long li
     /\.recording-library-workspace\s*\{[^}]*grid-template-columns:\s*minmax\(340px, 390px\) minmax\(0, 1fr\)/s,
   );
   assert.match(styles, /\.recording-library-list\s*\{[^}]*overflow-y:\s*auto/s);
+  assert.match(styles, /\.recording-library-list\s*\{[^}]*grid-auto-rows:\s*max-content/s);
+  assert.match(styles, /\.recording-library-list\s*\{[^}]*align-content:\s*start/s);
   assert.match(styles, /\.recording-library-panel\s*\{[^}]*overflow-y:\s*auto/s);
   assert.match(
     styles,
@@ -308,6 +335,12 @@ test("recording library keeps both desktop columns useful while browsing long li
   );
   assert.equal(cardSource.includes("safe / 3_600"), true);
   assert.equal(readFileSync(voiceMemoryDetailPath, "utf8").includes("hasMultipleSpeakers"), true);
+  assert.equal(
+    readFileSync(voiceMemoryDetailPath, "utf8").includes("转录模型 · {transcriptionModelLabel}"),
+    true,
+  );
+  assert.equal(cardSource.includes("转录模型 · {memoryStatus.modelLabel}"), true);
+  assert.match(styles, /\.voice-memory-model-badge\s*\{[^}]*text-overflow:\s*ellipsis/s);
   assert.doesNotMatch(styles, /\.voice-memory-transcript\s*\{[^}]*overflow:\s*auto/s);
   assert.equal(cardSource.includes('["main", "一号房"]'), false);
   assert.equal(cardSource.includes('["side", "二号房"]'), false);
@@ -333,13 +366,16 @@ test("recording library paints before deferred transcript status hydration", () 
 test("successful empty ASR units remain silence instead of failing the recording", () => {
   const runtimeSource = readFileSync(aiRuntimeManagerPath, "utf8");
   const voiceMemorySource = readFileSync(aiVoiceMemoryServicePath, "utf8");
-  const vibeSource = readFileSync(vibeVoiceRuntimePath, "utf8");
+  const asrRunnerSource = readFileSync(asrRunnerPath, "utf8");
 
-  assert.equal(runtimeSource.includes("if (!rawOutput) return [];"), true);
-  assert.equal(runtimeSource.includes("vibevoice_empty_output"), false);
-  assert.equal(vibeSource.includes("Mandarin Chinese voice chat"), false);
-  assert.equal(vibeSource.includes('"--greedy"'), false);
-  assert.equal(vibeSource.includes('resourceMode === "low" ? 4'), true);
+  assert.equal(asrRunnerSource.includes('"qwen3-asr-1.7b-force"'), true);
+  assert.equal(asrRunnerSource.includes('"fireredasr2-llm"'), false);
+  assert.equal(asrRunnerSource.includes('"paraformer-zh"'), true);
+  assert.equal(asrRunnerSource.includes("use_half=True"), true);
+  assert.equal(asrRunnerSource.includes("bf16=True"), true);
+  assert.equal(asrRunnerSource.includes("do_sample=False"), true);
+  assert.equal(asrRunnerSource.includes("staged_on_oom=True"), true);
+  assert.equal(runtimeSource.includes("vibeRuntime"), false);
   assert.equal(runtimeSource.includes("timeoutMs: options.timeoutMs ?? 4 * 60_000"), true);
   assert.equal(voiceMemorySource.includes("maxNewTokens: 384"), true);
   assert.equal(voiceMemorySource.includes("transcriptForPrompt(record, 6_000)"), true);
@@ -358,21 +394,26 @@ test("AI voice memory keeps first install manual and disables unavailable automa
   const source = readFileSync(aiVoiceMemoryCardPath, "utf8");
   const settingsSource = readFileSync(settingsPagePath, "utf8");
   const recordingSource = readFileSync(recordingLibraryCardPath, "utf8");
-  assert.equal(source.includes("首次使用由你手动下载"), true);
+  assert.equal(source.includes("1. 模型管理"), true);
+  assert.equal(source.includes("2. 转录设置"), true);
+  assert.equal(source.includes("3. AI 总结与其他能力"), true);
   assert.equal(source.includes("下载模型"), true);
-  assert.equal(source.includes('model.category === "asr" || model.id !== "qwen35-4b"'), true);
-  assert.equal(source.includes("runtimeStatus?.asr ?? runtimeStatus?.vibevoice"), true);
+  assert.equal(source.includes('model.category === "asr"'), true);
+  assert.equal(source.includes("runtimeStatus?.vibevoice"), false);
   assert.equal(source.includes('typeof aiApi.getRuntimeStatus !== "function"'), true);
   assert.equal(source.includes("model.id === settings.aiAsrModel"), true);
+  assert.equal(source.includes("qwen3-forced-aligner-0.6b"), true);
   assert.equal(source.includes("isDisabled={!selectedAsrReady}"), true);
-  assert.equal(source.includes("isDisabled={!qwenInstalled || !selectedAsrReady}"), true);
+  assert.equal(source.includes("isDisabled={!organizerReady || !selectedAsrReady}"), true);
+  assert.equal(source.includes('option value="cloud">房间云端（默认）'), true);
+  assert.equal(source.includes("密钥由 Windows 加密后只保存在本机"), true);
   assert.equal(source.includes('value="after_game"'), true);
   assert.equal(source.includes("游戏中已降速"), true);
-  assert.equal(source.includes("import.meta.env.DEV"), true);
-  assert.equal(source.includes("AI 处理状态"), true);
-  assert.equal(source.includes("最近处理的录音"), true);
-  assert.equal(source.includes("处理进度"), true);
-  assert.equal(source.includes("技术信息（排错时使用）"), true);
+  assert.equal(source.includes("AI 处理状态"), false);
+  assert.equal(source.includes("技术信息（排错时使用）"), false);
+  const diagnosticsSource = readFileSync(diagnosticsCardPath, "utf8");
+  assert.equal(diagnosticsSource.includes("AI 运行诊断"), true);
+  assert.equal(diagnosticsSource.includes("技术参数"), true);
   assert.equal(source.includes("AI Runtime Diagnostics"), false);
   assert.equal(source.includes("ASR Model:"), false);
   assert.equal(source.includes("Recent task:"), false);

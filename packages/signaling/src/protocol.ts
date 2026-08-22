@@ -53,6 +53,9 @@ export type SignalEnvelope =
   | RoomCollectionRemoveMessage
   | RequestDailyRoomReportsMessage
   | DailyRoomReportsMessage
+  | CloudAiRequestMessage
+  | CloudAiCancelMessage
+  | CloudAiResponseMessage
   | KnockEventMessage
   | AudioChunkMessage
   | AudioPathStateMessage
@@ -277,6 +280,34 @@ export interface DailyRoomReportsMessage extends BaseMessage {
   roomId: string;
   targetRoomId: "main" | "side";
   reports: DailyRoomReport[];
+}
+
+export interface CloudAiRequestMessage extends BaseMessage {
+  type: "cloud_ai_request";
+  roomId: string;
+  peerId: string;
+  requestId: string;
+  purpose: "organize" | "question";
+  responseFormat: "json";
+  prompt: string;
+  useWebSearch?: boolean;
+}
+
+export interface CloudAiCancelMessage extends BaseMessage {
+  type: "cloud_ai_cancel";
+  roomId: string;
+  peerId: string;
+  requestId: string;
+}
+
+export interface CloudAiResponseMessage extends BaseMessage {
+  type: "cloud_ai_response";
+  roomId: string;
+  peerId: string;
+  requestId: string;
+  ok: boolean;
+  content?: string;
+  errorCode?: string;
 }
 
 export interface RoomCollectionSnapshotMessage extends BaseMessage {
@@ -722,6 +753,27 @@ export const isSignalEnvelope = (value: unknown): value is SignalEnvelope => {
         ["main", "side"].includes(String(value.targetRoomId)) &&
         Array.isArray(value.reports) &&
         value.reports.length <= 14
+      );
+    case "cloud_ai_request":
+      return (
+        hasRoom(value) &&
+        hasPeer(value) &&
+        isIdentifier(value.requestId, 128) &&
+        ["organize", "question"].includes(String(value.purpose)) &&
+        value.responseFormat === "json" &&
+        isText(value.prompt, 48_000) &&
+        isOptionalBoolean(value.useWebSearch)
+      );
+    case "cloud_ai_cancel":
+      return hasRoom(value) && hasPeer(value) && isIdentifier(value.requestId, 128);
+    case "cloud_ai_response":
+      return (
+        hasRoom(value) &&
+        hasPeer(value) &&
+        isIdentifier(value.requestId, 128) &&
+        typeof value.ok === "boolean" &&
+        (value.content === undefined || isText(value.content, 64_000)) &&
+        (value.errorCode === undefined || isText(value.errorCode, 100))
       );
     case "room_collection_snapshot":
       return (

@@ -108,7 +108,6 @@ export const TeamIsland = ({
   );
   const weatherLocationMode = useSettingsStore((state) => state.settings?.weatherLocationMode);
   const weatherManualCity = useSettingsStore((state) => state.settings?.weatherManualCity);
-  const weatherEffectMode = useSettingsStore((state) => state.settings?.weatherEffectMode);
   const weatherSnapshot = useWeatherStore((state) => state.snapshot);
   const weatherPreview = useWeatherStore((state) => state.preview);
   const weatherTheme = resolveWeatherVisualTheme(
@@ -316,7 +315,6 @@ export const TeamIsland = ({
               isEnabled={isDynamicWeatherEnabled ?? true}
               locationMode={weatherLocationMode ?? "auto"}
               manualCity={weatherManualCity ?? ""}
-              effectMode={weatherEffectMode ?? "standard"}
             />
           </div>
         ) : null}

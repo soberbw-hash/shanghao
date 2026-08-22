@@ -12,6 +12,7 @@ type Log = (
 
 export class ScreenCaptureService {
   private pendingSourceId: string | undefined;
+  private readonly sourceCache = new Map<string, DesktopCapturerSource>();
 
   constructor(private readonly log?: Log) {}
 
@@ -41,15 +42,12 @@ export class ScreenCaptureService {
   async listSources(): Promise<ScreenCaptureSourceDescriptor[]> {
     if (!this.capabilities.supported) return [];
     this.setContentProtection(false);
-    await new Promise<void>((resolve) => setTimeout(resolve, 80));
+    await new Promise<void>((resolve) => setImmediate(resolve));
 
-    let sources: DesktopCapturerSource[];
-    try {
-      sources = await this.waitForSources(true, true);
-    } catch {
-      sources = await this.waitForSources(true, false).catch(() => []);
-    }
-    if (sources.length === 0) sources = await this.waitForSources(false, false);
+    // Window thumbnails make Windows Graphics Capture initialize every candidate
+    // before the picker can open. Source names are enough for selection and keep
+    // enumeration fast; the selected source itself is cached for the capture request.
+    const sources = await this.waitForSources(false, false);
 
     const screenSourceIds = sources
       .filter((source) => source.id.startsWith("screen:"))
@@ -64,29 +62,40 @@ export class ScreenCaptureService {
       }),
     );
 
-    return sources
+    const visibleSources = sources
       .filter((source) => source.id.startsWith("screen:") || !appWindowSourceIds.has(source.id))
-      .slice(0, 24)
-      .map((source) => {
-        const isScreen = source.id.startsWith("screen:");
-        const screenIndex = isScreen ? screenSourceIds.indexOf(source.id) + 1 : 0;
-        return {
-          id: source.id,
-          name: source.name.slice(0, 120),
-          kind: isScreen ? "screen" : "window",
-          displayId: source.display_id || undefined,
-          displayLabel: isScreen ? `显示器 ${Math.max(1, screenIndex)} · 全屏` : undefined,
-          thumbnailDataUrl: source.thumbnail.isEmpty() ? "" : source.thumbnail.toDataURL(),
-          appIconDataUrl:
-            source.appIcon && !source.appIcon.isEmpty() ? source.appIcon.toDataURL() : undefined,
-        } satisfies ScreenCaptureSourceDescriptor;
-      });
+      .sort(
+        (left, right) =>
+          Number(right.id.startsWith("screen:")) - Number(left.id.startsWith("screen:")),
+      )
+      .slice(0, 24);
+    this.sourceCache.clear();
+    for (const source of visibleSources) this.sourceCache.set(source.id, source);
+
+    return visibleSources.map((source) => {
+      const isScreen = source.id.startsWith("screen:");
+      const screenIndex = isScreen ? screenSourceIds.indexOf(source.id) + 1 : 0;
+      return {
+        id: source.id,
+        name: source.name.slice(0, 120),
+        kind: isScreen ? "screen" : "window",
+        displayId: source.display_id || undefined,
+        displayLabel: isScreen ? `显示器 ${Math.max(1, screenIndex)} · 全屏` : undefined,
+        thumbnailDataUrl: source.thumbnail.isEmpty() ? "" : source.thumbnail.toDataURL(),
+        appIconDataUrl:
+          source.appIcon && !source.appIcon.isEmpty() ? source.appIcon.toDataURL() : undefined,
+      } satisfies ScreenCaptureSourceDescriptor;
+    });
   }
 
   async resolveRequestedSource(
     requestedSourceId?: string,
   ): Promise<DesktopCapturerSource | undefined> {
+    const cachedSource = requestedSourceId ? this.sourceCache.get(requestedSourceId) : undefined;
+    if (cachedSource) return cachedSource;
+
     const sources = await this.waitForSources(false);
+    for (const source of sources) this.sourceCache.set(source.id, source);
     const primaryDisplayId = String(screen.getPrimaryDisplay().id);
     const selected = requestedSourceId
       ? sources.find((source) => source.id === requestedSourceId)

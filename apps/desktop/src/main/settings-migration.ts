@@ -6,7 +6,6 @@ import {
   SETTINGS_SCHEMA_VERSION,
   isBuiltInAvatarId,
   type AppSettings,
-  type MicEqualizerGains,
 } from "@private-voice/shared";
 
 import { normalizeRelayServerUrl } from "./relay-url";
@@ -39,14 +38,16 @@ export const defaultSettings: AppSettings = {
   speakerMasterVolume: 1,
   isFriendLoudnessBalanceEnabled: true,
   micEqualizerGains: [0, 0, 0, 0, 0],
-  lowCutFrequency: "90",
+  lowCutFrequency: "75",
   globalMuteShortcut: "",
   pushToTalkShortcut: "Space",
   recordingMarkerShortcut: "F8",
   recordingSaveDirectory: undefined,
   recordingLibraryQuotaGb: 10,
   isRecordingWasteAutoCleanupEnabled: false,
-  aiAsrModel: "vibevoice",
+  aiAsrModel: "qwen3-asr-0.6b-force",
+  aiOrganizerProvider: "cloud",
+  aiRoomAskProvider: "cloud",
   aiProcessingMode: "after_game",
   isAiAutoTranscribeEnabled: false,
   isAiAutoOrganizeEnabled: false,
@@ -106,47 +107,10 @@ const normalizeNumber = (value: unknown, fallback: number, min: number, max: num
     ? Math.max(min, Math.min(max, value))
     : fallback;
 
-const normalizeMonitorMode = (value?: string): AppSettings["micMonitorMode"] =>
-  value === "raw" ? "raw" : "processed";
-
-const normalizeLowCutFrequency = (raw: RawSettings): AppSettings["lowCutFrequency"] => {
-  if (
-    raw.lowCutFrequency === "off" ||
-    raw.lowCutFrequency === "90" ||
-    raw.lowCutFrequency === "120"
-  ) {
-    return raw.lowCutFrequency;
-  }
-  if (raw.isLowCutEnabled === false) {
-    return "off";
-  }
-  return defaultSettings.lowCutFrequency;
-};
-
 const normalizeAvatarId = (value: unknown): AppSettings["avatarId"] => {
   if (value === "penguin") return "duck";
   if (value === "dog") return "corgi";
   return isBuiltInAvatarId(value) ? value : defaultSettings.avatarId;
-};
-
-const normalizeEqualizerGains = (value: unknown): MicEqualizerGains => {
-  const source = Array.isArray(value) ? value : [];
-  const migratedSource =
-    source.length >= 10
-      ? [
-          ((Number(source[0]) || 0) + (Number(source[1]) || 0) + (Number(source[2]) || 0)) / 3,
-          Number(source[3]) || 0,
-          Number(source[5]) || 0,
-          Number(source[7]) || 0,
-          ((Number(source[8]) || 0) + (Number(source[9]) || 0)) / 2,
-        ]
-      : source;
-  return Array.from({ length: 5 }, (_, index) => {
-    const gain = migratedSource[index];
-    return typeof gain === "number" && Number.isFinite(gain)
-      ? Math.max(-12, Math.min(12, gain))
-      : 0;
-  }) as MicEqualizerGains;
 };
 
 export const migrateSettings = (raw: RawSettings): MigrationResult => {
@@ -173,13 +137,10 @@ export const migrateSettings = (raw: RawSettings): MigrationResult => {
       defaultSettings.hasCompletedProfileSetup,
     ),
     minimizeToTray: normalizeBoolean(raw.minimizeToTray, defaultSettings.minimizeToTray),
-    uiScale: raw.uiScale === 110 || raw.uiScale === 125 ? raw.uiScale : 100,
+    uiScale: 100,
     launchOnStartup: normalizeBoolean(raw.launchOnStartup, defaultSettings.launchOnStartup),
-    isHardwareAccelerationEnabled: normalizeBoolean(
-      raw.isHardwareAccelerationEnabled,
-      defaultSettings.isHardwareAccelerationEnabled,
-    ),
-    isOverlayEnabled: normalizeBoolean(raw.isOverlayEnabled, defaultSettings.isOverlayEnabled),
+    isHardwareAccelerationEnabled: true,
+    isOverlayEnabled: true,
     preferredInputDeviceId: trimUnknownText(raw.preferredInputDeviceId),
     preferredOutputDeviceId: trimUnknownText(raw.preferredOutputDeviceId),
     microphoneSendVolume: normalizeNumber(
@@ -198,7 +159,7 @@ export const migrateSettings = (raw: RawSettings): MigrationResult => {
       raw.isFriendLoudnessBalanceEnabled,
       defaultSettings.isFriendLoudnessBalanceEnabled,
     ),
-    globalMuteShortcut: trimUnknownText(raw.globalMuteShortcut) ?? "",
+    globalMuteShortcut: "",
     pushToTalkShortcut:
       trimUnknownText(raw.pushToTalkShortcut) ?? defaultSettings.pushToTalkShortcut,
     recordingMarkerShortcut:
@@ -213,9 +174,24 @@ export const migrateSettings = (raw: RawSettings): MigrationResult => {
       false,
     ),
     aiAsrModel:
-      raw.aiAsrModel === "qwen3-asr-0.6b" || raw.aiAsrModel === "paraformer-zh"
+      raw.aiAsrModel === "qwen3-asr-1.7b-force" ||
+      raw.aiAsrModel === "qwen3-asr-0.6b-force" ||
+      raw.aiAsrModel === "fun-asr-nano-2512" ||
+      raw.aiAsrModel === "glm-asr-nano-2512" ||
+      raw.aiAsrModel === "fireredasr2-aed" ||
+      raw.aiAsrModel === "paraformer-zh"
         ? raw.aiAsrModel
-        : "vibevoice",
+        : raw.aiAsrModel === "qwen3-asr-0.6b"
+          ? "qwen3-asr-0.6b-force"
+          : "qwen3-asr-0.6b-force",
+    aiOrganizerProvider:
+      raw.aiOrganizerProvider === "local" || raw.aiOrganizerProvider === "custom"
+        ? raw.aiOrganizerProvider
+        : "cloud",
+    aiRoomAskProvider:
+      raw.aiRoomAskProvider === "local" || raw.aiRoomAskProvider === "custom"
+        ? raw.aiRoomAskProvider
+        : "cloud",
     aiProcessingMode:
       raw.aiProcessingMode === "low_resource" ||
       raw.aiProcessingMode === "immediate" ||
@@ -245,13 +221,13 @@ export const migrateSettings = (raw: RawSettings): MigrationResult => {
     isSystemNotificationEnabled: true,
     isGameDetectionEnabled: true,
     isWorkActivityVisible: normalizeBoolean(raw.isWorkActivityVisible, true),
-    isDynamicWeatherEnabled: normalizeBoolean(raw.isDynamicWeatherEnabled, true),
+    isDynamicWeatherEnabled: true,
     weatherLocationMode: raw.weatherLocationMode === "manual" ? "manual" : "auto",
     weatherManualCity: trimUnknownText(raw.weatherManualCity) ?? "",
-    weatherEffectMode: raw.weatherEffectMode === "reduced" ? "reduced" : "standard",
-    micEqualizerGains: normalizeEqualizerGains(raw.micEqualizerGains),
-    lowCutFrequency: normalizeLowCutFrequency(raw),
-    micMonitorMode: normalizeMonitorMode(trimUnknownText(raw.micMonitorMode)),
+    weatherEffectMode: "standard",
+    micEqualizerGains: [0, 0, 0, 0, 0],
+    lowCutFrequency: "75",
+    micMonitorMode: "processed",
     isNoiseSuppressionEnabled: raw.isNoiseSuppressionEnabled !== false,
     isEchoCancellationEnabled: raw.isEchoCancellationEnabled !== false,
     isAutoGainControlEnabled: raw.isAutoGainControlEnabled !== false,

@@ -10,13 +10,19 @@ const timeout = setTimeout(() => {
 }, 15_000);
 
 app.whenReady().then(async () => {
+  const enumerationStartedAt = Date.now();
   const pickerSources = await desktopCapturer.getSources({
     types: ["screen", "window"],
-    thumbnailSize: { width: 320, height: 180 },
-    fetchWindowIcons: true,
+    thumbnailSize: { width: 0, height: 0 },
+    fetchWindowIcons: false,
   });
   const selectedSource = pickerSources.find((source) => source.id.startsWith("screen:"));
-  console.log(JSON.stringify({ pickerSourceCount: pickerSources.length }));
+  console.log(
+    JSON.stringify({
+      pickerSourceCount: pickerSources.length,
+      pickerEnumerationMs: Date.now() - enumerationStartedAt,
+    }),
+  );
   session.defaultSession.setPermissionRequestHandler((_webContents, permission, callback) => {
     callback(permission === "media" || permission === "display-capture");
   });
@@ -44,14 +50,15 @@ app.whenReady().then(async () => {
           const captures = [];
           for (const profile of profiles) {
             const stream = await navigator.mediaDevices.getDisplayMedia({
-              video: {
-                width: { ideal: profile.width, max: profile.width },
-                height: { ideal: profile.height, max: profile.height },
-                frameRate: { ideal: profile.frameRate, max: profile.frameRate },
-              },
+              video: true,
               audio: false,
             });
             const displayTrack = stream.getVideoTracks()[0];
+            await displayTrack?.applyConstraints?.({
+              width: { ideal: profile.width, max: profile.width },
+              height: { ideal: profile.height, max: profile.height },
+              frameRate: { ideal: profile.frameRate, max: profile.frameRate },
+            });
             captures.push({
               requested: profile,
               actual: displayTrack?.getSettings?.() ?? {},
@@ -65,14 +72,16 @@ app.whenReady().then(async () => {
               mandatory: {
                 chromeMediaSource: "desktop",
                 chromeMediaSourceId: ${JSON.stringify(selectedSource?.id ?? "")},
-                maxWidth: 1920,
-                maxHeight: 1080,
-                maxFrameRate: 30,
               },
             },
             audio: false,
           });
           const fallbackTrack = fallbackStream.getVideoTracks()[0];
+          await fallbackTrack?.applyConstraints?.({
+            width: { ideal: 1920, max: 1920 },
+            height: { ideal: 1080, max: 1080 },
+            frameRate: { ideal: 30, max: 30 },
+          });
           const fallbackSettings = fallbackTrack?.getSettings?.() ?? {};
           fallbackStream.getTracks().forEach((item) => item.stop());
           return {

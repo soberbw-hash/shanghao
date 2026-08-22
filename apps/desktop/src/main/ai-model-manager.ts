@@ -1,5 +1,5 @@
-import { randomUUID } from "node:crypto";
-import { createWriteStream } from "node:fs";
+import { createHash, randomUUID } from "node:crypto";
+import { createReadStream, createWriteStream } from "node:fs";
 import { mkdir, readFile, rename, rm, stat, statfs, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { Readable, Transform } from "node:stream";
@@ -12,6 +12,7 @@ import type {
   AiModelStatus,
   AiProcessingMode,
   AiRuntimePressure,
+  AiSupportModelId,
   AiTaskCheckpoint,
   AiTaskKind,
   AiVoiceMemorySnapshot,
@@ -29,13 +30,15 @@ export {
 
 interface ModelDefinition {
   id: AiModelId;
-  category: "asr" | "organizer";
+  category: "asr" | "support" | "organizer";
   name: string;
   purpose: string;
   repository: string;
   revision: string;
   approximateBytes: number;
   components?: readonly ModelComponent[];
+  dependencies?: readonly AiSupportModelId[];
+  hardwareNote?: string;
 }
 
 interface ModelComponent {
@@ -47,6 +50,8 @@ interface ModelComponent {
 interface RemoteModelFile {
   rfilename: string;
   size?: number;
+  sha256?: string;
+  lfs?: { sha256?: string; size?: number };
 }
 
 interface RemoteModelManifest {
@@ -58,6 +63,7 @@ interface DownloadModelFile extends RemoteModelFile {
   sourceFileName: string;
   sourceRepository: string;
   sourceRevision: string;
+  sha256?: string;
 }
 
 interface ModelSource {
@@ -80,8 +86,12 @@ interface PersistedAiState {
   taskCheckpoints: Record<string, AiTaskCheckpoint>;
 }
 
-const VIBEVOICE_MODEL_REVISION = "66e78021ab8f5f06133d1ab421ba4d348bda97c9";
-const QWEN3_ASR_MODEL_REVISION = "7f1569a48a89f3e3f4dc3a5c9d28bddd903bc76c";
+const QWEN3_ASR_17B_MODEL_REVISION = "7278e1e70fe206f11671096ffdd38061171dd6e5";
+const QWEN3_ASR_06B_MODEL_REVISION = "5eb144179a02acc5e5ba31e748d22b0cf3e303b0";
+const QWEN3_FORCED_ALIGNER_REVISION = "c7cbfc2048c462b0d63a45797104fc9db3ad62b7";
+const FUN_ASR_NANO_REVISION = "272c57b82523ada6fd87095e955f8e29100979ab";
+const GLM_ASR_NANO_REVISION = "61ba4e0b3309b6656edea3e93e419f7bd5c61957";
+const FIRERED_ASR2_AED_REVISION = "2304afed56eacfee6256dee5937ed22ffa0b64ec";
 const PARAFORMER_MODEL_REVISION = "d7811ee3ac581fbcfdeb37c98c6ba674028433dc";
 const FSMN_VAD_MODEL_REVISION = "df20e6b30c653645fa4ff125cacfcabd1020a669";
 const CT_PUNC_MODEL_REVISION = "d0e55e2b8722a78b63705ff443d09c4f86e5d750";
@@ -90,31 +100,65 @@ const QWEN_MODEL_REVISION = "851bf6e806efd8d0a36b00ddf55e13ccb7b8cd0a";
 
 const MODEL_DEFINITIONS: readonly ModelDefinition[] = [
   {
-    id: "vibevoice",
+    id: "qwen3-asr-1.7b-force",
     category: "asr",
-    name: "VibeVoice-ASR-BitNet",
-    purpose: "体积较小，现有兼容方案",
-    repository: "microsoft/VibeVoice-ASR-BitNet",
-    revision: VIBEVOICE_MODEL_REVISION,
-    approximateBytes: 1_695_957_664,
+    name: "Qwen3-ASR-1.7B + ForcedAligner",
+    purpose: "高质量 · 精确时间轴",
+    repository: "Qwen/Qwen3-ASR-1.7B",
+    revision: QWEN3_ASR_17B_MODEL_REVISION,
+    approximateBytes: 4_703_114_308,
+    dependencies: ["qwen3-forced-aligner-0.6b"],
+    hardwareNote: "CUDA · BF16 · batch 1 · 不量化；显存不足时明确提示，不会静默降级。",
   },
   {
-    id: "qwen3-asr-0.6b",
+    id: "qwen3-asr-0.6b-force",
     category: "asr",
-    name: "Qwen3-ASR-0.6B",
-    purpose: "中文与方言识别优先",
-    repository: "Qwen/Qwen3-ASR-0.6B-hf",
-    revision: QWEN3_ASR_MODEL_REVISION,
-    approximateBytes: 1_576_000_000,
+    name: "Qwen3-ASR-0.6B + ForcedAligner",
+    purpose: "轻量 · 精确时间轴",
+    repository: "Qwen/Qwen3-ASR-0.6B",
+    revision: QWEN3_ASR_06B_MODEL_REVISION,
+    approximateBytes: 1_880_619_678,
+    dependencies: ["qwen3-forced-aligner-0.6b"],
+    hardwareNote: "CUDA · BF16 · batch 1 · 不量化。",
+  },
+  {
+    id: "fun-asr-nano-2512",
+    category: "asr",
+    name: "Fun-ASR-Nano-2512",
+    purpose: "新一代中文 LLM ASR",
+    repository: "FunAudioLLM/Fun-ASR-Nano-2512",
+    revision: FUN_ASR_NANO_REVISION,
+    approximateBytes: 1_989_178_168,
+    hardwareNote: "CUDA · BF16 · batch 1 · 官方本地推理 · 不量化。",
+  },
+  {
+    id: "glm-asr-nano-2512",
+    category: "asr",
+    name: "GLM-ASR-Nano-2512",
+    purpose: "噪声 · 轻声 · 复杂环境",
+    repository: "zai-org/GLM-ASR-Nano-2512",
+    revision: GLM_ASR_NANO_REVISION,
+    approximateBytes: 4_522_623_926,
+    hardwareNote: "CUDA · BF16 · batch 1 · 固定确定性输出 · 长录音分段 · 不量化。",
+  },
+  {
+    id: "fireredasr2-aed",
+    category: "asr",
+    name: "FireRedASR2-AED",
+    purpose: "高质量中文 ASR · 原生时间戳",
+    repository: "FireRedTeam/FireRedASR2-AED",
+    revision: FIRERED_ASR2_AED_REVISION,
+    approximateBytes: 4_731_895_352,
+    hardwareNote: "CUDA · FP16 · batch 1 · 官方原生时间戳 · 不量化。",
   },
   {
     id: "paraformer-zh",
     category: "asr",
     name: "Paraformer 中文套件",
-    purpose: "轻量快速，包含语音检测与标点",
+    purpose: "极速转录 · 时间轴稳定",
     repository: "funasr/paraformer-zh + fsmn-vad + ct-punc",
     revision: PARAFORMER_BUNDLE_REVISION,
-    approximateBytes: 2_028_000_000,
+    approximateBytes: 2_027_343_620,
     components: [
       {
         directory: "asr",
@@ -134,6 +178,15 @@ const MODEL_DEFINITIONS: readonly ModelDefinition[] = [
     ],
   },
   {
+    id: "qwen3-forced-aligner-0.6b",
+    category: "support",
+    name: "Qwen3-ForcedAligner-0.6B",
+    purpose: "两套 Qwen 共用的官方时间对齐组件",
+    repository: "Qwen/Qwen3-ForcedAligner-0.6B",
+    revision: QWEN3_FORCED_ALIGNER_REVISION,
+    approximateBytes: 1_840_072_459,
+  },
+  {
     id: "qwen35-4b",
     category: "organizer",
     name: "Qwen3.5-4B",
@@ -145,9 +198,13 @@ const MODEL_DEFINITIONS: readonly ModelDefinition[] = [
 ] as const;
 
 export const PINNED_MODEL_REVISIONS: Readonly<Record<AiModelId, string>> = {
-  vibevoice: VIBEVOICE_MODEL_REVISION,
-  "qwen3-asr-0.6b": QWEN3_ASR_MODEL_REVISION,
+  "qwen3-asr-1.7b-force": QWEN3_ASR_17B_MODEL_REVISION,
+  "qwen3-asr-0.6b-force": QWEN3_ASR_06B_MODEL_REVISION,
+  "fun-asr-nano-2512": FUN_ASR_NANO_REVISION,
+  "glm-asr-nano-2512": GLM_ASR_NANO_REVISION,
+  "fireredasr2-aed": FIRERED_ASR2_AED_REVISION,
   "paraformer-zh": PARAFORMER_BUNDLE_REVISION,
+  "qwen3-forced-aligner-0.6b": QWEN3_FORCED_ALIGNER_REVISION,
   "qwen35-4b": QWEN_MODEL_REVISION,
 };
 
@@ -206,6 +263,8 @@ export const describeAiModelError = (error: unknown): string => {
     return "模型文件清单不完整，请稍后重试。";
   if (message === "ai_model_file_incomplete" || message === "ai_model_weight_size_mismatch")
     return "模型文件下载不完整，点击重试会从已下载的位置继续。";
+  if (message === "ai_model_checksum_mismatch")
+    return "模型完整性校验失败，损坏文件会在重试时重新下载。";
   const httpStatus = message.match(/ai_model_(?:manifest_)?http_(\d{3})/)?.[1];
   if (httpStatus) return `模型下载源暂时不可用（HTTP ${httpStatus}），请稍后重试。`;
   return "模型下载失败，请检查网络后重试；已下载的部分会保留。";
@@ -247,7 +306,7 @@ export class AiModelManager {
   private throttleWindowStartedAt = Date.now();
   private throttleWindowBytes = 0;
   private runtimeStatus: Partial<Record<AiModelId, { ready: boolean; message?: string }>> = {};
-  private activeAsrModel: AiAsrModelId = "vibevoice";
+  private activeAsrModel: AiAsrModelId = "qwen3-asr-0.6b-force";
   private runtimePreparer?: (id: AiModelId) => Promise<{ ready: boolean; message?: string }>;
 
   constructor(
@@ -258,7 +317,7 @@ export class AiModelManager {
 
   async initialize(
     processingMode: AiProcessingMode,
-    activeAsrModel: AiAsrModelId = "vibevoice",
+    activeAsrModel: AiAsrModelId = "qwen3-asr-0.6b-force",
   ): Promise<void> {
     this.processingMode = processingMode;
     this.activeAsrModel = activeAsrModel;
@@ -411,6 +470,11 @@ export class AiModelManager {
       current.userInstalled = true;
       await this.persist();
       this.startDownload(id, Boolean(current.activeRevision));
+      for (const dependency of modelDefinition(id).dependencies ?? []) {
+        const dependencyState = this.ensureModelState(dependency);
+        dependencyState.userInstalled = true;
+        this.startDownload(dependency, Boolean(dependencyState.activeRevision));
+      }
     } else if (action === "pause") {
       current.phase = "paused";
       this.abortControllers.get(id)?.abort();
@@ -656,15 +720,7 @@ export class AiModelManager {
         file.rfilename.endsWith("model.pt"),
     );
     if (!weightFiles.length) throw new Error("ai_model_required_files_missing");
-    if (definition.id === "vibevoice") {
-      const names = new Set(weightFiles.map((file) => path.basename(file.rfilename)));
-      if (
-        !names.has("vibeasr-lm-i2_s-embed-q6_k.gguf") ||
-        !names.has("vibeasr-vae-encoder-i8_s.gguf")
-      ) {
-        throw new Error("ai_model_required_files_missing");
-      }
-    } else if (definition.id === "paraformer-zh") {
+    if (definition.id === "paraformer-zh") {
       for (const component of ["asr", "vad", "punc"] as const) {
         await Promise.all([
           stat(path.join(directory, component, "config.yaml")),
@@ -680,15 +736,20 @@ export class AiModelManager {
       if (!config || typeof config !== "object") throw new Error("ai_model_config_invalid");
     }
     for (const file of weightFiles) {
-      const size = await stat(path.join(directory, file.rfilename)).then((value) => value.size);
+      const filePath = path.join(directory, file.rfilename);
+      const size = await stat(filePath).then((value) => value.size);
       if (file.size && size !== file.size) throw new Error("ai_model_weight_size_mismatch");
+      if ("sha256" in file && typeof file.sha256 === "string") {
+        const digest = await this.hashFile(filePath);
+        if (digest !== file.sha256) throw new Error("ai_model_checksum_mismatch");
+      }
     }
   }
 
-  private isVibeVoiceRuntimeFile(fileName: string): boolean {
-    return (
-      fileName === "vibeasr-lm-i2_s-embed-q6_k.gguf" || fileName === "vibeasr-vae-encoder-i8_s.gguf"
-    );
+  private async hashFile(filePath: string): Promise<string> {
+    const hash = createHash("sha256");
+    await pipeline(createReadStream(filePath), hash);
+    return hash.digest("hex");
   }
 
   private modelComponents(definition: ModelDefinition): readonly ModelComponent[] {
@@ -713,12 +774,7 @@ export class AiModelManager {
     );
     return manifests.flatMap(({ component, manifest }) =>
       manifest.siblings
-        .filter(
-          (file) =>
-            typeof file.size === "number" &&
-            file.size > 0 &&
-            (definition.id !== "vibevoice" || this.isVibeVoiceRuntimeFile(file.rfilename)),
-        )
+        .filter((file) => (file.lfs?.size ?? file.size ?? 0) > 0)
         .map((file): DownloadModelFile => {
           const sourceFileName = safeRelativeModelPath(file.rfilename);
           const destination = component.directory
@@ -726,10 +782,12 @@ export class AiModelManager {
             : sourceFileName;
           return {
             ...file,
+            size: file.lfs?.size ?? file.size,
             rfilename: destination,
             sourceFileName,
             sourceRepository: component.repository,
             sourceRevision: component.revision,
+            sha256: file.lfs?.sha256,
           };
         }),
     );
@@ -838,6 +896,8 @@ export class AiModelManager {
       errorMessage: current?.errorMessage,
       runtimeReady: this.runtimeStatus[definition.id]?.ready === true,
       runtimeMessage: this.runtimeStatus[definition.id]?.message,
+      dependencies: definition.dependencies ? [...definition.dependencies] : undefined,
+      hardwareNote: definition.hardwareNote,
       updateInProgress: Boolean(
         current?.activeRevision &&
         current.pendingRevision &&
@@ -939,13 +999,15 @@ export class AiModelManager {
   canRunTask(
     kind: AiTaskKind,
     manualRequest = false,
+    transcriptionModel?: AiAsrModelId,
   ): {
     runnable: boolean;
     reason?: string;
     resourceMode: "low" | "normal";
     requiredModel: AiModelId;
   } {
-    const requiredModel = kind === "transcription" ? this.activeAsrModel : "qwen35-4b";
+    const requiredModel =
+      kind === "transcription" ? (transcriptionModel ?? this.activeAsrModel) : "qwen35-4b";
     if (!this.persisted.models[requiredModel]?.activeRevision) {
       return {
         runnable: false,
@@ -953,6 +1015,24 @@ export class AiModelManager {
         resourceMode: "low",
         requiredModel,
       };
+    }
+    for (const dependency of modelDefinition(requiredModel).dependencies ?? []) {
+      if (!this.persisted.models[dependency]?.activeRevision) {
+        return {
+          runnable: false,
+          reason: `model_${dependency}_not_installed`,
+          resourceMode: "low",
+          requiredModel,
+        };
+      }
+      if (this.runtimeStatus[dependency]?.ready === false) {
+        return {
+          runnable: false,
+          reason: `model_${dependency}_runtime_not_ready`,
+          resourceMode: "low",
+          requiredModel,
+        };
+      }
     }
     const runtime = this.runtimeStatus[requiredModel];
     if (!runtime?.ready) {

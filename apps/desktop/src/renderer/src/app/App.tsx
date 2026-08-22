@@ -76,14 +76,6 @@ export const App = () => {
   }, [avatarDataUrl, bootstrapPhase, settings, syncLocalProfile]);
 
   useEffect(() => {
-    const root = document.documentElement;
-    root.style.fontSize = `${settings?.uiScale ?? 100}%`;
-    return () => {
-      root.style.removeProperty("font-size");
-    };
-  }, [settings?.uiScale]);
-
-  useEffect(() => {
     const handleError = (event: ErrorEvent) => {
       void writeRendererLog("app", "error", "Unhandled renderer error", {
         message: event.message,

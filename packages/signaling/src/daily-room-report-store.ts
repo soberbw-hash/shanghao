@@ -99,8 +99,23 @@ const sanitizeParticipant = (value: unknown): DailyRoomParticipantSummary | unde
   };
 };
 
+const uniqueNicknames = (values: unknown[]): string[] => {
+  const result = new Map<string, string>();
+  for (const value of values) {
+    if (typeof value !== "string") continue;
+    const nickname = value.trim().slice(0, 32);
+    if (!nickname) continue;
+    const key = nickname.toLocaleLowerCase("zh-CN");
+    if (!result.has(key)) result.set(key, nickname);
+  }
+  return [...result.values()].slice(0, 100);
+};
+
 const sanitizeReport = (value: unknown, roomId: DailyRoomId, date: string): DailyRoomReport => {
   const source = value && typeof value === "object" ? (value as Partial<DailyRoomReport>) : {};
+  const participantNicknames = uniqueNicknames(
+    Array.isArray(source.participantNicknames) ? source.participantNicknames : [],
+  );
   return {
     ...createEmptyReport(roomId, date),
     schemaVersion: 1,
@@ -110,12 +125,14 @@ const sanitizeReport = (value: unknown, roomId: DailyRoomId, date: string): Dail
         ? source.updatedAt
         : new Date(Date.parse(`${date}T00:00:00+08:00`)).toISOString(),
     hadActivity: source.hadActivity === true,
-    participantCount: Math.max(0, Math.min(100, Number(source.participantCount) || 0)),
-    participantNicknames: Array.isArray(source.participantNicknames)
-      ? source.participantNicknames
-          .filter((name): name is string => typeof name === "string")
-          .slice(0, 100)
-      : [],
+    participantCount:
+      participantNicknames.length ||
+      Math.max(0, Math.min(100, Number(source.participantCount) || 0)),
+    participantNicknames,
+    commentary:
+      typeof source.commentary === "string"
+        ? [...source.commentary.trim()].slice(0, 80).join("") || undefined
+        : undefined,
     activeDurationMs: Math.max(0, Number(source.activeDurationMs) || 0),
     peakConcurrent: Math.max(0, Math.min(5, Number(source.peakConcurrent) || 0)),
     messageCount: Math.max(0, Number(source.messageCount) || 0),
@@ -199,6 +216,16 @@ export class DailyRoomReportStore {
     return Array.from({ length: RETAIN_DAYS }, (_, index) => shiftShanghaiDate(today, -(index + 1)))
       .map((date) => sanitizeReport(this.reports.rooms[roomId]?.[date], roomId, date))
       .filter((report) => report.hadActivity);
+  }
+
+  setCommentary(roomId: DailyRoomId, date: string, value: string, now = Date.now()): boolean {
+    const report = this.reports.rooms[roomId]?.[date];
+    if (!report || report.commentary?.trim()) return false;
+    const commentary = [...value.replace(/\s+/g, " ").trim()].slice(0, 80).join("");
+    if (!commentary) return false;
+    report.commentary = commentary;
+    this.touch(report, now);
+    return true;
   }
 
   recordJoin(
@@ -555,8 +582,8 @@ export class DailyRoomReportStore {
     const dayParticipants = (roomParticipants[date] ??= {});
     for (const [identityId, nickname] of participants) dayParticipants[identityId] = nickname;
     const report = this.getMutableReport(roomId, Date.parse(`${date}T12:00:00+08:00`));
-    report.participantNicknames = Object.values(dayParticipants);
-    report.participantCount = Object.keys(dayParticipants).length;
+    report.participantNicknames = uniqueNicknames(Object.values(dayParticipants));
+    report.participantCount = report.participantNicknames.length;
   }
 
   private prune(roomId: DailyRoomId, today: string): void {

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, type CSSProperties } from "react";
 
 import { cn } from "@private-voice/ui";
-import type { WeatherEffectMode, WeatherLocationMode } from "@private-voice/shared";
+import type { WeatherLocationMode } from "@private-voice/shared";
 
 import { usePrefersReducedMotion } from "../../hooks/usePrefersReducedMotion";
 import { useVisibleInterval, useVisualVisibility } from "../../hooks/useVisualVisibility";
@@ -14,19 +14,17 @@ export const DynamicWeatherWindow = ({
   isEnabled,
   locationMode,
   manualCity,
-  effectMode,
 }: {
   isEnabled: boolean;
   locationMode: WeatherLocationMode;
   manualCity: string;
-  effectMode: WeatherEffectMode;
 }) => {
   const snapshot = useWeatherStore((state) => state.snapshot);
   const preview = useWeatherStore((state) => state.preview);
   const refresh = useWeatherStore((state) => state.refresh);
   const clear = useWeatherStore((state) => state.clear);
   const isPageVisible = useVisualVisibility();
-  const reduceMotion = usePrefersReducedMotion(effectMode === "reduced");
+  const reduceMotion = usePrefersReducedMotion();
   const request = useMemo(() => ({ locationMode, manualCity }), [locationMode, manualCity]);
 
   useEffect(() => {
@@ -52,9 +50,8 @@ export const DynamicWeatherWindow = ({
     : snapshot;
   const theme = resolveWeatherVisualTheme(isEnabled ? visualSnapshot : undefined);
   const isMotionPaused = reduceMotion || !isPageVisible;
-  const rainDrops =
-    effectMode === "reduced" ? 6 : theme.scene === "heavy_rain" || theme.hasLightning ? 14 : 9;
-  const snowflakes = effectMode === "reduced" ? 6 : 11;
+  const rainDrops = theme.scene === "heavy_rain" || theme.hasLightning ? 14 : 9;
+  const snowflakes = 11;
   const temperatureLabel =
     typeof visualSnapshot?.temperatureC === "number"
       ? `${Math.round(visualSnapshot.temperatureC)}°C`
@@ -75,7 +72,7 @@ export const DynamicWeatherWindow = ({
       aria-label={`窗外${theme.label}${snapshot?.city ? `，${snapshot.city}` : ""}`}
       data-weather-source={snapshot?.source ?? "fallback"}
     >
-      <div className="weather-window-view">
+      <div key={`${theme.scene}:${theme.phase}`} className="weather-window-view">
         <div className="weather-sky-orb" />
         <div className="weather-distant-silhouette">
           <span />

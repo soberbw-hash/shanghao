@@ -29,8 +29,9 @@ export interface AsrWorkerHealth {
 }
 
 export interface AsrWorkerLaunch {
-  modelId: Exclude<AiAsrModelId, "vibevoice">;
+  modelId: AiAsrModelId;
   modelPath: string;
+  alignerModelPath?: string;
   vadModelPath?: string;
   puncModelPath?: string;
   pythonPath?: string;
@@ -62,7 +63,13 @@ const WORKER_IDLE_RELEASE_MS = 60_000;
 const STDERR_LIMIT = 16_384;
 
 const launchKey = (launch: AsrWorkerLaunch): string =>
-  [launch.modelId, launch.modelPath, launch.vadModelPath, launch.puncModelPath].join("|");
+  [
+    launch.modelId,
+    launch.modelPath,
+    launch.alignerModelPath,
+    launch.vadModelPath,
+    launch.puncModelPath,
+  ].join("|");
 
 const killProcessTree = (child: ChildProcessWithoutNullStreams): void => {
   if (platformService.isWindows && child.pid) {
@@ -204,6 +211,7 @@ export class AsrPersistentWorker {
     ];
     if (launch.vadModelPath) args.push("--vad-model", launch.vadModelPath);
     if (launch.puncModelPath) args.push("--punc-model", launch.puncModelPath);
+    if (launch.alignerModelPath) args.push("--aligner-model", launch.alignerModelPath);
     const child = spawn(this.pythonExecutable, args, {
       windowsHide: true,
       stdio: ["pipe", "pipe", "pipe"],

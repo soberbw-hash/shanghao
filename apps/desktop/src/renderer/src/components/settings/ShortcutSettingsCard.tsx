@@ -11,30 +11,14 @@ export const ShortcutSettingsCard = ({
   settings: AppSettings;
   onChange: (patch: Partial<AppSettings>) => void;
 }) => {
-  const hasConflict =
-    Boolean(settings.globalMuteShortcut) &&
-    Boolean(settings.pushToTalkShortcut) &&
-    settings.globalMuteShortcut === settings.pushToTalkShortcut;
-
   return (
     <SettingsSection title="快捷键">
       <div className="space-y-3">
-        <SettingsItemRow
-          label="全局静音快捷键"
-          description="默认关闭，避免启动时被危险快捷键卡住。"
-        >
-          <ShortcutInput
-            value={settings.globalMuteShortcut}
-            onChange={(globalMuteShortcut) => onChange({ globalMuteShortcut })}
-            placeholder="未启用"
-          />
-        </SettingsItemRow>
         <SettingsItemRow label="按键说话" description="上号窗口聚焦时按住说话，松开闭麦。">
           <ShortcutInput
             value={settings.pushToTalkShortcut}
             onChange={(pushToTalkShortcut) => onChange({ pushToTalkShortcut })}
             defaultValue="Space"
-            conflictMessage={hasConflict ? "按键说话不能和全局静音快捷键重复。" : undefined}
           />
         </SettingsItemRow>
         <SettingsItemRow

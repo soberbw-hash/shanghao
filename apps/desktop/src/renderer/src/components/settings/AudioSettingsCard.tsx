@@ -1,15 +1,10 @@
-import { useEffect, useState } from "react";
-import { ChevronDown } from "lucide-react";
-
 import type { AppSettings, AudioDeviceDescriptor } from "@private-voice/shared";
 import type { MicTestPhase } from "../../hooks/useMicTest";
 
-import { MICROPHONE_EQ_FREQUENCIES } from "../../features/audio/microphoneProcessor";
 import { InputDevicePicker } from "../audio/InputDevicePicker";
 import { OutputDevicePicker } from "../audio/OutputDevicePicker";
 import { Button } from "../base/Button";
 import { SegmentedControl } from "../base/SegmentedControl";
-import { Slider } from "../base/Slider";
 import { Switch } from "../base/Switch";
 import { SettingsItemRow } from "./SettingsItemRow";
 import { SettingsSection } from "./SettingsSection";
@@ -41,11 +36,6 @@ export const AudioSettingsCard = ({
   onPlayProcessed: () => void;
   onChange: (patch: Partial<AppSettings>) => void;
 }) => {
-  const [isAdvancedOpen, setIsAdvancedOpen] = useState(false);
-  const [equalizerDraft, setEqualizerDraft] = useState(settings.micEqualizerGains);
-  useEffect(() => {
-    setEqualizerDraft(settings.micEqualizerGains);
-  }, [settings.micEqualizerGains]);
   const micHealth = !isMicTesting
     ? micTestError || "录制 9 秒后，可对比系统采集与上号处理后的声音"
     : isMicClipping
@@ -73,25 +63,6 @@ export const AudioSettingsCard = ({
             onChange={(preferredOutputDeviceId) => onChange({ preferredOutputDeviceId })}
           />
         </SettingsItemRow>
-        <SettingsItemRow label="说话模式">
-          <SegmentedControl
-            value={settings.isPushToTalkEnabled ? "ptt" : "open"}
-            options={[
-              { value: "open", label: "自由麦" },
-              { value: "ptt", label: "按键说话" },
-            ]}
-            onChange={(value) => onChange({ isPushToTalkEnabled: value === "ptt" })}
-          />
-        </SettingsItemRow>
-        <SettingsItemRow
-          label="自动录音并保存"
-          description="默认开启。进入频道后自动录音，退出时直接保存到录音库。"
-        >
-          <Switch
-            isChecked={settings.isAutoRecordOnJoinEnabled}
-            onChange={(isAutoRecordOnJoinEnabled) => onChange({ isAutoRecordOnJoinEnabled })}
-          />
-        </SettingsItemRow>
         <SettingsItemRow label="麦克风体检" description={micHealth}>
           <div className="min-w-[280px] space-y-3">
             <div className="flex gap-2">
@@ -117,108 +88,25 @@ export const AudioSettingsCard = ({
             </div>
           </div>
         </SettingsItemRow>
-
-        <div className="overflow-hidden rounded-[16px] border border-[#E7ECF2] bg-[#F8FAFC]">
-          <button
-            type="button"
-            className="flex w-full items-center justify-between px-4 py-3 text-left transition hover:bg-white/70"
-            onClick={() => setIsAdvancedOpen((current) => !current)}
-            aria-expanded={isAdvancedOpen}
-          >
-            <span>
-              <span className="block text-sm font-medium text-[#111827]">高级音频</span>
-              <span className="mt-0.5 block text-xs text-[#98A2B3]">一般不需要修改</span>
-            </span>
-            <ChevronDown
-              className={`h-4 w-4 text-[#667085] transition-transform ${isAdvancedOpen ? "rotate-180" : ""}`}
-            />
-          </button>
-
-          {isAdvancedOpen ? (
-            <div className="space-y-3 border-t border-[#E7ECF2] bg-white/70 p-3">
-              <SettingsItemRow label="试音模式">
-                <SegmentedControl
-                  value={settings.micMonitorMode}
-                  options={[
-                    { value: "processed", label: "处理后" },
-                    { value: "raw", label: "原声" },
-                  ]}
-                  onChange={(micMonitorMode) =>
-                    onChange({ micMonitorMode: micMonitorMode as AppSettings["micMonitorMode"] })
-                  }
-                />
-              </SettingsItemRow>
-              <SettingsItemRow
-                label="低频风噪抑制"
-                description="四阶高通削弱风扇、桌面震动和低频轰鸣，默认标准。"
-              >
-                <SegmentedControl
-                  value={settings.lowCutFrequency}
-                  options={[
-                    { value: "off", label: "关闭" },
-                    { value: "90", label: "标准 90 Hz" },
-                    { value: "120", label: "强力 120 Hz" },
-                  ]}
-                  onChange={(lowCutFrequency) =>
-                    onChange({
-                      lowCutFrequency: lowCutFrequency as AppSettings["lowCutFrequency"],
-                    })
-                  }
-                />
-              </SettingsItemRow>
-              <SettingsItemRow
-                label="五段声音塑形"
-                description="针对语音保留五个关键频段，0 dB 为原声。"
-              >
-                <div className="grid min-w-[420px] grid-cols-2 gap-x-4 gap-y-2">
-                  {MICROPHONE_EQ_FREQUENCIES.map((frequency, index) => {
-                    const gain = equalizerDraft[index] ?? 0;
-                    const label = frequency >= 1_000 ? `${frequency / 1_000}k` : String(frequency);
-                    return (
-                      <label
-                        key={frequency}
-                        className="grid grid-cols-[34px_1fr_42px] items-center gap-2"
-                      >
-                        <span className="text-[11px] font-semibold text-[#667085]">{label}</span>
-                        <Slider
-                          min={-12}
-                          max={12}
-                          step={1}
-                          value={gain}
-                          onChange={(event) => {
-                            const nextGains = [
-                              ...equalizerDraft,
-                            ] as AppSettings["micEqualizerGains"];
-                            nextGains[index] = Number(event.currentTarget.value);
-                            setEqualizerDraft(nextGains);
-                          }}
-                          onPointerUp={(event) => {
-                            const nextGains = [
-                              ...equalizerDraft,
-                            ] as AppSettings["micEqualizerGains"];
-                            nextGains[index] = Number(event.currentTarget.value);
-                            onChange({ micEqualizerGains: nextGains });
-                          }}
-                          onKeyUp={(event) => {
-                            const nextGains = [
-                              ...equalizerDraft,
-                            ] as AppSettings["micEqualizerGains"];
-                            nextGains[index] = Number(event.currentTarget.value);
-                            onChange({ micEqualizerGains: nextGains });
-                          }}
-                        />
-                        <span className="text-right text-[11px] tabular-nums text-[#98A2B3]">
-                          {gain > 0 ? "+" : ""}
-                          {gain} dB
-                        </span>
-                      </label>
-                    );
-                  })}
-                </div>
-              </SettingsItemRow>
-            </div>
-          ) : null}
-        </div>
+        <SettingsItemRow label="说话模式">
+          <SegmentedControl
+            value={settings.isPushToTalkEnabled ? "ptt" : "open"}
+            options={[
+              { value: "open", label: "自由麦" },
+              { value: "ptt", label: "按键说话" },
+            ]}
+            onChange={(value) => onChange({ isPushToTalkEnabled: value === "ptt" })}
+          />
+        </SettingsItemRow>
+        <SettingsItemRow
+          label="自动录音并保存"
+          description="默认开启。进入频道后自动录音，退出时直接保存到录音库。"
+        >
+          <Switch
+            isChecked={settings.isAutoRecordOnJoinEnabled}
+            onChange={(isAutoRecordOnJoinEnabled) => onChange({ isAutoRecordOnJoinEnabled })}
+          />
+        </SettingsItemRow>
       </div>
     </SettingsSection>
   );

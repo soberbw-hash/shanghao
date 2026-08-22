@@ -110,6 +110,8 @@ const desktopApi: DesktopApi = {
       ipcRenderer.invoke(IPC_CHANNELS.ai.getVoiceMemory, recordingId),
     listVoiceMemories: () => ipcRenderer.invoke(IPC_CHANNELS.ai.listVoiceMemories),
     processRecording: (request) => ipcRenderer.invoke(IPC_CHANNELS.ai.processRecording, request),
+    selectTranscription: (recordingId, modelId) =>
+      ipcRenderer.invoke(IPC_CHANNELS.ai.selectTranscription, recordingId, modelId),
     pauseTask: (recordingId) => ipcRenderer.invoke(IPC_CHANNELS.ai.pauseTask, recordingId),
     resumeTask: (recordingId) => ipcRenderer.invoke(IPC_CHANNELS.ai.resumeTask, recordingId),
     assignSpeaker: (recordingId, speakerId, memberId, nickname) =>
@@ -118,6 +120,10 @@ const desktopApi: DesktopApi = {
       ipcRenderer.invoke(IPC_CHANNELS.ai.updateMarkerTitle, recordingId, markerId, title),
     askRecording: (request) => ipcRenderer.invoke(IPC_CHANNELS.ai.askRecording, request),
     askMemory: (request) => ipcRenderer.invoke(IPC_CHANNELS.ai.askMemory, request),
+    cancelQuestion: () => ipcRenderer.invoke(IPC_CHANNELS.ai.cancelQuestion),
+    getCustomProvider: () => ipcRenderer.invoke(IPC_CHANNELS.ai.getCustomProvider),
+    saveCustomProvider: (input) => ipcRenderer.invoke(IPC_CHANNELS.ai.saveCustomProvider, input),
+    clearCustomProvider: () => ipcRenderer.invoke(IPC_CHANNELS.ai.clearCustomProvider),
     searchMemory: (request) => ipcRenderer.invoke(IPC_CHANNELS.ai.searchMemory, request),
     updateRuntimePressure: (pressure) =>
       ipcRenderer.invoke(IPC_CHANNELS.ai.updateRuntimePressure, pressure),

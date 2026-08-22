@@ -19,6 +19,7 @@ type CaptureMode =
   | "screen-share-expanded"
   | "settings"
   | "settings-recording"
+  | "settings-ai"
   | "settings-detail";
 
 interface CaptureUiOptions {
@@ -370,6 +371,7 @@ export const captureUi = async (
       "screen-share",
       "screen-share-expanded",
       "settings",
+      "settings-ai",
       "settings-detail",
     ].includes(options.mode);
     if (needsSettledRoom) {
@@ -384,6 +386,7 @@ export const captureUi = async (
   if (
     options.mode === "settings" ||
     options.mode === "settings-recording" ||
+    options.mode === "settings-ai" ||
     options.mode === "settings-detail"
   ) {
     const isAlreadyOpen = await waitForVisibleSelector(window, ".settings-page-header", 3_000);
@@ -401,6 +404,12 @@ export const captureUi = async (
       await clickButtonByLabel(window, "录音库");
       if (!(await waitForVisibleSelector(window, ".recording-library-utility-bar"))) {
         throw new Error("录音库没有在预期时间内完成渲染");
+      }
+      await sleep(300);
+    } else if (options.mode === "settings-ai") {
+      await clickButtonByLabel(window, "AI 功能");
+      if (!(await waitForVisibleSelector(window, "#asr-models-title"))) {
+        throw new Error("AI 功能页没有在预期时间内完成渲染");
       }
       await sleep(300);
     } else {

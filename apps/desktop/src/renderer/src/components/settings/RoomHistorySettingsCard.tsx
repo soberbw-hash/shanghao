@@ -19,10 +19,14 @@ const formatDuration = (milliseconds: number): string => {
 };
 
 const formatParticipantNames = (report: DailyRoomReport): string =>
-  report.participantNicknames
-    .map((nickname) => nickname.trim())
-    .filter(Boolean)
-    .join("、");
+  [
+    ...new Map(
+      report.participantNicknames
+        .map((nickname) => nickname.trim())
+        .filter(Boolean)
+        .map((nickname) => [nickname.toLocaleLowerCase("zh-CN"), nickname] as const),
+    ).values(),
+  ].join("、");
 
 const ReportDetails = ({ report, onOpen }: { report: DailyRoomReport; onOpen: () => void }) => {
   const participantNames = formatParticipantNames(report);

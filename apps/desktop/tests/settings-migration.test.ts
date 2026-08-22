@@ -24,6 +24,7 @@ test("migrateSettings falls back to safe defaults for damaged legacy config", ()
     isHardwareAccelerationEnabled: "invalid" as never,
     isOverlayEnabled: "invalid" as never,
     micEqualizerGains: [99, -99, 3, Number.NaN] as never,
+    micMonitorMode: "raw",
     colorTheme: "dark",
   });
 
@@ -36,7 +37,7 @@ test("migrateSettings falls back to safe defaults for damaged legacy config", ()
   assert.equal(result.settings.avatarId, "fox");
   assert.equal(result.settings.avatarPath, undefined);
   assert.equal(result.settings.nickname, "");
-  assert.equal(result.settings.globalMuteShortcut, "Ctrl+Shift+M");
+  assert.equal(result.settings.globalMuteShortcut, "");
   assert.equal("preferredSampleRate" in result.settings, false);
   assert.equal("inputLevelThreshold" in result.settings, false);
   assert.equal(result.settings.isVoiceEnhancementEnabled, true);
@@ -64,8 +65,9 @@ test("migrateSettings falls back to safe defaults for damaged legacy config", ()
   assert.equal(result.settings.weatherLocationMode, "auto");
   assert.equal(result.settings.weatherManualCity, "");
   assert.equal(result.settings.weatherEffectMode, "standard");
-  assert.deepEqual(result.settings.micEqualizerGains, [12, -12, 3, 0, 0]);
-  assert.equal(result.settings.lowCutFrequency, "90");
+  assert.deepEqual(result.settings.micEqualizerGains, [0, 0, 0, 0, 0]);
+  assert.equal(result.settings.lowCutFrequency, "75");
+  assert.equal(result.settings.micMonitorMode, "processed");
   assert.equal(result.migrated, true);
 });
 
@@ -79,8 +81,15 @@ test("friend loudness balance is on by default and explicit choices survive migr
 });
 
 test("ASR model selection preserves supported providers and repairs damaged values", () => {
-  assert.equal(migrateSettings({}).settings.aiAsrModel, "vibevoice");
-  for (const aiAsrModel of ["vibevoice", "qwen3-asr-0.6b", "paraformer-zh"] as const) {
+  assert.equal(migrateSettings({}).settings.aiAsrModel, "qwen3-asr-0.6b-force");
+  for (const aiAsrModel of [
+    "qwen3-asr-1.7b-force",
+    "qwen3-asr-0.6b-force",
+    "fun-asr-nano-2512",
+    "glm-asr-nano-2512",
+    "fireredasr2-aed",
+    "paraformer-zh",
+  ] as const) {
     assert.equal(
       migrateSettings({ ...defaultSettings, aiAsrModel }).settings.aiAsrModel,
       aiAsrModel,
@@ -88,11 +97,25 @@ test("ASR model selection preserves supported providers and repairs damaged valu
   }
   assert.equal(
     migrateSettings({ ...defaultSettings, aiAsrModel: "unknown-asr" as never }).settings.aiAsrModel,
-    "vibevoice",
+    "qwen3-asr-0.6b-force",
+  );
+  assert.equal(
+    migrateSettings({ ...defaultSettings, aiAsrModel: "vibevoice" as never }).settings.aiAsrModel,
+    "qwen3-asr-0.6b-force",
+  );
+  assert.equal(
+    migrateSettings({ ...defaultSettings, aiAsrModel: "fireredasr2-llm" as never }).settings
+      .aiAsrModel,
+    "qwen3-asr-0.6b-force",
+  );
+  assert.equal(
+    migrateSettings({ ...defaultSettings, aiAsrModel: "qwen3-asr-0.6b" as never }).settings
+      .aiAsrModel,
+    "qwen3-asr-0.6b-force",
   );
 });
 
-test("weather preferences migrate and remain local settings", () => {
+test("weather stays enabled with standard effects while location remains configurable", () => {
   const result = migrateSettings({
     ...defaultSettings,
     weatherLocationMode: "manual",
@@ -103,8 +126,8 @@ test("weather preferences migrate and remain local settings", () => {
 
   assert.equal(result.settings.weatherLocationMode, "manual");
   assert.equal(result.settings.weatherManualCity, "杭州");
-  assert.equal(result.settings.weatherEffectMode, "reduced");
-  assert.equal(result.settings.isDynamicWeatherEnabled, false);
+  assert.equal(result.settings.weatherEffectMode, "standard");
+  assert.equal(result.settings.isDynamicWeatherEnabled, true);
 });
 
 test("migrateSettings preserves the release notes version already shown", () => {

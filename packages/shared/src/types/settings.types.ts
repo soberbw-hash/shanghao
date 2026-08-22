@@ -1,8 +1,9 @@
-import type { AiAsrModelId, AiProcessingMode } from "./ai.types";
+import type { AiAsrModelId, AiProcessingMode, AiTextProvider } from "./ai.types";
 import type { WeatherEffectMode, WeatherLocationMode } from "./weather.types";
 
 export type MicMonitorMode = "processed" | "raw";
-export type LowCutFrequency = "off" | "90" | "120";
+// Keep legacy values readable during migration; current builds always normalize to 75 Hz.
+export type LowCutFrequency = "75" | "off" | "90" | "120";
 export type UiScale = 100 | 110 | 125;
 export type BuiltInAvatarId = "fox" | "cat" | "duck" | "panda" | "corgi";
 export type MicEqualizerGains = [number, number, number, number, number];
@@ -35,6 +36,8 @@ export interface AppSettings {
   recordingLibraryQuotaGb: number;
   isRecordingWasteAutoCleanupEnabled: boolean;
   aiAsrModel: AiAsrModelId;
+  aiOrganizerProvider: AiTextProvider;
+  aiRoomAskProvider: AiTextProvider;
   aiProcessingMode: AiProcessingMode;
   isAiAutoTranscribeEnabled: boolean;
   isAiAutoOrganizeEnabled: boolean;

@@ -76,16 +76,51 @@ test("room exposes one plainly named ask and voice-memory entry", () => {
     path.resolve(process.cwd(), "src/renderer/src/components/room/RoomAskDialog.tsx"),
     "utf8",
   );
-  assert.equal(topbarSource.includes("搜索语音记忆或提问"), true);
+  assert.equal(topbarSource.includes('aria-label="打开问"'), true);
+  assert.equal(topbarSource.includes("搜索语音记忆或提问"), false);
   assert.equal(topbarSource.includes("<span>问</span>"), true);
-  assert.equal(dialogSource.includes("搜索记忆"), true);
+  assert.equal(dialogSource.includes("搜索记忆"), false);
+  assert.equal(dialogSource.includes("房间云端 AI，可联网搜索相关知识"), false);
+  assert.equal(dialogSource.includes("ROOM_QUESTION_HISTORY_LIMIT = 10"), true);
+  assert.equal(dialogSource.includes('aria-label="最近提问"'), true);
   assert.equal(dialogSource.includes("问千问"), false);
-  assert.equal(dialogSource.includes('pending === "ask" ? "正在想…" : "问"'), true);
   assert.equal(dialogSource.includes("window.desktopApi.ai.askMemory"), true);
+  assert.equal(dialogSource.includes("window.desktopApi.ai.cancelQuestion"), true);
+  assert.equal(dialogSource.includes("停止回答"), true);
   assert.equal(dialogSource.includes("onOpenResult"), true);
   assert.equal(dialogSource.includes('className="room-ask-popover"'), true);
   assert.equal(dialogSource.includes('aria-modal="true"'), false);
   assert.equal(dialogSource.includes("fixed inset-0"), false);
+});
+
+test("room floating chrome keeps the requested static glass hierarchy", () => {
+  const stylesSource = readRendererCss(process.cwd());
+
+  assert.equal(stylesSource.includes(".room-page .voice-dock {"), true);
+  assert.equal(stylesSource.includes("blur(20px) saturate(138%)"), true);
+  assert.equal(stylesSource.includes(".room-page .room-topbar {"), true);
+  assert.equal(stylesSource.includes("blur(17px) saturate(132%)"), true);
+  assert.equal(stylesSource.includes(".room-page .audio-control-popover {"), true);
+  assert.equal(stylesSource.includes("blur(22px) saturate(142%)"), true);
+  assert.equal(stylesSource.includes(".room-page.performance-gaming .voice-dock"), true);
+  assert.equal(stylesSource.includes(".room-page.performance-gaming .room-topbar"), true);
+});
+
+test("room center material stays static, clean and separated from the workstations", () => {
+  const stylesSource = readFileSync(
+    path.resolve(process.cwd(), "src/renderer/src/styles/parts/130-final-material.css"),
+    "utf8",
+  );
+
+  assert.match(stylesSource, /\.team-island-stage::after \{[^}]*opacity: 0\.012;/);
+  assert.match(stylesSource, /\.scene-window-light \{[^}]*filter: none;/);
+  assert.match(stylesSource, /\.scene-rug \{[^}]*border-radius: 50%;/);
+  assert.match(stylesSource, /\.scene-brand-arc \{[^}]*width: clamp\(72px, 7%, 104px\);/);
+  assert.match(stylesSource, /\.scene-desk-shadow,[^{]*\{[^}]*filter: none;/);
+  assert.doesNotMatch(
+    stylesSource,
+    /\.team-island-stage::after \{[^}]*(?:animation|backdrop-filter):/,
+  );
 });
 
 test("local speaker and microphone state are applied atomically before server echoes", () => {

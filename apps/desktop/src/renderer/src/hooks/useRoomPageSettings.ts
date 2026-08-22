@@ -14,7 +14,6 @@ export const useRoomPageSettings = () => {
   const isAutoRecordOnJoinEnabled = useSettingsStore(
     (state) => state.settings?.isAutoRecordOnJoinEnabled,
   );
-  const isOverlayEnabled = useSettingsStore((state) => state.settings?.isOverlayEnabled);
   const isNoiseSuppressionEnabled = useSettingsStore(
     (state) => state.settings?.isNoiseSuppressionEnabled,
   );
@@ -72,7 +71,6 @@ export const useRoomPageSettings = () => {
     isAiAutoTranscribeEnabled,
     isAiAutoOrganizeEnabled,
     isAutoRecordOnJoinEnabled,
-    isOverlayEnabled,
     isNoiseSuppressionEnabled,
     preferredInputDeviceId,
     recordingSaveDirectory,

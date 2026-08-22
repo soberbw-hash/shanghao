@@ -51,13 +51,28 @@ test("AI models remain opt-in and game activity lowers background priority", asy
   );
   assert.deepEqual(
     snapshot.models.filter((model) => model.category === "asr").map((model) => model.id),
-    ["vibevoice", "qwen3-asr-0.6b", "paraformer-zh"],
+    [
+      "qwen3-asr-1.7b-force",
+      "qwen3-asr-0.6b-force",
+      "fun-asr-nano-2512",
+      "glm-asr-nano-2512",
+      "fireredasr2-aed",
+      "paraformer-zh",
+    ],
+  );
+  assert.equal(
+    snapshot.models.find((model) => model.id === "qwen3-forced-aligner-0.6b")?.category,
+    "support",
   );
   assert.equal(snapshot.models.find((model) => model.id === "qwen35-4b")?.category, "organizer");
-  assert.equal(manager.getActiveAsrModel(), "vibevoice");
-  assert.equal(manager.canRunTask("transcription").requiredModel, "vibevoice");
+  assert.equal(manager.getActiveAsrModel(), "qwen3-asr-0.6b-force");
+  assert.equal(manager.canRunTask("transcription").requiredModel, "qwen3-asr-0.6b-force");
   manager.setActiveAsrModel("paraformer-zh");
   assert.equal(manager.canRunTask("transcription").requiredModel, "paraformer-zh");
+  assert.equal(
+    manager.canRunTask("transcription", false, "qwen3-asr-1.7b-force").requiredModel,
+    "qwen3-asr-1.7b-force",
+  );
   assert.equal(snapshot.scheduler.processingMode, "after_game");
 
   games.setGame("三角洲行动");
@@ -93,7 +108,7 @@ test("AI model paths reject traversal and persisted partial state resumes after 
       statePath,
       JSON.stringify({
         models: {
-          vibevoice: {
+          "qwen3-asr-0.6b-force": {
             userInstalled: true,
             phase: "paused",
             pendingRevision: "test-revision",
@@ -108,11 +123,13 @@ test("AI model paths reject traversal and persisted partial state resumes after 
   const manager = new AiModelManager(directory, games as never, async () => undefined);
   await manager.initialize("manual");
   try {
-    const model = manager.getSnapshot().models.find((candidate) => candidate.id === "vibevoice");
+    const model = manager
+      .getSnapshot()
+      .models.find((candidate) => candidate.id === "qwen3-asr-0.6b-force");
     assert.ok(["paused", "checking", "downloading"].includes(model?.phase ?? ""));
     assert.equal(model?.progress, 60);
     assert.equal(
-      JSON.parse(await readFile(statePath, "utf8")).models.vibevoice.userInstalled,
+      JSON.parse(await readFile(statePath, "utf8")).models["qwen3-asr-0.6b-force"].userInstalled,
       true,
     );
   } finally {
@@ -131,10 +148,13 @@ test("AI model downloads have a mainland fallback and readable failure messages"
   assert.match(describeAiModelError(new Error("ai_model_disk_space_insufficient")), /磁盘/);
   assert.match(describeAiModelError(new Error("ai_model_file_incomplete")), /继续/);
   assert.match(describeAiModelError(new Error("ai_model_manifest_http_503")), /HTTP 503/);
-  assert.equal(PINNED_MODEL_REVISIONS.vibevoice, "66e78021ab8f5f06133d1ab421ba4d348bda97c9");
   assert.equal(
-    PINNED_MODEL_REVISIONS["qwen3-asr-0.6b"],
-    "7f1569a48a89f3e3f4dc3a5c9d28bddd903bc76c",
+    PINNED_MODEL_REVISIONS["qwen3-asr-0.6b-force"],
+    "5eb144179a02acc5e5ba31e748d22b0cf3e303b0",
+  );
+  assert.equal(
+    PINNED_MODEL_REVISIONS["qwen3-forced-aligner-0.6b"],
+    "c7cbfc2048c462b0d63a45797104fc9db3ad62b7",
   );
   assert.equal(PINNED_MODEL_REVISIONS["paraformer-zh"], "bundle-d7811ee3-df20e6b3-d0e55e2b");
   assert.equal(PINNED_MODEL_REVISIONS["qwen35-4b"], "851bf6e806efd8d0a36b00ddf55e13ccb7b8cd0a");

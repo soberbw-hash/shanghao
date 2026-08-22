@@ -29,8 +29,11 @@ const SCENE_LABELS: Record<WeatherSceneKind, string> = {
   fog: "雾",
 };
 
-export const resolveWeatherVisualTheme = (snapshot?: LocalWeatherSnapshot): WeatherVisualTheme => {
-  const scene = snapshot?.scene ?? "clear";
+export const resolveWeatherVisualTheme = (
+  snapshot?: Pick<LocalWeatherSnapshot, "scene" | "phase">,
+): WeatherVisualTheme => {
+  // A friendly blue-sky scene is visible before the first network weather snapshot arrives.
+  const scene = snapshot?.scene ?? "partly_cloudy";
   const phase = snapshot?.phase ?? "day";
   const isNight = phase === "night";
   const roomTone: WeatherRoomTone = isNight

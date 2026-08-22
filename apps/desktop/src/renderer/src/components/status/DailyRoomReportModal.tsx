@@ -1,4 +1,4 @@
-import { CalendarDays, Gamepad2, MessageCircle, MonitorUp, Users } from "lucide-react";
+import { CalendarDays, Gamepad2, MessageCircle, MonitorUp } from "lucide-react";
 import { motion, useReducedMotion } from "framer-motion";
 import { createPortal } from "react-dom";
 
@@ -41,19 +41,18 @@ export const DailyRoomReportModal = ({
   const roomName = report.roomId === "side" ? "二号房" : "一号房";
   const games = report.games.map((game) => game.name).join("、");
   const gameActivities = report.gameActivities ?? [];
-  const participantNames = report.participantNicknames
-    .map((nickname) => nickname.trim())
-    .filter(Boolean);
   const highlights = buildDailyRoomReportHighlights(report);
-  const headline = gameActivities.length
-    ? `${gameActivities[0]?.nickname} 昨天开了一局，房间里留下了游戏时间 🎮`
-    : report.participantCount >= 4
-      ? "昨天又凑成了一桌，热闹得很 🎉"
-      : report.messageCount >= 10
-        ? "昨天聊了不少，房间没白开 💬"
-        : games
-          ? "昨天有人来开黑，也留下了战绩 🎮"
-          : "昨天有人来坐了坐，房间记得这次碰面 ☕";
+  const headline =
+    report.commentary?.trim() ||
+    (gameActivities.length
+      ? `${gameActivities[0]?.nickname} 昨天开了一局，房间里留下了游戏时间 🎮`
+      : report.participantCount >= 4
+        ? "昨天又凑成了一桌，热闹得很 🎉"
+        : report.messageCount >= 10
+          ? "昨天聊了不少，房间没白开 💬"
+          : games
+            ? "昨天有人来开黑，也留下了战绩 🎮"
+            : "昨天有人来坐了坐，房间记得这次碰面 ☕");
 
   return createPortal(
     <motion.div
@@ -110,20 +109,6 @@ export const DailyRoomReportModal = ({
             </div>
           </section>
         ) : null}
-        {participantNames.length ? (
-          <section className="daily-report-friends" aria-label="昨天来过的朋友">
-            <div className="daily-report-friends-title">
-              <Users aria-hidden="true" />
-              <strong>昨天都有谁</strong>
-              <span>{participantNames.length} 位朋友</span>
-            </div>
-            <div className="daily-report-friend-list">
-              {participantNames.map((nickname, index) => (
-                <span key={`${nickname}-${index}`}>{nickname}</span>
-              ))}
-            </div>
-          </section>
-        ) : null}
         {highlights.length ? (
           <section className="mt-5 grid grid-cols-2 gap-2.5" aria-label="昨日亮点">
             {highlights.map((highlight) => (
@@ -144,14 +129,7 @@ export const DailyRoomReportModal = ({
             ))}
           </section>
         ) : null}
-        <div className="mt-5 grid grid-cols-3 gap-3">
-          {report.participantCount ? (
-            <div className="daily-report-stat">
-              <Users />
-              <strong>{report.participantCount}</strong>
-              <span>位朋友</span>
-            </div>
-          ) : null}
+        <div className="mt-5 grid grid-cols-2 gap-3">
           {report.messageCount ? (
             <div className="daily-report-stat">
               <MessageCircle />

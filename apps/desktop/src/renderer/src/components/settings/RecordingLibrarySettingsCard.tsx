@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 
 import {
+  AI_ASR_MODEL_NAMES,
   hasInvalidVoiceMemoryResult,
   RecordingState,
   type AppSettings,
@@ -76,16 +77,49 @@ const transcriptionPercent = (record: VoiceMemoryRecord): number =>
       ? 100
       : 0;
 
+const compactTranscriptionModelNames = {
+  "qwen3-asr-1.7b-force": "Qwen3-ASR-1.7B + Force",
+  "qwen3-asr-0.6b-force": "Qwen3-ASR-0.6B + Force",
+  "fun-asr-nano-2512": "Fun-ASR-Nano",
+  "glm-asr-nano-2512": "GLM-ASR-Nano",
+  "fireredasr2-aed": "FireRedASR2-AED",
+  "paraformer-zh": "Paraformer 中文套件",
+} as const satisfies Record<keyof typeof AI_ASR_MODEL_NAMES, string>;
+
 const voiceMemoryStatus = (
   record: VoiceMemoryRecord | undefined,
-): { label: string; progress?: number; tone: string } | undefined => {
+):
+  | {
+      label: string;
+      modelLabel?: string;
+      modelTitle?: string;
+      progress?: number;
+      tone: string;
+    }
+  | undefined => {
   if (!record) return undefined;
   const progress = transcriptionPercent(record);
+  const modelLabel = record.transcriptionModel
+    ? compactTranscriptionModelNames[record.transcriptionModel.id]
+    : record.transcript.length > 0
+      ? "模型未知"
+      : undefined;
+  const modelTitle = record.transcriptionModel
+    ? `转录模型：${record.transcriptionModel.name}${record.transcriptionModel.version ? `\n版本：${record.transcriptionModel.version}` : ""}`
+    : record.transcript.length > 0
+      ? "这条历史转录没有保存模型信息"
+      : undefined;
   if (record.phase === "transcribing") {
-    return { label: `转录中 ${progress}%`, progress, tone: "is-working" };
+    return { label: `转录中 ${progress}%`, modelLabel, modelTitle, progress, tone: "is-working" };
   }
   if (record.phase === "organizing") {
-    return { label: "转录完成 · 正在整理", progress: 100, tone: "is-working" };
+    return {
+      label: "转录完成 · 正在整理",
+      modelLabel,
+      modelTitle,
+      progress: 100,
+      tone: "is-working",
+    };
   }
   if (record.phase === "ready") {
     if (record.errorMessage === "no_reliable_speech") {
@@ -95,9 +129,15 @@ const voiceMemoryStatus = (
       return { label: "旧结果需重新转录", tone: "is-error" };
     }
     if (record.errorMessage?.startsWith("organize_failed:")) {
-      return { label: "转录完成 · 整理未完成", tone: "is-muted", progress: 100 };
+      return {
+        label: "转录完成 · 整理未完成",
+        modelLabel,
+        modelTitle,
+        tone: "is-muted",
+        progress: 100,
+      };
     }
-    return { label: "转录完成", progress: 100, tone: "is-ready" };
+    return { label: "转录完成", modelLabel, modelTitle, progress: 100, tone: "is-ready" };
   }
   if (record.phase === "paused") {
     return {
@@ -107,12 +147,16 @@ const voiceMemoryStatus = (
           ? "等待后台处理"
           : `已暂停 ${progress}%`,
       progress: progress || undefined,
+      modelLabel,
+      modelTitle,
       tone: "is-paused",
     };
   }
   if (record.phase === "error") {
     return {
       label: record.transcript.length ? "转录完成 · 整理失败" : "转录失败",
+      modelLabel,
+      modelTitle,
       progress: record.transcript.length ? 100 : undefined,
       tone: "is-error",
     };
@@ -744,7 +788,7 @@ export const RecordingLibrarySettingsCard = ({
                 ? cleanupScanProgress.total
                   ? `${cleanupScanProgress.processed}/${cleanupScanProgress.total}`
                   : "检查中"
-                : "立即清理"}
+                : "清理"}
             </Button>
           </div>
         </div>
@@ -873,6 +917,14 @@ export const RecordingLibrarySettingsCard = ({
                             {memoryStatus ? (
                               <span className={`recording-item-ai-status ${memoryStatus.tone}`}>
                                 <span>{memoryStatus.label}</span>
+                                {memoryStatus.modelLabel ? (
+                                  <span
+                                    className="recording-item-ai-model"
+                                    title={memoryStatus.modelTitle}
+                                  >
+                                    转录模型 · {memoryStatus.modelLabel}
+                                  </span>
+                                ) : null}
                                 {memoryStatus.progress !== undefined ? (
                                   <span
                                     className="recording-item-ai-progress"

@@ -11,7 +11,10 @@ import {
 } from "lucide-react";
 
 import {
+  AI_ASR_MODEL_NAMES,
   hasInvalidVoiceMemoryResult,
+  type AiAsrModelId,
+  type AiModelStatus,
   type RecordingLibraryItem,
   type VoiceMemoryRecord,
 } from "@private-voice/shared";
@@ -43,14 +46,11 @@ const describeError = (message: string, transcriptionFinished: boolean): string 
   if (message.includes("no_reliable_speech")) {
     return "没有检测到可靠的中文语音；模型返回的其他语言结果已被拦截，请重新转录。";
   }
-  if (message.includes("model_vibevoice_not_installed"))
-    return "当前选择的 VibeVoice 转录模型还没有下载。";
-  if (message.includes("model_qwen3-asr-0.6b_not_installed"))
-    return "当前选择的 Qwen3-ASR 转录模型还没有下载。";
-  if (message.includes("model_paraformer-zh_not_installed"))
-    return "当前选择的 Paraformer 中文套件还没有下载。";
+  if (message.includes("_not_installed")) return "当前选择的转录模型还没有下载。";
   if (message.includes("_runtime_not_ready"))
     return "当前转录模型的运行组件还没有准备好，请到“AI 功能”中修复组件。";
+  if (message.includes("No module named 'torchaudio'") || message.includes("torchaudio"))
+    return "Paraformer 的语音运行组件不完整，请到“AI 功能”中点击“修复组件”后再继续转录。";
   if (message.includes("ffmpeg_missing"))
     return "找不到 FFmpeg，无法把录音转换为 ASR 输入格式。请重新安装当前版本。";
   if (message.includes("ffmpeg_failed")) return "音频格式转换失败：" + message;
@@ -70,13 +70,37 @@ const describeError = (message: string, transcriptionFinished: boolean): string 
   if (message.includes("qwen_worker_timeout")) {
     return "本地千问整理耗时较长，已超过本次等待时间；转录文字已经保留，请稍后重新整理。";
   }
+  if (message.includes("cloud_ai_join_required")) {
+    return "转录文字已经保留。请先进入一号房或二号房，再使用云端模型整理。";
+  }
+  if (message.includes("cloud_ai_not_configured")) {
+    return "转录文字已经保留，但房间服务器还没有配置好云端 AI。";
+  }
+  if (message.includes("cloud_ai_unsupported")) {
+    return "转录文字已经保留，但当前房间服务器版本较旧，暂不支持云端整理。";
+  }
+  if (message.includes("cloud_ai_busy") || message.includes("cloud_ai_request_in_progress")) {
+    return "转录文字已经保留。云端 AI 正在处理另一项任务，请稍后重新整理。";
+  }
+  if (message.includes("custom_ai_not_configured")) {
+    return "转录文字已经保留。请先到“AI 功能”中保存自定义 API。";
+  }
+  if (message.includes("custom_ai_request_failed")) {
+    return "转录文字已经保留。自定义 API 暂时无法连接，请检查地址、模型和密钥。";
+  }
   if (message.includes("manual_required:long_recording")) {
     return "这条录音超过 30 分钟，为避免无人操作时长期占用电脑，已停止自动转录。需要时请点“继续”。";
+  }
+  if (message.includes("transcription_checkpoint_incompatible")) {
+    return "上次转录使用的模型或处理版本已变化，现有文字已保留。可以切回原模型继续，或点“重新转录”从头识别。";
+  }
+  if (message.includes("transcription_checkpoint_missing")) {
+    return "上次转录的续传断点已丢失，现有文字已保留。如需继续，请点“重新转录”从头识别。";
   }
   if (message.includes("ai_task_paused")) return "任务已暂停，需要时可以继续处理。";
   if (message.includes("voice_memory_transcript_required")) return "请先完成转录，再整理内容。";
   if (message.includes("organize_failed") || message.includes("ai_runtime_timeout")) {
-    return "转录文字已经保留，本地整理没有完成；你仍然可以直接查看文字，稍后再点重新整理。";
+    return "转录文字已经保留，内容整理没有完成；你仍然可以直接查看文字，稍后再点重新整理。";
   }
   if (message.includes("recording_file_unavailable")) return "录音文件已被移动或无法读取。";
   return message ? "转录没有完成：" + message : "转录没有完成，可以直接重试。";
@@ -85,6 +109,8 @@ const describeError = (message: string, transcriptionFinished: boolean): string 
 /** Presents one recording as a linked transcript, timeline and summary. */
 export const VoiceMemoryDetail = ({ recording, roomName, onSeek }: VoiceMemoryDetailProps) => {
   const [record, setRecord] = useState<VoiceMemoryRecord>();
+  const [asrModels, setAsrModels] = useState<AiModelStatus[]>([]);
+  const [selectedAsrModel, setSelectedAsrModel] = useState<AiAsrModelId>();
   const [busy, setBusy] = useState(false);
   const [queuedAction, setQueuedAction] = useState<"transcribe" | "organize">();
   const [error, setError] = useState<string>();
@@ -128,6 +154,29 @@ export const VoiceMemoryDetail = ({ recording, roomName, onSeek }: VoiceMemoryDe
     };
   }, [recording.filePath, recording.recordingId]);
 
+  useEffect(() => {
+    let active = true;
+    void window.desktopApi.ai
+      .getSnapshot()
+      .then((snapshot) => {
+        if (!active) return;
+        setAsrModels(snapshot.models.filter((model) => model.category === "asr"));
+      })
+      .catch(() => undefined);
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (selectedAsrModel) return;
+    const initialModel =
+      record?.transcriptionModel?.id ??
+      (asrModels.find((model) => model.activeRevision && model.runtimeReady)?.id as
+        AiAsrModelId | undefined);
+    if (initialModel) setSelectedAsrModel(initialModel);
+  }, [asrModels, record?.transcriptionModel?.id, selectedAsrModel]);
+
   const process = async (action: "transcribe" | "organize") => {
     setBusy(true);
     setQueuedAction(action);
@@ -143,6 +192,7 @@ export const VoiceMemoryDetail = ({ recording, roomName, onSeek }: VoiceMemoryDe
         transcribe: action === "transcribe",
         organize: action === "organize",
         restartTranscription: action === "transcribe",
+        asrModelId: action === "transcribe" ? selectedAsrModel : undefined,
         markers: recording.markers.map((marker) => ({
           id: marker.id,
           offsetMs: marker.offsetMs,
@@ -190,6 +240,21 @@ export const VoiceMemoryDetail = ({ recording, roomName, onSeek }: VoiceMemoryDe
     }
   };
 
+  const selectTestModel = async (modelId: AiAsrModelId) => {
+    setSelectedAsrModel(modelId);
+    if (!record?.transcriptionVariants?.[modelId]) return;
+    setBusy(true);
+    setError(undefined);
+    try {
+      setRecord(await window.desktopApi.ai.selectTranscription(recording.recordingId, modelId));
+      setDetailsOpen(true);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "切换转录结果失败");
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const invalidTranscript = useMemo(
     () => Boolean(record && hasInvalidVoiceMemoryResult(record)),
     [record],
@@ -222,18 +287,35 @@ export const VoiceMemoryDetail = ({ recording, roomName, onSeek }: VoiceMemoryDe
   const transcriptionFinished = record.transcript.length > 0 && !invalidTranscript;
   const organizationFailed = record.errorMessage?.startsWith("organize_failed:") === true;
   const pausedOrganization = record.phase === "paused" && record.processingStage === "organize";
+  const resumableTranscription =
+    record.processingStage !== "organize" &&
+    (record.phase === "paused" || (record.phase === "error" && transcriptionFinished));
   const hasMultipleSpeakers = record.speakers.length > 1;
   const pendingSpeakers = hasMultipleSpeakers
     ? record.speakers.filter((speaker) => speaker.confidence === "pending")
     : [];
   const displayProgress =
     record.phase === "transcribing" ? transcriptionPercent(record) : record.progress;
+  const transcriptionModelLabel =
+    record.transcriptionModel?.name ??
+    (record.transcript.length > 0 ? "历史记录 · 模型未知" : undefined);
+  const transcriptionModelTitle = record.transcriptionModel
+    ? `转录模型：${record.transcriptionModel.name}${record.transcriptionModel.version ? `\n版本：${record.transcriptionModel.version}` : ""}`
+    : "这条历史转录没有保存模型信息";
+  const selectedModelDiffers = Boolean(
+    selectedAsrModel && selectedAsrModel !== record.transcriptionModel?.id,
+  );
   return (
     <section className="voice-memory-detail" aria-label="AI 语音记忆">
       <header>
         <div>
           <Sparkles aria-hidden="true" />
           <strong>语音记忆</strong>
+          {transcriptionModelLabel ? (
+            <span className="voice-memory-model-badge" title={transcriptionModelTitle}>
+              转录模型 · {transcriptionModelLabel}
+            </span>
+          ) : null}
         </div>
         <span>
           {working
@@ -249,11 +331,36 @@ export const VoiceMemoryDetail = ({ recording, roomName, onSeek }: VoiceMemoryDe
                       ? "已整理"
                       : "转录完成"
                 : record.phase === "error" && transcriptionFinished
-                  ? "转录完成 · 整理失败"
+                  ? record.processingStage === "organize"
+                    ? "转录完成 · 整理失败"
+                    : "已保留当前文字 · 可继续"
                   : record.phase === "paused"
                     ? "已暂停"
                     : "待处理"}
         </span>
+        <label className="voice-memory-model-picker">
+          <span>对比模型</span>
+          <select
+            value={selectedAsrModel ?? ""}
+            disabled={working || busy}
+            aria-label="选择转录对比模型"
+            onChange={(event) => void selectTestModel(event.target.value as AiAsrModelId)}
+          >
+            <option value="" disabled>
+              选择模型
+            </option>
+            {asrModels.map((model) => {
+              const installed = Boolean(model.activeRevision && model.runtimeReady);
+              const saved = Boolean(record.transcriptionVariants?.[model.id as AiAsrModelId]);
+              return (
+                <option key={model.id} value={model.id} disabled={!installed && !saved}>
+                  {AI_ASR_MODEL_NAMES[model.id as AiAsrModelId]}
+                  {saved ? " · 已有结果" : installed ? "" : " · 未安装"}
+                </option>
+              );
+            })}
+          </select>
+        </label>
         {record.transcript.length > 0 && !invalidTranscript ? (
           <button
             type="button"
@@ -279,19 +386,17 @@ export const VoiceMemoryDetail = ({ recording, roomName, onSeek }: VoiceMemoryDe
               type="button"
               className="voice-memory-quiet-action"
               disabled={busy || Boolean(queuedAction)}
-              onClick={() =>
-                void (record.phase === "paused" && !pausedOrganization
-                  ? resume()
-                  : process("transcribe"))
-              }
+              onClick={() => void (resumableTranscription ? resume() : process("transcribe"))}
             >
-              {record.phase === "paused" && !pausedOrganization ? <Play /> : <RotateCcw />}
+              {resumableTranscription ? <Play /> : <RotateCcw />}
               {queuedAction === "transcribe"
                 ? "排队中"
-                : record.phase === "paused" && !pausedOrganization
+                : resumableTranscription
                   ? "继续转录"
                   : transcriptionFinished
-                    ? "重新转录"
+                    ? selectedModelDiffers
+                      ? "用此模型转录"
+                      : "重新转录"
                     : "开始转录"}
             </button>
             <button

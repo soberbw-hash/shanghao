@@ -76,37 +76,43 @@ test("the checked-in runtime manifest pins source revisions and integrity hashes
   );
 });
 
-test("runtime health distinguishes a missing native DLL from a missing model", async () => {
+test("runtime health requires the shared Qwen aligner without duplicating it", async () => {
   const directory = await mkdtemp(path.join(os.tmpdir(), "shanghao-ai-health-"));
   const runtimeRoot = path.join(directory, "runtimes");
   const modelRoot = path.join(directory, "model");
-  const executable = path.join(runtimeRoot, "VibeASR.cpp", "build", "bin", "asr_infer.exe");
-  const dllRoot = path.join(runtimeRoot, "mingw64", "bin");
-  await mkdir(path.dirname(executable), { recursive: true });
-  await mkdir(dllRoot, { recursive: true });
+  const alignerRoot = path.join(directory, "aligner");
+  const pythonExecutable = path.join(runtimeRoot, "python", "Scripts", "python.exe");
+  const qwenPackage = path.join(runtimeRoot, "asr-python", "qwen", "qwen_asr", "__init__.py");
+  await mkdir(path.dirname(pythonExecutable), { recursive: true });
+  await mkdir(path.dirname(qwenPackage), { recursive: true });
   await mkdir(modelRoot, { recursive: true });
   await Promise.all([
-    writeFile(executable, "runtime"),
-    writeFile(path.join(modelRoot, "vibeasr-vae-encoder-i8_s.gguf"), "model"),
-    writeFile(path.join(modelRoot, "vibeasr-lm-i2_s-embed-q6_k.gguf"), "model"),
-    ...["libgcc_s_seh-1.dll", "libstdc++-6.dll", "libwinpthread-1.dll", "libgomp-1.dll"].map(
-      (name) => writeFile(path.join(dllRoot, name), "dll"),
-    ),
+    writeFile(pythonExecutable, "runtime"),
+    writeFile(path.join(runtimeRoot, "asr-runner.py"), "print('runner')"),
+    writeFile(qwenPackage, "# qwen-asr"),
+    writeFile(path.join(modelRoot, "config.json"), "{}"),
   ]);
+  let alignerAvailable = false;
   const runtime = new AiRuntimeManager(runtimeRoot, {
-    vibevoice: () => modelRoot,
-    qwen3Asr: () => undefined,
-    paraformer: () => undefined,
+    model: (id) =>
+      id === "qwen3-asr-0.6b-force"
+        ? modelRoot
+        : id === "qwen3-forced-aligner-0.6b" && alignerAvailable
+          ? alignerRoot
+          : undefined,
     qwen: () => undefined,
-    activeAsr: () => "vibevoice",
+    activeAsr: () => "qwen3-asr-0.6b-force",
   });
   try {
-    assert.equal((await runtime.status()).vibevoice.ready, true);
-    await rm(path.join(dllRoot, "libgomp-1.dll"), { force: true });
-    const status = await runtime.status();
-    assert.equal(status.vibevoice.ready, false);
-    assert.equal(status.vibevoice.errorCode, "dll_missing");
-    assert.match(status.vibevoice.message ?? "", /libgomp-1\.dll/);
+    const missing = await runtime.status();
+    assert.equal(missing.asr.ready, false);
+    assert.equal(missing.asr.errorCode, "model_missing");
+    assert.match(missing.asr.message ?? "", /ForcedAligner/);
+    await mkdir(alignerRoot, { recursive: true });
+    alignerAvailable = true;
+    const ready = await runtime.status();
+    assert.equal(ready.asr.ready, true);
+    assert.equal((await runtime.modelRuntimeStatuses())["qwen3-forced-aligner-0.6b"].ready, true);
   } finally {
     runtime.stop();
     await rm(directory, { recursive: true, force: true });

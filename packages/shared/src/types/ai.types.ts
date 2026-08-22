@@ -1,6 +1,23 @@
-export type AiAsrModelId = "vibevoice" | "qwen3-asr-0.6b" | "paraformer-zh";
+export type AiAsrModelId =
+  | "qwen3-asr-1.7b-force"
+  | "qwen3-asr-0.6b-force"
+  | "fun-asr-nano-2512"
+  | "glm-asr-nano-2512"
+  | "fireredasr2-aed"
+  | "paraformer-zh";
 
-export type AiModelId = AiAsrModelId | "qwen35-4b";
+export const AI_ASR_MODEL_NAMES: Record<AiAsrModelId, string> = {
+  "qwen3-asr-1.7b-force": "Qwen3-ASR-1.7B + ForcedAligner",
+  "qwen3-asr-0.6b-force": "Qwen3-ASR-0.6B + ForcedAligner",
+  "fun-asr-nano-2512": "Fun-ASR-Nano-2512",
+  "glm-asr-nano-2512": "GLM-ASR-Nano-2512",
+  "fireredasr2-aed": "FireRedASR2-AED",
+  "paraformer-zh": "Paraformer-zh + FSMN-VAD + CT-punc",
+};
+
+export type AiSupportModelId = "qwen3-forced-aligner-0.6b";
+
+export type AiModelId = AiAsrModelId | AiSupportModelId | "qwen35-4b";
 
 export type AiModelPhase =
   "not_installed" | "checking" | "downloading" | "paused" | "installed" | "error";
@@ -8,6 +25,22 @@ export type AiModelPhase =
 export type AiModelAction = "download" | "pause" | "resume" | "delete";
 
 export type AiProcessingMode = "after_game" | "low_resource" | "immediate" | "manual";
+
+export type AiTextProvider = "cloud" | "local" | "custom";
+
+export interface AiCustomProviderInput {
+  baseUrl: string;
+  model: string;
+  /** Empty keeps the encrypted key that is already stored on this computer. */
+  apiKey?: string;
+}
+
+export interface AiCustomProviderStatus {
+  configured: boolean;
+  baseUrl?: string;
+  model?: string;
+  hasApiKey: boolean;
+}
 
 export interface AiRuntimePressure {
   inVoiceRoom: boolean;
@@ -21,7 +54,7 @@ export interface AiRuntimePressure {
 
 export interface AiModelStatus {
   id: AiModelId;
-  category: "asr" | "organizer";
+  category: "asr" | "support" | "organizer";
   name: string;
   purpose: string;
   repository: string;
@@ -38,6 +71,10 @@ export interface AiModelStatus {
   updateInProgress: boolean;
   runtimeReady: boolean;
   runtimeMessage?: string;
+  /** Shared components required before this model can run. */
+  dependencies?: AiSupportModelId[];
+  /** Concise hardware warning shown without silently changing the official runtime. */
+  hardwareNote?: string;
 }
 
 export interface AiTaskSchedulerStatus {
@@ -146,6 +183,21 @@ export interface VoiceMemorySummaryPoint {
   sourceSegmentIds?: string[];
 }
 
+export interface VoiceMemoryTranscriptionModel {
+  id: AiAsrModelId;
+  name: string;
+  /** Exact downloaded revision used when the runtime reported one. */
+  version?: string;
+}
+
+export interface VoiceMemoryTranscriptionVariant {
+  model: VoiceMemoryTranscriptionModel;
+  transcript: VoiceMemoryTranscriptSegment[];
+  speakers: VoiceMemorySpeaker[];
+  pipelineVersion?: number;
+  updatedAt: string;
+}
+
 export interface VoiceMemoryRecord {
   schemaVersion: 1;
   recordingId: string;
@@ -163,6 +215,10 @@ export interface VoiceMemoryRecord {
   organizedAt?: string;
   /** Recognition pipeline that produced the persisted transcript. Missing means legacy output. */
   transcriptionPipelineVersion?: number;
+  /** ASR model that produced this transcript; independent from the model currently selected. */
+  transcriptionModel?: VoiceMemoryTranscriptionModel;
+  /** Per-model A/B results. The active variant is also mirrored in transcript/speakers. */
+  transcriptionVariants?: Partial<Record<AiAsrModelId, VoiceMemoryTranscriptionVariant>>;
   errorMessage?: string;
   speakers: VoiceMemorySpeaker[];
   transcript: VoiceMemoryTranscriptSegment[];
@@ -255,6 +311,8 @@ export interface VoiceMemoryProcessRequest {
   transcribe?: boolean;
   /** Discard the prior transcript/checkpoint and run recognition again from the beginning. */
   restartTranscription?: boolean;
+  /** One-off model choice for A/B testing; does not change the global default. */
+  asrModelId?: AiAsrModelId;
   markers?: Array<{ id: string; offsetMs: number }>;
   speakingTimeline?: VoiceMemorySpeakingObservation[];
   taskId?: string;
@@ -285,8 +343,6 @@ export interface AiAsrRuntimeStatus {
 export interface AiRuntimeStatus {
   /** Runtime selected for new and retried transcriptions. */
   asr: AiAsrRuntimeStatus;
-  /** Kept for older diagnostics consumers while the UI moves to the generic ASR field. */
-  vibevoice: AiAsrRuntimeStatus;
   qwen: {
     ready: boolean;
     executable?: string;

@@ -13,7 +13,6 @@ import {
   type BuiltInAvatarId,
   type RoomCollectionItem,
   type SceneZoneId,
-  type DailyRoomReport,
 } from "@private-voice/shared";
 import { WebSocket, WebSocketServer } from "ws";
 
@@ -62,6 +61,7 @@ import { RoomManager } from "./room-manager";
 import type { SignalingRoom } from "./room-manager";
 import { SessionTokenStore } from "./session-token-store";
 import { DailyRoomReportStore } from "./daily-room-report-store";
+import { CloudAiRuntime } from "./cloud-ai-runtime";
 
 interface SignalingServerOptions {
   port?: number;
@@ -70,7 +70,6 @@ interface SignalingServerOptions {
   logger?: (message: string, context?: Record<string, unknown>) => void;
   requiredClientVersion?: string;
 }
-
 const compareVersions = (left: string, right: string): number => {
   const parse = (value: string) => {
     const match = /^(\d+)\.(\d+)\.(\d+)$/.exec(value.trim());
@@ -161,6 +160,7 @@ const SERVER_ONLY_MESSAGE_TYPES = new Set([
   "daily_room_reports",
   "room_collection_snapshot",
   "avatar_update",
+  "cloud_ai_response",
   "error",
 ]);
 
@@ -191,6 +191,8 @@ const RATE_LIMITS: Record<string, { windowMs: number; limit: number }> = {
   screen_share_state: { windowMs: 10_000, limit: 10 },
   screen_path_state: { windowMs: 10_000, limit: 30 },
   request_daily_room_reports: { windowMs: 10_000, limit: 6 },
+  cloud_ai_request: { windowMs: 60_000, limit: 4 },
+  cloud_ai_cancel: { windowMs: 60_000, limit: 12 },
 };
 const SEAT_ZONES: SceneZoneId[] = ["gameDesk1", "gameDesk2", "gameDesk3", "gameDesk4", "gameDesk5"];
 
@@ -311,7 +313,7 @@ export class SignalingServer extends EventEmitter {
   private readonly dailyRoomReports: Promise<DailyRoomReportStore>;
   private readonly sessionTokens = new SessionTokenStore();
   private readonly iceConfigRateWindows = new Map<string, { startedAt: number; count: number }>();
-
+  private readonly cloudAi: CloudAiRuntime;
   constructor(private readonly options: SignalingServerOptions) {
     super();
     this.roomName = options.roomName;
@@ -335,6 +337,7 @@ export class SignalingServer extends EventEmitter {
       });
     }
     this.dailyRoomReports = DailyRoomReportStore.create(dailyRoomReportFile, this.logger);
+    this.cloudAi = new CloudAiRuntime(this.dailyRoomReports, this.logger);
     this.httpServer = createServer();
     this.httpServer.on("request", (request, response) => {
       const contentLength = Number(request.headers["content-length"] ?? 0);
@@ -373,6 +376,7 @@ export class SignalingServer extends EventEmitter {
                 (process.env.TURN_USERNAME?.trim() && process.env.TURN_CREDENTIAL?.trim()),
               ),
             supportedTurnTransports: getSupportedTurnTransports(),
+            cloudAiConfigured: this.cloudAi.isConfigured(),
             now: new Date().toISOString(),
             serverTime: Date.now(),
           }),
@@ -671,6 +675,7 @@ export class SignalingServer extends EventEmitter {
     });
 
     socket.on("close", (code, reason) => {
+      this.cloudAi.cancelSocket(socket);
       const session = this.sessions.get(socket);
       const roomId = session?.roomId;
       const peerId = session?.peerId;
@@ -747,6 +752,7 @@ export class SignalingServer extends EventEmitter {
         : {}),
     } as SignalEnvelope;
     this.roomManager.getRoom(session.roomId)?.peers.updateHeartbeat(session.peerId);
+    if (this.cloudAi.handleSignal(socket, authoritative, this.safeSend.bind(this, socket))) return;
 
     switch (authoritative.type) {
       case "leave_channel":
@@ -1470,9 +1476,7 @@ export class SignalingServer extends EventEmitter {
     socket: WebSocket,
     message: RequestDailyRoomReportsMessage,
   ): Promise<void> {
-    const reports: DailyRoomReport[] = (await this.dailyRoomReports).getHistory(
-      message.targetRoomId,
-    );
+    const reports = await this.cloudAi.getDailyReports(message.targetRoomId);
     const payload: DailyRoomReportsMessage = {
       type: "daily_room_reports",
       roomId: message.roomId,

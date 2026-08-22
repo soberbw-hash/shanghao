@@ -22,6 +22,9 @@ import {
   APP_PROTOCOL_VERSION,
   IPC_CHANNELS,
   type AppSettings,
+  type AiCustomProviderInput,
+  type AiCustomProviderStatus,
+  type AiAsrModelId,
   type AiModelAction,
   type AiModelId,
   type AiRuntimePressure,
@@ -90,6 +93,7 @@ import { OverlayWindowController } from "./overlay-window";
 import { GameDetectionController } from "./game-detection";
 import { AiModelManager } from "./ai-model-manager";
 import { AiVoiceMemoryService } from "./ai-voice-memory-service";
+import { CustomAiProviderStore } from "./custom-ai-provider-store";
 import { applyLaunchOnStartup } from "./launch-on-startup";
 import { ChatHistoryStore } from "./chat-history-store";
 import { DailyRoomReportCache } from "./daily-room-report-cache";
@@ -112,6 +116,22 @@ import {
   selectScreenCaptureSource,
 } from "./window";
 
+const AI_ASR_MODEL_IDS = new Set<AiAsrModelId>([
+  "qwen3-asr-1.7b-force",
+  "qwen3-asr-0.6b-force",
+  "fun-asr-nano-2512",
+  "glm-asr-nano-2512",
+  "fireredasr2-aed",
+  "paraformer-zh",
+]);
+
+const requireAiAsrModelId = (value: unknown): AiAsrModelId => {
+  if (typeof value !== "string" || !AI_ASR_MODEL_IDS.has(value as AiAsrModelId)) {
+    throw new Error("invalid_ai_asr_model");
+  }
+  return value as AiAsrModelId;
+};
+
 interface MainProcessServices {
   getMainWindow: () => BrowserWindow | null;
   settingsStore: SettingsStore;
@@ -123,6 +143,7 @@ interface MainProcessServices {
   gameDetection: GameDetectionController;
   aiModels: AiModelManager;
   voiceMemory: AiVoiceMemoryService;
+  customAiProvider: CustomAiProviderStore;
   consumePendingDeepLink: () => DeepLinkInvite | undefined;
 }
 
@@ -283,6 +304,7 @@ export const registerIpcHandlers = ({
   gameDetection,
   aiModels,
   voiceMemory,
+  customAiProvider,
   consumePendingDeepLink,
 }: MainProcessServices): void => {
   const chatHistoryStore = new ChatHistoryStore(app.getPath("userData"));
@@ -859,9 +881,8 @@ export const registerIpcHandlers = ({
     IPC_CHANNELS.ai.controlModel,
     async (_event, modelId: AiModelId, action: AiModelAction): Promise<AiVoiceMemorySnapshot> => {
       if (
-        modelId !== "vibevoice" &&
-        modelId !== "qwen3-asr-0.6b" &&
-        modelId !== "paraformer-zh" &&
+        !AI_ASR_MODEL_IDS.has(modelId as AiAsrModelId) &&
+        modelId !== "qwen3-forced-aligner-0.6b" &&
         modelId !== "qwen35-4b"
       ) {
         throw new Error("invalid_ai_model");
@@ -890,7 +911,17 @@ export const registerIpcHandlers = ({
         ...request,
         recordingId: requireString(request.recordingId, 2_048, "recording_id"),
         filePath: requireString(request.filePath, 2_048, "recording_file_path"),
+        asrModelId:
+          request.asrModelId === undefined ? undefined : requireAiAsrModelId(request.asrModelId),
       }),
+  );
+  ipcMain.handle(
+    IPC_CHANNELS.ai.selectTranscription,
+    async (_event, recordingId: string, modelId: AiAsrModelId): Promise<VoiceMemoryRecord> =>
+      voiceMemory.selectTranscriptionVariant(
+        requireString(recordingId, 2_048, "recording_id"),
+        requireAiAsrModelId(modelId),
+      ),
   );
   ipcMain.handle(IPC_CHANNELS.ai.pauseTask, async (_event, recordingId: string): Promise<void> => {
     voiceMemory.pause(requireString(recordingId, 2_048, "recording_id"));
@@ -945,6 +976,27 @@ export const registerIpcHandlers = ({
         question: requireString(request.question, 500, "memory_question"),
       }),
   );
+  ipcMain.handle(IPC_CHANNELS.ai.cancelQuestion, async (): Promise<boolean> =>
+    voiceMemory.cancelQuestion(),
+  );
+  ipcMain.handle(IPC_CHANNELS.ai.getCustomProvider, async (): Promise<AiCustomProviderStatus> =>
+    customAiProvider.status(),
+  );
+  ipcMain.handle(
+    IPC_CHANNELS.ai.saveCustomProvider,
+    async (_event, input: AiCustomProviderInput): Promise<AiCustomProviderStatus> =>
+      customAiProvider.save({
+        baseUrl: requireString(input?.baseUrl, 2_048, "custom_ai_base_url"),
+        model: requireString(input?.model, 120, "custom_ai_model"),
+        apiKey:
+          input?.apiKey === undefined
+            ? undefined
+            : requireString(input.apiKey, 512, "custom_ai_key"),
+      }),
+  );
+  ipcMain.handle(IPC_CHANNELS.ai.clearCustomProvider, async (): Promise<void> => {
+    await customAiProvider.clear();
+  });
   ipcMain.handle(
     IPC_CHANNELS.ai.searchMemory,
     async (_event, request: VoiceMemorySearchRequest): Promise<VoiceMemorySearchResult[]> =>

@@ -3,10 +3,13 @@ import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import path from "node:path";
 
 import {
+  AI_ASR_MODEL_NAMES,
   CURRENT_TRANSCRIPTION_PIPELINE_VERSION,
   hasInvalidVoiceMemoryResult,
   isReliableTranscriptText,
   type AiAsrModelId,
+  type AiModelId,
+  type AiAsrRuntimeStatus,
   type AiRuntimeStatus,
   type RendererLogPayload,
   type VoiceMemoryAnswer,
@@ -24,6 +27,7 @@ import {
   type VoiceMemoryProcessingStage,
   type VoiceMemoryTaskDiagnostic,
   type VoiceMemoryTaskStatus,
+  type VoiceMemoryTranscriptionModel,
 } from "@private-voice/shared";
 
 import { AiModelManager } from "./ai-model-manager";
@@ -31,6 +35,7 @@ import { AiRuntimeManager } from "./ai-runtime-manager";
 import { classifyLocalModelRuntimeError } from "./local-model-runtime";
 import { VoiceMemoryStore } from "./voice-memory-store";
 import { resolveFfmpegExecutable } from "./media-runtime";
+import { AiTextGateway } from "./ai-text-gateway";
 
 // Short units bound local inference memory and preserve useful seek points for models without
 // word-level timestamps.
@@ -43,6 +48,15 @@ const TRANSCRIPTION_PIPELINE_VERSION = CURRENT_TRANSCRIPTION_PIPELINE_VERSION;
 
 export const canAutomaticallyTranscribeDuration = (durationMs: number): boolean =>
   durationMs <= AUTOMATIC_TRANSCRIPTION_MAX_DURATION_MS;
+
+export const transcriptionModelMetadata = (
+  modelId: AiAsrModelId,
+  status: AiAsrRuntimeStatus,
+): VoiceMemoryTranscriptionModel => ({
+  id: modelId,
+  name: status.modelName?.trim() || AI_ASR_MODEL_NAMES[modelId],
+  ...(status.modelVersion?.trim() ? { version: status.modelVersion.trim() } : {}),
+});
 
 export const completedTranscriptionUnits = (
   checkpoint: { completedUnits: number; unitDurationMs?: number } | undefined,
@@ -272,12 +286,14 @@ export class AiVoiceMemoryService {
     operation: Promise<VoiceMemoryRecord>;
     organizing: boolean;
   };
+  private activeQuestionController?: AbortController;
   private lastTask?: VoiceMemoryTaskDiagnostic;
   private deferredRetryTimer?: NodeJS.Timeout;
 
   constructor(
     private readonly models: AiModelManager,
     private readonly runtime: AiRuntimeManager,
+    private readonly textGateway: AiTextGateway,
     private readonly store: VoiceMemoryStore,
     private readonly writeLog?: (payload: RendererLogPayload) => Promise<void>,
   ) {}
@@ -323,12 +339,13 @@ export class AiVoiceMemoryService {
     return this.runtime.status().then((status) => ({ ...status, lastTask: this.lastTask }));
   }
 
-  get(recordingId: string): Promise<VoiceMemoryRecord | undefined> {
-    return this.store.get(recordingId);
+  async get(recordingId: string): Promise<VoiceMemoryRecord | undefined> {
+    const record = await this.store.get(recordingId);
+    return record ? this.withTranscriptionModel(record) : undefined;
   }
 
-  list(): Promise<VoiceMemoryRecord[]> {
-    return this.store.list();
+  async list(): Promise<VoiceMemoryRecord[]> {
+    return (await this.store.list()).map((record) => this.withTranscriptionModel(record));
   }
 
   search(request: VoiceMemorySearchRequest): VoiceMemorySearchResult[] {
@@ -337,6 +354,13 @@ export class AiVoiceMemoryService {
 
   pause(recordingId: string): void {
     this.controllers.get(recordingId)?.abort();
+  }
+
+  cancelQuestion(): boolean {
+    if (!this.activeQuestionController || this.activeQuestionController.signal.aborted)
+      return false;
+    this.activeQuestionController.abort();
+    return true;
   }
 
   async delete(recordingId: string): Promise<void> {
@@ -421,6 +445,26 @@ export class AiVoiceMemoryService {
       manual: true,
       transcribe: !resumeOrganization,
       organize: resumeOrganization,
+      asrModelId: record.transcriptionModel?.id,
+    });
+  }
+
+  async selectTranscriptionVariant(
+    recordingId: string,
+    modelId: AiAsrModelId,
+  ): Promise<VoiceMemoryRecord> {
+    const record = await this.requireRecord(recordingId);
+    const variant = record.transcriptionVariants?.[modelId];
+    if (!variant) throw new Error("voice_memory_transcription_variant_not_found");
+    return this.save({
+      ...record,
+      transcript: variant.transcript,
+      speakers: variant.speakers,
+      transcriptionModel: variant.model,
+      transcriptionPipelineVersion: variant.pipelineVersion,
+      phase: "ready",
+      progress: 100,
+      errorMessage: undefined,
     });
   }
 
@@ -433,7 +477,8 @@ export class AiVoiceMemoryService {
       const pendingRecord = await this.store.get(request.recordingId);
       if (pendingRecord) return pendingRecord;
     }
-    const previous = await this.store.get(request.recordingId);
+    const previousRecord = await this.store.get(request.recordingId);
+    const previous = previousRecord ? this.withTranscriptionModel(previousRecord) : undefined;
     const taskId = request.taskId ?? createTaskId(request.recordingId);
     const queuedRequest = {
       ...request,
@@ -660,7 +705,14 @@ export class AiVoiceMemoryService {
         await this.runtime.validateInputFile(request.filePath);
         record = await this.updateDiagnostic(record, request, taskId, currentStage, "processing");
         if (request.restartTranscription) {
-          await this.models.clearTaskCheckpoint(`transcription:${record.recordingId}`);
+          const restartModelId =
+            request.asrModelId ?? record.transcriptionModel?.id ?? this.models.getActiveAsrModel();
+          await Promise.all([
+            this.models.clearTaskCheckpoint(
+              `transcription:${record.recordingId}:${restartModelId}`,
+            ),
+            this.models.clearTaskCheckpoint(`transcription:${record.recordingId}`),
+          ]);
           record = await this.save({
             ...record,
             phase: "idle",
@@ -672,6 +724,7 @@ export class AiVoiceMemoryService {
             highlights: [],
             timeline: record.timeline.filter((entry) => entry.kind === "marker"),
             transcriptionPipelineVersion: undefined,
+            transcriptionModel: undefined,
             organizedAt: undefined,
             errorMessage: undefined,
           });
@@ -680,6 +733,7 @@ export class AiVoiceMemoryService {
           record,
           request.manual === true,
           controller.signal,
+          request.asrModelId,
           (stage) => {
             currentStage = stage;
           },
@@ -771,8 +825,13 @@ export class AiVoiceMemoryService {
           reason.startsWith("peer_recovery") ||
           reason.startsWith("network_quality") ||
           reason.startsWith("renderer_memory"));
+      // transcribe() persists every completed chunk before moving to the next one. When a later
+      // chunk is paused or fails, the rejected promise cannot return that newer record object to
+      // this caller. Reload the durable copy so this final status update never overwrites already
+      // visible transcript segments with the stale pre-transcription snapshot.
+      const durableRecord = (await this.store.get(request.recordingId)) ?? record;
       record = await this.save({
-        ...record,
+        ...durableRecord,
         taskId,
         taskStatus: paused || deferred || requiresManual ? "pending" : "failed",
         processingStage: currentStage,
@@ -854,13 +913,12 @@ export class AiVoiceMemoryService {
       .sort((a, b) => b.score - a.score)
       .slice(0, 16)
       .map(({ segment }) => segment);
-    const runnable = this.models.canRunTask("question", true);
-    if (!runnable.runnable) throw new Error(runnable.reason);
-    this.models.markQwenTaskStarted(`question:${record.recordingId}`);
-    try {
-      return await this.runtime.generateJson<VoiceMemoryAnswer>({
-        resourceMode: runnable.resourceMode,
+    const answer = await this.runQuestion((signal) =>
+      this.textGateway.generateJson<VoiceMemoryAnswer>({
+        purpose: "question",
+        manual: true,
         maxNewTokens: 700,
+        signal,
         prompt: [
           "你是上号的本地语音记忆助手。只根据给出的录音片段回答朋友间的日常问题。",
           '返回 JSON：{"text":"回答","sources":[{"startMs":数字,"segmentId":"id","quote":"简短原话"}]}。没有依据就明确说没找到。',
@@ -871,52 +929,112 @@ export class AiVoiceMemoryService {
               `${segment.id}\t${segment.startMs}\t${segment.nickname ?? segment.speakerId}\t${segment.text}`,
           ),
         ].join("\n"),
-      });
-    } finally {
-      this.models.markAiTaskFinished();
-    }
+      }),
+    );
+    return {
+      text: String(answer.text ?? ""),
+      sources: (Array.isArray(answer.sources) ? answer.sources : [])
+        .map((source) => {
+          const segment = candidates.find((candidate) => candidate.id === source.segmentId);
+          return segment
+            ? {
+                startMs: segment.startMs,
+                segmentId: segment.id,
+                quote: String(source.quote || segment.text).slice(0, 240),
+                recordingId: record.recordingId,
+                filePath: record.filePath,
+                roomName: record.roomName,
+                createdAt: record.createdAt,
+              }
+            : undefined;
+        })
+        .filter((source): source is NonNullable<typeof source> => Boolean(source))
+        .slice(0, 8),
+    };
   }
 
   async askMemory(request: VoiceMemoryGlobalQuestionRequest): Promise<VoiceMemoryAnswer> {
     const question = request.question.trim().slice(0, 500);
     if (!question) throw new Error("memory_question_required");
     const candidates = this.store.related(question, 24);
-    const runnable = this.models.canRunTask("question", true);
-    if (!runnable.runnable) throw new Error(runnable.reason);
-    this.models.markQwenTaskStarted("question:global");
-    try {
-      return await this.runtime.generateJson<VoiceMemoryAnswer>({
-        resourceMode: runnable.resourceMode,
-        maxNewTokens: 420,
+    const answer = await this.runQuestion((signal) =>
+      this.textGateway.generateJson<VoiceMemoryAnswer>({
+        purpose: "question",
+        manual: true,
+        maxNewTokens: 700,
+        signal,
         prompt: [
-          "你是上号里的本地千问助手。用户可能在查找朋友语音记忆，也可能在问普通问题。",
+          "你是上号房间里的中文助手。用户可能在查找朋友语音记忆，也可能在问普通问题。",
           "有相关语音记忆时优先依据它们回答，并给出来源；没有相关记忆时可以正常回答常识问题，但不要编造录音来源。",
-          '只返回 JSON：{"text":"回答","sources":[{"recordingId":"录音ID","filePath":"文件路径","roomName":"房间","createdAt":"时间","startMs":数字,"segmentId":"来源ID","quote":"简短原话"}]}。没有录音依据时 sources 返回空数组。',
+          '只返回 JSON：{"text":"回答","sources":[{"segmentId":"memory-1","startMs":数字,"quote":"简短原话"}]}。来源编号必须取自下面的 memory-N；没有录音依据时 sources 返回空数组。',
           `问题：${question}`,
           "可能相关的本地语音记忆：",
           ...(candidates.length
             ? candidates.map(
                 (item, index) =>
-                  `${index + 1}\t${item.recordingId}\t${item.filePath}\t${item.roomName ?? "房间"}\t${item.createdAt}\t${item.startMs}\t${item.kind}\t${item.title}\t${item.excerpt}`,
+                  `memory-${index + 1}\t${item.roomName ?? "房间"}\t${item.createdAt}\t${item.startMs}\t${item.kind}\t${item.title}\t${item.excerpt}`,
               )
             : ["没有检索到相关语音记忆。"]),
         ].join("\n"),
-      });
-    } finally {
-      this.models.markAiTaskFinished();
-    }
+      }),
+    );
+    return {
+      text: String(answer.text ?? ""),
+      sources: (Array.isArray(answer.sources) ? answer.sources : [])
+        .map((source) => {
+          const match = /^memory-(\d+)$/.exec(source.segmentId);
+          const candidate = match
+            ? candidates[Number.parseInt(match[1] ?? "0", 10) - 1]
+            : undefined;
+          return candidate
+            ? {
+                startMs: candidate.startMs,
+                segmentId: source.segmentId,
+                quote: String(source.quote || candidate.excerpt).slice(0, 240),
+                recordingId: candidate.recordingId,
+                filePath: candidate.filePath,
+                roomName: candidate.roomName,
+                createdAt: candidate.createdAt,
+              }
+            : undefined;
+        })
+        .filter((source): source is NonNullable<typeof source> => Boolean(source))
+        .slice(0, 8),
+    };
   }
 
   private async transcribe(
     record: VoiceMemoryRecord,
     manual: boolean,
     signal: AbortSignal,
+    requestedModelId?: AiAsrModelId,
     onStage?: (stage: VoiceMemoryProcessingStage) => void,
   ): Promise<VoiceMemoryRecord> {
-    const runnable = this.models.canRunTask("transcription", manual);
+    const selectedModelId =
+      requestedModelId ?? record.transcriptionModel?.id ?? this.models.getActiveAsrModel();
+    const taskId = `transcription:${record.recordingId}:${selectedModelId}`;
+    const legacyTaskId = `transcription:${record.recordingId}`;
+    const modelCheckpoint = this.models.getTaskCheckpoint(taskId);
+    const legacyCheckpoint = this.models.getTaskCheckpoint(legacyTaskId);
+    const checkpoint =
+      modelCheckpoint ??
+      (legacyCheckpoint?.asrModelId === selectedModelId ? legacyCheckpoint : undefined);
+    const checkpointModel =
+      checkpoint?.pipelineVersion === TRANSCRIPTION_PIPELINE_VERSION
+        ? checkpoint.asrModelId
+        : undefined;
+    // "Continue transcription" belongs to the recording, not to the model currently selected
+    // in Settings. Pin a valid checkpoint to its original ASR so changing the default model does
+    // not restart the recording or mix two recognizers in one transcript.
+    const runnable = this.models.canRunTask(
+      "transcription",
+      manual,
+      checkpointModel ?? selectedModelId,
+    );
     if (!runnable.runnable) throw new Error(runnable.reason);
     const asrModelId = runnable.requiredModel as AiAsrModelId;
-    const asrStatus = (await this.runtime.status()).asr;
+    const asrStatus = (await this.runtime.status(asrModelId)).asr;
+    const transcriptionModel = transcriptionModelMetadata(asrModelId, asrStatus);
     onStage?.("preprocess");
     const audio = await durationMs(record.filePath);
     record = await this.updateDiagnostic(
@@ -939,31 +1057,27 @@ export class AiVoiceMemoryService {
       throw new Error("automatic_long_recording_requires_manual");
     }
     const totalUnits = Math.max(1, Math.ceil(totalDuration / TRANSCRIPTION_CHUNK_MS));
-    const taskId = `transcription:${record.recordingId}`;
-    const checkpoint = this.models.getTaskCheckpoint(taskId);
     const checkpointCompatible =
       checkpoint?.pipelineVersion === TRANSCRIPTION_PIPELINE_VERSION &&
       checkpoint.asrModelId === asrModelId;
     let completedUnits = checkpointCompatible
       ? completedTranscriptionUnits(checkpoint, totalUnits)
       : 0;
-    if (!checkpointCompatible && (checkpoint || record.transcript.length > 0)) {
-      if (checkpoint) await this.models.clearTaskCheckpoint(taskId);
-      record = await this.save({
-        ...record,
-        progress: 0,
-        speakers: [],
-        transcript: [],
-        summary: [],
-        chapters: [],
-        highlights: [],
-        timeline: record.timeline.filter((entry) => entry.kind === "marker"),
-      });
+    if (!checkpointCompatible && record.transcript.length > 0) {
+      // A non-restart request must never silently destroy a saved partial transcript. Explicit
+      // "重新转录" clears both the checkpoint and transcript before entering this method.
+      throw new Error(
+        checkpoint ? "transcription_checkpoint_incompatible" : "transcription_checkpoint_missing",
+      );
+    }
+    if (!checkpointCompatible && checkpoint) {
+      await this.models.clearTaskCheckpoint(taskId);
     }
     record = await this.save({
       ...record,
       phase: "transcribing",
       progress: Math.round((completedUnits / totalUnits) * 70),
+      transcriptionModel,
       errorMessage: undefined,
     });
     for (let unit = completedUnits; unit < totalUnits; unit += 1) {
@@ -1040,6 +1154,9 @@ export class AiVoiceMemoryService {
         asrModelId,
         updatedAt: new Date().toISOString(),
       });
+      if (legacyCheckpoint?.asrModelId === asrModelId) {
+        await this.models.clearTaskCheckpoint(legacyTaskId);
+      }
     }
     return record;
   }
@@ -1050,80 +1167,70 @@ export class AiVoiceMemoryService {
     signal: AbortSignal,
   ): Promise<VoiceMemoryRecord> {
     if (record.transcript.length === 0) return record;
-    const runnable = this.models.canRunTask("summary", manual);
-    if (!runnable.runnable) throw new Error(runnable.reason);
-    this.models.markQwenTaskStarted(`organize:${record.recordingId}`);
     record = await this.save({
       ...record,
       phase: "organizing",
       progress: 75,
       errorMessage: undefined,
     });
-    try {
-      const result = await this.runtime.generateJson<OrganizedResult>({
-        resourceMode: runnable.resourceMode,
-        maxNewTokens: 384,
-        timeoutMs: 4 * 60_000,
-        signal,
-        prompt: [
-          "你是上号语音软件的本地整理助手。这里是固定好友的日常聊天，不是会议。",
-          "请生成自然、有趣、能回到原录音的结构化结果。不要写会议背景、议程、待办或企业话术。",
-          '只返回 JSON 对象，第一字符必须是 {，最后一个字符必须是 }，禁止 ```、Markdown 和任何解释。模板：{"summary":[{"text":"总结","sourceStartMs":0,"sourceSegmentIds":[]}],"chapters":[],"highlights":[],"markerTitles":[]}。四个字段必须始终是数组；所有 id 必须是字符串；没有内容就返回空数组。',
-          "章节数量随内容和时长决定；精彩片段只选择真正值得回看的内容；不要编造原文没有的信息。",
-          `已有标记：${record.markerTitles.map((marker) => `${marker.markerId}@${marker.offsetMs}ms`).join(", ") || "无"}`,
-          `录音：${path.basename(record.filePath)}`,
-          transcriptForPrompt(record, 6_000),
-        ].join("\n"),
-      });
-      const normalized = normalizeOrganizedResult(result, record);
-      return this.save({
-        ...record,
-        summary: normalized.summary,
-        chapters: normalized.chapters,
-        highlights: normalized.highlights,
-        markerTitles:
-          normalized.markerTitles.length > 0 ? normalized.markerTitles : record.markerTitles,
-        organizedAt: new Date().toISOString(),
-        timeline: [
-          ...record.timeline
-            .filter((entry) => entry.kind === "marker")
-            .map((entry) => ({
-              ...entry,
-              title:
-                normalized.markerTitles.find((marker) => marker.markerId === entry.id)?.title ??
-                entry.title,
-            })),
-          ...normalized.chapters.map((chapter) => ({
-            id: chapter.id || randomUUID(),
-            kind: "chapter" as const,
-            offsetMs: chapter.startMs,
-            title: chapter.title,
-            detail: chapter.description,
+    const result = await this.textGateway.generateJson<OrganizedResult>({
+      purpose: "organize",
+      manual,
+      maxNewTokens: 384,
+      timeoutMs: 4 * 60_000,
+      signal,
+      prompt: [
+        "你是上号语音软件的本地整理助手。这里是固定好友的日常聊天，不是会议。",
+        "请生成自然、有趣、能回到原录音的结构化结果。不要写会议背景、议程、待办或企业话术。",
+        '只返回 JSON 对象，第一字符必须是 {，最后一个字符必须是 }，禁止 ```、Markdown 和任何解释。模板：{"summary":[{"text":"总结","sourceStartMs":0,"sourceSegmentIds":[]}],"chapters":[],"highlights":[],"markerTitles":[]}。四个字段必须始终是数组；所有 id 必须是字符串；没有内容就返回空数组。',
+        "章节数量随内容和时长决定；精彩片段只选择真正值得回看的内容；不要编造原文没有的信息。",
+        `已有标记：${record.markerTitles.map((marker) => `${marker.markerId}@${marker.offsetMs}ms`).join(", ") || "无"}`,
+        `录音：${path.basename(record.filePath)}`,
+        transcriptForPrompt(record, 6_000),
+      ].join("\n"),
+    });
+    const normalized = normalizeOrganizedResult(result, record);
+    return this.save({
+      ...record,
+      summary: normalized.summary,
+      chapters: normalized.chapters,
+      highlights: normalized.highlights,
+      markerTitles:
+        normalized.markerTitles.length > 0 ? normalized.markerTitles : record.markerTitles,
+      organizedAt: new Date().toISOString(),
+      timeline: [
+        ...record.timeline
+          .filter((entry) => entry.kind === "marker")
+          .map((entry) => ({
+            ...entry,
+            title:
+              normalized.markerTitles.find((marker) => marker.markerId === entry.id)?.title ??
+              entry.title,
           })),
-          ...normalized.highlights.map((highlight) => ({
-            id: highlight.id || randomUUID(),
-            kind: "highlight" as const,
-            offsetMs: highlight.startMs,
-            endMs: highlight.endMs,
-            title: highlight.title,
-            detail: highlight.description,
-          })),
-        ].sort((a, b) => a.offsetMs - b.offsetMs),
-        progress: 98,
-      });
-    } finally {
-      this.models.markAiTaskFinished();
-    }
+        ...normalized.chapters.map((chapter) => ({
+          id: chapter.id || randomUUID(),
+          kind: "chapter" as const,
+          offsetMs: chapter.startMs,
+          title: chapter.title,
+          detail: chapter.description,
+        })),
+        ...normalized.highlights.map((highlight) => ({
+          id: highlight.id || randomUUID(),
+          kind: "highlight" as const,
+          offsetMs: highlight.startMs,
+          endMs: highlight.endMs,
+          title: highlight.title,
+          detail: highlight.description,
+        })),
+      ].sort((a, b) => a.offsetMs - b.offsetMs),
+      progress: 98,
+    });
   }
 
   private async refreshRuntimeStatus(): Promise<void> {
     const statuses = await this.runtime.modelRuntimeStatuses();
     for (const [id, status] of Object.entries(statuses)) {
-      this.models.setRuntimeStatus(
-        id as "vibevoice" | "qwen3-asr-0.6b" | "paraformer-zh" | "qwen35-4b",
-        status.ready,
-        status.message,
-      );
+      this.models.setRuntimeStatus(id as AiModelId, status.ready, status.message);
     }
   }
 
@@ -1154,7 +1261,34 @@ export class AiVoiceMemoryService {
   private async requireRecord(recordingId: string): Promise<VoiceMemoryRecord> {
     const record = await this.store.get(recordingId);
     if (!record) throw new Error("voice_memory_not_found");
-    return record;
+    return this.withTranscriptionModel(record);
+  }
+
+  private async runQuestion<T>(operation: (signal: AbortSignal) => Promise<T>): Promise<T> {
+    if (this.activeQuestionController) throw new Error("ai_question_in_progress");
+    const controller = new AbortController();
+    this.activeQuestionController = controller;
+    try {
+      return await operation(controller.signal);
+    } finally {
+      if (this.activeQuestionController === controller) this.activeQuestionController = undefined;
+    }
+  }
+
+  private withTranscriptionModel(record: VoiceMemoryRecord): VoiceMemoryRecord {
+    if (record.transcriptionModel || record.transcript.length === 0) return record;
+    const modelId =
+      Object.values(record.transcriptionVariants ?? {})[0]?.model.id ??
+      this.models.getTaskCheckpoint(`transcription:${record.recordingId}`)?.asrModelId;
+    return modelId
+      ? {
+          ...record,
+          transcriptionModel: {
+            id: modelId,
+            name: AI_ASR_MODEL_NAMES[modelId],
+          },
+        }
+      : record;
   }
 
   private createDiagnostic(
@@ -1207,7 +1341,24 @@ export class AiVoiceMemoryService {
 
   private async save(record: VoiceMemoryRecord): Promise<VoiceMemoryRecord> {
     if (this.deletedRecordings.has(record.recordingId)) throw new Error("voice_memory_deleted");
-    const saved = await this.store.save(record);
+    const persisted =
+      record.transcriptionModel && record.transcript.length > 0
+        ? {
+            ...record,
+            transcriptionVariants: {
+              ...record.transcriptionVariants,
+              [record.transcriptionModel.id]: {
+                model: record.transcriptionModel,
+                transcript: record.transcript,
+                speakers: record.speakers,
+                pipelineVersion:
+                  record.transcriptionPipelineVersion ?? TRANSCRIPTION_PIPELINE_VERSION,
+                updatedAt: new Date().toISOString(),
+              },
+            },
+          }
+        : record;
+    const saved = await this.store.save(persisted);
     if (saved.diagnostic) this.lastTask = saved.diagnostic;
     this.log("info", "AI pipeline stage", {
       taskId: saved.taskId,

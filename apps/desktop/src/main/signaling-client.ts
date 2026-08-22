@@ -1,4 +1,5 @@
 import { EventEmitter } from "node:events";
+import { randomUUID } from "node:crypto";
 import { WebSocket as NodeWebSocket, type RawData } from "ws";
 
 import type {
@@ -6,6 +7,12 @@ import type {
   RendererLogPayload,
   SignalingEventPayload,
 } from "@private-voice/shared";
+export interface CloudAiBridgeRequest {
+  purpose: "organize" | "question";
+  prompt: string;
+  useWebSearch?: boolean;
+  signal?: AbortSignal;
+}
 
 const sanitizeSignalingUrl = (value: string): string => {
   try {
@@ -27,6 +34,11 @@ export class SignalingClientBridge extends EventEmitter {
   private sentAudioChunks = 0;
   private skippedAudioChunks = 0;
   private lastBackpressureLogAt = 0;
+  private joinedRoom?: { roomId: string; peerId: string };
+  private readonly pendingCloudAi = new Map<
+    string,
+    { resolve: (content: string) => void; reject: (error: Error) => void; timer: NodeJS.Timeout }
+  >();
 
   constructor(private readonly writeLog: (payload: RendererLogPayload) => Promise<void>) {
     super();
@@ -98,9 +110,11 @@ export class SignalingClientBridge extends EventEmitter {
 
       socket.on("message", (data: RawData) => {
         if (!isCurrentSocket()) return;
+        const payloadText = data.toString();
+        if (this.handleBridgeMessage(payloadText)) return;
         this.emitEvent(sessionId, {
           type: "message",
-          data: data.toString(),
+          data: payloadText,
         });
       });
 
@@ -116,6 +130,8 @@ export class SignalingClientBridge extends EventEmitter {
           return;
         }
         this.socket = undefined;
+        this.joinedRoom = undefined;
+        this.rejectPendingCloudAi("cloud_ai_connection_closed");
         if (!opened) rejectOnce(new Error("signaling_socket_closed"));
         this.emitEvent(sessionId, {
           type: "close",
@@ -169,6 +185,12 @@ export class SignalingClientBridge extends EventEmitter {
     }
 
     this.socket.send(payload);
+    try {
+      const message = JSON.parse(payload) as { type?: string };
+      if (message.type === "leave_channel") this.joinedRoom = undefined;
+    } catch {
+      // Renderer payload validation happens in IPC before this bridge is called.
+    }
     if (isAudioChunk) {
       this.sentAudioChunks += 1;
       if (bufferedAmount >= 256 * 1024) {
@@ -211,7 +233,73 @@ export class SignalingClientBridge extends EventEmitter {
     }
     this.socketGeneration += 1;
     this.sessionId = undefined;
+    this.joinedRoom = undefined;
+    this.rejectPendingCloudAi("cloud_ai_connection_closed");
     await this.closeSocket();
+  }
+
+  async requestCloudAi(request: CloudAiBridgeRequest): Promise<string> {
+    if (!this.socket || this.socket.readyState !== NodeWebSocket.OPEN || !this.joinedRoom) {
+      throw new Error("cloud_ai_join_required");
+    }
+    const requestId = randomUUID();
+    const { roomId, peerId } = this.joinedRoom;
+    return new Promise<string>((resolve, reject) => {
+      const finish = (error?: Error, content?: string) => {
+        const pending = this.pendingCloudAi.get(requestId);
+        if (!pending) return;
+        clearTimeout(pending.timer);
+        request.signal?.removeEventListener("abort", abort);
+        this.pendingCloudAi.delete(requestId);
+        if (error) reject(error);
+        else resolve(content ?? "");
+      };
+      const abort = () => {
+        if (this.socket?.readyState === NodeWebSocket.OPEN) {
+          try {
+            this.socket.send(
+              JSON.stringify({
+                type: "cloud_ai_cancel",
+                roomId,
+                peerId,
+                requestId,
+              }),
+            );
+          } catch {
+            // The local request still stops even if the socket closes during cancellation.
+          }
+        }
+        finish(new Error("ai_task_paused"));
+      };
+      const timer = setTimeout(() => finish(new Error("cloud_ai_timeout")), 90_000);
+      timer.unref?.();
+      this.pendingCloudAi.set(requestId, {
+        resolve: (content) => finish(undefined, content),
+        reject: (error) => finish(error),
+        timer,
+      });
+      request.signal?.addEventListener("abort", abort, { once: true });
+      if (request.signal?.aborted) {
+        abort();
+        return;
+      }
+      try {
+        this.socket?.send(
+          JSON.stringify({
+            type: "cloud_ai_request",
+            roomId,
+            peerId,
+            requestId,
+            purpose: request.purpose,
+            responseFormat: "json",
+            prompt: request.prompt.slice(0, 48_000),
+            useWebSearch: request.useWebSearch === true,
+          }),
+        );
+      } catch {
+        finish(new Error("cloud_ai_send_failed"));
+      }
+    });
   }
 
   injectFault(sessionId: string, command: RealtimeFaultCommand): void {
@@ -264,6 +352,50 @@ export class SignalingClientBridge extends EventEmitter {
         resolve();
       }
     });
+  }
+
+  private handleBridgeMessage(payloadText: string): boolean {
+    try {
+      const message = JSON.parse(payloadText) as {
+        type?: string;
+        roomId?: string;
+        peerId?: string;
+        requestId?: string;
+        ok?: boolean;
+        content?: string;
+        errorCode?: string;
+      };
+      if (message.type === "join_ack" && message.roomId && message.peerId) {
+        this.joinedRoom = { roomId: message.roomId, peerId: message.peerId };
+        return false;
+      }
+      if (message.type === "error" && this.pendingCloudAi.size > 0) {
+        const code = String((message as { code?: unknown }).code ?? "");
+        if (code === "invalid_payload" || code === "server_message_not_allowed") {
+          this.rejectPendingCloudAi("cloud_ai_unsupported");
+          return true;
+        }
+        if (code === "rate_limited") {
+          this.rejectPendingCloudAi("cloud_ai_busy");
+          return true;
+        }
+      }
+      if (message.type !== "cloud_ai_response" || typeof message.requestId !== "string") {
+        return false;
+      }
+      const pending = this.pendingCloudAi.get(message.requestId);
+      if (!pending) return true;
+      if (message.ok && typeof message.content === "string") pending.resolve(message.content);
+      else pending.reject(new Error(message.errorCode || "cloud_ai_request_failed"));
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  private rejectPendingCloudAi(code: string): void {
+    for (const pending of this.pendingCloudAi.values()) pending.reject(new Error(code));
+    this.pendingCloudAi.clear();
   }
 
   private emitEvent(

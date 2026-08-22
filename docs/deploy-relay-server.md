@@ -83,3 +83,32 @@ sudo bash scripts/install-turn.sh
 ```
 
 Relay 只下发有时效的临时 TURN 凭据，共享密钥始终留在服务器。
+
+## 配置房间云端 AI
+
+房间“问”和录音整理可以复用已经加入房间的 WebSocket。客户端只发送问题或待整理文字，
+DeepSeek 密钥只放在服务器 `/opt/shanghao/.env`，不要写进源码、客户端设置或 GitHub：
+
+```bash
+sudoedit /opt/shanghao/.env
+```
+
+在服务器文件中加入下面三项，并把第一项替换成新生成的密钥：
+
+```dotenv
+DEEPSEEK_API_KEY=在服务器上填写
+DEEPSEEK_API_BASE_URL=https://api.deepseek.com
+DEEPSEEK_MODEL=deepseek-v4-flash
+```
+
+然后收紧权限并重启：
+
+```bash
+sudo chown shanghao:shanghao /opt/shanghao/.env
+sudo chmod 600 /opt/shanghao/.env
+sudo systemctl restart shanghao-relay
+curl -fsS http://127.0.0.1:43821/health
+```
+
+健康检查中的 `cloudAiConfigured` 应为 `true`。云端请求只有已经加入房间的连接才能发送，
+服务端还会执行频率限制、单连接并发限制、请求大小限制和超时；上游错误不会把密钥或原始响应返回客户端。

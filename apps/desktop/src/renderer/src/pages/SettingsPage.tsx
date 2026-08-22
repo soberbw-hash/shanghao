@@ -456,17 +456,8 @@ export const SettingsPage = () => {
 
   const content: Record<SettingsSectionId, React.ReactNode> = {
     general: (
-      <SettingsSection title="应用" description="控制窗口、悬浮窗与图形渲染。">
+      <SettingsSection title="应用" description="控制窗口与图形渲染。">
         <div className="space-y-3">
-          <SettingsItemRow
-            label="进入频道时显示悬浮窗"
-            description="默认开启，进入频道后自动显示胶囊悬浮窗。"
-          >
-            <Switch
-              isChecked={settings.isOverlayEnabled}
-              onChange={(isOverlayEnabled) => void handleSaveSettings({ isOverlayEnabled })}
-            />
-          </SettingsItemRow>
           <SettingsItemRow
             label="开机自动上号"
             description="开机后自动打开上号并进入上次使用的房间；为避免打扰，麦克风会保持关闭。"
@@ -475,29 +466,6 @@ export const SettingsPage = () => {
               isChecked={settings.launchOnStartup}
               onChange={(launchOnStartup) => void handleSaveSettings({ launchOnStartup })}
             />
-          </SettingsItemRow>
-          <SettingsItemRow label="硬件加速" description="默认开启。修改后下次启动生效。">
-            <Switch
-              isChecked={settings.isHardwareAccelerationEnabled}
-              onChange={(isHardwareAccelerationEnabled) =>
-                void handleSaveSettings({ isHardwareAccelerationEnabled })
-              }
-            />
-          </SettingsItemRow>
-          <SettingsItemRow label="界面大小" description="不缩放位图，按排版系统重新布局。">
-            <select
-              value={settings.uiScale}
-              className="settings-inline-select"
-              onChange={(event) =>
-                void handleSaveSettings({
-                  uiScale: Number(event.target.value) as AppSettings["uiScale"],
-                })
-              }
-            >
-              <option value={100}>100%</option>
-              <option value={110}>110%</option>
-              <option value={125}>125%</option>
-            </select>
           </SettingsItemRow>
           <SettingsItemRow label="关闭窗口时留在后台">
             <Switch

@@ -162,7 +162,7 @@ export const TopStatusBar = ({
             variant="ghost"
             className="topbar-action whitespace-nowrap"
             onClick={onAsk}
-            aria-label="搜索语音记忆或提问"
+            aria-label="打开问"
           >
             <MessageCircleQuestion className="h-3.5 w-3.5" aria-hidden="true" />
             <span>问</span>

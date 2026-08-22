@@ -1,5 +1,5 @@
 import { existsSync, readFileSync } from "node:fs";
-import path, { join } from "node:path";
+import path from "node:path";
 import { pathToFileURL } from "node:url";
 
 import { app, BrowserWindow, Tray, dialog, protocol } from "electron";
@@ -20,6 +20,8 @@ import { platformService } from "./platform/PlatformService";
 import { AiModelManager } from "./ai-model-manager";
 import { AiRuntimeManager } from "./ai-runtime-manager";
 import { AiVoiceMemoryService } from "./ai-voice-memory-service";
+import { AiTextGateway } from "./ai-text-gateway";
+import { CustomAiProviderStore } from "./custom-ai-provider-store";
 import { preparePersistentAiStorage } from "./ai-storage";
 import { prepareBundledAiRuntime } from "./ai-runtime-package";
 import { VoiceMemoryStore } from "./voice-memory-store";
@@ -57,18 +59,6 @@ if (!app.isPackaged && process.env.SHANGHAO_CAPTURE_PATH) {
   const captureName = path.basename(capturePath, path.extname(capturePath));
   app.setPath("userData", path.join(path.dirname(capturePath), `.user-data-${captureName}`));
 }
-
-const shouldUseHardwareAcceleration = (): boolean => {
-  try {
-    const settingsPath = join(app.getPath("userData"), "settings.json");
-    const raw = JSON.parse(readFileSync(settingsPath, "utf8").replace(/^\uFEFF/, "")) as {
-      isHardwareAccelerationEnabled?: unknown;
-    };
-    return raw.isHardwareAccelerationEnabled !== false;
-  } catch {
-    return true;
-  }
-};
 
 const showWindow = () => {
   if (!mainWindow) {
@@ -171,7 +161,7 @@ const maybeRunVisualCapture = async (window: BrowserWindow | null): Promise<void
   }
 
   const visualCapture = (await import(
-    pathToFileURL(join(__dirname, "../tests/visual/capture-ui.cjs")).href
+    pathToFileURL(path.join(__dirname, "../tests/visual/capture-ui.cjs")).href
   )) as typeof import("../../tests/visual/capture-ui");
   await visualCapture.captureUi(window, {
     mode: (process.env.SHANGHAO_CAPTURE_MODE ?? "home") as
@@ -187,6 +177,7 @@ const maybeRunVisualCapture = async (window: BrowserWindow | null): Promise<void
       | "screen-share-expanded"
       | "settings"
       | "settings-recording"
+      | "settings-ai"
       | "settings-detail",
     outputPath,
     exitAfterCapture: process.env.SHANGHAO_CAPTURE_EXIT !== "0",
@@ -273,6 +264,9 @@ const bootstrap = async (): Promise<void> => {
   }
 
   const signalingClient = new SignalingClientBridge(
+    (payload) => diagnostics?.writeLog(payload) ?? Promise.resolve(),
+  );
+  const customAiProvider = new CustomAiProviderStore(
     (payload) => diagnostics?.writeLog(payload) ?? Promise.resolve(),
   );
   const updates = new UpdateService(
@@ -368,9 +362,7 @@ const bootstrap = async (): Promise<void> => {
     await copyFile(bundledAsrRunner, runtimeAsrRunner);
   }
   const aiRuntime = new AiRuntimeManager(aiRuntimeDirectory, {
-    vibevoice: () => aiModels.getActiveModelDirectory("vibevoice"),
-    qwen3Asr: () => aiModels.getActiveModelDirectory("qwen3-asr-0.6b"),
-    paraformer: () => aiModels.getActiveModelDirectory("paraformer-zh"),
+    model: (id) => aiModels.getActiveModelDirectory(id),
     qwen: () => aiModels.getActiveModelDirectory("qwen35-4b"),
     activeAsr: () => aiModels.getActiveAsrModel(),
   });
@@ -379,9 +371,17 @@ const bootstrap = async (): Promise<void> => {
     aiModels.setQwenRuntimeState(health.loaded, health.queuedJobs);
   });
   aiModels.onQwenReleaseRequested((reason) => aiRuntime.releaseQwen(reason));
+  const aiTextGateway = new AiTextGateway(
+    settingsStore,
+    aiModels,
+    aiRuntime,
+    signalingClient,
+    customAiProvider,
+  );
   const voiceMemory = new AiVoiceMemoryService(
     aiModels,
     aiRuntime,
+    aiTextGateway,
     new VoiceMemoryStore(path.join(app.getPath("userData"), "voice-memory")),
     (payload) => diagnostics?.writeLog(payload) ?? Promise.resolve(),
   );
@@ -403,6 +403,7 @@ const bootstrap = async (): Promise<void> => {
     gameDetection,
     aiModels,
     voiceMemory,
+    customAiProvider,
     consumePendingDeepLink,
   });
 
@@ -477,9 +478,6 @@ const bootstrap = async (): Promise<void> => {
   });
 };
 
-if (!shouldUseHardwareAcceleration()) {
-  app.disableHardwareAcceleration();
-}
 if (platformService.isWindows) app.setAppUserModelId(APP_ID);
 protocol.registerSchemesAsPrivileged([
   {

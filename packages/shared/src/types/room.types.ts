@@ -189,6 +189,8 @@ export interface DailyRoomReport {
   hadActivity: boolean;
   participantCount: number;
   participantNicknames: string[];
+  /** Server-generated shared one-line recap. Every client sees the persisted same text. */
+  commentary?: string;
   activeDurationMs: number;
   peakConcurrent: number;
   messageCount: number;

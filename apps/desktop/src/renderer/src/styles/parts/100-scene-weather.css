@@ -959,6 +959,21 @@ body::before {
   overflow: hidden;
   border-radius: 15px;
   background: linear-gradient(180deg, #b9dcf6 0%, #dff1fb 58%, #edf7f9 100%);
+  animation: weather-window-scene-reveal 460ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  will-change: opacity;
+}
+
+@keyframes weather-window-scene-reveal {
+  from {
+    opacity: 0.42;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.dynamic-weather-window.is-motion-paused .weather-window-view {
+  animation: none;
 }
 
 .weather-phase-dawn .weather-window-view {

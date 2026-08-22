@@ -113,7 +113,6 @@ export const RoomPage = () => {
     isAiAutoTranscribeEnabled,
     isAiAutoOrganizeEnabled,
     isAutoRecordOnJoinEnabled,
-    isOverlayEnabled,
     isNoiseSuppressionEnabled,
     preferredInputDeviceId,
     recordingSaveDirectory,
@@ -494,12 +493,8 @@ export const RoomPage = () => {
   ]);
 
   useEffect(() => {
-    if (isOverlayEnabled === false) {
-      void window.desktopApi.overlay.close().then(() => setIsOverlayOpen(false));
-      return;
-    }
     void window.desktopApi.overlay.show().then(setIsOverlayOpen);
-  }, [isOverlayEnabled]);
+  }, []);
 
   useEffect(
     () =>
@@ -989,6 +984,9 @@ export const RoomPage = () => {
 
   const openScreenSourcePicker = async () => {
     const requestId = ++screenPickerRequestIdRef.current;
+    setScreenSourcePickerSources([]);
+    setPendingIncludeSystemAudio(false);
+    setIsScreenSourcePickerOpen(true);
     try {
       const sources = await prepareScreenSourcePicker();
       if (requestId !== screenPickerRequestIdRef.current) return;
@@ -1001,10 +999,10 @@ export const RoomPage = () => {
         return;
       }
       setScreenSourcePickerSources(sources);
-      setPendingIncludeSystemAudio(false);
-      setIsScreenSourcePickerOpen(true);
     } catch {
       if (requestId !== screenPickerRequestIdRef.current) return;
+      setIsScreenSourcePickerOpen(false);
+      setScreenSourcePickerSources([]);
       pushToast({
         tone: "danger",
         title: "没有找到可分享的画面",

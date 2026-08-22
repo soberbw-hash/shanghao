@@ -18,6 +18,13 @@ Implement the local ShangHao 3.0.2 performance stabilization plan on top of the 
 - After the first public 3.0.2 update, traced `ai_runtime_integrity_failed` to a stale Qwen runner SHA256 in `runtime-manifest.json`; the packaged runner was current but the manifest still pinned the previous script.
 - Corrected the manifest, made optional AI runtime preparation non-fatal to the main application, removed the packaged unverified duplicate runner copy, and added source/package hash regression checks.
 - Added `docs/stabilization-reference-3.0.2.md` with the observed performance symptoms, confirmed causes, fixes, intentionally rejected dynamic-blur workaround, and future diagnostic order.
+- Confirmed paused transcription already persists a checkpoint every 30 seconds; added a regression test proving “continue transcription” keeps that checkpoint instead of requesting a clean restart.
+- Traced Paraformer startup failure to a missing `torchaudio` package in the isolated FunASR runtime; runtime repair now installs the wheel matching the bundled PyTorch version and CUDA index.
+- Split text AI routing from ASR: recording organization and room questions can independently use room cloud AI, local Qwen, or an encrypted user-supplied OpenAI-compatible API.
+- Added a joined-room-only cloud AI signaling path with bounded payloads, rate/concurrency limits, timeouts and sanitized errors. The server reads DeepSeek configuration only from `/opt/shanghao/.env`; no provider key is present in client settings, IPC responses, logs, source or release assets.
+- Cloud room questions use server-side web search when supported; model output source identifiers are mapped back to local recording paths inside the main process so local file paths are not sent upstream.
+- Persist the ASR model name and revision with each completed or partial transcript; the recording list and detail view now show which model produced the text, while legacy records are backfilled from compatible checkpoints or marked as unknown.
+- Added a visible “停止回答” action for room questions. Cancellation now propagates through IPC to local Qwen, custom HTTP providers and the joined-room cloud request; closing the ask popover also stops active work, and Relay aborts its upstream fetch instead of holding the connection busy until timeout.
 
 ## 2026.08.21
 

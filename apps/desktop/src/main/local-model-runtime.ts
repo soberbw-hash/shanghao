@@ -1,4 +1,7 @@
-export type LocalModelRuntimeId = "vibevoice" | "qwen3-asr-0.6b" | "paraformer-zh" | "qwen35-4b";
+import type { AiModelId } from "@private-voice/shared";
+
+/** `vibevoice` remains readable only for old packaged-runtime diagnostics; it is no longer selectable. */
+export type LocalModelRuntimeId = AiModelId | "vibevoice";
 
 export type LocalModelRuntimePhase =
   "missing" | "stopped" | "preparing" | "loading" | "ready" | "running" | "paused" | "error";

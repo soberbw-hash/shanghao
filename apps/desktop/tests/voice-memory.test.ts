@@ -5,6 +5,7 @@ import path from "node:path";
 import test from "node:test";
 
 import {
+  AI_ASR_MODEL_NAMES,
   CURRENT_TRANSCRIPTION_PIPELINE_VERSION,
   hasInvalidVoiceMemoryResult,
   type VoiceMemoryRecord,
@@ -14,6 +15,7 @@ import {
   analyzePcm16Wav,
   parseVibeVoiceOutput,
   temporaryRecordingName,
+  torchAudioInstallPlan,
 } from "../src/main/ai-runtime-manager";
 import { buildVibeVoiceArguments } from "../src/main/vibevoice-runtime";
 import {
@@ -23,6 +25,7 @@ import {
   canAutomaticallyTranscribeDuration,
   completedTranscriptionUnits,
   TRANSCRIPTION_CHUNK_MS,
+  transcriptionModelMetadata,
 } from "../src/main/ai-voice-memory-service";
 import { VoiceMemoryStore } from "../src/main/voice-memory-store";
 import {
@@ -79,6 +82,19 @@ test("VibeASR uses the sampling decoder defaults required for Chinese recordings
   ]);
   assert.equal(args.includes("--greedy"), false);
   assert.equal(args.includes("--prompt-format"), false);
+});
+
+test("Paraformer repairs torchaudio from the index matching bundled PyTorch", () => {
+  assert.deepEqual(torchAudioInstallPlan("2.11.0+cu128"), {
+    version: "2.11.0",
+    indexUrl: "https://download.pytorch.org/whl/cu128",
+  });
+  assert.deepEqual(torchAudioInstallPlan("2.11.0+cpu"), {
+    version: "2.11.0",
+    indexUrl: "https://download.pytorch.org/whl/cpu",
+  });
+  assert.deepEqual(torchAudioInstallPlan("2.11.0"), { version: "2.11.0" });
+  assert.throws(() => torchAudioInstallPlan("nightly"), /unsupported_torch_version/);
 });
 
 test("VibeVoice timestamps become clickable structured transcript segments", () => {
@@ -241,6 +257,280 @@ test("transcription checkpoints update in shorter visible steps and preserve leg
   assert.equal(completedTranscriptionUnits({ completedUnits: 3, unitDurationMs: 30_000 }, 20), 3);
 });
 
+test("voice memories retain the exact ASR model instead of following later settings", async () => {
+  assert.deepEqual(
+    transcriptionModelMetadata("qwen3-asr-0.6b-force", {
+      modelId: "qwen3-asr-0.6b-force",
+      ready: true,
+      modelName: "Qwen3-ASR-0.6B",
+      modelVersion: "revision-qwen-1",
+    }),
+    {
+      id: "qwen3-asr-0.6b-force",
+      name: "Qwen3-ASR-0.6B",
+      version: "revision-qwen-1",
+    },
+  );
+
+  const legacy = record();
+  const service = new AiVoiceMemoryService(
+    {
+      getTaskCheckpoint: () => ({
+        taskId: `transcription:${legacy.recordingId}`,
+        recordingId: legacy.recordingId,
+        kind: "transcription",
+        completedUnits: 1,
+        totalUnits: 1,
+        asrModelId: "paraformer-zh",
+        updatedAt: new Date().toISOString(),
+      }),
+    } as never,
+    {} as never,
+    {} as never,
+    {
+      get: async () => legacy,
+      list: async () => [legacy],
+    } as never,
+  );
+
+  assert.deepEqual((await service.get(legacy.recordingId))?.transcriptionModel, {
+    id: "paraformer-zh",
+    name: AI_ASR_MODEL_NAMES["paraformer-zh"],
+  });
+  assert.equal((await service.list())[0]?.transcriptionModel?.id, "paraformer-zh");
+});
+
+test("A/B transcription variants stay separate and can be selected without retranscribing", async () => {
+  let durable = {
+    ...record(),
+    transcript: [],
+    speakers: [],
+    transcriptionModel: undefined,
+    transcriptionVariants: undefined,
+  } as VoiceMemoryRecord;
+  const store = {
+    get: async () => durable,
+    save: async (value: VoiceMemoryRecord) => {
+      durable = value;
+      return value;
+    },
+  };
+  const service = new AiVoiceMemoryService({} as never, {} as never, {} as never, store as never);
+  const save = (
+    service as unknown as { save: (value: VoiceMemoryRecord) => Promise<VoiceMemoryRecord> }
+  ).save.bind(service);
+  const qwenTranscript = [{ ...record().transcript[0]!, text: "千问结果" }];
+  const paraformerTranscript = [{ ...record().transcript[0]!, text: "Paraformer 结果" }];
+
+  await save({
+    ...durable,
+    transcript: qwenTranscript,
+    speakers: record().speakers,
+    transcriptionModel: {
+      id: "qwen3-asr-0.6b-force",
+      name: "Qwen3-ASR-0.6B + ForcedAligner",
+    },
+  });
+  await save({
+    ...durable,
+    transcript: paraformerTranscript,
+    speakers: record().speakers,
+    transcriptionModel: { id: "paraformer-zh", name: "Paraformer 中文套件" },
+  });
+
+  assert.equal(
+    durable.transcriptionVariants?.["qwen3-asr-0.6b-force"]?.transcript[0]?.text,
+    "千问结果",
+  );
+  assert.equal(
+    durable.transcriptionVariants?.["paraformer-zh"]?.transcript[0]?.text,
+    "Paraformer 结果",
+  );
+  const selected = await service.selectTranscriptionVariant(
+    durable.recordingId,
+    "qwen3-asr-0.6b-force",
+  );
+  assert.equal(selected.transcript[0]?.text, "千问结果");
+  assert.equal(
+    selected.transcriptionVariants?.["paraformer-zh"]?.transcript[0]?.text,
+    "Paraformer 结果",
+  );
+});
+
+test("room questions expose a real cancellation signal to every text provider", async () => {
+  let questionSignal: AbortSignal | undefined;
+  const service = new AiVoiceMemoryService(
+    {} as never,
+    {} as never,
+    {
+      generateJson: async ({ signal }: { signal?: AbortSignal }) => {
+        questionSignal = signal;
+        return new Promise((_resolve, reject) => {
+          signal?.addEventListener("abort", () => reject(new Error("ai_task_paused")), {
+            once: true,
+          });
+        });
+      },
+    } as never,
+    { related: () => [] } as never,
+  );
+
+  const pending = service.askMemory({ question: "现在几点？" });
+  assert.equal(service.cancelQuestion(), true);
+  await assert.rejects(pending, /ai_task_paused/);
+  assert.equal(questionSignal?.aborted, true);
+  assert.equal(service.cancelQuestion(), false);
+});
+
+test("continue transcription keeps the saved checkpoint instead of requesting a clean restart", async () => {
+  const paused = {
+    ...record(),
+    phase: "paused" as const,
+    progress: 35,
+    processingStage: "asr" as const,
+  };
+  const service = new AiVoiceMemoryService(
+    {} as never,
+    {} as never,
+    {} as never,
+    { get: async () => paused } as never,
+  );
+  let request: Parameters<AiVoiceMemoryService["start"]>[0] | undefined;
+  (service as unknown as { start: AiVoiceMemoryService["start"] }).start = async (next) => {
+    request = next;
+    return paused;
+  };
+
+  await service.resume(paused.recordingId);
+
+  assert.equal(request?.transcribe, true);
+  assert.equal(request?.restartTranscription, undefined);
+  assert.equal(request?.organize, false);
+});
+
+test("pausing after saved chunks keeps the newest durable transcript instead of overwriting it", async () => {
+  const initial = {
+    ...record(),
+    phase: "idle" as const,
+    progress: 0,
+    speakers: [],
+    transcript: [],
+    summary: [],
+    chapters: [],
+    markerTitles: [],
+    timeline: [],
+  };
+  let durable = initial;
+  const store = {
+    get: async () => durable,
+    save: async (value: VoiceMemoryRecord) => {
+      durable = value;
+      return value;
+    },
+  };
+  const service = new AiVoiceMemoryService(
+    {} as never,
+    { validateInputFile: async () => undefined } as never,
+    {} as never,
+    store as never,
+  );
+  (service as unknown as { transcribe: () => Promise<VoiceMemoryRecord> }).transcribe =
+    async () => {
+      durable = {
+        ...durable,
+        phase: "transcribing",
+        progress: 42,
+        transcript: record().transcript,
+        speakers: record().speakers,
+      };
+      throw new Error("ai_task_paused");
+    };
+
+  const result = await (
+    service as unknown as {
+      processNow: (request: {
+        recordingId: string;
+        filePath: string;
+        manual: boolean;
+        organize: boolean;
+      }) => Promise<VoiceMemoryRecord>;
+    }
+  ).processNow({
+    recordingId: initial.recordingId,
+    filePath: initial.filePath,
+    manual: true,
+    organize: false,
+  });
+
+  assert.equal(result.phase, "paused");
+  assert.equal(result.progress, 42);
+  assert.equal(result.transcript[0]?.text, "周六晚上七点吃饭");
+  assert.equal(durable.transcript[0]?.text, "周六晚上七点吃饭");
+});
+
+test("a later ASR failure keeps already saved chunks available for continuing", async () => {
+  const initial = {
+    ...record(),
+    phase: "idle" as const,
+    progress: 0,
+    speakers: [],
+    transcript: [],
+    summary: [],
+    chapters: [],
+    markerTitles: [],
+    timeline: [],
+  };
+  let durable = initial;
+  const store = {
+    get: async () => durable,
+    save: async (value: VoiceMemoryRecord) => {
+      durable = value;
+      return value;
+    },
+  };
+  const service = new AiVoiceMemoryService(
+    {} as never,
+    { validateInputFile: async () => undefined } as never,
+    {} as never,
+    store as never,
+  );
+  (service as unknown as { transcribe: () => Promise<VoiceMemoryRecord> }).transcribe =
+    async () => {
+      durable = {
+        ...durable,
+        phase: "transcribing",
+        progress: 60,
+        transcript: record().transcript,
+        speakers: record().speakers,
+      };
+      throw new Error("asr_runtime_failed: simulated failure");
+    };
+
+  await assert.rejects(
+    (
+      service as unknown as {
+        processNow: (request: {
+          recordingId: string;
+          filePath: string;
+          manual: boolean;
+          organize: boolean;
+        }) => Promise<VoiceMemoryRecord>;
+      }
+    ).processNow({
+      recordingId: initial.recordingId,
+      filePath: initial.filePath,
+      manual: true,
+      organize: false,
+    }),
+    /asr_runtime_failed/,
+  );
+
+  assert.equal(durable.phase, "error");
+  assert.equal(durable.progress, 60);
+  assert.equal(durable.transcript[0]?.text, "周六晚上七点吃饭");
+  assert.match(durable.errorMessage ?? "", /asr_runtime_failed/);
+});
+
 test("automatic transcription leaves recordings longer than thirty minutes for manual action", () => {
   assert.equal(canAutomaticallyTranscribeDuration(AUTOMATIC_TRANSCRIPTION_MAX_DURATION_MS), true);
   assert.equal(
@@ -250,7 +540,7 @@ test("automatic transcription leaves recordings longer than thirty minutes for m
 });
 
 test("a manual transcription runs before already queued background recordings", async () => {
-  const service = new AiVoiceMemoryService({} as never, {} as never, {} as never);
+  const service = new AiVoiceMemoryService({} as never, {} as never, {} as never, {} as never);
   const started: string[] = [];
   let finishFirst: (() => void) | undefined;
   const firstFinished = new Promise<void>((resolve) => {
@@ -291,6 +581,7 @@ test("a newer manual transcription pauses an older queued click instead of runni
   const saved: VoiceMemoryRecord[] = [];
   const records = new Map<string, VoiceMemoryRecord>();
   const service = new AiVoiceMemoryService(
+    {} as never,
     {} as never,
     {} as never,
     {
@@ -347,7 +638,12 @@ test("UI transcription retries acknowledge immediately and automatic organizatio
       return value;
     },
   };
-  const service = new AiVoiceMemoryService({} as never, {} as never, store as never);
+  const service = new AiVoiceMemoryService(
+    { getTaskCheckpoint: () => undefined } as never,
+    {} as never,
+    {} as never,
+    store as never,
+  );
   const requests: Array<{ organize?: boolean; transcribe?: boolean }> = [];
   (service as unknown as { process: AiVoiceMemoryService["process"] }).process = async (
     request,
@@ -394,7 +690,12 @@ test("the main process forces a clean retry when the UI sends an invalid legacy 
     get: async () => invalid,
     save: async (value: VoiceMemoryRecord) => value,
   };
-  const service = new AiVoiceMemoryService({} as never, {} as never, store as never);
+  const service = new AiVoiceMemoryService(
+    { getTaskCheckpoint: () => undefined } as never,
+    {} as never,
+    {} as never,
+    store as never,
+  );
   let acceptedRestart = false;
   (service as unknown as { process: AiVoiceMemoryService["process"] }).process = async (
     request,
@@ -418,7 +719,7 @@ test("new automatic speech yields a running background organization task", async
     get: async () => undefined,
     save: async (value: VoiceMemoryRecord) => value,
   };
-  const service = new AiVoiceMemoryService({} as never, {} as never, store as never);
+  const service = new AiVoiceMemoryService({} as never, {} as never, {} as never, store as never);
   const organizationController = new AbortController();
   const state = service as unknown as {
     activeAutomatic?: {

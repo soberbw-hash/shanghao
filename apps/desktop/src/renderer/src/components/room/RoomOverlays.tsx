@@ -104,6 +104,13 @@ export const ScreenSourcePicker = ({
               </button>
             </div>
             <div className="screen-source-picker-grid">
+              {sources.length === 0 ? (
+                <div className="screen-source-picker-loading" role="status">
+                  <span aria-hidden="true" />
+                  <strong>正在读取可分享的窗口…</strong>
+                  <small>通常只需要片刻</small>
+                </div>
+              ) : null}
               {sources.slice(0, 24).map((source, index) => (
                 <button
                   key={source.id}
@@ -126,7 +133,13 @@ export const ScreenSourcePicker = ({
                         draggable={false}
                       />
                     ) : (
-                      <span className="screen-source-thumbnail-fallback">暂无预览</span>
+                      <span
+                        className={`screen-source-thumbnail-fallback ${source.kind}`}
+                        aria-hidden="true"
+                      >
+                        <span />
+                        <small>{source.kind === "screen" ? "整个显示器" : "应用窗口"}</small>
+                      </span>
                     )}
                   </span>
                   <span className="screen-source-name">

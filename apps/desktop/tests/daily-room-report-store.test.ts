@@ -71,6 +71,39 @@ test("screen sharing and reconnect-style duplicate joins are counted once", asyn
   assert.equal(report?.participants?.[0]?.joinSessions, 1);
 });
 
+test("daily report deduplicates the same visible nickname and persists one shared commentary", async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "shanghao-daily-commentary-"));
+  const filePath = path.join(directory, "daily-room.json");
+  try {
+    const store = await DailyRoomReportStore.create(filePath);
+    const now = at("2026-08-10T20:00:00");
+    store.recordJoin("main", "legacy-peer-a", "Sober", 1, now);
+    store.recordLeave("main", "legacy-peer-a", "Sober", 0, now + 1_000);
+    store.recordJoin("main", "profile-a", " sober ", 1, now + 2_000);
+    store.recordLeave("main", "profile-a", "sober", 0, now + 3_000);
+    assert.equal(
+      store.setCommentary(
+        "main",
+        "2026-08-10",
+        " 昨天房间很安静，Sober 一个人也把气氛坐出了包场感 ☕ ",
+      ),
+      true,
+    );
+    assert.equal(store.setCommentary("main", "2026-08-10", "不能覆盖"), false);
+    await store.flush();
+
+    const report = (await DailyRoomReportStore.create(filePath)).getHistory(
+      "main",
+      at("2026-08-11T12:00:00"),
+    )[0];
+    assert.equal(report?.participantCount, 1);
+    assert.deepEqual(report?.participantNicknames, ["Sober"]);
+    assert.equal(report?.commentary, "昨天房间很安静，Sober 一个人也把气氛坐出了包场感 ☕");
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
 test("cross-midnight sessions are split in Shanghai time without a fake leave", async () => {
   const store = await DailyRoomReportStore.create();
   store.recordJoin("main", "profile-a", "小明", 1, at("2026-08-10T23:00:00"));
