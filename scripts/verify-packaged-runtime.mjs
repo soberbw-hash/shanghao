@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { access, readFile, stat } from "node:fs/promises";
 import path from "node:path";
 
@@ -7,6 +8,15 @@ const releaseDirectory = path.resolve(import.meta.dirname, "..", "apps", "deskto
 const resourcesDirectory = path.join(releaseDirectory, "win-unpacked", "resources");
 const archivePath = path.join(resourcesDirectory, "app.asar");
 await access(archivePath);
+
+const runtimeManifestPath = path.join(resourcesDirectory, "ai", "runtime-manifest.json");
+const runtimeManifest = JSON.parse(await readFile(runtimeManifestPath, "utf8"));
+const qwenRunnerPath = path.join(resourcesDirectory, "ai", runtimeManifest.qwen.runner.path);
+const qwenRunner = await readFile(qwenRunnerPath);
+const qwenRunnerHash = createHash("sha256").update(qwenRunner).digest("hex");
+if (qwenRunnerHash !== runtimeManifest.qwen.runner.sha256) {
+  throw new Error(`Packaged AI runtime hash mismatch: ${runtimeManifest.qwen.runner.path}`);
+}
 
 const entries = listPackage(archivePath, { isPack: false }).map((entry) =>
   entry.replaceAll("\\", "/"),
@@ -39,5 +49,5 @@ for (const licenseName of [
 }
 
 console.log(
-  `Packaged runtime verified: ${fontEntries.length} font files, DeepFilterNet assets, and all licenses`,
+  `Packaged runtime verified: AI runner integrity, ${fontEntries.length} font files, DeepFilterNet assets, and all licenses`,
 );

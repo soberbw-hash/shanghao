@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "packageVersion": "3.0.0-dev.1",
+  "packageVersion": "3.0.2",
   "platform": "win32-x64",
   "vibevoice": {
     "source": "microsoft/VibeASR.cpp",
@@ -34,7 +34,7 @@
     "transformersVersion": "5.15.0",
     "runner": {
       "path": "qwen-runner.py",
-      "sha256": "08c92d975316524c6241a8da477be593b63abf8eeffe47791fd1462ec9b3b4c7"
+      "sha256": "c82971f92612ccf74c8c22ad8aecbec6629cf82634d7f5af0d11003cfc98d6c0"
     }
   }
 }

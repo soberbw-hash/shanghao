@@ -15,6 +15,9 @@ Implement the local ShangHao 3.0.2 performance stabilization plan on top of the 
 - Prepared version 3.0.2 metadata and release notes after explicit authorization to package, push and publish once all release checks pass.
 - Passed ESLint, Prettier, workspace typecheck, 354/354 desktop smoke tests, Electron AudioWorklet, five-peer audio/media, and 2/2 Rust tests.
 - Built and verified `ShangHao-3.0.2-Setup-x64.exe`; packaged fonts, DeepFilterNet assets, licenses, install manifest, execution level, blockmap and checksums passed.
+- After the first public 3.0.2 update, traced `ai_runtime_integrity_failed` to a stale Qwen runner SHA256 in `runtime-manifest.json`; the packaged runner was current but the manifest still pinned the previous script.
+- Corrected the manifest, made optional AI runtime preparation non-fatal to the main application, removed the packaged unverified duplicate runner copy, and added source/package hash regression checks.
+- Added `docs/stabilization-reference-3.0.2.md` with the observed performance symptoms, confirmed causes, fixes, intentionally rejected dynamic-blur workaround, and future diagnostic order.
 
 ## 2026.08.21
 

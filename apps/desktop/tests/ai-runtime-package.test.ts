@@ -64,10 +64,16 @@ test("bundled AI runtime copies only manifest-verified files into persistent sto
 test("the checked-in runtime manifest pins source revisions and integrity hashes", async () => {
   const manifestPath = path.join(process.cwd(), "resources", "ai", "runtime-manifest.json");
   const manifest = JSON.parse(await readFile(manifestPath, "utf8")) as AiRuntimePackageManifest;
+  const qwenRunnerPath = path.join(process.cwd(), "scripts", manifest.qwen.runner.path);
   assert.equal(manifest.vibevoice.source, "microsoft/VibeASR.cpp");
   assert.match(manifest.vibevoice.revision, /^[a-f0-9]{40}$/);
   assert.ok(manifest.vibevoice.files.every((file) => /^[a-f0-9]{64}$/.test(file.sha256)));
   assert.match(manifest.qwen.runner.sha256, /^[a-f0-9]{64}$/);
+  assert.equal(
+    manifest.qwen.runner.sha256,
+    await sha256File(qwenRunnerPath),
+    "qwen-runner.py changed without updating resources/ai/runtime-manifest.json",
+  );
 });
 
 test("runtime health distinguishes a missing native DLL from a missing model", async () => {

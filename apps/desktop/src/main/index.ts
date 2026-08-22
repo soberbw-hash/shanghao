@@ -333,15 +333,27 @@ const bootstrap = async (): Promise<void> => {
   const bundledAiRuntimeRoot = app.isPackaged
     ? path.join(process.resourcesPath, "ai")
     : path.join(app.getAppPath(), "resources", "ai");
-  await prepareBundledAiRuntime({
-    runtimeRoot: aiRuntimeDirectory,
-    bundledRoot: bundledAiRuntimeRoot,
-  });
+  try {
+    await prepareBundledAiRuntime({
+      runtimeRoot: aiRuntimeDirectory,
+      bundledRoot: bundledAiRuntimeRoot,
+    });
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : String(error);
+    await diagnostics.writeLog({
+      category: "app",
+      level: "error",
+      message: "Bundled AI runtime could not be prepared; continuing without replacing it",
+      context: { reason, bundledAiRuntimeRoot, aiRuntimeDirectory },
+    });
+  }
   const bundledRunner = app.isPackaged
     ? path.join(process.resourcesPath, "ai", "qwen-runner.py")
     : path.join(app.getAppPath(), "scripts", "qwen-runner.py");
   const runtimeRunner = path.join(aiRuntimeDirectory, "qwen-runner.py");
-  if (existsSync(bundledRunner) && readFileSync(bundledRunner).length > 0) {
+  // Packaged Qwen runners are copied only by prepareBundledAiRuntime after hash verification.
+  // Development uses the live script because resources/ai intentionally contains only the manifest.
+  if (!app.isPackaged && existsSync(bundledRunner) && readFileSync(bundledRunner).length > 0) {
     const { mkdir, copyFile } = await import("node:fs/promises");
     await mkdir(aiRuntimeDirectory, { recursive: true });
     await copyFile(bundledRunner, runtimeRunner);

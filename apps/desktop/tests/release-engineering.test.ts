@@ -38,6 +38,11 @@ test("v3.0.2 release metadata and safeguards are complete", () => {
   assert.equal(existsSync(path.join(root, "docs/release-notes/v3.0.0.md")), true);
   assert.equal(changelog.includes("## 3.0.2 - 2026-08-22"), true);
   assert.equal(existsSync(path.join(root, "docs/release-notes/v3.0.2.md")), true);
+  assert.equal(existsSync(path.join(root, "docs/stabilization-reference-3.0.2.md")), true);
+  assert.equal(
+    changelog.includes("ai_runtime_integrity_failed") || changelog.includes("AI runtime"),
+    true,
+  );
   assert.equal(existsSync(path.join(root, "docs/v2.6.1-release-sequence.md")), true);
   assert.equal(architecture.includes("ScreenShareManager"), true);
   assert.equal(desktopBuilder.includes("mac:"), false);
