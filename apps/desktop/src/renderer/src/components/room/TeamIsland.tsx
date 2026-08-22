@@ -18,7 +18,8 @@ import { DynamicWeatherWindow } from "./DynamicWeatherWindow";
 import { RoomDateCalendar } from "./RoomDateCalendar";
 import type { RoomCollectionDragPayload } from "../../features/chat/collectionDrag";
 import { RoomCollectionShelf } from "./RoomCollectionShelf";
-import { SceneCharacter, sceneMemberKey, type SceneCharacterQuickMessage } from "./SceneCharacter";
+import { SceneCharacter, type SceneCharacterQuickMessage } from "./SceneCharacter";
+import { sceneMemberKey } from "./sceneMemberKey";
 import { GameMonitorContent } from "./GameMonitorContent";
 import { WorkMonitorContent } from "./WorkMonitorContent";
 import { MusicActivityBadge } from "./MusicActivityBadge";
@@ -35,6 +36,7 @@ import {
 import { memberStatus } from "../../features/voice-scene/activityRules";
 import { usePrefersReducedMotion } from "../../hooks/usePrefersReducedMotion";
 import { useVisibleInterval } from "../../hooks/useVisualVisibility";
+import { useRenderProfiler } from "../../features/diagnostics/renderProfiler";
 import type { ConnectionQualityLevel } from "../../features/network/networkDiagnostics";
 import { useSettingsStore } from "../../store/settingsStore";
 import { useWeatherStore } from "../../features/weather/weatherStore";
@@ -91,11 +93,26 @@ export const TeamIsland = ({
   pauseVisualMotion?: boolean;
 }) => {
   const islandRef = useRef<HTMLDivElement>(null);
-  const settings = useSettingsStore((state) => state.settings);
+  useRenderProfiler("TeamIsland", {
+    members,
+    screenSharingPeerIds,
+    networkQuality,
+    reactions,
+    chatBubbles,
+    collectionItems,
+    isCollectionOpen,
+    pauseVisualMotion,
+  });
+  const isDynamicWeatherEnabled = useSettingsStore(
+    (state) => state.settings?.isDynamicWeatherEnabled,
+  );
+  const weatherLocationMode = useSettingsStore((state) => state.settings?.weatherLocationMode);
+  const weatherManualCity = useSettingsStore((state) => state.settings?.weatherManualCity);
+  const weatherEffectMode = useSettingsStore((state) => state.settings?.weatherEffectMode);
   const weatherSnapshot = useWeatherStore((state) => state.snapshot);
   const weatherPreview = useWeatherStore((state) => state.preview);
   const weatherTheme = resolveWeatherVisualTheme(
-    settings?.isDynamicWeatherEnabled
+    isDynamicWeatherEnabled
       ? weatherPreview
         ? {
             ...weatherSnapshot,
@@ -108,7 +125,7 @@ export const TeamIsland = ({
       : undefined,
   );
   const weatherRoomClass =
-    settings?.isDynamicWeatherEnabled === false
+    isDynamicWeatherEnabled === false
       ? "weather-room-default"
       : `weather-room-${weatherTheme.roomTone} weather-room-phase-${weatherTheme.phase}`;
   const visibleMembers = members.filter((member) => !member.isEmptySlot).slice(0, 5);
@@ -152,6 +169,14 @@ export const TeamIsland = ({
   const localSettledZone = localMember
     ? (settledMemberZones[localMember.id] ?? localZone)
     : undefined;
+  const isCharacterMotionActive = visibleMembers.some((member) => {
+    const settledZone = settledMemberZones[member.id];
+    const targetZone = resolvedMemberZones.get(member.id);
+    // A newly mounted character is moving until it reports its first settled zone.
+    // Pause decorative animation during room entry as well as later seat changes.
+    return targetZone !== undefined && settledZone !== targetZone;
+  });
+  const shouldPauseAmbientMotion = pauseVisualMotion || isCharacterMotionActive;
   const awayMembers = visibleMembers.filter(
     (member) => resolvedMemberZones.get(member.id) === "restroomZone",
   );
@@ -272,6 +297,8 @@ export const TeamIsland = ({
       ref={islandRef}
       className={`team-island ambient-${ambient} ${weatherRoomClass} ${
         pauseVisualMotion ? "is-visual-motion-paused" : ""
+      } ${
+        isCharacterMotionActive ? "is-character-motion-active" : ""
       } relative h-full min-h-[420px] overflow-hidden`}
       data-testid="team-island"
     >
@@ -286,10 +313,10 @@ export const TeamIsland = ({
         sceneFeatureRegistry.has("weather-window") ? (
           <div className="scene-window-nook">
             <DynamicWeatherWindow
-              isEnabled={settings?.isDynamicWeatherEnabled ?? true}
-              locationMode={settings?.weatherLocationMode ?? "auto"}
-              manualCity={settings?.weatherManualCity ?? ""}
-              effectMode={settings?.weatherEffectMode ?? "standard"}
+              isEnabled={isDynamicWeatherEnabled ?? true}
+              locationMode={weatherLocationMode ?? "auto"}
+              manualCity={weatherManualCity ?? ""}
+              effectMode={weatherEffectMode ?? "standard"}
             />
           </div>
         ) : null}
@@ -361,17 +388,17 @@ export const TeamIsland = ({
                           <GameMonitorContent
                             gameName={settledOccupant.gameName}
                             iconDataUrl={settledOccupant.gameIconDataUrl}
-                            shouldReduceMotion={shouldReduceMotion}
+                            shouldReduceMotion={shouldReduceMotion || shouldPauseAmbientMotion}
                           />
                         ) : settledOccupant.workActivity ? (
                           <WorkMonitorContent
                             activity={settledOccupant.workActivity}
-                            shouldReduceMotion={shouldReduceMotion}
+                            shouldReduceMotion={shouldReduceMotion || shouldPauseAmbientMotion}
                           />
                         ) : (
                           <IdleMonitorContent
                             offsetSeconds={slotIndex * 48}
-                            shouldReduceMotion={shouldReduceMotion}
+                            shouldReduceMotion={shouldReduceMotion || shouldPauseAmbientMotion}
                           />
                         )}
                       </motion.span>

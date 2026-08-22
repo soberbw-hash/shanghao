@@ -8,6 +8,8 @@ export interface SpeakingActivityState {
   holdUntil: number;
 }
 
+const SPEAKING_ANALYSIS_INTERVAL_MS = 33;
+
 export const createSpeakingActivityState = (): SpeakingActivityState => ({
   isSpeaking: false,
   noiseFloor: 0.008,
@@ -49,7 +51,7 @@ export const createSpeakingDetector = (
   source.connect(analyser);
 
   const data = new Uint8Array(analyser.frequencyBinCount);
-  let frameId = 0;
+  let timerId = 0;
   let activityState = createSpeakingActivityState();
   let lastLevelPublishedAt = 0;
   let smoothedLevel = 0;
@@ -73,15 +75,17 @@ export const createSpeakingDetector = (
       lastLevelPublishedAt = now;
       onLevel(smoothedLevel < 0.01 ? 0 : smoothedLevel);
     }
-
-    frameId = window.requestAnimationFrame(tick);
   };
 
   tick();
+  // Voice activity does not need to follow a 120/144/160 Hz display. Keeping it
+  // on a fixed 30 Hz cadence avoids spending a renderer frame on audio analysis
+  // while preserving sub-50 ms speaking feedback.
+  timerId = window.setInterval(tick, SPEAKING_ANALYSIS_INTERVAL_MS);
 
   return {
     destroy: () => {
-      window.cancelAnimationFrame(frameId);
+      window.clearInterval(timerId);
       source.disconnect();
       analyser.disconnect();
       void audioContext.close();

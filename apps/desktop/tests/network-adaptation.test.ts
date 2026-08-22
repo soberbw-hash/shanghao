@@ -5,6 +5,7 @@ import { evaluateInboundAudioFlow, selectNetworkTier } from "@private-voice/webr
 
 import {
   isPeerAudioPathReady,
+  shouldRequestRelayResync,
   shouldSendAudioRelay,
   shouldUseAudioRelay,
 } from "../src/renderer/src/features/room/peerAudioPath";
@@ -99,6 +100,70 @@ test("inbound audio flow detects a connected peer that silently stopped receivin
   );
   assert.equal(progress.status, "flowing");
   assert.equal(progress.next.stagnantSamples, 0);
+});
+
+test("inbound audio flow treats verified Opus DTX silence as healthy until the peer speaks", () => {
+  const previous = { bytesReceived: 3_200, packetsReceived: 20, stagnantSamples: 2 };
+  const quiet = evaluateInboundAudioFlow({ bytesReceived: 3_200, packetsReceived: 20 }, previous, {
+    nowMs: 10_000,
+    connectedAtMs: 1_000,
+    isRemoteMuted: false,
+    isRemoteSpeaking: false,
+  });
+  assert.equal(quiet.status, "flowing");
+  assert.equal(quiet.progressed, false);
+  assert.equal(quiet.next.stagnantSamples, 0);
+
+  const speaking = evaluateInboundAudioFlow(
+    { bytesReceived: 3_200, packetsReceived: 20 },
+    { ...quiet.next, stagnantSamples: 2 },
+    {
+      nowMs: 11_000,
+      connectedAtMs: 1_000,
+      isRemoteMuted: false,
+      isRemoteSpeaking: true,
+    },
+  );
+  assert.equal(speaking.status, "stalled");
+});
+
+test("relay watchdog does not resync normal gated silence or repeat the same failed packet", () => {
+  assert.equal(
+    shouldRequestRelayResync({
+      now: 8_000,
+      lastReceivedAt: 4_000,
+      lastPlayedAt: 4_000,
+    }),
+    false,
+  );
+  assert.equal(
+    shouldRequestRelayResync({
+      now: 5_500,
+      lastReceivedAt: 5_400,
+      lastPlayedAt: 4_000,
+    }),
+    true,
+  );
+  assert.equal(
+    shouldRequestRelayResync({
+      now: 6_500,
+      lastReceivedAt: 5_400,
+      lastPlayedAt: 4_000,
+      lastResyncRequestedAt: 5_500,
+      lastResyncReceivedAt: 5_400,
+    }),
+    false,
+  );
+  assert.equal(
+    shouldRequestRelayResync({
+      now: 11_000,
+      lastReceivedAt: 10_900,
+      lastPlayedAt: 4_000,
+      lastResyncRequestedAt: 5_500,
+      lastResyncReceivedAt: 5_400,
+    }),
+    true,
+  );
 });
 
 test("a live WebRTC track cannot disable relay before inbound RTP is verified", () => {

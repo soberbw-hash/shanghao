@@ -76,6 +76,7 @@ export class UpdateService {
   private installStarted = false;
   private downloadStarted = false;
   private downloadReady = false;
+  private deferBackgroundDownload?: () => boolean;
 
   constructor(
     private readonly currentVersion: string,
@@ -118,6 +119,10 @@ export class UpdateService {
 
   onStatus(listener: (status: UpdateStatus) => void): void {
     this.statusListener = listener;
+  }
+
+  setBackgroundDownloadGuard(guard: () => boolean): void {
+    this.deferBackgroundDownload = guard;
   }
 
   async check(): Promise<UpdateCheckResult> {
@@ -164,7 +169,7 @@ export class UpdateService {
         forceUpdate,
       });
       if (hasUpdate && app.isPackaged) {
-        void this.download().catch(() => undefined);
+        void this.download(false).catch(() => undefined);
       }
       await this.log(
         "info",
@@ -189,11 +194,20 @@ export class UpdateService {
     }
   }
 
-  async download(): Promise<void> {
+  async download(manual = true): Promise<void> {
     if (!app.isPackaged) {
       throw new Error("开发环境不会下载真实更新");
     }
     if (this.downloadReady || this.downloadStarted) return;
+    if (!manual && this.deferBackgroundDownload?.()) {
+      this.emit({
+        phase: "available",
+        message: "当前正在进行实时语音或屏幕分享，更新下载将在空闲时开始。",
+        latestVersion: this.lastResult?.latestVersion,
+        forceUpdate: this.lastResult?.forceUpdate,
+      });
+      return;
+    }
     this.downloadStarted = true;
     this.emit({
       phase: "downloading",

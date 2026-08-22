@@ -368,6 +368,37 @@
   }
 }
 
+/* Seat changes keep the walking character fluid by temporarily giving its
+   compositor animation priority over decorative room motion. */
+.team-island.is-character-motion-active .weather-cloud,
+.team-island.is-character-motion-active .weather-rain-layer span,
+.team-island.is-character-motion-active .weather-snow-layer span,
+.team-island.is-character-motion-active .weather-fog-layer,
+.team-island.is-character-motion-active .weather-lightning,
+.team-island.is-character-motion-active
+  .scene-workstation.is-reconnecting
+  .scene-workstation-art-frame,
+.team-island.is-character-motion-active .scene-workstation-idle-fish,
+.team-island.is-character-motion-active .scene-idle-monitor-art,
+.team-island.is-character-motion-active .scene-workstation-screen.network-unstable::after,
+.team-island.is-character-motion-active
+  .scene-character-motion:is(.phase-idle, .phase-away-idle)
+  .room-character-visual-layer.is-active,
+.team-island.is-character-motion-active
+  .scene-character-motion:is(.phase-idle, .phase-away-idle)
+  .room-character-visual-layer.is-active
+  *,
+.team-island.is-character-motion-active
+  .scene-character-motion:is(.phase-idle, .phase-away-idle)
+  .room-character-visual-layer.is-active
+  *::before,
+.team-island.is-character-motion-active
+  .scene-character-motion:is(.phase-idle, .phase-away-idle)
+  .room-character-visual-layer.is-active
+  *::after {
+  animation-play-state: paused !important;
+}
+
 .scene-workstation-screen svg {
   width: 10px;
   height: 10px;
@@ -475,6 +506,26 @@
   padding: 2px;
 }
 
+.scene-game-monitor-content--scene .scene-game-monitor-art {
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  object-fit: cover;
+  filter: saturate(0.98) contrast(1.04) brightness(1.01);
+}
+
+.scene-game-monitor-content--scene[data-game-scene-tone="cozy"] .scene-game-monitor-art {
+  filter: saturate(1) contrast(1.02) brightness(1.01);
+}
+
+.scene-game-monitor-content--scene[data-game-scene-tone="moba"] .scene-game-monitor-art {
+  filter: saturate(1.03) contrast(1.06) brightness(1.03);
+}
+
+.scene-game-monitor-content--scene[data-game-scene-tone="tactical"] .scene-game-monitor-art {
+  filter: saturate(0.94) contrast(1.08) brightness(1.06);
+}
+
 .scene-game-monitor-content--fallback {
   place-items: center;
 }
@@ -489,9 +540,14 @@
   z-index: 3;
   width: 34px;
   height: 34px;
+  box-sizing: border-box;
+  padding: 4px;
   border-radius: 8px;
+  background: rgba(248, 251, 255, 0.94);
   object-fit: contain;
-  box-shadow: 0 4px 12px rgba(3, 11, 24, 0.28);
+  box-shadow:
+    0 4px 12px rgba(3, 11, 24, 0.28),
+    inset 0 0 0 1px rgba(205, 222, 242, 0.52);
 }
 
 .scene-game-monitor-scan {

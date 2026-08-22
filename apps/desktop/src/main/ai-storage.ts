@@ -117,6 +117,19 @@ export const preparePersistentAiStorage = async (
   await mkdir(paths.root, { recursive: true });
   const migrationMarker = path.join(paths.root, ".legacy-migration-v1.json");
 
+  // Visual captures run in disposable isolated storage. Copying the user's multi-gigabyte
+  // model library there wastes disk and can make a UI screenshot saturate the machine.
+  if (options.isolateDirectory) {
+    await mkdir(paths.models, { recursive: true });
+    await mkdir(paths.runtimes, { recursive: true });
+    await writeFile(
+      migrationMarker,
+      JSON.stringify({ migratedAt: new Date().toISOString(), isolatedCapture: true }, null, 2),
+      "utf8",
+    );
+    return paths;
+  }
+
   if (existsSync(migrationMarker)) {
     await mkdir(paths.models, { recursive: true });
     await mkdir(paths.runtimes, { recursive: true });

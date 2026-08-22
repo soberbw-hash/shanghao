@@ -1,10 +1,4 @@
-import {
-  useEffect,
-  useRef,
-  type ButtonHTMLAttributes,
-  type PointerEventHandler,
-  type PropsWithChildren,
-} from "react";
+import type { ButtonHTMLAttributes, PropsWithChildren } from "react";
 import { motion, type MotionProps } from "framer-motion";
 
 import { gentleScale } from "../motion/presets";
@@ -35,48 +29,8 @@ export const Button = ({
   className,
   variant = "primary",
   isFullWidth,
-  onPointerMove,
-  onPointerLeave,
   ...props
 }: PropsWithChildren<ButtonProps>) => {
-  const pointerFrameRef = useRef<number | undefined>(undefined);
-
-  useEffect(
-    () => () => {
-      if (pointerFrameRef.current !== undefined) {
-        cancelAnimationFrame(pointerFrameRef.current);
-      }
-    },
-    [],
-  );
-
-  const updatePointerLight: PointerEventHandler<HTMLButtonElement> = (event) => {
-    onPointerMove?.(event);
-    const button = event.currentTarget;
-    const bounds = button.getBoundingClientRect();
-    const x = ((event.clientX - bounds.left) / Math.max(1, bounds.width)) * 100;
-    const y = ((event.clientY - bounds.top) / Math.max(1, bounds.height)) * 100;
-
-    if (pointerFrameRef.current !== undefined) {
-      cancelAnimationFrame(pointerFrameRef.current);
-    }
-    pointerFrameRef.current = requestAnimationFrame(() => {
-      button.style.setProperty("--button-pointer-x", `${x.toFixed(1)}%`);
-      button.style.setProperty("--button-pointer-y", `${y.toFixed(1)}%`);
-      pointerFrameRef.current = undefined;
-    });
-  };
-
-  const resetPointerLight: PointerEventHandler<HTMLButtonElement> = (event) => {
-    onPointerLeave?.(event);
-    if (pointerFrameRef.current !== undefined) {
-      cancelAnimationFrame(pointerFrameRef.current);
-      pointerFrameRef.current = undefined;
-    }
-    event.currentTarget.style.setProperty("--button-pointer-x", "50%");
-    event.currentTarget.style.setProperty("--button-pointer-y", "50%");
-  };
-
   return (
     <motion.button
       type="button"
@@ -89,15 +43,12 @@ export const Button = ({
       )}
       {...gentleScale}
       {...props}
-      onPointerMove={updatePointerLight}
-      onPointerLeave={resetPointerLight}
     >
       <span
         aria-hidden="true"
         className="pointer-events-none absolute inset-0 z-0 rounded-[inherit] opacity-0 transition-opacity duration-150 group-hover:opacity-100"
         style={{
-          background:
-            "radial-gradient(100px circle at var(--button-pointer-x, 50%) var(--button-pointer-y, 50%), rgba(255,255,255,.32), transparent 72%)",
+          background: "linear-gradient(180deg, rgba(255,255,255,.24), rgba(255,255,255,0))",
         }}
       />
       <span className="shanghao-motion-button-content relative z-[1] inline-flex min-w-0 items-center justify-center gap-2">

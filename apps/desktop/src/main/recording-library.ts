@@ -52,14 +52,14 @@ export const scanWasteRecordings = async (
   const inspectable = library.items.filter((item) => !item.isFavorite && item.markers.length === 0);
   const candidates: RecordingCleanupScan["candidates"] = [];
   onProgress?.(0, inspectable.length);
-  for (let index = 0; index < inspectable.length; index += 2) {
-    const batch = await Promise.all(
-      inspectable
-        .slice(index, index + 2)
-        .map((item) => inspectRecordingForCleanup(item.filePath).catch(() => undefined)),
-    );
-    candidates.push(...batch.filter((item) => item !== undefined));
-    onProgress?.(Math.min(inspectable.length, index + batch.length), inspectable.length);
+  // Cleanup is a background maintenance task. Decode one file at a time so it
+  // does not compete with the renderer, voice processing, or a running game.
+  for (let index = 0; index < inspectable.length; index += 1) {
+    const item = inspectable[index];
+    if (!item) continue;
+    const candidate = await inspectRecordingForCleanup(item.filePath).catch(() => undefined);
+    if (candidate) candidates.push(candidate);
+    onProgress?.(index + 1, inspectable.length);
   }
   return { candidates, protectedCount: protectedItems.length };
 };
@@ -67,11 +67,74 @@ export const scanWasteRecordings = async (
 export const enforceRecordingQuota = async (
   configuredDirectory: string | undefined,
   quotaGb: number,
-): Promise<void> => {
-  await enforceRecordingQuotaInDirectory(
-    await getUsableRecordingDirectory(configuredDirectory),
-    quotaGb,
-  );
+): Promise<RecordingLibraryItem[]> =>
+  enforceRecordingQuotaInDirectory(await getUsableRecordingDirectory(configuredDirectory), quotaGb);
+
+export interface AutomaticRecordingCleanupResult {
+  deletedItems: RecordingLibraryItem[];
+  wasteDeletedCount: number;
+  quotaDeletedCount: number;
+}
+
+/** Cleans verified waste first, then applies the storage quota to unprotected oldest files. */
+export const runAutomaticRecordingCleanup = async (
+  configuredDirectory: string | undefined,
+  quotaGb: number,
+  cleanWaste: boolean,
+  newestFilePath?: string,
+): Promise<AutomaticRecordingCleanupResult> => {
+  const directory = await getUsableRecordingDirectory(configuredDirectory);
+  const deletedItems: RecordingLibraryItem[] = [];
+  const deletedPaths = new Set<string>();
+  let wasteDeletedCount = 0;
+
+  const deleteItem = async (item: RecordingLibraryItem): Promise<void> => {
+    if (deletedPaths.has(item.filePath)) return;
+    await deleteRecordingInDirectory(directory, item.filePath);
+    deletedPaths.add(item.filePath);
+    deletedItems.push(item);
+  };
+
+  if (cleanWaste) {
+    let snapshot = await readRecordingLibraryFromDirectory(directory, quotaGb);
+    const newest = newestFilePath
+      ? snapshot.items.find(
+          (item) =>
+            item.filePath === newestFilePath && !item.isFavorite && item.markers.length === 0,
+        )
+      : undefined;
+    if (newest) {
+      const candidate = await inspectRecordingForCleanup(newest.filePath).catch(() => undefined);
+      if (candidate) {
+        await deleteItem(newest);
+        wasteDeletedCount += 1;
+      }
+    }
+
+    snapshot = await readRecordingLibraryFromDirectory(directory, quotaGb);
+    if (snapshot.totalBytes > snapshot.quotaBytes) {
+      const scan = await scanWasteRecordings(configuredDirectory, quotaGb);
+      const itemsByPath = new Map(snapshot.items.map((item) => [item.filePath, item]));
+      for (const candidate of scan.candidates) {
+        const item = itemsByPath.get(candidate.filePath);
+        if (!item) continue;
+        await deleteItem(item).catch(() => undefined);
+        if (deletedPaths.has(item.filePath)) wasteDeletedCount += 1;
+      }
+    }
+  }
+
+  const quotaDeleted = await enforceRecordingQuotaInDirectory(directory, quotaGb);
+  for (const item of quotaDeleted) {
+    if (deletedPaths.has(item.filePath)) continue;
+    deletedPaths.add(item.filePath);
+    deletedItems.push(item);
+  }
+  return {
+    deletedItems,
+    wasteDeletedCount,
+    quotaDeletedCount: quotaDeleted.length,
+  };
 };
 
 export const deleteRecording = async (

@@ -18,10 +18,23 @@ import { AnimatedControlIcon } from "../icons/AnimatedControlIcon";
 
 type AudioPanel = "microphone" | "speaker" | undefined;
 
+export type RoomDockSettings = Pick<
+  AppSettings,
+  | "preferredInputDeviceId"
+  | "microphoneSendVolume"
+  | "isNoiseSuppressionEnabled"
+  | "isEchoCancellationEnabled"
+  | "isVoiceEnhancementEnabled"
+  | "isAutoGainControlEnabled"
+  | "preferredOutputDeviceId"
+  | "speakerMasterVolume"
+  | "isFriendLoudnessBalanceEnabled"
+>;
+
 interface RoomDockProps {
   activeAudioPanel: AudioPanel;
   setActiveAudioPanel: Dispatch<SetStateAction<AudioPanel>>;
-  settings?: AppSettings;
+  settings?: RoomDockSettings;
   inputDevices: AudioDeviceDescriptor[];
   outputDevices: AudioDeviceDescriptor[];
   isMuted: boolean;

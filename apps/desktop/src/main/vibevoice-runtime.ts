@@ -31,6 +31,23 @@ export interface VibeVoiceRuntimeRequest {
   signal?: AbortSignal;
 }
 
+export const buildVibeVoiceArguments = (options: {
+  modelPath: string;
+  wavPath: string;
+  resourceMode: "low" | "normal";
+}): string[] => [
+  "--vae-model",
+  path.join(options.modelPath, "vibeasr-vae-encoder-i8_s.gguf"),
+  "--lm-model",
+  path.join(options.modelPath, "vibeasr-lm-i2_s-embed-q6_k.gguf"),
+  "--audio",
+  options.wavPath,
+  // VibeASR.cpp's default sampling decoder is materially better for the
+  // Chinese recordings used by ShangHao than the old greedy decoder.
+  "-t",
+  String(options.resourceMode === "low" ? 4 : Math.max(4, Math.min(8, os.cpus().length - 1))),
+];
+
 /** Pinned microsoft/VibeASR.cpp native runtime behind the common local-model lifecycle. */
 export class VibeVoiceRuntime implements LocalModelRuntime<
   VibeVoiceRuntimeRequest,
@@ -110,27 +127,11 @@ export class VibeVoiceRuntime implements LocalModelRuntime<
     try {
       return await runLocalProcess(
         this.executable,
-        [
-          "--vae-model",
-          path.join(model, "vibeasr-vae-encoder-i8_s.gguf"),
-          "--lm-model",
-          path.join(model, "vibeasr-lm-i2_s-embed-q6_k.gguf"),
-          "--audio",
-          request.wavPath,
-          "-c",
-          "4096",
-          "-b",
-          "2048",
-          "--max-tokens",
-          "1024",
-          "-t",
-          String(
-            request.resourceMode === "low" ? 2 : Math.max(2, Math.min(6, os.cpus().length - 2)),
-          ),
-          "--greedy",
-          "--prompt-format",
-          "text",
-        ],
+        buildVibeVoiceArguments({
+          modelPath: model,
+          wavPath: request.wavPath,
+          resourceMode: request.resourceMode,
+        }),
         {
           signal: controller.signal,
           timeoutMs: Math.max(180_000, request.durationMs * 5),

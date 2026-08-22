@@ -29,14 +29,19 @@ const toResolvedIcon = (
   };
 };
 
-const scoreAppxAsset = (filename: string, baseName: string, extension: string): number => {
+export const scoreAppxAsset = (filename: string, baseName: string, extension: string): number => {
   const normalized = filename.toLocaleLowerCase();
   const expected = baseName.toLocaleLowerCase();
   if (!normalized.startsWith(expected) || !normalized.endsWith(extension.toLocaleLowerCase())) {
     return -1;
   }
-  if (normalized.includes("targetsize-128") && normalized.includes("unplated")) return 100;
-  if (normalized.includes("targetsize-64") && normalized.includes("unplated")) return 95;
+  // Activity badges always use a light neutral surface. Windows Appx packages often ship
+  // separate dark-on-transparent (lightunplated) and light-on-transparent variants; prefer
+  // the former explicitly instead of depending on filesystem enumeration order.
+  if (normalized.includes("targetsize-128") && normalized.includes("lightunplated")) return 120;
+  if (normalized.includes("targetsize-64") && normalized.includes("lightunplated")) return 115;
+  if (normalized.includes("targetsize-128") && normalized.includes("unplated")) return 110;
+  if (normalized.includes("targetsize-64") && normalized.includes("unplated")) return 105;
   if (normalized.includes("targetsize-128")) return 90;
   if (normalized.includes("targetsize-64")) return 85;
   if (normalized.includes("scale-200")) return 80;

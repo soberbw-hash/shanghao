@@ -20,6 +20,7 @@ interface PeerStatsMonitorOptions {
     isConnected: boolean;
     hasRemoteAudio: boolean;
     isRemoteMuted: boolean;
+    isRemoteSpeaking: boolean;
     iceState: RTCIceConnectionState;
   };
   getRecovery: (peerId: string) => { count: number; lastRecoveryAt?: string };
@@ -234,6 +235,7 @@ export class PeerStatsMonitor {
       nowMs,
       connectedAtMs,
       isRemoteMuted: peerState.isRemoteMuted,
+      isRemoteSpeaking: peerState.isRemoteSpeaking,
     });
     stats.inboundAudioFlow = evaluation.status;
     this.progress.set(peerId, evaluation.next);

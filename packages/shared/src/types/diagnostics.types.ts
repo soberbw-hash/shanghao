@@ -125,6 +125,9 @@ export interface FramePerformanceSnapshot {
   longTaskCount: number;
   longestTaskMs?: number;
   sampleWindowMs: number;
+  componentRenderCounts?: Record<string, number>;
+  componentRenderReasons?: Record<string, Record<string, number>>;
+  longTaskCategories?: Record<string, number>;
 }
 
 export interface ScreenSharePipelineDiagnostics {
@@ -232,6 +235,13 @@ export interface RuntimeHealthSnapshot {
   gpu: {
     hardwareAcceleration: boolean;
     featureStatus: Record<string, string>;
+    compositing?: string;
+    rasterization?: string;
+    webgl?: string;
+    webgl2?: string;
+    videoDecode?: string;
+    videoEncode?: string;
+    angleBackend?: string;
     vendor?: string;
     device?: string;
     driver?: string;

@@ -6,6 +6,7 @@ import { RoomAnimationScheduler } from "../src/renderer/src/features/visual-runt
 import { VisualRuntimeController } from "../src/renderer/src/features/visual-runtime/VisualRuntimeController";
 import {
   SceneFeatureRegistry,
+  builtInCharacterPackManifest,
   defaultRoomSceneManifest,
   sceneFeatureRegistry,
 } from "../src/renderer/src/features/visual-runtime/sceneFeatureRegistry";
@@ -150,6 +151,9 @@ test("room animation queue coalesces keys, stays bounded and performs one full r
 test("scene registry keeps built-ins explicit and rejects unsafe realtime pausing", () => {
   assert.deepEqual(defaultRoomSceneManifest.composition["wall-center"], ["date-calendar"]);
   assert.equal(sceneFeatureRegistry.list("presence")[0]?.id, "characters");
+  assert.equal(builtInCharacterPackManifest.rendererType, "layered");
+  assert.equal(builtInCharacterPackManifest.states.walk, "walk");
+  assert.equal(builtInCharacterPackManifest.transformOrigin, "50% 100%");
 
   const registry = new SceneFeatureRegistry();
   registry.register({

@@ -123,6 +123,7 @@ export const IPC_CHANNELS = {
     export: "recording:export",
     chooseDirectory: "recording:choose-directory",
     saveMarkers: "recording:save-markers",
+    applyAutomaticCleanup: "recording:apply-automatic-cleanup",
     list: "recording:list",
     scanWaste: "recording:scan-waste",
     scanWasteProgress: "recording:scan-waste-progress",

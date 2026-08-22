@@ -160,8 +160,9 @@ test("gsap motion is scoped to intentional surfaces with reduced-motion fallback
   assert.equal(sceneCharacterSource.includes("applyCharacterPersonality"), true);
   assert.equal(characterPersonalitySource.includes("CHARACTER_PERSONALITIES"), true);
   assert.equal(deskAnimalSource.includes("runCycleSources"), true);
-  assert.equal(deskAnimalSource.includes('data-run-cycle-frames="16"'), true);
-  assert.equal(deskAnimalSource.includes('data-run-cycle-fps="50"'), true);
+  assert.equal(deskAnimalSource.includes("const RUN_CYCLE_FRAME_COUNT = 16"), true);
+  assert.equal(deskAnimalSource.includes("data-run-cycle-frames={RUN_CYCLE_FRAME_COUNT}"), true);
+  assert.equal(deskAnimalSource.includes("data-run-cycle-fps={runCycleTiming.fps}"), true);
   assert.equal(deskAnimalSource.includes("walking-animal-run-cycle-strip"), true);
   assert.equal(stylesSource.includes("@keyframes walking-animal-run-cycle"), true);
   assert.equal(stylesSource.includes("--run-cycle-duration: 320ms"), true);
@@ -195,7 +196,8 @@ test("gsap motion is scoped to intentional surfaces with reduced-motion fallback
   assert.equal(stylesSource.includes("will-change: left, top"), false);
   assert.equal(stylesSource.includes("will-change: transform, opacity"), true);
   assert.equal(sceneCharacterSource.includes("planCharacterRoute"), true);
-  assert.equal(sceneCharacterSource.includes("routeAnimation"), true);
+  assert.equal(sceneCharacterSource.includes("element.animate("), true);
+  assert.equal(sceneCharacterSource.includes("characterRouteKeyframes"), true);
   assert.equal(sceneCharacterSource.includes("const middleLeft"), false);
   assert.equal(sceneCharacterSource.includes("destinationWalkingTop"), false);
   assert.equal(sceneCharacterSource.includes("travelDuration * 0.46"), false);
@@ -206,7 +208,7 @@ test("gsap motion is scoped to intentional surfaces with reduced-motion fallback
   assert.equal(sceneCharacterSource.includes("movementDirection"), true);
   assert.equal(sceneCharacterSource.includes("entryRevision"), false);
   assert.equal(sceneCharacterSource.includes("operationIdRef.current"), true);
-  assert.equal(sceneCharacterSource.includes("controls.stop()"), true);
+  assert.equal(sceneCharacterSource.includes("routeMotion.cancel()"), true);
   assert.equal(sceneCharacterSource.includes("didStartEntryRef.current"), true);
   assert.equal(sceneCharacterSource.includes('!wasAlreadyMoving && zone !== "restroomZone"'), true);
   assert.equal(
@@ -217,10 +219,11 @@ test("gsap motion is scoped to intentional surfaces with reduced-motion fallback
   assert.equal(stylesSource.includes("transition: transform 420ms var(--ease-out-soft)"), true);
   assert.equal(stylesSource.includes("@keyframes layered-body-walk"), true);
   assert.equal(stylesSource.includes(".layered-animal-head"), true);
-  assert.equal(sceneCharacterSource.includes("useAnimationControls"), true);
+  assert.equal(sceneCharacterSource.includes("useAnimationControls"), false);
   assert.equal(sceneCharacterSource.includes("usePresence"), true);
   assert.equal(sceneCharacterSource.includes("currentPositionRef.current"), true);
-  assert.equal(sceneCharacterSource.includes("onUpdate={(latest)"), true);
+  assert.equal(sceneCharacterSource.includes("onUpdate={(latest)"), false);
+  assert.equal(sceneCharacterSource.includes("readRenderedScenePosition"), true);
   assert.equal(sceneCharacterSource.includes("room-character-walking-layer"), true);
   assert.equal(sceneCharacterSource.includes("room-character-seated-layer"), true);
   assert.equal(sceneCharacterSource.includes("room-character-away-layer"), true);
@@ -248,9 +251,10 @@ test("gsap motion is scoped to intentional surfaces with reduced-motion fallback
   assert.equal(readFileSync(motionSystemPath, "utf8").includes("back.out"), false);
   assert.equal(readFileSync(motionSystemPath, "utf8").includes("APPLE_MOTION_DURATION"), true);
   assert.equal(readFileSync(motionSystemPath, "utf8").includes("APPLE_MOTION_SPRINGS"), true);
-  assert.equal(sharedButtonSource.includes("--button-pointer-x"), true);
-  assert.equal(sharedButtonSource.includes("requestAnimationFrame"), true);
-  assert.equal(sharedButtonSource.includes("radial-gradient(100px circle"), true);
+  assert.equal(sharedButtonSource.includes("--button-pointer-x"), false);
+  assert.equal(sharedButtonSource.includes("getBoundingClientRect"), false);
+  assert.equal(sharedButtonSource.includes("requestAnimationFrame"), false);
+  assert.equal(sharedButtonSource.includes("linear-gradient(180deg"), true);
   assert.equal(
     chatSource.includes(
       'shouldReduceMotion || previous === 0 || latestMessage?.isLocal ? "auto" : "smooth"',
@@ -337,7 +341,8 @@ test("route transitions remove the previous translucent page instead of stacking
 
   assert.equal(appSource.includes("AnimatePresence"), false);
   assert.equal(appSource.includes("key={basePage}"), true);
-  assert.equal(appSource.includes('basePage === "room" ? { opacity: 0 } : false'), true);
+  assert.equal(appSource.includes('isSettingsOpen ? "is-obscured" : ""'), true);
+  assert.equal(appSource.includes("{isSettingsOpen ? ("), true);
   assert.equal(appSource.includes("animate={{ opacity: 1, x: 0 }}"), false);
   assert.equal(appSource.includes("scale: 0.992"), false);
 });

@@ -94,6 +94,14 @@ test("screen pressure protects motion before cutting frame rate and track loss h
     ),
     "utf8",
   );
+  const relaySource = readFileSync(
+    new URL("../src/renderer/src/features/screen-share/ScreenFrameRelay.ts", import.meta.url),
+    "utf8",
+  );
+  const panelSource = readFileSync(
+    new URL("../src/renderer/src/components/room/ScreenSharePanel.tsx", import.meta.url),
+    "utf8",
+  );
 
   assert.match(peerSource, /constrained:[\s\S]*screenMaxFramerate: 30/);
   assert.match(peerSource, /critical:[\s\S]*screenMaxFramerate: 18/);
@@ -101,4 +109,7 @@ test("screen pressure protects motion before cutting frame rate and track loss h
   assert.match(managerSource, /attempting one automatic recovery/);
   assert.match(coordinatorSource, /SCREEN_TRACK_RECOVERY_DELAY_MS/);
   assert.match(coordinatorSource, /onScreenTrackLost/);
+  assert.match(coordinatorSource, /SCREEN_FRAME_INTERVAL_MS = 250/);
+  assert.match(relaySource, /captureInFlight/);
+  assert.match(panelSource, /网络受限 · 备用画面/);
 });

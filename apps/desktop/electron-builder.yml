@@ -25,6 +25,8 @@ files:
   - "!node_modules/**/*.map"
   - "package.json"
 extraResources:
+  - from: node_modules/ffmpeg-static/ffmpeg.exe
+    to: ffmpeg/ffmpeg.exe
   - from: ../../THIRD_PARTY_NOTICES.md
     to: licenses/THIRD_PARTY_NOTICES.md
   - from: node_modules/deepfilternet3-noise-filter/LICENSE-APACHE
@@ -44,6 +46,8 @@ extraResources:
       - "shanghao-core.exe"
   - from: scripts/qwen-runner.py
     to: ai/qwen-runner.py
+  - from: scripts/asr-runner.py
+    to: ai/asr-runner.py
   - from: build
     to: build
     filter:

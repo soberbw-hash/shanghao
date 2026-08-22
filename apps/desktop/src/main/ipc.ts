@@ -38,6 +38,7 @@ import {
   type RealtimeFaultCommand,
   type RecordingExportPayload,
   type RecordingExportResponse,
+  type RecordingAutomaticCleanupResult,
   type RecordingCleanupScan,
   type RecordingBatchDeleteResult,
   type RecordingLibrarySnapshot,
@@ -72,10 +73,10 @@ import { exportRecordingFromMain } from "./recording-main";
 import { resolveRecordingDirectory } from "./recording-path";
 import {
   deleteRecording,
-  enforceRecordingQuota,
   getUsableRecordingDirectory,
   readRecordingLibrary,
   renameRecording,
+  runAutomaticRecordingCleanup,
   scanWasteRecordings,
   setRecordingFavorite,
 } from "./recording-library";
@@ -626,29 +627,7 @@ export const registerIpcHandlers = ({
       }
       const settings = await settingsStore.save(partial);
       if (partial.aiProcessingMode) aiModels.setProcessingMode(settings.aiProcessingMode);
-      if (partial.isAiAutoTranscribeEnabled === true) {
-        const library = await readRecordingLibrary(
-          settings.recordingSaveDirectory,
-          settings.recordingLibraryQuotaGb,
-        );
-        void voiceMemory
-          .queueRecordings(
-            library.items.map((item) => ({
-              filePath: item.filePath,
-              roomId: item.roomId,
-              markers: item.markers.map((marker) => ({ id: marker.id, offsetMs: marker.offsetMs })),
-            })),
-            settings.isAiAutoOrganizeEnabled,
-          )
-          .catch((error) =>
-            diagnostics.writeLog({
-              category: "app",
-              level: "warn",
-              message: "voice_memory_library_queue_failed",
-              context: { error: error instanceof Error ? error.message : String(error) },
-            }),
-          );
-      }
+      if (partial.aiAsrModel) aiModels.setActiveAsrModel(settings.aiAsrModel);
       if (typeof partial.isGameDetectionEnabled === "boolean") {
         await gameDetection.setEnabled(settings.isGameDetectionEnabled);
       }
@@ -666,6 +645,7 @@ export const registerIpcHandlers = ({
   ipcMain.handle(IPC_CHANNELS.settings.reset, async (): Promise<AppSettings> => {
     const settings = await settingsStore.reset();
     aiModels.setProcessingMode(settings.aiProcessingMode);
+    aiModels.setActiveAsrModel(settings.aiAsrModel);
     await gameDetection.setWorkActivityEnabled(settings.isWorkActivityVisible);
     await gameDetection.setEnabled(settings.isGameDetectionEnabled);
     await shortcuts.configureGlobalMute(settings.globalMuteShortcut);
@@ -878,7 +858,14 @@ export const registerIpcHandlers = ({
   ipcMain.handle(
     IPC_CHANNELS.ai.controlModel,
     async (_event, modelId: AiModelId, action: AiModelAction): Promise<AiVoiceMemorySnapshot> => {
-      if (modelId !== "vibevoice" && modelId !== "qwen35-4b") throw new Error("invalid_ai_model");
+      if (
+        modelId !== "vibevoice" &&
+        modelId !== "qwen3-asr-0.6b" &&
+        modelId !== "paraformer-zh" &&
+        modelId !== "qwen35-4b"
+      ) {
+        throw new Error("invalid_ai_model");
+      }
       if (!["download", "pause", "resume", "delete"].includes(action)) {
         throw new Error("invalid_ai_model_action");
       }
@@ -1036,12 +1023,6 @@ export const registerIpcHandlers = ({
         settings.recordingSaveDirectory,
         (logPayload) => diagnostics.writeLog(logPayload),
       );
-      if (result.ok) {
-        await enforceRecordingQuota(
-          settings.recordingSaveDirectory,
-          settings.recordingLibraryQuotaGb,
-        );
-      }
       return result;
     },
   );
@@ -1084,6 +1065,42 @@ export const registerIpcHandlers = ({
       ].join("\r\n");
       await writeFile(markerPath, content, "utf8");
       return markerPath;
+    },
+  );
+  ipcMain.handle(
+    IPC_CHANNELS.recording.applyAutomaticCleanup,
+    async (_event, filePath: string): Promise<RecordingAutomaticCleanupResult> => {
+      const currentFilePath = requireString(filePath, 2_048, "recording_file_path");
+      const settings = settingsStore.getSnapshot();
+      const cleanup = await runAutomaticRecordingCleanup(
+        settings.recordingSaveDirectory,
+        settings.recordingLibraryQuotaGb,
+        settings.isRecordingWasteAutoCleanupEnabled,
+        currentFilePath,
+      );
+      for (const item of cleanup.deletedItems) {
+        await voiceMemory.delete(item.recordingId).catch(() => undefined);
+        await voiceMemory.delete(item.filePath).catch(() => undefined);
+      }
+      if (cleanup.deletedItems.length > 0) {
+        await diagnostics.writeLog({
+          category: "recording",
+          level: "info",
+          message: "Automatic recording cleanup completed",
+          context: {
+            wasteDeletedCount: cleanup.wasteDeletedCount,
+            quotaDeletedCount: cleanup.quotaDeletedCount,
+          },
+        });
+      }
+      return {
+        deletedFilePaths: cleanup.deletedItems.map((item) => item.filePath),
+        deletedCurrentRecording: cleanup.deletedItems.some(
+          (item) => item.filePath === currentFilePath,
+        ),
+        wasteDeletedCount: cleanup.wasteDeletedCount,
+        quotaDeletedCount: cleanup.quotaDeletedCount,
+      };
     },
   );
   ipcMain.handle(IPC_CHANNELS.recording.list, async (): Promise<RecordingLibrarySnapshot> => {

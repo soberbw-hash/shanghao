@@ -70,7 +70,10 @@ def generate(
         generated = model.generate(
             **inputs,
             max_new_tokens=max(16, min(4096, max_new_tokens)),
-            max_time=90,
+            # Generation runs in a separate low-priority worker. Allow a
+            # structured Chinese summary enough time on GPUs that offload
+            # part of Qwen3.5-4B to system memory.
+            max_time=150,
             do_sample=False,
             repetition_penalty=1.08,
             pad_token_id=tokenizer.eos_token_id,

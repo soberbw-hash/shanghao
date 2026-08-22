@@ -26,7 +26,6 @@ import { CharacterPicker } from "../components/profile/AvatarPicker";
 import { StartupSplashPage } from "../components/status/StartupSplashPage";
 import { motionCurve, motionDuration, motionEase } from "../features/motion/motionSystem";
 import { getRemoteAudioMixer } from "../features/audio/RemoteAudioMixer";
-import { requestMicrophoneStream } from "@private-voice/webrtc";
 import { usePrefersReducedMotion } from "../hooks/usePrefersReducedMotion";
 import { useRoomState } from "../hooks/useRoomState";
 import { useAppStore } from "../store/appStore";
@@ -41,6 +40,9 @@ const getServerCheckRetryInterval = (retryIndex: number): number =>
     Math.min(retryIndex, SERVER_CHECK_RETRY_INTERVALS_MS.length - 1)
   ] ?? 60_000;
 let hasPlayedHomeEntrance = false;
+
+const waitForNextPaint = (): Promise<void> =>
+  new Promise((resolve) => window.requestAnimationFrame(() => resolve()));
 
 export const HomePage = () => {
   const { joinChannel } = useRoomState();
@@ -292,23 +294,19 @@ export const HomePage = () => {
         return false;
       }
 
-      const { stream } = await requestMicrophoneStream({
-        deviceId: inputDeviceId,
-        echoCancellation: settings.isEchoCancellationEnabled,
-        noiseSuppression: settings.isNoiseSuppressionEnabled,
-        autoGainControl: settings.isAutoGainControlEnabled,
-      });
-      stream.getTracks().forEach((track) => track.stop());
-
-      const outputContext = new AudioContext({ latencyHint: "interactive" }) as AudioContext & {
-        setSinkId?: (sinkId: string) => Promise<void>;
-      };
-      try {
-        await outputContext.setSinkId?.(outputDeviceId || "default");
-      } finally {
-        await outputContext.close();
+      if (audioState.permissionState === MicPermissionState.Denied) {
+        pushToast({
+          tone: "warning",
+          title: "请先允许麦克风",
+          description: "Windows 已阻止上号使用麦克风，请在系统隐私设置中允许后重试。",
+        });
+        return false;
       }
-      getRemoteAudioMixer().setOutputDevice(outputDeviceId);
+
+      // The room connection acquires the real microphone stream immediately afterwards.
+      // Opening and closing a temporary stream here made one click initialize the device twice,
+      // which caused a visible renderer hitch on some Windows audio drivers.
+      await getRemoteAudioMixer().setOutputDevice(outputDeviceId);
       return true;
     } catch (error) {
       pushToast({
@@ -352,6 +350,8 @@ export const HomePage = () => {
     void getRemoteAudioMixer().unlock("enter-channel");
     setIsSubmitting(true);
     try {
+      // Let React commit the pressed/loading state before device and signaling work starts.
+      await waitForNextPaint();
       if (!(await verifyAudioDevices())) return;
       await saveSettings({
         nickname: trimmedNickname.slice(0, 16),

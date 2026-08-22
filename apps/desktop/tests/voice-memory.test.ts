@@ -15,9 +15,12 @@ import {
   parseVibeVoiceOutput,
   temporaryRecordingName,
 } from "../src/main/ai-runtime-manager";
+import { buildVibeVoiceArguments } from "../src/main/vibevoice-runtime";
 import {
   AiVoiceMemoryService,
+  AUTOMATIC_TRANSCRIPTION_MAX_DURATION_MS,
   applySpeakingTimeline,
+  canAutomaticallyTranscribeDuration,
   completedTranscriptionUnits,
   TRANSCRIPTION_CHUNK_MS,
 } from "../src/main/ai-voice-memory-service";
@@ -55,6 +58,27 @@ const record = (): VoiceMemoryRecord => ({
   highlights: [],
   markerTitles: [{ markerId: "m1", offsetMs: 1_500, title: "周六约饭" }],
   timeline: [{ id: "m1", kind: "marker", offsetMs: 1_500, title: "周六约饭" }],
+});
+
+test("VibeASR uses the sampling decoder defaults required for Chinese recordings", () => {
+  const args = buildVibeVoiceArguments({
+    modelPath: "C:\\models\\vibevoice",
+    wavPath: "C:\\recordings\\room.wav",
+    resourceMode: "low",
+  });
+
+  assert.deepEqual(args, [
+    "--vae-model",
+    "C:\\models\\vibevoice\\vibeasr-vae-encoder-i8_s.gguf",
+    "--lm-model",
+    "C:\\models\\vibevoice\\vibeasr-lm-i2_s-embed-q6_k.gguf",
+    "--audio",
+    "C:\\recordings\\room.wav",
+    "-t",
+    "4",
+  ]);
+  assert.equal(args.includes("--greedy"), false);
+  assert.equal(args.includes("--prompt-format"), false);
 });
 
 test("VibeVoice timestamps become clickable structured transcript segments", () => {
@@ -121,15 +145,22 @@ test("ASR status labels and repetitive hallucinations are not saved as speech", 
   assert.equal(parseVibeVoiceOutput("�������", "broken", 0).length, 0);
 });
 
-test("legacy transcripts require one clean rerun before the UI trusts them", () => {
+test("Mandarin-only ASR rejects foreign-script hallucinations", () => {
+  assert.equal(parseVibeVoiceOutput("왜 넌 이냐마", "korean-hallucination", 0).length, 0);
+  assert.equal(parseVibeVoiceOutput("Amor a vida.", "portuguese-hallucination", 0).length, 0);
+  assert.equal(parseVibeVoiceOutput("我们上号打游戏，打开 Discord。", "mandarin", 0).length, 1);
+});
+
+test("legacy Chinese transcripts stay visible while foreign hallucinations remain blocked", () => {
   const legacy = record();
-  assert.equal(hasInvalidVoiceMemoryResult(legacy), true);
+  assert.equal(hasInvalidVoiceMemoryResult(legacy), false);
   assert.equal(
     hasInvalidVoiceMemoryResult({
       ...legacy,
+      transcript: legacy.transcript.map((segment) => ({ ...segment, text: "Deixa eu pesquisar." })),
       transcriptionPipelineVersion: CURRENT_TRANSCRIPTION_PIPELINE_VERSION,
     }),
-    false,
+    true,
   );
 });
 
@@ -210,6 +241,14 @@ test("transcription checkpoints update in shorter visible steps and preserve leg
   assert.equal(completedTranscriptionUnits({ completedUnits: 3, unitDurationMs: 30_000 }, 20), 3);
 });
 
+test("automatic transcription leaves recordings longer than thirty minutes for manual action", () => {
+  assert.equal(canAutomaticallyTranscribeDuration(AUTOMATIC_TRANSCRIPTION_MAX_DURATION_MS), true);
+  assert.equal(
+    canAutomaticallyTranscribeDuration(AUTOMATIC_TRANSCRIPTION_MAX_DURATION_MS + 1),
+    false,
+  );
+});
+
 test("a manual transcription runs before already queued background recordings", async () => {
   const service = new AiVoiceMemoryService({} as never, {} as never, {} as never);
   const started: string[] = [];
@@ -248,11 +287,20 @@ test("a manual transcription runs before already queued background recordings", 
   assert.deepEqual(started, ["background-1", "manual", "background-2"]);
 });
 
-test("the latest manual transcription skips older clicks that have not started", async () => {
+test("a newer manual transcription pauses an older queued click instead of running it later", async () => {
+  const saved: VoiceMemoryRecord[] = [];
+  const records = new Map<string, VoiceMemoryRecord>();
   const service = new AiVoiceMemoryService(
     {} as never,
     {} as never,
-    { get: async () => undefined } as never,
+    {
+      get: async (recordingId: string) => records.get(recordingId),
+      save: async (value: VoiceMemoryRecord) => {
+        records.set(value.recordingId, value);
+        saved.push(value);
+        return value;
+      },
+    } as never,
   );
   const started: string[] = [];
   let finishFirst: (() => void) | undefined;
@@ -285,6 +333,9 @@ test("the latest manual transcription skips older clicks that have not started",
 
   await Promise.all([first, superseded, latest]);
   assert.deepEqual(started, ["manual-1", "manual-3"]);
+  assert.equal(records.get("manual-2")?.phase, "paused");
+  assert.equal(records.get("manual-2")?.diagnostic?.errorCode, "manual_task_superseded");
+  assert.ok(saved.some((item) => item.recordingId === "manual-2"));
 });
 
 test("UI transcription retries acknowledge immediately and automatic organization follows transcription", async () => {
@@ -297,7 +348,7 @@ test("UI transcription retries acknowledge immediately and automatic organizatio
     },
   };
   const service = new AiVoiceMemoryService({} as never, {} as never, store as never);
-  const requests: Array<{ organize?: boolean }> = [];
+  const requests: Array<{ organize?: boolean; transcribe?: boolean }> = [];
   (service as unknown as { process: AiVoiceMemoryService["process"] }).process = async (
     request,
   ) => {
@@ -316,12 +367,50 @@ test("UI transcription retries acknowledge immediately and automatic organizatio
     organize: true,
   });
   assert.equal(acknowledged.phase, "idle");
+  assert.equal(acknowledged.taskStatus, "pending");
+  assert.equal(acknowledged.processingStage, "recording");
+  assert.ok(acknowledged.taskId);
+  assert.equal(acknowledged.diagnostic?.status, "pending");
   assert.equal(saved[0]?.phase, "idle");
   await new Promise<void>((resolve) => setImmediate(resolve));
   assert.deepEqual(
     requests.map((request) => request.organize),
     [false, true],
   );
+  assert.deepEqual(
+    requests.map((request) => request.transcribe),
+    [undefined, false],
+  );
+});
+
+test("the main process forces a clean retry when the UI sends an invalid legacy result", async () => {
+  const invalid = {
+    ...record(),
+    phase: "ready" as const,
+    transcriptionPipelineVersion: 6,
+    transcript: record().transcript.map((segment) => ({ ...segment, text: "Quoi ?" })),
+  };
+  const store = {
+    get: async () => invalid,
+    save: async (value: VoiceMemoryRecord) => value,
+  };
+  const service = new AiVoiceMemoryService({} as never, {} as never, store as never);
+  let acceptedRestart = false;
+  (service as unknown as { process: AiVoiceMemoryService["process"] }).process = async (
+    request,
+  ) => {
+    acceptedRestart = request.restartTranscription === true;
+    return invalid;
+  };
+
+  await service.start({
+    recordingId: invalid.recordingId,
+    filePath: invalid.filePath,
+    manual: true,
+  });
+  await new Promise<void>((resolve) => setImmediate(resolve));
+
+  assert.equal(acceptedRestart, true);
 });
 
 test("new automatic speech yields a running background organization task", async () => {

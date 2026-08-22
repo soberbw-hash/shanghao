@@ -49,6 +49,15 @@ test("AI models remain opt-in and game activity lowers background priority", asy
     snapshot.models.every((model) => model.userInstalled === false),
     true,
   );
+  assert.deepEqual(
+    snapshot.models.filter((model) => model.category === "asr").map((model) => model.id),
+    ["vibevoice", "qwen3-asr-0.6b", "paraformer-zh"],
+  );
+  assert.equal(snapshot.models.find((model) => model.id === "qwen35-4b")?.category, "organizer");
+  assert.equal(manager.getActiveAsrModel(), "vibevoice");
+  assert.equal(manager.canRunTask("transcription").requiredModel, "vibevoice");
+  manager.setActiveAsrModel("paraformer-zh");
+  assert.equal(manager.canRunTask("transcription").requiredModel, "paraformer-zh");
   assert.equal(snapshot.scheduler.processingMode, "after_game");
 
   games.setGame("三角洲行动");
@@ -123,5 +132,10 @@ test("AI model downloads have a mainland fallback and readable failure messages"
   assert.match(describeAiModelError(new Error("ai_model_file_incomplete")), /继续/);
   assert.match(describeAiModelError(new Error("ai_model_manifest_http_503")), /HTTP 503/);
   assert.equal(PINNED_MODEL_REVISIONS.vibevoice, "66e78021ab8f5f06133d1ab421ba4d348bda97c9");
+  assert.equal(
+    PINNED_MODEL_REVISIONS["qwen3-asr-0.6b"],
+    "7f1569a48a89f3e3f4dc3a5c9d28bddd903bc76c",
+  );
+  assert.equal(PINNED_MODEL_REVISIONS["paraformer-zh"], "bundle-d7811ee3-df20e6b3-d0e55e2b");
   assert.equal(PINNED_MODEL_REVISIONS["qwen35-4b"], "851bf6e806efd8d0a36b00ddf55e13ccb7b8cd0a");
 });

@@ -9,7 +9,7 @@ import { normalizePresenceGameIconDataUrl } from "../../features/room/presenceSi
 import apexLegendsArtwork from "../../assets/games/apex-legends.jpg";
 import blackMythWukongArtwork from "../../assets/games/black-myth-wukong.jpg";
 import counterStrike2Artwork from "../../assets/games/counter-strike-2.jpg";
-import deltaForceArtwork from "../../assets/games/delta-force.jpg";
+import deltaForceSceneArtwork from "../../assets/games/delta-force-scene.webp";
 import dota2Artwork from "../../assets/games/dota-2.jpg";
 import eldenRingArtwork from "../../assets/games/elden-ring.jpg";
 import fortniteArtwork from "../../assets/games/fortnite.png";
@@ -18,7 +18,7 @@ import gtaVArtwork from "../../assets/games/gta-v.jpg";
 import honkaiStarRailArtwork from "../../assets/games/honkai-star-rail.ico";
 import itTakesTwoArtwork from "../../assets/games/it-takes-two.jpg";
 import kingdomRushArtwork from "../../assets/games/kingdom-rush.jpg";
-import leagueOfLegendsArtwork from "../../assets/games/league-of-legends.svg";
+import leagueOfLegendsSceneArtwork from "../../assets/games/league-of-legends-scene.webp";
 import lostCastle2Artwork from "../../assets/games/lost-castle-2.jpg";
 import minecraftArtwork from "../../assets/games/minecraft.png";
 import monsterHunterArtwork from "../../assets/games/monster-hunter.jpg";
@@ -30,22 +30,25 @@ import pubgArtwork from "../../assets/games/pubg.jpg";
 import rainbowSixSiegeArtwork from "../../assets/games/rainbow-six-siege.jpg";
 import redDeadRedemption2Artwork from "../../assets/games/red-dead-redemption-2.jpg";
 import slayTheSpireArtwork from "../../assets/games/slay-the-spire.jpg";
+import stardewValleySceneArtwork from "../../assets/games/stardew-valley-scene.webp";
 import valorantArtwork from "../../assets/games/valorant.png";
 
 type SupportedGameName = NonNullable<GameDetectionSnapshot["gameName"]>;
 
 interface GameArtwork {
   src: string;
-  layout: "capsule" | "mark";
+  layout: "capsule" | "mark" | "scene";
+  sceneTone?: "cozy" | "moba" | "tactical";
 }
 
 export const gameArtworkCatalog: Partial<Record<SupportedGameName, GameArtwork>> = {
   我的世界: { src: minecraftArtwork, layout: "mark" },
   王国保卫战: { src: kingdomRushArtwork, layout: "capsule" },
   杀戮尖塔: { src: slayTheSpireArtwork, layout: "capsule" },
-  英雄联盟: { src: leagueOfLegendsArtwork, layout: "mark" },
+  星露谷物语: { src: stardewValleySceneArtwork, layout: "scene", sceneTone: "cozy" },
+  英雄联盟: { src: leagueOfLegendsSceneArtwork, layout: "scene", sceneTone: "moba" },
   无畏契约: { src: valorantArtwork, layout: "mark" },
-  三角洲行动: { src: deltaForceArtwork, layout: "capsule" },
+  三角洲行动: { src: deltaForceSceneArtwork, layout: "scene", sceneTone: "tactical" },
   CS2: { src: counterStrike2Artwork, layout: "capsule" },
   "Dota 2": { src: dota2Artwork, layout: "capsule" },
   "Apex 英雄": { src: apexLegendsArtwork, layout: "capsule" },
@@ -91,6 +94,7 @@ export const GameMonitorContent = ({
   const rootRef = useRef<HTMLSpanElement>(null);
   const artwork = gameArtworkCatalog[gameName as SupportedGameName];
   const runtimeIconDataUrl = normalizePresenceGameIconDataUrl(gameName, iconDataUrl);
+  const displayedArtwork = artwork?.layout === "scene" || !runtimeIconDataUrl ? artwork : undefined;
 
   useLayoutEffect(() => {
     const root = rootRef.current;
@@ -128,15 +132,25 @@ export const GameMonitorContent = ({
     };
   }, [shouldReduceMotion]);
 
-  const layout = runtimeIconDataUrl ? "runtime" : (artwork?.layout ?? "fallback");
+  const layout = displayedArtwork?.layout ?? (runtimeIconDataUrl ? "runtime" : "fallback");
 
   return (
     <span
       ref={rootRef}
       className={`scene-game-monitor-content scene-game-monitor-content--${layout}`}
+      data-game-scene-tone={displayedArtwork?.sceneTone}
       aria-label={`正在玩 ${gameName}`}
     >
-      {runtimeIconDataUrl ? (
+      {displayedArtwork ? (
+        <img
+          className="scene-game-monitor-art"
+          src={displayedArtwork.src}
+          alt=""
+          draggable={false}
+          aria-hidden="true"
+          data-game-mark={displayedArtwork.layout === "scene" ? undefined : true}
+        />
+      ) : runtimeIconDataUrl ? (
         <img
           className="scene-game-monitor-runtime-icon"
           src={runtimeIconDataUrl}
@@ -145,19 +159,12 @@ export const GameMonitorContent = ({
           aria-hidden="true"
           data-game-mark
         />
-      ) : artwork ? (
-        <img
-          className="scene-game-monitor-art"
-          src={artwork.src}
-          alt=""
-          draggable={false}
-          aria-hidden="true"
-          data-game-mark
-        />
       ) : (
         <Gamepad2 aria-hidden="true" data-game-mark />
       )}
-      <span className="scene-game-monitor-scan" data-game-scan aria-hidden="true" />
+      {layout === "scene" ? null : (
+        <span className="scene-game-monitor-scan" data-game-scan aria-hidden="true" />
+      )}
     </span>
   );
 };

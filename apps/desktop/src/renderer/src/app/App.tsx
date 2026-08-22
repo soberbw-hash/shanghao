@@ -1,12 +1,8 @@
 import { lazy, Suspense, useEffect } from "react";
-import { motion } from "framer-motion";
-
-import { APPLE_MOTION_DURATION, APPLE_MOTION_EASE } from "@private-voice/shared";
 
 import { AppErrorBoundary } from "../components/layout/AppErrorBoundary";
 import { AppShell } from "../components/layout/AppShell";
 import { RemoteAudioRenderer } from "../features/audio/RemoteAudioRenderer";
-import { rendererPerformanceMonitor } from "../features/diagnostics/rendererPerformanceMonitor";
 import { visualRuntimeController } from "../features/visual-runtime/VisualRuntimeController";
 import { displayRefreshRateService } from "../features/visual-runtime/DisplayRefreshRateService";
 import { useAppBootstrap } from "../hooks/useAppBootstrap";
@@ -39,7 +35,6 @@ export const App = () => {
 
   useEffect(() => {
     const stopVisualRuntime = visualRuntimeController.start();
-    const stopPerformanceMonitor = rendererPerformanceMonitor.start();
     const handleDisplayLifecycle = (event: Event) => {
       const reason = (event as CustomEvent<{ reason?: string }>).detail?.reason ?? "";
       if (reason.startsWith("display-") || reason === "resume") {
@@ -49,7 +44,6 @@ export const App = () => {
     window.addEventListener("shanghao:lifecycle-recovery", handleDisplayLifecycle);
     return () => {
       window.removeEventListener("shanghao:lifecycle-recovery", handleDisplayLifecycle);
-      stopPerformanceMonitor();
       stopVisualRuntime();
     };
   }, []);
@@ -176,17 +170,9 @@ export const App = () => {
             className={`app-page-layer app-page-base ${isSettingsOpen ? "is-obscured" : ""}`}
             aria-hidden={isSettingsOpen || undefined}
           >
-            <motion.div
-              key={basePage}
-              className="app-route-motion"
-              initial={basePage === "room" ? { opacity: 0 } : false}
-              animate={{ opacity: 1 }}
-              transition={{
-                opacity: { duration: APPLE_MOTION_DURATION.panel, ease: APPLE_MOTION_EASE },
-              }}
-            >
+            <div key={basePage} className="app-route-motion">
               {basePage === "room" ? <RoomPage /> : <HomePage />}
-            </motion.div>
+            </div>
           </div>
           {isSettingsOpen ? (
             <div className="app-page-layer app-page-settings">

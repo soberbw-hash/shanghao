@@ -6,6 +6,18 @@ import type { SignalingEventPayload } from "@private-voice/shared";
 import { WebSocketServer } from "ws";
 
 import { SignalingClientBridge } from "../src/main/signaling-client";
+import { isSignalingSessionSupersededError } from "../src/renderer/src/features/room/signalingSessionOwnership";
+
+test("renderer recognizes stale signaling ownership errors without hiding other failures", () => {
+  assert.equal(isSignalingSessionSupersededError(new Error("signaling_session_superseded")), true);
+  assert.equal(
+    isSignalingSessionSupersededError(
+      "Error invoking remote method 'signaling:send': Error: signaling_session_superseded",
+    ),
+    true,
+  );
+  assert.equal(isSignalingSessionSupersededError(new Error("signaling_not_connected")), false);
+});
 
 test("a stale signaling session cannot close or receive events from the active session", async () => {
   const server = new WebSocketServer({ host: "127.0.0.1", port: 0 });

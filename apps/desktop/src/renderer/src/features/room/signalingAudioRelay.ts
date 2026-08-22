@@ -6,6 +6,7 @@ import type {
 
 import { getRemoteAudioMixer } from "../audio/RemoteAudioMixer";
 import { RelayVoiceActivityGate } from "../audio/RelayVoiceActivityGate";
+import { shouldRequestRelayResync } from "./peerAudioPath";
 
 export type AudioRelayMessage =
   AudioChunkMessage | AudioResyncRequestMessage | AudioResyncAckMessage;
@@ -54,6 +55,8 @@ interface PeerAudioState {
   fallbackEnabledAt: number;
   lastReceivedAt?: number;
   lastPlayedAt?: number;
+  lastResyncRequestedAt?: number;
+  lastResyncReceivedAt?: number;
   resyncPending: boolean;
   fallbackStatus:
     | "observing"
@@ -455,6 +458,7 @@ export class SignalingAudioRelay {
     state.audioSessionId = message.audioSessionId;
     state.audioStreamEpoch = message.newAudioStreamEpoch;
     state.resyncPending = false;
+    state.droppedConsecutive = 0;
     this.recordTimeline("audio_resync_completed", { peerId: message.peerId });
   }
 
@@ -474,6 +478,10 @@ export class SignalingAudioRelay {
       state.fallbackEnabledAt = performance.now();
       state.lastReceivedAt = undefined;
       state.lastPlayedAt = undefined;
+      state.lastResyncRequestedAt = undefined;
+      state.lastResyncReceivedAt = undefined;
+      state.droppedConsecutive = 0;
+      state.resyncPending = false;
       state.fallbackStatus = "observing";
     } else {
       state.fallbackStatus = "webrtc_active";
@@ -651,10 +659,22 @@ export class SignalingAudioRelay {
   }
 
   private requestResync(peerId: string, state: PeerAudioState, reason: string): void {
-    if (state.resyncPending) {
+    const now = performance.now();
+    if (
+      state.resyncPending ||
+      !shouldRequestRelayResync({
+        now,
+        lastReceivedAt: state.lastReceivedAt,
+        lastPlayedAt: state.lastPlayedAt,
+        lastResyncRequestedAt: state.lastResyncRequestedAt,
+        lastResyncReceivedAt: state.lastResyncReceivedAt,
+      })
+    ) {
       return;
     }
     state.resyncPending = true;
+    state.lastResyncRequestedAt = now;
+    state.lastResyncReceivedAt = state.lastReceivedAt;
     this.resetPeerQueue(peerId, state, `resync:${reason}`);
     void this.options.send({
       type: "audio_resync_request",
@@ -696,7 +716,15 @@ export class SignalingAudioRelay {
         state.fallbackStatus = "webrtc_active";
         continue;
       }
-      if (state.lastReceivedAt && (!state.lastPlayedAt || now - state.lastPlayedAt > 3_000)) {
+      if (
+        shouldRequestRelayResync({
+          now,
+          lastReceivedAt: state.lastReceivedAt,
+          lastPlayedAt: state.lastPlayedAt,
+          lastResyncRequestedAt: state.lastResyncRequestedAt,
+          lastResyncReceivedAt: state.lastResyncReceivedAt,
+        })
+      ) {
         state.fallbackStatus = "relay_receiving_but_dropping";
         this.requestResync(peerId, state, "relay_silent_timeout");
       } else if (

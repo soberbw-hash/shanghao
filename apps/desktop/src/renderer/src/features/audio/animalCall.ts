@@ -11,6 +11,7 @@ const shanghaoCallUrl = new URL(
 
 const defaultSound = { url: quickReplyCallUrl, duration: 0.74 } as const;
 const shanghaoSound = { url: shanghaoCallUrl, duration: 1.62 } as const;
+const SHANGHAO_QUICK_REPLY_GAIN = 10 ** (-5 / 20);
 
 let sharedAudioContext: AudioContext | undefined;
 const cachedAudio = new Map<string, HTMLAudioElement>();
@@ -67,7 +68,10 @@ export const playAnimalCall = (
     compressor.attack.value = 0.008;
     compressor.release.value = 0.2;
 
-    const level = requestedVolume * 0.92;
+    // The longer “上号” recording is mastered 5 dB lower than the short chirp;
+    // keep that correction local to this asset instead of changing global UI volume.
+    const level =
+      requestedVolume * 0.92 * (sound === shanghaoSound ? SHANGHAO_QUICK_REPLY_GAIN : 1);
     envelope.gain.setValueAtTime(0.0001, now);
     envelope.gain.exponentialRampToValueAtTime(Math.max(0.0001, level), now + 0.025);
     envelope.gain.setValueAtTime(Math.max(0.0001, level), now + Math.max(0.04, duration - 0.12));

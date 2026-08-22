@@ -59,6 +59,10 @@
   object-fit: contain;
 }
 
+.work-activity-badge img {
+  border-radius: 5px;
+}
+
 .music-activity-icon {
   position: relative;
   display: grid;
@@ -832,6 +836,12 @@ img {
   pointer-events: none;
   opacity: 0;
   transform: translateY(4px) scale(0.996);
+}
+
+.app-page-base.is-obscured *,
+.app-page-base.is-obscured *::before,
+.app-page-base.is-obscured *::after {
+  animation-play-state: paused !important;
 }
 
 .app-page-settings {

@@ -1,5 +1,10 @@
 import type { FramePerformanceSnapshot } from "@private-voice/shared";
 
+import {
+  getRenderProfileSnapshot,
+  resetRenderProfile,
+  setRenderProfilingEnabled,
+} from "./renderProfiler";
 import { displayRefreshRateService } from "../visual-runtime/DisplayRefreshRateService";
 import {
   visualRuntimeController,
@@ -10,6 +15,8 @@ const SAMPLE_WINDOW_MS = 10_000;
 const LONG_FRAME_MS = 50;
 const MAX_FRAME_SAMPLES = 2_000;
 
+export type LongTaskCategory = "react" | "ipc" | "image-decode" | "js" | "canvas" | "audio";
+
 const percentile = (values: number[], fraction: number): number | undefined => {
   if (values.length === 0) return undefined;
   const sorted = [...values].sort((left, right) => left - right);
@@ -18,7 +25,7 @@ const percentile = (values: number[], fraction: number): number | undefined => {
 
 class RendererPerformanceMonitor {
   private frames: Array<{ at: number; duration: number }> = [];
-  private longTasks: Array<{ at: number; duration: number }> = [];
+  private longTasks: Array<{ at: number; duration: number; category: LongTaskCategory }> = [];
   private previousFrameAt?: number;
   private observer?: PerformanceObserver;
   private consumers = 0;
@@ -27,6 +34,11 @@ class RendererPerformanceMonitor {
   start(): () => void {
     this.consumers += 1;
     if (this.consumers === 1) {
+      this.frames = [];
+      this.longTasks = [];
+      this.previousFrameAt = undefined;
+      resetRenderProfile();
+      setRenderProfilingEnabled(true);
       this.stopFrameTask = visualRuntimeController.registerTask(
         "renderer-performance-monitor",
         this.onFrame,
@@ -36,7 +48,7 @@ class RendererPerformanceMonitor {
           this.observer = new PerformanceObserver((list) => {
             const now = performance.now();
             for (const entry of list.getEntries()) {
-              this.longTasks.push({ at: now, duration: entry.duration });
+              this.longTasks.push({ at: now, duration: entry.duration, category: "js" });
             }
             this.prune(now);
           });
@@ -56,6 +68,7 @@ class RendererPerformanceMonitor {
       this.stopFrameTask?.();
       this.stopFrameTask = undefined;
       this.previousFrameAt = undefined;
+      setRenderProfilingEnabled(false);
       this.observer?.disconnect();
       this.observer = undefined;
     };
@@ -75,7 +88,15 @@ class RendererPerformanceMonitor {
       (longest, task) => Math.max(longest, task.duration),
       0,
     );
+    const longTaskCategories = this.longTasks.reduce<Partial<Record<LongTaskCategory, number>>>(
+      (counts, task) => {
+        counts[task.category] = (counts[task.category] ?? 0) + 1;
+        return counts;
+      },
+      {},
+    );
 
+    const renderProfile = getRenderProfileSnapshot();
     return {
       displayRefreshRateHz: displayRefreshRateService.getRefreshRateHz(),
       actualFps: elapsed > 0 ? ((this.frames.length - 1) * 1_000) / elapsed : undefined,
@@ -89,7 +110,16 @@ class RendererPerformanceMonitor {
       longTaskCount: this.longTasks.length,
       longestTaskMs: longestTask || undefined,
       sampleWindowMs: SAMPLE_WINDOW_MS,
+      componentRenderCounts: renderProfile.counts,
+      componentRenderReasons: renderProfile.reasons,
+      longTaskCategories,
     };
+  }
+
+  recordLongTask(category: LongTaskCategory, duration: number, at = performance.now()): void {
+    if (!Number.isFinite(duration) || duration < LONG_FRAME_MS) return;
+    this.longTasks.push({ at, duration, category });
+    this.prune(at);
   }
 
   private readonly onFrame = ({ timestamp: at }: VisualFrameContext): void => {

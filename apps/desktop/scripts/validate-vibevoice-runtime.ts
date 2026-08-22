@@ -12,7 +12,10 @@ if (!recordingPath || !runtimeRoot || !modelRoot) {
 const main = async (): Promise<void> => {
   const runtime = new AiRuntimeManager(path.resolve(runtimeRoot), {
     vibevoice: () => path.resolve(modelRoot),
+    qwen3Asr: () => undefined,
+    paraformer: () => undefined,
     qwen: () => undefined,
+    activeAsr: () => "vibevoice",
   });
   try {
     const status = await runtime.status();

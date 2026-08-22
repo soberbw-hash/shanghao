@@ -1,8 +1,9 @@
-import { useState } from "react";
+import { useState, type CSSProperties } from "react";
 
 import type { BuiltInAvatarId, MemberActivity } from "@private-voice/shared";
 
 import { getAvatarSrc } from "../../utils/profile";
+import { displayRefreshRateService } from "../../features/visual-runtime/DisplayRefreshRateService";
 
 import catRear from "../../assets/avatars/rear-v2/cat-rear.png";
 import corgiRear from "../../assets/avatars/rear-v2/corgi-rear.png";
@@ -39,6 +40,19 @@ const characterSpriteSources = [
 ];
 let characterSpritePreload: Promise<void> | undefined;
 
+const RUN_CYCLE_FRAME_COUNT = 16;
+const RUN_CYCLE_TARGET_FPS = 50;
+
+const getFrameAlignedRunCycle = (): { durationMs: number; fps: number } => {
+  const refreshRate = Math.max(30, displayRefreshRateService.getRefreshRateHz() ?? 60);
+  const displayFramesPerPose = Math.max(1, Math.round(refreshRate / RUN_CYCLE_TARGET_FPS));
+  const durationMs = (RUN_CYCLE_FRAME_COUNT * displayFramesPerPose * 1_000) / refreshRate;
+  return {
+    durationMs,
+    fps: Math.round((RUN_CYCLE_FRAME_COUNT / durationMs) * 1_000),
+  };
+};
+
 export const preloadCharacterSpriteAssets = (): Promise<void> => {
   characterSpritePreload ??= (async () => {
     // Decode sequentially while the home screen is idle so joining a room does not
@@ -69,14 +83,20 @@ export const WalkingAnimalSprite = ({
 }) => {
   const runCycleSource = runCycleSources[avatarId] ?? runCycleSources.fox;
   const [readyRunCycleSource, setReadyRunCycleSource] = useState<string>();
+  const [runCycleTiming] = useState(getFrameAlignedRunCycle);
   const isRunCycleReady = readyRunCycleSource === runCycleSource;
 
   return (
     <div
       className={`walking-animal walking-animal-${direction} ${paused ? "is-paused" : ""}`}
       data-run-cycle-avatar={avatarId}
-      data-run-cycle-frames="16"
-      data-run-cycle-fps="50"
+      data-run-cycle-frames={RUN_CYCLE_FRAME_COUNT}
+      data-run-cycle-fps={runCycleTiming.fps}
+      style={
+        {
+          "--run-cycle-duration": `${runCycleTiming.durationMs.toFixed(2)}ms`,
+        } as CSSProperties
+      }
       aria-hidden="true"
     >
       <span className="walking-animal-shadow" />

@@ -109,7 +109,10 @@ test("DeepFilterNet is the only suppression engine and keeps raw audio on model 
   assert.equal(processor.includes("DeepFilterNet3Core"), true);
   assert.equal(processor.includes("DEEPFILTER_BASE_SUPPRESSION_LEVEL = 34"), true);
   assert.equal(processor.includes("DEEPFILTER_SPEECH_SUPPRESSION_LEVEL = 24"), true);
-  assert.equal(processor.includes("advanceSpeechProtection"), true);
+  assert.equal(processor.includes("PROTECTION_WORKLET_SOURCE"), true);
+  assert.equal(processor.includes('registerProcessor("${PROTECTION_WORKLET_NAME}"'), true);
+  assert.equal(processor.includes("requestAnimationFrame"), false);
+  assert.equal(processor.includes('type: "remote-level"'), true);
   assert.equal(processor.includes("DEEPFILTER_RAW_ALIGNMENT_SECONDS"), true);
   assert.equal(processor.includes("rawProcessedMix"), true);
   assert.equal(processor.includes("getDeepFilterAssets"), true);

@@ -78,6 +78,20 @@ test("friend loudness balance is on by default and explicit choices survive migr
   );
 });
 
+test("ASR model selection preserves supported providers and repairs damaged values", () => {
+  assert.equal(migrateSettings({}).settings.aiAsrModel, "vibevoice");
+  for (const aiAsrModel of ["vibevoice", "qwen3-asr-0.6b", "paraformer-zh"] as const) {
+    assert.equal(
+      migrateSettings({ ...defaultSettings, aiAsrModel }).settings.aiAsrModel,
+      aiAsrModel,
+    );
+  }
+  assert.equal(
+    migrateSettings({ ...defaultSettings, aiAsrModel: "unknown-asr" as never }).settings.aiAsrModel,
+    "vibevoice",
+  );
+});
+
 test("weather preferences migrate and remain local settings", () => {
   const result = migrateSettings({
     ...defaultSettings,

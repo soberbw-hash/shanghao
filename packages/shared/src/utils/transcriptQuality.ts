@@ -5,7 +5,23 @@ const SILENCE_LABEL = /^(?:non[\s-]?speech|no[\s-]?speech|silence|silent|music|n
 const WORD = /[\p{L}\p{N}']+/gu;
 const transcriptReliabilityCache = new WeakMap<object, boolean>();
 
-export const CURRENT_TRANSCRIPTION_PIPELINE_VERSION = 6;
+export const CURRENT_TRANSCRIPTION_PIPELINE_VERSION = 7;
+
+const HAN_CHARACTER = /\p{Script=Han}/u;
+const LETTER = /\p{L}/u;
+const LATIN_LETTER = /\p{Script=Latin}/u;
+
+/** Accepts Mandarin transcript text while allowing ordinary Latin product names. */
+export const isChinesePreferredTranscriptText = (text: string): boolean => {
+  const normalized = text.normalize("NFKC").replace(/\s+/g, " ").trim();
+  if (!HAN_CHARACTER.test(normalized)) return false;
+  for (const character of normalized) {
+    if (LETTER.test(character) && !HAN_CHARACTER.test(character) && !LATIN_LETTER.test(character)) {
+      return false;
+    }
+  }
+  return true;
+};
 
 const normalizedWords = (text: string): string[] =>
   text.normalize("NFKC").toLocaleLowerCase().match(WORD) ?? [];
@@ -82,7 +98,8 @@ export const hasUnreliableTranscript = (
   if (cached !== undefined) return cached;
   const unreliable = transcript.some(
     (segment) =>
-      !isReliableTranscriptText(segment.text, Math.max(100, segment.endMs - segment.startMs)),
+      !isReliableTranscriptText(segment.text, Math.max(100, segment.endMs - segment.startMs)) ||
+      !isChinesePreferredTranscriptText(segment.text),
   );
   transcriptReliabilityCache.set(transcript, unreliable);
   return unreliable;
@@ -96,6 +113,4 @@ export const hasInvalidVoiceMemoryResult = (
 ): boolean =>
   record.errorMessage === "no_reliable_speech" ||
   (record.phase === "ready" && record.transcript.length === 0) ||
-  (record.transcript.length > 0 &&
-    (record.transcriptionPipelineVersion !== CURRENT_TRANSCRIPTION_PIPELINE_VERSION ||
-      hasUnreliableTranscript(record.transcript)));
+  (record.transcript.length > 0 && hasUnreliableTranscript(record.transcript));

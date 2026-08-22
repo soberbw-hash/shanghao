@@ -1,4 +1,5 @@
 import {
+  MemberSpeakingState,
   RoomConnectionState,
   type BuiltInAvatarId,
   type ChatImageAttachment,
@@ -64,6 +65,7 @@ import {
 import { decideSignalingError } from "./signalingErrorPolicy";
 import { collectActivePeerIds, normalizeRoomMembers } from "./roomMemberSnapshot";
 import { collectLongSessionAudioResources } from "./longSessionAudioResources";
+import { isSignalingSessionSupersededError } from "./signalingSessionOwnership";
 import { ReliableChatTransport } from "../chat/ReliableChatTransport";
 import { RoomSocialTransport } from "../chat/RoomSocialTransport";
 import { ScreenAudioMixer } from "../screen-share/ScreenAudioMixer";
@@ -188,6 +190,7 @@ export class RoomClient {
   private iceServers?: RTCIceServer[];
   private hasTurnServer = false;
   private reconnectSessionToken?: string;
+  private hasLostSignalingOwnership = false;
 
   constructor(private readonly options: RoomClientOptions) {
     this.localStream = options.localStream;
@@ -246,14 +249,19 @@ export class RoomClient {
     });
     this.peerStatsMonitor = new PeerStatsMonitor({
       getPeers: () => this.peers,
-      getPeerState: (peerId) => ({
-        isRemotePeer: this.remotePeerIds.has(peerId),
-        isConnected: this.webrtcConnectedPeerIds.has(peerId),
-        hasRemoteAudio: this.webrtcAudioPeerIds.has(peerId),
-        isRemoteMuted:
-          this.memberEvents.currentMembers.find((member) => member.id === peerId)?.isMuted ?? false,
-        iceState: this.peers.get(peerId)?.connection.iceConnectionState ?? "new",
-      }),
+      getPeerState: (peerId) => {
+        const member = this.memberEvents.currentMembers.find(
+          (candidate) => candidate.id === peerId,
+        );
+        return {
+          isRemotePeer: this.remotePeerIds.has(peerId),
+          isConnected: this.webrtcConnectedPeerIds.has(peerId),
+          hasRemoteAudio: this.webrtcAudioPeerIds.has(peerId),
+          isRemoteMuted: member?.isMuted ?? false,
+          isRemoteSpeaking: member?.speakingState === MemberSpeakingState.Speaking,
+          iceState: this.peers.get(peerId)?.connection.iceConnectionState ?? "new",
+        };
+      },
       getRecovery: (peerId) => this.peerRecovery.getSnapshot(peerId),
       getResources: () => collectLongSessionAudioResources(this.localStream, this.peers),
       onLatency: (peerId, latencyMs) => this.options.onPeerLatency?.(peerId, latencyMs),
@@ -267,6 +275,7 @@ export class RoomClient {
       roomId: options.roomId,
       peers: this.peers,
       remotePeerIds: this.remotePeerIds,
+      connectedPeerIds: this.webrtcConnectedPeerIds,
       readyPeerIds: this.webrtcReadyPeerIds,
       operationQueue: this.peerOperationQueue,
       canRecover: () => this.shouldReconnect && this.isSignalingConnected,
@@ -1165,6 +1174,9 @@ export class RoomClient {
         }
         if (state === "connected") {
           this.webrtcConnectedPeerIds.add(targetPeerId);
+          // A connected ICE/DTLS transport is healthy even while the friend is silent or muted.
+          // Audio readiness still controls relay fallback, but it must not rebuild the peer forever.
+          this.peerRecovery.clear(targetPeerId, true);
           this.webrtcFlowingPeerIds.delete(targetPeerId);
           this.peerStatsMonitor.markConnected(targetPeerId);
           this.webrtcStalledPeerIds.delete(targetPeerId);
@@ -1350,12 +1362,63 @@ export class RoomClient {
       await this.send(payload);
       return true;
     } catch (error) {
+      if (isSignalingSessionSupersededError(error)) {
+        this.stopSupersededSession();
+        return false;
+      }
       void writeRendererLog("signaling", "warn", "Skipped signaling send", {
         type: payload.type,
         error: error instanceof Error ? error.message : String(error),
       });
       return false;
     }
+  }
+
+  /**
+   * The main process owns one signaling session. If a newer RoomClient takes
+   * ownership, this instance can no longer send anything and must become inert.
+   * Do not call UI callbacks here because they may already belong to the newer
+   * room session and clearing them would erase its members or remote streams.
+   */
+  private stopSupersededSession(): void {
+    if (this.hasLostSignalingOwnership) return;
+    this.hasLostSignalingOwnership = true;
+    this.shouldReconnect = false;
+    this.isSignalingConnected = false;
+    this.joinAckReceived = false;
+    this.rejectPendingConnection(new Error("signaling_session_superseded"));
+    this.stopSnapshotRecovery();
+    this.stopHeartbeat();
+    this.stopAudioPathSync();
+    this.stopPeerStats();
+    this.reconnectCoordinator.dispose();
+    this.peerRecovery.clearAll();
+
+    for (const peer of this.peers.values()) peer.destroy();
+    this.peers.clear();
+    this.pendingIceCandidates.clear();
+    this.peerOperationQueue.clear();
+    this.remotePeerIds.clear();
+    this.webrtcConnectedPeerIds.clear();
+    this.webrtcAudioPeerIds.clear();
+    this.webrtcFlowingPeerIds.clear();
+    this.webrtcReadyPeerIds.clear();
+    this.webrtcStalledPeerIds.clear();
+    this.webrtcScreenPeerIds.clear();
+    this.relayRequestedByPeerIds.clear();
+    this.advertisedRelayNeeds.clear();
+
+    this.audioFallback?.destroy();
+    this.audioFallback = undefined;
+    this.screenShareCoordinator.stopTracks();
+    this.screenShareCoordinator.clear();
+    this.screenAudioMixer.dispose();
+    this.chatTransport.rejectPending("signaling_session_superseded");
+    void this.signalingBridge.close();
+    void writeRendererLog("signaling", "info", "Stopped superseded room client", {
+      roomId: this.options.roomId,
+      peerId: this.options.peerId,
+    });
   }
 
   private startHeartbeat(): void {
@@ -1439,6 +1502,10 @@ export class RoomClient {
       const wasFlowing = this.webrtcFlowingPeerIds.has(peerId);
       this.webrtcFlowingPeerIds.add(peerId);
       this.webrtcStalledPeerIds.delete(peerId);
+      // RTP growth is stronger transport evidence than decoded loudness. A quiet or
+      // muted friend can legitimately produce no non-zero PCM, so leaving the initial
+      // connection watchdog armed here would rebuild a healthy peer every few seconds.
+      this.peerRecovery.clear(peerId, true);
       this.syncPeerMediaPath(peerId, wasStalled ? "inbound_rtp_resumed" : "inbound_rtp_verified");
       if (!wasFlowing || wasStalled) {
         void writeRendererLog("webrtc", "info", "Remote audio RTP is flowing", {

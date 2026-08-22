@@ -214,6 +214,8 @@ const desktopApi: DesktopApi = {
     chooseDirectory: () => ipcRenderer.invoke(IPC_CHANNELS.recording.chooseDirectory),
     saveMarkers: (filePath, markers) =>
       ipcRenderer.invoke(IPC_CHANNELS.recording.saveMarkers, filePath, markers),
+    applyAutomaticCleanup: (filePath) =>
+      ipcRenderer.invoke(IPC_CHANNELS.recording.applyAutomaticCleanup, filePath),
     list: () => ipcRenderer.invoke(IPC_CHANNELS.recording.list),
     scanWaste: () => ipcRenderer.invoke(IPC_CHANNELS.recording.scanWaste),
     onScanWasteProgress: (listener) => {

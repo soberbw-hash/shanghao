@@ -175,16 +175,68 @@ const normalizeMembers = (members: RoomMember[]): RoomMember[] => {
 const countActualMembers = (members: RoomMember[]): number =>
   members.filter((member) => !member.isEmptySlot).length;
 
-const areMembersEqual = (left: RoomMember[], right: RoomMember[]): boolean => {
-  if (left.length !== right.length) {
-    return false;
-  }
+const areMusicActivitiesEqual = (
+  left: MusicActivity | undefined,
+  right: MusicActivity | undefined,
+): boolean =>
+  left === right ||
+  (left?.provider === right?.provider &&
+    left?.providerName === right?.providerName &&
+    left?.trackTitle === right?.trackTitle &&
+    left?.artist === right?.artist);
 
+const areWorkActivitiesEqual = (
+  left: import("@private-voice/shared").WorkActivity | undefined,
+  right: import("@private-voice/shared").WorkActivity | undefined,
+): boolean =>
+  left === right ||
+  (left?.id === right?.id &&
+    left?.name === right?.name &&
+    left?.category === right?.category &&
+    left?.iconDataUrl === right?.iconDataUrl);
+
+const areMembersEqual = (left: RoomMember[], right: RoomMember[]): boolean => {
+  if (left.length !== right.length) return false;
   return left.every((member, index) => {
     const candidate = right[index];
-    return candidate ? JSON.stringify(member) === JSON.stringify(candidate) : false;
+    if (!candidate) return false;
+    return (
+      member.id === candidate.id &&
+      member.profileId === candidate.profileId &&
+      member.nickname === candidate.nickname &&
+      member.avatarPath === candidate.avatarPath &&
+      member.avatarDataUrl === candidate.avatarDataUrl &&
+      member.avatarId === candidate.avatarId &&
+      member.avatarHash === candidate.avatarHash &&
+      member.isHost === candidate.isHost &&
+      member.isLocal === candidate.isLocal &&
+      member.isEmptySlot === candidate.isEmptySlot &&
+      member.isMuted === candidate.isMuted &&
+      member.isDeafened === candidate.isDeafened &&
+      member.activity === candidate.activity &&
+      member.sceneZone === candidate.sceneZone &&
+      member.gameName === candidate.gameName &&
+      member.gameIconDataUrl === candidate.gameIconDataUrl &&
+      areMusicActivitiesEqual(member.musicActivity, candidate.musicActivity) &&
+      areWorkActivitiesEqual(member.workActivity, candidate.workActivity) &&
+      member.latencyMs === candidate.latencyMs &&
+      member.presenceState === candidate.presenceState &&
+      member.speakingState === candidate.speakingState &&
+      member.joinState === candidate.joinState &&
+      member.volume === candidate.volume &&
+      member.joinedAt === candidate.joinedAt &&
+      member.connectionQuality === candidate.connectionQuality
+    );
   });
 };
+
+const reuseStableMembers = (previous: RoomMember[], next: RoomMember[]): RoomMember[] =>
+  next.map((member, index) => {
+    const previousAtIndex = previous[index];
+    return previousAtIndex && areMembersEqual([previousAtIndex], [member])
+      ? previousAtIndex
+      : member;
+  });
 
 const initialRoomEvents = (): RoomEvent[] => [
   {
@@ -272,11 +324,13 @@ export const useRoomStore = create<RoomStoreState>((set) => ({
         return state;
       }
 
+      const stableMembers = reuseStableMembers(state.room.members, normalizedMembers);
+
       return {
         room: {
           ...state.room,
-          members: normalizedMembers,
-          memberCount: countActualMembers(normalizedMembers),
+          members: stableMembers,
+          memberCount: countActualMembers(stableMembers),
         },
       };
     }),
@@ -293,6 +347,18 @@ export const useRoomStore = create<RoomStoreState>((set) => ({
     }),
   setRemoteScreenFrame: (peerId, frame) =>
     set((state) => {
+      const previousFrame = state.remoteScreenFrames[peerId];
+      if (
+        frame &&
+        previousFrame &&
+        frame.sequence === previousFrame.sequence &&
+        frame.data === previousFrame.data &&
+        frame.width === previousFrame.width &&
+        frame.height === previousFrame.height
+      ) {
+        return state;
+      }
+      if (!frame && !previousFrame) return state;
       const nextRemoteScreenFrames = { ...state.remoteScreenFrames };
       if (frame) {
         nextRemoteScreenFrames[peerId] = frame;

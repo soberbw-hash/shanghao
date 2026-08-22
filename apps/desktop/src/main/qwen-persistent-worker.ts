@@ -175,7 +175,8 @@ export class QwenPersistentWorker {
     this.lastUsedAt = Date.now();
     request.timeout = setTimeout(() => {
       if (this.active !== request) return;
-      const error = new Error("qwen_worker_timeout");
+      const error = new Error(`qwen_worker_timeout:${request.timeoutMs}ms`);
+      this.lastError = error.message;
       this.finishRequest(request, error);
       this.restartAfterCancellation(error);
     }, request.timeoutMs);
@@ -326,6 +327,7 @@ export class QwenPersistentWorker {
     const child = this.child;
     this.child = undefined;
     if (child) killProcessTree(child);
+    this.lastError = error.message;
     this.phase = "stopped";
     this.stdoutBuffer = "";
     this.failStart(error);

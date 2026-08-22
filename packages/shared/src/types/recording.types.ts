@@ -98,6 +98,13 @@ export interface RecordingCleanupProgress {
   total: number;
 }
 
+export interface RecordingAutomaticCleanupResult {
+  deletedFilePaths: string[];
+  deletedCurrentRecording: boolean;
+  wasteDeletedCount: number;
+  quotaDeletedCount: number;
+}
+
 export interface RecordingBatchDeleteResult {
   deletedFilePaths: string[];
   failed: Array<{ filePath: string; message: string }>;

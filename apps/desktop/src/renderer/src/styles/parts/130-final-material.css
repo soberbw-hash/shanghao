@@ -17,7 +17,7 @@
   background:
     radial-gradient(circle at 25% 10%, rgba(255, 255, 255, 0.4), transparent 46%),
     linear-gradient(145deg, rgba(247, 250, 253, 0.42), rgba(237, 244, 250, 0.26));
-  filter: contrast(1.02) saturate(0.97);
+  filter: none;
   contain: layout paint;
   isolation: isolate;
 }
@@ -305,14 +305,6 @@
   box-shadow:
     0 8px 22px rgba(53, 88, 132, 0.14),
     inset 0 1px 0 rgba(255, 255, 255, 0.82);
-}
-
-.work-activity-badge[data-activity-id="codex"] {
-  border-color: rgba(48, 67, 94, 0.52);
-  background: linear-gradient(145deg, rgba(36, 47, 66, 0.96), rgba(17, 25, 39, 0.96));
-  box-shadow:
-    0 8px 18px rgba(27, 39, 58, 0.22),
-    inset 0 1px 0 rgba(255, 255, 255, 0.16);
 }
 
 .scene-wall-clock {
@@ -947,17 +939,68 @@
   gap: 12px;
 }
 
+.ai-model-group {
+  padding: 12px;
+  border: 1px solid rgba(164, 191, 222, 0.48);
+  border-radius: 18px;
+  background: rgba(249, 252, 255, 0.62);
+}
+
+.ai-model-group-heading {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.ai-model-group-heading h3 {
+  margin: 0;
+  color: #1b2b40;
+  font-size: 15px;
+  font-weight: 740;
+}
+
+.ai-model-group-heading p {
+  margin: 2px 0 0;
+  color: #71839a;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.ai-model-group-heading > span {
+  overflow: hidden;
+  max-width: 42%;
+  color: #2878d8;
+  font-size: 12px;
+  font-weight: 680;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ai-model-list {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+}
+
 .ai-model-card {
   display: flex;
   min-width: 0;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 16px;
-  padding: 16px;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
   border: 1px solid rgba(164, 191, 222, 0.48);
-  border-radius: 18px;
-  background: rgba(249, 252, 255, 0.76);
-  box-shadow: 0 8px 20px rgba(87, 116, 149, 0.08);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.7);
+  box-shadow: none;
+}
+
+.ai-model-card.is-selected {
+  border-color: rgba(66, 145, 232, 0.62);
+  background: rgba(237, 246, 255, 0.82);
 }
 
 .ai-model-copy {
@@ -975,9 +1018,9 @@
 .ai-model-icon {
   display: grid;
   place-items: center;
-  width: 36px;
-  height: 36px;
-  border-radius: 12px;
+  width: 32px;
+  height: 32px;
+  border-radius: 10px;
   color: #2878d8;
   background: rgba(226, 240, 255, 0.9);
 }
@@ -1012,6 +1055,13 @@
 
 .ai-model-phase.is-installed {
   color: #13875a;
+}
+
+.ai-model-selected {
+  color: #2878d8;
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
 }
 
 .ai-model-phase.is-error,
@@ -1069,12 +1119,12 @@
 
 .voice-memory-detail,
 .voice-memory-empty {
-  margin-top: 12px;
+  margin-top: 8px;
   border: 1px solid rgb(199 218 241 / 78%);
   border-radius: 20px;
   background: rgb(255 255 255 / 54%);
   box-shadow: 0 12px 28px rgb(69 105 145 / 7%);
-  padding: 16px;
+  padding: 12px;
 }
 
 .voice-memory-empty {
@@ -1111,7 +1161,7 @@
 .voice-memory-detail header {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 7px;
 }
 .voice-memory-detail header > div {
   display: flex;
@@ -1120,7 +1170,7 @@
   flex: 1;
 }
 .voice-memory-detail header svg {
-  width: 17px;
+  width: 15px;
 }
 .voice-memory-detail header > span {
   font-size: 12px;
@@ -1133,10 +1183,17 @@
 }
 .voice-memory-detail header button {
   display: inline-flex;
-  gap: 5px;
+  gap: 4px;
   align-items: center;
   background: rgb(235 244 255 / 90%);
   color: #327dd9;
+}
+
+.voice-memory-detail header button,
+.voice-memory-detail header button.voice-memory-quiet-action {
+  border-radius: 10px;
+  padding: 6px 9px;
+  font-size: 11px;
 }
 .voice-memory-detail header button.voice-memory-quiet-action {
   border: 1px solid rgb(199 218 241 / 85%);
@@ -1191,10 +1248,10 @@
 .voice-memory-highlights,
 .voice-memory-summary,
 .voice-memory-speakers {
-  margin-top: 16px;
+  margin-top: 10px;
 }
 .voice-memory-detail h4 {
-  margin-bottom: 8px;
+  margin-bottom: 5px;
   color: #24384f;
   font-size: 13px;
   font-weight: 750;
@@ -1304,6 +1361,14 @@
 @media (max-width: 1180px) {
   .ai-voice-memory-models {
     grid-template-columns: 1fr;
+  }
+
+  .ai-model-card {
+    align-items: flex-start;
+  }
+
+  .ai-model-card > :last-child {
+    align-self: flex-end;
   }
 
   .recording-library-settings-grid,

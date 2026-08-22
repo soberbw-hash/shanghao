@@ -247,9 +247,19 @@ test("room uses a real always-on-top overlay and a ten-second knock cooldown", (
   assert.equal(overlaySource.includes("screen.getCursorScreenPoint()"), true);
   assert.equal(overlaySource.includes("this.window.setPosition(this.snapX"), true);
   assert.equal(stylesSource.includes(".overlay-still-progress-value"), true);
-  assert.equal(roomSource.includes("pauseVisualMotion={roomCollection.isOpen}"), true);
+  assert.equal(roomSource.includes("pauseVisualMotion"), true);
   assert.equal(stylesSource.includes(".team-island.is-visual-motion-paused *\n"), false);
   assert.equal(stylesSource.includes(".team-island.is-visual-motion-paused .weather-cloud"), true);
+  assert.equal(teamIslandSource.includes("isCharacterMotionActive"), true);
+  assert.equal(teamIslandSource.includes("shouldPauseAmbientMotion"), true);
+  assert.equal(
+    stylesSource.includes(".team-island.is-character-motion-active .weather-cloud"),
+    true,
+  );
+  assert.match(
+    stylesSource,
+    /\.team-island\.is-character-motion-active[\s\S]*\.scene-character-motion:is\(\.phase-idle, \.phase-away-idle\)/,
+  );
   assert.equal(stylesSource.includes(".collection-modal-panel.modal-surface"), true);
   assert.equal(stylesSource.includes("contain-intrinsic-size: auto 86px"), true);
   assert.equal(rendererMainSource.includes("overlay-renderer"), true);
@@ -509,6 +519,10 @@ test("screen sharing is wired through the room page and WebRTC peer layer", () =
     path.resolve(process.cwd(), "src/renderer/src/components/room/ScreenSharePanel.tsx"),
     "utf8",
   );
+  const screenPanelContainerSource = readFileSync(
+    path.resolve(process.cwd(), "src/renderer/src/components/room/ScreenSharePanelContainer.tsx"),
+    "utf8",
+  );
   const screenRelaySource = readFileSync(
     path.resolve(process.cwd(), "src/renderer/src/features/screen-share/ScreenFrameRelay.ts"),
     "utf8",
@@ -530,7 +544,8 @@ test("screen sharing is wired through the room page and WebRTC peer layer", () =
 
   assert.equal(managerSource.includes("navigator.mediaDevices.getDisplayMedia"), true);
   assert.equal(screenPanelSource.includes("screen-share-panel"), true);
-  assert.equal(roomSource.includes("remoteScreenFrames"), true);
+  assert.equal(roomSource.includes("ScreenSharePanelContainer"), true);
+  assert.equal(screenPanelContainerSource.includes("remoteScreenFrames"), true);
   assert.equal(roomSource.includes("useScreenShare"), true);
   assert.equal(screenShareHookSource.includes("new ScreenShareManager"), true);
   assert.equal(hookSource.includes("startScreenShare"), true);
@@ -582,6 +597,11 @@ test("screen sharing is wired through the room page and WebRTC peer layer", () =
   assert.equal(managerSource.includes("DetachedScreenSharePublisher"), true);
   assert.equal(managerSource.includes("toDataURL"), false);
   assert.equal(managerSource.includes("SCREEN_SHARE_PROFILES"), true);
+  assert.equal(roomSource.includes("const [screenFrameNow"), false);
+  assert.equal(roomSource.includes("useAudioStore()"), false);
+  assert.equal(roomSource.includes("}, 2_000);"), true);
+  assert.equal(screenPanelContainerSource.includes("detachedSyncTimerRef"), true);
+  assert.equal(screenPanelContainerSource.includes("}, 200)"), true);
   assert.equal(viewerPreloadSource.includes("screenShareViewerApi"), true);
   assert.equal(viewerPreloadSource.includes("desktopApi"), false);
   assert.equal(roomSource.includes("screen-share-fit-action"), false);
@@ -643,7 +663,8 @@ test("entering a channel does not replay the whole home entrance animation", () 
   assert.equal(homeSource.includes('document.addEventListener("visibilitychange"'), true);
   assert.equal(appSource.includes("const roomPagePromise = loadRoomPage()"), true);
   assert.equal(roomSource.includes("{ autoAlpha: 0.94, y: 5 }"), false);
-  assert.equal(appSource.includes('basePage === "room" ? { opacity: 0 } : false'), true);
+  assert.equal(appSource.includes('basePage === "room" ? { opacity: 0 } : false'), false);
+  assert.equal(appSource.includes("<motion.div"), false);
   assert.equal(roomSource.includes("[data-gsap-room='island']"), false);
 });
 
@@ -656,6 +677,11 @@ test("room navigation stays mounted behind settings and lightweight motion avoid
   assert.equal(appSource.includes('basePage === "room" ? <RoomPage /> : <HomePage />'), true);
   assert.equal(roomSource.includes('filter: "blur(6px)"'), false);
   assert.equal(stylesSource.includes(".app-page-base.is-obscured"), true);
+  assert.match(stylesSource, /\.team-island-stage\s*\{[^}]*filter:\s*none;/s);
+  assert.match(
+    stylesSource,
+    /\.app-page-base\.is-obscured \*[^}]*animation-play-state:\s*paused !important;/s,
+  );
   assert.equal(stylesSource.includes(".voice-exit-button"), true);
 });
 

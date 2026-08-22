@@ -8,7 +8,10 @@ import {
   sceneEntryPoint,
 } from "../src/renderer/src/features/voice-scene/characterMotion";
 import { characterPositions } from "../src/renderer/src/features/voice-scene/sceneZones";
-import { readSceneUnit } from "../src/renderer/src/features/voice-scene/characterMotionRuntime";
+import {
+  characterRouteKeyframes,
+  readSceneUnit,
+} from "../src/renderer/src/features/voice-scene/characterMotionRuntime";
 
 test("same-row seat changes stay horizontal and last at least one second", () => {
   const route = planCharacterRoute({
@@ -128,6 +131,67 @@ test("pixel-valued animation callbacks never overwrite scene container units", (
   assert.equal(readSceneUnit("712px", 68.9), 68.9);
 });
 
+test("seat travel runs as compositor keyframes without a React frame callback", () => {
+  const route = planCharacterRoute({
+    kind: "move",
+    from: characterPositions.gameDesk1,
+    to: characterPositions.gameDesk2,
+    fromZone: "gameDesk1",
+    toZone: "gameDesk2",
+  });
+  const keyframes = characterRouteKeyframes(route);
+  assert.equal(keyframes.length, route.points.length);
+  assert.equal(
+    keyframes[0]?.transform,
+    `translate3d(${route.points[0]?.left}cqw, ${route.points[0]?.top}cqh, 0)`,
+  );
+  assert.equal(keyframes.at(-1)?.offset, 1);
+
+  const source = readFileSync(
+    path.resolve(process.cwd(), "src/renderer/src/components/room/SceneCharacter.tsx"),
+    "utf8",
+  );
+  assert.equal(source.includes("useAnimationControls"), false);
+  assert.equal(source.includes("onUpdate={(latest)"), false);
+  assert.equal(source.includes("element.animate("), true);
+  assert.equal(source.includes("readRenderedScenePosition(element, current)"), true);
+});
+
+test("only the visible walking pose reserves a compositor layer", () => {
+  const styles = readFileSync(
+    path.resolve(process.cwd(), "src/renderer/src/styles/parts/50-character.css"),
+    "utf8",
+  );
+
+  assert.match(styles, /\.walking-animal-run-cycle-strip\s*\{[^}]*will-change:\s*auto;/s);
+  assert.match(
+    styles,
+    /\.room-character-walking-layer\.is-active \.walking-animal-run-cycle-strip\s*\{[^}]*will-change:\s*transform;/s,
+  );
+  assert.match(
+    styles,
+    /\.room-character-visual-layer:not\(\.is-active\)[\s\S]*animation-play-state:\s*paused !important;/,
+  );
+});
+
+test("idle characters do not continuously repaint clipped sprite layers", () => {
+  const styles = readFileSync(
+    path.resolve(process.cwd(), "src/renderer/src/styles/parts/50-character.css"),
+    "utf8",
+  );
+
+  assert.match(styles, /\.desk-animal-idle \.desk-animal-head\s*\{[^}]*animation:\s*none;/s);
+  assert.match(styles, /\.desk-animal-idle \.desk-animal-body-rig\s*\{[^}]*animation:\s*none;/s);
+  assert.doesNotMatch(styles, /\.room-character-speaking\s*\{[^}]*filter:/s);
+
+  const source = readFileSync(
+    path.resolve(process.cwd(), "src/renderer/src/components/room/SceneCharacter.tsx"),
+    "utf8",
+  );
+  assert.equal(source.includes("weightedIdleActions"), false);
+  assert.equal(source.includes('const idleAction: DeskAnimalIdleAction = "none"'), true);
+});
+
 test("channel exit continues from the rendered position without a fixed stand-up pause", () => {
   const source = readFileSync(
     path.resolve(process.cwd(), "src/renderer/src/components/room/SceneCharacter.tsx"),
@@ -140,5 +204,5 @@ test("channel exit continues from the rendered position without a fixed stand-up
   assert.equal(leaveStart >= 0 && leaveEnd > leaveStart, true);
   assert.equal(leaveFlow.includes('setMotionPhase("leaving")'), true);
   assert.equal(leaveFlow.includes("waitForMotionPhase(220)"), false);
-  assert.equal(leaveFlow.includes("routeAnimation(route, true)"), true);
+  assert.equal(leaveFlow.includes("characterRouteKeyframes(route, true)"), true);
 });

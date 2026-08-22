@@ -30,7 +30,8 @@ export const runLocalProcess = async (
         stdio: ["pipe", "pipe", "pipe"],
       });
     } catch (error) {
-      return reject(new Error("ai_runtime_spawn_failed", { cause: error }));
+      const detail = error instanceof Error ? error.message : String(error);
+      return reject(new Error(`ai_runtime_spawn_failed: ${detail}`, { cause: error }));
     }
     let stdout = "";
     let stderr = "";
@@ -64,7 +65,8 @@ export const runLocalProcess = async (
     child.on("error", (error) => {
       clearTimeout(timeout);
       options.signal?.removeEventListener("abort", abort);
-      reject(new Error("ai_runtime_spawn_failed", { cause: error }));
+      const detail = error instanceof Error ? error.message : String(error);
+      reject(new Error(`ai_runtime_spawn_failed: ${detail}`, { cause: error }));
     });
     child.on("close", (code) => {
       clearTimeout(timeout);

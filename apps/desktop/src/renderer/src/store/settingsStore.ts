@@ -75,6 +75,8 @@ const fallbackSettings: AppSettings = {
   recordingMarkerShortcut: "F8",
   recordingSaveDirectory: undefined,
   recordingLibraryQuotaGb: 10,
+  isRecordingWasteAutoCleanupEnabled: false,
+  aiAsrModel: "vibevoice",
   aiProcessingMode: "after_game",
   isAiAutoTranscribeEnabled: false,
   isAiAutoOrganizeEnabled: false,

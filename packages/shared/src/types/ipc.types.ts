@@ -17,6 +17,7 @@ import type { RoomMember } from "./room.types";
 import type {
   RecordingExportPayload,
   RecordingExportResponse,
+  RecordingAutomaticCleanupResult,
   RecordingBatchDeleteResult,
   RecordingCleanupProgress,
   RecordingCleanupScan,
@@ -161,6 +162,7 @@ export interface GameDetectionSnapshot {
     | "我的世界"
     | "王国保卫战"
     | "杀戮尖塔"
+    | "星露谷物语"
     | "英雄联盟"
     | "无畏契约"
     | "三角洲行动"
@@ -362,6 +364,7 @@ export interface DesktopApi {
     export: (payload: RecordingExportPayload) => Promise<RecordingExportResponse>;
     chooseDirectory: () => Promise<string | undefined>;
     saveMarkers: (filePath: string, markers: RecordingMarker[]) => Promise<string>;
+    applyAutomaticCleanup: (filePath: string) => Promise<RecordingAutomaticCleanupResult>;
     list: () => Promise<RecordingLibrarySnapshot>;
     scanWaste: () => Promise<RecordingCleanupScan>;
     onScanWasteProgress: (listener: (progress: RecordingCleanupProgress) => void) => () => void;

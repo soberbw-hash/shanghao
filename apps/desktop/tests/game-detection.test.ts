@@ -18,6 +18,7 @@ import {
   WORK_ACTIVITY_RULES,
 } from "../src/main/game-detection";
 import { AppIdentityResolver } from "../src/main/app-identity-resolver";
+import { scoreAppxAsset } from "../src/main/app-icon-resolver";
 
 const snapshot = (
   ProcessName: string,
@@ -31,6 +32,7 @@ test("game detection uses structured exact process matches", () => {
   assert.equal(matchKnownGame(snapshot("LostCastle2-Win64-Shipping")), "失落城堡 2");
   assert.equal(matchKnownGame(snapshot("DeltaForceClient-Win64-Shipping")), "三角洲行动");
   assert.equal(matchKnownGame(snapshot("League of Legends")), "英雄联盟");
+  assert.equal(matchKnownGame(snapshot("Stardew Valley")), "星露谷物语");
   assert.equal(matchKnownGame(snapshot("SlayTheSpire")), "杀戮尖塔");
   assert.equal(matchKnownGame(snapshot("eldenring")), "艾尔登法环");
   assert.equal(matchKnownGame(snapshot("RDR2")), "荒野大镖客 2");
@@ -110,12 +112,26 @@ test("Codex work detection keeps the official Appx manifest path as its identity
   assert.equal(source.includes("openai.codex_"), true);
 });
 
+test("activity icons prefer the dark-on-transparent Appx asset used on light badges", () => {
+  const lightSurfaceIcon = scoreAppxAsset(
+    "Square44x44Logo.targetsize-64_altform-lightunplated.png",
+    "Square44x44Logo",
+    ".png",
+  );
+  const darkSurfaceIcon = scoreAppxAsset(
+    "Square44x44Logo.targetsize-64_altform-unplated.png",
+    "Square44x44Logo",
+    ".png",
+  );
+  assert.ok(lightSurfaceIcon > darkSurfaceIcon);
+});
+
 test("repository documentation lists every supported game and work application", () => {
   const documentation = readFileSync(
     path.resolve(process.cwd(), "../../docs/supported-activities.md"),
     "utf8",
   );
-  assert.equal(SUPPORTED_GAME_NAMES.length, 49);
+  assert.equal(SUPPORTED_GAME_NAMES.length, 50);
   assert.equal(WORK_ACTIVITY_RULES.length, 50);
   for (const gameName of SUPPORTED_GAME_NAMES) {
     assert.equal(
@@ -399,13 +415,18 @@ test("bundled monitor artwork stays valid and newly detected games use a readabl
     new URL("../src/renderer/src/assets/games/", import.meta.url),
   );
   const componentSource = readFileSync(artworkComponentPath, "utf8");
+  const artworkGuide = readFileSync(
+    path.join(artworkDirectory, "GAME_MONITOR_ART_GUIDE.md"),
+    "utf8",
+  );
   const expectedArtwork = [
     ["我的世界", "minecraft.png"],
     ["王国保卫战", "kingdom-rush.jpg"],
     ["杀戮尖塔", "slay-the-spire.jpg"],
-    ["英雄联盟", "league-of-legends.svg"],
+    ["星露谷物语", "stardew-valley-scene.webp"],
+    ["英雄联盟", "league-of-legends-scene.webp"],
     ["无畏契约", "valorant.png"],
-    ["三角洲行动", "delta-force.jpg"],
+    ["三角洲行动", "delta-force-scene.webp"],
     ["CS2", "counter-strike-2.jpg"],
     ["Dota 2", "dota-2.jpg"],
     ["Apex 英雄", "apex-legends.jpg"],
@@ -432,15 +453,22 @@ test("bundled monitor artwork stays valid and newly detected games use a readabl
     assert.ok(statSync(path.join(artworkDirectory, filename)).size > 500);
   }
 
-  assert.equal(componentSource.includes('artwork?.layout ?? "fallback"'), true);
+  assert.equal(componentSource.includes('artwork?.layout === "scene"'), true);
   assert.equal(componentSource.includes("Partial<Record<SupportedGameName"), true);
   assert.equal(componentSource.includes("scene-game-monitor-label"), false);
   assert.equal(
-    componentSource.indexOf("iconDataUrl ? (") < componentSource.indexOf(") : artwork ? ("),
+    componentSource.indexOf("displayedArtwork ? (") <
+      componentSource.indexOf(") : runtimeIconDataUrl ? ("),
     true,
   );
+  assert.equal(componentSource.includes('layout === "scene" ? null'), true);
+  assert.equal(componentSource.includes("data-game-scene-tone"), true);
   assert.equal(componentSource.includes("data-game-scan"), true);
   assert.equal(componentSource.includes("shouldReduceMotion"), true);
+  assert.equal(artworkGuide.includes("110 × 70 CSS px"), true);
+  assert.equal(artworkGuide.includes("官方素材查找提示词"), true);
+  assert.equal(artworkGuide.includes("小屏二改提示词"), true);
+  assert.equal(artworkGuide.includes("两轮审核"), true);
   assert.equal(
     componentSource.includes("normalizePresenceGameIconDataUrl(gameName, iconDataUrl)"),
     true,

@@ -2,11 +2,11 @@ import { randomUUID } from "node:crypto";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import path from "node:path";
 
-import ffmpegPath from "ffmpeg-static";
-
 import {
   CURRENT_TRANSCRIPTION_PIPELINE_VERSION,
+  hasInvalidVoiceMemoryResult,
   isReliableTranscriptText,
+  type AiAsrModelId,
   type AiRuntimeStatus,
   type RendererLogPayload,
   type VoiceMemoryAnswer,
@@ -21,19 +21,28 @@ import {
   type VoiceMemorySearchResult,
   type VoiceMemorySpeakingObservation,
   type VoiceMemorySummaryPoint,
+  type VoiceMemoryProcessingStage,
+  type VoiceMemoryTaskDiagnostic,
+  type VoiceMemoryTaskStatus,
 } from "@private-voice/shared";
 
 import { AiModelManager } from "./ai-model-manager";
 import { AiRuntimeManager } from "./ai-runtime-manager";
+import { classifyLocalModelRuntimeError } from "./local-model-runtime";
 import { VoiceMemoryStore } from "./voice-memory-store";
+import { resolveFfmpegExecutable } from "./media-runtime";
 
-// The BitNet ASR model returns plain text rather than reliable word timestamps. Short units
-// preserve useful seek points and avoid asking one generation to represent several minutes.
+// Short units bound local inference memory and preserve useful seek points for models without
+// word-level timestamps.
 export const TRANSCRIPTION_CHUNK_MS = 30_000;
+export const AUTOMATIC_TRANSCRIPTION_MAX_DURATION_MS = 30 * 60_000;
 const LEGACY_TRANSCRIPTION_CHUNK_MS = 10 * 60_000;
-// Version 6 adds verified UTF-8/native JSON parsing and a pinned local runtime. Partial results
-// from older recognition runs must not be mixed into the guarded transcript.
+// Version 7 adds the Mandarin-only transcript guard and invalidates older multilingual results.
+// Partial results from older recognition runs must not be mixed into the guarded transcript.
 const TRANSCRIPTION_PIPELINE_VERSION = CURRENT_TRANSCRIPTION_PIPELINE_VERSION;
+
+export const canAutomaticallyTranscribeDuration = (durationMs: number): boolean =>
+  durationMs <= AUTOMATIC_TRANSCRIPTION_MAX_DURATION_MS;
 
 export const completedTranscriptionUnits = (
   checkpoint: { completedUnits: number; unitDurationMs?: number } | undefined,
@@ -55,18 +64,24 @@ interface OrganizedResult {
   markerTitles: VoiceMemoryMarkerTitle[];
 }
 
-const durationMs = async (filePath: string): Promise<number> =>
+const durationMs = async (
+  filePath: string,
+): Promise<{ durationMs: number; inputFormat?: string }> =>
   new Promise((resolve, reject) => {
-    if (!ffmpegPath) return reject(new Error("ffmpeg_runtime_unavailable"));
+    const executable = resolveFfmpegExecutable();
+    if (!executable) return reject(new Error("ffmpeg_missing"));
     const child: ChildProcessWithoutNullStreams = spawn(
-      ffmpegPath,
-      ["-hide_banner", "-i", filePath],
+      executable,
+      ["-nostdin", "-hide_banner", "-i", filePath],
       { windowsHide: true },
     );
     let output = "";
     child.stderr.setEncoding("utf8");
     child.stderr.on("data", (value: string) => (output += value));
-    child.on("error", reject);
+    child.on("error", (error) =>
+      reject(new Error("ffmpeg_probe_failed: " + (error instanceof Error ? error.message : error))),
+    );
+    child.stdin.end();
     child.on("close", () => {
       // FFmpeg emits this fixed header in bounded local diagnostic output.
       // eslint-disable-next-line security/detect-unsafe-regex
@@ -74,11 +89,17 @@ const durationMs = async (filePath: string): Promise<number> =>
       const seconds = match
         ? Number(match[1]) * 3_600 + Number(match[2]) * 60 + Number(match[3])
         : Number.NaN;
-      if (!Number.isFinite(seconds) || seconds <= 0)
-        return reject(new Error("recording_duration_unavailable"));
-      resolve(Math.round(seconds * 1_000));
+      if (!Number.isFinite(seconds) || seconds <= 0) {
+        const detail = output.trim().slice(-500);
+        return reject(new Error(detail || "recording_duration_unavailable"));
+      }
+      const audioLine = output.match(/Audio:\s*([^\r\n]+)/i)?.[1]?.trim();
+      resolve({ durationMs: Math.round(seconds * 1_000), inputFormat: audioLine });
     });
   });
+
+const createTaskId = (recordingId: string): string =>
+  `voice-memory:${recordingId}:${Date.now()}-${randomUUID().slice(0, 8)}`;
 
 const emptyRecord = (request: VoiceMemoryProcessRequest): VoiceMemoryRecord => ({
   schemaVersion: 1,
@@ -172,6 +193,66 @@ const transcriptForPrompt = (record: VoiceMemoryRecord, maximumCharacters = 36_0
     .join("\n")
     .slice(0, maximumCharacters);
 
+const asArray = <T>(value: unknown): T[] => {
+  if (Array.isArray(value)) return value as T[];
+  return value && typeof value === "object" ? [value as T] : [];
+};
+
+const normalizeOrganizedResult = (value: unknown, record: VoiceMemoryRecord): OrganizedResult => {
+  const raw = value && typeof value === "object" ? (value as Record<string, unknown>) : {};
+  const summary = asArray<Record<string, unknown>>(raw.summary)
+    .filter((item) => typeof item.text === "string" && item.text.trim())
+    .map((item) => ({
+      text: String(item.text).trim(),
+      sourceStartMs: typeof item.sourceStartMs === "number" ? item.sourceStartMs : undefined,
+      sourceSegmentIds: Array.isArray(item.sourceSegmentIds)
+        ? item.sourceSegmentIds.map((id) => {
+            if (typeof id === "number") return record.transcript[id]?.id ?? String(id);
+            return String(id);
+          })
+        : undefined,
+    }));
+  const chapters = asArray<Record<string, unknown>>(raw.chapters)
+    .filter((item) => typeof item.title === "string" && Number.isFinite(Number(item.startMs)))
+    .map((item, index) => ({
+      id: String(item.id ?? `chapter-${index + 1}`),
+      startMs: Number(item.startMs),
+      title: String(item.title).trim(),
+      description: typeof item.description === "string" ? item.description.trim() : undefined,
+    }));
+  const highlights = asArray<Record<string, unknown>>(raw.highlights)
+    .filter(
+      (item) =>
+        typeof item.title === "string" &&
+        Number.isFinite(Number(item.startMs)) &&
+        Number.isFinite(Number(item.endMs)),
+    )
+    .map((item, index) => ({
+      id: String(item.id ?? `highlight-${index + 1}`),
+      title: String(item.title).trim(),
+      startMs: Number(item.startMs),
+      endMs: Number(item.endMs),
+      description: typeof item.description === "string" ? item.description.trim() : "",
+      transcriptSegmentIds: Array.isArray(item.transcriptSegmentIds)
+        ? item.transcriptSegmentIds.map((id) => String(id))
+        : [],
+      exportable: item.exportable !== false,
+    }));
+  const markerTitles = asArray<Record<string, unknown>>(raw.markerTitles)
+    .filter(
+      (item) =>
+        typeof item.markerId === "string" &&
+        typeof item.title === "string" &&
+        Number.isFinite(Number(item.offsetMs)),
+    )
+    .map((item) => ({
+      markerId: String(item.markerId),
+      offsetMs: Number(item.offsetMs),
+      title: String(item.title).trim(),
+    }));
+  return { summary, chapters, highlights, markerTitles };
+};
+
 /** Runs resumable transcription and organization while persisting every completed unit. */
 export class AiVoiceMemoryService {
   private readonly listeners = new Set<(record: VoiceMemoryRecord) => void>();
@@ -191,6 +272,7 @@ export class AiVoiceMemoryService {
     operation: Promise<VoiceMemoryRecord>;
     organizing: boolean;
   };
+  private lastTask?: VoiceMemoryTaskDiagnostic;
   private deferredRetryTimer?: NodeJS.Timeout;
 
   constructor(
@@ -202,13 +284,28 @@ export class AiVoiceMemoryService {
 
   async initialize(): Promise<void> {
     await this.store.initialize();
-    const interrupted = (await this.store.list()).filter(
+    const records = await this.store.list();
+    this.lastTask = records
+      .filter((record) => record.diagnostic)
+      .sort((left, right) =>
+        (right.diagnostic?.updatedAt ?? "").localeCompare(left.diagnostic?.updatedAt ?? ""),
+      )[0]?.diagnostic;
+    const interrupted = records.filter(
       (record) => record.phase === "transcribing" || record.phase === "organizing",
     );
     for (const record of interrupted) {
       await this.save({
         ...record,
         phase: "paused",
+        taskStatus: "pending",
+        diagnostic: record.diagnostic
+          ? {
+              ...record.diagnostic,
+              status: "pending",
+              updatedAt: new Date().toISOString(),
+              errorMessage: undefined,
+            }
+          : undefined,
         errorMessage: undefined,
       });
     }
@@ -223,7 +320,7 @@ export class AiVoiceMemoryService {
   }
 
   getRuntimeStatus(): Promise<AiRuntimeStatus> {
-    return this.runtime.status();
+    return this.runtime.status().then((status) => ({ ...status, lastTask: this.lastTask }));
   }
 
   get(recordingId: string): Promise<VoiceMemoryRecord | undefined> {
@@ -312,33 +409,59 @@ export class AiVoiceMemoryService {
   async resume(recordingId: string): Promise<VoiceMemoryRecord> {
     const record = await this.store.get(recordingId);
     if (!record) throw new Error("voice_memory_not_found");
+    const resumeOrganization =
+      record.processingStage === "organize" &&
+      record.transcript.length > 0 &&
+      !hasInvalidVoiceMemoryResult(record);
     return this.start({
       recordingId,
       filePath: record.filePath,
       roomId: record.roomId,
       roomName: record.roomName,
       manual: true,
-      organize: true,
+      transcribe: !resumeOrganization,
+      organize: resumeOrganization,
     });
   }
 
   /** Acknowledges a UI retry immediately while the durable worker continues in the background. */
   async start(request: VoiceMemoryProcessRequest): Promise<VoiceMemoryRecord> {
+    // A retry button can be clicked more than once while the request is waiting
+    // behind another long recording. Keep the first accepted task instead of
+    // replacing it with another task for the same recording.
+    if (this.pendingProcesses.has(request.recordingId)) {
+      const pendingRecord = await this.store.get(request.recordingId);
+      if (pendingRecord) return pendingRecord;
+    }
     const previous = await this.store.get(request.recordingId);
+    const taskId = request.taskId ?? createTaskId(request.recordingId);
+    const queuedRequest = {
+      ...request,
+      taskId,
+      restartTranscription:
+        request.transcribe !== false &&
+        (request.restartTranscription === true ||
+          (request.manual === true && Boolean(previous && hasInvalidVoiceMemoryResult(previous)))),
+    };
     const queued = await this.save({
-      ...(previous ?? emptyRecord(request)),
+      ...(previous ?? emptyRecord(queuedRequest)),
       phase: "idle",
+      taskId,
+      taskStatus: "pending",
+      processingStage: "recording",
+      diagnostic: this.createDiagnostic(queuedRequest, "pending", "recording"),
       errorMessage: undefined,
     });
     if (request.manual) {
-      void this.process(request).catch(() => undefined);
+      void this.process(queuedRequest).catch(() => undefined);
     } else {
-      this.queueAutomaticProcess(request);
+      this.queueAutomaticProcess(queuedRequest);
     }
     return queued;
   }
 
   process(request: VoiceMemoryProcessRequest): Promise<VoiceMemoryRecord> {
+    request = { ...request, taskId: request.taskId ?? createTaskId(request.recordingId) };
     this.deletedRecordings.delete(request.recordingId);
     const pending = this.pendingProcesses.get(request.recordingId);
     if (pending) {
@@ -382,7 +505,18 @@ export class AiVoiceMemoryService {
             interruptedManual?.catch(() => undefined),
           ]);
           if (manualRequestVersion !== this.manualRequestVersion) {
-            return (await this.store.get(request.recordingId)) ?? emptyRecord(request);
+            const superseded = (await this.store.get(request.recordingId)) ?? emptyRecord(request);
+            return this.save({
+              ...superseded,
+              phase: "paused",
+              taskStatus: "pending",
+              processingStage: "recording",
+              diagnostic: this.createDiagnostic(request, "pending", "recording", {
+                errorCode: "manual_task_superseded",
+                errorMessage: "已暂停：已开始另一条录音的转录。",
+              }),
+              errorMessage: undefined,
+            });
           }
           const active = run();
           this.activeManual = { recordingId: request.recordingId, operation: active };
@@ -463,26 +597,26 @@ export class AiVoiceMemoryService {
         record?.phase === "ready" &&
         record.transcriptionPipelineVersion === TRANSCRIPTION_PIPELINE_VERSION;
       if (isCurrentTerminalResult || this.pendingProcesses.has(recordingId)) continue;
-      await this.save({
-        ...(record ??
-          emptyRecord({
-            recordingId,
-            filePath: recording.filePath,
-            roomId: recording.roomId,
-            roomName: recording.roomId === "side" ? "二号房" : "一号房",
-            markers: recording.markers,
-          })),
-        phase: "idle",
-        errorMessage: undefined,
-      });
-      this.queueAutomaticProcess({
+      const taskId = createTaskId(recordingId);
+      const queuedRequest: VoiceMemoryProcessRequest = {
         recordingId,
         filePath: recording.filePath,
         roomId: recording.roomId,
         roomName: recording.roomId === "side" ? "二号房" : "一号房",
         organize,
         markers: recording.markers,
+        taskId,
+      };
+      await this.save({
+        ...(record ?? emptyRecord(queuedRequest)),
+        phase: "idle",
+        taskId,
+        taskStatus: "pending",
+        processingStage: "recording",
+        diagnostic: this.createDiagnostic(queuedRequest, "pending", "recording"),
+        errorMessage: undefined,
       });
+      this.queueAutomaticProcess(queuedRequest);
     }
   }
 
@@ -497,7 +631,7 @@ export class AiVoiceMemoryService {
       void transcription
         .then((record) => {
           if (!record.transcript.length || record.errorMessage === "no_reliable_speech") return;
-          return this.process({ ...request, organize: true });
+          return this.process({ ...request, transcribe: false, organize: true });
         })
         .catch(() => undefined);
     } else {
@@ -506,36 +640,54 @@ export class AiVoiceMemoryService {
   }
 
   private async processNow(request: VoiceMemoryProcessRequest): Promise<VoiceMemoryRecord> {
+    const taskId = request.taskId ?? createTaskId(request.recordingId);
     this.log("info", "Voice memory processing started", {
       recordingId: request.recordingId,
+      taskId,
       manual: request.manual === true,
       restartTranscription: request.restartTranscription === true,
     });
-    await this.runtime.validateInputFile(request.filePath);
     const previous = await this.store.get(request.recordingId);
     let record = previous ?? emptyRecord(request);
-    if (request.restartTranscription) {
-      await this.models.clearTaskCheckpoint(`transcription:${record.recordingId}`);
-      record = await this.save({
-        ...record,
-        phase: "idle",
-        progress: 0,
-        speakers: [],
-        transcript: [],
-        summary: [],
-        chapters: [],
-        highlights: [],
-        timeline: record.timeline.filter((entry) => entry.kind === "marker"),
-        transcriptionPipelineVersion: undefined,
-        errorMessage: undefined,
-      });
-    }
+    let currentStage: VoiceMemoryProcessingStage = "recording";
+    const shouldTranscribe = request.transcribe !== false;
     const controller = new AbortController();
     this.controllers.get(request.recordingId)?.abort();
     this.controllers.set(request.recordingId, controller);
     try {
-      record = await this.transcribe(record, request.manual === true, controller.signal);
-      record = applySpeakingTimeline(record, request.speakingTimeline ?? []);
+      if (shouldTranscribe) {
+        currentStage = "audio_file";
+        await this.runtime.validateInputFile(request.filePath);
+        record = await this.updateDiagnostic(record, request, taskId, currentStage, "processing");
+        if (request.restartTranscription) {
+          await this.models.clearTaskCheckpoint(`transcription:${record.recordingId}`);
+          record = await this.save({
+            ...record,
+            phase: "idle",
+            progress: 0,
+            speakers: [],
+            transcript: [],
+            summary: [],
+            chapters: [],
+            highlights: [],
+            timeline: record.timeline.filter((entry) => entry.kind === "marker"),
+            transcriptionPipelineVersion: undefined,
+            organizedAt: undefined,
+            errorMessage: undefined,
+          });
+        }
+        record = await this.transcribe(
+          record,
+          request.manual === true,
+          controller.signal,
+          (stage) => {
+            currentStage = stage;
+          },
+        );
+        record = applySpeakingTimeline(record, request.speakingTimeline ?? []);
+      } else if (record.transcript.length === 0 || hasInvalidVoiceMemoryResult(record)) {
+        throw new Error("voice_memory_transcript_required");
+      }
       if (record.transcript.length === 0) {
         this.log("info", "Voice memory contained no reliable speech", {
           recordingId: record.recordingId,
@@ -544,17 +696,28 @@ export class AiVoiceMemoryService {
           ...record,
           phase: "ready",
           progress: 100,
+          taskId,
+          taskStatus: "success",
+          processingStage: "transcript",
+          diagnostic: this.createDiagnostic(request, "success", "transcript", {
+            errorCode: "no_reliable_speech",
+            errorMessage: "没有检测到可识别的人声。",
+          }),
           transcriptionPipelineVersion: TRANSCRIPTION_PIPELINE_VERSION,
           errorMessage: "no_reliable_speech",
         });
       }
       record = await this.save({
         ...record,
+        taskId,
+        taskStatus: "processing",
+        processingStage: "transcript",
         transcriptionPipelineVersion: TRANSCRIPTION_PIPELINE_VERSION,
       });
       let organizationError: string | undefined;
       if (request.organize !== false) {
         try {
+          currentStage = "organize";
           record = await this.organize(record, request.manual === true, controller.signal);
         } catch (error) {
           if (controller.signal.aborted || (error as Error).message === "ai_task_paused")
@@ -570,6 +733,15 @@ export class AiVoiceMemoryService {
         ...record,
         phase: "ready",
         progress: 100,
+        taskId,
+        taskStatus: organizationError ? "failed" : "success",
+        processingStage: organizationError ? "organize" : "storage",
+        diagnostic: this.createDiagnostic(
+          request,
+          organizationError ? "failed" : "success",
+          organizationError ? "organize" : "storage",
+          organizationError ? { errorMessage: `organize_failed:${organizationError}` } : undefined,
+        ),
         transcriptionPipelineVersion: TRANSCRIPTION_PIPELINE_VERSION,
         errorMessage: organizationError ? `organize_failed:${organizationError}` : undefined,
       });
@@ -581,14 +753,18 @@ export class AiVoiceMemoryService {
     } catch (error) {
       const paused = controller.signal.aborted || (error as Error).message === "ai_task_paused";
       const reason = error instanceof Error ? error.message : String(error);
-      this.log(paused ? "info" : "error", "Voice memory processing stopped", {
+      const requiresManual =
+        !request.manual && reason === "automatic_long_recording_requires_manual";
+      this.log(paused || requiresManual ? "info" : "error", "Voice memory processing stopped", {
         recordingId: record.recordingId,
         reason,
         paused,
       });
       const deferred =
         !request.manual &&
-        (reason === "waiting_for_game_to_finish" ||
+        !requiresManual &&
+        (reason === "manual_only" ||
+          reason === "waiting_for_game_to_finish" ||
           reason === "realtime_pressure" ||
           reason.startsWith("voice_") ||
           reason.startsWith("screen_share") ||
@@ -597,8 +773,23 @@ export class AiVoiceMemoryService {
           reason.startsWith("renderer_memory"));
       record = await this.save({
         ...record,
-        phase: paused || deferred ? "paused" : "error",
-        errorMessage: deferred ? `deferred:${reason}` : paused ? undefined : reason,
+        taskId,
+        taskStatus: paused || deferred || requiresManual ? "pending" : "failed",
+        processingStage: currentStage,
+        diagnostic: this.createDiagnostic(
+          request,
+          paused || deferred || requiresManual ? "pending" : "failed",
+          currentStage,
+          { errorCode: this.errorCode(error), errorMessage: reason },
+        ),
+        phase: paused || deferred || requiresManual ? "paused" : "error",
+        errorMessage: requiresManual
+          ? "manual_required:long_recording"
+          : deferred
+            ? `deferred:${reason}`
+            : paused
+              ? undefined
+              : reason,
       });
       if (deferred) this.scheduleDeferredRetry();
       if (!paused && !deferred) throw error;
@@ -720,14 +911,39 @@ export class AiVoiceMemoryService {
     record: VoiceMemoryRecord,
     manual: boolean,
     signal: AbortSignal,
+    onStage?: (stage: VoiceMemoryProcessingStage) => void,
   ): Promise<VoiceMemoryRecord> {
     const runnable = this.models.canRunTask("transcription", manual);
     if (!runnable.runnable) throw new Error(runnable.reason);
-    const totalDuration = await durationMs(record.filePath);
+    const asrModelId = runnable.requiredModel as AiAsrModelId;
+    const asrStatus = (await this.runtime.status()).asr;
+    onStage?.("preprocess");
+    const audio = await durationMs(record.filePath);
+    record = await this.updateDiagnostic(
+      record,
+      { recordingId: record.recordingId, filePath: record.filePath },
+      record.taskId ?? createTaskId(record.recordingId),
+      "preprocess",
+      "processing",
+      {
+        inputFormat: audio.inputFormat,
+        asrInputFormat: asrStatus.asrInputFormat,
+        modelName: asrStatus.modelName,
+        modelVersion: asrStatus.modelVersion,
+        modelPath: asrStatus.modelPath,
+        runtimeMessage: asrStatus.message,
+      },
+    );
+    const totalDuration = audio.durationMs;
+    if (!manual && !canAutomaticallyTranscribeDuration(totalDuration)) {
+      throw new Error("automatic_long_recording_requires_manual");
+    }
     const totalUnits = Math.max(1, Math.ceil(totalDuration / TRANSCRIPTION_CHUNK_MS));
     const taskId = `transcription:${record.recordingId}`;
     const checkpoint = this.models.getTaskCheckpoint(taskId);
-    const checkpointCompatible = checkpoint?.pipelineVersion === TRANSCRIPTION_PIPELINE_VERSION;
+    const checkpointCompatible =
+      checkpoint?.pipelineVersion === TRANSCRIPTION_PIPELINE_VERSION &&
+      checkpoint.asrModelId === asrModelId;
     let completedUnits = checkpointCompatible
       ? completedTranscriptionUnits(checkpoint, totalUnits)
       : 0;
@@ -753,14 +969,40 @@ export class AiVoiceMemoryService {
     for (let unit = completedUnits; unit < totalUnits; unit += 1) {
       if (signal.aborted) throw new Error("ai_task_paused");
       const offsetMs = unit * TRANSCRIPTION_CHUNK_MS;
+      onStage?.("convert");
+      record = await this.updateDiagnostic(
+        record,
+        { recordingId: record.recordingId, filePath: record.filePath },
+        record.taskId ?? createTaskId(record.recordingId),
+        "convert",
+        "processing",
+        {
+          inputFormat: audio.inputFormat,
+          asrInputFormat: asrStatus.asrInputFormat,
+          modelName: asrStatus.modelName,
+          modelVersion: asrStatus.modelVersion,
+          modelPath: asrStatus.modelPath,
+        },
+      );
       const segments = await this.runtime.transcribeChunk({
+        modelId: asrModelId,
         recordingId: record.recordingId,
         filePath: record.filePath,
         offsetMs,
         durationMs: Math.min(TRANSCRIPTION_CHUNK_MS, totalDuration - offsetMs),
         signal,
         resourceMode: runnable.resourceMode,
+        onStage: (stage, context) => {
+          onStage?.(stage);
+          this.log("info", "AI pipeline stage", {
+            taskId: record.taskId,
+            recordingId: record.recordingId,
+            stage,
+            ...context,
+          });
+        },
       });
+      onStage?.("storage");
       this.log("info", "Voice memory chunk transcribed", {
         recordingId: record.recordingId,
         unit: unit + 1,
@@ -773,6 +1015,7 @@ export class AiVoiceMemoryService {
       );
       record = await this.save({
         ...record,
+        processingStage: "storage",
         transcript: [...retained, ...segments].sort((a, b) => a.startMs - b.startMs),
         speakers: Array.from(
           new Set([...retained, ...segments].map((segment) => segment.speakerId)),
@@ -794,6 +1037,7 @@ export class AiVoiceMemoryService {
         totalUnits,
         unitDurationMs: TRANSCRIPTION_CHUNK_MS,
         pipelineVersion: TRANSCRIPTION_PIPELINE_VERSION,
+        asrModelId,
         updatedAt: new Date().toISOString(),
       });
     }
@@ -818,44 +1062,45 @@ export class AiVoiceMemoryService {
     try {
       const result = await this.runtime.generateJson<OrganizedResult>({
         resourceMode: runnable.resourceMode,
-        maxNewTokens: 900,
+        maxNewTokens: 384,
+        timeoutMs: 4 * 60_000,
         signal,
         prompt: [
           "你是上号语音软件的本地整理助手。这里是固定好友的日常聊天，不是会议。",
           "请生成自然、有趣、能回到原录音的结构化结果。不要写会议背景、议程、待办或企业话术。",
-          "严格返回一个 JSON 对象，字段：summary（text/sourceStartMs/sourceSegmentIds），chapters（id/startMs/title/description），highlights（id/title/startMs/endMs/description/transcriptSegmentIds/exportable），markerTitles（markerId/offsetMs/title）。",
+          '只返回 JSON 对象，第一字符必须是 {，最后一个字符必须是 }，禁止 ```、Markdown 和任何解释。模板：{"summary":[{"text":"总结","sourceStartMs":0,"sourceSegmentIds":[]}],"chapters":[],"highlights":[],"markerTitles":[]}。四个字段必须始终是数组；所有 id 必须是字符串；没有内容就返回空数组。',
           "章节数量随内容和时长决定；精彩片段只选择真正值得回看的内容；不要编造原文没有的信息。",
           `已有标记：${record.markerTitles.map((marker) => `${marker.markerId}@${marker.offsetMs}ms`).join(", ") || "无"}`,
           `录音：${path.basename(record.filePath)}`,
-          transcriptForPrompt(record, 12_000),
+          transcriptForPrompt(record, 6_000),
         ].join("\n"),
       });
+      const normalized = normalizeOrganizedResult(result, record);
       return this.save({
         ...record,
-        summary: Array.isArray(result.summary) ? result.summary : [],
-        chapters: Array.isArray(result.chapters) ? result.chapters : [],
-        highlights: Array.isArray(result.highlights) ? result.highlights : [],
-        markerTitles: Array.isArray(result.markerTitles)
-          ? result.markerTitles
-          : record.markerTitles,
+        summary: normalized.summary,
+        chapters: normalized.chapters,
+        highlights: normalized.highlights,
+        markerTitles:
+          normalized.markerTitles.length > 0 ? normalized.markerTitles : record.markerTitles,
+        organizedAt: new Date().toISOString(),
         timeline: [
           ...record.timeline
             .filter((entry) => entry.kind === "marker")
             .map((entry) => ({
               ...entry,
               title:
-                (Array.isArray(result.markerTitles) ? result.markerTitles : []).find(
-                  (marker) => marker.markerId === entry.id,
-                )?.title ?? entry.title,
+                normalized.markerTitles.find((marker) => marker.markerId === entry.id)?.title ??
+                entry.title,
             })),
-          ...(Array.isArray(result.chapters) ? result.chapters : []).map((chapter) => ({
+          ...normalized.chapters.map((chapter) => ({
             id: chapter.id || randomUUID(),
             kind: "chapter" as const,
             offsetMs: chapter.startMs,
             title: chapter.title,
             detail: chapter.description,
           })),
-          ...(Array.isArray(result.highlights) ? result.highlights : []).map((highlight) => ({
+          ...normalized.highlights.map((highlight) => ({
             id: highlight.id || randomUUID(),
             kind: "highlight" as const,
             offsetMs: highlight.startMs,
@@ -872,9 +1117,14 @@ export class AiVoiceMemoryService {
   }
 
   private async refreshRuntimeStatus(): Promise<void> {
-    const status = await this.runtime.status();
-    this.models.setRuntimeStatus("vibevoice", status.vibevoice.ready, status.vibevoice.message);
-    this.models.setRuntimeStatus("qwen35-4b", status.qwen.ready, status.qwen.message);
+    const statuses = await this.runtime.modelRuntimeStatuses();
+    for (const [id, status] of Object.entries(statuses)) {
+      this.models.setRuntimeStatus(
+        id as "vibevoice" | "qwen3-asr-0.6b" | "paraformer-zh" | "qwen35-4b",
+        status.ready,
+        status.message,
+      );
+    }
   }
 
   private scheduleDeferredRetry(): void {
@@ -907,9 +1157,65 @@ export class AiVoiceMemoryService {
     return record;
   }
 
+  private createDiagnostic(
+    request: Pick<VoiceMemoryProcessRequest, "recordingId" | "filePath" | "taskId">,
+    status: VoiceMemoryTaskStatus,
+    stage: VoiceMemoryProcessingStage,
+    patch?: Partial<VoiceMemoryTaskDiagnostic>,
+  ): VoiceMemoryTaskDiagnostic {
+    return {
+      taskId: request.taskId ?? createTaskId(request.recordingId),
+      status,
+      stage,
+      fileName: path.basename(request.filePath),
+      updatedAt: new Date().toISOString(),
+      ...patch,
+    };
+  }
+
+  private async updateDiagnostic(
+    record: VoiceMemoryRecord,
+    request: Pick<VoiceMemoryProcessRequest, "recordingId" | "filePath" | "taskId">,
+    taskId: string,
+    stage: VoiceMemoryProcessingStage,
+    status: VoiceMemoryTaskStatus,
+    patch?: Partial<VoiceMemoryTaskDiagnostic>,
+  ): Promise<VoiceMemoryRecord> {
+    const diagnostic = this.createDiagnostic({ ...request, taskId }, status, stage, patch);
+    this.lastTask = diagnostic;
+    this.log("info", "AI pipeline stage", {
+      taskId,
+      recordingId: request.recordingId,
+      stage,
+      status,
+      fileName: diagnostic.fileName,
+      inputFormat: diagnostic.inputFormat,
+      asrInputFormat: diagnostic.asrInputFormat,
+    });
+    return this.save({
+      ...record,
+      taskId,
+      taskStatus: status,
+      processingStage: stage,
+      diagnostic,
+    });
+  }
+
+  private errorCode(error: unknown): string {
+    return classifyLocalModelRuntimeError(error);
+  }
+
   private async save(record: VoiceMemoryRecord): Promise<VoiceMemoryRecord> {
     if (this.deletedRecordings.has(record.recordingId)) throw new Error("voice_memory_deleted");
     const saved = await this.store.save(record);
+    if (saved.diagnostic) this.lastTask = saved.diagnostic;
+    this.log("info", "AI pipeline stage", {
+      taskId: saved.taskId,
+      recordingId: saved.recordingId,
+      stage: saved.processingStage ?? "storage",
+      status: saved.taskStatus,
+      storage: "success",
+    });
     for (const listener of this.listeners) listener(saved);
     return saved;
   }

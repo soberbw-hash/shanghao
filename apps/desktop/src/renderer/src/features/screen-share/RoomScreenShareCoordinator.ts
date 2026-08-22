@@ -18,7 +18,9 @@ import {
   type ScreenSharePipelineSnapshot,
 } from "./ScreenSharePipelineController";
 
-const SCREEN_FRAME_INTERVAL_MS = 750;
+// Four relay frames per second keeps the fallback usable while the relay's
+// single-flight capture prevents JPEG/IPC work from overlapping.
+const SCREEN_FRAME_INTERVAL_MS = 250;
 const SCREEN_DIAGNOSTICS_INTERVAL_MS = 2_000;
 const SCREEN_TRACK_RECOVERY_DELAY_MS = 1_500;
 

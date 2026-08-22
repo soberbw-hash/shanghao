@@ -48,6 +48,8 @@ test("flight recorder is bounded and removes private log context", () => {
 
 test("runtime health uses real Electron and animation-frame measurements", () => {
   const mainHealth = readDesktop("src/main/runtime-health.ts");
+  const appSource = readDesktop("src/renderer/src/app/App.tsx");
+  const settingsSource = readDesktop("src/renderer/src/pages/SettingsPage.tsx");
   const rendererMonitor = readDesktop(
     "src/renderer/src/features/diagnostics/rendererPerformanceMonitor.ts",
   );
@@ -61,6 +63,9 @@ test("runtime health uses real Electron and animation-frame measurements", () =>
   assert.match(rendererMonitor, /displayRefreshRateService\.getRefreshRateHz/);
   assert.match(rendererMonitor, /frameTimeP99Ms/);
   assert.doesNotMatch(rendererMonitor, /actualFps:\s*120/);
+  assert.doesNotMatch(appSource, /rendererPerformanceMonitor\.start\(\)/);
+  assert.match(settingsSource, /rendererPerformanceMonitor\.start\(\)/);
+  assert.match(settingsSource, /stopPerformanceMonitor\(\)/);
 });
 
 test("diagnostic IPC and bundle expose health without ordinary fault-lab UI", () => {

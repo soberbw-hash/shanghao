@@ -716,8 +716,8 @@
 }
 
 .settings-page-header {
-  min-height: 64px;
-  padding: 4px 2px 8px;
+  min-height: 48px;
+  padding: 0 2px 2px;
 }
 
 .settings-page-eyebrow {
@@ -730,6 +730,18 @@
 
 .settings-page-title {
   color: #172235;
+}
+
+.settings-page-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.settings-save-notice {
+  color: #7c8da2;
+  font-size: 12px;
+  white-space: nowrap;
 }
 
 .settings-back-button {

@@ -30,6 +30,12 @@ export interface ScheduledAiDecision {
   resourceMode: "low" | "normal";
 }
 
+export interface BackgroundDownloadDecision {
+  defer: boolean;
+  bytesPerSecond: number;
+  reason?: string;
+}
+
 const initialPressure = (): AiRuntimePressure => ({
   inVoiceRoom: false,
   screenSharing: false,
@@ -94,6 +100,25 @@ export class ResourceScheduler {
     if (this.state.gameActive || this.state.pressure.inVoiceRoom)
       return GAMING_DOWNLOAD_BYTES_PER_SECOND;
     return NORMAL_DOWNLOAD_BYTES_PER_SECOND;
+  }
+
+  backgroundDownloadDecision(): BackgroundDownloadDecision {
+    const bytesPerSecond = this.downloadBytesPerSecond();
+    if (this.state.realtimePressureHigh)
+      return {
+        defer: true,
+        bytesPerSecond,
+        reason: this.state.pressureReason ?? "realtime_pressure",
+      };
+    if (this.state.pressure.peerRecovering)
+      return { defer: true, bytesPerSecond, reason: "peer_recovery" };
+    if (this.state.pressure.inVoiceRoom && this.state.pressure.screenSharing)
+      return { defer: true, bytesPerSecond, reason: "voice_and_screen_share" };
+    return {
+      defer: false,
+      bytesPerSecond,
+      reason: this.state.gameActive || this.state.pressure.inVoiceRoom ? "reduced_rate" : undefined,
+    };
   }
 
   shouldReleaseQwen(): { release: boolean; reason?: string } {

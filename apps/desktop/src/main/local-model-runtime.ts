@@ -1,4 +1,4 @@
-export type LocalModelRuntimeId = "vibevoice" | "qwen35-4b";
+export type LocalModelRuntimeId = "vibevoice" | "qwen3-asr-0.6b" | "paraformer-zh" | "qwen35-4b";
 
 export type LocalModelRuntimePhase =
   "missing" | "stopped" | "preparing" | "loading" | "ready" | "running" | "paused" | "error";
@@ -7,6 +7,7 @@ export type LocalModelRuntimeErrorCode =
   | "model_missing"
   | "runtime_missing"
   | "dll_missing"
+  | "ffmpeg_missing"
   | "ffmpeg_failed"
   | "wav_invalid"
   | "spawn_failed"
@@ -72,6 +73,7 @@ export const classifyLocalModelRuntimeError = (error: unknown): LocalModelRuntim
   if (error instanceof LocalModelRuntimeError) return error.code;
   const message = error instanceof Error ? error.message : String(error);
   if (/model.*not_installed|model.*missing/i.test(message)) return "model_missing";
+  if (/ffmpeg.*missing|ffmpeg.*unavailable/i.test(message)) return "ffmpeg_missing";
   if (/ffmpeg/i.test(message)) return "ffmpeg_failed";
   if (/invalid_transcription_wav|unsupported_transcription_wav/i.test(message))
     return "wav_invalid";

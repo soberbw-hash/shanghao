@@ -1,4 +1,4 @@
-import type { AiProcessingMode } from "./ai.types";
+import type { AiAsrModelId, AiProcessingMode } from "./ai.types";
 import type { WeatherEffectMode, WeatherLocationMode } from "./weather.types";
 
 export type MicMonitorMode = "processed" | "raw";
@@ -33,6 +33,8 @@ export interface AppSettings {
   recordingMarkerShortcut: string;
   recordingSaveDirectory?: string;
   recordingLibraryQuotaGb: number;
+  isRecordingWasteAutoCleanupEnabled: boolean;
+  aiAsrModel: AiAsrModelId;
   aiProcessingMode: AiProcessingMode;
   isAiAutoTranscribeEnabled: boolean;
   isAiAutoOrganizeEnabled: boolean;

@@ -89,7 +89,10 @@ test("runtime health distinguishes a missing native DLL from a missing model", a
   ]);
   const runtime = new AiRuntimeManager(runtimeRoot, {
     vibevoice: () => modelRoot,
+    qwen3Asr: () => undefined,
+    paraformer: () => undefined,
     qwen: () => undefined,
+    activeAsr: () => "vibevoice",
   });
   try {
     assert.equal((await runtime.status()).vibevoice.ready, true);

@@ -1,7 +1,10 @@
-import { mkdir, writeFile } from "node:fs/promises";
-import { dirname } from "node:path";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { dirname, extname } from "node:path";
 
 import type { BrowserWindow } from "electron";
+
+import { IPC_CHANNELS } from "@private-voice/shared";
+import type { GameDetectionSnapshot } from "@private-voice/shared";
 
 type CaptureMode =
   | "home"
@@ -15,6 +18,7 @@ type CaptureMode =
   | "screen-share"
   | "screen-share-expanded"
   | "settings"
+  | "settings-recording"
   | "settings-detail";
 
 interface CaptureUiOptions {
@@ -25,6 +29,59 @@ interface CaptureUiOptions {
 }
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+const readCaptureIconDataUrl = async (): Promise<string | undefined> => {
+  const iconPath = process.env.SHANGHAO_CAPTURE_WORK_ICON_PATH?.trim();
+  if (!iconPath) return undefined;
+  const mimeType =
+    {
+      ".jpg": "image/jpeg",
+      ".jpeg": "image/jpeg",
+      ".png": "image/png",
+      ".webp": "image/webp",
+    }[extname(iconPath).toLocaleLowerCase()] ?? "image/png";
+  const bytes = await readFile(iconPath);
+  return `data:${mimeType};base64,${bytes.toString("base64")}`;
+};
+
+const injectCapturePresence = async (window: BrowserWindow): Promise<void> => {
+  const gameName = process.env.SHANGHAO_CAPTURE_GAME_NAME?.trim();
+  const workName = process.env.SHANGHAO_CAPTURE_WORK_NAME?.trim();
+  if (!gameName && !workName) return;
+
+  const now = new Date().toISOString();
+  const snapshot: GameDetectionSnapshot = {
+    gameName: gameName as GameDetectionSnapshot["gameName"],
+    workActivity: workName
+      ? {
+          id: process.env.SHANGHAO_CAPTURE_WORK_ID?.trim() || "codex",
+          name: workName,
+          category: "development",
+          iconDataUrl: await readCaptureIconDataUrl(),
+        }
+      : undefined,
+    detectedAt: now,
+    checkedAt: now,
+  };
+  window.webContents.send(IPC_CHANNELS.games.detected, snapshot);
+
+  if (gameName) {
+    const found =
+      (await waitForVisibleSelector(window, `[aria-label="正在玩 ${gameName}"]`, 4_000)) ||
+      (await waitForVisibleSelector(window, ".scene-game-monitor-content--scene", 1_500));
+    if (!found) throw new Error(`视觉捕获没有呈现游戏状态：${gameName}`);
+  }
+  if (workName) {
+    const workId = snapshot.workActivity?.id ?? "codex";
+    const found = await waitForVisibleSelector(
+      window,
+      `.work-activity-badge[data-activity-id="${workId}"]`,
+      2_500,
+    );
+    if (!found) throw new Error(`视觉捕获没有呈现工作状态：${workName}`);
+  }
+  await sleep(650);
+};
 
 const dismissReleaseNotes = async (window: BrowserWindow, timeoutMs = 4_000): Promise<boolean> => {
   const deadline = Date.now() + timeoutMs;
@@ -321,9 +378,14 @@ export const captureUi = async (
     } else {
       await sleep(700);
     }
+    await injectCapturePresence(window);
   }
 
-  if (options.mode === "settings" || options.mode === "settings-detail") {
+  if (
+    options.mode === "settings" ||
+    options.mode === "settings-recording" ||
+    options.mode === "settings-detail"
+  ) {
     const isAlreadyOpen = await waitForVisibleSelector(window, ".settings-page-header", 3_000);
     const openedSettings = isAlreadyOpen || (await clickButtonByLabel(window, "设置"));
     if (!openedSettings || !(await waitForVisibleSelector(window, ".settings-page-header"))) {
@@ -335,8 +397,16 @@ export const captureUi = async (
         })}`,
       );
     }
-    await clickButtonByLabel(window, "更新");
-    await sleep(300);
+    if (options.mode === "settings-recording") {
+      await clickButtonByLabel(window, "录音库");
+      if (!(await waitForVisibleSelector(window, ".recording-library-utility-bar"))) {
+        throw new Error("录音库没有在预期时间内完成渲染");
+      }
+      await sleep(300);
+    } else {
+      await clickButtonByLabel(window, "更新");
+      await sleep(300);
+    }
     if (options.mode === "settings-detail") {
       await clickButtonByLabel(window, "查看详细信息");
       await sleep(300);

@@ -9,16 +9,7 @@ import { MICROPHONE_PROCESSING_SAMPLE_RATE } from "@private-voice/shared";
 import { DeepFilterNet3Core } from "deepfilternet3-noise-filter";
 
 import { FOURTH_ORDER_BUTTERWORTH_Q } from "./filterMath";
-import {
-  advanceSpeechProtection,
-  approachSuppressionLevel,
-  createSpeechProtectionState,
-} from "./speechProtection";
-import {
-  advanceVoiceProcessingState,
-  createVoiceProcessingState,
-  targetsForVoiceProcessingMode,
-} from "./voiceProcessingState";
+import { SPEECH_PROTECTION_HANGOVER_MS } from "./speechProtection";
 
 export const MICROPHONE_EQ_FREQUENCIES = [80, 250, 1_000, 4_000, 12_000] as const;
 
@@ -75,6 +66,190 @@ const DEEPFILTER_RAW_ALIGNMENT_SECONDS = 0.01;
 const PROCESSOR_CROSSFADE_SECONDS = 0.06;
 const SPEECH_MIX_ATTACK_SECONDS = 0.035;
 const SPEECH_MIX_RELEASE_SECONDS = 0.22;
+const PROTECTION_WORKLET_NAME = "shanghao-microphone-protection";
+const PROTECTION_ANALYSIS_FRAMES = 512;
+const PROTECTION_DIAGNOSTICS_INTERVAL_MS = 250;
+
+/**
+ * The protection path is deliberately an AudioWorklet.  It owns the audio
+ * clock, VAD/echo evidence and raw/processed crossfade so visual rendering
+ * cannot delay AEC-adjacent protection decisions.  The main thread receives
+ * low-rate diagnostics and only forwards DeepFilter level changes.
+ */
+const PROTECTION_WORKLET_SOURCE = `
+class ShangHaoMicrophoneProtection extends AudioWorkletProcessor {
+  constructor() {
+    super();
+    this.rawMix = 1;
+    this.processedMix = 0;
+    this.rawTarget = 1;
+    this.processedTarget = 0;
+    this.rawTimeConstant = 0.22;
+    this.processedTimeConstant = 0.22;
+    this.remoteLevel = 0;
+    this.previousRms = 0;
+    this.noiseFloor = 0.004;
+    this.protectionActive = false;
+    this.holdUntil = 0;
+    this.mode = "noise";
+    this.candidate = "noise";
+    this.candidateSince = 0;
+    this.modeHoldUntil = 0;
+    this.previousSuppression = 34;
+    this.frames = 0;
+    this.micHistory = [];
+    this.remoteHistory = [];
+    this.overruns = 0;
+    this.processingTotalMs = 0;
+    this.processingSamples = 0;
+    this.maxProcessingMs = 0;
+    this.port.onmessage = (event) => {
+      const message = event.data;
+      if (!message) return;
+      if (message.type === "remote-level") {
+        this.remoteLevel = Number.isFinite(message.level) ? Math.max(0, message.level) : 0;
+      } else if (message.type === "mix") {
+        this.rawTarget = Math.max(0, Math.min(1, message.raw));
+        this.processedTarget = Math.max(0, Math.min(1, message.processed));
+        this.rawTimeConstant = Math.max(0.008, message.timeConstant || 0.22);
+        this.processedTimeConstant = this.rawTimeConstant;
+      }
+    };
+  }
+
+  smooth(current, target, timeConstant) {
+    const coefficient = 1 - Math.exp(-128 / (sampleRate * Math.max(0.008, timeConstant)));
+    return current + (target - current) * coefficient;
+  }
+
+  classify(micRms, speechProbability, remoteLevel, echoCorrelation, now) {
+    const remoteActive = remoteLevel >= 0.018;
+    const nearSpeech = speechProbability >= 0.58 && micRms >= 0.006;
+    const echoLikely = remoteActive && echoCorrelation >= 0.48;
+    const candidate = nearSpeech && remoteActive
+      ? "double_talk"
+      : nearSpeech
+        ? "near_speech"
+        : echoLikely || remoteActive
+          ? "echo"
+          : "noise";
+    const candidateSince = candidate === this.candidate ? this.candidateSince : now;
+    const attackMs = candidate === "double_talk" || candidate === "near_speech" ? 35 : 110;
+    const canSwitch = candidate === this.mode || now - candidateSince >= attackMs;
+    const nextMode = canSwitch ? candidate : this.mode;
+    const holdUntil = nextMode === "double_talk" || nextMode === "near_speech"
+      ? Math.max(this.modeHoldUntil, now + 360)
+      : this.modeHoldUntil;
+    this.candidate = candidate;
+    this.candidateSince = candidateSince;
+    if (now >= this.modeHoldUntil || nextMode === "double_talk" || nextMode === "near_speech") {
+      this.mode = nextMode;
+      this.modeHoldUntil = holdUntil;
+    }
+    return this.mode;
+  }
+
+  process(inputs, outputs) {
+    const startedAt = globalThis.performance?.now?.() ?? 0;
+    const raw = inputs[0]?.[0];
+    const processed = inputs[1]?.[0];
+    const output = outputs[0]?.[0];
+    if (!output) return true;
+    let squareTotal = 0;
+    let zeroCrossings = 0;
+    for (let index = 0; index < output.length; index += 1) {
+      this.rawMix = this.smooth(this.rawMix, this.rawTarget, this.rawTimeConstant);
+      this.processedMix = this.smooth(this.processedMix, this.processedTarget, this.processedTimeConstant);
+      const rawSample = raw?.[index] ?? 0;
+      const processedSample = processed?.[index] ?? 0;
+      const sample = rawSample * this.rawMix + processedSample * this.processedMix;
+      output[index] = sample;
+      // Preserve the established protection input: measure filtered microphone
+      // audio, not the already mixed DeepFilter output.
+      squareTotal += rawSample * rawSample;
+      if (index > 0) {
+        const previous = raw?.[index - 1] ?? 0;
+        if (previous * rawSample < 0) zeroCrossings += 1;
+      }
+    }
+    this.frames += output.length;
+    if (this.frames >= ${PROTECTION_ANALYSIS_FRAMES}) {
+      this.frames = 0;
+      const rms = Math.sqrt(squareTotal / Math.max(1, output.length));
+      const zeroCrossingRate = zeroCrossings / Math.max(1, output.length);
+      const continuity = Math.min(1, rms / Math.max(0.002, Math.abs(rms - this.previousRms) * 4));
+      const speechProbability = Math.max(0, Math.min(1,
+        (rms - this.noiseFloor * 1.45) * 36
+          + continuity * 0.34
+          + (zeroCrossingRate > 0.02 && zeroCrossingRate < 0.28 ? 0.28 : 0)
+      ));
+      const now = currentTime * 1000;
+      if (!this.protectionActive && rms < Math.max(0.025, this.noiseFloor * 3.2)) {
+        this.noiseFloor += (rms - this.noiseFloor) * 0.018;
+      }
+      const openThreshold = Math.max(0.007, Math.min(0.06, this.noiseFloor * 2.4 + 0.003));
+      const closeThreshold = Math.max(0.0045, openThreshold * 0.55);
+      const voiceDetected = this.protectionActive ? rms >= closeThreshold : rms >= openThreshold;
+      if (voiceDetected) this.holdUntil = now + ${SPEECH_PROTECTION_HANGOVER_MS};
+      this.protectionActive = voiceDetected || now < this.holdUntil;
+      this.micHistory.push(rms);
+      this.remoteHistory.push(this.remoteLevel);
+      if (this.micHistory.length > 14) this.micHistory.shift();
+      if (this.remoteHistory.length > 14) this.remoteHistory.shift();
+      let micMean = 0;
+      let remoteMean = 0;
+      for (let index = 0; index < this.micHistory.length; index += 1) {
+        micMean += this.micHistory[index] ?? 0;
+        remoteMean += this.remoteHistory[index] ?? 0;
+      }
+      micMean /= Math.max(1, this.micHistory.length);
+      remoteMean /= Math.max(1, this.remoteHistory.length);
+      let covariance = 0;
+      let micVariance = 0;
+      let remoteVariance = 0;
+      for (let index = 0; index < this.micHistory.length; index += 1) {
+        const micDelta = (this.micHistory[index] ?? 0) - micMean;
+        const remoteDelta = (this.remoteHistory[index] ?? 0) - remoteMean;
+        covariance += micDelta * remoteDelta;
+        micVariance += micDelta * micDelta;
+        remoteVariance += remoteDelta * remoteDelta;
+      }
+      const echoCorrelation = this.remoteLevel > 0.002 && this.micHistory.length >= 6
+        ? Math.max(0, Math.min(1, covariance / Math.sqrt(Math.max(1e-9, micVariance * remoteVariance))))
+        : 0;
+      const mode = this.classify(rms, speechProbability, this.remoteLevel, echoCorrelation, now);
+      const targetSuppression = mode === "near_speech" || mode === "double_talk" ? 24 : 34;
+      const rawTarget = mode === "near_speech" ? 0.12 : mode === "double_talk" ? 0.16 : 0;
+      const suppressionSmoothing = this.protectionActive ? 0.68 : 0.12;
+      this.previousSuppression += (targetSuppression - this.previousSuppression) * suppressionSmoothing;
+      const processingMs = (globalThis.performance?.now?.() ?? startedAt) - startedAt;
+      const deadlineMs = output.length * 1000 / sampleRate;
+      if (processingMs > deadlineMs) this.overruns += 1;
+      this.processingTotalMs += processingMs;
+      this.processingSamples += 1;
+      this.maxProcessingMs = Math.max(this.maxProcessingMs, processingMs);
+      this.previousRms = rms;
+      this.port.postMessage({
+        type: "analysis",
+        rms,
+        speechProbability,
+        remoteLevel: this.remoteLevel,
+        echoCorrelation,
+        mode,
+        protectionActive: this.protectionActive,
+        rawMix: this.rawMix,
+        processedMix: this.processedMix,
+        targetSuppression: Math.round(this.previousSuppression),
+        processorOverruns: this.overruns,
+        averageProcessingMs: this.processingTotalMs / Math.max(1, this.processingSamples),
+        maxProcessingMs: this.maxProcessingMs,
+      });
+    }
+    return true;
+  }
+}
+registerProcessor("${PROTECTION_WORKLET_NAME}", ShangHaoMicrophoneProtection);
+`;
 
 let deepFilterAssetsPromise: Promise<DeepFilterAssets> | undefined;
 
@@ -140,6 +315,23 @@ const createDeepFilterNode = async (context: AudioContext): Promise<DeepFilterNo
     core.destroy();
     throw error;
   }
+};
+
+const createProtectionWorkletNode = async (context: AudioContext): Promise<AudioWorkletNode> => {
+  if (!context.audioWorklet) throw new Error("audio_worklet_unavailable");
+  const moduleUrl = URL.createObjectURL(
+    new Blob([PROTECTION_WORKLET_SOURCE], { type: "text/javascript" }),
+  );
+  try {
+    await context.audioWorklet.addModule(moduleUrl);
+  } finally {
+    URL.revokeObjectURL(moduleUrl);
+  }
+  return new AudioWorkletNode(context, PROTECTION_WORKLET_NAME, {
+    numberOfInputs: 2,
+    numberOfOutputs: 1,
+    outputChannelCount: [1],
+  });
 };
 
 export const normalizeEqualizerGains = (gains?: number[]): MicEqualizerGains =>
@@ -312,32 +504,27 @@ export const createProcessedMicrophoneStream = async (
   } else {
     filtered.connect(rawGain);
   }
-  rawGain.connect(blendBus);
+  if (!settings.isNoiseSuppressionEnabled) rawGain.connect(blendBus);
 
   let disposed = false;
   let activeProcessor: DeepFilterNodeResult | undefined;
   let processedGain: GainNode | undefined;
-  let protectionAnalyser: AnalyserNode | undefined;
-  let protectionSilentGain: GainNode | undefined;
-  let protectionFrameId = 0;
-  let protectionState = createSpeechProtectionState();
-  let voiceProcessingState = createVoiceProcessingState();
-  let previousMicRms = 0;
-  let previousProcessingMode = voiceProcessingState.mode;
-  const micLevelHistory: number[] = [];
-  const remoteLevelHistory: number[] = [];
+  let protectionWorklet: AudioWorkletNode | undefined;
+  let remoteReferenceTimer: number | undefined;
   let currentSuppressionLevel = DEEPFILTER_BASE_SUPPRESSION_LEVEL;
   let lastAppliedSuppressionLevel = DEEPFILTER_BASE_SUPPRESSION_LEVEL;
+  let lastPublishedDiagnosticsAt = 0;
   const diagnosticsListeners = new Set<
     (diagnostics: ProcessedMicrophoneStream["processorDiagnostics"]) => void
   >();
-  const publishDiagnostics = () => {
+  const publishDiagnostics = (force = false) => {
+    const now = performance.now();
+    if (!force && now - lastPublishedDiagnosticsAt < PROTECTION_DIAGNOSTICS_INTERVAL_MS) return;
+    lastPublishedDiagnosticsAt = now;
     const snapshot = { ...processorDiagnostics };
     for (const listener of diagnosticsListeners) listener(snapshot);
   };
   const setMix = (protectingSpeech: boolean, immediate = false, rawTargetOverride?: number) => {
-    if (!processedGain) return;
-    const now = context.currentTime;
     const timeConstant = immediate
       ? 0.008
       : protectingSpeech
@@ -345,10 +532,20 @@ export const createProcessedMicrophoneStream = async (
         : SPEECH_MIX_RELEASE_SECONDS;
     const rawTarget = rawTargetOverride ?? (protectingSpeech ? SPEECH_RAW_MIX : 0);
     const processedTarget = Math.max(0, 1 - rawTarget);
-    rawGain.gain.cancelScheduledValues(now);
-    processedGain.gain.cancelScheduledValues(now);
-    rawGain.gain.setTargetAtTime(rawTarget, now, timeConstant);
-    processedGain.gain.setTargetAtTime(processedTarget, now, timeConstant);
+    if (protectionWorklet) {
+      protectionWorklet.port.postMessage({
+        type: "mix",
+        raw: rawTarget,
+        processed: processedTarget,
+        timeConstant,
+      });
+    } else if (processedGain) {
+      const now = context.currentTime;
+      rawGain.gain.cancelScheduledValues(now);
+      processedGain.gain.cancelScheduledValues(now);
+      rawGain.gain.setTargetAtTime(rawTarget, now, timeConstant);
+      processedGain.gain.setTargetAtTime(processedTarget, now, timeConstant);
+    }
     processorDiagnostics.rawProcessedMix = { raw: rawTarget, processed: processedTarget };
   };
   const fallbackToRaw = (reason: string) => {
@@ -357,8 +554,17 @@ export const createProcessedMicrophoneStream = async (
     processorDiagnostics.speechProtection = "inactive";
     processorDiagnostics.currentSuppressionLevel = undefined;
     processorDiagnostics.rawProcessedMix = { raw: 1, processed: 0 };
-    if (processedGain) crossfade(context, processedGain, rawGain);
-    publishDiagnostics();
+    if (protectionWorklet) {
+      protectionWorklet.port.postMessage({
+        type: "mix",
+        raw: 1,
+        processed: 0,
+        timeConstant: PROCESSOR_CROSSFADE_SECONDS,
+      });
+    } else if (processedGain) {
+      crossfade(context, processedGain, rawGain);
+    }
+    publishDiagnostics(true);
     resolveReady?.({ ...processorDiagnostics });
     resolveReady = undefined;
     announceDeepFilterUnavailable(reason);
@@ -370,6 +576,87 @@ export const createProcessedMicrophoneStream = async (
   });
 
   if (settings.isNoiseSuppressionEnabled) {
+    try {
+      protectionWorklet = await createProtectionWorkletNode(context);
+      rawGain.connect(protectionWorklet, 0, 0);
+      protectionWorklet.connect(blendBus);
+      protectionWorklet.port.postMessage({
+        type: "mix",
+        raw: 1,
+        processed: 0,
+        timeConstant: 0.008,
+      });
+      remoteReferenceTimer = window.setInterval(() => {
+        if (disposed || !protectionWorklet) return;
+        protectionWorklet.port.postMessage({
+          type: "remote-level",
+          level: Math.max(0, settings.getRemoteReferenceLevel?.() ?? 0),
+        });
+      }, 50);
+      protectionWorklet.port.onmessage = (event: MessageEvent) => {
+        if (disposed || event.data?.type !== "analysis") return;
+        const analysis = event.data as {
+          speechProbability: number;
+          remoteLevel: number;
+          echoCorrelation: number;
+          mode: "noise" | "echo" | "near_speech" | "double_talk";
+          protectionActive: boolean;
+          rawMix: number;
+          processedMix: number;
+          targetSuppression: number;
+          processorOverruns: number;
+          averageProcessingMs: number;
+          maxProcessingMs: number;
+        };
+        const modeChanged = processorDiagnostics.processingMode !== analysis.mode;
+        const protectionChanged =
+          processorDiagnostics.speechProtection !==
+          (analysis.protectionActive ? "active" : "inactive");
+        processorDiagnostics.voiceActivity =
+          analysis.speechProbability >= 0.58 ? "active" : "inactive";
+        processorDiagnostics.processingMode = analysis.mode;
+        processorDiagnostics.doubleTalkDetected = analysis.mode === "double_talk";
+        processorDiagnostics.remoteEchoDetected = analysis.mode === "echo";
+        processorDiagnostics.speechProbability = analysis.speechProbability;
+        processorDiagnostics.remoteReferenceLevel = analysis.remoteLevel;
+        processorDiagnostics.speechProtection = analysis.protectionActive ? "active" : "inactive";
+        processorDiagnostics.rawProcessedMix = {
+          raw: analysis.rawMix,
+          processed: analysis.processedMix,
+        };
+        processorDiagnostics.processorOverruns = analysis.processorOverruns;
+        processorDiagnostics.averageProcessingMs = analysis.averageProcessingMs;
+        processorDiagnostics.maxProcessingMs = analysis.maxProcessingMs;
+        currentSuppressionLevel = analysis.targetSuppression;
+        if (naturalEnhancer.presence && naturalEnhancer.airRestraint) {
+          const now = context.currentTime;
+          const nearVoice = analysis.speechProbability >= 0.58;
+          naturalEnhancer.presence.gain.setTargetAtTime(nearVoice ? 0.7 : 0.2, now, 0.08);
+          naturalEnhancer.airRestraint.gain.setTargetAtTime(
+            analysis.mode === "echo" ? -1.4 : nearVoice ? -0.45 : -0.9,
+            now,
+            0.1,
+          );
+        }
+        if (activeProcessor && analysis.targetSuppression !== lastAppliedSuppressionLevel) {
+          try {
+            activeProcessor.core.setSuppressionLevel(analysis.targetSuppression);
+            lastAppliedSuppressionLevel = analysis.targetSuppression;
+            processorDiagnostics.currentSuppressionLevel = analysis.targetSuppression;
+          } catch {
+            fallbackToRaw("suppression_update_failed");
+            return;
+          }
+        }
+        publishDiagnostics(modeChanged || protectionChanged);
+      };
+    } catch {
+      // Chromium/Electron versions without AudioWorklet keep the established
+      // direct graph; the DeepFilter failure path still preserves raw audio.
+      protectionWorklet = undefined;
+      rawGain.connect(blendBus);
+    }
+
     void createDeepFilterNode(context)
       .then((processor) => {
         if (disposed) {
@@ -378,27 +665,20 @@ export const createProcessedMicrophoneStream = async (
         }
 
         const gain = context.createGain();
-        gain.gain.value = 0;
+        gain.gain.value = protectionWorklet ? 1 : 0;
         filtered.connect(processor.node);
         processor.node.connect(gain);
-        gain.connect(blendBus);
+        if (protectionWorklet) gain.connect(protectionWorklet, 0, 1);
+        else gain.connect(blendBus);
         activeProcessor = processor;
         processedGain = gain;
         processorDiagnostics.noiseProcessor = "deepfilter_active";
-        processorDiagnostics.speechProtection = protectionState.active ? "active" : "inactive";
-        currentSuppressionLevel = protectionState.active
-          ? DEEPFILTER_SPEECH_SUPPRESSION_LEVEL
-          : DEEPFILTER_BASE_SUPPRESSION_LEVEL;
+        currentSuppressionLevel = DEEPFILTER_BASE_SUPPRESSION_LEVEL;
         lastAppliedSuppressionLevel = Math.round(currentSuppressionLevel);
         processor.core.setSuppressionLevel(lastAppliedSuppressionLevel);
-        if (protectionState.active) {
-          setMix(true, true);
-        } else {
-          crossfade(context, rawGain, gain);
-          processorDiagnostics.rawProcessedMix = { raw: 0, processed: 1 };
-        }
+        setMix(false, true);
         processorDiagnostics.currentSuppressionLevel = lastAppliedSuppressionLevel;
-        publishDiagnostics();
+        publishDiagnostics(true);
         resolveReady?.({ ...processorDiagnostics });
         resolveReady = undefined;
 
@@ -410,123 +690,6 @@ export const createProcessedMicrophoneStream = async (
         if (disposed) return;
         fallbackToRaw(error instanceof Error ? error.message : "processor_initialization_failed");
       });
-
-    protectionAnalyser = context.createAnalyser();
-    protectionAnalyser.fftSize = 512;
-    protectionAnalyser.smoothingTimeConstant = 0;
-    protectionSilentGain = context.createGain();
-    protectionSilentGain.gain.value = 0;
-    filtered.connect(protectionAnalyser);
-    protectionAnalyser.connect(protectionSilentGain);
-    protectionSilentGain.connect(outputGain);
-    const samples = new Float32Array(protectionAnalyser.fftSize);
-    const updateProtection = () => {
-      if (disposed || !protectionAnalyser) return;
-      protectionAnalyser.getFloatTimeDomainData(samples);
-      let squareTotal = 0;
-      for (const sample of samples) squareTotal += sample * sample;
-      const rms = Math.sqrt(squareTotal / Math.max(1, samples.length));
-      let zeroCrossings = 0;
-      for (let index = 1; index < samples.length; index += 1) {
-        if ((samples[index - 1] ?? 0) * (samples[index] ?? 0) < 0) zeroCrossings += 1;
-      }
-      const zeroCrossingRate = zeroCrossings / samples.length;
-      const continuity = Math.min(1, rms / Math.max(0.002, Math.abs(rms - previousMicRms) * 4));
-      const speechProbability = Math.max(
-        0,
-        Math.min(
-          1,
-          (rms - protectionState.noiseFloor * 1.45) * 36 +
-            continuity * 0.34 +
-            (zeroCrossingRate > 0.02 && zeroCrossingRate < 0.28 ? 0.28 : 0),
-        ),
-      );
-      const remoteLevel = Math.max(0, settings.getRemoteReferenceLevel?.() ?? 0);
-      micLevelHistory.push(rms);
-      remoteLevelHistory.push(remoteLevel);
-      if (micLevelHistory.length > 14) micLevelHistory.shift();
-      if (remoteLevelHistory.length > 14) remoteLevelHistory.shift();
-      const micMean =
-        micLevelHistory.reduce((sum, value) => sum + value, 0) / micLevelHistory.length;
-      const remoteMean =
-        remoteLevelHistory.reduce((sum, value) => sum + value, 0) / remoteLevelHistory.length;
-      let covariance = 0;
-      let micVariance = 0;
-      let remoteVariance = 0;
-      for (let index = 0; index < micLevelHistory.length; index += 1) {
-        const micDelta = (micLevelHistory[index] ?? 0) - micMean;
-        const remoteDelta = (remoteLevelHistory[index] ?? 0) - remoteMean;
-        covariance += micDelta * remoteDelta;
-        micVariance += micDelta * micDelta;
-        remoteVariance += remoteDelta * remoteDelta;
-      }
-      const echoCorrelation =
-        remoteLevel > 0.002 && micLevelHistory.length >= 6
-          ? Math.max(
-              0,
-              Math.min(1, covariance / Math.sqrt(Math.max(1e-9, micVariance * remoteVariance))),
-            )
-          : 0;
-      previousMicRms = rms;
-      voiceProcessingState = advanceVoiceProcessingState(voiceProcessingState, {
-        micRms: rms,
-        speechProbability,
-        remoteLevel,
-        echoCorrelation,
-        now: performance.now(),
-      });
-      const targets = targetsForVoiceProcessingMode(voiceProcessingState.mode);
-      processorDiagnostics.voiceActivity = speechProbability >= 0.58 ? "active" : "inactive";
-      processorDiagnostics.processingMode = voiceProcessingState.mode;
-      processorDiagnostics.doubleTalkDetected = voiceProcessingState.mode === "double_talk";
-      processorDiagnostics.remoteEchoDetected = voiceProcessingState.mode === "echo";
-      processorDiagnostics.speechProbability = speechProbability;
-      processorDiagnostics.remoteReferenceLevel = remoteLevel;
-      if (naturalEnhancer.presence && naturalEnhancer.airRestraint) {
-        const now = context.currentTime;
-        const nearVoice = speechProbability >= 0.58;
-        naturalEnhancer.presence.gain.setTargetAtTime(nearVoice ? 0.7 : 0.2, now, 0.08);
-        naturalEnhancer.airRestraint.gain.setTargetAtTime(
-          voiceProcessingState.mode === "echo" ? -1.4 : nearVoice ? -0.45 : -0.9,
-          now,
-          0.1,
-        );
-      }
-      const previousActive = protectionState.active;
-      protectionState = advanceSpeechProtection(protectionState, rms, performance.now());
-
-      const processingModeChanged = previousProcessingMode !== voiceProcessingState.mode;
-      previousProcessingMode = voiceProcessingState.mode;
-      if (previousActive !== protectionState.active || processingModeChanged) {
-        processorDiagnostics.speechProtection = protectionState.active ? "active" : "inactive";
-        const protectsNearVoice =
-          protectionState.active ||
-          voiceProcessingState.mode === "near_speech" ||
-          voiceProcessingState.mode === "double_talk";
-        setMix(protectsNearVoice, false, targets.rawMix);
-        publishDiagnostics();
-      }
-
-      const targetSuppression = targets.suppression;
-      currentSuppressionLevel = approachSuppressionLevel(
-        currentSuppressionLevel,
-        targetSuppression,
-        protectionState.active,
-      );
-      const nextSuppressionLevel = Math.round(currentSuppressionLevel);
-      if (activeProcessor && nextSuppressionLevel !== lastAppliedSuppressionLevel) {
-        try {
-          activeProcessor.core.setSuppressionLevel(nextSuppressionLevel);
-          lastAppliedSuppressionLevel = nextSuppressionLevel;
-          processorDiagnostics.currentSuppressionLevel = nextSuppressionLevel;
-          publishDiagnostics();
-        } catch {
-          fallbackToRaw("suppression_update_failed");
-        }
-      }
-      protectionFrameId = window.requestAnimationFrame(updateProtection);
-    };
-    updateProtection();
   } else {
     resolveReady?.({ ...processorDiagnostics });
     resolveReady = undefined;
@@ -554,15 +717,15 @@ export const createProcessedMicrophoneStream = async (
       resolveReady?.({ ...processorDiagnostics });
       resolveReady = undefined;
       diagnosticsListeners.clear();
-      window.cancelAnimationFrame(protectionFrameId);
+      if (remoteReferenceTimer !== undefined) window.clearInterval(remoteReferenceTimer);
+      remoteReferenceTimer = undefined;
       if (activeProcessor) {
         activeProcessor.node.onprocessorerror = null;
         activeProcessor.node.disconnect();
         activeProcessor.core.destroy();
       }
       processedGain?.disconnect();
-      protectionAnalyser?.disconnect();
-      protectionSilentGain?.disconnect();
+      protectionWorklet?.disconnect();
       rawDelay?.disconnect();
       rawGain.disconnect();
       blendBus.disconnect();

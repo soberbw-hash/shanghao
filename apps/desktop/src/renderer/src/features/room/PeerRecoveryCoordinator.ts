@@ -9,6 +9,7 @@ interface PeerRecoveryCoordinatorOptions {
   roomId: string;
   peers: Map<string, MeshPeerConnection>;
   remotePeerIds: Set<string>;
+  connectedPeerIds: Set<string>;
   readyPeerIds: Set<string>;
   operationQueue: PeerOperationQueue;
   canRecover: () => boolean;
@@ -45,7 +46,7 @@ export class PeerRecoveryCoordinator {
       this.watchdogs.delete(peerId);
       if (
         this.options.peers.get(peerId) === peer &&
-        !this.options.readyPeerIds.has(peerId) &&
+        !this.options.connectedPeerIds.has(peerId) &&
         this.options.remotePeerIds.has(peerId)
       ) {
         this.schedule(peerId, "connection_timeout");

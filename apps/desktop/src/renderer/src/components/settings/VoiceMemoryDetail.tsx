@@ -1,5 +1,14 @@
 import { useEffect, useMemo, useState } from "react";
-import { BrainCircuit, ChevronDown, Eye, Pause, Play, RotateCcw, Sparkles } from "lucide-react";
+import {
+  BrainCircuit,
+  ChevronDown,
+  Eye,
+  FileText,
+  Pause,
+  Play,
+  RotateCcw,
+  Sparkles,
+} from "lucide-react";
 
 import {
   hasInvalidVoiceMemoryResult,
@@ -32,26 +41,52 @@ const transcriptionPercent = (record: VoiceMemoryRecord): number =>
 
 const describeError = (message: string, transcriptionFinished: boolean): string => {
   if (message.includes("no_reliable_speech")) {
-    return "没有检测到可用人声。这条录音可能接近静音，可以用“清理录音”检查后再决定是否删除。";
+    return "没有检测到可靠的中文语音；模型返回的其他语言结果已被拦截，请重新转录。";
   }
-  if (message.includes("model_vibevoice_not_installed")) return "需要先下载 VibeVoice 模型。";
+  if (message.includes("model_vibevoice_not_installed"))
+    return "当前选择的 VibeVoice 转录模型还没有下载。";
+  if (message.includes("model_qwen3-asr-0.6b_not_installed"))
+    return "当前选择的 Qwen3-ASR 转录模型还没有下载。";
+  if (message.includes("model_paraformer-zh_not_installed"))
+    return "当前选择的 Paraformer 中文套件还没有下载。";
+  if (message.includes("_runtime_not_ready"))
+    return "当前转录模型的运行组件还没有准备好，请到“AI 功能”中修复组件。";
+  if (message.includes("ffmpeg_missing"))
+    return "找不到 FFmpeg，无法把录音转换为 ASR 输入格式。请重新安装当前版本。";
+  if (message.includes("ffmpeg_failed")) return "音频格式转换失败：" + message;
+  if (message.includes("wav_invalid") || message.includes("unsupported_transcription_wav")) {
+    return "ASR 输入 WAV 格式不兼容：" + message;
+  }
+  if (message.includes("dll_missing") || message.includes("0xc0000135")) {
+    return "ASR 运行库缺失：" + message;
+  }
+  if (message.includes("ai_runtime_spawn_failed")) return "AI 进程启动失败：" + message;
   if (message.includes("vibevoice_runtime_unavailable")) return "转录运行环境还没有准备好。";
   if (message.includes("ai_runtime_exit")) {
     return transcriptionFinished
       ? "文字已经转好，自动整理没有完成，可以重新整理。"
       : "上次转录没有完成，可以直接重试。";
   }
+  if (message.includes("qwen_worker_timeout")) {
+    return "本地千问整理耗时较长，已超过本次等待时间；转录文字已经保留，请稍后重新整理。";
+  }
+  if (message.includes("manual_required:long_recording")) {
+    return "这条录音超过 30 分钟，为避免无人操作时长期占用电脑，已停止自动转录。需要时请点“继续”。";
+  }
+  if (message.includes("ai_task_paused")) return "任务已暂停，需要时可以继续处理。";
+  if (message.includes("voice_memory_transcript_required")) return "请先完成转录，再整理内容。";
   if (message.includes("organize_failed") || message.includes("ai_runtime_timeout")) {
     return "转录文字已经保留，本地整理没有完成；你仍然可以直接查看文字，稍后再点重新整理。";
   }
   if (message.includes("recording_file_unavailable")) return "录音文件已被移动或无法读取。";
-  return "转录没有完成，可以直接重试。";
+  return message ? "转录没有完成：" + message : "转录没有完成，可以直接重试。";
 };
 
 /** Presents one recording as a linked transcript, timeline and summary. */
 export const VoiceMemoryDetail = ({ recording, roomName, onSeek }: VoiceMemoryDetailProps) => {
   const [record, setRecord] = useState<VoiceMemoryRecord>();
   const [busy, setBusy] = useState(false);
+  const [queuedAction, setQueuedAction] = useState<"transcribe" | "organize">();
   const [error, setError] = useState<string>();
   const [speakerNames, setSpeakerNames] = useState<Record<string, string>>({});
   const [detailsOpen, setDetailsOpen] = useState(false);
@@ -59,6 +94,7 @@ export const VoiceMemoryDetail = ({ recording, roomName, onSeek }: VoiceMemoryDe
   useEffect(() => {
     let active = true;
     setRecord(undefined);
+    setQueuedAction(undefined);
     setDetailsOpen(false);
     void window.desktopApi.ai.getVoiceMemory(recording.recordingId).then((value) => {
       if (!active) return;
@@ -75,6 +111,15 @@ export const VoiceMemoryDetail = ({ recording, roomName, onSeek }: VoiceMemoryDe
       if (active && value.recordingId === recording.recordingId) {
         setRecord(value);
         if (value.phase === "transcribing" || value.phase === "organizing") setDetailsOpen(true);
+        if (
+          value.phase === "transcribing" ||
+          value.phase === "organizing" ||
+          value.phase === "ready" ||
+          value.phase === "error" ||
+          value.phase === "paused"
+        ) {
+          setQueuedAction(undefined);
+        }
       }
     });
     return () => {
@@ -83,27 +128,46 @@ export const VoiceMemoryDetail = ({ recording, roomName, onSeek }: VoiceMemoryDe
     };
   }, [recording.filePath, recording.recordingId]);
 
-  const process = async (restartTranscription = false) => {
+  const process = async (action: "transcribe" | "organize") => {
     setBusy(true);
+    setQueuedAction(action);
     setError(undefined);
     setDetailsOpen(true);
     try {
-      setRecord(
-        await window.desktopApi.ai.processRecording({
-          recordingId: recording.recordingId,
-          filePath: recording.filePath,
-          roomId: recording.roomId,
-          roomName,
-          manual: true,
-          organize: true,
-          restartTranscription,
-          markers: recording.markers.map((marker) => ({
-            id: marker.id,
-            offsetMs: marker.offsetMs,
-          })),
-        }),
-      );
+      const accepted = await window.desktopApi.ai.processRecording({
+        recordingId: recording.recordingId,
+        filePath: recording.filePath,
+        roomId: recording.roomId,
+        roomName,
+        manual: true,
+        transcribe: action === "transcribe",
+        organize: action === "organize",
+        restartTranscription: action === "transcribe",
+        markers: recording.markers.map((marker) => ({
+          id: marker.id,
+          offsetMs: marker.offsetMs,
+        })),
+      });
+      setRecord(accepted);
+      if (accepted.phase !== "idle" || accepted.taskStatus !== "pending")
+        setQueuedAction(undefined);
     } catch (cause) {
+      setQueuedAction(undefined);
+      setError(cause instanceof Error ? cause.message : "AI 处理失败");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const resume = async () => {
+    setBusy(true);
+    setQueuedAction(record?.processingStage === "organize" ? "organize" : "transcribe");
+    setError(undefined);
+    setDetailsOpen(true);
+    try {
+      setRecord(await window.desktopApi.ai.resumeTask(recording.recordingId));
+    } catch (cause) {
+      setQueuedAction(undefined);
       setError(cause instanceof Error ? cause.message : "AI 处理失败");
     } finally {
       setBusy(false);
@@ -139,9 +203,16 @@ export const VoiceMemoryDetail = ({ recording, roomName, onSeek }: VoiceMemoryDe
           <strong>这条录音还没有整理</strong>
           <span>转录、章节、精彩片段和问答都只在本机运行。</span>
         </div>
-        <button type="button" disabled={busy} onClick={() => void process()}>
-          {busy ? "正在启动…" : "开始 AI 整理"}
-        </button>
+        <div className="voice-memory-header-actions">
+          <button type="button" disabled={busy} onClick={() => void process("transcribe")}>
+            <FileText aria-hidden="true" />
+            {queuedAction === "transcribe" ? "排队中" : "开始转录"}
+          </button>
+          <button type="button" disabled aria-label="需要先转录才能整理">
+            <Sparkles aria-hidden="true" />
+            整理内容
+          </button>
+        </div>
         {error ? <p role="alert">{error}</p> : null}
       </section>
     );
@@ -149,6 +220,12 @@ export const VoiceMemoryDetail = ({ recording, roomName, onSeek }: VoiceMemoryDe
 
   const working = record.phase === "transcribing" || record.phase === "organizing";
   const transcriptionFinished = record.transcript.length > 0 && !invalidTranscript;
+  const organizationFailed = record.errorMessage?.startsWith("organize_failed:") === true;
+  const pausedOrganization = record.phase === "paused" && record.processingStage === "organize";
+  const hasMultipleSpeakers = record.speakers.length > 1;
+  const pendingSpeakers = hasMultipleSpeakers
+    ? record.speakers.filter((speaker) => speaker.confidence === "pending")
+    : [];
   const displayProgress =
     record.phase === "transcribing" ? transcriptionPercent(record) : record.progress;
   return (
@@ -161,17 +238,21 @@ export const VoiceMemoryDetail = ({ recording, roomName, onSeek }: VoiceMemoryDe
         <span>
           {working
             ? `${record.phase === "transcribing" ? "正在转录" : "正在整理"} ${displayProgress}%`
-            : record.phase === "ready"
-              ? invalidTranscript
-                ? "未识别到可靠语音"
-                : record.errorMessage?.startsWith("organize_failed:")
-                  ? "转录完成 · 整理未完成"
-                  : "已整理"
-              : record.phase === "error" && transcriptionFinished
-                ? "转录完成 · 整理失败"
-                : record.phase === "paused"
-                  ? "已暂停"
-                  : "待处理"}
+            : queuedAction
+              ? "排队中"
+              : record.phase === "ready"
+                ? invalidTranscript
+                  ? "未识别到可靠语音"
+                  : record.errorMessage?.startsWith("organize_failed:")
+                    ? "转录完成 · 整理未完成"
+                    : record.organizedAt
+                      ? "已整理"
+                      : "转录完成"
+                : record.phase === "error" && transcriptionFinished
+                  ? "转录完成 · 整理失败"
+                  : record.phase === "paused"
+                    ? "已暂停"
+                    : "待处理"}
         </span>
         {record.transcript.length > 0 && !invalidTranscript ? (
           <button
@@ -192,40 +273,44 @@ export const VoiceMemoryDetail = ({ recording, roomName, onSeek }: VoiceMemoryDe
             <Pause />
             暂停
           </button>
-        ) : record.phase === "paused" ? (
+        ) : (
           <div className="voice-memory-header-actions">
             <button
               type="button"
-              onClick={() => void window.desktopApi.ai.resumeTask(record.recordingId)}
+              className="voice-memory-quiet-action"
+              disabled={busy || Boolean(queuedAction)}
+              onClick={() =>
+                void (record.phase === "paused" && !pausedOrganization
+                  ? resume()
+                  : process("transcribe"))
+              }
             >
-              <Play />
-              继续
+              {record.phase === "paused" && !pausedOrganization ? <Play /> : <RotateCcw />}
+              {queuedAction === "transcribe"
+                ? "排队中"
+                : record.phase === "paused" && !pausedOrganization
+                  ? "继续转录"
+                  : transcriptionFinished
+                    ? "重新转录"
+                    : "开始转录"}
             </button>
-            <button type="button" disabled={busy} onClick={() => void process(true)}>
-              <RotateCcw />
-              重新转录
+            <button
+              type="button"
+              className="voice-memory-quiet-action"
+              disabled={busy || Boolean(queuedAction) || !transcriptionFinished}
+              onClick={() => void (pausedOrganization ? resume() : process("organize"))}
+            >
+              {pausedOrganization ? <Play /> : <Sparkles />}
+              {queuedAction === "organize"
+                ? "排队中"
+                : pausedOrganization
+                  ? "继续整理"
+                  : record.organizedAt || organizationFailed
+                    ? "重新整理"
+                    : "整理内容"}
             </button>
           </div>
-        ) : record.phase === "error" || record.phase === "idle" ? (
-          <button
-            type="button"
-            disabled={busy}
-            onClick={() => void process(!transcriptionFinished)}
-          >
-            <Play />
-            {busy ? "正在重试" : transcriptionFinished ? "重新整理" : "重新转录"}
-          </button>
-        ) : record.phase === "ready" ? (
-          <button
-            type="button"
-            className="voice-memory-quiet-action"
-            disabled={busy}
-            onClick={() => void process(true)}
-          >
-            <RotateCcw />
-            {busy ? "正在启动" : "重新转录"}
-          </button>
-        ) : null}
+        )}
       </header>
       {working ? (
         <div
@@ -252,38 +337,34 @@ export const VoiceMemoryDetail = ({ recording, roomName, onSeek }: VoiceMemoryDe
         </p>
       ) : null}
 
-      {detailsOpen &&
-      !invalidTranscript &&
-      record.speakers.some((speaker) => speaker.confidence === "pending") ? (
+      {detailsOpen && !invalidTranscript && pendingSpeakers.length ? (
         <div className="voice-memory-speakers">
           <h4>确认说话人</h4>
-          {record.speakers
-            .filter((speaker) => speaker.confidence === "pending")
-            .map((speaker) => (
-              <div key={speaker.speakerId}>
-                <span>{speaker.speakerId}</span>
-                <input
-                  value={speakerNames[speaker.speakerId] ?? ""}
-                  placeholder="输入好友昵称"
-                  onChange={(event) =>
-                    setSpeakerNames((current) => ({
-                      ...current,
-                      [speaker.speakerId]: event.target.value,
-                    }))
-                  }
-                  onKeyDown={(event) =>
-                    event.key === "Enter" && void confirmSpeaker(speaker.speakerId)
-                  }
-                />
-                <button
-                  type="button"
-                  disabled={busy || !speakerNames[speaker.speakerId]?.trim()}
-                  onClick={() => void confirmSpeaker(speaker.speakerId)}
-                >
-                  确认
-                </button>
-              </div>
-            ))}
+          {pendingSpeakers.map((speaker) => (
+            <div key={speaker.speakerId}>
+              <span>{speaker.speakerId}</span>
+              <input
+                value={speakerNames[speaker.speakerId] ?? ""}
+                placeholder="输入好友昵称"
+                onChange={(event) =>
+                  setSpeakerNames((current) => ({
+                    ...current,
+                    [speaker.speakerId]: event.target.value,
+                  }))
+                }
+                onKeyDown={(event) =>
+                  event.key === "Enter" && void confirmSpeaker(speaker.speakerId)
+                }
+              />
+              <button
+                type="button"
+                disabled={busy || !speakerNames[speaker.speakerId]?.trim()}
+                onClick={() => void confirmSpeaker(speaker.speakerId)}
+              >
+                确认
+              </button>
+            </div>
+          ))}
         </div>
       ) : null}
 
@@ -303,7 +384,10 @@ export const VoiceMemoryDetail = ({ recording, roomName, onSeek }: VoiceMemoryDe
           {record.transcript.map((segment) => (
             <button type="button" key={segment.id} onClick={() => onSeek(segment.startMs)}>
               <time>{clock(segment.startMs)}</time>
-              <strong>{segment.nickname ?? `${segment.speakerId}（待确认）`}</strong>
+              <strong>
+                {segment.nickname ??
+                  (hasMultipleSpeakers ? `${segment.speakerId}（待确认）` : "说话人")}
+              </strong>
               <span>{segment.text}</span>
             </button>
           ))}

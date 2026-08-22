@@ -1,8 +1,8 @@
 import { spawn } from "node:child_process";
 
-import ffmpegPath from "ffmpeg-static";
-
 import type { RecordingCleanupCandidate, RecordingCleanupReason } from "@private-voice/shared";
+
+import { resolveFfmpegExecutable } from "./media-runtime";
 
 export const SHORT_RECORDING_MS = 5 * 60_000;
 export const SILENT_RECORDING_PEAK_DB = -60;
@@ -58,7 +58,7 @@ export const parseRecordingProbeOutput = (
 export const inspectRecordingForCleanup = async (
   filePath: string,
 ): Promise<RecordingCleanupCandidate | undefined> => {
-  const executable = ffmpegPath;
+  const executable = resolveFfmpegExecutable();
   if (!executable) throw new Error("ffmpeg_runtime_unavailable");
   const result = await new Promise<RecordingProbeResult>((resolve, reject) => {
     const child = spawn(
@@ -66,6 +66,7 @@ export const inspectRecordingForCleanup = async (
       [
         "-hide_banner",
         "-nostdin",
+        "-nostats",
         "-i",
         filePath,
         "-vn",

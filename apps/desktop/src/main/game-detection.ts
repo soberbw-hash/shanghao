@@ -237,6 +237,7 @@ const GAME_RULES: GameRule[] = [
     ],
   },
   { name: "杀戮尖塔", processNames: ["slaythespire"] },
+  { name: "星露谷物语", processNames: ["stardew valley", "stardewvalley"] },
   { name: "英雄联盟", processNames: ["league of legends", "leagueoflegends"] },
   { name: "无畏契约", processNames: ["valorant-win64-shipping"] },
   {

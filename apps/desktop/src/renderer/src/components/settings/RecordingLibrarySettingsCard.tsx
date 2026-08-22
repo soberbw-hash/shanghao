@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { createPortal } from "react-dom";
 import {
+  ArrowUpToLine,
   Check,
   FolderOpen,
   Gauge,
-  HardDrive,
   ListChecks,
   MapPin,
   Pause,
@@ -27,7 +27,7 @@ import {
 } from "@private-voice/shared";
 
 import { Button } from "../base/Button";
-import { SettingsItemRow } from "./SettingsItemRow";
+import { Switch } from "../base/Switch";
 import { SettingsSection } from "./SettingsSection";
 import { VoiceMemoryDetail } from "./VoiceMemoryDetail";
 import { useRecordingStore } from "../../store/recordingStore";
@@ -61,7 +61,12 @@ const formatBytes = (bytes: number): string =>
 
 const formatTime = (seconds: number): string => {
   const safe = Number.isFinite(seconds) ? Math.max(0, Math.round(seconds)) : 0;
-  return `${Math.floor(safe / 60)}:${String(safe % 60).padStart(2, "0")}`;
+  const hours = Math.floor(safe / 3_600);
+  const minutes = Math.floor((safe % 3_600) / 60);
+  const secondsPart = String(safe % 60).padStart(2, "0");
+  return hours > 0
+    ? `${hours}:${String(minutes).padStart(2, "0")}:${secondsPart}`
+    : `${minutes}:${secondsPart}`;
 };
 
 const transcriptionPercent = (record: VoiceMemoryRecord): number =>
@@ -96,7 +101,11 @@ const voiceMemoryStatus = (
   }
   if (record.phase === "paused") {
     return {
-      label: record.errorMessage?.startsWith("deferred:") ? "等待后台处理" : `已暂停 ${progress}%`,
+      label: record.errorMessage?.startsWith("manual_required:long_recording")
+        ? "长录音需手动转录"
+        : record.errorMessage?.startsWith("deferred:")
+          ? "等待后台处理"
+          : `已暂停 ${progress}%`,
       progress: progress || undefined,
       tone: "is-paused",
     };
@@ -131,6 +140,7 @@ export const RecordingLibrarySettingsCard = ({
 }: RecordingLibrarySettingsCardProps) => {
   const audioRef = useRef<HTMLAudioElement>(null);
   const loadMoreRef = useRef<HTMLDivElement>(null);
+  const recordingPanelRef = useRef<HTMLElement>(null);
   const [library, setLibrary] = useState<RecordingLibrarySnapshot>();
   const [selectedId, setSelectedId] = useState<string>();
   const [recordingFilter, setRecordingFilter] = useState<RecordingFilter>("all");
@@ -503,6 +513,10 @@ export const RecordingLibrarySettingsCard = ({
     setPlaybackRate((current) => (current === 1 ? 1.5 : current === 1.5 ? 2 : 1));
   };
 
+  const scrollRecordingToTop = () => {
+    recordingPanelRef.current?.scrollTo({ top: 0 });
+  };
+
   const toggleRecordingSelection = (itemId: string) => {
     setSelectedRecordingIds((current) => {
       const next = new Set(current);
@@ -653,31 +667,59 @@ export const RecordingLibrarySettingsCard = ({
   return (
     <div className="recording-library-page">
       <SettingsSection title="录音库" description="录音、标记和播放进度都保存在本机。">
-        <div className="recording-library-settings-grid">
-          <SettingsItemRow label="存放位置" description={library?.directory ?? "正在读取…"}>
-            <div className="flex flex-wrap gap-2">
-              <Button variant="secondary" onClick={() => void chooseDirectory()}>
-                <MapPin className="h-4 w-4" /> 更改
-              </Button>
-              <Button
-                variant="secondary"
-                onClick={() => void window.desktopApi.recording.openDirectory()}
-              >
-                <FolderOpen className="h-4 w-4" /> 打开文件夹
-              </Button>
-            </div>
-          </SettingsItemRow>
-          <SettingsItemRow
-            label="自动清理上限"
-            description={`已用 ${formatBytes(library?.totalBytes ?? 0)}，满额后从最旧录音开始清理。`}
+        <div className="recording-library-utility-bar">
+          <div className="recording-library-location-tools">
+            <FolderOpen className="size-4 shrink-0" aria-hidden="true" />
+            <span className="recording-library-utility-label">存放位置</span>
+            <strong
+              className="recording-library-location-path"
+              title={library?.directory ?? "正在读取…"}
+            >
+              {library?.directory ?? "正在读取…"}
+            </strong>
+            <Button
+              variant="secondary"
+              className="h-9 shrink-0 px-3"
+              onClick={() => void chooseDirectory()}
+            >
+              <MapPin className="size-4" aria-hidden="true" /> 更改
+            </Button>
+            <Button
+              variant="secondary"
+              className="h-9 shrink-0 px-3"
+              onClick={() => void window.desktopApi.recording.openDirectory()}
+            >
+              打开
+            </Button>
+          </div>
+          <div
+            className="recording-library-cleanup-tools"
+            title="先清理五分钟以下、静音或损坏的录音；超过容量上限时，再清理最旧录音。收藏和带标记的录音会保留。"
           >
-            <label className="settings-quota-control">
-              <HardDrive className="h-4 w-4" />
+            <span className="recording-library-usage">
+              录音占用 <strong>{formatBytes(library?.totalBytes ?? 0)}</strong>
+            </span>
+            <label
+              className="recording-library-auto-cleanup"
+              title="录音保存后自动清理五分钟以下、静音或损坏的录音"
+            >
+              <span>自动清理</span>
+              <Switch
+                isChecked={settings.isRecordingWasteAutoCleanupEnabled}
+                ariaLabel="自动清理五分钟以下、静音或损坏的录音"
+                onChange={(checked) =>
+                  void onChange({ isRecordingWasteAutoCleanupEnabled: checked })
+                }
+              />
+            </label>
+            <label className="settings-quota-control" title="录音库容量上限">
+              <span className="recording-library-quota-label">上限</span>
               <input
                 type="number"
                 min={1}
                 max={100}
                 step={1}
+                aria-label="录音库自动清理容量上限"
                 value={settings.recordingLibraryQuotaGb}
                 onChange={(event) =>
                   void onChange({
@@ -690,7 +732,21 @@ export const RecordingLibrarySettingsCard = ({
               />
               <span>GB</span>
             </label>
-          </SettingsItemRow>
+            <Button
+              variant="secondary"
+              className="h-9 shrink-0 px-3"
+              title="先清理五分钟以下、静音或损坏的录音；超过上限时，再清理最旧录音"
+              disabled={!recordingCounts.all || isScanningRecordings || isSelectionMode}
+              onClick={() => void findWasteRecordings()}
+            >
+              <Trash2 className="size-4" aria-hidden="true" />
+              {isScanningRecordings
+                ? cleanupScanProgress.total
+                  ? `${cleanupScanProgress.processed}/${cleanupScanProgress.total}`
+                  : "检查中"
+                : "立即清理"}
+            </Button>
+          </div>
         </div>
       </SettingsSection>
 
@@ -715,20 +771,6 @@ export const RecordingLibrarySettingsCard = ({
               >
                 <ListChecks aria-hidden="true" />
                 {isSelectionMode ? "取消" : "选择"}
-              </button>
-              <button
-                type="button"
-                className="recording-clean-short-button"
-                disabled={!recordingCounts.all || isScanningRecordings || isSelectionMode}
-                onClick={() => void findWasteRecordings()}
-                title="检查五分钟以下、静音或损坏的录音"
-              >
-                <Trash2 aria-hidden="true" />
-                {isScanningRecordings
-                  ? cleanupScanProgress.total
-                    ? `${cleanupScanProgress.processed}/${cleanupScanProgress.total}`
-                    : "正在检查"
-                  : "清理录音"}
               </button>
             </div>
           </div>
@@ -824,7 +866,7 @@ export const RecordingLibrarySettingsCard = ({
                           >
                             <span className="recording-item-title">{recordingTitle(item)}</span>
                             <span className="recording-item-meta">
-                              {TIME_FORMAT.format(recordingDate(item))} ·{" "}
+                              录制时间 {TIME_FORMAT.format(recordingDate(item))} ·{" "}
                               {formatBytes(item.fileSize)}
                               {item.markers.length ? ` · ${item.markers.length} 个标记` : ""}
                             </span>
@@ -881,7 +923,7 @@ export const RecordingLibrarySettingsCard = ({
           )}
         </aside>
 
-        <section className="recording-library-panel">
+        <section ref={recordingPanelRef} className="recording-library-panel">
           {isLibraryLoading ? (
             <div className="recording-library-empty">正在准备录音详情…</div>
           ) : selected ? (
@@ -913,152 +955,168 @@ export const RecordingLibrarySettingsCard = ({
                   );
                 }}
               />
-              <div className="recording-player-head">
-                <div className="min-w-0">
-                  {renamingId === selected.recordingId ? (
-                    <div className="flex min-w-0 items-center gap-2">
-                      <input
-                        className="min-w-0 flex-1 rounded-xl border border-[#9fc9f5] bg-white/80 px-3 py-2 text-sm font-bold text-[#29435f] outline-none focus:ring-2 focus:ring-[#76b5f5]/30"
-                        value={renameTitle}
-                        maxLength={120}
-                        autoFocus
-                        aria-label="录音名称"
-                        onChange={(event) => setRenameTitle(event.currentTarget.value)}
-                        onKeyDown={(event) => {
-                          if (event.key === "Enter") void commitRename(selected);
-                          if (event.key === "Escape") setRenamingId(undefined);
-                        }}
-                      />
-                      <button
-                        type="button"
-                        className="recording-icon-button"
-                        disabled={isRenaming || !renameTitle.trim()}
-                        aria-label="保存名称"
-                        onClick={() => void commitRename(selected)}
-                      >
-                        <Check />
-                      </button>
-                    </div>
-                  ) : (
-                    <div className="flex min-w-0 items-center gap-2">
-                      <div className="recording-player-title truncate">
-                        {dateLabel(DATE_FORMAT.format(recordingDate(selected)))} ·{" "}
-                        {recordingTitle(selected)}
+              <div className="recording-player-sticky">
+                <div className="recording-player-head">
+                  <div className="recording-player-heading min-w-0">
+                    {renamingId === selected.recordingId ? (
+                      <div className="flex min-w-0 items-center gap-2">
+                        <input
+                          className="min-w-0 flex-1 rounded-xl border border-[#9fc9f5] bg-white/80 px-3 py-2 text-sm font-bold text-[#29435f] outline-none focus:ring-2 focus:ring-[#76b5f5]/30"
+                          value={renameTitle}
+                          maxLength={120}
+                          autoFocus
+                          aria-label="录音名称"
+                          onChange={(event) => setRenameTitle(event.currentTarget.value)}
+                          onKeyDown={(event) => {
+                            if (event.key === "Enter") void commitRename(selected);
+                            if (event.key === "Escape") setRenamingId(undefined);
+                          }}
+                        />
+                        <button
+                          type="button"
+                          className="recording-icon-button"
+                          disabled={isRenaming || !renameTitle.trim()}
+                          aria-label="保存名称"
+                          onClick={() => void commitRename(selected)}
+                        >
+                          <Check />
+                        </button>
                       </div>
-                      <button
-                        type="button"
-                        className="recording-icon-button h-8 w-8 shrink-0"
-                        aria-label="重命名录音"
-                        title="重命名"
-                        disabled={recordingBusy}
-                        onClick={() => beginRename(selected)}
-                      >
-                        <Pencil />
-                      </button>
+                    ) : (
+                      <div className="flex min-w-0 items-center gap-2">
+                        <div className="recording-player-title truncate">
+                          {dateLabel(DATE_FORMAT.format(recordingDate(selected)))} ·{" "}
+                          {recordingTitle(selected)}
+                        </div>
+                        <button
+                          type="button"
+                          className="recording-icon-button h-8 w-8 shrink-0"
+                          aria-label="重命名录音"
+                          title="重命名"
+                          disabled={recordingBusy}
+                          onClick={() => beginRename(selected)}
+                        >
+                          <Pencil />
+                        </button>
+                      </div>
+                    )}
+                    <div className="recording-player-subtitle">
+                      录制时间 {TIME_FORMAT.format(recordingDate(selected))} ·{" "}
+                      {formatBytes(selected.fileSize)}
+                      {selected.markers.length ? ` · ${selected.markers.length} 个标记` : ""}
                     </div>
-                  )}
-                  <div className="recording-player-subtitle">
-                    {TIME_FORMAT.format(recordingDate(selected))} · {formatBytes(selected.fileSize)}
-                    {selected.markers.length ? ` · ${selected.markers.length} 个标记` : ""}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      className={`recording-icon-button ${selected.isFavorite ? "is-favorite" : ""}`}
+                      type="button"
+                      aria-label={selected.isFavorite ? "取消收藏这条录音" : "收藏这条录音"}
+                      onClick={() => void toggleFavorite(selected)}
+                      title={selected.isFavorite ? "取消收藏" : "收藏"}
+                    >
+                      <Star fill={selected.isFavorite ? "currentColor" : "none"} />
+                    </button>
+                    <button
+                      className="recording-icon-button"
+                      type="button"
+                      aria-label="播放上一条录音"
+                      onClick={() => moveSelection(-1)}
+                      title="上一条"
+                    >
+                      <SkipBack />
+                    </button>
+                    <button
+                      className="recording-icon-button is-primary"
+                      type="button"
+                      aria-label={isPlaying ? "暂停录音" : "播放录音"}
+                      onClick={() => void togglePlayback()}
+                    >
+                      {isPlaying ? <Pause /> : <Play />}
+                    </button>
+                    <button
+                      className="recording-icon-button"
+                      type="button"
+                      aria-label="播放下一条录音"
+                      onClick={() => moveSelection(1)}
+                      title="下一条"
+                    >
+                      <SkipForward />
+                    </button>
+                    <button
+                      className="recording-icon-button"
+                      type="button"
+                      aria-label="删除录音"
+                      onClick={() => setPendingBatchDelete([selected])}
+                      title="删除"
+                    >
+                      <Trash2 />
+                    </button>
                   </div>
                 </div>
-                <div className="flex items-center gap-2">
-                  <button
-                    className={`recording-icon-button ${selected.isFavorite ? "is-favorite" : ""}`}
-                    type="button"
-                    aria-label={selected.isFavorite ? "取消收藏这条录音" : "收藏这条录音"}
-                    onClick={() => void toggleFavorite(selected)}
-                    title={selected.isFavorite ? "取消收藏" : "收藏"}
-                  >
-                    <Star fill={selected.isFavorite ? "currentColor" : "none"} />
-                  </button>
-                  <button
-                    className="recording-icon-button"
-                    type="button"
-                    aria-label="播放上一条录音"
-                    onClick={() => moveSelection(-1)}
-                    title="上一条"
-                  >
-                    <SkipBack />
-                  </button>
-                  <button
-                    className="recording-icon-button is-primary"
-                    type="button"
-                    aria-label={isPlaying ? "暂停录音" : "播放录音"}
-                    onClick={() => void togglePlayback()}
-                  >
-                    {isPlaying ? <Pause /> : <Play />}
-                  </button>
-                  <button
-                    className="recording-icon-button"
-                    type="button"
-                    aria-label="播放下一条录音"
-                    onClick={() => moveSelection(1)}
-                    title="下一条"
-                  >
-                    <SkipForward />
-                  </button>
-                  <button
-                    className="recording-icon-button"
-                    type="button"
-                    aria-label="删除录音"
-                    onClick={() => setPendingBatchDelete([selected])}
-                    title="删除"
-                  >
-                    <Trash2 />
-                  </button>
+                <div className="recording-player-controls-row">
+                  <span className="recording-player-time">
+                    已播 {formatTime(currentTime)} / 总时长 {formatTime(duration)}
+                  </span>
+                  <div className="recording-timeline-wrap">
+                    <input
+                      className="recording-timeline"
+                      type="range"
+                      min={0}
+                      max={Math.max(1, duration)}
+                      step={0.1}
+                      value={Math.min(currentTime, Math.max(1, duration))}
+                      aria-label="录音播放进度"
+                      style={
+                        {
+                          "--recording-progress": `${duration ? Math.min(100, (currentTime / duration) * 100) : 0}%`,
+                        } as CSSProperties
+                      }
+                      onChange={(event) => {
+                        const next = Number(event.target.value);
+                        if (audioRef.current) audioRef.current.currentTime = next;
+                        setCurrentTime(next);
+                      }}
+                    />
+                    {selected.markers.map((marker) => (
+                      <button
+                        key={marker.id}
+                        type="button"
+                        className="recording-marker-dot"
+                        style={{
+                          left: `${duration ? Math.min(100, (marker.offsetMs / 1_000 / duration) * 100) : 0}%`,
+                        }}
+                        onClick={() => {
+                          if (audioRef.current)
+                            audioRef.current.currentTime = marker.offsetMs / 1_000;
+                        }}
+                        title={`标记 ${formatTime(marker.offsetMs / 1_000)}`}
+                        aria-label={`跳到标记 ${formatTime(marker.offsetMs / 1_000)}`}
+                      />
+                    ))}
+                  </div>
+                  <div className="recording-player-meta-actions">
+                    <button
+                      type="button"
+                      className="recording-rate-button"
+                      onClick={cyclePlaybackRate}
+                      aria-label={`当前 ${playbackRate} 倍速，点击切换`}
+                      title="切换播放速度"
+                    >
+                      <Gauge className="h-3.5 w-3.5" />
+                      <span>{playbackRate}×</span>
+                    </button>
+                    <button
+                      type="button"
+                      className="recording-rate-button recording-scroll-top-button"
+                      onClick={scrollRecordingToTop}
+                      aria-label="回到录音详情顶部"
+                      title="回到顶部"
+                    >
+                      <ArrowUpToLine className="h-3.5 w-3.5" aria-hidden="true" />
+                      <span>顶部</span>
+                    </button>
+                  </div>
                 </div>
-              </div>
-              <div className="recording-timeline-wrap">
-                <input
-                  className="recording-timeline"
-                  type="range"
-                  min={0}
-                  max={Math.max(1, duration)}
-                  step={0.1}
-                  value={Math.min(currentTime, Math.max(1, duration))}
-                  aria-label="录音播放进度"
-                  style={
-                    {
-                      "--recording-progress": `${duration ? Math.min(100, (currentTime / duration) * 100) : 0}%`,
-                    } as CSSProperties
-                  }
-                  onChange={(event) => {
-                    const next = Number(event.target.value);
-                    if (audioRef.current) audioRef.current.currentTime = next;
-                    setCurrentTime(next);
-                  }}
-                />
-                {selected.markers.map((marker) => (
-                  <button
-                    key={marker.id}
-                    type="button"
-                    className="recording-marker-dot"
-                    style={{
-                      left: `${duration ? Math.min(100, (marker.offsetMs / 1_000 / duration) * 100) : 0}%`,
-                    }}
-                    onClick={() => {
-                      if (audioRef.current) audioRef.current.currentTime = marker.offsetMs / 1_000;
-                    }}
-                    title={`标记 ${formatTime(marker.offsetMs / 1_000)}`}
-                    aria-label={`跳到标记 ${formatTime(marker.offsetMs / 1_000)}`}
-                  />
-                ))}
-              </div>
-              <div className="recording-player-meta">
-                <span>
-                  {formatTime(currentTime)} / {formatTime(duration)}
-                </span>
-                <button
-                  type="button"
-                  className="recording-rate-button"
-                  onClick={cyclePlaybackRate}
-                  aria-label={`当前 ${playbackRate} 倍速，点击切换`}
-                  title="切换播放速度"
-                >
-                  <Gauge className="h-3.5 w-3.5" />
-                  <span>{playbackRate}×</span>
-                </button>
               </div>
               {playbackError ? (
                 <div className="recording-player-error" role="alert">

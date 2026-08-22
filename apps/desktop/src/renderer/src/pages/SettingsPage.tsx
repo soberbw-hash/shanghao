@@ -18,6 +18,7 @@ import type {
   RuntimeHealthSnapshot,
   WindowsIntegrationStatus,
 } from "@private-voice/shared";
+import { cn } from "@private-voice/ui";
 
 import { Button } from "../components/base/Button";
 import { Switch } from "../components/base/Switch";
@@ -146,6 +147,7 @@ export const SettingsPage = () => {
   useEffect(() => {
     if (activeSection !== "diagnostics") return;
     let cancelled = false;
+    const stopPerformanceMonitor = rendererPerformanceMonitor.start();
 
     const refresh = async () => {
       const runtime = getRoomRuntimeDiagnostics();
@@ -210,6 +212,7 @@ export const SettingsPage = () => {
     return () => {
       cancelled = true;
       window.clearInterval(timer);
+      stopPerformanceMonitor();
     };
   }, [
     activeSection,
@@ -272,25 +275,6 @@ export const SettingsPage = () => {
 
     return () => context.revert();
   }, [isSettingsReady, reduceMotion]);
-
-  useLayoutEffect(() => {
-    if (!isSettingsReady || reduceMotion || !pageRef.current) return;
-
-    const context = gsap.context(() => {
-      gsap.fromTo(
-        "[data-gsap-settings='content']",
-        { autoAlpha: 0 },
-        {
-          autoAlpha: 1,
-          duration: motionDuration.message,
-          ease: motionEase.spatial,
-          overwrite: true,
-        },
-      );
-    }, pageRef);
-
-    return () => context.revert();
-  }, [activeSection, isSettingsReady, reduceMotion]);
 
   if (!settings) {
     return <StartupSplashPage message="正在准备设置..." />;
@@ -711,13 +695,16 @@ export const SettingsPage = () => {
       >
         <div
           ref={pageRef}
-          className={activeSection === "recordings" ? "settings-recording-shell" : "contents"}
+          className={cn(
+            "settings-page-shell",
+            activeSection === "recordings" && "settings-recording-shell",
+          )}
         >
           <div data-gsap-settings="header">
-            <SettingsPageHeader onBack={() => navigate(settingsReturnTo)} />
+            <SettingsPageHeader saveNotice={saveNotice} onBack={() => navigate(settingsReturnTo)} />
           </div>
           <div
-            className={`mt-5 grid gap-5 lg:grid-cols-[168px_minmax(0,1fr)] ${
+            className={`mt-2 grid gap-5 lg:grid-cols-[168px_minmax(0,1fr)] ${
               activeSection === "recordings" ? "settings-recording-layout" : ""
             }`}
           >
@@ -730,7 +717,7 @@ export const SettingsPage = () => {
                   key={id}
                   type="button"
                   onClick={() => setActiveSection(id)}
-                  className={`flex w-full items-center gap-3 whitespace-nowrap rounded-[14px] px-3 py-2.5 text-left text-sm font-semibold transition ${
+                  className={`flex w-full items-center gap-3 whitespace-nowrap rounded-[14px] px-3 py-2.5 text-left text-sm font-semibold transition-colors duration-100 ${
                     activeSection === id
                       ? "bg-[#eaf1ff] text-[#3f6ed7]"
                       : "text-[#718096] hover:bg-white/70"
@@ -747,9 +734,6 @@ export const SettingsPage = () => {
                 activeSection === "recordings" ? "settings-recording-content" : ""
               }`}
             >
-              <div className="mb-2 text-right text-xs text-[#7c8da2]" aria-live="polite">
-                {saveNotice}
-              </div>
               {content[activeSection]}
             </div>
           </div>

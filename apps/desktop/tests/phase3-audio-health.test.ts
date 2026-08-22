@@ -85,7 +85,11 @@ test("natural voice enhancement runs after DeepFilter blend without pre-boosting
     source,
     /connectNaturalVoiceEnhancer\([\s\S]*blendBus[\s\S]*equalized\.connect\(outputGain\)/,
   );
-  assert.match(source, /processor\.node\.connect\(gain\);\s*gain\.connect\(blendBus\)/);
+  assert.match(
+    source,
+    /processor\.node\.connect\(gain\);[\s\S]*gain\.connect\(protectionWorklet, 0, 1\)/,
+  );
+  assert.match(source, /protectionWorklet\.connect\(blendBus\)/);
   assert.equal(source.includes("gain.connect(outputGain)"), false);
   assert.match(source, /airRestraint\.gain\.value = -0\.8/);
   assert.match(source, /compressor\.ratio\.value = 1\.6/);

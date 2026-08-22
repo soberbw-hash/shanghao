@@ -22,7 +22,7 @@ const processHealth = (metric: ProcessMetric): RuntimeProcessHealth => ({
 });
 
 const readGpuIdentity = async (): Promise<
-  Pick<RuntimeHealthSnapshot["gpu"], "vendor" | "device" | "driver">
+  Pick<RuntimeHealthSnapshot["gpu"], "vendor" | "device" | "driver" | "angleBackend">
 > => {
   const info = (await app.getGPUInfo("basic").catch(() => undefined)) as
     { gpuDevice?: Array<Record<string, unknown>> } | undefined;
@@ -38,6 +38,7 @@ const readGpuIdentity = async (): Promise<
     vendor: value("vendorString") ?? value("vendorId"),
     device: value("deviceString") ?? value("deviceId"),
     driver: value("driverVersion"),
+    angleBackend: value("glRenderer") ?? value("glVersion"),
   };
 };
 
@@ -92,6 +93,12 @@ export const captureRuntimeHealth = async (options: {
       featureStatus: Object.fromEntries(
         Object.entries(featureStatus).map(([key, value]) => [key, String(value)]),
       ),
+      compositing: featureStatus.gpu_compositing,
+      rasterization: featureStatus.rasterization,
+      webgl: featureStatus.webgl,
+      webgl2: featureStatus.webgl2,
+      videoDecode: featureStatus.video_decode,
+      videoEncode: featureStatus.video_encode,
       ...gpuIdentity,
     },
     display: {

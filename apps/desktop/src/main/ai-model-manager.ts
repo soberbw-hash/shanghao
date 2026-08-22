@@ -6,6 +6,7 @@ import { Readable, Transform } from "node:stream";
 import { pipeline } from "node:stream/promises";
 
 import type {
+  AiAsrModelId,
   AiModelAction,
   AiModelId,
   AiModelStatus,
@@ -28,11 +29,19 @@ export {
 
 interface ModelDefinition {
   id: AiModelId;
+  category: "asr" | "organizer";
   name: string;
   purpose: string;
   repository: string;
   revision: string;
   approximateBytes: number;
+  components?: readonly ModelComponent[];
+}
+
+interface ModelComponent {
+  directory: string;
+  repository: string;
+  revision: string;
 }
 
 interface RemoteModelFile {
@@ -43,6 +52,12 @@ interface RemoteModelFile {
 interface RemoteModelManifest {
   sha: string;
   siblings: RemoteModelFile[];
+}
+
+interface DownloadModelFile extends RemoteModelFile {
+  sourceFileName: string;
+  sourceRepository: string;
+  sourceRevision: string;
 }
 
 interface ModelSource {
@@ -66,19 +81,61 @@ interface PersistedAiState {
 }
 
 const VIBEVOICE_MODEL_REVISION = "66e78021ab8f5f06133d1ab421ba4d348bda97c9";
+const QWEN3_ASR_MODEL_REVISION = "7f1569a48a89f3e3f4dc3a5c9d28bddd903bc76c";
+const PARAFORMER_MODEL_REVISION = "d7811ee3ac581fbcfdeb37c98c6ba674028433dc";
+const FSMN_VAD_MODEL_REVISION = "df20e6b30c653645fa4ff125cacfcabd1020a669";
+const CT_PUNC_MODEL_REVISION = "d0e55e2b8722a78b63705ff443d09c4f86e5d750";
+const PARAFORMER_BUNDLE_REVISION = "bundle-d7811ee3-df20e6b3-d0e55e2b";
 const QWEN_MODEL_REVISION = "851bf6e806efd8d0a36b00ddf55e13ccb7b8cd0a";
 
 const MODEL_DEFINITIONS: readonly ModelDefinition[] = [
   {
     id: "vibevoice",
-    name: "VibeVoice",
-    purpose: "录音转文字",
+    category: "asr",
+    name: "VibeVoice-ASR-BitNet",
+    purpose: "体积较小，现有兼容方案",
     repository: "microsoft/VibeVoice-ASR-BitNet",
     revision: VIBEVOICE_MODEL_REVISION,
     approximateBytes: 1_695_957_664,
   },
   {
+    id: "qwen3-asr-0.6b",
+    category: "asr",
+    name: "Qwen3-ASR-0.6B",
+    purpose: "中文与方言识别优先",
+    repository: "Qwen/Qwen3-ASR-0.6B-hf",
+    revision: QWEN3_ASR_MODEL_REVISION,
+    approximateBytes: 1_576_000_000,
+  },
+  {
+    id: "paraformer-zh",
+    category: "asr",
+    name: "Paraformer 中文套件",
+    purpose: "轻量快速，包含语音检测与标点",
+    repository: "funasr/paraformer-zh + fsmn-vad + ct-punc",
+    revision: PARAFORMER_BUNDLE_REVISION,
+    approximateBytes: 2_028_000_000,
+    components: [
+      {
+        directory: "asr",
+        repository: "funasr/paraformer-zh",
+        revision: PARAFORMER_MODEL_REVISION,
+      },
+      {
+        directory: "vad",
+        repository: "funasr/fsmn-vad",
+        revision: FSMN_VAD_MODEL_REVISION,
+      },
+      {
+        directory: "punc",
+        repository: "funasr/ct-punc",
+        revision: CT_PUNC_MODEL_REVISION,
+      },
+    ],
+  },
+  {
     id: "qwen35-4b",
+    category: "organizer",
     name: "Qwen3.5-4B",
     purpose: "总结、章节、问答与精彩片段",
     repository: "Qwen/Qwen3.5-4B",
@@ -89,6 +146,8 @@ const MODEL_DEFINITIONS: readonly ModelDefinition[] = [
 
 export const PINNED_MODEL_REVISIONS: Readonly<Record<AiModelId, string>> = {
   vibevoice: VIBEVOICE_MODEL_REVISION,
+  "qwen3-asr-0.6b": QWEN3_ASR_MODEL_REVISION,
+  "paraformer-zh": PARAFORMER_BUNDLE_REVISION,
   "qwen35-4b": QWEN_MODEL_REVISION,
 };
 
@@ -188,6 +247,8 @@ export class AiModelManager {
   private throttleWindowStartedAt = Date.now();
   private throttleWindowBytes = 0;
   private runtimeStatus: Partial<Record<AiModelId, { ready: boolean; message?: string }>> = {};
+  private activeAsrModel: AiAsrModelId = "vibevoice";
+  private runtimePreparer?: (id: AiModelId) => Promise<{ ready: boolean; message?: string }>;
 
   constructor(
     private readonly rootDirectory: string,
@@ -195,8 +256,12 @@ export class AiModelManager {
     private readonly writeLog: (payload: RendererLogPayload) => Promise<void>,
   ) {}
 
-  async initialize(processingMode: AiProcessingMode): Promise<void> {
+  async initialize(
+    processingMode: AiProcessingMode,
+    activeAsrModel: AiAsrModelId = "vibevoice",
+  ): Promise<void> {
     this.processingMode = processingMode;
+    this.activeAsrModel = activeAsrModel;
     await mkdir(this.rootDirectory, { recursive: true });
     this.persisted = await this.readState();
     this.gameActive = Boolean(this.gameDetection.getSnapshot().gameName);
@@ -254,6 +319,22 @@ export class AiModelManager {
     this.emit();
   }
 
+  setActiveAsrModel(id: AiAsrModelId): void {
+    if (this.activeAsrModel === id) return;
+    this.activeAsrModel = id;
+    this.emit();
+  }
+
+  getActiveAsrModel(): AiAsrModelId {
+    return this.activeAsrModel;
+  }
+
+  setRuntimePreparer(
+    preparer: (id: AiModelId) => Promise<{ ready: boolean; message?: string }>,
+  ): void {
+    this.runtimePreparer = preparer;
+  }
+
   updateRuntimePressure(pressure: AiRuntimePressure): void {
     this.runtimePressure = pressure;
     this.scheduler.update({ pressure });
@@ -284,6 +365,10 @@ export class AiModelManager {
       this.scheduler.update({ realtimePressureHigh: false, pressureReason: undefined });
       this.emit();
     }, 8_000);
+  }
+
+  shouldDeferBackgroundDownload(): boolean {
+    return this.scheduler.backgroundDownloadDecision().defer;
   }
 
   onStatus(listener: (snapshot: AiVoiceMemorySnapshot) => void): () => void {
@@ -341,6 +426,7 @@ export class AiModelManager {
       await this.runningDownloads.get(id)?.catch(() => undefined);
       await rm(this.modelDirectory(id), { recursive: true, force: true });
       this.persisted.models[id] = { userInstalled: false, phase: "not_installed" };
+      delete this.runtimeStatus[id];
       if (id === "qwen35-4b") this.releaseQwenResources("model_deleted");
       await this.persist();
       this.emit();
@@ -351,9 +437,9 @@ export class AiModelManager {
   private async ensurePinnedRevision(id: AiModelId): Promise<void> {
     const current = this.ensureModelState(id);
     try {
-      const manifest = await this.fetchManifest(modelDefinition(id));
-      if (current.activeRevision === manifest.sha) return;
-      current.pendingRevision = manifest.sha;
+      const definition = modelDefinition(id);
+      if (current.activeRevision === definition.revision) return;
+      current.pendingRevision = definition.revision;
       await this.persist();
       this.startDownload(id, true);
     } catch (error) {
@@ -392,37 +478,38 @@ export class AiModelManager {
     current.errorMessage = undefined;
     this.emit();
 
-    const manifest = await this.fetchManifest(definition);
-    const files = manifest.siblings
-      .filter(
-        (file) =>
-          typeof file.size === "number" &&
-          file.size > 0 &&
-          (definition.id !== "vibevoice" || this.isVibeVoiceRuntimeFile(file.rfilename)),
-      )
-      .map((file) => ({ ...file, rfilename: safeRelativeModelPath(file.rfilename) }));
+    const files = await this.fetchDownloadFiles(definition);
     if (!files.length) throw new Error("ai_model_manifest_empty");
-    current.pendingRevision = manifest.sha;
+    current.pendingRevision = definition.revision;
     current.totalBytes = files.reduce((total, file) => total + (file.size ?? 0), 0);
-    current.downloadedBytes = await this.readDownloadedBytes(id, manifest.sha, files);
+    current.downloadedBytes = await this.readDownloadedBytes(id, definition.revision, files);
     await this.ensureDiskCapacity((current.totalBytes ?? 0) - (current.downloadedBytes ?? 0));
     current.phase = "downloading";
     await this.persist();
 
     for (const file of files) {
       if (controller.signal.aborted) throw new DownloadPausedError();
-      await this.downloadFile(definition, manifest.sha, file, controller.signal, current);
+      await this.downloadFile(definition.id, definition.revision, file, controller.signal, current);
     }
 
-    const revisionDirectory = this.revisionDirectory(id, manifest.sha);
-    await this.validateRevision(definition, manifest.sha, files);
+    const revisionDirectory = this.revisionDirectory(id, definition.revision);
+    await this.validateRevision(definition, definition.revision, files);
     await writeFile(
       path.join(revisionDirectory, "model.ready.json"),
-      JSON.stringify({ repository: definition.repository, revision: manifest.sha, files }, null, 2),
+      JSON.stringify(
+        {
+          repository: definition.repository,
+          revision: definition.revision,
+          components: this.modelComponents(definition),
+          files,
+        },
+        null,
+        2,
+      ),
       "utf8",
     );
     const previousRevision = current.activeRevision;
-    current.activeRevision = manifest.sha;
+    current.activeRevision = definition.revision;
     current.pendingRevision = undefined;
     current.phase = "installed";
     current.downloadedBytes = current.totalBytes;
@@ -430,20 +517,39 @@ export class AiModelManager {
     await this.persist();
     this.emit();
 
-    if (isUpdate && previousRevision && previousRevision !== manifest.sha) {
+    await this.prepareRuntime(id);
+
+    if (isUpdate && previousRevision && previousRevision !== definition.revision) {
       await rm(this.revisionDirectory(id, previousRevision), { recursive: true, force: true });
     }
-    await this.log("info", "ai_model_ready", id, undefined, { revision: manifest.sha });
+    await this.log("info", "ai_model_ready", id, undefined, { revision: definition.revision });
+  }
+
+  private async prepareRuntime(id: AiModelId): Promise<void> {
+    if (!this.runtimePreparer) return;
+    try {
+      const result = await this.runtimePreparer(id);
+      this.runtimeStatus[id] = result;
+      await this.log("info", "ai_model_runtime_checked", id, undefined, {
+        ready: result.ready,
+        message: result.message,
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.runtimeStatus[id] = { ready: false, message };
+      await this.log("error", "ai_model_runtime_prepare_failed", id, error);
+    }
+    this.emit();
   }
 
   private async downloadFile(
-    definition: ModelDefinition,
+    id: AiModelId,
     revision: string,
-    file: Required<Pick<RemoteModelFile, "rfilename">> & RemoteModelFile,
+    file: DownloadModelFile,
     signal: AbortSignal,
     state: PersistedModelState,
   ): Promise<void> {
-    const destination = path.join(this.revisionDirectory(definition.id, revision), file.rfilename);
+    const destination = path.join(this.revisionDirectory(id, revision), file.rfilename);
     const partial = `${destination}.part`;
     await mkdir(path.dirname(destination), { recursive: true });
     const expectedSize = file.size ?? 0;
@@ -459,7 +565,7 @@ export class AiModelManager {
       await unlink(partial).catch(() => undefined);
       offset = 0;
     }
-    const relativeUrl = `${definition.repository}/resolve/${revision}/${file.rfilename
+    const relativeUrl = `${file.sourceRepository}/resolve/${file.sourceRevision}/${file.sourceFileName
       .split("/")
       .map(encodeURIComponent)
       .join("/")}`;
@@ -544,7 +650,10 @@ export class AiModelManager {
   ): Promise<void> {
     const directory = this.revisionDirectory(definition.id, revision);
     const weightFiles = files.filter(
-      (file) => file.rfilename.endsWith(".safetensors") || file.rfilename.endsWith(".gguf"),
+      (file) =>
+        file.rfilename.endsWith(".safetensors") ||
+        file.rfilename.endsWith(".gguf") ||
+        file.rfilename.endsWith("model.pt"),
     );
     if (!weightFiles.length) throw new Error("ai_model_required_files_missing");
     if (definition.id === "vibevoice") {
@@ -554,6 +663,15 @@ export class AiModelManager {
         !names.has("vibeasr-vae-encoder-i8_s.gguf")
       ) {
         throw new Error("ai_model_required_files_missing");
+      }
+    } else if (definition.id === "paraformer-zh") {
+      for (const component of ["asr", "vad", "punc"] as const) {
+        await Promise.all([
+          stat(path.join(directory, component, "config.yaml")),
+          stat(path.join(directory, component, "model.pt")),
+        ]).catch(() => {
+          throw new Error("ai_model_required_files_missing");
+        });
       }
     } else {
       const config = JSON.parse(
@@ -573,9 +691,53 @@ export class AiModelManager {
     );
   }
 
-  private async fetchManifest(definition: ModelDefinition): Promise<RemoteModelManifest> {
+  private modelComponents(definition: ModelDefinition): readonly ModelComponent[] {
+    return (
+      definition.components ?? [
+        {
+          directory: "",
+          repository: definition.repository,
+          revision: definition.revision,
+        },
+      ]
+    );
+  }
+
+  private async fetchDownloadFiles(definition: ModelDefinition): Promise<DownloadModelFile[]> {
+    const components = this.modelComponents(definition);
+    const manifests = await Promise.all(
+      components.map(async (component) => ({
+        component,
+        manifest: await this.fetchManifest(component),
+      })),
+    );
+    return manifests.flatMap(({ component, manifest }) =>
+      manifest.siblings
+        .filter(
+          (file) =>
+            typeof file.size === "number" &&
+            file.size > 0 &&
+            (definition.id !== "vibevoice" || this.isVibeVoiceRuntimeFile(file.rfilename)),
+        )
+        .map((file): DownloadModelFile => {
+          const sourceFileName = safeRelativeModelPath(file.rfilename);
+          const destination = component.directory
+            ? safeRelativeModelPath(`${component.directory}/${sourceFileName}`)
+            : sourceFileName;
+          return {
+            ...file,
+            rfilename: destination,
+            sourceFileName,
+            sourceRepository: component.repository,
+            sourceRevision: component.revision,
+          };
+        }),
+    );
+  }
+
+  private async fetchManifest(component: ModelComponent): Promise<RemoteModelManifest> {
     const { response, release } = await this.fetchFromModelSources(
-      `api/models/${definition.repository}/revision/${definition.revision}?blobs=true`,
+      `api/models/${component.repository}/revision/${component.revision}?blobs=true`,
       {
         acceptedStatuses: [200],
         errorPrefix: "ai_model_manifest_http",
@@ -585,7 +747,7 @@ export class AiModelManager {
       const manifest = (await response.json()) as RemoteModelManifest;
       if (!manifest.sha || !Array.isArray(manifest.siblings))
         throw new Error("ai_model_manifest_invalid");
-      if (manifest.sha !== definition.revision) throw new Error("ai_model_revision_mismatch");
+      if (manifest.sha !== component.revision) throw new Error("ai_model_revision_mismatch");
       return manifest;
     } finally {
       release();
@@ -781,16 +943,27 @@ export class AiModelManager {
     runnable: boolean;
     reason?: string;
     resourceMode: "low" | "normal";
+    requiredModel: AiModelId;
   } {
-    const requiredModel = kind === "transcription" ? "vibevoice" : "qwen35-4b";
+    const requiredModel = kind === "transcription" ? this.activeAsrModel : "qwen35-4b";
     if (!this.persisted.models[requiredModel]?.activeRevision) {
       return {
         runnable: false,
         reason: `model_${requiredModel}_not_installed`,
         resourceMode: "low",
+        requiredModel,
       };
     }
-    return this.scheduler.aiDecision(kind, manualRequest);
+    const runtime = this.runtimeStatus[requiredModel];
+    if (!runtime?.ready) {
+      return {
+        runnable: false,
+        reason: runtime?.message || `model_${requiredModel}_runtime_not_ready`,
+        resourceMode: "low",
+        requiredModel,
+      };
+    }
+    return { ...this.scheduler.aiDecision(kind, manualRequest), requiredModel };
   }
 
   async saveTaskCheckpoint(checkpoint: AiTaskCheckpoint): Promise<void> {

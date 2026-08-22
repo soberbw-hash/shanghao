@@ -410,19 +410,34 @@ export const renameRecordingInDirectory = async (
   return item;
 };
 
+export const recordingQuotaDeletionOrder = (
+  items: RecordingLibraryItem[],
+): RecordingLibraryItem[] =>
+  [...items].reverse().filter((item) => !item.isFavorite && item.markers.length === 0);
+
 export const enforceRecordingQuotaInDirectory = async (
   directory: string,
   quotaGb: number,
-): Promise<void> => {
+): Promise<RecordingLibraryItem[]> => {
   const snapshot = await readRecordingLibraryFromDirectory(directory, quotaGb);
   let totalBytes = snapshot.totalBytes;
-  const oldestFirst = [...snapshot.items].reverse();
-  while (totalBytes > snapshot.quotaBytes && oldestFirst.length > 1) {
+  let remainingItems = snapshot.items.length;
+  const deleted: RecordingLibraryItem[] = [];
+  const oldestFirst = recordingQuotaDeletionOrder(snapshot.items);
+  while (totalBytes > snapshot.quotaBytes && oldestFirst.length > 0 && remainingItems > 1) {
     const item = oldestFirst.shift();
     if (!item) break;
-    await deleteRecordingInDirectory(directory, item.filePath).catch(() => undefined);
-    totalBytes -= item.fileSize;
+    const removed = await deleteRecordingInDirectory(directory, item.filePath).then(
+      () => true,
+      () => false,
+    );
+    if (removed) {
+      deleted.push(item);
+      totalBytes -= item.fileSize;
+      remainingItems -= 1;
+    }
   }
+  return deleted;
 };
 
 export const deleteRecordingInDirectory = async (

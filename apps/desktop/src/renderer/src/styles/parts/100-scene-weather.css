@@ -1238,11 +1238,7 @@ body::before {
 .team-island.is-visual-motion-paused .weather-snow-layer span,
 .team-island.is-visual-motion-paused .weather-fog-layer,
 .team-island.is-visual-motion-paused .weather-lightning,
-.team-island.is-visual-motion-paused .scene-workstation-screen.online,
-.team-island.is-visual-motion-paused .room-character-visual-layer.is-active,
-.team-island.is-visual-motion-paused .room-character-visual-layer.is-active *,
-.team-island.is-visual-motion-paused .room-character-visual-layer.is-active *::before,
-.team-island.is-visual-motion-paused .room-character-visual-layer.is-active *::after {
+.team-island.is-visual-motion-paused .scene-workstation-screen.online {
   animation-play-state: paused !important;
 }
 

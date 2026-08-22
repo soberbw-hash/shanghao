@@ -69,7 +69,8 @@ export const useUiFeedbackSounds = (): void => {
         return;
       }
       lastClickAt = now;
-      playUiSound("button-click");
+      // Let the button's action and React update finish before allocating audio playback.
+      window.setTimeout(() => playUiSound("button-click"), 0);
     };
 
     document.addEventListener("click", handleClick, true);

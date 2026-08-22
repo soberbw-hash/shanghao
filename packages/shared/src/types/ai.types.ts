@@ -1,4 +1,6 @@
-export type AiModelId = "vibevoice" | "qwen35-4b";
+export type AiAsrModelId = "vibevoice" | "qwen3-asr-0.6b" | "paraformer-zh";
+
+export type AiModelId = AiAsrModelId | "qwen35-4b";
 
 export type AiModelPhase =
   "not_installed" | "checking" | "downloading" | "paused" | "installed" | "error";
@@ -19,6 +21,7 @@ export interface AiRuntimePressure {
 
 export interface AiModelStatus {
   id: AiModelId;
+  category: "asr" | "organizer";
   name: string;
   purpose: string;
   repository: string;
@@ -67,6 +70,8 @@ export interface AiTaskCheckpoint {
   unitDurationMs?: number;
   /** Invalidates partial results when the local inference pipeline changes incompatibly. */
   pipelineVersion?: number;
+  /** Prevents a resumed recording from mixing transcripts produced by different ASR models. */
+  asrModelId?: AiAsrModelId;
   updatedAt: string;
 }
 
@@ -151,6 +156,11 @@ export interface VoiceMemoryRecord {
   updatedAt: string;
   phase: "idle" | "transcribing" | "organizing" | "ready" | "paused" | "error";
   progress: number;
+  taskId?: string;
+  taskStatus?: VoiceMemoryTaskStatus;
+  processingStage?: VoiceMemoryProcessingStage;
+  diagnostic?: VoiceMemoryTaskDiagnostic;
+  organizedAt?: string;
   /** Recognition pipeline that produced the persisted transcript. Missing means legacy output. */
   transcriptionPipelineVersion?: number;
   errorMessage?: string;
@@ -161,6 +171,34 @@ export interface VoiceMemoryRecord {
   highlights: VoiceMemoryHighlight[];
   markerTitles: VoiceMemoryMarkerTitle[];
   timeline: VoiceMemoryTimelineEntry[];
+}
+
+export type VoiceMemoryTaskStatus = "pending" | "processing" | "success" | "failed";
+
+export type VoiceMemoryProcessingStage =
+  | "recording"
+  | "audio_file"
+  | "preprocess"
+  | "convert"
+  | "asr"
+  | "transcript"
+  | "storage"
+  | "organize";
+
+export interface VoiceMemoryTaskDiagnostic {
+  taskId: string;
+  status: VoiceMemoryTaskStatus;
+  stage: VoiceMemoryProcessingStage;
+  fileName: string;
+  updatedAt: string;
+  modelName?: string;
+  modelVersion?: string;
+  modelPath?: string;
+  inputFormat?: string;
+  asrInputFormat?: string;
+  errorCode?: string;
+  errorMessage?: string;
+  runtimeMessage?: string;
 }
 
 export interface VoiceMemoryQuestionRequest {
@@ -213,10 +251,13 @@ export interface VoiceMemoryProcessRequest {
   roomName?: string;
   manual?: boolean;
   organize?: boolean;
+  /** False runs Qwen organization from the saved transcript without invoking ASR again. */
+  transcribe?: boolean;
   /** Discard the prior transcript/checkpoint and run recognition again from the beginning. */
   restartTranscription?: boolean;
   markers?: Array<{ id: string; offsetMs: number }>;
   speakingTimeline?: VoiceMemorySpeakingObservation[];
+  taskId?: string;
 }
 
 export interface VoiceMemorySpeakingObservation {
@@ -225,14 +266,27 @@ export interface VoiceMemorySpeakingObservation {
   nickname: string;
 }
 
+export interface AiAsrRuntimeStatus {
+  modelId: AiAsrModelId;
+  ready: boolean;
+  executable?: string;
+  message?: string;
+  errorCode?: string;
+  outputSource?: "stdout" | "stderr" | "file";
+  modelName?: string;
+  modelVersion?: string;
+  modelPath?: string;
+  runtimePhase?:
+    "missing" | "stopped" | "preparing" | "loading" | "ready" | "running" | "paused" | "error";
+  ffmpegPath?: string;
+  asrInputFormat?: string;
+}
+
 export interface AiRuntimeStatus {
-  vibevoice: {
-    ready: boolean;
-    executable?: string;
-    message?: string;
-    errorCode?: string;
-    outputSource?: "stdout" | "stderr" | "file";
-  };
+  /** Runtime selected for new and retried transcriptions. */
+  asr: AiAsrRuntimeStatus;
+  /** Kept for older diagnostics consumers while the UI moves to the generic ASR field. */
+  vibevoice: AiAsrRuntimeStatus;
   qwen: {
     ready: boolean;
     executable?: string;
@@ -244,4 +298,5 @@ export interface AiRuntimeStatus {
     queuedJobs?: number;
     lastError?: string;
   };
+  lastTask?: VoiceMemoryTaskDiagnostic;
 }

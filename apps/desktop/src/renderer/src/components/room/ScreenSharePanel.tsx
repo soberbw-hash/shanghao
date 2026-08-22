@@ -12,6 +12,7 @@ import { AnimatedControlIcon } from "../icons/AnimatedControlIcon";
 import { motionDuration } from "../../features/motion/motionSystem";
 import type { ScreenShareItem } from "../../features/screen-share/types";
 import { recordScreenSharePresentation } from "../../features/screen-share/screenSharePresentationMetrics";
+import { useRenderProfiler } from "../../features/diagnostics/renderProfiler";
 
 interface VideoFrameCallbackMetadata {
   width?: number;
@@ -115,6 +116,12 @@ export const ScreenSharePanel = ({
   const [selectedId, setSelectedId] = useState<string>();
   const [isDetaching, setIsDetaching] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
+  useRenderProfiler("ScreenShare", {
+    items,
+    selectedId,
+    isDetaching,
+    isDragging,
+  });
   const dragStateRef = useRef<
     | {
         pointerId: number;
@@ -218,7 +225,7 @@ export const ScreenSharePanel = ({
           <p className="screen-share-kicker">屏幕分享</p>
           <strong>{primaryItem.title}</strong>
           <span className="screen-share-transport">
-            {primaryItem.transport === "webrtc" ? "实时视频" : "服务器兜底"}
+            {primaryItem.transport === "webrtc" ? "实时视频" : "网络受限 · 备用画面"}
           </span>
         </div>
         <div className="screen-share-panel-actions">

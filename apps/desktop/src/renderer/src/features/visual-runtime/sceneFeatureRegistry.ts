@@ -18,6 +18,35 @@ export type SceneCapability =
   | "screen-capture"
   | "local-storage";
 
+/**
+ * Stable asset/behavior contract for a scene character pack.  Renderers may
+ * evolve independently (layered PNGs today, sprite sheets later) while the
+ * room only consumes these semantic animation states and layout anchors.
+ */
+export type CharacterRendererType = "layered" | "sprite-sheet" | "static";
+
+export interface CharacterPackManifest {
+  id: string;
+  version: 1;
+  rendererType: CharacterRendererType;
+  states: {
+    idle: string;
+    walk: string;
+    speak: string;
+    game: string;
+    away: string;
+    screenShare: string;
+  };
+  anchors: {
+    feet: { x: number; y: number };
+    label: { x: number; y: number };
+  };
+  dimensions: { width: number; height: number };
+  overlap: { top: number; bottom: number; left: number; right: number };
+  transformOrigin: string;
+  metadata?: Record<string, string>;
+}
+
 export interface SceneFeatureManifest {
   id: SceneFeatureId;
   version: 1;
@@ -246,4 +275,26 @@ export const defaultRoomSceneManifest: SceneManifest = {
     floor: ["workstations", "characters", "collection-shelf"],
     overlay: ["chat", "screen-share"],
   },
+};
+
+export const builtInCharacterPackManifest: CharacterPackManifest = {
+  id: "shanghao-layered-animals",
+  version: 1,
+  rendererType: "layered",
+  states: {
+    idle: "idle",
+    walk: "walk",
+    speak: "speaking",
+    game: "gaming",
+    away: "away",
+    screenShare: "screen-share",
+  },
+  anchors: {
+    feet: { x: 0.5, y: 1 },
+    label: { x: 0.5, y: 1.08 },
+  },
+  dimensions: { width: 160, height: 190 },
+  overlap: { top: 0.2, bottom: 0.08, left: 0.12, right: 0.12 },
+  transformOrigin: "50% 100%",
+  metadata: { source: "apps/desktop/src/renderer/src/assets/avatars" },
 };

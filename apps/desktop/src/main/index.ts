@@ -33,7 +33,6 @@ import {
   createRecordingMediaResponse,
   decodeRecordingMediaUrl,
   isAllowedRecordingMediaPath,
-  readRecordingLibrary,
   RECORDING_MEDIA_PROTOCOL,
 } from "./recording-library";
 
@@ -187,6 +186,7 @@ const maybeRunVisualCapture = async (window: BrowserWindow | null): Promise<void
       | "screen-share"
       | "screen-share-expanded"
       | "settings"
+      | "settings-recording"
       | "settings-detail",
     outputPath,
     exitAfterCapture: process.env.SHANGHAO_CAPTURE_EXIT !== "0",
@@ -290,7 +290,13 @@ const bootstrap = async (): Promise<void> => {
     (payload) => diagnostics?.writeLog(payload) ?? Promise.resolve(),
   );
   await gameDetection.setWorkActivityEnabled(settings.isWorkActivityVisible);
-  await gameDetection.setEnabled(settings.isGameDetectionEnabled);
+  const usesInjectedCapturePresence =
+    !app.isPackaged &&
+    Boolean(process.env.SHANGHAO_CAPTURE_PATH) &&
+    Boolean(process.env.SHANGHAO_CAPTURE_GAME_NAME || process.env.SHANGHAO_CAPTURE_WORK_NAME);
+  await gameDetection.setEnabled(
+    usesInjectedCapturePresence ? false : settings.isGameDetectionEnabled,
+  );
   const lifecycleRecovery = new LifecycleRecoveryService(
     async (reason) => {
       overlay.reconcileDisplayBounds();
@@ -321,7 +327,8 @@ const bootstrap = async (): Promise<void> => {
     gameDetection,
     (payload) => diagnostics?.writeLog(payload) ?? Promise.resolve(),
   );
-  await aiModels.initialize(settings.aiProcessingMode);
+  await aiModels.initialize(settings.aiProcessingMode, settings.aiAsrModel);
+  updates.setBackgroundDownloadGuard(() => aiModels.shouldDeferBackgroundDownload());
   const aiRuntimeDirectory = aiStorage.runtimes;
   const bundledAiRuntimeRoot = app.isPackaged
     ? path.join(process.resourcesPath, "ai")
@@ -339,10 +346,23 @@ const bootstrap = async (): Promise<void> => {
     await mkdir(aiRuntimeDirectory, { recursive: true });
     await copyFile(bundledRunner, runtimeRunner);
   }
+  const bundledAsrRunner = app.isPackaged
+    ? path.join(process.resourcesPath, "ai", "asr-runner.py")
+    : path.join(app.getAppPath(), "scripts", "asr-runner.py");
+  const runtimeAsrRunner = path.join(aiRuntimeDirectory, "asr-runner.py");
+  if (existsSync(bundledAsrRunner) && readFileSync(bundledAsrRunner).length > 0) {
+    const { mkdir, copyFile } = await import("node:fs/promises");
+    await mkdir(aiRuntimeDirectory, { recursive: true });
+    await copyFile(bundledAsrRunner, runtimeAsrRunner);
+  }
   const aiRuntime = new AiRuntimeManager(aiRuntimeDirectory, {
     vibevoice: () => aiModels.getActiveModelDirectory("vibevoice"),
+    qwen3Asr: () => aiModels.getActiveModelDirectory("qwen3-asr-0.6b"),
+    paraformer: () => aiModels.getActiveModelDirectory("paraformer-zh"),
     qwen: () => aiModels.getActiveModelDirectory("qwen35-4b"),
+    activeAsr: () => aiModels.getActiveAsrModel(),
   });
+  aiModels.setRuntimePreparer((id) => aiRuntime.prepareModelRuntime(id));
   aiRuntime.onQwenState((health) => {
     aiModels.setQwenRuntimeState(health.loaded, health.queuedJobs);
   });
@@ -354,29 +374,6 @@ const bootstrap = async (): Promise<void> => {
     (payload) => diagnostics?.writeLog(payload) ?? Promise.resolve(),
   );
   await voiceMemory.initialize();
-  if (settings.isAiAutoTranscribeEnabled) {
-    void readRecordingLibrary(settings.recordingSaveDirectory, settings.recordingLibraryQuotaGb)
-      .then((library) =>
-        voiceMemory.queueRecordings(
-          library.items.map((item) => ({
-            recordingId: item.recordingId,
-            filePath: item.filePath,
-            fileSize: item.fileSize,
-            roomId: item.roomId,
-            markers: item.markers.map((marker) => ({ id: marker.id, offsetMs: marker.offsetMs })),
-          })),
-          settings.isAiAutoOrganizeEnabled,
-        ),
-      )
-      .catch((error) =>
-        diagnostics?.writeLog({
-          category: "app",
-          level: "warn",
-          message: "voice_memory_library_queue_failed",
-          context: { error: error instanceof Error ? error.message : String(error) },
-        }),
-      );
-  }
   shortcutsController = shortcuts;
   overlayController = overlay;
   gameDetectionController = gameDetection;

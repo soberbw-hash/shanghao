@@ -124,6 +124,42 @@ The source and feedback captures were opened and compared around the upper-cente
 
 final result: blocked
 
+## 2026-08-22 Activity Icons And Official Game Monitor Scenes
+
+- User problem capture: `C:/Users/sober/AppData/Local/Temp/codex-clipboard-6bff32fd-86dd-4fbf-ab46-d7e16f0f769e.png`
+- First-pass comparison: `C:/Users/sober/AppData/Local/Temp/shanghao-room-art-qa/pass1-comparison.png`
+- Second-pass comparison: `C:/Users/sober/AppData/Local/Temp/shanghao-room-art-qa/pass2-comparison.png`
+- Electron captures: `pass1c-codex.png`, `pass1c-stardew.png`, `pass1c-lol.png`, `pass1c-delta.png`, and `pass2b-lol.png` in the same QA directory.
+- Viewport: 1440 x 900 pixels.
+- State: isolated local relay, disposable capture profiles, one or two occupied workstations depending on reconnect grace, no user chat or recording data loaded.
+
+### Visual source and implementation evidence
+
+The Codex comparison keeps the original room layout and shows the supplied black-on-dark badge beside the corrected installed Appx asset on a neutral light badge. The three game scenes use official gameplay sources recorded in `apps/desktop/src/renderer/src/assets/games/SOURCES.md`: a Stardew Valley farm, a League of Legends Summoner's Rift jungle scene, and a Delta Force urban helicopter battle. Each source was cropped for the workstation's 16:10 monitor, resized to 768 x 480, adjusted for tiny-screen readability, and encoded as a static WebP.
+
+### First review
+
+- [P1 fixed] Codex could resolve the `lightunplated` black asset and then place it on a Codex-specific dark tile. Appx scoring now deterministically prefers that asset for the shared light badge, and the dark Codex override is removed.
+- [P2 fixed] Transparent or dark executable icons could disappear on the dark workstation monitor. Runtime game icons now use a small neutral backing plate with an inset edge.
+- [P2 fixed after first capture] The first official League of Legends crop left the jungle subject too small and dark at the real monitor size. The focal crop is tighter and the midtones are raised without redrawing or adding content.
+- Stardew Valley remained readable through its farmhouse, crop blocks, and player silhouettes; Delta Force retained gun, city, and helicopter depth without becoming a gray block.
+
+### Second review
+
+- The updated League of Legends crop keeps the large jungle creature and champion readable at the real monitor size while retaining visible Rift terrain.
+- Codex, Stardew Valley, League of Legends, and Delta Force remain inside the monitor bezel and do not cover seat numbers, characters, identity cards, or controls.
+- Full-scene artwork is static and omits the existing scan and looping mark animation; reduced-motion behavior therefore remains stable.
+- No actionable P0, P1, or P2 visual issue remains for this scope.
+
+### Runtime and automated checks
+
+- Real Electron captures used an isolated local signaling server and disposable user-data directories.
+- Focused game/icon tests passed: 17/17.
+- Desktop typecheck and main-process build passed.
+- `git diff --check` passed before the final verification pass.
+
+final result: passed
+
 ## 2026-08-15 Compact Tear-Off Calendar And Idle Monitor Artwork
 
 - Calendar feedback source: `C:/Users/sober/AppData/Local/Temp/codex-clipboard-23de7537-4ae1-455d-8865-f894c5684c7f.png`

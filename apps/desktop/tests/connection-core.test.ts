@@ -125,6 +125,14 @@ test("room client preserves peers and self-heals signaling and media indefinitel
   assert.equal(recovery.includes('type: "peer_restart_request"'), true);
   assert.equal(recovery.includes("schedule("), true);
   assert.equal(recovery.includes("connection_timeout"), true);
+  const connectionWatchdog = recovery.slice(
+    recovery.indexOf("watchConnection("),
+    recovery.indexOf("schedule(peerId", recovery.indexOf("watchConnection(")),
+  );
+  assert.equal(connectionWatchdog.includes("!this.options.connectedPeerIds.has(peerId)"), true);
+  assert.equal(connectionWatchdog.includes("!this.options.readyPeerIds.has(peerId)"), false);
+  assert.equal(source.includes("this.peerRecovery.clear(peerId, true);"), true);
+  assert.equal(source.includes("this.peerRecovery.clear(targetPeerId, true);"), true);
   assert.equal(source.includes("DEFAULT_ICE_SERVERS"), true);
   assert.equal(source.includes("[...DEFAULT_ICE_SERVERS, ...relayIceServers]"), true);
   assert.equal(source.includes("Ignored stale room snapshot"), true);
@@ -235,6 +243,10 @@ test("installer and updater quit paths clean background surfaces", () => {
   assert.equal(updates.includes("autoUpdater.quitAndInstall(true, true)"), true);
   assert.equal(updates.includes("autoUpdater.autoInstallOnAppQuit = false"), true);
   assert.equal(updates.includes('phase: "ready_to_restart"'), true);
+  assert.equal(updates.includes("setBackgroundDownloadGuard"), true);
+  assert.equal(updates.includes("download(manual = true)"), true);
+  assert.equal(updates.includes("实时语音或屏幕分享"), true);
+  assert.equal(main.includes("shouldDeferBackgroundDownload"), true);
   assert.equal(updates.includes("setTimeout(() => this.install()"), false);
   assert.equal(installer.includes("--shanghao-quit-for-install"), true);
   assert.equal(installer.includes('${nsProcess::FindProcess} "${PROCESS_NAME}" $R8'), true);

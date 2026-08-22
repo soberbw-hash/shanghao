@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import {
   RecordingEncoderState,
@@ -20,13 +20,13 @@ import {
   DonationDialog,
   ScreenSourcePicker,
 } from "../components/room/RoomOverlays";
-import { ScreenSharePanel } from "../components/room/ScreenSharePanel";
+import { ScreenSharePanelContainer } from "../components/room/ScreenSharePanelContainer";
 import { TeamIsland } from "../components/room/TeamIsland";
 import { RecordingStopDialog } from "../components/status/RecordingStopDialog";
 import { playUiSound } from "../features/audio/uiSound";
 import { getRemoteAudioMixer } from "../features/audio/RemoteAudioMixer";
 import { summarizeConnectionHealth } from "../features/network/networkDiagnostics";
-import type { ScreenShareItem, ScreenShareQuality } from "../features/screen-share/types";
+import type { ScreenShareQuality } from "../features/screen-share/types";
 import { useScreenShare } from "../features/screen-share/useScreenShare";
 import {
   decideAutoAway,
@@ -34,8 +34,10 @@ import {
   shouldMuteAfterAwayReturn,
 } from "../features/room/autoAway";
 import { isSeatZone } from "../features/voice-scene/sceneZones";
-import { selectCharacterChatBubbles, selectScreenShareView } from "../features/room/roomViewModel";
+import { selectCharacterChatBubbles } from "../features/room/roomViewModel";
 import { usePrefersReducedMotion } from "../hooks/usePrefersReducedMotion";
+import { useRenderProfiler } from "../features/diagnostics/renderProfiler";
+import { useRoomPageSettings } from "../hooks/useRoomPageSettings";
 import { useRecordingController } from "../hooks/useRecordingController";
 import { useRoomCollection } from "../hooks/useRoomCollection";
 import { useRoomState } from "../hooks/useRoomState";
@@ -106,7 +108,17 @@ export const RoomPage = () => {
       });
     },
   });
-  const settings = useSettingsStore((state) => state.settings);
+  const {
+    isWorkActivityVisible,
+    isAiAutoTranscribeEnabled,
+    isAiAutoOrganizeEnabled,
+    isAutoRecordOnJoinEnabled,
+    isOverlayEnabled,
+    isNoiseSuppressionEnabled,
+    preferredInputDeviceId,
+    recordingSaveDirectory,
+    roomDockSettings,
+  } = useRoomPageSettings();
   const saveSettings = useSettingsStore((state) => state.saveSettings);
   const chatMessages = useRoomStore((state) => state.chatMessages);
   const roomQuickMessages = useRoomStore((state) => state.quickMessages);
@@ -114,21 +126,17 @@ export const RoomPage = () => {
     () => selectCharacterChatBubbles(chatMessages, roomQuickMessages),
     [chatMessages, roomQuickMessages],
   );
-  const remoteStreams = useRoomStore((state) => state.remoteStreams);
-  const remoteScreenFrames = useRoomStore((state) => state.remoteScreenFrames);
   const remoteScreenSharing = useRoomStore((state) => state.remoteScreenSharing);
   const connectionHealth = useRoomStore((state) => state.connectionHealth);
   const sceneReactions = useRoomStore((state) => state.sceneReactions);
   const channelCounts = useRoomStore((state) => state.channelCounts);
-  const {
-    inputDevices,
-    outputDevices,
-    isMuted,
-    isDeafened,
-    toggleMicrophone,
-    toggleDeafen,
-    setMuted,
-  } = useAudioStore();
+  const inputDevices = useAudioStore((state) => state.inputDevices);
+  const outputDevices = useAudioStore((state) => state.outputDevices);
+  const isMuted = useAudioStore((state) => state.isMuted);
+  const isDeafened = useAudioStore((state) => state.isDeafened);
+  const toggleMicrophone = useAudioStore((state) => state.toggleMicrophone);
+  const toggleDeafen = useAudioStore((state) => state.toggleDeafen);
+  const setMuted = useAudioStore((state) => state.setMuted);
   const recordingStatus = useRecordingStore((state) => state.status);
   const recordingMarkers = useRecordingStore((state) => state.markers);
   const addRecordingMarker = useRecordingStore((state) => state.addMarker);
@@ -136,6 +144,15 @@ export const RoomPage = () => {
   const resetRecordingStatus = useRecordingStore((state) => state.resetStatus);
   const { capability, startRecording, stopRecording, discardRecording } = useRecordingController();
   const pageRef = useRef<HTMLDivElement>(null);
+  useRenderProfiler("RoomPage", {
+    memberCount: room.members.length,
+    connectionState: room.connectionState,
+    chatCount: chatMessages.length,
+    remoteScreenSharing,
+    isMuted,
+    isDeafened,
+    recordingState: recordingStatus.state,
+  });
   const [chatInput, setChatInput] = useState("");
   const [pendingIncludeSystemAudio, setPendingIncludeSystemAudio] = useState(false);
   const [isScreenSourcePickerOpen, setIsScreenSourcePickerOpen] = useState(false);
@@ -149,7 +166,6 @@ export const RoomPage = () => {
   const [isRoomAskOpen, setIsRoomAskOpen] = useState(false);
   const [localKnockPulse, setLocalKnockPulse] = useState(0);
   const [activeAudioPanel, setActiveAudioPanel] = useState<"microphone" | "speaker">();
-  const [screenFrameNow, setScreenFrameNow] = useState(Date.now());
   const [isLeaving, setIsLeaving] = useState(false);
   const [recordingStopIntent, setRecordingStopIntent] = useState<"stop" | "leave">();
   const [isFinalizingRecording, setIsFinalizingRecording] = useState(false);
@@ -183,20 +199,15 @@ export const RoomPage = () => {
     room.connectionState === RoomConnectionState.Connected ||
     room.connectionState === RoomConnectionState.WaitingPeer ||
     room.connectionState === RoomConnectionState.WaitingSnapshot;
-  useEffect(() => {
-    if (Object.keys(remoteScreenFrames).length === 0) return;
-    const timer = window.setInterval(() => setScreenFrameNow(Date.now()), 1_000);
-    return () => window.clearInterval(timer);
-  }, [remoteScreenFrames]);
   const localMember = room.members.find((member) => member.isLocal);
   const visibleMembers = useMemo(
     () =>
-      settings?.isWorkActivityVisible === false
+      isWorkActivityVisible === false
         ? room.members.map((member) =>
             member.workActivity ? { ...member, workActivity: undefined } : member,
           )
         : room.members,
-    [room.members, settings?.isWorkActivityVisible],
+    [room.members, isWorkActivityVisible],
   );
   const roomCollection = useRoomCollection({
     localMemberId: localMember?.id,
@@ -205,10 +216,34 @@ export const RoomPage = () => {
   const localMemberId = localMember?.id;
   const localSceneZone = localMember?.sceneZone;
   const localActivity = localMember?.activity;
-  const localMusicActivityKey = JSON.stringify(localMember?.musicActivity ?? null);
-  const localWorkActivityKey = JSON.stringify(localMember?.workActivity ?? null);
+  const localMusicActivityKey = localMember?.musicActivity
+    ? [
+        localMember.musicActivity.provider,
+        localMember.musicActivity.providerName,
+        localMember.musicActivity.trackTitle,
+        localMember.musicActivity.artist ?? "",
+      ].join("|")
+    : "";
+  const localWorkActivityKey = localMember?.workActivity
+    ? [
+        localMember.workActivity.id,
+        localMember.workActivity.name,
+        localMember.workActivity.category,
+        localMember.workActivity.iconDataUrl ?? "",
+      ].join("|")
+    : "";
   const localGameIconKey = localMember?.gameIconDataUrl ?? "";
   const connectionQuality = summarizeConnectionHealth(connectionHealth);
+  const handleSceneReaction = useCallback(
+    (targetPeerId: string, emoji: Parameters<typeof sendSceneReaction>[1]) => {
+      void sendSceneReaction(targetPeerId, emoji);
+    },
+    [sendSceneReaction],
+  );
+  const handleMemberVolumeChange = useCallback(
+    (memberId: string, volume: number) => setMemberVolume(memberId, volume),
+    [setMemberVolume],
+  );
   useEffect(() => {
     if (recordingStatus.state !== RecordingState.Recording || !recordingStatus.startedAt) return;
     const now = Date.now();
@@ -229,14 +264,14 @@ export const RoomPage = () => {
     result: { filePath: string; recordingId?: string },
     markers = recordingMarkers,
   ) => {
-    if (!settings?.isAiAutoTranscribeEnabled || !window.desktopApi.ai?.processRecording) return;
+    if (!isAiAutoTranscribeEnabled || !window.desktopApi.ai?.processRecording) return;
     const request = {
       recordingId: result.recordingId ?? result.filePath,
       filePath: result.filePath,
       roomId: room.roomId,
       roomName: room.roomName,
       manual: false,
-      organize: settings.isAiAutoOrganizeEnabled,
+      organize: isAiAutoOrganizeEnabled,
       markers: markers.map((marker) => ({ id: marker.id, offsetMs: marker.offsetMs })),
       speakingTimeline: recordingSpeakingTimelineRef.current,
     };
@@ -250,16 +285,44 @@ export const RoomPage = () => {
       }),
     );
   };
-  const screenShareView = selectScreenShareView({
-    members: room.members,
-    localStream: localScreenShareStream,
-    remoteStreams,
-    remoteFrames: remoteScreenFrames,
-    remoteSharing: remoteScreenSharing,
-    now: screenFrameNow,
-  });
-  const screenShareItems = screenShareView.items;
-  const screenSharingPeerIds = screenShareView.peerIds;
+  const finishSavedRecording = async (
+    result: { filePath: string; recordingId?: string },
+    markers = recordingMarkers,
+  ) => {
+    if (markers.length) {
+      await window.desktopApi.recording.saveMarkers(result.filePath, markers);
+    }
+    let deletedCurrentRecording = false;
+    try {
+      const cleanup = await window.desktopApi.recording.applyAutomaticCleanup(result.filePath);
+      deletedCurrentRecording = cleanup.deletedCurrentRecording;
+    } catch (error) {
+      void window.desktopApi.app.writeLog({
+        category: "app",
+        level: "warn",
+        message: "recording_automatic_cleanup_deferred",
+        context: { error: error instanceof Error ? error.message : String(error) },
+      });
+    }
+    if (deletedCurrentRecording) {
+      recordingSpeakingTimelineRef.current = [];
+      pushToast({
+        tone: "neutral",
+        title: "短录音已自动清理",
+        description: "这条录音不足五分钟，且没有收藏或标记。",
+      });
+      return;
+    }
+    queueVoiceMemory(result, markers);
+  };
+  const screenSharingPeerIds = useMemo(
+    () =>
+      [
+        ...(localScreenShareStream && localMember ? [localMember.id] : []),
+        ...Object.keys(remoteScreenSharing),
+      ].filter((peerId, index, peers) => peers.indexOf(peerId) === index),
+    [localMember, localScreenShareStream, remoteScreenSharing],
+  );
 
   useEffect(() => {
     const publishPressure = () => {
@@ -292,40 +355,6 @@ export const RoomPage = () => {
     screenSharingPeerIds.length,
   ]);
 
-  const detachedViewerItem = detachedViewerId
-    ? screenShareItems.find((item) => item.id === detachedViewerId)
-    : undefined;
-  const detachedViewerSnapshot = {
-    id: detachedViewerItem?.id,
-    title: detachedViewerItem?.title,
-    stream: detachedViewerItem?.stream,
-    frameDataUrl: detachedViewerItem?.frameDataUrl,
-    isLocal: detachedViewerItem?.isLocal,
-    transport: detachedViewerItem?.transport,
-  };
-
-  useEffect(() => {
-    const item: ScreenShareItem | undefined = detachedViewerSnapshot.id
-      ? {
-          id: detachedViewerSnapshot.id,
-          title: detachedViewerSnapshot.title ?? "屏幕分享",
-          stream: detachedViewerSnapshot.stream,
-          frameDataUrl: detachedViewerSnapshot.frameDataUrl,
-          isLocal: detachedViewerSnapshot.isLocal,
-          transport: detachedViewerSnapshot.transport ?? "webrtc",
-        }
-      : undefined;
-    void syncDetachedItem(item);
-  }, [
-    detachedViewerSnapshot.frameDataUrl,
-    detachedViewerSnapshot.id,
-    detachedViewerSnapshot.isLocal,
-    detachedViewerSnapshot.stream,
-    detachedViewerSnapshot.title,
-    detachedViewerSnapshot.transport,
-    syncDetachedItem,
-  ]);
-
   useEffect(() => {
     const overlayState = {
       members: room.members,
@@ -344,7 +373,7 @@ export const RoomPage = () => {
         ...overlayState,
         members: useRoomStore.getState().room.members,
       });
-    }, 250);
+    }, 2_000);
     return () => window.clearInterval(heartbeat);
   }, [
     isDeafened,
@@ -390,7 +419,7 @@ export const RoomPage = () => {
       ?.getAudioTracks()
       .some((track) => track.readyState === "live");
     const canAutoRecord =
-      settings?.isAutoRecordOnJoinEnabled &&
+      isAutoRecordOnJoinEnabled &&
       canSend &&
       hasLiveMicrophone &&
       recordingStatus.state === RecordingState.Idle &&
@@ -460,17 +489,17 @@ export const RoomPage = () => {
     localStream,
     pushToast,
     recordingStatus.state,
-    settings?.isAutoRecordOnJoinEnabled,
+    isAutoRecordOnJoinEnabled,
     startRecording,
   ]);
 
   useEffect(() => {
-    if (settings?.isOverlayEnabled === false) {
+    if (isOverlayEnabled === false) {
       void window.desktopApi.overlay.close().then(() => setIsOverlayOpen(false));
       return;
     }
     void window.desktopApi.overlay.show().then(setIsOverlayOpen);
-  }, [settings?.isOverlayEnabled]);
+  }, [isOverlayEnabled]);
 
   useEffect(
     () =>
@@ -658,7 +687,7 @@ export const RoomPage = () => {
   useEffect(() => {
     if (!hasDetectionSnapshotRef.current) return;
     void window.desktopApi.games.getSnapshot().then((snapshot) => {
-      const workActivity = settings?.isWorkActivityVisible ? snapshot.workActivity : undefined;
+      const workActivity = isWorkActivityVisible ? snapshot.workActivity : undefined;
       detectedWorkRef.current = workActivity;
       const currentLocalMember = useRoomStore
         .getState()
@@ -678,7 +707,7 @@ export const RoomPage = () => {
         workActivity,
       );
     });
-  }, [settings?.isWorkActivityVisible]);
+  }, [isWorkActivityVisible]);
 
   useEffect(() => {
     if (!hasDetectionSnapshotRef.current || !localMemberId) return;
@@ -838,14 +867,11 @@ export const RoomPage = () => {
   const leave = async () => {
     if (isLeaving) return;
     if (recordingStatus.state === RecordingState.Recording) {
-      if (settings?.isAutoRecordOnJoinEnabled) {
+      if (isAutoRecordOnJoinEnabled) {
         setIsFinalizingRecording(true);
         try {
           const result = await stopRecording();
-          if (recordingMarkers.length) {
-            await window.desktopApi.recording.saveMarkers(result.filePath, recordingMarkers);
-          }
-          queueVoiceMemory(result);
+          await finishSavedRecording(result, recordingMarkers);
           clearRecordingMarkers();
           resetRecordingStatus();
           playUiSound("record-stop");
@@ -884,10 +910,7 @@ export const RoomPage = () => {
     try {
       if (shouldSave) {
         const result = await stopRecording();
-        if (recordingMarkers.length) {
-          await window.desktopApi.recording.saveMarkers(result.filePath, recordingMarkers);
-        }
-        queueVoiceMemory(result);
+        await finishSavedRecording(result, recordingMarkers);
       } else {
         await discardRecording();
       }
@@ -1050,17 +1073,17 @@ export const RoomPage = () => {
   };
 
   const toggleNoiseSuppression = async () => {
-    if (!settings || isNoiseSuppressionSwitching) return;
-    const isNoiseSuppressionEnabled = !settings.isNoiseSuppressionEnabled;
+    if (isNoiseSuppressionEnabled === undefined || isNoiseSuppressionSwitching) return;
+    const nextNoiseSuppressionEnabled = !isNoiseSuppressionEnabled;
     setIsNoiseSuppressionSwitching(true);
     try {
-      await saveSettings({ isNoiseSuppressionEnabled });
-      await replaceInputDevice(settings.preferredInputDeviceId);
+      await saveSettings({ isNoiseSuppressionEnabled: nextNoiseSuppressionEnabled });
+      await replaceInputDevice(preferredInputDeviceId);
       playUiSound("button-click");
       pushToast({
-        tone: isNoiseSuppressionEnabled ? "success" : "neutral",
-        title: isNoiseSuppressionEnabled ? "降噪已开启" : "降噪已关闭",
-        description: isNoiseSuppressionEnabled
+        tone: nextNoiseSuppressionEnabled ? "success" : "neutral",
+        title: nextNoiseSuppressionEnabled ? "降噪已开启" : "降噪已关闭",
+        description: nextNoiseSuppressionEnabled
           ? "DeepFilterNet 正在本机实时处理麦克风。"
           : "现在发送麦克风原声。",
       });
@@ -1068,7 +1091,7 @@ export const RoomPage = () => {
         category: "audio",
         level: "info",
         message: "deepfilter_user_toggle",
-        context: { enabled: isNoiseSuppressionEnabled },
+        context: { enabled: nextNoiseSuppressionEnabled },
       });
     } catch (error) {
       pushToast({
@@ -1092,11 +1115,11 @@ export const RoomPage = () => {
     enabledTitle: string,
     disabledTitle: string,
   ) => {
-    if (!settings || isNoiseSuppressionSwitching) return;
+    if (isNoiseSuppressionEnabled === undefined || isNoiseSuppressionSwitching) return;
     setIsNoiseSuppressionSwitching(true);
     try {
       await saveSettings(patch);
-      await replaceInputDevice(settings.preferredInputDeviceId);
+      await replaceInputDevice(preferredInputDeviceId);
       const enabled = Object.values(patch)[0] === true;
       playUiSound("button-click");
       pushToast({
@@ -1121,11 +1144,11 @@ export const RoomPage = () => {
   };
 
   const toggleAutoGain = async (isAutoGainControlEnabled: boolean) => {
-    if (!settings || isAutoGainSwitching) return;
+    if (isAutoGainSwitching) return;
     setIsAutoGainSwitching(true);
     try {
       await saveSettings({ isAutoGainControlEnabled });
-      await replaceInputDevice(settings.preferredInputDeviceId);
+      await replaceInputDevice(preferredInputDeviceId);
       playUiSound("button-click");
       pushToast({
         tone: isAutoGainControlEnabled ? "success" : "neutral",
@@ -1257,8 +1280,8 @@ export const RoomPage = () => {
           <TeamIsland
             members={visibleMembers}
             onZoneSelect={handleZoneSelect}
-            onReact={(targetPeerId, emoji) => void sendSceneReaction(targetPeerId, emoji)}
-            onVolumeChange={setMemberVolume}
+            onReact={handleSceneReaction}
+            onVolumeChange={handleMemberVolumeChange}
             screenSharingPeerIds={screenSharingPeerIds}
             networkQuality={connectionQuality.level}
             reactions={sceneReactions}
@@ -1270,15 +1293,16 @@ export const RoomPage = () => {
             onOpenCollection={roomCollection.open}
             onCollectionDragOverChange={roomCollection.setIsDragOver}
             onSaveDraggedCollection={(payload) => void roomCollection.saveDragged(payload)}
-            pauseVisualMotion={roomCollection.isOpen}
+            pauseVisualMotion
             knockPulse={
               localKnockPulse +
               chatMessages.filter((message) => message.id.startsWith("knock-")).length
             }
             reduceMotion={reduceMotion}
           />
-          <ScreenSharePanel
-            items={screenShareItems}
+          <ScreenSharePanelContainer
+            localStream={localScreenShareStream}
+            detachedItemId={detachedViewerId}
             onStopLocalShare={() => void stopSharingScreen()}
             onOpenDetached={async (item) => {
               try {
@@ -1294,6 +1318,7 @@ export const RoomPage = () => {
                 });
               }
             }}
+            syncDetachedItem={syncDetachedItem}
           />
         </section>
         <div className="room-chat-column min-h-0">
@@ -1379,7 +1404,7 @@ export const RoomPage = () => {
         isOpen={Boolean(recordingStopIntent)}
         isWorking={isFinalizingRecording}
         isChoosingDirectory={isChoosingRecordingDirectory}
-        saveDirectory={settings?.recordingSaveDirectory ?? "文档 / 上号录音"}
+        saveDirectory={recordingSaveDirectory ?? "文档 / 上号录音"}
         onChangeDirectory={() => void changeRecordingDirectory()}
         onContinue={() => setRecordingStopIntent(undefined)}
         onDiscard={() => void finalizeRecording(false)}
@@ -1389,7 +1414,7 @@ export const RoomPage = () => {
       <RoomDock
         activeAudioPanel={activeAudioPanel}
         setActiveAudioPanel={setActiveAudioPanel}
-        settings={settings}
+        settings={roomDockSettings}
         inputDevices={inputDevices}
         outputDevices={outputDevices}
         isMuted={isMuted}

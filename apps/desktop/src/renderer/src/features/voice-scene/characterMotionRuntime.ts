@@ -1,4 +1,4 @@
-import type { CharacterMotionRoute } from "./characterMotion";
+import type { CharacterMotionPoint, CharacterMotionRoute } from "./characterMotion";
 
 export type CharacterMotionPhase =
   | "entering"
@@ -24,6 +24,9 @@ export const characterMotionTiming = {
 const sceneXFor = (left: number): string => `${left}cqw`;
 const sceneYFor = (top: number): string => `${top}cqh`;
 
+export const sceneTransform = (left: number, top: number): string =>
+  `translate3d(${sceneXFor(left)}, ${sceneYFor(top)}, 0)`;
+
 const CHARACTER_START_EASE = [0.35, 0, 0.65, 0.65] as const;
 const CHARACTER_STOP_EASE = [0.35, 0.35, 0.65, 1] as const;
 const CHARACTER_SHORT_EASE = [0.45, 0, 0.55, 1] as const;
@@ -38,6 +41,48 @@ const routeEasesFor = (pointCount: number, preserveVelocity = false) => {
     if (index === segmentCount - 1) return CHARACTER_STOP_EASE;
     return "linear" as const;
   });
+};
+
+const easingToCss = (ease: string | readonly number[]): string =>
+  typeof ease === "string" ? ease : `cubic-bezier(${ease.join(", ")})`;
+
+/**
+ * Transform-only Web Animations keyframes stay on Chromium's compositor even
+ * when React, signaling or audio work briefly occupies the renderer thread.
+ */
+export const characterRouteKeyframes = (
+  route: CharacterMotionRoute,
+  preserveVelocity = false,
+): Keyframe[] => {
+  const eases = routeEasesFor(route.points.length, preserveVelocity);
+  return route.points.map((point, index) => ({
+    transform: sceneTransform(point.left, point.top),
+    offset: route.times[index],
+    ...(index < route.points.length - 1 ? { easing: easingToCss(eases[index]!) } : {}),
+  }));
+};
+
+/** Read the current compositor translation only when a route is interrupted. */
+export const readRenderedScenePosition = (
+  element: HTMLElement,
+  fallback: CharacterMotionPoint,
+): CharacterMotionPoint => {
+  const container = element.offsetParent;
+  if (!(container instanceof HTMLElement)) return fallback;
+  const bounds = container.getBoundingClientRect();
+  if (bounds.width <= 0 || bounds.height <= 0) return fallback;
+
+  try {
+    const transform = window.getComputedStyle(element).transform;
+    if (!transform || transform === "none") return fallback;
+    const matrix = new DOMMatrixReadOnly(transform);
+    return {
+      left: (matrix.m41 / bounds.width) * 100,
+      top: (matrix.m42 / bounds.height) * 100,
+    };
+  } catch {
+    return fallback;
+  }
 };
 
 export const routeAnimation = (route: CharacterMotionRoute, preserveVelocity = false) => ({

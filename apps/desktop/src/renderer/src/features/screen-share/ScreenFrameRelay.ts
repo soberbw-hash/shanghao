@@ -1,5 +1,7 @@
 import type { SignalEnvelope } from "@private-voice/signaling";
 
+import { rendererPerformanceMonitor } from "../diagnostics/rendererPerformanceMonitor";
+
 const MAX_WIDTH = 1_280;
 const MAX_BYTES = 180 * 1024;
 const FRAME_ENCODINGS = [
@@ -22,6 +24,7 @@ export class ScreenFrameRelay {
   private timer?: number;
   private intervalMs?: number;
   private sequence = 0;
+  private captureInFlight = false;
 
   constructor(private readonly options: ScreenFrameRelayOptions) {}
 
@@ -46,14 +49,14 @@ export class ScreenFrameRelay {
     this.intervalMs = intervalMs;
     video.addEventListener("loadeddata", () => void this.captureAndSend(), { once: true });
     void video.play().catch(() => undefined);
-    this.timer = window.setInterval(() => void this.captureAndSend(), intervalMs);
     void this.captureAndSend();
   }
 
   stop(): void {
-    if (this.timer !== undefined) window.clearInterval(this.timer);
+    if (this.timer !== undefined) window.clearTimeout(this.timer);
     this.timer = undefined;
     this.intervalMs = undefined;
+    this.captureInFlight = false;
     if (this.video) {
       this.video.pause();
       this.video.srcObject = null;
@@ -63,45 +66,64 @@ export class ScreenFrameRelay {
   }
 
   private async captureAndSend(): Promise<void> {
+    if (this.captureInFlight) return;
+    this.captureInFlight = true;
+    const captureStartedAt = performance.now();
     const video = this.video;
     const canvas = this.canvas;
     const targetPeerIds = this.options.getTargetPeerIds();
-    if (!video || !canvas || video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) return;
-    if (targetPeerIds.length === 0) {
-      this.stop();
-      return;
-    }
+    try {
+      if (!video || !canvas || video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) return;
+      if (targetPeerIds.length === 0) {
+        this.stop();
+        return;
+      }
 
-    const sourceWidth = video.videoWidth || 1280;
-    const sourceHeight = video.videoHeight || 720;
-    let encodedFrame: { data: string; width: number; height: number } | undefined;
-    for (const encoding of FRAME_ENCODINGS) {
-      const width = Math.min(MAX_WIDTH, encoding.width, sourceWidth);
-      const height = Math.max(1, Math.round((width / sourceWidth) * sourceHeight));
-      canvas.width = width;
-      canvas.height = height;
-      const context = canvas.getContext("2d", { alpha: false });
-      if (!context) return;
-      context.drawImage(video, 0, 0, width, height);
-      const data = canvas.toDataURL("image/jpeg", encoding.quality);
-      if (new TextEncoder().encode(data).byteLength <= MAX_BYTES) {
-        encodedFrame = { data, width, height };
-        break;
+      const sourceWidth = video.videoWidth || 1280;
+      const sourceHeight = video.videoHeight || 720;
+      let encodedFrame: { data: string; width: number; height: number } | undefined;
+      for (const encoding of FRAME_ENCODINGS) {
+        const width = Math.min(MAX_WIDTH, encoding.width, sourceWidth);
+        const height = Math.max(1, Math.round((width / sourceWidth) * sourceHeight));
+        canvas.width = width;
+        canvas.height = height;
+        const context = canvas.getContext("2d", { alpha: false });
+        if (!context) return;
+        context.drawImage(video, 0, 0, width, height);
+        const data = canvas.toDataURL("image/jpeg", encoding.quality);
+        if (new TextEncoder().encode(data).byteLength <= MAX_BYTES) {
+          encodedFrame = { data, width, height };
+          break;
+        }
+      }
+      if (!encodedFrame) return;
+
+      rendererPerformanceMonitor.recordLongTask("canvas", performance.now() - captureStartedAt);
+
+      await this.options.send({
+        type: "screen_frame",
+        roomId: this.options.roomId,
+        peerId: this.options.peerId,
+        sourcePeerId: this.options.peerId,
+        sequence: ++this.sequence,
+        sentAt: Date.now(),
+        width: encodedFrame.width,
+        height: encodedFrame.height,
+        data: encodedFrame.data,
+        targetPeerIds,
+      });
+    } finally {
+      this.captureInFlight = false;
+      if (
+        this.video &&
+        this.intervalMs !== undefined &&
+        this.options.getTargetPeerIds().length > 0
+      ) {
+        this.timer = window.setTimeout(() => {
+          this.timer = undefined;
+          void this.captureAndSend();
+        }, this.intervalMs);
       }
     }
-    if (!encodedFrame) return;
-
-    await this.options.send({
-      type: "screen_frame",
-      roomId: this.options.roomId,
-      peerId: this.options.peerId,
-      sourcePeerId: this.options.peerId,
-      sequence: ++this.sequence,
-      sentAt: Date.now(),
-      width: encodedFrame.width,
-      height: encodedFrame.height,
-      data: encodedFrame.data,
-      targetPeerIds,
-    });
   }
 }

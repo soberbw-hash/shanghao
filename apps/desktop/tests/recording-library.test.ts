@@ -10,6 +10,7 @@ import {
   isAllowedRecordingPathInDirectory,
   parseRecordingRange,
   readRecordingLibraryFromDirectory,
+  recordingQuotaDeletionOrder,
   renameRecordingInDirectory,
   setRecordingFavoriteInDirectory,
   toRecordingMediaUrl,
@@ -121,6 +122,50 @@ test("recording favorites persist locally without changing the audio file", asyn
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
+});
+
+test("recording quota considers only unprotected recordings in oldest-first order", () => {
+  const baseItem = {
+    id: "newest",
+    recordingId: "newest",
+    title: "newest",
+    fileName: "newest.m4a",
+    filePath: "C:\\recordings\\newest.m4a",
+    mediaUrl: "recording://newest",
+    createdAt: "2026-08-13T10:22:30.000Z",
+    modifiedAt: "2026-08-13T10:22:30.000Z",
+    fileSize: 1,
+    isFavorite: false,
+    markers: [],
+  };
+  const candidates = recordingQuotaDeletionOrder([
+    baseItem,
+    {
+      ...baseItem,
+      id: "favorite",
+      recordingId: "favorite",
+      filePath: "C:\\recordings\\favorite.m4a",
+      isFavorite: true,
+    },
+    {
+      ...baseItem,
+      id: "marked",
+      recordingId: "marked",
+      filePath: "C:\\recordings\\marked.m4a",
+      markers: [{ id: "m1", offsetMs: 5_000, createdAt: "2026-08-13T10:22:35.000Z" }],
+    },
+    {
+      ...baseItem,
+      id: "oldest",
+      recordingId: "oldest",
+      filePath: "C:\\recordings\\oldest.m4a",
+    },
+  ]);
+
+  assert.deepEqual(
+    candidates.map((item) => item.recordingId),
+    ["oldest", "newest"],
+  );
 });
 
 test("recording media URLs round-trip and directory traversal is rejected", () => {

@@ -103,6 +103,34 @@ export const DiagnosticsSettingsCard = ({
             </div>
           ))}
         </div>
+        {runtimeHealth?.rendererPerformance?.componentRenderCounts ? (
+          <div className="mt-3 rounded-[12px] border border-white bg-white/80 px-3 py-3">
+            <div className="text-[10px] font-medium text-[#98A2B3]">组件 Render（本采样窗口）</div>
+            <div className="mt-2 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+              {["RoomPage", "TeamIsland", "SceneCharacter", "ScreenShare"].map((name) => {
+                const count = runtimeHealth.rendererPerformance?.componentRenderCounts?.[name] ?? 0;
+                const reasons = runtimeHealth.rendererPerformance?.componentRenderReasons?.[name];
+                const reason = reasons
+                  ? Object.entries(reasons).sort((left, right) => right[1] - left[1])[0]?.[0]
+                  : undefined;
+                return (
+                  <div key={name} className="rounded-[10px] border border-[#E8EEF7] px-2.5 py-2">
+                    <div className="text-[11px] font-semibold text-[#344054]">{name}</div>
+                    <div className="mt-0.5 text-[11px] tabular-nums text-[#6B7F99]">
+                      {count} 次{reason ? ` · ${reason}` : ""}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+            <div className="mt-2 text-[11px] text-[#7A8CA5]">
+              Long Task：
+              {Object.entries(runtimeHealth.rendererPerformance.longTaskCategories ?? {})
+                .map(([category, count]) => `${category} ${count}`)
+                .join(" · ") || "无"}
+            </div>
+          </div>
+        ) : null}
       </div>
       {screenShare ? (
         <div

@@ -8,8 +8,8 @@
   contain: layout paint style;
   isolation: isolate;
   --run-facing: 1;
-  /* Sixteen poses preserve the 320ms gait while presenting a new pose every
-     20ms. Position remains a separate compositor transform at display rate. */
+  /* React aligns this fallback duration to the measured display refresh rate.
+     Position remains a separate compositor transform at display rate. */
   --run-cycle-duration: 320ms;
 }
 
@@ -65,12 +65,16 @@
   animation: walking-animal-run-cycle var(--run-cycle-duration) linear infinite;
   animation-delay: var(--character-motion-delay, 0s);
   backface-visibility: hidden;
-  will-change: transform;
+  will-change: auto;
   opacity: 0;
 }
 
 .walking-animal-run-cycle-strip.is-ready {
   opacity: 1;
+}
+
+.room-character-walking-layer.is-active .walking-animal-run-cycle-strip {
+  will-change: transform;
 }
 
 .walking-animal.is-paused .walking-animal-run-cycle-strip {
@@ -303,13 +307,11 @@
 }
 
 .desk-animal-idle .desk-animal-head {
-  animation: desk-head-idle 6.4s cubic-bezier(0.45, 0, 0.55, 1) infinite;
-  animation-delay: var(--character-motion-delay, 0s);
+  animation: none;
 }
 
 .desk-animal-idle .desk-animal-body-rig {
-  animation: desk-body-breathe 3.6s cubic-bezier(0.45, 0, 0.55, 1) infinite;
-  animation-delay: var(--character-motion-delay, 0s);
+  animation: none;
 }
 
 .desk-animal-gaming .desk-animal-head {
@@ -343,14 +345,12 @@
 }
 
 .desk-animal-muted .desk-animal-head {
-  animation: desk-head-muted 5.4s cubic-bezier(0.45, 0, 0.55, 1) infinite;
-  animation-delay: var(--character-motion-delay, 0s);
+  animation: none;
   filter: saturate(0.82);
 }
 
 .desk-animal-muted .desk-animal-body-rig {
-  animation: desk-body-breathe 4.2s cubic-bezier(0.45, 0, 0.55, 1) infinite;
-  animation-delay: var(--character-motion-delay, 0s);
+  animation: none;
 }
 
 .desk-animal-moving {
@@ -506,15 +506,15 @@
 }
 
 .layered-animal-idle .layered-animal-body {
-  animation: layered-body-breathe 3.4s cubic-bezier(0.45, 0, 0.55, 1) infinite;
+  animation: none;
 }
 
 .layered-animal-idle .layered-animal-head {
-  animation: layered-head-idle 3.4s cubic-bezier(0.45, 0, 0.55, 1) infinite;
+  animation: none;
 }
 
 .layered-animal-idle .layered-animal-tail {
-  animation: layered-tail-idle 2.8s cubic-bezier(0.45, 0, 0.55, 1) infinite;
+  animation: none;
 }
 
 .layered-animal-speaking .layered-animal-head {
@@ -632,10 +632,8 @@
   place-items: end center;
   transform: scale(var(--voice-scale));
   transform-origin: center bottom;
-  filter: drop-shadow(0 4px 6px rgba(30, 45, 70, 0.15)) drop-shadow(0 1px 2px rgba(30, 45, 70, 0.1));
   transition:
     transform 80ms linear,
-    filter 250ms var(--ease-out-soft),
     opacity 250ms var(--ease-out-soft);
 }
 
@@ -684,11 +682,6 @@
   filter: blur(2px);
 }
 
-.room-character-speaking {
-  filter: drop-shadow(0 0 var(--voice-glow-radius) rgba(77, 163, 255, 0.35))
-    drop-shadow(0 4px 6px rgba(30, 45, 70, 0.1));
-}
-
 .room-character-speaking::before {
   opacity: var(--voice-halo-opacity);
   transform: translateX(-50%) scale(var(--voice-halo-scale));
@@ -700,7 +693,7 @@
 }
 
 .room-character-muted {
-  filter: saturate(0.5) drop-shadow(0 4px 6px rgba(30, 45, 70, 0.08));
+  opacity: 0.72;
 }
 
 .room-character-reconnecting {

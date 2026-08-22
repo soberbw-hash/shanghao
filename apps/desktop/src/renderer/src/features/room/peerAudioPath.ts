@@ -34,3 +34,40 @@ export const shouldSendAudioRelay = ({
   evidence,
   isRelayRequested,
 }: PeerAudioRelayDecision): boolean => isRelayRequested || shouldUseAudioRelay(evidence);
+
+export interface RelayResyncEvidence {
+  now: number;
+  lastReceivedAt?: number;
+  lastPlayedAt?: number;
+  lastResyncRequestedAt?: number;
+  lastResyncReceivedAt?: number;
+}
+
+const RELAY_RESYNC_RECENT_RECEIVE_MS = 3_000;
+const RELAY_RESYNC_COOLDOWN_MS = 5_000;
+
+/**
+ * Silence after the last successfully played relay packet is normal because the
+ * relay voice gate stops sending quiet audio. Resync only when newer packets are
+ * still arriving without being played, and rate-limit the recovery handshake.
+ */
+export const shouldRequestRelayResync = ({
+  now,
+  lastReceivedAt,
+  lastPlayedAt,
+  lastResyncRequestedAt,
+  lastResyncReceivedAt,
+}: RelayResyncEvidence): boolean => {
+  if (lastReceivedAt === undefined || now - lastReceivedAt > RELAY_RESYNC_RECENT_RECEIVE_MS) {
+    return false;
+  }
+  if (lastPlayedAt !== undefined && lastReceivedAt <= lastPlayedAt) return false;
+  if (lastResyncReceivedAt !== undefined && lastReceivedAt <= lastResyncReceivedAt) return false;
+  if (
+    lastResyncRequestedAt !== undefined &&
+    now - lastResyncRequestedAt < RELAY_RESYNC_COOLDOWN_MS
+  ) {
+    return false;
+  }
+  return true;
+};

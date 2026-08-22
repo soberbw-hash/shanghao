@@ -45,6 +45,8 @@ export const defaultSettings: AppSettings = {
   recordingMarkerShortcut: "F8",
   recordingSaveDirectory: undefined,
   recordingLibraryQuotaGb: 10,
+  isRecordingWasteAutoCleanupEnabled: false,
+  aiAsrModel: "vibevoice",
   aiProcessingMode: "after_game",
   isAiAutoTranscribeEnabled: false,
   isAiAutoOrganizeEnabled: false,
@@ -206,6 +208,14 @@ export const migrateSettings = (raw: RawSettings): MigrationResult => {
       previousVersion < 24 && raw.recordingLibraryQuotaGb === 5
         ? 10
         : normalizeNumber(raw.recordingLibraryQuotaGb, 10, 1, 100),
+    isRecordingWasteAutoCleanupEnabled: normalizeBoolean(
+      raw.isRecordingWasteAutoCleanupEnabled,
+      false,
+    ),
+    aiAsrModel:
+      raw.aiAsrModel === "qwen3-asr-0.6b" || raw.aiAsrModel === "paraformer-zh"
+        ? raw.aiAsrModel
+        : "vibevoice",
     aiProcessingMode:
       raw.aiProcessingMode === "low_resource" ||
       raw.aiProcessingMode === "immediate" ||

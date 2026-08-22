@@ -2,7 +2,6 @@ import { spawn } from "node:child_process";
 import { copyFile, mkdir, readdir, stat, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 
-import ffmpegPath from "ffmpeg-static";
 import { app } from "electron";
 
 import type {
@@ -17,6 +16,7 @@ import {
   resolveUsableRecordingDirectory,
 } from "./recording-path";
 import { registerRecordingInDirectory } from "./recording-library-core";
+import { resolveFfmpegExecutable } from "./media-runtime";
 
 const inferExtensionFromMime = (mimeType: string): string => {
   if (mimeType.includes("mp4") || mimeType.includes("aac")) {
@@ -71,7 +71,7 @@ export const exportRecordingFromMain = async (
     } else {
       await new Promise<void>((resolve, reject) => {
         const ffmpeg = spawn(
-          ffmpegPath || "ffmpeg",
+          resolveFfmpegExecutable() || "ffmpeg",
           [
             "-y",
             "-i",

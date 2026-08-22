@@ -45,6 +45,7 @@ interface InboundAudioFlowContext {
   nowMs: number;
   connectedAtMs: number;
   isRemoteMuted: boolean;
+  isRemoteSpeaking?: boolean;
   gracePeriodMs?: number;
   stalledSampleLimit?: number;
 }
@@ -90,6 +91,20 @@ export const evaluateInboundAudioFlow = (
     return {
       status: "flowing",
       progressed: true,
+      next: { ...nextCounters, stagnantSamples: 0 },
+    };
+  }
+
+  const hasReceivedAudio =
+    Math.max(0, stats.bytesReceived ?? previous.bytesReceived ?? 0) > 0 ||
+    Math.max(0, stats.packetsReceived ?? previous.packetsReceived ?? 0) > 0;
+  if (context.isRemoteSpeaking === false && hasReceivedAudio) {
+    // Opus DTX legitimately stops RTP counters while a connected peer is quiet.
+    // Keep a previously verified path healthy and only test for a stall while the
+    // remote presence state says that voice should currently be arriving.
+    return {
+      status: "flowing",
+      progressed: false,
       next: { ...nextCounters, stagnantSamples: 0 },
     };
   }
