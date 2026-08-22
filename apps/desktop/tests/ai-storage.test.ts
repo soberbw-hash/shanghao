@@ -10,11 +10,12 @@ import {
 } from "../src/main/ai-storage";
 
 test("development and packaged builds resolve one version-independent local AI directory", () => {
+  const localAppDataDirectory = "C:\\Users\\tester\\AppData\\Local";
   const paths = resolvePersistentAiStoragePaths({
     appDataDirectory: "C:\\Users\\tester\\AppData\\Roaming",
-    localAppDataDirectory: "C:\\Users\\tester\\AppData\\Local",
+    localAppDataDirectory,
   });
-  assert.equal(paths.root, "C:\\Users\\tester\\AppData\\Local\\ShangHao\\AI");
+  assert.equal(paths.root, path.join(localAppDataDirectory, "ShangHao", "AI"));
   assert.equal(paths.models, path.join(paths.root, "models"));
   assert.equal(paths.runtimes, path.join(paths.root, "runtimes"));
   assert.equal(paths.root.includes("2.8.0"), false);

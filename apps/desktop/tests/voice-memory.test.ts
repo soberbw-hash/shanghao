@@ -64,17 +64,18 @@ const record = (): VoiceMemoryRecord => ({
 });
 
 test("VibeASR uses the sampling decoder defaults required for Chinese recordings", () => {
+  const modelPath = "C:\\models\\vibevoice";
   const args = buildVibeVoiceArguments({
-    modelPath: "C:\\models\\vibevoice",
+    modelPath,
     wavPath: "C:\\recordings\\room.wav",
     resourceMode: "low",
   });
 
   assert.deepEqual(args, [
     "--vae-model",
-    "C:\\models\\vibevoice\\vibeasr-vae-encoder-i8_s.gguf",
+    path.join(modelPath, "vibeasr-vae-encoder-i8_s.gguf"),
     "--lm-model",
-    "C:\\models\\vibevoice\\vibeasr-lm-i2_s-embed-q6_k.gguf",
+    path.join(modelPath, "vibeasr-lm-i2_s-embed-q6_k.gguf"),
     "--audio",
     "C:\\recordings\\room.wav",
     "-t",
