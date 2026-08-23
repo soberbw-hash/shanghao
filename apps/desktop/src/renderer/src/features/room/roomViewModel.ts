@@ -1,6 +1,7 @@
 import type { ChatMessage, RoomMember, RoomQuickMessage } from "@private-voice/shared";
 
 import type { ScreenShareItem } from "../screen-share/types";
+import type { ScreenShareQuality } from "../screen-share/types";
 import type { RemoteScreenFrame } from "../../store/roomStore";
 
 const CHARACTER_BUBBLE_LIFETIME_MS = 4_200;
@@ -56,6 +57,7 @@ export const selectCharacterChatBubbles = (
 interface ScreenShareViewInput {
   members: RoomMember[];
   localStream?: MediaStream;
+  localQuality?: ScreenShareQuality;
   remoteStreams: Record<string, MediaStream>;
   remoteFrames: Record<string, RemoteScreenFrame>;
   remoteSharing: Record<string, true>;
@@ -73,6 +75,7 @@ const isFreshFrame = (receivedAt: string, now: number): boolean => {
 export const selectScreenShareView = ({
   members,
   localStream,
+  localQuality,
   remoteStreams,
   remoteFrames,
   remoteSharing,
@@ -86,6 +89,7 @@ export const selectScreenShareView = ({
           title: "你正在分享",
           stream: localStream,
           isLocal: true,
+          quality: localQuality,
           transport: "webrtc",
         },
       ]
@@ -116,6 +120,8 @@ export const selectScreenShareView = ({
       id: `${peerId}-relay`,
       title: `${member?.nickname ?? "好友"} 正在分享`,
       frameDataUrl: frame.data,
+      frameWidth: frame.width,
+      frameHeight: frame.height,
       transport: "relay",
     });
   }

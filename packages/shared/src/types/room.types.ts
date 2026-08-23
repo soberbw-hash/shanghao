@@ -96,6 +96,12 @@ export interface WorkActivity {
 
 export interface RoomMember {
   id: string;
+  /** Permanent Supabase Auth identity for signed-in members, or guest:<peerId> for guests. */
+  userId?: string;
+  username?: string;
+  displayName?: string;
+  avatarUrl?: string;
+  isGuest?: boolean;
   profileId?: string;
   nickname: string;
   avatarPath?: string;

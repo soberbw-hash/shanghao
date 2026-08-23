@@ -20,6 +20,7 @@ const memberPresenceLabels: Record<MemberPresenceState, string> = {
   [MemberPresenceState.Connecting]: "连接中",
   [MemberPresenceState.Online]: "在线",
   [MemberPresenceState.Reconnecting]: "重连中",
+  [MemberPresenceState.Updating]: "更新中",
 };
 
 const recordingStateLabels: Record<RecordingState, string> = {

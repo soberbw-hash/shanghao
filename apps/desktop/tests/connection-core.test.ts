@@ -337,8 +337,11 @@ test("knock feedback is intentionally louder than routine UI sounds", () => {
   const sounds = read("apps/desktop/src/renderer/src/features/audio/uiSound.ts");
   const roomState = read("apps/desktop/src/renderer/src/hooks/useRoomState.ts");
   const ipc = read("apps/desktop/src/main/ipc.ts");
-  assert.equal(sounds.includes('"knock-bell": 1.35'), true);
-  assert.equal(sounds.includes("soundMix[sound]"), true);
+  assert.equal(sounds.includes("playback.volume = Math.min(1, 0.34 * masterVolume)"), true);
+  assert.equal(sounds.includes("volume: uiGain.subtle"), true);
+  assert.equal(sounds.includes("volume: uiGain.standard"), true);
+  assert.equal(sounds.includes("volume: uiGain.important"), true);
+  assert.equal(sounds.includes("volume: uiGain.deviceToggle"), true);
   assert.equal(roomState.includes('window.setTimeout(() => playUiSound("knock-bell"), 190)'), true);
   assert.equal(roomState.includes("shakeWindow: true"), true);
   assert.equal(ipc.includes("const shakeMainWindow"), true);

@@ -3,12 +3,14 @@ import {
   Activity,
   CalendarDays,
   Headphones,
+  Info,
   Library,
   MonitorCog,
-  RefreshCw,
   Sparkles,
+  UserRound,
 } from "lucide-react";
 import { gsap } from "gsap";
+import { LayoutGroup, motion } from "framer-motion";
 
 import type {
   AppSettings,
@@ -22,10 +24,13 @@ import { cn } from "@private-voice/ui";
 
 import { Button } from "../components/base/Button";
 import { Switch } from "../components/base/Switch";
-import { motionDuration, motionEase } from "../features/motion/motionSystem";
+import { playUiSound } from "../features/audio/uiSound";
+import { motionDuration, motionEase, motionSpring } from "../features/motion/motionSystem";
 import { rendererPerformanceMonitor } from "../features/diagnostics/rendererPerformanceMonitor";
 import { PageContainer } from "../components/layout/PageContainer";
 import { AudioSettingsCard } from "../components/settings/AudioSettingsCard";
+import { AboutSettingsCard } from "../components/settings/AboutSettingsCard";
+import { AccountSettingsCard } from "../components/settings/AccountSettingsCard";
 import { DiagnosticsSettingsCard } from "../components/settings/DiagnosticsSettingsCard";
 import { SettingsItemRow } from "../components/settings/SettingsItemRow";
 import { SettingsPageHeader } from "../components/settings/SettingsPageHeader";
@@ -36,8 +41,6 @@ import { AiVoiceMemorySettingsCard } from "../components/settings/AiVoiceMemoryS
 import { RoomHistorySettingsCard } from "../components/settings/RoomHistorySettingsCard";
 import { WeatherSettingsCard } from "../components/settings/WeatherSettingsCard";
 import { StartupSplashPage } from "../components/status/StartupSplashPage";
-import { ReleaseDetailModal } from "../components/status/ReleaseDetailModal";
-import { RELEASE_HISTORY, type ReleaseHistoryEntry } from "../components/status/releaseHistory";
 import { useMicTest } from "../hooks/useMicTest";
 import { usePrefersReducedMotion } from "../hooks/usePrefersReducedMotion";
 import { getRoomRuntimeDiagnostics, injectRealtimeFault } from "../hooks/useRoomState";
@@ -45,19 +48,37 @@ import { useAppStore } from "../store/appStore";
 import { useAudioStore } from "../store/audioStore";
 import { useRoomStore } from "../store/roomStore";
 import { useSettingsStore } from "../store/settingsStore";
+import { toUserFacingError } from "../utils/userFacingError";
 
 type SettingsSectionId =
-  "general" | "audio" | "recordings" | "ai" | "roomHistory" | "updates" | "diagnostics";
+  "account" | "general" | "audio" | "recordings" | "ai" | "roomHistory" | "about" | "diagnostics";
 
 const sections = [
+  { id: "account", label: "账号", icon: UserRound },
   { id: "general", label: "通用", icon: MonitorCog },
   { id: "audio", label: "语音", icon: Headphones },
   { id: "recordings", label: "录音库", icon: Library },
   { id: "ai", label: "AI 功能", icon: Sparkles },
   { id: "roomHistory", label: "房间记录", icon: CalendarDays },
-  { id: "updates", label: "更新", icon: RefreshCw },
+  { id: "about", label: "关于上号", icon: Info },
   { id: "diagnostics", label: "诊断", icon: Activity },
 ] satisfies Array<{ id: SettingsSectionId; label: string; icon: typeof Headphones }>;
+
+const SETTINGS_SECTION_REQUEST_KEY = "shanghao.settings-section";
+
+const getInitialSettingsSection = (): SettingsSectionId => {
+  const storedSection = window.sessionStorage.getItem(SETTINGS_SECTION_REQUEST_KEY);
+  window.sessionStorage.removeItem(SETTINGS_SECTION_REQUEST_KEY);
+  if (sections.some(({ id }) => id === storedSection)) {
+    return storedSection as SettingsSectionId;
+  }
+
+  if (!import.meta.env.DEV) return "general";
+  const requestedSection = new URLSearchParams(window.location.search).get("settingsSection");
+  return sections.some(({ id }) => id === requestedSection)
+    ? (requestedSection as SettingsSectionId)
+    : "general";
+};
 
 const sanitizeDiagnosticsServerUrl = (value?: string): string | undefined => {
   if (!value) return undefined;
@@ -81,6 +102,7 @@ export const SettingsPage = () => {
   const settings = useSettingsStore((state) => state.settings);
   const runtimeInfo = useSettingsStore((state) => state.runtimeInfo);
   const updateInfo = useSettingsStore((state) => state.updateInfo);
+  const updateStatus = useSettingsStore((state) => state.updateStatus);
   const saveSettings = useSettingsStore((state) => state.saveSettings);
   const resetSettings = useSettingsStore((state) => state.resetSettings);
   const checkUpdates = useSettingsStore((state) => state.checkUpdates);
@@ -92,7 +114,7 @@ export const SettingsPage = () => {
   const connectionHealth = useRoomStore((state) => state.connectionHealth);
   const localStream = useRoomStore((state) => state.localStream);
   const remoteStreams = useRoomStore((state) => state.remoteStreams);
-  const [activeSection, setActiveSection] = useState<SettingsSectionId>("general");
+  const [activeSection, setActiveSection] = useState<SettingsSectionId>(getInitialSettingsSection);
   const [diagnostics, setDiagnostics] = useState<DiagnosticsSnapshot>();
   const [runtimeHealth, setRuntimeHealth] = useState<RuntimeHealthSnapshot>();
   const [relayDiagnostics, setRelayDiagnostics] = useState<RelayStatusSnapshot>();
@@ -103,8 +125,10 @@ export const SettingsPage = () => {
     useState(!cachedWindowsDiagnostics);
   const [isRepairingFirewall, setIsRepairingFirewall] = useState(false);
   const [saveNotice, setSaveNotice] = useState("设置会自动保存");
-  const [selectedRelease, setSelectedRelease] = useState<ReleaseHistoryEntry>();
   const pageRef = useRef<HTMLDivElement>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
+  const sectionDirectionRef = useRef(1);
+  const didMountSectionRef = useRef(false);
   const reduceMotion = usePrefersReducedMotion();
   const isSettingsReady = Boolean(settings);
 
@@ -276,9 +300,47 @@ export const SettingsPage = () => {
     return () => context.revert();
   }, [isSettingsReady, reduceMotion]);
 
+  useLayoutEffect(() => {
+    const target = contentRef.current;
+    if (!isSettingsReady || !target) return;
+    if (!didMountSectionRef.current) {
+      didMountSectionRef.current = true;
+      return;
+    }
+    if (reduceMotion) {
+      gsap.fromTo(
+        target,
+        { autoAlpha: 0 },
+        { autoAlpha: 1, duration: motionDuration.instant, clearProps: "opacity,visibility" },
+      );
+      return;
+    }
+    gsap.fromTo(
+      target,
+      { autoAlpha: 0, x: sectionDirectionRef.current * 12 },
+      {
+        autoAlpha: 1,
+        x: 0,
+        duration: motionDuration.compact,
+        ease: motionEase.spatial,
+        force3D: true,
+        clearProps: "transform,opacity,visibility",
+      },
+    );
+  }, [activeSection, isSettingsReady, reduceMotion]);
+
   if (!settings) {
     return <StartupSplashPage message="正在准备设置..." />;
   }
+
+  const selectSection = (nextSection: SettingsSectionId) => {
+    if (nextSection === activeSection) return;
+    const currentIndex = sections.findIndex(({ id }) => id === activeSection);
+    const nextIndex = sections.findIndex(({ id }) => id === nextSection);
+    sectionDirectionRef.current = nextIndex >= currentIndex ? 1 : -1;
+    playUiSound("settings-section");
+    setActiveSection(nextSection);
+  };
 
   const refreshDiagnostics = () =>
     void window.desktopApi.diagnostics.snapshot().then(setDiagnostics);
@@ -305,13 +367,7 @@ export const SettingsPage = () => {
           description: firewall.healthy ? "TCP/UDP 双向规则已正常启用。" : firewall.message,
         });
       })
-      .catch((error) =>
-        pushToast({
-          tone: "danger",
-          title: "防火墙修复失败",
-          description: error instanceof Error ? error.message : "请确认管理员权限后重试。",
-        }),
-      )
+      .catch((error) => pushToast({ tone: "danger", ...toUserFacingError(error, "settings") }))
       .finally(() => setIsRepairingFirewall(false));
   };
   const handleIconOverlayChange = (hidden: boolean) => {
@@ -332,11 +388,11 @@ export const SettingsPage = () => {
             : "已恢复修改前的 Windows 图标标记。",
         });
       })
-      .catch((error) =>
+      .catch(() =>
         pushToast({
           tone: "danger",
           title: hidden ? "隐藏失败" : "恢复失败",
-          description: error instanceof Error ? error.message : "请允许 Windows 管理员确认后重试。",
+          description: "请允许 Windows 管理员确认，然后再次操作。",
         }),
       );
   };
@@ -349,8 +405,7 @@ export const SettingsPage = () => {
       setSaveNotice("保存失败");
       pushToast({
         tone: "danger",
-        title: "设置保存失败",
-        description: error instanceof Error ? error.message : "请稍后重试。",
+        ...toUserFacingError(error, "settings"),
       });
       throw error;
     }
@@ -455,6 +510,7 @@ export const SettingsPage = () => {
   );
 
   const content: Record<SettingsSectionId, React.ReactNode> = {
+    account: <AccountSettingsCard />,
     general: (
       <SettingsSection title="应用" description="控制窗口与图形渲染。">
         <div className="space-y-3">
@@ -473,6 +529,22 @@ export const SettingsPage = () => {
               onChange={(minimizeToTray) => void handleSaveSettings({ minimizeToTray })}
             />
           </SettingsItemRow>
+          <SettingsItemRow label="界面大小" description="按排版系统重新布局，不拉伸角色位图。">
+            <select
+              value={settings.uiScale}
+              className="settings-inline-select"
+              aria-label="界面大小"
+              onChange={(event) =>
+                void handleSaveSettings({
+                  uiScale: Number(event.target.value) as AppSettings["uiScale"],
+                })
+              }
+            >
+              <option value={100}>100%</option>
+              <option value={110}>110%</option>
+              <option value={125}>125%</option>
+            </select>
+          </SettingsItemRow>
           <SettingsItemRow
             label="开启工作显示"
             description="显示自己和好友持续使用的专业工作软件；游戏和音乐不受影响。"
@@ -481,6 +553,17 @@ export const SettingsPage = () => {
               isChecked={settings.isWorkActivityVisible}
               onChange={(isWorkActivityVisible) =>
                 void handleSaveSettings({ isWorkActivityVisible })
+              }
+            />
+          </SettingsItemRow>
+          <SettingsItemRow
+            label="开发者模式"
+            description="显示服务器切换和测试入口。普通使用无需开启。"
+          >
+            <Switch
+              isChecked={settings.isDeveloperModeEnabled}
+              onChange={(isDeveloperModeEnabled) =>
+                void handleSaveSettings({ isDeveloperModeEnabled })
               }
             />
           </SettingsItemRow>
@@ -552,59 +635,14 @@ export const SettingsPage = () => {
       />
     ),
     roomHistory: <RoomHistorySettingsCard settings={settings} onChange={handleSaveSettings} />,
-    updates: (
-      <SettingsSection title="更新" description={`当前版本 ${runtimeInfo?.version ?? "读取中..."}`}>
-        <div className="flex items-center justify-between gap-3 border-b border-[#dbe8f7]/80 pb-4">
-          <div className="text-sm text-[#718096]">{updateInfo?.message ?? "还没有检查更新"}</div>
-          <div className="flex gap-2">
-            <Button variant="secondary" onClick={() => void checkUpdates()}>
-              检查更新
-            </Button>
-            <Button variant="ghost" onClick={() => void openReleases()}>
-              查看发布页
-            </Button>
-          </div>
-        </div>
-        <div className="mt-4 grid gap-3" aria-label="完整版本更新记录">
-          {RELEASE_HISTORY.map((release, index) => (
-            <article
-              key={release.version}
-              className="overflow-hidden rounded-[18px] border border-[#dbe8f7]/80 bg-white/58"
-            >
-              <button
-                type="button"
-                className="w-full px-4 py-3.5 text-left transition-colors hover:bg-white/62"
-                aria-haspopup="dialog"
-                onClick={() => setSelectedRelease(release)}
-              >
-                <div className="flex flex-wrap items-baseline justify-between gap-2">
-                  <div className="flex items-center gap-2">
-                    <strong className="text-sm text-[#26364d]">上号 {release.version}</strong>
-                    {index === 0 ? (
-                      <span className="rounded-full bg-[#e8f2ff] px-2 py-0.5 text-[11px] font-bold text-[#3974d8]">
-                        最新
-                      </span>
-                    ) : null}
-                  </div>
-                  <time className="text-xs text-[#8a9ab0]">{release.date}</time>
-                </div>
-                <div className="mt-1 text-sm font-semibold text-[#52647b]">{release.title}</div>
-                <ul className="mt-2 grid gap-1 text-[13px] leading-5 text-[#718096]">
-                  {release.highlights.map((highlight) => (
-                    <li key={highlight} className="flex gap-2">
-                      <span className="mt-[8px] h-1 w-1 shrink-0 rounded-full bg-[#6da6ef]" />
-                      <span>{highlight}</span>
-                    </li>
-                  ))}
-                </ul>
-                <span className="mt-2.5 inline-flex text-xs font-semibold text-[#3974d8]">
-                  查看详细信息
-                </span>
-              </button>
-            </article>
-          ))}
-        </div>
-      </SettingsSection>
+    about: (
+      <AboutSettingsCard
+        runtimeInfo={runtimeInfo}
+        updateInfo={updateInfo}
+        updateStatus={updateStatus}
+        onCheckUpdates={checkUpdates}
+        onOpenReleases={openReleases}
+      />
     ),
     diagnostics: (
       <div className="space-y-4">
@@ -636,11 +674,11 @@ export const SettingsPage = () => {
                   description: `Fault Lab：${kind}`,
                 }),
               )
-              .catch((error) =>
+              .catch(() =>
                 pushToast({
                   tone: "danger",
                   title: "故障注入失败",
-                  description: error instanceof Error ? error.message : String(error),
+                  description: "测试命令没有执行，详细原因已写入诊断日志。",
                 }),
               )
           }
@@ -680,25 +718,39 @@ export const SettingsPage = () => {
               data-gsap-settings="nav"
               className="settings-nav glass-panel h-fit rounded-[22px] p-2"
             >
-              {sections.map(({ id, label, icon: Icon }) => (
-                <button
-                  key={id}
-                  type="button"
-                  onClick={() => setActiveSection(id)}
-                  className={`flex w-full items-center gap-3 whitespace-nowrap rounded-[14px] px-3 py-2.5 text-left text-sm font-semibold transition-colors duration-100 ${
-                    activeSection === id
-                      ? "bg-[#eaf1ff] text-[#3f6ed7]"
-                      : "text-[#718096] hover:bg-white/70"
-                  }`}
-                >
-                  <Icon className="h-4 w-4" />
-                  {label}
-                </button>
-              ))}
+              <LayoutGroup id="settings-section-navigation">
+                {sections.map(({ id, label, icon: Icon }) => {
+                  const active = activeSection === id;
+                  return (
+                    <button
+                      key={id}
+                      type="button"
+                      data-ui-sound="handled"
+                      aria-current={active ? "page" : undefined}
+                      onClick={() => selectSection(id)}
+                      className={`settings-nav-item relative isolate flex w-full items-center gap-3 whitespace-nowrap rounded-[14px] px-3 py-2.5 text-left text-sm font-semibold transition-colors duration-100 ${
+                        active ? "text-[#3f6ed7]" : "text-[#718096] hover:bg-white/70"
+                      }`}
+                    >
+                      {active ? (
+                        <motion.span
+                          className="settings-nav-active-pill"
+                          layoutId="settings-active-section"
+                          transition={{ type: "spring", ...motionSpring.soft }}
+                        />
+                      ) : null}
+                      <Icon className="relative z-[1] h-4 w-4" />
+                      <span className="relative z-[1]">{label}</span>
+                    </button>
+                  );
+                })}
+              </LayoutGroup>
             </nav>
             <div
+              ref={contentRef}
+              key={activeSection}
               data-gsap-settings="content"
-              className={`min-w-0 ${
+              className={`settings-section-motion min-w-0 ${
                 activeSection === "recordings" ? "settings-recording-content" : ""
               }`}
             >
@@ -707,7 +759,6 @@ export const SettingsPage = () => {
           </div>
         </div>
       </PageContainer>
-      <ReleaseDetailModal release={selectedRelease} onClose={() => setSelectedRelease(undefined)} />
     </>
   );
 };

@@ -543,4 +543,6 @@ app
     }
     if (readyPeers.size === PEER_IDS.length) broadcastPeerList();
   })
-  .catch((error) => finish(false, { error: error instanceof Error ? error.message : String(error) }));
+  .catch((error) =>
+    finish(false, { error: error instanceof Error ? error.message : String(error) }),
+  );

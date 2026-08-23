@@ -44,10 +44,9 @@ export class ScreenCaptureService {
     this.setContentProtection(false);
     await new Promise<void>((resolve) => setImmediate(resolve));
 
-    // Window thumbnails make Windows Graphics Capture initialize every candidate
-    // before the picker can open. Source names are enough for selection and keep
-    // enumeration fast; the selected source itself is cached for the capture request.
-    const sources = await this.waitForSources(false, false);
+    // The renderer source picker is visual, so it needs the real Electron previews.
+    // Keep the thumbnail modest to avoid sending full-resolution frames over IPC.
+    const sources = await this.waitForSources(true, true);
 
     const screenSourceIds = sources
       .filter((source) => source.id.startsWith("screen:"))
@@ -115,7 +114,7 @@ export class ScreenCaptureService {
   private enumerate(withThumbnails: boolean, fetchWindowIcons = withThumbnails) {
     return desktopCapturer.getSources({
       types: ["screen", "window"],
-      thumbnailSize: withThumbnails ? { width: 240, height: 135 } : { width: 0, height: 0 },
+      thumbnailSize: withThumbnails ? { width: 320, height: 180 } : { width: 0, height: 0 },
       fetchWindowIcons,
     });
   }

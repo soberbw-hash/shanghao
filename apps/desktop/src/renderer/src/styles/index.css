@@ -12,5 +12,8 @@
 @import "./parts/110-component-polish.css";
 @import "./parts/120-ai.css";
 @import "./parts/130-final-material.css";
+@import "./parts/140-visual-experience.css";
+@import "./parts/150-account.css";
+@import "./parts/160-sensory-polish.css";
 
 /* Keep these imports ordered: later compatibility passes intentionally win the cascade. */

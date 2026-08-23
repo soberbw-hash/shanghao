@@ -35,7 +35,7 @@ export class BrowserRecordingEncoder implements RecordingEncoder {
     this.startedAt = Date.now();
     const recorder = new MediaRecorder(stream, {
       mimeType: this.capability.mimeType,
-      audioBitsPerSecond: 160_000,
+      audioBitsPerSecond: 128_000,
     });
     this.mediaRecorder = recorder;
     recorder.ondataavailable = (event) => {

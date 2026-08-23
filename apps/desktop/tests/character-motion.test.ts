@@ -174,22 +174,27 @@ test("only the visible walking pose reserves a compositor layer", () => {
   );
 });
 
-test("idle characters do not continuously repaint clipped sprite layers", () => {
-  const styles = readFileSync(
-    path.resolve(process.cwd(), "src/renderer/src/styles/parts/50-character.css"),
-    "utf8",
-  );
-
-  assert.match(styles, /\.desk-animal-idle \.desk-animal-head\s*\{[^}]*animation:\s*none;/s);
-  assert.match(styles, /\.desk-animal-idle \.desk-animal-body-rig\s*\{[^}]*animation:\s*none;/s);
-  assert.doesNotMatch(styles, /\.room-character-speaking\s*\{[^}]*filter:/s);
-
-  const source = readFileSync(
+test("idle characters share one room scheduler capped at two simultaneous actions", () => {
+  const characterSource = readFileSync(
     path.resolve(process.cwd(), "src/renderer/src/components/room/SceneCharacter.tsx"),
     "utf8",
   );
-  assert.equal(source.includes("weightedIdleActions"), false);
-  assert.equal(source.includes('const idleAction: DeskAnimalIdleAction = "none"'), true);
+  const islandSource = readFileSync(
+    path.resolve(process.cwd(), "src/renderer/src/components/room/TeamIsland.tsx"),
+    "utf8",
+  );
+  const schedulerSource = readFileSync(
+    path.resolve(
+      process.cwd(),
+      "src/renderer/src/features/voice-scene/useCoordinatedIdleActions.ts",
+    ),
+    "utf8",
+  );
+  assert.equal(islandSource.includes("useCoordinatedIdleActions"), true);
+  assert.equal(characterSource.includes("idleAction={idleAction}"), true);
+  assert.equal(schedulerSource.includes('document.visibilityState === "hidden"'), true);
+  assert.equal(schedulerSource.includes("2 - active.size"), true);
+  assert.equal(schedulerSource.includes("setIdleAction(nextAction)"), false);
 });
 
 test("channel exit continues from the rendered position without a fixed stand-up pause", () => {

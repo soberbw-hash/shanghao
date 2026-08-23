@@ -1,4 +1,4 @@
-"""Persistent local ASR worker using the six official ShangHao adapters.
+"""Persistent local ASR worker using ShangHao's official-model adapters.
 
 Electron supplies mono PCM16/16 kHz WAV chunks. Each adapter loads only local
 weights and emits native timestamps when the official runtime provides them.
@@ -9,6 +9,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+import traceback
 import wave
 from pathlib import Path
 from typing import Any
@@ -48,6 +49,14 @@ def require_cuda(provider: str, *, bf16: bool = False) -> None:
         raise RuntimeError(f"{provider}_cuda_required")
     if bf16 and not torch.cuda.is_bf16_supported():
         raise RuntimeError(f"{provider}_cuda_bf16_required")
+
+
+def enable_legacy_distutils() -> None:
+    """Activate setuptools' distutils shim for FunASR on Python 3.12+."""
+    try:
+        import setuptools  # noqa: F401
+    except ModuleNotFoundError:
+        return
 
 
 class QwenAsr:
@@ -157,6 +166,7 @@ class QwenAsr:
 
 class FunAsrNano:
     def __init__(self, model_path: str) -> None:
+        enable_legacy_distutils()
         from funasr import AutoModel
 
         require_cuda("fun_asr_nano_2512", bf16=True)
@@ -282,6 +292,7 @@ class FireRedAsr:
 
 class ParaformerAsr:
     def __init__(self, model_path: str, vad_model_path: str, punc_model_path: str) -> None:
+        enable_legacy_distutils()
         from funasr import AutoModel
 
         if not vad_model_path or not punc_model_path:
@@ -337,6 +348,218 @@ class ParaformerAsr:
         }
 
 
+class MossTranscribeDiarize:
+    """Official Transformers inference and official transcript parser."""
+
+    def __init__(self, model_path: str) -> None:
+        from transformers import AutoModelForCausalLM, AutoProcessor
+
+        from moss_transcribe_diarize import parse_transcript
+        from moss_transcribe_diarize.inference_utils import (
+            build_transcription_messages,
+            generate_transcription,
+        )
+
+        require_cuda("moss_transcribe_diarize", bf16=True)
+        self.device = torch.device("cuda:0")
+        self.dtype = torch.bfloat16
+        self.parse_transcript = parse_transcript
+        self.build_messages = build_transcription_messages
+        self.generate_transcription = generate_transcription
+        self.processor = AutoProcessor.from_pretrained(
+            model_path,
+            trust_remote_code=True,
+            local_files_only=True,
+        )
+        self.model = AutoModelForCausalLM.from_pretrained(
+            model_path,
+            trust_remote_code=True,
+            local_files_only=True,
+            dtype="auto",
+        ).to(dtype=self.dtype).to(self.device).eval()
+
+    def transcribe(self, wav_path: str, resource_mode: str) -> dict[str, Any]:
+        configure_threads(resource_mode)
+        result = self.generate_transcription(
+            self.model,
+            self.processor,
+            self.build_messages(wav_path),
+            max_new_tokens=2048,
+            do_sample=False,
+            device=self.device,
+            dtype=self.dtype,
+        )
+        raw_text = str(result.get("text", "")).strip()
+        segments = []
+        for item in self.parse_transcript(raw_text):
+            text = str(getattr(item, "text", "") or "").strip()
+            if not text:
+                continue
+            start = float(getattr(item, "start", 0.0) or 0.0)
+            end = float(getattr(item, "end", start) or start)
+            segments.append(
+                {
+                    "startMs": max(0, round(start * 1000)),
+                    "endMs": max(round(start * 1000) + 100, round(end * 1000)),
+                    "speakerId": str(getattr(item, "speaker", "S01") or "S01"),
+                    "text": text,
+                }
+            )
+        return {"text": "".join(item["text"] for item in segments) or raw_text, "segments": segments}
+
+
+class DolphinCnDialect:
+    """Official 0.4B small.cn non-streaming runtime with word timing enabled."""
+
+    def __init__(self, model_path: str) -> None:
+        import dolphin
+
+        require_cuda("dolphin_cn_dialect")
+        self.transcribe_audio = dolphin.transcribe
+        self.model = dolphin.load_model("small.cn", model_dir=model_path, device="cuda:0")
+
+    @staticmethod
+    def _words(text: str, raw_times: Any) -> list[dict[str, Any]]:
+        if not isinstance(raw_times, (list, tuple)):
+            return []
+        tokens = text.split() if " " in text.strip() else list(text.strip())
+        output = []
+        for token, timing in zip(tokens, raw_times):
+            start = end = None
+            if isinstance(timing, dict):
+                start = timing.get("start", timing.get("start_time"))
+                end = timing.get("end", timing.get("end_time"))
+            elif isinstance(timing, (list, tuple)) and len(timing) >= 2:
+                start, end = timing[0], timing[1]
+            if start is None or end is None:
+                continue
+            start_ms = max(0, round(float(start) * 1000))
+            end_ms = max(start_ms + 20, round(float(end) * 1000))
+            output.append({"startMs": start_ms, "endMs": end_ms, "text": token})
+        return output
+
+    def transcribe(self, wav_path: str, resource_mode: str) -> dict[str, Any]:
+        configure_threads(resource_mode)
+        result = self.transcribe_audio(
+            self.model,
+            wav_path,
+            lang_sym="zh",
+            region_sym="CN",
+            predict_time=True,
+            word_timestamp=True,
+            beam_size=1,
+            hotwords=None,
+            use_deep_biasing=False,
+        )
+        text = str(getattr(result, "text_nospecial", None) or getattr(result, "text", "") or "").strip()
+        words = self._words(text, getattr(result, "word_timestamps", None))
+        if words:
+            return {
+                "text": text,
+                "segments": [{
+                    "startMs": words[0]["startMs"],
+                    "endMs": words[-1]["endMs"],
+                    "text": text,
+                    "words": words,
+                }],
+            }
+        return {"text": text}
+
+
+class CohereTranscribe:
+    """Official local Transformers runtime; ForcedAligner is a non-blocking enhancement."""
+
+    def __init__(self, model_path: str, aligner_model_path: str) -> None:
+        from transformers import AutoProcessor, CohereAsrForConditionalGeneration
+
+        require_cuda("cohere_transcribe", bf16=True)
+        self.device = torch.device("cuda:0")
+        self.dtype = torch.bfloat16
+        self.processor = AutoProcessor.from_pretrained(model_path, local_files_only=True)
+        self.model = CohereAsrForConditionalGeneration.from_pretrained(
+            model_path,
+            local_files_only=True,
+            dtype=self.dtype,
+            device_map="cuda:0",
+        ).eval()
+        self.aligner = None
+        if aligner_model_path:
+            try:
+                from qwen_asr import Qwen3ForcedAligner
+
+                self.aligner = Qwen3ForcedAligner.from_pretrained(
+                    aligner_model_path,
+                    dtype=self.dtype,
+                    device_map="cuda:0",
+                )
+            except (ImportError, ModuleNotFoundError, RuntimeError, torch.OutOfMemoryError):
+                self.aligner = None
+                torch.cuda.empty_cache()
+
+    @staticmethod
+    def _aligned_segments(items: Any) -> list[dict[str, Any]]:
+        output = []
+        values = items if isinstance(items, list) else []
+        for item in values:
+            text = str(getattr(item, "text", "") or "").strip()
+            start = getattr(item, "start_time", None)
+            end = getattr(item, "end_time", None)
+            if isinstance(item, dict):
+                text = str(item.get("text", text) or "").strip()
+                start = item.get("start_time", item.get("start", start))
+                end = item.get("end_time", item.get("end", end))
+            if not text or start is None or end is None:
+                continue
+            start_ms = max(0, round(float(start) * 1000))
+            output.append({
+                "startMs": start_ms,
+                "endMs": max(start_ms + 20, round(float(end) * 1000)),
+                "text": text,
+            })
+        return output
+
+    def transcribe(self, wav_path: str, resource_mode: str) -> dict[str, Any]:
+        configure_threads(resource_mode)
+        audio, sample_rate = read_pcm16_mono(wav_path)
+        inputs = self.processor(
+            audio,
+            sampling_rate=sample_rate,
+            return_tensors="pt",
+            language="zh",
+            punctuation=True,
+        )
+        audio_chunk_index = inputs.get("audio_chunk_index")
+        inputs = inputs.to(self.device, dtype=self.dtype)
+        with torch.inference_mode():
+            outputs = self.model.generate(**inputs, max_new_tokens=512, do_sample=False)
+        decoded = self.processor.decode(
+            outputs,
+            skip_special_tokens=True,
+            audio_chunk_index=audio_chunk_index,
+            language="zh",
+        )
+        text = str(decoded[0] if isinstance(decoded, list) and decoded else decoded or "").strip()
+        if not text or self.aligner is None:
+            return {"text": text}
+        try:
+            aligned = self.aligner.align(audio=wav_path, text=text, language="Chinese")
+            items = aligned[0] if isinstance(aligned, list) and aligned else []
+            words = self._aligned_segments(items)
+            if words:
+                return {
+                    "text": text,
+                    "segments": [{
+                        "startMs": words[0]["startMs"],
+                        "endMs": words[-1]["endMs"],
+                        "text": text,
+                        "words": words,
+                    }],
+                }
+        except (RuntimeError, torch.OutOfMemoryError):
+            torch.cuda.empty_cache()
+        return {"text": text}
+
+
 def load_runtime(args: argparse.Namespace) -> Any:
     if args.provider == "qwen3-asr-1.7b-force":
         return QwenAsr(args.model, args.aligner_model, staged_on_oom=True)
@@ -350,6 +573,12 @@ def load_runtime(args: argparse.Namespace) -> Any:
         return FireRedAsr(args.model)
     if args.provider == "paraformer-zh":
         return ParaformerAsr(args.model, args.vad_model, args.punc_model)
+    if args.provider == "moss-transcribe-diarize-0.9b":
+        return MossTranscribeDiarize(args.model)
+    if args.provider == "dolphin-cn-dialect-0.4b":
+        return DolphinCnDialect(args.model)
+    if args.provider == "cohere-transcribe-2b":
+        return CohereTranscribe(args.model, args.aligner_model)
     raise RuntimeError(f"unsupported_asr_provider: {args.provider}")
 
 
@@ -370,6 +599,7 @@ def run_worker(args: argparse.Namespace) -> int:
             )
             emit({"type": "result", "id": request_id, "output": output})
         except Exception as exc:
+            traceback.print_exc(file=sys.stderr)
             emit({"type": "error", "id": request_id, "error": str(exc)})
     del runtime
     if torch.cuda.is_available():
@@ -389,6 +619,9 @@ def main() -> int:
             "glm-asr-nano-2512",
             "fireredasr2-aed",
             "paraformer-zh",
+            "moss-transcribe-diarize-0.9b",
+            "dolphin-cn-dialect-0.4b",
+            "cohere-transcribe-2b",
         ),
     )
     parser.add_argument("--model", required=True)

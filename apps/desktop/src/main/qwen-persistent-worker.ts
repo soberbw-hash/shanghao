@@ -72,6 +72,7 @@ export class QwenPersistentWorker {
     private readonly pythonExecutable: string,
     private readonly runnerPath: string,
     private readonly modelPath: () => string | undefined,
+    private readonly pythonPath?: string,
   ) {}
 
   onState(listener: (health: QwenWorkerHealth) => void): () => void {
@@ -208,7 +209,14 @@ export class QwenPersistentWorker {
       {
         windowsHide: true,
         stdio: ["pipe", "pipe", "pipe"],
-        env: { ...process.env, PYTHONIOENCODING: "utf-8", PYTHONUTF8: "1" },
+        env: {
+          ...process.env,
+          PYTHONIOENCODING: "utf-8",
+          PYTHONUTF8: "1",
+          PYTHONPATH: this.pythonPath
+            ? `${this.pythonPath};${process.env.PYTHONPATH ?? ""}`
+            : process.env.PYTHONPATH,
+        },
       },
     );
     this.child = child;

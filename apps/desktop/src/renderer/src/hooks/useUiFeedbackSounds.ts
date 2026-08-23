@@ -6,10 +6,13 @@ import { useAudioStore } from "../store/audioStore";
 import { useRoomStore } from "../store/roomStore";
 import { useSettingsStore } from "../store/settingsStore";
 import {
+  playGenericPressUnlessHandled,
   playUiSound,
   prepareUiSounds,
   setUiSoundEnabled,
+  setUiSoundOutputDevice,
   setUiSoundVolume,
+  unlockUiSounds,
 } from "../features/audio/uiSound";
 import { prepareAnimalCalls } from "../features/audio/animalCall";
 
@@ -36,10 +39,12 @@ export const useUiFeedbackSounds = (): void => {
   useEffect(() => {
     setUiSoundEnabled(settings?.isUiSoundEnabled !== false);
     setUiSoundVolume(settings?.soundVolume ?? 0.72);
-  }, [settings?.isUiSoundEnabled, settings?.soundVolume]);
+    void setUiSoundOutputDevice(settings?.preferredOutputDeviceId);
+  }, [settings?.isUiSoundEnabled, settings?.preferredOutputDeviceId, settings?.soundVolume]);
 
   useEffect(() => {
     const prepare = () => {
+      void unlockUiSounds();
       prepareUiSounds();
       prepareAnimalCalls();
     };
@@ -69,8 +74,9 @@ export const useUiFeedbackSounds = (): void => {
         return;
       }
       lastClickAt = now;
-      // Let the button's action and React update finish before allocating audio playback.
-      window.setTimeout(() => playUiSound("button-click"), 0);
+      const clickStartedAt = performance.now();
+      // A React handler can claim this interaction with a more meaningful sound.
+      window.setTimeout(() => playGenericPressUnlessHandled(clickStartedAt), 0);
     };
 
     document.addEventListener("click", handleClick, true);

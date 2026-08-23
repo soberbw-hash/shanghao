@@ -21,9 +21,17 @@ import {
   APP_NAME,
   APP_PROTOCOL_VERSION,
   IPC_CHANNELS,
+  type AccountAvatarUpdateRequest,
+  type AccountLoginRequest,
+  type AccountPasswordResetRequest,
+  type AccountProfileUpdateRequest,
+  type AccountRegisterRequest,
+  type AccountSnapshot,
   type AppSettings,
   type AiCustomProviderInput,
   type AiCustomProviderStatus,
+  type AiHuggingFaceAccessInput,
+  type AiHuggingFaceAccessStatus,
   type AiAsrModelId,
   type AiModelAction,
   type AiModelId,
@@ -47,6 +55,9 @@ import {
   type RecordingLibrarySnapshot,
   type RecordingLibraryItem,
   type RecordingMarker,
+  type RecordingSpeakerSegmentFinalizePayload,
+  type RecordingSpeakerSegmentPayload,
+  type RecordingSpeakerSegmentResponse,
   type RendererLogPayload,
   type RendererRuntimeHealthInput,
   type RuntimeInfo,
@@ -69,10 +80,15 @@ import {
 } from "@private-voice/shared";
 
 import { DiagnosticsService } from "./diagnostics";
+import { AccountDesktopService } from "./account-service";
 import { captureRuntimeHealth } from "./runtime-health";
 import { readDeepFilterAssets } from "./deepfilter-assets";
 import { clearAvatarImage, pickAvatarImage, readAvatarImage } from "./profile-media";
 import { exportRecordingFromMain } from "./recording-main";
+import {
+  finalizeRecordingSpeakerSegments,
+  saveRecordingSpeakerSegment,
+} from "./recording-speaker-segments";
 import { resolveRecordingDirectory } from "./recording-path";
 import {
   deleteRecording,
@@ -94,6 +110,7 @@ import { GameDetectionController } from "./game-detection";
 import { AiModelManager } from "./ai-model-manager";
 import { AiVoiceMemoryService } from "./ai-voice-memory-service";
 import { CustomAiProviderStore } from "./custom-ai-provider-store";
+import { HuggingFaceAccessStore } from "./hugging-face-access-store";
 import { applyLaunchOnStartup } from "./launch-on-startup";
 import { ChatHistoryStore } from "./chat-history-store";
 import { DailyRoomReportCache } from "./daily-room-report-cache";
@@ -123,6 +140,9 @@ const AI_ASR_MODEL_IDS = new Set<AiAsrModelId>([
   "glm-asr-nano-2512",
   "fireredasr2-aed",
   "paraformer-zh",
+  "moss-transcribe-diarize-0.9b",
+  "dolphin-cn-dialect-0.4b",
+  "cohere-transcribe-2b",
 ]);
 
 const requireAiAsrModelId = (value: unknown): AiAsrModelId => {
@@ -138,12 +158,14 @@ interface MainProcessServices {
   diagnostics: DiagnosticsService;
   shortcuts: ShortcutController;
   signalingClient: SignalingClientBridge;
+  accounts: AccountDesktopService;
   updates: UpdateService;
   overlay: OverlayWindowController;
   gameDetection: GameDetectionController;
   aiModels: AiModelManager;
   voiceMemory: AiVoiceMemoryService;
   customAiProvider: CustomAiProviderStore;
+  huggingFaceAccess: HuggingFaceAccessStore;
   consumePendingDeepLink: () => DeepLinkInvite | undefined;
 }
 
@@ -299,12 +321,14 @@ export const registerIpcHandlers = ({
   diagnostics,
   shortcuts,
   signalingClient,
+  accounts,
   updates,
   overlay,
   gameDetection,
   aiModels,
   voiceMemory,
   customAiProvider,
+  huggingFaceAccess,
   consumePendingDeepLink,
 }: MainProcessServices): void => {
   const chatHistoryStore = new ChatHistoryStore(app.getPath("userData"));
@@ -319,6 +343,9 @@ export const registerIpcHandlers = ({
   });
   signalingClient.on("event", (payload: SignalingEventPayload) => {
     sendToWindow(getMainWindow(), IPC_CHANNELS.signaling.event, payload);
+  });
+  accounts.on("change", (snapshot: AccountSnapshot) => {
+    sendToWindow(getMainWindow(), IPC_CHANNELS.account.changed, snapshot);
   });
   updates.onStatus((status: UpdateStatus) => {
     sendToWindow(getMainWindow(), IPC_CHANNELS.updates.status, status);
@@ -444,6 +471,19 @@ export const registerIpcHandlers = ({
     if (url.username || url.password) throw new Error("external_url_credentials_not_allowed");
     await shell.openExternal(url.toString());
   });
+  ipcMain.handle(
+    IPC_CHANNELS.app.openSystemSettings,
+    async (_event, page: "microphone" | "sound" | "display"): Promise<void> => {
+      const pages = {
+        microphone: "ms-settings:privacy-microphone",
+        sound: "ms-settings:sound",
+        display: "ms-settings:display",
+      } as const;
+      const target = pages[page];
+      if (!target) throw new Error("invalid_system_settings_page");
+      await shell.openExternal(target);
+    },
+  );
   ipcMain.handle(
     IPC_CHANNELS.app.getLinkPreviewIcon,
     async (_event, rawUrl: string): Promise<string | undefined> => {
@@ -619,6 +659,62 @@ export const registerIpcHandlers = ({
 
   ipcMain.handle(IPC_CHANNELS.settings.get, async (): Promise<AppSettings> =>
     settingsStore.getSnapshot(),
+  );
+
+  ipcMain.handle(IPC_CHANNELS.account.getSnapshot, async (): Promise<AccountSnapshot> =>
+    accounts.getSnapshot(),
+  );
+  ipcMain.handle(
+    IPC_CHANNELS.account.login,
+    async (_event, request: AccountLoginRequest): Promise<AccountSnapshot> =>
+      accounts.login({
+        identifier: requireString(request?.identifier, 254, "account_identifier"),
+        password: requireString(request?.password, 128, "account_password"),
+      }),
+  );
+  ipcMain.handle(
+    IPC_CHANNELS.account.register,
+    async (_event, request: AccountRegisterRequest): Promise<AccountSnapshot> =>
+      accounts.register({
+        username: requireString(request?.username, 20, "account_username"),
+        email: requireString(request?.email, 254, "account_email"),
+        password: requireString(request?.password, 128, "account_password"),
+        displayName:
+          typeof request?.displayName === "string"
+            ? requireString(request.displayName, 32, "account_display_name")
+            : undefined,
+        avatarDataUrl:
+          typeof request?.avatarDataUrl === "string"
+            ? requireString(request.avatarDataUrl, 720_000, "account_avatar")
+            : undefined,
+      }),
+  );
+  ipcMain.handle(
+    IPC_CHANNELS.account.requestPasswordReset,
+    async (_event, request: AccountPasswordResetRequest): Promise<void> =>
+      accounts.requestPasswordReset({
+        email: requireString(request?.email, 254, "account_email"),
+      }),
+  );
+  ipcMain.handle(
+    IPC_CHANNELS.account.updateProfile,
+    async (_event, request: AccountProfileUpdateRequest): Promise<AccountSnapshot> =>
+      accounts.updateProfile({
+        displayName: requireString(request?.displayName, 32, "account_display_name"),
+      }),
+  );
+  ipcMain.handle(
+    IPC_CHANNELS.account.updateAvatar,
+    async (_event, request: AccountAvatarUpdateRequest): Promise<AccountSnapshot> =>
+      accounts.updateAvatar({
+        dataUrl: requireString(request?.dataUrl, 720_000, "account_avatar"),
+      }),
+  );
+  ipcMain.handle(IPC_CHANNELS.account.logout, async (): Promise<AccountSnapshot> =>
+    accounts.logout(),
+  );
+  ipcMain.handle(IPC_CHANNELS.account.continueAsGuest, async (): Promise<AccountSnapshot> =>
+    accounts.continueAsGuest(),
   );
 
   ipcMain.handle(
@@ -998,6 +1094,18 @@ export const registerIpcHandlers = ({
     await customAiProvider.clear();
   });
   ipcMain.handle(
+    IPC_CHANNELS.ai.getHuggingFaceAccess,
+    async (): Promise<AiHuggingFaceAccessStatus> => huggingFaceAccess.status(),
+  );
+  ipcMain.handle(
+    IPC_CHANNELS.ai.saveHuggingFaceAccess,
+    async (_event, input: AiHuggingFaceAccessInput): Promise<AiHuggingFaceAccessStatus> =>
+      huggingFaceAccess.save(requireString(input?.token, 256, "hugging_face_token")),
+  );
+  ipcMain.handle(IPC_CHANNELS.ai.clearHuggingFaceAccess, async (): Promise<void> => {
+    await huggingFaceAccess.clear();
+  });
+  ipcMain.handle(
     IPC_CHANNELS.ai.searchMemory,
     async (_event, request: VoiceMemorySearchRequest): Promise<VoiceMemorySearchResult[]> =>
       voiceMemory.search({
@@ -1024,7 +1132,7 @@ export const registerIpcHandlers = ({
     await updates.download();
   });
   ipcMain.handle(IPC_CHANNELS.updates.install, async (): Promise<void> => {
-    updates.install();
+    await updates.install();
   });
 
   ipcMain.handle(
@@ -1076,6 +1184,19 @@ export const registerIpcHandlers = ({
         (logPayload) => diagnostics.writeLog(logPayload),
       );
       return result;
+    },
+  );
+  ipcMain.handle(
+    IPC_CHANNELS.recording.saveSpeakerSegment,
+    async (
+      _event,
+      payload: RecordingSpeakerSegmentPayload,
+    ): Promise<RecordingSpeakerSegmentResponse> => saveRecordingSpeakerSegment(payload),
+  );
+  ipcMain.handle(
+    IPC_CHANNELS.recording.finalizeSpeakerSegments,
+    async (_event, payload: RecordingSpeakerSegmentFinalizePayload): Promise<void> => {
+      await finalizeRecordingSpeakerSegments(payload);
     },
   );
   ipcMain.handle(IPC_CHANNELS.recording.chooseDirectory, async (): Promise<string | undefined> => {

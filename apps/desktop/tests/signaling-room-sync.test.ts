@@ -1493,6 +1493,109 @@ test("fixed channel keeps a reconnecting member during grace and replaces same p
   }
 });
 
+test("update exit stays visible while manual exit is removed immediately", async () => {
+  const server = new SignalingServer({ roomName: "固定频道" });
+  const port = await server.listen();
+  const url = `ws://127.0.0.1:${port}`;
+  const observer = await openSocket(url);
+  const updatingPeer = await openSocket(url);
+  const profileId = "11111111-1111-4111-8111-111111111111";
+  const observerAvatar = BUILT_IN_AVATAR_IDS[0]!;
+  const updatingAvatar = BUILT_IN_AVATAR_IDS[1]!;
+
+  try {
+    joinChannel(observer, "observer", "observer", undefined, observerAvatar);
+    await waitForMessage(
+      observer,
+      (payload): payload is { type: "channel_snapshot"; members: unknown[] } =>
+        typeof payload === "object" &&
+        payload !== null &&
+        (payload as { type?: string }).type === "channel_snapshot" &&
+        (payload as { members?: unknown[] }).members?.length === 1,
+    );
+
+    const joined = waitForMessage(
+      observer,
+      (payload): payload is { type: "channel_snapshot"; members: unknown[] } =>
+        typeof payload === "object" &&
+        payload !== null &&
+        (payload as { type?: string }).type === "channel_snapshot" &&
+        (payload as { members?: unknown[] }).members?.length === 2,
+    );
+    joinChannel(
+      updatingPeer,
+      "updating-peer",
+      "更新中的朋友",
+      undefined,
+      updatingAvatar,
+      profileId,
+    );
+    await joined;
+
+    const updating = waitForMessage(
+      observer,
+      (
+        payload,
+      ): payload is {
+        type: "channel_snapshot";
+        members: Array<{ id: string; presenceState: string }>;
+      } =>
+        typeof payload === "object" &&
+        payload !== null &&
+        (payload as { type?: string }).type === "channel_snapshot" &&
+        (payload as { members?: Array<{ id: string; presenceState: string }> }).members?.some(
+          (candidate) => candidate.id === "updating-peer" && candidate.presenceState === "updating",
+        ) === true,
+    );
+    updatingPeer.close(4002, "client_updating");
+    assert.equal((await updating).members.length, 2);
+
+    const replacement = await openSocket(url);
+    const restored = waitForMessage(
+      observer,
+      (
+        payload,
+      ): payload is {
+        type: "channel_snapshot";
+        members: Array<{ id: string; presenceState: string }>;
+      } =>
+        typeof payload === "object" &&
+        payload !== null &&
+        (payload as { type?: string }).type === "channel_snapshot" &&
+        (payload as { members?: Array<{ id: string; presenceState: string }> }).members?.some(
+          (candidate) => candidate.id === "updated-peer" && candidate.presenceState === "online",
+        ) === true,
+    );
+    joinChannel(replacement, "updated-peer", "更新后的朋友", undefined, updatingAvatar, profileId);
+    assert.equal((await restored).members.length, 2);
+
+    const removed = waitForMessage(
+      observer,
+      (payload): payload is { type: "channel_snapshot"; members: Array<{ id: string }> } =>
+        typeof payload === "object" &&
+        payload !== null &&
+        (payload as { type?: string }).type === "channel_snapshot" &&
+        (payload as { members?: Array<{ id: string }> }).members?.length === 1,
+    );
+    replacement.send(
+      JSON.stringify({
+        type: "leave_channel",
+        roomId: "main",
+        peerId: "updated-peer",
+      }),
+    );
+    assert.deepEqual(
+      (await removed).members.map((candidate) => candidate.id),
+      ["observer"],
+    );
+    replacement.close();
+  } finally {
+    observer.close();
+    updatingPeer.close();
+    await server.close();
+  }
+});
+
 test("fixed channel broadcasts lightweight scene reactions", async () => {
   const server = new SignalingServer({ roomName: "固定频道" });
   const port = await server.listen();

@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import {
   DEFAULT_ROOM_NAME,
+  OFFICIAL_RELAY_SERVER_URL,
   PROFILE_SCHEMA_VERSION,
   SETTINGS_SCHEMA_VERSION,
   isBuiltInAvatarId,
@@ -16,6 +17,8 @@ export type RawSettings = Partial<AppSettings> & {
   inputLevelThreshold?: unknown;
   isLowCutEnabled?: boolean;
   preferredSampleRate?: unknown;
+  /** Legacy switch; recording loudness balance is now always enabled. */
+  isRecordingLoudnessBalanceEnabled?: unknown;
 };
 
 export const defaultSettings: AppSettings = {
@@ -58,7 +61,8 @@ export const defaultSettings: AppSettings = {
   isPushToTalkEnabled: false,
   isAutoRecordOnJoinEnabled: true,
   micMonitorMode: "processed",
-  relayServerUrl: "",
+  relayServerUrl: OFFICIAL_RELAY_SERVER_URL,
+  isDeveloperModeEnabled: false,
   memberVolumes: {},
   soundVolume: 0.72,
   isSystemNotificationEnabled: true,
@@ -137,7 +141,7 @@ export const migrateSettings = (raw: RawSettings): MigrationResult => {
       defaultSettings.hasCompletedProfileSetup,
     ),
     minimizeToTray: normalizeBoolean(raw.minimizeToTray, defaultSettings.minimizeToTray),
-    uiScale: 100,
+    uiScale: raw.uiScale === 110 || raw.uiScale === 125 ? raw.uiScale : 100,
     launchOnStartup: normalizeBoolean(raw.launchOnStartup, defaultSettings.launchOnStartup),
     isHardwareAccelerationEnabled: true,
     isOverlayEnabled: true,
@@ -179,7 +183,10 @@ export const migrateSettings = (raw: RawSettings): MigrationResult => {
       raw.aiAsrModel === "fun-asr-nano-2512" ||
       raw.aiAsrModel === "glm-asr-nano-2512" ||
       raw.aiAsrModel === "fireredasr2-aed" ||
-      raw.aiAsrModel === "paraformer-zh"
+      raw.aiAsrModel === "paraformer-zh" ||
+      raw.aiAsrModel === "moss-transcribe-diarize-0.9b" ||
+      raw.aiAsrModel === "dolphin-cn-dialect-0.4b" ||
+      raw.aiAsrModel === "cohere-transcribe-2b"
         ? raw.aiAsrModel
         : raw.aiAsrModel === "qwen3-asr-0.6b"
           ? "qwen3-asr-0.6b-force"
@@ -188,10 +195,9 @@ export const migrateSettings = (raw: RawSettings): MigrationResult => {
       raw.aiOrganizerProvider === "local" || raw.aiOrganizerProvider === "custom"
         ? raw.aiOrganizerProvider
         : "cloud",
-    aiRoomAskProvider:
-      raw.aiRoomAskProvider === "local" || raw.aiRoomAskProvider === "custom"
-        ? raw.aiRoomAskProvider
-        : "cloud",
+    // Room Ask is a shared cloud capability. Legacy local/custom selections
+    // must not make friends download Qwen before they can ask a question.
+    aiRoomAskProvider: "cloud",
     aiProcessingMode:
       raw.aiProcessingMode === "low_resource" ||
       raw.aiProcessingMode === "immediate" ||
@@ -203,6 +209,7 @@ export const migrateSettings = (raw: RawSettings): MigrationResult => {
     relayServerUrl:
       normalizeRelayServerUrl(trimUnknownText(raw.relayServerUrl)) ??
       defaultSettings.relayServerUrl,
+    isDeveloperModeEnabled: normalizeBoolean(raw.isDeveloperModeEnabled, false),
     memberVolumes:
       raw.memberVolumes &&
       typeof raw.memberVolumes === "object" &&
@@ -217,13 +224,15 @@ export const migrateSettings = (raw: RawSettings): MigrationResult => {
               .map(([name, value]) => [name.slice(0, 24), Math.max(0, Math.min(3, Number(value)))]),
           )
         : {},
-    soundVolume: defaultSettings.soundVolume,
+    soundVolume: normalizeNumber(raw.soundVolume, defaultSettings.soundVolume, 0, 1),
     isSystemNotificationEnabled: true,
     isGameDetectionEnabled: true,
     isWorkActivityVisible: normalizeBoolean(raw.isWorkActivityVisible, true),
-    isDynamicWeatherEnabled: true,
+    isDynamicWeatherEnabled: normalizeBoolean(raw.isDynamicWeatherEnabled, true),
     weatherLocationMode: raw.weatherLocationMode === "manual" ? "manual" : "auto",
     weatherManualCity: trimUnknownText(raw.weatherManualCity) ?? "",
+    // Visual weather has one complete presentation. Keep the legacy field for
+    // settings compatibility, but never migrate users into a reduced tier.
     weatherEffectMode: "standard",
     micEqualizerGains: [0, 0, 0, 0, 0],
     lowCutFrequency: "75",
@@ -234,7 +243,7 @@ export const migrateSettings = (raw: RawSettings): MigrationResult => {
     isVoiceEnhancementEnabled: raw.isVoiceEnhancementEnabled !== false,
     isPushToTalkEnabled: raw.isPushToTalkEnabled === true,
     isAutoRecordOnJoinEnabled: normalizeBoolean(raw.isAutoRecordOnJoinEnabled, true),
-    isUiSoundEnabled: true,
+    isUiSoundEnabled: normalizeBoolean(raw.isUiSoundEnabled, true),
     isBackgroundUpdateCheckEnabled: raw.isBackgroundUpdateCheckEnabled !== false,
     lastCollectionViewedAt: trimUnknownText(raw.lastCollectionViewedAt),
     hasInitializedCollectionReadState: raw.hasInitializedCollectionReadState === true,

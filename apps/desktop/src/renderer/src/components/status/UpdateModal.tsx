@@ -1,7 +1,9 @@
+import { useCallback, useEffect, useState } from "react";
 import { Download, RefreshCcw } from "lucide-react";
-import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
+import { AnimatePresence, motion } from "framer-motion";
 
 import { Button } from "../base/Button";
+import { DialogCloseButton } from "../base/DialogCloseButton";
 import { useSettingsStore } from "../../store/settingsStore";
 import {
   dialogSurfaceVariants,
@@ -9,6 +11,7 @@ import {
   popoverSurfaceVariants,
   reducedFadeVariants,
 } from "../../features/motion/motionPresets";
+import { usePrefersReducedMotion as useReducedMotion } from "../../hooks/usePrefersReducedMotion";
 
 export const UpdateModal = () => {
   const shouldReduceMotion = useReducedMotion();
@@ -17,17 +20,43 @@ export const UpdateModal = () => {
   const downloadUpdate = useSettingsStore((state) => state.downloadUpdate);
   const installUpdate = useSettingsStore((state) => state.installUpdate);
   const checkUpdates = useSettingsStore((state) => state.checkUpdates);
-
-  const isVisible = Boolean(
-    updateInfo?.hasUpdate ||
-    status.phase === "downloading" ||
-    status.phase === "downloaded" ||
-    status.phase === "ready_to_restart",
+  const [dismissedVersion, setDismissedVersion] = useState(() =>
+    window.localStorage.getItem("shanghao:dismissed-update-version"),
   );
+  const [hiddenPhase, setHiddenPhase] = useState<string>();
 
   const latestVersion = updateInfo?.latestVersion ?? status.latestVersion ?? "";
   const isForced = Boolean(updateInfo?.forceUpdate || status.forceUpdate);
   const isDownloading = status.phase === "downloading";
+  const isDownloaded = status.phase === "downloaded" || status.phase === "ready_to_restart";
+
+  const isVisible = Boolean(
+    (updateInfo?.hasUpdate || isDownloading || isDownloaded) &&
+    hiddenPhase !== status.phase &&
+    (isForced || isDownloaded || dismissedVersion !== latestVersion),
+  );
+
+  const dismissOptionalUpdate = useCallback(() => {
+    if (isForced) return;
+    setHiddenPhase(status.phase);
+    if (latestVersion) {
+      window.localStorage.setItem("shanghao:dismissed-update-version", latestVersion);
+      setDismissedVersion(latestVersion);
+    }
+  }, [isForced, latestVersion, status.phase]);
+
+  useEffect(() => {
+    setHiddenPhase(undefined);
+  }, [status.phase]);
+
+  useEffect(() => {
+    if (!isVisible || isForced) return;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") dismissOptionalUpdate();
+    };
+    document.addEventListener("keydown", closeOnEscape);
+    return () => document.removeEventListener("keydown", closeOnEscape);
+  }, [dismissOptionalUpdate, isForced, isVisible]);
 
   return (
     <AnimatePresence>
@@ -38,10 +67,10 @@ export const UpdateModal = () => {
           initial="initial"
           animate="open"
           exit="closed"
-          className={`fixed z-[90] grid p-6 ${
+          className={`update-modal-backdrop fixed z-[90] grid p-6 ${
             isForced
-              ? "inset-0 place-items-center bg-[#edf4ff]/88"
-              : "bottom-0 right-0 pointer-events-none place-items-end"
+              ? "is-forced-update inset-0 place-items-center"
+              : "is-optional-update bottom-0 right-0 pointer-events-none place-items-end"
           }`}
         >
           <motion.div
@@ -58,10 +87,15 @@ export const UpdateModal = () => {
             role={isForced ? "alertdialog" : "status"}
             aria-modal={isForced ? "true" : undefined}
             aria-labelledby="update-modal-title"
-            className="modal-surface pointer-events-auto w-full max-w-[430px] rounded-[30px] p-6"
+            className="update-modal-surface modal-surface pointer-events-auto w-full max-w-[430px] rounded-[30px] p-6"
           >
-            <div className="text-xs font-semibold tracking-[0.18em] text-[#7990ad]">
-              {isForced ? "需要更新" : "发现新版"}
+            <div className="flex items-start justify-between gap-4">
+              <div className="text-xs font-semibold tracking-[0.18em] text-[#7990ad]">
+                {isForced ? "需要更新" : "发现新版"}
+              </div>
+              {!isForced ? (
+                <DialogCloseButton label="稍后提醒" onClick={dismissOptionalUpdate} />
+              ) : null}
             </div>
             <h2
               id="update-modal-title"
@@ -109,6 +143,11 @@ export const UpdateModal = () => {
               {status.phase === "error" ? (
                 <Button variant="secondary" onClick={() => void checkUpdates()}>
                   重试
+                </Button>
+              ) : null}
+              {!isForced && !isDownloading && !isDownloaded ? (
+                <Button variant="secondary" onClick={dismissOptionalUpdate}>
+                  稍后提醒
                 </Button>
               ) : null}
             </div>

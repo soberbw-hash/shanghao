@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import { resolveAiTextProvider } from "../src/main/ai-text-gateway";
 import { CloudAiRequestController } from "../../../packages/signaling/src/cloud-ai-request-controller";
 import { CloudAiService } from "../../../packages/signaling/src/cloud-ai-service";
 import { isSignalEnvelope } from "../../../packages/signaling/src/protocol";
@@ -14,6 +15,13 @@ const request = {
   responseFormat: "json" as const,
   prompt: "请返回 JSON",
 };
+
+test("room questions always use cloud AI without a local model dependency", () => {
+  for (const legacyProvider of ["cloud", "local", "custom"] as const) {
+    assert.equal(resolveAiTextProvider("question", legacyProvider), "cloud");
+    assert.equal(resolveAiTextProvider("organize", legacyProvider), legacyProvider);
+  }
+});
 
 test("cloud AI signaling accepts bounded joined-room requests only", () => {
   assert.equal(isSignalEnvelope(request), true);

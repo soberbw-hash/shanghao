@@ -1,20 +1,20 @@
 import { useEffect, useMemo, useState } from "react";
-import { Copy, ExternalLink, FolderHeart, Plus, Trash2 } from "lucide-react";
+import { Copy, ExternalLink, FolderHeart, MonitorOff, Plus, RefreshCw, Trash2 } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
 
 import type { RoomCollectionItem, ScreenCaptureSourceDescriptor } from "@private-voice/shared";
 import { cn } from "@private-voice/ui";
 
-import donateQr from "../../assets/donate-qr.jpg";
 import {
-  dialogSurfaceVariants,
   largeDialogSurfaceVariants,
   overlayScrimVariants,
   reducedFadeVariants,
 } from "../../features/motion/motionPresets";
 import { Button } from "../base/Button";
+import { DialogCloseButton } from "../base/DialogCloseButton";
 import {
   DEFAULT_SCREEN_SHARE_QUALITY,
+  type ScreenShareTransitionOrigin,
   type ScreenShareQuality,
 } from "../../features/screen-share/types";
 
@@ -22,19 +22,33 @@ interface ScreenSourcePickerProps {
   isOpen: boolean;
   reduceMotion: boolean;
   sources: ScreenCaptureSourceDescriptor[];
+  status: "loading" | "ready" | "empty" | "error";
   includeSystemAudio: boolean;
   onIncludeSystemAudioChange: (value: boolean) => void;
-  onSelect: (sourceId: string, quality: ScreenShareQuality) => void;
+  onSelect: (
+    sourceId: string,
+    quality: ScreenShareQuality,
+    origin: ScreenShareTransitionOrigin,
+  ) => void;
+  onRetry: () => void;
   onClose: () => void;
 }
+
+const SCREEN_SHARE_QUALITY_OPTIONS = [
+  { value: "1440p", detail: "2K" },
+  { value: "1080p", detail: "默认" },
+  { value: "720p", detail: "省带宽" },
+] as const satisfies ReadonlyArray<{ value: ScreenShareQuality; detail: string }>;
 
 export const ScreenSourcePicker = ({
   isOpen,
   reduceMotion,
   sources,
+  status,
   includeSystemAudio,
   onIncludeSystemAudioChange,
   onSelect,
+  onRetry,
   onClose,
 }: ScreenSourcePickerProps) => {
   const [quality, setQuality] = useState<ScreenShareQuality>(DEFAULT_SCREEN_SHARE_QUALITY);
@@ -42,6 +56,15 @@ export const ScreenSourcePicker = ({
   useEffect(() => {
     if (isOpen) setQuality(DEFAULT_SCREEN_SHARE_QUALITY);
   }, [isOpen]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onClose();
+    };
+    document.addEventListener("keydown", closeOnEscape);
+    return () => document.removeEventListener("keydown", closeOnEscape);
+  }, [isOpen, onClose]);
 
   return (
     <AnimatePresence>
@@ -71,16 +94,16 @@ export const ScreenSourcePicker = ({
             <header>
               <div>
                 <h2>分享哪个画面？</h2>
-                <p>默认 1080p，也可以选择更省带宽的 720p。实际清晰度取决于来源窗口大小。</p>
+                <p>
+                  支持 1440p（2K）、默认 1080p 和更省带宽的 720p。实际清晰度取决于来源窗口大小。
+                </p>
               </div>
-              <Button variant="ghost" onClick={onClose}>
-                取消
-              </Button>
+              <DialogCloseButton label="取消屏幕分享" onClick={onClose} />
             </header>
             <div className="screen-source-options">
               <div className="screen-source-quality" aria-label="分享清晰度">
                 <span>清晰度</span>
-                {(["1080p", "720p"] as const).map((value) => (
+                {SCREEN_SHARE_QUALITY_OPTIONS.map(({ value, detail }) => (
                   <button
                     key={value}
                     type="button"
@@ -89,7 +112,7 @@ export const ScreenSourcePicker = ({
                     onClick={() => setQuality(value)}
                   >
                     {value}
-                    <small>{value === "1080p" ? "默认" : "省带宽"}</small>
+                    <small>{detail}</small>
                   </button>
                 ))}
               </div>
@@ -104,11 +127,36 @@ export const ScreenSourcePicker = ({
               </button>
             </div>
             <div className="screen-source-picker-grid">
-              {sources.length === 0 ? (
+              {status === "loading" ? (
                 <div className="screen-source-picker-loading" role="status">
                   <span aria-hidden="true" />
                   <strong>正在读取可分享的窗口…</strong>
                   <small>通常只需要片刻</small>
+                </div>
+              ) : null}
+              {status === "empty" || status === "error" ? (
+                <div className="screen-source-picker-loading" role="status">
+                  <MonitorOff className="size-8 text-[#7f95ad]" aria-hidden="true" />
+                  <strong>
+                    {status === "empty" ? "没有找到可分享的画面" : "画面来源读取失败"}
+                  </strong>
+                  <small>
+                    {status === "empty"
+                      ? "请确认显示器已连接，并关闭可能阻止捕获的受保护窗口。"
+                      : "请重新读取；如果仍然失败，可先关闭再打开屏幕分享。"}
+                  </small>
+                  <div className="flex flex-wrap justify-center gap-2">
+                    <Button variant="secondary" onClick={onRetry}>
+                      <RefreshCw className="size-4" aria-hidden="true" />
+                      重新读取
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      onClick={() => void window.desktopApi.app.openSystemSettings("display")}
+                    >
+                      打开显示设置
+                    </Button>
+                  </div>
                 </div>
               ) : null}
               {sources.slice(0, 24).map((source, index) => (
@@ -116,7 +164,15 @@ export const ScreenSourcePicker = ({
                   key={source.id}
                   type="button"
                   className="screen-source-picker-item"
-                  onClick={() => onSelect(source.id, quality)}
+                  onClick={(event) => {
+                    const bounds = event.currentTarget.getBoundingClientRect();
+                    onSelect(source.id, quality, {
+                      centerX: bounds.left + bounds.width / 2,
+                      centerY: bounds.top + bounds.height / 2,
+                      width: bounds.width,
+                      height: bounds.height,
+                    });
+                  }}
                 >
                   <span className="screen-source-thumbnail">
                     <strong className="screen-source-identity">
@@ -127,9 +183,7 @@ export const ScreenSourcePicker = ({
                       <img
                         src={source.thumbnailDataUrl}
                         alt=""
-                        loading="lazy"
                         decoding="async"
-                        fetchPriority="low"
                         draggable={false}
                       />
                     ) : (
@@ -164,53 +218,6 @@ export const ScreenSourcePicker = ({
     </AnimatePresence>
   );
 };
-
-interface DonationDialogProps {
-  isOpen: boolean;
-  reduceMotion: boolean;
-  onClose: () => void;
-}
-
-export const DonationDialog = ({ isOpen, reduceMotion, onClose }: DonationDialogProps) => (
-  <AnimatePresence>
-    {isOpen ? (
-      <motion.div
-        className="donation-modal-backdrop modal-scrim"
-        role="presentation"
-        variants={reduceMotion ? reducedFadeVariants : overlayScrimVariants}
-        initial="initial"
-        animate="open"
-        exit="closed"
-        onPointerDown={(event) => {
-          if (event.target === event.currentTarget) onClose();
-        }}
-      >
-        <motion.section
-          className="donation-modal-panel modal-surface"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="donation-modal-title"
-          variants={reduceMotion ? reducedFadeVariants : dialogSurfaceVariants}
-          initial="initial"
-          animate="open"
-          exit="closed"
-        >
-          <h2 id="donation-modal-title">请作者喝杯咖啡</h2>
-          <p>如果上号让你和朋友多开了一局，就请我补充一点续航。</p>
-          <div className="donation-qr-shell">
-            <img src={donateQr} alt="请作者喝咖啡的收款二维码" draggable={false} />
-          </div>
-          <div className="donation-modal-actions">
-            <span>微信扫码，心意随缘</span>
-            <Button variant="secondary" onClick={onClose}>
-              收下啦
-            </Button>
-          </div>
-        </motion.section>
-      </motion.div>
-    ) : null}
-  </AnimatePresence>
-);
 
 interface CollectionDialogProps {
   isOpen: boolean;

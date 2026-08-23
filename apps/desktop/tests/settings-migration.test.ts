@@ -52,7 +52,7 @@ test("migrateSettings falls back to safe defaults for damaged legacy config", ()
   assert.equal("isMemberJoinSoundEnabled" in result.settings, false);
   assert.equal("isMemberLeaveSoundEnabled" in result.settings, false);
   assert.equal("isConnectionSoundEnabled" in result.settings, false);
-  assert.equal(result.settings.isUiSoundEnabled, true);
+  assert.equal(result.settings.isUiSoundEnabled, false);
   assert.equal(result.settings.isSystemNotificationEnabled, true);
   assert.equal(result.settings.isGameDetectionEnabled, true);
   assert.equal(result.settings.launchOnStartup, true);
@@ -62,6 +62,7 @@ test("migrateSettings falls back to safe defaults for damaged legacy config", ()
   assert.equal(result.settings.isOverlayEnabled, true);
   assert.equal(result.settings.isDynamicWeatherEnabled, true);
   assert.equal(result.settings.isFriendLoudnessBalanceEnabled, true);
+  assert.equal("isRecordingLoudnessBalanceEnabled" in result.settings, false);
   assert.equal(result.settings.weatherLocationMode, "auto");
   assert.equal(result.settings.weatherManualCity, "");
   assert.equal(result.settings.weatherEffectMode, "standard");
@@ -80,6 +81,31 @@ test("friend loudness balance is on by default and explicit choices survive migr
   );
 });
 
+test("interface sound preference and volume survive restart migration", () => {
+  const result = migrateSettings({
+    ...defaultSettings,
+    soundVolume: 0.31,
+    isUiSoundEnabled: false,
+  });
+
+  assert.equal(result.settings.soundVolume, 0.31);
+  assert.equal(result.settings.isUiSoundEnabled, false);
+  assert.equal(migrateSettings({ soundVolume: 9 }).settings.soundVolume, 1);
+  assert.equal(migrateSettings({ soundVolume: -1 }).settings.soundVolume, 0);
+});
+
+test("legacy recording loudness preference is discarded because the pipeline always enables it", () => {
+  assert.equal("isRecordingLoudnessBalanceEnabled" in migrateSettings({}).settings, false);
+  assert.equal(
+    "isRecordingLoudnessBalanceEnabled" in
+      migrateSettings({
+        ...defaultSettings,
+        isRecordingLoudnessBalanceEnabled: false,
+      }).settings,
+    false,
+  );
+});
+
 test("ASR model selection preserves supported providers and repairs damaged values", () => {
   assert.equal(migrateSettings({}).settings.aiAsrModel, "qwen3-asr-0.6b-force");
   for (const aiAsrModel of [
@@ -89,6 +115,9 @@ test("ASR model selection preserves supported providers and repairs damaged valu
     "glm-asr-nano-2512",
     "fireredasr2-aed",
     "paraformer-zh",
+    "moss-transcribe-diarize-0.9b",
+    "dolphin-cn-dialect-0.4b",
+    "cohere-transcribe-2b",
   ] as const) {
     assert.equal(
       migrateSettings({ ...defaultSettings, aiAsrModel }).settings.aiAsrModel,
@@ -115,7 +144,7 @@ test("ASR model selection preserves supported providers and repairs damaged valu
   );
 });
 
-test("weather stays enabled with standard effects while location remains configurable", () => {
+test("weather keeps the user toggle while legacy reduced effects migrate to full visuals", () => {
   const result = migrateSettings({
     ...defaultSettings,
     weatherLocationMode: "manual",
@@ -127,7 +156,14 @@ test("weather stays enabled with standard effects while location remains configu
   assert.equal(result.settings.weatherLocationMode, "manual");
   assert.equal(result.settings.weatherManualCity, "杭州");
   assert.equal(result.settings.weatherEffectMode, "standard");
-  assert.equal(result.settings.isDynamicWeatherEnabled, true);
+  assert.equal(result.settings.isDynamicWeatherEnabled, false);
+});
+
+test("legacy room question providers migrate to cloud without requiring local Qwen", () => {
+  for (const aiRoomAskProvider of ["local", "custom"] as const) {
+    const result = migrateSettings({ ...defaultSettings, aiRoomAskProvider });
+    assert.equal(result.settings.aiRoomAskProvider, "cloud");
+  }
 });
 
 test("migrateSettings preserves the release notes version already shown", () => {

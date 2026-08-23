@@ -56,6 +56,65 @@ test("a stale signaling session cannot close or receive events from the active s
   }
 });
 
+test("update handoff waits for the WebSocket update close handshake", async () => {
+  const server = new WebSocketServer({ host: "127.0.0.1", port: 0 });
+  await once(server, "listening");
+  const address = server.address();
+  assert.equal(typeof address, "object");
+  assert.ok(address);
+  let resolveUpdateClose: ((value: { code: number; reason: string }) => void) | undefined;
+  const updateClose = new Promise<{ code: number; reason: string }>((resolve) => {
+    resolveUpdateClose = resolve;
+  });
+  server.on("connection", (socket) => {
+    socket.on("message", (raw) => {
+      const message = JSON.parse(raw.toString()) as {
+        type?: string;
+        roomId?: string;
+        peerId?: string;
+        reason?: string;
+      };
+      if (message.type === "join_channel") {
+        socket.send(
+          JSON.stringify({
+            type: "join_ack",
+            roomId: message.roomId,
+            peerId: message.peerId,
+            serverTime: Date.now(),
+            revision: 1,
+            memberCount: 1,
+            sessionToken: "test-token",
+          }),
+        );
+      }
+    });
+    socket.on("close", (code, reason) => {
+      resolveUpdateClose?.({ code, reason: reason.toString() });
+    });
+  });
+
+  const bridge = new SignalingClientBridge(async () => undefined);
+  try {
+    await bridge.connect(`ws://127.0.0.1:${address.port}`, "update-session");
+    const joined = new Promise<void>((resolve) => {
+      bridge.on("event", (event: SignalingEventPayload) => {
+        if (event.type === "message" && event.data?.includes('"type":"join_ack"')) resolve();
+      });
+    });
+    await bridge.send(
+      JSON.stringify({ type: "join_channel", roomId: "main", peerId: "peer-1" }),
+      "update-session",
+    );
+    await joined;
+
+    assert.equal(await bridge.prepareForUpdate(), true);
+    assert.deepEqual(await updateClose, { code: 4002, reason: "client_updating" });
+  } finally {
+    await bridge.close("update-session");
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  }
+});
+
 test("cloud AI requests reuse the joined room socket and stay out of renderer events", async () => {
   const server = new WebSocketServer({ host: "127.0.0.1", port: 0 });
   await once(server, "listening");

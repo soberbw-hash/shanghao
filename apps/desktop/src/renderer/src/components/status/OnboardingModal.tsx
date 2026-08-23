@@ -1,11 +1,13 @@
-import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
+import { AnimatePresence, motion } from "framer-motion";
 
 import { Button } from "../base/Button";
+import { DialogCloseButton } from "../base/DialogCloseButton";
 import {
   dialogSurfaceVariants,
   overlayScrimVariants,
   reducedFadeVariants,
 } from "../../features/motion/motionPresets";
+import { usePrefersReducedMotion as useReducedMotion } from "../../hooks/usePrefersReducedMotion";
 
 const steps = [
   "先设置自己的昵称和角色，好友能一眼认出你。",
@@ -15,6 +17,15 @@ const steps = [
 
 export const OnboardingModal = ({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) => {
   const shouldReduceMotion = useReducedMotion();
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onClose();
+    };
+    document.addEventListener("keydown", closeOnEscape);
+    return () => document.removeEventListener("keydown", closeOnEscape);
+  }, [isOpen, onClose]);
 
   return (
     <AnimatePresence>
@@ -38,11 +49,14 @@ export const OnboardingModal = ({ isOpen, onClose }: { isOpen: boolean; onClose:
             className="modal-surface w-full max-w-xl rounded-[24px] p-6"
           >
             <div className="space-y-4">
-              <div>
-                <div id="onboarding-title" className="text-[22px] font-semibold text-[#111827]">
-                  第一次进入频道
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <div id="onboarding-title" className="text-[22px] font-semibold text-[#111827]">
+                    第一次进入频道
+                  </div>
+                  <p className="mt-1 text-sm text-[#667085]">一分钟就能上手。</p>
                 </div>
-                <p className="mt-1 text-sm text-[#667085]">一分钟就能上手。</p>
+                <DialogCloseButton onClick={onClose} />
               </div>
               <div className="space-y-3">
                 {steps.map((step) => (
@@ -64,3 +78,4 @@ export const OnboardingModal = ({ isOpen, onClose }: { isOpen: boolean; onClose:
     </AnimatePresence>
   );
 };
+import { useEffect } from "react";

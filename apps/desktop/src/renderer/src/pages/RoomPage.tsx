@@ -15,19 +15,19 @@ import { TemporaryChatPanel } from "../components/chat/TemporaryChatPanel";
 import { TopStatusBar } from "../components/layout/TopStatusBar";
 import { RoomDock } from "../components/room/RoomDock";
 import { RoomAskDialog } from "../components/room/RoomAskDialog";
-import {
-  CollectionDialog,
-  DonationDialog,
-  ScreenSourcePicker,
-} from "../components/room/RoomOverlays";
+import { CollectionDialog, ScreenSourcePicker } from "../components/room/RoomOverlays";
 import { ScreenSharePanelContainer } from "../components/room/ScreenSharePanelContainer";
 import { TeamIsland } from "../components/room/TeamIsland";
 import { RecordingStopDialog } from "../components/status/RecordingStopDialog";
 import { playUiSound } from "../features/audio/uiSound";
 import { getRemoteAudioMixer } from "../features/audio/RemoteAudioMixer";
 import { summarizeConnectionHealth } from "../features/network/networkDiagnostics";
-import type { ScreenShareQuality } from "../features/screen-share/types";
+import type {
+  ScreenShareQuality,
+  ScreenShareTransitionOrigin,
+} from "../features/screen-share/types";
 import { useScreenShare } from "../features/screen-share/useScreenShare";
+import { useScreenShareAudience } from "../features/screen-share/useScreenShareAudience";
 import {
   decideAutoAway,
   IDLE_POLL_INTERVAL_MS,
@@ -47,6 +47,7 @@ import { useRecordingStore } from "../store/recordingStore";
 import { useRoomStore } from "../store/roomStore";
 import { useSettingsStore } from "../store/settingsStore";
 import { prepareChatImage } from "../utils/chatImage";
+import { toUserFacingError } from "../utils/userFacingError";
 
 const KNOCK_COOLDOWN_MS = 10_000;
 interface AwaySession {
@@ -77,6 +78,7 @@ export const RoomPage = () => {
     setMemberVolume,
     startScreenShare,
     stopScreenShare,
+    setScreenShareViewingActive,
     addRoomCollectionItem,
     removeRoomCollectionItem,
   } = useRoomState();
@@ -85,9 +87,17 @@ export const RoomPage = () => {
   const setSettingsReturnTo = useAppStore((state) => state.setSettingsReturnTo);
   const setVoiceMemoryOpenTarget = useAppStore((state) => state.setVoiceMemoryOpenTarget);
   const roomAction = useAppStore((state) => state.roomAction);
+  useEffect(() => {
+    const leaveReconnectingRoom = () => void leaveRoom();
+    window.addEventListener("shanghao:leave-reconnecting-room", leaveReconnectingRoom);
+    return () =>
+      window.removeEventListener("shanghao:leave-reconnecting-room", leaveReconnectingRoom);
+  }, [leaveRoom]);
   const {
     localStream: localScreenShareStream,
     status: screenShareStatus,
+    requestedQuality: screenShareQuality,
+    transitionOrigin: screenShareTransitionOrigin,
     detachedItemId: detachedViewerId,
     openSourcePicker: prepareScreenSourcePicker,
     cancelSourcePicker,
@@ -158,12 +168,15 @@ export const RoomPage = () => {
   const [screenSourcePickerSources, setScreenSourcePickerSources] = useState<
     ScreenCaptureSourceDescriptor[]
   >([]);
+  const [screenSourcePickerStatus, setScreenSourcePickerStatus] = useState<
+    "loading" | "ready" | "empty" | "error"
+  >("loading");
   const [isOverlayOpen, setIsOverlayOpen] = useState(false);
   const [isNoiseSuppressionSwitching, setIsNoiseSuppressionSwitching] = useState(false);
   const [isAutoGainSwitching, setIsAutoGainSwitching] = useState(false);
-  const [isDonationOpen, setIsDonationOpen] = useState(false);
   const [isRoomAskOpen, setIsRoomAskOpen] = useState(false);
   const [localKnockPulse, setLocalKnockPulse] = useState(0);
+  const [recordingMarkerPulse, setRecordingMarkerPulse] = useState(0);
   const [activeAudioPanel, setActiveAudioPanel] = useState<"microphone" | "speaker">();
   const [isLeaving, setIsLeaving] = useState(false);
   const [recordingStopIntent, setRecordingStopIntent] = useState<"stop" | "leave">();
@@ -186,7 +199,14 @@ export const RoomPage = () => {
   const screenPickerRequestIdRef = useRef(0);
   const channelSwitchInFlightRef = useRef(false);
   const recordingSpeakingTimelineRef = useRef<
-    Array<{ offsetMs: number; memberId: string; nickname: string }>
+    Array<{
+      offsetMs: number;
+      memberId: string;
+      nickname: string;
+      userId?: string;
+      usernameSnapshot?: string;
+      displayNameSnapshot?: string;
+    }>
   >([]);
   moveLocalMemberRef.current = moveLocalMember;
   const reduceMotion = usePrefersReducedMotion();
@@ -199,6 +219,16 @@ export const RoomPage = () => {
     room.connectionState === RoomConnectionState.WaitingPeer ||
     room.connectionState === RoomConnectionState.WaitingSnapshot;
   const localMember = room.members.find((member) => member.isLocal);
+  const {
+    viewerNames: localScreenShareViewerNames,
+    autoStopRemainingSeconds: screenShareAutoStopSeconds,
+  } = useScreenShareAudience({
+    members: room.members,
+    localStream: localScreenShareStream,
+    detachedViewerId,
+    setViewingActive: setScreenShareViewingActive,
+    stopShare: stopManagedScreenShare,
+  });
   const visibleMembers = useMemo(
     () =>
       isWorkActivityVisible === false
@@ -233,6 +263,7 @@ export const RoomPage = () => {
     : "";
   const localGameIconKey = localMember?.gameIconDataUrl ?? "";
   const connectionQuality = summarizeConnectionHealth(connectionHealth);
+
   const handleSceneReaction = useCallback(
     (targetPeerId: string, emoji: Parameters<typeof sendSceneReaction>[1]) => {
       void sendSceneReaction(targetPeerId, emoji);
@@ -255,6 +286,9 @@ export const RoomPage = () => {
         offsetMs,
         memberId: member.id,
         nickname: member.nickname,
+        userId: member.userId,
+        usernameSnapshot: member.username,
+        displayNameSnapshot: member.displayName ?? member.nickname,
       });
     }
   }, [recordingStatus.startedAt, recordingStatus.state, room.members]);
@@ -313,6 +347,11 @@ export const RoomPage = () => {
       return;
     }
     queueVoiceMemory(result, markers);
+    pushToast({
+      tone: "success",
+      title: "录音已保存",
+      description: result.filePath,
+    });
   };
   const screenSharingPeerIds = useMemo(
     () =>
@@ -508,7 +547,8 @@ export const RoomPage = () => {
           offsetMs: Math.max(0, Date.now() - startedAt),
           createdAt: new Date().toISOString(),
         });
-        playUiSound("button-click");
+        setRecordingMarkerPulse((current) => current + 1);
+        playUiSound("record-marker");
         pushToast({
           tone: "neutral",
           title: "已标记精彩时刻",
@@ -757,11 +797,11 @@ export const RoomPage = () => {
       const image = await prepareChatImage(file);
       await sendChatMessage("", image);
       playUiSound("send-message");
-    } catch (error) {
+    } catch {
       pushToast({
         tone: "warning",
         title: "图片没有发出去",
-        description: error instanceof Error ? error.message : "请换一张图片重试。",
+        description: "请确认图片是 PNG、JPG 或 WebP 且不超过 8 MB，然后重试。",
       });
     }
   };
@@ -811,6 +851,7 @@ export const RoomPage = () => {
     screenPickerRequestIdRef.current += 1;
     setIsScreenSourcePickerOpen(false);
     setScreenSourcePickerSources([]);
+    setScreenSourcePickerStatus("loading");
     if (cancelManager) void cancelSourcePicker();
   };
 
@@ -874,8 +915,7 @@ export const RoomPage = () => {
         } catch (error) {
           pushToast({
             tone: "danger",
-            title: "录音保存失败",
-            description: error instanceof Error ? error.message : "请稍后再试。",
+            ...toUserFacingError(error, "recording"),
           });
         } finally {
           setIsFinalizingRecording(false);
@@ -906,6 +946,7 @@ export const RoomPage = () => {
       if (shouldSave) {
         const result = await stopRecording();
         await finishSavedRecording(result, recordingMarkers);
+        resetRecordingStatus();
       } else {
         await discardRecording();
       }
@@ -916,8 +957,7 @@ export const RoomPage = () => {
     } catch (error) {
       pushToast({
         tone: "danger",
-        title: shouldSave ? "录音保存失败" : "录音结束失败",
-        description: error instanceof Error ? error.message : "请稍后再试。",
+        ...toUserFacingError(error, "recording"),
       });
     } finally {
       setIsFinalizingRecording(false);
@@ -934,15 +974,18 @@ export const RoomPage = () => {
     } catch (error) {
       pushToast({
         tone: "danger",
-        title: "无法更改保存位置",
-        description: error instanceof Error ? error.message : "请稍后再试。",
+        ...toUserFacingError(error, "recording"),
       });
     } finally {
       setIsChoosingRecordingDirectory(false);
     }
   };
 
-  const startSharingScreen = async (sourceId: string, quality: ScreenShareQuality) => {
+  const startSharingScreen = async (
+    sourceId: string,
+    quality: ScreenShareQuality,
+    transitionOrigin: ScreenShareTransitionOrigin,
+  ) => {
     try {
       closeScreenSourcePicker(false);
       await new Promise<void>((resolve) => {
@@ -952,8 +995,9 @@ export const RoomPage = () => {
         sourceId,
         includeSystemAudio: pendingIncludeSystemAudio,
         quality,
+        transitionOrigin,
       });
-      playUiSound("popup-open");
+      playUiSound("screen-share-start");
       pushToast({
         tone: "success",
         title: "屏幕分享已开启",
@@ -985,29 +1029,22 @@ export const RoomPage = () => {
   const openScreenSourcePicker = async () => {
     const requestId = ++screenPickerRequestIdRef.current;
     setScreenSourcePickerSources([]);
+    setScreenSourcePickerStatus("loading");
     setPendingIncludeSystemAudio(false);
     setIsScreenSourcePickerOpen(true);
     try {
       const sources = await prepareScreenSourcePicker();
       if (requestId !== screenPickerRequestIdRef.current) return;
       if (!sources.length) {
-        pushToast({
-          tone: "danger",
-          title: "没有找到可分享的画面",
-          description: "请确认 Windows 允许上号进行屏幕捕获后重试。",
-        });
+        setScreenSourcePickerStatus("empty");
         return;
       }
       setScreenSourcePickerSources(sources);
+      setScreenSourcePickerStatus("ready");
     } catch {
       if (requestId !== screenPickerRequestIdRef.current) return;
-      setIsScreenSourcePickerOpen(false);
       setScreenSourcePickerSources([]);
-      pushToast({
-        tone: "danger",
-        title: "没有找到可分享的画面",
-        description: "请确认 Windows 允许上号进行屏幕捕获后重试。",
-      });
+      setScreenSourcePickerStatus("error");
     }
   };
 
@@ -1055,19 +1092,13 @@ export const RoomPage = () => {
 
   const stopSharingScreen = async () => {
     await stopManagedScreenShare("user");
-    playUiSound("popup-open");
-    pushToast({
-      tone: "neutral",
-      title: "屏幕分享已停止",
-      description: "好友不再看到你的屏幕。",
-    });
+    playUiSound("screen-share-stop");
   };
 
   const switchInputDevice = async (preferredInputDeviceId?: string) => {
     await saveSettings({ preferredInputDeviceId });
     await replaceInputDevice(preferredInputDeviceId);
     playUiSound("device-switch");
-    pushToast({ tone: "success", title: "麦克风已切换", description: "新的输入设备已经生效。" });
   };
 
   const toggleNoiseSuppression = async () => {
@@ -1078,13 +1109,6 @@ export const RoomPage = () => {
       await saveSettings({ isNoiseSuppressionEnabled: nextNoiseSuppressionEnabled });
       await replaceInputDevice(preferredInputDeviceId);
       playUiSound("button-click");
-      pushToast({
-        tone: nextNoiseSuppressionEnabled ? "success" : "neutral",
-        title: nextNoiseSuppressionEnabled ? "降噪已开启" : "降噪已关闭",
-        description: nextNoiseSuppressionEnabled
-          ? "DeepFilterNet 正在本机实时处理麦克风。"
-          : "现在发送麦克风原声。",
-      });
       await window.desktopApi.app.writeLog({
         category: "audio",
         level: "info",
@@ -1110,20 +1134,13 @@ export const RoomPage = () => {
 
   const updateMicrophoneProcessing = async (
     patch: Partial<Pick<AppSettings, "isEchoCancellationEnabled" | "isVoiceEnhancementEnabled">>,
-    enabledTitle: string,
-    disabledTitle: string,
   ) => {
     if (isNoiseSuppressionEnabled === undefined || isNoiseSuppressionSwitching) return;
     setIsNoiseSuppressionSwitching(true);
     try {
       await saveSettings(patch);
       await replaceInputDevice(preferredInputDeviceId);
-      const enabled = Object.values(patch)[0] === true;
       playUiSound("button-click");
-      pushToast({
-        tone: enabled ? "success" : "neutral",
-        title: enabled ? enabledTitle : disabledTitle,
-      });
     } catch (error) {
       pushToast({
         tone: "danger",
@@ -1148,11 +1165,6 @@ export const RoomPage = () => {
       await saveSettings({ isAutoGainControlEnabled });
       await replaceInputDevice(preferredInputDeviceId);
       playUiSound("button-click");
-      pushToast({
-        tone: isAutoGainControlEnabled ? "success" : "neutral",
-        title: isAutoGainControlEnabled ? "自动增益已开启" : "自动增益已关闭",
-        description: "麦克风已经按新设置重新连接。",
-      });
     } catch (error) {
       pushToast({
         tone: "danger",
@@ -1175,11 +1187,6 @@ export const RoomPage = () => {
       await getRemoteAudioMixer().setOutputDevice(preferredOutputDeviceId);
       await saveSettings({ preferredOutputDeviceId });
       playUiSound("device-switch");
-      pushToast({
-        tone: "success",
-        title: "扬声器已切换",
-        description: "新的输出设备已经生效。",
-      });
     } catch (error) {
       pushToast({
         tone: "danger",
@@ -1257,7 +1264,7 @@ export const RoomPage = () => {
     <div
       ref={pageRef}
       className={`room-page relative flex h-full flex-col gap-2.5 overflow-hidden px-3.5 pb-3.5 pt-2 ${
-        localMember?.gameName ? "performance-gaming" : ""
+        isDeafened ? "is-speaker-closed" : ""
       }`}
     >
       <div>
@@ -1265,8 +1272,9 @@ export const RoomPage = () => {
           currentChannelId={room.roomId === "side" ? "side" : "main"}
           channelCounts={channelCounts}
           isSwitchingChannel={isSwitchingChannelLocally || roomAction === "joining"}
+          isRecording={recordingStatus.state === RecordingState.Recording}
+          recordingMarkerPulse={recordingMarkerPulse}
           onSwitchChannel={(channelId) => void handleSwitchChannel(channelId)}
-          onDonate={() => setIsDonationOpen(true)}
           onKnock={() => void knock()}
           onInvite={() => void copyInviteLink()}
           onAsk={() => setIsRoomAskOpen((isOpen) => !isOpen)}
@@ -1291,7 +1299,7 @@ export const RoomPage = () => {
             onOpenCollection={roomCollection.open}
             onCollectionDragOverChange={roomCollection.setIsDragOver}
             onSaveDraggedCollection={(payload) => void roomCollection.saveDragged(payload)}
-            pauseVisualMotion
+            pauseVisualMotion={roomCollection.isOpen}
             knockPulse={
               localKnockPulse +
               chatMessages.filter((message) => message.id.startsWith("knock-")).length
@@ -1300,6 +1308,10 @@ export const RoomPage = () => {
           />
           <ScreenSharePanelContainer
             localStream={localScreenShareStream}
+            localQuality={screenShareQuality}
+            transitionOrigin={screenShareTransitionOrigin}
+            localViewerNames={localScreenShareViewerNames}
+            autoStopRemainingSeconds={screenShareAutoStopSeconds}
             detachedItemId={detachedViewerId}
             onStopLocalShare={() => void stopSharingScreen()}
             onOpenDetached={async (item) => {
@@ -1362,17 +1374,14 @@ export const RoomPage = () => {
         isOpen={isScreenSourcePickerOpen}
         reduceMotion={reduceMotion}
         sources={screenSourcePickerSources}
+        status={screenSourcePickerStatus}
         includeSystemAudio={pendingIncludeSystemAudio}
         onIncludeSystemAudioChange={setPendingIncludeSystemAudio}
-        onSelect={(sourceId, quality) => void startSharingScreen(sourceId, quality)}
+        onSelect={(sourceId, quality, origin) => void startSharingScreen(sourceId, quality, origin)}
+        onRetry={() => void openScreenSourcePicker()}
         onClose={() => closeScreenSourcePicker()}
       />
 
-      <DonationDialog
-        isOpen={isDonationOpen}
-        reduceMotion={reduceMotion}
-        onClose={() => setIsDonationOpen(false)}
-      />
       <RoomAskDialog
         isOpen={isRoomAskOpen}
         reduceMotion={reduceMotion}
@@ -1433,18 +1442,10 @@ export const RoomPage = () => {
         }
         onNoiseSuppressionChange={() => void toggleNoiseSuppression()}
         onEchoCancellationChange={(isEchoCancellationEnabled) =>
-          void updateMicrophoneProcessing(
-            { isEchoCancellationEnabled },
-            "回声消除已开启",
-            "回声消除已关闭",
-          )
+          void updateMicrophoneProcessing({ isEchoCancellationEnabled })
         }
         onVoiceEnhancementChange={(isVoiceEnhancementEnabled) =>
-          void updateMicrophoneProcessing(
-            { isVoiceEnhancementEnabled },
-            "自然人声已开启",
-            "自然人声已关闭",
-          )
+          void updateMicrophoneProcessing({ isVoiceEnhancementEnabled })
         }
         onAutoGainChange={(isAutoGainControlEnabled) =>
           void toggleAutoGain(isAutoGainControlEnabled)

@@ -1323,14 +1323,6 @@ body::before {
   }
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .dynamic-weather-window *,
-  .dynamic-weather-window *::before,
-  .dynamic-weather-window *::after {
-    animation-play-state: paused !important;
-  }
-}
-
 .weather-settings-block {
   border-top: 1px solid rgba(219, 232, 247, 0.82);
   padding-top: 12px;

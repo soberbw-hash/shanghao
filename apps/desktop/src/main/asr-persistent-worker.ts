@@ -11,6 +11,8 @@ export interface AsrWorkerSegment {
   startMs: number;
   endMs: number;
   text: string;
+  speakerId?: string;
+  words?: Array<{ startMs: number; endMs: number; text: string }>;
 }
 
 export interface AsrWorkerResult {
@@ -26,6 +28,7 @@ export interface AsrWorkerHealth {
   queuedJobs: number;
   activeJobId?: string;
   lastError?: string;
+  diagnosticDetail?: string;
 }
 
 export interface AsrWorkerLaunch {
@@ -98,6 +101,7 @@ export class AsrPersistentWorker {
   private loadTimeout?: NodeJS.Timeout;
   private idleTimer?: NodeJS.Timeout;
   private lastError?: string;
+  private diagnosticDetail?: string;
 
   constructor(
     private readonly pythonExecutable: string,
@@ -113,6 +117,7 @@ export class AsrPersistentWorker {
       queuedJobs: this.queue.length,
       activeJobId: this.active?.id,
       lastError: this.lastError,
+      diagnosticDetail: this.diagnosticDetail,
     };
   }
 
@@ -198,6 +203,7 @@ export class AsrPersistentWorker {
     if (this.child) this.stopChild(new Error("asr_model_changed"));
     this.phase = "starting";
     this.lastError = undefined;
+    this.diagnosticDetail = undefined;
     this.stdoutBuffer = "";
     this.stderrTail = "";
     this.currentLaunch = launch;
@@ -286,10 +292,10 @@ export class AsrPersistentWorker {
     const request = this.active;
     if (!request || message.id !== request.id) return;
     if (message.type === "error") {
-      this.finishRequest(
-        request,
-        new Error(`asr_worker_job_failed: ${message.error ?? "unknown"}`),
-      );
+      const error = message.error ?? "asr_runtime_failed";
+      this.lastError = error;
+      this.diagnosticDetail = `${error}\n${this.stderrTail}`.trim();
+      this.finishRequest(request, new Error(error));
     } else if (message.type === "result") {
       this.finishRequest(request, undefined, message.output ?? { text: "" });
     }
@@ -321,6 +327,7 @@ export class AsrPersistentWorker {
 
   private handleCrash(error: Error): void {
     this.lastError = error.message;
+    this.diagnosticDetail = `${error.stack ?? error.message}\n${this.stderrTail}`.trim();
     this.phase = "crashed";
     if (this.active) this.finishRequest(this.active, error);
     this.stopChild(error, true);

@@ -8,11 +8,15 @@ import {
   AI_ASR_MODEL_NAMES,
   CURRENT_TRANSCRIPTION_PIPELINE_VERSION,
   hasInvalidVoiceMemoryResult,
+  mergeTranscriptIntoSentences,
+  type AiAsrModelId,
   type VoiceMemoryRecord,
+  type VoiceMemoryTranscriptSegment,
 } from "@private-voice/shared";
 
 import {
   analyzePcm16Wav,
+  normalizeForcedAlignerTranscript,
   parseVibeVoiceOutput,
   temporaryRecordingName,
   torchAudioInstallPlan,
@@ -24,15 +28,22 @@ import {
   applySpeakingTimeline,
   canAutomaticallyTranscribeDuration,
   completedTranscriptionUnits,
+  isRecoverableFfmpegFailure,
   TRANSCRIPTION_CHUNK_MS,
+  transcriptForPrompt,
   transcriptionModelMetadata,
 } from "../src/main/ai-voice-memory-service";
+import { bindTranscriptToKnownSpeaker } from "../src/main/speaker-transcript";
 import { VoiceMemoryStore } from "../src/main/voice-memory-store";
 import {
   advanceVoiceProcessingState,
   createVoiceProcessingState,
   targetsForVoiceProcessingMode,
 } from "../src/renderer/src/features/audio/voiceProcessingState";
+import {
+  shouldActivateVoiceMemoryVariant,
+  voiceMemoryTranscriptionPercent,
+} from "../src/renderer/src/features/ai/voiceMemoryPresentation";
 
 const record = (): VoiceMemoryRecord => ({
   schemaVersion: 1,
@@ -61,6 +72,113 @@ const record = (): VoiceMemoryRecord => ({
   highlights: [],
   markerTitles: [{ markerId: "m1", offsetMs: 1_500, title: "周六约饭" }],
   timeline: [{ id: "m1", kind: "marker", offsetMs: 1_500, title: "周六约饭" }],
+});
+
+const alignedCharacters = (): VoiceMemoryTranscriptSegment[] =>
+  [
+    ["能", 2_000, 2_090],
+    ["听", 2_100, 2_190],
+    ["见", 2_200, 2_290],
+    ["吗", 2_300, 2_390],
+    ["？", 2_400, 2_450],
+    ["我", 2_650, 2_740],
+    ["可", 2_750, 2_840],
+    ["以", 2_850, 2_940],
+    ["。", 2_950, 3_000],
+  ].map(([text, startMs, endMs], index) => ({
+    id: `aligned-${index}`,
+    recordingId: "aligned-recording",
+    startMs: Number(startMs),
+    endMs: Number(endMs),
+    text: String(text),
+    speakerId: "Speaker 1",
+    confidence: "pending" as const,
+  }));
+
+test("both Qwen ForcedAligner models retain exact word timing under readable sentences", () => {
+  const qwenModels: AiAsrModelId[] = ["qwen3-asr-0.6b-force", "qwen3-asr-1.7b-force"];
+  for (const modelId of qwenModels) {
+    const sentences = normalizeForcedAlignerTranscript(modelId, alignedCharacters());
+    assert.deepEqual(
+      sentences.map((segment) => segment.text),
+      ["能听见吗？", "我可以。"],
+      modelId,
+    );
+    assert.equal(sentences[0]?.startMs, 2_000);
+    assert.equal(sentences[0]?.endMs, 2_450);
+    assert.equal(sentences[0]?.words?.length, 5);
+    assert.deepEqual(sentences[0]?.words?.[4], {
+      id: "aligned-4",
+      startMs: 2_400,
+      endMs: 2_450,
+      text: "？",
+    });
+  }
+});
+
+test("sentence merging respects speaker changes, pauses, punctuation and remains idempotent", () => {
+  const source = alignedCharacters();
+  source[5] = { ...source[5]!, speakerId: "Speaker 2" };
+  source[6] = { ...source[6]!, speakerId: "Speaker 2" };
+  source[7] = { ...source[7]!, speakerId: "Speaker 2" };
+  source[8] = { ...source[8]!, speakerId: "Speaker 2" };
+  const once = mergeTranscriptIntoSentences(source);
+  const twice = mergeTranscriptIntoSentences(once);
+  assert.deepEqual(
+    twice.map((segment) => segment.text),
+    ["能听见吗？", "我可以。"],
+  );
+  assert.deepEqual(twice, once);
+  assert.equal(hasInvalidVoiceMemoryResult({ ...record(), transcript: source }), false);
+
+  const longPause = alignedCharacters().slice(0, 2);
+  longPause[1] = { ...longPause[1]!, startMs: 3_000, endMs: 3_090 };
+  assert.deepEqual(
+    mergeTranscriptIntoSentences(longPause).map((segment) => segment.text),
+    ["能", "听"],
+  );
+
+  const maximumLength = alignedCharacters()
+    .slice(0, 6)
+    .map((segment, index) => ({ ...segment, text: "一二三四五六"[index]! }));
+  assert.deepEqual(
+    mergeTranscriptIntoSentences(maximumLength, { maxCharacters: 4 }).map(
+      (segment) => segment.text,
+    ),
+    ["一二三四", "五六"],
+  );
+});
+
+test("AI organization prompt receives sentences instead of repeated character metadata", () => {
+  const prompt = transcriptForPrompt({ ...record(), transcript: alignedCharacters() });
+  assert.equal(prompt, "[2s] Speaker 1: 能听见吗？\n[3s] Speaker 1: 我可以。");
+  assert.equal(prompt.match(/Speaker 1:/g)?.length, 2);
+});
+
+test("paused transcription shows its durable percentage even when partial text exists", () => {
+  const paused: VoiceMemoryRecord = {
+    ...record(),
+    phase: "paused",
+    processingStage: "asr",
+    progress: 6.3,
+    transcript: alignedCharacters().slice(0, 2),
+  };
+  assert.equal(voiceMemoryTranscriptionPercent(paused), 9);
+  assert.equal(voiceMemoryTranscriptionPercent({ ...paused, phase: "ready", progress: 100 }), 100);
+});
+
+test("known-speaker binding shifts both sentence and nested word timestamps", () => {
+  const [sentence] = mergeTranscriptIntoSentences(alignedCharacters());
+  const [bound] = bindTranscriptToKnownSpeaker(
+    "known-speaker-recording",
+    3,
+    { speakerId: "member-7", displayNameSnapshot: "小七", startMs: 10_000, endMs: 20_000 },
+    [sentence!],
+  );
+  assert.equal(bound?.startMs, 12_000);
+  assert.equal(bound?.words?.[0]?.startMs, 12_000);
+  assert.equal(bound?.words?.[4]?.endMs, 12_450);
+  assert.equal(bound?.speakerId, "member-7");
 });
 
 test("VibeASR uses the sampling decoder defaults required for Chinese recordings", () => {
@@ -258,6 +376,33 @@ test("transcription checkpoints update in shorter visible steps and preserve leg
   assert.equal(completedTranscriptionUnits({ completedUnits: 3, unitDurationMs: 30_000 }, 20), 3);
 });
 
+test("only FFmpeg component failures are recovered after the runtime becomes available", () => {
+  assert.equal(
+    isRecoverableFfmpegFailure({
+      ...record(),
+      phase: "error",
+      errorMessage: "ffmpeg_missing",
+    }),
+    true,
+  );
+  assert.equal(
+    isRecoverableFfmpegFailure({
+      ...record(),
+      phase: "error",
+      errorMessage: "qwen3_asr_cuda_required",
+    }),
+    false,
+  );
+  assert.equal(
+    isRecoverableFfmpegFailure({
+      ...record(),
+      phase: "ready",
+      errorMessage: "ffmpeg_missing",
+    }),
+    false,
+  );
+});
+
 test("voice memories retain the exact ASR model instead of following later settings", async () => {
   assert.deepEqual(
     transcriptionModelMetadata("qwen3-asr-0.6b-force", {
@@ -356,6 +501,47 @@ test("A/B transcription variants stay separate and can be selected without retra
     selected.transcriptionVariants?.["paraformer-zh"]?.transcript[0]?.text,
     "Paraformer 结果",
   );
+});
+
+test("the shared model selection activates an existing recording result only when safe", () => {
+  const qwen = record();
+  const withSavedParaformer = {
+    ...qwen,
+    phase: "ready",
+    transcriptionModel: {
+      id: "qwen3-asr-0.6b-force",
+      name: AI_ASR_MODEL_NAMES["qwen3-asr-0.6b-force"],
+    },
+    transcriptionVariants: {
+      "paraformer-zh": {
+        model: { id: "paraformer-zh", name: AI_ASR_MODEL_NAMES["paraformer-zh"] },
+        transcript: qwen.transcript,
+        speakers: qwen.speakers,
+        updatedAt: new Date().toISOString(),
+      },
+    },
+  } as VoiceMemoryRecord;
+
+  assert.equal(shouldActivateVoiceMemoryVariant(withSavedParaformer, "paraformer-zh"), true);
+  assert.equal(
+    shouldActivateVoiceMemoryVariant(withSavedParaformer, "qwen3-asr-0.6b-force"),
+    false,
+  );
+  assert.equal(
+    shouldActivateVoiceMemoryVariant(
+      { ...withSavedParaformer, phase: "transcribing" },
+      "paraformer-zh",
+    ),
+    false,
+  );
+  assert.equal(
+    shouldActivateVoiceMemoryVariant(
+      { ...withSavedParaformer, phase: "error", taskStatus: "failed" },
+      "paraformer-zh",
+    ),
+    false,
+  );
+  assert.equal(shouldActivateVoiceMemoryVariant(withSavedParaformer, "fun-asr-nano-2512"), false);
 });
 
 test("room questions expose a real cancellation signal to every text provider", async () => {

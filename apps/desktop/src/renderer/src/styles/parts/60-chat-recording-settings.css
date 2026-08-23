@@ -1176,16 +1176,6 @@
   box-shadow: 0 2px 7px rgba(229, 84, 54, 0.34);
 }
 
-.topbar-donate {
-  color: #b36b16;
-}
-
-.topbar-donate:hover {
-  border-color: rgba(234, 162, 79, 0.3);
-  background: rgba(255, 245, 226, 0.72);
-  color: #94560e;
-}
-
 .screen-source-picker-panel {
   width: min(900px, 92vw);
   max-height: min(680px, 84vh);

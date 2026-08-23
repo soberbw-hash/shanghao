@@ -40,7 +40,10 @@ export class SignalingClientBridge extends EventEmitter {
     { resolve: (content: string) => void; reject: (error: Error) => void; timer: NodeJS.Timeout }
   >();
 
-  constructor(private readonly writeLog: (payload: RendererLogPayload) => Promise<void>) {
+  constructor(
+    private readonly writeLog: (payload: RendererLogPayload) => Promise<void>,
+    private readonly getAccountAccessToken: () => string | undefined = () => undefined,
+  ) {
     super();
   }
 
@@ -70,8 +73,10 @@ export class SignalingClientBridge extends EventEmitter {
     });
 
     await new Promise<void>((resolve, reject) => {
+      const accountAccessToken = this.getAccountAccessToken();
       const socket = new NodeWebSocket(signalingUrl, {
         handshakeTimeout: 8_000,
+        headers: accountAccessToken ? { Authorization: `Bearer ${accountAccessToken}` } : undefined,
       });
       this.socket = socket;
       let settled = false;
@@ -238,6 +243,15 @@ export class SignalingClientBridge extends EventEmitter {
     await this.closeSocket();
   }
 
+  async prepareForUpdate(): Promise<boolean> {
+    if (!this.joinedRoom || this.socket?.readyState !== NodeWebSocket.OPEN) return false;
+    this.socketGeneration += 1;
+    this.sessionId = undefined;
+    this.joinedRoom = undefined;
+    this.rejectPendingCloudAi("cloud_ai_connection_closed");
+    return this.closeSocket(4002, "client_updating");
+  }
+
   async requestCloudAi(request: CloudAiBridgeRequest): Promise<string> {
     if (!this.socket || this.socket.readyState !== NodeWebSocket.OPEN || !this.joinedRoom) {
       throw new Error("cloud_ai_join_required");
@@ -329,27 +343,27 @@ export class SignalingClientBridge extends EventEmitter {
     throw new Error("fault_must_be_injected_in_renderer");
   }
 
-  private async closeSocket(): Promise<void> {
-    if (!this.socket) return;
+  private async closeSocket(code = 1000, reason?: string): Promise<boolean> {
+    if (!this.socket) return false;
 
     const socket = this.socket;
     this.socket = undefined;
 
-    await new Promise<void>((resolve) => {
+    return new Promise<boolean>((resolve) => {
       if (socket.readyState === NodeWebSocket.CLOSED) {
-        resolve();
+        resolve(true);
         return;
       }
-      const fallback = setTimeout(resolve, 1_500);
+      const fallback = setTimeout(() => resolve(false), 1_500);
       socket.once("close", () => {
         clearTimeout(fallback);
-        resolve();
+        resolve(true);
       });
       try {
-        socket.close();
+        socket.close(code, reason);
       } catch {
         clearTimeout(fallback);
-        resolve();
+        resolve(false);
       }
     });
   }

@@ -161,7 +161,7 @@ export const AudioControlPopover = ({
         <div className="audio-control-processing-option" data-audio-setting="loudness-balance">
           <span>
             <strong>好友响度平衡</strong>
-            <small>将好友说话响度稳定在约 -14 LUFS</small>
+            <small>自动缩小忽大忽小的音量差异</small>
           </span>
           <Switch
             isChecked={loudnessBalanceEnabled}

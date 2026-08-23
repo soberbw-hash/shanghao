@@ -67,6 +67,23 @@ export class SignalingReconnectCoordinator {
     }, delay);
   }
 
+  retryNow(openSocket: () => Promise<void>, shouldContinue: () => boolean): boolean {
+    if (!shouldContinue()) return false;
+    this.beginEpisode();
+    if (this.reconnectTimer !== undefined) {
+      window.clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = undefined;
+    }
+    this.attempts += 1;
+    const attempt = this.attempts;
+    this.options.onAttempt?.(attempt);
+    void openSocket().catch((error) => {
+      this.options.onFailure?.({ attempt, error });
+      if (shouldContinue()) this.schedule(openSocket, shouldContinue);
+    });
+    return true;
+  }
+
   beginStableWindow(isStable: () => boolean): void {
     this.cancelStableWindow();
     if (this.activeEpisodeId === undefined) {

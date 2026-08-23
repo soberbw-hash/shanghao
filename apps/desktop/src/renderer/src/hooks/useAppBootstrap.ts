@@ -167,12 +167,26 @@ export const useAppBootstrap = (): void => {
       });
     };
     window.addEventListener("shanghao:deepfilter-unavailable", handleDeepFilterUnavailable);
+    const handleMicrophoneInputOverload = () => {
+      const overloadToast = {
+        tone: "warning",
+        title: "麦克风输入音量过高",
+        description: "检测到持续削波，请调低麦克风本体增益或离麦克风稍远一些。",
+      } as const;
+      useAppStore.getState().pushToast(overloadToast);
+      void writeRendererLog("audio", "warn", "Sustained raw microphone clipping detected");
+    };
+    window.addEventListener("shanghao:microphone-input-overload", handleMicrophoneInputOverload);
 
     return () => {
       isDisposed = true;
       unsubscribeLifecycleRecovery();
       navigator.mediaDevices?.removeEventListener("devicechange", handleDeviceChange);
       window.removeEventListener("shanghao:deepfilter-unavailable", handleDeepFilterUnavailable);
+      window.removeEventListener(
+        "shanghao:microphone-input-overload",
+        handleMicrophoneInputOverload,
+      );
     };
   }, [
     beginBootstrap,

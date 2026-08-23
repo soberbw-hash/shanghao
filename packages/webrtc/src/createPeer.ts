@@ -87,8 +87,8 @@ const NETWORK_TIER_PROFILES: Record<NetworkAdaptationTier, NetworkTierProfile> =
   critical: {
     audioBitrate: 16_000,
     screenBitrateScale: 0.48,
-    screenMaxFramerate: 18,
-    screenScaleResolutionDownBy: 1.5,
+    screenMaxFramerate: 24,
+    screenScaleResolutionDownBy: 1,
   },
 };
 
@@ -401,13 +401,16 @@ export class MeshPeerConnection {
     this.screenShareProfile = profile;
     await this.screenTransceiver.sender.replaceTrack(nextTrack ?? null);
     if (nextTrack) {
-      nextTrack.contentHint = "detail";
+      // Screen sharing must remain usable for games and video. The requested bitrate keeps
+      // text readable while the motion hint prevents Chromium from sacrificing frame cadence.
+      nextTrack.contentHint = "motion";
       await nextTrack
         .applyConstraints({
           width: { max: profile.maxWidth },
           height: { max: profile.maxHeight },
           frameRate: {
-            ideal: Math.max(10, profile.maxFramerate - 3),
+            min: Math.min(24, profile.maxFramerate),
+            ideal: profile.maxFramerate,
             max: profile.maxFramerate,
           },
         })
@@ -636,7 +639,7 @@ export class MeshPeerConnection {
       encoding.maxBitrate = Math.round(profile.maxBitrate * networkProfile.screenBitrateScale);
       encoding.maxFramerate = Math.min(profile.maxFramerate, networkProfile.screenMaxFramerate);
       encoding.scaleResolutionDownBy = networkProfile.screenScaleResolutionDownBy;
-      encoding.priority = "medium";
+      encoding.priority = "high";
       encoding.networkPriority = "low";
       await sender.setParameters(parameters);
     } catch (error) {

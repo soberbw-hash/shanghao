@@ -7,6 +7,7 @@ import {
   CURRENT_TRANSCRIPTION_PIPELINE_VERSION,
   hasInvalidVoiceMemoryResult,
   isReliableTranscriptText,
+  mergeTranscriptIntoSentences,
   type AiAsrModelId,
   type AiModelId,
   type AiAsrRuntimeStatus,
@@ -36,18 +37,27 @@ import { classifyLocalModelRuntimeError } from "./local-model-runtime";
 import { VoiceMemoryStore } from "./voice-memory-store";
 import { resolveFfmpegExecutable } from "./media-runtime";
 import { AiTextGateway } from "./ai-text-gateway";
+import {
+  cleanupRecordingSpeakerSegments,
+  loadRecordingSpeakerSegments,
+} from "./recording-speaker-segments";
+import { bindTranscriptToKnownSpeaker, mergeSpeakerTranscript } from "./speaker-transcript";
 
 // Short units bound local inference memory and preserve useful seek points for models without
 // word-level timestamps.
 export const TRANSCRIPTION_CHUNK_MS = 30_000;
 export const AUTOMATIC_TRANSCRIPTION_MAX_DURATION_MS = 30 * 60_000;
 const LEGACY_TRANSCRIPTION_CHUNK_MS = 10 * 60_000;
-// Version 7 adds the Mandarin-only transcript guard and invalidates older multilingual results.
-// Partial results from older recognition runs must not be mixed into the guarded transcript.
+// Version 8 binds speaker identity to independent participant streams. Partial mixed-stream
+// results must never be merged into this speaker-aware pipeline.
 const TRANSCRIPTION_PIPELINE_VERSION = CURRENT_TRANSCRIPTION_PIPELINE_VERSION;
 
 export const canAutomaticallyTranscribeDuration = (durationMs: number): boolean =>
   durationMs <= AUTOMATIC_TRANSCRIPTION_MAX_DURATION_MS;
+
+export const isRecoverableFfmpegFailure = (record: VoiceMemoryRecord): boolean =>
+  record.phase === "error" &&
+  (record.errorMessage === "ffmpeg_missing" || record.diagnostic?.errorCode === "ffmpeg_missing");
 
 export const transcriptionModelMetadata = (
   modelId: AiAsrModelId,
@@ -195,8 +205,11 @@ export const applySpeakingTimeline = (
   };
 };
 
-const transcriptForPrompt = (record: VoiceMemoryRecord, maximumCharacters = 36_000): string =>
-  record.transcript
+export const transcriptForPrompt = (
+  record: VoiceMemoryRecord,
+  maximumCharacters = 36_000,
+): string =>
+  mergeTranscriptIntoSentences(record.transcript)
     .filter((segment) =>
       isReliableTranscriptText(segment.text, Math.max(100, segment.endMs - segment.startMs)),
     )
@@ -306,6 +319,30 @@ export class AiVoiceMemoryService {
       .sort((left, right) =>
         (right.diagnostic?.updatedAt ?? "").localeCompare(left.diagnostic?.updatedAt ?? ""),
       )[0]?.diagnostic;
+    const recoverableFfmpegFailures = records.filter(isRecoverableFfmpegFailure);
+    if (recoverableFfmpegFailures.length > 0 && resolveFfmpegExecutable()) {
+      for (const record of recoverableFfmpegFailures) {
+        await this.save({
+          ...record,
+          phase: "paused",
+          taskStatus: "pending",
+          processingStage: "preprocess",
+          diagnostic: record.diagnostic
+            ? {
+                ...record.diagnostic,
+                status: "pending",
+                updatedAt: new Date().toISOString(),
+                errorCode: undefined,
+                errorMessage: undefined,
+              }
+            : undefined,
+          errorMessage: undefined,
+        });
+      }
+      this.log("info", "Recoverable FFmpeg voice-memory failures reset", {
+        recordingIds: recoverableFfmpegFailures.map((record) => record.recordingId),
+      });
+    }
     const interrupted = records.filter(
       (record) => record.phase === "transcribing" || record.phase === "organizing",
     );
@@ -1056,6 +1093,128 @@ export class AiVoiceMemoryService {
     if (!manual && !canAutomaticallyTranscribeDuration(totalDuration)) {
       throw new Error("automatic_long_recording_requires_manual");
     }
+    const knownSpeakerSegments = await loadRecordingSpeakerSegments(
+      record.recordingId,
+      record.filePath,
+    );
+    if (knownSpeakerSegments?.length) {
+      const totalUnits = knownSpeakerSegments.length;
+      const checkpointCompatible =
+        checkpoint?.pipelineVersion === TRANSCRIPTION_PIPELINE_VERSION &&
+        checkpoint.asrModelId === asrModelId &&
+        checkpoint.totalUnits === totalUnits;
+      let completedUnits = checkpointCompatible
+        ? Math.min(totalUnits, Math.max(0, checkpoint.completedUnits))
+        : 0;
+      if (!checkpointCompatible && record.transcript.length > 0) {
+        throw new Error(
+          checkpoint ? "transcription_checkpoint_incompatible" : "transcription_checkpoint_missing",
+        );
+      }
+      if (!checkpointCompatible && checkpoint) await this.models.clearTaskCheckpoint(taskId);
+      record = await this.save({
+        ...record,
+        phase: "transcribing",
+        progress: Math.round((completedUnits / totalUnits) * 70),
+        transcriptionModel,
+        errorMessage: undefined,
+      });
+      for (let unit = completedUnits; unit < totalUnits; unit += 1) {
+        if (signal.aborted) throw new Error("ai_task_paused");
+        const source = knownSpeakerSegments[unit];
+        if (!source) continue;
+        onStage?.("convert");
+        const recognized = await this.runtime.transcribeChunk({
+          modelId: asrModelId,
+          recordingId: record.recordingId,
+          filePath: source.filePath,
+          offsetMs: 0,
+          durationMs: Math.max(1, source.endMs - source.startMs),
+          signal,
+          resourceMode: runnable.resourceMode,
+          onStage: (stage, context) => {
+            onStage?.(stage);
+            this.log("info", "AI speaker segment stage", {
+              taskId: record.taskId,
+              recordingId: record.recordingId,
+              speakerId: source.speakerId,
+              stage,
+              ...context,
+            });
+          },
+        });
+        const speakerTranscript = bindTranscriptToKnownSpeaker(
+          record.recordingId,
+          unit,
+          source,
+          recognized,
+        );
+        this.log("info", "Speaker segment transcribed", {
+          recordingId: record.recordingId,
+          speakerId: source.speakerId,
+          displayNameSnapshot: source.displayNameSnapshot,
+          startMs: source.startMs,
+          endMs: source.endMs,
+          asrModelId,
+          transcriptCount: speakerTranscript.length,
+        });
+        const retained = record.transcript.filter(
+          (segment) => !segment.id.startsWith(`${record.recordingId}-speaker-${unit}-`),
+        );
+        const transcript = mergeSpeakerTranscript(retained, speakerTranscript);
+        const sourceBySpeaker = new Map(
+          knownSpeakerSegments.map((segment) => [segment.speakerId, segment]),
+        );
+        record = await this.save({
+          ...record,
+          processingStage: "storage",
+          transcript,
+          speakers: Array.from(new Set(transcript.map((segment) => segment.speakerId))).map(
+            (speakerId) => {
+              const identity = sourceBySpeaker.get(speakerId);
+              return {
+                speakerId,
+                memberId: speakerId,
+                nickname: identity?.displayNameSnapshot,
+                displayNameSnapshot: identity?.displayNameSnapshot,
+                confidence: "high" as const,
+              };
+            },
+          ),
+          progress: Math.round(((unit + 1) / totalUnits) * 70),
+        });
+        completedUnits = unit + 1;
+        await this.models.saveTaskCheckpoint({
+          taskId,
+          recordingId: record.recordingId,
+          kind: "transcription",
+          completedUnits,
+          totalUnits,
+          unitDurationMs: TRANSCRIPTION_CHUNK_MS,
+          pipelineVersion: TRANSCRIPTION_PIPELINE_VERSION,
+          asrModelId,
+          updatedAt: new Date().toISOString(),
+        });
+      }
+      let temporaryAudioCleaned = false;
+      try {
+        await cleanupRecordingSpeakerSegments(record.recordingId);
+        temporaryAudioCleaned = true;
+      } catch (error) {
+        this.log("warn", "Speaker segment cleanup deferred", {
+          recordingId: record.recordingId,
+          error: error instanceof Error ? error.message : "unknown_error",
+        });
+      }
+      this.log("info", "Speaker-aware transcription completed", {
+        recordingId: record.recordingId,
+        segmentCount: totalUnits,
+        speakerCount: record.speakers.length,
+        overlappingSegmentsSupported: true,
+        temporaryAudioCleaned,
+      });
+      return record;
+    }
     const totalUnits = Math.max(1, Math.ceil(totalDuration / TRANSCRIPTION_CHUNK_MS));
     const checkpointCompatible =
       checkpoint?.pipelineVersion === TRANSCRIPTION_PIPELINE_VERSION &&
@@ -1127,13 +1286,14 @@ export class AiVoiceMemoryService {
         (segment) =>
           segment.startMs < offsetMs || segment.startMs >= offsetMs + TRANSCRIPTION_CHUNK_MS,
       );
+      const transcript = [...retained, ...segments].sort(
+        (left, right) => left.startMs - right.startMs,
+      );
       record = await this.save({
         ...record,
         processingStage: "storage",
-        transcript: [...retained, ...segments].sort((a, b) => a.startMs - b.startMs),
-        speakers: Array.from(
-          new Set([...retained, ...segments].map((segment) => segment.speakerId)),
-        ).map(
+        transcript,
+        speakers: Array.from(new Set(transcript.map((segment) => segment.speakerId))).map(
           (speakerId) =>
             record.speakers.find((speaker) => speaker.speakerId === speakerId) ?? {
               speakerId,
@@ -1167,8 +1327,10 @@ export class AiVoiceMemoryService {
     signal: AbortSignal,
   ): Promise<VoiceMemoryRecord> {
     if (record.transcript.length === 0) return record;
+    const readableTranscript = mergeTranscriptIntoSentences(record.transcript);
     record = await this.save({
       ...record,
+      transcript: readableTranscript,
       phase: "organizing",
       progress: 75,
       errorMessage: undefined,

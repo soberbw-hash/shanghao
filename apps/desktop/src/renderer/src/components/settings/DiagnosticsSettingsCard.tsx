@@ -364,6 +364,12 @@ export const DiagnosticsSettingsCard = ({
               : "等待麦克风",
           ],
           [
+            "麦克风原始输入",
+            localAudioDiagnostics
+              ? `${localAudioDiagnostics.inputOverload === "warning" ? "音量过高" : "正常"} · 峰值 ${Math.round((localAudioDiagnostics.rawInputPeak ?? 0) * 100)}%`
+              : "等待麦克风",
+          ],
+          [
             "处理负载",
             localAudioDiagnostics
               ? `平均 ${(localAudioDiagnostics.averageProcessingMs ?? 0).toFixed(1)} ms · 峰值 ${(localAudioDiagnostics.maxProcessingMs ?? 0).toFixed(1)} ms · 超时 ${localAudioDiagnostics.processorOverruns ?? 0}`

@@ -125,6 +125,7 @@ export class ScreenShareManager {
       status: "starting",
       selectedSourceId: request.sourceId,
       requestedQuality: quality,
+      transitionOrigin: request.transitionOrigin,
       error: undefined,
     });
 
@@ -199,6 +200,7 @@ export class ScreenShareManager {
 
       const [videoTrack] = stream.getVideoTracks();
       if (!videoTrack) throw new Error("screen_track_missing");
+      videoTrack.contentHint = "motion";
       await this.applyCaptureProfile(videoTrack, profile);
       const captureSettings = videoTrack.getSettings();
       await this.options.startPublishing(stream, profile);
@@ -236,6 +238,7 @@ export class ScreenShareManager {
           localStream: undefined,
           hasSystemAudio: false,
           error: this.errorMessage(error),
+          transitionOrigin: undefined,
         });
       }
       await this.log("error", "Screen share request failed", error);
@@ -260,6 +263,7 @@ export class ScreenShareManager {
         capture: undefined,
         displayMode: "inline",
         detachedItemId: undefined,
+        transitionOrigin: undefined,
         error: undefined,
       });
     }
@@ -468,21 +472,37 @@ export class ScreenShareManager {
     videoTrack: MediaStreamTrack,
     profile: ScreenShareEncodingProfile,
   ): Promise<void> {
+    videoTrack.contentHint = "motion";
     try {
       await videoTrack.applyConstraints({
         width: { ideal: profile.maxWidth, max: profile.maxWidth },
         height: { ideal: profile.maxHeight, max: profile.maxHeight },
-        frameRate: { ideal: profile.maxFramerate, max: profile.maxFramerate },
+        frameRate: {
+          min: Math.min(24, profile.maxFramerate),
+          ideal: profile.maxFramerate,
+          max: profile.maxFramerate,
+        },
       });
     } catch (error) {
-      // A live desktop track is still usable when a Windows capture backend cannot
-      // resize it. The WebRTC sender profile continues to cap bitrate and framerate.
-      await this.log("warn", "Screen capture started but output constraints were not applied", {
-        error: this.errorMessage(error),
-        requestedWidth: profile.maxWidth,
-        requestedHeight: profile.maxHeight,
-        requestedFramerate: profile.maxFramerate,
-      });
+      // Some Windows backends reject a hard minimum even though they can honor a 30 FPS ideal.
+      // Retry without `min` before accepting the source defaults.
+      try {
+        await videoTrack.applyConstraints({
+          width: { ideal: profile.maxWidth, max: profile.maxWidth },
+          height: { ideal: profile.maxHeight, max: profile.maxHeight },
+          frameRate: { ideal: profile.maxFramerate, max: profile.maxFramerate },
+        });
+      } catch (fallbackError) {
+        // A live desktop track is still usable when a Windows capture backend cannot resize it.
+        // The WebRTC sender profile continues to cap bitrate and framerate.
+        await this.log("warn", "Screen capture started but output constraints were not applied", {
+          error: this.errorMessage(error),
+          fallbackError: this.errorMessage(fallbackError),
+          requestedWidth: profile.maxWidth,
+          requestedHeight: profile.maxHeight,
+          requestedFramerate: profile.maxFramerate,
+        });
+      }
     }
   }
 

@@ -3,6 +3,7 @@ import { useEffect } from "react";
 import type { AppSettings } from "@private-voice/shared";
 
 import { SettingsItemRow } from "./SettingsItemRow";
+import { Switch } from "../base/Switch";
 import { useWeatherStore } from "../../features/weather/weatherStore";
 import { WeatherCityPicker } from "./WeatherCityPicker";
 
@@ -36,30 +37,49 @@ export const WeatherSettingsCard = ({
               : "优先使用 Windows 系统定位；不可用时才回退到网络定位。";
 
   useEffect(() => {
+    if (!settings.isDynamicWeatherEnabled) return;
     void refresh({
       locationMode: settings.weatherLocationMode,
       manualCity: settings.weatherManualCity,
     }).catch(() => undefined);
-  }, [refresh, settings.weatherLocationMode, settings.weatherManualCity]);
+  }, [
+    refresh,
+    settings.isDynamicWeatherEnabled,
+    settings.weatherLocationMode,
+    settings.weatherManualCity,
+  ]);
 
   return (
     <div className="weather-settings-block space-y-3" aria-label="天气设置">
-      <SettingsItemRow label="天气位置" description={locationDescription}>
-        <WeatherCityPicker
-          selectedCity={settings.weatherLocationMode === "manual" ? savedCity : undefined}
-          detectedCity={detectedCity}
-          isLoading={isLoading}
-          onSelect={(city) => {
-            const weatherManualCity = city?.trim().slice(0, 80) ?? "";
-            onChange(
-              weatherManualCity
-                ? { weatherLocationMode: "manual", weatherManualCity }
-                : { weatherLocationMode: "auto", weatherManualCity: "" },
-            );
-          }}
+      <SettingsItemRow
+        label="窗外动态天气"
+        description="让窗外天气、昼夜和房间环境光随本地天气变化。"
+      >
+        <Switch
+          isChecked={settings.isDynamicWeatherEnabled}
+          onChange={(isDynamicWeatherEnabled) => onChange({ isDynamicWeatherEnabled })}
         />
       </SettingsItemRow>
-      {import.meta.env.DEV ? (
+      {settings.isDynamicWeatherEnabled ? (
+        <>
+          <SettingsItemRow label="天气位置" description={locationDescription}>
+            <WeatherCityPicker
+              selectedCity={settings.weatherLocationMode === "manual" ? savedCity : undefined}
+              detectedCity={detectedCity}
+              isLoading={isLoading}
+              onSelect={(city) => {
+                const weatherManualCity = city?.trim().slice(0, 80) ?? "";
+                onChange(
+                  weatherManualCity
+                    ? { weatherLocationMode: "manual", weatherManualCity }
+                    : { weatherLocationMode: "auto", weatherManualCity: "" },
+                );
+              }}
+            />
+          </SettingsItemRow>
+        </>
+      ) : null}
+      {settings.isDynamicWeatherEnabled && import.meta.env.DEV ? (
         <SettingsItemRow label="本地天气预览" description="仅开发模式可见，不会保存或联网。">
           <select
             value={preview ? `${preview.scene}:${preview.phase}` : "live"}

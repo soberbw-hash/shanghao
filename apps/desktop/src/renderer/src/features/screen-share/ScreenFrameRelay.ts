@@ -90,7 +90,9 @@ export class ScreenFrameRelay {
         const context = canvas.getContext("2d", { alpha: false });
         if (!context) return;
         context.drawImage(video, 0, 0, width, height);
-        const data = canvas.toDataURL("image/jpeg", encoding.quality);
+        // WebP keeps the current readable 720p/1280px fallback while making 24 FPS practical
+        // inside the signaling frame-size ceiling.
+        const data = canvas.toDataURL("image/webp", encoding.quality);
         if (new TextEncoder().encode(data).byteLength <= MAX_BYTES) {
           encodedFrame = { data, width, height };
           break;
@@ -119,10 +121,14 @@ export class ScreenFrameRelay {
         this.intervalMs !== undefined &&
         this.options.getTargetPeerIds().length > 0
       ) {
-        this.timer = window.setTimeout(() => {
-          this.timer = undefined;
-          void this.captureAndSend();
-        }, this.intervalMs);
+        const elapsedMs = performance.now() - captureStartedAt;
+        this.timer = window.setTimeout(
+          () => {
+            this.timer = undefined;
+            void this.captureAndSend();
+          },
+          Math.max(0, this.intervalMs - elapsedMs),
+        );
       }
     }
   }

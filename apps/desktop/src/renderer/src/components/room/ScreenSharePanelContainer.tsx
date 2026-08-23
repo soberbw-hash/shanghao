@@ -1,7 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { selectScreenShareView } from "../../features/room/roomViewModel";
-import type { ScreenShareItem } from "../../features/screen-share/types";
+import type {
+  ScreenShareItem,
+  ScreenShareQuality,
+  ScreenShareTransitionOrigin,
+} from "../../features/screen-share/types";
 import { useRoomStore } from "../../store/roomStore";
 import { ScreenSharePanel } from "./ScreenSharePanel";
 
@@ -12,12 +16,20 @@ import { ScreenSharePanel } from "./ScreenSharePanel";
  */
 export const ScreenSharePanelContainer = ({
   localStream,
+  localQuality,
+  transitionOrigin,
+  localViewerNames,
+  autoStopRemainingSeconds,
   detachedItemId,
   onStopLocalShare,
   onOpenDetached,
   syncDetachedItem,
 }: {
   localStream?: MediaStream;
+  localQuality?: ScreenShareQuality;
+  transitionOrigin?: ScreenShareTransitionOrigin;
+  localViewerNames: string[];
+  autoStopRemainingSeconds?: number;
   detachedItemId?: string;
   onStopLocalShare: () => void;
   onOpenDetached: (item: ScreenShareItem) => Promise<void>;
@@ -47,12 +59,21 @@ export const ScreenSharePanelContainer = ({
       selectScreenShareView({
         members,
         localStream,
+        localQuality,
         remoteStreams,
         remoteFrames: remoteScreenFrames,
         remoteSharing: remoteScreenSharing,
         now,
       }),
-    [members, localStream, now, remoteStreams, remoteScreenFrames, remoteScreenSharing],
+    [
+      localQuality,
+      members,
+      localStream,
+      now,
+      remoteStreams,
+      remoteScreenFrames,
+      remoteScreenSharing,
+    ],
   );
 
   const detachedItem = useMemo(
@@ -98,6 +119,9 @@ export const ScreenSharePanelContainer = ({
   return (
     <ScreenSharePanel
       items={screenShareView.items}
+      localViewerNames={localViewerNames}
+      autoStopRemainingSeconds={autoStopRemainingSeconds}
+      transitionOrigin={transitionOrigin}
       onStopLocalShare={onStopLocalShare}
       onOpenDetached={onOpenDetached}
     />

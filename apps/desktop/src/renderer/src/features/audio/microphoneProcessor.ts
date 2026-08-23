@@ -30,6 +30,8 @@ export interface ProcessedMicrophoneStream {
     | "processorOverruns"
     | "averageProcessingMs"
     | "maxProcessingMs"
+    | "rawInputPeak"
+    | "inputOverload"
   >;
   ready: Promise<ProcessedMicrophoneStream["processorDiagnostics"]>;
   onDiagnostics: (
@@ -464,6 +466,8 @@ export const createProcessedMicrophoneStream = async (
     processorOverruns: 0,
     averageProcessingMs: 0,
     maxProcessingMs: 0,
+    rawInputPeak: 0,
+    inputOverload: "normal",
   };
   const sendVolume = Math.max(0.5, Math.min(1.5, settings.microphoneSendVolume ?? 1));
 
@@ -487,6 +491,14 @@ export const createProcessedMicrophoneStream = async (
   outputLimiter.connect(destination);
   const filtered = connectMicrophoneLowCut(context, source, settings.lowCutFrequency);
   const blendBus = context.createGain();
+  const rawInputAnalyser = context.createAnalyser();
+  rawInputAnalyser.fftSize = 1024;
+  rawInputAnalyser.smoothingTimeConstant = 0;
+  const rawInputMonitorSilence = context.createGain();
+  rawInputMonitorSilence.gain.value = 0;
+  source.connect(rawInputAnalyser);
+  rawInputAnalyser.connect(rawInputMonitorSilence);
+  rawInputMonitorSilence.connect(blendBus);
   const naturalEnhancer = connectNaturalVoiceEnhancer(
     context,
     blendBus,
@@ -511,6 +523,7 @@ export const createProcessedMicrophoneStream = async (
   let processedGain: GainNode | undefined;
   let protectionWorklet: AudioWorkletNode | undefined;
   let remoteReferenceTimer: number | undefined;
+  let inputOverloadTimer: number | undefined;
   let currentSuppressionLevel = DEEPFILTER_BASE_SUPPRESSION_LEVEL;
   let lastAppliedSuppressionLevel = DEEPFILTER_BASE_SUPPRESSION_LEVEL;
   let lastPublishedDiagnosticsAt = 0;
@@ -524,6 +537,31 @@ export const createProcessedMicrophoneStream = async (
     const snapshot = { ...processorDiagnostics };
     for (const listener of diagnosticsListeners) listener(snapshot);
   };
+  const rawInputSamples = new Float32Array(rawInputAnalyser.fftSize);
+  let overloadFrames = 0;
+  let recoveryFrames = 0;
+  inputOverloadTimer = window.setInterval(() => {
+    if (disposed) return;
+    rawInputAnalyser.getFloatTimeDomainData(rawInputSamples);
+    let peak = 0;
+    for (const sample of rawInputSamples) peak = Math.max(peak, Math.abs(sample));
+    processorDiagnostics.rawInputPeak = peak;
+    if (peak >= 0.985) {
+      overloadFrames += 1;
+      recoveryFrames = 0;
+    } else if (peak < 0.94) {
+      overloadFrames = Math.max(0, overloadFrames - 1);
+      recoveryFrames += 1;
+    }
+    if (overloadFrames >= 5 && processorDiagnostics.inputOverload !== "warning") {
+      processorDiagnostics.inputOverload = "warning";
+      publishDiagnostics(true);
+      window.dispatchEvent(new CustomEvent("shanghao:microphone-input-overload"));
+    } else if (recoveryFrames >= 15 && processorDiagnostics.inputOverload !== "normal") {
+      processorDiagnostics.inputOverload = "normal";
+      publishDiagnostics(true);
+    }
+  }, 100);
   const setMix = (protectingSpeech: boolean, immediate = false, rawTargetOverride?: number) => {
     const timeConstant = immediate
       ? 0.008
@@ -719,6 +757,8 @@ export const createProcessedMicrophoneStream = async (
       diagnosticsListeners.clear();
       if (remoteReferenceTimer !== undefined) window.clearInterval(remoteReferenceTimer);
       remoteReferenceTimer = undefined;
+      if (inputOverloadTimer !== undefined) window.clearInterval(inputOverloadTimer);
+      inputOverloadTimer = undefined;
       if (activeProcessor) {
         activeProcessor.node.onprocessorerror = null;
         activeProcessor.node.disconnect();
@@ -728,6 +768,8 @@ export const createProcessedMicrophoneStream = async (
       protectionWorklet?.disconnect();
       rawDelay?.disconnect();
       rawGain.disconnect();
+      rawInputAnalyser.disconnect();
+      rawInputMonitorSilence.disconnect();
       blendBus.disconnect();
       naturalEnhancer.presence?.disconnect();
       naturalEnhancer.airRestraint?.disconnect();

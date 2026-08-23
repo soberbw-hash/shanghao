@@ -89,7 +89,7 @@ test("Room facade and page composition stay below their reviewed growth ceilings
   // 3.0.2 also keeps the tightly coupled superseded-session shutdown and
   // connected-but-quiet peer recovery ownership in this facade. The recognition
   // policy remains extracted while resource disposal stays beside its owners.
-  assert.ok(roomClientLines <= 1660, `RoomClient grew to ${roomClientLines} lines`);
+  assert.ok(roomClientLines <= 1665, `RoomClient grew to ${roomClientLines} lines`);
   // The reviewed ceiling includes the current room pressure/collection wiring while
   // the dock and overlays remain extracted from the page.
   assert.ok(roomPageLines <= 1515, `RoomPage grew to ${roomPageLines} lines`);

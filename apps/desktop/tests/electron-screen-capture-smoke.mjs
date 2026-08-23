@@ -13,14 +13,15 @@ app.whenReady().then(async () => {
   const enumerationStartedAt = Date.now();
   const pickerSources = await desktopCapturer.getSources({
     types: ["screen", "window"],
-    thumbnailSize: { width: 0, height: 0 },
-    fetchWindowIcons: false,
+    thumbnailSize: { width: 320, height: 180 },
+    fetchWindowIcons: true,
   });
   const selectedSource = pickerSources.find((source) => source.id.startsWith("screen:"));
   console.log(
     JSON.stringify({
       pickerSourceCount: pickerSources.length,
       pickerEnumerationMs: Date.now() - enumerationStartedAt,
+      pickerPreviewCount: pickerSources.filter((source) => !source.thumbnail.isEmpty()).length,
     }),
   );
   session.defaultSession.setPermissionRequestHandler((_webContents, permission, callback) => {
@@ -46,6 +47,7 @@ app.whenReady().then(async () => {
           const profiles = [
             { quality: "720p", width: 1280, height: 720, frameRate: 30 },
             { quality: "1080p", width: 1920, height: 1080, frameRate: 30 },
+            { quality: "1440p", width: 2560, height: 1440, frameRate: 30 },
           ];
           const captures = [];
           for (const profile of profiles) {

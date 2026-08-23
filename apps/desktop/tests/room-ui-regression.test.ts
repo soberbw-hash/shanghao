@@ -11,6 +11,7 @@ import {
 } from "@private-voice/shared";
 
 import { seatSlots } from "../src/renderer/src/features/voice-scene/sceneZones";
+import { memberStatus } from "../src/renderer/src/features/voice-scene/activityRules";
 import { stabilizePeerLatency, useRoomStore } from "../src/renderer/src/store/roomStore";
 import { getNicknameValidationError } from "../src/renderer/src/utils/nickname";
 import { readRendererCss } from "./helpers/read-renderer-css";
@@ -31,6 +32,17 @@ const member = (latencyMs?: number): RoomMember => ({
   volume: 1,
   joinedAt: "2026-07-13T00:00:00.000Z",
   connectionQuality: "good",
+});
+
+test("updating members are distinct from reconnecting members", () => {
+  assert.equal(
+    memberStatus({ ...member(), presenceState: MemberPresenceState.Updating }).label,
+    "正在更新",
+  );
+  assert.equal(
+    memberStatus({ ...member(), presenceState: MemberPresenceState.Reconnecting }).label,
+    "正在回来",
+  );
 });
 
 test("seat state updates preserve the last valid peer latency", () => {
@@ -89,8 +101,59 @@ test("room exposes one plainly named ask and voice-memory entry", () => {
   assert.equal(dialogSource.includes("停止回答"), true);
   assert.equal(dialogSource.includes("onOpenResult"), true);
   assert.equal(dialogSource.includes('className="room-ask-popover"'), true);
+  assert.equal(dialogSource.includes("需要先在设置的 AI 功能里下载问答模型"), false);
   assert.equal(dialogSource.includes('aria-modal="true"'), false);
   assert.equal(dialogSource.includes("fixed inset-0"), false);
+});
+
+test("room actions follow status, interaction, tools and safe-exit hierarchy", () => {
+  const topbarSource = readFileSync(
+    path.resolve(process.cwd(), "src/renderer/src/components/layout/TopStatusBar.tsx"),
+    "utf8",
+  );
+  const dockSource = readFileSync(
+    path.resolve(process.cwd(), "src/renderer/src/components/room/RoomDock.tsx"),
+    "utf8",
+  );
+  const stylesSource = readRendererCss(process.cwd());
+
+  const topbarOrder = [
+    'className="topbar-metrics"',
+    'data-icon-motion="knock"',
+    'data-icon-motion="invite"',
+    'aria-label="打开问"',
+    'data-icon-motion="settings"',
+  ].map((marker) => topbarSource.indexOf(marker));
+  assert.equal(
+    topbarOrder.every((position) => position >= 0),
+    true,
+  );
+  assert.deepEqual(
+    topbarOrder,
+    [...topbarOrder].sort((left, right) => left - right),
+  );
+  assert.equal(topbarSource.includes('aria-label="投喂作者"'), false);
+
+  const dockOrder = [
+    'className="voice-action-group voice-session-actions"',
+    'data-icon-motion="screen-share"',
+    "<RecordingButton",
+    'className="voice-action-group voice-window-actions"',
+    'className="voice-action-group voice-exit-actions"',
+    'data-icon-motion="exit"',
+  ].map((marker) => dockSource.indexOf(marker));
+  assert.equal(
+    dockOrder.every((position) => position >= 0),
+    true,
+  );
+  assert.deepEqual(
+    dockOrder,
+    [...dockOrder].sort((left, right) => left - right),
+  );
+  assert.match(
+    stylesSource,
+    /\.voice-window-actions,\s*\.voice-exit-actions\s*\{[^}]*border-left:/s,
+  );
 });
 
 test("room floating chrome keeps the requested static glass hierarchy", () => {
@@ -102,8 +165,8 @@ test("room floating chrome keeps the requested static glass hierarchy", () => {
   assert.equal(stylesSource.includes("blur(17px) saturate(132%)"), true);
   assert.equal(stylesSource.includes(".room-page .audio-control-popover {"), true);
   assert.equal(stylesSource.includes("blur(22px) saturate(142%)"), true);
-  assert.equal(stylesSource.includes(".room-page.performance-gaming .voice-dock"), true);
-  assert.equal(stylesSource.includes(".room-page.performance-gaming .room-topbar"), true);
+  assert.equal(stylesSource.includes("blur(32px) saturate(138%)"), true);
+  assert.equal(stylesSource.includes(".room-page.performance-gaming"), false);
 });
 
 test("room center material stays static, clean and separated from the workstations", () => {
@@ -372,7 +435,8 @@ test("speaker controls expose friend loudness balance without replacing per-frie
     "utf8",
   );
   assert.equal(popover.includes("好友响度平衡"), true);
-  assert.equal(popover.includes("约 -14 LUFS"), true);
+  assert.equal(popover.includes("自动缩小忽大忽小的音量差异"), true);
+  assert.equal(popover.includes("LUFS"), false);
   assert.equal(dock.includes("settings.isFriendLoudnessBalanceEnabled"), true);
   assert.equal(dock.includes("打开扬声器设备、好友响度平衡与总音量"), true);
 });

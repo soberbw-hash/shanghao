@@ -1,6 +1,9 @@
+import { useEffect, useState } from "react";
+
 import type { AppSettings, AudioDeviceDescriptor } from "@private-voice/shared";
 import type { MicTestPhase } from "../../hooks/useMicTest";
 
+import { playUiSound, setUiSoundVolume } from "../../features/audio/uiSound";
 import { InputDevicePicker } from "../audio/InputDevicePicker";
 import { OutputDevicePicker } from "../audio/OutputDevicePicker";
 import { Button } from "../base/Button";
@@ -36,6 +39,17 @@ export const AudioSettingsCard = ({
   onPlayProcessed: () => void;
   onChange: (patch: Partial<AppSettings>) => void;
 }) => {
+  const [soundVolume, setSoundVolume] = useState(settings.soundVolume);
+
+  useEffect(() => setSoundVolume(settings.soundVolume), [settings.soundVolume]);
+
+  const updateSoundVolume = (next: number) => {
+    setSoundVolume(next);
+    setUiSoundVolume(next);
+  };
+
+  const commitSoundVolume = () => onChange({ soundVolume });
+
   const micHealth = !isMicTesting
     ? micTestError || "录制 9 秒后，可对比系统采集与上号处理后的声音"
     : isMicClipping
@@ -62,6 +76,46 @@ export const AudioSettingsCard = ({
             value={settings.preferredOutputDeviceId}
             onChange={(preferredOutputDeviceId) => onChange({ preferredOutputDeviceId })}
           />
+        </SettingsItemRow>
+        <SettingsItemRow
+          label="界面音效"
+          description="为按钮、消息、录音、连接和 AI 状态提供不同的声音反馈；不会影响好友语音。"
+        >
+          <div className="ui-sound-settings">
+            <Switch
+              isChecked={settings.isUiSoundEnabled}
+              ariaLabel="开启界面音效"
+              onChange={(isUiSoundEnabled) => onChange({ isUiSoundEnabled })}
+            />
+            <input
+              className="ui-sound-volume"
+              type="range"
+              min={0}
+              max={1}
+              step={0.01}
+              value={soundVolume}
+              disabled={!settings.isUiSoundEnabled}
+              aria-label="界面音效音量"
+              style={
+                { "--ui-sound-volume": `${Math.round(soundVolume * 100)}%` } as React.CSSProperties
+              }
+              onChange={(event) => updateSoundVolume(Number(event.currentTarget.value))}
+              onPointerUp={commitSoundVolume}
+              onKeyUp={commitSoundVolume}
+              onBlur={commitSoundVolume}
+            />
+            <span className="ui-sound-volume-value tabular-nums">
+              {Math.round(soundVolume * 100)}%
+            </span>
+            <Button
+              variant="secondary"
+              disabled={!settings.isUiSoundEnabled}
+              data-ui-sound="handled"
+              onClick={() => playUiSound("sound-preview")}
+            >
+              试听
+            </Button>
+          </div>
         </SettingsItemRow>
         <SettingsItemRow label="麦克风体检" description={micHealth}>
           <div className="min-w-[280px] space-y-3">

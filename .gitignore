@@ -18,6 +18,7 @@ apps/desktop/dist-electron/
 apps/desktop/.local-reconnect-build/
 apps/desktop/local-test/
 apps/desktop/.tmp/
+apps/desktop/.dev-user-data/
 # Local AI models, runtimes and inference work files can exceed many GB and are user data.
 apps/desktop/work/
 apps/desktop/resources/native/shanghao-core*

@@ -12,9 +12,12 @@ export const RESOURCE_PRIORITY = {
   maintenance: 100,
 } as const;
 
-export const NORMAL_DOWNLOAD_BYTES_PER_SECOND = 2 * 1024 * 1024;
-export const GAMING_DOWNLOAD_BYTES_PER_SECOND = 256 * 1024;
-export const REALTIME_PRESSURE_DOWNLOAD_BYTES_PER_SECOND = 128 * 1024;
+// This is one aggregate limit shared by every active model download. Keep the
+// idle ceiling above typical home broadband while retaining explicit headroom
+// when realtime voice, screen sharing, or a game needs the network.
+export const NORMAL_DOWNLOAD_BYTES_PER_SECOND = 64 * 1024 * 1024;
+export const GAMING_DOWNLOAD_BYTES_PER_SECOND = 8 * 1024 * 1024;
+export const REALTIME_PRESSURE_DOWNLOAD_BYTES_PER_SECOND = 1024 * 1024;
 
 interface SchedulerState {
   processingMode: AiProcessingMode;

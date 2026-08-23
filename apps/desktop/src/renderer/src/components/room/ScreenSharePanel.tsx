@@ -1,16 +1,22 @@
 import {
+  useCallback,
   useEffect,
+  useLayoutEffect,
   useRef,
   useState,
   type CSSProperties,
   type PointerEvent as ReactPointerEvent,
 } from "react";
+import { AnimatePresence, motion } from "framer-motion";
 
-import { GripHorizontal } from "lucide-react";
+import { Eye, GripHorizontal } from "lucide-react";
 
 import { AnimatedControlIcon } from "../icons/AnimatedControlIcon";
 import { motionDuration } from "../../features/motion/motionSystem";
-import type { ScreenShareItem } from "../../features/screen-share/types";
+import type {
+  ScreenShareItem,
+  ScreenShareTransitionOrigin,
+} from "../../features/screen-share/types";
 import { recordScreenSharePresentation } from "../../features/screen-share/screenSharePresentationMetrics";
 import { useRenderProfiler } from "../../features/diagnostics/renderProfiler";
 
@@ -19,17 +25,49 @@ interface VideoFrameCallbackMetadata {
   height?: number;
 }
 
+interface ScreenPresentationStats {
+  framesPerSecond?: number;
+  width?: number;
+  height?: number;
+  ambientColor?: string;
+  sampledAt: number;
+}
+
+const sampleMediaAmbientColor = (source: CanvasImageSource): string | undefined => {
+  try {
+    const canvas = document.createElement("canvas");
+    canvas.width = 6;
+    canvas.height = 6;
+    const context = canvas.getContext("2d", { willReadFrequently: true });
+    if (!context) return undefined;
+    context.drawImage(source, 0, 0, canvas.width, canvas.height);
+    const pixels = context.getImageData(0, 0, canvas.width, canvas.height).data;
+    let red = 0;
+    let green = 0;
+    let blue = 0;
+    let samples = 0;
+    for (let index = 0; index < pixels.length; index += 4) {
+      if ((pixels[index + 3] ?? 0) < 16) continue;
+      red += pixels[index] ?? 0;
+      green += pixels[index + 1] ?? 0;
+      blue += pixels[index + 2] ?? 0;
+      samples += 1;
+    }
+    if (!samples) return undefined;
+    return `rgba(${Math.round(red / samples)}, ${Math.round(green / samples)}, ${Math.round(
+      blue / samples,
+    )}, 0.3)`;
+  } catch {
+    return undefined;
+  }
+};
+
 const ScreenShareVideo = ({
   stream,
   onPresentation,
 }: {
   stream: MediaStream;
-  onPresentation?: (stats: {
-    framesPerSecond?: number;
-    width?: number;
-    height?: number;
-    sampledAt: number;
-  }) => void;
+  onPresentation?: (stats: ScreenPresentationStats) => void;
 }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
 
@@ -49,14 +87,21 @@ const ScreenShareVideo = ({
     let callbackId = 0;
     let frames = 0;
     let windowStartedAt = performance.now();
+    let ambientColor: string | undefined;
+    let ambientSampledAt = 0;
     const measure = (now: number, metadata: VideoFrameCallbackMetadata) => {
       frames += 1;
+      if (now - ambientSampledAt >= 2_500) {
+        ambientColor = sampleMediaAmbientColor(video) ?? ambientColor;
+        ambientSampledAt = now;
+      }
       const elapsedMs = now - windowStartedAt;
       if (elapsedMs >= 1_000) {
         onPresentation({
           framesPerSecond: (frames * 1_000) / elapsedMs,
           width: metadata.width || video.videoWidth || undefined,
           height: metadata.height || video.videoHeight || undefined,
+          ambientColor,
           sampledAt: Date.now(),
         });
         frames = 0;
@@ -76,10 +121,7 @@ const ScreenShareMedia = ({
   onPresentation,
 }: {
   item: ScreenShareItem;
-  onPresentation: (
-    item: ScreenShareItem,
-    stats: Parameters<NonNullable<Parameters<typeof ScreenShareVideo>[0]["onPresentation"]>>[0],
-  ) => void;
+  onPresentation: (item: ScreenShareItem, stats: ScreenPresentationStats) => void;
 }) => {
   if (item.isLocal && item.stream) {
     return (
@@ -99,15 +141,73 @@ const ScreenShareMedia = ({
         onPresentation={(stats) => onPresentation(item, stats)}
       />
     );
-  return <img src={item.frameDataUrl} alt="" className="screen-share-video" draggable={false} />;
+  return <ScreenShareFallbackFrame item={item} onPresentation={onPresentation} />;
 };
 
-export const ScreenSharePanel = ({
+const ScreenShareFallbackFrame = ({
+  item,
+  onPresentation,
+}: {
+  item: ScreenShareItem;
+  onPresentation: (item: ScreenShareItem, stats: ScreenPresentationStats) => void;
+}) => {
+  const measurementRef = useRef({
+    startedAt: performance.now(),
+    frames: 0,
+    hasPresented: false,
+    ambientSampledAt: 0,
+    ambientColor: undefined as string | undefined,
+  });
+  return (
+    <img
+      src={item.frameDataUrl}
+      alt=""
+      className="screen-share-video"
+      draggable={false}
+      onLoad={(event) => {
+        const measurement = measurementRef.current;
+        measurement.frames += 1;
+        const now = performance.now();
+        const elapsedMs = now - measurement.startedAt;
+        if (now - measurement.ambientSampledAt >= 2_500) {
+          measurement.ambientColor =
+            sampleMediaAmbientColor(event.currentTarget) ?? measurement.ambientColor;
+          measurement.ambientSampledAt = now;
+        }
+        const sampled = {
+          width: item.frameWidth,
+          height: item.frameHeight,
+          sampledAt: Date.now(),
+          ambientColor: measurement.ambientColor,
+          ...(elapsedMs >= 1_000
+            ? { framesPerSecond: (measurement.frames * 1_000) / elapsedMs }
+            : {}),
+        };
+        if (!measurement.hasPresented || elapsedMs >= 1_000) {
+          measurement.hasPresented = true;
+          onPresentation(item, sampled);
+        }
+        if (elapsedMs >= 1_000) {
+          measurement.frames = 0;
+          measurement.startedAt = now;
+        }
+      }}
+    />
+  );
+};
+
+const ScreenSharePanelSurface = ({
   items,
+  localViewerNames,
+  autoStopRemainingSeconds,
+  transitionOrigin,
   onStopLocalShare,
   onOpenDetached,
 }: {
   items: ScreenShareItem[];
+  localViewerNames: string[];
+  autoStopRemainingSeconds?: number;
+  transitionOrigin?: ScreenShareTransitionOrigin;
   onStopLocalShare: () => void;
   onOpenDetached: (item: ScreenShareItem) => Promise<void>;
 }) => {
@@ -116,6 +216,16 @@ export const ScreenSharePanel = ({
   const [selectedId, setSelectedId] = useState<string>();
   const [isDetaching, setIsDetaching] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
+  const [qualityNotice, setQualityNotice] = useState<string>();
+  const [unfoldVector, setUnfoldVector] = useState<{
+    x: number;
+    y: number;
+    scaleX: number;
+    scaleY: number;
+  }>();
+  const [presentationByItem, setPresentationByItem] = useState<
+    Record<string, ScreenPresentationStats>
+  >({});
   useRenderProfiler("ScreenShare", {
     items,
     selectedId,
@@ -143,9 +253,44 @@ export const ScreenSharePanel = ({
     }
   }, [items, selectedId]);
 
-  if (items.length === 0) return null;
-  const primaryItem = items.find((item) => item.id === selectedId) ?? items[0];
-  if (!primaryItem) return null;
+  const primaryItem = items.find((item) => item.id === selectedId) ?? items[0]!;
+
+  useLayoutEffect(() => {
+    const panel = panelRef.current;
+    if (!panel || !transitionOrigin || !primaryItem.isLocal) {
+      setUnfoldVector(undefined);
+      return;
+    }
+    const bounds = panel.getBoundingClientRect();
+    setUnfoldVector({
+      x: transitionOrigin.centerX - (bounds.left + bounds.width / 2),
+      y: transitionOrigin.centerY - (bounds.top + bounds.height / 2),
+      scaleX: Math.max(0.36, Math.min(1, transitionOrigin.width / bounds.width)),
+      scaleY: Math.max(0.24, Math.min(1, transitionOrigin.height / bounds.height)),
+    });
+    const timer = window.setTimeout(() => setUnfoldVector(undefined), 520);
+    return () => window.clearTimeout(timer);
+  }, [primaryItem.id, primaryItem.isLocal, transitionOrigin]);
+
+  useEffect(() => {
+    if (!primaryItem.quality) {
+      setQualityNotice(undefined);
+      return;
+    }
+    setQualityNotice(
+      `${primaryItem.quality} · ${primaryItem.quality === "1440p" ? "2K" : "清晰画面"}`,
+    );
+    const timer = window.setTimeout(() => setQualityNotice(undefined), 2_600);
+    return () => window.clearTimeout(timer);
+  }, [primaryItem.quality]);
+  const primaryPresentation = presentationByItem[primaryItem.id];
+  const resolutionLabel =
+    primaryPresentation?.width && primaryPresentation.height
+      ? `${primaryPresentation.width}×${primaryPresentation.height}`
+      : undefined;
+  const frameRateLabel = primaryPresentation?.framesPerSecond
+    ? `${Math.round(primaryPresentation.framesPerSecond)} FPS`
+    : undefined;
 
   const handlePointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
     if ((event.target as Element).closest("button")) return;
@@ -201,18 +346,55 @@ export const ScreenSharePanel = ({
     }
   };
 
+  const handlePresentation = useCallback(
+    (item: ScreenShareItem, stats: ScreenPresentationStats) => {
+      setPresentationByItem((current) => ({ ...current, [item.id]: stats }));
+      recordScreenSharePresentation(item.id.replace(/-relay$/, ""), stats);
+    },
+    [],
+  );
+
   return (
-    <div
+    <motion.div
       ref={panelRef}
-      className={`screen-share-panel ${isDetaching ? "is-detaching" : ""} ${isDragging ? "is-dragging" : ""}`}
+      className={`screen-share-panel transport-${primaryItem.transport} ${
+        primaryPresentation ? "has-presented-frame" : "is-awaiting-frame"
+      } ${isDetaching ? "is-detaching" : ""} ${isDragging ? "is-dragging" : ""} ${
+        unfoldVector ? "is-source-unfolding" : ""
+      }`}
       data-testid="screen-share-panel"
+      exit={{ opacity: 0, scale: 0.9, y: 8 }}
+      transition={{ duration: 0.24, ease: [0.22, 1, 0.36, 1] }}
       style={
         {
           "--screen-share-x": `${position.x}px`,
           "--screen-share-y": `${position.y}px`,
-        } as CSSProperties & Record<string, string>
+          ...(unfoldVector
+            ? {
+                "--share-origin-x": `${unfoldVector.x}px`,
+                "--share-origin-y": `${unfoldVector.y}px`,
+                "--share-origin-scale-x": unfoldVector.scaleX,
+                "--share-origin-scale-y": unfoldVector.scaleY,
+              }
+            : {}),
+          ...(primaryPresentation?.ambientColor
+            ? { "--share-ambient": primaryPresentation.ambientColor }
+            : {}),
+        } as CSSProperties & Record<string, string | number>
       }
     >
+      <AnimatePresence>
+        {qualityNotice ? (
+          <motion.span
+            className="screen-share-quality-notice"
+            initial={{ opacity: 0, y: -5, scale: 0.94 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: -4, scale: 0.96 }}
+          >
+            {qualityNotice}
+          </motion.span>
+        ) : null}
+      </AnimatePresence>
       <div
         className="screen-share-panel-header"
         onPointerDown={handlePointerDown}
@@ -226,6 +408,10 @@ export const ScreenSharePanel = ({
           <strong>{primaryItem.title}</strong>
           <span className="screen-share-transport">
             {primaryItem.transport === "webrtc" ? "实时视频" : "网络受限 · 备用画面"}
+          </span>
+          <span className="screen-share-presentation-status" aria-live="polite">
+            {resolutionLabel || "正在等待首帧"}
+            {frameRateLabel ? ` · ${frameRateLabel}` : ""}
           </span>
         </div>
         <div className="screen-share-panel-actions">
@@ -247,13 +433,24 @@ export const ScreenSharePanel = ({
           ) : null}
         </div>
       </div>
-      <div className="screen-share-video-shell">
-        <ScreenShareMedia
-          item={primaryItem}
-          onPresentation={(item, stats) =>
-            recordScreenSharePresentation(item.id.replace(/-relay$/, ""), stats)
-          }
-        />
+      {primaryItem.isLocal ? (
+        <div
+          className={`screen-share-viewers ${localViewerNames.length ? "has-viewers" : "is-empty"}`}
+          aria-live="polite"
+          title={localViewerNames.length ? `正在观看：${localViewerNames.join("、")}` : undefined}
+        >
+          <Eye aria-hidden="true" />
+          <span>
+            {localViewerNames.length
+              ? `正在观看：${localViewerNames.join("、")}`
+              : autoStopRemainingSeconds !== undefined
+                ? `暂无观看者 · ${autoStopRemainingSeconds} 秒后自动停止`
+                : "正在等待好友观看"}
+          </span>
+        </div>
+      ) : null}
+      <div className="screen-share-video-shell" aria-busy={!primaryPresentation}>
+        <ScreenShareMedia item={primaryItem} onPresentation={handlePresentation} />
       </div>
       {items.length > 1 ? (
         <div className="screen-share-stack" role="tablist" aria-label="切换共享画面">
@@ -271,6 +468,12 @@ export const ScreenSharePanel = ({
           ))}
         </div>
       ) : null}
-    </div>
+    </motion.div>
   );
 };
+
+export const ScreenSharePanel = (props: Parameters<typeof ScreenSharePanelSurface>[0]) => (
+  <AnimatePresence initial={false}>
+    {props.items.length ? <ScreenSharePanelSurface key="screen-share-panel" {...props} /> : null}
+  </AnimatePresence>
+);

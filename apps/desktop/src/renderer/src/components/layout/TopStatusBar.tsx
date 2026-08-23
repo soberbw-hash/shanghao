@@ -1,4 +1,4 @@
-import { Coffee, MessageCircleQuestion, Users, Wifi } from "lucide-react";
+import { MessageCircleQuestion, Users, Wifi } from "lucide-react";
 
 import { RoomConnectionState } from "@private-voice/shared";
 
@@ -7,6 +7,10 @@ import { summarizeConnectionHealth } from "../../features/network/networkDiagnos
 import { useRoomStore } from "../../store/roomStore";
 import { Button } from "../base/Button";
 import { AnimatedControlIcon } from "../icons/AnimatedControlIcon";
+import {
+  clearGlassPointerHighlight,
+  updateGlassPointerHighlight,
+} from "../../features/motion/glassPointerHighlight";
 
 const statusCopy = (state: RoomConnectionState) => {
   if (state === RoomConnectionState.Reconnecting) return "正在恢复连接...";
@@ -47,8 +51,9 @@ export const TopStatusBar = ({
   currentChannelId,
   channelCounts,
   isSwitchingChannel,
+  isRecording,
+  recordingMarkerPulse,
   onSwitchChannel,
-  onDonate,
   onKnock,
   onInvite,
   onAsk,
@@ -56,8 +61,9 @@ export const TopStatusBar = ({
   currentChannelId: "main" | "side";
   channelCounts: { main: number; side: number };
   isSwitchingChannel?: boolean;
+  isRecording?: boolean;
+  recordingMarkerPulse?: number;
   onSwitchChannel: (channelId: "main" | "side") => void;
-  onDonate?: () => void;
   onKnock?: () => void;
   onInvite?: () => void;
   onAsk?: () => void;
@@ -77,6 +83,10 @@ export const TopStatusBar = ({
     <header
       className="room-topbar flex items-center gap-3 px-4 py-2.5"
       data-testid="channel-status-bar"
+      onPointerMove={(event) =>
+        updateGlassPointerHighlight(event.currentTarget, event.clientX, event.clientY)
+      }
+      onPointerLeave={(event) => clearGlassPointerHighlight(event.currentTarget)}
     >
       <div className="topbar-channel min-w-0 flex-1">
         <div className="topbar-channel-title flex items-center gap-2.5">
@@ -105,6 +115,19 @@ export const TopStatusBar = ({
               );
             })}
           </div>
+          {isRecording ? (
+            <div className="room-recording-live" role="status" aria-label="正在录音">
+              <i aria-hidden="true" />
+              <span>录音中</span>
+              {recordingMarkerPulse ? (
+                <i
+                  key={recordingMarkerPulse}
+                  className="room-recording-marker-pulse"
+                  aria-hidden="true"
+                />
+              ) : null}
+            </div>
+          ) : null}
         </div>
         <div
           className={`topbar-channel-copy mt-0.5 min-h-4 truncate text-[11px] text-[#8494a7] transition-opacity duration-150 ${
@@ -116,15 +139,6 @@ export const TopStatusBar = ({
         </div>
       </div>
       <div className="topbar-controls">
-        <Button
-          variant="ghost"
-          className="topbar-action topbar-donate whitespace-nowrap"
-          onClick={onDonate}
-          aria-label="投喂作者"
-        >
-          <Coffee className="h-3.5 w-3.5" />
-          <span>投喂</span>
-        </Button>
         <div className="topbar-metrics" aria-label="频道状态">
           <div className="status-capsule topbar-metric">
             <Users className="h-3 w-3" />
@@ -139,7 +153,7 @@ export const TopStatusBar = ({
             {connectionQuality.label}
           </div>
         </div>
-        <div className="topbar-actions">
+        <div className="topbar-actions topbar-room-actions" aria-label="房间互动">
           <Button
             variant="ghost"
             data-icon-motion="knock"
@@ -158,6 +172,8 @@ export const TopStatusBar = ({
             <AnimatedControlIcon name="invite" className="h-3.5 w-3.5" />
             <span>邀请</span>
           </Button>
+        </div>
+        <div className="topbar-actions topbar-utility-actions" aria-label="房间工具">
           <Button
             variant="ghost"
             className="topbar-action whitespace-nowrap"

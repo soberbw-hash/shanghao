@@ -10,6 +10,7 @@ import {
   createProcessedMicrophoneStream,
   type ProcessedMicrophoneStream,
 } from "../features/audio/microphoneProcessor";
+import { technicalErrorMessage, toUserFacingError } from "../utils/userFacingError";
 
 interface UseMicTestOptions {
   inputDeviceId?: string;
@@ -201,7 +202,14 @@ export const useMicTest = ({
         setPhase("ready");
       }, TEST_DURATION_MS);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
+      const friendly = toUserFacingError(cause, "audio");
+      setError(`${friendly.title}：${friendly.description}`);
+      void window.desktopApi.app.writeLog({
+        category: "audio",
+        level: "error",
+        message: "microphone_test_failed",
+        context: { error: technicalErrorMessage(cause), inputDeviceId, outputDeviceId },
+      });
       releaseCapture();
       setPhase("idle");
     }
@@ -210,6 +218,7 @@ export const useMicTest = ({
     echoCancellation,
     equalizerGains,
     inputDeviceId,
+    outputDeviceId,
     lowCutFrequency,
     noiseSuppression,
     recordStream,

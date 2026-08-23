@@ -1,7 +1,7 @@
 import { RecordingEncoderState, RecordingState } from "../enums/app.enums";
 
 export interface RecordingOptions {
-  targetSampleRate: 44100;
+  targetSampleRate: 48000;
   targetFormat: "m4a-aac";
   channels: 1 | 2;
   includeMixedCallAudio: boolean;
@@ -55,6 +55,28 @@ export interface RecordingExportResponse {
   mimeType?: string;
   fileSize?: number;
   errorMessage?: string;
+}
+
+export interface RecordingSpeakerSegmentPayload {
+  sessionId: string;
+  buffer: ArrayBuffer;
+  sourceMimeType: string;
+  speakerId: string;
+  displayNameSnapshot: string;
+  startMs: number;
+  endMs: number;
+}
+
+export interface RecordingSpeakerSegmentResponse {
+  ok: boolean;
+  filePath?: string;
+  errorMessage?: string;
+}
+
+export interface RecordingSpeakerSegmentFinalizePayload {
+  sessionId: string;
+  recordingId: string;
+  recordingFilePath: string;
 }
 
 export interface RecordingLibraryItem {

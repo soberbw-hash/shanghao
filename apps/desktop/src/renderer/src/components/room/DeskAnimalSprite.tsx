@@ -4,6 +4,7 @@ import type { BuiltInAvatarId, MemberActivity } from "@private-voice/shared";
 
 import { getAvatarSrc } from "../../utils/profile";
 import { displayRefreshRateService } from "../../features/visual-runtime/DisplayRefreshRateService";
+import type { CharacterIdleAction } from "../../features/voice-scene/characterPersonality";
 
 import catRear from "../../assets/avatars/rear-v2/cat-rear.png";
 import corgiRear from "../../assets/avatars/rear-v2/corgi-rear.png";
@@ -15,8 +16,6 @@ import corgiRunCycle from "../../assets/avatars/run-cycles-v2/corgi.png";
 import duckRunCycle from "../../assets/avatars/run-cycles-v2/duck.png";
 import foxRunCycle from "../../assets/avatars/run-cycles-v2/fox.png";
 import pandaRunCycle from "../../assets/avatars/run-cycles-v2/panda.png";
-
-export type DeskAnimalIdleAction = "none" | "look" | "stretch" | "sip" | "type" | "phone";
 
 const rearAvatarSources: Record<BuiltInAvatarId, string> = {
   cat: catRear,
@@ -143,7 +142,7 @@ export const DeskAnimalSprite = ({
   isMuted: boolean;
   isScreenSharing?: boolean;
   isWelcoming?: boolean;
-  idleAction?: DeskAnimalIdleAction;
+  idleAction?: CharacterIdleAction;
 }) => {
   const source = rearAvatarSources[avatarId] ?? rearAvatarSources.fox;
   const [readyRearSource, setReadyRearSource] = useState<string>();

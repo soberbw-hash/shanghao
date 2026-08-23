@@ -74,11 +74,17 @@ export const DynamicWeatherWindow = ({
     >
       <div key={`${theme.scene}:${theme.phase}`} className="weather-window-view">
         <div className="weather-sky-orb" />
+        <div className="weather-sunbeam" aria-hidden="true" />
         <div className="weather-distant-silhouette">
           <span />
           <span />
           <span />
           <span />
+        </div>
+        <div className="weather-city-lights" aria-hidden="true">
+          {Array.from({ length: 14 }, (_, index) => (
+            <span key={index} style={{ "--weather-index": index } as CSSProperties} />
+          ))}
         </div>
         {theme.hasClouds ? (
           <div className="weather-cloud-layer" aria-hidden="true">
@@ -108,6 +114,8 @@ export const DynamicWeatherWindow = ({
         <span className="weather-window-sill" />
       </div>
       <div className="weather-window-plants" aria-hidden="true">
+        <span className="weather-plant-shadow weather-plant-shadow-left" />
+        <span className="weather-plant-shadow weather-plant-shadow-right" />
         <span className="weather-plant weather-plant-left" />
         <span className="weather-plant weather-plant-right" />
       </div>

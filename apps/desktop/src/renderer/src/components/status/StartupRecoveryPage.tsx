@@ -29,16 +29,16 @@ export const StartupRecoveryPage = ({
         </div>
       </div>
       {issue?.details?.length ? (
-        <div className="mt-6 rounded-[18px] border border-[#E7ECF2] bg-[#F8FAFC] p-4">
-          <div className="text-xs font-medium uppercase tracking-[0.22em] text-[#98A2B3]">
-            启动信息
-          </div>
+        <details className="mt-6 rounded-[18px] border border-[#E7ECF2] bg-[#F8FAFC] p-4">
+          <summary className="cursor-pointer text-sm font-semibold text-[#667085]">
+            查看技术详情
+          </summary>
           <div className="mt-3 space-y-2 text-sm text-[#667085]">
             {issue.details.map((detail) => (
               <div key={detail}>{detail}</div>
             ))}
           </div>
-        </div>
+        </details>
       ) : null}
       <div className="mt-6 flex flex-wrap gap-3">
         <Button onClick={onRetry}>

@@ -2,6 +2,9 @@ import type { BuiltInAvatarId } from "@private-voice/shared";
 
 import type { CharacterMotionRoute, CharacterRouteKind } from "./characterMotion";
 
+export type CharacterIdleAction =
+  "none" | "blink" | "ear" | "look" | "stretch" | "yawn" | "sip" | "type" | "phone";
+
 export interface CharacterPersonality {
   walkSpeedMultiplier: number;
   runSpeedMultiplier: number;
@@ -9,8 +12,11 @@ export interface CharacterPersonality {
   landingSpring: "soft" | "physical";
   turnPauseMs: number;
   idleWeights: {
+    blink: number;
+    ear: number;
     look: number;
     stretch: number;
+    yawn: number;
     sip: number;
     type: number;
     phone: number;
@@ -26,7 +32,7 @@ const CHARACTER_PERSONALITIES: Record<BuiltInAvatarId, CharacterPersonality> = {
     strideMultiplier: 1.05,
     landingSpring: "soft",
     turnPauseMs: 75,
-    idleWeights: { look: 4, stretch: 2, sip: 2, type: 3, phone: 1 },
+    idleWeights: { blink: 5, ear: 2, look: 4, stretch: 2, yawn: 1, sip: 2, type: 3, phone: 1 },
     arrivalAction: "glance-back",
     greetingStyle: "quick",
   },
@@ -36,7 +42,7 @@ const CHARACTER_PERSONALITIES: Record<BuiltInAvatarId, CharacterPersonality> = {
     strideMultiplier: 0.98,
     landingSpring: "soft",
     turnPauseMs: 105,
-    idleWeights: { look: 4, stretch: 3, sip: 2, type: 2, phone: 2 },
+    idleWeights: { blink: 6, ear: 3, look: 4, stretch: 3, yawn: 2, sip: 2, type: 2, phone: 2 },
     arrivalAction: "soft-settle",
     greetingStyle: "gentle",
   },
@@ -46,7 +52,7 @@ const CHARACTER_PERSONALITIES: Record<BuiltInAvatarId, CharacterPersonality> = {
     strideMultiplier: 1.08,
     landingSpring: "soft",
     turnPauseMs: 145,
-    idleWeights: { look: 3, stretch: 2, sip: 4, type: 2, phone: 1 },
+    idleWeights: { blink: 4, ear: 1, look: 3, stretch: 2, yawn: 2, sip: 4, type: 2, phone: 1 },
     arrivalAction: "small-bounce",
     greetingStyle: "bouncy",
   },
@@ -56,7 +62,7 @@ const CHARACTER_PERSONALITIES: Record<BuiltInAvatarId, CharacterPersonality> = {
     strideMultiplier: 0.92,
     landingSpring: "physical",
     turnPauseMs: 155,
-    idleWeights: { look: 3, stretch: 4, sip: 3, type: 1, phone: 2 },
+    idleWeights: { blink: 4, ear: 2, look: 3, stretch: 4, yawn: 3, sip: 3, type: 1, phone: 2 },
     arrivalAction: "weighted-settle",
     greetingStyle: "calm",
   },
@@ -66,7 +72,7 @@ const CHARACTER_PERSONALITIES: Record<BuiltInAvatarId, CharacterPersonality> = {
     strideMultiplier: 1.12,
     landingSpring: "soft",
     turnPauseMs: 70,
-    idleWeights: { look: 3, stretch: 2, sip: 1, type: 3, phone: 2 },
+    idleWeights: { blink: 5, ear: 5, look: 3, stretch: 2, yawn: 1, sip: 1, type: 3, phone: 2 },
     arrivalAction: "ear-shake",
     greetingStyle: "eager",
   },
@@ -93,7 +99,7 @@ export const applyCharacterPersonality = (
 
 export const weightedIdleActions = (
   personality: CharacterPersonality,
-): Array<keyof CharacterPersonality["idleWeights"]> =>
+): Array<Exclude<CharacterIdleAction, "none">> =>
   Object.entries(personality.idleWeights).flatMap(([action, weight]) =>
-    Array.from({ length: weight }, () => action as keyof CharacterPersonality["idleWeights"]),
+    Array.from({ length: weight }, () => action as Exclude<CharacterIdleAction, "none">),
   );

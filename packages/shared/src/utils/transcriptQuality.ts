@@ -1,11 +1,12 @@
 import type { VoiceMemoryTranscriptSegment } from "../types/ai.types";
 import type { VoiceMemoryRecord } from "../types/ai.types";
+import { mergeTranscriptIntoSentences } from "./transcriptSegments";
 
 const SILENCE_LABEL = /^(?:non[\s-]?speech|no[\s-]?speech|silence|silent|music|noise)$/iu;
 const WORD = /[\p{L}\p{N}']+/gu;
 const transcriptReliabilityCache = new WeakMap<object, boolean>();
 
-export const CURRENT_TRANSCRIPTION_PIPELINE_VERSION = 7;
+export const CURRENT_TRANSCRIPTION_PIPELINE_VERSION = 8;
 
 const HAN_CHARACTER = /\p{Script=Han}/u;
 const LETTER = /\p{L}/u;
@@ -113,4 +114,5 @@ export const hasInvalidVoiceMemoryResult = (
 ): boolean =>
   record.errorMessage === "no_reliable_speech" ||
   (record.phase === "ready" && record.transcript.length === 0) ||
-  (record.transcript.length > 0 && hasUnreliableTranscript(record.transcript));
+  (record.transcript.length > 0 &&
+    hasUnreliableTranscript(mergeTranscriptIntoSentences(record.transcript)));

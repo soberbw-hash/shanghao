@@ -2,6 +2,30 @@
 
 上号只记录正式对外版本。当前正式支持平台为 Windows 10/11 x64。
 
+## 3.0.3 - 2026-08-24
+
+### 账号与房间身份
+
+- 新增 Supabase 账号注册、邮箱/用户名登录、Session 自动刷新、Windows 加密存储、资料编辑和十套默认 SVG 头像。
+- 房间服务器通过 Supabase Access Token 验证永久 userId，不信任客户端提交的身份；访客仍保持独立临时身份。
+- 增加显式开发连接模式：现有 `ws/http` 仅可携带短期 Access Token，密码与 Refresh Token 始终只访问 Supabase HTTPS；生产默认继续要求 TLS。
+- 将“旧服务器未部署账号接口”的 404 与“未启用 HTTPS/WSS”拆开诊断，不再用错误安全提示掩盖真实服务版本。
+
+### 本地 AI、模型下载与录音转录
+
+- 统一修复独立 AI Runtime 的 CUDA PyTorch 初始化、自检与诊断，Qwen、GLM、Fun-ASR、FireRed、MOSS、Dolphin 和 Cohere 复用同一 GPU Runtime。
+- 按官方文件布局校验 Fun-ASR-Nano 与 FireRedASR2-AED，保留大小和 SHA256 完整性检查；下载达到 100% 后明确进入校验/准备阶段。
+- 新增 MOSS-Transcribe-Diarize、Dolphin-CN-Dialect 与 Cohere Transcribe；Cohere 门控仓库支持本机 Windows 加密保存 Hugging Face 只读 Token。
+- ForcedAligner 字级时间轴合并为可读句段，保留字级底层数据与精确跳转；录音库和 AI 设置的模型选择、按模型结果显示与真实暂停进度完成同步。
+
+### 屏幕分享、房间动效与反馈
+
+- 屏幕分享支持 1440p、视频级动态帧率、观看者提示和无人观看自动停止，并改善独立观看窗口、环境光和玻璃材质。
+- 区分更新退出、异常重连与手动离开；修复音频菜单、说话时角色跳位、录音成功提示和多类阻塞等待。
+- 恢复天气影响全房间的环境光、角色待机与状态动作、窗口过渡、玻璃高光、录音反馈和下载完成反馈，并扩展统一后的界面音效。
+
+- 完整说明见 [v3.0.3 更新公告](./docs/release-notes/v3.0.3.md)。
+
 ## 3.0.2 - 2026-08-22
 
 ### 性能与连接稳定

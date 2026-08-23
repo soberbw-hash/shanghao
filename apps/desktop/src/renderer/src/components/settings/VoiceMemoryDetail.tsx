@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   BrainCircuit,
   ChevronDown,
@@ -13,15 +13,24 @@ import {
 import {
   AI_ASR_MODEL_NAMES,
   hasInvalidVoiceMemoryResult,
+  mergeTranscriptIntoSentences,
   type AiAsrModelId,
   type AiModelStatus,
   type RecordingLibraryItem,
   type VoiceMemoryRecord,
 } from "@private-voice/shared";
 
+import {
+  shouldActivateVoiceMemoryVariant,
+  voiceMemoryTranscriptionPercent,
+} from "../../features/ai/voiceMemoryPresentation";
+import { playUiSound } from "../../features/audio/uiSound";
+
 interface VoiceMemoryDetailProps {
   recording: RecordingLibraryItem;
   roomName: string;
+  selectedAsrModel: AiAsrModelId;
+  onSelectAsrModel: (modelId: AiAsrModelId) => Promise<void> | void;
   onSeek: (offsetMs: number) => void;
 }
 
@@ -35,32 +44,51 @@ const clock = (offsetMs: number): string => {
     : `${minutes}:${String(rest).padStart(2, "0")}`;
 };
 
-const transcriptionPercent = (record: VoiceMemoryRecord): number =>
-  record.phase === "transcribing"
-    ? Math.min(100, Math.round((record.progress / 70) * 100))
-    : record.transcript.length > 0 || record.phase === "organizing" || record.phase === "ready"
-      ? 100
-      : 0;
-
 const describeError = (message: string, transcriptionFinished: boolean): string => {
   if (message.includes("no_reliable_speech")) {
     return "没有检测到可靠的中文语音；模型返回的其他语言结果已被拦截，请重新转录。";
   }
   if (message.includes("_not_installed")) return "当前选择的转录模型还没有下载。";
-  if (message.includes("_runtime_not_ready"))
+  if (
+    message.includes("qwen3_asr_cuda_required") ||
+    message.includes("qwen3_asr_cuda_bf16_required")
+  )
+    return "Qwen GPU运行环境异常，请检查AI Runtime。";
+  if (
+    message.includes("fun_asr_cuda_required") ||
+    message.includes("fun_asr_nano_2512_cuda_required") ||
+    message.includes("fun_asr_nano_2512_cuda_bf16_required")
+  )
+    return "Fun-ASR GPU运行环境异常，请检查AI Runtime。";
+  if (
+    message.includes("glm_asr_cuda_required") ||
+    message.includes("glm_asr_nano_2512_cuda_required") ||
+    message.includes("glm_asr_nano_2512_cuda_bf16_required")
+  )
+    return "GLM-ASR GPU运行环境异常，请检查AI Runtime。";
+  if (
+    message.includes("firered_asr_cuda_required") ||
+    message.includes("fireredasr2_aed_cuda_required")
+  )
+    return "FireRedASR GPU运行环境异常，请检查AI Runtime。";
+  if (message.includes("cuda_runtime_unavailable") || message.includes("bf16_runtime_unavailable"))
+    return "GPU运行环境异常，请检查AI Runtime。";
+  if (message.includes("_runtime_not_ready") || message.includes("_runtime_unavailable"))
     return "当前转录模型的运行组件还没有准备好，请到“AI 功能”中修复组件。";
   if (message.includes("No module named 'torchaudio'") || message.includes("torchaudio"))
     return "Paraformer 的语音运行组件不完整，请到“AI 功能”中点击“修复组件”后再继续转录。";
   if (message.includes("ffmpeg_missing"))
-    return "找不到 FFmpeg，无法把录音转换为 ASR 输入格式。请重新安装当前版本。";
-  if (message.includes("ffmpeg_failed")) return "音频格式转换失败：" + message;
+    return "录音格式转换组件尚未载入。请完全退出上号（包括托盘）后重新打开；若仍出现，再重新安装当前版本。";
+  if (message.includes("ffmpeg_failed"))
+    return "录音格式转换没有完成，请确认录音文件仍可播放后重新转录。";
   if (message.includes("wav_invalid") || message.includes("unsupported_transcription_wav")) {
-    return "ASR 输入 WAV 格式不兼容：" + message;
+    return "这条录音暂时无法转换为转录格式，请重新录制或更换可播放的音频文件。";
   }
   if (message.includes("dll_missing") || message.includes("0xc0000135")) {
-    return "ASR 运行库缺失：" + message;
+    return "语音运行组件不完整，请到“AI 功能”中点击“修复组件”。";
   }
-  if (message.includes("ai_runtime_spawn_failed")) return "AI 进程启动失败：" + message;
+  if (message.includes("ai_runtime_spawn_failed"))
+    return "语音运行组件没有启动，请到“AI 功能”中点击“修复组件”。";
   if (message.includes("vibevoice_runtime_unavailable")) return "转录运行环境还没有准备好。";
   if (message.includes("ai_runtime_exit")) {
     return transcriptionFinished
@@ -103,27 +131,38 @@ const describeError = (message: string, transcriptionFinished: boolean): string 
     return "转录文字已经保留，内容整理没有完成；你仍然可以直接查看文字，稍后再点重新整理。";
   }
   if (message.includes("recording_file_unavailable")) return "录音文件已被移动或无法读取。";
-  return message ? "转录没有完成：" + message : "转录没有完成，可以直接重试。";
+  return message
+    ? "转录没有完成，可以直接重试；详细原因已写入诊断日志。"
+    : "转录没有完成，可以直接重试。";
 };
 
 /** Presents one recording as a linked transcript, timeline and summary. */
-export const VoiceMemoryDetail = ({ recording, roomName, onSeek }: VoiceMemoryDetailProps) => {
+export const VoiceMemoryDetail = ({
+  recording,
+  roomName,
+  selectedAsrModel,
+  onSelectAsrModel,
+  onSeek,
+}: VoiceMemoryDetailProps) => {
   const [record, setRecord] = useState<VoiceMemoryRecord>();
   const [asrModels, setAsrModels] = useState<AiModelStatus[]>([]);
-  const [selectedAsrModel, setSelectedAsrModel] = useState<AiAsrModelId>();
   const [busy, setBusy] = useState(false);
   const [queuedAction, setQueuedAction] = useState<"transcribe" | "organize">();
   const [error, setError] = useState<string>();
   const [speakerNames, setSpeakerNames] = useState<Record<string, string>>({});
   const [detailsOpen, setDetailsOpen] = useState(false);
+  const variantSelectionRef = useRef<string | undefined>(undefined);
+  const previousPhaseRef = useRef<VoiceMemoryRecord["phase"] | undefined>(undefined);
 
   useEffect(() => {
     let active = true;
     setRecord(undefined);
     setQueuedAction(undefined);
     setDetailsOpen(false);
+    previousPhaseRef.current = undefined;
     void window.desktopApi.ai.getVoiceMemory(recording.recordingId).then((value) => {
       if (!active) return;
+      previousPhaseRef.current = value?.phase;
       setRecord(value);
       setDetailsOpen(
         (value?.phase === "transcribing" ||
@@ -135,6 +174,13 @@ export const VoiceMemoryDetail = ({ recording, roomName, onSeek }: VoiceMemoryDe
     });
     const unsubscribe = window.desktopApi.ai.onVoiceMemoryStatus((value) => {
       if (active && value.recordingId === recording.recordingId) {
+        const previousPhase = previousPhaseRef.current;
+        if (previousPhase !== value.phase) {
+          if (value.phase === "transcribing") playUiSound("transcription-start");
+          else if (value.phase === "ready") playUiSound("transcription-complete");
+          else if (value.phase === "error") playUiSound("process-error");
+        }
+        previousPhaseRef.current = value.phase;
         setRecord(value);
         if (value.phase === "transcribing" || value.phase === "organizing") setDetailsOpen(true);
         if (
@@ -168,14 +214,44 @@ export const VoiceMemoryDetail = ({ recording, roomName, onSeek }: VoiceMemoryDe
     };
   }, []);
 
+  const selectedVariantUpdatedAt = record?.transcriptionVariants?.[selectedAsrModel]?.updatedAt;
+
   useEffect(() => {
-    if (selectedAsrModel) return;
-    const initialModel =
-      record?.transcriptionModel?.id ??
-      (asrModels.find((model) => model.activeRevision && model.runtimeReady)?.id as
-        AiAsrModelId | undefined);
-    if (initialModel) setSelectedAsrModel(initialModel);
-  }, [asrModels, record?.transcriptionModel?.id, selectedAsrModel]);
+    if (!shouldActivateVoiceMemoryVariant(record, selectedAsrModel)) return;
+    const selectionKey = `${recording.recordingId}:${selectedAsrModel}:${selectedVariantUpdatedAt ?? "saved"}`;
+    if (variantSelectionRef.current === selectionKey) return;
+    variantSelectionRef.current = selectionKey;
+    let active = true;
+    setBusy(true);
+    setError(undefined);
+    void window.desktopApi.ai
+      .selectTranscription(recording.recordingId, selectedAsrModel)
+      .then((next) => {
+        if (!active) return;
+        setRecord(next);
+        setDetailsOpen(true);
+      })
+      .catch((cause) => {
+        if (!active) return;
+        setError(cause instanceof Error ? cause.message : "切换转录结果失败");
+      })
+      .finally(() => {
+        if (variantSelectionRef.current === selectionKey) {
+          variantSelectionRef.current = undefined;
+        }
+        if (active) setBusy(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [
+    record,
+    record?.phase,
+    record?.transcriptionModel?.id,
+    recording.recordingId,
+    selectedAsrModel,
+    selectedVariantUpdatedAt,
+  ]);
 
   const process = async (action: "transcribe" | "organize") => {
     setBusy(true);
@@ -240,16 +316,14 @@ export const VoiceMemoryDetail = ({ recording, roomName, onSeek }: VoiceMemoryDe
     }
   };
 
-  const selectTestModel = async (modelId: AiAsrModelId) => {
-    setSelectedAsrModel(modelId);
-    if (!record?.transcriptionVariants?.[modelId]) return;
+  const selectModel = async (modelId: AiAsrModelId) => {
+    if (modelId === selectedAsrModel) return;
     setBusy(true);
     setError(undefined);
     try {
-      setRecord(await window.desktopApi.ai.selectTranscription(recording.recordingId, modelId));
-      setDetailsOpen(true);
+      await onSelectAsrModel(modelId);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "切换转录结果失败");
+      setError(cause instanceof Error ? cause.message : "切换转录模型失败");
     } finally {
       setBusy(false);
     }
@@ -258,6 +332,10 @@ export const VoiceMemoryDetail = ({ recording, roomName, onSeek }: VoiceMemoryDe
   const invalidTranscript = useMemo(
     () => Boolean(record && hasInvalidVoiceMemoryResult(record)),
     [record],
+  );
+  const readableTranscript = useMemo(
+    () => mergeTranscriptIntoSentences(record?.transcript ?? []),
+    [record?.transcript],
   );
 
   if (!record) {
@@ -278,7 +356,7 @@ export const VoiceMemoryDetail = ({ recording, roomName, onSeek }: VoiceMemoryDe
             整理内容
           </button>
         </div>
-        {error ? <p role="alert">{error}</p> : null}
+        {error ? <p role="alert">{describeError(error, false)}</p> : null}
       </section>
     );
   }
@@ -295,7 +373,10 @@ export const VoiceMemoryDetail = ({ recording, roomName, onSeek }: VoiceMemoryDe
     ? record.speakers.filter((speaker) => speaker.confidence === "pending")
     : [];
   const displayProgress =
-    record.phase === "transcribing" ? transcriptionPercent(record) : record.progress;
+    record.phase === "transcribing" ||
+    (record.phase === "paused" && record.processingStage !== "organize")
+      ? voiceMemoryTranscriptionPercent(record)
+      : record.progress;
   const transcriptionModelLabel =
     record.transcriptionModel?.name ??
     (record.transcript.length > 0 ? "历史记录 · 模型未知" : undefined);
@@ -335,20 +416,19 @@ export const VoiceMemoryDetail = ({ recording, roomName, onSeek }: VoiceMemoryDe
                     ? "转录完成 · 整理失败"
                     : "已保留当前文字 · 可继续"
                   : record.phase === "paused"
-                    ? "已暂停"
+                    ? pausedOrganization
+                      ? "整理已暂停"
+                      : `已暂停 ${displayProgress}%`
                     : "待处理"}
         </span>
         <label className="voice-memory-model-picker">
-          <span>对比模型</span>
+          <span>转录模型</span>
           <select
-            value={selectedAsrModel ?? ""}
+            value={selectedAsrModel}
             disabled={working || busy}
-            aria-label="选择转录对比模型"
-            onChange={(event) => void selectTestModel(event.target.value as AiAsrModelId)}
+            aria-label="选择转录模型"
+            onChange={(event) => void selectModel(event.target.value as AiAsrModelId)}
           >
-            <option value="" disabled>
-              选择模型
-            </option>
             {asrModels.map((model) => {
               const installed = Boolean(model.activeRevision && model.runtimeReady);
               const saved = Boolean(record.transcriptionVariants?.[model.id as AiAsrModelId]);
@@ -418,15 +498,22 @@ export const VoiceMemoryDetail = ({ recording, roomName, onSeek }: VoiceMemoryDe
         )}
       </header>
       {working ? (
-        <div
-          className="voice-memory-progress"
-          role="progressbar"
-          aria-label={record.phase === "transcribing" ? "转录进度" : "AI 整理进度"}
-          aria-valuemin={0}
-          aria-valuemax={100}
-          aria-valuenow={displayProgress}
-        >
-          <span style={{ transform: `scaleX(${displayProgress / 100})` }} />
+        <div className={`voice-memory-working is-${record.phase}`}>
+          <div className="voice-memory-audio-trajectory" aria-hidden="true">
+            {Array.from({ length: 16 }, (_, index) => (
+              <i key={index} />
+            ))}
+          </div>
+          <div
+            className="voice-memory-progress"
+            role="progressbar"
+            aria-label={record.phase === "transcribing" ? "转录进度" : "AI 整理进度"}
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-valuenow={displayProgress}
+          >
+            <span style={{ transform: `scaleX(${displayProgress / 100})` }} />
+          </div>
         </div>
       ) : null}
       {!working &&
@@ -483,10 +570,10 @@ export const VoiceMemoryDetail = ({ recording, roomName, onSeek }: VoiceMemoryDe
           ))}
         </div>
       ) : null}
-      {detailsOpen && !invalidTranscript && record.transcript.length ? (
+      {detailsOpen && !invalidTranscript && readableTranscript.length ? (
         <div className="voice-memory-transcript">
           <h4>转录</h4>
-          {record.transcript.map((segment) => (
+          {readableTranscript.map((segment) => (
             <button type="button" key={segment.id} onClick={() => onSeek(segment.startMs)}>
               <time>{clock(segment.startMs)}</time>
               <strong>

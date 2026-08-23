@@ -21,6 +21,7 @@ const desktopApi: DesktopApi = {
     saveDailyRoomReports: (reports) =>
       ipcRenderer.invoke(IPC_CHANNELS.app.saveDailyRoomReports, reports),
     openExternal: (url) => ipcRenderer.invoke(IPC_CHANNELS.app.openExternal, url),
+    openSystemSettings: (page) => ipcRenderer.invoke(IPC_CHANNELS.app.openSystemSettings, page),
     getLinkPreviewIcon: (url) => ipcRenderer.invoke(IPC_CHANNELS.app.getLinkPreviewIcon, url),
     consumeDeepLink: () => ipcRenderer.invoke(IPC_CHANNELS.app.consumeDeepLink),
     onDeepLink: (listener) => {
@@ -124,6 +125,10 @@ const desktopApi: DesktopApi = {
     getCustomProvider: () => ipcRenderer.invoke(IPC_CHANNELS.ai.getCustomProvider),
     saveCustomProvider: (input) => ipcRenderer.invoke(IPC_CHANNELS.ai.saveCustomProvider, input),
     clearCustomProvider: () => ipcRenderer.invoke(IPC_CHANNELS.ai.clearCustomProvider),
+    getHuggingFaceAccess: () => ipcRenderer.invoke(IPC_CHANNELS.ai.getHuggingFaceAccess),
+    saveHuggingFaceAccess: (input) =>
+      ipcRenderer.invoke(IPC_CHANNELS.ai.saveHuggingFaceAccess, input),
+    clearHuggingFaceAccess: () => ipcRenderer.invoke(IPC_CHANNELS.ai.clearHuggingFaceAccess),
     searchMemory: (request) => ipcRenderer.invoke(IPC_CHANNELS.ai.searchMemory, request),
     updateRuntimePressure: (pressure) =>
       ipcRenderer.invoke(IPC_CHANNELS.ai.updateRuntimePressure, pressure),
@@ -146,6 +151,24 @@ const desktopApi: DesktopApi = {
     get: () => ipcRenderer.invoke(IPC_CHANNELS.settings.get),
     save: (settings) => ipcRenderer.invoke(IPC_CHANNELS.settings.save, settings),
     reset: () => ipcRenderer.invoke(IPC_CHANNELS.settings.reset),
+  },
+  account: {
+    getSnapshot: () => ipcRenderer.invoke(IPC_CHANNELS.account.getSnapshot),
+    login: (request) => ipcRenderer.invoke(IPC_CHANNELS.account.login, request),
+    register: (request) => ipcRenderer.invoke(IPC_CHANNELS.account.register, request),
+    requestPasswordReset: (request) =>
+      ipcRenderer.invoke(IPC_CHANNELS.account.requestPasswordReset, request),
+    updateProfile: (request) => ipcRenderer.invoke(IPC_CHANNELS.account.updateProfile, request),
+    updateAvatar: (request) => ipcRenderer.invoke(IPC_CHANNELS.account.updateAvatar, request),
+    logout: () => ipcRenderer.invoke(IPC_CHANNELS.account.logout),
+    continueAsGuest: () => ipcRenderer.invoke(IPC_CHANNELS.account.continueAsGuest),
+    onChanged: (listener) => {
+      const wrapped = (_event: Electron.IpcRendererEvent, snapshot: unknown) => {
+        listener(snapshot as Parameters<typeof listener>[0]);
+      };
+      ipcRenderer.on(IPC_CHANNELS.account.changed, wrapped);
+      return () => ipcRenderer.removeListener(IPC_CHANNELS.account.changed, wrapped);
+    },
   },
   profile: {
     pickAvatar: () => ipcRenderer.invoke(IPC_CHANNELS.profile.pickAvatar),
@@ -217,6 +240,10 @@ const desktopApi: DesktopApi = {
   },
   recording: {
     export: (payload) => ipcRenderer.invoke(IPC_CHANNELS.recording.export, payload),
+    saveSpeakerSegment: (payload) =>
+      ipcRenderer.invoke(IPC_CHANNELS.recording.saveSpeakerSegment, payload),
+    finalizeSpeakerSegments: (payload) =>
+      ipcRenderer.invoke(IPC_CHANNELS.recording.finalizeSpeakerSegments, payload),
     chooseDirectory: () => ipcRenderer.invoke(IPC_CHANNELS.recording.chooseDirectory),
     saveMarkers: (filePath, markers) =>
       ipcRenderer.invoke(IPC_CHANNELS.recording.saveMarkers, filePath, markers),

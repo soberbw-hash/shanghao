@@ -1,6 +1,6 @@
 import { useEffect } from "react";
-import { Sparkles, X } from "lucide-react";
-import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
+import { Sparkles } from "lucide-react";
+import { AnimatePresence, motion } from "framer-motion";
 
 import type { ReleaseHistoryEntry } from "./releaseHistory";
 
@@ -10,6 +10,8 @@ import {
   overlayScrimVariants,
   reducedFadeVariants,
 } from "../../features/motion/motionPresets";
+import { usePrefersReducedMotion as useReducedMotion } from "../../hooks/usePrefersReducedMotion";
+import { DialogCloseButton } from "../base/DialogCloseButton";
 
 export const ReleaseDetailModal = ({
   release,
@@ -69,14 +71,7 @@ export const ReleaseDetailModal = ({
                   下面是这个版本实际调整的具体内容。
                 </p>
               </div>
-              <button
-                type="button"
-                onClick={onClose}
-                aria-label="关闭更新详情"
-                className="grid size-9 shrink-0 place-items-center rounded-[11px] border border-[#dbe8f7] bg-white text-[#718096] transition-colors hover:bg-[#f3f7fc] hover:text-[#26364d]"
-              >
-                <X className="h-4 w-4" aria-hidden="true" />
-              </button>
+              <DialogCloseButton label="关闭更新详情" onClick={onClose} />
             </header>
 
             <div className="max-h-[62vh] overflow-y-auto px-6 py-5">

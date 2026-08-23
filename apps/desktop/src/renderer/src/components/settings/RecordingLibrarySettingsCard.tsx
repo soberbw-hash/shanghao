@@ -20,6 +20,7 @@ import {
   AI_ASR_MODEL_NAMES,
   hasInvalidVoiceMemoryResult,
   RecordingState,
+  type AiAsrModelId,
   type AppSettings,
   type RecordingCleanupReason,
   type RecordingLibraryItem,
@@ -28,10 +29,12 @@ import {
 } from "@private-voice/shared";
 
 import { Button } from "../base/Button";
+import { DialogCloseButton } from "../base/DialogCloseButton";
 import { Switch } from "../base/Switch";
 import { SettingsSection } from "./SettingsSection";
 import { VoiceMemoryDetail } from "./VoiceMemoryDetail";
 import { useRecordingStore } from "../../store/recordingStore";
+import { voiceMemoryTranscriptionPercent } from "../../features/ai/voiceMemoryPresentation";
 
 interface RecordingLibrarySettingsCardProps {
   settings: AppSettings;
@@ -70,13 +73,6 @@ const formatTime = (seconds: number): string => {
     : `${minutes}:${secondsPart}`;
 };
 
-const transcriptionPercent = (record: VoiceMemoryRecord): number =>
-  record.phase === "transcribing"
-    ? Math.min(100, Math.round((record.progress / 70) * 100))
-    : record.transcript.length > 0 || record.phase === "organizing" || record.phase === "ready"
-      ? 100
-      : 0;
-
 const compactTranscriptionModelNames = {
   "qwen3-asr-1.7b-force": "Qwen3-ASR-1.7B + Force",
   "qwen3-asr-0.6b-force": "Qwen3-ASR-0.6B + Force",
@@ -84,6 +80,9 @@ const compactTranscriptionModelNames = {
   "glm-asr-nano-2512": "GLM-ASR-Nano",
   "fireredasr2-aed": "FireRedASR2-AED",
   "paraformer-zh": "Paraformer 中文套件",
+  "moss-transcribe-diarize-0.9b": "MOSS 0.9B",
+  "dolphin-cn-dialect-0.4b": "Dolphin 方言 0.4B",
+  "cohere-transcribe-2b": "Cohere Transcribe 2B",
 } as const satisfies Record<keyof typeof AI_ASR_MODEL_NAMES, string>;
 
 const voiceMemoryStatus = (
@@ -98,7 +97,7 @@ const voiceMemoryStatus = (
     }
   | undefined => {
   if (!record) return undefined;
-  const progress = transcriptionPercent(record);
+  const progress = voiceMemoryTranscriptionPercent(record);
   const modelLabel = record.transcriptionModel
     ? compactTranscriptionModelNames[record.transcriptionModel.id]
     : record.transcript.length > 0
@@ -979,7 +978,7 @@ export const RecordingLibrarySettingsCard = ({
           {isLibraryLoading ? (
             <div className="recording-library-empty">正在准备录音详情…</div>
           ) : selected ? (
-            <>
+            <div key={selected.id} className="recording-detail-swap">
               <audio
                 ref={audioRef}
                 src={selected.mediaUrl}
@@ -1178,12 +1177,21 @@ export const RecordingLibrarySettingsCard = ({
               <VoiceMemoryDetail
                 recording={selected}
                 roomName="好友语音"
+                selectedAsrModel={settings.aiAsrModel}
+                onSelectAsrModel={async (modelId: AiAsrModelId) => {
+                  await onChange({ aiAsrModel: modelId });
+                  pushToast({
+                    tone: "success",
+                    title: `已切换到 ${AI_ASR_MODEL_NAMES[modelId]}`,
+                    description: "AI 功能与录音库已同步；若这条录音有该模型的结果，会直接显示。",
+                  });
+                }}
                 onSeek={(offsetMs) => {
                   if (audioRef.current) audioRef.current.currentTime = offsetMs / 1_000;
                   setCurrentTime(offsetMs / 1_000);
                 }}
               />
-            </>
+            </div>
           ) : (
             <div className="recording-library-empty">录音会按房间和日期自动整理在这里。</div>
           )}
@@ -1197,11 +1205,17 @@ export const RecordingLibrarySettingsCard = ({
                 aria-modal="true"
                 aria-labelledby="clean-recordings-title"
                 aria-describedby="clean-recordings-description"
-                className="modal-surface w-full max-w-[430px] rounded-[26px] p-6"
+                className="modal-surface relative w-full max-w-[430px] rounded-[26px] p-6"
               >
+                <DialogCloseButton
+                  className="absolute right-4 top-4"
+                  label="取消清理录音"
+                  disabled={isCleaningRecordings}
+                  onClick={() => setCleanupRecordings(undefined)}
+                />
                 <h2
                   id="clean-recordings-title"
-                  className="text-balance text-[22px] font-bold text-[#172235]"
+                  className="pr-12 text-balance text-[22px] font-bold text-[#172235]"
                 >
                   清理录音？
                 </h2>
@@ -1249,11 +1263,17 @@ export const RecordingLibrarySettingsCard = ({
                 aria-modal="true"
                 aria-labelledby="delete-recordings-title"
                 aria-describedby="delete-recordings-description"
-                className="modal-surface w-full max-w-[430px] rounded-[26px] p-6"
+                className="modal-surface relative w-full max-w-[430px] rounded-[26px] p-6"
               >
+                <DialogCloseButton
+                  className="absolute right-4 top-4"
+                  label="取消删除录音"
+                  disabled={isDeletingBatch}
+                  onClick={() => setPendingBatchDelete(undefined)}
+                />
                 <h2
                   id="delete-recordings-title"
-                  className="text-balance text-[22px] font-bold text-[#172235]"
+                  className="pr-12 text-balance text-[22px] font-bold text-[#172235]"
                 >
                   {pendingBatchDelete.length === 1
                     ? "删除这条录音？"

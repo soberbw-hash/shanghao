@@ -8,6 +8,8 @@ import {
   LoaderCircle,
   Mic,
   MicOff,
+  Server,
+  Volume2,
 } from "lucide-react";
 import { motion } from "framer-motion";
 import { gsap } from "gsap";
@@ -31,6 +33,7 @@ import { useRoomState } from "../hooks/useRoomState";
 import { useAppStore } from "../store/appStore";
 import { useAudioStore } from "../store/audioStore";
 import { useSettingsStore } from "../store/settingsStore";
+import { useAccountStore } from "../store/accountStore";
 import { getNicknameValidationError } from "../utils/nickname";
 
 const SERVER_CHECK_HEALTHY_INTERVAL_MS = 45_000;
@@ -49,6 +52,7 @@ export const HomePage = () => {
   const settings = useSettingsStore((state) => state.settings);
   const runtimeInfo = useSettingsStore((state) => state.runtimeInfo);
   const saveSettings = useSettingsStore((state) => state.saveSettings);
+  const accountProfile = useAccountStore((state) => state.snapshot.profile);
   const roomAction = useAppStore((state) => state.roomAction);
   const pushToast = useAppStore((state) => state.pushToast);
   const permissionState = useAudioStore((state) => state.permissionState);
@@ -59,6 +63,7 @@ export const HomePage = () => {
   const pageRef = useRef<HTMLDivElement>(null);
   const hasAttemptedStartupJoinRef = useRef(false);
   const microphoneSelectRef = useRef<HTMLSelectElement>(null);
+  const nicknameFieldRef = useRef<HTMLDivElement>(null);
   const microphoneMenuRef = useRef<HTMLDivElement>(null);
   const [nickname, setNickname] = useState("");
   const [avatarId, setAvatarId] = useState<BuiltInAvatarId>("fox");
@@ -68,6 +73,8 @@ export const HomePage = () => {
   const [serverTestResult, setServerTestResult] = useState<RelayStatusSnapshot>();
   const [isCheckingAudio, setIsCheckingAudio] = useState(false);
   const [isMicrophoneMenuOpen, setIsMicrophoneMenuOpen] = useState(false);
+  const [isServerEditorOpen, setIsServerEditorOpen] = useState(false);
+  const [nicknameTouched, setNicknameTouched] = useState(false);
   const reduceMotion = usePrefersReducedMotion();
   const isSettingsReady = Boolean(settings);
   const savedNickname = settings?.nickname;
@@ -262,7 +269,9 @@ export const HomePage = () => {
       ? { title: "没有权限", tone: "bad" }
       : inputDevices.length === 0
         ? { title: "听不到你", tone: "warn" }
-        : { title: "麦克风正常", tone: "good" };
+        : outputDevices.length === 0
+          ? { title: "没有扬声器", tone: "warn" }
+          : { title: "声音正常", tone: "good" };
 
   const hasSelectedInput = settings.preferredInputDeviceId
     ? inputDevices.some((device) => device.id === settings.preferredInputDeviceId)
@@ -328,15 +337,13 @@ export const HomePage = () => {
     const trimmedNickname = nickname.trim();
     const nicknameError = getNicknameValidationError(trimmedNickname);
     if (nicknameError) {
-      pushToast({
-        tone: "warning",
-        title: "昵称不能这样用",
-        description: nicknameError,
-      });
+      setNicknameTouched(true);
+      nicknameFieldRef.current?.querySelector("input")?.focus();
       return;
     }
 
     if (!normalizedAddress) {
+      setIsServerEditorOpen(true);
       pushToast({
         tone: "warning",
         title: "服务器地址不对",
@@ -402,6 +409,9 @@ export const HomePage = () => {
   };
 
   const isJoining = isSubmitting || roomAction === "joining";
+  const nicknameValidationError = nicknameTouched
+    ? getNicknameValidationError(nickname.trim())
+    : undefined;
   const occupiedAvatarIds = serverTestResult?.occupiedAvatarIds ?? [];
   const isSelectedAvatarOccupied = occupiedAvatarIds.includes(avatarId);
   const serverTestStatus = (
@@ -508,6 +518,26 @@ export const HomePage = () => {
                   </select>
                   <i className={hasSelectedInput ? "is-ready" : "is-missing"} aria-hidden="true" />
                 </label>
+                <label>
+                  <Volume2 className="h-4 w-4" aria-hidden="true" />
+                  <select
+                    value={settings.preferredOutputDeviceId || ""}
+                    aria-label="扬声器设备"
+                    onChange={(event) =>
+                      void saveSettings({
+                        preferredOutputDeviceId: event.target.value || undefined,
+                      })
+                    }
+                  >
+                    <option value="">系统默认扬声器</option>
+                    {outputDevices.map((device) => (
+                      <option key={device.id} value={device.id}>
+                        {device.label || "未命名扬声器"}
+                      </option>
+                    ))}
+                  </select>
+                  <i className={hasAudioOutput ? "is-ready" : "is-missing"} aria-hidden="true" />
+                </label>
               </div>
             ) : null}
           </div>
@@ -534,28 +564,103 @@ export const HomePage = () => {
           </div>
 
           <div data-gsap-entry="form" className="entry-profile-form flex min-w-0 flex-col gap-4">
-            <label className="space-y-2">
-              <span className="text-xs font-semibold text-[#52657d]">昵称</span>
-              <div className="flex">
-                <Input
-                  value={nickname}
-                  maxLength={16}
-                  placeholder="朋友怎么叫你"
-                  onChange={(event) => setNickname(event.target.value)}
-                />
+            {accountProfile ? (
+              <div className="entry-account-identity" aria-label="当前账号">
+                <span className="entry-account-avatar">
+                  {accountProfile.avatarUrl ? (
+                    <img src={accountProfile.avatarUrl} alt="" />
+                  ) : (
+                    accountProfile.displayName.slice(0, 1).toUpperCase()
+                  )}
+                </span>
+                <span>
+                  <strong>{accountProfile.displayName}</strong>
+                  <small>@{accountProfile.username}</small>
+                </span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    window.sessionStorage.setItem("shanghao.settings-section", "account");
+                    useAppStore.getState().setSettingsReturnTo("home");
+                    useAppStore.getState().navigate("settings");
+                  }}
+                >
+                  修改资料
+                </button>
               </div>
-            </label>
-            <label className="space-y-2">
-              <span className="text-xs font-semibold text-[#52657d]">服务器地址</span>
-              <Input
-                value={serverAddress}
-                placeholder="118.25.103.107:43821"
-                onChange={(event) => {
-                  setServerAddress(event.target.value);
-                  setServerTestResult(undefined);
-                }}
-              />
-            </label>
+            ) : (
+              <label className="space-y-2">
+                <span className="text-xs font-semibold text-[#52657d]">昵称</span>
+                <div ref={nicknameFieldRef} className="flex">
+                  <Input
+                    value={nickname}
+                    maxLength={16}
+                    placeholder="朋友怎么叫你"
+                    aria-invalid={Boolean(nicknameValidationError)}
+                    aria-describedby={nicknameValidationError ? "entry-nickname-error" : undefined}
+                    onBlur={() => setNicknameTouched(true)}
+                    onChange={(event) => {
+                      setNickname(event.target.value);
+                      if (nicknameTouched) setNicknameTouched(true);
+                    }}
+                  />
+                </div>
+                {nicknameValidationError ? (
+                  <small
+                    id="entry-nickname-error"
+                    className="block text-xs font-medium text-[#c7434d]"
+                  >
+                    {nicknameValidationError}
+                  </small>
+                ) : (
+                  <small className="block text-xs text-[#8a9aaf]">
+                    最多 16 个字，朋友会用它认出你。
+                  </small>
+                )}
+              </label>
+            )}
+            <div className="space-y-2">
+              <span className="text-xs font-semibold text-[#52657d]">频道服务器</span>
+              <div className="flex items-center gap-3 rounded-[14px] border border-[#d9e5f2] bg-white/64 px-3.5 py-3">
+                <Server className="size-4 shrink-0 text-[#4a8de8]" aria-hidden="true" />
+                <span className="min-w-0 flex-1">
+                  <strong className="block text-sm text-[#314158]">
+                    {serverTestResult?.isReachable
+                      ? "已连接"
+                      : serverTestResult
+                        ? "连接异常"
+                        : "正在自动检查"}
+                  </strong>
+                  <small className="block truncate text-xs text-[#8796aa]">
+                    {serverTestResult?.isReachable
+                      ? "固定好友频道已准备好"
+                      : "上号会自动检测，无需手动测试"}
+                  </small>
+                </span>
+                <button
+                  type="button"
+                  className="min-h-10 rounded-[11px] px-3 text-xs font-semibold text-[#3974bd] hover:bg-[#edf5ff]"
+                  onClick={() => setIsServerEditorOpen((current) => !current)}
+                  hidden={!settings.isDeveloperModeEnabled}
+                >
+                  {isServerEditorOpen ? "收起" : "更换服务器"}
+                </button>
+              </div>
+              {settings.isDeveloperModeEnabled &&
+              (isServerEditorOpen || !normalizeRelayServerUrl(serverAddress)) ? (
+                <label className="block space-y-1.5">
+                  <span className="text-xs text-[#718096]">服务器地址</span>
+                  <Input
+                    value={serverAddress}
+                    placeholder="IP:端口或安全服务器域名"
+                    onChange={(event) => {
+                      setServerAddress(event.target.value);
+                      setServerTestResult(undefined);
+                    }}
+                  />
+                </label>
+              ) : null}
+            </div>
             {serverTestStatus}
             <div className="pt-1" data-gsap-entry="cta">
               <div className="flex flex-wrap gap-2.5">
@@ -565,9 +670,7 @@ export const HomePage = () => {
                     isJoining ||
                     isCheckingAudio ||
                     !serverAddress.trim() ||
-                    isSelectedAvatarOccupied ||
-                    !hasSelectedInput ||
-                    !hasAudioOutput
+                    isSelectedAvatarOccupied
                   }
                   onClick={() => void enterChannel()}
                 >
@@ -578,20 +681,63 @@ export const HomePage = () => {
                     <ArrowRight className="h-4 w-4" />
                   )}
                 </Button>
-                <Button
-                  variant="secondary"
-                  className="h-[52px] min-w-[132px] rounded-[16px] px-4"
-                  disabled={isTestingServer || isJoining || !serverAddress.trim()}
-                  onClick={() => void testServer()}
-                >
-                  {isTestingServer ? (
-                    <LoaderCircle className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <Activity className="h-4 w-4" />
-                  )}
-                  {isTestingServer ? "测试中" : "测试服务器"}
-                </Button>
+                {settings.isDeveloperModeEnabled &&
+                (isServerEditorOpen || serverTestResult?.isReachable === false) ? (
+                  <Button
+                    variant="secondary"
+                    className="h-[52px] min-w-[132px] rounded-[16px] px-4"
+                    disabled={isTestingServer || isJoining || !serverAddress.trim()}
+                    onClick={() => void testServer()}
+                  >
+                    {isTestingServer ? (
+                      <LoaderCircle className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <Activity className="h-4 w-4" />
+                    )}
+                    {isTestingServer ? "检测中" : "重新检测"}
+                  </Button>
+                ) : null}
               </div>
+              {!hasSelectedInput ||
+              !hasAudioOutput ||
+              permissionState === MicPermissionState.Denied ? (
+                <div
+                  className="mt-3 flex items-center gap-3 rounded-[14px] border border-[#f0d5a4] bg-[#fff8e9] px-3.5 py-3 text-sm text-[#7b5518]"
+                  role="status"
+                >
+                  <CircleAlert className="size-4 shrink-0" aria-hidden="true" />
+                  <span className="min-w-0 flex-1">
+                    {permissionState === MicPermissionState.Denied
+                      ? "Windows 没有允许麦克风，请允许后再进入频道。"
+                      : !hasSelectedInput
+                        ? "没有找到麦克风，请连接设备或选择其他麦克风。"
+                        : "没有找到扬声器，请连接设备或选择其他扬声器。"}
+                  </span>
+                  <button
+                    type="button"
+                    className="min-h-10 shrink-0 rounded-[11px] bg-white/75 px-3 text-xs font-bold"
+                    onClick={() => {
+                      if (permissionState === MicPermissionState.Denied) {
+                        void window.desktopApi.app.openSystemSettings("microphone");
+                        return;
+                      }
+                      if (!hasAudioOutput) {
+                        void window.desktopApi.app.openSystemSettings("sound");
+                        return;
+                      }
+                      void refreshDevices();
+                      setIsMicrophoneMenuOpen(true);
+                      window.setTimeout(() => microphoneSelectRef.current?.focus(), 50);
+                    }}
+                  >
+                    {permissionState === MicPermissionState.Denied
+                      ? "打开麦克风设置"
+                      : !hasAudioOutput
+                        ? "打开声音设置"
+                        : "选择设备"}
+                  </button>
+                </div>
+              ) : null}
             </div>
           </div>
         </motion.section>

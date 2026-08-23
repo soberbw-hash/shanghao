@@ -1,8 +1,9 @@
-import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
-import { AlertTriangle, CheckCircle2, Info, XCircle } from "lucide-react";
+import { AnimatePresence, motion } from "framer-motion";
+import { AlertTriangle, CheckCircle2, Info, X, XCircle } from "lucide-react";
 
 import { useAppStore } from "../../store/appStore";
 import { reducedFadeVariants, toastItemVariants } from "../../features/motion/motionPresets";
+import { usePrefersReducedMotion as useReducedMotion } from "../../hooks/usePrefersReducedMotion";
 
 const toneClasses = {
   neutral: {
@@ -55,14 +56,14 @@ export const ToastRegion = () => {
           const ToneIcon = toneIcons[tone];
           const classes = toneClasses[tone];
           return (
-            <motion.button
+            <motion.div
               key={toast.id}
               variants={shouldReduceMotion ? reducedFadeVariants : toastItemVariants}
               initial="initial"
               animate="open"
               exit="closed"
+              role={tone === "danger" ? "alert" : "status"}
               className={`toast-card pointer-events-auto flex min-h-14 items-center gap-3 rounded-[18px] px-3.5 py-2.5 text-left ${classes.card}`}
-              onClick={() => dismissToast(toast.id)}
             >
               <span
                 className={`toast-icon grid h-7 w-7 shrink-0 place-items-center rounded-full ${classes.icon}`}
@@ -80,13 +81,34 @@ export const ToastRegion = () => {
                 </span>
                 {toast.description ? (
                   <span
-                    className={`mt-0.5 block text-pretty text-[12px] leading-[18px] ${classes.description}`}
+                    className={`mt-0.5 block break-words text-pretty text-[12px] leading-[18px] ${classes.description}`}
                   >
                     {toast.description}
                   </span>
                 ) : null}
               </span>
-            </motion.button>
+              {toast.actionLabel && toast.onAction ? (
+                <button
+                  type="button"
+                  className="shrink-0 rounded-[10px] border border-current/15 bg-white/55 px-2.5 py-1.5 text-xs font-bold"
+                  onClick={() => {
+                    toast.onAction?.();
+                    dismissToast(toast.id);
+                  }}
+                >
+                  {toast.actionLabel}
+                </button>
+              ) : null}
+              <button
+                type="button"
+                aria-label="关闭提示"
+                title="关闭"
+                className="grid size-9 shrink-0 place-items-center rounded-[10px] text-current/70 transition-colors hover:bg-white/55 hover:text-current"
+                onClick={() => dismissToast(toast.id)}
+              >
+                <X className="size-4" aria-hidden="true" />
+              </button>
+            </motion.div>
           );
         })}
       </AnimatePresence>

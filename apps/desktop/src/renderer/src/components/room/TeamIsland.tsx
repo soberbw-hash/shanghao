@@ -42,6 +42,7 @@ import { useSettingsStore } from "../../store/settingsStore";
 import { useWeatherStore } from "../../features/weather/weatherStore";
 import { resolveWeatherVisualTheme } from "../../features/weather/weatherTheme";
 import { roomAnimationScheduler } from "../../features/visual-runtime/RoomAnimationScheduler";
+import { useCoordinatedIdleActions } from "../../features/voice-scene/useCoordinatedIdleActions";
 import {
   defaultRoomSceneManifest,
   sceneFeatureRegistry,
@@ -176,6 +177,25 @@ export const TeamIsland = ({
     return targetZone !== undefined && settledZone !== targetZone;
   });
   const shouldPauseAmbientMotion = pauseVisualMotion || isCharacterMotionActive;
+  const coordinatedIdleActions = useCoordinatedIdleActions(
+    visibleMembers.map((member) => {
+      const memberZone = resolvedMemberZones.get(member.id) ?? "gameDesk1";
+      const tone = memberStatus(member).tone;
+      return {
+        id: member.id,
+        avatarId: visibleAvatars.get(member.id) ?? "fox",
+        eligible:
+          isSeatZone(memberZone) &&
+          settledMemberZones[member.id] === memberZone &&
+          !screenSharingSet.has(member.id) &&
+          !member.gameName &&
+          !member.workActivity &&
+          member.activity !== "gaming" &&
+          !["speaking", "reconnecting", "offline"].includes(tone),
+      };
+    }),
+    shouldReduceMotion || shouldPauseAmbientMotion,
+  );
   const awayMembers = visibleMembers.filter(
     (member) => resolvedMemberZones.get(member.id) === "restroomZone",
   );
@@ -519,6 +539,7 @@ export const TeamIsland = ({
               arrivalIndex={memberIndex}
               isWelcoming={welcomingMemberIds.has(member.id)}
               isScreenSharing={screenSharingSet.has(member.id)}
+              idleAction={coordinatedIdleActions[member.id]}
               reactions={reactions
                 .filter(
                   (reaction) =>

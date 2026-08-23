@@ -18,6 +18,10 @@ export default defineConfig({
       currentDirectory,
       "tests/electron-recording-playback-smoke.ts",
     ),
+    "tests/electron-asr-runtime-smoke": path.join(
+      currentDirectory,
+      "tests/electron-asr-runtime-smoke.ts",
+    ),
   },
   clean: true,
   dts: false,

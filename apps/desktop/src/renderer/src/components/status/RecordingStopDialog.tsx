@@ -1,13 +1,15 @@
 import { useEffect } from "react";
 import { FolderOpen } from "lucide-react";
-import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
+import { AnimatePresence, motion } from "framer-motion";
 
 import { Button } from "../base/Button";
+import { DialogCloseButton } from "../base/DialogCloseButton";
 import {
   dialogSurfaceVariants,
   overlayScrimVariants,
   reducedFadeVariants,
 } from "../../features/motion/motionPresets";
+import { usePrefersReducedMotion as useReducedMotion } from "../../hooks/usePrefersReducedMotion";
 
 export const RecordingStopDialog = ({
   isOpen,
@@ -60,12 +62,15 @@ export const RecordingStopDialog = ({
             aria-describedby="recording-save-location"
             className="modal-surface w-full max-w-[480px] rounded-[26px] p-6"
           >
-            <h2
-              id="recording-stop-title"
-              className="text-balance text-[22px] font-bold text-[#172235]"
-            >
-              确认要保存录音吗？
-            </h2>
+            <div className="flex items-start justify-between gap-4">
+              <h2
+                id="recording-stop-title"
+                className="text-balance text-[22px] font-bold text-[#172235]"
+              >
+                确认要保存录音吗？
+              </h2>
+              <DialogCloseButton label="继续录音并关闭" disabled={isWorking} onClick={onContinue} />
+            </div>
             <div className="mt-5 flex items-center gap-3 rounded-[14px] border border-[#dbe8f7] bg-white/68 px-3.5 py-3">
               <FolderOpen className="size-4 shrink-0 text-[#4d91e6]" aria-hidden="true" />
               <span id="recording-save-location" className="min-w-0 flex-1">

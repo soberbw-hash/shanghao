@@ -1,3 +1,7 @@
+import { createUISFX, type CueName, type PackName, type UISFXPlayer } from "uisfx";
+
+import { writeRendererLog } from "../../utils/logger";
+
 export type UiSound =
   | "button-click"
   | "enter-room"
@@ -15,80 +19,281 @@ export type UiSound =
   | "mic-error"
   | "record-start"
   | "record-stop"
+  | "record-marker"
   | "mic-on"
   | "mic-off"
   | "speaker-muted"
-  | "speaker-unmuted";
+  | "speaker-unmuted"
+  | "settings-section"
+  | "screen-share-start"
+  | "screen-share-stop"
+  | "model-queued"
+  | "model-checkpoint"
+  | "model-complete"
+  | "transcription-start"
+  | "transcription-complete"
+  | "process-error"
+  | "account-success"
+  | "sound-preview";
 
-const soundUrls: Record<UiSound, string> = {
-  "button-click": new URL("../../assets/sounds/button-click.wav", import.meta.url).href,
-  "enter-room": new URL("../../assets/sounds/enter-room.wav", import.meta.url).href,
-  "leave-room": new URL("../../assets/sounds/leave-room.wav", import.meta.url).href,
-  "member-join": new URL("../../assets/sounds/member-join.wav", import.meta.url).href,
-  "member-leave": new URL("../../assets/sounds/member-leave.wav", import.meta.url).href,
-  "knock-bell": new URL("../../assets/sounds/knock-bell.wav", import.meta.url).href,
-  "popup-open": new URL("../../assets/sounds/popup-open.wav", import.meta.url).href,
-  "copy-success": new URL("../../assets/sounds/copy-success.wav", import.meta.url).href,
-  "device-switch": new URL("../../assets/sounds/device-switch.wav", import.meta.url).href,
-  "send-message": new URL("../../assets/sounds/send-message.wav", import.meta.url).href,
-  "receive-message": new URL("../../assets/sounds/receive-message.wav", import.meta.url).href,
-  "connection-restored": new URL("../../assets/sounds/connection-restored.wav", import.meta.url)
-    .href,
-  "connection-failed": new URL("../../assets/sounds/connection-failed.wav", import.meta.url).href,
-  "mic-error": new URL("../../assets/sounds/mic-error.wav", import.meta.url).href,
-  "record-start": new URL("../../assets/sounds/record-start.wav", import.meta.url).href,
-  "record-stop": new URL("../../assets/sounds/record-stop.wav", import.meta.url).href,
-  "mic-on": new URL("../../assets/sounds/mic-on.wav", import.meta.url).href,
-  "mic-off": new URL("../../assets/sounds/mic-off.wav", import.meta.url).href,
-  "speaker-muted": new URL("../../assets/sounds/speaker-muted.wav", import.meta.url).href,
-  "speaker-unmuted": new URL("../../assets/sounds/speaker-unmuted.wav", import.meta.url).href,
+interface UiSoundRecipe {
+  cue: CueName;
+  pack: PackName;
+  volume: number;
+  cooldownMs?: number;
+}
+
+// These gains are tuned for perceived loudness, not raw peak equality. Short tactile
+// toggles need less gain than wide, soft notifications to sound equally present.
+const uiGain = {
+  subtle: 0.09,
+  standard: 0.11,
+  important: 0.13,
+  deviceToggle: 0.075,
+} as const;
+
+type SinkRoutableAudioContext = AudioContext & {
+  setSinkId?: (sinkId: string) => Promise<void>;
 };
 
-const audioCache = new Map<UiSound, HTMLAudioElement>();
-const soundMix: Partial<Record<UiSound, number>> = {
-  "button-click": 0.34,
-  "send-message": 0.74,
-  "receive-message": 0.78,
-  "member-join": 0.8,
-  "member-leave": 0.72,
-  "knock-bell": 1.35,
-  "connection-failed": 0.92,
-  "mic-error": 0.9,
-  "record-start": 0.88,
-  "record-stop": 0.82,
+type SinkRoutableAudioElement = HTMLAudioElement & {
+  setSinkId?: (sinkId: string) => Promise<void>;
 };
+
+const soundRecipes: Record<Exclude<UiSound, "knock-bell">, UiSoundRecipe> = {
+  "button-click": { cue: "press", pack: "studio", volume: uiGain.subtle, cooldownMs: 70 },
+  "enter-room": { cue: "wake", pack: "organic", volume: uiGain.important, cooldownMs: 250 },
+  "leave-room": { cue: "sleep", pack: "organic", volume: uiGain.standard, cooldownMs: 250 },
+  "member-join": { cue: "connect", pack: "organic", volume: uiGain.standard, cooldownMs: 220 },
+  "member-leave": { cue: "disconnect", pack: "organic", volume: uiGain.standard, cooldownMs: 220 },
+  "popup-open": { cue: "open", pack: "glass", volume: uiGain.standard, cooldownMs: 90 },
+  "copy-success": { cue: "copy", pack: "glass", volume: uiGain.standard, cooldownMs: 120 },
+  "device-switch": { cue: "connect", pack: "studio", volume: uiGain.standard, cooldownMs: 160 },
+  "send-message": { cue: "send", pack: "glass", volume: uiGain.standard, cooldownMs: 180 },
+  "receive-message": { cue: "receive", pack: "soft", volume: uiGain.standard, cooldownMs: 240 },
+  "connection-restored": {
+    cue: "connect",
+    pack: "scifi",
+    volume: uiGain.important,
+    cooldownMs: 600,
+  },
+  "connection-failed": { cue: "error", pack: "studio", volume: uiGain.important, cooldownMs: 600 },
+  "mic-error": { cue: "blocked", pack: "studio", volume: uiGain.standard, cooldownMs: 400 },
+  "record-start": { cue: "start", pack: "studio", volume: uiGain.standard, cooldownMs: 260 },
+  "record-stop": { cue: "stop", pack: "studio", volume: uiGain.standard, cooldownMs: 260 },
+  "record-marker": { cue: "checkpoint", pack: "studio", volume: uiGain.standard, cooldownMs: 160 },
+  "mic-on": { cue: "toggle-on", pack: "soft", volume: uiGain.deviceToggle, cooldownMs: 120 },
+  "mic-off": { cue: "toggle-off", pack: "soft", volume: uiGain.deviceToggle, cooldownMs: 120 },
+  "speaker-muted": { cue: "lock", pack: "soft", volume: uiGain.deviceToggle, cooldownMs: 120 },
+  "speaker-unmuted": { cue: "unlock", pack: "soft", volume: uiGain.deviceToggle, cooldownMs: 120 },
+  "settings-section": { cue: "select", pack: "soft", volume: uiGain.subtle, cooldownMs: 80 },
+  "screen-share-start": {
+    cue: "connect",
+    pack: "scifi",
+    volume: uiGain.important,
+    cooldownMs: 260,
+  },
+  "screen-share-stop": {
+    cue: "disconnect",
+    pack: "scifi",
+    volume: uiGain.standard,
+    cooldownMs: 260,
+  },
+  "model-queued": { cue: "queued", pack: "dreamy", volume: uiGain.subtle, cooldownMs: 300 },
+  "model-checkpoint": {
+    cue: "checkpoint",
+    pack: "glass",
+    volume: uiGain.standard,
+    cooldownMs: 300,
+  },
+  "model-complete": { cue: "complete", pack: "dreamy", volume: uiGain.important, cooldownMs: 500 },
+  "transcription-start": { cue: "start", pack: "scifi", volume: uiGain.standard, cooldownMs: 300 },
+  "transcription-complete": {
+    cue: "success",
+    pack: "glass",
+    volume: uiGain.important,
+    cooldownMs: 400,
+  },
+  "process-error": { cue: "error", pack: "soft", volume: uiGain.important, cooldownMs: 400 },
+  "account-success": { cue: "success", pack: "dreamy", volume: uiGain.important, cooldownMs: 400 },
+  "sound-preview": {
+    cue: "notification",
+    pack: "dreamy",
+    volume: uiGain.important,
+    cooldownMs: 160,
+  },
+};
+
+const preloadSounds: readonly Exclude<UiSound, "knock-bell">[] = [
+  "button-click",
+  "popup-open",
+  "send-message",
+  "receive-message",
+  "mic-on",
+  "mic-off",
+  "record-start",
+  "record-stop",
+  "model-complete",
+];
+
+const knockUrl = new URL("../../assets/sounds/knock-bell.wav", import.meta.url).href;
+
+let player: UISFXPlayer | undefined;
+let audioContext: SinkRoutableAudioContext | undefined;
+let knockTemplate: SinkRoutableAudioElement | undefined;
 let isEnabled = true;
 let masterVolume = 0.72;
+let preferredOutputDeviceId: string | undefined;
+let lastSemanticSoundAt = 0;
+let didLogSinkFailureForDevice: string | undefined;
+
+const normalizeSinkId = (deviceId?: string): string =>
+  !deviceId || deviceId === "default" ? "" : deviceId;
+
+const routeElementToPreferredOutput = async (audio: SinkRoutableAudioElement): Promise<void> => {
+  if (typeof audio.setSinkId !== "function") return;
+  await audio.setSinkId(normalizeSinkId(preferredOutputDeviceId));
+};
+
+const routeContextToPreferredOutput = async (): Promise<boolean> => {
+  if (!audioContext) return true;
+  if (typeof audioContext.setSinkId !== "function") {
+    return !preferredOutputDeviceId || preferredOutputDeviceId === "default";
+  }
+  try {
+    await audioContext.setSinkId(normalizeSinkId(preferredOutputDeviceId));
+    didLogSinkFailureForDevice = undefined;
+    return true;
+  } catch (error) {
+    const deviceKey = preferredOutputDeviceId ?? "default";
+    if (didLogSinkFailureForDevice !== deviceKey) {
+      didLogSinkFailureForDevice = deviceKey;
+      void writeRendererLog("audio", "warn", "ui_sound_output_route_failed", {
+        preferredOutputDeviceId: deviceKey,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+    return false;
+  }
+};
+
+const ensurePlayer = (): UISFXPlayer | undefined => {
+  if (player) return player;
+  if (typeof window === "undefined" || typeof window.AudioContext !== "function") return undefined;
+  try {
+    audioContext = new window.AudioContext({
+      latencyHint: "interactive",
+    }) as SinkRoutableAudioContext;
+    player = createUISFX({
+      context: audioContext,
+      pack: "studio",
+      volume: masterVolume,
+      enabled: isEnabled,
+      maxVoices: 6,
+      cooldownMs: 40,
+    });
+    void routeContextToPreferredOutput();
+    return player;
+  } catch (error) {
+    void writeRendererLog("audio", "warn", "ui_sound_runtime_initialization_failed", {
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return undefined;
+  }
+};
+
+const ensureKnockTemplate = (): SinkRoutableAudioElement | undefined => {
+  if (knockTemplate) return knockTemplate;
+  try {
+    const audio = new Audio(knockUrl) as SinkRoutableAudioElement;
+    audio.preload = "auto";
+    audio.load();
+    knockTemplate = audio;
+    void routeElementToPreferredOutput(audio).catch(() => undefined);
+    return audio;
+  } catch {
+    return undefined;
+  }
+};
+
+const playBrandKnock = (): void => {
+  const template = ensureKnockTemplate();
+  if (!template) return;
+  const playback = template.cloneNode(true) as SinkRoutableAudioElement;
+  playback.volume = Math.min(1, 0.34 * masterVolume);
+  void routeElementToPreferredOutput(playback)
+    .catch(() => undefined)
+    .then(() => playback.play())
+    .catch(() => undefined);
+};
 
 export const setUiSoundEnabled = (enabled: boolean): void => {
   isEnabled = enabled;
+  player?.setEnabled(enabled);
+  if (!enabled) player?.stopAll();
 };
 
 export const setUiSoundVolume = (volume: number): void => {
   masterVolume = Math.max(0, Math.min(1, volume));
+  player?.setVolume(masterVolume);
+};
+
+export const setUiSoundOutputDevice = async (deviceId?: string): Promise<boolean> => {
+  preferredOutputDeviceId = deviceId;
+  const routedContext = await routeContextToPreferredOutput();
+  if (knockTemplate) {
+    try {
+      await routeElementToPreferredOutput(knockTemplate);
+    } catch {
+      return false;
+    }
+  }
+  return routedContext;
+};
+
+export const unlockUiSounds = async (): Promise<boolean> => {
+  const activePlayer = ensurePlayer();
+  if (!activePlayer) return false;
+  const unlocked = await activePlayer.unlock();
+  if (unlocked) await routeContextToPreferredOutput();
+  return unlocked;
 };
 
 export const prepareUiSounds = (): void => {
-  for (const sound of Object.keys(soundUrls) as UiSound[]) {
-    if (audioCache.has(sound)) continue;
-    const audio = new Audio(soundUrls[sound]);
-    audio.preload = "auto";
-    audio.load();
-    audioCache.set(sound, audio);
-  }
+  const activePlayer = ensurePlayer();
+  ensureKnockTemplate();
+  if (!activePlayer) return;
+  const cues = [...new Set(preloadSounds.map((sound) => soundRecipes[sound].cue))];
+  void activePlayer.preload(cues);
 };
 
 export const playUiSound = (sound: UiSound): void => {
   if (!isEnabled) return;
+  if (sound !== "button-click") lastSemanticSoundAt = performance.now();
   try {
-    const template = audioCache.get(sound) ?? new Audio(soundUrls[sound]);
-    template.preload = "auto";
-    template.volume = Math.min(1, 0.64 * masterVolume * (soundMix[sound] ?? 0.76));
-    audioCache.set(sound, template);
-    const playback = template.cloneNode(true) as HTMLAudioElement;
-    playback.volume = template.volume;
-    void playback.play().catch(() => undefined);
+    if (sound === "knock-bell") {
+      playBrandKnock();
+      return;
+    }
+    const recipe = soundRecipes[sound];
+    const activePlayer = ensurePlayer();
+    if (!activePlayer) return;
+    activePlayer.setPack(recipe.pack);
+    activePlayer.play(recipe.cue, {
+      volume: recipe.volume,
+      cooldownMs: recipe.cooldownMs,
+      retrigger: sound === "receive-message" ? "overlap" : "restart",
+    });
   } catch {
-    // UI feedback must never block the room flow.
+    // UI feedback must never block room, recording, or signaling work.
   }
+};
+
+export const playGenericPressUnlessHandled = (clickStartedAt: number): void => {
+  if (lastSemanticSoundAt >= clickStartedAt) return;
+  playUiSound("button-click");
+};
+
+export const stopAllUiSounds = (): void => {
+  player?.stopAll();
 };

@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useCallback, useEffect } from "react";
 
 import {
   DEFAULT_CHANNEL_ID,
@@ -63,6 +63,8 @@ const ROUTINE_SIGNAL_MESSAGE_TYPES = new Set([
 ]);
 
 export const getRoomRuntimeDiagnostics = () => activeClient?.getDiagnostics();
+
+export const retryActiveRoomConnection = (): boolean => activeClient?.retryReconnect() ?? false;
 
 export const injectRealtimeFault = async (command: RealtimeFaultCommand): Promise<void> => {
   if (!activeClient) throw new Error("fault_lab_room_client_unavailable");
@@ -199,6 +201,9 @@ export const useRoomState = () => {
   const setRemoteStream = useRoomStore((state) => state.setRemoteStream);
   const setRemoteScreenFrame = useRoomStore((state) => state.setRemoteScreenFrame);
   const setRemoteScreenSharing = useRoomStore((state) => state.setRemoteScreenSharing);
+  const setLocalScreenShareViewerPeerIds = useRoomStore(
+    (state) => state.setLocalScreenShareViewerPeerIds,
+  );
   const pushRoomEvent = useRoomStore((state) => state.pushRoomEvent);
   const clearRoomEvents = useRoomStore((state) => state.clearRoomEvents);
   const addChatMessage = useRoomStore((state) => state.addChatMessage);
@@ -588,6 +593,7 @@ export const useRoomState = () => {
         setRemoteScreenFrame(remotePeerId, frame);
       },
       onRemoteScreenShareState: setRemoteScreenSharing,
+      onLocalScreenShareViewers: setLocalScreenShareViewerPeerIds,
       onSceneReaction: (reaction) => {
         addSceneReaction(reaction);
         if (reaction.targetPeerId === peerId && reaction.peerId !== peerId) {
@@ -795,11 +801,6 @@ export const useRoomState = () => {
         });
         await connectToFixedChannel(serverUrl, channelId, { reuseLocalMedia });
         useAppStore.getState().navigate("room");
-        pushToast({
-          tone: "success",
-          title: copy.joinedTitle,
-          description: copy.joinedDescription,
-        });
       } catch (error) {
         if (error instanceof Error && error.message === "CLIENT_UPDATE_REQUIRED") {
           await cleanupPreviousSession();
@@ -1125,6 +1126,10 @@ export const useRoomState = () => {
     await writeRendererLog("webrtc", "info", "Screen share stopped from room state");
   };
 
+  const setScreenShareViewingActive = useCallback((active: boolean) => {
+    activeClient?.setScreenShareViewingActive(active);
+  }, []);
+
   const moveLocalMember = (
     sceneZone: SceneZoneId,
     activity: MemberActivity,
@@ -1213,6 +1218,7 @@ export const useRoomState = () => {
     sendQuickMessage,
     startScreenShare,
     stopScreenShare,
+    setScreenShareViewingActive,
     moveLocalMember,
     setMemberVolume,
     addRoomCollectionItem,

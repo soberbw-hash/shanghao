@@ -13,12 +13,15 @@ export interface VoiceMemoryOpenTarget {
   requestId: number;
 }
 
-interface ToastMessage {
+export interface ToastMessage {
   id: string;
   title: string;
   description?: string;
   tone?: ToastTone;
   repeatCount?: number;
+  actionLabel?: string;
+  onAction?: () => void;
+  persistent?: boolean;
 }
 
 export interface StartupIssue {
@@ -31,7 +34,6 @@ interface AppStoreState {
   currentPage: AppPage;
   settingsReturnTo: SettingsReturnTarget;
   isOnboardingOpen: boolean;
-  isRecordingSaveDialogOpen: boolean;
   roomAction: RoomActionState;
   toasts: ToastMessage[];
   bootstrapPhase: BootstrapPhase;
@@ -44,7 +46,6 @@ interface AppStoreState {
   navigate: (page: AppPage) => void;
   setSettingsReturnTo: (target: SettingsReturnTarget) => void;
   setOnboardingOpen: (isOpen: boolean) => void;
-  setRecordingSaveDialogOpen: (isOpen: boolean) => void;
   setVoiceMemoryOpenTarget: (target?: Omit<VoiceMemoryOpenTarget, "requestId">) => void;
   setRoomAction: (roomAction: RoomActionState) => void;
   beginBootstrap: (message?: string) => void;
@@ -64,7 +65,6 @@ export const useAppStore = create<AppStoreState>((set, get) => ({
   currentPage: "home",
   settingsReturnTo: "home",
   isOnboardingOpen: false,
-  isRecordingSaveDialogOpen: false,
   roomAction: "idle",
   toasts: [],
   bootstrapPhase: "booting",
@@ -78,7 +78,6 @@ export const useAppStore = create<AppStoreState>((set, get) => ({
   },
   setSettingsReturnTo: (settingsReturnTo) => set({ settingsReturnTo }),
   setOnboardingOpen: (isOnboardingOpen) => set({ isOnboardingOpen }),
-  setRecordingSaveDialogOpen: (isRecordingSaveDialogOpen) => set({ isRecordingSaveDialogOpen }),
   setVoiceMemoryOpenTarget: (target) =>
     set({
       voiceMemoryOpenTarget: target ? { ...target, requestId: Date.now() } : undefined,
@@ -154,15 +153,28 @@ export const useAppStore = create<AppStoreState>((set, get) => ({
             title: toast.title,
             description: toast.description,
             tone,
+            actionLabel: toast.actionLabel,
+            onAction: toast.onAction,
+            persistent: toast.persistent,
             repeatCount: duplicate ? (duplicate.repeatCount ?? 1) + 1 : 1,
           },
         ].slice(-3),
       };
     });
 
-    window.setTimeout(() => {
-      get().dismissToast(id);
-    }, 3600);
+    if (!toast.persistent) {
+      const duration =
+        tone === "success"
+          ? 2_800
+          : tone === "neutral"
+            ? 4_200
+            : tone === "warning"
+              ? 8_000
+              : 12_000;
+      window.setTimeout(() => {
+        get().dismissToast(id);
+      }, duration);
+    }
   },
   dismissToast: (id) =>
     set((state) => ({

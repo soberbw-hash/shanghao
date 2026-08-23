@@ -11,6 +11,10 @@ const audioCardPath = path.resolve(
   "src/renderer/src/components/settings/AudioSettingsCard.tsx",
 );
 const settingsPagePath = path.resolve(process.cwd(), "src/renderer/src/pages/SettingsPage.tsx");
+const aboutSettingsPath = path.resolve(
+  process.cwd(),
+  "src/renderer/src/components/settings/AboutSettingsCard.tsx",
+);
 const shortcutSettingsPath = path.resolve(
   process.cwd(),
   "src/renderer/src/components/settings/ShortcutSettingsCard.tsx",
@@ -59,8 +63,9 @@ const aiRuntimeManagerPath = path.resolve(process.cwd(), "src/main/ai-runtime-ma
 const aiVoiceMemoryServicePath = path.resolve(process.cwd(), "src/main/ai-voice-memory-service.ts");
 const asrRunnerPath = path.resolve(process.cwd(), "scripts/asr-runner.py");
 
-test("fixed sounds, game detection, and system notifications stay out of settings", () => {
+test("semantic interface sounds have one simple master control without per-event switches", () => {
   const source = readFileSync(settingsPagePath, "utf8");
+  const audioSource = readFileSync(audioCardPath, "utf8");
 
   assert.equal(source.includes("开麦提示音"), false);
   assert.equal(source.includes("关麦提示音"), false);
@@ -72,14 +77,19 @@ test("fixed sounds, game detection, and system notifications stay out of setting
   assert.equal(source.includes("自动识别游戏"), false);
   assert.equal(source.includes("系统通知"), false);
   assert.equal(source.includes("关闭窗口时留在后台"), true);
+  assert.equal(audioSource.includes("界面音效"), true);
+  assert.equal(audioSource.includes("isUiSoundEnabled"), true);
+  assert.equal(audioSource.includes("soundVolume"), true);
+  assert.equal(audioSource.includes('type="range"'), true);
+  assert.equal(audioSource.includes('playUiSound("sound-preview")'), true);
 });
 
-test("weather settings stay lightweight and hide technical provider details", () => {
+test("weather settings expose the full dynamic scene without technical quality tiers", () => {
   const source = readFileSync(weatherSettingsPath, "utf8");
   const pickerSource = readFileSync(weatherCityPickerPath, "utf8");
   const styles = readRendererCss();
-  assert.equal(source.includes("窗外天气"), false);
-  assert.equal(source.includes("isDynamicWeatherEnabled"), false);
+  assert.equal(source.includes("窗外动态天气"), true);
+  assert.equal(source.includes("isDynamicWeatherEnabled"), true);
   assert.equal(source.includes("天气位置"), true);
   assert.equal(source.includes("Windows 系统定位"), true);
   assert.equal(source.includes("公网 IP 自动定位"), false);
@@ -106,17 +116,19 @@ test("weather settings stay lightweight and hide technical provider details", ()
   assert.equal(source.includes("longitude"), false);
 });
 
-test("fixed interface scale and always-on room overlay stay out of settings", () => {
+test("interface scale is configurable while the room overlay remains always on", () => {
   const source = readFileSync(settingsPagePath, "utf8");
   const roomSource = readFileSync(roomPagePath, "utf8");
   const appSource = readFileSync(appPath, "utf8");
 
-  assert.equal(source.includes("界面大小"), false);
+  assert.equal(source.includes("界面大小"), true);
+  assert.equal(source.includes("<option value={110}>110%</option>"), true);
+  assert.equal(source.includes("<option value={125}>125%</option>"), true);
   assert.equal(source.includes("进入频道时显示悬浮窗"), false);
   assert.equal(source.includes("硬件加速"), false);
   assert.equal(roomSource.includes("isOverlayEnabled"), false);
   assert.equal(roomSource.includes("window.desktopApi.overlay.show()"), true);
-  assert.equal(appSource.includes("settings?.uiScale"), false);
+  assert.equal(appSource.includes("settings?.uiScale"), true);
 });
 
 test("home page exposes only the fixed channel server address entry", () => {
@@ -156,7 +168,7 @@ test("settings keep only everyday voice controls and remove advanced connection"
   const source = readFileSync(settingsPagePath, "utf8");
   const diagnosticsSource = readFileSync(diagnosticsCardPath, "utf8");
 
-  for (const label of ["通用", "语音", "更新", "诊断"]) {
+  for (const label of ["通用", "语音", "关于上号", "诊断"]) {
     assert.equal(source.includes(label), true);
   }
   assert.equal(source.includes('{ id: "notifications"'), false);
@@ -170,7 +182,8 @@ test("settings keep only everyday voice controls and remove advanced connection"
   ]) {
     assert.equal(source.includes(removed), false);
   }
-  assert.equal(source.includes('useState<SettingsSectionId>("general")'), true);
+  assert.equal(source.includes("useState<SettingsSectionId>(getInitialSettingsSection)"), true);
+  assert.equal(source.includes('if (!import.meta.env.DEV) return "general"'), true);
   for (const diagnostic of ["Relay 延迟", "TURN", "WebRTC", "当前语音路径", "丢包", "抖动"]) {
     assert.equal(diagnosticsSource.includes(diagnostic), true);
   }
@@ -192,13 +205,14 @@ test("settings pages keep the shared header compact", () => {
   assert.match(styles, /\.settings-page-shell\s*\{[^}]*display:\s*flex;/s);
 });
 
-test("microphone processing lives in the room panel while release history remains complete", () => {
+test("microphone processing lives in the room panel while about keeps release history complete", () => {
   const homeSource = readFileSync(homePagePath, "utf8");
   const roomDockSource = readFileSync(
     path.resolve(process.cwd(), "src/renderer/src/components/room/RoomDock.tsx"),
     "utf8",
   );
   const settingsSource = readFileSync(settingsPagePath, "utf8");
+  const aboutSource = readFileSync(aboutSettingsPath, "utf8");
 
   assert.equal(homeSource.includes("自动增益"), false);
   assert.equal(homeSource.includes('from "../components/base/Switch"'), false);
@@ -220,8 +234,8 @@ test("microphone processing lives in the room panel while release history remain
   assert.equal(audioCardSource.includes("isAutoGainControlEnabled"), false);
   assert.equal(audioCardSource.includes("isFriendLoudnessBalanceEnabled"), false);
   assert.equal(roomDockSource.includes("settings.isFriendLoudnessBalanceEnabled"), true);
-  assert.equal(RELEASE_HISTORY.length, 69);
-  assert.equal(RELEASE_HISTORY[0]?.version, "3.0.2");
+  assert.equal(RELEASE_HISTORY.length, 70);
+  assert.equal(RELEASE_HISTORY[0]?.version, "3.0.3");
   assert.equal(RELEASE_HISTORY.at(-1)?.version, "0.1.1");
   assert.equal(
     new Set(RELEASE_HISTORY.map((release) => release.version)).size,
@@ -238,11 +252,16 @@ test("microphone processing lives in the room panel while release history remain
     RELEASE_HISTORY.every((release) => release.details.length > 0),
     true,
   );
-  assert.equal(settingsSource.includes("查看详细信息"), true);
-  assert.equal(settingsSource.includes("查看每一项具体改动"), false);
-  assert.equal(settingsSource.includes("ReleaseDetailModal"), true);
-  assert.equal(settingsSource.includes("slice(0, 10)"), false);
-  assert.equal(settingsSource.includes("完整版本更新记录"), true);
+  assert.equal(settingsSource.includes("AboutSettingsCard"), true);
+  assert.equal(settingsSource.includes('{ id: "updates"'), false);
+  assert.equal(aboutSource.includes("ReleaseDetailModal"), true);
+  assert.equal(aboutSource.includes("slice(0, 10)"), false);
+  assert.equal(aboutSource.includes("完整版本更新记录"), true);
+  assert.equal(aboutSource.includes("检查更新"), true);
+  assert.equal(aboutSource.includes("版本 {currentVersion}"), true);
+  assert.equal(aboutSource.includes("作者主页"), true);
+  assert.equal(aboutSource.includes("投喂作者"), true);
+  assert.equal(aboutSource.includes("固定好友语音"), false);
 });
 
 test("room history leaves loading state on legacy servers", () => {
@@ -371,10 +390,17 @@ test("successful empty ASR units remain silence instead of failing the recording
   assert.equal(asrRunnerSource.includes('"qwen3-asr-1.7b-force"'), true);
   assert.equal(asrRunnerSource.includes('"fireredasr2-llm"'), false);
   assert.equal(asrRunnerSource.includes('"paraformer-zh"'), true);
+  assert.equal(asrRunnerSource.includes('"moss-transcribe-diarize-0.9b"'), true);
+  assert.equal(asrRunnerSource.includes('"dolphin-cn-dialect-0.4b"'), true);
+  assert.equal(asrRunnerSource.includes('"cohere-transcribe-2b"'), true);
+  assert.equal(asrRunnerSource.includes("parse_transcript"), true);
+  assert.equal(asrRunnerSource.includes('dolphin.load_model("small.cn"'), true);
+  assert.equal(asrRunnerSource.includes("CohereAsrForConditionalGeneration"), true);
   assert.equal(asrRunnerSource.includes("use_half=True"), true);
   assert.equal(asrRunnerSource.includes("bf16=True"), true);
   assert.equal(asrRunnerSource.includes("do_sample=False"), true);
   assert.equal(asrRunnerSource.includes("staged_on_oom=True"), true);
+  assert.equal(asrRunnerSource.includes("enable_legacy_distutils()"), true);
   assert.equal(runtimeSource.includes("vibeRuntime"), false);
   assert.equal(runtimeSource.includes("timeoutMs: options.timeoutMs ?? 4 * 60_000"), true);
   assert.equal(voiceMemorySource.includes("maxNewTokens: 384"), true);
@@ -394,9 +420,15 @@ test("AI voice memory keeps first install manual and disables unavailable automa
   const source = readFileSync(aiVoiceMemoryCardPath, "utf8");
   const settingsSource = readFileSync(settingsPagePath, "utf8");
   const recordingSource = readFileSync(recordingLibraryCardPath, "utf8");
-  assert.equal(source.includes("1. 模型管理"), true);
-  assert.equal(source.includes("2. 转录设置"), true);
-  assert.equal(source.includes("3. AI 总结与其他能力"), true);
+  assert.equal(source.includes("A. 概览"), true);
+  assert.equal(source.includes("B. 转录模型与组件"), true);
+  assert.equal(source.includes("B1. 主转录模型"), true);
+  assert.equal(source.includes("B2. 共享组件"), true);
+  assert.equal(source.includes("B3. 整理模型"), true);
+  assert.equal(source.includes("C. 转录行为"), true);
+  assert.equal(source.includes('className="ai-model-select-hit"'), true);
+  assert.equal(source.includes("ai-asr-choice-grid"), false);
+  assert.equal(source.includes("D. AI 整理与房间问答"), true);
   assert.equal(source.includes("下载模型"), true);
   assert.equal(source.includes('model.category === "asr"'), true);
   assert.equal(source.includes("runtimeStatus?.vibevoice"), false);
@@ -406,6 +438,9 @@ test("AI voice memory keeps first install manual and disables unavailable automa
   assert.equal(source.includes("isDisabled={!selectedAsrReady}"), true);
   assert.equal(source.includes("isDisabled={!organizerReady || !selectedAsrReady}"), true);
   assert.equal(source.includes('option value="cloud">房间云端（默认）'), true);
+  assert.equal(source.includes("云端 API · 无需本地模型"), true);
+  assert.equal(source.includes("providerSelect(settings.aiRoomAskProvider"), false);
+  assert.equal(source.includes("无需安装任何本地问答模型"), true);
   assert.equal(source.includes("密钥由 Windows 加密后只保存在本机"), true);
   assert.equal(source.includes('value="after_game"'), true);
   assert.equal(source.includes("游戏中已降速"), true);

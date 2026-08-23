@@ -48,5 +48,7 @@ export interface LocalAudioDiagnostics {
   processorOverruns?: number;
   averageProcessingMs?: number;
   maxProcessingMs?: number;
+  rawInputPeak?: number;
+  inputOverload?: "normal" | "warning";
   permissionState: MicPermissionState;
 }

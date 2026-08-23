@@ -1,5 +1,6 @@
+import { useCallback, useEffect } from "react";
 import { Sparkles } from "lucide-react";
-import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
+import { AnimatePresence, motion } from "framer-motion";
 
 import { DetailedReleaseNotesViewer } from "./DetailedReleaseNotesViewer";
 import {
@@ -7,8 +8,10 @@ import {
   overlayScrimVariants,
   reducedFadeVariants,
 } from "../../features/motion/motionPresets";
+import { usePrefersReducedMotion as useReducedMotion } from "../../hooks/usePrefersReducedMotion";
 import { useSettingsStore } from "../../store/settingsStore";
 import { getReleaseHistoryEntry } from "./releaseHistory";
+import { DialogCloseButton } from "../base/DialogCloseButton";
 
 export const ReleaseNotesModal = () => {
   const shouldReduceMotion = useReducedMotion();
@@ -25,10 +28,19 @@ export const ReleaseNotesModal = () => {
     settings.lastReleaseNotesVersionSeen !== version,
   );
 
-  const dismiss = () => {
+  const dismiss = useCallback(() => {
     if (!version) return;
     void saveSettings({ lastReleaseNotesVersionSeen: version });
-  };
+  }, [saveSettings, version]);
+
+  useEffect(() => {
+    if (!isVisible) return;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") dismiss();
+    };
+    document.addEventListener("keydown", closeOnEscape);
+    return () => document.removeEventListener("keydown", closeOnEscape);
+  }, [dismiss, isVisible]);
 
   return (
     <AnimatePresence>
@@ -50,9 +62,12 @@ export const ReleaseNotesModal = () => {
             aria-labelledby="release-notes-title"
             className="modal-surface w-full max-w-[560px] rounded-[32px] p-7"
           >
-            <div className="inline-flex items-center gap-2 rounded-full border border-white/80 bg-white/72 px-3 py-1.5 text-xs font-semibold text-[#3974d8] shadow-sm">
-              <Sparkles className="h-3.5 w-3.5" />
-              欢迎回来
+            <div className="flex items-start justify-between gap-4">
+              <div className="inline-flex items-center gap-2 rounded-full border border-white/80 bg-white/72 px-3 py-1.5 text-xs font-semibold text-[#3974d8] shadow-sm">
+                <Sparkles className="h-3.5 w-3.5" />
+                欢迎回来
+              </div>
+              <DialogCloseButton label="稍后查看更新内容" onClick={dismiss} />
             </div>
             <h2
               id="release-notes-title"

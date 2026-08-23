@@ -7,7 +7,7 @@ import {
   useRef,
   useState,
 } from "react";
-import { HeadphoneOff, VolumeX } from "lucide-react";
+import { HeadphoneOff, RefreshCw, VolumeX } from "lucide-react";
 import { AnimatePresence, motion, usePresence } from "framer-motion";
 
 import type {
@@ -33,14 +33,11 @@ import {
 import {
   applyCharacterPersonality,
   getCharacterPersonality,
+  type CharacterIdleAction,
 } from "../../features/voice-scene/characterPersonality";
 import { characterPositions, isSeatZone, sceneZones } from "../../features/voice-scene/sceneZones";
 import { AnimalSprite } from "./AnimalSprite";
-import {
-  DeskAnimalSprite,
-  type DeskAnimalIdleAction,
-  WalkingAnimalSprite,
-} from "./DeskAnimalSprite";
+import { DeskAnimalSprite, WalkingAnimalSprite } from "./DeskAnimalSprite";
 import { SceneCharacterLabel } from "./SceneCharacterLabel";
 import { SceneReaction } from "./SceneReaction";
 import { Slider } from "../base/Slider";
@@ -127,6 +124,7 @@ export interface SceneCharacterProps {
   arrivalIndex: number;
   isWelcoming: boolean;
   isScreenSharing: boolean;
+  idleAction?: CharacterIdleAction;
   reactions?: SceneReactionModel[];
   chatBubble?: SceneCharacterQuickMessage;
   onReact?: (targetPeerId: string, emoji: SceneReactionModel["emoji"]) => void;
@@ -143,6 +141,7 @@ const SceneCharacterView = ({
   zone,
   isWelcoming,
   isScreenSharing,
+  idleAction = "none",
   reactions = [],
   chatBubble,
   onVolumeChange,
@@ -163,6 +162,7 @@ const SceneCharacterView = ({
   const [isAudioControlsOpen, setIsAudioControlsOpen] = useState(false);
   const isSpeaking = status.tone === "speaking";
   const isReconnecting = status.tone === "reconnecting";
+  const isUpdating = status.label === "正在更新";
   const isOffline = status.tone === "offline";
   const isLocallyMuted = !member.isLocal && member.volume <= 0.001;
   const memberControlsRef = useRef<HTMLDivElement>(null);
@@ -502,10 +502,6 @@ const SceneCharacterView = ({
     };
   }, [isPresent, personality, safeToRemove, shouldReduceMotion, stopActiveAnimations]);
 
-  // Multi-layer idle gestures caused periodic compositor spikes even when the room was untouched.
-  // Keep meaningful movement/speaking/game animations, but leave stationary characters visually calm.
-  const idleAction: DeskAnimalIdleAction = "none";
-
   return (
     <div
       ref={motionElementRef}
@@ -514,6 +510,7 @@ const SceneCharacterView = ({
       data-greeting-style={personality.greetingStyle}
       data-scene-member-key={sceneMemberKey(member)}
       data-motion-phase={motionPhase}
+      data-movement-direction={movementDirection}
       style={{
         transform: shouldReduceMotion
           ? sceneTransform(position.left, position.top)
@@ -574,6 +571,7 @@ const SceneCharacterView = ({
               } ${member.isMuted ? "room-character-muted" : ""} ${
                 member.isDeafened ? "room-character-deafened" : ""
               } ${isReconnecting ? "room-character-reconnecting" : ""}`}
+              data-updating={isUpdating || undefined}
             >
               {/* Keep every pose mounted so the decoded character texture survives a seat
                   change. Only the active layer changes opacity; there is never a frame with
@@ -615,6 +613,20 @@ const SceneCharacterView = ({
               >
                 <AnimalSprite avatarId={avatarId} state="away" isMoving={isMoving} />
               </span>
+              {isReconnecting && !isUpdating ? (
+                <span className="room-character-reconnect-steps" aria-hidden="true">
+                  <i />
+                  <i />
+                  <i />
+                </span>
+              ) : null}
+              {isUpdating ? (
+                <span className="room-character-update-device" aria-label="正在更新客户端">
+                  <span>
+                    <RefreshCw aria-hidden="true" />
+                  </span>
+                </span>
+              ) : null}
               {member.isDeafened ? (
                 <span className="room-character-deafened-badge" aria-label="已关闭扬声器">
                   <HeadphoneOff className="h-3 w-3" />
@@ -713,6 +725,7 @@ export const SceneCharacter = memo(
     previous.arrivalIndex === next.arrivalIndex &&
     previous.isWelcoming === next.isWelcoming &&
     previous.isScreenSharing === next.isScreenSharing &&
+    previous.idleAction === next.idleAction &&
     areReactionListsEqual(previous.reactions, next.reactions) &&
     previous.chatBubble === next.chatBubble &&
     previous.onReact === next.onReact &&

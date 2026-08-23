@@ -30,8 +30,9 @@ export class QwenRuntime implements LocalModelRuntime<QwenRuntimeRequest, string
     private readonly pythonExecutable: string,
     private readonly runnerPath: string,
     private readonly modelPath: () => string | undefined,
+    pythonPath?: string,
   ) {
-    this.worker = new QwenPersistentWorker(pythonExecutable, runnerPath, modelPath);
+    this.worker = new QwenPersistentWorker(pythonExecutable, runnerPath, modelPath, pythonPath);
   }
 
   onState(listener: (health: QwenWorkerHealth) => void): () => void {

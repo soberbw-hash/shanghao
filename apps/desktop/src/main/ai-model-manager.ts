@@ -8,6 +8,7 @@ import { pipeline } from "node:stream/promises";
 import type {
   AiAsrModelId,
   AiModelAction,
+  AiModelFailureKind,
   AiModelId,
   AiModelStatus,
   AiProcessingMode,
@@ -20,6 +21,7 @@ import type {
 } from "@private-voice/shared";
 
 import type { GameDetectionController } from "./game-detection";
+import { requiredModelFiles, requiredWeightFiles } from "./ai-model-layout";
 import { ResourceScheduler } from "./resource-scheduler";
 
 export {
@@ -38,6 +40,8 @@ interface ModelDefinition {
   approximateBytes: number;
   components?: readonly ModelComponent[];
   dependencies?: readonly AiSupportModelId[];
+  optionalDependencies?: readonly AiSupportModelId[];
+  requiresHuggingFaceAuthorization?: boolean;
   hardwareNote?: string;
 }
 
@@ -47,7 +51,7 @@ interface ModelComponent {
   revision: string;
 }
 
-interface RemoteModelFile {
+export interface RemoteModelFile {
   rfilename: string;
   size?: number;
   sha256?: string;
@@ -71,6 +75,8 @@ interface ModelSource {
   baseUrl: string;
 }
 
+type ModelFetcher = (input: string, init?: RequestInit) => Promise<Response>;
+
 interface PersistedModelState {
   userInstalled: boolean;
   activeRevision?: string;
@@ -79,6 +85,7 @@ interface PersistedModelState {
   downloadedBytes?: number;
   totalBytes?: number;
   errorMessage?: string;
+  failureKind?: AiModelFailureKind;
 }
 
 interface PersistedAiState {
@@ -96,6 +103,9 @@ const PARAFORMER_MODEL_REVISION = "d7811ee3ac581fbcfdeb37c98c6ba674028433dc";
 const FSMN_VAD_MODEL_REVISION = "df20e6b30c653645fa4ff125cacfcabd1020a669";
 const CT_PUNC_MODEL_REVISION = "d0e55e2b8722a78b63705ff443d09c4f86e5d750";
 const PARAFORMER_BUNDLE_REVISION = "bundle-d7811ee3-df20e6b3-d0e55e2b";
+const MOSS_TRANSCRIBE_DIARIZE_REVISION = "e8681d68e7042738ffca8ac8212bc8fcb1131ab8";
+const DOLPHIN_CN_DIALECT_REVISION = "eb6854969b5715cfccf4a9297a75f189343700dc";
+const COHERE_TRANSCRIBE_REVISION = "00c06981f239c788c0ce23b8caa001c071e4e391";
 const QWEN_MODEL_REVISION = "851bf6e806efd8d0a36b00ddf55e13ccb7b8cd0a";
 
 const MODEL_DEFINITIONS: readonly ModelDefinition[] = [
@@ -178,6 +188,39 @@ const MODEL_DEFINITIONS: readonly ModelDefinition[] = [
     ],
   },
   {
+    id: "moss-transcribe-diarize-0.9b",
+    category: "asr",
+    name: "MOSS-Transcribe-Diarize 0.9B",
+    purpose: "长音频 · 原生说话人分离 · 时间戳",
+    repository: "OpenMOSS-Team/MOSS-Transcribe-Diarize",
+    revision: MOSS_TRANSCRIBE_DIARIZE_REVISION,
+    approximateBytes: 1_965_000_000,
+    hardwareNote: "CUDA · BF16 · batch 1 · 官方远程代码与原生 S01/S02 说话人标签 · 不量化。",
+  },
+  {
+    id: "dolphin-cn-dialect-0.4b",
+    category: "asr",
+    name: "Dolphin-CN-Dialect 0.4B",
+    purpose: "中文方言 · small.cn 非流式 · 词级时间戳",
+    repository: "DataoceanAI1/dolphi-cn-dialect-small",
+    revision: DOLPHIN_CN_DIALECT_REVISION,
+    approximateBytes: 1_776_000_000,
+    hardwareNote: "CUDA · batch 1 · 官方 small.cn 非流式权重 · 保留热词入口 · 不量化。",
+  },
+  {
+    id: "cohere-transcribe-2b",
+    category: "asr",
+    name: "Cohere Transcribe 2B",
+    purpose: "多语言 · 官方本地推理 · 可选精确对齐",
+    repository: "CohereLabs/cohere-transcribe-03-2026",
+    revision: COHERE_TRANSCRIBE_REVISION,
+    approximateBytes: 4_435_000_000,
+    optionalDependencies: ["qwen3-forced-aligner-0.6b"],
+    requiresHuggingFaceAuthorization: true,
+    hardwareNote:
+      "CUDA · BF16 · batch 1 · 不量化；官方仓库需先接受 Hugging Face 使用条款，未安装对齐组件时使用真实分段边界。",
+  },
+  {
     id: "qwen3-forced-aligner-0.6b",
     category: "support",
     name: "Qwen3-ForcedAligner-0.6B",
@@ -190,7 +233,7 @@ const MODEL_DEFINITIONS: readonly ModelDefinition[] = [
     id: "qwen35-4b",
     category: "organizer",
     name: "Qwen3.5-4B",
-    purpose: "总结、章节、问答与精彩片段",
+    purpose: "总结、章节与精彩片段",
     repository: "Qwen/Qwen3.5-4B",
     revision: QWEN_MODEL_REVISION,
     approximateBytes: 9_319_828_096,
@@ -204,12 +247,17 @@ export const PINNED_MODEL_REVISIONS: Readonly<Record<AiModelId, string>> = {
   "glm-asr-nano-2512": GLM_ASR_NANO_REVISION,
   "fireredasr2-aed": FIRERED_ASR2_AED_REVISION,
   "paraformer-zh": PARAFORMER_BUNDLE_REVISION,
+  "moss-transcribe-diarize-0.9b": MOSS_TRANSCRIBE_DIARIZE_REVISION,
+  "dolphin-cn-dialect-0.4b": DOLPHIN_CN_DIALECT_REVISION,
+  "cohere-transcribe-2b": COHERE_TRANSCRIBE_REVISION,
   "qwen3-forced-aligner-0.6b": QWEN3_FORCED_ALIGNER_REVISION,
   "qwen35-4b": QWEN_MODEL_REVISION,
 };
 
 const METADATA_FILE = "state.json";
 const MODEL_REQUEST_TIMEOUT_MS = 12_000;
+const MAX_CONCURRENT_MODEL_DOWNLOADS = 2;
+const MODEL_FILE_DOWNLOAD_ATTEMPTS = 3;
 
 // Hugging Face is frequently unreachable on otherwise healthy mainland networks.
 // Keep the mirror first for a fast default path and retain the canonical host as
@@ -248,6 +296,12 @@ export const buildResumeHeaders = (offset: number): Record<string, string> | und
 
 export const describeAiModelError = (error: unknown): string => {
   const message = error instanceof Error ? error.message : String(error);
+  if (message.includes("ai_model_access_token_required"))
+    return "此模型需要 Hugging Face 授权。请先接受模型使用条款，再把只读 Token 保存到本机。";
+  if (/ai_model_(?:manifest_)?http_401/.test(message))
+    return "Hugging Face Token 无效或已失效，请重新保存只读 Token。";
+  if (/ai_model_(?:manifest_)?http_403/.test(message))
+    return "当前 Hugging Face 账号尚未获得此模型权限，请先接受模型使用条款。";
   if (
     message === "fetch failed" ||
     message.includes("ai_model_source_unreachable") ||
@@ -263,11 +317,117 @@ export const describeAiModelError = (error: unknown): string => {
     return "模型文件清单不完整，请稍后重试。";
   if (message === "ai_model_file_incomplete" || message === "ai_model_weight_size_mismatch")
     return "模型文件下载不完整，点击重试会从已下载的位置继续。";
+  if (message === "ai_model_file_size_mismatch")
+    return "模型完整性校验失败，大小异常的文件会在重试时重新下载。";
   if (message === "ai_model_checksum_mismatch")
     return "模型完整性校验失败，损坏文件会在重试时重新下载。";
   const httpStatus = message.match(/ai_model_(?:manifest_)?http_(\d{3})/)?.[1];
   if (httpStatus) return `模型下载源暂时不可用（HTTP ${httpStatus}），请稍后重试。`;
   return "模型下载失败，请检查网络后重试；已下载的部分会保留。";
+};
+
+export const classifyAiModelFailure = (error: unknown): AiModelFailureKind => {
+  const message = error instanceof Error ? error.message : String(error);
+  if (
+    [
+      "ai_model_required_files_missing",
+      "ai_model_file_incomplete",
+      "ai_model_weight_size_mismatch",
+      "ai_model_file_size_mismatch",
+      "ai_model_checksum_mismatch",
+      "ai_model_config_invalid",
+    ].some((code) => message.includes(code))
+  )
+    return "integrity";
+  if (message.includes("ai_model_disk_space_insufficient") || message.includes("ENOSPC"))
+    return "disk";
+  if (
+    message.includes("ai_model_access_token_required") ||
+    /ai_model_(?:manifest_)?http_(401|403)/.test(message)
+  )
+    return "access";
+  if (
+    message === "fetch failed" ||
+    message.includes("ai_model_source_unreachable") ||
+    message.includes("ENETUNREACH") ||
+    message.includes("ECONNREFUSED") ||
+    message.includes("ETIMEDOUT") ||
+    /ai_model_(?:manifest_)?http_\d{3}/.test(message)
+  )
+    return "network";
+  return "download";
+};
+
+const hashModelFile = async (filePath: string): Promise<string> => {
+  const hash = createHash("sha256");
+  await pipeline(createReadStream(filePath), hash);
+  return hash.digest("hex");
+};
+
+const replaceStateFile = async (temporary: string, destination: string): Promise<void> => {
+  let lastError: unknown;
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    try {
+      await rename(temporary, destination);
+      return;
+    } catch (error) {
+      lastError = error;
+      const code = (error as NodeJS.ErrnoException).code;
+      if (code !== "EPERM" && code !== "EACCES" && code !== "EBUSY") throw error;
+      await new Promise((resolve) => setTimeout(resolve, 40 * (attempt + 1)));
+    }
+  }
+  throw lastError;
+};
+
+export const validateModelRevisionFiles = async (
+  id: AiModelId,
+  directory: string,
+  files: readonly RemoteModelFile[],
+): Promise<void> => {
+  const manifestNames = files.map((file) => file.rfilename);
+  const requiredFiles = requiredModelFiles(id);
+  const weightNames = requiredWeightFiles(id, manifestNames);
+  if (
+    !weightNames.length ||
+    requiredFiles.some((required) => !manifestNames.includes(required)) ||
+    weightNames.some((required) => !manifestNames.includes(required))
+  ) {
+    throw new Error("ai_model_required_files_missing");
+  }
+  await Promise.all(requiredFiles.map((file) => stat(path.join(directory, file)))).catch(() => {
+    throw new Error("ai_model_required_files_missing");
+  });
+  for (const configName of requiredFiles.filter((file) => file.endsWith(".json"))) {
+    try {
+      const config = JSON.parse(
+        await readFile(path.join(directory, configName), "utf8"),
+      ) as unknown;
+      if (!config || typeof config !== "object") throw new Error("ai_model_config_invalid");
+    } catch (error) {
+      if (error instanceof Error && error.message === "ai_model_config_invalid") throw error;
+      throw new Error("ai_model_config_invalid", { cause: error });
+    }
+  }
+  for (const file of files) {
+    const filePath = path.join(directory, file.rfilename);
+    const size = await stat(filePath)
+      .then((value) => value.size)
+      .catch((error) => {
+        throw new Error("ai_model_required_files_missing", { cause: error });
+      });
+    if (typeof file.size === "number" && size !== file.size) {
+      await rm(filePath, { force: true });
+      throw new Error("ai_model_file_size_mismatch");
+    }
+    if (typeof file.sha256 === "string") {
+      const digest = await hashModelFile(filePath);
+      if (digest !== file.sha256) {
+        await rm(filePath, { force: true });
+        throw new Error("ai_model_checksum_mismatch");
+      }
+    }
+  }
 };
 
 class DownloadPausedError extends Error {
@@ -283,6 +443,11 @@ export class AiModelManager {
   private readonly abortControllers = new Map<AiModelId, AbortController>();
   private readonly runningDownloads = new Map<AiModelId, Promise<void>>();
   private readonly downloadStartedAt = new Map<AiModelId, number>();
+  private readonly downloadSpeedSamples = new Map<
+    AiModelId,
+    { bytes: number; checkedAt: number }
+  >();
+  private readonly downloadSpeeds = new Map<AiModelId, number>();
   private persisted: PersistedAiState = emptyState();
   private processingMode: AiProcessingMode = "after_game";
   private gameActive = false;
@@ -305,6 +470,13 @@ export class AiModelManager {
   private throttleQueue: Promise<void> = Promise.resolve();
   private throttleWindowStartedAt = Date.now();
   private throttleWindowBytes = 0;
+  private activeModelDownloads = 0;
+  private readonly downloadSlotWaiters: Array<{
+    signal: AbortSignal;
+    onAbort: () => void;
+    resolve: (release: () => void) => void;
+    reject: (error: Error) => void;
+  }> = [];
   private runtimeStatus: Partial<Record<AiModelId, { ready: boolean; message?: string }>> = {};
   private activeAsrModel: AiAsrModelId = "qwen3-asr-0.6b-force";
   private runtimePreparer?: (id: AiModelId) => Promise<{ ready: boolean; message?: string }>;
@@ -313,6 +485,8 @@ export class AiModelManager {
     private readonly rootDirectory: string,
     private readonly gameDetection: GameDetectionController,
     private readonly writeLog: (payload: RendererLogPayload) => Promise<void>,
+    private readonly modelFetch: ModelFetcher = globalThis.fetch,
+    private readonly readHuggingFaceAccessToken?: () => Promise<string | undefined>,
   ) {}
 
   async initialize(
@@ -337,14 +511,22 @@ export class AiModelManager {
     const missingOptInDownloads: AiModelId[] = [];
     for (const definition of MODEL_DEFINITIONS) {
       const model = this.persisted.models[definition.id];
-      if (model?.phase === "downloading" || model?.phase === "checking") {
+      if (
+        model?.phase === "queued" ||
+        model?.phase === "checking" ||
+        model?.phase === "downloading" ||
+        model?.phase === "verifying" ||
+        model?.phase === "preparing"
+      ) {
         model.phase = "paused";
         interruptedDownloads.push(definition.id);
       }
       if (
         model?.userInstalled &&
         !model.activeRevision &&
-        model.phase !== "error" &&
+        (model.phase !== "error" ||
+          model.failureKind !== "integrity" ||
+          (Boolean(model.totalBytes) && model.downloadedBytes === model.totalBytes)) &&
         !interruptedDownloads.includes(definition.id)
       ) {
         missingOptInDownloads.push(definition.id);
@@ -358,10 +540,12 @@ export class AiModelManager {
       }
     }
     await this.persist();
-    for (const id of interruptedDownloads) {
+    const downloads = [...new Set([...interruptedDownloads, ...missingOptInDownloads])].sort(
+      (left, right) => this.downloadPriority(left) - this.downloadPriority(right),
+    );
+    for (const id of downloads) {
       this.startDownload(id, Boolean(this.persisted.models[id]?.activeRevision));
     }
-    for (const id of missingOptInDownloads) this.startDownload(id, false);
   }
 
   stop(): void {
@@ -464,6 +648,13 @@ export class AiModelManager {
     this.emit();
   }
 
+  setRuntimeStatuses(
+    statuses: Partial<Record<AiModelId, { ready: boolean; message?: string }>>,
+  ): void {
+    Object.assign(this.runtimeStatus, statuses);
+    this.emit();
+  }
+
   async controlModel(id: AiModelId, action: AiModelAction): Promise<AiVoiceMemorySnapshot> {
     const current = this.ensureModelState(id);
     if (action === "download") {
@@ -513,19 +704,39 @@ export class AiModelManager {
 
   private startDownload(id: AiModelId, isUpdate: boolean): void {
     if (this.runningDownloads.has(id)) return;
-    const operation = this.downloadModel(id, isUpdate)
+    const controller = new AbortController();
+    this.abortControllers.set(id, controller);
+    const current = this.ensureModelState(id);
+    current.phase = "queued";
+    current.errorMessage = undefined;
+    current.failureKind = undefined;
+    void this.persist();
+    const operation = this.withDownloadSlot(controller.signal, () =>
+      this.downloadModel(id, isUpdate, controller),
+    )
       .catch((error) => {
         if (error instanceof DownloadPausedError || (error as Error).name === "AbortError") return;
         const current = this.ensureModelState(id);
         current.phase = "error";
+        current.failureKind = classifyAiModelFailure(error);
         current.errorMessage = describeAiModelError(error);
         void this.persist();
-        void this.log("error", "ai_model_download_failed", id, error);
+        void this.log(
+          "error",
+          current.failureKind === "integrity"
+            ? "ai_model_integrity_validation_failed"
+            : "ai_model_download_failed",
+          id,
+          error,
+          { failureKind: current.failureKind },
+        );
       })
       .finally(() => {
         this.abortControllers.delete(id);
         this.runningDownloads.delete(id);
         this.downloadStartedAt.delete(id);
+        this.downloadSpeedSamples.delete(id);
+        this.downloadSpeeds.delete(id);
         this.emit();
       });
     this.runningDownloads.set(id, operation);
@@ -533,13 +744,16 @@ export class AiModelManager {
     this.emit();
   }
 
-  private async downloadModel(id: AiModelId, isUpdate: boolean): Promise<void> {
+  private async downloadModel(
+    id: AiModelId,
+    isUpdate: boolean,
+    controller: AbortController,
+  ): Promise<void> {
     const definition = modelDefinition(id);
     const current = this.ensureModelState(id);
-    const controller = new AbortController();
-    this.abortControllers.set(id, controller);
     current.phase = "checking";
     current.errorMessage = undefined;
+    current.failureKind = undefined;
     this.emit();
 
     const files = await this.fetchDownloadFiles(definition);
@@ -547,16 +761,30 @@ export class AiModelManager {
     current.pendingRevision = definition.revision;
     current.totalBytes = files.reduce((total, file) => total + (file.size ?? 0), 0);
     current.downloadedBytes = await this.readDownloadedBytes(id, definition.revision, files);
+    this.downloadSpeedSamples.set(id, {
+      bytes: current.downloadedBytes,
+      checkedAt: Date.now(),
+    });
     await this.ensureDiskCapacity((current.totalBytes ?? 0) - (current.downloadedBytes ?? 0));
     current.phase = "downloading";
     await this.persist();
 
     for (const file of files) {
       if (controller.signal.aborted) throw new DownloadPausedError();
-      await this.downloadFile(definition.id, definition.revision, file, controller.signal, current);
+      await this.downloadFileWithRetry(
+        definition.id,
+        definition.revision,
+        file,
+        controller.signal,
+        current,
+      );
     }
 
     const revisionDirectory = this.revisionDirectory(id, definition.revision);
+    current.phase = "verifying";
+    current.downloadedBytes = current.totalBytes;
+    await this.persist();
+    this.emit();
     await this.validateRevision(definition, definition.revision, files);
     await writeFile(
       path.join(revisionDirectory, "model.ready.json"),
@@ -575,13 +803,18 @@ export class AiModelManager {
     const previousRevision = current.activeRevision;
     current.activeRevision = definition.revision;
     current.pendingRevision = undefined;
-    current.phase = "installed";
+    current.phase = "preparing";
     current.downloadedBytes = current.totalBytes;
     current.errorMessage = undefined;
+    current.failureKind = undefined;
     await this.persist();
     this.emit();
 
     await this.prepareRuntime(id);
+
+    current.phase = "installed";
+    await this.persist();
+    this.emit();
 
     if (isUpdate && previousRevision && previousRevision !== definition.revision) {
       await rm(this.revisionDirectory(id, previousRevision), { recursive: true, force: true });
@@ -617,10 +850,10 @@ export class AiModelManager {
     const partial = `${destination}.part`;
     await mkdir(path.dirname(destination), { recursive: true });
     const expectedSize = file.size ?? 0;
-    const completedSize = await stat(destination)
-      .then((value) => value.size)
-      .catch(() => 0);
-    if (expectedSize > 0 && completedSize === expectedSize) return;
+    const completed = await stat(destination)
+      .then((value) => ({ exists: true, size: value.size }))
+      .catch(() => ({ exists: false, size: 0 }));
+    if (completed.exists && completed.size === expectedSize) return;
 
     let offset = await stat(partial)
       .then((value) => value.size)
@@ -638,6 +871,8 @@ export class AiModelManager {
       signal,
       acceptedStatuses: [200, 206],
       errorPrefix: "ai_model_http",
+      requiresHuggingFaceAuthorization:
+        modelDefinition(id).requiresHuggingFaceAuthorization === true,
     });
     try {
       if (offset && response.status === 200) {
@@ -660,6 +895,7 @@ export class AiModelManager {
           const now = Date.now();
           if (now - lastPersistedAt >= 1_000) {
             lastPersistedAt = now;
+            this.updateDownloadSpeed(id, state.downloadedBytes ?? 0, now);
             void this.persist();
             this.emit();
           }
@@ -678,6 +914,116 @@ export class AiModelManager {
     } finally {
       release();
     }
+  }
+
+  private async downloadFileWithRetry(
+    id: AiModelId,
+    revision: string,
+    file: DownloadModelFile,
+    signal: AbortSignal,
+    state: PersistedModelState,
+  ): Promise<void> {
+    let lastError: unknown;
+    for (let attempt = 1; attempt <= MODEL_FILE_DOWNLOAD_ATTEMPTS; attempt += 1) {
+      try {
+        await this.downloadFile(id, revision, file, signal, state);
+        return;
+      } catch (error) {
+        if (signal.aborted || error instanceof DownloadPausedError) throw new DownloadPausedError();
+        lastError = error;
+        if (attempt === MODEL_FILE_DOWNLOAD_ATTEMPTS) break;
+        await this.log("warn", "ai_model_file_download_retry", id, error, {
+          file: file.rfilename,
+          attempt,
+          maxAttempts: MODEL_FILE_DOWNLOAD_ATTEMPTS,
+        });
+        await this.waitForDownloadRetry(attempt * 750, signal);
+      }
+    }
+    throw lastError;
+  }
+
+  private waitForDownloadRetry(delayMs: number, signal: AbortSignal): Promise<void> {
+    if (signal.aborted) return Promise.reject(new DownloadPausedError());
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        signal.removeEventListener("abort", onAbort);
+        resolve();
+      }, delayMs);
+      const onAbort = () => {
+        clearTimeout(timer);
+        reject(new DownloadPausedError());
+      };
+      signal.addEventListener("abort", onAbort, { once: true });
+    });
+  }
+
+  private withDownloadSlot<T>(signal: AbortSignal, operation: () => Promise<T>): Promise<T> {
+    return this.acquireDownloadSlot(signal).then(async (release) => {
+      try {
+        return await operation();
+      } finally {
+        release();
+      }
+    });
+  }
+
+  private acquireDownloadSlot(signal: AbortSignal): Promise<() => void> {
+    if (signal.aborted) return Promise.reject(new DownloadPausedError());
+    if (this.activeModelDownloads < MAX_CONCURRENT_MODEL_DOWNLOADS) {
+      this.activeModelDownloads += 1;
+      return Promise.resolve(this.createDownloadSlotRelease());
+    }
+    return new Promise((resolve, reject) => {
+      const waiter = {
+        signal,
+        resolve,
+        reject,
+        onAbort: () => {
+          const index = this.downloadSlotWaiters.indexOf(waiter);
+          if (index >= 0) this.downloadSlotWaiters.splice(index, 1);
+          reject(new DownloadPausedError());
+        },
+      };
+      signal.addEventListener("abort", waiter.onAbort, { once: true });
+      this.downloadSlotWaiters.push(waiter);
+    });
+  }
+
+  private createDownloadSlotRelease(): () => void {
+    let released = false;
+    return () => {
+      if (released) return;
+      released = true;
+      const waiter = this.downloadSlotWaiters.shift();
+      if (waiter) {
+        waiter.signal.removeEventListener("abort", waiter.onAbort);
+        waiter.resolve(this.createDownloadSlotRelease());
+      } else {
+        this.activeModelDownloads = Math.max(0, this.activeModelDownloads - 1);
+      }
+    };
+  }
+
+  private downloadPriority(id: AiModelId): number {
+    if (id === this.activeAsrModel) return 0;
+    const activeDependencies = modelDefinition(this.activeAsrModel).dependencies as
+      readonly AiModelId[] | undefined;
+    if (activeDependencies?.includes(id)) return 1;
+    const category = modelDefinition(id).category;
+    return category === "asr" ? 2 : category === "support" ? 3 : 4;
+  }
+
+  private updateDownloadSpeed(id: AiModelId, bytes: number, checkedAt: number): void {
+    const previous = this.downloadSpeedSamples.get(id);
+    this.downloadSpeedSamples.set(id, { bytes, checkedAt });
+    if (!previous || checkedAt <= previous.checkedAt || bytes < previous.bytes) return;
+    const instantaneous = ((bytes - previous.bytes) * 1_000) / (checkedAt - previous.checkedAt);
+    const current = this.downloadSpeeds.get(id);
+    this.downloadSpeeds.set(
+      id,
+      current === undefined ? instantaneous : current * 0.6 + instantaneous * 0.4,
+    );
   }
 
   private createThrottle(): Transform {
@@ -713,43 +1059,7 @@ export class AiModelManager {
     files: RemoteModelFile[],
   ): Promise<void> {
     const directory = this.revisionDirectory(definition.id, revision);
-    const weightFiles = files.filter(
-      (file) =>
-        file.rfilename.endsWith(".safetensors") ||
-        file.rfilename.endsWith(".gguf") ||
-        file.rfilename.endsWith("model.pt"),
-    );
-    if (!weightFiles.length) throw new Error("ai_model_required_files_missing");
-    if (definition.id === "paraformer-zh") {
-      for (const component of ["asr", "vad", "punc"] as const) {
-        await Promise.all([
-          stat(path.join(directory, component, "config.yaml")),
-          stat(path.join(directory, component, "model.pt")),
-        ]).catch(() => {
-          throw new Error("ai_model_required_files_missing");
-        });
-      }
-    } else {
-      const config = JSON.parse(
-        await readFile(path.join(directory, "config.json"), "utf8"),
-      ) as unknown;
-      if (!config || typeof config !== "object") throw new Error("ai_model_config_invalid");
-    }
-    for (const file of weightFiles) {
-      const filePath = path.join(directory, file.rfilename);
-      const size = await stat(filePath).then((value) => value.size);
-      if (file.size && size !== file.size) throw new Error("ai_model_weight_size_mismatch");
-      if ("sha256" in file && typeof file.sha256 === "string") {
-        const digest = await this.hashFile(filePath);
-        if (digest !== file.sha256) throw new Error("ai_model_checksum_mismatch");
-      }
-    }
-  }
-
-  private async hashFile(filePath: string): Promise<string> {
-    const hash = createHash("sha256");
-    await pipeline(createReadStream(filePath), hash);
-    return hash.digest("hex");
+    await validateModelRevisionFiles(definition.id, directory, files);
   }
 
   private modelComponents(definition: ModelDefinition): readonly ModelComponent[] {
@@ -769,12 +1079,18 @@ export class AiModelManager {
     const manifests = await Promise.all(
       components.map(async (component) => ({
         component,
-        manifest: await this.fetchManifest(component),
+        manifest: await this.fetchManifest(
+          component,
+          definition.requiresHuggingFaceAuthorization === true,
+        ),
       })),
     );
     return manifests.flatMap(({ component, manifest }) =>
       manifest.siblings
-        .filter((file) => (file.lfs?.size ?? file.size ?? 0) > 0)
+        .filter((file) => {
+          const size = file.lfs?.size ?? file.size;
+          return typeof size === "number" && size >= 0;
+        })
         .map((file): DownloadModelFile => {
           const sourceFileName = safeRelativeModelPath(file.rfilename);
           const destination = component.directory
@@ -793,12 +1109,16 @@ export class AiModelManager {
     );
   }
 
-  private async fetchManifest(component: ModelComponent): Promise<RemoteModelManifest> {
+  private async fetchManifest(
+    component: ModelComponent,
+    requiresHuggingFaceAuthorization: boolean,
+  ): Promise<RemoteModelManifest> {
     const { response, release } = await this.fetchFromModelSources(
       `api/models/${component.repository}/revision/${component.revision}?blobs=true`,
       {
         acceptedStatuses: [200],
         errorPrefix: "ai_model_manifest_http",
+        requiresHuggingFaceAuthorization,
       },
     );
     try {
@@ -819,18 +1139,30 @@ export class AiModelManager {
       signal?: AbortSignal;
       acceptedStatuses: number[];
       errorPrefix: string;
+      requiresHuggingFaceAuthorization?: boolean;
     },
   ): Promise<{ response: Response; release: () => void }> {
     let lastError: unknown;
-    for (const source of MODEL_SOURCES) {
+    const accessToken = options.requiresHuggingFaceAuthorization
+      ? await this.readHuggingFaceAccessToken?.()
+      : undefined;
+    if (options.requiresHuggingFaceAuthorization && !accessToken) {
+      throw new Error("ai_model_access_token_required");
+    }
+    const sources = options.requiresHuggingFaceAuthorization
+      ? MODEL_SOURCES.filter((source) => source.baseUrl === "https://huggingface.co")
+      : MODEL_SOURCES;
+    for (const source of sources) {
       if (options.signal?.aborted) throw new DownloadPausedError();
       const controller = new AbortController();
       const forwardAbort = () => controller.abort();
       options.signal?.addEventListener("abort", forwardAbort, { once: true });
       const timeout = setTimeout(() => controller.abort(), MODEL_REQUEST_TIMEOUT_MS);
       try {
-        const response = await fetch(`${source.baseUrl}/${relativeUrl}`, {
-          headers: options.headers,
+        const response = await this.modelFetch(`${source.baseUrl}/${relativeUrl}`, {
+          headers: accessToken
+            ? { ...options.headers, Authorization: `Bearer ${accessToken}` }
+            : options.headers,
           redirect: "follow",
           signal: controller.signal,
         });
@@ -890,13 +1222,15 @@ export class AiModelManager {
       downloadedBytes,
       totalBytes,
       progress: totalBytes ? Math.min(100, (downloadedBytes / totalBytes) * 100) : 0,
-      bytesPerSecond: this.downloadStartedAt.has(definition.id)
-        ? this.scheduler.downloadBytesPerSecond()
-        : undefined,
+      bytesPerSecond: this.downloadSpeeds.get(definition.id),
       errorMessage: current?.errorMessage,
+      failureKind: current?.failureKind,
       runtimeReady: this.runtimeStatus[definition.id]?.ready === true,
       runtimeMessage: this.runtimeStatus[definition.id]?.message,
       dependencies: definition.dependencies ? [...definition.dependencies] : undefined,
+      optionalDependencies: definition.optionalDependencies
+        ? [...definition.optionalDependencies]
+        : undefined,
       hardwareNote: definition.hardwareNote,
       updateInProgress: Boolean(
         current?.activeRevision &&
@@ -958,8 +1292,12 @@ export class AiModelManager {
         await mkdir(this.rootDirectory, { recursive: true });
         const file = path.join(this.rootDirectory, METADATA_FILE);
         const temporary = `${file}.${process.pid}.${randomUUID()}.tmp`;
-        await writeFile(temporary, serialized, "utf8");
-        await rename(temporary, file);
+        try {
+          await writeFile(temporary, serialized, "utf8");
+          await replaceStateFile(temporary, file);
+        } finally {
+          await rm(temporary, { force: true }).catch(() => undefined);
+        }
       });
     this.persistQueue = operation;
     return operation;

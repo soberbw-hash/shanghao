@@ -15,6 +15,10 @@ import { MuteButton } from "../audio/MuteButton";
 import { RecordingButton } from "../audio/RecordingButton";
 import { Button } from "../base/Button";
 import { AnimatedControlIcon } from "../icons/AnimatedControlIcon";
+import {
+  clearGlassPointerHighlight,
+  updateGlassPointerHighlight,
+} from "../../features/motion/glassPointerHighlight";
 
 type AudioPanel = "microphone" | "speaker" | undefined;
 
@@ -104,7 +108,13 @@ export const RoomDock = ({
   onToggleOverlay,
   onLeave,
 }: RoomDockProps) => (
-  <footer className="voice-dock flex items-center gap-2 px-3 py-2.5">
+  <footer
+    className="voice-dock flex items-center gap-2 px-3 py-2.5"
+    onPointerMove={(event) =>
+      updateGlassPointerHighlight(event.currentTarget, event.clientX, event.clientY)
+    }
+    onPointerLeave={(event) => clearGlassPointerHighlight(event.currentTarget)}
+  >
     <div className="voice-primary-controls">
       <div className="voice-segmented-control audio-control-anchor" data-audio-control-root>
         <MuteButton
@@ -204,12 +214,7 @@ export const RoomDock = ({
       </div>
     </div>
     <div className="flex-1" />
-    <div className="voice-action-group" aria-label="频道操作">
-      <RecordingButton
-        isRecording={recordingState === RecordingState.Recording}
-        onClick={onToggleRecording}
-        disabled={recordingEncoderState === RecordingEncoderState.Unsupported}
-      />
+    <div className="voice-action-group voice-session-actions" aria-label="分享与录音">
       <Button
         variant={localScreenShareActive ? "secondary" : "ghost"}
         data-icon-motion="screen-share"
@@ -227,8 +232,13 @@ export const RoomDock = ({
           {isScreenShareStarting ? "正在开启…" : localScreenShareActive ? "正在分享" : "屏幕分享"}
         </span>
       </Button>
+      <RecordingButton
+        isRecording={recordingState === RecordingState.Recording}
+        onClick={onToggleRecording}
+        disabled={recordingEncoderState === RecordingEncoderState.Unsupported}
+      />
     </div>
-    <div className="voice-action-group voice-window-actions" aria-label="窗口与退出">
+    <div className="voice-action-group voice-window-actions" aria-label="悬浮窗口">
       <Button
         variant={isOverlayOpen ? "secondary" : "ghost"}
         data-icon-motion="overlay"
@@ -238,6 +248,8 @@ export const RoomDock = ({
         <AnimatedControlIcon name="overlay" active={isOverlayOpen} className="h-4 w-4" />
         <span className="voice-action-label">{isOverlayOpen ? "悬浮窗开" : "悬浮窗关"}</span>
       </Button>
+    </div>
+    <div className="voice-action-group voice-exit-actions" aria-label="离开房间">
       <Button
         variant="danger"
         data-icon-motion="exit"

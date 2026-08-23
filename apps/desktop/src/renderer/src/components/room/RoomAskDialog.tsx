@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { History, MessageCircleQuestion, Sparkles, Square, X } from "lucide-react";
+import { History, MessageCircleQuestion, Sparkles, Square } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
 
 import type { VoiceMemoryAnswer } from "@private-voice/shared";
 
 import { popoverSurfaceVariants, reducedFadeVariants } from "../../features/motion/motionPresets";
 import { Button } from "../base/Button";
+import { DialogCloseButton } from "../base/DialogCloseButton";
 
 interface RoomAskDialogProps {
   isOpen: boolean;
@@ -82,9 +83,11 @@ const formatOffset = (offsetMs: number): string => {
 
 const friendlyError = (error: unknown): string => {
   const message = error instanceof Error ? error.message : String(error);
-  if (message.includes("model_qwen35-4b_not_installed"))
-    return "需要先在设置的 AI 功能里下载问答模型。";
-  if (message.includes("qwen_runtime_unavailable")) return "问答功能正在准备中，稍后再试。";
+  if (
+    message.includes("model_qwen35-4b_not_installed") ||
+    message.includes("qwen_runtime_unavailable")
+  )
+    return "房间问答已使用云端 API，请完全退出并重新打开上号后再试。";
   if (message.includes("cloud_ai_join_required")) return "请先进入一号房或二号房，再使用云端问答。";
   if (message.includes("cloud_ai_not_configured")) return "房间云端 AI 还没有配置好。";
   if (message.includes("cloud_ai_unsupported"))
@@ -114,6 +117,7 @@ export const RoomAskDialog = ({
   const [query, setQuery] = useState("");
   const [pending, setPending] = useState<PendingAction>();
   const [stopping, setStopping] = useState(false);
+  const [pendingSeconds, setPendingSeconds] = useState(0);
   const [answer, setAnswer] = useState<VoiceMemoryAnswer>();
   const [error, setError] = useState<string>();
   const [questionHistory, setQuestionHistory] =
@@ -145,6 +149,18 @@ export const RoomAskDialog = ({
     if (isOpen || pending !== "ask") return;
     void window.desktopApi.ai.cancelQuestion();
   }, [isOpen, pending]);
+
+  useEffect(() => {
+    if (pending !== "ask") {
+      setPendingSeconds(0);
+      return;
+    }
+    const startedAt = Date.now();
+    const update = () => setPendingSeconds(Math.floor((Date.now() - startedAt) / 1_000));
+    update();
+    const timer = window.setInterval(update, 1_000);
+    return () => window.clearInterval(timer);
+  }, [pending]);
 
   const ask = async () => {
     const value = query.trim();
@@ -203,14 +219,7 @@ export const RoomAskDialog = ({
             >
               <Sparkles className="size-4 text-[#4a8de8]" aria-hidden="true" />问
             </h2>
-            <button
-              type="button"
-              aria-label="关闭提问浮窗"
-              onClick={closeDialog}
-              className="grid size-8 shrink-0 place-items-center rounded-[10px] border border-[#dbe8f7] bg-white/80 text-[#718096] transition-colors hover:bg-white hover:text-[#26364d]"
-            >
-              <X className="size-4" aria-hidden="true" />
-            </button>
+            <DialogCloseButton label="关闭提问浮窗" onClick={closeDialog} />
           </header>
 
           <div className="room-ask-popover-body">
@@ -223,6 +232,7 @@ export const RoomAskDialog = ({
                 ref={inputRef}
                 value={query}
                 maxLength={500}
+                disabled={pending === "ask"}
                 aria-label="输入问题"
                 placeholder="想问什么？"
                 onChange={(event) => setQuery(event.target.value)}
@@ -232,6 +242,26 @@ export const RoomAskDialog = ({
                 className="min-w-0 flex-1 bg-transparent text-[15px] font-medium text-[#24344b] outline-none placeholder:font-normal placeholder:text-[#99a9bb]"
               />
             </div>
+            {pending === "ask" ? (
+              <div
+                className="mt-3 rounded-[14px] border border-[#d7e5f5] bg-white/68 px-4 py-3"
+                role="status"
+                aria-live="polite"
+              >
+                <strong className="block text-sm text-[#3974bd]">
+                  {pendingSeconds < 5
+                    ? "正在查找相关语音记忆"
+                    : pendingSeconds < 15
+                      ? "正在整理相关内容"
+                      : "正在生成回答，仍在正常处理"}
+                </strong>
+                <small className="mt-1 block text-xs text-[#718096]">
+                  {pendingSeconds >= 8
+                    ? `已等待 ${pendingSeconds} 秒，可以停止后重新提问。`
+                    : "问题已经提交，不需要重复点击。"}
+                </small>
+              </div>
+            ) : null}
             <div className="mt-3 flex flex-wrap justify-end gap-2">
               {pending === "ask" ? (
                 <Button
@@ -251,9 +281,14 @@ export const RoomAskDialog = ({
             </div>
 
             {error ? (
-              <p className="mt-4 rounded-[14px] bg-[#fff1f1] px-4 py-3 text-sm font-medium text-[#d94b54]">
-                {error}
-              </p>
+              <div className="mt-4 flex items-center gap-3 rounded-[14px] bg-[#fff1f1] px-4 py-3 text-sm font-medium text-[#d94b54]">
+                <p className="min-w-0 flex-1">{error}</p>
+                {query.trim() ? (
+                  <Button variant="secondary" onClick={() => void ask()}>
+                    重试
+                  </Button>
+                ) : null}
+              </div>
             ) : null}
 
             {answer ? (

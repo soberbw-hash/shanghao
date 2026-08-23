@@ -130,14 +130,6 @@ export const OverlayPage = () => {
     if (!progress || toolsVisibleRef.current || isDraggingRef.current) return;
     progressTweenRef.current?.kill();
     setIsHoverArming(true);
-    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
-      gsap.set(progress, { attr: { strokeDashoffset: 0 }, opacity: 0.82 });
-      progressTweenRef.current = gsap.delayedCall(TOOLS_REVEAL_SECONDS, () => {
-        gsap.set(progress, { opacity: 0 });
-        revealTools();
-      });
-      return;
-    }
     // Keep a short visible head on the first frame. A mathematically empty
     // dash looks like nothing happened even though the timer has started.
     gsap.set(progress, { attr: { strokeDashoffset: 98 }, opacity: 1 });
@@ -242,15 +234,7 @@ export const OverlayPage = () => {
     const root = rootRef.current;
     if (!root) return;
 
-    const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     const context = gsap.context(() => {
-      if (reduceMotion) {
-        gsap.set("[data-overlay-list], [data-overlay-row]", {
-          clearProps: "all",
-        });
-        return;
-      }
-
       gsap.fromTo(
         "[data-overlay-list]",
         { autoAlpha: 0, x: -8 },

@@ -42,6 +42,9 @@ export interface MemberStatus {
 }
 
 export const memberStatus = (member: RoomMember): MemberStatus => {
+  if (member.presenceState === MemberPresenceState.Updating) {
+    return { label: "正在更新", tone: "reconnecting", icon: RotateCw };
+  }
   if (member.presenceState === MemberPresenceState.Reconnecting) {
     return { label: "正在回来", tone: "reconnecting", icon: RotateCw };
   }

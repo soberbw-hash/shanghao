@@ -14,7 +14,7 @@ import {
 } from "./overlay-bounds";
 import { sendToWindow } from "./safe-web-contents";
 
-const devServerUrl = "http://127.0.0.1:5173";
+const devServerUrl = process.env.VITE_DEV_SERVER_URL?.trim() || "http://127.0.0.1:5173";
 const OVERLAY_WIDTH = 142;
 const OVERLAY_ROW_HEIGHT = 36;
 const OVERLAY_GAP = 4;

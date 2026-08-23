@@ -72,10 +72,6 @@ const onboardingModalPath = path.resolve(
   process.cwd(),
   "src/renderer/src/components/status/OnboardingModal.tsx",
 );
-const recordingDialogPath = path.resolve(
-  process.cwd(),
-  "src/renderer/src/components/status/RecordingSaveDialog.tsx",
-);
 const reconnectOverlayPath = path.resolve(
   process.cwd(),
   "src/renderer/src/components/status/ReconnectOverlay.tsx",
@@ -85,7 +81,7 @@ const updateModalPath = path.resolve(
   "src/renderer/src/components/status/UpdateModal.tsx",
 );
 
-test("gsap motion is scoped to intentional surfaces with reduced-motion fallback", () => {
+test("gsap motion is scoped to intentional surfaces with the full visual presentation", () => {
   const packageJson = JSON.parse(readFileSync(packagePath, "utf8")) as {
     dependencies?: Record<string, string>;
   };
@@ -133,12 +129,13 @@ test("gsap motion is scoped to intentional surfaces with reduced-motion fallback
   assert.equal(settingsSource.includes("data-gsap-settings"), true);
   assert.equal(chatSource.includes("data-gsap-chat-message"), true);
   assert.equal(sceneCharacterSource.includes("data-gsap-character"), true);
-  assert.equal(hookSource.includes("prefers-reduced-motion: reduce"), true);
+  assert.equal(hookSource.includes("prefers-reduced-motion: reduce"), false);
+  assert.equal(hookSource.includes("return appReduceMotion"), true);
   assert.equal(stylesSource.includes("[data-gsap-entry],"), false);
-  assert.equal(stylesSource.includes("@media (prefers-reduced-motion: reduce)"), true);
+  assert.equal(stylesSource.includes("@media (prefers-reduced-motion: reduce)"), false);
   assert.equal(appStoreSource.includes("startTransition"), true);
-  assert.equal(appSource.includes('initial={basePage === "room" ? { opacity: 0, x: 8 }'), false);
-  assert.equal(appSource.includes("animate={{ opacity: 1, x: 0 }}"), false);
+  assert.equal(appSource.includes('initial={basePage === "room" ? { opacity: 0, y: 4 }'), true);
+  assert.equal(appSource.includes("animate={{ opacity: 1, y: 0 }}"), true);
   assert.equal(animalSource.includes("layered-animal"), true);
   assert.equal(animalSource.includes("avatarLayerAssets"), true);
   assert.equal(animalSource.includes("LayerPart"), true);
@@ -343,17 +340,15 @@ test("route transitions remove the previous translucent page instead of stacking
   assert.equal(appSource.includes("key={basePage}"), true);
   assert.equal(appSource.includes('isSettingsOpen ? "is-obscured" : ""'), true);
   assert.equal(appSource.includes("{isSettingsOpen ? ("), true);
-  assert.equal(appSource.includes("animate={{ opacity: 1, x: 0 }}"), false);
+  assert.equal(appSource.includes("animate={{ opacity: 1, y: 0 }}"), true);
   assert.equal(appSource.includes("scale: 0.992"), false);
 });
 
 test("dialogs use interruptible compositor motion without full-screen blur animation", () => {
-  const dialogSources = [
-    onboardingModalPath,
-    recordingDialogPath,
-    reconnectOverlayPath,
-    updateModalPath,
-  ].map((filePath) => readFileSync(filePath, "utf8"));
+  const stylesSource = readRendererCss();
+  const dialogSources = [onboardingModalPath, reconnectOverlayPath, updateModalPath].map(
+    (filePath) => readFileSync(filePath, "utf8"),
+  );
 
   for (const source of dialogSources) {
     assert.equal(source.includes("AnimatePresence"), true);
@@ -362,17 +357,20 @@ test("dialogs use interruptible compositor motion without full-screen blur anima
     assert.equal(source.includes('exit="closed"'), true);
   }
 
-  const updateSource = dialogSources[3];
+  const updateSource = dialogSources[2];
   assert.equal(updateSource.includes("backdrop-blur-xl"), false);
   assert.equal(updateSource.includes('role={isForced ? "alertdialog" : "status"}'), true);
+  assert.equal(updateSource.includes("update-modal-backdrop"), true);
+  assert.equal(updateSource.includes("update-modal-surface"), true);
+  assert.equal(stylesSource.includes("blur(28px) saturate(132%)"), true);
 
-  const reconnectSource = dialogSources[2];
+  const reconnectSource = dialogSources[1];
   assert.equal(reconnectSource.includes("RECONNECT_SHOW_DELAY_MS = 350"), true);
   assert.equal(reconnectSource.includes("RECONNECT_MIN_VISIBLE_MS = 600"), true);
 
   const roomSource = readFileSync(roomOverlaysPath, "utf8");
   assert.equal(roomSource.includes('key="screen-source-picker"'), true);
-  assert.equal(roomSource.includes("dialogSurfaceVariants"), true);
+  assert.equal(roomSource.includes("largeDialogSurfaceVariants"), true);
 });
 
 test("local scene identity survives placeholder-to-server peer replacement", () => {

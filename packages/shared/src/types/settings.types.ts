@@ -49,6 +49,7 @@ export interface AppSettings {
   isAutoRecordOnJoinEnabled: boolean;
   micMonitorMode: MicMonitorMode;
   relayServerUrl?: string;
+  isDeveloperModeEnabled: boolean;
   memberVolumes: Record<string, number>;
   soundVolume: number;
   isSystemNotificationEnabled: boolean;

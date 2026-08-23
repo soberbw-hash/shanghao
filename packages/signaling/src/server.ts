@@ -62,13 +62,20 @@ import type { SignalingRoom } from "./room-manager";
 import { SessionTokenStore } from "./session-token-store";
 import { DailyRoomReportStore } from "./daily-room-report-store";
 import { CloudAiRuntime } from "./cloud-ai-runtime";
+import { AccountHttpController } from "./account-http-controller";
+import {
+  SupabaseAccountService,
+  type AccountBackend,
+  type VerifiedAccountIdentity,
+} from "./account-service";
 
-interface SignalingServerOptions {
+export interface SignalingServerOptions {
   port?: number;
   roomName: string;
   packageVersion?: string;
   logger?: (message: string, context?: Record<string, unknown>) => void;
   requiredClientVersion?: string;
+  accountBackend?: AccountBackend;
 }
 const compareVersions = (left: string, right: string): number => {
   const parse = (value: string) => {
@@ -170,6 +177,8 @@ interface SocketSession {
   invalidMessages: number;
   rateWindows: Map<string, { startedAt: number; count: number }>;
 }
+
+type SocketIdentity = ({ kind: "account" } & VerifiedAccountIdentity) | { kind: "guest" };
 
 const RATE_LIMITS: Record<string, { windowMs: number; limit: number }> = {
   chat_message: { windowMs: 10_000, limit: 40 },
@@ -314,6 +323,9 @@ export class SignalingServer extends EventEmitter {
   private readonly sessionTokens = new SessionTokenStore();
   private readonly iceConfigRateWindows = new Map<string, { startedAt: number; count: number }>();
   private readonly cloudAi: CloudAiRuntime;
+  private readonly accountBackend: AccountBackend;
+  private readonly accountHttp: AccountHttpController;
+  private readonly socketIdentities = new WeakMap<WebSocket, SocketIdentity>();
   constructor(private readonly options: SignalingServerOptions) {
     super();
     this.roomName = options.roomName;
@@ -338,94 +350,12 @@ export class SignalingServer extends EventEmitter {
     }
     this.dailyRoomReports = DailyRoomReportStore.create(dailyRoomReportFile, this.logger);
     this.cloudAi = new CloudAiRuntime(this.dailyRoomReports, this.logger);
+    this.accountBackend =
+      options.accountBackend ?? SupabaseAccountService.fromEnvironment(this.logger);
+    this.accountHttp = new AccountHttpController(this.accountBackend, this.logger);
     this.httpServer = createServer();
     this.httpServer.on("request", (request, response) => {
-      const contentLength = Number(request.headers["content-length"] ?? 0);
-      if (Number.isFinite(contentLength) && contentLength > 8 * 1024) {
-        response.writeHead(413, { "content-type": "text/plain; charset=utf-8" });
-        response.end("Payload too large");
-        request.destroy();
-        return;
-      }
-      if (request.url?.startsWith("/health")) {
-        const stats = this.roomManager.getStats();
-        const occupiedAvatarIds = [
-          ...getOccupiedAvatarIds(this.roomManager.getRoom(DEFAULT_CHANNEL_ID)),
-        ];
-        response.writeHead(200, { "content-type": "application/json; charset=utf-8" });
-        response.end(
-          JSON.stringify({
-            ok: true,
-            name: "shanghao-signaling",
-            roomName: this.roomName,
-            protocolVersion: APP_PROTOCOL_VERSION,
-            buildNumber: APP_BUILD_NUMBER,
-            packageVersion:
-              this.options.packageVersion ?? process.env.npm_package_version ?? "unknown",
-            uptime: process.uptime(),
-            activeRooms: stats.activeRooms,
-            connectedPeers: stats.connectedPeers,
-            maxRoomMembers: this.roomManager.getMaxRoomMembers(),
-            currentOnlineCount: stats.connectedPeers,
-            occupiedAvatarIds,
-            droppedRealtimeMessages: this.droppedRealtimeMessages,
-            turnConfigured:
-              getTurnUrls().length > 0 &&
-              Boolean(
-                process.env.TURN_SHARED_SECRET?.trim() ||
-                (process.env.TURN_USERNAME?.trim() && process.env.TURN_CREDENTIAL?.trim()),
-              ),
-            supportedTurnTransports: getSupportedTurnTransports(),
-            cloudAiConfigured: this.cloudAi.isConfigured(),
-            now: new Date().toISOString(),
-            serverTime: Date.now(),
-          }),
-        );
-        return;
-      }
-
-      if (request.method === "GET" && request.url?.startsWith("/ice-config")) {
-        if (!this.isAuthorizedHttpRequest(request)) {
-          response.writeHead(401, {
-            "cache-control": "no-store",
-            "content-type": "application/json; charset=utf-8",
-          });
-          response.end(JSON.stringify({ error: "unauthorized" }));
-          return;
-        }
-        if (!this.consumeIceConfigRateLimit(request)) {
-          response.writeHead(429, {
-            "cache-control": "no-store",
-            "content-type": "application/json; charset=utf-8",
-            "retry-after": "60",
-          });
-          response.end(JSON.stringify({ error: "rate_limited" }));
-          return;
-        }
-
-        const requestUrl = new URL(request.url, "http://localhost");
-        const peerId =
-          (requestUrl.searchParams.get("peerId") ?? "diagnostic-peer")
-            .replace(/[^a-zA-Z0-9._-]/g, "")
-            .slice(0, 64) || "diagnostic-peer";
-        const iceServers = buildIceServersForPeer(peerId) ?? [];
-        response.writeHead(200, {
-          "cache-control": "no-store",
-          "content-type": "application/json; charset=utf-8",
-        });
-        response.end(
-          JSON.stringify({
-            iceServers,
-            serverTime: Date.now(),
-            turnConfigured: iceServers.length > 0,
-            supportedTurnTransports: getSupportedTurnTransports(),
-          }),
-        );
-        return;
-      }
-
-      response.writeHead(404, { "content-type": "text/plain; charset=utf-8" });
-      response.end("ShangHao signaling server");
+      void this.handleHttpRequest(request, response);
     });
     this.wss = new WebSocketServer({
       server: this.httpServer,
@@ -440,8 +370,127 @@ export class SignalingServer extends EventEmitter {
         socket.close(4429, "server_busy");
         return;
       }
-      this.handleConnection(socket);
+      void this.authorizeSocket(socket, request);
     });
+  }
+
+  private async handleHttpRequest(
+    request: IncomingMessage,
+    response: import("node:http").ServerResponse,
+  ): Promise<void> {
+    if (await this.accountHttp.handle(request, response)) return;
+
+    const contentLength = Number(request.headers["content-length"] ?? 0);
+    if (Number.isFinite(contentLength) && contentLength > 8 * 1024) {
+      response.writeHead(413, { "content-type": "text/plain; charset=utf-8" });
+      response.end("Payload too large");
+      request.destroy();
+      return;
+    }
+    if (request.url?.startsWith("/health")) {
+      const stats = this.roomManager.getStats();
+      const occupiedAvatarIds = [
+        ...getOccupiedAvatarIds(this.roomManager.getRoom(DEFAULT_CHANNEL_ID)),
+      ];
+      response.writeHead(200, { "content-type": "application/json; charset=utf-8" });
+      response.end(
+        JSON.stringify({
+          ok: true,
+          name: "shanghao-signaling",
+          roomName: this.roomName,
+          protocolVersion: APP_PROTOCOL_VERSION,
+          buildNumber: APP_BUILD_NUMBER,
+          packageVersion:
+            this.options.packageVersion ?? process.env.npm_package_version ?? "unknown",
+          uptime: process.uptime(),
+          activeRooms: stats.activeRooms,
+          connectedPeers: stats.connectedPeers,
+          maxRoomMembers: this.roomManager.getMaxRoomMembers(),
+          currentOnlineCount: stats.connectedPeers,
+          occupiedAvatarIds,
+          droppedRealtimeMessages: this.droppedRealtimeMessages,
+          turnConfigured:
+            getTurnUrls().length > 0 &&
+            Boolean(
+              process.env.TURN_SHARED_SECRET?.trim() ||
+              (process.env.TURN_USERNAME?.trim() && process.env.TURN_CREDENTIAL?.trim()),
+            ),
+          supportedTurnTransports: getSupportedTurnTransports(),
+          cloudAiConfigured: this.cloudAi.isConfigured(),
+          accountConfigured: this.accountBackend.configured,
+          guestAllowed: this.accountHttp.guestAllowed,
+          now: new Date().toISOString(),
+          serverTime: Date.now(),
+        }),
+      );
+      return;
+    }
+
+    if (request.method === "GET" && request.url?.startsWith("/ice-config")) {
+      if (!this.isAuthorizedHttpRequest(request)) {
+        response.writeHead(401, {
+          "cache-control": "no-store",
+          "content-type": "application/json; charset=utf-8",
+        });
+        response.end(JSON.stringify({ error: "unauthorized" }));
+        return;
+      }
+      if (!this.consumeIceConfigRateLimit(request)) {
+        response.writeHead(429, {
+          "cache-control": "no-store",
+          "content-type": "application/json; charset=utf-8",
+          "retry-after": "60",
+        });
+        response.end(JSON.stringify({ error: "rate_limited" }));
+        return;
+      }
+      const requestUrl = new URL(request.url, "http://localhost");
+      const peerId =
+        (requestUrl.searchParams.get("peerId") ?? "diagnostic-peer")
+          .replace(/[^a-zA-Z0-9._-]/g, "")
+          .slice(0, 64) || "diagnostic-peer";
+      const iceServers = buildIceServersForPeer(peerId) ?? [];
+      response.writeHead(200, {
+        "cache-control": "no-store",
+        "content-type": "application/json; charset=utf-8",
+      });
+      response.end(
+        JSON.stringify({
+          iceServers,
+          serverTime: Date.now(),
+          turnConfigured: iceServers.length > 0,
+          supportedTurnTransports: getSupportedTurnTransports(),
+        }),
+      );
+      return;
+    }
+
+    response.writeHead(404, { "content-type": "text/plain; charset=utf-8" });
+    response.end("ShangHao signaling server");
+  }
+
+  private async authorizeSocket(socket: WebSocket, request: IncomingMessage): Promise<void> {
+    const authorization = request.headers.authorization?.trim() ?? "";
+    const accessToken = authorization.toLowerCase().startsWith("bearer ")
+      ? authorization.slice(7).trim()
+      : "";
+    if (accessToken && this.accountBackend.configured) {
+      try {
+        const identity = await this.accountBackend.verifyAccessToken(accessToken);
+        this.socketIdentities.set(socket, { kind: "account", ...identity });
+        this.handleConnection(socket);
+        return;
+      } catch {
+        socket.close(4401, "invalid_access_token");
+        return;
+      }
+    }
+    if (this.accountHttp.guestAllowed) {
+      this.socketIdentities.set(socket, { kind: "guest" });
+      this.handleConnection(socket);
+      return;
+    }
+    socket.close(4401, "account_required");
   }
 
   async listen(): Promise<number> {
@@ -681,7 +730,7 @@ export class SignalingServer extends EventEmitter {
       const peerId = session?.peerId;
 
       if (roomId && peerId) {
-        const marked = this.roomManager.markPeerDisconnected(roomId, peerId, socket);
+        const marked = this.roomManager.markSocketClosed(roomId, peerId, socket, code, reason);
         this.logger?.("peer socket closed", {
           roomId,
           peerId,
@@ -822,6 +871,16 @@ export class SignalingServer extends EventEmitter {
   }
 
   private handleJoin(socket: WebSocket, message: JoinChannelMessage): void {
+    const socketIdentity = this.socketIdentities.get(socket);
+    if (!socketIdentity) {
+      socket.close(4401, "identity_required");
+      return;
+    }
+    const accountIdentity = socketIdentity.kind === "account" ? socketIdentity : undefined;
+    const guestIdentity = `guest:${message.profileId?.trim() || message.peerId}`;
+    const authoritativeUserId = accountIdentity?.userId ?? guestIdentity;
+    const authoritativeProfileId = accountIdentity?.userId ?? guestIdentity;
+    const authoritativeNickname = accountIdentity?.displayName ?? message.nickname;
     const requiredClientVersion =
       this.options.requiredClientVersion?.trim() || process.env.REQUIRED_CLIENT_VERSION?.trim();
     if (
@@ -854,10 +913,10 @@ export class SignalingServer extends EventEmitter {
     }
 
     let existingRoom = this.roomManager.getRoom(message.roomId);
-    const supersededProfilePeer = message.profileId
+    const supersededProfilePeer = authoritativeProfileId
       ? existingRoom?.peers
           .listPeers()
-          .find((peer) => peer.profileId === message.profileId && peer.id !== message.peerId)
+          .find((peer) => peer.userId === authoritativeProfileId && peer.id !== message.peerId)
       : undefined;
 
     // A desktop restart creates a new peer id while retaining the stable profile id.
@@ -874,7 +933,7 @@ export class SignalingServer extends EventEmitter {
       }
       this.logger?.("superseded stale profile session", {
         roomId: message.roomId,
-        profileId: message.profileId,
+        profileId: authoritativeProfileId,
         previousPeerId: supersededProfilePeer.id,
         peerId: message.peerId,
       });
@@ -972,8 +1031,13 @@ export class SignalingServer extends EventEmitter {
     );
     const room = this.roomManager.addPeer(message.roomId, this.roomName, {
       id: message.peerId,
-      profileId: existingPeer?.profileId ?? message.profileId,
-      nickname: message.nickname,
+      userId: authoritativeUserId,
+      username: accountIdentity?.username,
+      displayName: authoritativeNickname,
+      avatarUrl: accountIdentity?.avatarUrl,
+      isGuest: !accountIdentity,
+      profileId: existingPeer?.profileId ?? authoritativeProfileId,
+      nickname: authoritativeNickname,
       avatarDataUrl: existingPeer?.avatarDataUrl,
       avatarHash: existingPeer?.avatarHash,
       avatarId: requestedAvatarId,
@@ -1006,8 +1070,8 @@ export class SignalingServer extends EventEmitter {
       void this.dailyRoomReports.then((store) =>
         store.recordJoin(
           message.roomId,
-          message.profileId || message.peerId,
-          message.nickname,
+          authoritativeUserId,
+          authoritativeNickname,
           room.peers.listConnectedPeers().length,
         ),
       );
@@ -1113,7 +1177,9 @@ export class SignalingServer extends EventEmitter {
       : message.workActivity === null
         ? null
         : undefined;
+    const author = room.peers.getPeer(message.peerId);
     const normalizedAvatar = normalizeAvatar(message.avatarDataUrl);
+    const authoritativeNickname = author?.isGuest ? message.nickname : author?.displayName;
     room.peers.updateMemberState(message.peerId, {
       isMuted: message.isMuted,
       isSpeaking: message.isSpeaking,
@@ -1124,7 +1190,7 @@ export class SignalingServer extends EventEmitter {
       gameIconDataUrl: normalizedGameIconDataUrl,
       musicActivity: normalizedMusicActivity,
       workActivity: normalizedWorkActivity,
-      nickname: message.nickname,
+      nickname: authoritativeNickname,
       avatarDataUrl: normalizedAvatar.avatarDataUrl,
       avatarHash: normalizedAvatar.avatarHash,
       avatarId: message.avatarId,
@@ -1150,7 +1216,7 @@ export class SignalingServer extends EventEmitter {
       gameIconDataUrl: normalizedGameIconDataUrl,
       musicActivity: normalizedMusicActivity,
       workActivity: normalizedWorkActivity,
-      nickname: message.nickname,
+      nickname: authoritativeNickname,
       avatarId: message.avatarId,
     };
     for (const peer of room.peers.listConnectedPeers()) {

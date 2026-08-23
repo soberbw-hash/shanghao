@@ -49,12 +49,16 @@ export const RoomDateCalendar = () => {
             <Circle />
             <Circle />
           </span>
+          <span className="room-date-calendar-month" aria-hidden="true">
+            {MONTH_FORMATTER.format(today)}
+          </span>
         </span>
         <time
           className="room-date-calendar-today"
           dateTime={DATE_ATTRIBUTE_FORMATTER.format(today)}
         >
           <strong>{DAY_FORMATTER.format(today)}</strong>
+          <span aria-hidden="true">{WEEKDAY_FORMATTER.format(today)}</span>
         </time>
       </div>
       <span className="scene-ambient-tooltip room-date-calendar-tooltip" role="tooltip">

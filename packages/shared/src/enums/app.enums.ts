@@ -42,6 +42,7 @@ export enum MemberPresenceState {
   Connecting = "connecting",
   Online = "online",
   Reconnecting = "reconnecting",
+  Updating = "updating",
 }
 
 export enum MemberSpeakingState {

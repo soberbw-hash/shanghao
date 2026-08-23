@@ -3,10 +3,11 @@ import { mkdir, readFile, readdir, rename, rm, writeFile } from "node:fs/promise
 import path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 
-import type {
-  VoiceMemoryRecord,
-  VoiceMemorySearchRequest,
-  VoiceMemorySearchResult,
+import {
+  mergeTranscriptIntoSentences,
+  type VoiceMemoryRecord,
+  type VoiceMemorySearchRequest,
+  type VoiceMemorySearchResult,
 } from "@private-voice/shared";
 
 interface IndexedVoiceMemoryEntry extends VoiceMemorySearchResult {
@@ -189,8 +190,9 @@ export class VoiceMemoryStore {
       createdAt: record.createdAt,
       score: 0,
     };
+    const readableTranscript = mergeTranscriptIntoSentences(record.transcript);
     const entries: IndexedVoiceMemoryEntry[] = [
-      ...record.transcript.map((segment) => ({
+      ...readableTranscript.map((segment) => ({
         ...base,
         startMs: segment.startMs,
         title: segment.nickname ?? segment.speakerId,

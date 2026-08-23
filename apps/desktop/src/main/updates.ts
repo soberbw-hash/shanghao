@@ -77,11 +77,12 @@ export class UpdateService {
   private downloadStarted = false;
   private downloadReady = false;
   private deferBackgroundDownload?: () => boolean;
+  private installHandoffPromise?: Promise<void>;
 
   constructor(
     private readonly currentVersion: string,
     private readonly writeLog?: (payload: RendererLogPayload) => Promise<void>,
-    private readonly beforeInstall?: () => void,
+    private readonly beforeInstall?: () => void | Promise<void>,
   ) {
     autoUpdater.autoDownload = false;
     autoUpdater.autoInstallOnAppQuit = false;
@@ -107,7 +108,7 @@ export class UpdateService {
       });
     });
     (autoUpdater as UpdaterWithQuitEvent).on("before-quit-for-update", () => {
-      this.beforeInstall?.();
+      void this.prepareInstallHandoff();
       void this.log("info", "automatic update requested app quit");
     });
     autoUpdater.on("error", (error) => {
@@ -225,7 +226,7 @@ export class UpdateService {
     }
   }
 
-  install(): void {
+  async install(): Promise<void> {
     if (!app.isPackaged || this.installStarted) {
       return;
     }
@@ -239,7 +240,13 @@ export class UpdateService {
     }
     this.installStarted = true;
     this.emit({ phase: "installing", message: "正在安装新版…" });
-    this.beforeInstall?.();
+    try {
+      await this.prepareInstallHandoff();
+    } catch (error) {
+      void this.log("warn", "update presence handoff was not acknowledged", {
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
     void this.log("info", "starting user-confirmed update install handoff");
     try {
       autoUpdater.quitAndInstall(true, true);
@@ -250,6 +257,13 @@ export class UpdateService {
         error: error instanceof Error ? error.message : String(error),
       });
     }
+  }
+
+  private prepareInstallHandoff(): Promise<void> {
+    if (!this.installHandoffPromise) {
+      this.installHandoffPromise = Promise.resolve(this.beforeInstall?.());
+    }
+    return this.installHandoffPromise;
   }
 
   async openReleases(): Promise<void> {

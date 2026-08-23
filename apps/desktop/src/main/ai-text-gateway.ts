@@ -1,13 +1,15 @@
 import type { AiTextProvider } from "@private-voice/shared";
 
-import { AiModelManager } from "./ai-model-manager";
-import { AiRuntimeManager } from "./ai-runtime-manager";
-import { CustomAiProviderStore } from "./custom-ai-provider-store";
-import { SettingsStore } from "./settings-store";
-import { SignalingClientBridge } from "./signaling-client";
+import type { AiModelManager } from "./ai-model-manager";
+import type { AiRuntimeManager } from "./ai-runtime-manager";
+import type { CustomAiProviderStore } from "./custom-ai-provider-store";
+import type { SettingsStore } from "./settings-store";
+import type { SignalingClientBridge } from "./signaling-client";
+
+export type AiTextPurpose = "organize" | "question";
 
 interface GenerateJsonRequest {
-  purpose: "organize" | "question";
+  purpose: AiTextPurpose;
   prompt: string;
   maxNewTokens: number;
   timeoutMs?: number;
@@ -25,6 +27,11 @@ const extractJsonObject = <T>(value: string): T => {
     throw new Error("ai_invalid_json_response");
   }
 };
+
+export const resolveAiTextProvider = (
+  purpose: AiTextPurpose,
+  organizerProvider: AiTextProvider,
+): AiTextProvider => (purpose === "question" ? "cloud" : organizerProvider);
 
 /** Routes summary/question work without coupling ASR to a particular text model. */
 export class AiTextGateway {
@@ -72,8 +79,8 @@ export class AiTextGateway {
     }
   }
 
-  private providerFor(purpose: GenerateJsonRequest["purpose"]): AiTextProvider {
+  private providerFor(purpose: AiTextPurpose): AiTextProvider {
     const snapshot = this.settings.getSnapshot();
-    return purpose === "organize" ? snapshot.aiOrganizerProvider : snapshot.aiRoomAskProvider;
+    return resolveAiTextProvider(purpose, snapshot.aiOrganizerProvider);
   }
 }

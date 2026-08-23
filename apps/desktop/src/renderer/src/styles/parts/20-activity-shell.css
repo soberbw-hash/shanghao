@@ -213,14 +213,6 @@
   }
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .music-activity-icon,
-  .music-activity-icon i,
-  .music-activity-marquee-track {
-    animation: none !important;
-  }
-}
-
 .startup-splash {
   position: relative;
   display: grid;

@@ -24,10 +24,15 @@ import type {
   RecordingLibrarySnapshot,
   RecordingLibraryItem,
   RecordingMarker,
+  RecordingSpeakerSegmentFinalizePayload,
+  RecordingSpeakerSegmentPayload,
+  RecordingSpeakerSegmentResponse,
 } from "./recording.types";
 import type {
   AiCustomProviderInput,
   AiCustomProviderStatus,
+  AiHuggingFaceAccessInput,
+  AiHuggingFaceAccessStatus,
   AiAsrModelId,
   AiModelAction,
   AiModelId,
@@ -43,6 +48,14 @@ import type {
   VoiceMemorySearchResult,
 } from "./ai.types";
 import type { LocalWeatherRequest, LocalWeatherSnapshot } from "./weather.types";
+import type {
+  AccountAvatarUpdateRequest,
+  AccountLoginRequest,
+  AccountPasswordResetRequest,
+  AccountProfileUpdateRequest,
+  AccountRegisterRequest,
+  AccountSnapshot,
+} from "./account.types";
 
 export interface RuntimeInfo {
   appName: string;
@@ -248,6 +261,7 @@ export interface DesktopApi {
       reports: Record<"main" | "side", import("./room.types").DailyRoomReport[]>,
     ) => Promise<void>;
     openExternal: (url: string) => Promise<void>;
+    openSystemSettings: (page: "microphone" | "sound" | "display") => Promise<void>;
     getLinkPreviewIcon: (url: string) => Promise<string | undefined>;
     consumeDeepLink: () => Promise<DeepLinkInvite | undefined>;
     onDeepLink: (listener: (invite: DeepLinkInvite) => void) => () => void;
@@ -320,6 +334,9 @@ export interface DesktopApi {
     getCustomProvider: () => Promise<AiCustomProviderStatus>;
     saveCustomProvider: (input: AiCustomProviderInput) => Promise<AiCustomProviderStatus>;
     clearCustomProvider: () => Promise<void>;
+    getHuggingFaceAccess: () => Promise<AiHuggingFaceAccessStatus>;
+    saveHuggingFaceAccess: (input: AiHuggingFaceAccessInput) => Promise<AiHuggingFaceAccessStatus>;
+    clearHuggingFaceAccess: () => Promise<void>;
     updateRuntimePressure: (pressure: AiRuntimePressure) => Promise<void>;
     onStatus: (listener: (snapshot: AiVoiceMemorySnapshot) => void) => () => void;
     onVoiceMemoryStatus: (listener: (record: VoiceMemoryRecord) => void) => () => void;
@@ -328,6 +345,17 @@ export interface DesktopApi {
     get: () => Promise<AppSettings>;
     save: (settings: Partial<AppSettings>) => Promise<AppSettings>;
     reset: () => Promise<AppSettings>;
+  };
+  account: {
+    getSnapshot: () => Promise<AccountSnapshot>;
+    login: (request: AccountLoginRequest) => Promise<AccountSnapshot>;
+    register: (request: AccountRegisterRequest) => Promise<AccountSnapshot>;
+    requestPasswordReset: (request: AccountPasswordResetRequest) => Promise<void>;
+    updateProfile: (request: AccountProfileUpdateRequest) => Promise<AccountSnapshot>;
+    updateAvatar: (request: AccountAvatarUpdateRequest) => Promise<AccountSnapshot>;
+    logout: () => Promise<AccountSnapshot>;
+    continueAsGuest: () => Promise<AccountSnapshot>;
+    onChanged: (listener: (snapshot: AccountSnapshot) => void) => () => void;
   };
   profile: {
     pickAvatar: () => Promise<ProfileAvatarSelection | undefined>;
@@ -370,6 +398,10 @@ export interface DesktopApi {
   };
   recording: {
     export: (payload: RecordingExportPayload) => Promise<RecordingExportResponse>;
+    saveSpeakerSegment: (
+      payload: RecordingSpeakerSegmentPayload,
+    ) => Promise<RecordingSpeakerSegmentResponse>;
+    finalizeSpeakerSegments: (payload: RecordingSpeakerSegmentFinalizePayload) => Promise<void>;
     chooseDirectory: () => Promise<string | undefined>;
     saveMarkers: (filePath: string, markers: RecordingMarker[]) => Promise<string>;
     applyAutomaticCleanup: (filePath: string) => Promise<RecordingAutomaticCleanupResult>;

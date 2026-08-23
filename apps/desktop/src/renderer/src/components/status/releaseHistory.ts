@@ -74,6 +74,46 @@ const HISTORICAL_RELEASE_EVIDENCE: readonly HistoricalReleaseEvidence[] = [
 
 export const RELEASE_HISTORY: readonly ReleaseHistoryEntry[] = [
   {
+    version: "3.0.3",
+    date: "2026-08-24",
+    title: "账号、模型与房间体验完善",
+    summary:
+      "3.0.3 补齐正式账号基础、统一 CUDA AI Runtime 与九套转录模型，修复模型下载校验、字级转录显示和屏幕分享流畅度，并恢复房间天气、角色、玻璃和操作反馈。",
+    highlights: [
+      "新增 Supabase 账号注册、登录、自动刷新、安全存储、十套默认头像和服务端验签身份；开发连接与正式 TLS 策略明确分离。",
+      "统一修复 GPU 模型 CUDA Runtime，按官方文件布局校验 Fun-ASR 与 FireRedASR，并为 Cohere 门控模型加入本机加密授权入口。",
+      "ForcedAligner 字级时间轴合并为可读句段，录音库模型选择与 AI 设置同步，保留精确跳转和按模型结果切换。",
+      "屏幕分享支持 1440p 与视频级帧率、观看者提示和无人观看停止；补齐共享窗口、弹窗与更新窗口玻璃背景。",
+      "恢复天气环境光、角色待机与说话反馈、房间层次动画，并扩展和统一界面音效音量。",
+    ],
+    details: [
+      {
+        title: "账号与身份",
+        items: [
+          "账号 Session 由 Windows 安全存储加密，Renderer 不接触 Refresh Token，房间服务器只信任验签后的 Supabase userId。",
+          "开发测试允许现有 ws/http 房间连接携带短期 Access Token，但密码和 Refresh Token 始终只访问 Supabase HTTPS。",
+          "服务端账号状态、旧版本 404 与 TLS 状态分别诊断，不再把未部署接口误报为安全连接问题。",
+        ],
+      },
+      {
+        title: "本地 AI 与录音",
+        items: [
+          "Qwen、GLM、Fun-ASR、FireRed、Paraformer、MOSS、Dolphin 与 Cohere 共享独立 CUDA Runtime，不量化也不静默回退 CPU。",
+          "模型管理区分下载、授权、完整性和 Runtime 失败；100% 后进入明确校验阶段，完整文件不会重复下载。",
+          "字级对齐结果按停顿、标点和说话人合并，整理内容使用可读句段，暂停进度保持真实百分比。",
+        ],
+      },
+      {
+        title: "房间、分享与反馈",
+        items: [
+          "屏幕分享提升动态内容帧率，显示观看成员，无人观看时自动收尾，并保留清晰 1440p 画面。",
+          "更新退出、异常重连和手动退出使用三种独立成员状态；音频菜单、录音通知和全局错误反馈统一修复。",
+          "天气、角色、玻璃高光、弹窗过渡、录音提示、下载完成与声音反馈重新形成完整视觉层次。",
+        ],
+      },
+    ],
+  },
+  {
     version: "3.0.2",
     date: "2026-08-22",
     title: "性能稳定与本地语音记忆修复",

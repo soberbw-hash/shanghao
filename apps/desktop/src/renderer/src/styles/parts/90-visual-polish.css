@@ -803,10 +803,3 @@
   backdrop-filter: blur(14px) saturate(135%);
   -webkit-backdrop-filter: blur(14px) saturate(135%);
 }
-
-.room-page.performance-gaming .window-frame,
-.room-page.performance-gaming .room-topbar,
-.room-page.performance-gaming .voice-dock {
-  backdrop-filter: blur(10px) saturate(120%);
-  -webkit-backdrop-filter: blur(10px) saturate(120%);
-}

@@ -247,7 +247,8 @@ test("room uses a real always-on-top overlay and a ten-second knock cooldown", (
   assert.equal(overlaySource.includes("screen.getCursorScreenPoint()"), true);
   assert.equal(overlaySource.includes("this.window.setPosition(this.snapX"), true);
   assert.equal(stylesSource.includes(".overlay-still-progress-value"), true);
-  assert.equal(roomSource.includes("pauseVisualMotion"), true);
+  assert.equal(roomSource.includes("pauseVisualMotion={roomCollection.isOpen}"), true);
+  assert.equal(roomSource.includes("performance-gaming"), false);
   assert.equal(stylesSource.includes(".team-island.is-visual-motion-paused *\n"), false);
   assert.equal(stylesSource.includes(".team-island.is-visual-motion-paused .weather-cloud"), true);
   assert.equal(teamIslandSource.includes("isCharacterMotionActive"), true);
@@ -426,6 +427,8 @@ test("scene seats align with the marked workstation positions", () => {
   assert.equal(dateCalendarSource.includes("DAY_FORMATTER"), true);
   assert.equal(dateCalendarSource.includes('new Intl.DateTimeFormat("en-US"'), true);
   assert.equal(dateCalendarSource.includes("room-date-calendar"), true);
+  assert.equal(dateCalendarSource.includes("room-date-calendar-month"), true);
+  assert.equal(dateCalendarSource.includes("WEEKDAY_FORMATTER.format(today)"), true);
   assert.equal(dateCalendarSource.includes("FULL_DATE_FORMATTER"), true);
   assert.equal(dateCalendarSource.includes("room-date-calendar-tooltip"), true);
   assert.equal(teamIslandSource.includes("SceneWallClock"), true);
@@ -451,6 +454,15 @@ test("scene seats align with the marked workstation positions", () => {
   assert.match(
     stylesSource,
     /\.room-date-calendar-today strong\s*\{[^}]*font-family:\s*\n\s*"Noto Sans SC Variable"[^}]*font-variant-numeric:\s*tabular-nums;/s,
+  );
+  assert.match(
+    stylesSource,
+    /\.room-date-calendar-paper\s*\{[^}]*0 8px 16px rgba\(72, 110, 143, 0\.075\)/s,
+  );
+  assert.equal(stylesSource.includes(".room-date-calendar-paper::before"), false);
+  assert.match(
+    stylesSource,
+    /\.room-date-calendar\s*\{[^}]*left:\s*52\.4%;[^}]*transform:\s*translateX\(-50%\);/s,
   );
   assert.equal(stylesSource.includes(".room-collection-shelf-position"), true);
   assert.equal(teamIslandSource.includes("RoomCollectionShelf"), true);
@@ -608,16 +620,34 @@ test("screen sharing is wired through the room page and WebRTC peer layer", () =
   assert.equal(screenPanelSource.includes("screen-share-drag-handle"), true);
   assert.equal(mainWindowSource.includes("setDisplayMediaRequestHandler"), true);
   assert.equal(screenCaptureServiceSource.includes("desktopCapturer.getSources"), true);
+  assert.equal(screenCaptureServiceSource.includes("this.waitForSources(true, true)"), true);
+  assert.equal(
+    screenCaptureServiceSource.includes(
+      "thumbnailSize: withThumbnails ? { width: 320, height: 180 }",
+    ),
+    true,
+  );
   assert.equal(mainWindowSource.includes('"loopback"'), true);
-  assert.equal(roomSource.includes("startSharingScreen(sourceId, quality)"), true);
+  assert.equal(roomSource.includes("startSharingScreen(sourceId, quality, origin)"), true);
   const overlaysSource = readFileSync(
     path.resolve(process.cwd(), "src/renderer/src/components/room/RoomOverlays.tsx"),
     "utf8",
   );
-  assert.equal(overlaysSource.includes("1440p"), false);
-  assert.equal(overlaysSource.includes('(["1080p", "720p"] as const)'), true);
+  assert.equal(overlaysSource.includes('{ value: "1440p", detail: "2K" }'), true);
+  assert.equal(overlaysSource.includes("SCREEN_SHARE_QUALITY_OPTIONS.map"), true);
   assert.equal(overlaysSource.includes("DEFAULT_SCREEN_SHARE_QUALITY"), true);
   assert.equal(overlaysSource.includes("aria-pressed={includeSystemAudio}"), true);
+});
+
+test("the first main window opens roomy while saved window bounds still take priority", () => {
+  const source = readFileSync(mainWindowPath, "utf8");
+
+  assert.match(source, /display\.workArea\.width \* 0\.88/);
+  assert.match(source, /display\.workArea\.height \* 0\.9/);
+  assert.match(source, /Math\.min\(\s*1_680,/);
+  assert.match(source, /Math\.min\(\s*1_050,/);
+  assert.match(source, /savedBounds\.width \?\? defaultWidth/);
+  assert.match(source, /savedBounds\.height \?\? defaultHeight/);
 });
 
 test("room scene supports clickable seats and silent-away without daily summaries", () => {
@@ -637,7 +667,7 @@ test("room scene supports clickable seats and silent-away without daily summarie
   assert.equal(homeSource.includes("dailySummary"), false);
 });
 
-test("entering a channel does not replay the whole home entrance animation", () => {
+test("entering a channel uses one lightweight route transition without replaying home gsap", () => {
   const homeSource = readFileSync(homePagePath, "utf8");
   const appSource = readFileSync(appPath, "utf8");
   const roomSource = readFileSync(roomPagePath, "utf8");
@@ -664,7 +694,9 @@ test("entering a channel does not replay the whole home entrance animation", () 
   assert.equal(appSource.includes("const roomPagePromise = loadRoomPage()"), true);
   assert.equal(roomSource.includes("{ autoAlpha: 0.94, y: 5 }"), false);
   assert.equal(appSource.includes('basePage === "room" ? { opacity: 0 } : false'), false);
-  assert.equal(appSource.includes("<motion.div"), false);
+  assert.equal(appSource.includes("<motion.div"), true);
+  assert.equal(appSource.includes("key={basePage}"), true);
+  assert.equal(appSource.includes("{ opacity: 0, y: 4 }"), true);
   assert.equal(roomSource.includes("[data-gsap-room='island']"), false);
 });
 

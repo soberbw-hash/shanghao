@@ -4,7 +4,11 @@ import { TARGET_SAMPLE_RATE } from "@private-voice/shared";
 import { RecordingService } from "@private-voice/recording";
 import { RecordingState } from "@private-voice/shared";
 
-import { createMixedCallStream } from "../features/recording/mixRoomAudio";
+import {
+  createMixedCallStream,
+  LOCAL_RECORDING_SOURCE_KEY,
+  type RecordingSourceIdentity,
+} from "../features/recording/mixRoomAudio";
 import { useRecordingStore } from "../store/recordingStore";
 import { useRoomStore } from "../store/roomStore";
 import { writeRendererLog } from "../utils/logger";
@@ -57,17 +61,38 @@ const getRecordingRuntime = (): RecordingRuntime => {
   return runtime;
 };
 
+const recordingSourceIdentities = (): Record<string, RecordingSourceIdentity> => {
+  const { room } = useRoomStore.getState();
+  const identities: Record<string, RecordingSourceIdentity> = {};
+  for (const member of room.members) {
+    if (member.isEmptySlot) continue;
+    const key = member.isLocal ? LOCAL_RECORDING_SOURCE_KEY : member.id;
+    identities[key] = {
+      speakerId: member.id,
+      displayNameSnapshot: member.nickname,
+    };
+  }
+  return identities;
+};
+
 export const useRecordingController = () => {
   const localStream = useRoomStore((state) => state.localStream);
   const remoteStreamsByPeer = useRoomStore((state) => state.remoteStreams);
+  const members = useRoomStore((state) => state.room.members);
   const setStatus = useRecordingStore((state) => state.setStatus);
   const addHistory = useRecordingStore((state) => state.addHistory);
   const runtime = useMemo(getRecordingRuntime, []);
   const recordingService = runtime.service;
 
   useEffect(() => {
-    runtime.mix?.sync(localStream, remoteStreamsByPeer);
-  }, [localStream, remoteStreamsByPeer, runtime]);
+    runtime.mix?.sync(localStream, remoteStreamsByPeer, recordingSourceIdentities());
+  }, [localStream, members, remoteStreamsByPeer, runtime]);
+
+  useEffect(() => {
+    // This is part of the recording pipeline, not a user preference. Reassert it for a
+    // recording runtime retained across renderer hot reloads as well as for new sessions.
+    runtime.mix?.setLoudnessBalanceEnabled(true);
+  }, [runtime]);
 
   useEffect(() => {
     const storedStatus = useRecordingStore.getState().status;
@@ -97,7 +122,26 @@ export const useRecordingController = () => {
 
     runtime.mix?.dispose();
     const roomState = useRoomStore.getState();
-    runtime.mix = createMixedCallStream(roomState.localStream, roomState.remoteStreams);
+    runtime.mix = createMixedCallStream(roomState.localStream, roomState.remoteStreams, {
+      loudnessBalanceEnabled: true,
+      sourceIdentities: recordingSourceIdentities(),
+      onDiagnostic: (event, context) => {
+        void writeRendererLog("recording", "info", event, context);
+      },
+      persistSpeakerSegment: async (segment) => {
+        const response = await window.desktopApi.recording.saveSpeakerSegment(segment);
+        if (!response.ok) {
+          throw new Error(response.errorMessage ?? "speaker_segment_save_failed");
+        }
+      },
+      finalizeSpeakerSegments: async (sessionId, recordingId, recordingFilePath) => {
+        await window.desktopApi.recording.finalizeSpeakerSegments({
+          sessionId,
+          recordingId,
+          recordingFilePath,
+        });
+      },
+    });
     const status = recordingService.start(runtime.mix.stream);
     if (status.state !== RecordingState.Recording) {
       runtime.mix.dispose();
@@ -108,16 +152,31 @@ export const useRecordingController = () => {
   }, [recordingService, runtime, setStatus]);
 
   const stopRecording = useCallback(async () => {
+    const mix = runtime.mix;
     try {
       const result = await recordingService.stop(
         {
-          targetSampleRate: 44_100,
+          targetSampleRate: 48_000,
           targetFormat: "m4a-aac",
           channels: 1,
           includeMixedCallAudio: true,
         },
         TARGET_SAMPLE_RATE,
       );
+
+      if (result.recordingId) {
+        await mix?.finish(result.recordingId, result.filePath).catch((error) => {
+          void writeRendererLog(
+            "recording",
+            "error",
+            "recording_speaker_segments_finalize_failed",
+            {
+              recordingId: result.recordingId,
+              error: error instanceof Error ? error.message : "unknown_error",
+            },
+          );
+        });
+      }
 
       addHistory(result);
       setStatus(recordingService.getState());

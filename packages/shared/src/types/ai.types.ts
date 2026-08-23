@@ -4,7 +4,10 @@ export type AiAsrModelId =
   | "fun-asr-nano-2512"
   | "glm-asr-nano-2512"
   | "fireredasr2-aed"
-  | "paraformer-zh";
+  | "paraformer-zh"
+  | "moss-transcribe-diarize-0.9b"
+  | "dolphin-cn-dialect-0.4b"
+  | "cohere-transcribe-2b";
 
 export const AI_ASR_MODEL_NAMES: Record<AiAsrModelId, string> = {
   "qwen3-asr-1.7b-force": "Qwen3-ASR-1.7B + ForcedAligner",
@@ -13,6 +16,9 @@ export const AI_ASR_MODEL_NAMES: Record<AiAsrModelId, string> = {
   "glm-asr-nano-2512": "GLM-ASR-Nano-2512",
   "fireredasr2-aed": "FireRedASR2-AED",
   "paraformer-zh": "Paraformer-zh + FSMN-VAD + CT-punc",
+  "moss-transcribe-diarize-0.9b": "MOSS-Transcribe-Diarize 0.9B",
+  "dolphin-cn-dialect-0.4b": "Dolphin-CN-Dialect 0.4B",
+  "cohere-transcribe-2b": "Cohere Transcribe 2B",
 };
 
 export type AiSupportModelId = "qwen3-forced-aligner-0.6b";
@@ -20,9 +26,19 @@ export type AiSupportModelId = "qwen3-forced-aligner-0.6b";
 export type AiModelId = AiAsrModelId | AiSupportModelId | "qwen35-4b";
 
 export type AiModelPhase =
-  "not_installed" | "checking" | "downloading" | "paused" | "installed" | "error";
+  | "not_installed"
+  | "queued"
+  | "checking"
+  | "downloading"
+  | "verifying"
+  | "preparing"
+  | "paused"
+  | "installed"
+  | "error";
 
 export type AiModelAction = "download" | "pause" | "resume" | "delete";
+
+export type AiModelFailureKind = "download" | "network" | "disk" | "integrity" | "access";
 
 export type AiProcessingMode = "after_game" | "low_resource" | "immediate" | "manual";
 
@@ -40,6 +56,14 @@ export interface AiCustomProviderStatus {
   baseUrl?: string;
   model?: string;
   hasApiKey: boolean;
+}
+
+export interface AiHuggingFaceAccessInput {
+  token: string;
+}
+
+export interface AiHuggingFaceAccessStatus {
+  configured: boolean;
 }
 
 export interface AiRuntimePressure {
@@ -68,11 +92,14 @@ export interface AiModelStatus {
   progress: number;
   bytesPerSecond?: number;
   errorMessage?: string;
+  failureKind?: AiModelFailureKind;
   updateInProgress: boolean;
   runtimeReady: boolean;
   runtimeMessage?: string;
   /** Shared components required before this model can run. */
   dependencies?: AiSupportModelId[];
+  /** Shared components that improve output when already installed, but never block this model. */
+  optionalDependencies?: AiSupportModelId[];
   /** Concise hardware warning shown without silently changing the official runtime. */
   hardwareNote?: string;
 }
@@ -118,8 +145,17 @@ export interface VoiceMemorySpeaker {
   speakerId: string;
   memberId?: string;
   nickname?: string;
+  displayNameSnapshot?: string;
   confidence: AiConfidence;
   manuallyConfirmed?: boolean;
+}
+
+/** Exact word/character timing returned by a native aligner. */
+export interface VoiceMemoryTranscriptWord {
+  id: string;
+  startMs: number;
+  endMs: number;
+  text: string;
 }
 
 export interface VoiceMemoryTranscriptSegment {
@@ -131,7 +167,10 @@ export interface VoiceMemoryTranscriptSegment {
   speakerId: string;
   memberId?: string;
   nickname?: string;
+  displayNameSnapshot?: string;
   confidence: AiConfidence;
+  /** Preserves word-level alignment while the segment text stays sentence-readable. */
+  words?: VoiceMemoryTranscriptWord[];
 }
 
 export interface VoiceMemoryChapter {
@@ -322,6 +361,9 @@ export interface VoiceMemorySpeakingObservation {
   offsetMs: number;
   memberId: string;
   nickname: string;
+  userId?: string;
+  usernameSnapshot?: string;
+  displayNameSnapshot?: string;
 }
 
 export interface AiAsrRuntimeStatus {

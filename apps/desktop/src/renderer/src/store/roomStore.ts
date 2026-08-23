@@ -23,6 +23,11 @@ import {
 } from "@private-voice/shared";
 
 interface LocalProfilePayload {
+  userId?: string;
+  username?: string;
+  displayName?: string;
+  avatarUrl?: string;
+  isGuest?: boolean;
   nickname?: string;
   avatarPath?: string;
   avatarDataUrl?: string;
@@ -43,6 +48,7 @@ interface RoomStoreState {
   remoteStreams: Record<string, MediaStream>;
   remoteScreenFrames: Record<string, RemoteScreenFrame>;
   remoteScreenSharing: Record<string, true>;
+  localScreenShareViewerPeerIds: string[];
   connectionHealth: ConnectionHealth;
   chatMessages: ChatMessage[];
   collectionItems: RoomCollectionItem[];
@@ -57,6 +63,7 @@ interface RoomStoreState {
   setRemoteStream: (peerId: string, stream?: MediaStream) => void;
   setRemoteScreenFrame: (peerId: string, frame?: RemoteScreenFrame) => void;
   setRemoteScreenSharing: (peerId: string, isSharing: boolean) => void;
+  setLocalScreenShareViewerPeerIds: (peerIds: string[]) => void;
   setConnectionHealth: (health: Partial<ConnectionHealth>) => void;
   addChatMessage: (message: ChatMessage) => void;
   updateChatDelivery: (
@@ -132,6 +139,11 @@ const createEmptySlot = (index: number): RoomMember => ({
 
 const createLocalPreviewMember = (profile?: LocalProfilePayload): RoomMember => ({
   id: "local-preview",
+  userId: profile?.userId,
+  username: profile?.username,
+  displayName: profile?.displayName,
+  avatarUrl: profile?.avatarUrl,
+  isGuest: profile?.isGuest,
   nickname: profile?.nickname?.trim() || localMemberLabel,
   avatarPath: profile?.avatarPath,
   avatarDataUrl: profile?.avatarDataUrl,
@@ -202,6 +214,11 @@ const areMembersEqual = (left: RoomMember[], right: RoomMember[]): boolean => {
     if (!candidate) return false;
     return (
       member.id === candidate.id &&
+      member.userId === candidate.userId &&
+      member.username === candidate.username &&
+      member.displayName === candidate.displayName &&
+      member.avatarUrl === candidate.avatarUrl &&
+      member.isGuest === candidate.isGuest &&
       member.profileId === candidate.profileId &&
       member.nickname === candidate.nickname &&
       member.avatarPath === candidate.avatarPath &&
@@ -266,6 +283,7 @@ export const useRoomStore = create<RoomStoreState>((set) => ({
   remoteStreams: {},
   remoteScreenFrames: {},
   remoteScreenSharing: {},
+  localScreenShareViewerPeerIds: [],
   connectionHealth: {
     latencyMs: 0,
     jitterMs: 0,
@@ -374,6 +392,8 @@ export const useRoomStore = create<RoomStoreState>((set) => ({
       else delete remoteScreenSharing[peerId];
       return { remoteScreenSharing };
     }),
+  setLocalScreenShareViewerPeerIds: (peerIds) =>
+    set({ localScreenShareViewerPeerIds: [...new Set(peerIds)].sort() }),
   setConnectionHealth: (healthPatch) =>
     set((state) => ({
       connectionHealth: {
@@ -454,6 +474,7 @@ export const useRoomStore = create<RoomStoreState>((set) => ({
       remoteStreams: {},
       remoteScreenFrames: {},
       remoteScreenSharing: {},
+      localScreenShareViewerPeerIds: [],
       chatMessages: [],
       collectionItems: [],
       sceneReactions: [],
@@ -467,6 +488,11 @@ export const useRoomStore = create<RoomStoreState>((set) => ({
       const baseMember = existingLocalMember ?? createLocalPreviewMember(profile);
       const nextLocalMember: RoomMember = {
         ...baseMember,
+        userId: profile.userId ?? baseMember.userId,
+        username: profile.username ?? baseMember.username,
+        displayName: profile.displayName ?? baseMember.displayName,
+        avatarUrl: profile.avatarUrl ?? baseMember.avatarUrl,
+        isGuest: profile.isGuest ?? baseMember.isGuest,
         nickname: profile.nickname?.trim() || baseMember.nickname || localMemberLabel,
         avatarPath: profile.avatarPath,
         avatarDataUrl: profile.avatarDataUrl,
@@ -549,6 +575,7 @@ export const useRoomStore = create<RoomStoreState>((set) => ({
       remoteStreams: {},
       remoteScreenFrames: {},
       remoteScreenSharing: {},
+      localScreenShareViewerPeerIds: [],
       chatMessages: [],
       collectionItems: [],
       sceneReactions: [],

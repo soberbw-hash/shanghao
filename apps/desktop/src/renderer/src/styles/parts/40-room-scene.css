@@ -107,16 +107,6 @@
   box-shadow: 0 0 0 3px rgba(77, 163, 255, 0.12);
 }
 
-.room-page.performance-gaming .room-topbar,
-.room-page.performance-gaming .voice-dock,
-.room-page.performance-gaming .temporary-chat-panel {
-  backdrop-filter: blur(10px) saturate(125%);
-}
-
-.room-page.performance-gaming .team-island-stage {
-  filter: none;
-}
-
 .team-island-stage {
   background:
     linear-gradient(90deg, rgba(213, 227, 242, 0.34) 0 1px, transparent 1px 100%),

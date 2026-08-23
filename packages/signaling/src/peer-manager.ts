@@ -13,6 +13,11 @@ import type { WebSocket } from "ws";
 
 export interface PeerSession {
   id: string;
+  userId: string;
+  username?: string;
+  displayName: string;
+  avatarUrl?: string;
+  isGuest: boolean;
   profileId?: string;
   nickname: string;
   avatarDataUrl?: string;
@@ -32,6 +37,7 @@ export interface PeerSession {
   joinedAt: string;
   lastHeartbeatAt: number;
   disconnectedAt?: number;
+  disconnectedFor?: "reconnecting" | "updating";
 }
 
 export class PeerManager {
@@ -57,13 +63,18 @@ export class PeerManager {
     return this.listPeers().filter((peer) => !peer.disconnectedAt);
   }
 
-  markDisconnected(peerId: string, socket: WebSocket): boolean {
+  markDisconnected(
+    peerId: string,
+    socket: WebSocket,
+    disconnectedFor: PeerSession["disconnectedFor"] = "reconnecting",
+  ): boolean {
     const peer = this.peers.get(peerId);
     if (!peer || peer.socket !== socket) {
       return false;
     }
 
     peer.disconnectedAt = Date.now();
+    peer.disconnectedFor = disconnectedFor;
     return true;
   }
 
@@ -125,6 +136,11 @@ export class PeerManager {
   toRoomMembers(localPeerId?: string): RoomMember[] {
     return this.listPeers().map((peer) => ({
       id: peer.id,
+      userId: peer.userId,
+      username: peer.username,
+      displayName: peer.displayName,
+      avatarUrl: peer.avatarUrl,
+      isGuest: peer.isGuest,
       profileId: peer.profileId,
       nickname: peer.nickname,
       avatarHash: peer.avatarHash,
@@ -140,7 +156,9 @@ export class PeerManager {
       musicActivity: peer.musicActivity,
       workActivity: peer.workActivity,
       presenceState: peer.disconnectedAt
-        ? MemberPresenceState.Reconnecting
+        ? peer.disconnectedFor === "updating"
+          ? MemberPresenceState.Updating
+          : MemberPresenceState.Reconnecting
         : MemberPresenceState.Online,
       speakingState: peer.isMuted
         ? MemberSpeakingState.Muted

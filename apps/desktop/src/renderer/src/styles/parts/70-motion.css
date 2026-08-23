@@ -94,17 +94,6 @@
   }
 }
 
-@media (prefers-reduced-motion: reduce) {
-  *,
-  *::before,
-  *::after {
-    scroll-behavior: auto !important;
-    animation-duration: 0.001ms !important;
-    animation-iteration-count: 1 !important;
-    transition-duration: 0.001ms !important;
-  }
-}
-
 @keyframes startup-progress {
   from {
     transform: translateX(-110%);
@@ -420,21 +409,5 @@
   .entry-ready-avatar {
     width: 154px;
     height: 154px;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  *,
-  *::before,
-  *::after {
-    scroll-behavior: auto !important;
-    animation-duration: 1ms !important;
-    animation-iteration-count: 1 !important;
-    transition-duration: 1ms !important;
-  }
-
-  .animal-motion-sprite,
-  .layered-animal-part {
-    animation: none !important;
   }
 }

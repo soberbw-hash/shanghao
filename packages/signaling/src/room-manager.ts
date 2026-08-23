@@ -86,8 +86,29 @@ export class RoomManager {
     }
   }
 
-  markPeerDisconnected(roomId: string, peerId: string, socket: PeerSession["socket"]): boolean {
-    return this.rooms.get(roomId)?.peers.markDisconnected(peerId, socket) ?? false;
+  markPeerDisconnected(
+    roomId: string,
+    peerId: string,
+    socket: PeerSession["socket"],
+    disconnectedFor: PeerSession["disconnectedFor"] = "reconnecting",
+  ): boolean {
+    return this.rooms.get(roomId)?.peers.markDisconnected(peerId, socket, disconnectedFor) ?? false;
+  }
+
+  markSocketClosed(
+    roomId: string,
+    peerId: string,
+    socket: PeerSession["socket"],
+    code: number,
+    reason: Buffer,
+  ): boolean {
+    const updating = code === 4002 && reason.toString() === "client_updating";
+    return this.markPeerDisconnected(
+      roomId,
+      peerId,
+      socket,
+      updating ? "updating" : "reconnecting",
+    );
   }
 
   canJoin(roomId: string): boolean {
@@ -103,11 +124,14 @@ export class RoomManager {
     const stalePeers: Array<{ roomId: string; peerId: string }> = [];
     const staleAfterMs = SIGNALING_PING_TIMEOUT_MS + HEARTBEAT_INTERVAL_MS;
     const reconnectGraceMs = 20_000;
+    const updateGraceMs = 10 * 60_000;
 
     for (const room of this.rooms.values()) {
       for (const peer of room.peers.listPeers()) {
         if (
-          (peer.disconnectedAt && Date.now() - peer.disconnectedAt > reconnectGraceMs) ||
+          (peer.disconnectedAt &&
+            Date.now() - peer.disconnectedAt >
+              (peer.disconnectedFor === "updating" ? updateGraceMs : reconnectGraceMs)) ||
           (!peer.disconnectedAt && Date.now() - peer.lastHeartbeatAt > staleAfterMs)
         ) {
           stalePeers.push({ roomId: room.roomId, peerId: peer.id });

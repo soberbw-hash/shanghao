@@ -408,7 +408,7 @@ export const captureUi = async (
       await sleep(300);
     } else if (options.mode === "settings-ai") {
       await clickButtonByLabel(window, "AI 功能");
-      if (!(await waitForVisibleSelector(window, "#asr-models-title"))) {
+      if (!(await waitForVisibleSelector(window, "#model-management-title"))) {
         throw new Error("AI 功能页没有在预期时间内完成渲染");
       }
       await sleep(300);
@@ -472,6 +472,22 @@ export const captureUi = async (
   if (options.mode === "screen-share-expanded") {
     await clickButtonByLabel(window, "放大屏幕分享");
     await sleep(800);
+  }
+
+  const scrollSelector = process.env.SHANGHAO_CAPTURE_SCROLL_SELECTOR?.trim();
+  if (scrollSelector) {
+    await window.webContents.executeJavaScript(
+      `
+        (() => {
+          const element = document.querySelector(${JSON.stringify(scrollSelector)});
+          if (!(element instanceof HTMLElement)) return false;
+          element.scrollIntoView({ block: "center", inline: "nearest" });
+          return true;
+        })()
+      `,
+      true,
+    );
+    await sleep(350);
   }
 
   const hoverSelector = process.env.SHANGHAO_CAPTURE_HOVER_SELECTOR?.trim();

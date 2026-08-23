@@ -1,4 +1,7 @@
 import { lazy, Suspense, useEffect } from "react";
+import { motion } from "framer-motion";
+
+import { APPLE_MOTION_DURATION, APPLE_MOTION_EASE } from "@private-voice/shared";
 
 import { AppErrorBoundary } from "../components/layout/AppErrorBoundary";
 import { AppShell } from "../components/layout/AppShell";
@@ -10,10 +13,12 @@ import { useGlobalMuteSync } from "../hooks/useGlobalMuteSync";
 import { useLocalAudioTransport } from "../hooks/useLocalAudioTransport";
 import { useUiFeedbackSounds } from "../hooks/useUiFeedbackSounds";
 import { HomePage } from "../pages/HomePage";
+import { AccountPage } from "../pages/AccountPage";
 import { SharedOverlays } from "../pages/SharedOverlays";
 import { useAppStore } from "../store/appStore";
 import { useRoomStore } from "../store/roomStore";
 import { useSettingsStore } from "../store/settingsStore";
+import { useAccountStore } from "../store/accountStore";
 import { writeRendererLog } from "../utils/logger";
 import { StartupRecoveryPage } from "../components/status/StartupRecoveryPage";
 import { StartupSplashPage } from "../components/status/StartupSplashPage";
@@ -59,8 +64,54 @@ export const App = () => {
   const setSettingsReturnTo = useAppStore((state) => state.setSettingsReturnTo);
   const isHydrating = useSettingsStore((state) => state.isHydrating);
   const settings = useSettingsStore((state) => state.settings);
+  const saveSettings = useSettingsStore((state) => state.saveSettings);
   const avatarDataUrl = useSettingsStore((state) => state.avatarDataUrl);
+  const accountSnapshot = useAccountStore((state) => state.snapshot);
+  const isAccountHydrating = useAccountStore((state) => state.isHydrating);
+  const hydrateAccount = useAccountStore((state) => state.hydrate);
   const syncLocalProfile = useRoomStore((state) => state.syncLocalProfile);
+
+  useEffect(() => {
+    void hydrateAccount();
+  }, [hydrateAccount]);
+
+  useEffect(() => {
+    const profile = accountSnapshot.profile;
+    if (!settings || accountSnapshot.status !== "signed_in" || !profile) return;
+    if (
+      settings.profileId === profile.userId &&
+      settings.nickname === profile.displayName &&
+      settings.hasCompletedProfileSetup
+    ) {
+      return;
+    }
+    void saveSettings({
+      profileId: profile.userId,
+      nickname: profile.displayName,
+      hasCompletedProfileSetup: true,
+    });
+  }, [accountSnapshot.profile, accountSnapshot.status, saveSettings, settings]);
+
+  useEffect(() => {
+    const root = document.documentElement;
+    root.style.fontSize = `${settings?.uiScale ?? 100}%`;
+    return () => {
+      root.style.removeProperty("font-size");
+    };
+  }, [settings?.uiScale]);
+
+  useEffect(() => {
+    const root = document.documentElement;
+    const syncFocus = () => root.classList.toggle("is-app-window-focused", document.hasFocus());
+    syncFocus();
+    window.addEventListener("focus", syncFocus);
+    window.addEventListener("blur", syncFocus);
+    return () => {
+      window.removeEventListener("focus", syncFocus);
+      window.removeEventListener("blur", syncFocus);
+      root.classList.remove("is-app-window-focused");
+    };
+  }, []);
 
   useEffect(() => {
     if (!settings || bootstrapPhase !== "ready") {
@@ -68,12 +119,17 @@ export const App = () => {
     }
 
     syncLocalProfile({
-      nickname: settings.nickname,
+      userId: accountSnapshot.profile?.userId ?? accountSnapshot.guestId,
+      username: accountSnapshot.profile?.username,
+      displayName: accountSnapshot.profile?.displayName,
+      avatarUrl: accountSnapshot.profile?.avatarUrl,
+      isGuest: accountSnapshot.status === "guest",
+      nickname: accountSnapshot.profile?.displayName ?? settings.nickname,
       avatarPath: settings.avatarPath,
       avatarDataUrl,
       avatarId: settings.avatarId,
     });
-  }, [avatarDataUrl, bootstrapPhase, settings, syncLocalProfile]);
+  }, [accountSnapshot, avatarDataUrl, bootstrapPhase, settings, syncLocalProfile]);
 
   useEffect(() => {
     const handleError = (event: ErrorEvent) => {
@@ -138,6 +194,18 @@ export const App = () => {
       return <StartupSplashPage message={bootstrapMessage} />;
     }
 
+    if (isAccountHydrating || accountSnapshot.status === "loading") {
+      return <StartupSplashPage message="正在检查登录状态..." />;
+    }
+
+    if (
+      accountSnapshot.status === "signed_out" ||
+      accountSnapshot.status === "verification_required" ||
+      accountSnapshot.status === "unavailable"
+    ) {
+      return <AccountPage />;
+    }
+
     if (bootstrapPhase === "update-gate") {
       return <UpdateGatePage />;
     }
@@ -162,9 +230,18 @@ export const App = () => {
             className={`app-page-layer app-page-base ${isSettingsOpen ? "is-obscured" : ""}`}
             aria-hidden={isSettingsOpen || undefined}
           >
-            <div key={basePage} className="app-route-motion">
+            <motion.div
+              key={basePage}
+              className="app-route-motion"
+              initial={basePage === "room" ? { opacity: 0, y: 4 } : false}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{
+                duration: APPLE_MOTION_DURATION.panel,
+                ease: APPLE_MOTION_EASE,
+              }}
+            >
               {basePage === "room" ? <RoomPage /> : <HomePage />}
-            </div>
+            </motion.div>
           </div>
           {isSettingsOpen ? (
             <div className="app-page-layer app-page-settings">

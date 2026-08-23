@@ -1,12 +1,14 @@
 import { CalendarDays, Gamepad2, MessageCircle, MonitorUp } from "lucide-react";
-import { motion, useReducedMotion } from "framer-motion";
+import { motion } from "framer-motion";
 import { createPortal } from "react-dom";
 
 import type { DailyRoomReport } from "@private-voice/shared";
 
 import { Button } from "../base/Button";
+import { DialogCloseButton } from "../base/DialogCloseButton";
 import { buildDailyRoomReportHighlights } from "../../features/daily-report/dailyRoomReportHighlights";
 import { overlayScrimVariants, reducedFadeVariants } from "../../features/motion/motionPresets";
+import { usePrefersReducedMotion as useReducedMotion } from "../../hooks/usePrefersReducedMotion";
 
 const reportSurfaceVariants = {
   initial: { opacity: 0, y: 8, scale: 0.985 },
@@ -54,6 +56,14 @@ export const DailyRoomReportModal = ({
             ? "昨天有人来开黑，也留下了战绩 🎮"
             : "昨天有人来坐了坐，房间记得这次碰面 ☕");
 
+  useEffect(() => {
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onClose();
+    };
+    document.addEventListener("keydown", closeOnEscape);
+    return () => document.removeEventListener("keydown", closeOnEscape);
+  }, [onClose]);
+
   return createPortal(
     <motion.div
       variants={reduceMotion ? reducedFadeVariants : overlayScrimVariants}
@@ -70,14 +80,17 @@ export const DailyRoomReportModal = ({
         role="dialog"
         aria-modal="true"
         aria-labelledby="daily-room-report-title"
-        className="modal-surface max-h-[calc(100vh-48px)] w-full max-w-[520px] overflow-y-auto rounded-[30px] p-7"
+        className="modal-surface relative max-h-[calc(100vh-48px)] w-full max-w-[520px] overflow-y-auto rounded-[30px] p-7"
       >
+        <div className="absolute right-5 top-5">
+          <DialogCloseButton onClick={onClose} />
+        </div>
         <div className="inline-flex items-center gap-2 text-xs font-bold text-[#4779b8]">
           <CalendarDays className="h-4 w-4" /> {report.date} · {roomName}
         </div>
         <h2
           id="daily-room-report-title"
-          className="mt-3 text-[28px] font-[760] tracking-[-0.04em] text-[#172235]"
+          className="mt-3 pr-12 text-[28px] font-[760] tracking-[-0.04em] text-[#172235]"
         >
           昨日房间
         </h2>
@@ -166,3 +179,4 @@ export const DailyRoomReportModal = ({
     document.body,
   );
 };
+import { useEffect } from "react";

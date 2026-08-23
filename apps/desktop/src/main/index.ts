@@ -2,11 +2,13 @@ import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
-import { app, BrowserWindow, Tray, dialog, protocol } from "electron";
+import { app, BrowserWindow, Tray, dialog, net, protocol } from "electron";
 
 import { APP_ID, IPC_CHANNELS, type DeepLinkInvite } from "@private-voice/shared";
 
 import { DiagnosticsService } from "./diagnostics";
+import { AccountDesktopService } from "./account-service";
+import { AccountSessionStore } from "./account-session-store";
 import { registerIpcHandlers } from "./ipc";
 import { SettingsStore } from "./settings-store";
 import { ShortcutController } from "./shortcuts";
@@ -22,6 +24,7 @@ import { AiRuntimeManager } from "./ai-runtime-manager";
 import { AiVoiceMemoryService } from "./ai-voice-memory-service";
 import { AiTextGateway } from "./ai-text-gateway";
 import { CustomAiProviderStore } from "./custom-ai-provider-store";
+import { HuggingFaceAccessStore } from "./hugging-face-access-store";
 import { preparePersistentAiStorage } from "./ai-storage";
 import { prepareBundledAiRuntime } from "./ai-runtime-package";
 import { VoiceMemoryStore } from "./voice-memory-store";
@@ -49,6 +52,7 @@ let gameDetectionController: GameDetectionController | null = null;
 let aiModelManager: AiModelManager | null = null;
 let aiRuntimeManager: AiRuntimeManager | null = null;
 let lifecycleRecoveryService: LifecycleRecoveryService | null = null;
+let accountService: AccountDesktopService | null = null;
 let pendingDeepLink = findDeepLinkInvite(process.argv);
 
 const QUIT_FOR_INSTALL_ARG = "--shanghao-quit-for-install";
@@ -101,6 +105,7 @@ const prepareForQuit = (reason: string) => {
   overlayController?.close();
   gameDetectionController?.stop();
   lifecycleRecoveryService?.stop();
+  accountService?.dispose();
   aiRuntimeManager?.stop();
   shortcutsController?.dispose();
 
@@ -263,16 +268,40 @@ const bootstrap = async (): Promise<void> => {
     }
   }
 
+  const accounts = new AccountDesktopService(
+    new AccountSessionStore(app.getPath("userData")),
+    () => settingsStore?.getSnapshot().relayServerUrl,
+    (input, init) => net.fetch(input instanceof URL ? input.toString() : input, init),
+    (payload) => diagnostics?.writeLog(payload) ?? Promise.resolve(),
+    !app.isPackaged,
+  );
+  accountService = accounts;
+  await accounts.initialize();
   const signalingClient = new SignalingClientBridge(
     (payload) => diagnostics?.writeLog(payload) ?? Promise.resolve(),
+    () => accounts.getAccessToken(),
   );
   const customAiProvider = new CustomAiProviderStore(
+    (payload) => diagnostics?.writeLog(payload) ?? Promise.resolve(),
+  );
+  const huggingFaceAccess = new HuggingFaceAccessStore(
+    app.getPath("userData"),
     (payload) => diagnostics?.writeLog(payload) ?? Promise.resolve(),
   );
   const updates = new UpdateService(
     app.getVersion(),
     (payload) => diagnostics?.writeLog(payload) ?? Promise.resolve(),
-    () => prepareForQuit("auto-update"),
+    async () => {
+      const acknowledged = await signalingClient.prepareForUpdate();
+      await diagnostics?.writeLog({
+        category: "signaling",
+        level: acknowledged ? "info" : "warn",
+        message: acknowledged
+          ? "Update presence acknowledged before installer handoff"
+          : "No active room acknowledged update presence before installer handoff",
+      });
+      prepareForQuit("auto-update");
+    },
   );
   const shortcuts = new ShortcutController(
     () => mainWindow,
@@ -320,6 +349,8 @@ const bootstrap = async (): Promise<void> => {
     aiStorage.models,
     gameDetection,
     (payload) => diagnostics?.writeLog(payload) ?? Promise.resolve(),
+    (input, init) => net.fetch(input, init),
+    () => huggingFaceAccess.accessToken(),
   );
   await aiModels.initialize(settings.aiProcessingMode, settings.aiAsrModel);
   updates.setBackgroundDownloadGuard(() => aiModels.shouldDeferBackgroundDownload());
@@ -361,12 +392,23 @@ const bootstrap = async (): Promise<void> => {
     await mkdir(aiRuntimeDirectory, { recursive: true });
     await copyFile(bundledAsrRunner, runtimeAsrRunner);
   }
-  const aiRuntime = new AiRuntimeManager(aiRuntimeDirectory, {
-    model: (id) => aiModels.getActiveModelDirectory(id),
-    qwen: () => aiModels.getActiveModelDirectory("qwen35-4b"),
-    activeAsr: () => aiModels.getActiveAsrModel(),
+  const aiRuntime = new AiRuntimeManager(
+    aiRuntimeDirectory,
+    {
+      model: (id) => aiModels.getActiveModelDirectory(id),
+      qwen: () => aiModels.getActiveModelDirectory("qwen35-4b"),
+      activeAsr: () => aiModels.getActiveAsrModel(),
+    },
+    {
+      writeLog: (payload) => diagnostics?.writeLog(payload) ?? Promise.resolve(),
+    },
+  );
+  aiModels.setRuntimePreparer(async (id) => {
+    const prepared = await aiRuntime.prepareModelRuntime(id);
+    const statuses = await aiRuntime.modelRuntimeStatuses();
+    aiModels.setRuntimeStatuses(statuses);
+    return statuses[id] ?? prepared;
   });
-  aiModels.setRuntimePreparer((id) => aiRuntime.prepareModelRuntime(id));
   aiRuntime.onQwenState((health) => {
     aiModels.setQwenRuntimeState(health.loaded, health.queuedJobs);
   });
@@ -386,6 +428,20 @@ const bootstrap = async (): Promise<void> => {
     (payload) => diagnostics?.writeLog(payload) ?? Promise.resolve(),
   );
   await voiceMemory.initialize();
+  void aiRuntime
+    .initializeCudaRuntime()
+    .then(async () => {
+      const statuses = await aiRuntime.modelRuntimeStatuses();
+      aiModels.setRuntimeStatuses(statuses);
+    })
+    .catch((error) =>
+      diagnostics?.writeLog({
+        category: "app",
+        level: "error",
+        message: "AI Runtime CUDA initialization failed",
+        context: { exception: error instanceof Error ? error.stack : String(error) },
+      }),
+    );
   shortcutsController = shortcuts;
   overlayController = overlay;
   gameDetectionController = gameDetection;
@@ -398,12 +454,14 @@ const bootstrap = async (): Promise<void> => {
     diagnostics,
     shortcuts,
     signalingClient,
+    accounts,
     updates,
     overlay,
     gameDetection,
     aiModels,
     voiceMemory,
     customAiProvider,
+    huggingFaceAccess,
     consumePendingDeepLink,
   });
 

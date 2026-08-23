@@ -100,6 +100,7 @@ interface RoomClientOptions {
   onKnock: (message: ChatMessage) => void;
   onRemoteScreenFrame: (peerId: string, frame?: RemoteScreenFrame) => void;
   onRemoteScreenShareState: (peerId: string, isSharing: boolean) => void;
+  onLocalScreenShareViewers?: (peerIds: string[]) => void;
   onSceneReaction: (reaction: SceneReaction) => void;
   onQuickMessage: (message: RoomQuickMessage) => void;
   onDiagnosticEvent?: (payload: SignalingEventPayload) => void;
@@ -112,7 +113,6 @@ interface RoomClientOptions {
   onPeerLatency?: (peerId: string, latencyMs?: number) => void;
   onPeerStats?: (stats: Record<string, PeerAudioStats>) => void;
 }
-
 interface PendingConnection {
   resolve: () => void;
   reject: (error: Error) => void;
@@ -246,6 +246,7 @@ export class RoomClient {
       onRemoteFrame: options.onRemoteScreenFrame,
       onRemoteState: options.onRemoteScreenShareState,
       onScreenTrackLost: (peerId) => this.peerRecovery.schedule(peerId, "screen_track_lost"),
+      onLocalViewerIdsChange: options.onLocalScreenShareViewers ?? (() => undefined),
     });
     this.peerStatsMonitor = new PeerStatsMonitor({
       getPeers: () => this.peers,
@@ -295,6 +296,13 @@ export class RoomClient {
   connect(): Promise<void> {
     this.shouldReconnect = true;
     return this.openSocket(false);
+  }
+
+  retryReconnect(): boolean {
+    return this.reconnectCoordinator.retryNow(
+      () => this.openSocket(true),
+      () => this.shouldReconnect && !this.isSignalingConnected && !this.isDisconnecting,
+    );
   }
 
   async disconnect(): Promise<void> {
@@ -739,7 +747,6 @@ export class RoomClient {
       workActivity,
     );
   }
-
   /** Kept as a narrow compatibility seam for reconnect replay and focused tests. */
   private publishDesiredPresence(): Promise<void> {
     return this.presenceCoordinator.publish();
@@ -751,11 +758,12 @@ export class RoomClient {
   ): Promise<void> {
     await this.screenShareCoordinator.start(stream, profile);
   }
-
   async stopScreenShare(stopTracks = true): Promise<void> {
     await this.screenShareCoordinator.stop(stopTracks);
   }
-
+  setScreenShareViewingActive(active: boolean): void {
+    this.screenShareCoordinator.setViewingActive(active);
+  }
   private handleJoinAck(payload: JoinAckMessage): void {
     if (payload.roomId !== this.options.roomId || payload.peerId !== this.options.peerId) {
       return;

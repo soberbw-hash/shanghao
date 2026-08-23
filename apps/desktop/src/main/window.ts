@@ -242,8 +242,13 @@ export const createMainWindow = ({
     width: savedBounds.width ?? 1,
     height: savedBounds.height ?? 1,
   });
-  const width = Math.min(display.workArea.width, Math.max(1120, savedBounds.width ?? 1440));
-  const height = Math.min(display.workArea.height, Math.max(720, savedBounds.height ?? 900));
+  const defaultWidth = Math.min(1_680, Math.max(1_440, Math.round(display.workArea.width * 0.88)));
+  const defaultHeight = Math.min(1_050, Math.max(900, Math.round(display.workArea.height * 0.9)));
+  const width = Math.min(display.workArea.width, Math.max(1120, savedBounds.width ?? defaultWidth));
+  const height = Math.min(
+    display.workArea.height,
+    Math.max(720, savedBounds.height ?? defaultHeight),
+  );
   const x = Math.min(
     display.workArea.x + display.workArea.width - width,
     Math.max(
