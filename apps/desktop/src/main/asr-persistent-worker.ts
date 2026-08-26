@@ -100,6 +100,7 @@ export class AsrPersistentWorker {
   private startReject?: (reason: Error) => void;
   private loadTimeout?: NodeJS.Timeout;
   private idleTimer?: NodeJS.Timeout;
+  private idleReleaseGeneration = 0;
   private lastError?: string;
   private diagnosticDetail?: string;
 
@@ -359,7 +360,9 @@ export class AsrPersistentWorker {
   private scheduleIdleRelease(): void {
     this.clearIdleRelease();
     if (this.active || this.queue.length) return;
+    const generation = this.idleReleaseGeneration;
     this.idleTimer = setTimeout(() => {
+      if (generation !== this.idleReleaseGeneration) return;
       this.idleTimer = undefined;
       if (this.active || this.queue.length) return;
       this.release("idle_timeout");
@@ -367,6 +370,7 @@ export class AsrPersistentWorker {
   }
 
   private clearIdleRelease(): void {
+    this.idleReleaseGeneration += 1;
     if (this.idleTimer) clearTimeout(this.idleTimer);
     this.idleTimer = undefined;
   }

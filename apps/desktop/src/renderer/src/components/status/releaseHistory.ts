@@ -74,6 +74,28 @@ const HISTORICAL_RELEASE_EVIDENCE: readonly HistoricalReleaseEvidence[] = [
 
 export const RELEASE_HISTORY: readonly ReleaseHistoryEntry[] = [
   {
+    version: "3.0.5",
+    date: "2026-08-26",
+    title: "架构、稳定性与性能收口",
+    summary:
+      "3.0.5 收口架构边界、诊断懒加载、录音清理安全和模型测试稳定性，不改变房间语音、屏幕分享与本地 AI 能力。",
+    highlights: [
+      "桌面包 lint 入口改为真正执行 ESLint，并为主进程、AI 管理器、IPC、房间和信令入口建立只降不升的文件规模护栏。",
+      "诊断和 Windows 状态只在进入诊断页时加载，减少设置页首次打开时的无关 IPC 与后台工作。",
+      "自动录音清理改为进入 Windows 回收站，收藏和带标记录音继续受保护；手动删除仍保持原有明确删除操作。",
+      "保留现有 VibeASR/VibeVoice 运行能力，完成真实依赖核查，不误删当前可用模型链路。",
+    ],
+    details: [
+      {
+        title: "本地审核边界",
+        items: [
+          "本轮只更新本地代码、版本元数据和文档，不构建安装包、不推送 GitHub、不创建正式发布。",
+          "完整自动化验证与真实 Windows 长时运行、多人音频、模型连续测试仍需按报告中的边界逐项审核。",
+        ],
+      },
+    ],
+  },
+  {
     version: "3.0.4",
     date: "2026-08-26",
     title: "模型对比、快捷语音与本地体验完善",

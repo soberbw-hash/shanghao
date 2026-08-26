@@ -492,7 +492,10 @@ class CohereTranscribe:
                     dtype=self.dtype,
                     device_map="cuda:0",
                 )
-            except (ImportError, ModuleNotFoundError, RuntimeError, torch.OutOfMemoryError):
+            except Exception:
+                # ForcedAligner is only an optional timestamp enhancement. Its Qwen
+                # package can be incompatible with the Transformers version required by
+                # Cohere; that must never prevent the base transcript from starting.
                 self.aligner = None
                 torch.cuda.empty_cache()
 

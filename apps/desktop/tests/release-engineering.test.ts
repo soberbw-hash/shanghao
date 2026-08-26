@@ -8,7 +8,7 @@ import { APP_BUILD_NUMBER, APP_PROTOCOL_VERSION } from "@private-voice/shared";
 const root = path.resolve(process.cwd(), "../..");
 const read = (relativePath: string) => readFileSync(path.join(root, relativePath), "utf8");
 
-test("v3.0.4 release metadata and safeguards are complete", () => {
+test("v3.0.5 local metadata and safeguards are complete", () => {
   const rootPackage = JSON.parse(read("package.json")) as { version: string };
   const desktopPackage = JSON.parse(read("apps/desktop/package.json")) as { version: string };
   const release = read(".github/workflows/release.yml");
@@ -16,8 +16,8 @@ test("v3.0.4 release metadata and safeguards are complete", () => {
   const changelog = read("CHANGELOG.md");
   const architecture = read("docs/architecture.md");
 
-  assert.equal(rootPackage.version, "3.0.4");
-  assert.equal(desktopPackage.version, "3.0.4");
+  assert.equal(rootPackage.version, "3.0.5");
+  assert.equal(desktopPackage.version, "3.0.5");
   assert.equal(APP_PROTOCOL_VERSION, "7");
   assert.equal(APP_BUILD_NUMBER, "2026.08.26.1");
   assert.equal(existsSync(path.join(root, "docs/release-notes/v2.6.0.md")), true);
@@ -43,6 +43,8 @@ test("v3.0.4 release metadata and safeguards are complete", () => {
   assert.equal(existsSync(path.join(root, "docs/release-notes/v3.0.3.md")), true);
   assert.equal(changelog.includes("## 3.0.4 - 2026-08-26"), true);
   assert.equal(existsSync(path.join(root, "docs/release-notes/v3.0.4.md")), true);
+  assert.equal(changelog.includes("## 3.0.5 - 2026-08-26"), true);
+  assert.equal(existsSync(path.join(root, "docs/release-notes/v3.0.5.md")), true);
   assert.equal(
     changelog.includes("ai_runtime_integrity_failed") || changelog.includes("AI runtime"),
     true,

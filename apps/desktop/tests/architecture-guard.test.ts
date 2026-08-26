@@ -25,18 +25,22 @@ test("renderer style entry remains an ordered composition instead of a God file"
 });
 
 test("large orchestration entry points stay below reviewed growth ceilings", () => {
-  assert.ok(
-    lineCount("apps/desktop/src/renderer/src/features/room/roomClient.ts") <= 1_665,
-    "RoomClient needs a reviewed responsibility extraction",
-  );
-  assert.ok(
-    lineCount("apps/desktop/src/renderer/src/pages/RoomPage.tsx") <= 1_515,
-    "RoomPage needs a reviewed region extraction",
-  );
-  assert.ok(
-    lineCount("packages/signaling/src/server.ts") <= 1_800,
-    "SignalingServer needs a reviewed role extraction",
-  );
+  const ceilings = {
+    "apps/desktop/src/renderer/src/features/room/roomClient.ts": 1_665,
+    "apps/desktop/src/renderer/src/pages/RoomPage.tsx": 1_515,
+    // lineCount includes the final newline; these are the current reviewed
+    // baselines, so any future growth fails until responsibility is extracted.
+    "apps/desktop/src/main/ipc.ts": 1_429,
+    "apps/desktop/src/main/ai-model-manager.ts": 1_455,
+    "apps/desktop/src/main/ai-runtime-manager.ts": 1_489,
+    "packages/signaling/src/server.ts": 1_775,
+  } as const;
+  for (const [relativePath, ceiling] of Object.entries(ceilings)) {
+    assert.ok(
+      lineCount(relativePath) <= ceiling,
+      `${relativePath} grew beyond its reviewed ceiling of ${ceiling} lines`,
+    );
+  }
 });
 
 test("new 3.0 boundaries are explicit, typed and independently bounded", () => {

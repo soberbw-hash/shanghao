@@ -110,6 +110,24 @@
   font-variant-numeric: tabular-nums;
 }
 
+.model-comparison-result-actions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 8px;
+}
+
+.model-comparison-result-actions button {
+  min-height: 30px;
+  padding: 5px 9px;
+  font-size: 11px;
+}
+
+.model-comparison-result-actions button svg {
+  width: 14px;
+  height: 14px;
+}
+
 .model-comparison-models {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));

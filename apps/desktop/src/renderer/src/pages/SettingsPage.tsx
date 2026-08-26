@@ -156,8 +156,20 @@ export const SettingsPage = () => {
   });
 
   useEffect(() => {
-    void window.desktopApi.diagnostics.snapshot().then(setDiagnostics);
-  }, []);
+    if (activeSection !== "diagnostics") return;
+    let cancelled = false;
+    void window.desktopApi.diagnostics
+      .snapshot()
+      .then((snapshot) => {
+        if (!cancelled) setDiagnostics(snapshot);
+      })
+      .catch(() => {
+        if (!cancelled) setDiagnostics(undefined);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [activeSection]);
 
   useEffect(() => {
     if (voiceMemoryOpenTarget) setActiveSection("recordings");
@@ -261,6 +273,7 @@ export const SettingsPage = () => {
   ]);
 
   useEffect(() => {
+    if (activeSection !== "diagnostics") return;
     let cancelled = false;
     setIsWindowsDiagnosticsLoading(!cachedWindowsDiagnostics);
     void window.desktopApi.windows
@@ -279,7 +292,7 @@ export const SettingsPage = () => {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [activeSection]);
 
   useLayoutEffect(() => {
     if (!isSettingsReady || !pageRef.current) return;

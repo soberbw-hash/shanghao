@@ -1,4 +1,4 @@
-import { app } from "electron";
+import { app, shell } from "electron";
 
 import type {
   RecordingCleanupScan,
@@ -12,6 +12,7 @@ import {
   createRecordingMediaResponse,
   deleteRecordingInDirectory,
   enforceRecordingQuotaInDirectory,
+  forgetRecordingInDirectory,
   isAllowedRecordingPathInDirectory,
   readRecordingLibraryFromDirectory,
   renameRecordingInDirectory,
@@ -88,9 +89,19 @@ export const runAutomaticRecordingCleanup = async (
   const deletedPaths = new Set<string>();
   let wasteDeletedCount = 0;
 
+  // Automatic maintenance must be recoverable on Windows. Explicit user deletion
+  // still uses the permanent delete path below; background cleanup goes to Recycle Bin.
+  const moveToRecycleBin = async (directory: string, filePath: string): Promise<void> => {
+    if (!isAllowedRecordingPathInDirectory(directory, filePath)) {
+      throw new Error("invalid_recording_path");
+    }
+    await shell.trashItem(filePath);
+    await forgetRecordingInDirectory(directory, filePath);
+  };
+
   const deleteItem = async (item: RecordingLibraryItem): Promise<void> => {
     if (deletedPaths.has(item.filePath)) return;
-    await deleteRecordingInDirectory(directory, item.filePath);
+    await moveToRecycleBin(directory, item.filePath);
     deletedPaths.add(item.filePath);
     deletedItems.push(item);
   };
@@ -124,7 +135,7 @@ export const runAutomaticRecordingCleanup = async (
     }
   }
 
-  const quotaDeleted = await enforceRecordingQuotaInDirectory(directory, quotaGb);
+  const quotaDeleted = await enforceRecordingQuotaInDirectory(directory, quotaGb, moveToRecycleBin);
   for (const item of quotaDeleted) {
     if (deletedPaths.has(item.filePath)) continue;
     deletedPaths.add(item.filePath);

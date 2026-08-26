@@ -344,8 +344,8 @@ test("microphone processing lives in the room panel while about keeps release hi
   assert.equal(audioCardSource.includes("isAutoGainControlEnabled"), false);
   assert.equal(audioCardSource.includes("isFriendLoudnessBalanceEnabled"), false);
   assert.equal(roomDockSource.includes("settings.isFriendLoudnessBalanceEnabled"), true);
-  assert.equal(RELEASE_HISTORY.length, 71);
-  assert.equal(RELEASE_HISTORY[0]?.version, "3.0.4");
+  assert.equal(RELEASE_HISTORY.length, 72);
+  assert.equal(RELEASE_HISTORY[0]?.version, "3.0.5");
   assert.equal(RELEASE_HISTORY.at(-1)?.version, "0.1.1");
   assert.equal(
     new Set(RELEASE_HISTORY.map((release) => release.version)).size,
@@ -510,12 +510,21 @@ test("successful empty ASR units remain silence instead of failing the recording
   assert.equal(asrRunnerSource.includes("parse_transcript"), true);
   assert.equal(asrRunnerSource.includes('dolphin.load_model("small.cn"'), true);
   assert.equal(asrRunnerSource.includes("CohereAsrForConditionalGeneration"), true);
+  assert.equal(
+    asrRunnerSource.includes("ForcedAligner is only an optional timestamp enhancement"),
+    true,
+  );
+  assert.equal(asrRunnerSource.includes("except Exception:"), true);
   assert.equal(asrRunnerSource.includes("use_half=True"), true);
   assert.equal(asrRunnerSource.includes("bf16=True"), true);
   assert.equal(asrRunnerSource.includes("do_sample=False"), true);
   assert.equal(asrRunnerSource.includes("staged_on_oom=True"), true);
   assert.equal(asrRunnerSource.includes("enable_legacy_distutils()"), true);
   assert.equal(runtimeSource.includes("vibeRuntime"), false);
+  assert.equal(
+    runtimeSource.includes("pythonPath: this.providerPythonPath(this.coherePythonPath)"),
+    true,
+  );
   assert.equal(runtimeSource.includes("timeoutMs: options.timeoutMs ?? 4 * 60_000"), true);
   assert.equal(voiceMemorySource.includes("maxNewTokens: 384"), true);
   assert.equal(voiceMemorySource.includes("transcriptForPrompt(record, 6_000)"), true);

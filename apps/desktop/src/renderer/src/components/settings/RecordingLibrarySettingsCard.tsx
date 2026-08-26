@@ -1184,6 +1184,7 @@ export const RecordingLibrarySettingsCard = ({
                   key={selected.recordingId}
                   recording={selected}
                   recordingTitle={recordingTitle(selected)}
+                  audioDurationMs={duration > 0 ? Math.round(duration * 1_000) : undefined}
                   onClose={() => setIsModelComparisonOpen(false)}
                   onSeek={(offsetMs) => {
                     if (audioRef.current) audioRef.current.currentTime = offsetMs / 1_000;

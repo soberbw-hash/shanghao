@@ -1193,7 +1193,7 @@ export class AiRuntimeManager {
         modelId,
         modelPath,
         alignerModelPath,
-        pythonPath: `${this.providerPythonPath(this.coherePythonPath)}${path.delimiter}${this.qwenAsrPythonPath}`,
+        pythonPath: this.providerPythonPath(this.coherePythonPath),
       };
     }
     return {

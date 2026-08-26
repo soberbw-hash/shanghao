@@ -3,6 +3,7 @@ import {
   Check,
   CheckCircle2,
   CircleStop,
+  Download,
   LoaderCircle,
   Pause,
   Play,
@@ -25,10 +26,15 @@ import {
   modelComparisonQueue,
   type ModelComparisonJobSnapshot,
 } from "../../features/ai/modelComparisonQueue";
+import {
+  buildModelComparisonExport,
+  downloadModelComparisonExport,
+} from "../../features/ai/modelComparisonExport";
 
 interface ModelTestPanelProps {
   recording: RecordingLibraryItem;
   recordingTitle: string;
+  audioDurationMs?: number;
   onClose: () => void;
   onSeek: (offsetMs: number) => void;
 }
@@ -66,6 +72,7 @@ const readStoredModelSelection = (recordingId: string): AiAsrModelId[] | undefin
 export const ModelTestPanel = ({
   recording,
   recordingTitle,
+  audioDurationMs,
   onClose,
   onSeek,
 }: ModelTestPanelProps) => {
@@ -80,7 +87,10 @@ export const ModelTestPanel = ({
   const selectionHydratedRef = useRef(false);
   const [viewingModelId, setViewingModelId] = useState<AiAsrModelId>();
   const [isSwitchingResult, setIsSwitchingResult] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
   const [error, setError] = useState<string>();
+  const recordingRef = useRef(recording);
+  recordingRef.current = recording;
 
   useEffect(() => {
     let active = true;
@@ -122,12 +132,34 @@ export const ModelTestPanel = ({
           );
         }
         selectionHydratedRef.current = true;
+        const recoveredJob = modelComparisonQueue.get(recording.recordingId);
+        if (recoveredJob?.phase === "paused" && recoveredJob.recovered) {
+          modelComparisonQueue.resume(recordingRef.current, installed);
+        }
       })
       .catch(() => setError("无法读取可测试模型，请先刷新 AI 功能。"));
 
     const unsubscribe = window.desktopApi.ai.onVoiceMemoryStatus((next) => {
       if (!active || next.recordingId !== recording.recordingId) return;
-      setRecord(next);
+      const settled =
+        next.taskStatus !== "processing" &&
+        (next.phase === "ready" || next.phase === "error" || next.phase === "paused");
+      setRecord((current) => {
+        // A long recording can contain thousands of transcript segments. While a model is
+        // running, keep the existing snapshot and only update the small progress fields so
+        // the comparison page does not repeatedly clone the whole transcript in React.
+        if (!current || settled) return next;
+        return {
+          ...current,
+          phase: next.phase,
+          progress: next.progress,
+          taskId: next.taskId,
+          taskStatus: next.taskStatus,
+          processingStage: next.processingStage,
+          diagnostic: next.diagnostic,
+          errorMessage: next.errorMessage,
+        };
+      });
       if (next.transcriptionModel?.id) setViewingModelId(next.transcriptionModel.id);
     });
     return () => {
@@ -151,8 +183,9 @@ export const ModelTestPanel = ({
 
   const phase = job?.phase ?? "idle";
   const currentIndex = job?.currentIndex ?? -1;
+  const currentProgress = Math.max(0, Math.min(1, job?.currentProgress ?? 0));
   const runModelIds = job?.modelIds ?? [];
-  const results = job?.results ?? {};
+  const results = useMemo(() => job?.results ?? {}, [job?.results]);
   const selectedModels = useMemo(
     () => models.filter((model) => selectedModelIds.has(model.id as AiAsrModelId)),
     [models, selectedModelIds],
@@ -176,9 +209,19 @@ export const ModelTestPanel = ({
   const comparisonModelIds = useMemo(
     () =>
       [
-        ...new Set([...selectedModels.map((model) => model.id as AiAsrModelId), ...savedModelIds]),
+        ...new Set([
+          ...selectedModels.map((model) => model.id as AiAsrModelId),
+          ...savedModelIds,
+          ...Object.keys(results).filter(isKnownAsrModelId),
+        ]),
       ].sort((left, right) => modelDisplayName(left).localeCompare(modelDisplayName(right))),
-    [savedModelIds, selectedModels],
+    [results, savedModelIds, selectedModels],
+  );
+  const canExportResults = comparisonModelIds.some(
+    (modelId) =>
+      results[modelId] ||
+      record?.transcriptionVariants?.[modelId] ||
+      (record?.transcriptionModel?.id === modelId && record.transcript.length),
   );
 
   const start = () => {
@@ -239,6 +282,28 @@ export const ModelTestPanel = ({
       else next.add(modelId);
       return next;
     });
+  };
+
+  const exportResults = () => {
+    if (isExporting || !canExportResults) return;
+    setIsExporting(true);
+    setError(undefined);
+    try {
+      const payload = buildModelComparisonExport({
+        recording,
+        recordingTitle,
+        audioDurationMs,
+        record,
+        modelIds: comparisonModelIds,
+        results,
+      });
+      const safeTitle = recordingTitle.replace(/[<>:"/\\|?*]/g, "_").trim() || "录音";
+      downloadModelComparisonExport(payload, `上号-模型对比-${safeTitle}.json`);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "导出模型对比数据失败");
+    } finally {
+      setIsExporting(false);
+    }
   };
 
   const currentModel =
@@ -346,7 +411,7 @@ export const ModelTestPanel = ({
           ) : null}
           <span className="model-comparison-run-status" aria-live="polite">
             {phase === "running" && currentModel
-              ? `正在测试 ${currentIndex + 1}/${runModelIds.length} · ${modelDisplayName(currentModel.id as AiAsrModelId)}`
+              ? `正在测试 ${currentIndex + 1}/${runModelIds.length} · ${modelDisplayName(currentModel.id as AiAsrModelId)} · ${Math.round(currentProgress * 100)}%`
               : phase === "complete"
                 ? "本轮测试已完成，结果已保存在本机。"
                 : phase === "paused"
@@ -364,11 +429,11 @@ export const ModelTestPanel = ({
             role="progressbar"
             aria-valuemin={0}
             aria-valuemax={runModelIds.length}
-            aria-valuenow={Math.max(0, currentIndex)}
+            aria-valuenow={Math.max(0, currentIndex + currentProgress)}
           >
             <span
               style={{
-                transform: `scaleX(${runModelIds.length ? (currentIndex + 0.5) / runModelIds.length : 0})`,
+                transform: `scaleX(${runModelIds.length ? (currentIndex + currentProgress) / runModelIds.length : 0})`,
               }}
             />
           </div>
@@ -384,11 +449,21 @@ export const ModelTestPanel = ({
         <div className="model-comparison-section-head">
           <div>
             <h4>转录结果</h4>
-            <p>点击一个已完成的模型，即可查看该模型保存的说话人和转文字。</p>
+            <p>点击一个已完成的模型查看结果；也可以一次导出全部对比原始数据。</p>
           </div>
-          {isSwitchingResult ? (
-            <LoaderCircle className="model-comparison-spinner" aria-label="正在切换结果" />
-          ) : null}
+          <div className="model-comparison-result-actions">
+            <Button
+              variant="secondary"
+              disabled={!canExportResults || isExporting}
+              onClick={exportResults}
+            >
+              <Download aria-hidden="true" />
+              {isExporting ? "准备导出…" : "导出测试数据"}
+            </Button>
+            {isSwitchingResult ? (
+              <LoaderCircle className="model-comparison-spinner" aria-label="正在切换结果" />
+            ) : null}
+          </div>
         </div>
         {comparisonModelIds.length ? (
           <div

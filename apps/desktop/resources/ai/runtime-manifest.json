@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "packageVersion": "3.0.4",
+  "packageVersion": "3.0.5",
   "platform": "win32-x64",
   "vibevoice": {
     "source": "microsoft/VibeASR.cpp",

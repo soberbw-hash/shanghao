@@ -418,6 +418,7 @@ export const recordingQuotaDeletionOrder = (
 export const enforceRecordingQuotaInDirectory = async (
   directory: string,
   quotaGb: number,
+  removeItem: (directory: string, filePath: string) => Promise<void> = deleteRecordingInDirectory,
 ): Promise<RecordingLibraryItem[]> => {
   const snapshot = await readRecordingLibraryFromDirectory(directory, quotaGb);
   let totalBytes = snapshot.totalBytes;
@@ -427,7 +428,7 @@ export const enforceRecordingQuotaInDirectory = async (
   while (totalBytes > snapshot.quotaBytes && oldestFirst.length > 0 && remainingItems > 1) {
     const item = oldestFirst.shift();
     if (!item) break;
-    const removed = await deleteRecordingInDirectory(directory, item.filePath).then(
+    const removed = await removeItem(directory, item.filePath).then(
       () => true,
       () => false,
     );
@@ -449,6 +450,17 @@ export const deleteRecordingInDirectory = async (
   }
   await unlink(filePath);
   await unlink(markerPathFor(filePath)).catch(() => undefined);
+  await forgetRecordingInDirectory(directory, filePath);
+};
+
+/** Removes a recording from the library index after an external reversible move. */
+export const forgetRecordingInDirectory = async (
+  directory: string,
+  filePath: string,
+): Promise<void> => {
+  if (!isInsideDirectory(directory, filePath) || path.extname(filePath).toLowerCase() !== ".m4a") {
+    throw new Error("invalid_recording_path");
+  }
   const metadata = await readLibraryMetadata(directory);
   const fileName = path.basename(filePath);
   const entry = metadata.recordings?.find((recording) => recording.fileName === fileName);

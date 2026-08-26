@@ -1,6 +1,6 @@
 {
   "name": "shanghao-desktop",
-  "version": "3.0.4",
+  "version": "3.0.5",
   "private": true,
   "license": "AGPL-3.0-or-later",
   "description": "ShangHao desktop voice app for private friends group chat",
@@ -15,7 +15,7 @@
     "build:main": "tsup --config tsup.config.ts",
     "build:renderer": "vite build",
     "typecheck": "tsc --project tsconfig.json --noEmit",
-    "lint": "tsc --project tsconfig.json --noEmit",
+    "lint": "eslint src tests --max-warnings=0",
     "test:smoke": "node --import tsx --test tests/*.test.ts",
     "clean": "node ../../scripts/clean.mjs",
     "dist": "corepack pnpm build && node ../../scripts/run-electron-builder.mjs --config electron-builder.yml --win nsis && node ../../scripts/verify-windows-execution-level.mjs release/win-unpacked/ShangHao.exe",
