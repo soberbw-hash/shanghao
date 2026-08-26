@@ -30,7 +30,7 @@ import { prepareBundledAiRuntime } from "./ai-runtime-package";
 import { VoiceMemoryStore } from "./voice-memory-store";
 import { LifecycleRecoveryService } from "./lifecycle-recovery-service";
 import { ensurePre30DataSnapshot } from "./user-data-migration";
-import { applyLaunchOnStartup } from "./launch-on-startup";
+import { removeWindowsStartupTask } from "./windows-startup-task";
 import { ensureWindowsFirewallRules } from "./windows-integration";
 import { findDeepLinkInvite, parseDeepLinkInvite, SHANGHAO_PROTOCOL } from "./deep-link";
 import { sendToWindow } from "./safe-web-contents";
@@ -40,6 +40,10 @@ import {
   isAllowedRecordingMediaPath,
   RECORDING_MEDIA_PROTOCOL,
 } from "./recording-library";
+import {
+  createQuickMessageMediaResponse,
+  QUICK_MESSAGE_MEDIA_PROTOCOL,
+} from "./quick-message-assets";
 
 let mainWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
@@ -174,6 +178,7 @@ const maybeRunVisualCapture = async (window: BrowserWindow | null): Promise<void
       | "home-mic"
       | "room"
       | "room-mic"
+      | "room-ai"
       | "member-volume"
       | "recording-stop"
       | "room-seat"
@@ -237,16 +242,18 @@ const bootstrap = async (): Promise<void> => {
       return new Response("Not found", { status: 404 });
     }
   });
+  protocol.handle(QUICK_MESSAGE_MEDIA_PROTOCOL, (request) =>
+    createQuickMessageMediaResponse(request.url),
+  );
   try {
-    await applyLaunchOnStartup(settings.launchOnStartup);
+    await removeWindowsStartupTask();
   } catch (error) {
     await diagnostics.writeLog({
       category: "app",
       level: "warn",
-      message: "launch on startup setup failed",
+      message: "legacy startup task cleanup failed",
       context: { error: error instanceof Error ? error.message : String(error) },
     });
-    await settingsStore.save({ launchOnStartup: false });
   }
 
   if (app.isPackaged && platformService.isWindows) {
@@ -540,6 +547,10 @@ if (platformService.isWindows) app.setAppUserModelId(APP_ID);
 protocol.registerSchemesAsPrivileged([
   {
     scheme: RECORDING_MEDIA_PROTOCOL,
+    privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true },
+  },
+  {
+    scheme: QUICK_MESSAGE_MEDIA_PROTOCOL,
     privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true },
   },
 ]);

@@ -62,6 +62,11 @@ export class DailyRoomCommentaryService {
           messageCount: report.messageCount,
           screenShareCount: report.screenShareCount,
           games: report.games.map((game) => game.name),
+          workActivities: (report.workActivities ?? []).map((activity) => ({
+            nickname: activity.nickname,
+            workName: activity.workName,
+            durationMinutes: Math.round(activity.durationMs / 60_000),
+          })),
         }),
       ].join("\n"),
     };

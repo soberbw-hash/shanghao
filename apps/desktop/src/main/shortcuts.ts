@@ -7,6 +7,7 @@ import { sendToWindow } from "./safe-web-contents";
 export class ShortcutController {
   private currentMuteShortcut?: string;
   private currentRecordingMarkerShortcut?: string;
+  private readonly currentQuickMessageShortcuts = new Map<number, string>();
 
   constructor(
     private readonly windowProvider: () => BrowserWindow | null,
@@ -78,6 +79,36 @@ export class ShortcutController {
         message: "recording marker shortcut register failed",
         context: {
           accelerator,
+          error: error instanceof Error ? error.message : String(error),
+        },
+      });
+      return false;
+    }
+  }
+
+  async configureQuickMessage(slot: number, accelerator: string): Promise<boolean> {
+    const previous = this.currentQuickMessageShortcuts.get(slot);
+    if (previous) {
+      globalShortcut.unregister(previous);
+      this.currentQuickMessageShortcuts.delete(slot);
+    }
+    const normalized = accelerator.trim();
+    if (!normalized) return false;
+    try {
+      const registered = globalShortcut.register(normalized, () => {
+        sendToWindow(this.windowProvider(), IPC_CHANNELS.shortcuts.quickMessageTriggered, slot);
+      });
+      if (!registered) throw new Error(`Failed to register quick message shortcut: ${normalized}`);
+      this.currentQuickMessageShortcuts.set(slot, normalized);
+      return true;
+    } catch (error) {
+      await this.writeLog?.({
+        category: "app",
+        level: "warn",
+        message: "quick message shortcut register failed",
+        context: {
+          slot,
+          accelerator: normalized,
           error: error instanceof Error ? error.message : String(error),
         },
       });

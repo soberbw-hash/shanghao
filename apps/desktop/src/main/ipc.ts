@@ -83,6 +83,7 @@ import { DiagnosticsService } from "./diagnostics";
 import { AccountDesktopService } from "./account-service";
 import { captureRuntimeHealth } from "./runtime-health";
 import { readDeepFilterAssets } from "./deepfilter-assets";
+import { exportQuickMessagePack } from "./quick-message-export";
 import { clearAvatarImage, pickAvatarImage, readAvatarImage } from "./profile-media";
 import { exportRecordingFromMain } from "./recording-main";
 import {
@@ -111,7 +112,6 @@ import { AiModelManager } from "./ai-model-manager";
 import { AiVoiceMemoryService } from "./ai-voice-memory-service";
 import { CustomAiProviderStore } from "./custom-ai-provider-store";
 import { HuggingFaceAccessStore } from "./hugging-face-access-store";
-import { applyLaunchOnStartup } from "./launch-on-startup";
 import { ChatHistoryStore } from "./chat-history-store";
 import { DailyRoomReportCache } from "./daily-room-report-cache";
 import { LocalWeatherService } from "./weather-service";
@@ -368,7 +368,6 @@ export const registerIpcHandlers = ({
       platform: platformService.capabilities.nodePlatform,
       protocolVersion: APP_PROTOCOL_VERSION,
       buildNumber: APP_BUILD_NUMBER,
-      isStartupLaunch: process.argv.includes("--shanghao-startup"),
       isElevated: elevation.isElevated,
       requestedExecutionLevel: app.isPackaged ? "requireAdministrator" : "asInvoker",
     };
@@ -545,6 +544,10 @@ export const registerIpcHandlers = ({
       throw error;
     }
   });
+
+  ipcMain.handle(IPC_CHANNELS.quickMessages.export, async (): Promise<string | undefined> =>
+    exportQuickMessagePack(getMainWindow()),
+  );
 
   ipcMain.handle(IPC_CHANNELS.screenCapture.listSources, async () => listScreenCaptureSources());
   ipcMain.handle(
@@ -727,21 +730,6 @@ export const registerIpcHandlers = ({
         JSON.stringify(partial).length > 32_768
       ) {
         throw new Error("invalid_settings_patch");
-      }
-      if (typeof partial.launchOnStartup === "boolean") {
-        try {
-          await applyLaunchOnStartup(partial.launchOnStartup);
-        } catch (error) {
-          await diagnostics.writeLog({
-            category: "app",
-            level: "error",
-            message: "launch on startup setup failed",
-            context: { error: error instanceof Error ? error.message : String(error) },
-          });
-          throw new Error("无法设置开机启动，请检查 Windows 启动应用权限。", {
-            cause: error,
-          });
-        }
       }
       const settings = await settingsStore.save(partial);
       if (partial.aiProcessingMode) aiModels.setProcessingMode(settings.aiProcessingMode);
@@ -932,6 +920,15 @@ export const registerIpcHandlers = ({
       await shortcuts.configureGlobalMute(accelerator);
     },
   );
+  ipcMain.handle(
+    IPC_CHANNELS.shortcuts.configureQuickMessage,
+    async (_event, slot: number, accelerator: string): Promise<boolean> => {
+      if (!Number.isInteger(slot) || slot < 0 || slot >= 5)
+        throw new Error("invalid_quick_message_slot");
+      if (typeof accelerator !== "string") throw new Error("invalid_quick_message_shortcut");
+      return shortcuts.configureQuickMessage(slot, accelerator);
+    },
+  );
   ipcMain.handle(IPC_CHANNELS.updates.check, async (): Promise<UpdateCheckResult> => {
     const result = await updates.check();
     diagnostics.setLastUpdateCheckMessage(result.message);
@@ -983,7 +980,7 @@ export const registerIpcHandlers = ({
       ) {
         throw new Error("invalid_ai_model");
       }
-      if (!["download", "pause", "resume", "delete"].includes(action)) {
+      if (!["download", "repair", "pause", "resume", "delete"].includes(action)) {
         throw new Error("invalid_ai_model_action");
       }
       return aiModels.controlModel(modelId, action);

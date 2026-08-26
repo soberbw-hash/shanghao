@@ -755,7 +755,7 @@ img {
 }
 
 .interactive-surface:active:not(:disabled) {
-  transform: translateY(0) scale(0.965);
+  transform: translateY(0) scale(0.985);
 }
 
 .app-shell {

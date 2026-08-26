@@ -12,6 +12,8 @@ import {
 } from "../src/main/ai-runtime-package";
 import {
   AiRuntimeManager,
+  PRIVATE_PIP_INSTALL_ARGUMENTS,
+  DOLPHIN_RUNTIME_PACKAGES,
   MOSS_RUNTIME_PACKAGES,
   FIRE_RED_RUNTIME_PACKAGES,
   QWEN_ORGANIZER_RUNTIME_PACKAGES,
@@ -124,7 +126,7 @@ test("all GPU providers expose the exact common preflight error codes", () => {
 
 test("FireRed runtime keeps the native fbank dependency required by official source", () => {
   assert.deepEqual(FIRE_RED_RUNTIME_PACKAGES, [
-    "https://github.com/FireRedTeam/FireRedASR2S/archive/4e7d9aaf4482a47cec1724807026b9b151926eb5.zip",
+    "https://codeload.github.com/FireRedTeam/FireRedASR2S/zip/4e7d9aaf4482a47cec1724807026b9b151926eb5",
     "kaldi-native-fbank==1.22.3",
   ]);
 });
@@ -132,14 +134,31 @@ test("FireRed runtime keeps the native fbank dependency required by official sou
 test("MOSS runtime pins the official parser and inference source", () => {
   assert.equal(
     MOSS_RUNTIME_PACKAGES[0],
-    "https://github.com/OpenMOSS/MOSS-Transcribe-Diarize/archive/0e3d1403fd8f1f1c674e883ece96b9f630794ebe.zip",
+    "https://codeload.github.com/OpenMOSS/MOSS-Transcribe-Diarize/zip/0e3d1403fd8f1f1c674e883ece96b9f630794ebe",
   );
+});
+
+test("Dolphin runtime includes the undeclared complex tensor dependency used at import time", () => {
+  assert.deepEqual(DOLPHIN_RUNTIME_PACKAGES, [
+    "dataoceanai-dolphin==20260513",
+    "torch-complex==0.4.4",
+  ]);
 });
 
 test("Qwen organizer reuses shared CUDA torch and pins only its provider dependencies", () => {
   assert.deepEqual(QWEN_ORGANIZER_RUNTIME_PACKAGES, [
     "transformers==5.15.0",
     "accelerate>=1.10,<2",
+  ]);
+});
+
+test("all private AI Runtime pip installs bypass the shared user cache", () => {
+  assert.deepEqual(PRIVATE_PIP_INSTALL_ARGUMENTS, [
+    "--disable-pip-version-check",
+    "--no-input",
+    "--no-warn-script-location",
+    "--no-cache-dir",
+    "--prefer-binary",
   ]);
 });
 
@@ -213,7 +232,7 @@ test("runtime health requires the shared Qwen aligner without duplicating it", a
   const modelRoot = path.join(directory, "model");
   const alignerRoot = path.join(directory, "aligner");
   const pythonExecutable = path.join(runtimeRoot, "python", "Scripts", "python.exe");
-  const qwenPackage = path.join(runtimeRoot, "asr-python", "qwen", "qwen_asr", "__init__.py");
+  const qwenPackage = path.join(runtimeRoot, "asr-python-v3", "qwen", "qwen_asr", "__init__.py");
   await mkdir(path.dirname(pythonExecutable), { recursive: true });
   await mkdir(path.dirname(qwenPackage), { recursive: true });
   await mkdir(modelRoot, { recursive: true });
@@ -268,9 +287,9 @@ test("runtime status recognizes official Fun-ASR and FireRed file structures", a
   const pythonExecutable = path.join(runtimeRoot, "python", "Scripts", "python.exe");
   await Promise.all([
     mkdir(path.dirname(pythonExecutable), { recursive: true }),
-    mkdir(path.join(runtimeRoot, "asr-python", "funasr", "funasr"), { recursive: true }),
-    mkdir(path.join(runtimeRoot, "asr-python", "firered", "fireredasr2s"), { recursive: true }),
-    mkdir(path.join(runtimeRoot, "asr-python", "firered", "kaldi_native_fbank"), {
+    mkdir(path.join(runtimeRoot, "asr-python-v3", "funasr", "funasr"), { recursive: true }),
+    mkdir(path.join(runtimeRoot, "asr-python-v3", "firered", "fireredasr2s"), { recursive: true }),
+    mkdir(path.join(runtimeRoot, "asr-python-v3", "firered", "kaldi_native_fbank"), {
       recursive: true,
     }),
     mkdir(funRoot, { recursive: true }),
@@ -279,10 +298,13 @@ test("runtime status recognizes official Fun-ASR and FireRed file structures", a
   await Promise.all([
     writeFile(pythonExecutable, "runtime"),
     writeFile(path.join(runtimeRoot, "asr-runner.py"), "print('runner')"),
-    writeFile(path.join(runtimeRoot, "asr-python", "funasr", "funasr", "__init__.py"), ""),
-    writeFile(path.join(runtimeRoot, "asr-python", "firered", "fireredasr2s", "__init__.py"), ""),
+    writeFile(path.join(runtimeRoot, "asr-python-v3", "funasr", "funasr", "__init__.py"), ""),
     writeFile(
-      path.join(runtimeRoot, "asr-python", "firered", "kaldi_native_fbank", "__init__.py"),
+      path.join(runtimeRoot, "asr-python-v3", "firered", "fireredasr2s", "__init__.py"),
+      "",
+    ),
+    writeFile(
+      path.join(runtimeRoot, "asr-python-v3", "firered", "kaldi_native_fbank", "__init__.py"),
       "",
     ),
     ...["model.pt", "config.yaml", "configuration.json", "multilingual.tiktoken"].map((name) =>

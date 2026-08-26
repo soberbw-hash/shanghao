@@ -106,6 +106,7 @@ export class AsrPersistentWorker {
   constructor(
     private readonly pythonExecutable: string,
     private readonly runnerPath: string,
+    private readonly idleReleaseMs = WORKER_IDLE_RELEASE_MS,
   ) {}
 
   health(): AsrWorkerHealth {
@@ -130,6 +131,7 @@ export class AsrPersistentWorker {
     signal?: AbortSignal;
   }): Promise<AsrWorkerResult> {
     if (options.signal?.aborted) return Promise.reject(new Error("ai_task_paused"));
+    this.clearIdleRelease();
     return new Promise<AsrWorkerResult>((resolve, reject) => {
       const request: AsrWorkerRequest = {
         id: randomUUID(),
@@ -145,8 +147,7 @@ export class AsrPersistentWorker {
   }
 
   release(reason = "released"): void {
-    if (this.idleTimer) clearTimeout(this.idleTimer);
-    this.idleTimer = undefined;
+    this.clearIdleRelease();
     const error = new Error(
       reason === "idle_timeout" ? "asr_worker_idle_release" : "ai_task_paused",
     );
@@ -196,6 +197,7 @@ export class AsrPersistentWorker {
   }
 
   private ensureStarted(launch: AsrWorkerLaunch): Promise<void> {
+    this.clearIdleRelease();
     if (this.child && launchKey(this.currentLaunch as AsrWorkerLaunch) === launchKey(launch)) {
       if (this.phase === "ready" || this.phase === "running") return Promise.resolve();
       if (this.startPromise) return this.startPromise;
@@ -336,6 +338,7 @@ export class AsrPersistentWorker {
   }
 
   private stopChild(error: Error, preserveError = false): void {
+    this.clearIdleRelease();
     if (this.loadTimeout) clearTimeout(this.loadTimeout);
     this.loadTimeout = undefined;
     this.startReject?.(error);
@@ -354,8 +357,17 @@ export class AsrPersistentWorker {
   }
 
   private scheduleIdleRelease(): void {
-    if (this.idleTimer) clearTimeout(this.idleTimer);
+    this.clearIdleRelease();
     if (this.active || this.queue.length) return;
-    this.idleTimer = setTimeout(() => this.release("idle_timeout"), WORKER_IDLE_RELEASE_MS);
+    this.idleTimer = setTimeout(() => {
+      this.idleTimer = undefined;
+      if (this.active || this.queue.length) return;
+      this.release("idle_timeout");
+    }, this.idleReleaseMs);
+  }
+
+  private clearIdleRelease(): void {
+    if (this.idleTimer) clearTimeout(this.idleTimer);
+    this.idleTimer = undefined;
   }
 }

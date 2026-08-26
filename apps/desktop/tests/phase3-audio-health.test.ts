@@ -113,3 +113,13 @@ test("long-session diagnostics expose bounded mixer resource counts", () => {
   assert.match(settings, /audioNodeCount: mixerHealth\?\.audioNodeCount/);
   assert.match(settings, /timerCount: mixerHealth\?\.timerCount/);
 });
+
+test("remote playback ramps in instead of exposing the GainNode default on join", () => {
+  const mixer = read("apps/desktop/src/renderer/src/features/audio/RemoteAudioMixer.ts");
+  assert.match(mixer, /REMOTE_AUDIO_GAIN_RAMP_SECONDS = 0\.045/);
+  assert.ok(
+    (mixer.match(/gain\.gain\.setValueAtTime\(0, context\.currentTime\)/g) ?? []).length >= 2,
+  );
+  assert.match(mixer, /gain\.gain\.setTargetAtTime\([\s\S]*REMOTE_AUDIO_GAIN_RAMP_SECONDS/);
+  assert.match(mixer, /channel\.gain\.gain\.cancelScheduledValues\(context\.currentTime\)/);
+});

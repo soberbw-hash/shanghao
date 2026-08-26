@@ -92,8 +92,15 @@ const CUDA_TORCH_VERSION = "2.11.0";
 const CUDA_TORCHAUDIO_VERSION = "2.11.0";
 const CUDA_WHEEL_INDEX = "https://download.pytorch.org/whl/cu128";
 const CUDA_DIAGNOSTIC_TTL_MS = 15_000;
+export const PRIVATE_PIP_INSTALL_ARGUMENTS = [
+  "--disable-pip-version-check",
+  "--no-input",
+  "--no-warn-script-location",
+  "--no-cache-dir",
+  "--prefer-binary",
+] as const;
 export const FIRE_RED_RUNTIME_PACKAGES = [
-  "https://github.com/FireRedTeam/FireRedASR2S/archive/4e7d9aaf4482a47cec1724807026b9b151926eb5.zip",
+  "https://codeload.github.com/FireRedTeam/FireRedASR2S/zip/4e7d9aaf4482a47cec1724807026b9b151926eb5",
   // Required by the pinned official source but omitted from its pyproject dependencies. The
   // upstream 1.15 pin has no Windows/Python 3.12 wheel, so keep a tested compatible wheel pinned.
   "kaldi-native-fbank==1.22.3",
@@ -105,13 +112,16 @@ export const QWEN_ORGANIZER_RUNTIME_PACKAGES = [
 ] as const;
 
 export const MOSS_RUNTIME_PACKAGES = [
-  "https://github.com/OpenMOSS/MOSS-Transcribe-Diarize/archive/0e3d1403fd8f1f1c674e883ece96b9f630794ebe.zip",
+  "https://codeload.github.com/OpenMOSS/MOSS-Transcribe-Diarize/zip/0e3d1403fd8f1f1c674e883ece96b9f630794ebe",
   "transformers==5.15.0",
   "accelerate>=1.10,<2",
   "librosa>=0.11,<1",
 ] as const;
 
-export const DOLPHIN_RUNTIME_PACKAGES = ["dataoceanai-dolphin==20260513"] as const;
+export const DOLPHIN_RUNTIME_PACKAGES = [
+  "dataoceanai-dolphin==20260513",
+  "torch-complex==0.4.4",
+] as const;
 
 export const COHERE_TRANSCRIBE_RUNTIME_PACKAGES = [
   "transformers==5.15.0",
@@ -464,15 +474,19 @@ export class AiRuntimeManager {
         : embeddedPython;
     this.qwenRunner = path.join(runtimeRoot, "qwen-runner.py");
     this.asrRunner = path.join(runtimeRoot, "asr-runner.py");
-    this.qwenAsrPythonPath = path.join(runtimeRoot, "asr-python", "qwen");
-    this.funAsrPythonPath = path.join(runtimeRoot, "asr-python", "funasr");
-    this.glmAsrPythonPath = path.join(runtimeRoot, "asr-python", "glm");
-    this.fireRedPythonPath = path.join(runtimeRoot, "asr-python", "firered");
-    this.mossPythonPath = path.join(runtimeRoot, "asr-python", "moss");
-    this.dolphinPythonPath = path.join(runtimeRoot, "asr-python", "dolphin");
-    this.coherePythonPath = path.join(runtimeRoot, "asr-python", "cohere");
-    this.cudaPythonPath = path.join(runtimeRoot, "cuda-python");
-    this.qwenOrganizerPythonPath = path.join(runtimeRoot, "organizer-python");
+    const providerRoot = path.join(runtimeRoot, "asr-python-v3");
+    this.qwenAsrPythonPath = path.join(providerRoot, "qwen");
+    this.funAsrPythonPath = path.join(providerRoot, "funasr");
+    this.glmAsrPythonPath = path.join(providerRoot, "glm");
+    this.fireRedPythonPath = path.join(providerRoot, "firered");
+    this.mossPythonPath = path.join(providerRoot, "moss");
+    this.dolphinPythonPath = path.join(providerRoot, "dolphin");
+    this.coherePythonPath = path.join(providerRoot, "cohere");
+    // Keep the shared CUDA environment versioned. Older desktop builds could create
+    // cuda-python with an elevated Windows token, leaving its files unreadable to the
+    // development process and making every model appear stuck at "preparing".
+    this.cudaPythonPath = path.join(runtimeRoot, "cuda-python-v3");
+    this.qwenOrganizerPythonPath = path.join(runtimeRoot, "organizer-python-v3");
     this.qwenWorker = new QwenRuntime(
       this.pythonExecutable,
       this.qwenRunner,
@@ -709,7 +723,8 @@ export class AiRuntimeManager {
                   path.join(this.mossPythonPath, "moss_transcribe_diarize", "__init__.py"),
                 )) && (await exists(path.join(this.mossPythonPath, "transformers", "__init__.py")))
               : dolphin
-                ? await exists(path.join(this.dolphinPythonPath, "dolphin", "__init__.py"))
+                ? (await exists(path.join(this.dolphinPythonPath, "dolphin", "__init__.py"))) &&
+                  (await exists(path.join(this.dolphinPythonPath, "torch_complex", "tensor.py")))
                 : cohere
                   ? await exists(path.join(this.coherePythonPath, "transformers", "__init__.py"))
                   : false;
@@ -1026,16 +1041,13 @@ export class AiRuntimeManager {
             "-m",
             "pip",
             "install",
-            "--disable-pip-version-check",
-            "--no-input",
-            "--no-warn-script-location",
-            "--prefer-binary",
+            ...PRIVATE_PIP_INSTALL_ARGUMENTS,
             "--upgrade",
             "--target",
             this.qwenOrganizerPythonPath,
             ...QWEN_ORGANIZER_RUNTIME_PACKAGES,
           ],
-          { timeoutMs: 20 * 60_000 },
+          { env: this.pipEnvironment(), timeoutMs: 20 * 60_000 },
         );
         await this.removeProviderTorchCopies(this.qwenOrganizerPythonPath);
       } catch (error) {
@@ -1080,10 +1092,11 @@ export class AiRuntimeManager {
       "-m",
       "pip",
       "install",
-      "--disable-pip-version-check",
-      "--no-input",
-      "--no-warn-script-location",
-      "--prefer-binary",
+      ...PRIVATE_PIP_INSTALL_ARGUMENTS,
+      "--timeout",
+      "120",
+      "--retries",
+      "5",
       "--upgrade",
       "--target",
       pythonPath,
@@ -1091,37 +1104,53 @@ export class AiRuntimeManager {
     try {
       if (qwenModel) {
         await runLocalProcess(this.pythonExecutable, [...commonArgs, "qwen-asr==0.0.6"], {
+          env: this.pipEnvironment(),
           timeoutMs: 20 * 60_000,
         });
       } else if (funAsrModel) {
         await runLocalProcess(this.pythonExecutable, [...commonArgs, "funasr==1.4.3"], {
+          env: this.pipEnvironment(),
           timeoutMs: 20 * 60_000,
         });
       } else if (glmModel) {
         await runLocalProcess(
           this.pythonExecutable,
           [...commonArgs, "transformers==5.0.0", "accelerate>=1.10,<2", "librosa>=0.11,<1"],
-          { timeoutMs: 20 * 60_000 },
+          { env: this.pipEnvironment(), timeoutMs: 20 * 60_000 },
         );
       } else if (fireRedModel) {
         await runLocalProcess(
           this.pythonExecutable,
           [...commonArgs, ...FIRE_RED_RUNTIME_PACKAGES],
-          { timeoutMs: 30 * 60_000 },
+          { env: this.pipEnvironment(), timeoutMs: 30 * 60_000 },
         );
       } else if (mossModel) {
         await runLocalProcess(this.pythonExecutable, [...commonArgs, ...MOSS_RUNTIME_PACKAGES], {
+          env: this.pipEnvironment(),
           timeoutMs: 30 * 60_000,
         });
       } else if (dolphinModel) {
-        await runLocalProcess(this.pythonExecutable, [...commonArgs, ...DOLPHIN_RUNTIME_PACKAGES], {
+        const dolphinInstalled = await exists(
+          path.join(this.dolphinPythonPath, "dolphin", "__init__.py"),
+        );
+        const complexTensorInstalled = await exists(
+          path.join(this.dolphinPythonPath, "torch_complex", "tensor.py"),
+        );
+        const packages =
+          dolphinInstalled && !complexTensorInstalled
+            ? [DOLPHIN_RUNTIME_PACKAGES[1]]
+            : DOLPHIN_RUNTIME_PACKAGES;
+        const installArgs =
+          dolphinInstalled && !complexTensorInstalled ? [...commonArgs, "--no-deps"] : commonArgs;
+        await runLocalProcess(this.pythonExecutable, [...installArgs, ...packages], {
+          env: this.pipEnvironment(),
           timeoutMs: 30 * 60_000,
         });
       } else if (cohereModel) {
         await runLocalProcess(
           this.pythonExecutable,
           [...commonArgs, ...COHERE_TRANSCRIBE_RUNTIME_PACKAGES],
-          { timeoutMs: 30 * 60_000 },
+          { env: this.pipEnvironment(), timeoutMs: 30 * 60_000 },
         );
       }
       await this.removeProviderTorchCopies(pythonPath);
@@ -1293,10 +1322,7 @@ export class AiRuntimeManager {
         "-m",
         "pip",
         "install",
-        "--disable-pip-version-check",
-        "--no-input",
-        "--no-warn-script-location",
-        "--prefer-binary",
+        ...PRIVATE_PIP_INSTALL_ARGUMENTS,
         "--upgrade",
         "--target",
         this.cudaPythonPath,
@@ -1305,7 +1331,7 @@ export class AiRuntimeManager {
         "--index-url",
         CUDA_WHEEL_INDEX,
       ],
-      { timeoutMs: 45 * 60_000 },
+      { env: this.pipEnvironment(), timeoutMs: 45 * 60_000 },
     );
     const after = await this.pythonCudaDiagnostics(true);
     if (!after.cudaAvailable || after.deviceCount < 1) {
@@ -1315,6 +1341,15 @@ export class AiRuntimeManager {
 
   private providerPythonPath(providerPath: string): string {
     return `${this.cudaPythonPath}${path.delimiter}${providerPath}`;
+  }
+
+  private pipEnvironment(): NodeJS.ProcessEnv {
+    return {
+      ...process.env,
+      PIP_DISABLE_PIP_VERSION_CHECK: "1",
+      PIP_NO_CACHE_DIR: "1",
+      PIP_NO_INPUT: "1",
+    };
   }
 
   private async removeProviderTorchCopies(providerPath: string): Promise<void> {

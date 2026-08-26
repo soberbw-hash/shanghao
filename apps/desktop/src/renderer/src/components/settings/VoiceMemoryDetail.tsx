@@ -44,6 +44,14 @@ const clock = (offsetMs: number): string => {
     : `${minutes}:${String(rest).padStart(2, "0")}`;
 };
 
+const formatTranscriptionElapsed = (milliseconds?: number): string | undefined =>
+  milliseconds === undefined ? undefined : `${(Math.max(0, milliseconds) / 1_000).toFixed(1)} 秒`;
+
+const DEFAULT_ASR_MODEL_ID: AiAsrModelId = "qwen3-asr-0.6b-force";
+
+const isKnownAsrModelId = (value: string): value is AiAsrModelId =>
+  Object.prototype.hasOwnProperty.call(AI_ASR_MODEL_NAMES, value);
+
 const describeError = (message: string, transcriptionFinished: boolean): string => {
   if (message.includes("no_reliable_speech")) {
     return "没有检测到可靠的中文语音；模型返回的其他语言结果已被拦截，请重新转录。";
@@ -214,18 +222,30 @@ export const VoiceMemoryDetail = ({
     };
   }, []);
 
-  const selectedVariantUpdatedAt = record?.transcriptionVariants?.[selectedAsrModel]?.updatedAt;
+  const fallbackAsrModel = asrModels.find((model) => isKnownAsrModelId(model.id))?.id as
+    AiAsrModelId | undefined;
+  const effectiveSelectedAsrModel = isKnownAsrModelId(selectedAsrModel)
+    ? selectedAsrModel
+    : (fallbackAsrModel ?? DEFAULT_ASR_MODEL_ID);
 
   useEffect(() => {
-    if (!shouldActivateVoiceMemoryVariant(record, selectedAsrModel)) return;
-    const selectionKey = `${recording.recordingId}:${selectedAsrModel}:${selectedVariantUpdatedAt ?? "saved"}`;
+    if (isKnownAsrModelId(selectedAsrModel) || !fallbackAsrModel) return;
+    void onSelectAsrModel(fallbackAsrModel);
+  }, [fallbackAsrModel, onSelectAsrModel, selectedAsrModel]);
+
+  const selectedVariantUpdatedAt =
+    record?.transcriptionVariants?.[effectiveSelectedAsrModel]?.updatedAt;
+
+  useEffect(() => {
+    if (!shouldActivateVoiceMemoryVariant(record, effectiveSelectedAsrModel)) return;
+    const selectionKey = `${recording.recordingId}:${effectiveSelectedAsrModel}:${selectedVariantUpdatedAt ?? "saved"}`;
     if (variantSelectionRef.current === selectionKey) return;
     variantSelectionRef.current = selectionKey;
     let active = true;
     setBusy(true);
     setError(undefined);
     void window.desktopApi.ai
-      .selectTranscription(recording.recordingId, selectedAsrModel)
+      .selectTranscription(recording.recordingId, effectiveSelectedAsrModel)
       .then((next) => {
         if (!active) return;
         setRecord(next);
@@ -249,7 +269,7 @@ export const VoiceMemoryDetail = ({
     record?.phase,
     record?.transcriptionModel?.id,
     recording.recordingId,
-    selectedAsrModel,
+    effectiveSelectedAsrModel,
     selectedVariantUpdatedAt,
   ]);
 
@@ -268,7 +288,7 @@ export const VoiceMemoryDetail = ({
         transcribe: action === "transcribe",
         organize: action === "organize",
         restartTranscription: action === "transcribe",
-        asrModelId: action === "transcribe" ? selectedAsrModel : undefined,
+        asrModelId: action === "transcribe" ? effectiveSelectedAsrModel : undefined,
         markers: recording.markers.map((marker) => ({
           id: marker.id,
           offsetMs: marker.offsetMs,
@@ -317,7 +337,7 @@ export const VoiceMemoryDetail = ({
   };
 
   const selectModel = async (modelId: AiAsrModelId) => {
-    if (modelId === selectedAsrModel) return;
+    if (modelId === effectiveSelectedAsrModel) return;
     setBusy(true);
     setError(undefined);
     try {
@@ -383,9 +403,7 @@ export const VoiceMemoryDetail = ({
   const transcriptionModelTitle = record.transcriptionModel
     ? `转录模型：${record.transcriptionModel.name}${record.transcriptionModel.version ? `\n版本：${record.transcriptionModel.version}` : ""}`
     : "这条历史转录没有保存模型信息";
-  const selectedModelDiffers = Boolean(
-    selectedAsrModel && selectedAsrModel !== record.transcriptionModel?.id,
-  );
+  const selectedModelDiffers = Boolean(effectiveSelectedAsrModel !== record.transcriptionModel?.id);
   return (
     <section className="voice-memory-detail" aria-label="AI 语音记忆">
       <header>
@@ -395,6 +413,11 @@ export const VoiceMemoryDetail = ({
           {transcriptionModelLabel ? (
             <span className="voice-memory-model-badge" title={transcriptionModelTitle}>
               转录模型 · {transcriptionModelLabel}
+            </span>
+          ) : null}
+          {record.transcriptionElapsedMs !== undefined ? (
+            <span className="voice-memory-model-badge">
+              转录耗时 · {formatTranscriptionElapsed(record.transcriptionElapsedMs)}
             </span>
           ) : null}
         </div>
@@ -424,7 +447,7 @@ export const VoiceMemoryDetail = ({
         <label className="voice-memory-model-picker">
           <span>转录模型</span>
           <select
-            value={selectedAsrModel}
+            value={effectiveSelectedAsrModel}
             disabled={working || busy}
             aria-label="选择转录模型"
             onChange={(event) => void selectModel(event.target.value as AiAsrModelId)}

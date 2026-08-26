@@ -79,21 +79,42 @@ test("ordinary workstation selection is idle until a real game is detected", () 
   );
 });
 
-test("room exposes one plainly named ask and voice-memory entry", () => {
-  const topbarSource = readFileSync(
-    path.resolve(process.cwd(), "src/renderer/src/components/layout/TopStatusBar.tsx"),
+test("room exposes one dedicated AI entry with suggestions, prompt and history states", () => {
+  const windowFrameSource = readFileSync(
+    path.resolve(process.cwd(), "src/renderer/src/components/layout/WindowFrame.tsx"),
+    "utf8",
+  );
+  const roomSource = readFileSync(
+    path.resolve(process.cwd(), "src/renderer/src/pages/RoomPage.tsx"),
+    "utf8",
+  );
+  const chatSource = readFileSync(
+    path.resolve(process.cwd(), "src/renderer/src/components/chat/TemporaryChatPanel.tsx"),
     "utf8",
   );
   const dialogSource = readFileSync(
     path.resolve(process.cwd(), "src/renderer/src/components/room/RoomAskDialog.tsx"),
     "utf8",
   );
-  assert.equal(topbarSource.includes('aria-label="打开问"'), true);
-  assert.equal(topbarSource.includes("搜索语音记忆或提问"), false);
-  assert.equal(topbarSource.includes("<span>问</span>"), true);
+  assert.equal(windowFrameSource.includes('aria-label="打开上号 AI"'), false);
+  assert.equal(windowFrameSource.includes('className="window-ai-zone"'), false);
+  assert.equal(windowFrameSource.includes('className="window-ai-entry whitespace-nowrap"'), false);
+  assert.equal(chatSource.includes('className="chat-ai-entry interactive-surface"'), true);
+  assert.equal(chatSource.includes('aria-label="打开上号 AI"'), true);
+  assert.equal(chatSource.includes('<Bot className="h-4 w-4"'), true);
+  assert.equal(windowFrameSource.includes("shanghao:open-room-ai"), false);
+  assert.equal(roomSource.includes("shanghao:open-room-ai"), true);
   assert.equal(dialogSource.includes("搜索记忆"), false);
   assert.equal(dialogSource.includes("房间云端 AI，可联网搜索相关知识"), false);
   assert.equal(dialogSource.includes("ROOM_QUESTION_HISTORY_LIMIT = 10"), true);
+  assert.equal(dialogSource.includes("ROOM_QUESTION_SUGGESTIONS"), true);
+  assert.equal(dialogSource.includes("海克斯大乱斗卡莎出装推荐"), true);
+  assert.equal(dialogSource.includes("三角洲行动零号大坝撤离路线"), false);
+  assert.equal(dialogSource.includes("联网查游戏攻略和资料"), true);
+  assert.equal(dialogSource.includes("可以问当前房间，也可以查找录音里的内容。"), false);
+  assert.equal(dialogSource.includes("今天想问点什么？"), true);
+  assert.equal(dialogSource.includes('className="room-ai-composer"'), true);
+  assert.equal(dialogSource.includes('aria-label="发送问题"'), true);
   assert.equal(dialogSource.includes('aria-label="最近提问"'), true);
   assert.equal(dialogSource.includes("问千问"), false);
   assert.equal(dialogSource.includes("window.desktopApi.ai.askMemory"), true);
@@ -121,7 +142,6 @@ test("room actions follow status, interaction, tools and safe-exit hierarchy", (
     'className="topbar-metrics"',
     'data-icon-motion="knock"',
     'data-icon-motion="invite"',
-    'aria-label="打开问"',
     'data-icon-motion="settings"',
   ].map((marker) => topbarSource.indexOf(marker));
   assert.equal(
@@ -133,6 +153,7 @@ test("room actions follow status, interaction, tools and safe-exit hierarchy", (
     [...topbarOrder].sort((left, right) => left - right),
   );
   assert.equal(topbarSource.includes('aria-label="投喂作者"'), false);
+  assert.equal(topbarSource.includes('aria-label="打开上号 AI"'), false);
 
   const dockOrder = [
     'className="voice-action-group voice-session-actions"',
@@ -363,7 +384,7 @@ test("fast chat acknowledgements do not flash a transient sending label", () => 
 
 test("the shanghao quick reply uses its own voice sound for every avatar", () => {
   const soundSource = readFileSync(
-    path.resolve(process.cwd(), "src/renderer/src/features/audio/animalCall.ts"),
+    path.resolve(process.cwd(), "src/renderer/src/features/audio/quickMessageAudio.ts"),
     "utf8",
   );
   const roomStateSource = readFileSync(
@@ -371,25 +392,15 @@ test("the shanghao quick reply uses its own voice sound for every avatar", () =>
     "utf8",
   );
 
-  assert.equal(soundSource.includes("quick-reply-chirp.wav"), true);
-  assert.equal(soundSource.includes("quick-reply-shanghao.wav"), true);
-  assert.equal(soundSource.includes('quickReplyContent.trim() === "上号"'), true);
+  assert.equal(soundSource.includes('soundId === "legacy-animal-call"'), true);
+  assert.equal(soundSource.includes("playAnimalCall"), true);
   assert.equal(roomStateSource.includes("message.content,"), true);
   assert.equal(
-    roomStateSource.includes(
-      "if (!message.isLocal && currentSettings?.isUiSoundEnabled !== false)",
-    ),
+    roomStateSource.includes("currentSettings?.quickMessages.soundEnabled !== false"),
     true,
   );
-  const localQuickSend = roomStateSource.slice(
-    roomStateSource.indexOf("const sendQuickMessage"),
-    roomStateSource.indexOf("const startScreenShare"),
-  );
-  assert.equal(localQuickSend.includes("playAnimalCall("), true);
-  assert.equal(localQuickSend.includes("currentSettings?.avatarId"), true);
-  assert.equal(localQuickSend.includes(", content)"), true);
-  assert.equal(soundSource.includes("cat-meow.wav"), false);
-  assert.equal(soundSource.includes("duck-quack.wav"), false);
+  assert.equal(roomStateSource.includes("sendConfiguredQuickMessage"), true);
+  assert.equal(roomStateSource.includes("currentSettings.quickMessages.soundVolume"), true);
 });
 
 test("the seated duck stays centered over its compact chair", () => {
@@ -521,15 +532,18 @@ test("chat messages are uniformly left aligned with avatar and no per-message cl
 
 test("chat image preview keeps large navigation controls fixed at the left and right sides", () => {
   const source = readFileSync(
-    path.resolve(process.cwd(), "src/renderer/src/components/chat/TemporaryChatPanel.tsx"),
+    path.resolve(process.cwd(), "src/renderer/src/components/chat/ChatImageLightbox.tsx"),
     "utf8",
   );
   const styles = readRendererCss();
 
   assert.equal(source.includes('aria-label="查看上一张图片"'), true);
   assert.equal(source.includes('aria-label="查看下一张图片"'), true);
+  assert.equal(source.includes("getSpatialTransform"), true);
+  assert.equal(source.includes("originElement.getBoundingClientRect()"), true);
+  assert.equal(source.includes("onComplete: onClosed"), true);
   assert.match(styles, /\.chat-image-preview-nav\s*\{[^}]*position:\s*fixed;/s);
-  assert.match(styles, /\.chat-image-preview-nav\s*\{[^}]*width:\s*64px;[^}]*height:\s*64px;/s);
+  assert.match(styles, /\.chat-image-preview-nav\s*\{[^}]*width:\s*54px;[^}]*height:\s*54px;/s);
   assert.match(styles, /\.chat-image-preview-nav\.is-previous\s*\{[^}]*left:/s);
   assert.match(styles, /\.chat-image-preview-nav\.is-next\s*\{[^}]*right:/s);
 });

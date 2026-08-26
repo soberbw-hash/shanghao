@@ -10,6 +10,7 @@ type CaptureMode =
   | "home"
   | "home-mic"
   | "room"
+  | "room-ai"
   | "room-mic"
   | "member-volume"
   | "recording-stop"
@@ -347,6 +348,11 @@ export const captureUi = async (
   await dismissReleaseNotes(window);
   await dismissDailyReport(window);
   if (options.mode !== "home" && options.mode !== "home-mic") {
+    if (await clickButtonByLabel(window, "以访客身份继续")) {
+      await sleep(700);
+      await dismissReleaseNotes(window, 1_500);
+      await dismissDailyReport(window);
+    }
     await prepareProfileForCapture(window);
     await dismissReleaseNotes(window, 1_500);
     await dismissDailyReport(window);
@@ -363,6 +369,7 @@ export const captureUi = async (
     await dismissDailyReport(window);
     const needsSettledRoom = [
       "room",
+      "room-ai",
       "room-mic",
       "member-volume",
       "recording-stop",
@@ -429,6 +436,17 @@ export const captureUi = async (
 
   if (options.mode === "room-mic") {
     await clickButtonByLabel(window, "打开麦克风设备");
+    await sleep(250);
+  }
+
+  if (options.mode === "room-ai") {
+    const opened = await clickButtonByLabelWithMouse(window, "打开上号 AI");
+    if (!opened || !(await waitForVisibleSelector(window, ".room-ask-popover", 1_500))) {
+      const failedImage = await window.capturePage();
+      await mkdir(dirname(options.outputPath), { recursive: true });
+      await writeFile(options.outputPath, failedImage.toPNG());
+      throw new Error("上号 AI 面板没有在预期时间内打开");
+    }
     await sleep(250);
   }
 

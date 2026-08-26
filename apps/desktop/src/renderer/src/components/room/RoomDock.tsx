@@ -1,5 +1,5 @@
 import type { Dispatch, SetStateAction } from "react";
-import { ChevronDown } from "lucide-react";
+import { ChevronDown as ChevronDownData, ChevronUp as ChevronUpData } from "lucide";
 import { AnimatePresence } from "framer-motion";
 
 import {
@@ -15,6 +15,7 @@ import { MuteButton } from "../audio/MuteButton";
 import { RecordingButton } from "../audio/RecordingButton";
 import { Button } from "../base/Button";
 import { AnimatedControlIcon } from "../icons/AnimatedControlIcon";
+import { MorphingIcon } from "../icons/MorphingIcon";
 import {
   clearGlassPointerHighlight,
   updateGlassPointerHighlight,
@@ -135,7 +136,11 @@ export const RoomDock = ({
             setActiveAudioPanel((current) => (current === "microphone" ? undefined : "microphone"))
           }
         >
-          <ChevronDown className="h-4 w-4" aria-hidden="true" />
+          <MorphingIcon
+            icon={activeAudioPanel === "microphone" ? ChevronUpData : ChevronDownData}
+            className="h-4 w-4"
+            aria-hidden="true"
+          />
         </button>
         <AnimatePresence>
           {activeAudioPanel === "microphone" && settings ? (
@@ -190,7 +195,11 @@ export const RoomDock = ({
             setActiveAudioPanel((current) => (current === "speaker" ? undefined : "speaker"))
           }
         >
-          <ChevronDown className="h-4 w-4" aria-hidden="true" />
+          <MorphingIcon
+            icon={activeAudioPanel === "speaker" ? ChevronUpData : ChevronDownData}
+            className="h-4 w-4"
+            aria-hidden="true"
+          />
         </button>
         <AnimatePresence>
           {activeAudioPanel === "speaker" && settings ? (

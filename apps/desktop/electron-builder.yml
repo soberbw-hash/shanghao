@@ -40,6 +40,8 @@ extraResources:
       - "DeepFilterNet3_onnx.tar.gz"
   - from: resources/ai/runtime-manifest.json
     to: ai/runtime-manifest.json
+  - from: resources/quick-messages
+    to: quick-messages
   - from: resources/native
     to: native
     filter:

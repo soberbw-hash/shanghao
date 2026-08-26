@@ -14,14 +14,13 @@ test("packaged Windows executable requires administrator without uiAccess", asyn
   assert.match(verifier, /asInvoker/);
 });
 
-test("startup task is current-user interactive, delayed and highest available", async () => {
+test("legacy startup task support only removes the old auto-login task", async () => {
   const startupTask = await read("../src/main/windows-startup-task.ts");
   assert.match(startupTask, /ShangHao Auto Start/);
-  assert.match(startupTask, /LogonType Interactive/);
-  assert.match(startupTask, /RunLevel Highest/);
-  assert.match(startupTask, /PT5S/);
-  assert.match(startupTask, /--shanghao-startup/);
-  assert.doesNotMatch(startupTask, /-UserId\s+['"]?SYSTEM/i);
+  assert.match(startupTask, /Unregister-ScheduledTask/);
+  assert.match(startupTask, /removeWindowsStartupTask/);
+  assert.doesNotMatch(startupTask, /Register-ScheduledTask/);
+  assert.doesNotMatch(startupTask, /--shanghao-startup/);
 });
 
 test("firewall repair owns exactly four program-scoped TCP and UDP rules", async () => {

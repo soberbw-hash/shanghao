@@ -499,6 +499,7 @@ export class AiVoiceMemoryService {
       speakers: variant.speakers,
       transcriptionModel: variant.model,
       transcriptionPipelineVersion: variant.pipelineVersion,
+      transcriptionElapsedMs: variant.transcriptionElapsedMs,
       phase: "ready",
       progress: 100,
       errorMessage: undefined,
@@ -510,9 +511,26 @@ export class AiVoiceMemoryService {
     // A retry button can be clicked more than once while the request is waiting
     // behind another long recording. Keep the first accepted task instead of
     // replacing it with another task for the same recording.
-    if (this.pendingProcesses.has(request.recordingId)) {
+    const pending = this.pendingProcesses.get(request.recordingId);
+    if (pending) {
       const pendingRecord = await this.store.get(request.recordingId);
-      if (pendingRecord) return pendingRecord;
+      const previousTaskIsTerminal =
+        pendingRecord &&
+        (pendingRecord.phase === "ready" ||
+          pendingRecord.phase === "error" ||
+          pendingRecord.phase === "paused") &&
+        pendingRecord.taskStatus !== "processing";
+      const startsDistinctTask =
+        previousTaskIsTerminal &&
+        Boolean(request.taskId && request.taskId !== pendingRecord?.taskId);
+      if ((!request.restartTranscription && !startsDistinctTask) || !previousTaskIsTerminal) {
+        if (pendingRecord) return pendingRecord;
+      } else {
+        await pending.catch(() => undefined);
+        if (this.pendingProcesses.get(request.recordingId) === pending) {
+          this.pendingProcesses.delete(request.recordingId);
+        }
+      }
     }
     const previousRecord = await this.store.get(request.recordingId);
     const previous = previousRecord ? this.withTranscriptionModel(previousRecord) : undefined;
@@ -762,6 +780,7 @@ export class AiVoiceMemoryService {
             timeline: record.timeline.filter((entry) => entry.kind === "marker"),
             transcriptionPipelineVersion: undefined,
             transcriptionModel: undefined,
+            transcriptionElapsedMs: undefined,
             organizedAt: undefined,
             errorMessage: undefined,
           });
@@ -1124,6 +1143,7 @@ export class AiVoiceMemoryService {
         const source = knownSpeakerSegments[unit];
         if (!source) continue;
         onStage?.("convert");
+        const asrStartedAt = performance.now();
         const recognized = await this.runtime.transcribeChunk({
           modelId: asrModelId,
           recordingId: record.recordingId,
@@ -1142,6 +1162,12 @@ export class AiVoiceMemoryService {
               ...context,
             });
           },
+        });
+        record = await this.save({
+          ...record,
+          transcriptionElapsedMs:
+            (record.transcriptionElapsedMs ?? 0) +
+            Math.max(0, Math.round(performance.now() - asrStartedAt)),
         });
         const speakerTranscript = bindTranscriptToKnownSpeaker(
           record.recordingId,
@@ -1257,6 +1283,7 @@ export class AiVoiceMemoryService {
           modelPath: asrStatus.modelPath,
         },
       );
+      const asrStartedAt = performance.now();
       const segments = await this.runtime.transcribeChunk({
         modelId: asrModelId,
         recordingId: record.recordingId,
@@ -1274,6 +1301,12 @@ export class AiVoiceMemoryService {
             ...context,
           });
         },
+      });
+      record = await this.save({
+        ...record,
+        transcriptionElapsedMs:
+          (record.transcriptionElapsedMs ?? 0) +
+          Math.max(0, Math.round(performance.now() - asrStartedAt)),
       });
       onStage?.("storage");
       this.log("info", "Voice memory chunk transcribed", {
@@ -1515,6 +1548,7 @@ export class AiVoiceMemoryService {
                 speakers: record.speakers,
                 pipelineVersion:
                   record.transcriptionPipelineVersion ?? TRANSCRIPTION_PIPELINE_VERSION,
+                transcriptionElapsedMs: record.transcriptionElapsedMs,
                 updatedAt: new Date().toISOString(),
               },
             },

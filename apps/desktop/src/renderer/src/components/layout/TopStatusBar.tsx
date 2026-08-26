@@ -1,4 +1,4 @@
-import { MessageCircleQuestion, Users, Wifi } from "lucide-react";
+import { Users, Wifi } from "lucide-react";
 
 import { RoomConnectionState } from "@private-voice/shared";
 
@@ -7,6 +7,7 @@ import { summarizeConnectionHealth } from "../../features/network/networkDiagnos
 import { useRoomStore } from "../../store/roomStore";
 import { Button } from "../base/Button";
 import { AnimatedControlIcon } from "../icons/AnimatedControlIcon";
+import { LiquidSelectionIndicator } from "../motion/LiquidSelectionIndicator";
 import {
   clearGlassPointerHighlight,
   updateGlassPointerHighlight,
@@ -56,7 +57,6 @@ export const TopStatusBar = ({
   onSwitchChannel,
   onKnock,
   onInvite,
-  onAsk,
 }: {
   currentChannelId: "main" | "side";
   channelCounts: { main: number; side: number };
@@ -66,7 +66,6 @@ export const TopStatusBar = ({
   onSwitchChannel: (channelId: "main" | "side") => void;
   onKnock?: () => void;
   onInvite?: () => void;
-  onAsk?: () => void;
 }) => {
   const navigate = useAppStore((state) => state.navigate);
   const setSettingsReturnTo = useAppStore((state) => state.setSettingsReturnTo);
@@ -109,8 +108,13 @@ export const TopStatusBar = ({
                   onClick={() => onSwitchChannel(channelId)}
                   aria-current={isSelected ? "page" : undefined}
                 >
-                  <span>{index + 1} 房</span>
-                  <strong>{channelCounts[channelId]}/5</strong>
+                  {isSelected ? (
+                    <LiquidSelectionIndicator layoutId="room-channel-selection" />
+                  ) : null}
+                  <span className="channel-switch-content relative z-[1]">
+                    <span>{index + 1} 房</span>
+                    <strong>{channelCounts[channelId]}/5</strong>
+                  </span>
                 </button>
               );
             })}
@@ -174,15 +178,6 @@ export const TopStatusBar = ({
           </Button>
         </div>
         <div className="topbar-actions topbar-utility-actions" aria-label="房间工具">
-          <Button
-            variant="ghost"
-            className="topbar-action whitespace-nowrap"
-            onClick={onAsk}
-            aria-label="打开问"
-          >
-            <MessageCircleQuestion className="h-3.5 w-3.5" aria-hidden="true" />
-            <span>问</span>
-          </Button>
           <Button
             variant="ghost"
             data-icon-motion="settings"

@@ -29,17 +29,17 @@ export const overlayScrimVariants: Variants = {
 };
 
 export const dialogSurfaceVariants: Variants = {
-  initial: { opacity: 0, y: 12, scale: 0.965 },
+  initial: { opacity: 0, y: 10, scale: 0.972 },
   open: {
     opacity: 1,
     y: 0,
     scale: 1,
-    transition: { type: "spring", ...motionSpring.soft },
+    transition: { duration: motionDuration.relaxed, ease: motionCurve.spatial },
   },
   closed: {
     opacity: 0,
-    y: 6,
-    scale: 0.985,
+    y: 4,
+    scale: 0.988,
     transition: { duration: motionDuration.compact, ease: exitEase },
   },
 };
@@ -52,22 +52,22 @@ export const largeDialogSurfaceVariants: Variants = {
   open: {
     opacity: 1,
     y: 0,
-    transition: { duration: motionDuration.fast, ease: motionCurve.enter },
+    transition: { duration: motionDuration.normal, ease: motionCurve.spatial },
   },
   closed: {
     opacity: 0,
     y: 3,
-    transition: { duration: motionDuration.instant, ease: exitEase },
+    transition: { duration: motionDuration.compact, ease: exitEase },
   },
 };
 
 export const popoverSurfaceVariants: Variants = {
-  initial: { opacity: 0, y: 6, scale: 0.97 },
+  initial: { opacity: 0, y: 7, scale: 0.975 },
   open: {
     opacity: 1,
     y: 0,
     scale: 1,
-    transition: { type: "spring", ...motionSpring.compact },
+    transition: { duration: motionDuration.normal, ease: motionCurve.spatial },
   },
   closed: {
     opacity: 0,

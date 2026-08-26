@@ -55,7 +55,7 @@ test("migrateSettings falls back to safe defaults for damaged legacy config", ()
   assert.equal(result.settings.isUiSoundEnabled, false);
   assert.equal(result.settings.isSystemNotificationEnabled, true);
   assert.equal(result.settings.isGameDetectionEnabled, true);
-  assert.equal(result.settings.launchOnStartup, true);
+  assert.equal("launchOnStartup" in result.settings, false);
   assert.equal(result.settings.lastReleaseNotesVersionSeen, undefined);
   assert.equal(result.settings.soundVolume, defaultSettings.soundVolume);
   assert.equal(result.settings.isHardwareAccelerationEnabled, true);
@@ -81,6 +81,24 @@ test("friend loudness balance is on by default and explicit choices survive migr
   );
 });
 
+test("recording library cleanup defaults to 20 GB and upgrades the old 10 GB default", () => {
+  assert.equal(defaultSettings.recordingLibraryQuotaGb, 20);
+  assert.equal(
+    migrateSettings({
+      settingsSchemaVersion: SETTINGS_SCHEMA_VERSION - 1,
+      recordingLibraryQuotaGb: 10,
+    }).settings.recordingLibraryQuotaGb,
+    20,
+  );
+  assert.equal(
+    migrateSettings({
+      ...defaultSettings,
+      recordingLibraryQuotaGb: 15,
+    }).settings.recordingLibraryQuotaGb,
+    15,
+  );
+});
+
 test("interface sound preference and volume survive restart migration", () => {
   const result = migrateSettings({
     ...defaultSettings,
@@ -92,6 +110,50 @@ test("interface sound preference and volume survive restart migration", () => {
   assert.equal(result.settings.isUiSoundEnabled, false);
   assert.equal(migrateSettings({ soundVolume: 9 }).settings.soundVolume, 1);
   assert.equal(migrateSettings({ soundVolume: -1 }).settings.soundVolume, 0);
+});
+
+test("quick message settings migrate to five safe slots", () => {
+  const migrated = migrateSettings({
+    ...defaultSettings,
+    quickMessages: {
+      soundEnabled: false,
+      soundVolume: 2,
+      slots: [
+        { presetId: "legacy-shanghao", shortcut: " Ctrl+Alt+9 ", enabled: false },
+        { presetId: "missing", shortcut: "", enabled: true },
+      ],
+    },
+  });
+
+  assert.equal(migrated.settings.quickMessages.soundEnabled, false);
+  assert.equal(migrated.settings.quickMessages.soundVolume, 1);
+  assert.equal(migrated.settings.quickMessages.slots.length, 5);
+  assert.deepEqual(migrated.settings.quickMessages.slots[0], {
+    presetId: "legacy-shanghao",
+    shortcut: "Ctrl+Alt+9",
+    enabled: false,
+  });
+  assert.equal(migrated.settings.quickMessages.slots[1]?.presetId, "missing");
+  assert.equal(migrated.settings.quickMessages.slots[4]?.presetId, "legacy-hear");
+});
+
+test("removed legacy quick message preset is cleared from saved shortcuts", () => {
+  const migrated = migrateSettings({
+    ...defaultSettings,
+    quickMessages: {
+      ...defaultSettings.quickMessages,
+      slots: [
+        { presetId: "legacy-ok", shortcut: "Ctrl+Alt+1", enabled: true },
+        ...defaultSettings.quickMessages.slots.slice(1),
+      ],
+    },
+  });
+
+  assert.deepEqual(migrated.settings.quickMessages.slots[0], {
+    presetId: undefined,
+    shortcut: "Ctrl+Alt+1",
+    enabled: false,
+  });
 });
 
 test("legacy recording loudness preference is discarded because the pipeline always enables it", () => {

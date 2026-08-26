@@ -2,6 +2,7 @@ import { useCallback, useEffect } from "react";
 
 import {
   DEFAULT_CHANNEL_ID,
+  findQuickMessagePreset,
   MemberSpeakingState,
   RoomConnectionState,
   RoomLifecycleState,
@@ -27,9 +28,14 @@ import { REMOTE_AUDIO_LEVEL_EVENT } from "../features/audio/RemoteAudioMixer";
 import { getRemoteAudioMixer } from "../features/audio/RemoteAudioMixer";
 import { clampMemberVolume } from "../features/audio/memberVolume";
 import { playUiSound } from "../features/audio/uiSound";
-import { playAnimalCall } from "../features/audio/animalCall";
+import { playQuickMessageSound } from "../features/audio/quickMessageAudio";
 import { RoomClient } from "../features/room/roomClient";
-import { encodeQuickReplyTarget, QUICK_REPLY_COOLDOWN_MS } from "../features/chat/quickReplies";
+import {
+  encodeQuickMessageTarget,
+  encodeQuickReplyTarget,
+  presetForQuickReplyContent,
+  QUICK_REPLY_COOLDOWN_MS,
+} from "../features/chat/quickReplies";
 import { persistChatHistory, type ChannelId } from "../features/chat/chatPersistence";
 import {
   runtimeMemberVolumes,
@@ -603,8 +609,17 @@ export const useRoomState = () => {
       onQuickMessage: (message) => {
         addQuickMessage(message);
         const currentSettings = useSettingsStore.getState().settings;
-        if (!message.isLocal && currentSettings?.isUiSoundEnabled !== false) {
-          playAnimalCall(message.avatarId, currentSettings?.soundVolume ?? 0.72, message.content);
+        if (
+          !message.isLocal &&
+          currentSettings?.quickMessages.soundEnabled !== false &&
+          currentSettings?.quickMessages
+        ) {
+          playQuickMessageSound(
+            message.soundId,
+            message.avatarId,
+            currentSettings.quickMessages.soundVolume,
+            message.content,
+          );
         }
         if (!message.isLocal && currentSettings?.isSystemNotificationEnabled !== false) {
           sendSystemNotification({
@@ -1093,9 +1108,10 @@ export const useRoomState = () => {
     playSceneReactionSound("send-message");
   };
 
-  const sendQuickMessage = async (content: string) => {
-    const targetPeerId = encodeQuickReplyTarget(content);
-    if (!targetPeerId || !activeClient?.canSendChat()) {
+  const sendConfiguredQuickMessage = async (presetId: string) => {
+    const preset = findQuickMessagePreset(presetId);
+    const targetPeerId = preset ? encodeQuickMessageTarget(preset.id) : undefined;
+    if (!preset || !targetPeerId || !activeClient?.canSendChat()) {
       throw new Error("signaling_not_connected");
     }
     const now = Date.now();
@@ -1103,11 +1119,48 @@ export const useRoomState = () => {
     lastQuickMessageSentAt = now;
 
     const currentSettings = useSettingsStore.getState().settings;
-    if (currentSettings?.isUiSoundEnabled !== false) {
-      playAnimalCall(currentSettings?.avatarId, currentSettings?.soundVolume ?? 0.72, content);
+    if (currentSettings?.quickMessages.soundEnabled !== false && currentSettings?.quickMessages) {
+      playQuickMessageSound(
+        preset.soundId,
+        currentSettings.avatarId,
+        currentSettings.quickMessages.soundVolume,
+        preset.content,
+      );
     }
     await activeClient.sendSceneReaction(targetPeerId, "👍");
   };
+
+  const sendQuickMessage = async (content: string) => {
+    const preset = presetForQuickReplyContent(content);
+    if (preset) {
+      await sendConfiguredQuickMessage(preset.id);
+      return;
+    }
+    const targetPeerId = encodeQuickReplyTarget(content);
+    if (!targetPeerId || !activeClient?.canSendChat()) {
+      throw new Error("signaling_not_connected");
+    }
+    const now = Date.now();
+    if (now - lastQuickMessageSentAt < QUICK_REPLY_COOLDOWN_MS) return;
+    lastQuickMessageSentAt = now;
+    await activeClient.sendSceneReaction(targetPeerId, "👍");
+  };
+
+  useEffect(() => {
+    const unsubscribe = window.desktopApi.shortcuts.onQuickMessageTriggered((slotIndex) => {
+      const currentSettings = useSettingsStore.getState().settings;
+      const slot = currentSettings?.quickMessages.slots[slotIndex];
+      if (!slot?.enabled || !slot.presetId) return;
+      void sendConfiguredQuickMessage(slot.presetId).catch(() => {
+        pushToast({
+          tone: "warning",
+          title: "快捷消息没有发出去",
+          description: "进入房间后才能使用快捷键发送。",
+        });
+      });
+    });
+    return unsubscribe;
+  }, [pushToast]);
 
   const startScreenShare = async (stream: MediaStream, profile?: ScreenShareEncodingProfile) => {
     if (!activeClient) {
@@ -1216,6 +1269,7 @@ export const useRoomState = () => {
     sendKnock,
     sendSceneReaction,
     sendQuickMessage,
+    sendConfiguredQuickMessage,
     startScreenShare,
     stopScreenShare,
     setScreenShareViewingActive,

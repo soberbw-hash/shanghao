@@ -10,6 +10,7 @@ const resolvePath = (...segments: string[]) => path.resolve(currentDirectory, ..
 export default defineConfig({
   base: "./",
   plugins: [react()],
+  assetsInclude: ["**/*.aac", "**/*.mp3"],
   resolve: {
     alias: {
       "@renderer": resolvePath("src/renderer/src"),

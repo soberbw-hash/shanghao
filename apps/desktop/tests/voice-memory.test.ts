@@ -866,6 +866,52 @@ test("UI transcription retries acknowledge immediately and automatic organizatio
   );
 });
 
+test("a new model comparison task replaces a terminal task before its cleanup microtask", async () => {
+  let current: VoiceMemoryRecord = {
+    ...record(),
+    phase: "paused",
+    taskId: "comparison-old",
+    taskStatus: "pending",
+  };
+  const service = new AiVoiceMemoryService(
+    { getTaskCheckpoint: () => undefined } as never,
+    {} as never,
+    {} as never,
+    {
+      get: async () => current,
+      save: async (value: VoiceMemoryRecord) => {
+        current = value;
+        return value;
+      },
+    } as never,
+  );
+  const state = service as unknown as {
+    pendingProcesses: Map<string, Promise<VoiceMemoryRecord>>;
+    process: AiVoiceMemoryService["process"];
+  };
+  state.pendingProcesses.set(current.recordingId, Promise.resolve(current));
+  let processedTaskId: string | undefined;
+  state.process = async (request) => {
+    processedTaskId = request.taskId;
+    return current;
+  };
+
+  const accepted = await service.start({
+    recordingId: current.recordingId,
+    filePath: current.filePath,
+    manual: true,
+    transcribe: true,
+    organize: false,
+    restartTranscription: false,
+    asrModelId: "qwen3-asr-0.6b-force",
+    taskId: "comparison-next",
+  });
+
+  assert.equal(accepted.taskId, "comparison-next");
+  assert.equal(accepted.taskStatus, "pending");
+  assert.equal(processedTaskId, "comparison-next");
+});
+
 test("the main process forces a clean retry when the UI sends an invalid legacy result", async () => {
   const invalid = {
     ...record(),

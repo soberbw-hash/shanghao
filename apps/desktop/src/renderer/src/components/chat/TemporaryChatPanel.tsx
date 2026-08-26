@@ -1,18 +1,16 @@
-import { Fragment, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
-import { createPortal } from "react-dom";
 import {
-  ChevronLeft,
-  ChevronRight,
-  ExternalLink,
-  Link2,
-  LoaderCircle,
-  RotateCcw,
-  Send,
-  X,
-} from "lucide-react";
+  Fragment,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
+import { Bot, ExternalLink, Link2, LoaderCircle, RotateCcw, Settings2, Send } from "lucide-react";
 import { gsap } from "gsap";
 
-import type { ChatMessage } from "@private-voice/shared";
+import { QUICK_MESSAGE_PRESETS, type ChatMessage } from "@private-voice/shared";
 
 import { getAvatarSrc } from "../../utils/profile";
 import {
@@ -22,14 +20,16 @@ import {
   isMessageOnlyUrl,
 } from "../../features/chat/linkPreview";
 import { writeRoomCollectionDragPayload } from "../../features/chat/collectionDrag";
-import { QUICK_REPLIES, QUICK_REPLY_COOLDOWN_MS } from "../../features/chat/quickReplies";
+import { QUICK_REPLY_COOLDOWN_MS } from "../../features/chat/quickReplies";
 import { motionDuration, motionEase } from "../../features/motion/motionSystem";
 import { useAppStore } from "../../store/appStore";
+import { useSettingsStore } from "../../store/settingsStore";
 import { AvatarPlaceholder } from "../base/AvatarPlaceholder";
 import { Button } from "../base/Button";
 import { Input } from "../base/Input";
 import { usePrefersReducedMotion } from "../../hooks/usePrefersReducedMotion";
 import { isSupportedChatImageFile } from "../../utils/chatImage";
+import { ChatImageLightbox } from "./ChatImageLightbox";
 
 const urlPattern = /https?:\/\/[^\s<，。！？；：）】》」]+/gi;
 const trailingUrlPunctuation = /[.,!?，。！？;；:：)\]}>》」】]+$/;
@@ -148,6 +148,9 @@ export const TemporaryChatPanel = ({
   onChatInputChange,
   onSend,
   onQuickSend,
+  onQuickMessageSend,
+  onOpenQuickMessageSettings,
+  onOpenRoomAi,
   onSendImage,
   onRecall,
   onRetry,
@@ -162,6 +165,9 @@ export const TemporaryChatPanel = ({
   onChatInputChange: (value: string) => void;
   onSend: () => void;
   onQuickSend?: (message: string) => void;
+  onQuickMessageSend?: (presetId: string) => void;
+  onOpenQuickMessageSettings?: () => void;
+  onOpenRoomAi?: () => void;
   onSendImage?: (file: File) => Promise<void>;
   onRecall?: (messageId: string) => Promise<void>;
   onRetry?: (message: ChatMessage) => Promise<void>;
@@ -172,6 +178,7 @@ export const TemporaryChatPanel = ({
   reduceMotion?: boolean;
 }) => {
   const pushToast = useAppStore((state) => state.pushToast);
+  const quickMessageSlots = useSettingsStore((state) => state.settings?.quickMessages.slots);
   const lastQuickSendAt = useRef(0);
   const quickSendCooldownTimer = useRef<number | undefined>(undefined);
   const listRef = useRef<HTMLDivElement>(null);
@@ -181,18 +188,31 @@ export const TemporaryChatPanel = ({
   const [unreadCount, setUnreadCount] = useState(0);
   const [isSendingImage, setIsSendingImage] = useState(false);
   const [isDraggingImage, setIsDraggingImage] = useState(false);
-  const [previewImage, setPreviewImage] = useState<NonNullable<ChatMessage["image"]> | null>(null);
+  const [previewMessageId, setPreviewMessageId] = useState<string | null>(null);
+  const [previewDirection, setPreviewDirection] = useState<-1 | 0 | 1>(0);
+  const previewOriginElements = useRef(new Map<string, HTMLButtonElement>());
   const [isQuickSendCoolingDown, setIsQuickSendCoolingDown] = useState(false);
   const shouldReduceMotion = usePrefersReducedMotion(reduceMotion);
-
-  useEffect(() => {
-    if (!previewImage) return;
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setPreviewImage(null);
-    };
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [previewImage]);
+  const quickMessages = useMemo(() => {
+    const configured = (quickMessageSlots ?? [])
+      .map((slot) => ({
+        preset: QUICK_MESSAGE_PRESETS.find((candidate) => candidate.id === slot.presetId),
+        shortcut: slot.shortcut,
+        enabled: slot.enabled,
+      }))
+      .filter(
+        (
+          item,
+        ): item is {
+          preset: (typeof QUICK_MESSAGE_PRESETS)[number];
+          shortcut: string;
+          enabled: boolean;
+        } => item.enabled && Boolean(item.preset),
+      );
+    return configured.length
+      ? configured
+      : QUICK_MESSAGE_PRESETS.map((preset) => ({ preset, shortcut: "", enabled: true }));
+  }, [quickMessageSlots]);
 
   useEffect(
     () => () => {
@@ -343,7 +363,7 @@ export const TemporaryChatPanel = ({
     onSend();
   };
 
-  const handleQuickSend = (reply: string, source: HTMLButtonElement) => {
+  const handleQuickSend = (item: (typeof quickMessages)[number], source: HTMLButtonElement) => {
     const now = Date.now();
     if (now - lastQuickSendAt.current < QUICK_REPLY_COOLDOWN_MS) return;
     lastQuickSendAt.current = now;
@@ -356,7 +376,8 @@ export const TemporaryChatPanel = ({
       setIsQuickSendCoolingDown(false);
     }, QUICK_REPLY_COOLDOWN_MS);
     animateSendFeedback(source);
-    onQuickSend?.(reply);
+    if (onQuickMessageSend) onQuickMessageSend(item.preset.id);
+    else onQuickSend?.(item.preset.content);
   };
 
   const sendImageFile = (file?: File) => {
@@ -412,14 +433,18 @@ export const TemporaryChatPanel = ({
     );
   };
 
-  const previewImages = messages.flatMap((message) => (message.image ? [message.image] : []));
-  const previewIndex = previewImage
-    ? previewImages.findIndex((image) => image.dataUrl === previewImage.dataUrl)
+  const previewItems = messages.flatMap((message) =>
+    message.image ? [{ messageId: message.id, image: message.image }] : [],
+  );
+  const previewIndex = previewMessageId
+    ? previewItems.findIndex((item) => item.messageId === previewMessageId)
     : -1;
+  const previewItem = previewIndex >= 0 ? previewItems[previewIndex] : undefined;
   const showPreviewImage = (offset: number) => {
-    if (previewIndex < 0 || previewImages.length < 2) return;
-    const nextIndex = (previewIndex + offset + previewImages.length) % previewImages.length;
-    setPreviewImage(previewImages[nextIndex] ?? null);
+    if (previewIndex < 0 || previewItems.length < 2) return;
+    const nextIndex = (previewIndex + offset + previewItems.length) % previewItems.length;
+    setPreviewDirection(offset < 0 ? -1 : 1);
+    setPreviewMessageId(previewItems[nextIndex]?.messageId ?? null);
   };
 
   return (
@@ -465,21 +490,48 @@ export const TemporaryChatPanel = ({
             聊天
           </div>
           <div className="chat-quick-replies flex justify-end gap-1">
-            {QUICK_REPLIES.map((reply) => (
+            {quickMessages.map((item, index) => (
               <button
-                key={reply}
+                key={`${item.preset.id}-${index}`}
                 type="button"
                 disabled={!canSend || isQuickSendCoolingDown}
                 className="chat-quick-reply interactive-surface rounded-[9px] border border-[rgba(220,230,242,0.8)] bg-white font-medium text-[#52657d] disabled:opacity-35 hover:bg-[#f5f7fb]"
-                onClick={(event) => handleQuickSend(reply, event.currentTarget)}
+                onClick={(event) => handleQuickSend(item, event.currentTarget)}
+                title={
+                  item.shortcut ? `${item.preset.content} · ${item.shortcut}` : item.preset.content
+                }
               >
-                {reply}
+                {item.preset.label}
               </button>
             ))}
+            {onOpenQuickMessageSettings ? (
+              <button
+                type="button"
+                className="chat-quick-reply interactive-surface rounded-[9px] border border-[rgba(220,230,242,0.8)] bg-white font-medium text-[#52657d] disabled:opacity-35 hover:bg-[#f5f7fb]"
+                aria-label="设置快捷消息"
+                title="设置快捷消息"
+                onClick={onOpenQuickMessageSettings}
+              >
+                <Settings2 className="h-3.5 w-3.5" />
+              </button>
+            ) : null}
           </div>
         </div>
 
         <div className="relative mt-2.5 min-h-0 flex-1">
+          {onOpenRoomAi ? (
+            <div className="chat-ai-slot">
+              <button
+                type="button"
+                className="chat-ai-entry interactive-surface"
+                aria-label="打开上号 AI"
+                title="打开上号 AI"
+                onClick={onOpenRoomAi}
+              >
+                <Bot className="h-4 w-4" strokeWidth={2.15} aria-hidden="true" />
+              </button>
+            </div>
+          ) : null}
           <div
             ref={listRef}
             className="chat-message-list h-full min-h-0 space-y-2.5 overflow-x-hidden overflow-y-auto pr-1"
@@ -584,10 +636,17 @@ export const TemporaryChatPanel = ({
                           ) : null}
                           {message.image ? (
                             <button
+                              ref={(element) => {
+                                if (element) previewOriginElements.current.set(message.id, element);
+                                else previewOriginElements.current.delete(message.id);
+                              }}
                               type="button"
                               className="chat-image-thumbnail-button"
                               draggable
-                              onClick={() => setPreviewImage(message.image ?? null)}
+                              onClick={() => {
+                                setPreviewDirection(0);
+                                setPreviewMessageId(message.id);
+                              }}
                               onContextMenu={(event) => {
                                 event.preventDefault();
                                 copyImage(message.image?.dataUrl ?? "");
@@ -708,72 +767,20 @@ export const TemporaryChatPanel = ({
         </div>
         {isDraggingImage ? <div className="chat-image-drop-hint">松开即可压缩发送</div> : null}
       </div>
-      {previewImage
-        ? createPortal(
-            <div
-              className="chat-image-preview-backdrop"
-              role="dialog"
-              aria-modal="true"
-              aria-label="图片预览"
-              onKeyDown={(event) => {
-                if (event.key === "ArrowLeft") showPreviewImage(-1);
-                if (event.key === "ArrowRight") showPreviewImage(1);
-                if (event.key === "Escape") setPreviewImage(null);
-              }}
-              onMouseDown={(event) => {
-                if (event.target === event.currentTarget) setPreviewImage(null);
-              }}
-            >
-              {previewImages.length > 1 ? (
-                <button
-                  type="button"
-                  className="chat-image-preview-nav is-previous"
-                  onClick={() => showPreviewImage(-1)}
-                  aria-label="查看上一张图片"
-                >
-                  <ChevronLeft className="size-8" strokeWidth={2.4} aria-hidden="true" />
-                </button>
-              ) : null}
-              <div className="chat-image-preview-surface">
-                <button
-                  type="button"
-                  className="chat-image-preview-close"
-                  onClick={() => setPreviewImage(null)}
-                  aria-label="关闭图片预览"
-                >
-                  <X className="h-5 w-5" />
-                </button>
-                <img
-                  src={previewImage.dataUrl}
-                  alt={previewImage.fileName || "聊天图片"}
-                  width={previewImage.width}
-                  height={previewImage.height}
-                  draggable={false}
-                  onContextMenu={(event) => {
-                    event.preventDefault();
-                    copyImage(previewImage.dataUrl);
-                  }}
-                />
-                {previewImages.length > 1 ? (
-                  <span className="chat-image-preview-count">
-                    {previewIndex + 1} / {previewImages.length}
-                  </span>
-                ) : null}
-              </div>
-              {previewImages.length > 1 ? (
-                <button
-                  type="button"
-                  className="chat-image-preview-nav is-next"
-                  onClick={() => showPreviewImage(1)}
-                  aria-label="查看下一张图片"
-                >
-                  <ChevronRight className="size-8" strokeWidth={2.4} aria-hidden="true" />
-                </button>
-              ) : null}
-            </div>,
-            document.body,
-          )
-        : null}
+      {previewItem ? (
+        <ChatImageLightbox
+          image={previewItem.image}
+          index={previewIndex}
+          total={previewItems.length}
+          direction={previewDirection}
+          originElement={previewOriginElements.current.get(previewItem.messageId) ?? null}
+          reduceMotion={shouldReduceMotion}
+          onPrevious={() => showPreviewImage(-1)}
+          onNext={() => showPreviewImage(1)}
+          onCopy={copyImage}
+          onClosed={() => setPreviewMessageId(null)}
+        />
+      ) : null}
     </>
   );
 };

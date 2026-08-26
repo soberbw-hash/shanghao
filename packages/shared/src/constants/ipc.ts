@@ -22,6 +22,9 @@ export const IPC_CHANNELS = {
   audio: {
     getDeepFilterAssets: "audio:get-deepfilter-assets",
   },
+  quickMessages: {
+    export: "quick-messages:export",
+  },
   screenCapture: {
     listSources: "screen-capture:list-sources",
     selectSource: "screen-capture:select-source",
@@ -124,6 +127,8 @@ export const IPC_CHANNELS = {
     muteTriggered: "shortcuts:mute-triggered",
     configureRecordingMarker: "shortcuts:configure-recording-marker",
     recordingMarkerTriggered: "shortcuts:recording-marker-triggered",
+    configureQuickMessage: "shortcuts:configure-quick-message",
+    quickMessageTriggered: "shortcuts:quick-message-triggered",
   },
   updates: {
     check: "updates:check",

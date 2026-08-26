@@ -50,7 +50,6 @@ const waitForNextPaint = (): Promise<void> =>
 export const HomePage = () => {
   const { joinChannel } = useRoomState();
   const settings = useSettingsStore((state) => state.settings);
-  const runtimeInfo = useSettingsStore((state) => state.runtimeInfo);
   const saveSettings = useSettingsStore((state) => state.saveSettings);
   const accountProfile = useAccountStore((state) => state.snapshot.profile);
   const roomAction = useAppStore((state) => state.roomAction);
@@ -59,9 +58,7 @@ export const HomePage = () => {
   const inputDevices = useAudioStore((state) => state.inputDevices);
   const outputDevices = useAudioStore((state) => state.outputDevices);
   const refreshDevices = useAudioStore((state) => state.refreshDevices);
-  const setMuted = useAudioStore((state) => state.setMuted);
   const pageRef = useRef<HTMLDivElement>(null);
-  const hasAttemptedStartupJoinRef = useRef(false);
   const microphoneSelectRef = useRef<HTMLSelectElement>(null);
   const nicknameFieldRef = useRef<HTMLDivElement>(null);
   const microphoneMenuRef = useRef<HTMLDivElement>(null);
@@ -87,31 +84,6 @@ export const HomePage = () => {
     setAvatarId(savedAvatarId || "fox");
     setServerAddress(savedServerAddress || "");
   }, [isSettingsReady, savedAvatarId, savedNickname, savedServerAddress]);
-
-  useEffect(() => {
-    if (hasAttemptedStartupJoinRef.current || !settings || !runtimeInfo?.isStartupLaunch) return;
-    hasAttemptedStartupJoinRef.current = true;
-
-    const normalizedAddress = normalizeRelayServerUrl(settings.relayServerUrl);
-    if (
-      !settings.launchOnStartup ||
-      !settings.hasCompletedProfileSetup ||
-      !normalizedAddress ||
-      getNicknameValidationError(settings.nickname)
-    ) {
-      return;
-    }
-
-    // Startup joins are intentionally muted so Windows login never opens the microphone.
-    setMuted(true);
-    void window.desktopApi.app.writeLog({
-      category: "app",
-      level: "info",
-      message: "startup_auto_join_requested",
-      context: { roomId: "main", muted: true },
-    });
-    void joinChannel(normalizedAddress, "main");
-  }, [joinChannel, runtimeInfo?.isStartupLaunch, setMuted, settings]);
 
   useEffect(() => {
     const normalizedAddress = normalizeRelayServerUrl(serverAddress);

@@ -4,6 +4,8 @@ import {
   PROFILE_SCHEMA_VERSION,
   SETTINGS_SCHEMA_VERSION,
   OFFICIAL_RELAY_SERVER_URL,
+  DEFAULT_QUICK_MESSAGE_SLOTS,
+  DEFAULT_QUICK_MESSAGE_VOLUME,
   type AppSettings,
   type RuntimeInfo,
   type UpdateCheckResult,
@@ -47,7 +49,6 @@ const fallbackRuntimeInfo: RuntimeInfo = {
   platform: typeof navigator === "undefined" ? "unknown" : navigator.platform,
   protocolVersion: "1",
   buildNumber: "unknown",
-  isStartupLaunch: false,
 };
 
 const fallbackSettings: AppSettings = {
@@ -61,7 +62,6 @@ const fallbackSettings: AppSettings = {
   hasCompletedProfileSetup: false,
   minimizeToTray: false,
   uiScale: 100,
-  launchOnStartup: true,
   isHardwareAccelerationEnabled: true,
   isOverlayEnabled: true,
   preferredInputDeviceId: undefined,
@@ -75,7 +75,7 @@ const fallbackSettings: AppSettings = {
   pushToTalkShortcut: "Space",
   recordingMarkerShortcut: "F8",
   recordingSaveDirectory: undefined,
-  recordingLibraryQuotaGb: 10,
+  recordingLibraryQuotaGb: 20,
   isRecordingWasteAutoCleanupEnabled: false,
   aiAsrModel: "qwen3-asr-0.6b-force",
   aiOrganizerProvider: "cloud",
@@ -102,6 +102,11 @@ const fallbackSettings: AppSettings = {
   weatherManualCity: "",
   weatherEffectMode: "standard",
   isUiSoundEnabled: true,
+  quickMessages: {
+    soundEnabled: true,
+    soundVolume: DEFAULT_QUICK_MESSAGE_VOLUME,
+    slots: DEFAULT_QUICK_MESSAGE_SLOTS,
+  },
   isBackgroundUpdateCheckEnabled: true,
   lastCollectionViewedAt: undefined,
   hasInitializedCollectionReadState: false,
@@ -131,6 +136,18 @@ const withTimeout = async <T>(
         reject(error);
       });
   });
+
+const configureQuickMessageShortcuts = async (settings: AppSettings): Promise<void> => {
+  await Promise.all(
+    settings.quickMessages.slots
+      .slice(0, 5)
+      .map((slot, index) =>
+        desktopApi.shortcuts
+          .configureQuickMessage(index, slot.enabled ? slot.shortcut : "")
+          .catch(() => false),
+      ),
+  );
+};
 
 export const useSettingsStore = create<SettingsStoreState>((set, get) => ({
   settings: undefined,
@@ -190,6 +207,7 @@ export const useSettingsStore = create<SettingsStoreState>((set, get) => ({
     await desktopApi.shortcuts
       .configureRecordingMarker(settings.recordingMarkerShortcut)
       .catch(() => false);
+    await configureQuickMessageShortcuts(settings);
 
     if (settings.isBackgroundUpdateCheckEnabled) {
       void get()
@@ -215,6 +233,7 @@ export const useSettingsStore = create<SettingsStoreState>((set, get) => ({
     if ("recordingMarkerShortcut" in partial) {
       await desktopApi.shortcuts.configureRecordingMarker(settings.recordingMarkerShortcut);
     }
+    if ("quickMessages" in partial) await configureQuickMessageShortcuts(settings);
     return settings;
   },
   checkUpdates: async () => {
@@ -234,5 +253,6 @@ export const useSettingsStore = create<SettingsStoreState>((set, get) => ({
   resetSettings: async () => {
     const settings = await desktopApi.settings.reset();
     set({ settings, avatarDataUrl: undefined });
+    await configureQuickMessageShortcuts(settings);
   },
 }));

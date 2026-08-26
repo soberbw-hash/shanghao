@@ -70,6 +70,7 @@ export const RoomPage = () => {
     sendKnock,
     sendSceneReaction,
     sendQuickMessage,
+    sendConfiguredQuickMessage,
     replaceInputDevice,
     setMicrophoneSendVolume,
     localStream,
@@ -175,6 +176,11 @@ export const RoomPage = () => {
   const [isNoiseSuppressionSwitching, setIsNoiseSuppressionSwitching] = useState(false);
   const [isAutoGainSwitching, setIsAutoGainSwitching] = useState(false);
   const [isRoomAskOpen, setIsRoomAskOpen] = useState(false);
+  useEffect(() => {
+    const openRoomAi = () => setIsRoomAskOpen(true);
+    window.addEventListener("shanghao:open-room-ai", openRoomAi);
+    return () => window.removeEventListener("shanghao:open-room-ai", openRoomAi);
+  }, []);
   const [localKnockPulse, setLocalKnockPulse] = useState(0);
   const [recordingMarkerPulse, setRecordingMarkerPulse] = useState(0);
   const [activeAudioPanel, setActiveAudioPanel] = useState<"microphone" | "speaker">();
@@ -218,6 +224,12 @@ export const RoomPage = () => {
     room.connectionState === RoomConnectionState.Connected ||
     room.connectionState === RoomConnectionState.WaitingPeer ||
     room.connectionState === RoomConnectionState.WaitingSnapshot;
+
+  const openQuickMessageSettings = () => {
+    window.sessionStorage.setItem("shanghao.settings-section", "quickMessages");
+    setSettingsReturnTo("room");
+    navigate("settings");
+  };
   const localMember = room.members.find((member) => member.isLocal);
   const {
     viewerNames: localScreenShareViewerNames,
@@ -1277,7 +1289,6 @@ export const RoomPage = () => {
           onSwitchChannel={(channelId) => void handleSwitchChannel(channelId)}
           onKnock={() => void knock()}
           onInvite={() => void copyInviteLink()}
-          onAsk={() => setIsRoomAskOpen((isOpen) => !isOpen)}
         />
       </div>
 
@@ -1347,6 +1358,17 @@ export const RoomPage = () => {
                 });
               });
             }}
+            onQuickMessageSend={(presetId) => {
+              void sendConfiguredQuickMessage(presetId).catch(() => {
+                pushToast({
+                  tone: "warning",
+                  title: "快捷消息没有发出去",
+                  description: "连接恢复后再试一次。",
+                });
+              });
+            }}
+            onOpenQuickMessageSettings={openQuickMessageSettings}
+            onOpenRoomAi={() => setIsRoomAskOpen(true)}
             onSendImage={sendImage}
             onRecall={async (messageId) => {
               try {

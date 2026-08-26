@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { createPortal } from "react-dom";
 import {
-  ArrowUpToLine,
   Check,
   FolderOpen,
   Gauge,
@@ -13,6 +12,7 @@ import {
   SkipBack,
   SkipForward,
   Star,
+  TestTube2,
   Trash2,
 } from "lucide-react";
 
@@ -33,6 +33,7 @@ import { DialogCloseButton } from "../base/DialogCloseButton";
 import { Switch } from "../base/Switch";
 import { SettingsSection } from "./SettingsSection";
 import { VoiceMemoryDetail } from "./VoiceMemoryDetail";
+import { ModelTestPanel } from "./ModelTestPanel";
 import { useRecordingStore } from "../../store/recordingStore";
 import { voiceMemoryTranscriptionPercent } from "../../features/ai/voiceMemoryPresentation";
 
@@ -215,6 +216,7 @@ export const RecordingLibrarySettingsCard = ({
   ].includes(recordingState);
   const [pendingSeekMs, setPendingSeekMs] = useState<number>();
   const [voiceMemories, setVoiceMemories] = useState<Record<string, VoiceMemoryRecord>>({});
+  const [isModelComparisonOpen, setIsModelComparisonOpen] = useState(false);
 
   const reload = useCallback(async () => {
     if (typeof window.desktopApi.recording.list !== "function") {
@@ -309,6 +311,10 @@ export const RecordingLibrarySettingsCard = ({
     () => library?.items.find((item) => item.id === selectedId),
     [library?.items, selectedId],
   );
+
+  useEffect(() => {
+    setIsModelComparisonOpen(false);
+  }, [selectedId]);
 
   useEffect(() => {
     if (!openTarget || !library) return;
@@ -556,10 +562,6 @@ export const RecordingLibrarySettingsCard = ({
     setPlaybackRate((current) => (current === 1 ? 1.5 : current === 1.5 ? 2 : 1));
   };
 
-  const scrollRecordingToTop = () => {
-    recordingPanelRef.current?.scrollTo({ top: 0 });
-  };
-
   const toggleRecordingSelection = (itemId: string) => {
     setSelectedRecordingIds((current) => {
       const next = new Set(current);
@@ -768,7 +770,7 @@ export const RecordingLibrarySettingsCard = ({
                   void onChange({
                     recordingLibraryQuotaGb: Math.max(
                       1,
-                      Math.min(100, Number(event.target.value) || 10),
+                      Math.min(100, Number(event.target.value) || 20),
                     ),
                   })
                 }
@@ -900,11 +902,13 @@ export const RecordingLibrarySettingsCard = ({
                           <button
                             type="button"
                             className="recording-item-select"
-                            onClick={() =>
-                              isSelectionMode
-                                ? toggleRecordingSelection(item.id)
-                                : setSelectedId(item.id)
-                            }
+                            onClick={() => {
+                              if (isSelectionMode) toggleRecordingSelection(item.id);
+                              else {
+                                setSelectedId(item.id);
+                                setIsModelComparisonOpen(false);
+                              }
+                            }}
                             title={item.fileName}
                           >
                             <span className="recording-item-title">{recordingTitle(item)}</span>
@@ -1148,7 +1152,7 @@ export const RecordingLibrarySettingsCard = ({
                   <div className="recording-player-meta-actions">
                     <button
                       type="button"
-                      className="recording-rate-button"
+                      className="recording-rate-button recording-playback-rate-button"
                       onClick={cyclePlaybackRate}
                       aria-label={`当前 ${playbackRate} 倍速，点击切换`}
                       title="切换播放速度"
@@ -1158,13 +1162,14 @@ export const RecordingLibrarySettingsCard = ({
                     </button>
                     <button
                       type="button"
-                      className="recording-rate-button recording-scroll-top-button"
-                      onClick={scrollRecordingToTop}
-                      aria-label="回到录音详情顶部"
-                      title="回到顶部"
+                      className={`recording-rate-button ${isModelComparisonOpen ? "is-active" : ""}`}
+                      onClick={() => setIsModelComparisonOpen((current) => !current)}
+                      aria-pressed={isModelComparisonOpen}
+                      aria-label={isModelComparisonOpen ? "返回录音详情" : "对比这条录音的转录模型"}
+                      title={isModelComparisonOpen ? "返回录音详情" : "模型对比"}
                     >
-                      <ArrowUpToLine className="h-3.5 w-3.5" aria-hidden="true" />
-                      <span>顶部</span>
+                      <TestTube2 className="h-3.5 w-3.5" aria-hidden="true" />
+                      <span>对比</span>
                     </button>
                   </div>
                 </div>
@@ -1174,23 +1179,36 @@ export const RecordingLibrarySettingsCard = ({
                   {playbackError}
                 </div>
               ) : null}
-              <VoiceMemoryDetail
-                recording={selected}
-                roomName="好友语音"
-                selectedAsrModel={settings.aiAsrModel}
-                onSelectAsrModel={async (modelId: AiAsrModelId) => {
-                  await onChange({ aiAsrModel: modelId });
-                  pushToast({
-                    tone: "success",
-                    title: `已切换到 ${AI_ASR_MODEL_NAMES[modelId]}`,
-                    description: "AI 功能与录音库已同步；若这条录音有该模型的结果，会直接显示。",
-                  });
-                }}
-                onSeek={(offsetMs) => {
-                  if (audioRef.current) audioRef.current.currentTime = offsetMs / 1_000;
-                  setCurrentTime(offsetMs / 1_000);
-                }}
-              />
+              {isModelComparisonOpen ? (
+                <ModelTestPanel
+                  key={selected.recordingId}
+                  recording={selected}
+                  recordingTitle={recordingTitle(selected)}
+                  onClose={() => setIsModelComparisonOpen(false)}
+                  onSeek={(offsetMs) => {
+                    if (audioRef.current) audioRef.current.currentTime = offsetMs / 1_000;
+                    setCurrentTime(offsetMs / 1_000);
+                  }}
+                />
+              ) : (
+                <VoiceMemoryDetail
+                  recording={selected}
+                  roomName="好友语音"
+                  selectedAsrModel={settings.aiAsrModel}
+                  onSelectAsrModel={async (modelId: AiAsrModelId) => {
+                    await onChange({ aiAsrModel: modelId });
+                    pushToast({
+                      tone: "success",
+                      title: `已切换到 ${AI_ASR_MODEL_NAMES[modelId]}`,
+                      description: "AI 功能与录音库已同步；若这条录音有该模型的结果，会直接显示。",
+                    });
+                  }}
+                  onSeek={(offsetMs) => {
+                    if (audioRef.current) audioRef.current.currentTime = offsetMs / 1_000;
+                    setCurrentTime(offsetMs / 1_000);
+                  }}
+                />
+              )}
             </div>
           ) : (
             <div className="recording-library-empty">录音会按房间和日期自动整理在这里。</div>

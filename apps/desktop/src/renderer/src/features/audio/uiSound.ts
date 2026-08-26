@@ -49,6 +49,9 @@ const uiGain = {
   subtle: 0.09,
   standard: 0.11,
   important: 0.13,
+  // Entering a room can coincide with the first remote PCM frame. Keep this
+  // cue deliberately below normal UI feedback so the two never stack into a pop.
+  roomEntry: 0.025,
   deviceToggle: 0.075,
 } as const;
 
@@ -62,7 +65,9 @@ type SinkRoutableAudioElement = HTMLAudioElement & {
 
 const soundRecipes: Record<Exclude<UiSound, "knock-bell">, UiSoundRecipe> = {
   "button-click": { cue: "press", pack: "studio", volume: uiGain.subtle, cooldownMs: 70 },
-  "enter-room": { cue: "wake", pack: "organic", volume: uiGain.important, cooldownMs: 250 },
+  // Room entry is played right as remote audio becomes available. Keep it soft and
+  // avoid the organic pack's bright transient so it never jumps out of the speakers.
+  "enter-room": { cue: "wake", pack: "soft", volume: uiGain.roomEntry, cooldownMs: 250 },
   "leave-room": { cue: "sleep", pack: "organic", volume: uiGain.standard, cooldownMs: 250 },
   "member-join": { cue: "connect", pack: "organic", volume: uiGain.standard, cooldownMs: 220 },
   "member-leave": { cue: "disconnect", pack: "organic", volume: uiGain.standard, cooldownMs: 220 },

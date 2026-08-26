@@ -63,7 +63,6 @@ export interface RuntimeInfo {
   platform: string;
   protocolVersion: string;
   buildNumber: string;
-  isStartupLaunch: boolean;
   isElevated?: boolean;
   requestedExecutionLevel?: "asInvoker" | "requireAdministrator";
 }
@@ -80,15 +79,6 @@ export interface WindowsIntegrationStatus {
     isElevated: boolean;
     identity?: string;
     method: "windows-token" | "not-windows" | "unavailable";
-  };
-  startupTask: {
-    supported: boolean;
-    enabled: boolean;
-    taskName: string;
-    executablePath?: string;
-    arguments?: string;
-    runLevel?: string;
-    message: string;
   };
   firewall: {
     supported: boolean;
@@ -273,6 +263,9 @@ export interface DesktopApi {
   audio: {
     getDeepFilterAssets: () => Promise<DeepFilterAssets>;
   };
+  quickMessages: {
+    export: () => Promise<string | undefined>;
+  };
   screenCapture: {
     listSources: () => Promise<ScreenCaptureSourceDescriptor[]>;
     selectSource: (sourceId: string) => Promise<void>;
@@ -381,6 +374,8 @@ export interface DesktopApi {
     onMuteTriggered: (listener: () => void) => () => void;
     configureRecordingMarker: (accelerator: string) => Promise<boolean>;
     onRecordingMarkerTriggered: (listener: () => void) => () => void;
+    configureQuickMessage: (slot: number, accelerator: string) => Promise<boolean>;
+    onQuickMessageTriggered: (listener: (slot: number) => void) => () => void;
   };
   updates: {
     check: () => Promise<UpdateCheckResult>;

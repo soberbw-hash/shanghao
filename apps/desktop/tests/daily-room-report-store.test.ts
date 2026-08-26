@@ -119,6 +119,25 @@ test("cross-midnight sessions are split in Shanghai time without a fake leave", 
   assert.equal(secondDay?.lastExit?.nickname, "小明");
 });
 
+test("development work is recorded across multiple room-history days", async () => {
+  const store = await DailyRoomReportStore.create();
+  store.recordJoin("main", "profile-a", "Sober", 1, at("2026-08-20T22:00:00"));
+  store.recordWork("main", "profile-a", "Sober", "Codex", at("2026-08-20T22:30:00"));
+  store.recordWork("main", "profile-a", "Sober", undefined, at("2026-08-21T01:30:00"));
+  store.recordWork("main", "profile-a", "Sober", "Visual Studio Code", at("2026-08-21T10:00:00"));
+  store.recordLeave("main", "profile-a", "Sober", 0, at("2026-08-21T11:00:00"));
+
+  const history = store.getHistory("main", at("2026-08-22T12:00:00"));
+  assert.deepEqual(history.find((report) => report.date === "2026-08-20")?.workActivities, [
+    { nickname: "Sober", workName: "Codex", durationMs: 90 * 60 * 1_000 },
+  ]);
+  assert.deepEqual(history.find((report) => report.date === "2026-08-21")?.workActivities, [
+    { nickname: "Sober", workName: "Codex", durationMs: 90 * 60 * 1_000 },
+    { nickname: "Sober", workName: "Visual Studio Code", durationMs: 60 * 60 * 1_000 },
+  ]);
+  assert.equal(history.length, 2);
+});
+
 test("stable profile identity deduplicates nickname changes and game players across restart", async () => {
   const directory = await mkdtemp(path.join(os.tmpdir(), "shanghao-daily-identity-"));
   const filePath = path.join(directory, "daily-room.json");

@@ -92,6 +92,10 @@ const MAX_RELAY_QUEUE_CHUNKS = 36;
 const AUDIO_LEVEL_SAMPLE_INTERVAL_MS = 66;
 const PLAYBACK_WATCHDOG_INTERVAL_MS = 2_000;
 const WEBRTC_AUDIO_PROOF_RMS = 0.0008;
+// A newly attached MediaStream can already contain decoded samples before the
+// channel volume has been applied. Start silent and ease in the requested level
+// so the first remote frame can never escape at the GainNode default of 1.
+const REMOTE_AUDIO_GAIN_RAMP_SECONDS = 0.045;
 export const REMOTE_AUDIO_LEVEL_EVENT = "shanghao:remote-audio-level";
 
 /**
@@ -216,6 +220,7 @@ export class RemoteAudioMixer {
           const source = context.createMediaStreamSource(input.stream);
           const gain = context.createGain();
           const analyser = this.createAnalyser(context);
+          gain.gain.setValueAtTime(0, context.currentTime);
           // Observe the decoded WebRTC waveform before the path gain. During
           // relay fallback the WebRTC gain is intentionally zero, but we still
           // need proof that Chromium has started decoding real audio before we
@@ -329,6 +334,8 @@ export class RemoteAudioMixer {
     channel.source.disconnect();
     channel.analyser.disconnect();
     channel.gain.disconnect();
+    channel.gain.gain.cancelScheduledValues(context.currentTime);
+    channel.gain.gain.setValueAtTime(0, context.currentTime);
     channel.source.connect(channel.analyser);
     channel.analyser.connect(channel.gain);
     channel.gain.connect(this.masterGain);
@@ -593,6 +600,7 @@ export class RemoteAudioMixer {
     if (existing) return existing;
     const gain = context.createGain();
     const analyser = this.createAnalyser(context);
+    gain.gain.setValueAtTime(0, context.currentTime);
     analyser.connect(gain);
     gain.connect(this.masterGain!);
     const created: RelayAudioChannel = {
@@ -786,7 +794,7 @@ export class RemoteAudioMixer {
             )
           : 0,
         context.currentTime,
-        0.018,
+        REMOTE_AUDIO_GAIN_RAMP_SECONDS,
       );
     }
     const relayChannel = this.relayChannels.get(peerId);
@@ -800,7 +808,7 @@ export class RemoteAudioMixer {
             )
           : 0,
         context.currentTime,
-        0.018,
+        REMOTE_AUDIO_GAIN_RAMP_SECONDS,
       );
     }
   }

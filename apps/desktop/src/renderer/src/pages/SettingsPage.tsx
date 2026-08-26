@@ -7,6 +7,7 @@ import {
   Library,
   MonitorCog,
   Sparkles,
+  Zap,
   UserRound,
 } from "lucide-react";
 import { gsap } from "gsap";
@@ -25,7 +26,7 @@ import { cn } from "@private-voice/ui";
 import { Button } from "../components/base/Button";
 import { Switch } from "../components/base/Switch";
 import { playUiSound } from "../features/audio/uiSound";
-import { motionDuration, motionEase, motionSpring } from "../features/motion/motionSystem";
+import { motionCurve, motionDuration, motionEase } from "../features/motion/motionSystem";
 import { rendererPerformanceMonitor } from "../features/diagnostics/rendererPerformanceMonitor";
 import { PageContainer } from "../components/layout/PageContainer";
 import { AudioSettingsCard } from "../components/settings/AudioSettingsCard";
@@ -36,6 +37,7 @@ import { SettingsItemRow } from "../components/settings/SettingsItemRow";
 import { SettingsPageHeader } from "../components/settings/SettingsPageHeader";
 import { SettingsSection } from "../components/settings/SettingsSection";
 import { ShortcutSettingsCard } from "../components/settings/ShortcutSettingsCard";
+import { QuickMessageSettingsCard } from "../components/settings/QuickMessageSettingsCard";
 import { RecordingLibrarySettingsCard } from "../components/settings/RecordingLibrarySettingsCard";
 import { AiVoiceMemorySettingsCard } from "../components/settings/AiVoiceMemorySettingsCard";
 import { RoomHistorySettingsCard } from "../components/settings/RoomHistorySettingsCard";
@@ -51,12 +53,21 @@ import { useSettingsStore } from "../store/settingsStore";
 import { toUserFacingError } from "../utils/userFacingError";
 
 type SettingsSectionId =
-  "account" | "general" | "audio" | "recordings" | "ai" | "roomHistory" | "about" | "diagnostics";
+  | "account"
+  | "general"
+  | "audio"
+  | "quickMessages"
+  | "recordings"
+  | "ai"
+  | "roomHistory"
+  | "about"
+  | "diagnostics";
 
 const sections = [
   { id: "account", label: "账号", icon: UserRound },
   { id: "general", label: "通用", icon: MonitorCog },
   { id: "audio", label: "语音", icon: Headphones },
+  { id: "quickMessages", label: "快捷消息", icon: Zap },
   { id: "recordings", label: "录音库", icon: Library },
   { id: "ai", label: "AI 功能", icon: Sparkles },
   { id: "roomHistory", label: "房间记录", icon: CalendarDays },
@@ -514,36 +525,11 @@ export const SettingsPage = () => {
     general: (
       <SettingsSection title="应用" description="控制窗口与图形渲染。">
         <div className="space-y-3">
-          <SettingsItemRow
-            label="开机自动上号"
-            description="开机后自动打开上号并进入上次使用的房间；为避免打扰，麦克风会保持关闭。"
-          >
-            <Switch
-              isChecked={settings.launchOnStartup}
-              onChange={(launchOnStartup) => void handleSaveSettings({ launchOnStartup })}
-            />
-          </SettingsItemRow>
           <SettingsItemRow label="关闭窗口时留在后台">
             <Switch
               isChecked={settings.minimizeToTray}
               onChange={(minimizeToTray) => void handleSaveSettings({ minimizeToTray })}
             />
-          </SettingsItemRow>
-          <SettingsItemRow label="界面大小" description="按排版系统重新布局，不拉伸角色位图。">
-            <select
-              value={settings.uiScale}
-              className="settings-inline-select"
-              aria-label="界面大小"
-              onChange={(event) =>
-                void handleSaveSettings({
-                  uiScale: Number(event.target.value) as AppSettings["uiScale"],
-                })
-              }
-            >
-              <option value={100}>100%</option>
-              <option value={110}>110%</option>
-              <option value={125}>125%</option>
-            </select>
           </SettingsItemRow>
           <SettingsItemRow
             label="开启工作显示"
@@ -619,6 +605,26 @@ export const SettingsPage = () => {
         />
       </div>
     ),
+    quickMessages: (
+      <QuickMessageSettingsCard
+        settings={settings}
+        onChange={(patch) => void handleSaveSettings(patch)}
+        onExport={async () => {
+          try {
+            const directory = await window.desktopApi.quickMessages.export();
+            if (directory) {
+              pushToast({
+                tone: "success",
+                title: "语音包已导出",
+                description: `已保存到：${directory}`,
+              });
+            }
+          } catch {
+            pushToast({ tone: "danger", title: "导出失败", description: "请重试。" });
+          }
+        }}
+      />
+    ),
     recordings: (
       <RecordingLibrarySettingsCard
         settings={settings}
@@ -652,6 +658,7 @@ export const SettingsPage = () => {
           relay={relayDiagnostics}
           connectionHealth={connectionHealth}
           localAudioDiagnostics={localAudioDiagnostics}
+          outputDeviceCount={outputDevices.length}
           webrtcReadyPeerCount={runtimeDiagnostics?.webrtcReadyPeerCount ?? 0}
           remotePeerCount={runtimeDiagnostics?.remotePeerCount ?? 0}
           audioRelayActive={isAudioRelayActive}
@@ -662,6 +669,8 @@ export const SettingsPage = () => {
           onOpenLogs={() => void window.desktopApi.diagnostics.openLogsDirectory()}
           onExportBundle={handleExportBundle}
           onCopySummary={handleCopyDiagnostics}
+          onOpenAudioSettings={() => selectSection("audio")}
+          onRefreshHealth={refreshDiagnostics}
           onRefreshWindows={refreshWindowsDiagnostics}
           onRepairFirewall={handleRepairFirewall}
           isRepairingFirewall={isRepairingFirewall}
@@ -736,7 +745,10 @@ export const SettingsPage = () => {
                         <motion.span
                           className="settings-nav-active-pill"
                           layoutId="settings-active-section"
-                          transition={{ type: "spring", ...motionSpring.soft }}
+                          transition={{
+                            duration: motionDuration.normal,
+                            ease: motionCurve.spatial,
+                          }}
                         />
                       ) : null}
                       <Icon className="relative z-[1] h-4 w-4" />

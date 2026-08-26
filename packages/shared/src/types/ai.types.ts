@@ -36,7 +36,7 @@ export type AiModelPhase =
   | "installed"
   | "error";
 
-export type AiModelAction = "download" | "pause" | "resume" | "delete";
+export type AiModelAction = "download" | "repair" | "pause" | "resume" | "delete";
 
 export type AiModelFailureKind = "download" | "network" | "disk" | "integrity" | "access";
 
@@ -234,6 +234,8 @@ export interface VoiceMemoryTranscriptionVariant {
   transcript: VoiceMemoryTranscriptSegment[];
   speakers: VoiceMemorySpeaker[];
   pipelineVersion?: number;
+  /** Sum of the native ASR runtime windows used to produce this variant. */
+  transcriptionElapsedMs?: number;
   updatedAt: string;
 }
 
@@ -258,6 +260,8 @@ export interface VoiceMemoryRecord {
   transcriptionModel?: VoiceMemoryTranscriptionModel;
   /** Per-model A/B results. The active variant is also mirrored in transcript/speakers. */
   transcriptionVariants?: Partial<Record<AiAsrModelId, VoiceMemoryTranscriptionVariant>>;
+  /** Effective ASR runtime time; pauses, queueing, conversion and organization are excluded. */
+  transcriptionElapsedMs?: number;
   errorMessage?: string;
   speakers: VoiceMemorySpeaker[];
   transcript: VoiceMemoryTranscriptSegment[];

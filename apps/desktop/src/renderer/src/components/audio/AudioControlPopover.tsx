@@ -7,7 +7,8 @@ import type { AudioDeviceDescriptor } from "@private-voice/shared";
 
 import { Slider } from "../base/Slider";
 import { Switch } from "../base/Switch";
-import { motionDuration, motionEase } from "../../features/motion/motionSystem";
+import { popoverSurfaceVariants, reducedFadeVariants } from "../../features/motion/motionPresets";
+import { usePrefersReducedMotion } from "../../hooks/usePrefersReducedMotion";
 
 interface AudioControlPopoverProps {
   title: string;
@@ -59,6 +60,7 @@ export const AudioControlPopover = ({
   onLoudnessBalanceChange,
 }: AudioControlPopoverProps) => {
   const [draftVolume, setDraftVolume] = useState(volume);
+  const reduceMotion = usePrefersReducedMotion();
   useEffect(() => setDraftVolume(volume), [volume]);
 
   const commit = () => onVolumeCommit(draftVolume);
@@ -85,10 +87,10 @@ export const AudioControlPopover = ({
   return (
     <motion.div
       className="audio-control-popover"
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
-      transition={{ duration: motionDuration.fast, ease: motionEase.standard }}
+      variants={reduceMotion ? reducedFadeVariants : popoverSurfaceVariants}
+      initial="initial"
+      animate="open"
+      exit="closed"
     >
       <div className="audio-control-popover-heading">
         <strong>{title}</strong>

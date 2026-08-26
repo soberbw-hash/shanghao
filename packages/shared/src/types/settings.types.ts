@@ -1,5 +1,6 @@
 import type { AiAsrModelId, AiProcessingMode, AiTextProvider } from "./ai.types";
 import type { WeatherEffectMode, WeatherLocationMode } from "./weather.types";
+import type { QuickMessageSettings } from "./quick-message.types";
 
 export type MicMonitorMode = "processed" | "raw";
 // Keep legacy values readable during migration; current builds always normalize to 75 Hz.
@@ -19,7 +20,6 @@ export interface AppSettings {
   hasCompletedProfileSetup: boolean;
   minimizeToTray: boolean;
   uiScale: UiScale;
-  launchOnStartup: boolean;
   isHardwareAccelerationEnabled: boolean;
   isOverlayEnabled: boolean;
   preferredInputDeviceId?: string;
@@ -60,6 +60,7 @@ export interface AppSettings {
   weatherManualCity: string;
   weatherEffectMode: WeatherEffectMode;
   isUiSoundEnabled: boolean;
+  quickMessages: QuickMessageSettings;
   isBackgroundUpdateCheckEnabled: boolean;
   lastCollectionViewedAt?: string;
   hasInitializedCollectionReadState: boolean;

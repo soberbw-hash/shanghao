@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { access, readFile, stat } from "node:fs/promises";
+import { access, readFile, readdir, stat } from "node:fs/promises";
 import path from "node:path";
 
 import { listPackage } from "@electron/asar";
@@ -8,6 +8,18 @@ const releaseDirectory = path.resolve(import.meta.dirname, "..", "apps", "deskto
 const resourcesDirectory = path.join(releaseDirectory, "win-unpacked", "resources");
 const archivePath = path.join(resourcesDirectory, "app.asar");
 await access(archivePath);
+
+const listFilesRecursively = async (directory) => {
+  const entries = await readdir(directory, { withFileTypes: true });
+  return (
+    await Promise.all(
+      entries.map((entry) => {
+        const entryPath = path.join(directory, entry.name);
+        return entry.isDirectory() ? listFilesRecursively(entryPath) : [entryPath];
+      }),
+    )
+  ).flat();
+};
 
 const runtimeManifestPath = path.join(resourcesDirectory, "ai", "runtime-manifest.json");
 const runtimeManifest = JSON.parse(await readFile(runtimeManifestPath, "utf8"));
@@ -48,6 +60,21 @@ for (const licenseName of [
   }
 }
 
+const quickMessageDirectory = path.join(resourcesDirectory, "quick-messages");
+const quickMessageFiles = await listFilesRecursively(quickMessageDirectory);
+if (quickMessageFiles.length !== 34) {
+  throw new Error(`Expected 34 quick-message AAC files, found ${quickMessageFiles.length}`);
+}
+for (const filePath of quickMessageFiles) {
+  if (path.extname(filePath).toLowerCase() !== ".aac") {
+    throw new Error(`Quick-message pack contains a non-AAC file: ${path.basename(filePath)}`);
+  }
+  const header = (await readFile(filePath)).subarray(0, 2);
+  if (header[0] !== 0xff || ((header[1] ?? 0) & 0xf0) !== 0xf0) {
+    throw new Error(`Quick-message pack contains an invalid AAC file: ${path.basename(filePath)}`);
+  }
+}
+
 console.log(
-  `Packaged runtime verified: AI runner integrity, ${fontEntries.length} font files, DeepFilterNet assets, and all licenses`,
+  `Packaged runtime verified: AI runner integrity, ${fontEntries.length} font files, DeepFilterNet assets, ${quickMessageFiles.length} AAC voice clips, and all licenses`,
 );

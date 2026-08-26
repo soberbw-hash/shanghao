@@ -6,6 +6,7 @@ dist-electron/
 release/
 coverage/
 tmp/
+data/
 .DS_Store
 Thumbs.db
 *.log

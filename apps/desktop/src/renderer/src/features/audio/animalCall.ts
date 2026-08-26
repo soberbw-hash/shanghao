@@ -1,5 +1,7 @@
 import type { BuiltInAvatarId } from "@private-voice/shared";
 
+import { playUiSound } from "./uiSound";
+
 const quickReplyCallUrl = new URL(
   "../../assets/sounds/animals/quick-reply-chirp.wav",
   import.meta.url,
@@ -44,8 +46,23 @@ export const playAnimalCall = (
   const requestedVolume = Math.max(0, Math.min(1, volume));
   if (requestedVolume <= 0) return;
 
+  // Quick replies are deliberately semantic: a call to open the mic should not
+  // sound like a generic notification, while a question stays a lighter prompt.
+  const quickReplySound: Record<string, Parameters<typeof playUiSound>[0]> = {
+    "👌": "copy-success",
+    开麦: "mic-on",
+    等我: "popup-open",
+    听得到吗: "receive-message",
+  };
+  const quickReply = quickReplyContent.trim();
+  const isShanghaoQuickReply = quickReplyContent.trim() === "上号";
+  if (quickReply && !isShanghaoQuickReply) {
+    playUiSound(quickReplySound[quickReply] ?? "receive-message");
+    return;
+  }
+
   try {
-    const sound = quickReplyContent.trim() === "上号" ? shanghaoSound : defaultSound;
+    const sound = isShanghaoQuickReply ? shanghaoSound : defaultSound;
     const context = getAudioContext();
     const audio = getTemplate(sound.url).cloneNode(true) as HTMLAudioElement;
     const source = context.createMediaElementSource(audio);

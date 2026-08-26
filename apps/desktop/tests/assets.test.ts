@@ -1,9 +1,15 @@
 import assert from "node:assert/strict";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import path from "node:path";
 import test from "node:test";
 
 const root = path.resolve(process.cwd(), "../..");
+
+const listFilesRecursively = (directory: string): string[] =>
+  readdirSync(directory).flatMap((entry) => {
+    const entryPath = path.join(directory, entry);
+    return statSync(entryPath).isDirectory() ? listFilesRecursively(entryPath) : [entryPath];
+  });
 
 test("desktop branding assets exist for app, tray, and github", () => {
   const files = [
@@ -148,4 +154,34 @@ test("room scene and feedback sound assets are bundled", () => {
       `missing animal call: ${animalCall}`,
     );
   }
+});
+
+test("quick-message voice packs keep one compact AAC copy", () => {
+  const sourceDirectory = path.join(root, "apps/desktop/resources/quick-messages");
+  const rendererDuplicate = path.join(
+    root,
+    "apps/desktop/src/renderer/src/assets/sounds/quick-messages",
+  );
+  const files = listFilesRecursively(sourceDirectory);
+  const totalBytes = files.reduce((sum, filePath) => sum + statSync(filePath).size, 0);
+
+  assert.equal(files.length, 34);
+  assert.equal(
+    files.every((filePath) => path.extname(filePath).toLowerCase() === ".aac"),
+    true,
+  );
+  for (const filePath of files) {
+    const header = readFileSync(filePath).subarray(0, 2);
+    assert.equal(header[0], 0xff, `not an ADTS AAC file: ${filePath}`);
+    assert.equal((header[1] ?? 0) & 0xf0, 0xf0, `not an ADTS AAC file: ${filePath}`);
+  }
+  assert.equal(totalBytes < 1_200_000, true, "voice pack should remain compact");
+  assert.equal(existsSync(rendererDuplicate), false, "renderer must not bundle a duplicate pack");
+
+  const urlSource = readFileSync(
+    path.join(root, "apps/desktop/src/renderer/src/features/audio/quickMessageAssets.ts"),
+    "utf8",
+  );
+  assert.equal(urlSource.includes("shanghao-quick-message://audio/"), true);
+  assert.doesNotMatch(urlSource, /\.(?:mp3|wav)\b/i);
 });

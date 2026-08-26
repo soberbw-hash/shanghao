@@ -14,7 +14,11 @@ import type {
   SceneReactionMessage,
 } from "@private-voice/signaling";
 
-import { decodeQuickReplyTarget } from "../chat/quickReplies";
+import {
+  decodeQuickMessageTarget,
+  decodeQuickReplyTarget,
+  presetForQuickReplyContent,
+} from "../chat/quickReplies";
 import {
   normalizePresenceGameIconDataUrl,
   normalizePresenceGameName,
@@ -92,7 +96,11 @@ export class RoomMemberEventCoordinator {
   }
 
   handleReaction(payload: SceneReactionMessage): void {
-    const quickContent = decodeQuickReplyTarget(payload.targetPeerId);
+    const configuredPreset = decodeQuickMessageTarget(payload.targetPeerId);
+    const legacyContent = decodeQuickReplyTarget(payload.targetPeerId);
+    const preset =
+      configuredPreset ?? (legacyContent ? presetForQuickReplyContent(legacyContent) : undefined);
+    const quickContent = preset?.content ?? legacyContent;
     if (quickContent) {
       const author = this.members.find((member) => member.id === payload.peerId);
       this.options.onQuickMessage({
@@ -101,6 +109,8 @@ export class RoomMemberEventCoordinator {
         nickname: author?.nickname ?? "朋友",
         avatarId: author?.avatarId,
         content: quickContent,
+        presetId: preset?.id,
+        soundId: preset?.soundId,
         createdAt: payload.createdAt,
         isLocal: payload.peerId === this.options.localPeerId,
       });

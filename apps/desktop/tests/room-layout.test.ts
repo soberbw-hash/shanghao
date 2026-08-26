@@ -272,15 +272,16 @@ test("room uses a real always-on-top overlay and a ten-second knock cooldown", (
   assert.equal(chatSource.includes("formatCompactUrl"), true);
   assert.equal(chatLinkPreviewSource.includes("getMessageUrlDetails"), true);
   assert.equal(chatSource.includes("<Link2 />"), true);
-  assert.equal(chatSource.includes("QUICK_REPLIES.map"), true);
-  assert.equal(quickRepliesSource.includes('"听得到吗"'), true);
+  assert.equal(chatSource.includes("quickMessages.map"), true);
+  assert.equal(quickRepliesSource.includes("QUICK_MESSAGE_PRESETS"), true);
   assert.equal(roomSource.includes("chatBubbles={characterChatBubbles}"), true);
   assert.equal(teamIslandSource.includes("chatBubbleByPeerId.get(member.id)"), true);
   assert.equal(sceneCharacterSource.includes("CharacterChatBubble"), true);
   assert.equal(stylesSource.includes(".scene-character-chat-bubble"), true);
   assert.equal(roomStateSource.includes("sendSystemNotification({"), true);
   assert.equal(roomStateSource.includes("sendQuickMessage"), true);
-  assert.equal(roomStateSource.includes("playAnimalCall"), true);
+  assert.equal(roomStateSource.includes("playQuickMessageSound"), true);
+  assert.equal(roomStateSource.includes("sendConfiguredQuickMessage"), true);
   assert.equal(quickRepliesSource.includes("QUICK_REPLY_COOLDOWN_MS = 3_000"), true);
   assert.equal(chatSource.includes("isQuickSendCoolingDown"), true);
   assert.equal(

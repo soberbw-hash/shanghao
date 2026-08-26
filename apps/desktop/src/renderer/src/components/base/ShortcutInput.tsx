@@ -55,12 +55,14 @@ export const ShortcutInput = ({
   placeholder = "点击后按下快捷键",
   defaultValue,
   conflictMessage,
+  compact = false,
 }: {
   value: string;
   onChange: (value: string) => void;
   placeholder?: string;
   defaultValue?: string;
   conflictMessage?: string;
+  compact?: boolean;
 }) => {
   const [isCapturing, setIsCapturing] = useState(false);
 
@@ -73,13 +75,17 @@ export const ShortcutInput = ({
   }, [isCapturing, value]);
 
   return (
-    <div className="shortcut-input-wrap w-full space-y-2">
-      <div className="flex items-center gap-3">
+    <div
+      className={`shortcut-input-wrap w-full ${
+        compact ? "shortcut-input-wrap-compact space-y-1" : "space-y-2"
+      }`}
+    >
+      <div className={`flex items-center ${compact ? "gap-2" : "gap-3"}`}>
         <div className="relative flex-1">
           <Keyboard className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#98A2B3]" />
           <Input
             readOnly
-            className="shortcut-input-field pl-10"
+            className={`shortcut-input-field pl-10 ${compact ? "h-9 min-w-0 text-xs" : ""}`}
             value={displayValue}
             title={displayValue}
             placeholder={placeholder}
@@ -114,11 +120,23 @@ export const ShortcutInput = ({
             }}
           />
         </div>
-        <Button variant="secondary" onClick={() => onChange("")}>
+        <Button
+          variant="secondary"
+          className={
+            compact ? "h-9 shrink-0 whitespace-nowrap rounded-[10px] px-2.5 text-xs" : undefined
+          }
+          onClick={() => onChange("")}
+        >
           清空
         </Button>
         {defaultValue ? (
-          <Button variant="ghost" onClick={() => onChange(defaultValue)}>
+          <Button
+            variant="ghost"
+            className={
+              compact ? "h-9 shrink-0 whitespace-nowrap rounded-[10px] px-2 text-xs" : undefined
+            }
+            onClick={() => onChange(defaultValue)}
+          >
             默认
           </Button>
         ) : null}

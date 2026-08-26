@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { History, MessageCircleQuestion, Sparkles, Square } from "lucide-react";
+import { ArrowUp, Bot, History, MessageCircleQuestion, Sparkles, Square } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
 
 import type { VoiceMemoryAnswer } from "@private-voice/shared";
@@ -26,6 +26,10 @@ interface RoomQuestionHistoryEntry {
 
 const ROOM_QUESTION_HISTORY_KEY = "shanghao:room-question-history:v1";
 const ROOM_QUESTION_HISTORY_LIMIT = 10;
+const ROOM_QUESTION_SUGGESTIONS = [
+  "海克斯大乱斗卡莎出装推荐",
+  "英雄联盟当前版本亚索怎么出装",
+] as const;
 
 const readQuestionHistory = (): RoomQuestionHistoryEntry[] => {
   try {
@@ -212,58 +216,90 @@ export const RoomAskDialog = ({
           animate="open"
           exit="closed"
         >
-          <header className="flex items-center justify-between gap-3 border-b border-[#dbe8f7]/80 px-4 py-3">
-            <h2
-              id="room-ask-title"
-              className="flex items-center gap-2 text-balance text-sm font-bold text-[#24344b]"
-            >
-              <Sparkles className="size-4 text-[#4a8de8]" aria-hidden="true" />问
-            </h2>
+          <header className="room-ai-header">
+            <div className="room-ai-title">
+              <span className="room-ai-title-icon" aria-hidden="true">
+                <Bot />
+                <Sparkles />
+              </span>
+              <span>
+                <h2 id="room-ask-title">上号 AI</h2>
+                <small>联网查游戏攻略和资料</small>
+              </span>
+            </div>
             <DialogCloseButton label="关闭提问浮窗" onClick={closeDialog} />
           </header>
 
           <div className="room-ask-popover-body">
-            <div className="flex items-center gap-3 rounded-[18px] border border-[#ccdef3] bg-white/80 px-4 py-2.5 shadow-[0_12px_30px_rgba(69,104,145,0.08)]">
-              <MessageCircleQuestion
-                className="size-5 shrink-0 text-[#4a8de8]"
-                aria-hidden="true"
-              />
+            {!query.trim() && !pending && !answer && !error ? (
+              <section className="room-ai-empty" aria-label="提问建议">
+                <strong>今天想问点什么？</strong>
+                <div className="room-ai-suggestions">
+                  {ROOM_QUESTION_SUGGESTIONS.map((suggestion) => (
+                    <button
+                      type="button"
+                      key={suggestion}
+                      onClick={() => {
+                        setQuery(suggestion);
+                        window.setTimeout(() => inputRef.current?.focus(), 0);
+                      }}
+                    >
+                      {suggestion}
+                    </button>
+                  ))}
+                </div>
+              </section>
+            ) : null}
+
+            {pending || answer || error ? <p className="room-ai-user-question">{query}</p> : null}
+
+            <div className="room-ai-composer" data-pending={pending === "ask" ? "true" : "false"}>
+              <MessageCircleQuestion className="room-ai-composer-icon" aria-hidden="true" />
               <input
                 ref={inputRef}
                 value={query}
                 maxLength={500}
                 disabled={pending === "ask"}
                 aria-label="输入问题"
-                placeholder="想问什么？"
                 onChange={(event) => setQuery(event.target.value)}
                 onKeyDown={(event) => {
                   if (event.key === "Enter") void ask();
                 }}
-                className="min-w-0 flex-1 bg-transparent text-[15px] font-medium text-[#24344b] outline-none placeholder:font-normal placeholder:text-[#99a9bb]"
+                placeholder="输入想查的游戏攻略或资料"
               />
+              <button
+                type="button"
+                className="room-ai-send"
+                disabled={!query.trim() || Boolean(pending)}
+                onClick={() => void ask()}
+                aria-label="发送问题"
+              >
+                <ArrowUp aria-hidden="true" />
+              </button>
             </div>
             {pending === "ask" ? (
-              <div
-                className="mt-3 rounded-[14px] border border-[#d7e5f5] bg-white/68 px-4 py-3"
-                role="status"
-                aria-live="polite"
-              >
-                <strong className="block text-sm text-[#3974bd]">
-                  {pendingSeconds < 5
-                    ? "正在查找相关语音记忆"
-                    : pendingSeconds < 15
-                      ? "正在整理相关内容"
-                      : "正在生成回答，仍在正常处理"}
-                </strong>
-                <small className="mt-1 block text-xs text-[#718096]">
-                  {pendingSeconds >= 8
-                    ? `已等待 ${pendingSeconds} 秒，可以停止后重新提问。`
-                    : "问题已经提交，不需要重复点击。"}
-                </small>
+              <div className="room-ai-working" role="status" aria-live="polite">
+                <span className="room-ai-working-icon" aria-hidden="true">
+                  <Sparkles />
+                </span>
+                <span>
+                  <strong>
+                    {pendingSeconds < 5
+                      ? "正在查找相关语音记忆"
+                      : pendingSeconds < 15
+                        ? "正在整理相关内容"
+                        : "正在生成回答，仍在正常处理"}
+                  </strong>
+                  <small>
+                    {pendingSeconds >= 8
+                      ? `已等待 ${pendingSeconds} 秒，可以停止后重新提问。`
+                      : "问题已经提交，不需要重复点击。"}
+                  </small>
+                </span>
               </div>
             ) : null}
-            <div className="mt-3 flex flex-wrap justify-end gap-2">
-              {pending === "ask" ? (
+            {pending === "ask" ? (
+              <div className="mt-3 flex flex-wrap justify-end gap-2">
                 <Button
                   variant="secondary"
                   disabled={stopping}
@@ -273,12 +309,8 @@ export const RoomAskDialog = ({
                   <Square className="size-3.5" aria-hidden="true" />
                   {stopping ? "停止中…" : "停止回答"}
                 </Button>
-              ) : (
-                <Button disabled={!query.trim() || Boolean(pending)} onClick={() => void ask()}>
-                  <Sparkles className="size-4" aria-hidden="true" />问
-                </Button>
-              )}
-            </div>
+              </div>
+            ) : null}
 
             {error ? (
               <div className="mt-4 flex items-center gap-3 rounded-[14px] bg-[#fff1f1] px-4 py-3 text-sm font-medium text-[#d94b54]">
@@ -292,9 +324,12 @@ export const RoomAskDialog = ({
             ) : null}
 
             {answer ? (
-              <article className="mt-4 rounded-[16px] border border-[#d7e5f5] bg-white/72 p-4">
-                <h3 className="flex items-center gap-2 text-sm font-bold text-[#26364d]">
-                  <Sparkles className="size-4 text-[#4a8de8]" aria-hidden="true" /> 回答
+              <article className="room-ai-answer">
+                <h3>
+                  <span className="room-ai-answer-icon" aria-hidden="true">
+                    <Bot />
+                  </span>
+                  上号 AI
                 </h3>
                 <p className="mt-2 whitespace-pre-wrap text-sm leading-7 text-[#53657b]">
                   {answer.text}

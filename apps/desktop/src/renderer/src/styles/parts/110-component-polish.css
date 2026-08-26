@@ -568,6 +568,12 @@
   background: rgba(255, 235, 236, 0.86);
 }
 
+.recording-rate-button.is-active {
+  border-color: rgba(80, 147, 229, 0.72);
+  background: rgba(224, 240, 255, 0.96);
+  color: #2275ce;
+}
+
 .recording-icon-button svg {
   width: 15px;
   height: 15px;
@@ -683,8 +689,9 @@
   box-shadow: 0 7px 18px rgba(72, 138, 210, 0.12);
 }
 
-.recording-scroll-top-button {
-  min-width: 50px;
+.recording-playback-rate-button {
+  width: 58px;
+  min-width: 58px;
 }
 
 .recording-player-error {

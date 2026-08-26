@@ -1,4 +1,4 @@
-import { CalendarDays, Gamepad2, MessageCircle, MonitorUp } from "lucide-react";
+import { CalendarDays, Code2, Gamepad2, MessageCircle, MonitorUp } from "lucide-react";
 import { motion } from "framer-motion";
 import { createPortal } from "react-dom";
 
@@ -7,24 +7,12 @@ import type { DailyRoomReport } from "@private-voice/shared";
 import { Button } from "../base/Button";
 import { DialogCloseButton } from "../base/DialogCloseButton";
 import { buildDailyRoomReportHighlights } from "../../features/daily-report/dailyRoomReportHighlights";
-import { overlayScrimVariants, reducedFadeVariants } from "../../features/motion/motionPresets";
+import {
+  dialogSurfaceVariants,
+  overlayScrimVariants,
+  reducedFadeVariants,
+} from "../../features/motion/motionPresets";
 import { usePrefersReducedMotion as useReducedMotion } from "../../hooks/usePrefersReducedMotion";
-
-const reportSurfaceVariants = {
-  initial: { opacity: 0, y: 8, scale: 0.985 },
-  open: {
-    opacity: 1,
-    y: 0,
-    scale: 1,
-    transition: { duration: 0.16, ease: [0.22, 1, 0.36, 1] },
-  },
-  closed: {
-    opacity: 0,
-    y: 4,
-    scale: 0.992,
-    transition: { duration: 0.12, ease: [0.4, 0, 1, 1] },
-  },
-} as const;
 
 const formatDuration = (milliseconds: number): string => {
   const minutes = Math.max(0, Math.round(milliseconds / 60_000));
@@ -43,18 +31,21 @@ export const DailyRoomReportModal = ({
   const roomName = report.roomId === "side" ? "二号房" : "一号房";
   const games = report.games.map((game) => game.name).join("、");
   const gameActivities = report.gameActivities ?? [];
+  const workActivities = report.workActivities ?? [];
   const highlights = buildDailyRoomReportHighlights(report);
   const headline =
     report.commentary?.trim() ||
-    (gameActivities.length
-      ? `${gameActivities[0]?.nickname} 昨天开了一局，房间里留下了游戏时间 🎮`
-      : report.participantCount >= 4
-        ? "昨天又凑成了一桌，热闹得很 🎉"
-        : report.messageCount >= 10
-          ? "昨天聊了不少，房间没白开 💬"
-          : games
-            ? "昨天有人来开黑，也留下了战绩 🎮"
-            : "昨天有人来坐了坐，房间记得这次碰面 ☕");
+    (workActivities.length
+      ? `${workActivities[0]?.nickname} 昨天一直在开发，房间里也留下了工作时间 💻`
+      : gameActivities.length
+        ? `${gameActivities[0]?.nickname} 昨天开了一局，房间里留下了游戏时间 🎮`
+        : report.participantCount >= 4
+          ? "昨天又凑成了一桌，热闹得很 🎉"
+          : report.messageCount >= 10
+            ? "昨天聊了不少，房间没白开 💬"
+            : games
+              ? "昨天有人来开黑，也留下了战绩 🎮"
+              : "昨天有人来坐了坐，房间记得这次碰面 ☕");
 
   useEffect(() => {
     const closeOnEscape = (event: KeyboardEvent) => {
@@ -73,7 +64,7 @@ export const DailyRoomReportModal = ({
       className="fixed inset-0 z-[87] grid place-items-center bg-[#eaf3ff]/88 p-6"
     >
       <motion.section
-        variants={reduceMotion ? reducedFadeVariants : reportSurfaceVariants}
+        variants={reduceMotion ? reducedFadeVariants : dialogSurfaceVariants}
         initial="initial"
         animate="open"
         exit="closed"
@@ -119,6 +110,26 @@ export const DailyRoomReportModal = ({
                       {game.participantCount > 1 ? <small>{game.participantCount} 人</small> : null}
                     </span>
                   ))}
+            </div>
+          </section>
+        ) : null}
+        {workActivities.length ? (
+          <section className="daily-report-games" aria-label="昨天工作的应用">
+            <div className="daily-report-games-title">
+              <Code2 aria-hidden="true" />
+              <strong>昨天工作了</strong>
+            </div>
+            <div className="daily-report-game-list">
+              {workActivities.map((activity, index) => (
+                <div
+                  className="daily-report-game-activity"
+                  key={`${activity.nickname}-${activity.workName}-${index}`}
+                >
+                  <strong>{activity.nickname}</strong>
+                  <span>使用 {activity.workName}</span>
+                  <small>{formatDuration(activity.durationMs)}</small>
+                </div>
+              ))}
             </div>
           </section>
         ) : null}

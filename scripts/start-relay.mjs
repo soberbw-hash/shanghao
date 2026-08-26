@@ -1,4 +1,5 @@
 import { readFile } from "node:fs/promises";
+import { resolve } from "node:path";
 
 const loadLocalEnv = async () => {
   try {
@@ -40,6 +41,11 @@ const server = new SignalingServer({
   port,
   roomName,
   packageVersion,
+  dailyRoomReportFile:
+    process.env.DAILY_ROOM_REPORT_FILE ||
+    (process.env.CHAT_HISTORY_FILE
+      ? `${process.env.CHAT_HISTORY_FILE}.daily-reports.json`
+      : resolve(process.cwd(), "data", "daily-room-reports.json")),
   logger: (message, context) => {
     console.log(
       JSON.stringify({

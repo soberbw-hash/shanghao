@@ -77,7 +77,7 @@ const ModelActions = ({
     return (
       <div className="flex flex-wrap items-center justify-end gap-2">
         {model.category !== "support" && !model.runtimeReady && !dependencyPending ? (
-          <Button disabled={busy} onClick={() => onAction("download")}>
+          <Button disabled={busy} onClick={() => onAction("repair")}>
             修复运行组件
           </Button>
         ) : null}
@@ -298,8 +298,25 @@ export const AiVoiceMemorySettingsCard = ({
     }
   };
 
-  const openHuggingFacePage = (url: string) => {
-    void window.desktopApi.app.openExternal(url);
+  const openHuggingFacePage = async (url: string) => {
+    try {
+      await window.desktopApi.app.openExternal(url);
+    } catch {
+      try {
+        await window.desktopApi.clipboard.writeText(url);
+        pushToast({
+          tone: "neutral",
+          title: "浏览器没有自动打开",
+          description: "链接已复制，请粘贴到 Chrome、Edge 或其他浏览器打开。",
+        });
+      } catch {
+        pushToast({
+          tone: "danger",
+          title: "网页打开失败",
+          description: "请手动复制授权区域下方的 Hugging Face 地址到浏览器打开。",
+        });
+      }
+    }
   };
 
   const handleHuggingFaceAccess = async (model: AiModelStatus) => {
@@ -381,12 +398,9 @@ export const AiVoiceMemorySettingsCard = ({
     }
   }, [snapshot]);
 
-  const modelSort = (left: AiModelStatus, right: AiModelStatus) => {
-    const score = (model: AiModelStatus) =>
-      model.id === settings.aiAsrModel ? 0 : model.activeRevision ? 1 : 2;
-    return score(left) - score(right);
-  };
-  const asrModels = models.filter((model) => model.category === "asr").sort(modelSort);
+  // Keep the manifest order stable. Selecting a model only changes its state styling;
+  // it must never move the card the user is looking at.
+  const asrModels = models.filter((model) => model.category === "asr");
   const supportModels = models.filter((model) => model.category === "support");
   const organizerModel = models.find((model) => model.id === "qwen35-4b");
   const selectedAsr = asrModels.find((model) => model.id === settings.aiAsrModel);
@@ -488,32 +502,42 @@ export const AiVoiceMemorySettingsCard = ({
           />
         ) : null}
         <div className="ai-model-copy">
-          <div className="ai-model-title-row">
-            <span className="ai-model-icon" aria-hidden="true">
-              <BrainCircuit />
-            </span>
-            <div>
-              <h3 className="text-balance">{model.name}</h3>
-              <p className="text-pretty">
-                {model.purpose} · 约 {formatBytes(model.approximateBytes)}
-              </p>
-              <div className="ai-model-tags" aria-label="模型特点">
-                {(MODEL_TAGS[model.id] ?? []).map((tag) => (
-                  <span key={tag}>{tag}</span>
-                ))}
+          <div className="ai-model-header">
+            <div className="ai-model-title-row">
+              <span className="ai-model-icon" aria-hidden="true">
+                <BrainCircuit />
+              </span>
+              <div>
+                <h3 className="text-balance">{model.name}</h3>
+                <p className="text-pretty">
+                  {model.purpose} · 约 {formatBytes(model.approximateBytes)}
+                </p>
+                <div className="ai-model-tags" aria-label="模型特点">
+                  {(MODEL_TAGS[model.id] ?? []).map((tag) => (
+                    <span key={tag}>{tag}</span>
+                  ))}
+                </div>
+                {model.dependencies?.includes("qwen3-forced-aligner-0.6b") ? (
+                  <small className="ai-model-dependency">另需共用时间对齐组件，不会重复下载</small>
+                ) : null}
+                {model.optionalDependencies?.includes("qwen3-forced-aligner-0.6b") ? (
+                  <small className="ai-model-dependency">
+                    已安装 ForcedAligner 时自动精确对齐；没有也可转录
+                  </small>
+                ) : null}
               </div>
-              {model.dependencies?.includes("qwen3-forced-aligner-0.6b") ? (
-                <small className="ai-model-dependency">另需共用时间对齐组件，不会重复下载</small>
-              ) : null}
-              {model.optionalDependencies?.includes("qwen3-forced-aligner-0.6b") ? (
-                <small className="ai-model-dependency">
-                  已安装 ForcedAligner 时自动精确对齐；没有也可转录
-                </small>
-              ) : null}
+              <strong className={`ai-model-phase is-${selected ? "selected" : model.phase}`}>
+                {selected ? "当前使用" : modelPhaseLabel(model)}
+              </strong>
             </div>
-            <strong className={`ai-model-phase is-${selected ? "selected" : model.phase}`}>
-              {selected ? "当前使用" : modelPhaseLabel(model)}
-            </strong>
+            <div className="ai-model-actions">
+              <ModelActions
+                model={model}
+                busy={busyModel === model.id}
+                dependencyPending={dependencyPending}
+                onAction={(action) => void controlModel(model, action)}
+              />
+            </div>
           </div>
           {model.totalBytes > 0 && model.phase !== "installed" ? (
             <div className="ai-model-progress-wrap">
@@ -558,7 +582,8 @@ export const AiVoiceMemorySettingsCard = ({
             <p className={dependencyPending ? "ai-model-note" : "ai-model-error"}>
               {dependencyPending
                 ? "正在等待共用时间对齐组件完成，完成后会自动刷新，无需修复。"
-                : "模型已经下载完成，但运行组件还没准备好；点击“修复运行组件”，详细原因可在诊断页查看。"}
+                : model.runtimeMessage ||
+                  "模型已经下载完成，但运行组件还没准备好；点击“修复运行组件”，详细原因可在诊断页查看。"}
             </p>
           ) : null}
           {model.hardwareNote ? <p className="ai-model-note">{model.hardwareNote}</p> : null}
@@ -576,12 +601,15 @@ export const AiVoiceMemorySettingsCard = ({
                 </div>
               </div>
               <div className="ai-model-access-steps">
-                <Button variant="secondary" onClick={() => openHuggingFacePage(COHERE_TERMS_URL)}>
+                <Button
+                  variant="secondary"
+                  onClick={() => void openHuggingFacePage(COHERE_TERMS_URL)}
+                >
                   1. 接受模型条款 <ExternalLink aria-hidden="true" />
                 </Button>
                 <Button
                   variant="secondary"
-                  onClick={() => openHuggingFacePage(HUGGING_FACE_TOKENS_URL)}
+                  onClick={() => void openHuggingFacePage(HUGGING_FACE_TOKENS_URL)}
                 >
                   2. 创建只读 Token <ExternalLink aria-hidden="true" />
                 </Button>
@@ -627,14 +655,6 @@ export const AiVoiceMemorySettingsCard = ({
               </small>
             </div>
           ) : null}
-        </div>
-        <div className="ai-model-actions">
-          <ModelActions
-            model={model}
-            busy={busyModel === model.id}
-            dependencyPending={dependencyPending}
-            onAction={(action) => void controlModel(model, action)}
-          />
         </div>
       </article>
     );

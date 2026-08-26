@@ -1,10 +1,13 @@
 .account-page {
   position: relative;
-  display: grid;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  box-sizing: border-box;
+  height: 100%;
   min-height: 100%;
-  place-items: center;
-  overflow: auto;
-  padding: clamp(22px, 5vh, 52px) 24px;
+  overflow-y: auto;
+  padding: 16px 24px 24px;
   color: #24334f;
   background:
     linear-gradient(145deg, rgba(243, 249, 255, 0.76), rgba(236, 245, 255, 0.48)),
@@ -37,7 +40,8 @@
   position: relative;
   z-index: 1;
   width: min(100%, 460px);
-  padding: 26px 30px 24px;
+  margin: auto 0;
+  padding: 20px 24px 18px;
   border: 1px solid rgba(151, 185, 226, 0.54);
   border-radius: 28px;
   background: rgba(249, 252, 255, 0.8);
@@ -101,12 +105,12 @@
 }
 
 .account-heading {
-  margin: 26px 0 20px;
+  margin: 18px 0 14px;
 }
 
 .account-heading h1 {
-  margin: 19px 0 5px;
-  font-size: 25px;
+  margin: 15px 0 4px;
+  font-size: 24px;
   letter-spacing: -0.035em;
 }
 
@@ -114,7 +118,7 @@
   margin: 0;
   color: #71819a;
   font-size: 13px;
-  line-height: 1.65;
+  line-height: 1.5;
 }
 
 .account-tabs {
@@ -171,11 +175,23 @@
 }
 
 .account-form {
-  gap: 14px;
+  gap: 10px;
 }
 
 .account-field {
-  gap: 7px;
+  gap: 5px;
+}
+
+.account-register-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  min-width: 0;
+  gap: 10px 12px;
+}
+
+.account-register-grid > .account-field,
+.account-field {
+  min-width: 0;
 }
 
 .account-field > span {
@@ -187,8 +203,11 @@
 .account-field > div {
   display: flex;
   align-items: center;
-  min-height: 46px;
-  padding: 0 13px;
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  min-height: 42px;
+  padding: 0 11px;
   border: 1px solid rgba(147, 181, 221, 0.55);
   border-radius: 14px;
   background: rgba(255, 255, 255, 0.68);
@@ -285,8 +304,8 @@
 
 .account-avatar-section {
   display: grid;
-  gap: 9px;
-  padding: 11px;
+  gap: 7px;
+  padding: 9px;
   border: 1px solid rgba(125, 157, 198, 0.24);
   border-radius: 15px;
   background: rgba(247, 251, 255, 0.58);
@@ -354,7 +373,7 @@
 .account-avatar-presets {
   display: grid;
   grid-template-columns: repeat(10, minmax(0, 1fr));
-  gap: 6px;
+  gap: 4px;
 }
 
 .account-avatar-presets button {
@@ -406,7 +425,7 @@
 }
 
 .account-inline-notice {
-  padding: 10px 12px;
+  padding: 8px 10px;
   border: 1px solid;
   border-radius: 12px;
   font-size: 12px;
@@ -414,7 +433,7 @@
 }
 
 .account-heading + .account-inline-notice {
-  margin: -7px 0 14px;
+  margin: -4px 0 10px;
 }
 
 .account-inline-notice.is-error {
@@ -437,7 +456,7 @@
 
 .account-submit {
   width: 100%;
-  min-height: 46px;
+  min-height: 42px;
   margin-top: 2px;
   justify-content: center;
 }
@@ -458,8 +477,8 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-top: 18px;
-  padding-top: 15px;
+  margin-top: 10px;
+  padding-top: 9px;
   border-top: 1px solid rgba(155, 184, 217, 0.32);
 }
 
@@ -493,19 +512,28 @@
 
 @media (max-height: 760px) {
   .account-page {
-    place-items: start center;
+    align-items: flex-start;
+    padding: 10px 16px 18px;
   }
   .account-card {
-    padding-block: 21px;
+    margin: 0;
+    padding-block: 15px;
   }
   .account-heading {
-    margin-block: 19px 15px;
+    margin-block: 14px 10px;
   }
   .account-form {
-    gap: 10px;
+    gap: 8px;
   }
   .account-field > div {
-    min-height: 42px;
+    min-height: 39px;
+  }
+}
+
+@media (max-width: 560px) {
+  .account-register-grid {
+    grid-template-columns: 1fr;
+    gap: 8px;
   }
 }
 

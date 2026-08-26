@@ -666,6 +666,20 @@ export class AiModelManager {
         dependencyState.userInstalled = true;
         this.startDownload(dependency, Boolean(dependencyState.activeRevision));
       }
+    } else if (action === "repair") {
+      if (!current.activeRevision) throw new Error("ai_model_not_downloaded");
+      current.phase = "preparing";
+      current.errorMessage = undefined;
+      current.failureKind = undefined;
+      await this.persist();
+      this.emit();
+      const runtime = await this.prepareRuntime(id);
+      current.phase = "installed";
+      await this.persist();
+      this.emit();
+      if (!runtime.ready) {
+        throw new Error(runtime.message ?? `model_${id}_runtime_not_ready`);
+      }
     } else if (action === "pause") {
       current.phase = "paused";
       this.abortControllers.get(id)?.abort();
@@ -810,11 +824,18 @@ export class AiModelManager {
     await this.persist();
     this.emit();
 
-    await this.prepareRuntime(id);
+    const runtime = await this.prepareRuntime(id);
 
     current.phase = "installed";
     await this.persist();
     this.emit();
+
+    if (!runtime.ready) {
+      await this.log("warn", "ai_model_ready_but_runtime_unavailable", id, undefined, {
+        revision: definition.revision,
+        message: runtime.message,
+      });
+    }
 
     if (isUpdate && previousRevision && previousRevision !== definition.revision) {
       await rm(this.revisionDirectory(id, previousRevision), { recursive: true, force: true });
@@ -822,8 +843,8 @@ export class AiModelManager {
     await this.log("info", "ai_model_ready", id, undefined, { revision: definition.revision });
   }
 
-  private async prepareRuntime(id: AiModelId): Promise<void> {
-    if (!this.runtimePreparer) return;
+  private async prepareRuntime(id: AiModelId): Promise<{ ready: boolean; message?: string }> {
+    if (!this.runtimePreparer) return { ready: true };
     try {
       const result = await this.runtimePreparer(id);
       this.runtimeStatus[id] = result;
@@ -831,12 +852,16 @@ export class AiModelManager {
         ready: result.ready,
         message: result.message,
       });
+      this.emit();
+      return result;
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      this.runtimeStatus[id] = { ready: false, message };
+      const result = { ready: false, message };
+      this.runtimeStatus[id] = result;
       await this.log("error", "ai_model_runtime_prepare_failed", id, error);
+      this.emit();
+      return result;
     }
-    this.emit();
   }
 
   private async downloadFile(

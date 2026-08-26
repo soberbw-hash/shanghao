@@ -1185,23 +1185,22 @@ body::before {
 .ai-model-list,
 .ai-model-management-grid {
   display: grid;
+  align-items: start;
   gap: 8px;
   margin-top: 10px;
 }
 
 .ai-model-management-grid {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
 .ai-model-card {
   position: relative;
-  display: flex;
+  display: block;
+  align-self: start;
   min-width: 0;
-  align-items: flex-start;
-  justify-content: space-between;
-  align-items: center;
-  gap: 12px;
-  padding: 10px 12px;
+  min-height: 116px;
+  padding: 8px 10px;
   border: 1px solid rgba(164, 191, 222, 0.48);
   border-radius: 14px;
   background: rgba(255, 255, 255, 0.7);
@@ -1247,19 +1246,26 @@ body::before {
   cursor: default;
 }
 
-.ai-model-card > .ai-model-copy,
-.ai-model-card > .ai-model-actions {
+.ai-model-card > .ai-model-copy {
   position: relative;
 }
 
 .ai-model-card > .ai-model-copy {
-  z-index: 0;
+  z-index: 2;
   pointer-events: none;
 }
 
 .ai-model-actions {
   z-index: 2;
-  flex: 0 0 auto;
+  min-width: 0;
+  padding-top: 2px;
+}
+
+.ai-model-header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 10px;
 }
 
 .ai-model-card.is-support {
@@ -1281,7 +1287,8 @@ body::before {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
-  gap: 10px;
+  min-width: 0;
+  gap: 8px;
 }
 
 .ai-model-icon {
@@ -1303,15 +1310,15 @@ body::before {
 .ai-model-title-row h3 {
   margin: 0;
   color: #1b2b40;
-  font-size: 15px;
+  font-size: 14px;
   font-weight: 720;
   line-height: 1.35;
 }
 
 .ai-model-title-row p {
-  margin: 3px 0 0;
+  margin: 2px 0 0;
   color: #6b7e95;
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 540;
 }
 
@@ -1386,7 +1393,7 @@ body::before {
 }
 
 .ai-model-progress-wrap {
-  margin-top: 14px;
+  margin-top: 10px;
 }
 
 .ai-model-progress {
@@ -1415,7 +1422,7 @@ body::before {
 }
 
 .ai-model-error {
-  margin: 8px 0 0;
+  margin: 6px 0 0;
   font-size: 12px;
   line-height: 1.45;
 }
@@ -1555,6 +1562,7 @@ body::before {
   color: #df5360;
   font-size: 12px;
 }
+
 .voice-memory-detail header {
   display: flex;
   align-items: center;
@@ -1802,11 +1810,7 @@ body::before {
   }
 
   .ai-model-card {
-    align-items: flex-start;
-  }
-
-  .ai-model-card > :last-child {
-    align-self: flex-end;
+    grid-template-columns: minmax(0, 1fr) auto;
   }
 
   .recording-library-settings-grid,
@@ -1826,6 +1830,12 @@ body::before {
 
   .recording-date-items {
     grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (min-width: 1181px) and (max-width: 1440px) {
+  .ai-model-management-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 

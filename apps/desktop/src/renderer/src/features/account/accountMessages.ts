@@ -18,7 +18,7 @@ const messages: Record<string, string> = {
   account_server_not_configured: "账号服务器地址尚未配置。开发时请先填写服务器地址。",
   account_server_upgrade_required:
     "当前房间服务器还是旧版本，尚未部署账号接口。更新服务器后即可测试；这与 HTTPS/WSS 是两个独立问题。",
-  account_not_configured: "服务器尚未完成账号服务配置，请联系管理员。",
+  account_not_configured: "账号服务器还没有接入 Supabase，注册和登录暂不可用。",
   account_server_invalid_response: "服务器尚未启用账号服务。开发测试可先使用访客模式。",
   account_email_verification_required: "请先完成邮箱验证，再返回登录。",
   account_server_unreachable: "暂时连不上账号服务器，请检查网络后重试。",

@@ -104,6 +104,72 @@ test("AI models remain opt-in and game activity lowers background priority", asy
   await rm(directory, { recursive: true, force: true });
 });
 
+test("repairing an installed model only prepares its runtime and keeps its downloaded revision", async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "shanghao-ai-model-repair-"));
+  const games = new FakeGameDetection();
+  const manager = new AiModelManager(directory, games as never, async () => undefined);
+  await manager.initialize("manual");
+  const internal = manager as unknown as {
+    persisted: {
+      models: Record<string, { userInstalled: boolean; activeRevision?: string; phase?: string }>;
+    };
+  };
+  internal.persisted.models["fun-asr-nano-2512"] = {
+    userInstalled: true,
+    activeRevision: "already-downloaded",
+    phase: "installed",
+  };
+  const repaired: string[] = [];
+  manager.setRuntimePreparer(async (id) => {
+    repaired.push(id);
+    return { ready: true };
+  });
+  try {
+    const snapshot = await manager.controlModel("fun-asr-nano-2512", "repair");
+    const model = snapshot.models.find((candidate) => candidate.id === "fun-asr-nano-2512");
+    assert.deepEqual(repaired, ["fun-asr-nano-2512"]);
+    assert.equal(model?.phase, "installed");
+    assert.equal(model?.runtimeReady, true);
+  } finally {
+    manager.stop();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("a failed runtime repair stays installed but cannot report success", async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "shanghao-ai-runtime-failure-"));
+  const games = new FakeGameDetection();
+  const manager = new AiModelManager(directory, games as never, async () => undefined);
+  await manager.initialize("manual");
+  const internal = manager as unknown as {
+    persisted: {
+      models: Record<string, { userInstalled: boolean; activeRevision?: string; phase?: string }>;
+    };
+  };
+  internal.persisted.models["dolphin-cn-dialect-0.4b"] = {
+    userInstalled: true,
+    activeRevision: "already-downloaded",
+    phase: "installed",
+  };
+  manager.setRuntimePreparer(async () => ({ ready: false, message: "torch-complex 缺失" }));
+  try {
+    await assert.rejects(
+      manager.controlModel("dolphin-cn-dialect-0.4b", "repair"),
+      /torch-complex 缺失/,
+    );
+    const model = manager
+      .getSnapshot()
+      .models.find((candidate) => candidate.id === "dolphin-cn-dialect-0.4b");
+    assert.equal(model?.phase, "installed");
+    assert.equal(model?.runtimeReady, false);
+    assert.equal(model?.runtimeMessage, "torch-complex 缺失");
+    assert.equal(model?.activeRevision, "already-downloaded");
+  } finally {
+    manager.stop();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
 test("AI model paths reject traversal and persisted partial state resumes after restart", async () => {
   assert.equal(
     safeRelativeModelPath("weights/model-00001.safetensors"),

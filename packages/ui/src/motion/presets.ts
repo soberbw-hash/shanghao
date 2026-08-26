@@ -12,7 +12,8 @@ export const fadeSlideUp = {
 };
 
 export const gentleScale = {
-  whileTap: { scale: 0.965, y: 0 },
-  whileHover: { scale: 1.012, y: -1 },
+  // Keep feedback tactile without making the control visibly jump in size.
+  whileTap: { scale: 0.985, y: 0 },
+  whileHover: { scale: 1.006, y: -1 },
   transition: { type: "spring", ...APPLE_MOTION_SPRING },
 };

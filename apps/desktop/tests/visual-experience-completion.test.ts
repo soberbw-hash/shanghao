@@ -81,6 +81,8 @@ test("recording, markers, speaker closure and AI work all expose visible state f
   assert.match(topbar, /room-recording-marker-pulse/);
   assert.match(room, /is-speaker-closed/);
   assert.match(voiceMemory, /voice-memory-audio-trajectory/);
+  assert.match(visualStyles, /\.voice-memory-audio-trajectory\s*\{[^}]*width: min\(100%, 520px\)/s);
+  assert.doesNotMatch(visualStyles, /\.voice-memory-audio-trajectory\s*\{[^}]*border-radius:/s);
   assert.match(visualStyles, /@keyframes room-recording-breathe/);
   assert.match(visualStyles, /@keyframes room-recording-marker-confirm/);
   assert.match(visualStyles, /@keyframes voice-memory-wave/);

@@ -3,6 +3,8 @@ import { randomUUID } from "node:crypto";
 import {
   DEFAULT_ROOM_NAME,
   OFFICIAL_RELAY_SERVER_URL,
+  DEFAULT_QUICK_MESSAGE_SLOTS,
+  DEFAULT_QUICK_MESSAGE_VOLUME,
   PROFILE_SCHEMA_VERSION,
   SETTINGS_SCHEMA_VERSION,
   isBuiltInAvatarId,
@@ -32,7 +34,6 @@ export const defaultSettings: AppSettings = {
   hasCompletedProfileSetup: false,
   minimizeToTray: false,
   uiScale: 100,
-  launchOnStartup: true,
   isHardwareAccelerationEnabled: true,
   isOverlayEnabled: true,
   preferredInputDeviceId: undefined,
@@ -46,7 +47,7 @@ export const defaultSettings: AppSettings = {
   pushToTalkShortcut: "Space",
   recordingMarkerShortcut: "F8",
   recordingSaveDirectory: undefined,
-  recordingLibraryQuotaGb: 10,
+  recordingLibraryQuotaGb: 20,
   isRecordingWasteAutoCleanupEnabled: false,
   aiAsrModel: "qwen3-asr-0.6b-force",
   aiOrganizerProvider: "cloud",
@@ -73,6 +74,11 @@ export const defaultSettings: AppSettings = {
   weatherManualCity: "",
   weatherEffectMode: "standard",
   isUiSoundEnabled: true,
+  quickMessages: {
+    soundEnabled: true,
+    soundVolume: DEFAULT_QUICK_MESSAGE_VOLUME,
+    slots: DEFAULT_QUICK_MESSAGE_SLOTS,
+  },
   isBackgroundUpdateCheckEnabled: true,
   lastCollectionViewedAt: undefined,
   hasInitializedCollectionReadState: false,
@@ -117,6 +123,38 @@ const normalizeAvatarId = (value: unknown): AppSettings["avatarId"] => {
   return isBuiltInAvatarId(value) ? value : defaultSettings.avatarId;
 };
 
+const normalizeQuickMessages = (value: unknown): AppSettings["quickMessages"] => {
+  const raw =
+    value && typeof value === "object" && !Array.isArray(value)
+      ? (value as Record<string, unknown>)
+      : {};
+  const rawSlots = Array.isArray(raw.slots) ? raw.slots : [];
+  const slots = Array.from({ length: DEFAULT_QUICK_MESSAGE_SLOTS.length }, (_, index) => {
+    const fallback = DEFAULT_QUICK_MESSAGE_SLOTS[index] ??
+      DEFAULT_QUICK_MESSAGE_SLOTS[0] ?? { presetId: undefined, shortcut: "", enabled: false };
+    const candidate = rawSlots[index];
+    const source =
+      candidate && typeof candidate === "object" && !Array.isArray(candidate)
+        ? (candidate as Record<string, unknown>)
+        : {};
+    const rawPresetId =
+      typeof source.presetId === "string" ? source.presetId.trim() || undefined : undefined;
+    const isRemovedPreset = rawPresetId === "legacy-ok";
+    return {
+      // The old 👌 preset was removed from the library. Do not leave a dangling
+      // shortcut behind when an existing profile is opened after the update.
+      presetId: isRemovedPreset ? undefined : (rawPresetId ?? fallback.presetId),
+      shortcut: typeof source.shortcut === "string" ? source.shortcut.trim() : fallback.shortcut,
+      enabled: isRemovedPreset ? false : normalizeBoolean(source.enabled, fallback.enabled),
+    };
+  });
+  return {
+    soundEnabled: normalizeBoolean(raw.soundEnabled, defaultSettings.quickMessages.soundEnabled),
+    soundVolume: normalizeNumber(raw.soundVolume, defaultSettings.quickMessages.soundVolume, 0, 1),
+    slots,
+  };
+};
+
 export const migrateSettings = (raw: RawSettings): MigrationResult => {
   const previousVersion =
     typeof raw.settingsSchemaVersion === "number" && Number.isFinite(raw.settingsSchemaVersion)
@@ -142,7 +180,6 @@ export const migrateSettings = (raw: RawSettings): MigrationResult => {
     ),
     minimizeToTray: normalizeBoolean(raw.minimizeToTray, defaultSettings.minimizeToTray),
     uiScale: raw.uiScale === 110 || raw.uiScale === 125 ? raw.uiScale : 100,
-    launchOnStartup: normalizeBoolean(raw.launchOnStartup, defaultSettings.launchOnStartup),
     isHardwareAccelerationEnabled: true,
     isOverlayEnabled: true,
     preferredInputDeviceId: trimUnknownText(raw.preferredInputDeviceId),
@@ -170,9 +207,15 @@ export const migrateSettings = (raw: RawSettings): MigrationResult => {
       trimUnknownText(raw.recordingMarkerShortcut) ?? defaultSettings.recordingMarkerShortcut,
     recordingSaveDirectory: trimUnknownText(raw.recordingSaveDirectory),
     recordingLibraryQuotaGb:
-      previousVersion < 24 && raw.recordingLibraryQuotaGb === 5
-        ? 10
-        : normalizeNumber(raw.recordingLibraryQuotaGb, 10, 1, 100),
+      (previousVersion < 24 && raw.recordingLibraryQuotaGb === 5) ||
+      (previousVersion < 33 && raw.recordingLibraryQuotaGb === 10)
+        ? 20
+        : normalizeNumber(
+            raw.recordingLibraryQuotaGb,
+            defaultSettings.recordingLibraryQuotaGb,
+            1,
+            100,
+          ),
     isRecordingWasteAutoCleanupEnabled: normalizeBoolean(
       raw.isRecordingWasteAutoCleanupEnabled,
       false,
@@ -244,6 +287,7 @@ export const migrateSettings = (raw: RawSettings): MigrationResult => {
     isPushToTalkEnabled: raw.isPushToTalkEnabled === true,
     isAutoRecordOnJoinEnabled: normalizeBoolean(raw.isAutoRecordOnJoinEnabled, true),
     isUiSoundEnabled: normalizeBoolean(raw.isUiSoundEnabled, true),
+    quickMessages: normalizeQuickMessages(raw.quickMessages),
     isBackgroundUpdateCheckEnabled: raw.isBackgroundUpdateCheckEnabled !== false,
     lastCollectionViewedAt: trimUnknownText(raw.lastCollectionViewedAt),
     hasInitializedCollectionReadState: raw.hasInitializedCollectionReadState === true,

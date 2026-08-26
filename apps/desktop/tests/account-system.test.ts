@@ -150,7 +150,7 @@ test("authenticated room identity ignores forged client profile and nickname", a
         profileId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
         nickname: "伪造名字",
         avatarId: "fox",
-        appVersion: "3.0.3",
+        appVersion: "3.0.4",
         protocolVersion: APP_PROTOCOL_VERSION,
         buildNumber: APP_BUILD_NUMBER,
       }),
@@ -215,6 +215,30 @@ test("registration offers ten local SVG avatar presets without embedding remote 
     assert.match(source, /^<svg[\s>]/);
     assert.doesNotMatch(source, /<script|(?:href|src)=["']https?:\/\//i);
   }
+});
+
+test("registration form stays compact and scrollable in a short window", async () => {
+  const accountPage = await readFile(
+    new URL("../src/renderer/src/pages/AccountPage.tsx", import.meta.url),
+    "utf8",
+  );
+  const accountStyles = await readFile(
+    new URL("../src/renderer/src/styles/parts/150-account.css", import.meta.url),
+    "utf8",
+  );
+
+  assert.match(accountPage, /account-register-grid/);
+  assert.match(
+    accountStyles,
+    /\.account-page\s*\{[\s\S]*height:\s*100%;[\s\S]*overflow-y:\s*auto;/,
+  );
+  assert.match(accountStyles, /\.account-register-grid\s*\{[\s\S]*grid-template-columns:/);
+  assert.match(accountStyles, /\.account-register-grid\s*\{[\s\S]*min-width:\s*0/);
+  assert.match(accountStyles, /\.account-field\s*\{[\s\S]*min-width:\s*0/);
+  assert.match(
+    accountStyles,
+    /\.account-field > div\s*\{[\s\S]*box-sizing:\s*border-box[\s\S]*width:\s*100%[\s\S]*min-width:\s*0/,
+  );
 });
 
 test("old account servers are identified before credentials can be submitted", async () => {

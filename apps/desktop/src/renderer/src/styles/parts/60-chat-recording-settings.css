@@ -183,6 +183,14 @@
   min-width: min(100%, 360px);
 }
 
+.shortcut-input-wrap-compact {
+  min-width: 0;
+}
+
+.shortcut-input-wrap-compact .shortcut-input-field {
+  min-width: 0;
+}
+
 .shortcut-input-field {
   min-width: 214px;
   overflow: hidden;

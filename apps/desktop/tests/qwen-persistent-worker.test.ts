@@ -21,7 +21,9 @@ process.stdin.on("data", (chunk) => {
     const send = () => process.stdout.write(JSON.stringify({
       type:"result", id:request.id, output:JSON.stringify({echo:request.prompt})
     }) + "\\n");
-    if (request.prompt === "slow") setTimeout(send, 10_000); else setTimeout(send, 10);
+    if (request.prompt === "slow") setTimeout(send, 10_000);
+    else if (request.prompt === "idle-overlap") setTimeout(send, 180);
+    else setTimeout(send, 10);
     end = buffer.indexOf("\\n");
   }
 });
@@ -85,6 +87,38 @@ test("Qwen worker cancellation terminates the active process and recovers the ne
       }),
     ) as { echo: string };
     assert.equal(recovered.echo, "recovered");
+  } finally {
+    worker.release("test_complete");
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("Qwen idle cleanup never terminates a newly active request", async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "shanghao-qwen-idle-"));
+  const runner = path.join(directory, "fake-worker.cjs");
+  await writeFile(runner, fakeWorkerSource, "utf8");
+  const worker = new QwenPersistentWorker(
+    process.execPath,
+    runner,
+    () => directory,
+    undefined,
+    100,
+  );
+  try {
+    await worker.run({
+      prompt: "first",
+      maxNewTokens: 32,
+      resourceMode: "low",
+      timeoutMs: 2_000,
+    });
+    await new Promise<void>((resolve) => setTimeout(resolve, 50));
+    const output = await worker.run({
+      prompt: "idle-overlap",
+      maxNewTokens: 32,
+      resourceMode: "low",
+      timeoutMs: 2_000,
+    });
+    assert.equal(JSON.parse(output).echo, "idle-overlap");
   } finally {
     worker.release("test_complete");
     await rm(directory, { recursive: true, force: true });

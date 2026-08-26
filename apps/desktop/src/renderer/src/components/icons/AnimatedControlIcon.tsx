@@ -1,4 +1,20 @@
 import { cn } from "@private-voice/ui";
+import {
+  Bell,
+  Circle,
+  Headphones,
+  LogOut,
+  Mic,
+  MicOff,
+  MonitorUp,
+  ScreenShare,
+  Square,
+  UserPlus,
+  Volume2,
+  VolumeX,
+} from "lucide";
+
+import { MorphingIcon } from "./MorphingIcon";
 
 export type AnimatedControlIconName =
   | "bell"
@@ -229,25 +245,64 @@ const iconArtwork = (name: AnimatedControlIconName, active: boolean) => {
   }
 };
 
+const morphIconArtwork = (name: AnimatedControlIconName, active: boolean, muted: boolean) => {
+  switch (name) {
+    case "mic":
+      return muted ? MicOff : Mic;
+    case "speaker":
+      return muted ? VolumeX : Volume2;
+    case "record":
+      return active ? Square : Circle;
+    case "screen-share":
+      return active ? MonitorUp : ScreenShare;
+    case "invite":
+      return UserPlus;
+    case "bell":
+      return Bell;
+    case "exit":
+      return LogOut;
+    case "headphones":
+      return Headphones;
+    default:
+      return null;
+  }
+};
+
 export const AnimatedControlIcon = ({
   name,
   active = false,
   muted = false,
   className,
-}: AnimatedControlIconProps) => (
-  <svg
-    aria-hidden="true"
-    focusable="false"
-    viewBox="0 0 24 24"
-    className={cn("animated-control-icon", `animated-control-icon--${name}`, className)}
-    data-active={active ? "true" : "false"}
-    data-muted={muted ? "true" : "false"}
-    fill="none"
-    stroke="currentColor"
-    strokeWidth="1.8"
-    strokeLinecap="round"
-    strokeLinejoin="round"
-  >
-    {iconArtwork(name, active)}
-  </svg>
-);
+}: AnimatedControlIconProps) => {
+  const morphIcon = morphIconArtwork(name, active, muted);
+  const sharedClassName = cn("animated-control-icon", `animated-control-icon--${name}`, className);
+  const sharedProps = {
+    className: sharedClassName,
+    "data-active": active ? "true" : "false",
+    "data-muted": muted ? "true" : "false",
+    focusable: "false" as const,
+    strokeWidth: 1.8,
+  };
+
+  if (morphIcon) {
+    return <MorphingIcon icon={morphIcon} aria-hidden="true" {...sharedProps} />;
+  }
+
+  return (
+    <svg
+      aria-hidden="true"
+      focusable="false"
+      viewBox="0 0 24 24"
+      className={sharedClassName}
+      data-active={active ? "true" : "false"}
+      data-muted={muted ? "true" : "false"}
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      {iconArtwork(name, active)}
+    </svg>
+  );
+};

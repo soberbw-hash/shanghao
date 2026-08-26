@@ -68,6 +68,10 @@ const animatedIconPath = path.resolve(
   process.cwd(),
   "src/renderer/src/components/icons/AnimatedControlIcon.tsx",
 );
+const morphingIconPath = path.resolve(
+  process.cwd(),
+  "src/renderer/src/components/icons/MorphingIcon.tsx",
+);
 const onboardingModalPath = path.resolve(
   process.cwd(),
   "src/renderer/src/components/status/OnboardingModal.tsx",
@@ -102,6 +106,7 @@ test("gsap motion is scoped to intentional surfaces with the full visual present
   const appSource = readFileSync(appPath, "utf8");
   const sharedButtonSource = readFileSync(sharedButtonPath, "utf8");
   const animatedIconSource = readFileSync(animatedIconPath, "utf8");
+  const morphingIconSource = readFileSync(morphingIconPath, "utf8");
   const motionPresetsSource = readFileSync(motionPresetsPath, "utf8");
   const toastRegionSource = readFileSync(toastRegionPath, "utf8");
 
@@ -283,6 +288,11 @@ test("gsap motion is scoped to intentional surfaces with the full visual present
   assert.equal(animatedIconSource.includes("animated-icon__speaker-mute"), true);
   assert.equal(animatedIconSource.includes("animated-icon__bell-clapper"), true);
   assert.equal(animatedIconSource.includes("animated-icon__settings-knob--three"), true);
+  assert.equal(animatedIconSource.includes('from "lucide"'), true);
+  assert.equal(animatedIconSource.includes("<MorphingIcon icon={morphIcon}"), true);
+  assert.equal(morphingIconSource.includes('from "morphicons/react"'), true);
+  assert.equal(morphingIconSource.includes('reducedMotion = "user"'), true);
+  assert.equal(morphingIconSource.includes('spring = "smooth"'), true);
   assert.equal(stylesSource.includes("@keyframes animated-speaker-wave"), true);
   assert.equal(stylesSource.includes("@keyframes animated-bell-shell"), true);
   assert.equal(stylesSource.includes(".desk-animal-action-look"), true);
@@ -303,7 +313,7 @@ test("gsap motion is scoped to intentional surfaces with the full visual present
   assert.equal(stylesSource.includes("@keyframes icon-audio-hover"), false);
   assert.equal(motionPresetsSource.includes("dialogSurfaceVariants"), true);
   assert.equal(motionPresetsSource.includes("toastItemVariants"), true);
-  assert.equal(motionPresetsSource.includes("motionSpring.soft"), true);
+  assert.equal(motionPresetsSource.includes("motionCurve.spatial"), true);
   assert.equal(motionPresetsSource.includes("motionSpring.compact"), true);
   assert.equal(motionPresetsSource.includes("stiffness:"), false);
   assert.equal(toastRegionSource.includes('mode="popLayout"'), true);

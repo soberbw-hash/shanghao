@@ -341,6 +341,11 @@ test("knock feedback is intentionally louder than routine UI sounds", () => {
   assert.equal(sounds.includes("volume: uiGain.subtle"), true);
   assert.equal(sounds.includes("volume: uiGain.standard"), true);
   assert.equal(sounds.includes("volume: uiGain.important"), true);
+  assert.equal(sounds.includes("roomEntry: 0.025"), true);
+  assert.equal(
+    sounds.includes('"enter-room": { cue: "wake", pack: "soft", volume: uiGain.roomEntry'),
+    true,
+  );
   assert.equal(sounds.includes("volume: uiGain.deviceToggle"), true);
   assert.equal(roomState.includes('window.setTimeout(() => playUiSound("knock-bell"), 190)'), true);
   assert.equal(roomState.includes("shakeWindow: true"), true);

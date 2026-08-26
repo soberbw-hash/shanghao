@@ -39,6 +39,9 @@ const desktopApi: DesktopApi = {
   audio: {
     getDeepFilterAssets: () => ipcRenderer.invoke(IPC_CHANNELS.audio.getDeepFilterAssets),
   },
+  quickMessages: {
+    export: () => ipcRenderer.invoke(IPC_CHANNELS.quickMessages.export),
+  },
   screenCapture: {
     listSources: () => ipcRenderer.invoke(IPC_CHANNELS.screenCapture.listSources),
     selectSource: (sourceId) =>
@@ -207,6 +210,16 @@ const desktopApi: DesktopApi = {
       ipcRenderer.on(IPC_CHANNELS.shortcuts.recordingMarkerTriggered, wrapped);
       return () =>
         ipcRenderer.removeListener(IPC_CHANNELS.shortcuts.recordingMarkerTriggered, wrapped);
+    },
+    configureQuickMessage: (slot, accelerator) =>
+      ipcRenderer.invoke(IPC_CHANNELS.shortcuts.configureQuickMessage, slot, accelerator),
+    onQuickMessageTriggered: (listener) => {
+      const wrapped = (_event: Electron.IpcRendererEvent, slot: unknown) => {
+        if (typeof slot === "number") listener(slot);
+      };
+      ipcRenderer.on(IPC_CHANNELS.shortcuts.quickMessageTriggered, wrapped);
+      return () =>
+        ipcRenderer.removeListener(IPC_CHANNELS.shortcuts.quickMessageTriggered, wrapped);
     },
   },
   updates: {

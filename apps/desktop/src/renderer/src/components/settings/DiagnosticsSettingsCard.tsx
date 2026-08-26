@@ -139,12 +139,127 @@ const AiRuntimeDiagnosticsPanel = () => {
   );
 };
 
+type HealthLevel = "正常" | "异常" | "需要处理";
+
+const healthClass = (level: HealthLevel): string =>
+  level === "正常"
+    ? "bg-[#EAF7EF] text-[#2F8051]"
+    : level === "异常"
+      ? "bg-[#FFF0F0] text-[#C45151]"
+      : "bg-[#FFF8E8] text-[#9A6A19]";
+
+interface ShangHaoHealthOverviewProps {
+  runtimeHealth?: RuntimeHealthSnapshot;
+  relay?: RelayStatusSnapshot;
+  localAudioDiagnostics?: LocalAudioDiagnostics;
+  outputDeviceCount: number;
+  remotePeerCount: number;
+  webrtcReadyPeerCount: number;
+  screenShare?: ScreenSharePipelineDiagnostics;
+  onRefresh: () => void;
+  onOpenAudioSettings: () => void;
+}
+
+const ShangHaoHealthOverview = ({
+  runtimeHealth,
+  relay,
+  localAudioDiagnostics,
+  outputDeviceCount,
+  remotePeerCount,
+  webrtcReadyPeerCount,
+  screenShare,
+  onRefresh,
+  onOpenAudioSettings,
+}: ShangHaoHealthOverviewProps) => {
+  const relayLevel: HealthLevel = relay?.isReachable ? "正常" : "需要处理";
+  const webRtcLevel: HealthLevel =
+    remotePeerCount === 0 || webrtcReadyPeerCount === remotePeerCount ? "正常" : "需要处理";
+  const micLevel: HealthLevel = localAudioDiagnostics
+    ? localAudioDiagnostics.inputOverload === "warning"
+      ? "需要处理"
+      : "正常"
+    : "需要处理";
+  const gpuLevel: HealthLevel = runtimeHealth?.gpu.hardwareAcceleration ? "正常" : "异常";
+  const networkLevel: HealthLevel =
+    relay?.latencyMs === undefined
+      ? "需要处理"
+      : relay.latencyMs < 160
+        ? "正常"
+        : relay.latencyMs < 300
+          ? "需要处理"
+          : "异常";
+  const screenLevel: HealthLevel =
+    !screenShare || !screenShare.fallback.overdue ? "正常" : "需要处理";
+  const outputLevel: HealthLevel = outputDeviceCount > 0 ? "正常" : "需要处理";
+  const items: Array<{ label: string; level: HealthLevel; onClick?: () => void }> = [
+    { label: "麦克风 / 输入设备", level: micLevel },
+    { label: "输出设备 / 语音", level: outputLevel, onClick: onOpenAudioSettings },
+    { label: "WebRTC / TURN", level: webRtcLevel },
+    { label: "信令服务器", level: relayLevel },
+    { label: "网络延迟", level: networkLevel },
+    { label: "屏幕捕获 / 分享", level: screenLevel },
+    { label: "GPU / CUDA", level: gpuLevel },
+    { label: "本地存储 / 录音", level: runtimeHealth ? "正常" : "需要处理" },
+  ];
+  return (
+    <div className="rounded-[16px] border border-[#DCE8F5] bg-white p-4">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <div className="text-[14px] font-semibold text-[#344054]">ShangHao 体检</div>
+          <div className="mt-1 text-xs leading-5 text-[#667085]">
+            先看结论，需要时再展开下面的详细诊断。
+          </div>
+        </div>
+        <Button variant="ghost" onClick={onRefresh}>
+          重新检查
+        </Button>
+      </div>
+      <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+        {items.map(({ label, level, onClick }) => {
+          const className = `flex items-center justify-between gap-2 rounded-xl border border-[#EDF2F7] bg-[#FAFCFF] px-3 py-2 text-left ${
+            onClick
+              ? "w-full cursor-pointer transition-colors duration-100 hover:border-[#B9D5F5] hover:bg-[#F4F9FF]"
+              : ""
+          }`;
+          const content = (
+            <>
+              <span className="text-[12px] text-[#52657D]">{label}</span>
+              <span
+                className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${healthClass(level)}`}
+              >
+                {level}
+              </span>
+            </>
+          );
+          return onClick ? (
+            <button
+              key={label}
+              type="button"
+              className={className}
+              title="点击前往语音设置，检查输出设备和音量"
+              aria-label={`${label}：${level}，点击前往语音设置`}
+              onClick={onClick}
+            >
+              {content}
+            </button>
+          ) : (
+            <div key={label} className={className}>
+              {content}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+};
+
 export const DiagnosticsSettingsCard = ({
   diagnostics,
   runtimeHealth,
   relay,
   connectionHealth,
   localAudioDiagnostics,
+  outputDeviceCount,
   webrtcReadyPeerCount,
   remotePeerCount,
   audioRelayActive,
@@ -155,6 +270,8 @@ export const DiagnosticsSettingsCard = ({
   onOpenLogs,
   onExportBundle,
   onCopySummary,
+  onRefreshHealth,
+  onOpenAudioSettings,
   onRefreshWindows,
   onRepairFirewall,
   isRepairingFirewall,
@@ -165,6 +282,7 @@ export const DiagnosticsSettingsCard = ({
   relay?: RelayStatusSnapshot;
   connectionHealth: ConnectionHealth;
   localAudioDiagnostics?: LocalAudioDiagnostics;
+  outputDeviceCount: number;
   webrtcReadyPeerCount: number;
   remotePeerCount: number;
   audioRelayActive: boolean;
@@ -175,6 +293,8 @@ export const DiagnosticsSettingsCard = ({
   onOpenLogs: () => void;
   onExportBundle: () => void;
   onCopySummary: () => void;
+  onRefreshHealth: () => void;
+  onOpenAudioSettings: () => void;
   onRefreshWindows: () => void;
   onRepairFirewall: () => void;
   isRepairingFirewall: boolean;
@@ -182,6 +302,17 @@ export const DiagnosticsSettingsCard = ({
 }) => (
   <SettingsSection title="日志与诊断" description="出问题时导出诊断包发给开发者。">
     <div className="space-y-3">
+      <ShangHaoHealthOverview
+        runtimeHealth={runtimeHealth}
+        relay={relay}
+        localAudioDiagnostics={localAudioDiagnostics}
+        outputDeviceCount={outputDeviceCount}
+        remotePeerCount={remotePeerCount}
+        webrtcReadyPeerCount={webrtcReadyPeerCount}
+        screenShare={screenShare}
+        onRefresh={onRefreshHealth}
+        onOpenAudioSettings={onOpenAudioSettings}
+      />
       <div className="rounded-[16px] border border-[#CFE0F5] bg-[#F3F8FE] p-4">
         <div className="flex items-center justify-between gap-3">
           <div>
@@ -396,8 +527,6 @@ export const DiagnosticsSettingsCard = ({
               {windowsStatus?.firewall.healthy
                 ? `${windowsStatus.firewall.ruleCount}/${windowsStatus.firewall.expectedRuleCount} 条正常`
                 : "需要检查"}
-              <span className="mx-2 text-[#CBD5E1]">·</span>
-              开机任务：{windowsStatus?.startupTask.enabled ? "正常" : "未启用"}
             </div>
             <div className="mt-1 text-[11px] text-[#98A2B3]">
               {windowsStatus?.firewall.message ?? "正在读取 Windows 集成状态…"}

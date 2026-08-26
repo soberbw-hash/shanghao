@@ -94,14 +94,6 @@ export const App = () => {
 
   useEffect(() => {
     const root = document.documentElement;
-    root.style.fontSize = `${settings?.uiScale ?? 100}%`;
-    return () => {
-      root.style.removeProperty("font-size");
-    };
-  }, [settings?.uiScale]);
-
-  useEffect(() => {
-    const root = document.documentElement;
     const syncFocus = () => root.classList.toggle("is-app-window-focused", document.hasFocus());
     syncFocus();
     window.addEventListener("focus", syncFocus);

@@ -28,7 +28,7 @@ Electron 侧已提供 `host-benchmark.ts` 的统一样本与汇总结构。未�
 
 1. ScreenCaptureKit 画面采集与权限恢复；系统音频能力单独声明，不能假装 loopback。
 2. 麦克风、WebRTC、DeepFilter、录音、VibeVoice、Qwen 的真机运行与资源压力验证。
-3. Tray、开机启动、字体、模糊、动画、多显示器、睡眠唤醒与系统权限验证。
+3. Tray、字体、模糊、动画、多显示器、睡眠唤醒与系统权限验证。
 4. Apple Silicon 与至少一个受支持 macOS 版本上的签名、公证、升级和卸载验证。
 
 在这些证据齐全前，Windows 仍是唯一正式支持平台。

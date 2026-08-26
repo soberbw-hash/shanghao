@@ -4,6 +4,7 @@ import path from "node:path";
 import test from "node:test";
 
 import { RELEASE_HISTORY } from "../src/renderer/src/components/status/releaseHistory";
+import { QUICK_MESSAGE_PRESETS } from "@private-voice/shared";
 import { readRendererCss } from "./helpers/read-renderer-css";
 
 const audioCardPath = path.resolve(
@@ -48,9 +49,21 @@ const recordingLibraryCardPath = path.resolve(
   process.cwd(),
   "src/renderer/src/components/settings/RecordingLibrarySettingsCard.tsx",
 );
+const modelTestPanelPath = path.resolve(
+  process.cwd(),
+  "src/renderer/src/components/settings/ModelTestPanel.tsx",
+);
+const modelComparisonQueuePath = path.resolve(
+  process.cwd(),
+  "src/renderer/src/features/ai/modelComparisonQueue.ts",
+);
 const aiVoiceMemoryCardPath = path.resolve(
   process.cwd(),
   "src/renderer/src/components/settings/AiVoiceMemorySettingsCard.tsx",
+);
+const quickMessageSettingsPath = path.resolve(
+  process.cwd(),
+  "src/renderer/src/components/settings/QuickMessageSettingsCard.tsx",
 );
 const voiceMemoryDetailPath = path.resolve(
   process.cwd(),
@@ -82,6 +95,98 @@ test("semantic interface sounds have one simple master control without per-event
   assert.equal(audioSource.includes("soundVolume"), true);
   assert.equal(audioSource.includes('type="range"'), true);
   assert.equal(audioSource.includes('playUiSound("sound-preview")'), true);
+});
+
+test("quick messages use direct slot drops, a dense pack library, and compact shortcuts", () => {
+  const source = readFileSync(quickMessageSettingsPath, "utf8");
+
+  assert.equal(source.includes("实时预览"), true);
+  assert.equal(source.includes("onDrop={(event) => handleSlotDrop(event, index)}"), true);
+  assert.equal(source.includes("draggable"), true);
+  assert.equal(source.includes("语音包库"), true);
+  assert.equal(source.includes('className="flex flex-wrap gap-2"'), true);
+  assert.equal(source.includes("w-fit max-w-full cursor-grab"), true);
+  assert.equal(source.includes("搜索语音或分类"), true);
+  assert.equal(source.includes('["全部", "游戏", "主播", "默认语音", "未分类"]'), true);
+  assert.equal(source.includes('aria-label="筛选语音包分类"'), true);
+  assert.equal(source.includes("settings-inline-select"), true);
+  assert.equal(source.includes("xl:grid-cols-5"), true);
+  assert.equal(source.includes("快捷键"), true);
+  assert.equal(source.includes("compact"), true);
+  assert.equal(source.includes("soundVolume"), true);
+  assert.equal(source.includes('"--ui-sound-volume"'), true);
+  assert.equal(source.includes(">开关音效<"), true);
+  assert.equal(source.includes("disabled={!settings.quickMessages.soundEnabled}"), true);
+  const shortcutSource = readFileSync(
+    path.resolve(process.cwd(), "src/renderer/src/components/base/ShortcutInput.tsx"),
+    "utf8",
+  );
+  const styles = readRendererCss();
+  assert.equal(shortcutSource.includes("shortcut-input-wrap-compact"), true);
+  assert.equal(shortcutSource.includes("whitespace-nowrap"), true);
+  assert.match(styles, /\.shortcut-input-wrap-compact\s*\{/);
+  assert.equal(source.includes("当前预览："), false);
+  assert.equal(source.includes("添加到槽位"), false);
+  assert.equal(source.includes("原有快捷回复"), false);
+  assert.equal(source.includes("五个快捷键"), false);
+  assert.equal(source.includes("以后可以按人物、游戏和来源继续分类"), false);
+  assert.equal(source.includes('className="settings-inline-select'), true);
+  assert.equal(source.includes('value="game:"'), true);
+  assert.equal(source.includes('value="streamer:"'), true);
+  assert.equal(source.includes('<optgroup label="游戏">'), true);
+  assert.equal(source.includes('<optgroup label="主播">'), true);
+  assert.equal(source.includes("librarySubfilterOptions"), false);
+  assert.equal(source.includes("已添加 · 槽位"), true);
+  assert.equal(source.includes("assignedSlotsByPreset"), true);
+  assert.equal(source.includes("1/5"), false);
+  assert.equal(source.includes(">聊天<"), false);
+});
+
+test("local voice pack keeps streamer and multi-game tags separate from display names", () => {
+  assert.equal(
+    QUICK_MESSAGE_PRESETS.some((preset) => preset.id === "legacy-ok"),
+    false,
+  );
+  const localPresets = QUICK_MESSAGE_PRESETS.filter((preset) => preset.id.startsWith("voice-"));
+  const pddPresets = localPresets.filter((preset) => preset.streamer === "PDD");
+
+  assert.equal(localPresets.length, 28);
+  assert.equal(pddPresets.length, 2);
+  assert.deepEqual(pddPresets[0]?.gameTags, ["英雄联盟", "绝地求生"]);
+  assert.equal(localPresets.find((preset) => preset.content === "nice")?.streamer, undefined);
+  assert.equal(
+    localPresets.find((preset) => preset.content === "你吼那么大声")?.streamer,
+    "孙笑川",
+  );
+  assert.deepEqual(localPresets.find((preset) => preset.content === "你吼那么大声")?.gameTags, [
+    "英雄联盟",
+  ]);
+  assert.equal(localPresets.find((preset) => preset.content === "赋能哥？")?.streamer, "瓦瓦");
+  assert.equal(
+    localPresets.find((preset) => preset.content === "赋能哥？")?.gameTags?.[0],
+    "无主契约",
+  );
+  const defaultVoicePresets = QUICK_MESSAGE_PRESETS.filter(
+    (preset) => preset.category === "默认语音",
+  );
+  assert.equal(defaultVoicePresets.length, 6);
+  assert.deepEqual(
+    defaultVoicePresets.map((preset) => preset.content),
+    ["开麦", "等我", "听得到吗", "上个厕所", "都哥们", "开"],
+  );
+  assert.equal(
+    QUICK_MESSAGE_PRESETS.find((preset) => preset.id === "legacy-mic")?.soundId,
+    "default-voice-开麦",
+  );
+  assert.equal(
+    QUICK_MESSAGE_PRESETS.find((preset) => preset.id === "legacy-wait")?.soundId,
+    "default-voice-等我",
+  );
+  assert.equal(
+    QUICK_MESSAGE_PRESETS.find((preset) => preset.id === "legacy-hear")?.soundId,
+    "default-voice-听得到吗",
+  );
+  assert.equal(readFileSync(quickMessageSettingsPath, "utf8").includes("导出语音包"), true);
 });
 
 test("weather settings expose the full dynamic scene without technical quality tiers", () => {
@@ -116,19 +221,19 @@ test("weather settings expose the full dynamic scene without technical quality t
   assert.equal(source.includes("longitude"), false);
 });
 
-test("interface scale is configurable while the room overlay remains always on", () => {
+test("interface scale stays automatic while the room overlay remains always on", () => {
   const source = readFileSync(settingsPagePath, "utf8");
   const roomSource = readFileSync(roomPagePath, "utf8");
   const appSource = readFileSync(appPath, "utf8");
 
-  assert.equal(source.includes("界面大小"), true);
-  assert.equal(source.includes("<option value={110}>110%</option>"), true);
-  assert.equal(source.includes("<option value={125}>125%</option>"), true);
+  assert.equal(source.includes("界面大小"), false);
+  assert.equal(source.includes("<option value={110}>110%</option>"), false);
+  assert.equal(source.includes("<option value={125}>125%</option>"), false);
   assert.equal(source.includes("进入频道时显示悬浮窗"), false);
   assert.equal(source.includes("硬件加速"), false);
   assert.equal(roomSource.includes("isOverlayEnabled"), false);
   assert.equal(roomSource.includes("window.desktopApi.overlay.show()"), true);
-  assert.equal(appSource.includes("settings?.uiScale"), true);
+  assert.equal(appSource.includes("settings?.uiScale"), false);
 });
 
 test("home page exposes only the fixed channel server address entry", () => {
@@ -187,6 +292,11 @@ test("settings keep only everyday voice controls and remove advanced connection"
   for (const diagnostic of ["Relay 延迟", "TURN", "WebRTC", "当前语音路径", "丢包", "抖动"]) {
     assert.equal(diagnosticsSource.includes(diagnostic), true);
   }
+  assert.equal(diagnosticsSource.includes("outputDeviceCount"), true);
+  assert.equal(diagnosticsSource.includes("onOpenAudioSettings"), true);
+  assert.equal(diagnosticsSource.includes("点击前往语音设置，检查输出设备和音量"), true);
+  assert.equal(diagnosticsSource.includes('connectionHealth.voicePath === "unknown"'), false);
+  assert.equal(source.includes('onOpenAudioSettings={() => selectSection("audio")}'), true);
 });
 
 test("settings pages keep the shared header compact", () => {
@@ -234,8 +344,8 @@ test("microphone processing lives in the room panel while about keeps release hi
   assert.equal(audioCardSource.includes("isAutoGainControlEnabled"), false);
   assert.equal(audioCardSource.includes("isFriendLoudnessBalanceEnabled"), false);
   assert.equal(roomDockSource.includes("settings.isFriendLoudnessBalanceEnabled"), true);
-  assert.equal(RELEASE_HISTORY.length, 70);
-  assert.equal(RELEASE_HISTORY[0]?.version, "3.0.3");
+  assert.equal(RELEASE_HISTORY.length, 71);
+  assert.equal(RELEASE_HISTORY[0]?.version, "3.0.4");
   assert.equal(RELEASE_HISTORY.at(-1)?.version, "0.1.1");
   assert.equal(
     new Set(RELEASE_HISTORY.map((release) => release.version)).size,
@@ -343,10 +453,14 @@ test("recording library keeps both desktop columns useful while browsing long li
   );
   assert.match(styles, /\.recording-player-sticky\s*\{[^}]*position:\s*sticky/s);
   assert.match(styles, /\.recording-rate-button\s*\{[^}]*font-size:\s*11px/s);
+  assert.match(
+    styles,
+    /\.recording-playback-rate-button\s*\{[^}]*width:\s*58px;[^}]*min-width:\s*58px/s,
+  );
   assert.equal(cardSource.includes('className="recording-player-sticky"'), true);
   assert.equal(cardSource.includes('className="recording-player-controls-row"'), true);
-  assert.equal(cardSource.includes('aria-label="回到录音详情顶部"'), true);
-  assert.equal(cardSource.includes("recordingPanelRef.current?.scrollTo({ top: 0 })"), true);
+  assert.equal(cardSource.includes('aria-label="回到录音详情顶部"'), false);
+  assert.equal(cardSource.includes("recordingPanelRef.current?.scrollTo({ top: 0 })"), false);
   assert.equal(cardSource.match(/录制时间/g)?.length, 2);
   assert.equal(
     cardSource.includes("已播 {formatTime(currentTime)} / 总时长 {formatTime(duration)}"),
@@ -420,6 +534,9 @@ test("AI voice memory keeps first install manual and disables unavailable automa
   const source = readFileSync(aiVoiceMemoryCardPath, "utf8");
   const settingsSource = readFileSync(settingsPagePath, "utf8");
   const recordingSource = readFileSync(recordingLibraryCardPath, "utf8");
+  const modelTestSource = readFileSync(modelTestPanelPath, "utf8");
+  const modelComparisonQueueSource = readFileSync(modelComparisonQueuePath, "utf8");
+  const styles = readRendererCss();
   assert.equal(source.includes("A. 概览"), true);
   assert.equal(source.includes("B. 转录模型与组件"), true);
   assert.equal(source.includes("B1. 主转录模型"), true);
@@ -431,6 +548,9 @@ test("AI voice memory keeps first install manual and disables unavailable automa
   assert.equal(source.includes("D. AI 整理与房间问答"), true);
   assert.equal(source.includes("下载模型"), true);
   assert.equal(source.includes('model.category === "asr"'), true);
+  assert.equal(source.includes("modelSort"), false);
+  assert.equal(source.includes("Keep the manifest order stable"), true);
+  assert.match(styles, /\.ai-model-management-grid\s*\{[^}]*grid-template-columns:\s*repeat\(3/s);
   assert.equal(source.includes("runtimeStatus?.vibevoice"), false);
   assert.equal(source.includes('typeof aiApi.getRuntimeStatus !== "function"'), true);
   assert.equal(source.includes("model.id === settings.aiAsrModel"), true);
@@ -456,6 +576,20 @@ test("AI voice memory keeps first install manual and disables unavailable automa
   assert.equal(settingsSource.includes("<AiVoiceMemorySettingsCard"), true);
   assert.equal(recordingSource.includes("AiVoiceMemorySettingsCard"), false);
   assert.equal(recordingSource.includes("listVoiceMemories"), true);
+  assert.equal(modelTestSource.includes("modelSelectionStorageKey"), true);
+  assert.equal(modelTestSource.includes("modelComparisonQueue"), true);
+  assert.equal(modelTestSource.includes("onClose();"), true);
+  assert.equal(modelTestSource.includes("继续剩余测试"), true);
+  assert.equal(modelComparisonQueueSource.includes("localStorage"), true);
+  assert.equal(modelComparisonQueueSource.includes("recording-model-comparison-run"), true);
+  assert.equal(modelComparisonQueueSource.includes("createComparisonTaskId"), true);
+  assert.equal(modelComparisonQueueSource.includes("taskMatches(accepted, taskId)"), true);
+  assert.equal(modelComparisonQueueSource.includes("isRetryableFailure"), true);
+  assert.equal(modelComparisonQueueSource.includes("window.setInterval(poll, 1_000)"), true);
+  assert.equal(modelTestSource.includes("重新测试${modelDisplayName(modelId)}"), true);
+  assert.equal(recordingSource.includes("setIsModelComparisonOpen(false)"), true);
+  assert.equal(recordingSource.includes("key={selected.recordingId}"), true);
+  assert.match(styles, /\.model-comparison-rerun\s*\{/);
   assert.equal(recordingSource.includes("转录中 ${progress}%"), true);
   assert.equal(recordingSource.includes("recording-item-ai-progress"), true);
   assert.equal(recordingSource.includes("transcriptionSummary"), false);

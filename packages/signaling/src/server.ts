@@ -76,6 +76,7 @@ export interface SignalingServerOptions {
   logger?: (message: string, context?: Record<string, unknown>) => void;
   requiredClientVersion?: string;
   accountBackend?: AccountBackend;
+  dailyRoomReportFile?: string;
 }
 const compareVersions = (left: string, right: string): number => {
   const parse = (value: string) => {
@@ -339,7 +340,8 @@ export class SignalingServer extends EventEmitter {
       this.logger,
     );
     const dailyRoomReportFile =
-      process.env.DAILY_ROOM_REPORT_FILE ??
+      options.dailyRoomReportFile?.trim() ||
+      process.env.DAILY_ROOM_REPORT_FILE ||
       (process.env.CHAT_HISTORY_FILE
         ? `${process.env.CHAT_HISTORY_FILE}.daily-reports.json`
         : undefined);
@@ -1203,6 +1205,16 @@ export class SignalingServer extends EventEmitter {
         normalizedGameName,
       ),
     );
+    if (message.workActivity !== undefined) {
+      void this.dailyRoomReports.then((store) =>
+        store.recordWork(
+          message.roomId,
+          room.peers.getPeer(message.peerId)?.profileId || message.peerId,
+          room.peers.getPeer(message.peerId)?.nickname || message.nickname || "朋友",
+          normalizedWorkActivity?.name,
+        ),
+      );
+    }
     const payload: MemberStateMessage = {
       type: "member_state",
       roomId: message.roomId,

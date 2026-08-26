@@ -66,6 +66,8 @@ export interface RoomQuickMessage {
   nickname: string;
   avatarId?: BuiltInAvatarId;
   content: string;
+  presetId?: string;
+  soundId?: string;
   createdAt: string;
   isLocal?: boolean;
 }
@@ -173,6 +175,13 @@ export interface DailyRoomGameActivity {
   durationMs: number;
 }
 
+export interface DailyRoomWorkActivity {
+  identityId?: string;
+  nickname: string;
+  workName: string;
+  durationMs: number;
+}
+
 export interface DailyRoomParticipantSummary {
   identityId: string;
   nickname: string;
@@ -204,6 +213,7 @@ export interface DailyRoomReport {
   screenShareDurationMs?: number;
   games: DailyRoomGameSummary[];
   gameActivities: DailyRoomGameActivity[];
+  workActivities?: DailyRoomWorkActivity[];
   participants?: DailyRoomParticipantSummary[];
   peakConcurrentAt?: string;
   lastExit?: {

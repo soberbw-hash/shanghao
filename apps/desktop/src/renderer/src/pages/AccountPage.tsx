@@ -192,7 +192,10 @@ export const AccountPage = () => {
                         <motion.span
                           className="account-tab-pill"
                           layoutId="account-active-tab"
-                          transition={{ type: "spring", ...motionSpring.compact }}
+                          transition={{
+                            duration: motionDuration.normal,
+                            ease: motionCurve.spatial,
+                          }}
                         />
                       ) : null}
                       <span className="account-tab-label">
@@ -301,64 +304,106 @@ export const AccountPage = () => {
                     ))}
                   </div>
                 </div>
-                <label className="account-field">
-                  <span>用户名</span>
-                  <div>
-                    <UserRound />
-                    <input
-                      autoFocus
-                      autoComplete="username"
-                      value={username}
-                      onChange={(event) =>
-                        setUsername(event.target.value.replace(/[^a-zA-Z0-9_-]/g, "").toLowerCase())
-                      }
-                      placeholder="3～20 位英文、数字或下划线"
-                    />
-                  </div>
-                </label>
-                <label className="account-field">
-                  <span>显示名（可选）</span>
-                  <div>
-                    <UserRound />
-                    <input
-                      autoComplete="nickname"
-                      maxLength={32}
-                      value={displayName}
-                      onChange={(event) => setDisplayName(event.target.value)}
-                      placeholder={username || "朋友看到的名字"}
-                    />
-                  </div>
-                </label>
+                <div className="account-register-grid">
+                  <label className="account-field">
+                    <span>用户名</span>
+                    <div>
+                      <UserRound />
+                      <input
+                        autoFocus
+                        autoComplete="username"
+                        value={username}
+                        onChange={(event) =>
+                          setUsername(
+                            event.target.value.replace(/[^a-zA-Z0-9_-]/g, "").toLowerCase(),
+                          )
+                        }
+                        placeholder="3～20 位英文、数字或下划线"
+                      />
+                    </div>
+                  </label>
+                  <label className="account-field">
+                    <span>显示名（可选）</span>
+                    <div>
+                      <UserRound />
+                      <input
+                        autoComplete="nickname"
+                        maxLength={32}
+                        value={displayName}
+                        onChange={(event) => setDisplayName(event.target.value)}
+                        placeholder={username || "朋友看到的名字"}
+                      />
+                    </div>
+                  </label>
+                </div>
               </>
             ) : null}
 
             {mode !== "login" ? (
-              <label className="account-field">
-                <span>邮箱</span>
-                <div>
-                  <Mail />
-                  <input
-                    autoComplete="email"
-                    type="email"
-                    value={email}
-                    onChange={(event) => setEmail(event.target.value)}
-                    placeholder="name@example.com"
-                  />
-                </div>
-              </label>
-            ) : null}
-
-            {mode !== "reset" ? (
+              <div className={mode === "register" ? "account-register-grid" : undefined}>
+                <label className="account-field">
+                  <span>邮箱</span>
+                  <div>
+                    <Mail />
+                    <input
+                      autoComplete="email"
+                      type="email"
+                      value={email}
+                      onChange={(event) => setEmail(event.target.value)}
+                      placeholder="name@example.com"
+                    />
+                  </div>
+                </label>
+                {mode !== "reset" ? (
+                  <label className="account-field">
+                    <span>密码</span>
+                    <div>
+                      <LockKeyhole />
+                      <input
+                        autoComplete="new-password"
+                        type={showPassword ? "text" : "password"}
+                        value={password}
+                        onChange={(event) => setPassword(event.target.value)}
+                        placeholder={mode === "register" ? "至少 8 位" : "输入密码"}
+                      />
+                      <button
+                        type="button"
+                        className="account-password-toggle"
+                        onClick={() => setShowPassword((current) => !current)}
+                        aria-label={showPassword ? "隐藏密码" : "显示密码"}
+                      >
+                        {showPassword ? <EyeOff /> : <Eye />}
+                      </button>
+                    </div>
+                  </label>
+                ) : null}
+                {mode === "register" ? (
+                  <label className="account-field">
+                    <span>确认密码</span>
+                    <div>
+                      <LockKeyhole />
+                      <input
+                        autoComplete="new-password"
+                        type={showPassword ? "text" : "password"}
+                        value={confirmPassword}
+                        onChange={(event) => setConfirmPassword(event.target.value)}
+                        placeholder="再次输入密码"
+                      />
+                    </div>
+                  </label>
+                ) : null}
+              </div>
+            ) : (
               <label className="account-field">
                 <span>密码</span>
                 <div>
                   <LockKeyhole />
                   <input
-                    autoComplete={mode === "login" ? "current-password" : "new-password"}
+                    autoComplete="current-password"
                     type={showPassword ? "text" : "password"}
                     value={password}
                     onChange={(event) => setPassword(event.target.value)}
-                    placeholder={mode === "register" ? "至少 8 位" : "输入密码"}
+                    placeholder="输入密码"
                   />
                   <button
                     type="button"
@@ -370,23 +415,7 @@ export const AccountPage = () => {
                   </button>
                 </div>
               </label>
-            ) : null}
-
-            {mode === "register" ? (
-              <label className="account-field">
-                <span>确认密码</span>
-                <div>
-                  <LockKeyhole />
-                  <input
-                    autoComplete="new-password"
-                    type={showPassword ? "text" : "password"}
-                    value={confirmPassword}
-                    onChange={(event) => setConfirmPassword(event.target.value)}
-                    placeholder="再次输入密码"
-                  />
-                </div>
-              </label>
-            ) : null}
+            )}
 
             <AnimatePresence initial={false}>
               {effectiveError ? (

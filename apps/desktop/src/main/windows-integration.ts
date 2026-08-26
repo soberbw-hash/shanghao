@@ -7,7 +7,6 @@ import {
   repairWindowsFirewallRules,
   removeWindowsFirewallRules,
 } from "./windows-firewall";
-import { configureWindowsStartupTask, readWindowsStartupTaskStatus } from "./windows-startup-task";
 import {
   readWindowsIconOverlayStatus,
   setWindowsIconOverlaysHidden,
@@ -15,26 +14,15 @@ import {
 import { platformService } from "./platform/PlatformService";
 
 export const readWindowsIntegrationStatus = async (): Promise<WindowsIntegrationStatus> => {
-  const [elevationResult, startupTaskResult, firewallResult, iconOverlaysResult] =
-    await Promise.allSettled([
-      readWindowsElevationStatus(),
-      readWindowsStartupTaskStatus(),
-      readWindowsFirewallStatus(),
-      readWindowsIconOverlayStatus(),
-    ]);
+  const [elevationResult, firewallResult, iconOverlaysResult] = await Promise.allSettled([
+    readWindowsElevationStatus(),
+    readWindowsFirewallStatus(),
+    readWindowsIconOverlayStatus(),
+  ]);
   const elevation =
     elevationResult.status === "fulfilled"
       ? elevationResult.value
       : { isElevated: false, method: "unavailable" as const };
-  const startupTask =
-    startupTaskResult.status === "fulfilled"
-      ? startupTaskResult.value
-      : {
-          supported: platformService.isWindows,
-          enabled: false,
-          taskName: "ShangHao Auto Start",
-          message: "无法读取开机启动任务状态。",
-        };
   const firewall =
     firewallResult.status === "fulfilled"
       ? firewallResult.value
@@ -59,7 +47,6 @@ export const readWindowsIntegrationStatus = async (): Promise<WindowsIntegration
     platform: platformService.capabilities.nodePlatform,
     isPackaged: app.isPackaged,
     elevation,
-    startupTask,
     firewall,
     iconOverlays,
   };
@@ -74,5 +61,4 @@ export const ensureWindowsFirewallRules = async (): Promise<
 
 export const repairWindowsIntegrationFirewall = repairWindowsFirewallRules;
 export const removeWindowsIntegrationFirewall = removeWindowsFirewallRules;
-export const configureWindowsIntegrationStartup = configureWindowsStartupTask;
 export const configureWindowsIconOverlays = setWindowsIconOverlaysHidden;

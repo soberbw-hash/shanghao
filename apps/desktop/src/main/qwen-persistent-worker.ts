@@ -73,6 +73,7 @@ export class QwenPersistentWorker {
     private readonly runnerPath: string,
     private readonly modelPath: () => string | undefined,
     private readonly pythonPath?: string,
+    private readonly idleReleaseMs = WORKER_IDLE_RELEASE_MS,
   ) {}
 
   onState(listener: (health: QwenWorkerHealth) => void): () => void {
@@ -101,6 +102,7 @@ export class QwenPersistentWorker {
     signal?: AbortSignal;
   }): Promise<string> {
     if (options.signal?.aborted) throw new Error("ai_task_paused");
+    this.clearIdleRelease();
     return new Promise<string>((resolve, reject) => {
       const request: QwenWorkerRequest = {
         id: randomUUID(),
@@ -136,8 +138,7 @@ export class QwenPersistentWorker {
   }
 
   release(reason = "released"): void {
-    if (this.idleTimer) clearTimeout(this.idleTimer);
-    this.idleTimer = undefined;
+    this.clearIdleRelease();
     const error = new Error(
       reason === "idle_timeout" ? "qwen_worker_idle_release" : "ai_task_paused",
     );
@@ -194,6 +195,7 @@ export class QwenPersistentWorker {
   }
 
   private ensureStarted(): Promise<void> {
+    this.clearIdleRelease();
     if (this.child && (this.phase === "ready" || this.phase === "running"))
       return Promise.resolve();
     if (this.startPromise) return this.startPromise;
@@ -353,9 +355,18 @@ export class QwenPersistentWorker {
   }
 
   private scheduleIdleRelease(): void {
-    if (this.idleTimer) clearTimeout(this.idleTimer);
+    this.clearIdleRelease();
     if (this.active || this.queue.length) return;
-    this.idleTimer = setTimeout(() => this.release("idle_timeout"), WORKER_IDLE_RELEASE_MS);
+    this.idleTimer = setTimeout(() => {
+      this.idleTimer = undefined;
+      if (this.active || this.queue.length) return;
+      this.release("idle_timeout");
+    }, this.idleReleaseMs);
+  }
+
+  private clearIdleRelease(): void {
+    if (this.idleTimer) clearTimeout(this.idleTimer);
+    this.idleTimer = undefined;
   }
 
   private emit(): void {

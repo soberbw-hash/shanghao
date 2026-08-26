@@ -15,5 +15,6 @@
 @import "./parts/140-visual-experience.css";
 @import "./parts/150-account.css";
 @import "./parts/160-sensory-polish.css";
+@import "./parts/170-model-comparison.css";
 
 /* Keep these imports ordered: later compatibility passes intentionally win the cascade. */

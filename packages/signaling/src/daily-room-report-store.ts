@@ -25,6 +25,13 @@ interface ActiveGameState {
   startedAt: number;
 }
 
+interface ActiveWorkState {
+  identityId: string;
+  workName: string;
+  nickname: string;
+  startedAt: number;
+}
+
 interface ActiveParticipantState {
   identityId: string;
   nickname: string;
@@ -76,6 +83,7 @@ const createEmptyReport = (roomId: DailyRoomId, date: string): DailyRoomReport =
   screenShareDurationMs: 0,
   games: [],
   gameActivities: [],
+  workActivities: [],
   participants: [],
 });
 
@@ -165,6 +173,24 @@ const sanitizeReport = (value: unknown, roomId: DailyRoomId, date: string): Dail
           }))
           .slice(0, 100)
       : [],
+    workActivities: Array.isArray(source.workActivities)
+      ? source.workActivities
+          .filter(
+            (activity) =>
+              activity &&
+              typeof activity.nickname === "string" &&
+              typeof activity.workName === "string",
+          )
+          .map((activity) => ({
+            ...(typeof activity.identityId === "string"
+              ? { identityId: activity.identityId.slice(0, 160) }
+              : {}),
+            nickname: activity.nickname.slice(0, 32),
+            workName: activity.workName.slice(0, 64),
+            durationMs: Math.max(0, Number(activity.durationMs) || 0),
+          }))
+          .slice(0, 100)
+      : [],
     participants: Array.isArray(source.participants)
       ? source.participants
           .map(sanitizeParticipant)
@@ -189,6 +215,7 @@ export class DailyRoomReportStore {
   private readonly activeRooms = new Map<DailyRoomId, ActiveRoomState>();
   private readonly gamesByDay = new Map<string, Map<string, Set<string>>>();
   private readonly activeGames = new Map<string, ActiveGameState>();
+  private readonly activeWork = new Map<string, ActiveWorkState>();
   private readonly activeParticipants = new Map<string, ActiveParticipantState>();
   private readonly activeShares = new Map<string, ActiveShareState>();
   private writeQueue = Promise.resolve();
@@ -211,6 +238,7 @@ export class DailyRoomReportStore {
     this.closeActiveTime(roomId, now, false);
     this.closeActiveParticipants(roomId, now, false);
     this.closeActiveGames(roomId, now, false);
+    this.closeActiveWorks(roomId, now, false);
     this.closeActiveShares(roomId, now, false);
     const today = getShanghaiDate(now);
     return Array.from({ length: RETAIN_DAYS }, (_, index) => shiftShanghaiDate(today, -(index + 1)))
@@ -281,6 +309,7 @@ export class DailyRoomReportStore {
     report.lastExit = { nickname: nickname.slice(0, 32), at: new Date(now).toISOString() };
     this.closeActiveParticipant(roomIdValue, identityId, now, true);
     this.closeActiveGame(roomIdValue, identityId, now, true);
+    this.closeActiveWork(roomIdValue, identityId, now, true);
     this.closeActiveShare(roomIdValue, identityId, now, true);
     const active = this.activeRooms.get(roomIdValue) ?? {
       count: concurrent,
@@ -382,12 +411,42 @@ export class DailyRoomReportStore {
     }
   }
 
+  recordWork(
+    roomIdValue: string,
+    identityId: string,
+    nickname: string,
+    workName: string | undefined,
+    now = Date.now(),
+  ): void {
+    if (!isRoomId(roomIdValue)) return;
+    const activeKey = `${roomIdValue}:${identityId}`;
+    const active = this.activeWork.get(activeKey);
+    const normalizedWorkName = workName?.trim().slice(0, 64) || undefined;
+    const normalizedNickname = nickname.trim().slice(0, 32) || "朋友";
+    if (active && active.workName === normalizedWorkName) {
+      active.nickname = normalizedNickname;
+      return;
+    }
+    if (active) this.closeActiveWork(roomIdValue, identityId, now, true);
+    if (!normalizedWorkName) return;
+    const report = this.getMutableReport(roomIdValue, now);
+    report.hadActivity = true;
+    this.activeWork.set(activeKey, {
+      identityId,
+      workName: normalizedWorkName,
+      nickname: normalizedNickname,
+      startedAt: now,
+    });
+    this.touch(report, now);
+  }
+
   async flush(): Promise<void> {
     const now = Date.now();
     for (const roomId of ["main", "side"] as const) {
       this.closeActiveTime(roomId, now, true);
       this.closeActiveParticipants(roomId, now, true);
       this.closeActiveGames(roomId, now, true);
+      this.closeActiveWorks(roomId, now, true);
       this.closeActiveShares(roomId, now, true);
     }
     await this.writeQueue;
@@ -397,6 +456,14 @@ export class DailyRoomReportStore {
     for (const key of [...this.activeGames.keys()]) {
       if (key.startsWith(`${roomId}:`)) {
         this.closeActiveGame(roomId, key.slice(roomId.length + 1), now, stop);
+      }
+    }
+  }
+
+  private closeActiveWorks(roomId: DailyRoomId, now: number, stop: boolean): void {
+    for (const key of [...this.activeWork.keys()]) {
+      if (key.startsWith(`${roomId}:`)) {
+        this.closeActiveWork(roomId, key.slice(roomId.length + 1), now, stop);
       }
     }
   }
@@ -507,6 +574,46 @@ export class DailyRoomReportStore {
       cursor = segmentEnd;
     }
     if (stop) this.activeGames.delete(key);
+    else active.startedAt = now;
+    this.queueWrite();
+  }
+
+  private closeActiveWork(
+    roomId: DailyRoomId,
+    identityId: string,
+    now: number,
+    stop: boolean,
+  ): void {
+    const key = `${roomId}:${identityId}`;
+    const active = this.activeWork.get(key);
+    if (!active) return;
+    let cursor = active.startedAt;
+    while (cursor < now) {
+      const date = getShanghaiDate(cursor);
+      const nextDate = shiftShanghaiDate(date, 1);
+      const segmentEnd = Math.min(now, Date.parse(`${nextDate}T00:00:00+08:00`));
+      const report = this.getMutableReport(roomId, cursor);
+      const existing = report.workActivities?.find(
+        (activity) =>
+          activity.nickname === active.nickname && activity.workName === active.workName,
+      );
+      const durationMs = Math.max(0, segmentEnd - cursor);
+      if (existing) {
+        existing.durationMs += durationMs;
+        existing.nickname = active.nickname;
+      } else {
+        (report.workActivities ??= []).push({
+          nickname: active.nickname,
+          workName: active.workName,
+          durationMs,
+        });
+      }
+      report.workActivities?.sort((left, right) => right.durationMs - left.durationMs);
+      report.hadActivity = true;
+      this.touch(report, segmentEnd);
+      cursor = segmentEnd;
+    }
+    if (stop) this.activeWork.delete(key);
     else active.startedAt = now;
     this.queueWrite();
   }
