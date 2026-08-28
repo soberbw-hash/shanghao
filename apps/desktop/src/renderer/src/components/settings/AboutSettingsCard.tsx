@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Coffee, ExternalLink, Github, History, RefreshCw } from "lucide-react";
+import { Coffee, ExternalLink, Github, Globe2, History, RefreshCw } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
 
 import type { RuntimeInfo, UpdateCheckResult, UpdateStatus } from "@private-voice/shared";
@@ -20,6 +20,7 @@ import { SettingsSection } from "./SettingsSection";
 
 const AUTHOR_URL = "https://github.com/soberbw-hash";
 const PROJECT_URL = "https://github.com/soberbw-hash/shanghao";
+const OFFICIAL_WEBSITE_URL = "https://shanghao-d3ga95tc8224e727a-1315451893.tcloudbaseapp.com/";
 
 interface AboutSettingsCardProps {
   runtimeInfo?: RuntimeInfo;
@@ -159,6 +160,10 @@ export const AboutSettingsCard = ({
               <Button variant="ghost" onClick={() => openExternal(PROJECT_URL)}>
                 项目主页
                 <ExternalLink className="size-3.5" />
+              </Button>
+              <Button variant="ghost" onClick={() => openExternal(OFFICIAL_WEBSITE_URL)}>
+                <Globe2 className="size-3.5" />
+                官方网站
               </Button>
             </div>
           </article>

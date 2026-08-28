@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { Volume2 } from "lucide-react";
 import { motion } from "framer-motion";
@@ -60,6 +60,7 @@ export const AudioControlPopover = ({
   onLoudnessBalanceChange,
 }: AudioControlPopoverProps) => {
   const [draftVolume, setDraftVolume] = useState(volume);
+  const popoverRef = useRef<HTMLDivElement>(null);
   const reduceMotion = usePrefersReducedMotion();
   useEffect(() => setDraftVolume(volume), [volume]);
 
@@ -86,11 +87,18 @@ export const AudioControlPopover = ({
 
   return (
     <motion.div
+      ref={popoverRef}
       className="audio-control-popover"
       variants={reduceMotion ? reducedFadeVariants : popoverSurfaceVariants}
       initial="initial"
       animate="open"
       exit="closed"
+      onAnimationStart={() => {
+        if (popoverRef.current) popoverRef.current.style.willChange = "transform, opacity";
+      }}
+      onAnimationComplete={() => {
+        if (popoverRef.current) popoverRef.current.style.willChange = "";
+      }}
     >
       <div className="audio-control-popover-heading">
         <strong>{title}</strong>

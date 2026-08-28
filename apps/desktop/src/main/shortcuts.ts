@@ -254,9 +254,10 @@ export class ShortcutController {
   async configureQuickMessage(slot: number, accelerator: string): Promise<boolean> {
     const owner = `quick-message:${slot}` as const;
     const previous = this.currentQuickMessageShortcuts.get(slot);
+    const normalized = accelerator.trim();
+    if (previous === normalized) return true;
     this.removeBinding(owner, previous);
     this.currentQuickMessageShortcuts.delete(slot);
-    const normalized = accelerator.trim();
     if (!normalized) return false;
     const send = () =>
       sendToWindow(this.windowProvider(), IPC_CHANNELS.shortcuts.quickMessageTriggered, slot);

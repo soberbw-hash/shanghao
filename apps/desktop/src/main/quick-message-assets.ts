@@ -1,7 +1,9 @@
-import { access, readFile, stat } from "node:fs/promises";
+import { access } from "node:fs/promises";
 import path from "node:path";
 
 import { app } from "electron";
+
+import { createByteRangeMediaResponse } from "./byte-range-media-response";
 
 export const QUICK_MESSAGE_MEDIA_PROTOCOL = "shanghao-quick-message";
 export const QUICK_MESSAGE_MEDIA_MIME_TYPE = "audio/aac";
@@ -56,7 +58,10 @@ const decodeRelativeAssetPath = (rawUrl: string): string | undefined => {
   }
 };
 
-export const createQuickMessageMediaResponse = async (rawUrl: string): Promise<Response> => {
+export const createQuickMessageMediaResponse = async (
+  rawUrl: string,
+  rangeHeader: string | null = null,
+): Promise<Response> => {
   const relativePath = decodeRelativeAssetPath(rawUrl);
   if (!relativePath) return new Response("Not found", { status: 404 });
 
@@ -68,14 +73,9 @@ export const createQuickMessageMediaResponse = async (rawUrl: string): Promise<R
   }
 
   try {
-    const fileStat = await stat(filePath);
-    if (!fileStat.isFile()) return new Response("Not found", { status: 404 });
-    return new Response(await readFile(filePath), {
-      headers: {
-        "Cache-Control": "public, max-age=31536000, immutable",
-        "Content-Length": String(fileStat.size),
-        "Content-Type": QUICK_MESSAGE_MEDIA_MIME_TYPE,
-      },
+    return await createByteRangeMediaResponse(filePath, rangeHeader, {
+      cacheControl: "public, max-age=31536000, immutable",
+      contentType: QUICK_MESSAGE_MEDIA_MIME_TYPE,
     });
   } catch {
     return new Response("Not found", { status: 404 });

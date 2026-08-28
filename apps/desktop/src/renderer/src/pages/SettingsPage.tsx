@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
   Activity,
   CalendarDays,
@@ -36,8 +36,8 @@ import { SettingsItemRow } from "../components/settings/SettingsItemRow";
 import { SettingsPageHeader } from "../components/settings/SettingsPageHeader";
 import { SettingsSection } from "../components/settings/SettingsSection";
 import { QuickMessageSettingsCard } from "../components/settings/QuickMessageSettingsCard";
-import { RecordingLibrarySettingsCard } from "../components/settings/RecordingLibrarySettingsCard";
-import { AiVoiceMemorySettingsCard } from "../components/settings/AiVoiceMemorySettingsCard";
+import { RecordingLibrarySettingsCard as RecordingLibrarySettingsCardView } from "../components/settings/RecordingLibrarySettingsCard";
+import { AiVoiceMemorySettingsCard as AiVoiceMemorySettingsCardView } from "../components/settings/AiVoiceMemorySettingsCard";
 import { RoomHistorySettingsCard } from "../components/settings/RoomHistorySettingsCard";
 import { WeatherSettingsCard } from "../components/settings/WeatherSettingsCard";
 import { StartupSplashPage } from "../components/status/StartupSplashPage";
@@ -72,6 +72,20 @@ const sections = [
   { id: "about", label: "关于上号", icon: Info },
   { id: "diagnostics", label: "诊断", icon: Activity },
 ] satisfies Array<{ id: SettingsSectionId; label: string; icon: typeof Headphones }>;
+
+const SETTINGS_PREWARM_ORDER: SettingsSectionId[] = [
+  "recordings",
+  "ai",
+  "quickMessages",
+  "account",
+  "audio",
+  "roomHistory",
+  "about",
+  "diagnostics",
+];
+
+const RecordingLibrarySettingsCard = memo(RecordingLibrarySettingsCardView);
+const AiVoiceMemorySettingsCard = memo(AiVoiceMemorySettingsCardView);
 
 const SETTINGS_SECTION_REQUEST_KEY = "shanghao.settings-section";
 
@@ -158,6 +172,24 @@ export const SettingsPage = () => {
     equalizerGains: settings?.micEqualizerGains,
     lowCutFrequency: settings?.lowCutFrequency,
   });
+
+  const handleSaveSettings = useCallback(
+    async (patch: Partial<AppSettings>) => {
+      setSaveNotice("正在保存...");
+      try {
+        await saveSettings(patch);
+        setSaveNotice("已保存");
+      } catch (error) {
+        setSaveNotice("保存失败");
+        pushToast({
+          tone: "danger",
+          ...toUserFacingError(error, "settings"),
+        });
+        throw error;
+      }
+    },
+    [pushToast, saveSettings],
+  );
 
   useEffect(() => {
     if (voiceMemoryOpenTarget) {
@@ -289,6 +321,50 @@ export const SettingsPage = () => {
       cancelled = true;
     };
   }, [activeSection]);
+
+  useEffect(() => {
+    if (!isSettingsReady) return;
+
+    let cancelled = false;
+    let idleId: number | undefined;
+    let timeoutId: number | undefined;
+    const remaining = SETTINGS_PREWARM_ORDER.filter((id) => !visitedSections.has(id));
+
+    const scheduleNext = () => {
+      if (cancelled || remaining.length === 0) return;
+      const mountNext = () => {
+        if (cancelled) return;
+        const nextSection = remaining.shift();
+        if (!nextSection) return;
+        setSettingsView((current) => {
+          if (current.visitedSections.has(nextSection)) return current;
+          return {
+            ...current,
+            visitedSections: new Set(current.visitedSections).add(nextSection),
+          };
+        });
+        scheduleNext();
+      };
+
+      if (typeof window.requestIdleCallback === "function") {
+        idleId = window.requestIdleCallback(mountNext, { timeout: 650 });
+      } else {
+        timeoutId = window.setTimeout(mountNext, 120);
+      }
+    };
+
+    scheduleNext();
+    return () => {
+      cancelled = true;
+      if (idleId !== undefined && typeof window.cancelIdleCallback === "function") {
+        window.cancelIdleCallback(idleId);
+      }
+      if (timeoutId !== undefined) window.clearTimeout(timeoutId);
+    };
+    // The warm-up queue is intentionally based on the sections present when
+    // settings first become ready. Later visits are handled by selectSection.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isSettingsReady]);
 
   useLayoutEffect(() => {
     if (!isSettingsReady || !pageRef.current) return;
@@ -429,21 +505,6 @@ export const SettingsPage = () => {
         }),
       );
   };
-  const handleSaveSettings = async (patch: Partial<AppSettings>) => {
-    setSaveNotice("正在保存...");
-    try {
-      await saveSettings(patch);
-      setSaveNotice("已保存");
-    } catch (error) {
-      setSaveNotice("保存失败");
-      pushToast({
-        tone: "danger",
-        ...toUserFacingError(error, "settings"),
-      });
-      throw error;
-    }
-  };
-
   const buildRendererDiagnostics = (): RendererDiagnosticsSummary => {
     const runtime = getRoomRuntimeDiagnostics();
     return {

@@ -146,17 +146,35 @@ const withTimeout = async <T>(
       });
   });
 
-const configureQuickMessageShortcuts = async (settings: AppSettings): Promise<void> => {
-  await Promise.all(
-    [
-      ...settings.quickMessages.slots.slice(0, 5),
-      ...settings.quickMessages.musicSlots.slice(0, 3),
-    ].map((slot, index) =>
-      desktopApi.shortcuts
-        .configureQuickMessage(index, slot.enabled ? slot.shortcut : "")
-        .catch(() => false),
-    ),
-  );
+const getQuickMessageShortcutSignature = (settings: AppSettings): string =>
+  [...settings.quickMessages.slots.slice(0, 5), ...settings.quickMessages.musicSlots.slice(0, 3)]
+    .map((slot) => `${slot.enabled ? "1" : "0"}:${slot.shortcut.trim().toLowerCase()}`)
+    .join("|");
+
+let quickMessageShortcutConfiguration = Promise.resolve();
+
+const configureQuickMessageShortcuts = (settings: AppSettings): Promise<void> => {
+  const bindings = [
+    ...settings.quickMessages.slots.slice(0, 5),
+    ...settings.quickMessages.musicSlots.slice(0, 3),
+  ].map((slot, index) => ({
+    accelerator: slot.enabled ? slot.shortcut : "",
+    index,
+  }));
+
+  // The native mouse hook is shared by all eight slots. Configure it in one
+  // ordered queue so overlapping saves cannot remove a Mouse4/Mouse5 binding
+  // while another save is still registering it.
+  quickMessageShortcutConfiguration = quickMessageShortcutConfiguration
+    .catch(() => undefined)
+    .then(async () => {
+      for (const binding of bindings) {
+        await desktopApi.shortcuts
+          .configureQuickMessage(binding.index, binding.accelerator)
+          .catch(() => false);
+      }
+    });
+  return quickMessageShortcutConfiguration;
 };
 
 export const useSettingsStore = create<SettingsStoreState>((set, get) => ({
@@ -238,6 +256,7 @@ export const useSettingsStore = create<SettingsStoreState>((set, get) => ({
     return { mode, issue };
   },
   saveSettings: async (partial) => {
+    const previousSettings = get().settings;
     const settings = await desktopApi.settings.save(partial);
     set({ settings, avatarDataUrl: undefined });
     if ("recordingMarkerShortcut" in partial) {
@@ -249,7 +268,14 @@ export const useSettingsStore = create<SettingsStoreState>((set, get) => ({
         settings.isPushToTalkEnabled,
       );
     }
-    if ("quickMessages" in partial) await configureQuickMessageShortcuts(settings);
+    if (
+      "quickMessages" in partial &&
+      (!previousSettings ||
+        getQuickMessageShortcutSignature(previousSettings) !==
+          getQuickMessageShortcutSignature(settings))
+    ) {
+      await configureQuickMessageShortcuts(settings);
+    }
     return settings;
   },
   checkUpdates: async () => {

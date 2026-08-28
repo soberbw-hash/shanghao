@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { access, readFile, readdir, stat } from "node:fs/promises";
 import path from "node:path";
 
-import { listPackage } from "@electron/asar";
+import { extractFile, listPackage } from "@electron/asar";
 
 const releaseDirectory = path.resolve(import.meta.dirname, "..", "apps", "desktop", "release");
 const resourcesDirectory = path.join(releaseDirectory, "win-unpacked", "resources");
@@ -30,10 +30,26 @@ if (qwenRunnerHash !== runtimeManifest.qwen.runner.sha256) {
   throw new Error(`Packaged AI runtime hash mismatch: ${runtimeManifest.qwen.runner.path}`);
 }
 
-const entries = listPackage(archivePath, { isPack: false }).map((entry) =>
-  entry.replaceAll("\\", "/"),
-);
-const fontEntries = entries.filter((entry) => entry.endsWith(".woff2"));
+const entries = listPackage(archivePath, { isPack: false });
+const normalizedEntries = entries.map((entry) => entry.replaceAll("\\", "/"));
+const fontEntries = normalizedEntries.filter((entry) => entry.endsWith(".woff2"));
+
+const rendererScriptEntries = entries.filter((entry) => {
+  const normalizedEntry = entry.replaceAll("\\", "/");
+  return normalizedEntry.includes("/dist/assets/") && normalizedEntry.endsWith(".js");
+});
+const rendererSource = rendererScriptEntries
+  .map((entry) => extractFile(archivePath, entry.replace(/^[\\/]/, "")).toString("utf8"))
+  .join("\n");
+if (
+  !rendererSource.includes("shanghao-d3ga95tc8224e727a") ||
+  !rendererSource.includes("ap-shanghai") ||
+  !rendererSource.includes("eyJhbGci")
+) {
+  throw new Error(
+    "Packaged CloudBase client configuration is missing; refusing to publish a build that cannot log in",
+  );
+}
 
 if (fontEntries.length === 0) throw new Error("Offline Noto Sans SC font was not bundled");
 
@@ -76,5 +92,5 @@ for (const filePath of quickMessageFiles) {
 }
 
 console.log(
-  `Packaged runtime verified: AI runner integrity, ${fontEntries.length} font files, DeepFilterNet assets, ${quickMessageFiles.length} AAC voice clips, and all licenses`,
+  `Packaged runtime verified: CloudBase login config, AI runner integrity, ${fontEntries.length} font files, DeepFilterNet assets, ${quickMessageFiles.length} AAC voice clips, and all licenses`,
 );

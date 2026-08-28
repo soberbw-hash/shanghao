@@ -743,6 +743,8 @@
   border-radius: 20px;
   background: #eef3f8;
   box-shadow: 0 30px 90px rgba(10, 24, 43, 0.34);
+  backface-visibility: hidden;
+  transform: translateZ(0);
   user-select: none;
 }
 

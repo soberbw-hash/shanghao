@@ -236,6 +236,7 @@ export const ChatImageLightbox = ({
     <div
       ref={backdropRef}
       className="chat-image-preview-backdrop"
+      style={{ opacity: 0 }}
       role="dialog"
       aria-modal="true"
       aria-label="图片预览"
@@ -253,6 +254,7 @@ export const ChatImageLightbox = ({
           height={image.height}
           decoding="async"
           loading="eager"
+          style={{ opacity: 0 }}
           draggable={false}
           onContextMenu={(event) => {
             event.preventDefault();
@@ -260,7 +262,7 @@ export const ChatImageLightbox = ({
           }}
         />
       </div>
-      <div ref={controlsRef} className="chat-image-preview-controls">
+      <div ref={controlsRef} className="chat-image-preview-controls" style={{ opacity: 0 }}>
         <button
           type="button"
           className="chat-image-preview-close"

@@ -272,7 +272,7 @@ const bootstrap = async (): Promise<void> => {
     }
   });
   protocol.handle(QUICK_MESSAGE_MEDIA_PROTOCOL, (request) =>
-    createQuickMessageMediaResponse(request.url),
+    createQuickMessageMediaResponse(request.url, request.headers.get("range")),
   );
   try {
     await removeWindowsStartupTask();
