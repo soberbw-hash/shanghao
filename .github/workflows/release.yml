@@ -4,6 +4,12 @@ on:
   push:
     tags:
       - "v*"
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "要重新构建并覆盖的 Release 标签，例如 v3.0.6"
+        required: true
+        type: string
 
 permissions:
   contents: write
@@ -11,8 +17,14 @@ permissions:
 jobs:
   windows:
     runs-on: windows-latest
+    env:
+      VITE_CLOUDBASE_ENV_ID: ${{ vars.VITE_CLOUDBASE_ENV_ID }}
+      VITE_CLOUDBASE_REGION: ${{ vars.VITE_CLOUDBASE_REGION }}
+      VITE_CLOUDBASE_PUBLISHABLE_KEY: ${{ vars.VITE_CLOUDBASE_PUBLISHABLE_KEY }}
     steps:
       - uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.release_tag || github.ref_name }}
       - uses: pnpm/action-setup@v4
         with:
           version: 10.34.5
@@ -39,7 +51,7 @@ jobs:
       - run: pnpm release:checksums
       - uses: actions/upload-artifact@v7
         with:
-          name: windows-${{ github.ref_name }}
+          name: windows-${{ inputs.release_tag || github.ref_name }}
           if-no-files-found: error
           path: |
             apps/desktop/release/*.exe
@@ -52,13 +64,16 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.release_tag || github.ref_name }}
       - uses: actions/download-artifact@v7
         with:
           path: artifacts
           merge-multiple: true
       - uses: softprops/action-gh-release@v2
         with:
-          body_path: docs/release-notes/${{ github.ref_name }}.md
+          tag_name: ${{ inputs.release_tag || github.ref_name }}
+          body_path: docs/release-notes/${{ inputs.release_tag || github.ref_name }}.md
           fail_on_unmatched_files: true
           files: |
             artifacts/*.exe
