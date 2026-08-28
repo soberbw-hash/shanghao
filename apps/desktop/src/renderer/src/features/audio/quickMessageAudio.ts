@@ -1,16 +1,177 @@
-import type { BuiltInAvatarId } from "@private-voice/shared";
+import type { BuiltInAvatarId, QuickMessageMediaType } from "@private-voice/shared";
 
 import { playAnimalCall } from "./animalCall";
 import { QUICK_MESSAGE_SOUND_URLS } from "./quickMessageAssets";
 
-const activeVoicePlayers = new Set<HTMLAudioElement>();
+export type QuickMessageAudioStatus = "idle" | "playing" | "paused";
 
-const playLocalVoicePack = (url: string, volume: number): void => {
+export interface QuickMessageAudioSnapshot {
+  soundId?: string;
+  mediaType?: QuickMessageMediaType;
+  status: QuickMessageAudioStatus;
+  sourcePeerId?: string;
+  sourceNickname?: string;
+  quickMessageId?: string;
+  presetId?: string;
+  content?: string;
+}
+
+export interface QuickMessagePlaybackSource {
+  peerId?: string;
+  nickname?: string;
+  messageId?: string;
+  presetId?: string;
+  content?: string;
+}
+
+const activePlayers = new Set<HTMLAudioElement>();
+const audioListeners = new Set<() => void>();
+let activePlayer: HTMLAudioElement | undefined;
+let activeSoundId: string | undefined;
+let activeMediaType: QuickMessageMediaType | undefined;
+let activeSourcePeerId: string | undefined;
+let activeSourceNickname: string | undefined;
+let activeQuickMessageId: string | undefined;
+let activePresetId: string | undefined;
+let activeContent: string | undefined;
+let activeStatus: QuickMessageAudioStatus = "idle";
+let audioSnapshot: QuickMessageAudioSnapshot = { status: "idle" };
+
+const notifyAudioListeners = (): void => {
+  for (const listener of audioListeners) listener();
+};
+
+const publishAudioSnapshot = (): void => {
+  audioSnapshot = {
+    soundId: activeSoundId,
+    mediaType: activeMediaType,
+    status: activeStatus,
+    sourcePeerId: activeSourcePeerId,
+    sourceNickname: activeSourceNickname,
+    quickMessageId: activeQuickMessageId,
+    presetId: activePresetId,
+    content: activeContent,
+  };
+  notifyAudioListeners();
+};
+
+export const getQuickMessageAudioSnapshot = (): QuickMessageAudioSnapshot => audioSnapshot;
+
+export const subscribeQuickMessageAudio = (listener: () => void): (() => void) => {
+  audioListeners.add(listener);
+  return () => audioListeners.delete(listener);
+};
+
+const clearActivePlayer = (player?: HTMLAudioElement): void => {
+  if (player && activePlayer !== player) return;
+  activePlayer = undefined;
+  activeSoundId = undefined;
+  activeMediaType = undefined;
+  activeSourcePeerId = undefined;
+  activeSourceNickname = undefined;
+  activeQuickMessageId = undefined;
+  activePresetId = undefined;
+  activeContent = undefined;
+  activeStatus = "idle";
+  publishAudioSnapshot();
+};
+
+const stopActivePlayers = (): void => {
+  for (const player of activePlayers) {
+    player.pause();
+    player.currentTime = 0;
+    activePlayers.delete(player);
+  }
+  clearActivePlayer();
+};
+
+const playLocalVoicePack = (
+  url: string,
+  volume: number,
+  soundId: string,
+  mediaType: QuickMessageMediaType,
+  source?: QuickMessagePlaybackSource,
+): void => {
+  stopActivePlayers();
   const player = new Audio(url);
-  player.volume = Math.min(1, Math.max(0, volume));
-  activeVoicePlayers.add(player);
-  player.addEventListener("ended", () => activeVoicePlayers.delete(player), { once: true });
-  void player.play().catch(() => activeVoicePlayers.delete(player));
+  // Keep the custom AAC protocol on the native media path and honor the user's
+  // volume setting. The bundled packs are peak-safe at the asset level.
+  player.volume = Math.min(1, Math.max(0, Number.isFinite(volume) ? volume : 0));
+  activePlayers.add(player);
+  activePlayer = player;
+  activeSoundId = soundId;
+  activeMediaType = mediaType;
+  activeSourcePeerId = source?.peerId;
+  activeSourceNickname = source?.nickname;
+  activeQuickMessageId = source?.messageId;
+  activePresetId = source?.presetId;
+  activeContent = source?.content;
+  activeStatus = "playing";
+  publishAudioSnapshot();
+  player.addEventListener(
+    "ended",
+    () => {
+      activePlayers.delete(player);
+      clearActivePlayer(player);
+    },
+    { once: true },
+  );
+  player.addEventListener(
+    "error",
+    () => {
+      activePlayers.delete(player);
+      clearActivePlayer(player);
+    },
+    { once: true },
+  );
+  void player.play().catch(() => {
+    activePlayers.delete(player);
+    clearActivePlayer(player);
+  });
+};
+
+export const toggleQuickMessageMusic = (soundId: string | undefined): boolean => {
+  if (!soundId || activeMediaType !== "music" || activeSoundId !== soundId || !activePlayer) {
+    return false;
+  }
+  if (activeStatus === "playing") {
+    activePlayer.pause();
+    activeStatus = "paused";
+    publishAudioSnapshot();
+    return true;
+  }
+  const player = activePlayer;
+  if (!player) return false;
+  activeStatus = "playing";
+  publishAudioSnapshot();
+  void player.play().catch(() => clearActivePlayer(player));
+  return true;
+};
+
+/** Stops the active music on this client without changing any other listener's playback. */
+export const stopQuickMessageMusic = (soundId?: string): boolean => {
+  if (!activePlayer || activeMediaType !== "music" || (soundId && activeSoundId !== soundId)) {
+    return false;
+  }
+  stopActivePlayers();
+  return true;
+};
+
+/** Stops only the currently audible remote music for this local listener. */
+export const muteQuickMessagePlayback = (source: {
+  peerId?: string;
+  messageId?: string;
+}): boolean => {
+  if (
+    !activePlayer ||
+    activeMediaType !== "music" ||
+    (source.peerId && activeSourcePeerId !== source.peerId) ||
+    (source.messageId && activeQuickMessageId !== source.messageId)
+  ) {
+    return false;
+  }
+  stopActivePlayers();
+  return true;
 };
 
 /** Plays a local preset sound without putting the audio bytes into signaling messages. */
@@ -19,11 +180,16 @@ export const playQuickMessageSound = (
   avatarId: BuiltInAvatarId | undefined,
   volume: number,
   content: string,
+  mediaType: QuickMessageMediaType = "voice",
+  source?: QuickMessagePlaybackSource,
 ): void => {
   if (soundId === "legacy-animal-call") {
+    stopActivePlayers();
     playAnimalCall(avatarId, volume, content);
     return;
   }
   const url = soundId ? QUICK_MESSAGE_SOUND_URLS[soundId] : undefined;
-  if (url) playLocalVoicePack(url, volume);
+  if (url && soundId) {
+    playLocalVoicePack(url, volume, soundId, mediaType, { ...source, content });
+  }
 };

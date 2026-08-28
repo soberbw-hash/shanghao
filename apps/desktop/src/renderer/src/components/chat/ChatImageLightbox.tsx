@@ -66,14 +66,19 @@ export const ChatImageLightbox = ({
     if (!backdrop || !imageElement || !controls) return;
 
     let animationFrame = 0;
+    let cancelled = false;
     const context = gsap.context(() => {
       const reveal = () => {
-        if (closingRef.current) return;
+        if (cancelled || closingRef.current) return;
         const targetRect = imageElement.getBoundingClientRect();
         const sourceRect = initialOriginRef.current?.getBoundingClientRect();
 
         gsap.set(backdrop, { opacity: 0 });
         gsap.set(controls, { opacity: 0, y: 6 });
+        // Promote the two moving surfaces before the first animated frame so
+        // the compositor does not pay the layer-promotion cost mid-transition.
+        gsap.set(imageElement, { willChange: "transform, opacity" });
+        gsap.set(controls, { willChange: "transform, opacity" });
 
         if (reduceMotion || !sourceRect) {
           gsap.set(imageElement, { opacity: 0, scale: reduceMotion ? 1 : 0.985, x: 0, y: 0 });
@@ -107,7 +112,6 @@ export const ChatImageLightbox = ({
               scale: 1,
               duration: reduceMotion ? motionDuration.instant : motionDuration.relaxed,
               ease: motionEase.spatial,
-              willChange: "transform, opacity",
             },
             0,
           )
@@ -118,16 +122,25 @@ export const ChatImageLightbox = ({
               y: 0,
               duration: reduceMotion ? motionDuration.instant : motionDuration.compact,
               ease: motionEase.standard,
-              willChange: "transform, opacity",
             },
             reduceMotion ? 0 : 0.12,
           );
       };
 
-      animationFrame = window.requestAnimationFrame(reveal);
+      const revealAfterDecode = async () => {
+        try {
+          if (imageElement.decode) await imageElement.decode();
+        } catch {
+          // A decode rejection does not mean the browser cannot display it.
+        }
+        if (cancelled || closingRef.current) return;
+        animationFrame = window.requestAnimationFrame(reveal);
+      };
+      void revealAfterDecode();
     }, surfaceRef);
 
     return () => {
+      cancelled = true;
       window.cancelAnimationFrame(animationFrame);
       context.revert();
     };
@@ -238,6 +251,8 @@ export const ChatImageLightbox = ({
           alt={image.fileName || "聊天图片"}
           width={image.width}
           height={image.height}
+          decoding="async"
+          loading="eager"
           draggable={false}
           onContextMenu={(event) => {
             event.preventDefault();

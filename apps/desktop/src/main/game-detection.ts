@@ -814,7 +814,7 @@ export class StableWorkActivityResolver {
 export class GameDetectionController {
   private timer: NodeJS.Timeout | undefined;
   private enabled = false;
-  private workActivityEnabled = true;
+  private workActivityEnabled = false;
   private checkInFlight = false;
   private pendingReconcile = false;
   private generation = 0;

@@ -1,0 +1,14 @@
+{
+  "envId": "shanghao-d3ga95tc8224e727a",
+  "hosting": [
+    {
+      "name": "shanghao-site",
+      "root": ".",
+      "framework": "vite-react",
+      "buildCommand": "pnpm run build",
+      "outputDir": "dist",
+      "deployPath": "/",
+      "ignore": ["node_modules", "dist", ".git", "*.log"]
+    }
+  ]
+}

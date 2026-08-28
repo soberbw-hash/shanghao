@@ -4,6 +4,7 @@ import { createClient, type Session, type SupabaseClient } from "@supabase/supab
 
 import type {
   AccountAvatarUpdateRequest,
+  CloudBaseClientConfig,
   AccountLoginRequest,
   AccountPasswordResetRequest,
   AccountProfile,
@@ -14,6 +15,11 @@ import type {
 } from "@private-voice/shared";
 
 import { AccountSessionStore, type PersistedAccountSession } from "./account-session-store";
+import { CloudBaseAccountClient } from "./cloudbase-account";
+import { isDeepLinkAuthCallback, SHANGHAO_AUTH_REDIRECT_URL } from "./deep-link";
+import { AccountDesktopError } from "./account-errors";
+
+export { AccountDesktopError } from "./account-errors";
 
 interface AccountApiSession {
   accessToken: string;
@@ -38,19 +44,26 @@ interface AccountServerStatus {
   secureTransportRequired?: boolean;
   insecureDevelopmentConnection?: boolean;
   auth?: {
+    provider?: "supabase" | "cloudbase";
     supabaseUrl?: string;
     publishableKey?: string;
     usernameLoginUrl?: string;
+    cloudbaseEnvId?: string;
+    cloudbaseRegion?: string;
+    cloudbasePublishableKey?: string;
   };
 }
 
 interface UsernameLoginResponse {
-  session?: Session;
+  session?: unknown;
   error?: { code?: string };
 }
 
 const REFRESH_EARLY_SECONDS = 5 * 60;
-const USERNAME_PATTERN = /^[a-z0-9][a-z0-9_-]{2,19}$/;
+// Legacy/Supabase fallback only. CloudBase validates its own signup rules in
+// CloudBaseAccountClient; changing this expression cannot fix CloudBase signup.
+const USERNAME_ALLOWED_CHARACTER = /^[a-z0-9_-]$/i;
+const USERNAME_EDGE_CHARACTER = /^[a-z0-9]$/i;
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const RESERVED_USERNAMES = new Set([
   "admin",
@@ -71,17 +84,21 @@ const toPersistedSession = (session: Session): PersistedAccountSession => ({
   refreshToken: session.refresh_token,
   expiresAt: session.expires_at ?? Math.floor(Date.now() / 1_000) + session.expires_in,
   tokenType: session.token_type,
+  provider: "supabase",
 });
 
-export class AccountDesktopError extends Error {
-  constructor(
-    readonly code: string,
-    options?: ErrorOptions,
-  ) {
-    super(code, options);
-    this.name = "AccountDesktopError";
-  }
-}
+const isUsableSession = (value: unknown): value is Session => {
+  if (!value || typeof value !== "object") return false;
+  const session = value as Partial<Session>;
+  return (
+    typeof session.access_token === "string" &&
+    Boolean(session.access_token) &&
+    typeof session.refresh_token === "string" &&
+    Boolean(session.refresh_token) &&
+    typeof session.expires_in === "number" &&
+    typeof session.token_type === "string"
+  );
+};
 
 const accountApiBase = (relayServerUrl?: string): URL | undefined => {
   const value = relayServerUrl?.trim();
@@ -117,6 +134,10 @@ export class AccountDesktopService extends EventEmitter {
   private session?: PersistedAccountSession;
   private refreshTimer?: NodeJS.Timeout;
   private supabase?: SupabaseClient;
+  private cloudbase?: CloudBaseAccountClient;
+  private localCloudbaseConfig?: CloudBaseClientConfig;
+  private accountProvider: "supabase" | "cloudbase" = "supabase";
+  private supabaseUrl?: string;
   private supabasePublishableKey?: string;
   private usernameLoginUrl?: string;
   private developmentConnection = false;
@@ -150,9 +171,18 @@ export class AccountDesktopService extends EventEmitter {
       return this.getSnapshot();
     }
 
-    const configured = serverStatus.configured === true && this.configureSupabase(serverStatus);
+    // The renderer injects the current CloudBase client configuration from its
+    // local Vite environment. Keep that explicit local configuration as the
+    // source of truth; an older Relay status must not replace it during
+    // hydration with stale server-side auth settings.
+    const configured = this.localCloudbaseConfig
+      ? this.cloudbase !== undefined
+      : serverStatus.configured === true && this.configureProvider(serverStatus);
     const guestAllowed = serverStatus.guestAllowed === true;
     this.developmentConnection = serverStatus.insecureDevelopmentConnection === true;
+    if (this.session && this.accountProvider !== (this.session.provider ?? "supabase")) {
+      await this.clearSession();
+    }
     if (!this.session) {
       this.updateSnapshot({
         status: "signed_out",
@@ -193,14 +223,68 @@ export class AccountDesktopService extends EventEmitter {
     };
   }
 
+  async configureCloudBase(config: CloudBaseClientConfig): Promise<void> {
+    const envId = config.envId.trim();
+    const region = config.region.trim();
+    const publishableKey = config.publishableKey.trim();
+    if (!envId || !region || !publishableKey) {
+      throw new AccountDesktopError("account_not_configured");
+    }
+    if (this.accountProvider !== "cloudbase" && this.session) {
+      await this.clearSession();
+    }
+    this.accountProvider = "cloudbase";
+    this.supabase = undefined;
+    this.supabaseUrl = undefined;
+    this.supabasePublishableKey = undefined;
+    this.usernameLoginUrl = undefined;
+    const localConfig = { envId, region, publishableKey };
+    this.cloudbase = new CloudBaseAccountClient(localConfig, {
+      onDiagnostic: (diagnostic) => {
+        void this.log("warn", "CloudBase account request failed", { ...diagnostic }).catch(
+          () => undefined,
+        );
+      },
+    });
+    this.localCloudbaseConfig = localConfig;
+    this.updateSnapshot({ ...this.snapshot, configured: true });
+  }
+
   getAccessToken(): string | undefined {
     return this.snapshot.status === "signed_in" ? this.session?.accessToken : undefined;
   }
 
+  /**
+   * Relay connections must not reuse an access token that is about to expire.
+   * Keep this behind the main-process account service so there is still one
+   * authoritative session/token source for the whole desktop app.
+   */
+  async getFreshAccessToken(): Promise<string | undefined> {
+    if (this.snapshot.status !== "signed_in" || !this.session) return undefined;
+    await this.ensureFreshSession(false);
+    return this.session?.accessToken;
+  }
+
   async login(input: AccountLoginRequest): Promise<AccountSnapshot> {
-    const identifier = input.identifier.trim().toLowerCase();
+    const identifier =
+      this.accountProvider === "cloudbase"
+        ? input.identifier.trim()
+        : input.identifier.trim().toLowerCase();
     if (!identifier || !input.password || input.password.length > 128) {
       throw new AccountDesktopError("account_invalid_credentials");
+    }
+    if (this.accountProvider === "cloudbase") {
+      const result = await this.requireCloudBase().login(identifier, input.password);
+      await this.acceptSession(result.session);
+      this.updateSnapshot({
+        status: "signed_in",
+        configured: true,
+        guestAllowed: this.snapshot.guestAllowed,
+        developmentConnection: this.developmentConnection,
+        profile: result.profile,
+      });
+      await this.log("info", "account login completed", { userId: result.profile.userId });
+      return this.getSnapshot();
     }
     const client = this.requireSupabase();
     let session: Session | undefined;
@@ -233,9 +317,37 @@ export class AccountDesktopService extends EventEmitter {
   }
 
   async register(input: AccountRegisterRequest): Promise<AccountSnapshot> {
-    const username = input.username.trim().toLowerCase();
-    const email = input.email.trim().toLowerCase();
+    const username =
+      this.accountProvider === "cloudbase"
+        ? input.username.trim()
+        : input.username.trim().toLowerCase();
+    const email = input.email?.trim().toLowerCase() ?? "";
     const displayName = input.displayName?.trim() || input.username.trim();
+    if (this.accountProvider === "cloudbase") {
+      if (!input.phone || !input.verificationCode) {
+        throw new AccountDesktopError("account_verification_invalid");
+      }
+      const result = await this.requireCloudBase().registerByPhone({
+        phone: input.phone,
+        verificationCode: input.verificationCode,
+        username,
+        password: input.password,
+        displayName,
+      });
+      await this.acceptSession(result.session);
+      this.updateSnapshot({
+        status: "signed_in",
+        configured: true,
+        guestAllowed: this.snapshot.guestAllowed,
+        developmentConnection: this.developmentConnection,
+        profile: result.profile,
+      });
+      await this.log("info", "account registration completed", {
+        userId: result.profile.userId,
+        verificationRequired: false,
+      });
+      return this.getSnapshot();
+    }
     this.validateRegistration(username, email, input.password, displayName);
     const client = this.requireSupabase();
     let data: Awaited<ReturnType<typeof client.auth.signUp>>["data"];
@@ -244,7 +356,10 @@ export class AccountDesktopService extends EventEmitter {
       const result = await client.auth.signUp({
         email,
         password: input.password,
-        options: { data: { username, display_name: displayName } },
+        options: {
+          data: { username, display_name: displayName },
+          emailRedirectTo: SHANGHAO_AUTH_REDIRECT_URL,
+        },
       });
       if (result.error || !result.data.user) {
         throw this.registrationError(result.error);
@@ -296,7 +411,61 @@ export class AccountDesktopService extends EventEmitter {
     return this.getSnapshot();
   }
 
+  async handleAuthDeepLink(rawUrl: string): Promise<AccountSnapshot> {
+    if (!isDeepLinkAuthCallback(rawUrl)) return this.getSnapshot();
+
+    if (this.snapshot.message === "account_email_verified") {
+      return this.getSnapshot();
+    }
+
+    let url: URL;
+    try {
+      url = new URL(rawUrl);
+    } catch {
+      return this.setAuthCallbackMessage("account_email_verification_failed");
+    }
+
+    const params = new URLSearchParams(url.hash.replace(/^#/, ""));
+    for (const [key, value] of url.searchParams) params.set(key, value);
+    const callbackError = params.get("error_code") ?? params.get("error");
+    if (callbackError) {
+      return this.setAuthCallbackMessage(this.authCallbackErrorCode(callbackError));
+    }
+
+    const code = params.get("code");
+    const accessToken = params.get("access_token");
+    const refreshToken = params.get("refresh_token");
+    if (!code && (!accessToken || !refreshToken)) {
+      return this.setAuthCallbackMessage("account_email_verification_failed");
+    }
+
+    try {
+      if (!this.supabaseUrl || !this.supabasePublishableKey) {
+        throw new AccountDesktopError("account_not_configured");
+      }
+      const callbackClient = createClient(this.supabaseUrl, this.supabasePublishableKey, {
+        auth: SUPABASE_AUTH_OPTIONS,
+      });
+      const result = code
+        ? await callbackClient.auth.exchangeCodeForSession(code)
+        : await callbackClient.auth.setSession({
+            access_token: accessToken as string,
+            refresh_token: refreshToken as string,
+          });
+      if (result.error || !isUsableSession(result.data.session)) {
+        return this.setAuthCallbackMessage(this.authCallbackErrorCode(result.error));
+      }
+      await callbackClient.auth.signOut({ scope: "local" }).catch(() => undefined);
+      return this.setAuthCallbackMessage("account_email_verified");
+    } catch (error) {
+      return this.setAuthCallbackMessage(this.authCallbackErrorCode(error));
+    }
+  }
+
   async requestPasswordReset(input: AccountPasswordResetRequest): Promise<void> {
+    if (this.accountProvider === "cloudbase") {
+      throw new AccountDesktopError("account_not_supported");
+    }
     const email = input.email.trim().toLowerCase();
     if (!EMAIL_PATTERN.test(email) || email.length > 254) {
       throw new AccountDesktopError("account_email_invalid");
@@ -309,7 +478,20 @@ export class AccountDesktopService extends EventEmitter {
     }
   }
 
+  async requestVerificationCode(phone: string): Promise<void> {
+    if (this.accountProvider !== "cloudbase") {
+      throw new AccountDesktopError("account_not_configured");
+    }
+    await this.requireCloudBase().requestVerificationCode(phone);
+  }
+
   async updateProfile(input: AccountProfileUpdateRequest): Promise<AccountSnapshot> {
+    if (this.accountProvider === "cloudbase") {
+      await this.ensureFreshSession(false);
+      const profile = await this.requireCloudBase().updateProfile(input.displayName);
+      this.updateSnapshot({ ...this.snapshot, status: "signed_in", profile });
+      return this.getSnapshot();
+    }
     const profile = await this.authorizedProfileRequest("/api/account/profile", {
       method: "PUT",
       body: JSON.stringify(input),
@@ -329,7 +511,9 @@ export class AccountDesktopService extends EventEmitter {
 
   async logout(): Promise<AccountSnapshot> {
     const current = this.session;
-    if (current && this.supabase) {
+    if (this.accountProvider === "cloudbase") {
+      await this.cloudbase?.signOut();
+    } else if (current && this.supabase) {
       try {
         await this.supabase.auth.setSession({
           access_token: current.accessToken,
@@ -379,6 +563,26 @@ export class AccountDesktopService extends EventEmitter {
 
   private async ensureFreshSession(forceProfile: boolean): Promise<AccountAuthResponse> {
     if (!this.session) throw new AccountDesktopError("account_session_expired");
+    if (this.accountProvider === "cloudbase") {
+      try {
+        const result =
+          this.session.expiresAt - Math.floor(Date.now() / 1_000) <= REFRESH_EARLY_SECONDS
+            ? await this.requireCloudBase().refresh()
+            : {
+                session: this.session,
+                profile: forceProfile
+                  ? await this.requireCloudBase().getProfile()
+                  : this.snapshot.profile,
+              };
+        if (!result.profile) throw new AccountDesktopError("account_profile_unavailable");
+        if (result.session !== this.session) await this.acceptSession(result.session);
+        this.scheduleRefresh();
+        return { profile: result.profile, session: this.session };
+      } catch (error) {
+        if (error instanceof AccountDesktopError) throw error;
+        throw new AccountDesktopError("account_session_expired", { cause: error });
+      }
+    }
     const secondsRemaining = this.session.expiresAt - Math.floor(Date.now() / 1_000);
     if (secondsRemaining <= REFRESH_EARLY_SECONDS) {
       let refreshed: Session | undefined;
@@ -504,28 +708,62 @@ export class AccountDesktopService extends EventEmitter {
     const supabaseUrl = status.auth?.supabaseUrl?.trim();
     const publishableKey = status.auth?.publishableKey?.trim();
     const usernameLoginUrl = status.auth?.usernameLoginUrl?.trim();
-    if (!supabaseUrl || !publishableKey || !usernameLoginUrl) return false;
+    if (!supabaseUrl || !publishableKey) return false;
     try {
       const base = new URL(supabaseUrl);
-      const login = new URL(usernameLoginUrl);
+      const login = usernameLoginUrl ? new URL(usernameLoginUrl) : undefined;
+      if (base.protocol !== "https:" || base.username || base.password) return false;
       if (
-        base.protocol !== "https:" ||
-        login.protocol !== "https:" ||
-        base.origin !== login.origin ||
-        base.username ||
-        base.password ||
-        login.username ||
-        login.password
-      ) {
+        login &&
+        (login.protocol !== "https:" ||
+          base.origin !== login.origin ||
+          login.username ||
+          login.password)
+      )
         return false;
-      }
       this.supabase = createClient(base.origin, publishableKey, { auth: SUPABASE_AUTH_OPTIONS });
+      this.supabaseUrl = base.origin;
       this.supabasePublishableKey = publishableKey;
-      this.usernameLoginUrl = login.toString();
+      this.usernameLoginUrl = login?.toString();
       return true;
     } catch {
       return false;
     }
+  }
+
+  private configureProvider(status: AccountServerStatus): boolean {
+    this.accountProvider = status.auth?.provider === "cloudbase" ? "cloudbase" : "supabase";
+    if (this.accountProvider === "cloudbase") {
+      const envId = status.auth?.cloudbaseEnvId?.trim() || process.env.CLOUDBASE_ENV_ID?.trim();
+      const region =
+        status.auth?.cloudbaseRegion?.trim() ||
+        process.env.CLOUDBASE_REGION?.trim() ||
+        "ap-shanghai";
+      const publishableKey =
+        process.env.CLOUDBASE_PUBLISHABLE_KEY?.trim() ||
+        status.auth?.cloudbasePublishableKey?.trim();
+      if (!envId || !publishableKey) return false;
+      try {
+        this.cloudbase = new CloudBaseAccountClient(
+          {
+            envId,
+            region,
+            publishableKey,
+          },
+          {
+            onDiagnostic: (diagnostic) => {
+              void this.log("warn", "CloudBase account request failed", { ...diagnostic }).catch(
+                () => undefined,
+              );
+            },
+          },
+        );
+        return true;
+      } catch {
+        return false;
+      }
+    }
+    return this.configureSupabase(status);
   }
 
   private requireSupabase(): SupabaseClient {
@@ -533,9 +771,14 @@ export class AccountDesktopService extends EventEmitter {
     return this.supabase;
   }
 
+  private requireCloudBase(): CloudBaseAccountClient {
+    if (!this.cloudbase) throw new AccountDesktopError("account_not_configured");
+    return this.cloudbase;
+  }
+
   private async loginWithUsername(identifier: string, password: string): Promise<Session> {
     if (!this.usernameLoginUrl || !this.supabasePublishableKey) {
-      throw new AccountDesktopError("account_not_configured");
+      throw new AccountDesktopError("account_username_login_unavailable");
     }
     let response: Response;
     try {
@@ -551,13 +794,54 @@ export class AccountDesktopService extends EventEmitter {
         signal: AbortSignal.timeout(12_000),
       });
     } catch (error) {
-      throw new AccountDesktopError("account_network_error", { cause: error });
+      throw new AccountDesktopError("account_username_login_network_error", { cause: error });
     }
     const body = (await response.json().catch(() => ({}))) as UsernameLoginResponse;
-    if (!response.ok || !body.session) {
-      throw new AccountDesktopError(body.error?.code ?? "account_invalid_credentials");
+    const serverCode = body.error?.code;
+    if (serverCode === "account_invalid_credentials" && response.status < 500) {
+      throw new AccountDesktopError("account_invalid_credentials");
+    }
+    if (serverCode === "account_network_error") {
+      throw new AccountDesktopError("account_username_login_network_error");
+    }
+    if (
+      serverCode === "account_username_login_unavailable" ||
+      response.status === 404 ||
+      response.status >= 500 ||
+      !isUsableSession(body.session)
+    ) {
+      throw new AccountDesktopError("account_username_login_unavailable");
     }
     return body.session;
+  }
+
+  private setAuthCallbackMessage(message: string): AccountSnapshot {
+    this.updateSnapshot({
+      status: this.snapshot.status === "signed_in" ? "signed_in" : "signed_out",
+      configured: this.snapshot.configured,
+      guestAllowed: this.snapshot.guestAllowed,
+      developmentConnection: this.developmentConnection,
+      profile: this.snapshot.status === "signed_in" ? this.snapshot.profile : undefined,
+      message,
+    });
+    return this.getSnapshot();
+  }
+
+  private authCallbackErrorCode(error: unknown): string {
+    const detail =
+      error && typeof error === "object"
+        ? `${"code" in error ? String(error.code) : ""} ${"message" in error ? String(error.message) : ""}`
+        : String(error ?? "");
+    const normalized = detail.toLowerCase();
+    if (normalized.includes("expired") || normalized.includes("otp_expired")) {
+      return "account_email_verification_expired";
+    }
+    if (normalized.includes("cancel") || normalized.includes("access_denied")) {
+      return "account_email_verification_cancelled";
+    }
+    return normalized.includes("account_not_configured")
+      ? "account_not_configured"
+      : "account_email_verification_failed";
   }
 
   private validateRegistration(
@@ -566,8 +850,17 @@ export class AccountDesktopService extends EventEmitter {
     password: string,
     displayName: string,
   ): void {
-    if (!USERNAME_PATTERN.test(username)) throw new AccountDesktopError("account_username_invalid");
-    if (RESERVED_USERNAMES.has(username)) {
+    const isValidUsername =
+      username.length >= 3 &&
+      username.length <= 32 &&
+      USERNAME_EDGE_CHARACTER.test(username[0] ?? "") &&
+      USERNAME_EDGE_CHARACTER.test(username.at(-1) ?? "") &&
+      /[a-z]/i.test(username) &&
+      Array.from(username).every((character) => USERNAME_ALLOWED_CHARACTER.test(character));
+    if (!isValidUsername) {
+      throw new AccountDesktopError("account_username_invalid");
+    }
+    if (RESERVED_USERNAMES.has(username.toLowerCase())) {
       throw new AccountDesktopError("account_username_reserved");
     }
     if (!EMAIL_PATTERN.test(email) || email.length > 254) {

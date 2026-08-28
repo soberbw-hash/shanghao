@@ -14,7 +14,7 @@ import {
   type RoomCollectionItem,
   type SceneZoneId,
 } from "@private-voice/shared";
-import { WebSocket, WebSocketServer } from "ws";
+import { WebSocket, WebSocketServer, type RawData } from "ws";
 
 import type {
   AudioChunkMessage,
@@ -64,6 +64,7 @@ import { DailyRoomReportStore } from "./daily-room-report-store";
 import { CloudAiRuntime } from "./cloud-ai-runtime";
 import { AccountHttpController } from "./account-http-controller";
 import {
+  CloudBaseAccountService,
   SupabaseAccountService,
   type AccountBackend,
   type VerifiedAccountIdentity,
@@ -100,6 +101,8 @@ const compareVersions = (left: string, right: string): number => {
 };
 
 const MAX_SIGNALING_PAYLOAD_BYTES = 256 * 1024;
+const MAX_PENDING_AUTH_MESSAGES = 4;
+const MAX_PENDING_AUTH_PAYLOAD_BYTES = MAX_SIGNALING_PAYLOAD_BYTES;
 const CHAT_HISTORY_PAYLOAD_BUDGET_BYTES = MAX_SIGNALING_PAYLOAD_BYTES - 8 * 1024;
 const ROOM_COLLECTION_PAYLOAD_BUDGET_BYTES = MAX_SIGNALING_PAYLOAD_BYTES - 8 * 1024;
 const ROOM_COLLECTION_CHUNK_SIZE = 128;
@@ -352,8 +355,14 @@ export class SignalingServer extends EventEmitter {
     }
     this.dailyRoomReports = DailyRoomReportStore.create(dailyRoomReportFile, this.logger);
     this.cloudAi = new CloudAiRuntime(this.dailyRoomReports, this.logger);
+    const accountProvider = (process.env.SHANGHAO_ACCOUNT_PROVIDER ?? process.env.ACCOUNT_PROVIDER)
+      ?.trim()
+      .toLowerCase();
     this.accountBackend =
-      options.accountBackend ?? SupabaseAccountService.fromEnvironment(this.logger);
+      options.accountBackend ??
+      (accountProvider === "cloudbase"
+        ? CloudBaseAccountService.fromEnvironment(this.logger)
+        : SupabaseAccountService.fromEnvironment(this.logger));
     this.accountHttp = new AccountHttpController(this.accountBackend, this.logger);
     this.httpServer = createServer();
     this.httpServer.on("request", (request, response) => {
@@ -472,21 +481,58 @@ export class SignalingServer extends EventEmitter {
   }
 
   private async authorizeSocket(socket: WebSocket, request: IncomingMessage): Promise<void> {
+    const pendingMessages: RawData[] = [];
+    let pendingPayloadBytes = 0;
+    const queuePendingMessage = (raw: RawData): void => {
+      pendingPayloadBytes += Buffer.byteLength(raw.toString(), "utf8");
+      if (
+        pendingMessages.length >= MAX_PENDING_AUTH_MESSAGES ||
+        pendingPayloadBytes > MAX_PENDING_AUTH_PAYLOAD_BYTES
+      ) {
+        socket.off("message", queuePendingMessage);
+        socket.close(4400, "auth_message_overflow");
+        return;
+      }
+      pendingMessages.push(raw);
+    };
+    const stopQueueing = (): void => {
+      socket.off("message", queuePendingMessage);
+    };
+
+    // CloudBase token verification requires network requests. The renderer sends its join
+    // request as soon as WebSocket.open fires, so listen immediately and replay that request
+    // after the account identity has been verified instead of silently dropping it.
+    socket.on("message", queuePendingMessage);
     const authorization = request.headers.authorization?.trim() ?? "";
     const accessToken = authorization.toLowerCase().startsWith("bearer ")
       ? authorization.slice(7).trim()
       : "";
     if (accessToken && this.accountBackend.configured) {
+      const startedAt = Date.now();
       try {
         const identity = await this.accountBackend.verifyAccessToken(accessToken);
+        stopQueueing();
+        if (socket.readyState !== WebSocket.OPEN) return;
         this.socketIdentities.set(socket, { kind: "account", ...identity });
         this.handleConnection(socket);
+        for (const raw of pendingMessages) this.handleSocketMessage(socket, raw);
+        this.logger?.("account websocket authorized", {
+          userId: identity.userId,
+          durationMs: Date.now() - startedAt,
+          replayedMessages: pendingMessages.length,
+        });
         return;
-      } catch {
+      } catch (error) {
+        stopQueueing();
+        this.logger?.("account websocket authorization failed", {
+          durationMs: Date.now() - startedAt,
+          error: error instanceof Error ? error.message : "unknown_error",
+        });
         socket.close(4401, "invalid_access_token");
         return;
       }
     }
+    stopQueueing();
     if (this.accountHttp.guestAllowed) {
       this.socketIdentities.set(socket, { kind: "guest" });
       this.handleConnection(socket);
@@ -698,32 +744,7 @@ export class SignalingServer extends EventEmitter {
   }
 
   private handleConnection(socket: WebSocket): void {
-    socket.on("message", (raw) => {
-      try {
-        const payloadText = raw.toString();
-        if (Buffer.byteLength(payloadText, "utf8") > MAX_SIGNALING_PAYLOAD_BYTES) {
-          this.rejectInvalid(
-            socket,
-            "payload_too_large",
-            "Signaling message exceeds the 256KB limit.",
-          );
-          return;
-        }
-        const payload = JSON.parse(payloadText) as unknown;
-        if (!isSignalEnvelope(payload)) {
-          this.rejectInvalid(socket, "invalid_payload", "Invalid signaling message.");
-          return;
-        }
-        this.handleSignal(socket, payload);
-      } catch (error) {
-        const message: ErrorMessage = {
-          type: "error",
-          code: "invalid_payload",
-          message: error instanceof Error ? error.message : "Unknown signaling error",
-        };
-        this.rejectInvalid(socket, message.code, message.message);
-      }
-    });
+    socket.on("message", (raw) => this.handleSocketMessage(socket, raw));
 
     socket.on("close", (code, reason) => {
       this.cloudAi.cancelSocket(socket);
@@ -746,6 +767,33 @@ export class SignalingServer extends EventEmitter {
         }
       }
     });
+  }
+
+  private handleSocketMessage(socket: WebSocket, raw: RawData): void {
+    try {
+      const payloadText = raw.toString();
+      if (Buffer.byteLength(payloadText, "utf8") > MAX_SIGNALING_PAYLOAD_BYTES) {
+        this.rejectInvalid(
+          socket,
+          "payload_too_large",
+          "Signaling message exceeds the 256KB limit.",
+        );
+        return;
+      }
+      const payload = JSON.parse(payloadText) as unknown;
+      if (!isSignalEnvelope(payload)) {
+        this.rejectInvalid(socket, "invalid_payload", "Invalid signaling message.");
+        return;
+      }
+      this.handleSignal(socket, payload);
+    } catch (error) {
+      const message: ErrorMessage = {
+        type: "error",
+        code: "invalid_payload",
+        message: error instanceof Error ? error.message : "Unknown signaling error",
+      };
+      this.rejectInvalid(socket, message.code, message.message);
+    }
   }
 
   private handleSignal(socket: WebSocket, message: SignalEnvelope): void {

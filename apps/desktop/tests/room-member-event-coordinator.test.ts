@@ -4,6 +4,11 @@ import test from "node:test";
 import { MemberPresenceState, MemberSpeakingState, type RoomMember } from "@private-voice/shared";
 
 import { RoomMemberEventCoordinator } from "../src/renderer/src/features/room/RoomMemberEventCoordinator";
+import {
+  decodeQuickMessageControlTarget,
+  encodeQuickMessageControlTarget,
+} from "../src/renderer/src/features/chat/quickReplies";
+import { isSignalEnvelope } from "@private-voice/signaling";
 
 const createMember = (
   id: string,
@@ -72,4 +77,54 @@ test("the server can still authoritatively resolve a local seat conflict", () =>
   });
 
   assert.equal(snapshots.at(-1)?.find((member) => member.isLocal)?.sceneZone, "gameDesk4");
+});
+
+test("music toggle controls ignore local echoes and reach remote listeners", () => {
+  const controls: Array<{ presetId: string; peerId: string }> = [];
+  const coordinator = new RoomMemberEventCoordinator({
+    localPeerId: "local",
+    onMembers: () => undefined,
+    onCollection: () => undefined,
+    onKnock: () => undefined,
+    onReaction: () => undefined,
+    onQuickMessage: () => undefined,
+    onQuickMessageControl: ({ presetId, peerId }) => controls.push({ presetId, peerId }),
+  });
+  const musicPresetId = "music-delta-出泪小曲";
+  const targetPeerId = encodeQuickMessageControlTarget(musicPresetId);
+  assert.match(targetPeerId, /^[A-Za-z0-9._:-]+$/);
+  assert.deepEqual(decodeQuickMessageControlTarget(targetPeerId), {
+    presetId: musicPresetId,
+    control: "toggle",
+  });
+  assert.equal(
+    isSignalEnvelope({
+      type: "scene_reaction",
+      roomId: "main",
+      peerId: "local",
+      targetPeerId,
+      emoji: "👍",
+      createdAt: "2026-08-27T00:00:00.000Z",
+    }),
+    true,
+  );
+
+  coordinator.handleReaction({
+    type: "scene_reaction",
+    roomId: "main",
+    peerId: "local",
+    targetPeerId,
+    emoji: "👍",
+    createdAt: "2026-08-27T00:00:00.000Z",
+  });
+  coordinator.handleReaction({
+    type: "scene_reaction",
+    roomId: "main",
+    peerId: "remote",
+    targetPeerId,
+    emoji: "👍",
+    createdAt: "2026-08-27T00:00:01.000Z",
+  });
+
+  assert.deepEqual(controls, [{ presetId: musicPresetId, peerId: "remote" }]);
 });

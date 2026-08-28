@@ -47,7 +47,6 @@ export const RemoteAudioRenderer = () => {
     document.addEventListener("visibilitychange", resumeWhenVisible);
     navigator.mediaDevices?.addEventListener?.("devicechange", recoverOutput);
     window.addEventListener("shanghao:lifecycle-recovery", recoverOutput);
-    void mixer.unlock("renderer-ready");
     return () => {
       window.removeEventListener("pointerdown", unlock, true);
       window.removeEventListener("keydown", unlock, true);

@@ -440,9 +440,16 @@ class DolphinCnDialect:
 
     def transcribe(self, wav_path: str, resource_mode: str) -> dict[str, Any]:
         configure_threads(resource_mode)
+        # Dolphin's provider calls torchaudio.load(path), which now delegates to
+        # TorchCodec. TorchCodec/ffmpeg are intentionally not part of the shared
+        # runtime, while Electron has already validated and normalized this input
+        # to 16 kHz mono PCM16 WAV. Passing the tensor directly keeps Dolphin on
+        # the same decoder-free path as the other adapters.
+        audio, _sample_rate = read_pcm16_mono(wav_path)
+        waveform = torch.from_numpy(audio).unsqueeze(0)
         result = self.transcribe_audio(
             self.model,
-            wav_path,
+            waveform,
             lang_sym="zh",
             region_sym="CN",
             predict_time=True,
@@ -482,22 +489,29 @@ class CohereTranscribe:
             dtype=self.dtype,
             device_map="cuda:0",
         ).eval()
+        self.aligner_model_path = aligner_model_path
         self.aligner = None
-        if aligner_model_path:
-            try:
-                from qwen_asr import Qwen3ForcedAligner
+        self._aligner_load_attempted = False
 
-                self.aligner = Qwen3ForcedAligner.from_pretrained(
-                    aligner_model_path,
-                    dtype=self.dtype,
-                    device_map="cuda:0",
-                )
-            except Exception:
-                # ForcedAligner is only an optional timestamp enhancement. Its Qwen
-                # package can be incompatible with the Transformers version required by
-                # Cohere; that must never prevent the base transcript from starting.
-                self.aligner = None
-                torch.cuda.empty_cache()
+    def _ensure_aligner(self) -> None:
+        """Load optional alignment only after the base Cohere model is usable."""
+        if self._aligner_load_attempted or not self.aligner_model_path:
+            return
+        self._aligner_load_attempted = True
+        try:
+            from qwen_asr import Qwen3ForcedAligner
+
+            self.aligner = Qwen3ForcedAligner.from_pretrained(
+                self.aligner_model_path,
+                dtype=self.dtype,
+                device_map="cuda:0",
+            )
+        except Exception:
+            # ForcedAligner is only an optional timestamp enhancement. Its Qwen
+            # package can be incompatible with the Transformers version required by
+            # Cohere; that must never prevent the base transcript from completing.
+            self.aligner = None
+            torch.cuda.empty_cache()
 
     @staticmethod
     def _aligned_segments(items: Any) -> list[dict[str, Any]]:
@@ -542,7 +556,10 @@ class CohereTranscribe:
             language="zh",
         )
         text = str(decoded[0] if isinstance(decoded, list) and decoded else decoded or "").strip()
-        if not text or self.aligner is None:
+        if not text:
+            return {"text": text}
+        self._ensure_aligner()
+        if self.aligner is None:
             return {"text": text}
         try:
             aligned = self.aligner.align(audio=wav_path, text=text, language="Chinese")

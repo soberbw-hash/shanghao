@@ -315,6 +315,11 @@
   color: #ba5960;
 }
 
+.model-comparison-result-tab.is-partial {
+  color: #a46b2a;
+  border-color: rgb(225 183 111 / 70%);
+}
+
 .model-comparison-result-tab > span:not(.liquid-selection-indicator) {
   font-size: 12px;
   font-weight: 700;

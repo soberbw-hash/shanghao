@@ -53,14 +53,6 @@ export const SceneCharacterLabel = ({
             </span>
           </span>
           <span className="room-character-state">
-            {member.username ? (
-              <>
-                <span className="room-character-username">@{member.username}</span>
-                <span className="room-character-state-divider" aria-hidden="true">
-                  ·
-                </span>
-              </>
-            ) : null}
             <span
               className={`room-character-state-icon ${status.icon ? "has-icon" : ""}`}
               aria-hidden="true"

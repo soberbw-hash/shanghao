@@ -307,15 +307,17 @@ test("desktop clipboard writes go through the electron main process", () => {
   assert.equal(copyField.includes("navigator.clipboard"), false);
 });
 
-test("push-to-talk avoids low-level global hooks that can conflict with anti-cheat", () => {
+test("mouse side buttons use a scoped native hook without moving push-to-talk keyboard handling", () => {
   const shortcuts = read("apps/desktop/src/main/shortcuts.ts");
   const transport = read("apps/desktop/src/renderer/src/hooks/useLocalAudioTransport.ts");
   const packageSource = read("apps/desktop/package.json");
-  assert.equal(shortcuts.includes("uIOhook"), false);
-  assert.equal(packageSource.includes("uiohook-napi"), false);
+  assert.equal(shortcuts.includes('uIOhook.on("mousedown"'), true);
+  assert.equal(shortcuts.includes('uIOhook.on("mouseup"'), true);
+  assert.equal(shortcuts.includes("mouse4"), true);
+  assert.equal(packageSource.includes('"uiohook-napi"'), true);
   assert.equal(transport.includes('window.addEventListener("keydown"'), true);
   assert.equal(transport.includes('window.addEventListener("keyup"'), true);
-  assert.equal(transport.includes("onPushToTalkState"), false);
+  assert.equal(transport.includes("onPushToTalkState"), true);
 });
 
 test("native notifications and recording markers use main process IPC", () => {

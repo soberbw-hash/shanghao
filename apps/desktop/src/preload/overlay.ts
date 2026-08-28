@@ -1,6 +1,10 @@
 import { contextBridge, ipcRenderer } from "electron";
 
-import { IPC_CHANNELS, type OverlayState } from "@private-voice/shared";
+import {
+  IPC_CHANNELS,
+  type OverlayState,
+  type OverlayQuickMusicMuteRequest,
+} from "@private-voice/shared";
 
 const overlayBridge = {
   overlay: {
@@ -8,6 +12,8 @@ const overlayBridge = {
       ipcRenderer.invoke(IPC_CHANNELS.overlay.setInteractive, interactive),
     moveTo: (screenY: number) => ipcRenderer.invoke(IPC_CHANNELS.overlay.moveTo, screenY),
     resetPosition: () => ipcRenderer.invoke(IPC_CHANNELS.overlay.resetPosition),
+    requestMuteQuickMessage: (request: OverlayQuickMusicMuteRequest) =>
+      ipcRenderer.invoke(IPC_CHANNELS.overlay.requestMuteQuickMessage, request),
     onState: (listener: (state: OverlayState) => void) => {
       const wrapped = (_event: Electron.IpcRendererEvent, state: OverlayState) => listener(state);
       ipcRenderer.on(IPC_CHANNELS.overlay.state, wrapped);

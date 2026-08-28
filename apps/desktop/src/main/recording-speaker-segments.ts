@@ -15,6 +15,11 @@ export interface PersistedRecordingSpeakerSegment {
   displayNameSnapshot: string;
   startMs: number;
   endMs: number;
+  userId?: string;
+  trackId?: string;
+  roomId?: "main" | "side";
+  avatarId?: string;
+  joinedAt?: string;
 }
 
 interface SpeakerSegmentManifest {
@@ -91,6 +96,11 @@ const saveRecordingSpeakerSegmentNow = async (
       displayNameSnapshot: payload.displayNameSnapshot.trim().slice(0, 80) || "未知成员",
       startMs,
       endMs,
+      userId: payload.userId?.slice(0, 128),
+      trackId: payload.trackId?.slice(0, 128),
+      roomId: payload.roomId,
+      avatarId: payload.avatarId?.slice(0, 64),
+      joinedAt: payload.joinedAt,
     });
     await writeManifest(directory, manifest);
     return { ok: true, filePath };

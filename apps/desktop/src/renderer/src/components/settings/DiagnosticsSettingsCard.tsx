@@ -2,10 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 
 import type {
   AiRuntimeStatus,
-  ConnectionHealth,
-  DiagnosticsSnapshot,
   LocalAudioDiagnostics,
-  PeerHealthDiagnostics,
   RealtimeFaultKind,
   RelayStatusSnapshot,
   RuntimeHealthSnapshot,
@@ -16,52 +13,16 @@ import type {
 import { Button } from "../base/Button";
 import { SettingsSection } from "./SettingsSection";
 
-const formatMemory = (bytes?: number): string =>
-  typeof bytes === "number" ? `${(bytes / 1_048_576).toFixed(0)} MB` : "--";
-
-const hasScreenShareMetrics = (screenShare: ScreenSharePipelineDiagnostics): boolean =>
-  Boolean(
-    screenShare.requested ||
-    screenShare.capture ||
-    Object.keys(screenShare.send).length > 0 ||
-    Object.keys(screenShare.receive).length > 0 ||
-    Object.keys(screenShare.present).length > 0,
-  );
-
-const aiRuntimeLabel = (status?: AiRuntimeStatus["asr"]): string => {
-  if (!status) return "正在读取";
-  if (status.runtimePhase === "running") return "正在处理";
-  if (status.ready) return "可以使用";
-  if (status.runtimePhase === "missing") return "模型未安装";
-  if (status.runtimePhase === "error") return "运行异常";
-  return "等待任务";
-};
-
-const aiTaskStageLabel = (task: NonNullable<AiRuntimeStatus["lastTask"]>): string => {
-  const labels: Record<typeof task.stage, string> = {
-    recording: "等待录音保存",
-    audio_file: "读取录音文件",
-    preprocess: "检查录音内容",
-    convert: "转换录音格式",
-    asr: "识别语音",
-    transcript: "生成文字",
-    storage: "保存结果",
-    organize: "整理内容",
-  };
-  return labels[task.stage];
-};
-
-const AiRuntimeDiagnosticsPanel = () => {
+const AiRuntimeDiagnosticsPanel = ({ onOpenAiSettings }: { onOpenAiSettings: () => void }) => {
   const [status, setStatus] = useState<AiRuntimeStatus>();
-  const [loadError, setLoadError] = useState("");
+  const [loadError, setLoadError] = useState(false);
 
   const refresh = useCallback(async () => {
     try {
-      const nextStatus = await window.desktopApi.ai.getRuntimeStatus();
-      setStatus(nextStatus);
-      setLoadError("");
-    } catch (error) {
-      setLoadError(error instanceof Error ? error.message : "ai_runtime_status_unavailable");
+      setStatus(await window.desktopApi.ai.getRuntimeStatus());
+      setLoadError(false);
+    } catch {
+      setLoadError(true);
     }
   }, []);
 
@@ -71,82 +32,82 @@ const AiRuntimeDiagnosticsPanel = () => {
 
   const asr = status?.asr;
   const task = status?.lastTask;
+  const isBusy = asr?.runtimePhase === "running";
+  const hasProblem = Boolean(
+    loadError || asr?.runtimePhase === "error" || (task && task.status === "failed"),
+  );
+  const statusLabel = loadError
+    ? "暂时无法读取状态"
+    : !status
+      ? "正在检查"
+      : isBusy
+        ? "正在处理"
+        : asr?.ready
+          ? "可以使用"
+          : asr?.runtimePhase === "missing"
+            ? "还没有准备好"
+            : "需要检查";
+
   return (
     <div className="rounded-[16px] border border-[#DCE8F5] bg-[#F7FAFE] p-4">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <div className="text-[13px] font-semibold text-[#344054]">AI 运行诊断</div>
+          <div className="text-[13px] font-semibold text-[#344054]">AI 转录</div>
           <div className="mt-1 text-xs leading-5 text-[#667085]">
-            转录模型：{asr?.modelName ?? "正在读取"} · {aiRuntimeLabel(asr)}
+            {isBusy && task ? `正在处理“${task.fileName}”` : "负责录音转文字和语音记忆"}
           </div>
-          <div className="mt-1 text-[11px] text-[#7A8CA5]">
-            {task ? `最近任务：${task.fileName} · ${aiTaskStageLabel(task)}` : "还没有转录任务"}
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            <span
+              className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${
+                hasProblem
+                  ? "bg-[#FFF0F0] text-[#C45151]"
+                  : !status
+                    ? "bg-[#F1F5F9] text-[#64748B]"
+                    : asr?.ready || isBusy
+                      ? "bg-[#EAF7EF] text-[#2F8051]"
+                      : "bg-[#FFF8E8] text-[#9A6A19]"
+              }`}
+            >
+              {statusLabel}
+            </span>
+            {asr?.modelName ? (
+              <span className="text-[11px] text-[#7A8CA5]">当前模型：{asr.modelName}</span>
+            ) : null}
           </div>
-          {task?.errorMessage || loadError ? (
-            <div className="mt-1 break-all text-[11px] text-[#C45151]">
-              原因：{task?.errorMessage || loadError}
+          {hasProblem ? (
+            <div className="mt-2 text-xs leading-5 text-[#C45151]">
+              AI 转录没有正常准备好，请到 AI 设置检查模型和运行组件。
             </div>
           ) : null}
         </div>
-        <Button variant="ghost" onClick={() => void refresh()}>
-          刷新
-        </Button>
-      </div>
-      <details className="mt-3 border-t border-[#DCE8F5] pt-3 text-xs text-[#667085]">
-        <summary className="cursor-pointer select-none font-semibold text-[#52657D]">
-          技术参数
-        </summary>
-        <dl className="mt-2 grid gap-1 leading-5">
-          <div>
-            <dt className="inline font-semibold">模型版本：</dt>
-            <dd className="inline break-all">{asr?.modelVersion ?? "未加载"}</dd>
-          </div>
-          <div>
-            <dt className="inline font-semibold">模型位置：</dt>
-            <dd className="inline break-all">{asr?.modelPath ?? "未加载"}</dd>
-          </div>
-          <div>
-            <dt className="inline font-semibold">识别格式：</dt>
-            <dd className="inline">{asr?.asrInputFormat ?? "未确认"}</dd>
-          </div>
-          <div>
-            <dt className="inline font-semibold">内部状态：</dt>
-            <dd className="inline break-all">{asr?.message ?? "暂无"}</dd>
-          </div>
-          {task ? (
-            <>
-              <div>
-                <dt className="inline font-semibold">任务编号：</dt>
-                <dd className="inline break-all">{task.taskId}</dd>
-              </div>
-              <div>
-                <dt className="inline font-semibold">内部阶段：</dt>
-                <dd className="inline">
-                  {task.stage} / {task.status}
-                </dd>
-              </div>
-              {task.errorMessage ? (
-                <div>
-                  <dt className="inline font-semibold">原始错误：</dt>
-                  <dd className="inline break-all">{task.errorMessage}</dd>
-                </div>
-              ) : null}
-            </>
+        <div className="flex shrink-0 flex-wrap justify-end gap-2">
+          <Button variant="ghost" onClick={() => void refresh()}>
+            重新检查
+          </Button>
+          {hasProblem ? (
+            <Button variant="secondary" onClick={onOpenAiSettings}>
+              去 AI 设置
+            </Button>
           ) : null}
-        </dl>
-      </details>
+        </div>
+      </div>
     </div>
   );
 };
 
-type HealthLevel = "正常" | "异常" | "需要处理";
+type HealthLevel = "正常" | "未检测" | "需要看看" | "有问题";
 
 const healthClass = (level: HealthLevel): string =>
   level === "正常"
     ? "bg-[#EAF7EF] text-[#2F8051]"
-    : level === "异常"
+    : level === "有问题"
       ? "bg-[#FFF0F0] text-[#C45151]"
-      : "bg-[#FFF8E8] text-[#9A6A19]";
+      : level === "需要看看"
+        ? "bg-[#FFF8E8] text-[#9A6A19]"
+        : "bg-[#F1F5F9] text-[#64748B]";
+
+const isAttentionLevel = (level: HealthLevel): boolean =>
+  level === "需要看看" || level === "有问题";
 
 interface ShangHaoHealthOverviewProps {
   runtimeHealth?: RuntimeHealthSnapshot;
@@ -156,8 +117,14 @@ interface ShangHaoHealthOverviewProps {
   remotePeerCount: number;
   webrtcReadyPeerCount: number;
   screenShare?: ScreenSharePipelineDiagnostics;
+  windowsStatus?: WindowsIntegrationStatus;
   onRefresh: () => void;
   onOpenAudioSettings: () => void;
+  onOpenHome: () => void;
+  onOpenRoom: () => void;
+  onRefreshWindows: () => void;
+  onRepairFirewall: () => void;
+  isRepairingFirewall: boolean;
 }
 
 const ShangHaoHealthOverview = ({
@@ -168,103 +135,185 @@ const ShangHaoHealthOverview = ({
   remotePeerCount,
   webrtcReadyPeerCount,
   screenShare,
+  windowsStatus,
   onRefresh,
   onOpenAudioSettings,
+  onOpenHome,
+  onOpenRoom,
+  onRefreshWindows,
+  onRepairFirewall,
+  isRepairingFirewall,
 }: ShangHaoHealthOverviewProps) => {
-  const relayLevel: HealthLevel = relay?.isReachable ? "正常" : "需要处理";
+  const relayLevel: HealthLevel = relay ? (relay.isReachable ? "正常" : "有问题") : "未检测";
   const webRtcLevel: HealthLevel =
-    remotePeerCount === 0 || webrtcReadyPeerCount === remotePeerCount ? "正常" : "需要处理";
+    remotePeerCount === 0
+      ? "未检测"
+      : webrtcReadyPeerCount === remotePeerCount
+        ? "正常"
+        : "需要看看";
   const micLevel: HealthLevel = localAudioDiagnostics
     ? localAudioDiagnostics.inputOverload === "warning"
-      ? "需要处理"
+      ? "需要看看"
       : "正常"
-    : "需要处理";
-  const gpuLevel: HealthLevel = runtimeHealth?.gpu.hardwareAcceleration ? "正常" : "异常";
+    : "未检测";
   const networkLevel: HealthLevel =
     relay?.latencyMs === undefined
-      ? "需要处理"
+      ? "未检测"
       : relay.latencyMs < 160
         ? "正常"
         : relay.latencyMs < 300
-          ? "需要处理"
-          : "异常";
-  const screenLevel: HealthLevel =
-    !screenShare || !screenShare.fallback.overdue ? "正常" : "需要处理";
-  const outputLevel: HealthLevel = outputDeviceCount > 0 ? "正常" : "需要处理";
-  const items: Array<{ label: string; level: HealthLevel; onClick?: () => void }> = [
-    { label: "麦克风 / 输入设备", level: micLevel },
-    { label: "输出设备 / 语音", level: outputLevel, onClick: onOpenAudioSettings },
-    { label: "WebRTC / TURN", level: webRtcLevel },
-    { label: "信令服务器", level: relayLevel },
-    { label: "网络延迟", level: networkLevel },
-    { label: "屏幕捕获 / 分享", level: screenLevel },
-    { label: "GPU / CUDA", level: gpuLevel },
-    { label: "本地存储 / 录音", level: runtimeHealth ? "正常" : "需要处理" },
+          ? "需要看看"
+          : "有问题";
+  const screenLevel: HealthLevel = !screenShare
+    ? "未检测"
+    : screenShare.fallback.overdue
+      ? "需要看看"
+      : "正常";
+  const outputLevel: HealthLevel = outputDeviceCount > 0 ? "正常" : "有问题";
+  const windowsLevel: HealthLevel = windowsStatus
+    ? windowsStatus.firewall.healthy
+      ? "正常"
+      : "需要看看"
+    : "未检测";
+  const items: Array<{
+    label: string;
+    level: HealthLevel;
+    description: string;
+    actionLabel?: string;
+    onClick?: () => void;
+  }> = [
+    {
+      label: "麦克风",
+      level: micLevel,
+      description: micLevel === "需要看看" ? "输入音量可能偏高，建议检查。" : "麦克风输入正常。",
+      actionLabel: "去语音设置",
+      onClick: onOpenAudioSettings,
+    },
+    {
+      label: "扬声器",
+      level: outputLevel,
+      description: outputLevel === "有问题" ? "没有检测到可用的输出设备。" : "可以播放房间语音。",
+      actionLabel: "去语音设置",
+      onClick: onOpenAudioSettings,
+    },
+    {
+      label: "房间连接",
+      level: webRtcLevel,
+      description:
+        webRtcLevel === "未检测"
+          ? "进入房间并有好友在线后会自动检查。"
+          : webRtcLevel === "需要看看"
+            ? "有好友还没有建立稳定的语音连接。"
+            : "好友语音连接正常。",
+      actionLabel: "回到房间",
+      onClick: onOpenRoom,
+    },
+    {
+      label: "服务器连接",
+      level: relayLevel,
+      description:
+        relayLevel === "有问题"
+          ? "暂时连不上服务器，请检查网络或服务器设置。"
+          : "房间服务连接正常。",
+      actionLabel: "回到房间",
+      onClick: onOpenHome,
+    },
+    {
+      label: "网络速度",
+      level: networkLevel,
+      description:
+        networkLevel === "有问题" || networkLevel === "需要看看"
+          ? "网络响应偏慢，可能影响语音稳定性。"
+          : "网络响应正常。",
+      actionLabel: "回到房间",
+      onClick: onOpenRoom,
+    },
+    {
+      label: "屏幕分享",
+      level: screenLevel,
+      description:
+        screenLevel === "需要看看"
+          ? "屏幕分享可能暂时卡住，请回到房间检查。"
+          : "没有发现屏幕分享问题。",
+      actionLabel: "回到房间",
+      onClick: onOpenRoom,
+    },
+    {
+      label: "应用运行",
+      level: runtimeHealth ? "正常" : "未检测",
+      description: runtimeHealth ? "应用运行正常。" : "应用启动后会自动检查。",
+    },
+    {
+      label: "Windows 网络权限",
+      level: windowsLevel,
+      description:
+        windowsLevel === "需要看看"
+          ? "系统防火墙可能影响语音连接，可以直接修复。"
+          : "系统网络权限正常。",
+      actionLabel: windowsLevel === "需要看看" ? "自动修复" : undefined,
+      onClick: windowsLevel === "需要看看" ? onRepairFirewall : undefined,
+    },
   ];
+  const attentionCount = items.filter(({ level }) => isAttentionLevel(level)).length;
+
   return (
     <div className="rounded-[16px] border border-[#DCE8F5] bg-white p-4">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <div className="text-[14px] font-semibold text-[#344054]">ShangHao 体检</div>
+          <div className="text-[14px] font-semibold text-[#344054]">现在的状态</div>
           <div className="mt-1 text-xs leading-5 text-[#667085]">
-            先看结论，需要时再展开下面的详细诊断。
+            {attentionCount === 0
+              ? "目前没有发现需要你处理的问题。"
+              : "下面只列出可能需要你处理的项目。"}
           </div>
         </div>
         <Button variant="ghost" onClick={onRefresh}>
           重新检查
         </Button>
       </div>
-      <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
-        {items.map(({ label, level, onClick }) => {
-          const className = `flex items-center justify-between gap-2 rounded-xl border border-[#EDF2F7] bg-[#FAFCFF] px-3 py-2 text-left ${
-            onClick
-              ? "w-full cursor-pointer transition-colors duration-100 hover:border-[#B9D5F5] hover:bg-[#F4F9FF]"
-              : ""
-          }`;
-          const content = (
-            <>
-              <span className="text-[12px] text-[#52657D]">{label}</span>
+      <div className="mt-3 grid gap-2 sm:grid-cols-2">
+        {items.map(({ label, level, description, actionLabel, onClick }) => (
+          <div key={label} className="rounded-xl border border-[#EDF2F7] bg-[#FAFCFF] px-3 py-2.5">
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-[12px] font-semibold text-[#52657D]">{label}</span>
               <span
                 className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${healthClass(level)}`}
               >
                 {level}
               </span>
-            </>
-          );
-          return onClick ? (
-            <button
-              key={label}
-              type="button"
-              className={className}
-              title="点击前往语音设置，检查输出设备和音量"
-              aria-label={`${label}：${level}，点击前往语音设置`}
-              onClick={onClick}
-            >
-              {content}
-            </button>
-          ) : (
-            <div key={label} className={className}>
-              {content}
             </div>
-          );
-        })}
+            <div className="mt-1 text-[11px] leading-5 text-[#7A8CA5]">{description}</div>
+            {actionLabel && onClick && isAttentionLevel(level) ? (
+              <Button
+                variant="ghost"
+                className="mt-1.5 px-0 text-[11px]"
+                onClick={onClick}
+                disabled={isRepairingFirewall}
+              >
+                {label === "Windows 网络权限" && isRepairingFirewall ? "修复中…" : actionLabel}
+              </Button>
+            ) : null}
+          </div>
+        ))}
       </div>
+      {windowsStatus ? (
+        <div className="mt-3 flex justify-end">
+          <Button variant="ghost" className="px-0 text-[11px]" onClick={onRefreshWindows}>
+            重新检查系统权限
+          </Button>
+        </div>
+      ) : null}
     </div>
   );
 };
 
 export const DiagnosticsSettingsCard = ({
-  diagnostics,
   runtimeHealth,
   relay,
-  connectionHealth,
   localAudioDiagnostics,
   outputDeviceCount,
   webrtcReadyPeerCount,
   remotePeerCount,
-  audioRelayActive,
-  peerHealth,
-  longSessionSampleCount,
   screenShare,
   windowsStatus,
   onOpenLogs,
@@ -272,22 +321,20 @@ export const DiagnosticsSettingsCard = ({
   onCopySummary,
   onRefreshHealth,
   onOpenAudioSettings,
+  onOpenAiSettings,
+  onOpenHome,
+  onOpenRoom,
   onRefreshWindows,
   onRepairFirewall,
   isRepairingFirewall,
   onInjectFault,
 }: {
-  diagnostics?: DiagnosticsSnapshot;
   runtimeHealth?: RuntimeHealthSnapshot;
   relay?: RelayStatusSnapshot;
-  connectionHealth: ConnectionHealth;
   localAudioDiagnostics?: LocalAudioDiagnostics;
   outputDeviceCount: number;
   webrtcReadyPeerCount: number;
   remotePeerCount: number;
-  audioRelayActive: boolean;
-  peerHealth?: Record<string, PeerHealthDiagnostics>;
-  longSessionSampleCount: number;
   screenShare?: ScreenSharePipelineDiagnostics;
   windowsStatus?: WindowsIntegrationStatus;
   onOpenLogs: () => void;
@@ -295,12 +342,18 @@ export const DiagnosticsSettingsCard = ({
   onCopySummary: () => void;
   onRefreshHealth: () => void;
   onOpenAudioSettings: () => void;
+  onOpenAiSettings: () => void;
+  onOpenHome: () => void;
+  onOpenRoom: () => void;
   onRefreshWindows: () => void;
   onRepairFirewall: () => void;
   isRepairingFirewall: boolean;
   onInjectFault: (kind: RealtimeFaultKind) => void;
 }) => (
-  <SettingsSection title="日志与诊断" description="出问题时导出诊断包发给开发者。">
+  <SettingsSection
+    title="日志与诊断"
+    description="这里给你看结论；完整的技术数据会在导出诊断包时一并保存。"
+  >
     <div className="space-y-3">
       <ShangHaoHealthOverview
         runtimeHealth={runtimeHealth}
@@ -310,253 +363,40 @@ export const DiagnosticsSettingsCard = ({
         remotePeerCount={remotePeerCount}
         webrtcReadyPeerCount={webrtcReadyPeerCount}
         screenShare={screenShare}
+        windowsStatus={windowsStatus}
         onRefresh={onRefreshHealth}
         onOpenAudioSettings={onOpenAudioSettings}
+        onOpenHome={onOpenHome}
+        onOpenRoom={onOpenRoom}
+        onRefreshWindows={onRefreshWindows}
+        onRepairFirewall={onRepairFirewall}
+        isRepairingFirewall={isRepairingFirewall}
       />
-      <div className="rounded-[16px] border border-[#CFE0F5] bg-[#F3F8FE] p-4">
-        <div className="flex items-center justify-between gap-3">
-          <div>
-            <div className="text-[13px] font-semibold text-[#344054]">实时诊断 HUD</div>
-            <div className="mt-0.5 text-[11px] text-[#7A8CA5]">最近 10 秒真实采样，每 2 秒刷新</div>
-          </div>
-          <span className="rounded-full bg-white px-2.5 py-1 text-[11px] font-semibold text-[#4D79B8]">
-            {runtimeHealth ? "采集中" : "等待采样"}
-          </span>
+      <AiRuntimeDiagnosticsPanel onOpenAiSettings={onOpenAiSettings} />
+      <div className="rounded-[16px] border border-[#E7ECF2] bg-[#F8FAFC] p-4">
+        <div className="text-[13px] font-semibold text-[#344054]">需要帮忙时</div>
+        <div className="mt-1 text-xs leading-5 text-[#667085]">
+          导出诊断包会包含后台保存的详细技术信息，方便开发者定位问题；这里不会把这些术语直接堆给你看。
         </div>
-        <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
-          {[
-            [
-              "刷新率 / 实际 FPS",
-              `${runtimeHealth?.display.refreshRateHz ?? "--"} Hz / ${runtimeHealth?.rendererPerformance?.actualFps?.toFixed(0) ?? "--"}`,
-            ],
-            [
-              "1% Low / P99",
-              `${runtimeHealth?.rendererPerformance?.onePercentLowFps?.toFixed(0) ?? "--"} FPS / ${runtimeHealth?.rendererPerformance?.frameTimeP99Ms?.toFixed(1) ?? "--"} ms`,
-            ],
-            [
-              "主进程 / 渲染进程",
-              `${formatMemory(runtimeHealth?.main.workingSetBytes)} / ${formatMemory(runtimeHealth?.renderer?.workingSetBytes)}`,
-            ],
-            [
-              "Peer / Track / 长帧",
-              `${runtimeHealth?.realtime.peerCount ?? 0} / ${runtimeHealth?.realtime.trackCount ?? 0} / ${runtimeHealth?.rendererPerformance?.longFrameCount ?? 0}`,
-            ],
-          ].map(([label, value]) => (
-            <div key={label} className="rounded-[12px] border border-white bg-white/80 px-3 py-2">
-              <div className="text-[10px] font-medium text-[#98A2B3]">{label}</div>
-              <div className="mt-1 text-[12px] font-semibold text-[#344054]">{value}</div>
-            </div>
-          ))}
-        </div>
-        {runtimeHealth?.rendererPerformance?.componentRenderCounts ? (
-          <div className="mt-3 rounded-[12px] border border-white bg-white/80 px-3 py-3">
-            <div className="text-[10px] font-medium text-[#98A2B3]">组件 Render（本采样窗口）</div>
-            <div className="mt-2 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
-              {["RoomPage", "TeamIsland", "SceneCharacter", "ScreenShare"].map((name) => {
-                const count = runtimeHealth.rendererPerformance?.componentRenderCounts?.[name] ?? 0;
-                const reasons = runtimeHealth.rendererPerformance?.componentRenderReasons?.[name];
-                const reason = reasons
-                  ? Object.entries(reasons).sort((left, right) => right[1] - left[1])[0]?.[0]
-                  : undefined;
-                return (
-                  <div key={name} className="rounded-[10px] border border-[#E8EEF7] px-2.5 py-2">
-                    <div className="text-[11px] font-semibold text-[#344054]">{name}</div>
-                    <div className="mt-0.5 text-[11px] tabular-nums text-[#6B7F99]">
-                      {count} 次{reason ? ` · ${reason}` : ""}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-            <div className="mt-2 text-[11px] text-[#7A8CA5]">
-              Long Task：
-              {Object.entries(runtimeHealth.rendererPerformance.longTaskCategories ?? {})
-                .map(([category, count]) => `${category} ${count}`)
-                .join(" · ") || "无"}
-            </div>
-          </div>
-        ) : null}
-      </div>
-      {screenShare ? (
-        <div
-          className={`rounded-[16px] border p-4 ${
-            screenShare.fallback.overdue
-              ? "border-[#F3A6A6] bg-[#FFF3F3]"
-              : "border-[#CFE0F5] bg-[#F6FAFF]"
-          }`}
-        >
-          <div className="flex items-center justify-between gap-3">
-            <div className="text-[13px] font-semibold text-[#344054]">屏幕分享链路</div>
-            <span
-              className={`text-[11px] font-semibold ${
-                screenShare.fallback.overdue ? "text-[#D64545]" : "text-[#6B7F99]"
-              }`}
-            >
-              {screenShare.fallback.active
-                ? `兜底 ${Math.round(screenShare.fallback.activeForMs / 1_000)} 秒`
-                : "WebRTC 视频"}
-            </span>
-          </div>
-          {hasScreenShareMetrics(screenShare) ? (
-            <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
-              {[
-                [
-                  "请求 / 实际采集",
-                  `${screenShare.requested?.width ?? "--"}×${screenShare.requested?.height ?? "--"} @ ${screenShare.requested?.framesPerSecond ?? "--"} / ${screenShare.capture?.width ?? "--"}×${screenShare.capture?.height ?? "--"} @ ${screenShare.capture?.framesPerSecond?.toFixed(0) ?? "--"}`,
-                ],
-                [
-                  "编码 / 码率",
-                  (() => {
-                    const send = Object.values(screenShare.send)[0];
-                    return `${send?.width ?? "--"}×${send?.height ?? "--"} @ ${send?.framesPerSecond?.toFixed(0) ?? "--"} / ${send?.bitrateBps ? `${(send.bitrateBps / 1_000_000).toFixed(2)} Mbps` : "--"}`;
-                  })(),
-                ],
-                [
-                  "解码 / 显示",
-                  (() => {
-                    const receive = Object.values(screenShare.receive)[0];
-                    const present = Object.values(screenShare.present)[0];
-                    return `${receive?.width ?? "--"}×${receive?.height ?? "--"} @ ${receive?.framesPerSecond?.toFixed(0) ?? "--"} / ${present?.framesPerSecond?.toFixed(0) ?? "--"} FPS`;
-                  })(),
-                ],
-                [
-                  "丢帧 / 卡顿 / 延迟",
-                  (() => {
-                    const receive = Object.values(screenShare.receive)[0];
-                    return `${receive?.framesDropped ?? 0} / ${receive?.freezeCount ?? 0} / ${receive?.jitterBufferDelayMs?.toFixed(0) ?? "--"} ms`;
-                  })(),
-                ],
-              ].map(([label, value]) => (
-                <div
-                  key={label}
-                  className="rounded-[12px] border border-white bg-white/80 px-3 py-2"
-                >
-                  <div className="text-[10px] font-medium text-[#98A2B3]">{label}</div>
-                  <div className="mt-1 text-[12px] font-semibold tabular-nums text-[#344054]">
-                    {value}
-                  </div>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <div className="mt-3 rounded-[12px] border border-white bg-white/80 px-3 py-3 text-[12px] font-medium text-[#7A8CA5]">
-              未开始屏幕分享
-            </div>
-          )}
-        </div>
-      ) : null}
-      <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
-        {[
-          ["Relay 延迟", relay?.isReachable ? `${relay.latencyMs ?? "--"} ms` : "不可达"],
-          ["TURN", relay?.turnConfigured || connectionHealth.turnConfigured ? "已配置" : "未配置"],
-          ["WebRTC", `${webrtcReadyPeerCount}/${remotePeerCount} 个好友已直连`],
-          [
-            "当前语音路径",
-            audioRelayActive
-              ? "信令音频兜底"
-              : connectionHealth.voicePath === "webrtc_turn"
-                ? "WebRTC / TURN"
-                : connectionHealth.voicePath === "webrtc_direct"
-                  ? "WebRTC 直连"
-                  : "等待连接",
-          ],
-          ["丢包", `${connectionHealth.packetLossPercent.toFixed(1)}%`],
-          ["抖动", `${Math.round(connectionHealth.jitterMs)} ms`],
-          [
-            "好友健康",
-            peerHealth && Object.keys(peerHealth).length > 0
-              ? `${Object.values(peerHealth).filter((peer) => peer.level === "healthy").length}/${Object.keys(peerHealth).length} 正常`
-              : "等待好友数据",
-          ],
-          [
-            "长时趋势",
-            `${longSessionSampleCount} 个节点 · ${runtimeHealth?.realtime.audioNodeCount ?? 0} AudioNode`,
-          ],
-          [
-            "本地降噪",
-            localAudioDiagnostics?.noiseProcessor === "deepfilter_active"
-              ? "DeepFilterNet 正常"
-              : localAudioDiagnostics?.noiseProcessor === "deepfilter_loading"
-                ? "DeepFilterNet 加载中"
-                : localAudioDiagnostics?.noiseProcessor === "deepfilter_unavailable"
-                  ? "不可用，原声直通"
-                  : "已关闭",
-          ],
-          [
-            "人声保护",
-            localAudioDiagnostics?.noiseProcessor === "deepfilter_active"
-              ? `${localAudioDiagnostics.speechProtection === "active" ? "保护中" : "待命"} · ${localAudioDiagnostics.currentSuppressionLevel ?? "--"} · 原声 ${Math.round((localAudioDiagnostics.rawProcessedMix?.raw ?? 0) * 100)}%`
-              : "未启用",
-          ],
-          [
-            "语音判断",
-            localAudioDiagnostics
-              ? `${localAudioDiagnostics.processingMode ?? "noise"} · VAD ${Math.round((localAudioDiagnostics.speechProbability ?? 0) * 100)}%${localAudioDiagnostics.doubleTalkDetected ? " · 双讲" : ""}${localAudioDiagnostics.remoteEchoDetected ? " · 回声" : ""}`
-              : "等待麦克风",
-          ],
-          [
-            "麦克风原始输入",
-            localAudioDiagnostics
-              ? `${localAudioDiagnostics.inputOverload === "warning" ? "音量过高" : "正常"} · 峰值 ${Math.round((localAudioDiagnostics.rawInputPeak ?? 0) * 100)}%`
-              : "等待麦克风",
-          ],
-          [
-            "处理负载",
-            localAudioDiagnostics
-              ? `平均 ${(localAudioDiagnostics.averageProcessingMs ?? 0).toFixed(1)} ms · 峰值 ${(localAudioDiagnostics.maxProcessingMs ?? 0).toFixed(1)} ms · 超时 ${localAudioDiagnostics.processorOverruns ?? 0}`
-              : "等待麦克风",
-          ],
-        ].map(([label, value]) => (
-          <div
-            key={label}
-            className="rounded-[14px] border border-[#E7ECF2] bg-white/80 px-3 py-2.5"
-          >
-            <div className="text-[11px] font-medium text-[#98A2B3]">{label}</div>
-            <div className="mt-1 text-[13px] font-semibold text-[#344054]">{value}</div>
-          </div>
-        ))}
-      </div>
-      <div className="rounded-[16px] border border-[#DCE8F5] bg-[#F7FAFE] p-4">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <div className="text-[13px] font-semibold text-[#344054]">Windows 网络权限</div>
-            <div className="mt-1 text-xs leading-5 text-[#667085]">
-              管理员权限：{windowsStatus?.elevation.isElevated ? "已启用" : "未启用或读取中"}
-              <span className="mx-2 text-[#CBD5E1]">·</span>
-              防火墙：
-              {windowsStatus?.firewall.healthy
-                ? `${windowsStatus.firewall.ruleCount}/${windowsStatus.firewall.expectedRuleCount} 条正常`
-                : "需要检查"}
-            </div>
-            <div className="mt-1 text-[11px] text-[#98A2B3]">
-              {windowsStatus?.firewall.message ?? "正在读取 Windows 集成状态…"}
-            </div>
-          </div>
-          <div className="flex gap-2">
-            <Button variant="ghost" onClick={onRefreshWindows}>
-              刷新
-            </Button>
-            <Button variant="secondary" onClick={onRepairFirewall} disabled={isRepairingFirewall}>
-              {isRepairingFirewall ? "修复中…" : "修复防火墙"}
-            </Button>
-          </div>
-        </div>
-      </div>
-      <AiRuntimeDiagnosticsPanel />
-      <div className="rounded-[16px] border border-[#E7ECF2] bg-[#F8FAFC] p-4 text-sm text-[#667085]">
-        <div>日志目录：{diagnostics?.logsDirectory || "读取中…"}</div>
-        <div className="mt-2">
-          最近导出诊断包：{diagnostics?.lastBundlePath || "还没有导出记录"}
-        </div>
-        <div className="mt-2">
-          更新检查：{diagnostics?.lastUpdateCheckMessage || "还没有检查更新"}
+        <div className="mt-3 flex flex-wrap gap-3">
+          <Button variant="secondary" onClick={onOpenLogs}>
+            打开诊断文件夹
+          </Button>
+          <Button variant="secondary" onClick={onExportBundle}>
+            导出完整诊断包
+          </Button>
+          <Button variant="ghost" onClick={onCopySummary}>
+            复制易读摘要
+          </Button>
         </div>
       </div>
       {import.meta.env.DEV ? (
-        <div className="rounded-[16px] border border-dashed border-[#E4B968] bg-[#FFF9EC] p-4">
-          <div className="text-[13px] font-semibold text-[#6F5422]">Realtime Fault Lab</div>
+        <details className="rounded-[16px] border border-dashed border-[#E4B968] bg-[#FFF9EC] p-4">
+          <summary className="cursor-pointer select-none text-[13px] font-semibold text-[#6F5422]">
+            开发测试入口
+          </summary>
           <div className="mt-1 text-[11px] leading-5 text-[#93713A]">
-            仅开发环境可见。用于验证断线、旧连接事件、重复关闭、快照超时、单好友音频恢复和屏幕轨丢失。
+            仅开发环境可见，用于验证断线、旧连接事件、重复关闭、快照超时、单好友音频恢复和屏幕轨丢失。
           </div>
           <div className="mt-3 flex flex-wrap gap-2">
             {(
@@ -574,19 +414,8 @@ export const DiagnosticsSettingsCard = ({
               </Button>
             ))}
           </div>
-        </div>
+        </details>
       ) : null}
-      <div className="flex flex-wrap gap-3">
-        <Button variant="secondary" onClick={onOpenLogs}>
-          打开日志目录
-        </Button>
-        <Button variant="secondary" onClick={onExportBundle}>
-          导出诊断包
-        </Button>
-        <Button variant="ghost" onClick={onCopySummary}>
-          复制诊断摘要
-        </Button>
-      </div>
     </div>
   </SettingsSection>
 );

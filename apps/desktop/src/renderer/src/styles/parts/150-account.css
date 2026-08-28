@@ -73,18 +73,7 @@
 
 .account-brand-mark {
   display: grid;
-  width: 46px;
-  height: 46px;
   place-items: center;
-  color: white;
-  border-radius: 15px;
-  background: linear-gradient(145deg, #568ff2, #3478df);
-  box-shadow: 0 10px 24px rgba(57, 119, 222, 0.24);
-}
-
-.account-brand-mark svg {
-  width: 23px;
-  height: 23px;
 }
 
 .account-brand > div:last-child {
@@ -230,6 +219,19 @@
   color: #7e91ad;
 }
 
+.account-phone-prefix {
+  flex: 0 0 auto;
+  margin-left: 6px;
+  color: #7186a3;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+}
+
+.account-phone-control input {
+  padding-left: 7px;
+}
+
 .account-field input {
   min-width: 0;
   flex: 1;
@@ -259,6 +261,44 @@
 
 .account-password-toggle:hover {
   background: rgba(223, 235, 250, 0.75);
+}
+
+.account-field > .account-verification-control {
+  gap: 6px;
+  padding-inline: 8px 5px;
+}
+
+.account-verification-control input {
+  padding-inline: 0;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.account-code-action {
+  box-sizing: border-box;
+  flex: 0 0 auto;
+  width: 72px;
+  min-width: 72px;
+  padding: 7px 4px;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+  border: 0;
+  border-radius: 8px;
+  color: #3b82d9;
+  background: rgba(229, 241, 255, 0.86);
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.account-code-action:hover:not(:disabled) {
+  background: rgba(207, 229, 255, 0.96);
+}
+
+.account-code-action:disabled {
+  color: #9cabc0;
+  background: rgba(235, 240, 247, 0.82);
+  cursor: not-allowed;
 }
 
 .account-avatar-row {
@@ -318,56 +358,9 @@
   gap: 12px;
 }
 
-.account-avatar-heading > div {
-  display: grid;
-  gap: 2px;
-}
-
 .account-avatar-heading strong {
   color: #42536d;
   font-size: 13px;
-}
-
-.account-avatar-heading span {
-  color: #8b99ad;
-  font-size: 11px;
-}
-
-.account-avatar-upload {
-  display: flex;
-  min-width: 72px;
-  height: 34px;
-  align-items: center;
-  justify-content: center;
-  gap: 5px;
-  padding: 3px 9px;
-  border: 1px solid rgba(118, 151, 194, 0.3);
-  border-radius: 10px;
-  color: #58718f;
-  background: rgba(255, 255, 255, 0.78);
-  cursor: pointer;
-  transition:
-    border-color 160ms ease,
-    box-shadow 160ms ease,
-    transform 160ms ease;
-}
-
-.account-avatar-upload:hover {
-  transform: translateY(-1px);
-  border-color: rgba(66, 143, 234, 0.55);
-}
-
-.account-avatar-upload.is-selected {
-  border-color: rgba(66, 143, 234, 0.72);
-  box-shadow: 0 0 0 3px rgba(66, 143, 234, 0.12);
-}
-
-.account-avatar-upload svg,
-.account-avatar-upload img {
-  width: 21px;
-  height: 21px;
-  border-radius: 7px;
-  object-fit: cover;
 }
 
 .account-avatar-presets {
@@ -612,6 +605,60 @@
   width: 12px;
 }
 
+.account-settings-avatar-picker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 14px 0 18px;
+  padding: 10px;
+  border: 1px solid rgba(153, 183, 217, 0.32);
+  border-radius: 14px;
+  background: rgba(237, 245, 255, 0.62);
+}
+
+.account-settings-avatar-picker button {
+  position: relative;
+  display: grid;
+  width: 42px;
+  height: 42px;
+  place-items: center;
+  padding: 2px;
+  border: 1px solid transparent;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.78);
+  cursor: pointer;
+}
+
+.account-settings-avatar-picker button:hover,
+.account-settings-avatar-picker button:focus-visible {
+  border-color: #8bbcf5;
+  outline: none;
+}
+
+.account-settings-avatar-picker button.is-selected {
+  border-color: #4d8be8;
+  background: #eaf4ff;
+  box-shadow: 0 0 0 2px rgba(77, 139, 232, 0.14);
+}
+
+.account-settings-avatar-picker img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.account-settings-avatar-picker button > svg {
+  position: absolute;
+  right: -4px;
+  bottom: -4px;
+  width: 15px;
+  height: 15px;
+  padding: 2px;
+  border-radius: 50%;
+  color: white;
+  background: #4d8be8;
+}
+
 .account-verified-badge {
   display: inline-flex;
   align-items: center;
@@ -812,17 +859,4 @@
   border-radius: 5px;
   object-fit: cover;
   box-shadow: 0 1px 4px rgba(58, 91, 132, 0.16);
-}
-
-.room-character-username {
-  max-width: 70px;
-  overflow: hidden;
-  color: #7187a5;
-  font-size: 9px;
-  text-overflow: ellipsis;
-}
-
-.room-character-state-divider {
-  color: #a2afc1;
-  font-size: 9px;
 }

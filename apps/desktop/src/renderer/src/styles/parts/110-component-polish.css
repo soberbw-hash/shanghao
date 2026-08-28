@@ -737,6 +737,78 @@
   line-height: 20px;
 }
 
+.release-notes-summary-card {
+  margin-top: 14px;
+  border: 1px solid rgba(157, 198, 239, 0.72);
+  border-radius: 16px;
+  background: rgba(239, 248, 255, 0.76);
+  padding: 13px 14px 12px;
+}
+
+.release-notes-summary-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.release-notes-summary-heading > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: #2e6fbe;
+  font-size: 13px;
+  font-weight: 760;
+}
+
+.release-notes-summary-heading svg {
+  width: 15px;
+  height: 15px;
+}
+
+.release-notes-summary-heading small {
+  color: #7a91aa;
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.release-notes-summary-card > p {
+  margin: 8px 0 0;
+  color: #4e6077;
+  font-size: 13px;
+  line-height: 21px;
+  text-wrap: pretty;
+}
+
+.release-notes-highlight-list {
+  display: grid;
+  gap: 6px;
+  margin: 11px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.release-notes-highlight-list li {
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr);
+  align-items: start;
+  gap: 7px;
+  color: #53667e;
+  font-size: 12px;
+  line-height: 19px;
+  text-wrap: pretty;
+}
+
+.release-notes-highlight-list li > span:first-child {
+  line-height: 19px;
+  text-align: center;
+}
+
+.release-notes-inline-emphasis {
+  color: #2f74c5;
+  font-weight: 760;
+}
+
 .release-notes-image {
   display: block;
   width: 100%;
@@ -961,7 +1033,7 @@
 .recording-item-favorite {
   position: absolute;
   top: 7px;
-  right: 7px;
+  right: 35px;
   display: grid;
   width: 24px;
   height: 24px;
@@ -977,6 +1049,35 @@
 }
 
 .recording-item-favorite svg {
+  width: 14px;
+  height: 14px;
+  stroke-width: 2;
+}
+
+.recording-item-show-in-folder {
+  position: absolute;
+  top: 7px;
+  right: 7px;
+  display: grid;
+  width: 24px;
+  height: 24px;
+  place-items: center;
+  border-radius: 8px;
+  color: #91a2b7;
+}
+
+.recording-item-show-in-folder:hover,
+.recording-item-show-in-folder:focus-visible {
+  background: rgba(221, 238, 255, 0.9);
+  color: #287fe4;
+}
+
+.recording-item-show-in-folder:focus-visible {
+  outline: 2px solid rgba(72, 154, 240, 0.34);
+  outline-offset: 2px;
+}
+
+.recording-item-show-in-folder svg {
   width: 14px;
   height: 14px;
   stroke-width: 2;

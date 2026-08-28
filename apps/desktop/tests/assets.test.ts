@@ -41,6 +41,49 @@ test("desktop branding assets exist for app, tray, and github", () => {
   assert.equal(windowSource.includes("window.setIcon(windowIcon)"), true);
 });
 
+test("brand mark stays clean and consistent across renderer and desktop icon sources", () => {
+  const rendererMark = readFileSync(
+    path.join(root, "apps/desktop/src/renderer/src/assets/brand-mark.svg"),
+    "utf8",
+  );
+  const buildMarks = [
+    readFileSync(path.join(root, "apps/desktop/build/icon.svg"), "utf8"),
+    readFileSync(path.join(root, "apps/desktop/build/logo-ui.svg"), "utf8"),
+  ];
+
+  for (const source of [rendererMark, ...buildMarks]) {
+    assert.doesNotMatch(source, /feDropShadow|filter(?:\s+id|\s*=)/i);
+  }
+  assert.match(rendererMark, /viewBox="0 0 128 128"/);
+  assert.match(rendererMark, /stroke-width="8"/);
+
+  const brandComponent = readFileSync(
+    path.join(root, "apps/desktop/src/renderer/src/components/brand/BrandMark.tsx"),
+    "utf8",
+  );
+  const accountPage = readFileSync(
+    path.join(root, "apps/desktop/src/renderer/src/pages/AccountPage.tsx"),
+    "utf8",
+  );
+  const accountStyles = readFileSync(
+    path.join(root, "apps/desktop/src/renderer/src/styles/parts/150-account.css"),
+    "utf8",
+  );
+  const visualStyles = readFileSync(
+    path.join(root, "apps/desktop/src/renderer/src/styles/parts/140-visual-experience.css"),
+    "utf8",
+  );
+
+  assert.match(brandComponent, /assets\/brand-mark\.svg/);
+  assert.match(brandComponent, /size-\[46px\]/);
+  assert.match(accountPage, /<BrandMark size="account" className="account-brand-mark" \/>/);
+  assert.doesNotMatch(accountPage, /<Headphones/);
+  const accountMarkRule = accountStyles.match(/\.account-brand-mark\s*\{([^}]*)\}/)?.[1] ?? "";
+  const aboutMarkRule = visualStyles.match(/\.about-product-mark\s*\{([^}]*)\}/)?.[1] ?? "";
+  assert.doesNotMatch(accountMarkRule, /box-shadow|background:/);
+  assert.doesNotMatch(aboutMarkRule, /drop-shadow/);
+});
+
 test("desktop release configuration publishes automatic update metadata", () => {
   const builder = readFileSync(path.join(root, "apps/desktop/electron-builder.yml"), "utf8");
   const workflow = readFileSync(path.join(root, ".github/workflows/release.yml"), "utf8");
@@ -156,7 +199,7 @@ test("room scene and feedback sound assets are bundled", () => {
   }
 });
 
-test("quick-message voice packs keep one compact AAC copy", () => {
+test("quick-message voice and music packs keep one compact AAC copy", () => {
   const sourceDirectory = path.join(root, "apps/desktop/resources/quick-messages");
   const rendererDuplicate = path.join(
     root,
@@ -165,7 +208,7 @@ test("quick-message voice packs keep one compact AAC copy", () => {
   const files = listFilesRecursively(sourceDirectory);
   const totalBytes = files.reduce((sum, filePath) => sum + statSync(filePath).size, 0);
 
-  assert.equal(files.length, 34);
+  assert.equal(files.length, 47);
   assert.equal(
     files.every((filePath) => path.extname(filePath).toLowerCase() === ".aac"),
     true,
@@ -175,7 +218,7 @@ test("quick-message voice packs keep one compact AAC copy", () => {
     assert.equal(header[0], 0xff, `not an ADTS AAC file: ${filePath}`);
     assert.equal((header[1] ?? 0) & 0xf0, 0xf0, `not an ADTS AAC file: ${filePath}`);
   }
-  assert.equal(totalBytes < 1_200_000, true, "voice pack should remain compact");
+  assert.equal(totalBytes < 9_000_000, true, "quick-message packs should remain compact");
   assert.equal(existsSync(rendererDuplicate), false, "renderer must not bundle a duplicate pack");
 
   const urlSource = readFileSync(

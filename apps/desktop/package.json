@@ -1,6 +1,6 @@
 {
   "name": "shanghao-desktop",
-  "version": "3.0.5",
+  "version": "3.0.6",
   "private": true,
   "license": "AGPL-3.0-or-later",
   "description": "ShangHao desktop voice app for private friends group chat",
@@ -22,6 +22,7 @@
     "dist:win": "corepack pnpm build && node ../../scripts/run-electron-builder.mjs --config electron-builder.yml --win nsis && node ../../scripts/verify-windows-execution-level.mjs release/win-unpacked/ShangHao.exe"
   },
   "dependencies": {
+    "@cloudbase/js-sdk": "3.8.2",
     "@fontsource-variable/noto-sans-sc": "5.2.10",
     "@private-voice/recording": "workspace:*",
     "@private-voice/shared": "workspace:*",
@@ -40,6 +41,7 @@
     "react": "19.2.8",
     "react-dom": "19.2.8",
     "semver": "7.8.5",
+    "uiohook-napi": "1.5.5",
     "uisfx": "0.4.0",
     "ws": "8.21.3",
     "zustand": "5.0.14"

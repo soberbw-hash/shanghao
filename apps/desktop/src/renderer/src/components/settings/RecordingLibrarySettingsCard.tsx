@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import {
   Check,
   FolderOpen,
+  FolderSearch,
   Gauge,
   ListChecks,
   MapPin,
@@ -558,6 +559,21 @@ export const RecordingLibrarySettingsCard = ({
     }
   };
 
+  const showItemInFolder = async (item: RecordingLibraryItem) => {
+    try {
+      await window.desktopApi.recording.showItemInFolder(item.filePath);
+    } catch (error) {
+      pushToast({
+        tone: "danger",
+        title: "无法定位录音文件",
+        description:
+          error instanceof Error && error.message === "recording_not_found"
+            ? "这条录音可能已经被移动或删除，请先刷新录音库。"
+            : "请确认录音文件仍然存在，然后重试。",
+      });
+    }
+  };
+
   const cyclePlaybackRate = () => {
     setPlaybackRate((current) => (current === 1 ? 1.5 : current === 1.5 ? 2 : 1));
   };
@@ -958,6 +974,15 @@ export const RecordingLibrarySettingsCard = ({
                               aria-hidden="true"
                               fill={item.isFavorite ? "currentColor" : "none"}
                             />
+                          </button>
+                          <button
+                            type="button"
+                            className="recording-item-show-in-folder"
+                            aria-label={`打开${recordingTitle(item)}所在文件夹`}
+                            title="在文件夹中定位"
+                            onClick={() => void showItemInFolder(item)}
+                          >
+                            <FolderSearch aria-hidden="true" />
                           </button>
                         </div>
                       );

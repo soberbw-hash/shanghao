@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
 import { motion } from "framer-motion";
 
 import { APPLE_MOTION_DURATION, APPLE_MOTION_EASE } from "@private-voice/shared";
@@ -23,6 +23,7 @@ import { writeRendererLog } from "../utils/logger";
 import { StartupRecoveryPage } from "../components/status/StartupRecoveryPage";
 import { StartupSplashPage } from "../components/status/StartupSplashPage";
 import { UpdateGatePage } from "../components/status/UpdateGatePage";
+import { cloudBaseClientConfig } from "../config/cloudbase";
 
 const loadRoomPage = () => import("../pages/RoomPage");
 const loadSettingsPage = () => import("../pages/SettingsPage");
@@ -70,10 +71,30 @@ export const App = () => {
   const isAccountHydrating = useAccountStore((state) => state.isHydrating);
   const hydrateAccount = useAccountStore((state) => state.hydrate);
   const syncLocalProfile = useRoomStore((state) => state.syncLocalProfile);
+  const [accountConfigReady, setAccountConfigReady] = useState(!cloudBaseClientConfig);
 
   useEffect(() => {
+    if (!cloudBaseClientConfig) return;
+    let active = true;
+    void window.desktopApi.account
+      .configureCloudBase(cloudBaseClientConfig)
+      .catch((error) => {
+        void writeRendererLog("app", "warn", "CloudBase local configuration failed", {
+          error: error instanceof Error ? error.message : String(error),
+        });
+      })
+      .finally(() => {
+        if (active) setAccountConfigReady(true);
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!accountConfigReady) return;
     void hydrateAccount();
-  }, [hydrateAccount]);
+  }, [accountConfigReady, hydrateAccount]);
 
   useEffect(() => {
     const profile = accountSnapshot.profile;
@@ -163,10 +184,16 @@ export const App = () => {
       ),
     );
 
-    const preloadPages = () => void loadSettingsPage();
-
-    const requestId = window.requestIdleCallback(preloadPages, { timeout: 1_200 });
-    return () => window.cancelIdleCallback(requestId);
+    // Warm the settings route while the renderer is idle so the first switch
+    // does not put module evaluation on the navigation frame.
+    const preloadSettings = () => void loadSettingsPage();
+    const requestId = window.requestIdleCallback?.(preloadSettings, { timeout: 1_200 });
+    const fallbackTimer =
+      requestId === undefined ? window.setTimeout(preloadSettings, 180) : undefined;
+    return () => {
+      if (requestId !== undefined) window.cancelIdleCallback?.(requestId);
+      if (fallbackTimer !== undefined) window.clearTimeout(fallbackTimer);
+    };
   }, [bootstrapPhase]);
 
   useEffect(() => {

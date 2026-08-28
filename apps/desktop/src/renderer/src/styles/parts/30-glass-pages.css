@@ -295,7 +295,7 @@ a,
 }
 
 .entry-card-entry {
-  min-height: 520px;
+  min-height: 448px;
 }
 
 .entry-profile-layout {
@@ -554,9 +554,9 @@ a,
 
 .entry-server-status-slot {
   display: flex;
-  min-height: 44px;
+  min-height: 34px;
   align-items: flex-start;
-  padding-top: 10px;
+  padding-top: 2px;
 }
 
 .entry-audio-devices {

@@ -25,9 +25,19 @@ export interface AccountLoginRequest {
   password: string;
 }
 
+export interface CloudBaseClientConfig {
+  envId: string;
+  region: string;
+  publishableKey: string;
+}
+
 export interface AccountRegisterRequest {
   username: string;
-  email: string;
+  /** CloudBase registration uses a phone number and SMS verification. */
+  phone?: string;
+  verificationCode?: string;
+  /** Kept optional only for the staged Supabase fallback path. */
+  email?: string;
   password: string;
   displayName?: string;
   avatarDataUrl?: string;

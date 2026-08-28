@@ -313,6 +313,18 @@ export const ModelTestPanel = ({
           .map((modelId) => models.find((model) => model.id === modelId))[0]
       : undefined;
   const quickItems = (record?.timeline ?? []).slice(0, 8);
+  const currentPhaseLabel: Record<string, string> = {
+    waiting: "等待运行",
+    loading: "加载模型",
+    transcribing: "转录中",
+    paused: "已暂停",
+    releasing: "释放运行时",
+    stuck: "可能无响应",
+    success: "已完成",
+    partial: "部分完成",
+    failed: "失败",
+    "user-stopped": "已停止",
+  };
 
   return (
     <section className="model-comparison-panel" aria-label="录音模型对比">
@@ -411,7 +423,7 @@ export const ModelTestPanel = ({
           ) : null}
           <span className="model-comparison-run-status" aria-live="polite">
             {phase === "running" && currentModel
-              ? `正在测试 ${currentIndex + 1}/${runModelIds.length} · ${modelDisplayName(currentModel.id as AiAsrModelId)} · ${Math.round(currentProgress * 100)}%`
+              ? `${currentPhaseLabel[job?.currentPhase ?? "waiting"] ?? "处理中"} ${currentIndex + 1}/${runModelIds.length} · ${modelDisplayName(currentModel.id as AiAsrModelId)} · ${Math.round(currentProgress * 100)}%`
               : phase === "complete"
                 ? "本轮测试已完成，结果已保存在本机。"
                 : phase === "paused"
@@ -481,9 +493,13 @@ export const ModelTestPanel = ({
               const label = batchResult
                 ? batchResult.status === "success"
                   ? formatElapsed(batchResult.elapsedMs)
-                  : batchResult.status === "paused"
-                    ? "已暂停"
-                    : "失败"
+                  : batchResult.status === "partial"
+                    ? `部分 ${batchResult.coveragePercent?.toFixed(1) ?? "--"}%`
+                    : batchResult.status === "paused"
+                      ? "已暂停"
+                      : batchResult.status === "user-stopped"
+                        ? "已停止"
+                        : "失败"
                 : saved
                   ? formatElapsed(record?.transcriptionVariants?.[modelId]?.transcriptionElapsedMs)
                   : alreadyActive
@@ -495,7 +511,7 @@ export const ModelTestPanel = ({
                   type="button"
                   role="tab"
                   aria-selected={active}
-                  className={`model-comparison-result-tab ${active ? "is-active" : ""} ${batchResult?.status === "failed" ? "is-failed" : ""}`}
+                  className={`model-comparison-result-tab ${active ? "is-active" : ""} ${batchResult?.status === "failed" ? "is-failed" : ""} ${batchResult?.status === "partial" ? "is-partial" : ""}`}
                   disabled={!available || phase === "running" || isSwitchingResult}
                   onClick={() => void selectResult(modelId)}
                 >

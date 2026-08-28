@@ -8,6 +8,7 @@ import { InputDevicePicker } from "../audio/InputDevicePicker";
 import { OutputDevicePicker } from "../audio/OutputDevicePicker";
 import { Button } from "../base/Button";
 import { SegmentedControl } from "../base/SegmentedControl";
+import { ShortcutInput } from "../base/ShortcutInput";
 import { Switch } from "../base/Switch";
 import { SettingsItemRow } from "./SettingsItemRow";
 import { SettingsSection } from "./SettingsSection";
@@ -142,14 +143,37 @@ export const AudioSettingsCard = ({
             </div>
           </div>
         </SettingsItemRow>
-        <SettingsItemRow label="说话模式">
-          <SegmentedControl
-            value={settings.isPushToTalkEnabled ? "ptt" : "open"}
-            options={[
-              { value: "open", label: "自由麦" },
-              { value: "ptt", label: "按键说话" },
-            ]}
-            onChange={(value) => onChange({ isPushToTalkEnabled: value === "ptt" })}
+        <SettingsItemRow label="说话模式" description="选择自由麦，或按住快捷键说话。">
+          <div className="flex flex-wrap items-center justify-end gap-3">
+            <SegmentedControl
+              value={settings.isPushToTalkEnabled ? "ptt" : "open"}
+              options={[
+                { value: "open", label: "自由麦" },
+                { value: "ptt", label: "按键说话" },
+              ]}
+              onChange={(value) => onChange({ isPushToTalkEnabled: value === "ptt" })}
+            />
+            {settings.isPushToTalkEnabled ? (
+              <div className="min-w-[260px] flex-1">
+                <ShortcutInput
+                  value={settings.pushToTalkShortcut}
+                  onChange={(pushToTalkShortcut) => onChange({ pushToTalkShortcut })}
+                  defaultValue="Space"
+                  compact
+                />
+              </div>
+            ) : null}
+          </div>
+        </SettingsItemRow>
+        <SettingsItemRow
+          label="精彩时刻录制"
+          description="录音中按一下，在录音旁生成可直接阅读的精彩时刻文本。"
+        >
+          <ShortcutInput
+            value={settings.recordingMarkerShortcut}
+            onChange={(recordingMarkerShortcut) => onChange({ recordingMarkerShortcut })}
+            defaultValue="F8"
+            compact
           />
         </SettingsItemRow>
         <SettingsItemRow

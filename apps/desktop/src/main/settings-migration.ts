@@ -3,6 +3,8 @@ import { randomUUID } from "node:crypto";
 import {
   DEFAULT_ROOM_NAME,
   OFFICIAL_RELAY_SERVER_URL,
+  DEFAULT_QUICK_MESSAGE_MUSIC_PRESET_ID,
+  DEFAULT_QUICK_MESSAGE_MUSIC_SLOTS,
   DEFAULT_QUICK_MESSAGE_SLOTS,
   DEFAULT_QUICK_MESSAGE_VOLUME,
   PROFILE_SCHEMA_VERSION,
@@ -30,6 +32,7 @@ export const defaultSettings: AppSettings = {
   nickname: "",
   roomName: DEFAULT_ROOM_NAME,
   avatarId: "fox",
+  accountAvatarPresetId: undefined,
   avatarPath: undefined,
   hasCompletedProfileSetup: false,
   minimizeToTray: false,
@@ -68,7 +71,7 @@ export const defaultSettings: AppSettings = {
   soundVolume: 0.72,
   isSystemNotificationEnabled: true,
   isGameDetectionEnabled: true,
-  isWorkActivityVisible: true,
+  isWorkActivityVisible: false,
   isDynamicWeatherEnabled: true,
   weatherLocationMode: "auto",
   weatherManualCity: "",
@@ -77,6 +80,8 @@ export const defaultSettings: AppSettings = {
   quickMessages: {
     soundEnabled: true,
     soundVolume: DEFAULT_QUICK_MESSAGE_VOLUME,
+    musicPresetId: DEFAULT_QUICK_MESSAGE_MUSIC_PRESET_ID,
+    musicSlots: DEFAULT_QUICK_MESSAGE_MUSIC_SLOTS,
     slots: DEFAULT_QUICK_MESSAGE_SLOTS,
   },
   isBackgroundUpdateCheckEnabled: true,
@@ -123,6 +128,12 @@ const normalizeAvatarId = (value: unknown): AppSettings["avatarId"] => {
   return isBuiltInAvatarId(value) ? value : defaultSettings.avatarId;
 };
 
+const normalizeAccountAvatarPresetId = (value: unknown): string | undefined => {
+  if (typeof value !== "string") return undefined;
+  const candidate = value.trim().toLowerCase();
+  return /^[a-z0-9-]{1,64}$/.test(candidate) ? candidate : undefined;
+};
+
 const normalizeQuickMessages = (value: unknown): AppSettings["quickMessages"] => {
   const raw =
     value && typeof value === "object" && !Array.isArray(value)
@@ -148,9 +159,40 @@ const normalizeQuickMessages = (value: unknown): AppSettings["quickMessages"] =>
       enabled: isRemovedPreset ? false : normalizeBoolean(source.enabled, fallback.enabled),
     };
   });
+  const rawMusicPresetId =
+    typeof raw.musicPresetId === "string" ? raw.musicPresetId.trim() || undefined : undefined;
+  const rawMusicSlots = Array.isArray(raw.musicSlots) ? raw.musicSlots : [];
+  const musicSlots = Array.from(
+    { length: DEFAULT_QUICK_MESSAGE_MUSIC_SLOTS.length },
+    (_, index) => {
+      const fallback = DEFAULT_QUICK_MESSAGE_MUSIC_SLOTS[index] ??
+        DEFAULT_QUICK_MESSAGE_MUSIC_SLOTS[0] ?? {
+          presetId: undefined,
+          shortcut: "",
+          enabled: false,
+        };
+      const candidate = rawMusicSlots[index];
+      const source =
+        candidate && typeof candidate === "object" && !Array.isArray(candidate)
+          ? (candidate as Record<string, unknown>)
+          : {};
+      return {
+        presetId:
+          typeof source.presetId === "string"
+            ? source.presetId.trim() || undefined
+            : index === 0
+              ? (rawMusicPresetId ?? fallback.presetId)
+              : fallback.presetId,
+        shortcut: typeof source.shortcut === "string" ? source.shortcut.trim() : fallback.shortcut,
+        enabled: normalizeBoolean(source.enabled, fallback.enabled),
+      };
+    },
+  );
   return {
     soundEnabled: normalizeBoolean(raw.soundEnabled, defaultSettings.quickMessages.soundEnabled),
     soundVolume: normalizeNumber(raw.soundVolume, defaultSettings.quickMessages.soundVolume, 0, 1),
+    musicPresetId: rawMusicPresetId ?? defaultSettings.quickMessages.musicPresetId,
+    musicSlots,
     slots,
   };
 };
@@ -173,6 +215,7 @@ export const migrateSettings = (raw: RawSettings): MigrationResult => {
       previousProfileVersion === PROFILE_SCHEMA_VERSION ? (trimText(raw.nickname) ?? "") : "",
     roomName: trimText(raw.roomName) ?? DEFAULT_ROOM_NAME,
     avatarId: normalizeAvatarId(raw.avatarId),
+    accountAvatarPresetId: normalizeAccountAvatarPresetId(raw.accountAvatarPresetId),
     avatarPath: undefined,
     hasCompletedProfileSetup: normalizeBoolean(
       raw.hasCompletedProfileSetup,
@@ -270,7 +313,7 @@ export const migrateSettings = (raw: RawSettings): MigrationResult => {
     soundVolume: normalizeNumber(raw.soundVolume, defaultSettings.soundVolume, 0, 1),
     isSystemNotificationEnabled: true,
     isGameDetectionEnabled: true,
-    isWorkActivityVisible: normalizeBoolean(raw.isWorkActivityVisible, true),
+    isWorkActivityVisible: normalizeBoolean(raw.isWorkActivityVisible, false),
     isDynamicWeatherEnabled: normalizeBoolean(raw.isDynamicWeatherEnabled, true),
     weatherLocationMode: raw.weatherLocationMode === "manual" ? "manual" : "auto",
     weatherManualCity: trimUnknownText(raw.weatherManualCity) ?? "",

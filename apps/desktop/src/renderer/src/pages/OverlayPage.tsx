@@ -5,6 +5,7 @@ import {
   GripVertical,
   MicOff,
   MonitorUp,
+  Music2,
   RotateCcw,
   RotateCw,
   VolumeX,
@@ -329,6 +330,8 @@ export const OverlayPage = () => {
           const isDeafened = member.isDeafened;
           const isReconnecting = member.presenceState === MemberPresenceState.Reconnecting;
           const isOffline = member.presenceState === MemberPresenceState.Offline;
+          const quickMusic =
+            state.activeQuickMusic?.peerId === member.id ? state.activeQuickMusic : undefined;
           const statusColor = isReconnecting
             ? "#F59E0B"
             : isOffline
@@ -460,6 +463,29 @@ export const OverlayPage = () => {
               >
                 {member.nickname || "好友"}
               </span>
+              {quickMusic ? (
+                <button
+                  type="button"
+                  aria-label={
+                    member.isLocal ? "停止本次音乐" : `屏蔽${quickMusic.nickname}本次音乐`
+                  }
+                  title={
+                    member.isLocal
+                      ? `停止本次音乐：${quickMusic.title}`
+                      : `屏蔽${quickMusic.nickname}本次音乐：${quickMusic.title}`
+                  }
+                  className="overlay-quick-music-button"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    void window.desktopApi.overlay.requestMuteQuickMessage({
+                      peerId: quickMusic.peerId,
+                      messageId: quickMusic.messageId,
+                    });
+                  }}
+                >
+                  <Music2 aria-hidden="true" />
+                </button>
+              ) : null}
               {localActivityFlags.map(({ key, title, Icon, color }) => (
                 <span
                   key={key}
@@ -521,20 +547,24 @@ export const OverlayPage = () => {
                   <RotateCw className="h-2.5 w-2.5 text-[#F59E0B] animate-spin" />
                 </span>
               )}
-              {!isMuted && !isDeafened && !isReconnecting && localActivityFlags.length === 0 && (
-                <span
-                  style={{
-                    width: 7,
-                    height: 7,
-                    flexShrink: 0,
-                    borderRadius: "50%",
-                    background: statusColor,
-                    boxShadow: isSpeaking ? "0 0 0 3px rgba(33,184,119,0.14)" : "none",
-                    transition:
-                      "background-color 160ms linear, box-shadow 200ms cubic-bezier(0.16,1,0.3,1)",
-                  }}
-                />
-              )}
+              {!isMuted &&
+                !isDeafened &&
+                !isReconnecting &&
+                localActivityFlags.length === 0 &&
+                !quickMusic && (
+                  <span
+                    style={{
+                      width: 7,
+                      height: 7,
+                      flexShrink: 0,
+                      borderRadius: "50%",
+                      background: statusColor,
+                      boxShadow: isSpeaking ? "0 0 0 3px rgba(33,184,119,0.14)" : "none",
+                      transition:
+                        "background-color 160ms linear, box-shadow 200ms cubic-bezier(0.16,1,0.3,1)",
+                    }}
+                  />
+                )}
             </div>
           );
         })}

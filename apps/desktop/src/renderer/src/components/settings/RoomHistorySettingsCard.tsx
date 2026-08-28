@@ -31,7 +31,6 @@ const formatParticipantNames = (report: DailyRoomReport): string =>
 const ReportDetails = ({ report, onOpen }: { report: DailyRoomReport; onOpen: () => void }) => {
   const participantNames = formatParticipantNames(report);
   const gameActivities = report.gameActivities ?? [];
-  const workActivities = report.workActivities ?? [];
 
   return (
     <div className="room-history-details">
@@ -67,16 +66,6 @@ const ReportDetails = ({ report, onOpen }: { report: DailyRoomReport; onOpen: ()
         <span className="col-span-full">
           玩过：{report.games.map((game) => game.name).join("、")}
         </span>
-      ) : null}
-      {workActivities.length ? (
-        <div className="room-history-game-activities">
-          {workActivities.map((activity, index) => (
-            <span key={`${activity.nickname}-${activity.workName}-${index}`}>
-              <strong>{activity.nickname}</strong> 使用 {activity.workName} ·{" "}
-              {formatDuration(activity.durationMs)}
-            </span>
-          ))}
-        </div>
       ) : null}
       <button type="button" className="room-history-replay" onClick={onOpen}>
         重看昨日房间

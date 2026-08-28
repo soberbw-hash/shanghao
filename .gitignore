@@ -13,6 +13,9 @@ Thumbs.db
 __pycache__/
 *.pyc
 .env
+**/.env.local
+.playwright-cli/
+output/
 apps/desktop/release/
 apps/desktop/dist/
 apps/desktop/dist-electron/

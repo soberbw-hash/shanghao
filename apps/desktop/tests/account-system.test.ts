@@ -5,9 +5,11 @@ import test from "node:test";
 import { APP_BUILD_NUMBER, APP_PROTOCOL_VERSION, type AccountProfile } from "@private-voice/shared";
 import {
   SignalingServer,
+  CloudBaseAccountService,
   type AccountAuthResult,
   type AccountBackend,
   type VerifiedAccountIdentity,
+  resolveSupabaseEnvironmentKey,
 } from "@private-voice/signaling";
 import { WebSocket } from "ws";
 
@@ -63,6 +65,13 @@ class FakeAccountBackend implements AccountBackend {
       username: profile.username,
       displayName: profile.displayName,
     };
+  }
+}
+
+class DelayedAccountBackend extends FakeAccountBackend {
+  override async verifyAccessToken(accessToken: string): Promise<VerifiedAccountIdentity> {
+    await new Promise((resolve) => setTimeout(resolve, 150));
+    return super.verifyAccessToken(accessToken);
   }
 }
 
@@ -169,6 +178,49 @@ test("authenticated room identity ignores forged client profile and nickname", a
   }
 });
 
+test("join request sent during slow account verification is replayed after authorization", async () => {
+  const server = new SignalingServer({
+    roomName: "慢鉴权进房测试",
+    accountBackend: new DelayedAccountBackend(),
+  });
+  const port = await server.listen();
+  const socket = new WebSocket(`ws://127.0.0.1:${port}`, {
+    headers: { Authorization: "Bearer valid-account-token" },
+  });
+  try {
+    await new Promise<void>((resolve, reject) => {
+      socket.once("open", () => resolve());
+      socket.once("error", reject);
+    });
+    const joinAckPromise = waitForMessage(
+      socket,
+      (value): value is { type: "join_ack"; peerId: string } =>
+        Boolean(
+          value && typeof value === "object" && (value as { type?: string }).type === "join_ack",
+        ),
+    );
+    socket.send(
+      JSON.stringify({
+        type: "join_channel",
+        roomId: "main",
+        channelId: "main",
+        peerId: "slow-auth-peer",
+        profileId: profile.userId,
+        nickname: profile.displayName,
+        avatarId: "fox",
+        appVersion: "3.0.6",
+        protocolVersion: APP_PROTOCOL_VERSION,
+        buildNumber: APP_BUILD_NUMBER,
+      }),
+    );
+    const joinAck = await joinAckPromise;
+    assert.equal(joinAck.peerId, "slow-auth-peer");
+  } finally {
+    socket.close();
+    await server.close();
+  }
+});
+
 test("invalid bearer token is rejected before room messages are accepted", async () => {
   const server = new SignalingServer({
     roomName: "无效令牌测试",
@@ -228,6 +280,13 @@ test("registration form stays compact and scrollable in a short window", async (
   );
 
   assert.match(accountPage, /account-register-grid/);
+  assert.match(accountPage, /requestVerificationCode/);
+  assert.match(accountPage, /verificationCountdown/);
+  assert.match(accountPage, /手机号/);
+  assert.match(accountPage, /account-phone-prefix/);
+  assert.match(accountPage, /\+86/);
+  assert.doesNotMatch(accountPage, /showVerificationNotice/);
+  assert.doesNotMatch(accountPage, /emailRedirectTo/);
   assert.match(
     accountStyles,
     /\.account-page\s*\{[\s\S]*height:\s*100%;[\s\S]*overflow-y:\s*auto;/,
@@ -262,6 +321,78 @@ test("old account servers are identified before credentials can be submitted", a
   assert.match(messages, /未启用账号开发测试连接/);
 });
 
+test("CloudBase relay verification derives identity from the verified token", async () => {
+  const requests: Array<{ url: string; authorization?: string }> = [];
+  const backend = new CloudBaseAccountService({
+    envId: "shanghao-test",
+    region: "ap-shanghai",
+    publishableKey: "cloudbase-publishable-test-key",
+    fetcher: async (input, init) => {
+      requests.push({
+        url: String(input),
+        authorization: new Headers(init?.headers).get("authorization") ?? undefined,
+      });
+      if (String(input).endsWith("/token/introspect")) {
+        return new Response(JSON.stringify({ sub: "cloudbase-user-1" }), { status: 200 });
+      }
+      return new Response(
+        JSON.stringify({
+          sub: "cloudbase-user-1",
+          username: "sober_test",
+          name: "服务端名字",
+          phone_number: "+8613800000000",
+        }),
+        { status: 200 },
+      );
+    },
+  });
+
+  const identity = await backend.verifyAccessToken("verified-cloudbase-token");
+  assert.deepEqual(identity, {
+    userId: "cloudbase-user-1",
+    username: "sober_test",
+    displayName: "服务端名字",
+    avatarUrl: undefined,
+  });
+  assert.equal(requests.length, 2);
+  assert.equal(
+    requests[0]?.url,
+    "https://shanghao-test.api.tcloudbasegateway.com/auth/v1/token/introspect",
+  );
+  assert.equal(requests[1]?.url, "https://shanghao-test.api.tcloudbasegateway.com/auth/v1/user/me");
+  assert.ok(
+    requests.every((request) => request.authorization === "Bearer verified-cloudbase-token"),
+  );
+  assert.equal(backend.publicConfiguration?.provider, "cloudbase");
+});
+
+test("account verification and username login keep user-facing states separate", async () => {
+  const desktopService = await readFile(
+    new URL("../src/main/account-service.ts", import.meta.url),
+    "utf8",
+  );
+  const deepLink = await readFile(new URL("../src/main/deep-link.ts", import.meta.url), "utf8");
+  const edgeFunction = await readFile(
+    new URL("../../../supabase/functions/shanghao-username-login/index.ts", import.meta.url),
+    "utf8",
+  );
+  const messages = await readFile(
+    new URL("../src/renderer/src/features/account/accountMessages.ts", import.meta.url),
+    "utf8",
+  );
+
+  assert.match(desktopService, /emailRedirectTo:\s*SHANGHAO_AUTH_REDIRECT_URL/);
+  assert.match(desktopService, /handleAuthDeepLink/);
+  assert.match(desktopService, /account_username_login_unavailable/);
+  assert.match(deepLink, /SHANGHAO_AUTH_REDIRECT_URL/);
+  assert.match(edgeFunction, /lookupError[\s\S]*unavailable/);
+  assert.match(edgeFunction, /SUPABASE_PUBLISHABLE_KEYS/);
+  assert.match(edgeFunction, /SUPABASE_SECRET_KEYS/);
+  assert.match(messages, /用户名或密码错误/);
+  assert.match(messages, /用户名登录服务暂时不可用，请使用邮箱登录/);
+  assert.match(messages, /登录服务连接失败，请稍后重试/);
+});
+
 test("development relay never accepts password or refresh-token routes over plain HTTP", async () => {
   const controller = await readFile(
     new URL("../../../packages/signaling/src/account-http-controller.ts", import.meta.url),
@@ -291,6 +422,14 @@ test("development relay never accepts password or refresh-token routes over plai
   );
   assert.match(edgeFunction, /resolve_account_email/);
   assert.doesNotMatch(edgeFunction, /console\.(?:log|error)/);
+});
+
+test("Supabase config prefers the named default key and falls back to the legacy key", () => {
+  assert.equal(resolveSupabaseEnvironmentKey('{"default":" new-key "}', "old-key"), "new-key");
+  assert.equal(resolveSupabaseEnvironmentKey('{"web":"web-key"}', " old-key "), "old-key");
+  assert.equal(resolveSupabaseEnvironmentKey("{", " old-key "), "old-key");
+  assert.equal(resolveSupabaseEnvironmentKey(undefined, " old-key "), "old-key");
+  assert.equal(resolveSupabaseEnvironmentKey('{"default":""}', undefined), undefined);
 });
 
 test("desktop renderer and repository sources contain no server secret or refresh token API", async () => {

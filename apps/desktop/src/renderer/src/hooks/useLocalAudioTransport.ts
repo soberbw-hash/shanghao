@@ -80,6 +80,29 @@ export const useLocalAudioTransport = (): void => {
   const setPushToTalkState = useAudioStore((state) => state.setPushToTalkState);
 
   useEffect(() => {
+    if (
+      !isPushToTalkEnabled ||
+      !/(^|\+)(Mouse4|Mouse5|XButton1|XButton2)$/i.test(pushToTalkShortcut)
+    ) {
+      return;
+    }
+    const track = localStream?.getAudioTracks()[0];
+    if (!track) return;
+    const unsubscribe = window.desktopApi.shortcuts.onPushToTalkState((pressed) => {
+      track.enabled = pressed && !isMuted && !isDeafened;
+      setPushToTalkState(pressed ? PushToTalkState.Pressed : PushToTalkState.Armed);
+    });
+    return unsubscribe;
+  }, [
+    isDeafened,
+    isMuted,
+    isPushToTalkEnabled,
+    localStream,
+    pushToTalkShortcut,
+    setPushToTalkState,
+  ]);
+
+  useEffect(() => {
     const [track] = localStream?.getAudioTracks() ?? [];
     if (!track) {
       setPushToTalkState(PushToTalkState.Off);

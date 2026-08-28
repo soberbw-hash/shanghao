@@ -81,6 +81,16 @@ test("friend loudness balance is on by default and explicit choices survive migr
   );
 });
 
+test("work activity display is off by default and preserves an explicit user choice", () => {
+  assert.equal(defaultSettings.isWorkActivityVisible, false);
+  assert.equal(migrateSettings({}).settings.isWorkActivityVisible, false);
+  assert.equal(
+    migrateSettings({ ...defaultSettings, isWorkActivityVisible: true }).settings
+      .isWorkActivityVisible,
+    true,
+  );
+});
+
 test("recording library cleanup defaults to 20 GB and upgrades the old 10 GB default", () => {
   assert.equal(defaultSettings.recordingLibraryQuotaGb, 20);
   assert.equal(
@@ -112,7 +122,7 @@ test("interface sound preference and volume survive restart migration", () => {
   assert.equal(migrateSettings({ soundVolume: -1 }).settings.soundVolume, 0);
 });
 
-test("quick message settings migrate to five safe slots", () => {
+test("quick message settings migrate to five voice and three music slots", () => {
   const migrated = migrateSettings({
     ...defaultSettings,
     quickMessages: {
@@ -127,6 +137,16 @@ test("quick message settings migrate to five safe slots", () => {
 
   assert.equal(migrated.settings.quickMessages.soundEnabled, false);
   assert.equal(migrated.settings.quickMessages.soundVolume, 1);
+  assert.equal(
+    migrated.settings.quickMessages.musicPresetId,
+    defaultSettings.quickMessages.musicPresetId,
+  );
+  assert.equal(migrated.settings.quickMessages.musicSlots.length, 3);
+  assert.deepEqual(migrated.settings.quickMessages.musicSlots[0], {
+    presetId: defaultSettings.quickMessages.musicSlots[0]?.presetId,
+    shortcut: defaultSettings.quickMessages.musicSlots[0]?.shortcut,
+    enabled: defaultSettings.quickMessages.musicSlots[0]?.enabled,
+  });
   assert.equal(migrated.settings.quickMessages.slots.length, 5);
   assert.deepEqual(migrated.settings.quickMessages.slots[0], {
     presetId: "legacy-shanghao",
@@ -135,6 +155,15 @@ test("quick message settings migrate to five safe slots", () => {
   });
   assert.equal(migrated.settings.quickMessages.slots[1]?.presetId, "missing");
   assert.equal(migrated.settings.quickMessages.slots[4]?.presetId, "legacy-hear");
+
+  const restoredMusic = migrateSettings({
+    ...defaultSettings,
+    quickMessages: {
+      ...defaultSettings.quickMessages,
+      musicPresetId: " music-lol-卡特小曲 ",
+    },
+  });
+  assert.equal(restoredMusic.settings.quickMessages.musicPresetId, "music-lol-卡特小曲");
 });
 
 test("removed legacy quick message preset is cleared from saved shortcuts", () => {

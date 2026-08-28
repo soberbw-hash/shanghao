@@ -8,6 +8,8 @@ export interface PersistedAccountSession {
   refreshToken: string;
   expiresAt: number;
   tokenType: string;
+  /** Identifies the auth provider so a migration never restores a stale token. */
+  provider?: "cloudbase" | "supabase";
 }
 
 const isPersistedSession = (value: unknown): value is PersistedAccountSession => {

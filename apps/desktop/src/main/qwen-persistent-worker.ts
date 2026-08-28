@@ -321,6 +321,7 @@ export class QwenPersistentWorker {
   }
 
   private handleCrash(error: Error): void {
+    this.clearIdleRelease();
     const child = this.child;
     this.child = undefined;
     if (child && child.exitCode === null) killProcessTree(child);
@@ -334,6 +335,7 @@ export class QwenPersistentWorker {
   }
 
   private restartAfterCancellation(error: Error): void {
+    this.clearIdleRelease();
     const child = this.child;
     this.child = undefined;
     if (child) killProcessTree(child);

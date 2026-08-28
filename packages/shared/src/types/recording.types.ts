@@ -65,6 +65,38 @@ export interface RecordingSpeakerSegmentPayload {
   displayNameSnapshot: string;
   startMs: number;
   endMs: number;
+  userId?: string;
+  trackId?: string;
+  roomId?: "main" | "side";
+  avatarId?: string;
+  joinedAt?: string;
+}
+
+export interface RecordingParticipantTrackPayload {
+  sessionId: string;
+  buffer: ArrayBuffer;
+  sourceMimeType: string;
+  userId: string;
+  speakerId: string;
+  displayNameSnapshot: string;
+  avatarId?: string;
+  trackId: string;
+  roomId: "main" | "side";
+  joinedAt?: string;
+  startMs: number;
+  endMs: number;
+}
+
+export interface RecordingParticipantTrackResponse {
+  ok: boolean;
+  filePath?: string;
+  errorMessage?: string;
+}
+
+export interface RecordingParticipantTracksFinalizePayload {
+  sessionId: string;
+  recordingId: string;
+  recordingFilePath: string;
 }
 
 export interface RecordingSpeakerSegmentResponse {

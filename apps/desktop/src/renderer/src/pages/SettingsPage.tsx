@@ -15,7 +15,6 @@ import { LayoutGroup, motion } from "framer-motion";
 
 import type {
   AppSettings,
-  DiagnosticsSnapshot,
   RelayStatusSnapshot,
   RendererDiagnosticsSummary,
   RuntimeHealthSnapshot,
@@ -36,7 +35,6 @@ import { DiagnosticsSettingsCard } from "../components/settings/DiagnosticsSetti
 import { SettingsItemRow } from "../components/settings/SettingsItemRow";
 import { SettingsPageHeader } from "../components/settings/SettingsPageHeader";
 import { SettingsSection } from "../components/settings/SettingsSection";
-import { ShortcutSettingsCard } from "../components/settings/ShortcutSettingsCard";
 import { QuickMessageSettingsCard } from "../components/settings/QuickMessageSettingsCard";
 import { RecordingLibrarySettingsCard } from "../components/settings/RecordingLibrarySettingsCard";
 import { AiVoiceMemorySettingsCard } from "../components/settings/AiVoiceMemorySettingsCard";
@@ -125,8 +123,14 @@ export const SettingsPage = () => {
   const connectionHealth = useRoomStore((state) => state.connectionHealth);
   const localStream = useRoomStore((state) => state.localStream);
   const remoteStreams = useRoomStore((state) => state.remoteStreams);
-  const [activeSection, setActiveSection] = useState<SettingsSectionId>(getInitialSettingsSection);
-  const [diagnostics, setDiagnostics] = useState<DiagnosticsSnapshot>();
+  const [settingsView, setSettingsView] = useState(() => {
+    const initialSection = getInitialSettingsSection();
+    return {
+      activeSection: initialSection,
+      visitedSections: new Set<SettingsSectionId>([initialSection]),
+    };
+  });
+  const { activeSection, visitedSections } = settingsView;
   const [runtimeHealth, setRuntimeHealth] = useState<RuntimeHealthSnapshot>();
   const [relayDiagnostics, setRelayDiagnostics] = useState<RelayStatusSnapshot>();
   const [windowsDiagnostics, setWindowsDiagnostics] = useState<
@@ -156,23 +160,15 @@ export const SettingsPage = () => {
   });
 
   useEffect(() => {
-    if (activeSection !== "diagnostics") return;
-    let cancelled = false;
-    void window.desktopApi.diagnostics
-      .snapshot()
-      .then((snapshot) => {
-        if (!cancelled) setDiagnostics(snapshot);
-      })
-      .catch(() => {
-        if (!cancelled) setDiagnostics(undefined);
+    if (voiceMemoryOpenTarget) {
+      setSettingsView((current) => {
+        if (current.activeSection === "recordings") return current;
+        return {
+          activeSection: "recordings",
+          visitedSections: new Set(current.visitedSections).add("recordings"),
+        };
       });
-    return () => {
-      cancelled = true;
-    };
-  }, [activeSection]);
-
-  useEffect(() => {
-    if (voiceMemoryOpenTarget) setActiveSection("recordings");
+    }
   }, [voiceMemoryOpenTarget]);
 
   useEffect(() => {
@@ -363,11 +359,15 @@ export const SettingsPage = () => {
     const nextIndex = sections.findIndex(({ id }) => id === nextSection);
     sectionDirectionRef.current = nextIndex >= currentIndex ? 1 : -1;
     playUiSound("settings-section");
-    setActiveSection(nextSection);
+    setSettingsView((current) => {
+      if (current.activeSection === nextSection) return current;
+      return {
+        activeSection: nextSection,
+        visitedSections: new Set(current.visitedSections).add(nextSection),
+      };
+    });
   };
 
-  const refreshDiagnostics = () =>
-    void window.desktopApi.diagnostics.snapshot().then(setDiagnostics);
   const refreshWindowsDiagnostics = () => {
     setIsWindowsDiagnosticsLoading(true);
     void window.desktopApi.windows
@@ -377,6 +377,15 @@ export const SettingsPage = () => {
         setWindowsDiagnostics(snapshot);
       })
       .finally(() => setIsWindowsDiagnosticsLoading(false));
+  };
+  const refreshDiagnostics = () => {
+    if (settings?.relayServerUrl) {
+      void window.desktopApi.diagnostics
+        .testServer(settings.relayServerUrl)
+        .then(setRelayDiagnostics)
+        .catch(() => setRelayDiagnostics(undefined));
+    }
+    refreshWindowsDiagnostics();
   };
   const handleRepairFirewall = () => {
     if (isRepairingFirewall) return;
@@ -494,8 +503,7 @@ export const SettingsPage = () => {
     const rendererState = buildRendererDiagnostics();
     void window.desktopApi.diagnostics
       .exportBundle(rendererState)
-      .then((snapshot) => {
-        setDiagnostics(snapshot);
+      .then(() => {
         pushToast({ tone: "success", title: "诊断包已导出", description: "已保存到诊断目录。" });
       })
       .catch(() => pushToast({ tone: "danger", title: "导出失败", description: "请稍后再试。" }));
@@ -503,22 +511,35 @@ export const SettingsPage = () => {
 
   const handleCopyDiagnostics = () => {
     const runtime = getRoomRuntimeDiagnostics();
-    const relayFallbackActive = Boolean(
-      runtime?.audioRelayDiagnostics?.perPeerAudioStatus.some(
-        (status) => status.fallbackStatus === "relay_active",
-      ),
-    );
+    const microphone = localAudioDiagnostics
+      ? localAudioDiagnostics.inputOverload === "warning"
+        ? "输入音量偏高，建议检查"
+        : "正常"
+      : "尚未检测";
+    const speaker = outputDevices.length > 0 ? "正常" : "没有检测到输出设备";
+    const roomConnection =
+      (runtime?.remotePeerCount ?? 0) === 0
+        ? "尚未检测"
+        : (runtime?.webrtcReadyPeerCount ?? 0) === (runtime?.remotePeerCount ?? 0)
+          ? "正常"
+          : "有好友连接不稳定";
+    const server = relayDiagnostics
+      ? relayDiagnostics.isReachable
+        ? "正常"
+        : "暂时无法连接"
+      : "尚未检测";
+    const firewall = windowsDiagnostics
+      ? windowsDiagnostics.firewall.healthy
+        ? "正常"
+        : "可能影响语音连接"
+      : "尚未检测";
     const summary = [
-      `服务器：${sanitizeDiagnosticsServerUrl(settings.relayServerUrl) ?? "未配置"}`,
-      `Relay：${relayDiagnostics?.isReachable ? `${relayDiagnostics.latencyMs ?? "--"} ms` : "不可达"}`,
-      `TURN：${relayDiagnostics?.turnConfigured || runtime?.turnConfigured ? "已配置" : "未配置"}`,
-      `WebRTC：${runtime?.webrtcReadyPeerCount ?? 0}/${runtime?.remotePeerCount ?? 0}`,
-      `语音路径：${relayFallbackActive ? "信令音频兜底" : (connectionHealth.voicePath ?? "unknown")}`,
-      `丢包：${connectionHealth.packetLossPercent.toFixed(1)}%`,
-      `抖动：${Math.round(connectionHealth.jitterMs)} ms`,
-      `降噪：${localAudioDiagnostics?.noiseProcessor ?? "unknown"}`,
-      `管理员权限：${windowsDiagnostics?.elevation.isElevated ? "已启用" : "未启用"}`,
-      `防火墙：${windowsDiagnostics?.firewall.healthy ? "正常" : "需要修复"}`,
+      "上号诊断摘要",
+      `麦克风：${microphone}`,
+      `扬声器：${speaker}`,
+      `房间连接：${roomConnection}`,
+      `服务器连接：${server}`,
+      `网络权限：${firewall}`,
     ].join("\n");
     void window.desktopApi.clipboard
       .writeText(summary)
@@ -527,11 +548,6 @@ export const SettingsPage = () => {
   };
 
   const runtimeDiagnostics = getRoomRuntimeDiagnostics();
-  const isAudioRelayActive = Boolean(
-    runtimeDiagnostics?.audioRelayDiagnostics?.perPeerAudioStatus.some(
-      (status) => status.fallbackStatus === "relay_active",
-    ),
-  );
 
   const content: Record<SettingsSectionId, React.ReactNode> = {
     account: <AccountSettingsCard />,
@@ -612,10 +628,6 @@ export const SettingsPage = () => {
           onPlayProcessed={() => void micTest.playProcessed()}
           onChange={(patch) => void handleSaveSettings(patch)}
         />
-        <ShortcutSettingsCard
-          settings={settings}
-          onChange={(patch) => void handleSaveSettings(patch)}
-        />
       </div>
     ),
     quickMessages: (
@@ -666,23 +678,21 @@ export const SettingsPage = () => {
     diagnostics: (
       <div className="space-y-4">
         <DiagnosticsSettingsCard
-          diagnostics={diagnostics}
           runtimeHealth={runtimeHealth}
           relay={relayDiagnostics}
-          connectionHealth={connectionHealth}
           localAudioDiagnostics={localAudioDiagnostics}
           outputDeviceCount={outputDevices.length}
           webrtcReadyPeerCount={runtimeDiagnostics?.webrtcReadyPeerCount ?? 0}
           remotePeerCount={runtimeDiagnostics?.remotePeerCount ?? 0}
-          audioRelayActive={isAudioRelayActive}
-          peerHealth={runtimeDiagnostics?.peerHealth}
-          longSessionSampleCount={runtimeDiagnostics?.longSessionAudio.length ?? 0}
           screenShare={runtimeDiagnostics?.screenShare}
           windowsStatus={windowsDiagnostics}
           onOpenLogs={() => void window.desktopApi.diagnostics.openLogsDirectory()}
           onExportBundle={handleExportBundle}
           onCopySummary={handleCopyDiagnostics}
           onOpenAudioSettings={() => selectSection("audio")}
+          onOpenAiSettings={() => selectSection("ai")}
+          onOpenHome={() => navigate("home")}
+          onOpenRoom={() => navigate("room")}
           onRefreshHealth={refreshDiagnostics}
           onRefreshWindows={refreshWindowsDiagnostics}
           onRepairFirewall={handleRepairFirewall}
@@ -771,16 +781,24 @@ export const SettingsPage = () => {
                 })}
               </LayoutGroup>
             </nav>
-            <div
-              ref={contentRef}
-              key={activeSection}
-              data-gsap-settings="content"
-              className={`settings-section-motion min-w-0 ${
-                activeSection === "recordings" ? "settings-recording-content" : ""
-              }`}
-            >
-              {content[activeSection]}
-            </div>
+            {sections.map(({ id }) => {
+              const isActive = activeSection === id;
+              if (!isActive && !visitedSections.has(id)) return null;
+              return (
+                <div
+                  key={id}
+                  ref={isActive ? contentRef : undefined}
+                  data-gsap-settings={isActive ? "content" : undefined}
+                  aria-hidden={!isActive}
+                  hidden={!isActive}
+                  className={`settings-section-motion min-w-0 ${
+                    isActive && activeSection === "recordings" ? "settings-recording-content" : ""
+                  }`}
+                >
+                  {content[id]}
+                </div>
+              );
+            })}
           </div>
         </div>
       </PageContainer>

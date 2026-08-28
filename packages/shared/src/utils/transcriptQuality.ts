@@ -113,6 +113,7 @@ export const hasInvalidVoiceMemoryResult = (
   >,
 ): boolean =>
   record.errorMessage === "no_reliable_speech" ||
+  record.errorMessage === "partial_transcription" ||
   (record.phase === "ready" && record.transcript.length === 0) ||
   (record.transcript.length > 0 &&
     hasUnreliableTranscript(mergeTranscriptIntoSentences(record.transcript)));

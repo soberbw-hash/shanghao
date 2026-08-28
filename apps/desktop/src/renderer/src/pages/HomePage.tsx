@@ -1,14 +1,11 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
-  Activity,
   ArrowRight,
   ChevronDown,
   CircleAlert,
-  CircleCheck,
   LoaderCircle,
   Mic,
   MicOff,
-  Server,
   Volume2,
 } from "lucide-react";
 import { motion } from "framer-motion";
@@ -24,6 +21,7 @@ import {
 import { Button } from "../components/base/Button";
 import { Input } from "../components/base/Input";
 import { BrandMark } from "../components/brand/BrandMark";
+import { ACCOUNT_AVATAR_PRESETS } from "../features/account/accountAvatarPresets";
 import { CharacterPicker } from "../components/profile/AvatarPicker";
 import { StartupSplashPage } from "../components/status/StartupSplashPage";
 import { motionCurve, motionDuration, motionEase } from "../features/motion/motionSystem";
@@ -66,16 +64,17 @@ export const HomePage = () => {
   const [avatarId, setAvatarId] = useState<BuiltInAvatarId>("fox");
   const [serverAddress, setServerAddress] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [isTestingServer, setIsTestingServer] = useState(false);
   const [serverTestResult, setServerTestResult] = useState<RelayStatusSnapshot>();
   const [isCheckingAudio, setIsCheckingAudio] = useState(false);
   const [isMicrophoneMenuOpen, setIsMicrophoneMenuOpen] = useState(false);
-  const [isServerEditorOpen, setIsServerEditorOpen] = useState(false);
   const [nicknameTouched, setNicknameTouched] = useState(false);
   const reduceMotion = usePrefersReducedMotion();
   const isSettingsReady = Boolean(settings);
   const savedNickname = settings?.nickname;
   const savedAvatarId = settings?.avatarId;
+  const accountAvatarPreset = ACCOUNT_AVATAR_PRESETS.find(
+    (preset) => preset.id === settings?.accountAvatarPresetId,
+  );
   const savedServerAddress = settings?.relayServerUrl;
 
   useEffect(() => {
@@ -123,7 +122,14 @@ export const HomePage = () => {
           }
         }
       } catch {
-        // The explicit test button remains responsible for surfacing network errors.
+        if (!isCancelled) {
+          setServerTestResult({
+            serverUrl: normalizedAddress,
+            isConfigured: true,
+            isReachable: false,
+            message: "频道暂时连接不上，请稍后重试。",
+          });
+        }
         nextDelayMs = getServerCheckRetryInterval(retryIndex);
         retryIndex += 1;
       } finally {
@@ -315,11 +321,10 @@ export const HomePage = () => {
     }
 
     if (!normalizedAddress) {
-      setIsServerEditorOpen(true);
       pushToast({
         tone: "warning",
-        title: "服务器地址不对",
-        description: "可填写 IP:端口、ws:// 地址或 wss:// 域名。",
+        title: "频道连接还没准备好",
+        description: "请重启上号后重试；如果仍然失败，请打开诊断页查看详情。",
       });
       return;
     }
@@ -345,82 +350,23 @@ export const HomePage = () => {
     }
   };
 
-  const testServer = async () => {
-    const normalizedAddress = normalizeRelayServerUrl(serverAddress);
-    if (!normalizedAddress) {
-      setServerTestResult(undefined);
-      pushToast({
-        tone: "warning",
-        title: "服务器地址不对",
-        description: "可填写 IP:端口、ws:// 地址或 wss:// 域名。",
-      });
-      return;
-    }
-
-    setIsTestingServer(true);
-    try {
-      const result = await window.desktopApi.diagnostics.testServer(normalizedAddress);
-      setServerTestResult(result);
-      pushToast({
-        tone: result.isReachable ? "success" : "warning",
-        title: result.isReachable
-          ? `服务器正常${typeof result.latencyMs === "number" ? ` · ${result.latencyMs} ms` : ""}`
-          : "服务器暂时不可用",
-        description: result.message,
-      });
-    } catch {
-      setServerTestResult({
-        serverUrl: normalizedAddress,
-        isConfigured: true,
-        isReachable: false,
-        message: "测试请求失败，请稍后重试。",
-      });
-    } finally {
-      setIsTestingServer(false);
-    }
-  };
-
   const isJoining = isSubmitting || roomAction === "joining";
   const nicknameValidationError = nicknameTouched
     ? getNicknameValidationError(nickname.trim())
     : undefined;
   const occupiedAvatarIds = serverTestResult?.occupiedAvatarIds ?? [];
   const isSelectedAvatarOccupied = occupiedAvatarIds.includes(avatarId);
-  const serverTestStatus = (
-    <div className="entry-server-status-slot" aria-live="polite">
-      {isTestingServer ? (
-        <div className="entry-server-test-result checking" role="status">
-          <LoaderCircle className="h-4 w-4 animate-spin" />
-          <span>正在复查服务器...</span>
-        </div>
-      ) : isSelectedAvatarOccupied ? (
-        <div className="entry-server-test-result danger" role="status">
-          <CircleAlert className="h-4 w-4" />
-          <span>服务器正常，但这个角色已被朋友选择。</span>
-        </div>
-      ) : serverTestResult ? (
-        <div
-          className={`entry-server-test-result ${serverTestResult.isReachable ? "success" : "danger"}`}
-          role="status"
-        >
-          {serverTestResult.isReachable ? (
-            <CircleCheck className="h-4 w-4" />
-          ) : (
-            <CircleAlert className="h-4 w-4" />
-          )}
-          <span>
-            {serverTestResult.isReachable
-              ? `服务器正常${typeof serverTestResult.latencyMs === "number" ? ` · ${serverTestResult.latencyMs} ms` : ""}`
-              : serverTestResult.message}
-          </span>
-        </div>
-      ) : (
-        <span className="entry-server-status-placeholder" aria-hidden="true">
-          正在等待服务器状态
-        </span>
-      )}
+  const serverTestStatus = isSelectedAvatarOccupied ? (
+    <div className="entry-server-test-result danger" role="status">
+      <CircleAlert className="h-4 w-4" />
+      <span>服务器正常，但这个角色已被朋友选择。</span>
     </div>
-  );
+  ) : serverTestResult?.isReachable === false ? (
+    <div className="entry-server-test-result danger" role="status">
+      <CircleAlert className="h-4 w-4" />
+      <span>{serverTestResult.message || "暂时无法连接频道，请稍后再试。"}</span>
+    </div>
+  ) : null;
   return (
     <div
       ref={pageRef}
@@ -428,7 +374,7 @@ export const HomePage = () => {
     >
       <main
         data-gsap-entry="card"
-        className="entry-card entry-card-entry relative z-10 flex w-full max-w-[840px] flex-col px-10 py-8"
+        className="entry-card entry-card-entry relative z-10 flex w-full max-w-[840px] flex-col px-10 py-7"
       >
         <header
           data-gsap-entry="brand"
@@ -517,7 +463,7 @@ export const HomePage = () => {
 
         <motion.section
           key="entry"
-          className="entry-profile-layout relative z-0 mt-6 grid min-h-0 flex-1 gap-10 md:grid-cols-[.95fr_1.05fr]"
+          className="entry-profile-layout relative z-0 mt-5 grid min-h-0 flex-1 gap-8 md:grid-cols-[.95fr_1.05fr]"
           initial={reduceMotion ? false : { opacity: 0, x: 14 }}
           animate={{ opacity: 1, x: 0 }}
           exit={reduceMotion ? undefined : { opacity: 0, x: -10 }}
@@ -539,8 +485,8 @@ export const HomePage = () => {
             {accountProfile ? (
               <div className="entry-account-identity" aria-label="当前账号">
                 <span className="entry-account-avatar">
-                  {accountProfile.avatarUrl ? (
-                    <img src={accountProfile.avatarUrl} alt="" />
+                  {accountProfile.avatarUrl || accountAvatarPreset ? (
+                    <img src={accountProfile.avatarUrl ?? accountAvatarPreset?.source} alt="" />
                   ) : (
                     accountProfile.displayName.slice(0, 1).toUpperCase()
                   )}
@@ -591,49 +537,9 @@ export const HomePage = () => {
                 )}
               </label>
             )}
-            <div className="space-y-2">
-              <span className="text-xs font-semibold text-[#52657d]">频道服务器</span>
-              <div className="flex items-center gap-3 rounded-[14px] border border-[#d9e5f2] bg-white/64 px-3.5 py-3">
-                <Server className="size-4 shrink-0 text-[#4a8de8]" aria-hidden="true" />
-                <span className="min-w-0 flex-1">
-                  <strong className="block text-sm text-[#314158]">
-                    {serverTestResult?.isReachable
-                      ? "已连接"
-                      : serverTestResult
-                        ? "连接异常"
-                        : "正在自动检查"}
-                  </strong>
-                  <small className="block truncate text-xs text-[#8796aa]">
-                    {serverTestResult?.isReachable
-                      ? "固定好友频道已准备好"
-                      : "上号会自动检测，无需手动测试"}
-                  </small>
-                </span>
-                <button
-                  type="button"
-                  className="min-h-10 rounded-[11px] px-3 text-xs font-semibold text-[#3974bd] hover:bg-[#edf5ff]"
-                  onClick={() => setIsServerEditorOpen((current) => !current)}
-                  hidden={!settings.isDeveloperModeEnabled}
-                >
-                  {isServerEditorOpen ? "收起" : "更换服务器"}
-                </button>
-              </div>
-              {settings.isDeveloperModeEnabled &&
-              (isServerEditorOpen || !normalizeRelayServerUrl(serverAddress)) ? (
-                <label className="block space-y-1.5">
-                  <span className="text-xs text-[#718096]">服务器地址</span>
-                  <Input
-                    value={serverAddress}
-                    placeholder="IP:端口或安全服务器域名"
-                    onChange={(event) => {
-                      setServerAddress(event.target.value);
-                      setServerTestResult(undefined);
-                    }}
-                  />
-                </label>
-              ) : null}
-            </div>
-            {serverTestStatus}
+            {serverTestStatus ? (
+              <div className="entry-server-status-slot">{serverTestStatus}</div>
+            ) : null}
             <div className="pt-1" data-gsap-entry="cta">
               <div className="flex flex-wrap gap-2.5">
                 <Button
@@ -653,22 +559,6 @@ export const HomePage = () => {
                     <ArrowRight className="h-4 w-4" />
                   )}
                 </Button>
-                {settings.isDeveloperModeEnabled &&
-                (isServerEditorOpen || serverTestResult?.isReachable === false) ? (
-                  <Button
-                    variant="secondary"
-                    className="h-[52px] min-w-[132px] rounded-[16px] px-4"
-                    disabled={isTestingServer || isJoining || !serverAddress.trim()}
-                    onClick={() => void testServer()}
-                  >
-                    {isTestingServer ? (
-                      <LoaderCircle className="h-4 w-4 animate-spin" />
-                    ) : (
-                      <Activity className="h-4 w-4" />
-                    )}
-                    {isTestingServer ? "检测中" : "重新检测"}
-                  </Button>
-                ) : null}
               </div>
               {!hasSelectedInput ||
               !hasAudioOutput ||

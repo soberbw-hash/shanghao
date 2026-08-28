@@ -34,7 +34,6 @@ import {
 import { runLocalProcess } from "./local-process";
 import { resolveFfmpegExecutable } from "./media-runtime";
 import { modelFilesPresent } from "./ai-model-layout";
-
 interface RuntimeModelPaths {
   model: (id: AiModelId) => string | undefined;
   qwen: () => string | undefined;
@@ -48,7 +47,6 @@ interface QwenGenerateOptions {
   timeoutMs?: number;
   signal?: AbortSignal;
 }
-
 export interface PythonCudaDiagnostics {
   pythonPath: string;
   torchLocation?: string;
@@ -87,7 +85,6 @@ interface AiRuntimeManagerOptions {
   writeLog?: (payload: RendererLogPayload) => Promise<void>;
   probeCuda?: () => Promise<PythonCudaDiagnostics>;
 }
-
 const CUDA_TORCH_VERSION = "2.11.0";
 const CUDA_TORCHAUDIO_VERSION = "2.11.0";
 const CUDA_WHEEL_INDEX = "https://download.pytorch.org/whl/cu128";
@@ -225,13 +222,11 @@ export const torchAudioInstallPlan = (torchVersion: string): TorchAudioInstallPl
 
 export const temporaryRecordingName = (recordingId: string): string =>
   createHash("sha256").update(recordingId).digest("hex").slice(0, 20);
-
-/** Keep Qwen ForcedAligner's precise timing while exposing readable sentence segments. */
+/** Normalize every provider to the same readable, seekable sentence shape. */
 export const normalizeForcedAlignerTranscript = (
-  modelId: AiAsrModelId,
+  _modelId: AiAsrModelId,
   transcript: VoiceMemoryTranscriptSegment[],
-): VoiceMemoryTranscriptSegment[] =>
-  isQwenForcedAlignerModel(modelId) ? mergeTranscriptIntoSentences(transcript) : transcript;
+): VoiceMemoryTranscriptSegment[] => mergeTranscriptIntoSentences(transcript);
 
 export const providerCudaErrorCode = (modelId: AiAsrModelId, bf16 = false): string => {
   const providers: Record<AiAsrModelId, string> = {
@@ -584,7 +579,6 @@ export class AiRuntimeManager {
     );
     return after;
   }
-
   onQwenState(listener: (health: QwenWorkerHealth) => void): () => void {
     return this.qwenWorker.onState(listener);
   }
@@ -592,7 +586,9 @@ export class AiRuntimeManager {
   releaseQwen(reason: string): void {
     this.qwenWorker.release(reason);
   }
-
+  releaseAsr(reason: string): void {
+    this.asrWorker.release(reason);
+  }
   stop(): void {
     this.qwenWorker.release("app_stopping");
     this.asrWorker.release("app_stopping");
@@ -1410,6 +1406,10 @@ export class AiRuntimeManager {
             text,
             speakerId: segment.speakerId || "Speaker 1",
             confidence: "pending",
+            sourceModel: modelId,
+            sourceChunkId: `${modelId}:${recordingId}:${offsetMs}`,
+            rawSegmentId: `${recordingId}-${offsetMs}-raw-${index}`,
+            rawSegments: [JSON.stringify(segment)],
             words: segment.words?.flatMap((word, wordIndex) => {
               const wordText = word.text.trim();
               if (!wordText) return [];
@@ -1454,6 +1454,10 @@ export class AiRuntimeManager {
         text,
         speakerId: "Speaker 1",
         confidence: "pending",
+        sourceModel: modelId,
+        sourceChunkId: `${modelId}:${recordingId}:${offsetMs}`,
+        rawSegmentId: `${recordingId}-${offsetMs}-raw-coarse`,
+        rawSegments: [JSON.stringify({ text })],
       },
     ];
   }
@@ -1467,10 +1471,6 @@ export class AiRuntimeManager {
       prompt: options.prompt,
       maxNewTokens: options.maxNewTokens ?? 1_024,
       resourceMode: options.resourceMode,
-      // Qwen3.5-4B is intentionally kept in a background worker. On this
-      // machine a cold worker plus a structured Chinese response can take
-      // longer than the old two-minute watchdog, even when the runtime is
-      // healthy. Callers may use a shorter timeout for interactive tasks.
       timeoutMs: options.timeoutMs ?? 4 * 60_000,
       signal: options.signal,
     });

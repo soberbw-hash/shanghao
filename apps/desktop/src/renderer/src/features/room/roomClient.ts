@@ -68,13 +68,13 @@ import { collectLongSessionAudioResources } from "./longSessionAudioResources";
 import { isSignalingSessionSupersededError } from "./signalingSessionOwnership";
 import { ReliableChatTransport } from "../chat/ReliableChatTransport";
 import { RoomSocialTransport } from "../chat/RoomSocialTransport";
+import type { QuickMessageControlEvent } from "../chat/quickReplies";
 import { ScreenAudioMixer } from "../screen-share/ScreenAudioMixer";
 import { RoomScreenShareCoordinator } from "../screen-share/RoomScreenShareCoordinator";
 import {
   serverBuildSupportsDailyRoomReports,
   serverBuildSupportsReliableChat,
 } from "../chat/serverCapabilities";
-
 interface RoomClientOptions {
   signalingUrl: string;
   roomId: string;
@@ -103,6 +103,7 @@ interface RoomClientOptions {
   onLocalScreenShareViewers?: (peerIds: string[]) => void;
   onSceneReaction: (reaction: SceneReaction) => void;
   onQuickMessage: (message: RoomQuickMessage) => void;
+  onQuickMessageControl?: (control: QuickMessageControlEvent) => void;
   onDiagnosticEvent?: (payload: SignalingEventPayload) => void;
   onReconnectAttempt?: (attempt: number) => void;
   onReconnectExhausted?: (error: Error) => void;
@@ -126,12 +127,10 @@ export interface RemoteScreenFrame {
   sequence: number;
   receivedAt: string;
 }
-
 const INITIAL_CONNECT_TIMEOUT_MS = 10_000;
 const SNAPSHOT_RETRY_TIMEOUT_MS = 5_000;
 const AUDIO_PATH_SYNC_INTERVAL_MS = 3_000;
 export { serverBuildSupportsDailyRoomReports, serverBuildSupportsReliableChat };
-
 export class RoomClient {
   private readonly signalingBridge = new SignalingBridge();
   private readonly peers = new Map<string, MeshPeerConnection>();
@@ -214,6 +213,7 @@ export class RoomClient {
       onKnock: options.onKnock,
       onReaction: options.onSceneReaction,
       onQuickMessage: options.onQuickMessage,
+      onQuickMessageControl: options.onQuickMessageControl,
     });
     this.chatTransport = new ReliableChatTransport({
       roomId: options.roomId,
@@ -606,6 +606,19 @@ export class RoomClient {
         return;
       }
 
+      if (payload.code === 4401) {
+        const error = new Error(
+          payload.reason?.includes("invalid_access_token")
+            ? "relay_auth_failed"
+            : "relay_auth_required",
+        );
+        this.shouldReconnect = false;
+        this.rejectPendingConnection(error);
+        this.options.onConnectionState(RoomConnectionState.Failed);
+        this.options.onReconnectExhausted?.(error);
+        return;
+      }
+
       if (!this.shouldReconnect) {
         return;
       }
@@ -766,6 +779,24 @@ export class RoomClient {
   }
   private handleJoinAck(payload: JoinAckMessage): void {
     if (payload.roomId !== this.options.roomId || payload.peerId !== this.options.peerId) {
+      return;
+    }
+
+    const clientProtocolVersion = String(this.options.protocolVersion ?? "").trim();
+    const serverProtocolVersion = String(payload.protocolVersion ?? "").trim();
+    if (!clientProtocolVersion || serverProtocolVersion !== clientProtocolVersion) {
+      const error = new Error("relay_protocol_mismatch");
+      this.lastServerError = `version_mismatch:client=${clientProtocolVersion || "unknown"},server=${serverProtocolVersion || "unknown"}`;
+      this.shouldReconnect = false;
+      this.options.onConnectionState(RoomConnectionState.Failed);
+      this.rejectPendingConnection(error);
+      void this.signalingBridge.close();
+      void writeRendererLog("signaling", "error", "Relay protocol mismatch", {
+        roomId: payload.roomId,
+        clientProtocolVersion: clientProtocolVersion || "unknown",
+        serverProtocolVersion: serverProtocolVersion || "unknown",
+        serverBuildNumber: payload.buildNumber,
+      });
       return;
     }
 
@@ -991,7 +1022,10 @@ export class RoomClient {
       this.options.onAvatarConflict?.(decision.avatarConflict.availableAvatarIds ?? []);
     }
     if (decision.ignore) return;
-    if (decision.stopReconnect) this.shouldReconnect = false;
+    if (decision.stopReconnect) {
+      this.shouldReconnect = false;
+      void this.signalingBridge.close();
+    }
     this.options.onConnectionState(RoomConnectionState.Failed);
     this.rejectPendingConnection(new Error(decision.reason ?? "signaling_error"));
   }

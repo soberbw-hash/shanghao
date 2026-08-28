@@ -20,6 +20,7 @@ import { ScreenSharePanelContainer } from "../components/room/ScreenSharePanelCo
 import { TeamIsland } from "../components/room/TeamIsland";
 import { RecordingStopDialog } from "../components/status/RecordingStopDialog";
 import { playUiSound } from "../features/audio/uiSound";
+import { muteQuickMessagePlayback } from "../features/audio/quickMessageAudio";
 import { getRemoteAudioMixer } from "../features/audio/RemoteAudioMixer";
 import { summarizeConnectionHealth } from "../features/network/networkDiagnostics";
 import type {
@@ -36,6 +37,7 @@ import {
 import { isSeatZone } from "../features/voice-scene/sceneZones";
 import { selectCharacterChatBubbles } from "../features/room/roomViewModel";
 import { usePrefersReducedMotion } from "../hooks/usePrefersReducedMotion";
+import { useActiveQuickMessageMusic } from "../hooks/useQuickMessageMusicPresence";
 import { useRenderProfiler } from "../features/diagnostics/renderProfiler";
 import { useRoomPageSettings } from "../hooks/useRoomPageSettings";
 import { useRecordingController } from "../hooks/useRecordingController";
@@ -71,6 +73,7 @@ export const RoomPage = () => {
     sendSceneReaction,
     sendQuickMessage,
     sendConfiguredQuickMessage,
+    stopSharedQuickMessageMusic,
     replaceInputDevice,
     setMicrophoneSendVolume,
     localStream,
@@ -132,6 +135,7 @@ export const RoomPage = () => {
   const saveSettings = useSettingsStore((state) => state.saveSettings);
   const chatMessages = useRoomStore((state) => state.chatMessages);
   const roomQuickMessages = useRoomStore((state) => state.quickMessages);
+  const activeQuickMusic = useActiveQuickMessageMusic();
   const characterChatBubbles = useMemo(
     () => selectCharacterChatBubbles(chatMessages, roomQuickMessages),
     [chatMessages, roomQuickMessages],
@@ -183,7 +187,6 @@ export const RoomPage = () => {
   }, []);
   const [localKnockPulse, setLocalKnockPulse] = useState(0);
   const [recordingMarkerPulse, setRecordingMarkerPulse] = useState(0);
-  const [activeAudioPanel, setActiveAudioPanel] = useState<"microphone" | "speaker">();
   const [isLeaving, setIsLeaving] = useState(false);
   const [recordingStopIntent, setRecordingStopIntent] = useState<"stop" | "leave">();
   const [isFinalizingRecording, setIsFinalizingRecording] = useState(false);
@@ -394,6 +397,7 @@ export const RoomPage = () => {
       });
     };
     publishPressure();
+    if (room.connectionState !== RoomConnectionState.Connected) return;
     const interval = window.setInterval(publishPressure, 3_000);
     return () => window.clearInterval(interval);
   }, [
@@ -416,15 +420,9 @@ export const RoomPage = () => {
       hasSystemAudio: Boolean(
         localScreenShareStream?.getAudioTracks().some((track) => track.readyState === "live"),
       ),
+      activeQuickMusic,
     };
     void window.desktopApi.overlay.update(overlayState);
-    const heartbeat = window.setInterval(() => {
-      void window.desktopApi.overlay.update({
-        ...overlayState,
-        members: useRoomStore.getState().room.members,
-      });
-    }, 2_000);
-    return () => window.clearInterval(heartbeat);
   }, [
     isDeafened,
     isMuted,
@@ -432,27 +430,8 @@ export const RoomPage = () => {
     recordingStatus.state,
     room.connectionState,
     room.members,
+    activeQuickMusic,
   ]);
-
-  useEffect(() => {
-    if (!activeAudioPanel) return;
-
-    const closeOnOutsidePointer = (event: PointerEvent) => {
-      const target = event.target;
-      if (target instanceof Element && target.closest("[data-audio-control-root]")) return;
-      setActiveAudioPanel(undefined);
-    };
-    const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setActiveAudioPanel(undefined);
-    };
-
-    document.addEventListener("pointerdown", closeOnOutsidePointer);
-    document.addEventListener("keydown", closeOnEscape);
-    return () => {
-      document.removeEventListener("pointerdown", closeOnOutsidePointer);
-      document.removeEventListener("keydown", closeOnEscape);
-    };
-  }, [activeAudioPanel]);
 
   useEffect(() => {
     hasAutoStartedRecordingRef.current = false;
@@ -1303,6 +1282,14 @@ export const RoomPage = () => {
             networkQuality={connectionQuality.level}
             reactions={sceneReactions}
             chatBubbles={characterChatBubbles}
+            activeQuickMusic={activeQuickMusic}
+            onMuteQuickMusic={(playback) => {
+              if (playback.peerId === room.members.find((member) => member.isLocal)?.id) {
+                void stopSharedQuickMessageMusic(playback);
+                return;
+              }
+              muteQuickMessagePlayback(playback);
+            }}
             collectionItems={roomCollection.items}
             isCollectionOpen={roomCollection.isOpen}
             isCollectionDragOver={roomCollection.isDragOver}
@@ -1441,8 +1428,6 @@ export const RoomPage = () => {
       />
 
       <RoomDock
-        activeAudioPanel={activeAudioPanel}
-        setActiveAudioPanel={setActiveAudioPanel}
         settings={roomDockSettings}
         inputDevices={inputDevices}
         outputDevices={outputDevices}

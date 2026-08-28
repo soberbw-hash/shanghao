@@ -2,6 +2,8 @@ import { useCallback, useEffect } from "react";
 
 import {
   DEFAULT_CHANNEL_ID,
+  APP_BUILD_NUMBER,
+  APP_PROTOCOL_VERSION,
   findQuickMessagePreset,
   MemberSpeakingState,
   RoomConnectionState,
@@ -28,13 +30,21 @@ import { REMOTE_AUDIO_LEVEL_EVENT } from "../features/audio/RemoteAudioMixer";
 import { getRemoteAudioMixer } from "../features/audio/RemoteAudioMixer";
 import { clampMemberVolume } from "../features/audio/memberVolume";
 import { playUiSound } from "../features/audio/uiSound";
-import { playQuickMessageSound } from "../features/audio/quickMessageAudio";
+import {
+  getQuickMessageAudioSnapshot,
+  muteQuickMessagePlayback,
+  playQuickMessageSound,
+  stopQuickMessageMusic,
+  toggleQuickMessageMusic,
+} from "../features/audio/quickMessageAudio";
 import { RoomClient } from "../features/room/roomClient";
 import {
+  encodeQuickMessageControlTarget,
   encodeQuickMessageTarget,
   encodeQuickReplyTarget,
   presetForQuickReplyContent,
   QUICK_REPLY_COOLDOWN_MS,
+  quickMessageCooldownMs,
 } from "../features/chat/quickReplies";
 import { persistChatHistory, type ChannelId } from "../features/chat/chatPersistence";
 import {
@@ -55,12 +65,14 @@ import { useDailyRoomReportStore } from "../store/dailyRoomReportStore";
 import { writeRendererLog } from "../utils/logger";
 
 let activeClient: RoomClient | null = null;
+let activePeerId: string | undefined;
 let activeJoinPromise: Promise<void> | null = null;
 let activeSpeakingDetector: ReturnType<typeof createSpeakingDetector> | null = null;
 let activeProcessedMicrophone: ProcessedMicrophoneStream | null = null;
 let previousMemberIds = new Set<string>();
 const CHANNEL_IDS = new Set<ChannelId>(["main", "side"]);
 let lastQuickMessageSentAt = 0;
+let lastQuickMessageCooldownMs = 3_000;
 const ROUTINE_SIGNAL_MESSAGE_TYPES = new Set([
   "audio_chunk",
   "member_state",
@@ -86,9 +98,12 @@ const copy = {
   roomFull: "频道满了，最多 5 人同时语音。",
   networkFailed: "无法连接服务器，请检查地址、端口和防火墙。",
   socketClosed: "服务器连接被关闭，请确认服务端正在运行。",
-  joinAckTimeout: "服务器已连接，但没有确认加入频道，可能是服务端版本不兼容。",
+  joinAckTimeout: "频道服务器已连接，但没有返回进房确认，请检查频道服务器是否已部署当前版本。",
   snapshotTimeout: "已进入频道，但同步成员超时，请重试。",
   versionMismatch: "当前版本太旧，请更新后再进入频道。",
+  relayProtocolMismatch: "客户端与频道服务器版本不匹配，请更新频道服务器后再试。",
+  relayAuthRequired: "频道服务器需要登录，请先登录上号账号。",
+  relayAuthFailed: "登录状态已过期，请重新登录后再进入频道。",
   microphoneUnavailable: "麦克风不可用",
   microphonePermission: "麦克风不可用，请先在系统设置里允许访问麦克风。",
   microphoneMissing: "没有找到可用的麦克风。",
@@ -128,6 +143,9 @@ const normalizeRoomError = (error: unknown, fallback: string): string => {
       return copy.invalidServerUrl;
     }
     if (message.includes("version")) return copy.versionMismatch;
+    if (message === "relay_protocol_mismatch") return copy.relayProtocolMismatch;
+    if (message === "relay_auth_required") return copy.relayAuthRequired;
+    if (message === "relay_auth_failed") return copy.relayAuthFailed;
     if (message.includes("room_full")) return copy.roomFull;
     if (message === "avatar_taken") return "这个角色刚被朋友选走了，请换一个角色再进入频道。";
     if (message === "network_unreachable") return copy.networkFailed;
@@ -312,6 +330,7 @@ export const useRoomState = () => {
   }: { resetStore?: boolean; preserveLocalMedia?: boolean } = {}) => {
     const client = activeClient;
     activeClient = null;
+    activePeerId = undefined;
     if (client) {
       await client.disconnect().catch(() => undefined);
     }
@@ -404,6 +423,7 @@ export const useRoomState = () => {
     const currentSettings = useSettingsStore.getState().settings ?? settings;
     const stream = await ensureLocalStream(undefined, { reuseExisting: reuseLocalMedia });
     const peerId = crypto.randomUUID();
+    activePeerId = peerId;
     const profileId = currentSettings?.profileId || crypto.randomUUID();
     if (currentSettings && !currentSettings.profileId) {
       await useSettingsStore.getState().saveSettings({ profileId });
@@ -420,8 +440,8 @@ export const useRoomState = () => {
       avatarId: currentSettings?.avatarId,
       localStream: stream,
       appVersion: runtimeInfo?.version ?? "0.0.0",
-      protocolVersion: runtimeInfo?.protocolVersion ?? "1",
-      buildNumber: runtimeInfo?.buildNumber ?? "unknown",
+      protocolVersion: runtimeInfo?.protocolVersion ?? APP_PROTOCOL_VERSION,
+      buildNumber: runtimeInfo?.buildNumber ?? APP_BUILD_NUMBER,
       onMembers: (members) => {
         const { joined, left } = collectMemberEvents(members);
         const previousMembers = useRoomStore.getState().room.members;
@@ -619,6 +639,13 @@ export const useRoomState = () => {
             message.avatarId,
             currentSettings.quickMessages.soundVolume,
             message.content,
+            message.mediaType,
+            {
+              peerId: message.peerId,
+              nickname: message.nickname,
+              messageId: message.id,
+              presetId: message.presetId,
+            },
           );
         }
         if (!message.isLocal && currentSettings?.isSystemNotificationEnabled !== false) {
@@ -626,6 +653,12 @@ export const useRoomState = () => {
             title: `${message.nickname} 提醒你`,
             body: message.content,
           });
+        }
+      },
+      onQuickMessageControl: ({ presetId }) => {
+        const preset = findQuickMessagePreset(presetId);
+        if (preset?.mediaType === "music") {
+          toggleQuickMessageMusic(preset.soundId);
         }
       },
       onChatMessage: (message) => {
@@ -1114,20 +1147,54 @@ export const useRoomState = () => {
     if (!preset || !targetPeerId || !activeClient?.canSendChat()) {
       throw new Error("signaling_not_connected");
     }
+    if (preset.mediaType === "music" && toggleQuickMessageMusic(preset.soundId)) {
+      await activeClient.sendSceneReaction(encodeQuickMessageControlTarget(preset.id), "👍");
+      return;
+    }
     const now = Date.now();
-    if (now - lastQuickMessageSentAt < QUICK_REPLY_COOLDOWN_MS) return;
+    if (now - lastQuickMessageSentAt < lastQuickMessageCooldownMs) return;
     lastQuickMessageSentAt = now;
+    lastQuickMessageCooldownMs = quickMessageCooldownMs(preset);
 
     const currentSettings = useSettingsStore.getState().settings;
     if (currentSettings?.quickMessages.soundEnabled !== false && currentSettings?.quickMessages) {
+      const localMember = useRoomStore.getState().room.members.find((member) => member.isLocal);
       playQuickMessageSound(
         preset.soundId,
         currentSettings.avatarId,
         currentSettings.quickMessages.soundVolume,
         preset.content,
+        preset.mediaType,
+        {
+          peerId: activePeerId ?? localMember?.id,
+          nickname: currentSettings.nickname ?? localMember?.nickname,
+          messageId: `quick-${activePeerId ?? localMember?.id ?? "local"}-${now}`,
+          presetId: preset.id,
+        },
       );
     }
     await activeClient.sendSceneReaction(targetPeerId, "👍");
+  };
+
+  const stopSharedQuickMessageMusic = async (source: {
+    peerId: string;
+    messageId: string;
+  }): Promise<boolean> => {
+    const audio = getQuickMessageAudioSnapshot();
+    if (
+      !activeClient?.canSendChat() ||
+      source.peerId !== activePeerId ||
+      audio.status !== "playing" ||
+      audio.mediaType !== "music" ||
+      audio.sourcePeerId !== source.peerId ||
+      audio.quickMessageId !== source.messageId ||
+      !audio.presetId
+    ) {
+      return false;
+    }
+    if (!stopQuickMessageMusic(audio.soundId)) return false;
+    await activeClient.sendSceneReaction(encodeQuickMessageControlTarget(audio.presetId), "👍");
+    return true;
   };
 
   const sendQuickMessage = async (content: string) => {
@@ -1143,13 +1210,17 @@ export const useRoomState = () => {
     const now = Date.now();
     if (now - lastQuickMessageSentAt < QUICK_REPLY_COOLDOWN_MS) return;
     lastQuickMessageSentAt = now;
+    lastQuickMessageCooldownMs = QUICK_REPLY_COOLDOWN_MS;
     await activeClient.sendSceneReaction(targetPeerId, "👍");
   };
 
   useEffect(() => {
     const unsubscribe = window.desktopApi.shortcuts.onQuickMessageTriggered((slotIndex) => {
       const currentSettings = useSettingsStore.getState().settings;
-      const slot = currentSettings?.quickMessages.slots[slotIndex];
+      const slot =
+        slotIndex < 5
+          ? currentSettings?.quickMessages.slots[slotIndex]
+          : currentSettings?.quickMessages.musicSlots[slotIndex - 5];
       if (!slot?.enabled || !slot.presetId) return;
       void sendConfiguredQuickMessage(slot.presetId).catch(() => {
         pushToast({
@@ -1161,6 +1232,18 @@ export const useRoomState = () => {
     });
     return unsubscribe;
   }, [pushToast]);
+
+  useEffect(
+    () =>
+      window.desktopApi.overlay.onQuickMessageMute(({ peerId, messageId }) => {
+        if (peerId === activePeerId) {
+          void stopSharedQuickMessageMusic({ peerId, messageId });
+          return;
+        }
+        muteQuickMessagePlayback({ peerId, messageId });
+      }),
+    [],
+  );
 
   const startScreenShare = async (stream: MediaStream, profile?: ScreenShareEncodingProfile) => {
     if (!activeClient) {
@@ -1270,6 +1353,7 @@ export const useRoomState = () => {
     sendSceneReaction,
     sendQuickMessage,
     sendConfiguredQuickMessage,
+    stopSharedQuickMessageMusic,
     startScreenShare,
     stopScreenShare,
     setScreenShareViewingActive,

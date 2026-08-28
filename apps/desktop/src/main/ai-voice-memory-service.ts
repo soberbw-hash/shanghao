@@ -29,6 +29,9 @@ import {
   type VoiceMemoryTaskDiagnostic,
   type VoiceMemoryTaskStatus,
   type VoiceMemoryTranscriptionModel,
+  type VoiceMemoryTranscriptionStats,
+  type VoiceMemoryTranscriptionUnit,
+  type VoiceMemoryTranscriptSegment,
 } from "@private-voice/shared";
 
 import { AiModelManager } from "./ai-model-manager";
@@ -51,6 +54,8 @@ const LEGACY_TRANSCRIPTION_CHUNK_MS = 10 * 60_000;
 // Version 8 binds speaker identity to independent participant streams. Partial mixed-stream
 // results must never be merged into this speaker-aware pipeline.
 const TRANSCRIPTION_PIPELINE_VERSION = CURRENT_TRANSCRIPTION_PIPELINE_VERSION;
+const MAX_TRANSCRIPTION_CHUNK_ATTEMPTS = 3;
+const TRANSCRIPTION_CHUNK_RETRY_DELAY_MS = 1_000;
 
 export const canAutomaticallyTranscribeDuration = (durationMs: number): boolean =>
   durationMs <= AUTOMATIC_TRANSCRIPTION_MAX_DURATION_MS;
@@ -80,6 +85,128 @@ export const completedTranscriptionUnits = (
         TRANSCRIPTION_CHUNK_MS,
     ),
   );
+
+export interface TranscriptionUnitDefinition {
+  index: number;
+  startMs: number;
+  endMs: number;
+  speakerId?: string;
+}
+
+const transcriptionUnitId = (
+  recordingId: string,
+  modelId: AiAsrModelId,
+  definition: TranscriptionUnitDefinition,
+): string =>
+  [
+    recordingId,
+    modelId,
+    definition.index,
+    definition.startMs,
+    definition.endMs,
+    definition.speakerId,
+  ]
+    .map((value) => String(value ?? ""))
+    .join(":");
+
+export const createTranscriptionUnits = (
+  recordingId: string,
+  modelId: AiAsrModelId,
+  definitions: readonly TranscriptionUnitDefinition[],
+  existing: readonly VoiceMemoryTranscriptionUnit[] | undefined,
+  checkpointCompletedUnits: number,
+): VoiceMemoryTranscriptionUnit[] => {
+  const existingById = new Map((existing ?? []).map((unit) => [unit.unitId, unit]));
+  const now = new Date().toISOString();
+  return definitions.map((definition) => {
+    const unitId = transcriptionUnitId(recordingId, modelId, definition);
+    const saved = existingById.get(unitId);
+    if (saved && saved.modelId === modelId) {
+      // A process can be killed between the pre-flight save and inference. A persisted running
+      // unit is therefore recoverable work, never proof that the unit completed.
+      return saved.status === "running"
+        ? { ...saved, status: "pending", stage: undefined, updatedAt: now, heartbeatAt: now }
+        : {
+            ...saved,
+            index: definition.index,
+            startMs: definition.startMs,
+            endMs: definition.endMs,
+          };
+    }
+    const legacyCompleted = definition.index < checkpointCompletedUnits;
+    return {
+      unitId,
+      modelId,
+      pipelineVersion: TRANSCRIPTION_PIPELINE_VERSION,
+      index: definition.index,
+      startMs: definition.startMs,
+      endMs: definition.endMs,
+      speakerId: definition.speakerId,
+      status: legacyCompleted ? "completed" : "pending",
+      attempts: legacyCompleted ? 1 : 0,
+      retryCount: 0,
+      processedAudioMs: legacyCompleted ? Math.max(1, definition.endMs - definition.startMs) : 0,
+      coveredAudioMs: legacyCompleted ? Math.max(1, definition.endMs - definition.startMs) : 0,
+      segmentCount: 0,
+      updatedAt: now,
+    };
+  });
+};
+
+export const statsFromTranscriptionUnits = (
+  audioDurationMs: number,
+  units: readonly VoiceMemoryTranscriptionUnit[],
+  transcript: readonly VoiceMemoryTranscriptSegment[],
+  fallback?: VoiceMemoryTranscriptionStats,
+): VoiceMemoryTranscriptionStats => {
+  // Only completed units prove that audio was successfully processed. Failed,
+  // pending, and interrupted units must not inflate coverage or make a partial
+  // run look complete when a legacy fallback still contains old totals.
+  const completedUnitsForCoverage = units.filter((unit) => unit.status === "completed");
+  const processedAudioMs = Math.min(
+    audioDurationMs,
+    completedUnitsForCoverage.reduce((sum, unit) => sum + Math.max(0, unit.processedAudioMs), 0),
+  );
+  const coveredAudioMs = Math.min(
+    audioDurationMs,
+    completedUnitsForCoverage.reduce((sum, unit) => sum + Math.max(0, unit.coveredAudioMs), 0),
+  );
+  const completedUnits = units.filter(
+    (unit) => unit.status === "completed" || unit.status === "failed",
+  ).length;
+  const failedUnits = units.filter((unit) => unit.status === "failed").length;
+  const successfulUnits = units.filter((unit) => unit.status === "completed").length;
+  const silenceUnits = units.filter(
+    (unit) => unit.status === "completed" && unit.segmentCount === 0,
+  ).length;
+  const last = [...units].sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))[0];
+  return {
+    audioDurationMs,
+    processedAudioMs: units.length > 0 ? processedAudioMs : fallback?.processedAudioMs || 0,
+    coveredAudioMs: units.length > 0 ? coveredAudioMs : fallback?.coveredAudioMs || 0,
+    totalUnits: units.length,
+    completedUnits,
+    failedUnits,
+    retryCount: units.reduce((sum, unit) => sum + Math.max(0, unit.retryCount), 0),
+    segmentCount: transcript.length,
+    speakerCount: new Set(transcript.map((segment) => segment.speakerId)).size,
+    successfulUnits,
+    silenceUnits,
+    terminationReason:
+      failedUnits > 0
+        ? "partial"
+        : completedUnits === units.length && units.length > 0
+          ? transcript.length > 0
+            ? "completed"
+            : "no_speech"
+          : fallback?.terminationReason,
+    lastErrorStage: [...units].reverse().find((unit) => unit.errorCode)?.stage,
+    inferenceElapsedMs: fallback?.inferenceElapsedMs,
+    conversionElapsedMs: fallback?.conversionElapsedMs,
+    lastChunkOffsetMs: last?.startMs,
+    lastHeartbeatAt: last?.heartbeatAt ?? fallback?.lastHeartbeatAt,
+  };
+};
 
 interface OrganizedResult {
   summary: VoiceMemorySummaryPoint[];
@@ -349,6 +476,17 @@ export class AiVoiceMemoryService {
     for (const record of interrupted) {
       await this.save({
         ...record,
+        transcriptionUnits: record.transcriptionUnits?.map((unit) =>
+          unit.status === "running"
+            ? {
+                ...unit,
+                status: "pending",
+                stage: undefined,
+                heartbeatAt: new Date().toISOString(),
+                updatedAt: new Date().toISOString(),
+              }
+            : unit,
+        ),
         phase: "paused",
         taskStatus: "pending",
         diagnostic: record.diagnostic
@@ -500,6 +638,8 @@ export class AiVoiceMemoryService {
       transcriptionModel: variant.model,
       transcriptionPipelineVersion: variant.pipelineVersion,
       transcriptionElapsedMs: variant.transcriptionElapsedMs,
+      transcriptionStats: variant.transcriptionStats,
+      transcriptionUnits: variant.transcriptionUnits,
       phase: "ready",
       progress: 100,
       errorMessage: undefined,
@@ -781,6 +921,8 @@ export class AiVoiceMemoryService {
             transcriptionPipelineVersion: undefined,
             transcriptionModel: undefined,
             transcriptionElapsedMs: undefined,
+            transcriptionStats: undefined,
+            transcriptionUnits: undefined,
             organizedAt: undefined,
             errorMessage: undefined,
           });
@@ -802,19 +944,22 @@ export class AiVoiceMemoryService {
         this.log("info", "Voice memory contained no reliable speech", {
           recordingId: record.recordingId,
         });
+        const partial = (record.transcriptionStats?.failedUnits ?? 0) > 0;
         return this.save({
           ...record,
           phase: "ready",
           progress: 100,
           taskId,
-          taskStatus: "success",
+          taskStatus: partial ? "failed" : "success",
           processingStage: "transcript",
-          diagnostic: this.createDiagnostic(request, "success", "transcript", {
-            errorCode: "no_reliable_speech",
-            errorMessage: "没有检测到可识别的人声。",
+          diagnostic: this.createDiagnostic(request, partial ? "failed" : "success", "transcript", {
+            errorCode: partial ? "partial_transcription" : "no_reliable_speech",
+            errorMessage: partial
+              ? "部分音频分块处理失败，未得到完整转录。"
+              : "没有检测到可识别的人声。",
           }),
           transcriptionPipelineVersion: TRANSCRIPTION_PIPELINE_VERSION,
-          errorMessage: "no_reliable_speech",
+          errorMessage: partial ? "partial_transcription" : "no_reliable_speech",
         });
       }
       record = await this.save({
@@ -839,21 +984,33 @@ export class AiVoiceMemoryService {
           });
         }
       }
+      const partialTranscription = (record.transcriptionStats?.failedUnits ?? 0) > 0;
       record = await this.save({
         ...record,
         phase: "ready",
         progress: 100,
         taskId,
-        taskStatus: organizationError ? "failed" : "success",
+        taskStatus: organizationError || partialTranscription ? "failed" : "success",
         processingStage: organizationError ? "organize" : "storage",
         diagnostic: this.createDiagnostic(
           request,
-          organizationError ? "failed" : "success",
+          organizationError || partialTranscription ? "failed" : "success",
           organizationError ? "organize" : "storage",
-          organizationError ? { errorMessage: `organize_failed:${organizationError}` } : undefined,
+          organizationError
+            ? { errorMessage: `organize_failed:${organizationError}` }
+            : partialTranscription
+              ? {
+                  errorCode: "partial_transcription",
+                  errorMessage: "部分音频分块处理失败，可继续重试失败分块。",
+                }
+              : undefined,
         ),
         transcriptionPipelineVersion: TRANSCRIPTION_PIPELINE_VERSION,
-        errorMessage: organizationError ? `organize_failed:${organizationError}` : undefined,
+        errorMessage: organizationError
+          ? `organize_failed:${organizationError}`
+          : partialTranscription
+            ? "partial_transcription"
+            : undefined,
       });
       this.log("info", "Voice memory processing completed", {
         recordingId: record.recordingId,
@@ -912,6 +1069,11 @@ export class AiVoiceMemoryService {
     } finally {
       if (this.controllers.get(request.recordingId) === controller) {
         this.controllers.delete(request.recordingId);
+      }
+      if (request.taskId?.startsWith("model-comparison:")) {
+        // A comparison run is intentionally isolated: do not leave the previous model resident
+        // while the next model is waiting to load, and do not let a failed run retain its worker.
+        this.runtime.releaseAsr("model_comparison_model_complete");
       }
     }
   }
@@ -1122,46 +1284,117 @@ export class AiVoiceMemoryService {
         checkpoint?.pipelineVersion === TRANSCRIPTION_PIPELINE_VERSION &&
         checkpoint.asrModelId === asrModelId &&
         checkpoint.totalUnits === totalUnits;
-      let completedUnits = checkpointCompatible
-        ? Math.min(totalUnits, Math.max(0, checkpoint.completedUnits))
-        : 0;
-      if (!checkpointCompatible && record.transcript.length > 0) {
+      const definitions = knownSpeakerSegments.map((segment, index) => ({
+        index,
+        startMs: segment.startMs,
+        endMs: segment.endMs,
+        speakerId: segment.speakerId,
+      }));
+      const durableUnits = record.transcriptionUnits?.filter(
+        (unit) =>
+          unit.modelId === asrModelId &&
+          unit.pipelineVersion === TRANSCRIPTION_PIPELINE_VERSION &&
+          unit.index >= 0 &&
+          unit.index < totalUnits,
+      );
+      const canResumeDurably = durableUnits?.length === totalUnits;
+      if (!checkpointCompatible && !canResumeDurably && record.transcript.length > 0) {
         throw new Error(
           checkpoint ? "transcription_checkpoint_incompatible" : "transcription_checkpoint_missing",
         );
       }
       if (!checkpointCompatible && checkpoint) await this.models.clearTaskCheckpoint(taskId);
+      const units = createTranscriptionUnits(
+        record.recordingId,
+        asrModelId,
+        definitions,
+        canResumeDurably ? durableUnits : undefined,
+        checkpointCompatible ? Math.min(totalUnits, Math.max(0, checkpoint.completedUnits)) : 0,
+      );
+      let stats = statsFromTranscriptionUnits(
+        totalDuration,
+        units,
+        record.transcript,
+        record.transcriptionStats,
+      );
+      let completedUnits = stats.completedUnits;
       record = await this.save({
         ...record,
         phase: "transcribing",
         progress: Math.round((completedUnits / totalUnits) * 70),
         transcriptionModel,
+        transcriptionUnits: units,
+        transcriptionStats: stats,
         errorMessage: undefined,
       });
-      for (let unit = completedUnits; unit < totalUnits; unit += 1) {
+      for (let unit = 0; unit < totalUnits; unit += 1) {
         if (signal.aborted) throw new Error("ai_task_paused");
         const source = knownSpeakerSegments[unit];
         if (!source) continue;
+        const durableUnit = units[unit];
+        if (!durableUnit || durableUnit.status === "completed") continue;
+        const startedAt = new Date().toISOString();
+        Object.assign(durableUnit, {
+          status: "running" as const,
+          stage: "asr" as const,
+          attempts: durableUnit.attempts + 1,
+          startedAt,
+          heartbeatAt: startedAt,
+          updatedAt: startedAt,
+        });
+        record = await this.save({
+          ...record,
+          transcriptionUnits: units,
+          transcriptionStats: stats,
+        });
         onStage?.("convert");
         const asrStartedAt = performance.now();
-        const recognized = await this.runtime.transcribeChunk({
-          modelId: asrModelId,
-          recordingId: record.recordingId,
-          filePath: source.filePath,
-          offsetMs: 0,
-          durationMs: Math.max(1, source.endMs - source.startMs),
-          signal,
-          resourceMode: runnable.resourceMode,
-          onStage: (stage, context) => {
-            onStage?.(stage);
-            this.log("info", "AI speaker segment stage", {
-              taskId: record.taskId,
+        const duration = Math.max(1, source.endMs - source.startMs);
+        const chunk = await this.transcribeChunkWithRetry(
+          () =>
+            this.runtime.transcribeChunk({
+              modelId: asrModelId,
               recordingId: record.recordingId,
-              speakerId: source.speakerId,
-              stage,
-              ...context,
-            });
-          },
+              filePath: source.filePath,
+              offsetMs: 0,
+              durationMs: duration,
+              signal,
+              resourceMode: runnable.resourceMode,
+              onStage: (stage, context) => {
+                onStage?.(stage);
+                this.log("info", "AI speaker segment stage", {
+                  taskId: record.taskId,
+                  recordingId: record.recordingId,
+                  speakerId: source.speakerId,
+                  stage,
+                  ...context,
+                });
+              },
+            }),
+          signal,
+          { recordingId: record.recordingId, taskId: record.taskId, unit: unit + 1, totalUnits },
+        );
+        const recognized = chunk.segments;
+        const finishedAt = new Date().toISOString();
+        Object.assign(durableUnit, {
+          status: chunk.failed ? ("failed" as const) : ("completed" as const),
+          processedAudioMs: duration,
+          coveredAudioMs: chunk.failed ? 0 : duration,
+          segmentCount: recognized.length,
+          rawRuntimeOutput: JSON.stringify({ segments: recognized }),
+          normalizedSegmentIds: recognized.map((segment) => segment.id),
+          retryCount: chunk.retries,
+          errorCode: chunk.errorCode,
+          errorMessage: chunk.errorMessage,
+          completedAt: finishedAt,
+          heartbeatAt: finishedAt,
+          updatedAt: finishedAt,
+        });
+        stats = statsFromTranscriptionUnits(totalDuration, units, record.transcript, {
+          ...stats,
+          inferenceElapsedMs:
+            (stats.inferenceElapsedMs ?? 0) +
+            Math.max(0, Math.round(performance.now() - asrStartedAt)),
         });
         record = await this.save({
           ...record,
@@ -1208,13 +1441,22 @@ export class AiVoiceMemoryService {
             },
           ),
           progress: Math.round(((unit + 1) / totalUnits) * 70),
+          transcriptionStats: {
+            ...stats,
+            segmentCount: transcript.length,
+            speakerCount: new Set(transcript.map((segment) => segment.speakerId)).size,
+          },
+          transcriptionUnits: units,
         });
-        completedUnits = unit + 1;
+        stats = record.transcriptionStats ?? stats;
+        completedUnits = stats.completedUnits;
         await this.models.saveTaskCheckpoint({
           taskId,
           recordingId: record.recordingId,
           kind: "transcription",
-          completedUnits,
+          completedUnits: units.filter(
+            (candidate) => candidate.status === "completed" || candidate.status === "failed",
+          ).length,
           totalUnits,
           unitDurationMs: TRANSCRIPTION_CHUNK_MS,
           pipelineVersion: TRANSCRIPTION_PIPELINE_VERSION,
@@ -1239,16 +1481,37 @@ export class AiVoiceMemoryService {
         overlappingSegmentsSupported: true,
         temporaryAudioCleaned,
       });
-      return record;
+      return this.save({
+        ...record,
+        transcript: mergeTranscriptIntoSentences(record.transcript),
+        transcriptionUnits: units,
+        transcriptionStats: {
+          ...statsFromTranscriptionUnits(totalDuration, units, record.transcript, stats),
+          completedUnits,
+          segmentCount: record.transcript.length,
+          speakerCount: record.speakers.length,
+          lastHeartbeatAt: new Date().toISOString(),
+        },
+      });
     }
     const totalUnits = Math.max(1, Math.ceil(totalDuration / TRANSCRIPTION_CHUNK_MS));
     const checkpointCompatible =
       checkpoint?.pipelineVersion === TRANSCRIPTION_PIPELINE_VERSION &&
       checkpoint.asrModelId === asrModelId;
-    let completedUnits = checkpointCompatible
-      ? completedTranscriptionUnits(checkpoint, totalUnits)
-      : 0;
-    if (!checkpointCompatible && record.transcript.length > 0) {
+    const definitions = Array.from({ length: totalUnits }, (_, index) => ({
+      index,
+      startMs: index * TRANSCRIPTION_CHUNK_MS,
+      endMs: Math.min(totalDuration, (index + 1) * TRANSCRIPTION_CHUNK_MS),
+    }));
+    const durableUnits = record.transcriptionUnits?.filter(
+      (unit) =>
+        unit.modelId === asrModelId &&
+        unit.pipelineVersion === TRANSCRIPTION_PIPELINE_VERSION &&
+        unit.index >= 0 &&
+        unit.index < totalUnits,
+    );
+    const canResumeDurably = durableUnits?.length === totalUnits;
+    if (!checkpointCompatible && !canResumeDurably && record.transcript.length > 0) {
       // A non-restart request must never silently destroy a saved partial transcript. Explicit
       // "重新转录" clears both the checkpoint and transcript before entering this method.
       throw new Error(
@@ -1258,16 +1521,44 @@ export class AiVoiceMemoryService {
     if (!checkpointCompatible && checkpoint) {
       await this.models.clearTaskCheckpoint(taskId);
     }
+    const units = createTranscriptionUnits(
+      record.recordingId,
+      asrModelId,
+      definitions,
+      canResumeDurably ? durableUnits : undefined,
+      checkpointCompatible ? completedTranscriptionUnits(checkpoint, totalUnits) : 0,
+    );
+    let stats = statsFromTranscriptionUnits(
+      totalDuration,
+      units,
+      record.transcript,
+      record.transcriptionStats,
+    );
+    let completedUnits = stats.completedUnits;
     record = await this.save({
       ...record,
       phase: "transcribing",
       progress: Math.round((completedUnits / totalUnits) * 70),
       transcriptionModel,
+      transcriptionUnits: units,
+      transcriptionStats: stats,
       errorMessage: undefined,
     });
-    for (let unit = completedUnits; unit < totalUnits; unit += 1) {
+    for (let unit = 0; unit < totalUnits; unit += 1) {
       if (signal.aborted) throw new Error("ai_task_paused");
       const offsetMs = unit * TRANSCRIPTION_CHUNK_MS;
+      const durableUnit = units[unit];
+      if (!durableUnit || durableUnit.status === "completed") continue;
+      const startedAt = new Date().toISOString();
+      Object.assign(durableUnit, {
+        status: "running" as const,
+        stage: "asr" as const,
+        attempts: durableUnit.attempts + 1,
+        startedAt,
+        heartbeatAt: startedAt,
+        updatedAt: startedAt,
+      });
+      record = await this.save({ ...record, transcriptionUnits: units, transcriptionStats: stats });
       onStage?.("convert");
       record = await this.updateDiagnostic(
         record,
@@ -1283,24 +1574,52 @@ export class AiVoiceMemoryService {
           modelPath: asrStatus.modelPath,
         },
       );
+      const duration = Math.min(TRANSCRIPTION_CHUNK_MS, totalDuration - offsetMs);
       const asrStartedAt = performance.now();
-      const segments = await this.runtime.transcribeChunk({
-        modelId: asrModelId,
-        recordingId: record.recordingId,
-        filePath: record.filePath,
-        offsetMs,
-        durationMs: Math.min(TRANSCRIPTION_CHUNK_MS, totalDuration - offsetMs),
-        signal,
-        resourceMode: runnable.resourceMode,
-        onStage: (stage, context) => {
-          onStage?.(stage);
-          this.log("info", "AI pipeline stage", {
-            taskId: record.taskId,
+      const chunk = await this.transcribeChunkWithRetry(
+        () =>
+          this.runtime.transcribeChunk({
+            modelId: asrModelId,
             recordingId: record.recordingId,
-            stage,
-            ...context,
-          });
-        },
+            filePath: record.filePath,
+            offsetMs,
+            durationMs: duration,
+            signal,
+            resourceMode: runnable.resourceMode,
+            onStage: (stage, context) => {
+              onStage?.(stage);
+              this.log("info", "AI pipeline stage", {
+                taskId: record.taskId,
+                recordingId: record.recordingId,
+                stage,
+                ...context,
+              });
+            },
+          }),
+        signal,
+        { recordingId: record.recordingId, taskId: record.taskId, unit: unit + 1, totalUnits },
+      );
+      const segments = chunk.segments;
+      const finishedAt = new Date().toISOString();
+      Object.assign(durableUnit, {
+        status: chunk.failed ? ("failed" as const) : ("completed" as const),
+        processedAudioMs: duration,
+        coveredAudioMs: chunk.failed ? 0 : duration,
+        segmentCount: segments.length,
+        rawRuntimeOutput: JSON.stringify({ segments }),
+        normalizedSegmentIds: segments.map((segment) => segment.id),
+        retryCount: chunk.retries,
+        errorCode: chunk.errorCode,
+        errorMessage: chunk.errorMessage,
+        completedAt: finishedAt,
+        heartbeatAt: finishedAt,
+        updatedAt: finishedAt,
+      });
+      stats = statsFromTranscriptionUnits(totalDuration, units, record.transcript, {
+        ...stats,
+        inferenceElapsedMs:
+          (stats.inferenceElapsedMs ?? 0) +
+          Math.max(0, Math.round(performance.now() - asrStartedAt)),
       });
       record = await this.save({
         ...record,
@@ -1334,13 +1653,22 @@ export class AiVoiceMemoryService {
             },
         ),
         progress: Math.round(((unit + 1) / totalUnits) * 70),
+        transcriptionStats: {
+          ...stats,
+          segmentCount: transcript.length,
+          speakerCount: new Set(transcript.map((segment) => segment.speakerId)).size,
+        },
+        transcriptionUnits: units,
       });
-      completedUnits = unit + 1;
+      stats = record.transcriptionStats ?? stats;
+      completedUnits = stats.completedUnits;
       await this.models.saveTaskCheckpoint({
         taskId,
         recordingId: record.recordingId,
         kind: "transcription",
-        completedUnits,
+        completedUnits: units.filter(
+          (candidate) => candidate.status === "completed" || candidate.status === "failed",
+        ).length,
         totalUnits,
         unitDurationMs: TRANSCRIPTION_CHUNK_MS,
         pipelineVersion: TRANSCRIPTION_PIPELINE_VERSION,
@@ -1351,7 +1679,58 @@ export class AiVoiceMemoryService {
         await this.models.clearTaskCheckpoint(legacyTaskId);
       }
     }
-    return record;
+    return this.save({
+      ...record,
+      transcript: mergeTranscriptIntoSentences(record.transcript),
+      transcriptionUnits: units,
+      transcriptionStats: {
+        ...statsFromTranscriptionUnits(totalDuration, units, record.transcript, stats),
+        completedUnits,
+        segmentCount: record.transcript.length,
+        speakerCount: record.speakers.length,
+        lastHeartbeatAt: new Date().toISOString(),
+      },
+    });
+  }
+
+  private async transcribeChunkWithRetry(
+    operation: () => Promise<VoiceMemoryTranscriptSegment[]>,
+    signal: AbortSignal,
+    context: { recordingId: string; taskId?: string; unit: number; totalUnits: number },
+  ): Promise<{
+    segments: VoiceMemoryTranscriptSegment[];
+    retries: number;
+    failed: boolean;
+    errorCode?: string;
+    errorMessage?: string;
+  }> {
+    let retries = 0;
+    let lastError: unknown;
+    for (let attempt = 0; attempt < MAX_TRANSCRIPTION_CHUNK_ATTEMPTS; attempt += 1) {
+      if (signal.aborted) throw new Error("ai_task_paused");
+      try {
+        return { segments: await operation(), retries, failed: false };
+      } catch (error) {
+        lastError = error;
+        if (signal.aborted || (error as Error)?.message === "ai_task_paused") throw error;
+        retries += 1;
+        if (attempt + 1 < MAX_TRANSCRIPTION_CHUNK_ATTEMPTS) {
+          await new Promise((resolve) => setTimeout(resolve, TRANSCRIPTION_CHUNK_RETRY_DELAY_MS));
+        }
+      }
+    }
+    this.log("warn", "AI transcription chunk failed; continuing with later chunks", {
+      ...context,
+      reason: lastError instanceof Error ? lastError.message : String(lastError),
+    });
+    const errorMessage = lastError instanceof Error ? lastError.message : String(lastError);
+    return {
+      segments: [],
+      retries,
+      failed: true,
+      errorCode: this.errorCode(lastError),
+      errorMessage,
+    };
   }
 
   private async organize(
@@ -1536,24 +1915,25 @@ export class AiVoiceMemoryService {
 
   private async save(record: VoiceMemoryRecord): Promise<VoiceMemoryRecord> {
     if (this.deletedRecordings.has(record.recordingId)) throw new Error("voice_memory_deleted");
-    const persisted =
-      record.transcriptionModel && record.transcript.length > 0
-        ? {
-            ...record,
-            transcriptionVariants: {
-              ...record.transcriptionVariants,
-              [record.transcriptionModel.id]: {
-                model: record.transcriptionModel,
-                transcript: record.transcript,
-                speakers: record.speakers,
-                pipelineVersion:
-                  record.transcriptionPipelineVersion ?? TRANSCRIPTION_PIPELINE_VERSION,
-                transcriptionElapsedMs: record.transcriptionElapsedMs,
-                updatedAt: new Date().toISOString(),
-              },
+    const persisted = record.transcriptionModel
+      ? {
+          ...record,
+          transcriptionVariants: {
+            ...record.transcriptionVariants,
+            [record.transcriptionModel.id]: {
+              model: record.transcriptionModel,
+              transcript: record.transcript,
+              speakers: record.speakers,
+              pipelineVersion:
+                record.transcriptionPipelineVersion ?? TRANSCRIPTION_PIPELINE_VERSION,
+              transcriptionElapsedMs: record.transcriptionElapsedMs,
+              transcriptionStats: record.transcriptionStats,
+              transcriptionUnits: record.transcriptionUnits,
+              updatedAt: new Date().toISOString(),
             },
-          }
-        : record;
+          },
+        }
+      : record;
     const saved = await this.store.save(persisted);
     if (saved.diagnostic) this.lastTask = saved.diagnostic;
     this.log("info", "AI pipeline stage", {

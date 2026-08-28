@@ -28,6 +28,13 @@ export const decideSignalingError = (
       },
     };
   }
+  if (payload.code === "version_mismatch") {
+    return {
+      ignore: false,
+      stopReconnect: true,
+      reason: "relay_protocol_mismatch",
+    };
+  }
   if (payload.code === "avatar_taken" && context.hasJoinedOnce) {
     return {
       ignore: true,

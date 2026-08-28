@@ -6,10 +6,33 @@ import {
   type VoiceMemoryRecord,
 } from "@private-voice/shared";
 
+export type ModelComparisonPhase =
+  | "waiting"
+  | "loading"
+  | "transcribing"
+  | "paused"
+  | "releasing"
+  | "success"
+  | "partial"
+  | "stuck"
+  | "failed"
+  | "user-stopped";
+
 export interface ModelComparisonResult {
   modelId: AiAsrModelId;
-  status: "success" | "failed" | "paused";
+  status: "success" | "partial" | "failed" | "paused" | "user-stopped";
+  phase: ModelComparisonPhase;
   elapsedMs: number;
+  processedAudioMs?: number;
+  coveredAudioMs?: number;
+  coveragePercent?: number;
+  completedUnits?: number;
+  totalUnits?: number;
+  failedUnits?: number;
+  retryCount?: number;
+  segmentCount?: number;
+  speakerCount?: number;
+  heartbeatAt?: string;
   message?: string;
 }
 
@@ -19,6 +42,8 @@ export interface ModelComparisonJobSnapshot {
   currentIndex: number;
   /** Progress of the model currently being tested, from 0 to 1. */
   currentProgress: number;
+  currentPhase: ModelComparisonPhase;
+  lastHeartbeatAt?: string;
   phase: "running" | "paused" | "stopped" | "complete";
   results: Partial<Record<AiAsrModelId, ModelComparisonResult>>;
   recovered?: boolean;
@@ -32,6 +57,8 @@ interface StoredModelComparisonJob {
   currentIndex: number;
   phase: "running" | "paused" | "stopped";
   currentProgress: number;
+  currentPhase: ModelComparisonPhase;
+  lastHeartbeatAt?: string;
   results: Partial<Record<AiAsrModelId, ModelComparisonResult>>;
   updatedAt: number;
 }
@@ -42,6 +69,7 @@ interface ActiveModelComparisonJob extends ModelComparisonJobSnapshot {
   stopRequested: boolean;
   pauseRequested: boolean;
   activeTaskId?: string;
+  heartbeatTimer?: number;
 }
 
 const clampProgress = (value: number): number => Math.max(0, Math.min(1, value));
@@ -67,15 +95,62 @@ const readStoredResults = (
     const result = candidate as Partial<ModelComparisonResult>;
     if (
       result.modelId !== modelId ||
-      (result.status !== "success" && result.status !== "failed" && result.status !== "paused") ||
+      !["success", "partial", "failed", "paused", "user-stopped"].includes(
+        result.status as string,
+      ) ||
       typeof result.elapsedMs !== "number" ||
       !Number.isFinite(result.elapsedMs)
     )
       continue;
     results[modelId] = {
       modelId,
-      status: result.status,
+      status: result.status!,
+      phase:
+        typeof result.phase === "string"
+          ? result.phase
+          : result.status === "success"
+            ? "success"
+            : result.status === "partial"
+              ? "partial"
+              : result.status === "paused"
+                ? "paused"
+                : "failed",
       elapsedMs: Math.max(0, result.elapsedMs),
+      processedAudioMs:
+        typeof result.processedAudioMs === "number"
+          ? Math.max(0, result.processedAudioMs)
+          : undefined,
+      coveredAudioMs:
+        typeof result.coveredAudioMs === "number" ? Math.max(0, result.coveredAudioMs) : undefined,
+      coveragePercent:
+        typeof result.coveragePercent === "number"
+          ? Math.max(0, Math.min(100, result.coveragePercent))
+          : undefined,
+      completedUnits:
+        typeof result.completedUnits === "number"
+          ? Math.max(0, Math.floor(result.completedUnits))
+          : undefined,
+      totalUnits:
+        typeof result.totalUnits === "number"
+          ? Math.max(0, Math.floor(result.totalUnits))
+          : undefined,
+      failedUnits:
+        typeof result.failedUnits === "number"
+          ? Math.max(0, Math.floor(result.failedUnits))
+          : undefined,
+      retryCount:
+        typeof result.retryCount === "number"
+          ? Math.max(0, Math.floor(result.retryCount))
+          : undefined,
+      segmentCount:
+        typeof result.segmentCount === "number"
+          ? Math.max(0, Math.floor(result.segmentCount))
+          : undefined,
+      speakerCount:
+        typeof result.speakerCount === "number"
+          ? Math.max(0, Math.floor(result.speakerCount))
+          : undefined,
+      heartbeatAt: typeof result.heartbeatAt === "string" ? result.heartbeatAt : undefined,
       message: typeof result.message === "string" ? result.message : undefined,
     };
   }
@@ -111,6 +186,14 @@ const readStoredJob = (recordingId: string): StoredModelComparisonJob | undefine
       modelIds,
       currentIndex: parsed.currentIndex,
       phase: parsed.phase,
+      currentPhase:
+        typeof parsed.currentPhase === "string"
+          ? parsed.currentPhase
+          : parsed.phase === "running"
+            ? "transcribing"
+            : parsed.phase === "paused"
+              ? "paused"
+              : "user-stopped",
       currentProgress:
         parsed.version === 2 && typeof parsed.currentProgress === "number"
           ? clampProgress(parsed.currentProgress)
@@ -131,6 +214,8 @@ const persistJob = (job: ActiveModelComparisonJob): void => {
       modelIds: job.modelIds,
       currentIndex: job.currentIndex,
       phase: job.phase === "complete" ? "stopped" : job.phase,
+      currentPhase: job.currentPhase,
+      lastHeartbeatAt: job.lastHeartbeatAt,
       currentProgress: clampProgress(job.currentProgress),
       results: job.results,
       updatedAt: Date.now(),
@@ -162,17 +247,31 @@ const hasSavedVariant = (record: VoiceMemoryRecord | undefined, modelId: AiAsrMo
 const taskMatches = (record: VoiceMemoryRecord, taskId: string): boolean =>
   record.taskId === taskId;
 
+const COMPARISON_WATCHDOG_MS = 10 * 60_000;
+
 const waitForTerminal = (recordingId: string, taskId: string): Promise<VoiceMemoryRecord> =>
-  new Promise((resolve) => {
+  new Promise((resolve, reject) => {
     let finished = false;
     let unsubscribe: () => void = () => undefined;
-    const timer = { poll: undefined as number | undefined };
+    const timer = {
+      poll: undefined as number | undefined,
+      watchdog: undefined as number | undefined,
+    };
     const finish = (next: VoiceMemoryRecord) => {
       if (finished) return;
       finished = true;
       unsubscribe();
       if (timer.poll !== undefined) window.clearInterval(timer.poll);
+      if (timer.watchdog !== undefined) window.clearTimeout(timer.watchdog);
       resolve(next);
+    };
+    const fail = (cause: Error) => {
+      if (finished) return;
+      finished = true;
+      unsubscribe();
+      if (timer.poll !== undefined) window.clearInterval(timer.poll);
+      if (timer.watchdog !== undefined) window.clearTimeout(timer.watchdog);
+      reject(cause);
     };
     const inspect = (next: VoiceMemoryRecord | undefined) => {
       if (next && taskMatches(next, taskId) && isTerminal(next)) finish(next);
@@ -187,6 +286,10 @@ const waitForTerminal = (recordingId: string, taskId: string): Promise<VoiceMemo
         .catch(() => undefined);
     };
     timer.poll = window.setInterval(poll, 1_000);
+    timer.watchdog = window.setTimeout(
+      () => fail(new Error("transcription_stalled")),
+      COMPARISON_WATCHDOG_MS,
+    );
     poll();
   });
 
@@ -207,8 +310,13 @@ const isRetryableFailure = (record: VoiceMemoryRecord): boolean => {
   return isRetryableMessage(message);
 };
 
-const formatError = (cause: unknown): string =>
-  cause instanceof Error ? cause.message : "模型测试没有完成";
+const formatError = (cause: unknown): string => {
+  const message = cause instanceof Error ? cause.message : "";
+  if (message === "transcription_stalled") {
+    return "当前模型长时间没有进展，已暂停；可以点击继续测试。";
+  }
+  return message || "模型测试没有完成";
+};
 
 export class ModelComparisonQueue {
   private readonly jobs = new Map<string, ActiveModelComparisonJob>();
@@ -230,6 +338,8 @@ export class ModelComparisonQueue {
       currentIndex: stored.currentIndex,
       phase: stored.phase === "running" ? "paused" : stored.phase,
       currentProgress: stored.currentProgress,
+      currentPhase: stored.currentPhase,
+      lastHeartbeatAt: stored.lastHeartbeatAt,
       results: stored.results,
       recovered: stored.phase === "running",
     };
@@ -254,6 +364,18 @@ export class ModelComparisonQueue {
     this.ensureVoiceStatusSubscription();
     const existing = this.jobs.get(recording.recordingId);
     if (existing?.running) return;
+    const persisted = readStoredJob(recording.recordingId);
+    if (
+      !existing &&
+      persisted &&
+      persisted.phase !== "stopped" &&
+      persisted.currentIndex < persisted.modelIds.length
+    ) {
+      // A page remount or app restart must not discard a durable comparison run. The
+      // explicit clear action remains the way to abandon it and start from scratch.
+      this.resume(recording, models);
+      return;
+    }
     const job = this.createJob(
       recording.recordingId,
       models.map((model) => model.id as AiAsrModelId),
@@ -278,6 +400,8 @@ export class ModelComparisonQueue {
     stored.stopRequested = false;
     stored.pauseRequested = false;
     stored.currentProgress = 0;
+    stored.currentPhase = "waiting";
+    stored.lastHeartbeatAt = new Date().toISOString();
     this.jobs.set(recording.recordingId, stored);
     this.notify(stored);
     void this.run(
@@ -324,6 +448,8 @@ export class ModelComparisonQueue {
       currentIndex: 0,
       currentProgress: 0,
       phase: "running",
+      currentPhase: "waiting",
+      lastHeartbeatAt: new Date().toISOString(),
       results: {},
       recovered: false,
       token: ++this.sequence,
@@ -341,6 +467,8 @@ export class ModelComparisonQueue {
       modelIds: stored.modelIds,
       currentIndex: stored.currentIndex,
       currentProgress: stored.currentProgress,
+      currentPhase: stored.currentPhase,
+      lastHeartbeatAt: stored.lastHeartbeatAt,
       phase: stored.phase === "running" ? "paused" : stored.phase,
       results: stored.results,
       recovered: stored.phase === "running",
@@ -360,6 +488,7 @@ export class ModelComparisonQueue {
   ): Promise<void> {
     if (job.running) return;
     job.running = true;
+    job.heartbeatTimer = window.setInterval(() => this.notify(job), 2_000);
     const token = job.token;
     const available = new Map(models.map((model) => [model.id as AiAsrModelId, model]));
     try {
@@ -369,6 +498,8 @@ export class ModelComparisonQueue {
         if (!modelId || !available.has(modelId)) continue;
         job.currentIndex = index;
         job.currentProgress = 0;
+        job.currentPhase = "waiting";
+        job.lastHeartbeatAt = new Date().toISOString();
         job.error = undefined;
         persistJob(job);
         this.notify(job);
@@ -412,6 +543,7 @@ export class ModelComparisonQueue {
                   offsetMs: marker.offsetMs,
                 })),
               });
+              this.updateJobFromRecord(job, accepted);
               job.currentProgress = recordProgress(accepted);
               job.activeTaskId = taskId;
               persistJob(job);
@@ -420,6 +552,7 @@ export class ModelComparisonQueue {
                 taskMatches(accepted, taskId) && isTerminal(accepted)
                   ? accepted
                   : await waitForTerminal(recording.recordingId, taskId);
+              this.updateJobFromRecord(job, completed);
               if (
                 attempt === 0 &&
                 !job.pauseRequested &&
@@ -447,16 +580,63 @@ export class ModelComparisonQueue {
           // The token is a local cancellation marker, not a credential.
           // eslint-disable-next-line security/detect-possible-timing-attacks
           if (job.token !== token) return;
-          const success = completed.phase === "ready" && completed.transcript.length > 0;
+          const stats = completed.transcriptionStats;
+          const coveragePercent = stats
+            ? Math.max(
+                0,
+                Math.min(
+                  100,
+                  stats.audioDurationMs > 0
+                    ? (stats.coveredAudioMs / stats.audioDurationMs) * 100
+                    : 0,
+                ),
+              )
+            : undefined;
+          const success =
+            completed.phase === "ready" &&
+            completed.taskStatus === "success" &&
+            completed.transcript.length > 0 &&
+            (coveragePercent === undefined || coveragePercent >= 98);
+          const partial =
+            completed.phase === "ready" &&
+            completed.transcript.length > 0 &&
+            (completed.taskStatus === "failed" ||
+              (coveragePercent !== undefined && coveragePercent < 98));
           const failureMessage = recordFailureMessage(completed);
+          const status =
+            completed.phase === "paused"
+              ? job.stopRequested
+                ? "user-stopped"
+                : "paused"
+              : success
+                ? "success"
+                : partial
+                  ? "partial"
+                  : "failed";
           job.results[modelId] = {
             modelId,
-            status: completed.phase === "paused" ? "paused" : success ? "success" : "failed",
+            status,
+            phase: status,
             elapsedMs:
               completed.transcriptionElapsedMs ?? Math.round(performance.now() - startedAt),
-            message: failureMessage,
+            processedAudioMs: stats?.processedAudioMs,
+            coveredAudioMs: stats?.coveredAudioMs,
+            coveragePercent,
+            completedUnits: stats?.completedUnits,
+            totalUnits: stats?.totalUnits,
+            failedUnits: stats?.failedUnits,
+            retryCount: stats?.retryCount,
+            segmentCount: stats?.segmentCount ?? completed.transcript.length,
+            speakerCount: stats?.speakerCount ?? completed.speakers.length,
+            heartbeatAt: stats?.lastHeartbeatAt ?? completed.diagnostic?.updatedAt,
+            message:
+              failureMessage ??
+              (partial
+                ? `部分完成：${stats?.failedUnits ?? 0} 个音频分块未完成，覆盖率 ${coveragePercent?.toFixed(1)}%。`
+                : undefined),
           };
           job.activeTaskId = undefined;
+          job.currentPhase = "releasing";
           job.currentProgress = completed.phase === "paused" ? recordProgress(completed) : 1;
           if (completed.phase === "paused") {
             job.phase = job.stopRequested ? "stopped" : "paused";
@@ -472,10 +652,57 @@ export class ModelComparisonQueue {
           persistJob(job);
           this.notify(job);
         } catch (cause) {
+          if (cause instanceof Error && cause.message === "transcription_stalled") {
+            // The watchdog must never let the next model start while the previous main-process
+            // task is still alive. Abort it, keep the current index, and let Resume continue from
+            // the durable per-unit manifest instead of creating overlapping ASR workers.
+            job.pauseRequested = true;
+            await window.desktopApi.ai.pauseTask(recording.recordingId).catch(() => undefined);
+            const pausedRecord = await window.desktopApi.ai
+              .getVoiceMemory(recording.recordingId)
+              .catch(() => undefined);
+            if (pausedRecord) {
+              this.updateJobFromRecord(job, pausedRecord);
+              job.currentProgress = recordProgress(pausedRecord);
+              const stats = pausedRecord.transcriptionStats;
+              job.results[modelId] = {
+                modelId,
+                status: "paused",
+                phase: "stuck",
+                elapsedMs:
+                  pausedRecord.transcriptionElapsedMs ?? Math.round(performance.now() - startedAt),
+                processedAudioMs: stats?.processedAudioMs,
+                coveredAudioMs: stats?.coveredAudioMs,
+                coveragePercent:
+                  stats && stats.audioDurationMs > 0
+                    ? (stats.coveredAudioMs / stats.audioDurationMs) * 100
+                    : undefined,
+                completedUnits: stats?.completedUnits,
+                totalUnits: stats?.totalUnits,
+                failedUnits: stats?.failedUnits,
+                retryCount: stats?.retryCount,
+                message: "当前模型长时间没有进展，已暂停；可以点击继续测试。",
+              };
+            }
+            job.activeTaskId = undefined;
+            job.currentPhase = "stuck";
+            job.phase = "paused";
+            job.error = "当前模型长时间没有进展，已暂停；可以点击继续测试。";
+            persistJob(job);
+            this.notify(job);
+            return;
+          }
           job.activeTaskId = undefined;
+          job.currentPhase = "failed";
           job.currentProgress = 1;
           const message = formatError(cause);
-          job.results[modelId] = { modelId, status: "failed", elapsedMs: 0, message };
+          job.results[modelId] = {
+            modelId,
+            status: "failed",
+            phase: "failed",
+            elapsedMs: 0,
+            message,
+          };
           job.error = message;
           job.currentIndex = index + 1;
           resumeCurrent = false;
@@ -491,11 +718,14 @@ export class ModelComparisonQueue {
         // The token is a local cancellation marker, not a credential.
         // eslint-disable-next-line security/detect-possible-timing-attacks
       } else if (job.token === token) {
+        job.currentPhase = "user-stopped";
         job.phase = "stopped";
         persistJob(job);
         this.notify(job);
       }
     } finally {
+      if (job.heartbeatTimer !== undefined) window.clearInterval(job.heartbeatTimer);
+      job.heartbeatTimer = undefined;
       job.running = false;
     }
   }
@@ -506,6 +736,11 @@ export class ModelComparisonQueue {
       modelIds: [...job.modelIds],
       currentIndex: job.currentIndex,
       currentProgress: clampProgress(job.currentProgress),
+      currentPhase:
+        job.running && job.lastHeartbeatAt && Date.now() - Date.parse(job.lastHeartbeatAt) > 120_000
+          ? "stuck"
+          : job.currentPhase,
+      lastHeartbeatAt: job.lastHeartbeatAt,
       phase: job.phase,
       results: { ...job.results },
       recovered: job.recovered,
@@ -518,12 +753,27 @@ export class ModelComparisonQueue {
     this.voiceStatusUnsubscribe = window.desktopApi.ai.onVoiceMemoryStatus((record) => {
       const job = this.jobs.get(record.recordingId);
       if (!job?.running || !job.activeTaskId || record.taskId !== job.activeTaskId) return;
+      const heartbeat = record.diagnostic?.updatedAt ?? record.updatedAt;
+      const heartbeatChanged = heartbeat !== job.lastHeartbeatAt;
+      this.updateJobFromRecord(job, record);
       const nextProgress = recordProgress(record);
-      if (Math.abs(nextProgress - job.currentProgress) < 0.005) return;
+      if (Math.abs(nextProgress - job.currentProgress) < 0.005 && !heartbeatChanged) return;
       job.currentProgress = nextProgress;
       persistJob(job);
       this.notify(job);
     });
+  }
+
+  private updateJobFromRecord(job: ActiveModelComparisonJob, record: VoiceMemoryRecord): void {
+    const stage = record.processingStage ?? record.diagnostic?.stage;
+    if (record.phase === "paused") job.currentPhase = "paused";
+    else if (record.phase === "error") job.currentPhase = "failed";
+    else if (record.phase === "ready") job.currentPhase = "releasing";
+    else if (stage === "preprocess" || stage === "audio_file") job.currentPhase = "loading";
+    else if (record.taskStatus === "processing") job.currentPhase = "transcribing";
+    else job.currentPhase = "waiting";
+    const heartbeat = record.diagnostic?.updatedAt ?? record.updatedAt;
+    if (heartbeat) job.lastHeartbeatAt = heartbeat;
   }
 
   private notify(job: ActiveModelComparisonJob | undefined, recordingId = job?.recordingId): void {

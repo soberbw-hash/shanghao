@@ -15,9 +15,11 @@ import type {
 } from "@private-voice/signaling";
 
 import {
+  decodeQuickMessageControlTarget,
   decodeQuickMessageTarget,
   decodeQuickReplyTarget,
   presetForQuickReplyContent,
+  type QuickMessageControlEvent,
 } from "../chat/quickReplies";
 import {
   normalizePresenceGameIconDataUrl,
@@ -32,6 +34,7 @@ interface RoomMemberEventCoordinatorOptions {
   onKnock: (message: ChatMessage) => void;
   onReaction: (reaction: SceneReaction) => void;
   onQuickMessage: (message: RoomQuickMessage) => void;
+  onQuickMessageControl?: (control: QuickMessageControlEvent) => void;
 }
 
 /** Applies member-facing signaling events to the single current-members snapshot. */
@@ -96,6 +99,16 @@ export class RoomMemberEventCoordinator {
   }
 
   handleReaction(payload: SceneReactionMessage): void {
+    const quickMessageControl = decodeQuickMessageControlTarget(payload.targetPeerId);
+    if (quickMessageControl) {
+      if (payload.peerId === this.options.localPeerId) return;
+      this.options.onQuickMessageControl?.({
+        ...quickMessageControl,
+        peerId: payload.peerId,
+        createdAt: payload.createdAt,
+      });
+      return;
+    }
     const configuredPreset = decodeQuickMessageTarget(payload.targetPeerId);
     const legacyContent = decodeQuickReplyTarget(payload.targetPeerId);
     const preset =
@@ -111,6 +124,7 @@ export class RoomMemberEventCoordinator {
         content: quickContent,
         presetId: preset?.id,
         soundId: preset?.soundId,
+        mediaType: preset?.mediaType,
         createdAt: payload.createdAt,
         isLocal: payload.peerId === this.options.localPeerId,
       });

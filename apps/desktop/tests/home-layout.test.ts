@@ -14,13 +14,16 @@ test("home page is a full-screen fixed-channel entry page", () => {
 
   assert.equal(source.includes("entry-page"), true);
   assert.equal(source.includes("固定好友语音"), true);
-  assert.equal(source.includes("更换服务器"), true);
-  assert.equal(source.includes("重新检测"), true);
+  assert.equal(source.includes("更换服务器"), false);
+  assert.equal(source.includes("重新检测"), false);
+  assert.equal(source.includes("频道服务器"), false);
+  assert.equal(source.includes("固定好友频道已准备好"), false);
   assert.equal(source.includes("AvatarPicker"), true);
   assert.equal(source.includes("选择角色"), true);
   assert.equal(source.includes("选一个头像"), false);
   assert.equal(source.includes("TemporaryChatPanel"), false);
   assert.equal(source.includes("entry-server-status-slot"), true);
+  assert.equal(source.includes("diagnostics.testServer"), true);
   assert.equal(source.includes("setServerTestResult(undefined);\n    try"), false);
 });
 

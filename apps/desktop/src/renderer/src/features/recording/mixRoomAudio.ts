@@ -21,6 +21,8 @@ interface MixedSource {
   silenceFrames: number;
   capture?: ActiveSpeakerCapture;
   stopping?: Promise<void>;
+  participantCapture?: ActiveParticipantTrackCapture;
+  participantStopping?: Promise<void>;
   gainDbMinimum: number;
   gainDbMaximum: number;
   gainDbTotal: number;
@@ -35,9 +37,21 @@ interface ActiveSpeakerCapture {
   identity: RecordingSourceIdentity;
 }
 
+interface ActiveParticipantTrackCapture {
+  recorder: MediaRecorder;
+  chunks: BlobPart[];
+  startMs: number;
+  identity: RecordingSourceIdentity;
+  trackId: string;
+}
+
 export interface RecordingSourceIdentity {
   speakerId: string;
   displayNameSnapshot: string;
+  userId?: string;
+  avatarId?: string;
+  roomId?: "main" | "side";
+  joinedAt?: string;
 }
 
 export interface MixedCallOptions {
@@ -52,8 +66,32 @@ export interface MixedCallOptions {
     displayNameSnapshot: string;
     startMs: number;
     endMs: number;
+    userId?: string;
+    trackId?: string;
+    roomId?: "main" | "side";
+    avatarId?: string;
+    joinedAt?: string;
+  }) => Promise<void>;
+  persistParticipantTrack?: (track: {
+    sessionId: string;
+    buffer: ArrayBuffer;
+    sourceMimeType: string;
+    userId: string;
+    speakerId: string;
+    displayNameSnapshot: string;
+    avatarId?: string;
+    trackId: string;
+    roomId: "main" | "side";
+    joinedAt?: string;
+    startMs: number;
+    endMs: number;
   }) => Promise<void>;
   finalizeSpeakerSegments?: (
+    sessionId: string,
+    recordingId: string,
+    recordingFilePath: string,
+  ) => Promise<void>;
+  finalizeParticipantTracks?: (
     sessionId: string,
     recordingId: string,
     recordingFilePath: string,
@@ -137,6 +175,8 @@ export const createMixedCallStream = (
   const segmentMimeType = preferredSegmentMimeType();
   const pendingSegmentWrites = new Set<Promise<void>>();
   const pendingSegmentStops = new Set<Promise<void>>();
+  const pendingTrackWrites = new Set<Promise<void>>();
+  const pendingTrackStops = new Set<Promise<void>>();
   const segmentStats = new Map<string, { count: number; durationMs: number }>();
   let overlappingSegmentStarts = 0;
 
@@ -162,6 +202,11 @@ export const createMixedCallStream = (
               displayNameSnapshot: capture.identity.displayNameSnapshot,
               startMs: capture.startMs,
               endMs: Math.max(capture.startMs + 1, endMs),
+              userId: capture.identity.userId ?? capture.identity.speakerId,
+              trackId: source.trackId,
+              roomId: capture.identity.roomId ?? "main",
+              avatarId: capture.identity.avatarId,
+              joinedAt: capture.identity.joinedAt,
             });
             const durationMs = Math.max(1, endMs - capture.startMs);
             const existing = segmentStats.get(capture.identity.speakerId) ?? {
@@ -240,10 +285,111 @@ export const createMixedCallStream = (
     }
   };
 
+  const stopParticipantCapture = (source: MixedSource, endMs = elapsedMs()): Promise<void> => {
+    if (source.participantStopping) return source.participantStopping;
+    const capture = source.participantCapture;
+    if (!capture) return Promise.resolve();
+    source.participantCapture = undefined;
+    const stopped = new Promise<void>((resolve) => {
+      capture.recorder.addEventListener(
+        "stop",
+        () => {
+          const persist = (async () => {
+            const blob = new Blob(capture.chunks, { type: capture.recorder.mimeType });
+            const identity = capture.identity;
+            const userId = identity.userId ?? identity.speakerId;
+            const roomId = identity.roomId ?? "main";
+            if (blob.size === 0 || !options.persistParticipantTrack) return;
+            await options.persistParticipantTrack({
+              sessionId,
+              buffer: await blob.arrayBuffer(),
+              sourceMimeType: capture.recorder.mimeType,
+              userId,
+              speakerId: identity.speakerId,
+              displayNameSnapshot: identity.displayNameSnapshot,
+              avatarId: identity.avatarId,
+              trackId: capture.trackId,
+              roomId,
+              joinedAt: identity.joinedAt,
+              startMs: capture.startMs,
+              endMs: Math.max(capture.startMs + 1, endMs),
+            });
+          })()
+            .catch((error) => {
+              options.onDiagnostic?.("recording_participant_track_save_failed", {
+                userId: capture.identity.userId ?? capture.identity.speakerId,
+                trackId: capture.trackId,
+                startMs: capture.startMs,
+                endMs,
+                error: error instanceof Error ? error.message : "unknown_error",
+              });
+            })
+            .finally(resolve);
+          pendingTrackWrites.add(persist);
+          void persist.finally(() => pendingTrackWrites.delete(persist));
+        },
+        { once: true },
+      );
+      if (capture.recorder.state !== "inactive") {
+        capture.recorder.requestData();
+        capture.recorder.stop();
+      } else {
+        resolve();
+      }
+    }).finally(() => {
+      if (source.participantStopping === stopped) source.participantStopping = undefined;
+      pendingTrackStops.delete(stopped);
+    });
+    source.participantStopping = stopped;
+    pendingTrackStops.add(stopped);
+    return stopped;
+  };
+
+  const startParticipantCapture = (source: MixedSource): void => {
+    if (
+      !segmentMimeType ||
+      !options.persistParticipantTrack ||
+      source.participantCapture ||
+      source.participantStopping
+    ) {
+      return;
+    }
+    try {
+      const recorder = new MediaRecorder(source.segmentDestination.stream, {
+        mimeType: segmentMimeType,
+        audioBitsPerSecond: 96_000,
+      });
+      const capture: ActiveParticipantTrackCapture = {
+        recorder,
+        chunks: [],
+        startMs: elapsedMs(),
+        identity: { ...source.identity },
+        trackId: source.trackId,
+      };
+      recorder.ondataavailable = (event) => {
+        if (event.data.size > 0) capture.chunks.push(event.data);
+      };
+      recorder.start(1_000);
+      source.participantCapture = capture;
+    } catch (error) {
+      options.onDiagnostic?.("recording_participant_track_start_failed", {
+        userId: source.identity.userId ?? source.identity.speakerId,
+        trackId: source.trackId,
+        error: error instanceof Error ? error.message : "unknown_error",
+      });
+    }
+  };
+
   const flushSpeakerSegments = async (): Promise<void> => {
     await Promise.all([...sources.values()].map((source) => stopSpeakerCapture(source)));
     await Promise.all([...pendingSegmentStops]);
     await Promise.all([...pendingSegmentWrites]);
+  };
+
+  const flushParticipantTracks = async (): Promise<void> => {
+    await Promise.all([...sources.values()].map((source) => stopParticipantCapture(source)));
+    await Promise.all([...pendingTrackStops]);
+    await Promise.all([...pendingTrackWrites]);
   };
 
   const sync = (
@@ -261,11 +407,15 @@ export const createMixedCallStream = (
       const nextTrackId = nextStream?.getAudioTracks()[0]?.id;
       if (!nextTrackId || nextTrackId !== source.trackId) {
         const stopped = stopSpeakerCapture(source);
+        const participantStopped = stopParticipantCapture(source);
         source.node.disconnect();
         source.analyser.disconnect();
         source.gain.disconnect();
         source.segmentDestination.disconnect();
         void stopped.finally(() =>
+          source.segmentDestination.stream.getTracks().forEach((track) => track.stop()),
+        );
+        void participantStopped.finally(() =>
           source.segmentDestination.stream.getTracks().forEach((track) => track.stop()),
         );
         sources.delete(key);
@@ -308,6 +458,7 @@ export const createMixedCallStream = (
         gainDbTotal: 0,
         gainFrames: 0,
       });
+      startParticipantCapture(sources.get(key)!);
       options.onDiagnostic?.("recording_source_attached", {
         sourceKey: key,
         speakerId: identities[key]?.speakerId ?? key,
@@ -385,12 +536,15 @@ export const createMixedCallStream = (
     },
     finish: async (recordingId, recordingFilePath) => {
       await flushSpeakerSegments();
+      await flushParticipantTracks();
       await options.finalizeSpeakerSegments?.(sessionId, recordingId, recordingFilePath);
+      await options.finalizeParticipantTracks?.(sessionId, recordingId, recordingFilePath);
     },
     dispose: () => {
       disposed = true;
       window.clearInterval(analysisTimer);
       void flushSpeakerSegments();
+      void flushParticipantTracks();
       options.onDiagnostic?.("recording_mix_summary", {
         sourceCount: sources.size,
         loudnessBalanceEnabled,
@@ -423,6 +577,9 @@ export const createMixedCallStream = (
         source.analyser.disconnect();
         source.gain.disconnect();
         source.segmentDestination.disconnect();
+        void (source.participantStopping ?? Promise.resolve()).finally(() =>
+          source.segmentDestination.stream.getTracks().forEach((track) => track.stop()),
+        );
         void (source.stopping ?? Promise.resolve()).finally(() =>
           source.segmentDestination.stream.getTracks().forEach((track) => track.stop()),
         );

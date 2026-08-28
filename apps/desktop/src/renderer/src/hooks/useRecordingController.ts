@@ -70,6 +70,10 @@ const recordingSourceIdentities = (): Record<string, RecordingSourceIdentity> =>
     identities[key] = {
       speakerId: member.id,
       displayNameSnapshot: member.nickname,
+      userId: member.userId ?? member.id,
+      avatarId: member.avatarId,
+      roomId: room.roomId === "side" ? "side" : "main",
+      joinedAt: member.joinedAt,
     };
   }
   return identities;
@@ -134,8 +138,21 @@ export const useRecordingController = () => {
           throw new Error(response.errorMessage ?? "speaker_segment_save_failed");
         }
       },
+      persistParticipantTrack: async (track) => {
+        const response = await window.desktopApi.recording.saveParticipantTrack(track);
+        if (!response.ok) {
+          throw new Error(response.errorMessage ?? "participant_track_save_failed");
+        }
+      },
       finalizeSpeakerSegments: async (sessionId, recordingId, recordingFilePath) => {
         await window.desktopApi.recording.finalizeSpeakerSegments({
+          sessionId,
+          recordingId,
+          recordingFilePath,
+        });
+      },
+      finalizeParticipantTracks: async (sessionId, recordingId, recordingFilePath) => {
+        await window.desktopApi.recording.finalizeParticipantTracks({
           sessionId,
           recordingId,
           recordingFilePath,

@@ -4,8 +4,12 @@ import {
   PROFILE_SCHEMA_VERSION,
   SETTINGS_SCHEMA_VERSION,
   OFFICIAL_RELAY_SERVER_URL,
+  DEFAULT_QUICK_MESSAGE_MUSIC_PRESET_ID,
+  DEFAULT_QUICK_MESSAGE_MUSIC_SLOTS,
   DEFAULT_QUICK_MESSAGE_SLOTS,
   DEFAULT_QUICK_MESSAGE_VOLUME,
+  APP_BUILD_NUMBER,
+  APP_PROTOCOL_VERSION,
   type AppSettings,
   type RuntimeInfo,
   type UpdateCheckResult,
@@ -47,8 +51,10 @@ const fallbackRuntimeInfo: RuntimeInfo = {
   appName: APP_NAME,
   version: "0.0.0",
   platform: typeof navigator === "undefined" ? "unknown" : navigator.platform,
-  protocolVersion: "1",
-  buildNumber: "unknown",
+  // Keep room handshakes on the protocol compiled into this client even when
+  // the optional runtime-info IPC call times out during startup.
+  protocolVersion: APP_PROTOCOL_VERSION,
+  buildNumber: APP_BUILD_NUMBER,
 };
 
 const fallbackSettings: AppSettings = {
@@ -58,6 +64,7 @@ const fallbackSettings: AppSettings = {
   nickname: "",
   roomName: DEFAULT_ROOM_NAME,
   avatarId: "fox",
+  accountAvatarPresetId: undefined,
   avatarPath: undefined,
   hasCompletedProfileSetup: false,
   minimizeToTray: false,
@@ -96,7 +103,7 @@ const fallbackSettings: AppSettings = {
   soundVolume: 0.72,
   isSystemNotificationEnabled: true,
   isGameDetectionEnabled: true,
-  isWorkActivityVisible: true,
+  isWorkActivityVisible: false,
   isDynamicWeatherEnabled: true,
   weatherLocationMode: "auto",
   weatherManualCity: "",
@@ -105,6 +112,8 @@ const fallbackSettings: AppSettings = {
   quickMessages: {
     soundEnabled: true,
     soundVolume: DEFAULT_QUICK_MESSAGE_VOLUME,
+    musicPresetId: DEFAULT_QUICK_MESSAGE_MUSIC_PRESET_ID,
+    musicSlots: DEFAULT_QUICK_MESSAGE_MUSIC_SLOTS,
     slots: DEFAULT_QUICK_MESSAGE_SLOTS,
   },
   isBackgroundUpdateCheckEnabled: true,
@@ -139,13 +148,14 @@ const withTimeout = async <T>(
 
 const configureQuickMessageShortcuts = async (settings: AppSettings): Promise<void> => {
   await Promise.all(
-    settings.quickMessages.slots
-      .slice(0, 5)
-      .map((slot, index) =>
-        desktopApi.shortcuts
-          .configureQuickMessage(index, slot.enabled ? slot.shortcut : "")
-          .catch(() => false),
-      ),
+    [
+      ...settings.quickMessages.slots.slice(0, 5),
+      ...settings.quickMessages.musicSlots.slice(0, 3),
+    ].map((slot, index) =>
+      desktopApi.shortcuts
+        .configureQuickMessage(index, slot.enabled ? slot.shortcut : "")
+        .catch(() => false),
+    ),
   );
 };
 
@@ -233,6 +243,12 @@ export const useSettingsStore = create<SettingsStoreState>((set, get) => ({
     if ("recordingMarkerShortcut" in partial) {
       await desktopApi.shortcuts.configureRecordingMarker(settings.recordingMarkerShortcut);
     }
+    if ("pushToTalkShortcut" in partial || "isPushToTalkEnabled" in partial) {
+      await desktopApi.shortcuts.configurePushToTalk(
+        settings.pushToTalkShortcut,
+        settings.isPushToTalkEnabled,
+      );
+    }
     if ("quickMessages" in partial) await configureQuickMessageShortcuts(settings);
     return settings;
   },
@@ -253,6 +269,10 @@ export const useSettingsStore = create<SettingsStoreState>((set, get) => ({
   resetSettings: async () => {
     const settings = await desktopApi.settings.reset();
     set({ settings, avatarDataUrl: undefined });
+    await desktopApi.shortcuts.configurePushToTalk(
+      settings.pushToTalkShortcut,
+      settings.isPushToTalkEnabled,
+    );
     await configureQuickMessageShortcuts(settings);
   },
 }));

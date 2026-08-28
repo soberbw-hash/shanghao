@@ -1,4 +1,4 @@
-import { CalendarDays, Code2, Gamepad2, MessageCircle, MonitorUp } from "lucide-react";
+import { CalendarDays, Gamepad2, MessageCircle, MonitorUp } from "lucide-react";
 import { motion } from "framer-motion";
 import { createPortal } from "react-dom";
 
@@ -31,21 +31,22 @@ export const DailyRoomReportModal = ({
   const roomName = report.roomId === "side" ? "二号房" : "一号房";
   const games = report.games.map((game) => game.name).join("、");
   const gameActivities = report.gameActivities ?? [];
-  const workActivities = report.workActivities ?? [];
   const highlights = buildDailyRoomReportHighlights(report);
+  const savedCommentary = report.commentary?.trim();
+  const hasRichCommentary = Boolean(
+    savedCommentary && savedCommentary.split(/\r?\n/).filter((line) => line.trim()).length >= 2,
+  );
   const headline =
-    report.commentary?.trim() ||
-    (workActivities.length
-      ? `${workActivities[0]?.nickname} 昨天一直在开发，房间里也留下了工作时间 💻`
-      : gameActivities.length
-        ? `${gameActivities[0]?.nickname} 昨天开了一局，房间里留下了游戏时间 🎮`
-        : report.participantCount >= 4
-          ? "昨天又凑成了一桌，热闹得很 🎉"
-          : report.messageCount >= 10
-            ? "昨天聊了不少，房间没白开 💬"
-            : games
-              ? "昨天有人来开黑，也留下了战绩 🎮"
-              : "昨天有人来坐了坐，房间记得这次碰面 ☕");
+    (hasRichCommentary ? savedCommentary : undefined) ||
+    (gameActivities.length
+      ? `${gameActivities[0]?.nickname} 昨天开了一局，房间总算留下了点游戏战绩 🎮\n人来得不算少，至少不是开着房间集体挂机。`
+      : report.participantCount >= 4
+        ? "昨天又凑成了一桌，热闹得像临时开了个小型发布会 🎉\n人多、气氛也在，房间没有白白占着位置。"
+        : report.messageCount >= 10
+          ? `昨天聊得不算少，房间总算没有白开 💬\n${report.messageCount} 条消息，至少比“进来看看”认真多了。`
+          : games
+            ? "昨天有人来开黑，也留下了游戏战绩 🎮\n人不算多，但好歹不是一间空房间。"
+            : "昨天有人来坐了坐 ☕\n人不算多，但总比彻底长草强。");
 
   useEffect(() => {
     const closeOnEscape = (event: KeyboardEvent) => {
@@ -85,7 +86,9 @@ export const DailyRoomReportModal = ({
         >
           昨日房间
         </h2>
-        <p className="mt-2 text-sm font-semibold leading-6 text-[#526a86]">{headline}</p>
+        <p className="mt-2 whitespace-pre-line text-pretty text-sm font-semibold leading-6 text-[#526a86]">
+          {headline}
+        </p>
         {report.games.length || gameActivities.length ? (
           <section className="daily-report-games" aria-label="昨天玩过的游戏">
             <div className="daily-report-games-title">
@@ -110,26 +113,6 @@ export const DailyRoomReportModal = ({
                       {game.participantCount > 1 ? <small>{game.participantCount} 人</small> : null}
                     </span>
                   ))}
-            </div>
-          </section>
-        ) : null}
-        {workActivities.length ? (
-          <section className="daily-report-games" aria-label="昨天工作的应用">
-            <div className="daily-report-games-title">
-              <Code2 aria-hidden="true" />
-              <strong>昨天工作了</strong>
-            </div>
-            <div className="daily-report-game-list">
-              {workActivities.map((activity, index) => (
-                <div
-                  className="daily-report-game-activity"
-                  key={`${activity.nickname}-${activity.workName}-${index}`}
-                >
-                  <strong>{activity.nickname}</strong>
-                  <span>使用 {activity.workName}</span>
-                  <small>{formatDuration(activity.durationMs)}</small>
-                </div>
-              ))}
             </div>
           </section>
         ) : null}

@@ -61,6 +61,7 @@ export default tseslint.config(
   {
     files: [
       "scripts/**/*.{js,mjs,cjs}",
+      "website/scripts/**/*.{js,mjs,cjs}",
       "apps/desktop/scripts/**/*.{js,mjs,cjs}",
       "apps/desktop/tests/**/*.{ts,mjs}",
       "apps/desktop/*.cjs",

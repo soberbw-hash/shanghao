@@ -5,12 +5,27 @@ import {
   useMemo,
   useRef,
   useState,
+  useSyncExternalStore,
   type ReactNode,
 } from "react";
-import { Bot, ExternalLink, Link2, LoaderCircle, RotateCcw, Settings2, Send } from "lucide-react";
+import {
+  Bot,
+  ExternalLink,
+  Link2,
+  LoaderCircle,
+  Music2,
+  Pause,
+  RotateCcw,
+  Settings2,
+  Send,
+} from "lucide-react";
 import { gsap } from "gsap";
 
-import { QUICK_MESSAGE_PRESETS, type ChatMessage } from "@private-voice/shared";
+import {
+  DEFAULT_QUICK_MESSAGE_MUSIC_SLOTS,
+  QUICK_MESSAGE_PRESETS,
+  type ChatMessage,
+} from "@private-voice/shared";
 
 import { getAvatarSrc } from "../../utils/profile";
 import {
@@ -20,7 +35,11 @@ import {
   isMessageOnlyUrl,
 } from "../../features/chat/linkPreview";
 import { writeRoomCollectionDragPayload } from "../../features/chat/collectionDrag";
-import { QUICK_REPLY_COOLDOWN_MS } from "../../features/chat/quickReplies";
+import { quickMessageCooldownMs } from "../../features/chat/quickReplies";
+import {
+  getQuickMessageAudioSnapshot,
+  subscribeQuickMessageAudio,
+} from "../../features/audio/quickMessageAudio";
 import { motionDuration, motionEase } from "../../features/motion/motionSystem";
 import { useAppStore } from "../../store/appStore";
 import { useSettingsStore } from "../../store/settingsStore";
@@ -178,8 +197,15 @@ export const TemporaryChatPanel = ({
   reduceMotion?: boolean;
 }) => {
   const pushToast = useAppStore((state) => state.pushToast);
-  const quickMessageSlots = useSettingsStore((state) => state.settings?.quickMessages.slots);
+  const audioSnapshot = useSyncExternalStore(
+    subscribeQuickMessageAudio,
+    getQuickMessageAudioSnapshot,
+    getQuickMessageAudioSnapshot,
+  );
+  const quickMessageSettings = useSettingsStore((state) => state.settings?.quickMessages);
+  const quickMessageSlots = quickMessageSettings?.slots;
   const lastQuickSendAt = useRef(0);
+  const lastQuickCooldownMs = useRef(3_000);
   const quickSendCooldownTimer = useRef<number | undefined>(undefined);
   const listRef = useRef<HTMLDivElement>(null);
   const sendControlRef = useRef<HTMLSpanElement>(null);
@@ -211,8 +237,45 @@ export const TemporaryChatPanel = ({
       );
     return configured.length
       ? configured
-      : QUICK_MESSAGE_PRESETS.map((preset) => ({ preset, shortcut: "", enabled: true }));
+      : QUICK_MESSAGE_PRESETS.filter((preset) => preset.mediaType !== "music").map((preset) => ({
+          preset,
+          shortcut: "",
+          enabled: true,
+        }));
   }, [quickMessageSlots]);
+  const quickMusicItems = useMemo(() => {
+    const musicSlots = Array.from(
+      { length: DEFAULT_QUICK_MESSAGE_MUSIC_SLOTS.length },
+      (_, index) => {
+        const fallback = DEFAULT_QUICK_MESSAGE_MUSIC_SLOTS[index] ??
+          DEFAULT_QUICK_MESSAGE_MUSIC_SLOTS[0] ?? {
+            presetId: undefined,
+            shortcut: "",
+            enabled: false,
+          };
+        const savedSlot = quickMessageSettings?.musicSlots?.[index];
+        if (savedSlot) return savedSlot;
+        return index === 0 && quickMessageSettings?.musicPresetId
+          ? { ...fallback, presetId: quickMessageSettings.musicPresetId }
+          : fallback;
+      },
+    );
+    return musicSlots
+      .map((slot) => ({
+        preset: QUICK_MESSAGE_PRESETS.find((candidate) => candidate.id === slot.presetId),
+        shortcut: slot.shortcut,
+        enabled: slot.enabled,
+      }))
+      .filter(
+        (
+          item,
+        ): item is {
+          preset: (typeof QUICK_MESSAGE_PRESETS)[number];
+          shortcut: string;
+          enabled: boolean;
+        } => item.enabled && item.preset?.mediaType === "music",
+      );
+  }, [quickMessageSettings?.musicPresetId, quickMessageSettings?.musicSlots]);
 
   useEffect(
     () => () => {
@@ -364,9 +427,24 @@ export const TemporaryChatPanel = ({
   };
 
   const handleQuickSend = (item: (typeof quickMessages)[number], source: HTMLButtonElement) => {
+    const isPlayingMusic =
+      item.preset.mediaType === "music" &&
+      audioSnapshot.soundId === item.preset.soundId &&
+      audioSnapshot.status === "playing";
+    const isPausedMusic =
+      item.preset.mediaType === "music" &&
+      audioSnapshot.soundId === item.preset.soundId &&
+      audioSnapshot.status === "paused";
+    if (isPlayingMusic || isPausedMusic) {
+      animateSendFeedback(source);
+      onQuickMessageSend?.(item.preset.id);
+      return;
+    }
     const now = Date.now();
-    if (now - lastQuickSendAt.current < QUICK_REPLY_COOLDOWN_MS) return;
+    const cooldownMs = quickMessageCooldownMs(item.preset);
+    if (now - lastQuickSendAt.current < lastQuickCooldownMs.current) return;
     lastQuickSendAt.current = now;
+    lastQuickCooldownMs.current = cooldownMs;
     setIsQuickSendCoolingDown(true);
     if (quickSendCooldownTimer.current !== undefined) {
       window.clearTimeout(quickSendCooldownTimer.current);
@@ -374,7 +452,7 @@ export const TemporaryChatPanel = ({
     quickSendCooldownTimer.current = window.setTimeout(() => {
       quickSendCooldownTimer.current = undefined;
       setIsQuickSendCoolingDown(false);
-    }, QUICK_REPLY_COOLDOWN_MS);
+    }, cooldownMs);
     animateSendFeedback(source);
     if (onQuickMessageSend) onQuickMessageSend(item.preset.id);
     else onQuickSend?.(item.preset.content);
@@ -489,31 +567,97 @@ export const TemporaryChatPanel = ({
           <div className="chat-panel-title whitespace-nowrap text-[13px] font-semibold text-[#1a2332]">
             聊天
           </div>
-          <div className="chat-quick-replies flex justify-end gap-1">
-            {quickMessages.map((item, index) => (
-              <button
-                key={`${item.preset.id}-${index}`}
-                type="button"
-                disabled={!canSend || isQuickSendCoolingDown}
-                className="chat-quick-reply interactive-surface rounded-[9px] border border-[rgba(220,230,242,0.8)] bg-white font-medium text-[#52657d] disabled:opacity-35 hover:bg-[#f5f7fb]"
-                onClick={(event) => handleQuickSend(item, event.currentTarget)}
-                title={
-                  item.shortcut ? `${item.preset.content} · ${item.shortcut}` : item.preset.content
-                }
+          <div className="chat-quick-actions flex min-w-0 flex-col items-end gap-1">
+            <div className="chat-quick-replies flex justify-end gap-1">
+              {quickMessages.map((item, index) =>
+                (() => {
+                  const isPlayingMusic =
+                    item.preset.mediaType === "music" &&
+                    audioSnapshot.soundId === item.preset.soundId &&
+                    audioSnapshot.status === "playing";
+                  const isPausedMusic =
+                    item.preset.mediaType === "music" &&
+                    audioSnapshot.soundId === item.preset.soundId &&
+                    audioSnapshot.status === "paused";
+                  return (
+                    <button
+                      key={`${item.preset.id}-${index}`}
+                      type="button"
+                      disabled={
+                        !canSend || (isQuickSendCoolingDown && !isPlayingMusic && !isPausedMusic)
+                      }
+                      className="chat-quick-reply interactive-surface inline-flex items-center gap-1.5 rounded-[9px] border border-[rgba(220,230,242,0.8)] bg-white font-medium text-[#52657d] disabled:opacity-35 hover:bg-[#f5f7fb]"
+                      onClick={(event) => handleQuickSend(item, event.currentTarget)}
+                      title={
+                        item.shortcut
+                          ? `${item.preset.content} · ${item.shortcut}`
+                          : item.preset.content
+                      }
+                    >
+                      {item.preset.mediaType === "music" ? (
+                        isPlayingMusic ? (
+                          <Pause
+                            className="h-3.5 w-3.5 shrink-0 text-[#4D9BF3]"
+                            aria-hidden="true"
+                          />
+                        ) : (
+                          <Music2
+                            className="h-3.5 w-3.5 shrink-0 text-[#4D9BF3]"
+                            aria-hidden="true"
+                          />
+                        )
+                      ) : null}
+                      <span className="whitespace-nowrap">{item.preset.label}</span>
+                    </button>
+                  );
+                })(),
+              )}
+              {onOpenQuickMessageSettings ? (
+                <button
+                  type="button"
+                  className="chat-quick-reply interactive-surface rounded-[9px] border border-[rgba(220,230,242,0.8)] bg-white font-medium text-[#52657d] disabled:opacity-35 hover:bg-[#f5f7fb]"
+                  aria-label="设置快捷消息"
+                  title="设置快捷消息"
+                  onClick={onOpenQuickMessageSettings}
+                >
+                  <Settings2 className="h-3.5 w-3.5" />
+                </button>
+              ) : null}
+            </div>
+            {quickMusicItems.length ? (
+              <div
+                className="chat-quick-music-row flex justify-end gap-1"
+                aria-label="音乐快捷消息"
               >
-                {item.preset.label}
-              </button>
-            ))}
-            {onOpenQuickMessageSettings ? (
-              <button
-                type="button"
-                className="chat-quick-reply interactive-surface rounded-[9px] border border-[rgba(220,230,242,0.8)] bg-white font-medium text-[#52657d] disabled:opacity-35 hover:bg-[#f5f7fb]"
-                aria-label="设置快捷消息"
-                title="设置快捷消息"
-                onClick={onOpenQuickMessageSettings}
-              >
-                <Settings2 className="h-3.5 w-3.5" />
-              </button>
+                {quickMusicItems.map((item, index) => {
+                  const isPlayingMusic =
+                    audioSnapshot.soundId === item.preset.soundId &&
+                    audioSnapshot.status === "playing";
+                  const isPausedMusic =
+                    audioSnapshot.soundId === item.preset.soundId &&
+                    audioSnapshot.status === "paused";
+                  return (
+                    <button
+                      key={`${item.preset.id}-${index}`}
+                      type="button"
+                      disabled={
+                        !canSend || (isQuickSendCoolingDown && !isPlayingMusic && !isPausedMusic)
+                      }
+                      className="chat-quick-reply chat-quick-music interactive-surface inline-flex items-center gap-1 rounded-[9px] border bg-white font-medium disabled:opacity-35"
+                      aria-label={`播放音乐：${item.preset.label}`}
+                      title={`播放音乐：${item.preset.label}`}
+                      onClick={(event) => handleQuickSend(item, event.currentTarget)}
+                    >
+                      {isPlayingMusic ? (
+                        <Pause className="h-3 w-3 shrink-0" aria-hidden="true" />
+                      ) : (
+                        <Music2 className="h-3 w-3 shrink-0" aria-hidden="true" />
+                      )}
+                      <span className="whitespace-nowrap">{item.preset.label}</span>
+                    </button>
+                  );
+                })}
+              </div>
             ) : null}
           </div>
         </div>
@@ -579,15 +723,7 @@ export const TemporaryChatPanel = ({
                     {message.kind === "system" ? (
                       <div
                         data-gsap-chat-message
-                        draggable
                         className="chat-system-message mx-auto w-fit max-w-[90%] rounded-full bg-[#f5f7fb] px-3 py-1 text-center text-[12px] leading-4 text-[#718096]"
-                        onDragStart={(event) => {
-                          writeRoomCollectionDragPayload(event.dataTransfer, {
-                            kind: "text",
-                            title: message.content.slice(0, 36),
-                            content: message.content,
-                          });
-                        }}
                         onContextMenu={(event) => {
                           event.preventDefault();
                           copyText(message.content);

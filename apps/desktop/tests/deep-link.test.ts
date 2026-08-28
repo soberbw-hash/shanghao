@@ -2,7 +2,13 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { readFile } from "node:fs/promises";
 
-import { findDeepLinkInvite, parseDeepLinkInvite } from "../src/main/deep-link";
+import {
+  findDeepLinkAuth,
+  findDeepLinkInvite,
+  isDeepLinkAuthCallback,
+  parseDeepLinkInvite,
+  SHANGHAO_AUTH_REDIRECT_URL,
+} from "../src/main/deep-link";
 
 test("room invitation deep links keep only a websocket server and known room", () => {
   const invite = parseDeepLinkInvite(
@@ -46,6 +52,17 @@ test("deep links are found in Windows second-instance command lines", () => {
   ]);
   assert.equal(invite?.channelId, "main");
   assert.equal(invite?.serverUrl, "ws://127.0.0.1:43821/");
+});
+
+test("auth deep links reuse the shanghao protocol without exposing other URLs", () => {
+  assert.equal(SHANGHAO_AUTH_REDIRECT_URL, "shanghao://auth/confirmed");
+  assert.equal(isDeepLinkAuthCallback("shanghao://auth/confirmed#type=signup"), true);
+  assert.equal(isDeepLinkAuthCallback("shanghao://join?room=main"), false);
+  assert.equal(
+    findDeepLinkAuth(["ShangHao.exe", "shanghao://auth/confirmed?code=one-time-code"]),
+    "shanghao://auth/confirmed?code=one-time-code",
+  );
+  assert.equal(findDeepLinkAuth(["https://example.com/auth/confirmed"]), undefined);
 });
 
 test("development startup repairs a stale Windows protocol registration", async () => {

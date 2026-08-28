@@ -8,6 +8,8 @@ const LEGACY_QUICK_MESSAGE_PRESETS: QuickMessagePreset[] = [
     content: "上号",
     category: "未分类",
     soundId: "legacy-animal-call",
+    streamer: "康康",
+    gameTags: ["瓦罗兰特"],
   },
   {
     id: "legacy-mic",
@@ -67,6 +69,7 @@ const createLocalVoicePreset = (input: {
   label: input.name,
   content: input.name,
   category: "未分类",
+  mediaType: "voice",
   soundId: input.soundId,
   streamer: input.streamer,
   gameTags: input.gameTags,
@@ -80,10 +83,15 @@ const LOCAL_QUICK_MESSAGE_PRESETS: QuickMessagePreset[] = [
     name: "有的兄弟",
     soundId: "voice-you-have-brother",
   }),
-  createLocalVoicePreset({ id: "voice-rush", name: "猛攻", soundId: "voice-rush" }),
+  createLocalVoicePreset({
+    id: "voice-rush",
+    name: "猛攻",
+    soundId: "voice-rush",
+    gameTags: ["三角洲行动"],
+  }),
   createLocalVoicePreset({
     id: "voice-sunxiaochuan-你吼那么大声",
-    name: "你吼那么大声",
+    name: "吼大声",
     soundId: "voice-sunxiaochuan-你吼那么大声",
     streamer: "孙笑川",
     gameTags: ["英雄联盟"],
@@ -160,7 +168,7 @@ const LOCAL_QUICK_MESSAGE_PRESETS: QuickMessagePreset[] = [
   }),
   createLocalVoicePreset({
     id: "voice-pdd-可以说话吗",
-    name: "可以说话吗",
+    name: "可以说话",
     soundId: "voice-pdd-可以说话吗",
     streamer: "PDD",
     gameTags: ["英雄联盟", "绝地求生"],
@@ -195,7 +203,7 @@ const LOCAL_QUICK_MESSAGE_PRESETS: QuickMessagePreset[] = [
   }),
   createLocalVoicePreset({
     id: "voice-lubwei-玩游戏要笑",
-    name: "玩游戏要笑",
+    name: "要笑",
     soundId: "voice-lubwei-玩游戏要笑",
     streamer: "卢本伟",
     gameTags: ["英雄联盟", "绝地求生"],
@@ -258,10 +266,129 @@ const LOCAL_QUICK_MESSAGE_PRESETS: QuickMessagePreset[] = [
   }),
 ];
 
+const createLocalMusicPreset = (input: {
+  id: string;
+  name: string;
+  soundId: string;
+  gameTags: string[];
+}): QuickMessagePreset => ({
+  id: input.id,
+  label: input.name,
+  content: input.name,
+  category: "未分类",
+  mediaType: "music",
+  soundId: input.soundId,
+  gameTags: input.gameTags,
+});
+
+/** Short game-music clips keep their original song titles and carry game tags. */
+export const LOCAL_MUSIC_PRESETS: QuickMessagePreset[] = [
+  createLocalMusicPreset({
+    id: "music-delta-出泪小曲",
+    name: "出泪小曲",
+    soundId: "music-delta-出泪小曲",
+    gameTags: ["三角洲行动"],
+  }),
+  createLocalMusicPreset({
+    id: "music-delta-出心小曲",
+    name: "出心小曲",
+    soundId: "music-delta-出心小曲",
+    gameTags: ["三角洲行动"],
+  }),
+  createLocalMusicPreset({
+    id: "music-delta-得吃小曲",
+    name: "得吃小曲",
+    soundId: "music-delta-得吃小曲",
+    gameTags: ["三角洲行动"],
+  }),
+  createLocalMusicPreset({
+    id: "music-delta-难得真兄弟",
+    name: "难得真兄弟",
+    soundId: "music-delta-难得真兄弟",
+    gameTags: ["三角洲行动"],
+  }),
+  createLocalMusicPreset({
+    id: "music-delta-偷吃小曲",
+    name: "偷吃小曲",
+    soundId: "music-delta-偷吃小曲",
+    gameTags: ["三角洲行动"],
+  }),
+  createLocalMusicPreset({
+    id: "music-delta-花来小曲",
+    name: "花来小曲",
+    soundId: "music-delta-花来小曲",
+    gameTags: ["三角洲行动"],
+  }),
+  createLocalMusicPreset({
+    id: "music-delta-巡飞弹小曲",
+    name: "巡飞弹小曲",
+    soundId: "music-delta-巡飞弹小曲",
+    gameTags: ["三角洲行动"],
+  }),
+  createLocalMusicPreset({
+    id: "music-lol-卡特小曲",
+    name: "卡特小曲",
+    soundId: "music-lol-卡特小曲",
+    gameTags: ["英雄联盟"],
+  }),
+  createLocalMusicPreset({
+    id: "music-lol-潘森小曲",
+    name: "潘森小曲",
+    soundId: "music-lol-潘森小曲",
+    gameTags: ["英雄联盟"],
+  }),
+  createLocalMusicPreset({
+    id: "music-cf-大哥小曲",
+    name: "大哥小曲",
+    soundId: "music-cf-大哥小曲",
+    gameTags: ["穿越火线"],
+  }),
+  createLocalMusicPreset({
+    id: "music-csgo-预瞄小曲",
+    name: "预瞄小曲",
+    soundId: "music-csgo-预瞄小曲",
+    gameTags: ["CSGO"],
+  }),
+  createLocalMusicPreset({
+    id: "music-valorant-霓虹小曲",
+    name: "霓虹小曲",
+    soundId: "music-valorant-霓虹小曲",
+    gameTags: ["瓦罗兰特"],
+  }),
+  createLocalMusicPreset({
+    id: "music-valorant-颗秒小曲",
+    name: "颗秒小曲",
+    soundId: "music-valorant-颗秒小曲",
+    gameTags: ["瓦罗兰特"],
+  }),
+];
+
+/** The first music clip is the initial choice for the dedicated music button. */
+export const DEFAULT_QUICK_MESSAGE_MUSIC_PRESET_ID = LOCAL_MUSIC_PRESETS[0]?.id;
+
+export const DEFAULT_QUICK_MESSAGE_MUSIC_SLOTS: QuickMessageShortcutSlot[] = [
+  {
+    presetId: LOCAL_MUSIC_PRESETS[0]?.id,
+    shortcut: "Ctrl+Shift+1",
+    enabled: true,
+  },
+  {
+    presetId: LOCAL_MUSIC_PRESETS[1]?.id,
+    shortcut: "Ctrl+Shift+2",
+    enabled: true,
+  },
+  {
+    presetId: LOCAL_MUSIC_PRESETS[2]?.id,
+    shortcut: "Ctrl+Shift+3",
+    enabled: true,
+  },
+];
+
 export const QUICK_MESSAGE_PRESETS: QuickMessagePreset[] = [
   ...LEGACY_QUICK_MESSAGE_PRESETS,
   ...DEFAULT_VOICE_QUICK_MESSAGE_PRESETS,
   ...LOCAL_QUICK_MESSAGE_PRESETS,
+  ...LOCAL_MUSIC_PRESETS,
 ];
 
 /** Starts just below the -14 LUFS speech reference; final pack mastering stays independent. */

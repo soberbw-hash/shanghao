@@ -25,6 +25,7 @@ export type AccountServerErrorCode =
   | "account_password_weak"
   | "account_invalid_credentials"
   | "account_session_expired"
+  | "account_not_supported"
   | "account_profile_unavailable"
   | "account_avatar_invalid"
   | "account_avatar_upload_failed"
@@ -63,9 +64,13 @@ export interface VerifiedAccountIdentity {
 export interface AccountBackend {
   readonly configured: boolean;
   readonly publicConfiguration?: {
-    supabaseUrl: string;
-    publishableKey: string;
-    usernameLoginUrl: string;
+    provider?: "supabase" | "cloudbase";
+    supabaseUrl?: string;
+    publishableKey?: string;
+    usernameLoginUrl?: string;
+    cloudbaseEnvId?: string;
+    cloudbaseRegion?: string;
+    cloudbasePublishableKey?: string;
   };
   register(input: {
     username: string;
@@ -94,6 +99,31 @@ const authOptions = {
   autoRefreshToken: false,
   detectSessionInUrl: false,
 } as const;
+
+/**
+ * Resolve Supabase's named-key JSON map without ever logging or exposing the
+ * key value. The plural variable is preferred, but the legacy singular
+ * variable remains a compatibility fallback for existing deployments.
+ */
+export const resolveSupabaseEnvironmentKey = (
+  namedKeys: string | undefined,
+  fallbackKey: string | undefined,
+): string | undefined => {
+  if (namedKeys?.trim()) {
+    try {
+      const parsed: unknown = JSON.parse(namedKeys);
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+        const defaultKey = (parsed as Record<string, unknown>).default;
+        if (typeof defaultKey === "string" && defaultKey.trim()) return defaultKey.trim();
+      }
+    } catch {
+      // Fall back to the legacy variable when the JSON map is malformed.
+    }
+  }
+
+  const legacyKey = fallbackKey?.trim();
+  return legacyKey || undefined;
+};
 
 const toProfile = (row: ProfileRow, email?: string): AccountProfile => ({
   userId: row.id,
@@ -192,8 +222,14 @@ export class SupabaseAccountService implements AccountBackend {
   ): SupabaseAccountService {
     return new SupabaseAccountService({
       supabaseUrl: process.env.SUPABASE_URL,
-      publishableKey: process.env.SUPABASE_PUBLISHABLE_KEY,
-      secretKey: process.env.SUPABASE_SECRET_KEY,
+      publishableKey: resolveSupabaseEnvironmentKey(
+        process.env.SUPABASE_PUBLISHABLE_KEYS,
+        process.env.SUPABASE_PUBLISHABLE_KEY,
+      ),
+      secretKey: resolveSupabaseEnvironmentKey(
+        process.env.SUPABASE_SECRET_KEYS,
+        process.env.SUPABASE_SECRET_KEY,
+      ),
       passwordResetRedirectUrl: process.env.SUPABASE_PASSWORD_RESET_REDIRECT_URL,
       logger,
     });
@@ -448,5 +484,204 @@ export class SupabaseAccountService implements AccountBackend {
           ? Number((error as { status?: unknown }).status) || undefined
           : undefined,
     });
+  }
+}
+
+interface CloudBaseUserResponse {
+  sub?: string;
+  uid?: string;
+  username?: string;
+  name?: string;
+  displayName?: string;
+  nickName?: string;
+  email?: string;
+  phone_number?: string;
+  picture?: string;
+  user_metadata?: {
+    username?: string;
+    name?: string;
+    displayName?: string;
+    nickName?: string;
+    phone_number?: string;
+    picture?: string;
+  };
+}
+
+const normalizeCloudBaseAuthBaseUrl = (value: string): string | undefined => {
+  try {
+    const url = new URL(value.trim());
+    if (url.protocol !== "https:" || url.username || url.password || url.search || url.hash) {
+      return undefined;
+    }
+    const pathname = url.pathname.replace(/\/+$/, "");
+    url.pathname = pathname.endsWith("/auth/v1") ? pathname : `${pathname}/auth/v1`;
+    return url.toString().replace(/\/$/, "");
+  } catch {
+    return undefined;
+  }
+};
+
+/**
+ * CloudBase Auth v2 token verifier for the relay. The relay never trusts the
+ * uid/username sent by a desktop client; it resolves both from CloudBase's
+ * introspection and user/me endpoints instead.
+ */
+export class CloudBaseAccountService implements AccountBackend {
+  readonly configured: boolean;
+  readonly publicConfiguration?: AccountBackend["publicConfiguration"];
+  private readonly authBaseUrl?: string;
+
+  constructor(
+    private readonly options: {
+      envId?: string;
+      region?: string;
+      publishableKey?: string;
+      authBaseUrl?: string;
+      fetcher?: typeof fetch;
+      logger?: (message: string, context?: Record<string, unknown>) => void;
+    },
+  ) {
+    const envId = options.envId?.trim();
+    const region = options.region?.trim() || "ap-shanghai";
+    const publishableKey = options.publishableKey?.trim();
+    const configuredAuthBaseUrl = options.authBaseUrl?.trim();
+    const authBaseUrl = envId
+      ? normalizeCloudBaseAuthBaseUrl(
+          configuredAuthBaseUrl || `https://${envId}.api.tcloudbasegateway.com`,
+        )
+      : undefined;
+    this.configured = Boolean(envId && region && authBaseUrl);
+    if (!this.configured || !envId) return;
+    this.authBaseUrl = authBaseUrl;
+    this.publicConfiguration = {
+      provider: "cloudbase",
+      cloudbaseEnvId: envId,
+      cloudbaseRegion: region,
+      ...(publishableKey ? { cloudbasePublishableKey: publishableKey } : {}),
+    };
+  }
+
+  static fromEnvironment(
+    logger?: (message: string, context?: Record<string, unknown>) => void,
+  ): CloudBaseAccountService {
+    return new CloudBaseAccountService({
+      envId: process.env.CLOUDBASE_ENV_ID,
+      region: process.env.CLOUDBASE_REGION || "ap-shanghai",
+      publishableKey: process.env.CLOUDBASE_PUBLISHABLE_KEY,
+      authBaseUrl: process.env.CLOUDBASE_AUTH_BASE_URL,
+      logger,
+    });
+  }
+
+  async register(): Promise<AccountAuthResult> {
+    throw new AccountServerError("account_not_supported");
+  }
+
+  async login(): Promise<AccountAuthResult> {
+    throw new AccountServerError("account_not_supported");
+  }
+
+  async refresh(): Promise<AccountAuthResult> {
+    throw new AccountServerError("account_not_supported");
+  }
+
+  async requestPasswordReset(): Promise<void> {
+    throw new AccountServerError("account_not_supported");
+  }
+
+  async getProfile(accessToken: string): Promise<AccountProfile> {
+    const user = await this.readUser(accessToken);
+    const userId = user.sub?.trim() || user.uid?.trim();
+    if (!userId) throw new AccountServerError("account_session_expired");
+    const metadata = user.user_metadata;
+    const username =
+      user.username?.trim() ||
+      metadata?.username?.trim() ||
+      user.phone_number?.trim() ||
+      metadata?.phone_number?.trim() ||
+      user.email?.trim() ||
+      userId;
+    return {
+      userId,
+      username,
+      displayName:
+        user.name?.trim() ||
+        user.displayName?.trim() ||
+        user.nickName?.trim() ||
+        metadata?.name?.trim() ||
+        metadata?.displayName?.trim() ||
+        metadata?.nickName?.trim() ||
+        username,
+      email: user.email?.trim() || undefined,
+      avatarUrl: user.picture?.trim() || metadata?.picture?.trim() || undefined,
+    };
+  }
+
+  async updateProfile(): Promise<AccountProfile> {
+    throw new AccountServerError("account_not_supported");
+  }
+
+  async updateAvatar(): Promise<AccountProfile> {
+    throw new AccountServerError("account_not_supported");
+  }
+
+  async verifyAccessToken(accessToken: string): Promise<VerifiedAccountIdentity> {
+    const profile = await this.getProfile(accessToken);
+    return {
+      userId: profile.userId,
+      username: profile.username,
+      displayName: profile.displayName,
+      avatarUrl: profile.avatarUrl,
+    };
+  }
+
+  private async readUser(accessToken: string): Promise<CloudBaseUserResponse> {
+    if (!this.configured || !this.authBaseUrl) {
+      throw new AccountServerError("account_not_configured");
+    }
+    const token = accessToken.trim();
+    if (!token || token.length > 8_192) {
+      throw new AccountServerError("account_session_expired");
+    }
+    const request = this.options.fetcher ?? fetch;
+    try {
+      const introspection = await request(`${this.authBaseUrl}/token/introspect`, {
+        method: "GET",
+        headers: { accept: "application/json", authorization: `Bearer ${token}` },
+        signal: AbortSignal.timeout(12_000),
+      });
+      const introspectionBody = (await introspection.json().catch(() => ({}))) as {
+        sub?: string;
+      };
+      if (introspection.status === 401 || introspection.status === 403) {
+        throw new AccountServerError("account_session_expired");
+      }
+      if (!introspection.ok) {
+        throw new AccountServerError("account_network_error");
+      }
+      if (!introspectionBody.sub) throw new AccountServerError("account_session_expired");
+
+      const response = await request(`${this.authBaseUrl}/user/me`, {
+        method: "GET",
+        headers: { accept: "application/json", authorization: `Bearer ${token}` },
+        signal: AbortSignal.timeout(12_000),
+      });
+      const body = (await response.json().catch(() => ({}))) as CloudBaseUserResponse;
+      if (response.status === 401 || response.status === 403) {
+        throw new AccountServerError("account_session_expired");
+      }
+      if (!response.ok) throw new AccountServerError("account_network_error");
+      if (!body.sub && !body.uid) throw new AccountServerError("account_profile_unavailable");
+      if (body.sub && body.sub !== introspectionBody.sub) {
+        throw new AccountServerError("account_session_expired");
+      }
+      return { ...body, sub: body.sub || introspectionBody.sub };
+    } catch (error) {
+      if (error instanceof AccountServerError) throw error;
+      this.options.logger?.("cloudbase access token verification failed", {
+        errorCode: error instanceof Error ? error.name : "unknown",
+      });
+      throw new AccountServerError("account_network_error", { cause: error });
+    }
   }
 }

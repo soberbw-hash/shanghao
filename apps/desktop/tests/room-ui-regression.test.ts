@@ -177,6 +177,21 @@ test("room actions follow status, interaction, tools and safe-exit hierarchy", (
   );
 });
 
+test("room background sync only runs while connected and on actual state changes", () => {
+  const source = readFileSync(
+    path.resolve(process.cwd(), "src/renderer/src/pages/RoomPage.tsx"),
+    "utf8",
+  );
+  assert.match(
+    source,
+    /publishPressure\(\);\s*if \(room\.connectionState !== RoomConnectionState\.Connected\) return;/s,
+  );
+  assert.doesNotMatch(
+    source,
+    /const heartbeat = window\.setInterval\(\(\) => \{\s*void window\.desktopApi\.overlay\.update/s,
+  );
+});
+
 test("room floating chrome keeps the requested static glass hierarchy", () => {
   const stylesSource = readRendererCss(process.cwd());
 

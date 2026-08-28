@@ -4,18 +4,12 @@
       <stop offset="0" stop-color="#23262D" />
       <stop offset="1" stop-color="#111318" />
     </linearGradient>
-    <filter id="shadow" x="24" y="26" width="464" height="460" filterUnits="userSpaceOnUse">
-      <feDropShadow dx="0" dy="18" stdDeviation="18" flood-color="#111827" flood-opacity="0.28" />
-    </filter>
   </defs>
-  <g filter="url(#shadow)">
-    <rect x="56" y="48" width="400" height="400" rx="112" fill="url(#panel)" />
-    <rect x="62" y="54" width="388" height="388" rx="106" stroke="#2B2F36" stroke-width="12" />
-  </g>
-  <path d="M148 276V224C148 159.935 199.935 108 264 108C328.065 108 380 159.935 380 224V276" stroke="#FFFFFF" stroke-width="34" stroke-linecap="round" />
-  <rect x="126" y="228" width="48" height="116" rx="24" fill="#FFFFFF" />
-  <rect x="338" y="228" width="48" height="116" rx="24" fill="#FFFFFF" />
-  <rect x="170" y="208" width="54" height="144" rx="27" fill="#FFFFFF" />
-  <rect x="288" y="208" width="54" height="144" rx="27" fill="#FFFFFF" />
-  <path d="M228 146C246 129 282 129 300 146" stroke="#FFFFFF" stroke-width="34" stroke-linecap="round" />
+  <rect x="28" y="28" width="456" height="456" rx="124" fill="url(#panel)" />
+  <rect x="34" y="34" width="444" height="444" rx="118" stroke="#2B2F36" stroke-width="10" />
+  <path d="M124 276V220c0-77.32 62.68-140 140-140s140 62.68 140 140v56" stroke="#FFFFFF" stroke-width="32" stroke-linecap="round" />
+  <rect x="100" y="216" width="52" height="132" rx="26" fill="#FFFFFF" />
+  <rect x="360" y="216" width="52" height="132" rx="26" fill="#FFFFFF" />
+  <rect x="164" y="196" width="52" height="168" rx="26" fill="#FFFFFF" />
+  <rect x="296" y="196" width="52" height="168" rx="26" fill="#FFFFFF" />
 </svg>

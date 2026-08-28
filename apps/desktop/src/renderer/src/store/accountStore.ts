@@ -19,6 +19,7 @@ interface AccountStoreState {
   hydrate: () => Promise<AccountSnapshot>;
   login: (request: AccountLoginRequest) => Promise<AccountSnapshot>;
   register: (request: AccountRegisterRequest) => Promise<AccountSnapshot>;
+  requestVerificationCode: (phone: string) => Promise<void>;
   requestPasswordReset: (request: AccountPasswordResetRequest) => Promise<void>;
   updateProfile: (request: AccountProfileUpdateRequest) => Promise<AccountSnapshot>;
   updateAvatar: (request: AccountAvatarUpdateRequest) => Promise<AccountSnapshot>;
@@ -77,6 +78,16 @@ export const useAccountStore = create<AccountStoreState>((set) => {
     },
     login: (request) => run(() => window.desktopApi.account.login(request)),
     register: (request) => run(() => window.desktopApi.account.register(request)),
+    requestVerificationCode: async (phone) => {
+      set({ isBusy: true, errorCode: undefined });
+      try {
+        await window.desktopApi.account.requestVerificationCode(phone);
+        set({ isBusy: false });
+      } catch (error) {
+        set({ isBusy: false, errorCode: accountErrorCode(error) });
+        throw error;
+      }
+    },
     requestPasswordReset: async (request) => {
       set({ isBusy: true, errorCode: undefined });
       try {

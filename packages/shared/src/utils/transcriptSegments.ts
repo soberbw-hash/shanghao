@@ -106,6 +106,7 @@ export const mergeTranscriptIntoSentences = (
       endMs: Math.max(current.endMs, next.endMs),
       text: joinedText,
       words: [...(current.words ?? []), ...(next.words ?? [])],
+      rawSegments: [...(current.rawSegments ?? []), ...(next.rawSegments ?? [])],
     };
   }
 

@@ -14,6 +14,67 @@
   pointer-events: auto;
 }
 
+.quick-message-music-badge,
+.overlay-quick-music-button {
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(255, 255, 255, 0.92);
+  background: rgba(236, 248, 255, 0.96);
+  color: #3f98e8;
+  box-shadow:
+    0 8px 18px rgba(53, 80, 117, 0.15),
+    inset 0 1px 0 rgba(255, 255, 255, 0.96);
+  cursor: pointer;
+}
+
+.quick-message-music-badge {
+  position: absolute;
+  z-index: 10;
+  top: 27px;
+  right: -5px;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  outline: none;
+  pointer-events: auto;
+}
+
+.quick-message-music-badge svg {
+  width: 18px;
+  height: 18px;
+}
+
+.quick-message-music-badge i {
+  position: absolute;
+  inset: -4px;
+  border: 1px solid currentColor;
+  border-radius: inherit;
+  opacity: 0;
+  animation: music-badge-pulse 2.1s ease-out infinite;
+}
+
+.quick-message-music-badge:hover,
+.quick-message-music-badge:focus-visible,
+.overlay-quick-music-button:hover,
+.overlay-quick-music-button:focus-visible {
+  background: #e0f1ff;
+  color: #2078cf;
+}
+
+.overlay-quick-music-button {
+  width: 18px;
+  height: 18px;
+  flex: 0 0 18px;
+  border-radius: 50%;
+  padding: 0;
+  outline: none;
+}
+
+.overlay-quick-music-button svg {
+  width: 11px;
+  height: 11px;
+}
+
 .music-activity-position {
   position: absolute;
   width: 0;

@@ -268,6 +268,8 @@ const SceneCharacterView = ({
   const targetLeft = position.left;
   const targetTop = position.top;
   const targetOpacity = isOffline ? 0.45 : 1;
+  const targetOpacityRef = useRef(targetOpacity);
+  const previousTargetOpacityRef = useRef(targetOpacity);
 
   const stopActiveAnimations = useCallback(() => {
     const element = motionElementRef.current;
@@ -289,6 +291,10 @@ const SceneCharacterView = ({
     motionPhaseRef.current = motionPhase;
   }, [motionPhase]);
 
+  useLayoutEffect(() => {
+    targetOpacityRef.current = targetOpacity;
+  }, [targetOpacity]);
+
   useEffect(() => {
     onSettledRef.current = onSettled;
   }, [onSettled]);
@@ -304,7 +310,7 @@ const SceneCharacterView = ({
 
     if (shouldReduceMotion) {
       element.style.transform = sceneTransform(targetLeft, targetTop);
-      element.style.opacity = String(targetOpacity);
+      element.style.opacity = String(targetOpacityRef.current);
       currentPositionRef.current = { left: targetLeft, top: targetTop };
       lastZoneRef.current = zone;
       activeTargetZoneRef.current = zone;
@@ -324,7 +330,7 @@ const SceneCharacterView = ({
         Math.abs(previousPosition.top - targetTop) < 0.02;
       if (isAlreadyAtTarget) {
         element.style.transform = sceneTransform(targetLeft, targetTop);
-        element.style.opacity = String(targetOpacity);
+        element.style.opacity = String(targetOpacityRef.current);
         setDisplayZone(zone);
         setMotionPhase(zone === "restroomZone" ? "away-idle" : "idle");
         return;
@@ -378,7 +384,10 @@ const SceneCharacterView = ({
         },
       );
       const opacityMotion = element.animate(
-        [{ opacity: window.getComputedStyle(element).opacity }, { opacity: targetOpacity }],
+        [
+          { opacity: window.getComputedStyle(element).opacity },
+          { opacity: targetOpacityRef.current },
+        ],
         {
           duration: characterMotionTiming.routeOpacitySeconds * 1_000,
           easing: `cubic-bezier(${motionCurve.enter.join(", ")})`,
@@ -395,7 +404,7 @@ const SceneCharacterView = ({
       // Renderer throttling or an interrupted texture decode must not leave a
       // late joiner suspended on its entry frame. Finish at the assigned seat.
       element.style.transform = sceneTransform(targetLeft, targetTop);
-      element.style.opacity = String(targetOpacity);
+      element.style.opacity = String(targetOpacityRef.current);
       routeMotion.cancel();
       opacityMotion.cancel();
       if (activeRouteAnimationRef.current === routeMotion) {
@@ -430,10 +439,37 @@ const SceneCharacterView = ({
     shouldReduceMotion,
     stopActiveAnimations,
     targetLeft,
-    targetOpacity,
     targetTop,
     zone,
   ]);
+
+  useLayoutEffect(() => {
+    const element = motionElementRef.current;
+    if (!element) return;
+    if (previousTargetOpacityRef.current === targetOpacity) return;
+    previousTargetOpacityRef.current = targetOpacity;
+    const nextOpacity = targetOpacity;
+    if (shouldReduceMotion) {
+      element.style.opacity = String(nextOpacity);
+      return;
+    }
+
+    const opacityMotion = element.animate(
+      [{ opacity: window.getComputedStyle(element).opacity }, { opacity: nextOpacity }],
+      {
+        duration: characterMotionTiming.routeOpacitySeconds * 1_000,
+        easing: `cubic-bezier(${motionCurve.enter.join(", ")})`,
+        fill: "forwards",
+      },
+    );
+    activeOpacityAnimationRef.current = opacityMotion;
+    return () => {
+      opacityMotion.cancel();
+      if (activeOpacityAnimationRef.current === opacityMotion) {
+        activeOpacityAnimationRef.current = undefined;
+      }
+    };
+  }, [shouldReduceMotion, targetOpacity]);
 
   useEffect(() => {
     if (isPresent) return;

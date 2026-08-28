@@ -1,4 +1,4 @@
-import { type KeyboardEvent, useMemo, useState } from "react";
+import { type KeyboardEvent, type MouseEvent as ReactMouseEvent, useMemo, useState } from "react";
 import { Keyboard } from "lucide-react";
 
 import { Button } from "./Button";
@@ -12,6 +12,11 @@ const modifierLabels: Record<string, string> = {
 };
 
 const ignoredKeys = new Set(["Tab"]);
+
+const mouseShortcutNames: Record<number, string> = {
+  3: "Mouse4",
+  4: "Mouse5",
+};
 
 export const formatShortcutForDisplay = (value: string): string =>
   value
@@ -68,7 +73,7 @@ export const ShortcutInput = ({
 
   const displayValue = useMemo(() => {
     if (isCapturing) {
-      return "请直接按下快捷键";
+      return "请按下键盘按键或鼠标侧键";
     }
 
     return formatShortcutForDisplay(value);
@@ -85,12 +90,28 @@ export const ShortcutInput = ({
           <Keyboard className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#98A2B3]" />
           <Input
             readOnly
-            className={`shortcut-input-field pl-10 ${compact ? "h-9 min-w-0 text-xs" : ""}`}
+            className={`shortcut-input-field ${
+              compact ? "shortcut-input-field-compact h-9 min-w-0 pl-8 pr-1" : "pl-10"
+            }`}
             value={displayValue}
             title={displayValue}
             placeholder={placeholder}
             onFocus={() => setIsCapturing(true)}
             onBlur={() => setIsCapturing(false)}
+            onMouseDown={(event: ReactMouseEvent<HTMLInputElement>) => {
+              const mouseShortcut = mouseShortcutNames[event.button];
+              if (!isCapturing || !mouseShortcut) return;
+              event.preventDefault();
+              event.stopPropagation();
+              const modifiers = [
+                event.ctrlKey ? "Ctrl" : "",
+                event.metaKey ? "Meta" : "",
+                event.shiftKey ? "Shift" : "",
+                event.altKey ? "Alt" : "",
+              ].filter(Boolean);
+              onChange([...modifiers, mouseShortcut].join("+"));
+              setIsCapturing(false);
+            }}
             onKeyDown={(event) => {
               event.preventDefault();
               event.stopPropagation();

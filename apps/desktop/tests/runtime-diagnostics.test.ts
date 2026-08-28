@@ -78,18 +78,20 @@ test("diagnostic IPC and bundle expose health without ordinary fault-lab UI", ()
   assert.match(ipc, /runtime-health\.json/);
   assert.match(ipc, /flight-recorder\.json/);
   assert.match(diagnosticsCard, /import\.meta\.env\.DEV/);
-  assert.match(diagnosticsCard, /Realtime Fault Lab/);
+  assert.match(diagnosticsCard, /开发测试入口/);
+  assert.doesNotMatch(diagnosticsCard, /Realtime Fault Lab/);
 });
 
-test("screen-share diagnostics use a readable idle state and reveal real metrics on demand", () => {
+test("diagnostics keep screen-share status readable without exposing raw metrics", () => {
   const diagnosticsCard = readDesktop(
     "src/renderer/src/components/settings/DiagnosticsSettingsCard.tsx",
   );
 
-  assert.match(diagnosticsCard, /hasScreenShareMetrics/);
-  assert.match(diagnosticsCard, /未开始屏幕分享/);
-  assert.match(diagnosticsCard, /请求 \/ 实际采集/);
-  assert.match(diagnosticsCard, /编码 \/ 码率/);
+  assert.match(diagnosticsCard, /屏幕分享/);
+  assert.match(diagnosticsCard, /没有发现屏幕分享问题/);
+  assert.match(diagnosticsCard, /屏幕分享可能暂时卡住/);
+  assert.match(diagnosticsCard, /回到房间/);
+  assert.doesNotMatch(diagnosticsCard, /hasScreenShareMetrics/);
   assert.doesNotMatch(diagnosticsCard, /Requested \/ Capture/);
   assert.doesNotMatch(diagnosticsCard, /Encode \/ Bitrate/);
 });

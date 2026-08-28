@@ -27,6 +27,7 @@ import {
   type AccountProfileUpdateRequest,
   type AccountRegisterRequest,
   type AccountSnapshot,
+  type CloudBaseClientConfig,
   type AppSettings,
   type AiCustomProviderInput,
   type AiCustomProviderStatus,
@@ -58,6 +59,9 @@ import {
   type RecordingSpeakerSegmentFinalizePayload,
   type RecordingSpeakerSegmentPayload,
   type RecordingSpeakerSegmentResponse,
+  type RecordingParticipantTrackPayload,
+  type RecordingParticipantTrackResponse,
+  type RecordingParticipantTracksFinalizePayload,
   type RendererLogPayload,
   type RendererRuntimeHealthInput,
   type RuntimeInfo,
@@ -90,10 +94,14 @@ import {
   finalizeRecordingSpeakerSegments,
   saveRecordingSpeakerSegment,
 } from "./recording-speaker-segments";
+import {
+  cleanupRecordingParticipantTracks,
+  finalizeRecordingParticipantTracks,
+  saveRecordingParticipantTrack,
+} from "./recording-participant-tracks";
 import { resolveRecordingDirectory } from "./recording-path";
 import {
   deleteRecording,
-  getUsableRecordingDirectory,
   readRecordingLibrary,
   renameRecording,
   runAutomaticRecordingCleanup,
@@ -102,6 +110,9 @@ import {
 } from "./recording-library";
 import { readRelayStatus } from "./relay-status";
 import { sendToWindow } from "./safe-web-contents";
+import { registerOverlayQuickMusicMuteHandler } from "./overlay-quick-music-ipc";
+import { registerRecordingLocationIpcHandlers } from "./recording-location-ipc";
+import { registerShortcutIpcHandlers } from "./shortcut-ipc";
 import { SettingsStore } from "./settings-store";
 import { ShortcutController } from "./shortcuts";
 import { SignalingClientBridge } from "./signaling-client";
@@ -341,6 +352,7 @@ export const registerIpcHandlers = ({
       return weatherSession.fetch(input instanceof URL ? input.toString() : input, init);
     },
   });
+  registerRecordingLocationIpcHandlers(settingsStore);
   signalingClient.on("event", (payload: SignalingEventPayload) => {
     sendToWindow(getMainWindow(), IPC_CHANNELS.signaling.event, payload);
   });
@@ -490,11 +502,7 @@ export const registerIpcHandlers = ({
       return readLinkPreviewIcon(rawUrl);
     },
   );
-  ipcMain.handle(
-    IPC_CHANNELS.shortcuts.configureRecordingMarker,
-    async (_event, accelerator: string): Promise<boolean> =>
-      shortcuts.configureRecordingMarker(accelerator),
-  );
+  registerShortcutIpcHandlers(shortcuts);
 
   ipcMain.handle(IPC_CHANNELS.clipboard.writeText, async (_event, text: string): Promise<void> => {
     requireString(text, 4_096, "clipboard_text");
@@ -668,6 +676,17 @@ export const registerIpcHandlers = ({
     accounts.getSnapshot(),
   );
   ipcMain.handle(
+    IPC_CHANNELS.account.configureCloudBase,
+    async (_event, config?: CloudBaseClientConfig): Promise<void> => {
+      if (!config) return;
+      await accounts.configureCloudBase({
+        envId: requireString(config.envId, 128, "cloudbase_env_id"),
+        region: requireString(config.region, 64, "cloudbase_region"),
+        publishableKey: requireString(config.publishableKey, 16_384, "cloudbase_publishable_key"),
+      });
+    },
+  );
+  ipcMain.handle(
     IPC_CHANNELS.account.login,
     async (_event, request: AccountLoginRequest): Promise<AccountSnapshot> =>
       accounts.login({
@@ -680,7 +699,18 @@ export const registerIpcHandlers = ({
     async (_event, request: AccountRegisterRequest): Promise<AccountSnapshot> =>
       accounts.register({
         username: requireString(request?.username, 20, "account_username"),
-        email: requireString(request?.email, 254, "account_email"),
+        phone:
+          typeof request?.phone === "string"
+            ? requireString(request.phone, 32, "account_phone")
+            : undefined,
+        verificationCode:
+          typeof request?.verificationCode === "string"
+            ? requireString(request.verificationCode, 6, "account_verification_code")
+            : undefined,
+        email:
+          typeof request?.email === "string"
+            ? requireString(request.email, 254, "account_email")
+            : undefined,
         password: requireString(request?.password, 128, "account_password"),
         displayName:
           typeof request?.displayName === "string"
@@ -691,6 +721,11 @@ export const registerIpcHandlers = ({
             ? requireString(request.avatarDataUrl, 720_000, "account_avatar")
             : undefined,
       }),
+  );
+  ipcMain.handle(
+    IPC_CHANNELS.account.requestVerificationCode,
+    async (_event, phone: string): Promise<void> =>
+      accounts.requestVerificationCode(requireString(phone, 32, "account_phone")),
   );
   ipcMain.handle(
     IPC_CHANNELS.account.requestPasswordReset,
@@ -923,7 +958,7 @@ export const registerIpcHandlers = ({
   ipcMain.handle(
     IPC_CHANNELS.shortcuts.configureQuickMessage,
     async (_event, slot: number, accelerator: string): Promise<boolean> => {
-      if (!Number.isInteger(slot) || slot < 0 || slot >= 5)
+      if (!Number.isInteger(slot) || slot < 0 || slot >= 7)
         throw new Error("invalid_quick_message_slot");
       if (typeof accelerator !== "string") throw new Error("invalid_quick_message_shortcut");
       return shortcuts.configureQuickMessage(slot, accelerator);
@@ -948,9 +983,7 @@ export const registerIpcHandlers = ({
   ipcMain.handle(IPC_CHANNELS.overlay.moveTo, async (_event, screenY: number): Promise<void> =>
     overlay.moveTo(screenY),
   );
-  ipcMain.handle(IPC_CHANNELS.overlay.resetPosition, async (): Promise<void> =>
-    overlay.resetPosition(),
-  );
+  ipcMain.handle(IPC_CHANNELS.overlay.resetPosition, () => overlay.resetPosition());
   ipcMain.handle(
     IPC_CHANNELS.overlay.update,
     async (_event, state: OverlayState): Promise<void> => {
@@ -959,6 +992,7 @@ export const registerIpcHandlers = ({
       overlay.update(state);
     },
   );
+  registerOverlayQuickMusicMuteHandler(getMainWindow);
   ipcMain.handle(IPC_CHANNELS.games.getSnapshot, async (): Promise<GameDetectionSnapshot> =>
     gameDetection.getSnapshot(),
   );
@@ -1196,6 +1230,19 @@ export const registerIpcHandlers = ({
       await finalizeRecordingSpeakerSegments(payload);
     },
   );
+  ipcMain.handle(
+    IPC_CHANNELS.recording.saveParticipantTrack,
+    async (
+      _event,
+      payload: RecordingParticipantTrackPayload,
+    ): Promise<RecordingParticipantTrackResponse> => saveRecordingParticipantTrack(payload),
+  );
+  ipcMain.handle(
+    IPC_CHANNELS.recording.finalizeParticipantTracks,
+    async (_event, payload: RecordingParticipantTracksFinalizePayload): Promise<void> => {
+      await finalizeRecordingParticipantTracks(payload);
+    },
+  );
   ipcMain.handle(IPC_CHANNELS.recording.chooseDirectory, async (): Promise<string | undefined> => {
     const currentDirectory = resolveRecordingDirectory(
       settingsStore.getSnapshot().recordingSaveDirectory,
@@ -1337,13 +1384,6 @@ export const registerIpcHandlers = ({
       }
     },
   );
-  ipcMain.handle(IPC_CHANNELS.recording.openDirectory, async (): Promise<void> => {
-    const directory = await getUsableRecordingDirectory(
-      settingsStore.getSnapshot().recordingSaveDirectory,
-    );
-    const error = await shell.openPath(directory);
-    if (error) throw new Error(error);
-  });
   ipcMain.handle(IPC_CHANNELS.recording.delete, async (_event, filePath: string): Promise<void> => {
     const recordingPath = requireString(filePath, 2_048, "recording_file_path");
     const settings = settingsStore.getSnapshot();
@@ -1356,6 +1396,7 @@ export const registerIpcHandlers = ({
     try {
       if (item) await voiceMemory.delete(item.recordingId);
       await voiceMemory.delete(recordingPath);
+      await cleanupRecordingParticipantTracks(item?.recordingId ?? recordingPath);
     } catch (error) {
       await diagnostics.writeLog({
         category: "recording",
@@ -1395,6 +1436,7 @@ export const registerIpcHandlers = ({
             try {
               if (item) await voiceMemory.delete(item.recordingId);
               await voiceMemory.delete(recordingPath);
+              await cleanupRecordingParticipantTracks(item?.recordingId ?? recordingPath);
             } catch (error) {
               await diagnostics.writeLog({
                 category: "recording",

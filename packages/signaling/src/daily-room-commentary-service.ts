@@ -20,7 +20,7 @@ export class DailyRoomCommentaryService {
   async getReports(roomId: DailyRoomReport["roomId"]): Promise<DailyRoomReport[]> {
     const store = await this.reports;
     let reports = store.getHistory(roomId);
-    if (reports[0] && !reports[0].commentary) {
+    if (reports[0] && !this.hasRichCommentary(reports[0].commentary)) {
       await this.ensure(reports[0]);
       reports = store.getHistory(roomId);
     }
@@ -28,7 +28,7 @@ export class DailyRoomCommentaryService {
   }
 
   async ensure(report: DailyRoomReport): Promise<void> {
-    if (report.commentary?.trim() || !this.cloudAi.isConfigured()) return;
+    if (this.hasRichCommentary(report.commentary) || !this.cloudAi.isConfigured()) return;
     const key = `${report.roomId}:${report.date}`;
     const existing = this.inFlight.get(key);
     if (existing) {
@@ -50,9 +50,11 @@ export class DailyRoomCommentaryService {
       responseFormat: "json",
       useWebSearch: false,
       prompt: [
-        "根据下面的昨日房间统计，写一句有活人感的中文点评。",
-        "允许轻微调侃、吐槽或俏皮，但不要攻击任何人，不要编造统计里没有的事件。",
-        '控制在35到70个汉字，可以带一个emoji。只返回JSON：{"commentary":"..."}。',
+        "根据下面的昨日房间统计，写一段有活人感的中文点评。",
+        "必须分成2到3行，每行18到45个汉字，总长度80到150字；行与行之间使用换行。",
+        "可以加入2到4个自然的emoji，允许轻微毒舌、吐槽和玩梗，但不要攻击任何人，不要编造统计里没有的事件。",
+        "不要提及开发软件、工作软件、Codex、CodeS或工作时长；开发活动不属于昨日房间统计。",
+        '只返回JSON：{"commentary":"第一行\\n第二行"}。',
         JSON.stringify({
           room: report.roomId === "side" ? "二号房" : "一号房",
           participantNicknames: report.participantNicknames,
@@ -62,11 +64,6 @@ export class DailyRoomCommentaryService {
           messageCount: report.messageCount,
           screenShareCount: report.screenShareCount,
           games: report.games.map((game) => game.name),
-          workActivities: (report.workActivities ?? []).map((activity) => ({
-            nickname: activity.nickname,
-            workName: activity.workName,
-            durationMinutes: Math.round(activity.durationMs / 60_000),
-          })),
         }),
       ].join("\n"),
     };
@@ -82,5 +79,9 @@ export class DailyRoomCommentaryService {
         reason: error instanceof Error ? error.message : String(error),
       });
     }
+  }
+
+  private hasRichCommentary(value: string | undefined): boolean {
+    return Boolean(value && value.split(/\r?\n/).filter((line) => line.trim()).length >= 2);
   }
 }

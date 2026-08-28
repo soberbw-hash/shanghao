@@ -1,8 +1,31 @@
 import { useEffect, useState } from "react";
-import { ChevronLeft, ChevronRight } from "lucide-react";
+import { ChevronLeft, ChevronRight, Sparkles } from "lucide-react";
 
 import type { ReleaseHistoryEntry } from "./releaseHistory";
 import { Button } from "../base/Button";
+
+const RELEASE_EMPHASIS_PATTERN =
+  /(新增|修复|优化|支持|不会|避免|保留|默认|可以|只在|不再|继续|无需|成功|失败|更稳|更放心|少一点)/g;
+
+const getHighlightMarker = (text: string) => {
+  if (/(修复|错误|问题|失败)/.test(text)) return "🛠️";
+  if (/(性能|后台|资源|速度|占用|流畅)/.test(text)) return "⚡";
+  if (/(新增|支持|快捷|模型|功能)/.test(text)) return "✨";
+  return "🎯";
+};
+
+const renderReleaseText = (text: string) => {
+  const parts = text.split(RELEASE_EMPHASIS_PATTERN);
+  return parts.map((part, index) =>
+    index % 2 === 1 ? (
+      <strong key={`${part}-${index}`} className="release-notes-inline-emphasis">
+        {part}
+      </strong>
+    ) : (
+      <span key={`${part}-${index}`}>{part}</span>
+    ),
+  );
+};
 
 export const DetailedReleaseNotesViewer = ({
   release,
@@ -24,11 +47,11 @@ export const DetailedReleaseNotesViewer = ({
   const isLastPage = pageIndex === pages.length - 1;
   const renderDetail = (item: string) => {
     const separator = item.indexOf("：");
-    if (separator <= 0) return item;
+    if (separator <= 0) return renderReleaseText(item);
     return (
       <>
         <strong className="release-notes-detail-keyword">{item.slice(0, separator + 1)}</strong>
-        {item.slice(separator + 1)}
+        {renderReleaseText(item.slice(separator + 1))}
       </>
     );
   };
@@ -40,7 +63,28 @@ export const DetailedReleaseNotesViewer = ({
             {release.date} · {release.version}
           </div>
           <h3>{page.title}</h3>
-          {pageIndex === 0 && release.summary ? <p>{release.summary}</p> : null}
+          {pageIndex === 0 ? (
+            <section className="release-notes-summary-card" aria-label="本次更新重点">
+              <div className="release-notes-summary-heading">
+                <span>
+                  <Sparkles aria-hidden="true" />
+                  先看重点
+                </span>
+                <small>用大白话说</small>
+              </div>
+              {release.summary ? <p>{renderReleaseText(release.summary)}</p> : null}
+              {release.highlights.length ? (
+                <ul className="release-notes-highlight-list">
+                  {release.highlights.map((highlight) => (
+                    <li key={highlight}>
+                      <span aria-hidden="true">{getHighlightMarker(highlight)}</span>
+                      <span>{renderReleaseText(highlight)}</span>
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
+            </section>
+          ) : null}
         </div>
 
         <ol className="release-notes-detail-list">

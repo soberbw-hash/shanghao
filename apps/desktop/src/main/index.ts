@@ -32,7 +32,12 @@ import { LifecycleRecoveryService } from "./lifecycle-recovery-service";
 import { ensurePre30DataSnapshot } from "./user-data-migration";
 import { removeWindowsStartupTask } from "./windows-startup-task";
 import { ensureWindowsFirewallRules } from "./windows-integration";
-import { findDeepLinkInvite, parseDeepLinkInvite, SHANGHAO_PROTOCOL } from "./deep-link";
+import {
+  findDeepLinkAuth,
+  findDeepLinkInvite,
+  parseDeepLinkInvite,
+  SHANGHAO_PROTOCOL,
+} from "./deep-link";
 import { sendToWindow } from "./safe-web-contents";
 import {
   createRecordingMediaResponse,
@@ -58,6 +63,7 @@ let aiRuntimeManager: AiRuntimeManager | null = null;
 let lifecycleRecoveryService: LifecycleRecoveryService | null = null;
 let accountService: AccountDesktopService | null = null;
 let pendingDeepLink = findDeepLinkInvite(process.argv);
+let pendingAuthDeepLink = findDeepLinkAuth(process.argv);
 
 const QUIT_FOR_INSTALL_ARG = "--shanghao-quit-for-install";
 const shouldQuitForInstall = process.argv.includes(QUIT_FOR_INSTALL_ARG);
@@ -95,6 +101,29 @@ const dispatchDeepLink = (invite: DeepLinkInvite): void => {
   showWindow();
   if (!mainWindow || mainWindow.webContents.isLoadingMainFrame()) return;
   sendToWindow(mainWindow, IPC_CHANNELS.app.deepLink, invite);
+};
+
+const dispatchAuthDeepLink = (rawUrl: string): void => {
+  pendingAuthDeepLink = undefined;
+  showWindow();
+  if (!accountService) {
+    pendingAuthDeepLink = rawUrl;
+    return;
+  }
+  void accountService.handleAuthDeepLink(rawUrl).catch((error) =>
+    diagnostics?.writeLog({
+      category: "app",
+      level: "warn",
+      message: "Auth callback could not be handled",
+      context: { error: error instanceof Error ? error.message : String(error) },
+    }),
+  );
+};
+
+const consumePendingAuthDeepLink = (): string | undefined => {
+  const rawUrl = pendingAuthDeepLink;
+  pendingAuthDeepLink = undefined;
+  return rawUrl;
 };
 
 const prepareForQuit = (reason: string) => {
@@ -286,7 +315,7 @@ const bootstrap = async (): Promise<void> => {
   await accounts.initialize();
   const signalingClient = new SignalingClientBridge(
     (payload) => diagnostics?.writeLog(payload) ?? Promise.resolve(),
-    () => accounts.getAccessToken(),
+    () => accounts.getFreshAccessToken(),
   );
   const customAiProvider = new CustomAiProviderStore(
     (payload) => diagnostics?.writeLog(payload) ?? Promise.resolve(),
@@ -315,6 +344,7 @@ const bootstrap = async (): Promise<void> => {
     (payload) => diagnostics?.writeLog(payload) ?? Promise.resolve(),
   );
   await shortcuts.configureGlobalMute(settings.globalMuteShortcut);
+  await shortcuts.configurePushToTalk(settings.pushToTalkShortcut, settings.isPushToTalkEnabled);
   const overlay = new OverlayWindowController();
   const gameDetection = new GameDetectionController(
     (payload) => diagnostics?.writeLog(payload) ?? Promise.resolve(),
@@ -484,6 +514,9 @@ const bootstrap = async (): Promise<void> => {
     logsDirectory: diagnostics.getSnapshot().logsDirectory,
   });
 
+  const initialAuthDeepLink = consumePendingAuthDeepLink();
+  if (initialAuthDeepLink) dispatchAuthDeepLink(initialAuthDeepLink);
+
   await diagnostics.writeLog({
     category: "app",
     level: "info",
@@ -578,6 +611,12 @@ app.on("second-instance", (_event, commandLine) => {
     return;
   }
 
+  const authDeepLink = findDeepLinkAuth(commandLine);
+  if (authDeepLink) {
+    dispatchAuthDeepLink(authDeepLink);
+    return;
+  }
+
   showWindow();
 });
 
@@ -585,6 +624,7 @@ app.on("open-url", (event, rawUrl) => {
   event.preventDefault();
   const invite = parseDeepLinkInvite(rawUrl);
   if (invite) dispatchDeepLink(invite);
+  else if (findDeepLinkAuth([rawUrl])) dispatchAuthDeepLink(rawUrl);
 });
 
 const hasSingleInstanceLock = app.requestSingleInstanceLock();

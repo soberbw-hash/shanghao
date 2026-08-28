@@ -155,7 +155,6 @@ export class RemoteAudioMixer {
         },
       );
     };
-    this.startMaintenanceTimers();
     void this.applyOutputDevice();
     return context;
   }
@@ -240,6 +239,7 @@ export class RemoteAudioMixer {
             volume: input.volume,
             hasObservedAudio: false,
           });
+          this.startMaintenanceTimers();
           this.refreshPeerGains(input.peerId);
         } catch (error) {
           void writeRendererLog("audio", "error", "Failed to add remote stream to audio mixer", {
@@ -501,6 +501,10 @@ export class RemoteAudioMixer {
 
   forgetPeerMediaPath(peerId: string): void {
     this.peerMediaPaths.delete(peerId);
+    if (!this.channels.has(peerId) && !this.relayChannels.has(peerId)) {
+      this.peerLoudnessStates.delete(peerId);
+      this.publishPeerLevel(peerId, 0, true);
+    }
   }
 
   removeRelayPeer(peerId: string): void {
@@ -515,6 +519,7 @@ export class RemoteAudioMixer {
       this.peerLoudnessStates.delete(peerId);
       this.publishPeerLevel(peerId, 0, true);
     }
+    this.stopMaintenanceTimersIfIdle();
   }
 
   destroy(): void {
@@ -549,6 +554,7 @@ export class RemoteAudioMixer {
       this.peerLoudnessStates.delete(peerId);
       this.publishPeerLevel(peerId, 0, true);
     }
+    this.stopMaintenanceTimersIfIdle();
   }
 
   /**
@@ -613,6 +619,7 @@ export class RemoteAudioMixer {
       volume: 1,
     };
     this.relayChannels.set(peerId, created);
+    this.startMaintenanceTimers();
     this.refreshPeerGains(peerId);
     return created;
   }
@@ -655,7 +662,17 @@ export class RemoteAudioMixer {
     }
   }
 
+  private stopMaintenanceTimersIfIdle(): void {
+    if (this.channels.size === 0 && this.relayChannels.size === 0) {
+      this.stopMaintenanceTimers();
+    }
+  }
+
   private samplePeerLevels(): void {
+    if (this.channels.size === 0 && this.relayChannels.size === 0) {
+      this.stopMaintenanceTimers();
+      return;
+    }
     const peerIds = new Set([...this.channels.keys(), ...this.relayChannels.keys()]);
     for (const peerId of peerIds) {
       const webRtcChannel = this.channels.get(peerId);

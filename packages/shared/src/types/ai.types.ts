@@ -171,6 +171,13 @@ export interface VoiceMemoryTranscriptSegment {
   confidence: AiConfidence;
   /** Preserves word-level alignment while the segment text stays sentence-readable. */
   words?: VoiceMemoryTranscriptWord[];
+  /** Identifies the provider and exact inference chunk that produced this segment. */
+  sourceModel?: AiAsrModelId;
+  sourceChunkId?: string;
+  /** Stable raw-provider segment id retained for comparison/debug exports. */
+  rawSegmentId?: string;
+  /** Serialized provider segments retained alongside normalized text. */
+  rawSegments?: string[];
 }
 
 export interface VoiceMemoryChapter {
@@ -236,7 +243,66 @@ export interface VoiceMemoryTranscriptionVariant {
   pipelineVersion?: number;
   /** Sum of the native ASR runtime windows used to produce this variant. */
   transcriptionElapsedMs?: number;
+  /** Durable coverage and recovery metrics for long-running or comparison transcriptions. */
+  transcriptionStats?: VoiceMemoryTranscriptionStats;
+  /** Per-unit durable state used to resume a long recording without skipping failed windows. */
+  transcriptionUnits?: VoiceMemoryTranscriptionUnit[];
   updatedAt: string;
+}
+
+export type VoiceMemoryTranscriptionUnitStatus = "pending" | "running" | "completed" | "failed";
+
+export interface VoiceMemoryTranscriptionUnit {
+  /** Stable within one recording/model/pipeline, so a restart can safely upsert the same unit. */
+  unitId: string;
+  modelId: AiAsrModelId;
+  pipelineVersion?: number;
+  index: number;
+  startMs: number;
+  endMs: number;
+  speakerId?: string;
+  status: VoiceMemoryTranscriptionUnitStatus;
+  attempts: number;
+  retryCount: number;
+  processedAudioMs: number;
+  coveredAudioMs: number;
+  segmentCount: number;
+  /** JSON snapshot of the runtime result/error, retained for comparison/debug export. */
+  rawRuntimeOutput?: string;
+  normalizedSegmentIds?: string[];
+  stage?: VoiceMemoryProcessingStage;
+  errorCode?: string;
+  errorMessage?: string;
+  startedAt?: string;
+  completedAt?: string;
+  heartbeatAt?: string;
+  updatedAt: string;
+}
+
+export interface VoiceMemoryTranscriptionStats {
+  audioDurationMs: number;
+  /** Audio windows that completed without a runtime error, including silence-only windows. */
+  processedAudioMs: number;
+  /** Audio windows with a trustworthy result; failed windows are excluded. */
+  coveredAudioMs: number;
+  totalUnits: number;
+  completedUnits: number;
+  failedUnits: number;
+  retryCount: number;
+  segmentCount: number;
+  speakerCount: number;
+  /** Number of units that produced a trustworthy result; failed units are excluded. */
+  successfulUnits?: number;
+  /** Number of units that completed with no speech/result, distinct from a runtime failure. */
+  silenceUnits?: number;
+  /** User-facing terminal state for exports and diagnostics. */
+  terminationReason?:
+    "completed" | "partial" | "no_speech" | "paused" | "cancelled" | "failed" | "stalled";
+  lastErrorStage?: VoiceMemoryProcessingStage;
+  inferenceElapsedMs?: number;
+  conversionElapsedMs?: number;
+  lastChunkOffsetMs?: number;
+  lastHeartbeatAt?: string;
 }
 
 export interface VoiceMemoryRecord {
@@ -262,6 +328,10 @@ export interface VoiceMemoryRecord {
   transcriptionVariants?: Partial<Record<AiAsrModelId, VoiceMemoryTranscriptionVariant>>;
   /** Effective ASR runtime time; pauses, queueing, conversion and organization are excluded. */
   transcriptionElapsedMs?: number;
+  /** Durable coverage and recovery metrics for long-running or comparison transcriptions. */
+  transcriptionStats?: VoiceMemoryTranscriptionStats;
+  /** Durable per-chunk manifest; unlike completedUnits this preserves gaps and failures. */
+  transcriptionUnits?: VoiceMemoryTranscriptionUnit[];
   errorMessage?: string;
   speakers: VoiceMemorySpeaker[];
   transcript: VoiceMemoryTranscriptSegment[];

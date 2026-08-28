@@ -1,6 +1,7 @@
 import type { DeepLinkInvite } from "@private-voice/shared";
 
 export const SHANGHAO_PROTOCOL = "shanghao";
+export const SHANGHAO_AUTH_REDIRECT_URL = `${SHANGHAO_PROTOCOL}://auth/confirmed`;
 
 const ALLOWED_CHANNEL_IDS = new Set<DeepLinkInvite["channelId"]>(["main", "side"]);
 
@@ -41,6 +42,27 @@ export const findDeepLinkInvite = (commandLine: readonly string[]): DeepLinkInvi
     if (!argument.toLowerCase().startsWith(`${SHANGHAO_PROTOCOL}://`)) continue;
     const invite = parseDeepLinkInvite(argument);
     if (invite) return invite;
+  }
+  return undefined;
+};
+
+export const isDeepLinkAuthCallback = (rawValue: string): boolean => {
+  try {
+    const url = new URL(rawValue);
+    return (
+      url.protocol === `${SHANGHAO_PROTOCOL}:` &&
+      url.hostname === "auth" &&
+      url.pathname.replace(/\/+$/, "") === "/confirmed"
+    );
+  } catch {
+    return false;
+  }
+};
+
+export const findDeepLinkAuth = (commandLine: readonly string[]): string | undefined => {
+  for (const argument of commandLine) {
+    if (!argument.toLowerCase().startsWith(`${SHANGHAO_PROTOCOL}://`)) continue;
+    if (isDeepLinkAuthCallback(argument)) return argument;
   }
   return undefined;
 };

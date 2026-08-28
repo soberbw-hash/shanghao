@@ -42,7 +42,8 @@ export class SignalingClientBridge extends EventEmitter {
 
   constructor(
     private readonly writeLog: (payload: RendererLogPayload) => Promise<void>,
-    private readonly getAccountAccessToken: () => string | undefined = () => undefined,
+    private readonly getAccountAccessToken: () =>
+      string | undefined | Promise<string | undefined> = () => undefined,
   ) {
     super();
   }
@@ -72,8 +73,13 @@ export class SignalingClientBridge extends EventEmitter {
       context: { signalingUrl: safeSignalingUrl, mode },
     });
 
+    // Refresh through the main-process account service before opening the
+    // socket. This is important for CloudBase sessions restored after a long
+    // idle period and also prevents concurrent reconnects from using an
+    // already-expired bearer token.
+    const accountAccessToken = await this.getAccountAccessToken();
+
     await new Promise<void>((resolve, reject) => {
-      const accountAccessToken = this.getAccountAccessToken();
       const socket = new NodeWebSocket(signalingUrl, {
         handshakeTimeout: 8_000,
         headers: accountAccessToken ? { Authorization: `Bearer ${accountAccessToken}` } : undefined,

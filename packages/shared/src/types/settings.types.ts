@@ -16,6 +16,8 @@ export interface AppSettings {
   nickname: string;
   roomName: string;
   avatarId: BuiltInAvatarId;
+  /** Local account profile avatar preset. Kept separate from the room character avatar. */
+  accountAvatarPresetId?: string;
   avatarPath?: string;
   hasCompletedProfileSetup: boolean;
   minimizeToTray: boolean;

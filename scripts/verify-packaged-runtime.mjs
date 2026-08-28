@@ -62,8 +62,8 @@ for (const licenseName of [
 
 const quickMessageDirectory = path.join(resourcesDirectory, "quick-messages");
 const quickMessageFiles = await listFilesRecursively(quickMessageDirectory);
-if (quickMessageFiles.length !== 34) {
-  throw new Error(`Expected 34 quick-message AAC files, found ${quickMessageFiles.length}`);
+if (quickMessageFiles.length !== 47) {
+  throw new Error(`Expected 47 quick-message AAC files, found ${quickMessageFiles.length}`);
 }
 for (const filePath of quickMessageFiles) {
   if (path.extname(filePath).toLowerCase() !== ".aac") {

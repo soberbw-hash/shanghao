@@ -37,6 +37,6 @@ export default defineConfig({
   // inside production installers. Runtime logs already preserve useful stacks.
   sourcemap: process.argv.includes("--watch"),
   splitting: false,
-  external: [/^electron($|\/)/, "ffmpeg-static", "ffprobe-static"],
+  external: [/^electron($|\/)/, "ffmpeg-static", "ffprobe-static", "uiohook-napi"],
   noExternal: [/^@private-voice\//, "ws"],
 });

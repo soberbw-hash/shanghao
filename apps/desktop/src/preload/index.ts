@@ -77,12 +77,21 @@ const desktopApi: DesktopApi = {
       ipcRenderer.invoke(IPC_CHANNELS.overlay.setInteractive, interactive),
     moveTo: (screenY) => ipcRenderer.invoke(IPC_CHANNELS.overlay.moveTo, screenY),
     resetPosition: () => ipcRenderer.invoke(IPC_CHANNELS.overlay.resetPosition),
+    requestMuteQuickMessage: (request) =>
+      ipcRenderer.invoke(IPC_CHANNELS.overlay.requestMuteQuickMessage, request),
     onState: (listener) => {
       const wrapped = (_event: Electron.IpcRendererEvent, state: unknown) => {
         listener(state as Parameters<typeof listener>[0]);
       };
       ipcRenderer.on(IPC_CHANNELS.overlay.state, wrapped);
       return () => ipcRenderer.removeListener(IPC_CHANNELS.overlay.state, wrapped);
+    },
+    onQuickMessageMute: (listener) => {
+      const wrapped = (_event: Electron.IpcRendererEvent, request: unknown) => {
+        listener(request as Parameters<typeof listener>[0]);
+      };
+      ipcRenderer.on(IPC_CHANNELS.overlay.muteQuickMessage, wrapped);
+      return () => ipcRenderer.removeListener(IPC_CHANNELS.overlay.muteQuickMessage, wrapped);
     },
     onHoverState: (listener) => {
       const wrapped = (_event: Electron.IpcRendererEvent, inside: unknown) => {
@@ -157,8 +166,12 @@ const desktopApi: DesktopApi = {
   },
   account: {
     getSnapshot: () => ipcRenderer.invoke(IPC_CHANNELS.account.getSnapshot),
+    configureCloudBase: (config) =>
+      ipcRenderer.invoke(IPC_CHANNELS.account.configureCloudBase, config),
     login: (request) => ipcRenderer.invoke(IPC_CHANNELS.account.login, request),
     register: (request) => ipcRenderer.invoke(IPC_CHANNELS.account.register, request),
+    requestVerificationCode: (phone) =>
+      ipcRenderer.invoke(IPC_CHANNELS.account.requestVerificationCode, phone),
     requestPasswordReset: (request) =>
       ipcRenderer.invoke(IPC_CHANNELS.account.requestPasswordReset, request),
     updateProfile: (request) => ipcRenderer.invoke(IPC_CHANNELS.account.updateProfile, request),
@@ -211,6 +224,15 @@ const desktopApi: DesktopApi = {
       return () =>
         ipcRenderer.removeListener(IPC_CHANNELS.shortcuts.recordingMarkerTriggered, wrapped);
     },
+    configurePushToTalk: (accelerator, enabled) =>
+      ipcRenderer.invoke(IPC_CHANNELS.shortcuts.configurePushToTalk, accelerator, enabled),
+    onPushToTalkState: (listener) => {
+      const wrapped = (_event: Electron.IpcRendererEvent, pressed: unknown) => {
+        if (typeof pressed === "boolean") listener(pressed);
+      };
+      ipcRenderer.on(IPC_CHANNELS.shortcuts.pushToTalkState, wrapped);
+      return () => ipcRenderer.removeListener(IPC_CHANNELS.shortcuts.pushToTalkState, wrapped);
+    },
     configureQuickMessage: (slot, accelerator) =>
       ipcRenderer.invoke(IPC_CHANNELS.shortcuts.configureQuickMessage, slot, accelerator),
     onQuickMessageTriggered: (listener) => {
@@ -257,6 +279,10 @@ const desktopApi: DesktopApi = {
       ipcRenderer.invoke(IPC_CHANNELS.recording.saveSpeakerSegment, payload),
     finalizeSpeakerSegments: (payload) =>
       ipcRenderer.invoke(IPC_CHANNELS.recording.finalizeSpeakerSegments, payload),
+    saveParticipantTrack: (payload) =>
+      ipcRenderer.invoke(IPC_CHANNELS.recording.saveParticipantTrack, payload),
+    finalizeParticipantTracks: (payload) =>
+      ipcRenderer.invoke(IPC_CHANNELS.recording.finalizeParticipantTracks, payload),
     chooseDirectory: () => ipcRenderer.invoke(IPC_CHANNELS.recording.chooseDirectory),
     saveMarkers: (filePath, markers) =>
       ipcRenderer.invoke(IPC_CHANNELS.recording.saveMarkers, filePath, markers),
@@ -276,6 +302,8 @@ const desktopApi: DesktopApi = {
     rename: (recordingId, title) =>
       ipcRenderer.invoke(IPC_CHANNELS.recording.rename, recordingId, title),
     openDirectory: () => ipcRenderer.invoke(IPC_CHANNELS.recording.openDirectory),
+    showItemInFolder: (filePath) =>
+      ipcRenderer.invoke(IPC_CHANNELS.recording.showItemInFolder, filePath),
     delete: (filePath) => ipcRenderer.invoke(IPC_CHANNELS.recording.delete, filePath),
     deleteMany: (filePaths) => ipcRenderer.invoke(IPC_CHANNELS.recording.deleteMany, filePaths),
   },

@@ -1,4 +1,4 @@
-/** Bundled AAC paths for local voice packs. IDs are shared with quick-messages.ts. */
+/** Bundled AAC paths for local voice and music packs. IDs are shared with quick-messages.ts. */
 const QUICK_MESSAGE_SOUND_PATHS: Record<string, string> = {
   "default-voice-上个厕所": "默认语音/上个厕所.aac",
   "default-voice-都哥们": "默认语音/都哥们.aac",
@@ -34,6 +34,19 @@ const QUICK_MESSAGE_SOUND_PATHS: Record<string, string> = {
   "voice-liwo-滴滴": "梨涡/滴滴.aac",
   "voice-liwo-什么": "梨涡/什么.aac",
   "voice-liwo-我哩豆": "梨涡/我哩豆.aac",
+  "music-delta-出泪小曲": "音乐/三角洲行动/出泪小曲.aac",
+  "music-delta-出心小曲": "音乐/三角洲行动/出心小曲.aac",
+  "music-delta-得吃小曲": "音乐/三角洲行动/得吃小曲.aac",
+  "music-delta-难得真兄弟": "音乐/三角洲行动/难得真兄弟.aac",
+  "music-delta-偷吃小曲": "音乐/三角洲行动/偷吃小曲.aac",
+  "music-delta-花来小曲": "音乐/三角洲行动/花来小曲.aac",
+  "music-delta-巡飞弹小曲": "音乐/三角洲行动/巡飞弹小曲.aac",
+  "music-lol-卡特小曲": "音乐/英雄联盟/卡特小曲.aac",
+  "music-lol-潘森小曲": "音乐/英雄联盟/潘森小曲.aac",
+  "music-cf-大哥小曲": "音乐/穿越火线/大哥小曲.aac",
+  "music-csgo-预瞄小曲": "音乐/CSGO/预瞄小曲.aac",
+  "music-valorant-霓虹小曲": "音乐/瓦罗兰特/霓虹小曲.aac",
+  "music-valorant-颗秒小曲": "音乐/瓦罗兰特/颗秒小曲.aac",
 };
 
 const toQuickMessageSoundUrl = (relativePath: string): string =>

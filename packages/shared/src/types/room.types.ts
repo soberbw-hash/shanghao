@@ -68,6 +68,7 @@ export interface RoomQuickMessage {
   content: string;
   presetId?: string;
   soundId?: string;
+  mediaType?: "voice" | "music";
   createdAt: string;
   isLocal?: boolean;
 }
@@ -204,7 +205,7 @@ export interface DailyRoomReport {
   hadActivity: boolean;
   participantCount: number;
   participantNicknames: string[];
-  /** Server-generated shared one-line recap. Every client sees the persisted same text. */
+  /** Server-generated shared multi-line recap. Every client sees the persisted same text. */
   commentary?: string;
   activeDurationMs: number;
   peakConcurrent: number;

@@ -34,6 +34,18 @@ interface LocalProfilePayload {
   avatarId?: BuiltInAvatarId;
 }
 
+type LocalPresencePatch = {
+  isMuted?: boolean;
+  isDeafened?: boolean;
+  speakingState?: MemberSpeakingState;
+  activity?: MemberActivity;
+  sceneZone?: SceneZoneId;
+  gameName?: string;
+  gameIconDataUrl?: string;
+  musicActivity?: MusicActivity;
+  workActivity?: import("@private-voice/shared").WorkActivity;
+};
+
 export interface RemoteScreenFrame {
   data: string;
   width: number;
@@ -83,17 +95,7 @@ interface RoomStoreState {
   syncLocalProfile: (profile: LocalProfilePayload) => void;
   updateMemberVolume: (memberId: string, volume: number) => void;
   updatePeerLatency: (memberId: string, latencyMs?: number) => void;
-  updateLocalPresence: (presence: {
-    isMuted?: boolean;
-    isDeafened?: boolean;
-    speakingState?: MemberSpeakingState;
-    activity?: MemberActivity;
-    sceneZone?: SceneZoneId;
-    gameName?: string;
-    gameIconDataUrl?: string;
-    musicActivity?: MusicActivity;
-    workActivity?: import("@private-voice/shared").WorkActivity;
-  }) => void;
+  updateLocalPresence: (presence: LocalPresencePatch) => void;
   pushRoomEvent: (event: Omit<RoomEvent, "id" | "createdAt">) => void;
   clearRoomEvents: () => void;
   resetRoom: () => void;
@@ -352,9 +354,14 @@ export const useRoomStore = create<RoomStoreState>((set) => ({
         },
       };
     }),
-  setLocalStream: (localStream) => set({ localStream }),
+  setLocalStream: (localStream) =>
+    set((state) => (state.localStream === localStream ? state : { localStream })),
   setRemoteStream: (peerId, stream) =>
     set((state) => {
+      const previousStream = state.remoteStreams[peerId];
+      if (stream === previousStream || (!stream && !(peerId in state.remoteStreams))) {
+        return state;
+      }
       const nextRemoteStreams = { ...state.remoteStreams };
       if (stream) {
         nextRemoteStreams[peerId] = stream;
@@ -387,13 +394,22 @@ export const useRoomStore = create<RoomStoreState>((set) => ({
     }),
   setRemoteScreenSharing: (peerId, isSharing) =>
     set((state) => {
+      const wasSharing = state.remoteScreenSharing[peerId] === true;
+      if (wasSharing === isSharing) return state;
       const remoteScreenSharing = { ...state.remoteScreenSharing };
       if (isSharing) remoteScreenSharing[peerId] = true;
       else delete remoteScreenSharing[peerId];
       return { remoteScreenSharing };
     }),
   setLocalScreenShareViewerPeerIds: (peerIds) =>
-    set({ localScreenShareViewerPeerIds: [...new Set(peerIds)].sort() }),
+    set((state) => {
+      const nextPeerIds = [...new Set(peerIds)].sort();
+      return nextPeerIds.every(
+        (peerId, index) => peerId === state.localScreenShareViewerPeerIds[index],
+      ) && nextPeerIds.length === state.localScreenShareViewerPeerIds.length
+        ? state
+        : { localScreenShareViewerPeerIds: nextPeerIds };
+    }),
   setConnectionHealth: (healthPatch) =>
     set((state) => ({
       connectionHealth: {
@@ -519,34 +535,50 @@ export const useRoomStore = create<RoomStoreState>((set) => ({
       };
     }),
   updateMemberVolume: (memberId, volume) =>
-    set((state) => ({
-      room: {
-        ...state.room,
-        members: state.room.members.map((member) =>
-          member.id === memberId ? { ...member, volume } : member,
-        ),
-      },
-    })),
+    set((state) => {
+      const member = state.room.members.find((candidate) => candidate.id === memberId);
+      if (!member || member.volume === volume) return state;
+      return {
+        room: {
+          ...state.room,
+          members: state.room.members.map((candidate) =>
+            candidate.id === memberId ? { ...candidate, volume } : candidate,
+          ),
+        },
+      };
+    }),
   updatePeerLatency: (memberId, latencyMs) =>
-    set((state) => ({
-      room: {
-        ...state.room,
-        members: state.room.members.map((member) => {
-          if (member.id !== memberId) return member;
-          const nextLatency = stabilizePeerLatency(member.latencyMs, latencyMs);
-          return nextLatency === member.latencyMs ? member : { ...member, latencyMs: nextLatency };
-        }),
-      },
-    })),
+    set((state) => {
+      const member = state.room.members.find((candidate) => candidate.id === memberId);
+      if (!member) return state;
+      const nextLatency = stabilizePeerLatency(member.latencyMs, latencyMs);
+      if (nextLatency === member.latencyMs) return state;
+      return {
+        room: {
+          ...state.room,
+          members: state.room.members.map((candidate) =>
+            candidate.id === memberId ? { ...candidate, latencyMs: nextLatency } : candidate,
+          ),
+        },
+      };
+    }),
   updateLocalPresence: (presence) =>
-    set((state) => ({
-      room: {
-        ...state.room,
-        members: state.room.members.map((member) =>
-          member.isLocal ? { ...member, ...presence } : member,
-        ),
-      },
-    })),
+    set((state) => {
+      const localMember = state.room.members.find((member) => member.isLocal);
+      if (!localMember) return state;
+      const changed = (Object.keys(presence) as Array<keyof LocalPresencePatch>).some(
+        (key) => localMember[key] !== presence[key],
+      );
+      if (!changed) return state;
+      return {
+        room: {
+          ...state.room,
+          members: state.room.members.map((member) =>
+            member.isLocal ? { ...member, ...presence } : member,
+          ),
+        },
+      };
+    }),
   pushRoomEvent: (event) =>
     set((state) => ({
       room: {

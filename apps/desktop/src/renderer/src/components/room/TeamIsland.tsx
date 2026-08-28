@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { gsap } from "gsap";
+import { Music2 } from "lucide-react";
 
 import {
   type BuiltInAvatarId,
+  type ActiveQuickMusic,
   type MemberActivity,
   type RoomCollectionItem,
   type RoomMember,
@@ -39,6 +41,7 @@ import { useVisibleInterval } from "../../hooks/useVisualVisibility";
 import { useRenderProfiler } from "../../features/diagnostics/renderProfiler";
 import type { ConnectionQualityLevel } from "../../features/network/networkDiagnostics";
 import { useSettingsStore } from "../../store/settingsStore";
+import { useAppStore } from "../../store/appStore";
 import { useWeatherStore } from "../../features/weather/weatherStore";
 import { resolveWeatherVisualTheme } from "../../features/weather/weatherTheme";
 import { roomAnimationScheduler } from "../../features/visual-runtime/RoomAnimationScheduler";
@@ -71,6 +74,8 @@ export const TeamIsland = ({
   onOpenCollection,
   onCollectionDragOverChange,
   onSaveDraggedCollection,
+  activeQuickMusic,
+  onMuteQuickMusic,
   reduceMotion = false,
   pauseVisualMotion = false,
 }: {
@@ -90,6 +95,8 @@ export const TeamIsland = ({
   onOpenCollection?: () => void;
   onCollectionDragOverChange?: (value: boolean) => void;
   onSaveDraggedCollection?: (payload: RoomCollectionDragPayload) => void;
+  activeQuickMusic?: ActiveQuickMusic;
+  onMuteQuickMusic?: (playback: ActiveQuickMusic) => void;
   reduceMotion?: boolean;
   pauseVisualMotion?: boolean;
 }) => {
@@ -109,6 +116,7 @@ export const TeamIsland = ({
   );
   const weatherLocationMode = useSettingsStore((state) => state.settings?.weatherLocationMode);
   const weatherManualCity = useSettingsStore((state) => state.settings?.weatherManualCity);
+  const isRoomPageObscured = useAppStore((state) => state.currentPage === "settings");
   const weatherSnapshot = useWeatherStore((state) => state.snapshot);
   const weatherPreview = useWeatherStore((state) => state.preview);
   const weatherTheme = resolveWeatherVisualTheme(
@@ -176,7 +184,8 @@ export const TeamIsland = ({
     // Pause decorative animation during room entry as well as later seat changes.
     return targetZone !== undefined && settledZone !== targetZone;
   });
-  const shouldPauseAmbientMotion = pauseVisualMotion || isCharacterMotionActive;
+  const shouldPauseVisualMotion = pauseVisualMotion || isRoomPageObscured;
+  const shouldPauseAmbientMotion = shouldPauseVisualMotion || isCharacterMotionActive;
   const coordinatedIdleActions = useCoordinatedIdleActions(
     visibleMembers.map((member) => {
       const memberZone = resolvedMemberZones.get(member.id) ?? "gameDesk1";
@@ -315,7 +324,7 @@ export const TeamIsland = ({
     <div
       ref={islandRef}
       className={`team-island ambient-${ambient} ${weatherRoomClass} ${
-        pauseVisualMotion ? "is-visual-motion-paused" : ""
+        shouldPauseVisualMotion ? "is-visual-motion-paused" : ""
       } ${
         isCharacterMotionActive ? "is-character-motion-active" : ""
       } relative h-full min-h-[420px] overflow-hidden`}
@@ -493,9 +502,11 @@ export const TeamIsland = ({
         <AnimatePresence initial={false}>
           {seatSlots.map((slot) => {
             const occupant = memberBySeat.get(slot.id);
+            const quickMusic =
+              occupant && activeQuickMusic?.peerId === occupant.id ? activeQuickMusic : undefined;
             if (
               !occupant ||
-              (!occupant.musicActivity && !occupant.workActivity) ||
+              (!occupant.musicActivity && !occupant.workActivity && !quickMusic) ||
               settledMemberZones[occupant.id] !== slot.id
             )
               return null;
@@ -510,6 +521,27 @@ export const TeamIsland = ({
                 transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
               >
                 <div className="activity-badge-stack" data-seat-zone={slot.id}>
+                  {quickMusic ? (
+                    <button
+                      type="button"
+                      className="quick-message-music-badge"
+                      title={
+                        occupant.isLocal
+                          ? `停止本次音乐：${quickMusic.title}`
+                          : `屏蔽${quickMusic.nickname}本次音乐`
+                      }
+                      aria-label={
+                        occupant.isLocal ? "停止本次音乐" : `屏蔽${quickMusic.nickname}本次音乐`
+                      }
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        onMuteQuickMusic?.(quickMusic);
+                      }}
+                    >
+                      <Music2 aria-hidden="true" />
+                      <i aria-hidden="true" />
+                    </button>
+                  ) : null}
                   {occupant.musicActivity ? (
                     <MusicActivityBadge activity={occupant.musicActivity} />
                   ) : null}

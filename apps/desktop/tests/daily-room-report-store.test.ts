@@ -85,7 +85,7 @@ test("daily report deduplicates the same visible nickname and persists one share
       store.setCommentary(
         "main",
         "2026-08-10",
-        " 昨天房间很安静，Sober 一个人也把气氛坐出了包场感 ☕ ",
+        " 昨天房间很安静，Sober 一个人也把气氛坐出了包场感 ☕ \n 但好歹人还在，房间没有彻底长草。 ",
       ),
       true,
     );
@@ -98,7 +98,10 @@ test("daily report deduplicates the same visible nickname and persists one share
     )[0];
     assert.equal(report?.participantCount, 1);
     assert.deepEqual(report?.participantNicknames, ["Sober"]);
-    assert.equal(report?.commentary, "昨天房间很安静，Sober 一个人也把气氛坐出了包场感 ☕");
+    assert.equal(
+      report?.commentary,
+      "昨天房间很安静，Sober 一个人也把气氛坐出了包场感 ☕\n但好歹人还在，房间没有彻底长草。",
+    );
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
@@ -119,22 +122,21 @@ test("cross-midnight sessions are split in Shanghai time without a fake leave", 
   assert.equal(secondDay?.lastExit?.nickname, "小明");
 });
 
-test("development work is recorded across multiple room-history days", async () => {
+test("development work is excluded from room-history durations", async () => {
   const store = await DailyRoomReportStore.create();
   store.recordJoin("main", "profile-a", "Sober", 1, at("2026-08-20T22:00:00"));
   store.recordWork("main", "profile-a", "Sober", "Codex", at("2026-08-20T22:30:00"));
-  store.recordWork("main", "profile-a", "Sober", undefined, at("2026-08-21T01:30:00"));
-  store.recordWork("main", "profile-a", "Sober", "Visual Studio Code", at("2026-08-21T10:00:00"));
-  store.recordLeave("main", "profile-a", "Sober", 0, at("2026-08-21T11:00:00"));
+  store.recordLeave("main", "profile-a", "Sober", 0, at("2026-08-21T02:00:00"));
 
   const history = store.getHistory("main", at("2026-08-22T12:00:00"));
-  assert.deepEqual(history.find((report) => report.date === "2026-08-20")?.workActivities, [
-    { nickname: "Sober", workName: "Codex", durationMs: 90 * 60 * 1_000 },
-  ]);
-  assert.deepEqual(history.find((report) => report.date === "2026-08-21")?.workActivities, [
-    { nickname: "Sober", workName: "Codex", durationMs: 90 * 60 * 1_000 },
-    { nickname: "Sober", workName: "Visual Studio Code", durationMs: 60 * 60 * 1_000 },
-  ]);
+  const firstDay = history.find((report) => report.date === "2026-08-20");
+  const secondDay = history.find((report) => report.date === "2026-08-21");
+  assert.equal(firstDay?.activeDurationMs, 30 * 60 * 1_000);
+  assert.equal(secondDay?.activeDurationMs, 0);
+  assert.equal(firstDay?.participants?.[0]?.presenceDurationMs, 30 * 60 * 1_000);
+  assert.equal(secondDay?.participants?.[0]?.presenceDurationMs, 0);
+  assert.deepEqual(firstDay?.workActivities, []);
+  assert.deepEqual(secondDay?.workActivities, []);
   assert.equal(history.length, 2);
 });
 

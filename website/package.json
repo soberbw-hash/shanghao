@@ -1,0 +1,25 @@
+{
+  "name": "shanghao-website",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build && node scripts/copy-404.mjs",
+    "preview": "vite preview",
+    "release:prepare": "node scripts/prepare-release.mjs",
+    "release:activate": "node scripts/prepare-release.mjs --activate"
+  },
+  "dependencies": {
+    "@vitejs/plugin-react-swc": "4.3.3",
+    "lucide-react": "0.577.0",
+    "react": "19.2.8",
+    "react-dom": "19.2.8",
+    "typescript": "5.9.3",
+    "vite": "8.2.1"
+  },
+  "devDependencies": {
+    "@types/react": "19.2.8",
+    "@types/react-dom": "19.2.3"
+  }
+}

@@ -107,6 +107,13 @@
   box-shadow: 0 0 0 3px rgba(77, 163, 255, 0.12);
 }
 
+.quick-message-filter-select {
+  width: 136px;
+  min-width: 0;
+  max-width: 136px;
+  flex: 0 0 136px;
+}
+
 .team-island-stage {
   background:
     linear-gradient(90deg, rgba(213, 227, 242, 0.34) 0 1px, transparent 1px 100%),

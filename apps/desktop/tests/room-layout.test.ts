@@ -612,7 +612,12 @@ test("screen sharing is wired through the room page and WebRTC peer layer", () =
   assert.equal(managerSource.includes("SCREEN_SHARE_PROFILES"), true);
   assert.equal(roomSource.includes("const [screenFrameNow"), false);
   assert.equal(roomSource.includes("useAudioStore()"), false);
-  assert.equal(roomSource.includes("}, 2_000);"), true);
+  assert.equal(
+    roomSource.includes(
+      "const heartbeat = window.setInterval(() => {\n      void window.desktopApi.overlay.update",
+    ),
+    false,
+  );
   assert.equal(screenPanelContainerSource.includes("detachedSyncTimerRef"), true);
   assert.equal(screenPanelContainerSource.includes("}, 200)"), true);
   assert.equal(viewerPreloadSource.includes("screenShareViewerApi"), true);

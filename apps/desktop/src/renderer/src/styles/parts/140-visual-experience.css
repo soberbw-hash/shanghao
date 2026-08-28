@@ -1207,7 +1207,7 @@ html:not(.is-app-window-focused) .window-frame {
   width: 74px;
   height: 74px;
   flex: 0 0 auto;
-  filter: drop-shadow(0 10px 16px rgba(38, 50, 68, 0.16));
+  display: block;
 }
 
 .about-product-copy {

@@ -27,6 +27,9 @@ import type {
   RecordingSpeakerSegmentFinalizePayload,
   RecordingSpeakerSegmentPayload,
   RecordingSpeakerSegmentResponse,
+  RecordingParticipantTrackPayload,
+  RecordingParticipantTrackResponse,
+  RecordingParticipantTracksFinalizePayload,
 } from "./recording.types";
 import type {
   AiCustomProviderInput,
@@ -55,6 +58,7 @@ import type {
   AccountProfileUpdateRequest,
   AccountRegisterRequest,
   AccountSnapshot,
+  CloudBaseClientConfig,
 } from "./account.types";
 
 export interface RuntimeInfo {
@@ -128,6 +132,20 @@ export interface OverlayState {
   isRecording?: boolean;
   isScreenSharing?: boolean;
   hasSystemAudio?: boolean;
+  activeQuickMusic?: ActiveQuickMusic;
+}
+
+export interface ActiveQuickMusic {
+  peerId: string;
+  messageId: string;
+  presetId: string;
+  nickname: string;
+  title: string;
+}
+
+export interface OverlayQuickMusicMuteRequest {
+  peerId: string;
+  messageId: string;
 }
 
 export interface ScreenCaptureSourceDescriptor {
@@ -289,7 +307,9 @@ export interface DesktopApi {
     setInteractive: (interactive: boolean) => Promise<void>;
     moveTo: (screenY: number) => Promise<void>;
     resetPosition: () => Promise<void>;
+    requestMuteQuickMessage: (request: OverlayQuickMusicMuteRequest) => Promise<void>;
     onState: (listener: (state: OverlayState) => void) => () => void;
+    onQuickMessageMute: (listener: (request: OverlayQuickMusicMuteRequest) => void) => () => void;
     onHoverState: (listener: (inside: boolean) => void) => () => void;
   };
   games: {
@@ -341,8 +361,10 @@ export interface DesktopApi {
   };
   account: {
     getSnapshot: () => Promise<AccountSnapshot>;
+    configureCloudBase: (config?: CloudBaseClientConfig) => Promise<void>;
     login: (request: AccountLoginRequest) => Promise<AccountSnapshot>;
     register: (request: AccountRegisterRequest) => Promise<AccountSnapshot>;
+    requestVerificationCode: (phone: string) => Promise<void>;
     requestPasswordReset: (request: AccountPasswordResetRequest) => Promise<void>;
     updateProfile: (request: AccountProfileUpdateRequest) => Promise<AccountSnapshot>;
     updateAvatar: (request: AccountAvatarUpdateRequest) => Promise<AccountSnapshot>;
@@ -374,6 +396,8 @@ export interface DesktopApi {
     onMuteTriggered: (listener: () => void) => () => void;
     configureRecordingMarker: (accelerator: string) => Promise<boolean>;
     onRecordingMarkerTriggered: (listener: () => void) => () => void;
+    configurePushToTalk: (accelerator: string, enabled: boolean) => Promise<boolean>;
+    onPushToTalkState: (listener: (pressed: boolean) => void) => () => void;
     configureQuickMessage: (slot: number, accelerator: string) => Promise<boolean>;
     onQuickMessageTriggered: (listener: (slot: number) => void) => () => void;
   };
@@ -397,6 +421,12 @@ export interface DesktopApi {
       payload: RecordingSpeakerSegmentPayload,
     ) => Promise<RecordingSpeakerSegmentResponse>;
     finalizeSpeakerSegments: (payload: RecordingSpeakerSegmentFinalizePayload) => Promise<void>;
+    saveParticipantTrack: (
+      payload: RecordingParticipantTrackPayload,
+    ) => Promise<RecordingParticipantTrackResponse>;
+    finalizeParticipantTracks: (
+      payload: RecordingParticipantTracksFinalizePayload,
+    ) => Promise<void>;
     chooseDirectory: () => Promise<string | undefined>;
     saveMarkers: (filePath: string, markers: RecordingMarker[]) => Promise<string>;
     applyAutomaticCleanup: (filePath: string) => Promise<RecordingAutomaticCleanupResult>;
@@ -406,6 +436,7 @@ export interface DesktopApi {
     setFavorite: (filePath: string, isFavorite: boolean) => Promise<void>;
     rename: (recordingId: string, title: string) => Promise<RecordingLibraryItem>;
     openDirectory: () => Promise<void>;
+    showItemInFolder: (filePath: string) => Promise<void>;
     delete: (filePath: string) => Promise<void>;
     deleteMany: (filePaths: string[]) => Promise<RecordingBatchDeleteResult>;
   };

@@ -332,6 +332,19 @@
   display: none;
 }
 
+.chat-quick-actions {
+  max-width: 100%;
+}
+
+.chat-quick-music-row {
+  max-width: 100%;
+  flex-wrap: wrap;
+}
+
+.chat-quick-music-row::-webkit-scrollbar {
+  display: none;
+}
+
 .chat-quick-reply {
   flex: 0 0 auto;
   min-width: 26px;
@@ -342,7 +355,7 @@
   color: #52657d;
   font-size: 12px;
   font-weight: 550;
-  line-height: 1;
+  line-height: 1.2;
   box-shadow: 0 2px 7px rgba(63, 92, 132, 0.04);
 }
 
@@ -350,6 +363,81 @@
   transform: translateY(-1px) scale(1.01);
   border-color: rgba(174, 198, 226, 0.88) !important;
   background: #fff !important;
+}
+
+.chat-quick-music {
+  min-height: 26px;
+  padding: 0 7px;
+  border-color: rgba(94, 181, 199, 0.56) !important;
+  background: rgba(239, 252, 255, 0.94) !important;
+  color: #287f99 !important;
+}
+
+.chat-quick-music:hover:not(:disabled) {
+  border-color: rgba(62, 157, 181, 0.78) !important;
+  background: #f4fdff !important;
+  color: #206f88 !important;
+}
+
+.chat-quick-music svg,
+.quick-message-music-icon {
+  color: #2b94aa !important;
+}
+
+.quick-message-music-preview {
+  display: block;
+  border-color: rgba(94, 181, 199, 0.42);
+  background: rgba(241, 252, 255, 0.78);
+}
+
+.quick-message-music-preview-list {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.quick-message-music-preview-item {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+}
+
+.quick-message-music-button {
+  width: 100%;
+  min-width: 0;
+  justify-content: flex-start;
+  border-color: rgba(139, 205, 216, 0.62);
+  color: #287f99;
+}
+
+.quick-message-music-button:hover:not(:disabled),
+.quick-message-music-preview-control:hover:not(:disabled) {
+  border-color: rgba(62, 157, 181, 0.76) !important;
+  background: #f4fdff !important;
+  color: #206f88 !important;
+}
+
+.quick-message-music-select {
+  width: 100%;
+  min-width: 0;
+  max-width: none;
+  box-sizing: border-box;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  border-color: rgba(139, 205, 216, 0.62) !important;
+  color: #287f99;
+}
+
+@media (max-width: 860px) {
+  .quick-message-music-preview-list {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.quick-message-music-card {
+  border-color: rgba(139, 205, 216, 0.62) !important;
+  background: rgba(241, 252, 255, 0.86) !important;
 }
 
 .chat-ai-entry {
