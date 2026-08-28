@@ -36,7 +36,7 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - shell: bash
         run: bash -n scripts/deploy-relay-ubuntu.sh
-      - run: pnpm release:verify
+      - run: pnpm release:verify -- ${{ inputs.release_tag || github.ref_name }}
       - run: pnpm lint
       - run: pnpm typecheck
       - run: cargo fmt --manifest-path native/Cargo.toml --all -- --check
