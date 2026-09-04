@@ -300,6 +300,49 @@ test("registration form stays compact and scrollable in a short window", async (
   );
 });
 
+test("remembered login uses Electron secure storage and only explicit logout clears it", async () => {
+  const accountPage = await readFile(
+    new URL("../src/renderer/src/pages/AccountPage.tsx", import.meta.url),
+    "utf8",
+  );
+  const accountService = await readFile(
+    new URL("../src/main/account-service.ts", import.meta.url),
+    "utf8",
+  );
+  const sessionStore = await readFile(
+    new URL("../src/main/account-session-store.ts", import.meta.url),
+    "utf8",
+  );
+
+  assert.match(accountPage, /getRememberedLogin\(\)/);
+  assert.match(accountPage, /setPassword\(\(current\) => current \|\| remembered\.password\)/);
+  assert.match(accountPage, /AccountLoginSummary/);
+  assert.match(accountPage, /return <HomePage \/>/);
+  assert.doesNotMatch(accountPage, /automaticEntryIdentity=/);
+  assert.match(sessionStore, /safeStorage\.encryptStringAsync/);
+  assert.match(sessionStore, /account-login\.bin/);
+  assert.match(accountService, /async logout\(\)[\s\S]*clearRememberedLogin\(\)/);
+  const clearSessionBody = accountService.match(
+    /private async clearSession\(\)[\s\S]*?\n {2}\}/,
+  )?.[0];
+  assert.ok(clearSessionBody);
+  assert.doesNotMatch(clearSessionBody, /clearRememberedLogin\(\)/);
+});
+
+test("signed-in joins rely on verified access-token identity for legacy relay compatibility", async () => {
+  const roomState = await readFile(
+    new URL("../src/renderer/src/hooks/useRoomState.ts", import.meta.url),
+    "utf8",
+  );
+  const roomClient = await readFile(
+    new URL("../src/renderer/src/features/room/roomClient.ts", import.meta.url),
+    "utf8",
+  );
+
+  assert.match(roomState, /accountSnapshot\.status === "signed_in" \? undefined : localProfileId/);
+  assert.match(roomClient, /profileId\?: string/);
+});
+
 test("old account servers are identified before credentials can be submitted", async () => {
   const desktopService = await readFile(
     new URL("../src/main/account-service.ts", import.meta.url),

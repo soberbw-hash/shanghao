@@ -49,7 +49,7 @@ test("presence detected before join is replayed once signaling is ready", async 
     return true;
   };
 
-  client.updatePresenceState(false, "idle", "gameDesk1", undefined, {
+  client.updatePresenceState(false, "gaming", "gameDesk1", "英雄联盟", {
     provider: "netease",
     providerName: "网易云音乐",
     trackTitle: "一路向北",
@@ -70,12 +70,26 @@ test("presence detected before join is replayed once signaling is ready", async 
     artist: "周杰伦",
   });
 
-  client.updatePresenceState(false, "idle", "gameDesk1", undefined, {
+  client.updateMuteState(false, true);
+  await Promise.resolve();
+  const muteUpdate = sent.at(-1);
+  assert.equal(muteUpdate?.type, "member_state");
+  if (muteUpdate?.type === "member_state") {
+    assert.equal(muteUpdate.gameName, "英雄联盟");
+    assert.deepEqual(muteUpdate.musicActivity, {
+      provider: "netease",
+      providerName: "网易云音乐",
+      trackTitle: "一路向北",
+      artist: "周杰伦",
+    });
+  }
+
+  client.updatePresenceState(false, "gaming", "gameDesk1", "英雄联盟", {
     provider: "netease",
     providerName: "网易云音乐",
     trackTitle: "一路向北",
     artist: "周杰伦",
   });
   await Promise.resolve();
-  assert.equal(sent.length, 1);
+  assert.equal(sent.length, 2);
 });

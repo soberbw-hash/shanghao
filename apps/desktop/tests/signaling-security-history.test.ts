@@ -14,6 +14,7 @@ import { SignalingServer } from "@private-voice/signaling";
 import { WebSocket } from "ws";
 
 import { ChatHistoryStore } from "../../../packages/signaling/src/chat-history-store";
+import { DailyRoomReportStore } from "../../../packages/signaling/src/daily-room-report-store";
 import { isSignalEnvelope, isValidNickname } from "../../../packages/signaling/src/protocol";
 import { SessionTokenStore } from "../../../packages/signaling/src/session-token-store";
 
@@ -122,6 +123,25 @@ test("relay token is required and never appears in logs", async () => {
     if (previousToken === undefined) delete process.env.RELAY_ACCESS_TOKEN;
     else process.env.RELAY_ACCESS_TOKEN = previousToken;
   }
+});
+
+test("join validation accepts CloudBase account identities without weakening identifier checks", () => {
+  const message = {
+    type: "join_channel",
+    roomId: "main",
+    channelId: "main",
+    peerId: "peer-cloudbase-1",
+    profileId: "cloudbase-user-1",
+    nickname: "Sober",
+    avatarId: "fox",
+    appVersion: "0.1.50",
+    protocolVersion: APP_PROTOCOL_VERSION,
+    buildNumber: APP_BUILD_NUMBER,
+  };
+
+  assert.equal(isSignalEnvelope(message), true);
+  assert.equal(isSignalEnvelope({ ...message, profileId: "cloudbase user 1" }), false);
+  assert.equal(isSignalEnvelope({ ...message, profileId: "x".repeat(65) }), false);
 });
 
 test("temporary ICE configuration is authenticated and reports TURN transports", async () => {
@@ -456,6 +476,63 @@ test("legacy empty game names stay connected and explicitly clear stale state", 
     );
     await pong;
     assert.equal(socket.readyState, WebSocket.OPEN);
+  } finally {
+    socket.close();
+    await server.close();
+  }
+});
+
+test("partial member state updates do not truncate an active game session", async () => {
+  const server = new SignalingServer({ roomName: "固定频道" });
+  const port = await server.listen();
+  const socket = await openSocket(`ws://127.0.0.1:${port}`);
+  try {
+    const snapshot = waitForMemberCount(socket, 1);
+    join(socket, "game-peer", "Sober");
+    await snapshot;
+
+    socket.send(
+      JSON.stringify({
+        type: "member_state",
+        roomId: "main",
+        peerId: "game-peer",
+        activity: "gaming",
+        gameName: "英雄联盟",
+      }),
+    );
+    await new Promise((resolve) => setTimeout(resolve, 80));
+
+    socket.send(
+      JSON.stringify({
+        type: "member_state",
+        roomId: "main",
+        peerId: "game-peer",
+        isMuted: false,
+        isSpeaking: true,
+      }),
+    );
+    await new Promise((resolve) => setTimeout(resolve, 80));
+
+    socket.send(
+      JSON.stringify({
+        type: "member_state",
+        roomId: "main",
+        peerId: "game-peer",
+        activity: "idle",
+        gameName: "",
+      }),
+    );
+    await new Promise((resolve) => setTimeout(resolve, 30));
+
+    const reportStore = await (
+      server as unknown as { dailyRoomReports: Promise<DailyRoomReportStore> }
+    ).dailyRoomReports;
+    const tomorrow = Date.now() + 24 * 60 * 60_000;
+    const league = reportStore
+      .getHistory("main", tomorrow)[0]
+      ?.gameActivities.find((activity) => activity.gameName === "英雄联盟");
+    assert.ok(league);
+    assert.ok(league.durationMs >= 120);
   } finally {
     socket.close();
     await server.close();

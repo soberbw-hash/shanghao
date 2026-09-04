@@ -803,8 +803,7 @@
   background: rgba(238, 242, 255, 0.95);
 }
 
-.room-character-label.gaming,
-.room-character-label.working {
+.room-character-label.gaming {
   border-color: rgba(99, 177, 239, 0.26);
   background: rgba(243, 249, 255, 0.95);
   box-shadow:
@@ -814,11 +813,6 @@
 
 .room-character-label.gaming .room-character-state {
   color: #286fb8;
-  font-weight: 650;
-}
-
-.room-character-label.working .room-character-state {
-  color: #34789d;
   font-weight: 650;
 }
 

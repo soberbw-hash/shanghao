@@ -47,6 +47,8 @@ import type {
   RoomSnapshotMessage,
   RequestSnapshotMessage,
   RequestDailyRoomReportsMessage,
+  PublishRecordingRecapMessage,
+  RecordingRecapPublishedMessage,
   ScreenFrameMessage,
   ScreenPathStateMessage,
   ScreenShareStateMessage,
@@ -169,6 +171,7 @@ const SERVER_ONLY_MESSAGE_TYPES = new Set([
   "chat_rejected",
   "channel_counts",
   "daily_room_reports",
+  "recording_recap_published",
   "room_collection_snapshot",
   "avatar_update",
   "cloud_ai_response",
@@ -204,6 +207,7 @@ const RATE_LIMITS: Record<string, { windowMs: number; limit: number }> = {
   screen_share_state: { windowMs: 10_000, limit: 10 },
   screen_path_state: { windowMs: 10_000, limit: 30 },
   request_daily_room_reports: { windowMs: 10_000, limit: 6 },
+  publish_recording_recap: { windowMs: 60_000, limit: 4 },
   cloud_ai_request: { windowMs: 60_000, limit: 4 },
   cloud_ai_cancel: { windowMs: 60_000, limit: 12 },
 };
@@ -873,6 +877,9 @@ export class SignalingServer extends EventEmitter {
       case "request_daily_room_reports":
         void this.sendDailyRoomReports(socket, authoritative);
         return;
+      case "publish_recording_recap":
+        void this.publishRecordingRecap(socket, authoritative);
+        return;
       case "peer_offer":
       case "peer_answer":
       case "peer_restart_request":
@@ -1033,27 +1040,28 @@ export class SignalingServer extends EventEmitter {
 
     const requestedAvatarId = existingPeer?.avatarId ?? message.avatarId;
     const occupiedAvatarIds = getOccupiedAvatarIds(existingRoom, message.peerId);
-    if (occupiedAvatarIds.has(requestedAvatarId)) {
-      if (!existingPeer) {
-        this.sessionTokens.invalidate(message.roomId, message.peerId);
-      }
-      const availableAvatarIds = getAvailableAvatarIds(existingRoom, message.peerId);
-      this.logger?.("avatar selection rejected", {
-        roomId: message.roomId,
-        peerId: message.peerId,
-        avatarId: requestedAvatarId,
-        availableAvatarIds,
-      });
+    const availableAvatarIds = getAvailableAvatarIds(existingRoom, message.peerId);
+    const assignedAvatarId = occupiedAvatarIds.has(requestedAvatarId)
+      ? availableAvatarIds[0]
+      : requestedAvatarId;
+    if (!assignedAvatarId) {
+      if (!existingPeer) this.sessionTokens.invalidate(message.roomId, message.peerId);
       this.safeSend(socket, {
         type: "error",
-        code: "avatar_taken",
+        code: "room_full",
         roomId: message.roomId,
         peerId: message.peerId,
-        avatarId: requestedAvatarId,
-        availableAvatarIds,
-        message: "这个角色刚被朋友选走了，请换一个角色再进入频道。",
+        message: "频道里的角色都在使用，请稍后再试。",
       });
       return;
+    }
+    if (assignedAvatarId !== requestedAvatarId) {
+      this.logger?.("avatar assigned automatically", {
+        roomId: message.roomId,
+        peerId: message.peerId,
+        requestedAvatarId,
+        assignedAvatarId,
+      });
     }
 
     this.sessions.set(socket, {
@@ -1090,7 +1098,7 @@ export class SignalingServer extends EventEmitter {
       nickname: authoritativeNickname,
       avatarDataUrl: existingPeer?.avatarDataUrl,
       avatarHash: existingPeer?.avatarHash,
-      avatarId: requestedAvatarId,
+      avatarId: assignedAvatarId,
       socket,
       isHost: false,
       isMuted: existingPeer?.isMuted ?? false,
@@ -1102,7 +1110,6 @@ export class SignalingServer extends EventEmitter {
       gameName: existingPeer?.gameName,
       gameIconDataUrl: existingPeer?.gameIconDataUrl,
       musicActivity: existingPeer?.musicActivity,
-      workActivity: existingPeer?.workActivity,
       joinedAt: existingPeer?.joinedAt ?? new Date().toISOString(),
       lastHeartbeatAt: Date.now(),
       disconnectedAt: undefined,
@@ -1217,16 +1224,6 @@ export class SignalingServer extends EventEmitter {
       : message.musicActivity === null
         ? null
         : undefined;
-    const normalizedWorkActivity = message.workActivity
-      ? {
-          id: message.workActivity.id,
-          name: message.workActivity.name.trim().slice(0, 48),
-          category: message.workActivity.category,
-          iconDataUrl: message.workActivity.iconDataUrl,
-        }
-      : message.workActivity === null
-        ? null
-        : undefined;
     const author = room.peers.getPeer(message.peerId);
     const normalizedAvatar = normalizeAvatar(message.avatarDataUrl);
     const authoritativeNickname = author?.isGuest ? message.nickname : author?.displayName;
@@ -1239,27 +1236,21 @@ export class SignalingServer extends EventEmitter {
       gameName: message.gameName === undefined ? undefined : (normalizedGameName ?? ""),
       gameIconDataUrl: normalizedGameIconDataUrl,
       musicActivity: normalizedMusicActivity,
-      workActivity: normalizedWorkActivity,
       nickname: authoritativeNickname,
       avatarDataUrl: normalizedAvatar.avatarDataUrl,
       avatarHash: normalizedAvatar.avatarHash,
       avatarId: message.avatarId,
     });
-    void this.dailyRoomReports.then((store) =>
-      store.recordGame(
-        message.roomId,
-        room.peers.getPeer(message.peerId)?.profileId || message.peerId,
-        room.peers.getPeer(message.peerId)?.nickname || message.nickname || "朋友",
-        normalizedGameName,
-      ),
-    );
-    if (message.workActivity !== undefined) {
+    // member_state is a partial update. Speaking, mute and profile updates do
+    // not carry gameName, so only an explicitly supplied gameName is allowed
+    // to start, change or clear the persisted game session.
+    if (message.gameName !== undefined) {
       void this.dailyRoomReports.then((store) =>
-        store.recordWork(
+        store.recordGame(
           message.roomId,
           room.peers.getPeer(message.peerId)?.profileId || message.peerId,
           room.peers.getPeer(message.peerId)?.nickname || message.nickname || "朋友",
-          normalizedWorkActivity?.name,
+          normalizedGameName,
         ),
       );
     }
@@ -1275,7 +1266,6 @@ export class SignalingServer extends EventEmitter {
       gameName: message.gameName === undefined ? undefined : (normalizedGameName ?? ""),
       gameIconDataUrl: normalizedGameIconDataUrl,
       musicActivity: normalizedMusicActivity,
-      workActivity: normalizedWorkActivity,
       nickname: authoritativeNickname,
       avatarId: message.avatarId,
     };
@@ -1608,6 +1598,38 @@ export class SignalingServer extends EventEmitter {
       roomId: message.roomId,
       targetRoomId: message.targetRoomId,
       reports,
+    };
+    this.safeSend(socket, payload);
+  }
+
+  private async publishRecordingRecap(
+    socket: WebSocket,
+    message: PublishRecordingRecapMessage,
+  ): Promise<void> {
+    const room = this.roomManager.getRoom(message.roomId);
+    const peer = room?.peers.getPeer(message.peerId);
+    if (!peer) {
+      this.rejectInvalid(socket, "room_unavailable", "The room session is unavailable.");
+      return;
+    }
+    const result = (await this.dailyRoomReports).publishRecordingRecap(
+      message.roomId,
+      message.reportDate,
+      message.recap,
+      Date.now(),
+    );
+    if (!result) {
+      this.rejectInvalid(socket, "invalid_report_date", "The recording date is unavailable.");
+      return;
+    }
+    const payload: RecordingRecapPublishedMessage = {
+      type: "recording_recap_published",
+      roomId: message.roomId,
+      peerId: message.peerId,
+      requestId: message.requestId,
+      reportDate: message.reportDate,
+      publishedAt: result.publishedAt,
+      serverRevision: result.serverRevision,
     };
     this.safeSend(socket, payload);
   }

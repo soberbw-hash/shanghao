@@ -26,10 +26,20 @@ interface VisualRuntimeEnvironment {
 const browserEnvironment = (): VisualRuntimeEnvironment => ({
   requestFrame: (callback) => window.requestAnimationFrame(callback),
   cancelFrame: (id) => window.cancelAnimationFrame(id),
-  isVisible: () => document.visibilityState !== "hidden",
-  addVisibilityListener: (listener) => document.addEventListener("visibilitychange", listener),
-  removeVisibilityListener: (listener) =>
-    document.removeEventListener("visibilitychange", listener),
+  // Chromium can keep an occluded Electron window "visible" while a game is
+  // in the foreground. Purely visual schedulers should stop in that state as
+  // well, while voice/network/audio continue outside this controller.
+  isVisible: () => document.visibilityState !== "hidden" && document.hasFocus(),
+  addVisibilityListener: (listener) => {
+    document.addEventListener("visibilitychange", listener);
+    window.addEventListener("focus", listener);
+    window.addEventListener("blur", listener);
+  },
+  removeVisibilityListener: (listener) => {
+    document.removeEventListener("visibilitychange", listener);
+    window.removeEventListener("focus", listener);
+    window.removeEventListener("blur", listener);
+  },
 });
 
 export class VisualRuntimeController {

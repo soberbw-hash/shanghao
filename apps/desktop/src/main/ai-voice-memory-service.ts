@@ -5,6 +5,7 @@ import path from "node:path";
 import {
   AI_ASR_MODEL_NAMES,
   CURRENT_TRANSCRIPTION_PIPELINE_VERSION,
+  evaluateVoiceMemoryTranscriptionValidity,
   hasInvalidVoiceMemoryResult,
   isReliableTranscriptText,
   mergeTranscriptIntoSentences,
@@ -14,9 +15,13 @@ import {
   type AiRuntimeStatus,
   type RendererLogPayload,
   type VoiceMemoryAnswer,
+  type VoiceMemoryBenchmarkRunMetadata,
   type VoiceMemoryGlobalQuestionRequest,
   type VoiceMemoryChapter,
   type VoiceMemoryHighlight,
+  type VoiceMemoryOrganizationMetrics,
+  type VoiceMemoryOrganizationPublication,
+  type VoiceMemoryOrganizationResult,
   type VoiceMemoryMarkerTitle,
   type VoiceMemoryProcessRequest,
   type VoiceMemoryQuestionRequest,
@@ -34,28 +39,99 @@ import {
   type VoiceMemoryTranscriptSegment,
 } from "@private-voice/shared";
 
-import { AiModelManager } from "./ai-model-manager";
+import { AiModelManager, QWEN36_NVFP4_MODEL_REVISION } from "./ai-model-manager";
 import { AiRuntimeManager } from "./ai-runtime-manager";
+import type { TranscriptionChunkRuntimeResult } from "./asr-benchmark-runtime";
 import { classifyLocalModelRuntimeError } from "./local-model-runtime";
 import { VoiceMemoryStore } from "./voice-memory-store";
 import { resolveFfmpegExecutable } from "./media-runtime";
 import { AiTextGateway } from "./ai-text-gateway";
 import {
-  cleanupRecordingSpeakerSegments,
-  loadRecordingSpeakerSegments,
-} from "./recording-speaker-segments";
-import { bindTranscriptToKnownSpeaker, mergeSpeakerTranscript } from "./speaker-transcript";
+  materializeOrganizationChunks,
+  normalizeOrganizationResult,
+  organizationChunkPrompt,
+  organizationFinalPrompt,
+  planRecordingOrganizationChunks,
+  RECORDING_ORGANIZATION_PIPELINE_VERSION,
+} from "./recording-organizer";
+import { loadRecordingSpeakerSegments } from "./recording-speaker-segments";
+import { loadRecordingParticipantTracks } from "./recording-participant-tracks";
+import {
+  bindTranscriptToKnownSpeaker,
+  mergeSpeakerTranscript,
+  splitParticipantTracksIntoSpeakerSources,
+  type KnownSpeakerTranscriptionSource,
+} from "./speaker-transcript";
 
 // Short units bound local inference memory and preserve useful seek points for models without
 // word-level timestamps.
 export const TRANSCRIPTION_CHUNK_MS = 30_000;
+export const MOSS_CPP_TRANSCRIPTION_CHUNK_MS = 10 * 60_000;
 export const AUTOMATIC_TRANSCRIPTION_MAX_DURATION_MS = 30 * 60_000;
+export const benchmarkDurationForMode = (
+  mode: "smoke" | "standard" | "long" | undefined,
+  sourceDurationMs: number,
+): number =>
+  Math.min(
+    sourceDurationMs,
+    mode === "smoke" ? 3 * 60_000 : mode === "standard" ? 10 * 60_000 : sourceDurationMs,
+  );
+
+export const benchmarkRangeForMode = (
+  mode: "smoke" | "standard" | "long" | undefined,
+  sourceDurationMs: number,
+): { sourceStartMs: number; sourceEndMs: number; clipDurationMs: number } => {
+  const clipDurationMs = benchmarkDurationForMode(mode, sourceDurationMs);
+  const sourceStartMs =
+    mode === "standard" && clipDurationMs < sourceDurationMs
+      ? Math.max(0, Math.floor((sourceDurationMs - clipDurationMs) / 2))
+      : 0;
+  return {
+    sourceStartMs,
+    sourceEndMs: sourceStartMs + clipDurationMs,
+    clipDurationMs,
+  };
+};
+
+export const resolveTranscriptionRunRange = (
+  sourceDurationMs: number,
+  benchmark: VoiceMemoryBenchmarkRunMetadata | undefined,
+): { sourceStartMs: number; sourceEndMs: number; clipDurationMs: number } => {
+  if (!benchmark) return benchmarkRangeForMode(undefined, sourceDurationMs);
+  const savedClip = benchmark.clips?.[0];
+  const fallback = benchmarkRangeForMode(benchmark.mode, sourceDurationMs);
+  const sourceStartMs = Math.max(
+    0,
+    Math.min(
+      sourceDurationMs,
+      savedClip ? (savedClip.sourceStartMs ?? savedClip.startMs) : fallback.sourceStartMs,
+    ),
+  );
+  const sourceEndMs = Math.max(
+    sourceStartMs,
+    Math.min(
+      sourceDurationMs,
+      savedClip?.sourceEndMs ??
+        sourceStartMs +
+          (savedClip ? Math.max(0, savedClip.endMs - savedClip.startMs) : fallback.clipDurationMs),
+    ),
+  );
+  return { sourceStartMs, sourceEndMs, clipDurationMs: sourceEndMs - sourceStartMs };
+};
 const LEGACY_TRANSCRIPTION_CHUNK_MS = 10 * 60_000;
 // Version 8 binds speaker identity to independent participant streams. Partial mixed-stream
 // results must never be merged into this speaker-aware pipeline.
 const TRANSCRIPTION_PIPELINE_VERSION = CURRENT_TRANSCRIPTION_PIPELINE_VERSION;
 const MAX_TRANSCRIPTION_CHUNK_ATTEMPTS = 3;
 const TRANSCRIPTION_CHUNK_RETRY_DELAY_MS = 1_000;
+const MAX_ORGANIZATION_ATTEMPTS_PER_RUN = 2;
+
+export const isFatalTranscriptionRuntimeFailure = (error: unknown): boolean => {
+  const message = (error instanceof Error ? error.message : String(error)).toLowerCase();
+  return /(?:0xc000001d|-1073741795|3221225501|illegal instruction|ark_asr_(?:backend_missing|q8_model_missing|q8_quantization_required)|unable to compare versions for packaging|no package metadata was found|modulenotfounderror|no module named|importerror:|dll load failed)/i.test(
+    message,
+  );
+};
 
 export const canAutomaticallyTranscribeDuration = (durationMs: number): boolean =>
   durationMs <= AUTOMATIC_TRANSCRIPTION_MAX_DURATION_MS;
@@ -76,13 +152,14 @@ export const transcriptionModelMetadata = (
 export const completedTranscriptionUnits = (
   checkpoint: { completedUnits: number; unitDurationMs?: number } | undefined,
   totalUnits: number,
+  currentUnitDurationMs = TRANSCRIPTION_CHUNK_MS,
 ): number =>
   Math.min(
     totalUnits,
     Math.floor(
       ((checkpoint?.completedUnits ?? 0) *
         (checkpoint?.unitDurationMs ?? LEGACY_TRANSCRIPTION_CHUNK_MS)) /
-        TRANSCRIPTION_CHUNK_MS,
+        currentUnitDurationMs,
     ),
   );
 
@@ -163,46 +240,153 @@ export const statsFromTranscriptionUnits = (
   // pending, and interrupted units must not inflate coverage or make a partial
   // run look complete when a legacy fallback still contains old totals.
   const completedUnitsForCoverage = units.filter((unit) => unit.status === "completed");
-  const processedAudioMs = Math.min(
-    audioDurationMs,
-    completedUnitsForCoverage.reduce((sum, unit) => sum + Math.max(0, unit.processedAudioMs), 0),
+  const scheduledSpeechMs = units.reduce(
+    (sum, unit) => sum + Math.max(1, unit.endMs - unit.startMs),
+    0,
   );
-  const coveredAudioMs = Math.min(
-    audioDurationMs,
-    completedUnitsForCoverage.reduce((sum, unit) => sum + Math.max(0, unit.coveredAudioMs), 0),
+  // Speaker-aware tracks may overlap, so completed per-speaker work can legitimately exceed
+  // wall-clock clip duration. Keep the real scheduled work here; speechRatioPercent remains
+  // clamped as a user-facing occupancy figure.
+  const processedAudioMs = completedUnitsForCoverage.reduce(
+    (sum, unit) => sum + Math.max(0, unit.processedAudioMs),
+    0,
   );
-  const completedUnits = units.filter(
-    (unit) => unit.status === "completed" || unit.status === "failed",
-  ).length;
+  const coveredAudioMs = completedUnitsForCoverage.reduce(
+    (sum, unit) => sum + Math.max(0, unit.coveredAudioMs),
+    0,
+  );
+  const completedUnits = units.filter((unit) => unit.status === "completed").length;
+  const pendingUnits = units.filter((unit) => unit.status === "pending").length;
+  const runningUnits = units.filter((unit) => unit.status === "running").length;
   const failedUnits = units.filter((unit) => unit.status === "failed").length;
-  const successfulUnits = units.filter((unit) => unit.status === "completed").length;
-  const silenceUnits = units.filter(
-    (unit) => unit.status === "completed" && unit.segmentCount === 0,
+  const successfulUnits = completedUnits;
+  const terminalUnits = completedUnits + failedUnits;
+  const vadSilenceUnits = units.filter(
+    (unit) => unit.status === "completed" && unit.outputStatus === "vad_silence",
   ).length;
+  const speechUnits = units.filter((unit) => unit.commonVad?.hasSpeech).length;
+  const speechWithOutputUnits = units.filter(
+    (unit) =>
+      unit.status === "completed" &&
+      unit.commonVad?.hasSpeech &&
+      unit.outputStatus === "normal" &&
+      unit.segmentCount > 0,
+  ).length;
+  const emptyOutputOnSpeechUnits = units.filter(
+    (unit) => unit.commonVad?.hasSpeech && unit.outputStatus === "empty_output_on_speech",
+  ).length;
+  const repetitionLoopCount = units.filter((unit) =>
+    unit.anomalyTypes?.includes("repetition_loop"),
+  ).length;
+  const abnormalOutputCount = units.filter(
+    (unit) =>
+      unit.outputStatus === "abnormal_output" ||
+      unit.outputStatus === "repetition_loop" ||
+      unit.anomalyTypes?.length,
+  ).length;
+  const totalSpeechMs = units.reduce(
+    (sum, unit) => sum + (unit.commonVad?.hasSpeech ? unit.commonVad.speechDurationMs : 0),
+    0,
+  );
+  const coveredSpeechMs = units.reduce(
+    (sum, unit) =>
+      sum +
+      (unit.status === "completed" &&
+      unit.outputStatus === "normal" &&
+      unit.segmentCount > 0 &&
+      unit.commonVad?.hasSpeech
+        ? unit.commonVad.speechDurationMs
+        : 0),
+    0,
+  );
+  const taskProgressPercent = units.length > 0 ? (terminalUnits / units.length) * 100 : 0;
+  const processedPercent = audioDurationMs > 0 ? (processedAudioMs / audioDurationMs) * 100 : 0;
+  const processedSpeechPercent =
+    scheduledSpeechMs > 0 ? (processedAudioMs / scheduledSpeechMs) * 100 : 0;
+  const speechRatioPercent =
+    audioDurationMs > 0 ? Math.min(100, (scheduledSpeechMs / audioDurationMs) * 100) : 0;
+  const speechCoveragePercent =
+    totalSpeechMs > 0 ? (coveredSpeechMs / totalSpeechMs) * 100 : speechUnits === 0 ? 100 : 0;
+  const allCompleted =
+    units.length > 0 && completedUnits === units.length && pendingUnits === 0 && runningUnits === 0;
   const last = [...units].sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))[0];
+  const resourceSamples = units.flatMap((unit) => (unit.resourceUsage ? [unit.resourceUsage] : []));
+  const maximumDefined = (values: Array<number | undefined>): number | undefined => {
+    const defined = values.filter((value): value is number => value !== undefined);
+    return defined.length ? Math.max(...defined) : undefined;
+  };
+  const resourceUsage = resourceSamples.length
+    ? {
+        device: resourceSamples.find((sample) => sample.device)?.device,
+        backend: resourceSamples.find((sample) => sample.backend)?.backend,
+        quantization: resourceSamples.find((sample) => sample.quantization)?.quantization,
+        dtype: resourceSamples.find((sample) => sample.dtype)?.dtype,
+        modelFileSizeBytes: fallback?.resourceUsage?.modelFileSizeBytes,
+        gpuMemoryBeforeLoadMb: resourceSamples[0]?.gpuMemoryBeforeLoadMb,
+        gpuMemoryAfterLoadMb: [...resourceSamples]
+          .reverse()
+          .find((sample) => sample.gpuMemoryAfterLoadMb !== undefined)?.gpuMemoryAfterLoadMb,
+        gpuPeakMemoryMb: maximumDefined(resourceSamples.map((sample) => sample.gpuPeakMemoryMb)),
+        gpuMemoryAfterReleaseMb: fallback?.resourceUsage?.gpuMemoryAfterReleaseMb,
+        ramPeakMb: maximumDefined(resourceSamples.map((sample) => sample.ramPeakMb)),
+        oomCount: units.filter((unit) => /oom|out of memory/iu.test(unit.errorMessage ?? ""))
+          .length,
+        workerCrashCount: units.filter((unit) =>
+          /worker.*(?:crash|exit)/iu.test(unit.errorMessage ?? ""),
+        ).length,
+        resourceReleaseSucceeded: fallback?.resourceUsage?.resourceReleaseSucceeded,
+        possibleResourceLeak: fallback?.resourceUsage?.possibleResourceLeak,
+      }
+    : fallback?.resourceUsage;
   return {
     audioDurationMs,
     processedAudioMs: units.length > 0 ? processedAudioMs : fallback?.processedAudioMs || 0,
     coveredAudioMs: units.length > 0 ? coveredAudioMs : fallback?.coveredAudioMs || 0,
     totalUnits: units.length,
     completedUnits,
+    pendingUnits,
+    runningUnits,
     failedUnits,
     retryCount: units.reduce((sum, unit) => sum + Math.max(0, unit.retryCount), 0),
     segmentCount: transcript.length,
     speakerCount: new Set(transcript.map((segment) => segment.speakerId)).size,
     successfulUnits,
-    silenceUnits,
+    silenceUnits: vadSilenceUnits,
+    vadSilenceUnits,
+    speechUnits,
+    speechWithOutputUnits,
+    emptyOutputOnSpeechUnits,
+    repetitionLoopCount,
+    abnormalOutputCount,
+    hallucinationSuspectedCount: abnormalOutputCount,
+    taskProgressPercent,
+    scheduledSpeechMs,
+    processedSpeechPercent,
+    speechRatioPercent,
+    processedPercent,
+    speechCoveragePercent,
+    finalResultSaved: allCompleted ? fallback?.finalResultSaved : false,
     terminationReason:
       failedUnits > 0
         ? "partial"
-        : completedUnits === units.length && units.length > 0
-          ? transcript.length > 0
-            ? "completed"
-            : "no_speech"
-          : fallback?.terminationReason,
+        : allCompleted
+          ? "completed"
+          : fallback?.terminationReason === "completed" ||
+              fallback?.terminationReason === "no_speech"
+            ? undefined
+            : fallback?.terminationReason,
     lastErrorStage: [...units].reverse().find((unit) => unit.errorCode)?.stage,
-    inferenceElapsedMs: fallback?.inferenceElapsedMs,
-    conversionElapsedMs: fallback?.conversionElapsedMs,
+    inferenceElapsedMs: units.reduce((sum, unit) => sum + (unit.timing?.inferenceTimeMs ?? 0), 0),
+    conversionElapsedMs: units.reduce((sum, unit) => sum + (unit.timing?.conversionTimeMs ?? 0), 0),
+    loadElapsedMs: units.reduce((sum, unit) => sum + (unit.timing?.loadTimeMs ?? 0), 0),
+    alignmentElapsedMs: units.reduce((sum, unit) => sum + (unit.timing?.alignmentTimeMs ?? 0), 0),
+    saveElapsedMs: units.reduce((sum, unit) => sum + (unit.timing?.saveTimeMs ?? 0), 0),
+    releaseElapsedMs: fallback?.releaseElapsedMs,
+    totalElapsedMs: units.reduce(
+      (sum, unit) => sum + (unit.timing?.totalTimeMs ?? 0) + (unit.timing?.saveTimeMs ?? 0),
+      0,
+    ),
+    resourceUsage,
     lastChunkOffsetMs: last?.startMs,
     lastHeartbeatAt: last?.heartbeatAt ?? fallback?.lastHeartbeatAt,
   };
@@ -214,6 +398,81 @@ interface OrganizedResult {
   highlights: VoiceMemoryHighlight[];
   markerTitles: VoiceMemoryMarkerTitle[];
 }
+
+const createOrganizationMetrics = (): VoiceMemoryOrganizationMetrics => ({
+  modelName: "Qwen3.6-35B-A3B",
+  modelRevision: QWEN36_NVFP4_MODEL_REVISION,
+  quantization: "NVFP4",
+  provider: "freetoken",
+  inputTokens: 0,
+  outputTokens: 0,
+  totalElapsedMs: 0,
+  oomCount: 0,
+  retryCount: 0,
+  chunkCount: 0,
+  interrupted: false,
+  errors: [],
+});
+
+const mergeOrganizationMetrics = (
+  current: VoiceMemoryOrganizationMetrics,
+  next: Partial<VoiceMemoryOrganizationMetrics>,
+): VoiceMemoryOrganizationMetrics => {
+  const previousOutput = current.outputTokens;
+  const nextOutput = next.outputTokens ?? 0;
+  const totalOutput = previousOutput + nextOutput;
+  const weighted = (left?: number, right?: number): number | undefined => {
+    if (right === undefined) return left;
+    if (left === undefined || previousOutput === 0) return right;
+    return totalOutput > 0 ? (left * previousOutput + right * nextOutput) / totalOutput : right;
+  };
+  return {
+    ...current,
+    providerVersion: next.providerVersion ?? current.providerVersion,
+    modelLoadTimeMs: next.modelLoadTimeMs ?? current.modelLoadTimeMs,
+    inputTokens: current.inputTokens + (next.inputTokens ?? 0),
+    outputTokens: totalOutput,
+    prefillTimeMs:
+      current.prefillTimeMs === undefined && next.prefillTimeMs === undefined
+        ? undefined
+        : (current.prefillTimeMs ?? 0) + (next.prefillTimeMs ?? 0),
+    ttftMs: weighted(current.ttftMs, next.ttftMs),
+    outputTokensPerSecond: weighted(current.outputTokensPerSecond, next.outputTokensPerSecond),
+    totalElapsedMs: current.totalElapsedMs + (next.totalElapsedMs ?? 0),
+    peakVramMb: Math.max(current.peakVramMb ?? 0, next.peakVramMb ?? 0) || undefined,
+    peakRamMb: Math.max(current.peakRamMb ?? 0, next.peakRamMb ?? 0) || undefined,
+    oomCount: current.oomCount + (next.oomCount ?? 0),
+  };
+};
+
+const MAX_ORGANIZATION_REDUCTION_INPUT_TOKENS = 5_000;
+
+const estimateOrganizationPromptTokens = (value: string): number => {
+  const han = (value.match(/[\p{Script=Han}]/gu) ?? []).length;
+  return han + Math.ceil(Math.max(0, value.length - han) / 3.5);
+};
+
+const partitionOrganizationResults = (
+  record: VoiceMemoryRecord,
+  results: readonly VoiceMemoryOrganizationResult[],
+): VoiceMemoryOrganizationResult[][] => {
+  const groups: VoiceMemoryOrganizationResult[][] = [];
+  let current: VoiceMemoryOrganizationResult[] = [];
+  for (const result of results) {
+    const candidate = [...current, result];
+    const estimatedTokens = estimateOrganizationPromptTokens(
+      organizationFinalPrompt(record, candidate),
+    );
+    if (current.length > 0 && estimatedTokens > MAX_ORGANIZATION_REDUCTION_INPUT_TOKENS) {
+      groups.push(current);
+      current = [result];
+    } else {
+      current = candidate;
+    }
+  }
+  if (current.length > 0) groups.push(current);
+  return groups;
+};
 
 const durationMs = async (
   filePath: string,
@@ -436,6 +695,7 @@ export class AiVoiceMemoryService {
     private readonly textGateway: AiTextGateway,
     private readonly store: VoiceMemoryStore,
     private readonly writeLog?: (payload: RendererLogPayload) => Promise<void>,
+    private readonly isAutomaticTranscriptionEnabled: () => boolean = () => true,
   ) {}
 
   async initialize(): Promise<void> {
@@ -471,7 +731,12 @@ export class AiVoiceMemoryService {
       });
     }
     const interrupted = records.filter(
-      (record) => record.phase === "transcribing" || record.phase === "organizing",
+      (record) =>
+        record.phase === "transcribing" ||
+        record.phase === "organizing" ||
+        record.transcriptionUnits?.some((unit) => unit.status === "running") ||
+        record.organization?.status === "running" ||
+        record.organization?.chunks.some((chunk) => chunk.status === "running"),
     );
     for (const record of interrupted) {
       await this.save({
@@ -487,6 +752,21 @@ export class AiVoiceMemoryService {
               }
             : unit,
         ),
+        organization: record.organization
+          ? {
+              ...record.organization,
+              status: record.organization.status === "completed" ? "completed" : "paused",
+              chunks: record.organization.chunks.map((chunk) =>
+                chunk.status === "running"
+                  ? { ...chunk, status: "pending", updatedAt: new Date().toISOString() }
+                  : chunk,
+              ),
+              metrics: record.organization.metrics
+                ? { ...record.organization.metrics, interrupted: true }
+                : record.organization.metrics,
+              updatedAt: new Date().toISOString(),
+            }
+          : undefined,
         phase: "paused",
         taskStatus: "pending",
         diagnostic: record.diagnostic
@@ -500,7 +780,6 @@ export class AiVoiceMemoryService {
         errorMessage: undefined,
       });
     }
-    await this.refreshRuntimeStatus();
     this.models.onStatus(() => this.scheduleDeferredRetry());
     this.scheduleDeferredRetry();
   }
@@ -510,8 +789,12 @@ export class AiVoiceMemoryService {
     return () => this.listeners.delete(listener);
   }
 
-  getRuntimeStatus(): Promise<AiRuntimeStatus> {
-    return this.runtime.status().then((status) => ({ ...status, lastTask: this.lastTask }));
+  async getRuntimeStatus(): Promise<AiRuntimeStatus> {
+    // CUDA/PyTorch discovery is deliberately lazy. Starting the desktop app in manual
+    // transcription mode must not launch a Python worker just to populate the AI settings UI.
+    await this.refreshRuntimeStatus();
+    const status = await this.runtime.status();
+    return { ...status, lastTask: this.lastTask };
   }
 
   async get(recordingId: string): Promise<VoiceMemoryRecord | undefined> {
@@ -529,6 +812,71 @@ export class AiVoiceMemoryService {
 
   pause(recordingId: string): void {
     this.controllers.get(recordingId)?.abort();
+  }
+
+  hasActiveTask(): boolean {
+    return Boolean(
+      this.activeManual ||
+      this.activeAutomatic ||
+      this.pendingProcesses.size > 0 ||
+      [...this.controllers.values()].some((controller) => !controller.signal.aborted),
+    );
+  }
+
+  pauseAll(): void {
+    for (const controller of this.controllers.values()) controller.abort();
+  }
+
+  /** Clears one comparison run without deleting the recording file or its user markers. */
+  async clearTranscriptionResults(recordingId: string): Promise<VoiceMemoryRecord> {
+    if (this.pendingProcesses.has(recordingId)) throw new Error("voice_memory_task_active");
+    const record = await this.requireRecord(recordingId);
+    this.requestVersions.set(recordingId, (this.requestVersions.get(recordingId) ?? 0) + 1);
+    this.controllers.delete(recordingId);
+    await Promise.all([
+      ...Object.keys(AI_ASR_MODEL_NAMES).map((modelId) =>
+        this.models.clearTaskCheckpoint(`transcription:${recordingId}:${modelId}`),
+      ),
+      this.models.clearTaskCheckpoint(`transcription:${recordingId}`),
+    ]);
+    if (this.lastTask?.taskId.includes(recordingId)) this.lastTask = undefined;
+    return this.save({
+      ...record,
+      phase: "idle",
+      progress: 0,
+      taskId: undefined,
+      taskStatus: undefined,
+      processingStage: undefined,
+      diagnostic: undefined,
+      organizedAt: undefined,
+      transcriptionPipelineVersion: undefined,
+      transcriptionModel: undefined,
+      transcriptionVariants: undefined,
+      transcriptionElapsedMs: undefined,
+      transcriptionStats: undefined,
+      transcriptionUnits: undefined,
+      transcriptionBenchmark: undefined,
+      errorMessage: undefined,
+      speakers: [],
+      transcript: [],
+      summary: [],
+      chapters: [],
+      highlights: [],
+      timeline: record.timeline.filter((entry) => entry.kind === "marker"),
+      organization: undefined,
+      organizationPublication: undefined,
+    });
+  }
+
+  async markOrganizationPublished(
+    recordingId: string,
+    publication: VoiceMemoryOrganizationPublication,
+  ): Promise<VoiceMemoryRecord> {
+    const record = await this.requireRecord(recordingId);
+    if (record.organization?.status !== "completed" || !record.organization.finalResult) {
+      throw new Error("voice_memory_organization_required");
+    }
+    return this.save({ ...record, organizationPublication: publication });
   }
 
   cancelQuestion(): boolean {
@@ -640,6 +988,7 @@ export class AiVoiceMemoryService {
       transcriptionElapsedMs: variant.transcriptionElapsedMs,
       transcriptionStats: variant.transcriptionStats,
       transcriptionUnits: variant.transcriptionUnits,
+      transcriptionBenchmark: variant.benchmark,
       phase: "ready",
       progress: 100,
       errorMessage: undefined,
@@ -678,10 +1027,9 @@ export class AiVoiceMemoryService {
     const queuedRequest = {
       ...request,
       taskId,
-      restartTranscription:
-        request.transcribe !== false &&
-        (request.restartTranscription === true ||
-          (request.manual === true && Boolean(previous && hasInvalidVoiceMemoryResult(previous)))),
+      // A manual retry is a durable resume unless the caller explicitly requests a restart.
+      // Invalid/partial results are exactly the records that need their completed units kept.
+      restartTranscription: request.transcribe !== false && request.restartTranscription === true,
     };
     const queued = await this.save({
       ...(previous ?? emptyRecord(queuedRequest)),
@@ -821,6 +1169,7 @@ export class AiVoiceMemoryService {
     }>,
     organize: boolean,
   ): Promise<void> {
+    if (!this.isAutomaticTranscriptionEnabled()) return;
     for (const recording of [...recordings].sort(
       (left, right) =>
         (left.fileSize ?? Number.MAX_SAFE_INTEGER) - (right.fileSize ?? Number.MAX_SAFE_INTEGER),
@@ -889,6 +1238,27 @@ export class AiVoiceMemoryService {
     });
     const previous = await this.store.get(request.recordingId);
     let record = previous ?? emptyRecord(request);
+    if (request.benchmark) {
+      const environment = await this.runtime.benchmarkEnvironment();
+      const previousBenchmark = previous?.transcriptionBenchmark;
+      const preservedClips =
+        !request.restartTranscription && previousBenchmark?.mode === request.benchmark.mode
+          ? previousBenchmark?.clips
+          : undefined;
+      record = {
+        ...record,
+        transcriptionBenchmark: {
+          ...request.benchmark,
+          clips: request.benchmark.clips ?? preservedClips,
+          environment: {
+            ...environment,
+            ...request.benchmark.environment,
+            pipelineVersion: TRANSCRIPTION_PIPELINE_VERSION,
+            adapterVersion: "desktop-asr-adapter-v1",
+          },
+        },
+      };
+    }
     let currentStage: VoiceMemoryProcessingStage = "recording";
     const shouldTranscribe = request.transcribe !== false;
     const controller = new AbortController();
@@ -923,15 +1293,22 @@ export class AiVoiceMemoryService {
             transcriptionElapsedMs: undefined,
             transcriptionStats: undefined,
             transcriptionUnits: undefined,
+            transcriptionBenchmark: request.benchmark ? record.transcriptionBenchmark : undefined,
             organizedAt: undefined,
             errorMessage: undefined,
           });
+        }
+        if (!request.benchmark && record.transcriptionBenchmark) {
+          // A saved benchmark clip is historical result metadata. A later normal transcription
+          // must always use the full recording and must not inherit benchmark-only range/state.
+          record = { ...record, transcriptionBenchmark: undefined };
         }
         record = await this.transcribe(
           record,
           request.manual === true,
           controller.signal,
           request.asrModelId,
+          request.benchmark,
           (stage) => {
             currentStage = stage;
           },
@@ -944,7 +1321,12 @@ export class AiVoiceMemoryService {
         this.log("info", "Voice memory contained no reliable speech", {
           recordingId: record.recordingId,
         });
-        const partial = (record.transcriptionStats?.failedUnits ?? 0) > 0;
+        const validity = evaluateVoiceMemoryTranscriptionValidity(
+          record.transcriptionStats,
+          record.transcriptionUnits,
+        );
+        const partial = !validity.complete;
+        const missedSpeech = (record.transcriptionStats?.emptyOutputOnSpeechUnits ?? 0) > 0;
         return this.save({
           ...record,
           phase: "ready",
@@ -953,16 +1335,26 @@ export class AiVoiceMemoryService {
           taskStatus: partial ? "failed" : "success",
           processingStage: "transcript",
           diagnostic: this.createDiagnostic(request, partial ? "failed" : "success", "transcript", {
-            errorCode: partial ? "partial_transcription" : "no_reliable_speech",
+            errorCode: partial
+              ? "partial_transcription"
+              : missedSpeech
+                ? "empty_output_on_speech"
+                : "no_reliable_speech",
             errorMessage: partial
               ? "部分音频分块处理失败，未得到完整转录。"
-              : "没有检测到可识别的人声。",
+              : missedSpeech
+                ? "公共语音检测发现人声，但模型没有产生有效文字。"
+                : "没有检测到可识别的人声。",
           }),
           transcriptionPipelineVersion: TRANSCRIPTION_PIPELINE_VERSION,
-          errorMessage: partial ? "partial_transcription" : "no_reliable_speech",
+          errorMessage: partial
+            ? "partial_transcription"
+            : missedSpeech
+              ? "empty_output_on_speech"
+              : "no_reliable_speech",
         });
       }
-      record = await this.save({
+      await this.save({
         ...record,
         taskId,
         taskStatus: "processing",
@@ -984,7 +1376,11 @@ export class AiVoiceMemoryService {
           });
         }
       }
-      const partialTranscription = (record.transcriptionStats?.failedUnits ?? 0) > 0;
+      const transcriptionValidity = evaluateVoiceMemoryTranscriptionValidity(
+        record.transcriptionStats,
+        record.transcriptionUnits,
+      );
+      const partialTranscription = !transcriptionValidity.complete;
       record = await this.save({
         ...record,
         phase: "ready",
@@ -1043,8 +1439,16 @@ export class AiVoiceMemoryService {
       // this caller. Reload the durable copy so this final status update never overwrites already
       // visible transcript segments with the stale pre-transcription snapshot.
       const durableRecord = (await this.store.get(request.recordingId)) ?? record;
+      const interruptedStats = durableRecord.transcriptionStats
+        ? {
+            ...durableRecord.transcriptionStats,
+            finalResultSaved: false,
+            terminationReason: paused ? ("paused" as const) : ("failed" as const),
+          }
+        : undefined;
       record = await this.save({
         ...durableRecord,
+        transcriptionStats: interruptedStats,
         taskId,
         taskStatus: paused || deferred || requiresManual ? "pending" : "failed",
         processingStage: currentStage,
@@ -1226,6 +1630,7 @@ export class AiVoiceMemoryService {
     manual: boolean,
     signal: AbortSignal,
     requestedModelId?: AiAsrModelId,
+    requestedBenchmark?: VoiceMemoryBenchmarkRunMetadata,
     onStage?: (stage: VoiceMemoryProcessingStage) => void,
   ): Promise<VoiceMemoryRecord> {
     const selectedModelId =
@@ -1270,14 +1675,99 @@ export class AiVoiceMemoryService {
         runtimeMessage: asrStatus.message,
       },
     );
-    const totalDuration = audio.durationMs;
+    const activeBenchmark = requestedBenchmark ? record.transcriptionBenchmark : undefined;
+    const existingBenchmarkClip = activeBenchmark?.clips?.[0];
+    const {
+      sourceStartMs,
+      sourceEndMs,
+      clipDurationMs: totalDuration,
+    } = resolveTranscriptionRunRange(audio.durationMs, activeBenchmark);
+    if (activeBenchmark) {
+      record = {
+        ...record,
+        transcriptionBenchmark: {
+          ...activeBenchmark,
+          clips: [
+            {
+              ...(existingBenchmarkClip ?? {}),
+              startMs: 0,
+              endMs: totalDuration,
+              sourceStartMs,
+              sourceEndMs,
+              clipLocalStartMs: 0,
+              clipLocalEndMs: totalDuration,
+            },
+          ],
+        },
+      };
+    }
     if (!manual && !canAutomaticallyTranscribeDuration(totalDuration)) {
       throw new Error("automatic_long_recording_requires_manual");
     }
-    const knownSpeakerSegments = await loadRecordingSpeakerSegments(
+    // Prefer speech-only clips carrying the signed-in participant identity. A twelve-hour room
+    // may contain far less than twelve hours of actual speech, so this avoids repeatedly decoding
+    // every participant's silence while retaining exact nicknames and overlapping speakers.
+    const loadedSpeakerSegments = await loadRecordingSpeakerSegments(
       record.recordingId,
       record.filePath,
     );
+    const speechSources: KnownSpeakerTranscriptionSource[] = (loadedSpeakerSegments ?? [])
+      .filter((segment) => segment.startMs < sourceEndMs && segment.endMs > sourceStartMs)
+      .map((segment) => {
+        const clippedStartMs = Math.max(segment.startMs, sourceStartMs);
+        return {
+          ...segment,
+          speakerId: segment.userId?.trim() || segment.speakerId,
+          startMs: clippedStartMs,
+          endMs: Math.min(segment.endMs, sourceEndMs),
+          audioOffsetMs: Math.max(0, clippedStartMs - segment.startMs),
+        };
+      });
+    const participantTracks = await loadRecordingParticipantTracks(
+      record.recordingId,
+      record.filePath,
+    );
+    const participantSources = participantTracks?.length
+      ? splitParticipantTracksIntoSpeakerSources(
+          participantTracks,
+          sourceEndMs,
+          TRANSCRIPTION_CHUNK_MS,
+          sourceStartMs,
+        )
+      : [];
+    const durableSourceUnits = (record.transcriptionUnits ?? []).filter(
+      (unit) =>
+        unit.modelId === asrModelId && unit.pipelineVersion === TRANSCRIPTION_PIPELINE_VERSION,
+    );
+    const durableUnitsMatch = (sources: KnownSpeakerTranscriptionSource[]): boolean =>
+      durableSourceUnits.length === sources.length &&
+      durableSourceUnits.every((unit, index) => {
+        const source = sources[index];
+        return (
+          source !== undefined &&
+          unit.startMs === source.startMs &&
+          unit.endMs === source.endMs &&
+          unit.speakerId === source.speakerId
+        );
+      });
+    // An interrupted recording created by an older build may already have checkpoints against
+    // the continuous participant tracks. Finish those exact saved units instead of silently
+    // changing the unit timeline mid-run; all fresh work uses the smaller speech-only source.
+    const resumeParticipantSources =
+      participantSources.length > 0 &&
+      ((durableSourceUnits.length > 0 &&
+        durableUnitsMatch(participantSources) &&
+        !durableUnitsMatch(speechSources)) ||
+        (durableSourceUnits.length === 0 &&
+          checkpoint?.pipelineVersion === TRANSCRIPTION_PIPELINE_VERSION &&
+          checkpoint.asrModelId === asrModelId &&
+          checkpoint.totalUnits === participantSources.length &&
+          checkpoint.totalUnits !== speechSources.length));
+    const knownSpeakerSegments: KnownSpeakerTranscriptionSource[] = resumeParticipantSources
+      ? participantSources
+      : speechSources.length
+        ? speechSources
+        : participantSources;
     if (knownSpeakerSegments?.length) {
       const totalUnits = knownSpeakerSegments.length;
       const checkpointCompatible =
@@ -1317,7 +1807,7 @@ export class AiVoiceMemoryService {
         record.transcript,
         record.transcriptionStats,
       );
-      let completedUnits = stats.completedUnits;
+      const completedUnits = stats.completedUnits;
       record = await this.save({
         ...record,
         phase: "transcribing",
@@ -1342,11 +1832,6 @@ export class AiVoiceMemoryService {
           heartbeatAt: startedAt,
           updatedAt: startedAt,
         });
-        record = await this.save({
-          ...record,
-          transcriptionUnits: units,
-          transcriptionStats: stats,
-        });
         onStage?.("convert");
         const asrStartedAt = performance.now();
         const duration = Math.max(1, source.endMs - source.startMs);
@@ -1356,8 +1841,9 @@ export class AiVoiceMemoryService {
               modelId: asrModelId,
               recordingId: record.recordingId,
               filePath: source.filePath,
-              offsetMs: 0,
+              offsetMs: source.audioOffsetMs,
               durationMs: duration,
+              benchmark: Boolean(activeBenchmark),
               signal,
               resourceMode: runnable.resourceMode,
               onStage: (stage, context) => {
@@ -1375,13 +1861,31 @@ export class AiVoiceMemoryService {
           { recordingId: record.recordingId, taskId: record.taskId, unit: unit + 1, totalUnits },
         );
         const recognized = chunk.segments;
+        const chunkResult = chunk.result;
         const finishedAt = new Date().toISOString();
+        const outputStatus = chunkResult?.outputStatus;
+        const trustworthyCoverage =
+          !chunk.failed && (outputStatus === "normal" || outputStatus === "vad_silence");
         Object.assign(durableUnit, {
           status: chunk.failed ? ("failed" as const) : ("completed" as const),
-          processedAudioMs: duration,
-          coveredAudioMs: chunk.failed ? 0 : duration,
+          processedAudioMs: chunk.failed ? 0 : duration,
+          coveredAudioMs: trustworthyCoverage ? duration : 0,
           segmentCount: recognized.length,
-          rawRuntimeOutput: JSON.stringify({ segments: recognized }),
+          commonVad: chunkResult?.commonVad,
+          outputStatus,
+          anomalyTypes: chunkResult?.anomalyTypes,
+          timing: chunkResult?.timing,
+          resourceUsage: chunkResult?.resourceUsage,
+          rawRuntimeOutput: JSON.stringify({
+            segments: recognized,
+            rawText: chunkResult?.rawText,
+            rawOutput: chunkResult?.rawOutput,
+            commonVad: chunkResult?.commonVad,
+            outputStatus,
+            anomalyTypes: chunkResult?.anomalyTypes,
+            anomalyReasons: chunkResult?.anomalyReasons,
+            rawAnomalyAttempts: chunkResult?.rawAnomalyAttempts,
+          }),
           normalizedSegmentIds: recognized.map((segment) => segment.id),
           retryCount: chunk.retries,
           errorCode: chunk.errorCode,
@@ -1390,18 +1894,20 @@ export class AiVoiceMemoryService {
           heartbeatAt: finishedAt,
           updatedAt: finishedAt,
         });
-        stats = statsFromTranscriptionUnits(totalDuration, units, record.transcript, {
-          ...stats,
-          inferenceElapsedMs:
-            (stats.inferenceElapsedMs ?? 0) +
-            Math.max(0, Math.round(performance.now() - asrStartedAt)),
-        });
-        record = await this.save({
-          ...record,
-          transcriptionElapsedMs:
-            (record.transcriptionElapsedMs ?? 0) +
-            Math.max(0, Math.round(performance.now() - asrStartedAt)),
-        });
+        stats = statsFromTranscriptionUnits(totalDuration, units, record.transcript, stats);
+        if (chunk.fatal) {
+          record = await this.save({
+            ...record,
+            transcriptionUnits: units,
+            transcriptionStats: stats,
+            errorMessage: chunk.errorMessage,
+          });
+          throw new Error(chunk.errorMessage ?? "asr_runtime_fatal");
+        }
+        const unitSaveStartedAt = performance.now();
+        const transcriptionElapsedMs =
+          (record.transcriptionElapsedMs ?? 0) +
+          Math.max(0, Math.round(performance.now() - asrStartedAt));
         const speakerTranscript = bindTranscriptToKnownSpeaker(
           record.recordingId,
           unit,
@@ -1427,6 +1933,7 @@ export class AiVoiceMemoryService {
         record = await this.save({
           ...record,
           processingStage: "storage",
+          transcriptionElapsedMs,
           transcript,
           speakers: Array.from(new Set(transcript.map((segment) => segment.speakerId))).map(
             (speakerId) => {
@@ -1448,15 +1955,16 @@ export class AiVoiceMemoryService {
           },
           transcriptionUnits: units,
         });
+        durableUnit.timing = {
+          ...(durableUnit.timing ?? {}),
+          saveTimeMs: Math.max(0, Math.round(performance.now() - unitSaveStartedAt)),
+        };
         stats = record.transcriptionStats ?? stats;
-        completedUnits = stats.completedUnits;
         await this.models.saveTaskCheckpoint({
           taskId,
           recordingId: record.recordingId,
           kind: "transcription",
-          completedUnits: units.filter(
-            (candidate) => candidate.status === "completed" || candidate.status === "failed",
-          ).length,
+          completedUnits: units.filter((candidate) => candidate.status === "completed").length,
           totalUnits,
           unitDurationMs: TRANSCRIPTION_CHUNK_MS,
           pipelineVersion: TRANSCRIPTION_PIPELINE_VERSION,
@@ -1464,44 +1972,67 @@ export class AiVoiceMemoryService {
           updatedAt: new Date().toISOString(),
         });
       }
-      let temporaryAudioCleaned = false;
-      try {
-        await cleanupRecordingSpeakerSegments(record.recordingId);
-        temporaryAudioCleaned = true;
-      } catch (error) {
-        this.log("warn", "Speaker segment cleanup deferred", {
-          recordingId: record.recordingId,
-          error: error instanceof Error ? error.message : "unknown_error",
-        });
-      }
       this.log("info", "Speaker-aware transcription completed", {
         recordingId: record.recordingId,
+        identitySource: resumeParticipantSources
+          ? "participant_tracks_resume"
+          : speechSources.length
+            ? "speech_segments"
+            : "participant_tracks",
         segmentCount: totalUnits,
         speakerCount: record.speakers.length,
         overlappingSegmentsSupported: true,
-        temporaryAudioCleaned,
+        speechSegmentsRetainedForComparison: speechSources.length > 0,
       });
+      const releaseMetrics = activeBenchmark
+        ? await this.runtime.releaseAsrMeasured("model_comparison_model_complete")
+        : undefined;
+      const terminalStats = statsFromTranscriptionUnits(
+        totalDuration,
+        units,
+        record.transcript,
+        stats,
+      );
       return this.save({
         ...record,
         transcript: mergeTranscriptIntoSentences(record.transcript),
         transcriptionUnits: units,
         transcriptionStats: {
-          ...statsFromTranscriptionUnits(totalDuration, units, record.transcript, stats),
-          completedUnits,
+          ...terminalStats,
+          finalResultSaved: true,
           segmentCount: record.transcript.length,
           speakerCount: record.speakers.length,
           lastHeartbeatAt: new Date().toISOString(),
+          releaseElapsedMs: releaseMetrics?.releaseTimeMs,
+          totalElapsedMs:
+            (terminalStats.totalElapsedMs ?? 0) + (releaseMetrics?.releaseTimeMs ?? 0),
+          resourceUsage: {
+            ...(terminalStats.resourceUsage ?? {}),
+            gpuMemoryAfterReleaseMb: releaseMetrics?.gpuMemoryAfterReleaseMb,
+            resourceReleaseSucceeded: releaseMetrics?.resourceReleaseSucceeded,
+            possibleResourceLeak:
+              releaseMetrics?.gpuMemoryAfterReleaseMb !== undefined &&
+              terminalStats.resourceUsage?.gpuMemoryBeforeLoadMb !== undefined
+                ? releaseMetrics.gpuMemoryAfterReleaseMb >
+                  terminalStats.resourceUsage.gpuMemoryBeforeLoadMb + 256
+                : undefined,
+          },
         },
       });
     }
-    const totalUnits = Math.max(1, Math.ceil(totalDuration / TRANSCRIPTION_CHUNK_MS));
+    const transcriptionChunkMs =
+      asrModelId === "moss-transcribe-diarize-0.9b-q8_0"
+        ? MOSS_CPP_TRANSCRIPTION_CHUNK_MS
+        : TRANSCRIPTION_CHUNK_MS;
+    const totalUnits = Math.max(1, Math.ceil(totalDuration / transcriptionChunkMs));
     const checkpointCompatible =
       checkpoint?.pipelineVersion === TRANSCRIPTION_PIPELINE_VERSION &&
-      checkpoint.asrModelId === asrModelId;
+      checkpoint.asrModelId === asrModelId &&
+      checkpoint.totalUnits === totalUnits;
     const definitions = Array.from({ length: totalUnits }, (_, index) => ({
       index,
-      startMs: index * TRANSCRIPTION_CHUNK_MS,
-      endMs: Math.min(totalDuration, (index + 1) * TRANSCRIPTION_CHUNK_MS),
+      startMs: sourceStartMs + index * transcriptionChunkMs,
+      endMs: Math.min(sourceEndMs, sourceStartMs + (index + 1) * transcriptionChunkMs),
     }));
     const durableUnits = record.transcriptionUnits?.filter(
       (unit) =>
@@ -1510,7 +2041,12 @@ export class AiVoiceMemoryService {
         unit.index >= 0 &&
         unit.index < totalUnits,
     );
-    const canResumeDurably = durableUnits?.length === totalUnits;
+    const canResumeDurably =
+      durableUnits?.length === totalUnits &&
+      durableUnits.every(
+        (unit, index) =>
+          unit.startMs === definitions[index]?.startMs && unit.endMs === definitions[index]?.endMs,
+      );
     if (!checkpointCompatible && !canResumeDurably && record.transcript.length > 0) {
       // A non-restart request must never silently destroy a saved partial transcript. Explicit
       // "重新转录" clears both the checkpoint and transcript before entering this method.
@@ -1526,7 +2062,9 @@ export class AiVoiceMemoryService {
       asrModelId,
       definitions,
       canResumeDurably ? durableUnits : undefined,
-      checkpointCompatible ? completedTranscriptionUnits(checkpoint, totalUnits) : 0,
+      checkpointCompatible
+        ? completedTranscriptionUnits(checkpoint, totalUnits, transcriptionChunkMs)
+        : 0,
     );
     let stats = statsFromTranscriptionUnits(
       totalDuration,
@@ -1534,7 +2072,7 @@ export class AiVoiceMemoryService {
       record.transcript,
       record.transcriptionStats,
     );
-    let completedUnits = stats.completedUnits;
+    const completedUnits = stats.completedUnits;
     record = await this.save({
       ...record,
       phase: "transcribing",
@@ -1546,7 +2084,7 @@ export class AiVoiceMemoryService {
     });
     for (let unit = 0; unit < totalUnits; unit += 1) {
       if (signal.aborted) throw new Error("ai_task_paused");
-      const offsetMs = unit * TRANSCRIPTION_CHUNK_MS;
+      const offsetMs = sourceStartMs + unit * transcriptionChunkMs;
       const durableUnit = units[unit];
       if (!durableUnit || durableUnit.status === "completed") continue;
       const startedAt = new Date().toISOString();
@@ -1558,7 +2096,6 @@ export class AiVoiceMemoryService {
         heartbeatAt: startedAt,
         updatedAt: startedAt,
       });
-      record = await this.save({ ...record, transcriptionUnits: units, transcriptionStats: stats });
       onStage?.("convert");
       record = await this.updateDiagnostic(
         record,
@@ -1574,7 +2111,7 @@ export class AiVoiceMemoryService {
           modelPath: asrStatus.modelPath,
         },
       );
-      const duration = Math.min(TRANSCRIPTION_CHUNK_MS, totalDuration - offsetMs);
+      const duration = Math.min(transcriptionChunkMs, sourceEndMs - offsetMs);
       const asrStartedAt = performance.now();
       const chunk = await this.transcribeChunkWithRetry(
         () =>
@@ -1584,6 +2121,7 @@ export class AiVoiceMemoryService {
             filePath: record.filePath,
             offsetMs,
             durationMs: duration,
+            benchmark: Boolean(activeBenchmark),
             signal,
             resourceMode: runnable.resourceMode,
             onStage: (stage, context) => {
@@ -1600,13 +2138,31 @@ export class AiVoiceMemoryService {
         { recordingId: record.recordingId, taskId: record.taskId, unit: unit + 1, totalUnits },
       );
       const segments = chunk.segments;
+      const chunkResult = chunk.result;
       const finishedAt = new Date().toISOString();
+      const outputStatus = chunkResult?.outputStatus;
+      const trustworthyCoverage =
+        !chunk.failed && (outputStatus === "normal" || outputStatus === "vad_silence");
       Object.assign(durableUnit, {
         status: chunk.failed ? ("failed" as const) : ("completed" as const),
-        processedAudioMs: duration,
-        coveredAudioMs: chunk.failed ? 0 : duration,
+        processedAudioMs: chunk.failed ? 0 : duration,
+        coveredAudioMs: trustworthyCoverage ? duration : 0,
         segmentCount: segments.length,
-        rawRuntimeOutput: JSON.stringify({ segments }),
+        commonVad: chunkResult?.commonVad,
+        outputStatus,
+        anomalyTypes: chunkResult?.anomalyTypes,
+        timing: chunkResult?.timing,
+        resourceUsage: chunkResult?.resourceUsage,
+        rawRuntimeOutput: JSON.stringify({
+          segments,
+          rawText: chunkResult?.rawText,
+          rawOutput: chunkResult?.rawOutput,
+          commonVad: chunkResult?.commonVad,
+          outputStatus,
+          anomalyTypes: chunkResult?.anomalyTypes,
+          anomalyReasons: chunkResult?.anomalyReasons,
+          rawAnomalyAttempts: chunkResult?.rawAnomalyAttempts,
+        }),
         normalizedSegmentIds: segments.map((segment) => segment.id),
         retryCount: chunk.retries,
         errorCode: chunk.errorCode,
@@ -1615,18 +2171,20 @@ export class AiVoiceMemoryService {
         heartbeatAt: finishedAt,
         updatedAt: finishedAt,
       });
-      stats = statsFromTranscriptionUnits(totalDuration, units, record.transcript, {
-        ...stats,
-        inferenceElapsedMs:
-          (stats.inferenceElapsedMs ?? 0) +
-          Math.max(0, Math.round(performance.now() - asrStartedAt)),
-      });
-      record = await this.save({
-        ...record,
-        transcriptionElapsedMs:
-          (record.transcriptionElapsedMs ?? 0) +
-          Math.max(0, Math.round(performance.now() - asrStartedAt)),
-      });
+      stats = statsFromTranscriptionUnits(totalDuration, units, record.transcript, stats);
+      if (chunk.fatal) {
+        record = await this.save({
+          ...record,
+          transcriptionUnits: units,
+          transcriptionStats: stats,
+          errorMessage: chunk.errorMessage,
+        });
+        throw new Error(chunk.errorMessage ?? "asr_runtime_fatal");
+      }
+      const unitSaveStartedAt = performance.now();
+      const transcriptionElapsedMs =
+        (record.transcriptionElapsedMs ?? 0) +
+        Math.max(0, Math.round(performance.now() - asrStartedAt));
       onStage?.("storage");
       this.log("info", "Voice memory chunk transcribed", {
         recordingId: record.recordingId,
@@ -1636,7 +2194,7 @@ export class AiVoiceMemoryService {
       });
       const retained = record.transcript.filter(
         (segment) =>
-          segment.startMs < offsetMs || segment.startMs >= offsetMs + TRANSCRIPTION_CHUNK_MS,
+          segment.startMs < offsetMs || segment.startMs >= offsetMs + transcriptionChunkMs,
       );
       const transcript = [...retained, ...segments].sort(
         (left, right) => left.startMs - right.startMs,
@@ -1644,6 +2202,7 @@ export class AiVoiceMemoryService {
       record = await this.save({
         ...record,
         processingStage: "storage",
+        transcriptionElapsedMs,
         transcript,
         speakers: Array.from(new Set(transcript.map((segment) => segment.speakerId))).map(
           (speakerId) =>
@@ -1660,17 +2219,18 @@ export class AiVoiceMemoryService {
         },
         transcriptionUnits: units,
       });
+      durableUnit.timing = {
+        ...(durableUnit.timing ?? {}),
+        saveTimeMs: Math.max(0, Math.round(performance.now() - unitSaveStartedAt)),
+      };
       stats = record.transcriptionStats ?? stats;
-      completedUnits = stats.completedUnits;
       await this.models.saveTaskCheckpoint({
         taskId,
         recordingId: record.recordingId,
         kind: "transcription",
-        completedUnits: units.filter(
-          (candidate) => candidate.status === "completed" || candidate.status === "failed",
-        ).length,
+        completedUnits: units.filter((candidate) => candidate.status === "completed").length,
         totalUnits,
-        unitDurationMs: TRANSCRIPTION_CHUNK_MS,
+        unitDurationMs: transcriptionChunkMs,
         pipelineVersion: TRANSCRIPTION_PIPELINE_VERSION,
         asrModelId,
         updatedAt: new Date().toISOString(),
@@ -1679,41 +2239,123 @@ export class AiVoiceMemoryService {
         await this.models.clearTaskCheckpoint(legacyTaskId);
       }
     }
+    const releaseMetrics = activeBenchmark
+      ? await this.runtime.releaseAsrMeasured("model_comparison_model_complete")
+      : undefined;
+    const terminalStats = statsFromTranscriptionUnits(
+      totalDuration,
+      units,
+      record.transcript,
+      stats,
+    );
     return this.save({
       ...record,
       transcript: mergeTranscriptIntoSentences(record.transcript),
       transcriptionUnits: units,
       transcriptionStats: {
-        ...statsFromTranscriptionUnits(totalDuration, units, record.transcript, stats),
-        completedUnits,
+        ...terminalStats,
+        finalResultSaved: true,
         segmentCount: record.transcript.length,
         speakerCount: record.speakers.length,
         lastHeartbeatAt: new Date().toISOString(),
+        releaseElapsedMs: releaseMetrics?.releaseTimeMs,
+        totalElapsedMs: (terminalStats.totalElapsedMs ?? 0) + (releaseMetrics?.releaseTimeMs ?? 0),
+        resourceUsage: {
+          ...(terminalStats.resourceUsage ?? {}),
+          gpuMemoryAfterReleaseMb: releaseMetrics?.gpuMemoryAfterReleaseMb,
+          resourceReleaseSucceeded: releaseMetrics?.resourceReleaseSucceeded,
+          possibleResourceLeak:
+            releaseMetrics?.gpuMemoryAfterReleaseMb !== undefined &&
+            terminalStats.resourceUsage?.gpuMemoryBeforeLoadMb !== undefined
+              ? releaseMetrics.gpuMemoryAfterReleaseMb >
+                terminalStats.resourceUsage.gpuMemoryBeforeLoadMb + 256
+              : undefined,
+        },
       },
     });
   }
 
   private async transcribeChunkWithRetry(
-    operation: () => Promise<VoiceMemoryTranscriptSegment[]>,
+    operation: () => Promise<TranscriptionChunkRuntimeResult>,
     signal: AbortSignal,
     context: { recordingId: string; taskId?: string; unit: number; totalUnits: number },
   ): Promise<{
     segments: VoiceMemoryTranscriptSegment[];
+    result?: TranscriptionChunkRuntimeResult;
     retries: number;
     failed: boolean;
+    fatal?: boolean;
     errorCode?: string;
     errorMessage?: string;
   }> {
     let retries = 0;
     let lastError: unknown;
+    let anomalyRetryUsed = false;
+    const rawAnomalyAttempts: NonNullable<TranscriptionChunkRuntimeResult["rawAnomalyAttempts"]> =
+      [];
     for (let attempt = 0; attempt < MAX_TRANSCRIPTION_CHUNK_ATTEMPTS; attempt += 1) {
       if (signal.aborted) throw new Error("ai_task_paused");
       try {
-        return { segments: await operation(), retries, failed: false };
+        const result = await operation();
+        const anomalous =
+          result.outputStatus === "repetition_loop" || result.outputStatus === "abnormal_output";
+        if (anomalous) {
+          rawAnomalyAttempts.push({
+            outputStatus: result.outputStatus as "repetition_loop" | "abnormal_output",
+            rawText: result.rawText,
+            rawOutput: result.rawOutput,
+            anomalyTypes: result.anomalyTypes,
+            anomalyReasons: result.anomalyReasons,
+          });
+        }
+        if (anomalous && !anomalyRetryUsed) {
+          anomalyRetryUsed = true;
+          retries += 1;
+          continue;
+        }
+        return {
+          result: {
+            ...result,
+            anomalyTypes: Array.from(
+              new Set([
+                ...rawAnomalyAttempts.flatMap((attempt) => attempt.anomalyTypes),
+                ...result.anomalyTypes,
+              ]),
+            ),
+            anomalyReasons: Array.from(
+              new Set([
+                ...rawAnomalyAttempts.flatMap((attempt) => attempt.anomalyReasons),
+                ...result.anomalyReasons,
+              ]),
+            ),
+            rawAnomalyAttempts: rawAnomalyAttempts.length ? rawAnomalyAttempts : undefined,
+          },
+          // Preserve the raw abnormal output for diagnostics, but never promote it to final text.
+          segments: anomalous ? [] : result.segments,
+          retries,
+          failed: anomalous,
+          errorCode: anomalous ? "transcription_output_anomaly" : undefined,
+          errorMessage: anomalous ? result.anomalyReasons.join(",") : undefined,
+        };
       } catch (error) {
         lastError = error;
         if (signal.aborted || (error as Error)?.message === "ai_task_paused") throw error;
         retries += 1;
+        if (isFatalTranscriptionRuntimeFailure(error)) {
+          const errorMessage = error instanceof Error ? error.message : String(error);
+          this.log("error", "AI transcription runtime failed deterministically; stopping model", {
+            ...context,
+            reason: errorMessage,
+          });
+          return {
+            segments: [],
+            retries,
+            failed: true,
+            fatal: true,
+            errorCode: "asr_runtime_fatal",
+            errorMessage,
+          };
+        }
         if (attempt + 1 < MAX_TRANSCRIPTION_CHUNK_ATTEMPTS) {
           await new Promise((resolve) => setTimeout(resolve, TRANSCRIPTION_CHUNK_RETRY_DELAY_MS));
         }
@@ -1739,31 +2381,287 @@ export class AiVoiceMemoryService {
     signal: AbortSignal,
   ): Promise<VoiceMemoryRecord> {
     if (record.transcript.length === 0) return record;
+    if (!this.textGateway.usesLocalOrganizer()) {
+      return this.organizeSinglePass(record, manual, signal);
+    }
     const readableTranscript = mergeTranscriptIntoSentences(record.transcript);
+    const preparedRecord = { ...record, transcript: readableTranscript };
+    const plans = planRecordingOrganizationChunks(preparedRecord);
+    if (plans.length === 0) return preparedRecord;
+    const compatibleRun =
+      record.organization?.pipelineVersion === RECORDING_ORGANIZATION_PIPELINE_VERSION &&
+      record.organization.modelId === "qwen36-35b-a3b-nvfp4" &&
+      record.organization.modelRevision === QWEN36_NVFP4_MODEL_REVISION;
+    let chunks = materializeOrganizationChunks(
+      plans,
+      compatibleRun ? record.organization?.chunks : undefined,
+    );
+    let metrics = compatibleRun
+      ? (record.organization?.metrics ?? createOrganizationMetrics())
+      : createOrganizationMetrics();
+    const startedAt = compatibleRun
+      ? (record.organization?.startedAt ?? new Date().toISOString())
+      : new Date().toISOString();
     record = await this.save({
-      ...record,
+      ...preparedRecord,
       transcript: readableTranscript,
       phase: "organizing",
       progress: 75,
       errorMessage: undefined,
+      organizationPublication: undefined,
+      organization: {
+        pipelineVersion: RECORDING_ORGANIZATION_PIPELINE_VERSION,
+        modelId: "qwen36-35b-a3b-nvfp4",
+        modelRevision: QWEN36_NVFP4_MODEL_REVISION,
+        status: "running",
+        completedChunks: chunks.filter((chunk) => chunk.status === "completed").length,
+        chunks,
+        finalResult: compatibleRun ? record.organization?.finalResult : undefined,
+        metrics,
+        startedAt,
+        updatedAt: new Date().toISOString(),
+      },
     });
-    const result = await this.textGateway.generateJson<OrganizedResult>({
-      purpose: "organize",
-      manual,
-      maxNewTokens: 384,
-      timeoutMs: 4 * 60_000,
-      signal,
-      prompt: [
-        "你是上号语音软件的本地整理助手。这里是固定好友的日常聊天，不是会议。",
-        "请生成自然、有趣、能回到原录音的结构化结果。不要写会议背景、议程、待办或企业话术。",
-        '只返回 JSON 对象，第一字符必须是 {，最后一个字符必须是 }，禁止 ```、Markdown 和任何解释。模板：{"summary":[{"text":"总结","sourceStartMs":0,"sourceSegmentIds":[]}],"chapters":[],"highlights":[],"markerTitles":[]}。四个字段必须始终是数组；所有 id 必须是字符串；没有内容就返回空数组。',
-        "章节数量随内容和时长决定；精彩片段只选择真正值得回看的内容；不要编造原文没有的信息。",
-        `已有标记：${record.markerTitles.map((marker) => `${marker.markerId}@${marker.offsetMs}ms`).join(", ") || "无"}`,
-        `录音：${path.basename(record.filePath)}`,
-        transcriptForPrompt(record, 6_000),
-      ].join("\n"),
-    });
-    const normalized = normalizeOrganizedResult(result, record);
+
+    for (let index = 0; index < chunks.length; index += 1) {
+      const currentChunk = chunks[index];
+      if (!currentChunk) continue;
+      if (currentChunk.status === "completed" && currentChunk.result) continue;
+      let completed = false;
+      let lastError: unknown;
+      for (let attempt = 0; attempt < MAX_ORGANIZATION_ATTEMPTS_PER_RUN; attempt += 1) {
+        if (signal.aborted) {
+          metrics = { ...metrics, interrupted: true };
+          await this.save({
+            ...record,
+            phase: "paused",
+            organization: {
+              ...record.organization!,
+              status: "paused",
+              chunks,
+              metrics,
+              updatedAt: new Date().toISOString(),
+            },
+          });
+          throw new Error("ai_task_paused");
+        }
+        const baseChunk = chunks[index];
+        if (!baseChunk) throw new Error("organization_chunk_missing");
+        const running = {
+          ...baseChunk,
+          status: "running" as const,
+          attempts: baseChunk.attempts + 1,
+          errorMessage: undefined,
+          updatedAt: new Date().toISOString(),
+        };
+        chunks = chunks.map((chunk, chunkIndex) => (chunkIndex === index ? running : chunk));
+        record = await this.save({
+          ...record,
+          progress:
+            75 +
+            (20 * chunks.filter((chunk) => chunk.status === "completed").length) / chunks.length,
+          organization: {
+            ...record.organization!,
+            status: "running",
+            chunks,
+            metrics,
+            updatedAt: new Date().toISOString(),
+          },
+        });
+        try {
+          const generated = await this.textGateway.generateJsonWithMetrics<unknown>({
+            purpose: "organize",
+            manual,
+            maxNewTokens: 3_072,
+            timeoutMs: 30 * 60_000,
+            signal,
+            prompt: organizationChunkPrompt(record, running),
+          });
+          const result = normalizeOrganizationResult(
+            generated.value,
+            record,
+            running.startMs,
+            running.endMs,
+          );
+          if (generated.metrics) metrics = mergeOrganizationMetrics(metrics, generated.metrics);
+          metrics = { ...metrics, chunkCount: metrics.chunkCount + 1 };
+          const finished = {
+            ...running,
+            status: "completed" as const,
+            result,
+            updatedAt: new Date().toISOString(),
+          };
+          chunks = chunks.map((chunk, chunkIndex) => (chunkIndex === index ? finished : chunk));
+          record = await this.save({
+            ...record,
+            progress:
+              75 +
+              (20 * chunks.filter((chunk) => chunk.status === "completed").length) / chunks.length,
+            organization: {
+              ...record.organization!,
+              status: "running",
+              completedChunks: chunks.filter((chunk) => chunk.status === "completed").length,
+              chunks,
+              metrics,
+              updatedAt: new Date().toISOString(),
+            },
+          });
+          completed = true;
+          break;
+        } catch (error) {
+          lastError = error;
+          if (signal.aborted || (error instanceof Error && error.message === "ai_task_paused"))
+            break;
+          if (attempt + 1 < MAX_ORGANIZATION_ATTEMPTS_PER_RUN) {
+            metrics = { ...metrics, retryCount: metrics.retryCount + 1 };
+          }
+        }
+      }
+      if (!completed) {
+        const message = lastError instanceof Error ? lastError.message : String(lastError);
+        const failedBase = chunks[index];
+        if (!failedBase) throw new Error("organization_chunk_missing");
+        const failed = {
+          ...failedBase,
+          status: "failed" as const,
+          errorMessage: message,
+          updatedAt: new Date().toISOString(),
+        };
+        chunks = chunks.map((chunk, chunkIndex) => (chunkIndex === index ? failed : chunk));
+        metrics = {
+          ...metrics,
+          interrupted: signal.aborted,
+          oomCount:
+            metrics.oomCount + (/out of memory|\boom\b|cuda.*memory/i.test(message) ? 1 : 0),
+          errors: [...metrics.errors, `chunk_${index + 1}:${message}`].slice(-30),
+        };
+        await this.save({
+          ...record,
+          phase: signal.aborted ? "paused" : "error",
+          organization: {
+            ...record.organization!,
+            status: signal.aborted ? "paused" : "failed",
+            chunks,
+            metrics,
+            updatedAt: new Date().toISOString(),
+          },
+          errorMessage: signal.aborted ? undefined : `organize_failed:${message}`,
+        });
+        throw lastError instanceof Error ? lastError : new Error(message);
+      }
+    }
+
+    const chunkResults = chunks
+      .map((chunk) => chunk.result)
+      .filter((result): result is VoiceMemoryOrganizationResult => Boolean(result));
+    let finalResult: VoiceMemoryOrganizationResult | undefined;
+    let finalError: unknown;
+    let reductionLevel = 0;
+    let reductionResults = chunkResults;
+    try {
+      while (reductionResults.length > 1) {
+        if (signal.aborted) throw new Error("ai_task_paused");
+        const groups = partitionOrganizationResults(record, reductionResults);
+        // A malformed oversized saved result must not make the reducer loop forever.
+        const effectiveGroups =
+          groups.length < reductionResults.length
+            ? groups
+            : Array.from({ length: Math.ceil(reductionResults.length / 2) }, (_, index) =>
+                reductionResults.slice(index * 2, index * 2 + 2),
+              );
+        const nextLevel: VoiceMemoryOrganizationResult[] = [];
+        for (let groupIndex = 0; groupIndex < effectiveGroups.length; groupIndex += 1) {
+          const group = effectiveGroups[groupIndex];
+          if (!group) continue;
+          let reduced: VoiceMemoryOrganizationResult | undefined;
+          let groupError: unknown;
+          for (let attempt = 0; attempt < MAX_ORGANIZATION_ATTEMPTS_PER_RUN; attempt += 1) {
+            if (signal.aborted) throw new Error("ai_task_paused");
+            try {
+              const generation = await this.textGateway.generateJsonWithMetrics<unknown>({
+                purpose: "organize",
+                manual,
+                maxNewTokens: 3_072,
+                timeoutMs: 30 * 60_000,
+                signal,
+                prompt: organizationFinalPrompt(record, group),
+              });
+              if (generation.metrics)
+                metrics = mergeOrganizationMetrics(metrics, generation.metrics);
+              reduced = normalizeOrganizationResult(generation.value, record);
+              break;
+            } catch (error) {
+              groupError = error;
+              if (
+                signal.aborted ||
+                (error instanceof Error && error.message === "ai_task_paused")
+              ) {
+                throw error;
+              }
+              if (attempt + 1 < MAX_ORGANIZATION_ATTEMPTS_PER_RUN) {
+                metrics = { ...metrics, retryCount: metrics.retryCount + 1 };
+              }
+            }
+          }
+          if (!reduced) {
+            throw groupError instanceof Error
+              ? groupError
+              : new Error(`organization_reduce_failed_${reductionLevel}_${groupIndex}`);
+          }
+          nextLevel.push(reduced);
+        }
+        reductionResults = nextLevel;
+        reductionLevel += 1;
+      }
+      finalResult = reductionResults[0];
+    } catch (error) {
+      finalError = error;
+    }
+    if (!finalResult) {
+      const message = finalError instanceof Error ? finalError.message : String(finalError);
+      const paused = signal.aborted || message === "ai_task_paused";
+      metrics = {
+        ...metrics,
+        interrupted: paused,
+        oomCount: metrics.oomCount + (/out of memory|\boom\b|cuda.*memory/i.test(message) ? 1 : 0),
+        chunkCount: chunks.length,
+        errors: [...metrics.errors, `final:${message}`].slice(-30),
+      };
+      await this.save({
+        ...record,
+        phase: paused ? "paused" : "error",
+        organization: {
+          ...record.organization!,
+          status: paused ? "paused" : "failed",
+          completedChunks: chunks.filter((chunk) => chunk.status === "completed").length,
+          chunks,
+          metrics,
+          updatedAt: new Date().toISOString(),
+        },
+        errorMessage: paused ? undefined : `organize_failed:${message}`,
+      });
+      throw finalError instanceof Error ? finalError : new Error(message);
+    }
+    metrics = { ...metrics, chunkCount: chunks.length, interrupted: false };
+    const normalized: OrganizedResult = {
+      summary: finalResult.summary,
+      chapters: finalResult.topics.map((topic) => ({
+        id: topic.id,
+        startMs: topic.startMs,
+        title: topic.title,
+        description: topic.description,
+      })),
+      highlights: [...finalResult.highlights, ...finalResult.funnyMoments].map((highlight) => ({
+        id: highlight.id,
+        title: highlight.title,
+        startMs: highlight.startMs,
+        endMs: highlight.endMs,
+        description: highlight.description,
+        transcriptSegmentIds: highlight.sourceSegmentIds,
+        exportable: true,
+      })),
+      markerTitles: record.markerTitles,
+    };
     return this.save({
       ...record,
       summary: normalized.summary,
@@ -1798,18 +2696,83 @@ export class AiVoiceMemoryService {
         })),
       ].sort((a, b) => a.offsetMs - b.offsetMs),
       progress: 98,
+      organization: {
+        ...record.organization!,
+        status: "completed",
+        completedChunks: chunks.length,
+        chunks,
+        finalResult,
+        metrics,
+        updatedAt: new Date().toISOString(),
+      },
+    });
+  }
+
+  private async organizeSinglePass(
+    record: VoiceMemoryRecord,
+    manual: boolean,
+    signal: AbortSignal,
+  ): Promise<VoiceMemoryRecord> {
+    const readableTranscript = mergeTranscriptIntoSentences(record.transcript);
+    record = await this.save({
+      ...record,
+      transcript: readableTranscript,
+      phase: "organizing",
+      progress: 75,
+      errorMessage: undefined,
+      organizationPublication: undefined,
+    });
+    const result = await this.textGateway.generateJson<OrganizedResult>({
+      purpose: "organize",
+      manual,
+      maxNewTokens: 384,
+      timeoutMs: 4 * 60_000,
+      signal,
+      prompt: [
+        "你是上号语音软件的录音整理助手。这里是固定好友的日常聊天，不是会议。",
+        "生成自然、有趣、能回到原录音的结构化结果，不要编造。",
+        '只返回 JSON：{"summary":[],"chapters":[],"highlights":[],"markerTitles":[]}。',
+        `已有标记：${record.markerTitles.map((marker) => `${marker.markerId}@${marker.offsetMs}ms`).join(", ") || "无"}`,
+        `录音：${path.basename(record.filePath)}`,
+        transcriptForPrompt(record, 36_000),
+      ].join("\n"),
+    });
+    const normalized = normalizeOrganizedResult(result, record);
+    return this.save({
+      ...record,
+      summary: normalized.summary,
+      chapters: normalized.chapters,
+      highlights: normalized.highlights,
+      markerTitles:
+        normalized.markerTitles.length > 0 ? normalized.markerTitles : record.markerTitles,
+      organizedAt: new Date().toISOString(),
+      progress: 98,
     });
   }
 
   private async refreshRuntimeStatus(): Promise<void> {
     const statuses = await this.runtime.modelRuntimeStatuses();
-    for (const [id, status] of Object.entries(statuses)) {
-      this.models.setRuntimeStatus(id as AiModelId, status.ready, status.message);
+    // One runtime scan used to emit one full renderer snapshot per model. Batch the result so
+    // opening AI settings produces a single state update instead of a burst of 10+ renders.
+    const batchRuntimeStatuses = this.models.setRuntimeStatuses?.bind(this.models);
+    if (batchRuntimeStatuses) {
+      batchRuntimeStatuses(statuses);
+      return;
+    }
+
+    // Compatibility for older embedders and narrow test doubles. The shipped manager always
+    // provides the batched method above.
+    for (const [modelId, status] of Object.entries(statuses)) {
+      this.models.setRuntimeStatus(modelId as AiModelId, status.ready, status.message);
     }
   }
 
   private scheduleDeferredRetry(): void {
     if (this.deferredRetryTimer) clearTimeout(this.deferredRetryTimer);
+    if (!this.isAutomaticTranscriptionEnabled()) {
+      this.deferredRetryTimer = undefined;
+      return;
+    }
     this.deferredRetryTimer = setTimeout(() => {
       this.deferredRetryTimer = undefined;
       void this.retryDeferredRecords();
@@ -1817,6 +2780,7 @@ export class AiVoiceMemoryService {
   }
 
   private async retryDeferredRecords(): Promise<void> {
+    if (!this.isAutomaticTranscriptionEnabled()) return;
     if (this.controllers.size > 0) return this.scheduleDeferredRetry();
     const runnable = this.models.canRunTask("transcription", false);
     if (!runnable.runnable) return;
@@ -1929,6 +2893,7 @@ export class AiVoiceMemoryService {
               transcriptionElapsedMs: record.transcriptionElapsedMs,
               transcriptionStats: record.transcriptionStats,
               transcriptionUnits: record.transcriptionUnits,
+              benchmark: record.transcriptionBenchmark,
               updatedAt: new Date().toISOString(),
             },
           },

@@ -9,6 +9,7 @@ import {
 
 import { Button } from "../components/base/Button";
 import { BrandMark } from "../components/brand/BrandMark";
+import { AccountLoginSummary } from "../components/account/AccountLoginSummary";
 import { ACCOUNT_AVATAR_PRESETS } from "../features/account/accountAvatarPresets";
 import { accountErrorMessage } from "../features/account/accountMessages";
 import { playUiSound } from "../features/audio/uiSound";
@@ -16,6 +17,7 @@ import { motionCurve, motionDuration, motionSpring } from "../features/motion/mo
 import { usePrefersReducedMotion } from "../hooks/usePrefersReducedMotion";
 import { useAccountStore } from "../store/accountStore";
 import { useSettingsStore } from "../store/settingsStore";
+import { HomePage } from "./HomePage";
 
 type AccountMode = "login" | "register";
 
@@ -53,6 +55,8 @@ export const AccountPage = () => {
   const [verificationCountdown, setVerificationCountdown] = useState(0);
   const [displayName, setDisplayName] = useState("");
   const [password, setPassword] = useState("");
+  const [rememberMe, setRememberMe] = useState(true);
+  const [rememberedIdentifier, setRememberedIdentifier] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [selectedAvatarPresetId, setSelectedAvatarPresetId] = useState(
@@ -60,6 +64,23 @@ export const AccountPage = () => {
   );
   const [localError, setLocalError] = useState<string>();
   const accountServiceReady = snapshot.configured && snapshot.status !== "unavailable";
+
+  useEffect(() => {
+    let active = true;
+    void window.desktopApi.account
+      .getRememberedLogin()
+      .then((remembered) => {
+        if (!active || !remembered) return;
+        setIdentifier((current) => current || remembered.identifier);
+        setPassword((current) => current || remembered.password);
+        setRememberedIdentifier(remembered.identifier);
+        setRememberMe(true);
+      })
+      .catch(() => undefined);
+    return () => {
+      active = false;
+    };
+  }, []);
 
   useEffect(() => {
     if (verificationCountdown <= 0) return;
@@ -112,7 +133,7 @@ export const AccountPage = () => {
     setLocalError(undefined);
     try {
       if (mode === "login") {
-        await login({ identifier: identifier.trim(), password });
+        await login({ identifier: identifier.trim(), password, rememberMe });
         playUiSound("account-success");
         return;
       }
@@ -146,6 +167,10 @@ export const AccountPage = () => {
       playUiSound("process-error");
     }
   };
+
+  if (snapshot.status === "signed_in" || snapshot.status === "guest") {
+    return <HomePage />;
+  }
 
   return (
     <main className="account-page">
@@ -219,6 +244,15 @@ export const AccountPage = () => {
             }}
             onSubmit={(event) => void submit(event)}
           >
+            {mode === "login" ? (
+              <AccountLoginSummary
+                identifier={identifier}
+                isRemembered={
+                  Boolean(rememberedIdentifier) && rememberedIdentifier === identifier.trim()
+                }
+              />
+            ) : null}
+
             {mode === "login" ? (
               <label className="account-field">
                 <span>账号 / 手机号</span>
@@ -448,6 +482,18 @@ export const AccountPage = () => {
                 </div>
               </label>
             )}
+
+            {mode === "login" ? (
+              <label className="account-remember-me">
+                <input
+                  type="checkbox"
+                  checked={rememberMe}
+                  onChange={(event) => setRememberMe(event.target.checked)}
+                />
+                <span>记住密码</span>
+                <small>使用系统加密存储；登录失效时会自动填回</small>
+              </label>
+            ) : null}
 
             <AnimatePresence initial={false}>
               {effectiveError ? (

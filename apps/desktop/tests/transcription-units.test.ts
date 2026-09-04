@@ -64,7 +64,7 @@ test("transcription stats do not report a partial run as complete", () => {
   ];
   const stats = statsFromTranscriptionUnits(90_000, units, transcript);
 
-  assert.equal(stats.completedUnits, 2);
+  assert.equal(stats.completedUnits, 1);
   assert.equal(stats.failedUnits, 1);
   assert.equal(stats.coveredAudioMs, TRANSCRIPTION_CHUNK_MS);
   assert.equal(stats.terminationReason, "partial");

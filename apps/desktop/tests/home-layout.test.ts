@@ -18,13 +18,37 @@ test("home page is a full-screen fixed-channel entry page", () => {
   assert.equal(source.includes("重新检测"), false);
   assert.equal(source.includes("频道服务器"), false);
   assert.equal(source.includes("固定好友频道已准备好"), false);
-  assert.equal(source.includes("AvatarPicker"), true);
-  assert.equal(source.includes("选择角色"), true);
+  assert.equal(source.includes("AvatarPicker"), false);
+  assert.equal(source.includes("选择角色"), false);
+  assert.equal(source.includes("BUILT_IN_AVATAR_IDS.find"), true);
   assert.equal(source.includes("选一个头像"), false);
   assert.equal(source.includes("TemporaryChatPanel"), false);
   assert.equal(source.includes("entry-server-status-slot"), true);
+  assert.equal(source.includes("automaticEntryIdentity"), false);
+  assert.equal(source.includes('message="正在进入频道..."'), false);
+  assert.equal(source.includes('useState<ChannelId>("main")'), true);
+  assert.equal(source.includes('aria-label="选择进入的房间"'), true);
+  assert.equal(source.includes('"一号房" : "二号房"'), true);
+  assert.equal(source.includes("joinChannel(normalizedAddress, selectedChannelId)"), true);
   assert.equal(source.includes("diagnostics.testServer"), true);
   assert.equal(source.includes("setServerTestResult(undefined);\n    try"), false);
+});
+
+test("room shell is shown only after microphone and signaling join succeed", () => {
+  const source = readFileSync(
+    path.resolve(process.cwd(), "src/renderer/src/hooks/useRoomState.ts"),
+    "utf8",
+  );
+  const connectIndex = source.indexOf("await connectToFixedChannel(serverUrl, channelId");
+  const navigateIndex = source.indexOf('useAppStore.getState().navigate("room")', connectIndex);
+
+  assert.notEqual(connectIndex, -1);
+  assert.notEqual(navigateIndex, -1);
+  assert.equal(navigateIndex > connectIndex, true);
+  assert.equal(
+    source.slice(source.indexOf("const joinChannel ="), connectIndex).includes('navigate("room")'),
+    false,
+  );
 });
 
 test("home page hides legacy connection mode tabs from the primary flow", () => {

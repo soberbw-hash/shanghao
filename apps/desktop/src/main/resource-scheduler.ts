@@ -52,7 +52,7 @@ const initialPressure = (): AiRuntimePressure => ({
 /** One source of truth for background work yielding to realtime room features. */
 export class ResourceScheduler {
   private state: SchedulerState = {
-    processingMode: "after_game",
+    processingMode: "manual",
     gameActive: false,
     pressure: initialPressure(),
     realtimePressureHigh: false,
@@ -63,8 +63,6 @@ export class ResourceScheduler {
   }
 
   aiDecision(kind: AiTaskKind, manualRequest: boolean): ScheduledAiDecision {
-    if (this.state.processingMode === "manual" && !manualRequest)
-      return { runnable: false, reason: "manual_only", resourceMode: "low" };
     if (this.state.realtimePressureHigh && !manualRequest) {
       return {
         runnable: false,
@@ -72,6 +70,8 @@ export class ResourceScheduler {
         resourceMode: "low",
       };
     }
+    if (this.state.processingMode === "manual" && !manualRequest)
+      return { runnable: false, reason: "manual_only", resourceMode: "low" };
     if (this.state.gameActive && this.state.processingMode === "after_game" && !manualRequest) {
       return { runnable: false, reason: "waiting_for_game_to_finish", resourceMode: "low" };
     }

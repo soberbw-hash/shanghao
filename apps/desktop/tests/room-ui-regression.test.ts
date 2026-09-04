@@ -461,8 +461,7 @@ test("speaker controls expose friend loudness balance without replacing per-frie
     "utf8",
   );
   assert.equal(popover.includes("好友响度平衡"), true);
-  assert.equal(popover.includes("自动缩小忽大忽小的音量差异"), true);
-  assert.equal(popover.includes("LUFS"), false);
+  assert.equal(popover.includes("逐位好友平滑匹配约 -16 LUFS"), true);
   assert.equal(dock.includes("settings.isFriendLoudnessBalanceEnabled"), true);
   assert.equal(dock.includes("打开扬声器设备、好友响度平衡与总音量"), true);
 });
@@ -514,21 +513,16 @@ test("abusive, suggestive and family-title nickname variants are rejected", () =
   );
 });
 
-test("home avatar picker disables roles occupied on the fixed server", () => {
+test("home entry hides role selection and automatically chooses an unused server role", () => {
   const homeSource = readFileSync(
     path.resolve(process.cwd(), "src/renderer/src/pages/HomePage.tsx"),
     "utf8",
   );
-  const pickerSource = readFileSync(
-    path.resolve(process.cwd(), "src/renderer/src/components/profile/AvatarPicker.tsx"),
-    "utf8",
-  );
   const relaySource = readFileSync(path.resolve(process.cwd(), "src/main/relay-status.ts"), "utf8");
 
-  assert.equal(homeSource.includes("occupiedAvatarIds={occupiedAvatarIds}"), true);
-  assert.equal(homeSource.includes("isSelectedAvatarOccupied"), true);
-  assert.equal(pickerSource.includes("disabled={isOccupied}"), true);
-  assert.equal(pickerSource.includes("已被朋友选择"), true);
+  assert.equal(homeSource.includes("CharacterPicker"), false);
+  assert.equal(homeSource.includes("选择角色"), false);
+  assert.equal(homeSource.includes("BUILT_IN_AVATAR_IDS.find"), true);
   assert.equal(relaySource.includes("occupiedAvatarIds: health?.occupiedAvatarIds"), true);
 });
 
@@ -654,8 +648,12 @@ test("DeepFilterNet failure keeps the microphone live without interrupting the r
     "utf8",
   );
 
+  const deepFilterHandler = bootstrapSource.slice(
+    bootstrapSource.indexOf("const handleDeepFilterUnavailable"),
+    bootstrapSource.indexOf('window.addEventListener("shanghao:deepfilter-unavailable"'),
+  );
   assert.equal(bootstrapSource.includes("shanghao:deepfilter-unavailable"), true);
-  assert.equal(bootstrapSource.includes('pushToast({\n        tone: "warning"'), false);
+  assert.equal(deepFilterHandler.includes("pushToast"), false);
   assert.equal(bootstrapSource.includes("prewarmDeepFilterAssets"), true);
   assert.equal(processorSource.includes("crossfade(context, processedGain, rawGain)"), true);
   assert.equal(processorSource.includes("ready: Promise<"), true);

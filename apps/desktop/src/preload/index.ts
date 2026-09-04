@@ -125,6 +125,10 @@ const desktopApi: DesktopApi = {
     processRecording: (request) => ipcRenderer.invoke(IPC_CHANNELS.ai.processRecording, request),
     selectTranscription: (recordingId, modelId) =>
       ipcRenderer.invoke(IPC_CHANNELS.ai.selectTranscription, recordingId, modelId),
+    clearTranscriptionResults: (recordingId) =>
+      ipcRenderer.invoke(IPC_CHANNELS.ai.clearTranscriptionResults, recordingId),
+    publishOrganization: (recordingId) =>
+      ipcRenderer.invoke(IPC_CHANNELS.ai.publishOrganization, recordingId),
     pauseTask: (recordingId) => ipcRenderer.invoke(IPC_CHANNELS.ai.pauseTask, recordingId),
     resumeTask: (recordingId) => ipcRenderer.invoke(IPC_CHANNELS.ai.resumeTask, recordingId),
     assignSpeaker: (recordingId, speakerId, memberId, nickname) =>
@@ -166,6 +170,7 @@ const desktopApi: DesktopApi = {
   },
   account: {
     getSnapshot: () => ipcRenderer.invoke(IPC_CHANNELS.account.getSnapshot),
+    getRememberedLogin: () => ipcRenderer.invoke(IPC_CHANNELS.account.getRememberedLogin),
     configureCloudBase: (config) =>
       ipcRenderer.invoke(IPC_CHANNELS.account.configureCloudBase, config),
     login: (request) => ipcRenderer.invoke(IPC_CHANNELS.account.login, request),

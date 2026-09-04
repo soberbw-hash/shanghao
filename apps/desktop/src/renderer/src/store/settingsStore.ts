@@ -8,6 +8,7 @@ import {
   DEFAULT_QUICK_MESSAGE_MUSIC_SLOTS,
   DEFAULT_QUICK_MESSAGE_SLOTS,
   DEFAULT_QUICK_MESSAGE_VOLUME,
+  normalizeQuickMessageSlots,
   APP_BUILD_NUMBER,
   APP_PROTOCOL_VERSION,
   type AppSettings,
@@ -46,6 +47,17 @@ interface SettingsStoreState {
 }
 
 const HYDRATE_TIMEOUT_MS = 5_000;
+
+const settingsValuesEqual = (left: unknown, right: unknown): boolean =>
+  Object.is(left, right) || JSON.stringify(left) === JSON.stringify(right);
+
+export const hasSettingsPatchChanges = (
+  settings: AppSettings,
+  partial: Partial<AppSettings>,
+): boolean =>
+  (Object.keys(partial) as Array<keyof AppSettings>).some(
+    (key) => !settingsValuesEqual(settings[key], partial[key]),
+  );
 
 const fallbackRuntimeInfo: RuntimeInfo = {
   appName: APP_NAME,
@@ -87,7 +99,7 @@ const fallbackSettings: AppSettings = {
   aiAsrModel: "qwen3-asr-0.6b-force",
   aiOrganizerProvider: "cloud",
   aiRoomAskProvider: "cloud",
-  aiProcessingMode: "after_game",
+  aiProcessingMode: "manual",
   isAiAutoTranscribeEnabled: false,
   isAiAutoOrganizeEnabled: false,
   isNoiseSuppressionEnabled: true,
@@ -103,7 +115,6 @@ const fallbackSettings: AppSettings = {
   soundVolume: 0.72,
   isSystemNotificationEnabled: true,
   isGameDetectionEnabled: true,
-  isWorkActivityVisible: false,
   isDynamicWeatherEnabled: true,
   weatherLocationMode: "auto",
   weatherManualCity: "",
@@ -147,7 +158,14 @@ const withTimeout = async <T>(
   });
 
 const getQuickMessageShortcutSignature = (settings: AppSettings): string =>
-  [...settings.quickMessages.slots.slice(0, 5), ...settings.quickMessages.musicSlots.slice(0, 3)]
+  [
+    ...normalizeQuickMessageSlots(settings.quickMessages.slots, DEFAULT_QUICK_MESSAGE_SLOTS, 5),
+    ...normalizeQuickMessageSlots(
+      settings.quickMessages.musicSlots,
+      DEFAULT_QUICK_MESSAGE_MUSIC_SLOTS,
+      DEFAULT_QUICK_MESSAGE_MUSIC_SLOTS.length,
+    ),
+  ]
     .map((slot) => `${slot.enabled ? "1" : "0"}:${slot.shortcut.trim().toLowerCase()}`)
     .join("|");
 
@@ -155,8 +173,12 @@ let quickMessageShortcutConfiguration = Promise.resolve();
 
 const configureQuickMessageShortcuts = (settings: AppSettings): Promise<void> => {
   const bindings = [
-    ...settings.quickMessages.slots.slice(0, 5),
-    ...settings.quickMessages.musicSlots.slice(0, 3),
+    ...normalizeQuickMessageSlots(settings.quickMessages.slots, DEFAULT_QUICK_MESSAGE_SLOTS, 5),
+    ...normalizeQuickMessageSlots(
+      settings.quickMessages.musicSlots,
+      DEFAULT_QUICK_MESSAGE_MUSIC_SLOTS,
+      DEFAULT_QUICK_MESSAGE_MUSIC_SLOTS.length,
+    ),
   ].map((slot, index) => ({
     accelerator: slot.enabled ? slot.shortcut : "",
     index,
@@ -257,6 +279,9 @@ export const useSettingsStore = create<SettingsStoreState>((set, get) => ({
   },
   saveSettings: async (partial) => {
     const previousSettings = get().settings;
+    if (previousSettings && !hasSettingsPatchChanges(previousSettings, partial)) {
+      return previousSettings;
+    }
     const settings = await desktopApi.settings.save(partial);
     set({ settings, avatarDataUrl: undefined });
     if ("recordingMarkerShortcut" in partial) {

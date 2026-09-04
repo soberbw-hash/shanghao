@@ -88,6 +88,7 @@ export class ShortcutController {
   private readonly currentQuickMessageShortcuts = new Map<number, string>();
   private readonly mouseBindings = new Map<string, MouseShortcutBinding>();
   private mouseHookStarted = false;
+  private mouseHookSuppressed = false;
 
   constructor(
     private readonly windowProvider: () => BrowserWindow | null,
@@ -129,6 +130,11 @@ export class ShortcutController {
 
   private stopMouseHookIfUnused(): void {
     if (this.mouseBindings.size > 0 || !this.mouseHookStarted) return;
+    this.stopMouseHook();
+  }
+
+  private stopMouseHook(): void {
+    if (!this.mouseHookStarted) return;
     uIOhook.off("mousedown", this.handleMouseDown);
     uIOhook.off("mouseup", this.handleMouseUp);
     try {
@@ -137,6 +143,23 @@ export class ShortcutController {
       // The native hook may already be stopped during process shutdown.
     }
     this.mouseHookStarted = false;
+  }
+
+  /**
+   * uIOhook receives every native mouse event, including high-frequency
+   * movement events. Pause that global hook while a detected game owns the
+   * foreground input path; keyboard global shortcuts remain available.
+   */
+  setMouseHookSuppressed(suppressed: boolean): void {
+    if (this.mouseHookSuppressed === suppressed) return;
+    this.mouseHookSuppressed = suppressed;
+    if (suppressed) {
+      this.stopMouseHook();
+      return;
+    }
+    if (this.mouseBindings.size > 0) {
+      this.ensureMouseHook();
+    }
   }
 
   private removeBinding(owner: ShortcutOwner, accelerator?: string): void {
@@ -162,6 +185,7 @@ export class ShortcutController {
     if (this.mouseBindings.has(parsed.accelerator)) return false;
     const binding: MouseShortcutBinding = { ...parsed, owner, onPress, onRelease };
     this.mouseBindings.set(parsed.accelerator, binding);
+    if (this.mouseHookSuppressed) return true;
     if (this.ensureMouseHook()) return true;
     this.mouseBindings.delete(parsed.accelerator);
     this.stopMouseHookIfUnused();
@@ -289,6 +313,6 @@ export class ShortcutController {
   dispose(): void {
     globalShortcut.unregisterAll();
     this.mouseBindings.clear();
-    this.stopMouseHookIfUnused();
+    this.stopMouseHook();
   }
 }

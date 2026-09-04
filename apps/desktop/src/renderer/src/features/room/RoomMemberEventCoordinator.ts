@@ -59,7 +59,6 @@ export class RoomMemberEventCoordinator {
     gameName?: string,
     musicActivity?: RoomMember["musicActivity"],
     gameIconDataUrl?: string,
-    workActivity?: RoomMember["workActivity"],
   ): void {
     this.members = this.members.map((member) => {
       if (member.id !== this.options.localPeerId) return member;
@@ -72,7 +71,6 @@ export class RoomMemberEventCoordinator {
         gameName: normalizedGameName,
         gameIconDataUrl: normalizePresenceGameIconDataUrl(normalizedGameName, gameIconDataUrl),
         musicActivity,
-        workActivity,
       };
     });
   }
@@ -169,8 +167,6 @@ export class RoomMemberEventCoordinator {
           payload.musicActivity === null
             ? undefined
             : (payload.musicActivity ?? member.musicActivity),
-        workActivity:
-          payload.workActivity === null ? undefined : (payload.workActivity ?? member.workActivity),
         isMuted,
         speakingState: isMuted
           ? MemberSpeakingState.Muted

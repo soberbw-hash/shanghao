@@ -7,6 +7,15 @@ html.is-visual-runtime-hidden *::after {
   animation-play-state: paused !important;
 }
 
+/* When a game owns focus, keep the room exactly as designed but stop spending
+   CPU/GPU on invisible looping motion. Animations resume from their paused
+   position as soon as the user returns to ShangHao. */
+html:not(.is-app-window-focused) .team-island *,
+html:not(.is-app-window-focused) .team-island *::before,
+html:not(.is-app-window-focused) .team-island *::after {
+  animation-play-state: paused !important;
+}
+
 /* Tailwind 4 uses currentColor for unqualified borders. Keep the v3 baseline so
    the existing ice-blue surfaces do not change during this tooling migration. */
 @layer base {

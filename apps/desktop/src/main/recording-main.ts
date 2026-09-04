@@ -18,6 +18,8 @@ import {
 import { registerRecordingInDirectory } from "./recording-library-core";
 import { resolveFfmpegExecutable } from "./media-runtime";
 
+const RECORDING_AAC_BITRATE = "32k";
+
 const inferExtensionFromMime = (mimeType: string): string => {
   if (mimeType.includes("mp4") || mimeType.includes("aac")) {
     return ".m4a";
@@ -83,7 +85,7 @@ export const exportRecordingFromMain = async (
             "-c:a",
             "aac",
             "-b:a",
-            "128k",
+            RECORDING_AAC_BITRATE,
             "-movflags",
             "+faststart",
             outputPath,

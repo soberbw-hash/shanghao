@@ -8,7 +8,6 @@ import {
   type DailyRoomReport,
   type MemberActivity,
   type MusicActivity,
-  type WorkActivity,
   type RoomMember,
   type RoomQuickMessage,
   type RoomCollectionItem,
@@ -79,7 +78,7 @@ interface RoomClientOptions {
   signalingUrl: string;
   roomId: string;
   peerId: string;
-  profileId: string;
+  profileId?: string;
   nickname: string;
   avatarDataUrl?: string;
   avatarId?: BuiltInAvatarId;
@@ -437,13 +436,15 @@ export class RoomClient {
     this.lastPublishedMuteState = isMuted;
     this.lastPublishedSpeakingState = isSpeaking;
     this.audioFallback?.setMuted(isMuted);
-    void this.safeSend({
-      type: "member_state",
-      roomId: this.options.roomId,
-      peerId: this.options.peerId,
-      isMuted,
-      isSpeaking,
-    });
+    void this.safeSend(
+      this.presenceCoordinator.enrichPartialMessage({
+        type: "member_state",
+        roomId: this.options.roomId,
+        peerId: this.options.peerId,
+        isMuted,
+        isSpeaking,
+      }),
+    );
   }
 
   updateProfile(nickname: string, avatarDataUrl?: string, avatarId?: BuiltInAvatarId): void {
@@ -462,13 +463,15 @@ export class RoomClient {
     this.lastPublishedAvatarDataUrl = avatarDataUrl;
     this.lastPublishedAvatarId = avatarId;
 
-    void this.safeSend({
-      type: "member_state",
-      roomId: this.options.roomId,
-      peerId: this.options.peerId,
-      nickname,
-      avatarId,
-    });
+    void this.safeSend(
+      this.presenceCoordinator.enrichPartialMessage({
+        type: "member_state",
+        roomId: this.options.roomId,
+        peerId: this.options.peerId,
+        nickname,
+        avatarId,
+      }),
+    );
   }
 
   async replaceInputTrack(nextTrack: MediaStreamTrack): Promise<void> {
@@ -498,6 +501,7 @@ export class RoomClient {
     this.joinChannelSent = false;
     this.joinAckReceived = false;
     this.roomSnapshotReceived = false;
+    this.lastSnapshotRevision = 0;
     this.lastServerError = undefined;
     this.presenceCoordinator.resetPublication();
 
@@ -736,7 +740,6 @@ export class RoomClient {
     gameName?: string,
     musicActivity?: MusicActivity,
     gameIconDataUrl?: string,
-    workActivity?: WorkActivity,
   ): void {
     // Keep the coordinator's member snapshot in lockstep with the optimistic UI.
     // Otherwise, an unrelated peer event received before our server echo can replay
@@ -748,7 +751,6 @@ export class RoomClient {
       gameName,
       musicActivity,
       gameIconDataUrl,
-      workActivity,
     );
     this.presenceCoordinator.update(
       isDeafened,
@@ -757,7 +759,6 @@ export class RoomClient {
       gameName,
       musicActivity,
       gameIconDataUrl,
-      workActivity,
     );
   }
   /** Kept as a narrow compatibility seam for reconnect replay and focused tests. */

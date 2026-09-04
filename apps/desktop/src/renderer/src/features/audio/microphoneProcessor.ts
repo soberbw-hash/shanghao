@@ -30,6 +30,10 @@ export interface ProcessedMicrophoneStream {
     | "processorOverruns"
     | "averageProcessingMs"
     | "maxProcessingMs"
+    | "voiceEnhancementProcessor"
+    | "voiceEnhancementAverageProcessingMs"
+    | "voiceEnhancementMaxProcessingMs"
+    | "voiceEnhancementOverruns"
     | "rawInputPeak"
     | "inputOverload"
   >;
@@ -71,6 +75,122 @@ const SPEECH_MIX_RELEASE_SECONDS = 0.22;
 const PROTECTION_WORKLET_NAME = "shanghao-microphone-protection";
 const PROTECTION_ANALYSIS_FRAMES = 512;
 const PROTECTION_DIAGNOSTICS_INTERVAL_MS = 250;
+const VOICE_SHAPER_WORKLET_NAME = "shanghao-communication-voice-shaper";
+const VOICE_SHAPER_DIAGNOSTICS_INTERVAL_FRAMES = DEEPFILTER_SAMPLE_RATE / 2;
+
+/**
+ * A no-lookahead communication voice shaper. The processor works one render
+ * quantum at a time and keeps only envelope/filter state between calls. It
+ * deliberately avoids FFTs, allocations and model inference on the audio
+ * thread.
+ */
+const VOICE_SHAPER_WORKLET_SOURCE = `
+class ShangHaoCommunicationVoiceShaper extends AudioWorkletProcessor {
+  constructor() {
+    super();
+    this.broadEnvelope = 0;
+    this.compressorGain = 1;
+    this.deEsserEnvelope = 0;
+    this.deEsserGain = 1;
+    this.lowBandState = 0;
+    this.processedFrames = 0;
+    this.processingTotalMs = 0;
+    this.processingSamples = 0;
+    this.maxProcessingMs = 0;
+    this.overruns = 0;
+    this.compressorAttack = Math.exp(-1 / (sampleRate * 0.009));
+    this.compressorRelease = Math.exp(-1 / (sampleRate * 0.145));
+    this.deEsserAttack = Math.exp(-1 / (sampleRate * 0.0025));
+    this.deEsserRelease = Math.exp(-1 / (sampleRate * 0.085));
+    this.lowBandCoefficient = 1 - Math.exp(-2 * Math.PI * 5200 / sampleRate);
+    this.compressorThreshold = Math.pow(10, -23 / 20);
+    this.deEsserThreshold = Math.pow(10, -27 / 20);
+    this.minimumDeEsserGain = Math.pow(10, -3.5 / 20);
+  }
+
+  follow(current, target, attack, release) {
+    const coefficient = target > current ? attack : release;
+    return target + coefficient * (current - target);
+  }
+
+  process(inputs, outputs) {
+    const startedAt = globalThis.performance?.now?.() ?? 0;
+    const input = inputs[0]?.[0];
+    const output = outputs[0]?.[0];
+    if (!output) return true;
+    if (!input) {
+      output.fill(0);
+      return true;
+    }
+
+    for (let index = 0; index < output.length; index += 1) {
+      const sample = input[index] ?? 0;
+      const absoluteSample = Math.abs(sample);
+      this.broadEnvelope = this.follow(
+        this.broadEnvelope,
+        absoluteSample,
+        this.compressorAttack,
+        this.compressorRelease,
+      );
+      const compressionTarget = this.broadEnvelope > this.compressorThreshold
+        ? Math.pow(this.compressorThreshold / this.broadEnvelope, 1 - 1 / 2.15)
+        : 1;
+      const compressorCoefficient = compressionTarget < this.compressorGain
+        ? this.compressorAttack
+        : this.compressorRelease;
+      this.compressorGain = compressionTarget
+        + compressorCoefficient * (this.compressorGain - compressionTarget);
+
+      this.lowBandState += (sample - this.lowBandState) * this.lowBandCoefficient;
+      const highBand = sample - this.lowBandState;
+      this.deEsserEnvelope = this.follow(
+        this.deEsserEnvelope,
+        Math.abs(highBand),
+        this.deEsserAttack,
+        this.deEsserRelease,
+      );
+      const deEsserTarget = this.deEsserEnvelope > this.deEsserThreshold
+        ? Math.max(
+            this.minimumDeEsserGain,
+            Math.pow(this.deEsserThreshold / this.deEsserEnvelope, 0.42),
+          )
+        : 1;
+      const deEsserCoefficient = deEsserTarget < this.deEsserGain
+        ? this.deEsserAttack
+        : this.deEsserRelease;
+      this.deEsserGain = deEsserTarget
+        + deEsserCoefficient * (this.deEsserGain - deEsserTarget);
+
+      const deEssed = this.lowBandState + highBand * this.deEsserGain;
+      const voicePresent = this.broadEnvelope >= 0.008;
+      const saturatedHigh = Math.tanh(highBand * 3.2) / 3.2;
+      const harmonicDetail = voicePresent ? (saturatedHigh - highBand) * -0.055 : 0;
+      const makeup = voicePresent ? 1.16 : 1;
+      const shaped = (deEssed + harmonicDetail) * this.compressorGain * makeup;
+      output[index] = Math.max(-1.15, Math.min(1.15, shaped));
+    }
+
+    const processingMs = (globalThis.performance?.now?.() ?? startedAt) - startedAt;
+    const deadlineMs = output.length * 1000 / sampleRate;
+    if (processingMs > deadlineMs) this.overruns += 1;
+    this.processingTotalMs += processingMs;
+    this.processingSamples += 1;
+    this.maxProcessingMs = Math.max(this.maxProcessingMs, processingMs);
+    this.processedFrames += output.length;
+    if (this.processedFrames >= ${VOICE_SHAPER_DIAGNOSTICS_INTERVAL_FRAMES}) {
+      this.processedFrames = 0;
+      this.port.postMessage({
+        type: "diagnostics",
+        averageProcessingMs: this.processingTotalMs / Math.max(1, this.processingSamples),
+        maxProcessingMs: this.maxProcessingMs,
+        overruns: this.overruns,
+      });
+    }
+    return true;
+  }
+}
+registerProcessor("${VOICE_SHAPER_WORKLET_NAME}", ShangHaoCommunicationVoiceShaper);
+`;
 
 /**
  * The protection path is deliberately an AudioWorklet.  It owns the audio
@@ -275,6 +395,12 @@ const announceDeepFilterUnavailable = (reason: string): void => {
   window.dispatchEvent(new CustomEvent("shanghao:deepfilter-unavailable", { detail: { reason } }));
 };
 
+const announceVoiceEnhancementUnavailable = (reason: string): void => {
+  window.dispatchEvent(
+    new CustomEvent("shanghao:voice-enhancement-unavailable", { detail: { reason } }),
+  );
+};
+
 const crossfade = (context: AudioContext, from: GainNode, to: GainNode): void => {
   const now = context.currentTime;
   from.gain.cancelScheduledValues(now);
@@ -403,38 +529,86 @@ const connectMicrophoneLowCut = (
   return currentNode;
 };
 
-interface NaturalVoiceEnhancer {
+interface CommunicationVoiceShaper {
   output: AudioNode;
-  presence?: BiquadFilterNode;
-  airRestraint?: BiquadFilterNode;
-  compressor?: DynamicsCompressorNode;
+  mudCut?: BiquadFilterNode;
+  clarity?: BiquadFilterNode;
+  worklet?: AudioWorkletNode;
+  processedGain?: GainNode;
+  bypassGain?: GainNode;
+  merge?: GainNode;
 }
 
-const connectNaturalVoiceEnhancer = (
+const createVoiceShaperWorkletNode = async (context: AudioContext): Promise<AudioWorkletNode> => {
+  if (!context.audioWorklet) throw new Error("audio_worklet_unavailable");
+  const moduleUrl = URL.createObjectURL(
+    new Blob([VOICE_SHAPER_WORKLET_SOURCE], { type: "text/javascript" }),
+  );
+  try {
+    await context.audioWorklet.addModule(moduleUrl);
+  } finally {
+    URL.revokeObjectURL(moduleUrl);
+  }
+  return new AudioWorkletNode(context, VOICE_SHAPER_WORKLET_NAME, {
+    numberOfInputs: 1,
+    numberOfOutputs: 1,
+    outputChannelCount: [1],
+  });
+};
+
+const connectCommunicationVoiceShaper = async (
   context: AudioContext,
   source: AudioNode,
   enabled: boolean,
-): NaturalVoiceEnhancer => {
+  onDiagnostics: (diagnostics: {
+    averageProcessingMs: number;
+    maxProcessingMs: number;
+    overruns: number;
+  }) => void,
+  onRuntimeFailure: () => void,
+): Promise<CommunicationVoiceShaper> => {
   if (!enabled) return { output: source };
-  const presence = context.createBiquadFilter();
-  presence.type = "peaking";
-  presence.frequency.value = 2_400;
-  presence.Q.value = 0.75;
-  presence.gain.value = 0.45;
-  const airRestraint = context.createBiquadFilter();
-  airRestraint.type = "highshelf";
-  airRestraint.frequency.value = 6_500;
-  airRestraint.gain.value = -0.8;
-  const compressor = context.createDynamicsCompressor();
-  compressor.threshold.value = -18;
-  compressor.knee.value = 10;
-  compressor.ratio.value = 1.6;
-  compressor.attack.value = 0.012;
-  compressor.release.value = 0.18;
-  source.connect(presence);
-  presence.connect(airRestraint);
-  airRestraint.connect(compressor);
-  return { output: compressor, presence, airRestraint, compressor };
+
+  const worklet = await createVoiceShaperWorkletNode(context);
+  const mudCut = context.createBiquadFilter();
+  mudCut.type = "peaking";
+  mudCut.frequency.value = 240;
+  mudCut.Q.value = 0.82;
+  mudCut.gain.value = -1.8;
+  const clarity = context.createBiquadFilter();
+  clarity.type = "peaking";
+  clarity.frequency.value = 2_900;
+  clarity.Q.value = 0.78;
+  clarity.gain.value = 1.7;
+  const processedGain = context.createGain();
+  const bypassGain = context.createGain();
+  const merge = context.createGain();
+  processedGain.gain.value = 1;
+  bypassGain.gain.value = 0;
+
+  source.connect(mudCut);
+  mudCut.connect(clarity);
+  clarity.connect(worklet);
+  worklet.connect(processedGain);
+  processedGain.connect(merge);
+  source.connect(bypassGain);
+  bypassGain.connect(merge);
+
+  worklet.port.onmessage = (event: MessageEvent) => {
+    if (event.data?.type !== "diagnostics") return;
+    onDiagnostics({
+      averageProcessingMs: Number(event.data.averageProcessingMs) || 0,
+      maxProcessingMs: Number(event.data.maxProcessingMs) || 0,
+      overruns: Number(event.data.overruns) || 0,
+    });
+  };
+  worklet.onprocessorerror = () => {
+    worklet.onprocessorerror = null;
+    crossfade(context, processedGain, bypassGain);
+    onRuntimeFailure();
+  };
+
+  return { output: merge, mudCut, clarity, worklet, processedGain, bypassGain, merge };
 };
 
 export const createProcessedMicrophoneStream = async (
@@ -466,10 +640,26 @@ export const createProcessedMicrophoneStream = async (
     processorOverruns: 0,
     averageProcessingMs: 0,
     maxProcessingMs: 0,
+    voiceEnhancementProcessor: settings.isVoiceEnhancementEnabled ? "dsp_active" : "bypass",
+    voiceEnhancementAverageProcessingMs: 0,
+    voiceEnhancementMaxProcessingMs: 0,
+    voiceEnhancementOverruns: 0,
     rawInputPeak: 0,
     inputOverload: "normal",
   };
   const sendVolume = Math.max(0.5, Math.min(1.5, settings.microphoneSendVolume ?? 1));
+  let disposed = false;
+  let lastPublishedDiagnosticsAt = 0;
+  const diagnosticsListeners = new Set<
+    (diagnostics: ProcessedMicrophoneStream["processorDiagnostics"]) => void
+  >();
+  const publishDiagnostics = (force = false) => {
+    const now = performance.now();
+    if (!force && now - lastPublishedDiagnosticsAt < PROTECTION_DIAGNOSTICS_INTERVAL_MS) return;
+    lastPublishedDiagnosticsAt = now;
+    const snapshot = { ...processorDiagnostics };
+    for (const listener of diagnosticsListeners) listener(snapshot);
+  };
 
   const context = new AudioContext({
     latencyHint: "interactive",
@@ -499,12 +689,36 @@ export const createProcessedMicrophoneStream = async (
   source.connect(rawInputAnalyser);
   rawInputAnalyser.connect(rawInputMonitorSilence);
   rawInputMonitorSilence.connect(blendBus);
-  const naturalEnhancer = connectNaturalVoiceEnhancer(
-    context,
-    blendBus,
-    settings.isVoiceEnhancementEnabled,
-  );
-  const equalized = connectMicrophoneEqualizer(context, naturalEnhancer.output, userGains, "off");
+  let voiceShaper: CommunicationVoiceShaper = { output: blendBus };
+  if (settings.isVoiceEnhancementEnabled) {
+    try {
+      voiceShaper = await connectCommunicationVoiceShaper(
+        context,
+        blendBus,
+        true,
+        (diagnostics) => {
+          if (disposed) return;
+          processorDiagnostics.voiceEnhancementAverageProcessingMs =
+            diagnostics.averageProcessingMs;
+          processorDiagnostics.voiceEnhancementMaxProcessingMs = diagnostics.maxProcessingMs;
+          processorDiagnostics.voiceEnhancementOverruns = diagnostics.overruns;
+          publishDiagnostics();
+        },
+        () => {
+          if (disposed) return;
+          processorDiagnostics.voiceEnhancementProcessor = "dsp_unavailable";
+          publishDiagnostics(true);
+          announceVoiceEnhancementUnavailable("processor_runtime_error");
+        },
+      );
+    } catch (error) {
+      processorDiagnostics.voiceEnhancementProcessor = "dsp_unavailable";
+      announceVoiceEnhancementUnavailable(
+        error instanceof Error ? error.message : "processor_initialization_failed",
+      );
+    }
+  }
+  const equalized = connectMicrophoneEqualizer(context, voiceShaper.output, userGains, "off");
   equalized.connect(outputGain);
   const rawGain = context.createGain();
   rawGain.gain.value = 1;
@@ -518,7 +732,6 @@ export const createProcessedMicrophoneStream = async (
   }
   if (!settings.isNoiseSuppressionEnabled) rawGain.connect(blendBus);
 
-  let disposed = false;
   let activeProcessor: DeepFilterNodeResult | undefined;
   let processedGain: GainNode | undefined;
   let protectionWorklet: AudioWorkletNode | undefined;
@@ -526,17 +739,6 @@ export const createProcessedMicrophoneStream = async (
   let inputOverloadTimer: number | undefined;
   let currentSuppressionLevel = DEEPFILTER_BASE_SUPPRESSION_LEVEL;
   let lastAppliedSuppressionLevel = DEEPFILTER_BASE_SUPPRESSION_LEVEL;
-  let lastPublishedDiagnosticsAt = 0;
-  const diagnosticsListeners = new Set<
-    (diagnostics: ProcessedMicrophoneStream["processorDiagnostics"]) => void
-  >();
-  const publishDiagnostics = (force = false) => {
-    const now = performance.now();
-    if (!force && now - lastPublishedDiagnosticsAt < PROTECTION_DIAGNOSTICS_INTERVAL_MS) return;
-    lastPublishedDiagnosticsAt = now;
-    const snapshot = { ...processorDiagnostics };
-    for (const listener of diagnosticsListeners) listener(snapshot);
-  };
   const rawInputSamples = new Float32Array(rawInputAnalyser.fftSize);
   let overloadFrames = 0;
   let recoveryFrames = 0;
@@ -666,16 +868,6 @@ export const createProcessedMicrophoneStream = async (
         processorDiagnostics.averageProcessingMs = analysis.averageProcessingMs;
         processorDiagnostics.maxProcessingMs = analysis.maxProcessingMs;
         currentSuppressionLevel = analysis.targetSuppression;
-        if (naturalEnhancer.presence && naturalEnhancer.airRestraint) {
-          const now = context.currentTime;
-          const nearVoice = analysis.speechProbability >= 0.58;
-          naturalEnhancer.presence.gain.setTargetAtTime(nearVoice ? 0.7 : 0.2, now, 0.08);
-          naturalEnhancer.airRestraint.gain.setTargetAtTime(
-            analysis.mode === "echo" ? -1.4 : nearVoice ? -0.45 : -0.9,
-            now,
-            0.1,
-          );
-        }
         if (activeProcessor && analysis.targetSuppression !== lastAppliedSuppressionLevel) {
           try {
             activeProcessor.core.setSuppressionLevel(analysis.targetSuppression);
@@ -771,9 +963,16 @@ export const createProcessedMicrophoneStream = async (
       rawInputAnalyser.disconnect();
       rawInputMonitorSilence.disconnect();
       blendBus.disconnect();
-      naturalEnhancer.presence?.disconnect();
-      naturalEnhancer.airRestraint?.disconnect();
-      naturalEnhancer.compressor?.disconnect();
+      if (voiceShaper.worklet) {
+        voiceShaper.worklet.onprocessorerror = null;
+        voiceShaper.worklet.port.onmessage = null;
+      }
+      voiceShaper.mudCut?.disconnect();
+      voiceShaper.clarity?.disconnect();
+      voiceShaper.worklet?.disconnect();
+      voiceShaper.processedGain?.disconnect();
+      voiceShaper.bypassGain?.disconnect();
+      voiceShaper.merge?.disconnect();
       outputGain.disconnect();
       outputLimiter.disconnect();
       inputStream.getTracks().forEach((track) => track.stop());

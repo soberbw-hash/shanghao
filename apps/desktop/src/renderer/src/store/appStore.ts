@@ -1,6 +1,8 @@
 import { startTransition } from "react";
 import { create } from "zustand";
 
+import { interactionPerformanceMonitor } from "../features/diagnostics/interactionPerformanceMonitor";
+
 export type AppPage = "home" | "room" | "settings";
 export type SettingsReturnTarget = "home" | "room";
 export type RoomActionState = "idle" | "starting" | "joining";
@@ -74,6 +76,16 @@ export const useAppStore = create<AppStoreState>((set, get) => ({
   requiredUpdate: undefined,
   isSafeMode: false,
   navigate: (page) => {
+    const current = get().currentPage;
+    if (current !== page) {
+      const interactionId = interactionPerformanceMonitor.begin(
+        `route:${current}->${page}`,
+        current,
+      );
+      interactionPerformanceMonitor.mark(interactionId, "visual-feedback-start");
+      interactionPerformanceMonitor.mark(interactionId, "route-transition-start");
+      interactionPerformanceMonitor.afterNextPaint(interactionId);
+    }
     startTransition(() => set({ currentPage: page }));
   },
   setSettingsReturnTo: (settingsReturnTo) => set({ settingsReturnTo }),

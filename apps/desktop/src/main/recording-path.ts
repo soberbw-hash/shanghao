@@ -72,9 +72,7 @@ const formatLocalDatePart = (date: Date): string =>
     .join("-");
 
 const formatLocalTimePart = (date: Date): string =>
-  [date.getHours(), date.getMinutes(), date.getSeconds()]
-    .map((value) => String(value).padStart(2, "0"))
-    .join("-");
+  `${String(date.getHours()).padStart(2, "0")}时${String(date.getMinutes()).padStart(2, "0")}分`;
 
 export const createNumberedRecordingFileName = (
   createdAt: Date,
@@ -84,13 +82,15 @@ export const createNumberedRecordingFileName = (
   const matchingNames = existingFileNames.filter(
     (fileName) => fileName.toLowerCase().endsWith(".m4a") && fileName.includes(datePart),
   );
-  const numberedTailPattern = /-(?:语音|一号房|二号房)-(\d{2,3})-\d{2}-\d{2}-\d{2}\.m4a$/i;
+  const numberedTailPattern =
+    /(?:-(?:语音|一号房|二号房)-(\d{2,3})-\d{2}-\d{2}-\d{2}|-语音(\d{2,3})-\d{2}时\d{2}分)\.m4a$/i;
   const largestExistingNumber = matchingNames.reduce((largest, fileName) => {
     const match = numberedTailPattern.exec(fileName);
-    return match?.[1] ? Math.max(largest, Number(match[1])) : largest;
+    const sequence = match?.[1] ?? match?.[2];
+    return sequence ? Math.max(largest, Number(sequence)) : largest;
   }, 0);
   const sequence = Math.max(matchingNames.length, largestExistingNumber) + 1;
-  return `上号-${datePart}-语音-${String(sequence).padStart(2, "0")}-${formatLocalTimePart(createdAt)}.m4a`;
+  return `上号-${datePart}-语音${String(sequence).padStart(2, "0")}-${formatLocalTimePart(createdAt)}.m4a`;
 };
 
 export const resolveAvailableRecordingPath = async (

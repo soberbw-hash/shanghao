@@ -7,6 +7,7 @@ import {
   DEFAULT_QUICK_MESSAGE_MUSIC_SLOTS,
   DEFAULT_QUICK_MESSAGE_SLOTS,
   DEFAULT_QUICK_MESSAGE_VOLUME,
+  normalizeQuickMessageSlots,
   PROFILE_SCHEMA_VERSION,
   SETTINGS_SCHEMA_VERSION,
   isBuiltInAvatarId,
@@ -55,7 +56,7 @@ export const defaultSettings: AppSettings = {
   aiAsrModel: "qwen3-asr-0.6b-force",
   aiOrganizerProvider: "cloud",
   aiRoomAskProvider: "cloud",
-  aiProcessingMode: "after_game",
+  aiProcessingMode: "manual",
   isAiAutoTranscribeEnabled: false,
   isAiAutoOrganizeEnabled: false,
   isNoiseSuppressionEnabled: true,
@@ -71,7 +72,6 @@ export const defaultSettings: AppSettings = {
   soundVolume: 0.72,
   isSystemNotificationEnabled: true,
   isGameDetectionEnabled: true,
-  isWorkActivityVisible: false,
   isDynamicWeatherEnabled: true,
   weatherLocationMode: "auto",
   weatherManualCity: "",
@@ -108,10 +108,16 @@ const trimUnknownText = (value: unknown): string | undefined =>
   typeof value === "string" ? trimText(value) : undefined;
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+// Account providers own the shape of their user ids. Supabase currently uses UUIDs,
+// while CloudBase returns an opaque uid. Treat both as durable identities instead of
+// regenerating a UUID every time settings are normalized.
+const OPAQUE_ACCOUNT_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$/;
 
 const normalizeProfileId = (value: unknown): string => {
   const candidate = trimUnknownText(value);
-  return candidate && UUID_PATTERN.test(candidate) ? candidate : randomUUID();
+  return candidate && (UUID_PATTERN.test(candidate) || OPAQUE_ACCOUNT_ID_PATTERN.test(candidate))
+    ? candidate
+    : randomUUID();
 };
 
 const normalizeBoolean = (value: unknown, fallback: boolean): boolean =>
@@ -134,31 +140,20 @@ const normalizeAccountAvatarPresetId = (value: unknown): string | undefined => {
   return /^[a-z0-9-]{1,64}$/.test(candidate) ? candidate : undefined;
 };
 
-const normalizeQuickMessages = (value: unknown): AppSettings["quickMessages"] => {
+const LEGACY_DEFAULT_QUICK_MESSAGE_VOLUME = 0.72;
+
+const normalizeQuickMessages = (
+  value: unknown,
+  previousSettingsVersion: number,
+): AppSettings["quickMessages"] => {
   const raw =
     value && typeof value === "object" && !Array.isArray(value)
       ? (value as Record<string, unknown>)
       : {};
-  const rawSlots = Array.isArray(raw.slots) ? raw.slots : [];
-  const slots = Array.from({ length: DEFAULT_QUICK_MESSAGE_SLOTS.length }, (_, index) => {
-    const fallback = DEFAULT_QUICK_MESSAGE_SLOTS[index] ??
-      DEFAULT_QUICK_MESSAGE_SLOTS[0] ?? { presetId: undefined, shortcut: "", enabled: false };
-    const candidate = rawSlots[index];
-    const source =
-      candidate && typeof candidate === "object" && !Array.isArray(candidate)
-        ? (candidate as Record<string, unknown>)
-        : {};
-    const rawPresetId =
-      typeof source.presetId === "string" ? source.presetId.trim() || undefined : undefined;
-    const isRemovedPreset = rawPresetId === "legacy-ok";
-    return {
-      // The old 👌 preset was removed from the library. Do not leave a dangling
-      // shortcut behind when an existing profile is opened after the update.
-      presetId: isRemovedPreset ? undefined : (rawPresetId ?? fallback.presetId),
-      shortcut: typeof source.shortcut === "string" ? source.shortcut.trim() : fallback.shortcut,
-      enabled: isRemovedPreset ? false : normalizeBoolean(source.enabled, fallback.enabled),
-    };
-  });
+  const slots = normalizeQuickMessageSlots(raw.slots);
+  const normalizedSlots = slots.map((slot) =>
+    slot.presetId === "legacy-ok" ? { ...slot, presetId: undefined, enabled: false } : slot,
+  );
   const rawMusicPresetId =
     typeof raw.musicPresetId === "string" ? raw.musicPresetId.trim() || undefined : undefined;
   const rawMusicSlots = Array.isArray(raw.musicSlots) ? raw.musicSlots : [];
@@ -188,12 +183,23 @@ const normalizeQuickMessages = (value: unknown): AppSettings["quickMessages"] =>
       };
     },
   );
+  const normalizedSoundVolume = normalizeNumber(
+    raw.soundVolume,
+    defaultSettings.quickMessages.soundVolume,
+    0,
+    1,
+  );
+  const soundVolume =
+    previousSettingsVersion < 35 && normalizedSoundVolume === LEGACY_DEFAULT_QUICK_MESSAGE_VOLUME
+      ? DEFAULT_QUICK_MESSAGE_VOLUME
+      : normalizedSoundVolume;
+
   return {
     soundEnabled: normalizeBoolean(raw.soundEnabled, defaultSettings.quickMessages.soundEnabled),
-    soundVolume: normalizeNumber(raw.soundVolume, defaultSettings.quickMessages.soundVolume, 0, 1),
+    soundVolume,
     musicPresetId: rawMusicPresetId ?? defaultSettings.quickMessages.musicPresetId,
     musicSlots,
-    slots,
+    slots: normalizedSlots,
   };
 };
 
@@ -271,8 +277,10 @@ export const migrateSettings = (raw: RawSettings): MigrationResult => {
       raw.aiAsrModel === "fireredasr2-aed" ||
       raw.aiAsrModel === "paraformer-zh" ||
       raw.aiAsrModel === "moss-transcribe-diarize-0.9b" ||
+      raw.aiAsrModel === "moss-transcribe-diarize-0.9b-q8_0" ||
       raw.aiAsrModel === "dolphin-cn-dialect-0.4b" ||
-      raw.aiAsrModel === "cohere-transcribe-2b"
+      raw.aiAsrModel === "cohere-transcribe-2b" ||
+      raw.aiAsrModel === "ark-asr-3b-q8_0"
         ? raw.aiAsrModel
         : raw.aiAsrModel === "qwen3-asr-0.6b"
           ? "qwen3-asr-0.6b-force"
@@ -285,11 +293,16 @@ export const migrateSettings = (raw: RawSettings): MigrationResult => {
     // must not make friends download Qwen before they can ask a question.
     aiRoomAskProvider: "cloud",
     aiProcessingMode:
-      raw.aiProcessingMode === "low_resource" ||
-      raw.aiProcessingMode === "immediate" ||
-      raw.aiProcessingMode === "manual"
-        ? raw.aiProcessingMode
-        : "after_game",
+      previousVersion < 35 &&
+      raw.aiProcessingMode === "after_game" &&
+      normalizeBoolean(raw.isAiAutoTranscribeEnabled, false) === false
+        ? "manual"
+        : raw.aiProcessingMode === "after_game" ||
+            raw.aiProcessingMode === "low_resource" ||
+            raw.aiProcessingMode === "immediate" ||
+            raw.aiProcessingMode === "manual"
+          ? raw.aiProcessingMode
+          : "manual",
     isAiAutoTranscribeEnabled: normalizeBoolean(raw.isAiAutoTranscribeEnabled, false),
     isAiAutoOrganizeEnabled: normalizeBoolean(raw.isAiAutoOrganizeEnabled, false),
     relayServerUrl:
@@ -310,10 +323,9 @@ export const migrateSettings = (raw: RawSettings): MigrationResult => {
               .map(([name, value]) => [name.slice(0, 24), Math.max(0, Math.min(3, Number(value)))]),
           )
         : {},
-    soundVolume: normalizeNumber(raw.soundVolume, defaultSettings.soundVolume, 0, 1),
+    soundVolume: defaultSettings.soundVolume,
     isSystemNotificationEnabled: true,
     isGameDetectionEnabled: true,
-    isWorkActivityVisible: normalizeBoolean(raw.isWorkActivityVisible, false),
     isDynamicWeatherEnabled: normalizeBoolean(raw.isDynamicWeatherEnabled, true),
     weatherLocationMode: raw.weatherLocationMode === "manual" ? "manual" : "auto",
     weatherManualCity: trimUnknownText(raw.weatherManualCity) ?? "",
@@ -329,8 +341,8 @@ export const migrateSettings = (raw: RawSettings): MigrationResult => {
     isVoiceEnhancementEnabled: raw.isVoiceEnhancementEnabled !== false,
     isPushToTalkEnabled: raw.isPushToTalkEnabled === true,
     isAutoRecordOnJoinEnabled: normalizeBoolean(raw.isAutoRecordOnJoinEnabled, true),
-    isUiSoundEnabled: normalizeBoolean(raw.isUiSoundEnabled, true),
-    quickMessages: normalizeQuickMessages(raw.quickMessages),
+    isUiSoundEnabled: true,
+    quickMessages: normalizeQuickMessages(raw.quickMessages, previousVersion),
     isBackgroundUpdateCheckEnabled: raw.isBackgroundUpdateCheckEnabled !== false,
     lastCollectionViewedAt: trimUnknownText(raw.lastCollectionViewedAt),
     hasInitializedCollectionReadState: raw.hasInitializedCollectionReadState === true,

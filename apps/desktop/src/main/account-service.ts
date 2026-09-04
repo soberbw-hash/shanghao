@@ -6,6 +6,7 @@ import type {
   AccountAvatarUpdateRequest,
   CloudBaseClientConfig,
   AccountLoginRequest,
+  AccountRememberedLogin,
   AccountPasswordResetRequest,
   AccountProfile,
   AccountProfileUpdateRequest,
@@ -137,6 +138,8 @@ export class AccountDesktopService extends EventEmitter {
   private cloudbase?: CloudBaseAccountClient;
   private localCloudbaseConfig?: CloudBaseClientConfig;
   private accountProvider: "supabase" | "cloudbase" = "supabase";
+  /** Session persistence is opt-out from the login form, never password persistence. */
+  private rememberSession = true;
   private supabaseUrl?: string;
   private supabasePublishableKey?: string;
   private usernameLoginUrl?: string;
@@ -154,6 +157,9 @@ export class AccountDesktopService extends EventEmitter {
 
   async initialize(): Promise<AccountSnapshot> {
     this.session = await this.sessionStore.read();
+    // A restored session necessarily came from the remembered-session store;
+    // a fresh login should also default to remember-me until the user opts out.
+    this.rememberSession = true;
     let serverStatus: AccountServerStatus | undefined;
     try {
       serverStatus = await this.request<AccountServerStatus>(
@@ -180,8 +186,27 @@ export class AccountDesktopService extends EventEmitter {
       : serverStatus.configured === true && this.configureProvider(serverStatus);
     const guestAllowed = serverStatus.guestAllowed === true;
     this.developmentConnection = serverStatus.insecureDevelopmentConnection === true;
-    if (this.session && this.accountProvider !== (this.session.provider ?? "supabase")) {
+    // In development, the renderer provides the CloudBase client config after
+    // the main process has started. Do not interpret that short window as a
+    // provider mismatch and delete a valid persisted CloudBase session.
+    const providerConfigured = Boolean(
+      this.localCloudbaseConfig || this.cloudbase || this.supabase,
+    );
+    if (
+      this.session &&
+      providerConfigured &&
+      this.accountProvider !== (this.session.provider ?? "supabase")
+    ) {
       await this.clearSession();
+    }
+    if (this.session && !providerConfigured) {
+      this.updateSnapshot({
+        status: "loading",
+        configured: false,
+        guestAllowed,
+        developmentConnection: this.developmentConnection,
+      });
+      return this.getSnapshot();
     }
     if (!this.session) {
       this.updateSnapshot({
@@ -230,7 +255,8 @@ export class AccountDesktopService extends EventEmitter {
     if (!envId || !region || !publishableKey) {
       throw new AccountDesktopError("account_not_configured");
     }
-    if (this.accountProvider !== "cloudbase" && this.session) {
+    const persistedProvider = this.session?.provider ?? this.accountProvider;
+    if (persistedProvider !== "cloudbase" && this.session) {
       await this.clearSession();
     }
     this.accountProvider = "cloudbase";
@@ -248,6 +274,31 @@ export class AccountDesktopService extends EventEmitter {
     });
     this.localCloudbaseConfig = localConfig;
     this.updateSnapshot({ ...this.snapshot, configured: true });
+
+    // The main process may have deferred session hydration until this local
+    // CloudBase config arrived. Finish that hydration here so the renderer
+    // never has to ask the user for a password again after a restart.
+    if (this.session && this.snapshot.status !== "signed_in") {
+      try {
+        const result = await this.ensureFreshSession(true);
+        this.updateSnapshot({
+          status: "signed_in",
+          configured: true,
+          guestAllowed: this.snapshot.guestAllowed,
+          developmentConnection: this.developmentConnection,
+          profile: result.profile,
+        });
+      } catch (error) {
+        await this.clearSession();
+        this.updateSnapshot({
+          status: "signed_out",
+          configured: true,
+          guestAllowed: this.snapshot.guestAllowed,
+          developmentConnection: this.developmentConnection,
+          message: this.codeOf(error),
+        });
+      }
+    }
   }
 
   getAccessToken(): string | undefined {
@@ -265,7 +316,12 @@ export class AccountDesktopService extends EventEmitter {
     return this.session?.accessToken;
   }
 
+  async getRememberedLogin(): Promise<AccountRememberedLogin | undefined> {
+    return this.sessionStore.readRememberedLogin();
+  }
+
   async login(input: AccountLoginRequest): Promise<AccountSnapshot> {
+    this.rememberSession = input.rememberMe !== false;
     const identifier =
       this.accountProvider === "cloudbase"
         ? input.identifier.trim()
@@ -283,6 +339,7 @@ export class AccountDesktopService extends EventEmitter {
         developmentConnection: this.developmentConnection,
         profile: result.profile,
       });
+      await this.persistRememberedLogin(identifier, input.password);
       await this.log("info", "account login completed", { userId: result.profile.userId });
       return this.getSnapshot();
     }
@@ -312,11 +369,15 @@ export class AccountDesktopService extends EventEmitter {
       developmentConnection: this.developmentConnection,
       profile: result.profile,
     });
+    await this.persistRememberedLogin(identifier, input.password);
     await this.log("info", "account login completed", { userId: result.profile.userId });
     return this.getSnapshot();
   }
 
   async register(input: AccountRegisterRequest): Promise<AccountSnapshot> {
+    // Registration is a successful sign-in flow too; keep the normal desktop
+    // behavior even though the registration form does not ask about it again.
+    this.rememberSession = true;
     const username =
       this.accountProvider === "cloudbase"
         ? input.username.trim()
@@ -341,6 +402,10 @@ export class AccountDesktopService extends EventEmitter {
         guestAllowed: this.snapshot.guestAllowed,
         developmentConnection: this.developmentConnection,
         profile: result.profile,
+      });
+      await this.sessionStore.writeRememberedLogin({
+        identifier: username,
+        password: input.password,
       });
       await this.log("info", "account registration completed", {
         userId: result.profile.userId,
@@ -388,6 +453,10 @@ export class AccountDesktopService extends EventEmitter {
         guestAllowed: this.snapshot.guestAllowed,
         developmentConnection: this.developmentConnection,
         profile,
+      });
+      await this.sessionStore.writeRememberedLogin({
+        identifier: username,
+        password: input.password,
       });
     } else {
       this.updateSnapshot({
@@ -525,6 +594,7 @@ export class AccountDesktopService extends EventEmitter {
       }
     }
     await this.clearSession();
+    await this.sessionStore.clearRememberedLogin();
     this.updateSnapshot({
       status: "signed_out",
       configured: this.snapshot.configured,
@@ -613,9 +683,18 @@ export class AccountDesktopService extends EventEmitter {
     return { profile: this.snapshot.profile as AccountProfile, session: this.session };
   }
 
-  private async acceptSession(session: AccountApiSession): Promise<void> {
+  private async acceptSession(
+    session: AccountApiSession,
+    shouldPersist = this.rememberSession,
+  ): Promise<void> {
     this.session = { ...session };
-    await this.sessionStore.write(this.session);
+    this.rememberSession = shouldPersist;
+    if (shouldPersist) {
+      await this.sessionStore.write(this.session);
+    } else {
+      // A previous remembered session must not survive a deliberate opt-out.
+      await this.sessionStore.clear();
+    }
     this.scheduleRefresh();
   }
 
@@ -649,7 +728,16 @@ export class AccountDesktopService extends EventEmitter {
     if (this.refreshTimer) clearTimeout(this.refreshTimer);
     this.refreshTimer = undefined;
     this.session = undefined;
+    this.rememberSession = true;
     await this.sessionStore.clear();
+  }
+
+  private async persistRememberedLogin(identifier: string, password: string): Promise<void> {
+    if (!this.rememberSession) {
+      await this.sessionStore.clearRememberedLogin();
+      return;
+    }
+    await this.sessionStore.writeRememberedLogin({ identifier, password });
   }
 
   private async request<T>(pathname: string, init: RequestInit, authorized = false): Promise<T> {

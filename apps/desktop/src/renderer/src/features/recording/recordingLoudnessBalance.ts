@@ -1,6 +1,6 @@
 export const RECORDING_TARGET_LOUDNESS_DB = -16;
 export const RECORDING_MAX_BOOST_DB = 6;
-export const RECORDING_MAX_CUT_DB = -9;
+export const RECORDING_MAX_CUT_DB = -6;
 
 const SPEECH_RMS_GATE = 0.008;
 const SPEECH_PEAK_GATE = 0.015;

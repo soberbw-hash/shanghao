@@ -21,7 +21,6 @@ import {
   AI_ASR_MODEL_NAMES,
   hasInvalidVoiceMemoryResult,
   RecordingState,
-  type AiAsrModelId,
   type AppSettings,
   type RecordingCleanupReason,
   type RecordingLibraryItem,
@@ -36,9 +35,13 @@ import { SettingsSection } from "./SettingsSection";
 import { VoiceMemoryDetail } from "./VoiceMemoryDetail";
 import { ModelTestPanel } from "./ModelTestPanel";
 import { useRecordingStore } from "../../store/recordingStore";
-import { voiceMemoryTranscriptionPercent } from "../../features/ai/voiceMemoryPresentation";
+import {
+  isVoiceMemoryTranscriptionComplete,
+  voiceMemoryTranscriptionPercent,
+} from "../../features/ai/voiceMemoryPresentation";
 
 interface RecordingLibrarySettingsCardProps {
+  isActive?: boolean;
   settings: AppSettings;
   onChange: (patch: Partial<AppSettings>) => Promise<void> | void;
   pushToast: (toast: {
@@ -48,6 +51,24 @@ interface RecordingLibrarySettingsCardProps {
   }) => void;
   openTarget?: { filePath: string; startMs: number; requestId: number };
 }
+
+let cachedRecordingLibrary: RecordingLibrarySnapshot | undefined;
+let recordingLibraryRequest: Promise<RecordingLibrarySnapshot> | undefined;
+
+export const preloadRecordingLibrary = (): Promise<RecordingLibrarySnapshot> => {
+  if (cachedRecordingLibrary) return Promise.resolve(cachedRecordingLibrary);
+  if (recordingLibraryRequest) return recordingLibraryRequest;
+  recordingLibraryRequest = window.desktopApi.recording
+    .list()
+    .then((snapshot) => {
+      cachedRecordingLibrary = snapshot;
+      return snapshot;
+    })
+    .finally(() => {
+      recordingLibraryRequest = undefined;
+    });
+  return recordingLibraryRequest;
+};
 
 type RecordingFilter = "all" | "favorites";
 const RECORDING_RENDER_BATCH = 24;
@@ -83,8 +104,10 @@ const compactTranscriptionModelNames = {
   "fireredasr2-aed": "FireRedASR2-AED",
   "paraformer-zh": "Paraformer 中文套件",
   "moss-transcribe-diarize-0.9b": "MOSS 0.9B",
+  "moss-transcribe-diarize-0.9b-q8_0": "MOSS 0.9B Q8",
   "dolphin-cn-dialect-0.4b": "Dolphin 方言 0.4B",
   "cohere-transcribe-2b": "Cohere Transcribe 2B",
+  "ark-asr-3b-q8_0": "ARK-ASR-3B Q8_0",
 } as const satisfies Record<keyof typeof AI_ASR_MODEL_NAMES, string>;
 
 const voiceMemoryStatus = (
@@ -129,6 +152,15 @@ const voiceMemoryStatus = (
     if (hasInvalidVoiceMemoryResult(record)) {
       return { label: "旧结果需重新转录", tone: "is-error" };
     }
+    if (!isVoiceMemoryTranscriptionComplete(record)) {
+      return {
+        label: record.transcript.length ? `部分转录 ${progress}%` : "转录未完成",
+        modelLabel,
+        modelTitle,
+        progress: progress || undefined,
+        tone: "is-paused",
+      };
+    }
     if (record.errorMessage?.startsWith("organize_failed:")) {
       return {
         label: "转录完成 · 整理未完成",
@@ -154,11 +186,16 @@ const voiceMemoryStatus = (
     };
   }
   if (record.phase === "error") {
+    const organizationFailed = record.processingStage === "organize" && record.transcript.length;
     return {
-      label: record.transcript.length ? "转录完成 · 整理失败" : "转录失败",
+      label: organizationFailed
+        ? "转录完成 · 整理失败"
+        : record.transcript.length
+          ? `已保留当前文字 ${progress}%`
+          : "转录失败",
       modelLabel,
       modelTitle,
-      progress: record.transcript.length ? 100 : undefined,
+      progress: organizationFailed ? 100 : progress || undefined,
       tone: "is-error",
     };
   }
@@ -178,6 +215,7 @@ const dateLabel = (dateKey: string): string => {
 };
 
 export const RecordingLibrarySettingsCard = ({
+  isActive = true,
   settings,
   onChange,
   pushToast,
@@ -186,7 +224,9 @@ export const RecordingLibrarySettingsCard = ({
   const audioRef = useRef<HTMLAudioElement>(null);
   const loadMoreRef = useRef<HTMLDivElement>(null);
   const recordingPanelRef = useRef<HTMLElement>(null);
-  const [library, setLibrary] = useState<RecordingLibrarySnapshot>();
+  const [library, setLibrary] = useState<RecordingLibrarySnapshot | undefined>(
+    cachedRecordingLibrary,
+  );
   const [selectedId, setSelectedId] = useState<string>();
   const [recordingFilter, setRecordingFilter] = useState<RecordingFilter>("all");
   const [isPlaying, setIsPlaying] = useState(false);
@@ -207,7 +247,7 @@ export const RecordingLibrarySettingsCard = ({
   const [renameTitle, setRenameTitle] = useState("");
   const [isRenaming, setIsRenaming] = useState(false);
   const [renderLimit, setRenderLimit] = useState(RECORDING_RENDER_BATCH);
-  const [isLibraryLoading, setIsLibraryLoading] = useState(true);
+  const [isLibraryLoading, setIsLibraryLoading] = useState(!cachedRecordingLibrary);
   const recordingState = useRecordingStore((state) => state.status.state);
   const recordingBusy = [
     RecordingState.Preparing,
@@ -218,12 +258,13 @@ export const RecordingLibrarySettingsCard = ({
   const [pendingSeekMs, setPendingSeekMs] = useState<number>();
   const [voiceMemories, setVoiceMemories] = useState<Record<string, VoiceMemoryRecord>>({});
   const [isModelComparisonOpen, setIsModelComparisonOpen] = useState(false);
+  const didUsePreloadedLibraryRef = useRef(Boolean(cachedRecordingLibrary));
 
   const reload = useCallback(async () => {
     if (typeof window.desktopApi.recording.list !== "function") {
       throw new Error("recording_library_restart_required");
     }
-    const next = await window.desktopApi.recording.list();
+    const next = await preloadRecordingLibrary();
     setLibrary(next);
     setSelectedRecordingIds((current) => {
       const existingIds = new Set(next.items.map((item) => item.id));
@@ -235,8 +276,15 @@ export const RecordingLibrarySettingsCard = ({
   }, []);
 
   useEffect(() => {
+    if (!isActive) return;
+    if (didUsePreloadedLibraryRef.current) {
+      didUsePreloadedLibraryRef.current = false;
+      setIsLibraryLoading(false);
+      return;
+    }
     let active = true;
-    setIsLibraryLoading(true);
+    cachedRecordingLibrary = undefined;
+    if (!cachedRecordingLibrary) setIsLibraryLoading(true);
     void reload()
       .catch((error) => {
         if (!active) return;
@@ -255,9 +303,16 @@ export const RecordingLibrarySettingsCard = ({
     return () => {
       active = false;
     };
-  }, [pushToast, reload, settings.recordingLibraryQuotaGb, settings.recordingSaveDirectory]);
+  }, [
+    isActive,
+    pushToast,
+    reload,
+    settings.recordingLibraryQuotaGb,
+    settings.recordingSaveDirectory,
+  ]);
 
   useEffect(() => {
+    if (!isActive) return;
     let active = true;
     const unsubscribe = window.desktopApi.ai.onVoiceMemoryStatus((record) => {
       if (!active) return;
@@ -267,10 +322,10 @@ export const RecordingLibrarySettingsCard = ({
       active = false;
       unsubscribe();
     };
-  }, []);
+  }, [isActive]);
 
   useEffect(() => {
-    if (!library) return undefined;
+    if (!isActive || !library) return undefined;
     let active = true;
     const loadVoiceMemoryStatuses = () => {
       void window.desktopApi.ai
@@ -298,15 +353,22 @@ export const RecordingLibrarySettingsCard = ({
       if (idleId !== undefined) window.cancelIdleCallback?.(idleId);
       if (timerId !== undefined) window.clearTimeout(timerId);
     };
-  }, [library]);
+  }, [isActive, library]);
 
   useEffect(() => {
+    if (!isActive) return;
     const subscribe = window.desktopApi.recording.onScanWasteProgress;
     if (typeof subscribe !== "function") return undefined;
     return subscribe((progress) => {
       setCleanupScanProgress(progress);
     });
-  }, []);
+  }, [isActive]);
+
+  useEffect(() => {
+    if (isActive) return;
+    audioRef.current?.pause();
+    setIsPlaying(false);
+  }, [isActive]);
 
   const selected = useMemo(
     () => library?.items.find((item) => item.id === selectedId),
@@ -1221,14 +1283,6 @@ export const RecordingLibrarySettingsCard = ({
                   recording={selected}
                   roomName="好友语音"
                   selectedAsrModel={settings.aiAsrModel}
-                  onSelectAsrModel={async (modelId: AiAsrModelId) => {
-                    await onChange({ aiAsrModel: modelId });
-                    pushToast({
-                      tone: "success",
-                      title: `已切换到 ${AI_ASR_MODEL_NAMES[modelId]}`,
-                      description: "AI 功能与录音库已同步；若这条录音有该模型的结果，会直接显示。",
-                    });
-                  }}
                   onSeek={(offsetMs) => {
                     if (audioRef.current) audioRef.current.currentTime = offsetMs / 1_000;
                     setCurrentTime(offsetMs / 1_000);

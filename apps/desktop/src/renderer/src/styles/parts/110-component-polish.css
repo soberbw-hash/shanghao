@@ -39,6 +39,16 @@
   background: rgba(248, 252, 255, 0.985);
   backdrop-filter: blur(22px) saturate(116%);
   -webkit-backdrop-filter: blur(22px) saturate(116%);
+  transition: visibility 0s linear var(--duration-fast);
+}
+
+.audio-control-popover[aria-hidden="true"] {
+  visibility: hidden;
+}
+
+.audio-control-popover[aria-hidden="false"] {
+  visibility: visible;
+  transition-delay: 0s;
 }
 
 .window-frame,
@@ -66,6 +76,37 @@
   background: var(--sg-material-content) !important;
   backdrop-filter: none;
   -webkit-backdrop-filter: none;
+}
+
+.ai-settings-loading {
+  display: grid;
+  min-height: 220px;
+  place-items: center;
+  align-content: center;
+  gap: 9px;
+  color: #536982;
+  text-align: center;
+}
+
+.ai-settings-loading-spinner,
+.chat-image-preview-loading > span {
+  width: 24px;
+  height: 24px;
+  border: 3px solid rgba(77, 163, 255, 0.2);
+  border-top-color: #4da3ff;
+  border-radius: 999px;
+  animation: sg-lightweight-spin 720ms linear infinite;
+}
+
+.ai-settings-loading small {
+  color: #7b8da3;
+  font-size: 12px;
+}
+
+@keyframes sg-lightweight-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .entry-card {
@@ -228,9 +269,16 @@
   flex: 1;
 }
 
+.settings-recording-layout > .min-w-0 {
+  display: flex;
+  min-height: 0;
+  flex-direction: column;
+}
+
 .settings-recording-content {
   display: flex;
   min-height: 0;
+  flex: 1;
   flex-direction: column;
 }
 
@@ -449,6 +497,7 @@
   min-height: 0;
   overflow-x: hidden;
   overflow-y: auto;
+  touch-action: pan-y;
   overscroll-behavior: contain;
   scrollbar-gutter: stable;
   padding: 16px;
@@ -1243,6 +1292,7 @@
   }
 
   .settings-recording-shell,
+  .settings-recording-layout > .min-w-0,
   .settings-recording-content {
     display: block;
   }
@@ -1288,4 +1338,38 @@
   .recording-date-items {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
+}
+.interaction-performance-hud {
+  position: fixed;
+  right: 14px;
+  bottom: 14px;
+  z-index: 20000;
+  display: grid;
+  min-width: 310px;
+  gap: 3px;
+  border: 1px solid rgba(133, 180, 235, 0.72);
+  border-radius: 14px;
+  background: rgba(15, 25, 39, 0.9);
+  padding: 10px 12px;
+  color: #dbeafe;
+  font:
+    600 11px/1.35 ui-monospace,
+    SFMono-Regular,
+    Consolas,
+    monospace;
+  box-shadow: 0 14px 40px rgba(15, 35, 64, 0.26);
+  pointer-events: auto;
+}
+
+.interaction-performance-hud strong {
+  color: #7dd3fc;
+  letter-spacing: 0.04em;
+}
+
+.interaction-performance-hud button {
+  justify-self: end;
+  border: 0;
+  background: transparent;
+  color: #93c5fd;
+  cursor: pointer;
 }

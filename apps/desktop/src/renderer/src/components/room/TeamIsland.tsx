@@ -23,9 +23,7 @@ import { RoomCollectionShelf } from "./RoomCollectionShelf";
 import { SceneCharacter, type SceneCharacterQuickMessage } from "./SceneCharacter";
 import { sceneMemberKey } from "./sceneMemberKey";
 import { GameMonitorContent } from "./GameMonitorContent";
-import { WorkMonitorContent } from "./WorkMonitorContent";
 import { MusicActivityBadge } from "./MusicActivityBadge";
-import { WorkActivityBadge } from "./WorkActivityBadge";
 import { WorkstationArt } from "./WorkstationArt";
 import { IdleMonitorContent } from "./IdleMonitorContent";
 import {
@@ -38,7 +36,6 @@ import {
 import { memberStatus } from "../../features/voice-scene/activityRules";
 import { usePrefersReducedMotion } from "../../hooks/usePrefersReducedMotion";
 import { useVisibleInterval } from "../../hooks/useVisualVisibility";
-import { useRenderProfiler } from "../../features/diagnostics/renderProfiler";
 import type { ConnectionQualityLevel } from "../../features/network/networkDiagnostics";
 import { useSettingsStore } from "../../store/settingsStore";
 import { useAppStore } from "../../store/appStore";
@@ -50,6 +47,21 @@ import {
   defaultRoomSceneManifest,
   sceneFeatureRegistry,
 } from "../../features/visual-runtime/sceneFeatureRegistry";
+
+const EXITED_MEMBER_CLEANUP_FALLBACK_MS = 5_000;
+
+const uniqueVisibleMembers = (members: RoomMember[]): RoomMember[] => {
+  const byStableIdentity = new Map<string, RoomMember>();
+  for (const member of members) {
+    if (member.isEmptySlot) continue;
+    const key = sceneMemberKey(member);
+    const existing = byStableIdentity.get(key);
+    if (!existing || member.joinedAt >= existing.joinedAt) {
+      byStableIdentity.set(key, member);
+    }
+  }
+  return [...byStableIdentity.values()].slice(0, 5);
+};
 
 const assignVisibleAvatars = (members: RoomMember[]): Map<string, BuiltInAvatarId> => {
   return new Map(
@@ -101,16 +113,6 @@ export const TeamIsland = ({
   pauseVisualMotion?: boolean;
 }) => {
   const islandRef = useRef<HTMLDivElement>(null);
-  useRenderProfiler("TeamIsland", {
-    members,
-    screenSharingPeerIds,
-    networkQuality,
-    reactions,
-    chatBubbles,
-    collectionItems,
-    isCollectionOpen,
-    pauseVisualMotion,
-  });
   const isDynamicWeatherEnabled = useSettingsStore(
     (state) => state.settings?.isDynamicWeatherEnabled,
   );
@@ -136,21 +138,43 @@ export const TeamIsland = ({
     isDynamicWeatherEnabled === false
       ? "weather-room-default"
       : `weather-room-${weatherTheme.roomTone} weather-room-phase-${weatherTheme.phase}`;
-  const visibleMembers = members.filter((member) => !member.isEmptySlot).slice(0, 5);
+  // A reconnect replaces the transport peer id but keeps the account/profile id.
+  // Collapse the brief old/new snapshot overlap so React never paints two copies
+  // of the same person while the old peer is still running its exit route.
+  const visibleMembers = uniqueVisibleMembers(members);
   const visibleAvatars = assignVisibleAvatars(visibleMembers);
   const shouldReduceMotion = usePrefersReducedMotion(reduceMotion);
   const [ambient, setAmbient] = useState<"day" | "evening" | "night">("day");
   const [hoveredZone, setHoveredZone] = useState<SceneZoneId>();
   const [welcomingMemberIds, setWelcomingMemberIds] = useState<Set<string>>(new Set());
   const [settledMemberZones, setSettledMemberZones] = useState<Record<string, SceneZoneId>>({});
+  const memberSnapshotsRef = useRef(new Map<string, RoomMember>());
+  const memberZoneSnapshotsRef = useRef(new Map<string, SceneZoneId>());
+  const visibleMemberIdsRef = useRef(new Set<string>());
   const previousMemberIdsRef = useRef<string[] | undefined>(undefined);
-  const memberSignature = visibleMembers.map(sceneMemberKey).join("|");
-  const visibleMemberIdSignature = visibleMembers.map((member) => member.id).join("|");
+  // Transport ids intentionally stay in this signature: a fast reconnect keeps
+  // the stable React key but must still trigger stale seat/snapshot cleanup.
+  const memberSignature = visibleMembers.map((member) => member.id).join("|");
   const screenSharingSet = new Set(screenSharingPeerIds);
   const chatBubbleByPeerId = new Map(
     chatBubbles.map((message) => [message.peerId, message] as const),
   );
-  const resolvedMemberZones = resolveMemberSceneZones(visibleMembers);
+  visibleMemberIdsRef.current = new Set(visibleMembers.map((member) => member.id));
+  visibleMembers.forEach((member) => memberSnapshotsRef.current.set(member.id, member));
+  const visibleMemberById = new Map(visibleMembers.map((member) => [member.id, member] as const));
+  const reservedSeatIds = new Set<SceneZoneId>(
+    Object.entries(settledMemberZones)
+      .filter(([memberId, zone]) => !visibleMemberById.has(memberId) && isSeatZone(zone))
+      .map(([, zone]) => zone),
+  );
+  memberZoneSnapshotsRef.current.forEach((zone, memberId) => {
+    if (!visibleMemberById.has(memberId) && isSeatZone(zone)) reservedSeatIds.add(zone);
+  });
+  const resolvedMemberZones = resolveMemberSceneZones(visibleMembers, reservedSeatIds);
+  visibleMembers.forEach((member) => {
+    const zone = resolvedMemberZones.get(member.id);
+    if (zone) memberZoneSnapshotsRef.current.set(member.id, zone);
+  });
   const occupiedSeatIds = new Set<SceneZoneId>();
   visibleMembers.forEach((member) => {
     const zone = resolvedMemberZones.get(member.id) ?? "gameDesk1";
@@ -163,10 +187,15 @@ export const TeamIsland = ({
         Boolean(entry[0] && isSeatZone(entry[0])),
       ),
   );
-  const visibleMemberById = new Map(visibleMembers.map((member) => [member.id, member] as const));
   const settledMemberBySeat = new Map(
     Object.entries(settledMemberZones)
-      .map(([memberId, zone]) => [zone, visibleMemberById.get(memberId)] as const)
+      .map(
+        ([memberId, zone]) =>
+          [
+            zone,
+            visibleMemberById.get(memberId) ?? memberSnapshotsRef.current.get(memberId),
+          ] as const,
+      )
       .filter(
         (entry): entry is readonly [SceneZoneId, RoomMember] =>
           isSeatZone(entry[0]) && Boolean(entry[1]),
@@ -198,7 +227,6 @@ export const TeamIsland = ({
           settledMemberZones[member.id] === memberZone &&
           !screenSharingSet.has(member.id) &&
           !member.gameName &&
-          !member.workActivity &&
           member.activity !== "gaming" &&
           !["speaking", "reconnecting", "offline"].includes(tone),
       };
@@ -219,17 +247,65 @@ export const TeamIsland = ({
     });
   }, []);
 
+  const handleMemberExited = useCallback((memberId: string) => {
+    roomAnimationScheduler.enqueue({
+      key: `member-exited:${memberId}`,
+      write: () => {
+        // A quick reconnect can make the same member visible again before the
+        // exit animation finishes. In that case the exit callback must not
+        // delete the reconnected member's settled position.
+        if (visibleMemberIdsRef.current.has(memberId)) return;
+        memberSnapshotsRef.current.delete(memberId);
+        memberZoneSnapshotsRef.current.delete(memberId);
+        setSettledMemberZones((current) => {
+          if (!(memberId in current)) return current;
+          const next = { ...current };
+          delete next[memberId];
+          return next;
+        });
+      },
+    });
+  }, []);
+
   const wallFeatures = defaultRoomSceneManifest.composition;
 
   useEffect(() => {
-    const activeMemberIds = new Set(visibleMemberIdSignature.split("|").filter(Boolean));
-    setSettledMemberZones((current) => {
-      const entries = Object.entries(current).filter(([memberId]) => activeMemberIds.has(memberId));
-      return entries.length === Object.keys(current).length
-        ? current
-        : (Object.fromEntries(entries) as Record<string, SceneZoneId>);
-    });
-  }, [visibleMemberIdSignature]);
+    const staleMemberIds = [...memberZoneSnapshotsRef.current.keys()].filter(
+      (memberId) => !visibleMemberIdsRef.current.has(memberId),
+    );
+    if (staleMemberIds.length === 0) return;
+
+    // SceneCharacter normally removes these snapshots after its exit route.
+    // A renderer interruption or a cancelled presence animation must not leave
+    // an invisible member reserving a clickable seat forever.
+    const timer = window.setTimeout(() => {
+      roomAnimationScheduler.enqueue({
+        key: `stale-member-cleanup:${staleMemberIds.join(":")}`,
+        write: () => {
+          const removableIds = staleMemberIds.filter(
+            (memberId) => !visibleMemberIdsRef.current.has(memberId),
+          );
+          if (removableIds.length === 0) return;
+          removableIds.forEach((memberId) => {
+            memberSnapshotsRef.current.delete(memberId);
+            memberZoneSnapshotsRef.current.delete(memberId);
+          });
+          setSettledMemberZones((current) => {
+            const next = { ...current };
+            let changed = false;
+            removableIds.forEach((memberId) => {
+              if (!(memberId in next)) return;
+              delete next[memberId];
+              changed = true;
+            });
+            return changed ? next : current;
+          });
+        },
+      });
+    }, EXITED_MEMBER_CLEANUP_FALLBACK_MS);
+
+    return () => window.clearTimeout(timer);
+  }, [memberSignature]);
 
   useEffect(() => {
     const currentIds = memberSignature ? memberSignature.split("|") : [];
@@ -389,19 +465,15 @@ export const TeamIsland = ({
                 <span
                   className={`scene-workstation-screen ${settledOccupant ? "online" : ""} ${
                     settledOccupant?.gameName ? "gaming" : ""
-                  } ${settledOccupant?.workActivity && !settledOccupant.gameName ? "working" : ""} ${
-                    isScreenSharing ? "sharing" : ""
-                  } ${networkQuality === "poor" && settledOccupant ? "network-unstable" : ""}`}
+                  } ${isScreenSharing ? "sharing" : ""} ${
+                    networkQuality === "poor" && settledOccupant ? "network-unstable" : ""
+                  }`}
                 >
                   <AnimatePresence mode="sync" initial={false}>
                     {settledOccupant ? (
                       <motion.span
                         key={`${settledOccupant.id}:${slot.id}:${
-                          isScreenSharing
-                            ? "sharing"
-                            : (settledOccupant.gameName ??
-                              settledOccupant.workActivity?.id ??
-                              "idle")
+                          isScreenSharing ? "sharing" : (settledOccupant.gameName ?? "idle")
                         }`}
                         className="scene-workstation-screen-content"
                         initial={{ opacity: 0, scale: 0.96 }}
@@ -415,11 +487,6 @@ export const TeamIsland = ({
                           <GameMonitorContent
                             gameName={settledOccupant.gameName}
                             iconDataUrl={settledOccupant.gameIconDataUrl}
-                            shouldReduceMotion={shouldReduceMotion || shouldPauseAmbientMotion}
-                          />
-                        ) : settledOccupant.workActivity ? (
-                          <WorkMonitorContent
-                            activity={settledOccupant.workActivity}
                             shouldReduceMotion={shouldReduceMotion || shouldPauseAmbientMotion}
                           />
                         ) : (
@@ -506,7 +573,7 @@ export const TeamIsland = ({
               occupant && activeQuickMusic?.peerId === occupant.id ? activeQuickMusic : undefined;
             if (
               !occupant ||
-              (!occupant.musicActivity && !occupant.workActivity && !quickMusic) ||
+              (!occupant.musicActivity && !quickMusic) ||
               settledMemberZones[occupant.id] !== slot.id
             )
               return null;
@@ -545,9 +612,6 @@ export const TeamIsland = ({
                   {occupant.musicActivity ? (
                     <MusicActivityBadge activity={occupant.musicActivity} />
                   ) : null}
-                  {occupant.workActivity ? (
-                    <WorkActivityBadge activity={occupant.workActivity} />
-                  ) : null}
                 </div>
               </motion.div>
             );
@@ -583,6 +647,7 @@ export const TeamIsland = ({
               onReact={onReact}
               onVolumeChange={onVolumeChange}
               onSettled={handleMemberSettled}
+              onExited={handleMemberExited}
             />
           );
         })}

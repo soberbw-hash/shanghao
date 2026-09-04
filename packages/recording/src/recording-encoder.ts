@@ -7,6 +7,10 @@ export interface RecordingEncoder {
   stop: () => Promise<{ blob: Blob; mimeType: string; durationMs: number }>;
 }
 
+// The room mix is mono voice. 32 kbps keeps long gaming sessions practical while
+// retaining enough speech detail for playback and the local ASR pipeline.
+export const RECORDING_AUDIO_BITS_PER_SECOND = 32_000;
+
 export class BrowserRecordingEncoder implements RecordingEncoder {
   readonly capability: RecordingCapability;
   private mediaRecorder?: MediaRecorder;
@@ -35,7 +39,7 @@ export class BrowserRecordingEncoder implements RecordingEncoder {
     this.startedAt = Date.now();
     const recorder = new MediaRecorder(stream, {
       mimeType: this.capability.mimeType,
-      audioBitsPerSecond: 128_000,
+      audioBitsPerSecond: RECORDING_AUDIO_BITS_PER_SECOND,
     });
     this.mediaRecorder = recorder;
     recorder.ondataavailable = (event) => {

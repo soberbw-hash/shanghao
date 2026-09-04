@@ -33,8 +33,7 @@ export type UiSound =
   | "transcription-start"
   | "transcription-complete"
   | "process-error"
-  | "account-success"
-  | "sound-preview";
+  | "account-success";
 
 interface UiSoundRecipe {
   cue: CueName;
@@ -121,12 +120,6 @@ const soundRecipes: Record<Exclude<UiSound, "knock-bell">, UiSoundRecipe> = {
   },
   "process-error": { cue: "error", pack: "soft", volume: uiGain.important, cooldownMs: 400 },
   "account-success": { cue: "success", pack: "dreamy", volume: uiGain.important, cooldownMs: 400 },
-  "sound-preview": {
-    cue: "notification",
-    pack: "dreamy",
-    volume: uiGain.important,
-    cooldownMs: 160,
-  },
 };
 
 const preloadSounds: readonly Exclude<UiSound, "knock-bell">[] = [
@@ -146,8 +139,7 @@ const knockUrl = new URL("../../assets/sounds/knock-bell.wav", import.meta.url).
 let player: UISFXPlayer | undefined;
 let audioContext: SinkRoutableAudioContext | undefined;
 let knockTemplate: SinkRoutableAudioElement | undefined;
-let isEnabled = true;
-let masterVolume = 0.72;
+const masterVolume = 0.72;
 let preferredOutputDeviceId: string | undefined;
 let lastSemanticSoundAt = 0;
 let didLogSinkFailureForDevice: string | undefined;
@@ -193,7 +185,7 @@ const ensurePlayer = (): UISFXPlayer | undefined => {
       context: audioContext,
       pack: "studio",
       volume: masterVolume,
-      enabled: isEnabled,
+      enabled: true,
       maxVoices: 6,
       cooldownMs: 40,
     });
@@ -232,17 +224,6 @@ const playBrandKnock = (): void => {
     .catch(() => undefined);
 };
 
-export const setUiSoundEnabled = (enabled: boolean): void => {
-  isEnabled = enabled;
-  player?.setEnabled(enabled);
-  if (!enabled) player?.stopAll();
-};
-
-export const setUiSoundVolume = (volume: number): void => {
-  masterVolume = Math.max(0, Math.min(1, volume));
-  player?.setVolume(masterVolume);
-};
-
 export const setUiSoundOutputDevice = async (deviceId?: string): Promise<boolean> => {
   preferredOutputDeviceId = deviceId;
   const routedContext = await routeContextToPreferredOutput();
@@ -273,7 +254,6 @@ export const prepareUiSounds = (): void => {
 };
 
 export const playUiSound = (sound: UiSound): void => {
-  if (!isEnabled) return;
   if (sound !== "button-click") lastSemanticSoundAt = performance.now();
   try {
     if (sound === "knock-bell") {

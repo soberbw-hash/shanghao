@@ -12,6 +12,7 @@ import { motion } from "framer-motion";
 import { gsap } from "gsap";
 
 import {
+  BUILT_IN_AVATAR_IDS,
   MicPermissionState,
   normalizeRelayServerUrl,
   type BuiltInAvatarId,
@@ -22,12 +23,12 @@ import { Button } from "../components/base/Button";
 import { Input } from "../components/base/Input";
 import { BrandMark } from "../components/brand/BrandMark";
 import { ACCOUNT_AVATAR_PRESETS } from "../features/account/accountAvatarPresets";
-import { CharacterPicker } from "../components/profile/AvatarPicker";
 import { StartupSplashPage } from "../components/status/StartupSplashPage";
 import { motionCurve, motionDuration, motionEase } from "../features/motion/motionSystem";
 import { getRemoteAudioMixer } from "../features/audio/RemoteAudioMixer";
 import { usePrefersReducedMotion } from "../hooks/usePrefersReducedMotion";
 import { useRoomState } from "../hooks/useRoomState";
+import type { ChannelId } from "../features/chat/chatPersistence";
 import { useAppStore } from "../store/appStore";
 import { useAudioStore } from "../store/audioStore";
 import { useSettingsStore } from "../store/settingsStore";
@@ -65,6 +66,7 @@ export const HomePage = () => {
   const [serverAddress, setServerAddress] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [serverTestResult, setServerTestResult] = useState<RelayStatusSnapshot>();
+  const [selectedChannelId, setSelectedChannelId] = useState<ChannelId>("main");
   const [isCheckingAudio, setIsCheckingAudio] = useState(false);
   const [isMicrophoneMenuOpen, setIsMicrophoneMenuOpen] = useState(false);
   const [nicknameTouched, setNicknameTouched] = useState(false);
@@ -208,31 +210,18 @@ export const HomePage = () => {
           "-=0.34",
         );
 
-      timeline
-        .fromTo(
-          "[data-gsap-entry='ready-avatar'], [data-gsap-entry='role-picker']",
-          { autoAlpha: 0, x: -16, scale: 0.96 },
-          {
-            autoAlpha: 1,
-            x: 0,
-            scale: 1,
-            duration: motionDuration.panel,
-            ease: motionEase.spatial,
-          },
-          "-=0.18",
-        )
-        .fromTo(
-          "[data-gsap-entry='ready-copy'] > *, [data-gsap-entry='form'] > *",
-          { autoAlpha: 0, x: 14 },
-          {
-            autoAlpha: 1,
-            x: 0,
-            duration: motionDuration.panel,
-            stagger: 0.035,
-            ease: motionEase.spatial,
-          },
-          "-=0.2",
-        );
+      timeline.fromTo(
+        "[data-gsap-entry='ready-copy'] > *, [data-gsap-entry='form'] > *",
+        { autoAlpha: 0, x: 14 },
+        {
+          autoAlpha: 1,
+          x: 0,
+          duration: motionDuration.panel,
+          stagger: 0.035,
+          ease: motionEase.spatial,
+        },
+        "-=0.2",
+      );
     }, pageRef);
 
     return () => context.revert();
@@ -337,14 +326,27 @@ export const HomePage = () => {
       // Let React commit the pressed/loading state before device and signaling work starts.
       await waitForNextPaint();
       if (!(await verifyAudioDevices())) return;
+      const occupiedAvatarIds = serverTestResult?.occupiedAvatarIds ?? [];
+      const automaticAvatarId = occupiedAvatarIds.includes(avatarId)
+        ? BUILT_IN_AVATAR_IDS.find((candidate) => !occupiedAvatarIds.includes(candidate))
+        : avatarId;
+      if (!automaticAvatarId) {
+        pushToast({
+          tone: "warning",
+          title: "频道里的角色都在使用",
+          description: "请等朋友离开后再进入频道。",
+        });
+        return;
+      }
+      setAvatarId(automaticAvatarId);
       await saveSettings({
         nickname: trimmedNickname.slice(0, 16),
-        avatarId,
+        avatarId: automaticAvatarId,
         avatarPath: undefined,
         relayServerUrl: normalizedAddress,
         hasCompletedProfileSetup: true,
       });
-      await joinChannel(normalizedAddress);
+      await joinChannel(normalizedAddress, selectedChannelId);
     } finally {
       setIsSubmitting(false);
     }
@@ -354,19 +356,14 @@ export const HomePage = () => {
   const nicknameValidationError = nicknameTouched
     ? getNicknameValidationError(nickname.trim())
     : undefined;
-  const occupiedAvatarIds = serverTestResult?.occupiedAvatarIds ?? [];
-  const isSelectedAvatarOccupied = occupiedAvatarIds.includes(avatarId);
-  const serverTestStatus = isSelectedAvatarOccupied ? (
-    <div className="entry-server-test-result danger" role="status">
-      <CircleAlert className="h-4 w-4" />
-      <span>服务器正常，但这个角色已被朋友选择。</span>
-    </div>
-  ) : serverTestResult?.isReachable === false ? (
-    <div className="entry-server-test-result danger" role="status">
-      <CircleAlert className="h-4 w-4" />
-      <span>{serverTestResult.message || "暂时无法连接频道，请稍后再试。"}</span>
-    </div>
-  ) : null;
+  const serverTestStatus =
+    serverTestResult?.isReachable === false ? (
+      <div className="entry-server-test-result danger" role="status">
+        <CircleAlert className="h-4 w-4" />
+        <span>{serverTestResult.message || "暂时无法连接频道，请稍后再试。"}</span>
+      </div>
+    ) : null;
+
   return (
     <div
       ref={pageRef}
@@ -374,7 +371,7 @@ export const HomePage = () => {
     >
       <main
         data-gsap-entry="card"
-        className="entry-card entry-card-entry relative z-10 flex w-full max-w-[840px] flex-col px-10 py-7"
+        className="entry-card entry-card-entry relative z-10 flex w-full max-w-[560px] flex-col px-8 py-7"
       >
         <header
           data-gsap-entry="brand"
@@ -391,7 +388,8 @@ export const HomePage = () => {
             <button
               type="button"
               onClick={() => {
-                void refreshDevices();
+                // Device data is warmed during bootstrap and kept current by the global
+                // devicechange listener. Opening the menu must remain a paint-only action.
                 setIsMicrophoneMenuOpen((current) => !current);
               }}
               className="entry-mic-status interactive-surface flex items-center gap-2 rounded-full px-3.5 py-2 text-xs font-semibold text-[#60738b]"
@@ -463,7 +461,7 @@ export const HomePage = () => {
 
         <motion.section
           key="entry"
-          className="entry-profile-layout relative z-0 mt-5 grid min-h-0 flex-1 gap-8 md:grid-cols-[.95fr_1.05fr]"
+          className="entry-profile-layout relative z-0 mt-5 min-h-0 flex-1"
           initial={reduceMotion ? false : { opacity: 0, x: 14 }}
           animate={{ opacity: 1, x: 0 }}
           exit={reduceMotion ? undefined : { opacity: 0, x: -10 }}
@@ -472,15 +470,6 @@ export const HomePage = () => {
             ease: motionCurve.enter,
           }}
         >
-          <div data-gsap-entry="role-picker" className="flex h-full flex-col justify-center p-2">
-            <div className="mb-3 text-center text-sm font-semibold text-[#314158]">选择角色</div>
-            <CharacterPicker
-              value={avatarId}
-              occupiedAvatarIds={occupiedAvatarIds}
-              onChange={setAvatarId}
-            />
-          </div>
-
           <div data-gsap-entry="form" className="entry-profile-form flex min-w-0 flex-col gap-4">
             {accountProfile ? (
               <div className="entry-account-identity" aria-label="当前账号">
@@ -540,16 +529,28 @@ export const HomePage = () => {
             {serverTestStatus ? (
               <div className="entry-server-status-slot">{serverTestStatus}</div>
             ) : null}
+            <div className="entry-room-choice" role="group" aria-label="选择进入的房间">
+              <span>选择房间</span>
+              <div>
+                {(["main", "side"] as const).map((channelId) => (
+                  <button
+                    key={channelId}
+                    type="button"
+                    className={selectedChannelId === channelId ? "is-active" : ""}
+                    aria-pressed={selectedChannelId === channelId}
+                    disabled={isJoining || isCheckingAudio}
+                    onClick={() => setSelectedChannelId(channelId)}
+                  >
+                    {channelId === "main" ? "一号房" : "二号房"}
+                  </button>
+                ))}
+              </div>
+            </div>
             <div className="pt-1" data-gsap-entry="cta">
-              <div className="flex flex-wrap gap-2.5">
+              <div className="flex justify-center gap-2.5">
                 <Button
                   className="h-[52px] min-w-[188px] rounded-[16px] text-[15px]"
-                  disabled={
-                    isJoining ||
-                    isCheckingAudio ||
-                    !serverAddress.trim() ||
-                    isSelectedAvatarOccupied
-                  }
+                  disabled={isJoining || isCheckingAudio || !serverAddress.trim()}
                   onClick={() => void enterChannel()}
                 >
                   {isCheckingAudio ? "正在检查设备..." : isJoining ? "正在进入..." : "进入频道"}

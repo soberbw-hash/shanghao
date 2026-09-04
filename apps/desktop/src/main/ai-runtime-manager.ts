@@ -1,11 +1,11 @@
-import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
-import { access, mkdir, readFile, readdir, rm, stat } from "node:fs/promises";
+import { access, copyFile, mkdir, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
 import {
   AI_ASR_MODEL_NAMES,
+  analyzeTranscriptAnomalies,
   isQwenForcedAlignerModel,
   isChinesePreferredTranscriptText,
   isReliableTranscriptText,
@@ -15,6 +15,8 @@ import {
   type AiAsrRuntimeStatus,
   type AiRuntimeStatus,
   type VoiceMemoryProcessingStage,
+  type VoiceMemoryCommonVadResult,
+  type VoiceMemoryTranscriptionOutputStatus,
   type VoiceMemoryTranscriptSegment,
   type RendererLogPayload,
 } from "@private-voice/shared";
@@ -34,6 +36,22 @@ import {
 import { runLocalProcess } from "./local-process";
 import { resolveFfmpegExecutable } from "./media-runtime";
 import { modelFilesPresent } from "./ai-model-layout";
+import { ACTIVE_ARK_ASR_VARIANT } from "./ark-asr-config";
+import {
+  downloadVerifiedRuntimeArtifact,
+  sha256RuntimeArtifact,
+} from "./runtime-artifact-download";
+import {
+  analyzePcm16Wav,
+  benchmarkEnvironmentSnapshot,
+  gpuMemoryUsedMb,
+  modelPrecision,
+  temporaryRecordingName,
+  type PcmAudioActivity,
+  type TranscriptionChunkRuntimeResult,
+} from "./asr-benchmark-runtime";
+export { analyzePcm16Wav, temporaryRecordingName } from "./asr-benchmark-runtime";
+export { parseVibeVoiceOutput } from "./asr-transcript-parser";
 interface RuntimeModelPaths {
   model: (id: AiModelId) => string | undefined;
   qwen: () => string | undefined;
@@ -84,6 +102,7 @@ export type CudaRuntimeFailureReason =
 interface AiRuntimeManagerOptions {
   writeLog?: (payload: RendererLogPayload) => Promise<void>;
   probeCuda?: () => Promise<PythonCudaDiagnostics>;
+  runtimeFetch?: import("./runtime-artifact-download").RuntimeArtifactFetcher;
 }
 const CUDA_TORCH_VERSION = "2.11.0";
 const CUDA_TORCHAUDIO_VERSION = "2.11.0";
@@ -115,16 +134,119 @@ export const MOSS_RUNTIME_PACKAGES = [
   "librosa>=0.11,<1",
 ] as const;
 
+const MOSS_CPP_RUNTIME_MARKER = "transcribe-cpp-0.2.3-cu12";
+
+export const MOSS_CPP_RUNTIME_WHEELS = [
+  {
+    fileName: "transcribe_cpp-0.2.3-py3-none-any.whl",
+    bytes: 34_910,
+    sha256: "ef043b3b736049f05636f83818b130f30c7118c6d9148b1982f46ed62c10bce2",
+    sources: [
+      {
+        url: "https://github.com/handy-computer/transcribe.cpp/releases/download/v0.2.3/transcribe_cpp-0.2.3-py3-none-any.whl",
+        headers: { Accept: "application/octet-stream" },
+      },
+      {
+        url: "https://api.github.com/repos/handy-computer/transcribe.cpp/releases/assets/536497071",
+        headers: { Accept: "application/octet-stream", "User-Agent": "ShangHao-Desktop" },
+      },
+    ],
+  },
+  {
+    fileName: "transcribe_cpp_native_cu12-0.2.3-py3-none-win_amd64.whl",
+    bytes: 200_127_708,
+    sha256: "04b35695b8d56f016cf2592460371ef5f638f06c4c4368d638a07d6812dbcafc",
+    sources: [
+      {
+        url: "https://github.com/handy-computer/transcribe.cpp/releases/download/v0.2.3/transcribe_cpp_native_cu12-0.2.3-py3-none-win_amd64.whl",
+        headers: { Accept: "application/octet-stream" },
+      },
+      {
+        url: "https://api.github.com/repos/handy-computer/transcribe.cpp/releases/assets/536497075",
+        headers: { Accept: "application/octet-stream", "User-Agent": "ShangHao-Desktop" },
+      },
+    ],
+  },
+] as const;
+
 export const DOLPHIN_RUNTIME_PACKAGES = [
   "dataoceanai-dolphin==20260513",
   "torch-complex==0.4.4",
 ] as const;
+
+// Provider wheels are installed into isolated --target directories. A stale or unreadable
+// provider-local dist-info directory must not be allowed to shadow the shared dependency
+// metadata used by Transformers during worker startup.
+export const SHARED_PYTHON_PACKAGING_VERSION = "26.3";
+export const SHARED_PYTHON_NUMPY_VERSION = "2.5.2";
+const DOLPHIN_RUNTIME_MARKER = "dolphin-cn-dialect-runtime-v2";
 
 export const COHERE_TRANSCRIBE_RUNTIME_PACKAGES = [
   "transformers==5.15.0",
   "accelerate>=1.10,<2",
   "librosa>=0.11,<1",
 ] as const;
+
+export const ARK_ASR_RUNTIME_PACKAGES = [
+  "https://github.com/CrispStrobe/CrispASR/releases/download/v0.8.30/crispasr-0.8.30%2Bcuda-py3-none-win_amd64.whl#sha256=be800df87c979d696f6e5e1204dc68b74cf194e58a0667ae95c430e364254cd6",
+] as const;
+
+export const ARK_ASR_RUNTIME_WHEEL = {
+  fileName: "crispasr-0.8.30+cuda-py3-none-win_amd64.whl",
+  bytes: 714_913_362,
+  sha256: "be800df87c979d696f6e5e1204dc68b74cf194e58a0667ae95c430e364254cd6",
+  sources: [
+    {
+      url: "https://github.com/CrispStrobe/CrispASR/releases/download/v0.8.30/crispasr-0.8.30%2Bcuda-py3-none-win_amd64.whl",
+      headers: { Accept: "application/octet-stream" },
+    },
+    {
+      url: "https://api.github.com/repos/CrispStrobe/CrispASR/releases/assets/535145440",
+      headers: {
+        Accept: "application/octet-stream",
+        "User-Agent": "ShangHao-Desktop",
+      },
+    },
+  ],
+} as const;
+
+/**
+ * The v0.8.30 Python CUDA wheel still carries a ggml-cpu helper that raises
+ * 0xC000001D on an i5-12600KF when a model session opens. The official CLI
+ * bundle from the same release contains the portable CPU helper built by the
+ * fixed Windows CUDA job. Overlay only that ABI-compatible DLL and keep the
+ * existing persistent Python worker and benchmark pipeline.
+ */
+export const ARK_ASR_PORTABLE_CLI = {
+  fileName: "crispasr-windows-x86_64-cuda-non-cuda.zip",
+  directoryName: "crispasr-windows-x86_64-cuda-non-cuda",
+  bytes: 142_370_322,
+  sha256: "bc486486a9326f70ce24afe6b34d900e964ba2a0ff96c096890117821055a2df",
+  cpuHelper: {
+    fileName: "ggml-cpu.dll",
+    bytes: 910_848,
+    sha256: "d865d3f00934b53c1dbf5aa6d645235cf14d40757ef1e53ad6ab2a7f06fbe38c",
+  },
+  sources: [
+    {
+      url: "https://github.com/CrispStrobe/CrispASR/releases/download/v0.8.30/crispasr-windows-x86_64-cuda-non-cuda.zip",
+      headers: { Accept: "application/octet-stream" },
+    },
+    {
+      url: "https://api.github.com/repos/CrispStrobe/CrispASR/releases/assets/533910929",
+      headers: {
+        Accept: "application/octet-stream",
+        "User-Agent": "ShangHao-Desktop",
+      },
+    },
+  ],
+} as const;
+
+const ARK_ASR_RUNTIME_MARKER = [
+  `wheel=${ARK_ASR_RUNTIME_WHEEL.sha256}`,
+  `portableCli=${ARK_ASR_PORTABLE_CLI.sha256}`,
+  `cpuHelper=${ARK_ASR_PORTABLE_CLI.cpuHelper.sha256}`,
+].join("\n");
 
 export const classifyCudaRuntimeFailure = (
   diagnostics: PythonCudaDiagnostics,
@@ -220,8 +342,6 @@ export const torchAudioInstallPlan = (torchVersion: string): TorchAudioInstallPl
   throw new Error(`unsupported_torch_build:${build}`);
 };
 
-export const temporaryRecordingName = (recordingId: string): string =>
-  createHash("sha256").update(recordingId).digest("hex").slice(0, 20);
 /** Normalize every provider to the same readable, seekable sentence shape. */
 export const normalizeForcedAlignerTranscript = (
   _modelId: AiAsrModelId,
@@ -237,200 +357,13 @@ export const providerCudaErrorCode = (modelId: AiAsrModelId, bf16 = false): stri
     "fireredasr2-aed": "fireredasr2_aed",
     "paraformer-zh": "paraformer_zh",
     "moss-transcribe-diarize-0.9b": "moss_transcribe_diarize",
+    "moss-transcribe-diarize-0.9b-q8_0": "moss_transcribe_diarize_q8",
     "dolphin-cn-dialect-0.4b": "dolphin_cn_dialect",
     "cohere-transcribe-2b": "cohere_transcribe",
+    "ark-asr-3b-q8_0": "ark_asr_3b",
   };
   const provider = providers[modelId];
   return `${provider}_cuda${bf16 ? "_bf16" : ""}_required`;
-};
-
-const parseTimestamp = (value: string): number => {
-  const numeric = Number(value);
-  if (Number.isFinite(numeric)) return numeric > 100_000 ? numeric : numeric * 1_000;
-  const parts = value.split(":").map(Number);
-  if (parts.some((part) => !Number.isFinite(part))) return 0;
-  return parts.reduce((total, part) => total * 60 + part, 0) * 1_000;
-};
-
-export interface PcmAudioActivity {
-  peak: number;
-  activeFrameRatio: number;
-  audible: boolean;
-}
-
-/** Measures 20 ms PCM frames so a click cannot make an otherwise silent chunk look like speech. */
-export const analyzePcm16Wav = (wav: Buffer): PcmAudioActivity => {
-  if (
-    wav.length < 44 ||
-    wav.toString("ascii", 0, 4) !== "RIFF" ||
-    wav.toString("ascii", 8, 12) !== "WAVE"
-  ) {
-    throw new Error("invalid_transcription_wav");
-  }
-  let cursor = 12;
-  let channels = 0;
-  let sampleRate = 0;
-  let bitsPerSample = 0;
-  let audioFormat = 0;
-  let dataStart = 0;
-  let dataLength = 0;
-  while (cursor + 8 <= wav.length) {
-    const kind = wav.toString("ascii", cursor, cursor + 4);
-    const size = wav.readUInt32LE(cursor + 4);
-    const start = cursor + 8;
-    if (kind === "fmt " && size >= 16 && start + 16 <= wav.length) {
-      audioFormat = wav.readUInt16LE(start);
-      channels = wav.readUInt16LE(start + 2);
-      sampleRate = wav.readUInt32LE(start + 4);
-      bitsPerSample = wav.readUInt16LE(start + 14);
-    } else if (kind === "data") {
-      dataStart = start;
-      dataLength = Math.min(size, wav.length - start);
-      break;
-    }
-    cursor = start + size + (size % 2);
-  }
-  if (audioFormat !== 1 || channels !== 1 || bitsPerSample !== 16 || !sampleRate || !dataLength) {
-    throw new Error("unsupported_transcription_wav");
-  }
-
-  const frameSamples = Math.max(1, Math.round(sampleRate * 0.02));
-  const samples = Math.floor(dataLength / 2);
-  const totalFrames = Math.ceil(samples / frameSamples);
-  let peak = 0;
-  let activeFrames = 0;
-  for (let frame = 0; frame < totalFrames; frame += 1) {
-    const first = frame * frameSamples;
-    const last = Math.min(samples, first + frameSamples);
-    let sumSquares = 0;
-    for (let index = first; index < last; index += 1) {
-      const amplitude = Math.abs(wav.readInt16LE(dataStart + index * 2)) / 32_768;
-      peak = Math.max(peak, amplitude);
-      sumSquares += amplitude * amplitude;
-    }
-    const rms = Math.sqrt(sumSquares / Math.max(1, last - first));
-    if (rms >= 0.0025) activeFrames += 1;
-  }
-  const activeFrameRatio = activeFrames / Math.max(1, totalFrames);
-  return {
-    peak,
-    activeFrameRatio,
-    audible: peak >= 0.0063 && activeFrames >= Math.max(2, Math.ceil(totalFrames * 0.003)),
-  };
-};
-
-export const parseVibeVoiceOutput = (
-  output: string,
-  recordingId: string,
-  offsetMs: number,
-  durationMs = 30_000,
-): VoiceMemoryTranscriptSegment[] => {
-  const isAcceptedTranscript = (text: string, segmentDurationMs: number): boolean =>
-    isReliableTranscriptText(text, segmentDurationMs) && isChinesePreferredTranscriptText(text);
-  let sanitizedOutput = "";
-  for (let index = 0; index < output.length; index += 1) {
-    if (output.charCodeAt(index) === 27 && output[index + 1] === "[") {
-      index += 2;
-      while (index < output.length && output.charCodeAt(index) < 64) index += 1;
-      continue;
-    }
-    sanitizedOutput += output[index] ?? "";
-  }
-  sanitizedOutput = sanitizedOutput.replace(/^\uFEFF/, "");
-  const jsonStart = sanitizedOutput.indexOf("[");
-  const jsonEnd = sanitizedOutput.lastIndexOf("]");
-  if (jsonStart >= 0 && jsonEnd > jsonStart) {
-    try {
-      const items = JSON.parse(sanitizedOutput.slice(jsonStart, jsonEnd + 1)) as Array<{
-        Start?: string | number;
-        End?: string | number;
-        Speaker?: string | number;
-        Content?: string;
-      }>;
-      if (Array.isArray(items)) {
-        const parsed = items.flatMap((item, index): VoiceMemoryTranscriptSegment[] => {
-          const text = typeof item.Content === "string" ? item.Content.trim() : "";
-          const startMs = offsetMs + parseTimestamp(String(item.Start ?? 0));
-          const endMs = Math.max(
-            startMs + 100,
-            offsetMs + parseTimestamp(String(item.End ?? durationMs / 1_000)),
-          );
-          if (!text || !isAcceptedTranscript(text, endMs - startMs)) return [];
-          return [
-            {
-              id: `${recordingId}-${startMs}-${index}`,
-              recordingId,
-              startMs,
-              endMs,
-              text,
-              speakerId: `Speaker ${item.Speaker ?? 1}`,
-              confidence: "pending",
-            },
-          ];
-        });
-        if (parsed.length) return parsed;
-      }
-    } catch {
-      // The BitNet text prompt can legitimately start with '[' without being JSON.
-    }
-  }
-  // Local model output is parsed one line at a time, so the input is bounded.
-  // eslint-disable-next-line security/detect-unsafe-regex
-  const pattern = /^\[([^\]]+)\s+-\s+([^\]]+)\]\s+(?:Speaker\s+([^:]+):\s*)?(.+)$/gm;
-  const segments: VoiceMemoryTranscriptSegment[] = [];
-  let sawTimestampOutput = false;
-  let match: RegExpExecArray | null;
-  while ((match = pattern.exec(sanitizedOutput))) {
-    sawTimestampOutput = true;
-    const text = match[4]?.trim();
-    if (!text) continue;
-    const speaker = match[3]?.trim() || "1";
-    const startMs = offsetMs + parseTimestamp(match[1] ?? "0");
-    const endMs = Math.max(startMs + 100, offsetMs + parseTimestamp(match[2] ?? "0"));
-    if (!isAcceptedTranscript(text, endMs - startMs)) continue;
-    segments.push({
-      id: `${recordingId}-${startMs}-${segments.length}`,
-      recordingId,
-      startMs,
-      endMs,
-      text,
-      speakerId: `Speaker ${speaker}`,
-      confidence: "pending",
-    });
-  }
-  const plain = sanitizedOutput
-    .replace(/---END---/g, "")
-    .replace(/^assistant\s*/i, "")
-    .trim();
-  if (!sawTimestampOutput && !segments.length && plain && isAcceptedTranscript(plain, durationMs)) {
-    const sentences = plain
-      .split(/(?<=[。！？!?])\s*|\n+/u)
-      .map((sentence) => sentence.trim())
-      .filter(Boolean);
-    const parts = sentences.length ? sentences : [plain];
-    const totalCharacters = Math.max(
-      1,
-      parts.reduce((sum, part) => sum + part.length, 0),
-    );
-    let elapsed = 0;
-    for (const [index, text] of parts.entries()) {
-      const startRatio = elapsed / totalCharacters;
-      elapsed += text.length;
-      const endRatio = elapsed / totalCharacters;
-      const startMs = offsetMs + Math.round(durationMs * startRatio);
-      const endMs = Math.max(startMs + 100, offsetMs + Math.round(durationMs * endRatio));
-      segments.push({
-        id: `${recordingId}-${startMs}-${index}`,
-        recordingId,
-        startMs,
-        endMs,
-        text,
-        speakerId: "Speaker 1",
-        confidence: "pending",
-      });
-    }
-  }
-  return segments;
 };
 
 /** Executes the downloaded models through real local Windows runtimes. */
@@ -443,8 +376,11 @@ export class AiRuntimeManager {
   private readonly glmAsrPythonPath: string;
   private readonly fireRedPythonPath: string;
   private readonly mossPythonPath: string;
+  private readonly mossCppPythonPath: string;
   private readonly dolphinPythonPath: string;
   private readonly coherePythonPath: string;
+  private readonly arkAsrPythonPath: string;
+  private readonly arkAsrPortableCliPath: string;
   private readonly cudaPythonPath: string;
   private readonly qwenOrganizerPythonPath: string;
   private readonly qwenWorker: QwenRuntime;
@@ -475,8 +411,14 @@ export class AiRuntimeManager {
     this.glmAsrPythonPath = path.join(providerRoot, "glm");
     this.fireRedPythonPath = path.join(providerRoot, "firered");
     this.mossPythonPath = path.join(providerRoot, "moss");
+    this.mossCppPythonPath = path.join(providerRoot, "moss-transcribe-cpp-v0.2.3-cu12");
     this.dolphinPythonPath = path.join(providerRoot, "dolphin");
     this.coherePythonPath = path.join(providerRoot, "cohere");
+    // v0.8.29's Windows CUDA binary used AVX-512 and crashed with 0xC000001D on
+    // otherwise supported CPUs. Keep the portable v0.8.30 runtime in a fresh versioned
+    // directory so pip cannot overlay it on stale native DLLs from the broken build.
+    this.arkAsrPythonPath = path.join(providerRoot, "ark-asr-v0.8.30-cuda-portable-r2");
+    this.arkAsrPortableCliPath = path.join(runtimeRoot, "crispasr-v0.8.30-cuda-portable-cli");
     // Keep the shared CUDA environment versioned. Older desktop builds could create
     // cuda-python with an elevated Windows token, leaving its files unreadable to the
     // development process and making every model appear stuck at "preparing".
@@ -589,6 +531,37 @@ export class AiRuntimeManager {
   releaseAsr(reason: string): void {
     this.asrWorker.release(reason);
   }
+
+  async releaseAsrMeasured(reason: string): Promise<{
+    gpuMemoryAfterReleaseMb?: number;
+    releaseTimeMs: number;
+    resourceReleaseSucceeded: boolean;
+  }> {
+    const startedAt = performance.now();
+    this.asrWorker.release(reason);
+    const deadline = Date.now() + 2_000;
+    while (this.asrWorker.health().processId && Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+    return {
+      gpuMemoryAfterReleaseMb: await gpuMemoryUsedMb(),
+      releaseTimeMs: Math.max(0, Math.round(performance.now() - startedAt)),
+      resourceReleaseSucceeded: !this.asrWorker.health().processId,
+    };
+  }
+
+  async benchmarkEnvironment(): Promise<{
+    gpu?: string;
+    gpuTotalVramMb?: number;
+    cpu?: string;
+    ramMb?: number;
+    os?: string;
+    cudaVersion?: string;
+    pytorchVersion?: string;
+  }> {
+    const diagnostics = await this.pythonCudaDiagnostics().catch(() => undefined);
+    return benchmarkEnvironmentSnapshot(diagnostics);
+  }
   stop(): void {
     this.qwenWorker.release("app_stopping");
     this.asrWorker.release("app_stopping");
@@ -603,8 +576,10 @@ export class AiRuntimeManager {
       "fireredasr2-aed",
       "paraformer-zh",
       "moss-transcribe-diarize-0.9b",
+      "moss-transcribe-diarize-0.9b-q8_0",
       "dolphin-cn-dialect-0.4b",
       "cohere-transcribe-2b",
+      "ark-asr-3b-q8_0",
     ];
     const [asrStatuses, qwenStatus] = await Promise.all([
       Promise.all(modelIds.map((id) => this.asrStatus(id))),
@@ -661,8 +636,10 @@ export class AiRuntimeManager {
       "fireredasr2-aed",
       "paraformer-zh",
       "moss-transcribe-diarize-0.9b",
+      "moss-transcribe-diarize-0.9b-q8_0",
       "dolphin-cn-dialect-0.4b",
       "cohere-transcribe-2b",
+      "ark-asr-3b-q8_0",
     ];
     const [statuses, qwen] = await Promise.all([
       Promise.all(ids.map((id) => this.asrStatus(id))),
@@ -685,6 +662,63 @@ export class AiRuntimeManager {
     };
   }
 
+  private async arkAsrRuntimeReady(): Promise<boolean> {
+    const packageFile = path.join(this.arkAsrPythonPath, "crispasr", "__init__.py");
+    const cpuHelper = path.join(
+      this.arkAsrPythonPath,
+      "crispasr",
+      ARK_ASR_PORTABLE_CLI.cpuHelper.fileName,
+    );
+    const marker = await readFile(
+      path.join(this.arkAsrPythonPath, ".shanghao-runtime-verified"),
+      "utf8",
+    ).catch(() => "");
+    return (
+      (await exists(packageFile)) &&
+      (await exists(cpuHelper)) &&
+      marker.trim() === ARK_ASR_RUNTIME_MARKER.trim()
+    );
+  }
+
+  private async mossCppRuntimeReady(): Promise<boolean> {
+    const marker = await readFile(
+      path.join(this.mossCppPythonPath, ".shanghao-runtime-verified"),
+      "utf8",
+    ).catch(() => "");
+    return (
+      (await exists(path.join(this.mossCppPythonPath, "transcribe_cpp", "__init__.py"))) &&
+      marker.trim() === MOSS_CPP_RUNTIME_MARKER
+    );
+  }
+
+  private async dolphinRuntimeReady(): Promise<boolean> {
+    const marker = await readFile(
+      path.join(this.dolphinPythonPath, ".shanghao-runtime-verified"),
+      "utf8",
+    ).catch(() => "");
+    return (
+      (await exists(path.join(this.dolphinPythonPath, "dolphin", "__init__.py"))) &&
+      (await exists(path.join(this.dolphinPythonPath, "torch_complex", "tensor.py"))) &&
+      (await exists(path.join(this.cudaPythonPath, "packaging", "__init__.py"))) &&
+      (await exists(
+        path.join(
+          this.cudaPythonPath,
+          `packaging-${SHARED_PYTHON_PACKAGING_VERSION}.dist-info`,
+          "METADATA",
+        ),
+      )) &&
+      (await exists(path.join(this.cudaPythonPath, "numpy", "__init__.py"))) &&
+      (await exists(
+        path.join(
+          this.cudaPythonPath,
+          `numpy-${SHARED_PYTHON_NUMPY_VERSION}.dist-info`,
+          "METADATA",
+        ),
+      )) &&
+      marker.trim() === DOLPHIN_RUNTIME_MARKER
+    );
+  }
+
   private async asrStatus(modelId: AiAsrModelId): Promise<AiAsrRuntimeStatus> {
     const worker = this.asrWorker.health();
     const pythonRuntimeExists = await exists(this.pythonExecutable);
@@ -696,8 +730,10 @@ export class AiRuntimeManager {
     const glm = modelId === "glm-asr-nano-2512";
     const fireRed = modelId === "fireredasr2-aed";
     const moss = modelId === "moss-transcribe-diarize-0.9b";
+    const mossCpp = modelId === "moss-transcribe-diarize-0.9b-q8_0";
     const dolphin = modelId === "dolphin-cn-dialect-0.4b";
     const cohere = modelId === "cohere-transcribe-2b";
+    const arkAsr = modelId === "ark-asr-3b-q8_0";
     const aligner = qwenModel ? this.models.model("qwen3-forced-aligner-0.6b") : undefined;
     const modelReady = Boolean(model && (await modelFilesPresent(modelId, model)));
     const dependencyReady =
@@ -718,13 +754,18 @@ export class AiRuntimeManager {
               ? (await exists(
                   path.join(this.mossPythonPath, "moss_transcribe_diarize", "__init__.py"),
                 )) && (await exists(path.join(this.mossPythonPath, "transformers", "__init__.py")))
-              : dolphin
-                ? (await exists(path.join(this.dolphinPythonPath, "dolphin", "__init__.py"))) &&
-                  (await exists(path.join(this.dolphinPythonPath, "torch_complex", "tensor.py")))
-                : cohere
-                  ? await exists(path.join(this.coherePythonPath, "transformers", "__init__.py"))
-                  : false;
-    const needsCuda = !paraformer;
+              : mossCpp
+                ? await this.mossCppRuntimeReady()
+                : dolphin
+                  ? await this.dolphinRuntimeReady()
+                  : cohere
+                    ? await exists(path.join(this.coherePythonPath, "transformers", "__init__.py"))
+                    : arkAsr
+                      ? await this.arkAsrRuntimeReady()
+                      : false;
+    // The transcribe.cpp CUDA package also contains a CPU backend. Keep this model usable
+    // when its GPU backend is unavailable and report the backend actually selected at runtime.
+    const needsCuda = !paraformer && !mossCpp;
     const cuda =
       needsCuda && pythonRuntimeExists
         ? await this.pythonCudaDiagnostics().catch((error) => {
@@ -840,10 +881,12 @@ export class AiRuntimeManager {
     filePath: string;
     offsetMs: number;
     durationMs: number;
+    benchmark?: boolean;
     signal?: AbortSignal;
     resourceMode: "low" | "normal";
     onStage?: (stage: VoiceMemoryProcessingStage, context?: Record<string, unknown>) => void;
-  }): Promise<VoiceMemoryTranscriptSegment[]> {
+  }): Promise<TranscriptionChunkRuntimeResult> {
+    const totalStartedAt = performance.now();
     const executable = resolveFfmpegExecutable();
     if (!executable) {
       throw new LocalModelRuntimeError(
@@ -895,6 +938,7 @@ export class AiRuntimeManager {
       `${temporaryRecordingName(options.recordingId)}-${options.offsetMs}-${process.pid}.wav`,
     );
     try {
+      const conversionStartedAt = performance.now();
       try {
         options.onStage?.("convert", {
           inputFile: path.basename(options.filePath),
@@ -931,6 +975,7 @@ export class AiRuntimeManager {
         if (message === "ai_task_paused") throw error;
         throw new LocalModelRuntimeError("ffmpeg_failed", "ffmpeg_failed", message);
       }
+      const conversionTimeMs = Math.max(0, Math.round(performance.now() - conversionStartedAt));
       let activity: PcmAudioActivity;
       try {
         activity = analyzePcm16Wav(await readFile(wavPath));
@@ -938,7 +983,36 @@ export class AiRuntimeManager {
         const message = error instanceof Error ? error.message : String(error);
         throw new LocalModelRuntimeError("wav_invalid", "wav_invalid", message);
       }
-      if (!activity.audible) return [];
+      const speechDurationMs = Math.min(
+        options.durationMs,
+        Math.max(0, Math.round(options.durationMs * activity.activeFrameRatio)),
+      );
+      const commonVad: VoiceMemoryCommonVadResult = {
+        hasSpeech: activity.audible,
+        speechDurationMs: activity.audible ? Math.max(1, speechDurationMs) : 0,
+        silenceDurationMs: activity.audible
+          ? Math.max(0, options.durationMs - Math.max(1, speechDurationMs))
+          : options.durationMs,
+        activeFrameRatio: activity.activeFrameRatio,
+        peak: activity.peak,
+      };
+      if (!activity.audible) {
+        return {
+          segments: [],
+          rawText: "",
+          commonVad,
+          outputStatus: "vad_silence",
+          anomalyTypes: [],
+          anomalyReasons: [],
+          timing: {
+            loadTimeMs: 0,
+            conversionTimeMs,
+            inferenceTimeMs: 0,
+            totalTimeMs: Math.max(0, Math.round(performance.now() - totalStartedAt)),
+          },
+          resourceUsage: { ...modelPrecision(modelId), oomCount: 0, workerCrashCount: 0 },
+        };
+      }
       options.onStage?.("asr", {
         model: status.modelName,
         modelPath: status.modelPath,
@@ -946,6 +1020,18 @@ export class AiRuntimeManager {
         languagePolicy: "Mandarin Chinese only",
       });
       let result: AsrWorkerResult;
+      const gpuMemoryBeforeLoadMb = options.benchmark ? await gpuMemoryUsedMb() : undefined;
+      let gpuPeakMemoryMb = gpuMemoryBeforeLoadMb;
+      let resourceSampleActive = true;
+      const resourceSampler = options.benchmark
+        ? setInterval(() => {
+            if (!resourceSampleActive) return;
+            void gpuMemoryUsedMb().then((value) => {
+              if (value !== undefined) gpuPeakMemoryMb = Math.max(gpuPeakMemoryMb ?? 0, value);
+            });
+          }, 250)
+        : undefined;
+      resourceSampler?.unref();
       try {
         result = await this.asrWorker.run({
           launch: this.pythonAsrLaunch(modelId),
@@ -956,6 +1042,8 @@ export class AiRuntimeManager {
           timeoutMs: Math.max(240_000, options.durationMs * 8),
         });
       } catch (error) {
+        resourceSampleActive = false;
+        if (resourceSampler) clearInterval(resourceSampler);
         const diagnostics = await this.pythonCudaDiagnostics(true).catch(() => undefined);
         await this.log("error", "ASR Runtime transcription failed", {
           modelId,
@@ -977,6 +1065,11 @@ export class AiRuntimeManager {
         });
         throw error;
       }
+      resourceSampleActive = false;
+      if (resourceSampler) clearInterval(resourceSampler);
+      const gpuMemoryAfterLoadMb = options.benchmark ? await gpuMemoryUsedMb() : undefined;
+      if (gpuMemoryAfterLoadMb !== undefined)
+        gpuPeakMemoryMb = Math.max(gpuPeakMemoryMb ?? 0, gpuMemoryAfterLoadMb);
       options.onStage?.("transcript", {
         outputCharacters: result.text.length,
         structuredSegments: result.segments?.length ?? 0,
@@ -988,11 +1081,44 @@ export class AiRuntimeManager {
         options.offsetMs,
         options.durationMs,
       );
-      // A native inference can return only unreliable repetition for very quiet/non-speech
-      // chunks. Treat that as an empty transcript unit so one bad chunk cannot fail the whole
-      // recording or erase useful segments already persisted from adjacent chunks.
-      if (!segments.length) return [];
-      return segments;
+      const anomaly = analyzeTranscriptAnomalies(result.text, options.durationMs);
+      const anomalyTypes: TranscriptionChunkRuntimeResult["anomalyTypes"] = [];
+      if (anomaly.repetitionLoop) anomalyTypes.push("repetition_loop");
+      if (anomaly.abnormalOutput && !anomaly.repetitionLoop) anomalyTypes.push("abnormal_output");
+      const outputStatus: VoiceMemoryTranscriptionOutputStatus = anomaly.repetitionLoop
+        ? "repetition_loop"
+        : anomaly.abnormalOutput
+          ? "abnormal_output"
+          : segments.length > 0
+            ? "normal"
+            : "empty_output_on_speech";
+      return {
+        segments,
+        rawText: result.text,
+        rawOutput: result,
+        commonVad,
+        outputStatus,
+        anomalyTypes,
+        anomalyReasons: anomaly.reasons,
+        timing: {
+          loadTimeMs: result.metrics?.loadTimeMs,
+          conversionTimeMs,
+          inferenceTimeMs: result.metrics?.inferenceTimeMs,
+          totalTimeMs: Math.max(0, Math.round(performance.now() - totalStartedAt)),
+        },
+        resourceUsage: {
+          ...modelPrecision(modelId),
+          ...(result.metrics?.backend ? { backend: result.metrics.backend } : {}),
+          ...(result.metrics?.device ? { device: result.metrics.device } : {}),
+          ...(result.metrics?.quantization ? { quantization: result.metrics.quantization } : {}),
+          ...(result.metrics?.dtype ? { dtype: result.metrics.dtype } : {}),
+          gpuMemoryBeforeLoadMb,
+          gpuMemoryAfterLoadMb,
+          gpuPeakMemoryMb,
+          oomCount: 0,
+          workerCrashCount: 0,
+        },
+      };
     } finally {
       await rm(wavPath, { force: true }).catch(() => undefined);
     }
@@ -1012,6 +1138,12 @@ export class AiRuntimeManager {
   private async prepareModelRuntimeOnce(
     id: AiModelId,
   ): Promise<{ ready: boolean; message?: string }> {
+    if (id === "qwen36-35b-a3b-nvfp4") {
+      return {
+        ready: false,
+        message: "Qwen3.6-35B-A3B 的 FreeToken Windows 运行组件由上号内部托管。",
+      };
+    }
     if (id === "qwen3-forced-aligner-0.6b") {
       const model = this.models.model(id);
       const installed = Boolean(model && (await modelFilesPresent(id, model)));
@@ -1061,7 +1193,8 @@ export class AiRuntimeManager {
       return { ready: false, message: "便携 Python 尚未安装，无法准备转录运行组件。" };
     }
 
-    await this.ensureCudaRuntime();
+    const mossCppModel = id === "moss-transcribe-diarize-0.9b-q8_0";
+    if (!mossCppModel) await this.ensureCudaRuntime();
 
     const qwenModel = id.startsWith("qwen3-asr-");
     const funAsrModel = id === "fun-asr-nano-2512" || id === "paraformer-zh";
@@ -1070,6 +1203,7 @@ export class AiRuntimeManager {
     const mossModel = id === "moss-transcribe-diarize-0.9b";
     const dolphinModel = id === "dolphin-cn-dialect-0.4b";
     const cohereModel = id === "cohere-transcribe-2b";
+    const arkAsrModel = id === "ark-asr-3b-q8_0";
     const pythonPath = qwenModel
       ? this.qwenAsrPythonPath
       : funAsrModel
@@ -1080,10 +1214,33 @@ export class AiRuntimeManager {
             ? this.fireRedPythonPath
             : mossModel
               ? this.mossPythonPath
-              : dolphinModel
-                ? this.dolphinPythonPath
-                : this.coherePythonPath;
+              : mossCppModel
+                ? this.mossCppPythonPath
+                : dolphinModel
+                  ? this.dolphinPythonPath
+                  : cohereModel
+                    ? this.coherePythonPath
+                    : this.arkAsrPythonPath;
     await mkdir(pythonPath, { recursive: true });
+
+    if (dolphinModel) {
+      await this.ensureDolphinSharedMetadata();
+      const providerFilesPresent =
+        (await exists(path.join(this.dolphinPythonPath, "dolphin", "__init__.py"))) &&
+        (await exists(path.join(this.dolphinPythonPath, "torch_complex", "tensor.py")));
+      if (providerFilesPresent) {
+        try {
+          await this.verifyDolphinRuntime();
+          await this.pythonCudaDiagnostics(true);
+          const repaired = await this.asrStatus(id);
+          return { ready: repaired.ready, message: repaired.message };
+        } catch (error) {
+          await this.log("warn", "Dolphin Runtime preflight failed; reinstalling provider", {
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }
+      }
+    }
     const commonArgs = [
       "-m",
       "pip",
@@ -1125,6 +1282,8 @@ export class AiRuntimeManager {
           env: this.pipEnvironment(),
           timeoutMs: 30 * 60_000,
         });
+      } else if (mossCppModel) {
+        await this.prepareMossCppRuntime();
       } else if (dolphinModel) {
         const dolphinInstalled = await exists(
           path.join(this.dolphinPythonPath, "dolphin", "__init__.py"),
@@ -1148,17 +1307,311 @@ export class AiRuntimeManager {
           [...commonArgs, ...COHERE_TRANSCRIBE_RUNTIME_PACKAGES],
           { env: this.pipEnvironment(), timeoutMs: 30 * 60_000 },
         );
+      } else if (arkAsrModel) {
+        if (!(await exists(path.join(pythonPath, "crispasr", "__init__.py")))) {
+          const runtimeWheel = await this.prepareArkAsrRuntimeWheel();
+          await runLocalProcess("tar.exe", ["-xf", runtimeWheel, "-C", pythonPath], {
+            timeoutMs: 10 * 60_000,
+          });
+        }
+        await this.prepareArkAsrPortableCpuHelper(pythonPath);
       }
       await this.removeProviderTorchCopies(pythonPath);
+      if (dolphinModel) {
+        await this.ensureDolphinSharedMetadata();
+        await this.verifyDolphinRuntime();
+      }
+      if (arkAsrModel) {
+        await this.verifyArkAsrRuntime(pythonPath);
+      }
+      if (mossCppModel) {
+        await this.verifyMossCppRuntime();
+      }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       throw new Error(`${AI_ASR_MODEL_NAMES[id]} 官方运行组件安装失败：${message}`, {
         cause: error,
       });
     }
-    await this.pythonCudaDiagnostics(true);
+    if (!mossCppModel) await this.pythonCudaDiagnostics(true);
     const after = await this.asrStatus(id);
     return { ready: after.ready, message: after.message };
+  }
+
+  private async prepareArkAsrRuntimeWheel(): Promise<string> {
+    const destination = path.join(
+      this.runtimeRoot,
+      "downloads",
+      "runtime-wheels",
+      ARK_ASR_RUNTIME_WHEEL.fileName,
+    );
+    try {
+      return await downloadVerifiedRuntimeArtifact({
+        destination,
+        expectedBytes: ARK_ASR_RUNTIME_WHEEL.bytes,
+        expectedSha256: ARK_ASR_RUNTIME_WHEEL.sha256,
+        sources: ARK_ASR_RUNTIME_WHEEL.sources,
+        fetcher: this.options.runtimeFetch,
+        attempts: 6,
+        idleTimeoutMs: 120_000,
+        onRetry: async ({ attempt, source, error }) => {
+          await this.log("warn", "ARK-ASR runtime artifact download retry", {
+            attempt,
+            source: source.url,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        },
+      });
+    } catch (error) {
+      await this.log("error", "ARK-ASR runtime artifact download failed", {
+        destination,
+        error: error instanceof Error ? error.message : String(error),
+        cause:
+          error instanceof Error && error.cause instanceof Error ? error.cause.message : undefined,
+      });
+      throw new Error(
+        "CrispASR GPU 运行组件下载中断，已保留下载进度；请检查网络后再次点击“修复运行组件”继续。",
+        { cause: error },
+      );
+    }
+  }
+
+  private async prepareMossCppRuntime(): Promise<void> {
+    const wheelDirectory = path.join(this.runtimeRoot, "downloads", "runtime-wheels");
+    await mkdir(wheelDirectory, { recursive: true });
+    const wheels: string[] = [];
+    for (const artifact of MOSS_CPP_RUNTIME_WHEELS) {
+      const destination = path.join(wheelDirectory, artifact.fileName);
+      wheels.push(
+        await downloadVerifiedRuntimeArtifact({
+          destination,
+          expectedBytes: artifact.bytes,
+          expectedSha256: artifact.sha256,
+          sources: artifact.sources,
+          fetcher: this.options.runtimeFetch,
+          attempts: 6,
+          idleTimeoutMs: 120_000,
+          onRetry: async ({ attempt, source, error }) => {
+            await this.log("warn", "MOSS Q8 runtime artifact download retry", {
+              attempt,
+              source: source.url,
+              error: error instanceof Error ? error.message : String(error),
+            });
+          },
+        }),
+      );
+    }
+    await mkdir(this.mossCppPythonPath, { recursive: true });
+    await runLocalProcess(
+      this.pythonExecutable,
+      [
+        "-m",
+        "pip",
+        "install",
+        ...PRIVATE_PIP_INSTALL_ARGUMENTS,
+        "--upgrade",
+        "--no-deps",
+        "--target",
+        this.mossCppPythonPath,
+        ...wheels,
+      ],
+      { env: this.pipEnvironment(), timeoutMs: 15 * 60_000 },
+    );
+  }
+
+  private async verifyMossCppRuntime(): Promise<void> {
+    const script = [
+      "import transcribe_cpp",
+      "devices = transcribe_cpp.backends()",
+      "assert devices, 'transcribe_cpp_no_backend'",
+      "print('|'.join(f'{device.device_type}:{device.name}' for device in devices))",
+    ].join("\n");
+    try {
+      await runLocalProcess(this.pythonExecutable, ["-c", script], {
+        env: {
+          ...this.pipEnvironment(),
+          PYTHONPATH: this.providerPythonPath(this.mossCppPythonPath),
+          TRANSCRIBE_NATIVE_PROVIDER: "cu12",
+        },
+        timeoutMs: 3 * 60_000,
+      });
+      await writeFile(
+        path.join(this.mossCppPythonPath, ".shanghao-runtime-verified"),
+        `${MOSS_CPP_RUNTIME_MARKER}\n`,
+        "utf8",
+      );
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(`MOSS Q8 运行组件自检失败：${message}`, { cause: error });
+    }
+  }
+
+  private async isVerifiedArkAsrCpuHelper(filePath: string): Promise<boolean> {
+    const info = await stat(filePath).catch(() => undefined);
+    if (!info?.isFile() || info.size !== ARK_ASR_PORTABLE_CLI.cpuHelper.bytes) return false;
+    return (
+      (await sha256RuntimeArtifact(filePath).catch(() => "")) ===
+      ARK_ASR_PORTABLE_CLI.cpuHelper.sha256
+    );
+  }
+
+  private async prepareArkAsrPortableCpuHelper(pythonPath: string): Promise<void> {
+    const destination = path.join(pythonPath, "crispasr", ARK_ASR_PORTABLE_CLI.cpuHelper.fileName);
+    if (await this.isVerifiedArkAsrCpuHelper(destination)) return;
+
+    const extracted = path.join(
+      this.arkAsrPortableCliPath,
+      ARK_ASR_PORTABLE_CLI.directoryName,
+      ARK_ASR_PORTABLE_CLI.cpuHelper.fileName,
+    );
+    if (!(await this.isVerifiedArkAsrCpuHelper(extracted))) {
+      const archive = path.join(this.runtimeRoot, "downloads", ARK_ASR_PORTABLE_CLI.fileName);
+      try {
+        await downloadVerifiedRuntimeArtifact({
+          destination: archive,
+          expectedBytes: ARK_ASR_PORTABLE_CLI.bytes,
+          expectedSha256: ARK_ASR_PORTABLE_CLI.sha256,
+          sources: ARK_ASR_PORTABLE_CLI.sources,
+          fetcher: this.options.runtimeFetch,
+          attempts: 6,
+          idleTimeoutMs: 120_000,
+          onRetry: async ({ attempt, source, error }) => {
+            await this.log("warn", "ARK-ASR portable CPU helper download retry", {
+              attempt,
+              source: source.url,
+              error: error instanceof Error ? error.message : String(error),
+            });
+          },
+        });
+        await mkdir(this.arkAsrPortableCliPath, { recursive: true });
+        await runLocalProcess("tar.exe", ["-xf", archive, "-C", this.arkAsrPortableCliPath], {
+          timeoutMs: 10 * 60_000,
+        });
+      } catch (error) {
+        await this.log("error", "ARK-ASR portable CPU helper preparation failed", {
+          archive,
+          destination,
+          error: error instanceof Error ? error.message : String(error),
+        });
+        throw new Error(
+          "CrispASR 便携 CPU 兼容组件准备失败；已保留下载进度，请再次点击“修复运行组件”。",
+          { cause: error },
+        );
+      }
+    }
+
+    if (!(await this.isVerifiedArkAsrCpuHelper(extracted))) {
+      throw new Error("ark_asr_portable_cpu_helper_verification_failed");
+    }
+    await mkdir(path.dirname(destination), { recursive: true });
+    await copyFile(extracted, destination);
+    if (!(await this.isVerifiedArkAsrCpuHelper(destination))) {
+      throw new Error("ark_asr_portable_cpu_helper_copy_failed");
+    }
+  }
+
+  private async verifyArkAsrRuntime(pythonPath: string): Promise<void> {
+    const modelRoot = this.models.model("ark-asr-3b-q8_0");
+    if (!modelRoot) throw new Error("model_ark-asr-3b-q8_0_not_installed");
+    const modelFile = path.join(modelRoot, ACTIVE_ARK_ASR_VARIANT.fileName);
+    const script = [
+      "import sys",
+      "sys.path.insert(0, sys.argv[1])",
+      "from crispasr import Session",
+      "backends = Session.available_backends()",
+      "assert 'ark-asr' in backends, f'ark_asr_backend_missing:{backends}'",
+      "session = Session(sys.argv[2], n_threads=1, backend='ark-asr')",
+      "close = getattr(session, 'close', None)",
+      "close() if callable(close) else None",
+      "print('ark_asr_runtime_verified')",
+    ].join("\n");
+    try {
+      await runLocalProcess(this.pythonExecutable, ["-c", script, pythonPath, modelFile], {
+        env: { ...this.pipEnvironment(), PYTHONPATH: this.providerPythonPath(pythonPath) },
+        timeoutMs: 3 * 60_000,
+      });
+      await writeFile(
+        path.join(pythonPath, ".shanghao-runtime-verified"),
+        `${ARK_ASR_RUNTIME_MARKER}\n`,
+        "utf8",
+      );
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(
+        /(?:0xc000001d|-1073741795|3221225501)/i.test(message)
+          ? "ARK-ASR Q8 原生运行组件触发 CPU 非法指令；请重新点击修复运行组件安装便携版。"
+          : `ARK-ASR Q8 运行组件自检失败：${message}`,
+        { cause: error },
+      );
+    }
+  }
+
+  private async ensureDolphinSharedMetadata(): Promise<void> {
+    const packageFile = path.join(this.cudaPythonPath, "packaging", "__init__.py");
+    const metadataFile = path.join(
+      this.cudaPythonPath,
+      `packaging-${SHARED_PYTHON_PACKAGING_VERSION}.dist-info`,
+      "METADATA",
+    );
+    const numpyPackageFile = path.join(this.cudaPythonPath, "numpy", "__init__.py");
+    const numpyMetadataFile = path.join(
+      this.cudaPythonPath,
+      `numpy-${SHARED_PYTHON_NUMPY_VERSION}.dist-info`,
+      "METADATA",
+    );
+    if (
+      (await exists(packageFile)) &&
+      (await exists(metadataFile)) &&
+      (await exists(numpyPackageFile)) &&
+      (await exists(numpyMetadataFile))
+    )
+      return;
+    await mkdir(this.cudaPythonPath, { recursive: true });
+    await runLocalProcess(
+      this.pythonExecutable,
+      [
+        "-m",
+        "pip",
+        "install",
+        ...PRIVATE_PIP_INSTALL_ARGUMENTS,
+        "--upgrade",
+        "--no-deps",
+        "--target",
+        this.cudaPythonPath,
+        `packaging==${SHARED_PYTHON_PACKAGING_VERSION}`,
+        `numpy==${SHARED_PYTHON_NUMPY_VERSION}`,
+      ],
+      { env: this.pipEnvironment(), timeoutMs: 5 * 60_000 },
+    );
+  }
+
+  private async verifyDolphinRuntime(): Promise<void> {
+    const script = [
+      "from importlib.metadata import version",
+      "assert version('packaging') == '" + SHARED_PYTHON_PACKAGING_VERSION + "'",
+      "assert version('numpy') == '" + SHARED_PYTHON_NUMPY_VERSION + "'",
+      "import transformers",
+      "import torch_complex",
+      "import dolphin",
+      "print('dolphin_runtime_verified')",
+    ].join("\n");
+    try {
+      await runLocalProcess(this.pythonExecutable, ["-c", script], {
+        env: {
+          ...this.pipEnvironment(),
+          PYTHONPATH: this.providerPythonPath(this.dolphinPythonPath),
+        },
+        timeoutMs: 3 * 60_000,
+      });
+      await writeFile(
+        path.join(this.dolphinPythonPath, ".shanghao-runtime-verified"),
+        `${DOLPHIN_RUNTIME_MARKER}\n`,
+        "utf8",
+      );
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(`Dolphin 运行组件自检失败：${message}`, { cause: error });
+    }
   }
 
   private pythonAsrLaunch(modelId: AiAsrModelId): AsrWorkerLaunch {
@@ -1190,6 +1643,20 @@ export class AiRuntimeManager {
         modelPath,
         alignerModelPath,
         pythonPath: this.providerPythonPath(this.coherePythonPath),
+      };
+    }
+    if (modelId === "ark-asr-3b-q8_0") {
+      return {
+        modelId,
+        modelPath: path.join(modelPath, ACTIVE_ARK_ASR_VARIANT.fileName),
+        pythonPath: this.providerPythonPath(this.arkAsrPythonPath),
+      };
+    }
+    if (modelId === "moss-transcribe-diarize-0.9b-q8_0") {
+      return {
+        modelId,
+        modelPath: path.join(modelPath, "MOSS-Transcribe-Diarize-Q8_0.gguf"),
+        pythonPath: this.providerPythonPath(this.mossCppPythonPath),
       };
     }
     return {

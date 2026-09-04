@@ -89,41 +89,6 @@
   transform: translate(-50%, -50%);
 }
 
-.work-activity-badge {
-  position: absolute;
-  z-index: 8;
-  top: 27px;
-  right: -5px;
-  display: grid;
-  width: 31px;
-  height: 31px;
-  place-items: center;
-  overflow: hidden;
-  border: 1px solid rgba(255, 255, 255, 0.92);
-  border-radius: 9px;
-  background: rgba(249, 252, 255, 0.92);
-  color: #4f78b8;
-  box-shadow:
-    0 8px 18px rgba(53, 80, 117, 0.15),
-    inset 0 1px 0 rgba(255, 255, 255, 0.96);
-  backdrop-filter: blur(10px) saturate(125%);
-}
-
-.activity-badge-stack:has(.music-activity-badge) .work-activity-badge {
-  top: 62px;
-}
-
-.work-activity-badge img,
-.work-activity-badge svg {
-  width: 21px;
-  height: 21px;
-  object-fit: contain;
-}
-
-.work-activity-badge img {
-  border-radius: 5px;
-}
-
 .music-activity-icon {
   position: relative;
   display: grid;
@@ -910,8 +875,35 @@ img {
       rgba(237, 244, 253, 0.98) 58%,
       rgba(246, 251, 248, 0.98)
     );
-  animation: settings-page-enter var(--duration-fast) var(--ease-out-soft) both;
   contain: layout paint;
+  transition:
+    opacity var(--duration-fast) var(--ease-out-soft),
+    transform var(--duration-fast) var(--ease-spatial),
+    visibility 0s linear var(--duration-fast),
+    content-visibility 0s linear var(--duration-fast);
+  transition-behavior: allow-discrete;
+}
+
+.app-page-settings.is-active {
+  visibility: visible;
+  opacity: 1;
+  transform: translateY(0);
+  content-visibility: visible;
+  transition-delay: 0s;
+}
+
+.app-page-settings.is-inactive {
+  visibility: hidden;
+  opacity: 0;
+  transform: translateY(4px);
+  content-visibility: hidden;
+  pointer-events: none;
+}
+
+.app-page-settings.is-inactive *,
+.app-page-settings.is-inactive *::before,
+.app-page-settings.is-inactive *::after {
+  animation-play-state: paused !important;
 }
 
 @keyframes settings-page-enter {

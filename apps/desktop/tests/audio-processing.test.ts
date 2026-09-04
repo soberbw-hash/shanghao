@@ -16,6 +16,8 @@ import {
   advanceLoudnessBalance,
   applyLoudnessBalanceToMemberVolume,
   createLoudnessBalanceState,
+  FRIEND_LOUDNESS_MAX_BOOST_DB,
+  FRIEND_LOUDNESS_MAX_CUT_DB,
   FRIEND_LOUDNESS_TARGET_LUFS,
   FRIEND_LOUDNESS_HANGOVER_MS,
 } from "../src/renderer/src/features/audio/loudnessBalance";
@@ -168,6 +170,10 @@ test("remote audio uses one shared mixer with silent per-stream decoder pumps", 
   assert.equal(mixer.includes("element.muted = true"), true);
   assert.equal(mixer.includes("channel.decoderPump.srcObject = null"), true);
   assert.equal(mixer.includes("createDynamicsCompressor"), true);
+  assert.equal(mixer.includes("getFinalOutputStream(): MediaStream"), true);
+  assert.equal(mixer.includes("outputLimiter.connect(finalOutputTap)"), true);
+  assert.equal(mixer.includes("outputLimiter.connect(context.destination)"), true);
+  assert.equal(mixer.includes("enabled ? 12 : 3"), false);
   assert.equal(mixer.includes("this.isDeafened ? 0 : this.masterVolume"), true);
   assert.equal(mixer.includes("clampMemberVolume(webRtcChannel.volume)"), true);
   assert.equal(mixer.includes("channels = new Map"), true);
@@ -268,8 +274,11 @@ test("friend loudness balance learns speech without lifting silence or overridin
       enabled: true,
     });
   }
-  assert.equal(FRIEND_LOUDNESS_TARGET_LUFS, -14);
-  assert.ok(quiet.gain > 1.8);
+  assert.equal(FRIEND_LOUDNESS_TARGET_LUFS, -16);
+  assert.equal(FRIEND_LOUDNESS_MAX_BOOST_DB, 6);
+  assert.equal(FRIEND_LOUDNESS_MAX_CUT_DB, -6);
+  assert.ok(quiet.gain > 1.4);
+  assert.ok(quiet.gain <= 10 ** (FRIEND_LOUDNESS_MAX_BOOST_DB / 20));
 
   let loud = createLoudnessBalanceState();
   for (let index = 0; index < 60; index += 1) {
@@ -281,6 +290,7 @@ test("friend loudness balance learns speech without lifting silence or overridin
     });
   }
   assert.ok(loud.gain < 0.8);
+  assert.ok(loud.gain >= 10 ** (FRIEND_LOUDNESS_MAX_CUT_DB / 20));
   assert.equal(applyLoudnessBalanceToMemberVolume(0, quiet.gain, true), 0);
   assert.equal(applyLoudnessBalanceToMemberVolume(1.5, 2, true), 3);
   assert.equal(applyLoudnessBalanceToMemberVolume(1.5, 2, false), 1.5);
@@ -294,7 +304,7 @@ test("friend loudness balance learns speech without lifting silence or overridin
       enabled: true,
     });
   }
-  assert.ok(quiet.gain < learnedGain * 0.75);
+  assert.equal(quiet.gain, learnedGain);
   const silentGain = quiet.gain;
   quiet = advanceLoudnessBalance(quiet, {
     rms: 0.05,
@@ -302,7 +312,34 @@ test("friend loudness balance learns speech without lifting silence or overridin
     now: 14_000,
     enabled: true,
   });
-  assert.ok(quiet.gain > silentGain);
+  assert.ok(Math.abs(quiet.gain - silentGain) < 0.01);
+});
+
+test("independent friend loudness states converge gradually without sharing gain", () => {
+  const inputRms = [0.08, 0.11, 0.16];
+  const peaks = [0.2, 0.28, 0.42];
+  const states = inputRms.map(() => createLoudnessBalanceState());
+  const maximumStepDb = 1.8 * 0.066 + 1e-6;
+
+  for (let frame = 0; frame < 1_200; frame += 1) {
+    for (let index = 0; index < states.length; index += 1) {
+      const previousGainDb = states[index]!.gainDb;
+      states[index] = advanceLoudnessBalance(states[index]!, {
+        rms: inputRms[index]!,
+        peak: peaks[index]!,
+        now: frame * 66,
+        enabled: true,
+      });
+      assert.ok(Math.abs(states[index]!.gainDb - previousGainDb) <= maximumStepDb);
+    }
+  }
+
+  const outputLufs = states.map(
+    (state, index) => -0.691 + 20 * Math.log10(inputRms[index]!) + state.gainDb,
+  );
+  assert.ok(Math.max(...outputLufs) - Math.min(...outputLufs) < 1.2);
+  assert.ok(outputLufs.every((level) => level >= -17.2 && level <= -15.2));
+  assert.equal(new Set(states.map((state) => state.gainDb.toFixed(3))).size, states.length);
 });
 
 test("late-join remote audio stays attached while Chromium temporarily mutes the live track", () => {

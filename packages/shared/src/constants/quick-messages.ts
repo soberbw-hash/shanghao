@@ -391,8 +391,8 @@ export const QUICK_MESSAGE_PRESETS: QuickMessagePreset[] = [
   ...LOCAL_MUSIC_PRESETS,
 ];
 
-/** Starts just below the -14 LUFS speech reference; final pack mastering stays independent. */
-export const DEFAULT_QUICK_MESSAGE_VOLUME = 0.72;
+/** Shared default for voice effects and music; source mastering remains independent. */
+export const DEFAULT_QUICK_MESSAGE_VOLUME = 0.68;
 
 export const DEFAULT_QUICK_MESSAGE_SLOTS: QuickMessageShortcutSlot[] = [
   { presetId: undefined, shortcut: "Ctrl+Alt+1", enabled: false },
@@ -401,6 +401,38 @@ export const DEFAULT_QUICK_MESSAGE_SLOTS: QuickMessageShortcutSlot[] = [
   { presetId: "legacy-wait", shortcut: "Ctrl+Alt+4", enabled: true },
   { presetId: "legacy-hear", shortcut: "Ctrl+Alt+5", enabled: true },
 ];
+
+/**
+ * Keep every consumer on the same fixed-size shortcut model. Older profiles
+ * can contain a sparse or truncated array, while newer profiles may carry
+ * extra slot metadata that should survive a read/write round trip.
+ */
+export const normalizeQuickMessageSlots = (
+  value: unknown,
+  defaults: readonly QuickMessageShortcutSlot[] = DEFAULT_QUICK_MESSAGE_SLOTS,
+  count = defaults.length,
+): QuickMessageShortcutSlot[] => {
+  const rawSlots = Array.isArray(value) ? value : [];
+  return Array.from({ length: count }, (_, index) => {
+    const fallback = defaults[index] ??
+      defaults[0] ?? { presetId: undefined, shortcut: "", enabled: false };
+    const candidate = rawSlots[index];
+    if (!candidate || typeof candidate !== "object" || Array.isArray(candidate)) {
+      return { ...fallback };
+    }
+    const source = candidate as Record<string, unknown>;
+    return {
+      ...fallback,
+      ...source,
+      presetId:
+        typeof source.presetId === "string"
+          ? source.presetId.trim() || undefined
+          : fallback.presetId,
+      shortcut: typeof source.shortcut === "string" ? source.shortcut.trim() : fallback.shortcut,
+      enabled: typeof source.enabled === "boolean" ? source.enabled : fallback.enabled,
+    } as QuickMessageShortcutSlot;
+  });
+};
 
 export const findQuickMessagePreset = (presetId: string): QuickMessagePreset | undefined =>
   QUICK_MESSAGE_PRESETS.find((preset) => preset.id === presetId);

@@ -23,7 +23,17 @@ test("recording filenames use one readable sequence per day", () => {
       "上号-2026-08-12-一号房-08-23-30-00.m4a",
       "上号-2026-08-13-二号房-04-00-40-00.m4a",
     ]),
-    "上号-2026-08-13-语音-05-00-47-26.m4a",
+    "上号-2026-08-13-语音05-00时47分.m4a",
+  );
+});
+
+test("recording filenames recognize new readable names without reusing the daily sequence", () => {
+  assert.equal(
+    createNumberedRecordingFileName(new Date(2026, 7, 13, 18, 25, 59), [
+      "上号-2026-08-13-语音01-10时05分.m4a",
+      "上号-2026-08-13-语音07-17时40分.m4a",
+    ]),
+    "上号-2026-08-13-语音08-18时25分.m4a",
   );
 });
 

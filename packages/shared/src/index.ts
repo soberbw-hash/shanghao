@@ -19,3 +19,4 @@ export * from "./utils/relayUrl";
 export * from "./utils/nickname";
 export * from "./utils/transcriptQuality";
 export * from "./utils/transcriptSegments";
+export * from "./utils/transcriptionValidity";

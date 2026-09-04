@@ -17,7 +17,7 @@ test("recording loudness learner never raises silence or background noise", () =
   assert.equal(state.speechFrames, 0);
 });
 
-test("recording loudness gain remains inside +6/-9 dB and reacts quickly to loud speech", () => {
+test("recording fallback loudness gain remains inside +/-6 dB", () => {
   let quiet = createRecordingLoudnessState();
   for (let index = 0; index < 500; index += 1) {
     quiet = advanceRecordingLoudness(quiet, { rms: 0.02, peak: 0.08 }, true);
@@ -29,7 +29,7 @@ test("recording loudness gain remains inside +6/-9 dB and reacts quickly to loud
   for (let index = 0; index < 20; index += 1) {
     loud = advanceRecordingLoudness(loud, { rms: 0.5, peak: 0.9 }, true);
   }
-  assert.ok(loud.gainDb < -8.5);
+  assert.ok(loud.gainDb < -5.5);
   assert.ok(loud.gainDb >= RECORDING_MAX_CUT_DB);
 });
 
@@ -57,7 +57,7 @@ test("five strongly different talkers converge without sharing recording gain st
     }
   }
   assert.ok(states[0]!.gainDb > 5.5);
-  assert.ok(states[4]!.gainDb < -8.5);
+  assert.ok(states[4]!.gainDb < -5.5);
   assert.equal(new Set(states.map((state) => state.speechFrames)).size, 1);
-  assert.ok(states.every((state) => state.gainDb >= -9 && state.gainDb <= 6));
+  assert.ok(states.every((state) => state.gainDb >= -6 && state.gainDb <= 6));
 });

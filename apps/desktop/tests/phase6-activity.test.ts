@@ -3,50 +3,29 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import test from "node:test";
 
-import {
-  ACTIVITY_FALLBACK_POLL_INTERVAL_MS,
-  WORK_ACTIVITY_RULES,
-} from "../src/main/game-detection";
+import { ACTIVITY_FALLBACK_POLL_INTERVAL_MS } from "../src/main/game-detection";
 import { readRendererCss } from "./helpers/read-renderer-css";
 
 const readSource = (relativePath: string): string =>
   readFileSync(path.resolve(process.cwd(), relativePath), "utf8");
 
-test("work presence is independently controlled and actively cleared", () => {
+test("professional work presence has been removed from settings, detection and room UI", () => {
   const settings = readSource("src/renderer/src/pages/SettingsPage.tsx");
   const room = readSource("src/renderer/src/pages/RoomPage.tsx");
   const ipc = readSource("src/main/ipc.ts");
   const detector = readSource("src/main/game-detection.ts");
+  const protocol = readSource("../../packages/signaling/src/protocol.ts");
 
-  assert.ok(settings.includes('label="开启工作显示"'));
-  assert.ok(room.includes("visibleMembers"));
-  assert.ok(room.includes("workActivity: undefined"));
-  assert.ok(ipc.includes("setWorkActivityEnabled(settings.isWorkActivityVisible)"));
-  assert.ok(
-    detector.includes('message: enabled ? "work_activity_enabled" : "work_activity_cleared"'),
-  );
-  assert.ok(detector.includes("const work = includeWorkActivity"));
-  assert.ok(detector.includes("this.workActivityEnabled"));
+  for (const source of [settings, room, ipc, detector, protocol]) {
+    assert.equal(source.includes("workActivity"), false);
+    assert.equal(source.includes("isWorkActivityVisible"), false);
+  }
+  assert.ok(detector.includes("matchKnownGameActivity"));
+  assert.ok(detector.includes("matchMediaSessionMusicActivity"));
 });
 
-test("activity fallback is 20 seconds and common office apps are excluded", () => {
+test("game and music activity fallback remains 20 seconds", () => {
   assert.equal(ACTIVITY_FALLBACK_POLL_INTERVAL_MS, 20_000);
-  const ids = new Set(WORK_ACTIVITY_RULES.map((rule) => rule.id));
-  for (const id of ["word", "excel", "powerpoint", "visio", "wps", "notion"]) {
-    assert.equal(ids.has(id), false, `${id} must not be public work presence`);
-  }
-  for (const id of [
-    "codex",
-    "vscode",
-    "cursor",
-    "premiere",
-    "photoshop",
-    "blender",
-    "unity",
-    "unreal",
-  ]) {
-    assert.equal(ids.has(id), true, `${id} must remain a professional work app`);
-  }
 });
 
 test("application identity and icon resolution are cached outside the renderer", () => {

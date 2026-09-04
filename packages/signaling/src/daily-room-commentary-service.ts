@@ -21,6 +21,9 @@ export class DailyRoomCommentaryService {
     const store = await this.reports;
     let reports = store.getHistory(roomId);
     if (reports[0] && !this.hasRichCommentary(reports[0].commentary)) {
+      // Despite the legacy "cloud_ai" protocol name, CloudAiService is the
+      // user's DeepSeek-compatible API client. This never calls CloudBase AI
+      // and therefore cannot consume CloudBase AI resource points.
       await this.ensure(reports[0]);
       reports = store.getHistory(roomId);
     }
@@ -53,7 +56,6 @@ export class DailyRoomCommentaryService {
         "根据下面的昨日房间统计，写一段有活人感的中文点评。",
         "必须分成2到3行，每行18到45个汉字，总长度80到150字；行与行之间使用换行。",
         "可以加入2到4个自然的emoji，允许轻微毒舌、吐槽和玩梗，但不要攻击任何人，不要编造统计里没有的事件。",
-        "不要提及开发软件、工作软件、Codex、CodeS或工作时长；开发活动不属于昨日房间统计。",
         '只返回JSON：{"commentary":"第一行\\n第二行"}。',
         JSON.stringify({
           room: report.roomId === "side" ? "二号房" : "一号房",
@@ -63,7 +65,9 @@ export class DailyRoomCommentaryService {
           peakConcurrent: report.peakConcurrent,
           messageCount: report.messageCount,
           screenShareCount: report.screenShareCount,
-          games: report.games.map((game) => game.name),
+          games: report.games,
+          gameActivities: report.gameActivities,
+          participants: report.participants,
         }),
       ].join("\n"),
     };

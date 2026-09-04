@@ -87,16 +87,6 @@ export interface MusicActivity {
   artist?: string;
 }
 
-export type WorkActivityCategory =
-  "development" | "design" | "engineering" | "office" | "data" | "media";
-
-export interface WorkActivity {
-  id: string;
-  name: string;
-  category: WorkActivityCategory;
-  iconDataUrl?: string;
-}
-
 export interface RoomMember {
   id: string;
   /** Permanent Supabase Auth identity for signed-in members, or guest:<peerId> for guests. */
@@ -121,7 +111,6 @@ export interface RoomMember {
   gameName?: string;
   gameIconDataUrl?: string;
   musicActivity?: MusicActivity;
-  workActivity?: WorkActivity;
   latencyMs?: number;
   presenceState: MemberPresenceState;
   speakingState: MemberSpeakingState;
@@ -176,13 +165,6 @@ export interface DailyRoomGameActivity {
   durationMs: number;
 }
 
-export interface DailyRoomWorkActivity {
-  identityId?: string;
-  nickname: string;
-  workName: string;
-  durationMs: number;
-}
-
 export interface DailyRoomParticipantSummary {
   identityId: string;
   nickname: string;
@@ -194,6 +176,24 @@ export interface DailyRoomParticipantSummary {
   screenShareDurationMs: number;
   firstSeenAt: string;
   lastExitAt?: string;
+}
+
+export interface DailyRoomRecordingRecapMoment {
+  title: string;
+  description: string;
+  startMs: number;
+  endMs: number;
+}
+
+export interface DailyRoomRecordingRecap {
+  recordingId: string;
+  uploadedAt: string;
+  description: string;
+  summary: string[];
+  highlights: DailyRoomRecordingRecapMoment[];
+  funnyMoments: DailyRoomRecordingRecapMoment[];
+  participantNicknames: string[];
+  keywords: string[];
 }
 
 export interface DailyRoomReport {
@@ -214,8 +214,9 @@ export interface DailyRoomReport {
   screenShareDurationMs?: number;
   games: DailyRoomGameSummary[];
   gameActivities: DailyRoomGameActivity[];
-  workActivities?: DailyRoomWorkActivity[];
   participants?: DailyRoomParticipantSummary[];
+  /** Local recording recaps appear here only after a user explicitly publishes them. */
+  recordingRecaps?: DailyRoomRecordingRecap[];
   peakConcurrentAt?: string;
   lastExit?: {
     nickname: string;

@@ -54,6 +54,7 @@ import type { LocalWeatherRequest, LocalWeatherSnapshot } from "./weather.types"
 import type {
   AccountAvatarUpdateRequest,
   AccountLoginRequest,
+  AccountRememberedLogin,
   AccountPasswordResetRequest,
   AccountProfileUpdateRequest,
   AccountRegisterRequest,
@@ -236,7 +237,6 @@ export interface GameDetectionSnapshot {
   gameIconDataUrl?: string;
   detectedAt?: string;
   musicActivity?: import("./room.types").MusicActivity;
-  workActivity?: import("./room.types").WorkActivity;
   checkedAt: string;
 }
 
@@ -327,6 +327,8 @@ export interface DesktopApi {
     listVoiceMemories: () => Promise<VoiceMemoryRecord[]>;
     processRecording: (request: VoiceMemoryProcessRequest) => Promise<VoiceMemoryRecord>;
     selectTranscription: (recordingId: string, modelId: AiAsrModelId) => Promise<VoiceMemoryRecord>;
+    clearTranscriptionResults: (recordingId: string) => Promise<VoiceMemoryRecord>;
+    publishOrganization: (recordingId: string) => Promise<VoiceMemoryRecord>;
     pauseTask: (recordingId: string) => Promise<void>;
     resumeTask: (recordingId: string) => Promise<VoiceMemoryRecord>;
     assignSpeaker: (
@@ -361,6 +363,7 @@ export interface DesktopApi {
   };
   account: {
     getSnapshot: () => Promise<AccountSnapshot>;
+    getRememberedLogin: () => Promise<AccountRememberedLogin | undefined>;
     configureCloudBase: (config?: CloudBaseClientConfig) => Promise<void>;
     login: (request: AccountLoginRequest) => Promise<AccountSnapshot>;
     register: (request: AccountRegisterRequest) => Promise<AccountSnapshot>;

@@ -5,16 +5,22 @@ import type { AiRuntimeManager } from "./ai-runtime-manager";
 import type { CustomAiProviderStore } from "./custom-ai-provider-store";
 import type { SettingsStore } from "./settings-store";
 import type { SignalingClientBridge } from "./signaling-client";
+import type { LocalLLMProvider, LocalLlmGenerateResult } from "./local-llm-provider";
 
 export type AiTextPurpose = "organize" | "question";
 
-interface GenerateJsonRequest {
+export interface GenerateJsonRequest {
   purpose: AiTextPurpose;
   prompt: string;
   maxNewTokens: number;
   timeoutMs?: number;
   manual: boolean;
   signal?: AbortSignal;
+}
+
+export interface GeneratedJson<T> {
+  value: T;
+  metrics?: LocalLlmGenerateResult<T>["metrics"];
 }
 
 const extractJsonObject = <T>(value: string): T => {
@@ -41,9 +47,18 @@ export class AiTextGateway {
     private readonly runtime: AiRuntimeManager,
     private readonly signaling: SignalingClientBridge,
     private readonly customProvider: CustomAiProviderStore,
+    private readonly localLlm: LocalLLMProvider,
   ) {}
 
   async generateJson<T>(request: GenerateJsonRequest): Promise<T> {
+    return (await this.generateJsonWithMetrics<T>(request)).value;
+  }
+
+  usesLocalOrganizer(): boolean {
+    return this.providerFor("organize") === "local";
+  }
+
+  async generateJsonWithMetrics<T>(request: GenerateJsonRequest): Promise<GeneratedJson<T>> {
     const provider = this.providerFor(request.purpose);
     if (provider === "cloud") {
       const content = await this.signaling.requestCloudAi({
@@ -52,14 +67,16 @@ export class AiTextGateway {
         useWebSearch: request.purpose === "question",
         signal: request.signal,
       });
-      return extractJsonObject<T>(content);
+      return { value: extractJsonObject<T>(content) };
     }
     if (provider === "custom") {
-      return this.customProvider.generateJson<T>({
-        prompt: request.prompt,
-        maxNewTokens: request.maxNewTokens,
-        signal: request.signal,
-      });
+      return {
+        value: await this.customProvider.generateJson<T>({
+          prompt: request.prompt,
+          maxNewTokens: request.maxNewTokens,
+          signal: request.signal,
+        }),
+      };
     }
 
     const taskKind = request.purpose === "organize" ? "summary" : "question";
@@ -67,10 +84,12 @@ export class AiTextGateway {
     if (!runnable.runnable) throw new Error(runnable.reason);
     this.models.markQwenTaskStarted(`${request.purpose}:local`);
     try {
-      return await this.runtime.generateJson<T>({
-        resourceMode: runnable.resourceMode,
+      // The target machine has 8 GB VRAM and 32 GB RAM. ASR is explicitly released before
+      // FreeToken starts, while one complete organization run keeps the LLM loaded.
+      await this.runtime.releaseAsrMeasured("local_llm_organization_start");
+      return await this.localLlm.generateJson<T>({
         maxNewTokens: request.maxNewTokens,
-        timeoutMs: request.timeoutMs,
+        timeoutMs: request.timeoutMs ?? 30 * 60_000,
         signal: request.signal,
         prompt: request.prompt,
       });

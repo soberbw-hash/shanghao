@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
-import { createReadStream, createWriteStream } from "node:fs";
+import { createReadStream, createWriteStream, existsSync } from "node:fs";
 import { mkdir, readFile, rename, rm, stat, statfs, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { Readable, Transform } from "node:stream";
@@ -11,9 +11,9 @@ import type {
   AiModelFailureKind,
   AiModelId,
   AiModelStatus,
+  AiLocalLlmRuntimeMetrics,
   AiProcessingMode,
   AiRuntimePressure,
-  AiSupportModelId,
   AiTaskCheckpoint,
   AiTaskKind,
   AiVoiceMemorySnapshot,
@@ -21,7 +21,15 @@ import type {
 } from "@private-voice/shared";
 
 import type { GameDetectionController } from "./game-detection";
+import {
+  MODEL_SOURCES,
+  QWEN36_NVFP4_MODEL_DEFINITION,
+  QWEN36_NVFP4_MODEL_REVISION,
+  type ModelComponent,
+  type ModelDefinition,
+} from "./ai-model-catalog";
 import { requiredModelFiles, requiredWeightFiles } from "./ai-model-layout";
+import { ACTIVE_ARK_ASR_VARIANT } from "./ark-asr-config";
 import { ResourceScheduler } from "./resource-scheduler";
 
 export {
@@ -29,28 +37,7 @@ export {
   NORMAL_DOWNLOAD_BYTES_PER_SECOND,
   REALTIME_PRESSURE_DOWNLOAD_BYTES_PER_SECOND,
 } from "./resource-scheduler";
-
-interface ModelDefinition {
-  id: AiModelId;
-  category: "asr" | "support" | "organizer";
-  name: string;
-  purpose: string;
-  repository: string;
-  revision: string;
-  approximateBytes: number;
-  components?: readonly ModelComponent[];
-  dependencies?: readonly AiSupportModelId[];
-  optionalDependencies?: readonly AiSupportModelId[];
-  requiresHuggingFaceAuthorization?: boolean;
-  hardwareNote?: string;
-}
-
-interface ModelComponent {
-  directory: string;
-  repository: string;
-  revision: string;
-}
-
+export { MODEL_SOURCES, QWEN36_NVFP4_MODEL_REVISION };
 export interface RemoteModelFile {
   rfilename: string;
   size?: number;
@@ -68,11 +55,6 @@ interface DownloadModelFile extends RemoteModelFile {
   sourceRepository: string;
   sourceRevision: string;
   sha256?: string;
-}
-
-interface ModelSource {
-  name: string;
-  baseUrl: string;
 }
 
 type ModelFetcher = (input: string, init?: RequestInit) => Promise<Response>;
@@ -104,8 +86,10 @@ const FSMN_VAD_MODEL_REVISION = "df20e6b30c653645fa4ff125cacfcabd1020a669";
 const CT_PUNC_MODEL_REVISION = "d0e55e2b8722a78b63705ff443d09c4f86e5d750";
 const PARAFORMER_BUNDLE_REVISION = "bundle-d7811ee3-df20e6b3-d0e55e2b";
 const MOSS_TRANSCRIBE_DIARIZE_REVISION = "e8681d68e7042738ffca8ac8212bc8fcb1131ab8";
+const MOSS_TRANSCRIBE_DIARIZE_Q8_REVISION = "6fdfa33aed776bbb0ac11a1a9835634fe6d75dd7";
 const DOLPHIN_CN_DIALECT_REVISION = "eb6854969b5715cfccf4a9297a75f189343700dc";
 const COHERE_TRANSCRIBE_REVISION = "00c06981f239c788c0ce23b8caa001c071e4e391";
+const ARK_ASR_REVISION = ACTIVE_ARK_ASR_VARIANT.revision;
 const QWEN_MODEL_REVISION = "851bf6e806efd8d0a36b00ddf55e13ccb7b8cd0a";
 
 const MODEL_DEFINITIONS: readonly ModelDefinition[] = [
@@ -198,6 +182,17 @@ const MODEL_DEFINITIONS: readonly ModelDefinition[] = [
     hardwareNote: "CUDA · BF16 · batch 1 · 官方远程代码与原生 S01/S02 说话人标签 · 不量化。",
   },
   {
+    id: "moss-transcribe-diarize-0.9b-q8_0",
+    category: "asr",
+    name: "MOSS Transcribe Diarize 0.9B Q8",
+    purpose: "多人转录 · 说话人区分 · 时间戳",
+    repository: "handy-computer/MOSS-Transcribe-Diarize-gguf",
+    revision: MOSS_TRANSCRIBE_DIARIZE_Q8_REVISION,
+    approximateBytes: 986_899_616,
+    files: ["MOSS-Transcribe-Diarize-Q8_0.gguf"],
+    hardwareNote: "transcribe.cpp · Q8_0 · CUDA 优先、CPU 回退；保留模型原生说话人编号和时间戳。",
+  },
+  {
     id: "dolphin-cn-dialect-0.4b",
     category: "asr",
     name: "Dolphin-CN-Dialect 0.4B",
@@ -221,6 +216,18 @@ const MODEL_DEFINITIONS: readonly ModelDefinition[] = [
       "CUDA · BF16 · batch 1 · 不量化；官方仓库需先接受 Hugging Face 使用条款，未安装对齐组件时使用真实分段边界。",
   },
   {
+    id: "ark-asr-3b-q8_0",
+    category: "asr",
+    name: "ARK-ASR-3B Q8_0",
+    purpose: "高质量多语言 ASR · GGUF Q8_0",
+    repository: ACTIVE_ARK_ASR_VARIANT.repository,
+    revision: ARK_ASR_REVISION,
+    approximateBytes: ACTIVE_ARK_ASR_VARIANT.fileSizeBytes,
+    files: [ACTIVE_ARK_ASR_VARIANT.fileName],
+    hardwareNote:
+      "CUDA · Q8_0 · batch 1 · 不自动降级；8GB 显存上的 OOM、降速或中断会按真实结果记录。ARK CUDA 后端仍属实验支持。",
+  },
+  {
     id: "qwen3-forced-aligner-0.6b",
     category: "support",
     name: "Qwen3-ForcedAligner-0.6B",
@@ -237,7 +244,9 @@ const MODEL_DEFINITIONS: readonly ModelDefinition[] = [
     repository: "Qwen/Qwen3.5-4B",
     revision: QWEN_MODEL_REVISION,
     approximateBytes: 9_319_828_096,
+    inferenceBackend: "builtin",
   },
+  QWEN36_NVFP4_MODEL_DEFINITION,
 ] as const;
 
 export const PINNED_MODEL_REVISIONS: Readonly<Record<AiModelId, string>> = {
@@ -248,24 +257,19 @@ export const PINNED_MODEL_REVISIONS: Readonly<Record<AiModelId, string>> = {
   "fireredasr2-aed": FIRERED_ASR2_AED_REVISION,
   "paraformer-zh": PARAFORMER_BUNDLE_REVISION,
   "moss-transcribe-diarize-0.9b": MOSS_TRANSCRIBE_DIARIZE_REVISION,
+  "moss-transcribe-diarize-0.9b-q8_0": MOSS_TRANSCRIBE_DIARIZE_Q8_REVISION,
   "dolphin-cn-dialect-0.4b": DOLPHIN_CN_DIALECT_REVISION,
   "cohere-transcribe-2b": COHERE_TRANSCRIBE_REVISION,
+  "ark-asr-3b-q8_0": ARK_ASR_REVISION,
   "qwen3-forced-aligner-0.6b": QWEN3_FORCED_ALIGNER_REVISION,
   "qwen35-4b": QWEN_MODEL_REVISION,
+  "qwen36-35b-a3b-nvfp4": QWEN36_NVFP4_MODEL_REVISION,
 };
 
 const METADATA_FILE = "state.json";
-const MODEL_REQUEST_TIMEOUT_MS = 12_000;
-const MAX_CONCURRENT_MODEL_DOWNLOADS = 2;
+const MODEL_REQUEST_TIMEOUT_MS = 12_000,
+  MAX_CONCURRENT_MODEL_DOWNLOADS = 2;
 const MODEL_FILE_DOWNLOAD_ATTEMPTS = 3;
-
-// Hugging Face is frequently unreachable on otherwise healthy mainland networks.
-// Keep the mirror first for a fast default path and retain the canonical host as
-// an automatic fallback. Both endpoints expose the same immutable revision files.
-export const MODEL_SOURCES: readonly ModelSource[] = [
-  { name: "Hugging Face 镜像", baseUrl: "https://hf-mirror.com" },
-  { name: "Hugging Face", baseUrl: "https://huggingface.co" },
-] as const;
 
 const modelDefinition = (id: AiModelId): ModelDefinition => {
   const definition = MODEL_DEFINITIONS.find((candidate) => candidate.id === id);
@@ -449,7 +453,7 @@ export class AiModelManager {
   >();
   private readonly downloadSpeeds = new Map<AiModelId, number>();
   private persisted: PersistedAiState = emptyState();
-  private processingMode: AiProcessingMode = "after_game";
+  private processingMode: AiProcessingMode = "manual";
   private gameActive = false;
   private runtimePressure: AiRuntimePressure = {
     inVoiceRoom: false,
@@ -477,9 +481,15 @@ export class AiModelManager {
     resolve: (release: () => void) => void;
     reject: (error: Error) => void;
   }> = [];
-  private runtimeStatus: Partial<Record<AiModelId, { ready: boolean; message?: string }>> = {};
+  private runtimeStatus: Partial<
+    Record<AiModelId, { ready: boolean; message?: string; metrics?: AiLocalLlmRuntimeMetrics }>
+  > = {};
+  private readonly fallbackModelRoots = new Map<AiModelId, string>();
   private activeAsrModel: AiAsrModelId = "qwen3-asr-0.6b-force";
-  private runtimePreparer?: (id: AiModelId) => Promise<{ ready: boolean; message?: string }>;
+  private runtimePreparer?: (
+    id: AiModelId,
+    signal?: AbortSignal,
+  ) => Promise<{ ready: boolean; message?: string }>;
 
   constructor(
     private readonly rootDirectory: string,
@@ -487,6 +497,7 @@ export class AiModelManager {
     private readonly writeLog: (payload: RendererLogPayload) => Promise<void>,
     private readonly modelFetch: ModelFetcher = globalThis.fetch,
     private readonly readHuggingFaceAccessToken?: () => Promise<string | undefined>,
+    private readonly fallbackModelDirectories: readonly string[] = [],
   ) {}
 
   async initialize(
@@ -497,6 +508,7 @@ export class AiModelManager {
     this.activeAsrModel = activeAsrModel;
     await mkdir(this.rootDirectory, { recursive: true });
     this.persisted = await this.readState();
+    await this.hydrateFallbackModelReferences();
     this.gameActive = Boolean(this.gameDetection.getSnapshot().gameName);
     this.scheduler.update({ processingMode, gameActive: this.gameActive });
     this.gameDetection.onDetected((snapshot) => {
@@ -573,7 +585,10 @@ export class AiModelManager {
   }
 
   setRuntimePreparer(
-    preparer: (id: AiModelId) => Promise<{ ready: boolean; message?: string }>,
+    preparer: (
+      id: AiModelId,
+      signal?: AbortSignal,
+    ) => Promise<{ ready: boolean; message?: string }>,
   ): void {
     this.runtimePreparer = preparer;
   }
@@ -644,7 +659,15 @@ export class AiModelManager {
   }
 
   setRuntimeStatus(id: AiModelId, ready: boolean, message?: string): void {
-    this.runtimeStatus[id] = { ready, message };
+    this.runtimeStatus[id] = { ...this.runtimeStatus[id], ready, message };
+    this.emit();
+  }
+
+  setLocalLlmRuntimeStatus(
+    id: "qwen36-35b-a3b-nvfp4",
+    status: { ready: boolean; message?: string; metrics: AiLocalLlmRuntimeMetrics },
+  ): void {
+    this.runtimeStatus[id] = status;
     this.emit();
   }
 
@@ -696,7 +719,8 @@ export class AiModelManager {
       await rm(this.modelDirectory(id), { recursive: true, force: true });
       this.persisted.models[id] = { userInstalled: false, phase: "not_installed" };
       delete this.runtimeStatus[id];
-      if (id === "qwen35-4b") this.releaseQwenResources("model_deleted");
+      if (id === "qwen35-4b" || id === "qwen36-35b-a3b-nvfp4")
+        this.releaseQwenResources("model_deleted");
       await this.persist();
       this.emit();
     }
@@ -824,7 +848,7 @@ export class AiModelManager {
     await this.persist();
     this.emit();
 
-    const runtime = await this.prepareRuntime(id);
+    const runtime = await this.prepareRuntime(id, controller.signal);
 
     current.phase = "installed";
     await this.persist();
@@ -843,10 +867,13 @@ export class AiModelManager {
     await this.log("info", "ai_model_ready", id, undefined, { revision: definition.revision });
   }
 
-  private async prepareRuntime(id: AiModelId): Promise<{ ready: boolean; message?: string }> {
+  private async prepareRuntime(
+    id: AiModelId,
+    signal?: AbortSignal,
+  ): Promise<{ ready: boolean; message?: string }> {
     if (!this.runtimePreparer) return { ready: true };
     try {
-      const result = await this.runtimePreparer(id);
+      const result = await this.runtimePreparer(id, signal);
       this.runtimeStatus[id] = result;
       await this.log("info", "ai_model_runtime_checked", id, undefined, {
         ready: result.ready,
@@ -1130,7 +1157,8 @@ export class AiModelManager {
             sourceRevision: component.revision,
             sha256: file.lfs?.sha256,
           };
-        }),
+        })
+        .filter((file) => !definition.files || definition.files.includes(file.rfilename)),
     );
   }
 
@@ -1252,6 +1280,7 @@ export class AiModelManager {
       failureKind: current?.failureKind,
       runtimeReady: this.runtimeStatus[definition.id]?.ready === true,
       runtimeMessage: this.runtimeStatus[definition.id]?.message,
+      runtimeMetrics: this.runtimeStatus[definition.id]?.metrics,
       dependencies: definition.dependencies ? [...definition.dependencies] : undefined,
       optionalDependencies: definition.optionalDependencies
         ? [...definition.optionalDependencies]
@@ -1275,11 +1304,51 @@ export class AiModelManager {
 
   getActiveModelDirectory(id: AiModelId): string | undefined {
     const revision = this.persisted.models[id]?.activeRevision;
-    return revision ? this.revisionDirectory(id, revision) : undefined;
+    if (!revision) return undefined;
+    const local = this.revisionDirectory(id, revision);
+    if (existsSync(local)) return local;
+    const fallbackRoot = this.fallbackModelRoots.get(id);
+    const fallback = fallbackRoot ? path.join(fallbackRoot, id, revision) : undefined;
+    return fallback && existsSync(fallback) ? fallback : local;
   }
 
   private revisionDirectory(id: AiModelId, revision: string): string {
     return path.join(this.modelDirectory(id), revision);
+  }
+
+  /**
+   * Older development builds wrote models below userData. Keep complete models usable
+   * without copying tens of gigabytes into the new LocalAppData store. New downloads and
+   * repairs still target rootDirectory; the fallback is only used to resolve an active model.
+   */
+  private async hydrateFallbackModelReferences(): Promise<void> {
+    for (const fallbackRoot of this.fallbackModelDirectories) {
+      if (!fallbackRoot || path.resolve(fallbackRoot) === path.resolve(this.rootDirectory))
+        continue;
+      let legacy: PersistedAiState;
+      try {
+        legacy = JSON.parse(
+          await readFile(path.join(fallbackRoot, METADATA_FILE), "utf8"),
+        ) as PersistedAiState;
+      } catch {
+        continue;
+      }
+      for (const definition of MODEL_DEFINITIONS) {
+        const legacyModel = legacy.models?.[definition.id];
+        const revision = legacyModel?.activeRevision;
+        if (!revision || !existsSync(path.join(fallbackRoot, definition.id, revision))) continue;
+        const current = this.persisted.models[definition.id];
+        const localActive = current?.activeRevision
+          ? path.join(this.rootDirectory, definition.id, current.activeRevision)
+          : undefined;
+        if (!current) {
+          this.persisted.models[definition.id] = { ...legacyModel };
+          this.fallbackModelRoots.set(definition.id, fallbackRoot);
+        } else if (current.activeRevision === revision && localActive && !existsSync(localActive)) {
+          this.fallbackModelRoots.set(definition.id, fallbackRoot);
+        }
+      }
+    }
   }
 
   private async readState(): Promise<PersistedAiState> {
@@ -1370,7 +1439,9 @@ export class AiModelManager {
     requiredModel: AiModelId;
   } {
     const requiredModel =
-      kind === "transcription" ? (transcriptionModel ?? this.activeAsrModel) : "qwen35-4b";
+      kind === "transcription"
+        ? (transcriptionModel ?? this.activeAsrModel)
+        : "qwen36-35b-a3b-nvfp4";
     if (!this.persisted.models[requiredModel]?.activeRevision) {
       return {
         runnable: false,

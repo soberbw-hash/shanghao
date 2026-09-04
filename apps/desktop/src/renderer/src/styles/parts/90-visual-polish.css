@@ -733,7 +733,26 @@
   -webkit-backdrop-filter: none !important;
 }
 
+.chat-image-preview-loading {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  z-index: 0;
+  place-items: center;
+  align-content: center;
+  gap: 10px;
+  color: rgba(255, 255, 255, 0.82);
+  pointer-events: none;
+}
+
+.chat-image-preview-loading small {
+  font-size: 12px;
+  font-weight: 650;
+}
+
 .chat-image-preview-surface img {
+  position: relative;
+  z-index: 1;
   display: block;
   max-width: 100%;
   max-height: 100%;
@@ -741,7 +760,7 @@
   pointer-events: auto;
   border: 1px solid rgba(255, 255, 255, 0.68);
   border-radius: 20px;
-  background: #eef3f8;
+  background: transparent;
   box-shadow: 0 30px 90px rgba(10, 24, 43, 0.34);
   backface-visibility: hidden;
   transform: translateZ(0);

@@ -5,6 +5,7 @@ import { APPLE_MOTION_DURATION, APPLE_MOTION_EASE } from "@private-voice/shared"
 
 import { AppErrorBoundary } from "../components/layout/AppErrorBoundary";
 import { AppShell } from "../components/layout/AppShell";
+import { InteractionPerformanceHud } from "../components/diagnostics/InteractionPerformanceHud";
 import { RemoteAudioRenderer } from "../features/audio/RemoteAudioRenderer";
 import { visualRuntimeController } from "../features/visual-runtime/VisualRuntimeController";
 import { displayRefreshRateService } from "../features/visual-runtime/DisplayRefreshRateService";
@@ -12,7 +13,7 @@ import { useAppBootstrap } from "../hooks/useAppBootstrap";
 import { useGlobalMuteSync } from "../hooks/useGlobalMuteSync";
 import { useLocalAudioTransport } from "../hooks/useLocalAudioTransport";
 import { useUiFeedbackSounds } from "../hooks/useUiFeedbackSounds";
-import { HomePage } from "../pages/HomePage";
+import { dispatchQuickMessageShortcut } from "../hooks/useRoomState";
 import { AccountPage } from "../pages/AccountPage";
 import { SharedOverlays } from "../pages/SharedOverlays";
 import { useAppStore } from "../store/appStore";
@@ -39,6 +40,11 @@ export const App = () => {
   useLocalAudioTransport();
   useUiFeedbackSounds();
 
+  useEffect(
+    () => window.desktopApi.shortcuts.onQuickMessageTriggered(dispatchQuickMessageShortcut),
+    [],
+  );
+
   useEffect(() => {
     const stopVisualRuntime = visualRuntimeController.start();
     const handleDisplayLifecycle = (event: Event) => {
@@ -55,6 +61,7 @@ export const App = () => {
   }, []);
 
   const currentPage = useAppStore((state) => state.currentPage);
+  const [hasOpenedSettings, setHasOpenedSettings] = useState(currentPage === "settings");
   const settingsReturnTo = useAppStore((state) => state.settingsReturnTo);
   const bootstrapPhase = useAppStore((state) => state.bootstrapPhase);
   const bootstrapMessage = useAppStore((state) => state.bootstrapMessage);
@@ -72,6 +79,10 @@ export const App = () => {
   const hydrateAccount = useAccountStore((state) => state.hydrate);
   const syncLocalProfile = useRoomStore((state) => state.syncLocalProfile);
   const [accountConfigReady, setAccountConfigReady] = useState(!cloudBaseClientConfig);
+
+  useEffect(() => {
+    if (currentPage === "settings") setHasOpenedSettings(true);
+  }, [currentPage]);
 
   useEffect(() => {
     if (!cloudBaseClientConfig) return;
@@ -241,6 +252,7 @@ export const App = () => {
 
     const isSettingsOpen = currentPage === "settings";
     const basePage = isSettingsOpen ? settingsReturnTo : currentPage;
+    const shouldRenderSettings = hasOpenedSettings || isSettingsOpen;
 
     return (
       <Suspense fallback={<StartupSplashPage message="正在打开页面..." />}>
@@ -259,12 +271,17 @@ export const App = () => {
                 ease: APPLE_MOTION_EASE,
               }}
             >
-              {basePage === "room" ? <RoomPage /> : <HomePage />}
+              {basePage === "room" ? <RoomPage /> : <AccountPage />}
             </motion.div>
           </div>
-          {isSettingsOpen ? (
-            <div className="app-page-layer app-page-settings">
-              <SettingsPage />
+          {shouldRenderSettings ? (
+            <div
+              className={`app-page-layer app-page-settings ${
+                isSettingsOpen ? "is-active" : "is-inactive"
+              }`}
+              aria-hidden={!isSettingsOpen || undefined}
+            >
+              <SettingsPage isActive={isSettingsOpen} />
             </div>
           ) : null}
         </div>
@@ -279,6 +296,7 @@ export const App = () => {
         {bootstrapPhase === "ready" ? <RemoteAudioRenderer /> : null}
       </AppErrorBoundary>
       <SharedOverlays />
+      {import.meta.env.DEV ? <InteractionPerformanceHud route={currentPage} /> : null}
     </AppShell>
   );
 };

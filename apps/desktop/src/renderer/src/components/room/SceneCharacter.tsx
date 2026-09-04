@@ -41,7 +41,6 @@ import { DeskAnimalSprite, WalkingAnimalSprite } from "./DeskAnimalSprite";
 import { SceneCharacterLabel } from "./SceneCharacterLabel";
 import { SceneReaction } from "./SceneReaction";
 import { Slider } from "../base/Slider";
-import { useRenderProfiler } from "../../features/diagnostics/renderProfiler";
 import { sceneMemberKey } from "./sceneMemberKey";
 
 export interface SceneCharacterQuickMessage {
@@ -130,6 +129,7 @@ export interface SceneCharacterProps {
   onReact?: (targetPeerId: string, emoji: SceneReactionModel["emoji"]) => void;
   onVolumeChange?: (memberId: string, volume: number) => void;
   onSettled?: (memberId: string, zone: SceneZoneId) => void;
+  onExited?: (memberId: string) => void;
 }
 
 const SceneCharacterView = ({
@@ -146,18 +146,9 @@ const SceneCharacterView = ({
   chatBubble,
   onVolumeChange,
   onSettled,
+  onExited,
 }: SceneCharacterProps) => {
   const status = memberStatus(member);
-  useRenderProfiler("SceneCharacter", {
-    member,
-    speakingState: member.speakingState,
-    volume: member.volume,
-    avatarId,
-    zone,
-    reactions,
-    chatBubble,
-    isScreenSharing,
-  });
   const personality = getCharacterPersonality(avatarId);
   const [isAudioControlsOpen, setIsAudioControlsOpen] = useState(false);
   const isSpeaking = status.tone === "speaking";
@@ -192,6 +183,7 @@ const SceneCharacterView = ({
   const didStartEntryRef = useRef(shouldReduceMotion);
   const operationIdRef = useRef(0);
   const onSettledRef = useRef(onSettled);
+  const onExitedRef = useRef(onExited);
   const motionElementRef = useRef<HTMLDivElement>(null);
   const activeRouteAnimationRef = useRef<Animation | undefined>(undefined);
   const activeOpacityAnimationRef = useRef<Animation | undefined>(undefined);
@@ -298,6 +290,10 @@ const SceneCharacterView = ({
   useEffect(() => {
     onSettledRef.current = onSettled;
   }, [onSettled]);
+
+  useEffect(() => {
+    onExitedRef.current = onExited;
+  }, [onExited]);
 
   useLayoutEffect(() => {
     if (!isPresent) return;
@@ -479,6 +475,7 @@ const SceneCharacterView = ({
       const element = motionElementRef.current;
       if (!element) {
         safeToRemove?.();
+        onExitedRef.current?.(member.id);
         return;
       }
       setMovementDirection("left");
@@ -529,14 +526,17 @@ const SceneCharacterView = ({
           activeOpacityAnimationRef.current = undefined;
         }
       }
-      if (isCurrentOperation()) safeToRemove?.();
+      if (isCurrentOperation()) {
+        safeToRemove?.();
+        onExitedRef.current?.(member.id);
+      }
     };
     void leave();
     return () => {
       if (operationIdRef.current === operationId) operationIdRef.current += 1;
       stopActiveAnimations();
     };
-  }, [isPresent, personality, safeToRemove, shouldReduceMotion, stopActiveAnimations]);
+  }, [isPresent, member.id, personality, safeToRemove, shouldReduceMotion, stopActiveAnimations]);
 
   return (
     <div
@@ -766,5 +766,6 @@ export const SceneCharacter = memo(
     previous.chatBubble === next.chatBubble &&
     previous.onReact === next.onReact &&
     previous.onVolumeChange === next.onVolumeChange &&
-    previous.onSettled === next.onSettled,
+    previous.onSettled === next.onSettled &&
+    previous.onExited === next.onExited,
 );

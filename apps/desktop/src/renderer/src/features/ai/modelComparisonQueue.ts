@@ -1,10 +1,18 @@
 import {
   AI_ASR_MODEL_NAMES,
+  evaluateVoiceMemoryTranscriptionValidity,
   type AiAsrModelId,
   type AiModelStatus,
   type RecordingLibraryItem,
   type VoiceMemoryRecord,
+  type VoiceMemoryBenchmarkMode,
 } from "@private-voice/shared";
+
+import {
+  areVoiceMemoryStatsComplete,
+  isVoiceMemoryTranscriptionComplete,
+  voiceMemoryTranscriptionPercent,
+} from "./voiceMemoryPresentation";
 
 export type ModelComparisonPhase =
   | "waiting"
@@ -22,9 +30,15 @@ export interface ModelComparisonResult {
   modelId: AiAsrModelId;
   status: "success" | "partial" | "failed" | "paused" | "user-stopped";
   phase: ModelComparisonPhase;
-  elapsedMs: number;
+  /** Only present after this model completed successfully. */
+  elapsedMs?: number;
   processedAudioMs?: number;
   coveredAudioMs?: number;
+  taskProgressPercent?: number;
+  processedSpeechPercent?: number;
+  speechRatioPercent?: number;
+  speechCoveragePercent?: number;
+  /** Legacy alias retained for old persisted jobs. */
   coveragePercent?: number;
   completedUnits?: number;
   totalUnits?: number;
@@ -46,12 +60,23 @@ export interface ModelComparisonJobSnapshot {
   lastHeartbeatAt?: string;
   phase: "running" | "paused" | "stopped" | "complete";
   results: Partial<Record<AiAsrModelId, ModelComparisonResult>>;
+  benchmarkMode?: VoiceMemoryBenchmarkMode;
   recovered?: boolean;
   error?: string;
 }
 
+export const DEFAULT_MODEL_COMPARISON_BENCHMARK_MODE: VoiceMemoryBenchmarkMode = "long";
+
+/**
+ * Installation and runtime preparation are deliberately separate. Runtime discovery is lazy so
+ * opening the recording library never has to start Python/CUDA just to decide whether a model can
+ * be selected. The queue prepares an installed model immediately before its turn begins.
+ */
+export const isSelectableModelComparisonModel = (model: AiModelStatus): boolean =>
+  model.category === "asr" && Boolean(model.activeRevision);
+
 interface StoredModelComparisonJob {
-  version: 1 | 2;
+  version: 1 | 2 | 3 | 4 | 5;
   recordingId: string;
   modelIds: AiAsrModelId[];
   currentIndex: number;
@@ -60,6 +85,7 @@ interface StoredModelComparisonJob {
   currentPhase: ModelComparisonPhase;
   lastHeartbeatAt?: string;
   results: Partial<Record<AiAsrModelId, ModelComparisonResult>>;
+  benchmarkMode?: VoiceMemoryBenchmarkMode;
   updatedAt: number;
 }
 
@@ -75,12 +101,17 @@ interface ActiveModelComparisonJob extends ModelComparisonJobSnapshot {
 const clampProgress = (value: number): number => Math.max(0, Math.min(1, value));
 
 const recordProgress = (record: VoiceMemoryRecord): number => {
-  if (record.phase === "ready" || record.phase === "error") return 1;
-  return clampProgress((record.progress ?? 0) / 70);
+  return clampProgress(voiceMemoryTranscriptionPercent(record) / 100);
 };
 
 const storageKey = (recordingId: string): string =>
   `shanghao.recording-model-comparison-run.${recordingId}`;
+const STORAGE_KEY_PREFIX = "shanghao.recording-model-comparison-run.";
+
+export const isSupportedModelComparisonStorageVersion = (
+  value: unknown,
+): value is StoredModelComparisonJob["version"] =>
+  value === 1 || value === 2 || value === 3 || value === 4 || value === 5;
 
 const isKnownModelId = (value: string): value is AiAsrModelId =>
   Object.prototype.hasOwnProperty.call(AI_ASR_MODEL_NAMES, value);
@@ -98,8 +129,8 @@ const readStoredResults = (
       !["success", "partial", "failed", "paused", "user-stopped"].includes(
         result.status as string,
       ) ||
-      typeof result.elapsedMs !== "number" ||
-      !Number.isFinite(result.elapsedMs)
+      (result.elapsedMs !== undefined &&
+        (typeof result.elapsedMs !== "number" || !Number.isFinite(result.elapsedMs)))
     )
       continue;
     results[modelId] = {
@@ -115,13 +146,29 @@ const readStoredResults = (
               : result.status === "paused"
                 ? "paused"
                 : "failed",
-      elapsedMs: Math.max(0, result.elapsedMs),
+      elapsedMs: typeof result.elapsedMs === "number" ? Math.max(0, result.elapsedMs) : undefined,
       processedAudioMs:
         typeof result.processedAudioMs === "number"
           ? Math.max(0, result.processedAudioMs)
           : undefined,
       coveredAudioMs:
         typeof result.coveredAudioMs === "number" ? Math.max(0, result.coveredAudioMs) : undefined,
+      taskProgressPercent:
+        typeof result.taskProgressPercent === "number"
+          ? Math.max(0, Math.min(100, result.taskProgressPercent))
+          : undefined,
+      processedSpeechPercent:
+        typeof result.processedSpeechPercent === "number"
+          ? Math.max(0, Math.min(100, result.processedSpeechPercent))
+          : undefined,
+      speechRatioPercent:
+        typeof result.speechRatioPercent === "number"
+          ? Math.max(0, Math.min(100, result.speechRatioPercent))
+          : undefined,
+      speechCoveragePercent:
+        typeof result.speechCoveragePercent === "number"
+          ? Math.max(0, Math.min(100, result.speechCoveragePercent))
+          : undefined,
       coveragePercent:
         typeof result.coveragePercent === "number"
           ? Math.max(0, Math.min(100, result.coveragePercent))
@@ -169,7 +216,7 @@ const readStoredJob = (recordingId: string): StoredModelComparisonJob | undefine
         )
       : [];
     if (
-      (parsed.version !== 1 && parsed.version !== 2) ||
+      !isSupportedModelComparisonStorageVersion(parsed.version) ||
       parsed.recordingId !== recordingId ||
       !modelIds.length ||
       typeof parsed.currentIndex !== "number" ||
@@ -180,8 +227,17 @@ const readStoredJob = (recordingId: string): StoredModelComparisonJob | undefine
     ) {
       return undefined;
     }
+    const benchmarkMode =
+      parsed.version < 4 &&
+      (parsed.benchmarkMode === undefined || parsed.benchmarkMode === "standard")
+        ? DEFAULT_MODEL_COMPARISON_BENCHMARK_MODE
+        : parsed.benchmarkMode === "smoke" ||
+            parsed.benchmarkMode === "standard" ||
+            parsed.benchmarkMode === "long"
+          ? parsed.benchmarkMode
+          : DEFAULT_MODEL_COMPARISON_BENCHMARK_MODE;
     return {
-      version: 2,
+      version: 5,
       recordingId,
       modelIds,
       currentIndex: parsed.currentIndex,
@@ -195,10 +251,11 @@ const readStoredJob = (recordingId: string): StoredModelComparisonJob | undefine
               ? "paused"
               : "user-stopped",
       currentProgress:
-        parsed.version === 2 && typeof parsed.currentProgress === "number"
+        parsed.version !== 1 && typeof parsed.currentProgress === "number"
           ? clampProgress(parsed.currentProgress)
           : 0,
-      results: parsed.version === 2 ? readStoredResults(parsed.results) : {},
+      results: parsed.version !== 1 ? readStoredResults(parsed.results) : {},
+      benchmarkMode,
       updatedAt: typeof parsed.updatedAt === "number" ? parsed.updatedAt : Date.now(),
     };
   } catch {
@@ -209,7 +266,7 @@ const readStoredJob = (recordingId: string): StoredModelComparisonJob | undefine
 const persistJob = (job: ActiveModelComparisonJob): void => {
   try {
     const stored: StoredModelComparisonJob = {
-      version: 2,
+      version: 5,
       recordingId: job.recordingId,
       modelIds: job.modelIds,
       currentIndex: job.currentIndex,
@@ -218,6 +275,7 @@ const persistJob = (job: ActiveModelComparisonJob): void => {
       lastHeartbeatAt: job.lastHeartbeatAt,
       currentProgress: clampProgress(job.currentProgress),
       results: job.results,
+      benchmarkMode: job.benchmarkMode,
       updatedAt: Date.now(),
     };
     window.localStorage.setItem(storageKey(job.recordingId), JSON.stringify(stored));
@@ -234,20 +292,63 @@ const clearPersistedJob = (recordingId: string): void => {
   }
 };
 
+const recoverInterruptedJob = (
+  stored: StoredModelComparisonJob,
+): { stored: StoredModelComparisonJob; recovered: boolean } => {
+  if (stored.phase !== "running") return { stored, recovered: false };
+  const paused: StoredModelComparisonJob = {
+    ...stored,
+    phase: "paused",
+    currentPhase: "paused",
+    updatedAt: Date.now(),
+  };
+  try {
+    window.localStorage.setItem(storageKey(stored.recordingId), JSON.stringify(paused));
+  } catch {
+    // The main process also recovers interrupted work as paused on a full restart.
+  }
+  return { stored: paused, recovered: true };
+};
+
 const isTerminal = (record: VoiceMemoryRecord): boolean =>
   (record.phase === "ready" || record.phase === "error" || record.phase === "paused") &&
   record.taskStatus !== "processing";
 
-const hasSavedVariant = (record: VoiceMemoryRecord | undefined, modelId: AiAsrModelId): boolean =>
-  Boolean(
-    record?.transcriptionVariants?.[modelId] ||
-    (record?.transcriptionModel?.id === modelId && record.transcript.length > 0),
+const hasCompletedVariant = (
+  record: VoiceMemoryRecord | undefined,
+  modelId: AiAsrModelId,
+): boolean => {
+  const variant = record?.transcriptionVariants?.[modelId];
+  if (variant) {
+    return variant.transcriptionStats
+      ? areVoiceMemoryStatsComplete(variant.transcriptionStats)
+      : variant.transcript.length > 0;
+  }
+  return Boolean(
+    record?.transcriptionModel?.id === modelId && isVoiceMemoryTranscriptionComplete(record),
   );
+};
+
+const isCompletedResult = (result: ModelComparisonResult | undefined): boolean => {
+  if (result?.status !== "success") return false;
+  if ((result.failedUnits ?? 0) > 0) return false;
+  if (
+    result.totalUnits !== undefined &&
+    (result.completedUnits === undefined || result.completedUnits < result.totalUnits)
+  )
+    return false;
+  if (result.taskProgressPercent !== undefined && result.taskProgressPercent < 100) return false;
+  return true;
+};
 
 const taskMatches = (record: VoiceMemoryRecord, taskId: string): boolean =>
   record.taskId === taskId;
 
-const COMPARISON_WATCHDOG_MS = 10 * 60_000;
+// A cold local model can spend several minutes loading or inferring one short audio unit,
+// especially while another application is using the GPU. The watchdog is only a last-resort
+// recovery guard: every durable record heartbeat renews it, so normal long inference is not
+// mistaken for a dead task.
+const COMPARISON_WATCHDOG_MS = 30 * 60_000;
 
 const waitForTerminal = (recordingId: string, taskId: string): Promise<VoiceMemoryRecord> =>
   new Promise((resolve, reject) => {
@@ -256,6 +357,14 @@ const waitForTerminal = (recordingId: string, taskId: string): Promise<VoiceMemo
     const timer = {
       poll: undefined as number | undefined,
       watchdog: undefined as number | undefined,
+    };
+    let lastHeartbeat: string | undefined;
+    const armWatchdog = () => {
+      if (timer.watchdog !== undefined) window.clearTimeout(timer.watchdog);
+      timer.watchdog = window.setTimeout(
+        () => fail(new Error("transcription_stalled")),
+        COMPARISON_WATCHDOG_MS,
+      );
     };
     const finish = (next: VoiceMemoryRecord) => {
       if (finished) return;
@@ -274,7 +383,13 @@ const waitForTerminal = (recordingId: string, taskId: string): Promise<VoiceMemo
       reject(cause);
     };
     const inspect = (next: VoiceMemoryRecord | undefined) => {
-      if (next && taskMatches(next, taskId) && isTerminal(next)) finish(next);
+      if (!next || !taskMatches(next, taskId)) return;
+      const heartbeat = next.diagnostic?.updatedAt ?? next.updatedAt;
+      if (heartbeat && heartbeat !== lastHeartbeat) {
+        lastHeartbeat = heartbeat;
+        armWatchdog();
+      }
+      if (isTerminal(next)) finish(next);
     };
     unsubscribe = window.desktopApi.ai.onVoiceMemoryStatus((next) => {
       if (next.recordingId === recordingId) inspect(next);
@@ -286,10 +401,7 @@ const waitForTerminal = (recordingId: string, taskId: string): Promise<VoiceMemo
         .catch(() => undefined);
     };
     timer.poll = window.setInterval(poll, 1_000);
-    timer.watchdog = window.setTimeout(
-      () => fail(new Error("transcription_stalled")),
-      COMPARISON_WATCHDOG_MS,
-    );
+    armWatchdog();
     poll();
   });
 
@@ -300,6 +412,7 @@ const recordFailureMessage = (record: VoiceMemoryRecord): string | undefined =>
   record.errorMessage ?? record.diagnostic?.errorMessage;
 
 const isRetryableMessage = (message: string): boolean =>
+  !/(?:0xc000001d|-1073741795|3221225501|asr_runtime_fatal)/i.test(message) &&
   /(?:asr|qwen)_worker_(?:idle_release|timeout|exit_|load_timeout)|transcription_checkpoint_(?:missing|incompatible)/i.test(
     message,
   );
@@ -310,8 +423,20 @@ const isRetryableFailure = (record: VoiceMemoryRecord): boolean => {
   return isRetryableMessage(message);
 };
 
+const COMPARISON_STALE_MS = 30 * 60_000;
+
 const formatError = (cause: unknown): string => {
   const message = cause instanceof Error ? cause.message : "";
+  if (/(?:0xc000001d|-1073741795|3221225501|illegal instruction)/i.test(message)) {
+    return "ARK-ASR Q8 原生运行组件不兼容当前 CPU，已停止该模型且保留断点；请先在 AI 功能中修复运行组件。";
+  }
+  if (
+    /(?:unable to compare versions for packaging|no package metadata was found|modulenotfounderror|no module named|importerror:|dll load failed|asr_runtime_fatal)/i.test(
+      message,
+    )
+  ) {
+    return "当前模型运行组件损坏或缺少依赖，已停止该模型；请在 AI 功能中修复运行组件。";
+  }
   if (message === "transcription_stalled") {
     return "当前模型长时间没有进展，已暂停；可以点击继续测试。";
   }
@@ -327,21 +452,28 @@ export class ModelComparisonQueue {
   private sequence = 0;
   private voiceStatusUnsubscribe?: () => void;
 
+  constructor() {
+    if (typeof window === "undefined") return;
+    this.recoverAllInterruptedJobs();
+  }
+
   get(recordingId: string): ModelComparisonJobSnapshot | undefined {
     const active = this.jobs.get(recordingId);
     if (active) return this.snapshot(active);
-    const stored = readStoredJob(recordingId);
-    if (!stored) return undefined;
+    const persisted = readStoredJob(recordingId);
+    if (!persisted) return undefined;
+    const { stored, recovered } = recoverInterruptedJob(persisted);
     return {
       recordingId: stored.recordingId,
       modelIds: stored.modelIds,
       currentIndex: stored.currentIndex,
-      phase: stored.phase === "running" ? "paused" : stored.phase,
+      phase: stored.phase,
       currentProgress: stored.currentProgress,
       currentPhase: stored.currentPhase,
       lastHeartbeatAt: stored.lastHeartbeatAt,
       results: stored.results,
-      recovered: stored.phase === "running",
+      benchmarkMode: stored.benchmarkMode,
+      recovered,
     };
   }
 
@@ -359,26 +491,21 @@ export class ModelComparisonQueue {
     };
   }
 
-  start(recording: RecordingLibraryItem, models: AiModelStatus[]): void {
+  start(
+    recording: RecordingLibraryItem,
+    models: AiModelStatus[],
+    benchmarkMode: VoiceMemoryBenchmarkMode = DEFAULT_MODEL_COMPARISON_BENCHMARK_MODE,
+  ): void {
     if (!models.length) return;
     this.ensureVoiceStatusSubscription();
     const existing = this.jobs.get(recording.recordingId);
     if (existing?.running) return;
-    const persisted = readStoredJob(recording.recordingId);
-    if (
-      !existing &&
-      persisted &&
-      persisted.phase !== "stopped" &&
-      persisted.currentIndex < persisted.modelIds.length
-    ) {
-      // A page remount or app restart must not discard a durable comparison run. The
-      // explicit clear action remains the way to abandon it and start from scratch.
-      this.resume(recording, models);
-      return;
-    }
+    this.jobs.delete(recording.recordingId);
+    clearPersistedJob(recording.recordingId);
     const job = this.createJob(
       recording.recordingId,
       models.map((model) => model.id as AiAsrModelId),
+      benchmarkMode,
     );
     this.jobs.set(recording.recordingId, job);
     this.notify(job);
@@ -433,15 +560,30 @@ export class ModelComparisonQueue {
     await window.desktopApi.ai.pauseTask(recordingId);
   }
 
-  clear(recordingId: string): void {
+  dispose(): void {
+    this.voiceStatusUnsubscribe?.();
+    this.voiceStatusUnsubscribe = undefined;
+    for (const job of this.jobs.values()) {
+      if (job.heartbeatTimer !== undefined) window.clearInterval(job.heartbeatTimer);
+      job.heartbeatTimer = undefined;
+    }
+  }
+
+  async clear(recordingId: string): Promise<VoiceMemoryRecord> {
     const job = this.jobs.get(recordingId);
-    if (job?.running) return;
+    if (job?.running) throw new Error("请先暂停当前测试，再清除测试结果。");
+    const record = await window.desktopApi.ai.clearTranscriptionResults(recordingId);
     this.jobs.delete(recordingId);
     clearPersistedJob(recordingId);
     this.notify(undefined, recordingId);
+    return record;
   }
 
-  private createJob(recordingId: string, modelIds: AiAsrModelId[]): ActiveModelComparisonJob {
+  private createJob(
+    recordingId: string,
+    modelIds: AiAsrModelId[],
+    benchmarkMode: VoiceMemoryBenchmarkMode = DEFAULT_MODEL_COMPARISON_BENCHMARK_MODE,
+  ): ActiveModelComparisonJob {
     return {
       recordingId,
       modelIds,
@@ -451,6 +593,7 @@ export class ModelComparisonQueue {
       currentPhase: "waiting",
       lastHeartbeatAt: new Date().toISOString(),
       results: {},
+      benchmarkMode,
       recovered: false,
       token: ++this.sequence,
       running: false,
@@ -460,8 +603,9 @@ export class ModelComparisonQueue {
   }
 
   private createRecoveredJob(recordingId: string): ActiveModelComparisonJob | undefined {
-    const stored = readStoredJob(recordingId);
-    if (!stored) return undefined;
+    const persisted = readStoredJob(recordingId);
+    if (!persisted) return undefined;
+    const { stored, recovered } = recoverInterruptedJob(persisted);
     return {
       recordingId,
       modelIds: stored.modelIds,
@@ -469,9 +613,10 @@ export class ModelComparisonQueue {
       currentProgress: stored.currentProgress,
       currentPhase: stored.currentPhase,
       lastHeartbeatAt: stored.lastHeartbeatAt,
-      phase: stored.phase === "running" ? "paused" : stored.phase,
+      phase: stored.phase,
       results: stored.results,
-      recovered: stored.phase === "running",
+      benchmarkMode: stored.benchmarkMode,
+      recovered,
       token: ++this.sequence,
       running: false,
       stopRequested: false,
@@ -479,12 +624,31 @@ export class ModelComparisonQueue {
     };
   }
 
+  private recoverAllInterruptedJobs(): void {
+    const recordingIds: string[] = [];
+    try {
+      for (let index = 0; index < window.localStorage.length; index += 1) {
+        const key = window.localStorage.key(index);
+        if (key?.startsWith(STORAGE_KEY_PREFIX)) {
+          recordingIds.push(key.slice(STORAGE_KEY_PREFIX.length));
+        }
+      }
+    } catch {
+      return;
+    }
+    for (const recordingId of recordingIds) {
+      const stored = readStoredJob(recordingId);
+      if (!stored || stored.phase !== "running") continue;
+      recoverInterruptedJob(stored);
+    }
+  }
+
   private async run(
     job: ActiveModelComparisonJob,
     recording: RecordingLibraryItem,
     models: AiModelStatus[],
     startIndex: number,
-    resumeCurrent: boolean,
+    resumeSavedVariants: boolean,
   ): Promise<void> {
     if (job.running) return;
     job.running = true;
@@ -495,7 +659,8 @@ export class ModelComparisonQueue {
       for (let index = startIndex; index < job.modelIds.length; index += 1) {
         if (job.token !== token || job.stopRequested) break;
         const modelId = job.modelIds[index];
-        if (!modelId || !available.has(modelId)) continue;
+        const selectedModel = modelId ? available.get(modelId) : undefined;
+        if (!modelId || !selectedModel) continue;
         job.currentIndex = index;
         job.currentProgress = 0;
         job.currentPhase = "waiting";
@@ -505,26 +670,72 @@ export class ModelComparisonQueue {
         this.notify(job);
         const startedAt = performance.now();
         try {
-          const currentRecord =
-            resumeCurrent && index === startIndex
-              ? await window.desktopApi.ai.getVoiceMemory(recording.recordingId)
-              : undefined;
-          if (currentRecord && hasSavedVariant(currentRecord, modelId)) {
+          if (!selectedModel.runtimeReady) {
+            job.currentPhase = "loading";
+            persistJob(job);
+            this.notify(job);
+            const snapshot = await window.desktopApi.ai.controlModel(modelId, "repair");
+            for (const snapshotModel of snapshot.models) {
+              if (
+                snapshotModel.category === "asr" &&
+                isKnownModelId(snapshotModel.id) &&
+                available.has(snapshotModel.id)
+              ) {
+                available.set(snapshotModel.id, snapshotModel);
+              }
+            }
+            const preparedModel = snapshot.models.find((model) => model.id === modelId);
+            if (!preparedModel?.activeRevision || !preparedModel.runtimeReady) {
+              throw new Error(
+                preparedModel?.runtimeMessage ?? `${AI_ASR_MODEL_NAMES[modelId]}运行组件尚未就绪`,
+              );
+            }
+            available.set(modelId, preparedModel);
+          }
+          let currentRecord = resumeSavedVariants
+            ? await window.desktopApi.ai.getVoiceMemory(recording.recordingId)
+            : undefined;
+          if (currentRecord && hasCompletedVariant(currentRecord, modelId)) {
             job.currentIndex = index + 1;
             job.currentProgress = 1;
-            resumeCurrent = false;
             persistJob(job);
             this.notify(job);
             continue;
           }
-          const resumeThisModel = resumeCurrent && index === startIndex;
+          if (
+            resumeSavedVariants &&
+            currentRecord?.transcriptionVariants?.[modelId] &&
+            currentRecord.transcriptionModel?.id !== modelId
+          ) {
+            currentRecord = await window.desktopApi.ai.selectTranscription(
+              recording.recordingId,
+              modelId,
+            );
+          }
+          const resumeThisModel = resumeSavedVariants;
           const resumeHasStaleTranscript = Boolean(
             currentRecord &&
             currentRecord.transcript.length > 0 &&
             currentRecord.transcriptionModel?.id !== modelId,
           );
           let completed: VoiceMemoryRecord | undefined;
+          if (
+            resumeSavedVariants &&
+            currentRecord?.taskStatus === "processing" &&
+            currentRecord.transcriptionModel?.id === modelId &&
+            currentRecord.taskId?.startsWith("model-comparison:")
+          ) {
+            // The renderer can reload independently of the durable main-process task. Reattach
+            // to that exact task instead of issuing a second request or aborting healthy work.
+            job.activeTaskId = currentRecord.taskId;
+            this.updateJobFromRecord(job, currentRecord);
+            job.currentProgress = recordProgress(currentRecord);
+            persistJob(job);
+            this.notify(job);
+            completed = await waitForTerminal(recording.recordingId, currentRecord.taskId);
+          }
           for (let attempt = 0; attempt < 2; attempt += 1) {
+            if (completed) break;
             try {
               const taskId = createComparisonTaskId(recording.recordingId, modelId);
               const accepted = await window.desktopApi.ai.processRecording({
@@ -538,6 +749,9 @@ export class ModelComparisonQueue {
                 restartTranscription: attempt > 0 || !resumeThisModel || resumeHasStaleTranscript,
                 asrModelId: modelId,
                 taskId,
+                benchmark: {
+                  mode: job.benchmarkMode ?? DEFAULT_MODEL_COMPARISON_BENCHMARK_MODE,
+                },
                 markers: recording.markers.map((marker) => ({
                   id: marker.id,
                   offsetMs: marker.offsetMs,
@@ -581,27 +795,18 @@ export class ModelComparisonQueue {
           // eslint-disable-next-line security/detect-possible-timing-attacks
           if (job.token !== token) return;
           const stats = completed.transcriptionStats;
-          const coveragePercent = stats
-            ? Math.max(
-                0,
-                Math.min(
-                  100,
-                  stats.audioDurationMs > 0
-                    ? (stats.coveredAudioMs / stats.audioDurationMs) * 100
-                    : 0,
-                ),
-              )
-            : undefined;
+          const coveragePercent = stats?.speechCoveragePercent;
+          const validity = evaluateVoiceMemoryTranscriptionValidity(
+            stats,
+            completed.transcriptionUnits,
+          );
           const success =
-            completed.phase === "ready" &&
-            completed.taskStatus === "success" &&
-            completed.transcript.length > 0 &&
-            (coveragePercent === undefined || coveragePercent >= 98);
+            completed.phase === "ready" && completed.taskStatus === "success" && validity.complete;
           const partial =
+            !success &&
             completed.phase === "ready" &&
-            completed.transcript.length > 0 &&
-            (completed.taskStatus === "failed" ||
-              (coveragePercent !== undefined && coveragePercent < 98));
+            (completed.transcript.length > 0 || (stats?.processedAudioMs ?? 0) > 0) &&
+            (completed.taskStatus === "failed" || !validity.complete);
           const failureMessage = recordFailureMessage(completed);
           const status =
             completed.phase === "paused"
@@ -618,9 +823,15 @@ export class ModelComparisonQueue {
             status,
             phase: status,
             elapsedMs:
-              completed.transcriptionElapsedMs ?? Math.round(performance.now() - startedAt),
+              status === "success"
+                ? (completed.transcriptionElapsedMs ?? Math.round(performance.now() - startedAt))
+                : undefined,
             processedAudioMs: stats?.processedAudioMs,
             coveredAudioMs: stats?.coveredAudioMs,
+            taskProgressPercent: stats?.taskProgressPercent,
+            processedSpeechPercent: stats?.processedSpeechPercent,
+            speechRatioPercent: stats?.speechRatioPercent,
+            speechCoveragePercent: stats?.speechCoveragePercent,
             coveragePercent,
             completedUnits: stats?.completedUnits,
             totalUnits: stats?.totalUnits,
@@ -631,9 +842,7 @@ export class ModelComparisonQueue {
             heartbeatAt: stats?.lastHeartbeatAt ?? completed.diagnostic?.updatedAt,
             message:
               failureMessage ??
-              (partial
-                ? `部分完成：${stats?.failedUnits ?? 0} 个音频分块未完成，覆盖率 ${coveragePercent?.toFixed(1)}%。`
-                : undefined),
+              (partial ? `部分完成：${stats?.failedUnits ?? 0} 个音频分块未完成。` : undefined),
           };
           job.activeTaskId = undefined;
           job.currentPhase = "releasing";
@@ -648,7 +857,6 @@ export class ModelComparisonQueue {
           }
           job.currentIndex = index + 1;
           job.currentProgress = 0;
-          resumeCurrent = false;
           persistJob(job);
           this.notify(job);
         } catch (cause) {
@@ -669,10 +877,12 @@ export class ModelComparisonQueue {
                 modelId,
                 status: "paused",
                 phase: "stuck",
-                elapsedMs:
-                  pausedRecord.transcriptionElapsedMs ?? Math.round(performance.now() - startedAt),
                 processedAudioMs: stats?.processedAudioMs,
                 coveredAudioMs: stats?.coveredAudioMs,
+                taskProgressPercent: stats?.taskProgressPercent,
+                processedSpeechPercent: stats?.processedSpeechPercent,
+                speechRatioPercent: stats?.speechRatioPercent,
+                speechCoveragePercent: stats?.speechCoveragePercent,
                 coveragePercent:
                   stats && stats.audioDurationMs > 0
                     ? (stats.coveredAudioMs / stats.audioDurationMs) * 100
@@ -700,20 +910,38 @@ export class ModelComparisonQueue {
             modelId,
             status: "failed",
             phase: "failed",
-            elapsedMs: 0,
             message,
           };
           job.error = message;
           job.currentIndex = index + 1;
-          resumeCurrent = false;
           persistJob(job);
           this.notify(job);
         }
       }
       if (job.token === token && !job.stopRequested) {
-        job.currentIndex = job.modelIds.length;
-        job.phase = "complete";
-        clearPersistedJob(job.recordingId);
+        const latestRecord = await window.desktopApi.ai
+          .getVoiceMemory(recording.recordingId)
+          .catch(() => undefined);
+        const incompleteModelIds = job.modelIds.filter((modelId) => {
+          const result = job.results[modelId];
+          if (result?.status === "failed" || result?.status === "partial") return false;
+          return !isCompletedResult(result) && !hasCompletedVariant(latestRecord, modelId);
+        });
+        if (incompleteModelIds.length > 0) {
+          job.modelIds = incompleteModelIds;
+          job.currentIndex = 0;
+          job.currentProgress = 0;
+          job.currentPhase = "paused";
+          job.phase = "paused";
+          job.recovered = false;
+          job.error = `${incompleteModelIds.length} 个模型尚未完整覆盖音频，已保留断点；点击继续剩余测试。`;
+          persistJob(job);
+        } else {
+          job.currentIndex = job.modelIds.length;
+          job.phase = "complete";
+          job.error = undefined;
+          clearPersistedJob(job.recordingId);
+        }
         this.notify(job);
         // The token is a local cancellation marker, not a credential.
         // eslint-disable-next-line security/detect-possible-timing-attacks
@@ -737,7 +965,9 @@ export class ModelComparisonQueue {
       currentIndex: job.currentIndex,
       currentProgress: clampProgress(job.currentProgress),
       currentPhase:
-        job.running && job.lastHeartbeatAt && Date.now() - Date.parse(job.lastHeartbeatAt) > 120_000
+        job.running &&
+        job.lastHeartbeatAt &&
+        Date.now() - Date.parse(job.lastHeartbeatAt) > COMPARISON_STALE_MS
           ? "stuck"
           : job.currentPhase,
       lastHeartbeatAt: job.lastHeartbeatAt,
@@ -783,4 +1013,18 @@ export class ModelComparisonQueue {
   }
 }
 
-export const modelComparisonQueue = new ModelComparisonQueue();
+interface ModelComparisonHotData {
+  queue?: ModelComparisonQueue;
+}
+
+const modelComparisonHotData = import.meta.hot?.data as ModelComparisonHotData | undefined;
+
+export const modelComparisonQueue = modelComparisonHotData?.queue ?? new ModelComparisonQueue();
+
+if (import.meta.hot) {
+  import.meta.hot.dispose((data: ModelComparisonHotData) => {
+    // Keep the active coordinator alive across renderer HMR. The main process owns the durable
+    // ASR job, and a visual hot update must not pause or duplicate it.
+    data.queue = modelComparisonQueue;
+  });
+}

@@ -167,6 +167,21 @@ export const useAppBootstrap = (): void => {
       });
     };
     window.addEventListener("shanghao:deepfilter-unavailable", handleDeepFilterUnavailable);
+    const handleVoiceEnhancementUnavailable = (event: Event) => {
+      const reason = (event as CustomEvent<{ reason?: string }>).detail?.reason ?? "unknown";
+      useAppStore.getState().pushToast({
+        tone: "warning",
+        title: "人声增强已安全旁路",
+        description: "DSP 运行异常，本次通话继续发送未整形的人声。",
+      });
+      void writeRendererLog("audio", "error", "Voice enhancement became unavailable", {
+        reason,
+      });
+    };
+    window.addEventListener(
+      "shanghao:voice-enhancement-unavailable",
+      handleVoiceEnhancementUnavailable,
+    );
     const handleMicrophoneInputOverload = () => {
       const overloadToast = {
         tone: "warning",
@@ -183,6 +198,10 @@ export const useAppBootstrap = (): void => {
       unsubscribeLifecycleRecovery();
       navigator.mediaDevices?.removeEventListener("devicechange", handleDeviceChange);
       window.removeEventListener("shanghao:deepfilter-unavailable", handleDeepFilterUnavailable);
+      window.removeEventListener(
+        "shanghao:voice-enhancement-unavailable",
+        handleVoiceEnhancementUnavailable,
+      );
       window.removeEventListener(
         "shanghao:microphone-input-overload",
         handleMicrophoneInputOverload,

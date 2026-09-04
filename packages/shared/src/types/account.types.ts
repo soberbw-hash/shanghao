@@ -23,6 +23,14 @@ export interface AccountSnapshot {
 export interface AccountLoginRequest {
   identifier: string;
   password: string;
+  /** Persist the encrypted session for the next app launch. Defaults to true. */
+  rememberMe?: boolean;
+}
+
+/** Encrypted login fallback used only when a persisted session can no longer be refreshed. */
+export interface AccountRememberedLogin {
+  identifier: string;
+  password: string;
 }
 
 export interface CloudBaseClientConfig {

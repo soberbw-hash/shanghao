@@ -52,7 +52,7 @@ test("migrateSettings falls back to safe defaults for damaged legacy config", ()
   assert.equal("isMemberJoinSoundEnabled" in result.settings, false);
   assert.equal("isMemberLeaveSoundEnabled" in result.settings, false);
   assert.equal("isConnectionSoundEnabled" in result.settings, false);
-  assert.equal(result.settings.isUiSoundEnabled, false);
+  assert.equal(result.settings.isUiSoundEnabled, true);
   assert.equal(result.settings.isSystemNotificationEnabled, true);
   assert.equal(result.settings.isGameDetectionEnabled, true);
   assert.equal("launchOnStartup" in result.settings, false);
@@ -81,13 +81,32 @@ test("friend loudness balance is on by default and explicit choices survive migr
   );
 });
 
-test("work activity display is off by default and preserves an explicit user choice", () => {
-  assert.equal(defaultSettings.isWorkActivityVisible, false);
-  assert.equal(migrateSettings({}).settings.isWorkActivityVisible, false);
+test("voice transcription defaults to manual and only preserves an intentional automatic mode", () => {
+  assert.equal(defaultSettings.aiProcessingMode, "manual");
+  assert.equal(migrateSettings({}).settings.aiProcessingMode, "manual");
   assert.equal(
-    migrateSettings({ ...defaultSettings, isWorkActivityVisible: true }).settings
-      .isWorkActivityVisible,
-    true,
+    migrateSettings({
+      settingsSchemaVersion: 34,
+      aiProcessingMode: "after_game",
+      isAiAutoTranscribeEnabled: false,
+    }).settings.aiProcessingMode,
+    "manual",
+  );
+  assert.equal(
+    migrateSettings({
+      settingsSchemaVersion: 34,
+      aiProcessingMode: "after_game",
+      isAiAutoTranscribeEnabled: true,
+    }).settings.aiProcessingMode,
+    "after_game",
+  );
+  assert.equal(
+    migrateSettings({
+      ...defaultSettings,
+      aiProcessingMode: "immediate",
+      isAiAutoTranscribeEnabled: true,
+    }).settings.aiProcessingMode,
+    "immediate",
   );
 });
 
@@ -95,7 +114,7 @@ test("recording library cleanup defaults to 20 GB and upgrades the old 10 GB def
   assert.equal(defaultSettings.recordingLibraryQuotaGb, 20);
   assert.equal(
     migrateSettings({
-      settingsSchemaVersion: SETTINGS_SCHEMA_VERSION - 1,
+      settingsSchemaVersion: 32,
       recordingLibraryQuotaGb: 10,
     }).settings.recordingLibraryQuotaGb,
     20,
@@ -109,17 +128,23 @@ test("recording library cleanup defaults to 20 GB and upgrades the old 10 GB def
   );
 });
 
-test("interface sound preference and volume survive restart migration", () => {
+test("interface sounds remain enabled at the product default volume", () => {
   const result = migrateSettings({
     ...defaultSettings,
     soundVolume: 0.31,
     isUiSoundEnabled: false,
   });
 
-  assert.equal(result.settings.soundVolume, 0.31);
-  assert.equal(result.settings.isUiSoundEnabled, false);
-  assert.equal(migrateSettings({ soundVolume: 9 }).settings.soundVolume, 1);
-  assert.equal(migrateSettings({ soundVolume: -1 }).settings.soundVolume, 0);
+  assert.equal(result.settings.soundVolume, defaultSettings.soundVolume);
+  assert.equal(result.settings.isUiSoundEnabled, true);
+  assert.equal(
+    migrateSettings({ soundVolume: 9 }).settings.soundVolume,
+    defaultSettings.soundVolume,
+  );
+  assert.equal(
+    migrateSettings({ soundVolume: -1 }).settings.soundVolume,
+    defaultSettings.soundVolume,
+  );
 });
 
 test("quick message settings migrate to five voice and three music slots", () => {
@@ -166,6 +191,30 @@ test("quick message settings migrate to five voice and three music slots", () =>
   assert.equal(restoredMusic.settings.quickMessages.musicPresetId, "music-lol-卡特小曲");
 });
 
+test("quick message volume lowers the untouched legacy default without overriding custom levels", () => {
+  assert.equal(defaultSettings.quickMessages.soundVolume, 0.68);
+  assert.equal(
+    migrateSettings({
+      settingsSchemaVersion: SETTINGS_SCHEMA_VERSION - 1,
+      quickMessages: {
+        ...defaultSettings.quickMessages,
+        soundVolume: 0.72,
+      },
+    }).settings.quickMessages.soundVolume,
+    0.68,
+  );
+  assert.equal(
+    migrateSettings({
+      settingsSchemaVersion: SETTINGS_SCHEMA_VERSION - 1,
+      quickMessages: {
+        ...defaultSettings.quickMessages,
+        soundVolume: 0.61,
+      },
+    }).settings.quickMessages.soundVolume,
+    0.61,
+  );
+});
+
 test("removed legacy quick message preset is cleared from saved shortcuts", () => {
   const migrated = migrateSettings({
     ...defaultSettings,
@@ -207,8 +256,10 @@ test("ASR model selection preserves supported providers and repairs damaged valu
     "fireredasr2-aed",
     "paraformer-zh",
     "moss-transcribe-diarize-0.9b",
+    "moss-transcribe-diarize-0.9b-q8_0",
     "dolphin-cn-dialect-0.4b",
     "cohere-transcribe-2b",
+    "ark-asr-3b-q8_0",
   ] as const) {
     assert.equal(
       migrateSettings({ ...defaultSettings, aiAsrModel }).settings.aiAsrModel,
@@ -289,13 +340,19 @@ test("legacy sample-rate preferences are removed because microphone processing i
   }
 });
 
-test("profile identity survives settings migration and malformed ids are repaired", () => {
+test("provider-owned profile identities survive settings migration and malformed ids are repaired", () => {
   const profileId = "9df995df-3724-4c85-a8ae-47278368d380";
+  const cloudBaseProfileId = "cloudbase-user_8d61a098d28d4cfe";
   const preserved = migrateSettings({ ...defaultSettings, profileId });
-  const repaired = migrateSettings({ ...defaultSettings, profileId: "not-a-profile-id" });
+  const cloudBasePreserved = migrateSettings({
+    ...defaultSettings,
+    profileId: cloudBaseProfileId,
+  });
+  const repaired = migrateSettings({ ...defaultSettings, profileId: "invalid profile id" });
 
   assert.equal(preserved.settings.profileId, profileId);
-  assert.notEqual(repaired.settings.profileId, "not-a-profile-id");
+  assert.equal(cloudBasePreserved.settings.profileId, cloudBaseProfileId);
+  assert.notEqual(repaired.settings.profileId, "invalid profile id");
   assert.match(
     repaired.settings.profileId,
     /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,

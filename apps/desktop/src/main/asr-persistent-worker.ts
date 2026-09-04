@@ -17,7 +17,26 @@ export interface AsrWorkerSegment {
 
 export interface AsrWorkerResult {
   text: string;
+  rawText?: string;
   segments?: AsrWorkerSegment[];
+  nativeSpeakerSegments?: Array<{
+    startMs: number;
+    endMs: number;
+    speakerId?: string;
+    confidence?: number | null;
+  }>;
+  metrics?: {
+    loadTimeMs?: number;
+    inferenceTimeMs?: number;
+    backend?: string;
+    device?: string;
+    quantization?: string;
+    dtype?: string;
+    backendFallback?: boolean;
+    nativeLoadTimeMs?: number;
+    nativeEncodeTimeMs?: number;
+    nativeDecodeTimeMs?: number;
+  };
 }
 
 export interface AsrWorkerHealth {
@@ -52,6 +71,8 @@ interface AsrWorkerRequest {
   reject: (reason: Error) => void;
   abort?: () => void;
   timeout?: NodeJS.Timeout;
+  loadTimeMs?: number;
+  inferenceStartedAt?: number;
 }
 
 interface WorkerMessage {
@@ -161,8 +182,17 @@ export class AsrPersistentWorker {
     if (this.active || !this.queue.length) return;
     const request = this.queue[0];
     if (!request) return;
+    const alreadyLoaded = Boolean(
+      this.child &&
+      this.phase === "ready" &&
+      launchKey(this.currentLaunch as AsrWorkerLaunch) === launchKey(request.launch),
+    );
+    const loadStartedAt = performance.now();
     try {
       await this.ensureStarted(request.launch);
+      request.loadTimeMs = alreadyLoaded
+        ? 0
+        : Math.max(0, Math.round(performance.now() - loadStartedAt));
     } catch (error) {
       this.queue.shift();
       this.finishRequest(request, error instanceof Error ? error : new Error(String(error)));
@@ -178,6 +208,7 @@ export class AsrPersistentWorker {
     }
     this.active = request;
     this.phase = "running";
+    request.inferenceStartedAt = performance.now();
     request.timeout = setTimeout(() => {
       if (this.active !== request) return;
       const error = new Error(`asr_worker_timeout:${request.timeoutMs}ms`);
@@ -325,7 +356,19 @@ export class AsrPersistentWorker {
     request.signal?.removeEventListener("abort", request.abort as EventListener);
     if (this.active === request) this.active = undefined;
     if (error) request.reject(error);
-    else request.resolve(output ?? { text: "" });
+    else {
+      const inferenceTimeMs = request.inferenceStartedAt
+        ? Math.max(0, Math.round(performance.now() - request.inferenceStartedAt))
+        : undefined;
+      request.resolve({
+        ...(output ?? { text: "" }),
+        metrics: {
+          ...(output?.metrics ?? {}),
+          loadTimeMs: request.loadTimeMs,
+          inferenceTimeMs,
+        },
+      });
+    }
   }
 
   private handleCrash(error: Error): void {

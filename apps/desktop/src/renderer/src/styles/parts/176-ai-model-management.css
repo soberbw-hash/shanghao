@@ -1,0 +1,107 @@
+/* Stable, compact model cards. Long technical details live in the native hover tooltip. */
+.ai-model-management-grid {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr));
+  grid-auto-rows: max-content;
+  align-items: start;
+  gap: 8px;
+}
+
+.ai-model-card {
+  align-self: start;
+  height: auto;
+  min-height: 72px;
+  padding: 9px 12px;
+  contain: layout paint style;
+}
+
+.ai-model-subgroup {
+  margin-top: 10px;
+  content-visibility: auto;
+  contain-intrinsic-size: auto 140px;
+}
+
+.ai-model-subgroup + .ai-model-subgroup {
+  padding-top: 10px;
+}
+
+.ai-model-card > .ai-model-copy {
+  display: grid;
+  grid-template-rows: repeat(2, minmax(0, auto));
+  height: auto;
+}
+
+.ai-model-header {
+  min-height: 0;
+  gap: 8px;
+}
+
+.ai-model-title-row {
+  align-items: start;
+}
+
+.ai-model-primary {
+  min-width: 0;
+}
+
+.ai-model-title-row h3,
+.ai-model-summary,
+.ai-model-card-status,
+.ai-model-progress-wrap small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ai-model-title-row h3 {
+  max-width: 100%;
+}
+
+.ai-model-summary {
+  max-width: 100%;
+}
+
+.ai-model-actions {
+  padding-top: 0;
+}
+
+.ai-model-card-footer {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  flex-direction: column;
+  justify-content: flex-start;
+  overflow: hidden;
+}
+
+.ai-model-progress-wrap {
+  min-width: 0;
+  margin-top: 4px;
+}
+
+.ai-model-progress-wrap small {
+  margin-top: 3px;
+  line-height: 1.3;
+}
+
+.ai-model-card-status {
+  min-height: 16px;
+  margin: 3px 0 0 40px;
+  color: #71839a;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 16px;
+}
+
+.ai-model-card-footer.is-info .ai-model-card-status {
+  color: #2878d8;
+}
+
+.ai-model-card-footer.is-error .ai-model-card-status {
+  color: #d74848;
+}
+
+@media (max-width: 900px) {
+  .ai-model-management-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

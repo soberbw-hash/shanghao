@@ -102,6 +102,10 @@ test("gsap motion is scoped to intentional surfaces with the full visual present
   const deskAnimalSource = readFileSync(deskAnimalPath, "utf8");
   const hookSource = readFileSync(hookPath, "utf8");
   const stylesSource = readRendererCss();
+  assert.match(
+    stylesSource,
+    /html:not\(\.is-app-window-focused\) \.team-island \*[\s\S]*animation-play-state:\s*paused !important;/,
+  );
   const appStoreSource = readFileSync(appStorePath, "utf8");
   const appSource = readFileSync(appPath, "utf8");
   const sharedButtonSource = readFileSync(sharedButtonPath, "utf8");
@@ -343,13 +347,15 @@ test("startup paints immediately and keeps network work off the critical path", 
   assert.equal(bootstrapSource.includes("void refreshDevices()"), true);
 });
 
-test("route transitions remove the previous translucent page instead of stacking it", () => {
+test("route transitions keep one base page and retain only the settings shell", () => {
   const appSource = readFileSync(appPath, "utf8");
 
   assert.equal(appSource.includes("AnimatePresence"), false);
   assert.equal(appSource.includes("key={basePage}"), true);
   assert.equal(appSource.includes('isSettingsOpen ? "is-obscured" : ""'), true);
-  assert.equal(appSource.includes("{isSettingsOpen ? ("), true);
+  assert.equal(appSource.includes("{shouldRenderSettings ? ("), true);
+  assert.equal(appSource.includes('isSettingsOpen ? "is-active" : "is-inactive"'), true);
+  assert.equal(appSource.includes("<SettingsPage isActive={isSettingsOpen} />"), true);
   assert.equal(appSource.includes("animate={{ opacity: 1, y: 0 }}"), true);
   assert.equal(appSource.includes("scale: 0.992"), false);
 });
@@ -389,6 +395,7 @@ test("local scene identity survives placeholder-to-server peer replacement", () 
 
   assert.equal(sceneCharacterSource.includes('member.isLocal ? "local-member" : member.id'), true);
   assert.equal(islandSource.includes("key={sceneMemberKey(member)}"), true);
+  assert.equal(islandSource.includes("uniqueVisibleMembers"), true);
   assert.doesNotMatch(islandSource, /<SceneCharacter\s+key=\{member\.id\}/);
 });
 

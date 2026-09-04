@@ -4,7 +4,6 @@ import type { RoomDockSettings } from "../components/room/RoomDock";
 import { useSettingsStore } from "../store/settingsStore";
 
 export const useRoomPageSettings = () => {
-  const isWorkActivityVisible = useSettingsStore((state) => state.settings?.isWorkActivityVisible);
   const isAiAutoTranscribeEnabled = useSettingsStore(
     (state) => state.settings?.isAiAutoTranscribeEnabled,
   );
@@ -33,6 +32,10 @@ export const useRoomPageSettings = () => {
   const isAutoGainControlEnabled = useSettingsStore(
     (state) => state.settings?.isAutoGainControlEnabled,
   );
+  const isPushToTalkEnabled = useSettingsStore((state) => state.settings?.isPushToTalkEnabled);
+  const pushToTalkShortcut = useSettingsStore((state) => state.settings?.pushToTalkShortcut);
+  const micEqualizerGains = useSettingsStore((state) => state.settings?.micEqualizerGains);
+  const lowCutFrequency = useSettingsStore((state) => state.settings?.lowCutFrequency);
   const preferredOutputDeviceId = useSettingsStore(
     (state) => state.settings?.preferredOutputDeviceId,
   );
@@ -50,6 +53,10 @@ export const useRoomPageSettings = () => {
       isEchoCancellationEnabled: isEchoCancellationEnabled ?? true,
       isVoiceEnhancementEnabled: isVoiceEnhancementEnabled ?? true,
       isAutoGainControlEnabled: isAutoGainControlEnabled ?? true,
+      isPushToTalkEnabled: isPushToTalkEnabled ?? false,
+      pushToTalkShortcut: pushToTalkShortcut || "Space",
+      micEqualizerGains: micEqualizerGains ?? [0, 0, 0, 0, 0],
+      lowCutFrequency: lowCutFrequency ?? "75",
       preferredOutputDeviceId,
       speakerMasterVolume: speakerMasterVolume ?? 1,
       isFriendLoudnessBalanceEnabled: isFriendLoudnessBalanceEnabled ?? true,
@@ -61,13 +68,16 @@ export const useRoomPageSettings = () => {
     isEchoCancellationEnabled,
     isVoiceEnhancementEnabled,
     isAutoGainControlEnabled,
+    isPushToTalkEnabled,
+    pushToTalkShortcut,
+    micEqualizerGains,
+    lowCutFrequency,
     preferredOutputDeviceId,
     speakerMasterVolume,
     isFriendLoudnessBalanceEnabled,
   ]);
 
   return {
-    isWorkActivityVisible,
     isAiAutoTranscribeEnabled,
     isAiAutoOrganizeEnabled,
     isAutoRecordOnJoinEnabled,

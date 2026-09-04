@@ -122,24 +122,6 @@ test("cross-midnight sessions are split in Shanghai time without a fake leave", 
   assert.equal(secondDay?.lastExit?.nickname, "小明");
 });
 
-test("development work is excluded from room-history durations", async () => {
-  const store = await DailyRoomReportStore.create();
-  store.recordJoin("main", "profile-a", "Sober", 1, at("2026-08-20T22:00:00"));
-  store.recordWork("main", "profile-a", "Sober", "Codex", at("2026-08-20T22:30:00"));
-  store.recordLeave("main", "profile-a", "Sober", 0, at("2026-08-21T02:00:00"));
-
-  const history = store.getHistory("main", at("2026-08-22T12:00:00"));
-  const firstDay = history.find((report) => report.date === "2026-08-20");
-  const secondDay = history.find((report) => report.date === "2026-08-21");
-  assert.equal(firstDay?.activeDurationMs, 30 * 60 * 1_000);
-  assert.equal(secondDay?.activeDurationMs, 0);
-  assert.equal(firstDay?.participants?.[0]?.presenceDurationMs, 30 * 60 * 1_000);
-  assert.equal(secondDay?.participants?.[0]?.presenceDurationMs, 0);
-  assert.deepEqual(firstDay?.workActivities, []);
-  assert.deepEqual(secondDay?.workActivities, []);
-  assert.equal(history.length, 2);
-});
-
 test("stable profile identity deduplicates nickname changes and game players across restart", async () => {
   const directory = await mkdtemp(path.join(os.tmpdir(), "shanghao-daily-identity-"));
   const filePath = path.join(directory, "daily-room.json");
@@ -183,4 +165,51 @@ test("game activity records each friend, game duration, switching, and Shanghai 
     { nickname: "gramps", gameName: "三角洲行动", durationMs: 60 * 60 * 1_000 },
     { nickname: "gramps", gameName: "英雄联盟", durationMs: 30 * 60 * 1_000 },
   ]);
+});
+
+test("recording recaps exist only after explicit publish and replace the same recording", async () => {
+  const store = await DailyRoomReportStore.create();
+  const now = at("2026-08-11T12:00:00");
+  assert.equal(store.getHistory("main", now)[0], undefined);
+  const first = store.publishRecordingRecap(
+    "main",
+    "2026-08-10",
+    {
+      recordingId: "recording-1",
+      description: "前半场认真打，后半场开始互相甩锅。",
+      summary: ["小明连续送了两波，被大家抓住调侃。"],
+      highlights: [],
+      funnyMoments: [
+        {
+          title: "甩锅现场",
+          description: "三个人同时说不是自己的问题。",
+          startMs: 3_000,
+          endMs: 8_000,
+        },
+      ],
+      participantNicknames: ["小明", "小红"],
+      keywords: ["英雄联盟", "甩锅"],
+    },
+    now,
+  );
+  assert.ok(first);
+  const second = store.publishRecordingRecap(
+    "main",
+    "2026-08-10",
+    {
+      recordingId: "recording-1",
+      description: "更新后的本地整理。",
+      summary: [],
+      highlights: [],
+      funnyMoments: [],
+      participantNicknames: ["小明"],
+      keywords: [],
+    },
+    now + 1_000,
+  );
+  assert.ok(second);
+  const report = store.getHistory("main", now + 2_000)[0];
+  assert.equal(report?.recordingRecaps?.length, 1);
+  assert.equal(report?.recordingRecaps?.[0]?.description, "更新后的本地整理。");
+  assert.equal(report?.commentary, "更新后的本地整理。");
 });

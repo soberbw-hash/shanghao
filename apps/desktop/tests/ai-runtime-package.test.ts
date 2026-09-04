@@ -12,9 +12,15 @@ import {
 } from "../src/main/ai-runtime-package";
 import {
   AiRuntimeManager,
+  ARK_ASR_PORTABLE_CLI,
+  ARK_ASR_RUNTIME_PACKAGES,
+  ARK_ASR_RUNTIME_WHEEL,
   PRIVATE_PIP_INSTALL_ARGUMENTS,
   DOLPHIN_RUNTIME_PACKAGES,
+  SHARED_PYTHON_NUMPY_VERSION,
+  SHARED_PYTHON_PACKAGING_VERSION,
   MOSS_RUNTIME_PACKAGES,
+  MOSS_CPP_RUNTIME_WHEELS,
   FIRE_RED_RUNTIME_PACKAGES,
   QWEN_ORGANIZER_RUNTIME_PACKAGES,
   classifyCudaRuntimeFailure,
@@ -122,6 +128,30 @@ test("all GPU providers expose the exact common preflight error codes", () => {
     providerCudaErrorCode("cohere-transcribe-2b", true),
     "cohere_transcribe_cuda_bf16_required",
   );
+  assert.equal(providerCudaErrorCode("ark-asr-3b-q8_0"), "ark_asr_3b_cuda_required");
+});
+
+test("ARK runtime pins the CUDA wheel and verifies its release digest", () => {
+  assert.deepEqual(ARK_ASR_RUNTIME_PACKAGES, [
+    "https://github.com/CrispStrobe/CrispASR/releases/download/v0.8.30/crispasr-0.8.30%2Bcuda-py3-none-win_amd64.whl#sha256=be800df87c979d696f6e5e1204dc68b74cf194e58a0667ae95c430e364254cd6",
+  ]);
+  assert.equal(ARK_ASR_RUNTIME_WHEEL.bytes, 714_913_362);
+  assert.equal(
+    ARK_ASR_RUNTIME_WHEEL.sha256,
+    "be800df87c979d696f6e5e1204dc68b74cf194e58a0667ae95c430e364254cd6",
+  );
+  assert.equal(ARK_ASR_RUNTIME_WHEEL.sources.length, 2);
+  assert.equal(ARK_ASR_PORTABLE_CLI.bytes, 142_370_322);
+  assert.equal(
+    ARK_ASR_PORTABLE_CLI.sha256,
+    "bc486486a9326f70ce24afe6b34d900e964ba2a0ff96c096890117821055a2df",
+  );
+  assert.deepEqual(ARK_ASR_PORTABLE_CLI.cpuHelper, {
+    fileName: "ggml-cpu.dll",
+    bytes: 910_848,
+    sha256: "d865d3f00934b53c1dbf5aa6d645235cf14d40757ef1e53ad6ab2a7f06fbe38c",
+  });
+  assert.equal(ARK_ASR_PORTABLE_CLI.sources.length, 2);
 });
 
 test("FireRed runtime keeps the native fbank dependency required by official source", () => {
@@ -138,11 +168,27 @@ test("MOSS runtime pins the official parser and inference source", () => {
   );
 });
 
+test("MOSS Q8 runtime pins verified transcribe.cpp Windows CUDA wheels", () => {
+  assert.equal(MOSS_CPP_RUNTIME_WHEELS.length, 2);
+  assert.equal(MOSS_CPP_RUNTIME_WHEELS[0]?.bytes, 34_910);
+  assert.equal(
+    MOSS_CPP_RUNTIME_WHEELS[0]?.sha256,
+    "ef043b3b736049f05636f83818b130f30c7118c6d9148b1982f46ed62c10bce2",
+  );
+  assert.equal(MOSS_CPP_RUNTIME_WHEELS[1]?.bytes, 200_127_708);
+  assert.equal(
+    MOSS_CPP_RUNTIME_WHEELS[1]?.sha256,
+    "04b35695b8d56f016cf2592460371ef5f638f06c4c4368d638a07d6812dbcafc",
+  );
+});
+
 test("Dolphin runtime includes the undeclared complex tensor dependency used at import time", () => {
   assert.deepEqual(DOLPHIN_RUNTIME_PACKAGES, [
     "dataoceanai-dolphin==20260513",
     "torch-complex==0.4.4",
   ]);
+  assert.equal(SHARED_PYTHON_PACKAGING_VERSION, "26.3");
+  assert.equal(SHARED_PYTHON_NUMPY_VERSION, "2.5.2");
 });
 
 test("Qwen organizer reuses shared CUDA torch and pins only its provider dependencies", () => {

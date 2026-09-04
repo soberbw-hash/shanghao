@@ -1,9 +1,4 @@
-import type {
-  MemberActivity,
-  MusicActivity,
-  SceneZoneId,
-  WorkActivity,
-} from "@private-voice/shared";
+import type { MemberActivity, MusicActivity, SceneZoneId } from "@private-voice/shared";
 import type { MemberStateMessage } from "@private-voice/signaling";
 
 import { normalizePresenceGameIconDataUrl, normalizePresenceGameName } from "./presenceSignal";
@@ -15,7 +10,6 @@ interface DesiredPresenceState {
   gameName?: string;
   gameIconDataUrl?: string;
   musicActivity?: MusicActivity;
-  workActivity?: WorkActivity;
   key: string;
 }
 
@@ -48,7 +42,6 @@ export class PresenceCoordinator {
     gameName?: string,
     musicActivity?: MusicActivity,
     gameIconDataUrl?: string,
-    workActivity?: WorkActivity,
   ): void {
     const normalizedGameName = normalizePresenceGameName(gameName);
     const normalizedGameIconDataUrl = normalizePresenceGameIconDataUrl(
@@ -62,7 +55,6 @@ export class PresenceCoordinator {
       normalizedGameName ?? null,
       normalizedGameIconDataUrl ?? null,
       musicActivity ?? null,
-      workActivity ?? null,
     ]);
     this.desired = {
       isDeafened,
@@ -71,10 +63,28 @@ export class PresenceCoordinator {
       gameName: normalizedGameName,
       gameIconDataUrl: normalizedGameIconDataUrl,
       musicActivity,
-      workActivity,
       key,
     };
     void this.publish();
+  }
+
+  /**
+   * Older relays treated an omitted gameName as an explicit clear. Preserve
+   * the latest complete presence snapshot when sending mute/profile patches so
+   * those patches cannot truncate game timing before the relay is upgraded.
+   */
+  enrichPartialMessage(message: MemberStateMessage): MemberStateMessage {
+    const desired = this.desired;
+    if (!desired) return message;
+    return {
+      ...message,
+      isDeafened: message.isDeafened ?? desired.isDeafened,
+      activity: message.activity ?? desired.activity,
+      sceneZone: message.sceneZone ?? desired.sceneZone,
+      gameName: message.gameName ?? desired.gameName ?? "",
+      gameIconDataUrl: message.gameIconDataUrl ?? desired.gameIconDataUrl ?? null,
+      musicActivity: message.musicActivity ?? desired.musicActivity ?? null,
+    };
   }
 
   async publish(): Promise<void> {
@@ -100,7 +110,6 @@ export class PresenceCoordinator {
       gameName: desired.gameName ?? "",
       gameIconDataUrl: desired.gameIconDataUrl ?? null,
       musicActivity: desired.musicActivity ?? null,
-      workActivity: desired.workActivity ?? null,
     });
 
     if (publicationGeneration !== this.generation) return;

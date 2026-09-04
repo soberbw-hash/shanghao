@@ -48,7 +48,7 @@ test("display environment changes reset stale cadence and retain DPI diagnostics
   assert.equal(service.getEnvironment()?.scaleFactor, 1.25);
 });
 
-test("visual runtime pauses pure visual frames while hidden and resumes cleanly", () => {
+test("visual runtime pauses pure visual frames while hidden or unfocused and resumes cleanly", () => {
   let visible = true;
   let nextId = 0;
   const callbacks = new Map<number, FrameRequestCallback>();

@@ -1,0 +1,146 @@
+.voice-memory-organization {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+  border: 1px solid rgb(202 218 240 / 82%);
+  border-radius: 14px;
+  background: rgb(246 250 255 / 72%);
+  padding: 9px 10px;
+}
+
+.voice-memory-organization.is-failed {
+  border-color: rgb(226 163 170 / 72%);
+}
+
+.voice-memory-organization-overview {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.voice-memory-organization-overview > div:first-child {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.voice-memory-organization-overview strong {
+  color: #2b4665;
+  font-size: 12px;
+}
+
+.voice-memory-organization-overview span {
+  color: #71839a;
+  font-size: 10px;
+}
+
+.voice-memory-publish-action {
+  display: inline-flex;
+  min-height: 34px;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  margin-left: auto;
+  padding: 7px 12px;
+  border: 1px solid rgba(124, 173, 226, 0.48);
+  border-radius: 12px;
+  color: #2c6fb8;
+  background: rgba(255, 255, 255, 0.68);
+  font-size: 12px;
+  font-weight: 760;
+}
+
+.voice-memory-publish-action svg {
+  width: 15px;
+  height: 15px;
+}
+
+.voice-memory-publish-action:disabled {
+  cursor: default;
+  opacity: 0.64;
+}
+
+.voice-memory-speaking-share {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 5px;
+}
+
+.voice-memory-speaking-share > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border-radius: 999px;
+  background: rgb(230 241 255 / 82%);
+  padding: 4px 7px;
+  color: #49637f;
+  white-space: nowrap;
+}
+
+.voice-memory-speaking-share b {
+  color: #347fd8;
+  font-variant-numeric: tabular-nums;
+}
+
+.voice-memory-organization-metrics {
+  border-top: 1px solid rgb(207 222 240 / 72%);
+  padding-top: 7px;
+}
+
+.voice-memory-organization-metrics summary {
+  width: max-content;
+  cursor: pointer;
+  color: #5c718b;
+  font-size: 10px;
+  font-weight: 680;
+}
+
+.voice-memory-organization-metrics dl {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.voice-memory-organization-metrics dl > div {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+  border-radius: 9px;
+  background: rgb(255 255 255 / 64%);
+  padding: 6px 7px;
+}
+
+.voice-memory-organization-metrics dt {
+  color: #8594a8;
+  font-size: 9px;
+}
+
+.voice-memory-organization-metrics dd {
+  overflow: hidden;
+  margin: 0;
+  color: #40566f;
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (max-width: 1180px) {
+  .voice-memory-organization-overview {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .voice-memory-speaking-share {
+    justify-content: flex-start;
+  }
+
+  .voice-memory-organization-metrics dl {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}

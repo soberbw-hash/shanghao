@@ -1,6 +1,6 @@
-# 支持的游戏与工作软件
+# 支持的游戏
 
-本页与上号当前检测规则同步。游戏和工作状态只识别当前最前方窗口对应的受支持软件；“开启工作显示”默认开启，可在设置中关闭。上号不读取文档内容、项目名或聊天内容。
+本页与上号当前游戏检测规则同步。游戏状态只识别有明确进程证据的受支持游戏。
 
 游戏显示器优先使用当前电脑上已安装程序自带的官方高清图标，读取失败时才使用仓库中的本地图标。星露谷物语、英雄联盟和三角洲行动使用经过小屏裁切和提亮的官方实机画面；其他游戏继续显示图标或封面。游戏名称显示在角色状态中。上号只把压缩后的图标和下列固定名称同步给同房间好友，不发送文件路径。
 
@@ -16,19 +16,8 @@
 
 腾讯 2026 新游范围参考 [腾讯 SPARK 2026 官方发布内容](https://www.tencent.com/zh-cn/articles/2202340.html)。KK 对战平台属于平台客户端：平台本体不算游戏；检测到由 KK 启动且位于前台的实际游戏进程时统一显示“KK 对战平台”，不猜测具体地图或模式。
 
-## 专业工作软件（50 项）
-
-| 类别                | 支持项                                                                                                                                                                             |
-| ------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 编程与开发          | Codex、WorkBuddy、Visual Studio Code、Cursor、Trae、Visual Studio、IntelliJ IDEA、PyCharm、WebStorm、CLion、Rider、GoLand、Android Studio、Eclipse、NetBeans、Unity、Unreal Editor |
-| Adobe / 设计 / 影音 | Photoshop、Illustrator、Figma、InDesign、Premiere Pro、After Effects、Adobe Audition、Media Encoder、DaVinci Resolve、Blender、Maya、3ds Max                                       |
-| 工程与电子          | AutoCAD、SOLIDWORKS、Revit、Fusion 360、CATIA、Siemens NX、LabVIEW、ANSYS、Altium Designer、Proteus、Keil、STM32CubeIDE、Arduino IDE、SketchUp                                     |
-| 专业数据工具        | MATLAB、RStudio、Anaconda Navigator、Power BI、Tableau、Origin、SPSS Statistics                                                                                                    |
-
 ## 识别说明
 
 - 游戏按明确的进程名匹配；具体游戏优先于平台客户端，普通 Java 程序不会被当成游戏。
-- 工作软件需要持续约 20 秒的可靠前台证据才公开；短暂切到微信或浏览器不会立刻改变朋友看到的状态。
-- Word、Excel、PowerPoint、Visio、WPS 等普通高频办公软件不作为 Work Presence。
-- Spotify、Apple Music、网易云音乐和 QQ 音乐属于音乐状态，不受工作状态开关影响。
+- Spotify、Apple Music、网易云音乐和 QQ 音乐作为独立的音乐状态处理。
 - 软件升级不会清除本地聊天历史、录音目录或每位好友的本地音量设置。

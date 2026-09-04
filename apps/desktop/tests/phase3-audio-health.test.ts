@@ -78,12 +78,12 @@ test("peer health separates network damage from a local media stall", () => {
   assert.equal(pipeline.audioFlow, "stalled");
 });
 
-test("natural voice enhancement runs after DeepFilter blend without pre-boosting air", () => {
+test("communication voice shaping runs after DeepFilter blend without lookahead DSP", () => {
   const source = read("apps/desktop/src/renderer/src/features/audio/microphoneProcessor.ts");
   assert.equal(source.includes("VOICE_ENHANCEMENT_EQ_GAINS"), false);
   assert.match(
     source,
-    /connectNaturalVoiceEnhancer\([\s\S]*blendBus[\s\S]*equalized\.connect\(outputGain\)/,
+    /voiceShaper = await connectCommunicationVoiceShaper\([\s\S]*blendBus[\s\S]*equalized\.connect\(outputGain\)/,
   );
   assert.match(
     source,
@@ -91,8 +91,12 @@ test("natural voice enhancement runs after DeepFilter blend without pre-boosting
   );
   assert.match(source, /protectionWorklet\.connect\(blendBus\)/);
   assert.equal(source.includes("gain.connect(outputGain)"), false);
-  assert.match(source, /airRestraint\.gain\.value = -0\.8/);
-  assert.match(source, /compressor\.ratio\.value = 1\.6/);
+  assert.match(source, /registerProcessor\("\$\{VOICE_SHAPER_WORKLET_NAME\}"/);
+  assert.match(source, /mudCut\.gain\.value = -1\.8/);
+  assert.match(source, /clarity\.gain\.value = 1\.7/);
+  assert.match(source, /this\.compressorThreshold = Math\.pow\(10, -23 \/ 20\)/);
+  assert.match(source, /this\.minimumDeEsserGain = Math\.pow\(10, -3\.5 \/ 20\)/);
+  assert.equal(source.includes("connectNaturalVoiceEnhancer"), false);
 });
 
 test("a stalled friend repairs only that playback graph before peer ICE recovery", () => {

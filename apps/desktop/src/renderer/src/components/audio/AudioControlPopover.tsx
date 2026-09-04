@@ -4,13 +4,29 @@ import { Volume2 } from "lucide-react";
 import { motion } from "framer-motion";
 
 import type { AudioDeviceDescriptor } from "@private-voice/shared";
+import { cn } from "@private-voice/ui";
 
+import { Button } from "../base/Button";
+import { SegmentedControl } from "../base/SegmentedControl";
+import { ShortcutInput } from "../base/ShortcutInput";
 import { Slider } from "../base/Slider";
 import { Switch } from "../base/Switch";
 import { popoverSurfaceVariants, reducedFadeVariants } from "../../features/motion/motionPresets";
+import type { MicTestPhase } from "../../hooks/useMicTest";
 import { usePrefersReducedMotion } from "../../hooks/usePrefersReducedMotion";
 
+export interface MicrophoneTestControls {
+  phase: MicTestPhase;
+  level: number;
+  isClipping: boolean;
+  error?: string;
+  onToggle: () => void;
+  onPlaySystemCapture: () => void;
+  onPlayProcessed: () => void;
+}
+
 interface AudioControlPopoverProps {
+  isOpen?: boolean;
   title: string;
   devices: AudioDeviceDescriptor[];
   deviceId?: string;
@@ -31,11 +47,17 @@ interface AudioControlPopoverProps {
   onEchoCancellationChange?: (enabled: boolean) => void;
   voiceEnhancementEnabled?: boolean;
   onVoiceEnhancementChange?: (enabled: boolean) => void;
+  pushToTalkEnabled?: boolean;
+  pushToTalkShortcut?: string;
+  onPushToTalkEnabledChange?: (enabled: boolean) => void;
+  onPushToTalkShortcutChange?: (shortcut: string) => void;
+  microphoneTest?: MicrophoneTestControls;
   loudnessBalanceEnabled?: boolean;
   onLoudnessBalanceChange?: (enabled: boolean) => void;
 }
 
 export const AudioControlPopover = ({
+  isOpen = true,
   title,
   devices,
   deviceId,
@@ -56,6 +78,11 @@ export const AudioControlPopover = ({
   onEchoCancellationChange,
   voiceEnhancementEnabled,
   onVoiceEnhancementChange,
+  pushToTalkEnabled,
+  pushToTalkShortcut,
+  onPushToTalkEnabledChange,
+  onPushToTalkShortcutChange,
+  microphoneTest,
   loudnessBalanceEnabled,
   onLoudnessBalanceChange,
 }: AudioControlPopoverProps) => {
@@ -70,6 +97,24 @@ export const AudioControlPopover = ({
     typeof autoGainEnabled === "boolean" ||
     typeof echoCancellationEnabled === "boolean" ||
     typeof voiceEnhancementEnabled === "boolean";
+  const hasSpeakingMode =
+    typeof pushToTalkEnabled === "boolean" &&
+    Boolean(onPushToTalkEnabledChange) &&
+    Boolean(onPushToTalkShortcutChange);
+  const canPlayMicTest =
+    microphoneTest?.phase === "ready" || microphoneTest?.phase.startsWith("playing_");
+  const micTestStatus = (() => {
+    if (!microphoneTest) return undefined;
+    if (microphoneTest.error) return microphoneTest.error;
+    if (microphoneTest.phase === "ready") return "体检完成，可以试听对比";
+    if (microphoneTest.phase === "playing_system") return "正在播放原声";
+    if (microphoneTest.phase === "playing_processed") return "正在播放处理后声音";
+    if (microphoneTest.phase !== "recording") return "录制 5 秒，听听处理前后的区别";
+    if (microphoneTest.isClipping) return "输入过高，已经出现削波";
+    if (microphoneTest.level > 0.18) return "麦克风正常";
+    if (microphoneTest.level > 0.035) return "声音有点小";
+    return "听不到你";
+  })();
   const deviceSelect = (
     <select
       value={deviceId || ""}
@@ -88,11 +133,12 @@ export const AudioControlPopover = ({
   return (
     <motion.div
       ref={popoverRef}
-      className="audio-control-popover"
+      className={cn("audio-control-popover", hasMicrophoneProcessing && "is-microphone")}
       variants={reduceMotion ? reducedFadeVariants : popoverSurfaceVariants}
       initial="initial"
-      animate="open"
-      exit="closed"
+      animate={isOpen ? "open" : "closed"}
+      aria-hidden={!isOpen}
+      style={{ pointerEvents: isOpen ? "auto" : "none" }}
       onAnimationStart={() => {
         if (popoverRef.current) popoverRef.current.style.willChange = "transform, opacity";
       }}
@@ -104,7 +150,6 @@ export const AudioControlPopover = ({
         <strong>{title}</strong>
         <span>{Math.round(draftVolume * 100)}%</span>
       </div>
-      {hasMicrophoneProcessing ? null : deviceSelect}
       {typeof noiseSuppressionEnabled === "boolean" && onNoiseSuppressionChange ? (
         <div
           className="audio-control-processing-option"
@@ -113,7 +158,9 @@ export const AudioControlPopover = ({
         >
           <span>
             <strong>降噪</strong>
-            <small>{isNoiseSuppressionSwitching ? "正在切换" : "减少环境噪声"}</small>
+            <small>
+              {isNoiseSuppressionSwitching ? "DeepFilterNet3 正在切换" : "DeepFilterNet3"}
+            </small>
           </span>
           <Switch
             isChecked={noiseSuppressionEnabled}
@@ -142,13 +189,13 @@ export const AudioControlPopover = ({
       {typeof voiceEnhancementEnabled === "boolean" && onVoiceEnhancementChange ? (
         <div className="audio-control-processing-option" data-audio-setting="voice-enhancement">
           <span>
-            <strong>自然人声</strong>
-            <small>温和平衡清晰度与刺耳感</small>
+            <strong>人声增强</strong>
+            <small>DSP 人声整形</small>
           </span>
           <Switch
             isChecked={voiceEnhancementEnabled}
             isDisabled={isNoiseSuppressionSwitching}
-            ariaLabel="切换自然人声"
+            ariaLabel="切换人声增强"
             onChange={onVoiceEnhancementChange}
           />
         </div>
@@ -166,12 +213,84 @@ export const AudioControlPopover = ({
           />
         </div>
       ) : null}
-      {hasMicrophoneProcessing ? deviceSelect : null}
+      {hasSpeakingMode ? (
+        <section className="audio-control-section" aria-labelledby="microphone-speaking-mode">
+          <div className="audio-control-section-heading">
+            <strong id="microphone-speaking-mode">说话模式</strong>
+          </div>
+          <div className="audio-control-speaking-mode">
+            <SegmentedControl
+              value={pushToTalkEnabled ? "ptt" : "open"}
+              options={[
+                { value: "open", label: "自由麦" },
+                { value: "ptt", label: "按键说话" },
+              ]}
+              onChange={(value) => onPushToTalkEnabledChange?.(value === "ptt")}
+            />
+          </div>
+          {pushToTalkEnabled ? (
+            <div className="audio-control-shortcut">
+              <ShortcutInput
+                value={pushToTalkShortcut || "Space"}
+                onChange={(shortcut) => onPushToTalkShortcutChange?.(shortcut)}
+                defaultValue="Space"
+                compact
+              />
+            </div>
+          ) : null}
+        </section>
+      ) : null}
+      {microphoneTest ? (
+        <section className="audio-control-section" aria-labelledby="microphone-health-check">
+          <div className="audio-control-section-heading">
+            <strong id="microphone-health-check">麦克风体检</strong>
+            <small title={micTestStatus}>{micTestStatus}</small>
+          </div>
+          {microphoneTest.phase === "recording" ? (
+            <div
+              className="audio-control-mic-test-meter"
+              role="meter"
+              aria-label="麦克风输入音量"
+              aria-valuemin={0}
+              aria-valuemax={100}
+              aria-valuenow={Math.round(microphoneTest.level * 100)}
+            >
+              <span
+                className={cn(microphoneTest.isClipping && "is-clipping")}
+                style={{ transform: `scaleX(${Math.max(0.04, microphoneTest.level)})` }}
+              />
+            </div>
+          ) : null}
+          <div className="audio-control-mic-test-actions">
+            <Button
+              variant={microphoneTest.phase === "recording" ? "danger" : "secondary"}
+              className="audio-control-mic-test-primary"
+              onClick={microphoneTest.onToggle}
+            >
+              {microphoneTest.phase === "recording"
+                ? "停止录制"
+                : canPlayMicTest
+                  ? "重新录制"
+                  : "开始 5 秒体检"}
+            </Button>
+            {canPlayMicTest ? (
+              <div className="audio-control-mic-test-playback">
+                <Button variant="ghost" onClick={microphoneTest.onPlaySystemCapture}>
+                  听原声
+                </Button>
+                <Button variant="ghost" onClick={microphoneTest.onPlayProcessed}>
+                  听处理后
+                </Button>
+              </div>
+            ) : null}
+          </div>
+        </section>
+      ) : null}
       {typeof loudnessBalanceEnabled === "boolean" && onLoudnessBalanceChange ? (
         <div className="audio-control-processing-option" data-audio-setting="loudness-balance">
           <span>
             <strong>好友响度平衡</strong>
-            <small>自动缩小忽大忽小的音量差异</small>
+            <small>逐位好友平滑匹配约 -16 LUFS</small>
           </span>
           <Switch
             isChecked={loudnessBalanceEnabled}
@@ -198,6 +317,7 @@ export const AudioControlPopover = ({
           onKeyUp={commit}
         />
       </div>
+      <div className="audio-control-device-select">{deviceSelect}</div>
       <div className="audio-control-popover-actions">
         {onTest ? (
           <button type="button" className="audio-control-test" onClick={onTest}>

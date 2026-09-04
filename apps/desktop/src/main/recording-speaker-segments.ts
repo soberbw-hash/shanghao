@@ -1,4 +1,5 @@
 import { mkdir, readFile, readdir, rename, rm, writeFile } from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 
 import { app } from "electron";
@@ -39,11 +40,32 @@ const safeId = (value: string): string => {
   return normalized;
 };
 
-const rootDirectory = (): string => path.join(app.getPath("userData"), "speaker-segments");
+const applicationPath = (name: "userData" | "appData"): string => {
+  const electronPath = app?.getPath?.(name);
+  if (electronPath) return electronPath;
+  const appData = process.env.APPDATA ?? path.join(os.homedir(), "AppData", "Roaming");
+  return name === "appData" ? appData : path.join(appData, "shanghao-desktop");
+};
+
+const knownUserDataDirectories = (): string[] => {
+  const current = path.resolve(applicationPath("userData"));
+  const appData = path.resolve(applicationPath("appData"));
+  if (path.dirname(current).toLowerCase() !== appData.toLowerCase()) return [current];
+  return [
+    current,
+    ...["shanghao-desktop", "shanghao", "上号"].map((name) => path.join(appData, name)),
+  ].filter((directory, index, directories) => directories.indexOf(directory) === index);
+};
+const rootDirectory = (userDataDirectory = applicationPath("userData")): string =>
+  path.join(userDataDirectory, "speaker-segments");
 const pendingDirectory = (sessionId: string): string =>
   path.join(rootDirectory(), "pending", safeId(sessionId));
 const completedDirectory = (recordingId: string): string =>
   path.join(rootDirectory(), "recordings", safeId(recordingId));
+const completedDirectories = (recordingId: string): string[] =>
+  knownUserDataDirectories().map((directory) =>
+    path.join(rootDirectory(directory), "recordings", safeId(recordingId)),
+  );
 const manifestPath = (directory: string): string => path.join(directory, "manifest.json");
 const sessionWrites = new Map<string, Promise<RecordingSpeakerSegmentResponse>>();
 
@@ -153,21 +175,24 @@ export const finalizeRecordingSpeakerSegments = async (
 
 export const loadRecordingSpeakerSegments = async (
   recordingId: string,
-  recordingFilePath: string,
+  _recordingFilePath: string,
 ): Promise<PersistedRecordingSpeakerSegment[] | undefined> => {
-  const directory = completedDirectory(recordingId);
-  const manifest = await readManifest(directory, "completed");
-  if (
-    manifest.recordingId !== recordingId ||
-    path.resolve(manifest.recordingFilePath ?? "") !== path.resolve(recordingFilePath) ||
-    manifest.segments.length === 0
-  ) {
-    return undefined;
+  for (const directory of completedDirectories(recordingId)) {
+    const manifest = await readManifest(directory, "completed");
+    if (manifest.recordingId !== recordingId || manifest.segments.length === 0) continue;
+    const existingNames = new Set(await readdir(directory));
+    const segments = manifest.segments.filter((segment) =>
+      existingNames.has(path.basename(segment.filePath)),
+    );
+    if (segments.length) return segments;
   }
-  const existingNames = new Set(await readdir(directory));
-  return manifest.segments.filter((segment) => existingNames.has(path.basename(segment.filePath)));
+  return undefined;
 };
 
 export const cleanupRecordingSpeakerSegments = async (recordingId: string): Promise<void> => {
-  await rm(completedDirectory(recordingId), { recursive: true, force: true });
+  await Promise.all(
+    completedDirectories(recordingId).map((directory) =>
+      rm(directory, { recursive: true, force: true }),
+    ),
+  );
 };

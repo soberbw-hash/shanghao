@@ -72,6 +72,8 @@ export const IPC_CHANNELS = {
     listVoiceMemories: "ai:list-voice-memories",
     processRecording: "ai:process-recording",
     selectTranscription: "ai:select-transcription",
+    clearTranscriptionResults: "ai:clear-transcription-results",
+    publishOrganization: "ai:publish-organization",
     pauseTask: "ai:pause-task",
     resumeTask: "ai:resume-task",
     assignSpeaker: "ai:assign-speaker",
@@ -96,6 +98,7 @@ export const IPC_CHANNELS = {
   },
   account: {
     getSnapshot: "account:get-snapshot",
+    getRememberedLogin: "account:get-remembered-login",
     configureCloudBase: "account:configure-cloudbase",
     login: "account:login",
     register: "account:register",

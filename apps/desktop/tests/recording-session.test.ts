@@ -6,7 +6,10 @@ import { fileURLToPath } from "node:url";
 
 import { RecordingEncoderState } from "@private-voice/shared";
 
-import { BrowserRecordingEncoder } from "../../../packages/recording/src/recording-encoder";
+import {
+  BrowserRecordingEncoder,
+  RECORDING_AUDIO_BITS_PER_SECOND,
+} from "../../../packages/recording/src/recording-encoder";
 
 class FakeMediaRecorder extends EventTarget {
   static isTypeSupported(): boolean {
@@ -14,12 +17,14 @@ class FakeMediaRecorder extends EventTarget {
   }
 
   readonly mimeType: string;
+  readonly audioBitsPerSecond?: number;
   state: RecordingState = "inactive";
   ondataavailable: ((event: BlobEvent) => void) | null = null;
 
   constructor(_stream: MediaStream, options?: MediaRecorderOptions) {
     super();
     this.mimeType = options?.mimeType ?? "audio/webm";
+    this.audioBitsPerSecond = options?.audioBitsPerSecond;
   }
 
   start(): void {
@@ -62,6 +67,8 @@ test("recording encoder preserves buffered audio after an unexpected recorder st
     assert.equal(encoder.hasRecording(), true);
 
     const recorder = (encoder as unknown as { mediaRecorder: FakeMediaRecorder }).mediaRecorder;
+    assert.equal(recorder.audioBitsPerSecond, RECORDING_AUDIO_BITS_PER_SECOND);
+    assert.equal(RECORDING_AUDIO_BITS_PER_SECOND, 32_000);
     recorder.stopUnexpectedly();
 
     const result = await encoder.stop();

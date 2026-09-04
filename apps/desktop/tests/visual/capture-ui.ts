@@ -1,5 +1,5 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
-import { dirname, extname } from "node:path";
+import { mkdir, writeFile } from "node:fs/promises";
+import { dirname } from "node:path";
 
 import type { BrowserWindow } from "electron";
 
@@ -21,7 +21,8 @@ type CaptureMode =
   | "settings"
   | "settings-recording"
   | "settings-ai"
-  | "settings-detail";
+  | "settings-detail"
+  | "profile-settings";
 
 interface CaptureUiOptions {
   mode: CaptureMode;
@@ -32,36 +33,13 @@ interface CaptureUiOptions {
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
-const readCaptureIconDataUrl = async (): Promise<string | undefined> => {
-  const iconPath = process.env.SHANGHAO_CAPTURE_WORK_ICON_PATH?.trim();
-  if (!iconPath) return undefined;
-  const mimeType =
-    {
-      ".jpg": "image/jpeg",
-      ".jpeg": "image/jpeg",
-      ".png": "image/png",
-      ".webp": "image/webp",
-    }[extname(iconPath).toLocaleLowerCase()] ?? "image/png";
-  const bytes = await readFile(iconPath);
-  return `data:${mimeType};base64,${bytes.toString("base64")}`;
-};
-
 const injectCapturePresence = async (window: BrowserWindow): Promise<void> => {
   const gameName = process.env.SHANGHAO_CAPTURE_GAME_NAME?.trim();
-  const workName = process.env.SHANGHAO_CAPTURE_WORK_NAME?.trim();
-  if (!gameName && !workName) return;
+  if (!gameName) return;
 
   const now = new Date().toISOString();
   const snapshot: GameDetectionSnapshot = {
     gameName: gameName as GameDetectionSnapshot["gameName"],
-    workActivity: workName
-      ? {
-          id: process.env.SHANGHAO_CAPTURE_WORK_ID?.trim() || "codex",
-          name: workName,
-          category: "development",
-          iconDataUrl: await readCaptureIconDataUrl(),
-        }
-      : undefined,
     detectedAt: now,
     checkedAt: now,
   };
@@ -72,15 +50,6 @@ const injectCapturePresence = async (window: BrowserWindow): Promise<void> => {
       (await waitForVisibleSelector(window, `[aria-label="正在玩 ${gameName}"]`, 4_000)) ||
       (await waitForVisibleSelector(window, ".scene-game-monitor-content--scene", 1_500));
     if (!found) throw new Error(`视觉捕获没有呈现游戏状态：${gameName}`);
-  }
-  if (workName) {
-    const workId = snapshot.workActivity?.id ?? "codex";
-    const found = await waitForVisibleSelector(
-      window,
-      `.work-activity-badge[data-activity-id="${workId}"]`,
-      2_500,
-    );
-    if (!found) throw new Error(`视觉捕获没有呈现工作状态：${workName}`);
   }
   await sleep(650);
 };
@@ -347,7 +316,16 @@ export const captureUi = async (
   await sleep(5_200);
   await dismissReleaseNotes(window);
   await dismissDailyReport(window);
-  if (options.mode !== "home" && options.mode !== "home-mic") {
+  if (options.mode === "profile-settings") {
+    if (await clickButtonByLabel(window, "以访客身份继续")) {
+      await sleep(700);
+      await dismissReleaseNotes(window, 1_500);
+      await dismissDailyReport(window);
+    }
+    await prepareProfileForCapture(window);
+    await dismissReleaseNotes(window, 1_500);
+    await dismissDailyReport(window);
+  } else if (options.mode !== "home" && options.mode !== "home-mic") {
     if (await clickButtonByLabel(window, "以访客身份继续")) {
       await sleep(700);
       await dismissReleaseNotes(window, 1_500);
@@ -394,7 +372,8 @@ export const captureUi = async (
     options.mode === "settings" ||
     options.mode === "settings-recording" ||
     options.mode === "settings-ai" ||
-    options.mode === "settings-detail"
+    options.mode === "settings-detail" ||
+    options.mode === "profile-settings"
   ) {
     const isAlreadyOpen = await waitForVisibleSelector(window, ".settings-page-header", 3_000);
     const openedSettings = isAlreadyOpen || (await clickButtonByLabel(window, "设置"));
@@ -492,6 +471,18 @@ export const captureUi = async (
     await sleep(800);
   }
 
+  if (process.env.SHANGHAO_PERF_SEQUENCE === "settings") {
+    if (!(await waitForVisibleSelector(window, ".settings-page-header", 2_500))) {
+      throw new Error("性能序列无法找到设置页");
+    }
+    for (const label of ["录音库", "AI 功能", "通用", "录音库", "AI 功能", "通用"]) {
+      if (!(await clickButtonByLabel(window, label))) {
+        throw new Error(`性能序列无法打开设置分区：${label}`);
+      }
+      await sleep(260);
+    }
+  }
+
   const scrollSelector = process.env.SHANGHAO_CAPTURE_SCROLL_SELECTOR?.trim();
   if (scrollSelector) {
     await window.webContents.executeJavaScript(
@@ -540,6 +531,16 @@ export const captureUi = async (
   const image = await window.capturePage();
   await mkdir(dirname(options.outputPath), { recursive: true });
   await writeFile(options.outputPath, image.toPNG());
+
+  const performanceSnapshotPath = process.env.SHANGHAO_PERF_SNAPSHOT_PATH?.trim();
+  if (performanceSnapshotPath) {
+    const performanceSnapshot = await window.webContents.executeJavaScript(
+      `window.__shanghaoPerformance?.snapshot?.() ?? null`,
+      true,
+    );
+    await mkdir(dirname(performanceSnapshotPath), { recursive: true });
+    await writeFile(performanceSnapshotPath, JSON.stringify(performanceSnapshot, null, 2), "utf8");
+  }
 
   if (options.exitAfterCapture) {
     options.onExit();

@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { WebSocket as NodeWebSocket, type RawData } from "ws";
 
 import type {
+  DailyRoomRecordingRecap,
   RealtimeFaultCommand,
   RendererLogPayload,
   SignalingEventPayload,
@@ -12,6 +13,19 @@ export interface CloudAiBridgeRequest {
   prompt: string;
   useWebSearch?: boolean;
   signal?: AbortSignal;
+}
+
+export interface RecordingRecapBridgeRequest {
+  roomId: "main" | "side";
+  reportDate: string;
+  recap: Omit<DailyRoomRecordingRecap, "uploadedAt">;
+}
+
+export interface RecordingRecapBridgeResult {
+  roomId: "main" | "side";
+  reportDate: string;
+  publishedAt: string;
+  serverRevision: number;
 }
 
 const sanitizeSignalingUrl = (value: string): string => {
@@ -38,6 +52,14 @@ export class SignalingClientBridge extends EventEmitter {
   private readonly pendingCloudAi = new Map<
     string,
     { resolve: (content: string) => void; reject: (error: Error) => void; timer: NodeJS.Timeout }
+  >();
+  private readonly pendingRecordingRecaps = new Map<
+    string,
+    {
+      resolve: (result: RecordingRecapBridgeResult) => void;
+      reject: (error: Error) => void;
+      timer: NodeJS.Timeout;
+    }
   >();
 
   constructor(
@@ -143,6 +165,7 @@ export class SignalingClientBridge extends EventEmitter {
         this.socket = undefined;
         this.joinedRoom = undefined;
         this.rejectPendingCloudAi("cloud_ai_connection_closed");
+        this.rejectPendingRecordingRecaps("recording_recap_connection_closed");
         if (!opened) rejectOnce(new Error("signaling_socket_closed"));
         this.emitEvent(sessionId, {
           type: "close",
@@ -246,6 +269,7 @@ export class SignalingClientBridge extends EventEmitter {
     this.sessionId = undefined;
     this.joinedRoom = undefined;
     this.rejectPendingCloudAi("cloud_ai_connection_closed");
+    this.rejectPendingRecordingRecaps("recording_recap_connection_closed");
     await this.closeSocket();
   }
 
@@ -255,6 +279,7 @@ export class SignalingClientBridge extends EventEmitter {
     this.sessionId = undefined;
     this.joinedRoom = undefined;
     this.rejectPendingCloudAi("cloud_ai_connection_closed");
+    this.rejectPendingRecordingRecaps("recording_recap_connection_closed");
     return this.closeSocket(4002, "client_updating");
   }
 
@@ -318,6 +343,43 @@ export class SignalingClientBridge extends EventEmitter {
         );
       } catch {
         finish(new Error("cloud_ai_send_failed"));
+      }
+    });
+  }
+
+  async publishRecordingRecap(
+    request: RecordingRecapBridgeRequest,
+  ): Promise<RecordingRecapBridgeResult> {
+    if (!this.socket || this.socket.readyState !== NodeWebSocket.OPEN || !this.joinedRoom) {
+      throw new Error("recording_recap_join_required");
+    }
+    const roomId = this.joinedRoom.roomId;
+    if (roomId !== "main" && roomId !== "side") throw new Error("recording_recap_room_invalid");
+    if (roomId !== request.roomId) throw new Error("recording_recap_join_matching_room");
+    const requestId = randomUUID();
+    const peerId = this.joinedRoom.peerId;
+    return new Promise<RecordingRecapBridgeResult>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        this.pendingRecordingRecaps.delete(requestId);
+        reject(new Error("recording_recap_timeout"));
+      }, 15_000);
+      timer.unref?.();
+      this.pendingRecordingRecaps.set(requestId, { resolve, reject, timer });
+      try {
+        this.socket?.send(
+          JSON.stringify({
+            type: "publish_recording_recap",
+            roomId,
+            peerId,
+            requestId,
+            reportDate: request.reportDate,
+            recap: request.recap,
+          }),
+        );
+      } catch {
+        clearTimeout(timer);
+        this.pendingRecordingRecaps.delete(requestId);
+        reject(new Error("recording_recap_send_failed"));
       }
     });
   }
@@ -400,6 +462,29 @@ export class SignalingClientBridge extends EventEmitter {
           return true;
         }
       }
+      if (message.type === "error" && this.pendingRecordingRecaps.size > 0) {
+        const code = String((message as { code?: unknown }).code ?? "");
+        this.rejectPendingRecordingRecaps(
+          code === "invalid_payload" || code === "server_message_not_allowed"
+            ? "recording_recap_unsupported"
+            : code || "recording_recap_publish_failed",
+        );
+        return true;
+      }
+      if (message.type === "recording_recap_published" && typeof message.requestId === "string") {
+        const pending = this.pendingRecordingRecaps.get(message.requestId);
+        if (!pending) return true;
+        clearTimeout(pending.timer);
+        this.pendingRecordingRecaps.delete(message.requestId);
+        const reportDate = String((message as { reportDate?: unknown }).reportDate ?? "");
+        const publishedAt = String((message as { publishedAt?: unknown }).publishedAt ?? "");
+        const serverRevision = Number(
+          (message as { serverRevision?: unknown }).serverRevision ?? 0,
+        );
+        const roomId = message.roomId === "side" ? "side" : "main";
+        pending.resolve({ roomId, reportDate, publishedAt, serverRevision });
+        return true;
+      }
       if (message.type !== "cloud_ai_response" || typeof message.requestId !== "string") {
         return false;
       }
@@ -416,6 +501,14 @@ export class SignalingClientBridge extends EventEmitter {
   private rejectPendingCloudAi(code: string): void {
     for (const pending of this.pendingCloudAi.values()) pending.reject(new Error(code));
     this.pendingCloudAi.clear();
+  }
+
+  private rejectPendingRecordingRecaps(code: string): void {
+    for (const pending of this.pendingRecordingRecaps.values()) {
+      clearTimeout(pending.timer);
+      pending.reject(new Error(code));
+    }
+    this.pendingRecordingRecaps.clear();
   }
 
   private emitEvent(

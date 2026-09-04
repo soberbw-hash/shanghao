@@ -3,10 +3,10 @@ import type {
   ChatImageAttachment,
   MemberActivity,
   MusicActivity,
-  WorkActivity,
   RoomMember,
   RoomCollectionItem,
   DailyRoomReport,
+  DailyRoomRecordingRecap,
   SceneZoneId,
 } from "@private-voice/shared";
 import { isAllowedNickname, isBuiltInAvatarId } from "@private-voice/shared";
@@ -53,6 +53,8 @@ export type SignalEnvelope =
   | RoomCollectionRemoveMessage
   | RequestDailyRoomReportsMessage
   | DailyRoomReportsMessage
+  | PublishRecordingRecapMessage
+  | RecordingRecapPublishedMessage
   | CloudAiRequestMessage
   | CloudAiCancelMessage
   | CloudAiResponseMessage
@@ -200,7 +202,6 @@ export interface MemberStateMessage extends BaseMessage {
   gameName?: string;
   gameIconDataUrl?: string | null;
   musicActivity?: MusicActivity | null;
-  workActivity?: WorkActivity | null;
   nickname?: string;
   avatarDataUrl?: string;
   avatarId?: BuiltInAvatarId;
@@ -280,6 +281,25 @@ export interface DailyRoomReportsMessage extends BaseMessage {
   roomId: string;
   targetRoomId: "main" | "side";
   reports: DailyRoomReport[];
+}
+
+export interface PublishRecordingRecapMessage extends BaseMessage {
+  type: "publish_recording_recap";
+  roomId: string;
+  peerId: string;
+  requestId: string;
+  reportDate: string;
+  recap: Omit<DailyRoomRecordingRecap, "uploadedAt">;
+}
+
+export interface RecordingRecapPublishedMessage extends BaseMessage {
+  type: "recording_recap_published";
+  roomId: string;
+  peerId: string;
+  requestId: string;
+  reportDate: string;
+  publishedAt: string;
+  serverRevision: number;
 }
 
 export interface CloudAiRequestMessage extends BaseMessage {
@@ -547,16 +567,6 @@ const MEMBER_ACTIVITIES = new Set(["idle", "gaming", "drinking", "fitness", "res
 const isActivityIconDataUrl = (value: unknown): value is string =>
   isText(value, 48_000) && /^data:image\/png;base64,/.test(value);
 
-const isWorkActivity = (value: unknown): value is WorkActivity =>
-  isRecord(value) &&
-  isText(value.id, 48) &&
-  /^[a-z0-9-]+$/.test(value.id) &&
-  isText(value.name, 48) &&
-  ["development", "design", "engineering", "office", "data", "media"].includes(
-    String(value.category),
-  ) &&
-  (value.iconDataUrl === undefined || isActivityIconDataUrl(value.iconDataUrl));
-
 export const isValidNickname = (value: unknown): value is string => {
   if (typeof value !== "string") return false;
   const trimmed = value.trim();
@@ -578,6 +588,35 @@ const hasPeer = (value: Record<string, unknown>): boolean => isIdentifier(value.
 const hasTarget = (value: Record<string, unknown>): boolean =>
   isIdentifier(value.targetPeerId, 128);
 
+const isRecordingRecapMoment = (value: unknown): boolean =>
+  isRecord(value) &&
+  isText(value.title, 80) &&
+  isText(value.description, 320) &&
+  isFiniteNumber(value.startMs) &&
+  value.startMs >= 0 &&
+  isFiniteNumber(value.endMs) &&
+  value.endMs >= value.startMs;
+
+const isRecordingRecap = (value: unknown): boolean =>
+  isRecord(value) &&
+  isIdentifier(value.recordingId, 180) &&
+  isText(value.description, 800) &&
+  Array.isArray(value.summary) &&
+  value.summary.length <= 8 &&
+  value.summary.every((item) => isText(item, 300)) &&
+  Array.isArray(value.highlights) &&
+  value.highlights.length <= 8 &&
+  value.highlights.every(isRecordingRecapMoment) &&
+  Array.isArray(value.funnyMoments) &&
+  value.funnyMoments.length <= 8 &&
+  value.funnyMoments.every(isRecordingRecapMoment) &&
+  Array.isArray(value.participantNicknames) &&
+  value.participantNicknames.length <= 20 &&
+  value.participantNicknames.every((item) => isText(item, 32)) &&
+  Array.isArray(value.keywords) &&
+  value.keywords.length <= 24 &&
+  value.keywords.every((item) => isText(item, 40));
+
 export const isSignalEnvelope = (value: unknown): value is SignalEnvelope => {
   if (!isRecord(value) || !isText(value.type, 64)) return false;
 
@@ -586,11 +625,9 @@ export const isSignalEnvelope = (value: unknown): value is SignalEnvelope => {
       return (
         hasRoom(value) &&
         hasPeer(value) &&
-        (value.profileId === undefined ||
-          (isText(value.profileId, 64) &&
-            /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
-              value.profileId,
-            ))) &&
+        // Supabase identities are UUIDs, while CloudBase identities are short
+        // opaque identifiers. Both remain restricted to the signaling-safe ID alphabet.
+        (value.profileId === undefined || isIdentifier(value.profileId, 64)) &&
         isIdentifier(value.channelId, 64) &&
         isValidNickname(value.nickname) &&
         isBuiltInAvatarId(value.avatarId) &&
@@ -693,9 +730,6 @@ export const isSignalEnvelope = (value: unknown): value is SignalEnvelope => {
             isText(value.musicActivity.trackTitle, 160) &&
             (value.musicActivity.artist === undefined ||
               isText(value.musicActivity.artist, 100, true)))) &&
-        (value.workActivity === undefined ||
-          value.workActivity === null ||
-          isWorkActivity(value.workActivity)) &&
         (value.nickname === undefined || isValidNickname(value.nickname)) &&
         (value.avatarId === undefined || isBuiltInAvatarId(value.avatarId)) &&
         (value.avatarDataUrl === undefined ||
@@ -753,6 +787,26 @@ export const isSignalEnvelope = (value: unknown): value is SignalEnvelope => {
         ["main", "side"].includes(String(value.targetRoomId)) &&
         Array.isArray(value.reports) &&
         value.reports.length <= 14
+      );
+    case "publish_recording_recap":
+      return (
+        hasRoom(value) &&
+        hasPeer(value) &&
+        isIdentifier(value.requestId, 128) &&
+        typeof value.reportDate === "string" &&
+        /^\d{4}-\d{2}-\d{2}$/.test(value.reportDate) &&
+        isRecordingRecap(value.recap)
+      );
+    case "recording_recap_published":
+      return (
+        hasRoom(value) &&
+        hasPeer(value) &&
+        isIdentifier(value.requestId, 128) &&
+        typeof value.reportDate === "string" &&
+        /^\d{4}-\d{2}-\d{2}$/.test(value.reportDate) &&
+        typeof value.publishedAt === "string" &&
+        Number.isFinite(Date.parse(value.publishedAt)) &&
+        isFiniteNumber(value.serverRevision)
       );
     case "cloud_ai_request":
       return (

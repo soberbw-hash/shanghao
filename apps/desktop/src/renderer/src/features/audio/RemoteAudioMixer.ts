@@ -96,6 +96,7 @@ const WEBRTC_AUDIO_PROOF_RMS = 0.0008;
 // channel volume has been applied. Start silent and ease in the requested level
 // so the first remote frame can never escape at the GainNode default of 1.
 const REMOTE_AUDIO_GAIN_RAMP_SECONDS = 0.045;
+const OUTPUT_LIMITER_THRESHOLD_DB = -1.5;
 export const REMOTE_AUDIO_LEVEL_EVENT = "shanghao:remote-audio-level";
 
 /**
@@ -105,7 +106,8 @@ export const REMOTE_AUDIO_LEVEL_EVENT = "shanghao:remote-audio-level";
 export class RemoteAudioMixer {
   private context?: SinkAwareAudioContext;
   private masterGain?: GainNode;
-  private compressor?: DynamicsCompressorNode;
+  private outputLimiter?: DynamicsCompressorNode;
+  private finalOutputTap?: MediaStreamAudioDestinationNode;
   private channels = new Map<string, RemoteAudioChannel>();
   private relayChannels = new Map<string, RelayAudioChannel>();
   private peerMediaPaths = new Map<string, RemoteAudioMediaPath>();
@@ -120,22 +122,31 @@ export class RemoteAudioMixer {
   private readonly peerLoudnessStates = new Map<string, LoudnessBalanceState>();
 
   private ensureGraph(): SinkAwareAudioContext {
-    if (this.context && this.masterGain && this.compressor) return this.context;
+    if (this.context && this.masterGain && this.outputLimiter && this.finalOutputTap) {
+      return this.context;
+    }
 
     const context = new AudioContext({ latencyHint: "interactive" }) as SinkAwareAudioContext;
     const masterGain = context.createGain();
-    const compressor = context.createDynamicsCompressor();
-    compressor.threshold.value = this.loudnessBalanceEnabled ? -3 : -8;
-    compressor.knee.value = this.loudnessBalanceEnabled ? 3 : 8;
-    compressor.ratio.value = this.loudnessBalanceEnabled ? 12 : 3;
-    compressor.attack.value = 0.003;
-    compressor.release.value = 0.12;
-    masterGain.connect(compressor);
-    compressor.connect(context.destination);
+    const outputLimiter = context.createDynamicsCompressor();
+    const finalOutputTap = context.createMediaStreamDestination();
+    finalOutputTap.channelCount = 1;
+    finalOutputTap.channelCountMode = "explicit";
+    // Per-speaker balancing establishes the normal listening level. The shared bus only catches
+    // exceptional peaks; it must not pull every speaker down as soon as a second person talks.
+    outputLimiter.threshold.value = OUTPUT_LIMITER_THRESHOLD_DB;
+    outputLimiter.knee.value = 0;
+    outputLimiter.ratio.value = 20;
+    outputLimiter.attack.value = 0.003;
+    outputLimiter.release.value = 0.16;
+    masterGain.connect(outputLimiter);
+    outputLimiter.connect(finalOutputTap);
+    outputLimiter.connect(context.destination);
 
     this.context = context;
     this.masterGain = masterGain;
-    this.compressor = compressor;
+    this.outputLimiter = outputLimiter;
+    this.finalOutputTap = finalOutputTap;
     masterGain.gain.value = this.getEffectiveMasterVolume();
     context.onstatechange = () => {
       const peerIds = new Set([
@@ -275,14 +286,15 @@ export class RemoteAudioMixer {
     if (this.loudnessBalanceEnabled === enabled) return;
     this.loudnessBalanceEnabled = enabled;
     if (!enabled) this.peerLoudnessStates.clear();
-    if (this.compressor) {
-      this.compressor.threshold.value = enabled ? -3 : -8;
-      this.compressor.knee.value = enabled ? 3 : 8;
-      this.compressor.ratio.value = enabled ? 12 : 3;
-    }
     for (const peerId of new Set([...this.channels.keys(), ...this.relayChannels.keys()])) {
       this.refreshPeerGains(peerId);
     }
+  }
+
+  /** Final software PCM after per-peer gain, master volume and the peak limiter. */
+  getFinalOutputStream(): MediaStream {
+    this.ensureGraph();
+    return this.finalOutputTap!.stream;
   }
 
   getRemoteReferenceLevel(): number {
@@ -388,7 +400,7 @@ export class RemoteAudioMixer {
     return {
       contextState: this.context?.state ?? "not_started",
       audioContextCount: this.context ? 1 : 0,
-      audioNodeCount: (this.context ? 2 : 0) + this.channels.size * 3 + this.relayChannels.size * 2,
+      audioNodeCount: (this.context ? 3 : 0) + this.channels.size * 3 + this.relayChannels.size * 2,
       timerCount:
         Number(this.audioLevelTimer !== undefined) +
         Number(this.playbackWatchdogTimer !== undefined),
@@ -526,12 +538,15 @@ export class RemoteAudioMixer {
     for (const [peerId] of this.channels) this.removeChannel(peerId);
     for (const [peerId] of this.relayChannels) this.removeRelayPeer(peerId);
     this.masterGain?.disconnect();
-    this.compressor?.disconnect();
+    this.outputLimiter?.disconnect();
+    this.finalOutputTap?.disconnect();
+    this.finalOutputTap?.stream.getTracks().forEach((track) => track.stop());
     this.stopMaintenanceTimers();
     const context = this.context;
     this.context = undefined;
     this.masterGain = undefined;
-    this.compressor = undefined;
+    this.outputLimiter = undefined;
+    this.finalOutputTap = undefined;
     this.resumeInFlight = undefined;
     this.peerMediaPaths.clear();
     this.smoothedPeerLevels.clear();

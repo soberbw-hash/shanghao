@@ -63,8 +63,10 @@ test("AI models remain opt-in and game activity lowers background priority", asy
       "fireredasr2-aed",
       "paraformer-zh",
       "moss-transcribe-diarize-0.9b",
+      "moss-transcribe-diarize-0.9b-q8_0",
       "dolphin-cn-dialect-0.4b",
       "cohere-transcribe-2b",
+      "ark-asr-3b-q8_0",
     ],
   );
   assert.equal(
@@ -72,6 +74,11 @@ test("AI models remain opt-in and game activity lowers background priority", asy
     "support",
   );
   assert.equal(snapshot.models.find((model) => model.id === "qwen35-4b")?.category, "organizer");
+  const qwen36Organizer = snapshot.models.find((model) => model.id === "qwen36-35b-a3b-nvfp4");
+  assert.equal(qwen36Organizer?.category, "organizer");
+  assert.equal(qwen36Organizer?.inferenceBackend, "freetoken");
+  assert.match(qwen36Organizer?.hardwareNote ?? "", /8GB.*32GB/i);
+  assert.equal(manager.canRunTask("organization", false).requiredModel, "qwen36-35b-a3b-nvfp4");
   assert.equal(manager.getActiveAsrModel(), "qwen3-asr-0.6b-force");
   assert.equal(manager.canRunTask("transcription").requiredModel, "qwen3-asr-0.6b-force");
   manager.setActiveAsrModel("paraformer-zh");
@@ -170,6 +177,52 @@ test("a failed runtime repair stays installed but cannot report success", async 
   }
 });
 
+test("a complete model from the legacy development directory is reused without a 23GB copy", async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "shanghao-ai-current-store-"));
+  const legacy = await mkdtemp(path.join(os.tmpdir(), "shanghao-ai-legacy-store-"));
+  const revision = PINNED_MODEL_REVISIONS["qwen36-35b-a3b-nvfp4"];
+  const legacyRevision = path.join(legacy, "qwen36-35b-a3b-nvfp4", revision);
+  await mkdir(legacyRevision, { recursive: true });
+  await writeFile(
+    path.join(legacy, "state.json"),
+    JSON.stringify({
+      models: {
+        "qwen36-35b-a3b-nvfp4": {
+          userInstalled: true,
+          phase: "installed",
+          activeRevision: revision,
+          downloadedBytes: 23_462_477_857,
+          totalBytes: 23_462_477_857,
+        },
+      },
+      taskCheckpoints: {},
+    }),
+    "utf8",
+  );
+  const manager = new AiModelManager(
+    directory,
+    new FakeGameDetection() as never,
+    async () => undefined,
+    globalThis.fetch,
+    undefined,
+    [legacy],
+  );
+  try {
+    await manager.initialize("manual");
+    assert.equal(manager.getActiveModelDirectory("qwen36-35b-a3b-nvfp4"), legacyRevision);
+    assert.equal(
+      manager.getSnapshot().models.find((model) => model.id === "qwen36-35b-a3b-nvfp4")
+        ?.activeRevision,
+      revision,
+    );
+    await assert.rejects(stat(path.join(directory, "qwen36-35b-a3b-nvfp4")));
+  } finally {
+    manager.stop();
+    await rm(directory, { recursive: true, force: true });
+    await rm(legacy, { recursive: true, force: true });
+  }
+});
+
 test("AI model paths reject traversal and persisted partial state resumes after restart", async () => {
   assert.equal(
     safeRelativeModelPath("weights/model-00001.safetensors"),
@@ -253,6 +306,10 @@ test("AI model downloads have a mainland fallback and readable failure messages"
     "e8681d68e7042738ffca8ac8212bc8fcb1131ab8",
   );
   assert.equal(
+    PINNED_MODEL_REVISIONS["moss-transcribe-diarize-0.9b-q8_0"],
+    "6fdfa33aed776bbb0ac11a1a9835634fe6d75dd7",
+  );
+  assert.equal(
     PINNED_MODEL_REVISIONS["dolphin-cn-dialect-0.4b"],
     "eb6854969b5715cfccf4a9297a75f189343700dc",
   );
@@ -260,7 +317,15 @@ test("AI model downloads have a mainland fallback and readable failure messages"
     PINNED_MODEL_REVISIONS["cohere-transcribe-2b"],
     "00c06981f239c788c0ce23b8caa001c071e4e391",
   );
+  assert.equal(
+    PINNED_MODEL_REVISIONS["ark-asr-3b-q8_0"],
+    "3f228f0d7835ded6e73f399286695534001e4cb2",
+  );
   assert.equal(PINNED_MODEL_REVISIONS["qwen35-4b"], "851bf6e806efd8d0a36b00ddf55e13ccb7b8cd0a");
+  assert.equal(
+    PINNED_MODEL_REVISIONS["qwen36-35b-a3b-nvfp4"],
+    "1355db6a052410cfd62085d94b58866fd0f2c3c5",
+  );
 });
 
 test("gated model authorization stays on the official host and out of logs", async () => {
@@ -329,7 +394,7 @@ test("Fun-ASR and FireRed validate their official layouts without config.json", 
   }
 });
 
-test("MOSS, Dolphin small.cn and Cohere use independent official file layouts", async () => {
+test("MOSS, Dolphin, Cohere and ARK Q8 use independent pinned file layouts", async () => {
   const directory = await mkdtemp(path.join(os.tmpdir(), "shanghao-new-asr-layout-"));
   try {
     const mossDirectory = path.join(directory, "moss");
@@ -341,6 +406,16 @@ test("MOSS, Dolphin small.cn and Cohere use independent official file layouts", 
       "model-00000-of-00001.safetensors": "moss-official-weights",
     });
     await validateModelRevisionFiles("moss-transcribe-diarize-0.9b", mossDirectory, mossFiles);
+
+    const mossQ8Directory = path.join(directory, "moss-q8");
+    const mossQ8Files = await writeModelFixture(mossQ8Directory, {
+      "MOSS-Transcribe-Diarize-Q8_0.gguf": "moss-q8-weights",
+    });
+    await validateModelRevisionFiles(
+      "moss-transcribe-diarize-0.9b-q8_0",
+      mossQ8Directory,
+      mossQ8Files,
+    );
 
     const dolphinDirectory = path.join(directory, "dolphin");
     const dolphinFiles = await writeModelFixture(dolphinDirectory, {
@@ -368,6 +443,18 @@ test("MOSS, Dolphin small.cn and Cohere use independent official file layouts", 
       "model.safetensors": "cohere-official-weights",
     });
     await validateModelRevisionFiles("cohere-transcribe-2b", cohereDirectory, cohereFiles);
+
+    const arkDirectory = path.join(directory, "ark");
+    const arkFiles = await writeModelFixture(arkDirectory, {
+      "ark-asr-3b-q8_0.gguf": "ark-q8-weights",
+    });
+    await validateModelRevisionFiles("ark-asr-3b-q8_0", arkDirectory, arkFiles);
+    await assert.rejects(
+      validateModelRevisionFiles("ark-asr-3b-q8_0", arkDirectory, [
+        { rfilename: "ark-asr-3b-q6_k.gguf", size: 1 },
+      ]),
+      /ai_model_required_files_missing/,
+    );
   } finally {
     await rm(directory, { recursive: true, force: true });
   }

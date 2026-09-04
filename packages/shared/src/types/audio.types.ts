@@ -48,6 +48,10 @@ export interface LocalAudioDiagnostics {
   processorOverruns?: number;
   averageProcessingMs?: number;
   maxProcessingMs?: number;
+  voiceEnhancementProcessor?: "dsp_active" | "dsp_unavailable" | "bypass";
+  voiceEnhancementAverageProcessingMs?: number;
+  voiceEnhancementMaxProcessingMs?: number;
+  voiceEnhancementOverruns?: number;
   rawInputPeak?: number;
   inputOverload?: "normal" | "warning";
   permissionState: MicPermissionState;

@@ -121,6 +121,7 @@ import { OverlayWindowController } from "./overlay-window";
 import { GameDetectionController } from "./game-detection";
 import { AiModelManager } from "./ai-model-manager";
 import { AiVoiceMemoryService } from "./ai-voice-memory-service";
+import { publishVoiceMemoryOrganization } from "./recording-recap-publisher";
 import { CustomAiProviderStore } from "./custom-ai-provider-store";
 import { HuggingFaceAccessStore } from "./hugging-face-access-store";
 import { ChatHistoryStore } from "./chat-history-store";
@@ -152,8 +153,10 @@ const AI_ASR_MODEL_IDS = new Set<AiAsrModelId>([
   "fireredasr2-aed",
   "paraformer-zh",
   "moss-transcribe-diarize-0.9b",
+  "moss-transcribe-diarize-0.9b-q8_0",
   "dolphin-cn-dialect-0.4b",
   "cohere-transcribe-2b",
+  "ark-asr-3b-q8_0",
 ]);
 
 const requireAiAsrModelId = (value: unknown): AiAsrModelId => {
@@ -675,6 +678,9 @@ export const registerIpcHandlers = ({
   ipcMain.handle(IPC_CHANNELS.account.getSnapshot, async (): Promise<AccountSnapshot> =>
     accounts.getSnapshot(),
   );
+  ipcMain.handle(IPC_CHANNELS.account.getRememberedLogin, async () =>
+    accounts.getRememberedLogin(),
+  );
   ipcMain.handle(
     IPC_CHANNELS.account.configureCloudBase,
     async (_event, config?: CloudBaseClientConfig): Promise<void> => {
@@ -692,6 +698,7 @@ export const registerIpcHandlers = ({
       accounts.login({
         identifier: requireString(request?.identifier, 254, "account_identifier"),
         password: requireString(request?.password, 128, "account_password"),
+        rememberMe: request?.rememberMe !== false,
       }),
   );
   ipcMain.handle(
@@ -772,9 +779,6 @@ export const registerIpcHandlers = ({
       if (typeof partial.isGameDetectionEnabled === "boolean") {
         await gameDetection.setEnabled(settings.isGameDetectionEnabled);
       }
-      if (typeof partial.isWorkActivityVisible === "boolean") {
-        await gameDetection.setWorkActivityEnabled(settings.isWorkActivityVisible);
-      }
       const registered = await shortcuts.configureGlobalMute(settings.globalMuteShortcut);
       if (!registered && settings.globalMuteShortcut) {
         return settingsStore.save({ globalMuteShortcut: "" });
@@ -787,7 +791,6 @@ export const registerIpcHandlers = ({
     const settings = await settingsStore.reset();
     aiModels.setProcessingMode(settings.aiProcessingMode);
     aiModels.setActiveAsrModel(settings.aiAsrModel);
-    await gameDetection.setWorkActivityEnabled(settings.isWorkActivityVisible);
     await gameDetection.setEnabled(settings.isGameDetectionEnabled);
     await shortcuts.configureGlobalMute(settings.globalMuteShortcut);
     return settings;
@@ -1010,7 +1013,8 @@ export const registerIpcHandlers = ({
       if (
         !AI_ASR_MODEL_IDS.has(modelId as AiAsrModelId) &&
         modelId !== "qwen3-forced-aligner-0.6b" &&
-        modelId !== "qwen35-4b"
+        modelId !== "qwen35-4b" &&
+        modelId !== "qwen36-35b-a3b-nvfp4"
       ) {
         throw new Error("invalid_ai_model");
       }
@@ -1049,6 +1053,20 @@ export const registerIpcHandlers = ({
         requireString(recordingId, 2_048, "recording_id"),
         requireAiAsrModelId(modelId),
       ),
+  );
+  ipcMain.handle(
+    IPC_CHANNELS.ai.clearTranscriptionResults,
+    async (_event, recordingId: string): Promise<VoiceMemoryRecord> =>
+      voiceMemory.clearTranscriptionResults(requireString(recordingId, 2_048, "recording_id")),
+  );
+  ipcMain.handle(
+    IPC_CHANNELS.ai.publishOrganization,
+    async (_event, recordingIdValue: string): Promise<VoiceMemoryRecord> =>
+      publishVoiceMemoryOrganization({
+        recordingId: requireString(recordingIdValue, 2_048, "recording_id"),
+        voiceMemory,
+        signalingClient,
+      }),
   );
   ipcMain.handle(IPC_CHANNELS.ai.pauseTask, async (_event, recordingId: string): Promise<void> => {
     voiceMemory.pause(requireString(recordingId, 2_048, "recording_id"));

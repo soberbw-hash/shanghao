@@ -9,9 +9,7 @@ import {
   playGenericPressUnlessHandled,
   playUiSound,
   prepareUiSounds,
-  setUiSoundEnabled,
   setUiSoundOutputDevice,
-  setUiSoundVolume,
   unlockUiSounds,
 } from "../features/audio/uiSound";
 import { prepareAnimalCalls } from "../features/audio/animalCall";
@@ -37,10 +35,8 @@ export const useUiFeedbackSounds = (): void => {
   );
 
   useEffect(() => {
-    setUiSoundEnabled(settings?.isUiSoundEnabled !== false);
-    setUiSoundVolume(settings?.soundVolume ?? 0.72);
     void setUiSoundOutputDevice(settings?.preferredOutputDeviceId);
-  }, [settings?.isUiSoundEnabled, settings?.preferredOutputDeviceId, settings?.soundVolume]);
+  }, [settings?.preferredOutputDeviceId]);
 
   useEffect(() => {
     const prepare = () => {
@@ -57,10 +53,6 @@ export const useUiFeedbackSounds = (): void => {
   }, []);
 
   useEffect(() => {
-    if (!settings?.isUiSoundEnabled) {
-      return;
-    }
-
     const handleClick = (event: MouseEvent) => {
       const target = event.target instanceof Element ? event.target.closest("button") : null;
       if (!(target instanceof HTMLButtonElement) || target.disabled) {
@@ -81,7 +73,7 @@ export const useUiFeedbackSounds = (): void => {
 
     document.addEventListener("click", handleClick, true);
     return () => document.removeEventListener("click", handleClick, true);
-  }, [settings?.isUiSoundEnabled]);
+  }, []);
 
   useEffect(() => {
     if (!settings) {

@@ -417,7 +417,7 @@ test("a restarted desktop replaces the stale peer with the same stable profile",
   }
 });
 
-test("fixed channel reserves each built-in avatar atomically and releases it on leave", async () => {
+test("fixed channel assigns the first unused avatar atomically and releases avatars on leave", async () => {
   const server = new SignalingServer({ roomName: "固定频道" });
   const port = await server.listen();
   const url = `ws://127.0.0.1:${port}`;
@@ -437,29 +437,28 @@ test("fixed channel reserves each built-in avatar atomically and releases it on 
     );
 
     joinChannel(conflicting, "avatar-conflict", "狐狸二号", undefined, "fox");
-    const conflict = await waitForMessage(
+    const assignedSnapshot = await waitForMessage(
       conflicting,
       (
         payload,
       ): payload is {
-        type: "error";
-        code: "avatar_taken";
-        avatarId: BuiltInAvatarId;
-        availableAvatarIds: BuiltInAvatarId[];
+        type: "channel_snapshot";
+        members: Array<{ id: string; avatarId?: BuiltInAvatarId }>;
       } =>
         typeof payload === "object" &&
         payload !== null &&
-        (payload as { type?: string }).type === "error" &&
-        (payload as { code?: string }).code === "avatar_taken",
+        (payload as { type?: string }).type === "channel_snapshot" &&
+        (payload as { members?: unknown[] }).members?.length === 2,
     );
-    assert.equal(conflict.avatarId, "fox");
-    assert.equal(conflict.availableAvatarIds.includes("fox"), false);
-    assert.equal(conflict.availableAvatarIds.length, 4);
+    assert.equal(
+      assignedSnapshot.members.find((member) => member.id === "avatar-conflict")?.avatarId,
+      "cat",
+    );
 
     const health = (await fetch(`http://127.0.0.1:${port}/health`).then((response) =>
       response.json(),
     )) as { occupiedAvatarIds: BuiltInAvatarId[] };
-    assert.deepEqual(health.occupiedAvatarIds, ["fox"]);
+    assert.deepEqual(health.occupiedAvatarIds, ["fox", "cat"]);
 
     first.send(JSON.stringify({ type: "leave_channel", roomId: "main", peerId: "avatar-first" }));
     await wait(80);

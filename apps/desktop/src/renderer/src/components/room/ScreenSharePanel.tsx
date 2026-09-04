@@ -18,7 +18,6 @@ import type {
   ScreenShareTransitionOrigin,
 } from "../../features/screen-share/types";
 import { recordScreenSharePresentation } from "../../features/screen-share/screenSharePresentationMetrics";
-import { useRenderProfiler } from "../../features/diagnostics/renderProfiler";
 
 interface VideoFrameCallbackMetadata {
   width?: number;
@@ -226,12 +225,6 @@ const ScreenSharePanelSurface = ({
   const [presentationByItem, setPresentationByItem] = useState<
     Record<string, ScreenPresentationStats>
   >({});
-  useRenderProfiler("ScreenShare", {
-    items,
-    selectedId,
-    isDetaching,
-    isDragging,
-  });
   const dragStateRef = useRef<
     | {
         pointerId: number;

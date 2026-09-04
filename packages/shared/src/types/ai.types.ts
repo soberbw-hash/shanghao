@@ -6,8 +6,10 @@ export type AiAsrModelId =
   | "fireredasr2-aed"
   | "paraformer-zh"
   | "moss-transcribe-diarize-0.9b"
+  | "moss-transcribe-diarize-0.9b-q8_0"
   | "dolphin-cn-dialect-0.4b"
-  | "cohere-transcribe-2b";
+  | "cohere-transcribe-2b"
+  | "ark-asr-3b-q8_0";
 
 export const AI_ASR_MODEL_NAMES: Record<AiAsrModelId, string> = {
   "qwen3-asr-1.7b-force": "Qwen3-ASR-1.7B + ForcedAligner",
@@ -17,13 +19,17 @@ export const AI_ASR_MODEL_NAMES: Record<AiAsrModelId, string> = {
   "fireredasr2-aed": "FireRedASR2-AED",
   "paraformer-zh": "Paraformer-zh + FSMN-VAD + CT-punc",
   "moss-transcribe-diarize-0.9b": "MOSS-Transcribe-Diarize 0.9B",
+  "moss-transcribe-diarize-0.9b-q8_0": "MOSS Transcribe Diarize 0.9B Q8",
   "dolphin-cn-dialect-0.4b": "Dolphin-CN-Dialect 0.4B",
   "cohere-transcribe-2b": "Cohere Transcribe 2B",
+  "ark-asr-3b-q8_0": "ARK-ASR-3B Q8_0",
 };
 
 export type AiSupportModelId = "qwen3-forced-aligner-0.6b";
 
-export type AiModelId = AiAsrModelId | AiSupportModelId | "qwen35-4b";
+export type AiOrganizerModelId = "qwen35-4b" | "qwen36-35b-a3b-nvfp4";
+
+export type AiModelId = AiAsrModelId | AiSupportModelId | AiOrganizerModelId;
 
 export type AiModelPhase =
   | "not_installed"
@@ -102,6 +108,23 @@ export interface AiModelStatus {
   optionalDependencies?: AiSupportModelId[];
   /** Concise hardware warning shown without silently changing the official runtime. */
   hardwareNote?: string;
+  /** Inference backend used by organizer models. */
+  inferenceBackend?: "builtin" | "freetoken";
+  /** Live sidecar information. Missing when the model is stopped or not installed. */
+  runtimeMetrics?: AiLocalLlmRuntimeMetrics;
+}
+
+export interface AiLocalLlmRuntimeMetrics {
+  provider: "freetoken";
+  phase: "missing" | "stopped" | "starting" | "loading" | "ready" | "running" | "error";
+  version?: string;
+  modelRevision?: string;
+  processId?: number;
+  loadTimeMs?: number;
+  gpuMemoryMb?: number;
+  ramMemoryMb?: number;
+  tokensPerSecond?: number;
+  updatedAt: string;
 }
 
 export interface AiTaskSchedulerStatus {
@@ -229,6 +252,105 @@ export interface VoiceMemorySummaryPoint {
   sourceSegmentIds?: string[];
 }
 
+export interface VoiceMemoryOrganizationTopic {
+  id: string;
+  title: string;
+  description?: string;
+  startMs: number;
+  endMs: number;
+  speakerIds: string[];
+  sourceSegmentIds: string[];
+}
+
+export interface VoiceMemoryOrganizationMoment {
+  id: string;
+  title: string;
+  description: string;
+  startMs: number;
+  endMs: number;
+  speakerIds: string[];
+  sourceSegmentIds: string[];
+}
+
+export interface VoiceMemoryOrganizationParticipant {
+  speakerId: string;
+  nickname?: string;
+  description?: string;
+  speakingSharePercent?: number;
+  sourceSegmentIds: string[];
+}
+
+export interface VoiceMemoryOrganizationResult {
+  description: string;
+  summary: VoiceMemorySummaryPoint[];
+  topics: VoiceMemoryOrganizationTopic[];
+  timeline: VoiceMemoryOrganizationMoment[];
+  highlights: VoiceMemoryOrganizationMoment[];
+  funnyMoments: VoiceMemoryOrganizationMoment[];
+  importantInformation: VoiceMemoryOrganizationMoment[];
+  participants: VoiceMemoryOrganizationParticipant[];
+  keywords: string[];
+}
+
+export type VoiceMemoryOrganizationChunkStatus = "pending" | "running" | "completed" | "failed";
+
+export interface VoiceMemoryOrganizationChunk {
+  id: string;
+  index: number;
+  startMs: number;
+  endMs: number;
+  sourceSegmentIds: string[];
+  estimatedInputTokens: number;
+  status: VoiceMemoryOrganizationChunkStatus;
+  attempts: number;
+  result?: VoiceMemoryOrganizationResult;
+  errorMessage?: string;
+  updatedAt: string;
+}
+
+export interface VoiceMemoryOrganizationMetrics {
+  modelName: string;
+  modelRevision: string;
+  quantization: "NVFP4";
+  provider: "freetoken";
+  providerVersion?: string;
+  modelLoadTimeMs?: number;
+  inputTokens: number;
+  outputTokens: number;
+  prefillTimeMs?: number;
+  ttftMs?: number;
+  outputTokensPerSecond?: number;
+  totalElapsedMs: number;
+  peakVramMb?: number;
+  peakRamMb?: number;
+  oomCount: number;
+  retryCount: number;
+  chunkCount: number;
+  interrupted: boolean;
+  errors: string[];
+}
+
+export interface VoiceMemoryOrganizationRun {
+  pipelineVersion: number;
+  modelId: AiOrganizerModelId;
+  modelRevision: string;
+  status: "pending" | "running" | "completed" | "paused" | "failed";
+  completedChunks: number;
+  chunks: VoiceMemoryOrganizationChunk[];
+  finalResult?: VoiceMemoryOrganizationResult;
+  metrics?: VoiceMemoryOrganizationMetrics;
+  startedAt: string;
+  updatedAt: string;
+}
+
+export interface VoiceMemoryOrganizationPublication {
+  status: "published";
+  roomId: "main" | "side";
+  reportDate: string;
+  publishedAt: string;
+  serverRevision?: number;
+}
+
 export interface VoiceMemoryTranscriptionModel {
   id: AiAsrModelId;
   name: string;
@@ -247,10 +369,51 @@ export interface VoiceMemoryTranscriptionVariant {
   transcriptionStats?: VoiceMemoryTranscriptionStats;
   /** Per-unit durable state used to resume a long recording without skipping failed windows. */
   transcriptionUnits?: VoiceMemoryTranscriptionUnit[];
+  /** Benchmark metadata captured for this concrete run. Missing on legacy results. */
+  benchmark?: VoiceMemoryBenchmarkRunMetadata;
   updatedAt: string;
 }
 
 export type VoiceMemoryTranscriptionUnitStatus = "pending" | "running" | "completed" | "failed";
+
+export type VoiceMemoryTranscriptionOutputStatus =
+  "normal" | "vad_silence" | "empty_output_on_speech" | "abnormal_output" | "repetition_loop";
+
+export interface VoiceMemoryCommonVadResult {
+  hasSpeech: boolean;
+  speechDurationMs: number;
+  silenceDurationMs: number;
+  activeFrameRatio: number;
+  peak: number;
+}
+
+export interface VoiceMemoryTranscriptionTiming {
+  loadTimeMs?: number;
+  conversionTimeMs?: number;
+  inferenceTimeMs?: number;
+  alignmentTimeMs?: number;
+  saveTimeMs?: number;
+  releaseTimeMs?: number;
+  totalTimeMs?: number;
+}
+
+export interface VoiceMemoryTranscriptionResourceUsage {
+  device?: string;
+  /** Runtime-reported inference backend, separate from the selected device. */
+  backend?: string;
+  quantization?: string;
+  dtype?: string;
+  modelFileSizeBytes?: number;
+  gpuMemoryBeforeLoadMb?: number;
+  gpuMemoryAfterLoadMb?: number;
+  gpuPeakMemoryMb?: number;
+  gpuMemoryAfterReleaseMb?: number;
+  ramPeakMb?: number;
+  oomCount?: number;
+  workerCrashCount?: number;
+  resourceReleaseSucceeded?: boolean;
+  possibleResourceLeak?: boolean;
+}
 
 export interface VoiceMemoryTranscriptionUnit {
   /** Stable within one recording/model/pipeline, so a restart can safely upsert the same unit. */
@@ -267,6 +430,13 @@ export interface VoiceMemoryTranscriptionUnit {
   processedAudioMs: number;
   coveredAudioMs: number;
   segmentCount: number;
+  /** Common, model-independent speech detector result for this exact time range. */
+  commonVad?: VoiceMemoryCommonVadResult;
+  /** Distinguishes true silence from an empty/abnormal model output. */
+  outputStatus?: VoiceMemoryTranscriptionOutputStatus;
+  anomalyTypes?: Array<"repetition_loop" | "abnormal_output">;
+  timing?: VoiceMemoryTranscriptionTiming;
+  resourceUsage?: VoiceMemoryTranscriptionResourceUsage;
   /** JSON snapshot of the runtime result/error, retained for comparison/debug export. */
   rawRuntimeOutput?: string;
   normalizedSegmentIds?: string[];
@@ -287,6 +457,8 @@ export interface VoiceMemoryTranscriptionStats {
   coveredAudioMs: number;
   totalUnits: number;
   completedUnits: number;
+  pendingUnits?: number;
+  runningUnits?: number;
   failedUnits: number;
   retryCount: number;
   segmentCount: number;
@@ -295,15 +467,98 @@ export interface VoiceMemoryTranscriptionStats {
   successfulUnits?: number;
   /** Number of units that completed with no speech/result, distinct from a runtime failure. */
   silenceUnits?: number;
+  vadSilenceUnits?: number;
+  speechUnits?: number;
+  speechWithOutputUnits?: number;
+  emptyOutputOnSpeechUnits?: number;
+  repetitionLoopCount?: number;
+  abnormalOutputCount?: number;
+  hallucinationSuspectedCount?: number;
+  /** Scheduler terminal progress; not a claim about recognition quality. */
+  taskProgressPercent?: number;
+  /** Sum of the speech units scheduled for this run. */
+  scheduledSpeechMs?: number;
+  /** Successfully processed scheduled speech divided by scheduled speech. */
+  processedSpeechPercent?: number;
+  /** Scheduled speech divided by the selected clip duration. */
+  speechRatioPercent?: number;
+  /** Legacy clip occupancy: processed scheduled speech divided by the selected clip duration. */
+  processedPercent?: number;
+  /** Common-VAD speech duration that produced trustworthy output. */
+  speechCoveragePercent?: number;
+  /** Written only after the final durable result has been saved. */
+  finalResultSaved?: boolean;
   /** User-facing terminal state for exports and diagnostics. */
   terminationReason?:
     "completed" | "partial" | "no_speech" | "paused" | "cancelled" | "failed" | "stalled";
   lastErrorStage?: VoiceMemoryProcessingStage;
   inferenceElapsedMs?: number;
   conversionElapsedMs?: number;
+  loadElapsedMs?: number;
+  alignmentElapsedMs?: number;
+  saveElapsedMs?: number;
+  releaseElapsedMs?: number;
+  totalElapsedMs?: number;
+  resourceUsage?: VoiceMemoryTranscriptionResourceUsage;
   lastChunkOffsetMs?: number;
   lastHeartbeatAt?: string;
 }
+
+export type VoiceMemoryBenchmarkMode = "smoke" | "standard" | "long";
+
+export interface VoiceMemoryBenchmarkClip {
+  /** Backward-compatible local clip range. */
+  startMs: number;
+  endMs: number;
+  /** Real position in the source recording. */
+  sourceStartMs?: number;
+  sourceEndMs?: number;
+  /** Position inside the extracted benchmark clip. */
+  clipLocalStartMs?: number;
+  clipLocalEndMs?: number;
+  groundTruthText?: string;
+  importantKeywords?: string[];
+}
+
+export interface VoiceMemoryBenchmarkEnvironment {
+  gpu?: string;
+  gpuTotalVramMb?: number;
+  cpu?: string;
+  ramMb?: number;
+  os?: string;
+  cudaVersion?: string;
+  pytorchVersion?: string;
+  appVersion?: string;
+  gitCommit?: string;
+  pipelineVersion?: number;
+  adapterVersion?: string;
+}
+
+export interface VoiceMemoryBenchmarkRunMetadata {
+  mode?: VoiceMemoryBenchmarkMode;
+  clips?: VoiceMemoryBenchmarkClip[];
+  environment?: VoiceMemoryBenchmarkEnvironment;
+}
+
+export type VoiceMemoryBenchmarkResultStatus =
+  | "success"
+  | "not_started"
+  | "partial"
+  | "interrupted"
+  | "failed"
+  | "cancelled"
+  | "paused"
+  | "incomplete";
+
+export type VoiceMemoryBenchmarkDataValidity =
+  | "valid_complete"
+  | "valid_partial"
+  | "invalid_not_started"
+  | "invalid_status_conflict"
+  | "invalid_runtime_error"
+  | "invalid_output_anomaly";
+
+export type VoiceMemoryBenchmarkRankingEligibility = boolean | "partial_reference";
 
 export interface VoiceMemoryRecord {
   schemaVersion: 1;
@@ -332,6 +587,8 @@ export interface VoiceMemoryRecord {
   transcriptionStats?: VoiceMemoryTranscriptionStats;
   /** Durable per-chunk manifest; unlike completedUnits this preserves gaps and failures. */
   transcriptionUnits?: VoiceMemoryTranscriptionUnit[];
+  /** Metadata for the active/saved benchmark run. */
+  transcriptionBenchmark?: VoiceMemoryBenchmarkRunMetadata;
   errorMessage?: string;
   speakers: VoiceMemorySpeaker[];
   transcript: VoiceMemoryTranscriptSegment[];
@@ -340,6 +597,10 @@ export interface VoiceMemoryRecord {
   highlights: VoiceMemoryHighlight[];
   markerTitles: VoiceMemoryMarkerTitle[];
   timeline: VoiceMemoryTimelineEntry[];
+  /** Resumable hierarchical local-LLM organization state. */
+  organization?: VoiceMemoryOrganizationRun;
+  /** Present only after the user explicitly publishes the local organization to the room server. */
+  organizationPublication?: VoiceMemoryOrganizationPublication;
 }
 
 export type VoiceMemoryTaskStatus = "pending" | "processing" | "success" | "failed";
@@ -426,6 +687,8 @@ export interface VoiceMemoryProcessRequest {
   restartTranscription?: boolean;
   /** One-off model choice for A/B testing; does not change the global default. */
   asrModelId?: AiAsrModelId;
+  /** Optional metadata for comparison runs; it never changes recognition parameters. */
+  benchmark?: VoiceMemoryBenchmarkRunMetadata;
   markers?: Array<{ id: string; offsetMs: number }>;
   speakingTimeline?: VoiceMemorySpeakingObservation[];
   taskId?: string;

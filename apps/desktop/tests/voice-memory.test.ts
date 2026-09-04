@@ -6,6 +6,7 @@ import test from "node:test";
 
 import {
   AI_ASR_MODEL_NAMES,
+  buildReadableTranscriptParagraphs,
   CURRENT_TRANSCRIPTION_PIPELINE_VERSION,
   hasInvalidVoiceMemoryResult,
   mergeTranscriptIntoSentences,
@@ -41,7 +42,9 @@ import {
   targetsForVoiceProcessingMode,
 } from "../src/renderer/src/features/audio/voiceProcessingState";
 import {
+  isVoiceMemoryTranscriptionComplete,
   shouldActivateVoiceMemoryVariant,
+  voiceMemoryStatsPercent,
   voiceMemoryTranscriptionPercent,
 } from "../src/renderer/src/features/ai/voiceMemoryPresentation";
 
@@ -72,6 +75,47 @@ const record = (): VoiceMemoryRecord => ({
   highlights: [],
   markerTitles: [{ markerId: "m1", offsetMs: 1_500, title: "周六约饭" }],
   timeline: [{ id: "m1", kind: "marker", offsetMs: 1_500, title: "周六约饭" }],
+});
+
+test("voice memory startup pauses interrupted work without eagerly probing the AI runtime", async () => {
+  const interrupted: VoiceMemoryRecord = {
+    ...record(),
+    phase: "transcribing",
+    taskStatus: "processing",
+  };
+  let durable = interrupted;
+  let runtimeProbeCount = 0;
+  const service = new AiVoiceMemoryService(
+    {
+      onStatus: () => () => undefined,
+    } as never,
+    {
+      modelRuntimeStatuses: async () => {
+        runtimeProbeCount += 1;
+        return {};
+      },
+      status: async () => ({}),
+    } as never,
+    {} as never,
+    {
+      initialize: async () => undefined,
+      list: async () => [durable],
+      save: async (value: VoiceMemoryRecord) => {
+        durable = value;
+        return value;
+      },
+    } as never,
+    undefined,
+    () => false,
+  );
+
+  await service.initialize();
+  assert.equal(runtimeProbeCount, 0);
+  assert.equal(durable.phase, "paused");
+  assert.equal(durable.taskStatus, "pending");
+
+  await service.getRuntimeStatus();
+  assert.equal(runtimeProbeCount, 1);
 });
 
 const alignedCharacters = (): VoiceMemoryTranscriptSegment[] =>
@@ -149,6 +193,135 @@ test("sentence merging respects speaker changes, pauses, punctuation and remains
   );
 });
 
+test("display paragraphs merge short aligned sentences without losing source timing", () => {
+  const qwenSentences: VoiceMemoryTranscriptSegment[] = Array.from({ length: 8 }, (_, index) => ({
+    id: `qwen-sentence-${index}`,
+    recordingId: "qwen-readable",
+    startMs: index * 2_500,
+    endMs: index * 2_500 + 1_900,
+    text: [
+      "我觉得可以。",
+      "但是先等等。",
+      "你先把墙补一下。",
+      "然后我们再出去。",
+      "那边好像还有人。",
+      "我们先听一下。",
+      "确认安全再过去。",
+      "最后一起回城。",
+    ][index]!,
+    speakerId: "friend-a",
+    confidence: "high",
+    words: [
+      {
+        id: `qwen-word-${index}`,
+        startMs: index * 2_500,
+        endMs: index * 2_500 + 1_900,
+        text: `第${index + 1}句`,
+      },
+    ],
+  }));
+
+  const paragraphs = buildReadableTranscriptParagraphs(qwenSentences);
+  assert.ok(paragraphs.length >= 1 && paragraphs.length <= 3);
+  assert.equal(paragraphs.flatMap((paragraph) => paragraph.sourceSegmentIds).length, 8);
+  assert.deepEqual(
+    paragraphs.flatMap((paragraph) => paragraph.sourceSegments.map((segment) => segment.id)),
+    qwenSentences.map((segment) => segment.id),
+  );
+  assert.deepEqual(
+    paragraphs.flatMap((paragraph) => paragraph.words?.map((word) => word.startMs) ?? []),
+    qwenSentences.map((segment) => segment.startMs),
+  );
+  assert.equal(paragraphs[0]?.startMs, qwenSentences[0]?.startMs);
+  assert.deepEqual(
+    qwenSentences.map((segment) => segment.text),
+    [
+      "我觉得可以。",
+      "但是先等等。",
+      "你先把墙补一下。",
+      "然后我们再出去。",
+      "那边好像还有人。",
+      "我们先听一下。",
+      "确认安全再过去。",
+      "最后一起回城。",
+    ],
+  );
+
+  const alignedParagraphs = buildReadableTranscriptParagraphs(alignedCharacters());
+  assert.deepEqual(
+    alignedParagraphs.flatMap((paragraph) => paragraph.sourceSegmentIds),
+    alignedCharacters().map((segment) => segment.id),
+  );
+  assert.deepEqual(
+    alignedParagraphs.flatMap((paragraph) =>
+      paragraph.sourceSegments.map((segment) => segment.startMs),
+    ),
+    alignedCharacters().map((segment) => segment.startMs),
+  );
+
+  const contiguous = qwenSentences.slice(0, 3).map((segment, index) => ({
+    ...segment,
+    id: `contiguous-source-${index}`,
+    startMs: index * 1_000,
+    endMs: (index + 1) * 1_000,
+    text: index === 0 ? "第一句。" : index === 1 ? "第二句还没说完" : "，现在说完。",
+  }));
+  assert.deepEqual(
+    buildReadableTranscriptParagraphs(contiguous).flatMap(
+      (paragraph) => paragraph.sourceSegmentIds,
+    ),
+    contiguous.map((segment) => segment.id),
+  );
+});
+
+test("display paragraphs split on speakers and long boundaries but preserve existing model blocks", () => {
+  const existingBlock: VoiceMemoryTranscriptSegment = {
+    id: "glm-block",
+    recordingId: "readable-mixed",
+    startMs: 0,
+    endMs: 18_000,
+    text: "这是一段模型本身已经整理好的完整内容，不应该为了展示层再次被切成很多小块。",
+    speakerId: "friend-a",
+    confidence: "high",
+  };
+  const speakerChange: VoiceMemoryTranscriptSegment = {
+    ...existingBlock,
+    id: "speaker-change",
+    startMs: 18_500,
+    endMs: 20_000,
+    text: "我来接着说。",
+    speakerId: "friend-b",
+  };
+  const longPause: VoiceMemoryTranscriptSegment = {
+    ...speakerChange,
+    id: "long-pause",
+    startMs: 25_000,
+    endMs: 27_000,
+    text: "停了一会以后再说。",
+  };
+  const paragraphs = buildReadableTranscriptParagraphs([existingBlock, speakerChange, longPause]);
+  assert.deepEqual(
+    paragraphs.map((paragraph) => paragraph.sourceSegmentIds),
+    [["glm-block"], ["speaker-change"], ["long-pause"]],
+  );
+  assert.equal(paragraphs[0]?.text, existingBlock.text);
+
+  const uninterrupted = Array.from({ length: 20 }, (_, index) => ({
+    ...existingBlock,
+    id: `continuous-${index}`,
+    startMs: index * 2_000,
+    endMs: index * 2_000 + 1_600,
+    text: `这是连续表达的第${index + 1}句。`,
+  }));
+  const bounded = buildReadableTranscriptParagraphs(uninterrupted);
+  assert.ok(bounded.length > 1);
+  assert.ok(bounded.every((paragraph) => paragraph.endMs - paragraph.startMs <= 30_000));
+  assert.equal(
+    bounded.reduce((total, paragraph) => total + paragraph.sourceSegmentIds.length, 0),
+    uninterrupted.length,
+  );
+});
+
 test("AI organization prompt receives sentences instead of repeated character metadata", () => {
   const prompt = transcriptForPrompt({ ...record(), transcript: alignedCharacters() });
   assert.equal(prompt, "[2s] Speaker 1: 能听见吗？\n[3s] Speaker 1: 我可以。");
@@ -165,6 +338,45 @@ test("paused transcription shows its durable percentage even when partial text e
   };
   assert.equal(voiceMemoryTranscriptionPercent(paused), 9);
   assert.equal(voiceMemoryTranscriptionPercent({ ...paused, phase: "ready", progress: 100 }), 100);
+});
+
+test("transcription progress uses durable audio coverage and incomplete work is not complete", () => {
+  const paused: VoiceMemoryRecord = {
+    ...record(),
+    phase: "paused",
+    processingStage: "asr",
+    progress: 14,
+    transcriptionStats: {
+      audioDurationMs: 100_000,
+      processedAudioMs: 42_000,
+      coveredAudioMs: 42_000,
+      totalUnits: 10,
+      completedUnits: 4,
+      failedUnits: 0,
+      retryCount: 0,
+      segmentCount: 4,
+      speakerCount: 1,
+      terminationReason: "paused",
+    },
+  };
+  assert.equal(voiceMemoryStatsPercent(paused.transcriptionStats), 42);
+  assert.equal(voiceMemoryTranscriptionPercent(paused), 42);
+  assert.equal(isVoiceMemoryTranscriptionComplete(paused), false);
+
+  const completed: VoiceMemoryRecord = {
+    ...paused,
+    phase: "ready",
+    taskStatus: "success",
+    transcriptionStats: {
+      ...paused.transcriptionStats!,
+      processedAudioMs: 100_000,
+      coveredAudioMs: 100_000,
+      completedUnits: 10,
+      terminationReason: "completed",
+    },
+  };
+  assert.equal(voiceMemoryTranscriptionPercent(completed), 100);
+  assert.equal(isVoiceMemoryTranscriptionComplete(completed), true);
 });
 
 test("known-speaker binding shifts both sentence and nested word timestamps", () => {
@@ -500,6 +712,70 @@ test("A/B transcription variants stay separate and can be selected without retra
   assert.equal(
     selected.transcriptionVariants?.["paraformer-zh"]?.transcript[0]?.text,
     "Paraformer 结果",
+  );
+});
+
+test("clearing comparison results removes durable variants and checkpoints but keeps markers", async () => {
+  const source = record();
+  let durable = {
+    ...source,
+    taskId: `model-comparison:${source.recordingId}:qwen3-asr-0.6b-force`,
+    taskStatus: "success" as const,
+    processingStage: "storage" as const,
+    transcriptionModel: {
+      id: "qwen3-asr-0.6b-force" as const,
+      name: AI_ASR_MODEL_NAMES["qwen3-asr-0.6b-force"],
+    },
+    transcriptionVariants: {
+      "qwen3-asr-0.6b-force": {
+        model: {
+          id: "qwen3-asr-0.6b-force" as const,
+          name: AI_ASR_MODEL_NAMES["qwen3-asr-0.6b-force"],
+        },
+        transcript: source.transcript,
+        speakers: source.speakers,
+        updatedAt: new Date().toISOString(),
+      },
+    },
+    organization: {
+      pipelineVersion: 4,
+      status: "completed" as const,
+      modelId: "qwen36-35b-a3b-nvfp4" as const,
+      modelRevision: "test",
+      chunks: [],
+      updatedAt: new Date().toISOString(),
+    },
+  } satisfies VoiceMemoryRecord;
+  const clearedCheckpoints: string[] = [];
+  const service = new AiVoiceMemoryService(
+    {
+      clearTaskCheckpoint: async (taskId: string) => {
+        clearedCheckpoints.push(taskId);
+      },
+    } as never,
+    {} as never,
+    {} as never,
+    {
+      get: async () => durable,
+      save: async (value: VoiceMemoryRecord) => {
+        durable = value as typeof durable;
+        return value;
+      },
+    } as never,
+  );
+
+  const cleared = await service.clearTranscriptionResults(source.recordingId);
+  assert.equal(cleared.phase, "idle");
+  assert.equal(cleared.progress, 0);
+  assert.equal(cleared.transcriptionVariants, undefined);
+  assert.equal(cleared.transcriptionModel, undefined);
+  assert.equal(cleared.transcript.length, 0);
+  assert.equal(cleared.organization, undefined);
+  assert.deepEqual(cleared.markerTitles, source.markerTitles);
+  assert.deepEqual(cleared.timeline, source.timeline);
+  assert.equal(clearedCheckpoints.length, Object.keys(AI_ASR_MODEL_NAMES).length + 1);
+  assert.ok(
+    clearedCheckpoints.includes(`transcription:${source.recordingId}:qwen3-asr-0.6b-force`),
   );
 });
 
@@ -912,7 +1188,7 @@ test("a new model comparison task replaces a terminal task before its cleanup mi
   assert.equal(processedTaskId, "comparison-next");
 });
 
-test("the main process forces a clean retry when the UI sends an invalid legacy result", async () => {
+test("the main process preserves invalid legacy checkpoints unless restart is explicit", async () => {
   const invalid = {
     ...record(),
     phase: "ready" as const,
@@ -944,7 +1220,7 @@ test("the main process forces a clean retry when the UI sends an invalid legacy 
   });
   await new Promise<void>((resolve) => setImmediate(resolve));
 
-  assert.equal(acceptedRestart, true);
+  assert.equal(acceptedRestart, false);
 });
 
 test("new automatic speech yields a running background organization task", async () => {

@@ -48,6 +48,38 @@ test("cloud AI signaling accepts bounded joined-room requests only", () => {
   assert.equal(isSignalEnvelope({ ...request, prompt: "x".repeat(48_001) }), false);
 });
 
+test("recording recap signaling accepts only bounded manually published summaries", () => {
+  const message = {
+    type: "publish_recording_recap",
+    roomId: "main",
+    peerId: "peer-a",
+    requestId: "request-a",
+    reportDate: "2026-08-30",
+    recap: {
+      recordingId: "recording-a",
+      description: "今晚前半场认真打，后半场开始互相甩锅。",
+      summary: ["有人连送两波。"],
+      highlights: [],
+      funnyMoments: [
+        {
+          title: "甩锅现场",
+          description: "三个人都说不是自己的问题。",
+          startMs: 1_000,
+          endMs: 4_000,
+        },
+      ],
+      participantNicknames: ["Sober"],
+      keywords: ["英雄联盟"],
+    },
+  };
+  assert.equal(isSignalEnvelope(message), true);
+  assert.equal(isSignalEnvelope({ ...message, reportDate: "昨天" }), false);
+  assert.equal(
+    isSignalEnvelope({ ...message, recap: { ...message.recap, description: "x".repeat(801) } }),
+    false,
+  );
+});
+
 test("server cloud AI forwards cancellation to the provider request", async () => {
   const controller = new AbortController();
   let providerSignal: AbortSignal | undefined;

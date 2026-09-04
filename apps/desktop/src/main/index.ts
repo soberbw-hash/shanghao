@@ -2,7 +2,7 @@ import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
-import { app, BrowserWindow, Tray, dialog, net, protocol } from "electron";
+import { app, BrowserWindow, Notification, Tray, dialog, net, protocol } from "electron";
 
 import { APP_ID, IPC_CHANNELS, type DeepLinkInvite } from "@private-voice/shared";
 
@@ -19,8 +19,10 @@ import { createMainWindow } from "./window";
 import { OverlayWindowController } from "./overlay-window";
 import { GameDetectionController } from "./game-detection";
 import { platformService } from "./platform/PlatformService";
-import { AiModelManager } from "./ai-model-manager";
+import { AiModelManager, QWEN36_NVFP4_MODEL_REVISION } from "./ai-model-manager";
 import { AiRuntimeManager } from "./ai-runtime-manager";
+import { FreeTokenLocalLlmProvider } from "./freetoken-local-llm-provider";
+import { FreeTokenManagedRuntime } from "./freetoken-managed-runtime";
 import { AiVoiceMemoryService } from "./ai-voice-memory-service";
 import { AiTextGateway } from "./ai-text-gateway";
 import { CustomAiProviderStore } from "./custom-ai-provider-store";
@@ -31,7 +33,7 @@ import { VoiceMemoryStore } from "./voice-memory-store";
 import { LifecycleRecoveryService } from "./lifecycle-recovery-service";
 import { ensurePre30DataSnapshot } from "./user-data-migration";
 import { removeWindowsStartupTask } from "./windows-startup-task";
-import { ensureWindowsFirewallRules } from "./windows-integration";
+import { ensureWindowsFirewallRulesWithOutcome } from "./windows-integration";
 import {
   findDeepLinkAuth,
   findDeepLinkInvite,
@@ -60,6 +62,7 @@ let overlayController: OverlayWindowController | null = null;
 let gameDetectionController: GameDetectionController | null = null;
 let aiModelManager: AiModelManager | null = null;
 let aiRuntimeManager: AiRuntimeManager | null = null;
+let freeTokenLocalLlmProvider: FreeTokenLocalLlmProvider | null = null;
 let lifecycleRecoveryService: LifecycleRecoveryService | null = null;
 let accountService: AccountDesktopService | null = null;
 let pendingDeepLink = findDeepLinkInvite(process.argv);
@@ -88,6 +91,53 @@ const showWindow = () => {
   }
 
   mainWindow.focus();
+};
+
+const showNetworkPermissionNotice = (title: string, body: string): void => {
+  if (!settingsStore?.getSnapshot().isSystemNotificationEnabled || !Notification.isSupported()) {
+    return;
+  }
+  const notification = new Notification({ title, body, silent: false });
+  notification.on("click", showWindow);
+  notification.show();
+};
+
+const autoRepairWindowsNetworkPermissions = async (): Promise<void> => {
+  if (!app.isPackaged || !platformService.isWindows || !diagnostics) return;
+  try {
+    const outcome = await ensureWindowsFirewallRulesWithOutcome();
+    await diagnostics.writeLog({
+      category: "app",
+      level: outcome.status.healthy ? "info" : "warn",
+      message: outcome.repairAttempted
+        ? "Windows network permissions automatically repaired"
+        : "Windows network permissions already healthy",
+      context: {
+        ...outcome.status,
+        repairAttempted: outcome.repairAttempted,
+        repaired: outcome.repaired,
+        inspectionFailed: outcome.inspectionFailed,
+      },
+    });
+    if (!outcome.repairAttempted) return;
+    showNetworkPermissionNotice(
+      outcome.repaired ? "网络权限已自动修复" : "网络权限自动修复未完成",
+      outcome.repaired
+        ? "上号已恢复 TCP/UDP 语音连接权限，无需手动操作。"
+        : "上号未能完成网络权限修复，请在设置的诊断页面查看原因。",
+    );
+  } catch (error) {
+    await diagnostics.writeLog({
+      category: "app",
+      level: "warn",
+      message: "Windows network permission automatic repair failed",
+      context: { error: error instanceof Error ? error.message : String(error) },
+    });
+    showNetworkPermissionNotice(
+      "网络权限自动修复未完成",
+      "上号未能完成网络权限修复，请在设置的诊断页面查看原因。",
+    );
+  }
 };
 
 const consumePendingDeepLink = (): DeepLinkInvite | undefined => {
@@ -140,6 +190,7 @@ const prepareForQuit = (reason: string) => {
   lifecycleRecoveryService?.stop();
   accountService?.dispose();
   aiRuntimeManager?.stop();
+  freeTokenLocalLlmProvider?.stop();
   shortcutsController?.dispose();
 
   if (tray && !tray.isDestroyed()) {
@@ -217,7 +268,8 @@ const maybeRunVisualCapture = async (window: BrowserWindow | null): Promise<void
       | "settings"
       | "settings-recording"
       | "settings-ai"
-      | "settings-detail",
+      | "settings-detail"
+      | "profile-settings",
     outputPath,
     exitAfterCapture: process.env.SHANGHAO_CAPTURE_EXIT !== "0",
     onExit: () => {
@@ -285,25 +337,6 @@ const bootstrap = async (): Promise<void> => {
     });
   }
 
-  if (app.isPackaged && platformService.isWindows) {
-    try {
-      const firewall = await ensureWindowsFirewallRules();
-      await diagnostics.writeLog({
-        category: "app",
-        level: firewall.healthy ? "info" : "warn",
-        message: "Windows firewall integration checked",
-        context: firewall,
-      });
-    } catch (error) {
-      await diagnostics.writeLog({
-        category: "app",
-        level: "warn",
-        message: "Windows firewall integration failed",
-        context: { error: error instanceof Error ? error.message : String(error) },
-      });
-    }
-  }
-
   const accounts = new AccountDesktopService(
     new AccountSessionStore(app.getPath("userData")),
     () => settingsStore?.getSnapshot().relayServerUrl,
@@ -349,7 +382,9 @@ const bootstrap = async (): Promise<void> => {
   const gameDetection = new GameDetectionController(
     (payload) => diagnostics?.writeLog(payload) ?? Promise.resolve(),
   );
-  await gameDetection.setWorkActivityEnabled(settings.isWorkActivityVisible);
+  gameDetection.onDetected((snapshot) => {
+    shortcuts.setMouseHookSuppressed(Boolean(snapshot.gameName));
+  });
   const usesInjectedCapturePresence =
     !app.isPackaged &&
     Boolean(process.env.SHANGHAO_CAPTURE_PATH) &&
@@ -388,6 +423,12 @@ const bootstrap = async (): Promise<void> => {
     (payload) => diagnostics?.writeLog(payload) ?? Promise.resolve(),
     (input, init) => net.fetch(input, init),
     () => huggingFaceAccess.accessToken(),
+    [
+      path.join(app.getPath("userData"), "ai-models"),
+      path.join(app.getPath("appData"), "shanghao-desktop", "ai-models"),
+      path.join(app.getPath("appData"), "ShangHao", "ai-models"),
+      path.join(app.getPath("appData"), "上号", "ai-models"),
+    ],
   );
   await aiModels.initialize(settings.aiProcessingMode, settings.aiAsrModel);
   updates.setBackgroundDownloadGuard(() => aiModels.shouldDeferBackgroundDownload());
@@ -438,9 +479,38 @@ const bootstrap = async (): Promise<void> => {
     },
     {
       writeLog: (payload) => diagnostics?.writeLog(payload) ?? Promise.resolve(),
+      runtimeFetch: (input, init) =>
+        net.fetch(input instanceof URL ? input.toString() : input, init),
     },
   );
-  aiModels.setRuntimePreparer(async (id) => {
+  const freeTokenRuntime = new FreeTokenManagedRuntime(aiRuntimeDirectory, {
+    fetcher: (input, init) => net.fetch(input instanceof URL ? input.toString() : input, init),
+    writeLog: (payload) => diagnostics?.writeLog(payload) ?? Promise.resolve(),
+  });
+  const freeTokenProvider = new FreeTokenLocalLlmProvider(
+    () => aiModels.getActiveModelDirectory("qwen36-35b-a3b-nvfp4"),
+    QWEN36_NVFP4_MODEL_REVISION,
+    (payload) => diagnostics?.writeLog(payload) ?? Promise.resolve(),
+    undefined,
+    () => freeTokenRuntime.executablePath(),
+    async () => {
+      const status = await freeTokenRuntime.prepare();
+      if (!status.ready || !status.executable) {
+        throw new Error(status.message ?? "local_organizer_runtime_unavailable");
+      }
+      return status.executable;
+    },
+  );
+  aiModels.setRuntimePreparer(async (id, signal) => {
+    if (id === "qwen36-35b-a3b-nvfp4") {
+      const runtime = await freeTokenRuntime.prepare(signal);
+      if (!runtime.ready) {
+        return { ready: false, message: runtime.message };
+      }
+      const status = await freeTokenProvider.prepare();
+      aiModels.setLocalLlmRuntimeStatus(id, status);
+      return status;
+    }
     const prepared = await aiRuntime.prepareModelRuntime(id);
     const statuses = await aiRuntime.modelRuntimeStatuses();
     aiModels.setRuntimeStatuses(statuses);
@@ -449,13 +519,20 @@ const bootstrap = async (): Promise<void> => {
   aiRuntime.onQwenState((health) => {
     aiModels.setQwenRuntimeState(health.loaded, health.queuedJobs);
   });
-  aiModels.onQwenReleaseRequested((reason) => aiRuntime.releaseQwen(reason));
+  freeTokenProvider.onStatus((status) => {
+    aiModels.setLocalLlmRuntimeStatus("qwen36-35b-a3b-nvfp4", status);
+  });
+  aiModels.onQwenReleaseRequested((reason) => {
+    aiRuntime.releaseQwen(reason);
+    freeTokenProvider.release(reason);
+  });
   const aiTextGateway = new AiTextGateway(
     settingsStore,
     aiModels,
     aiRuntime,
     signalingClient,
     customAiProvider,
+    freeTokenProvider,
   );
   const voiceMemory = new AiVoiceMemoryService(
     aiModels,
@@ -463,27 +540,15 @@ const bootstrap = async (): Promise<void> => {
     aiTextGateway,
     new VoiceMemoryStore(path.join(app.getPath("userData"), "voice-memory")),
     (payload) => diagnostics?.writeLog(payload) ?? Promise.resolve(),
+    () => settingsStore?.getSnapshot().isAiAutoTranscribeEnabled ?? false,
   );
   await voiceMemory.initialize();
-  void aiRuntime
-    .initializeCudaRuntime()
-    .then(async () => {
-      const statuses = await aiRuntime.modelRuntimeStatuses();
-      aiModels.setRuntimeStatuses(statuses);
-    })
-    .catch((error) =>
-      diagnostics?.writeLog({
-        category: "app",
-        level: "error",
-        message: "AI Runtime CUDA initialization failed",
-        context: { exception: error instanceof Error ? error.stack : String(error) },
-      }),
-    );
   shortcutsController = shortcuts;
   overlayController = overlay;
   gameDetectionController = gameDetection;
   aiModelManager = aiModels;
   aiRuntimeManager = aiRuntime;
+  freeTokenLocalLlmProvider = freeTokenProvider;
 
   registerIpcHandlers({
     getMainWindow: () => mainWindow,
@@ -522,6 +587,10 @@ const bootstrap = async (): Promise<void> => {
     level: "info",
     message: "Main window created",
   });
+  // The check may invoke PowerShell and elevation-sensitive firewall APIs, so
+  // keep it off the startup critical path. It runs once per launch and the
+  // firewall layer serializes any manual repair that happens at the same time.
+  void autoRepairWindowsNetworkPermissions();
   void maybeRunVisualCapture(mainWindow).catch(async (error) => {
     await diagnostics?.writeLog({
       category: "app",
@@ -548,10 +617,32 @@ const bootstrap = async (): Promise<void> => {
 
   tray = createTrayController(
     () => mainWindow,
-    () => prepareForQuit("tray"),
+    async () => {
+      if (voiceMemory.hasActiveTask()) {
+        showWindow();
+        const options = {
+          type: "warning" as const,
+          title: "转录仍在进行",
+          message: "当前转录或整理还没有完成。",
+          detail: "继续留在上号会保持任务运行；退出会暂停，下次可以接着处理。",
+          buttons: ["继续处理", "退出并暂停"],
+          defaultId: 0,
+          cancelId: 0,
+          noLink: true,
+        };
+        const result = mainWindow
+          ? await dialog.showMessageBox(mainWindow, options)
+          : await dialog.showMessageBox(options);
+        if (result.response !== 1) return false;
+        voiceMemory.pauseAll();
+      }
+      prepareForQuit("tray");
+      return true;
+    },
   );
 
   app.on("before-quit", () => {
+    voiceMemory.pauseAll();
     aiModelManager?.stop();
     prepareForQuit("before-quit");
   });

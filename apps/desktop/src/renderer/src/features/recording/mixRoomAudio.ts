@@ -12,6 +12,7 @@ interface MixedSource {
   node: MediaStreamAudioSourceNode;
   analyser: AnalyserNode;
   gain: GainNode;
+  includeInMainMix: boolean;
   segmentDestination: MediaStreamAudioDestinationNode;
   samples: Float32Array<ArrayBuffer>;
   loudness: RecordingLoudnessState;
@@ -56,6 +57,8 @@ export interface RecordingSourceIdentity {
 
 export interface MixedCallOptions {
   loudnessBalanceEnabled: boolean;
+  /** Remote audio after the exact shared playback master gain and limiter. */
+  finalRemotePlaybackStream?: MediaStream;
   sourceIdentities?: Record<string, RecordingSourceIdentity>;
   onDiagnostic?: (event: string, context: Record<string, unknown>) => void;
   persistSpeakerSegment?: (segment: {
@@ -114,6 +117,9 @@ export const LOCAL_RECORDING_SOURCE_KEY = "__local_microphone__";
 const ANALYSIS_INTERVAL_MS = 100;
 const SPEECH_HANGOVER_FRAMES = 6;
 const MAX_SPEAKER_SEGMENT_MS = 30_000;
+const MAX_PARTICIPANT_TRACK_SEGMENT_MS = 5 * 60_000;
+const SPEAKER_SEGMENT_BITS_PER_SECOND = 32_000;
+const PARTICIPANT_TRACK_BITS_PER_SECOND = 32_000;
 
 const preferredSegmentMimeType = (): string | undefined =>
   ["audio/webm;codecs=opus", "audio/ogg;codecs=opus", "audio/webm"].find((mimeType) =>
@@ -143,12 +149,6 @@ export const createMixedCallStream = (
   const mixBus = audioContext.createGain();
   mixBus.channelCount = 1;
   mixBus.channelCountMode = "explicit";
-  const overloadCompressor = audioContext.createDynamicsCompressor();
-  overloadCompressor.threshold.value = -12;
-  overloadCompressor.knee.value = 12;
-  overloadCompressor.ratio.value = 1.8;
-  overloadCompressor.attack.value = 0.012;
-  overloadCompressor.release.value = 0.18;
   const samplePeakGuard = audioContext.createDynamicsCompressor();
   samplePeakGuard.threshold.value = -1.5;
   samplePeakGuard.knee.value = 0;
@@ -157,16 +157,22 @@ export const createMixedCallStream = (
   samplePeakGuard.release.value = 0.08;
   const outputAnalyser = audioContext.createAnalyser();
   outputAnalyser.fftSize = 1024;
-  mixBus.connect(overloadCompressor);
-  overloadCompressor.connect(samplePeakGuard);
+  mixBus.connect(samplePeakGuard);
   samplePeakGuard.connect(outputAnalyser);
   outputAnalyser.connect(destination);
+  const finalRemotePlaybackTrack = options.finalRemotePlaybackStream?.getAudioTracks()[0];
+  const usesFinalRemotePlaybackTap = Boolean(
+    finalRemotePlaybackTrack && finalRemotePlaybackTrack.readyState === "live",
+  );
+  const finalRemotePlaybackSource = usesFinalRemotePlaybackTap
+    ? audioContext.createMediaStreamSource(options.finalRemotePlaybackStream!)
+    : undefined;
+  finalRemotePlaybackSource?.connect(mixBus);
   const sources = new Map<string, MixedSource>();
   let disposed = false;
   let loudnessBalanceEnabled = options.loudnessBalanceEnabled;
   let identities = options.sourceIdentities ?? {};
   let maximumOutputPeak = 0;
-  let maximumCompressorReductionDb = 0;
   let maximumPeakGuardReductionDb = 0;
   let peakGuardTriggerCount = 0;
   const outputSamples = new Float32Array(outputAnalyser.fftSize);
@@ -260,7 +266,7 @@ export const createMixedCallStream = (
     try {
       const recorder = new MediaRecorder(source.segmentDestination.stream, {
         mimeType: segmentMimeType,
-        audioBitsPerSecond: 64_000,
+        audioBitsPerSecond: SPEAKER_SEGMENT_BITS_PER_SECOND,
       });
       const capture: ActiveSpeakerCapture = {
         recorder,
@@ -357,7 +363,7 @@ export const createMixedCallStream = (
     try {
       const recorder = new MediaRecorder(source.segmentDestination.stream, {
         mimeType: segmentMimeType,
-        audioBitsPerSecond: 96_000,
+        audioBitsPerSecond: PARTICIPANT_TRACK_BITS_PER_SECOND,
       });
       const capture: ActiveParticipantTrackCapture = {
         recorder,
@@ -430,19 +436,21 @@ export const createMixedCallStream = (
       analyser.fftSize = 1024;
       analyser.smoothingTimeConstant = 0.15;
       const gain = audioContext.createGain();
+      const includeInMainMix = key === LOCAL_RECORDING_SOURCE_KEY || !usesFinalRemotePlaybackTap;
       const segmentDestination = audioContext.createMediaStreamDestination();
       segmentDestination.channelCount = 1;
       segmentDestination.channelCountMode = "explicit";
       node.connect(analyser);
       analyser.connect(gain);
       analyser.connect(segmentDestination);
-      gain.connect(mixBus);
+      if (includeInMainMix) gain.connect(mixBus);
       sources.set(key, {
         stream,
         trackId,
         node,
         analyser,
         gain,
+        includeInMainMix,
         segmentDestination,
         samples: new Float32Array(analyser.fftSize),
         loudness: createRecordingLoudnessState(),
@@ -499,8 +507,25 @@ export const createMixedCallStream = (
       if (source.capture && elapsedMs() - source.capture.startMs >= MAX_SPEAKER_SEGMENT_MS) {
         void stopSpeakerCapture(source);
       }
-      source.loudness = advanceRecordingLoudness(source.loudness, frame, loudnessBalanceEnabled);
-      if (speech) {
+      if (
+        source.participantCapture &&
+        elapsedMs() - source.participantCapture.startMs >= MAX_PARTICIPANT_TRACK_SEGMENT_MS
+      ) {
+        // Persist long participant tracks incrementally. This bounds renderer memory, keeps
+        // completed five-minute pieces after a crash, and remains compatible with the existing
+        // manifest/ASR resume path.
+        void stopParticipantCapture(source).then(() => {
+          if (!disposed && [...sources.values()].includes(source)) startParticipantCapture(source);
+        });
+      }
+      const shouldApplyFallbackLoudness =
+        source.includeInMainMix && !usesFinalRemotePlaybackTap && loudnessBalanceEnabled;
+      source.loudness = advanceRecordingLoudness(
+        source.loudness,
+        frame,
+        shouldApplyFallbackLoudness,
+      );
+      if (speech && shouldApplyFallbackLoudness) {
         source.gainDbMinimum =
           source.gainFrames === 0
             ? source.loudness.gainDb
@@ -512,18 +537,18 @@ export const createMixedCallStream = (
         source.gainDbTotal += source.loudness.gainDb;
         source.gainFrames += 1;
       }
-      const now = audioContext.currentTime;
-      source.gain.gain.setTargetAtTime(
-        loudnessBalanceEnabled ? gainDbToLinear(source.loudness.gainDb) : 1,
-        now,
-        source.loudness.gainDb > 0 ? 0.75 : 0.08,
-      );
+      if (source.includeInMainMix) {
+        const now = audioContext.currentTime;
+        source.gain.gain.setTargetAtTime(
+          shouldApplyFallbackLoudness ? gainDbToLinear(source.loudness.gainDb) : 1,
+          now,
+          shouldApplyFallbackLoudness && source.loudness.gainDb > 0 ? 0.75 : 0.08,
+        );
+      }
     }
     outputAnalyser.getFloatTimeDomainData(outputSamples);
     maximumOutputPeak = Math.max(maximumOutputPeak, measureFrame(outputSamples).peak);
-    const compressorReductionDb = Math.abs(Math.min(0, overloadCompressor.reduction));
     const peakGuardReductionDb = Math.abs(Math.min(0, samplePeakGuard.reduction));
-    maximumCompressorReductionDb = Math.max(maximumCompressorReductionDb, compressorReductionDb);
     maximumPeakGuardReductionDb = Math.max(maximumPeakGuardReductionDb, peakGuardReductionDb);
     if (peakGuardReductionDb >= 0.1) peakGuardTriggerCount += 1;
   }, ANALYSIS_INTERVAL_MS);
@@ -548,15 +573,15 @@ export const createMixedCallStream = (
       options.onDiagnostic?.("recording_mix_summary", {
         sourceCount: sources.size,
         loudnessBalanceEnabled,
+        remoteAudioSource: usesFinalRemotePlaybackTap ? "final_playback_pcm" : "fallback_raw_mix",
         maximumOutputSamplePeak: Number(maximumOutputPeak.toFixed(4)),
         clippingDetected: maximumOutputPeak >= 0.999,
         outputHeadroomDb: 1.5,
-        maximumCompressorReductionDb: Number(maximumCompressorReductionDb.toFixed(2)),
         maximumPeakGuardReductionDb: Number(maximumPeakGuardReductionDb.toFixed(2)),
         peakGuardTriggerCount,
         outputSampleRate: audioContext.sampleRate,
         outputChannels: destination.channelCount,
-        outputCodec: "AAC 128 kbps",
+        outputCodec: "AAC 64 kbps",
         overlappingSegmentStarts,
         speakerSegmentStats: Object.fromEntries(segmentStats),
         sources: [...sources.entries()].map(([key, source]) => ({
@@ -585,8 +610,8 @@ export const createMixedCallStream = (
         );
       }
       sources.clear();
+      finalRemotePlaybackSource?.disconnect();
       mixBus.disconnect();
-      overloadCompressor.disconnect();
       samplePeakGuard.disconnect();
       outputAnalyser.disconnect();
       destination.disconnect();

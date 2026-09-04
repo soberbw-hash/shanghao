@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type MouseEvent } from "react";
 import { createPortal } from "react-dom";
 import { BrainCircuit, Download, ExternalLink, KeyRound, Pause, Play, Trash2 } from "lucide-react";
 
@@ -17,6 +17,7 @@ import type {
 
 import { modelPhaseLabel, modelProgressPercent } from "../../features/ai/modelDownloadPresentation";
 import { playUiSound } from "../../features/audio/uiSound";
+import { useRenderProfiler } from "../../features/diagnostics/renderProfiler";
 import { Button } from "../base/Button";
 import { DialogCloseButton } from "../base/DialogCloseButton";
 import { Switch } from "../base/Switch";
@@ -26,10 +27,29 @@ import type { ToastMessage } from "../../store/appStore";
 import { toUserFacingError } from "../../utils/userFacingError";
 
 interface AiVoiceMemorySettingsCardProps {
+  isActive?: boolean;
   settings: AppSettings;
   onChange: (patch: Partial<AppSettings>) => Promise<void> | void;
   pushToast: (toast: Omit<ToastMessage, "id">) => void;
 }
+
+let cachedAiVoiceMemorySnapshot: AiVoiceMemorySnapshot | undefined;
+let aiVoiceMemorySnapshotRequest: Promise<AiVoiceMemorySnapshot> | undefined;
+
+export const preloadAiVoiceMemorySnapshot = (): Promise<AiVoiceMemorySnapshot> => {
+  if (cachedAiVoiceMemorySnapshot) return Promise.resolve(cachedAiVoiceMemorySnapshot);
+  if (aiVoiceMemorySnapshotRequest) return aiVoiceMemorySnapshotRequest;
+  aiVoiceMemorySnapshotRequest = window.desktopApi.ai
+    .getSnapshot()
+    .then((snapshot) => {
+      cachedAiVoiceMemorySnapshot = snapshot;
+      return snapshot;
+    })
+    .finally(() => {
+      aiVoiceMemorySnapshotRequest = undefined;
+    });
+  return aiVoiceMemorySnapshotRequest;
+};
 
 const formatBytes = (bytes: number): string =>
   bytes >= 1024 ** 3
@@ -44,31 +64,71 @@ const MODEL_TAGS: Partial<Record<AiModelId, readonly string[]>> = {
   "fireredasr2-aed": ["中文", "原生时间戳", "FP16"],
   "paraformer-zh": ["中文", "极速", "套件"],
   "moss-transcribe-diarize-0.9b": ["长音频", "多人分离", "原生时间戳", "BF16"],
+  "moss-transcribe-diarize-0.9b-q8_0": ["多人转录", "说话人区分", "时间戳", "Q8_0"],
   "dolphin-cn-dialect-0.4b": ["中文", "方言", "热词", "词级时间戳"],
   "cohere-transcribe-2b": ["多语言", "高准确率", "长音频", "BF16"],
+  "ark-asr-3b-q8_0": ["多语言", "高质量", "Q8_0", "CUDA"],
   "qwen3-forced-aligner-0.6b": ["共享组件", "精确对齐"],
   "qwen35-4b": ["本地整理", "总结", "章节"],
+  "qwen36-35b-a3b-nvfp4": ["本地整理", "MoE", "3B Active", "NVFP4"],
 };
 
 const COHERE_TERMS_URL = "https://huggingface.co/CohereLabs/cohere-transcribe-03-2026";
 const HUGGING_FACE_TOKENS_URL = "https://huggingface.co/settings/tokens";
+
+const localRuntimePhaseLabel = (
+  phase: NonNullable<AiModelStatus["runtimeMetrics"]>["phase"],
+): string =>
+  ({
+    missing: "自动准备中",
+    stopped: "使用时自动加载",
+    starting: "正在准备",
+    loading: "正在准备",
+    ready: "可以使用",
+    running: "正在整理",
+    error: "暂时不可用",
+  })[phase];
 
 const ModelActions = ({
   model,
   busy,
   dependencyPending,
   onAction,
+  onConfigureAccess,
 }: {
   model: AiModelStatus;
   busy: boolean;
   dependencyPending: boolean;
   onAction: (action: AiModelAction) => void;
+  onConfigureAccess: () => void;
 }) => {
+  const runAction = (event: MouseEvent<HTMLButtonElement>, action: AiModelAction) => {
+    event.stopPropagation();
+    onAction(action);
+  };
   const accessManaged = model.id === "cohere-transcribe-2b";
   if (model.phase === "not_installed") {
-    if (accessManaged) return null;
+    if (accessManaged) {
+      return (
+        <Button
+          variant="secondary"
+          className="h-9 rounded-[11px] px-3 text-xs"
+          disabled={busy}
+          onClick={(event) => {
+            event.stopPropagation();
+            onConfigureAccess();
+          }}
+        >
+          <KeyRound className="size-4" aria-hidden="true" /> 配置下载
+        </Button>
+      );
+    }
     return (
-      <Button disabled={busy} onClick={() => onAction("download")}>
+      <Button
+        className="h-9 rounded-[11px] px-3 text-xs"
+        disabled={busy}
+        onClick={(event) => runAction(event, "download")}
+      >
         <Download className="size-4" aria-hidden="true" /> 下载模型
       </Button>
     );
@@ -76,13 +136,27 @@ const ModelActions = ({
   if (model.phase === "installed") {
     return (
       <div className="flex flex-wrap items-center justify-end gap-2">
-        {model.category !== "support" && !model.runtimeReady && !dependencyPending ? (
-          <Button disabled={busy} onClick={() => onAction("repair")}>
-            修复运行组件
+        {model.category !== "support" &&
+        !model.runtimeReady &&
+        !dependencyPending &&
+        (model.id !== "qwen36-35b-a3b-nvfp4" || model.runtimeMetrics?.phase === "error") ? (
+          <Button
+            className="h-9 rounded-[11px] px-3 text-xs"
+            disabled={busy}
+            onClick={(event) => runAction(event, "repair")}
+          >
+            重试
           </Button>
         ) : null}
-        <Button variant="ghost" disabled={busy} onClick={() => onAction("delete")}>
-          <Trash2 className="size-4" aria-hidden="true" /> 删除
+        <Button
+          variant="ghost"
+          className="size-9 rounded-[11px] p-0"
+          aria-label={`删除 ${model.name}`}
+          title="删除模型"
+          disabled={busy}
+          onClick={(event) => runAction(event, "delete")}
+        >
+          <Trash2 className="size-4" aria-hidden="true" />
         </Button>
       </div>
     );
@@ -90,7 +164,11 @@ const ModelActions = ({
   return (
     <div className="flex flex-wrap gap-2">
       {model.phase === "error" && model.failureKind !== "access" ? (
-        <Button disabled={busy} onClick={() => onAction("download")}>
+        <Button
+          className="h-9 rounded-[11px] px-3 text-xs"
+          disabled={busy}
+          onClick={(event) => runAction(event, "download")}
+        >
           <Download className="size-4" aria-hidden="true" />
           {model.failureKind === "integrity"
             ? "重新校验并修复"
@@ -102,27 +180,47 @@ const ModelActions = ({
         </Button>
       ) : null}
       {model.phase === "queued" || model.phase === "downloading" || model.phase === "checking" ? (
-        <Button variant="secondary" disabled={busy} onClick={() => onAction("pause")}>
+        <Button
+          variant="secondary"
+          className="h-9 rounded-[11px] px-3 text-xs"
+          disabled={busy}
+          onClick={(event) => runAction(event, "pause")}
+        >
           <Pause className="size-4" aria-hidden="true" /> 暂停
         </Button>
       ) : model.phase === "paused" ? (
-        <Button variant="secondary" disabled={busy} onClick={() => onAction("resume")}>
+        <Button
+          variant="secondary"
+          className="h-9 rounded-[11px] px-3 text-xs"
+          disabled={busy}
+          onClick={(event) => runAction(event, "resume")}
+        >
           <Play className="size-4" aria-hidden="true" /> 继续
         </Button>
       ) : null}
-      <Button variant="ghost" disabled={busy} onClick={() => onAction("delete")}>
-        <Trash2 className="size-4" aria-hidden="true" /> 删除
+      <Button
+        variant="ghost"
+        className="size-9 rounded-[11px] p-0"
+        aria-label={`删除 ${model.name}`}
+        title="删除模型"
+        disabled={busy}
+        onClick={(event) => runAction(event, "delete")}
+      >
+        <Trash2 className="size-4" aria-hidden="true" />
       </Button>
     </div>
   );
 };
 
 export const AiVoiceMemorySettingsCard = ({
+  isActive = true,
   settings,
   onChange,
   pushToast,
 }: AiVoiceMemorySettingsCardProps) => {
-  const [snapshot, setSnapshot] = useState<AiVoiceMemorySnapshot>();
+  const [snapshot, setSnapshot] = useState<AiVoiceMemorySnapshot | undefined>(
+    cachedAiVoiceMemorySnapshot,
+  );
   const [busyModel, setBusyModel] = useState<AiModelId>();
   const [pendingDeleteModel, setPendingDeleteModel] = useState<AiModelStatus>();
   const [runtimeStatus, setRuntimeStatus] = useState<AiRuntimeStatus>();
@@ -130,6 +228,7 @@ export const AiVoiceMemorySettingsCard = ({
   const [huggingFaceAccess, setHuggingFaceAccess] = useState<AiHuggingFaceAccessStatus>();
   const [huggingFaceToken, setHuggingFaceToken] = useState("");
   const [savingHuggingFaceAccess, setSavingHuggingFaceAccess] = useState(false);
+  const [huggingFaceAccessModel, setHuggingFaceAccessModel] = useState<AiModelStatus>();
   const [customBaseUrl, setCustomBaseUrl] = useState("");
   const [customModel, setCustomModel] = useState("");
   const [customApiKey, setCustomApiKey] = useState("");
@@ -137,7 +236,15 @@ export const AiVoiceMemorySettingsCard = ({
   const modelManagementRef = useRef<HTMLElement>(null);
   const previousModelPhasesRef = useRef<Map<AiModelId, AiModelStatus["phase"]>>(new Map());
 
+  useRenderProfiler("AiVoiceMemorySettingsCard", {
+    isActive,
+    modelCount: snapshot?.models.length ?? 0,
+    snapshotRevision: snapshot?.checkedAt,
+    busyModel,
+  });
+
   useEffect(() => {
+    if (!isActive) return;
     let active = true;
     const aiApi = window.desktopApi.ai;
     if (!aiApi || typeof aiApi.getSnapshot !== "function" || typeof aiApi.onStatus !== "function") {
@@ -148,8 +255,7 @@ export const AiVoiceMemorySettingsCard = ({
       });
       return;
     }
-    void aiApi
-      .getSnapshot()
+    void preloadAiVoiceMemorySnapshot()
       .then((next) => active && setSnapshot(next))
       .catch(() =>
         pushToast({
@@ -159,16 +265,22 @@ export const AiVoiceMemorySettingsCard = ({
         }),
       );
     const unsubscribe = aiApi.onStatus((next) => {
+      cachedAiVoiceMemorySnapshot = next;
       if (active) setSnapshot(next);
     });
     return () => {
       active = false;
       unsubscribe();
     };
-  }, [pushToast]);
+  }, [isActive, pushToast]);
 
   useEffect(() => {
+    if (!isActive) return;
     let active = true;
+    let firstFrame = 0;
+    let secondFrame = 0;
+    let idleId: number | undefined;
+    let timerId: number | undefined;
     const aiApi = window.desktopApi.ai;
     if (!aiApi || typeof aiApi.getRuntimeStatus !== "function") return;
 
@@ -178,15 +290,29 @@ export const AiVoiceMemorySettingsCard = ({
         .then((next) => active && setRuntimeStatus(next))
         .catch(() => undefined);
     };
-    refresh();
-    const timer = window.setInterval(refresh, 2_000);
+
+    // Runtime discovery touches every local model directory. Let the visible page paint first,
+    // refresh once, and then rely on the model status subscription for real changes.
+    firstFrame = window.requestAnimationFrame(() => {
+      secondFrame = window.requestAnimationFrame(() => {
+        if (typeof window.requestIdleCallback === "function") {
+          idleId = window.requestIdleCallback(refresh, { timeout: 2_000 });
+        } else {
+          timerId = window.setTimeout(refresh, 350);
+        }
+      });
+    });
     return () => {
       active = false;
-      window.clearInterval(timer);
+      window.cancelAnimationFrame(firstFrame);
+      window.cancelAnimationFrame(secondFrame);
+      if (idleId !== undefined) window.cancelIdleCallback?.(idleId);
+      if (timerId !== undefined) window.clearTimeout(timerId);
     };
-  }, []);
+  }, [isActive]);
 
   useEffect(() => {
+    if (!isActive) return;
     let active = true;
     const aiApi = window.desktopApi.ai;
     if (!aiApi || typeof aiApi.getHuggingFaceAccess !== "function") return;
@@ -197,9 +323,10 @@ export const AiVoiceMemorySettingsCard = ({
     return () => {
       active = false;
     };
-  }, []);
+  }, [isActive]);
 
   useEffect(() => {
+    if (!isActive) return;
     if (!pendingDeleteModel) return;
     const closeOnEscape = (event: KeyboardEvent) => {
       if (event.key === "Escape" && busyModel !== pendingDeleteModel.id) {
@@ -208,9 +335,10 @@ export const AiVoiceMemorySettingsCard = ({
     };
     document.addEventListener("keydown", closeOnEscape);
     return () => document.removeEventListener("keydown", closeOnEscape);
-  }, [busyModel, pendingDeleteModel]);
+  }, [busyModel, isActive, pendingDeleteModel]);
 
   useEffect(() => {
+    if (!isActive) return;
     let active = true;
     void window.desktopApi.ai
       .getCustomProvider()
@@ -224,7 +352,7 @@ export const AiVoiceMemorySettingsCard = ({
     return () => {
       active = false;
     };
-  }, []);
+  }, [isActive]);
 
   const controlModel = async (model: AiModelStatus, action: AiModelAction) => {
     if (action === "delete") {
@@ -257,7 +385,7 @@ export const AiVoiceMemorySettingsCard = ({
   };
 
   const selectAsrModel = async (model: AiModelStatus) => {
-    if (model.id === "qwen35-4b" || !model.activeRevision || !model.runtimeReady) return;
+    if (model.category !== "asr" || !model.activeRevision || !model.runtimeReady) return;
     setBusyModel(model.id);
     try {
       await onChange({ aiAsrModel: model.id as AiAsrModelId });
@@ -342,6 +470,7 @@ export const AiVoiceMemorySettingsCard = ({
         });
       }
       await runModelAction(model, model.phase === "paused" ? "resume" : "download");
+      setHuggingFaceAccessModel(undefined);
     } catch {
       pushToast({
         tone: "danger",
@@ -402,7 +531,8 @@ export const AiVoiceMemorySettingsCard = ({
   // it must never move the card the user is looking at.
   const asrModels = models.filter((model) => model.category === "asr");
   const supportModels = models.filter((model) => model.category === "support");
-  const organizerModel = models.find((model) => model.id === "qwen35-4b");
+  const organizerModels = models.filter((model) => model.category === "organizer");
+  const organizerModel = organizerModels.find((model) => model.id === "qwen36-35b-a3b-nvfp4");
   const selectedAsr = asrModels.find((model) => model.id === settings.aiAsrModel);
   const asrRuntimeStatus = runtimeStatus?.asr;
   const selectedAsrReady = Boolean(
@@ -411,13 +541,13 @@ export const AiVoiceMemorySettingsCard = ({
   const qwenInstalled = Boolean(organizerModel?.activeRevision);
   const organizerReady =
     settings.aiOrganizerProvider === "local"
-      ? qwenInstalled
+      ? Boolean(qwenInstalled && organizerModel?.runtimeReady)
       : settings.aiOrganizerProvider === "custom"
         ? Boolean(customProvider?.configured)
         : true;
   const showCustomProvider = settings.aiOrganizerProvider === "custom";
   const installedAsrCount = asrModels.filter((model) => model.activeRevision).length;
-  const installedOrganizerCount = organizerModel?.activeRevision ? 1 : 0;
+  const installedOrganizerCount = organizerModels.filter((model) => model.activeRevision).length;
 
   const chooseAsrModel = (model: AiModelStatus) => {
     if (model.id === settings.aiAsrModel) return;
@@ -425,7 +555,7 @@ export const AiVoiceMemorySettingsCard = ({
       pushToast({
         tone: "neutral",
         title: `${model.name} 尚未安装`,
-        description: "点击卡片右侧的“下载模型”，安装并校验完成后即可直接切换。",
+        description: "请先下载模型。",
       });
       return;
     }
@@ -438,10 +568,8 @@ export const AiVoiceMemorySettingsCard = ({
       );
       pushToast({
         tone: "neutral",
-        title: `${model.name} 的运行组件尚未就绪`,
-        description: dependencyPending
-          ? "请先在 B2 安装共用时间对齐组件，完成后即可切换。"
-          : "点击卡片右侧的“修复运行组件”，准备完成后即可切换。",
+        title: `${model.name} 正在准备`,
+        description: dependencyPending ? "正在准备所需文件。" : "软件会自动完成，请稍后重试。",
       });
       return;
     }
@@ -468,20 +596,86 @@ export const AiVoiceMemorySettingsCard = ({
   );
 
   const renderModel = (model: AiModelStatus) => {
-    const requiresHuggingFaceAccess = model.id === "cohere-transcribe-2b";
     const selectable = model.category === "asr";
     const selected = model.id === settings.aiAsrModel;
+    const tags = MODEL_TAGS[model.id] ?? [];
     const dependencyPending = Boolean(
       model.dependencies?.some((dependencyId) => {
         const dependency = models.find((candidate) => candidate.id === dependencyId);
         return !dependency || dependency.phase !== "installed" || !dependency.runtimeReady;
       }),
     );
+    // Only an installed and runnable ASR model has a card-level selection target.
+    // Download/repair/delete remain a separate action segment and must never be
+    // intercepted by the transparent selection layer.
+    const canSelect =
+      selectable && Boolean(model.activeRevision && model.runtimeReady && !dependencyPending);
+    const showProgress =
+      model.totalBytes > 0 && model.phase !== "not_installed" && model.phase !== "installed";
+    const compactStatus = model.errorMessage
+      ? model.failureKind === "integrity"
+        ? "文件校验失败，可修复"
+        : model.failureKind === "network"
+          ? "下载中断，可继续"
+          : model.failureKind === "disk"
+            ? "模型磁盘空间不足"
+            : model.failureKind === "access"
+              ? "需要完成下载授权"
+              : "模型操作未完成，可重试"
+      : model.activeRevision && !model.runtimeReady && model.runtimeMessage
+        ? dependencyPending
+          ? "等待共享组件"
+          : "正在自动准备"
+        : model.inferenceBackend === "freetoken" && model.runtimeMetrics
+          ? `${
+              model.runtimeMetrics.phase === "starting" || model.runtimeMetrics.phase === "loading"
+                ? "正在准备"
+                : model.runtimeMetrics.phase === "running"
+                  ? "正在整理"
+                  : model.runtimeMetrics.phase === "error"
+                    ? "暂时不可用，使用时自动重试"
+                    : "使用时自动加载"
+            }${
+              model.runtimeMetrics.tokensPerSecond !== undefined
+                ? ` · ${model.runtimeMetrics.tokensPerSecond.toFixed(1)} token/s`
+                : ""
+            }`
+          : "";
+    const technicalDetails = [
+      `${model.purpose} · 约 ${formatBytes(model.approximateBytes)}`,
+      tags.length > 0 ? `特点：${tags.join("、")}` : "",
+      model.dependencies?.includes("qwen3-forced-aligner-0.6b")
+        ? "需要共用时间对齐组件，不会重复下载。"
+        : "",
+      model.optionalDependencies?.includes("qwen3-forced-aligner-0.6b")
+        ? "安装 ForcedAligner 后自动精确对齐；未安装也可转录。"
+        : "",
+      model.hardwareNote ?? "",
+      model.errorMessage ?? "",
+      model.runtimeMessage ?? "",
+      model.inferenceBackend === "freetoken" && model.runtimeMetrics
+        ? [
+            "本地运行",
+            localRuntimePhaseLabel(model.runtimeMetrics.phase),
+            model.runtimeMetrics.gpuMemoryMb !== undefined
+              ? `GPU ${model.runtimeMetrics.gpuMemoryMb.toFixed(0)} MB`
+              : "",
+            model.runtimeMetrics.ramMemoryMb !== undefined
+              ? `RAM ${model.runtimeMetrics.ramMemoryMb.toFixed(0)} MB`
+              : "",
+          ]
+            .filter(Boolean)
+            .join(" · ")
+        : "",
+    ]
+      .filter(Boolean)
+      .join("\n");
     return (
       <article
-        className={`ai-model-card is-${model.category}${selectable ? " is-selectable" : ""}${selected ? " is-selected" : ""}`}
+        className={`ai-model-card is-${model.category}${canSelect ? " is-selectable" : ""}${selected ? " is-selected" : ""}`}
         data-model-id={model.id}
         data-model-phase={model.phase}
+        title={technicalDetails}
         aria-busy={
           model.phase === "queued" ||
           model.phase === "downloading" ||
@@ -491,7 +685,7 @@ export const AiVoiceMemorySettingsCard = ({
         }
         key={model.id}
       >
-        {selectable ? (
+        {canSelect ? (
           <button
             type="button"
             className="ai-model-select-hit"
@@ -507,24 +701,11 @@ export const AiVoiceMemorySettingsCard = ({
               <span className="ai-model-icon" aria-hidden="true">
                 <BrainCircuit />
               </span>
-              <div>
+              <div className="ai-model-primary">
                 <h3 className="text-balance">{model.name}</h3>
-                <p className="text-pretty">
+                <p className="ai-model-summary text-pretty">
                   {model.purpose} · 约 {formatBytes(model.approximateBytes)}
                 </p>
-                <div className="ai-model-tags" aria-label="模型特点">
-                  {(MODEL_TAGS[model.id] ?? []).map((tag) => (
-                    <span key={tag}>{tag}</span>
-                  ))}
-                </div>
-                {model.dependencies?.includes("qwen3-forced-aligner-0.6b") ? (
-                  <small className="ai-model-dependency">另需共用时间对齐组件，不会重复下载</small>
-                ) : null}
-                {model.optionalDependencies?.includes("qwen3-forced-aligner-0.6b") ? (
-                  <small className="ai-model-dependency">
-                    已安装 ForcedAligner 时自动精确对齐；没有也可转录
-                  </small>
-                ) : null}
               </div>
               <strong className={`ai-model-phase is-${selected ? "selected" : model.phase}`}>
                 {selected ? "当前使用" : modelPhaseLabel(model)}
@@ -536,167 +717,98 @@ export const AiVoiceMemorySettingsCard = ({
                 busy={busyModel === model.id}
                 dependencyPending={dependencyPending}
                 onAction={(action) => void controlModel(model, action)}
+                onConfigureAccess={() => setHuggingFaceAccessModel(model)}
               />
             </div>
           </div>
-          {model.totalBytes > 0 && model.phase !== "installed" ? (
-            <div className="ai-model-progress-wrap">
-              <div
-                className="ai-model-progress"
-                role="progressbar"
-                aria-label={`${model.name} 下载进度`}
-                aria-valuemin={0}
-                aria-valuemax={100}
-                aria-valuenow={modelProgressPercent(model)}
-              >
-                <span style={{ transform: `scaleX(${modelProgressPercent(model) / 100})` }} />
-              </div>
-              <small className="tabular-nums">
-                {formatBytes(model.downloadedBytes)} / {formatBytes(model.totalBytes)} ·{" "}
-                {modelProgressPercent(model)}%
-                {model.phase === "verifying"
-                  ? " · 下载完成，正在校验文件完整性"
-                  : model.phase === "preparing"
-                    ? " · 文件已校验，正在准备运行组件"
-                    : ""}
-                {model.phase === "downloading" && model.bytesPerSecond
-                  ? ` · ${formatBytes(model.bytesPerSecond)}/s${snapshot?.scheduler.gameActive ? "（游戏中已降速）" : ""}`
-                  : ""}
-              </small>
-            </div>
-          ) : null}
-          {model.errorMessage ? (
-            <p className="ai-model-error">
-              {model.failureKind === "access"
-                ? model.errorMessage
-                : model.failureKind === "integrity"
-                  ? "模型文件校验未通过，点击“重新校验并修复”；完整文件不会重复下载。"
-                  : model.failureKind === "network"
-                    ? "模型下载连接已中断。请检查网络或代理后继续，已经下载的部分会保留。"
-                    : model.failureKind === "disk"
-                      ? "磁盘空间不足。请先清理模型所在磁盘，再点击“清理空间后重试”。"
-                      : "模型下载没有完成。请点击“继续下载”，已经下载的部分会保留。"}
-            </p>
-          ) : null}
-          {model.activeRevision && !model.runtimeReady && model.runtimeMessage ? (
-            <p className={dependencyPending ? "ai-model-note" : "ai-model-error"}>
-              {dependencyPending
-                ? "正在等待共用时间对齐组件完成，完成后会自动刷新，无需修复。"
-                : model.runtimeMessage ||
-                  "模型已经下载完成，但运行组件还没准备好；点击“修复运行组件”，详细原因可在诊断页查看。"}
-            </p>
-          ) : null}
-          {model.hardwareNote ? <p className="ai-model-note">{model.hardwareNote}</p> : null}
-          {requiresHuggingFaceAccess && model.phase !== "installed" ? (
-            <div className="ai-model-access-panel" aria-label="Cohere 模型下载授权">
-              <div className="ai-model-access-heading">
-                <KeyRound aria-hidden="true" />
-                <div>
-                  <strong>下载前完成一次官方授权</strong>
-                  <span>
-                    {huggingFaceAccess?.configured
-                      ? "本机已保存授权，可直接继续下载"
-                      : "这是 Hugging Face 官方门控模型，匿名下载会被拒绝"}
-                  </span>
+          <div
+            className={`ai-model-card-footer${
+              compactStatus
+                ? model.errorMessage || (!model.runtimeReady && !dependencyPending)
+                  ? " is-error"
+                  : " is-info"
+                : ""
+            }`}
+            aria-live={model.errorMessage ? "polite" : "off"}
+          >
+            {showProgress ? (
+              <div className="ai-model-progress-wrap">
+                <div
+                  className="ai-model-progress"
+                  role="progressbar"
+                  aria-label={`${model.name} 下载进度`}
+                  aria-valuemin={0}
+                  aria-valuemax={100}
+                  aria-valuenow={modelProgressPercent(model)}
+                >
+                  <span style={{ transform: `scaleX(${modelProgressPercent(model) / 100})` }} />
                 </div>
+                <small className="tabular-nums">
+                  {modelProgressPercent(model)}% · {formatBytes(model.downloadedBytes)} /{" "}
+                  {formatBytes(model.totalBytes)}
+                  {model.phase === "verifying"
+                    ? " · 正在校验"
+                    : model.phase === "preparing"
+                      ? " · 正在准备"
+                      : ""}
+                  {model.phase === "downloading" && model.bytesPerSecond
+                    ? ` · ${formatBytes(model.bytesPerSecond)}/s${snapshot?.scheduler.gameActive ? "（游戏中已降速）" : ""}`
+                    : ""}
+                </small>
               </div>
-              <div className="ai-model-access-steps">
-                <Button
-                  variant="secondary"
-                  onClick={() => void openHuggingFacePage(COHERE_TERMS_URL)}
-                >
-                  1. 接受模型条款 <ExternalLink aria-hidden="true" />
-                </Button>
-                <Button
-                  variant="secondary"
-                  onClick={() => void openHuggingFacePage(HUGGING_FACE_TOKENS_URL)}
-                >
-                  2. 创建只读 Token <ExternalLink aria-hidden="true" />
-                </Button>
-              </div>
-              <div className="ai-model-access-form">
-                <input
-                  type="password"
-                  value={huggingFaceToken}
-                  autoComplete="off"
-                  spellCheck={false}
-                  aria-label="Hugging Face 只读 Token"
-                  placeholder={
-                    huggingFaceAccess?.configured
-                      ? "已安全保存；如需更换可粘贴新 Token"
-                      : "粘贴以 hf_ 开头的只读 Token"
-                  }
-                  onChange={(event) => setHuggingFaceToken(event.target.value)}
-                />
-                <Button
-                  disabled={savingHuggingFaceAccess || busyModel === model.id}
-                  onClick={() => void handleHuggingFaceAccess(model)}
-                >
-                  <Download aria-hidden="true" />
-                  {huggingFaceToken.trim()
-                    ? "加密保存并下载"
-                    : huggingFaceAccess?.configured
-                      ? "使用已保存授权下载"
-                      : "保存并下载"}
-                </Button>
-                {huggingFaceAccess?.configured ? (
-                  <Button
-                    variant="ghost"
-                    disabled={savingHuggingFaceAccess}
-                    onClick={() => void clearHuggingFaceAccess()}
-                  >
-                    清除授权
-                  </Button>
-                ) : null}
-              </div>
-              <small>
-                Token 只由 Windows 加密保存在这台电脑，仅发送给
-                huggingface.co；不会显示在界面、日志或上传到上号服务器。
-              </small>
-            </div>
-          ) : null}
+            ) : null}
+            {compactStatus ? (
+              <p className="ai-model-card-status" title={technicalDetails}>
+                {compactStatus}
+              </p>
+            ) : null}
+          </div>
         </div>
       </article>
     );
   };
 
+  if (!snapshot) {
+    return (
+      <SettingsSection title="AI 功能">
+        <div className="ai-settings-loading" role="status" aria-label="正在准备 AI 功能">
+          <span className="ai-settings-loading-spinner" aria-hidden="true" />
+          <strong>正在准备 AI 功能…</strong>
+        </div>
+      </SettingsSection>
+    );
+  }
+
   return (
-    <SettingsSection title="AI 功能" description="先看当前使用状态，再管理转录、整理和房间问答。">
+    <SettingsSection title="AI 功能">
       <section className="ai-overview" aria-labelledby="ai-overview-title">
         <div className="ai-model-group-heading">
-          <div>
-            <h3 id="ai-overview-title">A. 概览</h3>
-            <p>常用设置和本机安装情况一眼就能确认。</p>
-          </div>
+          <h3 id="ai-overview-title">当前使用</h3>
         </div>
         <div className="ai-overview-grid">
           <article>
-            <small>默认转录模型</small>
+            <small>默认转录</small>
             <strong>{selectedAsr?.name ?? "未选择"}</strong>
-            <span>{selectedAsrReady ? "可直接转录" : "需要先完成安装"}</span>
           </article>
           <article>
-            <small>录音整理模型</small>
+            <small>录音整理</small>
             <strong>
               {settings.aiOrganizerProvider === "cloud"
                 ? "房间云端 AI"
                 : settings.aiOrganizerProvider === "local"
-                  ? "本地 Qwen3.5-4B"
+                  ? "本地 Qwen3.6-35B-A3B"
                   : "自定义 API"}
             </strong>
-            <span>{organizerReady ? "已就绪" : "需要配置"}</span>
           </article>
           <article>
-            <small>房间问答模型</small>
+            <small>房间问答</small>
             <strong>房间云端 AI</strong>
-            <span>无需本地模型</span>
           </article>
           <article>
-            <small>本机模型</small>
+            <small>已安装</small>
             <strong>
-              {installedAsrCount} 套转录 · {installedOrganizerCount} 套整理
+              {installedAsrCount} 个转录 · {installedOrganizerCount} 个整理
             </strong>
-            <span>共享组件单独计入下方</span>
           </article>
         </div>
       </section>
@@ -708,51 +820,36 @@ export const AiVoiceMemorySettingsCard = ({
         aria-labelledby="model-management-title"
       >
         <div className="ai-model-group-heading">
-          <div>
-            <h3 id="model-management-title">B. 转录模型与组件</h3>
-            <p>主模型、共享组件和整理模型分开管理；已安装的主模型可直接在卡片上切换。</p>
-          </div>
+          <h3 id="model-management-title">模型</h3>
         </div>
         <div className="ai-model-subgroup">
           <div className="ai-model-subgroup-heading">
-            <strong>B1. 主转录模型</strong>
-            <span>点击已安装模型卡即可切换；下载、修复和删除在卡片右侧</span>
+            <strong>转录</strong>
           </div>
           <div className="ai-model-management-grid">{asrModels.map(renderModel)}</div>
         </div>
         <div className="ai-model-subgroup is-compact">
           <div className="ai-model-subgroup-heading">
-            <strong>B2. 共享组件</strong>
-            <span>只下载一份，由需要精确时间轴的模型复用</span>
+            <strong>共享组件</strong>
           </div>
           <div className="ai-model-management-grid">{supportModels.map(renderModel)}</div>
         </div>
         <div className="ai-model-subgroup">
           <div className="ai-model-subgroup-heading">
-            <strong>B3. 整理模型</strong>
-            <span>只负责总结、章节和精彩片段，不参与语音识别</span>
+            <strong>整理</strong>
           </div>
-          <div className="ai-model-management-grid">
-            {organizerModel ? renderModel(organizerModel) : null}
-          </div>
+          <div className="ai-model-management-grid">{organizerModels.map(renderModel)}</div>
         </div>
       </section>
 
       <section className="ai-model-group mt-3" aria-labelledby="transcription-settings-title">
         <div className="ai-model-group-heading">
-          <div>
-            <h3 id="transcription-settings-title">C. 转录行为</h3>
-            <p>设置新录音何时转录，以及是否自动开始。</p>
-          </div>
+          <h3 id="transcription-settings-title">转录设置</h3>
         </div>
         <div className="mt-3 space-y-3">
           <SettingsItemRow
             label="转录时机"
-            description={
-              snapshot?.scheduler.gameActive
-                ? "检测到游戏，下载会降低占用，转录任务按当前设置让出资源。"
-                : "选择录音保存后何时开始处理。"
-            }
+            description={snapshot?.scheduler.gameActive ? "游戏中将自动降低后台占用。" : undefined}
           >
             <select
               className="ai-processing-select"
@@ -772,11 +869,7 @@ export const AiVoiceMemorySettingsCard = ({
           </SettingsItemRow>
           <SettingsItemRow
             label="自动转录"
-            description={
-              selectedAsrReady
-                ? `新录音保存后由 ${selectedAsr?.name ?? "当前模型"} 自动转成文字。`
-                : "先安装并启用一套转录模型，开关才可使用。"
-            }
+            description={selectedAsrReady ? undefined : "当前转录模型未就绪。"}
           >
             <Switch
               isChecked={settings.isAiAutoTranscribeEnabled}
@@ -790,29 +883,14 @@ export const AiVoiceMemorySettingsCard = ({
 
       <section className="ai-model-group mt-3" aria-labelledby="ai-analysis-title">
         <div className="ai-model-group-heading">
-          <div>
-            <h3 id="ai-analysis-title">D. AI 整理与房间问答</h3>
-            <p>分别选择录音整理方式，并确认房间里的“问”使用什么。</p>
-          </div>
+          <h3 id="ai-analysis-title">整理与问答</h3>
         </div>
         <div className="mt-3 space-y-3">
-          <SettingsItemRow
-            label="录音整理模型"
-            description={
-              settings.aiOrganizerProvider === "cloud"
-                ? "默认使用房间云端 AI；转录文字会发送到上号服务器进行总结和分段。"
-                : settings.aiOrganizerProvider === "local"
-                  ? "完全在本机整理，需要先安装 Qwen3.5-4B。"
-                  : "使用你保存在这台电脑上的 OpenAI 兼容 API。"
-            }
-          >
+          <SettingsItemRow label="录音整理模型">
             {providerSelect(settings.aiOrganizerProvider, "aiOrganizerProvider", "整理内容方式")}
           </SettingsItemRow>
-          <SettingsItemRow
-            label="房间问答模型"
-            description="固定使用房间云端 AI，可联网搜索；无需安装任何本地问答模型。"
-          >
-            <span className="ai-cloud-provider-badge">云端 API · 无需本地模型</span>
+          <SettingsItemRow label="房间问答模型">
+            <span className="ai-cloud-provider-badge">房间云端 AI</span>
           </SettingsItemRow>
           {showCustomProvider ? (
             <div className="settings-item-row rounded-[16px] border border-[#E7ECF2] bg-[#F8FAFC] p-4">
@@ -867,8 +945,7 @@ export const AiVoiceMemorySettingsCard = ({
                 </div>
               </div>
               <p className="mt-2 text-xs leading-5 text-[#718096]">
-                密钥由 Windows 加密后只保存在本机，不会写入设置文件、日志或 GitHub。仅允许 HTTPS
-                公网地址。
+                密钥经 Windows 加密，仅保存在本机。仅支持 HTTPS 地址。
               </p>
             </div>
           ) : null}
@@ -876,10 +953,10 @@ export const AiVoiceMemorySettingsCard = ({
             label="自动整理"
             description={
               organizerReady
-                ? "转录完成后生成总结、章节和精彩片段。"
+                ? undefined
                 : settings.aiOrganizerProvider === "local"
-                  ? "需要先下载 Qwen3.5-4B。"
-                  : "需要先保存自定义 API。"
+                  ? "本地整理模型未就绪。"
+                  : "请先保存自定义 API。"
             }
           >
             <Switch
@@ -891,6 +968,105 @@ export const AiVoiceMemorySettingsCard = ({
           </SettingsItemRow>
         </div>
       </section>
+      {huggingFaceAccessModel
+        ? createPortal(
+            <div className="modal-scrim fixed inset-0 z-50 flex items-center justify-center px-6">
+              <section
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="hugging-face-access-title"
+                aria-describedby="hugging-face-access-description"
+                className="modal-surface relative w-full max-w-[560px] rounded-[26px] p-6"
+              >
+                <DialogCloseButton
+                  className="absolute right-4 top-4"
+                  label="关闭模型下载授权"
+                  disabled={savingHuggingFaceAccess}
+                  onClick={() => setHuggingFaceAccessModel(undefined)}
+                />
+                <h2
+                  id="hugging-face-access-title"
+                  className="pr-12 text-balance text-[22px] font-bold text-[#172235]"
+                >
+                  下载 {huggingFaceAccessModel.name}
+                </h2>
+                <p
+                  id="hugging-face-access-description"
+                  className="mt-2 text-pretty text-sm leading-6 text-[#66778d]"
+                >
+                  这是 Hugging Face 门控模型，首次下载需要完成官方授权。
+                </p>
+                <div className="ai-model-access-panel mt-5" aria-label="Cohere 模型下载授权">
+                  <div className="ai-model-access-heading">
+                    <KeyRound aria-hidden="true" />
+                    <div>
+                      <strong>授权只需配置一次</strong>
+                      <span>
+                        {huggingFaceAccess?.configured
+                          ? "本机已保存授权，可直接继续下载"
+                          : "先接受条款，再创建一个只读 Token"}
+                      </span>
+                    </div>
+                  </div>
+                  <div className="ai-model-access-steps">
+                    <Button
+                      variant="secondary"
+                      onClick={() => void openHuggingFacePage(COHERE_TERMS_URL)}
+                    >
+                      1. 接受模型条款 <ExternalLink aria-hidden="true" />
+                    </Button>
+                    <Button
+                      variant="secondary"
+                      onClick={() => void openHuggingFacePage(HUGGING_FACE_TOKENS_URL)}
+                    >
+                      2. 创建只读 Token <ExternalLink aria-hidden="true" />
+                    </Button>
+                  </div>
+                  <div className="ai-model-access-form">
+                    <input
+                      type="password"
+                      value={huggingFaceToken}
+                      autoComplete="off"
+                      spellCheck={false}
+                      aria-label="Hugging Face 只读 Token"
+                      placeholder={
+                        huggingFaceAccess?.configured
+                          ? "已安全保存；需要更换时再粘贴"
+                          : "粘贴以 hf_ 开头的只读 Token"
+                      }
+                      onChange={(event) => setHuggingFaceToken(event.target.value)}
+                    />
+                    <Button
+                      disabled={savingHuggingFaceAccess || busyModel === huggingFaceAccessModel.id}
+                      onClick={() => void handleHuggingFaceAccess(huggingFaceAccessModel)}
+                    >
+                      <Download aria-hidden="true" />
+                      {huggingFaceToken.trim()
+                        ? "保存并下载"
+                        : huggingFaceAccess?.configured
+                          ? "继续下载"
+                          : "保存并下载"}
+                    </Button>
+                    {huggingFaceAccess?.configured ? (
+                      <Button
+                        variant="ghost"
+                        disabled={savingHuggingFaceAccess}
+                        onClick={() => void clearHuggingFaceAccess()}
+                      >
+                        清除授权
+                      </Button>
+                    ) : null}
+                  </div>
+                  <small>
+                    Token 由 Windows 加密后保存在本机，仅用于 Hugging Face
+                    下载，不会上传到上号服务器。
+                  </small>
+                </div>
+              </section>
+            </div>,
+            document.body,
+          )
+        : null}
       {pendingDeleteModel
         ? createPortal(
             <div className="modal-scrim fixed inset-0 z-50 flex items-center justify-center px-6">

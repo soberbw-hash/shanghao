@@ -166,6 +166,7 @@ test("room joining uses acknowledgement and snapshot recovery without logging ra
   assert.equal(client.includes('type: "request_snapshot"'), true);
   assert.equal(client.includes("RoomConnectionState.WaitingSnapshot"), true);
   assert.equal(client.includes('new Error(this.wsOpened ? "join_ack_timeout"'), true);
+  assert.equal(client.includes("this.lastSnapshotRevision = 0;"), true);
   assert.equal(hook.includes("summarizeSignalingEvent"), true);
   assert.equal(hook.includes("ROUTINE_SIGNAL_MESSAGE_TYPES"), true);
   assert.equal(hook.includes("...payload,"), false);
@@ -314,10 +315,22 @@ test("mouse side buttons use a scoped native hook without moving push-to-talk ke
   assert.equal(shortcuts.includes('uIOhook.on("mousedown"'), true);
   assert.equal(shortcuts.includes('uIOhook.on("mouseup"'), true);
   assert.equal(shortcuts.includes("mouse4"), true);
+  assert.equal(shortcuts.includes("setMouseHookSuppressed"), true);
+  assert.equal(shortcuts.includes("private mouseHookSuppressed"), true);
   assert.equal(packageSource.includes('"uiohook-napi"'), true);
   assert.equal(transport.includes('window.addEventListener("keydown"'), true);
   assert.equal(transport.includes('window.addEventListener("keyup"'), true);
   assert.equal(transport.includes("onPushToTalkState"), true);
+});
+
+test("quick-message shortcuts stay subscribed at the app boundary", () => {
+  const app = read("apps/desktop/src/renderer/src/app/App.tsx");
+  const roomState = read("apps/desktop/src/renderer/src/hooks/useRoomState.ts");
+
+  assert.equal(app.includes("dispatchQuickMessageShortcut"), true);
+  assert.equal(app.includes("onQuickMessageTriggered(dispatchQuickMessageShortcut)"), true);
+  assert.equal(roomState.includes("activeQuickMessageShortcutHandler"), true);
+  assert.equal(roomState.includes("window.desktopApi.shortcuts.onQuickMessageTriggered"), false);
 });
 
 test("native notifications and recording markers use main process IPC", () => {

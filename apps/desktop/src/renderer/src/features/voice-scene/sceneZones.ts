@@ -105,6 +105,7 @@ export const isSeatZone = (zone: SceneZoneId): boolean => zone.startsWith("gameD
 
 export const resolveMemberSceneZones = (
   members: Pick<RoomMember, "id" | "joinedAt" | "sceneZone">[],
+  reservedSeatIds: ReadonlySet<SceneZoneId> = new Set(),
 ): Map<string, SceneZoneId> => {
   const result = new Map<string, SceneZoneId>();
   const occupiedSeats = new Set<SceneZoneId>();
@@ -119,10 +120,16 @@ export const resolveMemberSceneZones = (
       return;
     }
 
+    // A reserved seat only protects automatic placement while the previous
+    // character finishes leaving. An explicit authoritative seat selection
+    // must still win, otherwise an invisible stale reservation makes the seat
+    // look clickable while the local member can never actually move there.
     const resolvedZone =
       requestedZone && !occupiedSeats.has(requestedZone)
         ? requestedZone
-        : (defaultMemberZones.find((zone) => !occupiedSeats.has(zone)) ?? "restroomZone");
+        : (defaultMemberZones.find(
+            (zone) => !occupiedSeats.has(zone) && !reservedSeatIds.has(zone),
+          ) ?? "restroomZone");
     result.set(member.id, resolvedZone);
     if (isSeatZone(resolvedZone)) {
       occupiedSeats.add(resolvedZone);

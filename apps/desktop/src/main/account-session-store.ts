@@ -3,6 +3,8 @@ import path from "node:path";
 
 import { safeStorage } from "electron";
 
+import type { AccountRememberedLogin } from "@private-voice/shared";
+
 export interface PersistedAccountSession {
   accessToken: string;
   refreshToken: string;
@@ -29,12 +31,27 @@ const isPersistedSession = (value: unknown): value is PersistedAccountSession =>
   );
 };
 
+const isRememberedLogin = (value: unknown): value is AccountRememberedLogin => {
+  if (!value || typeof value !== "object") return false;
+  const candidate = value as Partial<AccountRememberedLogin>;
+  return (
+    typeof candidate.identifier === "string" &&
+    candidate.identifier.length > 0 &&
+    candidate.identifier.length <= 254 &&
+    typeof candidate.password === "string" &&
+    candidate.password.length > 0 &&
+    candidate.password.length <= 128
+  );
+};
+
 /** Keeps account credentials outside settings.json and encrypts them with the OS key store. */
 export class AccountSessionStore {
   private readonly filePath: string;
+  private readonly rememberedLoginFilePath: string;
 
   constructor(userDataDirectory: string) {
     this.filePath = path.join(userDataDirectory, "account-session.bin");
+    this.rememberedLoginFilePath = path.join(userDataDirectory, "account-login.bin");
   }
 
   async read(): Promise<PersistedAccountSession | undefined> {
@@ -71,5 +88,41 @@ export class AccountSessionStore {
 
   async clear(): Promise<void> {
     await rm(this.filePath, { force: true });
+  }
+
+  async readRememberedLogin(): Promise<AccountRememberedLogin | undefined> {
+    let encrypted: Buffer;
+    try {
+      encrypted = await readFile(this.rememberedLoginFilePath);
+    } catch {
+      return undefined;
+    }
+
+    try {
+      const decrypted = await safeStorage.decryptStringAsync(encrypted);
+      const parsed = JSON.parse(decrypted.result) as unknown;
+      if (!isRememberedLogin(parsed)) throw new Error("invalid_account_login_shape");
+      if (decrypted.shouldReEncrypt) await this.writeRememberedLogin(parsed);
+      return parsed;
+    } catch {
+      await this.clearRememberedLogin();
+      return undefined;
+    }
+  }
+
+  async writeRememberedLogin(login: AccountRememberedLogin): Promise<void> {
+    if (!isRememberedLogin(login)) throw new Error("invalid_account_login_shape");
+    if (!(await safeStorage.isAsyncEncryptionAvailable())) {
+      throw new Error("account_secure_storage_unavailable");
+    }
+    const encrypted = await safeStorage.encryptStringAsync(JSON.stringify(login));
+    await mkdir(path.dirname(this.rememberedLoginFilePath), { recursive: true });
+    const temporaryPath = `${this.rememberedLoginFilePath}.${process.pid}.${Date.now()}.tmp`;
+    await writeFile(temporaryPath, encrypted, { flag: "wx" });
+    await rename(temporaryPath, this.rememberedLoginFilePath);
+  }
+
+  async clearRememberedLogin(): Promise<void> {
+    await rm(this.rememberedLoginFilePath, { force: true });
   }
 }

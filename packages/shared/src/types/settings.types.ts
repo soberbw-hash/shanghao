@@ -56,7 +56,6 @@ export interface AppSettings {
   soundVolume: number;
   isSystemNotificationEnabled: boolean;
   isGameDetectionEnabled: boolean;
-  isWorkActivityVisible: boolean;
   isDynamicWeatherEnabled: boolean;
   weatherLocationMode: WeatherLocationMode;
   weatherManualCity: string;

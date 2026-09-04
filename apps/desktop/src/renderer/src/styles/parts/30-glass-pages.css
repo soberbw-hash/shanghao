@@ -295,7 +295,7 @@ a,
 }
 
 .entry-card-entry {
-  min-height: 448px;
+  min-height: 0;
 }
 
 .entry-profile-layout {
@@ -304,6 +304,57 @@ a,
 
 .entry-profile-form {
   align-self: center;
+}
+
+.entry-room-choice {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  min-height: 44px;
+  padding: 5px 6px 5px 12px;
+  border: 1px solid rgba(196, 212, 232, 0.66);
+  border-radius: 14px;
+  background: rgba(247, 251, 255, 0.72);
+}
+
+.entry-room-choice > span {
+  color: #60738b;
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.entry-room-choice > div {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(74px, 1fr));
+  gap: 4px;
+  padding: 3px;
+  border-radius: 11px;
+  background: rgba(222, 234, 249, 0.76);
+}
+
+.entry-room-choice button {
+  min-height: 30px;
+  padding: 0 12px;
+  border-radius: 8px;
+  color: #73849a;
+  font-size: 12px;
+  font-weight: 700;
+  transition:
+    color 140ms ease-out,
+    background-color 140ms ease-out,
+    box-shadow 140ms ease-out;
+}
+
+.entry-room-choice button.is-active {
+  color: #2877cf;
+  background: rgba(255, 255, 255, 0.94);
+  box-shadow: 0 2px 7px rgba(65, 105, 154, 0.11);
+}
+
+.entry-room-choice button:disabled {
+  cursor: default;
+  opacity: 0.58;
 }
 
 .entry-card-ready {

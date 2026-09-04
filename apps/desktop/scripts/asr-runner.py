@@ -8,14 +8,23 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 import traceback
 import wave
+from array import array
 from pathlib import Path
 from typing import Any
 
-import numpy as np
-import torch
+try:
+    import numpy as np
+except ModuleNotFoundError:
+    np = None
+
+try:
+    import torch
+except ModuleNotFoundError:
+    torch = None
 
 
 sys.stdout.reconfigure(encoding="utf-8", errors="strict", line_buffering=True)
@@ -27,6 +36,8 @@ def emit(payload: dict[str, Any]) -> None:
 
 
 def read_pcm16_mono(path: str) -> tuple[np.ndarray, int]:
+    if np is None:
+        raise RuntimeError("numpy_runtime_missing")
     with wave.open(path, "rb") as source:
         channels = source.getnchannels()
         sample_width = source.getsampwidth()
@@ -41,11 +52,12 @@ def read_pcm16_mono(path: str) -> tuple[np.ndarray, int]:
 
 
 def configure_threads(resource_mode: str) -> None:
-    torch.set_num_threads(2 if resource_mode == "low" else 4)
+    if torch is not None:
+        torch.set_num_threads(2 if resource_mode == "low" else 4)
 
 
 def require_cuda(provider: str, *, bf16: bool = False) -> None:
-    if not torch.cuda.is_available():
+    if torch is None or not torch.cuda.is_available():
         raise RuntimeError(f"{provider}_cuda_required")
     if bf16 and not torch.cuda.is_bf16_supported():
         raise RuntimeError(f"{provider}_cuda_bf16_required")
@@ -408,6 +420,135 @@ class MossTranscribeDiarize:
         return {"text": "".join(item["text"] for item in segments) or raw_text, "segments": segments}
 
 
+class MossTranscribeDiarizeQ8:
+    """Pinned transcribe.cpp Q8 runtime with native timestamps and diarization."""
+
+    def __init__(self, model_path: str) -> None:
+        resolved = Path(model_path)
+        if not resolved.is_file() or resolved.suffix.lower() != ".gguf":
+            raise RuntimeError("moss_transcribe_diarize_q8_model_missing")
+        if "q8_0" not in resolved.name.lower():
+            raise RuntimeError("moss_transcribe_diarize_q8_quantization_required")
+        os.environ.setdefault("TRANSCRIBE_NATIVE_PROVIDER", "cu12")
+        import transcribe_cpp
+
+        self.transcribe_cpp = transcribe_cpp
+        self.model = None
+        self.session = None
+        self.backend_fallback = False
+        try:
+            self.model = transcribe_cpp.Model(str(resolved), backend="auto")
+        except Exception:
+            # The official CUDA provider also ships a CPU backend. A broken GPU
+            # backend must not make a 0.9B model unusable, and the selected backend
+            # is returned to the benchmark instead of being guessed from settings.
+            self.backend_fallback = True
+            self.model = transcribe_cpp.Model(str(resolved), backend="cpu")
+        self.session = self.model.session(n_threads=4)
+
+    def close(self) -> None:
+        session = getattr(self, "session", None)
+        if session is not None:
+            session.close()
+            self.session = None
+        model = getattr(self, "model", None)
+        if model is not None:
+            model.close()
+            self.model = None
+
+    def __del__(self) -> None:
+        self.close()
+
+    @staticmethod
+    def _speaker_label(value: Any) -> str | None:
+        try:
+            speaker_id = int(value)
+        except (TypeError, ValueError):
+            return None
+        return f"S{speaker_id:02d}" if speaker_id >= 0 else None
+
+    @staticmethod
+    def _pcm(path: str) -> array:
+        with wave.open(path, "rb") as source:
+            channels = source.getnchannels()
+            sample_width = source.getsampwidth()
+            sample_rate = source.getframerate()
+            frames = source.readframes(source.getnframes())
+        if channels != 1 or sample_width != 2 or sample_rate != 16_000:
+            raise RuntimeError(
+                f"unsupported_asr_wav: channels={channels}, width={sample_width}, rate={sample_rate}"
+            )
+        pcm16 = array("h")
+        pcm16.frombytes(frames)
+        if sys.byteorder != "little":
+            pcm16.byteswap()
+        return array("f", (sample / 32768.0 for sample in pcm16))
+
+    def transcribe(self, wav_path: str, resource_mode: str) -> dict[str, Any]:
+        configure_threads(resource_mode)
+        if self.session is None or self.model is None:
+            raise RuntimeError("moss_transcribe_diarize_q8_session_closed")
+        result = self.session.run(
+            self._pcm(wav_path),
+            language="zh",
+            timestamps="segment",
+            diarize="on",
+        )
+        words_by_segment: dict[int, list[dict[str, Any]]] = {}
+        for word in result.words:
+            text = str(word.text or "").strip()
+            if not text:
+                continue
+            words_by_segment.setdefault(int(word.seg_index), []).append(
+                {
+                    "startMs": max(0, int(word.t0_ms)),
+                    "endMs": max(int(word.t0_ms) + 20, int(word.t1_ms)),
+                    "text": text,
+                }
+            )
+        segments = []
+        for index, item in enumerate(result.segments):
+            text = str(item.text or "").strip()
+            if not text:
+                continue
+            start_ms = max(0, int(item.t0_ms))
+            segment = {
+                "startMs": start_ms,
+                "endMs": max(start_ms + 100, int(item.t1_ms)),
+                "speakerId": self._speaker_label(item.speaker_id),
+                "text": text,
+            }
+            words = words_by_segment.get(index)
+            if words:
+                segment["words"] = words
+            segments.append(segment)
+        device = self.model.device
+        return {
+            "text": str(result.text or "").strip(),
+            "rawText": str(result.raw_text or ""),
+            "segments": segments,
+            "nativeSpeakerSegments": [
+                {
+                    "startMs": max(0, int(item.t0_ms)),
+                    "endMs": max(int(item.t0_ms), int(item.t1_ms)),
+                    "speakerId": self._speaker_label(item.speaker_id),
+                    "confidence": None if item.p != item.p else float(item.p),
+                }
+                for item in result.speaker_segments
+            ],
+            "metrics": {
+                "backend": str(self.model.backend),
+                "device": f"{device.device_type}:{device.name}",
+                "quantization": "Q8_0",
+                "dtype": "int8",
+                "backendFallback": self.backend_fallback,
+                "nativeLoadTimeMs": float(result.timings.load_ms),
+                "nativeEncodeTimeMs": float(result.timings.encode_ms),
+                "nativeDecodeTimeMs": float(result.timings.decode_ms),
+            },
+        }
+
+
 class DolphinCnDialect:
     """Official 0.4B small.cn non-streaming runtime with word timing enabled."""
 
@@ -580,6 +721,78 @@ class CohereTranscribe:
         return {"text": text}
 
 
+class ArkAsr3BQ8:
+    """Pinned CrispASR CUDA runtime for the requested ARK-ASR-3B Q8_0 GGUF."""
+
+    def __init__(self, model_path: str) -> None:
+        from crispasr import Session
+
+        resolved = Path(model_path)
+        if not resolved.is_file() or resolved.suffix.lower() != ".gguf":
+            raise RuntimeError("ark_asr_q8_model_missing")
+        if "q8_0" not in resolved.name.lower():
+            # Never substitute Q6/Q4/CPU behind the user's back. A future Q6 A/B
+            # pass can select its own pinned artifact through the shared variant config.
+            raise RuntimeError("ark_asr_q8_quantization_required")
+        os.environ.pop("CRISPASR_ARKASR_CPU", None)
+        available = Session.available_backends()
+        if "ark-asr" not in available:
+            raise RuntimeError("ark_asr_backend_missing")
+        self.session = Session(str(resolved), n_threads=4, backend="ark-asr")
+
+    def close(self) -> None:
+        session = getattr(self, "session", None)
+        if session is not None:
+            session.close()
+            self.session = None
+
+    def __del__(self) -> None:
+        self.close()
+
+    def transcribe(self, wav_path: str, resource_mode: str) -> dict[str, Any]:
+        configure_threads(resource_mode)
+        audio, sample_rate = read_pcm16_mono(wav_path)
+        duration_ms = max(100, round(len(audio) * 1000 / sample_rate))
+        native_segments = self.session.transcribe(audio, sample_rate, language="zh")
+        segments: list[dict[str, Any]] = []
+        for item in native_segments:
+            text = str(getattr(item, "text", "") or "").strip()
+            if not text:
+                continue
+            start_ms = max(0, round(float(getattr(item, "start", 0.0) or 0.0) * 1000))
+            raw_end_ms = round(float(getattr(item, "end", 0.0) or 0.0) * 1000)
+            end_ms = min(duration_ms, max(start_ms + 100, raw_end_ms or duration_ms))
+            words = []
+            for word in getattr(item, "words", []) or []:
+                word_text = str(getattr(word, "text", "") or "").strip()
+                if not word_text:
+                    continue
+                word_start_ms = max(
+                    start_ms,
+                    round(float(getattr(word, "start", 0.0) or 0.0) * 1000),
+                )
+                word_end_ms = min(
+                    duration_ms,
+                    max(
+                        word_start_ms + 20,
+                        round(float(getattr(word, "end", 0.0) or 0.0) * 1000),
+                    ),
+                )
+                words.append(
+                    {"startMs": word_start_ms, "endMs": word_end_ms, "text": word_text}
+                )
+            segment: dict[str, Any] = {
+                "startMs": start_ms,
+                "endMs": end_ms,
+                "text": text,
+            }
+            if words:
+                segment["words"] = words
+            segments.append(segment)
+        text = "".join(segment["text"] for segment in segments).strip()
+        return {"text": text, "segments": segments}
+
+
 def load_runtime(args: argparse.Namespace) -> Any:
     if args.provider == "qwen3-asr-1.7b-force":
         return QwenAsr(args.model, args.aligner_model, staged_on_oom=True)
@@ -595,10 +808,14 @@ def load_runtime(args: argparse.Namespace) -> Any:
         return ParaformerAsr(args.model, args.vad_model, args.punc_model)
     if args.provider == "moss-transcribe-diarize-0.9b":
         return MossTranscribeDiarize(args.model)
+    if args.provider == "moss-transcribe-diarize-0.9b-q8_0":
+        return MossTranscribeDiarizeQ8(args.model)
     if args.provider == "dolphin-cn-dialect-0.4b":
         return DolphinCnDialect(args.model)
     if args.provider == "cohere-transcribe-2b":
         return CohereTranscribe(args.model, args.aligner_model)
+    if args.provider == "ark-asr-3b-q8_0":
+        return ArkAsr3BQ8(args.model)
     raise RuntimeError(f"unsupported_asr_provider: {args.provider}")
 
 
@@ -621,8 +838,11 @@ def run_worker(args: argparse.Namespace) -> int:
         except Exception as exc:
             traceback.print_exc(file=sys.stderr)
             emit({"type": "error", "id": request_id, "error": str(exc)})
+    close = getattr(runtime, "close", None)
+    if callable(close):
+        close()
     del runtime
-    if torch.cuda.is_available():
+    if torch is not None and torch.cuda.is_available():
         torch.cuda.empty_cache()
     return 0
 
@@ -640,8 +860,10 @@ def main() -> int:
             "fireredasr2-aed",
             "paraformer-zh",
             "moss-transcribe-diarize-0.9b",
+            "moss-transcribe-diarize-0.9b-q8_0",
             "dolphin-cn-dialect-0.4b",
             "cohere-transcribe-2b",
+            "ark-asr-3b-q8_0",
         ),
     )
     parser.add_argument("--model", required=True)

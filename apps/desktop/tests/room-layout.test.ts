@@ -37,10 +37,6 @@ const collectionShelfPath = path.resolve(
   process.cwd(),
   "src/renderer/src/components/room/RoomCollectionShelf.tsx",
 );
-const workMonitorPath = path.resolve(
-  process.cwd(),
-  "src/renderer/src/components/room/WorkMonitorContent.tsx",
-);
 const idleMonitorPath = path.resolve(
   process.cwd(),
   "src/renderer/src/components/room/IdleMonitorContent.tsx",
@@ -114,6 +110,10 @@ test("room page uses the V5 island, light responses, and voice dock", () => {
     path.resolve(process.cwd(), "src/renderer/src/components/audio/AudioControlPopover.tsx"),
     "utf8",
   );
+  const micTestSource = readFileSync(
+    path.resolve(process.cwd(), "src/renderer/src/hooks/useMicTest.ts"),
+    "utf8",
+  );
 
   assert.equal(source.includes("TemporaryChatPanel"), true);
   assert.equal(source.includes("TeamIsland"), true);
@@ -131,15 +131,32 @@ test("room page uses the V5 island, light responses, and voice dock", () => {
   assert.equal(audioPopoverSource.includes('data-audio-setting="echo-cancellation"'), true);
   assert.equal(audioPopoverSource.includes('data-audio-setting="voice-enhancement"'), true);
   assert.equal(audioPopoverSource.includes('ariaLabel="切换回声消除"'), true);
-  assert.equal(audioPopoverSource.includes('ariaLabel="切换自然人声"'), true);
+  assert.equal(audioPopoverSource.includes('ariaLabel="切换人声增强"'), true);
+  assert.equal(audioPopoverSource.includes("DSP 人声整形"), true);
+  assert.equal(audioPopoverSource.includes("DeepFilterNet3"), true);
+  assert.equal(audioPopoverSource.includes('data-audio-setting="voice-restoration"'), false);
+  assert.equal(audioPopoverSource.includes("LavaSR v2"), false);
   assert.equal(source.includes("noise-suppression-button"), false);
   assert.equal(audioPopoverSource.includes('ariaLabel="切换降噪"'), true);
-  assert.equal(audioPopoverSource.includes("hasMicrophoneProcessing ? deviceSelect : null"), true);
+  assert.equal(audioPopoverSource.includes("说话模式"), true);
+  assert.equal(audioPopoverSource.includes("麦克风体检"), true);
+  assert.equal(audioPopoverSource.includes("ShortcutInput"), true);
+  assert.equal(source.includes("useMicTest"), true);
+  assert.equal(audioPopoverSource.includes('className="audio-control-device-select"'), true);
   assert.equal(
-    audioPopoverSource.indexOf("hasMicrophoneProcessing ? deviceSelect : null") <
+    audioPopoverSource.indexOf('className="audio-control-device-select"') >
       audioPopoverSource.indexOf('className="audio-control-popover-slider"'),
     true,
   );
+  assert.equal(
+    audioPopoverSource.indexOf('className="audio-control-device-select"') <
+      audioPopoverSource.indexOf('className="audio-control-popover-actions"'),
+    true,
+  );
+  assert.equal(audioPopoverSource.includes("开始 5 秒体检"), true);
+  assert.equal(audioPopoverSource.includes("听原声"), true);
+  assert.equal(audioPopoverSource.includes("听处理后"), true);
+  assert.equal(micTestSource.includes("const TEST_DURATION_MS = 5_000"), true);
   assert.equal(source.includes("朋友的小收藏箱"), false);
   assert.equal(source.includes("留下一句话或链接，会一直保留"), false);
   assert.equal(source.includes("把下次开黑时间、攻略链接"), false);
@@ -170,35 +187,20 @@ test("exit label stays clear of the door arrow", () => {
   assert.match(stylesSource, /\.scene-service-restroom \.scene-exit-label\s*\{[^}]*top:\s*9%;/s);
 });
 
-test("work and game activities animate on the monitor without replacing voice state", () => {
+test("game and idle activities animate on the monitor without replacing voice state", () => {
   const teamIslandSource = readFileSync(teamIslandPath, "utf8");
-  const workMonitorSource = readFileSync(workMonitorPath, "utf8");
   const idleMonitorSource = readFileSync(idleMonitorPath, "utf8");
   const activityRulesSource = readFileSync(activityRulesPath, "utf8");
-  const stylesSource = readRendererCss();
 
-  assert.equal(teamIslandSource.includes("<WorkMonitorContent"), true);
   assert.equal(teamIslandSource.includes("settledOccupant.gameName"), true);
-  assert.equal(teamIslandSource.includes("settledOccupant.workActivity"), true);
-  assert.equal(teamIslandSource.includes("shouldReduceMotion={shouldReduceMotion}"), true);
-  assert.equal(workMonitorSource.includes('mode === "code"'), true);
-  assert.equal(workMonitorSource.includes('mode === "media"'), true);
-  assert.equal(workMonitorSource.includes('mode === "engineering"'), true);
-  assert.equal(workMonitorSource.includes('mode === "data"'), true);
-  assert.equal(workMonitorSource.includes('mode === "office"'), true);
-  assert.equal(workMonitorSource.includes("gsap.context"), true);
-  assert.equal(workMonitorSource.includes("repeat: -1"), true);
-  assert.equal(workMonitorSource.includes("observer?.disconnect()"), true);
-  assert.equal(workMonitorSource.includes("context.revert()"), true);
+  assert.equal(teamIslandSource.includes("<GameMonitorContent"), true);
   assert.equal(teamIslandSource.includes("<IdleMonitorContent"), true);
   assert.equal(teamIslandSource.includes("offsetSeconds={slotIndex * 48}"), true);
   assert.equal(idleMonitorSource.includes("idle-monitors/window-sky.png"), true);
   assert.equal(idleMonitorSource.includes("--idle-monitor-offset"), true);
   assert.equal(idleMonitorSource.includes("idle-monitors/aquarium.png"), false);
   assert.equal(activityRulesSource.includes("正在玩"), true);
-  assert.equal(activityRulesSource.includes("workActivity.name"), true);
-  assert.equal(stylesSource.includes(".scene-workstation-screen.working"), true);
-  assert.equal(stylesSource.includes(".scene-work-monitor"), true);
+  assert.equal(teamIslandSource.includes("workActivity"), false);
 });
 
 test("room uses a real always-on-top overlay and a ten-second knock cooldown", () => {
@@ -508,6 +510,26 @@ test("client-side scene arbitration keeps duplicate member seats visually unique
   assert.equal(zones.get("away"), "restroomZone");
 });
 
+test("an explicit seat selection overrides an exiting member's temporary reservation", () => {
+  const zones = resolveMemberSceneZones(
+    [
+      {
+        id: "local",
+        joinedAt: "2026-08-30T10:00:00.000Z",
+        sceneZone: "gameDesk1",
+      },
+      {
+        id: "automatic",
+        joinedAt: "2026-08-30T10:00:01.000Z",
+      },
+    ],
+    new Set(["gameDesk1"]),
+  );
+
+  assert.equal(zones.get("local"), "gameDesk1");
+  assert.equal(zones.get("automatic"), "gameDesk2");
+});
+
 test("screen sharing is wired through the room page and WebRTC peer layer", () => {
   const roomSource = readFileSync(roomPagePath, "utf8");
   const hookSource = readFileSync(
@@ -664,6 +686,11 @@ test("room scene supports clickable seats and silent-away without daily summarie
 
   assert.equal(teamIslandSource.includes("onZoneSelect?.(zone.id, zone.activity)"), true);
   assert.equal(teamIslandSource.includes("disabled={"), true);
+  assert.equal(
+    teamIslandSource.includes("reservedSeatIds.forEach((zone) => occupiedSeatIds.add(zone))"),
+    false,
+  );
+  assert.equal(teamIslandSource.includes("EXITED_MEMBER_CLEANUP_FALLBACK_MS"), true);
   assert.equal(sceneCharacterSource.includes("DeskAnimalSprite"), true);
   assert.equal(roomSource.includes("decideAutoAway"), true);
   assert.equal(roomSource.includes("lastSpokeAtRef"), false);
@@ -712,7 +739,7 @@ test("room navigation stays mounted behind settings and lightweight motion avoid
   const stylesSource = readRendererCss();
 
   assert.equal(appSource.includes("app-page-base"), true);
-  assert.equal(appSource.includes('basePage === "room" ? <RoomPage /> : <HomePage />'), true);
+  assert.equal(appSource.includes('basePage === "room" ? <RoomPage /> : <AccountPage />'), true);
   assert.equal(roomSource.includes('filter: "blur(6px)"'), false);
   assert.equal(stylesSource.includes(".app-page-base.is-obscured"), true);
   assert.match(stylesSource, /\.team-island-stage\s*\{[^}]*filter:\s*none;/s);

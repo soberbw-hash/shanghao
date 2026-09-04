@@ -16,6 +16,7 @@ import {
   DEFAULT_QUICK_MESSAGE_SLOTS,
   DEFAULT_QUICK_MESSAGE_MUSIC_SLOTS,
   QUICK_MESSAGE_PRESETS,
+  normalizeQuickMessageSlots,
   type AppSettings,
   type QuickMessagePreset,
   type QuickMessageShortcutSlot,
@@ -81,26 +82,24 @@ export const QuickMessageSettingsCard = ({
   onChange: (patch: Partial<AppSettings>) => void;
   onExport: () => Promise<void>;
 }) => {
-  const slots: QuickMessageShortcutSlot[] = Array.from(
-    { length: SLOT_COUNT },
-    (_, index) =>
-      settings.quickMessages.slots[index] ??
-      DEFAULT_QUICK_MESSAGE_SLOTS[index] ?? { presetId: undefined, shortcut: "", enabled: false },
+  const slots: QuickMessageShortcutSlot[] = normalizeQuickMessageSlots(
+    settings.quickMessages.slots,
+    DEFAULT_QUICK_MESSAGE_SLOTS,
+    SLOT_COUNT,
   );
-  const musicSlots: QuickMessageShortcutSlot[] = Array.from(
-    { length: DEFAULT_QUICK_MESSAGE_MUSIC_SLOTS.length },
-    (_, index) => {
-      const fallback = DEFAULT_QUICK_MESSAGE_MUSIC_SLOTS[index] ?? {
-        presetId: undefined,
-        shortcut: "",
-        enabled: false,
-      };
-      const savedSlot = settings.quickMessages.musicSlots?.[index];
-      if (savedSlot) return savedSlot;
-      return index === 0 && settings.quickMessages.musicPresetId
-        ? { ...fallback, presetId: settings.quickMessages.musicPresetId }
-        : fallback;
-    },
+  const musicSlots: QuickMessageShortcutSlot[] = normalizeQuickMessageSlots(
+    settings.quickMessages.musicSlots?.length
+      ? settings.quickMessages.musicSlots
+      : settings.quickMessages.musicPresetId
+        ? [
+            {
+              ...DEFAULT_QUICK_MESSAGE_MUSIC_SLOTS[0],
+              presetId: settings.quickMessages.musicPresetId,
+            },
+          ]
+        : settings.quickMessages.musicSlots,
+    DEFAULT_QUICK_MESSAGE_MUSIC_SLOTS,
+    DEFAULT_QUICK_MESSAGE_MUSIC_SLOTS.length,
   );
   const [selectedPresetId, setSelectedPresetId] = useState(
     slots[0]?.presetId ?? QUICK_MESSAGE_PRESETS[0]?.id ?? "",
@@ -599,7 +598,10 @@ export const QuickMessageSettingsCard = ({
         </div>
       </SettingsSection>
 
-      <SettingsSection title="快捷键">
+      <SettingsSection
+        title="快捷键"
+        description="这里的开关只控制全局快捷键；房间里的鼠标点击按钮始终保留。"
+      >
         <div className="grid gap-1.5 md:grid-cols-2 xl:grid-cols-5">
           {slots.map((slot, index) => {
             const preset = QUICK_MESSAGE_PRESETS.find(

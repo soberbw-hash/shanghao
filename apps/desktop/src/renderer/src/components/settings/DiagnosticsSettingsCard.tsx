@@ -248,7 +248,7 @@ const ShangHaoHealthOverview = ({
       level: windowsLevel,
       description:
         windowsLevel === "需要看看"
-          ? "系统防火墙可能影响语音连接，可以直接修复。"
+          ? "后台已尝试修复；如果这里仍异常，可以再手动重试。"
           : "系统网络权限正常。",
       actionLabel: windowsLevel === "需要看看" ? "自动修复" : undefined,
       onClick: windowsLevel === "需要看看" ? onRepairFirewall : undefined,

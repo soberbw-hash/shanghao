@@ -37,8 +37,8 @@ import {
 import { isSeatZone } from "../features/voice-scene/sceneZones";
 import { selectCharacterChatBubbles } from "../features/room/roomViewModel";
 import { usePrefersReducedMotion } from "../hooks/usePrefersReducedMotion";
+import { useMicTest } from "../hooks/useMicTest";
 import { useActiveQuickMessageMusic } from "../hooks/useQuickMessageMusicPresence";
-import { useRenderProfiler } from "../features/diagnostics/renderProfiler";
 import { useRoomPageSettings } from "../hooks/useRoomPageSettings";
 import { useRecordingController } from "../hooks/useRecordingController";
 import { useRoomCollection } from "../hooks/useRoomCollection";
@@ -59,7 +59,6 @@ interface AwaySession {
   gameName?: string;
   gameIconDataUrl?: string;
   musicActivity?: GameDetectionSnapshot["musicActivity"];
-  workActivity?: GameDetectionSnapshot["workActivity"];
   enteredAt: string;
 }
 export const RoomPage = () => {
@@ -123,7 +122,6 @@ export const RoomPage = () => {
     },
   });
   const {
-    isWorkActivityVisible,
     isAiAutoTranscribeEnabled,
     isAiAutoOrganizeEnabled,
     isAutoRecordOnJoinEnabled,
@@ -151,22 +149,24 @@ export const RoomPage = () => {
   const toggleMicrophone = useAudioStore((state) => state.toggleMicrophone);
   const toggleDeafen = useAudioStore((state) => state.toggleDeafen);
   const setMuted = useAudioStore((state) => state.setMuted);
+  const setPushToTalkEnabled = useAudioStore((state) => state.setPushToTalkEnabled);
   const recordingStatus = useRecordingStore((state) => state.status);
   const recordingMarkers = useRecordingStore((state) => state.markers);
   const addRecordingMarker = useRecordingStore((state) => state.addMarker);
   const clearRecordingMarkers = useRecordingStore((state) => state.clearMarkers);
   const resetRecordingStatus = useRecordingStore((state) => state.resetStatus);
   const { capability, startRecording, stopRecording, discardRecording } = useRecordingController();
-  const pageRef = useRef<HTMLDivElement>(null);
-  useRenderProfiler("RoomPage", {
-    memberCount: room.members.length,
-    connectionState: room.connectionState,
-    chatCount: chatMessages.length,
-    remoteScreenSharing,
-    isMuted,
-    isDeafened,
-    recordingState: recordingStatus.state,
+  const micTest = useMicTest({
+    inputDeviceId: roomDockSettings?.preferredInputDeviceId,
+    outputDeviceId: roomDockSettings?.preferredOutputDeviceId,
+    echoCancellation: roomDockSettings?.isEchoCancellationEnabled,
+    noiseSuppression: roomDockSettings?.isNoiseSuppressionEnabled,
+    autoGainControl: roomDockSettings?.isAutoGainControlEnabled,
+    voiceEnhancement: roomDockSettings?.isVoiceEnhancementEnabled,
+    equalizerGains: roomDockSettings?.micEqualizerGains,
+    lowCutFrequency: roomDockSettings?.lowCutFrequency,
   });
+  const pageRef = useRef<HTMLDivElement>(null);
   const [chatInput, setChatInput] = useState("");
   const [pendingIncludeSystemAudio, setPendingIncludeSystemAudio] = useState(false);
   const [isScreenSourcePickerOpen, setIsScreenSourcePickerOpen] = useState(false);
@@ -198,7 +198,6 @@ export const RoomPage = () => {
   const detectedGameRef = useRef<string | undefined>(undefined);
   const detectedGameIconRef = useRef<string | undefined>(undefined);
   const detectedMusicRef = useRef<GameDetectionSnapshot["musicActivity"] | undefined>(undefined);
-  const detectedWorkRef = useRef<GameDetectionSnapshot["workActivity"] | undefined>(undefined);
   const hasDetectionSnapshotRef = useRef(false);
   const hasAutoStartedRecordingRef = useRef(false);
   const isAutoRecordSuppressedRef = useRef(false);
@@ -244,15 +243,7 @@ export const RoomPage = () => {
     setViewingActive: setScreenShareViewingActive,
     stopShare: stopManagedScreenShare,
   });
-  const visibleMembers = useMemo(
-    () =>
-      isWorkActivityVisible === false
-        ? room.members.map((member) =>
-            member.workActivity ? { ...member, workActivity: undefined } : member,
-          )
-        : room.members,
-    [room.members, isWorkActivityVisible],
-  );
+  const visibleMembers = room.members;
   const roomCollection = useRoomCollection({
     localMemberId: localMember?.id,
     addItem: addRoomCollectionItem,
@@ -266,14 +257,6 @@ export const RoomPage = () => {
         localMember.musicActivity.providerName,
         localMember.musicActivity.trackTitle,
         localMember.musicActivity.artist ?? "",
-      ].join("|")
-    : "";
-  const localWorkActivityKey = localMember?.workActivity
-    ? [
-        localMember.workActivity.id,
-        localMember.workActivity.name,
-        localMember.workActivity.category,
-        localMember.workActivity.iconDataUrl ?? "",
       ].join("|")
     : "";
   const localGameIconKey = localMember?.gameIconDataUrl ?? "";
@@ -587,7 +570,6 @@ export const RoomPage = () => {
           gameName: currentLocalMember.gameName,
           gameIconDataUrl: currentLocalMember.gameIconDataUrl,
           musicActivity: currentLocalMember.musicActivity,
-          workActivity: currentLocalMember.workActivity,
           enteredAt: new Date().toISOString(),
         };
         setMuted(true);
@@ -597,7 +579,6 @@ export const RoomPage = () => {
           currentLocalMember.gameName,
           currentLocalMember.musicActivity,
           currentLocalMember.gameIconDataUrl,
-          currentLocalMember.workActivity,
         );
         void window.desktopApi.app.writeLog({
           category: "app",
@@ -626,7 +607,6 @@ export const RoomPage = () => {
           awaySession.gameName,
           awaySession.musicActivity,
           awaySession.gameIconDataUrl,
-          awaySession.workActivity,
         );
         void window.desktopApi.app.writeLog({
           category: "app",
@@ -657,10 +637,6 @@ export const RoomPage = () => {
       detectedGameRef.current = snapshot.gameName;
       detectedGameIconRef.current = snapshot.gameIconDataUrl;
       detectedMusicRef.current = snapshot.musicActivity;
-      const workActivity = useSettingsStore.getState().settings?.isWorkActivityVisible
-        ? snapshot.workActivity
-        : undefined;
-      detectedWorkRef.current = workActivity;
       const localMember = useRoomStore.getState().room.members.find((member) => member.isLocal);
       const currentZone = localMember?.sceneZone ?? "gameDesk1";
 
@@ -672,7 +648,6 @@ export const RoomPage = () => {
             snapshot.gameName,
             snapshot.musicActivity,
             snapshot.gameIconDataUrl,
-            workActivity,
           );
         } else {
           const gameZone = currentZone.startsWith("gameDesk") ? currentZone : "gameDesk1";
@@ -682,7 +657,6 @@ export const RoomPage = () => {
             snapshot.gameName,
             snapshot.musicActivity,
             snapshot.gameIconDataUrl,
-            workActivity,
           );
         }
       } else if (previousGame) {
@@ -692,7 +666,6 @@ export const RoomPage = () => {
           undefined,
           snapshot.musicActivity,
           undefined,
-          workActivity,
         );
       } else {
         moveLocalMemberRef.current(
@@ -701,7 +674,6 @@ export const RoomPage = () => {
           undefined,
           snapshot.musicActivity,
           undefined,
-          workActivity,
         );
       }
     };
@@ -711,39 +683,12 @@ export const RoomPage = () => {
   }, []);
 
   useEffect(() => {
-    if (!hasDetectionSnapshotRef.current) return;
-    void window.desktopApi.games.getSnapshot().then((snapshot) => {
-      const workActivity = isWorkActivityVisible ? snapshot.workActivity : undefined;
-      detectedWorkRef.current = workActivity;
-      const currentLocalMember = useRoomStore
-        .getState()
-        .room.members.find((member) => member.isLocal);
-      if (!currentLocalMember) return;
-      const sceneZone = currentLocalMember.sceneZone ?? "gameDesk1";
-      moveLocalMemberRef.current(
-        sceneZone,
-        sceneZone === "restroomZone"
-          ? "restroom"
-          : snapshot.gameName
-            ? "gaming"
-            : (currentLocalMember.activity ?? "idle"),
-        snapshot.gameName,
-        snapshot.musicActivity,
-        snapshot.gameIconDataUrl,
-        workActivity,
-      );
-    });
-  }, [isWorkActivityVisible]);
-
-  useEffect(() => {
     if (!hasDetectionSnapshotRef.current || !localMemberId) return;
 
     const detectedMusicActivityKey = JSON.stringify(detectedMusicRef.current ?? null);
-    const detectedWorkActivityKey = JSON.stringify(detectedWorkRef.current ?? null);
     const detectedGameIconKey = detectedGameIconRef.current ?? "";
     if (
       detectedMusicActivityKey === localMusicActivityKey &&
-      detectedWorkActivityKey === localWorkActivityKey &&
       detectedGameIconKey === localGameIconKey
     )
       return;
@@ -759,16 +704,8 @@ export const RoomPage = () => {
       detectedGameRef.current,
       detectedMusicRef.current,
       detectedGameIconRef.current,
-      detectedWorkRef.current,
     );
-  }, [
-    localGameIconKey,
-    localActivity,
-    localMemberId,
-    localSceneZone,
-    localMusicActivityKey,
-    localWorkActivityKey,
-  ]);
+  }, [localGameIconKey, localActivity, localMemberId, localSceneZone, localMusicActivityKey]);
 
   const send = async (content = chatInput) => {
     if (!content.trim()) return;
@@ -1218,7 +1155,6 @@ export const RoomPage = () => {
         gameName: localMember?.gameName,
         gameIconDataUrl: localMember?.gameIconDataUrl,
         musicActivity: localMember?.musicActivity,
-        workActivity: localMember?.workActivity,
         enteredAt: new Date().toISOString(),
       };
       setMuted(true);
@@ -1235,7 +1171,6 @@ export const RoomPage = () => {
       detectedGameRef.current,
       detectedMusicRef.current ?? localMember?.musicActivity,
       detectedGameIconRef.current ?? localMember?.gameIconDataUrl,
-      detectedWorkRef.current ?? localMember?.workActivity,
     );
   };
 
@@ -1434,6 +1369,15 @@ export const RoomPage = () => {
         isMuted={isMuted}
         isDeafened={isDeafened}
         isNoiseSuppressionSwitching={isNoiseSuppressionSwitching}
+        microphoneTest={{
+          phase: micTest.phase,
+          level: micTest.level,
+          isClipping: micTest.isClipping,
+          error: micTest.error,
+          onToggle: () => void micTest.toggle(),
+          onPlaySystemCapture: () => void micTest.playSystemCapture(),
+          onPlayProcessed: () => void micTest.playProcessed(),
+        }}
         recordingState={recordingStatus.state}
         recordingEncoderState={capability.encoderState}
         localScreenShareActive={Boolean(localScreenShareStream)}
@@ -1456,6 +1400,13 @@ export const RoomPage = () => {
         }
         onAutoGainChange={(isAutoGainControlEnabled) =>
           void toggleAutoGain(isAutoGainControlEnabled)
+        }
+        onPushToTalkEnabledChange={(isPushToTalkEnabled) => {
+          setPushToTalkEnabled(isPushToTalkEnabled);
+          void saveSettings({ isPushToTalkEnabled });
+        }}
+        onPushToTalkShortcutChange={(pushToTalkShortcut) =>
+          void saveSettings({ pushToTalkShortcut })
         }
         onResetMicrophoneVolume={() => {
           setMicrophoneSendVolume(1);

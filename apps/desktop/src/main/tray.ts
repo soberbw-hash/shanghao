@@ -35,7 +35,7 @@ const restoreWindow = (window: BrowserWindow | null) => {
 
 export const createTrayController = (
   getWindow: () => BrowserWindow | null,
-  onQuit: () => void,
+  onQuit: () => boolean | Promise<boolean>,
 ): Tray => {
   const tray = new Tray(getTrayImage());
 
@@ -52,9 +52,8 @@ export const createTrayController = (
       { type: "separator" },
       {
         label: "\u9000\u51FA",
-        click: () => {
-          onQuit();
-          app.quit();
+        click: async () => {
+          if (await onQuit()) app.quit();
         },
       },
     ]);

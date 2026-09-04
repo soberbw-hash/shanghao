@@ -1,7 +1,11 @@
 import { copyFile, mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
 import { dirname, join, parse } from "node:path";
 
-import type { DailyRoomParticipantSummary, DailyRoomReport } from "@private-voice/shared";
+import type {
+  DailyRoomParticipantSummary,
+  DailyRoomRecordingRecap,
+  DailyRoomReport,
+} from "@private-voice/shared";
 
 type DailyRoomId = DailyRoomReport["roomId"];
 
@@ -21,13 +25,6 @@ interface ActiveRoomState {
 interface ActiveGameState {
   identityId: string;
   gameName: string;
-  nickname: string;
-  startedAt: number;
-}
-
-interface ActiveWorkState {
-  identityId: string;
-  workName: string;
   nickname: string;
   startedAt: number;
 }
@@ -83,7 +80,6 @@ const createEmptyReport = (roomId: DailyRoomId, date: string): DailyRoomReport =
   screenShareDurationMs: 0,
   games: [],
   gameActivities: [],
-  workActivities: [],
   participants: [],
 });
 
@@ -132,6 +128,53 @@ const normalizeCommentary = (value: string): string | undefined => {
 
 const isRichCommentary = (value: string | undefined): boolean =>
   Boolean(value && value.split(/\r?\n/).filter((line) => line.trim()).length >= 2);
+
+const sanitizeRecordingRecap = (value: unknown): DailyRoomRecordingRecap | undefined => {
+  if (!value || typeof value !== "object") return undefined;
+  const source = value as Partial<DailyRoomRecordingRecap>;
+  const recordingId =
+    typeof source.recordingId === "string" ? source.recordingId.slice(0, 180) : "";
+  const uploadedAt = typeof source.uploadedAt === "string" ? source.uploadedAt : "";
+  const description =
+    typeof source.description === "string" ? source.description.trim().slice(0, 800) : "";
+  if (!recordingId || !description || !Number.isFinite(Date.parse(uploadedAt))) return undefined;
+  const moments = (items: unknown, limit: number) =>
+    (Array.isArray(items) ? items : [])
+      .filter(
+        (item) =>
+          item &&
+          typeof item.title === "string" &&
+          typeof item.description === "string" &&
+          Number.isFinite(Number(item.startMs)) &&
+          Number.isFinite(Number(item.endMs)),
+      )
+      .map((item) => ({
+        title: String(item.title).trim().slice(0, 80),
+        description: String(item.description).trim().slice(0, 320),
+        startMs: Math.max(0, Number(item.startMs)),
+        endMs: Math.max(Number(item.startMs), Number(item.endMs)),
+      }))
+      .filter((item) => item.title && item.description)
+      .slice(0, limit);
+  return {
+    recordingId,
+    uploadedAt,
+    description,
+    summary: (Array.isArray(source.summary) ? source.summary : [])
+      .map((item) => String(item).trim().slice(0, 300))
+      .filter(Boolean)
+      .slice(0, 8),
+    highlights: moments(source.highlights, 8),
+    funnyMoments: moments(source.funnyMoments, 8),
+    participantNicknames: uniqueNicknames(
+      Array.isArray(source.participantNicknames) ? source.participantNicknames : [],
+    ).slice(0, 20),
+    keywords: (Array.isArray(source.keywords) ? source.keywords : [])
+      .map((item) => String(item).trim().slice(0, 40))
+      .filter(Boolean)
+      .slice(0, 24),
+  };
+};
 
 const sanitizeReport = (value: unknown, roomId: DailyRoomId, date: string): DailyRoomReport => {
   const source = value && typeof value === "object" ? (value as Partial<DailyRoomReport>) : {};
@@ -185,13 +228,17 @@ const sanitizeReport = (value: unknown, roomId: DailyRoomId, date: string): Dail
           }))
           .slice(0, 100)
       : [],
-    // Development activity is transient telemetry, not part of the user-facing room history.
-    workActivities: [],
     participants: Array.isArray(source.participants)
       ? source.participants
           .map(sanitizeParticipant)
           .filter((participant): participant is DailyRoomParticipantSummary => Boolean(participant))
           .slice(0, 100)
+      : [],
+    recordingRecaps: Array.isArray(source.recordingRecaps)
+      ? source.recordingRecaps
+          .map(sanitizeRecordingRecap)
+          .filter((recap): recap is DailyRoomRecordingRecap => Boolean(recap))
+          .slice(-6)
       : [],
     peakConcurrentAt:
       typeof source.peakConcurrentAt === "string" ? source.peakConcurrentAt : undefined,
@@ -211,7 +258,6 @@ export class DailyRoomReportStore {
   private readonly activeRooms = new Map<DailyRoomId, ActiveRoomState>();
   private readonly gamesByDay = new Map<string, Map<string, Set<string>>>();
   private readonly activeGames = new Map<string, ActiveGameState>();
-  private readonly activeWork = new Map<string, ActiveWorkState>();
   private readonly activeParticipants = new Map<string, ActiveParticipantState>();
   private readonly activeShares = new Map<string, ActiveShareState>();
   private writeQueue = Promise.resolve();
@@ -234,7 +280,6 @@ export class DailyRoomReportStore {
     this.closeActiveTime(roomId, now, false);
     this.closeActiveParticipants(roomId, now, false);
     this.closeActiveGames(roomId, now, false);
-    this.closeActiveWorks(roomId, now, false);
     this.closeActiveShares(roomId, now, false);
     const today = getShanghaiDate(now);
     return Array.from({ length: RETAIN_DAYS }, (_, index) => shiftShanghaiDate(today, -(index + 1)))
@@ -250,6 +295,36 @@ export class DailyRoomReportStore {
     report.commentary = commentary;
     this.touch(report, now);
     return true;
+  }
+
+  publishRecordingRecap(
+    roomIdValue: string,
+    date: string,
+    value: Omit<DailyRoomRecordingRecap, "uploadedAt">,
+    now = Date.now(),
+  ): { publishedAt: string; serverRevision: number } | undefined {
+    if (!isRoomId(roomIdValue) || !/^\d{4}-\d{2}-\d{2}$/.test(date)) return undefined;
+    const reportTimestamp = Date.parse(`${date}T12:00:00+08:00`);
+    const todayTimestamp = Date.parse(`${getShanghaiDate(now)}T12:00:00+08:00`);
+    const ageDays = Math.round((todayTimestamp - reportTimestamp) / 86_400_000);
+    if (!Number.isFinite(reportTimestamp) || ageDays < 0 || ageDays > RETAIN_DAYS) return undefined;
+    const publishedAt = new Date(now).toISOString();
+    const recap = sanitizeRecordingRecap({ ...value, uploadedAt: publishedAt });
+    if (!recap) return undefined;
+    const report = this.getMutableReport(roomIdValue, reportTimestamp);
+    report.recordingRecaps = [
+      ...(report.recordingRecaps ?? []).filter(
+        (candidate) => candidate.recordingId !== recap.recordingId,
+      ),
+      recap,
+    ].slice(-6);
+    const recapCommentary = normalizeCommentary(
+      [recap.description, ...recap.summary].filter(Boolean).slice(0, 3).join("\n"),
+    );
+    if (recapCommentary) report.commentary = recapCommentary;
+    report.hadActivity = true;
+    this.touch(report, now);
+    return { publishedAt, serverRevision: report.revision ?? 0 };
   }
 
   recordJoin(
@@ -305,7 +380,6 @@ export class DailyRoomReportStore {
     report.lastExit = { nickname: nickname.slice(0, 32), at: new Date(now).toISOString() };
     this.closeActiveParticipant(roomIdValue, identityId, now, true);
     this.closeActiveGame(roomIdValue, identityId, now, true);
-    this.closeActiveWork(roomIdValue, identityId, true);
     this.closeActiveShare(roomIdValue, identityId, now, true);
     const active = this.activeRooms.get(roomIdValue) ?? {
       count: concurrent,
@@ -407,43 +481,12 @@ export class DailyRoomReportStore {
     }
   }
 
-  recordWork(
-    roomIdValue: string,
-    identityId: string,
-    nickname: string,
-    workName: string | undefined,
-    now = Date.now(),
-  ): void {
-    if (!isRoomId(roomIdValue)) return;
-    const activeKey = `${roomIdValue}:${identityId}`;
-    const active = this.activeWork.get(activeKey);
-    const normalizedWorkName = workName?.trim().slice(0, 64) || undefined;
-    const normalizedNickname = nickname.trim().slice(0, 32) || "朋友";
-    if (active && active.workName === normalizedWorkName) {
-      active.nickname = normalizedNickname;
-      return;
-    }
-    // Close the room and participant clocks before changing the development state.
-    // Intervals covered entirely by a development app are excluded from room history.
-    this.closeActiveTime(roomIdValue, now, false);
-    this.closeActiveParticipant(roomIdValue, identityId, now, false);
-    if (active) this.closeActiveWork(roomIdValue, identityId, true);
-    if (!normalizedWorkName) return;
-    this.activeWork.set(activeKey, {
-      identityId,
-      workName: normalizedWorkName,
-      nickname: normalizedNickname,
-      startedAt: now,
-    });
-  }
-
   async flush(): Promise<void> {
     const now = Date.now();
     for (const roomId of ["main", "side"] as const) {
       this.closeActiveTime(roomId, now, true);
       this.closeActiveParticipants(roomId, now, true);
       this.closeActiveGames(roomId, now, true);
-      this.closeActiveWorks(roomId, now, true);
       this.closeActiveShares(roomId, now, true);
     }
     await this.writeQueue;
@@ -453,14 +496,6 @@ export class DailyRoomReportStore {
     for (const key of [...this.activeGames.keys()]) {
       if (key.startsWith(`${roomId}:`)) {
         this.closeActiveGame(roomId, key.slice(roomId.length + 1), now, stop);
-      }
-    }
-  }
-
-  private closeActiveWorks(roomId: DailyRoomId, now: number, stop: boolean): void {
-    for (const key of [...this.activeWork.keys()]) {
-      if (key.startsWith(`${roomId}:`)) {
-        this.closeActiveWork(roomId, key.slice(roomId.length + 1), stop);
       }
     }
   }
@@ -489,12 +524,7 @@ export class DailyRoomReportStore {
       const segmentEnd = Math.min(now, Date.parse(`${nextDate}T00:00:00+08:00`));
       const report = this.getMutableReport(roomId, cursor);
       const participant = this.getParticipant(report, identityId, active.nickname, cursor);
-      const activeWork = this.activeWork.get(key);
-      const billableEnd =
-        activeWork && activeWork.startedAt < segmentEnd
-          ? Math.min(segmentEnd, Math.max(cursor, activeWork.startedAt))
-          : segmentEnd;
-      participant.presenceDurationMs += Math.max(0, billableEnd - cursor);
+      participant.presenceDurationMs += Math.max(0, segmentEnd - cursor);
       if (stop && segmentEnd === now) participant.lastExitAt = new Date(now).toISOString();
       report.hadActivity = true;
       this.touch(report, segmentEnd);
@@ -580,13 +610,6 @@ export class DailyRoomReportStore {
     this.queueWrite();
   }
 
-  private closeActiveWork(roomId: DailyRoomId, identityId: string, stop: boolean): void {
-    const key = `${roomId}:${identityId}`;
-    const active = this.activeWork.get(key);
-    if (!active) return;
-    if (stop) this.activeWork.delete(key);
-  }
-
   private getMutableReport(roomId: DailyRoomId, now: number): DailyRoomReport {
     const date = getShanghaiDate(now);
     const roomReports = (this.reports.rooms[roomId] ??= {});
@@ -638,30 +661,11 @@ export class DailyRoomReportStore {
       const nextDate = shiftShanghaiDate(date, 1);
       const midnight = Date.parse(`${nextDate}T00:00:00+08:00`);
       const segmentEnd = Math.min(now, midnight);
-      const workBoundaries = [...active.participants.keys()]
-        .map((identityId) => this.activeWork.get(`${roomId}:${identityId}`)?.startedAt)
-        .filter(
-          (startedAt): startedAt is number =>
-            startedAt !== undefined && startedAt > cursor && startedAt < segmentEnd,
-        );
-      const boundaries = [...new Set([cursor, ...workBoundaries, segmentEnd])].sort(
-        (left, right) => left - right,
-      );
-      for (let index = 0; index < boundaries.length - 1; index += 1) {
-        const start = boundaries[index]!;
-        const end = boundaries[index + 1]!;
-        const developmentOnly =
-          active.participants.size > 0 &&
-          [...active.participants.keys()].every((identityId) => {
-            const work = this.activeWork.get(`${roomId}:${identityId}`);
-            return Boolean(work && work.startedAt <= start);
-          });
-        const report = this.getMutableReport(roomId, start);
-        if (!developmentOnly) report.activeDurationMs += Math.max(0, end - start);
-        report.hadActivity = true;
-        report.peakConcurrent = Math.max(report.peakConcurrent, active.count);
-        this.addParticipants(roomId, getShanghaiDate(start), active.participants);
-      }
+      const report = this.getMutableReport(roomId, cursor);
+      report.activeDurationMs += Math.max(0, segmentEnd - cursor);
+      report.hadActivity = true;
+      report.peakConcurrent = Math.max(report.peakConcurrent, active.count);
+      this.addParticipants(roomId, getShanghaiDate(cursor), active.participants);
       cursor = segmentEnd;
     }
     active.activeSince = stop ? undefined : now;

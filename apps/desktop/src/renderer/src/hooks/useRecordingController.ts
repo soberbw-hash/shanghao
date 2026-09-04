@@ -9,6 +9,7 @@ import {
   LOCAL_RECORDING_SOURCE_KEY,
   type RecordingSourceIdentity,
 } from "../features/recording/mixRoomAudio";
+import { getRemoteAudioMixer } from "../features/audio/RemoteAudioMixer";
 import { useRecordingStore } from "../store/recordingStore";
 import { useRoomStore } from "../store/roomStore";
 import { writeRendererLog } from "../utils/logger";
@@ -128,6 +129,7 @@ export const useRecordingController = () => {
     const roomState = useRoomStore.getState();
     runtime.mix = createMixedCallStream(roomState.localStream, roomState.remoteStreams, {
       loudnessBalanceEnabled: true,
+      finalRemotePlaybackStream: getRemoteAudioMixer().getFinalOutputStream(),
       sourceIdentities: recordingSourceIdentities(),
       onDiagnostic: (event, context) => {
         void writeRendererLog("recording", "info", event, context);

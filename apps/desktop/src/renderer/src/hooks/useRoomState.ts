@@ -1,10 +1,13 @@
-import { useCallback, useEffect } from "react";
+import { useCallback, useEffect, useRef } from "react";
 
 import {
   DEFAULT_CHANNEL_ID,
   APP_BUILD_NUMBER,
   APP_PROTOCOL_VERSION,
+  DEFAULT_QUICK_MESSAGE_MUSIC_SLOTS,
+  DEFAULT_QUICK_MESSAGE_SLOTS,
   findQuickMessagePreset,
+  normalizeQuickMessageSlots,
   MemberSpeakingState,
   RoomConnectionState,
   RoomLifecycleState,
@@ -58,6 +61,7 @@ import {
 } from "../features/room/roomNotifications";
 import { useRoomDeepLink } from "../features/room/useRoomDeepLink";
 import { useAppStore } from "../store/appStore";
+import { useAccountStore } from "../store/accountStore";
 import { useAudioStore } from "../store/audioStore";
 import { useRoomStore } from "../store/roomStore";
 import { useSettingsStore } from "../store/settingsStore";
@@ -73,6 +77,8 @@ let previousMemberIds = new Set<string>();
 const CHANNEL_IDS = new Set<ChannelId>(["main", "side"]);
 let lastQuickMessageSentAt = 0;
 let lastQuickMessageCooldownMs = 3_000;
+type QuickMessageShortcutHandler = (slotIndex: number) => void;
+let activeQuickMessageShortcutHandler: QuickMessageShortcutHandler | undefined;
 const ROUTINE_SIGNAL_MESSAGE_TYPES = new Set([
   "audio_chunk",
   "member_state",
@@ -83,6 +89,10 @@ const ROUTINE_SIGNAL_MESSAGE_TYPES = new Set([
 export const getRoomRuntimeDiagnostics = () => activeClient?.getDiagnostics();
 
 export const retryActiveRoomConnection = (): boolean => activeClient?.retryReconnect() ?? false;
+
+export const dispatchQuickMessageShortcut = (slotIndex: number): void => {
+  activeQuickMessageShortcutHandler?.(slotIndex);
+};
 
 export const injectRealtimeFault = async (command: RealtimeFaultCommand): Promise<void> => {
   if (!activeClient) throw new Error("fault_lab_room_client_unavailable");
@@ -273,7 +283,6 @@ export const useRoomState = () => {
       localMember?.gameName,
       localMember?.musicActivity,
       localMember?.gameIconDataUrl,
-      localMember?.workActivity,
     );
   }, [isDeafened, isMuted, updateLocalPresence]);
 
@@ -424,17 +433,23 @@ export const useRoomState = () => {
     const stream = await ensureLocalStream(undefined, { reuseExisting: reuseLocalMedia });
     const peerId = crypto.randomUUID();
     activePeerId = peerId;
-    const profileId = currentSettings?.profileId || crypto.randomUUID();
+    const localProfileId = currentSettings?.profileId || crypto.randomUUID();
     if (currentSettings && !currentSettings.profileId) {
-      await useSettingsStore.getState().saveSettings({ profileId });
+      await useSettingsStore.getState().saveSettings({ profileId: localProfileId });
     }
+    const accountSnapshot = useAccountStore.getState().snapshot;
+    // Signed-in identity is derived from the verified access token. Omitting the
+    // provider-specific id keeps current clients compatible with older relays
+    // that only accepted UUID-shaped profile ids. Guests still send the stable
+    // local profile id because they have no authenticated server identity.
+    const signalingProfileId = accountSnapshot.status === "signed_in" ? undefined : localProfileId;
     const roomName = currentSettings?.roomName ?? room.roomName;
 
     activeClient = new RoomClient({
       signalingUrl: serverUrl,
       roomId: channelId,
       peerId,
-      profileId,
+      profileId: signalingProfileId,
       nickname: currentSettings?.nickname || "我",
       avatarDataUrl: undefined,
       avatarId: currentSettings?.avatarId,
@@ -762,7 +777,6 @@ export const useRoomState = () => {
       localMember?.gameName,
       localMember?.musicActivity,
       localMember?.gameIconDataUrl,
-      localMember?.workActivity,
     );
     playUiSound("enter-room");
     setRoom({
@@ -821,7 +835,6 @@ export const useRoomState = () => {
         level: "info",
         message: `正在进入${channelId === "main" ? "一号房" : "二号房"}`,
       });
-
       try {
         const reuseLocalMedia = Boolean(
           activeClient &&
@@ -832,23 +845,27 @@ export const useRoomState = () => {
         await cleanupPreviousSession({ preserveLocalMedia: reuseLocalMedia });
         clearChannelContent();
         const readChatHistory = window.desktopApi?.app?.readChatHistory;
-        const cachedMessages =
+        const chatHistoryPromise =
           typeof readChatHistory === "function"
-            ? await readChatHistory({ serverUrl, channelId }).catch((error) => {
+            ? readChatHistory({ serverUrl, channelId }).catch((error) => {
                 void writeRendererLog("app", "warn", "Failed to restore local chat history", {
                   channelId,
                   error: error instanceof Error ? error.message : String(error),
                 });
                 return [];
               })
-            : [];
-        mergeChatHistory(cachedMessages);
-        await writeRendererLog("signaling", "info", "Joining fixed channel", {
+            : Promise.resolve([]);
+        void writeRendererLog("signaling", "info", "Joining fixed channel", {
           serverUrl,
           channelId,
         });
         await connectToFixedChannel(serverUrl, channelId, { reuseLocalMedia });
+        // Keep the entry page visible until microphone acquisition, authorization,
+        // join acknowledgement and the first room snapshot have all succeeded.
+        // A failed device check must never flash the room shell before returning.
         useAppStore.getState().navigate("room");
+        const cachedMessages = await chatHistoryPromise;
+        mergeChatHistory(cachedMessages);
       } catch (error) {
         if (error instanceof Error && error.message === "CLIENT_UPDATE_REQUIRED") {
           await cleanupPreviousSession();
@@ -862,6 +879,7 @@ export const useRoomState = () => {
           ...activeClient?.getDiagnostics(),
         });
         await cleanupPreviousSession();
+        useAppStore.getState().navigate("home");
         setConnectionState(RoomConnectionState.Failed, description);
         setRoom({
           lifecycleState: RoomLifecycleState.Failed,
@@ -1214,24 +1232,42 @@ export const useRoomState = () => {
     await activeClient.sendSceneReaction(targetPeerId, "👍");
   };
 
-  useEffect(() => {
-    const unsubscribe = window.desktopApi.shortcuts.onQuickMessageTriggered((slotIndex) => {
-      const currentSettings = useSettingsStore.getState().settings;
-      const slot =
-        slotIndex < 5
-          ? currentSettings?.quickMessages.slots[slotIndex]
-          : currentSettings?.quickMessages.musicSlots[slotIndex - 5];
-      if (!slot?.enabled || !slot.presetId) return;
-      void sendConfiguredQuickMessage(slot.presetId).catch(() => {
-        pushToast({
-          tone: "warning",
-          title: "快捷消息没有发出去",
-          description: "进入房间后才能使用快捷键发送。",
-        });
+  const quickMessageShortcutHandlerRef = useRef<QuickMessageShortcutHandler>(() => undefined);
+  quickMessageShortcutHandlerRef.current = (slotIndex) => {
+    const currentSettings = useSettingsStore.getState().settings;
+    if (!currentSettings) return;
+    const voiceSlots = normalizeQuickMessageSlots(
+      currentSettings?.quickMessages.slots,
+      DEFAULT_QUICK_MESSAGE_SLOTS,
+      DEFAULT_QUICK_MESSAGE_SLOTS.length,
+    );
+    const musicSlots = normalizeQuickMessageSlots(
+      currentSettings?.quickMessages.musicSlots,
+      DEFAULT_QUICK_MESSAGE_MUSIC_SLOTS,
+      DEFAULT_QUICK_MESSAGE_MUSIC_SLOTS.length,
+    );
+    const slot = slotIndex < voiceSlots.length ? voiceSlots[slotIndex] : musicSlots[slotIndex - 5];
+    if (!slot?.enabled || !slot.presetId) return;
+    void sendConfiguredQuickMessage(slot.presetId).catch(() => {
+      pushToast({
+        tone: "warning",
+        title: "快捷消息没有发出去",
+        description: "进入房间后才能使用快捷键发送。",
       });
     });
-    return unsubscribe;
-  }, [pushToast]);
+  };
+
+  useEffect(() => {
+    const handler: QuickMessageShortcutHandler = (slotIndex) => {
+      quickMessageShortcutHandlerRef.current(slotIndex);
+    };
+    activeQuickMessageShortcutHandler = handler;
+    return () => {
+      if (activeQuickMessageShortcutHandler === handler) {
+        activeQuickMessageShortcutHandler = undefined;
+      }
+    };
+  }, []);
 
   useEffect(
     () =>
@@ -1272,7 +1308,6 @@ export const useRoomState = () => {
     gameName?: string,
     musicActivity?: RoomMember["musicActivity"],
     gameIconDataUrl?: string,
-    workActivity?: RoomMember["workActivity"],
   ) => {
     if (sceneZone === "restroomZone") {
       useAudioStore.getState().setMuted(true);
@@ -1284,7 +1319,6 @@ export const useRoomState = () => {
       gameName,
       gameIconDataUrl,
       musicActivity,
-      workActivity,
     });
     activeClient?.updatePresenceState(
       isDeafened,
@@ -1293,14 +1327,12 @@ export const useRoomState = () => {
       gameName,
       musicActivity,
       gameIconDataUrl,
-      workActivity,
     );
     void writeRendererLog("app", "info", "Local member moved in scene", {
       sceneZone,
       activity,
       gameName,
       musicProvider: musicActivity?.provider,
-      workApp: workActivity?.id,
     });
   };
 

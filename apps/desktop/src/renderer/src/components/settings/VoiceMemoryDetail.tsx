@@ -1,36 +1,31 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   BrainCircuit,
-  ChevronDown,
-  Eye,
+  Check,
   FileText,
   Pause,
   Play,
   RotateCcw,
   Sparkles,
+  Upload,
 } from "lucide-react";
 
 import {
   AI_ASR_MODEL_NAMES,
+  buildReadableTranscriptParagraphs,
   hasInvalidVoiceMemoryResult,
-  mergeTranscriptIntoSentences,
   type AiAsrModelId,
-  type AiModelStatus,
   type RecordingLibraryItem,
   type VoiceMemoryRecord,
 } from "@private-voice/shared";
 
-import {
-  shouldActivateVoiceMemoryVariant,
-  voiceMemoryTranscriptionPercent,
-} from "../../features/ai/voiceMemoryPresentation";
+import { voiceMemoryTranscriptionPercent } from "../../features/ai/voiceMemoryPresentation";
 import { playUiSound } from "../../features/audio/uiSound";
 
 interface VoiceMemoryDetailProps {
   recording: RecordingLibraryItem;
   roomName: string;
   selectedAsrModel: AiAsrModelId;
-  onSelectAsrModel: (modelId: AiAsrModelId) => Promise<void> | void;
   onSeek: (offsetMs: number) => void;
 }
 
@@ -44,8 +39,16 @@ const clock = (offsetMs: number): string => {
     : `${minutes}:${String(rest).padStart(2, "0")}`;
 };
 
-const formatTranscriptionElapsed = (milliseconds?: number): string | undefined =>
-  milliseconds === undefined ? undefined : `${(Math.max(0, milliseconds) / 1_000).toFixed(1)} 秒`;
+const formatElapsed = (milliseconds?: number): string => {
+  if (milliseconds === undefined) return "—";
+  if (milliseconds < 1_000) return `${Math.round(milliseconds)} ms`;
+  const seconds = milliseconds / 1_000;
+  if (seconds < 60) return `${seconds.toFixed(1)} 秒`;
+  return `${Math.floor(seconds / 60)} 分 ${Math.round(seconds % 60)} 秒`;
+};
+
+const formatMemory = (megabytes?: number): string =>
+  megabytes === undefined ? "—" : `${(megabytes / 1_024).toFixed(1)} GB`;
 
 const DEFAULT_ASR_MODEL_ID: AiAsrModelId = "qwen3-asr-0.6b-force";
 
@@ -135,6 +138,13 @@ const describeError = (message: string, transcriptionFinished: boolean): string 
   }
   if (message.includes("ai_task_paused")) return "任务已暂停，需要时可以继续处理。";
   if (message.includes("voice_memory_transcript_required")) return "请先完成转录，再整理内容。";
+  if (message.includes("recording_recap_join_matching_room"))
+    return "请先进入这条录音对应的房间，再上传整理结果。";
+  if (message.includes("recording_recap_join_required"))
+    return "请先进入一号房或二号房，再上传整理结果。";
+  if (message.includes("recording_recap_unsupported"))
+    return "当前房间服务器版本较旧，暂时不能接收整理结果。";
+  if (message.includes("recording_recap")) return "上传没有完成，请检查房间连接后重试。";
   if (message.includes("organize_failed") || message.includes("ai_runtime_timeout")) {
     return "转录文字已经保留，内容整理没有完成；你仍然可以直接查看文字，稍后再点重新整理。";
   }
@@ -149,36 +159,25 @@ export const VoiceMemoryDetail = ({
   recording,
   roomName,
   selectedAsrModel,
-  onSelectAsrModel,
   onSeek,
 }: VoiceMemoryDetailProps) => {
   const [record, setRecord] = useState<VoiceMemoryRecord>();
-  const [asrModels, setAsrModels] = useState<AiModelStatus[]>([]);
   const [busy, setBusy] = useState(false);
+  const [publishing, setPublishing] = useState(false);
   const [queuedAction, setQueuedAction] = useState<"transcribe" | "organize">();
   const [error, setError] = useState<string>();
   const [speakerNames, setSpeakerNames] = useState<Record<string, string>>({});
-  const [detailsOpen, setDetailsOpen] = useState(false);
-  const variantSelectionRef = useRef<string | undefined>(undefined);
   const previousPhaseRef = useRef<VoiceMemoryRecord["phase"] | undefined>(undefined);
 
   useEffect(() => {
     let active = true;
     setRecord(undefined);
     setQueuedAction(undefined);
-    setDetailsOpen(false);
     previousPhaseRef.current = undefined;
     void window.desktopApi.ai.getVoiceMemory(recording.recordingId).then((value) => {
       if (!active) return;
       previousPhaseRef.current = value?.phase;
       setRecord(value);
-      setDetailsOpen(
-        (value?.phase === "transcribing" ||
-          value?.phase === "organizing" ||
-          value?.phase === "ready" ||
-          Boolean(value?.transcript.length)) &&
-          !(value && hasInvalidVoiceMemoryResult(value)),
-      );
     });
     const unsubscribe = window.desktopApi.ai.onVoiceMemoryStatus((value) => {
       if (active && value.recordingId === recording.recordingId) {
@@ -190,7 +189,6 @@ export const VoiceMemoryDetail = ({
         }
         previousPhaseRef.current = value.phase;
         setRecord(value);
-        if (value.phase === "transcribing" || value.phase === "organizing") setDetailsOpen(true);
         if (
           value.phase === "transcribing" ||
           value.phase === "organizing" ||
@@ -208,76 +206,14 @@ export const VoiceMemoryDetail = ({
     };
   }, [recording.filePath, recording.recordingId]);
 
-  useEffect(() => {
-    let active = true;
-    void window.desktopApi.ai
-      .getSnapshot()
-      .then((snapshot) => {
-        if (!active) return;
-        setAsrModels(snapshot.models.filter((model) => model.category === "asr"));
-      })
-      .catch(() => undefined);
-    return () => {
-      active = false;
-    };
-  }, []);
-
-  const fallbackAsrModel = asrModels.find((model) => isKnownAsrModelId(model.id))?.id as
-    AiAsrModelId | undefined;
   const effectiveSelectedAsrModel = isKnownAsrModelId(selectedAsrModel)
     ? selectedAsrModel
-    : (fallbackAsrModel ?? DEFAULT_ASR_MODEL_ID);
-
-  useEffect(() => {
-    if (isKnownAsrModelId(selectedAsrModel) || !fallbackAsrModel) return;
-    void onSelectAsrModel(fallbackAsrModel);
-  }, [fallbackAsrModel, onSelectAsrModel, selectedAsrModel]);
-
-  const selectedVariantUpdatedAt =
-    record?.transcriptionVariants?.[effectiveSelectedAsrModel]?.updatedAt;
-
-  useEffect(() => {
-    if (!shouldActivateVoiceMemoryVariant(record, effectiveSelectedAsrModel)) return;
-    const selectionKey = `${recording.recordingId}:${effectiveSelectedAsrModel}:${selectedVariantUpdatedAt ?? "saved"}`;
-    if (variantSelectionRef.current === selectionKey) return;
-    variantSelectionRef.current = selectionKey;
-    let active = true;
-    setBusy(true);
-    setError(undefined);
-    void window.desktopApi.ai
-      .selectTranscription(recording.recordingId, effectiveSelectedAsrModel)
-      .then((next) => {
-        if (!active) return;
-        setRecord(next);
-        setDetailsOpen(true);
-      })
-      .catch((cause) => {
-        if (!active) return;
-        setError(cause instanceof Error ? cause.message : "切换转录结果失败");
-      })
-      .finally(() => {
-        if (variantSelectionRef.current === selectionKey) {
-          variantSelectionRef.current = undefined;
-        }
-        if (active) setBusy(false);
-      });
-    return () => {
-      active = false;
-    };
-  }, [
-    record,
-    record?.phase,
-    record?.transcriptionModel?.id,
-    recording.recordingId,
-    effectiveSelectedAsrModel,
-    selectedVariantUpdatedAt,
-  ]);
+    : DEFAULT_ASR_MODEL_ID;
 
   const process = async (action: "transcribe" | "organize") => {
     setBusy(true);
     setQueuedAction(action);
     setError(undefined);
-    setDetailsOpen(true);
     try {
       const accepted = await window.desktopApi.ai.processRecording({
         recordingId: recording.recordingId,
@@ -309,7 +245,6 @@ export const VoiceMemoryDetail = ({
     setBusy(true);
     setQueuedAction(record?.processingStage === "organize" ? "organize" : "transcribe");
     setError(undefined);
-    setDetailsOpen(true);
     try {
       setRecord(await window.desktopApi.ai.resumeTask(recording.recordingId));
     } catch (cause) {
@@ -317,6 +252,19 @@ export const VoiceMemoryDetail = ({
       setError(cause instanceof Error ? cause.message : "AI 处理失败");
     } finally {
       setBusy(false);
+    }
+  };
+
+  const publishOrganization = async () => {
+    if (publishing || record?.organization?.status !== "completed") return;
+    setPublishing(true);
+    setError(undefined);
+    try {
+      setRecord(await window.desktopApi.ai.publishOrganization(recording.recordingId));
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "上传整理结果失败");
+    } finally {
+      setPublishing(false);
     }
   };
 
@@ -336,26 +284,23 @@ export const VoiceMemoryDetail = ({
     }
   };
 
-  const selectModel = async (modelId: AiAsrModelId) => {
-    if (modelId === effectiveSelectedAsrModel) return;
-    setBusy(true);
-    setError(undefined);
-    try {
-      await onSelectAsrModel(modelId);
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "切换转录模型失败");
-    } finally {
-      setBusy(false);
-    }
-  };
-
   const invalidTranscript = useMemo(
     () => Boolean(record && hasInvalidVoiceMemoryResult(record)),
     [record],
   );
-  const readableTranscript = useMemo(
-    () => mergeTranscriptIntoSentences(record?.transcript ?? []),
+  const displayParagraphs = useMemo(
+    () => buildReadableTranscriptParagraphs(record?.transcript ?? []),
     [record?.transcript],
+  );
+  const knownSpeakerNames = useMemo(
+    () =>
+      new Map(
+        (record?.speakers ?? []).flatMap((speaker) => {
+          const name = speaker.nickname?.trim() || speaker.displayNameSnapshot?.trim();
+          return name ? [[speaker.speakerId, name] as const] : [];
+        }),
+      ),
+    [record?.speakers],
   );
 
   if (!record) {
@@ -381,11 +326,20 @@ export const VoiceMemoryDetail = ({
     );
   }
 
-  const working = record.phase === "transcribing" || record.phase === "organizing";
+  const processing = record.phase === "transcribing" || record.phase === "organizing";
+  const isModelComparisonTask = record.taskId?.startsWith("model-comparison:") === true;
+  const comparisonOwnsTask =
+    isModelComparisonTask &&
+    (record.phase === "transcribing" ||
+      record.phase === "paused" ||
+      record.taskStatus === "processing" ||
+      record.taskStatus === "pending");
+  const working = processing && !comparisonOwnsTask;
   const transcriptionFinished = record.transcript.length > 0 && !invalidTranscript;
   const organizationFailed = record.errorMessage?.startsWith("organize_failed:") === true;
   const pausedOrganization = record.phase === "paused" && record.processingStage === "organize";
   const resumableTranscription =
+    !comparisonOwnsTask &&
     record.processingStage !== "organize" &&
     (record.phase === "paused" || (record.phase === "error" && transcriptionFinished));
   const hasMultipleSpeakers = record.speakers.length > 1;
@@ -393,89 +347,41 @@ export const VoiceMemoryDetail = ({
     ? record.speakers.filter((speaker) => speaker.confidence === "pending")
     : [];
   const displayProgress =
-    record.phase === "transcribing" ||
-    (record.phase === "paused" && record.processingStage !== "organize")
+    record.processingStage !== "organize" &&
+    (record.transcriptionStats || record.phase === "transcribing" || record.phase === "paused")
       ? voiceMemoryTranscriptionPercent(record)
       : record.progress;
-  const transcriptionModelLabel =
-    record.transcriptionModel?.name ??
-    (record.transcript.length > 0 ? "历史记录 · 模型未知" : undefined);
-  const transcriptionModelTitle = record.transcriptionModel
-    ? `转录模型：${record.transcriptionModel.name}${record.transcriptionModel.version ? `\n版本：${record.transcriptionModel.version}` : ""}`
-    : "这条历史转录没有保存模型信息";
-  const selectedModelDiffers = Boolean(effectiveSelectedAsrModel !== record.transcriptionModel?.id);
+  const organization = record.organization;
+  const organizationMetrics = organization?.metrics;
+  const organizationProgress = organization?.chunks.length
+    ? Math.round((organization.completedChunks / organization.chunks.length) * 100)
+    : 0;
+  const organizationStatus = organization
+    ? organization.status === "completed"
+      ? "整理完成"
+      : organization.status === "running"
+        ? `正在整理 ${organizationProgress}%`
+        : organization.status === "paused"
+          ? `整理已暂停 ${organizationProgress}%`
+          : organization.status === "failed"
+            ? `整理未完成 ${organizationProgress}%`
+            : "等待整理"
+    : undefined;
   return (
     <section className="voice-memory-detail" aria-label="AI 语音记忆">
       <header>
-        <div>
+        <div className="voice-memory-title">
           <Sparkles aria-hidden="true" />
           <strong>语音记忆</strong>
-          {transcriptionModelLabel ? (
-            <span className="voice-memory-model-badge" title={transcriptionModelTitle}>
-              转录模型 · {transcriptionModelLabel}
-            </span>
-          ) : null}
-          {record.transcriptionElapsedMs !== undefined ? (
-            <span className="voice-memory-model-badge">
-              转录耗时 · {formatTranscriptionElapsed(record.transcriptionElapsedMs)}
-            </span>
-          ) : null}
         </div>
-        <span>
-          {working
-            ? `${record.phase === "transcribing" ? "正在转录" : "正在整理"} ${displayProgress}%`
-            : queuedAction
-              ? "排队中"
-              : record.phase === "ready"
-                ? invalidTranscript
-                  ? "未识别到可靠语音"
-                  : record.errorMessage?.startsWith("organize_failed:")
-                    ? "转录完成 · 整理未完成"
-                    : record.organizedAt
-                      ? "已整理"
-                      : "转录完成"
-                : record.phase === "error" && transcriptionFinished
-                  ? record.processingStage === "organize"
-                    ? "转录完成 · 整理失败"
-                    : "已保留当前文字 · 可继续"
-                  : record.phase === "paused"
-                    ? pausedOrganization
-                      ? "整理已暂停"
-                      : `已暂停 ${displayProgress}%`
-                    : "待处理"}
-        </span>
-        <label className="voice-memory-model-picker">
-          <span>转录模型</span>
-          <select
-            value={effectiveSelectedAsrModel}
-            disabled={working || busy}
-            aria-label="选择转录模型"
-            onChange={(event) => void selectModel(event.target.value as AiAsrModelId)}
-          >
-            {asrModels.map((model) => {
-              const installed = Boolean(model.activeRevision && model.runtimeReady);
-              const saved = Boolean(record.transcriptionVariants?.[model.id as AiAsrModelId]);
-              return (
-                <option key={model.id} value={model.id} disabled={!installed && !saved}>
-                  {AI_ASR_MODEL_NAMES[model.id as AiAsrModelId]}
-                  {saved ? " · 已有结果" : installed ? "" : " · 未安装"}
-                </option>
-              );
-            })}
-          </select>
-        </label>
-        {record.transcript.length > 0 && !invalidTranscript ? (
-          <button
-            type="button"
-            className="voice-memory-quiet-action"
-            aria-expanded={detailsOpen}
-            onClick={() => setDetailsOpen((open) => !open)}
-          >
-            {detailsOpen ? <ChevronDown /> : <Eye />}
-            {detailsOpen ? "收起内容" : "查看转录"}
-          </button>
-        ) : null}
-        {working ? (
+        {comparisonOwnsTask ? (
+          <div className="voice-memory-header-actions">
+            <button type="button" className="voice-memory-quiet-action" disabled>
+              <Play />
+              请在模型对比页面继续
+            </button>
+          </div>
+        ) : working ? (
           <button
             type="button"
             onClick={() => void window.desktopApi.ai.pauseTask(record.recordingId)}
@@ -497,9 +403,7 @@ export const VoiceMemoryDetail = ({
                 : resumableTranscription
                   ? "继续转录"
                   : transcriptionFinished
-                    ? selectedModelDiffers
-                      ? "用此模型转录"
-                      : "重新转录"
+                    ? "重新转录"
                     : "开始转录"}
             </button>
             <button
@@ -520,7 +424,7 @@ export const VoiceMemoryDetail = ({
           </div>
         )}
       </header>
-      {working ? (
+      {processing ? (
         <div className={`voice-memory-working is-${record.phase}`}>
           <div className="voice-memory-audio-trajectory" aria-hidden="true">
             {Array.from({ length: 16 }, (_, index) => (
@@ -552,7 +456,109 @@ export const VoiceMemoryDetail = ({
         </p>
       ) : null}
 
-      {detailsOpen && !invalidTranscript && pendingSpeakers.length ? (
+      {organization ? (
+        <div className={`voice-memory-organization is-${organization.status}`}>
+          <div className="voice-memory-organization-overview">
+            <div>
+              <strong>{organizationStatus}</strong>
+              <span>
+                Qwen3.6-35B-A3B NVFP4 · {organization.completedChunks}/{organization.chunks.length}{" "}
+                块
+              </span>
+            </div>
+            {organization.status === "completed" ? (
+              <button
+                type="button"
+                className="voice-memory-publish-action"
+                disabled={publishing || record.organizationPublication?.status === "published"}
+                title="点击后才会把整理摘要上传到房间服务器"
+                onClick={() => void publishOrganization()}
+              >
+                {record.organizationPublication?.status === "published" ? (
+                  <Check aria-hidden="true" />
+                ) : (
+                  <Upload aria-hidden="true" />
+                )}
+                {record.organizationPublication?.status === "published"
+                  ? "已上传"
+                  : publishing
+                    ? "上传中…"
+                    : "上传服务器"}
+              </button>
+            ) : null}
+            {organization.finalResult?.participants.length ? (
+              <div className="voice-memory-speaking-share" aria-label="说话占比">
+                {organization.finalResult.participants.map((participant) => (
+                  <span key={participant.speakerId}>
+                    {participant.nickname ??
+                      knownSpeakerNames.get(participant.speakerId) ??
+                      participant.speakerId}
+                    <b>{participant.speakingSharePercent ?? 0}%</b>
+                  </span>
+                ))}
+              </div>
+            ) : null}
+          </div>
+          {organizationMetrics ? (
+            <details className="voice-memory-organization-metrics">
+              <summary>本次本地整理性能</summary>
+              <dl>
+                <div>
+                  <dt>FreeToken</dt>
+                  <dd>{organizationMetrics.providerVersion ?? "版本待回报"}</dd>
+                </div>
+                <div>
+                  <dt>模型加载</dt>
+                  <dd>{formatElapsed(organizationMetrics.modelLoadTimeMs)}</dd>
+                </div>
+                <div>
+                  <dt>输入 / 输出</dt>
+                  <dd>
+                    {organizationMetrics.inputTokens.toLocaleString()} /{" "}
+                    {organizationMetrics.outputTokens.toLocaleString()} token
+                  </dd>
+                </div>
+                <div>
+                  <dt>首字等待</dt>
+                  <dd>{formatElapsed(organizationMetrics.ttftMs)}</dd>
+                </div>
+                <div>
+                  <dt>Prefill</dt>
+                  <dd>{formatElapsed(organizationMetrics.prefillTimeMs)}</dd>
+                </div>
+                <div>
+                  <dt>生成速度</dt>
+                  <dd>
+                    {organizationMetrics.outputTokensPerSecond === undefined
+                      ? "—"
+                      : `${organizationMetrics.outputTokensPerSecond.toFixed(1)} token/s`}
+                  </dd>
+                </div>
+                <div>
+                  <dt>总耗时</dt>
+                  <dd>{formatElapsed(organizationMetrics.totalElapsedMs)}</dd>
+                </div>
+                <div title="优先读取 FreeToken 引擎显存；引擎未提供时才使用 Windows WDDM 启动前后增量">
+                  <dt>峰值显存</dt>
+                  <dd>{formatMemory(organizationMetrics.peakVramMb)}</dd>
+                </div>
+                <div>
+                  <dt>峰值内存</dt>
+                  <dd>{formatMemory(organizationMetrics.peakRamMb)}</dd>
+                </div>
+                <div>
+                  <dt>重试 / OOM</dt>
+                  <dd>
+                    {organizationMetrics.retryCount} / {organizationMetrics.oomCount}
+                  </dd>
+                </div>
+              </dl>
+            </details>
+          ) : null}
+        </div>
+      ) : null}
+
+      {!invalidTranscript && pendingSpeakers.length ? (
         <div className="voice-memory-speakers">
           <h4>确认说话人</h4>
           {pendingSpeakers.map((speaker) => (
@@ -583,7 +589,7 @@ export const VoiceMemoryDetail = ({
         </div>
       ) : null}
 
-      {detailsOpen && !invalidTranscript && record.timeline.length ? (
+      {!invalidTranscript && record.timeline.length ? (
         <div className="voice-memory-timeline">
           {record.timeline.map((item) => (
             <button type="button" key={item.id} onClick={() => onSeek(item.offsetMs)}>
@@ -593,22 +599,23 @@ export const VoiceMemoryDetail = ({
           ))}
         </div>
       ) : null}
-      {detailsOpen && !invalidTranscript && readableTranscript.length ? (
+      {!invalidTranscript && displayParagraphs.length ? (
         <div className="voice-memory-transcript">
-          <h4>转录</h4>
-          {readableTranscript.map((segment) => (
-            <button type="button" key={segment.id} onClick={() => onSeek(segment.startMs)}>
-              <time>{clock(segment.startMs)}</time>
+          {displayParagraphs.map((paragraph) => (
+            <button type="button" key={paragraph.id} onClick={() => onSeek(paragraph.startMs)}>
+              <time>{clock(paragraph.startMs)}</time>
               <strong>
-                {segment.nickname ??
-                  (hasMultipleSpeakers ? `${segment.speakerId}（待确认）` : "说话人")}
+                {paragraph.nickname ??
+                  paragraph.displayNameSnapshot ??
+                  knownSpeakerNames.get(paragraph.speakerId) ??
+                  (hasMultipleSpeakers ? `${paragraph.speakerId}（待确认）` : "说话人")}
               </strong>
-              <span>{segment.text}</span>
+              <span>{paragraph.text}</span>
             </button>
           ))}
         </div>
       ) : null}
-      {detailsOpen && !invalidTranscript && record.highlights.length ? (
+      {!invalidTranscript && record.highlights.length ? (
         <div className="voice-memory-highlights">
           <h4>精彩片段</h4>
           {record.highlights.map((item) => (
@@ -621,7 +628,7 @@ export const VoiceMemoryDetail = ({
           ))}
         </div>
       ) : null}
-      {detailsOpen && !invalidTranscript && record.summary.length ? (
+      {!invalidTranscript && record.summary.length ? (
         <div className="voice-memory-summary">
           <h4>今晚聊了什么</h4>
           {record.summary.map((item, index) => (

@@ -8,14 +8,11 @@ import {
   buildGameDetectionProbeCommand,
   buildMediaSessionProbeCommand,
   matchKnownGame,
-  matchKnownWorkActivity,
   matchMediaSessionMusicActivity,
   matchMusicActivity,
   resolveStableGameActivity,
   resolveStableMusicActivity,
-  StableWorkActivityResolver,
   SUPPORTED_GAME_NAMES,
-  WORK_ACTIVITY_RULES,
 } from "../src/main/game-detection";
 import { AppIdentityResolver } from "../src/main/app-identity-resolver";
 import { scoreAppxAsset } from "../src/main/app-icon-resolver";
@@ -43,6 +40,16 @@ test("game detection uses structured exact process matches", () => {
   assert.equal(matchKnownGame("LostCastle2\r\nexplorer"), undefined);
 });
 
+test("an exact running game stays visible while another app is foreground", () => {
+  assert.equal(
+    matchKnownGame([
+      JSON.parse(snapshot("League of Legends", "英雄联盟", "", "", false)),
+      JSON.parse(snapshot("Code", "Visual Studio Code", "", "", true)),
+    ]),
+    "英雄联盟",
+  );
+});
+
 test("Tencent PC additions and Lost Control Evolution are detected by exact executable", () => {
   assert.equal(matchKnownGame(snapshot("Evolution-Win64-Shipping")), "失控进化");
   assert.equal(matchKnownGame(snapshot("NZFuture-Win64-Shipping")), "逆战：未来");
@@ -50,66 +57,6 @@ test("Tencent PC additions and Lost Control Evolution are detected by exact exec
   assert.equal(matchKnownGame(snapshot("AnimulaNook")), "粒粒的小人国");
   assert.equal(SUPPORTED_GAME_NAMES.includes("王者荣耀世界"), true);
   assert.equal(SUPPORTED_GAME_NAMES.includes("暗区突围：无限"), true);
-});
-
-test("work activity is private to the foreground app and covers common creator tools", () => {
-  assert.deepEqual(matchKnownWorkActivity(snapshot("Code", "", "", "", true)), {
-    id: "vscode",
-    name: "Visual Studio Code",
-    category: "development",
-  });
-  assert.deepEqual(matchKnownWorkActivity(snapshot("Photoshop", "", "", "", true)), {
-    id: "photoshop",
-    name: "Photoshop",
-    category: "design",
-  });
-  assert.deepEqual(matchKnownWorkActivity(snapshot("MATLAB", "", "", "", true)), {
-    id: "matlab",
-    name: "MATLAB",
-    category: "data",
-  });
-  assert.equal(matchKnownWorkActivity(snapshot("pythonw", "", "", "", true)), undefined);
-  assert.equal(matchKnownWorkActivity(snapshot("WINWORD", "", "", "", true)), undefined);
-  assert.equal(matchKnownWorkActivity(snapshot("EXCEL", "", "", "", true)), undefined);
-  assert.equal(matchKnownWorkActivity(snapshot("POWERPNT", "", "", "", true)), undefined);
-  assert.equal(matchKnownWorkActivity(snapshot("wps", "", "", "", true)), undefined);
-  assert.equal(matchKnownWorkActivity(snapshot("Code", "", "", "", false)), undefined);
-  assert.deepEqual(
-    matchKnownWorkActivity(
-      snapshot(
-        "ChatGPT",
-        "ChatGPT",
-        "C:\\Program Files\\WindowsApps\\OpenAI.Codex_26.803.10989.0_x64__2p2nqsd0c76g0\\app\\ChatGPT.exe",
-        "",
-        true,
-      ),
-    ),
-    { id: "codex", name: "Codex", category: "development" },
-  );
-  assert.equal(
-    matchKnownWorkActivity(
-      snapshot(
-        "ChatGPT",
-        "ChatGPT",
-        "C:\\Program Files\\WindowsApps\\OpenAI.ChatGPT_1.0.0.0_x64__test\\app\\ChatGPT.exe",
-        "",
-        false,
-      ),
-    ),
-    undefined,
-  );
-});
-
-test("Codex work detection keeps the official Appx manifest path as its identity evidence", () => {
-  const source = readFileSync(path.resolve(process.cwd(), "src/main/game-detection.ts"), "utf8");
-  const iconSource = readFileSync(
-    path.resolve(process.cwd(), "src/main/app-icon-resolver.ts"),
-    "utf8",
-  );
-  assert.equal(iconSource.includes("AppxManifest.xml"), true);
-  assert.equal(iconSource.includes("Square44x44Logo"), true);
-  assert.equal(iconSource.includes("targetsize-64"), true);
-  assert.equal(source.includes("openai.codex_"), true);
 });
 
 test("activity icons prefer the dark-on-transparent Appx asset used on light badges", () => {
@@ -126,25 +73,17 @@ test("activity icons prefer the dark-on-transparent Appx asset used on light bad
   assert.ok(lightSurfaceIcon > darkSurfaceIcon);
 });
 
-test("repository documentation lists every supported game and work application", () => {
+test("repository documentation lists every supported game", () => {
   const documentation = readFileSync(
     path.resolve(process.cwd(), "../../docs/supported-activities.md"),
     "utf8",
   );
   assert.equal(SUPPORTED_GAME_NAMES.length, 50);
-  assert.equal(WORK_ACTIVITY_RULES.length, 50);
   for (const gameName of SUPPORTED_GAME_NAMES) {
     assert.equal(
       documentation.includes(gameName),
       true,
       `${gameName} is missing from documentation`,
-    );
-  }
-  for (const work of WORK_ACTIVITY_RULES) {
-    assert.equal(
-      documentation.includes(work.name),
-      true,
-      `${work.name} is missing from documentation`,
     );
   }
 });
@@ -234,20 +173,6 @@ test("music activity survives transient title misses without becoming permanentl
 
   const changed = matchMusicActivity(snapshot("cloudmusic", "夜曲 - 周杰伦 - 网易云音乐"));
   assert.equal(resolveStableMusicActivity(changed, activity, 0), changed);
-});
-
-test("professional work waits for sustained evidence and ignores brief app switches", () => {
-  const resolver = new StableWorkActivityResolver();
-  const premiere = { id: "premiere", name: "Premiere Pro", category: "media" } as const;
-  const codex = { id: "codex", name: "Codex", category: "development" } as const;
-
-  assert.equal(resolver.update(premiere), undefined);
-  assert.deepEqual(resolver.update(premiere), premiere);
-  assert.deepEqual(resolver.update(undefined), premiere);
-  assert.deepEqual(resolver.update(codex), premiere);
-  assert.deepEqual(resolver.update(undefined), premiere);
-  assert.deepEqual(resolver.update(codex), premiere);
-  assert.deepEqual(resolver.update(codex), codex);
 });
 
 test("game activity survives two fallback misses during a short Alt+Tab", () => {
@@ -342,7 +267,7 @@ test("KK launcher alone stays hidden while a real foreground hosted process repo
         false,
       ),
     ),
-    undefined,
+    "KK 对战平台",
   );
   assert.equal(matchKnownGame(snapshot("Game_x64h", "KK RPG")), "KK 对战平台");
   assert.equal(matchKnownGame(snapshot("war3", "Warcraft III")), undefined);

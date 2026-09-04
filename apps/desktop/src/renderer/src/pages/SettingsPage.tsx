@@ -26,7 +26,9 @@ import { Button } from "../components/base/Button";
 import { Switch } from "../components/base/Switch";
 import { playUiSound } from "../features/audio/uiSound";
 import { motionCurve, motionDuration, motionEase } from "../features/motion/motionSystem";
+import { interactionPerformanceMonitor } from "../features/diagnostics/interactionPerformanceMonitor";
 import { rendererPerformanceMonitor } from "../features/diagnostics/rendererPerformanceMonitor";
+import { useRenderProfiler } from "../features/diagnostics/renderProfiler";
 import { PageContainer } from "../components/layout/PageContainer";
 import { AudioSettingsCard } from "../components/settings/AudioSettingsCard";
 import { AboutSettingsCard } from "../components/settings/AboutSettingsCard";
@@ -36,12 +38,17 @@ import { SettingsItemRow } from "../components/settings/SettingsItemRow";
 import { SettingsPageHeader } from "../components/settings/SettingsPageHeader";
 import { SettingsSection } from "../components/settings/SettingsSection";
 import { QuickMessageSettingsCard } from "../components/settings/QuickMessageSettingsCard";
-import { RecordingLibrarySettingsCard as RecordingLibrarySettingsCardView } from "../components/settings/RecordingLibrarySettingsCard";
-import { AiVoiceMemorySettingsCard as AiVoiceMemorySettingsCardView } from "../components/settings/AiVoiceMemorySettingsCard";
+import {
+  preloadRecordingLibrary,
+  RecordingLibrarySettingsCard as RecordingLibrarySettingsCardView,
+} from "../components/settings/RecordingLibrarySettingsCard";
+import {
+  preloadAiVoiceMemorySnapshot,
+  AiVoiceMemorySettingsCard as AiVoiceMemorySettingsCardView,
+} from "../components/settings/AiVoiceMemorySettingsCard";
 import { RoomHistorySettingsCard } from "../components/settings/RoomHistorySettingsCard";
 import { WeatherSettingsCard } from "../components/settings/WeatherSettingsCard";
 import { StartupSplashPage } from "../components/status/StartupSplashPage";
-import { useMicTest } from "../hooks/useMicTest";
 import { usePrefersReducedMotion } from "../hooks/usePrefersReducedMotion";
 import { getRoomRuntimeDiagnostics, injectRealtimeFault } from "../hooks/useRoomState";
 import { useAppStore } from "../store/appStore";
@@ -73,21 +80,20 @@ const sections = [
   { id: "diagnostics", label: "诊断", icon: Activity },
 ] satisfies Array<{ id: SettingsSectionId; label: string; icon: typeof Headphones }>;
 
-const SETTINGS_PREWARM_ORDER: SettingsSectionId[] = [
-  "recordings",
-  "ai",
-  "quickMessages",
-  "account",
-  "audio",
-  "roomHistory",
-  "about",
-  "diagnostics",
-];
-
 const RecordingLibrarySettingsCard = memo(RecordingLibrarySettingsCardView);
 const AiVoiceMemorySettingsCard = memo(AiVoiceMemorySettingsCardView);
 
 const SETTINGS_SECTION_REQUEST_KEY = "shanghao.settings-section";
+const MAX_CACHED_SETTINGS_SECTIONS = 4;
+
+const cacheSettingsSection = (
+  current: ReadonlySet<SettingsSectionId>,
+  nextSection: SettingsSectionId,
+): Set<SettingsSectionId> => {
+  const ordered = [...current].filter((section) => section !== nextSection);
+  ordered.push(nextSection);
+  return new Set(ordered.slice(-MAX_CACHED_SETTINGS_SECTIONS));
+};
 
 const getInitialSettingsSection = (): SettingsSectionId => {
   const storedSection = window.sessionStorage.getItem(SETTINGS_SECTION_REQUEST_KEY);
@@ -117,7 +123,7 @@ const sanitizeDiagnosticsServerUrl = (value?: string): string | undefined => {
 
 let cachedWindowsDiagnostics: WindowsIntegrationStatus | undefined;
 
-export const SettingsPage = () => {
+export const SettingsPage = ({ isActive = true }: { isActive?: boolean }) => {
   const navigate = useAppStore((state) => state.navigate);
   const settingsReturnTo = useAppStore((state) => state.settingsReturnTo);
   const pushToast = useAppStore((state) => state.pushToast);
@@ -144,7 +150,7 @@ export const SettingsPage = () => {
       visitedSections: new Set<SettingsSectionId>([initialSection]),
     };
   });
-  const { activeSection, visitedSections } = settingsView;
+  const { activeSection } = settingsView;
   const [runtimeHealth, setRuntimeHealth] = useState<RuntimeHealthSnapshot>();
   const [relayDiagnostics, setRelayDiagnostics] = useState<RelayStatusSnapshot>();
   const [windowsDiagnostics, setWindowsDiagnostics] = useState<
@@ -161,17 +167,39 @@ export const SettingsPage = () => {
   const reduceMotion = usePrefersReducedMotion();
   const isSettingsReady = Boolean(settings);
 
-  const micTest = useMicTest({
-    inputDeviceId: settings?.preferredInputDeviceId,
-    outputDeviceId: settings?.preferredOutputDeviceId,
-    echoCancellation: settings?.isEchoCancellationEnabled,
-    noiseSuppression: settings?.isNoiseSuppressionEnabled,
-    autoGainControl: settings?.isAutoGainControlEnabled,
-    voiceEnhancement: settings?.isVoiceEnhancementEnabled,
-    monitorMode: settings?.micMonitorMode,
-    equalizerGains: settings?.micEqualizerGains,
-    lowCutFrequency: settings?.lowCutFrequency,
+  useRenderProfiler("SettingsPage", {
+    activeSection,
+    cachedSections: settingsView.visitedSections.size,
+    isActive,
   });
+
+  useEffect(() => {
+    if (!import.meta.env.DEV || !isActive) return;
+    return rendererPerformanceMonitor.start();
+  }, [isActive]);
+
+  useEffect(() => {
+    if (!isActive) return;
+    const idleIds: number[] = [];
+    const timerIds: number[] = [];
+    const scheduleIdle = (task: () => void, timeout: number, fallbackDelay: number) => {
+      if (typeof window.requestIdleCallback === "function") {
+        idleIds.push(window.requestIdleCallback(task, { timeout }));
+      } else {
+        timerIds.push(window.setTimeout(task, fallbackDelay));
+      }
+    };
+
+    // Warm only data. Mounting both large pages while they are hidden retains thousands of DOM
+    // nodes and makes the first visible transition compete with unrelated background work.
+    scheduleIdle(() => void preloadAiVoiceMemorySnapshot().catch(() => undefined), 900, 160);
+    scheduleIdle(() => void preloadRecordingLibrary().catch(() => undefined), 2_800, 1_100);
+
+    return () => {
+      idleIds.forEach((id) => window.cancelIdleCallback?.(id));
+      timerIds.forEach((id) => window.clearTimeout(id));
+    };
+  }, [isActive]);
 
   const handleSaveSettings = useCallback(
     async (patch: Partial<AppSettings>) => {
@@ -197,14 +225,14 @@ export const SettingsPage = () => {
         if (current.activeSection === "recordings") return current;
         return {
           activeSection: "recordings",
-          visitedSections: new Set(current.visitedSections).add("recordings"),
+          visitedSections: cacheSettingsSection(current.visitedSections, "recordings"),
         };
       });
     }
   }, [voiceMemoryOpenTarget]);
 
   useEffect(() => {
-    if (activeSection !== "diagnostics" || !settings?.relayServerUrl) return;
+    if (!isActive || activeSection !== "diagnostics" || !settings?.relayServerUrl) return;
     let cancelled = false;
     void window.desktopApi.diagnostics
       .testServer(settings.relayServerUrl)
@@ -217,10 +245,10 @@ export const SettingsPage = () => {
     return () => {
       cancelled = true;
     };
-  }, [activeSection, settings?.relayServerUrl]);
+  }, [activeSection, isActive, settings?.relayServerUrl]);
 
   useEffect(() => {
-    if (activeSection !== "diagnostics") return;
+    if (!isActive || activeSection !== "diagnostics") return;
     let cancelled = false;
     const stopPerformanceMonitor = rendererPerformanceMonitor.start();
 
@@ -291,6 +319,7 @@ export const SettingsPage = () => {
     };
   }, [
     activeSection,
+    isActive,
     localStream,
     remoteStreams,
     room.connectionState,
@@ -301,7 +330,7 @@ export const SettingsPage = () => {
   ]);
 
   useEffect(() => {
-    if (activeSection !== "diagnostics") return;
+    if (!isActive || activeSection !== "diagnostics") return;
     let cancelled = false;
     setIsWindowsDiagnosticsLoading(!cachedWindowsDiagnostics);
     void window.desktopApi.windows
@@ -320,54 +349,10 @@ export const SettingsPage = () => {
     return () => {
       cancelled = true;
     };
-  }, [activeSection]);
-
-  useEffect(() => {
-    if (!isSettingsReady) return;
-
-    let cancelled = false;
-    let idleId: number | undefined;
-    let timeoutId: number | undefined;
-    const remaining = SETTINGS_PREWARM_ORDER.filter((id) => !visitedSections.has(id));
-
-    const scheduleNext = () => {
-      if (cancelled || remaining.length === 0) return;
-      const mountNext = () => {
-        if (cancelled) return;
-        const nextSection = remaining.shift();
-        if (!nextSection) return;
-        setSettingsView((current) => {
-          if (current.visitedSections.has(nextSection)) return current;
-          return {
-            ...current,
-            visitedSections: new Set(current.visitedSections).add(nextSection),
-          };
-        });
-        scheduleNext();
-      };
-
-      if (typeof window.requestIdleCallback === "function") {
-        idleId = window.requestIdleCallback(mountNext, { timeout: 650 });
-      } else {
-        timeoutId = window.setTimeout(mountNext, 120);
-      }
-    };
-
-    scheduleNext();
-    return () => {
-      cancelled = true;
-      if (idleId !== undefined && typeof window.cancelIdleCallback === "function") {
-        window.cancelIdleCallback(idleId);
-      }
-      if (timeoutId !== undefined) window.clearTimeout(timeoutId);
-    };
-    // The warm-up queue is intentionally based on the sections present when
-    // settings first become ready. Later visits are handled by selectSection.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isSettingsReady]);
+  }, [activeSection, isActive]);
 
   useLayoutEffect(() => {
-    if (!isSettingsReady || !pageRef.current) return;
+    if (!isActive || !isSettingsReady || !pageRef.current) return;
 
     const context = gsap.context(() => {
       if (reduceMotion) {
@@ -394,36 +379,34 @@ export const SettingsPage = () => {
     }, pageRef);
 
     return () => context.revert();
-  }, [isSettingsReady, reduceMotion]);
+  }, [isActive, isSettingsReady, reduceMotion]);
 
   useLayoutEffect(() => {
     const target = contentRef.current;
-    if (!isSettingsReady || !target) return;
+    if (!isActive || !isSettingsReady || !target) return;
     if (!didMountSectionRef.current) {
       didMountSectionRef.current = true;
       return;
     }
-    if (reduceMotion) {
-      gsap.fromTo(
-        target,
-        { autoAlpha: 0 },
-        { autoAlpha: 1, duration: motionDuration.instant, clearProps: "opacity,visibility" },
-      );
+    if (reduceMotion) return;
+    if (activeSection === "ai" || activeSection === "recordings") {
+      // Promoting an entire long model/recording page to a moving GPU layer is more expensive
+      // than the tiny transition is worth. The nav indicator still supplies visual feedback.
+      gsap.set(target, { clearProps: "transform,opacity,visibility,willChange" });
       return;
     }
     gsap.fromTo(
       target,
-      { autoAlpha: 0, x: sectionDirectionRef.current * 12 },
+      { x: sectionDirectionRef.current * 7 },
       {
-        autoAlpha: 1,
         x: 0,
         duration: motionDuration.compact,
         ease: motionEase.spatial,
         force3D: true,
-        clearProps: "transform,opacity,visibility",
+        clearProps: "transform",
       },
     );
-  }, [activeSection, isSettingsReady, reduceMotion]);
+  }, [activeSection, isActive, isSettingsReady, reduceMotion]);
 
   if (!settings) {
     return <StartupSplashPage message="正在准备设置..." />;
@@ -431,17 +414,24 @@ export const SettingsPage = () => {
 
   const selectSection = (nextSection: SettingsSectionId) => {
     if (nextSection === activeSection) return;
+    const interactionId = interactionPerformanceMonitor.begin(
+      `settings:${activeSection}->${nextSection}`,
+      "settings",
+    );
+    interactionPerformanceMonitor.mark(interactionId, "visual-feedback-start");
     const currentIndex = sections.findIndex(({ id }) => id === activeSection);
     const nextIndex = sections.findIndex(({ id }) => id === nextSection);
     sectionDirectionRef.current = nextIndex >= currentIndex ? 1 : -1;
     playUiSound("settings-section");
+    interactionPerformanceMonitor.mark(interactionId, "route-transition-start");
     setSettingsView((current) => {
       if (current.activeSection === nextSection) return current;
       return {
         activeSection: nextSection,
-        visitedSections: new Set(current.visitedSections).add(nextSection),
+        visitedSections: cacheSettingsSection(current.visitedSections, nextSection),
       };
     });
+    interactionPerformanceMonitor.afterNextPaint(interactionId);
   };
 
   const refreshWindowsDiagnostics = () => {
@@ -622,17 +612,6 @@ export const SettingsPage = () => {
             />
           </SettingsItemRow>
           <SettingsItemRow
-            label="开启工作显示"
-            description="显示自己和好友持续使用的专业工作软件；游戏和音乐不受影响。"
-          >
-            <Switch
-              isChecked={settings.isWorkActivityVisible}
-              onChange={(isWorkActivityVisible) =>
-                void handleSaveSettings({ isWorkActivityVisible })
-              }
-            />
-          </SettingsItemRow>
-          <SettingsItemRow
             label="开发者模式"
             description="显示服务器切换和测试入口。普通使用无需开启。"
           >
@@ -679,14 +658,6 @@ export const SettingsPage = () => {
           settings={settings}
           inputDevices={inputDevices}
           outputDevices={outputDevices}
-          isMicTesting={micTest.isTesting}
-          micTestLevel={micTest.level}
-          micTestPhase={micTest.phase}
-          isMicClipping={micTest.isClipping}
-          micTestError={micTest.error}
-          onToggleMicTest={() => void micTest.toggle()}
-          onPlaySystemCapture={() => void micTest.playSystemCapture()}
-          onPlayProcessed={() => void micTest.playProcessed()}
           onChange={(patch) => void handleSaveSettings(patch)}
         />
       </div>
@@ -713,6 +684,7 @@ export const SettingsPage = () => {
     ),
     recordings: (
       <RecordingLibrarySettingsCard
+        isActive={isActive && activeSection === "recordings"}
         settings={settings}
         onChange={handleSaveSettings}
         pushToast={pushToast}
@@ -721,6 +693,7 @@ export const SettingsPage = () => {
     ),
     ai: (
       <AiVoiceMemorySettingsCard
+        isActive={isActive && activeSection === "ai"}
         settings={settings}
         onChange={handleSaveSettings}
         pushToast={pushToast}
@@ -842,24 +815,26 @@ export const SettingsPage = () => {
                 })}
               </LayoutGroup>
             </nav>
-            {sections.map(({ id }) => {
-              const isActive = activeSection === id;
-              if (!isActive && !visitedSections.has(id)) return null;
-              return (
-                <div
-                  key={id}
-                  ref={isActive ? contentRef : undefined}
-                  data-gsap-settings={isActive ? "content" : undefined}
-                  aria-hidden={!isActive}
-                  hidden={!isActive}
-                  className={`settings-section-motion min-w-0 ${
-                    isActive && activeSection === "recordings" ? "settings-recording-content" : ""
-                  }`}
-                >
-                  {content[id]}
-                </div>
-              );
-            })}
+            <div className="min-w-0">
+              {sections.map(({ id }) => {
+                if (!settingsView.visitedSections.has(id)) return null;
+                const isCurrentSection = id === activeSection;
+                return (
+                  <div
+                    key={id}
+                    ref={isCurrentSection ? contentRef : undefined}
+                    data-gsap-settings={isCurrentSection ? "content" : undefined}
+                    hidden={!isCurrentSection}
+                    aria-hidden={!isCurrentSection}
+                    className={`settings-section-motion min-w-0 ${
+                      id === "recordings" ? "settings-recording-content" : ""
+                    }`}
+                  >
+                    {content[id]}
+                  </div>
+                );
+              })}
+            </div>
           </div>
         </div>
       </PageContainer>

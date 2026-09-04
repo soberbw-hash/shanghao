@@ -43,7 +43,6 @@ type LocalPresencePatch = {
   gameName?: string;
   gameIconDataUrl?: string;
   musicActivity?: MusicActivity;
-  workActivity?: import("@private-voice/shared").WorkActivity;
 };
 
 export interface RemoteScreenFrame {
@@ -199,16 +198,6 @@ const areMusicActivitiesEqual = (
     left?.trackTitle === right?.trackTitle &&
     left?.artist === right?.artist);
 
-const areWorkActivitiesEqual = (
-  left: import("@private-voice/shared").WorkActivity | undefined,
-  right: import("@private-voice/shared").WorkActivity | undefined,
-): boolean =>
-  left === right ||
-  (left?.id === right?.id &&
-    left?.name === right?.name &&
-    left?.category === right?.category &&
-    left?.iconDataUrl === right?.iconDataUrl);
-
 const areMembersEqual = (left: RoomMember[], right: RoomMember[]): boolean => {
   if (left.length !== right.length) return false;
   return left.every((member, index) => {
@@ -237,7 +226,6 @@ const areMembersEqual = (left: RoomMember[], right: RoomMember[]): boolean => {
       member.gameName === candidate.gameName &&
       member.gameIconDataUrl === candidate.gameIconDataUrl &&
       areMusicActivitiesEqual(member.musicActivity, candidate.musicActivity) &&
-      areWorkActivitiesEqual(member.workActivity, candidate.workActivity) &&
       member.latencyMs === candidate.latencyMs &&
       member.presenceState === candidate.presenceState &&
       member.speakingState === candidate.speakingState &&

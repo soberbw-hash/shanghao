@@ -1,13 +1,29 @@
 /* eslint-disable @typescript-eslint/no-require-imports */
-/* global console, require */
+/* global __dirname, console, require */
 
 const { app, BrowserWindow } = require("electron");
+const { readFileSync } = require("node:fs");
 const http = require("node:http");
+const path = require("node:path");
 
 const CSP =
   "default-src 'self'; script-src 'self' 'wasm-unsafe-eval' blob:; worker-src 'self' blob:;";
 
 let server;
+
+const microphoneProcessorSource = readFileSync(
+  path.join(__dirname, "../src/renderer/src/features/audio/microphoneProcessor.ts"),
+  "utf8",
+);
+const voiceShaperMatch = microphoneProcessorSource.match(
+  /const VOICE_SHAPER_WORKLET_SOURCE = `([\s\S]*?)`;/,
+);
+if (!voiceShaperMatch?.[1]) {
+  throw new Error("Unable to read the communication voice shaper worklet source.");
+}
+const voiceShaperSource = voiceShaperMatch[1]
+  .replaceAll("${VOICE_SHAPER_DIAGNOSTICS_INTERVAL_FRAMES}", "24000")
+  .replaceAll("${VOICE_SHAPER_WORKLET_NAME}", "shanghao-communication-voice-shaper");
 
 const closeServer = () =>
   new Promise((resolve) => {
@@ -68,25 +84,63 @@ app
           await context.close();
           return { ok: false, error: "audio_worklet_unavailable" };
         }
-        const source = [
-          "class ShangHaoSmokeProcessor extends AudioWorkletProcessor {",
-          "  process(inputs, outputs) {",
-          "    const input = inputs[0]?.[0];",
-          "    const output = outputs[0]?.[0];",
-          "    if (input && output) output.set(input);",
-          "    return true;",
-          "  }",
-          "}",
-          "registerProcessor('shanghao-smoke-processor', ShangHaoSmokeProcessor);",
-        ].join("\\n");
+        const source = ${JSON.stringify(voiceShaperSource)};
         const moduleUrl = URL.createObjectURL(
           new Blob([source], { type: "application/javascript" }),
         );
         try {
           await context.audioWorklet.addModule(moduleUrl);
-          const node = new AudioWorkletNode(context, "shanghao-smoke-processor");
+          const node = new AudioWorkletNode(
+            context,
+            "shanghao-communication-voice-shaper",
+            { outputChannelCount: [1] },
+          );
+          const oscillator = context.createOscillator();
+          const sourceGain = context.createGain();
+          const analyser = context.createAnalyser();
+          const monitorSilence = context.createGain();
+          sourceGain.gain.value = 0.12;
+          oscillator.frequency.value = 440;
+          analyser.fftSize = 1024;
+          monitorSilence.gain.value = 0;
+          oscillator.connect(sourceGain);
+          sourceGain.connect(node);
+          node.connect(analyser);
+          analyser.connect(monitorSilence);
+          monitorSilence.connect(context.destination);
+          const diagnosticsPromise = new Promise((resolve, reject) => {
+            const timeout = setTimeout(
+              () => reject(new Error("voice_shaper_diagnostics_timeout")),
+              2000,
+            );
+            node.port.onmessage = (event) => {
+              if (event.data?.type !== "diagnostics") return;
+              clearTimeout(timeout);
+              resolve(event.data);
+            };
+          });
+          oscillator.start();
+          const diagnostics = await diagnosticsPromise;
+          const samples = new Float32Array(analyser.fftSize);
+          analyser.getFloatTimeDomainData(samples);
+          let squareTotal = 0;
+          for (const sample of samples) squareTotal += sample * sample;
+          const rms = Math.sqrt(squareTotal / samples.length);
+          oscillator.stop();
+          oscillator.disconnect();
           node.disconnect();
-          return { ok: true, sampleRate: context.sampleRate };
+          return {
+            ok:
+              rms > 0.01 &&
+              Number.isFinite(diagnostics.averageProcessingMs) &&
+              diagnostics.overruns === 0,
+            sampleRate: context.sampleRate,
+            renderQuantumMs: 128000 / context.sampleRate,
+            rms,
+            averageProcessingMs: diagnostics.averageProcessingMs,
+            maxProcessingMs: diagnostics.maxProcessingMs,
+            overruns: diagnostics.overruns,
+          };
         } finally {
           URL.revokeObjectURL(moduleUrl);
           await context.close();

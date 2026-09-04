@@ -5,7 +5,6 @@ import {
   type BuiltInAvatarId,
   type MemberActivity,
   type MusicActivity,
-  type WorkActivity,
   type RoomMember,
   type SceneZoneId,
 } from "@private-voice/shared";
@@ -33,7 +32,6 @@ export interface PeerSession {
   gameName?: string;
   gameIconDataUrl?: string;
   musicActivity?: MusicActivity;
-  workActivity?: WorkActivity;
   joinedAt: string;
   lastHeartbeatAt: number;
   disconnectedAt?: number;
@@ -104,7 +102,6 @@ export class PeerManager {
     > & {
       gameIconDataUrl?: string | null;
       musicActivity?: MusicActivity | null;
-      workActivity?: WorkActivity | null;
     },
   ): void {
     const peer = this.peers.get(peerId);
@@ -116,10 +113,6 @@ export class PeerManager {
         }
         if (key === "musicActivity" && value === null) {
           peer.musicActivity = undefined;
-          continue;
-        }
-        if (key === "workActivity" && value === null) {
-          peer.workActivity = undefined;
           continue;
         }
         if (key === "gameIconDataUrl" && value === null) {
@@ -154,7 +147,6 @@ export class PeerManager {
       gameName: peer.gameName,
       gameIconDataUrl: peer.gameIconDataUrl,
       musicActivity: peer.musicActivity,
-      workActivity: peer.workActivity,
       presenceState: peer.disconnectedAt
         ? peer.disconnectedFor === "updating"
           ? MemberPresenceState.Updating

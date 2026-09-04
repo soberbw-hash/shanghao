@@ -7,6 +7,58 @@ export interface KnownSpeakerAudioSegment {
   endMs: number;
 }
 
+export interface KnownParticipantAudioTrack extends KnownSpeakerAudioSegment {
+  filePath: string;
+  userId?: string;
+  trackId?: string;
+}
+
+export interface KnownSpeakerTranscriptionSource extends KnownSpeakerAudioSegment {
+  filePath: string;
+  /** Offset inside this participant's independent audio file. */
+  audioOffsetMs: number;
+}
+
+/**
+ * Splits durable per-participant tracks into the same bounded units used by the
+ * regular long-recording pipeline. The account user id becomes the stable
+ * speaker id, so a reconnect cannot turn one person into two speakers.
+ */
+export const splitParticipantTracksIntoSpeakerSources = (
+  tracks: readonly KnownParticipantAudioTrack[],
+  rangeEndMs: number,
+  chunkDurationMs: number,
+  rangeStartMs = 0,
+): KnownSpeakerTranscriptionSource[] => {
+  if (rangeEndMs <= rangeStartMs || chunkDurationMs <= 0) return [];
+  return [...tracks]
+    .sort(
+      (left, right) =>
+        left.startMs - right.startMs ||
+        (left.userId ?? left.speakerId).localeCompare(right.userId ?? right.speakerId) ||
+        (left.trackId ?? left.filePath).localeCompare(right.trackId ?? right.filePath),
+    )
+    .flatMap((track) => {
+      const originalTrackStartMs = Math.max(0, track.startMs);
+      const trackStartMs = Math.max(rangeStartMs, originalTrackStartMs);
+      const trackEndMs = Math.min(rangeEndMs, Math.max(originalTrackStartMs, track.endMs));
+      if (trackEndMs <= trackStartMs) return [];
+      const speakerId = track.userId?.trim() || track.speakerId;
+      const sources: KnownSpeakerTranscriptionSource[] = [];
+      for (let startMs = trackStartMs; startMs < trackEndMs; startMs += chunkDurationMs) {
+        sources.push({
+          filePath: track.filePath,
+          speakerId,
+          displayNameSnapshot: track.displayNameSnapshot,
+          startMs,
+          endMs: Math.min(trackEndMs, startMs + chunkDurationMs),
+          audioOffsetMs: startMs - originalTrackStartMs,
+        });
+      }
+      return sources;
+    });
+};
+
 export const bindTranscriptToKnownSpeaker = (
   recordingId: string,
   unit: number,

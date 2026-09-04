@@ -1,5 +1,6 @@
-import { copyFile, mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, readFile, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { isDeepStrictEqual } from "node:util";
 
 import { app } from "electron";
 
@@ -14,6 +15,7 @@ export class SettingsStore {
   private cachedSettings: AppSettings = migrateSettings(defaultSettings).settings;
   private readonly filePath = path.join(app.getPath("userData"), "settings.json");
   private readonly backupFilePath = path.join(app.getPath("userData"), "settings.backup.json");
+  private persistQueue: Promise<void> = Promise.resolve();
 
   constructor(private readonly writeLog?: (payload: RendererLogPayload) => Promise<void>) {}
 
@@ -63,6 +65,9 @@ export class SettingsStore {
       ...this.cachedSettings,
       ...partial,
     });
+    // Ignore semantic no-op saves. Besides avoiding needless disk writes, this keeps a
+    // misbehaving renderer effect from turning settings persistence into a hot loop.
+    if (isDeepStrictEqual(settings, this.cachedSettings)) return this.cachedSettings;
     this.cachedSettings = settings;
     await this.persist(this.cachedSettings);
     await this.log("info", "settings saved", {
@@ -97,17 +102,32 @@ export class SettingsStore {
     return value.startsWith(SETTINGS_BOM) ? value.slice(1) : value;
   }
 
-  private async persist(settings: AppSettings, backupExisting = true): Promise<void> {
+  private persist(settings: AppSettings, backupExisting = true): Promise<void> {
+    const serialized = JSON.stringify(settings, null, 2);
+    const operation = this.persistQueue
+      .catch(() => undefined)
+      .then(() => this.persistNow(serialized, backupExisting));
+    this.persistQueue = operation;
+    return operation;
+  }
+
+  private async persistNow(serialized: string, backupExisting: boolean): Promise<void> {
     await mkdir(path.dirname(this.filePath), { recursive: true });
     const temporaryPath = `${this.filePath}.${process.pid}.${Date.now()}.tmp`;
-    await writeFile(temporaryPath, JSON.stringify(settings, null, 2), {
+    await writeFile(temporaryPath, serialized, {
       encoding: "utf8",
       flag: "wx",
     });
-    if (backupExisting) {
-      await copyFile(this.filePath, this.backupFilePath).catch(() => undefined);
+    try {
+      if (backupExisting) {
+        await copyFile(this.filePath, this.backupFilePath).catch(() => undefined);
+      }
+      // fs.rename cannot reliably replace an existing destination on Windows. copyFile uses
+      // overwrite semantics, while the serialized queue prevents concurrent saves racing.
+      await copyFile(temporaryPath, this.filePath);
+    } finally {
+      await unlink(temporaryPath).catch(() => undefined);
     }
-    await rename(temporaryPath, this.filePath);
   }
 
   private async log(

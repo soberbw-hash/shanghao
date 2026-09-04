@@ -39,7 +39,7 @@ interface UseMicTestResult {
   playProcessed: () => Promise<void>;
 }
 
-const TEST_DURATION_MS = 9_000;
+const TEST_DURATION_MS = 5_000;
 const recorderMimeType = (): string | undefined =>
   ["audio/webm;codecs=opus", "audio/webm", "audio/ogg;codecs=opus"].find((type) =>
     MediaRecorder.isTypeSupported(type),

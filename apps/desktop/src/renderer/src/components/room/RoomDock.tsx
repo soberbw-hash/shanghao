@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
 import { ChevronDown as ChevronDownData, ChevronUp as ChevronUpData } from "lucide";
-import { AnimatePresence } from "framer-motion";
 
 import {
   RecordingEncoderState,
@@ -11,6 +10,7 @@ import {
 import { cn } from "@private-voice/ui";
 
 import { AudioControlPopover } from "../audio/AudioControlPopover";
+import type { MicrophoneTestControls } from "../audio/AudioControlPopover";
 import { MuteButton } from "../audio/MuteButton";
 import { RecordingButton } from "../audio/RecordingButton";
 import { Button } from "../base/Button";
@@ -18,6 +18,7 @@ import { AnimatedControlIcon } from "../icons/AnimatedControlIcon";
 import { MorphingIcon } from "../icons/MorphingIcon";
 import {
   clearGlassPointerHighlight,
+  refreshGlassPointerHighlightBounds,
   updateGlassPointerHighlight,
 } from "../../features/motion/glassPointerHighlight";
 
@@ -31,6 +32,10 @@ export type RoomDockSettings = Pick<
   | "isEchoCancellationEnabled"
   | "isVoiceEnhancementEnabled"
   | "isAutoGainControlEnabled"
+  | "isPushToTalkEnabled"
+  | "pushToTalkShortcut"
+  | "micEqualizerGains"
+  | "lowCutFrequency"
   | "preferredOutputDeviceId"
   | "speakerMasterVolume"
   | "isFriendLoudnessBalanceEnabled"
@@ -43,6 +48,7 @@ interface RoomDockProps {
   isMuted: boolean;
   isDeafened: boolean;
   isNoiseSuppressionSwitching: boolean;
+  microphoneTest: MicrophoneTestControls;
   recordingState: RecordingState;
   recordingEncoderState: RecordingEncoderState;
   localScreenShareActive: boolean;
@@ -58,6 +64,8 @@ interface RoomDockProps {
   onEchoCancellationChange: (value: boolean) => void;
   onVoiceEnhancementChange: (value: boolean) => void;
   onAutoGainChange: (value: boolean) => void;
+  onPushToTalkEnabledChange: (enabled: boolean) => void;
+  onPushToTalkShortcutChange: (shortcut: string) => void;
   onResetMicrophoneVolume: () => void;
   onSwitchOutputDevice: (deviceId?: string) => void;
   onSpeakerVolumePreview: (volume: number) => void;
@@ -78,6 +86,7 @@ export const RoomDock = ({
   isMuted,
   isDeafened,
   isNoiseSuppressionSwitching,
+  microphoneTest,
   recordingState,
   recordingEncoderState,
   localScreenShareActive,
@@ -93,6 +102,8 @@ export const RoomDock = ({
   onEchoCancellationChange,
   onVoiceEnhancementChange,
   onAutoGainChange,
+  onPushToTalkEnabledChange,
+  onPushToTalkShortcutChange,
   onResetMicrophoneVolume,
   onSwitchOutputDevice,
   onSpeakerVolumePreview,
@@ -106,6 +117,19 @@ export const RoomDock = ({
   onLeave,
 }: RoomDockProps) => {
   const [activeAudioPanel, setActiveAudioPanel] = useState<AudioPanel>();
+  const [mountedAudioPanels, setMountedAudioPanels] = useState<Set<Exclude<AudioPanel, undefined>>>(
+    () => new Set(),
+  );
+  const prewarmAudioPanel = (panel: Exclude<AudioPanel, undefined>) => {
+    setMountedAudioPanels((current) =>
+      current.has(panel) ? current : new Set(current).add(panel),
+    );
+  };
+  const toggleAudioPanel = (panel: Exclude<AudioPanel, undefined>) => {
+    const willOpen = activeAudioPanel !== panel;
+    if (willOpen) prewarmAudioPanel(panel);
+    setActiveAudioPanel(willOpen ? panel : undefined);
+  };
 
   useEffect(() => {
     if (!activeAudioPanel) return;
@@ -130,6 +154,7 @@ export const RoomDock = ({
   return (
     <footer
       className="voice-dock flex items-center gap-2 px-3 py-2.5"
+      onPointerEnter={(event) => refreshGlassPointerHighlightBounds(event.currentTarget)}
       onPointerMove={(event) =>
         updateGlassPointerHighlight(event.currentTarget, event.clientX, event.clientY)
       }
@@ -148,14 +173,12 @@ export const RoomDock = ({
               "audio-control-trigger voice-segmented-arrow",
               activeAudioPanel === "microphone" && "is-active",
             )}
-            title="麦克风设备、降噪、自动增益与发送音量"
-            aria-label="打开麦克风设备、降噪、自动增益与发送音量"
+            title="麦克风设备、处理、说话模式与体检"
+            aria-label="打开麦克风设备、处理、说话模式与体检"
             aria-expanded={activeAudioPanel === "microphone"}
-            onClick={() =>
-              setActiveAudioPanel((current) =>
-                current === "microphone" ? undefined : "microphone",
-              )
-            }
+            onPointerEnter={() => prewarmAudioPanel("microphone")}
+            onFocus={() => prewarmAudioPanel("microphone")}
+            onClick={() => toggleAudioPanel("microphone")}
           >
             <MorphingIcon
               icon={activeAudioPanel === "microphone" ? ChevronUpData : ChevronDownData}
@@ -163,31 +186,35 @@ export const RoomDock = ({
               aria-hidden="true"
             />
           </button>
-          <AnimatePresence>
-            {activeAudioPanel === "microphone" && settings ? (
-              <AudioControlPopover
-                title="麦克风"
-                devices={inputDevices}
-                deviceId={settings.preferredInputDeviceId}
-                volume={settings.microphoneSendVolume}
-                min={0.5}
-                max={1.5}
-                onDeviceChange={onSwitchInputDevice}
-                onVolumePreview={onMicrophoneVolumePreview}
-                onVolumeCommit={onMicrophoneVolumeCommit}
-                noiseSuppressionEnabled={settings.isNoiseSuppressionEnabled}
-                isNoiseSuppressionSwitching={isNoiseSuppressionSwitching}
-                onNoiseSuppressionChange={onNoiseSuppressionChange}
-                echoCancellationEnabled={settings.isEchoCancellationEnabled}
-                onEchoCancellationChange={onEchoCancellationChange}
-                voiceEnhancementEnabled={settings.isVoiceEnhancementEnabled}
-                onVoiceEnhancementChange={onVoiceEnhancementChange}
-                autoGainEnabled={settings.isAutoGainControlEnabled}
-                onAutoGainChange={onAutoGainChange}
-                onReset={onResetMicrophoneVolume}
-              />
-            ) : null}
-          </AnimatePresence>
+          {mountedAudioPanels.has("microphone") && settings ? (
+            <AudioControlPopover
+              isOpen={activeAudioPanel === "microphone"}
+              title="麦克风"
+              devices={inputDevices}
+              deviceId={settings.preferredInputDeviceId}
+              volume={settings.microphoneSendVolume}
+              min={0.5}
+              max={1.5}
+              onDeviceChange={onSwitchInputDevice}
+              onVolumePreview={onMicrophoneVolumePreview}
+              onVolumeCommit={onMicrophoneVolumeCommit}
+              noiseSuppressionEnabled={settings.isNoiseSuppressionEnabled}
+              isNoiseSuppressionSwitching={isNoiseSuppressionSwitching}
+              onNoiseSuppressionChange={onNoiseSuppressionChange}
+              echoCancellationEnabled={settings.isEchoCancellationEnabled}
+              onEchoCancellationChange={onEchoCancellationChange}
+              voiceEnhancementEnabled={settings.isVoiceEnhancementEnabled}
+              onVoiceEnhancementChange={onVoiceEnhancementChange}
+              autoGainEnabled={settings.isAutoGainControlEnabled}
+              onAutoGainChange={onAutoGainChange}
+              pushToTalkEnabled={settings.isPushToTalkEnabled}
+              pushToTalkShortcut={settings.pushToTalkShortcut}
+              onPushToTalkEnabledChange={onPushToTalkEnabledChange}
+              onPushToTalkShortcutChange={onPushToTalkShortcutChange}
+              microphoneTest={microphoneTest}
+              onReset={onResetMicrophoneVolume}
+            />
+          ) : null}
         </div>
         <div className="voice-segmented-control audio-control-anchor" data-audio-control-root>
           <Button
@@ -212,9 +239,9 @@ export const RoomDock = ({
             title="扬声器设备、好友响度平衡与总音量"
             aria-label="打开扬声器设备、好友响度平衡与总音量"
             aria-expanded={activeAudioPanel === "speaker"}
-            onClick={() =>
-              setActiveAudioPanel((current) => (current === "speaker" ? undefined : "speaker"))
-            }
+            onPointerEnter={() => prewarmAudioPanel("speaker")}
+            onFocus={() => prewarmAudioPanel("speaker")}
+            onClick={() => toggleAudioPanel("speaker")}
           >
             <MorphingIcon
               icon={activeAudioPanel === "speaker" ? ChevronUpData : ChevronDownData}
@@ -222,25 +249,24 @@ export const RoomDock = ({
               aria-hidden="true"
             />
           </button>
-          <AnimatePresence>
-            {activeAudioPanel === "speaker" && settings ? (
-              <AudioControlPopover
-                title="扬声器"
-                devices={outputDevices}
-                deviceId={settings.preferredOutputDeviceId}
-                volume={settings.speakerMasterVolume}
-                min={0}
-                max={2}
-                onDeviceChange={onSwitchOutputDevice}
-                onVolumePreview={onSpeakerVolumePreview}
-                onVolumeCommit={onSpeakerVolumeCommit}
-                loudnessBalanceEnabled={settings.isFriendLoudnessBalanceEnabled}
-                onLoudnessBalanceChange={onLoudnessBalanceChange}
-                onTest={onTestSpeaker}
-                onReset={onResetSpeakerVolume}
-              />
-            ) : null}
-          </AnimatePresence>
+          {mountedAudioPanels.has("speaker") && settings ? (
+            <AudioControlPopover
+              isOpen={activeAudioPanel === "speaker"}
+              title="扬声器"
+              devices={outputDevices}
+              deviceId={settings.preferredOutputDeviceId}
+              volume={settings.speakerMasterVolume}
+              min={0}
+              max={2}
+              onDeviceChange={onSwitchOutputDevice}
+              onVolumePreview={onSpeakerVolumePreview}
+              onVolumeCommit={onSpeakerVolumeCommit}
+              loudnessBalanceEnabled={settings.isFriendLoudnessBalanceEnabled}
+              onLoudnessBalanceChange={onLoudnessBalanceChange}
+              onTest={onTestSpeaker}
+              onReset={onResetSpeakerVolume}
+            />
+          ) : null}
         </div>
       </div>
       <div className="flex-1" />

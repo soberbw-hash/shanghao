@@ -48,6 +48,37 @@ const containsLongRepeatedRun = (text: string): boolean => {
   return false;
 };
 
+export interface TranscriptAnomalyAnalysis {
+  repetitionLoop: boolean;
+  abnormalOutput: boolean;
+  reasons: Array<"repeated_character" | "repeated_phrase" | "implausible_length" | "invalid_text">;
+}
+
+/** Lightweight guard for obvious decoder loops. It is deliberately conservative. */
+export const analyzeTranscriptAnomalies = (
+  text: string,
+  durationMs = 30_000,
+): TranscriptAnomalyAnalysis => {
+  const normalized = text.normalize("NFKC").replace(/\s+/g, " ").trim();
+  if (!normalized) return { repetitionLoop: false, abnormalOutput: false, reasons: [] };
+  const compact = normalized.replace(/[^\p{L}\p{N}]+/gu, "");
+  const repeatedCharacter = /(.)\1{11,}/u.test(compact);
+  const repeatedPhrase = containsLongRepeatedRun(normalized);
+  const maximumCharacters = Math.max(240, Math.ceil((durationMs / 1_000) * 45));
+  const implausibleLength = normalized.length > maximumCharacters;
+  const invalidText = normalized.includes("\uFFFD");
+  const reasons: TranscriptAnomalyAnalysis["reasons"] = [];
+  if (repeatedCharacter) reasons.push("repeated_character");
+  if (repeatedPhrase) reasons.push("repeated_phrase");
+  if (implausibleLength) reasons.push("implausible_length");
+  if (invalidText) reasons.push("invalid_text");
+  return {
+    repetitionLoop: repeatedCharacter || repeatedPhrase,
+    abnormalOutput: reasons.length > 0,
+    reasons,
+  };
+};
+
 /** Rejects model status labels, broken encoding and strongly repetitive hallucinations. */
 export const isReliableTranscriptText = (text: string, durationMs = 30_000): boolean => {
   const normalized = text.normalize("NFKC").replace(/\s+/g, " ").trim();

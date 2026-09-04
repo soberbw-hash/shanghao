@@ -23,7 +23,9 @@ import { gsap } from "gsap";
 
 import {
   DEFAULT_QUICK_MESSAGE_MUSIC_SLOTS,
+  DEFAULT_QUICK_MESSAGE_SLOTS,
   QUICK_MESSAGE_PRESETS,
+  normalizeQuickMessageSlots,
   type ChatMessage,
 } from "@private-voice/shared";
 
@@ -35,6 +37,7 @@ import {
   isMessageOnlyUrl,
 } from "../../features/chat/linkPreview";
 import { writeRoomCollectionDragPayload } from "../../features/chat/collectionDrag";
+import { preloadAdjacentChatImages, preloadChatImage } from "../../features/chat/chatImagePreload";
 import { quickMessageCooldownMs } from "../../features/chat/quickReplies";
 import {
   getQuickMessageAudioSnapshot,
@@ -210,7 +213,9 @@ export const TemporaryChatPanel = ({
   const listRef = useRef<HTMLDivElement>(null);
   const sendControlRef = useRef<HTMLSpanElement>(null);
   const dragDepthRef = useRef(0);
-  const previousMessageCount = useRef(messages.length);
+  // The first render can already contain restored history. Treat it as an
+  // initial batch so the chat opens at the newest message rather than the top.
+  const previousMessageCount = useRef(0);
   const [unreadCount, setUnreadCount] = useState(0);
   const [isSendingImage, setIsSendingImage] = useState(false);
   const [isDraggingImage, setIsDraggingImage] = useState(false);
@@ -220,7 +225,11 @@ export const TemporaryChatPanel = ({
   const [isQuickSendCoolingDown, setIsQuickSendCoolingDown] = useState(false);
   const shouldReduceMotion = usePrefersReducedMotion(reduceMotion);
   const quickMessages = useMemo(() => {
-    const configured = (quickMessageSlots ?? [])
+    const configured = normalizeQuickMessageSlots(
+      quickMessageSlots,
+      DEFAULT_QUICK_MESSAGE_SLOTS,
+      DEFAULT_QUICK_MESSAGE_SLOTS.length,
+    )
       .map((slot) => ({
         preset: QUICK_MESSAGE_PRESETS.find((candidate) => candidate.id === slot.presetId),
         shortcut: slot.shortcut,
@@ -233,32 +242,32 @@ export const TemporaryChatPanel = ({
           preset: (typeof QUICK_MESSAGE_PRESETS)[number];
           shortcut: string;
           enabled: boolean;
-        } => item.enabled && Boolean(item.preset),
+        } => Boolean(item.preset),
       );
-    return configured.length
-      ? configured
-      : QUICK_MESSAGE_PRESETS.filter((preset) => preset.mediaType !== "music").map((preset) => ({
-          preset,
-          shortcut: "",
-          enabled: true,
-        }));
+    return configured.filter(
+      (
+        item,
+      ): item is {
+        preset: (typeof QUICK_MESSAGE_PRESETS)[number];
+        shortcut: string;
+        enabled: boolean;
+      } => Boolean(item.preset) && item.preset.mediaType !== "music",
+    );
   }, [quickMessageSlots]);
   const quickMusicItems = useMemo(() => {
-    const musicSlots = Array.from(
-      { length: DEFAULT_QUICK_MESSAGE_MUSIC_SLOTS.length },
-      (_, index) => {
-        const fallback = DEFAULT_QUICK_MESSAGE_MUSIC_SLOTS[index] ??
-          DEFAULT_QUICK_MESSAGE_MUSIC_SLOTS[0] ?? {
-            presetId: undefined,
-            shortcut: "",
-            enabled: false,
-          };
-        const savedSlot = quickMessageSettings?.musicSlots?.[index];
-        if (savedSlot) return savedSlot;
-        return index === 0 && quickMessageSettings?.musicPresetId
-          ? { ...fallback, presetId: quickMessageSettings.musicPresetId }
-          : fallback;
-      },
+    const musicSlots = normalizeQuickMessageSlots(
+      quickMessageSettings?.musicSlots?.length
+        ? quickMessageSettings.musicSlots
+        : quickMessageSettings?.musicPresetId
+          ? [
+              {
+                ...DEFAULT_QUICK_MESSAGE_MUSIC_SLOTS[0],
+                presetId: quickMessageSettings.musicPresetId,
+              },
+            ]
+          : quickMessageSettings?.musicSlots,
+      DEFAULT_QUICK_MESSAGE_MUSIC_SLOTS,
+      DEFAULT_QUICK_MESSAGE_MUSIC_SLOTS.length,
     );
     return musicSlots
       .map((slot) => ({
@@ -273,7 +282,7 @@ export const TemporaryChatPanel = ({
           preset: (typeof QUICK_MESSAGE_PRESETS)[number];
           shortcut: string;
           enabled: boolean;
-        } => item.enabled && item.preset?.mediaType === "music",
+        } => item.preset?.mediaType === "music",
       );
   }, [quickMessageSettings?.musicPresetId, quickMessageSettings?.musicSlots]);
 
@@ -511,13 +520,24 @@ export const TemporaryChatPanel = ({
     );
   };
 
-  const previewItems = messages.flatMap((message) =>
-    message.image ? [{ messageId: message.id, image: message.image }] : [],
+  const previewItems = useMemo(
+    () =>
+      messages.flatMap((message) =>
+        message.image ? [{ messageId: message.id, image: message.image }] : [],
+      ),
+    [messages],
   );
   const previewIndex = previewMessageId
     ? previewItems.findIndex((item) => item.messageId === previewMessageId)
     : -1;
   const previewItem = previewIndex >= 0 ? previewItems[previewIndex] : undefined;
+  useEffect(() => {
+    if (previewIndex < 0) return;
+    preloadAdjacentChatImages(
+      previewItems.map((item) => item.image.dataUrl),
+      previewIndex,
+    );
+  }, [previewIndex, previewItems]);
   const showPreviewImage = (offset: number) => {
     if (previewIndex < 0 || previewItems.length < 2) return;
     const nextIndex = (previewIndex + offset + previewItems.length) % previewItems.length;
@@ -779,6 +799,12 @@ export const TemporaryChatPanel = ({
                               type="button"
                               className="chat-image-thumbnail-button"
                               draggable
+                              onPointerEnter={() =>
+                                void preloadChatImage(message.image?.dataUrl ?? "")
+                              }
+                              onPointerDown={() =>
+                                void preloadChatImage(message.image?.dataUrl ?? "")
+                              }
                               onClick={() => {
                                 setPreviewDirection(0);
                                 setPreviewMessageId(message.id);
@@ -803,6 +829,7 @@ export const TemporaryChatPanel = ({
                                 height={message.image.height}
                                 className="chat-image-thumbnail"
                                 loading="lazy"
+                                onLoad={() => void preloadChatImage(message.image?.dataUrl ?? "")}
                                 draggable={false}
                               />
                             </button>
@@ -914,7 +941,9 @@ export const TemporaryChatPanel = ({
           onPrevious={() => showPreviewImage(-1)}
           onNext={() => showPreviewImage(1)}
           onCopy={copyImage}
-          onClosed={() => setPreviewMessageId(null)}
+          onClosed={() => {
+            setPreviewMessageId(null);
+          }}
         />
       ) : null}
     </>

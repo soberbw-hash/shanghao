@@ -35,6 +35,9 @@ let activeQuickMessageId: string | undefined;
 let activePresetId: string | undefined;
 let activeContent: string | undefined;
 let activeStatus: QuickMessageAudioStatus = "idle";
+let activeObjectUrl: string | undefined;
+let activePlayerReady = false;
+let playbackGeneration = 0;
 let audioSnapshot: QuickMessageAudioSnapshot = { status: "idle" };
 
 const notifyAudioListeners = (): void => {
@@ -64,6 +67,11 @@ export const subscribeQuickMessageAudio = (listener: () => void): (() => void) =
 
 const clearActivePlayer = (player?: HTMLAudioElement): void => {
   if (player && activePlayer !== player) return;
+  if (activeObjectUrl) {
+    URL.revokeObjectURL(activeObjectUrl);
+    activeObjectUrl = undefined;
+  }
+  activePlayerReady = false;
   activePlayer = undefined;
   activeSoundId = undefined;
   activeMediaType = undefined;
@@ -77,6 +85,7 @@ const clearActivePlayer = (player?: HTMLAudioElement): void => {
 };
 
 const stopActivePlayers = (): void => {
+  playbackGeneration += 1;
   for (const player of activePlayers) {
     player.pause();
     player.currentTime = 0;
@@ -93,7 +102,9 @@ const playLocalVoicePack = (
   source?: QuickMessagePlaybackSource,
 ): void => {
   stopActivePlayers();
-  const player = new Audio(url);
+  const generation = playbackGeneration;
+  const player = new Audio();
+  player.preload = "auto";
   // Keep the custom AAC protocol on the native media path and honor the user's
   // volume setting. The bundled packs are peak-safe at the asset level.
   player.volume = Math.min(1, Math.max(0, Number.isFinite(volume) ? volume : 0));
@@ -124,7 +135,45 @@ const playLocalVoicePack = (
     },
     { once: true },
   );
-  void player.play().catch(() => {
+  void (async () => {
+    try {
+      if (mediaType === "music") {
+        // Chromium can treat a custom-protocol AAC Range response as the end of
+        // the media when it reaches the first requested segment. Music is
+        // small enough to buffer as one immutable local asset, which also
+        // keeps the dedicated music player independent from short SFX logic.
+        const response = await fetch(url, { cache: "force-cache" });
+        if (!response.ok) throw new Error(`quick_music_fetch_${response.status}`);
+        const bytes = await response.arrayBuffer();
+        if (generation !== playbackGeneration || activePlayer !== player) return;
+        activeObjectUrl = URL.createObjectURL(new Blob([bytes], { type: "audio/aac" }));
+        player.src = activeObjectUrl;
+      } else {
+        player.src = url;
+      }
+      if (generation !== playbackGeneration || activePlayer !== player) return;
+      player.load();
+      activePlayerReady = true;
+      if (activeStatus !== "playing") return;
+      await player.play();
+    } catch {
+      // Keep a direct-source fallback for environments that reject fetches for
+      // the private media scheme; it still uses the same player lifecycle.
+      if (generation !== playbackGeneration || activePlayer !== player) return;
+      if (mediaType === "music" && activeObjectUrl) {
+        URL.revokeObjectURL(activeObjectUrl);
+        activeObjectUrl = undefined;
+      }
+      player.src = url;
+      player.load();
+      activePlayerReady = true;
+      if (activeStatus !== "playing") return;
+      await player.play().catch(() => {
+        activePlayers.delete(player);
+        clearActivePlayer(player);
+      });
+    }
+  })().catch(() => {
     activePlayers.delete(player);
     clearActivePlayer(player);
   });
@@ -142,6 +191,11 @@ export const toggleQuickMessageMusic = (soundId: string | undefined): boolean =>
   }
   const player = activePlayer;
   if (!player) return false;
+  if (!activePlayerReady) {
+    activeStatus = "playing";
+    publishAudioSnapshot();
+    return true;
+  }
   activeStatus = "playing";
   publishAudioSnapshot();
   void player.play().catch(() => clearActivePlayer(player));

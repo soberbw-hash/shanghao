@@ -7,7 +7,6 @@ import type {
   MusicActivity,
   MusicProviderId,
   RendererLogPayload,
-  WorkActivity,
 } from "@private-voice/shared";
 
 import { AppIdentityResolver, appIdentityMatches, type AppIdentity } from "./app-identity-resolver";
@@ -19,8 +18,6 @@ const execFileAsync = promisify(execFile);
 export const ACTIVITY_FALLBACK_POLL_INTERVAL_MS = 20_000;
 const MUSIC_ACTIVITY_MISS_TOLERANCE = 3;
 const GAME_ACTIVITY_MISS_TOLERANCE = 2;
-const WORK_ACTIVITY_MISS_TOLERANCE = 2;
-const WORK_ACTIVITY_CONFIRMATION_CYCLES = 2;
 
 export interface ProcessSnapshot {
   ProcessId?: number;
@@ -70,10 +67,6 @@ interface MusicRule {
   genericTitles: string[];
 }
 
-interface WorkRule extends Omit<WorkActivity, "iconDataUrl"> {
-  processNames: string[];
-}
-
 interface MatchedActivity<T> {
   activity: T;
   identity?: AppIdentity;
@@ -107,109 +100,6 @@ const MUSIC_RULES: MusicRule[] = [
     processNames: ["applemusic", "applemusicpreview", "itunes"],
     genericTitles: ["apple music", "itunes"],
   },
-];
-
-export const WORK_ACTIVITY_RULES: WorkRule[] = [
-  { id: "codex", name: "Codex", category: "development", processNames: ["codex"] },
-  { id: "workbuddy", name: "WorkBuddy", category: "development", processNames: ["workbuddy"] },
-  { id: "vscode", name: "Visual Studio Code", category: "development", processNames: ["code"] },
-  { id: "cursor", name: "Cursor", category: "development", processNames: ["cursor"] },
-  { id: "trae", name: "Trae", category: "development", processNames: ["trae"] },
-  { id: "visual-studio", name: "Visual Studio", category: "development", processNames: ["devenv"] },
-  {
-    id: "intellij",
-    name: "IntelliJ IDEA",
-    category: "development",
-    processNames: ["idea64", "idea"],
-  },
-  {
-    id: "pycharm",
-    name: "PyCharm",
-    category: "development",
-    processNames: ["pycharm64", "pycharm"],
-  },
-  {
-    id: "webstorm",
-    name: "WebStorm",
-    category: "development",
-    processNames: ["webstorm64", "webstorm"],
-  },
-  { id: "clion", name: "CLion", category: "development", processNames: ["clion64", "clion"] },
-  { id: "rider", name: "Rider", category: "development", processNames: ["rider64", "rider"] },
-  { id: "goland", name: "GoLand", category: "development", processNames: ["goland64", "goland"] },
-  {
-    id: "android-studio",
-    name: "Android Studio",
-    category: "development",
-    processNames: ["studio64", "studio"],
-  },
-  { id: "eclipse", name: "Eclipse", category: "development", processNames: ["eclipse"] },
-  {
-    id: "netbeans",
-    name: "NetBeans",
-    category: "development",
-    processNames: ["netbeans", "netbeans64"],
-  },
-  { id: "rstudio", name: "RStudio", category: "data", processNames: ["rstudio"] },
-  {
-    id: "anaconda",
-    name: "Anaconda Navigator",
-    category: "data",
-    processNames: ["anaconda-navigator"],
-  },
-  { id: "photoshop", name: "Photoshop", category: "design", processNames: ["photoshop"] },
-  { id: "illustrator", name: "Illustrator", category: "design", processNames: ["illustrator"] },
-  { id: "figma", name: "Figma", category: "design", processNames: ["figma"] },
-  { id: "indesign", name: "InDesign", category: "design", processNames: ["indesign"] },
-  { id: "premiere", name: "Premiere Pro", category: "media", processNames: ["adobe premiere pro"] },
-  { id: "after-effects", name: "After Effects", category: "media", processNames: ["afterfx"] },
-  { id: "audition", name: "Adobe Audition", category: "media", processNames: ["adobe audition"] },
-  {
-    id: "media-encoder",
-    name: "Media Encoder",
-    category: "media",
-    processNames: ["adobe media encoder"],
-  },
-  { id: "davinci", name: "DaVinci Resolve", category: "media", processNames: ["resolve"] },
-  { id: "blender", name: "Blender", category: "design", processNames: ["blender"] },
-  { id: "unity", name: "Unity", category: "development", processNames: ["unity"] },
-  {
-    id: "unreal",
-    name: "Unreal Editor",
-    category: "development",
-    processNames: ["unrealeditor", "ue4editor"],
-  },
-  { id: "maya", name: "Maya", category: "design", processNames: ["maya"] },
-  { id: "3ds-max", name: "3ds Max", category: "design", processNames: ["3dsmax"] },
-  { id: "sketchup", name: "SketchUp", category: "engineering", processNames: ["sketchup"] },
-  { id: "autocad", name: "AutoCAD", category: "engineering", processNames: ["acad"] },
-  { id: "solidworks", name: "SOLIDWORKS", category: "engineering", processNames: ["sldworks"] },
-  { id: "revit", name: "Revit", category: "engineering", processNames: ["revit"] },
-  { id: "fusion-360", name: "Fusion 360", category: "engineering", processNames: ["fusion360"] },
-  { id: "catia", name: "CATIA", category: "engineering", processNames: ["cnext"] },
-  { id: "siemens-nx", name: "Siemens NX", category: "engineering", processNames: ["ugraf"] },
-  { id: "matlab", name: "MATLAB", category: "data", processNames: ["matlab"] },
-  { id: "labview", name: "LabVIEW", category: "engineering", processNames: ["labview"] },
-  { id: "ansys", name: "ANSYS", category: "engineering", processNames: ["ansys", "runwb2"] },
-  { id: "altium", name: "Altium Designer", category: "engineering", processNames: ["x2"] },
-  { id: "proteus", name: "Proteus", category: "engineering", processNames: ["pds"] },
-  { id: "keil", name: "Keil", category: "engineering", processNames: ["uv4", "uv5"] },
-  {
-    id: "stm32cubeide",
-    name: "STM32CubeIDE",
-    category: "engineering",
-    processNames: ["stm32cubeide"],
-  },
-  {
-    id: "arduino",
-    name: "Arduino IDE",
-    category: "engineering",
-    processNames: ["arduino ide", "arduino"],
-  },
-  { id: "power-bi", name: "Power BI", category: "data", processNames: ["pbidesktop"] },
-  { id: "tableau", name: "Tableau", category: "data", processNames: ["tableau"] },
-  { id: "origin", name: "Origin", category: "data", processNames: ["origin", "originpro"] },
-  { id: "spss", name: "SPSS Statistics", category: "data", processNames: ["stats"] },
 ];
 
 const KK_PLATFORM_GAME_NAME: NonNullable<GameDetectionSnapshot["gameName"]> = "KK 对战平台";
@@ -442,47 +332,53 @@ export const matchKnownGame = (
     : parseProcessSnapshot(processSnapshot);
   const foregroundProcesses = selectForegroundActivityProcesses(processes);
 
-  if (foregroundProcesses.some(isKkHostedGameProcess)) return KK_PLATFORM_GAME_NAME;
+  const matchFromProcesses = (candidates: ProcessSnapshot[]): GameDetectionSnapshot["gameName"] => {
+    if (candidates.some(isKkHostedGameProcess)) return KK_PLATFORM_GAME_NAME;
 
-  for (const rule of GAME_RULES) {
-    for (const processInfo of foregroundProcesses) {
-      const processName = normalizeProcessName(processInfo.ProcessName);
-      const executableName = normalizeProcessName(
-        processInfo.Path ? path.basename(processInfo.Path) : undefined,
-      );
-      const title = (processInfo.MainWindowTitle ?? "").toLowerCase();
-      const processPath = (processInfo.Path ?? "").toLowerCase();
-      const commandLine = (processInfo.CommandLine ?? "").toLowerCase();
+    for (const rule of GAME_RULES) {
+      for (const processInfo of candidates) {
+        const processName = normalizeProcessName(processInfo.ProcessName);
+        const executableName = normalizeProcessName(
+          processInfo.Path ? path.basename(processInfo.Path) : undefined,
+        );
+        const title = (processInfo.MainWindowTitle ?? "").toLowerCase();
+        const processPath = (processInfo.Path ?? "").toLowerCase();
+        const commandLine = (processInfo.CommandLine ?? "").toLowerCase();
 
-      const processMatched = rule.processNames.some((candidate) => {
-        const normalizedCandidate = normalizeProcessName(candidate);
-        return processName === normalizedCandidate || executableName === normalizedCandidate;
-      });
-      if (!processMatched) continue;
+        const processMatched = rule.processNames.some((candidate) => {
+          const normalizedCandidate = normalizeProcessName(candidate);
+          return processName === normalizedCandidate || executableName === normalizedCandidate;
+        });
+        if (!processMatched) continue;
 
-      const requiresEvidence = rule.evidenceRequiredProcessNames?.some((candidate) => {
-        const normalizedCandidate = normalizeProcessName(candidate);
-        return processName === normalizedCandidate || executableName === normalizedCandidate;
-      });
-      if (
-        requiresEvidence &&
-        !includesAny(title, rule.titleNeedles) &&
-        !includesAny(processPath, rule.pathNeedles) &&
-        !includesAny(commandLine, rule.commandLineNeedles)
-      ) {
-        continue;
+        const requiresEvidence = rule.evidenceRequiredProcessNames?.some((candidate) => {
+          const normalizedCandidate = normalizeProcessName(candidate);
+          return processName === normalizedCandidate || executableName === normalizedCandidate;
+        });
+        if (
+          requiresEvidence &&
+          !includesAny(title, rule.titleNeedles) &&
+          !includesAny(processPath, rule.pathNeedles) &&
+          !includesAny(commandLine, rule.commandLineNeedles)
+        ) {
+          continue;
+        }
+        return rule.name;
       }
-      return rule.name;
     }
-  }
-  return undefined;
+    return undefined;
+  };
+
+  // Prefer the foreground process for the most precise identity, but keep an
+  // exact running-game match while the user Alt+Tabs to ShangHao or another
+  // app. Work activity remains foreground-only.
+  return matchFromProcesses(foregroundProcesses) ?? matchFromProcesses(processes);
 };
 
 const matchKnownGameActivity = (
   processes: ProcessSnapshot[],
 ): MatchedActivity<NonNullable<GameDetectionSnapshot["gameName"]>> | undefined => {
-  const foregroundProcesses = selectForegroundActivityProcesses(processes);
-  const gameName = matchKnownGame(foregroundProcesses);
+  const gameName = matchKnownGame(processes);
   if (!gameName) return undefined;
   const rule = GAME_RULES.find((candidate) => candidate.name === gameName);
   if (!rule) return { activity: gameName };
@@ -490,7 +386,7 @@ const matchKnownGameActivity = (
   // executable icon would leak the concrete game (for example 英雄三国) even
   // though the public activity is intentionally unified as KK 对战平台.
   if (gameName === KK_PLATFORM_GAME_NAME) return { activity: gameName };
-  for (const processInfo of foregroundProcesses) {
+  for (const processInfo of processes) {
     const identity = appIdentityResolver.resolve({
       processName: processInfo.ProcessName,
       executablePath: processInfo.Path,
@@ -506,55 +402,6 @@ const matchKnownGameActivity = (
     }
   }
   return { activity: gameName };
-};
-
-const matchKnownWorkActivityWithProcess = (
-  processes: ProcessSnapshot[],
-): MatchedActivity<WorkActivity> | undefined => {
-  const visibleProcesses = selectForegroundActivityProcesses(processes);
-
-  for (const processInfo of visibleProcesses) {
-    const identity = appIdentityResolver.resolve({
-      processName: processInfo.ProcessName,
-      executablePath: processInfo.Path,
-      productName: processInfo.ProductName,
-      fileDescription: processInfo.FileDescription,
-      packageFamilyName: processInfo.PackageFamilyName,
-      appUserModelId: processInfo.AppUserModelId,
-      windowOwnerProcessName: processInfo.WindowOwnerProcessName,
-      parentProcessId: processInfo.ParentProcessId,
-    });
-    if (!identity) continue;
-    const normalizedEvidence = `${processInfo.Path ?? ""}\n${processInfo.CommandLine ?? ""}`
-      .toLocaleLowerCase()
-      .replaceAll("/", "\\");
-    const rule = WORK_ACTIVITY_RULES.find((candidate) => {
-      const isDirectProcessMatch = appIdentityMatches(identity, candidate.processNames);
-      if (isDirectProcessMatch) return true;
-
-      return (
-        candidate.id === "codex" &&
-        (identity.processName === "chatgpt" || identity.executableName === "chatgpt") &&
-        (normalizedEvidence.includes("openai.codex_") ||
-          normalizedEvidence.includes("\\roaming\\codex\\"))
-      );
-    });
-    if (!rule) continue;
-    return {
-      activity: { id: rule.id, name: rule.name, category: rule.category },
-      identity,
-    };
-  }
-  return undefined;
-};
-
-export const matchKnownWorkActivity = (
-  processSnapshot: string | ProcessSnapshot[],
-): WorkActivity | undefined => {
-  const processes = Array.isArray(processSnapshot)
-    ? processSnapshot
-    : parseProcessSnapshot(processSnapshot);
-  return matchKnownWorkActivityWithProcess(processes)?.activity;
 };
 
 const cleanMusicTitle = (title: string, rule: MusicRule): string => {
@@ -712,10 +559,9 @@ export const buildMediaSessionProbeCommand = (): string =>
 interface DetectedActivities {
   game?: MatchedActivity<NonNullable<GameDetectionSnapshot["gameName"]>>;
   musicActivity?: MusicActivity;
-  work?: MatchedActivity<WorkActivity>;
 }
 
-const detectActivities = async (includeWorkActivity: boolean): Promise<DetectedActivities> => {
+const detectActivities = async (): Promise<DetectedActivities> => {
   if (!platformService.isWindows) return {};
 
   const nativeActivity = await rustCoreClient
@@ -745,12 +591,10 @@ const detectActivities = async (includeWorkActivity: boolean): Promise<DetectedA
 
   const processes = parseProcessSnapshot(processResult.stdout);
   const game = matchKnownGameActivity(processes);
-  const work = includeWorkActivity ? matchKnownWorkActivityWithProcess(processes) : undefined;
   return {
     game,
     musicActivity:
       matchMediaSessionMusicActivity(mediaSessionResult.stdout) ?? matchMusicActivity(processes),
-    work,
   };
 };
 
@@ -763,64 +607,14 @@ export const resolveStableGameActivity = (
   return consecutiveMisses <= GAME_ACTIVITY_MISS_TOLERANCE ? previous : undefined;
 };
 
-/** Requires sustained professional work before publishing and resists brief app switching. */
-export class StableWorkActivityResolver {
-  private current: WorkActivity | undefined;
-  private candidate: WorkActivity | undefined;
-  private candidateCycles = 0;
-  private misses = 0;
-
-  update(detected?: WorkActivity): WorkActivity | undefined {
-    if (!detected) {
-      this.candidate = undefined;
-      this.candidateCycles = 0;
-      this.misses += 1;
-      if (this.misses > WORK_ACTIVITY_MISS_TOLERANCE) this.current = undefined;
-      return this.current;
-    }
-
-    this.misses = 0;
-    if (this.current?.id === detected.id) {
-      this.current = detected;
-      this.candidate = undefined;
-      this.candidateCycles = 0;
-      return this.current;
-    }
-
-    if (this.candidate?.id === detected.id) {
-      this.candidate = detected;
-      this.candidateCycles += 1;
-    } else {
-      this.candidate = detected;
-      this.candidateCycles = 1;
-    }
-
-    if (this.candidateCycles >= WORK_ACTIVITY_CONFIRMATION_CYCLES) {
-      this.current = this.candidate;
-      this.candidate = undefined;
-      this.candidateCycles = 0;
-    }
-    return this.current;
-  }
-
-  reset(current?: WorkActivity): void {
-    this.current = current;
-    this.candidate = undefined;
-    this.candidateCycles = 0;
-    this.misses = 0;
-  }
-}
-
 export class GameDetectionController {
   private timer: NodeJS.Timeout | undefined;
   private enabled = false;
-  private workActivityEnabled = false;
   private checkInFlight = false;
   private pendingReconcile = false;
   private generation = 0;
   private gameActivityMisses = 0;
   private musicActivityMisses = 0;
-  private readonly stableWorkActivity = new StableWorkActivityResolver();
   private listeners = new Set<(snapshot: GameDetectionSnapshot) => void>();
   private snapshot: GameDetectionSnapshot = { checkedAt: new Date(0).toISOString() };
 
@@ -840,7 +634,6 @@ export class GameDetectionController {
       this.timer = undefined;
       this.gameActivityMisses = 0;
       this.musicActivityMisses = 0;
-      this.stableWorkActivity.reset();
       this.snapshot = { checkedAt: new Date().toISOString() };
       this.notifyListeners();
       await this.writeLog({
@@ -858,27 +651,6 @@ export class GameDetectionController {
     });
     void this.check();
     this.timer = setInterval(() => void this.check(), ACTIVITY_FALLBACK_POLL_INTERVAL_MS);
-  }
-
-  async setWorkActivityEnabled(enabled: boolean): Promise<void> {
-    if (this.workActivityEnabled === enabled) return;
-    this.workActivityEnabled = enabled;
-    this.generation += 1;
-    this.stableWorkActivity.reset();
-    if (!enabled && this.snapshot.workActivity) {
-      this.snapshot = {
-        ...this.snapshot,
-        workActivity: undefined,
-        checkedAt: new Date().toISOString(),
-      };
-      this.notifyListeners();
-    }
-    await this.writeLog({
-      category: "app",
-      level: "info",
-      message: enabled ? "work_activity_enabled" : "work_activity_cleared",
-    });
-    if (enabled && this.enabled) void this.check();
   }
 
   async reconcile(reason: string): Promise<void> {
@@ -903,7 +675,6 @@ export class GameDetectionController {
     this.generation += 1;
     this.gameActivityMisses = 0;
     this.musicActivityMisses = 0;
-    this.stableWorkActivity.reset();
     appIconResolver.clear();
     this.listeners.clear();
   }
@@ -925,12 +696,7 @@ export class GameDetectionController {
     const previousGame = this.snapshot.gameName;
     const previousGameIconDataUrl = this.snapshot.gameIconDataUrl;
     const previousMusicKey = JSON.stringify(this.snapshot.musicActivity ?? null);
-    const previousWorkKey = JSON.stringify(this.snapshot.workActivity ?? null);
-    const {
-      game,
-      musicActivity: detectedMusicActivity,
-      work,
-    } = await detectActivities(this.workActivityEnabled).finally(() => {
+    const { game, musicActivity: detectedMusicActivity } = await detectActivities().finally(() => {
       this.checkInFlight = false;
     });
     if (!this.enabled || generation !== this.generation) {
@@ -949,36 +715,15 @@ export class GameDetectionController {
       this.snapshot.musicActivity,
       this.musicActivityMisses,
     );
-    const detectedWorkActivity = this.workActivityEnabled ? work?.activity : undefined;
-    const stableWorkActivity = this.workActivityEnabled
-      ? this.stableWorkActivity.update(detectedWorkActivity)
-      : undefined;
-    const [gameIcon, workIcon] = await Promise.all([
-      game && gameName === game.activity
-        ? appIconResolver.resolve(game.identity)
-        : Promise.resolve(undefined),
-      work && stableWorkActivity?.id === work.activity.id
-        ? appIconResolver.resolve(work.identity)
-        : Promise.resolve(undefined),
-    ]);
+    const gameIcon =
+      game && gameName === game.activity ? await appIconResolver.resolve(game.identity) : undefined;
     if (!this.enabled || generation !== this.generation) return;
     const gameIconDataUrl =
       gameName === previousGame && !gameIcon ? previousGameIconDataUrl : gameIcon?.dataUrl;
-    const workActivity = stableWorkActivity
-      ? {
-          ...stableWorkActivity,
-          iconDataUrl:
-            workIcon?.dataUrl ??
-            (stableWorkActivity.id === this.snapshot.workActivity?.id
-              ? this.snapshot.workActivity.iconDataUrl
-              : undefined),
-        }
-      : undefined;
     this.snapshot = {
       gameName,
       gameIconDataUrl,
       musicActivity,
-      workActivity,
       detectedAt: gameName
         ? previousGame === gameName
           ? this.snapshot.detectedAt
@@ -988,19 +733,17 @@ export class GameDetectionController {
     };
 
     const musicKey = JSON.stringify(musicActivity ?? null);
-    const workKey = JSON.stringify(workActivity ?? null);
     if (
       previousGame === gameName &&
       previousGameIconDataUrl === gameIconDataUrl &&
-      previousMusicKey === musicKey &&
-      previousWorkKey === workKey
+      previousMusicKey === musicKey
     )
       return;
     await this.writeLog({
       category: "app",
       level: "info",
       message: "Desktop activity changed",
-      context: { gameName, musicProvider: musicActivity?.provider, workApp: workActivity?.id },
+      context: { gameName, musicProvider: musicActivity?.provider },
     });
     this.notifyListeners();
     if (this.pendingReconcile) void this.check();
