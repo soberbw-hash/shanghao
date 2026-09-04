@@ -12,7 +12,7 @@
   },
   "dependencies": {
     "@private-voice/shared": "workspace:*",
-    "@supabase/supabase-js": "2.112.3",
+    "@supabase/supabase-js": "2.112.4",
     "ws": "8.21.3"
   },
   "devDependencies": {
