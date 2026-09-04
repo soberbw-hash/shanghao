@@ -13,7 +13,7 @@
   "dependencies": {
     "@private-voice/shared": "workspace:*",
     "clsx": "^2.1.1",
-    "framer-motion": "^11.18.2",
+    "framer-motion": "^13.1.1",
     "react": "19.2.8",
     "tailwind-merge": "3.6.0"
   },
