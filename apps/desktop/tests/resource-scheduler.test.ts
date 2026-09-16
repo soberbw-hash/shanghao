@@ -11,6 +11,22 @@ import {
   ResourceScheduler,
 } from "../src/main/resource-scheduler";
 
+test("denial telemetry is bounded memory-only and does not alter decisions", () => {
+  const scheduler = new ResourceScheduler();
+  for (let i = 0; i < 10000; i++)
+    assert.equal(scheduler.aiDecision("summary", false).reason, "manual_only");
+  assert.equal(scheduler.getDenialSnapshot().total, 10000);
+  assert.equal(scheduler.getDenialSnapshot().byReason.manual_only, 10000);
+  scheduler.aiDecision("summary", true);
+  assert.equal(scheduler.getDenialSnapshot().total, 10000);
+  scheduler.update({ processingMode: "after_game", gameActive: true });
+  scheduler.aiDecision("summary", false);
+  assert.equal(scheduler.getDenialSnapshot().lastReason, "waiting_for_game_to_finish");
+  const snapshot = scheduler.getDenialSnapshot();
+  snapshot.byReason.manual_only = 0;
+  assert.equal(scheduler.getDenialSnapshot().byReason.manual_only, 10000);
+});
+
 const pressure = (overrides: Partial<AiRuntimePressure>): AiRuntimePressure => ({
   inVoiceRoom: false,
   screenSharing: false,

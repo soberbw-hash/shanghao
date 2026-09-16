@@ -13,6 +13,7 @@ import type {
 } from "./local-llm-provider";
 import { runLocalProcess } from "./local-process";
 import { platformService } from "./platform/PlatformService";
+import { terminateProcessTree } from "./process-tree";
 
 const SERVED_MODEL = "qwen36-35b-a3b-nvfp4";
 const DEFAULT_PORT = 19_193;
@@ -92,18 +93,6 @@ const extractJsonObject = <T>(value: string, diagnostics: JsonResponseDiagnostic
       `freetoken_invalid_json_response:${suffix}:parse=${jsonParseFailureKind(error)}`,
       { cause: error },
     );
-  }
-};
-
-const terminateTree = (child: ChildProcessWithoutNullStreams): void => {
-  if (platformService.isWindows && child.pid) {
-    const killer = spawn("taskkill", ["/PID", String(child.pid), "/T", "/F"], {
-      windowsHide: true,
-      stdio: "ignore",
-    });
-    killer.unref();
-  } else {
-    child.kill("SIGKILL");
   }
 };
 
@@ -212,6 +201,9 @@ export class FreeTokenLocalLlmProvider implements LocalLLMProvider {
   private child?: ChildProcessWithoutNullStreams;
   private ownedServer = false;
   private startPromise?: Promise<void>;
+  private startReject?: (reason: Error) => void;
+  private startPollTimer?: NodeJS.Timeout;
+  private startGeneration = 0;
   private stderrTail = "";
   private phase: ProviderPhase = "missing";
   private idleTimer?: NodeJS.Timeout;
@@ -219,6 +211,7 @@ export class FreeTokenLocalLlmProvider implements LocalLLMProvider {
   private baselineGpuMemoryMb?: number;
   private lastLoadTimeMs?: number;
   private generationQueue: Promise<void> = Promise.resolve();
+  private terminationPromise: Promise<void> = Promise.resolve();
   private metrics: AiLocalLlmRuntimeMetrics = {
     provider: "freetoken",
     phase: "missing",
@@ -307,10 +300,16 @@ export class FreeTokenLocalLlmProvider implements LocalLLMProvider {
   release(reason: string): void {
     if (this.activeRequest && reason !== "app_stopping") return;
     this.clearIdleTimer();
+    this.startGeneration += 1;
+    if (this.startPollTimer) clearTimeout(this.startPollTimer);
+    this.startPollTimer = undefined;
+    const rejectStart = this.startReject;
+    this.startReject = undefined;
     const child = this.child;
     this.child = undefined;
     this.startPromise = undefined;
-    if (child && this.ownedServer && child.exitCode === null) terminateTree(child);
+    rejectStart?.(new Error(`freetoken_released:${reason}`));
+    if (child && this.ownedServer && child.exitCode === null) this.queueTermination(child);
     this.ownedServer = false;
     this.phase = this.executable ? "stopped" : "missing";
     void this.log("info", "FreeToken sidecar released", { reason });
@@ -497,6 +496,7 @@ export class FreeTokenLocalLlmProvider implements LocalLLMProvider {
   }
 
   private async ensureServer(signal?: AbortSignal): Promise<void> {
+    await this.terminationPromise;
     const prepared = await this.prepare();
     if (!prepared.ready || !this.executable)
       throw new Error(prepared.message ?? "freetoken_missing");
@@ -507,7 +507,22 @@ export class FreeTokenLocalLlmProvider implements LocalLLMProvider {
     this.baselineGpuMemoryMb = await gpuMemoryUsedMb();
     this.phase = "starting";
     this.stderrTail = "";
-    this.startPromise = new Promise<void>((resolve, reject) => {
+    const generation = ++this.startGeneration;
+    const startPromise = new Promise<void>((resolve, reject) => {
+      let settled = false;
+      const settle = (error?: Error) => {
+        if (settled) return;
+        settled = true;
+        if (this.startPollTimer) clearTimeout(this.startPollTimer);
+        this.startPollTimer = undefined;
+        if (this.startGeneration === generation) {
+          this.startPromise = undefined;
+          this.startReject = undefined;
+        }
+        if (error) reject(error);
+        else resolve();
+      };
+      this.startReject = (error) => settle(error);
       const child = spawn(
         this.executable as string,
         [
@@ -541,14 +556,14 @@ export class FreeTokenLocalLlmProvider implements LocalLLMProvider {
       };
       child.stdout.on("data", consume);
       child.stderr.on("data", consume);
-      child.on("error", (error) => reject(new Error(`freetoken_spawn_failed:${error.message}`)));
+      child.on("error", (error) => settle(new Error(`freetoken_spawn_failed:${error.message}`)));
       child.on("close", (code) => {
         if (this.child !== child) return;
         this.child = undefined;
         this.ownedServer = false;
         if (this.phase !== "stopped") {
           this.phase = "error";
-          this.startPromise = undefined;
+          settle(new Error(`freetoken_process_exit_${code}:${this.stderrTail.slice(-800)}`));
           void this.updateStatus(
             false,
             `FreeToken 服务异常退出 (${code})：${this.stderrTail.slice(-800)}`,
@@ -557,13 +572,13 @@ export class FreeTokenLocalLlmProvider implements LocalLLMProvider {
       });
       const startedAt = Date.now();
       const poll = async () => {
+        if (generation !== this.startGeneration) return;
         if (signal?.aborted) {
-          terminateTree(child);
-          return reject(new Error("ai_task_paused"));
+          this.queueTermination(child);
+          return settle(new Error("ai_task_paused"));
         }
         if (await this.healthCheck()) {
           this.phase = "ready";
-          this.startPromise = undefined;
           this.lastLoadTimeMs = Date.now() - startedAt;
           await this.log("info", "FreeToken sidecar ready", {
             executable: this.executable,
@@ -574,19 +589,19 @@ export class FreeTokenLocalLlmProvider implements LocalLLMProvider {
             loadTimeMs: this.lastLoadTimeMs,
           });
           await this.updateStatus(true);
-          return resolve();
+          return settle();
         }
         if (Date.now() - startedAt >= START_TIMEOUT_MS) {
-          terminateTree(child);
+          this.queueTermination(child);
           this.phase = "error";
-          this.startPromise = undefined;
-          return reject(new Error(`freetoken_load_timeout:${this.stderrTail.slice(-1_200)}`));
+          return settle(new Error(`freetoken_load_timeout:${this.stderrTail.slice(-1_200)}`));
         }
-        setTimeout(() => void poll(), 1_000);
+        this.startPollTimer = setTimeout(() => void poll(), 1_000);
       };
       void poll();
     });
-    return this.startPromise;
+    this.startPromise = startPromise;
+    return startPromise;
   }
 
   private async healthCheck(): Promise<boolean> {
@@ -669,6 +684,12 @@ export class FreeTokenLocalLlmProvider implements LocalLLMProvider {
   private clearIdleTimer(): void {
     if (this.idleTimer) clearTimeout(this.idleTimer);
     this.idleTimer = undefined;
+  }
+
+  private queueTermination(child: ChildProcessWithoutNullStreams): void {
+    this.terminationPromise = this.terminationPromise
+      .catch(() => undefined)
+      .then(() => terminateProcessTree(child));
   }
 
   private baseUrl(): string {

@@ -27,9 +27,9 @@ import {
 const comparisonModelStatus = (
   overrides: Partial<import("@private-voice/shared").AiModelStatus> = {},
 ): import("@private-voice/shared").AiModelStatus => ({
-  id: "dolphin-cn-dialect-0.4b",
+  id: "ark-asr-3b-q8_0",
   category: "asr",
-  name: "Dolphin",
+  name: "ARK",
   purpose: "test",
   repository: "test/repository",
   approximateBytes: 1,
@@ -250,8 +250,9 @@ test("common VAD keeps model speech misses separate from real silence", () => {
     finalResultSaved: true,
     terminationReason: "completed",
   });
-  assert.equal(validity.dataValidity, "invalid_output_anomaly");
-  assert.equal(validity.eligibleForQualityRanking, false);
+  assert.equal(validity.dataValidity, "valid_with_review");
+  assert.equal(validity.eligibleForQualityRanking, true);
+  assert.equal(stats.suspectedOmissionCount, 1);
 });
 
 test("obvious decoder repetition is detected conservatively", () => {
@@ -319,10 +320,7 @@ test("cross-model checks flag a clear empty outlier and create a review candidat
     "qwen3-asr-0.6b-force": "",
     "fireredasr2-aed": "",
     "paraformer-zh": "",
-    "moss-transcribe-diarize-0.9b": "",
     "moss-transcribe-diarize-0.9b-q8_0": "",
-    "dolphin-cn-dialect-0.4b": "",
-    "cohere-transcribe-2b": "",
     "ark-asr-3b-q8_0": "",
   };
   const variants = Object.fromEntries(

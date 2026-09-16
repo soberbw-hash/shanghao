@@ -19,7 +19,10 @@ const request = {
 test("room questions always use cloud AI without a local model dependency", () => {
   for (const legacyProvider of ["cloud", "local", "custom"] as const) {
     assert.equal(resolveAiTextProvider("question", legacyProvider), "cloud");
-    assert.equal(resolveAiTextProvider("organize", legacyProvider), legacyProvider);
+    assert.equal(
+      resolveAiTextProvider("organize", legacyProvider),
+      legacyProvider === "custom" ? "custom" : "cloud",
+    );
   }
 });
 
@@ -142,7 +145,7 @@ test("server cloud AI keeps the API key in the authorization header", async () =
   let body = "";
   const service = new CloudAiService({
     apiKey: "server-only-test-key",
-    model: "deepseek-v4-flash",
+    model: "deepseek-flash",
     fetcher: async (input, init) => {
       url = String(input);
       authorization = new Headers(init?.headers).get("authorization") ?? "";
@@ -160,8 +163,37 @@ test("server cloud AI keeps the API key in the authorization header", async () =
   assert.equal(url.includes("server-only-test-key"), false);
   assert.equal(authorization, "Bearer server-only-test-key");
   assert.equal(body.includes("server-only-test-key"), false);
-  assert.equal(body.includes("deepseek-v4-flash"), true);
+  assert.equal(body.includes("deepseek-flash"), true);
   assert.equal(result, '{"summary":[]}');
+});
+
+test("cloud AI defaults to Flash 4.1 on both routes and preserves explicit model overrides", async () => {
+  const previous = process.env.DEEPSEEK_MODEL;
+  try {
+    for (const [environment, configured, expected] of [
+      ["", undefined, "deepseek-flash"],
+      ["environment-model", undefined, "environment-model"],
+      ["environment-model", "custom-model", "custom-model"],
+    ] as const) {
+      process.env.DEEPSEEK_MODEL = environment;
+      for (const useWebSearch of [false, true]) {
+        let sentModel = "";
+        const service = new CloudAiService({
+          apiKey: "server-only-test-key",
+          model: configured,
+          fetcher: async (_input, init) => {
+            sentModel = JSON.parse(String(init?.body)).model;
+            return new Response("busy", { status: 429 });
+          },
+        });
+        await assert.rejects(service.execute({ ...request, purpose: "question", useWebSearch }));
+        assert.equal(sentModel, expected);
+      }
+    }
+  } finally {
+    if (previous === undefined) delete process.env.DEEPSEEK_MODEL;
+    else process.env.DEEPSEEK_MODEL = previous;
+  }
 });
 
 test("room cloud questions request server-side web search without exposing provider errors", async () => {

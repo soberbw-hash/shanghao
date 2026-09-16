@@ -25,6 +25,9 @@ export const formatShortcutForDisplay = (value: string): string =>
       const normalized = part.trim();
       if (normalized === "CommandOrControl" || normalized === "Control") return "Ctrl";
       if (normalized === "Meta" || normalized === "Super") return "Win";
+      if (normalized === "Space") return "空格";
+      if (normalized === "Mouse4") return "鼠标侧键 1";
+      if (normalized === "Mouse5") return "鼠标侧键 2";
       return normalized;
     })
     .filter(Boolean)
@@ -39,17 +42,19 @@ const normalizeKey = (event: KeyboardEvent<HTMLInputElement>) => {
   ].filter(Boolean);
 
   if (Object.prototype.hasOwnProperty.call(modifierLabels, event.key)) {
-    return modifiers.join("+");
+    return "";
   }
 
   const key =
-    event.code && event.code.startsWith("Key")
-      ? event.code.replace("Key", "")
-      : event.code && event.code.startsWith("Digit")
-        ? event.code.replace("Digit", "")
-        : event.key.length === 1
-          ? event.key.toUpperCase()
-          : event.code || event.key;
+    event.code === "Space" || event.key === " "
+      ? "Space"
+      : event.code && event.code.startsWith("Key")
+        ? event.code.replace("Key", "")
+        : event.code && event.code.startsWith("Digit")
+          ? event.code.replace("Digit", "")
+          : event.key.length === 1
+            ? event.key.toUpperCase()
+            : event.code || event.key;
 
   return [...modifiers, key].filter(Boolean).join("+");
 };
@@ -61,6 +66,7 @@ export const ShortcutInput = ({
   defaultValue,
   conflictMessage,
   compact = false,
+  physicalKeys = false,
 }: {
   value: string;
   onChange: (value: string) => void;
@@ -68,6 +74,7 @@ export const ShortcutInput = ({
   defaultValue?: string;
   conflictMessage?: string;
   compact?: boolean;
+  physicalKeys?: boolean;
 }) => {
   const [isCapturing, setIsCapturing] = useState(false);
 
@@ -97,10 +104,15 @@ export const ShortcutInput = ({
             title={displayValue}
             placeholder={placeholder}
             onFocus={() => setIsCapturing(true)}
+            onClick={() => setIsCapturing(true)}
             onBlur={() => setIsCapturing(false)}
+            onAuxClick={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+            }}
             onMouseDown={(event: ReactMouseEvent<HTMLInputElement>) => {
               const mouseShortcut = mouseShortcutNames[event.button];
-              if (!isCapturing || !mouseShortcut) return;
+              if (!mouseShortcut || document.activeElement !== event.currentTarget) return;
               event.preventDefault();
               event.stopPropagation();
               const modifiers = [
@@ -116,22 +128,33 @@ export const ShortcutInput = ({
               event.preventDefault();
               event.stopPropagation();
 
-              if (ignoredKeys.has(event.key)) {
+              if (!physicalKeys && ignoredKeys.has(event.key)) {
                 return;
               }
 
-              if (event.key === "Escape") {
+              if (!physicalKeys && event.key === "Escape") {
                 setIsCapturing(false);
                 return;
               }
 
-              if (event.key === "Backspace" || event.key === "Delete") {
+              if (!physicalKeys && (event.key === "Backspace" || event.key === "Delete")) {
                 onChange("");
                 setIsCapturing(false);
                 return;
               }
 
-              const nextValue = normalizeKey(event);
+              let nextValue = normalizeKey(event);
+              if (physicalKeys && nextValue && event.code && !/^(Key|Digit)/.test(event.code)) {
+                nextValue = [
+                  event.ctrlKey ? "Ctrl" : "",
+                  event.metaKey ? "Meta" : "",
+                  event.shiftKey ? "Shift" : "",
+                  event.altKey ? "Alt" : "",
+                  event.code,
+                ]
+                  .filter(Boolean)
+                  .join("+");
+              }
               if (!nextValue) {
                 return;
               }

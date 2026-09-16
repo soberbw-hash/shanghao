@@ -46,6 +46,7 @@ extraResources:
     to: native
     filter:
       - "shanghao-core.exe"
+      - "ShangHao.PhoneAudio.exe"
   - from: scripts/qwen-runner.py
     to: ai/qwen-runner.py
   - from: scripts/asr-runner.py

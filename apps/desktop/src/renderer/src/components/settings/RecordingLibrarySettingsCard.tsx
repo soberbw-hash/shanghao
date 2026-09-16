@@ -35,6 +35,8 @@ import { SettingsSection } from "./SettingsSection";
 import { VoiceMemoryDetail } from "./VoiceMemoryDetail";
 import { ModelTestPanel } from "./ModelTestPanel";
 import { useRecordingStore } from "../../store/recordingStore";
+import { createRecordingLibraryCache } from "../../features/recording/recordingLibraryCache";
+import { formatRecordingBytes } from "../../features/recording/recordingSize";
 import {
   isVoiceMemoryTranscriptionComplete,
   voiceMemoryTranscriptionPercent,
@@ -52,23 +54,9 @@ interface RecordingLibrarySettingsCardProps {
   openTarget?: { filePath: string; startMs: number; requestId: number };
 }
 
-let cachedRecordingLibrary: RecordingLibrarySnapshot | undefined;
-let recordingLibraryRequest: Promise<RecordingLibrarySnapshot> | undefined;
-
-export const preloadRecordingLibrary = (): Promise<RecordingLibrarySnapshot> => {
-  if (cachedRecordingLibrary) return Promise.resolve(cachedRecordingLibrary);
-  if (recordingLibraryRequest) return recordingLibraryRequest;
-  recordingLibraryRequest = window.desktopApi.recording
-    .list()
-    .then((snapshot) => {
-      cachedRecordingLibrary = snapshot;
-      return snapshot;
-    })
-    .finally(() => {
-      recordingLibraryRequest = undefined;
-    });
-  return recordingLibraryRequest;
-};
+const recordingLibraryCache = createRecordingLibraryCache(() => window.desktopApi.recording.list());
+export const preloadRecordingLibrary = (): Promise<RecordingLibrarySnapshot> =>
+  recordingLibraryCache.read();
 
 type RecordingFilter = "all" | "favorites";
 const RECORDING_RENDER_BATCH = 24;
@@ -81,10 +69,7 @@ const TIME_FORMAT = new Intl.DateTimeFormat("zh-CN", {
   hour12: false,
 });
 
-const formatBytes = (bytes: number): string =>
-  bytes >= 1024 ** 3
-    ? `${(bytes / 1024 ** 3).toFixed(1)} GB`
-    : `${Math.max(0.1, bytes / 1024 ** 2).toFixed(1)} MB`;
+const formatBytes = formatRecordingBytes;
 
 const formatTime = (seconds: number): string => {
   const safe = Number.isFinite(seconds) ? Math.max(0, Math.round(seconds)) : 0;
@@ -103,10 +88,7 @@ const compactTranscriptionModelNames = {
   "glm-asr-nano-2512": "GLM-ASR-Nano",
   "fireredasr2-aed": "FireRedASR2-AED",
   "paraformer-zh": "Paraformer 中文套件",
-  "moss-transcribe-diarize-0.9b": "MOSS 0.9B",
-  "moss-transcribe-diarize-0.9b-q8_0": "MOSS 0.9B Q8",
-  "dolphin-cn-dialect-0.4b": "Dolphin 方言 0.4B",
-  "cohere-transcribe-2b": "Cohere Transcribe 2B",
+  "moss-transcribe-diarize-0.9b-q8_0": "MOSS 0.9B（Q8）",
   "ark-asr-3b-q8_0": "ARK-ASR-3B Q8_0",
 } as const satisfies Record<keyof typeof AI_ASR_MODEL_NAMES, string>;
 
@@ -225,12 +207,16 @@ export const RecordingLibrarySettingsCard = ({
   const loadMoreRef = useRef<HTMLDivElement>(null);
   const recordingPanelRef = useRef<HTMLElement>(null);
   const [library, setLibrary] = useState<RecordingLibrarySnapshot | undefined>(
-    cachedRecordingLibrary,
+    recordingLibraryCache.peek(),
   );
   const [selectedId, setSelectedId] = useState<string>();
   const [recordingFilter, setRecordingFilter] = useState<RecordingFilter>("all");
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
+  const seekTranscript = useCallback((offsetMs: number) => {
+    if (audioRef.current) audioRef.current.currentTime = offsetMs / 1_000;
+    setCurrentTime(offsetMs / 1_000);
+  }, []);
   const [duration, setDuration] = useState(0);
   const [playbackRate, setPlaybackRate] = useState(1);
   const [playbackError, setPlaybackError] = useState<string>();
@@ -247,7 +233,7 @@ export const RecordingLibrarySettingsCard = ({
   const [renameTitle, setRenameTitle] = useState("");
   const [isRenaming, setIsRenaming] = useState(false);
   const [renderLimit, setRenderLimit] = useState(RECORDING_RENDER_BATCH);
-  const [isLibraryLoading, setIsLibraryLoading] = useState(!cachedRecordingLibrary);
+  const [isLibraryLoading, setIsLibraryLoading] = useState(!recordingLibraryCache.peek());
   const recordingState = useRecordingStore((state) => state.status.state);
   const recordingBusy = [
     RecordingState.Preparing,
@@ -258,13 +244,15 @@ export const RecordingLibrarySettingsCard = ({
   const [pendingSeekMs, setPendingSeekMs] = useState<number>();
   const [voiceMemories, setVoiceMemories] = useState<Record<string, VoiceMemoryRecord>>({});
   const [isModelComparisonOpen, setIsModelComparisonOpen] = useState(false);
-  const didUsePreloadedLibraryRef = useRef(Boolean(cachedRecordingLibrary));
+  const reloadGeneration = useRef(0);
 
   const reload = useCallback(async () => {
     if (typeof window.desktopApi.recording.list !== "function") {
       throw new Error("recording_library_restart_required");
     }
-    const next = await preloadRecordingLibrary();
+    const generation = ++reloadGeneration.current;
+    const next = await recordingLibraryCache.read(true);
+    if (generation !== reloadGeneration.current) return;
     setLibrary(next);
     setSelectedRecordingIds((current) => {
       const existingIds = new Set(next.items.map((item) => item.id));
@@ -277,14 +265,8 @@ export const RecordingLibrarySettingsCard = ({
 
   useEffect(() => {
     if (!isActive) return;
-    if (didUsePreloadedLibraryRef.current) {
-      didUsePreloadedLibraryRef.current = false;
-      setIsLibraryLoading(false);
-      return;
-    }
     let active = true;
-    cachedRecordingLibrary = undefined;
-    if (!cachedRecordingLibrary) setIsLibraryLoading(true);
+    if (!recordingLibraryCache.peek()) setIsLibraryLoading(true);
     void reload()
       .catch((error) => {
         if (!active) return;
@@ -691,6 +673,14 @@ export const RecordingLibrarySettingsCard = ({
         ),
       );
       setPendingBatchDelete(undefined);
+      setLibrary((current) =>
+        current
+          ? {
+              ...current,
+              items: current.items.filter((item) => !deletedPaths.has(item.filePath)),
+            }
+          : current,
+      );
       await reload();
       if (!selectedRecordingIds.size || result.failed.length === 0) setIsSelectionMode(false);
       pushToast({
@@ -1093,8 +1083,9 @@ export const RecordingLibrarySettingsCard = ({
                   const mediaError = event.currentTarget.error;
                   setIsPlaying(false);
                   setPlaybackError(
-                    `这条录音暂时无法播放，文件仍保存在本地。${mediaError?.code ? `（错误 ${mediaError.code}）` : ""}`,
+                    `录音无法播放，文件可能已被移动、删除或损坏。${mediaError?.code ? `（错误 ${mediaError.code}）` : ""}`,
                   );
+                  void reload().catch(() => undefined);
                 }}
               />
               <div className="recording-player-sticky">
@@ -1283,10 +1274,7 @@ export const RecordingLibrarySettingsCard = ({
                   recording={selected}
                   roomName="好友语音"
                   selectedAsrModel={settings.aiAsrModel}
-                  onSeek={(offsetMs) => {
-                    if (audioRef.current) audioRef.current.currentTime = offsetMs / 1_000;
-                    setCurrentTime(offsetMs / 1_000);
-                  }}
+                  onSeek={seekTranscript}
                 />
               )}
             </div>

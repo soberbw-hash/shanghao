@@ -2,6 +2,7 @@ import { existsSync } from "node:fs";
 import { access, copyFile, mkdir, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { cleanAsrText, hasAsrBody, restoreAlignedPunctuation } from "./asr-text-postprocess";
 
 import {
   AI_ASR_MODEL_NAMES,
@@ -34,6 +35,7 @@ import {
   type AsrWorkerResult,
 } from "./asr-persistent-worker";
 import { runLocalProcess } from "./local-process";
+import { measureAsrRelease } from "./asr-resource-release";
 import { resolveFfmpegExecutable } from "./media-runtime";
 import { modelFilesPresent } from "./ai-model-layout";
 import { ACTIVE_ARK_ASR_VARIANT } from "./ark-asr-config";
@@ -46,6 +48,7 @@ import {
   benchmarkEnvironmentSnapshot,
   gpuMemoryUsedMb,
   modelPrecision,
+  providerCudaErrorCode,
   temporaryRecordingName,
   type PcmAudioActivity,
   type TranscriptionChunkRuntimeResult,
@@ -127,13 +130,6 @@ export const QWEN_ORGANIZER_RUNTIME_PACKAGES = [
   "accelerate>=1.10,<2",
 ] as const;
 
-export const MOSS_RUNTIME_PACKAGES = [
-  "https://codeload.github.com/OpenMOSS/MOSS-Transcribe-Diarize/zip/0e3d1403fd8f1f1c674e883ece96b9f630794ebe",
-  "transformers==5.15.0",
-  "accelerate>=1.10,<2",
-  "librosa>=0.11,<1",
-] as const;
-
 const MOSS_CPP_RUNTIME_MARKER = "transcribe-cpp-0.2.3-cu12";
 
 export const MOSS_CPP_RUNTIME_WHEELS = [
@@ -167,24 +163,6 @@ export const MOSS_CPP_RUNTIME_WHEELS = [
       },
     ],
   },
-] as const;
-
-export const DOLPHIN_RUNTIME_PACKAGES = [
-  "dataoceanai-dolphin==20260513",
-  "torch-complex==0.4.4",
-] as const;
-
-// Provider wheels are installed into isolated --target directories. A stale or unreadable
-// provider-local dist-info directory must not be allowed to shadow the shared dependency
-// metadata used by Transformers during worker startup.
-export const SHARED_PYTHON_PACKAGING_VERSION = "26.3";
-export const SHARED_PYTHON_NUMPY_VERSION = "2.5.2";
-const DOLPHIN_RUNTIME_MARKER = "dolphin-cn-dialect-runtime-v2";
-
-export const COHERE_TRANSCRIBE_RUNTIME_PACKAGES = [
-  "transformers==5.15.0",
-  "accelerate>=1.10,<2",
-  "librosa>=0.11,<1",
 ] as const;
 
 export const ARK_ASR_RUNTIME_PACKAGES = [
@@ -348,23 +326,7 @@ export const normalizeForcedAlignerTranscript = (
   transcript: VoiceMemoryTranscriptSegment[],
 ): VoiceMemoryTranscriptSegment[] => mergeTranscriptIntoSentences(transcript);
 
-export const providerCudaErrorCode = (modelId: AiAsrModelId, bf16 = false): string => {
-  const providers: Record<AiAsrModelId, string> = {
-    "qwen3-asr-1.7b-force": "qwen3_asr",
-    "qwen3-asr-0.6b-force": "qwen3_asr",
-    "fun-asr-nano-2512": "fun_asr_nano_2512",
-    "glm-asr-nano-2512": "glm_asr_nano_2512",
-    "fireredasr2-aed": "fireredasr2_aed",
-    "paraformer-zh": "paraformer_zh",
-    "moss-transcribe-diarize-0.9b": "moss_transcribe_diarize",
-    "moss-transcribe-diarize-0.9b-q8_0": "moss_transcribe_diarize_q8",
-    "dolphin-cn-dialect-0.4b": "dolphin_cn_dialect",
-    "cohere-transcribe-2b": "cohere_transcribe",
-    "ark-asr-3b-q8_0": "ark_asr_3b",
-  };
-  const provider = providers[modelId];
-  return `${provider}_cuda${bf16 ? "_bf16" : ""}_required`;
-};
+export { providerCudaErrorCode } from "./asr-benchmark-runtime";
 
 /** Executes the downloaded models through real local Windows runtimes. */
 export class AiRuntimeManager {
@@ -375,10 +337,7 @@ export class AiRuntimeManager {
   private readonly funAsrPythonPath: string;
   private readonly glmAsrPythonPath: string;
   private readonly fireRedPythonPath: string;
-  private readonly mossPythonPath: string;
   private readonly mossCppPythonPath: string;
-  private readonly dolphinPythonPath: string;
-  private readonly coherePythonPath: string;
   private readonly arkAsrPythonPath: string;
   private readonly arkAsrPortableCliPath: string;
   private readonly cudaPythonPath: string;
@@ -410,10 +369,7 @@ export class AiRuntimeManager {
     this.funAsrPythonPath = path.join(providerRoot, "funasr");
     this.glmAsrPythonPath = path.join(providerRoot, "glm");
     this.fireRedPythonPath = path.join(providerRoot, "firered");
-    this.mossPythonPath = path.join(providerRoot, "moss");
     this.mossCppPythonPath = path.join(providerRoot, "moss-transcribe-cpp-v0.2.3-cu12");
-    this.dolphinPythonPath = path.join(providerRoot, "dolphin");
-    this.coherePythonPath = path.join(providerRoot, "cohere");
     // v0.8.29's Windows CUDA binary used AVX-512 and crashed with 0xC000001D on
     // otherwise supported CPUs. Keep the portable v0.8.30 runtime in a fresh versioned
     // directory so pip cannot overlay it on stale native DLLs from the broken build.
@@ -532,22 +488,8 @@ export class AiRuntimeManager {
     this.asrWorker.release(reason);
   }
 
-  async releaseAsrMeasured(reason: string): Promise<{
-    gpuMemoryAfterReleaseMb?: number;
-    releaseTimeMs: number;
-    resourceReleaseSucceeded: boolean;
-  }> {
-    const startedAt = performance.now();
-    this.asrWorker.release(reason);
-    const deadline = Date.now() + 2_000;
-    while (this.asrWorker.health().processId && Date.now() < deadline) {
-      await new Promise((resolve) => setTimeout(resolve, 100));
-    }
-    return {
-      gpuMemoryAfterReleaseMb: await gpuMemoryUsedMb(),
-      releaseTimeMs: Math.max(0, Math.round(performance.now() - startedAt)),
-      resourceReleaseSucceeded: !this.asrWorker.health().processId,
-    };
+  releaseAsrMeasured(reason: string, baselineGpuMemoryMb?: number) {
+    return measureAsrRelease(this.asrWorker, reason, baselineGpuMemoryMb);
   }
 
   async benchmarkEnvironment(): Promise<{
@@ -575,10 +517,7 @@ export class AiRuntimeManager {
       "glm-asr-nano-2512",
       "fireredasr2-aed",
       "paraformer-zh",
-      "moss-transcribe-diarize-0.9b",
       "moss-transcribe-diarize-0.9b-q8_0",
-      "dolphin-cn-dialect-0.4b",
-      "cohere-transcribe-2b",
       "ark-asr-3b-q8_0",
     ];
     const [asrStatuses, qwenStatus] = await Promise.all([
@@ -635,10 +574,7 @@ export class AiRuntimeManager {
       "glm-asr-nano-2512",
       "fireredasr2-aed",
       "paraformer-zh",
-      "moss-transcribe-diarize-0.9b",
       "moss-transcribe-diarize-0.9b-q8_0",
-      "dolphin-cn-dialect-0.4b",
-      "cohere-transcribe-2b",
       "ark-asr-3b-q8_0",
     ];
     const [statuses, qwen] = await Promise.all([
@@ -691,34 +627,6 @@ export class AiRuntimeManager {
     );
   }
 
-  private async dolphinRuntimeReady(): Promise<boolean> {
-    const marker = await readFile(
-      path.join(this.dolphinPythonPath, ".shanghao-runtime-verified"),
-      "utf8",
-    ).catch(() => "");
-    return (
-      (await exists(path.join(this.dolphinPythonPath, "dolphin", "__init__.py"))) &&
-      (await exists(path.join(this.dolphinPythonPath, "torch_complex", "tensor.py"))) &&
-      (await exists(path.join(this.cudaPythonPath, "packaging", "__init__.py"))) &&
-      (await exists(
-        path.join(
-          this.cudaPythonPath,
-          `packaging-${SHARED_PYTHON_PACKAGING_VERSION}.dist-info`,
-          "METADATA",
-        ),
-      )) &&
-      (await exists(path.join(this.cudaPythonPath, "numpy", "__init__.py"))) &&
-      (await exists(
-        path.join(
-          this.cudaPythonPath,
-          `numpy-${SHARED_PYTHON_NUMPY_VERSION}.dist-info`,
-          "METADATA",
-        ),
-      )) &&
-      marker.trim() === DOLPHIN_RUNTIME_MARKER
-    );
-  }
-
   private async asrStatus(modelId: AiAsrModelId): Promise<AiAsrRuntimeStatus> {
     const worker = this.asrWorker.health();
     const pythonRuntimeExists = await exists(this.pythonExecutable);
@@ -729,10 +637,7 @@ export class AiRuntimeManager {
     const funAsr = modelId === "fun-asr-nano-2512" || paraformer;
     const glm = modelId === "glm-asr-nano-2512";
     const fireRed = modelId === "fireredasr2-aed";
-    const moss = modelId === "moss-transcribe-diarize-0.9b";
     const mossCpp = modelId === "moss-transcribe-diarize-0.9b-q8_0";
-    const dolphin = modelId === "dolphin-cn-dialect-0.4b";
-    const cohere = modelId === "cohere-transcribe-2b";
     const arkAsr = modelId === "ark-asr-3b-q8_0";
     const aligner = qwenModel ? this.models.model("qwen3-forced-aligner-0.6b") : undefined;
     const modelReady = Boolean(model && (await modelFilesPresent(modelId, model)));
@@ -750,19 +655,11 @@ export class AiRuntimeManager {
           : fireRed
             ? (await exists(path.join(this.fireRedPythonPath, "fireredasr2s", "__init__.py"))) &&
               (await exists(path.join(this.fireRedPythonPath, "kaldi_native_fbank", "__init__.py")))
-            : moss
-              ? (await exists(
-                  path.join(this.mossPythonPath, "moss_transcribe_diarize", "__init__.py"),
-                )) && (await exists(path.join(this.mossPythonPath, "transformers", "__init__.py")))
-              : mossCpp
-                ? await this.mossCppRuntimeReady()
-                : dolphin
-                  ? await this.dolphinRuntimeReady()
-                  : cohere
-                    ? await exists(path.join(this.coherePythonPath, "transformers", "__init__.py"))
-                    : arkAsr
-                      ? await this.arkAsrRuntimeReady()
-                      : false;
+            : mossCpp
+              ? await this.mossCppRuntimeReady()
+              : arkAsr
+                ? await this.arkAsrRuntimeReady()
+                : false;
     // The transcribe.cpp CUDA package also contains a CPU backend. Keep this model usable
     // when its GPU backend is unavailable and report the backend actually selected at runtime.
     const needsCuda = !paraformer && !mossCpp;
@@ -786,7 +683,7 @@ export class AiRuntimeManager {
             return failed;
           })
         : undefined;
-    const needsBf16 = qwenModel || modelId === "fun-asr-nano-2512" || glm || moss || cohere;
+    const needsBf16 = qwenModel || modelId === "fun-asr-nano-2512" || glm;
     const cudaFailure =
       cuda?.failureReason ?? (cuda ? classifyCudaRuntimeFailure(cuda) : undefined);
     const cudaReady =
@@ -937,6 +834,7 @@ export class AiRuntimeManager {
       temporaryDirectory,
       `${temporaryRecordingName(options.recordingId)}-${options.offsetMs}-${process.pid}.wav`,
     );
+    const preflightTimeMs = performance.now() - totalStartedAt;
     try {
       const conversionStartedAt = performance.now();
       try {
@@ -976,6 +874,7 @@ export class AiRuntimeManager {
         throw new LocalModelRuntimeError("ffmpeg_failed", "ffmpeg_failed", message);
       }
       const conversionTimeMs = Math.max(0, Math.round(performance.now() - conversionStartedAt));
+      const vadStartedAt = performance.now();
       let activity: PcmAudioActivity;
       try {
         activity = analyzePcm16Wav(await readFile(wavPath));
@@ -996,6 +895,7 @@ export class AiRuntimeManager {
         activeFrameRatio: activity.activeFrameRatio,
         peak: activity.peak,
       };
+      const vadTimeMs = performance.now() - vadStartedAt;
       if (!activity.audible) {
         return {
           segments: [],
@@ -1005,8 +905,10 @@ export class AiRuntimeManager {
           anomalyTypes: [],
           anomalyReasons: [],
           timing: {
+            preflightTimeMs,
             loadTimeMs: 0,
             conversionTimeMs,
+            vadTimeMs,
             inferenceTimeMs: 0,
             totalTimeMs: Math.max(0, Math.round(performance.now() - totalStartedAt)),
           },
@@ -1020,15 +922,23 @@ export class AiRuntimeManager {
         languagePolicy: "Mandarin Chinese only",
       });
       let result: AsrWorkerResult;
+      const probeStartedAt = performance.now();
       const gpuMemoryBeforeLoadMb = options.benchmark ? await gpuMemoryUsedMb() : undefined;
+      let resourceProbeTimeMs = performance.now() - probeStartedAt;
       let gpuPeakMemoryMb = gpuMemoryBeforeLoadMb;
       let resourceSampleActive = true;
+      let samplePending = false;
       const resourceSampler = options.benchmark
         ? setInterval(() => {
-            if (!resourceSampleActive) return;
-            void gpuMemoryUsedMb().then((value) => {
-              if (value !== undefined) gpuPeakMemoryMb = Math.max(gpuPeakMemoryMb ?? 0, value);
-            });
+            if (!resourceSampleActive || samplePending) return;
+            samplePending = true;
+            void gpuMemoryUsedMb()
+              .then((value) => {
+                if (value !== undefined) gpuPeakMemoryMb = Math.max(gpuPeakMemoryMb ?? 0, value);
+              })
+              .finally(() => {
+                samplePending = false;
+              });
           }, 250)
         : undefined;
       resourceSampler?.unref();
@@ -1044,7 +954,11 @@ export class AiRuntimeManager {
       } catch (error) {
         resourceSampleActive = false;
         if (resourceSampler) clearInterval(resourceSampler);
-        const diagnostics = await this.pythonCudaDiagnostics(true).catch(() => undefined);
+        const detail = error as Error & { stderr?: string; exitCode?: number };
+        detail.stderr = this.asrWorker.health().diagnosticDetail;
+        const exitMatch = detail.message.match(/asr_worker_exit_(-?\d+)/u);
+        if (exitMatch) detail.exitCode = Number(exitMatch[1]);
+        const diagnostics = await this.pythonCudaDiagnostics().catch(() => undefined);
         await this.log("error", "ASR Runtime transcription failed", {
           modelId,
           modelName: status.modelName,
@@ -1067,13 +981,16 @@ export class AiRuntimeManager {
       }
       resourceSampleActive = false;
       if (resourceSampler) clearInterval(resourceSampler);
+      const finalProbeStartedAt = performance.now();
       const gpuMemoryAfterLoadMb = options.benchmark ? await gpuMemoryUsedMb() : undefined;
+      resourceProbeTimeMs += performance.now() - finalProbeStartedAt;
       if (gpuMemoryAfterLoadMb !== undefined)
         gpuPeakMemoryMb = Math.max(gpuPeakMemoryMb ?? 0, gpuMemoryAfterLoadMb);
       options.onStage?.("transcript", {
         outputCharacters: result.text.length,
         structuredSegments: result.segments?.length ?? 0,
       });
+      const postprocessStartedAt = performance.now();
       const segments = this.normalizePythonAsrResult(
         result,
         modelId,
@@ -1081,7 +998,10 @@ export class AiRuntimeManager {
         options.offsetMs,
         options.durationMs,
       );
-      const anomaly = analyzeTranscriptAnomalies(result.text, options.durationMs);
+      const anomaly = analyzeTranscriptAnomalies(
+        cleanAsrText(modelId, result.text),
+        options.durationMs,
+      );
       const anomalyTypes: TranscriptionChunkRuntimeResult["anomalyTypes"] = [];
       if (anomaly.repetitionLoop) anomalyTypes.push("repetition_loop");
       if (anomaly.abnormalOutput && !anomaly.repetitionLoop) anomalyTypes.push("abnormal_output");
@@ -1094,16 +1014,26 @@ export class AiRuntimeManager {
             : "empty_output_on_speech";
       return {
         segments,
-        rawText: result.text,
+        rawText: result.rawText ?? result.text,
         rawOutput: result,
         commonVad,
         outputStatus,
         anomalyTypes,
         anomalyReasons: anomaly.reasons,
         timing: {
+          preflightTimeMs,
+          resourceProbeTimeMs,
           loadTimeMs: result.metrics?.loadTimeMs,
+          providerImportTimeMs: result.metrics?.providerImportTimeMs,
+          modelInitializationTimeMs: result.metrics?.modelInitializationTimeMs,
+          workerStartupTimeMs: result.metrics?.workerStartupTimeMs,
           conversionTimeMs,
+          vadTimeMs,
           inferenceTimeMs: result.metrics?.inferenceTimeMs,
+          alignmentTimeMs: result.metrics?.alignmentTimeMs,
+          postprocessTimeMs:
+            (result.metrics?.postprocessTimeMs ?? 0) + performance.now() - postprocessStartedAt,
+          workerRoundTripTimeMs: result.metrics?.workerRoundTripTimeMs,
           totalTimeMs: Math.max(0, Math.round(performance.now() - totalStartedAt)),
         },
         resourceUsage: {
@@ -1115,6 +1045,7 @@ export class AiRuntimeManager {
           gpuMemoryBeforeLoadMb,
           gpuMemoryAfterLoadMb,
           gpuPeakMemoryMb,
+          ramPeakMb: result.metrics?.ramPeakMb,
           oomCount: 0,
           workerCrashCount: 0,
         },
@@ -1200,9 +1131,6 @@ export class AiRuntimeManager {
     const funAsrModel = id === "fun-asr-nano-2512" || id === "paraformer-zh";
     const glmModel = id === "glm-asr-nano-2512";
     const fireRedModel = id === "fireredasr2-aed";
-    const mossModel = id === "moss-transcribe-diarize-0.9b";
-    const dolphinModel = id === "dolphin-cn-dialect-0.4b";
-    const cohereModel = id === "cohere-transcribe-2b";
     const arkAsrModel = id === "ark-asr-3b-q8_0";
     const pythonPath = qwenModel
       ? this.qwenAsrPythonPath
@@ -1212,35 +1140,11 @@ export class AiRuntimeManager {
           ? this.glmAsrPythonPath
           : fireRedModel
             ? this.fireRedPythonPath
-            : mossModel
-              ? this.mossPythonPath
-              : mossCppModel
-                ? this.mossCppPythonPath
-                : dolphinModel
-                  ? this.dolphinPythonPath
-                  : cohereModel
-                    ? this.coherePythonPath
-                    : this.arkAsrPythonPath;
+            : mossCppModel
+              ? this.mossCppPythonPath
+              : this.arkAsrPythonPath;
     await mkdir(pythonPath, { recursive: true });
 
-    if (dolphinModel) {
-      await this.ensureDolphinSharedMetadata();
-      const providerFilesPresent =
-        (await exists(path.join(this.dolphinPythonPath, "dolphin", "__init__.py"))) &&
-        (await exists(path.join(this.dolphinPythonPath, "torch_complex", "tensor.py")));
-      if (providerFilesPresent) {
-        try {
-          await this.verifyDolphinRuntime();
-          await this.pythonCudaDiagnostics(true);
-          const repaired = await this.asrStatus(id);
-          return { ready: repaired.ready, message: repaired.message };
-        } catch (error) {
-          await this.log("warn", "Dolphin Runtime preflight failed; reinstalling provider", {
-            error: error instanceof Error ? error.message : String(error),
-          });
-        }
-      }
-    }
     const commonArgs = [
       "-m",
       "pip",
@@ -1277,36 +1181,8 @@ export class AiRuntimeManager {
           [...commonArgs, ...FIRE_RED_RUNTIME_PACKAGES],
           { env: this.pipEnvironment(), timeoutMs: 30 * 60_000 },
         );
-      } else if (mossModel) {
-        await runLocalProcess(this.pythonExecutable, [...commonArgs, ...MOSS_RUNTIME_PACKAGES], {
-          env: this.pipEnvironment(),
-          timeoutMs: 30 * 60_000,
-        });
       } else if (mossCppModel) {
         await this.prepareMossCppRuntime();
-      } else if (dolphinModel) {
-        const dolphinInstalled = await exists(
-          path.join(this.dolphinPythonPath, "dolphin", "__init__.py"),
-        );
-        const complexTensorInstalled = await exists(
-          path.join(this.dolphinPythonPath, "torch_complex", "tensor.py"),
-        );
-        const packages =
-          dolphinInstalled && !complexTensorInstalled
-            ? [DOLPHIN_RUNTIME_PACKAGES[1]]
-            : DOLPHIN_RUNTIME_PACKAGES;
-        const installArgs =
-          dolphinInstalled && !complexTensorInstalled ? [...commonArgs, "--no-deps"] : commonArgs;
-        await runLocalProcess(this.pythonExecutable, [...installArgs, ...packages], {
-          env: this.pipEnvironment(),
-          timeoutMs: 30 * 60_000,
-        });
-      } else if (cohereModel) {
-        await runLocalProcess(
-          this.pythonExecutable,
-          [...commonArgs, ...COHERE_TRANSCRIBE_RUNTIME_PACKAGES],
-          { env: this.pipEnvironment(), timeoutMs: 30 * 60_000 },
-        );
       } else if (arkAsrModel) {
         if (!(await exists(path.join(pythonPath, "crispasr", "__init__.py")))) {
           const runtimeWheel = await this.prepareArkAsrRuntimeWheel();
@@ -1317,10 +1193,6 @@ export class AiRuntimeManager {
         await this.prepareArkAsrPortableCpuHelper(pythonPath);
       }
       await this.removeProviderTorchCopies(pythonPath);
-      if (dolphinModel) {
-        await this.ensureDolphinSharedMetadata();
-        await this.verifyDolphinRuntime();
-      }
       if (arkAsrModel) {
         await this.verifyArkAsrRuntime(pythonPath);
       }
@@ -1546,74 +1418,6 @@ export class AiRuntimeManager {
     }
   }
 
-  private async ensureDolphinSharedMetadata(): Promise<void> {
-    const packageFile = path.join(this.cudaPythonPath, "packaging", "__init__.py");
-    const metadataFile = path.join(
-      this.cudaPythonPath,
-      `packaging-${SHARED_PYTHON_PACKAGING_VERSION}.dist-info`,
-      "METADATA",
-    );
-    const numpyPackageFile = path.join(this.cudaPythonPath, "numpy", "__init__.py");
-    const numpyMetadataFile = path.join(
-      this.cudaPythonPath,
-      `numpy-${SHARED_PYTHON_NUMPY_VERSION}.dist-info`,
-      "METADATA",
-    );
-    if (
-      (await exists(packageFile)) &&
-      (await exists(metadataFile)) &&
-      (await exists(numpyPackageFile)) &&
-      (await exists(numpyMetadataFile))
-    )
-      return;
-    await mkdir(this.cudaPythonPath, { recursive: true });
-    await runLocalProcess(
-      this.pythonExecutable,
-      [
-        "-m",
-        "pip",
-        "install",
-        ...PRIVATE_PIP_INSTALL_ARGUMENTS,
-        "--upgrade",
-        "--no-deps",
-        "--target",
-        this.cudaPythonPath,
-        `packaging==${SHARED_PYTHON_PACKAGING_VERSION}`,
-        `numpy==${SHARED_PYTHON_NUMPY_VERSION}`,
-      ],
-      { env: this.pipEnvironment(), timeoutMs: 5 * 60_000 },
-    );
-  }
-
-  private async verifyDolphinRuntime(): Promise<void> {
-    const script = [
-      "from importlib.metadata import version",
-      "assert version('packaging') == '" + SHARED_PYTHON_PACKAGING_VERSION + "'",
-      "assert version('numpy') == '" + SHARED_PYTHON_NUMPY_VERSION + "'",
-      "import transformers",
-      "import torch_complex",
-      "import dolphin",
-      "print('dolphin_runtime_verified')",
-    ].join("\n");
-    try {
-      await runLocalProcess(this.pythonExecutable, ["-c", script], {
-        env: {
-          ...this.pipEnvironment(),
-          PYTHONPATH: this.providerPythonPath(this.dolphinPythonPath),
-        },
-        timeoutMs: 3 * 60_000,
-      });
-      await writeFile(
-        path.join(this.dolphinPythonPath, ".shanghao-runtime-verified"),
-        `${DOLPHIN_RUNTIME_MARKER}\n`,
-        "utf8",
-      );
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      throw new Error(`Dolphin 运行组件自检失败：${message}`, { cause: error });
-    }
-  }
-
   private pythonAsrLaunch(modelId: AiAsrModelId): AsrWorkerLaunch {
     const modelPath = this.models.model(modelId);
     if (!modelPath) throw new Error(`model_${modelId}_not_installed`);
@@ -1634,15 +1438,6 @@ export class AiRuntimeManager {
         vadModelPath: path.join(modelPath, "vad"),
         puncModelPath: path.join(modelPath, "punc"),
         pythonPath: this.providerPythonPath(this.funAsrPythonPath),
-      };
-    }
-    if (modelId === "cohere-transcribe-2b") {
-      const alignerModelPath = this.models.model("qwen3-forced-aligner-0.6b");
-      return {
-        modelId,
-        modelPath,
-        alignerModelPath,
-        pythonPath: this.providerPythonPath(this.coherePythonPath),
       };
     }
     if (modelId === "ark-asr-3b-q8_0") {
@@ -1667,11 +1462,7 @@ export class AiRuntimeManager {
           ? this.funAsrPythonPath
           : modelId === "glm-asr-nano-2512"
             ? this.glmAsrPythonPath
-            : modelId === "fireredasr2-aed"
-              ? this.fireRedPythonPath
-              : modelId === "moss-transcribe-diarize-0.9b"
-                ? this.mossPythonPath
-                : this.dolphinPythonPath,
+            : this.fireRedPythonPath,
       ),
     };
   }
@@ -1844,67 +1635,68 @@ export class AiRuntimeManager {
     offsetMs: number,
     durationMs: number,
   ): VoiceMemoryTranscriptSegment[] {
-    const structured = (result.segments ?? []).flatMap(
-      (segment, index): VoiceMemoryTranscriptSegment[] => {
-        const text = segment.text.trim();
-        const startMs = offsetMs + Math.max(0, Math.min(durationMs, segment.startMs));
-        const endMs =
-          offsetMs +
-          Math.max(
-            Math.min(durationMs, segment.endMs),
-            Math.min(durationMs, segment.startMs + 100),
-          );
-        if (!text) {
-          return [];
-        }
-        if (
-          !isQwenForcedAlignerModel(modelId) &&
-          (!isReliableTranscriptText(text, Math.max(100, endMs - startMs)) ||
-            !isChinesePreferredTranscriptText(text))
-        ) {
-          return [];
-        }
-        return [
-          {
-            id: `${recordingId}-${startMs}-${index}`,
-            recordingId,
-            startMs,
-            endMs,
-            text,
-            speakerId: segment.speakerId || "Speaker 1",
-            confidence: "pending",
-            sourceModel: modelId,
-            sourceChunkId: `${modelId}:${recordingId}:${offsetMs}`,
-            rawSegmentId: `${recordingId}-${offsetMs}-raw-${index}`,
-            rawSegments: [JSON.stringify(segment)],
-            words: segment.words?.flatMap((word, wordIndex) => {
-              const wordText = word.text.trim();
-              if (!wordText) return [];
-              const wordStartMs = offsetMs + Math.max(0, Math.min(durationMs, word.startMs));
-              const wordEndMs =
-                offsetMs + Math.max(wordStartMs - offsetMs + 20, Math.min(durationMs, word.endMs));
-              return [
-                {
-                  id: `${recordingId}-${wordStartMs}-${index}-${wordIndex}`,
-                  startMs: wordStartMs,
-                  endMs: wordEndMs,
-                  text: wordText,
-                },
-              ];
-            }),
-          },
-        ];
-      },
-    );
+    const alignedSegments = isQwenForcedAlignerModel(modelId)
+      ? restoreAlignedPunctuation(result.text, result.segments ?? [])
+      : (result.segments ?? []);
+    const structured = alignedSegments.flatMap((segment, index): VoiceMemoryTranscriptSegment[] => {
+      const text = cleanAsrText(modelId, segment.text);
+      const startMs = offsetMs + Math.max(0, Math.min(durationMs, segment.startMs));
+      const endMs =
+        offsetMs +
+        Math.max(Math.min(durationMs, segment.endMs), Math.min(durationMs, segment.startMs + 100));
+      if (!hasAsrBody(text)) {
+        return [];
+      }
+      if (
+        !isQwenForcedAlignerModel(modelId) &&
+        (!isReliableTranscriptText(text, Math.max(100, endMs - startMs)) ||
+          !isChinesePreferredTranscriptText(text))
+      ) {
+        return [];
+      }
+      return [
+        {
+          id: `${recordingId}-${startMs}-${index}`,
+          recordingId,
+          startMs,
+          endMs,
+          text,
+          speakerId: segment.speakerId || "Speaker 1",
+          confidence: "pending",
+          sourceModel: modelId,
+          sourceChunkId: `${modelId}:${recordingId}:${offsetMs}`,
+          rawSegmentId: `${recordingId}-${offsetMs}-raw-${index}`,
+          rawSegments: [JSON.stringify(result.segments?.[index] ?? segment)],
+          words: (isQwenForcedAlignerModel(modelId) && segment.words
+            ? restoreAlignedPunctuation(segment.text, segment.words)
+            : segment.words
+          )?.flatMap((word, wordIndex) => {
+            const wordText = cleanAsrText(modelId, word.text);
+            if (!wordText) return [];
+            const wordStartMs = offsetMs + Math.max(0, Math.min(durationMs, word.startMs));
+            const wordEndMs =
+              offsetMs + Math.max(wordStartMs - offsetMs + 20, Math.min(durationMs, word.endMs));
+            return [
+              {
+                id: `${recordingId}-${wordStartMs}-${index}-${wordIndex}`,
+                startMs: wordStartMs,
+                endMs: wordEndMs,
+                text: wordText,
+              },
+            ];
+          }),
+        },
+      ];
+    });
     const normalizedStructured = normalizeForcedAlignerTranscript(modelId, structured).filter(
       (segment) =>
         isReliableTranscriptText(segment.text, Math.max(100, segment.endMs - segment.startMs)) &&
         isChinesePreferredTranscriptText(segment.text),
     );
     if (normalizedStructured.length) return normalizedStructured;
-    const text = result.text.trim();
+    const text = cleanAsrText(modelId, result.text);
     if (
-      !text ||
+      !hasAsrBody(text) ||
       !isReliableTranscriptText(text, durationMs) ||
       !isChinesePreferredTranscriptText(text)
     ) {

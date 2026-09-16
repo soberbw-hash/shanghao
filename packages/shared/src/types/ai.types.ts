@@ -5,10 +5,7 @@ export type AiAsrModelId =
   | "glm-asr-nano-2512"
   | "fireredasr2-aed"
   | "paraformer-zh"
-  | "moss-transcribe-diarize-0.9b"
   | "moss-transcribe-diarize-0.9b-q8_0"
-  | "dolphin-cn-dialect-0.4b"
-  | "cohere-transcribe-2b"
   | "ark-asr-3b-q8_0";
 
 export const AI_ASR_MODEL_NAMES: Record<AiAsrModelId, string> = {
@@ -18,11 +15,22 @@ export const AI_ASR_MODEL_NAMES: Record<AiAsrModelId, string> = {
   "glm-asr-nano-2512": "GLM-ASR-Nano-2512",
   "fireredasr2-aed": "FireRedASR2-AED",
   "paraformer-zh": "Paraformer-zh + FSMN-VAD + CT-punc",
-  "moss-transcribe-diarize-0.9b": "MOSS-Transcribe-Diarize 0.9B",
-  "moss-transcribe-diarize-0.9b-q8_0": "MOSS Transcribe Diarize 0.9B Q8",
-  "dolphin-cn-dialect-0.4b": "Dolphin-CN-Dialect 0.4B",
-  "cohere-transcribe-2b": "Cohere Transcribe 2B",
+  "moss-transcribe-diarize-0.9b-q8_0": "MOSS 0.9B（Q8）",
   "ark-asr-3b-q8_0": "ARK-ASR-3B Q8_0",
+};
+
+export type AiAsrProductClass = "high_accuracy" | "high_speed";
+
+/** Product grouping only. Benchmark validity and ranking remain model-independent. */
+export const AI_ASR_PRODUCT_CLASSES: Record<AiAsrModelId, AiAsrProductClass> = {
+  "ark-asr-3b-q8_0": "high_accuracy",
+  "fireredasr2-aed": "high_accuracy",
+  "fun-asr-nano-2512": "high_accuracy",
+  "glm-asr-nano-2512": "high_accuracy",
+  "qwen3-asr-1.7b-force": "high_accuracy",
+  "moss-transcribe-diarize-0.9b-q8_0": "high_speed",
+  "paraformer-zh": "high_speed",
+  "qwen3-asr-0.6b-force": "high_speed",
 };
 
 export type AiSupportModelId = "qwen3-forced-aligner-0.6b";
@@ -128,6 +136,12 @@ export interface AiLocalLlmRuntimeMetrics {
 }
 
 export interface AiTaskSchedulerStatus {
+  denials?: {
+    total: number;
+    byReason: Record<string, number>;
+    lastReason?: string;
+    lastAt?: number;
+  };
   processingMode: AiProcessingMode;
   gameActive: boolean;
   downloadsThrottled: boolean;
@@ -292,7 +306,15 @@ export interface VoiceMemoryOrganizationResult {
   keywords: string[];
 }
 
-export type VoiceMemoryOrganizationChunkStatus = "pending" | "running" | "completed" | "failed";
+export type VoiceMemoryOrganizationChunkStatus =
+  "pending" | "running" | "completed" | "failed" | "unrecoverable";
+
+export interface OrganizationRetryState {
+  attempts: number;
+  status: VoiceMemoryOrganizationChunkStatus;
+  errorMessage?: string;
+  value?: unknown;
+}
 
 export interface VoiceMemoryOrganizationChunk {
   id: string;
@@ -334,7 +356,8 @@ export interface VoiceMemoryOrganizationRun {
   pipelineVersion: number;
   modelId: AiOrganizerModelId;
   modelRevision: string;
-  status: "pending" | "running" | "completed" | "paused" | "failed";
+  status: "pending" | "running" | "completed" | "paused" | "failed" | "unrecoverable";
+  reductionRetries?: Record<string, OrganizationRetryState>;
   completedChunks: number;
   chunks: VoiceMemoryOrganizationChunk[];
   finalResult?: VoiceMemoryOrganizationResult;
@@ -388,12 +411,22 @@ export interface VoiceMemoryCommonVadResult {
 }
 
 export interface VoiceMemoryTranscriptionTiming {
+  preflightTimeMs?: number;
+  resourceProbeTimeMs?: number;
   loadTimeMs?: number;
+  providerImportTimeMs?: number;
+  modelInitializationTimeMs?: number;
+  workerStartupTimeMs?: number;
   conversionTimeMs?: number;
+  vadTimeMs?: number;
   inferenceTimeMs?: number;
   alignmentTimeMs?: number;
+  postprocessTimeMs?: number;
+  mergeTimeMs?: number;
   saveTimeMs?: number;
   releaseTimeMs?: number;
+  workerRoundTripTimeMs?: number;
+  unaccountedTimeMs?: number;
   totalTimeMs?: number;
 }
 
@@ -408,11 +441,31 @@ export interface VoiceMemoryTranscriptionResourceUsage {
   gpuMemoryAfterLoadMb?: number;
   gpuPeakMemoryMb?: number;
   gpuMemoryAfterReleaseMb?: number;
+  memoryAfterWorkerExitMb?: number;
   ramPeakMb?: number;
   oomCount?: number;
   workerCrashCount?: number;
   resourceReleaseSucceeded?: boolean;
   possibleResourceLeak?: boolean;
+  releaseRequestedAt?: string;
+  workerExitedAt?: string;
+  releaseSampleDelayMs?: number;
+}
+
+export interface VoiceMemoryTranscriptionAttempt {
+  attempt: number;
+  startedAt: string;
+  completedAt: string;
+  outcome: "success" | "runtime_error" | "output_anomaly";
+  errorCode?: string;
+  errorMessage?: string;
+  stderr?: string;
+  exitCode?: number;
+  outputStatus?: VoiceMemoryTranscriptionOutputStatus;
+  rawText?: string;
+  rawRuntimeOutput?: string;
+  elapsedMs?: number;
+  timing?: VoiceMemoryTranscriptionTiming;
 }
 
 export interface VoiceMemoryTranscriptionUnit {
@@ -427,6 +480,7 @@ export interface VoiceMemoryTranscriptionUnit {
   status: VoiceMemoryTranscriptionUnitStatus;
   attempts: number;
   retryCount: number;
+  attemptHistory?: VoiceMemoryTranscriptionAttempt[];
   processedAudioMs: number;
   coveredAudioMs: number;
   segmentCount: number;
@@ -474,6 +528,8 @@ export interface VoiceMemoryTranscriptionStats {
   repetitionLoopCount?: number;
   abnormalOutputCount?: number;
   hallucinationSuspectedCount?: number;
+  /** Conservative review signal. This is never, by itself, proof that a model output is invalid. */
+  suspectedOmissionCount?: number;
   /** Scheduler terminal progress; not a claim about recognition quality. */
   taskProgressPercent?: number;
   /** Sum of the speech units scheduled for this run. */
@@ -494,10 +550,19 @@ export interface VoiceMemoryTranscriptionStats {
   lastErrorStage?: VoiceMemoryProcessingStage;
   inferenceElapsedMs?: number;
   conversionElapsedMs?: number;
+  preflightElapsedMs?: number;
+  resourceProbeElapsedMs?: number;
   loadElapsedMs?: number;
+  providerImportElapsedMs?: number;
+  modelInitializationElapsedMs?: number;
+  workerStartupElapsedMs?: number;
+  vadElapsedMs?: number;
   alignmentElapsedMs?: number;
+  postprocessElapsedMs?: number;
+  mergeElapsedMs?: number;
   saveElapsedMs?: number;
   releaseElapsedMs?: number;
+  unaccountedElapsedMs?: number;
   totalElapsedMs?: number;
   resourceUsage?: VoiceMemoryTranscriptionResourceUsage;
   lastChunkOffsetMs?: number;
@@ -552,7 +617,9 @@ export type VoiceMemoryBenchmarkResultStatus =
 
 export type VoiceMemoryBenchmarkDataValidity =
   | "valid_complete"
+  | "valid_with_review"
   | "valid_partial"
+  | "incomplete"
   | "invalid_not_started"
   | "invalid_status_conflict"
   | "invalid_runtime_error"
@@ -599,6 +666,7 @@ export interface VoiceMemoryRecord {
   timeline: VoiceMemoryTimelineEntry[];
   /** Resumable hierarchical local-LLM organization state. */
   organization?: VoiceMemoryOrganizationRun;
+  organizationSinglePassRetry?: OrganizationRetryState;
   /** Present only after the user explicitly publishes the local organization to the room server. */
   organizationPublication?: VoiceMemoryOrganizationPublication;
 }

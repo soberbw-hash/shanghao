@@ -97,7 +97,7 @@ const record = {
 } as VoiceMemoryRecord;
 
 test("model comparison export keeps per-model raw transcription data without CER", () => {
-  const modelIds: AiAsrModelId[] = ["cohere-transcribe-2b", "dolphin-cn-dialect-0.4b"];
+  const modelIds: AiAsrModelId[] = ["cohere-transcribe-2b", "ark-asr-3b-q8_0"];
   const payload = buildModelComparisonExport({
     recording,
     recordingTitle: "语音 01",
@@ -110,8 +110,8 @@ test("model comparison export keeps per-model raw transcription data without CER
         status: "success",
         elapsedMs: 2_000,
       },
-      "dolphin-cn-dialect-0.4b": {
-        modelId: "dolphin-cn-dialect-0.4b",
+      "ark-asr-3b-q8_0": {
+        modelId: "ark-asr-3b-q8_0",
         status: "failed",
         elapsedMs: 0,
         message: "transcription_checkpoint_missing",

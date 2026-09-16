@@ -6,16 +6,16 @@ const SILENCE_LABEL = /^(?:non[\s-]?speech|no[\s-]?speech|silence|silent|music|n
 const WORD = /[\p{L}\p{N}']+/gu;
 const transcriptReliabilityCache = new WeakMap<object, boolean>();
 
-export const CURRENT_TRANSCRIPTION_PIPELINE_VERSION = 8;
+export const CURRENT_TRANSCRIPTION_PIPELINE_VERSION = 10;
 
 const HAN_CHARACTER = /\p{Script=Han}/u;
 const LETTER = /\p{L}/u;
 const LATIN_LETTER = /\p{Script=Latin}/u;
 
-/** Accepts Mandarin transcript text while allowing ordinary Latin product names. */
+/** Accepts Mandarin, Latin speech/game terms and spoken numbers, including standalone segments. */
 export const isChinesePreferredTranscriptText = (text: string): boolean => {
   const normalized = text.normalize("NFKC").replace(/\s+/g, " ").trim();
-  if (!HAN_CHARACTER.test(normalized)) return false;
+  if (!/[\p{Script=Han}\p{Script=Latin}\p{N}]/u.test(normalized)) return false;
   for (const character of normalized) {
     if (LETTER.test(character) && !HAN_CHARACTER.test(character) && !LATIN_LETTER.test(character)) {
       return false;

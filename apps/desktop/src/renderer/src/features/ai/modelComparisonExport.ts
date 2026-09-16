@@ -276,6 +276,7 @@ export const buildModelComparisonExport = ({
     return {
       environment: { ...record?.transcriptionBenchmark?.environment, ...environment },
       modelSummary: analysis.modelSummary,
+      qualityReview: analysis.qualityReview,
       crossModelConsistency: analysis.crossModelUnits,
       reviewCandidates: analysis.reviewCandidates,
     };
@@ -349,6 +350,14 @@ export const buildModelComparisonExport = ({
       status: unit.status,
       attempts: unit.attempts,
       retryCount: unit.retryCount,
+      attemptHistory: unit.attemptHistory,
+      firstFailure: unit.attemptHistory?.find((attempt) => attempt.outcome !== "success"),
+      retryResult:
+        unit.attemptHistory && unit.attemptHistory.length > 1
+          ? unit.attemptHistory.at(-1)
+          : undefined,
+      sourceRecordingId: record?.recordingId,
+      inputDurationMs: unit.endMs - unit.startMs,
       processedAudioMs: unit.processedAudioMs,
       coveredAudioMs: unit.coveredAudioMs,
       segmentCount: unit.segmentCount,
@@ -387,6 +396,7 @@ export const buildModelComparisonExport = ({
       exclusionReasons: failedBeforeDurableStart
         ? [...validity.exclusionReasons, result.message ?? "模型运行失败"]
         : validity.exclusionReasons,
+      reviewReasons: validity.reviewReasons,
       recommendedAction: failedBeforeDurableStart
         ? "修复运行时错误后重新测试"
         : validity.recommendedAction,
@@ -463,11 +473,13 @@ export const buildModelComparisonSummaryExport = (
   testMode: payload.comparison.testMode,
   groundTruthAvailable: payload.comparison.groundTruthAvailable,
   modelSummary: payload.modelSummary,
+  qualityReview: payload.qualityReview,
   dataValidity: payload.modelSummary.map((model) => ({
     modelId: model.modelId,
     status: model.status,
     dataValidity: model.dataValidity,
     exclusionReasons: model.exclusionReasons,
+    reviewReasons: model.reviewReasons,
     recommendedAction: model.recommendedAction,
   })),
   rankingEligibility: payload.modelSummary.map((model) => ({
@@ -479,6 +491,17 @@ export const buildModelComparisonSummaryExport = (
   timing: payload.modelSummary.map((model) => ({
     modelId: model.modelId,
     loadTimeMs: model.loadTimeMs,
+    providerImportTimeMs: model.providerImportTimeMs,
+    modelInitializationTimeMs: model.modelInitializationTimeMs,
+    workerStartupTimeMs: model.workerStartupTimeMs,
+    conversionTimeMs: model.conversionTimeMs,
+    preflightTimeMs: model.preflightTimeMs,
+    resourceProbeTimeMs: model.resourceProbeTimeMs,
+    vadTimeMs: model.vadTimeMs,
+    postprocessTimeMs: model.postprocessTimeMs,
+    unaccountedTimeMs: model.unaccountedTimeMs,
+    clipWallSpeedX: model.clipWallSpeedX,
+    clipDurationMs: model.clipDurationMs,
     inferenceTimeMs: model.inferenceTimeMs,
     alignmentTimeMs: model.alignmentTimeMs,
     saveTimeMs: model.saveTimeMs,
@@ -513,6 +536,9 @@ export const buildModelComparisonSummaryExport = (
     speechUnits: model.speechUnits,
     vadSilenceUnits: model.vadSilenceUnits,
     emptyOutputOnSpeechUnits: model.emptyOutputOnSpeechUnits,
+    emptySpeechUnitCount: model.emptySpeechUnitCount,
+    reviewCandidateCount: model.reviewCandidateCount,
+    suspectedOmissionCount: model.suspectedOmissionCount,
   })),
   anomalies: payload.modelSummary.map((model) => ({
     modelId: model.modelId,

@@ -23,7 +23,6 @@ import type {
 import type { GameDetectionController } from "./game-detection";
 import {
   MODEL_SOURCES,
-  QWEN36_NVFP4_MODEL_DEFINITION,
   QWEN36_NVFP4_MODEL_REVISION,
   type ModelComponent,
   type ModelDefinition,
@@ -31,7 +30,6 @@ import {
 import { requiredModelFiles, requiredWeightFiles } from "./ai-model-layout";
 import { ACTIVE_ARK_ASR_VARIANT } from "./ark-asr-config";
 import { ResourceScheduler } from "./resource-scheduler";
-
 export {
   GAMING_DOWNLOAD_BYTES_PER_SECOND,
   NORMAL_DOWNLOAD_BYTES_PER_SECOND,
@@ -85,10 +83,7 @@ const PARAFORMER_MODEL_REVISION = "d7811ee3ac581fbcfdeb37c98c6ba674028433dc";
 const FSMN_VAD_MODEL_REVISION = "df20e6b30c653645fa4ff125cacfcabd1020a669";
 const CT_PUNC_MODEL_REVISION = "d0e55e2b8722a78b63705ff443d09c4f86e5d750";
 const PARAFORMER_BUNDLE_REVISION = "bundle-d7811ee3-df20e6b3-d0e55e2b";
-const MOSS_TRANSCRIBE_DIARIZE_REVISION = "e8681d68e7042738ffca8ac8212bc8fcb1131ab8";
 const MOSS_TRANSCRIBE_DIARIZE_Q8_REVISION = "6fdfa33aed776bbb0ac11a1a9835634fe6d75dd7";
-const DOLPHIN_CN_DIALECT_REVISION = "eb6854969b5715cfccf4a9297a75f189343700dc";
-const COHERE_TRANSCRIBE_REVISION = "00c06981f239c788c0ce23b8caa001c071e4e391";
 const ARK_ASR_REVISION = ACTIVE_ARK_ASR_VARIANT.revision;
 const QWEN_MODEL_REVISION = "851bf6e806efd8d0a36b00ddf55e13ccb7b8cd0a";
 
@@ -172,48 +167,15 @@ const MODEL_DEFINITIONS: readonly ModelDefinition[] = [
     ],
   },
   {
-    id: "moss-transcribe-diarize-0.9b",
-    category: "asr",
-    name: "MOSS-Transcribe-Diarize 0.9B",
-    purpose: "长音频 · 原生说话人分离 · 时间戳",
-    repository: "OpenMOSS-Team/MOSS-Transcribe-Diarize",
-    revision: MOSS_TRANSCRIBE_DIARIZE_REVISION,
-    approximateBytes: 1_965_000_000,
-    hardwareNote: "CUDA · BF16 · batch 1 · 官方远程代码与原生 S01/S02 说话人标签 · 不量化。",
-  },
-  {
     id: "moss-transcribe-diarize-0.9b-q8_0",
     category: "asr",
-    name: "MOSS Transcribe Diarize 0.9B Q8",
+    name: "MOSS 0.9B（Q8）",
     purpose: "多人转录 · 说话人区分 · 时间戳",
     repository: "handy-computer/MOSS-Transcribe-Diarize-gguf",
     revision: MOSS_TRANSCRIBE_DIARIZE_Q8_REVISION,
     approximateBytes: 986_899_616,
     files: ["MOSS-Transcribe-Diarize-Q8_0.gguf"],
     hardwareNote: "transcribe.cpp · Q8_0 · CUDA 优先、CPU 回退；保留模型原生说话人编号和时间戳。",
-  },
-  {
-    id: "dolphin-cn-dialect-0.4b",
-    category: "asr",
-    name: "Dolphin-CN-Dialect 0.4B",
-    purpose: "中文方言 · small.cn 非流式 · 词级时间戳",
-    repository: "DataoceanAI1/dolphi-cn-dialect-small",
-    revision: DOLPHIN_CN_DIALECT_REVISION,
-    approximateBytes: 1_776_000_000,
-    hardwareNote: "CUDA · batch 1 · 官方 small.cn 非流式权重 · 保留热词入口 · 不量化。",
-  },
-  {
-    id: "cohere-transcribe-2b",
-    category: "asr",
-    name: "Cohere Transcribe 2B",
-    purpose: "多语言 · 官方本地推理 · 可选精确对齐",
-    repository: "CohereLabs/cohere-transcribe-03-2026",
-    revision: COHERE_TRANSCRIBE_REVISION,
-    approximateBytes: 4_435_000_000,
-    optionalDependencies: ["qwen3-forced-aligner-0.6b"],
-    requiresHuggingFaceAuthorization: true,
-    hardwareNote:
-      "CUDA · BF16 · batch 1 · 不量化；官方仓库需先接受 Hugging Face 使用条款，未安装对齐组件时使用真实分段边界。",
   },
   {
     id: "ark-asr-3b-q8_0",
@@ -236,17 +198,6 @@ const MODEL_DEFINITIONS: readonly ModelDefinition[] = [
     revision: QWEN3_FORCED_ALIGNER_REVISION,
     approximateBytes: 1_840_072_459,
   },
-  {
-    id: "qwen35-4b",
-    category: "organizer",
-    name: "Qwen3.5-4B",
-    purpose: "总结、章节与精彩片段",
-    repository: "Qwen/Qwen3.5-4B",
-    revision: QWEN_MODEL_REVISION,
-    approximateBytes: 9_319_828_096,
-    inferenceBackend: "builtin",
-  },
-  QWEN36_NVFP4_MODEL_DEFINITION,
 ] as const;
 
 export const PINNED_MODEL_REVISIONS: Readonly<Record<AiModelId, string>> = {
@@ -256,10 +207,7 @@ export const PINNED_MODEL_REVISIONS: Readonly<Record<AiModelId, string>> = {
   "glm-asr-nano-2512": GLM_ASR_NANO_REVISION,
   "fireredasr2-aed": FIRERED_ASR2_AED_REVISION,
   "paraformer-zh": PARAFORMER_BUNDLE_REVISION,
-  "moss-transcribe-diarize-0.9b": MOSS_TRANSCRIBE_DIARIZE_REVISION,
   "moss-transcribe-diarize-0.9b-q8_0": MOSS_TRANSCRIBE_DIARIZE_Q8_REVISION,
-  "dolphin-cn-dialect-0.4b": DOLPHIN_CN_DIALECT_REVISION,
-  "cohere-transcribe-2b": COHERE_TRANSCRIBE_REVISION,
   "ark-asr-3b-q8_0": ARK_ASR_REVISION,
   "qwen3-forced-aligner-0.6b": QWEN3_FORCED_ALIGNER_REVISION,
   "qwen35-4b": QWEN_MODEL_REVISION,
@@ -643,6 +591,7 @@ export class AiModelManager {
     return {
       models: MODEL_DEFINITIONS.map((definition) => this.buildModelStatus(definition)),
       scheduler: {
+        denials: this.scheduler.getDenialSnapshot(),
         processingMode: this.processingMode,
         gameActive: this.gameActive,
         downloadsThrottled:

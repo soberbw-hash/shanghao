@@ -3,7 +3,7 @@ import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 
 import type { AiAsrModelId } from "@private-voice/shared";
 
-import { platformService } from "./platform/PlatformService";
+import { terminateProcessTree } from "./process-tree";
 
 export type AsrWorkerPhase = "stopped" | "starting" | "loading" | "ready" | "running" | "crashed";
 
@@ -27,7 +27,18 @@ export interface AsrWorkerResult {
   }>;
   metrics?: {
     loadTimeMs?: number;
+    runtimeLoadTimeMs?: number;
+    ramPeakMb?: number;
+    cpuPercent?: number;
+    ramMeasurementScope?: string;
+    alignmentIncludesModelSwap?: boolean;
+    providerImportTimeMs?: number;
+    modelInitializationTimeMs?: number;
+    workerStartupTimeMs?: number;
     inferenceTimeMs?: number;
+    alignmentTimeMs?: number;
+    postprocessTimeMs?: number;
+    workerRoundTripTimeMs?: number;
     backend?: string;
     device?: string;
     quantization?: string;
@@ -80,6 +91,7 @@ interface WorkerMessage {
   id?: string;
   output?: AsrWorkerResult;
   error?: string;
+  metrics?: AsrWorkerResult["metrics"];
 }
 
 const WORKER_LOAD_TIMEOUT_MS = 8 * 60_000;
@@ -94,18 +106,6 @@ const launchKey = (launch: AsrWorkerLaunch): string =>
     launch.vadModelPath,
     launch.puncModelPath,
   ].join("|");
-
-const killProcessTree = (child: ChildProcessWithoutNullStreams): void => {
-  if (platformService.isWindows && child.pid) {
-    const killer = spawn("taskkill", ["/PID", String(child.pid), "/T", "/F"], {
-      windowsHide: true,
-      stdio: "ignore",
-    });
-    killer.unref();
-    return;
-  }
-  child.kill("SIGKILL");
-};
 
 /** Keeps exactly one non-Vibe ASR model loaded and serializes inference off the Electron thread. */
 export class AsrPersistentWorker {
@@ -124,6 +124,9 @@ export class AsrPersistentWorker {
   private idleReleaseGeneration = 0;
   private lastError?: string;
   private diagnosticDetail?: string;
+  private terminationPromise: Promise<void> = Promise.resolve();
+  private startupMetrics?: AsrWorkerResult["metrics"];
+  private terminatingChildren = new Set<ChildProcessWithoutNullStreams>();
 
   constructor(
     private readonly pythonExecutable: string,
@@ -178,6 +181,19 @@ export class AsrPersistentWorker {
     this.stopChild(error);
   }
 
+  async releaseAndWait(
+    reason = "released",
+  ): Promise<{ workerExited: boolean; workerExitedAt: string }> {
+    this.release(reason);
+    await this.terminationPromise.catch(() => undefined);
+    const workerExited =
+      !this.child &&
+      [...this.terminatingChildren].every(
+        (child) => child.exitCode !== null || child.signalCode !== null,
+      );
+    return { workerExited, workerExitedAt: workerExited ? new Date().toISOString() : "" };
+  }
+
   private async pump(): Promise<void> {
     if (this.active || !this.queue.length) return;
     const request = this.queue[0];
@@ -228,18 +244,27 @@ export class AsrPersistentWorker {
     );
   }
 
-  private ensureStarted(launch: AsrWorkerLaunch): Promise<void> {
+  private async ensureStarted(launch: AsrWorkerLaunch): Promise<void> {
     this.clearIdleRelease();
     if (this.child && launchKey(this.currentLaunch as AsrWorkerLaunch) === launchKey(launch)) {
-      if (this.phase === "ready" || this.phase === "running") return Promise.resolve();
+      if (this.phase === "ready" || this.phase === "running") return;
       if (this.startPromise) return this.startPromise;
     }
     if (this.child) this.stopChild(new Error("asr_model_changed"));
+    await this.terminationPromise;
+    if (
+      [...this.terminatingChildren].some(
+        (child) => child.exitCode === null && child.signalCode === null,
+      )
+    ) {
+      throw new Error("asr_previous_worker_still_running");
+    }
     this.phase = "starting";
     this.lastError = undefined;
     this.diagnosticDetail = undefined;
     this.stdoutBuffer = "";
     this.stderrTail = "";
+    this.startupMetrics = undefined;
     this.currentLaunch = launch;
     const args = [
       this.runnerPath,
@@ -315,6 +340,7 @@ export class AsrPersistentWorker {
     }
     if (message.type === "ready") {
       this.phase = "ready";
+      this.startupMetrics = message.metrics;
       if (this.loadTimeout) clearTimeout(this.loadTimeout);
       this.loadTimeout = undefined;
       this.startResolve?.();
@@ -363,9 +389,17 @@ export class AsrPersistentWorker {
       request.resolve({
         ...(output ?? { text: "" }),
         metrics: {
+          ...(request.loadTimeMs ? this.startupMetrics : {}),
           ...(output?.metrics ?? {}),
           loadTimeMs: request.loadTimeMs,
-          inferenceTimeMs,
+          workerStartupTimeMs: request.loadTimeMs
+            ? Math.max(
+                0,
+                request.loadTimeMs - (this.startupMetrics?.runtimeLoadTimeMs ?? request.loadTimeMs),
+              )
+            : 0,
+          workerRoundTripTimeMs: inferenceTimeMs,
+          inferenceTimeMs: output?.metrics?.inferenceTimeMs ?? inferenceTimeMs,
         },
       });
     }
@@ -391,7 +425,13 @@ export class AsrPersistentWorker {
     this.startReject = undefined;
     const child = this.child;
     this.child = undefined;
-    if (child && child.exitCode === null) killProcessTree(child);
+    if (child && child.exitCode === null) {
+      this.terminatingChildren.add(child);
+      child.once("exit", () => this.terminatingChildren.delete(child));
+      this.terminationPromise = this.terminationPromise
+        .catch(() => undefined)
+        .then(() => terminateProcessTree(child));
+    }
     this.stdoutBuffer = "";
     this.stderrTail = "";
     if (!preserveError) {

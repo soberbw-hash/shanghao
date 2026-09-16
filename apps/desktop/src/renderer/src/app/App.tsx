@@ -11,6 +11,7 @@ import { visualRuntimeController } from "../features/visual-runtime/VisualRuntim
 import { displayRefreshRateService } from "../features/visual-runtime/DisplayRefreshRateService";
 import { useAppBootstrap } from "../hooks/useAppBootstrap";
 import { useGlobalMuteSync } from "../hooks/useGlobalMuteSync";
+import { usePhoneModeSync } from "../hooks/usePhoneModeSync";
 import { useLocalAudioTransport } from "../hooks/useLocalAudioTransport";
 import { useUiFeedbackSounds } from "../hooks/useUiFeedbackSounds";
 import { dispatchQuickMessageShortcut } from "../hooks/useRoomState";
@@ -37,6 +38,7 @@ const SettingsPage = lazy(() =>
 export const App = () => {
   useAppBootstrap();
   useGlobalMuteSync();
+  usePhoneModeSync();
   useLocalAudioTransport();
   useUiFeedbackSounds();
 

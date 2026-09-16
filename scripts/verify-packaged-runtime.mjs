@@ -30,6 +30,14 @@ if (qwenRunnerHash !== runtimeManifest.qwen.runner.sha256) {
   throw new Error(`Packaged AI runtime hash mismatch: ${runtimeManifest.qwen.runner.path}`);
 }
 
+for (const nativeHelper of ["shanghao-core.exe", "ShangHao.PhoneAudio.exe"]) {
+  const nativeHelperPath = path.join(resourcesDirectory, "native", nativeHelper);
+  await access(nativeHelperPath);
+  if ((await stat(nativeHelperPath)).size < 1024) {
+    throw new Error(`Packaged native helper is incomplete: ${nativeHelper}`);
+  }
+}
+
 const entries = listPackage(archivePath, { isPack: false });
 const normalizedEntries = entries.map((entry) => entry.replaceAll("\\", "/"));
 const fontEntries = normalizedEntries.filter((entry) => entry.endsWith(".woff2"));
@@ -92,5 +100,5 @@ for (const filePath of quickMessageFiles) {
 }
 
 console.log(
-  `Packaged runtime verified: CloudBase login config, AI runner integrity, ${fontEntries.length} font files, DeepFilterNet assets, ${quickMessageFiles.length} AAC voice clips, and all licenses`,
+  `Packaged runtime verified: CloudBase login config, AI runner integrity, native helpers, ${fontEntries.length} font files, DeepFilterNet assets, ${quickMessageFiles.length} AAC voice clips, and all licenses`,
 );

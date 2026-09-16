@@ -11,6 +11,9 @@ const constants = await readFile(
   path.join(workspaceRoot, "packages", "shared", "src", "constants", "app.ts"),
   "utf8",
 );
+const readme = await readFile(path.join(workspaceRoot, "README.md"), "utf8");
+const currentRound = await readFile(path.join(workspaceRoot, "docs", "CURRENT_ROUND.md"), "utf8");
+const changelog = await readFile(path.join(workspaceRoot, "CHANGELOG.md"), "utf8");
 const cliVersion = process.argv.slice(2).find((argument) => argument !== "--");
 const expectedVersion =
   cliVersion?.replace(/^v/, "") ?? process.env.GITHUB_REF_NAME?.replace(/^v/, "");
@@ -39,6 +42,24 @@ const releaseNotesPath = path.join(
 const releaseNotes = await readFile(releaseNotesPath, "utf8");
 if (releaseNotes.trim().length < 200) {
   throw new Error(`Release notes are missing or incomplete: ${releaseNotesPath}`);
+}
+if (!readme.includes(`当前仓库版本为 **${expectedVersion}**`)) {
+  throw new Error(`README current version is not ${expectedVersion}`);
+}
+if (!readme.includes(`v${expectedVersion} 更新公告`)) {
+  throw new Error(`README does not link the v${expectedVersion} release notes`);
+}
+if (!currentRound.startsWith(`# ShangHao ${expectedVersion} `)) {
+  throw new Error(`docs/CURRENT_ROUND.md is not aligned with ${expectedVersion}`);
+}
+if (!changelog.includes(`## ${expectedVersion} -`)) {
+  throw new Error(`CHANGELOG.md has no ${expectedVersion} entry`);
+}
+if (!readme.includes("约 -16 LUFS") || !readme.includes("CloudBase 手机号验证注册")) {
+  throw new Error("README audio target or primary account provider is stale");
+}
+if (currentRound.includes("UI 音效开关/音量")) {
+  throw new Error("CURRENT_ROUND still documents removed UI sound controls");
 }
 
 console.log(`Release metadata verified for v${expectedVersion}`);

@@ -6,6 +6,7 @@ import { ShortcutInput } from "../base/ShortcutInput";
 import { Switch } from "../base/Switch";
 import { SettingsItemRow } from "./SettingsItemRow";
 import { SettingsSection } from "./SettingsSection";
+import { PhoneModeSettings } from "./PhoneModeSettings";
 
 export const AudioSettingsCard = ({
   settings,
@@ -20,6 +21,7 @@ export const AudioSettingsCard = ({
 }) => (
   <SettingsSection title="音频" description="选择输入与输出设备。">
     <div className="space-y-3">
+      <PhoneModeSettings />
       <SettingsItemRow label="输入设备">
         <InputDevicePicker
           devices={inputDevices}
@@ -50,6 +52,7 @@ export const AudioSettingsCard = ({
         description="默认开启。进入频道后自动录音，退出时直接保存到录音库。"
       >
         <Switch
+          ariaLabel="自动录音并保存"
           isChecked={settings.isAutoRecordOnJoinEnabled}
           onChange={(isAutoRecordOnJoinEnabled) => onChange({ isAutoRecordOnJoinEnabled })}
         />

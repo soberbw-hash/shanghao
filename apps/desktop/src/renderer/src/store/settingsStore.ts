@@ -20,6 +20,7 @@ import { create } from "zustand";
 
 import { desktopApi } from "../utils/desktopApi";
 import { writeRendererLog } from "../utils/logger";
+import { useAppStore } from "./appStore";
 
 interface StoreHydrationOutcome {
   mode: "ready" | "safe_mode";
@@ -159,7 +160,7 @@ const withTimeout = async <T>(
 
 const getQuickMessageShortcutSignature = (settings: AppSettings): string =>
   [
-    ...normalizeQuickMessageSlots(settings.quickMessages.slots, DEFAULT_QUICK_MESSAGE_SLOTS, 5),
+    ...normalizeQuickMessageSlots(settings.quickMessages.slots, DEFAULT_QUICK_MESSAGE_SLOTS),
     ...normalizeQuickMessageSlots(
       settings.quickMessages.musicSlots,
       DEFAULT_QUICK_MESSAGE_MUSIC_SLOTS,
@@ -170,10 +171,11 @@ const getQuickMessageShortcutSignature = (settings: AppSettings): string =>
     .join("|");
 
 let quickMessageShortcutConfiguration = Promise.resolve();
+let unsubscribeUpdateStatus: (() => void) | undefined;
 
 const configureQuickMessageShortcuts = (settings: AppSettings): Promise<void> => {
   const bindings = [
-    ...normalizeQuickMessageSlots(settings.quickMessages.slots, DEFAULT_QUICK_MESSAGE_SLOTS, 5),
+    ...normalizeQuickMessageSlots(settings.quickMessages.slots, DEFAULT_QUICK_MESSAGE_SLOTS),
     ...normalizeQuickMessageSlots(
       settings.quickMessages.musicSlots,
       DEFAULT_QUICK_MESSAGE_MUSIC_SLOTS,
@@ -190,10 +192,19 @@ const configureQuickMessageShortcuts = (settings: AppSettings): Promise<void> =>
   quickMessageShortcutConfiguration = quickMessageShortcutConfiguration
     .catch(() => undefined)
     .then(async () => {
+      const failed: string[] = [];
       for (const binding of bindings) {
-        await desktopApi.shortcuts
+        const registered = await desktopApi.shortcuts
           .configureQuickMessage(binding.index, binding.accelerator)
           .catch(() => false);
+        if (binding.accelerator && !registered) failed.push(binding.accelerator);
+      }
+      if (failed.length) {
+        useAppStore.getState().pushToast({
+          tone: "warning",
+          title: "部分快捷键未生效",
+          description: `${failed.join("、")} 无法注册，请在快捷消息中更换组合键。`,
+        });
       }
     });
   return quickMessageShortcutConfiguration;
@@ -247,7 +258,8 @@ export const useSettingsStore = create<SettingsStoreState>((set, get) => ({
       isHydrating: false,
     });
 
-    desktopApi.updates.onStatus((updateStatus) => set({ updateStatus }));
+    unsubscribeUpdateStatus?.();
+    unsubscribeUpdateStatus = desktopApi.updates.onStatus((updateStatus) => set({ updateStatus }));
 
     await desktopApi.shortcuts.configureMute(settings.globalMuteShortcut).catch(async (error) => {
       await writeRendererLog("renderer-startup", "warn", "Failed to configure mute shortcut", {
@@ -284,6 +296,16 @@ export const useSettingsStore = create<SettingsStoreState>((set, get) => ({
     }
     const settings = await desktopApi.settings.save(partial);
     set({ settings, avatarDataUrl: undefined });
+    if (
+      typeof partial.globalMuteShortcut === "string" &&
+      settings.globalMuteShortcut !== partial.globalMuteShortcut.trim()
+    ) {
+      useAppStore.getState().pushToast({
+        tone: "warning",
+        title: "快捷键未更改",
+        description: "这个组合键无法注册，已保留原来的设置。",
+      });
+    }
     if ("recordingMarkerShortcut" in partial) {
       await desktopApi.shortcuts.configureRecordingMarker(settings.recordingMarkerShortcut);
     }

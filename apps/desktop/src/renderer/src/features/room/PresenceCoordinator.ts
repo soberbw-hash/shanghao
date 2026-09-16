@@ -5,6 +5,7 @@ import { normalizePresenceGameIconDataUrl, normalizePresenceGameName } from "./p
 
 interface DesiredPresenceState {
   isDeafened: boolean;
+  callModeActive: boolean;
   activity: MemberActivity;
   sceneZone?: SceneZoneId;
   gameName?: string;
@@ -42,6 +43,7 @@ export class PresenceCoordinator {
     gameName?: string,
     musicActivity?: MusicActivity,
     gameIconDataUrl?: string,
+    callModeActive = this.desired?.callModeActive ?? false,
   ): void {
     const normalizedGameName = normalizePresenceGameName(gameName);
     const normalizedGameIconDataUrl = normalizePresenceGameIconDataUrl(
@@ -49,6 +51,7 @@ export class PresenceCoordinator {
       gameIconDataUrl,
     );
     const key = JSON.stringify([
+      callModeActive,
       isDeafened,
       activity,
       sceneZone ?? null,
@@ -57,6 +60,7 @@ export class PresenceCoordinator {
       musicActivity ?? null,
     ]);
     this.desired = {
+      callModeActive,
       isDeafened,
       activity,
       sceneZone,
@@ -79,6 +83,7 @@ export class PresenceCoordinator {
     return {
       ...message,
       isDeafened: message.isDeafened ?? desired.isDeafened,
+      callModeActive: message.callModeActive ?? desired.callModeActive,
       activity: message.activity ?? desired.activity,
       sceneZone: message.sceneZone ?? desired.sceneZone,
       gameName: message.gameName ?? desired.gameName ?? "",
@@ -105,6 +110,7 @@ export class PresenceCoordinator {
       roomId: this.options.roomId,
       peerId: this.options.peerId,
       isDeafened: desired.isDeafened,
+      callModeActive: desired.callModeActive,
       activity: desired.activity,
       sceneZone: desired.sceneZone,
       gameName: desired.gameName ?? "",

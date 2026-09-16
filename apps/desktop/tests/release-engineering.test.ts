@@ -8,20 +8,28 @@ import { APP_BUILD_NUMBER, APP_PROTOCOL_VERSION } from "@private-voice/shared";
 const root = path.resolve(process.cwd(), "../..");
 const read = (relativePath: string) => readFileSync(path.join(root, relativePath), "utf8");
 
-test("v3.0.8 local metadata and safeguards are complete", () => {
+test("current local metadata and safeguards are complete", () => {
   const rootPackage = JSON.parse(read("package.json")) as { version: string };
   const desktopPackage = JSON.parse(read("apps/desktop/package.json")) as { version: string };
+  const currentVersion = rootPackage.version;
   const release = read(".github/workflows/release.yml");
   const desktopBuilder = read("apps/desktop/electron-builder.yml");
   const changelog = read("CHANGELOG.md");
   const architecture = read("docs/architecture.md");
+  const readme = read("README.md");
+  const currentRound = read("docs/CURRENT_ROUND.md");
 
-  assert.equal(rootPackage.version, "3.0.8");
-  assert.equal(desktopPackage.version, "3.0.8");
+  assert.equal(desktopPackage.version, currentVersion);
   assert.equal(APP_PROTOCOL_VERSION, "7");
-  assert.equal(APP_BUILD_NUMBER, "2026.09.05.1");
-  assert.equal(existsSync(path.join(root, "docs/release-notes/v3.0.8.md")), true);
-  assert.equal(changelog.includes("## 3.0.8 - 2026-09-05"), true);
+  assert.match(APP_BUILD_NUMBER, /^\d{4}\.\d{2}\.\d{2}\.\d+$/);
+  assert.equal(existsSync(path.join(root, `docs/release-notes/v${currentVersion}.md`)), true);
+  assert.equal(changelog.includes(`## ${currentVersion} -`), true);
+  assert.equal(readme.includes(`当前仓库版本为 **${currentVersion}**`), true);
+  assert.equal(readme.includes(`v${currentVersion} 更新公告`), true);
+  assert.equal(currentRound.startsWith(`# ShangHao ${currentVersion} `), true);
+  assert.equal(readme.includes("约 -16 LUFS"), true);
+  assert.equal(readme.includes("CloudBase 手机号验证注册"), true);
+  assert.equal(currentRound.includes("UI 音效开关/音量"), false);
   assert.equal(existsSync(path.join(root, "docs/release-notes/v2.6.0.md")), true);
   assert.equal(changelog.includes("## 2.6.0"), true);
   assert.equal(changelog.includes("## 2.6.1 - 2026-08-12（已合并到 2.8.0，未单独发布）"), true);
@@ -78,6 +86,7 @@ test("main CI, CodeQL, and Dependabot guard the repository", () => {
   assert.equal(ci.includes("branches: [main]"), true);
   assert.equal(ci.includes("pnpm install --frozen-lockfile"), true);
   assert.equal(ci.includes("pnpm build"), true);
+  assert.equal(ci.includes("runs-on: windows-latest"), true);
   assert.equal(
     ci.includes(
       "xvfb-run -a pnpm --dir apps/desktop exec electron --no-sandbox tests/electron-audio-worklet-smoke.cjs",
@@ -85,6 +94,10 @@ test("main CI, CodeQL, and Dependabot guard the repository", () => {
     true,
   );
   assert.equal(ci.includes("xvfb-run -a pnpm test:five-peer-media"), true);
+  const soak = read(".github/workflows/soak.yml");
+  assert.equal(soak.includes('cron: "0 18 * * *"'), true);
+  assert.equal(soak.includes("runtime-diagnostics.test.ts"), true);
+  assert.equal(soak.includes("process-samples.log"), true);
   assert.equal(codeql.includes("javascript-typescript"), true);
   assert.equal(dependabot.includes("package-ecosystem: npm"), true);
   assert.equal(dependabot.includes("package-ecosystem: github-actions"), true);

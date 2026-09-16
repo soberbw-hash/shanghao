@@ -1,6 +1,6 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 
-import { platformService } from "./platform/PlatformService";
+import { terminateProcessTree } from "./process-tree";
 
 export interface LocalProcessResult {
   stdout: string;
@@ -40,15 +40,7 @@ export const runLocalProcess = async (
     const terminate = (reason: "paused" | "timeout") => {
       if (terminationReason) return;
       terminationReason = reason;
-      if (platformService.isWindows && child.pid) {
-        const killer = spawn("taskkill", ["/PID", String(child.pid), "/T", "/F"], {
-          windowsHide: true,
-          stdio: "ignore",
-        });
-        killer.unref();
-      } else {
-        child.kill("SIGKILL");
-      }
+      void terminateProcessTree(child);
       terminationFallback = setTimeout(() => {
         options.signal?.removeEventListener("abort", abort);
         reject(new Error(reason === "paused" ? "ai_task_paused" : "ai_runtime_timeout"));

@@ -5,6 +5,24 @@ import { PROFILE_SCHEMA_VERSION, SETTINGS_SCHEMA_VERSION } from "@private-voice/
 
 import { defaultSettings, migrateSettings } from "../src/main/settings-migration";
 
+test("retired Dolphin preference falls back without changing retained model preferences", () => {
+  assert.equal(
+    migrateSettings({ ...defaultSettings, aiAsrModel: "dolphin-cn-dialect-0.4b" as never }).settings
+      .aiAsrModel,
+    defaultSettings.aiAsrModel,
+  );
+  for (const aiAsrModel of [
+    "glm-asr-nano-2512",
+    "moss-transcribe-diarize-0.9b-q8_0",
+    "qwen3-asr-1.7b-force",
+  ] as const) {
+    assert.equal(
+      migrateSettings({ ...defaultSettings, aiAsrModel }).settings.aiAsrModel,
+      aiAsrModel,
+    );
+  }
+});
+
 test("migrateSettings falls back to safe defaults for damaged legacy config", () => {
   const result = migrateSettings({
     nickname: "阿北",
@@ -255,10 +273,7 @@ test("ASR model selection preserves supported providers and repairs damaged valu
     "glm-asr-nano-2512",
     "fireredasr2-aed",
     "paraformer-zh",
-    "moss-transcribe-diarize-0.9b",
     "moss-transcribe-diarize-0.9b-q8_0",
-    "dolphin-cn-dialect-0.4b",
-    "cohere-transcribe-2b",
     "ark-asr-3b-q8_0",
   ] as const) {
     assert.equal(

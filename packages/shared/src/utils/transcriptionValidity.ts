@@ -13,6 +13,7 @@ export interface VoiceMemoryTranscriptionValidity {
   eligibleForSpeedRanking: VoiceMemoryBenchmarkRankingEligibility;
   eligibleForStabilityRanking: VoiceMemoryBenchmarkRankingEligibility;
   exclusionReasons: string[];
+  reviewReasons: string[];
   recommendedAction: string;
   complete: boolean;
 }
@@ -64,11 +65,31 @@ export const evaluateVoiceMemoryTranscriptionValidity = (
   const statusConflict =
     stats?.terminationReason === "completed" &&
     (!complete || completedUnits !== totalUnits || pendingUnits > 0 || runningUnits > 0);
+  // Only explicit, reproducible output anomalies invalidate quality. Empty output on a speech
+  // window and conservative omission/truncation heuristics remain review signals, not proof.
   const outputAnomaly =
     (stats?.repetitionLoopCount ?? 0) > 0 ||
     (stats?.abnormalOutputCount ?? 0) > 0 ||
-    (stats?.emptyOutputOnSpeechUnits ?? 0) > 0;
-  const runtimeError = failedUnits > 0 || stats?.terminationReason === "failed";
+    (stats?.hallucinationSuspectedCount ?? 0) > 0;
+  const needsReview =
+    !outputAnomaly &&
+    ((stats?.emptyOutputOnSpeechUnits ?? 0) > 0 || (stats?.suspectedOmissionCount ?? 0) > 0);
+  const failedRuntimeUnits =
+    units?.filter(
+      (unit) => unit.status === "failed" && unit.errorCode !== "transcription_output_anomaly",
+    ).length ?? failedUnits;
+  const runtimeError = failedRuntimeUnits > 0 || stats?.terminationReason === "failed";
+  const executionComplete = Boolean(
+    stats &&
+    totalUnits > 0 &&
+    completedUnits + failedUnits === totalUnits &&
+    pendingUnits === 0 &&
+    runningUnits === 0 &&
+    failedRuntimeUnits === 0 &&
+    finalResultSaved,
+  );
+  const runtimeIncident =
+    (stats?.resourceUsage?.oomCount ?? 0) > 0 || (stats?.resourceUsage?.workerCrashCount ?? 0) > 0;
   const status: VoiceMemoryBenchmarkResultStatus = complete
     ? "success"
     : !started
@@ -93,8 +114,10 @@ export const evaluateVoiceMemoryTranscriptionValidity = (
         : outputAnomaly
           ? "invalid_output_anomaly"
           : complete
-            ? "valid_complete"
-            : "valid_partial";
+            ? needsReview
+              ? "valid_with_review"
+              : "valid_complete"
+            : "incomplete";
   const exclusionReasons: string[] = [];
   if (!complete) exclusionReasons.push("任务未完整、可靠地处理并保存全部音频");
   if (failedUnits > 0) exclusionReasons.push(`${failedUnits} 个处理单元失败`);
@@ -103,19 +126,33 @@ export const evaluateVoiceMemoryTranscriptionValidity = (
   if (!allScheduledSpeechProcessed) exclusionReasons.push("实际成功处理音频未覆盖全部计划语音单元");
   if (!finalResultSaved) exclusionReasons.push("最终结果尚未确认持久化");
   if (outputAnomaly) exclusionReasons.push("存在重复循环或异常输出");
+  const reviewReasons: string[] = [];
+  if ((stats?.emptyOutputOnSpeechUnits ?? 0) > 0)
+    reviewReasons.push("语音检测单元存在空输出；不等于已确认遗漏有意义讲话");
+  if ((stats?.suspectedOmissionCount ?? 0) > 0)
+    reviewReasons.push("存在疑似遗漏候选，需结合原音频人工确认");
   const partialSpeedReference: VoiceMemoryBenchmarkRankingEligibility =
-    processedAudioMs > 0 && !outputAnomaly ? "partial_reference" : false;
+    processedAudioMs > 0 && !runtimeError ? "partial_reference" : false;
   return {
     status,
     dataValidity,
     eligibleForQualityRanking: complete && !outputAnomaly,
-    eligibleForSpeedRanking: complete && !outputAnomaly ? true : partialSpeedReference,
-    eligibleForStabilityRanking: complete,
+    // A complete run with anomalous text may still provide valid speed and stability evidence.
+    eligibleForSpeedRanking:
+      executionComplete && !runtimeIncident
+        ? true
+        : runtimeIncident
+          ? false
+          : partialSpeedReference,
+    eligibleForStabilityRanking: executionComplete && !runtimeIncident,
     exclusionReasons,
+    reviewReasons,
     recommendedAction: complete
       ? outputAnomaly
         ? "复核异常片段后重测"
-        : "结果完整，可参与对比"
+        : needsReview
+          ? "结果完整，可参与对比；建议复核标记片段"
+          : "结果完整，可参与对比"
       : runtimeError
         ? "修复运行时错误后从失败单元继续"
         : started

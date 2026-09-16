@@ -73,6 +73,7 @@ let activePeerId: string | undefined;
 let activeJoinPromise: Promise<void> | null = null;
 let activeSpeakingDetector: ReturnType<typeof createSpeakingDetector> | null = null;
 let activeProcessedMicrophone: ProcessedMicrophoneStream | null = null;
+let inputDeviceSwitchQueue: Promise<void> = Promise.resolve();
 let previousMemberIds = new Set<string>();
 const CHANNEL_IDS = new Set<ChannelId>(["main", "side"]);
 let lastQuickMessageSentAt = 0;
@@ -257,6 +258,7 @@ export const useRoomState = () => {
   const setLocalDiagnostics = useAudioStore((state) => state.setLocalDiagnostics);
   const isMuted = useAudioStore((state) => state.isMuted);
   const isDeafened = useAudioStore((state) => state.isDeafened);
+  const callModeActive = useAudioStore((state) => state.phoneModeActive);
   const pushToast = useAppStore((state) => state.pushToast);
   const setRoomAction = useAppStore((state) => state.setRoomAction);
 
@@ -266,6 +268,7 @@ export const useRoomState = () => {
       .room.members.find((member) => member.isLocal)?.speakingState;
     const isSpeaking = !isMuted && localSpeakingState === MemberSpeakingState.Speaking;
     updateLocalPresence({
+      callModeActive,
       isMuted,
       isDeafened,
       speakingState: isMuted
@@ -283,8 +286,9 @@ export const useRoomState = () => {
       localMember?.gameName,
       localMember?.musicActivity,
       localMember?.gameIconDataUrl,
+      callModeActive,
     );
-  }, [isDeafened, isMuted, updateLocalPresence]);
+  }, [isDeafened, isMuted, callModeActive, updateLocalPresence]);
 
   const profileNickname = settings?.nickname;
   const profileAvatarId = settings?.avatarId;
@@ -777,6 +781,7 @@ export const useRoomState = () => {
       localMember?.gameName,
       localMember?.musicActivity,
       localMember?.gameIconDataUrl,
+      useAudioStore.getState().phoneModeActive,
     );
     playUiSound("enter-room");
     setRoom({
@@ -928,61 +933,76 @@ export const useRoomState = () => {
     },
   });
 
-  const replaceInputDevice = async (preferredInputDeviceId?: string) => {
-    const currentSettings = useSettingsStore.getState().settings ?? settings;
-    if (!activeClient || !currentSettings) {
-      return;
-    }
-
-    try {
-      const { stream: inputStream, diagnostics } = await requestMicrophoneStream({
-        deviceId: preferredInputDeviceId ?? currentSettings.preferredInputDeviceId,
-        noiseSuppression: false,
-        echoCancellation: currentSettings.isEchoCancellationEnabled,
-        autoGainControl: currentSettings.isAutoGainControlEnabled,
-      });
-      const processedMicrophone = await createProcessedMicrophoneStream(
-        inputStream,
-        currentSettings,
-      );
-      const stream = processedMicrophone.stream;
-      const [nextTrack] = stream.getAudioTracks();
-      if (!nextTrack) {
-        processedMicrophone.dispose();
-        throw new Error(copy.microphoneMissing);
+  const replaceInputDevice = (preferredInputDeviceId?: string) => {
+    const client = activeClient;
+    const operation = inputDeviceSwitchQueue.then(async () => {
+      const currentSettings = useSettingsStore.getState().settings ?? settings;
+      if (!client || activeClient !== client || !currentSettings) {
+        return;
       }
 
-      activeProcessedMicrophone?.dispose();
-      activeProcessedMicrophone = processedMicrophone;
-      setLocalDiagnostics({ ...diagnostics, ...processedMicrophone.processorDiagnostics });
-      processedMicrophone.onDiagnostics((processorDiagnostics) => {
-        if (activeProcessedMicrophone !== processedMicrophone) return;
-        setLocalDiagnostics({ ...diagnostics, ...processorDiagnostics });
-      });
-      void processedMicrophone.ready.then((processorDiagnostics) => {
-        if (activeProcessedMicrophone !== processedMicrophone) return;
-        setLocalDiagnostics({ ...diagnostics, ...processorDiagnostics });
-      });
-      setLocalStream(stream);
-      await activeClient.replaceInputTrack(nextTrack);
-      startSpeakingDetector(stream);
-      await writeRendererLog("devices", "info", "Switched input device", {
-        preferredInputDeviceId,
-        ...diagnostics,
-      });
-    } catch (error) {
-      const description = normalizeRoomError(error, copy.microphoneUnavailable);
-      await writeRendererLog("devices", "error", "Failed to switch input device", {
-        preferredInputDeviceId,
-        error: error instanceof Error ? error.message : String(error),
-      });
-      pushToast({
-        tone: "danger",
-        title: copy.inputDeviceFailed,
-        description,
-      });
-      playUiSound("mic-error");
-    }
+      let pendingInput: MediaStream | undefined;
+      let pendingProcessor: ProcessedMicrophoneStream | undefined;
+      try {
+        const { stream: inputStream, diagnostics } = await requestMicrophoneStream({
+          deviceId: preferredInputDeviceId ?? currentSettings.preferredInputDeviceId,
+          noiseSuppression: false,
+          echoCancellation: currentSettings.isEchoCancellationEnabled,
+          autoGainControl: currentSettings.isAutoGainControlEnabled,
+        });
+        pendingInput = inputStream;
+        const processedMicrophone = await createProcessedMicrophoneStream(
+          inputStream,
+          currentSettings,
+        );
+        pendingProcessor = processedMicrophone;
+        const stream = processedMicrophone.stream;
+        const [nextTrack] = stream.getAudioTracks();
+        if (!nextTrack) {
+          throw new Error(copy.microphoneMissing);
+        }
+
+        if (activeClient !== client) return;
+        await client.replaceInputTrack(nextTrack);
+        if (activeClient !== client) return;
+        activeProcessedMicrophone?.dispose();
+        activeProcessedMicrophone = processedMicrophone;
+        pendingInput = undefined;
+        pendingProcessor = undefined;
+        setLocalDiagnostics({ ...diagnostics, ...processedMicrophone.processorDiagnostics });
+        processedMicrophone.onDiagnostics((processorDiagnostics) => {
+          if (activeProcessedMicrophone !== processedMicrophone) return;
+          setLocalDiagnostics({ ...diagnostics, ...processorDiagnostics });
+        });
+        void processedMicrophone.ready.then((processorDiagnostics) => {
+          if (activeProcessedMicrophone !== processedMicrophone) return;
+          setLocalDiagnostics({ ...diagnostics, ...processorDiagnostics });
+        });
+        setLocalStream(stream);
+        startSpeakingDetector(stream);
+        await writeRendererLog("devices", "info", "Switched input device", {
+          preferredInputDeviceId,
+          ...diagnostics,
+        });
+      } catch (error) {
+        const description = normalizeRoomError(error, copy.microphoneUnavailable);
+        await writeRendererLog("devices", "error", "Failed to switch input device", {
+          preferredInputDeviceId,
+          error: error instanceof Error ? error.message : String(error),
+        });
+        pushToast({
+          tone: "danger",
+          title: copy.inputDeviceFailed,
+          description,
+        });
+        playUiSound("mic-error");
+      } finally {
+        if (pendingProcessor) pendingProcessor.dispose();
+        else pendingInput?.getTracks().forEach((track) => track.stop());
+      }
+    });
+    inputDeviceSwitchQueue = operation.catch(() => undefined);
+    return operation;
   };
 
   const setMicrophoneSendVolume = (volume: number) => {

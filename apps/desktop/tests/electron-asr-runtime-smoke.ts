@@ -66,7 +66,22 @@ const run = async (): Promise<void> => {
         durationMs: 5_000,
         resourceMode: "normal",
       });
-      results.push({ modelId, elapsedMs: Date.now() - startedAt, transcript });
+      if (
+        transcript.outputStatus !== "normal" ||
+        !transcript.segments.some((segment) => segment.text.trim().length > 0)
+      ) {
+        throw new Error(
+          `${modelId}:smoke_transcription_rejected:${transcript.outputStatus}:segments=${transcript.segments.length}`,
+        );
+      }
+      results.push({
+        modelId,
+        elapsedMs: Date.now() - startedAt,
+        outputStatus: transcript.outputStatus,
+        segmentCount: transcript.segments.length,
+        timing: transcript.timing,
+        resourceUsage: transcript.resourceUsage,
+      });
     }
     console.log(
       JSON.stringify({

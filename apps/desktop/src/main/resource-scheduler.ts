@@ -51,6 +51,42 @@ const initialPressure = (): AiRuntimePressure => ({
 
 /** One source of truth for background work yielding to realtime room features. */
 export class ResourceScheduler {
+  private readonly denials: Record<string, number> = Object.create(null);
+  private denialTotal = 0;
+  private lastDenialReason?: string;
+  private lastDenialAt?: number;
+
+  getDenialSnapshot() {
+    return {
+      total: this.denialTotal,
+      byReason: { ...this.denials },
+      lastReason: this.lastDenialReason,
+      lastAt: this.lastDenialAt,
+    };
+  }
+
+  private denied(reason: string): ScheduledAiDecision {
+    // Bounded reason vocabulary; counts are decision observations, not distinct jobs.
+    const key = [
+      "realtime_pressure",
+      "manual_only",
+      "waiting_for_game_to_finish",
+      "peer_recovery",
+      "packet_loss",
+      "latency",
+      "renderer_memory_pressure",
+      "screen_share_network_pressure",
+      "voice_network_pressure",
+      "memory_pressure",
+    ].includes(reason)
+      ? reason
+      : "other";
+    this.denials[key] = Math.min(Number.MAX_SAFE_INTEGER, (this.denials[key] ?? 0) + 1);
+    this.denialTotal = Math.min(Number.MAX_SAFE_INTEGER, this.denialTotal + 1);
+    this.lastDenialReason = key;
+    this.lastDenialAt = Date.now();
+    return { runnable: false, reason, resourceMode: "low" };
+  }
   private state: SchedulerState = {
     processingMode: "manual",
     gameActive: false,
@@ -64,16 +100,11 @@ export class ResourceScheduler {
 
   aiDecision(kind: AiTaskKind, manualRequest: boolean): ScheduledAiDecision {
     if (this.state.realtimePressureHigh && !manualRequest) {
-      return {
-        runnable: false,
-        reason: this.state.pressureReason ?? "realtime_pressure",
-        resourceMode: "low",
-      };
+      return this.denied(this.state.pressureReason ?? "realtime_pressure");
     }
-    if (this.state.processingMode === "manual" && !manualRequest)
-      return { runnable: false, reason: "manual_only", resourceMode: "low" };
+    if (this.state.processingMode === "manual" && !manualRequest) return this.denied("manual_only");
     if (this.state.gameActive && this.state.processingMode === "after_game" && !manualRequest) {
-      return { runnable: false, reason: "waiting_for_game_to_finish", resourceMode: "low" };
+      return this.denied("waiting_for_game_to_finish");
     }
     const realtimeFeatureActive =
       this.state.pressure.inVoiceRoom ||

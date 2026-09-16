@@ -271,7 +271,7 @@ const ShangHaoHealthOverview = ({
           重新检查
         </Button>
       </div>
-      <div className="mt-3 grid gap-2 sm:grid-cols-2">
+      <div className="mt-3 grid items-start gap-2 sm:grid-cols-2">
         {items.map(({ label, level, description, actionLabel, onClick }) => (
           <div key={label} className="rounded-xl border border-[#EDF2F7] bg-[#FAFCFF] px-3 py-2.5">
             <div className="flex items-center justify-between gap-2">
@@ -282,17 +282,19 @@ const ShangHaoHealthOverview = ({
                 {level}
               </span>
             </div>
-            <div className="mt-1 text-[11px] leading-5 text-[#7A8CA5]">{description}</div>
-            {actionLabel && onClick && isAttentionLevel(level) ? (
-              <Button
-                variant="ghost"
-                className="mt-1.5 px-0 text-[11px]"
-                onClick={onClick}
-                disabled={isRepairingFirewall}
-              >
-                {label === "Windows 网络权限" && isRepairingFirewall ? "修复中…" : actionLabel}
-              </Button>
-            ) : null}
+            <div className="mt-1 flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
+              <div className="min-w-0 text-[11px] leading-5 text-[#7A8CA5]">{description}</div>
+              {actionLabel && onClick && isAttentionLevel(level) ? (
+                <Button
+                  variant="ghost"
+                  className="h-6 shrink-0 rounded-md px-2 text-[11px]"
+                  onClick={onClick}
+                  disabled={isRepairingFirewall}
+                >
+                  {label === "Windows 网络权限" && isRepairingFirewall ? "修复中…" : actionLabel}
+                </Button>
+              ) : null}
+            </div>
           </div>
         ))}
       </div>

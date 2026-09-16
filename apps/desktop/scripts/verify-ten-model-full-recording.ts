@@ -27,7 +27,6 @@ const RUN_STATE_FILE = path.join(RUN_DIRECTORY, "ten-model-full-run.json");
 const MODEL_ORDER: AiAsrModelId[] = [
   "paraformer-zh",
   "fun-asr-nano-2512",
-  "dolphin-cn-dialect-0.4b",
   "glm-asr-nano-2512",
   "fireredasr2-aed",
   "moss-transcribe-diarize-0.9b",

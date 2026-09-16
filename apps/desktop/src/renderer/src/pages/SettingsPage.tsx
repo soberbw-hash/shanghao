@@ -13,13 +13,7 @@ import {
 import { gsap } from "gsap";
 import { LayoutGroup, motion } from "framer-motion";
 
-import type {
-  AppSettings,
-  RelayStatusSnapshot,
-  RendererDiagnosticsSummary,
-  RuntimeHealthSnapshot,
-  WindowsIntegrationStatus,
-} from "@private-voice/shared";
+import type { AppSettings, WindowsIntegrationStatus } from "@private-voice/shared";
 import { cn } from "@private-voice/ui";
 
 import { Button } from "../components/base/Button";
@@ -33,7 +27,7 @@ import { PageContainer } from "../components/layout/PageContainer";
 import { AudioSettingsCard } from "../components/settings/AudioSettingsCard";
 import { AboutSettingsCard } from "../components/settings/AboutSettingsCard";
 import { AccountSettingsCard } from "../components/settings/AccountSettingsCard";
-import { DiagnosticsSettingsCard } from "../components/settings/DiagnosticsSettingsCard";
+import { SettingsDiagnosticsSection } from "../components/settings/SettingsDiagnosticsSection";
 import { SettingsItemRow } from "../components/settings/SettingsItemRow";
 import { SettingsPageHeader } from "../components/settings/SettingsPageHeader";
 import { SettingsSection } from "../components/settings/SettingsSection";
@@ -50,10 +44,8 @@ import { RoomHistorySettingsCard } from "../components/settings/RoomHistorySetti
 import { WeatherSettingsCard } from "../components/settings/WeatherSettingsCard";
 import { StartupSplashPage } from "../components/status/StartupSplashPage";
 import { usePrefersReducedMotion } from "../hooks/usePrefersReducedMotion";
-import { getRoomRuntimeDiagnostics, injectRealtimeFault } from "../hooks/useRoomState";
 import { useAppStore } from "../store/appStore";
 import { useAudioStore } from "../store/audioStore";
-import { useRoomStore } from "../store/roomStore";
 import { useSettingsStore } from "../store/settingsStore";
 import { toUserFacingError } from "../utils/userFacingError";
 
@@ -109,18 +101,6 @@ const getInitialSettingsSection = (): SettingsSectionId => {
     : "general";
 };
 
-const sanitizeDiagnosticsServerUrl = (value?: string): string | undefined => {
-  if (!value) return undefined;
-  try {
-    const url = new URL(value);
-    url.search = "";
-    url.hash = "";
-    return url.toString();
-  } catch {
-    return "地址格式不可识别";
-  }
-};
-
 let cachedWindowsDiagnostics: WindowsIntegrationStatus | undefined;
 
 export const SettingsPage = ({ isActive = true }: { isActive?: boolean }) => {
@@ -133,16 +113,10 @@ export const SettingsPage = ({ isActive = true }: { isActive?: boolean }) => {
   const updateInfo = useSettingsStore((state) => state.updateInfo);
   const updateStatus = useSettingsStore((state) => state.updateStatus);
   const saveSettings = useSettingsStore((state) => state.saveSettings);
-  const resetSettings = useSettingsStore((state) => state.resetSettings);
   const checkUpdates = useSettingsStore((state) => state.checkUpdates);
   const openReleases = useSettingsStore((state) => state.openReleases);
   const inputDevices = useAudioStore((state) => state.inputDevices);
   const outputDevices = useAudioStore((state) => state.outputDevices);
-  const localAudioDiagnostics = useAudioStore((state) => state.localDiagnostics);
-  const room = useRoomStore((state) => state.room);
-  const connectionHealth = useRoomStore((state) => state.connectionHealth);
-  const localStream = useRoomStore((state) => state.localStream);
-  const remoteStreams = useRoomStore((state) => state.remoteStreams);
   const [settingsView, setSettingsView] = useState(() => {
     const initialSection = getInitialSettingsSection();
     return {
@@ -151,8 +125,6 @@ export const SettingsPage = ({ isActive = true }: { isActive?: boolean }) => {
     };
   });
   const { activeSection } = settingsView;
-  const [runtimeHealth, setRuntimeHealth] = useState<RuntimeHealthSnapshot>();
-  const [relayDiagnostics, setRelayDiagnostics] = useState<RelayStatusSnapshot>();
   const [windowsDiagnostics, setWindowsDiagnostics] = useState<
     WindowsIntegrationStatus | undefined
   >(cachedWindowsDiagnostics);
@@ -232,105 +204,7 @@ export const SettingsPage = ({ isActive = true }: { isActive?: boolean }) => {
   }, [voiceMemoryOpenTarget]);
 
   useEffect(() => {
-    if (!isActive || activeSection !== "diagnostics" || !settings?.relayServerUrl) return;
-    let cancelled = false;
-    void window.desktopApi.diagnostics
-      .testServer(settings.relayServerUrl)
-      .then((snapshot) => {
-        if (!cancelled) setRelayDiagnostics(snapshot);
-      })
-      .catch(() => {
-        if (!cancelled) setRelayDiagnostics(undefined);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [activeSection, isActive, settings?.relayServerUrl]);
-
-  useEffect(() => {
-    if (!isActive || activeSection !== "diagnostics") return;
-    let cancelled = false;
-    const stopPerformanceMonitor = rendererPerformanceMonitor.start();
-
-    const refresh = async () => {
-      const runtime = getRoomRuntimeDiagnostics();
-      const memory = performance as Performance & {
-        memory?: { usedJSHeapSize?: number; totalJSHeapSize?: number };
-      };
-      const trackCount = [localStream, ...Object.values(remoteStreams)].reduce(
-        (total, stream) => total + (stream?.getTracks().length ?? 0),
-        0,
-      );
-      const mixerHealth = runtime?.remoteAudioMixer;
-      const snapshot = await window.desktopApi.diagnostics.runtimeHealth({
-        performance: rendererPerformanceMonitor.snapshot(),
-        jsHeapUsedBytes: memory.memory?.usedJSHeapSize,
-        jsHeapTotalBytes: memory.memory?.totalJSHeapSize,
-        trackCount,
-        audioNodeCount: mixerHealth?.audioNodeCount,
-        audioContextCount: mixerHealth?.audioContextCount,
-        timerCount: mixerHealth?.timerCount,
-        screenShare: runtime?.screenShare
-          ? {
-              active: Boolean(
-                runtime.screenShare.requested ||
-                Object.keys(runtime.screenShare.receive).length ||
-                runtime.screenShare.fallback.active,
-              ),
-              fallbackActive: runtime.screenShare.fallback.active,
-              requestedWidth: runtime.screenShare.requested?.width,
-              requestedHeight: runtime.screenShare.requested?.height,
-              captureWidth: runtime.screenShare.capture?.width,
-              captureHeight: runtime.screenShare.capture?.height,
-              captureFps: runtime.screenShare.capture?.framesPerSecond,
-            }
-          : undefined,
-        room: {
-          roomLifecycleState: room.lifecycleState,
-          roomConnectionState: room.connectionState,
-          serverUrl: sanitizeDiagnosticsServerUrl(room.signalingUrl ?? settings?.relayServerUrl),
-          currentRoomId: room.roomId,
-          currentPeerId: runtime?.currentPeerId,
-          reconnectAttempts: runtime?.reconnectAttempts ?? 0,
-          connectionGeneration: runtime?.connectionGeneration,
-          reconnectEpisodeId: runtime?.reconnectEpisodeId,
-          reconnectEpisodeActive: runtime?.reconnectEpisodeActive,
-          reconnectStableSince: runtime?.reconnectStableSince,
-          activeClientExists: Boolean(runtime),
-          audioRelayState: runtime?.audioRelayState ?? "inactive",
-          localStreamActive: Boolean(
-            localStream?.getAudioTracks().some((track) => track.readyState === "live"),
-          ),
-          remotePeerCount: runtime?.remotePeerCount ?? Object.keys(remoteStreams).length,
-          screenShareRelayState: runtime?.screenShareRelayState,
-          roomSnapshotRevision: runtime?.roomSnapshotRevision ?? 0,
-          chatSendFailures: runtime?.chatSendFailures ?? 0,
-        },
-      });
-      if (!cancelled) setRuntimeHealth(snapshot);
-    };
-
-    void refresh().catch(() => undefined);
-    const timer = window.setInterval(() => void refresh().catch(() => undefined), 2_000);
-    return () => {
-      cancelled = true;
-      window.clearInterval(timer);
-      stopPerformanceMonitor();
-    };
-  }, [
-    activeSection,
-    isActive,
-    localStream,
-    remoteStreams,
-    room.connectionState,
-    room.lifecycleState,
-    room.roomId,
-    room.signalingUrl,
-    settings?.relayServerUrl,
-  ]);
-
-  useEffect(() => {
-    if (!isActive || activeSection !== "diagnostics") return;
+    if (!isActive || (activeSection !== "general" && activeSection !== "diagnostics")) return;
     let cancelled = false;
     setIsWindowsDiagnosticsLoading(!cachedWindowsDiagnostics);
     void window.desktopApi.windows
@@ -444,15 +318,6 @@ export const SettingsPage = ({ isActive = true }: { isActive?: boolean }) => {
       })
       .finally(() => setIsWindowsDiagnosticsLoading(false));
   };
-  const refreshDiagnostics = () => {
-    if (settings?.relayServerUrl) {
-      void window.desktopApi.diagnostics
-        .testServer(settings.relayServerUrl)
-        .then(setRelayDiagnostics)
-        .catch(() => setRelayDiagnostics(undefined));
-    }
-    refreshWindowsDiagnostics();
-  };
   const handleRepairFirewall = () => {
     if (isRepairingFirewall) return;
     setIsRepairingFirewall(true);
@@ -495,111 +360,6 @@ export const SettingsPage = ({ isActive = true }: { isActive?: boolean }) => {
         }),
       );
   };
-  const buildRendererDiagnostics = (): RendererDiagnosticsSummary => {
-    const runtime = getRoomRuntimeDiagnostics();
-    return {
-      roomLifecycleState: room.lifecycleState,
-      roomConnectionState: room.connectionState,
-      serverUrl: sanitizeDiagnosticsServerUrl(room.signalingUrl ?? settings.relayServerUrl),
-      currentRoomId: room.roomId,
-      currentPeerId: runtime?.currentPeerId,
-      reconnectAttempts: runtime?.reconnectAttempts ?? 0,
-      connectionGeneration: runtime?.connectionGeneration,
-      reconnectEpisodeId: runtime?.reconnectEpisodeId,
-      reconnectEpisodeActive: runtime?.reconnectEpisodeActive,
-      reconnectStableSince: runtime?.reconnectStableSince,
-      lastSocketCloseCode: runtime?.lastSocketCloseCode,
-      lastSocketCloseReason: runtime?.lastSocketCloseReason,
-      lastSocketClosedAt: runtime?.lastSocketClosedAt,
-      activeClientExists: Boolean(runtime),
-      audioRelayState: runtime?.audioRelayState ?? "inactive",
-      localStreamActive: Boolean(
-        localStream?.getAudioTracks().some((track) => track.readyState === "live"),
-      ),
-      remotePeerCount: runtime?.remotePeerCount ?? Object.keys(remoteStreams).length,
-      webrtcReadyPeerCount: runtime?.webrtcReadyPeerCount,
-      turnConfigured: runtime?.turnConfigured,
-      peerRecoveryAttempts: runtime?.peerRecoveryAttempts,
-      peerConnectionStats: runtime?.peerConnectionStats,
-      peerHealth: runtime?.peerHealth,
-      longSessionAudio: runtime?.longSessionAudio,
-      roomSnapshotRevision: runtime?.roomSnapshotRevision ?? 0,
-      chatSendFailures: runtime?.chatSendFailures ?? 0,
-      joinStage: runtime?.joinStage,
-      wsOpened: runtime?.wsOpened,
-      joinChannelSent: runtime?.joinChannelSent,
-      joinAckReceived: runtime?.joinAckReceived,
-      roomSnapshotReceived: runtime?.roomSnapshotReceived,
-      lastServerError: runtime?.lastServerError,
-      serverClockOffsetMs: runtime?.audioRelayDiagnostics?.serverClockOffsetMs,
-      audioStreamEpoch: runtime?.audioRelayDiagnostics?.audioStreamEpoch,
-      droppedExpiredChunks: runtime?.audioRelayDiagnostics?.droppedExpiredChunks,
-      droppedSendChunks: runtime?.audioRelayDiagnostics?.droppedSendChunks,
-      perPeerAudioStatus: runtime?.audioRelayDiagnostics?.perPeerAudioStatus,
-      connectionHealth,
-      localAudioDiagnostics,
-      relayStatus: relayDiagnostics
-        ? {
-            ...relayDiagnostics,
-            serverUrl: sanitizeDiagnosticsServerUrl(relayDiagnostics.serverUrl),
-          }
-        : undefined,
-      screenShareRelayState: runtime?.screenShareRelayState,
-      screenShare: runtime?.screenShare,
-      audioTimeline: runtime?.audioRelayDiagnostics?.audioTimeline,
-    };
-  };
-
-  const handleExportBundle = () => {
-    const rendererState = buildRendererDiagnostics();
-    void window.desktopApi.diagnostics
-      .exportBundle(rendererState)
-      .then(() => {
-        pushToast({ tone: "success", title: "诊断包已导出", description: "已保存到诊断目录。" });
-      })
-      .catch(() => pushToast({ tone: "danger", title: "导出失败", description: "请稍后再试。" }));
-  };
-
-  const handleCopyDiagnostics = () => {
-    const runtime = getRoomRuntimeDiagnostics();
-    const microphone = localAudioDiagnostics
-      ? localAudioDiagnostics.inputOverload === "warning"
-        ? "输入音量偏高，建议检查"
-        : "正常"
-      : "尚未检测";
-    const speaker = outputDevices.length > 0 ? "正常" : "没有检测到输出设备";
-    const roomConnection =
-      (runtime?.remotePeerCount ?? 0) === 0
-        ? "尚未检测"
-        : (runtime?.webrtcReadyPeerCount ?? 0) === (runtime?.remotePeerCount ?? 0)
-          ? "正常"
-          : "有好友连接不稳定";
-    const server = relayDiagnostics
-      ? relayDiagnostics.isReachable
-        ? "正常"
-        : "暂时无法连接"
-      : "尚未检测";
-    const firewall = windowsDiagnostics
-      ? windowsDiagnostics.firewall.healthy
-        ? "正常"
-        : "可能影响语音连接"
-      : "尚未检测";
-    const summary = [
-      "上号诊断摘要",
-      `麦克风：${microphone}`,
-      `扬声器：${speaker}`,
-      `房间连接：${roomConnection}`,
-      `服务器连接：${server}`,
-      `网络权限：${firewall}`,
-    ].join("\n");
-    void window.desktopApi.clipboard
-      .writeText(summary)
-      .then(() => pushToast({ tone: "success", title: "诊断摘要已复制" }))
-      .catch(() => pushToast({ tone: "danger", title: "复制失败", description: "请重试。" }));
-  };
-
-  const runtimeDiagnostics = getRoomRuntimeDiagnostics();
-
   const content: Record<SettingsSectionId, React.ReactNode> = {
     account: <AccountSettingsCard />,
     general: (
@@ -607,6 +367,7 @@ export const SettingsPage = ({ isActive = true }: { isActive?: boolean }) => {
         <div className="space-y-3">
           <SettingsItemRow label="关闭窗口时留在后台">
             <Switch
+              ariaLabel="关闭窗口时留在后台"
               isChecked={settings.minimizeToTray}
               onChange={(minimizeToTray) => void handleSaveSettings({ minimizeToTray })}
             />
@@ -616,6 +377,7 @@ export const SettingsPage = ({ isActive = true }: { isActive?: boolean }) => {
             description="显示服务器切换和测试入口。普通使用无需开启。"
           >
             <Switch
+              ariaLabel="开发者模式"
               isChecked={settings.isDeveloperModeEnabled}
               onChange={(isDeveloperModeEnabled) =>
                 void handleSaveSettings({ isDeveloperModeEnabled })
@@ -709,51 +471,18 @@ export const SettingsPage = ({ isActive = true }: { isActive?: boolean }) => {
         onOpenReleases={openReleases}
       />
     ),
-    diagnostics: (
-      <div className="space-y-4">
-        <DiagnosticsSettingsCard
-          runtimeHealth={runtimeHealth}
-          relay={relayDiagnostics}
-          localAudioDiagnostics={localAudioDiagnostics}
-          outputDeviceCount={outputDevices.length}
-          webrtcReadyPeerCount={runtimeDiagnostics?.webrtcReadyPeerCount ?? 0}
-          remotePeerCount={runtimeDiagnostics?.remotePeerCount ?? 0}
-          screenShare={runtimeDiagnostics?.screenShare}
+    diagnostics:
+      isActive && activeSection === "diagnostics" ? (
+        <SettingsDiagnosticsSection
+          settings={settings}
           windowsStatus={windowsDiagnostics}
-          onOpenLogs={() => void window.desktopApi.diagnostics.openLogsDirectory()}
-          onExportBundle={handleExportBundle}
-          onCopySummary={handleCopyDiagnostics}
-          onOpenAudioSettings={() => selectSection("audio")}
-          onOpenAiSettings={() => selectSection("ai")}
-          onOpenHome={() => navigate("home")}
-          onOpenRoom={() => navigate("room")}
-          onRefreshHealth={refreshDiagnostics}
+          isRepairingFirewall={isRepairingFirewall}
           onRefreshWindows={refreshWindowsDiagnostics}
           onRepairFirewall={handleRepairFirewall}
-          isRepairingFirewall={isRepairingFirewall}
-          onInjectFault={(kind) =>
-            void injectRealtimeFault({ kind })
-              .then(() =>
-                pushToast({
-                  tone: "success",
-                  title: "故障已注入",
-                  description: `Fault Lab：${kind}`,
-                }),
-              )
-              .catch(() =>
-                pushToast({
-                  tone: "danger",
-                  title: "故障注入失败",
-                  description: "测试命令没有执行，详细原因已写入诊断日志。",
-                }),
-              )
-          }
+          onOpenAudioSettings={() => selectSection("audio")}
+          onOpenAiSettings={() => selectSection("ai")}
         />
-        <Button variant="danger" onClick={() => void resetSettings().then(refreshDiagnostics)}>
-          安全重置设置
-        </Button>
-      </div>
-    ),
+      ) : null,
   };
 
   return (

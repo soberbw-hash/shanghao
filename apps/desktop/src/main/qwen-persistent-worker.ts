@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 
-import { platformService } from "./platform/PlatformService";
+import { terminateProcessTree } from "./process-tree";
 
 export type QwenWorkerPhase = "stopped" | "starting" | "loading" | "ready" | "running" | "crashed";
 
@@ -39,18 +39,6 @@ const WORKER_LOAD_TIMEOUT_MS = 8 * 60_000;
 const WORKER_IDLE_RELEASE_MS = 90_000;
 const STDERR_LIMIT = 16_384;
 
-const killProcessTree = (child: ChildProcessWithoutNullStreams): void => {
-  if (platformService.isWindows && child.pid) {
-    const killer = spawn("taskkill", ["/PID", String(child.pid), "/T", "/F"], {
-      windowsHide: true,
-      stdio: "ignore",
-    });
-    killer.unref();
-    return;
-  }
-  child.kill("SIGKILL");
-};
-
 /** Owns the only Qwen model process and serializes every request through it. */
 export class QwenPersistentWorker {
   private child?: ChildProcessWithoutNullStreams;
@@ -66,6 +54,7 @@ export class QwenPersistentWorker {
   private idleTimer?: NodeJS.Timeout;
   private lastError?: string;
   private lastUsedAt?: number;
+  private terminationPromise: Promise<void> = Promise.resolve();
   private readonly listeners = new Set<(health: QwenWorkerHealth) => void>();
 
   constructor(
@@ -144,7 +133,7 @@ export class QwenPersistentWorker {
     );
     if (this.active) this.finishRequest(this.active, error);
     for (const request of this.queue.splice(0)) this.finishRequest(request, error);
-    if (this.child) killProcessTree(this.child);
+    if (this.child) this.queueTermination(this.child);
     this.child = undefined;
     this.failStart(error);
     this.phase = "stopped";
@@ -194,13 +183,13 @@ export class QwenPersistentWorker {
     );
   }
 
-  private ensureStarted(): Promise<void> {
+  private async ensureStarted(): Promise<void> {
     this.clearIdleRelease();
-    if (this.child && (this.phase === "ready" || this.phase === "running"))
-      return Promise.resolve();
+    if (this.child && (this.phase === "ready" || this.phase === "running")) return;
     if (this.startPromise) return this.startPromise;
+    await this.terminationPromise;
     const modelPath = this.modelPath();
-    if (!modelPath) return Promise.reject(new Error("model_qwen35-4b_not_installed"));
+    if (!modelPath) throw new Error("model_qwen35-4b_not_installed");
     this.phase = "starting";
     this.lastError = undefined;
     this.stdoutBuffer = "";
@@ -324,7 +313,7 @@ export class QwenPersistentWorker {
     this.clearIdleRelease();
     const child = this.child;
     this.child = undefined;
-    if (child && child.exitCode === null) killProcessTree(child);
+    if (child && child.exitCode === null) this.queueTermination(child);
     this.lastError = error.message;
     this.phase = "crashed";
     this.stdoutBuffer = "";
@@ -338,7 +327,7 @@ export class QwenPersistentWorker {
     this.clearIdleRelease();
     const child = this.child;
     this.child = undefined;
-    if (child) killProcessTree(child);
+    if (child) this.queueTermination(child);
     this.lastError = error.message;
     this.phase = "stopped";
     this.stdoutBuffer = "";
@@ -354,6 +343,12 @@ export class QwenPersistentWorker {
     this.startPromise = undefined;
     this.startResolve = undefined;
     this.startReject = undefined;
+  }
+
+  private queueTermination(child: ChildProcessWithoutNullStreams): void {
+    this.terminationPromise = this.terminationPromise
+      .catch(() => undefined)
+      .then(() => terminateProcessTree(child));
   }
 
   private scheduleIdleRelease(): void {

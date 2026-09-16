@@ -390,8 +390,8 @@ test("microphone processing lives in the room panel while about keeps release hi
   assert.equal(roomDockSource.includes("settings.isFriendLoudnessBalanceEnabled"), true);
   assert.equal(roomDockSource.includes("pushToTalkEnabled={settings.isPushToTalkEnabled}"), true);
   assert.equal(roomDockSource.includes("microphoneTest={microphoneTest}"), true);
-  assert.equal(RELEASE_HISTORY.length, 75);
-  assert.equal(RELEASE_HISTORY[0]?.version, "3.0.8");
+  assert.equal(RELEASE_HISTORY.length, 76);
+  assert.equal(RELEASE_HISTORY[0]?.version, "3.0.9");
   assert.equal(RELEASE_HISTORY.at(-1)?.version, "0.1.1");
   assert.equal(
     new Set(RELEASE_HISTORY.map((release) => release.version)).size,
@@ -564,22 +564,15 @@ test("successful empty ASR units remain silence instead of failing the recording
   assert.equal(asrRunnerSource.includes('"qwen3-asr-1.7b-force"'), true);
   assert.equal(asrRunnerSource.includes('"fireredasr2-llm"'), false);
   assert.equal(asrRunnerSource.includes('"paraformer-zh"'), true);
-  assert.equal(asrRunnerSource.includes('"moss-transcribe-diarize-0.9b"'), true);
-  assert.equal(asrRunnerSource.includes('"dolphin-cn-dialect-0.4b"'), true);
-  assert.equal(asrRunnerSource.includes('"cohere-transcribe-2b"'), true);
+  assert.equal(asrRunnerSource.includes('"moss-transcribe-diarize-0.9b"'), false);
+  assert.equal(asrRunnerSource.includes('"cohere-transcribe-2b"'), false);
   assert.equal(asrRunnerSource.includes('"ark-asr-3b-q8_0"'), true);
   assert.equal(asrRunnerSource.includes("class ArkAsr3BQ8"), true);
   assert.equal(asrRunnerSource.includes('backend="ark-asr"'), true);
   assert.equal(asrRunnerSource.includes('os.environ.pop("CRISPASR_ARKASR_CPU"'), true);
-  assert.equal(asrRunnerSource.includes("parse_transcript"), true);
-  assert.equal(asrRunnerSource.includes('dolphin.load_model("small.cn"'), true);
-  assert.equal(asrRunnerSource.includes("waveform = torch.from_numpy(audio).unsqueeze(0)"), true);
-  assert.equal(asrRunnerSource.includes("CohereAsrForConditionalGeneration"), true);
-  assert.equal(asrRunnerSource.includes("self._ensure_aligner()"), true);
-  assert.equal(
-    asrRunnerSource.includes("ForcedAligner is only an optional timestamp enhancement"),
-    true,
-  );
+  assert.equal(asrRunnerSource.includes("class MossTranscribeDiarizeQ8"), true);
+  assert.equal(asrRunnerSource.includes("CohereAsrForConditionalGeneration"), false);
+  assert.equal(asrRunnerSource.includes("Qwen3ForcedAligner"), true);
   assert.equal(asrRunnerSource.includes("except Exception:"), true);
   assert.equal(asrRunnerSource.includes("use_half=True"), true);
   assert.equal(asrRunnerSource.includes("bf16=True"), true);
@@ -589,7 +582,7 @@ test("successful empty ASR units remain silence instead of failing the recording
   assert.equal(runtimeSource.includes("vibeRuntime"), false);
   assert.equal(
     runtimeSource.includes("pythonPath: this.providerPythonPath(this.coherePythonPath)"),
-    true,
+    false,
   );
   assert.equal(runtimeSource.includes("timeoutMs: options.timeoutMs ?? 4 * 60_000"), true);
   assert.equal(voiceMemorySource.includes("maxNewTokens: 384"), true);
@@ -615,9 +608,10 @@ test("AI voice memory keeps first install manual and recovers interrupted compar
   const styles = readRendererCss();
   assert.equal(source.includes("当前使用"), true);
   assert.equal(source.includes('id="model-management-title">模型'), true);
-  assert.equal(source.includes("<strong>转录</strong>"), true);
+  assert.equal(source.includes("高精度转录"), true);
+  assert.equal(source.includes("极速转录"), true);
   assert.equal(source.includes("<strong>共享组件</strong>"), true);
-  assert.equal(source.includes("<strong>整理</strong>"), true);
+  assert.equal(source.includes('id="ai-analysis-title">整理与问答'), true);
   assert.equal(source.includes("转录设置"), true);
   assert.equal(source.includes('className="ai-model-select-hit"'), true);
   assert.equal(source.includes("ai-asr-choice-grid"), false);
@@ -646,7 +640,7 @@ test("AI voice memory keeps first install manual and recovers interrupted compar
   assert.equal(source.includes("修复运行组件"), false);
   assert.equal(source.includes("使用时自动加载"), true);
   assert.equal(ipcSource.includes('modelId !== "qwen36-35b-a3b-nvfp4"'), true);
-  assert.equal(source.includes("setHuggingFaceAccessModel(model)"), true);
+  assert.equal(source.includes("setHuggingFaceAccessModel(model)"), false);
   assert.equal(source.includes("runtimeStatus?.vibevoice"), false);
   assert.equal(source.includes('typeof aiApi.getRuntimeStatus !== "function"'), true);
   assert.equal(source.includes("model.id === settings.aiAsrModel"), true);

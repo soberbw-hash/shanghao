@@ -1,4 +1,5 @@
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
+import { writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
@@ -446,21 +447,30 @@ export const createMainWindow = ({
   });
 
   let saveBoundsTimer: NodeJS.Timeout | undefined;
+  let boundsWriteQueue = Promise.resolve();
   const saveBounds = () => {
     if (window.isMaximized() || window.isMinimized()) return;
     if (saveBoundsTimer) clearTimeout(saveBoundsTimer);
     saveBoundsTimer = setTimeout(() => {
-      try {
-        writeFileSync(boundsPath, JSON.stringify(window.getBounds()), "utf8");
-      } catch (error) {
-        log?.("warn", "Failed to persist window bounds", {
-          error: error instanceof Error ? error.message : String(error),
+      saveBoundsTimer = undefined;
+      if (window.isDestroyed()) return;
+      const serializedBounds = JSON.stringify(window.getBounds());
+      boundsWriteQueue = boundsWriteQueue
+        .catch(() => undefined)
+        .then(() => writeFile(boundsPath, serializedBounds, "utf8"))
+        .catch((error) => {
+          log?.("warn", "Failed to persist window bounds", {
+            error: error instanceof Error ? error.message : String(error),
+          });
         });
-      }
     }, 250);
   };
   window.on("resize", saveBounds);
   window.on("move", saveBounds);
+  window.once("closed", () => {
+    if (saveBoundsTimer) clearTimeout(saveBoundsTimer);
+    saveBoundsTimer = undefined;
+  });
 
   setTimeout(() => {
     if (!window.isVisible()) {

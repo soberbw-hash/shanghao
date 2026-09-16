@@ -27,6 +27,7 @@ export interface PeerSession {
   isMuted: boolean;
   isSpeaking: boolean;
   isDeafened: boolean;
+  callModeActive?: boolean;
   activity: MemberActivity;
   sceneZone?: SceneZoneId;
   gameName?: string;
@@ -91,6 +92,7 @@ export class PeerManager {
         | "isMuted"
         | "isSpeaking"
         | "isDeafened"
+        | "callModeActive"
         | "activity"
         | "sceneZone"
         | "gameName"
@@ -142,6 +144,7 @@ export class PeerManager {
       isLocal: peer.id === localPeerId,
       isMuted: peer.isMuted,
       isDeafened: peer.isDeafened,
+      callModeActive: peer.callModeActive ?? false,
       activity: peer.activity,
       sceneZone: peer.sceneZone,
       gameName: peer.gameName,

@@ -1,4 +1,11 @@
 export const IPC_CHANNELS = {
+  phoneMode: {
+    get: "phone-mode:get",
+    set: "phone-mode:set",
+    devices: "phone-mode:devices",
+    configure: "phone-mode:configure",
+    changed: "phone-mode:changed",
+  },
   app: {
     getRuntimeInfo: "app:get-runtime-info",
     getSystemIdleSeconds: "app:get-system-idle-seconds",

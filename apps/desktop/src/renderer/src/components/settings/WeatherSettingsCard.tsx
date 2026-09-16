@@ -56,6 +56,7 @@ export const WeatherSettingsCard = ({
         description="让窗外天气、昼夜和房间环境光随本地天气变化。"
       >
         <Switch
+          ariaLabel="窗外动态天气"
           isChecked={settings.isDynamicWeatherEnabled}
           onChange={(isDynamicWeatherEnabled) => onChange({ isDynamicWeatherEnabled })}
         />

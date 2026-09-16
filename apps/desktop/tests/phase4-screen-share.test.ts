@@ -9,7 +9,11 @@ import {
   SCREEN_FALLBACK_TARGET_FPS,
   ScreenShareViewerTracker,
 } from "../src/renderer/src/features/screen-share/screenSharePolicy";
-import { recordScreenSharePresentation } from "../src/renderer/src/features/screen-share/screenSharePresentationMetrics";
+import {
+  clearScreenSharePresentation,
+  readScreenSharePresentation,
+  recordScreenSharePresentation,
+} from "../src/renderer/src/features/screen-share/screenSharePresentationMetrics";
 import {
   DEFAULT_SCREEN_SHARE_QUALITY,
   SCREEN_SHARE_PROFILES,
@@ -36,6 +40,22 @@ test("screen share exposes 720p, 1080p and 1440p requests with 1080p as default"
     maxWidth: 2_560,
     maxHeight: 1_440,
   });
+});
+
+test("screen presentation metrics prune stale peers and stay bounded", () => {
+  clearScreenSharePresentation();
+  for (let index = 0; index < 20; index += 1) {
+    recordScreenSharePresentation(`peer-${index}`, {
+      framesPerSecond: 30,
+      width: 1_920,
+      height: 1_080,
+      sampledAt: 10_000,
+    });
+  }
+  const current = readScreenSharePresentation(10_000);
+  assert.equal(Object.keys(current).length, 16);
+  assert.equal(current["peer-0"], undefined);
+  assert.deepEqual(readScreenSharePresentation(16_000), {});
 });
 
 test("screen pipeline keeps requested, actual capture, send, decode, present and fallback separate", async () => {

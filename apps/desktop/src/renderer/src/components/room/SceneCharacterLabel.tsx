@@ -52,19 +52,21 @@ export const SceneCharacterLabel = ({
               {typeof displayedLatency === "number" ? `${displayedLatency} ms` : "—"}
             </span>
           </span>
-          <span className="room-character-state">
-            <span
-              className={`room-character-state-icon ${status.icon ? "has-icon" : ""}`}
-              aria-hidden="true"
-            >
-              {status.icon ? (
-                <status.icon className={`h-3 w-3 ${isReconnecting ? "animate-spin" : ""}`} />
-              ) : null}
+          {status.label !== "等待中" && (
+            <span className="room-character-state">
+              <span
+                className={`room-character-state-icon ${status.icon ? "has-icon" : ""}`}
+                aria-hidden="true"
+              >
+                {status.icon ? (
+                  <status.icon className={`h-3 w-3 ${isReconnecting ? "animate-spin" : ""}`} />
+                ) : null}
+              </span>
+              <span className="room-character-state-text" title={status.label}>
+                {status.label}
+              </span>
             </span>
-            <span className="room-character-state-text" title={status.label}>
-              {status.label}
-            </span>
-          </span>
+          )}
         </>
       )}
     </div>

@@ -13,6 +13,21 @@ import { ACTIVE_ARK_ASR_VARIANT } from "./ark-asr-config";
 import type { AsrWorkerResult } from "./asr-persistent-worker";
 import { runLocalProcess } from "./local-process";
 
+export const providerCudaErrorCode = (modelId: AiAsrModelId, bf16 = false): string => {
+  const providers: Record<AiAsrModelId, string> = {
+    "qwen3-asr-1.7b-force": "qwen3_asr",
+    "qwen3-asr-0.6b-force": "qwen3_asr",
+    "fun-asr-nano-2512": "fun_asr_nano_2512",
+    "glm-asr-nano-2512": "glm_asr_nano_2512",
+    "fireredasr2-aed": "fireredasr2_aed",
+    "paraformer-zh": "paraformer_zh",
+    "moss-transcribe-diarize-0.9b-q8_0": "moss_transcribe_diarize_q8",
+    "ark-asr-3b-q8_0": "ark_asr_3b",
+  };
+  const provider = providers[modelId];
+  return `${provider}_cuda${bf16 ? "_bf16" : ""}_required`;
+};
+
 export const parseTranscriptTimestamp = (value: string): number => {
   const numeric = Number(value);
   if (Number.isFinite(numeric)) return numeric > 100_000 ? numeric : numeric * 1_000;
@@ -48,9 +63,19 @@ export interface TranscriptionChunkRuntimeResult {
     anomalyReasons: string[];
   }>;
   timing: {
+    preflightTimeMs?: number;
+    resourceProbeTimeMs?: number;
     loadTimeMs?: number;
+    providerImportTimeMs?: number;
+    modelInitializationTimeMs?: number;
+    workerStartupTimeMs?: number;
     conversionTimeMs: number;
+    vadTimeMs?: number;
     inferenceTimeMs?: number;
+    alignmentTimeMs?: number;
+    postprocessTimeMs?: number;
+    workerRoundTripTimeMs?: number;
+    unaccountedTimeMs?: number;
     totalTimeMs: number;
   };
   resourceUsage?: {
@@ -85,8 +110,6 @@ export const modelPrecision = (
               "qwen3-asr-0.6b-force",
               "fun-asr-nano-2512",
               "glm-asr-nano-2512",
-              "moss-transcribe-diarize-0.9b",
-              "cohere-transcribe-2b",
             ].includes(modelId)
           ? "bfloat16"
           : undefined,

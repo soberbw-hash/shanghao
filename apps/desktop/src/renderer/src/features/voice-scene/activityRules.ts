@@ -4,7 +4,7 @@ import {
   type MemberActivity,
   type RoomMember,
 } from "@private-voice/shared";
-import { Gamepad2, Headphones, MicOff, RotateCw, VolumeX, WifiOff } from "lucide-react";
+import { Gamepad2, Headphones, MicOff, Phone, RotateCw, VolumeX, WifiOff } from "lucide-react";
 
 export const activityLabels: Record<MemberActivity, string> = {
   idle: "等待中",
@@ -29,6 +29,9 @@ export const memberStatus = (member: RoomMember): MemberStatus => {
   }
   if (member.presenceState === MemberPresenceState.Offline) {
     return { label: "暂时离开", tone: "offline", icon: WifiOff };
+  }
+  if (member.callModeActive) {
+    return { label: "通话中", tone: "online", icon: Phone };
   }
   if (member.isDeafened) {
     return { label: "已关闭扬声器", tone: "deafened", icon: VolumeX };

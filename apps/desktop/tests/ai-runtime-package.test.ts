@@ -16,10 +16,6 @@ import {
   ARK_ASR_RUNTIME_PACKAGES,
   ARK_ASR_RUNTIME_WHEEL,
   PRIVATE_PIP_INSTALL_ARGUMENTS,
-  DOLPHIN_RUNTIME_PACKAGES,
-  SHARED_PYTHON_NUMPY_VERSION,
-  SHARED_PYTHON_PACKAGING_VERSION,
-  MOSS_RUNTIME_PACKAGES,
   MOSS_CPP_RUNTIME_WHEELS,
   FIRE_RED_RUNTIME_PACKAGES,
   QWEN_ORGANIZER_RUNTIME_PACKAGES,
@@ -116,18 +112,6 @@ test("all GPU providers expose the exact common preflight error codes", () => {
   );
   assert.equal(providerCudaErrorCode("glm-asr-nano-2512"), "glm_asr_nano_2512_cuda_required");
   assert.equal(providerCudaErrorCode("fireredasr2-aed"), "fireredasr2_aed_cuda_required");
-  assert.equal(
-    providerCudaErrorCode("moss-transcribe-diarize-0.9b", true),
-    "moss_transcribe_diarize_cuda_bf16_required",
-  );
-  assert.equal(
-    providerCudaErrorCode("dolphin-cn-dialect-0.4b"),
-    "dolphin_cn_dialect_cuda_required",
-  );
-  assert.equal(
-    providerCudaErrorCode("cohere-transcribe-2b", true),
-    "cohere_transcribe_cuda_bf16_required",
-  );
   assert.equal(providerCudaErrorCode("ark-asr-3b-q8_0"), "ark_asr_3b_cuda_required");
 });
 
@@ -161,13 +145,6 @@ test("FireRed runtime keeps the native fbank dependency required by official sou
   ]);
 });
 
-test("MOSS runtime pins the official parser and inference source", () => {
-  assert.equal(
-    MOSS_RUNTIME_PACKAGES[0],
-    "https://codeload.github.com/OpenMOSS/MOSS-Transcribe-Diarize/zip/0e3d1403fd8f1f1c674e883ece96b9f630794ebe",
-  );
-});
-
 test("MOSS Q8 runtime pins verified transcribe.cpp Windows CUDA wheels", () => {
   assert.equal(MOSS_CPP_RUNTIME_WHEELS.length, 2);
   assert.equal(MOSS_CPP_RUNTIME_WHEELS[0]?.bytes, 34_910);
@@ -180,15 +157,6 @@ test("MOSS Q8 runtime pins verified transcribe.cpp Windows CUDA wheels", () => {
     MOSS_CPP_RUNTIME_WHEELS[1]?.sha256,
     "04b35695b8d56f016cf2592460371ef5f638f06c4c4368d638a07d6812dbcafc",
   );
-});
-
-test("Dolphin runtime includes the undeclared complex tensor dependency used at import time", () => {
-  assert.deepEqual(DOLPHIN_RUNTIME_PACKAGES, [
-    "dataoceanai-dolphin==20260513",
-    "torch-complex==0.4.4",
-  ]);
-  assert.equal(SHARED_PYTHON_PACKAGING_VERSION, "26.3");
-  assert.equal(SHARED_PYTHON_NUMPY_VERSION, "2.5.2");
 });
 
 test("Qwen organizer reuses shared CUDA torch and pins only its provider dependencies", () => {

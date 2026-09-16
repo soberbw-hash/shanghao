@@ -241,6 +241,15 @@ export interface GameDetectionSnapshot {
 }
 
 export interface DesktopApi {
+  phoneMode: {
+    get: () => Promise<{ active: boolean; busy: boolean; error?: string }>;
+    set: (active: boolean) => Promise<void>;
+    devices: (devices: { inputDeviceId: string; outputDeviceId: string }) => Promise<void>;
+    configure: (shortcut: string, trigger: "hold" | "toggle") => Promise<void>;
+    onChanged: (
+      listener: (state: { active: boolean; busy: boolean; error?: string }) => void,
+    ) => () => void;
+  };
   app: {
     getRuntimeInfo: () => Promise<RuntimeInfo>;
     getSystemIdleSeconds: () => Promise<number>;

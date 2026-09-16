@@ -98,7 +98,7 @@ sudoedit /opt/shanghao/.env
 ```dotenv
 DEEPSEEK_API_KEY=在服务器上填写
 DEEPSEEK_API_BASE_URL=https://api.deepseek.com
-DEEPSEEK_MODEL=deepseek-v4-flash
+DEEPSEEK_MODEL=deepseek-flash
 ```
 
 然后收紧权限并重启：

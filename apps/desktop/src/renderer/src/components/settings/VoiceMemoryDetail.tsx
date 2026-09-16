@@ -1,4 +1,6 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { TranscriptParagraphList } from "./TranscriptParagraphList";
+import { reuseVoiceMemoryReferences } from "../../features/ai/voiceMemoryReferences";
 import {
   BrainCircuit,
   Check,
@@ -56,6 +58,8 @@ const isKnownAsrModelId = (value: string): value is AiAsrModelId =>
   Object.prototype.hasOwnProperty.call(AI_ASR_MODEL_NAMES, value);
 
 const describeError = (message: string, transcriptionFinished: boolean): string => {
+  if (message.includes("organization_retry_exhausted"))
+    return "多次尝试后仍无法整理，请点重新整理。";
   if (message.includes("no_reliable_speech")) {
     return "没有检测到可靠的中文语音；模型返回的其他语言结果已被拦截，请重新转录。";
   }
@@ -161,7 +165,12 @@ export const VoiceMemoryDetail = ({
   selectedAsrModel,
   onSeek,
 }: VoiceMemoryDetailProps) => {
-  const [record, setRecord] = useState<VoiceMemoryRecord>();
+  const [record, setRecordState] = useState<VoiceMemoryRecord>();
+  const setRecord = useCallback(
+    (value: VoiceMemoryRecord | undefined) =>
+      setRecordState((previous) => reuseVoiceMemoryReferences(previous, value)),
+    [],
+  );
   const [busy, setBusy] = useState(false);
   const [publishing, setPublishing] = useState(false);
   const [queuedAction, setQueuedAction] = useState<"transcribe" | "organize">();
@@ -204,7 +213,7 @@ export const VoiceMemoryDetail = ({
       active = false;
       unsubscribe();
     };
-  }, [recording.filePath, recording.recordingId]);
+  }, [recording.filePath, recording.recordingId, setRecord]);
 
   const effectiveSelectedAsrModel = isKnownAsrModelId(selectedAsrModel)
     ? selectedAsrModel
@@ -363,12 +372,17 @@ export const VoiceMemoryDetail = ({
         ? `正在整理 ${organizationProgress}%`
         : organization.status === "paused"
           ? `整理已暂停 ${organizationProgress}%`
-          : organization.status === "failed"
-            ? `整理未完成 ${organizationProgress}%`
-            : "等待整理"
+          : organization.status === "unrecoverable"
+            ? "多次尝试失败，请重新整理"
+            : organization.status === "failed"
+              ? `整理未完成 ${organizationProgress}%`
+              : "等待整理"
     : undefined;
   return (
     <section className="voice-memory-detail" aria-label="AI 语音记忆">
+      {record.organizationSinglePassRetry?.status === "unrecoverable" ? (
+        <p role="status">多次尝试后仍无法整理，请点重新整理。</p>
+      ) : null}
       <header>
         <div className="voice-memory-title">
           <Sparkles aria-hidden="true" />
@@ -600,20 +614,13 @@ export const VoiceMemoryDetail = ({
         </div>
       ) : null}
       {!invalidTranscript && displayParagraphs.length ? (
-        <div className="voice-memory-transcript">
-          {displayParagraphs.map((paragraph) => (
-            <button type="button" key={paragraph.id} onClick={() => onSeek(paragraph.startMs)}>
-              <time>{clock(paragraph.startMs)}</time>
-              <strong>
-                {paragraph.nickname ??
-                  paragraph.displayNameSnapshot ??
-                  knownSpeakerNames.get(paragraph.speakerId) ??
-                  (hasMultipleSpeakers ? `${paragraph.speakerId}（待确认）` : "说话人")}
-              </strong>
-              <span>{paragraph.text}</span>
-            </button>
-          ))}
-        </div>
+        <TranscriptParagraphList
+          key={record.recordingId}
+          paragraphs={displayParagraphs}
+          names={knownSpeakerNames}
+          multipleSpeakers={hasMultipleSpeakers}
+          onSeek={onSeek}
+        />
       ) : null}
       {!invalidTranscript && record.highlights.length ? (
         <div className="voice-memory-highlights">

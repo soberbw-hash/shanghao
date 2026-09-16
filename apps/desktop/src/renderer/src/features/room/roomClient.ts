@@ -49,6 +49,7 @@ import { AudioFallbackController } from "../audio/AudioFallbackController";
 import { clampMemberVolume } from "../audio/memberVolume";
 import { getRemoteAudioMixer } from "../audio/RemoteAudioMixer";
 import { hasPlayableAudioTrack } from "../audio/remoteAudioTrack";
+import { replaceOutgoingAudioTrack } from "../audio/replaceOutgoingAudioTrack";
 import { logPeerNetworkAdaptation, PeerStatsMonitor } from "./PeerStatsMonitor";
 import { PeerOperationQueue } from "./PeerOperationQueue";
 import { PeerRecoveryCoordinator } from "./PeerRecoveryCoordinator";
@@ -476,13 +477,13 @@ export class RoomClient {
 
   async replaceInputTrack(nextTrack: MediaStreamTrack): Promise<void> {
     const previousPrimaryTrack = this.primaryInputTrack;
-    this.primaryInputTrack = nextTrack;
     const systemAudioTrack = this.screenShareCoordinator.activeStream?.getAudioTracks()[0];
     if (systemAudioTrack) {
       await this.applyScreenAudioMix(nextTrack, systemAudioTrack);
     } else {
       await this.applyOutgoingAudioTrack(nextTrack);
     }
+    this.primaryInputTrack = nextTrack;
     if (previousPrimaryTrack && previousPrimaryTrack.id !== nextTrack.id) {
       previousPrimaryTrack.stop();
     }
@@ -740,6 +741,7 @@ export class RoomClient {
     gameName?: string,
     musicActivity?: MusicActivity,
     gameIconDataUrl?: string,
+    callModeActive?: boolean,
   ): void {
     // Keep the coordinator's member snapshot in lockstep with the optimistic UI.
     // Otherwise, an unrelated peer event received before our server echo can replay
@@ -751,6 +753,7 @@ export class RoomClient {
       gameName,
       musicActivity,
       gameIconDataUrl,
+      callModeActive,
     );
     this.presenceCoordinator.update(
       isDeafened,
@@ -759,6 +762,7 @@ export class RoomClient {
       gameName,
       musicActivity,
       gameIconDataUrl,
+      callModeActive,
     );
   }
   /** Kept as a narrow compatibility seam for reconnect replay and focused tests. */
@@ -1644,18 +1648,22 @@ export class RoomClient {
   }
 
   private async applyOutgoingAudioTrack(track: MediaStreamTrack): Promise<void> {
-    const nextStream = new MediaStream([track]);
-    this.localStream = nextStream;
-    await Promise.all([...this.peers.values()].map((peer) => peer.replaceLocalTrack(track)));
-    await this.audioFallback?.replaceLocalStream(nextStream);
+    this.localStream = await replaceOutgoingAudioTrack(
+      track,
+      this.localStream,
+      this.peers.values(),
+      this.audioFallback,
+    );
   }
 
   private async applyScreenAudioMix(
     microphoneTrack: MediaStreamTrack,
     systemAudioTrack: MediaStreamTrack,
   ): Promise<void> {
-    const mixedTrack = await this.screenAudioMixer.mix(microphoneTrack, systemAudioTrack);
-    if (mixedTrack) await this.applyOutgoingAudioTrack(mixedTrack);
+    const mixedTrack = await this.screenAudioMixer.mix(microphoneTrack, systemAudioTrack, (track) =>
+      this.applyOutgoingAudioTrack(track),
+    );
+    if (!mixedTrack) throw new Error("screen_audio_mix_track_missing");
   }
 
   private async restorePrimaryInputTrack(): Promise<void> {

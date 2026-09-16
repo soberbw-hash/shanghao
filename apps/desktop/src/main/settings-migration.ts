@@ -250,6 +250,8 @@ export const migrateSettings = (raw: RawSettings): MigrationResult => {
       defaultSettings.isFriendLoudnessBalanceEnabled,
     ),
     globalMuteShortcut: "",
+    phoneModeShortcut: (trimUnknownText(raw.phoneModeShortcut) ?? "").slice(0, 80),
+    phoneModeTrigger: raw.phoneModeTrigger === "toggle" ? "toggle" : "hold",
     pushToTalkShortcut:
       trimUnknownText(raw.pushToTalkShortcut) ?? defaultSettings.pushToTalkShortcut,
     recordingMarkerShortcut:
@@ -276,19 +278,13 @@ export const migrateSettings = (raw: RawSettings): MigrationResult => {
       raw.aiAsrModel === "glm-asr-nano-2512" ||
       raw.aiAsrModel === "fireredasr2-aed" ||
       raw.aiAsrModel === "paraformer-zh" ||
-      raw.aiAsrModel === "moss-transcribe-diarize-0.9b" ||
       raw.aiAsrModel === "moss-transcribe-diarize-0.9b-q8_0" ||
-      raw.aiAsrModel === "dolphin-cn-dialect-0.4b" ||
-      raw.aiAsrModel === "cohere-transcribe-2b" ||
       raw.aiAsrModel === "ark-asr-3b-q8_0"
         ? raw.aiAsrModel
         : raw.aiAsrModel === "qwen3-asr-0.6b"
           ? "qwen3-asr-0.6b-force"
           : "qwen3-asr-0.6b-force",
-    aiOrganizerProvider:
-      raw.aiOrganizerProvider === "local" || raw.aiOrganizerProvider === "custom"
-        ? raw.aiOrganizerProvider
-        : "cloud",
+    aiOrganizerProvider: raw.aiOrganizerProvider === "custom" ? raw.aiOrganizerProvider : "cloud",
     // Room Ask is a shared cloud capability. Legacy local/custom selections
     // must not make friends download Qwen before they can ask a question.
     aiRoomAskProvider: "cloud",

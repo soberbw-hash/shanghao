@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import path from "node:path";
 
@@ -34,6 +34,7 @@ import {
   type VoiceMemoryTaskDiagnostic,
   type VoiceMemoryTaskStatus,
   type VoiceMemoryTranscriptionModel,
+  type VoiceMemoryTranscriptionAttempt,
   type VoiceMemoryTranscriptionStats,
   type VoiceMemoryTranscriptionUnit,
   type VoiceMemoryTranscriptSegment,
@@ -124,7 +125,12 @@ const LEGACY_TRANSCRIPTION_CHUNK_MS = 10 * 60_000;
 const TRANSCRIPTION_PIPELINE_VERSION = CURRENT_TRANSCRIPTION_PIPELINE_VERSION;
 const MAX_TRANSCRIPTION_CHUNK_ATTEMPTS = 3;
 const TRANSCRIPTION_CHUNK_RETRY_DELAY_MS = 1_000;
-const MAX_ORGANIZATION_ATTEMPTS_PER_RUN = 2;
+import {
+  MAX_ORGANIZATION_ATTEMPTS_PER_RUN,
+  organizationExhausted,
+  resetOrganizationRetry,
+  runOrganizationWithRetry,
+} from "./organization-retry";
 
 export const isFatalTranscriptionRuntimeFailure = (error: unknown): boolean => {
   const message = (error instanceof Error ? error.message : String(error)).toLowerCase();
@@ -275,6 +281,14 @@ export const statsFromTranscriptionUnits = (
   const emptyOutputOnSpeechUnits = units.filter(
     (unit) => unit.commonVad?.hasSpeech && unit.outputStatus === "empty_output_on_speech",
   ).length;
+  const suspectedOmissionCount = units.filter(
+    (unit) =>
+      unit.outputStatus === "empty_output_on_speech" &&
+      unit.endMs - unit.startMs >= 2_000 &&
+      (unit.commonVad?.speechDurationMs ?? 0) >= 1_000 &&
+      (unit.commonVad?.activeFrameRatio ?? 0) >= 0.08 &&
+      (unit.commonVad?.peak ?? 0) >= 0.01,
+  ).length;
   const repetitionLoopCount = units.filter((unit) =>
     unit.anomalyTypes?.includes("repetition_loop"),
   ).length;
@@ -317,22 +331,36 @@ export const statsFromTranscriptionUnits = (
   };
   const resourceUsage = resourceSamples.length
     ? {
+        ...fallback?.resourceUsage,
         device: resourceSamples.find((sample) => sample.device)?.device,
         backend: resourceSamples.find((sample) => sample.backend)?.backend,
         quantization: resourceSamples.find((sample) => sample.quantization)?.quantization,
         dtype: resourceSamples.find((sample) => sample.dtype)?.dtype,
         modelFileSizeBytes: fallback?.resourceUsage?.modelFileSizeBytes,
-        gpuMemoryBeforeLoadMb: resourceSamples[0]?.gpuMemoryBeforeLoadMb,
+        gpuMemoryBeforeLoadMb: resourceSamples.find(
+          (sample) => sample.gpuMemoryBeforeLoadMb !== undefined,
+        )?.gpuMemoryBeforeLoadMb,
         gpuMemoryAfterLoadMb: [...resourceSamples]
           .reverse()
           .find((sample) => sample.gpuMemoryAfterLoadMb !== undefined)?.gpuMemoryAfterLoadMb,
         gpuPeakMemoryMb: maximumDefined(resourceSamples.map((sample) => sample.gpuPeakMemoryMb)),
         gpuMemoryAfterReleaseMb: fallback?.resourceUsage?.gpuMemoryAfterReleaseMb,
         ramPeakMb: maximumDefined(resourceSamples.map((sample) => sample.ramPeakMb)),
-        oomCount: units.filter((unit) => /oom|out of memory/iu.test(unit.errorMessage ?? ""))
-          .length,
+        oomCount: units.filter((unit) =>
+          /oom|out of memory/iu.test(
+            [
+              unit.errorMessage,
+              ...(unit.attemptHistory ?? []).map((attempt) => attempt.errorMessage),
+            ].join("\n"),
+          ),
+        ).length,
         workerCrashCount: units.filter((unit) =>
-          /worker.*(?:crash|exit)/iu.test(unit.errorMessage ?? ""),
+          /worker.*(?:crash|exit)/iu.test(
+            [
+              unit.errorMessage,
+              ...(unit.attemptHistory ?? []).map((attempt) => attempt.errorMessage),
+            ].join("\n"),
+          ),
         ).length,
         resourceReleaseSucceeded: fallback?.resourceUsage?.resourceReleaseSucceeded,
         possibleResourceLeak: fallback?.resourceUsage?.possibleResourceLeak,
@@ -358,7 +386,8 @@ export const statsFromTranscriptionUnits = (
     emptyOutputOnSpeechUnits,
     repetitionLoopCount,
     abnormalOutputCount,
-    hallucinationSuspectedCount: abnormalOutputCount,
+    hallucinationSuspectedCount: 0,
+    suspectedOmissionCount,
     taskProgressPercent,
     scheduledSpeechMs,
     processedSpeechPercent,
@@ -378,7 +407,33 @@ export const statsFromTranscriptionUnits = (
     lastErrorStage: [...units].reverse().find((unit) => unit.errorCode)?.stage,
     inferenceElapsedMs: units.reduce((sum, unit) => sum + (unit.timing?.inferenceTimeMs ?? 0), 0),
     conversionElapsedMs: units.reduce((sum, unit) => sum + (unit.timing?.conversionTimeMs ?? 0), 0),
+    preflightElapsedMs: units.reduce((sum, unit) => sum + (unit.timing?.preflightTimeMs ?? 0), 0),
+    resourceProbeElapsedMs: units.reduce(
+      (sum, unit) => sum + (unit.timing?.resourceProbeTimeMs ?? 0),
+      0,
+    ),
     loadElapsedMs: units.reduce((sum, unit) => sum + (unit.timing?.loadTimeMs ?? 0), 0),
+    providerImportElapsedMs: units.reduce(
+      (sum, unit) => sum + (unit.timing?.providerImportTimeMs ?? 0),
+      0,
+    ),
+    modelInitializationElapsedMs: units.reduce(
+      (sum, unit) => sum + (unit.timing?.modelInitializationTimeMs ?? 0),
+      0,
+    ),
+    workerStartupElapsedMs: units.reduce(
+      (sum, unit) => sum + (unit.timing?.workerStartupTimeMs ?? 0),
+      0,
+    ),
+    vadElapsedMs: units.reduce((sum, unit) => sum + (unit.timing?.vadTimeMs ?? 0), 0),
+    postprocessElapsedMs: units.reduce(
+      (sum, unit) => sum + (unit.timing?.postprocessTimeMs ?? 0),
+      0,
+    ),
+    unaccountedElapsedMs: units.reduce(
+      (sum, unit) => sum + (unit.timing?.unaccountedTimeMs ?? 0),
+      0,
+    ),
     alignmentElapsedMs: units.reduce((sum, unit) => sum + (unit.timing?.alignmentTimeMs ?? 0), 0),
     saveElapsedMs: units.reduce((sum, unit) => sum + (unit.timing?.saveTimeMs ?? 0), 0),
     releaseElapsedMs: fallback?.releaseElapsedMs,
@@ -1370,6 +1425,8 @@ export class AiVoiceMemoryService {
           if (controller.signal.aborted || (error as Error).message === "ai_task_paused")
             throw error;
           organizationError = error instanceof Error ? error.message : String(error);
+          // Preserve the durable attempts/failure state saved inside organize before it threw.
+          record = (await this.store.get(record.recordingId)) ?? record;
           this.log("warn", "Voice memory organization failed; transcript retained", {
             recordingId: record.recordingId,
             reason: organizationError,
@@ -1633,6 +1690,50 @@ export class AiVoiceMemoryService {
     requestedBenchmark?: VoiceMemoryBenchmarkRunMetadata,
     onStage?: (stage: VoiceMemoryProcessingStage) => void,
   ): Promise<VoiceMemoryRecord> {
+    const started = performance.now();
+    const previousElapsed = record.transcriptionStats?.totalElapsedMs ?? 0;
+    const result = await this.transcribeCore(
+      record,
+      manual,
+      signal,
+      requestedModelId,
+      requestedBenchmark,
+      onStage,
+    );
+    if (!requestedBenchmark || !result.transcriptionStats) return result;
+    const stats = result.transcriptionStats;
+    const totalElapsedMs = previousElapsed + performance.now() - started;
+    const known = [
+      stats.loadElapsedMs,
+      stats.conversionElapsedMs,
+      stats.preflightElapsedMs,
+      stats.resourceProbeElapsedMs,
+      stats.vadElapsedMs,
+      stats.inferenceElapsedMs,
+      stats.alignmentElapsedMs,
+      stats.postprocessElapsedMs,
+      stats.mergeElapsedMs,
+      stats.saveElapsedMs,
+      stats.releaseElapsedMs,
+    ].reduce<number>((sum, value) => sum + (value ?? 0), 0);
+    return this.save({
+      ...result,
+      transcriptionStats: {
+        ...stats,
+        totalElapsedMs,
+        unaccountedElapsedMs: Math.max(0, totalElapsedMs - known),
+      },
+    });
+  }
+
+  private async transcribeCore(
+    record: VoiceMemoryRecord,
+    manual: boolean,
+    signal: AbortSignal,
+    requestedModelId?: AiAsrModelId,
+    requestedBenchmark?: VoiceMemoryBenchmarkRunMetadata,
+    onStage?: (stage: VoiceMemoryProcessingStage) => void,
+  ): Promise<VoiceMemoryRecord> {
     const selectedModelId =
       requestedModelId ?? record.transcriptionModel?.id ?? this.models.getActiveAsrModel();
     const taskId = `transcription:${record.recordingId}:${selectedModelId}`;
@@ -1858,7 +1959,13 @@ export class AiVoiceMemoryService {
               },
             }),
           signal,
-          { recordingId: record.recordingId, taskId: record.taskId, unit: unit + 1, totalUnits },
+          {
+            recordingId: record.recordingId,
+            taskId: record.taskId,
+            unit: unit + 1,
+            totalUnits,
+            benchmark: Boolean(activeBenchmark),
+          },
         );
         const recognized = chunk.segments;
         const chunkResult = chunk.result;
@@ -1874,7 +1981,12 @@ export class AiVoiceMemoryService {
           commonVad: chunkResult?.commonVad,
           outputStatus,
           anomalyTypes: chunkResult?.anomalyTypes,
-          timing: chunkResult?.timing,
+          timing: chunkResult?.timing ?? {
+            totalTimeMs: chunk.attemptHistory.reduce(
+              (sum, attempt) => sum + (attempt.elapsedMs ?? 0),
+              0,
+            ),
+          },
           resourceUsage: chunkResult?.resourceUsage,
           rawRuntimeOutput: JSON.stringify({
             segments: recognized,
@@ -1888,6 +2000,8 @@ export class AiVoiceMemoryService {
           }),
           normalizedSegmentIds: recognized.map((segment) => segment.id),
           retryCount: chunk.retries,
+          attemptHistory: [...(durableUnit.attemptHistory ?? []), ...chunk.attemptHistory],
+          attempts: durableUnit.attempts + chunk.retries,
           errorCode: chunk.errorCode,
           errorMessage: chunk.errorMessage,
           completedAt: finishedAt,
@@ -1985,7 +2099,10 @@ export class AiVoiceMemoryService {
         speechSegmentsRetainedForComparison: speechSources.length > 0,
       });
       const releaseMetrics = activeBenchmark
-        ? await this.runtime.releaseAsrMeasured("model_comparison_model_complete")
+        ? await this.runtime.releaseAsrMeasured(
+            "model_comparison_model_complete",
+            stats.resourceUsage?.gpuMemoryBeforeLoadMb,
+          )
         : undefined;
       const terminalStats = statsFromTranscriptionUnits(
         totalDuration,
@@ -2008,14 +2125,10 @@ export class AiVoiceMemoryService {
             (terminalStats.totalElapsedMs ?? 0) + (releaseMetrics?.releaseTimeMs ?? 0),
           resourceUsage: {
             ...(terminalStats.resourceUsage ?? {}),
+            ...releaseMetrics,
             gpuMemoryAfterReleaseMb: releaseMetrics?.gpuMemoryAfterReleaseMb,
             resourceReleaseSucceeded: releaseMetrics?.resourceReleaseSucceeded,
-            possibleResourceLeak:
-              releaseMetrics?.gpuMemoryAfterReleaseMb !== undefined &&
-              terminalStats.resourceUsage?.gpuMemoryBeforeLoadMb !== undefined
-                ? releaseMetrics.gpuMemoryAfterReleaseMb >
-                  terminalStats.resourceUsage.gpuMemoryBeforeLoadMb + 256
-                : undefined,
+            possibleResourceLeak: releaseMetrics?.possibleResourceLeak,
           },
         },
       });
@@ -2135,7 +2248,13 @@ export class AiVoiceMemoryService {
             },
           }),
         signal,
-        { recordingId: record.recordingId, taskId: record.taskId, unit: unit + 1, totalUnits },
+        {
+          recordingId: record.recordingId,
+          taskId: record.taskId,
+          unit: unit + 1,
+          totalUnits,
+          benchmark: Boolean(activeBenchmark),
+        },
       );
       const segments = chunk.segments;
       const chunkResult = chunk.result;
@@ -2151,7 +2270,12 @@ export class AiVoiceMemoryService {
         commonVad: chunkResult?.commonVad,
         outputStatus,
         anomalyTypes: chunkResult?.anomalyTypes,
-        timing: chunkResult?.timing,
+        timing: chunkResult?.timing ?? {
+          totalTimeMs: chunk.attemptHistory.reduce(
+            (sum, attempt) => sum + (attempt.elapsedMs ?? 0),
+            0,
+          ),
+        },
         resourceUsage: chunkResult?.resourceUsage,
         rawRuntimeOutput: JSON.stringify({
           segments,
@@ -2165,6 +2289,8 @@ export class AiVoiceMemoryService {
         }),
         normalizedSegmentIds: segments.map((segment) => segment.id),
         retryCount: chunk.retries,
+        attemptHistory: [...(durableUnit.attemptHistory ?? []), ...chunk.attemptHistory],
+        attempts: durableUnit.attempts + chunk.retries,
         errorCode: chunk.errorCode,
         errorMessage: chunk.errorMessage,
         completedAt: finishedAt,
@@ -2240,7 +2366,10 @@ export class AiVoiceMemoryService {
       }
     }
     const releaseMetrics = activeBenchmark
-      ? await this.runtime.releaseAsrMeasured("model_comparison_model_complete")
+      ? await this.runtime.releaseAsrMeasured(
+          "model_comparison_model_complete",
+          stats.resourceUsage?.gpuMemoryBeforeLoadMb,
+        )
       : undefined;
     const terminalStats = statsFromTranscriptionUnits(
       totalDuration,
@@ -2262,14 +2391,10 @@ export class AiVoiceMemoryService {
         totalElapsedMs: (terminalStats.totalElapsedMs ?? 0) + (releaseMetrics?.releaseTimeMs ?? 0),
         resourceUsage: {
           ...(terminalStats.resourceUsage ?? {}),
+          ...releaseMetrics,
           gpuMemoryAfterReleaseMb: releaseMetrics?.gpuMemoryAfterReleaseMb,
           resourceReleaseSucceeded: releaseMetrics?.resourceReleaseSucceeded,
-          possibleResourceLeak:
-            releaseMetrics?.gpuMemoryAfterReleaseMb !== undefined &&
-            terminalStats.resourceUsage?.gpuMemoryBeforeLoadMb !== undefined
-              ? releaseMetrics.gpuMemoryAfterReleaseMb >
-                terminalStats.resourceUsage.gpuMemoryBeforeLoadMb + 256
-              : undefined,
+          possibleResourceLeak: releaseMetrics?.possibleResourceLeak,
         },
       },
     });
@@ -2278,7 +2403,13 @@ export class AiVoiceMemoryService {
   private async transcribeChunkWithRetry(
     operation: () => Promise<TranscriptionChunkRuntimeResult>,
     signal: AbortSignal,
-    context: { recordingId: string; taskId?: string; unit: number; totalUnits: number },
+    context: {
+      recordingId: string;
+      taskId?: string;
+      unit: number;
+      totalUnits: number;
+      benchmark?: boolean;
+    },
   ): Promise<{
     segments: VoiceMemoryTranscriptSegment[];
     result?: TranscriptionChunkRuntimeResult;
@@ -2287,18 +2418,38 @@ export class AiVoiceMemoryService {
     fatal?: boolean;
     errorCode?: string;
     errorMessage?: string;
+    attemptHistory: VoiceMemoryTranscriptionAttempt[];
   }> {
     let retries = 0;
     let lastError: unknown;
     let anomalyRetryUsed = false;
+    const measuredTimings: TranscriptionChunkRuntimeResult["timing"][] = [];
+    const operationStarted = performance.now();
+    const attemptHistory: VoiceMemoryTranscriptionAttempt[] = [];
+    const maxAttempts = context.benchmark ? 2 : MAX_TRANSCRIPTION_CHUNK_ATTEMPTS;
     const rawAnomalyAttempts: NonNullable<TranscriptionChunkRuntimeResult["rawAnomalyAttempts"]> =
       [];
-    for (let attempt = 0; attempt < MAX_TRANSCRIPTION_CHUNK_ATTEMPTS; attempt += 1) {
+    for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
       if (signal.aborted) throw new Error("ai_task_paused");
+      const startedAt = new Date().toISOString();
+      const attemptStarted = performance.now();
+      retries = attempt;
       try {
         const result = await operation();
+        measuredTimings.push(result.timing);
         const anomalous =
           result.outputStatus === "repetition_loop" || result.outputStatus === "abnormal_output";
+        attemptHistory.push({
+          attempt: attempt + 1,
+          startedAt,
+          completedAt: new Date().toISOString(),
+          outcome: anomalous ? "output_anomaly" : "success",
+          outputStatus: result.outputStatus,
+          elapsedMs: performance.now() - attemptStarted,
+          timing: result.timing,
+          rawText: context.benchmark ? result.rawText : undefined,
+          rawRuntimeOutput: context.benchmark ? JSON.stringify(result.rawOutput) : undefined,
+        });
         if (anomalous) {
           rawAnomalyAttempts.push({
             outputStatus: result.outputStatus as "repetition_loop" | "abnormal_output",
@@ -2308,14 +2459,38 @@ export class AiVoiceMemoryService {
             anomalyReasons: result.anomalyReasons,
           });
         }
-        if (anomalous && !anomalyRetryUsed) {
+        if (anomalous && !anomalyRetryUsed && attempt + 1 < maxAttempts) {
           anomalyRetryUsed = true;
           retries += 1;
           continue;
         }
         return {
+          attemptHistory,
           result: {
             ...result,
+            timing: {
+              ...result.timing,
+              ...Object.fromEntries(
+                [
+                  "loadTimeMs",
+                  "conversionTimeMs",
+                  "inferenceTimeMs",
+                  "alignmentTimeMs",
+                  "postprocessTimeMs",
+                  "vadTimeMs",
+                  "providerImportTimeMs",
+                  "modelInitializationTimeMs",
+                  "workerStartupTimeMs",
+                ].map((key) => [
+                  key,
+                  measuredTimings.reduce(
+                    (sum, timing) => sum + (timing[key as keyof typeof timing] ?? 0),
+                    0,
+                  ),
+                ]),
+              ),
+              totalTimeMs: performance.now() - operationStarted,
+            },
             anomalyTypes: Array.from(
               new Set([
                 ...rawAnomalyAttempts.flatMap((attempt) => attempt.anomalyTypes),
@@ -2340,7 +2515,19 @@ export class AiVoiceMemoryService {
       } catch (error) {
         lastError = error;
         if (signal.aborted || (error as Error)?.message === "ai_task_paused") throw error;
-        retries += 1;
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        const detail = error as Error & { stderr?: string; exitCode?: number };
+        attemptHistory.push({
+          attempt: attempt + 1,
+          startedAt,
+          completedAt: new Date().toISOString(),
+          outcome: "runtime_error",
+          errorCode: this.errorCode(error),
+          errorMessage,
+          elapsedMs: performance.now() - attemptStarted,
+          stderr: context.benchmark ? detail.stderr : undefined,
+          exitCode: detail.exitCode,
+        });
         if (isFatalTranscriptionRuntimeFailure(error)) {
           const errorMessage = error instanceof Error ? error.message : String(error);
           this.log("error", "AI transcription runtime failed deterministically; stopping model", {
@@ -2348,6 +2535,7 @@ export class AiVoiceMemoryService {
             reason: errorMessage,
           });
           return {
+            attemptHistory,
             segments: [],
             retries,
             failed: true,
@@ -2356,7 +2544,7 @@ export class AiVoiceMemoryService {
             errorMessage,
           };
         }
-        if (attempt + 1 < MAX_TRANSCRIPTION_CHUNK_ATTEMPTS) {
+        if (attempt + 1 < maxAttempts) {
           await new Promise((resolve) => setTimeout(resolve, TRANSCRIPTION_CHUNK_RETRY_DELAY_MS));
         }
       }
@@ -2367,6 +2555,7 @@ export class AiVoiceMemoryService {
     });
     const errorMessage = lastError instanceof Error ? lastError.message : String(lastError);
     return {
+      attemptHistory,
       segments: [],
       retries,
       failed: true,
@@ -2381,6 +2570,31 @@ export class AiVoiceMemoryService {
     signal: AbortSignal,
   ): Promise<VoiceMemoryRecord> {
     if (record.transcript.length === 0) return record;
+    if (manual && record.organizationSinglePassRetry) {
+      record = await this.save({
+        ...record,
+        organizationSinglePassRetry:
+          record.organizationSinglePassRetry.status === "completed"
+            ? undefined
+            : resetOrganizationRetry(record.organizationSinglePassRetry),
+      });
+    }
+    // Only an explicit foreground action grants exhausted work another budget.
+    if (manual && record.organization) {
+      record = await this.save({
+        ...record,
+        organization: {
+          ...record.organization,
+          chunks: record.organization.chunks.map(resetOrganizationRetry),
+          reductionRetries: Object.fromEntries(
+            Object.entries(record.organization.reductionRetries ?? {}).map(([key, value]) => [
+              key,
+              resetOrganizationRetry(value),
+            ]),
+          ),
+        },
+      });
+    }
     if (!this.textGateway.usesLocalOrganizer()) {
       return this.organizeSinglePass(record, manual, signal);
     }
@@ -2394,7 +2608,15 @@ export class AiVoiceMemoryService {
       record.organization.modelRevision === QWEN36_NVFP4_MODEL_REVISION;
     let chunks = materializeOrganizationChunks(
       plans,
-      compatibleRun ? record.organization?.chunks : undefined,
+      compatibleRun
+        ? record.organization?.chunks
+        : record.organization?.chunks.map((chunk) => ({
+            ...chunk,
+            result: undefined,
+            status: organizationExhausted(chunk)
+              ? ("unrecoverable" as const)
+              : ("pending" as const),
+          })),
     );
     let metrics = compatibleRun
       ? (record.organization?.metrics ?? createOrganizationMetrics())
@@ -2416,6 +2638,7 @@ export class AiVoiceMemoryService {
         status: "running",
         completedChunks: chunks.filter((chunk) => chunk.status === "completed").length,
         chunks,
+        reductionRetries: record.organization?.reductionRetries,
         finalResult: compatibleRun ? record.organization?.finalResult : undefined,
         metrics,
         startedAt,
@@ -2447,6 +2670,10 @@ export class AiVoiceMemoryService {
         }
         const baseChunk = chunks[index];
         if (!baseChunk) throw new Error("organization_chunk_missing");
+        if (organizationExhausted(baseChunk)) {
+          lastError = new Error("organization_retry_exhausted");
+          break;
+        }
         const running = {
           ...baseChunk,
           status: "running" as const,
@@ -2523,7 +2750,9 @@ export class AiVoiceMemoryService {
         if (!failedBase) throw new Error("organization_chunk_missing");
         const failed = {
           ...failedBase,
-          status: "failed" as const,
+          status: organizationExhausted(failedBase)
+            ? ("unrecoverable" as const)
+            : ("failed" as const),
           errorMessage: message,
           updatedAt: new Date().toISOString(),
         };
@@ -2540,7 +2769,7 @@ export class AiVoiceMemoryService {
           phase: signal.aborted ? "paused" : "error",
           organization: {
             ...record.organization!,
-            status: signal.aborted ? "paused" : "failed",
+            status: signal.aborted ? "paused" : failed.status,
             chunks,
             metrics,
             updatedAt: new Date().toISOString(),
@@ -2575,33 +2804,39 @@ export class AiVoiceMemoryService {
           if (!group) continue;
           let reduced: VoiceMemoryOrganizationResult | undefined;
           let groupError: unknown;
-          for (let attempt = 0; attempt < MAX_ORGANIZATION_ATTEMPTS_PER_RUN; attempt += 1) {
-            if (signal.aborted) throw new Error("ai_task_paused");
-            try {
-              const generation = await this.textGateway.generateJsonWithMetrics<unknown>({
-                purpose: "organize",
-                manual,
-                maxNewTokens: 3_072,
-                timeoutMs: 30 * 60_000,
-                signal,
-                prompt: organizationFinalPrompt(record, group),
-              });
-              if (generation.metrics)
-                metrics = mergeOrganizationMetrics(metrics, generation.metrics);
-              reduced = normalizeOrganizationResult(generation.value, record);
-              break;
-            } catch (error) {
-              groupError = error;
-              if (
-                signal.aborted ||
-                (error instanceof Error && error.message === "ai_task_paused")
-              ) {
-                throw error;
-              }
-              if (attempt + 1 < MAX_ORGANIZATION_ATTEMPTS_PER_RUN) {
-                metrics = { ...metrics, retryCount: metrics.retryCount + 1 };
-              }
-            }
+          const retryKey = `${reductionLevel}:${groupIndex}:${createHash("sha256").update(JSON.stringify(group)).digest("hex").slice(0, 16)}`;
+          try {
+            reduced = await runOrganizationWithRetry(
+              record.organization?.reductionRetries?.[retryKey],
+              async (state) => {
+                record = await this.save({
+                  ...record,
+                  organization: {
+                    ...record.organization!,
+                    reductionRetries: {
+                      ...record.organization?.reductionRetries,
+                      [retryKey]: state,
+                    },
+                  },
+                });
+              },
+              async () => {
+                const generation = await this.textGateway.generateJsonWithMetrics<unknown>({
+                  purpose: "organize",
+                  manual,
+                  maxNewTokens: 3_072,
+                  timeoutMs: 30 * 60_000,
+                  signal,
+                  prompt: organizationFinalPrompt(record, group),
+                });
+                if (generation.metrics)
+                  metrics = mergeOrganizationMetrics(metrics, generation.metrics);
+                return normalizeOrganizationResult(generation.value, record);
+              },
+              signal,
+            );
+          } catch (error) {
+            groupError = error;
           }
           if (!reduced) {
             throw groupError instanceof Error
@@ -2632,7 +2867,11 @@ export class AiVoiceMemoryService {
         phase: paused ? "paused" : "error",
         organization: {
           ...record.organization!,
-          status: paused ? "paused" : "failed",
+          status: paused
+            ? "paused"
+            : Object.values(record.organization?.reductionRetries ?? {}).some(organizationExhausted)
+              ? "unrecoverable"
+              : "failed",
           completedChunks: chunks.filter((chunk) => chunk.status === "completed").length,
           chunks,
           metrics,
@@ -2722,21 +2961,29 @@ export class AiVoiceMemoryService {
       errorMessage: undefined,
       organizationPublication: undefined,
     });
-    const result = await this.textGateway.generateJson<OrganizedResult>({
-      purpose: "organize",
-      manual,
-      maxNewTokens: 384,
-      timeoutMs: 4 * 60_000,
+    const result = await runOrganizationWithRetry(
+      record.organizationSinglePassRetry,
+      async (state) => {
+        record = await this.save({ ...record, organizationSinglePassRetry: state });
+      },
+      () =>
+        this.textGateway.generateJson<OrganizedResult>({
+          purpose: "organize",
+          manual,
+          maxNewTokens: 384,
+          timeoutMs: 4 * 60_000,
+          signal,
+          prompt: [
+            "你是上号语音软件的录音整理助手。这里是固定好友的日常聊天，不是会议。",
+            "生成自然、有趣、能回到原录音的结构化结果，不要编造。",
+            '只返回 JSON：{"summary":[],"chapters":[],"highlights":[],"markerTitles":[]}。',
+            `已有标记：${record.markerTitles.map((marker) => `${marker.markerId}@${marker.offsetMs}ms`).join(", ") || "无"}`,
+            `录音：${path.basename(record.filePath)}`,
+            transcriptForPrompt(record, 36_000),
+          ].join("\n"),
+        }),
       signal,
-      prompt: [
-        "你是上号语音软件的录音整理助手。这里是固定好友的日常聊天，不是会议。",
-        "生成自然、有趣、能回到原录音的结构化结果，不要编造。",
-        '只返回 JSON：{"summary":[],"chapters":[],"highlights":[],"markerTitles":[]}。',
-        `已有标记：${record.markerTitles.map((marker) => `${marker.markerId}@${marker.offsetMs}ms`).join(", ") || "无"}`,
-        `录音：${path.basename(record.filePath)}`,
-        transcriptForPrompt(record, 36_000),
-      ].join("\n"),
-    });
+    );
     const normalized = normalizeOrganizedResult(result, record);
     return this.save({
       ...record,

@@ -37,7 +37,8 @@ const extractJsonObject = <T>(value: string): T => {
 export const resolveAiTextProvider = (
   purpose: AiTextPurpose,
   organizerProvider: AiTextProvider,
-): AiTextProvider => (purpose === "question" ? "cloud" : organizerProvider);
+): AiTextProvider =>
+  purpose === "question" || organizerProvider !== "custom" ? "cloud" : "custom";
 
 /** Routes summary/question work without coupling ASR to a particular text model. */
 export class AiTextGateway {

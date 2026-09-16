@@ -21,7 +21,7 @@ body::before {
 
 .team-island-stage {
   background:
-    radial-gradient(ellipse at 54% 46%, rgba(255, 255, 255, 0.34) 0%, transparent 54%),
+    radial-gradient(ellipse at 54% 46%, rgba(255, 255, 255, 0.12) 0%, transparent 54%),
     radial-gradient(circle at 18% 8%, rgba(219, 237, 251, 0.22) 0%, transparent 38%),
     linear-gradient(145deg, rgba(249, 252, 255, 0.56), rgba(235, 244, 251, 0.3));
   filter: none;
@@ -55,7 +55,7 @@ body::before {
     transparent 72%
   );
   filter: none;
-  opacity: 0.46;
+  opacity: 0.28;
 }
 
 .team-island {
@@ -176,8 +176,8 @@ body::before {
 
 .scene-zone-hotspot.current {
   border-color: transparent;
-  background: linear-gradient(180deg, rgba(113, 177, 242, 0.025), rgba(84, 155, 231, 0.055));
-  box-shadow: inset 0 0 0 1px rgba(91, 159, 226, 0.075);
+  background: transparent;
+  box-shadow: none;
 }
 
 .scene-service-zone {
@@ -1671,7 +1671,7 @@ body::before {
   margin-top: 5px;
   overflow: visible;
 }
-.voice-memory-transcript > button {
+.voice-memory-transcript .transcript-paragraph {
   width: 100%;
   display: grid;
   grid-template-columns: 44px minmax(76px, auto) 1fr;
@@ -1681,7 +1681,7 @@ body::before {
   padding: 7px 8px;
   text-align: left;
 }
-.voice-memory-transcript > button:hover {
+.voice-memory-transcript .transcript-paragraph:hover {
   background: rgb(231 242 255 / 68%);
 }
 .voice-memory-transcript time {

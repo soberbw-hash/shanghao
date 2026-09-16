@@ -407,6 +407,12 @@ export const DEFAULT_QUICK_MESSAGE_SLOTS: QuickMessageShortcutSlot[] = [
  * can contain a sparse or truncated array, while newer profiles may carry
  * extra slot metadata that should survive a read/write round trip.
  */
+export const QUICK_MESSAGE_SHORTCUT_COUNT =
+  DEFAULT_QUICK_MESSAGE_SLOTS.length + DEFAULT_QUICK_MESSAGE_MUSIC_SLOTS.length;
+
+export const isQuickMessageShortcutSlot = (slot: number): boolean =>
+  Number.isInteger(slot) && slot >= 0 && slot < QUICK_MESSAGE_SHORTCUT_COUNT;
+
 export const normalizeQuickMessageSlots = (
   value: unknown,
   defaults: readonly QuickMessageShortcutSlot[] = DEFAULT_QUICK_MESSAGE_SLOTS,

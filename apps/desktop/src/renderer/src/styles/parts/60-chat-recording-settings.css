@@ -49,6 +49,33 @@
   opacity: 0;
 }
 
+.phone-mode-settings-controls {
+  min-width: min(100%, 520px);
+}
+
+.phone-mode-shortcut-control .shortcut-input-wrap {
+  min-width: 0;
+}
+
+.phone-mode-trigger-select {
+  width: 148px;
+  min-width: 148px;
+  max-width: 148px;
+  height: 36px;
+  padding: 0 28px 0 10px;
+  border: 1px solid rgba(183, 203, 228, 0.68);
+  border-radius: 10px;
+  outline: none;
+  background: rgba(255, 255, 255, 0.86);
+  color: #40536b;
+  font-size: 12px;
+}
+
+.phone-mode-trigger-select:focus-visible {
+  border-color: rgba(77, 163, 255, 0.66);
+  box-shadow: 0 0 0 3px rgba(77, 163, 255, 0.12);
+}
+
 .audio-control-anchor {
   position: relative;
   display: inline-flex;

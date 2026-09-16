@@ -37,6 +37,7 @@ interface LocalProfilePayload {
 type LocalPresencePatch = {
   isMuted?: boolean;
   isDeafened?: boolean;
+  callModeActive?: boolean;
   speakingState?: MemberSpeakingState;
   activity?: MemberActivity;
   sceneZone?: SceneZoneId;
@@ -221,6 +222,7 @@ const areMembersEqual = (left: RoomMember[], right: RoomMember[]): boolean => {
       member.isEmptySlot === candidate.isEmptySlot &&
       member.isMuted === candidate.isMuted &&
       member.isDeafened === candidate.isDeafened &&
+      member.callModeActive === candidate.callModeActive &&
       member.activity === candidate.activity &&
       member.sceneZone === candidate.sceneZone &&
       member.gameName === candidate.gameName &&

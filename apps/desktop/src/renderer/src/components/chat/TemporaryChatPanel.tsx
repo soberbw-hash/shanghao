@@ -583,7 +583,7 @@ export const TemporaryChatPanel = ({
           sendImageFile(Array.from(event.dataTransfer.files).find(isSupportedChatImageFile));
         }}
       >
-        <div className="chat-panel-header flex items-center justify-between gap-2 border-b border-[rgba(220,230,242,0.6)] pb-2.5">
+        <div className="chat-panel-header flex flex-col items-stretch gap-2 border-b border-[rgba(220,230,242,0.6)] pb-2.5">
           <div className="chat-panel-title whitespace-nowrap text-[13px] font-semibold text-[#1a2332]">
             聊天
           </div>
@@ -899,7 +899,8 @@ export const TemporaryChatPanel = ({
             </span>
           ) : null}
           <Input
-            placeholder={canSend ? "发送消息，最多保留最近 100 条" : unavailableLabel}
+            placeholder={canSend ? "发送消息…" : unavailableLabel}
+            title="最多保留最近 100 条消息"
             value={chatInput}
             disabled={!canSend}
             onChange={(event) => onChatInputChange(event.target.value)}

@@ -62,10 +62,7 @@ test("AI models remain opt-in and game activity lowers background priority", asy
       "glm-asr-nano-2512",
       "fireredasr2-aed",
       "paraformer-zh",
-      "moss-transcribe-diarize-0.9b",
       "moss-transcribe-diarize-0.9b-q8_0",
-      "dolphin-cn-dialect-0.4b",
-      "cohere-transcribe-2b",
       "ark-asr-3b-q8_0",
     ],
   );
@@ -73,12 +70,10 @@ test("AI models remain opt-in and game activity lowers background priority", asy
     snapshot.models.find((model) => model.id === "qwen3-forced-aligner-0.6b")?.category,
     "support",
   );
-  assert.equal(snapshot.models.find((model) => model.id === "qwen35-4b")?.category, "organizer");
-  const qwen36Organizer = snapshot.models.find((model) => model.id === "qwen36-35b-a3b-nvfp4");
-  assert.equal(qwen36Organizer?.category, "organizer");
-  assert.equal(qwen36Organizer?.inferenceBackend, "freetoken");
-  assert.match(qwen36Organizer?.hardwareNote ?? "", /8GB.*32GB/i);
-  assert.equal(manager.canRunTask("organization", false).requiredModel, "qwen36-35b-a3b-nvfp4");
+  assert.equal(
+    snapshot.models.some((model) => model.category === "organizer"),
+    false,
+  );
   assert.equal(manager.getActiveAsrModel(), "qwen3-asr-0.6b-force");
   assert.equal(manager.canRunTask("transcription").requiredModel, "qwen3-asr-0.6b-force");
   manager.setActiveAsrModel("paraformer-zh");
@@ -153,23 +148,20 @@ test("a failed runtime repair stays installed but cannot report success", async 
       models: Record<string, { userInstalled: boolean; activeRevision?: string; phase?: string }>;
     };
   };
-  internal.persisted.models["dolphin-cn-dialect-0.4b"] = {
+  internal.persisted.models["fireredasr2-aed"] = {
     userInstalled: true,
     activeRevision: "already-downloaded",
     phase: "installed",
   };
-  manager.setRuntimePreparer(async () => ({ ready: false, message: "torch-complex 缺失" }));
+  manager.setRuntimePreparer(async () => ({ ready: false, message: "运行组件缺失" }));
   try {
-    await assert.rejects(
-      manager.controlModel("dolphin-cn-dialect-0.4b", "repair"),
-      /torch-complex 缺失/,
-    );
+    await assert.rejects(manager.controlModel("fireredasr2-aed", "repair"), /运行组件缺失/);
     const model = manager
       .getSnapshot()
-      .models.find((candidate) => candidate.id === "dolphin-cn-dialect-0.4b");
+      .models.find((candidate) => candidate.id === "fireredasr2-aed");
     assert.equal(model?.phase, "installed");
     assert.equal(model?.runtimeReady, false);
-    assert.equal(model?.runtimeMessage, "torch-complex 缺失");
+    assert.equal(model?.runtimeMessage, "运行组件缺失");
     assert.equal(model?.activeRevision, "already-downloaded");
   } finally {
     manager.stop();
@@ -177,17 +169,18 @@ test("a failed runtime repair stays installed but cannot report success", async 
   }
 });
 
-test("a complete model from the legacy development directory is reused without a 23GB copy", async () => {
+test("a complete ASR model from the legacy development directory is reused without a duplicate copy", async () => {
   const directory = await mkdtemp(path.join(os.tmpdir(), "shanghao-ai-current-store-"));
   const legacy = await mkdtemp(path.join(os.tmpdir(), "shanghao-ai-legacy-store-"));
-  const revision = PINNED_MODEL_REVISIONS["qwen36-35b-a3b-nvfp4"];
-  const legacyRevision = path.join(legacy, "qwen36-35b-a3b-nvfp4", revision);
+  const modelId = "qwen3-asr-0.6b-force";
+  const revision = PINNED_MODEL_REVISIONS[modelId];
+  const legacyRevision = path.join(legacy, modelId, revision);
   await mkdir(legacyRevision, { recursive: true });
   await writeFile(
     path.join(legacy, "state.json"),
     JSON.stringify({
       models: {
-        "qwen36-35b-a3b-nvfp4": {
+        [modelId]: {
           userInstalled: true,
           phase: "installed",
           activeRevision: revision,
@@ -209,13 +202,12 @@ test("a complete model from the legacy development directory is reused without a
   );
   try {
     await manager.initialize("manual");
-    assert.equal(manager.getActiveModelDirectory("qwen36-35b-a3b-nvfp4"), legacyRevision);
+    assert.equal(manager.getActiveModelDirectory(modelId), legacyRevision);
     assert.equal(
-      manager.getSnapshot().models.find((model) => model.id === "qwen36-35b-a3b-nvfp4")
-        ?.activeRevision,
+      manager.getSnapshot().models.find((model) => model.id === modelId)?.activeRevision,
       revision,
     );
-    await assert.rejects(stat(path.join(directory, "qwen36-35b-a3b-nvfp4")));
+    await assert.rejects(stat(path.join(directory, modelId)));
   } finally {
     manager.stop();
     await rm(directory, { recursive: true, force: true });
@@ -302,29 +294,12 @@ test("AI model downloads have a mainland fallback and readable failure messages"
   );
   assert.equal(PINNED_MODEL_REVISIONS["paraformer-zh"], "bundle-d7811ee3-df20e6b3-d0e55e2b");
   assert.equal(
-    PINNED_MODEL_REVISIONS["moss-transcribe-diarize-0.9b"],
-    "e8681d68e7042738ffca8ac8212bc8fcb1131ab8",
-  );
-  assert.equal(
     PINNED_MODEL_REVISIONS["moss-transcribe-diarize-0.9b-q8_0"],
     "6fdfa33aed776bbb0ac11a1a9835634fe6d75dd7",
   );
   assert.equal(
-    PINNED_MODEL_REVISIONS["dolphin-cn-dialect-0.4b"],
-    "eb6854969b5715cfccf4a9297a75f189343700dc",
-  );
-  assert.equal(
-    PINNED_MODEL_REVISIONS["cohere-transcribe-2b"],
-    "00c06981f239c788c0ce23b8caa001c071e4e391",
-  );
-  assert.equal(
     PINNED_MODEL_REVISIONS["ark-asr-3b-q8_0"],
     "3f228f0d7835ded6e73f399286695534001e4cb2",
-  );
-  assert.equal(PINNED_MODEL_REVISIONS["qwen35-4b"], "851bf6e806efd8d0a36b00ddf55e13ccb7b8cd0a");
-  assert.equal(
-    PINNED_MODEL_REVISIONS["qwen36-35b-a3b-nvfp4"],
-    "1355db6a052410cfd62085d94b58866fd0f2c3c5",
   );
 });
 
@@ -394,19 +369,9 @@ test("Fun-ASR and FireRed validate their official layouts without config.json", 
   }
 });
 
-test("MOSS, Dolphin, Cohere and ARK Q8 use independent pinned file layouts", async () => {
+test("MOSS Q8 and ARK Q8 use independent pinned file layouts", async () => {
   const directory = await mkdtemp(path.join(os.tmpdir(), "shanghao-new-asr-layout-"));
   try {
-    const mossDirectory = path.join(directory, "moss");
-    const mossFiles = await writeModelFixture(mossDirectory, {
-      "config.json": "{}",
-      "preprocessor_config.json": "{}",
-      "processor_config.json": "{}",
-      "tokenizer_config.json": "{}",
-      "model-00000-of-00001.safetensors": "moss-official-weights",
-    });
-    await validateModelRevisionFiles("moss-transcribe-diarize-0.9b", mossDirectory, mossFiles);
-
     const mossQ8Directory = path.join(directory, "moss-q8");
     const mossQ8Files = await writeModelFixture(mossQ8Directory, {
       "MOSS-Transcribe-Diarize-Q8_0.gguf": "moss-q8-weights",
@@ -416,33 +381,6 @@ test("MOSS, Dolphin, Cohere and ARK Q8 use independent pinned file layouts", asy
       mossQ8Directory,
       mossQ8Files,
     );
-
-    const dolphinDirectory = path.join(directory, "dolphin");
-    const dolphinFiles = await writeModelFixture(dolphinDirectory, {
-      "small.cn.pt": "dolphin-small-cn-weights",
-      "train.yaml": "model: small.cn",
-      "units.txt": "tokens",
-      global_cmvn: "cmvn",
-    });
-    await validateModelRevisionFiles("dolphin-cn-dialect-0.4b", dolphinDirectory, dolphinFiles);
-    assert.equal(
-      dolphinFiles.some((file) => file.rfilename === "base.cn.pt"),
-      false,
-    );
-    assert.equal(
-      dolphinFiles.some((file) => file.rfilename.includes("streaming")),
-      false,
-    );
-
-    const cohereDirectory = path.join(directory, "cohere");
-    const cohereFiles = await writeModelFixture(cohereDirectory, {
-      "config.json": "{}",
-      "preprocessor_config.json": "{}",
-      "processor_config.json": "{}",
-      "tokenizer_config.json": "{}",
-      "model.safetensors": "cohere-official-weights",
-    });
-    await validateModelRevisionFiles("cohere-transcribe-2b", cohereDirectory, cohereFiles);
 
     const arkDirectory = path.join(directory, "ark");
     const arkFiles = await writeModelFixture(arkDirectory, {

@@ -334,6 +334,14 @@
 
 .chat-quick-actions {
   max-width: 100%;
+  width: 100%;
+  align-items: flex-start;
+}
+
+.chat-quick-actions .chat-quick-replies,
+.chat-quick-actions .chat-quick-music-row {
+  justify-content: flex-start;
+  gap: 6px;
 }
 
 .chat-quick-music-row {

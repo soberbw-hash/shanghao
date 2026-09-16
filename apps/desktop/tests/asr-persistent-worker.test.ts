@@ -27,6 +27,49 @@ process.stdin.on("data", (chunk) => {
 });
 `;
 
+test("ASR abort before/during/after request and timeout race leave worker reusable", async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "shanghao-asr-abort-"));
+  const runner = path.join(directory, "worker.cjs");
+  await writeFile(runner, fakeWorkerSource, "utf8");
+  const worker = new AsrPersistentWorker(process.execPath, runner);
+  const request = (signal?: AbortSignal, durationMs = 100, timeoutMs = 2000) =>
+    worker.run({
+      launch: { modelId: "fun-asr-nano-2512", modelPath: directory },
+      wavPath: "test.wav",
+      resourceMode: "low",
+      durationMs,
+      timeoutMs,
+      signal,
+    });
+  try {
+    const before = new AbortController();
+    before.abort();
+    await assert.rejects(request(before.signal), /paused/);
+    assert.equal(worker.health().processId, undefined);
+    const after = new AbortController();
+    await request(after.signal);
+    const pid = worker.health().processId;
+    after.abort();
+    await request();
+    assert.equal(worker.health().processId, pid);
+    const during = new AbortController();
+    const running = request(during.signal, 2000);
+    setTimeout(() => during.abort(), 30);
+    await assert.rejects(running, /paused/);
+    await request();
+    const race = new AbortController();
+    const timed = request(race.signal, 2000, 20);
+    setTimeout(() => race.abort(), 20);
+    await assert.rejects(timed, /paused|timeout/);
+    await request();
+    assert.equal(worker.health().activeJobId, undefined);
+    assert.equal(worker.health().queuedJobs, 0);
+  } finally {
+    await worker.releaseAndWait("test_complete");
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
 test("ASR idle cleanup never terminates the next model comparison job", async () => {
   const directory = await mkdtemp(path.join(os.tmpdir(), "shanghao-asr-worker-"));
   const runner = path.join(directory, "fake-worker.cjs");

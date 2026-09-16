@@ -59,6 +59,7 @@ export class RoomMemberEventCoordinator {
     gameName?: string,
     musicActivity?: RoomMember["musicActivity"],
     gameIconDataUrl?: string,
+    callModeActive?: boolean,
   ): void {
     this.members = this.members.map((member) => {
       if (member.id !== this.options.localPeerId) return member;
@@ -66,6 +67,7 @@ export class RoomMemberEventCoordinator {
       return {
         ...member,
         isDeafened,
+        callModeActive: callModeActive ?? member.callModeActive,
         activity,
         sceneZone,
         gameName: normalizedGameName,
@@ -159,6 +161,7 @@ export class RoomMemberEventCoordinator {
         nickname: payload.nickname ?? member.nickname,
         avatarId: payload.avatarId ?? member.avatarId,
         isDeafened: payload.isDeafened ?? member.isDeafened,
+        callModeActive: payload.callModeActive ?? member.callModeActive,
         activity: payload.activity ?? member.activity,
         sceneZone: payload.sceneZone ?? member.sceneZone,
         gameName,

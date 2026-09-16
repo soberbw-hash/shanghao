@@ -13,6 +13,9 @@ export default tseslint.config(
       "**/release/**",
       "**/node_modules/**",
       "artifacts/**",
+      // Generated browser evidence and isolated downloaded runtimes, not sources.
+      "output/**",
+      ".playwright-cli/**",
       "tmp/**",
       ".pnpm-store/**",
       ".turbo/**",

@@ -191,6 +191,7 @@ export interface IceCandidateMessage extends BaseMessage {
 }
 
 export interface MemberStateMessage extends BaseMessage {
+  callModeActive?: boolean;
   type: "member_state";
   roomId: string;
   peerId: string;
@@ -712,6 +713,7 @@ export const isSignalEnvelope = (value: unknown): value is SignalEnvelope => {
         isOptionalBoolean(value.isMuted) &&
         isOptionalBoolean(value.isSpeaking) &&
         isOptionalBoolean(value.isDeafened) &&
+        isOptionalBoolean(value.callModeActive) &&
         (value.activity === undefined || MEMBER_ACTIVITIES.has(String(value.activity))) &&
         (value.sceneZone === undefined || SCENE_ZONES.has(String(value.sceneZone))) &&
         // v0.1.50 sent an empty game name when no game was detected. Accept it on the

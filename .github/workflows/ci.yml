@@ -33,3 +33,26 @@ jobs:
       - run: pnpm test:five-peer-audio
       - run: xvfb-run -a pnpm test:five-peer-media
       - run: pnpm build
+
+  verify-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.34.5
+          run_install: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm typecheck
+      - run: cargo fmt --manifest-path native/Cargo.toml --all -- --check
+      - run: pnpm test:native
+      - run: pnpm lint
+      - run: pnpm test
+      - run: pnpm test:audio-worklet
+      - run: pnpm test:five-peer-audio
+      - run: pnpm test:five-peer-media
+      - run: pnpm build

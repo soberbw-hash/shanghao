@@ -1104,6 +1104,7 @@ export class SignalingServer extends EventEmitter {
       isMuted: existingPeer?.isMuted ?? false,
       isSpeaking: existingPeer?.isSpeaking ?? false,
       isDeafened: existingPeer?.isDeafened ?? false,
+      callModeActive: existingPeer?.callModeActive ?? false,
       activity:
         assignedSceneZone === "restroomZone" ? "restroom" : (existingPeer?.activity ?? "idle"),
       sceneZone: assignedSceneZone,
@@ -1231,6 +1232,7 @@ export class SignalingServer extends EventEmitter {
       isMuted: message.isMuted,
       isSpeaking: message.isSpeaking,
       isDeafened: message.isDeafened,
+      callModeActive: message.callModeActive,
       activity: normalizedActivity,
       sceneZone: normalizedSceneZone,
       gameName: message.gameName === undefined ? undefined : (normalizedGameName ?? ""),
@@ -1261,6 +1263,7 @@ export class SignalingServer extends EventEmitter {
       isMuted: message.isMuted,
       isSpeaking: message.isSpeaking,
       isDeafened: message.isDeafened,
+      callModeActive: message.callModeActive,
       activity: normalizedActivity,
       sceneZone: normalizedSceneZone,
       gameName: message.gameName === undefined ? undefined : (normalizedGameName ?? ""),

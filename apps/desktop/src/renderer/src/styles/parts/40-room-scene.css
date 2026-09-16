@@ -583,8 +583,21 @@
 }
 
 .scene-zone-hotspot.current {
-  border-color: rgba(77, 163, 255, 0.3);
-  background: radial-gradient(circle at 50% 66%, rgba(77, 163, 255, 0.12), transparent 65%);
+  border-color: transparent;
+  background: transparent;
+}
+
+.scene-zone-hotspot.seat.current::after {
+  content: "";
+  position: absolute;
+  pointer-events: none;
+  left: 35%;
+  right: 35%;
+  bottom: 0;
+  height: 10%;
+  border-radius: 50%;
+  border: 1px solid rgba(77, 163, 255, 0.3);
+  background: rgba(77, 163, 255, 0.09);
 }
 
 .scene-zone-hotspot:disabled {

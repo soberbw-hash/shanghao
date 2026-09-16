@@ -1,5 +1,6 @@
 import path from "node:path";
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
+import { writeFile } from "node:fs/promises";
 
 import { app, BrowserWindow, screen } from "electron";
 
@@ -29,6 +30,7 @@ export class OverlayWindowController {
   private readonly gridSize = 16;
   private boundsPath = "";
   private boundsSaveTimer?: NodeJS.Timeout;
+  private boundsWriteQueue: Promise<void> = Promise.resolve();
   private hoverPollTimer?: NodeJS.Timeout;
   private cursorInside = false;
   private rendererInteractionLock = false;
@@ -262,10 +264,10 @@ export class OverlayWindowController {
     if (this.boundsSaveTimer) clearTimeout(this.boundsSaveTimer);
     this.boundsSaveTimer = undefined;
     if (!this.boundsPath || !this.window || this.window.isDestroyed()) return;
-    try {
-      writeFileSync(this.boundsPath, JSON.stringify({ y: this.window.getBounds().y }), "utf8");
-    } catch {
-      // The overlay remains usable even if its optional position preference cannot be saved.
-    }
+    const serializedBounds = JSON.stringify({ y: this.window.getBounds().y });
+    this.boundsWriteQueue = this.boundsWriteQueue
+      .catch(() => undefined)
+      .then(() => writeFile(this.boundsPath, serializedBounds, "utf8"))
+      .catch(() => undefined);
   }
 }

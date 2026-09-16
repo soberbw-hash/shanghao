@@ -67,19 +67,27 @@ export const readRenderedScenePosition = (
   element: HTMLElement,
   fallback: CharacterMotionPoint,
 ): CharacterMotionPoint => {
-  const container = element.offsetParent;
-  if (!(container instanceof HTMLElement)) return fallback;
-  const bounds = container.getBoundingClientRect();
-  if (bounds.width <= 0 || bounds.height <= 0) return fallback;
+  // cqw/cqh use the query container's untransformed content box, not its
+  // viewport bounding rectangle (which includes scene/page scale transforms).
+  let container = element.parentElement;
+  while (container && window.getComputedStyle(container).containerType !== "size") {
+    container = container.parentElement;
+  }
+  if (!container) return fallback;
+  const style = window.getComputedStyle(container);
+  const width =
+    container.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight);
+  const height =
+    container.clientHeight - parseFloat(style.paddingTop) - parseFloat(style.paddingBottom);
+  if (width <= 0 || height <= 0) return fallback;
 
   try {
     const transform = window.getComputedStyle(element).transform;
     if (!transform || transform === "none") return fallback;
     const matrix = new DOMMatrixReadOnly(transform);
-    return {
-      left: (matrix.m41 / bounds.width) * 100,
-      top: (matrix.m42 / bounds.height) * 100,
-    };
+    const left = (matrix.m41 / width) * 100;
+    const top = (matrix.m42 / height) * 100;
+    return Number.isFinite(left) && Number.isFinite(top) ? { left, top } : fallback;
   } catch {
     return fallback;
   }

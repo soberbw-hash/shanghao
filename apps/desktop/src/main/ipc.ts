@@ -21,6 +21,7 @@ import {
   APP_NAME,
   APP_PROTOCOL_VERSION,
   IPC_CHANNELS,
+  isQuickMessageShortcutSlot,
   type AccountAvatarUpdateRequest,
   type AccountLoginRequest,
   type AccountPasswordResetRequest,
@@ -85,6 +86,7 @@ import {
 
 import { DiagnosticsService } from "./diagnostics";
 import { AccountDesktopService } from "./account-service";
+import { readLruCache, writeLruCache } from "./bounded-cache";
 import { captureRuntimeHealth } from "./runtime-health";
 import { readDeepFilterAssets } from "./deepfilter-assets";
 import { exportQuickMessagePack } from "./quick-message-export";
@@ -152,10 +154,7 @@ const AI_ASR_MODEL_IDS = new Set<AiAsrModelId>([
   "glm-asr-nano-2512",
   "fireredasr2-aed",
   "paraformer-zh",
-  "moss-transcribe-diarize-0.9b",
   "moss-transcribe-diarize-0.9b-q8_0",
-  "dolphin-cn-dialect-0.4b",
-  "cohere-transcribe-2b",
   "ark-asr-3b-q8_0",
 ]);
 
@@ -194,6 +193,11 @@ let attentionResetTimer: NodeJS.Timeout | undefined;
 let restoreAlwaysOnTop = false;
 let windowShakeTimer: NodeJS.Timeout | undefined;
 const linkPreviewIconCache = new Map<string, string | null>();
+const MAX_LINK_PREVIEW_ICONS = 128;
+
+const cacheLinkPreviewIcon = (key: string, value: string | null): void => {
+  writeLruCache(linkPreviewIconCache, key, value, MAX_LINK_PREVIEW_ICONS);
+};
 
 const readLinkPreviewIcon = async (rawUrl: string): Promise<string | undefined> => {
   const url = new URL(rawUrl);
@@ -203,9 +207,8 @@ const readLinkPreviewIcon = async (rawUrl: string): Promise<string | undefined> 
   if (url.username || url.password) throw new Error("link_preview_url_credentials_not_allowed");
 
   const cacheKey = url.origin;
-  if (linkPreviewIconCache.has(cacheKey)) {
-    return linkPreviewIconCache.get(cacheKey) ?? undefined;
-  }
+  const cached = readLruCache(linkPreviewIconCache, cacheKey);
+  if (cached !== undefined) return cached ?? undefined;
 
   try {
     const faviconUrl = `https://www.google.com/s2/favicons?domain_url=${encodeURIComponent(
@@ -222,23 +225,19 @@ const readLinkPreviewIcon = async (rawUrl: string): Promise<string | undefined> 
       !contentType?.startsWith("image/") ||
       (contentLength > 0 && contentLength > 256 * 1024)
     ) {
-      linkPreviewIconCache.set(cacheKey, null);
+      cacheLinkPreviewIcon(cacheKey, null);
       return undefined;
     }
     const bytes = Buffer.from(await response.arrayBuffer());
     if (bytes.byteLength === 0 || bytes.byteLength > 256 * 1024) {
-      linkPreviewIconCache.set(cacheKey, null);
+      cacheLinkPreviewIcon(cacheKey, null);
       return undefined;
     }
     const dataUrl = `data:${contentType};base64,${bytes.toString("base64")}`;
-    if (linkPreviewIconCache.size >= 128) {
-      const oldestKey = linkPreviewIconCache.keys().next().value;
-      if (oldestKey) linkPreviewIconCache.delete(oldestKey);
-    }
-    linkPreviewIconCache.set(cacheKey, dataUrl);
+    cacheLinkPreviewIcon(cacheKey, dataUrl);
     return dataUrl;
   } catch {
-    linkPreviewIconCache.set(cacheKey, null);
+    cacheLinkPreviewIcon(cacheKey, null);
     return undefined;
   }
 };
@@ -773,15 +772,18 @@ export const registerIpcHandlers = ({
       ) {
         throw new Error("invalid_settings_patch");
       }
+      const previousMuteShortcut = settingsStore.getSnapshot().globalMuteShortcut;
       const settings = await settingsStore.save(partial);
       if (partial.aiProcessingMode) aiModels.setProcessingMode(settings.aiProcessingMode);
       if (partial.aiAsrModel) aiModels.setActiveAsrModel(settings.aiAsrModel);
       if (typeof partial.isGameDetectionEnabled === "boolean") {
         await gameDetection.setEnabled(settings.isGameDetectionEnabled);
       }
-      const registered = await shortcuts.configureGlobalMute(settings.globalMuteShortcut);
-      if (!registered && settings.globalMuteShortcut) {
-        return settingsStore.save({ globalMuteShortcut: "" });
+      if ("globalMuteShortcut" in partial) {
+        const registered = await shortcuts.configureGlobalMute(settings.globalMuteShortcut);
+        if (!registered && settings.globalMuteShortcut) {
+          return settingsStore.save({ globalMuteShortcut: previousMuteShortcut });
+        }
       }
       return settings;
     },
@@ -941,6 +943,10 @@ export const registerIpcHandlers = ({
           content: JSON.stringify(runtimeHealth, null, 2),
         },
         {
+          name: "runtime-health-history.json",
+          content: JSON.stringify(diagnostics.getRuntimeHealthHistory(), null, 2),
+        },
+        {
           name: "flight-recorder.json",
           content: JSON.stringify(diagnostics.flightRecorder.snapshot(), null, 2),
         },
@@ -961,8 +967,7 @@ export const registerIpcHandlers = ({
   ipcMain.handle(
     IPC_CHANNELS.shortcuts.configureQuickMessage,
     async (_event, slot: number, accelerator: string): Promise<boolean> => {
-      if (!Number.isInteger(slot) || slot < 0 || slot >= 7)
-        throw new Error("invalid_quick_message_slot");
+      if (!isQuickMessageShortcutSlot(slot)) throw new Error("invalid_quick_message_slot");
       if (typeof accelerator !== "string") throw new Error("invalid_quick_message_shortcut");
       return shortcuts.configureQuickMessage(slot, accelerator);
     },

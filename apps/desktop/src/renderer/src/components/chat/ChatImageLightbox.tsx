@@ -59,8 +59,11 @@ export const ChatImageLightbox = ({
   const closingRef = useRef(false);
   const initialOriginRef = useRef(originElement);
   const didRevealImageRef = useRef(false);
+  const closingTimelineRef = useRef<gsap.core.Timeline | null>(null);
   const [readyImageUrl, setReadyImageUrl] = useState<string>();
+  const [failedImageUrl, setFailedImageUrl] = useState<string>();
   const isImageReady = readyImageUrl === image.dataUrl;
+  const isImageFailed = failedImageUrl === image.dataUrl;
 
   useLayoutEffect(() => {
     const backdrop = backdropRef.current;
@@ -92,7 +95,10 @@ export const ChatImageLightbox = ({
         );
     }, surfaceRef);
 
-    return () => context.revert();
+    return () => {
+      closingTimelineRef.current?.kill();
+      context.revert();
+    };
   }, [reduceMotion]);
 
   useLayoutEffect(() => {
@@ -129,6 +135,9 @@ export const ChatImageLightbox = ({
         onComplete: () => gsap.set(imageElement, { clearProps: "willChange" }),
       },
     );
+    return () => {
+      gsap.killTweensOf(imageElement);
+    };
   }, [direction, image.dataUrl, isImageReady, reduceMotion]);
 
   useEffect(() => {
@@ -157,7 +166,7 @@ export const ChatImageLightbox = ({
     const backdrop = backdropRef.current;
     const imageElement = imageRef.current;
     const controls = controlsRef.current;
-    if (!backdrop || !imageElement || !controls || reduceMotion) {
+    if (!backdrop || !imageElement || !controls || reduceMotion || !isImageReady) {
       onClosed();
       return;
     }
@@ -170,6 +179,7 @@ export const ChatImageLightbox = ({
       : { x: 0, y: 4, scale: 0.975 };
 
     const timeline = gsap.timeline({ onComplete: onClosed, defaults: { overwrite: "auto" } });
+    closingTimelineRef.current = timeline;
     timeline
       .to(controls, {
         opacity: 0,
@@ -197,7 +207,7 @@ export const ChatImageLightbox = ({
         },
         0.04,
       );
-  }, [onClosed, originElement, reduceMotion]);
+  }, [isImageReady, onClosed, originElement, reduceMotion]);
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -222,7 +232,12 @@ export const ChatImageLightbox = ({
       }}
     >
       <div ref={surfaceRef} className="chat-image-preview-surface">
-        {!isImageReady ? (
+        {isImageFailed ? (
+          <div className="chat-image-preview-loading" role="alert">
+            <strong>图片无法打开</strong>
+            <small>文件可能已损坏，请关闭后重新发送。</small>
+          </div>
+        ) : !isImageReady ? (
           <div className="chat-image-preview-loading" role="status" aria-label="正在打开图片">
             <span aria-hidden="true" />
             <small>正在打开图片…</small>
@@ -240,6 +255,7 @@ export const ChatImageLightbox = ({
           style={{ opacity: 0 }}
           draggable={false}
           onLoad={(event) => markImageReady(event.currentTarget)}
+          onError={() => setFailedImageUrl(image.dataUrl)}
           onContextMenu={(event) => {
             event.preventDefault();
             onCopy(image.dataUrl);

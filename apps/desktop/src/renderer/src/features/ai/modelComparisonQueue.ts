@@ -32,6 +32,8 @@ export interface ModelComparisonResult {
   phase: ModelComparisonPhase;
   /** Only present after this model completed successfully. */
   elapsedMs?: number;
+  /** Active wall time, including startup/save/release; missing for legacy runs. */
+  wallElapsedMs?: number;
   processedAudioMs?: number;
   coveredAudioMs?: number;
   taskProgressPercent?: number;
@@ -147,6 +149,10 @@ const readStoredResults = (
                 ? "paused"
                 : "failed",
       elapsedMs: typeof result.elapsedMs === "number" ? Math.max(0, result.elapsedMs) : undefined,
+      wallElapsedMs:
+        typeof result.wallElapsedMs === "number" && Number.isFinite(result.wallElapsedMs)
+          ? Math.max(0, result.wallElapsedMs)
+          : undefined,
       processedAudioMs:
         typeof result.processedAudioMs === "number"
           ? Math.max(0, result.processedAudioMs)
@@ -822,6 +828,7 @@ export class ModelComparisonQueue {
             modelId,
             status,
             phase: status,
+            wallElapsedMs: stats?.totalElapsedMs ?? Math.round(performance.now() - startedAt),
             elapsedMs:
               status === "success"
                 ? (completed.transcriptionElapsedMs ?? Math.round(performance.now() - startedAt))

@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
@@ -12,6 +12,7 @@ import { AccountSessionStore } from "./account-session-store";
 import { registerIpcHandlers } from "./ipc";
 import { SettingsStore } from "./settings-store";
 import { ShortcutController } from "./shortcuts";
+import { registerPhoneMode } from "./phone-mode-service";
 import { SignalingClientBridge } from "./signaling-client";
 import { createTrayController } from "./tray";
 import { UpdateService } from "./updates";
@@ -75,6 +76,10 @@ if (!app.isPackaged && process.env.SHANGHAO_CAPTURE_PATH) {
   const capturePath = process.env.SHANGHAO_CAPTURE_PATH;
   const captureName = path.basename(capturePath, path.extname(capturePath));
   app.setPath("userData", path.join(path.dirname(capturePath), `.user-data-${captureName}`));
+  // Recording fallback must not reach the real Documents folder during capture QA.
+  const captureDocuments = path.join(path.dirname(capturePath), `.documents-${captureName}`);
+  mkdirSync(captureDocuments, { recursive: true });
+  app.setPath("documents", captureDocuments);
 }
 
 const showWindow = () => {
@@ -192,6 +197,7 @@ const prepareForQuit = (reason: string) => {
   aiRuntimeManager?.stop();
   freeTokenLocalLlmProvider?.stop();
   shortcutsController?.dispose();
+  diagnostics?.stop();
 
   if (tray && !tray.isDestroyed()) {
     tray.destroy();
@@ -377,6 +383,7 @@ const bootstrap = async (): Promise<void> => {
     (payload) => diagnostics?.writeLog(payload) ?? Promise.resolve(),
   );
   await shortcuts.configureGlobalMute(settings.globalMuteShortcut);
+  registerPhoneMode(() => mainWindow, settingsStore, shortcuts);
   await shortcuts.configurePushToTalk(settings.pushToTalkShortcut, settings.isPushToTalkEnabled);
   const overlay = new OverlayWindowController();
   const gameDetection = new GameDetectionController(
@@ -423,12 +430,14 @@ const bootstrap = async (): Promise<void> => {
     (payload) => diagnostics?.writeLog(payload) ?? Promise.resolve(),
     (input, init) => net.fetch(input, init),
     () => huggingFaceAccess.accessToken(),
-    [
-      path.join(app.getPath("userData"), "ai-models"),
-      path.join(app.getPath("appData"), "shanghao-desktop", "ai-models"),
-      path.join(app.getPath("appData"), "ShangHao", "ai-models"),
-      path.join(app.getPath("appData"), "上号", "ai-models"),
-    ],
+    !app.isPackaged && process.env.SHANGHAO_CAPTURE_PATH
+      ? []
+      : [
+          path.join(app.getPath("userData"), "ai-models"),
+          path.join(app.getPath("appData"), "shanghao-desktop", "ai-models"),
+          path.join(app.getPath("appData"), "ShangHao", "ai-models"),
+          path.join(app.getPath("appData"), "上号", "ai-models"),
+        ],
   );
   await aiModels.initialize(settings.aiProcessingMode, settings.aiAsrModel);
   updates.setBackgroundDownloadGuard(() => aiModels.shouldDeferBackgroundDownload());

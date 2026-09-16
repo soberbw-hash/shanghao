@@ -3,6 +3,19 @@ import { contextBridge, ipcRenderer } from "electron";
 import { IPC_CHANNELS, type DesktopApi } from "@private-voice/shared";
 
 const desktopApi: DesktopApi = {
+  phoneMode: {
+    get: () => ipcRenderer.invoke(IPC_CHANNELS.phoneMode.get),
+    set: (active) => ipcRenderer.invoke(IPC_CHANNELS.phoneMode.set, active),
+    devices: (devices) => ipcRenderer.invoke(IPC_CHANNELS.phoneMode.devices, devices),
+    configure: (shortcut, trigger) =>
+      ipcRenderer.invoke(IPC_CHANNELS.phoneMode.configure, shortcut, trigger),
+    onChanged: (listener) => {
+      const wrapped = (_event: Electron.IpcRendererEvent, state: Parameters<typeof listener>[0]) =>
+        listener(state);
+      ipcRenderer.on(IPC_CHANNELS.phoneMode.changed, wrapped);
+      return () => ipcRenderer.removeListener(IPC_CHANNELS.phoneMode.changed, wrapped);
+    },
+  },
   app: {
     getRuntimeInfo: () => ipcRenderer.invoke(IPC_CHANNELS.app.getRuntimeInfo),
     getSystemIdleSeconds: () => ipcRenderer.invoke(IPC_CHANNELS.app.getSystemIdleSeconds),

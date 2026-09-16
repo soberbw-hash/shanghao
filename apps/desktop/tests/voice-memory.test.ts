@@ -492,13 +492,15 @@ test("ASR status labels and repetitive hallucinations are not saved as speech", 
   assert.equal(parseVibeVoiceOutput("�������", "broken", 0).length, 0);
 });
 
-test("Mandarin-only ASR rejects foreign-script hallucinations", () => {
+test("ASR script guard preserves Latin text without treating language as proof of hallucination", () => {
   assert.equal(parseVibeVoiceOutput("왜 넌 이냐마", "korean-hallucination", 0).length, 0);
-  assert.equal(parseVibeVoiceOutput("Amor a vida.", "portuguese-hallucination", 0).length, 0);
+  // Without the source audio, Latin script alone cannot establish hallucination.
+  assert.equal(parseVibeVoiceOutput("Amor a vida.", "latin-output", 0).length, 1);
+  assert.equal(parseVibeVoiceOutput("Let's go.", "english-output", 0).length, 1);
   assert.equal(parseVibeVoiceOutput("我们上号打游戏，打开 Discord。", "mandarin", 0).length, 1);
 });
 
-test("legacy Chinese transcripts stay visible while foreign hallucinations remain blocked", () => {
+test("legacy Chinese and Latin transcripts are not invalidated by language alone", () => {
   const legacy = record();
   assert.equal(hasInvalidVoiceMemoryResult(legacy), false);
   assert.equal(
@@ -507,7 +509,7 @@ test("legacy Chinese transcripts stay visible while foreign hallucinations remai
       transcript: legacy.transcript.map((segment) => ({ ...segment, text: "Deixa eu pesquisar." })),
       transcriptionPipelineVersion: CURRENT_TRANSCRIPTION_PIPELINE_VERSION,
     }),
-    true,
+    false,
   );
 });
 

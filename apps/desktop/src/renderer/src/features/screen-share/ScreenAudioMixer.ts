@@ -4,6 +4,7 @@ import { writeRendererLog } from "../../utils/logger";
 export class ScreenAudioMixer {
   private context?: AudioContext;
   private mixedTrack?: MediaStreamTrack;
+  private revision = 0;
 
   hasActiveMix(): boolean {
     return Boolean(this.mixedTrack);
@@ -12,9 +13,9 @@ export class ScreenAudioMixer {
   async mix(
     microphoneTrack: MediaStreamTrack,
     systemAudioTrack: MediaStreamTrack,
+    connect?: (track: MediaStreamTrack) => Promise<void>,
   ): Promise<MediaStreamTrack | undefined> {
-    this.dispose();
-
+    const revision = ++this.revision;
     let context: AudioContext;
     try {
       context = new AudioContext({ latencyHint: "interactive", sampleRate: 32_000 });
@@ -22,33 +23,46 @@ export class ScreenAudioMixer {
       context = new AudioContext({ latencyHint: "interactive" });
     }
 
-    const destination = context.createMediaStreamDestination();
-    const microphoneSource = context.createMediaStreamSource(new MediaStream([microphoneTrack]));
-    const systemSource = context.createMediaStreamSource(new MediaStream([systemAudioTrack]));
-    const microphoneGain = context.createGain();
-    const systemGain = context.createGain();
-    microphoneGain.gain.value = 1;
-    systemGain.gain.value = 0.72;
-    microphoneSource.connect(microphoneGain).connect(destination);
-    systemSource.connect(systemGain).connect(destination);
+    let preparedTrack: MediaStreamTrack | undefined;
+    try {
+      const destination = context.createMediaStreamDestination();
+      const microphoneSource = context.createMediaStreamSource(new MediaStream([microphoneTrack]));
+      const systemSource = context.createMediaStreamSource(new MediaStream([systemAudioTrack]));
+      const microphoneGain = context.createGain();
+      const systemGain = context.createGain();
+      microphoneGain.gain.value = 1;
+      systemGain.gain.value = 0.72;
+      microphoneSource.connect(microphoneGain).connect(destination);
+      systemSource.connect(systemGain).connect(destination);
 
-    const mixedTrack = destination.stream.getAudioTracks()[0];
-    if (!mixedTrack) {
-      await context.close();
-      return undefined;
+      const mixedTrack = destination.stream.getAudioTracks()[0];
+      preparedTrack = mixedTrack;
+      if (!mixedTrack) {
+        await context.close();
+        return undefined;
+      }
+
+      mixedTrack.contentHint = "speech";
+      // Keep the previous graph alive until every sender accepts the replacement.
+      await connect?.(mixedTrack);
+      if (revision !== this.revision) throw new Error("screen_audio_mix_superseded");
+      this.dispose();
+      this.context = context;
+      this.mixedTrack = mixedTrack;
+      void writeRendererLog("audio", "info", "Screen system audio mixed with microphone", {
+        contextSampleRate: context.sampleRate,
+        systemTrackLabel: systemAudioTrack.label,
+      });
+      return mixedTrack;
+    } catch (error) {
+      preparedTrack?.stop();
+      await context.close().catch(() => undefined);
+      throw error;
     }
-
-    mixedTrack.contentHint = "speech";
-    this.context = context;
-    this.mixedTrack = mixedTrack;
-    void writeRendererLog("audio", "info", "Screen system audio mixed with microphone", {
-      contextSampleRate: context.sampleRate,
-      systemTrackLabel: systemAudioTrack.label,
-    });
-    return mixedTrack;
   }
 
   dispose(): void {
+    this.revision++;
     this.mixedTrack?.stop();
     this.mixedTrack = undefined;
     if (this.context) {

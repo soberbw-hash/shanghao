@@ -106,6 +106,7 @@ export interface RoomMember {
   isEmptySlot?: boolean;
   isMuted: boolean;
   isDeafened?: boolean;
+  callModeActive?: boolean;
   activity?: MemberActivity;
   sceneZone?: SceneZoneId;
   gameName?: string;

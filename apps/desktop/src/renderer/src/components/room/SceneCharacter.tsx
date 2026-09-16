@@ -42,6 +42,7 @@ import { SceneCharacterLabel } from "./SceneCharacterLabel";
 import { SceneReaction } from "./SceneReaction";
 import { Slider } from "../base/Slider";
 import { sceneMemberKey } from "./sceneMemberKey";
+import { writeRendererLog } from "../../utils/logger";
 
 export interface SceneCharacterQuickMessage {
   id: string;
@@ -329,6 +330,7 @@ const SceneCharacterView = ({
         element.style.opacity = String(targetOpacityRef.current);
         setDisplayZone(zone);
         setMotionPhase(zone === "restroomZone" ? "away-idle" : "idle");
+        onSettledRef.current?.(member.id, zone);
         return;
       }
 
@@ -372,25 +374,23 @@ const SceneCharacterView = ({
       // keeping the away-area scale for the entire walk and popping at the desk.
       if (previousZone === "restroomZone" && isSeatZone(zone)) setDisplayZone(zone);
       setMotionPhase(isFirstRoute ? "entering" : "walking");
+      const startingOpacity = window.getComputedStyle(element).opacity;
       const routeMotion = element.animate(
-        characterRouteKeyframes(route, !isFirstRoute || wasAlreadyMoving),
+        characterRouteKeyframes(route, wasAlreadyMoving && !isFirstRoute),
         {
           duration: route.duration * 1_000,
           fill: "forwards",
         },
       );
+      activeRouteAnimationRef.current = routeMotion;
       const opacityMotion = element.animate(
-        [
-          { opacity: window.getComputedStyle(element).opacity },
-          { opacity: targetOpacityRef.current },
-        ],
+        [{ opacity: startingOpacity }, { opacity: targetOpacityRef.current }],
         {
           duration: characterMotionTiming.routeOpacitySeconds * 1_000,
           easing: `cubic-bezier(${motionCurve.enter.join(", ")})`,
           fill: "forwards",
         },
       );
-      activeRouteAnimationRef.current = routeMotion;
       activeOpacityAnimationRef.current = opacityMotion;
       await Promise.race([
         routeMotion.finished.catch(() => undefined),
@@ -423,7 +423,23 @@ const SceneCharacterView = ({
       onSettledRef.current?.(member.id, zone);
     };
 
-    void travel();
+    void travel().catch((error: unknown) => {
+      if (!isCurrentOperation()) return;
+      // A rejected/unsupported animation must not leave the looping walking
+      // sprite running forever. Only the latest destination may settle.
+      void writeRendererLog("app", "warn", "Character travel failed; settling at destination", {
+        reason: error instanceof Error ? error.message : String(error),
+      });
+      stopActiveAnimations();
+      element.style.transform = sceneTransform(targetLeft, targetTop);
+      element.style.opacity = String(targetOpacityRef.current);
+      currentPositionRef.current = { left: targetLeft, top: targetTop };
+      lastZoneRef.current = zone;
+      activeTargetZoneRef.current = zone;
+      setDisplayZone(zone);
+      setMotionPhase(zone === "restroomZone" ? "away-idle" : "idle");
+      onSettledRef.current?.(member.id, zone);
+    });
     return () => {
       if (operationIdRef.current === operationId) operationIdRef.current += 1;
       stopActiveAnimations();

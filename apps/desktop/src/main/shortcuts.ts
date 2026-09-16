@@ -4,6 +4,7 @@ import { uIOhook, type UiohookMouseEvent } from "uiohook-napi";
 import { IPC_CHANNELS, type RendererLogPayload } from "@private-voice/shared";
 
 import { sendToWindow } from "./safe-web-contents";
+import { PhoneShortcut } from "./phone-shortcut";
 
 type ShortcutOwner = "mute" | "recording-marker" | "push-to-talk" | `quick-message:${number}`;
 
@@ -89,6 +90,58 @@ export class ShortcutController {
   private readonly mouseBindings = new Map<string, MouseShortcutBinding>();
   private mouseHookStarted = false;
   private mouseHookSuppressed = false;
+  private phoneBinding?: PhoneShortcut;
+  private phoneAccelerator = "";
+
+  private conflictsWithPhone(accelerator: string): boolean {
+    return Boolean(
+      accelerator && accelerator.toLowerCase() === this.phoneAccelerator.toLowerCase(),
+    );
+  }
+
+  configurePhone(
+    shortcut: string,
+    trigger: "hold" | "toggle",
+    change: (active?: boolean) => void,
+  ): void {
+    const normalized = shortcut.trim();
+    const next = normalized ? PhoneShortcut.parse(normalized, trigger, change) : undefined;
+    const mouse = parseMouseShortcut(normalized);
+    // The native hook owns both key-down and key-up for phone mode. Do not
+    // additionally reserve an Electron accelerator with a different key grammar.
+    if (mouse && this.mouseBindings.has(mouse.accelerator)) throw new Error("快捷键已被占用");
+    if (
+      normalized &&
+      [
+        this.currentMuteShortcut,
+        this.currentRecordingMarkerShortcut,
+        this.currentPushToTalkShortcut,
+        ...this.currentQuickMessageShortcuts.values(),
+      ].some((key) => key?.toLowerCase() === normalized.toLowerCase())
+    )
+      throw new Error("该快捷键已用于上号的其他功能，请先更改原快捷键");
+    const previous = this.phoneBinding;
+    this.phoneBinding = next;
+    if (next && !this.ensureMouseHook()) {
+      this.phoneBinding = previous;
+      throw new Error("全局快捷键监听启动失败");
+    }
+    if (previous) {
+      uIOhook.off("keydown", previous.keyDown);
+      uIOhook.off("keyup", previous.keyUp);
+      previous.reset();
+    }
+    this.phoneAccelerator = normalized;
+    if (next) {
+      uIOhook.on("keydown", next.keyDown);
+      uIOhook.on("keyup", next.keyUp);
+    }
+    this.stopMouseHookIfUnused();
+  }
+
+  resetPhonePress(): void {
+    this.phoneBinding?.reset();
+  }
 
   constructor(
     private readonly windowProvider: () => BrowserWindow | null,
@@ -96,12 +149,14 @@ export class ShortcutController {
   ) {}
 
   private readonly handleMouseDown = (event: UiohookMouseEvent): void => {
+    this.phoneBinding?.mouseDown(event);
     for (const binding of this.mouseBindings.values()) {
       if (matchesMouseShortcut(event, binding)) binding.onPress();
     }
   };
 
   private readonly handleMouseUp = (event: UiohookMouseEvent): void => {
+    this.phoneBinding?.mouseUp(event);
     for (const binding of this.mouseBindings.values()) {
       if (matchesMouseShortcut(event, binding)) binding.onRelease?.();
     }
@@ -129,7 +184,7 @@ export class ShortcutController {
   }
 
   private stopMouseHookIfUnused(): void {
-    if (this.mouseBindings.size > 0 || !this.mouseHookStarted) return;
+    if (this.phoneBinding || this.mouseBindings.size > 0 || !this.mouseHookStarted) return;
     this.stopMouseHook();
   }
 
@@ -154,6 +209,7 @@ export class ShortcutController {
     if (this.mouseHookSuppressed === suppressed) return;
     this.mouseHookSuppressed = suppressed;
     if (suppressed) {
+      if (this.phoneBinding) return; // Global key-up must remain alive during games.
       this.stopMouseHook();
       return;
     }
@@ -182,6 +238,7 @@ export class ShortcutController {
   ): boolean {
     const parsed = parseMouseShortcut(accelerator);
     if (!parsed) return false;
+    if (parseMouseShortcut(this.phoneAccelerator)?.accelerator === parsed.accelerator) return false;
     if (this.mouseBindings.has(parsed.accelerator)) return false;
     const binding: MouseShortcutBinding = { ...parsed, owner, onPress, onRelease };
     this.mouseBindings.set(parsed.accelerator, binding);
@@ -193,15 +250,23 @@ export class ShortcutController {
   }
 
   async configureGlobalMute(accelerator: string): Promise<boolean> {
-    this.removeBinding("mute", this.currentMuteShortcut);
-    this.currentMuteShortcut = undefined;
+    if (this.conflictsWithPhone(accelerator.trim())) return false;
+    const previous = this.currentMuteShortcut;
     const normalized = accelerator.trim();
-    if (!normalized) return false;
+    if (previous === normalized) return true;
+    if (!normalized) {
+      this.removeBinding("mute", previous);
+      this.currentMuteShortcut = undefined;
+      return false;
+    }
     if (parseMouseShortcut(normalized)) {
       const registered = this.addMouseBinding("mute", normalized, () => {
         sendToWindow(this.windowProvider(), IPC_CHANNELS.shortcuts.muteTriggered);
       });
-      if (registered) this.currentMuteShortcut = normalized;
+      if (registered) {
+        this.removeBinding("mute", previous);
+        this.currentMuteShortcut = normalized;
+      }
       return registered;
     }
     try {
@@ -209,6 +274,7 @@ export class ShortcutController {
         sendToWindow(this.windowProvider(), IPC_CHANNELS.shortcuts.muteTriggered);
       });
       if (!registered) throw new Error(`Failed to register global shortcut: ${normalized}`);
+      this.removeBinding("mute", previous);
       this.currentMuteShortcut = normalized;
       return true;
     } catch (error) {
@@ -226,15 +292,23 @@ export class ShortcutController {
   }
 
   async configureRecordingMarker(accelerator: string): Promise<boolean> {
-    this.removeBinding("recording-marker", this.currentRecordingMarkerShortcut);
-    this.currentRecordingMarkerShortcut = undefined;
+    if (this.conflictsWithPhone(accelerator.trim())) return false;
+    const previous = this.currentRecordingMarkerShortcut;
     const normalized = accelerator.trim();
-    if (!normalized) return false;
+    if (previous === normalized) return true;
+    if (!normalized) {
+      this.removeBinding("recording-marker", previous);
+      this.currentRecordingMarkerShortcut = undefined;
+      return false;
+    }
     if (parseMouseShortcut(normalized)) {
       const registered = this.addMouseBinding("recording-marker", normalized, () => {
         sendToWindow(this.windowProvider(), IPC_CHANNELS.shortcuts.recordingMarkerTriggered);
       });
-      if (registered) this.currentRecordingMarkerShortcut = normalized;
+      if (registered) {
+        this.removeBinding("recording-marker", previous);
+        this.currentRecordingMarkerShortcut = normalized;
+      }
       return registered;
     }
     try {
@@ -244,6 +318,7 @@ export class ShortcutController {
       if (!registered) {
         throw new Error(`Failed to register recording marker shortcut: ${normalized}`);
       }
+      this.removeBinding("recording-marker", previous);
       this.currentRecordingMarkerShortcut = normalized;
       return true;
     } catch (error) {
@@ -261,6 +336,7 @@ export class ShortcutController {
   }
 
   async configurePushToTalk(accelerator: string, enabled: boolean): Promise<boolean> {
+    if (enabled && this.conflictsWithPhone(accelerator.trim())) return false;
     this.removeBinding("push-to-talk", this.currentPushToTalkShortcut);
     this.currentPushToTalkShortcut = undefined;
     const normalized = accelerator.trim();
@@ -276,23 +352,30 @@ export class ShortcutController {
   }
 
   async configureQuickMessage(slot: number, accelerator: string): Promise<boolean> {
+    if (this.conflictsWithPhone(accelerator.trim())) return false;
     const owner = `quick-message:${slot}` as const;
     const previous = this.currentQuickMessageShortcuts.get(slot);
     const normalized = accelerator.trim();
     if (previous === normalized) return true;
-    this.removeBinding(owner, previous);
-    this.currentQuickMessageShortcuts.delete(slot);
-    if (!normalized) return false;
+    if (!normalized) {
+      this.removeBinding(owner, previous);
+      this.currentQuickMessageShortcuts.delete(slot);
+      return false;
+    }
     const send = () =>
       sendToWindow(this.windowProvider(), IPC_CHANNELS.shortcuts.quickMessageTriggered, slot);
     if (parseMouseShortcut(normalized)) {
       const registered = this.addMouseBinding(owner, normalized, send);
-      if (registered) this.currentQuickMessageShortcuts.set(slot, normalized);
+      if (registered) {
+        this.removeBinding(owner, previous);
+        this.currentQuickMessageShortcuts.set(slot, normalized);
+      }
       return registered;
     }
     try {
       const registered = globalShortcut.register(normalized, send);
       if (!registered) throw new Error(`Failed to register quick message shortcut: ${normalized}`);
+      this.removeBinding(owner, previous);
       this.currentQuickMessageShortcuts.set(slot, normalized);
       return true;
     } catch (error) {
@@ -311,6 +394,7 @@ export class ShortcutController {
   }
 
   dispose(): void {
+    this.configurePhone("", "hold", () => undefined);
     globalShortcut.unregisterAll();
     this.mouseBindings.clear();
     this.stopMouseHook();

@@ -14,6 +14,20 @@ import {
 } from "../src/main/recording-path";
 import { defaultSettings, migrateSettings } from "../src/main/settings-migration";
 
+test("capture recording fallback stays inside isolated Documents when preferred path fails", async () => {
+  const documents = path.resolve("test-artifacts", ".documents-asr-isolated");
+  const preferred = path.resolve("test-artifacts", "unusable-recordings");
+  const visited: string[] = [];
+  const result = await resolveUsableRecordingDirectory(preferred, documents, async (directory) => {
+    visited.push(directory);
+    if (directory === preferred) throw new Error("fixture_directory_unavailable");
+  });
+  const fallback = path.join(documents, RECORDING_DIRECTORY_NAME);
+  assert.equal(result, fallback);
+  assert.deepEqual(visited, [preferred, fallback]);
+  assert.equal(resolveRecordingDirectory(undefined, documents), fallback);
+});
+
 test("recording filenames use one readable sequence per day", () => {
   const createdAt = new Date(2026, 7, 13, 0, 47, 26);
   assert.equal(

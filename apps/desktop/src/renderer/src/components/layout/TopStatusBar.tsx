@@ -1,4 +1,4 @@
-import { Users, Wifi } from "lucide-react";
+import { Wifi } from "lucide-react";
 
 import { RoomConnectionState } from "@private-voice/shared";
 
@@ -144,10 +144,6 @@ export const TopStatusBar = ({
       </div>
       <div className="topbar-controls">
         <div className="topbar-metrics" aria-label="频道状态">
-          <div className="status-capsule topbar-metric">
-            <Users className="h-3 w-3" />
-            {room.memberCount}/5
-          </div>
           <div
             className={`connection-quality-capsule topbar-metric ${connectionQuality.level}`}
             title={connectionQuality.detail}

@@ -138,6 +138,7 @@ export const AudioControlPopover = ({
       initial="initial"
       animate={isOpen ? "open" : "closed"}
       aria-hidden={!isOpen}
+      inert={!isOpen}
       style={{ pointerEvents: isOpen ? "auto" : "none" }}
       onAnimationStart={() => {
         if (popoverRef.current) popoverRef.current.style.willChange = "transform, opacity";

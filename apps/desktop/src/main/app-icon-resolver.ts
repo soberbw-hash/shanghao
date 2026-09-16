@@ -5,9 +5,11 @@ import path from "node:path";
 import { app, nativeImage } from "electron";
 
 import type { AppIdentity } from "./app-identity-resolver";
+import { readLruCache, writeLruCache } from "./bounded-cache";
 import { platformService } from "./platform/PlatformService";
 
 const MAX_ACTIVITY_ICON_DATA_URL_LENGTH = 96_000;
+const MAX_CACHED_APP_ICONS = 64;
 
 export interface ResolvedAppIcon {
   dataUrl: string;
@@ -56,10 +58,10 @@ export class AppIconResolver {
 
   resolve(identity?: AppIdentity): Promise<ResolvedAppIcon | undefined> {
     if (!identity || !platformService.isWindows) return Promise.resolve(undefined);
-    const cached = this.cache.get(identity.key);
+    const cached = readLruCache(this.cache, identity.key);
     if (cached) return cached;
     const pending = this.resolveUncached(identity).catch(() => undefined);
-    this.cache.set(identity.key, pending);
+    writeLruCache(this.cache, identity.key, pending, MAX_CACHED_APP_ICONS);
     return pending;
   }
 

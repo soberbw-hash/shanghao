@@ -76,7 +76,7 @@ MAX_CONNECTIONS=100
 CHAT_HISTORY_FILE=${DATA_DIR}/chat-history.json
 RELAY_ACCESS_TOKEN=${relay_token}
 DEEPSEEK_API_BASE_URL=https://api.deepseek.com
-DEEPSEEK_MODEL=deepseek-v4-flash
+DEEPSEEK_MODEL=deepseek-flash
 EOF
   chown "${APP_USER}:${APP_USER}" "${ENV_FILE}"
   chmod 600 "${ENV_FILE}"

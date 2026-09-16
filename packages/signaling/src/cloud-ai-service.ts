@@ -49,7 +49,7 @@ export class CloudAiService {
         process.env.DEEPSEEK_API_BASE_URL?.trim() ||
         "https://api.deepseek.com",
     );
-    this.model = options.model?.trim() || process.env.DEEPSEEK_MODEL?.trim() || "deepseek-v4-flash";
+    this.model = options.model?.trim() || process.env.DEEPSEEK_MODEL?.trim() || "deepseek-flash";
     this.fetcher = options.fetcher ?? fetch;
   }
 

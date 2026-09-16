@@ -29,6 +29,7 @@ import {
 } from "@private-voice/shared";
 
 import { FlightRecorder } from "./flight-recorder";
+import { analyzeRuntimeHealthTrend } from "./runtime-health-trend";
 
 const execFileAsync = promisify(execFile);
 const MAX_LOG_FILE_BYTES = 10 * 1024 * 1024;
@@ -102,6 +103,8 @@ export class DiagnosticsService {
   };
   private logWriteQueue = Promise.resolve();
   private lastRuntimeHealthSnapshot?: RuntimeHealthSnapshot;
+  private readonly runtimeHealthHistory: RuntimeHealthSnapshot[] = [];
+  private lastRuntimeTrendSignature = "";
   private watchdogTimer?: NodeJS.Timeout;
   readonly flightRecorder = new FlightRecorder();
 
@@ -117,10 +120,39 @@ export class DiagnosticsService {
 
   setRuntimeHealthSnapshot(snapshot: RuntimeHealthSnapshot): void {
     this.lastRuntimeHealthSnapshot = snapshot;
+    this.runtimeHealthHistory.push(snapshot);
+    if (this.runtimeHealthHistory.length > 90) this.runtimeHealthHistory.shift();
+    const trend = analyzeRuntimeHealthTrend(this.runtimeHealthHistory);
+    const signature = trend.warnings.join("|");
+    if (signature && signature !== this.lastRuntimeTrendSignature) {
+      this.flightRecorder.record({
+        source: "main",
+        level: "warn",
+        event: "runtime_resource_growth_detected",
+        metrics: {
+          sampleCount: trend.sampleCount,
+          windowMs: trend.windowMs,
+          warnings: trend.warnings.join(","),
+        },
+      });
+    }
+    this.lastRuntimeTrendSignature = signature;
   }
 
   getRuntimeHealthSnapshot(): RuntimeHealthSnapshot | undefined {
     return this.lastRuntimeHealthSnapshot;
+  }
+
+  getRuntimeHealthHistory() {
+    return {
+      samples: [...this.runtimeHealthHistory],
+      trend: analyzeRuntimeHealthTrend(this.runtimeHealthHistory),
+    };
+  }
+
+  stop(): void {
+    if (this.watchdogTimer) clearInterval(this.watchdogTimer);
+    this.watchdogTimer = undefined;
   }
 
   setLastUpdateCheckMessage(message: string): void {

@@ -17,6 +17,7 @@ export type LocalModelRuntimeErrorCode =
   | "crash"
   | "timeout"
   | "empty_output"
+  | "output_truncated"
   | "parse_failed"
   | "no_reliable_speech"
   | "file_missing";
@@ -85,6 +86,8 @@ export const classifyLocalModelRuntimeError = (error: unknown): LocalModelRuntim
   if (/timeout/i.test(message)) return "timeout";
   if (/spawn/i.test(message)) return "spawn_failed";
   if (/empty_output/i.test(message)) return "empty_output";
+  if (/output[ _]truncated|decode hit the context\/generation cap/i.test(message))
+    return "output_truncated";
   if (/parse|invalid_json/i.test(message)) return "parse_failed";
   if (/no_reliable_speech/i.test(message)) return "no_reliable_speech";
   if (/runtime.*unavailable|runtime.*missing/i.test(message)) return "runtime_missing";

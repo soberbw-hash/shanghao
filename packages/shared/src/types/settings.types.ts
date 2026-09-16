@@ -32,6 +32,8 @@ export interface AppSettings {
   micEqualizerGains: MicEqualizerGains;
   lowCutFrequency: LowCutFrequency;
   globalMuteShortcut: string;
+  phoneModeShortcut?: string;
+  phoneModeTrigger?: "hold" | "toggle";
   pushToTalkShortcut: string;
   recordingMarkerShortcut: string;
   recordingSaveDirectory?: string;

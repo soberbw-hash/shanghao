@@ -26,7 +26,9 @@ test("renderer style entry remains an ordered composition instead of a God file"
 
 test("large orchestration entry points stay below reviewed growth ceilings", () => {
   const ceilings = {
-    "apps/desktop/src/renderer/src/features/room/roomClient.ts": 1_700,
+    // Reviewed: replacement/rollback implementation remains in the audio helper;
+    // the facade adds only its typed call and the missing-mix failure guard.
+    "apps/desktop/src/renderer/src/features/room/roomClient.ts": 1_708,
     "apps/desktop/src/renderer/src/pages/RoomPage.tsx": 1_515,
     // lineCount includes the final newline; these are the current reviewed
     // baselines, so any future growth fails until responsibility is extracted.
@@ -34,6 +36,8 @@ test("large orchestration entry points stay below reviewed growth ceilings", () 
     "apps/desktop/src/main/ai-model-manager.ts": 1_526,
     "apps/desktop/src/main/ai-runtime-manager.ts": 1_956,
     "packages/signaling/src/server.ts": 1_850,
+    "apps/desktop/src/renderer/src/pages/SettingsPage.tsx": 575,
+    "apps/desktop/src/renderer/src/components/settings/SettingsDiagnosticsSection.tsx": 300,
   } as const;
   for (const [relativePath, ceiling] of Object.entries(ceilings)) {
     assert.ok(
@@ -53,6 +57,8 @@ test("new 3.0 boundaries are explicit, typed and independently bounded", () => {
     "apps/desktop/src/renderer/src/features/visual-runtime/VisualRuntimeController.ts",
     "apps/desktop/src/renderer/src/features/visual-runtime/RoomAnimationScheduler.ts",
     "apps/desktop/src/renderer/src/features/visual-runtime/sceneFeatureRegistry.ts",
+    "apps/desktop/src/main/process-tree.ts",
+    "apps/desktop/src/main/runtime-health-trend.ts",
   ];
   for (const module of guardedModules) {
     assert.ok(lineCount(module) <= 500, `${module} must be split before it reaches 500 lines`);
