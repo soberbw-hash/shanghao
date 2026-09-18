@@ -76,6 +76,8 @@ export class UpdateService {
   private installStarted = false;
   private downloadStarted = false;
   private downloadReady = false;
+  private pendingBackgroundDownload = false;
+  private backgroundDownloadRetryTimer?: NodeJS.Timeout;
   private deferBackgroundDownload?: () => boolean;
   private installHandoffPromise?: Promise<void>;
 
@@ -201,17 +203,24 @@ export class UpdateService {
     }
     if (this.downloadReady || this.downloadStarted) return;
     if (!manual && this.deferBackgroundDownload?.()) {
+      this.pendingBackgroundDownload = true;
+      this.scheduleBackgroundDownloadRetry();
       this.emit({
         phase: "available",
+        deferred: true,
         message: "当前正在进行实时语音或屏幕分享，更新下载将在空闲时开始。",
         latestVersion: this.lastResult?.latestVersion,
         forceUpdate: this.lastResult?.forceUpdate,
       });
       return;
     }
+    this.pendingBackgroundDownload = false;
+    if (this.backgroundDownloadRetryTimer) clearTimeout(this.backgroundDownloadRetryTimer);
+    this.backgroundDownloadRetryTimer = undefined;
     this.downloadStarted = true;
     this.emit({
       phase: "downloading",
+      deferred: false,
       message: "正在准备更新…",
       percent: 0,
       latestVersion: this.lastResult?.latestVersion,
@@ -224,6 +233,20 @@ export class UpdateService {
       this.downloadStarted = false;
       throw error;
     }
+  }
+
+  private scheduleBackgroundDownloadRetry(): void {
+    if (this.backgroundDownloadRetryTimer || !this.pendingBackgroundDownload) return;
+    this.backgroundDownloadRetryTimer = setTimeout(() => {
+      this.backgroundDownloadRetryTimer = undefined;
+      if (!this.pendingBackgroundDownload) return;
+      void this.download(false).catch((error) => {
+        void this.log("warn", "deferred update download could not start", {
+          error: error instanceof Error ? error.message : String(error),
+        });
+      });
+    }, 5_000);
+    this.backgroundDownloadRetryTimer.unref();
   }
 
   async install(): Promise<void> {

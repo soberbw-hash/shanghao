@@ -732,6 +732,7 @@
 
 .room-character-label {
   position: absolute;
+  box-sizing: border-box;
   z-index: 4;
   left: 50%;
   top: 100%;
@@ -931,15 +932,23 @@
 
 .room-character-identity {
   display: flex;
+  min-height: 16px;
+  flex: 0 0 16px;
   gap: 4px;
 }
 
 .room-character-state {
   display: flex;
   width: 100%;
+  height: 16px;
+  flex: 0 0 16px;
   min-height: 16px;
   justify-content: center;
   gap: 4px;
+}
+
+.room-character-state.is-placeholder {
+  visibility: hidden;
 }
 
 .room-character-state-icon {

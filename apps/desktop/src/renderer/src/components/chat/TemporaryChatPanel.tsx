@@ -29,7 +29,7 @@ import {
   type ChatMessage,
 } from "@private-voice/shared";
 
-import { getAvatarSrc } from "../../utils/profile";
+import { ChatAccountAvatar } from "./ChatAccountAvatar";
 import {
   findFirstMessageUrl,
   formatCompactUrl,
@@ -46,7 +46,6 @@ import {
 import { motionDuration, motionEase } from "../../features/motion/motionSystem";
 import { useAppStore } from "../../store/appStore";
 import { useSettingsStore } from "../../store/settingsStore";
-import { AvatarPlaceholder } from "../base/AvatarPlaceholder";
 import { Button } from "../base/Button";
 import { Input } from "../base/Input";
 import { usePrefersReducedMotion } from "../../hooks/usePrefersReducedMotion";
@@ -584,8 +583,21 @@ export const TemporaryChatPanel = ({
         }}
       >
         <div className="chat-panel-header flex flex-col items-stretch gap-2 border-b border-[rgba(220,230,242,0.6)] pb-2.5">
-          <div className="chat-panel-title whitespace-nowrap text-[13px] font-semibold text-[#1a2332]">
-            聊天
+          <div className="chat-panel-title-row flex items-center justify-between gap-3">
+            <div className="chat-panel-title whitespace-nowrap text-[13px] font-semibold text-[#1a2332]">
+              聊天
+            </div>
+            {onOpenQuickMessageSettings ? (
+              <button
+                type="button"
+                className="chat-settings-button interactive-surface mr-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-[9px] border border-[rgba(220,230,242,0.8)] bg-white text-[#52657d] hover:bg-[#f5f7fb]"
+                aria-label="设置快捷消息"
+                title="设置快捷消息"
+                onClick={onOpenQuickMessageSettings}
+              >
+                <Settings2 className="h-3.5 w-3.5" />
+              </button>
+            ) : null}
           </div>
           <div className="chat-quick-actions flex min-w-0 flex-col items-end gap-1">
             <div className="chat-quick-replies flex justify-end gap-1">
@@ -632,17 +644,6 @@ export const TemporaryChatPanel = ({
                   );
                 })(),
               )}
-              {onOpenQuickMessageSettings ? (
-                <button
-                  type="button"
-                  className="chat-quick-reply interactive-surface rounded-[9px] border border-[rgba(220,230,242,0.8)] bg-white font-medium text-[#52657d] disabled:opacity-35 hover:bg-[#f5f7fb]"
-                  aria-label="设置快捷消息"
-                  title="设置快捷消息"
-                  onClick={onOpenQuickMessageSettings}
-                >
-                  <Settings2 className="h-3.5 w-3.5" />
-                </button>
-              ) : null}
             </div>
             {quickMusicItems.length ? (
               <div
@@ -760,12 +761,7 @@ export const TemporaryChatPanel = ({
                         {isGrouped ? (
                           <span className="chat-message-avatar-spacer h-7 w-7 shrink-0" />
                         ) : (
-                          <AvatarPlaceholder
-                            name={message.nickname}
-                            src={message.avatarDataUrl || getAvatarSrc(message.avatarId)}
-                            size="sm"
-                            className="chat-message-avatar mt-0.5 h-7 w-7 shrink-0 rounded-[10px]"
-                          />
+                          <ChatAccountAvatar message={message} />
                         )}
                         <div className="chat-message-copy flex min-w-0 max-w-[82%] flex-col items-start">
                           {!isGrouped || (message.isLocal && onRecall) ? (

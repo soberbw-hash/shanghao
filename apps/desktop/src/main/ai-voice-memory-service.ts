@@ -26,6 +26,7 @@ import {
   type VoiceMemoryProcessRequest,
   type VoiceMemoryQuestionRequest,
   type VoiceMemoryRecord,
+  type VoiceMemorySummary,
   type VoiceMemorySearchRequest,
   type VoiceMemorySearchResult,
   type VoiceMemorySpeakingObservation,
@@ -859,6 +860,10 @@ export class AiVoiceMemoryService {
 
   async list(): Promise<VoiceMemoryRecord[]> {
     return (await this.store.list()).map((record) => this.withTranscriptionModel(record));
+  }
+
+  async listSummaries(): Promise<VoiceMemorySummary[]> {
+    return this.store.listSummaries();
   }
 
   search(request: VoiceMemorySearchRequest): VoiceMemorySearchResult[] {
@@ -2008,6 +2013,9 @@ export class AiVoiceMemoryService {
           heartbeatAt: finishedAt,
           updatedAt: finishedAt,
         });
+        if (typeof this.store.appendTranscriptionUnit === "function") {
+          await this.store.appendTranscriptionUnit(record.recordingId, durableUnit);
+        }
         stats = statsFromTranscriptionUnits(totalDuration, units, record.transcript, stats);
         if (chunk.fatal) {
           record = await this.save({

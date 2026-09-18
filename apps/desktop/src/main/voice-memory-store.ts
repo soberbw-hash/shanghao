@@ -1,11 +1,15 @@
 import { createHash, randomUUID } from "node:crypto";
-import { mkdir, readFile, readdir, rename, rm, writeFile } from "node:fs/promises";
+import { appendFile, mkdir, readFile, readdir, rename, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 
 import {
+  evaluateVoiceMemoryTranscriptionValidity,
+  hasInvalidVoiceMemoryResult,
   mergeTranscriptIntoSentences,
   type VoiceMemoryRecord,
+  type VoiceMemorySummary,
+  type VoiceMemoryTranscriptionUnit,
   type VoiceMemorySearchRequest,
   type VoiceMemorySearchResult,
 } from "@private-voice/shared";
@@ -22,7 +26,14 @@ interface PersistedVoiceMemoryIndex {
 }
 
 const INDEX_FILE = "index.json";
+const SUMMARY_FILE = "summaries.json";
 const RECORD_DIRECTORY = "records";
+const TRANSCRIPTION_EVENT_DIRECTORY = "transcription-events";
+
+interface PersistedVoiceMemorySummaries {
+  schemaVersion: 1;
+  entries: VoiceMemorySummary[];
+}
 
 const normalize = (value: string): string =>
   value.normalize("NFKC").toLocaleLowerCase("zh-CN").replace(/\s+/g, " ").trim();
@@ -66,6 +77,7 @@ const scoreEntry = (entry: IndexedVoiceMemoryEntry, terms: string[]): number => 
 /** Stores one durable JSON document per recording and a compact searchable index. */
 export class VoiceMemoryStore {
   private index: PersistedVoiceMemoryIndex = { schemaVersion: 1, entries: [] };
+  private summaries: PersistedVoiceMemorySummaries = { schemaVersion: 1, entries: [] };
   private mutationQueue: Promise<void> = Promise.resolve();
 
   constructor(private readonly rootDirectory: string) {}
@@ -76,6 +88,19 @@ export class VoiceMemoryStore {
       schemaVersion: 1,
       entries: [],
     }));
+    this.summaries = await this.readJson<PersistedVoiceMemorySummaries>(this.summaryPath()).catch(
+      () => ({ schemaVersion: 1, entries: [] }),
+    );
+    if (!this.summaries.entries.length) {
+      const records = await this.list();
+      this.summaries = {
+        schemaVersion: 1,
+        entries: records.map((record) => toVoiceMemorySummary(record)),
+      };
+      if (this.summaries.entries.length) {
+        await atomicWrite(this.summaryPath(), JSON.stringify(this.summaries));
+      }
+    }
   }
 
   recordingIdFor(filePath: string): string {
@@ -92,8 +117,35 @@ export class VoiceMemoryStore {
     return this.mutate(async () => {
       const next = { ...record, updatedAt: new Date().toISOString() };
       await atomicWrite(this.recordPath(record.recordingId), JSON.stringify(next, null, 2));
+      this.summaries = {
+        schemaVersion: 1,
+        entries: [
+          toVoiceMemorySummary(next),
+          ...this.summaries.entries.filter((entry) => entry.recordingId !== next.recordingId),
+        ],
+      };
+      await atomicWrite(this.summaryPath(), JSON.stringify(this.summaries));
       await this.reindex(next);
       return next;
+    });
+  }
+
+  /** Appends a compact per-unit checkpoint for crash recovery and auditability. */
+  async appendTranscriptionUnit(
+    recordingId: string,
+    unit: VoiceMemoryTranscriptionUnit,
+  ): Promise<void> {
+    await this.mutate(async () => {
+      const directory = path.join(this.rootDirectory, TRANSCRIPTION_EVENT_DIRECTORY);
+      await mkdir(directory, { recursive: true });
+      const compactUnit = Object.fromEntries(
+        Object.entries(unit).filter(([key]) => key !== "rawRuntimeOutput"),
+      );
+      await appendFile(
+        path.join(directory, `${safeRecordingId(recordingId)}.ndjson`),
+        `${JSON.stringify({ recordedAt: new Date().toISOString(), unit: compactUnit })}\n`,
+        "utf8",
+      );
     });
   }
 
@@ -104,7 +156,12 @@ export class VoiceMemoryStore {
         schemaVersion: 1,
         entries: this.index.entries.filter((entry) => entry.recordingId !== recordingId),
       };
+      this.summaries = {
+        schemaVersion: 1,
+        entries: this.summaries.entries.filter((entry) => entry.recordingId !== recordingId),
+      };
       await atomicWrite(this.indexPath(), JSON.stringify(this.index));
+      await atomicWrite(this.summaryPath(), JSON.stringify(this.summaries));
     });
   }
 
@@ -120,6 +177,14 @@ export class VoiceMemoryStore {
         ),
     );
     return records.filter((record): record is VoiceMemoryRecord => Boolean(record));
+  }
+
+  async listSummaries(
+    options: { limit?: number; offset?: number } = {},
+  ): Promise<VoiceMemorySummary[]> {
+    const limit = Math.max(1, Math.min(200, options.limit ?? 100));
+    const offset = Math.max(0, options.offset ?? 0);
+    return this.summaries.entries.slice(offset, offset + limit).map((entry) => ({ ...entry }));
   }
 
   search(request: VoiceMemorySearchRequest): VoiceMemorySearchResult[] {
@@ -250,6 +315,10 @@ export class VoiceMemoryStore {
     return path.join(this.rootDirectory, INDEX_FILE);
   }
 
+  private summaryPath(): string {
+    return path.join(this.rootDirectory, SUMMARY_FILE);
+  }
+
   private async readJson<T>(filePath: string): Promise<T> {
     return JSON.parse(await readFile(filePath, "utf8")) as T;
   }
@@ -263,3 +332,36 @@ export class VoiceMemoryStore {
     return result;
   }
 }
+
+const toVoiceMemorySummary = (record: VoiceMemoryRecord): VoiceMemorySummary => {
+  const validity = evaluateVoiceMemoryTranscriptionValidity(
+    record.transcriptionStats,
+    record.transcriptionUnits,
+  );
+  return {
+    recordingId: record.recordingId,
+    filePath: record.filePath,
+    roomId: record.roomId,
+    roomName: record.roomName,
+    createdAt: record.createdAt,
+    updatedAt: record.updatedAt,
+    phase: record.phase,
+    progress: record.progress,
+    taskStatus: record.taskStatus,
+    processingStage: record.processingStage,
+    errorMessage: record.errorMessage,
+    transcriptionModel: record.transcriptionModel,
+    transcriptCount: record.transcript.length,
+    speakerCount: record.speakers.length,
+    chapterCount: record.chapters.length,
+    highlightCount: record.highlights.length,
+    markerCount: record.markerTitles.length,
+    transcriptionComplete:
+      validity.complete ||
+      (record.transcriptionStats === undefined &&
+        record.phase === "ready" &&
+        record.transcript.length > 0 &&
+        !hasInvalidVoiceMemoryResult(record)),
+    invalidResult: hasInvalidVoiceMemoryResult(record),
+  };
+};

@@ -21,8 +21,8 @@ import {
   SILENT_RECORDING_PEAK_DB,
 } from "../src/main/recording-cleanup";
 
-test("recording cleanup marks recordings below five minutes, silent media, or unreadable media", () => {
-  assert.equal(SHORT_RECORDING_MS, 5 * 60_000);
+test("recording cleanup marks recordings below ten seconds, silent media, or unreadable media", () => {
+  assert.equal(SHORT_RECORDING_MS, 10_000);
   assert.equal(SILENT_RECORDING_PEAK_DB, -60);
   assert.equal(
     parseRecordingProbeOutput("Duration: 00:00:08.40, start: 0.000000\nmax_volume: -12.0 dB", 0)
@@ -35,12 +35,12 @@ test("recording cleanup marks recordings below five minutes, silent media, or un
     "silent",
   );
   assert.equal(
-    parseRecordingProbeOutput("Duration: 00:04:59.99, start: 0.000000\nmax_volume: -8.0 dB", 0)
+    parseRecordingProbeOutput("Duration: 00:00:09.99, start: 0.000000\nmax_volume: -8.0 dB", 0)
       .reason,
     "too_short",
   );
   assert.equal(
-    parseRecordingProbeOutput("Duration: 00:05:00.00, start: 0.000000\nmax_volume: -8.0 dB", 0)
+    parseRecordingProbeOutput("Duration: 00:00:10.00, start: 0.000000\nmax_volume: -8.0 dB", 0)
       .reason,
     undefined,
   );
@@ -119,6 +119,28 @@ test("recording favorites persist locally without changing the audio file", asyn
     await setRecordingFavoriteInDirectory(directory, firstPath, false);
     library = await readRecordingLibraryFromDirectory(directory, 10);
     assert.equal(library.items.find((item) => item.filePath === firstPath)?.isFavorite, false);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("recording metadata mutations are serialized so simultaneous favorites are not lost", async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "shanghao-recording-metadata-queue-"));
+  try {
+    const firstPath = path.join(directory, "first.m4a");
+    const secondPath = path.join(directory, "second.m4a");
+    await writeFile(firstPath, Buffer.from([1]));
+    await writeFile(secondPath, Buffer.from([2]));
+    await readRecordingLibraryFromDirectory(directory, 10);
+
+    await Promise.all([
+      setRecordingFavoriteInDirectory(directory, firstPath, true),
+      setRecordingFavoriteInDirectory(directory, secondPath, true),
+    ]);
+
+    const items = (await readRecordingLibraryFromDirectory(directory, 10)).items;
+    assert.equal(items.find((item) => item.filePath === firstPath)?.isFavorite, true);
+    assert.equal(items.find((item) => item.filePath === secondPath)?.isFavorite, true);
   } finally {
     await rm(directory, { recursive: true, force: true });
   }

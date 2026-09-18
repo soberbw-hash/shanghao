@@ -7,13 +7,13 @@ import {
   planCharacterRoute,
   sceneEntryPoint,
 } from "../src/renderer/src/features/voice-scene/characterMotion";
-import { characterPositions } from "../src/renderer/src/features/voice-scene/sceneZones";
+import { characterPositions, seatSlots } from "../src/renderer/src/features/voice-scene/sceneZones";
 import {
   characterRouteKeyframes,
   readSceneUnit,
 } from "../src/renderer/src/features/voice-scene/characterMotionRuntime";
 
-test("same-row seat changes stay horizontal and last at least one second", () => {
+test("adjacent top-row seat changes stay direct and last at least one second", () => {
   const route = planCharacterRoute({
     kind: "move",
     from: characterPositions.gameDesk1,
@@ -63,7 +63,10 @@ test("a desk-blocked seat change uses the shortest visible detour", () => {
   assert.deepEqual(route.points.at(-1), characterPositions.gameDesk3);
   assert.equal(route.points[1]!.top > characterPositions.gameDesk2.top, true);
   assert.equal(route.points[2]!.top > characterPositions.gameDesk2.top, true);
-  assert.equal(route.length > 44, true);
+  assert.equal(
+    route.length > characterPositions.gameDesk3.left - characterPositions.gameDesk1.left,
+    true,
+  );
   assert.equal(new Set(route.points.map((point) => `${point.left}:${point.top}`)).size, 4);
   assert.equal(
     route.times.every((time, index) => index === 0 || time > route.times[index - 1]!),
@@ -94,7 +97,8 @@ test("away and exit routes use only the shortest required desk detour", () => {
     fromZone: "gameDesk2",
     toZone: "restroomZone",
   });
-  assert.equal(awayRoute.points.length, 2);
+  // The raised center desk now passes the first desk on its way to the door.
+  assert.equal(awayRoute.points.length, 3);
   assert.deepEqual(awayRoute.points[0], characterPositions.gameDesk2);
   assert.deepEqual(awayRoute.points.at(-1), characterPositions.restroomZone);
 
@@ -107,6 +111,45 @@ test("away and exit routes use only the shortest required desk detour", () => {
   assert.deepEqual(exitRoute.points, [characterPositions.restroomZone, { left: -9, top: 56 }]);
   assert.equal(exitRoute.strideDurationMs >= 430, true);
   assert.equal(exitRoute.strideDurationMs <= 500, true);
+});
+
+test("every new-layout seat and door route avoids unrelated desks and progresses monotonically", () => {
+  const zones = [...seatSlots.map((slot) => slot.id), "restroomZone" as const];
+  for (const fromZone of zones) {
+    for (const toZone of zones) {
+      if (fromZone === toZone) continue;
+      const route = planCharacterRoute({
+        kind: "move",
+        from: characterPositions[fromZone],
+        to: characterPositions[toZone],
+        fromZone,
+        toZone,
+      });
+      assert.deepEqual(route.points[0], characterPositions[fromZone]);
+      assert.deepEqual(route.points.at(-1), characterPositions[toZone]);
+      assert.equal(
+        route.times.every((time, index) => index === 0 || time > route.times[index - 1]!),
+        true,
+      );
+      for (let segment = 1; segment < route.points.length; segment += 1) {
+        const start = route.points[segment - 1]!;
+        const end = route.points[segment]!;
+        for (let sample = 1; sample < 100; sample += 1) {
+          const x = start.left + ((end.left - start.left) * sample) / 100;
+          const y = start.top + ((end.top - start.top) * sample) / 100;
+          for (const desk of seatSlots.filter(
+            (slot) => slot.id !== fromZone && slot.id !== toZone,
+          )) {
+            assert.equal(
+              x > desk.left - 8.8 && x < desk.left + 8.8 && y > desk.top - 10 && y < desk.top + 9.5,
+              false,
+              `${fromZone} -> ${toZone} crosses ${desk.id}`,
+            );
+          }
+        }
+      }
+    }
+  }
 });
 
 test("an interrupted route can leave the footprint it currently occupies", () => {

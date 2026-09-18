@@ -348,7 +348,7 @@ export const SettingsPage = ({ isActive = true }: { isActive?: boolean }) => {
           tone: "success",
           title: hidden ? "桌面图标标记已隐藏" : "桌面图标标记已恢复",
           description: hidden
-            ? "快捷方式小箭头和管理员盾牌已隐藏，软件仍会正常请求管理员权限。"
+            ? "快捷方式小箭头已隐藏；管理员盾牌仍由 Windows 正常显示。"
             : "已恢复修改前的 Windows 图标标记。",
         });
       })
@@ -385,8 +385,8 @@ export const SettingsPage = ({ isActive = true }: { isActive?: boolean }) => {
             />
           </SettingsItemRow>
           <SettingsItemRow
-            label="桌面图标标记"
-            description="隐藏 Windows 桌面所有快捷方式的小箭头和管理员盾牌；不删除图标，也不取消管理员启动。"
+            label="Windows 外观实验功能"
+            description="隐藏 Windows 桌面所有快捷方式的小箭头；此功能会影响整个 Windows，不会隐藏管理员盾牌。"
           >
             <div className="flex flex-wrap gap-2">
               <Button

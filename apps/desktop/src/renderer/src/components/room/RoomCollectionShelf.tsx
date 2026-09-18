@@ -2,6 +2,7 @@ import { Archive, Gamepad2, Image, Link2, StickyNote } from "lucide-react";
 
 import type { RoomCollectionItem } from "@private-voice/shared";
 import { cn } from "@private-voice/ui";
+import cabinetAsset from "../../assets/scenes/shanghao-room/cabinet.png";
 
 import {
   readRoomCollectionDragPayload,
@@ -98,6 +99,13 @@ export const RoomCollectionShelf = ({
         }}
       >
         <span className="room-collection-shelf-shadow" aria-hidden="true" />
+        <img
+          className="room-collection-shelf-art"
+          src={cabinetAsset}
+          alt=""
+          aria-hidden="true"
+          draggable={false}
+        />
         <span className="room-collection-shelf-body" aria-hidden="true">
           <span className="room-collection-shelf-top" />
           <span className="room-collection-shelf-display">

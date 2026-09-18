@@ -47,6 +47,26 @@ export interface RecordingExportPayload {
   targetFormat: "m4a-aac";
 }
 
+export interface RecordingStreamStartPayload {
+  sourceMimeType: string;
+}
+
+export interface RecordingStreamFinalizePayload {
+  sessionId: string;
+  sourceMimeType: string;
+  sampleRate: number;
+  suggestedFileName: string;
+  channels: number;
+  targetFormat: "m4a-aac";
+  durationMs: number;
+}
+
+export interface RecordingStreamStartResponse {
+  ok: boolean;
+  sessionId?: string;
+  errorMessage?: string;
+}
+
 export interface RecordingExportResponse {
   ok: boolean;
   recordingId?: string;

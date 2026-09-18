@@ -7,6 +7,12 @@ import { usePrefersReducedMotion } from "../../hooks/usePrefersReducedMotion";
 import { useVisibleInterval, useVisualVisibility } from "../../hooks/useVisualVisibility";
 import { resolveWeatherVisualTheme } from "../../features/weather/weatherTheme";
 import { useWeatherStore } from "../../features/weather/weatherStore";
+import windowAsset from "../../assets/scenes/shanghao-room/window-frame-v2.png";
+import dayView from "../../assets/scenes/shanghao-room/weather-day.png";
+import cloudyView from "../../assets/scenes/shanghao-room/weather-cloudy.png";
+import rainView from "../../assets/scenes/shanghao-room/weather-rain.png";
+import snowView from "../../assets/scenes/shanghao-room/weather-snow.png";
+import nightView from "../../assets/scenes/shanghao-room/weather-night.png";
 
 const REFRESH_INTERVAL_MS = 25 * 60 * 1_000;
 
@@ -50,6 +56,15 @@ export const DynamicWeatherWindow = ({
     : snapshot;
   const theme = resolveWeatherVisualTheme(isEnabled ? visualSnapshot : undefined);
   const isMotionPaused = reduceMotion || !isPageVisible;
+  const landscape = theme.hasSnow
+    ? snowView
+    : theme.hasRain
+      ? rainView
+      : theme.phase === "night"
+        ? nightView
+        : theme.scene === "overcast" || theme.hasFog
+          ? cloudyView
+          : dayView;
   const rainDrops = theme.scene === "heavy_rain" || theme.hasLightning ? 14 : 9;
   const snowflakes = 11;
   const temperatureLabel =
@@ -72,52 +87,42 @@ export const DynamicWeatherWindow = ({
       aria-label={`窗外${theme.label}${snapshot?.city ? `，${snapshot.city}` : ""}`}
       data-weather-source={snapshot?.source ?? "fallback"}
     >
+      <img
+        className="weather-window-art"
+        src={windowAsset}
+        alt=""
+        aria-hidden="true"
+        draggable={false}
+      />
       <div key={`${theme.scene}:${theme.phase}`} className="weather-window-view">
-        <div className="weather-sky-orb" />
-        <div className="weather-sunbeam" aria-hidden="true" />
-        <div className="weather-distant-silhouette">
-          <span />
-          <span />
-          <span />
-          <span />
-        </div>
-        <div className="weather-city-lights" aria-hidden="true">
-          {Array.from({ length: 14 }, (_, index) => (
-            <span key={index} style={{ "--weather-index": index } as CSSProperties} />
-          ))}
-        </div>
-        {theme.hasClouds ? (
+        <img className="weather-landscape" src={landscape} alt="" aria-hidden="true" />
+        {isEnabled ? <span className="weather-atmosphere-glow" aria-hidden="true" /> : null}
+        {isEnabled && theme.hasClouds ? (
           <div className="weather-cloud-layer" aria-hidden="true">
             <span className="weather-cloud weather-cloud-one" />
             <span className="weather-cloud weather-cloud-two" />
           </div>
         ) : null}
-        {theme.hasRain ? (
+        {isEnabled && theme.hasRain ? (
           <div className="weather-rain-layer" aria-hidden="true">
             {Array.from({ length: rainDrops }, (_, index) => (
               <span key={index} style={{ "--weather-index": index } as CSSProperties} />
             ))}
           </div>
         ) : null}
-        {theme.hasSnow ? (
+        {isEnabled && theme.hasSnow ? (
           <div className="weather-snow-layer" aria-hidden="true">
             {Array.from({ length: snowflakes }, (_, index) => (
               <span key={index} style={{ "--weather-index": index } as CSSProperties} />
             ))}
           </div>
         ) : null}
-        {theme.hasFog ? <div className="weather-fog-layer" aria-hidden="true" /> : null}
-        {theme.hasLightning ? <div className="weather-lightning" aria-hidden="true" /> : null}
-      </div>
-      <div className="weather-window-frame" aria-hidden="true">
-        <span className="weather-window-mullion" />
-        <span className="weather-window-sill" />
-      </div>
-      <div className="weather-window-plants" aria-hidden="true">
-        <span className="weather-plant-shadow weather-plant-shadow-left" />
-        <span className="weather-plant-shadow weather-plant-shadow-right" />
-        <span className="weather-plant weather-plant-left" />
-        <span className="weather-plant weather-plant-right" />
+        {isEnabled && theme.hasFog ? (
+          <div className="weather-fog-layer" aria-hidden="true" />
+        ) : null}
+        {isEnabled && theme.hasLightning ? (
+          <div className="weather-lightning" aria-hidden="true" />
+        ) : null}
       </div>
       <span className="scene-ambient-tooltip weather-window-tooltip" aria-hidden="true">
         {weatherTooltip}

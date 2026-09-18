@@ -1,5 +1,7 @@
 import type { ScreenShareViewerSignal } from "@private-voice/shared";
 
+export const MAX_PENDING_SCREEN_SHARE_ICE_CANDIDATES = 64;
+
 interface DetachedScreenSharePublisherOptions {
   sessionId: string;
   title: string;
@@ -76,7 +78,12 @@ export class DetachedScreenSharePublisher {
         sdpMLineIndex: signal.sdpMLineIndex,
       };
       if (this.peer.remoteDescription) await this.peer.addIceCandidate(candidate);
-      else this.pendingCandidates.push(candidate);
+      else {
+        if (this.pendingCandidates.length >= MAX_PENDING_SCREEN_SHARE_ICE_CANDIDATES) {
+          this.pendingCandidates.shift();
+        }
+        this.pendingCandidates.push(candidate);
+      }
     }
   }
 

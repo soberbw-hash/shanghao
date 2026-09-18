@@ -533,7 +533,7 @@ test("chat messages are uniformly left aligned with avatar and no per-message cl
   );
   assert.equal(source.includes('message.isLocal ? "justify-end"'), false);
   assert.equal(source.includes("formatMessageTime"), false);
-  assert.equal(source.includes("AvatarPlaceholder"), true);
+  assert.equal(source.includes("ChatAccountAvatar"), true);
   assert.equal(source.includes("chat-date-divider"), true);
   assert.equal(source.includes("animateSendFeedback"), true);
   assert.equal(source.includes('clearProps: "transform,opacity,visibility"'), true);

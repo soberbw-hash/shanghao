@@ -17,6 +17,9 @@ import type { RoomMember } from "./room.types";
 import type {
   RecordingExportPayload,
   RecordingExportResponse,
+  RecordingStreamFinalizePayload,
+  RecordingStreamStartPayload,
+  RecordingStreamStartResponse,
   RecordingAutomaticCleanupResult,
   RecordingBatchDeleteResult,
   RecordingCleanupProgress,
@@ -47,6 +50,7 @@ import type {
   VoiceMemoryProcessRequest,
   VoiceMemoryQuestionRequest,
   VoiceMemoryRecord,
+  VoiceMemorySummary,
   VoiceMemorySearchRequest,
   VoiceMemorySearchResult,
 } from "./ai.types";
@@ -333,7 +337,7 @@ export interface DesktopApi {
     controlModel: (modelId: AiModelId, action: AiModelAction) => Promise<AiVoiceMemorySnapshot>;
     getRuntimeStatus: () => Promise<AiRuntimeStatus>;
     getVoiceMemory: (recordingId: string) => Promise<VoiceMemoryRecord | undefined>;
-    listVoiceMemories: () => Promise<VoiceMemoryRecord[]>;
+    listVoiceMemories: () => Promise<VoiceMemorySummary[]>;
     processRecording: (request: VoiceMemoryProcessRequest) => Promise<VoiceMemoryRecord>;
     selectTranscription: (recordingId: string, modelId: AiAsrModelId) => Promise<VoiceMemoryRecord>;
     clearTranscriptionResults: (recordingId: string) => Promise<VoiceMemoryRecord>;
@@ -429,6 +433,10 @@ export interface DesktopApi {
   };
   recording: {
     export: (payload: RecordingExportPayload) => Promise<RecordingExportResponse>;
+    startSession: (payload: RecordingStreamStartPayload) => Promise<RecordingStreamStartResponse>;
+    appendChunk: (sessionId: string, buffer: ArrayBuffer) => Promise<void>;
+    finalizeSession: (payload: RecordingStreamFinalizePayload) => Promise<RecordingExportResponse>;
+    abortSession: (sessionId: string) => Promise<void>;
     saveSpeakerSegment: (
       payload: RecordingSpeakerSegmentPayload,
     ) => Promise<RecordingSpeakerSegmentResponse>;

@@ -1,0 +1,419 @@
+/* Supplied furniture stays in independent layers. Coordinates belong to TeamIsland. */
+.team-island {
+  container-type: size;
+  min-height: 0;
+  background: #e9f2fb;
+}
+.scene-coordinate-space {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: max(100cqw, 123.75cqh);
+  height: max(62.6263cqw, 77.5cqh);
+  transform: translate(-50%, -50%);
+  container-type: size;
+  isolation: isolate;
+}
+.scene-extended-environment {
+  position: absolute;
+  pointer-events: none;
+  left: 0;
+  top: -14.5161%;
+  width: 100%;
+  height: 129.0323%;
+  background-position: center;
+  background-size: 100% 100%;
+  background-repeat: no-repeat;
+}
+.team-island-stage {
+  background: transparent;
+}
+.scene-foreground-leaves {
+  position: absolute;
+  pointer-events: none;
+  z-index: 45;
+  left: 0;
+  top: -14.5161%;
+  width: 100%;
+  height: 129.0323%;
+}
+.scene-wall-backdrop,
+.scene-window-light,
+.scene-rug,
+.scene-brand-arc {
+  display: none;
+}
+.scene-window-nook {
+  left: -1%;
+  top: -7%;
+  width: 35%;
+  height: auto;
+  aspect-ratio: 4 / 3;
+  opacity: 1;
+  filter: drop-shadow(4px 9px 7px rgba(49, 78, 123, 0.22));
+}
+.dynamic-weather-window {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  overflow: visible;
+}
+.weather-window-art,
+.room-date-calendar-art,
+.scene-wall-clock-art,
+.room-collection-shelf-art {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  pointer-events: none;
+  user-select: none;
+}
+.weather-window-art {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+}
+/* The frame has transparent panes; scenery and motion live behind the mullion. */
+.dynamic-weather-window .weather-window-view {
+  inset: 27.8% 9.6% 35.8% 10.5%;
+  z-index: 1;
+  border-radius: 8%;
+  background: transparent;
+  animation: none;
+  will-change: auto;
+}
+.weather-landscape {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.weather-phase-night:not(.weather-scene-clear):not(.weather-scene-partly_cloudy)
+  .weather-landscape {
+  filter: brightness(0.6) saturate(0.8);
+}
+.weather-phase-dusk .weather-landscape,
+.weather-phase-dawn .weather-landscape {
+  filter: sepia(0.2) saturate(0.8);
+}
+.weather-atmosphere-glow {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: radial-gradient(ellipse at 75% 25%, rgba(255, 240, 196, 0.16), transparent 65%);
+  animation: weather-light-breathe 8s ease-in-out infinite alternate;
+}
+@keyframes weather-light-breathe {
+  from {
+    opacity: 0.25;
+  }
+  to {
+    opacity: 0.9;
+  }
+}
+.dynamic-weather-window.is-motion-paused .weather-atmosphere-glow {
+  animation: none;
+}
+.scene-ceiling-curtain {
+  position: absolute;
+  z-index: 12;
+  pointer-events: none;
+  left: -1%;
+  top: -22%;
+  width: 12%;
+  height: 50%;
+  object-fit: contain;
+  object-position: left bottom;
+  filter: drop-shadow(4px 5px 5px rgba(49, 78, 123, 0.12));
+}
+.dynamic-weather-window .weather-window-frame,
+.dynamic-weather-window .weather-window-plants,
+.dynamic-weather-window .weather-sky-orb,
+.dynamic-weather-window .weather-sunbeam,
+.dynamic-weather-window .weather-distant-silhouette,
+.dynamic-weather-window .weather-city-lights {
+  display: none;
+}
+.room-date-calendar {
+  left: 49%;
+  top: 3%;
+  width: 9%;
+  aspect-ratio: 3 / 4;
+  transform: translateX(-50%);
+  color: #405f78;
+}
+.room-date-calendar-art {
+  position: absolute;
+  inset: 0;
+  filter: brightness(0.94) saturate(0.88) drop-shadow(3px 9px 5px rgba(49, 78, 123, 0.3));
+}
+.room-date-calendar-paper,
+.room-date-calendar:hover .room-date-calendar-paper {
+  position: absolute;
+  inset: 32% 13% 15%;
+  border: 0;
+  border-radius: 0 0 8% 8%;
+  background: transparent;
+  box-shadow: none;
+  transform: none;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+.room-date-calendar-rings {
+  display: none;
+}
+.room-date-calendar-head {
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+}
+.room-date-calendar-month {
+  font-size: clamp(6px, 0.7cqw, 10px);
+  line-height: 1.4;
+}
+.room-date-calendar-today {
+  min-height: 0;
+  padding: 2px 0;
+  gap: 3px;
+}
+.room-date-calendar-today strong {
+  font-size: clamp(18px, 2.8cqw, 38px);
+  line-height: 1;
+}
+.room-date-calendar-today span {
+  font-size: clamp(5px, 0.6cqw, 8px);
+}
+.scene-wall-clock {
+  right: 17%;
+  top: 4%;
+  width: 10%;
+  opacity: 1;
+  filter: brightness(0.94) saturate(0.88) drop-shadow(3px 9px 6px rgba(49, 78, 123, 0.28));
+}
+.scene-wall-clock-content {
+  aspect-ratio: 1;
+}
+/* Cover baked pointers inside the face while retaining the supplied rim and ticks. */
+.scene-clock-hands {
+  position: absolute;
+  left: 50%;
+  top: 49%;
+  width: 54%;
+  height: 54%;
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  background: radial-gradient(ellipse at 66% 35%, #eef3fa, #dfe8f5);
+  pointer-events: none;
+}
+.scene-clock-hand {
+  position: absolute;
+  bottom: 50%;
+  left: 50%;
+  display: block;
+  width: 2px;
+  border-radius: 999px;
+  transform-origin: 50% 100%;
+}
+.scene-clock-hand-hour {
+  height: 33%;
+  background: #567ba5;
+}
+.scene-clock-hand-minute {
+  height: 45%;
+  background: #668ebc;
+}
+.scene-clock-hand-second {
+  width: 1px;
+  height: 46%;
+  background: #e8b459;
+}
+.scene-clock-hands b {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: #f4c35f;
+  transform: translate(-50%, -50%);
+}
+.scene-workstation {
+  width: 18%;
+  height: auto;
+  aspect-ratio: 4 / 3;
+}
+.scene-workstation-art-frame,
+.scene-workstation.is-hovered .scene-workstation-art-frame,
+.scene-workstation.is-current .scene-workstation-art-frame {
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  aspect-ratio: 4 / 3;
+  filter: drop-shadow(4px 7px 5px rgba(47, 76, 120, 0.22));
+}
+.scene-workstation-art {
+  object-fit: contain;
+  filter: brightness(0.91) saturate(0.85);
+}
+/* Measured against the 1448 x 1086 source, not the previous CSS monitor. */
+.scene-workstation .scene-workstation-screen {
+  left: 27%;
+  top: 14.9%;
+  width: 45.8%;
+  height: 34.8%;
+  border: 0;
+  border-radius: 8% / 14%;
+  padding: 0;
+  font-size: clamp(5px, 0.6cqw, 9px);
+  background: transparent;
+  box-shadow: none;
+  transform: none;
+}
+.scene-workstation .scene-workstation-screen.online {
+  background: #b9d8f5;
+}
+.scene-workstation .scene-workstation-screen.gaming {
+  background: #172944;
+}
+.scene-desk-shadow {
+  display: block;
+  left: 15%;
+  right: 9%;
+  bottom: 0;
+  height: 15%;
+  background: radial-gradient(ellipse, rgba(39, 64, 105, 0.32), transparent 72%);
+  filter: blur(5px);
+}
+.scene-coordinate-space .scene-seat-marker {
+  opacity: 0;
+}
+.scene-coordinate-space .scene-seat-marker.is-hovered {
+  opacity: 0.65;
+}
+.scene-service-restroom {
+  z-index: 3;
+  left: 9%;
+  top: 71%;
+  width: 16%;
+  min-width: 0;
+  height: 30%;
+  border: 0;
+  background: none;
+  box-shadow: none;
+}
+.scene-service-restroom .scene-exit-door {
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  transform: none;
+  opacity: 1;
+  filter: brightness(0.88) saturate(0.8) drop-shadow(5px 8px 6px rgba(49, 78, 123, 0.24));
+}
+.scene-service-restroom.is-hovered .scene-exit-door,
+.scene-service-restroom.is-current .scene-exit-door {
+  transform: scale(1.025);
+  opacity: 1;
+}
+.scene-service-restroom .scene-exit-label {
+  top: 100%;
+}
+.room-collection-shelf-position {
+  right: 3%;
+  bottom: 7%;
+  width: 18%;
+  aspect-ratio: 4 / 3;
+}
+.room-collection-shelf {
+  opacity: 1;
+}
+.room-collection-shelf-art {
+  position: absolute;
+  inset: 0;
+  filter: brightness(0.9) saturate(0.82) drop-shadow(5px 10px 5px rgba(49, 78, 123, 0.24));
+}
+.room-collection-shelf-body {
+  inset: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+.room-collection-shelf-top,
+.room-collection-shelf-board,
+.room-collection-shelf-base,
+.room-collection-empty-objects,
+.room-collection-decorative-books,
+.room-collection-shelf-shadow {
+  display: none;
+}
+.room-collection-shelf-display {
+  background: transparent;
+  box-shadow: none;
+}
+.team-island .room-character-label {
+  margin-top: calc(1px + var(--label-offset-y));
+  padding-block: 4px;
+  background: rgba(250, 252, 255, 0.96);
+  gap: 2px;
+  border-radius: 10px;
+  min-width: 112px;
+  box-shadow: 0 4px 10px rgba(47, 76, 120, 0.14);
+}
+.team-island .room-character-state {
+  color: #58728e;
+  font-size: 10px;
+  line-height: 14px;
+  min-height: 14px;
+  height: 14px;
+  flex-basis: 14px;
+}
+
+.team-island .room-character-label.speaking .room-character-state {
+  color: #3184c6;
+}
+.team-island .room-character-label.muted .room-character-state {
+  color: #ce4857;
+}
+.room-page {
+  gap: 10px;
+  padding: 8px 12px 10px;
+}
+.room-page .room-topbar {
+  padding-block: 8px;
+  border-radius: var(--sg-radius-lg, 20px);
+}
+.room-main-grid {
+  gap: 10px;
+}
+.room-chat-column {
+  min-width: 0;
+}
+.room-page .voice-dock {
+  padding: 7px 24px 7px 10px;
+  border-radius: var(--sg-radius-lg, 20px);
+}
+.room-page .voice-primary-controls {
+  gap: 8px;
+}
+.room-page .voice-segmented-main {
+  padding-inline: 12px;
+  min-height: 36px;
+}
+.room-page .voice-segmented-control {
+  min-height: 36px;
+}
+.room-page .island-panel {
+  border-color: rgba(176, 199, 229, 0.3);
+}
+/* Preserve separation between the first-row nameplates and rear monitors on short windows. */
+@container (max-height: 600px) {
+  .scene-character-anchor {
+    transform: scale(calc(var(--character-scale) * 0.82));
+    transform-origin: center top;
+  }
+}

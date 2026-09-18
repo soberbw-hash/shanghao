@@ -296,6 +296,7 @@ body::before {
 }
 
 .room-character-label {
+  box-sizing: border-box;
   width: 148px;
   min-width: 148px;
   max-width: 148px;
@@ -307,6 +308,8 @@ body::before {
   align-items: baseline;
   justify-content: center;
   width: 100%;
+  min-height: 16px;
+  flex: 0 0 16px;
   gap: 6px;
   white-space: nowrap;
 }
@@ -339,6 +342,8 @@ body::before {
 }
 
 .room-character-state {
+  height: 16px;
+  flex: 0 0 16px;
   min-height: 16px;
 }
 

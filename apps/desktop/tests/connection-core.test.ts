@@ -14,6 +14,8 @@ test("webrtc prefers domestic stun and buffers early ICE candidates", () => {
   assert.equal(source.includes("stun:stun.chat.bilibili.com:3478"), true);
   assert.equal(source.includes("pendingIceCandidates"), true);
   assert.equal(source.includes("flushPendingIceCandidates"), true);
+  assert.equal(source.includes("MAX_PENDING_ICE_CANDIDATES = 64"), true);
+  assert.equal(source.includes('reason: "queue_limit"'), true);
 });
 
 test("webrtc voice and screen transport adapt to weak networks", () => {

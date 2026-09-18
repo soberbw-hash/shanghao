@@ -10,6 +10,7 @@ import {
   type RecordingSourceIdentity,
 } from "../features/recording/mixRoomAudio";
 import { getRemoteAudioMixer } from "../features/audio/RemoteAudioMixer";
+import { createRecordingTopologyGuard } from "../features/recording/recordingTopology";
 import { useRecordingStore } from "../store/recordingStore";
 import { useRoomStore } from "../store/roomStore";
 import { writeRendererLog } from "../utils/logger";
@@ -52,6 +53,13 @@ const getRecordingRuntime = (): RecordingRuntime => {
           });
         },
       },
+      streamingExporter: {
+        startSession: (payload) => window.desktopApi.recording.startSession(payload),
+        appendChunk: (sessionId, buffer) =>
+          window.desktopApi.recording.appendChunk(sessionId, buffer),
+        finalizeSession: (payload) => window.desktopApi.recording.finalizeSession(payload),
+        abortSession: (sessionId) => window.desktopApi.recording.abortSession(sessionId),
+      },
       onStateChange: (snapshot) => useRecordingStore.getState().setStatus(snapshot),
       logger: (message, context) => {
         void writeRendererLog("recording", "info", message, context);
@@ -81,17 +89,44 @@ const recordingSourceIdentities = (): Record<string, RecordingSourceIdentity> =>
 };
 
 export const useRecordingController = () => {
-  const localStream = useRoomStore((state) => state.localStream);
-  const remoteStreamsByPeer = useRoomStore((state) => state.remoteStreams);
-  const members = useRoomStore((state) => state.room.members);
   const setStatus = useRecordingStore((state) => state.setStatus);
   const addHistory = useRecordingStore((state) => state.addHistory);
   const runtime = useMemo(getRecordingRuntime, []);
   const recordingService = runtime.service;
 
   useEffect(() => {
-    runtime.mix?.sync(localStream, remoteStreamsByPeer, recordingSourceIdentities());
-  }, [localStream, members, remoteStreamsByPeer, runtime]);
+    const changed = createRecordingTopologyGuard();
+    let removeMediaListeners = () => {};
+    const sync = () => {
+      const state = useRoomStore.getState();
+      if (!changed(state)) return;
+      removeMediaListeners();
+      const streams = new Set(
+        [state.localStream, ...Object.values(state.remoteStreams)].filter(
+          (stream): stream is MediaStream => Boolean(stream),
+        ),
+      );
+      const cleanup: Array<() => void> = [];
+      for (const stream of streams) {
+        for (const event of ["addtrack", "removetrack"]) {
+          stream.addEventListener(event, sync);
+          cleanup.push(() => stream.removeEventListener(event, sync));
+        }
+        for (const track of stream.getAudioTracks()) {
+          track.addEventListener("ended", sync);
+          cleanup.push(() => track.removeEventListener("ended", sync));
+        }
+      }
+      removeMediaListeners = () => cleanup.forEach((remove) => remove());
+      runtime.mix?.sync(state.localStream, state.remoteStreams, recordingSourceIdentities());
+    };
+    sync();
+    const unsubscribe = useRoomStore.subscribe(sync);
+    return () => {
+      unsubscribe();
+      removeMediaListeners();
+    };
+  }, [runtime]);
 
   useEffect(() => {
     // This is part of the recording pipeline, not a user preference. Reassert it for a

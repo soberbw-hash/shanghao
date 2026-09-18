@@ -21,6 +21,7 @@ import { useAppStore } from "../store/appStore";
 import { useRoomStore } from "../store/roomStore";
 import { useSettingsStore } from "../store/settingsStore";
 import { useAccountStore } from "../store/accountStore";
+import { ACCOUNT_AVATAR_PRESETS } from "../features/account/accountAvatarPresets";
 import { writeRendererLog } from "../utils/logger";
 import { StartupRecoveryPage } from "../components/status/StartupRecoveryPage";
 import { StartupSplashPage } from "../components/status/StartupSplashPage";
@@ -148,7 +149,10 @@ export const App = () => {
       userId: accountSnapshot.profile?.userId ?? accountSnapshot.guestId,
       username: accountSnapshot.profile?.username,
       displayName: accountSnapshot.profile?.displayName,
-      avatarUrl: accountSnapshot.profile?.avatarUrl,
+      avatarUrl:
+        accountSnapshot.profile?.avatarUrl ??
+        ACCOUNT_AVATAR_PRESETS.find((preset) => preset.id === settings.accountAvatarPresetId)
+          ?.source,
       isGuest: accountSnapshot.status === "guest",
       nickname: accountSnapshot.profile?.displayName ?? settings.nickname,
       avatarPath: settings.avatarPath,

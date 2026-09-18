@@ -132,6 +132,13 @@ test("screen pressure preserves at least 24 FPS and fallback is video-capable", 
     new URL("../src/renderer/src/components/room/ScreenSharePanel.tsx", import.meta.url),
     "utf8",
   );
+  const detachedPublisherSource = readFileSync(
+    new URL(
+      "../src/renderer/src/features/screen-share/DetachedScreenSharePublisher.ts",
+      import.meta.url,
+    ),
+    "utf8",
+  );
 
   assert.match(peerSource, /constrained:[\s\S]*screenMaxFramerate: 30/);
   assert.match(peerSource, /critical:[\s\S]*screenMaxFramerate: 24/);
@@ -147,6 +154,8 @@ test("screen pressure preserves at least 24 FPS and fallback is video-capable", 
   assert.match(relaySource, /toDataURL\("image\/webp"/);
   assert.match(panelSource, /网络受限 · 备用画面/);
   assert.match(panelSource, /framesPerSecond/);
+  assert.match(detachedPublisherSource, /MAX_PENDING_SCREEN_SHARE_ICE_CANDIDATES = 64/);
+  assert.match(detachedPublisherSource, /this\.pendingCandidates\.shift\(\)/);
 });
 
 test("screen share reuses path acknowledgements for viewer presence", () => {

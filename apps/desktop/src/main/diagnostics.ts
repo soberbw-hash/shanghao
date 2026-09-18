@@ -75,14 +75,26 @@ const zipDirectory = async (sourceDir: string, targetPath: string): Promise<void
   try {
     // The Windows app uses Compress-Archive; keep the generic fallback for development tools.
     if (platformService.isWindows) {
+      const script = String.raw`
+$sourceDir = [Environment]::GetEnvironmentVariable('SHANGHAO_DIAGNOSTICS_SOURCE')
+$targetPath = [Environment]::GetEnvironmentVariable('SHANGHAO_DIAGNOSTICS_TARGET')
+if ([string]::IsNullOrWhiteSpace($sourceDir) -or [string]::IsNullOrWhiteSpace($targetPath)) {
+  throw 'diagnostics_archive_paths_missing'
+}
+Compress-Archive -Path (Join-Path -Path $sourceDir -ChildPath '*') -DestinationPath $targetPath -Force
+`;
+      const encoded = Buffer.from(script, "utf16le").toString("base64");
       await execFileAsync(
         "powershell",
-        [
-          "-NoProfile",
-          "-Command",
-          `Compress-Archive -Path '${sourceDir}${path.sep}*' -DestinationPath '${targetPath}' -Force`,
-        ],
-        { windowsHide: true },
+        ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-EncodedCommand", encoded],
+        {
+          windowsHide: true,
+          env: {
+            ...process.env,
+            SHANGHAO_DIAGNOSTICS_SOURCE: sourceDir,
+            SHANGHAO_DIAGNOSTICS_TARGET: targetPath,
+          },
+        },
       );
     } else {
       await execFileAsync("zip", ["-r", targetPath, "."], {

@@ -4,7 +4,9 @@ import type { RecordingCleanupCandidate, RecordingCleanupReason } from "@private
 
 import { resolveFfmpegExecutable } from "./media-runtime";
 
-export const SHORT_RECORDING_MS = 5 * 60_000;
+// A short recording is only an accidental tap, not an ordinary conversation.
+// Five minutes incorrectly classified real 1–5 minute conversations as waste.
+export const SHORT_RECORDING_MS = 10_000;
 export const SILENT_RECORDING_PEAK_DB = -60;
 
 interface RecordingProbeResult {

@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Circle } from "lucide-react";
 
 import { useVisibleInterval } from "../../hooks/useVisualVisibility";
+import calendarAsset from "../../assets/scenes/shanghao-room/calendar-blank-v2.png";
 
 const MONTH_FORMATTER = new Intl.DateTimeFormat("zh-CN", {
   timeZone: "Asia/Shanghai",
@@ -43,6 +44,13 @@ export const RoomDateCalendar = () => {
       className="room-date-calendar"
       aria-label={`今天是${YEAR_FORMATTER.format(today)}${MONTH_FORMATTER.format(today)}${DAY_FORMATTER.format(today)}日，${WEEKDAY_FORMATTER.format(today)}`}
     >
+      <img
+        className="room-date-calendar-art"
+        src={calendarAsset}
+        alt=""
+        aria-hidden="true"
+        draggable={false}
+      />
       <div className="room-date-calendar-paper">
         <span className="room-date-calendar-head">
           <span className="room-date-calendar-rings" aria-hidden="true">

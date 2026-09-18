@@ -8,16 +8,14 @@ const readRenderer = (relativePath: string) =>
 const visualStyles = readRenderer("styles/parts/140-visual-experience.css");
 const characterStyles = readRenderer("styles/parts/50-character.css");
 
-test("weather completes sunlight, plant shadows, snow and staggered city lights", () => {
+test("weather uses supplied window art without duplicate city and plant layers", () => {
   const weather = readRenderer("components/room/DynamicWeatherWindow.tsx");
 
-  assert.match(weather, /weather-sunbeam/);
-  assert.match(weather, /weather-city-lights/);
-  assert.match(weather, /weather-plant-shadow-left/);
-  assert.match(weather, /weather-plant-shadow-right/);
-  assert.match(visualStyles, /@keyframes weather-sunbeam-drift/);
-  assert.match(visualStyles, /@keyframes weather-city-light-twinkle/);
-  assert.match(visualStyles, /\.weather-scene-snow \.weather-window-sill::after/);
+  assert.match(weather, /className="weather-window-art"/);
+  assert.doesNotMatch(weather, /className="weather-(city-lights|skyline|plant-shadow|sunbeam)/);
+  for (const effect of ["Clouds", "Rain", "Snow", "Fog", "Lightning"]) {
+    assert.ok(weather.includes(`isEnabled && theme.has${effect}`));
+  }
 });
 
 test("animated room lighting overscans the scene edge without exposing an uncolored strip", () => {

@@ -671,6 +671,29 @@ export interface VoiceMemoryRecord {
   organizationPublication?: VoiceMemoryOrganizationPublication;
 }
 
+/** Lightweight list row; transcript, raw provider output and diagnostics stay out of list IPC. */
+export interface VoiceMemorySummary {
+  recordingId: string;
+  filePath: string;
+  roomId?: string;
+  roomName?: string;
+  createdAt: string;
+  updatedAt: string;
+  phase: VoiceMemoryRecord["phase"];
+  progress: number;
+  taskStatus?: VoiceMemoryTaskStatus;
+  processingStage?: VoiceMemoryProcessingStage;
+  errorMessage?: string;
+  transcriptionModel?: VoiceMemoryTranscriptionModel;
+  transcriptCount: number;
+  speakerCount: number;
+  chapterCount: number;
+  highlightCount: number;
+  markerCount: number;
+  transcriptionComplete: boolean;
+  invalidResult: boolean;
+}
+
 export type VoiceMemoryTaskStatus = "pending" | "processing" | "success" | "failed";
 
 export type VoiceMemoryProcessingStage =

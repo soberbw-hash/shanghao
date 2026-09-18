@@ -533,16 +533,53 @@ export class AccountDesktopService extends EventEmitter {
 
   async requestPasswordReset(input: AccountPasswordResetRequest): Promise<void> {
     if (this.accountProvider === "cloudbase") {
-      throw new AccountDesktopError("account_not_supported");
+      await this.requireCloudBase().requestPasswordReset(
+        input.email,
+        input.verificationCode,
+        input.newPassword,
+      );
+      return;
     }
     const email = input.email.trim().toLowerCase();
     if (!EMAIL_PATTERN.test(email) || email.length > 254) {
       throw new AccountDesktopError("account_email_invalid");
     }
     try {
+      if (input.verificationCode !== undefined || input.newPassword !== undefined) {
+        if (!/^\d{6}$/.test(input.verificationCode ?? ""))
+          throw new AccountDesktopError("account_verification_invalid");
+        if (
+          !input.newPassword ||
+          input.newPassword.length < 8 ||
+          input.newPassword.length > 32 ||
+          !/[a-zA-Z]/.test(input.newPassword) ||
+          !/\d/.test(input.newPassword)
+        )
+          throw new AccountDesktopError("account_password_weak");
+        if (!this.supabaseUrl || !this.supabasePublishableKey)
+          throw new AccountDesktopError("account_not_configured");
+        const recovery = createClient(this.supabaseUrl, this.supabasePublishableKey, {
+          auth: SUPABASE_AUTH_OPTIONS,
+        });
+        try {
+          const verified = await recovery.auth.verifyOtp({
+            email,
+            token: input.verificationCode!,
+            type: "recovery",
+          });
+          if (verified.error || !verified.data.session)
+            throw new AccountDesktopError("account_verification_invalid");
+          const updated = await recovery.auth.updateUser({ password: input.newPassword });
+          if (updated.error) throw updated.error;
+        } finally {
+          await recovery.auth.signOut({ scope: "local" }).catch(() => undefined);
+        }
+        return;
+      }
       const { error } = await this.requireSupabase().auth.resetPasswordForEmail(email);
       if (error) throw error;
     } catch (error) {
+      if (error instanceof AccountDesktopError) throw error;
       throw new AccountDesktopError("account_network_error", { cause: error });
     }
   }

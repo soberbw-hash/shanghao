@@ -19,6 +19,7 @@ export const SceneCharacterLabel = ({
   isAway: boolean;
 }) => {
   const status = memberStatus(member);
+  const statusLabel = status.label === "等待中" ? "摸鱼中" : status.label;
   const isReconnecting = status.tone === "reconnecting";
   const lastLatencyRef = useRef<number | undefined>(undefined);
   if (typeof member.latencyMs === "number") {
@@ -37,9 +38,6 @@ export const SceneCharacterLabel = ({
       ) : (
         <>
           <span className="room-character-identity">
-            {member.avatarUrl ? (
-              <img className="room-character-account-avatar" src={member.avatarUrl} alt="" />
-            ) : null}
             <strong
               className="room-character-nickname"
               data-length={nicknameLength > 12 ? "long" : nicknameLength > 8 ? "medium" : "short"}
@@ -52,21 +50,19 @@ export const SceneCharacterLabel = ({
               {typeof displayedLatency === "number" ? `${displayedLatency} ms` : "—"}
             </span>
           </span>
-          {status.label !== "等待中" && (
-            <span className="room-character-state">
-              <span
-                className={`room-character-state-icon ${status.icon ? "has-icon" : ""}`}
-                aria-hidden="true"
-              >
-                {status.icon ? (
-                  <status.icon className={`h-3 w-3 ${isReconnecting ? "animate-spin" : ""}`} />
-                ) : null}
-              </span>
-              <span className="room-character-state-text" title={status.label}>
-                {status.label}
-              </span>
+          <span className="room-character-state">
+            <span
+              className={`room-character-state-icon ${status.icon ? "has-icon" : ""}`}
+              aria-hidden="true"
+            >
+              {status.icon ? (
+                <status.icon className={`h-3 w-3 ${isReconnecting ? "animate-spin" : ""}`} />
+              ) : null}
             </span>
-          )}
+            <span className="room-character-state-text" title={statusLabel}>
+              {statusLabel}
+            </span>
+          </span>
         </>
       )}
     </div>

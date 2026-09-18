@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, readdir, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -1270,6 +1270,24 @@ test("voice memory uses durable per-record files and a compact local search inde
     await store.initialize();
     await store.save(record());
     assert.equal((await store.get("C:\\录音\\一号房-01.m4a"))?.transcript.length, 1);
+    const summaries = await store.listSummaries();
+    assert.equal(summaries.length, 1);
+    assert.equal(summaries[0]?.transcriptCount, 1);
+    assert.equal(summaries[0]?.transcriptionComplete, true);
+    assert.equal("transcript" in (summaries[0] ?? {}), false);
+    await store.appendTranscriptionUnit("event-recording", {
+      recordingId: "event-recording",
+      modelId: "paraformer-zh",
+      pipelineVersion: CURRENT_TRANSCRIPTION_PIPELINE_VERSION,
+      index: 0,
+      startMs: 0,
+      endMs: 1_000,
+      speakerId: "Speaker 1",
+      status: "completed",
+      attempts: 1,
+    });
+    const eventFiles = await readdir(path.join(root, "transcription-events"));
+    assert.equal(eventFiles.length, 1);
     const results = store.search({ query: "老王 周六" });
     assert.equal(results.length, 0, "unconfirmed speaker names are not invented");
     assert.ok(
@@ -1282,6 +1300,7 @@ test("voice memory uses durable per-record files and a compact local search inde
     );
     await store.delete("C:\\录音\\一号房-01.m4a");
     assert.equal(await store.get("C:\\录音\\一号房-01.m4a"), undefined);
+    assert.equal((await store.listSummaries()).length, 0);
     assert.equal(store.search({ query: "周六" }).length, 0);
   } finally {
     await rm(root, { recursive: true, force: true });

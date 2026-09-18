@@ -8,11 +8,16 @@ import {
 
 import { detectRecordingCapability } from "./mime-capability";
 import { BrowserRecordingEncoder, type RecordingEncoder } from "./recording-encoder";
-import { type RecordingExporter, toRecordingResult } from "./recording-exporter";
+import {
+  type RecordingExporter,
+  type StreamingRecordingExporter,
+  toRecordingResult,
+} from "./recording-exporter";
 import { RecordingStateMachine } from "./recording-state-machine";
 
 export interface RecordingServiceOptions {
   exporter: RecordingExporter;
+  streamingExporter?: StreamingRecordingExporter;
   logger?: (message: string, context?: Record<string, unknown>) => void;
   onStateChange?: (snapshot: RecordingStatusSnapshot) => void;
 }
@@ -21,6 +26,7 @@ export class RecordingService {
   private readonly stateMachine = new RecordingStateMachine();
   private readonly capability = detectRecordingCapability();
   private readonly encoder = new BrowserRecordingEncoder(this.capability);
+  private streamSession?: Promise<string>;
 
   constructor(private readonly options: RecordingServiceOptions) {}
 
@@ -51,7 +57,10 @@ export class RecordingService {
     );
 
     try {
-      this.encoder.start(stream);
+      this.encoder.start(
+        stream,
+        this.options.streamingExporter ? (buffer) => this.appendStreamChunk(buffer) : undefined,
+      );
       return this.emitState(
         this.stateMachine.transition(RecordingState.Recording, {
           startedAt: Date.now(),
@@ -108,15 +117,33 @@ export class RecordingService {
       }),
     );
 
-    const buffer = await encoded.blob.arrayBuffer();
-    const response = await this.options.exporter.exportRecording({
-      buffer,
-      sampleRate: actualSampleRate,
-      sourceMimeType: encoded.mimeType,
-      channels: options.channels,
-      suggestedFileName: `${APP_NAME}-${new Date().toISOString().replaceAll(":", "-")}.m4a`,
-      targetFormat: options.targetFormat,
-    });
+    const suggestedFileName = `${APP_NAME}-${new Date().toISOString().replaceAll(":", "-")}.m4a`;
+    const session = this.streamSession;
+    const response =
+      session && this.options.streamingExporter
+        ? await this.options.streamingExporter.finalizeSession({
+            sessionId: await session,
+            sourceMimeType: encoded.mimeType,
+            sampleRate: actualSampleRate,
+            channels: options.channels,
+            suggestedFileName,
+            targetFormat: options.targetFormat,
+            durationMs: encoded.durationMs,
+          })
+        : encoded.blob
+          ? await this.options.exporter.exportRecording({
+              buffer: await encoded.blob.arrayBuffer(),
+              sampleRate: actualSampleRate,
+              sourceMimeType: encoded.mimeType,
+              channels: options.channels,
+              suggestedFileName,
+              targetFormat: options.targetFormat,
+            })
+          : {
+              ok: false,
+              errorMessage: "录音没有产生可保存的音频数据。",
+            };
+    this.streamSession = undefined;
 
     if (!response.ok) {
       this.options.logger?.("recording export failed", { ...response });
@@ -169,6 +196,11 @@ export class RecordingService {
     );
 
     await this.encoder.stop();
+    if (this.streamSession && this.options.streamingExporter) {
+      const sessionId = await this.streamSession;
+      await this.options.streamingExporter.abortSession(sessionId).catch(() => undefined);
+      this.streamSession = undefined;
+    }
     this.emitState(
       this.stateMachine.transition(RecordingState.Idle, {
         startedAt: undefined,
@@ -178,5 +210,21 @@ export class RecordingService {
       }),
     );
     this.options.logger?.("recording discarded by user");
+  }
+
+  private appendStreamChunk(buffer: ArrayBuffer): Promise<void> {
+    const streamingExporter = this.options.streamingExporter;
+    if (!streamingExporter) return Promise.resolve();
+    if (!this.streamSession) {
+      this.streamSession = streamingExporter
+        .startSession({ sourceMimeType: this.capability.mimeType ?? "application/octet-stream" })
+        .then((response) => {
+          if (!response.ok || !response.sessionId) {
+            throw new Error(response.errorMessage ?? "录音流式会话创建失败。");
+          }
+          return response.sessionId;
+        });
+    }
+    return this.streamSession.then((sessionId) => streamingExporter.appendChunk(sessionId, buffer));
   }
 }

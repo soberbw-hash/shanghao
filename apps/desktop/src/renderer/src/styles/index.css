@@ -18,5 +18,6 @@
 @import "./parts/170-model-comparison.css";
 @import "./parts/175-voice-memory-organization.css";
 @import "./parts/176-ai-model-management.css";
+@import "./parts/180-room-asset-pass.css";
 
 /* Keep these imports ordered: later compatibility passes intentionally win the cascade. */

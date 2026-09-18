@@ -287,6 +287,34 @@
   font-size: 11px;
 }
 
+.account-login-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.account-login-actions .account-text-action {
+  flex: 0 0 auto;
+  padding-inline: 0;
+  color: #4b8fda;
+}
+
+.account-reset-panel {
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid rgba(147, 181, 221, 0.45);
+  border-radius: 14px;
+  background: rgba(245, 250, 255, 0.78);
+}
+
+.account-reset-submit {
+  width: 100%;
+  min-height: 38px;
+  justify-content: center;
+}
+
 .account-login-summary {
   position: relative;
   z-index: 4;
@@ -1067,4 +1095,10 @@
   border-radius: 5px;
   object-fit: cover;
   box-shadow: 0 1px 4px rgba(58, 91, 132, 0.16);
+}
+.account-reset-panel .account-field-hint {
+  margin: 0;
+  color: var(--text-secondary, #64748b);
+  font-size: 12px;
+  line-height: 1.5;
 }

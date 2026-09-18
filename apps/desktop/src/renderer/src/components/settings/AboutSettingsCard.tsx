@@ -101,9 +101,11 @@ export const AboutSettingsCard = ({
   const [selectedRelease, setSelectedRelease] = useState<ReleaseHistoryEntry>();
   const isChecking = updateStatus.phase === "checking";
   const currentVersion = runtimeInfo?.version ?? "读取中…";
-  const updateMessage = isChecking
-    ? updateStatus.message
-    : updateInfo?.message || updateStatus.message || "点击检查是否有新版本";
+  const updateMessage = updateStatus.deferred
+    ? "当前正在进行实时语音或屏幕分享，空闲后会自动开始下载。"
+    : isChecking
+      ? updateStatus.message
+      : updateInfo?.message || updateStatus.message || "点击检查是否有新版本";
   const updateTone =
     updateStatus.phase === "error" ? "error" : updateInfo?.hasUpdate ? "available" : "current";
 

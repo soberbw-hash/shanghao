@@ -198,6 +198,8 @@ export const DEFAULT_SCREEN_SHARE_PROFILE: ScreenShareEncodingProfile = {
   maxHeight: 1_080,
 };
 
+export const MAX_PENDING_ICE_CANDIDATES = 64;
+
 export const DEFAULT_ICE_SERVERS: RTCIceServer[] = [
   { urls: "stun:stun.qq.com:3478" },
   { urls: "stun:stun.miwifi.com:3478" },
@@ -371,6 +373,15 @@ export class MeshPeerConnection {
 
   async addIceCandidate(candidate: IceCandidatePayload): Promise<void> {
     if (!this.connection.remoteDescription) {
+      if (this.pendingIceCandidates.length >= MAX_PENDING_ICE_CANDIDATES) {
+        this.pendingIceCandidates.shift();
+        this.options.onDiagnosticEvent?.("ice_candidate_queue", {
+          peerId: this.options.peerId,
+          action: "dropped",
+          reason: "queue_limit",
+          pendingCount: this.pendingIceCandidates.length,
+        });
+      }
       this.pendingIceCandidates.push(candidate);
       this.options.onDiagnosticEvent?.("ice_candidate_queue", {
         peerId: this.options.peerId,
