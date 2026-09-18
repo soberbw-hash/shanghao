@@ -82,6 +82,38 @@ test("recording encoder preserves buffered audio after an unexpected recorder st
   }
 });
 
+test("streaming recording encoder forwards chunks in order without retaining a final blob", async () => {
+  const originalMediaRecorder = globalThis.MediaRecorder;
+  Object.defineProperty(globalThis, "MediaRecorder", {
+    configurable: true,
+    value: FakeMediaRecorder,
+  });
+
+  try {
+    const received: string[] = [];
+    const encoder = new BrowserRecordingEncoder({
+      mimeType: "audio/webm",
+      encoderState: RecordingEncoderState.FallbackTranscode,
+      requiresTranscode: true,
+      supportedMimeTypes: ["audio/webm"],
+    });
+    encoder.start({} as MediaStream, async (buffer) => {
+      await new Promise((resolve) => setTimeout(resolve, 2));
+      received.push(Buffer.from(buffer).toString("utf8"));
+    });
+
+    const result = await encoder.stop();
+    assert.equal(result.blob, undefined);
+    assert.deepEqual(received, ["recorded-audio", "recorded-audio"]);
+    assert.equal(encoder.hasRecording(), false);
+  } finally {
+    Object.defineProperty(globalThis, "MediaRecorder", {
+      configurable: true,
+      value: originalMediaRecorder,
+    });
+  }
+});
+
 test("renderer recording runtime survives room component reconstruction", () => {
   const testDirectory = path.dirname(fileURLToPath(import.meta.url));
   const source = readFileSync(

@@ -1,3 +1,4 @@
+import { validatePasswordResetRequest } from "./password-reset-validation";
 import {
   app,
   clipboard,
@@ -49,20 +50,12 @@ import {
   type OverlayState,
   type RelayStatusSnapshot,
   type RealtimeFaultCommand,
-  type RecordingExportPayload,
-  type RecordingExportResponse,
   type RecordingAutomaticCleanupResult,
   type RecordingCleanupScan,
   type RecordingBatchDeleteResult,
   type RecordingLibrarySnapshot,
   type RecordingLibraryItem,
   type RecordingMarker,
-  type RecordingSpeakerSegmentFinalizePayload,
-  type RecordingSpeakerSegmentPayload,
-  type RecordingSpeakerSegmentResponse,
-  type RecordingParticipantTrackPayload,
-  type RecordingParticipantTrackResponse,
-  type RecordingParticipantTracksFinalizePayload,
   type RendererLogPayload,
   type RendererRuntimeHealthInput,
   type RuntimeInfo,
@@ -77,6 +70,7 @@ import {
   type VoiceMemoryProcessRequest,
   type VoiceMemoryQuestionRequest,
   type VoiceMemoryRecord,
+  type VoiceMemorySummary,
   type VoiceMemorySearchRequest,
   type VoiceMemorySearchResult,
   type LocalWeatherRequest,
@@ -91,16 +85,9 @@ import { captureRuntimeHealth } from "./runtime-health";
 import { readDeepFilterAssets } from "./deepfilter-assets";
 import { exportQuickMessagePack } from "./quick-message-export";
 import { clearAvatarImage, pickAvatarImage, readAvatarImage } from "./profile-media";
-import { exportRecordingFromMain } from "./recording-main";
-import {
-  finalizeRecordingSpeakerSegments,
-  saveRecordingSpeakerSegment,
-} from "./recording-speaker-segments";
-import {
-  cleanupRecordingParticipantTracks,
-  finalizeRecordingParticipantTracks,
-  saveRecordingParticipantTrack,
-} from "./recording-participant-tracks";
+import { registerRecordingStreamIpcHandlers } from "./recording-stream-ipc";
+import { registerRecordingTrackIpcHandlers } from "./recording-tracks-ipc";
+import { cleanupRecordingParticipantTracks } from "./recording-participant-tracks";
 import { resolveRecordingDirectory } from "./recording-path";
 import {
   deleteRecording,
@@ -736,9 +723,7 @@ export const registerIpcHandlers = ({
   ipcMain.handle(
     IPC_CHANNELS.account.requestPasswordReset,
     async (_event, request: AccountPasswordResetRequest): Promise<void> =>
-      accounts.requestPasswordReset({
-        email: requireString(request?.email, 254, "account_email"),
-      }),
+      accounts.requestPasswordReset(validatePasswordResetRequest(request)),
   );
   ipcMain.handle(
     IPC_CHANNELS.account.updateProfile,
@@ -1037,8 +1022,8 @@ export const registerIpcHandlers = ({
     async (_event, recordingId: string): Promise<VoiceMemoryRecord | undefined> =>
       voiceMemory.get(requireString(recordingId, 2_048, "recording_id")),
   );
-  ipcMain.handle(IPC_CHANNELS.ai.listVoiceMemories, async (): Promise<VoiceMemoryRecord[]> =>
-    voiceMemory.list(),
+  ipcMain.handle(IPC_CHANNELS.ai.listVoiceMemories, async (): Promise<VoiceMemorySummary[]> =>
+    voiceMemory.listSummaries(),
   );
   ipcMain.handle(
     IPC_CHANNELS.ai.processRecording,
@@ -1228,44 +1213,11 @@ export const registerIpcHandlers = ({
     },
   );
 
-  ipcMain.handle(
-    IPC_CHANNELS.recording.export,
-    async (_event, payload: RecordingExportPayload): Promise<RecordingExportResponse> => {
-      const settings = settingsStore.getSnapshot();
-      const result = await exportRecordingFromMain(
-        payload,
-        settings.recordingSaveDirectory,
-        (logPayload) => diagnostics.writeLog(logPayload),
-      );
-      return result;
-    },
-  );
-  ipcMain.handle(
-    IPC_CHANNELS.recording.saveSpeakerSegment,
-    async (
-      _event,
-      payload: RecordingSpeakerSegmentPayload,
-    ): Promise<RecordingSpeakerSegmentResponse> => saveRecordingSpeakerSegment(payload),
-  );
-  ipcMain.handle(
-    IPC_CHANNELS.recording.finalizeSpeakerSegments,
-    async (_event, payload: RecordingSpeakerSegmentFinalizePayload): Promise<void> => {
-      await finalizeRecordingSpeakerSegments(payload);
-    },
-  );
-  ipcMain.handle(
-    IPC_CHANNELS.recording.saveParticipantTrack,
-    async (
-      _event,
-      payload: RecordingParticipantTrackPayload,
-    ): Promise<RecordingParticipantTrackResponse> => saveRecordingParticipantTrack(payload),
-  );
-  ipcMain.handle(
-    IPC_CHANNELS.recording.finalizeParticipantTracks,
-    async (_event, payload: RecordingParticipantTracksFinalizePayload): Promise<void> => {
-      await finalizeRecordingParticipantTracks(payload);
-    },
-  );
+  registerRecordingStreamIpcHandlers({
+    getSettings: () => settingsStore.getSnapshot(),
+    writeLog: (logPayload) => diagnostics.writeLog(logPayload),
+  });
+  registerRecordingTrackIpcHandlers();
   ipcMain.handle(IPC_CHANNELS.recording.chooseDirectory, async (): Promise<string | undefined> => {
     const currentDirectory = resolveRecordingDirectory(
       settingsStore.getSnapshot().recordingSaveDirectory,

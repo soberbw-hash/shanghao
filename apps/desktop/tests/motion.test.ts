@@ -420,6 +420,11 @@ test("late joiners keep a visible avatar while character textures finish loading
     sceneCharacterSource.includes("waitForMotionPhase(Math.ceil(route.duration * 1_000) + 480)"),
     true,
   );
-  assert.equal(overlaySource.includes("getAvatarEmoji(avatarId)"), true);
-  assert.equal(overlaySource.includes("opacity: isLoaded ? 1 : 0"), true);
+  assert.equal(overlaySource.includes("<AccountAvatar"), true);
+  const accountAvatar = readFileSync(
+    path.resolve(process.cwd(), "src/renderer/src/components/account/AccountAvatar.tsx"),
+    "utf8",
+  );
+  assert.ok(accountAvatar.includes("loadedSource === src ? 1 : 0"));
+  assert.ok(accountAvatar.includes('Array.from(name.trim())[0] || "上"'));
 });

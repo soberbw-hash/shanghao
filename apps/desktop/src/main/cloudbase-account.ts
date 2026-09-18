@@ -20,6 +20,7 @@ export type CloudBaseAccountAuth = Pick<
   | "getCurrentUser"
   | "getCredentials"
   | "signOut"
+  | "resetPasswordForEmail"
 >;
 
 export interface CloudBaseAccountDiagnostic {
@@ -115,6 +116,13 @@ export const normalizeCloudBasePhone = (input: string): string => {
 export class CloudBaseAccountClient {
   private readonly auth: CloudBaseAccountAuth;
   private verification?: CloudBaseVerification;
+  private passwordReset?: {
+    target: string;
+    expiresAt: number;
+    updateUser: NonNullable<
+      Awaited<ReturnType<CloudBaseAccountAuth["resetPasswordForEmail"]>>["data"]
+    >["updateUser"];
+  };
 
   constructor(
     options: CloudBaseAccountOptions,
@@ -244,6 +252,58 @@ export class CloudBaseAccountClient {
       return await this.readAuthenticatedAccount();
     } catch (error) {
       throw this.mapError(error, "account_login_unavailable", "password_login");
+    }
+  }
+
+  async requestPasswordReset(
+    identifierInput: string,
+    verificationCode?: string,
+    newPassword?: string,
+  ): Promise<void> {
+    const identifier = identifierInput.trim();
+    const target = /^1\d{10}$/.test(identifier) ? normalizeCloudBasePhone(identifier) : identifier;
+    if (!target || target.length > 254) {
+      throw new AccountDesktopError("account_invalid_request");
+    }
+    try {
+      if (verificationCode !== undefined || newPassword !== undefined) {
+        const pending = this.passwordReset;
+        if (!pending || pending.target !== target || pending.expiresAt <= Date.now()) {
+          throw new AccountDesktopError("account_verification_expired");
+        }
+        if (!/^\d{6}$/.test(verificationCode ?? ""))
+          throw new AccountDesktopError("account_verification_invalid");
+        if (
+          !newPassword ||
+          newPassword.length < 8 ||
+          newPassword.length > 32 ||
+          !/[a-zA-Z]/.test(newPassword) ||
+          !/\d/.test(newPassword)
+        ) {
+          throw new AccountDesktopError("account_password_weak");
+        }
+        if (!pending.updateUser) throw new AccountDesktopError("account_verification_expired");
+        const result = await pending.updateUser({
+          nonce: verificationCode!,
+          password: newPassword,
+        });
+        assertCloudBaseAuthSuccess(result);
+        this.passwordReset = undefined;
+        return;
+      }
+      this.passwordReset = undefined;
+      const result = await this.auth.resetPasswordForEmail(target);
+      assertCloudBaseAuthSuccess(result);
+      if (!result.data?.updateUser)
+        throw new AccountDesktopError("account_verification_send_failed");
+      this.passwordReset = {
+        target,
+        expiresAt: Date.now() + 10 * 60_000,
+        updateUser: result.data.updateUser,
+      };
+    } catch (error) {
+      if (error instanceof AccountDesktopError) throw error;
+      throw this.mapError(error, "account_network_error", "password_reset");
     }
   }
 

@@ -26,6 +26,7 @@ import {
   type RecordingLibraryItem,
   type RecordingLibrarySnapshot,
   type VoiceMemoryRecord,
+  type VoiceMemorySummary,
 } from "@private-voice/shared";
 
 import { Button } from "../base/Button";
@@ -37,10 +38,7 @@ import { ModelTestPanel } from "./ModelTestPanel";
 import { useRecordingStore } from "../../store/recordingStore";
 import { createRecordingLibraryCache } from "../../features/recording/recordingLibraryCache";
 import { formatRecordingBytes } from "../../features/recording/recordingSize";
-import {
-  isVoiceMemoryTranscriptionComplete,
-  voiceMemoryTranscriptionPercent,
-} from "../../features/ai/voiceMemoryPresentation";
+import { isVoiceMemoryTranscriptionComplete } from "../../features/ai/voiceMemoryPresentation";
 
 interface RecordingLibrarySettingsCardProps {
   isActive?: boolean;
@@ -92,8 +90,30 @@ const compactTranscriptionModelNames = {
   "ark-asr-3b-q8_0": "ARK-ASR-3B Q8_0",
 } as const satisfies Record<keyof typeof AI_ASR_MODEL_NAMES, string>;
 
+const toVoiceMemorySummary = (record: VoiceMemoryRecord): VoiceMemorySummary => ({
+  recordingId: record.recordingId,
+  filePath: record.filePath,
+  roomId: record.roomId,
+  roomName: record.roomName,
+  createdAt: record.createdAt,
+  updatedAt: record.updatedAt,
+  phase: record.phase,
+  progress: record.progress,
+  taskStatus: record.taskStatus,
+  processingStage: record.processingStage,
+  errorMessage: record.errorMessage,
+  transcriptionModel: record.transcriptionModel,
+  transcriptCount: record.transcript.length,
+  speakerCount: record.speakers.length,
+  chapterCount: record.chapters.length,
+  highlightCount: record.highlights.length,
+  markerCount: record.markerTitles.length,
+  transcriptionComplete: isVoiceMemoryTranscriptionComplete(record),
+  invalidResult: hasInvalidVoiceMemoryResult(record),
+});
+
 const voiceMemoryStatus = (
-  record: VoiceMemoryRecord | undefined,
+  record: VoiceMemorySummary | undefined,
 ):
   | {
       label: string;
@@ -104,15 +124,15 @@ const voiceMemoryStatus = (
     }
   | undefined => {
   if (!record) return undefined;
-  const progress = voiceMemoryTranscriptionPercent(record);
+  const progress = record.progress;
   const modelLabel = record.transcriptionModel
     ? compactTranscriptionModelNames[record.transcriptionModel.id]
-    : record.transcript.length > 0
+    : record.transcriptCount > 0
       ? "模型未知"
       : undefined;
   const modelTitle = record.transcriptionModel
     ? `转录模型：${record.transcriptionModel.name}${record.transcriptionModel.version ? `\n版本：${record.transcriptionModel.version}` : ""}`
-    : record.transcript.length > 0
+    : record.transcriptCount > 0
       ? "这条历史转录没有保存模型信息"
       : undefined;
   if (record.phase === "transcribing") {
@@ -131,12 +151,12 @@ const voiceMemoryStatus = (
     if (record.errorMessage === "no_reliable_speech") {
       return { label: "未检测到可用人声", tone: "is-paused" };
     }
-    if (hasInvalidVoiceMemoryResult(record)) {
+    if (record.invalidResult) {
       return { label: "旧结果需重新转录", tone: "is-error" };
     }
-    if (!isVoiceMemoryTranscriptionComplete(record)) {
+    if (!record.transcriptionComplete) {
       return {
-        label: record.transcript.length ? `部分转录 ${progress}%` : "转录未完成",
+        label: record.transcriptCount ? `部分转录 ${progress}%` : "转录未完成",
         modelLabel,
         modelTitle,
         progress: progress || undefined,
@@ -168,11 +188,11 @@ const voiceMemoryStatus = (
     };
   }
   if (record.phase === "error") {
-    const organizationFailed = record.processingStage === "organize" && record.transcript.length;
+    const organizationFailed = record.processingStage === "organize" && record.transcriptCount;
     return {
       label: organizationFailed
         ? "转录完成 · 整理失败"
-        : record.transcript.length
+        : record.transcriptCount
           ? `已保留当前文字 ${progress}%`
           : "转录失败",
       modelLabel,
@@ -242,7 +262,7 @@ export const RecordingLibrarySettingsCard = ({
     RecordingState.Saving,
   ].includes(recordingState);
   const [pendingSeekMs, setPendingSeekMs] = useState<number>();
-  const [voiceMemories, setVoiceMemories] = useState<Record<string, VoiceMemoryRecord>>({});
+  const [voiceMemories, setVoiceMemories] = useState<Record<string, VoiceMemorySummary>>({});
   const [isModelComparisonOpen, setIsModelComparisonOpen] = useState(false);
   const reloadGeneration = useRef(0);
 
@@ -298,7 +318,10 @@ export const RecordingLibrarySettingsCard = ({
     let active = true;
     const unsubscribe = window.desktopApi.ai.onVoiceMemoryStatus((record) => {
       if (!active) return;
-      setVoiceMemories((current) => ({ ...current, [record.recordingId]: record }));
+      setVoiceMemories((current) => ({
+        ...current,
+        [record.recordingId]: toVoiceMemorySummary(record),
+      }));
     });
     return () => {
       active = false;
@@ -814,12 +837,12 @@ export const RecordingLibrarySettingsCard = ({
             </span>
             <label
               className="recording-library-auto-cleanup"
-              title="录音保存后自动清理五分钟以下、静音或损坏的录音"
+              title="录音保存后自动清理十秒以下、静音或损坏的录音"
             >
               <span>自动清理</span>
               <Switch
                 isChecked={settings.isRecordingWasteAutoCleanupEnabled}
-                ariaLabel="自动清理五分钟以下、静音或损坏的录音"
+                ariaLabel="自动清理十秒以下、静音或损坏的录音"
                 onChange={(checked) =>
                   void onChange({ isRecordingWasteAutoCleanupEnabled: checked })
                 }
@@ -1309,7 +1332,7 @@ export const RecordingLibrarySettingsCard = ({
                   id="clean-recordings-description"
                   className="mt-2 text-pretty text-sm leading-6 text-[#66778d]"
                 >
-                  找到 {cleanupRecordings.length} 条可清理录音：五分钟以下{" "}
+                  找到 {cleanupRecordings.length} 条可清理录音：十秒以下{" "}
                   {cleanupRecordings.filter((entry) => entry.reason === "too_short").length}
                   条、静音 {cleanupRecordings.filter((entry) => entry.reason === "silent").length}
                   条、损坏{" "}

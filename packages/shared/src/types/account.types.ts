@@ -53,6 +53,8 @@ export interface AccountRegisterRequest {
 
 export interface AccountPasswordResetRequest {
   email: string;
+  verificationCode?: string;
+  newPassword?: string;
 }
 
 export interface AccountProfileUpdateRequest {

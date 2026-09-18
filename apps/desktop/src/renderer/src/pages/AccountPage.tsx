@@ -42,6 +42,7 @@ export const AccountPage = () => {
   const login = useAccountStore((state) => state.login);
   const register = useAccountStore((state) => state.register);
   const requestVerificationCode = useAccountStore((state) => state.requestVerificationCode);
+  const requestPasswordReset = useAccountStore((state) => state.requestPasswordReset);
   const continueAsGuest = useAccountStore((state) => state.continueAsGuest);
   const clearError = useAccountStore((state) => state.clearError);
   const saveSettings = useSettingsStore((state) => state.saveSettings);
@@ -59,6 +60,14 @@ export const AccountPage = () => {
   const [rememberedIdentifier, setRememberedIdentifier] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
+  const [isResetOpen, setIsResetOpen] = useState(false);
+  const [resetIdentifier, setResetIdentifier] = useState("");
+  const [resetNotice, setResetNotice] = useState<string>();
+  const [resetSent, setResetSent] = useState(false);
+  const [resetCode, setResetCode] = useState("");
+  const [resetPassword, setResetPassword] = useState("");
+  const [resetConfirmation, setResetConfirmation] = useState("");
+  const [resetCountdown, setResetCountdown] = useState(0);
   const [selectedAvatarPresetId, setSelectedAvatarPresetId] = useState(
     ACCOUNT_AVATAR_PRESETS[0]?.id,
   );
@@ -83,6 +92,15 @@ export const AccountPage = () => {
   }, []);
 
   useEffect(() => {
+    if (resetCountdown <= 0) return;
+    const timer = window.setTimeout(
+      () => setResetCountdown((value) => Math.max(0, value - 1)),
+      1_000,
+    );
+    return () => window.clearTimeout(timer);
+  }, [resetCountdown]);
+
+  useEffect(() => {
     if (verificationCountdown <= 0) return;
     const timer = window.setInterval(() => {
       setVerificationCountdown((current) => Math.max(0, current - 1));
@@ -91,9 +109,10 @@ export const AccountPage = () => {
   }, [verificationCountdown]);
 
   const effectiveError = localError ?? (errorCode ? accountErrorMessage(errorCode) : undefined);
-  const title = mode === "login" ? "欢迎回来" : "创建上号账号";
-  const subtitle =
-    mode === "login"
+  const title = isResetOpen ? "重置密码" : mode === "login" ? "欢迎回来" : "创建上号账号";
+  const subtitle = isResetOpen
+    ? "验证注册手机号或邮箱后，设置新的登录密码。"
+    : mode === "login"
       ? "登录后，你的身份会在不同电脑上保持一致。"
       : "手机号验证后即可创建账号，昵称以后可以修改。";
 
@@ -120,6 +139,11 @@ export const AccountPage = () => {
   ]);
 
   const changeMode = (next: AccountMode) => {
+    if (isBusy) return;
+    setIsResetOpen(false);
+    setResetCode("");
+    setResetPassword("");
+    setResetConfirmation("");
     if (next === mode) return;
     clearError();
     setLocalError(undefined);
@@ -130,6 +154,11 @@ export const AccountPage = () => {
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
+    if (isResetOpen) {
+      if (resetSent) await completePasswordReset();
+      else await submitPasswordReset();
+      return;
+    }
     setLocalError(undefined);
     try {
       if (mode === "login") {
@@ -165,6 +194,70 @@ export const AccountPage = () => {
     } catch {
       // The store exposes a stable user-facing error code; raw IPC details stay out of the UI.
       playUiSound("process-error");
+    }
+  };
+
+  const submitPasswordReset = async () => {
+    if (isBusy || resetCountdown > 0) return;
+    const target = resetIdentifier.trim();
+    if (!target) {
+      setResetNotice("请输入注册邮箱或手机号。");
+      return;
+    }
+    setResetNotice(undefined);
+    setLocalError(undefined);
+    clearError();
+    try {
+      await requestPasswordReset({ email: target });
+      setResetSent(true);
+      setResetCode("");
+      setResetCountdown(60);
+      setResetNotice(
+        "验证码已发送，请在下方填写验证码和新密码。若邮件提供的是链接，请按邮件提示操作。",
+      );
+    } catch {
+      // The store keeps the provider error in the shared account error area.
+    }
+  };
+
+  const completePasswordReset = async () => {
+    if (isBusy || !resetSent) return;
+    clearError();
+    setLocalError(undefined);
+    setResetNotice(undefined);
+    if (!/^\d{6}$/.test(resetCode)) {
+      setLocalError("请输入 6 位验证码。");
+      return;
+    }
+    if (
+      resetPassword.length < 8 ||
+      resetPassword.length > 32 ||
+      !/[a-zA-Z]/.test(resetPassword) ||
+      !/\d/.test(resetPassword)
+    ) {
+      setLocalError(accountErrorMessage("account_password_weak"));
+      return;
+    }
+    // Form feedback only; verification and credential changes run in the provider.
+    if (resetPassword !== resetConfirmation) {
+      setLocalError("两次输入的新密码不一致。");
+      return;
+    }
+    try {
+      await requestPasswordReset({
+        email: resetIdentifier.trim(),
+        verificationCode: resetCode,
+        newPassword: resetPassword,
+      });
+      setIdentifier(resetIdentifier.trim());
+      setPassword("");
+      setResetCode("");
+      setResetPassword("");
+      setResetConfirmation("");
+      setResetSent(false);
+      setResetNotice("密码已重置。请返回登录，使用新密码登录。");
+    } catch {
+      // Keep the form open for retry; never report success on a provider error.
     }
   };
 
@@ -244,7 +337,7 @@ export const AccountPage = () => {
             }}
             onSubmit={(event) => void submit(event)}
           >
-            {mode === "login" ? (
+            {mode === "login" && !isResetOpen ? (
               <AccountLoginSummary
                 identifier={identifier}
                 isRemembered={
@@ -253,7 +346,7 @@ export const AccountPage = () => {
               />
             ) : null}
 
-            {mode === "login" ? (
+            {mode === "login" && !isResetOpen ? (
               <label className="account-field">
                 <span>账号 / 手机号</span>
                 <div>
@@ -459,7 +552,7 @@ export const AccountPage = () => {
                   </div>
                 </label>
               </div>
-            ) : (
+            ) : !isResetOpen ? (
               <label className="account-field">
                 <span>密码</span>
                 <div>
@@ -481,18 +574,152 @@ export const AccountPage = () => {
                   </button>
                 </div>
               </label>
-            )}
+            ) : null}
 
             {mode === "login" ? (
-              <label className="account-remember-me">
-                <input
-                  type="checkbox"
-                  checked={rememberMe}
-                  onChange={(event) => setRememberMe(event.target.checked)}
-                />
-                <span>记住密码</span>
-                <small>使用系统加密存储；登录失效时会自动填回</small>
-              </label>
+              <>
+                {!isResetOpen ? (
+                  <div className="account-login-actions">
+                    <label className="account-remember-me">
+                      <input
+                        type="checkbox"
+                        checked={rememberMe}
+                        onChange={(event) => setRememberMe(event.target.checked)}
+                      />
+                      <span>记住密码</span>
+                      <small>使用系统加密存储；登录失效时会自动填回</small>
+                    </label>
+                    <button
+                      type="button"
+                      className="account-text-action"
+                      disabled={isBusy}
+                      onClick={() => {
+                        setResetIdentifier(identifier);
+                        setResetNotice(undefined);
+                        setResetSent(false);
+                        setResetCode("");
+                        setResetPassword("");
+                        setResetConfirmation("");
+                        setLocalError(undefined);
+                        setIsResetOpen((current) => !current);
+                        clearError();
+                      }}
+                    >
+                      忘记密码？
+                    </button>
+                  </div>
+                ) : null}
+                {isResetOpen ? (
+                  <div className="account-reset-panel">
+                    <label className="account-field">
+                      <span>找回账号</span>
+                      <div>
+                        <UserRound />
+                        <input
+                          autoFocus
+                          autoComplete="username"
+                          value={resetIdentifier}
+                          disabled={isBusy}
+                          onChange={(event) => {
+                            setResetIdentifier(event.target.value);
+                            setResetSent(false);
+                            setResetCode("");
+                            setResetNotice(undefined);
+                            clearError();
+                          }}
+                          placeholder="注册邮箱或手机号"
+                        />
+                      </div>
+                    </label>
+                    <Button
+                      type="button"
+                      className="account-reset-submit"
+                      disabled={isBusy || resetCountdown > 0 || !resetIdentifier.trim()}
+                      onClick={() => void submitPasswordReset()}
+                    >
+                      {resetCountdown > 0 ? `${resetCountdown}s 后可重新发送` : "发送验证码"}
+                    </Button>
+                    <p className="account-field-hint">先发送验证码，再填写验证码和两次新密码。</p>
+                    <>
+                      <label className="account-field">
+                        <span>重置验证码</span>
+                        <div>
+                          <input
+                            autoComplete="one-time-code"
+                            inputMode="numeric"
+                            maxLength={6}
+                            value={resetCode}
+                            disabled={isBusy}
+                            onChange={(event) =>
+                              setResetCode(event.target.value.replace(/\D/g, "").slice(0, 6))
+                            }
+                            placeholder="输入收到的 6 位验证码"
+                          />
+                        </div>
+                      </label>
+                      <label className="account-field">
+                        <span>新密码</span>
+                        <div>
+                          <input
+                            type="password"
+                            autoComplete="new-password"
+                            maxLength={32}
+                            value={resetPassword}
+                            disabled={isBusy}
+                            onChange={(event) => setResetPassword(event.target.value)}
+                            placeholder="8～32 位，包含字母和数字"
+                          />
+                        </div>
+                      </label>
+                      <label className="account-field">
+                        <span>确认新密码</span>
+                        <div>
+                          <input
+                            type="password"
+                            autoComplete="new-password"
+                            maxLength={32}
+                            value={resetConfirmation}
+                            disabled={isBusy}
+                            onChange={(event) => setResetConfirmation(event.target.value)}
+                            placeholder="再次输入新密码"
+                          />
+                        </div>
+                      </label>
+                      <Button
+                        type="button"
+                        disabled={
+                          isBusy ||
+                          !resetSent ||
+                          resetCode.length !== 6 ||
+                          !resetPassword ||
+                          !resetConfirmation
+                        }
+                        onClick={() => void completePasswordReset()}
+                      >
+                        {isBusy ? "正在验证并重置…" : "确认重置密码"}
+                      </Button>
+                    </>
+                    <button
+                      type="button"
+                      className="account-text-action"
+                      disabled={isBusy}
+                      onClick={() => {
+                        setIsResetOpen(false);
+                        setResetCode("");
+                        setResetPassword("");
+                        setResetConfirmation("");
+                        clearError();
+                        setLocalError(undefined);
+                      }}
+                    >
+                      返回登录
+                    </button>
+                    {resetNotice ? (
+                      <div className="account-inline-notice is-success">{resetNotice}</div>
+                    ) : null}
+                  </div>
+                ) : null}
+              </>
             ) : null}
 
             <AnimatePresence initial={false}>
@@ -512,30 +739,35 @@ export const AccountPage = () => {
                 </motion.div>
               ) : null}
             </AnimatePresence>
-            <AnimatePresence initial={false}></AnimatePresence>
-
-            <Button type="submit" disabled={!canSubmit} className="account-submit">
-              <AnimatePresence mode="wait" initial={false}>
-                <motion.span
-                  key={isBusy ? "busy" : mode}
-                  className="account-submit-state"
-                  initial={{ opacity: 0, y: 5 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: -4 }}
-                  transition={{ duration: motionDuration.fast, ease: motionCurve.enter }}
-                >
-                  {isBusy ? (
-                    <>
-                      <LoaderCircle className="account-spinner" /> 正在处理…
-                    </>
-                  ) : mode === "login" ? (
-                    "登录并上号"
-                  ) : (
-                    "创建账号"
-                  )}
-                </motion.span>
-              </AnimatePresence>
-            </Button>
+            {!isResetOpen ? (
+              <Button
+                type="submit"
+                hidden={isResetOpen}
+                disabled={!canSubmit || isResetOpen}
+                className="account-submit"
+              >
+                <AnimatePresence mode="wait" initial={false}>
+                  <motion.span
+                    key={isBusy ? "busy" : mode}
+                    className="account-submit-state"
+                    initial={{ opacity: 0, y: 5 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -4 }}
+                    transition={{ duration: motionDuration.fast, ease: motionCurve.enter }}
+                  >
+                    {isBusy ? (
+                      <>
+                        <LoaderCircle className="account-spinner" /> 正在处理…
+                      </>
+                    ) : mode === "login" ? (
+                      "登录并上号"
+                    ) : (
+                      "创建账号"
+                    )}
+                  </motion.span>
+                </AnimatePresence>
+              </Button>
+            ) : null}
           </motion.form>
         </AnimatePresence>
 

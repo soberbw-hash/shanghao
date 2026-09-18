@@ -18,6 +18,8 @@ export interface ChatImageAttachment {
 }
 
 export interface ChatMessage {
+  /** Account portrait snapshot; optional for older persisted messages. */
+  avatarUrl?: string;
   id: string;
   clientMessageId?: string;
   peerId: string;

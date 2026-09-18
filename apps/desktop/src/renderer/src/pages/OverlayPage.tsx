@@ -15,12 +15,7 @@ import { gsap } from "gsap";
 import { MemberPresenceState, MemberSpeakingState, type OverlayState } from "@private-voice/shared";
 
 import { motionDuration, motionEase } from "../features/motion/motionSystem";
-import {
-  getAvatarEmoji,
-  getAvatarFaceStyle,
-  getAvatarSrc,
-  getStableAvatarId,
-} from "../utils/profile";
+import { AccountAvatar } from "../components/account/AccountAvatar";
 
 const OVERLAY_WIDTH = 142;
 const AVATAR_SIZE = 26;
@@ -29,57 +24,6 @@ const GAP = 4;
 const PADDING = 5;
 const TOOLS_REVEAL_SECONDS = 1;
 const POINTER_STILL_THRESHOLD = 3;
-
-const OverlayAvatar = ({
-  memberId,
-  nickname,
-  avatarId,
-  dimmed,
-}: {
-  memberId: string;
-  nickname: string;
-  avatarId: ReturnType<typeof getStableAvatarId>;
-  dimmed: boolean;
-}) => {
-  const source = getAvatarSrc(avatarId);
-  const [loadedSource, setLoadedSource] = useState<string>();
-  const isLoaded = loadedSource === source;
-
-  useEffect(() => {
-    setLoadedSource(undefined);
-  }, [memberId, source]);
-
-  return (
-    <>
-      <span
-        aria-hidden="true"
-        style={{
-          position: "absolute",
-          inset: 0,
-          display: "grid",
-          placeItems: "center",
-          fontSize: 17,
-          lineHeight: 1,
-          opacity: isLoaded ? 0 : 1,
-        }}
-      >
-        {getAvatarEmoji(avatarId)}
-      </span>
-      <img
-        src={source}
-        alt={nickname}
-        draggable={false}
-        onLoad={() => setLoadedSource(source)}
-        onError={() => setLoadedSource(undefined)}
-        style={{
-          ...getAvatarFaceStyle(avatarId),
-          opacity: isLoaded ? 1 : 0,
-          filter: dimmed ? "saturate(0.5)" : "none",
-        }}
-      />
-    </>
-  );
-};
 
 export const OverlayPage = () => {
   const rootRef = useRef<HTMLDivElement>(null);
@@ -324,7 +268,6 @@ export const OverlayPage = () => {
         }}
       >
         {onlineMembers.map((member) => {
-          const avatarId = getStableAvatarId(member.id, member.avatarId);
           const isSpeaking = member.speakingState === MemberSpeakingState.Speaking;
           const isMuted = member.isMuted;
           const isDeafened = member.isDeafened;
@@ -441,10 +384,10 @@ export const OverlayPage = () => {
                     "border-color 220ms cubic-bezier(0.16,1,0.3,1), box-shadow 220ms cubic-bezier(0.16,1,0.3,1), opacity 160ms linear",
                 }}
               >
-                <OverlayAvatar
-                  memberId={member.id}
-                  nickname={member.nickname}
-                  avatarId={avatarId}
+                <AccountAvatar
+                  name={member.nickname}
+                  src={member.avatarUrl || member.avatarDataUrl}
+                  className="h-full w-full"
                   dimmed={Boolean(isMuted || isDeafened)}
                 />
               </div>

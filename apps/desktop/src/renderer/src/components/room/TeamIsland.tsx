@@ -1,7 +1,10 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
+import ceilingCurtain from "../../assets/scenes/shanghao-room/curtain-ceiling-v2.png";
+import foregroundLeaves from "../../assets/scenes/shanghao-room/foreground-leaves-v2.png";
 import { gsap } from "gsap";
 import { Music2 } from "lucide-react";
+import roomEnvironmentUrl from "../../assets/scenes/shanghao-room/environment-v3-extended.png";
 
 import {
   type BuiltInAvatarId,
@@ -406,252 +409,276 @@ export const TeamIsland = ({
       } relative h-full min-h-[420px] overflow-hidden`}
       data-testid="team-island"
     >
-      <span className="scene-knock-wave" data-knock-wave aria-hidden="true" />
-      <div className="team-island-stage absolute inset-0" aria-hidden="true">
-        <div className="scene-wall-backdrop" />
-        <div className="scene-weather-ambient" />
-        <div className="scene-window-light" />
-        <div className="scene-rug" />
-        <div className="scene-brand-arc" />
-        {wallFeatures["wall-left"].includes("weather-window") &&
-        sceneFeatureRegistry.has("weather-window") ? (
-          <div className="scene-window-nook">
-            <DynamicWeatherWindow
-              isEnabled={isDynamicWeatherEnabled ?? true}
-              locationMode={weatherLocationMode ?? "auto"}
-              manualCity={weatherManualCity ?? ""}
-            />
-          </div>
-        ) : null}
-        {wallFeatures["wall-right"].includes("wall-clock") &&
-        sceneFeatureRegistry.has("wall-clock") ? (
-          <div className="scene-wall-clock">
-            <SceneWallClock />
-          </div>
-        ) : null}
+      <div className="scene-coordinate-space">
         <div
-          className={`scene-service-zone scene-service-restroom ${
-            hoveredZone === "restroomZone" ? "is-hovered" : ""
-          } ${localZone === "restroomZone" ? "is-current" : ""}`}
-        >
-          <SceneExitDoor className="scene-exit-door" />
-          <span className="scene-exit-label">离开</span>
-        </div>
-        {seatSlots.map((slot, slotIndex) => {
-          const occupant = memberBySeat.get(slot.id);
-          // Presence publishes the destination immediately. Keep the old desk display stable
-          // until the character has physically completed the route away from that desk.
-          const settledOccupant = settledMemberBySeat.get(slot.id);
-          const occupantTone = occupant ? memberStatus(occupant).tone : undefined;
-          const isScreenSharing = screenSharingSet.has(settledOccupant?.id ?? "");
-          return (
-            <div
-              key={slot.id}
-              className={`scene-workstation ${hoveredZone === slot.id ? "is-hovered" : ""} ${
-                localSettledZone === slot.id ? "is-current" : ""
-              } ${occupant ? "is-occupied" : ""} ${
-                occupantTone === "reconnecting" ? "is-reconnecting" : ""
-              }`}
-              data-seat-zone={slot.id}
-              style={{
-                left: `${slot.left}%`,
-                top: `${slot.top}%`,
-                zIndex: characterPositions[slot.id].zIndex - 3,
-              }}
-            >
-              <div className="scene-desk-shadow" />
-              <div className="scene-workstation-art-frame">
-                <WorkstationArt className="scene-workstation-art" />
-                <span
-                  className={`scene-workstation-screen ${settledOccupant ? "online" : ""} ${
-                    settledOccupant?.gameName ? "gaming" : ""
-                  } ${isScreenSharing ? "sharing" : ""} ${
-                    networkQuality === "poor" && settledOccupant ? "network-unstable" : ""
-                  }`}
-                >
-                  <AnimatePresence mode="sync" initial={false}>
-                    {settledOccupant ? (
-                      <motion.span
-                        key={`${settledOccupant.id}:${slot.id}:${
-                          isScreenSharing ? "sharing" : (settledOccupant.gameName ?? "idle")
-                        }`}
-                        className="scene-workstation-screen-content"
-                        initial={{ opacity: 0, scale: 0.96 }}
-                        animate={{ opacity: 1, scale: 1 }}
-                        exit={{ opacity: 0, scale: 0.98 }}
-                        transition={{ duration: 0.26, ease: [0.22, 1, 0.36, 1] }}
-                      >
-                        {isScreenSharing ? (
-                          <span className="scene-workstation-sharing-mark">共享中</span>
-                        ) : settledOccupant.gameName ? (
-                          <GameMonitorContent
-                            gameName={settledOccupant.gameName}
-                            iconDataUrl={settledOccupant.gameIconDataUrl}
-                            shouldReduceMotion={shouldReduceMotion || shouldPauseAmbientMotion}
-                          />
-                        ) : (
-                          <IdleMonitorContent
-                            offsetSeconds={slotIndex * 48}
-                            shouldReduceMotion={shouldReduceMotion || shouldPauseAmbientMotion}
-                          />
-                        )}
-                      </motion.span>
-                    ) : null}
-                  </AnimatePresence>
-                </span>
-              </div>
+          className="scene-extended-environment"
+          style={{ backgroundImage: `url(${roomEnvironmentUrl})` }}
+          aria-hidden="true"
+        />
+        <span className="scene-knock-wave" data-knock-wave aria-hidden="true" />
+        <img
+          className="scene-ceiling-curtain"
+          src={ceilingCurtain}
+          alt=""
+          aria-hidden="true"
+          draggable={false}
+        />
+        <img
+          className="scene-foreground-leaves"
+          src={foregroundLeaves}
+          alt=""
+          aria-hidden="true"
+          draggable={false}
+        />
+        <div className="team-island-stage absolute inset-0" aria-hidden="true">
+          <div className="scene-wall-backdrop" />
+          <div className="scene-weather-ambient" />
+          <div className="scene-window-light" />
+          <div className="scene-rug" />
+          <div className="scene-brand-arc" />
+          {wallFeatures["wall-left"].includes("weather-window") &&
+          sceneFeatureRegistry.has("weather-window") ? (
+            <div className="scene-window-nook">
+              <DynamicWeatherWindow
+                isEnabled={isDynamicWeatherEnabled ?? true}
+                locationMode={weatherLocationMode ?? "auto"}
+                manualCity={weatherManualCity ?? ""}
+              />
             </div>
-          );
-        })}
-      </div>
-      {wallFeatures["wall-center"].includes("date-calendar") &&
-      sceneFeatureRegistry.has("date-calendar") ? (
-        <RoomDateCalendar />
-      ) : null}
-      <RoomCollectionShelf
-        items={collectionItems}
-        isOpen={isCollectionOpen}
-        isDragOver={isCollectionDragOver}
-        hasUnreadItems={hasUnreadCollectionItems}
-        onOpen={() => onOpenCollection?.()}
-        onDragOverChange={(value) => onCollectionDragOverChange?.(value)}
-        onSaveDragged={(payload) => onSaveDraggedCollection?.(payload)}
-      />
-      <div className="pointer-events-none absolute inset-0 z-[48]">
-        {seatSlots.map((slot) => {
-          const occupied = occupiedSeatIds.has(slot.id);
-          return (
-            <div
-              key={slot.id}
-              className={`scene-seat-marker ${occupied ? "occupied" : "empty"}`}
-              style={{
-                left: `${slot.left}%`,
-                top: `${slot.top}%`,
-              }}
-              aria-hidden="true"
-            >
-              <span>{slot.shortLabel}</span>
+          ) : null}
+          {wallFeatures["wall-right"].includes("wall-clock") &&
+          sceneFeatureRegistry.has("wall-clock") ? (
+            <div className="scene-wall-clock">
+              <SceneWallClock />
             </div>
-          );
-        })}
-      </div>
-
-      <div className="pointer-events-none absolute inset-0 z-[18]">
-        {sceneZones.map((zone) => (
-          <button
-            key={zone.id}
-            type="button"
-            className={`scene-zone-hotspot pointer-events-auto ${
-              zone.kind === "seat" ? "seat" : "activity"
-            } ${localZone === zone.id ? "current" : ""}`}
-            style={{
-              left: `${zone.left - zone.width / 2}%`,
-              top: `${zone.top - zone.height / 2}%`,
-              width: `${zone.width}%`,
-              height: `${zone.height}%`,
-            }}
-            aria-label={`移动到${zone.label}`}
-            disabled={zone.kind === "seat" && occupiedSeatIds.has(zone.id) && localZone !== zone.id}
-            onPointerEnter={() => setHoveredZone(zone.id)}
-            onPointerLeave={() =>
-              setHoveredZone((current) => (current === zone.id ? undefined : current))
-            }
-            onFocus={() => setHoveredZone(zone.id)}
-            onBlur={() => setHoveredZone((current) => (current === zone.id ? undefined : current))}
-            onClick={() => onZoneSelect?.(zone.id, zone.activity)}
+          ) : null}
+          <div
+            className={`scene-service-zone scene-service-restroom ${
+              hoveredZone === "restroomZone" ? "is-hovered" : ""
+            } ${localZone === "restroomZone" ? "is-current" : ""}`}
           >
-            <span>{zone.label}</span>
-          </button>
-        ))}
-      </div>
-
-      <div className="music-activity-overlay pointer-events-none absolute inset-0 z-[62]">
-        <AnimatePresence initial={false}>
-          {seatSlots.map((slot) => {
+            <SceneExitDoor className="scene-exit-door" />
+          </div>
+          {seatSlots.map((slot, slotIndex) => {
             const occupant = memberBySeat.get(slot.id);
-            const quickMusic =
-              occupant && activeQuickMusic?.peerId === occupant.id ? activeQuickMusic : undefined;
-            if (
-              !occupant ||
-              (!occupant.musicActivity && !quickMusic) ||
-              settledMemberZones[occupant.id] !== slot.id
-            )
-              return null;
+            // Presence publishes the destination immediately. Keep the old desk display stable
+            // until the character has physically completed the route away from that desk.
+            const settledOccupant = settledMemberBySeat.get(slot.id);
+            const occupantTone = occupant ? memberStatus(occupant).tone : undefined;
+            const isScreenSharing = screenSharingSet.has(settledOccupant?.id ?? "");
             return (
-              <motion.div
-                key={`${occupant.id}:${slot.id}`}
-                className="music-activity-position"
-                style={{ left: `${slot.left}%`, top: `${slot.top}%` }}
-                initial={{ opacity: 0, scale: 0.82 }}
-                animate={{ opacity: 1, scale: 1 }}
-                exit={{ opacity: 0, scale: 0.9 }}
-                transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
+              <div
+                key={slot.id}
+                className={`scene-workstation ${hoveredZone === slot.id ? "is-hovered" : ""} ${
+                  localSettledZone === slot.id ? "is-current" : ""
+                } ${occupant ? "is-occupied" : ""} ${
+                  occupantTone === "reconnecting" ? "is-reconnecting" : ""
+                }`}
+                data-seat-zone={slot.id}
+                style={{
+                  left: `${slot.left}%`,
+                  top: `${slot.top}%`,
+                  zIndex: characterPositions[slot.id].zIndex - 3,
+                }}
               >
-                <div className="activity-badge-stack" data-seat-zone={slot.id}>
-                  {quickMusic ? (
-                    <button
-                      type="button"
-                      className="quick-message-music-badge"
-                      title={
-                        occupant.isLocal
-                          ? `停止本次音乐：${quickMusic.title}`
-                          : `屏蔽${quickMusic.nickname}本次音乐`
-                      }
-                      aria-label={
-                        occupant.isLocal ? "停止本次音乐" : `屏蔽${quickMusic.nickname}本次音乐`
-                      }
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        onMuteQuickMusic?.(quickMusic);
-                      }}
-                    >
-                      <Music2 aria-hidden="true" />
-                      <i aria-hidden="true" />
-                    </button>
-                  ) : null}
-                  {occupant.musicActivity ? (
-                    <MusicActivityBadge activity={occupant.musicActivity} />
-                  ) : null}
+                <div className="scene-desk-shadow" />
+                <div className="scene-workstation-art-frame">
+                  <WorkstationArt className="scene-workstation-art" />
+                  <span
+                    className={`scene-workstation-screen ${settledOccupant ? "online" : ""} ${
+                      settledOccupant?.gameName ? "gaming" : ""
+                    } ${isScreenSharing ? "sharing" : ""} ${
+                      networkQuality === "poor" && settledOccupant ? "network-unstable" : ""
+                    }`}
+                  >
+                    <AnimatePresence mode="sync" initial={false}>
+                      {settledOccupant ? (
+                        <motion.span
+                          key={`${settledOccupant.id}:${slot.id}:${
+                            isScreenSharing ? "sharing" : (settledOccupant.gameName ?? "idle")
+                          }`}
+                          className="scene-workstation-screen-content"
+                          initial={{ opacity: 0, scale: 0.96 }}
+                          animate={{ opacity: 1, scale: 1 }}
+                          exit={{ opacity: 0, scale: 0.98 }}
+                          transition={{ duration: 0.26, ease: [0.22, 1, 0.36, 1] }}
+                        >
+                          {isScreenSharing ? (
+                            <span className="scene-workstation-sharing-mark">共享中</span>
+                          ) : settledOccupant.gameName ? (
+                            <GameMonitorContent
+                              gameName={settledOccupant.gameName}
+                              iconDataUrl={settledOccupant.gameIconDataUrl}
+                              shouldReduceMotion={shouldReduceMotion || shouldPauseAmbientMotion}
+                            />
+                          ) : (
+                            <IdleMonitorContent
+                              offsetSeconds={slotIndex * 48}
+                              shouldReduceMotion={shouldReduceMotion || shouldPauseAmbientMotion}
+                            />
+                          )}
+                        </motion.span>
+                      ) : null}
+                    </AnimatePresence>
+                  </span>
                 </div>
-              </motion.div>
+              </div>
+            );
+          })}
+        </div>
+        {wallFeatures["wall-center"].includes("date-calendar") &&
+        sceneFeatureRegistry.has("date-calendar") ? (
+          <RoomDateCalendar />
+        ) : null}
+        <RoomCollectionShelf
+          items={collectionItems}
+          isOpen={isCollectionOpen}
+          isDragOver={isCollectionDragOver}
+          hasUnreadItems={hasUnreadCollectionItems}
+          onOpen={() => onOpenCollection?.()}
+          onDragOverChange={(value) => onCollectionDragOverChange?.(value)}
+          onSaveDragged={(payload) => onSaveDraggedCollection?.(payload)}
+        />
+        <div className="scene-seat-markers pointer-events-none absolute inset-0 z-[19]">
+          {seatSlots.map((slot) => {
+            const occupied = occupiedSeatIds.has(slot.id);
+            return (
+              <div
+                key={slot.id}
+                className={`scene-seat-marker ${occupied ? "occupied" : "empty"} ${hoveredZone === slot.id ? "is-hovered" : ""}`}
+                style={{
+                  left: `${slot.left}%`,
+                  top: `${slot.top}%`,
+                }}
+                aria-hidden="true"
+              >
+                <span>{slot.shortLabel}</span>
+              </div>
+            );
+          })}
+        </div>
+
+        <div className="pointer-events-none absolute inset-0 z-[18]">
+          {sceneZones.map((zone) => (
+            <button
+              key={zone.id}
+              type="button"
+              className={`scene-zone-hotspot pointer-events-auto ${
+                zone.kind === "seat" ? "seat" : "activity"
+              } ${localZone === zone.id ? "current" : ""}`}
+              style={{
+                left: `${zone.left - zone.width / 2}%`,
+                top: `${zone.top - zone.height / 2}%`,
+                width: `${zone.width}%`,
+                height: `${zone.height}%`,
+              }}
+              aria-label={`移动到${zone.label}`}
+              disabled={
+                zone.kind === "seat" && occupiedSeatIds.has(zone.id) && localZone !== zone.id
+              }
+              onPointerEnter={() => setHoveredZone(zone.id)}
+              onPointerLeave={() =>
+                setHoveredZone((current) => (current === zone.id ? undefined : current))
+              }
+              onFocus={() => setHoveredZone(zone.id)}
+              onBlur={() =>
+                setHoveredZone((current) => (current === zone.id ? undefined : current))
+              }
+              onClick={() => onZoneSelect?.(zone.id, zone.activity)}
+            >
+              <span>{zone.label}</span>
+            </button>
+          ))}
+        </div>
+
+        <div className="music-activity-overlay pointer-events-none absolute inset-0 z-[62]">
+          <AnimatePresence initial={false}>
+            {seatSlots.map((slot) => {
+              const occupant = memberBySeat.get(slot.id);
+              const quickMusic =
+                occupant && activeQuickMusic?.peerId === occupant.id ? activeQuickMusic : undefined;
+              if (
+                !occupant ||
+                (!occupant.musicActivity && !quickMusic) ||
+                settledMemberZones[occupant.id] !== slot.id
+              )
+                return null;
+              return (
+                <motion.div
+                  key={`${occupant.id}:${slot.id}`}
+                  className="music-activity-position"
+                  style={{ left: `${slot.left}%`, top: `${slot.top}%` }}
+                  initial={{ opacity: 0, scale: 0.82 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  exit={{ opacity: 0, scale: 0.9 }}
+                  transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
+                >
+                  <div className="activity-badge-stack" data-seat-zone={slot.id}>
+                    {quickMusic ? (
+                      <button
+                        type="button"
+                        className="quick-message-music-badge"
+                        title={
+                          occupant.isLocal
+                            ? `停止本次音乐：${quickMusic.title}`
+                            : `屏蔽${quickMusic.nickname}本次音乐`
+                        }
+                        aria-label={
+                          occupant.isLocal ? "停止本次音乐" : `屏蔽${quickMusic.nickname}本次音乐`
+                        }
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          onMuteQuickMusic?.(quickMusic);
+                        }}
+                      >
+                        <Music2 aria-hidden="true" />
+                        <i aria-hidden="true" />
+                      </button>
+                    ) : null}
+                    {occupant.musicActivity ? (
+                      <MusicActivityBadge activity={occupant.musicActivity} />
+                    ) : null}
+                  </div>
+                </motion.div>
+              );
+            })}
+          </AnimatePresence>
+        </div>
+
+        <AnimatePresence>
+          {visibleMembers.map((member, memberIndex) => {
+            const zone = resolvedMemberZones.get(member.id) ?? "gameDesk1";
+            const awayIndex = awayMembers.findIndex((candidate) => candidate.id === member.id);
+            return (
+              <SceneCharacter
+                key={sceneMemberKey(member)}
+                member={member}
+                avatarId={visibleAvatars.get(member.id) ?? "fox"}
+                shouldReduceMotion={shouldReduceMotion}
+                awayIndex={Math.max(0, awayIndex)}
+                awayCount={awayMembers.length}
+                zone={zone}
+                arrivalIndex={memberIndex}
+                isWelcoming={welcomingMemberIds.has(member.id)}
+                isScreenSharing={screenSharingSet.has(member.id)}
+                idleAction={coordinatedIdleActions[member.id]}
+                reactions={reactions
+                  .filter(
+                    (reaction) =>
+                      reaction.targetPeerId === member.id &&
+                      Date.now() - Date.parse(reaction.createdAt) < 2_000,
+                  )
+                  .slice(-3)}
+                chatBubble={chatBubbleByPeerId.get(member.id)}
+                onReact={onReact}
+                onVolumeChange={onVolumeChange}
+                onSettled={handleMemberSettled}
+                onExited={handleMemberExited}
+              />
             );
           })}
         </AnimatePresence>
       </div>
-
-      <AnimatePresence>
-        {visibleMembers.map((member, memberIndex) => {
-          const zone = resolvedMemberZones.get(member.id) ?? "gameDesk1";
-          const awayIndex = awayMembers.findIndex((candidate) => candidate.id === member.id);
-          return (
-            <SceneCharacter
-              key={sceneMemberKey(member)}
-              member={member}
-              avatarId={visibleAvatars.get(member.id) ?? "fox"}
-              shouldReduceMotion={shouldReduceMotion}
-              awayIndex={Math.max(0, awayIndex)}
-              awayCount={awayMembers.length}
-              zone={zone}
-              arrivalIndex={memberIndex}
-              isWelcoming={welcomingMemberIds.has(member.id)}
-              isScreenSharing={screenSharingSet.has(member.id)}
-              idleAction={coordinatedIdleActions[member.id]}
-              reactions={reactions
-                .filter(
-                  (reaction) =>
-                    reaction.targetPeerId === member.id &&
-                    Date.now() - Date.parse(reaction.createdAt) < 2_000,
-                )
-                .slice(-3)}
-              chatBubble={chatBubbleByPeerId.get(member.id)}
-              onReact={onReact}
-              onVolumeChange={onVolumeChange}
-              onSettled={handleMemberSettled}
-              onExited={handleMemberExited}
-            />
-          );
-        })}
-      </AnimatePresence>
     </div>
   );
 };

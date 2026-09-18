@@ -62,6 +62,7 @@ import {
 import { useRoomDeepLink } from "../features/room/useRoomDeepLink";
 import { useAppStore } from "../store/appStore";
 import { useAccountStore } from "../store/accountStore";
+import { ACCOUNT_AVATAR_PRESETS } from "../features/account/accountAvatarPresets";
 import { useAudioStore } from "../store/audioStore";
 import { useRoomStore } from "../store/roomStore";
 import { useSettingsStore } from "../store/settingsStore";
@@ -74,6 +75,7 @@ let activeJoinPromise: Promise<void> | null = null;
 let activeSpeakingDetector: ReturnType<typeof createSpeakingDetector> | null = null;
 let activeProcessedMicrophone: ProcessedMicrophoneStream | null = null;
 let inputDeviceSwitchQueue: Promise<void> = Promise.resolve();
+let activeLeavePromise: Promise<void> | undefined;
 let previousMemberIds = new Set<string>();
 const CHANNEL_IDS = new Set<ChannelId>(["main", "side"]);
 let lastQuickMessageSentAt = 0;
@@ -226,6 +228,7 @@ export const useRoomState = () => {
   const runtimeInfo = useSettingsStore((state) => state.runtimeInfo);
   const settings = useSettingsStore((state) => state.settings);
   const avatarDataUrl = useSettingsStore((state) => state.avatarDataUrl);
+  const accountDisplayName = useAccountStore((state) => state.snapshot.profile?.displayName);
   const room = useRoomStore((state) => state.room);
   const localStream = useRoomStore((state) => state.localStream);
   const setRoom = useRoomStore((state) => state.setRoom);
@@ -290,7 +293,7 @@ export const useRoomState = () => {
     );
   }, [isDeafened, isMuted, callModeActive, updateLocalPresence]);
 
-  const profileNickname = settings?.nickname;
+  const profileNickname = accountDisplayName || settings?.nickname;
   const profileAvatarId = settings?.avatarId;
   useEffect(() => {
     if (!profileNickname) {
@@ -454,7 +457,7 @@ export const useRoomState = () => {
       roomId: channelId,
       peerId,
       profileId: signalingProfileId,
-      nickname: currentSettings?.nickname || "我",
+      nickname: accountSnapshot.profile?.displayName || currentSettings?.nickname || "访客",
       avatarDataUrl: undefined,
       avatarId: currentSettings?.avatarId,
       localStream: stream,
@@ -492,6 +495,16 @@ export const useRoomState = () => {
 
           return {
             ...member,
+            // Presence packets may omit local account fields. Resolve the latest
+            // account here so reconnect/speaking updates cannot replace it with “我”.
+            nickname: useAccountStore.getState().snapshot.profile?.displayName || member.nickname,
+            avatarUrl:
+              useAccountStore.getState().snapshot.profile?.avatarUrl ||
+              ACCOUNT_AVATAR_PRESETS.find(
+                (preset) =>
+                  preset.id === useSettingsStore.getState().settings?.accountAvatarPresetId,
+              )?.source ||
+              member.avatarUrl,
             volume,
             isMuted: audioState.isMuted,
             isDeafened: audioState.isDeafened,
@@ -1009,26 +1022,32 @@ export const useRoomState = () => {
     activeProcessedMicrophone?.setSendVolume(volume);
   };
 
-  const leaveRoom = async () => {
-    try {
-      playUiSound("leave-room");
-      setLifecycleState(RoomLifecycleState.Closing);
-      if (settings) {
-        useRoomStore.getState().syncLocalProfile({
-          nickname: settings.nickname,
-          avatarPath: settings.avatarPath,
-          avatarDataUrl,
-          avatarId: settings.avatarId,
+  const leaveRoom = () => {
+    if (activeLeavePromise) return activeLeavePromise;
+    activeLeavePromise = (async () => {
+      try {
+        playUiSound("leave-room");
+        setLifecycleState(RoomLifecycleState.Closing);
+        if (settings) {
+          useRoomStore.getState().syncLocalProfile({
+            nickname: settings.nickname,
+            avatarPath: settings.avatarPath,
+            avatarDataUrl,
+            avatarId: settings.avatarId,
+          });
+        }
+        useAppStore.getState().navigate("home");
+        await cleanupPreviousSession({ resetStore: true });
+        previousMemberIds = new Set<string>();
+      } catch (error) {
+        await writeRendererLog("signaling", "error", "Failed to leave room cleanly", {
+          error: error instanceof Error ? error.message : String(error),
         });
+      } finally {
+        activeLeavePromise = undefined;
       }
-      useAppStore.getState().navigate("home");
-      await cleanupPreviousSession({ resetStore: true });
-      previousMemberIds = new Set<string>();
-    } catch (error) {
-      await writeRendererLog("signaling", "error", "Failed to leave room cleanly", {
-        error: error instanceof Error ? error.message : String(error),
-      });
-    }
+    })();
+    return activeLeavePromise;
   };
 
   const copyInviteLink = async () => {
@@ -1095,6 +1114,7 @@ export const useRoomState = () => {
         clientMessageId,
         peerId: localPeer?.id ?? "local-member",
         nickname: localPeer?.nickname ?? settings.nickname,
+        avatarUrl: localPeer?.avatarUrl,
         avatarDataUrl: localPeer?.avatarDataUrl,
         avatarId: localPeer?.avatarId,
         content: trimmed,
@@ -1329,6 +1349,24 @@ export const useRoomState = () => {
     musicActivity?: RoomMember["musicActivity"],
     gameIconDataUrl?: string,
   ) => {
+    const currentLocalMember = useRoomStore
+      .getState()
+      .room.members.find((member) => member.isLocal);
+    const sameMusicActivity =
+      currentLocalMember?.musicActivity?.provider === musicActivity?.provider &&
+      currentLocalMember?.musicActivity?.providerName === musicActivity?.providerName &&
+      currentLocalMember?.musicActivity?.trackTitle === musicActivity?.trackTitle &&
+      currentLocalMember?.musicActivity?.artist === musicActivity?.artist;
+    if (
+      currentLocalMember &&
+      currentLocalMember.sceneZone === sceneZone &&
+      currentLocalMember.activity === activity &&
+      currentLocalMember.gameName === gameName &&
+      currentLocalMember.gameIconDataUrl === gameIconDataUrl &&
+      sameMusicActivity
+    ) {
+      return;
+    }
     if (sceneZone === "restroomZone") {
       useAudioStore.getState().setMuted(true);
       activeClient?.updateMuteState(true, false);

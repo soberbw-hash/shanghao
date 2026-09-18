@@ -162,6 +162,10 @@ export const IPC_CHANNELS = {
   },
   recording: {
     export: "recording:export",
+    startSession: "recording:start-session",
+    appendChunk: "recording:append-chunk",
+    finalizeSession: "recording:finalize-session",
+    abortSession: "recording:abort-session",
     saveSpeakerSegment: "recording:save-speaker-segment",
     finalizeSpeakerSegments: "recording:finalize-speaker-segments",
     saveParticipantTrack: "recording:save-participant-track",

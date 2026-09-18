@@ -85,11 +85,32 @@ const readBoundedText = async (response: Response): Promise<string> => {
   if (declaredLength > MAX_PROVIDER_RESPONSE_BYTES) {
     throw new Error("custom_ai_response_too_large");
   }
-  const text = await response.text();
-  if (Buffer.byteLength(text, "utf8") > MAX_PROVIDER_RESPONSE_BYTES) {
-    throw new Error("custom_ai_response_too_large");
+  if (!response.body) {
+    const text = await response.text();
+    if (Buffer.byteLength(text, "utf8") > MAX_PROVIDER_RESPONSE_BYTES) {
+      throw new Error("custom_ai_response_too_large");
+    }
+    return text;
   }
-  return text;
+  const reader = response.body.getReader();
+  const chunks: Buffer[] = [];
+  let totalBytes = 0;
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (!value?.byteLength) continue;
+      totalBytes += value.byteLength;
+      if (totalBytes > MAX_PROVIDER_RESPONSE_BYTES) {
+        await reader.cancel("custom_ai_response_too_large");
+        throw new Error("custom_ai_response_too_large");
+      }
+      chunks.push(Buffer.from(value));
+    }
+  } finally {
+    reader.releaseLock();
+  }
+  return Buffer.concat(chunks, totalBytes).toString("utf8");
 };
 
 const extractJsonObject = <T>(value: string): T => {

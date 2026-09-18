@@ -416,7 +416,12 @@ export const useRoomStore = create<RoomStoreState>((set) => ({
       if (existingByClientId && existingByClientId.id !== message.id) {
         byId.delete(existingByClientId.id);
       }
-      byId.set(message.id, existingByClientId ? { ...existingByClientId, ...message } : message);
+      const avatarUrl =
+        state.room.members.find((member) => member.id === message.peerId)?.avatarUrl ||
+        message.avatarUrl ||
+        existingByClientId?.avatarUrl ||
+        byId.get(message.id)?.avatarUrl;
+      byId.set(message.id, { ...existingByClientId, ...message, avatarUrl });
       return {
         chatMessages: [...byId.values()]
           .sort((left, right) => left.createdAt.localeCompare(right.createdAt))
@@ -443,7 +448,11 @@ export const useRoomStore = create<RoomStoreState>((set) => ({
           );
           if (optimistic && optimistic.id !== message.id) byId.delete(optimistic.id);
         }
-        byId.set(message.id, { ...message, deliveryState: "sent" });
+        const avatarUrl =
+          state.room.members.find((member) => member.id === message.peerId)?.avatarUrl ||
+          message.avatarUrl ||
+          byId.get(message.id)?.avatarUrl;
+        byId.set(message.id, { ...message, avatarUrl, deliveryState: "sent" });
       }
       return {
         chatMessages: [...byId.values()]

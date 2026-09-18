@@ -12,15 +12,13 @@ export interface WindowsIconOverlayStatus {
 const READ_SCRIPT = String.raw`
 $shellKey = 'Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\Shell Icons'
 $arrow = $null
-$shield = $null
 if (Test-Path -LiteralPath $shellKey) {
   $arrow = Get-ItemPropertyValue -LiteralPath $shellKey -Name '29' -ErrorAction SilentlyContinue
-  $shield = Get-ItemPropertyValue -LiteralPath $shellKey -Name '77' -ErrorAction SilentlyContinue
 }
 $blank = '%SystemRoot%\System32\imageres.dll,197'
 @{
   arrowHidden = [string]::Equals([string]$arrow, $blank, [System.StringComparison]::OrdinalIgnoreCase)
-  shieldHidden = [string]::Equals([string]$shield, $blank, [System.StringComparison]::OrdinalIgnoreCase)
+  shieldHidden = $false
 } | ConvertTo-Json -Compress
 `;
 
@@ -32,7 +30,7 @@ New-Item -Path $shellKey -Force | Out-Null
 New-Item -Path $backupKey -Force | Out-Null
 $hasBackup = (Get-ItemPropertyValue -LiteralPath $backupKey -Name 'Saved' -ErrorAction SilentlyContinue) -eq 1
 if (-not $hasBackup) {
-  foreach ($name in @('29', '77')) {
+  foreach ($name in @('29')) {
     $value = Get-ItemPropertyValue -LiteralPath $shellKey -Name $name -ErrorAction SilentlyContinue
     $exists = $null -ne $value -and -not [string]::Equals([string]$value, $blank, [System.StringComparison]::OrdinalIgnoreCase)
     New-ItemProperty -LiteralPath $backupKey -Name ("Exists" + $name) -PropertyType DWord -Value ([int]$exists) -Force | Out-Null
@@ -43,24 +41,37 @@ if (-not $hasBackup) {
   New-ItemProperty -LiteralPath $backupKey -Name 'Saved' -PropertyType DWord -Value 1 -Force | Out-Null
 }
 New-ItemProperty -LiteralPath $shellKey -Name '29' -PropertyType String -Value $blank -Force | Out-Null
-New-ItemProperty -LiteralPath $shellKey -Name '77' -PropertyType String -Value $blank -Force | Out-Null
 Stop-Process -Name explorer -Force -ErrorAction SilentlyContinue
 Start-Sleep -Milliseconds 350
 Start-Process explorer.exe
-@{ arrowHidden = $true; shieldHidden = $true } | ConvertTo-Json -Compress
+@{ arrowHidden = $true; shieldHidden = $false } | ConvertTo-Json -Compress
 `;
 
 const RESTORE_SCRIPT = String.raw`
 $shellKey = 'Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\Shell Icons'
 $backupKey = 'Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Sober\ShangHao\IconOverlayBackup'
+$blank = '%SystemRoot%\System32\imageres.dll,197'
 New-Item -Path $shellKey -Force | Out-Null
-foreach ($name in @('29', '77')) {
-  $existed = (Get-ItemPropertyValue -LiteralPath $backupKey -Name ("Exists" + $name) -ErrorAction SilentlyContinue) -eq 1
+$currentArrow = Get-ItemPropertyValue -LiteralPath $shellKey -Name '29' -ErrorAction SilentlyContinue
+if ([string]::Equals([string]$currentArrow, $blank, [System.StringComparison]::OrdinalIgnoreCase)) {
+  $existed = (Get-ItemPropertyValue -LiteralPath $backupKey -Name 'Exists29' -ErrorAction SilentlyContinue) -eq 1
   if ($existed) {
-    $value = Get-ItemPropertyValue -LiteralPath $backupKey -Name ("Value" + $name) -ErrorAction SilentlyContinue
-    New-ItemProperty -LiteralPath $shellKey -Name $name -PropertyType String -Value ([string]$value) -Force | Out-Null
+    $value = Get-ItemPropertyValue -LiteralPath $backupKey -Name 'Value29' -ErrorAction SilentlyContinue
+    New-ItemProperty -LiteralPath $shellKey -Name '29' -PropertyType String -Value ([string]$value) -Force | Out-Null
   } else {
-    Remove-ItemProperty -LiteralPath $shellKey -Name $name -ErrorAction SilentlyContinue
+    Remove-ItemProperty -LiteralPath $shellKey -Name '29' -ErrorAction SilentlyContinue
+  }
+}
+# Restore the legacy UAC shield change from older versions only when it is still
+# exactly the value ShangHao wrote. Never overwrite a newer user/tool setting.
+$currentShield = Get-ItemPropertyValue -LiteralPath $shellKey -Name '77' -ErrorAction SilentlyContinue
+if ([string]::Equals([string]$currentShield, $blank, [System.StringComparison]::OrdinalIgnoreCase)) {
+  $legacyExisted = (Get-ItemPropertyValue -LiteralPath $backupKey -Name 'Exists77' -ErrorAction SilentlyContinue) -eq 1
+  if ($legacyExisted) {
+    $legacyValue = Get-ItemPropertyValue -LiteralPath $backupKey -Name 'Value77' -ErrorAction SilentlyContinue
+    New-ItemProperty -LiteralPath $shellKey -Name '77' -PropertyType String -Value ([string]$legacyValue) -Force | Out-Null
+  } elseif ($null -ne $currentShield) {
+    Remove-ItemProperty -LiteralPath $shellKey -Name '77' -ErrorAction SilentlyContinue
   }
 }
 Remove-Item -LiteralPath $backupKey -Recurse -Force -ErrorAction SilentlyContinue
@@ -97,13 +108,10 @@ export const readWindowsIconOverlayStatus = async (): Promise<WindowsIconOverlay
     const shieldHidden = parsed.shieldHidden === true;
     return {
       supported: true,
-      hidden: arrowHidden && shieldHidden,
+      hidden: arrowHidden,
       arrowHidden,
       shieldHidden,
-      message:
-        arrowHidden && shieldHidden
-          ? "快捷方式小箭头和管理员盾牌已隐藏。"
-          : "当前使用 Windows 默认图标标记。",
+      message: arrowHidden ? "快捷方式小箭头已隐藏。" : "当前使用 Windows 默认图标标记。",
     };
   } catch {
     return {
@@ -126,7 +134,7 @@ export const setWindowsIconOverlaysHidden = async (
     supported: true,
     hidden,
     arrowHidden: hidden,
-    shieldHidden: hidden,
-    message: hidden ? "已隐藏快捷方式小箭头和管理员盾牌。" : "已恢复 Windows 默认图标标记。",
+    shieldHidden: false,
+    message: hidden ? "已隐藏快捷方式小箭头。" : "已恢复 Windows 默认图标标记。",
   };
 };

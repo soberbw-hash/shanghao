@@ -120,6 +120,8 @@ export interface UpdateStatus {
     | "installing"
     | "error";
   message: string;
+  /** True when a background download is waiting for realtime activity to become idle. */
+  deferred?: boolean;
   percent?: number;
   bytesPerSecond?: number;
   latestVersion?: string;

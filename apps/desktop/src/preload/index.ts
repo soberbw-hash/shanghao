@@ -293,6 +293,12 @@ const desktopApi: DesktopApi = {
   },
   recording: {
     export: (payload) => ipcRenderer.invoke(IPC_CHANNELS.recording.export, payload),
+    startSession: (payload) => ipcRenderer.invoke(IPC_CHANNELS.recording.startSession, payload),
+    appendChunk: (sessionId, buffer) =>
+      ipcRenderer.invoke(IPC_CHANNELS.recording.appendChunk, sessionId, buffer),
+    finalizeSession: (payload) =>
+      ipcRenderer.invoke(IPC_CHANNELS.recording.finalizeSession, payload),
+    abortSession: (sessionId) => ipcRenderer.invoke(IPC_CHANNELS.recording.abortSession, sessionId),
     saveSpeakerSegment: (payload) =>
       ipcRenderer.invoke(IPC_CHANNELS.recording.saveSpeakerSegment, payload),
     finalizeSpeakerSegments: (payload) =>

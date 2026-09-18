@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { AnimatePresence } from "framer-motion";
 import { RoomConnectionState } from "@private-voice/shared";
 
@@ -39,6 +39,8 @@ export const SharedOverlays = () => {
   const reports = useDailyRoomReportStore((state) => state.reports[roomId]);
   const reportsLoaded = useDailyRoomReportStore((state) => state.loaded[roomId]);
   const [welcomeQueueReady, setWelcomeQueueReady] = useState(false);
+  const roomEntryRef = useRef<string | undefined>(undefined);
+  const [roomEntryKey, setRoomEntryKey] = useState<string | undefined>(undefined);
   const version = runtimeInfo?.version ?? "";
   const releasePending = Boolean(
     settings?.hasCompletedProfileSetup &&
@@ -56,6 +58,19 @@ export const SharedOverlays = () => {
     return () => window.clearTimeout(timer);
   }, [releasePending]);
 
+  // Arm the report once per room entry. A later transition from waiting for a
+  // peer to connected must not be interpreted as a new room entry.
+  useEffect(() => {
+    if (currentPage !== "room") {
+      roomEntryRef.current = undefined;
+      setRoomEntryKey(undefined);
+      return;
+    }
+    if (roomEntryRef.current === roomId) return;
+    roomEntryRef.current = roomId;
+    setRoomEntryKey(roomId);
+  }, [currentPage, roomId]);
+
   const yesterdayDate = getYesterdayDate();
   const yesterdayReport = reports.find((report) => report.date === yesterdayDate);
   const showDailyReport = Boolean(
@@ -64,10 +79,13 @@ export const SharedOverlays = () => {
     !releasePending &&
     !updateInfo?.forceUpdate &&
     currentPage === "room" &&
+    roomEntryKey === roomId &&
     reportsLoaded &&
     yesterdayReport?.hadActivity &&
     settings?.lastDailyRoomReportSeen?.[roomId] !== yesterdayDate &&
-    (roomState === RoomConnectionState.Connected || roomState === RoomConnectionState.Degraded),
+    (roomState === RoomConnectionState.WaitingPeer ||
+      roomState === RoomConnectionState.Connected ||
+      roomState === RoomConnectionState.Degraded),
   );
 
   return (

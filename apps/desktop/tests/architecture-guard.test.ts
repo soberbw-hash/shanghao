@@ -32,7 +32,7 @@ test("large orchestration entry points stay below reviewed growth ceilings", () 
     "apps/desktop/src/renderer/src/pages/RoomPage.tsx": 1_515,
     // lineCount includes the final newline; these are the current reviewed
     // baselines, so any future growth fails until responsibility is extracted.
-    "apps/desktop/src/main/ipc.ts": 1_500,
+    "apps/desktop/src/main/ipc.ts": 1_450,
     "apps/desktop/src/main/ai-model-manager.ts": 1_526,
     "apps/desktop/src/main/ai-runtime-manager.ts": 1_956,
     "packages/signaling/src/server.ts": 1_850,
@@ -59,6 +59,8 @@ test("new 3.0 boundaries are explicit, typed and independently bounded", () => {
     "apps/desktop/src/renderer/src/features/visual-runtime/sceneFeatureRegistry.ts",
     "apps/desktop/src/main/process-tree.ts",
     "apps/desktop/src/main/runtime-health-trend.ts",
+    "apps/desktop/src/main/recording-stream-ipc.ts",
+    "apps/desktop/src/main/recording-tracks-ipc.ts",
   ];
   for (const module of guardedModules) {
     assert.ok(lineCount(module) <= 500, `${module} must be split before it reaches 500 lines`);

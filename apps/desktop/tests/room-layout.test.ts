@@ -177,14 +177,15 @@ test("seat switching uses the full visible workstation area", () => {
 
   assert.equal(teamIslandSource.includes("absolute inset-0 z-[18]"), true);
   assert.match(stylesSource, /\.scene-workstation\s*\{[^}]*pointer-events:\s*none;/s);
-  assert.equal(sceneZonesSource.match(/width: 21/g)?.length, 5);
-  assert.equal(sceneZonesSource.match(/height: 27/g)?.length, 5);
+  assert.equal(sceneZonesSource.match(/width: 18/g)?.length, 5);
+  assert.equal(sceneZonesSource.match(/height: 24/g)?.length, 5);
 });
 
-test("exit label stays clear of the door arrow", () => {
-  const stylesSource = readRendererCss();
-
-  assert.match(stylesSource, /\.scene-service-restroom \.scene-exit-label\s*\{[^}]*top:\s*9%;/s);
+test("door omits permanent exit text but retains its interactive label", () => {
+  const source = readFileSync(teamIslandPath, "utf8");
+  assert.equal(source.includes('className="scene-exit-label"'), false);
+  assert.ok(source.includes("<span>{zone.label}</span>"));
+  assert.ok(source.includes("aria-label={`移动到${zone.label}`}"));
 });
 
 test("game and idle activities animate on the monitor without replacing voice state", () => {
@@ -269,7 +270,7 @@ test("room uses a real always-on-top overlay and a ten-second knock cooldown", (
   assert.equal(stylesSource.includes("html.overlay-renderer"), true);
   assert.equal(stylesSource.includes("background: transparent !important"), true);
   assert.equal(chatSource.includes('message.kind === "system"'), true);
-  assert.equal(chatSource.includes("AvatarPlaceholder"), true);
+  assert.equal(chatSource.includes("ChatAccountAvatar"), true);
   assert.equal(chatSource.includes("MessageLinkPreview"), true);
   assert.equal(chatSource.includes("formatCompactUrl"), true);
   assert.equal(chatLinkPreviewSource.includes("getMessageUrlDetails"), true);
@@ -417,7 +418,8 @@ test("scene seats align with the marked workstation positions", () => {
   assert.equal(stylesSource.includes("width: 41.3%"), true);
   assert.equal(teamIslandSource.includes("WorkstationArt"), true);
   assert.equal(teamIslandSource.includes("workstation-chibi.webp"), false);
-  assert.equal(workstationSource.includes('viewBox="0 0 184 138"'), true);
+  assert.equal(workstationSource.includes("shanghao-room/workstation.png"), true);
+  assert.equal(workstationSource.includes("<img"), true);
   assert.equal(stylesSource.includes("transform: translate(-50%, -50%);"), true);
   assert.equal(stylesSource.includes("translateY(-3px) scale(1.018)"), false);
   assert.equal(teamIslandSource.includes("scene-restroom-door"), false);
@@ -476,12 +478,12 @@ test("scene seats align with the marked workstation positions", () => {
   assert.equal(sceneCharacterSource.includes("WalkingAnimalSprite"), true);
   assert.equal(stylesSource.includes(".desk-animal-layer"), true);
   assert.equal(stylesSource.includes(".desk-animal-chair-front"), false);
-  assert.equal(sceneZonesSource.includes("gameDesk5: { left: 65, top: 70.7"), true);
-  assert.equal(sceneZonesSource.includes("gameDesk4: { left: 40, top: 70.7"), true);
-  assert.equal(sceneZonesSource.includes("gameDesk1: { left: 30, top: 34.7"), true);
-  assert.equal(sceneZonesSource.includes("restroomZone: { left: 13, top: 74"), true);
+  assert.equal(sceneZonesSource.includes("gameDesk5: { left: 64, top: 70"), true);
+  assert.equal(sceneZonesSource.includes("gameDesk4: { left: 36, top: 70"), true);
+  assert.equal(sceneZonesSource.includes("gameDesk1: { left: 28, top: 38"), true);
+  assert.equal(sceneZonesSource.includes("restroomZone: { left: 9, top: 71"), true);
   assert.equal(
-    sceneZonesSource.includes("gameDesk1: { left: 30, top: 34.7, zIndex: 24, scale: 1"),
+    sceneZonesSource.includes("gameDesk1: { left: 28, top: 38, zIndex: 24, scale: 1"),
     true,
   );
 });
