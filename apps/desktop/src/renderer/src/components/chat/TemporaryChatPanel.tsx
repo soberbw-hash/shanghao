@@ -210,6 +210,8 @@ export const TemporaryChatPanel = ({
   const lastQuickCooldownMs = useRef(3_000);
   const quickSendCooldownTimer = useRef<number | undefined>(undefined);
   const listRef = useRef<HTMLDivElement>(null);
+  const latestMessageElementRef = useRef<HTMLDivElement>(null);
+  const isNearBottomRef = useRef(true);
   const sendControlRef = useRef<HTMLSpanElement>(null);
   const dragDepthRef = useRef(0);
   // The first render can already contain restored history. Treat it as an
@@ -300,13 +302,14 @@ export const TemporaryChatPanel = ({
 
     const previous = previousMessageCount.current;
     previousMessageCount.current = messages.length;
-    const wasNearBottom = list.scrollHeight - list.scrollTop - list.clientHeight < 96;
+    const wasNearBottom = isNearBottomRef.current;
     const latestMessage = messages[messages.length - 1];
     if (wasNearBottom || latestMessage?.isLocal || previous === 0) {
       window.requestAnimationFrame(() => {
         const behavior =
           shouldReduceMotion || previous === 0 || latestMessage?.isLocal ? "auto" : "smooth";
         list.scrollTo({ top: list.scrollHeight, behavior });
+        isNearBottomRef.current = true;
         // Link cards and compressed-image previews can finish layout one frame
         // after the message row. Pin a locally sent message to the true bottom
         // again so the composer never clips its lower half.
@@ -321,8 +324,7 @@ export const TemporaryChatPanel = ({
 
     if (shouldReduceMotion || messages.length <= previous) return;
 
-    const messageItems = list.querySelectorAll("[data-gsap-chat-message]");
-    const latest = messageItems.item(messageItems.length - 1);
+    const latest = latestMessageElementRef.current;
     if (!latest) return;
 
     const isSystemMessage = latestMessage?.kind === "system";
@@ -702,7 +704,8 @@ export const TemporaryChatPanel = ({
             className="chat-message-list h-full min-h-0 space-y-2.5 overflow-x-hidden overflow-y-auto pr-1"
             onScroll={(event) => {
               const list = event.currentTarget;
-              if (list.scrollHeight - list.scrollTop - list.clientHeight < 64) setUnreadCount(0);
+              isNearBottomRef.current = list.scrollHeight - list.scrollTop - list.clientHeight < 64;
+              if (isNearBottomRef.current) setUnreadCount(0);
             }}
           >
             {messages.length === 0 ? (
@@ -743,6 +746,9 @@ export const TemporaryChatPanel = ({
                     ) : null}
                     {message.kind === "system" ? (
                       <div
+                        ref={
+                          index === visibleMessages.length - 1 ? latestMessageElementRef : undefined
+                        }
                         data-gsap-chat-message
                         className="chat-system-message mx-auto w-fit max-w-[90%] rounded-full bg-[#f5f7fb] px-3 py-1 text-center text-[12px] leading-4 text-[#718096]"
                         onContextMenu={(event) => {
@@ -754,6 +760,9 @@ export const TemporaryChatPanel = ({
                       </div>
                     ) : (
                       <div
+                        ref={
+                          index === visibleMessages.length - 1 ? latestMessageElementRef : undefined
+                        }
                         data-gsap-chat-message
                         data-chat-direction={message.isLocal ? "outgoing" : "incoming"}
                         className={`chat-message-row flex min-w-0 items-start gap-2 ${isGrouped ? "is-grouped" : ""}`}

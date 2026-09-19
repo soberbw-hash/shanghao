@@ -12,6 +12,10 @@ const audioCardPath = path.resolve(
   "src/renderer/src/components/settings/AudioSettingsCard.tsx",
 );
 const settingsPagePath = path.resolve(process.cwd(), "src/renderer/src/pages/SettingsPage.tsx");
+const settingsSectionStatePath = path.resolve(
+  process.cwd(),
+  "src/renderer/src/features/settings/settingsSectionState.ts",
+);
 const aboutSettingsPath = path.resolve(
   process.cwd(),
   "src/renderer/src/components/settings/AboutSettingsCard.tsx",
@@ -310,6 +314,7 @@ test("audio settings keep only everyday controls", () => {
 
 test("settings keep only everyday voice controls and remove advanced connection", () => {
   const source = readFileSync(settingsPagePath, "utf8");
+  const sectionStateSource = readFileSync(settingsSectionStatePath, "utf8");
   const diagnosticsSource = readFileSync(diagnosticsCardPath, "utf8");
 
   for (const label of ["通用", "语音", "关于上号", "诊断"]) {
@@ -327,7 +332,8 @@ test("settings keep only everyday voice controls and remove advanced connection"
     assert.equal(source.includes(removed), false);
   }
   assert.equal(source.includes("useState(() => {"), true);
-  assert.equal(source.includes('if (!import.meta.env.DEV) return "general"'), true);
+  assert.equal(source.includes("getInitialSettingsSection()"), true);
+  assert.equal(sectionStateSource.includes('if (!import.meta.env.DEV) return "general"'), true);
   for (const diagnostic of ["服务器连接", "网络速度", "房间连接", "Windows 网络权限"]) {
     assert.equal(diagnosticsSource.includes(diagnostic), true);
   }

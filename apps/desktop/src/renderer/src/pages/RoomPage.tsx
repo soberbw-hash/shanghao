@@ -11,7 +11,7 @@ import {
   type SceneZoneId,
 } from "@private-voice/shared";
 
-import { TemporaryChatPanel } from "../components/chat/TemporaryChatPanel";
+import { RoomChatPanel } from "../components/chat/RoomChatPanel";
 import { TopStatusBar } from "../components/layout/TopStatusBar";
 import { RoomDock } from "../components/room/RoomDock";
 import { RoomAskDialog } from "../components/room/RoomAskDialog";
@@ -48,7 +48,6 @@ import { useAudioStore } from "../store/audioStore";
 import { useRecordingStore } from "../store/recordingStore";
 import { useRoomStore } from "../store/roomStore";
 import { useSettingsStore } from "../store/settingsStore";
-import { prepareChatImage } from "../utils/chatImage";
 import { toUserFacingError } from "../utils/userFacingError";
 
 const KNOCK_COOLDOWN_MS = 10_000;
@@ -131,13 +130,30 @@ export const RoomPage = () => {
     roomDockSettings,
   } = useRoomPageSettings();
   const saveSettings = useSettingsStore((state) => state.saveSettings);
-  const chatMessages = useRoomStore((state) => state.chatMessages);
-  const roomQuickMessages = useRoomStore((state) => state.quickMessages);
-  const activeQuickMusic = useActiveQuickMessageMusic();
-  const characterChatBubbles = useMemo(
-    () => selectCharacterChatBubbles(chatMessages, roomQuickMessages),
-    [chatMessages, roomQuickMessages],
+  const chatBubbleVersion = useRoomStore((state) =>
+    state.chatMessages
+      .slice(-100)
+      .filter(
+        (message) =>
+          message.kind !== "system" &&
+          message.deliveryState !== "failed" &&
+          Boolean(message.content.trim()),
+      )
+      .map((message) => `${message.id}:${message.deliveryState ?? "sent"}`)
+      .join("|"),
   );
+  const quickBubbleVersion = useRoomStore((state) =>
+    state.quickMessages.map((message) => message.id).join("|"),
+  );
+  const knockMessageCount = useRoomStore(
+    (state) => state.chatMessages.filter((message) => message.id.startsWith("knock-")).length,
+  );
+  const activeQuickMusic = useActiveQuickMessageMusic();
+  const characterChatBubbles = useMemo(() => {
+    if (!chatBubbleVersion && !quickBubbleVersion) return [];
+    const { chatMessages, quickMessages } = useRoomStore.getState();
+    return selectCharacterChatBubbles(chatMessages, quickMessages);
+  }, [chatBubbleVersion, quickBubbleVersion]);
   const remoteScreenSharing = useRoomStore((state) => state.remoteScreenSharing);
   const connectionHealth = useRoomStore((state) => state.connectionHealth);
   const sceneReactions = useRoomStore((state) => state.sceneReactions);
@@ -167,7 +183,6 @@ export const RoomPage = () => {
     lowCutFrequency: roomDockSettings?.lowCutFrequency,
   });
   const pageRef = useRef<HTMLDivElement>(null);
-  const [chatInput, setChatInput] = useState("");
   const [pendingIncludeSystemAudio, setPendingIncludeSystemAudio] = useState(false);
   const [isScreenSourcePickerOpen, setIsScreenSourcePickerOpen] = useState(false);
   const [screenSourcePickerSources, setScreenSourcePickerSources] = useState<
@@ -359,20 +374,35 @@ export const RoomPage = () => {
       ].filter((peerId, index, peers) => peers.indexOf(peerId) === index),
     [localMember, localScreenShareStream, remoteScreenSharing],
   );
+  const runtimePressureRef = useRef({
+    connectionState: room.connectionState,
+    screenSharing: Boolean(localScreenShareStream || screenSharingPeerIds.length),
+    reconnectAttempt: connectionHealth.reconnectAttempt,
+    latencyMs: connectionHealth.latencyMs,
+    packetLossPercent: connectionHealth.packetLossPercent,
+  });
+  runtimePressureRef.current = {
+    connectionState: room.connectionState,
+    screenSharing: Boolean(localScreenShareStream || screenSharingPeerIds.length),
+    reconnectAttempt: connectionHealth.reconnectAttempt,
+    latencyMs: connectionHealth.latencyMs,
+    packetLossPercent: connectionHealth.packetLossPercent,
+  };
 
   useEffect(() => {
     const publishPressure = () => {
+      const pressure = runtimePressureRef.current;
       const memory = (
         performance as Performance & {
           memory?: { usedJSHeapSize: number; jsHeapSizeLimit: number };
         }
       ).memory;
       void window.desktopApi.ai?.updateRuntimePressure?.({
-        inVoiceRoom: room.connectionState === RoomConnectionState.Connected,
-        screenSharing: Boolean(localScreenShareStream || screenSharingPeerIds.length),
-        peerRecovering: connectionHealth.reconnectAttempt > 0,
-        latencyMs: connectionHealth.latencyMs,
-        packetLossPercent: connectionHealth.packetLossPercent,
+        inVoiceRoom: pressure.connectionState === RoomConnectionState.Connected,
+        screenSharing: pressure.screenSharing,
+        peerRecovering: pressure.reconnectAttempt > 0,
+        latencyMs: pressure.latencyMs,
+        packetLossPercent: pressure.packetLossPercent,
         rendererMemoryPressure: Boolean(
           memory && memory.usedJSHeapSize / Math.max(1, memory.jsHeapSizeLimit) > 0.82,
         ),
@@ -383,14 +413,7 @@ export const RoomPage = () => {
     if (room.connectionState !== RoomConnectionState.Connected) return;
     const interval = window.setInterval(publishPressure, 3_000);
     return () => window.clearInterval(interval);
-  }, [
-    connectionHealth.latencyMs,
-    connectionHealth.packetLossPercent,
-    connectionHealth.reconnectAttempt,
-    localScreenShareStream,
-    room.connectionState,
-    screenSharingPeerIds.length,
-  ]);
+  }, [room.connectionState]);
 
   useEffect(() => {
     const overlayState = {
@@ -706,33 +729,6 @@ export const RoomPage = () => {
       detectedGameIconRef.current,
     );
   }, [localGameIconKey, localActivity, localMemberId, localSceneZone, localMusicActivityKey]);
-
-  const send = async (content = chatInput) => {
-    if (!content.trim()) return;
-    const isComposerMessage = content === chatInput;
-    if (isComposerMessage) setChatInput("");
-    try {
-      await sendChatMessage(content);
-      playUiSound("send-message");
-    } catch {
-      // sendChatMessage already exposes a user-facing retry state.
-    }
-  };
-
-  const sendImage = async (file: File) => {
-    if (!canSend) return;
-    try {
-      const image = await prepareChatImage(file);
-      await sendChatMessage("", image);
-      playUiSound("send-message");
-    } catch {
-      pushToast({
-        tone: "warning",
-        title: "图片没有发出去",
-        description: "请确认图片是 PNG、JPG 或 WebP 且不超过 8 MB，然后重试。",
-      });
-    }
-  };
 
   const knock = async () => {
     const remaining = KNOCK_COOLDOWN_MS - (Date.now() - lastKnockAt.current);
@@ -1233,10 +1229,7 @@ export const RoomPage = () => {
             onCollectionDragOverChange={roomCollection.setIsDragOver}
             onSaveDraggedCollection={(payload) => void roomCollection.saveDragged(payload)}
             pauseVisualMotion={roomCollection.isOpen}
-            knockPulse={
-              localKnockPulse +
-              chatMessages.filter((message) => message.id.startsWith("knock-")).length
-            }
+            knockPulse={localKnockPulse + knockMessageCount}
             reduceMotion={reduceMotion}
           />
           <ScreenSharePanelContainer
@@ -1265,50 +1258,14 @@ export const RoomPage = () => {
           />
         </section>
         <div className="room-chat-column min-h-0">
-          <TemporaryChatPanel
-            className="h-full"
-            messages={chatMessages}
-            chatInput={chatInput}
-            onChatInputChange={setChatInput}
-            onSend={() => void send()}
-            onQuickSend={(message) => {
-              void sendQuickMessage(message).catch(() => {
-                pushToast({
-                  tone: "warning",
-                  title: "提醒没有发出去",
-                  description: "连接恢复后再试一次。",
-                });
-              });
-            }}
-            onQuickMessageSend={(presetId) => {
-              void sendConfiguredQuickMessage(presetId).catch(() => {
-                pushToast({
-                  tone: "warning",
-                  title: "快捷消息没有发出去",
-                  description: "连接恢复后再试一次。",
-                });
-              });
-            }}
+          <RoomChatPanel
+            sendChatMessage={sendChatMessage}
+            recallChatMessage={recallChatMessage}
+            sendQuickMessage={sendQuickMessage}
+            sendConfiguredQuickMessage={sendConfiguredQuickMessage}
             onOpenQuickMessageSettings={openQuickMessageSettings}
             onOpenRoomAi={() => setIsRoomAskOpen(true)}
-            onSendImage={sendImage}
-            onRecall={async (messageId) => {
-              try {
-                await recallChatMessage(messageId);
-              } catch {
-                pushToast({
-                  tone: "danger",
-                  title: "撤回失败",
-                  description: "连接恢复后再试一次。",
-                });
-              }
-            }}
-            onRetry={async (message) => {
-              if (!message.clientMessageId) return;
-              await sendChatMessage(message.content, message.image, message.clientMessageId);
-            }}
             canSend={canSend}
-            unavailableLabel="正在重连..."
             reduceMotion={reduceMotion}
           />
         </div>

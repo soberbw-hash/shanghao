@@ -23,6 +23,13 @@ import { motionCurve, motionDuration, motionEase } from "../features/motion/moti
 import { interactionPerformanceMonitor } from "../features/diagnostics/interactionPerformanceMonitor";
 import { rendererPerformanceMonitor } from "../features/diagnostics/rendererPerformanceMonitor";
 import { useRenderProfiler } from "../features/diagnostics/renderProfiler";
+import {
+  cacheSettingsSection,
+  getInitialSettingsSection,
+  readRequestedSettingsSection,
+  settingsSectionSignature,
+  type SettingsSectionId,
+} from "../features/settings/settingsSectionState";
 import { PageContainer } from "../components/layout/PageContainer";
 import { AudioSettingsCard } from "../components/settings/AudioSettingsCard";
 import { AboutSettingsCard } from "../components/settings/AboutSettingsCard";
@@ -49,17 +56,6 @@ import { useAudioStore } from "../store/audioStore";
 import { useSettingsStore } from "../store/settingsStore";
 import { toUserFacingError } from "../utils/userFacingError";
 
-type SettingsSectionId =
-  | "account"
-  | "general"
-  | "audio"
-  | "quickMessages"
-  | "recordings"
-  | "ai"
-  | "roomHistory"
-  | "about"
-  | "diagnostics";
-
 const sections = [
   { id: "account", label: "账号", icon: UserRound },
   { id: "general", label: "通用", icon: MonitorCog },
@@ -75,32 +71,6 @@ const sections = [
 const RecordingLibrarySettingsCard = memo(RecordingLibrarySettingsCardView);
 const AiVoiceMemorySettingsCard = memo(AiVoiceMemorySettingsCardView);
 
-const SETTINGS_SECTION_REQUEST_KEY = "shanghao.settings-section";
-const MAX_CACHED_SETTINGS_SECTIONS = 4;
-
-const cacheSettingsSection = (
-  current: ReadonlySet<SettingsSectionId>,
-  nextSection: SettingsSectionId,
-): Set<SettingsSectionId> => {
-  const ordered = [...current].filter((section) => section !== nextSection);
-  ordered.push(nextSection);
-  return new Set(ordered.slice(-MAX_CACHED_SETTINGS_SECTIONS));
-};
-
-const getInitialSettingsSection = (): SettingsSectionId => {
-  const storedSection = window.sessionStorage.getItem(SETTINGS_SECTION_REQUEST_KEY);
-  window.sessionStorage.removeItem(SETTINGS_SECTION_REQUEST_KEY);
-  if (sections.some(({ id }) => id === storedSection)) {
-    return storedSection as SettingsSectionId;
-  }
-
-  if (!import.meta.env.DEV) return "general";
-  const requestedSection = new URLSearchParams(window.location.search).get("settingsSection");
-  return sections.some(({ id }) => id === requestedSection)
-    ? (requestedSection as SettingsSectionId)
-    : "general";
-};
-
 let cachedWindowsDiagnostics: WindowsIntegrationStatus | undefined;
 
 export const SettingsPage = ({ isActive = true }: { isActive?: boolean }) => {
@@ -108,15 +78,6 @@ export const SettingsPage = ({ isActive = true }: { isActive?: boolean }) => {
   const settingsReturnTo = useAppStore((state) => state.settingsReturnTo);
   const pushToast = useAppStore((state) => state.pushToast);
   const voiceMemoryOpenTarget = useAppStore((state) => state.voiceMemoryOpenTarget);
-  const settings = useSettingsStore((state) => state.settings);
-  const runtimeInfo = useSettingsStore((state) => state.runtimeInfo);
-  const updateInfo = useSettingsStore((state) => state.updateInfo);
-  const updateStatus = useSettingsStore((state) => state.updateStatus);
-  const saveSettings = useSettingsStore((state) => state.saveSettings);
-  const checkUpdates = useSettingsStore((state) => state.checkUpdates);
-  const openReleases = useSettingsStore((state) => state.openReleases);
-  const inputDevices = useAudioStore((state) => state.inputDevices);
-  const outputDevices = useAudioStore((state) => state.outputDevices);
   const [settingsView, setSettingsView] = useState(() => {
     const initialSection = getInitialSettingsSection();
     return {
@@ -125,6 +86,16 @@ export const SettingsPage = ({ isActive = true }: { isActive?: boolean }) => {
     };
   });
   const { activeSection } = settingsView;
+  useSettingsStore((state) => settingsSectionSignature(state.settings, activeSection));
+  const settings = useSettingsStore.getState().settings;
+  const runtimeInfo = useSettingsStore((state) => state.runtimeInfo);
+  const updateInfo = useSettingsStore((state) => state.updateInfo);
+  const updateStatus = useSettingsStore((state) => state.updateStatus);
+  const saveSettings = useSettingsStore((state) => state.saveSettings);
+  const checkUpdates = useSettingsStore((state) => state.checkUpdates);
+  const openReleases = useSettingsStore((state) => state.openReleases);
+  const inputDevices = useAudioStore((state) => state.inputDevices);
+  const outputDevices = useAudioStore((state) => state.outputDevices);
   const [windowsDiagnostics, setWindowsDiagnostics] = useState<
     WindowsIntegrationStatus | undefined
   >(cachedWindowsDiagnostics);
@@ -133,9 +104,6 @@ export const SettingsPage = ({ isActive = true }: { isActive?: boolean }) => {
   const [isRepairingFirewall, setIsRepairingFirewall] = useState(false);
   const [saveNotice, setSaveNotice] = useState("设置会自动保存");
   const pageRef = useRef<HTMLDivElement>(null);
-  const contentRef = useRef<HTMLDivElement>(null);
-  const sectionDirectionRef = useRef(1);
-  const didMountSectionRef = useRef(false);
   const reduceMotion = usePrefersReducedMotion();
   const isSettingsReady = Boolean(settings);
 
@@ -190,6 +158,16 @@ export const SettingsPage = ({ isActive = true }: { isActive?: boolean }) => {
     },
     [pushToast, saveSettings],
   );
+
+  useEffect(() => {
+    if (!isActive) return;
+    const requestedSection = readRequestedSettingsSection();
+    if (!requestedSection) return;
+    setSettingsView((current) => ({
+      activeSection: requestedSection,
+      visitedSections: cacheSettingsSection(current.visitedSections, requestedSection),
+    }));
+  }, [isActive]);
 
   useEffect(() => {
     if (voiceMemoryOpenTarget) {
@@ -255,33 +233,6 @@ export const SettingsPage = ({ isActive = true }: { isActive?: boolean }) => {
     return () => context.revert();
   }, [isActive, isSettingsReady, reduceMotion]);
 
-  useLayoutEffect(() => {
-    const target = contentRef.current;
-    if (!isActive || !isSettingsReady || !target) return;
-    if (!didMountSectionRef.current) {
-      didMountSectionRef.current = true;
-      return;
-    }
-    if (reduceMotion) return;
-    if (activeSection === "ai" || activeSection === "recordings") {
-      // Promoting an entire long model/recording page to a moving GPU layer is more expensive
-      // than the tiny transition is worth. The nav indicator still supplies visual feedback.
-      gsap.set(target, { clearProps: "transform,opacity,visibility,willChange" });
-      return;
-    }
-    gsap.fromTo(
-      target,
-      { x: sectionDirectionRef.current * 7 },
-      {
-        x: 0,
-        duration: motionDuration.compact,
-        ease: motionEase.spatial,
-        force3D: true,
-        clearProps: "transform",
-      },
-    );
-  }, [activeSection, isActive, isSettingsReady, reduceMotion]);
-
   if (!settings) {
     return <StartupSplashPage message="正在准备设置..." />;
   }
@@ -293,9 +244,6 @@ export const SettingsPage = ({ isActive = true }: { isActive?: boolean }) => {
       "settings",
     );
     interactionPerformanceMonitor.mark(interactionId, "visual-feedback-start");
-    const currentIndex = sections.findIndex(({ id }) => id === activeSection);
-    const nextIndex = sections.findIndex(({ id }) => id === nextSection);
-    sectionDirectionRef.current = nextIndex >= currentIndex ? 1 : -1;
     playUiSound("settings-section");
     interactionPerformanceMonitor.mark(interactionId, "route-transition-start");
     setSettingsView((current) => {
@@ -551,7 +499,6 @@ export const SettingsPage = ({ isActive = true }: { isActive?: boolean }) => {
                 return (
                   <div
                     key={id}
-                    ref={isCurrentSection ? contentRef : undefined}
                     data-gsap-settings={isCurrentSection ? "content" : undefined}
                     hidden={!isCurrentSection}
                     aria-hidden={!isCurrentSection}

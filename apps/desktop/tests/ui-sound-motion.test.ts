@@ -39,7 +39,7 @@ test("major flows expose semantic motion and state feedback instead of isolated 
   assert.equal(account.includes("account-avatar-check"), true);
   assert.equal(account.includes('playUiSound("account-success")'), true);
   assert.equal(settings.includes('layoutId="settings-active-section"'), true);
-  assert.equal(settings.includes("contentRef"), true);
+  assert.equal(settings.includes("contentRef"), false);
   assert.equal(settings.includes('playUiSound("settings-section")'), true);
   assert.equal(models.includes("data-model-phase"), true);
   assert.equal(models.includes('playUiSound("model-complete")'), true);

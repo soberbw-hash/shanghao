@@ -3,6 +3,11 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import test from "node:test";
 
+import {
+  cacheSettingsSection,
+  type SettingsSectionId,
+} from "../src/renderer/src/features/settings/settingsSectionState";
+
 const read = (relativePath: string) =>
   readFileSync(path.resolve(process.cwd(), "src/renderer/src", relativePath), "utf8");
 
@@ -18,9 +23,10 @@ test("development performance HUD stays behind the dev guard without React profi
   assert.equal(app.includes("recordReactCommit"), false);
 });
 
-test("settings keep a bounded page cache and pause hidden heavy work", () => {
+test("settings keep lightweight pages warm and unload hidden heavy work", () => {
   const app = read("app/App.tsx");
   const settings = read("pages/SettingsPage.tsx");
+  const settingsState = read("features/settings/settingsSectionState.ts");
   const room = read("pages/RoomPage.tsx");
   const shellStyles = read("styles/parts/20-activity-shell.css");
   const recordings = read("components/settings/RecordingLibrarySettingsCard.tsx");
@@ -30,11 +36,14 @@ test("settings keep a bounded page cache and pause hidden heavy work", () => {
   assert.equal(app.includes("<SettingsPage isActive={isSettingsOpen} />"), true);
   assert.equal(settings.includes("visitedSections.has(id)"), true);
   assert.equal(settings.includes("hidden={!isCurrentSection}"), true);
-  assert.equal(settings.includes("MAX_CACHED_SETTINGS_SECTIONS = 4"), true);
+  assert.equal(settingsState.includes("lightweightSections"), true);
+  assert.equal(settings.includes("MAX_CACHED_SETTINGS_SECTIONS"), false);
   assert.equal(settings.includes("SETTINGS_PREWARM_ORDER"), false);
   assert.equal(settings.includes("Promise.allSettled"), false);
   assert.equal(settings.includes("mountHeavySection"), false);
-  assert.equal(settings.includes('activeSection === "ai" || activeSection === "recordings"'), true);
+  assert.equal(settings.includes("sectionDirectionRef"), false);
+  assert.equal(settings.includes("settingsSectionSignature"), true);
+  assert.equal(settingsState.includes("readRequestedSettingsSection"), true);
   assert.equal(settings.includes("useMicTest"), false);
   assert.equal(room.includes("const micTest = useMicTest({"), true);
   assert.equal(recordings.includes("if (!isActive) return;"), true);
@@ -42,6 +51,42 @@ test("settings keep a bounded page cache and pause hidden heavy work", () => {
   assert.equal(ai.includes("if (!isActive) return;"), true);
   assert.equal(ai.includes("window.setInterval(refresh, 2_000)"), false);
   assert.equal(shellStyles.includes("transition-behavior: allow-discrete"), true);
+});
+
+test("the 56-switch settings stress sequence keeps mounted section count bounded", () => {
+  const sections: SettingsSectionId[] = [
+    "general",
+    "audio",
+    "quickMessages",
+    "ai",
+    "recordings",
+    "roomHistory",
+    "account",
+    "about",
+  ];
+  let cached = new Set<SettingsSectionId>(["general"]);
+  let maxMounted = cached.size;
+  for (const section of Array.from({ length: 7 }, () => sections).flat()) {
+    cached = cacheSettingsSection(cached, section);
+    maxMounted = Math.max(maxMounted, cached.size);
+  }
+  assert.equal(maxMounted, 6);
+  assert.deepEqual([...cached], ["general", "audio", "quickMessages", "account", "about"]);
+});
+
+test("high-frequency chat, telemetry, and pressure paths avoid broad invalidation", () => {
+  const room = read("pages/RoomPage.tsx");
+  const chat = read("components/chat/TemporaryChatPanel.tsx");
+  const store = read("store/roomStore.ts");
+
+  assert.equal(room.includes("runtimePressureRef.current"), true);
+  assert.equal(room.includes("}, [room.connectionState]);"), true);
+  assert.equal(room.includes("<RoomChatPanel"), true);
+  assert.equal(chat.includes("latestMessageElementRef"), true);
+  assert.equal(chat.includes("isNearBottomRef"), true);
+  assert.equal(chat.includes('querySelectorAll("[data-gsap-chat-message]")'), false);
+  assert.equal(store.includes("hasSameVisibleConnectionHealth"), true);
+  assert.equal(store.includes("const canAppend ="), true);
 });
 
 test("AI runtime discovery batches model status updates", () => {

@@ -17,6 +17,10 @@ const chatPanelPath = path.resolve(
   process.cwd(),
   "src/renderer/src/components/chat/TemporaryChatPanel.tsx",
 );
+const roomChatPanelPath = path.resolve(
+  process.cwd(),
+  "src/renderer/src/components/chat/RoomChatPanel.tsx",
+);
 const chatLinkPreviewPath = path.resolve(
   process.cwd(),
   "src/renderer/src/features/chat/linkPreview.ts",
@@ -101,6 +105,7 @@ const recordingMainPath = path.resolve(process.cwd(), "src/main/recording-main.t
 
 test("room page uses the V5 island, light responses, and voice dock", () => {
   const source = readFileSync(roomPagePath, "utf8");
+  const roomChatPanelSource = readFileSync(roomChatPanelPath, "utf8");
   const teamIslandSource = readFileSync(teamIslandPath, "utf8");
   const dockSource = readFileSync(
     path.resolve(process.cwd(), "src/renderer/src/components/room/RoomDock.tsx"),
@@ -115,7 +120,8 @@ test("room page uses the V5 island, light responses, and voice dock", () => {
     "utf8",
   );
 
-  assert.equal(source.includes("TemporaryChatPanel"), true);
+  assert.equal(source.includes("RoomChatPanel"), true);
+  assert.equal(roomChatPanelSource.includes("TemporaryChatPanel"), true);
   assert.equal(source.includes("TeamIsland"), true);
   assert.equal(source.includes("desktopApi.overlay.toggle"), true);
   assert.equal(source.includes("useScreenShare"), true);
