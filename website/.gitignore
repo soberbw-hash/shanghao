@@ -1,5 +1,6 @@
 .release-cache/
 public/release.json
+public/downloads/
 dist/
 node_modules/
 .env*
