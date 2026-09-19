@@ -1,5 +1,7 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 
+import type { AccountProfile } from "@private-voice/shared";
+
 import {
   AccountServerError,
   type AccountBackend,
@@ -95,7 +97,19 @@ export class AccountHttpController {
   constructor(
     private readonly backend: AccountBackend,
     private readonly logger?: (message: string, context?: Record<string, unknown>) => void,
+    private readonly onProfileUpdated?: (profile: AccountProfile) => void | Promise<void>,
   ) {}
+
+  private async notifyProfileUpdated(profile: AccountProfile): Promise<void> {
+    try {
+      await this.onProfileUpdated?.(profile);
+    } catch (error) {
+      this.logger?.("account profile room sync failed", {
+        userId: profile.userId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
 
   async handle(request: IncomingMessage, response: ServerResponse): Promise<boolean> {
     const pathname = new URL(request.url ?? "/", "http://localhost").pathname;
@@ -143,6 +157,7 @@ export class AccountHttpController {
             requiredText(body.avatarDataUrl, 720_000),
           );
         }
+        await this.notifyProfileUpdated(result.profile);
         this.send(response, 201, result);
         return true;
       }
@@ -178,6 +193,7 @@ export class AccountHttpController {
           bearerToken(request),
           requiredText(body.displayName, 32),
         );
+        await this.notifyProfileUpdated(profile);
         this.send(response, 200, { profile });
         return true;
       }
@@ -187,6 +203,7 @@ export class AccountHttpController {
           bearerToken(request),
           requiredText(body.dataUrl, 720_000),
         );
+        await this.notifyProfileUpdated(profile);
         this.send(response, 200, { profile });
         return true;
       }

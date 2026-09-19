@@ -394,8 +394,12 @@ test("local scene identity survives placeholder-to-server peer replacement", () 
   const sceneCharacterSource = readFileSync(sceneCharacterPath, "utf8");
 
   assert.equal(sceneCharacterSource.includes('member.isLocal ? "local-member" : member.id'), true);
-  assert.equal(islandSource.includes("key={sceneMemberKey(member)}"), true);
-  assert.equal(islandSource.includes("uniqueVisibleMembers"), true);
+  assert.equal(islandSource.includes("selectVisibleSceneMembers(members)"), true);
+  assert.equal(islandSource.includes("sceneRenderKeyByMemberId"), true);
+  assert.equal(
+    islandSource.includes("key={sceneRenderKeyByMemberId.get(member.id) ?? member.id}"),
+    true,
+  );
   assert.doesNotMatch(islandSource, /<SceneCharacter\s+key=\{member\.id\}/);
 });
 

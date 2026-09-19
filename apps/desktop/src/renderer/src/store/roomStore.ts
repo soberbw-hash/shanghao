@@ -105,6 +105,21 @@ const localMemberLabel = "我";
 const emptySlotLabel = "空位";
 const MAX_LOCAL_CHAT_MESSAGES = 500;
 
+let latestConnectionHealthTelemetry: ConnectionHealth | undefined;
+
+export const getLatestConnectionHealthTelemetry = (): ConnectionHealth | undefined =>
+  latestConnectionHealthTelemetry;
+
+const hasSameVisibleConnectionHealth = (left: ConnectionHealth, right: ConnectionHealth): boolean =>
+  left.latencyMs === right.latencyMs &&
+  left.jitterMs === right.jitterMs &&
+  left.packetLossPercent === right.packetLossPercent &&
+  left.availableOutgoingBitrateKbps === right.availableOutgoingBitrateKbps &&
+  left.reconnectAttempt === right.reconnectAttempt &&
+  left.voicePath === right.voicePath &&
+  left.turnConfigured === right.turnConfigured &&
+  left.relayFallbackActive === right.relayFallbackActive;
+
 export const stabilizePeerLatency = (
   previousLatencyMs: number | undefined,
   measuredLatencyMs: number | undefined,
@@ -401,14 +416,43 @@ export const useRoomStore = create<RoomStoreState>((set) => ({
         : { localScreenShareViewerPeerIds: nextPeerIds };
     }),
   setConnectionHealth: (healthPatch) =>
-    set((state) => ({
-      connectionHealth: {
+    set((state) => {
+      const connectionHealth = {
         ...state.connectionHealth,
         ...healthPatch,
-      },
-    })),
+      };
+      latestConnectionHealthTelemetry = connectionHealth;
+      if (
+        hasSameVisibleConnectionHealth(state.connectionHealth, connectionHealth) &&
+        (state.connectionHealth.lastUpdatedAt || !connectionHealth.lastUpdatedAt)
+      ) {
+        return state;
+      }
+      return { connectionHealth };
+    }),
   addChatMessage: (message) =>
     set((state) => {
+      const member = state.room.members.find((candidate) => candidate.id === message.peerId);
+      const previousMessage = state.chatMessages.at(-1);
+      const canAppend =
+        !state.chatMessages.some(
+          (item) =>
+            item.id === message.id ||
+            (message.clientMessageId && item.clientMessageId === message.clientMessageId),
+        ) &&
+        (!previousMessage || previousMessage.createdAt.localeCompare(message.createdAt) <= 0);
+      if (canAppend) {
+        return {
+          chatMessages: [
+            ...state.chatMessages,
+            {
+              ...message,
+              avatarUrl: member?.avatarUrl || message.avatarUrl,
+              avatarDataUrl: member?.avatarDataUrl || message.avatarDataUrl,
+            },
+          ].slice(-MAX_LOCAL_CHAT_MESSAGES),
+        };
+      }
       const existingByClientId = message.clientMessageId
         ? state.chatMessages.find((item) => item.clientMessageId === message.clientMessageId)
         : undefined;
@@ -417,11 +461,16 @@ export const useRoomStore = create<RoomStoreState>((set) => ({
         byId.delete(existingByClientId.id);
       }
       const avatarUrl =
-        state.room.members.find((member) => member.id === message.peerId)?.avatarUrl ||
+        member?.avatarUrl ||
         message.avatarUrl ||
         existingByClientId?.avatarUrl ||
         byId.get(message.id)?.avatarUrl;
-      byId.set(message.id, { ...existingByClientId, ...message, avatarUrl });
+      const avatarDataUrl =
+        member?.avatarDataUrl ||
+        message.avatarDataUrl ||
+        existingByClientId?.avatarDataUrl ||
+        byId.get(message.id)?.avatarDataUrl;
+      byId.set(message.id, { ...existingByClientId, ...message, avatarUrl, avatarDataUrl });
       return {
         chatMessages: [...byId.values()]
           .sort((left, right) => left.createdAt.localeCompare(right.createdAt))

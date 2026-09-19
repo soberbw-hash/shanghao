@@ -7,12 +7,12 @@ import { AccountAvatar } from "../account/AccountAvatar";
 
 export const ChatAccountAvatar = ({ message }: { message: ChatMessage }) => {
   // A primitive selector ignores speaking/latency updates and follows account-photo changes.
-  const currentAvatar = useRoomStore(
-    (state) =>
-      state.room.members.find(
-        (member) => member.id === message.peerId || (message.isLocal === true && member.isLocal),
-      )?.avatarUrl,
-  );
+  const currentAvatar = useRoomStore((state) => {
+    const member = state.room.members.find(
+      (member) => member.id === message.peerId || (message.isLocal === true && member.isLocal),
+    );
+    return member?.avatarUrl || member?.avatarDataUrl;
+  });
   const localPortrait = useAccountStore((state) =>
     message.isLocal ? state.snapshot.profile?.avatarUrl : undefined,
   );

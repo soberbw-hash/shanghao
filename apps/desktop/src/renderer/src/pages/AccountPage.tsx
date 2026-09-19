@@ -12,6 +12,7 @@ import { BrandMark } from "../components/brand/BrandMark";
 import { AccountLoginSummary } from "../components/account/AccountLoginSummary";
 import { ACCOUNT_AVATAR_PRESETS } from "../features/account/accountAvatarPresets";
 import { accountErrorMessage } from "../features/account/accountMessages";
+import { prepareAccountAvatar } from "../features/account/prepareAccountAvatar";
 import { playUiSound } from "../features/audio/uiSound";
 import { motionCurve, motionDuration, motionSpring } from "../features/motion/motionSystem";
 import { usePrefersReducedMotion } from "../hooks/usePrefersReducedMotion";
@@ -41,6 +42,7 @@ export const AccountPage = () => {
   const errorCode = useAccountStore((state) => state.errorCode);
   const login = useAccountStore((state) => state.login);
   const register = useAccountStore((state) => state.register);
+  const updateAvatar = useAccountStore((state) => state.updateAvatar);
   const requestVerificationCode = useAccountStore((state) => state.requestVerificationCode);
   const requestPasswordReset = useAccountStore((state) => state.requestPasswordReset);
   const continueAsGuest = useAccountStore((state) => state.continueAsGuest);
@@ -185,9 +187,13 @@ export const AccountPage = () => {
         password,
         displayName: displayName.trim() || username.trim(),
       });
-      // CloudBase's built-in user profile has no avatar field. Keep the selected
-      // preset in local settings so it is available immediately and after restart.
       if (selectedAvatarPresetId) {
+        const preset = ACCOUNT_AVATAR_PRESETS.find(
+          (candidate) => candidate.id === selectedAvatarPresetId,
+        );
+        if (!preset) throw new Error("account_avatar_invalid");
+        const dataUrl = await prepareAccountAvatar(preset.source);
+        await updateAvatar({ dataUrl });
         await saveSettings({ accountAvatarPresetId: selectedAvatarPresetId });
       }
       playUiSound("account-success");

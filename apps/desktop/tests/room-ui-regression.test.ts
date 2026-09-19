@@ -12,6 +12,7 @@ import {
 
 import { seatSlots } from "../src/renderer/src/features/voice-scene/sceneZones";
 import { memberStatus } from "../src/renderer/src/features/voice-scene/activityRules";
+import { selectVisibleSceneMembers } from "../src/renderer/src/features/voice-scene/visibleSceneMembers";
 import { stabilizePeerLatency, useRoomStore } from "../src/renderer/src/store/roomStore";
 import { getNicknameValidationError } from "../src/renderer/src/utils/nickname";
 import { readRendererCss } from "./helpers/read-renderer-css";
@@ -42,6 +43,47 @@ test("updating members are distinct from reconnecting members", () => {
   assert.equal(
     memberStatus({ ...member(), presenceState: MemberPresenceState.Reconnecting }).label,
     "正在回来",
+  );
+});
+
+test("scene keeps every online member when legacy stable identities collide", () => {
+  const first = {
+    ...member(),
+    id: "peer-first",
+    userId: "shared-legacy-profile",
+    nickname: "一号成员",
+  };
+  const second = {
+    ...member(),
+    id: "peer-second",
+    userId: "shared-legacy-profile",
+    nickname: "二号成员",
+    joinedAt: "2026-07-13T00:00:01.000Z",
+  };
+
+  assert.deepEqual(
+    selectVisibleSceneMembers([first, second]).map((candidate) => candidate.id),
+    ["peer-first", "peer-second"],
+  );
+});
+
+test("scene still collapses the stale half of a reconnect overlap", () => {
+  const stale = {
+    ...member(),
+    id: "peer-stale",
+    userId: "stable-account",
+    presenceState: MemberPresenceState.Reconnecting,
+  };
+  const active = {
+    ...member(),
+    id: "peer-active",
+    userId: "stable-account",
+    joinedAt: "2026-07-13T00:00:01.000Z",
+  };
+
+  assert.deepEqual(
+    selectVisibleSceneMembers([stale, active]).map((candidate) => candidate.id),
+    ["peer-active"],
   );
 });
 

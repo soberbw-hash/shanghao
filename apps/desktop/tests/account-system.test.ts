@@ -178,6 +178,79 @@ test("authenticated room identity ignores forged client profile and nickname", a
   }
 });
 
+test("account avatar updates are broadcast to every active room snapshot", async () => {
+  const server = new SignalingServer({
+    roomName: "头像同步测试",
+    accountBackend: new FakeAccountBackend(),
+  });
+  const port = await server.listen();
+  const socket = new WebSocket(`ws://127.0.0.1:${port}`, {
+    headers: { Authorization: "Bearer valid-account-token" },
+  });
+  try {
+    await new Promise<void>((resolve, reject) => {
+      socket.once("open", () => resolve());
+      socket.once("error", reject);
+    });
+    const initialSnapshot = waitForMessage(
+      socket,
+      (value): value is { type: "channel_snapshot"; members: Array<Record<string, unknown>> } =>
+        Boolean(
+          value &&
+          typeof value === "object" &&
+          (value as { type?: string }).type === "channel_snapshot",
+        ),
+    );
+    socket.send(
+      JSON.stringify({
+        type: "join_channel",
+        roomId: "main",
+        channelId: "main",
+        peerId: "avatar-peer",
+        profileId: profile.userId,
+        nickname: profile.displayName,
+        avatarId: "fox",
+        appVersion: "3.0.10",
+        protocolVersion: APP_PROTOCOL_VERSION,
+        buildNumber: APP_BUILD_NUMBER,
+      }),
+    );
+    await initialSnapshot;
+
+    const updatedSnapshot = waitForMessage(
+      socket,
+      (value): value is { type: "channel_snapshot"; members: Array<Record<string, unknown>> } => {
+        if (!value || typeof value !== "object") return false;
+        const candidate = value as {
+          type?: string;
+          members?: Array<Record<string, unknown>>;
+        };
+        return Boolean(
+          candidate.type === "channel_snapshot" &&
+          candidate.members?.some(
+            (member) =>
+              member.id === "avatar-peer" && member.avatarUrl === "https://example.com/avatar.webp",
+          ),
+        );
+      },
+    );
+    const response = await fetch(`http://127.0.0.1:${port}/api/account/avatar`, {
+      method: "PUT",
+      headers: {
+        authorization: "Bearer valid-account-token",
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({ dataUrl: "data:image/webp;base64,AAAA" }),
+    });
+    assert.equal(response.status, 200);
+    const snapshot = await updatedSnapshot;
+    assert.ok(snapshot.members.some((member) => member.avatarUrl));
+  } finally {
+    socket.close();
+    await server.close();
+  }
+});
+
 test("join request sent during slow account verification is replayed after authorization", async () => {
   const server = new SignalingServer({
     roomName: "慢鉴权进房测试",

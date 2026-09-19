@@ -50,6 +50,10 @@ export class RoomManager {
     return this.rooms.get(roomId);
   }
 
+  listRooms(): SignalingRoom[] {
+    return [...this.rooms.values()];
+  }
+
   getStats(): { activeRooms: number; connectedPeers: number } {
     return {
       activeRooms: this.rooms.size,

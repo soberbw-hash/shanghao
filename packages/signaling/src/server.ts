@@ -59,12 +59,12 @@ import type {
 import { isSignalEnvelope } from "./protocol";
 import { ChatHistoryStore } from "./chat-history-store";
 import { RoomCollectionStore } from "./room-collection-store";
-import { RoomManager } from "./room-manager";
-import type { SignalingRoom } from "./room-manager";
+import { RoomManager, type SignalingRoom } from "./room-manager";
 import { SessionTokenStore } from "./session-token-store";
 import { DailyRoomReportStore } from "./daily-room-report-store";
 import { CloudAiRuntime } from "./cloud-ai-runtime";
 import { AccountHttpController } from "./account-http-controller";
+import { syncAccountProfileAcrossRooms } from "./account-room-profile-sync";
 import {
   CloudBaseAccountService,
   SupabaseAccountService,
@@ -367,11 +367,16 @@ export class SignalingServer extends EventEmitter {
       (accountProvider === "cloudbase"
         ? CloudBaseAccountService.fromEnvironment(this.logger)
         : SupabaseAccountService.fromEnvironment(this.logger));
-    this.accountHttp = new AccountHttpController(this.accountBackend, this.logger);
+    this.accountHttp = new AccountHttpController(this.accountBackend, this.logger, (profile) =>
+      syncAccountProfileAcrossRooms(this.roomManager, profile, (roomId) =>
+        this.broadcastSnapshot(roomId),
+      ),
+    );
     this.httpServer = createServer();
-    this.httpServer.on("request", (request, response) => {
-      void this.handleHttpRequest(request, response);
-    });
+    this.httpServer.on(
+      "request",
+      (request, response) => void this.handleHttpRequest(request, response),
+    );
     this.wss = new WebSocketServer({
       server: this.httpServer,
       maxPayload: MAX_SIGNALING_PAYLOAD_BYTES,

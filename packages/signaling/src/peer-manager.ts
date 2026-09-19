@@ -62,6 +62,30 @@ export class PeerManager {
     return this.listPeers().filter((peer) => !peer.disconnectedAt);
   }
 
+  updateAccountProfile(
+    userId: string,
+    profile: { username: string; displayName: string; avatarUrl?: string },
+  ): boolean {
+    let changed = false;
+    for (const peer of this.peers.values()) {
+      if (peer.userId !== userId) continue;
+      if (
+        peer.username === profile.username &&
+        peer.displayName === profile.displayName &&
+        peer.nickname === profile.displayName &&
+        peer.avatarUrl === profile.avatarUrl
+      ) {
+        continue;
+      }
+      peer.username = profile.username;
+      peer.displayName = profile.displayName;
+      peer.nickname = profile.displayName;
+      peer.avatarUrl = profile.avatarUrl;
+      changed = true;
+    }
+    return changed;
+  }
+
   markDisconnected(
     peerId: string,
     socket: WebSocket,

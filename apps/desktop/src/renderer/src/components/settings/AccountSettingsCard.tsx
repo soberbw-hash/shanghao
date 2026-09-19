@@ -4,6 +4,7 @@ import { Camera, Check, LogOut, ShieldCheck, UserRound } from "lucide-react";
 import { Button } from "../base/Button";
 import { accountErrorMessage } from "../../features/account/accountMessages";
 import { ACCOUNT_AVATAR_PRESETS } from "../../features/account/accountAvatarPresets";
+import { prepareAccountAvatar } from "../../features/account/prepareAccountAvatar";
 import { useAccountStore } from "../../store/accountStore";
 import { useAppStore } from "../../store/appStore";
 import { useSettingsStore } from "../../store/settingsStore";
@@ -12,9 +13,10 @@ export const AccountSettingsCard = () => {
   const snapshot = useAccountStore((state) => state.snapshot);
   const isBusy = useAccountStore((state) => state.isBusy);
   const updateProfile = useAccountStore((state) => state.updateProfile);
+  const updateAvatar = useAccountStore((state) => state.updateAvatar);
   const logout = useAccountStore((state) => state.logout);
   const pushToast = useAppStore((state) => state.pushToast);
-  const settings = useSettingsStore((state) => state.settings);
+  const selectedAvatarPresetId = useSettingsStore((state) => state.settings?.accountAvatarPresetId);
   const saveSettings = useSettingsStore((state) => state.saveSettings);
   const profile = snapshot.profile;
   const [displayName, setDisplayName] = useState(profile?.displayName ?? "");
@@ -51,14 +53,18 @@ export const AccountSettingsCard = () => {
   };
 
   const selectedAvatar = ACCOUNT_AVATAR_PRESETS.find(
-    (preset) => preset.id === settings?.accountAvatarPresetId,
+    (preset) => preset.id === selectedAvatarPresetId,
   );
 
   const chooseAvatar = async (presetId: string) => {
     try {
+      const preset = ACCOUNT_AVATAR_PRESETS.find((candidate) => candidate.id === presetId);
+      if (!preset) throw new Error("account_avatar_invalid");
+      const dataUrl = await prepareAccountAvatar(preset.source);
+      await updateAvatar({ dataUrl });
       await saveSettings({ accountAvatarPresetId: presetId });
       setIsAvatarPickerOpen(false);
-      pushToast({ tone: "success", title: "头像已更新" });
+      pushToast({ tone: "success", title: "头像已同步", description: "房间和悬浮窗会自动更新。" });
     } catch (error) {
       pushToast({ tone: "danger", title: "头像没有保存", description: accountErrorMessage(error) });
     }
@@ -97,7 +103,7 @@ export const AccountSettingsCard = () => {
         {isAvatarPickerOpen ? (
           <div className="account-settings-avatar-picker" role="radiogroup" aria-label="选择头像">
             {ACCOUNT_AVATAR_PRESETS.map((preset) => {
-              const isSelected = preset.id === settings?.accountAvatarPresetId;
+              const isSelected = preset.id === selectedAvatarPresetId;
               return (
                 <button
                   key={preset.id}

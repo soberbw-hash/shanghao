@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import ceilingCurtain from "../../assets/scenes/shanghao-room/curtain-ceiling-v2.png";
 import foregroundLeaves from "../../assets/scenes/shanghao-room/foreground-leaves-v2.png";
@@ -46,25 +46,13 @@ import { useWeatherStore } from "../../features/weather/weatherStore";
 import { resolveWeatherVisualTheme } from "../../features/weather/weatherTheme";
 import { roomAnimationScheduler } from "../../features/visual-runtime/RoomAnimationScheduler";
 import { useCoordinatedIdleActions } from "../../features/voice-scene/useCoordinatedIdleActions";
+import { selectVisibleSceneMembers } from "../../features/voice-scene/visibleSceneMembers";
 import {
   defaultRoomSceneManifest,
   sceneFeatureRegistry,
 } from "../../features/visual-runtime/sceneFeatureRegistry";
 
 const EXITED_MEMBER_CLEANUP_FALLBACK_MS = 5_000;
-
-const uniqueVisibleMembers = (members: RoomMember[]): RoomMember[] => {
-  const byStableIdentity = new Map<string, RoomMember>();
-  for (const member of members) {
-    if (member.isEmptySlot) continue;
-    const key = sceneMemberKey(member);
-    const existing = byStableIdentity.get(key);
-    if (!existing || member.joinedAt >= existing.joinedAt) {
-      byStableIdentity.set(key, member);
-    }
-  }
-  return [...byStableIdentity.values()].slice(0, 5);
-};
 
 const assignVisibleAvatars = (members: RoomMember[]): Map<string, BuiltInAvatarId> => {
   return new Map(
@@ -144,8 +132,8 @@ export const TeamIsland = ({
   // A reconnect replaces the transport peer id but keeps the account/profile id.
   // Collapse the brief old/new snapshot overlap so React never paints two copies
   // of the same person while the old peer is still running its exit route.
-  const visibleMembers = uniqueVisibleMembers(members);
-  const visibleAvatars = assignVisibleAvatars(visibleMembers);
+  const visibleMembers = useMemo(() => selectVisibleSceneMembers(members), [members]);
+  const visibleAvatars = useMemo(() => assignVisibleAvatars(visibleMembers), [visibleMembers]);
   const shouldReduceMotion = usePrefersReducedMotion(reduceMotion);
   const [ambient, setAmbient] = useState<"day" | "evening" | "night">("day");
   const [hoveredZone, setHoveredZone] = useState<SceneZoneId>();
@@ -157,23 +145,53 @@ export const TeamIsland = ({
   const previousMemberIdsRef = useRef<string[] | undefined>(undefined);
   // Transport ids intentionally stay in this signature: a fast reconnect keeps
   // the stable React key but must still trigger stale seat/snapshot cleanup.
-  const memberSignature = visibleMembers.map((member) => member.id).join("|");
-  const screenSharingSet = new Set(screenSharingPeerIds);
-  const chatBubbleByPeerId = new Map(
-    chatBubbles.map((message) => [message.peerId, message] as const),
+  const memberSignature = useMemo(
+    () => visibleMembers.map((member) => member.id).join("|"),
+    [visibleMembers],
   );
+  const screenSharingSet = useMemo(() => new Set(screenSharingPeerIds), [screenSharingPeerIds]);
+  const chatBubbleByPeerId = useMemo(
+    () => new Map(chatBubbles.map((message) => [message.peerId, message] as const)),
+    [chatBubbles],
+  );
+  const sceneRenderKeyByMemberId = useMemo(() => {
+    const stableKeyCounts = new Map<string, number>();
+    visibleMembers.forEach((member) => {
+      const key = sceneMemberKey(member);
+      stableKeyCounts.set(key, (stableKeyCounts.get(key) ?? 0) + 1);
+    });
+    return new Map(
+      visibleMembers.map((member) => {
+        const stableKey = sceneMemberKey(member);
+        return [
+          member.id,
+          stableKeyCounts.get(stableKey) === 1 ? stableKey : `${stableKey}:${member.id}`,
+        ] as const;
+      }),
+    );
+  }, [visibleMembers]);
   visibleMemberIdsRef.current = new Set(visibleMembers.map((member) => member.id));
   visibleMembers.forEach((member) => memberSnapshotsRef.current.set(member.id, member));
-  const visibleMemberById = new Map(visibleMembers.map((member) => [member.id, member] as const));
-  const reservedSeatIds = new Set<SceneZoneId>(
-    Object.entries(settledMemberZones)
-      .filter(([memberId, zone]) => !visibleMemberById.has(memberId) && isSeatZone(zone))
-      .map(([, zone]) => zone),
+  const visibleMemberById = useMemo(
+    () => new Map(visibleMembers.map((member) => [member.id, member] as const)),
+    [visibleMembers],
+  );
+  const reservedSeatIds = useMemo(
+    () =>
+      new Set<SceneZoneId>(
+        Object.entries(settledMemberZones)
+          .filter(([memberId, zone]) => !visibleMemberById.has(memberId) && isSeatZone(zone))
+          .map(([, zone]) => zone),
+      ),
+    [settledMemberZones, visibleMemberById],
   );
   memberZoneSnapshotsRef.current.forEach((zone, memberId) => {
     if (!visibleMemberById.has(memberId) && isSeatZone(zone)) reservedSeatIds.add(zone);
   });
-  const resolvedMemberZones = resolveMemberSceneZones(visibleMembers, reservedSeatIds);
+  const resolvedMemberZones = useMemo(
+    () => resolveMemberSceneZones(visibleMembers, reservedSeatIds),
+    [reservedSeatIds, visibleMembers],
+  );
   visibleMembers.forEach((member) => {
     const zone = resolvedMemberZones.get(member.id);
     if (zone) memberZoneSnapshotsRef.current.set(member.id, zone);
@@ -651,7 +669,7 @@ export const TeamIsland = ({
             const awayIndex = awayMembers.findIndex((candidate) => candidate.id === member.id);
             return (
               <SceneCharacter
-                key={sceneMemberKey(member)}
+                key={sceneRenderKeyByMemberId.get(member.id) ?? member.id}
                 member={member}
                 avatarId={visibleAvatars.get(member.id) ?? "fox"}
                 shouldReduceMotion={shouldReduceMotion}

@@ -35,6 +35,19 @@ test("chat and overlay prefer account identity over room avatar selection", () =
   assert.ok(!overlay.includes("getAvatarFaceStyle"));
 });
 
+test("preset avatars are uploaded to the account profile before local selection is saved", () => {
+  const card = readFileSync("src/renderer/src/components/settings/AccountSettingsCard.tsx", "utf8");
+  const registration = readFileSync("src/renderer/src/pages/AccountPage.tsx", "utf8");
+  for (const source of [card, registration]) {
+    assert.ok(source.includes("prepareAccountAvatar"));
+    assert.ok(source.includes("updateAvatar({ dataUrl })"));
+  }
+  assert.ok(
+    card.indexOf("updateAvatar({ dataUrl })") <
+      card.indexOf("saveSettings({ accountAvatarPresetId"),
+  );
+});
+
 test("room character labels omit portraits while chat keeps account portraits", () => {
   const label = readFileSync("src/renderer/src/components/room/SceneCharacterLabel.tsx", "utf8");
   assert.ok(!label.includes("<img"));
