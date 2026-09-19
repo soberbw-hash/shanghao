@@ -307,6 +307,7 @@ export const captureUi = async (
   window: BrowserWindow,
   options: CaptureUiOptions,
 ): Promise<void> => {
+  let performanceSequenceSummary: Record<string, unknown> | undefined;
   if (window.webContents.isLoadingMainFrame()) {
     await new Promise<void>((resolve) => {
       window.webContents.once("did-finish-load", () => resolve());
@@ -475,12 +476,73 @@ export const captureUi = async (
     if (!(await waitForVisibleSelector(window, ".settings-page-header", 2_500))) {
       throw new Error("性能序列无法找到设置页");
     }
-    for (const label of ["录音库", "AI 功能", "通用", "录音库", "AI 功能", "通用"]) {
+    const labels = [
+      "通用",
+      "语音",
+      "快捷消息",
+      "AI 功能",
+      "录音库",
+      "房间记录",
+      "账号",
+      "关于上号",
+    ];
+    // Prime the bounded lightweight cache once so the measured 56 switches
+    // compare steady-state DOM usage instead of counting intentional first-use mounts.
+    for (const label of labels) {
+      if (!(await clickButtonByLabel(window, label))) {
+        throw new Error(`性能序列无法预热设置分区：${label}`);
+      }
+      await window.webContents.executeJavaScript(
+        `new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))`,
+        true,
+      );
+      await sleep(60);
+    }
+    const sequence = Array.from({ length: 7 }, () => labels).flat();
+    const initialMetrics = (await window.webContents.executeJavaScript(
+      `({
+        domNodes: document.querySelectorAll("*").length,
+        jsHeapUsedBytes: performance.memory?.usedJSHeapSize,
+      })`,
+      true,
+    )) as { domNodes: number; jsHeapUsedBytes?: number };
+    let maxDomNodes = initialMetrics.domNodes;
+    const switchDurationsMs: number[] = [];
+    for (const label of sequence) {
+      const startedAt = performance.now();
       if (!(await clickButtonByLabel(window, label))) {
         throw new Error(`性能序列无法打开设置分区：${label}`);
       }
-      await sleep(260);
+      await window.webContents.executeJavaScript(
+        `new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))`,
+        true,
+      );
+      switchDurationsMs.push(performance.now() - startedAt);
+      const domNodes = Number(
+        await window.webContents.executeJavaScript(`document.querySelectorAll("*").length`, true),
+      );
+      maxDomNodes = Math.max(maxDomNodes, domNodes);
+      await sleep(90);
     }
+    const finalMetrics = (await window.webContents.executeJavaScript(
+      `({
+        domNodes: document.querySelectorAll("*").length,
+        jsHeapUsedBytes: performance.memory?.usedJSHeapSize,
+      })`,
+      true,
+    )) as { domNodes: number; jsHeapUsedBytes?: number };
+    const sortedDurations = [...switchDurationsMs].sort((left, right) => left - right);
+    performanceSequenceSummary = {
+      settingsSwitches: sequence.length,
+      initialDomNodes: initialMetrics.domNodes,
+      finalDomNodes: finalMetrics.domNodes,
+      maxDomNodes,
+      initialJsHeapUsedBytes: initialMetrics.jsHeapUsedBytes,
+      finalJsHeapUsedBytes: finalMetrics.jsHeapUsedBytes,
+      averageSwitchMs:
+        switchDurationsMs.reduce((total, value) => total + value, 0) / switchDurationsMs.length,
+      p95SwitchMs: sortedDurations[Math.floor(sortedDurations.length * 0.95)] ?? 0,
+    };
   }
 
   const scrollSelector = process.env.SHANGHAO_CAPTURE_SCROLL_SELECTOR?.trim();
@@ -539,7 +601,11 @@ export const captureUi = async (
       true,
     );
     await mkdir(dirname(performanceSnapshotPath), { recursive: true });
-    await writeFile(performanceSnapshotPath, JSON.stringify(performanceSnapshot, null, 2), "utf8");
+    await writeFile(
+      performanceSnapshotPath,
+      JSON.stringify({ performanceSnapshot, performanceSequenceSummary }, null, 2),
+      "utf8",
+    );
   }
 
   if (options.exitAfterCapture) {

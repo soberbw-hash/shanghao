@@ -345,7 +345,9 @@ const bootstrap = async (): Promise<void> => {
 
   const accounts = new AccountDesktopService(
     new AccountSessionStore(app.getPath("userData")),
-    () => settingsStore?.getSnapshot().relayServerUrl,
+    () =>
+      (!app.isPackaged ? process.env.SHANGHAO_CAPTURE_SERVER_URL?.trim() : undefined) ||
+      settingsStore?.getSnapshot().relayServerUrl,
     (input, init) => net.fetch(input instanceof URL ? input.toString() : input, init),
     (payload) => diagnostics?.writeLog(payload) ?? Promise.resolve(),
     !app.isPackaged,
@@ -439,7 +441,6 @@ const bootstrap = async (): Promise<void> => {
           path.join(app.getPath("appData"), "上号", "ai-models"),
         ],
   );
-  await aiModels.initialize(settings.aiProcessingMode, settings.aiAsrModel);
   updates.setBackgroundDownloadGuard(() => aiModels.shouldDeferBackgroundDownload());
   const aiRuntimeDirectory = aiStorage.runtimes;
   const bundledAiRuntimeRoot = app.isPackaged
@@ -551,7 +552,6 @@ const bootstrap = async (): Promise<void> => {
     (payload) => diagnostics?.writeLog(payload) ?? Promise.resolve(),
     () => settingsStore?.getSnapshot().isAiAutoTranscribeEnabled ?? false,
   );
-  await voiceMemory.initialize();
   shortcutsController = shortcuts;
   overlayController = overlay;
   gameDetectionController = gameDetection;
@@ -587,6 +587,31 @@ const bootstrap = async (): Promise<void> => {
     },
     logsDirectory: diagnostics.getSnapshot().logsDirectory,
   });
+
+  // Model discovery and the voice-memory index are not required to paint or use
+  // the room shell. Start them only after the window exists so a large local
+  // model library cannot hold the entire application behind a blank startup.
+  void Promise.all([
+    aiModels.initialize(settings.aiProcessingMode, settings.aiAsrModel),
+    voiceMemory.initialize(),
+  ])
+    .then(
+      () =>
+        diagnostics?.writeLog({
+          category: "app",
+          level: "info",
+          message: "Deferred AI services initialized",
+        }) ?? Promise.resolve(),
+    )
+    .catch(
+      (error) =>
+        diagnostics?.writeLog({
+          category: "app",
+          level: "error",
+          message: "Deferred AI services failed to initialize",
+          context: { error: error instanceof Error ? error.message : String(error) },
+        }) ?? Promise.resolve(),
+    );
 
   const initialAuthDeepLink = consumePendingAuthDeepLink();
   if (initialAuthDeepLink) dispatchAuthDeepLink(initialAuthDeepLink);
