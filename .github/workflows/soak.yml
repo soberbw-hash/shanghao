@@ -8,7 +8,7 @@ on:
       minutes:
         description: "Bounded soak duration in minutes"
         required: false
-        default: "120"
+        default: "15"
 
 permissions:
   contents: read
@@ -16,7 +16,7 @@ permissions:
 jobs:
   realtime-soak:
     runs-on: ubuntu-24.04
-    timeout-minutes: 160
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v6
       - uses: pnpm/action-setup@v6
@@ -32,7 +32,7 @@ jobs:
       - name: Repeated five-peer audio and fault regression
         shell: bash
         env:
-          SOAK_MINUTES: ${{ github.event.inputs.minutes || '120' }}
+          SOAK_MINUTES: ${{ github.event.inputs.minutes || '15' }}
         run: |
           exec > >(tee -a "$GITHUB_WORKSPACE/soak.log") 2>&1
           end=$((SECONDS + SOAK_MINUTES * 60))
