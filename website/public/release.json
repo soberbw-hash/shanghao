@@ -1,20 +1,20 @@
 {
-  "tag_name": "v3.1.1",
-  "published_at": "2026-09-26T06:07:58Z",
-  "html_url": "https://github.com/soberbw-hash/shanghao/releases/tag/v3.1.1",
+  "tag_name": "v3.2.0",
+  "published_at": "2026-09-26T11:11:54Z",
+  "html_url": "https://github.com/soberbw-hash/shanghao/releases/tag/v3.2.0",
   "highlights": [
-    "调整顶部房间栏、快捷消息区、聊天面板与底部 Dock 的圆角、层次和间距。玻璃边缘保留柔和高光与投影，文字和操作仍以可读性优先。",
-    "修复不同窗口尺寸下窗户偏移或被裁切的问题；窗外天气场景保持动态，隐藏页面时暂停纯视觉工作。",
-    "房间座位以成员及落座状态稳定映射，减少“人数显示正确、画面少一个人”的情况。",
-    "注册时选择头像，旧账号没有头像时可分配预设头像；头像通过账号服务保存和同步，并用于聊天、悬浮窗和成员界面。"
+    "设置文件只在内容真正变化或需要迁移时写入。新加的往返与旧版数据夹具测试会检查设置、录音、模型和 Voice Memory 等已有资料的兼容性；不会为升级清理用户数据。",
+    "开发者诊断加入 Main / Renderer 的内存、进程与 DOM 趋势。指标是有界统计，不收集聊天正文、转录正文或音频内容。",
+    "聊天链接不再请求第三方 favicon 服务；没有本地图标时用通用链接图标。",
+    "Windows 游戏探测优先由 Rust Core 提供进程和前台窗口事实，TypeScript 继续负责游戏规则；原生探测不可用才用 PowerShell 回退，减少常态扫描开销。"
   ],
   "assets": [
     {
-      "name": "ShangHao-3.1.1-Setup-x64.exe",
-      "size": 209224647,
-      "browser_download_url": "https://github.com/soberbw-hash/shanghao/releases/download/v3.1.1/ShangHao-3.1.1-Setup-x64.exe",
-      "mirror_path": "/downloads/v3.1.1/ShangHao-3.1.1-Setup-x64.exe",
-      "sha256": "a990dd130486d613fe164791862130913b73eb6d676c5dfdd3b239eb28921fdc"
+      "name": "ShangHao-3.2.0-Setup-x64.exe",
+      "size": 209248315,
+      "browser_download_url": "https://github.com/soberbw-hash/shanghao/releases/download/v3.2.0/ShangHao-3.2.0-Setup-x64.exe",
+      "mirror_path": "/downloads/v3.2.0/ShangHao-3.2.0-Setup-x64.exe",
+      "sha256": "b4c3a1c98dcd9777d47e1a736ed858470d6903e43a29b5d48c1e9026e2f957de"
     }
   ]
 }
