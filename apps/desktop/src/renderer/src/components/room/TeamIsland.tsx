@@ -23,7 +23,7 @@ import { DynamicWeatherWindow } from "./DynamicWeatherWindow";
 import { RoomDateCalendar } from "./RoomDateCalendar";
 import type { RoomCollectionDragPayload } from "../../features/chat/collectionDrag";
 import { RoomCollectionShelf } from "./RoomCollectionShelf";
-import { SceneCharacter, type SceneCharacterQuickMessage } from "./SceneCharacter";
+import { SceneCharacter } from "./SceneCharacter";
 import { sceneMemberKey } from "./sceneMemberKey";
 import { GameMonitorContent } from "./GameMonitorContent";
 import { MusicActivityBadge } from "./MusicActivityBadge";
@@ -47,6 +47,7 @@ import { resolveWeatherVisualTheme } from "../../features/weather/weatherTheme";
 import { roomAnimationScheduler } from "../../features/visual-runtime/RoomAnimationScheduler";
 import { useCoordinatedIdleActions } from "../../features/voice-scene/useCoordinatedIdleActions";
 import { selectVisibleSceneMembers } from "../../features/voice-scene/visibleSceneMembers";
+import { useCharacterChatBubbles } from "../../features/room/useCharacterChatBubbles";
 import {
   defaultRoomSceneManifest,
   sceneFeatureRegistry,
@@ -68,7 +69,6 @@ export const TeamIsland = ({
   screenSharingPeerIds = [],
   networkQuality = "pending",
   reactions = [],
-  chatBubbles = [],
   knockPulse = 0,
   collectionItems = [],
   isCollectionOpen = false,
@@ -89,7 +89,6 @@ export const TeamIsland = ({
   screenSharingPeerIds?: string[];
   networkQuality?: ConnectionQualityLevel;
   reactions?: SceneReaction[];
-  chatBubbles?: Array<SceneCharacterQuickMessage & { peerId: string }>;
   knockPulse?: number;
   collectionItems?: RoomCollectionItem[];
   isCollectionOpen?: boolean;
@@ -104,6 +103,8 @@ export const TeamIsland = ({
   pauseVisualMotion?: boolean;
 }) => {
   const islandRef = useRef<HTMLDivElement>(null);
+  // Only bubble-worthy chat reaches the scene; RoomPage and its dock stay independent.
+  const chatBubbles = useCharacterChatBubbles();
   const isDynamicWeatherEnabled = useSettingsStore(
     (state) => state.settings?.isDynamicWeatherEnabled,
   );
@@ -196,32 +197,26 @@ export const TeamIsland = ({
     const zone = resolvedMemberZones.get(member.id);
     if (zone) memberZoneSnapshotsRef.current.set(member.id, zone);
   });
-  const occupiedSeatIds = new Set<SceneZoneId>();
-  visibleMembers.forEach((member) => {
-    const zone = resolvedMemberZones.get(member.id) ?? "gameDesk1";
-    if (isSeatZone(zone)) occupiedSeatIds.add(zone);
-  });
-  const memberBySeat = new Map(
-    visibleMembers
-      .map((member) => [resolvedMemberZones.get(member.id), member] as const)
-      .filter((entry): entry is readonly [SceneZoneId, RoomMember] =>
-        Boolean(entry[0] && isSeatZone(entry[0])),
-      ),
-  );
-  const settledMemberBySeat = new Map(
-    Object.entries(settledMemberZones)
-      .map(
-        ([memberId, zone]) =>
-          [
-            zone,
-            visibleMemberById.get(memberId) ?? memberSnapshotsRef.current.get(memberId),
-          ] as const,
-      )
-      .filter(
-        (entry): entry is readonly [SceneZoneId, RoomMember] =>
-          isSeatZone(entry[0]) && Boolean(entry[1]),
-      ),
-  );
+  const { occupiedSeatIds, memberBySeat } = useMemo(() => {
+    const occupiedSeatIds = new Set<SceneZoneId>();
+    const memberBySeat = new Map<SceneZoneId, RoomMember>();
+    visibleMembers.forEach((member) => {
+      const zone = resolvedMemberZones.get(member.id) ?? "gameDesk1";
+      if (!isSeatZone(zone)) return;
+      occupiedSeatIds.add(zone);
+      memberBySeat.set(zone, member);
+    });
+    return { occupiedSeatIds, memberBySeat };
+  }, [resolvedMemberZones, visibleMembers]);
+  const settledMemberBySeat = useMemo(() => {
+    const bySeat = new Map<SceneZoneId, RoomMember>();
+    Object.entries(settledMemberZones).forEach(([memberId, zone]) => {
+      if (!isSeatZone(zone)) return;
+      const member = visibleMemberById.get(memberId) ?? memberSnapshotsRef.current.get(memberId);
+      if (member) bySeat.set(zone, member);
+    });
+    return bySeat;
+  }, [settledMemberZones, visibleMemberById]);
   const localMember = visibleMembers.find((member) => member.isLocal);
   const localZone = localMember ? resolvedMemberZones.get(localMember.id) : undefined;
   const localSettledZone = localMember

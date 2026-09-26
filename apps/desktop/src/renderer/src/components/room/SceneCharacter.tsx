@@ -484,6 +484,32 @@ const SceneCharacterView = ({
   }, [shouldReduceMotion, targetOpacity]);
 
   useEffect(() => {
+    if (!isPresent || shouldReduceMotion) return;
+    // Chromium may suspend an entry animation while the game has focus. A
+    // counted member must not remain transparent after its route's deadline.
+    const timeout = window.setTimeout(() => {
+      const element = motionElementRef.current;
+      if (!element || !element.isConnected) return;
+      const visibleOpacity = Number(window.getComputedStyle(element).opacity);
+      if (visibleOpacity > 0.08 && motionPhaseRef.current === "idle") return;
+      operationIdRef.current += 1;
+      stopActiveAnimations();
+      element.style.transform = sceneTransform(targetLeft, targetTop);
+      element.style.opacity = String(targetOpacityRef.current);
+      currentPositionRef.current = { left: targetLeft, top: targetTop };
+      lastZoneRef.current = zone;
+      activeTargetZoneRef.current = zone;
+      setDisplayZone(zone);
+      setMotionPhase(zone === "restroomZone" ? "away-idle" : "idle");
+      onSettledRef.current?.(member.id, zone);
+      void writeRendererLog("app", "warn", "Character route watchdog settled a hidden member", {
+        zone,
+      });
+    }, 4_500);
+    return () => window.clearTimeout(timeout);
+  }, [isPresent, member.id, shouldReduceMotion, stopActiveAnimations, targetLeft, targetTop, zone]);
+
+  useEffect(() => {
     if (isPresent) return;
     const operationId = ++operationIdRef.current;
     const isCurrentOperation = () => operationIdRef.current === operationId;

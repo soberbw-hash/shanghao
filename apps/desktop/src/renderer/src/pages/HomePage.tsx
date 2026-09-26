@@ -75,7 +75,8 @@ export const HomePage = () => {
   const savedNickname = settings?.nickname;
   const savedAvatarId = settings?.avatarId;
   const accountAvatarPreset = ACCOUNT_AVATAR_PRESETS.find(
-    (preset) => preset.id === settings?.accountAvatarPresetId,
+    (preset) =>
+      preset.id === (accountProfile?.accountAvatarPresetId ?? settings?.accountAvatarPresetId),
   );
   const savedServerAddress = settings?.relayServerUrl;
 

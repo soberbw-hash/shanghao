@@ -332,12 +332,20 @@ export class AccountDesktopService extends EventEmitter {
     if (this.accountProvider === "cloudbase") {
       const result = await this.requireCloudBase().login(identifier, input.password);
       await this.acceptSession(result.session);
+      const profile = await this.request<{ profile: AccountProfile }>(
+        "/api/account/me",
+        { method: "GET" },
+        true,
+      ).then(
+        (response) => response.profile,
+        () => result.profile,
+      );
       this.updateSnapshot({
         status: "signed_in",
         configured: true,
         guestAllowed: this.snapshot.guestAllowed,
         developmentConnection: this.developmentConnection,
-        profile: result.profile,
+        profile,
       });
       await this.persistRememberedLogin(identifier, input.password);
       await this.log("info", "account login completed", { userId: result.profile.userId });
@@ -388,6 +396,9 @@ export class AccountDesktopService extends EventEmitter {
       if (!input.phone || !input.verificationCode) {
         throw new AccountDesktopError("account_verification_invalid");
       }
+      if (!input.accountAvatarPresetId) {
+        throw new AccountDesktopError("account_avatar_invalid");
+      }
       const result = await this.requireCloudBase().registerByPhone({
         phone: input.phone,
         verificationCode: input.verificationCode,
@@ -396,12 +407,22 @@ export class AccountDesktopService extends EventEmitter {
         displayName,
       });
       await this.acceptSession(result.session);
+      const profile = (
+        await this.request<{ profile: AccountProfile }>(
+          "/api/account/avatar",
+          {
+            method: "PUT",
+            body: JSON.stringify({ accountAvatarPresetId: input.accountAvatarPresetId }),
+          },
+          true,
+        )
+      ).profile;
       this.updateSnapshot({
         status: "signed_in",
         configured: true,
         guestAllowed: this.snapshot.guestAllowed,
         developmentConnection: this.developmentConnection,
-        profile: result.profile,
+        profile,
       });
       await this.sessionStore.writeRememberedLogin({
         identifier: username,
@@ -607,9 +628,19 @@ export class AccountDesktopService extends EventEmitter {
   }
 
   async updateAvatar(input: AccountAvatarUpdateRequest): Promise<AccountSnapshot> {
+    if (this.accountProvider === "cloudbase" && !input.accountAvatarPresetId) {
+      throw new AccountDesktopError("account_avatar_invalid");
+    }
+    if (this.accountProvider === "supabase" && !input.dataUrl) {
+      throw new AccountDesktopError("account_avatar_invalid");
+    }
     const profile = await this.authorizedProfileRequest("/api/account/avatar", {
       method: "PUT",
-      body: JSON.stringify(input),
+      body: JSON.stringify(
+        this.accountProvider === "cloudbase"
+          ? { accountAvatarPresetId: input.accountAvatarPresetId }
+          : { dataUrl: input.dataUrl },
+      ),
     });
     this.updateSnapshot({ ...this.snapshot, status: "signed_in", profile });
     return this.getSnapshot();
@@ -672,19 +703,32 @@ export class AccountDesktopService extends EventEmitter {
     if (!this.session) throw new AccountDesktopError("account_session_expired");
     if (this.accountProvider === "cloudbase") {
       try {
-        const result =
-          this.session.expiresAt - Math.floor(Date.now() / 1_000) <= REFRESH_EARLY_SECONDS
-            ? await this.requireCloudBase().refresh()
-            : {
-                session: this.session,
-                profile: forceProfile
-                  ? await this.requireCloudBase().getProfile()
-                  : this.snapshot.profile,
-              };
+        const needsRefresh =
+          this.session.expiresAt - Math.floor(Date.now() / 1_000) <= REFRESH_EARLY_SECONDS;
+        const result = needsRefresh
+          ? await this.requireCloudBase().refresh()
+          : {
+              session: this.session,
+              profile: forceProfile
+                ? await this.requireCloudBase().getProfile()
+                : this.snapshot.profile,
+            };
         if (!result.profile) throw new AccountDesktopError("account_profile_unavailable");
         if (result.session !== this.session) await this.acceptSession(result.session);
+        const profile =
+          forceProfile || needsRefresh
+            ? await this.request<{ profile: AccountProfile }>(
+                "/api/account/me",
+                { method: "GET" },
+                true,
+              ).then(
+                (response) => response.profile,
+                () => result.profile,
+              )
+            : result.profile;
+        if (!profile) throw new AccountDesktopError("account_profile_unavailable");
         this.scheduleRefresh();
-        return { profile: result.profile, session: this.session };
+        return { profile, session: this.session };
       } catch (error) {
         if (error instanceof AccountDesktopError) throw error;
         throw new AccountDesktopError("account_session_expired", { cause: error });

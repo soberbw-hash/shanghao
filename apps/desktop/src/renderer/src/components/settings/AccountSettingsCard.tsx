@@ -53,7 +53,7 @@ export const AccountSettingsCard = () => {
   };
 
   const selectedAvatar = ACCOUNT_AVATAR_PRESETS.find(
-    (preset) => preset.id === selectedAvatarPresetId,
+    (preset) => preset.id === (profile.accountAvatarPresetId ?? selectedAvatarPresetId),
   );
 
   const chooseAvatar = async (presetId: string) => {
@@ -61,7 +61,7 @@ export const AccountSettingsCard = () => {
       const preset = ACCOUNT_AVATAR_PRESETS.find((candidate) => candidate.id === presetId);
       if (!preset) throw new Error("account_avatar_invalid");
       const dataUrl = await prepareAccountAvatar(preset.source);
-      await updateAvatar({ dataUrl });
+      await updateAvatar({ dataUrl, accountAvatarPresetId: preset.id });
       await saveSettings({ accountAvatarPresetId: presetId });
       setIsAvatarPickerOpen(false);
       pushToast({ tone: "success", title: "头像已同步", description: "房间和悬浮窗会自动更新。" });
@@ -103,7 +103,8 @@ export const AccountSettingsCard = () => {
         {isAvatarPickerOpen ? (
           <div className="account-settings-avatar-picker" role="radiogroup" aria-label="选择头像">
             {ACCOUNT_AVATAR_PRESETS.map((preset) => {
-              const isSelected = preset.id === selectedAvatarPresetId;
+              const isSelected =
+                preset.id === (profile.accountAvatarPresetId ?? selectedAvatarPresetId);
               return (
                 <button
                   key={preset.id}

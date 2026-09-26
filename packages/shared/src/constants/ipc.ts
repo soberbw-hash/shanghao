@@ -28,6 +28,10 @@ export const IPC_CHANNELS = {
   },
   audio: {
     getDeepFilterAssets: "audio:get-deepfilter-assets",
+    getPhoneMicHostTicket: "audio:phone-mic-host-ticket",
+    listPhoneMicUsbDevices: "audio:phone-mic-usb-devices",
+    startPhoneMicUsb: "audio:phone-mic-usb-start",
+    stopPhoneMicUsb: "audio:phone-mic-usb-stop",
   },
   quickMessages: {
     export: "quick-messages:export",

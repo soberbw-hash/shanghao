@@ -1,5 +1,17 @@
 # Third-party notices
 
+## Phone microphone pairing QR codes
+
+- Package: `qrcode` `1.5.4`
+- Source: https://github.com/soldair/node-qrcode
+- License: MIT
+- Purpose: renders one-time phone pairing URLs in the desktop connection dialog.
+
+MicYou (https://github.com/LanRhyme/MicYou) was reviewed as an architectural
+reference. No MicYou source code, models, or assets are bundled or copied into
+ShangHao. Android SDK Platform-Tools is a separately installed developer tool,
+not redistributed with the app.
+
 ## DeepFilterNet 3 noise suppression
 
 - Package: `deepfilternet3-noise-filter` `1.2.1`

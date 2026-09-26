@@ -1,5 +1,6 @@
 /* Supplied furniture stays in independent layers. Coordinates belong to TeamIsland. */
 .team-island {
+  container-name: room-scene;
   container-type: size;
   min-height: 0;
   background: #e9f2fb;
@@ -45,12 +46,34 @@
 }
 .scene-window-nook {
   left: -1%;
-  top: -7%;
+  top: -11.5%;
   width: 35%;
   height: auto;
   aspect-ratio: 4 / 3;
   opacity: 1;
   filter: drop-shadow(4px 9px 7px rgba(49, 78, 123, 0.22));
+}
+/* The coordinate canvas is centre-cropped in wide/short windows. Keep the
+   actual window frame (which begins below transparent pixels) in view. */
+@container room-scene (min-aspect-ratio: 29 / 20) {
+  .scene-window-nook {
+    top: -5%;
+  }
+}
+@container room-scene (min-aspect-ratio: 8 / 5) {
+  .scene-window-nook {
+    top: 0;
+  }
+}
+@container room-scene (min-aspect-ratio: 19 / 10) {
+  .scene-window-nook {
+    top: 7%;
+  }
+}
+@container room-scene (min-aspect-ratio: 11 / 5) {
+  .scene-window-nook {
+    top: 16%;
+  }
 }
 .dynamic-weather-window {
   border: 0;
@@ -194,6 +217,26 @@
   width: 10%;
   opacity: 1;
   filter: brightness(0.94) saturate(0.88) drop-shadow(3px 9px 6px rgba(49, 78, 123, 0.28));
+}
+/* Wall fixtures share the cropped coordinate canvas with the window. Move
+   them down only when the room viewport is wide enough to crop their tops. */
+@container room-scene (min-aspect-ratio: 17 / 10) {
+  .room-date-calendar,
+  .scene-wall-clock {
+    top: 7%;
+  }
+}
+@container room-scene (min-aspect-ratio: 19 / 10) {
+  .room-date-calendar,
+  .scene-wall-clock {
+    top: 14%;
+  }
+}
+@container room-scene (min-aspect-ratio: 11 / 5) {
+  .room-date-calendar,
+  .scene-wall-clock {
+    top: 26%;
+  }
 }
 .scene-wall-clock-content {
   aspect-ratio: 1;

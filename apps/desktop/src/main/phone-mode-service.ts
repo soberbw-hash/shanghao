@@ -46,10 +46,21 @@ export function registerPhoneMode(
       { windowsHide: true, stdio: "pipe" },
     );
     helper = child;
+    // The helper can close its stdin before Electron's quit hook runs. Node emits
+    // ERR_STREAM_WRITE_AFTER_END asynchronously from end(), not as a thrown error.
+    child.stdin.on("error", (error) => {
+      if (!closing && state.active) {
+        publish({ active: true, busy: false, error: error.message });
+      }
+    });
+    const endInput = (finalCommand?: string) => {
+      if (child.stdin.destroyed || child.stdin.writableEnded) return;
+      child.stdin.end(finalCommand);
+    };
     ready = new Promise<void>((resolve, reject) => {
       const timeout = setTimeout(() => {
         reject(new Error("电话模式助手启动超时"));
-        child.stdin.end();
+        endInput();
       }, 5000);
       const lines = createInterface({ input: child.stdout });
       lines.on("line", (line) => {
@@ -71,7 +82,7 @@ export function registerPhoneMode(
               reject(new Error(response.error));
               // Retire a failed startup so the next explicit attempt can retry.
               // The native helper preserves mute on pipe loss while active.
-              child.stdin.end();
+              endInput();
             } else resolve();
             return;
           }
@@ -127,6 +138,9 @@ export function registerPhoneMode(
   };
   const command = async (active: boolean) => {
     await start();
+    if (closing || !helper || helper.stdin.destroyed || helper.stdin.writableEnded) {
+      throw new Error("电话模式助手已退出");
+    }
     const id = ++sequence;
     await new Promise<void>((resolve, reject) => {
       const timer = setTimeout(() => {
@@ -235,7 +249,9 @@ export function registerPhoneMode(
     closing = true;
     shortcuts.resetPhonePress();
     // Explicit app exit restores; unexpected pipe loss in the helper stays muted.
-    helper?.stdin.end(JSON.stringify({ id: ++sequence, active: false }) + "\n");
+    if (helper && !helper.stdin.destroyed && !helper.stdin.writableEnded) {
+      helper.stdin.end(JSON.stringify({ id: ++sequence, active: false }) + "\n");
+    }
   });
   // Load without muting: recover an interrupted previous session immediately.
   if (platformService.isWindows)

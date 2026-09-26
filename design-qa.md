@@ -142,3 +142,64 @@ CloudBase 的重置挑战绑定接收目标、设本地过期时间，成功后�
 纯函数测试模拟 1000 次 speaking/延迟/位置更新，均被依赖守卫过滤。这不是真实设备性能提升百分比或 React Profiler 结果。
 未完成：整页渲染剖析、时间线压缩、共享参与者索引、日志/聊天批处理、完整 IPC 和内存回归。
 未为视觉任务更改 WebRTC、AEC、VAD 或采样率；没有发布、打包或部署。
+
+# Room glass visual QA — 2026-09-25
+
+Reference: the user's September 19 glass-room screenshot (inside the app frame only), compared with the annotated current-state screenshot supplied in the same request.
+
+- At a 1984×1272 desktop viewport, the room-scene/chat join is continuous: inner corners are square, outer corners stay rounded, and the two concave white gaps are gone.
+- The chat background uses layered cool-blue and warm reflected-light gradients with backdrop blur; the previous near-opaque white material rule is explicitly overridden. Message text and controls remain crisp.
+- Top bar and bottom dock use the same softened translucent material. The room illustration itself is not blurred or stretched, and nothing outside the application frame was changed.
+- A 980px breakpoint restores separated rounded panels for narrow layouts.
+- Source review and in-app browser visual fixture completed. The isolated Electron room capture stopped at account login because the configured relay disallows guest access, so a logged-in production-window screenshot is still a physical QA item.
+
+## 2026-09-25 glass and chat follow-up
+
+- Source visual truth: `C:/Users/sober/AppData/Local/Temp/codex-clipboard-08a4361c-0bcb-4f34-8609-75cca8522de6.png` (1984×1275 reference material); current-state comparison: `codex-clipboard-58d87406-c63d-43a4-9216-9f2a5b14097c.png` (2457×1580). The user explicitly excluded old proportions from the comparison.
+- Implementation: `http://127.0.0.1:5173/room-visual-check.html`, in-app Browser capture in this task, viewport and CSS size 1984×1275 at 1×. This is a live component fixture, not a signed-in production RoomPage screenshot; the capture was displayed inline and not persisted to a file.
+- Full view: room scene remains sharp; chat uses a lighter frosted substrate with separate edge highlight, header, content cards and composer layers. No extra whitespace gap appears between the scene and chat.
+- Focused region: in-app Browser 240×620 clip at the scene/chat join shows no independent white border; the remaining transition is a soft 88px colour wash. Chat text and buttons remain sharp. At the same viewport, six fixture message rows have measured vertical gaps of 12–13px, including grouped messages and a URL preview.
+- Earlier P1 findings: chat panel was too solid blue and the join had a hard white vertical line. Earlier P2 finding: grouped chat rows were pulled 5px closer by a negative margin, while image/link margins made rhythm uneven. Fixes: more translucent neutral material, overlapping join by 8px, remove left border/left inset highlight, change grouped-row margin to zero, replace list `space-y` with 12px flex gap and align media spacing. Post-fix focused capture and DOM measurements above verify those local issues.
+- Fonts/copy: retained existing Noto Sans SC stack, labels and content; no type, size or proportion change. Colour: blue tint reduced while preserving contrast. Imagery: original room asset retained and unblurred. Spacing: only chat-message rhythm and join overlap changed.
+- `final result: blocked` for production-window fidelity: the signed-in room could not be opened in isolated Electron capture because the relay disallows guests. The live component fixture passes the scoped visual checks; real account-window comparison remains required.
+
+## 2026-09-25 join softening
+
+- The user marked the vertical scene/chat transition as too visible. At the same 1984px reference-width fixture, added a 42px masked frosted wash only over the scene's right edge; the chat still overlaps by 8px and retains a crisp reading surface.
+- Rechecked the live in-app Browser capture after CSS hot reload: the right-edge plant now fades into the glass instead of ending at an unsoftened straight cut. No scene scaling, external-window treatment, or chat-content blur was introduced. The narrow-layout breakpoint disables the wash when panels separate.
+- `final result: blocked` remains for signed-in production-window fidelity and physical device acceptance; this capture is the live component fixture, not the authenticated app.
+
+## 2026-09-25 floating material and microphone shortcut
+
+- Reference: the user's music-hint screenshot is the material target; clock hint, character label, and microphone popover were the inconsistent current surfaces. Kept the existing room proportions and scene imagery.
+- Unified the small floating surfaces around a translucent cool-blue fill, 18px backdrop blur, fine white rim, inset top highlight, and soft outer shadow. The larger microphone popover uses the same material hierarchy with 24px blur and lighter inset option cards so controls stay legible.
+- Added a direct “手机麦克风” action beside the bottom restore action in the microphone popover, while preserving its device-list entry. The live component fixture at 1440×900 showed the action and a two-member scene; computed microphone material was `rgba(235,246,255,0.84)` with `blur(24px)`.
+- `final result: blocked` for authenticated production-window and physical two-client fidelity. The local browser fixture confirmed layout and both character elements, but does not reproduce every reconnect/animation timing or real multi-device session.
+
+## 2026-09-25 room perimeter, header spacing, and window motion
+
+- References: `codex-clipboard-247d5b31-fead-4904-89ac-ab6dcd739fac.png` for the chat-header gap, `codex-clipboard-8ad27e42-ce0b-4ea8-b6ff-5df334fe48eb.png` for the wall above the window, and `codex-clipboard-9bdceb4f-e7d1-4631-a177-be54b66955cd.png` for the room UI perimeter. The marked rectangles identify problems, not exact dimensions to reproduce.
+- Reduced the chat panel's top padding and header spacing, and removed the redundant header highlight. The quick replies remain immediately below the title and the message/composer separation is retained.
+- Raised the independent window element from `top: -7%` to `top: -11.5%` without resizing the room illustration or moving the city separately. Existing weather art, rain, snow, fog, and lightning remain. Clear weather now also renders one low-opacity drifting cloud; cloud motion uses a container-relative compositor transform, while the landscape stays anchored.
+- Tuned the entire page's depth hierarchy: the app frame and title bar remain the quiet outer material; the room status bar and voice dock cast opposing low-opacity shadows; the joined scene/chat region owns one perimeter shadow; individual scene and chat shadows were reduced to avoid stacked heavy edges. Existing small control and message surfaces retain lighter local elevation.
+- Live in-app Browser fixture at `http://127.0.0.1:5174/room-visual-check.html` was reviewed at a wide layout before the last shadow pass and at a 783px narrow layout after the pass. The narrow layout keeps separate rounded scene/chat panels; no text or scene blur was introduced. The fixture is synthetic and does not include the authenticated production top bar or every chat state.
+- Weather motion continues to pause under page invisibility/reduced-motion through `DynamicWeatherWindow` and the scene animation rules. Static source assertions cover the clear-weather cloud path and existing visibility gating. Test and build outcomes are recorded separately in the task response.
+- `final result: blocked` for pixel-level authenticated production-window fidelity and on-device animation assessment; the browser fixture and source checks do not substitute for those captures.
+
+## 2026-09-25 quick-message card edge
+
+- Source visual truth: `C:/Users/sober/AppData/Local/Temp/codex-clipboard-cf918f1a-5d89-4876-a78b-78c3e280a9f7.png`, 796×270 crop of the signed-in chat header. Its abrupt lower divider and square inset are the defects to remove, not styling to reproduce.
+- Implementation: live `http://127.0.0.1:5174/room-visual-check.html` in in-app Browser tab 5. The implementation screenshot was viewed inline at 1984×1279 CSS px, 1× density, with a 550×160 focused chat-header crop; it was not persisted to a file. Also reviewed at the default 694px narrow viewport. Fixture content differs from the signed-in source, so the comparison is limited to card geometry and material.
+- Earlier P2: the quick-message area ended in a full-width straight line without its own closed frame. Fix: inset the header 2px, give it a continuous 16px radius and one-pixel border, retain translucent fill and contained shadow. Post-fix wide and narrow captures show all four corners and no cropped buttons; narrow music actions wrap within the card.
+- Typography and copy: existing type stack, labels, and button contents unchanged. Spacing: 10–12px internal padding with existing row gaps; no added broad gap below. Colors: existing cool-blue/white glass tokens retained. Image quality: no image assets in this card. No additional icon assets introduced.
+- The isolated fixture cannot verify authenticated-room data or every window size, but no P0/P1/P2 differences remain for the scoped rounded-card request.
+- `final result: passed` for this scoped visual change.
+
+## 2026-09-26 room-glass and short-window follow-up
+
+- Compared the user's iOS dock screenshots for material qualities only: quiet cool-blue translucency, a fine light rim, a restrained inner dark edge, and a soft outer shadow. Retained ShangHao's existing room proportions, typography, illustration, and controls. The room status bar and voice dock now share one glass hierarchy; the chat header remains a separate rounded inset card rather than a clipped divider.
+- Reduced the extra full-height backdrop blur on the chat panel. Its enlarged, blurred room-wallpaper layer remains behind sharp message text and controls. This removes one costly compositing layer by construction; no measured CPU/GPU improvement is claimed.
+- The independent window frame, calendar, and clock use room-scene aspect-ratio rules to avoid the coordinate canvas's top crop in short/wide windows. Live component fixture checks at 1024×768, 1280×720, 1440×900, 1600×900, 1920×1080, and 1920×700 found the calendar and clock top edges inside the scene; the window's visible frame also remained inside it. The frame PNG has transparent padding above its visible rim, so the element rectangle itself can extend above the scene without visible clipping.
+- Verified the local `room-visual-check.html` fixture in the in-app browser at 1280×720 and 1920×1080 after hot reload. Screenshots were displayed inline, not persisted. This fixture has synthetic members/messages and simplified chrome; it is not an authenticated production-window capture.
+- Typecheck, renderer production build, main/preload `tsup` build, `git diff --check`, and all 606 desktop smoke tests passed. The shutdown regression test now covers duplicate `before-quit` events and rejects new phone-mode writes after shutdown. The user's earlier `ERR_STREAM_WRITE_AFTER_END` native popup was not reproduced on a real Electron exit in this run.
+- `final result: blocked` for exact signed-in production-window comparison, real Windows close/switch stress, and measured before/after UI frame time or GPU memory. No physical phone or multi-peer acceptance is inferred from the fixture.

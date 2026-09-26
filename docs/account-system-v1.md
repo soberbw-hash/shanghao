@@ -46,6 +46,15 @@ raw SVG is never uploaded to the public avatar bucket.
 
 ## Direct Tencent Relay sync without GitHub
 
+CloudBase account avatars use the existing ten bundled SVG presets. The relay stores each
+account's selected preset ID in an atomic JSON file beside `CHAT_HISTORY_FILE` (or at the
+optional `ACCOUNT_AVATAR_PRESET_FILE` path). Keep that directory on the relay's persistent data
+volume and writable by the service. Older accounts without a picture receive a stable preset
+on first profile lookup; user-selected presets take precedence and are sent with room presence
+and chat. If no persistent path is configured, explicit avatar changes fail instead of falsely
+reporting cloud synchronization. This code does not update an already-running relay until that
+relay is deployed.
+
 The repository includes `scripts/sync-cloudbase-relay.ps1` for the current migration. It uploads
 only the CloudBase relay verifier, provider selection, and the remote apply script; it does not
 push GitHub and it never overwrites the remote `.env`.

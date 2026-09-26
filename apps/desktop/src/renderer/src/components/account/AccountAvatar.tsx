@@ -4,16 +4,24 @@ import { useState } from "react";
 export const AccountAvatar = ({
   name,
   src,
+  fallbackSrc,
   className = "",
   dimmed = false,
 }: {
   name: string;
   src?: string;
+  fallbackSrc?: string;
   className?: string;
   dimmed?: boolean;
 }) => {
-  const [failedSource, setFailedSource] = useState<string>();
+  const [failedSources, setFailedSources] = useState<string[]>([]);
   const [loadedSource, setLoadedSource] = useState<string>();
+  const visibleSource =
+    src && !failedSources.includes(src)
+      ? src
+      : fallbackSrc && !failedSources.includes(fallbackSrc)
+        ? fallbackSrc
+        : undefined;
   return (
     <span
       className={className}
@@ -29,21 +37,21 @@ export const AccountAvatar = ({
       }}
     >
       <span aria-label={name}>{Array.from(name.trim())[0] || "上"}</span>
-      {src && src !== failedSource ? (
+      {visibleSource ? (
         <img
-          key={src}
-          src={src}
+          key={visibleSource}
+          src={visibleSource}
           alt={name}
           draggable={false}
-          onError={() => setFailedSource(src)}
-          onLoad={() => setLoadedSource(src)}
+          onError={() => setFailedSources((sources) => [...sources, visibleSource])}
+          onLoad={() => setLoadedSource(visibleSource)}
           style={{
             position: "absolute",
             inset: 0,
             width: "100%",
             height: "100%",
             objectFit: "cover",
-            opacity: loadedSource === src ? 1 : 0,
+            opacity: loadedSource === visibleSource ? 1 : 0,
           }}
         />
       ) : null}

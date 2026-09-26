@@ -1,4 +1,5 @@
 export * from "./constants/app";
+export * from "./constants/account-avatars";
 export * from "./constants/motion";
 export * from "./constants/profile";
 export * from "./constants/ipc";

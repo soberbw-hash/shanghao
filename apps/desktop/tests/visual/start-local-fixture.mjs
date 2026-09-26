@@ -5,6 +5,7 @@ import { WebSocket } from "ws";
 const port = Number(process.env.SHANGHAO_FIXTURE_PORT || "43829");
 const remoteCount = Math.max(0, Math.min(4, Number(process.env.SHANGHAO_FIXTURE_REMOTES || "0")));
 const fixtureOffset = Math.max(0, Math.min(4, Number(process.env.SHANGHAO_FIXTURE_OFFSET || "0")));
+const roomId = process.env.SHANGHAO_FIXTURE_ROOM_ID === "side" ? "side" : "main";
 const server = new SignalingServer({ port, roomName: "2.7.0 视觉验证" });
 await server.listen();
 
@@ -29,8 +30,8 @@ for (let index = 0; index < remoteCount; index += 1) {
   const peerId = `visual-peer-${fixtureIndex + 1}`;
   send(socket, {
     type: "join_channel",
-    roomId: "main",
-    channelId: "main",
+    roomId,
+    channelId: roomId,
     peerId,
     profileId: `00000000-0000-4000-8000-00000000000${fixtureIndex + 1}`,
     nickname,
@@ -40,14 +41,14 @@ for (let index = 0; index < remoteCount; index += 1) {
     buildNumber: APP_BUILD_NUMBER,
   });
   const heartbeat = setInterval(
-    () => send(socket, { type: "heartbeat", roomId: "main", peerId, sentAt: Date.now() }),
+    () => send(socket, { type: "heartbeat", roomId, peerId, sentAt: Date.now() }),
     5_000,
   );
   socket.on("close", () => clearInterval(heartbeat));
   sockets.push(socket);
 }
 
-console.log(JSON.stringify({ ready: true, port, remoteCount }));
+console.log(JSON.stringify({ ready: true, port, remoteCount, roomId }));
 const shutdown = async () => {
   for (const socket of sockets) socket.close();
   await server.close();

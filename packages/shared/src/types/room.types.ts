@@ -6,6 +6,7 @@ import {
   RoomLifecycleState,
 } from "../enums/app.enums";
 import type { BuiltInAvatarId, RelayStatusSnapshot } from "./settings.types";
+import type { AccountAvatarPresetId } from "../constants/account-avatars";
 
 export type ChatImageMimeType = "image/png" | "image/jpeg" | "image/webp";
 
@@ -20,6 +21,8 @@ export interface ChatImageAttachment {
 export interface ChatMessage {
   /** Account portrait snapshot; optional for older persisted messages. */
   avatarUrl?: string;
+  accountAvatarPresetId?: AccountAvatarPresetId;
+  senderProfileId?: string;
   id: string;
   clientMessageId?: string;
   peerId: string;
@@ -96,6 +99,7 @@ export interface RoomMember {
   username?: string;
   displayName?: string;
   avatarUrl?: string;
+  accountAvatarPresetId?: AccountAvatarPresetId;
   isGuest?: boolean;
   profileId?: string;
   nickname: string;

@@ -122,4 +122,16 @@ test("phone service stays muted on native rejection, wrong acknowledgement and h
   assert.equal(publications.at(-1)?.active, true);
   assert.ok(publications.at(-1)?.error);
   assert.equal(spawns, 1, "a crash cannot auto-restart into journal restoration");
+
+  // A later explicit retry may start a new helper. Quitting must send exactly
+  // one final restore command even if Electron raises before-quit twice.
+  await set(false);
+  assert.equal(spawns, 2);
+  const beforeQuitCommands = commands.length;
+  app.emit("before-quit");
+  app.emit("before-quit");
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  assert.equal(commands.length, beforeQuitCommands + 1);
+  assert.equal(commands.at(-1)?.active, false);
+  await assert.rejects(set(true), /软件正在退出/);
 });

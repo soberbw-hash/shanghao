@@ -448,6 +448,7 @@ export const useRoomStore = create<RoomStoreState>((set) => ({
             {
               ...message,
               avatarUrl: member?.avatarUrl || message.avatarUrl,
+              accountAvatarPresetId: member?.accountAvatarPresetId || message.accountAvatarPresetId,
               avatarDataUrl: member?.avatarDataUrl || message.avatarDataUrl,
             },
           ].slice(-MAX_LOCAL_CHAT_MESSAGES),
@@ -465,12 +466,23 @@ export const useRoomStore = create<RoomStoreState>((set) => ({
         message.avatarUrl ||
         existingByClientId?.avatarUrl ||
         byId.get(message.id)?.avatarUrl;
+      const accountAvatarPresetId =
+        member?.accountAvatarPresetId ||
+        message.accountAvatarPresetId ||
+        existingByClientId?.accountAvatarPresetId ||
+        byId.get(message.id)?.accountAvatarPresetId;
       const avatarDataUrl =
         member?.avatarDataUrl ||
         message.avatarDataUrl ||
         existingByClientId?.avatarDataUrl ||
         byId.get(message.id)?.avatarDataUrl;
-      byId.set(message.id, { ...existingByClientId, ...message, avatarUrl, avatarDataUrl });
+      byId.set(message.id, {
+        ...existingByClientId,
+        ...message,
+        avatarUrl,
+        accountAvatarPresetId,
+        avatarDataUrl,
+      });
       return {
         chatMessages: [...byId.values()]
           .sort((left, right) => left.createdAt.localeCompare(right.createdAt))
@@ -497,11 +509,18 @@ export const useRoomStore = create<RoomStoreState>((set) => ({
           );
           if (optimistic && optimistic.id !== message.id) byId.delete(optimistic.id);
         }
-        const avatarUrl =
-          state.room.members.find((member) => member.id === message.peerId)?.avatarUrl ||
-          message.avatarUrl ||
-          byId.get(message.id)?.avatarUrl;
-        byId.set(message.id, { ...message, avatarUrl, deliveryState: "sent" });
+        const member = state.room.members.find((member) => member.id === message.peerId);
+        const avatarUrl = member?.avatarUrl || message.avatarUrl || byId.get(message.id)?.avatarUrl;
+        const accountAvatarPresetId =
+          member?.accountAvatarPresetId ||
+          message.accountAvatarPresetId ||
+          byId.get(message.id)?.accountAvatarPresetId;
+        byId.set(message.id, {
+          ...message,
+          avatarUrl,
+          accountAvatarPresetId,
+          deliveryState: "sent",
+        });
       }
       return {
         chatMessages: [...byId.values()]

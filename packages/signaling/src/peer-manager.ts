@@ -16,6 +16,7 @@ export interface PeerSession {
   username?: string;
   displayName: string;
   avatarUrl?: string;
+  accountAvatarPresetId?: RoomMember["accountAvatarPresetId"];
   isGuest: boolean;
   profileId?: string;
   nickname: string;
@@ -64,7 +65,12 @@ export class PeerManager {
 
   updateAccountProfile(
     userId: string,
-    profile: { username: string; displayName: string; avatarUrl?: string },
+    profile: {
+      username: string;
+      displayName: string;
+      avatarUrl?: string;
+      accountAvatarPresetId?: RoomMember["accountAvatarPresetId"];
+    },
   ): boolean {
     let changed = false;
     for (const peer of this.peers.values()) {
@@ -73,7 +79,8 @@ export class PeerManager {
         peer.username === profile.username &&
         peer.displayName === profile.displayName &&
         peer.nickname === profile.displayName &&
-        peer.avatarUrl === profile.avatarUrl
+        peer.avatarUrl === profile.avatarUrl &&
+        peer.accountAvatarPresetId === profile.accountAvatarPresetId
       ) {
         continue;
       }
@@ -81,6 +88,7 @@ export class PeerManager {
       peer.displayName = profile.displayName;
       peer.nickname = profile.displayName;
       peer.avatarUrl = profile.avatarUrl;
+      peer.accountAvatarPresetId = profile.accountAvatarPresetId;
       changed = true;
     }
     return changed;
@@ -159,6 +167,7 @@ export class PeerManager {
       username: peer.username,
       displayName: peer.displayName,
       avatarUrl: peer.avatarUrl,
+      accountAvatarPresetId: peer.accountAvatarPresetId,
       isGuest: peer.isGuest,
       profileId: peer.profileId,
       nickname: peer.nickname,

@@ -619,7 +619,12 @@ export const createProcessedMicrophoneStream = async (
     | "lowCutFrequency"
     | "isNoiseSuppressionEnabled"
     | "isVoiceEnhancementEnabled"
-  > & { microphoneSendVolume?: number; getRemoteReferenceLevel?: () => number },
+  > & {
+    microphoneSendVolume?: number;
+    getRemoteReferenceLevel?: () => number;
+    /** Remote sources own their track and must survive DSP graph replacement. */
+    stopInputOnDispose?: boolean;
+  },
 ): Promise<ProcessedMicrophoneStream> => {
   const userGains = normalizeEqualizerGains(settings.micEqualizerGains);
   const processorDiagnostics: ProcessedMicrophoneStream["processorDiagnostics"] = {
@@ -975,7 +980,9 @@ export const createProcessedMicrophoneStream = async (
       voiceShaper.merge?.disconnect();
       outputGain.disconnect();
       outputLimiter.disconnect();
-      inputStream.getTracks().forEach((track) => track.stop());
+      if (settings.stopInputOnDispose !== false) {
+        inputStream.getTracks().forEach((track) => track.stop());
+      }
       destination.stream.getTracks().forEach((track) => track.stop());
       void context.close().catch(() => undefined);
     },

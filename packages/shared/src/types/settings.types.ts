@@ -25,6 +25,7 @@ export interface AppSettings {
   isHardwareAccelerationEnabled: boolean;
   isOverlayEnabled: boolean;
   preferredInputDeviceId?: string;
+  phoneMicMode?: "wifi" | "usb" | "web";
   preferredOutputDeviceId?: string;
   microphoneSendVolume: number;
   speakerMasterVolume: number;

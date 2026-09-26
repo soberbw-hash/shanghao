@@ -43,6 +43,7 @@ export type RoomDockSettings = Pick<
 
 interface RoomDockProps {
   settings?: RoomDockSettings;
+  selectedInputDeviceId?: string;
   inputDevices: AudioDeviceDescriptor[];
   outputDevices: AudioDeviceDescriptor[];
   isMuted: boolean;
@@ -81,6 +82,7 @@ interface RoomDockProps {
 
 export const RoomDock = ({
   settings,
+  selectedInputDeviceId,
   inputDevices,
   outputDevices,
   isMuted,
@@ -191,7 +193,7 @@ export const RoomDock = ({
               isOpen={activeAudioPanel === "microphone"}
               title="麦克风"
               devices={inputDevices}
-              deviceId={settings.preferredInputDeviceId}
+              deviceId={selectedInputDeviceId ?? settings.preferredInputDeviceId}
               volume={settings.microphoneSendVolume}
               min={0.5}
               max={1.5}

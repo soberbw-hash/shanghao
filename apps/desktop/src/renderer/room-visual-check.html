@@ -4,6 +4,7 @@ const React = await import('react');
 const {createRoot} = await import('react-dom/client');
 await import('./src/styles/index.css');
 const {TeamIsland} = await import('./src/components/room/TeamIsland.tsx');
+const {RoomDock} = await import('./src/components/room/RoomDock.tsx');
 const {TemporaryChatPanel} = await import('./src/components/chat/TemporaryChatPanel.tsx');
 const {useSettingsStore} = await import('./src/store/settingsStore.ts');
 const {useWeatherStore} = await import('./src/features/weather/weatherStore.ts');
@@ -18,13 +19,30 @@ function Fixture(){
 const [zone,setZone]=React.useState('gameDesk1');
 const [open,setOpen]=React.useState(false);
 const [chatInput,setChatInput]=React.useState('');
-const members=[{id:'visual-local',nickname:'Sober',avatarId:'cat',isLocal:true,joinedAt:'2026-09-17T00:00:00Z',sceneZone:zone,activity:'idle',isMuted:false,isDeafened:false,connectionState:'connected',speakingState:'silent',latencyMs:30}];
+const [visualCountdown,setVisualCountdown]=React.useState(0);
+const [phoneButtonPressed,setPhoneButtonPressed]=React.useState(false);
+React.useEffect(()=>{if(!visualCountdown)return;const timer=window.setTimeout(()=>setVisualCountdown(value=>value-1),1000);return()=>window.clearTimeout(timer)},[visualCountdown]);
+const members=[{id:'visual-local',nickname:'Sober',avatarId:'cat',isLocal:true,joinedAt:'2026-09-17T00:00:00Z',sceneZone:zone,activity:'idle',isMuted:false,isDeafened:false,connectionState:'connected',speakingState:'silent',latencyMs:30},{id:'visual-remote',userId:'visual-friend',nickname:'grampus',avatarId:'fox',isLocal:false,joinedAt:'2026-09-17T00:00:01Z',sceneZone:'gameDesk5',activity:'idle',isMuted:false,isDeafened:false,connectionState:'connected',speakingState:'silent',latencyMs:45}];
+const messages=[
+{id:'visual-1',peerId:'visual-peer-1',nickname:'朋友',content:'今晚这间房的光线真舒服。',createdAt:'2026-09-25T00:01:00Z'},
+{id:'visual-1b',peerId:'visual-peer-1',nickname:'朋友',content:'天气也很舒服。',createdAt:'2026-09-25T00:01:30Z'},
+{id:'visual-1c',peerId:'visual-peer-1',nickname:'朋友',content:'每条消息之间要留出一样的呼吸感。',createdAt:'2026-09-25T00:02:00Z'},
+{id:'visual-2',peerId:'visual-local',nickname:'Sober',content:'嗯，聊天区也应该和房间融在一起。',createdAt:'2026-09-25T00:02:00Z',isLocal:true},
+{id:'visual-2b',peerId:'visual-local',nickname:'Sober',content:'https://example.com',createdAt:'2026-09-25T00:02:20Z',isLocal:true},
+{id:'visual-3',peerId:'visual-peer-1',nickname:'朋友',content:'不过字和按钮还是要清楚，不能被磨砂模糊掉。',createdAt:'2026-09-25T00:03:00Z'}];
 return React.createElement('div',{className:'room-page',style:{height:'100dvh',display:'flex',flexDirection:'column'}},
 React.createElement('header',{className:'room-topbar',style:{padding:'12px 20px'}},'上号 · 一号房 — 视觉验证'),
 React.createElement('div',{style:{height:40,flexShrink:0}},'天气预览 ',React.createElement('select',{ 'aria-label':'天气预览',onChange:e=>useWeatherStore.getState().setPreview({scene:e.target.value==='night'?'clear':e.target.value,phase:e.target.value==='night'?'night':'day'})},['clear','partly_cloudy','overcast','light_rain','heavy_rain','thunderstorm','snow','fog','night'].map(value=>React.createElement('option',{key:value,value},value)))),
 React.createElement('main',{className:'room-main-grid',style:{display:'grid',gridTemplateColumns:'minmax(0,1.44fr) minmax(280px,.56fr)',flex:1,minHeight:0}},
 React.createElement('section',{className:'room-scene-column island-panel',style:{minHeight:0,overflow:'hidden'}},React.createElement(TeamIsland,{members,onZoneSelect:setZone,onOpenCollection:()=>setOpen(!open),isCollectionOpen:open,reduceMotion:false})),
-React.createElement('aside',{className:'island-panel',style:{padding:12,minHeight:0}},React.createElement(TemporaryChatPanel,{messages:[],chatInput,onChatInputChange:setChatInput,onSend:()=>{},onOpenQuickMessageSettings:()=>setOpen(!open),emptyMessage:open?'设置按钮可用（测试）':'仅视觉验证，不发送消息'}))),
-React.createElement('footer',{className:'voice-dock',style:{padding:12}},'麦克风　 扬声器　　视觉验证，不连接房间或采集音频'));
+React.createElement('aside',{className:'room-chat-column',style:{minHeight:0}},React.createElement(TemporaryChatPanel,{className:'h-full',messages,chatInput,onChatInputChange:setChatInput,onSend:()=>{},onOpenQuickMessageSettings:()=>setOpen(!open),emptyMessage:open?'设置按钮可用（测试）':'仅视觉验证，不发送消息'}))),
+React.createElement(RoomDock,{
+settings:{preferredInputDeviceId:'',microphoneSendVolume:1,isNoiseSuppressionEnabled:true,isEchoCancellationEnabled:true,isVoiceEnhancementEnabled:true,isAutoGainControlEnabled:true,isPushToTalkEnabled:false,pushToTalkShortcut:'',micEqualizerGains:[],lowCutFrequency:0,preferredOutputDeviceId:'',speakerMasterVolume:1,isFriendLoudnessBalanceEnabled:false},
+inputDevices:[],outputDevices:[],isMuted:false,isDeafened:false,isNoiseSuppressionSwitching:false,
+microphoneTest:{phase:visualCountdown?'recording':'idle',level:0.2,isClipping:false,remainingSeconds:visualCountdown,onToggle:()=>setVisualCountdown(value=>value?0:3),onPlaySystemCapture:()=>{},onPlayProcessed:()=>{}},
+recordingState:'idle',recordingEncoderState:'native_aac_available',localScreenShareActive:false,isScreenShareStarting:false,isOverlayOpen:false,isLeaving:false,
+onToggleMicrophone:()=>{},onToggleDeafen:()=>{},onSwitchInputDevice:id=>setPhoneButtonPressed(id==='shanghao:phone-microphone'),onMicrophoneVolumePreview:()=>{},onMicrophoneVolumeCommit:()=>{},onNoiseSuppressionChange:()=>{},onEchoCancellationChange:()=>{},onVoiceEnhancementChange:()=>{},onAutoGainChange:()=>{},onPushToTalkEnabledChange:()=>{},onPushToTalkShortcutChange:()=>{},onResetMicrophoneVolume:()=>{},onSwitchOutputDevice:()=>{},onSpeakerVolumePreview:()=>{},onSpeakerVolumeCommit:()=>{},onLoudnessBalanceChange:()=>{},onTestSpeaker:()=>{},onResetSpeakerVolume:()=>{},onToggleRecording:()=>{},onToggleScreenShare:()=>{},onToggleOverlay:()=>{},onLeave:()=>{},
+}),
+phoneButtonPressed?React.createElement('span',{className:'sr-only','aria-live':'polite'},'手机麦克风入口已触发'):null);
 }createRoot(document.getElementById('root')).render(React.createElement(Fixture));
 </script></body></html>

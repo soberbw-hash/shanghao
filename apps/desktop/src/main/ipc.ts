@@ -83,6 +83,7 @@ import { AccountDesktopService } from "./account-service";
 import { readLruCache, writeLruCache } from "./bounded-cache";
 import { captureRuntimeHealth } from "./runtime-health";
 import { readDeepFilterAssets } from "./deepfilter-assets";
+import { registerPhoneMicUsbIpc } from "./phone-mic-usb-ipc";
 import { exportQuickMessagePack } from "./quick-message-export";
 import { clearAvatarImage, pickAvatarImage, readAvatarImage } from "./profile-media";
 import { registerRecordingStreamIpcHandlers } from "./recording-stream-ipc";
@@ -342,6 +343,7 @@ export const registerIpcHandlers = ({
     },
   });
   registerRecordingLocationIpcHandlers(settingsStore);
+  registerPhoneMicUsbIpc(accounts, settingsStore);
   signalingClient.on("event", (payload: SignalingEventPayload) => {
     sendToWindow(getMainWindow(), IPC_CHANNELS.signaling.event, payload);
   });

@@ -154,6 +154,8 @@ export class ReliableChatTransport {
       clientMessageId,
       peerId: payload.peerId,
       nickname: payload.nickname,
+      accountAvatarPresetId: payload.accountAvatarPresetId,
+      senderProfileId: payload.senderProfileId,
       avatarDataUrl: payload.avatarDataUrl,
       avatarId: payload.avatarId,
       content: payload.content,

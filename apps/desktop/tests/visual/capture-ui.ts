@@ -174,6 +174,11 @@ const prepareProfileForCapture = async (window: BrowserWindow): Promise<void> =>
       `window.desktopApi.settings.save({ relayServerUrl: ${JSON.stringify(captureServerUrl)} })`,
       true,
     );
+    await new Promise<void>((resolve) => {
+      window.webContents.once("did-finish-load", () => resolve());
+      window.webContents.reload();
+    });
+    await sleep(1_000);
   }
   const prepared = async (): Promise<boolean> =>
     window.webContents.executeJavaScript(
@@ -191,16 +196,7 @@ const prepareProfileForCapture = async (window: BrowserWindow): Promise<void> =>
           nicknameInput.dispatchEvent(new Event("change", { bubbles: true }));
         }
 
-        const captureServerUrl = ${JSON.stringify(captureServerUrl)};
-        if (!captureServerUrl) return true;
-        const serverInput = inputs.find(
-          (input) => input !== nicknameInput && input.type === "text",
-        );
-        if (!(serverInput instanceof HTMLInputElement)) return false;
-        valueSetter?.call(serverInput, captureServerUrl);
-        serverInput.dispatchEvent(new Event("input", { bubbles: true }));
-        serverInput.dispatchEvent(new Event("change", { bubbles: true }));
-        return serverInput.value === captureServerUrl;
+        return true;
       })();
     `,
       true,
@@ -340,12 +336,32 @@ export const captureUi = async (
       await clickButtonByLabel(window, "选择鸭子");
       await sleep(120);
     }
+    if (process.env.SHANGHAO_CAPTURE_ROOM_ID === "side") {
+      if (!(await clickButtonByLabel(window, "二号房"))) {
+        throw new Error("房间二视觉捕获无法找到入房选择");
+      }
+    }
     const usedChannelEntry = await clickButtonByLabel(window, "进入频道");
     if (!usedChannelEntry) {
       await clickButtonByLabel(window, "上号");
     }
     await dismissReleaseNotes(window, 2_000);
     await dismissDailyReport(window);
+    if (process.env.SHANGHAO_CAPTURE_ROOM_ID === "side") {
+      const deadline = Date.now() + 8_000;
+      let switched = false;
+      while (Date.now() < deadline) {
+        switched = Boolean(
+          await window.webContents.executeJavaScript(
+            `document.querySelector(".topbar-channel-title h1")?.textContent?.trim() === "二号房"`,
+            true,
+          ),
+        );
+        if (switched) break;
+        await sleep(150);
+      }
+      if (!switched) throw new Error("房间二视觉捕获未完成切换");
+    }
     const needsSettledRoom = [
       "room",
       "room-ai",

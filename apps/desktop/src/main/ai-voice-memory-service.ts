@@ -600,6 +600,25 @@ export const applySpeakingTimeline = (
   observations: VoiceMemorySpeakingObservation[],
 ): VoiceMemoryRecord => {
   if (!observations.length) return record;
+  // Room observations arrive in timestamp order. Index that common path so a long
+  // recording does not rescan every observation for every transcript segment.
+  // Keep the original scan for imported/out-of-order timelines: its encounter
+  // order is significant when two members receive an equal score.
+  const chronological = observations.every(
+    (observation, index) =>
+      Number.isFinite(observation.offsetMs) &&
+      (index === 0 || observations[index - 1]!.offsetMs <= observation.offsetMs),
+  );
+  const firstObservationAtOrAfter = (offsetMs: number): number => {
+    let low = 0;
+    let high = observations.length;
+    while (low < high) {
+      const middle = (low + high) >>> 1;
+      if (observations[middle]!.offsetMs < offsetMs) low = middle + 1;
+      else high = middle;
+    }
+    return low;
+  };
   const updates = new Map<
     string,
     { memberId: string; nickname: string; confidence: "high" | "medium" }
@@ -607,12 +626,13 @@ export const applySpeakingTimeline = (
   for (const speakerId of new Set(record.transcript.map((segment) => segment.speakerId))) {
     const scores = new Map<string, { memberId: string; nickname: string; count: number }>();
     for (const segment of record.transcript.filter((item) => item.speakerId === speakerId)) {
-      for (const observation of observations) {
-        if (
-          observation.offsetMs < segment.startMs - 350 ||
-          observation.offsetMs > segment.endMs + 350
-        )
-          continue;
+      const lowerBound = segment.startMs - 350;
+      const upperBound = segment.endMs + 350;
+      const firstIndex = chronological ? firstObservationAtOrAfter(lowerBound) : 0;
+      for (let index = firstIndex; index < observations.length; index += 1) {
+        const observation = observations[index]!;
+        if (chronological && observation.offsetMs > upperBound) break;
+        if (observation.offsetMs < lowerBound || observation.offsetMs > upperBound) continue;
         const current = scores.get(observation.memberId);
         scores.set(observation.memberId, {
           memberId: observation.memberId,

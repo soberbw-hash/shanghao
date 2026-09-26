@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { Check, Eye, EyeOff, LoaderCircle, LockKeyhole, Smartphone, UserRound } from "lucide-react";
 import { AnimatePresence, LayoutGroup, motion } from "framer-motion";
+import type { AccountAvatarPresetId } from "@private-voice/shared";
 
 import {
   CLOUDBASE_USERNAME_MESSAGE,
@@ -42,7 +43,6 @@ export const AccountPage = () => {
   const errorCode = useAccountStore((state) => state.errorCode);
   const login = useAccountStore((state) => state.login);
   const register = useAccountStore((state) => state.register);
-  const updateAvatar = useAccountStore((state) => state.updateAvatar);
   const requestVerificationCode = useAccountStore((state) => state.requestVerificationCode);
   const requestPasswordReset = useAccountStore((state) => state.requestPasswordReset);
   const continueAsGuest = useAccountStore((state) => state.continueAsGuest);
@@ -70,9 +70,9 @@ export const AccountPage = () => {
   const [resetPassword, setResetPassword] = useState("");
   const [resetConfirmation, setResetConfirmation] = useState("");
   const [resetCountdown, setResetCountdown] = useState(0);
-  const [selectedAvatarPresetId, setSelectedAvatarPresetId] = useState(
-    ACCOUNT_AVATAR_PRESETS[0]?.id,
-  );
+  const [selectedAvatarPresetId, setSelectedAvatarPresetId] = useState<
+    AccountAvatarPresetId | undefined
+  >();
   const [localError, setLocalError] = useState<string>();
   const accountServiceReady = snapshot.configured && snapshot.status !== "unavailable";
 
@@ -125,6 +125,7 @@ export const AccountPage = () => {
       phone.trim() &&
       /^\d{6}$/.test(verificationCode.trim()) &&
       username.trim() &&
+      selectedAvatarPresetId &&
       password &&
       confirmPassword,
     );
@@ -136,6 +137,7 @@ export const AccountPage = () => {
     mode,
     password,
     phone,
+    selectedAvatarPresetId,
     username,
     verificationCode,
   ]);
@@ -180,25 +182,31 @@ export const AccountPage = () => {
         playUiSound("process-error");
         return;
       }
+      const preset = ACCOUNT_AVATAR_PRESETS.find(
+        (candidate) => candidate.id === selectedAvatarPresetId,
+      );
+      if (!preset) {
+        setLocalError("请先选择一张账号头像。");
+        playUiSound("process-error");
+        return;
+      }
+      const avatarDataUrl = await prepareAccountAvatar(preset.source);
       await register({
         username: username.trim(),
         phone: phone.trim(),
         verificationCode: verificationCode.trim(),
         password,
         displayName: displayName.trim() || username.trim(),
+        avatarDataUrl,
+        accountAvatarPresetId: preset.id,
       });
-      if (selectedAvatarPresetId) {
-        const preset = ACCOUNT_AVATAR_PRESETS.find(
-          (candidate) => candidate.id === selectedAvatarPresetId,
-        );
-        if (!preset) throw new Error("account_avatar_invalid");
-        const dataUrl = await prepareAccountAvatar(preset.source);
-        await updateAvatar({ dataUrl });
-        await saveSettings({ accountAvatarPresetId: selectedAvatarPresetId });
-      }
+      await saveSettings({ accountAvatarPresetId: preset.id });
       playUiSound("account-success");
-    } catch {
-      // The store exposes a stable user-facing error code; raw IPC details stay out of the UI.
+    } catch (error) {
+      // Image preparation fails before the account store can expose its own error code.
+      if (!useAccountStore.getState().errorCode) {
+        setLocalError(accountErrorMessage(error));
+      }
       playUiSound("process-error");
     }
   };
@@ -372,7 +380,7 @@ export const AccountPage = () => {
               <>
                 <div className="account-avatar-section">
                   <div className="account-avatar-heading">
-                    <strong>选择头像</strong>
+                    <strong>选择头像（必选）</strong>
                   </div>
                   <div className="account-avatar-presets" role="radiogroup" aria-label="默认头像">
                     {ACCOUNT_AVATAR_PRESETS.map((preset) => (

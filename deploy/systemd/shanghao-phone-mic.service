@@ -1,0 +1,19 @@
+[Unit]
+Description=ShangHao phone microphone pairing sidecar
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/root/shanghao
+Environment=NODE_ENV=production
+ExecStart=/usr/bin/node /root/shanghao/packages/signaling/phone-mic-sidecar-dist/phone-mic-sidecar.js
+Restart=on-failure
+RestartSec=3
+NoNewPrivileges=true
+ProtectSystem=full
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

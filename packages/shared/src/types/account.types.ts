@@ -1,3 +1,5 @@
+import type { AccountAvatarPresetId } from "../constants/account-avatars";
+
 export type AccountStatus =
   "loading" | "signed_out" | "signed_in" | "guest" | "verification_required" | "unavailable";
 
@@ -7,6 +9,7 @@ export interface AccountProfile {
   displayName: string;
   email?: string;
   avatarUrl?: string;
+  accountAvatarPresetId?: AccountAvatarPresetId;
 }
 
 export interface AccountSnapshot {
@@ -49,6 +52,7 @@ export interface AccountRegisterRequest {
   password: string;
   displayName?: string;
   avatarDataUrl?: string;
+  accountAvatarPresetId?: AccountAvatarPresetId;
 }
 
 export interface AccountPasswordResetRequest {
@@ -62,5 +66,6 @@ export interface AccountProfileUpdateRequest {
 }
 
 export interface AccountAvatarUpdateRequest {
-  dataUrl: string;
+  dataUrl?: string;
+  accountAvatarPresetId?: AccountAvatarPresetId;
 }

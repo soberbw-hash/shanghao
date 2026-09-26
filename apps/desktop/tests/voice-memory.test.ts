@@ -581,6 +581,24 @@ test("speaker observations only bind a nickname when the timeline is convincing"
   assert.equal(uncertain.transcript[0]?.nickname, undefined);
 });
 
+test("speaker timeline lookup includes both tolerance edges and handles out-of-order imports", () => {
+  const atEdges = applySpeakingTimeline(record(), [
+    { offsetMs: 649, memberId: "other", nickname: "路人" },
+    { offsetMs: 650, memberId: "friend", nickname: "朋友" },
+    { offsetMs: 3_350, memberId: "friend", nickname: "朋友" },
+    { offsetMs: 3_351, memberId: "other", nickname: "路人" },
+  ]);
+  assert.equal(atEdges.transcript[0]?.nickname, "朋友");
+  assert.equal(atEdges.transcript[0]?.confidence, "high");
+
+  const imported = applySpeakingTimeline(record(), [
+    { offsetMs: 2_400, memberId: "friend", nickname: "朋友" },
+    { offsetMs: 500, memberId: "other", nickname: "路人" },
+    { offsetMs: 1_200, memberId: "friend", nickname: "朋友" },
+  ]);
+  assert.equal(imported.transcript[0]?.nickname, "朋友");
+});
+
 test("transcription checkpoints update in shorter visible steps and preserve legacy progress", () => {
   assert.equal(TRANSCRIPTION_CHUNK_MS, 30_000);
   assert.equal(

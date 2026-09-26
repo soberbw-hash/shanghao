@@ -151,8 +151,11 @@ export const App = () => {
       displayName: accountSnapshot.profile?.displayName,
       avatarUrl:
         accountSnapshot.profile?.avatarUrl ??
-        ACCOUNT_AVATAR_PRESETS.find((preset) => preset.id === settings.accountAvatarPresetId)
-          ?.source,
+        ACCOUNT_AVATAR_PRESETS.find(
+          (preset) =>
+            preset.id ===
+            (accountSnapshot.profile?.accountAvatarPresetId ?? settings.accountAvatarPresetId),
+        )?.source,
       isGuest: accountSnapshot.status === "guest",
       nickname: accountSnapshot.profile?.displayName ?? settings.nickname,
       avatarPath: settings.avatarPath,

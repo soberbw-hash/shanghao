@@ -469,6 +469,7 @@ test("CloudBase relay verification derives identity from the verified token", as
     username: "sober_test",
     displayName: "服务端名字",
     avatarUrl: undefined,
+    accountAvatarPresetId: "lilac-deer",
   });
   assert.equal(requests.length, 2);
   assert.equal(

@@ -22,10 +22,14 @@ export const selectVisibleSceneMembers = (members: RoomMember[]): RoomMember[] =
 
     const existing = visible[existingIndex];
     if (!existing) continue;
+    // Legacy peers can omit presenceState. Absence is not evidence that one
+    // peer is stale: dropping it here made the header/overlay count two people
+    // while the scene painted only one character.
     const isReconnectOverlap =
       existing.id === member.id ||
-      existing.presenceState !== MemberPresenceState.Online ||
-      member.presenceState !== MemberPresenceState.Online;
+      (existing.presenceState !== undefined &&
+        existing.presenceState !== MemberPresenceState.Online) ||
+      (member.presenceState !== undefined && member.presenceState !== MemberPresenceState.Online);
 
     if (isReconnectOverlap) {
       const next =

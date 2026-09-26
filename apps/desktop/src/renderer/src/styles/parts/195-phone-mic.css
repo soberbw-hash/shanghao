@@ -1,0 +1,181 @@
+.phone-mic-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 10020;
+  display: grid;
+  place-items: center;
+  background: #1c34566b;
+  backdrop-filter: blur(7px);
+  padding: 20px;
+}
+.phone-mic-dialog {
+  width: min(100%, 410px);
+  max-height: calc(100vh - 40px);
+  overflow: auto;
+  padding: 24px;
+  border: 1px solid #ffffffc9;
+  border-radius: 24px;
+  background: linear-gradient(150deg, #f7fbffdc, #dceeffd1);
+  box-shadow:
+    0 25px 80px #183e7080,
+    inset 0 1px #fff;
+  backdrop-filter: blur(28px) saturate(150%);
+  color: #223a59;
+}
+.phone-mic-dialog header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+}
+.phone-mic-dialog header small {
+  font-size: 10px;
+  letter-spacing: 0.22em;
+  color: #788da8;
+}
+.phone-mic-dialog header h2 {
+  margin: 4px 0 0;
+  font-size: 22px;
+}
+.phone-mic-dialog header button {
+  border: 0;
+  background: transparent;
+  font-size: 26px;
+  color: #6c809c;
+  cursor: pointer;
+}
+.phone-mic-tabs {
+  display: flex;
+  gap: 5px;
+  margin-top: 20px;
+  padding: 4px;
+  border: 1px solid #d7e4f4;
+  border-radius: 13px;
+  background: #eaf3ff;
+}
+.phone-mic-tabs button {
+  flex: 1;
+  padding: 9px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: #6a7f9c;
+  font-weight: 700;
+  cursor: pointer;
+}
+.phone-mic-tabs button.is-active {
+  color: #2e6dbd;
+  background: #fff;
+  box-shadow: 0 2px 8px #7897c033;
+}
+.phone-mic-hint {
+  min-height: 32px;
+  margin: 13px 0;
+  color: #7085a1;
+  font-size: 13px;
+}
+.phone-mic-pairing {
+  display: grid;
+  justify-items: center;
+  padding: 14px;
+  border: 1px solid #dbe9fa;
+  border-radius: 18px;
+  background: #fff;
+}
+.phone-mic-pairing img {
+  width: 195px;
+  height: 195px;
+}
+.phone-mic-qr-placeholder {
+  display: grid;
+  place-items: center;
+  width: 195px;
+  height: 195px;
+  color: #8799b3;
+  font-size: 13px;
+}
+.phone-mic-status {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 10px 0 0;
+  font-size: 13px;
+  font-weight: 700;
+}
+.phone-mic-status i {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #adc0d9;
+}
+.phone-mic-status.is-streaming i,
+.phone-mic-status.is-connected i {
+  background: #24b48a;
+}
+.phone-mic-error {
+  margin: 10px 0;
+  color: #c25261;
+  font-size: 12px;
+}
+.phone-mic-signal {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 7px;
+  margin: 16px 0;
+  font-size: 13px;
+  color: #7389a6;
+}
+.phone-mic-signal strong {
+  color: #365f98;
+  text-align: right;
+}
+.phone-mic-actions {
+  display: flex;
+  gap: 8px;
+}
+.phone-mic-actions button {
+  flex: 1;
+  padding: 10px;
+  border: 1px solid #d1e0f4;
+  border-radius: 11px;
+  background: #fff;
+  color: #4675ae;
+  font-weight: 700;
+  cursor: pointer;
+}
+.phone-mic-debug {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px;
+  margin: 15px 0 0;
+  padding: 14px;
+  border-radius: 12px;
+  background: #eaf2ff;
+  font-size: 12px;
+}
+.phone-mic-debug dt {
+  color: #7189a8;
+}
+.phone-mic-debug dd {
+  margin: 0;
+  font-weight: 700;
+}
+.phone-mic-usb-options select {
+  width: 100%;
+  margin: 0 0 8px;
+  padding: 10px;
+  border: 1px solid #cedef2;
+  border-radius: 11px;
+  background: #ffffffb8;
+  color: #365f89;
+}
+.phone-mic-usb-options button {
+  width: 100%;
+  margin-bottom: 10px;
+  padding: 9px;
+  border: 1px solid #c8dcf5;
+  border-radius: 11px;
+  background: #e8f3ff;
+  color: #376dad;
+  font-weight: 700;
+  cursor: pointer;
+}

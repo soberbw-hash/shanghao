@@ -1,3 +1,5 @@
+import type { AccountAvatarPresetId } from "@private-voice/shared";
+
 import skyCat from "../../assets/account-avatars/01-sky-cat.svg";
 import mintBear from "../../assets/account-avatars/02-mint-bear.svg";
 import peachFox from "../../assets/account-avatars/03-peach-fox.svg";
@@ -10,7 +12,7 @@ import cloudPanda from "../../assets/account-avatars/09-cloud-panda.svg";
 import cometOtter from "../../assets/account-avatars/10-comet-otter.svg";
 
 export interface AccountAvatarPreset {
-  id: string;
+  id: AccountAvatarPresetId;
   name: string;
   source: string;
 }
@@ -27,3 +29,6 @@ export const ACCOUNT_AVATAR_PRESETS: AccountAvatarPreset[] = [
   { id: "cloud-panda", name: "云朵熊猫", source: cloudPanda },
   { id: "comet-otter", name: "彗星水獭", source: cometOtter },
 ];
+
+export const accountAvatarPresetSource = (id?: AccountAvatarPresetId): string | undefined =>
+  ACCOUNT_AVATAR_PRESETS.find((preset) => preset.id === id)?.source;

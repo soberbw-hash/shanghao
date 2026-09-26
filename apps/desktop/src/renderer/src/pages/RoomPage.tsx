@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 
 import {
   RecordingEncoderState,
@@ -19,6 +19,8 @@ import { CollectionDialog, ScreenSourcePicker } from "../components/room/RoomOve
 import { ScreenSharePanelContainer } from "../components/room/ScreenSharePanelContainer";
 import { TeamIsland } from "../components/room/TeamIsland";
 import { RecordingStopDialog } from "../components/status/RecordingStopDialog";
+import { PhoneMicDialog } from "../components/audio/PhoneMicDialog";
+import { PHONE_MIC_DEVICE_ID, phoneMicSource } from "../features/audio/phoneMicSource";
 import { playUiSound } from "../features/audio/uiSound";
 import { muteQuickMessagePlayback } from "../features/audio/quickMessageAudio";
 import { getRemoteAudioMixer } from "../features/audio/RemoteAudioMixer";
@@ -34,8 +36,8 @@ import {
   IDLE_POLL_INTERVAL_MS,
   shouldMuteAfterAwayReturn,
 } from "../features/room/autoAway";
+import { useRoomActivityDetection } from "../features/room/useRoomActivityDetection";
 import { isSeatZone } from "../features/voice-scene/sceneZones";
-import { selectCharacterChatBubbles } from "../features/room/roomViewModel";
 import { usePrefersReducedMotion } from "../hooks/usePrefersReducedMotion";
 import { useMicTest } from "../hooks/useMicTest";
 import { useActiveQuickMessageMusic } from "../hooks/useQuickMessageMusicPresence";
@@ -46,9 +48,10 @@ import { useRoomState } from "../hooks/useRoomState";
 import { useAppStore } from "../store/appStore";
 import { useAudioStore } from "../store/audioStore";
 import { useRecordingStore } from "../store/recordingStore";
-import { useRoomStore } from "../store/roomStore";
+import { getLatestConnectionHealthTelemetry, useRoomStore } from "../store/roomStore";
 import { useSettingsStore } from "../store/settingsStore";
 import { toUserFacingError } from "../utils/userFacingError";
+import roomEnvironmentUrl from "../assets/scenes/shanghao-room/environment-v3-extended.png";
 
 const KNOCK_COOLDOWN_MS = 10_000;
 interface AwaySession {
@@ -130,32 +133,23 @@ export const RoomPage = () => {
     roomDockSettings,
   } = useRoomPageSettings();
   const saveSettings = useSettingsStore((state) => state.saveSettings);
-  const chatBubbleVersion = useRoomStore((state) =>
-    state.chatMessages
-      .slice(-100)
-      .filter(
-        (message) =>
-          message.kind !== "system" &&
-          message.deliveryState !== "failed" &&
-          Boolean(message.content.trim()),
-      )
-      .map((message) => `${message.id}:${message.deliveryState ?? "sent"}`)
-      .join("|"),
-  );
-  const quickBubbleVersion = useRoomStore((state) =>
-    state.quickMessages.map((message) => message.id).join("|"),
+  const relayServerUrl = useSettingsStore((state) => state.settings?.relayServerUrl);
+  const [isPhoneMicDialogOpen, setIsPhoneMicDialogOpen] = useState(false);
+  const [phoneMicSelected, setPhoneMicSelected] = useState(false);
+  useEffect(
+    () => () => {
+      void phoneMicSource.stop();
+    },
+    [],
   );
   const knockMessageCount = useRoomStore(
     (state) => state.chatMessages.filter((message) => message.id.startsWith("knock-")).length,
   );
   const activeQuickMusic = useActiveQuickMessageMusic();
-  const characterChatBubbles = useMemo(() => {
-    if (!chatBubbleVersion && !quickBubbleVersion) return [];
-    const { chatMessages, quickMessages } = useRoomStore.getState();
-    return selectCharacterChatBubbles(chatMessages, quickMessages);
-  }, [chatBubbleVersion, quickBubbleVersion]);
   const remoteScreenSharing = useRoomStore((state) => state.remoteScreenSharing);
-  const connectionHealth = useRoomStore((state) => state.connectionHealth);
+  const connectionQualityLevel = useRoomStore(
+    (state) => summarizeConnectionHealth(state.connectionHealth).level,
+  );
   const sceneReactions = useRoomStore((state) => state.sceneReactions);
   const channelCounts = useRoomStore((state) => state.channelCounts);
   const inputDevices = useAudioStore((state) => state.inputDevices);
@@ -275,7 +269,6 @@ export const RoomPage = () => {
       ].join("|")
     : "";
   const localGameIconKey = localMember?.gameIconDataUrl ?? "";
-  const connectionQuality = summarizeConnectionHealth(connectionHealth);
 
   const handleSceneReaction = useCallback(
     (targetPeerId: string, emoji: Parameters<typeof sendSceneReaction>[1]) => {
@@ -377,21 +370,17 @@ export const RoomPage = () => {
   const runtimePressureRef = useRef({
     connectionState: room.connectionState,
     screenSharing: Boolean(localScreenShareStream || screenSharingPeerIds.length),
-    reconnectAttempt: connectionHealth.reconnectAttempt,
-    latencyMs: connectionHealth.latencyMs,
-    packetLossPercent: connectionHealth.packetLossPercent,
   });
   runtimePressureRef.current = {
     connectionState: room.connectionState,
     screenSharing: Boolean(localScreenShareStream || screenSharingPeerIds.length),
-    reconnectAttempt: connectionHealth.reconnectAttempt,
-    latencyMs: connectionHealth.latencyMs,
-    packetLossPercent: connectionHealth.packetLossPercent,
   };
 
   useEffect(() => {
     const publishPressure = () => {
       const pressure = runtimePressureRef.current;
+      const telemetry =
+        getLatestConnectionHealthTelemetry() ?? useRoomStore.getState().connectionHealth;
       const memory = (
         performance as Performance & {
           memory?: { usedJSHeapSize: number; jsHeapSizeLimit: number };
@@ -400,9 +389,9 @@ export const RoomPage = () => {
       void window.desktopApi.ai?.updateRuntimePressure?.({
         inVoiceRoom: pressure.connectionState === RoomConnectionState.Connected,
         screenSharing: pressure.screenSharing,
-        peerRecovering: pressure.reconnectAttempt > 0,
-        latencyMs: pressure.latencyMs,
-        packetLossPercent: pressure.packetLossPercent,
+        peerRecovering: telemetry.reconnectAttempt > 0,
+        latencyMs: telemetry.latencyMs,
+        packetLossPercent: telemetry.packetLossPercent,
         rendererMemoryPressure: Boolean(
           memory && memory.usedJSHeapSize / Math.max(1, memory.jsHeapSizeLimit) > 0.82,
         ),
@@ -653,57 +642,13 @@ export const RoomPage = () => {
     };
   }, [pushToast, setMuted]);
 
-  useEffect(() => {
-    const applyGameDetection = (snapshot: GameDetectionSnapshot) => {
-      hasDetectionSnapshotRef.current = true;
-      const previousGame = detectedGameRef.current;
-      detectedGameRef.current = snapshot.gameName;
-      detectedGameIconRef.current = snapshot.gameIconDataUrl;
-      detectedMusicRef.current = snapshot.musicActivity;
-      const localMember = useRoomStore.getState().room.members.find((member) => member.isLocal);
-      const currentZone = localMember?.sceneZone ?? "gameDesk1";
-
-      if (snapshot.gameName) {
-        if (currentZone === "restroomZone") {
-          moveLocalMemberRef.current(
-            "restroomZone",
-            "restroom",
-            snapshot.gameName,
-            snapshot.musicActivity,
-            snapshot.gameIconDataUrl,
-          );
-        } else {
-          const gameZone = currentZone.startsWith("gameDesk") ? currentZone : "gameDesk1";
-          moveLocalMemberRef.current(
-            gameZone,
-            "gaming",
-            snapshot.gameName,
-            snapshot.musicActivity,
-            snapshot.gameIconDataUrl,
-          );
-        }
-      } else if (previousGame) {
-        moveLocalMemberRef.current(
-          currentZone,
-          currentZone === "restroomZone" ? "restroom" : "idle",
-          undefined,
-          snapshot.musicActivity,
-          undefined,
-        );
-      } else {
-        moveLocalMemberRef.current(
-          currentZone,
-          currentZone === "restroomZone" ? "restroom" : (localMember?.activity ?? "idle"),
-          undefined,
-          snapshot.musicActivity,
-          undefined,
-        );
-      }
-    };
-
-    void window.desktopApi.games.getSnapshot().then(applyGameDetection);
-    return window.desktopApi.games.onDetected(applyGameDetection);
-  }, []);
+  useRoomActivityDetection({
+    hasSnapshot: hasDetectionSnapshotRef,
+    gameName: detectedGameRef,
+    gameIcon: detectedGameIconRef,
+    music: detectedMusicRef,
+    moveLocalMember: moveLocalMemberRef,
+  });
 
   useEffect(() => {
     if (!hasDetectionSnapshotRef.current || !localMemberId) return;
@@ -1020,9 +965,16 @@ export const RoomPage = () => {
   };
 
   const switchInputDevice = async (preferredInputDeviceId?: string) => {
+    if (preferredInputDeviceId === PHONE_MIC_DEVICE_ID) {
+      setIsPhoneMicDialogOpen(true);
+      return;
+    }
     await saveSettings({ preferredInputDeviceId });
-    await replaceInputDevice(preferredInputDeviceId);
-    playUiSound("device-switch");
+    if (await replaceInputDevice(preferredInputDeviceId)) {
+      setPhoneMicSelected(false);
+      await phoneMicSource.stop();
+      playUiSound("device-switch");
+    }
   };
 
   const toggleNoiseSuppression = async () => {
@@ -1031,7 +983,7 @@ export const RoomPage = () => {
     setIsNoiseSuppressionSwitching(true);
     try {
       await saveSettings({ isNoiseSuppressionEnabled: nextNoiseSuppressionEnabled });
-      await replaceInputDevice(preferredInputDeviceId);
+      await replaceInputDevice(phoneMicSelected ? PHONE_MIC_DEVICE_ID : preferredInputDeviceId);
       playUiSound("button-click");
       await window.desktopApi.app.writeLog({
         category: "audio",
@@ -1063,7 +1015,7 @@ export const RoomPage = () => {
     setIsNoiseSuppressionSwitching(true);
     try {
       await saveSettings(patch);
-      await replaceInputDevice(preferredInputDeviceId);
+      await replaceInputDevice(phoneMicSelected ? PHONE_MIC_DEVICE_ID : preferredInputDeviceId);
       playUiSound("button-click");
     } catch (error) {
       pushToast({
@@ -1087,7 +1039,7 @@ export const RoomPage = () => {
     setIsAutoGainSwitching(true);
     try {
       await saveSettings({ isAutoGainControlEnabled });
-      await replaceInputDevice(preferredInputDeviceId);
+      await replaceInputDevice(phoneMicSelected ? PHONE_MIC_DEVICE_ID : preferredInputDeviceId);
       playUiSound("button-click");
     } catch (error) {
       pushToast({
@@ -1202,7 +1154,10 @@ export const RoomPage = () => {
         />
       </div>
 
-      <main className="room-main-grid grid min-h-0 flex-1 gap-2.5 lg:grid-cols-[minmax(0,1.44fr)_minmax(280px,.56fr)]">
+      <main
+        className="room-main-grid grid min-h-0 flex-1 gap-2.5 lg:grid-cols-[minmax(0,1.44fr)_minmax(280px,.56fr)]"
+        style={{ "--room-wallpaper": `url(${roomEnvironmentUrl})` } as CSSProperties}
+      >
         <section className="room-scene-column island-panel min-h-0 overflow-hidden">
           <TeamIsland
             members={visibleMembers}
@@ -1210,9 +1165,8 @@ export const RoomPage = () => {
             onReact={handleSceneReaction}
             onVolumeChange={handleMemberVolumeChange}
             screenSharingPeerIds={screenSharingPeerIds}
-            networkQuality={connectionQuality.level}
+            networkQuality={connectionQualityLevel}
             reactions={sceneReactions}
-            chatBubbles={characterChatBubbles}
             activeQuickMusic={activeQuickMusic}
             onMuteQuickMusic={(playback) => {
               if (playback.peerId === room.members.find((member) => member.isLocal)?.id) {
@@ -1318,9 +1272,23 @@ export const RoomPage = () => {
         onDiscard={() => void finalizeRecording(false)}
         onSave={() => void finalizeRecording(true)}
       />
+      <PhoneMicDialog
+        open={isPhoneMicDialogOpen}
+        relayUrl={room?.signalingUrl || relayServerUrl}
+        onClose={() => setIsPhoneMicDialogOpen(false)}
+        onStream={() => {
+          void replaceInputDevice(PHONE_MIC_DEVICE_ID).then((switched) => {
+            if (switched) setPhoneMicSelected(true);
+          });
+        }}
+        onDisconnect={() =>
+          phoneMicSelected ? switchInputDevice(preferredInputDeviceId) : phoneMicSource.stop()
+        }
+      />
 
       <RoomDock
         settings={roomDockSettings}
+        selectedInputDeviceId={phoneMicSelected ? PHONE_MIC_DEVICE_ID : preferredInputDeviceId}
         inputDevices={inputDevices}
         outputDevices={outputDevices}
         isMuted={isMuted}
@@ -1330,6 +1298,7 @@ export const RoomPage = () => {
           phase: micTest.phase,
           level: micTest.level,
           isClipping: micTest.isClipping,
+          remainingSeconds: micTest.remainingSeconds,
           error: micTest.error,
           onToggle: () => void micTest.toggle(),
           onPlaySystemCapture: () => void micTest.playSystemCapture(),

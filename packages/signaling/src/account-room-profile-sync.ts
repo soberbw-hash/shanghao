@@ -12,6 +12,7 @@ export const syncAccountProfileAcrossRooms = (
       username: profile.username,
       displayName: profile.displayName,
       avatarUrl: profile.avatarUrl,
+      accountAvatarPresetId: profile.accountAvatarPresetId,
     });
     if (changed) broadcastSnapshot(room.roomId);
   }

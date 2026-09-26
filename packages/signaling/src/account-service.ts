@@ -1,6 +1,14 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import { dirname, join } from "node:path";
 
-import type { AccountProfile } from "@private-voice/shared";
+import {
+  accountAvatarPresetForIdentity,
+  isAccountAvatarPresetId,
+  type AccountAvatarPresetId,
+  type AccountProfile,
+} from "@private-voice/shared";
+
+import { AccountAvatarPresetStore } from "./account-avatar-preset-store";
 
 const USERNAME_PATTERN = /^[a-z0-9][a-z0-9_-]{2,19}$/;
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -59,6 +67,7 @@ export interface VerifiedAccountIdentity {
   username: string;
   displayName: string;
   avatarUrl?: string;
+  accountAvatarPresetId?: AccountAvatarPresetId;
 }
 
 export interface AccountBackend {
@@ -84,6 +93,10 @@ export interface AccountBackend {
   getProfile(accessToken: string): Promise<AccountProfile>;
   updateProfile(accessToken: string, displayName: string): Promise<AccountProfile>;
   updateAvatar(accessToken: string, dataUrl: string): Promise<AccountProfile>;
+  updateAvatarPreset?(
+    accessToken: string,
+    presetId: AccountAvatarPresetId,
+  ): Promise<AccountProfile>;
   verifyAccessToken(accessToken: string): Promise<VerifiedAccountIdentity>;
 }
 
@@ -530,6 +543,7 @@ export class CloudBaseAccountService implements AccountBackend {
   readonly configured: boolean;
   readonly publicConfiguration?: AccountBackend["publicConfiguration"];
   private readonly authBaseUrl?: string;
+  private avatarPresets?: Promise<AccountAvatarPresetStore>;
 
   constructor(
     private readonly options: {
@@ -537,6 +551,7 @@ export class CloudBaseAccountService implements AccountBackend {
       region?: string;
       publishableKey?: string;
       authBaseUrl?: string;
+      avatarStoreFile?: string;
       fetcher?: typeof fetch;
       logger?: (message: string, context?: Record<string, unknown>) => void;
     },
@@ -569,6 +584,11 @@ export class CloudBaseAccountService implements AccountBackend {
       region: process.env.CLOUDBASE_REGION || "ap-shanghai",
       publishableKey: process.env.CLOUDBASE_PUBLISHABLE_KEY,
       authBaseUrl: process.env.CLOUDBASE_AUTH_BASE_URL,
+      avatarStoreFile:
+        process.env.ACCOUNT_AVATAR_PRESET_FILE ||
+        (process.env.CHAT_HISTORY_FILE
+          ? join(dirname(process.env.CHAT_HISTORY_FILE), "account-avatar-presets.json")
+          : undefined),
       logger,
     });
   }
@@ -591,6 +611,10 @@ export class CloudBaseAccountService implements AccountBackend {
 
   async getProfile(accessToken: string): Promise<AccountProfile> {
     const user = await this.readUser(accessToken);
+    return this.profileForUser(user);
+  }
+
+  private async profileForUser(user: CloudBaseUserResponse): Promise<AccountProfile> {
     const userId = user.sub?.trim() || user.uid?.trim();
     if (!userId) throw new AccountServerError("account_session_expired");
     const metadata = user.user_metadata;
@@ -601,6 +625,18 @@ export class CloudBaseAccountService implements AccountBackend {
       metadata?.phone_number?.trim() ||
       user.email?.trim() ||
       userId;
+    const existingPortrait = user.picture?.trim() || metadata?.picture?.trim() || undefined;
+    let accountAvatarPresetId: AccountAvatarPresetId | undefined;
+    try {
+      const store = await this.getAvatarPresets();
+      accountAvatarPresetId =
+        store.get(userId) || (existingPortrait ? undefined : await store.getOrAssign(userId));
+    } catch (error) {
+      this.options.logger?.("account avatar store unavailable", {
+        errorCode: error instanceof Error ? error.name : "unknown",
+      });
+      accountAvatarPresetId = existingPortrait ? undefined : accountAvatarPresetForIdentity(userId);
+    }
     return {
       userId,
       username,
@@ -613,7 +649,8 @@ export class CloudBaseAccountService implements AccountBackend {
         metadata?.nickName?.trim() ||
         username,
       email: user.email?.trim() || undefined,
-      avatarUrl: user.picture?.trim() || metadata?.picture?.trim() || undefined,
+      avatarUrl: accountAvatarPresetId ? undefined : existingPortrait,
+      accountAvatarPresetId,
     };
   }
 
@@ -625,6 +662,22 @@ export class CloudBaseAccountService implements AccountBackend {
     throw new AccountServerError("account_not_supported");
   }
 
+  async updateAvatarPreset(
+    accessToken: string,
+    presetId: AccountAvatarPresetId,
+  ): Promise<AccountProfile> {
+    if (!isAccountAvatarPresetId(presetId)) throw new AccountServerError("account_avatar_invalid");
+    const user = await this.readUser(accessToken);
+    const userId = user.sub?.trim() || user.uid?.trim();
+    if (!userId) throw new AccountServerError("account_session_expired");
+    try {
+      await (await this.getAvatarPresets()).set(userId, presetId);
+    } catch (error) {
+      throw new AccountServerError("account_avatar_upload_failed", { cause: error });
+    }
+    return this.profileForUser(user);
+  }
+
   async verifyAccessToken(accessToken: string): Promise<VerifiedAccountIdentity> {
     const profile = await this.getProfile(accessToken);
     return {
@@ -632,7 +685,16 @@ export class CloudBaseAccountService implements AccountBackend {
       username: profile.username,
       displayName: profile.displayName,
       avatarUrl: profile.avatarUrl,
+      accountAvatarPresetId: profile.accountAvatarPresetId,
     };
+  }
+
+  private getAvatarPresets(): Promise<AccountAvatarPresetStore> {
+    this.avatarPresets ??= AccountAvatarPresetStore.create(
+      this.options.avatarStoreFile,
+      this.options.logger,
+    );
+    return this.avatarPresets;
   }
 
   private async readUser(accessToken: string): Promise<CloudBaseUserResponse> {

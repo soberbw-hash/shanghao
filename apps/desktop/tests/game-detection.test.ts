@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 
 import {
   buildGameDetectionProbeCommand,
+  buildFastGameProbeCommand,
   buildMediaSessionProbeCommand,
   matchKnownGame,
   matchMediaSessionMusicActivity,
@@ -48,6 +49,22 @@ test("an exact running game stays visible while another app is foreground", () =
     ]),
     "英雄联盟",
   );
+});
+
+test("fast fallback can still identify League and Delta without protected process metadata", () => {
+  const command = buildFastGameProbeCommand();
+  assert.equal(command.includes("Get-Process"), true);
+  assert.equal(command.includes("MainModule"), false);
+  assert.equal(command.includes("Get-CimInstance"), false);
+  assert.equal(command.includes("ProcessName"), true);
+  assert.equal(
+    matchKnownGame([
+      { ProcessName: "Code", IsForeground: true },
+      { ProcessName: "League of Legends", IsForeground: false },
+    ]),
+    "英雄联盟",
+  );
+  assert.equal(matchKnownGame([{ ProcessName: "DeltaForceClient-Win64-Shipping" }]), "三角洲行动");
 });
 
 test("Tencent PC additions and Lost Control Evolution are detected by exact executable", () => {

@@ -7,6 +7,10 @@ import { resolveMemberSceneZones } from "../src/renderer/src/features/voice-scen
 import { readRendererCss } from "./helpers/read-renderer-css";
 
 const roomPagePath = path.resolve(process.cwd(), "src/renderer/src/pages/RoomPage.tsx");
+const roomActivityDetectionPath = path.resolve(
+  process.cwd(),
+  "src/renderer/src/features/room/useRoomActivityDetection.ts",
+);
 const homePagePath = path.resolve(process.cwd(), "src/renderer/src/pages/HomePage.tsx");
 const overlayWindowPath = path.resolve(process.cwd(), "src/main/overlay-window.ts");
 const overlayPagePath = path.resolve(process.cwd(), "src/renderer/src/pages/OverlayPage.tsx");
@@ -159,10 +163,20 @@ test("room page uses the V5 island, light responses, and voice dock", () => {
       audioPopoverSource.indexOf('className="audio-control-popover-actions"'),
     true,
   );
-  assert.equal(audioPopoverSource.includes("开始 5 秒体检"), true);
+  assert.equal(audioPopoverSource.includes("MIC_TEST_DURATION_SECONDS"), true);
+  assert.equal(audioPopoverSource.includes("audio-control-mic-test-countdown tabular-nums"), true);
+  assert.equal(audioPopoverSource.includes("还剩 {microphoneTest.remainingSeconds} 秒"), true);
+  assert.equal(audioPopoverSource.includes("data-active={isRecordingMicTest}"), true);
   assert.equal(audioPopoverSource.includes("听原声"), true);
   assert.equal(audioPopoverSource.includes("听处理后"), true);
-  assert.equal(micTestSource.includes("const TEST_DURATION_MS = 5_000"), true);
+  assert.equal(micTestSource.includes("MIC_TEST_DURATION_SECONDS = 3"), true);
+  assert.equal(
+    micTestSource.includes("const TEST_DURATION_MS = MIC_TEST_DURATION_SECONDS * 1_000"),
+    true,
+  );
+  assert.equal(micTestSource.includes("const METER_UPDATE_INTERVAL_MS = 80"), true);
+  assert.equal(micTestSource.includes("now >= nextMeterUpdateAt"), true);
+  assert.equal(micTestSource.includes("window.clearInterval(countdownTimerRef.current)"), true);
   assert.equal(source.includes("朋友的小收藏箱"), false);
   assert.equal(source.includes("留下一句话或链接，会一直保留"), false);
   assert.equal(source.includes("把下次开黑时间、攻略链接"), false);
@@ -283,7 +297,8 @@ test("room uses a real always-on-top overlay and a ten-second knock cooldown", (
   assert.equal(chatSource.includes("<Link2 />"), true);
   assert.equal(chatSource.includes("quickMessages.map"), true);
   assert.equal(quickRepliesSource.includes("QUICK_MESSAGE_PRESETS"), true);
-  assert.equal(roomSource.includes("chatBubbles={characterChatBubbles}"), true);
+  assert.equal(roomSource.includes("chatBubbles={characterChatBubbles}"), false);
+  assert.equal(teamIslandSource.includes("useCharacterChatBubbles()"), true);
   assert.equal(teamIslandSource.includes("chatBubbleByPeerId.get(member.id)"), true);
   assert.equal(sceneCharacterSource.includes("CharacterChatBubble"), true);
   assert.equal(stylesSource.includes(".scene-character-chat-bubble"), true);
@@ -366,10 +381,12 @@ test("music activity stays attached to a member while seats change", () => {
   const teamIslandSource = readFileSync(teamIslandPath, "utf8");
   const badgeSource = readFileSync(musicActivityBadgePath, "utf8");
   const roomSource = readFileSync(roomPagePath, "utf8");
+  const activityDetectionSource = readFileSync(roomActivityDetectionPath, "utf8");
   const stylesSource = readRendererCss();
 
   assert.equal(teamIslandSource.includes("const occupant = memberBySeat.get(slot.id)"), true);
-  assert.equal(teamIslandSource.includes("const settledMemberBySeat = new Map"), true);
+  assert.equal(teamIslandSource.includes("const settledMemberBySeat = useMemo"), true);
+  assert.equal(teamIslandSource.includes("if (member) bySeat.set(zone, member)"), true);
   assert.equal(teamIslandSource.includes("settledMemberBySeat.get(slot.id)"), true);
   assert.equal(teamIslandSource.includes("onSettled={handleMemberSettled}"), true);
   assert.equal(teamIslandSource.includes("occupant.musicActivity"), true);
@@ -381,7 +398,8 @@ test("music activity stays attached to a member while seats change", () => {
   assert.equal(badgeSource.includes("apple-music.png"), true);
   assert.equal(stylesSource.includes("pointer-events: none"), true);
   assert.equal(roomSource.includes("detectedMusicRef.current ?? localMember?.musicActivity"), true);
-  assert.equal(roomSource.includes("hasDetectionSnapshotRef.current = true"), true);
+  assert.equal(roomSource.includes("useRoomActivityDetection({"), true);
+  assert.equal(activityDetectionSource.includes("refs.hasSnapshot.current = true"), true);
   assert.equal(roomSource.includes("detectedMusicActivityKey === localMusicActivityKey"), true);
 });
 

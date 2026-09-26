@@ -64,6 +64,8 @@ import { SessionTokenStore } from "./session-token-store";
 import { DailyRoomReportStore } from "./daily-room-report-store";
 import { CloudAiRuntime } from "./cloud-ai-runtime";
 import { AccountHttpController } from "./account-http-controller";
+import { PhoneMicBridge } from "./phone-mic-bridge";
+import { compareVersions } from "./version-comparison";
 import { syncAccountProfileAcrossRooms } from "./account-room-profile-sync";
 import {
   CloudBaseAccountService,
@@ -81,27 +83,6 @@ export interface SignalingServerOptions {
   accountBackend?: AccountBackend;
   dailyRoomReportFile?: string;
 }
-const compareVersions = (left: string, right: string): number => {
-  const parse = (value: string) => {
-    const match = /^(\d+)\.(\d+)\.(\d+)$/.exec(value.trim());
-    return match ? match.slice(1).map((part) => Number.parseInt(part, 10)) : [];
-  };
-  const leftParts = parse(left);
-  const rightParts = parse(right);
-  if (
-    leftParts.length < 3 ||
-    rightParts.length < 3 ||
-    [...leftParts, ...rightParts].some((part) => !Number.isFinite(part))
-  ) {
-    return Number.NaN;
-  }
-  for (let index = 0; index < Math.max(leftParts.length, rightParts.length); index += 1) {
-    const difference = (leftParts[index] ?? 0) - (rightParts[index] ?? 0);
-    if (difference !== 0) return difference;
-  }
-  return 0;
-};
-
 const MAX_SIGNALING_PAYLOAD_BYTES = 256 * 1024;
 const MAX_PENDING_AUTH_MESSAGES = 4;
 const MAX_PENDING_AUTH_PAYLOAD_BYTES = MAX_SIGNALING_PAYLOAD_BYTES;
@@ -317,6 +298,7 @@ export class SignalingServer extends EventEmitter {
   private readonly roomManager = new RoomManager();
   private readonly httpServer: HttpServer;
   private readonly wss: WebSocketServer;
+  private readonly phoneMicBridge: PhoneMicBridge;
   private readonly roomName: string;
   private readonly logger?: SignalingServerOptions["logger"];
   private heartbeatTimer?: NodeJS.Timeout;
@@ -372,15 +354,16 @@ export class SignalingServer extends EventEmitter {
         this.broadcastSnapshot(roomId),
       ),
     );
-    this.httpServer = createServer();
-    this.httpServer.on(
-      "request",
+    this.httpServer = createServer(
       (request, response) => void this.handleHttpRequest(request, response),
     );
-    this.wss = new WebSocketServer({
-      server: this.httpServer,
-      maxPayload: MAX_SIGNALING_PAYLOAD_BYTES,
-    });
+    this.phoneMicBridge = new PhoneMicBridge(
+      (id) => buildIceServersForPeer(id) ?? [],
+      async (token) =>
+        !!(this.accountBackend.configured && (await this.accountBackend.verifyAccessToken(token))),
+    );
+    this.wss = new WebSocketServer({ noServer: true, maxPayload: MAX_SIGNALING_PAYLOAD_BYTES });
+    this.phoneMicBridge.attachToServer(this.httpServer, this.wss);
     this.wss.on("connection", (socket, request) => {
       if (!this.isAuthorizedRequest(request.url)) {
         socket.close(4401, "unauthorized");
@@ -398,6 +381,7 @@ export class SignalingServer extends EventEmitter {
     request: IncomingMessage,
     response: import("node:http").ServerResponse,
   ): Promise<void> {
+    if (await this.phoneMicBridge.serveHttpRequest(request, response)) return;
     if (await this.accountHttp.handle(request, response)) return;
 
     const contentLength = Number(request.headers["content-length"] ?? 0);
@@ -425,6 +409,7 @@ export class SignalingServer extends EventEmitter {
           uptime: process.uptime(),
           activeRooms: stats.activeRooms,
           connectedPeers: stats.connectedPeers,
+          phoneMicSessions: this.phoneMicBridge.activeSessions,
           maxRoomMembers: this.roomManager.getMaxRoomMembers(),
           currentOnlineCount: stats.connectedPeers,
           occupiedAvatarIds,
@@ -606,6 +591,7 @@ export class SignalingServer extends EventEmitter {
     for (const client of this.wss.clients) {
       client.close();
     }
+    this.phoneMicBridge.close();
 
     await (await this.chatHistory).flush();
     await (await this.roomCollection).flush();
@@ -1098,6 +1084,7 @@ export class SignalingServer extends EventEmitter {
       username: accountIdentity?.username,
       displayName: authoritativeNickname,
       avatarUrl: accountIdentity?.avatarUrl,
+      accountAvatarPresetId: accountIdentity?.accountAvatarPresetId,
       isGuest: !accountIdentity,
       profileId: existingPeer?.profileId ?? authoritativeProfileId,
       nickname: authoritativeNickname,
@@ -1327,6 +1314,7 @@ export class SignalingServer extends EventEmitter {
       senderProfileId: author.profileId,
       nickname: author.nickname,
       avatarId: author.avatarId,
+      accountAvatarPresetId: author.accountAvatarPresetId,
       content,
       image: message.image,
       createdAt: new Date().toISOString(),

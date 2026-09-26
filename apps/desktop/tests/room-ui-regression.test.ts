@@ -67,6 +67,27 @@ test("scene keeps every online member when legacy stable identities collide", ()
   );
 });
 
+test("scene does not discard a peer when legacy presence metadata is missing", () => {
+  const first = {
+    ...member(),
+    id: "peer-first",
+    userId: "shared-legacy-profile",
+    presenceState: undefined,
+  };
+  const second = {
+    ...member(),
+    id: "peer-second",
+    userId: "shared-legacy-profile",
+    presenceState: undefined,
+    joinedAt: "2026-07-13T00:00:01.000Z",
+  };
+
+  assert.deepEqual(
+    selectVisibleSceneMembers([first, second]).map((candidate) => candidate.id),
+    ["peer-first", "peer-second"],
+  );
+});
+
 test("scene still collapses the stale half of a reconnect overlap", () => {
   const stale = {
     ...member(),

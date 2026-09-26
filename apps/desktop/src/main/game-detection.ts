@@ -503,6 +503,19 @@ export const resolveStableMusicActivity = (
 };
 
 export const buildGameDetectionProbeCommand = (): string => {
+  const relevantProcessNames = Array.from(
+    new Set(
+      [
+        ...GAME_RULES.flatMap((rule) => rule.processNames),
+        ...MUSIC_RULES.flatMap((rule) => rule.processNames),
+        ...KK_HOSTED_PROCESS_NAMES,
+        "applicationframehost",
+      ].map(normalizeProcessName),
+    ),
+  );
+  const relevantProcessNameArray = relevantProcessNames
+    .map((processName) => `'${processName.replace(/'/g, "''")}'`)
+    .join(",");
   const commandLineProcessNames = Array.from(
     new Set(
       GAME_RULES.flatMap((rule) => rule.evidenceRequiredProcessNames ?? []).map(
@@ -521,6 +534,7 @@ export const buildGameDetectionProbeCommand = (): string => {
     "$foregroundProcessId=0",
     'if ($env:SHANGHAO_FOREGROUND_PID) { [void][uint32]::TryParse($env:SHANGHAO_FOREGROUND_PID, [ref]$foregroundProcessId) } else { Add-Type -Namespace ShangHaoWin32 -Name NativeMethods -MemberDefinition \'[DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow(); [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint processId);\'; $foregroundHandle=[ShangHaoWin32.NativeMethods]::GetForegroundWindow(); if ($foregroundHandle -ne [IntPtr]::Zero) { [void][ShangHaoWin32.NativeMethods]::GetWindowThreadProcessId($foregroundHandle, [ref]$foregroundProcessId) } }',
     "function ConvertTo-Utf8Base64([string]$Value) { if ([string]::IsNullOrEmpty($Value)) { return ''; }; return [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($Value)); }",
+    `$relevantProcessNames=@(${relevantProcessNameArray})`,
     `$commandLineProcessNames=@(${processNameArray})`,
     "Get-Process | ForEach-Object {",
     "  $processPath = ''",
@@ -531,8 +545,11 @@ export const buildGameDetectionProbeCommand = (): string => {
     "  $appUserModelId = ''",
     "  $windowOwnerProcessName = ''",
     "  $parentProcessId = 0",
-    "  try { $processPath = $_.Path } catch {}",
-    "  try { $versionInfo = $_.MainModule.FileVersionInfo; $productName = $versionInfo.ProductName; $fileDescription = $versionInfo.FileDescription } catch {}",
+    "  $isRelevant = ($_.Id -eq $foregroundProcessId) -or ($relevantProcessNames -contains $_.ProcessName.ToLowerInvariant())",
+    "  if ($isRelevant) {",
+    "    try { $processPath = $_.Path } catch {}",
+    "    try { $versionInfo = $_.MainModule.FileVersionInfo; $productName = $versionInfo.ProductName; $fileDescription = $versionInfo.FileDescription } catch {}",
+    "  }",
     "  if ($processPath -match '\\\\WindowsApps\\\\([^\\\\]+)') { $packageFullName = $Matches[1]; $packageFamilyName = ($packageFullName -replace '_[^_]+_[^_]+__', '_') }",
     "  if (($_.Id -eq $foregroundProcessId) -or ($commandLineProcessNames -contains $_.ProcessName.ToLowerInvariant())) {",
     '    try { $processDetails = Get-CimInstance Win32_Process -Filter "ProcessId=$($_.Id)"; $commandLine = $processDetails.CommandLine; $parentProcessId = [int]$processDetails.ParentProcessId; if (-not $processPath) { $processPath = $processDetails.ExecutablePath }; if ($parentProcessId -gt 0) { $windowOwnerProcessName = (Get-Process -Id $parentProcessId -ErrorAction SilentlyContinue).ProcessName } } catch {}',
@@ -556,9 +573,20 @@ export const buildMediaSessionProbeCommand = (): string =>
     "if ($sessions.Count -eq 0) { Write-Output '[]' } else { $sessions | ConvertTo-Json -Compress }",
   ].join("; ");
 
+export const buildFastGameProbeCommand = (): string =>
+  [
+    "$ErrorActionPreference='SilentlyContinue'",
+    "[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false)",
+    "function ConvertTo-Utf8Base64([string]$Value) { if ([string]::IsNullOrEmpty($Value)) { return ''; }; return [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($Value)); }",
+    "$foregroundProcessId=0",
+    "if ($env:SHANGHAO_FOREGROUND_PID) { [void][uint32]::TryParse($env:SHANGHAO_FOREGROUND_PID, [ref]$foregroundProcessId) }",
+    "Get-Process | ForEach-Object { [PSCustomObject]@{ ProcessId=$_.Id; ProcessName=$_.ProcessName; MainWindowTitleBase64=(ConvertTo-Utf8Base64 $_.MainWindowTitle); IsForeground=($_.Id -eq $foregroundProcessId) } } | ConvertTo-Json -Compress",
+  ].join("; ");
+
 interface DetectedActivities {
   game?: MatchedActivity<NonNullable<GameDetectionSnapshot["gameName"]>>;
   musicActivity?: MusicActivity;
+  processProbeFailed?: boolean;
 }
 
 const detectActivities = async (): Promise<DetectedActivities> => {
@@ -570,7 +598,7 @@ const detectActivities = async (): Promise<DetectedActivities> => {
   const commandOptions = {
     windowsHide: true,
     maxBuffer: 2 * 1024 * 1024,
-    timeout: 5_000,
+    timeout: 8_000,
     env: {
       ...process.env,
       SHANGHAO_FOREGROUND_PID: nativeActivity?.pid ? String(nativeActivity.pid) : "",
@@ -581,7 +609,13 @@ const detectActivities = async (): Promise<DetectedActivities> => {
       "powershell.exe",
       ["-NoProfile", "-NonInteractive", "-Command", buildGameDetectionProbeCommand()],
       commandOptions,
-    ).catch(() => ({ stdout: "" })),
+    ).catch(async () =>
+      execFileAsync(
+        "powershell.exe",
+        ["-NoProfile", "-NonInteractive", "-Command", buildFastGameProbeCommand()],
+        { ...commandOptions, timeout: 4_000 },
+      ).catch(() => undefined),
+    ),
     execFileAsync(
       "powershell.exe",
       ["-NoProfile", "-NonInteractive", "-Command", buildMediaSessionProbeCommand()],
@@ -589,10 +623,11 @@ const detectActivities = async (): Promise<DetectedActivities> => {
     ).catch(() => ({ stdout: "" })),
   ]);
 
-  const processes = parseProcessSnapshot(processResult.stdout);
+  const processes = parseProcessSnapshot(processResult?.stdout ?? "");
   const game = matchKnownGameActivity(processes);
   return {
     game,
+    processProbeFailed: !processResult,
     musicActivity:
       matchMediaSessionMusicActivity(mediaSessionResult.stdout) ?? matchMusicActivity(processes),
   };
@@ -615,6 +650,7 @@ export class GameDetectionController {
   private generation = 0;
   private gameActivityMisses = 0;
   private musicActivityMisses = 0;
+  private lastProbeFailureLoggedAt = 0;
   private listeners = new Set<(snapshot: GameDetectionSnapshot) => void>();
   private snapshot: GameDetectionSnapshot = { checkedAt: new Date(0).toISOString() };
 
@@ -696,14 +732,46 @@ export class GameDetectionController {
     const previousGame = this.snapshot.gameName;
     const previousGameIconDataUrl = this.snapshot.gameIconDataUrl;
     const previousMusicKey = JSON.stringify(this.snapshot.musicActivity ?? null);
-    const { game, musicActivity: detectedMusicActivity } = await detectActivities().finally(() => {
+    try {
+      await this.performCheck(generation, previousGame, previousGameIconDataUrl, previousMusicKey);
+    } catch (error) {
+      if (this.enabled && generation === this.generation) {
+        await this.writeLog({
+          category: "app",
+          level: "warn",
+          message: "game_detection_check_failed",
+          context: { reason: error instanceof Error ? error.name : "unknown" },
+        });
+      }
+    } finally {
       this.checkInFlight = false;
-    });
+      if (this.enabled && this.pendingReconcile) void this.check();
+    }
+  }
+
+  private async performCheck(
+    generation: number,
+    previousGame: GameDetectionSnapshot["gameName"],
+    previousGameIconDataUrl: GameDetectionSnapshot["gameIconDataUrl"],
+    previousMusicKey: string,
+  ): Promise<void> {
+    const {
+      game,
+      musicActivity: detectedMusicActivity,
+      processProbeFailed,
+    } = await detectActivities();
     if (!this.enabled || generation !== this.generation) {
-      if (this.pendingReconcile) void this.check();
       return;
     }
-    this.gameActivityMisses = game ? 0 : this.gameActivityMisses + 1;
+    if (processProbeFailed && Date.now() - this.lastProbeFailureLoggedAt > 60_000) {
+      this.lastProbeFailureLoggedAt = Date.now();
+      await this.writeLog({
+        category: "app",
+        level: "warn",
+        message: "game_process_probe_unavailable",
+      });
+    }
+    if (!processProbeFailed) this.gameActivityMisses = game ? 0 : this.gameActivityMisses + 1;
     const gameName = resolveStableGameActivity(
       game?.activity,
       this.snapshot.gameName,
@@ -746,7 +814,6 @@ export class GameDetectionController {
       context: { gameName, musicProvider: musicActivity?.provider },
     });
     this.notifyListeners();
-    if (this.pendingReconcile) void this.check();
   }
 
   private notifyListeners(): void {

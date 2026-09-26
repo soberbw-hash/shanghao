@@ -12,10 +12,16 @@ import {
 } from "lucide-react";
 import { gsap } from "gsap";
 
-import { MemberPresenceState, MemberSpeakingState, type OverlayState } from "@private-voice/shared";
+import {
+  accountAvatarPresetForIdentity,
+  MemberPresenceState,
+  MemberSpeakingState,
+  type OverlayState,
+} from "@private-voice/shared";
 
 import { motionDuration, motionEase } from "../features/motion/motionSystem";
 import { AccountAvatar } from "../components/account/AccountAvatar";
+import { accountAvatarPresetSource } from "../features/account/accountAvatarPresets";
 
 const OVERLAY_WIDTH = 142;
 const AVATAR_SIZE = 26;
@@ -386,7 +392,19 @@ export const OverlayPage = () => {
               >
                 <AccountAvatar
                   name={member.nickname}
-                  src={member.avatarUrl || member.avatarDataUrl}
+                  src={
+                    member.avatarUrl ||
+                    accountAvatarPresetSource(member.accountAvatarPresetId) ||
+                    member.avatarDataUrl ||
+                    (member.userId && !member.isGuest
+                      ? accountAvatarPresetSource(accountAvatarPresetForIdentity(member.userId))
+                      : undefined)
+                  }
+                  fallbackSrc={
+                    member.userId && !member.isGuest
+                      ? accountAvatarPresetSource(accountAvatarPresetForIdentity(member.userId))
+                      : undefined
+                  }
                   className="h-full w-full"
                   dimmed={Boolean(isMuted || isDeafened)}
                 />

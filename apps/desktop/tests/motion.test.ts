@@ -429,6 +429,6 @@ test("late joiners keep a visible avatar while character textures finish loading
     path.resolve(process.cwd(), "src/renderer/src/components/account/AccountAvatar.tsx"),
     "utf8",
   );
-  assert.ok(accountAvatar.includes("loadedSource === src ? 1 : 0"));
+  assert.ok(accountAvatar.includes("loadedSource === visibleSource ? 1 : 0"));
   assert.ok(accountAvatar.includes('Array.from(name.trim())[0] || "上"'));
 });

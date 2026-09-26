@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 
-import { Volume2 } from "lucide-react";
+import { Smartphone, Volume2 } from "lucide-react";
 import { motion } from "framer-motion";
 
 import type { AudioDeviceDescriptor } from "@private-voice/shared";
@@ -12,13 +12,15 @@ import { ShortcutInput } from "../base/ShortcutInput";
 import { Slider } from "../base/Slider";
 import { Switch } from "../base/Switch";
 import { popoverSurfaceVariants, reducedFadeVariants } from "../../features/motion/motionPresets";
-import type { MicTestPhase } from "../../hooks/useMicTest";
+import { MIC_TEST_DURATION_SECONDS, type MicTestPhase } from "../../hooks/useMicTest";
 import { usePrefersReducedMotion } from "../../hooks/usePrefersReducedMotion";
+import { PHONE_MIC_DEVICE_ID } from "../../features/audio/phoneMicSource";
 
 export interface MicrophoneTestControls {
   phase: MicTestPhase;
   level: number;
   isClipping: boolean;
+  remainingSeconds?: number;
   error?: string;
   onToggle: () => void;
   onPlaySystemCapture: () => void;
@@ -103,13 +105,15 @@ export const AudioControlPopover = ({
     Boolean(onPushToTalkShortcutChange);
   const canPlayMicTest =
     microphoneTest?.phase === "ready" || microphoneTest?.phase.startsWith("playing_");
+  const isRecordingMicTest = microphoneTest?.phase === "recording";
   const micTestStatus = (() => {
     if (!microphoneTest) return undefined;
     if (microphoneTest.error) return microphoneTest.error;
     if (microphoneTest.phase === "ready") return "体检完成，可以试听对比";
     if (microphoneTest.phase === "playing_system") return "正在播放原声";
     if (microphoneTest.phase === "playing_processed") return "正在播放处理后声音";
-    if (microphoneTest.phase !== "recording") return "录制 5 秒，听听处理前后的区别";
+    if (microphoneTest.phase !== "recording")
+      return `录制 ${MIC_TEST_DURATION_SECONDS} 秒，听听处理前后的区别`;
     if (microphoneTest.isClipping) return "输入过高，已经出现削波";
     if (microphoneTest.level > 0.18) return "麦克风正常";
     if (microphoneTest.level > 0.035) return "声音有点小";
@@ -127,6 +131,7 @@ export const AudioControlPopover = ({
           {device.label || title}
         </option>
       ))}
+      {title === "麦克风" ? <option value={PHONE_MIC_DEVICE_ID}>使用手机麦克风…</option> : null}
     </select>
   );
 
@@ -245,23 +250,35 @@ export const AudioControlPopover = ({
         <section className="audio-control-section" aria-labelledby="microphone-health-check">
           <div className="audio-control-section-heading">
             <strong id="microphone-health-check">麦克风体检</strong>
+            <span
+              className="audio-control-mic-test-countdown tabular-nums"
+              data-active={isRecordingMicTest}
+              role={isRecordingMicTest ? "timer" : undefined}
+              aria-hidden={!isRecordingMicTest}
+            >
+              {isRecordingMicTest ? (
+                <>还剩 {microphoneTest.remainingSeconds} 秒</>
+              ) : (
+                <>还剩 {MIC_TEST_DURATION_SECONDS} 秒</>
+              )}
+            </span>
             <small title={micTestStatus}>{micTestStatus}</small>
           </div>
-          {microphoneTest.phase === "recording" ? (
-            <div
-              className="audio-control-mic-test-meter"
-              role="meter"
-              aria-label="麦克风输入音量"
-              aria-valuemin={0}
-              aria-valuemax={100}
-              aria-valuenow={Math.round(microphoneTest.level * 100)}
-            >
-              <span
-                className={cn(microphoneTest.isClipping && "is-clipping")}
-                style={{ transform: `scaleX(${Math.max(0.04, microphoneTest.level)})` }}
-              />
-            </div>
-          ) : null}
+          <div
+            className="audio-control-mic-test-meter"
+            data-active={isRecordingMicTest}
+            role={isRecordingMicTest ? "meter" : undefined}
+            aria-hidden={!isRecordingMicTest}
+            aria-label={isRecordingMicTest ? "麦克风输入音量" : undefined}
+            aria-valuemin={isRecordingMicTest ? 0 : undefined}
+            aria-valuemax={isRecordingMicTest ? 100 : undefined}
+            aria-valuenow={isRecordingMicTest ? Math.round(microphoneTest.level * 100) : undefined}
+          >
+            <span
+              className={cn(microphoneTest.isClipping && "is-clipping")}
+              style={{ transform: `scaleX(${Math.max(0.04, microphoneTest.level)})` }}
+            />
+          </div>
           <div className="audio-control-mic-test-actions">
             <Button
               variant={microphoneTest.phase === "recording" ? "danger" : "secondary"}
@@ -272,7 +289,7 @@ export const AudioControlPopover = ({
                 ? "停止录制"
                 : canPlayMicTest
                   ? "重新录制"
-                  : "开始 5 秒体检"}
+                  : `开始 ${MIC_TEST_DURATION_SECONDS} 秒体检`}
             </Button>
             {canPlayMicTest ? (
               <div className="audio-control-mic-test-playback">
@@ -320,6 +337,16 @@ export const AudioControlPopover = ({
       </div>
       <div className="audio-control-device-select">{deviceSelect}</div>
       <div className="audio-control-popover-actions">
+        {title === "麦克风" ? (
+          <button
+            type="button"
+            className="audio-control-phone-mic"
+            onClick={() => onDeviceChange(PHONE_MIC_DEVICE_ID)}
+          >
+            <Smartphone aria-hidden="true" />
+            使用手机麦克风
+          </button>
+        ) : null}
         {onTest ? (
           <button type="button" className="audio-control-test" onClick={onTest}>
             <Volume2 aria-hidden="true" />

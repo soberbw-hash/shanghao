@@ -97,7 +97,7 @@ export const DynamicWeatherWindow = ({
       <div key={`${theme.scene}:${theme.phase}`} className="weather-window-view">
         <img className="weather-landscape" src={landscape} alt="" aria-hidden="true" />
         {isEnabled ? <span className="weather-atmosphere-glow" aria-hidden="true" /> : null}
-        {isEnabled && theme.hasClouds ? (
+        {isEnabled && (theme.hasClouds || theme.scene === "clear") ? (
           <div className="weather-cloud-layer" aria-hidden="true">
             <span className="weather-cloud weather-cloud-one" />
             <span className="weather-cloud weather-cloud-two" />

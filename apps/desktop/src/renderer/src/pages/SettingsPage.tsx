@@ -264,6 +264,7 @@ export const SettingsPage = ({ isActive = true }: { isActive?: boolean }) => {
         cachedWindowsDiagnostics = snapshot;
         setWindowsDiagnostics(snapshot);
       })
+      .catch((error) => pushToast({ tone: "danger", ...toUserFacingError(error, "settings") }))
       .finally(() => setIsWindowsDiagnosticsLoading(false));
   };
   const handleRepairFirewall = () => {

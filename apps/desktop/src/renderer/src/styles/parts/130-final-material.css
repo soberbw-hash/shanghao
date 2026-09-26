@@ -25,7 +25,9 @@ body::before {
     radial-gradient(circle at 18% 8%, rgba(219, 237, 251, 0.22) 0%, transparent 38%),
     linear-gradient(145deg, rgba(249, 252, 255, 0.56), rgba(235, 244, 251, 0.3));
   filter: none;
-  contain: layout paint;
+  /* Window art intentionally extends above the coordinate canvas. Paint
+     containment clips its top frame even while it is inside the room. */
+  contain: layout;
   isolation: isolate;
 }
 

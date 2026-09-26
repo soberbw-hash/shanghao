@@ -1,6 +1,6 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 
-import type { AccountProfile } from "@private-voice/shared";
+import { isAccountAvatarPresetId, type AccountProfile } from "@private-voice/shared";
 
 import {
   AccountServerError,
@@ -199,10 +199,11 @@ export class AccountHttpController {
       }
       if (request.method === "PUT" && pathname === "/api/account/avatar") {
         const body = await readJsonBody(request);
-        const profile = await this.backend.updateAvatar(
-          bearerToken(request),
-          requiredText(body.dataUrl, 720_000),
-        );
+        const token = bearerToken(request);
+        const profile =
+          this.backend.updateAvatarPreset && isAccountAvatarPresetId(body.accountAvatarPresetId)
+            ? await this.backend.updateAvatarPreset(token, body.accountAvatarPresetId)
+            : await this.backend.updateAvatar(token, requiredText(body.dataUrl, 720_000));
         await this.notifyProfileUpdated(profile);
         this.send(response, 200, { profile });
         return true;

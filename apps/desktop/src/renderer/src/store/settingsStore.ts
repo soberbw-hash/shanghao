@@ -85,6 +85,7 @@ const fallbackSettings: AppSettings = {
   isHardwareAccelerationEnabled: true,
   isOverlayEnabled: true,
   preferredInputDeviceId: undefined,
+  phoneMicMode: "web",
   preferredOutputDeviceId: undefined,
   microphoneSendVolume: 1,
   speakerMasterVolume: 1,

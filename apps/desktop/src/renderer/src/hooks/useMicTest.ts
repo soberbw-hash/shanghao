@@ -31,6 +31,7 @@ interface UseMicTestResult {
   phase: MicTestPhase;
   level: number;
   isClipping: boolean;
+  remainingSeconds?: number;
   error?: string;
   start: () => Promise<void>;
   stop: () => void;
@@ -39,7 +40,9 @@ interface UseMicTestResult {
   playProcessed: () => Promise<void>;
 }
 
-const TEST_DURATION_MS = 5_000;
+export const MIC_TEST_DURATION_SECONDS = 3;
+const TEST_DURATION_MS = MIC_TEST_DURATION_SECONDS * 1_000;
+const METER_UPDATE_INTERVAL_MS = 80;
 const recorderMimeType = (): string | undefined =>
   ["audio/webm;codecs=opus", "audio/webm", "audio/ogg;codecs=opus"].find((type) =>
     MediaRecorder.isTypeSupported(type),
@@ -58,6 +61,7 @@ export const useMicTest = ({
   const [phase, setPhase] = useState<MicTestPhase>("idle");
   const [level, setLevel] = useState(0);
   const [isClipping, setIsClipping] = useState(false);
+  const [remainingSeconds, setRemainingSeconds] = useState<number>();
   const [error, setError] = useState<string>();
   const inputStreamRef = useRef<MediaStream | undefined>(undefined);
   const processedStreamRef = useRef<ProcessedMicrophoneStream | undefined>(undefined);
@@ -65,6 +69,9 @@ export const useMicTest = ({
   const analyserRef = useRef<AnalyserNode | undefined>(undefined);
   const playbackRef = useRef<HTMLAudioElement | undefined>(undefined);
   const recordingTimerRef = useRef<number | undefined>(undefined);
+  const countdownTimerRef = useRef<number | undefined>(undefined);
+  const recordingSessionRef = useRef(0);
+  const recordersRef = useRef<MediaRecorder[]>([]);
   const rafRef = useRef<number | undefined>(undefined);
   const urlsRef = useRef<{ system?: string; processed?: string }>({});
 
@@ -97,11 +104,25 @@ export const useMicTest = ({
   }, []);
 
   const stop = useCallback(() => {
+    recordingSessionRef.current += 1;
     if (recordingTimerRef.current !== undefined) window.clearTimeout(recordingTimerRef.current);
     recordingTimerRef.current = undefined;
+    if (countdownTimerRef.current !== undefined) window.clearInterval(countdownTimerRef.current);
+    countdownTimerRef.current = undefined;
+    for (const recorder of recordersRef.current) {
+      if (recorder.state === "recording") {
+        try {
+          recorder.stop();
+        } catch {
+          // The source may already have ended; continue releasing the other resources.
+        }
+      }
+    }
+    recordersRef.current = [];
     releaseCapture();
     clearPlayback(true);
     setPhase("idle");
+    setRemainingSeconds(undefined);
     setIsClipping(false);
   }, [clearPlayback, releaseCapture]);
 
@@ -109,12 +130,21 @@ export const useMicTest = ({
     const analyser = analyserRef.current;
     if (!analyser) return;
     const samples = new Uint8Array(analyser.fftSize);
+    let nextMeterUpdateAt = 0;
+    let clippingReported = false;
     const tick = () => {
       analyser.getByteTimeDomainData(samples);
       let peak = 0;
       for (const value of samples) peak = Math.max(peak, Math.abs((value - 128) / 128));
-      setLevel(Math.min(1, peak * 2.4));
-      if (peak >= 0.98) setIsClipping(true);
+      const now = performance.now();
+      if (now >= nextMeterUpdateAt) {
+        setLevel(Math.min(1, peak * 2.4));
+        nextMeterUpdateAt = now + METER_UPDATE_INTERVAL_MS;
+      }
+      if (peak >= 0.98 && !clippingReported) {
+        clippingReported = true;
+        setIsClipping(true);
+      }
       rafRef.current = window.requestAnimationFrame(tick);
     };
     tick();
@@ -139,6 +169,8 @@ export const useMicTest = ({
           { once: true },
         );
       });
+      // The second recorder can fail before the timer awaits both recordings.
+      void done.catch(() => undefined);
       recorder.start(500);
       return { recorder, done };
     },
@@ -147,6 +179,7 @@ export const useMicTest = ({
 
   const start = useCallback(async () => {
     stop();
+    const session = recordingSessionRef.current;
     setError(undefined);
     setIsClipping(false);
     try {
@@ -160,6 +193,10 @@ export const useMicTest = ({
           channelCount: 1,
         },
       });
+      if (session !== recordingSessionRef.current) {
+        inputStream.getTracks().forEach((track) => track.stop());
+        return;
+      }
       inputStreamRef.current = inputStream;
       const processedStream = await createProcessedMicrophoneStream(inputStream.clone(), {
         micEqualizerGains: Array.from(
@@ -170,6 +207,10 @@ export const useMicTest = ({
         isNoiseSuppressionEnabled: noiseSuppression,
         isVoiceEnhancementEnabled: voiceEnhancement,
       });
+      if (session !== recordingSessionRef.current) {
+        processedStream.dispose();
+        return;
+      }
       processedStreamRef.current = processedStream;
 
       const context = new AudioContext({
@@ -177,6 +218,10 @@ export const useMicTest = ({
         latencyHint: "interactive",
       });
       await context.resume();
+      if (session !== recordingSessionRef.current) {
+        void context.close().catch(() => undefined);
+        return;
+      }
       contextRef.current = context;
       const analyser = context.createAnalyser();
       analyser.fftSize = 512;
@@ -185,23 +230,47 @@ export const useMicTest = ({
       startMeter();
 
       const systemRecording = recordStream(inputStream);
+      recordersRef.current.push(systemRecording.recorder);
       const processedRecording = recordStream(processedStream.stream);
+      recordersRef.current.push(processedRecording.recorder);
+      const deadline = performance.now() + TEST_DURATION_MS;
+      setRemainingSeconds(MIC_TEST_DURATION_SECONDS);
       setPhase("recording");
+      countdownTimerRef.current = window.setInterval(() => {
+        if (session !== recordingSessionRef.current) return;
+        setRemainingSeconds(Math.max(1, Math.ceil((deadline - performance.now()) / 1_000)));
+      }, 200);
       recordingTimerRef.current = window.setTimeout(async () => {
-        systemRecording.recorder.stop();
-        processedRecording.recorder.stop();
-        const [systemBlob, processedBlob] = await Promise.all([
-          systemRecording.done,
-          processedRecording.done,
-        ]);
-        releaseCapture();
-        urlsRef.current = {
-          system: URL.createObjectURL(systemBlob),
-          processed: URL.createObjectURL(processedBlob),
-        };
-        setPhase("ready");
+        recordingTimerRef.current = undefined;
+        if (countdownTimerRef.current !== undefined)
+          window.clearInterval(countdownTimerRef.current);
+        countdownTimerRef.current = undefined;
+        setRemainingSeconds(undefined);
+        try {
+          for (const recorder of recordersRef.current) {
+            if (recorder.state === "recording") recorder.stop();
+          }
+          recordersRef.current = [];
+          const [systemBlob, processedBlob] = await Promise.all([
+            systemRecording.done,
+            processedRecording.done,
+          ]);
+          if (session !== recordingSessionRef.current) return;
+          releaseCapture();
+          urlsRef.current = {
+            system: URL.createObjectURL(systemBlob),
+            processed: URL.createObjectURL(processedBlob),
+          };
+          setPhase("ready");
+        } catch (cause) {
+          if (session !== recordingSessionRef.current) return;
+          stop();
+          const friendly = toUserFacingError(cause, "audio");
+          setError(`${friendly.title}：${friendly.description}`);
+        }
       }, TEST_DURATION_MS);
     } catch (cause) {
+      if (session !== recordingSessionRef.current) return;
       const friendly = toUserFacingError(cause, "audio");
       setError(`${friendly.title}：${friendly.description}`);
       void window.desktopApi.app.writeLog({
@@ -210,8 +279,7 @@ export const useMicTest = ({
         message: "microphone_test_failed",
         context: { error: technicalErrorMessage(cause), inputDeviceId, outputDeviceId },
       });
-      releaseCapture();
-      setPhase("idle");
+      stop();
     }
   }, [
     autoGainControl,
@@ -260,6 +328,7 @@ export const useMicTest = ({
     level,
     isClipping,
     error,
+    remainingSeconds,
     start,
     stop,
     toggle,

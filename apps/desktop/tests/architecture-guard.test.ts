@@ -36,10 +36,12 @@ test("large orchestration entry points stay below reviewed growth ceilings", () 
     "apps/desktop/src/main/ai-model-manager.ts": 1_526,
     "apps/desktop/src/main/ai-runtime-manager.ts": 1_956,
     "packages/signaling/src/server.ts": 1_853,
-    "apps/desktop/src/renderer/src/pages/SettingsPage.tsx": 520,
+    // Reviewed one-line error feedback for failed Windows diagnostics loading.
+    "apps/desktop/src/renderer/src/pages/SettingsPage.tsx": 521,
     "apps/desktop/src/renderer/src/components/room/TeamIsland.tsx": 705,
     "apps/desktop/src/renderer/src/components/chat/TemporaryChatPanel.tsx": 960,
-    "apps/desktop/src/main/ai-voice-memory-service.ts": 3_178,
+    // Reviewed growth: timestamp-ordered observations use a bounded binary-search scan.
+    "apps/desktop/src/main/ai-voice-memory-service.ts": 3_202,
     "apps/desktop/src/renderer/src/components/settings/SettingsDiagnosticsSection.tsx": 300,
   } as const;
   for (const [relativePath, ceiling] of Object.entries(ceilings)) {

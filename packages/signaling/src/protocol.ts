@@ -215,6 +215,8 @@ export interface ChatMessage extends BaseMessage {
   peerId?: string;
   nickname?: string;
   avatarDataUrl?: string;
+  accountAvatarPresetId?: import("@private-voice/shared").AccountAvatarPresetId;
+  senderProfileId?: string;
   avatarId?: BuiltInAvatarId;
   content: string;
   clientMessageId?: string;
@@ -224,9 +226,9 @@ export interface ChatMessage extends BaseMessage {
 
 export type ServerChatMessage = Required<
   Pick<ChatMessage, "id" | "peerId" | "nickname" | "content" | "createdAt">
-> & { clientMessageId: string } & { senderProfileId?: string } & Pick<
+> & { clientMessageId: string } & Pick<
     ChatMessage,
-    "avatarId" | "avatarDataUrl" | "image"
+    "avatarId" | "avatarDataUrl" | "accountAvatarPresetId" | "senderProfileId" | "image"
   >;
 
 export interface ChatAckMessage extends BaseMessage {

@@ -685,7 +685,7 @@ export const TemporaryChatPanel = ({
           </div>
         </div>
 
-        <div className="relative mt-2.5 min-h-0 flex-1">
+        <div className="relative min-h-0 flex-1">
           {onOpenRoomAi ? (
             <div className="chat-ai-slot">
               <button
@@ -701,7 +701,7 @@ export const TemporaryChatPanel = ({
           ) : null}
           <div
             ref={listRef}
-            className="chat-message-list h-full min-h-0 space-y-2.5 overflow-x-hidden overflow-y-auto pr-1"
+            className="chat-message-list flex h-full min-h-0 flex-col gap-3 overflow-x-hidden overflow-y-auto pr-1"
             onScroll={(event) => {
               const list = event.currentTarget;
               isNearBottomRef.current = list.scrollHeight - list.scrollTop - list.clientHeight < 64;

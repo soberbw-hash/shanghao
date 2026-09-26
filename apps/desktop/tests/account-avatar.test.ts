@@ -24,26 +24,24 @@ test("missing account portraits use initials rather than a room animal", () => {
 test("chat and overlay prefer account identity over room avatar selection", () => {
   const chat = readFileSync("src/renderer/src/components/chat/ChatAccountAvatar.tsx", "utf8");
   const overlay = readFileSync("src/renderer/src/pages/OverlayPage.tsx", "utf8");
-  assert.ok(
-    chat.includes(
-      "localPortrait || currentAvatar || localPreset || message.avatarUrl || message.avatarDataUrl",
-    ),
-  );
+  assert.ok(chat.includes("localPortrait ||"));
+  assert.ok(chat.includes("accountAvatarPresetSource(message.accountAvatarPresetId)"));
+  assert.ok(chat.includes("accountAvatarPresetForIdentity(fallbackIdentity)"));
   assert.ok(chat.includes("message.isLocal === true && member.isLocal"));
-  assert.ok(overlay.includes("member.avatarUrl || member.avatarDataUrl"));
+  assert.ok(overlay.includes("accountAvatarPresetSource(member.accountAvatarPresetId)"));
   assert.ok(!chat.includes("getAvatarSrc"));
   assert.ok(!overlay.includes("getAvatarFaceStyle"));
 });
 
-test("preset avatars are uploaded to the account profile before local selection is saved", () => {
+test("preset avatars are saved to the account profile before local selection is saved", () => {
   const card = readFileSync("src/renderer/src/components/settings/AccountSettingsCard.tsx", "utf8");
   const registration = readFileSync("src/renderer/src/pages/AccountPage.tsx", "utf8");
-  for (const source of [card, registration]) {
-    assert.ok(source.includes("prepareAccountAvatar"));
-    assert.ok(source.includes("updateAvatar({ dataUrl })"));
-  }
+  assert.ok(card.includes("prepareAccountAvatar"));
+  assert.ok(card.includes("updateAvatar({ dataUrl, accountAvatarPresetId: preset.id })"));
+  assert.ok(registration.includes("accountAvatarPresetId: preset.id"));
+  assert.ok(registration.includes("selectedAvatarPresetId &&"));
   assert.ok(
-    card.indexOf("updateAvatar({ dataUrl })") <
+    card.indexOf("updateAvatar({ dataUrl, accountAvatarPresetId: preset.id })") <
       card.indexOf("saveSettings({ accountAvatarPresetId"),
   );
 });

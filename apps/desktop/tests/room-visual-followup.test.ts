@@ -31,12 +31,46 @@ test("chat settings live in the title row, outside quick replies", () => {
   );
   assert.ok(chat.includes("chat-panel-title-row flex items-center justify-between"));
 });
+test("quick-message header is an inset rounded card instead of a clipped divider", () => {
+  const css = source("styles/parts/190-room-glass-unification.css");
+  const chat = source("components/chat/TemporaryChatPanel.tsx");
+  assert.match(
+    css,
+    /\.room-page \.chat-panel-header\s*\{[^}]*margin-inline: 2px;[^}]*border: 1px solid[^;]*;[^}]*border-radius: 16px;/s,
+  );
+  assert.doesNotMatch(css, /\.room-page \.chat-panel-header\s*\{[^}]*border-bottom:/s);
+  assert.ok(chat.includes('className="relative min-h-0 flex-1"'));
+});
+test("scene window art can paint above its coordinate canvas", () => {
+  const css = source("styles/parts/130-final-material.css");
+  assert.match(css, /\.team-island-stage\s*\{[^}]*contain: layout;/s);
+  assert.doesNotMatch(css, /\.team-island-stage\s*\{[^}]*contain: layout paint;/s);
+});
+test("dock and segmented audio controls share the outer corner radius", () => {
+  const css = source("styles/parts/190-room-glass-unification.css");
+  assert.match(
+    css,
+    /\.room-page \.voice-dock\s*\{[^}]*border-radius: var\(--room-dock-corner-radius\)/s,
+  );
+  assert.match(
+    css,
+    /\.room-page \.voice-segmented-control \.voice-segmented-main\s*\{[^}]*border-top-left-radius: var\(--room-dock-corner-radius\)/s,
+  );
+  assert.match(
+    css,
+    /\.room-page \.voice-segmented-control \.voice-segmented-arrow\s*\{[^}]*border-top-right-radius: var\(--room-dock-corner-radius\)/s,
+  );
+});
 test("local account presets and names survive incoming presence", () => {
   const hook = source("hooks/useRoomState.ts");
   assert.ok(hook.includes("nickname: accountSnapshot.profile?.displayName"));
   assert.ok(hook.includes("nickname: useAccountStore.getState().snapshot.profile?.displayName"));
   assert.ok(hook.includes("settings?.accountAvatarPresetId"));
-  assert.ok(source("app/App.tsx").includes("preset.id === settings.accountAvatarPresetId"));
+  assert.ok(
+    source("app/App.tsx").includes(
+      "accountSnapshot.profile?.accountAvatarPresetId ?? settings.accountAvatarPresetId",
+    ),
+  );
 });
 test("generated weather retains live effects and visibility/reduced-motion gating", () => {
   const weather = source("components/room/DynamicWeatherWindow.tsx");
@@ -48,4 +82,17 @@ test("generated weather retains live effects and visibility/reduced-motion gatin
     assert.ok(weather.includes(`weather-${effect}-layer`));
   assert.ok(weather.includes("reduceMotion || !isPageVisible"));
   assert.ok(weather.includes("window-frame-v2.png"));
+  assert.ok(weather.includes('theme.hasClouds || theme.scene === "clear"'));
+  const roomGlass = source("styles/parts/190-room-glass-unification.css");
+  const roomAssets = source("styles/parts/180-room-asset-pass.css");
+  assert.match(roomAssets, /\.scene-window-nook\s*\{[^}]*top: -11\.5%/);
+  for (const ratio of ["29 / 20", "8 / 5", "19 / 10", "11 / 5"])
+    assert.ok(roomAssets.includes(`@container room-scene (min-aspect-ratio: ${ratio})`));
+  assert.match(
+    roomAssets,
+    /@container room-scene \(min-aspect-ratio: 17 \/ 10\)\s*\{\s*\.room-date-calendar,\s*\.scene-wall-clock\s*\{\s*top: 7%/,
+  );
+  assert.doesNotMatch(roomGlass, /\.scene-window-nook\s*\{/);
+  assert.match(roomGlass, /weather-cloud-window-passage/);
+  assert.match(roomGlass, /translate3d\(50cqw, -3px, 0\)/);
 });

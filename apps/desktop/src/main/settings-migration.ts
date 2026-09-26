@@ -41,6 +41,7 @@ export const defaultSettings: AppSettings = {
   isHardwareAccelerationEnabled: true,
   isOverlayEnabled: true,
   preferredInputDeviceId: undefined,
+  phoneMicMode: "web",
   preferredOutputDeviceId: undefined,
   microphoneSendVolume: 1,
   speakerMasterVolume: 1,
@@ -232,6 +233,8 @@ export const migrateSettings = (raw: RawSettings): MigrationResult => {
     isHardwareAccelerationEnabled: true,
     isOverlayEnabled: true,
     preferredInputDeviceId: trimUnknownText(raw.preferredInputDeviceId),
+    phoneMicMode:
+      raw.phoneMicMode === "wifi" || raw.phoneMicMode === "usb" ? raw.phoneMicMode : "web",
     preferredOutputDeviceId: trimUnknownText(raw.preferredOutputDeviceId),
     microphoneSendVolume: normalizeNumber(
       raw.microphoneSendVolume,

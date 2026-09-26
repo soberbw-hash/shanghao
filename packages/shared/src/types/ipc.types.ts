@@ -293,6 +293,12 @@ export interface DesktopApi {
   };
   audio: {
     getDeepFilterAssets: () => Promise<DeepFilterAssets>;
+    getPhoneMicHostTicket: (relayUrl: string) => Promise<string>;
+    listPhoneMicUsbDevices: () => Promise<{ serial: string; label: string }[]>;
+    startPhoneMicUsb: (
+      serial?: string,
+    ) => Promise<{ url: string; receiverUrl: string; serial: string }>;
+    stopPhoneMicUsb: () => Promise<void>;
   };
   quickMessages: {
     export: () => Promise<string | undefined>;

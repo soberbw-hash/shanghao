@@ -50,7 +50,12 @@ const desktopApi: DesktopApi = {
     writeImage: (dataUrl) => ipcRenderer.invoke(IPC_CHANNELS.clipboard.writeImage, dataUrl),
   },
   audio: {
+    getPhoneMicHostTicket: (relayUrl) =>
+      ipcRenderer.invoke(IPC_CHANNELS.audio.getPhoneMicHostTicket, relayUrl),
     getDeepFilterAssets: () => ipcRenderer.invoke(IPC_CHANNELS.audio.getDeepFilterAssets),
+    listPhoneMicUsbDevices: () => ipcRenderer.invoke(IPC_CHANNELS.audio.listPhoneMicUsbDevices),
+    startPhoneMicUsb: (serial) => ipcRenderer.invoke(IPC_CHANNELS.audio.startPhoneMicUsb, serial),
+    stopPhoneMicUsb: () => ipcRenderer.invoke(IPC_CHANNELS.audio.stopPhoneMicUsb),
   },
   quickMessages: {
     export: () => ipcRenderer.invoke(IPC_CHANNELS.quickMessages.export),
