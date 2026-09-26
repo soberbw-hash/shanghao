@@ -21,3 +21,10 @@ npx -p @cloudbase/cli tcb app deploy --framework vite -e shanghao-d3ga95tc8224e7
 `tcb login` opens Tencent Cloud authorization in the browser. The CLI keeps
 that authorization in local machine configuration; it is not written to this
 repository.
+
+For a formal release, run `pnpm release:prepare` to fetch and checksum-verify
+the GitHub installer. Upload the verified installer and checksum to its
+versioned `/downloads/<version>/` path, then run `pnpm release:activate` to
+verify the mirror and generate `public/release.json`. Commit that public,
+non-secret manifest with the website source before building and deploying.
+Keep earlier versioned downloads available for existing clients.
