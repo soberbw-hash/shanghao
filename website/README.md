@@ -11,20 +11,28 @@ corepack pnpm run build
 
 The site reads the latest public GitHub Release at runtime. No CloudBase
 publishable key is needed by this informational site, and no secret belongs in
-this directory. Deploy the built site with the CloudBase CLI from this folder:
+this directory. The live site uses CloudBase static hosting at the root path.
+For a formal release, run these commands from this folder after the GitHub
+Release has been published:
 
 ```powershell
-npx -p @cloudbase/cli tcb login
-npx -p @cloudbase/cli tcb app deploy --framework vite -e shanghao-d3ga95tc8224e727a
+corepack pnpm release:prepare
+npx -p @cloudbase/cli tcb hosting deploy .release-cache/v3.2.0 downloads/v3.2.0 -e shanghao-d3ga95tc8224e727a --verify --safe
+corepack pnpm release:activate
+corepack pnpm build
+npx -p @cloudbase/cli tcb hosting deploy dist / -e shanghao-d3ga95tc8224e727a
 ```
 
-`tcb login` opens Tencent Cloud authorization in the browser. The CLI keeps
-that authorization in local machine configuration; it is not written to this
-repository.
+Replace `v3.2.0` with the release being published. Commit `public/release.json`
+after activation. Check the public homepage and `release.json`, HEAD the
+versioned installer and its checksum file, and fetch the first bytes of the
+installer to confirm downloads work. Keep earlier versioned downloads available
+for existing clients; do not use `--prune`.
 
-For a formal release, run `pnpm release:prepare` to fetch and checksum-verify
-the GitHub installer. Upload the verified installer and checksum to its
-versioned `/downloads/<version>/` path, then run `pnpm release:activate` to
-verify the mirror and generate `public/release.json`. Commit that public,
-non-secret manifest with the website source before building and deploying.
-Keep earlier versioned downloads available for existing clients.
+CloudBase CLI 3.8.4's `hosting deploy dist / --verify --safe` failed the root
+consistency check during v3.2.0 and its rollback removed live root files.
+The site was restored with the root upload command above and checked over HTTPS.
+Do not use that root `--safe` combination until its rollback behavior is fixed;
+the versioned installer upload with `--verify --safe` succeeded. `tcb login`,
+when needed, opens Tencent Cloud authorization in the browser; its credentials
+stay in local CLI configuration, not this repository.
