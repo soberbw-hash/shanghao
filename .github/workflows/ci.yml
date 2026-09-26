@@ -11,10 +11,10 @@ permissions:
 
 jobs:
   verify:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v6
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v6
         with:
           version: 10.34.5
           run_install: false
@@ -24,11 +24,16 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: bash -n scripts/deploy-relay-ubuntu.sh
+      - run: bash -n deploy/install-phone-mic-sidecar.sh
       - run: pnpm typecheck
       - run: cargo fmt --manifest-path native/Cargo.toml --all -- --check
       - run: pnpm test:native
       - run: pnpm lint
-      - run: pnpm test
+      - run: xvfb-run -a pnpm test
+      - run: pnpm test:phone-mic
+      - run: pnpm test:migration
+      - run: pnpm test:upgrade
+      - run: pnpm test:runtime-health
       - run: xvfb-run -a pnpm --dir apps/desktop exec electron --no-sandbox tests/electron-audio-worklet-smoke.cjs
       - run: pnpm test:five-peer-audio
       - run: xvfb-run -a pnpm test:five-peer-media
@@ -38,7 +43,7 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v6
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v6
         with:
           version: 10.34.5
           run_install: false
@@ -52,6 +57,10 @@ jobs:
       - run: pnpm test:native
       - run: pnpm lint
       - run: pnpm test
+      - run: pnpm test:phone-mic
+      - run: pnpm test:migration
+      - run: pnpm test:upgrade
+      - run: pnpm test:runtime-health
       - run: pnpm test:audio-worklet
       - run: pnpm test:five-peer-audio
       - run: pnpm test:five-peer-media

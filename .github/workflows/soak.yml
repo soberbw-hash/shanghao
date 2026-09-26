@@ -15,11 +15,11 @@ permissions:
 
 jobs:
   realtime-soak:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 160
     steps:
       - uses: actions/checkout@v6
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v6
         with:
           version: 10.34.5
           run_install: false
@@ -51,7 +51,7 @@ jobs:
         run: xvfb-run -a pnpm test:five-peer-media
       - name: Upload soak diagnostics
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: realtime-soak-${{ github.run_id }}
           path: |

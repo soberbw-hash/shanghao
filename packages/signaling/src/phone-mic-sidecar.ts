@@ -1,29 +1,9 @@
 import { createHmac } from "node:crypto";
-import { readFile } from "node:fs/promises";
 import { createServer } from "node:http";
 
 import type { IceServerConfig } from "./protocol";
 import { PhoneMicBridge } from "./phone-mic-bridge";
-
-const loadRelayEnv = async (): Promise<void> => {
-  try {
-    const source = await readFile(new URL("../../../.env", import.meta.url), "utf8");
-    for (const rawLine of source.replace(/^\uFEFF/, "").split(/\r?\n/)) {
-      const line = rawLine.trim();
-      if (!line || line.startsWith("#")) continue;
-      const separator = line.indexOf("=");
-      if (separator <= 0) continue;
-      const key = line.slice(0, separator).trim();
-      const value = line
-        .slice(separator + 1)
-        .trim()
-        .replace(/^(['"])(.*)\1$/, "$2");
-      if (process.env[key] === undefined) process.env[key] = value;
-    }
-  } catch {
-    // The relay also permits environment-only deployments.
-  }
-};
+import { readPhoneMicHealth } from "./phone-mic-health";
 
 const iceServersForSession = (sessionId: string): IceServerConfig[] => {
   const urls = (process.env.TURN_URLS ?? "")
@@ -53,7 +33,8 @@ const iceServersForSession = (sessionId: string): IceServerConfig[] => {
   return username && credential ? [{ urls, username, credential }] : [];
 };
 
-await loadRelayEnv();
+const version = process.env.SHANGHAO_VERSION?.trim() || "development";
+const startedAt = Date.now();
 
 const relayPort = Number(process.env.PORT ?? 43821);
 const sidecarPort = Number(process.env.PHONE_MIC_SIDECAR_PORT ?? 43822);
@@ -81,11 +62,18 @@ const bridge = new PhoneMicBridge(iceServersForSession, async (token) => {
 
 const server = createServer((request, response) => {
   if (request.method === "GET" && request.url === "/phone-mic/health") {
-    response.writeHead(200, {
-      "cache-control": "no-store",
-      "content-type": "application/json; charset=utf-8",
+    void readPhoneMicHealth({
+      relayPort,
+      activeSessions: bridge.activeSessions,
+      startedAt,
+      version,
+    }).then((health) => {
+      response.writeHead(health.ok ? 200 : 503, {
+        "cache-control": "no-store",
+        "content-type": "application/json; charset=utf-8",
+      });
+      response.end(JSON.stringify(health));
     });
-    response.end(JSON.stringify({ ok: true, activeSessions: bridge.activeSessions }));
     return;
   }
   void bridge

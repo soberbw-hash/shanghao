@@ -17,7 +17,6 @@ export const IPC_CHANNELS = {
     saveDailyRoomReports: "app:save-daily-room-reports",
     openExternal: "app:open-external",
     openSystemSettings: "app:open-system-settings",
-    getLinkPreviewIcon: "app:get-link-preview-icon",
     consumeDeepLink: "app:consume-deep-link",
     deepLink: "app:deep-link",
     lifecycleRecovery: "app:lifecycle-recovery",

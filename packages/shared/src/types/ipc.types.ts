@@ -283,7 +283,6 @@ export interface DesktopApi {
     ) => Promise<void>;
     openExternal: (url: string) => Promise<void>;
     openSystemSettings: (page: "microphone" | "sound" | "display") => Promise<void>;
-    getLinkPreviewIcon: (url: string) => Promise<string | undefined>;
     consumeDeepLink: () => Promise<DeepLinkInvite | undefined>;
     onDeepLink: (listener: (invite: DeepLinkInvite) => void) => () => void;
   };

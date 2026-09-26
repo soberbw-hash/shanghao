@@ -182,11 +182,13 @@ export const PhoneMicDialog = ({
             <img src={qrDataUrl} alt="手机麦克风配对二维码" />
           ) : (
             <div className="phone-mic-qr-placeholder">
-              {state.status === "error"
-                ? "暂时无法生成配对码"
-                : relayUrl || state.mode === "usb"
-                  ? "正在生成二维码…"
-                  : "请先设置中继服务器"}
+              {state.phase === "recovering"
+                ? "等待原手机恢复连接"
+                : state.status === "error"
+                  ? "暂时无法生成配对码"
+                  : relayUrl || state.mode === "usb"
+                    ? "正在生成二维码…"
+                    : "请先设置中继服务器"}
             </div>
           )}
           <p className={`phone-mic-status is-${state.status}`}>
@@ -194,9 +196,15 @@ export const PhoneMicDialog = ({
             {state.status === "streaming"
               ? "正在传输"
               : state.status === "connected"
-                ? "已连接，等待手机开始传输"
+                ? state.phase === "recovering"
+                  ? "等待手机恢复音频"
+                  : "手机已连接，正在协商音频"
                 : state.status === "pairing"
-                  ? "等待手机连接"
+                  ? state.phase === "authorizing"
+                    ? "正在验证账号"
+                    : state.phase === "connecting"
+                      ? "正在连接配对服务"
+                      : "等待手机扫码连接"
                   : state.status === "error"
                     ? "连接失败"
                     : "未连接"}
@@ -219,7 +227,9 @@ export const PhoneMicDialog = ({
           <button type="button" onClick={() => setAdvanced((value) => !value)}>
             {advanced ? "收起详情" : "高级详情"}
           </button>
-          {state.status === "error" ? (
+          {state.status === "error" ||
+          state.status === "disconnected" ||
+          state.phase === "recovering" ? (
             <button type="button" onClick={() => connect(state.mode, usbSerial)}>
               重试连接
             </button>

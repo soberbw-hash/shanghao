@@ -88,6 +88,7 @@ export const SettingsDiagnosticsSection = ({
         performance: rendererPerformanceMonitor.snapshot(),
         jsHeapUsedBytes: memory.memory?.usedJSHeapSize,
         jsHeapTotalBytes: memory.memory?.totalJSHeapSize,
+        domNodeCount: document.getElementsByTagName("*").length,
         trackCount,
         audioNodeCount: mixerHealth?.audioNodeCount,
         audioContextCount: mixerHealth?.audioContextCount,
@@ -133,7 +134,7 @@ export const SettingsDiagnosticsSection = ({
     };
 
     void refresh().catch(() => undefined);
-    const timer = window.setInterval(() => void refresh().catch(() => undefined), 2_000);
+    const timer = window.setInterval(() => void refresh().catch(() => undefined), 5_000);
     return () => {
       cancelled = true;
       window.clearInterval(timer);

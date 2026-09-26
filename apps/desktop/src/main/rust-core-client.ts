@@ -23,6 +23,18 @@ export interface RustActivitySnapshot {
   executablePath?: string;
 }
 
+export interface RustActivityProcessSnapshot {
+  available: boolean;
+  processes: Array<{
+    ProcessId: number;
+    ProcessName: string;
+    MainWindowTitle: string;
+    Path?: string;
+    ParentProcessId: number;
+    IsForeground: boolean;
+  }>;
+}
+
 export interface RustFileIdentity {
   stableId: string;
   volumeSerialNumber?: number;
@@ -65,6 +77,10 @@ export class RustCoreClient {
 
   activitySnapshot(options?: RustCoreCallOptions): Promise<RustActivitySnapshot> {
     return this.call({ command: "activity_snapshot" }, options);
+  }
+
+  activityProcessSnapshot(options?: RustCoreCallOptions): Promise<RustActivityProcessSnapshot> {
+    return this.call({ command: "activity_process_snapshot" }, options);
   }
 
   fileIdentity(filePath: string, options?: RustCoreCallOptions): Promise<RustFileIdentity> {

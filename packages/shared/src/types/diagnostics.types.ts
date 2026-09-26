@@ -191,6 +191,7 @@ export interface RendererRuntimeHealthInput {
   performance: FramePerformanceSnapshot;
   jsHeapUsedBytes?: number;
   jsHeapTotalBytes?: number;
+  domNodeCount?: number;
   room?: RendererDiagnosticsSummary;
   trackCount: number;
   audioContextCount?: number;
@@ -213,6 +214,8 @@ export interface RuntimeProcessHealth {
   cpuPercent?: number;
   workingSetBytes?: number;
   privateBytes?: number;
+  jsHeapUsedBytes?: number;
+  activeResourceCount?: number;
   type: string;
 }
 
@@ -224,8 +227,8 @@ export interface RuntimeHealthSnapshot {
   uptimeMs: number;
   main: RuntimeProcessHealth;
   renderer?: RuntimeProcessHealth & {
-    jsHeapUsedBytes?: number;
     jsHeapTotalBytes?: number;
+    domNodeCount?: number;
   };
   processes: RuntimeProcessHealth[];
   system: {

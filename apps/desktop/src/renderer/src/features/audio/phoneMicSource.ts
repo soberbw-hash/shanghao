@@ -16,6 +16,7 @@ export interface PhoneMicMetrics {
 
 export interface PhoneMicState {
   status: "idle" | "pairing" | "connected" | "streaming" | "disconnected" | "error";
+  phase?: "authorizing" | "connecting" | "waitingForPhone" | "negotiating" | "recovering";
   mode: PhoneMicMode;
   pairingUrl?: string;
   error?: string;
@@ -68,6 +69,7 @@ export class PhoneMicSource {
   private stream?: MediaStream;
   private usbReceiver?: PhoneMicUsbReceiver;
   private metricsTimer?: number;
+  private pairingTimer?: number;
   private listeners = new Set<PhoneMicListener>();
   private iceServers: RTCIceServer[] = [];
   private pendingCandidates: RTCIceCandidateInit[] = [];
@@ -131,12 +133,24 @@ export class PhoneMicSource {
   ): Promise<void> {
     await this.stopInternal();
     this.disposed = false;
-    this.publish({ status: "pairing", mode, pairingUrl: undefined, error: undefined });
+    this.publish({
+      status: "pairing",
+      phase: mode === "usb" ? "connecting" : "authorizing",
+      mode,
+      pairingUrl: undefined,
+      error: undefined,
+    });
     if (mode === "usb") {
       await this.startUsb(usbSerial);
       return;
     }
-    const url = phoneMicSignalingUrl(relayUrl);
+    let url: URL;
+    try {
+      url = phoneMicSignalingUrl(relayUrl);
+    } catch (error) {
+      this.publish({ status: "error", phase: undefined, error: readablePhoneMicError(error) });
+      throw error;
+    }
     const page = new URL(url.href);
     page.protocol = url.protocol === "wss:" ? "https:" : "http:";
     page.pathname = "/phone-mic";
@@ -144,17 +158,34 @@ export class PhoneMicSource {
     try {
       ticket = await window.desktopApi.audio.getPhoneMicHostTicket(relayUrl);
     } catch (error) {
-      this.publish({ status: "error", error: readablePhoneMicError(error) });
+      this.publish({ status: "error", phase: undefined, error: readablePhoneMicError(error) });
       throw error;
     }
-    const socket = new WebSocket(url);
+    this.publish({ phase: "connecting" });
+    let socket: WebSocket;
+    try {
+      socket = new WebSocket(url);
+    } catch (error) {
+      this.publish({ status: "error", phase: undefined, error: readablePhoneMicError(error) });
+      throw error;
+    }
     this.socket = socket;
+    this.pairingTimer = window.setTimeout(() => {
+      if (this.socket !== socket || this.disposed || this.state.pairingUrl) return;
+      this.publish({
+        status: "error",
+        phase: undefined,
+        error: "配对服务响应超时，请检查服务器手机麦克风服务并重试。",
+      });
+      socket.close();
+    }, 10_000);
     socket.onopen = () => this.send({ type: "create", ticket });
     socket.onmessage = (event) => {
       void this.handleSignal(event.data, page).catch((error: unknown) => {
         if (!this.disposed) {
           this.publish({
             status: "error",
+            phase: undefined,
             error: error instanceof Error ? error.message : "音频连接协商失败",
           });
         }
@@ -162,13 +193,28 @@ export class PhoneMicSource {
     };
     socket.onerror = () => {
       if (!this.disposed)
-        this.publish({ status: "error", error: "配对服务连接失败，请检查中继和 HTTPS。" });
+        this.publish({
+          status: "error",
+          phase: undefined,
+          error: "配对服务连接失败，请检查中继和 HTTPS。",
+        });
     };
     socket.onclose = () => {
+      this.clearPairingTimer();
       if (this.disposed) return;
       this.closePeer();
+      if (this.state.status === "error") return;
+      if (!this.state.pairingUrl) {
+        this.publish({
+          status: "error",
+          phase: undefined,
+          error: "配对服务在生成二维码前断开，请检查服务器手机麦克风服务。",
+        });
+        return;
+      }
       this.publish({
         status: "disconnected",
+        phase: undefined,
         pairingUrl: undefined,
         error: "连接已断开，请重新配对。",
       });
@@ -200,9 +246,13 @@ export class PhoneMicSource {
         }
         if (connected) {
           this.stream = receiver.getStream();
-          this.publish({ status: "streaming", error: undefined });
+          this.publish({ status: "streaming", phase: undefined, error: undefined });
         } else if (this.state.status === "streaming") {
-          this.publish({ status: "connected", error: "手机音频已断开，等待重新连接。" });
+          this.publish({
+            status: "connected",
+            phase: undefined,
+            error: "手机音频已断开，等待重新连接。",
+          });
         }
       });
       if (this.disposed) {
@@ -216,6 +266,7 @@ export class PhoneMicSource {
       await this.stopInternal();
       this.publish({
         status: "error",
+        phase: undefined,
         error: error instanceof Error ? error.message : "USB 连接失败",
       });
       throw error;
@@ -238,16 +289,28 @@ export class PhoneMicSource {
       const sessionId = String(message.sessionId ?? "");
       const secret = String(message.pairingSecret ?? "");
       if (!sessionId || !secret) return;
+      this.clearPairingTimer();
       this.iceServers = Array.isArray(message.iceServers)
         ? (message.iceServers as RTCIceServer[])
         : [];
       page.hash = new URLSearchParams({ id: sessionId, code: secret }).toString();
-      this.publish({ status: "pairing", pairingUrl: page.href });
+      this.publish({ status: "pairing", phase: "waitingForPhone", pairingUrl: page.href });
     } else if (message.type === "phone_connected") {
-      this.publish({ status: "connected", error: undefined });
+      this.publish({ status: "connected", phase: "negotiating", error: undefined });
     } else if (message.type === "phone_disconnected" || message.type === "phone_stopped") {
       this.closePeer();
-      this.publish({ status: "connected", metrics: { quality: "等待连接" } });
+      this.publish({
+        status: "connected",
+        phase: "recovering",
+        // The original pairing secret was consumed on first join. Showing its
+        // old QR code would promise a new phone can use it when it cannot.
+        pairingUrl: undefined,
+        error:
+          message.type === "phone_disconnected"
+            ? "手机已断开，请在 60 秒内用原手机重连；换手机请点重试连接。"
+            : "手机已停止传输，可在原手机重新开始；换手机请点重试连接。",
+        metrics: { quality: "等待连接" },
+      });
     } else if (message.type === "offer" && typeof message.sdp === "string") {
       await this.acceptOffer(message.sdp);
     } else if (message.type === "candidate" && message.candidate) {
@@ -279,19 +342,27 @@ export class PhoneMicSource {
         () => {
           if (this.peer === peer) {
             this.closePeer();
-            this.publish({ status: "connected", error: "手机音频已停止。" });
+            this.publish({
+              status: "connected",
+              phase: "negotiating",
+              error: "手机音频已停止。",
+            });
           }
         },
         { once: true },
       );
-      this.publish({ status: "streaming", error: undefined });
+      this.publish({ status: "streaming", phase: undefined, error: undefined });
       this.metricsTimer = window.setInterval(() => void this.sampleMetrics(peer), 1_000);
     };
     peer.onconnectionstatechange = () => {
       if (this.peer !== peer) return;
       if (peer.connectionState === "failed" || peer.connectionState === "closed") {
         this.closePeer();
-        this.publish({ status: "connected", error: "音频连接中断，等待手机重连。" });
+        this.publish({
+          status: "connected",
+          phase: "negotiating",
+          error: "音频连接中断，等待手机重连。",
+        });
       }
     };
     await peer.setRemoteDescription({ type: "offer", sdp });
@@ -369,6 +440,7 @@ export class PhoneMicSource {
 
   private async stopInternal(): Promise<void> {
     this.disposed = true;
+    this.clearPairingTimer();
     if (this.socket) {
       this.socket.onclose = null;
       this.socket.close();
@@ -383,10 +455,16 @@ export class PhoneMicSource {
     }
     this.publish({
       status: "idle",
+      phase: undefined,
       pairingUrl: undefined,
       error: undefined,
       metrics: { quality: "等待连接" },
     });
+  }
+
+  private clearPairingTimer(): void {
+    if (this.pairingTimer !== undefined) window.clearTimeout(this.pairingTimer);
+    this.pairingTimer = undefined;
   }
 }
 

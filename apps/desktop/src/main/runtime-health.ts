@@ -42,6 +42,14 @@ const readGpuIdentity = async (): Promise<
   };
 };
 
+// GPU identity cannot change during a process lifetime. Avoid a driver query on every
+// diagnostics refresh, especially while the settings page is open for a long session.
+let gpuIdentityPromise: ReturnType<typeof readGpuIdentity> | undefined;
+const cachedGpuIdentity = (): ReturnType<typeof readGpuIdentity> => {
+  gpuIdentityPromise ??= readGpuIdentity();
+  return gpuIdentityPromise;
+};
+
 export const captureRuntimeHealth = async (options: {
   getMainWindow: () => BrowserWindow | null;
   renderer?: RendererRuntimeHealthInput;
@@ -59,7 +67,7 @@ export const captureRuntimeHealth = async (options: {
       : screen.getPrimaryDisplay();
   const systemMemory = process.getSystemMemoryInfo();
   const featureStatus = app.getGPUFeatureStatus();
-  const gpuIdentity = await readGpuIdentity();
+  const gpuIdentity = await cachedGpuIdentity();
   const processes = metrics.map(processHealth);
   const rendererRoom = options.renderer?.room;
   const screenFallbackActive = rendererRoom?.screenShareRelayState === "active";
@@ -71,16 +79,23 @@ export const captureRuntimeHealth = async (options: {
     buildNumber: APP_BUILD_NUMBER,
     uptimeMs: Math.round(process.uptime() * 1_000),
     main: mainMetric
-      ? processHealth(mainMetric)
+      ? {
+          ...processHealth(mainMetric),
+          jsHeapUsedBytes: process.memoryUsage().heapUsed,
+          activeResourceCount: process.getActiveResourcesInfo?.().length,
+        }
       : {
           pid: process.pid,
           type: "Browser",
+          jsHeapUsedBytes: process.memoryUsage().heapUsed,
+          activeResourceCount: process.getActiveResourcesInfo?.().length,
         },
     renderer: rendererMetric
       ? {
           ...processHealth(rendererMetric),
           jsHeapUsedBytes: options.renderer?.jsHeapUsedBytes,
           jsHeapTotalBytes: options.renderer?.jsHeapTotalBytes,
+          domNodeCount: options.renderer?.domNodeCount,
         }
       : undefined,
     processes,

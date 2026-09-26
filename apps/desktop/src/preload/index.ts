@@ -35,7 +35,6 @@ const desktopApi: DesktopApi = {
       ipcRenderer.invoke(IPC_CHANNELS.app.saveDailyRoomReports, reports),
     openExternal: (url) => ipcRenderer.invoke(IPC_CHANNELS.app.openExternal, url),
     openSystemSettings: (page) => ipcRenderer.invoke(IPC_CHANNELS.app.openSystemSettings, page),
-    getLinkPreviewIcon: (url) => ipcRenderer.invoke(IPC_CHANNELS.app.getLinkPreviewIcon, url),
     consumeDeepLink: () => ipcRenderer.invoke(IPC_CHANNELS.app.consumeDeepLink),
     onDeepLink: (listener) => {
       const wrapped = (_event: Electron.IpcRendererEvent, invite: unknown) => {

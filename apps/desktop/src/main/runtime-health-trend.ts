@@ -34,6 +34,9 @@ export const analyzeRuntimeHealthTrend = (
     warnings.push("child_process_growth");
   }
   if (stableRealtimeShape) {
+    if (grewBy(first.renderer?.domNodeCount, last.renderer?.domNodeCount, 500)) {
+      warnings.push("dom_node_growth");
+    }
     const counters = [
       ["media_track_growth", first.realtime.trackCount, last.realtime.trackCount, 4],
       [

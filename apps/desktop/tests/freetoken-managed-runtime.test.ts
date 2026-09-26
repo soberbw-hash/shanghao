@@ -49,35 +49,41 @@ test("FreeToken release parser selects the newest matching Windows wheel pair", 
   assert.equal(pair.runtime.sha256, newDigest);
 });
 
-test("FreeToken runtime reuses an existing CLI without downloading Desktop or another runtime", async () => {
-  const directory = await mkdtemp(path.join(os.tmpdir(), "shanghao-freetoken-managed-"));
-  const legacyCli = path.join(directory, "existing", "ft.exe");
-  await mkdir(path.dirname(legacyCli), { recursive: true });
-  await writeFile(legacyCli, "placeholder", "utf8");
-  let fetchCalled = false;
-  try {
-    const runtime = new FreeTokenManagedRuntime(path.join(directory, "runtime"), {
-      legacyExecutablePaths: [legacyCli],
-      fetcher: async () => {
-        fetchCalled = true;
-        throw new Error("network_should_not_be_used");
-      },
-      runProcess: async (executable, args) => {
-        assert.equal(executable, legacyCli);
-        assert.deepEqual(args, ["--version"]);
-        return { stdout: "freetoken 0.1.2+test\n", stderr: "" };
-      },
-    });
-    const status = await runtime.prepare();
-    assert.equal(status.ready, true);
-    assert.equal(status.managed, false);
-    assert.equal(status.executable, legacyCli);
-    assert.equal(status.version, "0.1.2+test");
-    assert.equal(fetchCalled, false);
-  } finally {
-    await rm(directory, { recursive: true, force: true });
-  }
-});
+test(
+  "FreeToken runtime reuses an existing CLI without downloading Desktop or another runtime",
+  {
+    skip: process.platform !== "win32" ? "FreeToken runtime is supported on Windows only" : false,
+  },
+  async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "shanghao-freetoken-managed-"));
+    const legacyCli = path.join(directory, "existing", "ft.exe");
+    await mkdir(path.dirname(legacyCli), { recursive: true });
+    await writeFile(legacyCli, "placeholder", "utf8");
+    let fetchCalled = false;
+    try {
+      const runtime = new FreeTokenManagedRuntime(path.join(directory, "runtime"), {
+        legacyExecutablePaths: [legacyCli],
+        fetcher: async () => {
+          fetchCalled = true;
+          throw new Error("network_should_not_be_used");
+        },
+        runProcess: async (executable, args) => {
+          assert.equal(executable, legacyCli);
+          assert.deepEqual(args, ["--version"]);
+          return { stdout: "freetoken 0.1.2+test\n", stderr: "" };
+        },
+      });
+      const status = await runtime.prepare();
+      assert.equal(status.ready, true);
+      assert.equal(status.managed, false);
+      assert.equal(status.executable, legacyCli);
+      assert.equal(status.version, "0.1.2+test");
+      assert.equal(fetchCalled, false);
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  },
+);
 
 test("FreeToken release parser refuses an unpaired or Linux-only release", () => {
   const html = row(

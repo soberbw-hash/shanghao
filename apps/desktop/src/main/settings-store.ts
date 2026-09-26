@@ -6,18 +6,28 @@ import { app } from "electron";
 
 import { type AppSettings, type RendererLogPayload } from "@private-voice/shared";
 
-import { clearAvatarImage } from "./profile-media";
 import { defaultSettings, migrateSettings, type RawSettings } from "./settings-migration";
 
 const SETTINGS_BOM = "\uFEFF";
+const clearLegacyAvatarImage = async (avatarPath?: string): Promise<void> => {
+  if (!avatarPath) return;
+  const { clearAvatarImage } = await import("./profile-media");
+  await clearAvatarImage(avatarPath);
+};
 
 export class SettingsStore {
   private cachedSettings: AppSettings = migrateSettings(defaultSettings).settings;
-  private readonly filePath = path.join(app.getPath("userData"), "settings.json");
-  private readonly backupFilePath = path.join(app.getPath("userData"), "settings.backup.json");
+  private readonly filePath: string;
+  private readonly backupFilePath: string;
   private persistQueue: Promise<void> = Promise.resolve();
 
-  constructor(private readonly writeLog?: (payload: RendererLogPayload) => Promise<void>) {}
+  constructor(
+    private readonly writeLog?: (payload: RendererLogPayload) => Promise<void>,
+    userDataDirectory = app.getPath("userData"),
+  ) {
+    this.filePath = path.join(userDataDirectory, "settings.json");
+    this.backupFilePath = path.join(userDataDirectory, "settings.backup.json");
+  }
 
   async load(): Promise<AppSettings> {
     const candidates = [this.filePath, this.backupFilePath];
@@ -27,8 +37,17 @@ export class SettingsStore {
         const parsed = JSON.parse(this.stripBom(fileContent)) as RawSettings;
         const { settings, migrated, previousVersion } = migrateSettings(parsed);
         this.cachedSettings = settings;
-        await this.persist(this.cachedSettings, candidate === this.filePath);
-        if (migrated) await clearAvatarImage(parsed.avatarPath);
+        // Opening an unchanged profile must not rewrite account-adjacent data or its backup.
+        // Persist only a real normalization/migration or recovery from the backup file.
+        const normalizedForDisk = JSON.parse(JSON.stringify(settings)) as RawSettings;
+        if (
+          candidate !== this.filePath ||
+          migrated ||
+          !isDeepStrictEqual(normalizedForDisk, parsed)
+        ) {
+          await this.persist(this.cachedSettings, candidate === this.filePath);
+        }
+        if (migrated) await clearLegacyAvatarImage(parsed.avatarPath);
         await this.log("info", "settings loaded", {
           source: candidate === this.filePath ? "primary" : "backup",
           schemaVersion: settings.settingsSchemaVersion,
@@ -89,7 +108,7 @@ export class SettingsStore {
   }
 
   async reset(): Promise<AppSettings> {
-    await clearAvatarImage(this.cachedSettings.avatarPath);
+    await clearLegacyAvatarImage(this.cachedSettings.avatarPath);
     this.cachedSettings = migrateSettings(defaultSettings).settings;
     await this.persist(this.cachedSettings);
     await this.log("info", "settings reset", {

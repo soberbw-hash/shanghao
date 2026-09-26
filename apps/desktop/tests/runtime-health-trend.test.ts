@@ -20,6 +20,7 @@ const sample = (index: number, growth = false): RuntimeHealthSnapshot => ({
     pid: 2,
     type: "Tab",
     workingSetBytes: 200 * 1024 * 1024 + (growth ? index * 24 * 1024 * 1024 : 0),
+    domNodeCount: 1_000 + (growth ? index * 100 : 0),
   },
   processes: growth
     ? Array.from({ length: 2 + Math.floor(index / 2) }, (_, pid) => ({ pid, type: "Utility" }))
@@ -57,5 +58,6 @@ test("runtime trend reports sustained process, memory and realtime growth", () =
   assert.ok(trend.warnings.includes("main_working_set_growth"));
   assert.ok(trend.warnings.includes("renderer_working_set_growth"));
   assert.ok(trend.warnings.includes("child_process_growth"));
+  assert.ok(trend.warnings.includes("dom_node_growth"));
   assert.ok(trend.warnings.includes("audio_context_growth"));
 });

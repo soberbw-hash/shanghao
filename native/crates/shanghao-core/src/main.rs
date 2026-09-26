@@ -16,6 +16,9 @@ enum CoreCommand {
     ActivitySnapshot {
         request_id: Option<String>,
     },
+    ActivityProcessSnapshot {
+        request_id: Option<String>,
+    },
     FileIdentity {
         request_id: Option<String>,
         path: String,
@@ -35,6 +38,7 @@ impl CoreCommand {
         match self {
             Self::Capabilities { request_id }
             | Self::ActivitySnapshot { request_id }
+            | Self::ActivityProcessSnapshot { request_id }
             | Self::FileIdentity { request_id, .. }
             | Self::SuperviseProcess { request_id, .. } => request_id.as_deref(),
         }
@@ -88,7 +92,7 @@ fn capabilities() -> Value {
     json!({
         "protocolVersion": 1,
         "platform": std::env::consts::OS,
-        "commands": ["capabilities", "activity_snapshot", "file_identity", "supervise_process"],
+        "commands": ["capabilities", "activity_snapshot", "activity_process_snapshot", "file_identity", "supervise_process"],
         "nativeActivity": cfg!(windows),
         "stableFileIdentity": cfg!(windows),
         "processSupervision": true
@@ -169,6 +173,106 @@ fn activity_snapshot() -> io::Result<Value> {
     }
 }
 
+#[cfg(windows)]
+fn activity_process_snapshot() -> io::Result<Value> {
+    use std::collections::HashMap;
+    use windows_sys::Win32::Foundation::{CloseHandle, INVALID_HANDLE_VALUE, LPARAM};
+    use windows_sys::Win32::System::Diagnostics::ToolHelp::{
+        CreateToolhelp32Snapshot, PROCESSENTRY32W, Process32FirstW, Process32NextW,
+        TH32CS_SNAPPROCESS,
+    };
+    use windows_sys::Win32::System::Threading::{
+        OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION, QueryFullProcessImageNameW,
+    };
+    use windows_sys::Win32::UI::WindowsAndMessaging::{
+        EnumWindows, GetForegroundWindow, GetWindowTextLengthW, GetWindowTextW,
+        GetWindowThreadProcessId, IsWindowVisible,
+    };
+
+    unsafe extern "system" fn collect_window_title(
+        window: *mut std::ffi::c_void,
+        data: LPARAM,
+    ) -> i32 {
+        unsafe {
+            if IsWindowVisible(window) == 0 {
+                return 1;
+            }
+            let title_length = GetWindowTextLengthW(window);
+            if title_length <= 0 {
+                return 1;
+            }
+            let mut pid = 0_u32;
+            GetWindowThreadProcessId(window, &mut pid);
+            let titles = &mut *(data as *mut HashMap<u32, String>);
+            if titles.contains_key(&pid) {
+                return 1;
+            }
+            let mut title = vec![0_u16; (title_length as usize).min(1_024) + 1];
+            let copied = GetWindowTextW(window, title.as_mut_ptr(), title.len() as i32);
+            if copied > 0 {
+                titles.insert(pid, String::from_utf16_lossy(&title[..copied as usize]));
+            }
+            1
+        }
+    }
+
+    let mut titles = HashMap::<u32, String>::new();
+    let mut foreground_pid = 0_u32;
+    unsafe {
+        GetWindowThreadProcessId(GetForegroundWindow(), &mut foreground_pid);
+        EnumWindows(Some(collect_window_title), &mut titles as *mut _ as LPARAM);
+
+        let handle = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+        if handle == INVALID_HANDLE_VALUE {
+            return Err(io::Error::last_os_error());
+        }
+
+        let mut entry: PROCESSENTRY32W = std::mem::zeroed();
+        entry.dwSize = std::mem::size_of::<PROCESSENTRY32W>() as u32;
+        let mut processes = Vec::new();
+        if Process32FirstW(handle, &mut entry) != 0 {
+            loop {
+                let name_end = entry
+                    .szExeFile
+                    .iter()
+                    .position(|unit| *unit == 0)
+                    .unwrap_or(entry.szExeFile.len());
+                let process_name = String::from_utf16_lossy(&entry.szExeFile[..name_end]);
+                let pid = entry.th32ProcessID;
+                let process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid);
+                let executable_path = if process.is_null() {
+                    None
+                } else {
+                    let mut buffer = vec![0_u16; 32_768];
+                    let mut length = buffer.len() as u32;
+                    let succeeded =
+                        QueryFullProcessImageNameW(process, 0, buffer.as_mut_ptr(), &mut length);
+                    CloseHandle(process);
+                    (succeeded != 0).then(|| String::from_utf16_lossy(&buffer[..length as usize]))
+                };
+                processes.push(json!({
+                    "ProcessId": pid,
+                    "ProcessName": process_name,
+                    "MainWindowTitle": titles.remove(&pid).unwrap_or_default(),
+                    "Path": executable_path,
+                    "ParentProcessId": entry.th32ParentProcessID,
+                    "IsForeground": pid == foreground_pid,
+                }));
+                if processes.len() >= 4_096 || Process32NextW(handle, &mut entry) == 0 {
+                    break;
+                }
+            }
+        }
+        CloseHandle(handle);
+        Ok(json!({ "available": true, "processes": processes }))
+    }
+}
+
+#[cfg(not(windows))]
+fn activity_process_snapshot() -> io::Result<Value> {
+    Ok(json!({ "available": false, "processes": [] }))
+}
+
 #[cfg(not(windows))]
 fn activity_snapshot() -> io::Result<Value> {
     Ok(json!({ "available": false }))
@@ -223,6 +327,7 @@ fn handle(command: &CoreCommand) -> CoreResponse {
     let result = match command {
         CoreCommand::Capabilities { .. } => Ok(capabilities()),
         CoreCommand::ActivitySnapshot { .. } => activity_snapshot(),
+        CoreCommand::ActivityProcessSnapshot { .. } => activity_process_snapshot(),
         CoreCommand::FileIdentity { path, .. } => file_identity(Path::new(path)),
         CoreCommand::SuperviseProcess {
             program,
@@ -264,7 +369,7 @@ mod tests {
     fn capabilities_are_versioned_and_bounded() {
         let value = capabilities();
         assert_eq!(value["protocolVersion"], 1);
-        assert_eq!(value["commands"].as_array().map(Vec::len), Some(4));
+        assert_eq!(value["commands"].as_array().map(Vec::len), Some(5));
     }
 
     #[test]

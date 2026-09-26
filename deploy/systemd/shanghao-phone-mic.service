@@ -2,18 +2,27 @@
 Description=ShangHao phone microphone pairing sidecar
 Wants=network-online.target
 After=network-online.target
+StartLimitIntervalSec=60
+StartLimitBurst=5
 
 [Service]
 Type=simple
-User=root
-WorkingDirectory=/root/shanghao
+User=shanghao-phone-mic
+Group=shanghao-phone-mic
+WorkingDirectory=/opt/shanghao-phone-mic
 Environment=NODE_ENV=production
-ExecStart=/usr/bin/node /root/shanghao/packages/signaling/phone-mic-sidecar-dist/phone-mic-sidecar.js
+EnvironmentFile=/etc/shanghao/phone-mic.env
+ExecStart=/usr/bin/node /opt/shanghao-phone-mic/phone-mic-sidecar.cjs
 Restart=on-failure
 RestartSec=3
 NoNewPrivileges=true
-ProtectSystem=full
+ProtectSystem=strict
+ProtectHome=true
+PrivateDevices=true
 PrivateTmp=true
+MemoryMax=256M
+CPUQuota=50%
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
 
 [Install]
 WantedBy=multi-user.target

@@ -56,7 +56,8 @@ test("right-clicking a link preview copies immediately and reports success", () 
   assert.equal(source.includes("onContextMenu={(event) =>"), true);
   assert.equal(source.includes("window.desktopApi.clipboard.writeText(url)"), true);
   assert.equal(source.includes('title: "已复制链接"'), true);
-  assert.equal(source.includes("window.desktopApi?.app?.getLinkPreviewIcon"), true);
+  assert.equal(source.includes("getLinkPreviewIcon"), false);
+  assert.equal(source.includes("<Link2 />"), true);
 });
 
 test("chat text, images and links can be dragged into the persistent room collection", () => {

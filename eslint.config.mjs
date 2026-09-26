@@ -10,6 +10,7 @@ export default tseslint.config(
     ignores: [
       "**/dist/**",
       "**/dist-electron/**",
+      "packages/signaling/phone-mic-sidecar-dist/**",
       "**/release/**",
       "**/node_modules/**",
       "artifacts/**",

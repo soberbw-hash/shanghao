@@ -3,6 +3,7 @@ native/target/
 .turbo/
 dist/
 dist-electron/
+packages/signaling/phone-mic-sidecar-dist/
 release/
 coverage/
 tmp/

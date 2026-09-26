@@ -4,7 +4,6 @@ import {
   clipboard,
   dialog,
   ipcMain,
-  net,
   nativeImage,
   Notification,
   powerMonitor,
@@ -80,7 +79,6 @@ import {
 
 import { DiagnosticsService } from "./diagnostics";
 import { AccountDesktopService } from "./account-service";
-import { readLruCache, writeLruCache } from "./bounded-cache";
 import { captureRuntimeHealth } from "./runtime-health";
 import { readDeepFilterAssets } from "./deepfilter-assets";
 import { registerPhoneMicUsbIpc } from "./phone-mic-usb-ipc";
@@ -180,56 +178,6 @@ const requireString = (value: unknown, maximumLength: number, label: string): st
 let attentionResetTimer: NodeJS.Timeout | undefined;
 let restoreAlwaysOnTop = false;
 let windowShakeTimer: NodeJS.Timeout | undefined;
-const linkPreviewIconCache = new Map<string, string | null>();
-const MAX_LINK_PREVIEW_ICONS = 128;
-
-const cacheLinkPreviewIcon = (key: string, value: string | null): void => {
-  writeLruCache(linkPreviewIconCache, key, value, MAX_LINK_PREVIEW_ICONS);
-};
-
-const readLinkPreviewIcon = async (rawUrl: string): Promise<string | undefined> => {
-  const url = new URL(rawUrl);
-  if (url.protocol !== "http:" && url.protocol !== "https:") {
-    throw new Error("link_preview_url_protocol_not_allowed");
-  }
-  if (url.username || url.password) throw new Error("link_preview_url_credentials_not_allowed");
-
-  const cacheKey = url.origin;
-  const cached = readLruCache(linkPreviewIconCache, cacheKey);
-  if (cached !== undefined) return cached ?? undefined;
-
-  try {
-    const faviconUrl = `https://www.google.com/s2/favicons?domain_url=${encodeURIComponent(
-      url.origin,
-    )}&sz=128`;
-    const response = await net.fetch(faviconUrl, {
-      headers: { Accept: "image/avif,image/webp,image/png,image/*" },
-      signal: AbortSignal.timeout(5_000),
-    });
-    const contentType = response.headers.get("content-type")?.split(";")[0]?.trim();
-    const contentLength = Number(response.headers.get("content-length") ?? 0);
-    if (
-      !response.ok ||
-      !contentType?.startsWith("image/") ||
-      (contentLength > 0 && contentLength > 256 * 1024)
-    ) {
-      cacheLinkPreviewIcon(cacheKey, null);
-      return undefined;
-    }
-    const bytes = Buffer.from(await response.arrayBuffer());
-    if (bytes.byteLength === 0 || bytes.byteLength > 256 * 1024) {
-      cacheLinkPreviewIcon(cacheKey, null);
-      return undefined;
-    }
-    const dataUrl = `data:${contentType};base64,${bytes.toString("base64")}`;
-    cacheLinkPreviewIcon(cacheKey, dataUrl);
-    return dataUrl;
-  } catch {
-    cacheLinkPreviewIcon(cacheKey, null);
-    return undefined;
-  }
-};
-
 const bringWindowToFront = (mainWindow: BrowserWindow | null, attention = false): void => {
   if (!mainWindow || mainWindow.isDestroyed()) return;
   if (mainWindow.isMinimized()) mainWindow.restore();
@@ -484,13 +432,6 @@ export const registerIpcHandlers = ({
       const target = pages[page];
       if (!target) throw new Error("invalid_system_settings_page");
       await shell.openExternal(target);
-    },
-  );
-  ipcMain.handle(
-    IPC_CHANNELS.app.getLinkPreviewIcon,
-    async (_event, rawUrl: string): Promise<string | undefined> => {
-      requireString(rawUrl, 2_048, "link_preview_url");
-      return readLinkPreviewIcon(rawUrl);
     },
   );
   registerShortcutIpcHandlers(shortcuts);

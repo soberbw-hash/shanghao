@@ -592,20 +592,26 @@ interface DetectedActivities {
 const detectActivities = async (): Promise<DetectedActivities> => {
   if (!platformService.isWindows) return {};
 
-  const nativeActivity = await rustCoreClient
-    .activitySnapshot({ timeoutMs: 1_500 })
+  const native = await rustCoreClient
+    .activityProcessSnapshot({ timeoutMs: 1_500 })
     .catch(() => undefined);
-  const commandOptions = {
-    windowsHide: true,
-    maxBuffer: 2 * 1024 * 1024,
-    timeout: 8_000,
-    env: {
-      ...process.env,
-      SHANGHAO_FOREGROUND_PID: nativeActivity?.pid ? String(nativeActivity.pid) : "",
-    },
-  };
-  const [processResult, mediaSessionResult] = await Promise.all([
-    execFileAsync(
+  let processes: ProcessSnapshot[] =
+    native?.available && Array.isArray(native.processes) ? native.processes : [];
+  if (processes.length === 0) {
+    // Emergency compatibility path for machines where the native helper is missing.
+    const nativeActivity = await rustCoreClient
+      .activitySnapshot({ timeoutMs: 1_500 })
+      .catch(() => undefined);
+    const commandOptions = {
+      windowsHide: true,
+      maxBuffer: 2 * 1024 * 1024,
+      timeout: 8_000,
+      env: {
+        ...process.env,
+        SHANGHAO_FOREGROUND_PID: nativeActivity?.pid ? String(nativeActivity.pid) : "",
+      },
+    };
+    const processResult = await execFileAsync(
       "powershell.exe",
       ["-NoProfile", "-NonInteractive", "-Command", buildGameDetectionProbeCommand()],
       commandOptions,
@@ -615,19 +621,30 @@ const detectActivities = async (): Promise<DetectedActivities> => {
         ["-NoProfile", "-NonInteractive", "-Command", buildFastGameProbeCommand()],
         { ...commandOptions, timeout: 4_000 },
       ).catch(() => undefined),
-    ),
-    execFileAsync(
-      "powershell.exe",
-      ["-NoProfile", "-NonInteractive", "-Command", buildMediaSessionProbeCommand()],
-      commandOptions,
-    ).catch(() => ({ stdout: "" })),
-  ]);
-
-  const processes = parseProcessSnapshot(processResult?.stdout ?? "");
+    );
+    processes = parseProcessSnapshot(processResult?.stdout ?? "");
+  }
+  const appleMusicVisible = processes.some((processInfo) => {
+    const name = normalizeProcessName(processInfo.ProcessName);
+    return (
+      name === "applemusic" ||
+      name === "applemusicpreview" ||
+      name === "itunes" ||
+      (name === "applicationframehost" &&
+        (processInfo.MainWindowTitle ?? "").toLowerCase().includes("apple music"))
+    );
+  });
+  const mediaSessionResult = appleMusicVisible
+    ? await execFileAsync(
+        "powershell.exe",
+        ["-NoProfile", "-NonInteractive", "-Command", buildMediaSessionProbeCommand()],
+        { windowsHide: true, maxBuffer: 2 * 1024 * 1024, timeout: 8_000 },
+      ).catch(() => ({ stdout: "" }))
+    : { stdout: "" };
   const game = matchKnownGameActivity(processes);
   return {
     game,
-    processProbeFailed: !processResult,
+    processProbeFailed: processes.length === 0,
     musicActivity:
       matchMediaSessionMusicActivity(mediaSessionResult.stdout) ?? matchMusicActivity(processes),
   };
