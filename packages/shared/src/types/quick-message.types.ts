@@ -27,7 +27,7 @@ export interface QuickMessageSettings {
   soundVolume: number;
   /** The music clip shown in the dedicated room quick-play button. */
   musicPresetId?: string;
-  /** Three optional music shortcuts kept separate from the five voice-message slots. */
+  /** Music shortcuts stay separate from voice-message slots. */
   musicSlots: QuickMessageShortcutSlot[];
   slots: QuickMessageShortcutSlot[];
 }

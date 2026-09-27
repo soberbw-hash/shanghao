@@ -24,6 +24,132 @@
   pointer-events: none;
 }
 
+/* Keep the painted skyline fixed; moving light and cloud planes provide depth. */
+.weather-sky-breath {
+  position: absolute;
+  inset: -12% -22% 38%;
+  pointer-events: none;
+  background: radial-gradient(ellipse at 35% 52%, rgba(245, 253, 255, 0.26), transparent 57%);
+  animation: weather-sky-passage 22s ease-in-out infinite alternate;
+}
+
+.weather-phase-night .weather-sky-breath {
+  background: radial-gradient(ellipse at 70% 35%, rgba(131, 174, 237, 0.28), transparent 62%);
+  animation-duration: 31s;
+}
+
+.weather-cloud-layer {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  container-type: inline-size;
+  pointer-events: none;
+}
+
+.room-page .dynamic-weather-window .weather-cloud {
+  width: 33%;
+  height: 10%;
+  border-radius: 50%;
+  background: rgba(249, 253, 255, 0.54);
+  box-shadow:
+    12px -5px 0 -2px rgba(249, 253, 255, 0.46),
+    24px 1px 0 -3px rgba(249, 253, 255, 0.39);
+}
+
+.room-page .dynamic-weather-window .weather-cloud-one {
+  top: 18%;
+}
+
+.room-page .dynamic-weather-window .weather-cloud-two {
+  top: 35%;
+  width: 43%;
+  height: 13%;
+}
+
+.room-page .dynamic-weather-window .weather-cloud-three {
+  top: 51%;
+  width: 25%;
+  height: 8%;
+}
+
+.room-page .weather-phase-night .weather-cloud {
+  background: rgba(173, 204, 239, 0.24);
+  box-shadow:
+    12px -5px 0 -2px rgba(173, 204, 239, 0.22),
+    24px 1px 0 -3px rgba(173, 204, 239, 0.18);
+}
+
+.weather-near-foliage {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.weather-near-foliage span {
+  position: absolute;
+  bottom: -5%;
+  width: 5%;
+  height: 24%;
+  border-radius: 100% 0 100% 0;
+  background: linear-gradient(115deg, rgba(85, 144, 116, 0.75), rgba(39, 92, 100, 0.92));
+  transform-origin: 50% 100%;
+  animation: weather-foliage-sway 5.8s ease-in-out infinite alternate;
+}
+
+.weather-near-foliage span:nth-child(1) {
+  left: 2%;
+  transform: rotate(-27deg);
+}
+
+.weather-near-foliage span:nth-child(2) {
+  left: 7%;
+  height: 18%;
+  animation-duration: 7.1s;
+  animation-delay: -3.2s;
+}
+
+.weather-near-foliage span:nth-child(3) {
+  right: 2%;
+  height: 21%;
+  animation-duration: 6.4s;
+  animation-delay: -1.4s;
+  animation-name: weather-foliage-sway-right;
+}
+
+.weather-phase-night .weather-near-foliage span {
+  background: linear-gradient(115deg, rgba(73, 122, 129, 0.83), rgba(25, 64, 85, 0.95));
+}
+
+@keyframes weather-sky-passage {
+  from {
+    transform: translate3d(-6%, 0, 0);
+    opacity: 0.42;
+  }
+  to {
+    transform: translate3d(7%, 1%, 0);
+    opacity: 0.8;
+  }
+}
+
+@keyframes weather-foliage-sway {
+  from {
+    transform: rotate(-27deg);
+  }
+  to {
+    transform: rotate(-8deg);
+  }
+}
+
+@keyframes weather-foliage-sway-right {
+  from {
+    transform: rotate(24deg);
+  }
+  to {
+    transform: rotate(8deg);
+  }
+}
+
 .weather-night-moonlight {
   position: absolute;
   top: 1%;
@@ -125,12 +251,12 @@
 
 .scene-ceiling-curtain {
   transform-origin: 26% 0;
-  animation: scene-curtain-breathe 8.4s ease-in-out infinite alternate;
+  animation: scene-curtain-breathe 7.8s ease-in-out infinite alternate;
 }
 
 .scene-foreground-leaves {
   transform-origin: 0 94%;
-  animation: scene-foreground-sway 9.6s ease-in-out infinite alternate;
+  animation: scene-foreground-sway 8.6s ease-in-out infinite alternate;
 }
 
 .scene-corner-life {
@@ -188,19 +314,19 @@
 
 @keyframes scene-curtain-breathe {
   from {
-    transform: translate3d(0, 0, 0) rotate(-0.35deg);
+    transform: translate3d(-1px, 0, 0) rotate(-1.1deg);
   }
   to {
-    transform: translate3d(1px, 0, 0) rotate(0.45deg);
+    transform: translate3d(2px, 0, 0) rotate(1.3deg);
   }
 }
 
 @keyframes scene-foreground-sway {
   from {
-    transform: translate3d(0, 0, 0) rotate(-0.2deg);
+    transform: translate3d(-1px, 0, 0) rotate(-0.7deg);
   }
   to {
-    transform: translate3d(2px, 0, 0) rotate(0.22deg);
+    transform: translate3d(4px, 0, 0) rotate(0.85deg);
   }
 }
 

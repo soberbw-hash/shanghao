@@ -131,7 +131,6 @@
   align-items: center;
   justify-content: flex-end;
   gap: 10px 18px;
-  margin-bottom: 11px;
 }
 
 .quick-message-library-sound-toggle,
@@ -320,7 +319,7 @@
 }
 .ai-model-action-menu > div {
   position: absolute;
-  top: 38px;
+  top: calc(100% - 1px);
   right: 0;
   display: grid;
   min-width: 132px;

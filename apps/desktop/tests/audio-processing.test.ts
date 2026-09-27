@@ -94,6 +94,23 @@ test("speech protection attacks quickly, holds sentence endings, and releases sm
   assert.equal(SPEECH_RAW_MIX + SPEECH_PROCESSED_MIX, 1);
 });
 
+test("microphone raw and processed mix uses a per-sample crossfade coefficient", () => {
+  const processor = readFileSync(
+    path.join(root, "apps/desktop/src/renderer/src/features/audio/microphoneProcessor.ts"),
+    "utf8",
+  );
+  assert.match(
+    processor,
+    /this\.mixSmoothing = 1 - Math\.exp\(-1 \/ \(sampleRate \* timeConstant\)\)/,
+  );
+  assert.match(processor, /return current \+ \(target - current\) \* this\.mixSmoothing/);
+  const sampleRate = 48_000;
+  const timeConstant = 0.035;
+  const coefficient = 1 - Math.exp(-1 / (sampleRate * timeConstant));
+  const reachedAfterOneTimeConstant = 1 - (1 - coefficient) ** (sampleRate * timeConstant);
+  assert.ok(Math.abs(reachedAfterOneTimeConstant - (1 - Math.exp(-1))) < 1e-10);
+});
+
 test("DeepFilterNet is the only suppression engine and keeps raw audio on model failure", () => {
   const processor = readFileSync(
     path.join(root, "apps/desktop/src/renderer/src/features/audio/microphoneProcessor.ts"),

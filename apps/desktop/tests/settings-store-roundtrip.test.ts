@@ -43,6 +43,20 @@ test("user settings survive save and a fresh store load", async () => {
       quickMessages: {
         ...store.getSnapshot().quickMessages,
         soundVolume: 0.42,
+        slots: store
+          .getSnapshot()
+          .quickMessages.slots.map((slot, index) =>
+            index === 7 ? { ...slot, presetId: "legacy-hear", enabled: true } : slot,
+          ),
+        musicSlots: store.getSnapshot().quickMessages.musicSlots.map((slot, index) =>
+          index === 4
+            ? {
+                ...slot,
+                presetId: defaultSettings.quickMessages.musicSlots[0]?.presetId,
+                enabled: true,
+              }
+            : slot,
+        ),
       },
     });
 
@@ -50,6 +64,11 @@ test("user settings survive save and a fresh store load", async () => {
     assert.deepEqual(reloaded, saved);
     assert.equal(reloaded.recordingSaveDirectory, "D:/上号录音");
     assert.equal(reloaded.quickMessages.soundVolume, 0.42);
+    assert.equal(reloaded.quickMessages.slots[7]?.presetId, "legacy-hear");
+    assert.equal(
+      reloaded.quickMessages.musicSlots[4]?.presetId,
+      defaultSettings.quickMessages.musicSlots[0]?.presetId,
+    );
   } finally {
     await rm(directory, { recursive: true, force: true });
   }

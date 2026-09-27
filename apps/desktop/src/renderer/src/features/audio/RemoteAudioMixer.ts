@@ -115,6 +115,7 @@ export class RemoteAudioMixer {
   private masterVolume = 1;
   private loudnessBalanceEnabled = false;
   private outputDeviceId?: string;
+  private outputRouteQueue: Promise<void> = Promise.resolve();
   private resumeInFlight?: Promise<boolean>;
   private audioLevelTimer?: number;
   private playbackWatchdogTimer?: number;
@@ -858,30 +859,45 @@ export class RemoteAudioMixer {
     );
   }
 
-  private async applyOutputDevice(): Promise<void> {
+  private applyOutputDevice(): Promise<void> {
     const context = this.context;
-    if (!context?.setSinkId) return;
-    try {
-      await context.setSinkId(this.outputDeviceId || "default");
-    } catch (error) {
-      const failedOutputDeviceId = this.outputDeviceId;
-      void writeRendererLog("audio", "warn", "Failed to route shared audio mixer output", {
-        outputDeviceId: failedOutputDeviceId || "default",
-        error: error instanceof Error ? error.message : String(error),
-      });
-      if (!failedOutputDeviceId) return;
+    if (!context?.setSinkId) return Promise.resolve();
+    // setSinkId is asynchronous. Keep changes in order so an older device request
+    // cannot finish after a newer one and silently move the shared mixer back.
+    const route = async () => {
+      if (this.context !== context) return;
+      const requestedOutputDeviceId = this.outputDeviceId;
       try {
-        await context.setSinkId("default");
-        this.outputDeviceId = undefined;
-        void writeRendererLog("audio", "warn", "Shared audio mixer fell back to default output", {
-          failedOutputDeviceId,
+        await context.setSinkId!(requestedOutputDeviceId || "default");
+      } catch (error) {
+        void writeRendererLog("audio", "warn", "Failed to route shared audio mixer output", {
+          outputDeviceId: requestedOutputDeviceId || "default",
+          error: error instanceof Error ? error.message : String(error),
         });
-      } catch (fallbackError) {
-        void writeRendererLog("audio", "error", "Default audio output fallback failed", {
-          error: fallbackError instanceof Error ? fallbackError.message : String(fallbackError),
-        });
+        if (
+          !requestedOutputDeviceId ||
+          this.context !== context ||
+          this.outputDeviceId !== requestedOutputDeviceId
+        )
+          return;
+        try {
+          await context.setSinkId!("default");
+          if (this.context === context && this.outputDeviceId === requestedOutputDeviceId) {
+            this.outputDeviceId = undefined;
+          }
+          void writeRendererLog("audio", "warn", "Shared audio mixer fell back to default output", {
+            failedOutputDeviceId: requestedOutputDeviceId,
+          });
+        } catch (fallbackError) {
+          void writeRendererLog("audio", "error", "Default audio output fallback failed", {
+            error: fallbackError instanceof Error ? fallbackError.message : String(fallbackError),
+          });
+        }
       }
-    }
+    };
+    const next = this.outputRouteQueue.then(route, route);
+    this.outputRouteQueue = next;
+    return next;
   }
 }
 

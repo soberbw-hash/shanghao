@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ArrowUp, Bot, History, MessageCircleQuestion, Sparkles, Square } from "lucide-react";
+import { ArrowUp, History, Sparkles, Square } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
 
 import type { VoiceMemoryAnswer } from "@private-voice/shared";
@@ -26,10 +26,7 @@ interface RoomQuestionHistoryEntry {
 
 const ROOM_QUESTION_HISTORY_KEY = "shanghao:room-question-history:v1";
 const ROOM_QUESTION_HISTORY_LIMIT = 10;
-const ROOM_QUESTION_SUGGESTIONS = [
-  "海克斯大乱斗卡莎出装推荐",
-  "英雄联盟当前版本亚索怎么出装",
-] as const;
+const ROOM_QUESTION_SUGGESTIONS = ["海克斯大乱斗卡莎出装", "当前版本亚索出装"] as const;
 
 const readQuestionHistory = (): RoomQuestionHistoryEntry[] => {
   try {
@@ -219,12 +216,13 @@ export const RoomAskDialog = ({
           <header className="room-ai-header">
             <div className="room-ai-title">
               <span className="room-ai-title-icon" aria-hidden="true">
-                <Bot />
                 <Sparkles />
               </span>
               <span>
-                <h2 id="room-ask-title">上号 AI</h2>
-                <small>联网查游戏攻略和资料</small>
+                <h2 id="room-ask-title" className="text-balance">
+                  上号 AI
+                </h2>
+                <small>游戏助手</small>
               </span>
             </div>
             <DialogCloseButton label="关闭提问浮窗" onClick={closeDialog} />
@@ -233,7 +231,7 @@ export const RoomAskDialog = ({
           <div className="room-ask-popover-body">
             {!query.trim() && !pending && !answer && !error ? (
               <section className="room-ai-empty" aria-label="提问建议">
-                <strong>今天想问点什么？</strong>
+                <strong>提问示例</strong>
                 <div className="room-ai-suggestions">
                   {ROOM_QUESTION_SUGGESTIONS.map((suggestion) => (
                     <button
@@ -254,7 +252,6 @@ export const RoomAskDialog = ({
             {pending || answer || error ? <p className="room-ai-user-question">{query}</p> : null}
 
             <div className="room-ai-composer" data-pending={pending === "ask" ? "true" : "false"}>
-              <MessageCircleQuestion className="room-ai-composer-icon" aria-hidden="true" />
               <input
                 ref={inputRef}
                 value={query}
@@ -265,7 +262,7 @@ export const RoomAskDialog = ({
                 onKeyDown={(event) => {
                   if (event.key === "Enter") void ask();
                 }}
-                placeholder="输入想查的游戏攻略或资料"
+                placeholder="输入问题"
               />
               <button
                 type="button"
@@ -285,10 +282,10 @@ export const RoomAskDialog = ({
                 <span>
                   <strong>
                     {pendingSeconds < 5
-                      ? "正在查找相关语音记忆"
+                      ? "正在查找资料"
                       : pendingSeconds < 15
-                        ? "正在整理相关内容"
-                        : "正在生成回答，仍在正常处理"}
+                        ? "正在整理答案"
+                        : "正在生成回答"}
                   </strong>
                   <small>
                     {pendingSeconds >= 8
@@ -327,11 +324,11 @@ export const RoomAskDialog = ({
               <article className="room-ai-answer">
                 <h3>
                   <span className="room-ai-answer-icon" aria-hidden="true">
-                    <Bot />
+                    <Sparkles />
                   </span>
                   上号 AI
                 </h3>
-                <p className="mt-2 whitespace-pre-wrap text-sm leading-7 text-[#53657b]">
+                <p className="mt-2 whitespace-pre-wrap text-pretty text-sm leading-7 text-[#53657b]">
                   {answer.text}
                 </p>
                 {answer.sources.length ? (

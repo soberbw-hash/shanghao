@@ -69,8 +69,12 @@ test("optional updates, long AI waits, and toasts all have a clear escape route"
   assert.match(update, /isForced/);
   assert.match(update, /DialogCloseButton label="稍后提醒"/);
   assert.match(update, /shanghao:dismissed-update-version/);
-  assert.match(ask, /正在查找相关语音记忆/);
-  assert.match(ask, /正在整理相关内容/);
+  assert.match(update, /is-optional-update bottom-0 inset-x-0/);
+  assert.match(update, /mt-6 flex min-w-0 flex-wrap gap-3/);
+  assert.match(update, /min-w-\[180px\] flex-\[1_1_180px\]/);
+  assert.match(update, /shrink-0 whitespace-nowrap/);
+  assert.match(ask, /正在查找资料/);
+  assert.match(ask, /正在整理答案/);
   assert.match(ask, /正在生成回答/);
   assert.match(ask, /重新提问/);
   assert.match(toast, /toast.actionLabel && toast.onAction/);

@@ -282,21 +282,26 @@
     inset 0 1px 0 rgba(255, 255, 255, 0.83);
 }
 
-/* The city stays anchored; only the foreground cloud layer crosses the panes. */
+/* The city stays anchored while three cloud planes cross the panes at different speeds. */
 .room-page .dynamic-weather-window .weather-cloud {
   animation-name: weather-cloud-window-passage;
-  animation-duration: 26s;
-  filter: drop-shadow(0 2px 4px rgba(99, 153, 207, 0.16));
+  animation-duration: 24s;
 }
 
 .room-page .dynamic-weather-window .weather-cloud-one {
-  left: -32%;
+  left: -45%;
 }
 
 .room-page .dynamic-weather-window .weather-cloud-two {
-  left: 12%;
-  animation-duration: 32s;
-  animation-delay: -16s;
+  left: -51%;
+  animation-duration: 36s;
+  animation-delay: -21s;
+}
+
+.room-page .dynamic-weather-window .weather-cloud-three {
+  left: -39%;
+  animation-duration: 29s;
+  animation-delay: -11s;
 }
 
 .room-page .weather-scene-clear .weather-cloud {
@@ -306,24 +311,20 @@
     40px -3px 0 -4px rgba(247, 251, 253, 0.32);
 }
 
-.room-page .weather-scene-clear .weather-cloud-two {
-  display: none;
-}
-
 @keyframes weather-cloud-window-passage {
   0% {
     transform: translate3d(0, 2px, 0);
     opacity: 0;
   }
-  12% {
-    opacity: 0.88;
+  16% {
+    opacity: 0.78;
   }
-  76% {
-    opacity: 0.76;
+  78% {
+    opacity: 0.68;
   }
-  94%,
+  96%,
   100% {
-    transform: translate3d(50cqw, -3px, 0);
+    transform: translate3d(145cqw, -4px, 0);
     opacity: 0;
   }
 }

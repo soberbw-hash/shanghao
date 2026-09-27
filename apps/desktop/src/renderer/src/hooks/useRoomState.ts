@@ -1304,7 +1304,10 @@ export const useRoomState = () => {
       DEFAULT_QUICK_MESSAGE_MUSIC_SLOTS,
       DEFAULT_QUICK_MESSAGE_MUSIC_SLOTS.length,
     );
-    const slot = slotIndex < voiceSlots.length ? voiceSlots[slotIndex] : musicSlots[slotIndex - 5];
+    const slot =
+      slotIndex < voiceSlots.length
+        ? voiceSlots[slotIndex]
+        : musicSlots[slotIndex - voiceSlots.length];
     if (!slot?.enabled || !slot.presetId) return;
     void sendConfiguredQuickMessage(slot.presetId).catch(() => {
       pushToast({

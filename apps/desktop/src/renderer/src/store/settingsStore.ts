@@ -188,7 +188,7 @@ const configureQuickMessageShortcuts = (settings: AppSettings): Promise<void> =>
     index,
   }));
 
-  // The native mouse hook is shared by all eight slots. Configure it in one
+  // The native mouse hook is shared by all voice and music slots. Configure it in one
   // ordered queue so overlapping saves cannot remove a Mouse4/Mouse5 binding
   // while another save is still registering it.
   quickMessageShortcutConfiguration = quickMessageShortcutConfiguration

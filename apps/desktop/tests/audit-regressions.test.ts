@@ -11,7 +11,8 @@ import { formatRecordingBytes } from "../src/renderer/src/features/recording/rec
 
 test("all voice and music shortcut slots use the same IPC bounds", () => {
   const total = DEFAULT_QUICK_MESSAGE_SLOTS.length + DEFAULT_QUICK_MESSAGE_MUSIC_SLOTS.length;
-  assert.equal(total, 8);
+  assert.equal(DEFAULT_QUICK_MESSAGE_SLOTS.length, 8);
+  assert.equal(DEFAULT_QUICK_MESSAGE_MUSIC_SLOTS.length, 5);
   assert.equal(QUICK_MESSAGE_SHORTCUT_COUNT, total);
   for (let index = 0; index < total; index++) assert.equal(isQuickMessageShortcutSlot(index), true);
   for (const invalid of [-1, total, 0.5, NaN, Infinity]) {

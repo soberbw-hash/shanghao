@@ -5,6 +5,7 @@ import {
   type LowCutFrequency,
   type MicEqualizerGains,
 } from "@private-voice/shared";
+import { requestMicrophoneStream } from "@private-voice/webrtc";
 
 import {
   createProcessedMicrophoneStream,
@@ -183,15 +184,12 @@ export const useMicTest = ({
     setError(undefined);
     setIsClipping(false);
     try {
-      const inputStream = await navigator.mediaDevices.getUserMedia({
-        audio: {
-          deviceId: inputDeviceId ? { exact: inputDeviceId } : undefined,
-          echoCancellation,
-          noiseSuppression: false,
-          autoGainControl,
-          sampleRate: MICROPHONE_PROCESSING_SAMPLE_RATE,
-          channelCount: 1,
-        },
+      // Match the room capture path, including the native-rate retry for virtual microphones.
+      const { stream: inputStream } = await requestMicrophoneStream({
+        deviceId: inputDeviceId,
+        echoCancellation,
+        noiseSuppression: false,
+        autoGainControl,
       });
       if (session !== recordingSessionRef.current) {
         inputStream.getTracks().forEach((track) => track.stop());

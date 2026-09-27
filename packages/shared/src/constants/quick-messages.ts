@@ -382,6 +382,8 @@ export const DEFAULT_QUICK_MESSAGE_MUSIC_SLOTS: QuickMessageShortcutSlot[] = [
     shortcut: "Ctrl+Shift+3",
     enabled: true,
   },
+  { presetId: undefined, shortcut: "", enabled: false },
+  { presetId: undefined, shortcut: "", enabled: false },
 ];
 
 export const QUICK_MESSAGE_PRESETS: QuickMessagePreset[] = [
@@ -400,10 +402,13 @@ export const DEFAULT_QUICK_MESSAGE_SLOTS: QuickMessageShortcutSlot[] = [
   { presetId: "legacy-mic", shortcut: "Ctrl+Alt+3", enabled: true },
   { presetId: "legacy-wait", shortcut: "Ctrl+Alt+4", enabled: true },
   { presetId: "legacy-hear", shortcut: "Ctrl+Alt+5", enabled: true },
+  { presetId: undefined, shortcut: "", enabled: false },
+  { presetId: undefined, shortcut: "", enabled: false },
+  { presetId: undefined, shortcut: "", enabled: false },
 ];
 
 /**
- * Keep every consumer on the same fixed-size shortcut model. Older profiles
+ * Keep every consumer on the same bounded shortcut model. Older profiles
  * can contain a sparse or truncated array, while newer profiles may carry
  * extra slot metadata that should survive a read/write round trip.
  */

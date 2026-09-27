@@ -82,11 +82,15 @@ test("generated weather retains live effects and visibility/reduced-motion gatin
     assert.ok(weather.includes(`weather-${effect}-layer`));
   assert.ok(weather.includes("reduceMotion || !isPageVisible"));
   assert.ok(weather.includes("window-frame-v2.png"));
-  assert.ok(weather.includes('theme.scene === "clear" && theme.phase !== "night"'));
+  assert.ok(weather.includes('theme.hasClouds || theme.scene === "clear"'));
+  assert.ok(weather.includes("weather-cloud-three"));
+  assert.ok(weather.includes("weather-sky-breath"));
+  assert.ok(weather.includes("weather-near-foliage"));
   assert.ok(weather.includes("weather-night-details"));
   assert.ok(weather.includes("weather-night-city-glimmer"));
   const sceneLife = source("styles/parts/205-scene-life.css");
   assert.match(sceneLife, /\.weather-night-star\s*\{/);
+  assert.match(sceneLife, /\.weather-cloud-layer\s*\{[^}]*container-type: inline-size/s);
   assert.match(sceneLife, /\.scene-ceiling-curtain\s*\{[^}]*animation: scene-curtain-breathe/s);
   assert.match(sceneLife, /\.scene-foreground-leaves\s*\{[^}]*animation: scene-foreground-sway/s);
   assert.match(sceneLife, /\.scene-corner-pet-ear\s*\{[^}]*animation: scene-pet-ear-flick/s);
@@ -102,5 +106,5 @@ test("generated weather retains live effects and visibility/reduced-motion gatin
   );
   assert.doesNotMatch(roomGlass, /\.scene-window-nook\s*\{/);
   assert.match(roomGlass, /weather-cloud-window-passage/);
-  assert.match(roomGlass, /translate3d\(50cqw, -3px, 0\)/);
+  assert.match(roomGlass, /translate3d\(145cqw, -4px, 0\)/);
 });

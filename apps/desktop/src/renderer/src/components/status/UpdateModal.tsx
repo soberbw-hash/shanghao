@@ -70,7 +70,7 @@ export const UpdateModal = () => {
           className={`update-modal-backdrop fixed z-[90] grid p-6 ${
             isForced
               ? "is-forced-update inset-0 place-items-center"
-              : "is-optional-update bottom-0 right-0 pointer-events-none place-items-end"
+              : "is-optional-update bottom-0 inset-x-0 pointer-events-none place-items-end"
           }`}
         >
           <motion.div
@@ -87,7 +87,7 @@ export const UpdateModal = () => {
             role={isForced ? "alertdialog" : "status"}
             aria-modal={isForced ? "true" : undefined}
             aria-labelledby="update-modal-title"
-            className="update-modal-surface modal-surface pointer-events-auto w-full max-w-[430px] rounded-[30px] p-6"
+            className="update-modal-surface modal-surface pointer-events-auto w-full min-w-0 max-w-[430px] rounded-[30px] p-6"
           >
             <div className="flex items-start justify-between gap-4">
               <div className="text-xs font-semibold tracking-[0.18em] text-[#7990ad]">
@@ -128,25 +128,40 @@ export const UpdateModal = () => {
               </div>
             ) : null}
 
-            <div className="mt-6 flex gap-3">
+            <div className="mt-6 flex min-w-0 flex-wrap gap-3">
               {status.phase === "downloaded" || status.phase === "ready_to_restart" ? (
-                <Button isFullWidth onClick={() => void installUpdate()}>
+                <Button
+                  className="min-w-[180px] flex-[1_1_180px]"
+                  onClick={() => void installUpdate()}
+                >
                   <RefreshCcw className="h-4 w-4" />
                   安装并重新打开
                 </Button>
               ) : (
-                <Button isFullWidth disabled={isDownloading} onClick={() => void downloadUpdate()}>
+                <Button
+                  className="min-w-[180px] flex-[1_1_180px]"
+                  disabled={isDownloading}
+                  onClick={() => void downloadUpdate()}
+                >
                   <Download className="h-4 w-4" />
                   {isDownloading ? "正在更新…" : "立即更新"}
                 </Button>
               )}
               {status.phase === "error" ? (
-                <Button variant="secondary" onClick={() => void checkUpdates()}>
+                <Button
+                  className="shrink-0 whitespace-nowrap"
+                  variant="secondary"
+                  onClick={() => void checkUpdates()}
+                >
                   重试
                 </Button>
               ) : null}
               {!isForced && !isDownloading && !isDownloaded ? (
-                <Button variant="secondary" onClick={dismissOptionalUpdate}>
+                <Button
+                  className="shrink-0 whitespace-nowrap"
+                  variant="secondary"
+                  onClick={dismissOptionalUpdate}
+                >
                   稍后提醒
                 </Button>
               ) : null}

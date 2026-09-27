@@ -96,6 +96,8 @@ const ModelActions = ({
 }) => {
   const runAction = (event: MouseEvent<HTMLButtonElement>, action: AiModelAction) => {
     event.stopPropagation();
+    const menu = event.currentTarget.closest("details");
+    if (menu) menu.open = false;
     onAction(action);
   };
   if (model.phase === "not_installed") {
@@ -113,7 +115,24 @@ const ModelActions = ({
   if (model.phase === "installed") {
     return (
       <div className="flex flex-wrap items-center justify-end gap-2">
-        <details className="ai-model-action-menu" onClick={(event) => event.stopPropagation()}>
+        <details
+          className="ai-model-action-menu"
+          onClick={(event) => event.stopPropagation()}
+          onMouseLeave={(event) => {
+            event.currentTarget.open = false;
+          }}
+          onBlur={(event) => {
+            if (!event.currentTarget.contains(event.relatedTarget)) {
+              event.currentTarget.open = false;
+            }
+          }}
+          onKeyDown={(event) => {
+            if (event.key === "Escape") {
+              event.currentTarget.open = false;
+              event.currentTarget.querySelector("summary")?.focus();
+            }
+          }}
+        >
           <summary aria-label={`管理 ${model.name}`}>
             <MoreHorizontal className="size-4" aria-hidden="true" />
           </summary>

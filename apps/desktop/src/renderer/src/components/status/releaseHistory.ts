@@ -74,6 +74,34 @@ const HISTORICAL_RELEASE_EVIDENCE: readonly HistoricalReleaseEvidence[] = [
 
 export const RELEASE_HISTORY: readonly ReleaseHistoryEntry[] = [
   {
+    version: "3.2.2",
+    date: "2026-09-27",
+    title: "语音保护、快捷消息和房间天气",
+    summary: "扩充语音与音乐槽位，调整声音处理和夜间窗景，重新整理仓库主页说明。",
+    highlights: [
+      "我的快捷消息提供八个语音／音效槽位和五个音乐槽位。",
+      "近端说话与双讲保护更平滑，远端响度学习减少句间波动。",
+      "窗外云层、夜间光雾和植物摆动更丰富，隐藏页面时暂停视觉运动。",
+      "更新提示在窄窗口中完整显示操作按钮。",
+    ],
+    details: [
+      {
+        title: "声音与日常操作",
+        items: [
+          "语音、音乐槽位按内容宽度展示，并保留独立音量与快捷键。",
+          "问 AI 弹窗和模型操作菜单减少遮挡与重复说明。",
+        ],
+      },
+      {
+        title: "验收边界",
+        items: [
+          "更新后台下载，安装并重新打开仍需用户主动点击。",
+          "旧版客户端升级和好友端手机麦克风听感仍需真实设备验证。",
+        ],
+      },
+    ],
+  },
+  {
     version: "3.2.1",
     date: "2026-09-27",
     title: "设置、聊天预览和房间画面调整",

@@ -179,7 +179,7 @@ test("interface sounds remain enabled at the product default volume", () => {
   );
 });
 
-test("quick message settings migrate to five voice and three music slots", () => {
+test("quick message settings keep old bindings while adding voice and music slots", () => {
   const migrated = migrateSettings({
     ...defaultSettings,
     quickMessages: {
@@ -198,13 +198,14 @@ test("quick message settings migrate to five voice and three music slots", () =>
     migrated.settings.quickMessages.musicPresetId,
     defaultSettings.quickMessages.musicPresetId,
   );
-  assert.equal(migrated.settings.quickMessages.musicSlots.length, 3);
+  assert.equal(migrated.settings.quickMessages.musicSlots.length, 5);
   assert.deepEqual(migrated.settings.quickMessages.musicSlots[0], {
     presetId: defaultSettings.quickMessages.musicSlots[0]?.presetId,
     shortcut: defaultSettings.quickMessages.musicSlots[0]?.shortcut,
     enabled: defaultSettings.quickMessages.musicSlots[0]?.enabled,
   });
-  assert.equal(migrated.settings.quickMessages.slots.length, 5);
+  assert.equal(migrated.settings.quickMessages.musicSlots[3]?.presetId, undefined);
+  assert.equal(migrated.settings.quickMessages.slots.length, 8);
   assert.deepEqual(migrated.settings.quickMessages.slots[0], {
     presetId: "legacy-shanghao",
     shortcut: "Ctrl+Alt+9",
@@ -212,6 +213,7 @@ test("quick message settings migrate to five voice and three music slots", () =>
   });
   assert.equal(migrated.settings.quickMessages.slots[1]?.presetId, "missing");
   assert.equal(migrated.settings.quickMessages.slots[4]?.presetId, "legacy-hear");
+  assert.equal(migrated.settings.quickMessages.slots[5]?.presetId, undefined);
 
   const restoredMusic = migrateSettings({
     ...defaultSettings,

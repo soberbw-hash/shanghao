@@ -9,7 +9,6 @@ import {
   type ReactNode,
 } from "react";
 import {
-  Bot,
   ExternalLink,
   Link2,
   LoaderCircle,
@@ -18,6 +17,7 @@ import {
   RotateCcw,
   Settings2,
   Send,
+  Sparkles,
 } from "lucide-react";
 import { gsap } from "gsap";
 
@@ -681,7 +681,7 @@ export const TemporaryChatPanel = ({
                 title="打开上号 AI"
                 onClick={onOpenRoomAi}
               >
-                <Bot className="h-4 w-4" strokeWidth={2.15} aria-hidden="true" />
+                <Sparkles className="h-4 w-4" strokeWidth={1.9} aria-hidden="true" />
               </button>
             </div>
           ) : null}

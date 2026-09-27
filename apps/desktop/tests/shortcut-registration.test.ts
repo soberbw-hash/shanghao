@@ -5,6 +5,7 @@ import { runInNewContext } from "node:vm";
 import ts from "typescript";
 import { PhoneShortcut } from "../src/main/phone-shortcut";
 import { UiohookKey } from "uiohook-napi";
+import { QUICK_MESSAGE_SHORTCUT_COUNT } from "@private-voice/shared";
 
 // Exercise the actual controller with isolated native boundaries. Never register
 // global keys on the developer's computer from a unit test.
@@ -121,10 +122,10 @@ test("phone mouse bindings use native button events and reject bidirectional con
   controller.dispose();
 });
 
-test("all eight quick-message slots remain usable after registration conflicts", async () => {
+test("all quick-message slots remain usable after registration conflicts", async () => {
   const { controller, bindings, sent } = harness();
-  for (let slot = 0; slot < 8; slot++) {
-    const original = `Ctrl+Shift+${slot}`;
+  for (let slot = 0; slot < QUICK_MESSAGE_SHORTCUT_COUNT; slot++) {
+    const original = `Ctrl+Shift+${String.fromCharCode(65 + slot)}`;
     assert.equal(await controller.configureQuickMessage(slot, original), true);
     assert.equal(await controller.configureQuickMessage(slot, "occupied"), false);
     assert.equal(await controller.configureQuickMessage(slot, "invalid"), false);
@@ -132,10 +133,11 @@ test("all eight quick-message slots remain usable after registration conflicts",
     bindings.get(original)!();
     assert.equal(sent.at(-1)?.[2], slot);
   }
-  assert.equal(bindings.size, 8);
-  assert.equal(await controller.configureQuickMessage(7, "Alt+8"), true);
-  assert.equal(bindings.has("Ctrl+Shift+7"), false);
-  await controller.configureQuickMessage(7, "");
+  assert.equal(bindings.size, QUICK_MESSAGE_SHORTCUT_COUNT);
+  const lastSlot = QUICK_MESSAGE_SHORTCUT_COUNT - 1;
+  assert.equal(await controller.configureQuickMessage(lastSlot, "Alt+8"), true);
+  assert.equal(bindings.has(`Ctrl+Shift+${String.fromCharCode(65 + lastSlot)}`), false);
+  await controller.configureQuickMessage(lastSlot, "");
   assert.equal(bindings.has("Alt+8"), false);
   controller.dispose();
   assert.equal(bindings.size, 0);

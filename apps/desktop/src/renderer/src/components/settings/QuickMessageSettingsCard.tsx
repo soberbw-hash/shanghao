@@ -22,7 +22,6 @@ import {
   toggleQuickMessageMusic,
 } from "../../features/audio/quickMessageAudio";
 
-const SLOT_COUNT = 5;
 const LIBRARY_MEDIA_FILTERS = ["全部", "语音", "音乐", "默认", "未分类"] as const;
 type LibraryMediaFilter = (typeof LIBRARY_MEDIA_FILTERS)[number];
 
@@ -74,7 +73,7 @@ export const QuickMessageSettingsCard = ({
   const slots: QuickMessageShortcutSlot[] = normalizeQuickMessageSlots(
     settings.quickMessages.slots,
     DEFAULT_QUICK_MESSAGE_SLOTS,
-    SLOT_COUNT,
+    DEFAULT_QUICK_MESSAGE_SLOTS.length,
   );
   const musicSlots: QuickMessageShortcutSlot[] = normalizeQuickMessageSlots(
     settings.quickMessages.musicSlots?.length
@@ -194,7 +193,7 @@ export const QuickMessageSettingsCard = ({
   };
 
   const replaceSlotPreset = (index: number, presetId: string) => {
-    updateSlot(index, { presetId, enabled: true });
+    updateSlot(index, { presetId, enabled: Boolean(slots[index]?.shortcut) });
   };
 
   const handleSlotDrop = (event: DragEvent<HTMLButtonElement>, index: number) => {
@@ -215,7 +214,10 @@ export const QuickMessageSettingsCard = ({
     const presetId = event.dataTransfer.getData("text/plain");
     const preset = QUICK_MESSAGE_PRESETS.find((candidate) => candidate.id === presetId);
     if (preset?.mediaType === "music") {
-      updateMusicSlot(index, { presetId: preset.id, enabled: true });
+      updateMusicSlot(index, {
+        presetId: preset.id,
+        enabled: Boolean(musicSlots[index]?.shortcut),
+      });
     }
     setDragOverSlot(undefined);
   };
@@ -248,6 +250,49 @@ export const QuickMessageSettingsCard = ({
     playPreset(preset);
   };
 
+  const libraryControls = (
+    <div className="quick-message-library-controls">
+      <label className="quick-message-library-sound-toggle">
+        <span>播放音频</span>
+        <Switch
+          ariaLabel="播放快捷消息音频"
+          isChecked={settings.quickMessages.soundEnabled}
+          onChange={(soundEnabled) =>
+            onChange({ quickMessages: { ...settings.quickMessages, soundEnabled } })
+          }
+        />
+      </label>
+      <label className="quick-message-library-volume">
+        <Volume2 aria-hidden="true" />
+        <span>音量</span>
+        <input
+          className="ui-sound-volume"
+          type="range"
+          min={0}
+          max={1}
+          step={0.01}
+          value={settings.quickMessages.soundVolume}
+          aria-label="快捷消息音量"
+          disabled={!settings.quickMessages.soundEnabled}
+          style={
+            {
+              "--ui-sound-volume": `${settings.quickMessages.soundVolume * 100}%`,
+            } as CSSProperties
+          }
+          onChange={(event) =>
+            onChange({
+              quickMessages: {
+                ...settings.quickMessages,
+                soundVolume: Number(event.target.value),
+              },
+            })
+          }
+        />
+        <output>{Math.round(settings.quickMessages.soundVolume * 100)}%</output>
+      </label>
+    </div>
+  );
+
   return (
     <div className="space-y-3">
       <nav className="quick-message-settings-tabs" aria-label="快捷消息设置">
@@ -268,47 +313,7 @@ export const QuickMessageSettingsCard = ({
         ))}
       </nav>
       {activeTab === "library" ? (
-        <SettingsSection title="我的快捷消息">
-          <div className="quick-message-library-controls">
-            <label className="quick-message-library-sound-toggle">
-              <span>播放音频</span>
-              <Switch
-                ariaLabel="播放快捷消息音频"
-                isChecked={settings.quickMessages.soundEnabled}
-                onChange={(soundEnabled) =>
-                  onChange({ quickMessages: { ...settings.quickMessages, soundEnabled } })
-                }
-              />
-            </label>
-            <label className="quick-message-library-volume">
-              <Volume2 aria-hidden="true" />
-              <span>音量</span>
-              <input
-                className="ui-sound-volume"
-                type="range"
-                min={0}
-                max={1}
-                step={0.01}
-                value={settings.quickMessages.soundVolume}
-                aria-label="快捷消息音量"
-                disabled={!settings.quickMessages.soundEnabled}
-                style={
-                  {
-                    "--ui-sound-volume": `${settings.quickMessages.soundVolume * 100}%`,
-                  } as CSSProperties
-                }
-                onChange={(event) =>
-                  onChange({
-                    quickMessages: {
-                      ...settings.quickMessages,
-                      soundVolume: Number(event.target.value),
-                    },
-                  })
-                }
-              />
-              <output>{Math.round(settings.quickMessages.soundVolume * 100)}%</output>
-            </label>
-          </div>
+        <SettingsSection title="我的快捷消息" headerAction={libraryControls}>
           <div className="quick-message-slot-groups">
             <div className="quick-message-slot-group">
               <div className="quick-message-slot-group-heading">
@@ -564,7 +569,12 @@ export const QuickMessageSettingsCard = ({
                     <ShortcutInput
                       compact
                       value={slot.shortcut}
-                      onChange={(shortcut) => updateSlot(index, { shortcut })}
+                      onChange={(shortcut) =>
+                        updateSlot(index, {
+                          shortcut,
+                          enabled: shortcut ? (slot.shortcut ? slot.enabled : true) : false,
+                        })
+                      }
                       defaultValue={DEFAULT_QUICK_MESSAGE_SLOTS[index]?.shortcut ?? ""}
                     />
                   </div>
@@ -619,7 +629,12 @@ export const QuickMessageSettingsCard = ({
                       <ShortcutInput
                         compact
                         value={slot.shortcut}
-                        onChange={(shortcut) => updateMusicSlot(index, { shortcut })}
+                        onChange={(shortcut) =>
+                          updateMusicSlot(index, {
+                            shortcut,
+                            enabled: shortcut ? (slot.shortcut ? slot.enabled : true) : false,
+                          })
+                        }
                         defaultValue={DEFAULT_QUICK_MESSAGE_MUSIC_SLOTS[index]?.shortcut ?? ""}
                       />
                     </div>

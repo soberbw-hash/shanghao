@@ -206,8 +206,7 @@ class ShangHaoMicrophoneProtection extends AudioWorkletProcessor {
     this.processedMix = 0;
     this.rawTarget = 1;
     this.processedTarget = 0;
-    this.rawTimeConstant = 0.22;
-    this.processedTimeConstant = 0.22;
+    this.mixSmoothing = 1 - Math.exp(-1 / (sampleRate * 0.22));
     this.remoteLevel = 0;
     this.previousRms = 0;
     this.noiseFloor = 0.004;
@@ -233,15 +232,15 @@ class ShangHaoMicrophoneProtection extends AudioWorkletProcessor {
       } else if (message.type === "mix") {
         this.rawTarget = Math.max(0, Math.min(1, message.raw));
         this.processedTarget = Math.max(0, Math.min(1, message.processed));
-        this.rawTimeConstant = Math.max(0.008, message.timeConstant || 0.22);
-        this.processedTimeConstant = this.rawTimeConstant;
+        const timeConstant = Math.max(0.008, message.timeConstant || 0.22);
+        // process() advances this envelope for every sample, not once per 128-frame block.
+        this.mixSmoothing = 1 - Math.exp(-1 / (sampleRate * timeConstant));
       }
     };
   }
 
-  smooth(current, target, timeConstant) {
-    const coefficient = 1 - Math.exp(-128 / (sampleRate * Math.max(0.008, timeConstant)));
-    return current + (target - current) * coefficient;
+  smooth(current, target) {
+    return current + (target - current) * this.mixSmoothing;
   }
 
   classify(micRms, speechProbability, remoteLevel, echoCorrelation, now) {
@@ -280,8 +279,8 @@ class ShangHaoMicrophoneProtection extends AudioWorkletProcessor {
     let squareTotal = 0;
     let zeroCrossings = 0;
     for (let index = 0; index < output.length; index += 1) {
-      this.rawMix = this.smooth(this.rawMix, this.rawTarget, this.rawTimeConstant);
-      this.processedMix = this.smooth(this.processedMix, this.processedTarget, this.processedTimeConstant);
+      this.rawMix = this.smooth(this.rawMix, this.rawTarget);
+      this.processedMix = this.smooth(this.processedMix, this.processedTarget);
       const rawSample = raw?.[index] ?? 0;
       const processedSample = processed?.[index] ?? 0;
       const sample = rawSample * this.rawMix + processedSample * this.processedMix;

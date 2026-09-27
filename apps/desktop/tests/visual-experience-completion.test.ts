@@ -13,7 +13,9 @@ test("weather uses supplied window art without duplicate city and plant layers",
 
   assert.match(weather, /className="weather-window-art"/);
   assert.doesNotMatch(weather, /className="weather-(city-lights|skyline|plant-shadow|sunbeam)/);
-  assert.ok(weather.includes('theme.scene === "clear" && theme.phase !== "night"'));
+  assert.ok(weather.includes('theme.hasClouds || theme.scene === "clear"'));
+  assert.ok(weather.includes("weather-cloud-three"));
+  assert.ok(weather.includes("weather-near-foliage"));
   for (const effect of ["Rain", "Snow", "Fog", "Lightning"]) {
     assert.ok(weather.includes(`isEnabled && theme.has${effect}`));
   }
