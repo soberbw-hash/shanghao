@@ -5,6 +5,8 @@ export const PHONE_MIC_DEVICE_ID = "shanghao:phone-microphone";
 export type PhoneMicMode = "wifi" | "web" | "usb";
 
 export interface PhoneMicMetrics {
+  connectionType?: "lan" | "p2p" | "turn";
+  selectedCandidatePairId?: string;
   latencyMs?: number;
   jitterMs?: number;
   packetLossPercent?: number;
@@ -13,6 +15,44 @@ export interface PhoneMicMetrics {
   bitrateKbps?: number;
   quality: "优秀" | "良好" | "一般" | "较差" | "等待连接";
 }
+
+export const selectedPhoneMicConnection = (
+  reports: RTCStatsReport,
+): Pick<PhoneMicMetrics, "connectionType" | "selectedCandidatePairId" | "latencyMs"> => {
+  const values = [...reports.values()];
+  const transport = values.find(
+    (stat) => stat.type === "transport" && stat.selectedCandidatePairId,
+  );
+  const pair = transport?.selectedCandidatePairId
+    ? reports.get(transport.selectedCandidatePairId)
+    : values.find(
+        (stat) => stat.type === "candidate-pair" && stat.state === "succeeded" && stat.nominated,
+      );
+  if (!pair) return {};
+  const local = reports.get(pair.localCandidateId);
+  const remote = reports.get(pair.remoteCandidateId);
+  const isPrivate = (address: unknown): boolean =>
+    typeof address === "string" &&
+    (/^10\./.test(address) ||
+      /^192\.168\./.test(address) ||
+      /^172\.(1[6-9]|2\d|3[01])\./.test(address) ||
+      /^f[cd][0-9a-f]{2}:/i.test(address));
+  const connectionType =
+    local?.candidateType === "relay" || remote?.candidateType === "relay"
+      ? "turn"
+      : local?.candidateType === "host" &&
+          remote?.candidateType === "host" &&
+          isPrivate(local.address ?? local.ip) &&
+          isPrivate(remote.address ?? remote.ip)
+        ? "lan"
+        : "p2p";
+  const rtt = Number(pair.currentRoundTripTime);
+  return {
+    connectionType,
+    selectedCandidatePairId: pair.id,
+    latencyMs: Number.isFinite(rtt) && rtt >= 0 ? rtt * 1_000 : undefined,
+  };
+};
 
 export interface PhoneMicState {
   status: "idle" | "pairing" | "connected" | "streaming" | "disconnected" | "error";
@@ -25,11 +65,23 @@ export interface PhoneMicState {
 
 type PhoneMicListener = (state: PhoneMicState, stream?: MediaStream) => void;
 
-const readablePhoneMicError = (error: unknown): string =>
-  (error instanceof Error ? error.message : String(error)).replace(
+export const readablePhoneMicError = (error: unknown): string => {
+  const message = (error instanceof Error ? error.message : String(error)).replace(
     /^Error invoking remote method '[^']+': (?:Error|TypeError): /,
     "",
   );
+  if (
+    /未检测到已授权的 Android USB 设备|no authorized.*android.*usb|device.*unauthorized/i.test(
+      message,
+    )
+  ) {
+    return "未检测到已授权的 Android 手机。请连接 USB、开启 USB 调试，并在手机上允许这台电脑。";
+  }
+  if (/adb|usb/i.test(message) && /not found|未找到|未安装/i.test(message)) {
+    return "USB 连接组件尚未准备好，请检查安装后重试。";
+  }
+  return message;
+};
 
 const qualityFromMetrics = (
   latencyMs?: number,
@@ -139,6 +191,7 @@ export class PhoneMicSource {
       mode,
       pairingUrl: undefined,
       error: undefined,
+      metrics: { quality: "等待连接" },
     });
     if (mode === "usb") {
       await this.startUsb(usbSerial);
@@ -267,7 +320,7 @@ export class PhoneMicSource {
       this.publish({
         status: "error",
         phase: undefined,
-        error: error instanceof Error ? error.message : "USB 连接失败",
+        error: readablePhoneMicError(error),
       });
       throw error;
     }
@@ -381,6 +434,7 @@ export class PhoneMicSource {
   private async sampleMetrics(peer: RTCPeerConnection): Promise<void> {
     if (peer !== this.peer) return;
     const reports = await peer.getStats();
+    const connection = selectedPhoneMicConnection(reports);
     for (const stat of reports.values()) {
       if (stat.type !== "inbound-rtp" || stat.kind !== "audio") continue;
       const now = performance.now();
@@ -399,14 +453,16 @@ export class PhoneMicSource {
       const jitterMs = Number(stat.jitter ?? 0) * 1_000;
       const packetLossPercent =
         recentReceived + recentLost > 0 ? (recentLost / (recentReceived + recentLost)) * 100 : 0;
-      let latencyMs: number | undefined;
-      if (stat.remoteId) {
+      let latencyMs = connection.latencyMs;
+      if (latencyMs === undefined && stat.remoteId) {
         const remote = reports.get(stat.remoteId);
         if (remote?.roundTripTime !== undefined) latencyMs = remote.roundTripTime * 1_000;
       }
       this.publish({
         metrics: {
           latencyMs,
+          connectionType: connection.connectionType,
+          selectedCandidatePairId: connection.selectedCandidatePairId,
           jitterMs,
           packetLossPercent,
           packetsReceived: received,

@@ -7,6 +7,7 @@ import {
   DEFAULT_QUICK_MESSAGE_MUSIC_SLOTS,
   DEFAULT_QUICK_MESSAGE_SLOTS,
   DEFAULT_QUICK_MESSAGE_VOLUME,
+  DEFAULT_AI_ASR_MODEL_ID,
   normalizeQuickMessageSlots,
   PROFILE_SCHEMA_VERSION,
   SETTINGS_SCHEMA_VERSION,
@@ -54,7 +55,7 @@ export const defaultSettings: AppSettings = {
   recordingSaveDirectory: undefined,
   recordingLibraryQuotaGb: 20,
   isRecordingWasteAutoCleanupEnabled: false,
-  aiAsrModel: "qwen3-asr-0.6b-force",
+  aiAsrModel: DEFAULT_AI_ASR_MODEL_ID,
   aiOrganizerProvider: "cloud",
   aiRoomAskProvider: "cloud",
   aiProcessingMode: "manual",
@@ -274,6 +275,8 @@ export const migrateSettings = (raw: RawSettings): MigrationResult => {
       raw.isRecordingWasteAutoCleanupEnabled,
       false,
     ),
+    // Saved and legacy configurations keep their choice or original fallback;
+    // the new-profile recommendation only applies through defaultSettings.
     aiAsrModel:
       raw.aiAsrModel === "qwen3-asr-1.7b-force" ||
       raw.aiAsrModel === "qwen3-asr-0.6b-force" ||

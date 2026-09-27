@@ -403,6 +403,30 @@ export const captureUi = async (
         })}`,
       );
     }
+    if (options.mode === "settings" && process.env.SHANGHAO_CAPTURE_SETTINGS_TABS === "1") {
+      const tabs = [
+        ["账号", "account"],
+        ["通用", "general"],
+        ["语音", "audio"],
+        ["快捷消息", "quick-messages"],
+        ["录音库", "recordings"],
+        ["AI 功能", "ai"],
+        ["房间记录", "room-history"],
+        ["关于上号", "about"],
+        ["诊断", "diagnostics"],
+      ] as const;
+      for (const [label, slug] of tabs) {
+        if (!(await clickButtonByLabel(window, label))) throw new Error(`设置页缺少 ${label} Tab`);
+        await sleep(600);
+        const active = await window.webContents.executeJavaScript(
+          `document.querySelector('.settings-nav button[aria-current="page"]')?.textContent?.trim()`,
+          true,
+        );
+        if (active !== label) throw new Error(`${label} Tab 未正确激活：${String(active)}`);
+        const image = await window.capturePage();
+        await writeFile(`${dirname(options.outputPath)}/settings-${slug}.png`, image.toPNG());
+      }
+    }
     if (options.mode === "settings-recording") {
       await clickButtonByLabel(window, "录音库");
       if (!(await waitForVisibleSelector(window, ".recording-library-utility-bar"))) {
@@ -488,7 +512,35 @@ export const captureUi = async (
     await sleep(800);
   }
 
-  if (process.env.SHANGHAO_PERF_SEQUENCE === "settings") {
+  const weatherPreview = process.env.SHANGHAO_CAPTURE_WEATHER_PREVIEW?.trim();
+  if (weatherPreview && options.mode === "room") {
+    if (!(await clickButtonByLabel(window, "设置"))) throw new Error("无法打开天气预览设置");
+    if (!(await waitForVisibleSelector(window, ".settings-page-header"))) {
+      throw new Error("天气预览设置页未完成渲染");
+    }
+    if (!(await clickButtonByLabel(window, "通用"))) throw new Error("无法打开通用设置");
+    if (!(await waitForVisibleSelector(window, 'select[aria-label="本地天气预览"]'))) {
+      throw new Error("无法找到本地天气预览");
+    }
+    const selected = await window.webContents.executeJavaScript(
+      `
+        (() => {
+          const select = document.querySelector('select[aria-label="本地天气预览"]');
+          if (!(select instanceof HTMLSelectElement)) return false;
+          select.value = ${JSON.stringify(weatherPreview)};
+          select.dispatchEvent(new Event("change", { bubbles: true }));
+          return true;
+        })()
+      `,
+      true,
+    );
+    if (!selected || !(await clickButtonByLabel(window, "返回"))) {
+      throw new Error("天气预览未能返回房间");
+    }
+    await sleep(600);
+  }
+
+  if (process.env.SHANGHAO_PERF_SEQUENCE === "settings" && options.mode === "settings") {
     if (!(await waitForVisibleSelector(window, ".settings-page-header", 2_500))) {
       throw new Error("性能序列无法找到设置页");
     }

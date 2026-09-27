@@ -68,7 +68,8 @@ test("runtime health uses real Electron and animation-frame measurements", () =>
   assert.doesNotMatch(rendererMonitor, /actualFps:\s*120/);
   assert.doesNotMatch(appSource, /rendererPerformanceMonitor\.start\(\)/);
   assert.match(settingsSource, /rendererPerformanceMonitor\.start\(\)/);
-  assert.match(diagnosticsSection, /stopPerformanceMonitor\(\)/);
+  assert.match(appSource, /runtimeHealthCollector\.start\(\)/);
+  assert.match(diagnosticsSection, /runtimeHealthCollector\.observeDetailed\(\)/);
   assert.doesNotMatch(settingsSource, /useRoomStore|getRoomRuntimeDiagnostics/);
 });
 

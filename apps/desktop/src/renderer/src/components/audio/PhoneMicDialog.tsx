@@ -4,6 +4,7 @@ import QRCode from "qrcode";
 
 import {
   phoneMicSource,
+  readablePhoneMicError,
   type PhoneMicMode,
   type PhoneMicState,
 } from "../../features/audio/phoneMicSource";
@@ -106,8 +107,7 @@ export const PhoneMicDialog = ({
       setState({
         ...phoneMicSource.getState(),
         status: "error",
-        error:
-          phoneMicSource.getState().error ?? (error instanceof Error ? error.message : "连接失败"),
+        error: phoneMicSource.getState().error ?? readablePhoneMicError(error),
       });
     });
   };
@@ -135,21 +135,21 @@ export const PhoneMicDialog = ({
           </button>
         </header>
         <nav className="phone-mic-tabs" aria-label="连接方式">
-          {(["wifi", "usb", "web"] as const).map((mode) => (
+          {(["web", "usb"] as const).map((mode) => (
             <button
               key={mode}
               type="button"
-              className={state.mode === mode ? "is-active" : ""}
+              className={(state.mode === "wifi" ? "web" : state.mode) === mode ? "is-active" : ""}
               onClick={() => connect(mode)}
             >
-              {mode === "wifi" ? "Wi-Fi" : mode === "usb" ? "USB" : "Web"}
+              {mode === "usb" ? "USB" : "扫码连接"}
             </button>
           ))}
         </nav>
         {state.mode === "usb" ? (
           <div className="phone-mic-usb-options">
             <p className="phone-mic-hint">
-              Android 请开启 USB 调试并连接电脑。iPhone 请使用 Wi-Fi 或 Web。
+              Android 请开启 USB 调试并连接电脑。iPhone 请使用扫码连接。
             </p>
             {usbDevices.length > 1 ? (
               <select
@@ -172,9 +172,7 @@ export const PhoneMicDialog = ({
           </div>
         ) : (
           <p className="phone-mic-hint">
-            {state.mode === "wifi"
-              ? "手机连接 Wi-Fi 后扫码；同一局域网可减少音频绕行。"
-              : "手机浏览器扫码，无需安装应用。"}
+            手机打开浏览器扫码即可，无需安装应用。连接路径由 WebRTC 自动选择。
           </p>
         )}
         <div className="phone-mic-pairing">
@@ -216,6 +214,18 @@ export const PhoneMicDialog = ({
           </p>
         ) : null}
         <div className="phone-mic-signal">
+          <span>连接方式</span>
+          <strong>
+            {state.mode === "usb"
+              ? "USB"
+              : metrics.connectionType === "lan"
+                ? "局域网直连"
+                : metrics.connectionType === "p2p"
+                  ? "P2P 直连"
+                  : metrics.connectionType === "turn"
+                    ? "TURN 中继"
+                    : "检测中"}
+          </strong>
           <span>信号质量</span>
           <strong>{metrics.quality}</strong>
           <span>延迟</span>
@@ -242,9 +252,13 @@ export const PhoneMicDialog = ({
         {advanced ? (
           <dl className="phone-mic-debug">
             <dt>模式</dt>
-            <dd>{state.mode}</dd>
+            <dd>{state.mode === "usb" ? "USB" : "扫码连接"}</dd>
             <dt>编解码</dt>
             <dd>{state.mode === "usb" ? "PCM / USB" : "WebRTC / Opus"}</dd>
+            <dt>ICE 路径</dt>
+            <dd>{metrics.connectionType?.toUpperCase() ?? "—"}</dd>
+            <dt>Selected candidate pair</dt>
+            <dd>{metrics.selectedCandidatePairId ?? "—"}</dd>
             <dt>抖动</dt>
             <dd>{metrics.jitterMs?.toFixed(1) ?? "—"} ms</dd>
             <dt>丢包</dt>

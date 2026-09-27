@@ -402,6 +402,27 @@ test("remembered login uses Electron secure storage and only explicit logout cle
   assert.doesNotMatch(clearSessionBody, /clearRememberedLogin\(\)/);
 });
 
+test("login keeps sound settings in the card header and explains temporary guest access", async () => {
+  const accountPage = await readFile(
+    new URL("../src/renderer/src/pages/AccountPage.tsx", import.meta.url),
+    "utf8",
+  );
+  const accountStyles = await readFile(
+    new URL("../src/renderer/src/styles/parts/150-account.css", import.meta.url),
+    "utf8",
+  );
+
+  assert.match(
+    accountPage,
+    /<header className="account-topbar">[\s\S]*?<AccountAudioControl \/>[\s\S]*?<\/header>/,
+  );
+  assert.match(accountPage, /临时身份，不创建账号/);
+  assert.doesNotMatch(accountPage, /登录后，你的身份会在不同电脑上保持一致/);
+  assert.doesNotMatch(accountPage, /使用系统加密存储；登录失效时会自动填回/);
+  assert.doesNotMatch(accountPage, /仅限本地开发测试/);
+  assert.match(accountStyles, /\.account-topbar\s*\{[\s\S]*?justify-content:\s*space-between/);
+});
+
 test("signed-in joins rely on verified access-token identity for legacy relay compatibility", async () => {
   const roomState = await readFile(
     new URL("../src/renderer/src/hooks/useRoomState.ts", import.meta.url),

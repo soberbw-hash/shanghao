@@ -597,7 +597,57 @@ const detectActivities = async (): Promise<DetectedActivities> => {
     .catch(() => undefined);
   let processes: ProcessSnapshot[] =
     native?.available && Array.isArray(native.processes) ? native.processes : [];
-  if (processes.length === 0) {
+  let nativeDetailsMissing = false;
+  if (processes.length > 0) {
+    const relevantNames = new Set(
+      [
+        ...GAME_RULES.flatMap((rule) => rule.processNames),
+        ...MUSIC_RULES.flatMap((rule) => rule.processNames),
+        ...KK_HOSTED_PROCESS_NAMES,
+      ].map(normalizeProcessName),
+    );
+    const candidates = processes
+      .filter((processInfo) => {
+        const name = normalizeProcessName(processInfo.ProcessName);
+        return (
+          relevantNames.has(name) ||
+          (name === "applicationframehost" &&
+            /apple music|itunes/i.test(processInfo.MainWindowTitle ?? ""))
+        );
+      })
+      .slice(0, 64);
+    if (candidates.length > 0) {
+      const details = await rustCoreClient
+        .activityProcessDetails(
+          candidates
+            .map((processInfo) => processInfo.ProcessId)
+            .filter((pid): pid is number => typeof pid === "number" && pid > 0),
+          { timeoutMs: 1_500 },
+        )
+        .catch(() => undefined);
+      if (details) {
+        const byPid = new Map(details.processes.map((item) => [item.ProcessId, item]));
+        processes = processes.map((processInfo) => ({
+          ...processInfo,
+          Path: byPid.get(processInfo.ProcessId ?? -1)?.Path,
+        }));
+        const evidenceNames = new Set(
+          GAME_RULES.flatMap((rule) => rule.evidenceRequiredProcessNames ?? []).map(
+            normalizeProcessName,
+          ),
+        );
+        nativeDetailsMissing = candidates.some(
+          (processInfo) =>
+            evidenceNames.has(normalizeProcessName(processInfo.ProcessName)) &&
+            !byPid.get(processInfo.ProcessId ?? -1)?.Path &&
+            !processInfo.MainWindowTitle,
+        );
+      } else {
+        nativeDetailsMissing = true;
+      }
+    }
+  }
+  if (processes.length === 0 || nativeDetailsMissing) {
     // Emergency compatibility path for machines where the native helper is missing.
     const nativeActivity = await rustCoreClient
       .activitySnapshot({ timeoutMs: 1_500 })

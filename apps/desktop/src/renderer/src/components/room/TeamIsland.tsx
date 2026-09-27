@@ -38,7 +38,7 @@ import {
 } from "../../features/voice-scene/sceneZones";
 import { memberStatus } from "../../features/voice-scene/activityRules";
 import { usePrefersReducedMotion } from "../../hooks/usePrefersReducedMotion";
-import { useVisibleInterval } from "../../hooks/useVisualVisibility";
+import { useVisibleInterval, useVisualVisibility } from "../../hooks/useVisualVisibility";
 import type { ConnectionQualityLevel } from "../../features/network/networkDiagnostics";
 import { useSettingsStore } from "../../store/settingsStore";
 import { useAppStore } from "../../store/appStore";
@@ -136,6 +136,7 @@ export const TeamIsland = ({
   const visibleMembers = useMemo(() => selectVisibleSceneMembers(members), [members]);
   const visibleAvatars = useMemo(() => assignVisibleAvatars(visibleMembers), [visibleMembers]);
   const shouldReduceMotion = usePrefersReducedMotion(reduceMotion);
+  const isPageVisible = useVisualVisibility();
   const [ambient, setAmbient] = useState<"day" | "evening" | "night">("day");
   const [hoveredZone, setHoveredZone] = useState<SceneZoneId>();
   const [welcomingMemberIds, setWelcomingMemberIds] = useState<Set<string>>(new Set());
@@ -229,7 +230,8 @@ export const TeamIsland = ({
     // Pause decorative animation during room entry as well as later seat changes.
     return targetZone !== undefined && settledZone !== targetZone;
   });
-  const shouldPauseVisualMotion = pauseVisualMotion || isRoomPageObscured;
+  const shouldPauseVisualMotion =
+    pauseVisualMotion || isRoomPageObscured || !isPageVisible || shouldReduceMotion;
   const shouldPauseAmbientMotion = shouldPauseVisualMotion || isCharacterMotionActive;
   const coordinatedIdleActions = useCoordinatedIdleActions(
     visibleMembers.map((member) => {
@@ -443,6 +445,12 @@ export const TeamIsland = ({
           aria-hidden="true"
           draggable={false}
         />
+        <span className="scene-corner-life" aria-hidden="true">
+          <i className="scene-corner-leaf scene-corner-leaf-one" />
+          <i className="scene-corner-leaf scene-corner-leaf-two" />
+          <i className="scene-corner-pet-ear scene-corner-pet-ear-left" />
+          <i className="scene-corner-pet-ear scene-corner-pet-ear-right" />
+        </span>
         <div className="team-island-stage absolute inset-0" aria-hidden="true">
           <div className="scene-wall-backdrop" />
           <div className="scene-weather-ambient" />

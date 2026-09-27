@@ -21,5 +21,7 @@
 @import "./parts/180-room-asset-pass.css";
 @import "./parts/190-room-glass-unification.css";
 @import "./parts/195-phone-mic.css";
+@import "./parts/200-settings-refinement.css";
+@import "./parts/205-scene-life.css";
 
 /* Keep these imports ordered: later compatibility passes intentionally win the cascade. */

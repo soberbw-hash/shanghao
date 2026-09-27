@@ -36,9 +36,10 @@ test("large orchestration entry points stay below reviewed growth ceilings", () 
     "apps/desktop/src/main/ai-model-manager.ts": 1_526,
     "apps/desktop/src/main/ai-runtime-manager.ts": 1_956,
     "packages/signaling/src/server.ts": 1_853,
-    // Reviewed one-line error feedback for failed Windows diagnostics loading.
-    "apps/desktop/src/renderer/src/pages/SettingsPage.tsx": 521,
-    "apps/desktop/src/renderer/src/components/room/TeamIsland.tsx": 705,
+    // Reviewed Windows appearance disclosure keeps its risk text beside the controls.
+    "apps/desktop/src/renderer/src/pages/SettingsPage.tsx": 522,
+    // Reviewed: the scene gained a bounded decorative corner layer and visibility gating.
+    "apps/desktop/src/renderer/src/components/room/TeamIsland.tsx": 706,
     "apps/desktop/src/renderer/src/components/chat/TemporaryChatPanel.tsx": 960,
     // Reviewed growth: timestamp-ordered observations use a bounded binary-search scan.
     "apps/desktop/src/main/ai-voice-memory-service.ts": 3_202,

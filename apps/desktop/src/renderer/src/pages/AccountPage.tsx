@@ -10,6 +10,7 @@ import {
 
 import { Button } from "../components/base/Button";
 import { BrandMark } from "../components/brand/BrandMark";
+import { AccountAudioControl } from "../components/account/AccountAudioControl";
 import { AccountLoginSummary } from "../components/account/AccountLoginSummary";
 import { ACCOUNT_AVATAR_PRESETS } from "../features/account/accountAvatarPresets";
 import { accountErrorMessage } from "../features/account/accountMessages";
@@ -115,7 +116,7 @@ export const AccountPage = () => {
   const subtitle = isResetOpen
     ? "验证注册手机号或邮箱后，设置新的登录密码。"
     : mode === "login"
-      ? "登录后，你的身份会在不同电脑上保持一致。"
+      ? undefined
       : "手机号验证后即可创建账号，昵称以后可以修改。";
 
   const canSubmit = useMemo(() => {
@@ -284,12 +285,15 @@ export const AccountPage = () => {
       <div className="account-ambient account-ambient--one" aria-hidden="true" />
       <div className="account-ambient account-ambient--two" aria-hidden="true" />
       <section className="account-card">
-        <header className="account-brand">
-          <BrandMark size="account" className="account-brand-mark" />
-          <div>
-            <span>SHANGHAO</span>
-            <strong>上号</strong>
+        <header className="account-topbar">
+          <div className="account-brand">
+            <BrandMark size="account" className="account-brand-mark" />
+            <div>
+              <span>SHANGHAO</span>
+              <strong>上号</strong>
+            </div>
           </div>
+          <AccountAudioControl />
         </header>
 
         <div className="account-heading">
@@ -326,7 +330,7 @@ export const AccountPage = () => {
             </div>
           </LayoutGroup>
           <h1>{title}</h1>
-          <p>{subtitle}</p>
+          {subtitle ? <p>{subtitle}</p> : null}
         </div>
 
         {snapshot.status === "unavailable" || !snapshot.configured ? (
@@ -601,7 +605,6 @@ export const AccountPage = () => {
                         onChange={(event) => setRememberMe(event.target.checked)}
                       />
                       <span>记住密码</span>
-                      <small>使用系统加密存储；登录失效时会自动填回</small>
                     </label>
                     <button
                       type="button"
@@ -787,7 +790,7 @@ export const AccountPage = () => {
 
         {snapshot.guestAllowed ? (
           <footer className="account-guest">
-            <span>仅限本地开发测试</span>
+            <span>临时身份，不创建账号</span>
             <button type="button" disabled={isBusy} onClick={() => void continueAsGuest()}>
               以访客身份继续
             </button>

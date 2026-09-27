@@ -117,6 +117,7 @@ import { DailyRoomReportCache } from "./daily-room-report-cache";
 import { LocalWeatherService } from "./weather-service";
 import { platformService } from "./platform/PlatformService";
 import { readWindowsElevationStatus } from "./windows-elevation";
+import { getChatLinkPreview } from "./chat-link-preview";
 import {
   configureWindowsIconOverlays,
   readWindowsIntegrationStatus,
@@ -421,6 +422,9 @@ export const registerIpcHandlers = ({
     if (url.username || url.password) throw new Error("external_url_credentials_not_allowed");
     await shell.openExternal(url.toString());
   });
+  ipcMain.handle(IPC_CHANNELS.app.getChatLinkPreview, async (_event, rawUrl: string) =>
+    typeof rawUrl === "string" ? getChatLinkPreview(rawUrl) : {},
+  );
   ipcMain.handle(
     IPC_CHANNELS.app.openSystemSettings,
     async (_event, page: "microphone" | "sound" | "display"): Promise<void> => {

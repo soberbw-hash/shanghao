@@ -82,7 +82,15 @@ test("generated weather retains live effects and visibility/reduced-motion gatin
     assert.ok(weather.includes(`weather-${effect}-layer`));
   assert.ok(weather.includes("reduceMotion || !isPageVisible"));
   assert.ok(weather.includes("window-frame-v2.png"));
-  assert.ok(weather.includes('theme.hasClouds || theme.scene === "clear"'));
+  assert.ok(weather.includes('theme.scene === "clear" && theme.phase !== "night"'));
+  assert.ok(weather.includes("weather-night-details"));
+  assert.ok(weather.includes("weather-night-city-glimmer"));
+  const sceneLife = source("styles/parts/205-scene-life.css");
+  assert.match(sceneLife, /\.weather-night-star\s*\{/);
+  assert.match(sceneLife, /\.scene-ceiling-curtain\s*\{[^}]*animation: scene-curtain-breathe/s);
+  assert.match(sceneLife, /\.scene-foreground-leaves\s*\{[^}]*animation: scene-foreground-sway/s);
+  assert.match(sceneLife, /\.scene-corner-pet-ear\s*\{[^}]*animation: scene-pet-ear-flick/s);
+  assert.match(sceneLife, /\.team-island\.is-visual-motion-paused \.scene-ceiling-curtain/);
   const roomGlass = source("styles/parts/190-room-glass-unification.css");
   const roomAssets = source("styles/parts/180-room-asset-pass.css");
   assert.match(roomAssets, /\.scene-window-nook\s*\{[^}]*top: -11\.5%/);

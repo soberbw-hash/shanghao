@@ -13,7 +13,7 @@ test("weather uses supplied window art without duplicate city and plant layers",
 
   assert.match(weather, /className="weather-window-art"/);
   assert.doesNotMatch(weather, /className="weather-(city-lights|skyline|plant-shadow|sunbeam)/);
-  assert.ok(weather.includes('isEnabled && (theme.hasClouds || theme.scene === "clear")'));
+  assert.ok(weather.includes('theme.scene === "clear" && theme.phase !== "night"'));
   for (const effect of ["Rain", "Snow", "Fog", "Lightning"]) {
     assert.ok(weather.includes(`isEnabled && theme.has${effect}`));
   }
@@ -37,7 +37,7 @@ test("character life is coordinated and includes expressive and connection feedb
   assert.match(character, /room-character-reconnect-steps/);
   assert.match(character, /room-character-update-device/);
   assert.doesNotMatch(visualStyles, /\.desk-animal-speaking \.desk-animal-art/);
-  assert.match(characterStyles, /\.desk-animal-speaking \.desk-animal-head/);
+  assert.match(characterStyles, /\.desk-animal-speaking \.desk-animal-body-rig/);
   assert.match(visualStyles, /character-moving-shadow/);
 });
 

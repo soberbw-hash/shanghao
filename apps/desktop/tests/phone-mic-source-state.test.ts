@@ -1,7 +1,79 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { PhoneMicSource } from "../src/renderer/src/features/audio/phoneMicSource";
+import {
+  PhoneMicSource,
+  readablePhoneMicError,
+  selectedPhoneMicConnection,
+} from "../src/renderer/src/features/audio/phoneMicSource";
+
+test("USB errors show the cause instead of Electron IPC details", () => {
+  const message = readablePhoneMicError(
+    new Error(
+      "Error invoking remote method 'audio:phone-mic-usb-start': Error: 未检测到已授权的 Android USB 设备。请开启 USB 调试",
+    ),
+  );
+  assert.equal(message.includes("Error invoking remote method"), false);
+  assert.match(message, /连接 USB.*开启 USB 调试.*允许这台电脑/);
+});
+
+test("phone microphone labels only the selected ICE pair", () => {
+  const report = (local: Record<string, unknown>, remote: Record<string, unknown>) =>
+    new Map([
+      ["transport", { id: "transport", type: "transport", selectedCandidatePairId: "selected" }],
+      [
+        "selected",
+        {
+          id: "selected",
+          type: "candidate-pair",
+          localCandidateId: "local",
+          remoteCandidateId: "remote",
+          currentRoundTripTime: 0.018,
+        },
+      ],
+      [
+        "unused",
+        {
+          id: "unused",
+          type: "candidate-pair",
+          nominated: true,
+          state: "succeeded",
+          localCandidateId: "relay",
+          remoteCandidateId: "remote",
+        },
+      ],
+      ["local", { id: "local", type: "local-candidate", ...local }],
+      ["remote", { id: "remote", type: "remote-candidate", ...remote }],
+      ["relay", { id: "relay", type: "local-candidate", candidateType: "relay" }],
+    ]) as unknown as RTCStatsReport;
+  assert.deepEqual(
+    selectedPhoneMicConnection(
+      report(
+        { candidateType: "host", address: "192.168.1.5" },
+        { candidateType: "host", address: "192.168.1.9" },
+      ),
+    ),
+    { connectionType: "lan", selectedCandidatePairId: "selected", latencyMs: 18 },
+  );
+  assert.equal(
+    selectedPhoneMicConnection(
+      report(
+        { candidateType: "relay", address: "203.0.113.5" },
+        { candidateType: "host", address: "192.168.1.9" },
+      ),
+    ).connectionType,
+    "turn",
+  );
+  assert.equal(
+    selectedPhoneMicConnection(
+      report(
+        { candidateType: "host", address: "example.local" },
+        { candidateType: "host", address: "example.local" },
+      ),
+    ).connectionType,
+    "p2p",
+  );
+});
 
 test("phone microphone keeps the actionable socket error after close", async () => {
   const originalWindow = globalThis.window;

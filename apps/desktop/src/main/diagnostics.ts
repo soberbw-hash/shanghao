@@ -38,13 +38,54 @@ const EXPORT_LOG_TRUNCATE_THRESHOLD_BYTES = 20 * 1024 * 1024;
 const EXPORT_LOG_TAIL_BYTES = 2 * 1024 * 1024;
 const MAIN_WATCHDOG_INTERVAL_MS = 1_000;
 const MAIN_WATCHDOG_WARN_MS = 500;
-const SENSITIVE_DIAGNOSTIC_KEY =
-  /(path|file|recording|transcript|chat|messagebody|nickname|email|sid|token|authorization|cookie)/i;
+const RUNTIME_HISTORY_WINDOW_MS = 6 * 60 * 60_000;
+const RUNTIME_DETAILED_WINDOW_MS = 10 * 60_000;
+const isSensitiveDiagnosticKey = (key: string): boolean => {
+  const normalized = key.replace(/[_-]/g, "").toLowerCase();
+  return (
+    /(?:path|filename|filepath|token|authorization|cookie|secret|password|credential|session|authcode|nickname|email|userid|sid)$/.test(
+      normalized,
+    ) ||
+    /^(?:file|recording|transcript|chat)$/.test(normalized) ||
+    /(?:recording|transcript|chat|message)(?:body|text|content|data|messages|segments|audio)$/.test(
+      normalized,
+    )
+  );
+};
 const WINDOWS_PATH = /[a-z]:\\[^\s"']+/gi;
+const URL_IN_TEXT = /\b[a-z][a-z\d+.-]*:\/\/[^\s<>"']+/gi;
+const EMAIL_IN_TEXT = /\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi;
+const WINDOWS_SID = /\bS-1-5-[\d-]+\b/gi;
 
-const sanitizeDiagnosticValue = (value: unknown, key = ""): unknown => {
-  if (SENSITIVE_DIAGNOSTIC_KEY.test(key)) return "[redacted]";
-  if (typeof value === "string") return value.replace(WINDOWS_PATH, "[local-path]");
+export const sanitizeUrl = (value: string): string => {
+  try {
+    const url = new URL(value);
+    if (!["http:", "https:", "ws:", "wss:"].includes(url.protocol)) return "[redacted-url]";
+    return `${url.protocol}//${url.host}${url.pathname}`;
+  } catch {
+    return "[redacted-url]";
+  }
+};
+
+const sanitizeText = (value: string): string =>
+  value
+    .replace(URL_IN_TEXT, (match) => {
+      const trimmed = match.replace(/[),.;]+$/u, "");
+      return `${sanitizeUrl(trimmed)}${match.slice(trimmed.length)}`;
+    })
+    .replace(WINDOWS_PATH, "[local-path]")
+    .replace(EMAIL_IN_TEXT, "[email]")
+    .replace(WINDOWS_SID, "[sid]")
+    .replace(/\bBearer\s+[^\s,;]+/gi, "Bearer [redacted]")
+    .replace(
+      /\b(token|session|secret|password|credential|authorization[_ -]?code)=([^\s&;,]+)/gi,
+      "$1=[redacted]",
+    );
+
+export const sanitizeDiagnosticValue = (value: unknown, key = ""): unknown => {
+  if (/url$/i.test(key)) return typeof value === "string" ? sanitizeUrl(value) : "[redacted]";
+  if (isSensitiveDiagnosticKey(key)) return "[redacted]";
+  if (typeof value === "string") return sanitizeText(value);
   if (Array.isArray(value)) return value.slice(0, 100).map((item) => sanitizeDiagnosticValue(item));
   if (value && typeof value === "object") {
     return Object.fromEntries(
@@ -133,7 +174,15 @@ export class DiagnosticsService {
   setRuntimeHealthSnapshot(snapshot: RuntimeHealthSnapshot): void {
     this.lastRuntimeHealthSnapshot = snapshot;
     this.runtimeHealthHistory.push(snapshot);
-    if (this.runtimeHealthHistory.length > 90) this.runtimeHealthHistory.shift();
+    const now = Date.parse(snapshot.capturedAt);
+    const compacted = this.runtimeHealthHistory.filter((sample, index, all) => {
+      const at = Date.parse(sample.capturedAt);
+      if (at < now - RUNTIME_HISTORY_WINDOW_MS) return false;
+      if (at >= now - RUNTIME_DETAILED_WINDOW_MS) return true;
+      const next = all[index + 1];
+      return !next || Math.floor(at / 60_000) !== Math.floor(Date.parse(next.capturedAt) / 60_000);
+    });
+    this.runtimeHealthHistory.splice(0, this.runtimeHealthHistory.length, ...compacted.slice(-480));
     const trend = analyzeRuntimeHealthTrend(this.runtimeHealthHistory);
     const signature = trend.warnings.join("|");
     if (signature && signature !== this.lastRuntimeTrendSignature) {
@@ -175,10 +224,10 @@ export class DiagnosticsService {
   }
 
   async writeLog(payload: RendererLogPayload): Promise<void> {
-    const entry: LogEntry = {
+    const entry = sanitizeDiagnosticValue({
       timestamp: new Date().toISOString(),
       ...payload,
-    };
+    }) as LogEntry;
     this.flightRecorder.recordLog(entry);
 
     const filePath = path.join(this.logsDirectory, `${payload.category}.log`);
@@ -220,7 +269,7 @@ export class DiagnosticsService {
         targetDirectory,
         `shanghao-logs-${new Date().toISOString().replaceAll(":", "-")}`,
       );
-      await this.exportLogsToDirectory(exportDirectory);
+      await this.exportLogsToDirectory(exportDirectory, true);
 
       this.snapshot = {
         ...this.snapshot,
@@ -284,7 +333,13 @@ export class DiagnosticsService {
       );
 
       for (const file of extraFiles) {
-        await writeFile(path.join(bundleRoot, file.name), file.content, "utf8");
+        let content: string;
+        try {
+          content = JSON.stringify(sanitizeDiagnosticValue(JSON.parse(file.content)), null, 2);
+        } catch {
+          content = sanitizeText(file.content);
+        }
+        await writeFile(path.join(bundleRoot, file.name), content, "utf8");
       }
 
       await zipDirectory(bundleRoot, zipPath);

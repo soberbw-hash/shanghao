@@ -1,15 +1,29 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { PROFILE_SCHEMA_VERSION, SETTINGS_SCHEMA_VERSION } from "@private-voice/shared";
+import {
+  DEFAULT_AI_ASR_MODEL_ID,
+  PROFILE_SCHEMA_VERSION,
+  SETTINGS_SCHEMA_VERSION,
+} from "@private-voice/shared";
 
 import { defaultSettings, migrateSettings } from "../src/main/settings-migration";
 
-test("retired Dolphin preference falls back without changing retained model preferences", () => {
+test("new profiles recommend GLM without replacing an existing ASR choice", () => {
+  assert.equal(DEFAULT_AI_ASR_MODEL_ID, "glm-asr-nano-2512");
+  assert.equal(defaultSettings.aiAsrModel, DEFAULT_AI_ASR_MODEL_ID);
+  assert.equal(migrateSettings(defaultSettings).settings.aiAsrModel, DEFAULT_AI_ASR_MODEL_ID);
+  assert.equal(
+    migrateSettings({ ...defaultSettings, aiAsrModel: "qwen3-asr-0.6b-force" }).settings.aiAsrModel,
+    "qwen3-asr-0.6b-force",
+  );
+});
+
+test("retired Dolphin preference keeps the legacy fallback without changing retained choices", () => {
   assert.equal(
     migrateSettings({ ...defaultSettings, aiAsrModel: "dolphin-cn-dialect-0.4b" as never }).settings
       .aiAsrModel,
-    defaultSettings.aiAsrModel,
+    "qwen3-asr-0.6b-force",
   );
   for (const aiAsrModel of [
     "glm-asr-nano-2512",

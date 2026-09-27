@@ -9,25 +9,16 @@ import type {
 } from "@private-voice/shared";
 
 import { Button } from "../base/Button";
-import { rendererPerformanceMonitor } from "../../features/diagnostics/rendererPerformanceMonitor";
+import {
+  runtimeHealthCollector,
+  sanitizeRuntimeServerUrl,
+} from "../../features/diagnostics/runtimeHealthCollector";
 import { getRoomRuntimeDiagnostics, injectRealtimeFault } from "../../hooks/useRoomState";
 import { useAppStore } from "../../store/appStore";
 import { useAudioStore } from "../../store/audioStore";
 import { useRoomStore } from "../../store/roomStore";
 import { useSettingsStore } from "../../store/settingsStore";
 import { DiagnosticsSettingsCard } from "./DiagnosticsSettingsCard";
-
-const sanitizeServerUrl = (value?: string): string | undefined => {
-  if (!value) return undefined;
-  try {
-    const url = new URL(value);
-    url.search = "";
-    url.hash = "";
-    return url.toString();
-  } catch {
-    return "地址格式不可识别";
-  }
-};
 
 export const SettingsDiagnosticsSection = ({
   settings,
@@ -51,7 +42,9 @@ export const SettingsDiagnosticsSection = ({
   const resetSettings = useSettingsStore((state) => state.resetSettings);
   const outputDeviceCount = useAudioStore((state) => state.outputDevices.length);
   const localAudioDiagnostics = useAudioStore((state) => state.localDiagnostics);
-  const [runtimeHealth, setRuntimeHealth] = useState<RuntimeHealthSnapshot>();
+  const [runtimeHealth, setRuntimeHealth] = useState<RuntimeHealthSnapshot | undefined>(() =>
+    runtimeHealthCollector.snapshot(),
+  );
   const [relay, setRelay] = useState<RelayStatusSnapshot>();
 
   useEffect(() => {
@@ -71,78 +64,16 @@ export const SettingsDiagnosticsSection = ({
   }, [settings.relayServerUrl]);
 
   useEffect(() => {
-    let cancelled = false;
-    const stopPerformanceMonitor = rendererPerformanceMonitor.start();
-    const refresh = async () => {
-      const runtime = getRoomRuntimeDiagnostics();
-      const { room, localStream, remoteStreams } = useRoomStore.getState();
-      const memory = performance as Performance & {
-        memory?: { usedJSHeapSize?: number; totalJSHeapSize?: number };
-      };
-      const trackCount = [localStream, ...Object.values(remoteStreams)].reduce(
-        (total, stream) => total + (stream?.getTracks().length ?? 0),
-        0,
-      );
-      const mixerHealth = runtime?.remoteAudioMixer;
-      const snapshot = await window.desktopApi.diagnostics.runtimeHealth({
-        performance: rendererPerformanceMonitor.snapshot(),
-        jsHeapUsedBytes: memory.memory?.usedJSHeapSize,
-        jsHeapTotalBytes: memory.memory?.totalJSHeapSize,
-        domNodeCount: document.getElementsByTagName("*").length,
-        trackCount,
-        audioNodeCount: mixerHealth?.audioNodeCount,
-        audioContextCount: mixerHealth?.audioContextCount,
-        timerCount: mixerHealth?.timerCount,
-        screenShare: runtime?.screenShare
-          ? {
-              active: Boolean(
-                runtime.screenShare.requested ||
-                Object.keys(runtime.screenShare.receive).length ||
-                runtime.screenShare.fallback.active,
-              ),
-              fallbackActive: runtime.screenShare.fallback.active,
-              requestedWidth: runtime.screenShare.requested?.width,
-              requestedHeight: runtime.screenShare.requested?.height,
-              captureWidth: runtime.screenShare.capture?.width,
-              captureHeight: runtime.screenShare.capture?.height,
-              captureFps: runtime.screenShare.capture?.framesPerSecond,
-            }
-          : undefined,
-        room: {
-          roomLifecycleState: room.lifecycleState,
-          roomConnectionState: room.connectionState,
-          serverUrl: sanitizeServerUrl(room.signalingUrl ?? settings.relayServerUrl),
-          currentRoomId: room.roomId,
-          currentPeerId: runtime?.currentPeerId,
-          reconnectAttempts: runtime?.reconnectAttempts ?? 0,
-          connectionGeneration: runtime?.connectionGeneration,
-          reconnectEpisodeId: runtime?.reconnectEpisodeId,
-          reconnectEpisodeActive: runtime?.reconnectEpisodeActive,
-          reconnectStableSince: runtime?.reconnectStableSince,
-          activeClientExists: Boolean(runtime),
-          audioRelayState: runtime?.audioRelayState ?? "inactive",
-          localStreamActive: Boolean(
-            localStream?.getAudioTracks().some((track) => track.readyState === "live"),
-          ),
-          remotePeerCount: runtime?.remotePeerCount ?? Object.keys(remoteStreams).length,
-          screenShareRelayState: runtime?.screenShareRelayState,
-          roomSnapshotRevision: runtime?.roomSnapshotRevision ?? 0,
-          chatSendFailures: runtime?.chatSendFailures ?? 0,
-        },
-      });
-      if (!cancelled) setRuntimeHealth(snapshot);
-    };
-
-    void refresh().catch(() => undefined);
-    const timer = window.setInterval(() => void refresh().catch(() => undefined), 5_000);
+    const unsubscribe = runtimeHealthCollector.subscribe(setRuntimeHealth);
+    const stopDetailed = runtimeHealthCollector.observeDetailed();
     return () => {
-      cancelled = true;
-      window.clearInterval(timer);
-      stopPerformanceMonitor();
+      stopDetailed();
+      unsubscribe();
     };
-  }, [settings.relayServerUrl]);
+  }, []);
 
   const refreshDiagnostics = () => {
+    void runtimeHealthCollector.refresh().catch(() => undefined);
     if (settings.relayServerUrl) {
       void window.desktopApi.diagnostics
         .testServer(settings.relayServerUrl)
@@ -158,7 +89,7 @@ export const SettingsDiagnosticsSection = ({
     return {
       roomLifecycleState: room.lifecycleState,
       roomConnectionState: room.connectionState,
-      serverUrl: sanitizeServerUrl(room.signalingUrl ?? settings.relayServerUrl),
+      serverUrl: sanitizeRuntimeServerUrl(room.signalingUrl ?? settings.relayServerUrl),
       currentRoomId: room.roomId,
       currentPeerId: runtime?.currentPeerId,
       reconnectAttempts: runtime?.reconnectAttempts ?? 0,
@@ -196,7 +127,9 @@ export const SettingsDiagnosticsSection = ({
       perPeerAudioStatus: runtime?.audioRelayDiagnostics?.perPeerAudioStatus,
       connectionHealth,
       localAudioDiagnostics,
-      relayStatus: relay ? { ...relay, serverUrl: sanitizeServerUrl(relay.serverUrl) } : undefined,
+      relayStatus: relay
+        ? { ...relay, serverUrl: sanitizeRuntimeServerUrl(relay.serverUrl) }
+        : undefined,
       screenShareRelayState: runtime?.screenShareRelayState,
       screenShare: runtime?.screenShare,
       audioTimeline: runtime?.audioRelayDiagnostics?.audioTimeline,
@@ -280,9 +213,35 @@ export const SettingsDiagnosticsSection = ({
             )
         }
       />
-      <Button variant="danger" onClick={() => void resetSettings().then(refreshDiagnostics)}>
-        安全重置设置
-      </Button>
+      <section className="settings-reset-section">
+        <div>
+          <strong>高级操作</strong>
+          <p>安全重置仅恢复应用设置，不删除聊天、录音、模型和转录数据。</p>
+        </div>
+        <Button
+          variant="danger"
+          onClick={() => {
+            if (
+              !window.confirm(
+                "确认重置应用设置？此操作会恢复偏好和快捷键；聊天、录音、模型及转录数据不会删除。",
+              )
+            )
+              return;
+            void resetSettings()
+              .then(refreshDiagnostics)
+              .then(() => pushToast({ tone: "success", title: "设置已重置" }))
+              .catch((error: unknown) =>
+                pushToast({
+                  tone: "danger",
+                  title: "设置重置失败",
+                  description: error instanceof Error ? error.message : String(error),
+                }),
+              );
+          }}
+        >
+          安全重置
+        </Button>
+      </section>
     </div>
   );
 };

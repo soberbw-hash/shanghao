@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync } from "node:fs";
+import { mkdirSync } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
@@ -34,6 +34,8 @@ import { VoiceMemoryStore } from "./voice-memory-store";
 import { LifecycleRecoveryService } from "./lifecycle-recovery-service";
 import { ensurePre30DataSnapshot } from "./user-data-migration";
 import { removeWindowsStartupTask } from "./windows-startup-task";
+import { rustCoreClient } from "./rust-core-client";
+import { BootstrapMigrationRegistry } from "./bootstrap-migration-registry";
 import { ensureWindowsFirewallRulesWithOutcome } from "./windows-integration";
 import {
   findDeepLinkAuth,
@@ -192,6 +194,7 @@ const prepareForQuit = (reason: string) => {
 
   overlayController?.close();
   gameDetectionController?.stop();
+  rustCoreClient.close();
   lifecycleRecoveryService?.stop();
   accountService?.dispose();
   aiRuntimeManager?.stop();
@@ -298,13 +301,20 @@ const bootstrap = async (): Promise<void> => {
     (payload) => diagnostics?.writeLog(payload) ?? Promise.resolve(),
   );
   const settings = await settingsStore.load();
-  await ensurePre30DataSnapshot({
-    userDataDirectory: app.getPath("userData"),
-    recordingDirectory:
-      settings.recordingSaveDirectory?.trim() || path.join(app.getPath("documents"), "上号录音"),
-    log: (message, context) =>
-      void diagnostics?.writeLog({ category: "app", level: "info", message, context }),
-  }).catch(() => undefined);
+  const migrations = new BootstrapMigrationRegistry(
+    path.join(app.getPath("userData"), "bootstrap-migrations.json"),
+  );
+  const ensureSnapshot = () =>
+    ensurePre30DataSnapshot({
+      userDataDirectory: app.getPath("userData"),
+      recordingDirectory:
+        settings.recordingSaveDirectory?.trim() || path.join(app.getPath("documents"), "上号录音"),
+      log: (message, context) =>
+        void diagnostics?.writeLog({ category: "app", level: "info", message, context }),
+    });
+  await migrations
+    .runOnce("pre30_snapshot_completed_v1", ensureSnapshot)
+    .catch(async () => ensureSnapshot().catch(() => undefined));
   protocol.handle(RECORDING_MEDIA_PROTOCOL, async (request) => {
     const filePath = decodeRecordingMediaUrl(request.url);
     if (
@@ -332,17 +342,6 @@ const bootstrap = async (): Promise<void> => {
   protocol.handle(QUICK_MESSAGE_MEDIA_PROTOCOL, (request) =>
     createQuickMessageMediaResponse(request.url, request.headers.get("range")),
   );
-  try {
-    await removeWindowsStartupTask();
-  } catch (error) {
-    await diagnostics.writeLog({
-      category: "app",
-      level: "warn",
-      message: "legacy startup task cleanup failed",
-      context: { error: error instanceof Error ? error.message : String(error) },
-    });
-  }
-
   const accounts = new AccountDesktopService(
     new AccountSessionStore(app.getPath("userData")),
     () =>
@@ -446,40 +445,22 @@ const bootstrap = async (): Promise<void> => {
   const bundledAiRuntimeRoot = app.isPackaged
     ? path.join(process.resourcesPath, "ai")
     : path.join(app.getAppPath(), "resources", "ai");
-  try {
-    await prepareBundledAiRuntime({
-      runtimeRoot: aiRuntimeDirectory,
-      bundledRoot: bundledAiRuntimeRoot,
-    });
-  } catch (error) {
-    const reason = error instanceof Error ? error.message : String(error);
-    await diagnostics.writeLog({
-      category: "app",
-      level: "error",
-      message: "Bundled AI runtime could not be prepared; continuing without replacing it",
-      context: { reason, bundledAiRuntimeRoot, aiRuntimeDirectory },
-    });
-  }
-  const bundledRunner = app.isPackaged
-    ? path.join(process.resourcesPath, "ai", "qwen-runner.py")
-    : path.join(app.getAppPath(), "scripts", "qwen-runner.py");
-  const runtimeRunner = path.join(aiRuntimeDirectory, "qwen-runner.py");
-  // Packaged Qwen runners are copied only by prepareBundledAiRuntime after hash verification.
-  // Development uses the live script because resources/ai intentionally contains only the manifest.
-  if (!app.isPackaged && existsSync(bundledRunner) && readFileSync(bundledRunner).length > 0) {
-    const { mkdir, copyFile } = await import("node:fs/promises");
-    await mkdir(aiRuntimeDirectory, { recursive: true });
-    await copyFile(bundledRunner, runtimeRunner);
-  }
-  const bundledAsrRunner = app.isPackaged
-    ? path.join(process.resourcesPath, "ai", "asr-runner.py")
-    : path.join(app.getAppPath(), "scripts", "asr-runner.py");
-  const runtimeAsrRunner = path.join(aiRuntimeDirectory, "asr-runner.py");
-  if (existsSync(bundledAsrRunner) && readFileSync(bundledAsrRunner).length > 0) {
-    const { mkdir, copyFile } = await import("node:fs/promises");
-    await mkdir(aiRuntimeDirectory, { recursive: true });
-    await copyFile(bundledAsrRunner, runtimeAsrRunner);
-  }
+  const prepareRuntime = async () => {
+    try {
+      await prepareBundledAiRuntime({
+        runtimeRoot: aiRuntimeDirectory,
+        bundledRoot: bundledAiRuntimeRoot,
+        developmentScriptRoot: app.isPackaged ? undefined : path.join(app.getAppPath(), "scripts"),
+      });
+    } catch (error) {
+      await diagnostics?.writeLog({
+        category: "app",
+        level: "error",
+        message: "Bundled AI runtime could not be prepared; continuing without replacing it",
+        context: { reason: error instanceof Error ? error.message : String(error) },
+      });
+    }
+  };
   const aiRuntime = new AiRuntimeManager(
     aiRuntimeDirectory,
     {
@@ -588,13 +569,27 @@ const bootstrap = async (): Promise<void> => {
     logsDirectory: diagnostics.getSnapshot().logsDirectory,
   });
 
+  // This one-time PowerShell cleanup is unrelated to first paint.
+  void migrations.runOnce("legacy_startup_task_removed_v1", removeWindowsStartupTask).catch(
+    (error) =>
+      diagnostics?.writeLog({
+        category: "app",
+        level: "warn",
+        message: "legacy startup task cleanup failed",
+        context: { error: error instanceof Error ? error.message : String(error) },
+      }) ?? Promise.resolve(),
+  );
+
   // Model discovery and the voice-memory index are not required to paint or use
   // the room shell. Start them only after the window exists so a large local
   // model library cannot hold the entire application behind a blank startup.
-  void Promise.all([
-    aiModels.initialize(settings.aiProcessingMode, settings.aiAsrModel),
-    voiceMemory.initialize(),
-  ])
+  void prepareRuntime()
+    .then(() =>
+      Promise.all([
+        aiModels.initialize(settings.aiProcessingMode, settings.aiAsrModel),
+        voiceMemory.initialize(),
+      ]),
+    )
     .then(
       () =>
         diagnostics?.writeLog({
@@ -752,7 +747,11 @@ app.on("open-url", (event, rawUrl) => {
   else if (findDeepLinkAuth([rawUrl])) dispatchAuthDeepLink(rawUrl);
 });
 
-const hasSingleInstanceLock = app.requestSingleInstanceLock();
+// Visual capture uses its own userData and Documents paths, so it can coexist
+// with a running development client without taking over that client's window.
+const hasSingleInstanceLock =
+  (!app.isPackaged && Boolean(process.env.SHANGHAO_CAPTURE_PATH)) ||
+  app.requestSingleInstanceLock();
 
 if (!hasSingleInstanceLock) {
   if (shouldQuitForInstall) {

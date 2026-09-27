@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type MouseEvent } from "react";
 import { createPortal } from "react-dom";
-import { BrainCircuit, Download, Pause, Play, Trash2 } from "lucide-react";
+import { BrainCircuit, Download, MoreHorizontal, Pause, Play, Trash2 } from "lucide-react";
 
 import type {
   AiAsrModelId,
@@ -13,7 +13,7 @@ import type {
   AiVoiceMemorySnapshot,
   AppSettings,
 } from "@private-voice/shared";
-import { AI_ASR_PRODUCT_CLASSES } from "@private-voice/shared";
+import { AI_ASR_PRODUCT_CLASSES, DEFAULT_AI_ASR_MODEL_ID } from "@private-voice/shared";
 
 import { modelPhaseLabel, modelProgressPercent } from "../../features/ai/modelDownloadPresentation";
 import { playUiSound } from "../../features/audio/uiSound";
@@ -113,28 +113,24 @@ const ModelActions = ({
   if (model.phase === "installed") {
     return (
       <div className="flex flex-wrap items-center justify-end gap-2">
-        {model.category !== "support" &&
-        !model.runtimeReady &&
-        !dependencyPending &&
-        (model.id !== "qwen36-35b-a3b-nvfp4" || model.runtimeMetrics?.phase === "error") ? (
-          <Button
-            className="h-9 rounded-[11px] px-3 text-xs"
-            disabled={busy}
-            onClick={(event) => runAction(event, "repair")}
-          >
-            重试
-          </Button>
-        ) : null}
-        <Button
-          variant="ghost"
-          className="size-9 rounded-[11px] p-0"
-          aria-label={`删除 ${model.name}`}
-          title="删除模型"
-          disabled={busy}
-          onClick={(event) => runAction(event, "delete")}
-        >
-          <Trash2 className="size-4" aria-hidden="true" />
-        </Button>
+        <details className="ai-model-action-menu" onClick={(event) => event.stopPropagation()}>
+          <summary aria-label={`管理 ${model.name}`}>
+            <MoreHorizontal className="size-4" aria-hidden="true" />
+          </summary>
+          <div>
+            {model.category !== "support" &&
+            !model.runtimeReady &&
+            !dependencyPending &&
+            (model.id !== "qwen36-35b-a3b-nvfp4" || model.runtimeMetrics?.phase === "error") ? (
+              <button type="button" disabled={busy} onClick={(event) => runAction(event, "repair")}>
+                重试 / 修复
+              </button>
+            ) : null}
+            <button type="button" disabled={busy} onClick={(event) => runAction(event, "delete")}>
+              <Trash2 className="size-4" aria-hidden="true" /> 删除模型
+            </button>
+          </div>
+        </details>
       </div>
     );
   }
@@ -206,6 +202,7 @@ export const AiVoiceMemorySettingsCard = ({
   const [customModel, setCustomModel] = useState("");
   const [customApiKey, setCustomApiKey] = useState("");
   const [savingCustomProvider, setSavingCustomProvider] = useState(false);
+  const [modelFilter, setModelFilter] = useState<"all" | "installed" | "available">("all");
   const modelManagementRef = useRef<HTMLElement>(null);
   const previousModelPhasesRef = useRef<Map<AiModelId, AiModelStatus["phase"]>>(new Map());
 
@@ -412,10 +409,13 @@ export const AiVoiceMemorySettingsCard = ({
     }
   }, [snapshot]);
 
-  // Keep the manifest order stable. Selecting a model only changes its state styling;
-  // it must never move the card the user is looking at.
+  // Pin the recommendation at the top of its group. Selection and download
+  // state never move a card the user is looking at.
   const asrModels = models.filter((model) => model.category === "asr");
   const supportModels = models.filter((model) => model.category === "support");
+  const visibleModel = (model: AiModelStatus): boolean =>
+    modelFilter === "all" ||
+    (modelFilter === "installed" ? Boolean(model.activeRevision) : !model.activeRevision);
   const selectedAsr = asrModels.find((model) => model.id === settings.aiAsrModel);
   const asrRuntimeStatus = runtimeStatus?.asr;
   const selectedAsrReady = Boolean(
@@ -474,6 +474,7 @@ export const AiVoiceMemorySettingsCard = ({
   const renderModel = (model: AiModelStatus) => {
     const selectable = model.category === "asr";
     const selected = model.id === settings.aiAsrModel;
+    const recommended = model.id === DEFAULT_AI_ASR_MODEL_ID;
     const tags = MODEL_TAGS[model.id] ?? [];
     const dependencyPending = Boolean(
       model.dependencies?.some((dependencyId) => {
@@ -548,7 +549,7 @@ export const AiVoiceMemorySettingsCard = ({
       .join("\n");
     return (
       <article
-        className={`ai-model-card is-${model.category}${canSelect ? " is-selectable" : ""}${selected ? " is-selected" : ""}`}
+        className={`ai-model-card is-${model.category}${canSelect ? " is-selectable" : ""}${selected ? " is-selected" : ""}${recommended ? " is-recommended" : ""}`}
         data-model-id={model.id}
         data-model-phase={model.phase}
         title={technicalDetails}
@@ -578,7 +579,17 @@ export const AiVoiceMemorySettingsCard = ({
                 <BrainCircuit />
               </span>
               <div className="ai-model-primary">
-                <h3 className="text-balance">{model.name}</h3>
+                <div className="ai-model-name-line">
+                  <h3 className="text-balance">{model.name}</h3>
+                  {recommended ? (
+                    <span
+                      className="ai-model-recommendation"
+                      title="新建配置默认选择；已有选择不会改变"
+                    >
+                      默认推荐
+                    </span>
+                  ) : null}
+                </div>
                 <p className="ai-model-summary text-pretty">
                   {model.purpose} · 约 {formatBytes(model.approximateBytes)}
                 </p>
@@ -587,7 +598,7 @@ export const AiVoiceMemorySettingsCard = ({
                 {selected
                   ? canSelect
                     ? "当前使用"
-                    : `默认 · ${modelPhaseLabel(model)}`
+                    : `已选 · ${modelPhaseLabel(model)}`
                   : modelPhaseLabel(model)}
               </strong>
             </div>
@@ -666,7 +677,7 @@ export const AiVoiceMemorySettingsCard = ({
         </div>
         <div className="ai-overview-grid">
           <article>
-            <small>默认转录</small>
+            <small>已选转录模型</small>
             <strong>{selectedAsr?.name ?? "未选择"}</strong>
           </article>
           <article>
@@ -694,6 +705,24 @@ export const AiVoiceMemorySettingsCard = ({
       >
         <div className="ai-model-group-heading">
           <h3 id="model-management-title">模型</h3>
+          <div className="ai-model-filter-bar" role="group" aria-label="筛选模型">
+            {(
+              [
+                ["all", "全部"],
+                ["installed", "已安装"],
+                ["available", "可安装"],
+              ] as const
+            ).map(([value, label]) => (
+              <button
+                key={value}
+                type="button"
+                aria-pressed={modelFilter === value}
+                onClick={() => setModelFilter(value)}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
         </div>
         {(["high_accuracy", "high_speed"] as const).map((category) => (
           <div className="ai-model-subgroup" key={category}>
@@ -702,7 +731,16 @@ export const AiVoiceMemorySettingsCard = ({
             </div>
             <div className="ai-model-management-grid">
               {asrModels
-                .filter((model) => AI_ASR_PRODUCT_CLASSES[model.id as AiAsrModelId] === category)
+                .filter(
+                  (model) =>
+                    AI_ASR_PRODUCT_CLASSES[model.id as AiAsrModelId] === category &&
+                    visibleModel(model),
+                )
+                .sort(
+                  (left, right) =>
+                    Number(right.id === DEFAULT_AI_ASR_MODEL_ID) -
+                    Number(left.id === DEFAULT_AI_ASR_MODEL_ID),
+                )
                 .map(renderModel)}
             </div>
           </div>
@@ -711,7 +749,9 @@ export const AiVoiceMemorySettingsCard = ({
           <div className="ai-model-subgroup-heading">
             <strong>共享组件</strong>
           </div>
-          <div className="ai-model-management-grid">{supportModels.map(renderModel)}</div>
+          <div className="ai-model-management-grid">
+            {supportModels.filter(visibleModel).map(renderModel)}
+          </div>
         </div>
       </section>
 

@@ -8,6 +8,9 @@ export type AiAsrModelId =
   | "moss-transcribe-diarize-0.9b-q8_0"
   | "ark-asr-3b-q8_0";
 
+/** Initial selection for new profiles; existing saved choices remain authoritative. */
+export const DEFAULT_AI_ASR_MODEL_ID: AiAsrModelId = "glm-asr-nano-2512";
+
 export const AI_ASR_MODEL_NAMES: Record<AiAsrModelId, string> = {
   "qwen3-asr-1.7b-force": "Qwen3-ASR-1.7B + ForcedAligner",
   "qwen3-asr-0.6b-force": "Qwen3-ASR-0.6B + ForcedAligner",

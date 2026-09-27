@@ -126,6 +126,12 @@ export const captureRuntimeHealth = async (options: {
     },
     rendererPerformance: options.renderer?.performance,
     realtime: {
+      phaseId: options.renderer?.phaseId,
+      roomLifecycleState: rendererRoom?.roomLifecycleState,
+      roomConnectionState: rendererRoom?.roomConnectionState,
+      roomId: rendererRoom?.currentRoomId,
+      localStreamActive: rendererRoom?.localStreamActive,
+      phoneMicStatus: options.renderer?.phoneMicStatus,
       peerCount: rendererRoom?.remotePeerCount ?? 0,
       reconnectAttempts: rendererRoom?.reconnectAttempts ?? 0,
       connectionGeneration: rendererRoom?.connectionGeneration,

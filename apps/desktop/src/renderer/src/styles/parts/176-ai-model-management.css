@@ -11,13 +11,11 @@
   height: auto;
   min-height: 72px;
   padding: 9px 12px;
-  contain: layout paint style;
+  contain: layout style;
 }
 
 .ai-model-subgroup {
   margin-top: 10px;
-  content-visibility: auto;
-  contain-intrinsic-size: auto 140px;
 }
 
 .ai-model-subgroup + .ai-model-subgroup {

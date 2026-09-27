@@ -194,6 +194,8 @@ export interface RendererRuntimeHealthInput {
   domNodeCount?: number;
   room?: RendererDiagnosticsSummary;
   trackCount: number;
+  phaseId?: number;
+  phoneMicStatus?: string;
   audioContextCount?: number;
   audioNodeCount?: number;
   listenerCount?: number;
@@ -259,6 +261,12 @@ export interface RuntimeHealthSnapshot {
   };
   rendererPerformance?: FramePerformanceSnapshot;
   realtime: {
+    phaseId?: number;
+    roomLifecycleState?: RendererDiagnosticsSummary["roomLifecycleState"];
+    roomConnectionState?: RendererDiagnosticsSummary["roomConnectionState"];
+    roomId?: string;
+    localStreamActive?: boolean;
+    phoneMicStatus?: string;
     peerCount: number;
     reconnectAttempts: number;
     connectionGeneration?: number;

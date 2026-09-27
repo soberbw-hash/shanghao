@@ -24,11 +24,11 @@ test("current local metadata and safeguards are complete", () => {
   assert.match(APP_BUILD_NUMBER, /^\d{4}\.\d{2}\.\d{2}\.\d+$/);
   assert.equal(existsSync(path.join(root, `docs/release-notes/v${currentVersion}.md`)), true);
   assert.equal(changelog.includes(`## ${currentVersion} -`), true);
-  assert.equal(readme.includes(`当前仓库版本为 **${currentVersion}**`), true);
-  assert.equal(readme.includes(`v${currentVersion} 更新公告`), true);
+  assert.equal(readme.includes(`v${currentVersion} 安装包`), true);
+  assert.equal(readme.includes(`v${currentVersion} 发布说明`), true);
   assert.equal(currentRound.startsWith(`# ShangHao ${currentVersion} `), true);
-  assert.equal(readme.includes("约 -16 LUFS"), true);
-  assert.equal(readme.includes("CloudBase 手机号验证注册"), true);
+  assert.match(readme, /约 [−-]16 LUFS/);
+  assert.equal(readme.includes("安装后登录账号"), true);
   assert.equal(currentRound.includes("UI 音效开关/音量"), false);
   assert.equal(existsSync(path.join(root, "docs/release-notes/v2.6.0.md")), true);
   assert.equal(changelog.includes("## 2.6.0"), true);

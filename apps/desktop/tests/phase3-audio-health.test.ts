@@ -112,12 +112,12 @@ test("a stalled friend repairs only that playback graph before peer ICE recovery
 test("long-session diagnostics expose bounded mixer resource counts", () => {
   const mixer = read("apps/desktop/src/renderer/src/features/audio/RemoteAudioMixer.ts");
   const diagnostics = read(
-    "apps/desktop/src/renderer/src/components/settings/SettingsDiagnosticsSection.tsx",
+    "apps/desktop/src/renderer/src/features/diagnostics/runtimeHealthCollector.ts",
   );
   assert.match(mixer, /audioContextCount: this\.context \? 1 : 0/);
   assert.match(mixer, /this\.channels\.size \* 3 \+ this\.relayChannels\.size \* 2/);
-  assert.match(diagnostics, /audioNodeCount: mixerHealth\?\.audioNodeCount/);
-  assert.match(diagnostics, /timerCount: mixerHealth\?\.timerCount/);
+  assert.match(diagnostics, /audioNodeCount: mixer\?\.audioNodeCount/);
+  assert.match(diagnostics, /timerCount: mixer\?\.timerCount/);
 });
 
 test("remote playback ramps in instead of exposing the GainNode default on join", () => {

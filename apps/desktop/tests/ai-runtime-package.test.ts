@@ -182,12 +182,14 @@ test("bundled AI runtime copies only manifest-verified files into persistent sto
   const runtimeRoot = path.join(directory, "runtime");
   const vibeFile = path.join(bundledRoot, "vibevoice", "asr_infer.exe");
   const runnerFile = path.join(bundledRoot, "qwen-runner.py");
+  const asrRunnerFile = path.join(bundledRoot, "asr-runner.py");
   await mkdir(path.dirname(vibeFile), { recursive: true });
   await writeFile(vibeFile, "pinned-native-runtime", "utf8");
   await writeFile(runnerFile, "print('worker')", "utf8");
+  await writeFile(asrRunnerFile, "print('asr')", "utf8");
   const manifest: AiRuntimePackageManifest = {
     schemaVersion: 1,
-    packageVersion: "test",
+    runtimePackageVersion: "test",
     platform: "win32-x64",
     vibevoice: {
       source: "microsoft/VibeASR.cpp",
@@ -200,6 +202,7 @@ test("bundled AI runtime copies only manifest-verified files into persistent sto
       transformersVersion: "test",
       runner: { path: "qwen-runner.py", sha256: await sha256File(runnerFile) },
     },
+    asr: { runner: { path: "asr-runner.py", sha256: await sha256File(asrRunnerFile) } },
   };
   await writeFile(
     path.join(bundledRoot, "runtime-manifest.json"),
@@ -208,7 +211,8 @@ test("bundled AI runtime copies only manifest-verified files into persistent sto
   );
   try {
     const installed = await prepareBundledAiRuntime({ bundledRoot, runtimeRoot });
-    assert.equal(installed?.packageVersion, "test");
+    assert.equal(installed?.runtimePackageVersion, "test");
+    assert.equal(await readFile(path.join(runtimeRoot, "asr-runner.py"), "utf8"), "print('asr')");
     assert.equal(
       await readFile(path.join(runtimeRoot, "vibevoice", "asr_infer.exe"), "utf8"),
       "pinned-native-runtime",
@@ -229,6 +233,7 @@ test("the checked-in runtime manifest pins source revisions and integrity hashes
   const manifestPath = path.join(process.cwd(), "resources", "ai", "runtime-manifest.json");
   const manifest = JSON.parse(await readFile(manifestPath, "utf8")) as AiRuntimePackageManifest;
   const qwenRunnerPath = path.join(process.cwd(), "scripts", manifest.qwen.runner.path);
+  const asrRunnerPath = path.join(process.cwd(), "scripts", manifest.asr?.runner.path ?? "");
   assert.equal(manifest.vibevoice.source, "microsoft/VibeASR.cpp");
   assert.match(manifest.vibevoice.revision, /^[a-f0-9]{40}$/);
   assert.ok(manifest.vibevoice.files.every((file) => /^[a-f0-9]{64}$/.test(file.sha256)));
@@ -238,6 +243,7 @@ test("the checked-in runtime manifest pins source revisions and integrity hashes
     await sha256File(qwenRunnerPath),
     "qwen-runner.py changed without updating resources/ai/runtime-manifest.json",
   );
+  assert.equal(manifest.asr?.runner.sha256, await sha256File(asrRunnerPath));
 });
 
 test("runtime health requires the shared Qwen aligner without duplicating it", async () => {

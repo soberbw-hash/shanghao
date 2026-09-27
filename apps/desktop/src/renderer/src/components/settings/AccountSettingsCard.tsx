@@ -133,21 +133,11 @@ export const AccountSettingsCard = () => {
         <div className="account-settings-fields">
           <label>
             <span>昵称</span>
-            <div>
-              <input
-                value={displayName}
-                maxLength={32}
-                onChange={(event) => setDisplayName(event.target.value)}
-              />
-              <Button
-                disabled={
-                  isBusy || !displayName.trim() || displayName.trim() === profile.displayName
-                }
-                onClick={() => void saveDisplayName()}
-              >
-                保存
-              </Button>
-            </div>
+            <input
+              value={displayName}
+              maxLength={32}
+              onChange={(event) => setDisplayName(event.target.value)}
+            />
           </label>
           <label>
             <span>账号</span>
@@ -159,6 +149,15 @@ export const AccountSettingsCard = () => {
             <input value={profile.userId} readOnly aria-readonly="true" />
             <small>房间身份由服务器验证，其他客户端无法伪造。</small>
           </label>
+        </div>
+        <div className="account-settings-save">
+          <Button
+            variant="secondary"
+            disabled={isBusy || !displayName.trim() || displayName.trim() === profile.displayName}
+            onClick={() => void saveDisplayName()}
+          >
+            {isBusy ? "保存中…" : "保存修改"}
+          </Button>
         </div>
       </section>
 

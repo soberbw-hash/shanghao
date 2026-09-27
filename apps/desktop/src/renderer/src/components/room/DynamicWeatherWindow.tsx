@@ -67,6 +67,10 @@ export const DynamicWeatherWindow = ({
           : dayView;
   const rainDrops = theme.scene === "heavy_rain" || theme.hasLightning ? 14 : 9;
   const snowflakes = 11;
+  const showNightDetails =
+    isEnabled &&
+    theme.phase === "night" &&
+    (theme.scene === "clear" || theme.scene === "partly_cloudy");
   const temperatureLabel =
     typeof visualSnapshot?.temperatureC === "number"
       ? `${Math.round(visualSnapshot.temperatureC)}°C`
@@ -96,8 +100,17 @@ export const DynamicWeatherWindow = ({
       />
       <div key={`${theme.scene}:${theme.phase}`} className="weather-window-view">
         <img className="weather-landscape" src={landscape} alt="" aria-hidden="true" />
+        {showNightDetails ? (
+          <div className="weather-night-details" aria-hidden="true">
+            <span className="weather-night-moonlight" />
+            {Array.from({ length: 7 }, (_, index) => (
+              <span className="weather-night-star" key={index} />
+            ))}
+            <span className="weather-night-city-glimmer" />
+          </div>
+        ) : null}
         {isEnabled ? <span className="weather-atmosphere-glow" aria-hidden="true" /> : null}
-        {isEnabled && (theme.hasClouds || theme.scene === "clear") ? (
+        {isEnabled && (theme.hasClouds || (theme.scene === "clear" && theme.phase !== "night")) ? (
           <div className="weather-cloud-layer" aria-hidden="true">
             <span className="weather-cloud weather-cloud-one" />
             <span className="weather-cloud weather-cloud-two" />

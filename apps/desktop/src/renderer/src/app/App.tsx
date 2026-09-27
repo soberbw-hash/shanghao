@@ -6,6 +6,7 @@ import { APPLE_MOTION_DURATION, APPLE_MOTION_EASE } from "@private-voice/shared"
 import { AppErrorBoundary } from "../components/layout/AppErrorBoundary";
 import { AppShell } from "../components/layout/AppShell";
 import { InteractionPerformanceHud } from "../components/diagnostics/InteractionPerformanceHud";
+import { runtimeHealthCollector } from "../features/diagnostics/runtimeHealthCollector";
 import { RemoteAudioRenderer } from "../features/audio/RemoteAudioRenderer";
 import { visualRuntimeController } from "../features/visual-runtime/VisualRuntimeController";
 import { displayRefreshRateService } from "../features/visual-runtime/DisplayRefreshRateService";
@@ -82,6 +83,11 @@ export const App = () => {
   const hydrateAccount = useAccountStore((state) => state.hydrate);
   const syncLocalProfile = useRoomStore((state) => state.syncLocalProfile);
   const [accountConfigReady, setAccountConfigReady] = useState(!cloudBaseClientConfig);
+
+  useEffect(() => {
+    if (bootstrapPhase !== "ready") return;
+    return runtimeHealthCollector.start();
+  }, [bootstrapPhase]);
 
   useEffect(() => {
     if (currentPage === "settings") setHasOpenedSettings(true);

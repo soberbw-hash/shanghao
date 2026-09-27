@@ -1,0 +1,278 @@
+/* Small, independent scene layers leave the room art and character routes untouched. */
+.scene-extended-environment::after {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    105deg,
+    rgba(20, 43, 83, 0.23),
+    rgba(39, 64, 105, 0.14) 62%,
+    rgba(57, 61, 91, 0.05)
+  );
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 600ms ease-out;
+  content: "";
+}
+
+.team-island.weather-room-night .scene-extended-environment::after {
+  opacity: 1;
+}
+
+.weather-night-details {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.weather-night-moonlight {
+  position: absolute;
+  top: 1%;
+  right: 4%;
+  width: 25%;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(233, 245, 255, 0.32), rgba(190, 224, 255, 0) 72%);
+  animation: weather-night-glow 8s ease-in-out infinite alternate;
+}
+
+.weather-night-star {
+  position: absolute;
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: #f4fbff;
+  box-shadow: 0 0 5px 1px rgba(209, 233, 255, 0.68);
+  animation: weather-night-twinkle 4.8s ease-in-out infinite alternate;
+}
+
+.weather-night-star:nth-of-type(2) {
+  left: 12%;
+  top: 22%;
+  animation-delay: -0.7s;
+}
+.weather-night-star:nth-of-type(3) {
+  left: 24%;
+  top: 39%;
+  animation-delay: -3.2s;
+}
+.weather-night-star:nth-of-type(4) {
+  left: 39%;
+  top: 15%;
+  animation-delay: -1.9s;
+}
+.weather-night-star:nth-of-type(5) {
+  left: 52%;
+  top: 31%;
+  animation-delay: -3.9s;
+}
+.weather-night-star:nth-of-type(6) {
+  left: 65%;
+  top: 13%;
+  animation-delay: -2.5s;
+}
+.weather-night-star:nth-of-type(7) {
+  left: 77%;
+  top: 42%;
+  animation-delay: -4.1s;
+}
+.weather-night-star:nth-of-type(8) {
+  left: 91%;
+  top: 19%;
+  animation-delay: -1.3s;
+}
+
+.weather-night-city-glimmer {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  height: 42%;
+  background:
+    radial-gradient(circle at 17% 68%, #ffe5a1 0 1px, transparent 2px),
+    radial-gradient(circle at 33% 51%, #ffe9ae 0 1px, transparent 2px),
+    radial-gradient(circle at 48% 72%, #fff0b9 0 1px, transparent 2px),
+    radial-gradient(circle at 62% 57%, #ffe1a0 0 1px, transparent 2px),
+    radial-gradient(circle at 78% 64%, #fff0b9 0 1px, transparent 2px);
+  animation: weather-night-glow 7s ease-in-out -2s infinite alternate;
+}
+
+.weather-phase-night .weather-cloud {
+  background: rgba(157, 185, 216, 0.38);
+  box-shadow:
+    18px -8px 0 -2px rgba(157, 185, 216, 0.32),
+    40px -3px 0 -4px rgba(157, 185, 216, 0.28);
+}
+
+@keyframes weather-night-twinkle {
+  from {
+    opacity: 0.25;
+    transform: scale(0.75);
+  }
+  to {
+    opacity: 0.9;
+    transform: scale(1.18);
+  }
+}
+
+@keyframes weather-night-glow {
+  from {
+    opacity: 0.38;
+  }
+  to {
+    opacity: 0.84;
+  }
+}
+
+.scene-ceiling-curtain {
+  transform-origin: 26% 0;
+  animation: scene-curtain-breathe 8.4s ease-in-out infinite alternate;
+}
+
+.scene-foreground-leaves {
+  transform-origin: 0 94%;
+  animation: scene-foreground-sway 9.6s ease-in-out infinite alternate;
+}
+
+.scene-corner-life {
+  position: absolute;
+  z-index: 46;
+  inset: 0;
+  pointer-events: none;
+}
+
+.scene-corner-leaf,
+.scene-corner-pet-ear {
+  position: absolute;
+  display: block;
+}
+
+.scene-corner-leaf {
+  width: 2.1%;
+  height: 4.2%;
+  border-radius: 75% 15% 70% 25%;
+  background: linear-gradient(145deg, rgba(145, 181, 102, 0.86), rgba(46, 113, 85, 0.92));
+  transform-origin: 25% 90%;
+  animation: scene-leaf-sway 6.8s ease-in-out infinite alternate;
+}
+
+.scene-corner-leaf-one {
+  left: 91.3%;
+  top: 18.7%;
+  transform: rotate(-32deg);
+}
+.scene-corner-leaf-two {
+  left: 95.3%;
+  top: 17.2%;
+  animation-delay: -3.4s;
+}
+
+.scene-corner-pet-ear {
+  top: 32%;
+  width: 0.55%;
+  height: 1.2%;
+  border-radius: 65% 65% 30% 30%;
+  background: #fff2d9;
+  box-shadow: inset -1px 0 2px rgba(214, 177, 119, 0.32);
+  transform-origin: 50% 100%;
+  animation: scene-pet-ear-flick 7.8s ease-in-out infinite;
+}
+
+.scene-corner-pet-ear-left {
+  left: 89.9%;
+  transform: rotate(-15deg);
+}
+.scene-corner-pet-ear-right {
+  left: 91.4%;
+  animation-delay: -3.9s;
+}
+
+@keyframes scene-curtain-breathe {
+  from {
+    transform: translate3d(0, 0, 0) rotate(-0.35deg);
+  }
+  to {
+    transform: translate3d(1px, 0, 0) rotate(0.45deg);
+  }
+}
+
+@keyframes scene-foreground-sway {
+  from {
+    transform: translate3d(0, 0, 0) rotate(-0.2deg);
+  }
+  to {
+    transform: translate3d(2px, 0, 0) rotate(0.22deg);
+  }
+}
+
+@keyframes scene-leaf-sway {
+  from {
+    transform: rotate(-31deg);
+  }
+  to {
+    transform: rotate(-24deg);
+  }
+}
+
+@keyframes scene-pet-ear-flick {
+  0%,
+  77%,
+  100% {
+    transform: rotate(-8deg);
+  }
+  82% {
+    transform: rotate(6deg);
+  }
+  88% {
+    transform: rotate(-4deg);
+  }
+}
+
+/* The seated portrait is one image, including gestures that previously moved its crops. */
+.desk-animal-action-blink .desk-animal-body-rig {
+  animation: desk-action-whole-blink 820ms ease-in-out both;
+}
+
+.desk-animal-action-ear .desk-animal-body-rig,
+.desk-animal-welcoming .desk-animal-body-rig {
+  animation: desk-action-look 1.15s var(--ease-organic) both;
+}
+
+.desk-animal-action-yawn .desk-animal-body-rig {
+  animation: desk-action-whole-yawn 2.15s var(--ease-organic) both;
+}
+
+.desk-animal-action-type .desk-animal-body-rig {
+  animation: desk-body-gaming 0.36s var(--ease-organic) 5 alternate;
+}
+
+.desk-animal-action-phone .desk-animal-body-rig {
+  animation: desk-action-sip 1.9s var(--ease-organic) both;
+}
+
+@keyframes desk-action-whole-blink {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  45% {
+    transform: translateY(1px) scaleY(0.994);
+  }
+}
+
+@keyframes desk-action-whole-yawn {
+  0%,
+  100% {
+    transform: translateY(0) scaleY(1);
+  }
+  45%,
+  70% {
+    transform: translateY(-1px) scaleY(1.018);
+  }
+}
+
+.team-island.is-visual-motion-paused .scene-ceiling-curtain,
+.team-island.is-visual-motion-paused .scene-foreground-leaves,
+.team-island.is-visual-motion-paused .scene-corner-life *,
+.team-island.is-visual-motion-paused .desk-animal-body-rig {
+  animation-play-state: paused !important;
+}

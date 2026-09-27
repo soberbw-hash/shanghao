@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "packageVersion": "3.0.5",
+  "runtimePackageVersion": "3.0.5",
   "platform": "win32-x64",
   "vibevoice": {
     "source": "microsoft/VibeASR.cpp",
@@ -35,6 +35,12 @@
     "runner": {
       "path": "qwen-runner.py",
       "sha256": "c82971f92612ccf74c8c22ad8aecbec6629cf82634d7f5af0d11003cfc98d6c0"
+    }
+  },
+  "asr": {
+    "runner": {
+      "path": "asr-runner.py",
+      "sha256": "44520393a4d7f2c9c6f3380cf2baa70e1a9524571156a656d84ecf07198e8e9c"
     }
   }
 }

@@ -75,5 +75,24 @@ if ! systemctl restart shanghao-phone-mic || ! curl --fail --silent --show-error
   exit 1
 fi
 
+# Prune only this sidecar's timestamped backups after the new service passes
+# readiness. Lexical order matches UTC creation order for this suffix format.
+prune_sidecar_backups() {
+  local target="$1" base directory candidate
+  local -a backups=()
+  directory="$(dirname "$target")"
+  base="$(basename "$target")"
+  while IFS= read -r candidate; do
+    [[ "$(basename "$candidate")" =~ ^${base//./\.}\.backup\.[0-9]{8}T[0-9]{6}Z$ ]] || continue
+    backups+=("$candidate")
+  done < <(find "$directory" -maxdepth 1 -type f -name "${base}.backup.*" -print | sort -r)
+  for ((i=3; i<${#backups[@]}; i++)); do
+    rm -- "${backups[i]}"
+  done
+}
+prune_sidecar_backups "$env_target"
+prune_sidecar_backups "$target_bundle"
+prune_sidecar_backups "$service_target"
+
 echo "Phone microphone sidecar is healthy under $(systemctl show shanghao-phone-mic -p User --value)"
 [[ -z "$backup_service" ]] || echo "Previous service file preserved at $backup_service"

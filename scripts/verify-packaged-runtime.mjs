@@ -23,11 +23,15 @@ const listFilesRecursively = async (directory) => {
 
 const runtimeManifestPath = path.join(resourcesDirectory, "ai", "runtime-manifest.json");
 const runtimeManifest = JSON.parse(await readFile(runtimeManifestPath, "utf8"));
-const qwenRunnerPath = path.join(resourcesDirectory, "ai", runtimeManifest.qwen.runner.path);
-const qwenRunner = await readFile(qwenRunnerPath);
-const qwenRunnerHash = createHash("sha256").update(qwenRunner).digest("hex");
-if (qwenRunnerHash !== runtimeManifest.qwen.runner.sha256) {
-  throw new Error(`Packaged AI runtime hash mismatch: ${runtimeManifest.qwen.runner.path}`);
+for (const runner of [runtimeManifest.qwen.runner, runtimeManifest.asr?.runner]) {
+  if (!runner) throw new Error("Packaged AI runtime manifest is missing a runner");
+  const runnerPath = path.join(resourcesDirectory, "ai", runner.path);
+  const runnerHash = createHash("sha256")
+    .update(await readFile(runnerPath))
+    .digest("hex");
+  if (runnerHash !== runner.sha256) {
+    throw new Error(`Packaged AI runtime hash mismatch: ${runner.path}`);
+  }
 }
 
 for (const nativeHelper of ["shanghao-core.exe", "ShangHao.PhoneAudio.exe"]) {

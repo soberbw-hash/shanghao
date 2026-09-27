@@ -34,19 +34,17 @@ const AiRuntimeDiagnosticsPanel = ({ onOpenAiSettings }: { onOpenAiSettings: () 
   const task = status?.lastTask;
   const isBusy = asr?.runtimePhase === "running";
   const hasProblem = Boolean(
-    loadError || asr?.runtimePhase === "error" || (task && task.status === "failed"),
+    loadError || (status && !asr?.ready && !isBusy) || asr?.runtimePhase === "error",
   );
   const statusLabel = loadError
-    ? "暂时无法读取状态"
+    ? "检查失败"
     : !status
       ? "正在检查"
       : isBusy
-        ? "正在处理"
-        : asr?.ready
-          ? "可以使用"
-          : asr?.runtimePhase === "missing"
-            ? "还没有准备好"
-            : "需要检查";
+        ? "正在检查"
+        : hasProblem
+          ? "需要处理"
+          : "正常";
 
   return (
     <div className="rounded-[16px] border border-[#DCE8F5] bg-[#F7FAFE] p-4">
@@ -76,7 +74,9 @@ const AiRuntimeDiagnosticsPanel = ({ onOpenAiSettings }: { onOpenAiSettings: () 
           </div>
           {hasProblem ? (
             <div className="mt-2 text-xs leading-5 text-[#C45151]">
-              AI 转录没有正常准备好，请到 AI 设置检查模型和运行组件。
+              {loadError
+                ? "状态读取失败，请重新检查。"
+                : "运行组件尚未准备完成，请到 AI 设置检查模型和运行组件。"}
             </div>
           ) : null}
         </div>
@@ -185,7 +185,12 @@ const ShangHaoHealthOverview = ({
     {
       label: "麦克风",
       level: micLevel,
-      description: micLevel === "需要看看" ? "输入音量可能偏高，建议检查。" : "麦克风输入正常。",
+      description:
+        micLevel === "未检测"
+          ? "尚未取得麦克风诊断。"
+          : micLevel === "需要看看"
+            ? "输入音量可能偏高，建议检查。"
+            : "麦克风输入正常。",
       actionLabel: "去语音设置",
       onClick: onOpenAudioSettings,
     },
@@ -212,9 +217,11 @@ const ShangHaoHealthOverview = ({
       label: "服务器连接",
       level: relayLevel,
       description:
-        relayLevel === "有问题"
-          ? "暂时连不上服务器，请检查网络或服务器设置。"
-          : "房间服务连接正常。",
+        relayLevel === "未检测"
+          ? "尚未检查服务器连接。"
+          : relayLevel === "有问题"
+            ? "暂时连不上服务器，请检查网络或服务器设置。"
+            : "房间服务连接正常。",
       actionLabel: "回到房间",
       onClick: onOpenHome,
     },
@@ -222,9 +229,11 @@ const ShangHaoHealthOverview = ({
       label: "网络速度",
       level: networkLevel,
       description:
-        networkLevel === "有问题" || networkLevel === "需要看看"
-          ? "网络响应偏慢，可能影响语音稳定性。"
-          : "网络响应正常。",
+        networkLevel === "未检测"
+          ? "尚未取得网络延迟。"
+          : networkLevel === "有问题" || networkLevel === "需要看看"
+            ? "网络响应偏慢，可能影响语音稳定性。"
+            : "网络响应正常。",
       actionLabel: "回到房间",
       onClick: onOpenRoom,
     },
@@ -232,9 +241,11 @@ const ShangHaoHealthOverview = ({
       label: "屏幕分享",
       level: screenLevel,
       description:
-        screenLevel === "需要看看"
-          ? "屏幕分享可能暂时卡住，请回到房间检查。"
-          : "没有发现屏幕分享问题。",
+        screenLevel === "未检测"
+          ? "开始屏幕分享后检查。"
+          : screenLevel === "需要看看"
+            ? "屏幕分享可能暂时卡住，请回到房间检查。"
+            : "没有发现屏幕分享问题。",
       actionLabel: "回到房间",
       onClick: onOpenRoom,
     },
@@ -247,24 +258,26 @@ const ShangHaoHealthOverview = ({
       label: "Windows 网络权限",
       level: windowsLevel,
       description:
-        windowsLevel === "需要看看"
-          ? "后台已尝试修复；如果这里仍异常，可以再手动重试。"
-          : "系统网络权限正常。",
+        windowsLevel === "未检测"
+          ? "尚未检查 Windows 网络权限。"
+          : windowsLevel === "需要看看"
+            ? "后台已尝试修复；如果这里仍异常，可以再手动重试。"
+            : "系统网络权限正常。",
       actionLabel: windowsLevel === "需要看看" ? "自动修复" : undefined,
       onClick: windowsLevel === "需要看看" ? onRepairFirewall : undefined,
     },
   ];
   const attentionCount = items.filter(({ level }) => isAttentionLevel(level)).length;
+  const normalCount = items.filter(({ level }) => level === "正常").length;
+  const uncheckedCount = items.filter(({ level }) => level === "未检测").length;
 
   return (
     <div className="rounded-[16px] border border-[#DCE8F5] bg-white p-4">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <div className="text-[14px] font-semibold text-[#344054]">现在的状态</div>
+          <div className="text-[14px] font-semibold text-[#344054]">系统状态 · 连接与设备</div>
           <div className="mt-1 text-xs leading-5 text-[#667085]">
-            {attentionCount === 0
-              ? "目前没有发现需要你处理的问题。"
-              : "下面只列出可能需要你处理的项目。"}
+            {normalCount} 项正常 · {attentionCount} 项需要处理 · {uncheckedCount} 项尚未检测
           </div>
         </div>
         <Button variant="ghost" onClick={onRefresh}>
@@ -279,7 +292,7 @@ const ShangHaoHealthOverview = ({
               <span
                 className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${healthClass(level)}`}
               >
-                {level}
+                {level === "有问题" || level === "需要看看" ? "需要处理" : level}
               </span>
             </div>
             <div className="mt-1 flex flex-wrap items-center justify-between gap-x-3 gap-y-1">

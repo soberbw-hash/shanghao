@@ -19,6 +19,10 @@ enum CoreCommand {
     ActivityProcessSnapshot {
         request_id: Option<String>,
     },
+    ActivityProcessDetails {
+        request_id: Option<String>,
+        process_ids: Vec<u32>,
+    },
     FileIdentity {
         request_id: Option<String>,
         path: String,
@@ -39,6 +43,7 @@ impl CoreCommand {
             Self::Capabilities { request_id }
             | Self::ActivitySnapshot { request_id }
             | Self::ActivityProcessSnapshot { request_id }
+            | Self::ActivityProcessDetails { request_id, .. }
             | Self::FileIdentity { request_id, .. }
             | Self::SuperviseProcess { request_id, .. } => request_id.as_deref(),
         }
@@ -92,7 +97,7 @@ fn capabilities() -> Value {
     json!({
         "protocolVersion": 1,
         "platform": std::env::consts::OS,
-        "commands": ["capabilities", "activity_snapshot", "activity_process_snapshot", "file_identity", "supervise_process"],
+        "commands": ["capabilities", "activity_snapshot", "activity_process_snapshot", "activity_process_details", "file_identity", "supervise_process"],
         "nativeActivity": cfg!(windows),
         "stableFileIdentity": cfg!(windows),
         "processSupervision": true
@@ -132,10 +137,6 @@ fn supervise_process(program: &str, args: &[String], timeout_ms: u64) -> io::Res
 
 #[cfg(windows)]
 fn activity_snapshot() -> io::Result<Value> {
-    use windows_sys::Win32::Foundation::CloseHandle;
-    use windows_sys::Win32::System::Threading::{
-        OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION, QueryFullProcessImageNameW,
-    };
     use windows_sys::Win32::UI::WindowsAndMessaging::{
         GetForegroundWindow, GetWindowTextLengthW, GetWindowTextW, GetWindowThreadProcessId,
     };
@@ -152,17 +153,7 @@ fn activity_snapshot() -> io::Result<Value> {
         let copied = GetWindowTextW(window, title.as_mut_ptr(), title.len() as i32).max(0) as usize;
         title.truncate(copied);
 
-        let process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid);
-        let executable_path = if process.is_null() {
-            None
-        } else {
-            let mut buffer = vec![0_u16; 32_768];
-            let mut length = buffer.len() as u32;
-            let succeeded =
-                QueryFullProcessImageNameW(process, 0, buffer.as_mut_ptr(), &mut length);
-            CloseHandle(process);
-            (succeeded != 0).then(|| String::from_utf16_lossy(&buffer[..length as usize]))
-        };
+        let executable_path = query_executable_path(pid);
 
         Ok(json!({
             "available": true,
@@ -180,9 +171,6 @@ fn activity_process_snapshot() -> io::Result<Value> {
     use windows_sys::Win32::System::Diagnostics::ToolHelp::{
         CreateToolhelp32Snapshot, PROCESSENTRY32W, Process32FirstW, Process32NextW,
         TH32CS_SNAPPROCESS,
-    };
-    use windows_sys::Win32::System::Threading::{
-        OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION, QueryFullProcessImageNameW,
     };
     use windows_sys::Win32::UI::WindowsAndMessaging::{
         EnumWindows, GetForegroundWindow, GetWindowTextLengthW, GetWindowTextW,
@@ -239,22 +227,10 @@ fn activity_process_snapshot() -> io::Result<Value> {
                     .unwrap_or(entry.szExeFile.len());
                 let process_name = String::from_utf16_lossy(&entry.szExeFile[..name_end]);
                 let pid = entry.th32ProcessID;
-                let process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid);
-                let executable_path = if process.is_null() {
-                    None
-                } else {
-                    let mut buffer = vec![0_u16; 32_768];
-                    let mut length = buffer.len() as u32;
-                    let succeeded =
-                        QueryFullProcessImageNameW(process, 0, buffer.as_mut_ptr(), &mut length);
-                    CloseHandle(process);
-                    (succeeded != 0).then(|| String::from_utf16_lossy(&buffer[..length as usize]))
-                };
                 processes.push(json!({
                     "ProcessId": pid,
                     "ProcessName": process_name,
                     "MainWindowTitle": titles.remove(&pid).unwrap_or_default(),
-                    "Path": executable_path,
                     "ParentProcessId": entry.th32ParentProcessID,
                     "IsForeground": pid == foreground_pid,
                 }));
@@ -266,6 +242,46 @@ fn activity_process_snapshot() -> io::Result<Value> {
         CloseHandle(handle);
         Ok(json!({ "available": true, "processes": processes }))
     }
+}
+
+#[cfg(windows)]
+fn query_executable_path(pid: u32) -> Option<String> {
+    use windows_sys::Win32::Foundation::CloseHandle;
+    use windows_sys::Win32::System::Threading::{
+        OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION, QueryFullProcessImageNameW,
+    };
+
+    unsafe {
+        let process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid);
+        if process.is_null() {
+            return None;
+        }
+        let mut buffer = vec![0_u16; 32_768];
+        let mut length = buffer.len() as u32;
+        let succeeded = QueryFullProcessImageNameW(process, 0, buffer.as_mut_ptr(), &mut length);
+        CloseHandle(process);
+        (succeeded != 0).then(|| String::from_utf16_lossy(&buffer[..length as usize]))
+    }
+}
+
+#[cfg(windows)]
+fn activity_process_details(process_ids: &[u32]) -> io::Result<Value> {
+    use std::collections::HashSet;
+
+    let mut seen = HashSet::new();
+    let processes: Vec<Value> = process_ids
+        .iter()
+        .copied()
+        .filter(|pid| *pid != 0 && seen.insert(*pid))
+        .take(64)
+        .map(|pid| json!({ "ProcessId": pid, "Path": query_executable_path(pid) }))
+        .collect();
+    Ok(json!({ "processes": processes }))
+}
+
+#[cfg(not(windows))]
+fn activity_process_details(_process_ids: &[u32]) -> io::Result<Value> {
+    Ok(json!({ "processes": [] }))
 }
 
 #[cfg(not(windows))]
@@ -328,6 +344,9 @@ fn handle(command: &CoreCommand) -> CoreResponse {
         CoreCommand::Capabilities { .. } => Ok(capabilities()),
         CoreCommand::ActivitySnapshot { .. } => activity_snapshot(),
         CoreCommand::ActivityProcessSnapshot { .. } => activity_process_snapshot(),
+        CoreCommand::ActivityProcessDetails { process_ids, .. } => {
+            activity_process_details(process_ids)
+        }
         CoreCommand::FileIdentity { path, .. } => file_identity(Path::new(path)),
         CoreCommand::SuperviseProcess {
             program,
@@ -369,7 +388,7 @@ mod tests {
     fn capabilities_are_versioned_and_bounded() {
         let value = capabilities();
         assert_eq!(value["protocolVersion"], 1);
-        assert_eq!(value["commands"].as_array().map(Vec::len), Some(5));
+        assert_eq!(value["commands"].as_array().map(Vec::len), Some(6));
     }
 
     #[test]

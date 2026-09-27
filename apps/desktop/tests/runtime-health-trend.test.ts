@@ -5,12 +5,12 @@ import type { RuntimeHealthSnapshot } from "@private-voice/shared";
 
 import { analyzeRuntimeHealthTrend } from "../src/main/runtime-health-trend";
 
-const sample = (index: number, growth = false): RuntimeHealthSnapshot => ({
-  capturedAt: new Date(index * 2_000).toISOString(),
+const sample = (index: number, growth = false, phaseId = 1): RuntimeHealthSnapshot => ({
+  capturedAt: new Date(index * 60_000).toISOString(),
   appVersion: "3.0.8",
   protocolVersion: "7",
   buildNumber: "test",
-  uptimeMs: index * 2_000,
+  uptimeMs: index * 60_000,
   main: {
     pid: 1,
     type: "Browser",
@@ -32,6 +32,7 @@ const sample = (index: number, growth = false): RuntimeHealthSnapshot => ({
   gpu: { hardwareAcceleration: true, featureStatus: {} },
   display: { id: "1", scaleFactor: 1, width: 1_920, height: 1_080 },
   realtime: {
+    phaseId,
     peerCount: 2,
     reconnectAttempts: 0,
     trackCount: growth ? index : 2,
@@ -47,17 +48,32 @@ const sample = (index: number, growth = false): RuntimeHealthSnapshot => ({
 });
 
 test("runtime trend stays quiet for stable resource counts", () => {
-  const trend = analyzeRuntimeHealthTrend(Array.from({ length: 8 }, (_, index) => sample(index)));
+  const trend = analyzeRuntimeHealthTrend(Array.from({ length: 12 }, (_, index) => sample(index)));
   assert.deepEqual(trend.warnings, []);
 });
 
 test("runtime trend reports sustained process, memory and realtime growth", () => {
   const trend = analyzeRuntimeHealthTrend(
-    Array.from({ length: 8 }, (_, index) => sample(index, true)),
+    Array.from({ length: 12 }, (_, index) => sample(index, true)),
   );
   assert.ok(trend.warnings.includes("main_working_set_growth"));
   assert.ok(trend.warnings.includes("renderer_working_set_growth"));
   assert.ok(trend.warnings.includes("child_process_growth"));
   assert.ok(trend.warnings.includes("dom_node_growth"));
   assert.ok(trend.warnings.includes("audio_context_growth"));
+});
+
+test("runtime trend resets after a room or device phase change", () => {
+  const samples = Array.from({ length: 12 }, (_, index) => sample(index, true, index < 6 ? 1 : 2));
+  assert.deepEqual(analyzeRuntimeHealthTrend(samples).warnings, []);
+});
+
+test("runtime trend ignores isolated endpoint spikes and GC-like fluctuations", () => {
+  const samples = Array.from({ length: 12 }, (_, index) => sample(index));
+  const first = samples[0];
+  const last = samples.at(-1);
+  if (!first || !last) throw new Error("test samples missing");
+  first.main.workingSetBytes = 80 * 1024 * 1024;
+  last.main.workingSetBytes = 300 * 1024 * 1024;
+  assert.deepEqual(analyzeRuntimeHealthTrend(samples).warnings, []);
 });

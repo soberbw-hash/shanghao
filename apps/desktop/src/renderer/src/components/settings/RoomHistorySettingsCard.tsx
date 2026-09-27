@@ -1,11 +1,10 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { ChevronDown, MessageCircle, MonitorUp, Users } from "lucide-react";
 import { AnimatePresence } from "framer-motion";
 
 import type { AppSettings, DailyRoomReport } from "@private-voice/shared";
 
 import { useDailyRoomReportStore } from "../../store/dailyRoomReportStore";
-import { useRoomStore } from "../../store/roomStore";
 import { DailyRoomReportModal } from "../status/DailyRoomReportModal";
 
 const yesterday = (): string => {
@@ -81,11 +80,30 @@ export const RoomHistorySettingsCard = ({
   settings: AppSettings;
   onChange: (patch: Partial<AppSettings>) => Promise<void> | void;
 }) => {
-  const currentRoomId = useRoomStore((state) => state.room.roomId);
-  const [roomId, setRoomId] = useState<"main" | "side">(currentRoomId === "side" ? "side" : "main");
-  const reports = useDailyRoomReportStore((state) => state.reports[roomId]);
-  const loaded = useDailyRoomReportStore((state) => state.loaded[roomId]);
-  const unavailable = useDailyRoomReportStore((state) => state.unavailable[roomId]);
+  const [roomId, setRoomId] = useState<"all" | "main" | "side">("all");
+  const mainReports = useDailyRoomReportStore((state) => state.reports.main);
+  const sideReports = useDailyRoomReportStore((state) => state.reports.side);
+  const mainLoaded = useDailyRoomReportStore((state) => state.loaded.main);
+  const sideLoaded = useDailyRoomReportStore((state) => state.loaded.side);
+  const mainUnavailable = useDailyRoomReportStore((state) => state.unavailable.main);
+  const sideUnavailable = useDailyRoomReportStore((state) => state.unavailable.side);
+  const reports = useMemo(
+    () =>
+      roomId === "main"
+        ? mainReports
+        : roomId === "side"
+          ? sideReports
+          : [...mainReports, ...sideReports].sort((a, b) => b.date.localeCompare(a.date)),
+    [roomId, mainReports, sideReports],
+  );
+  const loaded =
+    roomId === "main" ? mainLoaded : roomId === "side" ? sideLoaded : mainLoaded && sideLoaded;
+  const unavailable =
+    roomId === "main"
+      ? mainUnavailable
+      : roomId === "side"
+        ? sideUnavailable
+        : mainUnavailable && sideUnavailable;
   const [expandedDate, setExpandedDate] = useState<string>();
   const [previewReport, setPreviewReport] = useState<DailyRoomReport>();
 
@@ -94,14 +112,18 @@ export const RoomHistorySettingsCard = ({
   }, []);
 
   useEffect(() => {
-    setExpandedDate(reports[0]?.date);
-  }, [reports, roomId]);
+    setExpandedDate(reports[0] ? `${reports[0].roomId}:${reports[0].date}` : undefined);
+  }, [reports]);
 
   const toggle = (report: DailyRoomReport) => {
-    setExpandedDate((current) => (current === report.date ? undefined : report.date));
+    const key = `${report.roomId}:${report.date}`;
+    setExpandedDate((current) => (current === key ? undefined : key));
     if (report.date === yesterday()) {
       void onChange({
-        lastDailyRoomReportSeen: { ...settings.lastDailyRoomReportSeen, [roomId]: report.date },
+        lastDailyRoomReportSeen: {
+          ...settings.lastDailyRoomReportSeen,
+          [report.roomId]: report.date,
+        },
       });
     }
   };
@@ -114,6 +136,13 @@ export const RoomHistorySettingsCard = ({
           <p className="mt-1 text-sm text-[#718096]">最近 14 天，这个房间发生过什么。</p>
         </div>
         <div className="room-history-switch">
+          <button
+            type="button"
+            className={roomId === "all" ? "is-active" : ""}
+            onClick={() => setRoomId("all")}
+          >
+            全部
+          </button>
           <button
             type="button"
             className={roomId === "main" ? "is-active" : ""}
@@ -144,20 +173,29 @@ export const RoomHistorySettingsCard = ({
         ) : null}
         {loaded &&
           reports.map((report) => {
-            const expanded = expandedDate === report.date;
+            const expanded = expandedDate === `${report.roomId}:${report.date}`;
             return (
               <article
-                key={report.date}
+                key={`${report.roomId}:${report.date}`}
                 className={`room-history-day ${expanded ? "is-expanded" : ""}`}
               >
                 <button type="button" onClick={() => toggle(report)} aria-expanded={expanded}>
                   <span>
-                    <strong>{report.date}</strong>
+                    <strong>
+                      {report.date} · {report.roomId === "main" ? "一号房" : "二号房"}
+                    </strong>
                     <small>
                       {report.hadActivity
                         ? formatParticipantNames(report) || `${report.participantCount} 人来过`
                         : "安静的一天"}
                     </small>
+                    {report.hadActivity ? (
+                      <small className="room-history-day-summary">
+                        {report.participantCount} 人 · {formatDuration(report.activeDurationMs)} ·{" "}
+                        {report.messageCount} 条消息
+                        {report.games[0] ? ` · ${report.games[0].name}` : ""}
+                      </small>
+                    ) : null}
                   </span>
                   <ChevronDown className={expanded ? "rotate-180" : ""} />
                 </button>

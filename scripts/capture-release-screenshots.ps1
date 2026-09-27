@@ -104,7 +104,8 @@ try {
       -WorkingDirectory $desktopDirectory `
       -PassThru
 
-    for ($index = 0; $index -lt 60; $index++) {
+    $capturePollLimit = if ($capture.Mode -eq "settings" -and ($env:SHANGHAO_CAPTURE_SETTINGS_TABS -eq "1" -or $env:SHANGHAO_PERF_SEQUENCE -eq "settings")) { 120 } else { 60 }
+    for ($index = 0; $index -lt $capturePollLimit; $index++) {
       if (Test-Path $target) {
         break
       }

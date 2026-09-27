@@ -196,7 +196,6 @@ export const AboutSettingsCard = ({
               <strong>历史版本</strong>
               <small>需要时再展开，不打扰日常设置</small>
             </span>
-            <span className="about-release-count">{RELEASE_HISTORY.length} 个版本</span>
           </summary>
           <div className="about-release-list" aria-label="完整版本更新记录">
             {RELEASE_HISTORY.map((release, index) => (

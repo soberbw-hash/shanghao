@@ -19,16 +19,19 @@ test("top bar reserves one status row for every connection state", () => {
   assert.doesNotMatch(source, /\{statusCopy\(room\.connectionState\) \? \(/);
 });
 
-test("seated characters use an inherited body rig and safe layer overlap", () => {
+test("seated characters animate one complete portrait without head and body seams", () => {
   const component = readRenderer("components/room/DeskAnimalSprite.tsx");
   const styles = readRendererCss();
   assert.match(component, /className="desk-animal-body-rig"/);
-  assert.match(component, /desk-animal-body[\s\S]*desk-animal-head[\s\S]*desk-animal-arm/);
+  assert.match(component, /className="desk-animal-layer desk-animal-portrait"/);
+  assert.doesNotMatch(component, /desk-animal-head|desk-animal-arm/);
   assert.match(styles, /\.desk-animal-body-rig \{[\s\S]*transform-origin: center bottom/);
-  assert.match(styles, /\.desk-animal-head \{[\s\S]*inset\(0 0 47% 0\)/);
-  assert.match(styles, /\.desk-animal-body \{[\s\S]*inset\(43% 0 0 0\)/);
+  assert.doesNotMatch(styles, /\.desk-animal-portrait\s*\{[^}]*clip-path:/s);
   for (const motion of ["idle", "gaming", "speaking", "muted"]) {
     assert.match(styles, new RegExp(`\\.desk-animal-${motion} \\.desk-animal-body-rig`));
+  }
+  for (const action of ["look", "stretch", "sip", "blink", "ear", "yawn", "type", "phone"]) {
+    assert.match(styles, new RegExp(`\\.desk-animal-action-${action} \\.desk-animal-body-rig`));
   }
 });
 

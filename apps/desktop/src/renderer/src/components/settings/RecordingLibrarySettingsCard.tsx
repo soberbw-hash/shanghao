@@ -1004,21 +1004,12 @@ export const RecordingLibrarySettingsCard = ({
                           >
                             <span className="recording-item-title">{recordingTitle(item)}</span>
                             <span className="recording-item-meta">
-                              录制时间 {TIME_FORMAT.format(recordingDate(item))} ·{" "}
+                              {TIME_FORMAT.format(recordingDate(item))} ·{" "}
                               {formatBytes(item.fileSize)}
-                              {item.markers.length ? ` · ${item.markers.length} 个标记` : ""}
                             </span>
-                            {memoryStatus ? (
+                            {memoryStatus && memoryStatus.tone !== "is-ready" ? (
                               <span className={`recording-item-ai-status ${memoryStatus.tone}`}>
                                 <span>{memoryStatus.label}</span>
-                                {memoryStatus.modelLabel ? (
-                                  <span
-                                    className="recording-item-ai-model"
-                                    title={memoryStatus.modelTitle}
-                                  >
-                                    转录模型 · {memoryStatus.modelLabel}
-                                  </span>
-                                ) : null}
                                 {memoryStatus.progress !== undefined ? (
                                   <span
                                     className="recording-item-ai-progress"

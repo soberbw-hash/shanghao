@@ -176,7 +176,7 @@ export const DeskAnimalSprite = ({
       <span className={`desk-animal-art ${isRearReady ? "is-ready" : ""}`}>
         <span className="desk-animal-body-rig">
           <img
-            className="desk-animal-layer desk-animal-body"
+            className="desk-animal-layer desk-animal-portrait"
             src={source}
             alt=""
             draggable={false}
@@ -184,18 +184,6 @@ export const DeskAnimalSprite = ({
             onError={() =>
               setReadyRearSource((current) => (current === source ? undefined : current))
             }
-          />
-          <img
-            className="desk-animal-layer desk-animal-head"
-            src={source}
-            alt=""
-            draggable={false}
-          />
-          <img
-            className="desk-animal-layer desk-animal-arm"
-            src={source}
-            alt=""
-            draggable={false}
           />
         </span>
       </span>

@@ -206,21 +206,8 @@
   backface-visibility: hidden;
 }
 
-.desk-animal-head {
-  z-index: 4;
-  clip-path: inset(0 0 47% 0);
-  transform-origin: 50% 43%;
-}
-
-.desk-animal-body {
+.desk-animal-portrait {
   z-index: 3;
-  clip-path: inset(43% 0 0 0);
-}
-
-.desk-animal-arm {
-  z-index: 5;
-  clip-path: inset(46% 0 18% 58%);
-  transform-origin: 74% 63%;
 }
 
 .desk-animal-chair {
@@ -237,10 +224,6 @@
 
 .desk-animal-chair-back {
   z-index: 1;
-}
-
-.desk-animal[data-avatar-id="duck"] .desk-animal-head {
-  transform-origin: 50% 45%;
 }
 
 .room-character-visual-layer {
@@ -306,36 +289,12 @@
   filter: blur(4px);
 }
 
-.desk-animal-idle .desk-animal-head {
-  animation: none;
-}
-
 .desk-animal-idle .desk-animal-body-rig {
   animation: none;
 }
 
-.desk-animal-gaming .desk-animal-head {
-  animation: desk-head-gaming 1.25s var(--ease-organic) infinite;
-  animation-delay: var(--character-motion-delay, 0s);
-}
-
-.desk-animal-gaming .desk-animal-arm {
-  animation: desk-arm-typing 0.34s var(--ease-organic) infinite alternate;
-  animation-delay: var(--character-motion-delay, 0s);
-}
-
 .desk-animal-gaming .desk-animal-body-rig {
   animation: desk-body-gaming 1.25s var(--ease-organic) infinite;
-  animation-delay: var(--character-motion-delay, 0s);
-}
-
-.desk-animal-speaking .desk-animal-head {
-  animation: desk-head-speaking 0.7s var(--ease-organic) infinite;
-  animation-delay: var(--character-motion-delay, 0s);
-}
-
-.desk-animal-speaking .desk-animal-arm {
-  animation: desk-arm-speaking 0.7s var(--ease-organic) infinite;
   animation-delay: var(--character-motion-delay, 0s);
 }
 
@@ -344,41 +303,25 @@
   animation-delay: var(--character-motion-delay, 0s);
 }
 
-.desk-animal-muted .desk-animal-head {
-  animation: none;
-  filter: saturate(0.82);
-}
-
 .desk-animal-muted .desk-animal-body-rig {
   animation: none;
+  filter: saturate(0.82);
 }
 
 .desk-animal-moving {
   animation: desk-character-arrive 0.82s var(--ease-spatial);
 }
 
-.desk-animal-action-look .desk-animal-head {
+.desk-animal-action-look .desk-animal-body-rig {
   animation: desk-action-look 1.7s var(--ease-organic) both;
-}
-
-.desk-animal-action-stretch .desk-animal-head {
-  animation: desk-action-stretch-head 2.05s var(--ease-organic) both;
 }
 
 .desk-animal-action-stretch .desk-animal-body-rig {
   animation: desk-action-stretch-body 2.05s var(--ease-organic) both;
 }
 
-.desk-animal-action-stretch .desk-animal-arm {
-  animation: desk-action-stretch-arm 2.05s var(--ease-organic) both;
-}
-
-.desk-animal-action-sip .desk-animal-head {
-  animation: desk-action-sip-head 1.65s var(--ease-organic) both;
-}
-
-.desk-animal-action-sip .desk-animal-arm {
-  animation: desk-action-sip-arm 1.65s var(--ease-organic) both;
+.desk-animal-action-sip .desk-animal-body-rig {
+  animation: desk-action-sip 1.65s var(--ease-organic) both;
 }
 
 @keyframes desk-action-look {
@@ -387,20 +330,10 @@
     transform: translate3d(0, 0, 0) rotate(0deg);
   }
   28% {
-    transform: translate3d(-2px, -1px, 0) rotate(-3.5deg);
+    transform: translate3d(-1px, -1px, 0) rotate(-1.2deg);
   }
   62% {
-    transform: translate3d(2px, -1px, 0) rotate(3deg);
-  }
-}
-
-@keyframes desk-action-stretch-head {
-  0%,
-  100% {
-    transform: translate3d(0, 0, 0) rotate(0deg);
-  }
-  45% {
-    transform: translate3d(0, -4px, 0) rotate(-2deg) scale(1.025);
+    transform: translate3d(1px, -1px, 0) rotate(1deg);
   }
 }
 
@@ -410,40 +343,18 @@
     transform: scaleY(1);
   }
   45% {
-    transform: translateY(-2px) scaleY(1.055);
+    transform: translateY(-2px) scaleY(1.022);
   }
 }
 
-@keyframes desk-action-stretch-arm {
-  0%,
-  100% {
-    transform: rotate(0deg);
-  }
-  42%,
-  58% {
-    transform: translate(-3px, -5px) rotate(-22deg);
-  }
-}
-
-@keyframes desk-action-sip-head {
+@keyframes desk-action-sip {
   0%,
   100% {
     transform: rotate(0deg);
   }
   42%,
   66% {
-    transform: translateY(1px) rotate(4deg);
-  }
-}
-
-@keyframes desk-action-sip-arm {
-  0%,
-  100% {
-    transform: rotate(0deg);
-  }
-  35%,
-  68% {
-    transform: translate(-5px, -5px) rotate(-28deg);
+    transform: translateY(1px) rotate(1.4deg);
   }
 }
 

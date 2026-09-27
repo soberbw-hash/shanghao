@@ -282,6 +282,7 @@ export interface DesktopApi {
       reports: Record<"main" | "side", import("./room.types").DailyRoomReport[]>,
     ) => Promise<void>;
     openExternal: (url: string) => Promise<void>;
+    getChatLinkPreview: (url: string) => Promise<{ title?: string; imageDataUrl?: string }>;
     openSystemSettings: (page: "microphone" | "sound" | "display") => Promise<void>;
     consumeDeepLink: () => Promise<DeepLinkInvite | undefined>;
     onDeepLink: (listener: (invite: DeepLinkInvite) => void) => () => void;

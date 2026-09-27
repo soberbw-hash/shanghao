@@ -55,7 +55,7 @@ if (!currentRound.startsWith(`# ShangHao ${expectedVersion} `)) {
 if (!changelog.includes(`## ${expectedVersion} -`)) {
   throw new Error(`CHANGELOG.md has no ${expectedVersion} entry`);
 }
-if (!readme.includes("约 -16 LUFS") || !readme.includes("CloudBase 手机号验证注册")) {
+if (!/约 [−-]16 LUFS/.test(readme) || !readme.includes("CloudBase 手机号验证注册")) {
   throw new Error("README audio target or primary account provider is stale");
 }
 if (currentRound.includes("UI 音效开关/音量")) {

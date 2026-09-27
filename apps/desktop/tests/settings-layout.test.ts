@@ -101,23 +101,59 @@ test("semantic interface sounds stay enabled without a settings control", () => 
   assert.equal(audioSource.includes('playUiSound("sound-preview")'), false);
 });
 
-test("quick messages use direct slot drops, a dense pack library, and compact shortcuts", () => {
+test("settings keep short lists visible and model actions above neighboring cards", () => {
+  const aiSource = readFileSync(aiVoiceMemoryCardPath, "utf8");
+  const historySource = readFileSync(roomHistoryCardPath, "utf8");
+  const settingsSource = readFileSync(settingsPagePath, "utf8");
+  const styles = readRendererCss();
+
+  assert.equal(aiSource.includes('aria-label="搜索模型"'), false);
+  assert.equal(aiSource.includes('aria-label="筛选模型"'), true);
+  assert.match(
+    aiSource,
+    /<div className="ai-model-group-heading">\s*<h3 id="model-management-title">模型<\/h3>\s*<div className="ai-model-filter-bar" role="group" aria-label="筛选模型">/,
+  );
+  assert.match(styles, /\.ai-model-filter-bar\s*\{[^}]*margin-left:\s*auto;/s);
+  assert.equal(historySource.includes('aria-label="搜索房间记录"'), false);
+  assert.equal(historySource.includes('className="room-history-switch"'), true);
+  assert.equal(settingsSource.includes('<details className="settings-advanced-operation">'), false);
+  assert.equal(settingsSource.includes('label="Windows 外观实验功能"'), true);
+  assert.match(
+    styles,
+    /\.ai-model-card:has\(\.ai-model-action-menu\[open\]\)\s*\{[^}]*z-index:\s*5;[^}]*overflow:\s*visible;/s,
+  );
+  assert.match(styles, /\.ai-model-subgroup:has\(\.ai-model-action-menu\[open\]\)/);
+  assert.match(
+    styles,
+    /\.settings-section-card\.glass-panel:has\(\.ai-model-action-menu\[open\]\)\s*\{[^}]*overflow:\s*visible;/s,
+  );
+  assert.doesNotMatch(styles, /\.ai-model-card\s*\{[^}]*contain:\s*layout paint style;/s);
+  assert.doesNotMatch(styles, /\.ai-model-subgroup\s*\{[^}]*content-visibility:\s*auto;/s);
+});
+
+test("quick messages show voice and music slots with playback controls in one library", () => {
   const source = readFileSync(quickMessageSettingsPath, "utf8");
   const chatSource = readFileSync(temporaryChatPanelPath, "utf8");
 
-  assert.equal(source.includes("实时预览"), true);
+  assert.equal(source.includes("实时预览"), false);
   assert.equal(source.includes("musicPresetId"), true);
   assert.equal(source.includes("musicSlots"), true);
   assert.equal(source.includes("音乐快捷键"), true);
   assert.equal(source.includes("选择音乐快捷键"), true);
   assert.equal(source.includes("DEFAULT_QUICK_MESSAGE_MUSIC_SLOTS"), true);
-  assert.equal(source.includes("quick-message-music-preview"), true);
-  assert.equal(source.includes("quick-message-music-preview-list"), true);
-  assert.equal(source.includes("音乐（可添加 3 首）"), true);
+  assert.equal(source.includes('title="我的快捷消息"'), true);
+  assert.equal(source.includes('["slots", "我的快捷消息"]'), false);
+  assert.equal(source.includes('["library", "我的快捷消息"]'), true);
+  assert.equal(source.includes("quick-message-slot-list--voice"), true);
+  assert.equal(source.includes("quick-message-slot-list--music"), true);
+  assert.equal(source.includes("语音 / 音效"), true);
+  assert.equal(source.includes("拖到槽位即可绑定"), true);
   assert.equal(source.includes("onDrop={(event) => handleSlotDrop(event, index)}"), true);
+  assert.equal(source.includes("onDrop={(event) => handleMusicDrop(event, index)}"), true);
   assert.equal(source.includes("draggable"), true);
-  assert.equal(source.includes("快捷音频库"), true);
-  assert.equal(source.includes('className="flex flex-wrap gap-2"'), true);
+  assert.equal(source.includes("快捷音频库"), false);
+  assert.equal(source.includes('className="flex flex-wrap gap-1.5"'), true);
+  assert.equal(source.includes("rounded-[9px] border px-2 py-1"), true);
   assert.equal(source.includes("w-fit max-w-full cursor-grab"), true);
   assert.equal(source.includes("搜索音频名称或标签"), true);
   assert.equal(source.includes("libraryPresetCollator"), true);
@@ -135,7 +171,8 @@ test("quick messages use direct slot drops, a dense pack library, and compact sh
   assert.equal(source.includes("compact"), true);
   assert.equal(source.includes("soundVolume"), true);
   assert.equal(source.includes('"--ui-sound-volume"'), true);
-  assert.equal(source.includes(">开关音效<"), true);
+  assert.equal(source.includes(">播放音频<"), true);
+  assert.equal(source.includes('aria-label="快捷消息音量"'), true);
   assert.equal(source.includes("disabled={!settings.quickMessages.soundEnabled}"), true);
   const shortcutSource = readFileSync(
     path.resolve(process.cwd(), "src/renderer/src/components/base/ShortcutInput.tsx"),
@@ -160,7 +197,8 @@ test("quick messages use direct slot drops, a dense pack library, and compact sh
   assert.equal(source.includes(">全部游戏<"), true);
   assert.equal(source.includes(">全部主播<"), true);
   assert.equal(source.includes("librarySubfilterOptions"), false);
-  assert.equal(source.includes("已添加 · 槽位"), true);
+  assert.equal(source.includes("已添加 · {assignedLabel}"), true);
+  assert.equal(source.includes("assignedMusicSlotsByPreset"), true);
   assert.equal(source.includes("assignedSlotsByPreset"), true);
   assert.equal(source.includes("quick-message-filter-select"), true);
   assert.match(readRendererCss(), /\.quick-message-filter-select\s*\{/);
@@ -396,8 +434,8 @@ test("microphone processing lives in the room panel while about keeps release hi
   assert.equal(roomDockSource.includes("settings.isFriendLoudnessBalanceEnabled"), true);
   assert.equal(roomDockSource.includes("pushToTalkEnabled={settings.isPushToTalkEnabled}"), true);
   assert.equal(roomDockSource.includes("microphoneTest={microphoneTest}"), true);
-  assert.equal(RELEASE_HISTORY.length, 77);
-  assert.equal(RELEASE_HISTORY[0]?.version, "3.0.10");
+  assert.equal(RELEASE_HISTORY.length, 80);
+  assert.equal(RELEASE_HISTORY[0]?.version, "3.2.1");
   assert.equal(RELEASE_HISTORY.at(-1)?.version, "0.1.1");
   assert.equal(
     new Set(RELEASE_HISTORY.map((release) => release.version)).size,
@@ -523,7 +561,7 @@ test("recording library keeps both desktop columns useful while browsing long li
   assert.equal(cardSource.includes('className="recording-player-controls-row"'), true);
   assert.equal(cardSource.includes('aria-label="回到录音详情顶部"'), false);
   assert.equal(cardSource.includes("recordingPanelRef.current?.scrollTo({ top: 0 })"), false);
-  assert.equal(cardSource.match(/录制时间/g)?.length, 2);
+  assert.equal(cardSource.match(/录制时间/g)?.length, 1);
   assert.equal(
     cardSource.includes("已播 {formatTime(currentTime)} / 总时长 {formatTime(duration)}"),
     true,
@@ -537,7 +575,7 @@ test("recording library keeps both desktop columns useful while browsing long li
   assert.equal(voiceMemorySource.includes("<h4>转录</h4>"), false);
   assert.equal(voiceMemorySource.includes('aria-label="选择转录模型"'), false);
   assert.equal(voiceMemorySource.includes("收起内容"), false);
-  assert.equal(cardSource.includes("转录模型 · {memoryStatus.modelLabel}"), true);
+  assert.equal(cardSource.includes("转录模型 · {memoryStatus.modelLabel}"), false);
   assert.match(styles, /\.voice-memory-title\s*\{[^}]*white-space:\s*nowrap/s);
   assert.match(styles, /\.voice-memory-title\s*\{[^}]*flex:\s*0 0 auto/s);
   assert.doesNotMatch(styles, /\.voice-memory-transcript\s*\{[^}]*overflow:\s*auto/s);
@@ -625,7 +663,9 @@ test("AI voice memory keeps first install manual and recovers interrupted compar
   assert.equal(source.includes("下载模型"), true);
   assert.equal(source.includes('model.category === "asr"'), true);
   assert.equal(source.includes("modelSort"), false);
-  assert.equal(source.includes("Keep the manifest order stable"), true);
+  assert.equal(source.includes("Pin the recommendation at the top"), true);
+  assert.equal(source.includes("默认推荐"), true);
+  assert.equal(source.includes("<small>已选转录模型</small>"), true);
   assert.match(
     styles,
     /\.ai-model-management-grid\s*\{[^}]*grid-template-columns:\s*repeat\(auto-fit/s,

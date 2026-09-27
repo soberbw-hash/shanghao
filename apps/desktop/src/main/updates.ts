@@ -12,6 +12,8 @@ import {
 } from "@private-voice/shared";
 
 const RELEASES_API_URL = "https://api.github.com/repos/soberbw-hash/shanghao/releases/latest";
+const MAX_RELEASE_RESPONSE_BYTES = 1024 * 1024;
+const RELEASE_CACHE_MAX_AGE_MS = 6 * 60 * 60_000;
 
 interface GitHubReleaseResponse {
   tag_name?: string;
@@ -28,33 +30,80 @@ type UpdaterWithQuitEvent = typeof autoUpdater & {
   on(event: "before-quit-for-update", listener: () => void): void;
 };
 
-const fetchJson = async <T>(url: string): Promise<T> =>
-  new Promise<T>((resolve, reject) => {
+class UpdateCheckHttpError extends Error {
+  constructor(
+    readonly code: string,
+    readonly status?: number,
+  ) {
+    super(code);
+  }
+}
+
+interface ReleaseHttpResult {
+  status: number;
+  etag?: string;
+  release?: GitHubReleaseResponse;
+}
+
+const fetchLatestRelease = async (etag?: string): Promise<ReleaseHttpResult> =>
+  new Promise<ReleaseHttpResult>((resolve, reject) => {
     const req = request(
-      url,
+      RELEASES_API_URL,
       {
         headers: {
           "user-agent": "ShangHao/desktop",
           accept: "application/vnd.github+json",
+          ...(etag ? { "if-none-match": etag } : {}),
         },
       },
       (response) => {
-        let body = "";
+        const status = response.statusCode ?? 0;
+        const responseEtag = response.headers.etag;
+        if (status === 304) {
+          response.resume();
+          resolve({ status, etag: responseEtag });
+          return;
+        }
+        if (status < 200 || status >= 300) {
+          response.resume();
+          const code =
+            status === 403 && response.headers["x-ratelimit-remaining"] === "0"
+              ? "update_rate_limited"
+              : status === 404
+                ? "update_release_not_found"
+                : status >= 500
+                  ? "update_server_error"
+                  : `update_http_${status}`;
+          reject(new UpdateCheckHttpError(code, status));
+          return;
+        }
+        const chunks: Buffer[] = [];
+        let size = 0;
         response.on("data", (chunk) => {
-          body += chunk.toString();
+          const bytes = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+          size += bytes.length;
+          if (size > MAX_RELEASE_RESPONSE_BYTES) {
+            req.destroy(new UpdateCheckHttpError("update_response_too_large", status));
+            return;
+          }
+          chunks.push(bytes);
         });
         response.on("end", () => {
           try {
-            resolve(JSON.parse(body) as T);
-          } catch (error) {
-            reject(error);
+            const release = JSON.parse(
+              Buffer.concat(chunks).toString("utf8"),
+            ) as GitHubReleaseResponse;
+            if (!release || typeof release !== "object") throw new Error("invalid_release_json");
+            resolve({ status, etag: responseEtag, release });
+          } catch {
+            reject(new UpdateCheckHttpError("update_invalid_json", status));
           }
         });
       },
     );
 
     req.on("error", reject);
-    req.setTimeout(6_000, () => req.destroy(new Error("update_check_timeout")));
+    req.setTimeout(6_000, () => req.destroy(new UpdateCheckHttpError("update_check_timeout")));
     req.end();
   });
 
@@ -72,6 +121,7 @@ const parsePolicy = (releaseNotes?: string): UpdatePolicy => {
 
 export class UpdateService {
   private lastResult?: UpdateCheckResult;
+  private cachedRelease?: { release: GitHubReleaseResponse; etag?: string; checkedAt: number };
   private statusListener?: (status: UpdateStatus) => void;
   private installStarted = false;
   private downloadStarted = false;
@@ -131,70 +181,106 @@ export class UpdateService {
   async check(): Promise<UpdateCheckResult> {
     this.emit({ phase: "checking", message: "正在检查更新…" });
     try {
-      const release = await fetchJson<GitHubReleaseResponse>(RELEASES_API_URL);
-      const latestVersion = release.tag_name?.replace(/^v/i, "") || undefined;
-      const policy = parsePolicy(release.body);
-      const hasUpdate = Boolean(
-        latestVersion &&
-        semver.valid(latestVersion) &&
-        semver.gt(latestVersion, this.currentVersion),
-      );
-      const belowMinimum = Boolean(
-        policy.minSupportedVersion &&
-        semver.valid(policy.minSupportedVersion) &&
-        semver.lt(this.currentVersion, policy.minSupportedVersion),
-      );
-      const forceUpdate = hasUpdate && (policy.forceUpdate === true || belowMinimum);
-
-      const result: UpdateCheckResult = {
-        currentVersion: this.currentVersion,
-        latestVersion,
-        hasUpdate,
-        forceUpdate,
-        minSupportedVersion: policy.minSupportedVersion,
-        releaseNotes: release.body,
-        canAutoInstall: app.isPackaged,
-        checkedAt: new Date().toISOString(),
-        releaseUrl: release.html_url || DEFAULT_RELEASES_URL,
-        message: hasUpdate
-          ? forceUpdate
-            ? `需要更新到 ${latestVersion} 后继续使用`
-            : `发现新版本 ${latestVersion}`
-          : latestVersion
-            ? "当前已经是最新版本"
-            : "暂时无法判断是否有新版本",
+      const response = await fetchLatestRelease(this.cachedRelease?.etag);
+      const release = response.release ?? this.cachedRelease?.release;
+      if (!release) throw new UpdateCheckHttpError("update_cache_missing", response.status);
+      this.cachedRelease = {
+        release,
+        etag: response.etag ?? this.cachedRelease?.etag,
+        checkedAt: Date.now(),
       };
+      const result = this.resultFromRelease(release);
       this.lastResult = result;
       this.emit({
-        phase: hasUpdate ? "available" : "idle",
+        phase: result.hasUpdate ? "available" : "idle",
         message: result.message,
-        latestVersion,
-        forceUpdate,
+        latestVersion: result.latestVersion,
+        forceUpdate: result.forceUpdate,
       });
-      if (hasUpdate && app.isPackaged) {
+      if (result.hasUpdate && app.isPackaged) {
         void this.download(false).catch(() => undefined);
       }
-      await this.log(
-        "info",
-        "update check completed",
-        result as unknown as Record<string, unknown>,
-      );
+      await this.log("info", "update check completed", {
+        currentVersion: result.currentVersion,
+        latestVersion: result.latestVersion,
+        hasUpdate: result.hasUpdate,
+        forceUpdate: result.forceUpdate,
+        checkedAt: result.checkedAt,
+        httpStatus: response.status,
+      });
       return result;
     } catch (error) {
+      const cached = this.cachedRelease;
+      if (cached && Date.now() - cached.checkedAt < RELEASE_CACHE_MAX_AGE_MS) {
+        const result = this.resultFromRelease(cached.release, true);
+        this.lastResult = result;
+        this.emit({
+          phase: result.hasUpdate ? "available" : "idle",
+          message: result.message,
+          latestVersion: result.latestVersion,
+          forceUpdate: result.forceUpdate,
+        });
+        await this.log("warn", "update check used recent cache", {
+          currentVersion: result.currentVersion,
+          latestVersion: result.latestVersion,
+          hasUpdate: result.hasUpdate,
+          checkedAt: result.checkedAt,
+          errorCode: error instanceof UpdateCheckHttpError ? error.code : "update_network_error",
+          httpStatus: error instanceof UpdateCheckHttpError ? error.status : undefined,
+        });
+        return result;
+      }
       const result: UpdateCheckResult = {
         currentVersion: this.currentVersion,
         hasUpdate: false,
         canAutoInstall: app.isPackaged,
         checkedAt: new Date().toISOString(),
         releaseUrl: DEFAULT_RELEASES_URL,
-        message: "检查更新失败，请稍后再试。",
+        message:
+          error instanceof UpdateCheckHttpError && error.code === "update_rate_limited"
+            ? "更新服务请求过于频繁，请稍后再试。"
+            : "检查更新失败，请稍后再试。",
       };
       this.emit({ phase: "error", message: result.message });
       await this.log("warn", "update check failed", {
-        error: error instanceof Error ? error.message : String(error),
+        errorCode: error instanceof UpdateCheckHttpError ? error.code : "update_network_error",
+        httpStatus: error instanceof UpdateCheckHttpError ? error.status : undefined,
       });
       return result;
     }
+  }
+
+  private resultFromRelease(release: GitHubReleaseResponse, fromCache = false): UpdateCheckResult {
+    const latestVersion = release.tag_name?.replace(/^v/i, "") || undefined;
+    const policy = parsePolicy(release.body);
+    const hasUpdate = Boolean(
+      latestVersion && semver.valid(latestVersion) && semver.gt(latestVersion, this.currentVersion),
+    );
+    const belowMinimum = Boolean(
+      policy.minSupportedVersion &&
+      semver.valid(policy.minSupportedVersion) &&
+      semver.lt(this.currentVersion, policy.minSupportedVersion),
+    );
+    const forceUpdate = hasUpdate && (policy.forceUpdate === true || belowMinimum);
+    const message = hasUpdate
+      ? forceUpdate
+        ? `需要更新到 ${latestVersion} 后继续使用`
+        : `发现新版本 ${latestVersion}`
+      : latestVersion
+        ? "当前已经是最新版本"
+        : "暂时无法判断是否有新版本";
+    return {
+      currentVersion: this.currentVersion,
+      latestVersion,
+      hasUpdate,
+      forceUpdate,
+      minSupportedVersion: policy.minSupportedVersion,
+      releaseNotes: release.body,
+      canAutoInstall: app.isPackaged,
+      checkedAt: new Date().toISOString(),
+      releaseUrl: release.html_url || DEFAULT_RELEASES_URL,
+      message: fromCache ? `${message}（上次检查结果）` : message,
+    };
   }
 
   async download(manual = true): Promise<void> {
@@ -302,6 +388,6 @@ export class UpdateService {
     message: string,
     context?: Record<string, unknown>,
   ): Promise<void> {
-    await this.writeLog?.({ category: "updates", level, message, context });
+    await this.writeLog?.({ category: "updates", level, message, context }).catch(() => undefined);
   }
 }

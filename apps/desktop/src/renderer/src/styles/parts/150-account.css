@@ -65,6 +65,13 @@
   margin: 0;
 }
 
+.account-topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
 .account-brand {
   display: flex;
   align-items: center;
@@ -94,17 +101,17 @@
 }
 
 .account-heading {
-  margin: 18px 0 14px;
+  margin: 24px 0 18px;
 }
 
 .account-heading h1 {
-  margin: 15px 0 4px;
+  margin: 20px 0 0;
   font-size: 24px;
   letter-spacing: -0.035em;
 }
 
 .account-heading p {
-  margin: 0;
+  margin: 5px 0 0;
   color: #71819a;
   font-size: 13px;
   line-height: 1.5;
@@ -164,7 +171,7 @@
 }
 
 .account-form {
-  gap: 10px;
+  gap: 12px;
 }
 
 .account-field {
@@ -281,12 +288,6 @@
   accent-color: #4b95e8;
 }
 
-.account-remember-me small {
-  margin-left: 2px;
-  color: #94a5bd;
-  font-size: 11px;
-}
-
 .account-login-actions {
   display: flex;
   align-items: center;
@@ -316,11 +317,7 @@
 }
 
 .account-login-summary {
-  position: relative;
-  z-index: 4;
-  display: flex;
-  align-items: center;
-  gap: 8px;
+  display: block;
 }
 
 .account-remembered-identity {
@@ -396,7 +393,7 @@
   display: flex;
   align-items: center;
   gap: 6px;
-  min-height: 40px;
+  min-height: 36px;
   padding: 0 10px;
   border: 1px solid rgba(151, 183, 220, 0.46);
   border-radius: 13px;
@@ -428,7 +425,8 @@
   top: calc(100% + 7px);
   right: 0;
   display: grid;
-  width: 292px;
+  box-sizing: border-box;
+  width: min(292px, calc(100vw - 64px));
   gap: 8px;
   padding: 11px;
   border: 1px solid rgba(190, 208, 230, 0.82);
@@ -480,23 +478,6 @@
   font-size: 11px;
   font-weight: 600;
   text-overflow: ellipsis;
-}
-
-@media (max-width: 520px) {
-  .account-login-summary {
-    align-items: stretch;
-    flex-direction: column;
-  }
-
-  .account-audio-status {
-    width: 100%;
-    justify-content: center;
-  }
-
-  .account-audio-menu {
-    left: 0;
-    width: 100%;
-  }
 }
 
 .account-field > .account-verification-control {
@@ -685,8 +666,8 @@
 
 .account-submit {
   width: 100%;
-  min-height: 42px;
-  margin-top: 2px;
+  min-height: 46px;
+  margin-top: 4px;
   justify-content: center;
 }
 
@@ -706,14 +687,14 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-top: 10px;
-  padding-top: 9px;
+  margin-top: 16px;
+  padding-top: 11px;
   border-top: 1px solid rgba(155, 184, 217, 0.32);
 }
 
 .account-guest span {
-  color: #99a5b7;
-  font-size: 11px;
+  color: #71829a;
+  font-size: 12px;
 }
 
 .account-guest button {
@@ -763,6 +744,18 @@
   .account-register-grid {
     grid-template-columns: 1fr;
     gap: 8px;
+  }
+}
+
+@media (max-width: 380px) {
+  .account-topbar {
+    gap: 8px;
+  }
+
+  .account-audio-status {
+    gap: 4px;
+    padding-inline: 8px;
+    font-size: 10px;
   }
 }
 

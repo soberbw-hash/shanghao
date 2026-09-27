@@ -98,6 +98,21 @@ const renderMessageContent = (content: string, onCopyLink: (url: string) => void
 
 const MessageLinkPreview = ({ url, onCopy }: { url: string; onCopy: (url: string) => void }) => {
   const details = getMessageUrlDetails(url);
+  const [preview, setPreview] = useState<{ title?: string; imageDataUrl?: string }>({});
+
+  useEffect(() => {
+    let active = true;
+    setPreview({});
+    void window.desktopApi.app
+      .getChatLinkPreview(url)
+      .then((result) => {
+        if (active) setPreview(result);
+      })
+      .catch(() => undefined);
+    return () => {
+      active = false;
+    };
+  }, [url]);
 
   if (!details) return null;
   const compactUrl = formatCompactUrl(url);
@@ -123,10 +138,10 @@ const MessageLinkPreview = ({ url, onCopy }: { url: string; onCopy: (url: string
       }}
     >
       <span className="chat-link-preview-image" aria-hidden="true">
-        <Link2 />
+        {preview.imageDataUrl ? <img src={preview.imageDataUrl} alt="" /> : <Link2 />}
       </span>
       <span className="chat-link-preview-copy">
-        <strong>{details.hostname}</strong>
+        <strong>{preview.title ?? details.hostname}</strong>
         <small>{compactUrl === details.hostname ? "点击打开网页" : compactUrl}</small>
       </span>
       <ExternalLink className="chat-link-preview-open" aria-hidden="true" />

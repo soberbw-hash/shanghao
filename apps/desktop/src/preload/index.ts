@@ -34,6 +34,7 @@ const desktopApi: DesktopApi = {
     saveDailyRoomReports: (reports) =>
       ipcRenderer.invoke(IPC_CHANNELS.app.saveDailyRoomReports, reports),
     openExternal: (url) => ipcRenderer.invoke(IPC_CHANNELS.app.openExternal, url),
+    getChatLinkPreview: (url) => ipcRenderer.invoke(IPC_CHANNELS.app.getChatLinkPreview, url),
     openSystemSettings: (page) => ipcRenderer.invoke(IPC_CHANNELS.app.openSystemSettings, page),
     consumeDeepLink: () => ipcRenderer.invoke(IPC_CHANNELS.app.consumeDeepLink),
     onDeepLink: (listener) => {
