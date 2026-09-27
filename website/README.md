@@ -29,6 +29,10 @@ versioned installer and its checksum file, and fetch the first bytes of the
 installer to confirm downloads work. Keep earlier versioned downloads available
 for existing clients; do not use `--prune`.
 
+If GitHub's anonymous API is rate limited, run `release:prepare` with a
+temporary `GH_TOKEN` from the existing `gh` login. The script reads it only
+from the process environment; never save the token in this repository.
+
 CloudBase CLI 3.8.4's `hosting deploy dist / --verify --safe` failed the root
 consistency check during v3.2.0 and its rollback removed live root files.
 The site was restored with the root upload command above and checked over HTTPS.

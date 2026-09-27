@@ -1,20 +1,20 @@
 {
-  "tag_name": "v3.2.0",
-  "published_at": "2026-09-26T11:11:54Z",
-  "html_url": "https://github.com/soberbw-hash/shanghao/releases/tag/v3.2.0",
+  "tag_name": "v3.2.1",
+  "published_at": "2026-09-27T03:48:34Z",
+  "html_url": "https://github.com/soberbw-hash/shanghao/releases/tag/v3.2.1",
   "highlights": [
-    "设置文件只在内容真正变化或需要迁移时写入。新加的往返与旧版数据夹具测试会检查设置、录音、模型和 Voice Memory 等已有资料的兼容性；不会为升级清理用户数据。",
-    "开发者诊断加入 Main / Renderer 的内存、进程与 DOM 趋势。指标是有界统计，不收集聊天正文、转录正文或音频内容。",
-    "聊天链接不再请求第三方 favicon 服务；没有本地图标时用通用链接图标。",
-    "Windows 游戏探测优先由 Rust Core 提供进程和前台窗口事实，TypeScript 继续负责游戏规则；原生探测不可用才用 PowerShell 回退，减少常态扫描开销。"
+    "“我的快捷消息”合并语音／音效与音乐槽位，音频库里可以拖拽绑定、试听，并调整播放开关和音量。音频包条目更紧凑，后续添加更多内容时更容易浏览。",
+    "AI 模型列表移除多余搜索和留白，筛选靠近标题；模型操作菜单不再被邻近卡片遮住。GLM-ASR-Nano-2512 显示“默认推荐”，只影响新配置，已有选择保持不变。",
+    "登录页删除重复说明，声音检测移到卡片右上区域。房间记录移除不必要的搜索，Windows 外观实验选项直接展示。",
+    "聊天链接卡片在可获取时显示网页标题和缩略图；获取不到时仍保留可点击的链接卡片。"
   ],
   "assets": [
     {
-      "name": "ShangHao-3.2.0-Setup-x64.exe",
-      "size": 209248315,
-      "browser_download_url": "https://github.com/soberbw-hash/shanghao/releases/download/v3.2.0/ShangHao-3.2.0-Setup-x64.exe",
-      "mirror_path": "/downloads/v3.2.0/ShangHao-3.2.0-Setup-x64.exe",
-      "sha256": "b4c3a1c98dcd9777d47e1a736ed858470d6903e43a29b5d48c1e9026e2f957de"
+      "name": "ShangHao-3.2.1-Setup-x64.exe",
+      "size": 209259988,
+      "browser_download_url": "https://github.com/soberbw-hash/shanghao/releases/download/v3.2.1/ShangHao-3.2.1-Setup-x64.exe",
+      "mirror_path": "/downloads/v3.2.1/ShangHao-3.2.1-Setup-x64.exe",
+      "sha256": "a904975769521daf3377174f1f9927632eca8689f56b69efaaf1f9fc16455b64"
     }
   ]
 }

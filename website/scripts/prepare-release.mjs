@@ -16,6 +16,7 @@ const manifestPath = resolve(cache, "release.json");
 const headers = {
   Accept: "application/vnd.github+json",
   "User-Agent": "ShangHao-website-release-mirror",
+  ...(process.env.GH_TOKEN ? { Authorization: `Bearer ${process.env.GH_TOKEN}` } : {}),
 };
 
 async function sha256(path) {
