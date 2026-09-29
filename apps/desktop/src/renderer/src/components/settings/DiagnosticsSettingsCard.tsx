@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState } from "react";
 import type {
   AiRuntimeStatus,
   LocalAudioDiagnostics,
+  PeerHealthDiagnostics,
   RealtimeFaultKind,
   RelayStatusSnapshot,
   RuntimeHealthSnapshot,
@@ -11,6 +12,16 @@ import type {
 } from "@private-voice/shared";
 
 import { Button } from "../base/Button";
+import type { AudioRuntimeSnapshot } from "../../features/audio/audioRuntimeSnapshot";
+import type { RemoteAudioMixerDiagnostics } from "../../features/audio/RemoteAudioMixer";
+import {
+  aggregateHealthLevel,
+  microphoneHealth,
+  roomAudioHealth,
+  screenShareHealth,
+  speakerHealth,
+  type HealthLevel,
+} from "../../features/diagnostics/healthProjection";
 import { SettingsSection } from "./SettingsSection";
 
 const AiRuntimeDiagnosticsPanel = ({ onOpenAiSettings }: { onOpenAiSettings: () => void }) => {
@@ -95,8 +106,6 @@ const AiRuntimeDiagnosticsPanel = ({ onOpenAiSettings }: { onOpenAiSettings: () 
   );
 };
 
-type HealthLevel = "正常" | "未检测" | "需要看看" | "有问题";
-
 const healthClass = (level: HealthLevel): string =>
   level === "正常"
     ? "bg-[#EAF7EF] text-[#2F8051]"
@@ -113,6 +122,10 @@ interface ShangHaoHealthOverviewProps {
   runtimeHealth?: RuntimeHealthSnapshot;
   relay?: RelayStatusSnapshot;
   localAudioDiagnostics?: LocalAudioDiagnostics;
+  audioRuntime?: AudioRuntimeSnapshot;
+  mixer?: RemoteAudioMixerDiagnostics;
+  peerHealth?: Record<string, PeerHealthDiagnostics>;
+  roomActive: boolean;
   outputDeviceCount: number;
   remotePeerCount: number;
   webrtcReadyPeerCount: number;
@@ -131,6 +144,10 @@ const ShangHaoHealthOverview = ({
   runtimeHealth,
   relay,
   localAudioDiagnostics,
+  audioRuntime,
+  mixer,
+  peerHealth,
+  roomActive,
   outputDeviceCount,
   remotePeerCount,
   webrtcReadyPeerCount,
@@ -145,17 +162,9 @@ const ShangHaoHealthOverview = ({
   isRepairingFirewall,
 }: ShangHaoHealthOverviewProps) => {
   const relayLevel: HealthLevel = relay ? (relay.isReachable ? "正常" : "有问题") : "未检测";
-  const webRtcLevel: HealthLevel =
-    remotePeerCount === 0
-      ? "未检测"
-      : webrtcReadyPeerCount === remotePeerCount
-        ? "正常"
-        : "需要看看";
-  const micLevel: HealthLevel = localAudioDiagnostics
-    ? localAudioDiagnostics.inputOverload === "warning"
-      ? "需要看看"
-      : "正常"
-    : "未检测";
+  const roomFinding = roomAudioHealth({ remotePeerCount, webrtcReadyPeerCount, peerHealth });
+  const micFinding = microphoneHealth(audioRuntime, localAudioDiagnostics);
+  const outputFinding = speakerHealth({ outputDeviceCount, roomActive, remotePeerCount, mixer });
   const networkLevel: HealthLevel =
     relay?.latencyMs === undefined
       ? "未检测"
@@ -164,12 +173,7 @@ const ShangHaoHealthOverview = ({
         : relay.latencyMs < 300
           ? "需要看看"
           : "有问题";
-  const screenLevel: HealthLevel = !screenShare
-    ? "未检测"
-    : screenShare.fallback.overdue
-      ? "需要看看"
-      : "正常";
-  const outputLevel: HealthLevel = outputDeviceCount > 0 ? "正常" : "有问题";
+  const screenFinding = screenShareHealth(screenShare);
   const windowsLevel: HealthLevel = windowsStatus
     ? windowsStatus.firewall.healthy
       ? "正常"
@@ -184,32 +188,22 @@ const ShangHaoHealthOverview = ({
   }> = [
     {
       label: "麦克风",
-      level: micLevel,
-      description:
-        micLevel === "未检测"
-          ? "尚未取得麦克风诊断。"
-          : micLevel === "需要看看"
-            ? "输入音量可能偏高，建议检查。"
-            : "麦克风输入正常。",
+      level: micFinding.level,
+      description: micFinding.description,
       actionLabel: "去语音设置",
       onClick: onOpenAudioSettings,
     },
     {
       label: "扬声器",
-      level: outputLevel,
-      description: outputLevel === "有问题" ? "没有检测到可用的输出设备。" : "可以播放房间语音。",
+      level: outputFinding.level,
+      description: outputFinding.description,
       actionLabel: "去语音设置",
       onClick: onOpenAudioSettings,
     },
     {
       label: "房间连接",
-      level: webRtcLevel,
-      description:
-        webRtcLevel === "未检测"
-          ? "进入房间并有好友在线后会自动检查。"
-          : webRtcLevel === "需要看看"
-            ? "有好友还没有建立稳定的语音连接。"
-            : "好友语音连接正常。",
+      level: roomFinding.level,
+      description: roomFinding.description,
       actionLabel: "回到房间",
       onClick: onOpenRoom,
     },
@@ -239,20 +233,10 @@ const ShangHaoHealthOverview = ({
     },
     {
       label: "屏幕分享",
-      level: screenLevel,
-      description:
-        screenLevel === "未检测"
-          ? "开始屏幕分享后检查。"
-          : screenLevel === "需要看看"
-            ? "屏幕分享可能暂时卡住，请回到房间检查。"
-            : "没有发现屏幕分享问题。",
+      level: screenFinding.level,
+      description: screenFinding.description,
       actionLabel: "回到房间",
       onClick: onOpenRoom,
-    },
-    {
-      label: "应用运行",
-      level: runtimeHealth ? "正常" : "未检测",
-      description: runtimeHealth ? "应用运行正常。" : "应用启动后会自动检查。",
     },
     {
       label: "Windows 网络权限",
@@ -270,6 +254,7 @@ const ShangHaoHealthOverview = ({
   const attentionCount = items.filter(({ level }) => isAttentionLevel(level)).length;
   const normalCount = items.filter(({ level }) => level === "正常").length;
   const uncheckedCount = items.filter(({ level }) => level === "未检测").length;
+  const overallLevel = aggregateHealthLevel(items.map(({ level }) => level));
 
   return (
     <div className="rounded-[16px] border border-[#DCE8F5] bg-white p-4">
@@ -279,10 +264,23 @@ const ShangHaoHealthOverview = ({
           <div className="mt-1 text-xs leading-5 text-[#667085]">
             {normalCount} 项正常 · {attentionCount} 项需要处理 · {uncheckedCount} 项尚未检测
           </div>
+          <div className="mt-1 text-[11px] leading-5 text-[#7A8CA5]">
+            {runtimeHealth
+              ? "本机运行指标已记录；单次采样不代表语音或设备运行正常。"
+              : "本机运行指标尚未取得。"}
+          </div>
         </div>
-        <Button variant="ghost" onClick={onRefresh}>
-          重新检查
-        </Button>
+        <div className="flex shrink-0 items-center gap-2">
+          <span
+            className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${healthClass(overallLevel)}`}
+          >
+            整体：
+            {overallLevel === "需要看看" || overallLevel === "有问题" ? "需要处理" : overallLevel}
+          </span>
+          <Button variant="ghost" onClick={onRefresh}>
+            重新检查
+          </Button>
+        </div>
       </div>
       <div className="mt-3 grid items-start gap-2 sm:grid-cols-2">
         {items.map(({ label, level, description, actionLabel, onClick }) => (
@@ -326,6 +324,10 @@ export const DiagnosticsSettingsCard = ({
   runtimeHealth,
   relay,
   localAudioDiagnostics,
+  audioRuntime,
+  mixer,
+  peerHealth,
+  roomActive,
   outputDeviceCount,
   webrtcReadyPeerCount,
   remotePeerCount,
@@ -347,6 +349,10 @@ export const DiagnosticsSettingsCard = ({
   runtimeHealth?: RuntimeHealthSnapshot;
   relay?: RelayStatusSnapshot;
   localAudioDiagnostics?: LocalAudioDiagnostics;
+  audioRuntime?: AudioRuntimeSnapshot;
+  mixer?: RemoteAudioMixerDiagnostics;
+  peerHealth?: Record<string, PeerHealthDiagnostics>;
+  roomActive: boolean;
   outputDeviceCount: number;
   webrtcReadyPeerCount: number;
   remotePeerCount: number;
@@ -374,6 +380,10 @@ export const DiagnosticsSettingsCard = ({
         runtimeHealth={runtimeHealth}
         relay={relay}
         localAudioDiagnostics={localAudioDiagnostics}
+        audioRuntime={audioRuntime}
+        mixer={mixer}
+        peerHealth={peerHealth}
+        roomActive={roomActive}
         outputDeviceCount={outputDeviceCount}
         remotePeerCount={remotePeerCount}
         webrtcReadyPeerCount={webrtcReadyPeerCount}

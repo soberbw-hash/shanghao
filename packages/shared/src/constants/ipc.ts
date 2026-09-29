@@ -141,13 +141,9 @@ export const IPC_CHANNELS = {
     setIconOverlaysHidden: "windows:set-icon-overlays-hidden",
   },
   shortcuts: {
-    configureMute: "shortcuts:configure-mute",
     muteTriggered: "shortcuts:mute-triggered",
-    configureRecordingMarker: "shortcuts:configure-recording-marker",
     recordingMarkerTriggered: "shortcuts:recording-marker-triggered",
-    configurePushToTalk: "shortcuts:configure-push-to-talk",
     pushToTalkState: "shortcuts:push-to-talk-state",
-    configureQuickMessage: "shortcuts:configure-quick-message",
     quickMessageTriggered: "shortcuts:quick-message-triggered",
   },
   updates: {
@@ -169,6 +165,7 @@ export const IPC_CHANNELS = {
     startSession: "recording:start-session",
     appendChunk: "recording:append-chunk",
     finalizeSession: "recording:finalize-session",
+    sealSession: "recording:seal-session",
     abortSession: "recording:abort-session",
     saveSpeakerSegment: "recording:save-speaker-segment",
     finalizeSpeakerSegments: "recording:finalize-speaker-segments",

@@ -76,7 +76,7 @@ export class DailyRoomReportCache {
     this.writeQueue = this.writeQueue
       .catch(() => undefined)
       .then(async () => {
-        this.cache = nextReports;
+        if (!this.cache) await this.load();
         const payload: DailyRoomReportCacheFile = {
           version: CACHE_VERSION,
           reports: nextReports,
@@ -84,6 +84,7 @@ export class DailyRoomReportCache {
         await mkdir(path.dirname(this.filePath), { recursive: true });
         await writeFile(this.temporaryFilePath, JSON.stringify(payload), "utf8");
         await rename(this.temporaryFilePath, this.filePath);
+        this.cache = nextReports;
       });
     return this.writeQueue;
   }
@@ -93,9 +94,25 @@ export class DailyRoomReportCache {
       const parsed = JSON.parse(
         await readFile(this.filePath, "utf8"),
       ) as Partial<DailyRoomReportCacheFile>;
-      this.cache =
-        parsed.version === CACHE_VERSION ? sanitizeReports(parsed.reports) : emptyReports();
-    } catch {
+      if (
+        parsed.version !== CACHE_VERSION ||
+        !parsed.reports ||
+        typeof parsed.reports !== "object" ||
+        !(["main", "side"] as const).every(
+          (roomId) =>
+            Array.isArray(parsed.reports?.[roomId]) &&
+            parsed.reports[roomId].every(
+              (report) => isDailyRoomReport(report) && report.roomId === roomId,
+            ),
+        )
+      ) {
+        throw new Error("daily_room_reports_unreadable");
+      }
+      this.cache = sanitizeReports(parsed.reports);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+        throw new Error("daily_room_reports_unreadable", { cause: error });
+      }
       this.cache = emptyReports();
     }
   }

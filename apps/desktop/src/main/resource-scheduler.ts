@@ -39,8 +39,53 @@ export interface BackgroundDownloadDecision {
   reason?: string;
 }
 
+export interface AiComputeLease {
+  resourceMode: "low" | "normal";
+  signal: AbortSignal;
+  release: () => void;
+}
+
+interface ActiveAiCompute {
+  id: number;
+  kind: AiTaskKind;
+  manualRequest: boolean;
+  controller: AbortController;
+  stoppingReason?:
+    | "cancelled"
+    | "recording_priority"
+    | "realtime_pressure"
+    | "manual_only"
+    | "waiting_for_game_to_finish";
+}
+
+interface AiComputeWaiter {
+  id: number;
+  kind: AiTaskKind;
+  manualRequest: boolean;
+  priority: number;
+  signal?: AbortSignal;
+  onAbort: () => void;
+  resolve: (lease: AiComputeLease) => void;
+  reject: (error: Error) => void;
+}
+
+const MAX_AI_COMPUTE_WAITERS = 32;
+const MAX_AI_COMPUTE_EVENTS = 64;
+export interface AiComputeEvent {
+  id: number;
+  at: number;
+  kind: AiTaskKind;
+  manualRequest: boolean;
+  phase: "queued" | "started" | "stopping" | "released" | "cancelled" | "denied";
+  reason?: string;
+}
+const computePriority = (kind: AiTaskKind, manualRequest: boolean): number =>
+  (manualRequest ? 1_000 : 0) +
+  (kind === "transcription" ? RESOURCE_PRIORITY.aiInference : RESOURCE_PRIORITY.aiOrganization);
+
 const initialPressure = (): AiRuntimePressure => ({
   inVoiceRoom: false,
+  recordingActive: false,
   screenSharing: false,
   peerRecovering: false,
   latencyMs: 0,
@@ -51,6 +96,10 @@ const initialPressure = (): AiRuntimePressure => ({
 
 /** One source of truth for background work yielding to realtime room features. */
 export class ResourceScheduler {
+  private activeCompute?: ActiveAiCompute;
+  private readonly computeWaiters: AiComputeWaiter[] = [];
+  private readonly computeEvents: AiComputeEvent[] = [];
+  private nextComputeId = 0;
   private readonly denials: Record<string, number> = Object.create(null);
   private denialTotal = 0;
   private lastDenialReason?: string;
@@ -63,6 +112,167 @@ export class ResourceScheduler {
       lastReason: this.lastDenialReason,
       lastAt: this.lastDenialAt,
     };
+  }
+
+  getComputeSnapshot(): {
+    activeKind?: AiTaskKind;
+    activePhase?: "running" | "stopping";
+    stoppingReason?: ActiveAiCompute["stoppingReason"];
+    waiting: number;
+  } {
+    return {
+      activeKind: this.activeCompute?.kind,
+      activePhase: this.activeCompute
+        ? this.activeCompute.controller.signal.aborted
+          ? "stopping"
+          : "running"
+        : undefined,
+      stoppingReason: this.activeCompute?.stoppingReason,
+      waiting: this.computeWaiters.length,
+    };
+  }
+
+  getComputeTimeline(): AiComputeEvent[] {
+    return this.computeEvents.map((event) => ({ ...event }));
+  }
+
+  private recordComputeEvent(
+    task: Pick<AiComputeEvent, "id" | "kind" | "manualRequest">,
+    phase: AiComputeEvent["phase"],
+    reason?: string,
+  ): void {
+    this.computeEvents.push({ ...task, phase, reason, at: Date.now() });
+    if (this.computeEvents.length > MAX_AI_COMPUTE_EVENTS) this.computeEvents.shift();
+  }
+
+  isManualTextComputeActive(): boolean {
+    return Boolean(
+      this.activeCompute?.manualRequest && this.activeCompute.kind !== "transcription",
+    );
+  }
+
+  async acquireCompute(
+    kind: AiTaskKind,
+    manualRequest: boolean,
+    signal?: AbortSignal,
+  ): Promise<AiComputeLease> {
+    if (signal?.aborted) throw new Error("ai_task_paused");
+    const id = ++this.nextComputeId;
+    if (!this.activeCompute && this.computeWaiters.length === 0) {
+      const decision = this.aiDecision(kind, manualRequest);
+      if (!decision.runnable) {
+        this.recordComputeEvent({ id, kind, manualRequest }, "denied", decision.reason);
+        throw new Error(decision.reason);
+      }
+      return this.grantCompute(id, kind, manualRequest, decision.resourceMode, signal);
+    }
+    if (this.computeWaiters.length >= MAX_AI_COMPUTE_WAITERS) {
+      this.recordComputeEvent({ id, kind, manualRequest }, "denied", "ai_compute_queue_full");
+      throw new Error("ai_compute_queue_full");
+    }
+    return new Promise<AiComputeLease>((resolve, reject) => {
+      const waiter: AiComputeWaiter = {
+        id,
+        kind,
+        manualRequest,
+        priority: computePriority(kind, manualRequest),
+        signal,
+        onAbort: () => {
+          const index = this.computeWaiters.indexOf(waiter);
+          if (index < 0) return;
+          this.computeWaiters.splice(index, 1);
+          this.recordComputeEvent(waiter, "cancelled", "ai_task_paused");
+          reject(new Error("ai_task_paused"));
+        },
+        resolve,
+        reject,
+      };
+      const index = this.computeWaiters.findIndex((pending) => pending.priority < waiter.priority);
+      this.computeWaiters.splice(index < 0 ? this.computeWaiters.length : index, 0, waiter);
+      this.recordComputeEvent(waiter, "queued");
+      signal?.addEventListener("abort", waiter.onAbort, { once: true });
+      if (signal?.aborted) waiter.onAbort();
+    });
+  }
+
+  cancelWaitingCompute(): void {
+    for (const waiter of this.computeWaiters.splice(0)) {
+      waiter.signal?.removeEventListener("abort", waiter.onAbort);
+      this.recordComputeEvent(waiter, "cancelled", "ai_task_paused");
+      waiter.reject(new Error("ai_task_paused"));
+    }
+  }
+
+  cancelCompute(): void {
+    this.cancelWaitingCompute();
+    if (this.activeCompute) {
+      this.activeCompute.stoppingReason = "cancelled";
+      if (!this.activeCompute.controller.signal.aborted)
+        this.recordComputeEvent(this.activeCompute, "stopping", "cancelled");
+      this.activeCompute.controller.abort();
+    }
+  }
+
+  private grantCompute(
+    id: number,
+    kind: AiTaskKind,
+    manualRequest: boolean,
+    resourceMode: "low" | "normal",
+    signal?: AbortSignal,
+  ): AiComputeLease {
+    const controller = new AbortController();
+    const active: ActiveAiCompute = { id, kind, manualRequest, controller };
+    const forwardAbort = () => {
+      active.stoppingReason = "cancelled";
+      if (!controller.signal.aborted) this.recordComputeEvent(active, "stopping", "cancelled");
+      controller.abort();
+    };
+    this.activeCompute = active;
+    this.recordComputeEvent(active, "started");
+    signal?.addEventListener("abort", forwardAbort, { once: true });
+    if (signal?.aborted) forwardAbort();
+    let released = false;
+    return {
+      resourceMode,
+      signal: controller.signal,
+      release: () => {
+        if (released) return;
+        released = true;
+        signal?.removeEventListener("abort", forwardAbort);
+        if (this.activeCompute === active) this.activeCompute = undefined;
+        this.recordComputeEvent(active, "released");
+        this.grantNextCompute();
+      },
+    };
+  }
+
+  private grantNextCompute(): void {
+    if (this.activeCompute) return;
+    while (this.computeWaiters.length > 0) {
+      const waiter = this.computeWaiters.shift()!;
+      waiter.signal?.removeEventListener("abort", waiter.onAbort);
+      if (waiter.signal?.aborted) {
+        this.recordComputeEvent(waiter, "cancelled", "ai_task_paused");
+        waiter.reject(new Error("ai_task_paused"));
+        continue;
+      }
+      const decision = this.aiDecision(waiter.kind, waiter.manualRequest);
+      if (!decision.runnable) {
+        this.recordComputeEvent(waiter, "denied", decision.reason);
+        waiter.reject(new Error(decision.reason));
+        continue;
+      }
+      waiter.resolve(
+        this.grantCompute(
+          waiter.id,
+          waiter.kind,
+          waiter.manualRequest,
+          decision.resourceMode,
+          waiter.signal,
+        ),
+      );
+      return;
+    }
   }
 
   private denied(reason: string): ScheduledAiDecision {
@@ -78,6 +288,7 @@ export class ResourceScheduler {
       "screen_share_network_pressure",
       "voice_network_pressure",
       "memory_pressure",
+      "recording_priority",
     ].includes(reason)
       ? reason
       : "other";
@@ -96,6 +307,22 @@ export class ResourceScheduler {
 
   update(update: Partial<SchedulerState>): void {
     this.state = { ...this.state, ...update };
+    if (this.activeCompute && !this.activeCompute.manualRequest) {
+      const reason = this.state.realtimePressureHigh
+        ? "realtime_pressure"
+        : this.state.pressure.recordingActive
+          ? "recording_priority"
+          : this.state.processingMode === "manual"
+            ? "manual_only"
+            : this.state.gameActive && this.state.processingMode === "after_game"
+              ? "waiting_for_game_to_finish"
+              : undefined;
+      if (reason && !this.activeCompute.controller.signal.aborted) {
+        this.activeCompute.stoppingReason = reason;
+        this.recordComputeEvent(this.activeCompute, "stopping", reason);
+        this.activeCompute.controller.abort();
+      }
+    }
   }
 
   aiDecision(kind: AiTaskKind, manualRequest: boolean): ScheduledAiDecision {
@@ -103,6 +330,8 @@ export class ResourceScheduler {
       return this.denied(this.state.pressureReason ?? "realtime_pressure");
     }
     if (this.state.processingMode === "manual" && !manualRequest) return this.denied("manual_only");
+    if (this.state.pressure.recordingActive && !manualRequest)
+      return this.denied("recording_priority");
     if (this.state.gameActive && this.state.processingMode === "after_game" && !manualRequest) {
       return this.denied("waiting_for_game_to_finish");
     }
@@ -116,6 +345,7 @@ export class ResourceScheduler {
       resourceMode:
         this.state.processingMode === "low_resource" ||
         this.state.gameActive ||
+        this.state.pressure.recordingActive ||
         realtimeFeatureActive ||
         (organizing && this.state.pressure.rendererMemoryPressure)
           ? "low"
@@ -156,9 +386,11 @@ export class ResourceScheduler {
   }
 
   shouldReleaseQwen(): { release: boolean; reason?: string } {
+    if (this.isManualTextComputeActive()) return { release: false };
     if (this.state.pressure.peerRecovering) return { release: true, reason: "peer_recovery" };
     if (this.state.realtimePressureHigh)
       return { release: true, reason: this.state.pressureReason ?? "realtime_pressure" };
+    if (this.state.pressure.recordingActive) return { release: true, reason: "recording_priority" };
     if (this.state.gameActive && this.state.processingMode === "after_game")
       return { release: true, reason: "processing_deferred" };
     return { release: false };

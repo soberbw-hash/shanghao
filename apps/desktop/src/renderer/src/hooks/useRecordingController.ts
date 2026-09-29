@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo } from "react";
 
-import { TARGET_SAMPLE_RATE } from "@private-voice/shared";
+import { TARGET_SAMPLE_RATE, type RecordingResult } from "@private-voice/shared";
 import { RecordingService } from "@private-voice/recording";
 import { RecordingState } from "@private-voice/shared";
 
@@ -20,6 +20,7 @@ type MixedCallStream = ReturnType<typeof createMixedCallStream>;
 interface RecordingRuntime {
   service: RecordingService;
   mix: MixedCallStream | null;
+  finalizing?: Promise<RecordingResult>;
 }
 
 const RECORDING_RUNTIME_KEY = "__shanghaoRecordingRuntimeV2__";
@@ -58,6 +59,7 @@ const getRecordingRuntime = (): RecordingRuntime => {
         appendChunk: (sessionId, buffer) =>
           window.desktopApi.recording.appendChunk(sessionId, buffer),
         finalizeSession: (payload) => window.desktopApi.recording.finalizeSession(payload),
+        sealSession: (sessionId) => window.desktopApi.recording.sealSession(sessionId),
         abortSession: (sessionId) => window.desktopApi.recording.abortSession(sessionId),
       },
       onStateChange: (snapshot) => useRecordingStore.getState().setStatus(snapshot),
@@ -154,7 +156,13 @@ export const useRecordingController = () => {
   }, [recordingService, setStatus]);
 
   const startRecording = useCallback(() => {
-    if (recordingService.hasRecording()) {
+    const currentState = recordingService.getState().state;
+    if (
+      runtime.finalizing ||
+      recordingService.hasRecording() ||
+      currentState === RecordingState.Stopping ||
+      currentState === RecordingState.Saving
+    ) {
       const status = recordingService.getState();
       setStatus(status);
       return status;
@@ -205,49 +213,66 @@ export const useRecordingController = () => {
     return status;
   }, [recordingService, runtime, setStatus]);
 
-  const stopRecording = useCallback(async () => {
+  const stopRecording = useCallback((): Promise<RecordingResult> => {
+    if (runtime.finalizing) return runtime.finalizing;
     const mix = runtime.mix;
-    try {
-      const result = await recordingService.stop(
-        {
-          targetSampleRate: 48_000,
-          targetFormat: "m4a-aac",
-          channels: 1,
-          includeMixedCallAudio: true,
-        },
-        TARGET_SAMPLE_RATE,
-      );
+    const operation = (async () => {
+      try {
+        const result = await recordingService.stop(
+          {
+            targetSampleRate: 48_000,
+            targetFormat: "m4a-aac",
+            channels: 1,
+            includeMixedCallAudio: true,
+          },
+          TARGET_SAMPLE_RATE,
+        );
 
-      if (result.recordingId) {
-        await mix?.finish(result.recordingId, result.filePath).catch((error) => {
-          void writeRendererLog(
-            "recording",
-            "error",
-            "recording_speaker_segments_finalize_failed",
-            {
-              recordingId: result.recordingId,
-              error: error instanceof Error ? error.message : "unknown_error",
-            },
-          );
-        });
+        if (result.recordingId) {
+          await mix?.finish(result.recordingId, result.filePath).catch((error) => {
+            void writeRendererLog(
+              "recording",
+              "error",
+              "recording_speaker_segments_finalize_failed",
+              {
+                recordingId: result.recordingId,
+                error: error instanceof Error ? error.message : "unknown_error",
+              },
+            );
+          });
+        }
+
+        addHistory(result);
+        setStatus(recordingService.getState());
+        return result;
+      } finally {
+        mix?.dispose();
+        if (runtime.mix === mix) runtime.mix = null;
       }
-
-      addHistory(result);
-      setStatus(recordingService.getState());
-      return result;
-    } finally {
-      runtime.mix?.dispose();
-      runtime.mix = null;
-    }
+    })();
+    runtime.finalizing = operation;
+    void operation.then(
+      () => {
+        if (runtime.finalizing === operation) runtime.finalizing = undefined;
+      },
+      () => {
+        if (runtime.finalizing === operation) runtime.finalizing = undefined;
+      },
+    );
+    return operation;
   }, [addHistory, recordingService, runtime, setStatus]);
 
   const discardRecording = useCallback(async () => {
+    if (runtime.finalizing) return;
+    const currentState = recordingService.getState().state;
+    if (currentState === RecordingState.Stopping || currentState === RecordingState.Saving) return;
+    const mix = runtime.mix;
     try {
       await recordingService.discard();
       setStatus(recordingService.getState());
     } finally {
-      runtime.mix?.dispose();
-      runtime.mix = null;
+      mix?.dispose();
+      if (runtime.mix === mix) runtime.mix = null;
     }
   }, [recordingService, runtime, setStatus]);
 

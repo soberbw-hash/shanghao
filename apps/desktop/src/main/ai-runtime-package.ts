@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { createReadStream, existsSync } from "node:fs";
 import { copyFile, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
@@ -78,12 +78,35 @@ export const readAiRuntimeManifest = async (
   return manifest as AiRuntimePackageManifest;
 };
 
-/** Installs bundled, pinned runtime files without touching user models or existing valid files. */
-export const prepareBundledAiRuntime = async (options: {
+interface PrepareBundledAiRuntimeOptions {
   runtimeRoot: string;
   bundledRoot: string;
   developmentScriptRoot?: string;
-}): Promise<AiRuntimePackageManifest | undefined> => {
+}
+
+const runtimeInstallQueues = new Map<string, Promise<void>>();
+
+/** Installs bundled, pinned runtime files without touching user models or existing valid files. */
+export const prepareBundledAiRuntime = (
+  options: PrepareBundledAiRuntimeOptions,
+): Promise<AiRuntimePackageManifest | undefined> => {
+  const key = path.resolve(options.runtimeRoot);
+  const prior = runtimeInstallQueues.get(key) ?? Promise.resolve();
+  const result = prior.then(() => prepareBundledAiRuntimeOnce(options));
+  const settled = result.then(
+    () => undefined,
+    () => undefined,
+  );
+  runtimeInstallQueues.set(key, settled);
+  void settled.then(() => {
+    if (runtimeInstallQueues.get(key) === settled) runtimeInstallQueues.delete(key);
+  });
+  return result;
+};
+
+const prepareBundledAiRuntimeOnce = async (
+  options: PrepareBundledAiRuntimeOptions,
+): Promise<AiRuntimePackageManifest | undefined> => {
   const bundledManifest = path.join(options.bundledRoot, "runtime-manifest.json");
   if (!existsSync(bundledManifest)) return undefined;
   const manifest = await readAiRuntimeManifest(bundledManifest);
@@ -91,18 +114,32 @@ export const prepareBundledAiRuntime = async (options: {
   const files = [...manifest.vibevoice.files, manifest.qwen.runner, manifest.asr?.runner].filter(
     (file): file is RuntimeManifestFile => Boolean(file),
   );
+  const requiredRunners = [manifest.qwen.runner, manifest.asr?.runner].filter(
+    (file): file is RuntimeManifestFile => Boolean(file),
+  );
+  const requiredPaths = new Set(requiredRunners.map((file) => file.path));
+  const availableFiles: Array<{ file: RuntimeManifestFile; source: string }> = [];
   for (const file of files) {
     const source =
       options.developmentScriptRoot &&
       (file.path === manifest.qwen.runner.path || file.path === manifest.asr?.runner.path)
         ? safeRuntimePath(options.developmentScriptRoot, file.path)
         : safeRuntimePath(options.bundledRoot, file.path);
-    if (!existsSync(source)) continue;
+    // Legacy VibeVoice binaries are optional. Every declared current runner
+    // must be present, and every available source must pass integrity checks
+    // before the first installed file is replaced.
+    if (!existsSync(source)) {
+      if (requiredPaths.has(file.path)) throw new Error("ai_runtime_source_missing");
+      continue;
+    }
     if ((await sha256File(source)) !== file.sha256) throw new Error("ai_runtime_integrity_failed");
+    availableFiles.push({ file, source });
+  }
+  for (const { file, source } of availableFiles) {
     const destination = safeRuntimePath(options.runtimeRoot, file.path);
     if (existsSync(destination) && (await sha256File(destination)) === file.sha256) continue;
     await mkdir(path.dirname(destination), { recursive: true });
-    const temporary = `${destination}.${process.pid}.tmp`;
+    const temporary = `${destination}.${process.pid}.${randomUUID()}.tmp`;
     try {
       await copyFile(source, temporary);
       if ((await sha256File(temporary)) !== file.sha256) throw new Error("ai_runtime_copy_failed");
@@ -121,7 +158,7 @@ export const prepareBundledAiRuntime = async (options: {
   ) {
     return manifest;
   }
-  const temporaryManifest = `${installedManifest}.${process.pid}.tmp`;
+  const temporaryManifest = `${installedManifest}.${process.pid}.${randomUUID()}.tmp`;
   try {
     await writeFile(temporaryManifest, serializedManifest, "utf8");
     await rename(temporaryManifest, installedManifest);

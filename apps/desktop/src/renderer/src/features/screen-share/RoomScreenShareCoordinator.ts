@@ -136,10 +136,20 @@ export class RoomScreenShareCoordinator {
     this.emitLocalViewers();
     this.relay.stop();
     this.pipeline.clearLocalCapture();
-    await Promise.all(
+    const detachResults = await Promise.allSettled(
       [...this.options.getPeers().values()].map((peer) => peer.setScreenTrack(undefined)),
     );
-    await this.options.restorePrimaryInputTrack();
+    const failedDetaches = detachResults.filter((result) => result.status === "rejected").length;
+    if (failedDetaches > 0) {
+      void writeRendererLog("webrtc", "warn", "Some screen share tracks could not be detached", {
+        failedPeerCount: failedDetaches,
+      });
+    }
+    try {
+      await this.options.restorePrimaryInputTrack();
+    } catch {
+      void writeRendererLog("webrtc", "warn", "Microphone restore after screen sharing failed");
+    }
     if (stopTracks) previousStream?.getTracks().forEach((track) => track.stop());
     void this.options.safeSend({
       type: "screen_share_state",

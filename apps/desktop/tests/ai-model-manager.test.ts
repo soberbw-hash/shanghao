@@ -4,6 +4,9 @@ import { mkdtemp, mkdir, readFile, rm, stat, writeFile } from "node:fs/promises"
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
+import { setTimeout as delay } from "node:timers/promises";
+
+import type { AiModelId } from "@private-voice/shared";
 
 import {
   AiModelManager,
@@ -37,6 +40,186 @@ class FakeGameDetection {
     this.listener?.({ gameName });
   }
 }
+
+test("invalid model state is preserved and cannot trigger a model deletion", async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "shanghao-model-state-damaged-"));
+  const statePath = path.join(directory, "state.json");
+  const modelPath = path.join(directory, "glm-asr-nano-2512", "existing", "weights.bin");
+  try {
+    await mkdir(path.dirname(modelPath), { recursive: true });
+    await writeFile(modelPath, "keep model bytes", "utf8");
+    await writeFile(statePath, "corrupted model state", "utf8");
+    const manager = new AiModelManager(
+      directory,
+      new FakeGameDetection() as never,
+      async () => undefined,
+    );
+    await assert.rejects(manager.initialize("manual"), /ai_model_state_invalid/);
+    await assert.rejects(
+      manager.controlModel("glm-asr-nano-2512", "delete"),
+      /ai_model_state_unavailable/,
+    );
+    await assert.rejects(manager.clearTaskCheckpoint("old-task"), /ai_model_state_unavailable/);
+    assert.equal(await readFile(statePath, "utf8"), "corrupted model state");
+    assert.equal(await readFile(modelPath, "utf8"), "keep model bytes");
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("invalid model state structure is not replaced by an empty catalog", async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "shanghao-model-state-schema-"));
+  const statePath = path.join(directory, "state.json");
+  const state = JSON.stringify({ models: [], taskCheckpoints: {} });
+  try {
+    await writeFile(statePath, state, "utf8");
+    const manager = new AiModelManager(
+      directory,
+      new FakeGameDetection() as never,
+      async () => undefined,
+    );
+    await assert.rejects(manager.initialize("manual"), /ai_model_state_invalid/);
+    assert.equal(await readFile(statePath, "utf8"), state);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("cancelled model download waiters cannot consume the next download slot", async () => {
+  const manager = new AiModelManager(
+    "unused",
+    new FakeGameDetection() as never,
+    async () => undefined,
+  );
+  const slots = manager as unknown as {
+    acquireDownloadSlot: (signal: AbortSignal) => Promise<() => void>;
+    activeModelDownloads: number;
+    downloadSlotWaiters: unknown[];
+  };
+  const first = await slots.acquireDownloadSlot(new AbortController().signal);
+  const second = await slots.acquireDownloadSlot(new AbortController().signal);
+  const cancelledController = new AbortController();
+  const cancelled = slots.acquireDownloadSlot(cancelledController.signal);
+  const next = slots.acquireDownloadSlot(new AbortController().signal);
+  cancelledController.abort();
+  await assert.rejects(cancelled, /download_paused/i);
+  first();
+  const nextRelease = await next;
+  assert.equal(slots.activeModelDownloads, 2);
+  second();
+  nextRelease();
+  assert.equal(slots.activeModelDownloads, 0);
+  assert.equal(slots.downloadSlotWaiters.length, 0);
+});
+
+test("a download cancellation during waiter registration is not lost", async () => {
+  const manager = new AiModelManager(
+    "unused",
+    new FakeGameDetection() as never,
+    async () => undefined,
+  );
+  const slots = manager as unknown as {
+    acquireDownloadSlot: (signal: AbortSignal) => Promise<() => void>;
+    downloadSlotWaiters: unknown[];
+  };
+  const first = await slots.acquireDownloadSlot(new AbortController().signal);
+  const second = await slots.acquireDownloadSlot(new AbortController().signal);
+  const racedSignal = {
+    aborted: false,
+    addEventListener() {
+      this.aborted = true;
+    },
+    removeEventListener: () => undefined,
+  } as unknown as AbortSignal;
+  await assert.rejects(slots.acquireDownloadSlot(racedSignal), /download_paused/i);
+  assert.equal(slots.downloadSlotWaiters.length, 0);
+  first();
+  second();
+});
+
+test("model download rejects excess response bytes before they fill the partial file", async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "shanghao-model-oversized-"));
+  try {
+    const manager = new AiModelManager(
+      directory,
+      new FakeGameDetection() as never,
+      async () => undefined,
+    );
+    Object.assign(manager, {
+      fetchFromModelSources: async () => ({
+        response: new Response("more than expected", { status: 200 }),
+        release: () => undefined,
+      }),
+    });
+    const internal = manager as unknown as {
+      downloadFile: (
+        id: string,
+        revision: string,
+        file: Record<string, unknown>,
+        signal: AbortSignal,
+        state: Record<string, unknown>,
+      ) => Promise<void>;
+    };
+    await assert.rejects(
+      internal.downloadFile(
+        "glm-asr-nano-2512",
+        "test-revision",
+        {
+          rfilename: "weights.bin",
+          sourceRepository: "test/model",
+          sourceRevision: "test-revision",
+          sourceFileName: "weights.bin",
+          size: 2,
+        },
+        new AbortController().signal,
+        { userInstalled: true, totalBytes: 2, downloadedBytes: 0 },
+      ),
+      /ai_model_file_oversized/,
+    );
+    const partial = path.join(directory, "glm-asr-nano-2512", "test-revision", "weights.bin.part");
+    const partialSize = await stat(partial)
+      .then((value) => value.size)
+      .catch(() => 0);
+    assert.equal(partialSize <= 2, true);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("model manifest ignores file sizes that cannot bound a download", async () => {
+  const manager = new AiModelManager(
+    "unused",
+    new FakeGameDetection() as never,
+    async () => undefined,
+  );
+  Object.assign(manager, {
+    fetchManifest: async () => ({
+      sha: "test-revision",
+      siblings: [
+        { rfilename: "weights.bin", size: 2 },
+        { rfilename: "infinite.bin", size: Number.POSITIVE_INFINITY },
+        { rfilename: "fraction.bin", size: 1.5 },
+        { rfilename: "negative.bin", size: -1 },
+      ],
+    }),
+  });
+  const internal = manager as unknown as {
+    fetchDownloadFiles: (
+      definition: Record<string, unknown>,
+    ) => Promise<Array<{ rfilename: string }>>;
+  };
+  const files = await internal.fetchDownloadFiles({
+    id: "glm-asr-nano-2512",
+    repository: "test/model",
+    revision: "test-revision",
+  });
+  assert.deepEqual(
+    files.map((file) => file.rfilename),
+    ["weights.bin"],
+  );
+  assert.equal(classifyAiModelFailure(new Error("ai_model_file_oversized")), "integrity");
+  assert.match(describeAiModelError(new Error("ai_model_file_oversized")), /超过清单大小/);
+});
 
 test("AI models remain opt-in and game activity lowers background priority", async () => {
   const directory = await mkdtemp(path.join(os.tmpdir(), "shanghao-ai-models-"));
@@ -106,6 +289,408 @@ test("AI models remain opt-in and game activity lowers background priority", asy
   await rm(directory, { recursive: true, force: true });
 });
 
+test("AI task status keeps the remaining task when concurrent work finishes out of order", () => {
+  const games = new FakeGameDetection();
+  const manager = new AiModelManager(
+    "unused-test-directory",
+    games as never,
+    async () => undefined,
+  );
+  const first = manager.markQwenTaskStarted("organize:local");
+  const second = manager.markQwenTaskStarted("question:local");
+  assert.equal(manager.getSnapshot().scheduler.runningTask, "question:local");
+  manager.markAiTaskFinished(first);
+  assert.equal(manager.getSnapshot().scheduler.runningTask, "question:local");
+  manager.markAiTaskFinished(second);
+  assert.equal(manager.getSnapshot().scheduler.runningTask, undefined);
+  manager.markAiTaskFinished(first);
+  assert.equal(manager.getSnapshot().scheduler.runningTask, undefined);
+  manager.stop();
+});
+
+test("AI compute status follows the lease and recovers when ASR preparation fails", async () => {
+  const manager = new AiModelManager(
+    "unused-test-directory",
+    new FakeGameDetection() as never,
+    async () => undefined,
+  );
+  const first = await manager.acquireComputeSlot("summary", true);
+  const waiting = manager.acquireComputeSlot("transcription", true);
+  assert.equal(manager.getSnapshot().scheduler.computeActiveKind, "summary");
+  assert.equal(manager.getSnapshot().scheduler.computeWaiting, 1);
+  first.release();
+  const second = await waiting;
+  assert.equal(manager.getSnapshot().scheduler.computeActiveKind, "transcription");
+  second.release();
+  assert.equal(manager.getSnapshot().scheduler.computeActiveKind, undefined);
+
+  const unsubscribe = manager.onQwenReleaseRequested(() => {
+    throw new Error("release_listener_failed");
+  });
+  await assert.rejects(
+    manager.acquireComputeSlot("transcription", true),
+    /release_listener_failed/,
+  );
+  assert.equal(manager.getSnapshot().scheduler.computeActiveKind, undefined);
+  unsubscribe();
+  manager.stop();
+});
+
+test("recording pressure publishes a stopping phase without repeating unchanged status", async () => {
+  const manager = new AiModelManager(
+    "unused-test-directory",
+    new FakeGameDetection() as never,
+    async () => undefined,
+  );
+  manager.setProcessingMode("immediate");
+  const lease = await manager.acquireComputeSlot("summary", false);
+  let notifications = 0;
+  const unsubscribe = manager.onStatus(() => {
+    notifications += 1;
+  });
+  const pressure = {
+    inVoiceRoom: true,
+    recordingActive: true,
+    screenSharing: false,
+    peerRecovering: false,
+    latencyMs: 0,
+    packetLossPercent: 0,
+    rendererMemoryPressure: false,
+    updatedAt: Date.now(),
+  };
+  manager.updateRuntimePressure(pressure);
+  assert.equal(lease.signal.aborted, true);
+  assert.equal(manager.getSnapshot().scheduler.recordingActive, true);
+  assert.equal(manager.getSnapshot().scheduler.computeActivePhase, "stopping");
+  assert.equal(manager.getSnapshot().scheduler.computeStoppingReason, "recording_priority");
+  assert.equal(notifications, 1);
+  manager.updateRuntimePressure({ ...pressure, updatedAt: Date.now() + 1 });
+  assert.equal(notifications, 1);
+  lease.release();
+  assert.equal(manager.getSnapshot().scheduler.computeActivePhase, undefined);
+  unsubscribe();
+  manager.stop();
+});
+
+test("stale network observations expire without forgetting an active room or recording", async () => {
+  const manager = new AiModelManager(
+    "unused-test-directory",
+    new FakeGameDetection() as never,
+    async () => undefined,
+    undefined,
+    undefined,
+    [],
+    20,
+  );
+  try {
+    manager.updateRuntimePressure({
+      inVoiceRoom: true,
+      recordingActive: true,
+      screenSharing: false,
+      peerRecovering: true,
+      latencyMs: 400,
+      packetLossPercent: 12,
+      rendererMemoryPressure: true,
+      updatedAt: Date.now(),
+    });
+    assert.equal(manager.getSnapshot().scheduler.realtimePressureHigh, true);
+    await delay(60);
+    const snapshot = manager.getSnapshot().scheduler;
+    assert.equal(snapshot.realtimePressureHigh, false);
+    assert.equal(snapshot.pressureReason, undefined);
+    assert.equal(snapshot.recordingActive, true);
+    assert.equal(snapshot.downloadsThrottled, true);
+    assert.equal(manager.shouldDeferBackgroundDownload(), false);
+  } finally {
+    manager.stop();
+  }
+});
+
+test("external cancellation publishes the active AI slot stopping state", async () => {
+  const manager = new AiModelManager(
+    "unused-test-directory",
+    new FakeGameDetection() as never,
+    async () => undefined,
+  );
+  const controller = new AbortController();
+  const lease = await manager.acquireComputeSlot("summary", true, controller.signal);
+  let observedPhase: string | undefined;
+  const unsubscribe = manager.onStatus((snapshot) => {
+    observedPhase = snapshot.scheduler.computeActivePhase;
+  });
+  controller.abort();
+  assert.equal(observedPhase, "stopping");
+  assert.equal(manager.getSnapshot().scheduler.computeStoppingReason, "cancelled");
+  lease.release();
+  assert.equal(observedPhase, undefined);
+  unsubscribe();
+  manager.stop();
+});
+
+test("manual text work is not released by pressure until its compute lease ends", async () => {
+  const manager = new AiModelManager(
+    "unused-test-directory",
+    new FakeGameDetection() as never,
+    async () => undefined,
+  );
+  const releases: string[] = [];
+  let statusUpdates = 0;
+  const unsubscribe = manager.onQwenReleaseRequested((reason) => releases.push(reason));
+  const unsubscribeStatus = manager.onStatus(() => {
+    statusUpdates += 1;
+  });
+  const lease = await manager.acquireComputeSlot("summary", true);
+  const pressure = {
+    inVoiceRoom: true,
+    recordingActive: false,
+    screenSharing: false,
+    peerRecovering: true,
+    latencyMs: 0,
+    packetLossPercent: 0,
+    rendererMemoryPressure: false,
+    updatedAt: Date.now(),
+  };
+  manager.updateRuntimePressure(pressure);
+  assert.equal(lease.signal.aborted, false);
+  assert.deepEqual(releases, []);
+  const updatesAfterTransition = statusUpdates;
+  manager.updateRuntimePressure({ ...pressure, updatedAt: Date.now() + 1 });
+  assert.equal(statusUpdates, updatesAfterTransition);
+  lease.release();
+  assert.deepEqual(releases, ["peer_recovery"]);
+  unsubscribe();
+  unsubscribeStatus();
+  manager.stop();
+});
+
+test("game start waits for a running manual text job before releasing Qwen", async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "shanghao-ai-game-manual-"));
+  const games = new FakeGameDetection();
+  const manager = new AiModelManager(directory, games as never, async () => undefined);
+  try {
+    await manager.initialize("after_game");
+    const releases: string[] = [];
+    manager.onQwenReleaseRequested((reason) => releases.push(reason));
+    const lease = await manager.acquireComputeSlot("summary", true);
+    games.setGame("running game");
+    assert.equal(lease.signal.aborted, false);
+    assert.deepEqual(releases, []);
+    lease.release();
+    assert.deepEqual(releases, ["processing_deferred"]);
+  } finally {
+    manager.stop();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("AI model manager releases its game listener when stopped or reinitialized", async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "shanghao-ai-listener-"));
+  const games = new FakeGameDetection();
+  const manager = new AiModelManager(directory, games as never, async () => undefined);
+  try {
+    await manager.initialize("manual");
+    games.setGame("first game");
+    assert.equal(manager.getSnapshot().scheduler.gameActive, true);
+    await manager.initialize("manual");
+    games.setGame("second game");
+    assert.equal(manager.getSnapshot().scheduler.gameActive, true);
+    manager.stop();
+    games.setGame(undefined);
+    assert.equal(manager.getSnapshot().scheduler.gameActive, true);
+  } finally {
+    manager.stop();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("stopping during model initialization prevents a late listener or download", async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "shanghao-ai-stopped-init-"));
+  let subscribed = 0;
+  const games = {
+    getSnapshot: () => ({ gameName: undefined }),
+    onDetected: () => {
+      subscribed += 1;
+      return () => undefined;
+    },
+  };
+  const manager = new AiModelManager(directory, games as never, async () => undefined);
+  let releaseRead: (() => void) | undefined;
+  let startedRead: (() => void) | undefined;
+  const readStarted = new Promise<void>((resolve) => {
+    startedRead = resolve;
+  });
+  const readBlocked = new Promise<void>((resolve) => {
+    releaseRead = resolve;
+  });
+  const internal = manager as unknown as { readState: () => Promise<unknown> };
+  internal.readState = async () => {
+    startedRead?.();
+    await readBlocked;
+    return { models: {}, taskCheckpoints: {} };
+  };
+  try {
+    const initializing = manager.initialize("manual");
+    await readStarted;
+    manager.stop();
+    releaseRead?.();
+    await initializing;
+    assert.equal(subscribed, 0);
+    assert.equal(
+      manager.getSnapshot().models.every((model) => model.phase === "not_installed"),
+      true,
+    );
+  } finally {
+    releaseRead?.();
+    manager.stop();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("deleting one recording clears only its AI checkpoints", async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "shanghao-ai-checkpoints-"));
+  const manager = new AiModelManager(
+    directory,
+    new FakeGameDetection() as never,
+    async () => undefined,
+  );
+  try {
+    await manager.initialize("manual");
+    for (const [taskId, recordingId] of [
+      ["transcription:one:model-a", "one"],
+      ["transcription:one:model-b", "one"],
+      ["transcription:two:model-a", "two"],
+    ]) {
+      await manager.saveTaskCheckpoint({
+        taskId,
+        recordingId,
+        kind: "transcription",
+        completedUnits: 1,
+        totalUnits: 2,
+        updatedAt: new Date().toISOString(),
+      });
+    }
+    await manager.clearTaskCheckpointsForRecording("one");
+    assert.equal(manager.getTaskCheckpoint("transcription:one:model-a"), undefined);
+    assert.equal(manager.getTaskCheckpoint("transcription:one:model-b"), undefined);
+    assert.equal(manager.getTaskCheckpoint("transcription:two:model-a")?.recordingId, "two");
+  } finally {
+    manager.stop();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("deleting a model waits for its active repair before removing state", async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "shanghao-ai-repair-delete-"));
+  const manager = new AiModelManager(
+    directory,
+    new FakeGameDetection() as never,
+    async () => undefined,
+  );
+  let releaseRepair: (() => void) | undefined;
+  let repairStarted: (() => void) | undefined;
+  const started = new Promise<void>((resolve) => {
+    repairStarted = resolve;
+  });
+  const blocked = new Promise<void>((resolve) => {
+    releaseRepair = resolve;
+  });
+  try {
+    await manager.initialize("manual");
+    const internal = manager as unknown as {
+      persisted: {
+        models: Record<string, { userInstalled: boolean; activeRevision?: string; phase: string }>;
+      };
+    };
+    internal.persisted.models["fun-asr-nano-2512"] = {
+      userInstalled: true,
+      activeRevision: "test-revision",
+      phase: "installed",
+    };
+    manager.setRuntimePreparer(async () => {
+      repairStarted?.();
+      await blocked;
+      return { ready: true };
+    });
+    const repairing = manager.controlModel("fun-asr-nano-2512", "repair");
+    await started;
+    let deletionFinished = false;
+    const deleting = manager.controlModel("fun-asr-nano-2512", "delete").then(() => {
+      deletionFinished = true;
+    });
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    assert.equal(deletionFinished, false);
+    releaseRepair?.();
+    await Promise.all([repairing, deleting]);
+    assert.equal(
+      manager.getSnapshot().models.find((model) => model.id === "fun-asr-nano-2512")?.phase,
+      "not_installed",
+    );
+  } finally {
+    releaseRepair?.();
+    manager.stop();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("a late pinned-revision check cannot restart a deleted model download", async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "shanghao-ai-pinned-delete-"));
+  const manager = new AiModelManager(
+    directory,
+    new FakeGameDetection() as never,
+    async () => undefined,
+  );
+  await manager.initialize("manual");
+  let releasePersist: (() => void) | undefined;
+  let persistStarted: (() => void) | undefined;
+  const started = new Promise<void>((resolve) => {
+    persistStarted = resolve;
+  });
+  const blocked = new Promise<void>((resolve) => {
+    releasePersist = resolve;
+  });
+  const internal = manager as unknown as {
+    persisted: {
+      models: Record<string, { userInstalled: boolean; activeRevision?: string; phase: string }>;
+    };
+    persist: () => Promise<void>;
+    ensurePinnedRevision: (id: "fun-asr-nano-2512", generation: number) => Promise<void>;
+    startDownload: () => void;
+    lifecycleGeneration: number;
+  };
+  internal.persisted.models["fun-asr-nano-2512"] = {
+    userInstalled: true,
+    activeRevision: "old-revision",
+    phase: "installed",
+  };
+  let persistCalls = 0;
+  internal.persist = async () => {
+    persistCalls += 1;
+    if (persistCalls === 1) {
+      persistStarted?.();
+      await blocked;
+    }
+  };
+  let downloadsStarted = 0;
+  internal.startDownload = () => {
+    downloadsStarted += 1;
+  };
+  try {
+    const checking = internal.ensurePinnedRevision(
+      "fun-asr-nano-2512",
+      internal.lifecycleGeneration,
+    );
+    await started;
+    await manager.controlModel("fun-asr-nano-2512", "delete");
+    releasePersist?.();
+    await checking;
+    assert.equal(downloadsStarted, 0);
+  } finally {
+    releasePersist?.();
+    manager.stop();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
 test("repairing an installed model only prepares its runtime and keeps its downloaded revision", async () => {
   const directory = await mkdtemp(path.join(os.tmpdir(), "shanghao-ai-model-repair-"));
   const games = new FakeGameDetection();
@@ -163,6 +748,38 @@ test("a failed runtime repair stays installed but cannot report success", async 
     assert.equal(model?.runtimeReady, false);
     assert.equal(model?.runtimeMessage, "运行组件缺失");
     assert.equal(model?.activeRevision, "already-downloaded");
+  } finally {
+    manager.stop();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("a cancelled runtime preparation is not converted into a model-ready result", async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "shanghao-ai-runtime-cancel-"));
+  const manager = new AiModelManager(
+    directory,
+    new FakeGameDetection() as never,
+    async () => undefined,
+  );
+  await manager.initialize("manual");
+  const controller = new AbortController();
+  manager.setRuntimePreparer(async (_id, signal) => {
+    assert.equal(signal, controller.signal);
+    controller.abort();
+    throw new Error("ai_task_paused");
+  });
+  const internal = manager as unknown as {
+    prepareRuntime: (id: AiModelId, signal?: AbortSignal) => Promise<{ ready: boolean }>;
+  };
+  try {
+    await assert.rejects(
+      internal.prepareRuntime("fun-asr-nano-2512", controller.signal),
+      /ai_model_download_paused/,
+    );
+    assert.notEqual(
+      manager.getSnapshot().models.find((model) => model.id === "fun-asr-nano-2512")?.runtimeReady,
+      true,
+    );
   } finally {
     manager.stop();
     await rm(directory, { recursive: true, force: true });

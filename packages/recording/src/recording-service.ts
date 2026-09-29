@@ -27,6 +27,7 @@ export class RecordingService {
   private readonly capability = detectRecordingCapability();
   private readonly encoder = new BrowserRecordingEncoder(this.capability);
   private streamSession?: Promise<string>;
+  private stopOperation?: Promise<RecordingResult>;
 
   constructor(private readonly options: RecordingServiceOptions) {}
 
@@ -48,10 +49,20 @@ export class RecordingService {
   }
 
   start(stream: MediaStream): RecordingStatusSnapshot {
+    const current = this.getState();
+    if (
+      this.stopOperation ||
+      this.encoder.hasRecording() ||
+      current.state === RecordingState.Stopping ||
+      current.state === RecordingState.Saving
+    ) {
+      return current;
+    }
     this.emitState(
       this.stateMachine.transition(RecordingState.Preparing, {
         startedAt: Date.now(),
         durationMs: 0,
+        result: undefined,
         message: "正在准备录音",
       }),
     );
@@ -78,7 +89,28 @@ export class RecordingService {
     }
   }
 
-  async stop(options: RecordingOptions, actualSampleRate: number): Promise<RecordingResult> {
+  stop(options: RecordingOptions, actualSampleRate: number): Promise<RecordingResult> {
+    if (this.stopOperation) return this.stopOperation;
+    if (this.getState().state === RecordingState.Stopping) {
+      return Promise.reject(new Error("recording_discard_in_progress"));
+    }
+    const operation = this.stopNow(options, actualSampleRate);
+    this.stopOperation = operation;
+    void operation.then(
+      () => {
+        if (this.stopOperation === operation) this.stopOperation = undefined;
+      },
+      () => {
+        if (this.stopOperation === operation) this.stopOperation = undefined;
+      },
+    );
+    return operation;
+  }
+
+  private async stopNow(
+    options: RecordingOptions,
+    actualSampleRate: number,
+  ): Promise<RecordingResult> {
     if (!this.encoder.hasRecording()) {
       const message = "录音会话已经中断，没有找到可保存的音频。请重新开始录音。";
       this.emitState(
@@ -101,6 +133,7 @@ export class RecordingService {
     try {
       encoded = await this.encoder.stop();
     } catch (error) {
+      await this.sealFailedSession();
       const message = error instanceof Error ? error.message : "录音编码器停止失败。";
       this.emitState(
         this.stateMachine.transition(RecordingState.Failed, {
@@ -119,64 +152,69 @@ export class RecordingService {
 
     const suggestedFileName = `${APP_NAME}-${new Date().toISOString().replaceAll(":", "-")}.m4a`;
     const session = this.streamSession;
-    const response =
-      session && this.options.streamingExporter
-        ? await this.options.streamingExporter.finalizeSession({
-            sessionId: await session,
-            sourceMimeType: encoded.mimeType,
-            sampleRate: actualSampleRate,
-            channels: options.channels,
-            suggestedFileName,
-            targetFormat: options.targetFormat,
-            durationMs: encoded.durationMs,
-          })
-        : encoded.blob
-          ? await this.options.exporter.exportRecording({
-              buffer: await encoded.blob.arrayBuffer(),
-              sampleRate: actualSampleRate,
+    try {
+      const response =
+        session && this.options.streamingExporter
+          ? await this.options.streamingExporter.finalizeSession({
+              sessionId: await session,
               sourceMimeType: encoded.mimeType,
+              sampleRate: actualSampleRate,
               channels: options.channels,
               suggestedFileName,
               targetFormat: options.targetFormat,
+              durationMs: encoded.durationMs,
             })
-          : {
-              ok: false,
-              errorMessage: "录音没有产生可保存的音频数据。",
-            };
-    this.streamSession = undefined;
-
-    if (!response.ok) {
-      this.options.logger?.("recording export failed", { ...response });
+          : encoded.blob
+            ? await this.options.exporter.exportRecording({
+                buffer: await encoded.blob.arrayBuffer(),
+                sampleRate: actualSampleRate,
+                sourceMimeType: encoded.mimeType,
+                channels: options.channels,
+                suggestedFileName,
+                targetFormat: options.targetFormat,
+              })
+            : {
+                ok: false,
+                errorMessage: "录音没有产生可保存的音频数据。",
+              };
+      if (!response.ok) throw new Error(response.errorMessage ?? "录音导出失败。");
+      const result = toRecordingResult(
+        response,
+        encoded.mimeType,
+        encoded.durationMs,
+        actualSampleRate,
+      );
+      this.options.logger?.("recording export complete", { ...result });
+      this.emitState(
+        this.stateMachine.transition(RecordingState.Saved, {
+          durationMs: result.durationMs,
+          result,
+          message: "录音已保存为 .m4a",
+        }),
+      );
+      return result;
+    } catch (error) {
+      await this.sealFailedSession();
+      const message = error instanceof Error ? error.message : "录音导出失败。";
+      this.options.logger?.("recording export failed", { errorCode: "recording_export_failed" });
       this.emitState(
         this.stateMachine.transition(RecordingState.Failed, {
           durationMs: encoded.durationMs,
-          message: response.errorMessage,
+          message,
         }),
       );
-      throw new Error(response.errorMessage ?? "录音导出失败。");
+      throw error;
+    } finally {
+      // The main process retains a failed session's temporary input for recovery.
+      // Releasing this reference never asks it to delete that file.
+      this.streamSession = undefined;
     }
-
-    const result = toRecordingResult(
-      response,
-      encoded.mimeType,
-      encoded.durationMs,
-      actualSampleRate,
-    );
-
-    this.options.logger?.("recording export complete", { ...result });
-
-    this.emitState(
-      this.stateMachine.transition(RecordingState.Saved, {
-        durationMs: result.durationMs,
-        result,
-        message: "录音已保存为 .m4a",
-      }),
-    );
-
-    return result;
   }
 
   async discard(): Promise<void> {
+    if (this.stopOperation) return;
+    const state = this.getState().state;
+    if (state === RecordingState.Stopping || state === RecordingState.Saving) return;
     if (!this.encoder.hasRecording()) {
       this.emitState(
         this.stateMachine.transition(RecordingState.Idle, {
@@ -195,10 +233,22 @@ export class RecordingService {
       }),
     );
 
-    await this.encoder.stop();
-    if (this.streamSession && this.options.streamingExporter) {
-      const sessionId = await this.streamSession;
-      await this.options.streamingExporter.abortSession(sessionId).catch(() => undefined);
+    try {
+      await this.encoder.stop();
+      if (this.streamSession && this.options.streamingExporter) {
+        const sessionId = await this.streamSession;
+        await this.options.streamingExporter.abortSession(sessionId);
+      }
+    } catch (error) {
+      await this.sealFailedSession();
+      this.emitState(
+        this.stateMachine.transition(RecordingState.Failed, {
+          message: error instanceof Error ? error.message : "录音结束失败。",
+        }),
+      );
+      throw error;
+    } finally {
+      // A failed stream may still have a recoverable input in the main process.
       this.streamSession = undefined;
     }
     this.emitState(
@@ -226,5 +276,18 @@ export class RecordingService {
         });
     }
     return this.streamSession.then((sessionId) => streamingExporter.appendChunk(sessionId, buffer));
+  }
+
+  private async sealFailedSession(): Promise<void> {
+    const session = this.streamSession;
+    this.streamSession = undefined;
+    if (!session || !this.options.streamingExporter?.sealSession) return;
+    try {
+      await this.options.streamingExporter.sealSession(await session);
+    } catch {
+      this.options.logger?.("recording session seal failed", {
+        errorCode: "recording_session_seal_failed",
+      });
+    }
   }
 }

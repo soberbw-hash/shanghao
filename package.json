@@ -1,6 +1,6 @@
 {
   "name": "shanghao-workspace",
-  "version": "3.2.2",
+  "version": "3.3.0",
   "private": true,
   "license": "AGPL-3.0-or-later",
   "packageManager": "pnpm@10.34.5",
@@ -45,7 +45,6 @@
     "eslint-plugin-security": "4.0.1",
     "globals": "17.11.0",
     "prettier": "3.9.6",
-    "turbo": "2.10.9",
     "typescript": "5.9.3",
     "typescript-eslint": "8.67.0"
   }

@@ -4,6 +4,7 @@ export const FRIEND_LOUDNESS_MAX_CUT_DB = -6;
 
 const SPEECH_GATE_RMS = 0.008;
 const SPEECH_GATE_PEAK = 0.015;
+const MAX_SPEECH_CREST_FACTOR = 12;
 const MINIMUM_SPEECH_OBSERVATION_MS = 900;
 const SPEECH_ENERGY_WINDOW_MS = 3_500;
 const PEAK_RELEASE_MS = 2_500;
@@ -13,6 +14,16 @@ const MAX_BOOST_RATE_DB_PER_SECOND = 0.8;
 const MAX_CUT_RATE_DB_PER_SECOND = 1.8;
 const PEAK_HEADROOM = 10 ** (-1.5 / 20);
 export const FRIEND_LOUDNESS_HANGOVER_MS = 1_600;
+
+/** An older peer may never publish speaking activity; keep energy-only learning until observed. */
+export const resolveRemoteSpeakingEvidence = (
+  previous: boolean | undefined,
+  state: { speaking: boolean; muted: boolean },
+): boolean | undefined => {
+  if (state.muted) return false;
+  if (state.speaking) return true;
+  return previous === undefined ? undefined : false;
+};
 
 export interface LoudnessBalanceState {
   meanSquare: number;
@@ -57,12 +68,16 @@ const smoothingForTimeConstant = (elapsedMs: number, timeConstantMs: number): nu
  */
 export const advanceLoudnessBalance = (
   state: LoudnessBalanceState,
-  input: { rms: number; peak: number; now: number; enabled: boolean },
+  input: { rms: number; peak: number; now: number; enabled: boolean; speaking?: boolean },
 ): LoudnessBalanceState => {
   if (!input.enabled) return createLoudnessBalanceState();
   const rms = Number.isFinite(input.rms) ? Math.max(0, input.rms) : 0;
   const peak = Number.isFinite(input.peak) ? Math.max(0, input.peak) : 0;
-  const hasSpeech = rms >= SPEECH_GATE_RMS && peak >= SPEECH_GATE_PEAK;
+  const hasSpeech =
+    input.speaking !== false &&
+    rms >= SPEECH_GATE_RMS &&
+    peak >= SPEECH_GATE_PEAK &&
+    peak <= rms * MAX_SPEECH_CREST_FACTOR;
   const elapsedMs =
     state.lastUpdatedAt > 0 ? Math.max(16, Math.min(250, input.now - state.lastUpdatedAt)) : 66;
 

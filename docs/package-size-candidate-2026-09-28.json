@@ -1,0 +1,553 @@
+{
+  "schemaVersion": 1,
+  "version": "3.2.2",
+  "measuredAt": "2026-09-28T11:15:15.355Z",
+  "installerBytes": 171579874,
+  "unpackedBytes": 486643587,
+  "electronRuntimeBytes": 325829081,
+  "resources": {
+    "ai": 35488,
+    "app-update.yml": 90,
+    "app.asar": 50302780,
+    "app.asar.unpacked": 772509,
+    "build": 442606,
+    "deepfilter": 17606111,
+    "elevate.exe": 107520,
+    "ffmpeg": 82797568,
+    "licenses": 17042,
+    "native": 470016,
+    "quick-messages": 8262776
+  },
+  "archiveLogicalBytes": {
+    "dist": 26462988,
+    "node_modules": 21880650,
+    "dist-electron": 1101268,
+    "package.json": 1083
+  },
+  "productionNodeModules": {
+    "@cloudbase": 5885949,
+    "@supabase": 4554460,
+    "bson": 1820605,
+    "lodash": 1412361,
+    "core-js-pure": 1204968,
+    "@private-voice": 1127518,
+    "pngjs": 1006846,
+    "uiohook-napi": 653304,
+    "tailwind-merge": 588036,
+    "web-streams-polyfill": 413524,
+    "js-yaml": 395756,
+    "tr46": 268047,
+    "electron-updater": 267532,
+    "yargs": 176121,
+    "argparse": 162580,
+    "node-fetch": 140009,
+    "ws": 135179,
+    "ffmpeg-static": 119205,
+    "readable-stream": 118674,
+    "qrcode": 112568,
+    "scheduler": 82215,
+    "semver": 75083,
+    "motion-dom": 67376,
+    "tslib": 66813,
+    "deepfilternet3-noise-filter": 64411,
+    "builder-util-runtime": 56149,
+    "iceberg-js": 54554,
+    "fs-extra": 53136,
+    "sax": 52263,
+    "lodash.isequal": 51894,
+    "emoji-regex": 44711,
+    "@mattiasbuelens": 44653,
+    "whatwg-url": 44436,
+    "yargs-parser": 35915,
+    "@derhuerst": 34098,
+    "graceful-fs": 27363,
+    "regenerator-runtime": 27017,
+    "jsonwebtoken": 25236,
+    "typedarray": 23714,
+    "color-convert": 22543,
+    "lodash.includes": 21015,
+    "debug": 20109,
+    "agent-base": 19270,
+    "ecdsa-sig-formatter": 17615,
+    "caseless": 12894,
+    "string_decoder": 12345,
+    "https-proxy-agent": 11927,
+    "node-gyp-build": 11242,
+    "cliui": 9830,
+    "require-directory": 9769,
+    "jws": 9639,
+    "lodash.once": 9385,
+    "jwa": 8549,
+    "jwt-decode": 8386,
+    "lodash.isinteger": 8337,
+    "progress": 8330,
+    "dijkstrajs": 7186,
+    "webidl-conversions": 6781,
+    "lodash.escaperegexp": 6705,
+    "y18n": 6583,
+    "wrap-ansi": 6424,
+    "color-name": 6071,
+    "lodash.isplainobject": 5982,
+    "ansi-styles": 5911,
+    "concat-stream": 5830,
+    "motion-utils": 5242,
+    "text-encoding-shim": 4896,
+    "ms": 4600,
+    "http-response-object": 4315,
+    "jsonfile": 4180,
+    "clsx": 4069,
+    "buffer-equal-constant-time": 3929,
+    "lodash.isstring": 3883,
+    "parse-cache-control": 3828,
+    "env-paths": 3748,
+    "camelcase": 3736,
+    "find-up": 3665,
+    "lodash.isnumber": 3606,
+    "util-deprecate": 3559,
+    "safe-buffer": 3525,
+    "is-fullwidth-code-point": 3402,
+    "lodash.isboolean": 3402,
+    "locate-path": 2981,
+    "p-locate": 2973,
+    "buffer-from": 2947,
+    "p-limit": 2932,
+    "string-width": 2665,
+    "get-caller-file": 2622,
+    "universalify": 2424,
+    "inherits": 2146,
+    "decamelize": 1933,
+    "ansi-regex": 1929,
+    "path-exists": 1908,
+    "strip-ansi": 1774,
+    "p-try": 1760,
+    "require-main-filename": 1746,
+    "@types": 1685,
+    "tiny-typed-emitter": 1631,
+    "set-blocking": 1608,
+    "which-module": 1529,
+    "lazy-val": 935
+  },
+  "rendererOnlyModuleCopies": {
+    "react": 0,
+    "react-dom": 0,
+    "framer-motion": 0,
+    "gsap": 0,
+    "lucide": 0,
+    "lucide-react": 0,
+    "morphicons": 0,
+    "uisfx": 0,
+    "@fontsource-variable": 0,
+    "react-virtuoso": 0,
+    "zustand": 0
+  },
+  "rendererAssets": {
+    "environment-v3-extended-Bub9fTQF.png": 1410931,
+    "weather-rain-D27yAUHo.png": 1325131,
+    "weather-snow-DX-wdEiJ.png": 1310233,
+    "weather-day-jwn0ticR.png": 1177343,
+    "weather-cloudy-DYX1vYPv.png": 1144263,
+    "weather-night-DCH21RPv.png": 1128208,
+    "fox-yGEESxWg.png": 914939,
+    "cabinet-Bwojc85s.png": 887980,
+    "cat-DGoNxsRi.png": 868040,
+    "clock-BY-5TRJG.png": 864513,
+    "door-DbczJlsh.png": 855322,
+    "corgi-CHxooK7s.png": 849547,
+    "duck-BZEksxNb.png": 832117,
+    "calendar-blank-v2-js58lzX-.png": 827798,
+    "panda-DIWj59Og.png": 796462,
+    "curtain-ceiling-v2-CDl3p5dO.png": 655085,
+    "workstation-B6pFjfYW.png": 599916,
+    "window-frame-v2-EGHuePhi.png": 452496,
+    "index-BeeaAlh1.css": 450754,
+    "DialogCloseButton-BYwYnLxs.js": 345259,
+    "SettingsPage-DCHHHUEV.js": 261204,
+    "brand-mark-CLKyE052.png": 249832,
+    "RoomPage-BXqB9cYF.js": 248973,
+    "fox-rear-DnDBwGVn.png": 214407,
+    "corgi-rear-C66YQ93L.png": 192721,
+    "vendor-motion-CMs4UaPr.js": 190411,
+    "vendor-react-CluWBeuA.js": 181749,
+    "cat-rear-Bz_-FYUG.png": 157462,
+    "fox-scene-Dfzko8xz.png": 157294,
+    "quick-reply-shanghao-__EypiLG.wav": 155560,
+    "panda-rear-CPek_caj.png": 154185,
+    "panda-scene-xtUO-tZA.png": 141968,
+    "duck-rear-O1E8SRMJ.png": 139608,
+    "corgi-scene-zBfegv-d.png": 134259,
+    "window-sky-DqeMjQsh.png": 129559,
+    "cat-scene-Br2zRMHc.png": 124756,
+    "duck-scene-DWzgXMbG.png": 118724,
+    "foreground-leaves-v2-CPFKSlrZ.png": 112841,
+    "stardew-valley-scene-CMnQbM7H.webp": 98492,
+    "honkai-star-rail-CwbxgkZw.ico": 93281,
+    "knock-bell-BYf9GmV6.wav": 86444,
+    "index-CmPj_BkE.js": 81127,
+    "noto-sans-sc-119-wght-normal-BfzSEbFz.woff2": 76800,
+    "quick-reply-chirp-D7rQO-kN.wav": 71084,
+    "noto-sans-sc-45-wght-normal-MKIEVRIC.woff2": 67620,
+    "noto-sans-sc-22-wght-normal-VXjdYcT-.woff2": 65384,
+    "noto-sans-sc-108-wght-normal-7aXvqIa2.woff2": 64552,
+    "noto-sans-sc-100-wght-normal-DrqXJETY.woff2": 64548,
+    "delta-force-scene-D2hJgWBn.webp": 64410,
+    "donate-qr-Vhg9uQkx.jpg": 64086,
+    "noto-sans-sc-103-wght-normal-DGHo20nu.woff2": 63864,
+    "noto-sans-sc-111-wght-normal-ClFr5QXM.woff2": 62664,
+    "noto-sans-sc-106-wght-normal-D6uUHw3w.woff2": 62636,
+    "noto-sans-sc-24-wght-normal-B58DWgHS.woff2": 62580,
+    "noto-sans-sc-105-wght-normal-BFoiJwz2.woff2": 61828,
+    "noto-sans-sc-104-wght-normal-CJT2ioDJ.woff2": 61588,
+    "noto-sans-sc-110-wght-normal-D2JBr045.woff2": 61472,
+    "noto-sans-sc-107-wght-normal-kFQzJDLH.woff2": 61076,
+    "noto-sans-sc-102-wght-normal-C1RtbCZr.woff2": 60708,
+    "noto-sans-sc-109-wght-normal-CnjNbNmw.woff2": 60372,
+    "noto-sans-sc-62-wght-normal-CXXMAq-5.woff2": 59112,
+    "noto-sans-sc-113-wght-normal-OgQXOX6x.woff2": 58648,
+    "noto-sans-sc-25-wght-normal-C3Jm6l7O.woff2": 58320,
+    "noto-sans-sc-101-wght-normal-c94LAl5p.woff2": 58204,
+    "noto-sans-sc-114-wght-normal-CRH9SDZu.woff2": 57964,
+    "noto-sans-sc-46-wght-normal-CErGc6Mt.woff2": 57668,
+    "noto-sans-sc-112-wght-normal-CiZxJMyY.woff2": 57648,
+    "noto-sans-sc-58-wght-normal-CE0BKS9u.woff2": 57648,
+    "ReleaseDetailModal-Cd_Hn2uL.js": 57426,
+    "noto-sans-sc-23-wght-normal-4HrHKhpL.woff2": 56792,
+    "noto-sans-sc-115-wght-normal-BN__2iBG.woff2": 56508,
+    "noto-sans-sc-74-wght-normal-Cte7o1QG.woff2": 56424,
+    "noto-sans-sc-47-wght-normal-C5Kgg1_m.woff2": 56156,
+    "noto-sans-sc-69-wght-normal-D596Jjl2.woff2": 55604,
+    "noto-sans-sc-57-wght-normal-DU8YBsDj.woff2": 55496,
+    "noto-sans-sc-30-wght-normal-B8_s30jZ.woff2": 54656,
+    "noto-sans-sc-38-wght-normal-4Nz8k_dt.woff2": 54592,
+    "league-of-legends-scene-CZfpLttw.webp": 54518,
+    "noto-sans-sc-44-wght-normal-cbKJlTUe.woff2": 54244,
+    "noto-sans-sc-29-wght-normal-45aVmHn_.woff2": 54008,
+    "noto-sans-sc-37-wght-normal-ghDiyiuv.woff2": 53528,
+    "noto-sans-sc-56-wght-normal-B4L7Hj8f.woff2": 53500,
+    "noto-sans-sc-116-wght-normal-vdFVzbO2.woff2": 52984,
+    "noto-sans-sc-66-wght-normal-BvNozWOY.woff2": 52868,
+    "noto-sans-sc-49-wght-normal-B7l_3BZr.woff2": 52844,
+    "noto-sans-sc-67-wght-normal-CC-WRBV-.woff2": 52584,
+    "noto-sans-sc-32-wght-normal-ShbWPcei.woff2": 52548,
+    "noto-sans-sc-117-wght-normal-Dsz3vkzU.woff2": 52464,
+    "noto-sans-sc-54-wght-normal-DL5lmlUd.woff2": 52000,
+    "noto-sans-sc-52-wght-normal-P18e_Y0j.woff2": 51840,
+    "noto-sans-sc-39-wght-normal-Ddtm1XVC.woff2": 51784,
+    "noto-sans-sc-26-wght-normal-YNOygvr_.woff2": 50888,
+    "noto-sans-sc-48-wght-normal-DFMjDDY6.woff2": 50764,
+    "noto-sans-sc-35-wght-normal-Bosspiyr.woff2": 50688,
+    "noto-sans-sc-28-wght-normal-BWPKDbtH.woff2": 50200,
+    "noto-sans-sc-63-wght-normal-4La5uKvS.woff2": 49180,
+    "noto-sans-sc-78-wght-normal-BFUXeSw6.woff2": 49156,
+    "noto-sans-sc-76-wght-normal-BPLMO_2x.woff2": 48420,
+    "noto-sans-sc-55-wght-normal-BV_Oy6IF.woff2": 48132,
+    "noto-sans-sc-71-wght-normal-ChZfXpdg.woff2": 47904,
+    "noto-sans-sc-59-wght-normal-Azv2Ku9_.woff2": 47676,
+    "noto-sans-sc-81-wght-normal-ed_TZlfo.woff2": 47548,
+    "noto-sans-sc-27-wght-normal-BP2pEGQH.woff2": 47488,
+    "noto-sans-sc-33-wght-normal-BOTZYTjM.woff2": 47452,
+    "noto-sans-sc-31-wght-normal-DW0t445S.woff2": 47220,
+    "noto-sans-sc-72-wght-normal-D1VyfEG3.woff2": 47032,
+    "noto-sans-sc-34-wght-normal-BF1rqDSt.woff2": 46888,
+    "noto-sans-sc-40-wght-normal-BVn4-kgX.woff2": 46628,
+    "noto-sans-sc-43-wght-normal-psppu0d8.woff2": 46624,
+    "noto-sans-sc-118-wght-normal-BPEb0gM9.woff2": 46192,
+    "noto-sans-sc-82-wght-normal-DcxfR5OJ.woff2": 46176,
+    "noto-sans-sc-50-wght-normal-C5KfAmFp.woff2": 45876,
+    "noto-sans-sc-42-wght-normal-CQ4lY28u.woff2": 45540,
+    "noto-sans-sc-61-wght-normal-BxWkGF5M.woff2": 45276,
+    "noto-sans-sc-75-wght-normal-B0qL41rF.woff2": 43940,
+    "noto-sans-sc-53-wght-normal-Bgkuo2tF.woff2": 43528,
+    "noto-sans-sc-83-wght-normal-C9UjAcMM.woff2": 43504,
+    "noto-sans-sc-70-wght-normal-ColEcmtJ.woff2": 42236,
+    "noto-sans-sc-36-wght-normal-CtU9CyKw.woff2": 41832,
+    "noto-sans-sc-51-wght-normal-C2bq6hC8.woff2": 41616,
+    "noto-sans-sc-65-wght-normal-BGqvKda2.woff2": 41608,
+    "noto-sans-sc-68-wght-normal-c0FjfUaj.woff2": 41568,
+    "noto-sans-sc-64-wght-normal-CbIuD2Eg.woff2": 41540,
+    "noto-sans-sc-60-wght-normal-C1lngC61.woff2": 41432,
+    "noto-sans-sc-79-wght-normal-DoJG4UTB.woff2": 41232,
+    "noto-sans-sc-73-wght-normal-DwSJRYPJ.woff2": 39312,
+    "noto-sans-sc-77-wght-normal-Dkbi3pye.woff2": 36788,
+    "noto-sans-sc-41-wght-normal-CZqajZnl.woff2": 36416,
+    "noto-sans-sc-86-wght-normal-CLJIoPpl.woff2": 33576,
+    "noto-sans-sc-80-wght-normal-BEFypWOO.woff2": 32632,
+    "noto-sans-sc-84-wght-normal-C7NxT478.woff2": 32612,
+    "vendor-icons-D57X7K8o.js": 29692,
+    "noto-sans-sc-85-wght-normal-DBcDBu1n.woff2": 26900,
+    "noto-sans-sc-latin-wght-normal-DYAKOyvl.woff2": 25240,
+    "browser-DFBgVuWK.js": 23477,
+    "noto-sans-sc-5-wght-normal-DI846rD9.woff2": 20176,
+    "fox-body-CVw0YOBr.png": 17764,
+    "palworld-Bn6CB173.jpg": 16995,
+    "corgi-body-Bo9z0AT-.png": 16647,
+    "panda-body-BnPxs1kL.png": 16474,
+    "apex-legends-DF6grrnW.jpg": 15585,
+    "it-takes-two-FTPokOhP.jpg": 14926,
+    "cat-body-B0AAQyCv.png": 14744,
+    "duck-body-BnJ7YlMw.png": 14579,
+    "red-dead-redemption-2-DlVzCHbc.jpg": 13787,
+    "gta-v-fPqEJthO.jpg": 13320,
+    "overcooked-2-BkNHbgfI.jpg": 13253,
+    "DisplayRefreshRateService-BlUs0Gtj.js": 12805,
+    "fox-head-CUEESX1J.png": 12756,
+    "kingdom-rush-CZjKkyd3.jpg": 12633,
+    "slay-the-spire-BIvxgbIA.jpg": 12322,
+    "panda-head-DLlUWFGm.png": 12215,
+    "genshin-impact-DsalQq1j.ico": 12014,
+    "monster-hunter-Zik5Qoxq.jpg": 12012,
+    "corgi-head-CFTpdu_V.png": 11903,
+    "lost-castle-2-BEWuOMbP.jpg": 11717,
+    "fox-feet-B2ctgegU.png": 11680,
+    "noto-sans-sc-6-wght-normal-ozUCEY9O.woff2": 11464,
+    "noto-sans-sc-21-wght-normal-DIu_1ZBI.woff2": 11356,
+    "panda-feet-Kfg-s31C.png": 11039,
+    "cat-head-KuU3FGrs.png": 11014,
+    "overwatch-2-JSYXR9ah.jpg": 11011,
+    "pubg-B1KU55Rw.jpg": 11008,
+    "noto-sans-sc-89-wght-normal-IQU_KQA8.woff2": 10984,
+    "corgi-feet-Cmq4Dtqx.png": 10433,
+    "cat-feet-DsCObqn-.png": 10355,
+    "naraka-BWqVJVFE.jpg": 10323,
+    "noto-sans-sc-cyrillic-wght-normal-CRA5_Pf1.woff2": 10008,
+    "duck-head-D3iSryIs.png": 9752,
+    "noto-sans-sc-99-wght-normal-Q_IptJM5.woff2": 9704,
+    "counter-strike-2-COtgftp4.jpg": 9528,
+    "black-myth-wukong-CPs0_vtS.jpg": 9349,
+    "noto-sans-sc-90-wght-normal-BWcrRNoG.woff2": 9344,
+    "duck-feet-BTpouG20.png": 9295,
+    "noto-sans-sc-vietnamese-wght-normal-y5SU35Rl.woff2": 9096,
+    "noto-sans-sc-91-wght-normal-CGekvDdH.woff2": 8704,
+    "noto-sans-sc-latin-ext-wght-normal-CqPqLCfe.woff2": 8244,
+    "rainbow-six-siege-BBz83HXS.jpg": 8231,
+    "noto-sans-sc-87-wght-normal-DYfJ-vGE.woff2": 8012,
+    "recordingStore-DXvPKRC5.js": 7601,
+    "noto-sans-sc-88-wght-normal-ClNDOCGW.woff2": 7336,
+    "fox-tail-CLj5oV3-.png": 7158,
+    "corgi-tail-yj6WW9c3.png": 6694,
+    "cat-tail-05IFqLZV.png": 6097,
+    "panda-tail-BgfEzz1T.png": 5078,
+    "dota-2-Nlm8wf23.jpg": 4415,
+    "duck-tail-PMwKsaCZ.png": 4286,
+    "elden-ring-BaVPx9FV.jpg": 4276,
+    "DeskAnimalSprite-ZUoQsthj.js": 3786,
+    "AccountAvatar-BVNYRg_Y.js": 2337,
+    "rolldown-runtime-B0Z9INg1.js": 901,
+    "vendor-state--M8hfQ4H.js": 697,
+    "profile-B65SOSwv.js": 58
+  },
+  "componentBytes": {
+    "electronRuntime": 325829081,
+    "appAsar": 50302780,
+    "appAsarUnpacked": 772509,
+    "ffmpegResource": 82797568,
+    "deepFilter": 17606111,
+    "quickMessages": 8262776,
+    "nativeHelpers": 470016,
+    "otherResources": 602746,
+    "nativeAddonsLogical": 173056,
+    "rendererJsLogical": 1447503,
+    "rendererCssLogical": 450754,
+    "rendererFontsLogical": 4507216,
+    "rendererImagesLogical": 19634100,
+    "rendererOtherAssetsLogical": 418383,
+    "productionNodeModulesLogical": 21880650
+  },
+  "largestPhysicalFiles": [
+    {
+      "path": "ShangHao.exe",
+      "bytes": 235251200
+    },
+    {
+      "path": "resources\\ffmpeg\\ffmpeg.exe",
+      "bytes": 82797568
+    },
+    {
+      "path": "resources\\app.asar",
+      "bytes": 50302780
+    },
+    {
+      "path": "dxcompiler.dll",
+      "bytes": 25637888
+    },
+    {
+      "path": "LICENSES.chromium.html",
+      "bytes": 20367775
+    },
+    {
+      "path": "icudtl.dat",
+      "bytes": 10876560
+    },
+    {
+      "path": "resources\\deepfilter\\df_bg.wasm",
+      "bytes": 9622975
+    },
+    {
+      "path": "libGLESv2.dll",
+      "bytes": 8034304
+    },
+    {
+      "path": "resources\\deepfilter\\DeepFilterNet3_onnx.tar.gz",
+      "bytes": 7983136
+    },
+    {
+      "path": "resources.pak",
+      "bytes": 6875967
+    },
+    {
+      "path": "vk_swiftshader.dll",
+      "bytes": 5529600
+    },
+    {
+      "path": "d3dcompiler_47.dll",
+      "bytes": 4741488
+    },
+    {
+      "path": "ffmpeg.dll",
+      "bytes": 3057152
+    },
+    {
+      "path": "dxil.dll",
+      "bytes": 1509760
+    },
+    {
+      "path": "resources\\quick-messages\\音乐\\CSGO\\预瞄小曲.aac",
+      "bytes": 1117974
+    },
+    {
+      "path": "vulkan-1.dll",
+      "bytes": 925696
+    },
+    {
+      "path": "resources\\quick-messages\\音乐\\三角洲行动\\难得真兄弟.aac",
+      "bytes": 875325
+    },
+    {
+      "path": "resources\\quick-messages\\音乐\\英雄联盟\\潘森小曲.aac",
+      "bytes": 769143
+    },
+    {
+      "path": "v8_context_snapshot.bin",
+      "bytes": 721176
+    },
+    {
+      "path": "locales\\zh-CN.pak",
+      "bytes": 577797
+    }
+  ],
+  "largestArchiveFiles": [
+    {
+      "path": "dist/assets/environment-v3-extended-Bub9fTQF.png",
+      "bytes": 1410931
+    },
+    {
+      "path": "dist/assets/weather-rain-D27yAUHo.png",
+      "bytes": 1325131
+    },
+    {
+      "path": "dist/assets/weather-snow-DX-wdEiJ.png",
+      "bytes": 1310233
+    },
+    {
+      "path": "dist/assets/weather-day-jwn0ticR.png",
+      "bytes": 1177343
+    },
+    {
+      "path": "dist/assets/weather-cloudy-DYX1vYPv.png",
+      "bytes": 1144263
+    },
+    {
+      "path": "dist/assets/weather-night-DCH21RPv.png",
+      "bytes": 1128208
+    },
+    {
+      "path": "dist-electron/main/index.cjs",
+      "bytes": 1005500
+    },
+    {
+      "path": "dist/assets/fox-yGEESxWg.png",
+      "bytes": 914939
+    },
+    {
+      "path": "dist/assets/cabinet-Bwojc85s.png",
+      "bytes": 887980
+    },
+    {
+      "path": "dist/assets/cat-DGoNxsRi.png",
+      "bytes": 868040
+    },
+    {
+      "path": "dist/assets/clock-BY-5TRJG.png",
+      "bytes": 864513
+    },
+    {
+      "path": "dist/assets/door-DbczJlsh.png",
+      "bytes": 855322
+    },
+    {
+      "path": "dist/assets/corgi-CHxooK7s.png",
+      "bytes": 849547
+    },
+    {
+      "path": "node_modules/@cloudbase/js-sdk/dist/index.node.cjs.js",
+      "bytes": 836962
+    },
+    {
+      "path": "dist/assets/duck-BZEksxNb.png",
+      "bytes": 832117
+    },
+    {
+      "path": "dist/assets/calendar-blank-v2-js58lzX-.png",
+      "bytes": 827798
+    },
+    {
+      "path": "dist/assets/panda-DIWj59Og.png",
+      "bytes": 796462
+    },
+    {
+      "path": "node_modules/@cloudbase/js-sdk/dist/index.node.esm.js",
+      "bytes": 786935
+    },
+    {
+      "path": "dist/assets/curtain-ceiling-v2-CDl3p5dO.png",
+      "bytes": 655085
+    },
+    {
+      "path": "node_modules/@cloudbase/js-sdk/dist/index.cjs.js",
+      "bytes": 616464
+    }
+  ],
+  "archiveSourceMaps": [],
+  "nativeAddons": {
+    "count": 1,
+    "bytes": 173056,
+    "files": [
+      {
+        "path": "node_modules/uiohook-napi/prebuilds/win32-x64/uiohook-napi.node",
+        "bytes": 173056
+      }
+    ]
+  },
+  "nonTargetUiohookPrebuilds": {
+    "count": 0,
+    "bytes": 0,
+    "files": []
+  },
+  "workspaceSourceFiles": {
+    "count": 0,
+    "bytes": 0,
+    "files": []
+  },
+  "cloudbaseMiniProgramFiles": {
+    "count": 0,
+    "bytes": 0,
+    "files": []
+  },
+  "electronLocales": ["en-US.pak", "zh-CN.pak"],
+  "ffmpegCopies": [
+    {
+      "path": "resources\\ffmpeg\\ffmpeg.exe",
+      "bytes": 82797568,
+      "sha256": "04e1307997530f9cf2fe35cba2ca7e8875ca91da02f89d6c7243df819c94ad00"
+    }
+  ]
+}

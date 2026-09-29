@@ -493,63 +493,95 @@ class MossTranscribeDiarizeQ8:
         configure_threads(resource_mode)
         if self.session is None or self.model is None:
             raise RuntimeError("moss_transcribe_diarize_q8_session_closed")
-        result = self.session.run(
-            self._pcm(wav_path),
-            language="zh",
-            timestamps="segment",
-            diarize="on",
-        )
-        words_by_segment: dict[int, list[dict[str, Any]]] = {}
-        for word in result.words:
-            text = str(word.text or "").strip()
-            if not text:
-                continue
-            words_by_segment.setdefault(int(word.seg_index), []).append(
-                {
-                    "startMs": max(0, int(word.t0_ms)),
-                    "endMs": max(int(word.t0_ms) + 20, int(word.t1_ms)),
+        pcm = self._pcm(wav_path)
+        truncation_count = 0
+
+        def run_chunk(samples: array, offset: int) -> list[tuple[int, Any]]:
+            nonlocal truncation_count
+            try:
+                return [(offset, self.session.run(
+                    samples, language="zh", timestamps="segment", diarize="on",
+                ))]
+            except self.transcribe_cpp.OutputTruncated:
+                truncation_count += 1
+                # The native decoder has a bounded output token budget. Split only
+                # the offending chunk; a normal 30-second result stays untouched.
+                if len(samples) <= 40_000:  # 2.5 seconds at 16 kHz
+                    raise
+                part_size = 160_000 if len(samples) > 160_000 else max(40_000, len(samples) // 2)
+                parts: list[tuple[int, Any]] = []
+                for start in range(0, len(samples), part_size):
+                    parts.extend(run_chunk(samples[start:start + part_size], offset + start))
+                return parts
+
+        results = run_chunk(pcm, 0)
+        segments = []
+        native_speaker_segments = []
+        text_parts = []
+        raw_text_parts = []
+        load_ms = encode_ms = decode_ms = 0.0
+        for offset, result in results:
+            offset_ms = offset // 16
+            if result.text:
+                text_parts.append(str(result.text).strip())
+            if result.raw_text:
+                raw_text_parts.append(str(result.raw_text))
+            load_ms += float(result.timings.load_ms)
+            encode_ms += float(result.timings.encode_ms)
+            decode_ms += float(result.timings.decode_ms)
+            words_by_segment: dict[int, list[dict[str, Any]]] = {}
+            for word in result.words:
+                text = str(word.text or "").strip()
+                if not text:
+                    continue
+                start_ms = offset_ms + max(0, int(word.t0_ms))
+                words_by_segment.setdefault(int(word.seg_index), []).append(
+                    {
+                        "startMs": start_ms,
+                        "endMs": max(start_ms + 20, offset_ms + int(word.t1_ms)),
+                        "text": text,
+                    }
+                )
+            for index, item in enumerate(result.segments):
+                text = str(item.text or "").strip()
+                if not text:
+                    continue
+                start_ms = offset_ms + max(0, int(item.t0_ms))
+                segment = {
+                    "startMs": start_ms,
+                    "endMs": max(start_ms + 100, offset_ms + int(item.t1_ms)),
+                    "speakerId": self._speaker_label(item.speaker_id),
                     "text": text,
                 }
-            )
-        segments = []
-        for index, item in enumerate(result.segments):
-            text = str(item.text or "").strip()
-            if not text:
-                continue
-            start_ms = max(0, int(item.t0_ms))
-            segment = {
-                "startMs": start_ms,
-                "endMs": max(start_ms + 100, int(item.t1_ms)),
-                "speakerId": self._speaker_label(item.speaker_id),
-                "text": text,
-            }
-            words = words_by_segment.get(index)
-            if words:
-                segment["words"] = words
-            segments.append(segment)
-        device = self.model.device
-        return {
-            "text": str(result.text or "").strip(),
-            "rawText": str(result.raw_text or ""),
-            "segments": segments,
-            "nativeSpeakerSegments": [
+                words = words_by_segment.get(index)
+                if words:
+                    segment["words"] = words
+                segments.append(segment)
+            native_speaker_segments.extend(
                 {
-                    "startMs": max(0, int(item.t0_ms)),
-                    "endMs": max(int(item.t0_ms), int(item.t1_ms)),
+                    "startMs": offset_ms + max(0, int(item.t0_ms)),
+                    "endMs": offset_ms + max(int(item.t0_ms), int(item.t1_ms)),
                     "speakerId": self._speaker_label(item.speaker_id),
                     "confidence": None if item.p != item.p else float(item.p),
                 }
                 for item in result.speaker_segments
-            ],
+            )
+        device = self.model.device
+        return {
+            "text": " ".join(text_parts),
+            "rawText": " ".join(raw_text_parts),
+            "segments": segments,
+            "nativeSpeakerSegments": native_speaker_segments,
             "metrics": {
                 "backend": str(self.model.backend),
                 "device": f"{device.device_type}:{device.name}",
                 "quantization": "Q8_0",
                 "dtype": "int8",
                 "backendFallback": self.backend_fallback,
-                "nativeLoadTimeMs": float(result.timings.load_ms),
-                "nativeEncodeTimeMs": float(result.timings.encode_ms),
-                "nativeDecodeTimeMs": float(result.timings.decode_ms),
+                "nativeLoadTimeMs": load_ms,
+                "nativeEncodeTimeMs": encode_ms,
+                "nativeDecodeTimeMs": decode_ms,
+                "truncationFallbackParts": len(results) if truncation_count else 0,
             },
         }
 

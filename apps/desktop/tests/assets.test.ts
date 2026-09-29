@@ -11,18 +11,15 @@ const listFilesRecursively = (directory: string): string[] =>
     return statSync(entryPath).isDirectory() ? listFilesRecursively(entryPath) : [entryPath];
   });
 
-test("desktop branding assets exist for app, tray, and github", () => {
+test("approved branding assets exist for app, shortcut, renderer and website", () => {
   const files = [
     path.join(root, "apps/desktop/build/icon-master.png"),
-    path.join(root, "apps/desktop/build/shanghao-icon-xl.ico"),
-    path.join(root, "apps/desktop/build/shanghao-shortcut-xl.ico"),
-    path.join(root, "apps/desktop/build/shanghao-icon-v3.ico"),
-    path.join(root, "apps/desktop/build/shanghao-shortcut-v3.ico"),
+    path.join(root, "apps/desktop/build/icon.png"),
+    path.join(root, "apps/desktop/build/shanghao-icon-v4.ico"),
+    path.join(root, "apps/desktop/build/shanghao-shortcut-v4.ico"),
     path.join(root, "apps/desktop/build/installer.nsh"),
-    path.join(root, "apps/desktop/build/logo-ui.svg"),
-    path.join(root, "apps/desktop/build/tray-dark.png"),
-    path.join(root, "apps/desktop/build/tray-light.png"),
-    path.join(root, "apps/desktop/src/renderer/src/assets/brand-mark.svg"),
+    path.join(root, "apps/desktop/src/renderer/src/assets/brand-mark.png"),
+    path.join(root, "website/public/brand-mark.png"),
     path.join(root, "docs/branding/github-avatar.png"),
   ];
 
@@ -33,7 +30,7 @@ test("desktop branding assets exist for app, tray, and github", () => {
   const windowSource = readFileSync(path.join(root, "apps/desktop/src/main/window.ts"), "utf8");
   assert.equal(
     windowSource.includes(
-      'getBuildAssetPath(app.isPackaged ? "shanghao-icon-v3.ico" : "icon.png")',
+      'getBuildAssetPath(app.isPackaged ? "shanghao-icon-v4.ico" : "icon.png")',
     ),
     true,
   );
@@ -41,21 +38,40 @@ test("desktop branding assets exist for app, tray, and github", () => {
   assert.equal(windowSource.includes("window.setIcon(windowIcon)"), true);
 });
 
-test("brand mark stays clean and consistent across renderer and desktop icon sources", () => {
-  const rendererMark = readFileSync(
-    path.join(root, "apps/desktop/src/renderer/src/assets/brand-mark.svg"),
-    "utf8",
-  );
-  const buildMarks = [
-    readFileSync(path.join(root, "apps/desktop/build/icon.svg"), "utf8"),
-    readFileSync(path.join(root, "apps/desktop/build/logo-ui.svg"), "utf8"),
-  ];
-
-  for (const source of [rendererMark, ...buildMarks]) {
-    assert.doesNotMatch(source, /feDropShadow|filter(?:\s+id|\s*=)/i);
+test("every full-size brand image is byte-identical to the approved source", () => {
+  const approved = readFileSync(path.join(root, "docs/branding/github-avatar.png"));
+  for (const relative of [
+    "apps/desktop/build/icon-master.png",
+    "apps/desktop/build/icon.png",
+    "apps/desktop/src/renderer/src/assets/brand-mark.png",
+    "website/public/brand-mark.png",
+  ]) {
+    assert.equal(readFileSync(path.join(root, relative)).equals(approved), true, relative);
   }
-  assert.match(rendererMark, /viewBox="0 0 128 128"/);
-  assert.match(rendererMark, /stroke-width="8"/);
+  const appIcon = readFileSync(path.join(root, "apps/desktop/build/shanghao-icon-v4.ico"));
+  const shortcutIcon = readFileSync(path.join(root, "apps/desktop/build/shanghao-shortcut-v4.ico"));
+  assert.equal(appIcon.equals(shortcutIcon), true);
+  assert.equal(appIcon.readUInt16LE(2), 1, "Windows icon resource");
+  assert.equal(appIcon.readUInt16LE(4), 9, "nine Windows shell resolutions");
+
+  for (const relative of [
+    "apps/desktop/src/renderer/index.html",
+    "apps/desktop/src/renderer/src/components/brand/BrandMark.tsx",
+    "apps/desktop/src/renderer/src/components/status/UpdateGatePage.tsx",
+    "apps/desktop/src/renderer/src/components/settings/AboutSettingsCard.tsx",
+    "website/index.html",
+    "website/src/main.tsx",
+    "website/scripts/copy-404.mjs",
+  ]) {
+    const source = readFileSync(path.join(root, relative), "utf8");
+    assert.match(source, /brand-mark\.png/, relative);
+    assert.doesNotMatch(source, /brand-mark\.svg/, relative);
+  }
+  const traySource = readFileSync(path.join(root, "apps/desktop/src/main/tray.ts"), "utf8");
+  assert.match(traySource, /getBuildAssetPath\("icon\.png"\)/);
+  const generator = readFileSync(path.join(root, "scripts/generate-brand-assets.ps1"), "utf8");
+  assert.match(generator, /docs\/branding\/github-avatar\.png/);
+  assert.doesNotMatch(generator, /New-SquareMasterFromSource|New-TrayBitmap/);
 
   const brandComponent = readFileSync(
     path.join(root, "apps/desktop/src/renderer/src/components/brand/BrandMark.tsx"),
@@ -74,7 +90,7 @@ test("brand mark stays clean and consistent across renderer and desktop icon sou
     "utf8",
   );
 
-  assert.match(brandComponent, /assets\/brand-mark\.svg/);
+  assert.match(brandComponent, /assets\/brand-mark\.png/);
   assert.match(brandComponent, /size-\[46px\]/);
   assert.match(accountPage, /<BrandMark size="account" className="account-brand-mark" \/>/);
   assert.doesNotMatch(accountPage, /<Headphones/);

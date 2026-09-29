@@ -1,9 +1,11 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 
 import { useAudioStore } from "../../store/audioStore";
 import { useRoomStore } from "../../store/roomStore";
 import { useSettingsStore } from "../../store/settingsStore";
 import { getRemoteAudioMixer } from "./RemoteAudioMixer";
+import { hasPlayableAudioTrack } from "./remoteAudioTrack";
+import { sameRemoteAudioSyncInputs, type RemoteAudioSyncInput } from "./remoteAudioSync";
 
 export const RemoteAudioRenderer = () => {
   const remoteStreams = useRoomStore((state) => state.remoteStreams);
@@ -15,16 +17,34 @@ export const RemoteAudioRenderer = () => {
     (state) => state.settings?.isFriendLoudnessBalanceEnabled ?? true,
   );
   const mixer = getRemoteAudioMixer();
+  const lastSyncedInputs = useRef<RemoteAudioSyncInput[] | null>(null);
 
   useEffect(() => {
-    mixer.sync(
-      Object.entries(remoteStreams).map(([peerId, stream]) => ({
-        peerId,
-        stream,
-        volume: members.find((candidate) => candidate.id === peerId)?.volume ?? 1,
-      })),
-    );
+    const inputs = Object.entries(remoteStreams).map(([peerId, stream]) => ({
+      peerId,
+      stream,
+      audioTrackId: stream.getAudioTracks()[0]?.id,
+      playable: hasPlayableAudioTrack(stream),
+      volume: members.find((candidate) => candidate.id === peerId)?.volume ?? 1,
+    }));
+    if (lastSyncedInputs.current && sameRemoteAudioSyncInputs(lastSyncedInputs.current, inputs)) {
+      return;
+    }
+    lastSyncedInputs.current = inputs;
+    mixer.sync(inputs);
   }, [members, mixer, remoteStreams]);
+
+  useEffect(() => {
+    mixer.setPeerSpeakingStates(
+      members
+        .filter((member) => !member.isLocal)
+        .map((member) => ({
+          peerId: member.id,
+          speaking: member.speakingState === "speaking",
+          muted: member.isMuted || member.speakingState === "muted",
+        })),
+    );
+  }, [members, mixer]);
 
   useEffect(() => mixer.setDeafened(isDeafened), [isDeafened, mixer]);
   useEffect(() => {

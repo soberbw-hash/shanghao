@@ -9,7 +9,7 @@ import {
 } from "@private-voice/shared";
 import { formatRecordingBytes } from "../src/renderer/src/features/recording/recordingSize";
 
-test("all voice and music shortcut slots use the same IPC bounds", () => {
+test("all voice and music shortcut slots use the controller's shared bounds", () => {
   const total = DEFAULT_QUICK_MESSAGE_SLOTS.length + DEFAULT_QUICK_MESSAGE_MUSIC_SLOTS.length;
   assert.equal(DEFAULT_QUICK_MESSAGE_SLOTS.length, 8);
   assert.equal(DEFAULT_QUICK_MESSAGE_MUSIC_SLOTS.length, 5);
@@ -18,8 +18,8 @@ test("all voice and music shortcut slots use the same IPC bounds", () => {
   for (const invalid of [-1, total, 0.5, NaN, Infinity]) {
     assert.equal(isQuickMessageShortcutSlot(invalid), false);
   }
-  const ipc = readFileSync(new URL("../src/main/ipc.ts", import.meta.url), "utf8");
-  assert.match(ipc, /if \(!isQuickMessageShortcutSlot\(slot\)\)/);
+  const controller = readFileSync(new URL("../src/main/shortcuts.ts", import.meta.url), "utf8");
+  assert.match(controller, /if \(!isQuickMessageShortcutSlot\(slot\)\)/);
 });
 
 test("empty recording storage is not reported as a nonzero file", () => {

@@ -20,6 +20,7 @@ export class SettingsStore {
   private readonly filePath: string;
   private readonly backupFilePath: string;
   private persistQueue: Promise<void> = Promise.resolve();
+  private writeProtected = false;
 
   constructor(
     private readonly writeLog?: (payload: RendererLogPayload) => Promise<void>,
@@ -31,12 +32,14 @@ export class SettingsStore {
 
   async load(): Promise<AppSettings> {
     const candidates = [this.filePath, this.backupFilePath];
+    let unreadableCandidate = false;
     for (const candidate of candidates) {
       try {
         const fileContent = await readFile(candidate, "utf8");
         const parsed = JSON.parse(this.stripBom(fileContent)) as RawSettings;
         const { settings, migrated, previousVersion } = migrateSettings(parsed);
         this.cachedSettings = settings;
+        this.writeProtected = false;
         // Opening an unchanged profile must not rewrite account-adjacent data or its backup.
         // Persist only a real normalization/migration or recovery from the backup file.
         const normalizedForDisk = JSON.parse(JSON.stringify(settings)) as RawSettings;
@@ -60,6 +63,7 @@ export class SettingsStore {
         });
         return this.cachedSettings;
       } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "ENOENT") unreadableCandidate = true;
         await this.log("warn", "settings candidate failed", {
           source: candidate === this.filePath ? "primary" : "backup",
           error: error instanceof Error ? error.message : String(error),
@@ -68,6 +72,11 @@ export class SettingsStore {
     }
 
     this.cachedSettings = migrateSettings(defaultSettings).settings;
+    if (unreadableCandidate) {
+      this.writeProtected = true;
+      await this.log("error", "settings unreadable; original files preserved");
+      return this.cachedSettings;
+    }
     await this.persist(this.cachedSettings, false);
     await this.log("warn", "settings safe defaults restored", {
       schemaVersion: defaultSettings.settingsSchemaVersion,
@@ -80,6 +89,7 @@ export class SettingsStore {
   }
 
   async save(partial: Partial<AppSettings>): Promise<AppSettings> {
+    if (this.writeProtected) throw new Error("settings_unreadable");
     const { settings } = migrateSettings({
       ...this.cachedSettings,
       ...partial,
@@ -87,8 +97,14 @@ export class SettingsStore {
     // Ignore semantic no-op saves. Besides avoiding needless disk writes, this keeps a
     // misbehaving renderer effect from turning settings persistence into a hot loop.
     if (isDeepStrictEqual(settings, this.cachedSettings)) return this.cachedSettings;
+    const previousSettings = this.cachedSettings;
     this.cachedSettings = settings;
-    await this.persist(this.cachedSettings);
+    try {
+      await this.persist(this.cachedSettings);
+    } catch (error) {
+      if (this.cachedSettings === settings) this.cachedSettings = previousSettings;
+      throw error;
+    }
     await this.log("info", "settings saved", {
       schemaVersion: this.cachedSettings.settingsSchemaVersion,
       avatarId: this.cachedSettings.avatarId,
@@ -108,9 +124,18 @@ export class SettingsStore {
   }
 
   async reset(): Promise<AppSettings> {
-    await clearLegacyAvatarImage(this.cachedSettings.avatarPath);
+    const previousSettings = this.cachedSettings;
+    const previousWriteProtected = this.writeProtected;
+    this.writeProtected = false;
     this.cachedSettings = migrateSettings(defaultSettings).settings;
-    await this.persist(this.cachedSettings);
+    try {
+      await this.persist(this.cachedSettings);
+    } catch (error) {
+      this.cachedSettings = previousSettings;
+      this.writeProtected = previousWriteProtected;
+      throw error;
+    }
+    await clearLegacyAvatarImage(previousSettings.avatarPath);
     await this.log("info", "settings reset", {
       schemaVersion: this.cachedSettings.settingsSchemaVersion,
     });
@@ -139,7 +164,11 @@ export class SettingsStore {
     });
     try {
       if (backupExisting) {
-        await copyFile(this.filePath, this.backupFilePath).catch(() => undefined);
+        try {
+          await copyFile(this.filePath, this.backupFilePath);
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+        }
       }
       // fs.rename cannot reliably replace an existing destination on Windows. copyFile uses
       // overwrite semantics, while the serialized queue prevents concurrent saves racing.

@@ -408,7 +408,7 @@ test("desktop build includes custom nsis shortcut icon wiring", () => {
   const installer = readFileSync(path.resolve(process.cwd(), "build/installer.nsh"), "utf8");
 
   assert.equal(source.includes("include: build/installer.nsh"), true);
-  assert.equal(source.includes("shanghao-shortcut-v3.ico"), true);
+  assert.equal(source.includes("shanghao-shortcut-v4.ico"), true);
   assert.equal(installer.includes("--shanghao-quit-for-install"), true);
   assert.equal(installer.includes("customCheckAppRunning"), true);
   assert.equal(installer.includes("shutdownShangHaoProcesses"), true);

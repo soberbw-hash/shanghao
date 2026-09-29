@@ -2,7 +2,9 @@ import { createHash } from "node:crypto";
 import { readdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 
-const releaseDirectory = path.resolve(import.meta.dirname, "..", "apps", "desktop", "release");
+const releaseDirectory = process.argv[2]
+  ? path.resolve(process.argv[2])
+  : path.resolve(import.meta.dirname, "..", "apps", "desktop", "release");
 const desktopPackage = JSON.parse(
   await readFile(
     path.resolve(import.meta.dirname, "..", "apps", "desktop", "package.json"),
@@ -14,7 +16,8 @@ const names = (await readdir(releaseDirectory))
   .filter(
     (name) =>
       ((name.endsWith(".exe") || name.endsWith(".blockmap")) && name.includes(versionMarker)) ||
-      /^latest.*\.ya?ml$/i.test(name),
+      /^latest.*\.ya?ml$/i.test(name) ||
+      name === "package-size.json",
   )
   .sort((left, right) => left.localeCompare(right));
 

@@ -255,11 +255,18 @@ export const AiVoiceMemorySettingsCard = ({
         setCustomBaseUrl(status.baseUrl ?? "https://api.deepseek.com");
         setCustomModel(status.model ?? "deepseek-flash");
       })
-      .catch(() => undefined);
+      .catch(() => {
+        if (!active) return;
+        pushToast({
+          tone: "danger",
+          title: "自定义 API 配置无法读取",
+          description: "原配置文件已保留，请检查系统加密存储或磁盘权限。",
+        });
+      });
     return () => {
       active = false;
     };
-  }, [isActive]);
+  }, [isActive, pushToast]);
 
   const controlModel = async (model: AiModelStatus, action: AiModelAction) => {
     if (action === "delete") {
@@ -322,11 +329,17 @@ export const AiVoiceMemorySettingsCard = ({
       setCustomProvider(status);
       setCustomApiKey("");
       pushToast({ tone: "success", title: "自定义 API 已安全保存" });
-    } catch {
+    } catch (error) {
+      const existingConfigUnreadable =
+        /custom_ai_config_(?:invalid|unreadable)|custom_ai_encryption_unavailable|EACCES|EISDIR/u.test(
+          String(error),
+        );
       pushToast({
         tone: "danger",
         title: "自定义 API 保存失败",
-        description: "请检查 API 地址、模型名称和密钥是否填写正确，然后重试。",
+        description: existingConfigUnreadable
+          ? "原配置无法读取，已保留原文件。请检查系统加密存储或磁盘权限。"
+          : "请检查 API 地址、模型名称和密钥是否填写正确，然后重试。",
       });
     } finally {
       setSavingCustomProvider(false);

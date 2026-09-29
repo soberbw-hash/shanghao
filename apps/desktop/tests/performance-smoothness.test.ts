@@ -80,7 +80,7 @@ test("high-frequency chat, telemetry, and pressure paths avoid broad invalidatio
   const store = read("store/roomStore.ts");
 
   assert.equal(room.includes("runtimePressureRef.current"), true);
-  assert.equal(room.includes("}, [room.connectionState]);"), true);
+  assert.equal(room.includes("}, [room.connectionState, recordingStatus.state]);"), true);
   assert.equal(room.includes("<RoomChatPanel"), true);
   assert.equal(chat.includes("latestMessageElementRef"), true);
   assert.equal(chat.includes("isNearBottomRef"), true);

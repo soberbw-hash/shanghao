@@ -23,6 +23,35 @@ files:
   - "!dist-electron/**/*.map"
   - "!dist-electron/tests/**"
   - "!node_modules/**/*.map"
+  # The runnable binary is copied once to resources/ffmpeg below. Keep the
+  # ffmpeg-static JS resolver for development without packaging its second exe.
+  - "!node_modules/ffmpeg-static/ffmpeg.exe"
+  # Vite has already bundled these renderer-only libraries and font subsets
+  # into dist/. Their raw package trees are unused by Electron's main process.
+  - "!node_modules/react/**"
+  - "!node_modules/react-dom/**"
+  - "!node_modules/framer-motion/**"
+  - "!node_modules/gsap/**"
+  - "!node_modules/lucide/**"
+  - "!node_modules/lucide-react/**"
+  - "!node_modules/morphicons/**"
+  - "!node_modules/uisfx/**"
+  - "!node_modules/@fontsource-variable/**"
+  - "!node_modules/react-virtuoso/**"
+  - "!node_modules/zustand/**"
+  # Only win32-x64 is shipped. Keep its uiohook addon for mouse shortcuts.
+  - "!node_modules/uiohook-napi/prebuilds/win32-arm64/**"
+  - "!node_modules/uiohook-napi/prebuilds/darwin-arm64/**"
+  - "!node_modules/uiohook-napi/prebuilds/darwin-x64/**"
+  - "!node_modules/uiohook-napi/prebuilds/linux-arm64/**"
+  - "!node_modules/uiohook-napi/prebuilds/linux-loong64/**"
+  - "!node_modules/uiohook-napi/prebuilds/linux-x64/**"
+  # Workspace packages enter via their dist/ entrypoints; their TypeScript
+  # source is not needed at runtime.
+  - "!node_modules/@private-voice/*/src/**"
+  # The main process resolves CloudBase's node CJS export; its mini-program
+  # distribution is a separate platform build.
+  - "!node_modules/@cloudbase/js-sdk/miniprogram_dist/**"
   - "package.json"
 extraResources:
   - from: node_modules/ffmpeg-static/ffmpeg.exe
@@ -54,17 +83,16 @@ extraResources:
   - from: build
     to: build
     filter:
-      - "shanghao-icon-v3.ico"
-      - "shanghao-shortcut-v3.ico"
-      - "tray-dark.png"
-      - "tray-light.png"
+      - "shanghao-icon-v4.ico"
+      - "shanghao-shortcut-v4.ico"
+      - "icon.png"
 extraMetadata:
   name: shanghao
   main: dist-electron/main/index.cjs
 
 win:
   executableName: ShangHao
-  icon: shanghao-icon-v3.ico
+  icon: shanghao-icon-v4.ico
   artifactName: ShangHao-${version}-Setup-${arch}.${ext}
   electronLanguages:
     - zh-CN
@@ -79,6 +107,6 @@ nsis:
   allowToChangeInstallationDirectory: true
   include: build/installer.nsh
   shortcutName: "上号"
-  installerIcon: shanghao-icon-v3.ico
-  uninstallerIcon: shanghao-icon-v3.ico
-  installerHeaderIcon: shanghao-icon-v3.ico
+  installerIcon: shanghao-icon-v4.ico
+  uninstallerIcon: shanghao-icon-v4.ico
+  installerHeaderIcon: shanghao-icon-v4.ico

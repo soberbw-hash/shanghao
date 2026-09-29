@@ -1,6 +1,6 @@
 import { createReadStream } from "node:fs";
 import { randomUUID } from "node:crypto";
-import { mkdir, readFile, readdir, rename, stat, unlink, writeFile } from "node:fs/promises";
+import { mkdir, readFile, readdir, rename, rm, stat, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { Readable } from "node:stream";
 
@@ -130,33 +130,47 @@ const emptyMetadata = (): RecordingLibraryMetadata => ({
 });
 
 const readLibraryMetadata = async (directory: string): Promise<RecordingLibraryMetadata> => {
+  let content: string;
   try {
-    const parsed = JSON.parse(
-      await readFile(metadataPathFor(directory), "utf8"),
-    ) as Partial<RecordingLibraryMetadata>;
-    return {
-      version: 2,
-      favorites: Array.isArray(parsed.favorites)
-        ? parsed.favorites.filter((value): value is string => typeof value === "string")
-        : [],
-      favoriteRecordingIds: Array.isArray(parsed.favoriteRecordingIds)
-        ? parsed.favoriteRecordingIds.filter((value): value is string => typeof value === "string")
-        : [],
-      recordings: Array.isArray(parsed.recordings)
-        ? parsed.recordings.filter((entry): entry is RecordingCatalogEntry =>
-            Boolean(
-              entry &&
-              typeof entry.recordingId === "string" &&
-              typeof entry.fileName === "string" &&
-              typeof entry.title === "string" &&
-              typeof entry.createdAt === "string",
-            ),
-          )
-        : [],
-    };
-  } catch {
-    return emptyMetadata();
+    content = await readFile(metadataPathFor(directory), "utf8");
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return emptyMetadata();
+    throw error;
   }
+  let parsed: Partial<RecordingLibraryMetadata>;
+  try {
+    parsed = JSON.parse(content) as Partial<RecordingLibraryMetadata>;
+  } catch {
+    throw new Error("recording_library_metadata_invalid");
+  }
+  const stringArray = (value: unknown): value is string[] =>
+    Array.isArray(value) && value.every((item) => typeof item === "string");
+  if (
+    !parsed ||
+    typeof parsed !== "object" ||
+    Array.isArray(parsed) ||
+    (parsed.version !== undefined && parsed.version !== 1 && parsed.version !== 2) ||
+    (parsed.favorites !== undefined && !stringArray(parsed.favorites)) ||
+    (parsed.favoriteRecordingIds !== undefined && !stringArray(parsed.favoriteRecordingIds)) ||
+    (parsed.recordings !== undefined &&
+      (!Array.isArray(parsed.recordings) ||
+        !parsed.recordings.every(
+          (entry) =>
+            entry &&
+            typeof entry.recordingId === "string" &&
+            typeof entry.fileName === "string" &&
+            typeof entry.title === "string" &&
+            typeof entry.createdAt === "string",
+        )))
+  ) {
+    throw new Error("recording_library_metadata_invalid");
+  }
+  return {
+    version: 2,
+    favorites: parsed.favorites ?? [],
+    favoriteRecordingIds: parsed.favoriteRecordingIds ?? [],
+    recordings: parsed.recordings ?? [],
+  };
 };
 
 const writeLibraryMetadata = async (
@@ -166,12 +180,15 @@ const writeLibraryMetadata = async (
   await mkdir(directory, { recursive: true });
   const metadataPath = metadataPathFor(directory);
   const temporaryPath = `${metadataPath}.${process.pid}.${randomUUID()}.tmp`;
-  await writeFile(
-    temporaryPath,
-    `${JSON.stringify({ ...metadata, version: 2 }, null, 2)}\n`,
-    "utf8",
-  );
-  await rename(temporaryPath, metadataPath);
+  try {
+    await writeFile(temporaryPath, `${JSON.stringify({ ...metadata, version: 2 }, null, 2)}\n`, {
+      encoding: "utf8",
+      flag: "wx",
+    });
+    await rename(temporaryPath, metadataPath);
+  } finally {
+    await rm(temporaryPath, { force: true }).catch(() => undefined);
+  }
 };
 
 export const setRecordingFavoriteInDirectory = async (
@@ -182,12 +199,11 @@ export const setRecordingFavoriteInDirectory = async (
   if (!isAllowedRecordingPathInDirectory(directory, filePath)) {
     throw new Error("invalid_recording_path");
   }
-  if (isFavorite) {
-    const fileStat = await stat(filePath);
-    if (!fileStat.isFile()) throw new Error("recording_not_found");
-  }
-
   await mutateDirectory(directory, async () => {
+    if (isFavorite) {
+      const fileStat = await stat(filePath);
+      if (!fileStat.isFile()) throw new Error("recording_not_found");
+    }
     await mkdir(directory, { recursive: true });
     const metadata = await readLibraryMetadata(directory);
     const fileName = path.basename(filePath);
@@ -212,8 +228,15 @@ export const isInsideDirectory = (directory: string, candidate: string): boolean
 };
 
 const parseMarkers = async (filePath: string, recordingId: string): Promise<RecordingMarker[]> => {
-  const source = await readFile(markerPathFor(filePath), "utf8").catch(() => "");
+  let source: string;
+  try {
+    source = await readFile(markerPathFor(filePath), "utf8");
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
+    throw error;
+  }
   const matches = [...source.matchAll(/(\d{2}):(\d{2}):(\d{2})/g)];
+  if (source.trim() && matches.length === 0) throw new Error("recording_marker_unreadable");
   return matches.map((match, index) => ({
     id: `${recordingId}-${index}`,
     offsetMs: (Number(match[1]) * 3_600 + Number(match[2]) * 60 + Number(match[3])) * 1_000,
@@ -236,7 +259,10 @@ export const decodeRecordingMediaUrl = (rawUrl: string): string | undefined => {
   }
 };
 
-export const readRecordingLibraryItems = async (
+export const readRecordingLibraryItems = (directory: string): Promise<RecordingLibraryItem[]> =>
+  mutateDirectory(directory, () => readRecordingLibraryItemsUnsafe(directory));
+
+const readRecordingLibraryItemsUnsafe = async (
   directory: string,
 ): Promise<RecordingLibraryItem[]> => {
   await mkdir(directory, { recursive: true });
@@ -397,8 +423,14 @@ export const renameRecordingInDirectory = async (
     const sourceMarkerPath = markerPathFor(sourcePath);
     const targetMarkerPath = markerPathFor(targetPath);
     const markerExists = await stat(sourceMarkerPath)
-      .then((value) => value.isFile())
-      .catch(() => false);
+      .then((value) => {
+        if (!value.isFile()) throw new Error("recording_marker_unreadable");
+        return true;
+      })
+      .catch((error: NodeJS.ErrnoException) => {
+        if (error.code === "ENOENT") return false;
+        throw error;
+      });
     const originalEntry = { ...catalogEntry };
     const legacyFavorites = new Set(metadata.favorites);
     const wasLegacyFavorite = legacyFavorites.delete(catalogEntry.fileName);
@@ -425,7 +457,7 @@ export const renameRecordingInDirectory = async (
       if (audioRenamed) await rename(targetPath, sourcePath).catch(() => undefined);
       throw error;
     }
-    const [item] = (await readRecordingLibraryItems(directory)).filter(
+    const [item] = (await readRecordingLibraryItemsUnsafe(directory)).filter(
       (candidate) => candidate.recordingId === recordingId,
     );
     if (!item) throw new Error("recording_rename_verification_failed");
@@ -472,6 +504,9 @@ export const deleteRecordingInDirectory = async (
     throw new Error("invalid_recording_path");
   }
   await mutateDirectory(directory, async () => {
+    // A corrupt index must stop deletion before any recording or marker bytes
+    // are removed. The metadata read below otherwise happens too late.
+    await readLibraryMetadata(directory);
     await unlink(filePath);
     await unlink(markerPathFor(filePath)).catch(() => undefined);
     await forgetRecordingInDirectoryUnsafe(directory, filePath);
@@ -489,11 +524,37 @@ export const forgetRecordingInDirectory = async (
   await mutateDirectory(directory, () => forgetRecordingInDirectoryUnsafe(directory, filePath));
 };
 
+/** Rechecks favorites and markers under the metadata queue before automatic recycling. */
+export const recycleUnprotectedRecordingInDirectory = async (
+  directory: string,
+  filePath: string,
+  recycle: (filePath: string) => Promise<void>,
+): Promise<void> => {
+  if (!isAllowedRecordingPathInDirectory(directory, filePath)) {
+    throw new Error("invalid_recording_path");
+  }
+  await mutateDirectory(directory, async () => {
+    const metadata = await readLibraryMetadata(directory);
+    const fileName = path.basename(filePath);
+    const entry = metadata.recordings?.find((recording) => recording.fileName === fileName);
+    if (
+      metadata.favorites.includes(fileName) ||
+      (entry && metadata.favoriteRecordingIds?.includes(entry.recordingId)) ||
+      (await parseMarkers(filePath, entry?.recordingId ?? fileName)).length > 0
+    ) {
+      throw new Error("recording_protected");
+    }
+    await recycle(filePath);
+    await forgetRecordingInDirectoryUnsafe(directory, filePath, metadata);
+  });
+};
+
 const forgetRecordingInDirectoryUnsafe = async (
   directory: string,
   filePath: string,
+  knownMetadata?: RecordingLibraryMetadata,
 ): Promise<void> => {
-  const metadata = await readLibraryMetadata(directory);
+  const metadata = knownMetadata ?? (await readLibraryMetadata(directory));
   const fileName = path.basename(filePath);
   const entry = metadata.recordings?.find((recording) => recording.fileName === fileName);
   metadata.recordings = metadata.recordings?.filter((recording) => recording.fileName !== fileName);

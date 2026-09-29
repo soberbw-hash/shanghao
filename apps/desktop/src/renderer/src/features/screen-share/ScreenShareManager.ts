@@ -60,6 +60,8 @@ export class ScreenShareManager {
   private operationId = 0;
   private isDisposed = false;
   private shutdownPromise?: Promise<void>;
+  private publishingPromise?: Promise<void>;
+  private stopPromise?: Promise<void>;
 
   constructor(options: ScreenShareManagerOptions) {
     this.options = options;
@@ -115,6 +117,7 @@ export class ScreenShareManager {
   }
 
   async startShare(request: StartScreenShareRequest): Promise<MediaStream> {
+    if (this.stopPromise) await this.stopPromise;
     if (this.snapshot.localStream) {
       throw new Error("screen_share_already_active");
     }
@@ -130,6 +133,7 @@ export class ScreenShareManager {
     });
 
     let stream: MediaStream | undefined;
+    let publishingAttempted = false;
     try {
       const profile = SCREEN_SHARE_PROFILES[quality];
       const requestStream = async (includeSystemAudio: boolean): Promise<MediaStream> => {
@@ -202,8 +206,18 @@ export class ScreenShareManager {
       if (!videoTrack) throw new Error("screen_track_missing");
       videoTrack.contentHint = "motion";
       await this.applyCaptureProfile(videoTrack, profile);
+      if (operationId !== this.operationId || this.isDisposed) {
+        throw new Error("screen_share_superseded");
+      }
       const captureSettings = videoTrack.getSettings();
-      await this.options.startPublishing(stream, profile);
+      publishingAttempted = true;
+      const publishing = this.options.startPublishing(stream, profile);
+      this.publishingPromise = publishing;
+      try {
+        await publishing;
+      } finally {
+        if (this.publishingPromise === publishing) this.publishingPromise = undefined;
+      }
       if (operationId !== this.operationId || this.isDisposed) {
         stream.getTracks().forEach((track) => track.stop());
         throw new Error("screen_share_superseded");
@@ -230,16 +244,24 @@ export class ScreenShareManager {
       });
       return stream;
     } catch (error) {
-      stream?.getTracks().forEach((track) => track.stop());
-      await shanghaoCore.screenCapture.setContentProtection(false).catch(() => undefined);
-      if (operationId === this.operationId && !this.isDisposed) {
-        this.patch({
-          status: "failed",
-          localStream: undefined,
-          hasSystemAudio: false,
-          error: this.errorMessage(error),
-          transitionOrigin: undefined,
+      const ownsOperation = () => operationId === this.operationId && !this.isDisposed;
+      if (publishingAttempted && ownsOperation()) {
+        await this.options.stopPublishing().catch(async (rollbackError) => {
+          await this.log("warn", "Failed to roll back screen share publishing", rollbackError);
         });
+      }
+      stream?.getTracks().forEach((track) => track.stop());
+      if (ownsOperation()) {
+        await shanghaoCore.screenCapture.setContentProtection(false).catch(() => undefined);
+        if (ownsOperation()) {
+          this.patch({
+            status: "failed",
+            localStream: undefined,
+            hasSystemAudio: false,
+            error: this.errorMessage(error),
+            transitionOrigin: undefined,
+          });
+        }
       }
       await this.log("error", "Screen share request failed", error);
       throw error;
@@ -247,6 +269,7 @@ export class ScreenShareManager {
   }
 
   async stopShare(reason = "user"): Promise<void> {
+    if (this.stopPromise) return this.stopPromise;
     const operationId = ++this.operationId;
     const previousStream = this.snapshot.localStream;
     if (!previousStream && this.snapshot.status === "idle") return;
@@ -268,17 +291,27 @@ export class ScreenShareManager {
       });
     }
 
-    try {
-      await this.options.stopPublishing();
-    } catch (error) {
-      await this.log("warn", "Failed to stop publishing screen share cleanly", {
-        reason,
-        error: this.errorMessage(error),
-      });
-    }
-
-    await shanghaoCore.screenCapture.setContentProtection(false).catch(() => undefined);
-    await this.log("info", "Screen share stopped", { reason });
+    const pendingPublishing = this.publishingPromise;
+    const stopping = (async () => {
+      await pendingPublishing?.catch(() => undefined);
+      try {
+        await this.options.stopPublishing();
+      } catch (error) {
+        await this.log("warn", "Failed to stop publishing screen share cleanly", {
+          reason,
+          error: this.errorMessage(error),
+        });
+      }
+      if (operationId === this.operationId && !this.isDisposed) {
+        await shanghaoCore.screenCapture.setContentProtection(false).catch(() => undefined);
+      }
+      await this.log("info", "Screen share stopped", { reason });
+    })();
+    const completed = stopping.finally(() => {
+      if (this.stopPromise === completed) this.stopPromise = undefined;
+    });
+    this.stopPromise = completed;
+    return completed;
   }
 
   async openDetachedViewer(item: ScreenShareItem): Promise<void> {
@@ -347,8 +380,12 @@ export class ScreenShareManager {
     if (this.isDisposed) return;
     this.isDisposed = true;
     this.operationId += 1;
-    if (this.snapshot.localStream) {
-      void this.options.stopPublishing().catch(() => undefined);
+    const pendingPublishing = this.publishingPromise;
+    if (!this.stopPromise && (this.snapshot.localStream || pendingPublishing)) {
+      void Promise.resolve(pendingPublishing)
+        .catch(() => undefined)
+        .then(() => this.options.stopPublishing())
+        .catch(() => undefined);
     }
     this.stopLocalTracks();
     this.closeDetachedPublisher(true);
@@ -429,8 +466,22 @@ export class ScreenShareManager {
       const [videoTrack] = recoveredStream.getVideoTracks();
       if (!videoTrack) throw new Error("screen_track_missing_after_recovery");
       await this.applyCaptureProfile(videoTrack, profile);
+      if (operationId !== this.operationId || this.isDisposed) {
+        recoveredStream.getTracks().forEach((track) => track.stop());
+        return;
+      }
       const captureSettings = videoTrack.getSettings();
-      await this.options.startPublishing(recoveredStream, profile);
+      const publishing = this.options.startPublishing(recoveredStream, profile);
+      this.publishingPromise = publishing;
+      try {
+        await publishing;
+      } finally {
+        if (this.publishingPromise === publishing) this.publishingPromise = undefined;
+      }
+      if (operationId !== this.operationId || this.isDisposed) {
+        recoveredStream.getTracks().forEach((track) => track.stop());
+        return;
+      }
       endedStream.getTracks().forEach((track) => track.stop());
       this.bindTrackRecovery(recoveredStream, request, profile);
       this.patch({

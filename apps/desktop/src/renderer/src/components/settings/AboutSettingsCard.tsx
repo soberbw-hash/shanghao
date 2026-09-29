@@ -4,7 +4,7 @@ import { AnimatePresence, motion } from "framer-motion";
 
 import type { RuntimeInfo, UpdateCheckResult, UpdateStatus } from "@private-voice/shared";
 
-import brandMark from "../../assets/brand-mark.svg";
+import brandMark from "../../assets/brand-mark.png";
 import donateQr from "../../assets/donate-qr.jpg";
 import {
   dialogSurfaceVariants,

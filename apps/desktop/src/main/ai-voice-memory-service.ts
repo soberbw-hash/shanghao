@@ -1,5 +1,4 @@
 import { createHash, randomUUID } from "node:crypto";
-import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import path from "node:path";
 
 import {
@@ -42,11 +41,14 @@ import {
 } from "@private-voice/shared";
 
 import { AiModelManager, QWEN36_NVFP4_MODEL_REVISION } from "./ai-model-manager";
+import { AiJobWriteOwnership } from "./ai-job-write-ownership";
 import { AiRuntimeManager } from "./ai-runtime-manager";
 import type { TranscriptionChunkRuntimeResult } from "./asr-benchmark-runtime";
+import { TRANSCRIPTION_CHUNK_MS, transcriptionChunkMsForModel } from "./asr-chunk-policy";
 import { classifyLocalModelRuntimeError } from "./local-model-runtime";
 import { VoiceMemoryStore } from "./voice-memory-store";
 import { resolveFfmpegExecutable } from "./media-runtime";
+import { probeRecordingMedia } from "./recording-media-probe";
 import { AiTextGateway } from "./ai-text-gateway";
 import {
   materializeOrganizationChunks,
@@ -65,10 +67,11 @@ import {
   type KnownSpeakerTranscriptionSource,
 } from "./speaker-transcript";
 
-// Short units bound local inference memory and preserve useful seek points for models without
-// word-level timestamps.
-export const TRANSCRIPTION_CHUNK_MS = 30_000;
-export const MOSS_CPP_TRANSCRIPTION_CHUNK_MS = 10 * 60_000;
+export {
+  TRANSCRIPTION_CHUNK_MS,
+  MOSS_CPP_TRANSCRIPTION_CHUNK_MS,
+  mossTranscriptionChunkMsForResume,
+} from "./asr-chunk-policy";
 export const AUTOMATIC_TRANSCRIPTION_MAX_DURATION_MS = 30 * 60_000;
 export const benchmarkDurationForMode = (
   mode: "smoke" | "standard" | "long" | undefined,
@@ -530,40 +533,6 @@ const partitionOrganizationResults = (
   return groups;
 };
 
-const durationMs = async (
-  filePath: string,
-): Promise<{ durationMs: number; inputFormat?: string }> =>
-  new Promise((resolve, reject) => {
-    const executable = resolveFfmpegExecutable();
-    if (!executable) return reject(new Error("ffmpeg_missing"));
-    const child: ChildProcessWithoutNullStreams = spawn(
-      executable,
-      ["-nostdin", "-hide_banner", "-i", filePath],
-      { windowsHide: true },
-    );
-    let output = "";
-    child.stderr.setEncoding("utf8");
-    child.stderr.on("data", (value: string) => (output += value));
-    child.on("error", (error) =>
-      reject(new Error("ffmpeg_probe_failed: " + (error instanceof Error ? error.message : error))),
-    );
-    child.stdin.end();
-    child.on("close", () => {
-      // FFmpeg emits this fixed header in bounded local diagnostic output.
-      // eslint-disable-next-line security/detect-unsafe-regex
-      const match = output.match(/Duration:\s*(\d{2}):(\d{2}):(\d{2}(?:\.\d+)?)/);
-      const seconds = match
-        ? Number(match[1]) * 3_600 + Number(match[2]) * 60 + Number(match[3])
-        : Number.NaN;
-      if (!Number.isFinite(seconds) || seconds <= 0) {
-        const detail = output.trim().slice(-500);
-        return reject(new Error(detail || "recording_duration_unavailable"));
-      }
-      const audioLine = output.match(/Audio:\s*([^\r\n]+)/i)?.[1]?.trim();
-      resolve({ durationMs: Math.round(seconds * 1_000), inputFormat: audioLine });
-    });
-  });
-
 const createTaskId = (recordingId: string): string =>
   `voice-memory:${recordingId}:${Date.now()}-${randomUUID().slice(0, 8)}`;
 
@@ -748,6 +717,10 @@ export class AiVoiceMemoryService {
   private readonly controllers = new Map<string, AbortController>();
   private readonly pendingProcesses = new Map<string, Promise<VoiceMemoryRecord>>();
   private readonly requestVersions = new Map<string, number>();
+  private readonly recordingSetupQueues = new Map<string, Promise<void>>();
+  private readonly clearingRecordings = new Set<string>();
+  private readonly deletingRecordings = new Set<string>();
+  private readonly writeOwnership = new AiJobWriteOwnership();
   private readonly deletedRecordings = new Set<string>();
   private processingQueue: Promise<void> = Promise.resolve();
   private manualQueue: Promise<void> = Promise.resolve();
@@ -907,8 +880,36 @@ export class AiVoiceMemoryService {
     for (const controller of this.controllers.values()) controller.abort();
   }
 
+  private serializeRecordingSetup<T>(recordingId: string, operation: () => Promise<T>): Promise<T> {
+    const previous = this.recordingSetupQueues.get(recordingId) ?? Promise.resolve();
+    const result = previous.catch(() => undefined).then(operation);
+    const settled = result.then(
+      () => undefined,
+      () => undefined,
+    );
+    this.recordingSetupQueues.set(recordingId, settled);
+    void settled.then(() => {
+      if (this.recordingSetupQueues.get(recordingId) === settled) {
+        this.recordingSetupQueues.delete(recordingId);
+      }
+    });
+    return result;
+  }
+
   /** Clears one comparison run without deleting the recording file or its user markers. */
   async clearTranscriptionResults(recordingId: string): Promise<VoiceMemoryRecord> {
+    if (this.deletingRecordings.has(recordingId)) throw new Error("voice_memory_deleted");
+    return this.serializeRecordingSetup(recordingId, async () => {
+      this.clearingRecordings.add(recordingId);
+      try {
+        return await this.clearTranscriptionResultsNow(recordingId);
+      } finally {
+        this.clearingRecordings.delete(recordingId);
+      }
+    });
+  }
+
+  private async clearTranscriptionResultsNow(recordingId: string): Promise<VoiceMemoryRecord> {
     if (this.pendingProcesses.has(recordingId)) throw new Error("voice_memory_task_active");
     const record = await this.requireRecord(recordingId);
     this.requestVersions.set(recordingId, (this.requestVersions.get(recordingId) ?? 0) + 1);
@@ -920,32 +921,35 @@ export class AiVoiceMemoryService {
       this.models.clearTaskCheckpoint(`transcription:${recordingId}`),
     ]);
     if (this.lastTask?.taskId.includes(recordingId)) this.lastTask = undefined;
-    return this.save({
-      ...record,
-      phase: "idle",
-      progress: 0,
-      taskId: undefined,
-      taskStatus: undefined,
-      processingStage: undefined,
-      diagnostic: undefined,
-      organizedAt: undefined,
-      transcriptionPipelineVersion: undefined,
-      transcriptionModel: undefined,
-      transcriptionVariants: undefined,
-      transcriptionElapsedMs: undefined,
-      transcriptionStats: undefined,
-      transcriptionUnits: undefined,
-      transcriptionBenchmark: undefined,
-      errorMessage: undefined,
-      speakers: [],
-      transcript: [],
-      summary: [],
-      chapters: [],
-      highlights: [],
-      timeline: record.timeline.filter((entry) => entry.kind === "marker"),
-      organization: undefined,
-      organizationPublication: undefined,
-    });
+    return this.save(
+      {
+        ...record,
+        phase: "idle",
+        progress: 0,
+        taskId: undefined,
+        taskStatus: undefined,
+        processingStage: undefined,
+        diagnostic: undefined,
+        organizedAt: undefined,
+        transcriptionPipelineVersion: undefined,
+        transcriptionModel: undefined,
+        transcriptionVariants: undefined,
+        transcriptionElapsedMs: undefined,
+        transcriptionStats: undefined,
+        transcriptionUnits: undefined,
+        transcriptionBenchmark: undefined,
+        errorMessage: undefined,
+        speakers: [],
+        transcript: [],
+        summary: [],
+        chapters: [],
+        highlights: [],
+        timeline: record.timeline.filter((entry) => entry.kind === "marker"),
+        organization: undefined,
+        organizationPublication: undefined,
+      },
+      { clearTranscriptionEvents: true },
+    );
   }
 
   async markOrganizationPublished(
@@ -968,8 +972,19 @@ export class AiVoiceMemoryService {
 
   async delete(recordingId: string): Promise<void> {
     this.deletedRecordings.add(recordingId);
+    this.deletingRecordings.add(recordingId);
     this.requestVersions.set(recordingId, (this.requestVersions.get(recordingId) ?? 0) + 1);
     this.controllers.get(recordingId)?.abort();
+    return this.serializeRecordingSetup(recordingId, async () => {
+      try {
+        await this.deleteNow(recordingId);
+      } finally {
+        this.deletingRecordings.delete(recordingId);
+      }
+    });
+  }
+
+  private async deleteNow(recordingId: string): Promise<void> {
     const pending = this.pendingProcesses.get(recordingId);
     if (pending) {
       await Promise.race([
@@ -980,6 +995,15 @@ export class AiVoiceMemoryService {
     this.pendingProcesses.delete(recordingId);
     this.controllers.delete(recordingId);
     await this.store.delete(recordingId);
+    try {
+      await this.models.clearTaskCheckpointsForRecording(recordingId);
+    } catch {
+      // The record is already gone. Do not tell the UI deletion failed and invite a retry
+      // that could target a newly imported recording with the same identity.
+      this.log("warn", "Voice memory checkpoint cleanup failed", {
+        errorCode: "voice_memory_checkpoint_cleanup_failed",
+      });
+    }
   }
 
   async reconcileRecordingIdentity(
@@ -1077,6 +1101,21 @@ export class AiVoiceMemoryService {
 
   /** Acknowledges a UI retry immediately while the durable worker continues in the background. */
   async start(request: VoiceMemoryProcessRequest): Promise<VoiceMemoryRecord> {
+    if (this.deletingRecordings.has(request.recordingId)) throw new Error("voice_memory_deleted");
+    const allowRecreate = this.deletedRecordings.has(request.recordingId);
+    return this.serializeRecordingSetup(request.recordingId, () =>
+      this.startNow(request, allowRecreate),
+    );
+  }
+
+  private async startNow(
+    request: VoiceMemoryProcessRequest,
+    allowRecreate: boolean,
+  ): Promise<VoiceMemoryRecord> {
+    if (this.deletedRecordings.has(request.recordingId) && !allowRecreate) {
+      throw new Error("voice_memory_deleted");
+    }
+    if (allowRecreate) this.deletedRecordings.delete(request.recordingId);
     // A retry button can be clicked more than once while the request is waiting
     // behind another long recording. Keep the first accepted task instead of
     // replacing it with another task for the same recording.
@@ -1129,6 +1168,12 @@ export class AiVoiceMemoryService {
   }
 
   process(request: VoiceMemoryProcessRequest): Promise<VoiceMemoryRecord> {
+    if (
+      this.clearingRecordings.has(request.recordingId) ||
+      this.deletingRecordings.has(request.recordingId)
+    ) {
+      return Promise.reject(new Error("voice_memory_task_active"));
+    }
     request = { ...request, taskId: request.taskId ?? createTaskId(request.recordingId) };
     this.deletedRecordings.delete(request.recordingId);
     const pending = this.pendingProcesses.get(request.recordingId);
@@ -1151,7 +1196,7 @@ export class AiVoiceMemoryService {
       if (this.requestVersions.get(request.recordingId) !== version) {
         return (await this.store.get(request.recordingId)) ?? emptyRecord(request);
       }
-      return this.processNow(request);
+      return this.writeOwnership.run(request.recordingId, version, () => this.processNow(request));
     };
 
     let operation: Promise<VoiceMemoryRecord>;
@@ -1276,16 +1321,7 @@ export class AiVoiceMemoryService {
         markers: recording.markers,
         taskId,
       };
-      await this.save({
-        ...(record ?? emptyRecord(queuedRequest)),
-        phase: "idle",
-        taskId,
-        taskStatus: "pending",
-        processingStage: "recording",
-        diagnostic: this.createDiagnostic(queuedRequest, "pending", "recording"),
-        errorMessage: undefined,
-      });
-      this.queueAutomaticProcess(queuedRequest);
+      await this.start(queuedRequest);
     }
   }
 
@@ -1785,7 +1821,7 @@ export class AiVoiceMemoryService {
     const asrStatus = (await this.runtime.status(asrModelId)).asr;
     const transcriptionModel = transcriptionModelMetadata(asrModelId, asrStatus);
     onStage?.("preprocess");
-    const audio = await durationMs(record.filePath);
+    const audio = await probeRecordingMedia(record.filePath, { signal });
     record = await this.updateDiagnostic(
       record,
       { recordingId: record.recordingId, filePath: record.filePath },
@@ -1971,6 +2007,7 @@ export class AiVoiceMemoryService {
               durationMs: duration,
               benchmark: Boolean(activeBenchmark),
               signal,
+              manual,
               resourceMode: runnable.resourceMode,
               onStage: (stage, context) => {
                 onStage?.(stage);
@@ -2034,6 +2071,10 @@ export class AiVoiceMemoryService {
           updatedAt: finishedAt,
         });
         if (typeof this.store.appendTranscriptionUnit === "function") {
+          this.writeOwnership.assertCurrent(
+            record.recordingId,
+            this.requestVersions.get(record.recordingId),
+          );
           await this.store.appendTranscriptionUnit(record.recordingId, durableUnit);
         }
         stats = statsFromTranscriptionUnits(totalDuration, units, record.transcript, stats);
@@ -2102,6 +2143,10 @@ export class AiVoiceMemoryService {
           saveTimeMs: Math.max(0, Math.round(performance.now() - unitSaveStartedAt)),
         };
         stats = record.transcriptionStats ?? stats;
+        this.writeOwnership.assertCurrent(
+          record.recordingId,
+          this.requestVersions.get(record.recordingId),
+        );
         await this.models.saveTaskCheckpoint({
           taskId,
           recordingId: record.recordingId,
@@ -2161,10 +2206,12 @@ export class AiVoiceMemoryService {
         },
       });
     }
-    const transcriptionChunkMs =
-      asrModelId === "moss-transcribe-diarize-0.9b-q8_0"
-        ? MOSS_CPP_TRANSCRIPTION_CHUNK_MS
-        : TRANSCRIPTION_CHUNK_MS;
+    const transcriptionChunkMs = transcriptionChunkMsForModel(
+      asrModelId,
+      TRANSCRIPTION_PIPELINE_VERSION,
+      checkpoint,
+      record.transcriptionUnits,
+    );
     const totalUnits = Math.max(1, Math.ceil(totalDuration / transcriptionChunkMs));
     const checkpointCompatible =
       checkpoint?.pipelineVersion === TRANSCRIPTION_PIPELINE_VERSION &&
@@ -2264,6 +2311,7 @@ export class AiVoiceMemoryService {
             durationMs: duration,
             benchmark: Boolean(activeBenchmark),
             signal,
+            manual,
             resourceMode: runnable.resourceMode,
             onStage: (stage, context) => {
               onStage?.(stage);
@@ -2378,6 +2426,10 @@ export class AiVoiceMemoryService {
         saveTimeMs: Math.max(0, Math.round(performance.now() - unitSaveStartedAt)),
       };
       stats = record.transcriptionStats ?? stats;
+      this.writeOwnership.assertCurrent(
+        record.recordingId,
+        this.requestVersions.get(record.recordingId),
+      );
       await this.models.saveTaskCheckpoint({
         taskId,
         recordingId: record.recordingId,
@@ -3152,7 +3204,14 @@ export class AiVoiceMemoryService {
     return classifyLocalModelRuntimeError(error);
   }
 
-  private async save(record: VoiceMemoryRecord): Promise<VoiceMemoryRecord> {
+  private async save(
+    record: VoiceMemoryRecord,
+    options: { clearTranscriptionEvents?: boolean } = {},
+  ): Promise<VoiceMemoryRecord> {
+    this.writeOwnership.assertCurrent(
+      record.recordingId,
+      this.requestVersions.get(record.recordingId),
+    );
     if (this.deletedRecordings.has(record.recordingId)) throw new Error("voice_memory_deleted");
     const persisted = record.transcriptionModel
       ? {
@@ -3174,7 +3233,7 @@ export class AiVoiceMemoryService {
           },
         }
       : record;
-    const saved = await this.store.save(persisted);
+    const saved = await this.store.save(persisted, options);
     if (saved.diagnostic) this.lastTask = saved.diagnostic;
     this.log("info", "AI pipeline stage", {
       taskId: saved.taskId,

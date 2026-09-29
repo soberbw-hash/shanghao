@@ -1,8 +1,8 @@
 import { existsSync } from "node:fs";
 import { access, copyFile, mkdir, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
-import os from "node:os";
 import path from "node:path";
 import { cleanAsrText, hasAsrBody, restoreAlignedPunctuation } from "./asr-text-postprocess";
+import { asrTemporaryDirectory, createAsrTemporaryWavPath } from "./asr-temp-files";
 
 import {
   AI_ASR_MODEL_NAMES,
@@ -15,6 +15,7 @@ import {
   type AiModelId,
   type AiAsrRuntimeStatus,
   type AiRuntimeStatus,
+  type AiTaskKind,
   type VoiceMemoryProcessingStage,
   type VoiceMemoryCommonVadResult,
   type VoiceMemoryTranscriptionOutputStatus,
@@ -36,6 +37,7 @@ import {
 } from "./asr-persistent-worker";
 import { runLocalProcess } from "./local-process";
 import { measureAsrRelease } from "./asr-resource-release";
+import type { AiComputeLease } from "./resource-scheduler";
 import { resolveFfmpegExecutable } from "./media-runtime";
 import { modelFilesPresent } from "./ai-model-layout";
 import { ACTIVE_ARK_ASR_VARIANT } from "./ark-asr-config";
@@ -49,7 +51,6 @@ import {
   gpuMemoryUsedMb,
   modelPrecision,
   providerCudaErrorCode,
-  temporaryRecordingName,
   type PcmAudioActivity,
   type TranscriptionChunkRuntimeResult,
 } from "./asr-benchmark-runtime";
@@ -67,6 +68,7 @@ interface QwenGenerateOptions {
   resourceMode: "low" | "normal";
   timeoutMs?: number;
   signal?: AbortSignal;
+  manual?: boolean;
 }
 export interface PythonCudaDiagnostics {
   pythonPath: string;
@@ -106,6 +108,11 @@ interface AiRuntimeManagerOptions {
   writeLog?: (payload: RendererLogPayload) => Promise<void>;
   probeCuda?: () => Promise<PythonCudaDiagnostics>;
   runtimeFetch?: import("./runtime-artifact-download").RuntimeArtifactFetcher;
+  acquireComputeSlot?: (
+    kind: AiTaskKind,
+    manualRequest: boolean,
+    signal?: AbortSignal,
+  ) => Promise<AiComputeLease>;
 }
 const CUDA_TORCH_VERSION = "2.11.0";
 const CUDA_TORCHAUDIO_VERSION = "2.11.0";
@@ -347,6 +354,7 @@ export class AiRuntimeManager {
   private cudaDiagnostics?: { checkedAt: number; value: PythonCudaDiagnostics };
   private cudaDiagnosticsPromise?: Promise<PythonCudaDiagnostics>;
   private cudaInitializationPromise?: Promise<PythonCudaDiagnostics>;
+  private cudaPreparationQueue: Promise<void> = Promise.resolve();
   private runtimePreparationQueue: Promise<void> = Promise.resolve();
 
   constructor(
@@ -391,7 +399,10 @@ export class AiRuntimeManager {
 
   initializeCudaRuntime(): Promise<PythonCudaDiagnostics> {
     if (this.cudaInitializationPromise) return this.cudaInitializationPromise;
-    const operation = this.initializeCudaRuntimeOnce();
+    const operation = this.initializeCudaRuntimeOnce().catch((error) => {
+      if (this.cudaInitializationPromise === operation) this.cudaInitializationPromise = undefined;
+      throw error;
+    });
     this.cudaInitializationPromise = operation;
     return operation;
   }
@@ -490,6 +501,26 @@ export class AiRuntimeManager {
 
   releaseAsrMeasured(reason: string, baselineGpuMemoryMb?: number) {
     return measureAsrRelease(this.asrWorker, reason, baselineGpuMemoryMb);
+  }
+
+  private async runAsrWithComputeSlot(
+    request: Parameters<AsrPersistentWorker["run"]>[0],
+    manualRequest: boolean,
+  ): Promise<AsrWorkerResult> {
+    const lease = await this.options.acquireComputeSlot?.(
+      "transcription",
+      manualRequest,
+      request.signal,
+    );
+    try {
+      return await this.asrWorker.run({
+        ...request,
+        signal: lease?.signal ?? request.signal,
+        resourceMode: lease?.resourceMode ?? request.resourceMode,
+      });
+    } finally {
+      lease?.release();
+    }
   }
 
   async benchmarkEnvironment(): Promise<{
@@ -780,6 +811,7 @@ export class AiRuntimeManager {
     durationMs: number;
     benchmark?: boolean;
     signal?: AbortSignal;
+    manual?: boolean;
     resourceMode: "low" | "normal";
     onStage?: (stage: VoiceMemoryProcessingStage, context?: Record<string, unknown>) => void;
   }): Promise<TranscriptionChunkRuntimeResult> {
@@ -827,12 +859,12 @@ export class AiRuntimeManager {
     }
     const sampleRate = 16_000;
     const asrInputFormat = `PCM16 WAV / ${sampleRate} Hz / mono`;
-    const temporaryDirectory = await mkdir(path.join(os.tmpdir(), "shanghao-voice-memory"), {
-      recursive: true,
-    }).then(() => path.join(os.tmpdir(), "shanghao-voice-memory"));
-    const wavPath = path.join(
+    const temporaryDirectory = asrTemporaryDirectory();
+    await mkdir(temporaryDirectory, { recursive: true });
+    const wavPath = createAsrTemporaryWavPath(
+      options.recordingId,
+      options.offsetMs,
       temporaryDirectory,
-      `${temporaryRecordingName(options.recordingId)}-${options.offsetMs}-${process.pid}.wav`,
     );
     const preflightTimeMs = performance.now() - totalStartedAt;
     try {
@@ -943,14 +975,17 @@ export class AiRuntimeManager {
         : undefined;
       resourceSampler?.unref();
       try {
-        result = await this.asrWorker.run({
-          launch: this.pythonAsrLaunch(modelId),
-          wavPath,
-          durationMs: options.durationMs,
-          resourceMode: options.resourceMode,
-          signal: options.signal,
-          timeoutMs: Math.max(240_000, options.durationMs * 8),
-        });
+        result = await this.runAsrWithComputeSlot(
+          {
+            launch: this.pythonAsrLaunch(modelId),
+            wavPath,
+            durationMs: options.durationMs,
+            resourceMode: options.resourceMode,
+            signal: options.signal,
+            timeoutMs: Math.max(240_000, options.durationMs * 8),
+          },
+          Boolean(options.manual),
+        );
       } catch (error) {
         resourceSampleActive = false;
         if (resourceSampler) clearInterval(resourceSampler);
@@ -1055,20 +1090,46 @@ export class AiRuntimeManager {
     }
   }
 
-  async prepareModelRuntime(id: AiModelId): Promise<{ ready: boolean; message?: string }> {
+  async prepareModelRuntime(
+    id: AiModelId,
+    signal?: AbortSignal,
+  ): Promise<{ ready: boolean; message?: string }> {
     const operation = this.runtimePreparationQueue
       .catch(() => undefined)
-      .then(() => this.prepareModelRuntimeOnce(id));
+      .then(() => {
+        if (signal?.aborted) throw new Error("ai_task_paused");
+        return this.prepareModelRuntimeOnce(id, signal);
+      });
     this.runtimePreparationQueue = operation.then(
       () => undefined,
       () => undefined,
     );
-    return operation;
+    if (!signal) return operation;
+    return new Promise((resolve, reject) => {
+      const onAbort = () => {
+        signal.removeEventListener("abort", onAbort);
+        reject(new Error("ai_task_paused"));
+      };
+      signal.addEventListener("abort", onAbort, { once: true });
+      if (signal.aborted) onAbort();
+      void operation.then(
+        (result) => {
+          signal.removeEventListener("abort", onAbort);
+          resolve(result);
+        },
+        (error) => {
+          signal.removeEventListener("abort", onAbort);
+          reject(error);
+        },
+      );
+    });
   }
 
   private async prepareModelRuntimeOnce(
     id: AiModelId,
+    signal?: AbortSignal,
   ): Promise<{ ready: boolean; message?: string }> {
+    if (signal?.aborted) throw new Error("ai_task_paused");
     if (id === "qwen36-35b-a3b-nvfp4") {
       return {
         ready: false,
@@ -1091,7 +1152,7 @@ export class AiRuntimeManager {
       if (!(await exists(this.pythonExecutable))) {
         return { ready: false, message: "便携 Python 尚未安装，无法准备本地整理组件。" };
       }
-      await this.ensureCudaRuntime();
+      await this.ensureCudaRuntime(signal);
       await mkdir(this.qwenOrganizerPythonPath, { recursive: true });
       try {
         await runLocalProcess(
@@ -1106,8 +1167,9 @@ export class AiRuntimeManager {
             this.qwenOrganizerPythonPath,
             ...QWEN_ORGANIZER_RUNTIME_PACKAGES,
           ],
-          { env: this.pipEnvironment(), timeoutMs: 20 * 60_000 },
+          { env: this.pipEnvironment(), signal, timeoutMs: 20 * 60_000 },
         );
+        if (signal?.aborted) throw new Error("ai_task_paused");
         await this.removeProviderTorchCopies(this.qwenOrganizerPythonPath);
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
@@ -1125,7 +1187,7 @@ export class AiRuntimeManager {
     }
 
     const mossCppModel = id === "moss-transcribe-diarize-0.9b-q8_0";
-    if (!mossCppModel) await this.ensureCudaRuntime();
+    if (!mossCppModel) await this.ensureCudaRuntime(signal);
 
     const qwenModel = id.startsWith("qwen3-asr-");
     const funAsrModel = id === "fun-asr-nano-2512" || id === "paraformer-zh";
@@ -1162,42 +1224,46 @@ export class AiRuntimeManager {
       if (qwenModel) {
         await runLocalProcess(this.pythonExecutable, [...commonArgs, "qwen-asr==0.0.6"], {
           env: this.pipEnvironment(),
+          signal,
           timeoutMs: 20 * 60_000,
         });
       } else if (funAsrModel) {
         await runLocalProcess(this.pythonExecutable, [...commonArgs, "funasr==1.4.3"], {
           env: this.pipEnvironment(),
+          signal,
           timeoutMs: 20 * 60_000,
         });
       } else if (glmModel) {
         await runLocalProcess(
           this.pythonExecutable,
           [...commonArgs, "transformers==5.0.0", "accelerate>=1.10,<2", "librosa>=0.11,<1"],
-          { env: this.pipEnvironment(), timeoutMs: 20 * 60_000 },
+          { env: this.pipEnvironment(), signal, timeoutMs: 20 * 60_000 },
         );
       } else if (fireRedModel) {
         await runLocalProcess(
           this.pythonExecutable,
           [...commonArgs, ...FIRE_RED_RUNTIME_PACKAGES],
-          { env: this.pipEnvironment(), timeoutMs: 30 * 60_000 },
+          { env: this.pipEnvironment(), signal, timeoutMs: 30 * 60_000 },
         );
       } else if (mossCppModel) {
-        await this.prepareMossCppRuntime();
+        await this.prepareMossCppRuntime(signal);
       } else if (arkAsrModel) {
         if (!(await exists(path.join(pythonPath, "crispasr", "__init__.py")))) {
-          const runtimeWheel = await this.prepareArkAsrRuntimeWheel();
+          const runtimeWheel = await this.prepareArkAsrRuntimeWheel(signal);
           await runLocalProcess("tar.exe", ["-xf", runtimeWheel, "-C", pythonPath], {
+            signal,
             timeoutMs: 10 * 60_000,
           });
         }
-        await this.prepareArkAsrPortableCpuHelper(pythonPath);
+        await this.prepareArkAsrPortableCpuHelper(pythonPath, signal);
       }
+      if (signal?.aborted) throw new Error("ai_task_paused");
       await this.removeProviderTorchCopies(pythonPath);
       if (arkAsrModel) {
-        await this.verifyArkAsrRuntime(pythonPath);
+        await this.verifyArkAsrRuntime(pythonPath, signal);
       }
       if (mossCppModel) {
-        await this.verifyMossCppRuntime();
+        await this.verifyMossCppRuntime(signal);
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -1210,7 +1276,7 @@ export class AiRuntimeManager {
     return { ready: after.ready, message: after.message };
   }
 
-  private async prepareArkAsrRuntimeWheel(): Promise<string> {
+  private async prepareArkAsrRuntimeWheel(signal?: AbortSignal): Promise<string> {
     const destination = path.join(
       this.runtimeRoot,
       "downloads",
@@ -1226,6 +1292,7 @@ export class AiRuntimeManager {
         fetcher: this.options.runtimeFetch,
         attempts: 6,
         idleTimeoutMs: 120_000,
+        signal,
         onRetry: async ({ attempt, source, error }) => {
           await this.log("warn", "ARK-ASR runtime artifact download retry", {
             attempt,
@@ -1248,7 +1315,7 @@ export class AiRuntimeManager {
     }
   }
 
-  private async prepareMossCppRuntime(): Promise<void> {
+  private async prepareMossCppRuntime(signal?: AbortSignal): Promise<void> {
     const wheelDirectory = path.join(this.runtimeRoot, "downloads", "runtime-wheels");
     await mkdir(wheelDirectory, { recursive: true });
     const wheels: string[] = [];
@@ -1263,6 +1330,7 @@ export class AiRuntimeManager {
           fetcher: this.options.runtimeFetch,
           attempts: 6,
           idleTimeoutMs: 120_000,
+          signal,
           onRetry: async ({ attempt, source, error }) => {
             await this.log("warn", "MOSS Q8 runtime artifact download retry", {
               attempt,
@@ -1287,11 +1355,11 @@ export class AiRuntimeManager {
         this.mossCppPythonPath,
         ...wheels,
       ],
-      { env: this.pipEnvironment(), timeoutMs: 15 * 60_000 },
+      { env: this.pipEnvironment(), signal, timeoutMs: 15 * 60_000 },
     );
   }
 
-  private async verifyMossCppRuntime(): Promise<void> {
+  private async verifyMossCppRuntime(signal?: AbortSignal): Promise<void> {
     const script = [
       "import transcribe_cpp",
       "devices = transcribe_cpp.backends()",
@@ -1305,6 +1373,7 @@ export class AiRuntimeManager {
           PYTHONPATH: this.providerPythonPath(this.mossCppPythonPath),
           TRANSCRIBE_NATIVE_PROVIDER: "cu12",
         },
+        signal,
         timeoutMs: 3 * 60_000,
       });
       await writeFile(
@@ -1327,7 +1396,10 @@ export class AiRuntimeManager {
     );
   }
 
-  private async prepareArkAsrPortableCpuHelper(pythonPath: string): Promise<void> {
+  private async prepareArkAsrPortableCpuHelper(
+    pythonPath: string,
+    signal?: AbortSignal,
+  ): Promise<void> {
     const destination = path.join(pythonPath, "crispasr", ARK_ASR_PORTABLE_CLI.cpuHelper.fileName);
     if (await this.isVerifiedArkAsrCpuHelper(destination)) return;
 
@@ -1347,6 +1419,7 @@ export class AiRuntimeManager {
           fetcher: this.options.runtimeFetch,
           attempts: 6,
           idleTimeoutMs: 120_000,
+          signal,
           onRetry: async ({ attempt, source, error }) => {
             await this.log("warn", "ARK-ASR portable CPU helper download retry", {
               attempt,
@@ -1357,6 +1430,7 @@ export class AiRuntimeManager {
         });
         await mkdir(this.arkAsrPortableCliPath, { recursive: true });
         await runLocalProcess("tar.exe", ["-xf", archive, "-C", this.arkAsrPortableCliPath], {
+          signal,
           timeoutMs: 10 * 60_000,
         });
       } catch (error) {
@@ -1382,7 +1456,7 @@ export class AiRuntimeManager {
     }
   }
 
-  private async verifyArkAsrRuntime(pythonPath: string): Promise<void> {
+  private async verifyArkAsrRuntime(pythonPath: string, signal?: AbortSignal): Promise<void> {
     const modelRoot = this.models.model("ark-asr-3b-q8_0");
     if (!modelRoot) throw new Error("model_ark-asr-3b-q8_0_not_installed");
     const modelFile = path.join(modelRoot, ACTIVE_ARK_ASR_VARIANT.fileName);
@@ -1400,6 +1474,7 @@ export class AiRuntimeManager {
     try {
       await runLocalProcess(this.pythonExecutable, ["-c", script, pythonPath, modelFile], {
         env: { ...this.pipEnvironment(), PYTHONPATH: this.providerPythonPath(pythonPath) },
+        signal,
         timeoutMs: 3 * 60_000,
       });
       await writeFile(
@@ -1548,7 +1623,22 @@ export class AiRuntimeManager {
     return value;
   }
 
-  private async ensureCudaRuntime(): Promise<void> {
+  private ensureCudaRuntime(signal?: AbortSignal): Promise<void> {
+    const operation = this.cudaPreparationQueue
+      .catch(() => undefined)
+      .then(() => {
+        if (signal?.aborted) throw new Error("ai_task_paused");
+        return this.ensureCudaRuntimeOnce(signal);
+      });
+    this.cudaPreparationQueue = operation.then(
+      () => undefined,
+      () => undefined,
+    );
+    return operation;
+  }
+
+  private async ensureCudaRuntimeOnce(signal?: AbortSignal): Promise<void> {
+    if (signal?.aborted) throw new Error("ai_task_paused");
     const before = await this.pythonCudaDiagnostics(true).catch(() => undefined);
     const sharedTorchAudioReady = await exists(
       path.join(this.cudaPythonPath, "torchaudio", "__init__.py"),
@@ -1585,8 +1675,9 @@ export class AiRuntimeManager {
         "--index-url",
         CUDA_WHEEL_INDEX,
       ],
-      { env: this.pipEnvironment(), timeoutMs: 45 * 60_000 },
+      { env: this.pipEnvironment(), signal, timeoutMs: 45 * 60_000 },
     );
+    if (signal?.aborted) throw new Error("ai_task_paused");
     const after = await this.pythonCudaDiagnostics(true);
     if (!after.cudaAvailable || after.deviceCount < 1) {
       throw new Error("ai_runtime_cuda_install_failed");
@@ -1726,13 +1817,24 @@ export class AiRuntimeManager {
     if (!qwen) throw new Error("model_qwen35-4b_not_installed");
     const status = await this.status();
     if (!status.qwen.ready) throw new Error("qwen_runtime_unavailable");
-    const output = await this.qwenWorker.run({
-      prompt: options.prompt,
-      maxNewTokens: options.maxNewTokens ?? 1_024,
-      resourceMode: options.resourceMode,
-      timeoutMs: options.timeoutMs ?? 4 * 60_000,
-      signal: options.signal,
-    });
+    const computeLease = await this.options.acquireComputeSlot?.(
+      "summary",
+      Boolean(options.manual),
+      options.signal,
+    );
+    let output: string;
+    try {
+      await this.releaseAsrMeasured("qwen_inference_start");
+      output = await this.qwenWorker.run({
+        prompt: options.prompt,
+        maxNewTokens: options.maxNewTokens ?? 1_024,
+        resourceMode: computeLease?.resourceMode ?? options.resourceMode,
+        timeoutMs: options.timeoutMs ?? 4 * 60_000,
+        signal: computeLease?.signal ?? options.signal,
+      });
+    } finally {
+      computeLease?.release();
+    }
     const trimmed = output.trim();
     const start = trimmed.indexOf("{");
     const end = trimmed.lastIndexOf("}");

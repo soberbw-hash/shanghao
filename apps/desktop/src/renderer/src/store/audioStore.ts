@@ -9,6 +9,7 @@ import { create } from "zustand";
 
 import { listAudioDevices, readMicrophonePermissionState } from "@private-voice/webrtc";
 
+import { createDeviceRefreshVersion } from "../features/audio/deviceRecovery";
 import { writeRendererLog } from "../utils/logger";
 
 interface AudioStoreState {
@@ -40,6 +41,7 @@ interface AudioStoreState {
 }
 
 let beforePhone: { isMuted: boolean; isDeafened: boolean } | undefined;
+const deviceRefreshVersion = createDeviceRefreshVersion();
 export const useAudioStore = create<AudioStoreState>((set) => ({
   phoneModeActive: false,
   setPhoneMode: (active) =>
@@ -65,6 +67,7 @@ export const useAudioStore = create<AudioStoreState>((set) => ({
   isPushToTalkEnabled: false,
   pushToTalkState: PushToTalkState.Off,
   refreshDevices: async () => {
+    const version = deviceRefreshVersion.begin();
     try {
       const [devices, permissionState] = await Promise.all([
         listAudioDevices(),
@@ -73,6 +76,7 @@ export const useAudioStore = create<AudioStoreState>((set) => ({
 
       const inputDevices = devices.filter((device) => device.kind === "audioinput");
       const outputDevices = devices.filter((device) => device.kind === "audiooutput");
+      if (!deviceRefreshVersion.isLatest(version)) return;
 
       set({
         inputDevices,
@@ -88,6 +92,7 @@ export const useAudioStore = create<AudioStoreState>((set) => ({
         permissionState,
       });
     } catch (error) {
+      if (!deviceRefreshVersion.isLatest(version)) return;
       set({
         inputDevices: [],
         outputDevices: [],

@@ -17,6 +17,28 @@ export const toUserFacingError = (
   const message = technicalErrorMessage(error);
   const normalized = message.toLowerCase();
 
+  if (
+    context === "model" &&
+    (normalized.includes("ai_model_state_invalid") ||
+      normalized.includes("ai_model_state_unavailable"))
+  ) {
+    return {
+      title: "模型记录无法读取",
+      description: "原有模型和记录已保留。请先备份并查看诊断信息，修复前无法更改模型。",
+    };
+  }
+
+  if (
+    context === "recording" &&
+    (normalized.includes("recording_library_metadata_invalid") ||
+      normalized.includes("recording_marker_unreadable"))
+  ) {
+    return {
+      title: "录音记录无法读取",
+      description: "录音和标记仍保留在本机。请先备份录音目录并查看诊断信息，修复前不要清理录音。",
+    };
+  }
+
   if (normalized.includes("enospc") || normalized.includes("disk full")) {
     return {
       title: "磁盘空间不足",

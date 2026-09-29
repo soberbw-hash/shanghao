@@ -1,4 +1,6 @@
-import { mkdir, readFile, readdir, rename, rm, writeFile } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
+import { constants } from "node:fs";
+import { copyFile, mkdir, readFile, readdir, rename, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
@@ -76,16 +78,61 @@ const extensionForMime = (mimeType: string): string =>
 const readManifest = async (
   directory: string,
   sessionId: string,
+  checkUnindexedAudio = false,
 ): Promise<ParticipantTrackManifest> => {
+  let content: string;
   try {
-    const parsed = JSON.parse(
-      await readFile(manifestPath(directory), "utf8"),
-    ) as ParticipantTrackManifest;
-    if (parsed.schemaVersion === 1 && Array.isArray(parsed.tracks)) return parsed;
-  } catch {
-    // The first track creates the manifest. A damaged manifest never deletes retained audio.
+    content = await readFile(manifestPath(directory), "utf8");
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    const entries = await readdir(directory, { withFileTypes: true }).catch(
+      (directoryError: NodeJS.ErrnoException) => {
+        if (directoryError.code === "ENOENT") return [];
+        throw directoryError;
+      },
+    );
+    if (entries.some((entry) => entry.isFile() && /\.(?:webm|m4a|ogg)$/i.test(entry.name))) {
+      throw new Error("participant_track_manifest_missing_with_audio", { cause: error });
+    }
+    return { schemaVersion: 1, sessionId, tracks: [] };
   }
-  return { schemaVersion: 1, sessionId, tracks: [] };
+  let parsed: ParticipantTrackManifest;
+  try {
+    parsed = JSON.parse(content) as ParticipantTrackManifest;
+  } catch (error) {
+    throw new Error("participant_track_manifest_invalid", { cause: error });
+  }
+  if (
+    !parsed ||
+    parsed.schemaVersion !== 1 ||
+    typeof parsed.sessionId !== "string" ||
+    !Array.isArray(parsed.tracks) ||
+    !parsed.tracks.every(
+      (track) =>
+        track &&
+        typeof track.filePath === "string" &&
+        typeof track.userId === "string" &&
+        typeof track.startMs === "number" &&
+        typeof track.endMs === "number",
+    )
+  ) {
+    throw new Error("participant_track_manifest_invalid");
+  }
+  if (checkUnindexedAudio) {
+    const indexedNames = new Set(parsed.tracks.map((track) => path.basename(track.filePath)));
+    const entries = await readdir(directory, { withFileTypes: true });
+    if (
+      entries.some(
+        (entry) =>
+          entry.isFile() &&
+          /\.(?:webm|m4a|ogg)$/i.test(entry.name) &&
+          !indexedNames.has(entry.name),
+      )
+    ) {
+      throw new Error("participant_track_unindexed_audio");
+    }
+  }
+  return parsed;
 };
 
 const writeManifest = async (
@@ -93,9 +140,13 @@ const writeManifest = async (
   manifest: ParticipantTrackManifest,
 ): Promise<void> => {
   const targetPath = manifestPath(directory);
-  const temporaryPath = `${targetPath}.tmp`;
-  await writeFile(temporaryPath, JSON.stringify(manifest, null, 2), "utf8");
-  await rename(temporaryPath, targetPath);
+  const temporaryPath = `${targetPath}.${process.pid}.${randomUUID()}.tmp`;
+  try {
+    await writeFile(temporaryPath, JSON.stringify(manifest, null, 2), { flag: "wx" });
+    await rename(temporaryPath, targetPath);
+  } finally {
+    await rm(temporaryPath, { force: true }).catch(() => undefined);
+  }
 };
 
 const saveParticipantTrackNow = async (
@@ -104,7 +155,7 @@ const saveParticipantTrackNow = async (
   try {
     const directory = pendingDirectory(payload.sessionId);
     await mkdir(directory, { recursive: true });
-    const manifest = await readManifest(directory, safeId(payload.sessionId));
+    const manifest = await readManifest(directory, safeId(payload.sessionId), true);
     const index = manifest.tracks.length;
     const startMs = Math.max(0, Math.round(payload.startMs));
     const endMs = Math.max(startMs + 1, Math.round(payload.endMs));
@@ -112,7 +163,7 @@ const saveParticipantTrackNow = async (
       directory,
       `${String(index).padStart(4, "0")}-${safeId(payload.userId)}-${startMs}-${endMs}${extensionForMime(payload.sourceMimeType)}`,
     );
-    await writeFile(filePath, Buffer.from(payload.buffer));
+    await writeFile(filePath, Buffer.from(payload.buffer), { flag: "wx" });
     manifest.tracks.push({
       filePath,
       userId: payload.userId.slice(0, 128),
@@ -155,12 +206,16 @@ export const finalizeRecordingParticipantTracks = async (
   const sourceDirectory = pendingDirectory(payload.sessionId);
   const targetDirectory = completedDirectory(payload.recordingId);
   await mkdir(targetDirectory, { recursive: true });
-  const manifest = await readManifest(sourceDirectory, safeId(payload.sessionId));
+  const manifest = await readManifest(sourceDirectory, safeId(payload.sessionId), true);
+  const previousTarget = await readManifest(targetDirectory, safeId(payload.sessionId), true);
+  if (previousTarget.recordingId || previousTarget.tracks.length > 0) {
+    throw new Error("participant_track_target_exists");
+  }
   const copiedTracks: PersistedParticipantTrack[] = [];
   for (const track of manifest.tracks) {
     const name = path.basename(track.filePath);
     const targetPath = path.join(targetDirectory, name);
-    await writeFile(targetPath, await readFile(track.filePath));
+    await copyFile(track.filePath, targetPath, constants.COPYFILE_EXCL);
     copiedTracks.push({ ...track, filePath: targetPath });
   }
   await writeManifest(targetDirectory, {

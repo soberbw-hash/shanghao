@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { copyFile, mkdir, readFile, readdir, rename, stat, writeFile } from "node:fs/promises";
+import { mkdir, readFile, readdir, rename, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
@@ -19,6 +19,7 @@ import { analyzeModelComparison } from "../src/renderer/src/features/ai/modelCom
 // It never changes the user's model preference, recordings, old results, or checkpoints.
 const USER_DATA = path.join(process.env.APPDATA!, "shanghao-desktop");
 const AI_ROOT = path.join(process.env.LOCALAPPDATA!, "ShangHao", "AI");
+const WORKSPACE_ROOT = path.resolve(fileURLToPath(new URL("../../../", import.meta.url)));
 const MODEL_ROOT = path.join(AI_ROOT, "models");
 const RUNTIME_ROOT = path.join(AI_ROOT, "runtimes");
 const SOURCE_RECORDS = path.join(USER_DATA, "voice-memory", "records");
@@ -27,11 +28,20 @@ const benchmarkMode = process.env.SHANGHAO_MATRIX_MODE ?? "long";
 if (!["smoke", "standard", "long"].includes(benchmarkMode))
   throw new Error("invalid_benchmark_mode");
 const selectedRecordings = process.env.SHANGHAO_MATRIX_RECORDINGS?.split(",").filter(Boolean);
+const selectedInputs = process.env.SHANGHAO_MATRIX_INPUTS
+  ? (JSON.parse(process.env.SHANGHAO_MATRIX_INPUTS) as Array<{
+      recordingId: string;
+      filePath: string;
+    }>)
+  : undefined;
 const suite = process.env.SHANGHAO_MATRIX_SUITE;
 if (suite && !/^[a-zA-Z0-9_-]+$/.test(suite)) throw new Error("invalid_suite_name");
-if ((benchmarkMode !== "long" || selectedRecordings) && !suite)
+if ((benchmarkMode !== "long" || selectedRecordings || selectedInputs) && !suite)
   throw new Error("isolated_suite_required");
-const ROOT = path.join(
+if (selectedInputs && selectedRecordings) throw new Error("choose_recordings_or_inputs");
+if (selectedInputs && !process.env.SHANGHAO_MATRIX_OUTPUT_ROOT)
+  throw new Error("external_matrix_output_required_for_selected_inputs");
+const defaultRoot = path.join(
   USER_DATA,
   "voice-memory",
   "verification",
@@ -39,7 +49,29 @@ const ROOT = path.join(
     ? `matrix-${suite}-${benchmarkMode}`
     : `matrix-pipeline-${CURRENT_TRANSCRIPTION_PIPELINE_VERSION}`,
 );
-const MODEL_IDS = Object.keys(AI_ASR_MODEL_NAMES) as AiAsrModelId[];
+const ROOT = process.env.SHANGHAO_MATRIX_OUTPUT_ROOT
+  ? path.resolve(process.env.SHANGHAO_MATRIX_OUTPUT_ROOT)
+  : defaultRoot;
+if (process.env.SHANGHAO_MATRIX_OUTPUT_ROOT) {
+  if (!suite) throw new Error("isolated_suite_required");
+  const normalized = `${ROOT.toLowerCase()}${path.sep}`;
+  for (const protectedRoot of [
+    WORKSPACE_ROOT,
+    USER_DATA,
+    path.join(process.env.APPDATA!, "shanghao"),
+    path.join(process.env.APPDATA!, "上号"),
+    AI_ROOT,
+  ]) {
+    if (normalized.startsWith(`${path.resolve(protectedRoot).toLowerCase()}${path.sep}`))
+      throw new Error("matrix_output_must_be_outside_user_data_and_ai_runtime");
+  }
+}
+const requestedModels = process.env.SHANGHAO_MATRIX_MODELS?.split(",").filter(Boolean);
+if (requestedModels?.some((id) => !(id in AI_ASR_MODEL_NAMES)))
+  throw new Error("invalid_matrix_model_id");
+const MODEL_IDS = (requestedModels ?? Object.keys(AI_ASR_MODEL_NAMES)) as AiAsrModelId[];
+if (MODEL_IDS.length === 0 || new Set(MODEL_IDS).size !== MODEL_IDS.length)
+  throw new Error("invalid_matrix_model_selection");
 const mode = process.argv[2] ?? "--preflight";
 const emit = (event: string, data: object = {}) =>
   process.stdout.write(`${JSON.stringify({ event, at: new Date().toISOString(), ...data })}\n`);
@@ -62,15 +94,47 @@ async function main() {
   if (!["--preflight", "--reproduce-glm", "--run"].includes(mode))
     throw new Error("unknown_matrix_mode");
   const records: VoiceMemoryRecord[] = [];
-  for (const name of await readdir(SOURCE_RECORDS)) {
-    if (!name.endsWith(".json")) continue;
-    const record = await readJson<VoiceMemoryRecord>(path.join(SOURCE_RECORDS, name));
-    if (selectedRecordings && !selectedRecordings.includes(record?.recordingId ?? "")) continue;
-    if (record?.filePath) {
-      await stat(record.filePath); // Missing input is a visible preflight failure, never silently skipped.
-      records.push(record);
+  if (selectedInputs) {
+    if (!Array.isArray(selectedInputs) || selectedInputs.length === 0)
+      throw new Error("matrix_inputs_missing");
+    for (const input of selectedInputs) {
+      if (!/^[a-zA-Z0-9-]{1,96}$/.test(input.recordingId))
+        throw new Error("invalid_matrix_recording_id");
+      if (!path.isAbsolute(input.filePath) || path.extname(input.filePath).toLowerCase() !== ".m4a")
+        throw new Error("invalid_matrix_recording_path");
+      const file = await stat(input.filePath);
+      if (!file.isFile()) throw new Error("matrix_input_not_file");
+      const createdAt = file.birthtime.toISOString();
+      records.push({
+        schemaVersion: 1,
+        recordingId: input.recordingId,
+        filePath: path.resolve(input.filePath),
+        createdAt,
+        updatedAt: createdAt,
+        phase: "idle",
+        progress: 0,
+        speakers: [],
+        transcript: [],
+        summary: [],
+        chapters: [],
+        highlights: [],
+        markerTitles: [],
+        timeline: [],
+      });
+    }
+  } else {
+    for (const name of await readdir(SOURCE_RECORDS)) {
+      if (!name.endsWith(".json")) continue;
+      const record = await readJson<VoiceMemoryRecord>(path.join(SOURCE_RECORDS, name));
+      if (selectedRecordings && !selectedRecordings.includes(record?.recordingId ?? "")) continue;
+      if (record?.filePath) {
+        await stat(record.filePath); // Missing input is a visible preflight failure, never silently skipped.
+        records.push(record);
+      }
     }
   }
+  if (new Set(records.map((record) => record.recordingId)).size !== records.length)
+    throw new Error("duplicate_matrix_recording_id");
   records.sort(
     (a, b) =>
       (a.transcriptionStats?.audioDurationMs ?? Infinity) -
@@ -86,7 +150,12 @@ async function main() {
     path.join(MODEL_ROOT, "state.json"),
   );
   const paths = new Map<string, string>();
-  for (const id of [...MODEL_IDS, "qwen3-forced-aligner-0.6b"]) {
+  for (const id of [
+    ...MODEL_IDS,
+    ...(MODEL_IDS.some((modelId) => modelId.startsWith("qwen3-asr-"))
+      ? ["qwen3-forced-aligner-0.6b"]
+      : []),
+  ]) {
     const revision = state?.models[id]?.activeRevision;
     if (!revision) throw new Error(`model_active_revision_missing:${id}`);
     const directory = path.join(MODEL_ROOT, id, revision);
@@ -94,9 +163,13 @@ async function main() {
     paths.set(id, directory);
   }
   const sourceFiles = [
+    "../../../packages/shared/src/utils/transcriptQuality.ts",
     "../src/main/ai-runtime-manager.ts",
     "../src/main/ai-voice-memory-service.ts",
+    "../src/main/asr-chunk-policy.ts",
+    "../src/main/asr-benchmark-runtime.ts",
     "../src/main/asr-persistent-worker.ts",
+    "../src/renderer/src/features/ai/modelComparisonAnalysis.ts",
     "./asr-runner.py",
   ];
   const digest = createHash("sha256");
@@ -176,10 +249,12 @@ async function main() {
     if (mode === "--preflight") return;
     for (const id of MODEL_IDS)
       if (!statuses[id]?.ready) throw new Error(`runtime_not_ready:${id}:${statuses[id]?.message}`);
-    await copyFile(
+    const bundledRunner = await readFile(
       fileURLToPath(new URL("./asr-runner.py", import.meta.url)),
-      path.join(RUNTIME_ROOT, "asr-runner.py"),
     );
+    const installedRunner = await readFile(path.join(RUNTIME_ROOT, "asr-runner.py"));
+    if (!bundledRunner.equals(installedRunner))
+      throw new Error("installed_asr_runner_differs_from_source_no_runtime_overwrite");
     if (mode === "--reproduce-glm") {
       const record = records.find((r) => r.recordingId === "71140c19-40da-4a72-a3df-41e3bc5276ff");
       if (!record) throw new Error("glm_source_missing");

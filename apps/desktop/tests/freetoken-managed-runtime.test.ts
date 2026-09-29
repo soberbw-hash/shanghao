@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -8,6 +8,8 @@ import assert from "node:assert/strict";
 import {
   FreeTokenManagedRuntime,
   parseFreeTokenWindowsAssetPair,
+  probeFreeTokenAssetByteLength,
+  writeFreeTokenManifestAtomically,
 } from "../src/main/freetoken-managed-runtime";
 import { FreeTokenLocalLlmProvider } from "../src/main/freetoken-local-llm-provider";
 
@@ -17,6 +19,62 @@ const row = (name: string, digest: string, updatedAt: string): string => `
     <span>sha256:${digest}</span>
     <relative-time datetime="${updatedAt}"></relative-time>
   </li>`;
+
+test("FreeToken manifest writes never leave a partial or shared scratch file", async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "shanghao-freetoken-manifest-"));
+  const manifest = path.join(directory, "runtime-manifest.json");
+  try {
+    await Promise.all(
+      Array.from({ length: 8 }, (_, index) =>
+        writeFreeTokenManifestAtomically(manifest, { index, padding: "x".repeat(1024) }),
+      ),
+    );
+    const stored = JSON.parse(await readFile(manifest, "utf8")) as {
+      index: number;
+      padding: string;
+    };
+    assert.ok(stored.index >= 0 && stored.index < 8);
+    assert.equal(stored.padding.length, 1024);
+    assert.deepEqual(await readdir(directory), ["runtime-manifest.json"]);
+
+    const blockedTarget = path.join(directory, "blocked");
+    await mkdir(blockedTarget);
+    await assert.rejects(writeFreeTokenManifestAtomically(blockedTarget, { index: 9 }));
+    assert.deepEqual((await readdir(directory)).sort(), ["blocked", "runtime-manifest.json"]);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("FreeToken asset size probes pass cancellation through HEAD and range fallback", async () => {
+  const controller = new AbortController();
+  const methods: string[] = [];
+  const fetcher = async (_input: string | URL | Request, init?: RequestInit): Promise<Response> => {
+    assert.equal(init?.signal, controller.signal);
+    methods.push(init?.method ?? "GET");
+    if (init?.method === "HEAD") return new Response(null, { status: 200 });
+    assert.equal(new Headers(init?.headers).get("range"), "bytes=0-0");
+    return new Response(null, { status: 206, headers: { "content-range": "bytes 0-0/2048" } });
+  };
+  assert.equal(
+    await probeFreeTokenAssetByteLength(fetcher, "https://example.test/wheel", controller.signal),
+    2048,
+  );
+  assert.deepEqual(methods, ["HEAD", "GET"]);
+
+  const pending = probeFreeTokenAssetByteLength(
+    (_input, init) =>
+      new Promise<Response>((_resolve, reject) => {
+        init?.signal?.addEventListener("abort", () => reject(new Error("aborted_probe")), {
+          once: true,
+        });
+      }),
+    "https://example.test/wheel",
+    controller.signal,
+  );
+  controller.abort();
+  await assert.rejects(pending, /aborted_probe/);
+});
 
 test("FreeToken release parser selects the newest matching Windows wheel pair", () => {
   const oldDigest = "a".repeat(64);
@@ -80,6 +138,47 @@ test(
       assert.equal(status.version, "0.1.2+test");
       assert.equal(fetchCalled, false);
     } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  },
+);
+
+test(
+  "a later FreeToken prepare caller can cancel its wait without stopping the owner",
+  {
+    skip: process.platform !== "win32" ? "FreeToken runtime is supported on Windows only" : false,
+  },
+  async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "shanghao-freetoken-wait-"));
+    const legacyCli = path.join(directory, "ft.exe");
+    await writeFile(legacyCli, "placeholder", "utf8");
+    let entered!: () => void;
+    const processEntered = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+    let finish!: () => void;
+    const processFinished = new Promise<void>((resolve) => {
+      finish = resolve;
+    });
+    try {
+      const runtime = new FreeTokenManagedRuntime(path.join(directory, "runtime"), {
+        legacyExecutablePaths: [legacyCli],
+        runProcess: async () => {
+          entered();
+          await processFinished;
+          return { stdout: "freetoken 0.1.2\n", stderr: "" };
+        },
+      });
+      const owner = runtime.prepare();
+      await processEntered;
+      const controller = new AbortController();
+      const later = runtime.prepare(controller.signal);
+      controller.abort();
+      await assert.rejects(later, /ai_task_paused/);
+      finish();
+      assert.equal((await owner).ready, true);
+    } finally {
+      finish();
       await rm(directory, { recursive: true, force: true });
     }
   },

@@ -1,9 +1,11 @@
-import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { readFile, rm } from "node:fs/promises";
 import path from "node:path";
 
 import { safeStorage } from "electron";
 
 import type { AiHuggingFaceAccessStatus, RendererLogPayload } from "@private-voice/shared";
+
+import { writePrivateFileAtomically } from "./atomic-private-file";
 
 const TOKEN_PATTERN = /^hf_[A-Za-z0-9]{20,256}$/;
 
@@ -29,10 +31,7 @@ export class HuggingFaceAccessStore {
       throw new Error("hugging_face_secure_storage_unavailable");
     }
     const encrypted = await safeStorage.encryptStringAsync(token);
-    await mkdir(path.dirname(this.filePath), { recursive: true });
-    const temporary = `${this.filePath}.${process.pid}.${Date.now()}.tmp`;
-    await writeFile(temporary, encrypted, { flag: "wx" });
-    await rename(temporary, this.filePath);
+    await writePrivateFileAtomically(this.filePath, encrypted);
     await this.log("info", "Hugging Face access saved");
     return { configured: true };
   }

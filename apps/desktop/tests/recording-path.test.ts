@@ -7,6 +7,7 @@ import test from "node:test";
 import {
   createNumberedRecordingFileName,
   RECORDING_DIRECTORY_NAME,
+  reserveAvailableRecordingPath,
   resolveAvailableRecordingPath,
   resolveRecordingDirectory,
   resolveUsableRecordingDirectory,
@@ -120,4 +121,23 @@ test("recording output never overwrites an existing file", async () => {
   );
 
   assert.equal(outputPath, path.join("D:\\Recordings", "上号录音 (2).m4a"));
+});
+
+test("concurrent recording exports reserve distinct names without replacing an older file", async (t) => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "shanghao-recording-reserve-"));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const existing = path.join(directory, "上号录音.m4a");
+  await writeFile(existing, "previous recording");
+
+  const [first, second] = await Promise.all([
+    reserveAvailableRecordingPath(directory, "上号录音.m4a"),
+    reserveAvailableRecordingPath(directory, "上号录音.m4a"),
+  ]);
+
+  assert.notEqual(first, second);
+  assert.equal(await readFile(existing, "utf8"), "previous recording");
+  assert.deepEqual([path.basename(first), path.basename(second)].sort(), [
+    "上号录音 (2).m4a",
+    "上号录音 (3).m4a",
+  ]);
 });

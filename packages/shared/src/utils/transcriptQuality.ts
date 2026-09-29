@@ -61,8 +61,10 @@ export const analyzeTranscriptAnomalies = (
 ): TranscriptAnomalyAnalysis => {
   const normalized = text.normalize("NFKC").replace(/\s+/g, " ").trim();
   if (!normalized) return { repetitionLoop: false, abnormalOutput: false, reasons: [] };
-  const compact = normalized.replace(/[^\p{L}\p{N}]+/gu, "");
-  const repeatedCharacter = /(.)\1{11,}/u.test(compact);
+  // Conversational laughter can contain a dozen repeated syllables, including runs
+  // separated by punctuation. Require a much longer continuous run before rejecting
+  // a whole chunk; the phrase/dominance guard below still catches punctuated loops.
+  const repeatedCharacter = /([\p{L}\p{N}])\1{31,}/u.test(normalized);
   const repeatedPhrase = containsLongRepeatedRun(normalized);
   const maximumCharacters = Math.max(240, Math.ceil((durationMs / 1_000) * 45));
   const implausibleLength = normalized.length > maximumCharacters;

@@ -61,6 +61,28 @@ interface UsernameLoginResponse {
 }
 
 const REFRESH_EARLY_SECONDS = 5 * 60;
+const SESSION_RECOVERY_DELAYS_MS = [10_000, 30_000, 60_000] as const;
+const TRANSIENT_SESSION_ERRORS = new Set([
+  "account_server_unreachable",
+  "account_server_invalid_response",
+  "account_network_error",
+  "account_login_unavailable",
+  "account_rate_limited",
+  "account_request_failed",
+]);
+
+const isTransientSessionError = (error: unknown): boolean =>
+  error instanceof AccountDesktopError && TRANSIENT_SESSION_ERRORS.has(error.code);
+
+const isRetryableSupabaseRefreshError = (error: unknown): boolean => {
+  if (!error || typeof error !== "object") return false;
+  const candidate = error as { name?: unknown; status?: unknown };
+  return (
+    candidate.name === "AuthRetryableFetchError" ||
+    candidate.status === 0 ||
+    (typeof candidate.status === "number" && candidate.status >= 500)
+  );
+};
 // Legacy/Supabase fallback only. CloudBase validates its own signup rules in
 // CloudBaseAccountClient; changing this expression cannot fix CloudBase signup.
 const USERNAME_ALLOWED_CHARACTER = /^[a-z0-9_-]$/i;
@@ -134,8 +156,12 @@ export class AccountDesktopService extends EventEmitter {
   };
   private session?: PersistedAccountSession;
   private refreshTimer?: NodeJS.Timeout;
+  private recoveryTimer?: NodeJS.Timeout;
+  private recoveryInFlight?: Promise<void>;
+  private recoveryAttempts = 0;
   private supabase?: SupabaseClient;
   private cloudbase?: CloudBaseAccountClient;
+  private cloudbaseNeedsRestore = false;
   private localCloudbaseConfig?: CloudBaseClientConfig;
   private accountProvider: "supabase" | "cloudbase" = "supabase";
   /** Session persistence is opt-out from the login form, never password persistence. */
@@ -151,12 +177,14 @@ export class AccountDesktopService extends EventEmitter {
     private readonly fetcher: typeof fetch,
     private readonly writeLog?: (payload: RendererLogPayload) => Promise<void>,
     private readonly developmentGuestAllowed = false,
+    private readonly sessionRecoveryDelaysMs: readonly number[] = SESSION_RECOVERY_DELAYS_MS,
   ) {
     super();
   }
 
   async initialize(): Promise<AccountSnapshot> {
     this.session = await this.sessionStore.read();
+    this.cloudbaseNeedsRestore = this.session?.provider === "cloudbase";
     // A restored session necessarily came from the remembered-session store;
     // a fresh login should also default to remember-me until the user opts out.
     this.rememberSession = true;
@@ -174,6 +202,7 @@ export class AccountDesktopService extends EventEmitter {
         guestAllowed: this.developmentGuestAllowed,
         message: this.codeOf(error),
       });
+      if (this.session && isTransientSessionError(error)) this.scheduleSessionRecovery();
       return this.getSnapshot();
     }
 
@@ -197,7 +226,7 @@ export class AccountDesktopService extends EventEmitter {
       providerConfigured &&
       this.accountProvider !== (this.session.provider ?? "supabase")
     ) {
-      await this.clearSession();
+      this.suspendSession();
     }
     if (this.session && !providerConfigured) {
       this.updateSnapshot({
@@ -227,16 +256,21 @@ export class AccountDesktopService extends EventEmitter {
         developmentConnection: this.developmentConnection,
         profile: result.profile,
       });
+      this.recoveryAttempts = 0;
       return this.getSnapshot();
     } catch (error) {
-      await this.clearSession();
+      const shouldRetry = Boolean(
+        this.session && this.rememberSession && isTransientSessionError(error),
+      );
+      this.suspendSession();
       this.updateSnapshot({
-        status: "signed_out",
+        status: isTransientSessionError(error) ? "unavailable" : "signed_out",
         configured,
         guestAllowed,
         developmentConnection: this.developmentConnection,
         message: this.codeOf(error),
       });
+      if (shouldRetry) this.scheduleSessionRecovery();
       return this.getSnapshot();
     }
   }
@@ -249,6 +283,7 @@ export class AccountDesktopService extends EventEmitter {
   }
 
   async configureCloudBase(config: CloudBaseClientConfig): Promise<void> {
+    await this.cancelSessionRecovery();
     const envId = config.envId.trim();
     const region = config.region.trim();
     const publishableKey = config.publishableKey.trim();
@@ -272,13 +307,14 @@ export class AccountDesktopService extends EventEmitter {
         );
       },
     });
+    this.cloudbaseNeedsRestore = this.session?.provider === "cloudbase";
     this.localCloudbaseConfig = localConfig;
     this.updateSnapshot({ ...this.snapshot, configured: true });
 
     // The main process may have deferred session hydration until this local
     // CloudBase config arrived. Finish that hydration here so the renderer
     // never has to ask the user for a password again after a restart.
-    if (this.session && this.snapshot.status !== "signed_in") {
+    if (this.session) {
       try {
         const result = await this.ensureFreshSession(true);
         this.updateSnapshot({
@@ -288,15 +324,20 @@ export class AccountDesktopService extends EventEmitter {
           developmentConnection: this.developmentConnection,
           profile: result.profile,
         });
+        this.recoveryAttempts = 0;
       } catch (error) {
-        await this.clearSession();
+        const shouldRetry = Boolean(
+          this.session && this.rememberSession && isTransientSessionError(error),
+        );
+        this.suspendSession();
         this.updateSnapshot({
-          status: "signed_out",
+          status: isTransientSessionError(error) ? "unavailable" : "signed_out",
           configured: true,
           guestAllowed: this.snapshot.guestAllowed,
           developmentConnection: this.developmentConnection,
           message: this.codeOf(error),
         });
+        if (shouldRetry) this.scheduleSessionRecovery();
       }
     }
   }
@@ -321,6 +362,7 @@ export class AccountDesktopService extends EventEmitter {
   }
 
   async login(input: AccountLoginRequest): Promise<AccountSnapshot> {
+    await this.cancelSessionRecovery();
     this.rememberSession = input.rememberMe !== false;
     const identifier =
       this.accountProvider === "cloudbase"
@@ -383,6 +425,7 @@ export class AccountDesktopService extends EventEmitter {
   }
 
   async register(input: AccountRegisterRequest): Promise<AccountSnapshot> {
+    await this.cancelSessionRecovery();
     // Registration is a successful sign-in flow too; keep the normal desktop
     // behavior even though the registration form does not ask about it again.
     this.rememberSession = true;
@@ -647,6 +690,7 @@ export class AccountDesktopService extends EventEmitter {
   }
 
   async logout(): Promise<AccountSnapshot> {
+    await this.cancelSessionRecovery();
     const current = this.session;
     if (this.accountProvider === "cloudbase") {
       await this.cloudbase?.signOut();
@@ -673,6 +717,7 @@ export class AccountDesktopService extends EventEmitter {
   }
 
   async continueAsGuest(): Promise<AccountSnapshot> {
+    await this.cancelSessionRecovery();
     if (!this.snapshot.guestAllowed) throw new AccountDesktopError("account_guest_not_allowed");
     await this.clearSession();
     this.updateSnapshot({
@@ -688,6 +733,8 @@ export class AccountDesktopService extends EventEmitter {
   dispose(): void {
     if (this.refreshTimer) clearTimeout(this.refreshTimer);
     this.refreshTimer = undefined;
+    if (this.recoveryTimer) clearTimeout(this.recoveryTimer);
+    this.recoveryTimer = undefined;
   }
 
   private async authorizedProfileRequest(
@@ -703,16 +750,23 @@ export class AccountDesktopService extends EventEmitter {
     if (!this.session) throw new AccountDesktopError("account_session_expired");
     if (this.accountProvider === "cloudbase") {
       try {
+        const restored = this.cloudbaseNeedsRestore
+          ? await this.requireCloudBase().restore(this.session)
+          : undefined;
+        if (restored) this.cloudbaseNeedsRestore = false;
         const needsRefresh =
+          !restored &&
           this.session.expiresAt - Math.floor(Date.now() / 1_000) <= REFRESH_EARLY_SECONDS;
-        const result = needsRefresh
-          ? await this.requireCloudBase().refresh()
-          : {
-              session: this.session,
-              profile: forceProfile
-                ? await this.requireCloudBase().getProfile()
-                : this.snapshot.profile,
-            };
+        const result =
+          restored ??
+          (needsRefresh
+            ? await this.requireCloudBase().refresh()
+            : {
+                session: this.session,
+                profile: forceProfile
+                  ? await this.requireCloudBase().getProfile()
+                  : this.snapshot.profile,
+              });
         if (!result.profile) throw new AccountDesktopError("account_profile_unavailable");
         if (result.session !== this.session) await this.acceptSession(result.session);
         const profile =
@@ -744,7 +798,12 @@ export class AccountDesktopService extends EventEmitter {
         if (error || !data.session) throw error;
         refreshed = data.session;
       } catch (error) {
-        throw new AccountDesktopError("account_session_expired", { cause: error });
+        throw new AccountDesktopError(
+          isRetryableSupabaseRefreshError(error)
+            ? "account_network_error"
+            : "account_session_expired",
+          { cause: error },
+        );
       }
       await this.acceptSession(toPersistedSession(refreshed));
       const profile = (
@@ -769,6 +828,7 @@ export class AccountDesktopService extends EventEmitter {
     shouldPersist = this.rememberSession,
   ): Promise<void> {
     this.session = { ...session };
+    if (this.accountProvider === "cloudbase") this.cloudbaseNeedsRestore = false;
     this.rememberSession = shouldPersist;
     if (shouldPersist) {
       await this.sessionStore.write(this.session);
@@ -792,25 +852,68 @@ export class AccountDesktopService extends EventEmitter {
           if (result.profile) this.updateSnapshot({ ...this.snapshot, profile: result.profile });
         })
         .catch(async (error) => {
-          await this.clearSession();
+          const shouldRetry = Boolean(
+            this.session && this.rememberSession && isTransientSessionError(error),
+          );
+          this.suspendSession();
           this.updateSnapshot({
-            status: "signed_out",
+            status: isTransientSessionError(error) ? "unavailable" : "signed_out",
             configured: this.snapshot.configured,
             guestAllowed: this.snapshot.guestAllowed,
             developmentConnection: this.developmentConnection,
             message: this.codeOf(error),
           });
+          if (shouldRetry) this.scheduleSessionRecovery();
         });
     }, delay);
     this.refreshTimer.unref?.();
   }
 
   private async clearSession(): Promise<void> {
+    this.suspendSession();
+    await this.sessionStore.clear();
+  }
+
+  private suspendSession(): void {
     if (this.refreshTimer) clearTimeout(this.refreshTimer);
     this.refreshTimer = undefined;
     this.session = undefined;
+    this.cloudbaseNeedsRestore = false;
     this.rememberSession = true;
-    await this.sessionStore.clear();
+  }
+
+  private scheduleSessionRecovery(): void {
+    if (this.recoveryTimer || this.recoveryAttempts >= this.sessionRecoveryDelaysMs.length) return;
+    const delay = this.sessionRecoveryDelaysMs[this.recoveryAttempts++]!;
+    this.recoveryTimer = setTimeout(() => {
+      this.recoveryTimer = undefined;
+      const pending = this.initialize()
+        .then(() => undefined)
+        .catch(() => {
+          this.suspendSession();
+          this.updateSnapshot({
+            status: "unavailable",
+            configured: this.snapshot.configured,
+            guestAllowed: this.snapshot.guestAllowed,
+            developmentConnection: this.developmentConnection,
+            message: "account_secure_storage_unavailable",
+          });
+        });
+      this.recoveryInFlight = pending;
+      void pending.finally(() => {
+        if (this.recoveryInFlight === pending) this.recoveryInFlight = undefined;
+      });
+    }, delay);
+    this.recoveryTimer.unref?.();
+  }
+
+  private async cancelSessionRecovery(): Promise<void> {
+    if (this.recoveryTimer) clearTimeout(this.recoveryTimer);
+    this.recoveryTimer = undefined;
+    if (this.recoveryInFlight) await this.recoveryInFlight;
+    if (this.recoveryTimer) clearTimeout(this.recoveryTimer);
+    this.recoveryTimer = undefined;
+    this.recoveryAttempts = 0;
   }
 
   private async persistRememberedLogin(identifier: string, password: string): Promise<void> {
@@ -855,6 +958,9 @@ export class AccountDesktopService extends EventEmitter {
     }
     if (isPublicStatusProbe && response.status === 404) {
       throw new AccountDesktopError("account_server_upgrade_required");
+    }
+    if (response.status >= 500) {
+      throw new AccountDesktopError("account_server_unreachable");
     }
     let body: T | AccountErrorBody;
     try {

@@ -29,7 +29,8 @@ import {
 } from "./ai-model-catalog";
 import { requiredModelFiles, requiredWeightFiles } from "./ai-model-layout";
 import { ACTIVE_ARK_ASR_VARIANT } from "./ark-asr-config";
-import { ResourceScheduler } from "./resource-scheduler";
+import { ResourceScheduler, type AiComputeEvent, type AiComputeLease } from "./resource-scheduler";
+import { RuntimePressureController } from "./runtime-pressure-controller";
 export {
   GAMING_DOWNLOAD_BYTES_PER_SECOND,
   NORMAL_DOWNLOAD_BYTES_PER_SECOND,
@@ -271,6 +272,8 @@ export const describeAiModelError = (error: unknown): string => {
     return "模型文件下载不完整，点击重试会从已下载的位置继续。";
   if (message === "ai_model_file_size_mismatch")
     return "模型完整性校验失败，大小异常的文件会在重试时重新下载。";
+  if (message === "ai_model_file_oversized")
+    return "下载源返回的文件超过清单大小，已停止写入；请稍后重试。";
   if (message === "ai_model_checksum_mismatch")
     return "模型完整性校验失败，损坏文件会在重试时重新下载。";
   const httpStatus = message.match(/ai_model_(?:manifest_)?http_(\d{3})/)?.[1];
@@ -286,6 +289,7 @@ export const classifyAiModelFailure = (error: unknown): AiModelFailureKind => {
       "ai_model_file_incomplete",
       "ai_model_weight_size_mismatch",
       "ai_model_file_size_mismatch",
+      "ai_model_file_oversized",
       "ai_model_checksum_mismatch",
       "ai_model_config_invalid",
     ].some((code) => message.includes(code))
@@ -394,6 +398,7 @@ export class AiModelManager {
   private readonly scheduler = new ResourceScheduler();
   private readonly abortControllers = new Map<AiModelId, AbortController>();
   private readonly runningDownloads = new Map<AiModelId, Promise<void>>();
+  private readonly modelActionQueues = new Map<AiModelId, Promise<void>>();
   private readonly downloadStartedAt = new Map<AiModelId, number>();
   private readonly downloadSpeedSamples = new Map<
     AiModelId,
@@ -401,23 +406,16 @@ export class AiModelManager {
   >();
   private readonly downloadSpeeds = new Map<AiModelId, number>();
   private persisted: PersistedAiState = emptyState();
+  private stateLoaded = false;
   private processingMode: AiProcessingMode = "manual";
   private gameActive = false;
-  private runtimePressure: AiRuntimePressure = {
-    inVoiceRoom: false,
-    screenSharing: false,
-    peerRecovering: false,
-    latencyMs: 0,
-    packetLossPercent: 0,
-    rendererMemoryPressure: false,
-    updatedAt: 0,
-  };
-  private realtimePressureHigh = false;
-  private pressureReason?: string;
-  private pressureReleaseTimer?: NodeJS.Timeout;
+  private readonly pressureController: RuntimePressureController;
   private qwenLoaded = false;
   private queuedTasks = 0;
-  private runningTask?: string;
+  private readonly runningTasks = new Map<number, string>();
+  private nextRunningTaskId = 0;
+  private unsubscribeGameDetection?: () => void;
+  private lifecycleGeneration = 0;
   private persistQueue: Promise<void> = Promise.resolve();
   private throttleQueue: Promise<void> = Promise.resolve();
   private throttleWindowStartedAt = Date.now();
@@ -446,29 +444,59 @@ export class AiModelManager {
     private readonly modelFetch: ModelFetcher = globalThis.fetch,
     private readonly readHuggingFaceAccessToken?: () => Promise<string | undefined>,
     private readonly fallbackModelDirectories: readonly string[] = [],
-  ) {}
+    pressureStaleAfterMs = 30_000,
+  ) {
+    this.pressureController = new RuntimePressureController((change) => {
+      this.scheduler.update({ pressure: change.pressure });
+      this.scheduler.update({
+        realtimePressureHigh: change.realtimePressureHigh,
+        pressureReason: change.pressureReason,
+      });
+      if (change.releaseQwenReason && this.scheduler.shouldReleaseQwen().release) {
+        this.releaseQwenResources(change.releaseQwenReason);
+      }
+      if (change.notify) this.emit();
+    }, pressureStaleAfterMs);
+  }
 
   async initialize(
     processingMode: AiProcessingMode,
     activeAsrModel: AiAsrModelId = "qwen3-asr-0.6b-force",
   ): Promise<void> {
+    const generation = ++this.lifecycleGeneration;
+    this.unsubscribeGameDetection?.();
+    this.unsubscribeGameDetection = undefined;
     this.processingMode = processingMode;
     this.activeAsrModel = activeAsrModel;
     await mkdir(this.rootDirectory, { recursive: true });
-    this.persisted = await this.readState();
-    await this.hydrateFallbackModelReferences();
+    if (generation !== this.lifecycleGeneration) return;
+    let persisted: PersistedAiState;
+    try {
+      persisted = await this.readState();
+    } catch (error) {
+      if (generation === this.lifecycleGeneration) this.stateLoaded = false;
+      throw error;
+    }
+    if (generation !== this.lifecycleGeneration) return;
+    this.persisted = persisted;
+    await this.hydrateFallbackModelReferences(generation);
+    if (generation !== this.lifecycleGeneration) return;
+    this.stateLoaded = true;
     this.gameActive = Boolean(this.gameDetection.getSnapshot().gameName);
     this.scheduler.update({ processingMode, gameActive: this.gameActive });
-    this.gameDetection.onDetected((snapshot) => {
+    this.unsubscribeGameDetection = this.gameDetection.onDetected((snapshot) => {
+      if (generation !== this.lifecycleGeneration) return;
       const nextGameActive = Boolean(snapshot.gameName);
       if (nextGameActive === this.gameActive) return;
       this.gameActive = nextGameActive;
       this.scheduler.update({ gameActive: this.gameActive });
-      if (this.gameActive) this.releaseQwenResources("game_started");
+      if (this.gameActive && !this.scheduler.isManualTextComputeActive())
+        this.releaseQwenResources("game_started");
       this.emit();
     });
     const interruptedDownloads: AiModelId[] = [];
     const missingOptInDownloads: AiModelId[] = [];
+    const revisionUpdates: AiModelId[] = [];
     for (const definition of MODEL_DEFINITIONS) {
       const model = this.persisted.models[definition.id];
       if (
@@ -496,10 +524,12 @@ export class AiModelManager {
         model.activeRevision &&
         model.activeRevision !== definition.revision
       ) {
-        void this.ensurePinnedRevision(definition.id);
+        revisionUpdates.push(definition.id);
       }
     }
     await this.persist();
+    if (generation !== this.lifecycleGeneration) return;
+    for (const id of revisionUpdates) void this.ensurePinnedRevision(id, generation);
     const downloads = [...new Set([...interruptedDownloads, ...missingOptInDownloads])].sort(
       (left, right) => this.downloadPriority(left) - this.downloadPriority(right),
     );
@@ -509,16 +539,22 @@ export class AiModelManager {
   }
 
   stop(): void {
+    this.lifecycleGeneration += 1;
+    this.unsubscribeGameDetection?.();
+    this.unsubscribeGameDetection = undefined;
+    this.scheduler.cancelCompute();
     for (const controller of this.abortControllers.values()) controller.abort();
     this.abortControllers.clear();
-    if (this.pressureReleaseTimer) clearTimeout(this.pressureReleaseTimer);
+    this.pressureController.stop();
+    this.runningTasks.clear();
     this.releaseQwenResources("app_stopping");
   }
 
   setProcessingMode(mode: AiProcessingMode): void {
     this.processingMode = mode;
     this.scheduler.update({ processingMode: mode });
-    if (this.gameActive && mode === "after_game") this.releaseQwenResources("processing_deferred");
+    if (this.gameActive && mode === "after_game" && this.scheduler.shouldReleaseQwen().release)
+      this.releaseQwenResources("processing_deferred");
     this.emit();
   }
 
@@ -542,35 +578,7 @@ export class AiModelManager {
   }
 
   updateRuntimePressure(pressure: AiRuntimePressure): void {
-    this.runtimePressure = pressure;
-    this.scheduler.update({ pressure });
-    const reason = pressure.peerRecovering
-      ? "peer_recovery"
-      : pressure.screenSharing && (pressure.latencyMs > 180 || pressure.packetLossPercent > 3)
-        ? "screen_share_network_pressure"
-        : pressure.inVoiceRoom && (pressure.latencyMs > 260 || pressure.packetLossPercent > 5)
-          ? "voice_network_pressure"
-          : pressure.rendererMemoryPressure
-            ? "memory_pressure"
-            : undefined;
-    if (reason) {
-      if (this.pressureReleaseTimer) clearTimeout(this.pressureReleaseTimer);
-      this.pressureReleaseTimer = undefined;
-      this.realtimePressureHigh = true;
-      this.pressureReason = reason;
-      this.scheduler.update({ realtimePressureHigh: true, pressureReason: reason });
-      this.releaseQwenResources(reason);
-      this.emit();
-      return;
-    }
-    if (!this.realtimePressureHigh || this.pressureReleaseTimer) return;
-    this.pressureReleaseTimer = setTimeout(() => {
-      this.pressureReleaseTimer = undefined;
-      this.realtimePressureHigh = false;
-      this.pressureReason = undefined;
-      this.scheduler.update({ realtimePressureHigh: false, pressureReason: undefined });
-      this.emit();
-    }, 8_000);
+    this.pressureController.update(pressure);
   }
 
   shouldDeferBackgroundDownload(): boolean {
@@ -588,23 +596,36 @@ export class AiModelManager {
   }
 
   getSnapshot(): AiVoiceMemorySnapshot {
+    const compute = this.scheduler.getComputeSnapshot();
+    const runtimePressure = this.pressureController.snapshot;
     return {
       models: MODEL_DEFINITIONS.map((definition) => this.buildModelStatus(definition)),
       scheduler: {
         denials: this.scheduler.getDenialSnapshot(),
         processingMode: this.processingMode,
         gameActive: this.gameActive,
+        recordingActive: Boolean(runtimePressure.pressure.recordingActive),
         downloadsThrottled:
-          this.gameActive || this.realtimePressureHigh || this.runtimePressure.inVoiceRoom,
+          this.gameActive ||
+          runtimePressure.realtimePressureHigh ||
+          runtimePressure.pressure.inVoiceRoom,
         aiTasksPausedForGame: this.gameActive && this.processingMode === "after_game",
-        realtimePressureHigh: this.realtimePressureHigh,
-        pressureReason: this.pressureReason,
+        realtimePressureHigh: runtimePressure.realtimePressureHigh,
+        pressureReason: runtimePressure.pressureReason,
         qwenLoaded: this.qwenLoaded,
         queuedTasks: this.queuedTasks,
-        runningTask: this.runningTask,
+        runningTask: [...this.runningTasks.values()].at(-1),
+        computeActiveKind: compute.activeKind,
+        computeActivePhase: compute.activePhase,
+        computeStoppingReason: compute.stoppingReason,
+        computeWaiting: compute.waiting,
       },
       checkedAt: new Date().toISOString(),
     };
+  }
+
+  getComputeTimeline(): AiComputeEvent[] {
+    return this.scheduler.getComputeTimeline();
   }
 
   setRuntimeStatus(id: AiModelId, ready: boolean, message?: string): void {
@@ -628,6 +649,28 @@ export class AiModelManager {
   }
 
   async controlModel(id: AiModelId, action: AiModelAction): Promise<AiVoiceMemorySnapshot> {
+    if (!this.stateLoaded) throw new Error("ai_model_state_unavailable");
+    const previous = this.modelActionQueues.get(id) ?? Promise.resolve();
+    const operation = previous
+      .catch(() => undefined)
+      .then(() => this.executeModelAction(id, action));
+    const settled = operation.then(
+      () => undefined,
+      () => undefined,
+    );
+    this.modelActionQueues.set(id, settled);
+    try {
+      return await operation;
+    } finally {
+      if (this.modelActionQueues.get(id) === settled) this.modelActionQueues.delete(id);
+    }
+  }
+
+  private async executeModelAction(
+    id: AiModelId,
+    action: AiModelAction,
+  ): Promise<AiVoiceMemorySnapshot> {
+    if (!this.stateLoaded) throw new Error("ai_model_state_unavailable");
     const current = this.ensureModelState(id);
     if (action === "download") {
       current.userInstalled = true;
@@ -676,13 +719,19 @@ export class AiModelManager {
     return this.getSnapshot();
   }
 
-  private async ensurePinnedRevision(id: AiModelId): Promise<void> {
+  private async ensurePinnedRevision(id: AiModelId, generation: number): Promise<void> {
     const current = this.ensureModelState(id);
     try {
       const definition = modelDefinition(id);
       if (current.activeRevision === definition.revision) return;
       current.pendingRevision = definition.revision;
       await this.persist();
+      if (
+        generation !== this.lifecycleGeneration ||
+        this.persisted.models[id] !== current ||
+        !current.userInstalled
+      )
+        return;
       this.startDownload(id, true);
     } catch (error) {
       await this.log("warn", "ai_model_pinned_revision_check_failed", id, error);
@@ -798,6 +847,7 @@ export class AiModelManager {
     this.emit();
 
     const runtime = await this.prepareRuntime(id, controller.signal);
+    if (controller.signal.aborted) throw new DownloadPausedError();
 
     current.phase = "installed";
     await this.persist();
@@ -831,6 +881,7 @@ export class AiModelManager {
       this.emit();
       return result;
     } catch (error) {
+      if (signal?.aborted) throw new DownloadPausedError();
       const message = error instanceof Error ? error.message : String(error);
       const result = { ready: false, message };
       this.runtimeStatus[id] = result;
@@ -888,6 +939,10 @@ export class AiModelManager {
       let lastPersistedAt = Date.now();
       const progress = new Transform({
         transform: (chunk: Buffer, _encoding, callback) => {
+          if (received + chunk.length > expectedSize) {
+            callback(new Error("ai_model_file_oversized"));
+            return;
+          }
           received += chunk.length;
           state.downloadedBytes = Math.min(
             state.totalBytes ?? Number.MAX_SAFE_INTEGER,
@@ -981,6 +1036,7 @@ export class AiModelManager {
         resolve,
         reject,
         onAbort: () => {
+          signal.removeEventListener("abort", waiter.onAbort);
           const index = this.downloadSlotWaiters.indexOf(waiter);
           if (index >= 0) this.downloadSlotWaiters.splice(index, 1);
           reject(new DownloadPausedError());
@@ -988,6 +1044,7 @@ export class AiModelManager {
       };
       signal.addEventListener("abort", waiter.onAbort, { once: true });
       this.downloadSlotWaiters.push(waiter);
+      if (signal.aborted) waiter.onAbort();
     });
   }
 
@@ -996,13 +1053,18 @@ export class AiModelManager {
     return () => {
       if (released) return;
       released = true;
-      const waiter = this.downloadSlotWaiters.shift();
-      if (waiter) {
+      let waiter = this.downloadSlotWaiters.shift();
+      while (waiter) {
         waiter.signal.removeEventListener("abort", waiter.onAbort);
+        if (waiter.signal.aborted) {
+          waiter.reject(new DownloadPausedError());
+          waiter = this.downloadSlotWaiters.shift();
+          continue;
+        }
         waiter.resolve(this.createDownloadSlotRelease());
-      } else {
-        this.activeModelDownloads = Math.max(0, this.activeModelDownloads - 1);
+        return;
       }
+      this.activeModelDownloads = Math.max(0, this.activeModelDownloads - 1);
     };
   }
 
@@ -1090,7 +1152,7 @@ export class AiModelManager {
       manifest.siblings
         .filter((file) => {
           const size = file.lfs?.size ?? file.size;
-          return typeof size === "number" && size >= 0;
+          return Number.isSafeInteger(size) && size !== undefined && size >= 0;
         })
         .map((file): DownloadModelFile => {
           const sourceFileName = safeRelativeModelPath(file.rfilename);
@@ -1270,7 +1332,7 @@ export class AiModelManager {
    * without copying tens of gigabytes into the new LocalAppData store. New downloads and
    * repairs still target rootDirectory; the fallback is only used to resolve an active model.
    */
-  private async hydrateFallbackModelReferences(): Promise<void> {
+  private async hydrateFallbackModelReferences(generation: number): Promise<void> {
     for (const fallbackRoot of this.fallbackModelDirectories) {
       if (!fallbackRoot || path.resolve(fallbackRoot) === path.resolve(this.rootDirectory))
         continue;
@@ -1282,6 +1344,7 @@ export class AiModelManager {
       } catch {
         continue;
       }
+      if (generation !== this.lifecycleGeneration) return;
       for (const definition of MODEL_DEFINITIONS) {
         const legacyModel = legacy.models?.[definition.id];
         const revision = legacyModel?.activeRevision;
@@ -1301,20 +1364,42 @@ export class AiModelManager {
   }
 
   private async readState(): Promise<PersistedAiState> {
+    let contents: string;
     try {
-      const parsed = JSON.parse(
-        await readFile(path.join(this.rootDirectory, METADATA_FILE), "utf8"),
-      ) as Partial<PersistedAiState>;
-      return {
-        models: parsed.models && typeof parsed.models === "object" ? parsed.models : {},
-        taskCheckpoints:
-          parsed.taskCheckpoints && typeof parsed.taskCheckpoints === "object"
-            ? parsed.taskCheckpoints
-            : {},
-      };
-    } catch {
-      return emptyState();
+      contents = await readFile(path.join(this.rootDirectory, METADATA_FILE), "utf8");
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return emptyState();
+      throw error;
     }
+    let parsed: Partial<PersistedAiState>;
+    try {
+      parsed = JSON.parse(contents) as Partial<PersistedAiState>;
+    } catch {
+      throw new Error("ai_model_state_invalid");
+    }
+    if (
+      !parsed ||
+      typeof parsed !== "object" ||
+      Array.isArray(parsed) ||
+      (parsed.models !== undefined &&
+        (!parsed.models || typeof parsed.models !== "object" || Array.isArray(parsed.models))) ||
+      (parsed.taskCheckpoints !== undefined &&
+        (!parsed.taskCheckpoints ||
+          typeof parsed.taskCheckpoints !== "object" ||
+          Array.isArray(parsed.taskCheckpoints))) ||
+      Object.values(parsed.models ?? {}).some(
+        (model) => !model || typeof model !== "object" || Array.isArray(model),
+      ) ||
+      Object.values(parsed.taskCheckpoints ?? {}).some(
+        (checkpoint) => !checkpoint || typeof checkpoint !== "object" || Array.isArray(checkpoint),
+      )
+    ) {
+      throw new Error("ai_model_state_invalid");
+    }
+    return {
+      models: parsed.models ?? {},
+      taskCheckpoints: parsed.taskCheckpoints ?? {},
+    };
   }
 
   private async ensureDiskCapacity(remainingBytes: number): Promise<void> {
@@ -1328,6 +1413,7 @@ export class AiModelManager {
   }
 
   private persist(): Promise<void> {
+    if (!this.stateLoaded) return Promise.reject(new Error("ai_model_state_unavailable"));
     const serialized = JSON.stringify(this.persisted, null, 2);
     const operation = this.persistQueue
       .catch(() => undefined)
@@ -1367,14 +1453,56 @@ export class AiModelManager {
     this.emit();
   }
 
-  markQwenTaskStarted(taskName: string): void {
-    this.runningTask = taskName;
+  markQwenTaskStarted(taskName: string): number {
+    const taskId = ++this.nextRunningTaskId;
+    this.runningTasks.set(taskId, taskName);
+    this.emit();
+    return taskId;
+  }
+
+  markAiTaskFinished(taskId: number): void {
+    if (!this.runningTasks.delete(taskId)) return;
     this.emit();
   }
 
-  markAiTaskFinished(): void {
-    this.runningTask = undefined;
+  async acquireComputeSlot(
+    kind: AiTaskKind,
+    manualRequest: boolean,
+    signal?: AbortSignal,
+  ): Promise<AiComputeLease> {
+    const pending = this.scheduler.acquireCompute(kind, manualRequest, signal);
     this.emit();
+    try {
+      const lease = await pending;
+      const onAbort = () => this.emit();
+      signal?.addEventListener("abort", onAbort, { once: true });
+      if (signal?.aborted) onAbort();
+      try {
+        if (kind === "transcription") this.releaseQwenResources("asr_start");
+        this.emit();
+      } catch (error) {
+        signal?.removeEventListener("abort", onAbort);
+        lease.release();
+        throw error;
+      }
+      return {
+        resourceMode: lease.resourceMode,
+        signal: lease.signal,
+        release: () => {
+          signal?.removeEventListener("abort", onAbort);
+          lease.release();
+          if (kind !== "transcription") {
+            const decision = this.scheduler.shouldReleaseQwen();
+            if (decision.release) this.releaseQwenResources(decision.reason ?? "resource_pressure");
+            else if (this.gameActive) this.releaseQwenResources("game_started");
+          }
+          this.emit();
+        },
+      };
+    } catch (error) {
+      this.emit();
+      throw error;
+    }
   }
 
   canRunTask(
@@ -1430,6 +1558,7 @@ export class AiModelManager {
   }
 
   async saveTaskCheckpoint(checkpoint: AiTaskCheckpoint): Promise<void> {
+    if (!this.stateLoaded) throw new Error("ai_model_state_unavailable");
     if (!checkpoint.taskId || !checkpoint.recordingId || checkpoint.totalUnits < 1) {
       throw new Error("invalid_ai_task_checkpoint");
     }
@@ -1447,9 +1576,21 @@ export class AiModelManager {
   }
 
   async clearTaskCheckpoint(taskId: string): Promise<void> {
+    if (!this.stateLoaded) throw new Error("ai_model_state_unavailable");
     if (!(taskId in this.persisted.taskCheckpoints)) return;
     delete this.persisted.taskCheckpoints[taskId];
     await this.persist();
+  }
+
+  async clearTaskCheckpointsForRecording(recordingId: string): Promise<void> {
+    if (!this.stateLoaded) throw new Error("ai_model_state_unavailable");
+    let changed = false;
+    for (const [taskId, checkpoint] of Object.entries(this.persisted.taskCheckpoints)) {
+      if (checkpoint.recordingId !== recordingId) continue;
+      delete this.persisted.taskCheckpoints[taskId];
+      changed = true;
+    }
+    if (changed) await this.persist();
   }
 
   private async log(

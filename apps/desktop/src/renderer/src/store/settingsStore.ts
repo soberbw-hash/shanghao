@@ -21,6 +21,11 @@ import { create } from "zustand";
 
 import { desktopApi } from "../utils/desktopApi";
 import { writeRendererLog } from "../utils/logger";
+import {
+  cancelPendingMemberVolumeSaves,
+  configureMemberVolumePersistence,
+  resetRuntimeMemberVolumes,
+} from "../features/room/memberVolumePersistence";
 import { useAppStore } from "./appStore";
 
 interface StoreHydrationOutcome {
@@ -172,45 +177,7 @@ const getQuickMessageShortcutSignature = (settings: AppSettings): string =>
     .map((slot) => `${slot.enabled ? "1" : "0"}:${slot.shortcut.trim().toLowerCase()}`)
     .join("|");
 
-let quickMessageShortcutConfiguration = Promise.resolve();
 let unsubscribeUpdateStatus: (() => void) | undefined;
-
-const configureQuickMessageShortcuts = (settings: AppSettings): Promise<void> => {
-  const bindings = [
-    ...normalizeQuickMessageSlots(settings.quickMessages.slots, DEFAULT_QUICK_MESSAGE_SLOTS),
-    ...normalizeQuickMessageSlots(
-      settings.quickMessages.musicSlots,
-      DEFAULT_QUICK_MESSAGE_MUSIC_SLOTS,
-      DEFAULT_QUICK_MESSAGE_MUSIC_SLOTS.length,
-    ),
-  ].map((slot, index) => ({
-    accelerator: slot.enabled ? slot.shortcut : "",
-    index,
-  }));
-
-  // The native mouse hook is shared by all voice and music slots. Configure it in one
-  // ordered queue so overlapping saves cannot remove a Mouse4/Mouse5 binding
-  // while another save is still registering it.
-  quickMessageShortcutConfiguration = quickMessageShortcutConfiguration
-    .catch(() => undefined)
-    .then(async () => {
-      const failed: string[] = [];
-      for (const binding of bindings) {
-        const registered = await desktopApi.shortcuts
-          .configureQuickMessage(binding.index, binding.accelerator)
-          .catch(() => false);
-        if (binding.accelerator && !registered) failed.push(binding.accelerator);
-      }
-      if (failed.length) {
-        useAppStore.getState().pushToast({
-          tone: "warning",
-          title: "部分快捷键未生效",
-          description: `${failed.join("、")} 无法注册，请在快捷消息中更换组合键。`,
-        });
-      }
-    });
-  return quickMessageShortcutConfiguration;
-};
 
 export const useSettingsStore = create<SettingsStoreState>((set, get) => ({
   settings: undefined,
@@ -263,16 +230,6 @@ export const useSettingsStore = create<SettingsStoreState>((set, get) => ({
     unsubscribeUpdateStatus?.();
     unsubscribeUpdateStatus = desktopApi.updates.onStatus((updateStatus) => set({ updateStatus }));
 
-    await desktopApi.shortcuts.configureMute(settings.globalMuteShortcut).catch(async (error) => {
-      await writeRendererLog("renderer-startup", "warn", "Failed to configure mute shortcut", {
-        error: error instanceof Error ? error.message : String(error),
-      });
-    });
-    await desktopApi.shortcuts
-      .configureRecordingMarker(settings.recordingMarkerShortcut)
-      .catch(() => false);
-    await configureQuickMessageShortcuts(settings);
-
     if (settings.isBackgroundUpdateCheckEnabled) {
       void get()
         .checkUpdates()
@@ -299,8 +256,14 @@ export const useSettingsStore = create<SettingsStoreState>((set, get) => ({
     const settings = await desktopApi.settings.save(partial);
     set({ settings, avatarDataUrl: undefined });
     if (
-      typeof partial.globalMuteShortcut === "string" &&
-      settings.globalMuteShortcut !== partial.globalMuteShortcut.trim()
+      (typeof partial.globalMuteShortcut === "string" &&
+        settings.globalMuteShortcut !== partial.globalMuteShortcut.trim()) ||
+      (typeof partial.recordingMarkerShortcut === "string" &&
+        settings.recordingMarkerShortcut !== partial.recordingMarkerShortcut.trim()) ||
+      ("isPushToTalkEnabled" in partial &&
+        settings.isPushToTalkEnabled !== partial.isPushToTalkEnabled) ||
+      (typeof partial.pushToTalkShortcut === "string" &&
+        settings.pushToTalkShortcut !== partial.pushToTalkShortcut.trim())
     ) {
       useAppStore.getState().pushToast({
         tone: "warning",
@@ -308,22 +271,17 @@ export const useSettingsStore = create<SettingsStoreState>((set, get) => ({
         description: "这个组合键无法注册，已保留原来的设置。",
       });
     }
-    if ("recordingMarkerShortcut" in partial) {
-      await desktopApi.shortcuts.configureRecordingMarker(settings.recordingMarkerShortcut);
-    }
-    if ("pushToTalkShortcut" in partial || "isPushToTalkEnabled" in partial) {
-      await desktopApi.shortcuts.configurePushToTalk(
-        settings.pushToTalkShortcut,
-        settings.isPushToTalkEnabled,
-      );
-    }
     if (
       "quickMessages" in partial &&
-      (!previousSettings ||
-        getQuickMessageShortcutSignature(previousSettings) !==
-          getQuickMessageShortcutSignature(settings))
+      partial.quickMessages &&
+      getQuickMessageShortcutSignature({ ...settings, quickMessages: partial.quickMessages }) !==
+        getQuickMessageShortcutSignature(settings)
     ) {
-      await configureQuickMessageShortcuts(settings);
+      useAppStore.getState().pushToast({
+        tone: "warning",
+        title: "快捷消息按键未更改",
+        description: "有组合键无法注册，已保留原来的槽位设置。",
+      });
     }
     return settings;
   },
@@ -342,12 +300,24 @@ export const useSettingsStore = create<SettingsStoreState>((set, get) => ({
     await desktopApi.updates.openReleases();
   },
   resetSettings: async () => {
+    cancelPendingMemberVolumeSaves();
     const settings = await desktopApi.settings.reset();
     set({ settings, avatarDataUrl: undefined });
-    await desktopApi.shortcuts.configurePushToTalk(
-      settings.pushToTalkShortcut,
-      settings.isPushToTalkEnabled,
-    );
-    await configureQuickMessageShortcuts(settings);
+    resetRuntimeMemberVolumes();
   },
 }));
+
+configureMemberVolumePersistence({
+  getMemberVolumes: () => useSettingsStore.getState().settings?.memberVolumes,
+  saveMemberVolumes: async (memberVolumes) => {
+    try {
+      await useSettingsStore.getState().saveSettings({ memberVolumes });
+    } catch {
+      useAppStore.getState().pushToast({
+        tone: "warning",
+        title: "成员音量未保存",
+        description: "音量已在本次通话生效，请稍后重试。",
+      });
+    }
+  },
+});

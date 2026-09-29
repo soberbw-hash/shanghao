@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -7,15 +7,20 @@ import test from "node:test";
 import {
   decodeRecordingMediaUrl,
   createRecordingMediaResponse,
+  deleteRecordingInDirectory,
   isAllowedRecordingPathInDirectory,
+  markerPathFor,
   parseRecordingRange,
   readRecordingLibraryFromDirectory,
+  recycleUnprotectedRecordingInDirectory,
+  RECORDING_LIBRARY_METADATA_FILE,
   recordingQuotaDeletionOrder,
   renameRecordingInDirectory,
   setRecordingFavoriteInDirectory,
   toRecordingMediaUrl,
 } from "../src/main/recording-library-core";
 import {
+  isAutomaticWasteCandidate,
   parseRecordingProbeOutput,
   SHORT_RECORDING_MS,
   SILENT_RECORDING_PEAK_DB,
@@ -47,6 +52,15 @@ test("recording cleanup marks recordings below ten seconds, silent media, or unr
   assert.equal(parseRecordingProbeOutput("invalid media", 1).reason, "unreadable");
 });
 
+test("automatic cleanup leaves unreadable recordings for manual review", () => {
+  assert.equal(
+    isAutomaticWasteCandidate({ filePath: "recording.m4a", reason: "unreadable" }),
+    false,
+  );
+  assert.equal(isAutomaticWasteCandidate({ filePath: "recording.m4a", reason: "too_short" }), true);
+  assert.equal(isAutomaticWasteCandidate({ filePath: "recording.m4a", reason: "silent" }), true);
+});
+
 test("recording library lists old and room-aware recordings with marker points", async () => {
   const directory = await mkdtemp(path.join(os.tmpdir(), "shanghao-recordings-"));
   try {
@@ -71,6 +85,67 @@ test("recording library lists old and room-aware recordings with marker points",
     const legacyRecording = library.items.find((item) => item.filePath === legacyPath);
     assert.equal(legacyRecording?.roomId, undefined);
     assert.equal(library.totalBytes, 7);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("invalid recording metadata is preserved and blocks automatic catalog reconstruction", async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "shanghao-recording-corrupt-index-"));
+  const filePath = path.join(directory, "recording.m4a");
+  const metadataPath = path.join(directory, RECORDING_LIBRARY_METADATA_FILE);
+  const markerPath = markerPathFor(filePath);
+  try {
+    await writeFile(filePath, Buffer.from([1, 2, 3]));
+    await writeFile(markerPath, "1. 00:00:01\n", "utf8");
+    for (const content of ["{broken", '{"version":99,"favorites":[]}']) {
+      await writeFile(metadataPath, content, "utf8");
+      await assert.rejects(readRecordingLibraryFromDirectory(directory, 1), {
+        message: "recording_library_metadata_invalid",
+      });
+      await assert.rejects(setRecordingFavoriteInDirectory(directory, filePath, true), {
+        message: "recording_library_metadata_invalid",
+      });
+      await assert.rejects(deleteRecordingInDirectory(directory, filePath), {
+        message: "recording_library_metadata_invalid",
+      });
+      assert.equal(await readFile(metadataPath, "utf8"), content);
+      assert.deepEqual(await readFile(filePath), Buffer.from([1, 2, 3]));
+      assert.equal(await readFile(markerPath, "utf8"), "1. 00:00:01\n");
+    }
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("unreadable marker metadata is never treated as an unmarked recording", async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "shanghao-recording-marker-error-"));
+  const filePath = path.join(directory, "recording.m4a");
+  try {
+    await writeFile(filePath, Buffer.from([1, 2, 3]));
+    const recordingId = (await readRecordingLibraryFromDirectory(directory, 1)).items[0]!
+      .recordingId;
+    await mkdir(markerPathFor(filePath));
+    await assert.rejects(readRecordingLibraryFromDirectory(directory, 1));
+    await assert.rejects(renameRecordingInDirectory(directory, recordingId, "renamed"));
+    assert.deepEqual(await readFile(filePath), Buffer.from([1, 2, 3]));
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("a nonempty marker file with unknown content is not eligible for quota cleanup", async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "shanghao-recording-marker-format-"));
+  const filePath = path.join(directory, "recording.m4a");
+  const markerPath = markerPathFor(filePath);
+  try {
+    await writeFile(filePath, Buffer.from([1, 2, 3]));
+    await writeFile(markerPath, "unknown marker format", "utf8");
+    await assert.rejects(readRecordingLibraryFromDirectory(directory, 1), {
+      message: "recording_marker_unreadable",
+    });
+    assert.equal(await readFile(markerPath, "utf8"), "unknown marker format");
+    assert.deepEqual(await readFile(filePath), Buffer.from([1, 2, 3]));
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
@@ -141,6 +216,62 @@ test("recording metadata mutations are serialized so simultaneous favorites are 
     const items = (await readRecordingLibraryFromDirectory(directory, 10)).items;
     assert.equal(items.find((item) => item.filePath === firstPath)?.isFavorite, true);
     assert.equal(items.find((item) => item.filePath === secondPath)?.isFavorite, true);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("catalog discovery and a concurrent favorite cannot overwrite each other", async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "shanghao-recording-catalog-race-"));
+  const filePath = path.join(directory, "new-recording.m4a");
+  try {
+    await writeFile(filePath, Buffer.from([1, 2, 3]));
+    const [first] = await Promise.all([
+      readRecordingLibraryFromDirectory(directory, 1),
+      setRecordingFavoriteInDirectory(directory, filePath, true),
+    ]);
+    const second = await readRecordingLibraryFromDirectory(directory, 1);
+    assert.equal(second.items[0]?.recordingId, first.items[0]?.recordingId);
+    assert.equal(second.items[0]?.isFavorite, true);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("automatic recycling rechecks a newly added favorite before touching audio", async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "shanghao-recording-recycle-race-"));
+  const filePath = path.join(directory, "recording.m4a");
+  try {
+    await writeFile(filePath, Buffer.from([1, 2, 3]));
+    await readRecordingLibraryFromDirectory(directory, 1);
+    let recycled = false;
+    const favorite = setRecordingFavoriteInDirectory(directory, filePath, true);
+    const recycle = recycleUnprotectedRecordingInDirectory(directory, filePath, async () => {
+      recycled = true;
+    });
+    await favorite;
+    await assert.rejects(recycle, { message: "recording_protected" });
+    assert.equal(recycled, false);
+    assert.deepEqual(await readFile(filePath), Buffer.from([1, 2, 3]));
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("automatic recycling rechecks marker files and refuses unreadable marker content", async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "shanghao-recording-recycle-marked-"));
+  const filePath = path.join(directory, "recording.m4a");
+  try {
+    await writeFile(filePath, Buffer.from([1, 2, 3]));
+    const recycle = () =>
+      recycleUnprotectedRecordingInDirectory(directory, filePath, async () => {
+        throw new Error("recycle_must_not_run");
+      });
+    await writeFile(markerPathFor(filePath), "1. 00:00:01\n", "utf8");
+    await assert.rejects(recycle(), { message: "recording_protected" });
+    await writeFile(markerPathFor(filePath), "unrecognized marker", "utf8");
+    await assert.rejects(recycle(), { message: "recording_marker_unreadable" });
+    assert.deepEqual(await readFile(filePath), Buffer.from([1, 2, 3]));
   } finally {
     await rm(directory, { recursive: true, force: true });
   }

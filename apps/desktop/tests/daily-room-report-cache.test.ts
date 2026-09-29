@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -49,4 +49,22 @@ test("daily room report cache rejects malformed entries without discarding valid
   const stored = await new DailyRoomReportCache(directory).read();
   assert.equal(stored.main.length, 1);
   assert.equal(stored.side.length, 1);
+});
+
+test("daily room report cache refuses to overwrite unreadable user data", async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "shanghao-room-reports-"));
+  const file = path.join(directory, "daily-room-reports.json");
+  try {
+    const original = JSON.stringify({ version: 2, reports: { main: [], side: [] } });
+    await writeFile(file, original, "utf8");
+    const cache = new DailyRoomReportCache(directory);
+    await assert.rejects(cache.read(), /daily_room_reports_unreadable/);
+    await assert.rejects(
+      cache.save({ main: [report("main", "2026-09-28")], side: [] }),
+      /daily_room_reports_unreadable/,
+    );
+    assert.equal(await readFile(file, "utf8"), original);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
 });

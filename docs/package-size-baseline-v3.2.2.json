@@ -1,0 +1,25 @@
+{
+  "version": "3.2.2",
+  "installerBytes": 209270526,
+  "unpackedBytes": 610561169,
+  "resources": {
+    "app.asar": 91853562
+  },
+  "componentBytes": {
+    "electronRuntime": 325769285,
+    "appAsar": 91853562,
+    "appAsarUnpacked": 83570077,
+    "ffmpegResource": 82797568,
+    "deepFilter": 17606111,
+    "quickMessages": 8262776,
+    "nativeHelpers": 470016,
+    "otherResources": 231774,
+    "nativeAddonsLogical": 698296,
+    "rendererJsLogical": 1438863,
+    "rendererCssLogical": 450754,
+    "rendererFontsLogical": 4507216,
+    "rendererImagesLogical": 20545912,
+    "rendererOtherAssetsLogical": 418383,
+    "productionNodeModulesLogical": 144171154
+  }
+}

@@ -72,6 +72,7 @@ test("N-1 storage fixture preserves settings, account bytes, recording, model an
     assert.equal(loaded.isBackgroundUpdateCheckEnabled, false);
     assert.equal((await voiceStore.get(recordingId))?.recordingId, recordingId);
     assert.equal((await voiceStore.listSummaries())[0]?.recordingId, recordingId);
+    assert.equal(voiceStore.search({ query: "测试转录" })[0]?.recordingId, recordingId);
 
     for (const [file, content] of files) {
       assert.deepEqual(await readFile(file), Buffer.from(content), `Unexpected rewrite: ${file}`);

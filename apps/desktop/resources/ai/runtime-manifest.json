@@ -40,7 +40,7 @@
   "asr": {
     "runner": {
       "path": "asr-runner.py",
-      "sha256": "44520393a4d7f2c9c6f3380cf2baa70e1a9524571156a656d84ecf07198e8e9c"
+      "sha256": "bef54284c4c846c364cb1a982ca046ec5c9b3b05a3c72df173548ea5e9468907"
     }
   }
 }

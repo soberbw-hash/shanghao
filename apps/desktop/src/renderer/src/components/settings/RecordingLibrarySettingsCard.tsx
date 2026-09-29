@@ -296,7 +296,10 @@ export const RecordingLibrarySettingsCard = ({
           description:
             error instanceof Error && error.message === "recording_library_restart_required"
               ? "请完全退出并重新打开上号，让主进程加载新版录音库。"
-              : "请检查保存目录。",
+              : error instanceof Error &&
+                  error.message.includes("recording_library_metadata_invalid")
+                ? "录音目录中的记录文件无法读取，原文件已保留。请先备份录音目录，修复前不要清理录音。"
+                : "请检查保存目录和标记文件。录音原文件已保留。",
         });
       })
       .finally(() => {
@@ -741,8 +744,13 @@ export const RecordingLibrarySettingsCard = ({
     setCleanupScanProgress({ processed: 0, total: items.length });
     try {
       const scan = await window.desktopApi.recording.scanWaste();
+      const unreadableCount = scan.candidates.filter(
+        (candidate) => candidate.reason === "unreadable",
+      ).length;
       const candidates = new Map(
-        scan.candidates.map((candidate) => [candidate.filePath, candidate]),
+        scan.candidates
+          .filter((candidate) => candidate.reason !== "unreadable")
+          .map((candidate) => [candidate.filePath, candidate]),
       );
       const matches = items.flatMap((item) => {
         const candidate = candidates.get(item.filePath);
@@ -750,15 +758,24 @@ export const RecordingLibrarySettingsCard = ({
       });
       if (!matches.length) {
         pushToast({
-          tone: "success",
-          title: "没有发现废录音",
-          description: scan.protectedCount
-            ? `${scan.protectedCount} 条收藏或带标记录音已自动保留。`
-            : undefined,
+          tone: unreadableCount ? "neutral" : "success",
+          title: unreadableCount ? "有录音需要人工核查" : "没有发现废录音",
+          description: unreadableCount
+            ? `${unreadableCount} 条录音暂时无法读取，已排除批量清理，请在录音库中逐条检查。`
+            : scan.protectedCount
+              ? `${scan.protectedCount} 条收藏或带标记录音已自动保留。`
+              : undefined,
         });
         return;
       }
       setCleanupRecordings(matches);
+      if (unreadableCount) {
+        pushToast({
+          tone: "neutral",
+          title: "无法读取的录音已保留",
+          description: `${unreadableCount} 条录音没有加入批量清理，请逐条核查。`,
+        });
+      }
     } catch {
       pushToast({ tone: "danger", title: "录音检查失败", description: "没有删除任何文件。" });
     } finally {
@@ -830,19 +847,19 @@ export const RecordingLibrarySettingsCard = ({
           </div>
           <div
             className="recording-library-cleanup-tools"
-            title="先清理五分钟以下、静音或损坏的录音；超过容量上限时，再清理最旧录音。收藏和带标记的录音会保留。"
+            title="自动清理十秒以下或静音录音；无法读取的录音留待人工查看。超过容量上限时，回收最旧的未收藏、无标记录音。"
           >
             <span className="recording-library-usage">
               录音占用 <strong>{formatBytes(library?.totalBytes ?? 0)}</strong>
             </span>
             <label
               className="recording-library-auto-cleanup"
-              title="录音保存后自动清理十秒以下、静音或损坏的录音"
+              title="录音保存后自动清理十秒以下或静音的录音；无法读取的录音留待人工查看"
             >
               <span>自动清理</span>
               <Switch
                 isChecked={settings.isRecordingWasteAutoCleanupEnabled}
-                ariaLabel="自动清理十秒以下、静音或损坏的录音"
+                ariaLabel="自动清理十秒以下或静音的录音"
                 onChange={(checked) =>
                   void onChange({ isRecordingWasteAutoCleanupEnabled: checked })
                 }
@@ -871,7 +888,7 @@ export const RecordingLibrarySettingsCard = ({
             <Button
               variant="secondary"
               className="h-9 shrink-0 px-3"
-              title="先清理五分钟以下、静音或损坏的录音；超过上限时，再清理最旧录音"
+              title="扫描十秒以下或静音录音；无法读取的录音只提示，不加入批量清理"
               disabled={!recordingCounts.all || isScanningRecordings || isSelectionMode}
               onClick={() => void findWasteRecordings()}
             >
@@ -883,6 +900,9 @@ export const RecordingLibrarySettingsCard = ({
                 : "清理"}
             </Button>
           </div>
+          <p className="mt-2 text-xs text-[#72839a]">
+            自动清理开关只管十秒以下和静音录音；超过上限仍会把最旧的未收藏、无标记录音移到回收站。
+          </p>
         </div>
       </SettingsSection>
 
@@ -1326,8 +1346,6 @@ export const RecordingLibrarySettingsCard = ({
                   找到 {cleanupRecordings.length} 条可清理录音：十秒以下{" "}
                   {cleanupRecordings.filter((entry) => entry.reason === "too_short").length}
                   条、静音 {cleanupRecordings.filter((entry) => entry.reason === "silent").length}
-                  条、损坏{" "}
-                  {cleanupRecordings.filter((entry) => entry.reason === "unreadable").length}
                   条。预计释放{" "}
                   {formatBytes(
                     cleanupRecordings.reduce((total, entry) => total + entry.item.fileSize, 0),

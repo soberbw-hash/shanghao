@@ -2,6 +2,12 @@ import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 
 import { terminateProcessTree } from "./process-tree";
 
+const MAX_STDOUT_CHARS = 1024 * 1024;
+const MAX_STDERR_CHARS = 64 * 1024;
+
+const appendTail = (existing: string, incoming: string, limit: number): string =>
+  incoming.length >= limit ? incoming.slice(-limit) : (existing + incoming).slice(-limit);
+
 export interface LocalProcessResult {
   stdout: string;
   stderr: string;
@@ -51,8 +57,12 @@ export const runLocalProcess = async (
     options.signal?.addEventListener("abort", abort, { once: true });
     child.stdout.setEncoding("utf8");
     child.stderr.setEncoding("utf8");
-    child.stdout.on("data", (value: string) => (stdout += value));
-    child.stderr.on("data", (value: string) => (stderr += value));
+    child.stdout.on("data", (value: string) => {
+      stdout = appendTail(stdout, value, MAX_STDOUT_CHARS);
+    });
+    child.stderr.on("data", (value: string) => {
+      stderr = appendTail(stderr, value, MAX_STDERR_CHARS);
+    });
     child.stdin.end(options.input ?? "");
     child.on("error", (error) => {
       clearTimeout(timeout);

@@ -72,11 +72,13 @@ export class SignalingClientBridge extends EventEmitter {
 
   async connect(signalingUrl: string, sessionId: string): Promise<void> {
     const generation = ++this.socketGeneration;
+    const isCurrentAttempt = () =>
+      generation === this.socketGeneration && this.sessionId === sessionId;
     // Claim the bridge before closing the previous socket so a late close request
     // from the old renderer session cannot cancel the replacement connection.
     this.sessionId = sessionId;
     await this.closeSocket();
-    if (generation !== this.socketGeneration || this.sessionId !== sessionId) {
+    if (!isCurrentAttempt()) {
       throw new Error("signaling_session_superseded");
     }
     const mode = (() => {
@@ -94,12 +96,14 @@ export class SignalingClientBridge extends EventEmitter {
       message: "Opening signaling bridge socket",
       context: { signalingUrl: safeSignalingUrl, mode },
     });
+    if (!isCurrentAttempt()) throw new Error("signaling_session_superseded");
 
     // Refresh through the main-process account service before opening the
     // socket. This is important for CloudBase sessions restored after a long
     // idle period and also prevents concurrent reconnects from using an
     // already-expired bearer token.
     const accountAccessToken = await this.getAccountAccessToken();
+    if (!isCurrentAttempt()) throw new Error("signaling_session_superseded");
 
     await new Promise<void>((resolve, reject) => {
       const socket = new NodeWebSocket(signalingUrl, {

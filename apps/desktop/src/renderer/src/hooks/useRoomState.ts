@@ -25,7 +25,8 @@ import {
   createProcessedMicrophoneStream,
   type ProcessedMicrophoneStream,
 } from "../features/audio/microphoneProcessor";
-import { acquireAudioSource } from "../features/audio/audioSource";
+import { acquireAudioSource, releaseAcquiredAudioSource } from "../features/audio/audioSource";
+import { createAudioRuntimeSnapshot } from "../features/audio/audioRuntimeSnapshot";
 import { PHONE_MIC_DEVICE_ID } from "../features/audio/phoneMicSource";
 import { REMOTE_AUDIO_LEVEL_EVENT } from "../features/audio/RemoteAudioMixer";
 import { getRemoteAudioMixer } from "../features/audio/RemoteAudioMixer";
@@ -39,6 +40,8 @@ import {
   toggleQuickMessageMusic,
 } from "../features/audio/quickMessageAudio";
 import { RoomClient } from "../features/room/roomClient";
+import { MemberPresenceTracker } from "../features/room/memberPresenceTracker";
+import { finishOwnedRoomCleanup, RoomSessionOwnership } from "../features/room/sessionOwnership";
 import {
   encodeQuickMessageControlTarget,
   encodeQuickMessageTarget,
@@ -49,6 +52,8 @@ import {
 } from "../features/chat/quickReplies";
 import { persistChatHistory, type ChannelId } from "../features/chat/chatPersistence";
 import {
+  applyDefaultMemberVolumes,
+  registerMemberVolumeReset,
   runtimeMemberVolumes,
   scheduleMemberVolumeSave,
 } from "../features/room/memberVolumePersistence";
@@ -68,6 +73,13 @@ import { useDailyRoomReportStore } from "../store/dailyRoomReportStore";
 import { writeRendererLog } from "../utils/logger";
 
 let activeClient: RoomClient | null = null;
+registerMemberVolumeReset(() => {
+  const { room, updateMemberVolume } = useRoomStore.getState();
+  applyDefaultMemberVolumes(room.members, (peerId, volume) => {
+    updateMemberVolume(peerId, volume);
+    activeClient?.setPeerVolume(peerId, volume);
+  });
+});
 let activePeerId: string | undefined;
 let activeJoinPromise: Promise<void> | null = null;
 let activeSpeakingDetector: ReturnType<typeof createSpeakingDetector> | null = null;
@@ -75,7 +87,7 @@ let activeProcessedMicrophone: ProcessedMicrophoneStream | null = null;
 let activeInputSourceId: string | undefined;
 let inputDeviceSwitchQueue: Promise<unknown> = Promise.resolve();
 let activeLeavePromise: Promise<void> | undefined;
-let previousMemberIds = new Set<string>();
+const roomSessionOwnership = new RoomSessionOwnership();
 const CHANNEL_IDS = new Set<ChannelId>(["main", "side"]);
 let lastQuickMessageSentAt = 0;
 let lastQuickMessageCooldownMs = 3_000;
@@ -89,6 +101,20 @@ const ROUTINE_SIGNAL_MESSAGE_TYPES = new Set([
 ]);
 
 export const getRoomRuntimeDiagnostics = () => activeClient?.getDiagnostics();
+export const getRoomSessionTimeline = () => roomSessionOwnership.snapshot();
+export const getAudioRuntimeSnapshot = () => {
+  const output = getRemoteAudioMixer().getDiagnostics();
+  return createAudioRuntimeSnapshot({
+    settings: useSettingsStore.getState().settings,
+    appliedSourceId: activeInputSourceId,
+    processorPresent: Boolean(activeProcessedMicrophone),
+    processorDiagnostics: activeProcessedMicrophone?.processorDiagnostics,
+    outputTrack: activeProcessedMicrophone?.stream.getAudioTracks()[0],
+    roomClientPresent: Boolean(activeClient),
+    appliedOutputDeviceId: output.appliedOutputDeviceId,
+    outputRouteStatus: output.outputRouteStatus,
+  });
+};
 
 export const retryActiveRoomConnection = (): boolean => activeClient?.retryReconnect() ?? false;
 
@@ -176,18 +202,6 @@ export const buildChannelInviteText = ({ channelId }: { channelId: string }) => 
   invite.searchParams.set("room", CHANNEL_IDS.has(channelId as ChannelId) ? channelId : "main");
   invite.searchParams.set("expires", String(Date.now() + 10 * 60_000));
   return invite.toString();
-};
-
-const collectMemberEvents = (members: RoomMember[]) => {
-  const nextIds = new Set(
-    members.filter((member) => !member.isEmptySlot && !member.isLocal).map((member) => member.id),
-  );
-  const joined = members.filter(
-    (member) => !member.isEmptySlot && !member.isLocal && !previousMemberIds.has(member.id),
-  );
-  const left = [...previousMemberIds].filter((memberId) => !nextIds.has(memberId));
-  previousMemberIds = nextIds;
-  return { joined, left };
 };
 
 const summarizeSignalingEvent = (payload: SignalingEventPayload): Record<string, unknown> => {
@@ -303,10 +317,20 @@ export const useRoomState = () => {
   }, [avatarDataUrl, profileAvatarId, profileNickname]);
 
   const startSpeakingDetector = (stream: MediaStream) => {
-    activeSpeakingDetector?.destroy();
-    activeSpeakingDetector = createSpeakingDetector(
+    const previousDetector = activeSpeakingDetector;
+    activeSpeakingDetector = null;
+    previousDetector?.destroy();
+    const generation = roomSessionOwnership.current();
+    // The detector may invoke a callback during construction; keep it unset
+    // until construction finishes so that callback cannot acquire ownership.
+    // eslint-disable-next-line prefer-const
+    let detector: ReturnType<typeof createSpeakingDetector> | undefined;
+    const ownsDetector = () =>
+      roomSessionOwnership.owns(generation) && activeSpeakingDetector === detector;
+    detector = createSpeakingDetector(
       stream,
       (isSpeaking) => {
+        if (!ownsDetector()) return;
         const muted = useAudioStore.getState().isMuted;
         updateLocalPresence({
           speakingState: muted
@@ -318,6 +342,7 @@ export const useRoomState = () => {
         activeClient?.updateMuteState(muted, !muted && isSpeaking);
       },
       (level) => {
+        if (!ownsDetector()) return;
         window.dispatchEvent(
           new CustomEvent(REMOTE_AUDIO_LEVEL_EVENT, {
             detail: { peerId: "local-member", level },
@@ -325,11 +350,13 @@ export const useRoomState = () => {
         );
       },
     );
+    activeSpeakingDetector = detector;
   };
 
   const stopLocalMedia = () => {
-    activeSpeakingDetector?.destroy();
+    const detector = activeSpeakingDetector;
     activeSpeakingDetector = null;
+    detector?.destroy();
     activeProcessedMicrophone?.dispose();
     activeProcessedMicrophone = null;
     useRoomStore
@@ -344,20 +371,28 @@ export const useRoomState = () => {
     resetStore = false,
     preserveLocalMedia = false,
   }: { resetStore?: boolean; preserveLocalMedia?: boolean } = {}) => {
+    const generation = roomSessionOwnership.current();
     const client = activeClient;
     activeClient = null;
     activePeerId = undefined;
+    if (client) roomSessionOwnership.record("disconnect_started", generation);
+    await finishOwnedRoomCleanup(
+      roomSessionOwnership,
+      generation,
+      async () => {
+        if (client) await client.disconnect().catch(() => undefined);
+      },
+      () => {
+        if (!preserveLocalMedia) stopLocalMedia();
+        setConnectionHealth({ reconnectAttempt: 0 });
+        if (resetStore) useRoomStore.getState().resetRoom();
+      },
+    );
     if (client) {
-      await client.disconnect().catch(() => undefined);
-    }
-
-    if (!preserveLocalMedia) {
-      stopLocalMedia();
-    }
-    previousMemberIds = new Set<string>();
-    setConnectionHealth({ reconnectAttempt: 0 });
-    if (resetStore) {
-      useRoomStore.getState().resetRoom();
+      roomSessionOwnership.record(
+        roomSessionOwnership.owns(generation) ? "disconnect_completed" : "disconnect_superseded",
+        generation,
+      );
     }
   };
 
@@ -377,24 +412,30 @@ export const useRoomState = () => {
     }
 
     const currentSettings = useSettingsStore.getState().settings ?? settings;
-    activeProcessedMicrophone?.dispose();
+    const previousProcessor = activeProcessedMicrophone;
     activeProcessedMicrophone = null;
+    try {
+      previousProcessor?.dispose();
+    } catch (cleanupError) {
+      void writeRendererLog("audio", "warn", "Previous microphone cleanup failed", {
+        error: cleanupError instanceof Error ? cleanupError.message : String(cleanupError),
+      });
+    }
 
+    let acquiredSource: Awaited<ReturnType<typeof acquireAudioSource>> | undefined;
+    let processedMicrophone: ProcessedMicrophoneStream | undefined;
     try {
       const selectedDeviceId =
         preferredInputDeviceId ??
         (activeInputSourceId === PHONE_MIC_DEVICE_ID
           ? activeInputSourceId
           : currentSettings?.preferredInputDeviceId);
-      const {
-        stream: inputStream,
-        diagnostics,
-        stopInputOnDispose,
-      } = await acquireAudioSource(selectedDeviceId, {
+      acquiredSource = await acquireAudioSource(selectedDeviceId, {
         echoCancellation: currentSettings?.isEchoCancellationEnabled ?? true,
         autoGainControl: currentSettings?.isAutoGainControlEnabled ?? true,
       });
-      const processedMicrophone = await createProcessedMicrophoneStream(inputStream, {
+      const { stream: inputStream, diagnostics, stopInputOnDispose } = acquiredSource;
+      processedMicrophone = await createProcessedMicrophoneStream(inputStream, {
         micEqualizerGains: currentSettings?.micEqualizerGains ?? [0, 0, 0, 0, 0],
         lowCutFrequency: currentSettings?.lowCutFrequency ?? "75",
         isNoiseSuppressionEnabled: currentSettings?.isNoiseSuppressionEnabled ?? true,
@@ -404,6 +445,7 @@ export const useRoomState = () => {
         stopInputOnDispose,
       });
       activeProcessedMicrophone = processedMicrophone;
+      activeInputSourceId = selectedDeviceId;
       const stream = processedMicrophone.stream;
 
       setLocalStream(stream);
@@ -428,6 +470,16 @@ export const useRoomState = () => {
       }
       return stream;
     } catch (error) {
+      if (processedMicrophone) {
+        processedMicrophone.dispose();
+        if (activeProcessedMicrophone === processedMicrophone) {
+          activeProcessedMicrophone = null;
+          setLocalStream(undefined);
+          activeInputSourceId = undefined;
+        }
+      } else if (acquiredSource) {
+        releaseAcquiredAudioSource(acquiredSource);
+      }
       await writeRendererLog("audio", "error", "Failed to acquire local microphone stream", {
         error: error instanceof Error ? error.message : String(error),
       });
@@ -442,10 +494,14 @@ export const useRoomState = () => {
     channelId: ChannelId,
     { reuseLocalMedia = false }: { reuseLocalMedia?: boolean } = {},
   ) => {
+    const generation = roomSessionOwnership.current();
     const currentSettings = useSettingsStore.getState().settings ?? settings;
+    roomSessionOwnership.record("microphone_acquire_started", generation);
     const stream = await ensureLocalStream(undefined, { reuseExisting: reuseLocalMedia });
+    roomSessionOwnership.record("microphone_acquired", generation);
     const peerId = crypto.randomUUID();
     activePeerId = peerId;
+    const isCurrentSession = () => roomSessionOwnership.ownsPeer(generation, peerId, activePeerId);
     const localProfileId = currentSettings?.profileId || crypto.randomUUID();
     if (currentSettings && !currentSettings.profileId) {
       await useSettingsStore.getState().saveSettings({ profileId: localProfileId });
@@ -457,6 +513,7 @@ export const useRoomState = () => {
     // local profile id because they have no authenticated server identity.
     const signalingProfileId = accountSnapshot.status === "signed_in" ? undefined : localProfileId;
     const roomName = currentSettings?.roomName ?? room.roomName;
+    const memberPresence = new MemberPresenceTracker();
 
     activeClient = new RoomClient({
       signalingUrl: serverUrl,
@@ -471,7 +528,8 @@ export const useRoomState = () => {
       protocolVersion: runtimeInfo?.protocolVersion ?? APP_PROTOCOL_VERSION,
       buildNumber: runtimeInfo?.buildNumber ?? APP_BUILD_NUMBER,
       onMembers: (members) => {
-        const { joined, left } = collectMemberEvents(members);
+        if (!isCurrentSession()) return;
+        const { joined, left } = memberPresence.collect(members);
         const previousMembers = useRoomStore.getState().room.members;
         const savedVolumes = useSettingsStore.getState().settings?.memberVolumes ?? {};
         const audioState = useAudioStore.getState();
@@ -554,8 +612,11 @@ export const useRoomState = () => {
           });
         });
       },
-      onRoomName: (nextRoomName) => setRoom({ roomName: nextRoomName }),
+      onRoomName: (nextRoomName) => {
+        if (isCurrentSession()) setRoom({ roomName: nextRoomName });
+      },
       onConnectionState: (state) => {
+        if (!isCurrentSession()) return;
         setConnectionState(state);
         if (state === RoomConnectionState.WaitingSnapshot) {
           pushRoomEvent({ level: "info", message: "已连接，正在同步成员…" });
@@ -565,10 +626,14 @@ export const useRoomState = () => {
         }
       },
       onReconnectAttempt: (attempt) => {
+        if (!isCurrentSession()) return;
+        roomSessionOwnership.record("reconnect_attempt", generation);
         setConnectionHealth({ reconnectAttempt: attempt, lastUpdatedAt: new Date().toISOString() });
         pushRoomEvent({ level: "warning", message: `连接有波动，正在第 ${attempt} 次重连…` });
       },
       onReconnectExhausted: (error) => {
+        if (!isCurrentSession()) return;
+        roomSessionOwnership.record("reconnect_exhausted", generation);
         const protocolRejected = error.message === "signaling_protocol_rejected";
         void writeRendererLog("signaling", "error", "Signaling reconnect exhausted", {
           roomId: channelId,
@@ -576,7 +641,9 @@ export const useRoomState = () => {
           error: error.message,
         });
         void (async () => {
+          if (!isCurrentSession()) return;
           await cleanupPreviousSession({ resetStore: true });
+          if (!roomSessionOwnership.owns(generation)) return;
           setConnectionState(RoomConnectionState.Failed, "连接已断开，请重新进入频道。");
           setLifecycleState(RoomLifecycleState.Failed);
           pushToast({
@@ -590,9 +657,11 @@ export const useRoomState = () => {
         })();
       },
       onUpdateRequired: (requiredVersion, currentVersion) => {
+        if (!isCurrentSession()) return;
         useAppStore.getState().requireUpdate(requiredVersion, currentVersion);
       },
       onAvatarConflict: (availableAvatarIds) => {
+        if (!isCurrentSession()) return;
         const localMember = useRoomStore
           .getState()
           .room.members.find((member) => member.isLocal && !member.isEmptySlot);
@@ -609,6 +678,7 @@ export const useRoomState = () => {
         });
       },
       onSnapshotRevision: (revision) => {
+        if (!isCurrentSession()) return;
         setConnectionHealth({ lastUpdatedAt: new Date().toISOString() });
         void writeRendererLog("signaling", "info", "Applied fixed channel snapshot", {
           roomId: channelId,
@@ -617,11 +687,15 @@ export const useRoomState = () => {
         });
       },
       onRtt: (latencyMs) => {
+        if (!isCurrentSession()) return;
         setConnectionHealth({ latencyMs, lastUpdatedAt: new Date().toISOString() });
         updatePeerLatency(peerId, latencyMs);
       },
-      onPeerLatency: updatePeerLatency,
+      onPeerLatency: (remotePeerId, latencyMs) => {
+        if (isCurrentSession()) updatePeerLatency(remotePeerId, latencyMs);
+      },
       onPeerStats: (statsByPeer) => {
+        if (!isCurrentSession()) return;
         const snapshots = Object.values(statsByPeer);
         const jitterMs = snapshots.reduce(
           (highest, snapshot) => Math.max(highest, snapshot.jitterMs ?? 0),
@@ -653,20 +727,26 @@ export const useRoomState = () => {
         });
       },
       onRemoteStream: (remotePeerId, remoteStream) => {
-        setRemoteStream(remotePeerId, remoteStream);
+        if (isCurrentSession()) setRemoteStream(remotePeerId, remoteStream);
       },
       onRemoteScreenFrame: (remotePeerId, frame) => {
-        setRemoteScreenFrame(remotePeerId, frame);
+        if (isCurrentSession()) setRemoteScreenFrame(remotePeerId, frame);
       },
-      onRemoteScreenShareState: setRemoteScreenSharing,
-      onLocalScreenShareViewers: setLocalScreenShareViewerPeerIds,
+      onRemoteScreenShareState: (remotePeerId, sharing) => {
+        if (isCurrentSession()) setRemoteScreenSharing(remotePeerId, sharing);
+      },
+      onLocalScreenShareViewers: (viewerPeerIds) => {
+        if (isCurrentSession()) setLocalScreenShareViewerPeerIds(viewerPeerIds);
+      },
       onSceneReaction: (reaction) => {
+        if (!isCurrentSession()) return;
         addSceneReaction(reaction);
         if (reaction.targetPeerId === peerId && reaction.peerId !== peerId) {
           playSceneReactionSound("receive-message");
         }
       },
       onQuickMessage: (message) => {
+        if (!isCurrentSession()) return;
         addQuickMessage(message);
         const currentSettings = useSettingsStore.getState().settings;
         if (
@@ -696,12 +776,14 @@ export const useRoomState = () => {
         }
       },
       onQuickMessageControl: ({ presetId }) => {
+        if (!isCurrentSession()) return;
         const preset = findQuickMessagePreset(presetId);
         if (preset?.mediaType === "music") {
           toggleQuickMessageMusic(preset.soundId);
         }
       },
       onChatMessage: (message) => {
+        if (!isCurrentSession()) return;
         addChatMessage(message);
         persistChatHistory(serverUrl, channelId);
         if (!message.isLocal) {
@@ -715,25 +797,35 @@ export const useRoomState = () => {
         }
       },
       onChatRecall: ({ messageId }) => {
+        if (!isCurrentSession()) return;
         removeChatMessage(messageId);
         persistChatHistory(serverUrl, channelId);
       },
       onChatHistory: (messages) => {
+        if (!isCurrentSession()) return;
         mergeChatHistory(messages);
         persistChatHistory(serverUrl, channelId);
       },
-      onChannelCounts: setChannelCounts,
-      onDailyRoomReports: (targetRoomId, reports) =>
-        useDailyRoomReportStore.getState().setReports(targetRoomId, reports),
+      onChannelCounts: (counts) => {
+        if (isCurrentSession()) setChannelCounts(counts);
+      },
+      onDailyRoomReports: (targetRoomId, reports) => {
+        if (isCurrentSession())
+          useDailyRoomReportStore.getState().setReports(targetRoomId, reports);
+      },
       onRoomCollection: (items, replace) => {
+        if (!isCurrentSession()) return;
         if (replace) setCollectionItems(items);
         else mergeCollectionItems(items);
       },
       onKnock: (message) => {
+        if (!isCurrentSession()) return;
         addChatMessage(message);
         persistChatHistory(serverUrl, channelId);
         playUiSound("knock-bell");
-        window.setTimeout(() => playUiSound("knock-bell"), 190);
+        window.setTimeout(() => {
+          if (isCurrentSession()) playUiSound("knock-bell");
+        }, 190);
         if (!message.isLocal) {
           pushToast({
             tone: "warning",
@@ -751,6 +843,7 @@ export const useRoomState = () => {
         }
       },
       onDiagnosticEvent: (payload) => {
+        if (!isCurrentSession()) return;
         const summary = summarizeSignalingEvent(payload);
         if (
           payload.type === "message" &&
@@ -777,7 +870,9 @@ export const useRoomState = () => {
       latestFailureReason: undefined,
     });
 
+    roomSessionOwnership.record("connect_started", generation);
     await activeClient.connect();
+    roomSessionOwnership.record("connected", generation);
     useDailyRoomReportStore.getState().beginLoading();
     const reportClient = activeClient;
     void Promise.allSettled([
@@ -821,11 +916,15 @@ export const useRoomState = () => {
     serverUrlOverride?: string,
     requestedChannelId: ChannelId = DEFAULT_CHANNEL_ID,
   ): Promise<void> => {
+    // A fast rejoin waits for the preceding leave to release its own client and
+    // media before the next room begins acquiring them.
+    if (activeLeavePromise) {
+      return activeLeavePromise.then(() => joinChannel(serverUrlOverride, requestedChannelId));
+    }
     if (activeJoinPromise) {
       void writeRendererLog("signaling", "info", "Ignored duplicate fixed channel join request");
       return activeJoinPromise;
     }
-
     const joinPromise = (async () => {
       const currentSettings = useSettingsStore.getState().settings ?? settings;
       if (!currentSettings) {
@@ -847,6 +946,9 @@ export const useRoomState = () => {
         pushToast({ tone: "warning", title: copy.joinTitle, description });
         return;
       }
+
+      const generation = roomSessionOwnership.advance();
+      roomSessionOwnership.record("join_requested", generation);
 
       setRoomAction("joining");
       setConnectionState(RoomConnectionState.Joining);
@@ -893,6 +995,7 @@ export const useRoomState = () => {
         const cachedMessages = await chatHistoryPromise;
         mergeChatHistory(cachedMessages);
       } catch (error) {
+        roomSessionOwnership.record("join_failed", generation);
         if (error instanceof Error && error.message === "CLIENT_UPDATE_REQUIRED") {
           await cleanupPreviousSession();
           return;
@@ -956,27 +1059,31 @@ export const useRoomState = () => {
 
   const replaceInputDevice = (preferredInputDeviceId?: string) => {
     const client = activeClient;
+    const generation = roomSessionOwnership.current();
+    const ownsSwitch = () => activeClient === client && roomSessionOwnership.owns(generation);
     const operation = inputDeviceSwitchQueue.then(async () => {
       const currentSettings = useSettingsStore.getState().settings ?? settings;
-      if (!client || activeClient !== client || !currentSettings) {
+      if (!client || !ownsSwitch() || !currentSettings) {
         return false;
       }
+      roomSessionOwnership.record("device_switch_started", generation);
 
-      let pendingInput: MediaStream | undefined;
+      let pendingSource: Awaited<ReturnType<typeof acquireAudioSource>> | undefined;
       let pendingProcessor: ProcessedMicrophoneStream | undefined;
       try {
-        const {
-          stream: inputStream,
-          diagnostics,
-          stopInputOnDispose,
-        } = await acquireAudioSource(
+        const acquiredSource = await acquireAudioSource(
           preferredInputDeviceId ?? currentSettings.preferredInputDeviceId,
           {
             echoCancellation: currentSettings.isEchoCancellationEnabled,
             autoGainControl: currentSettings.isAutoGainControlEnabled,
           },
         );
-        pendingInput = inputStream;
+        pendingSource = acquiredSource;
+        if (!ownsSwitch()) {
+          roomSessionOwnership.record("device_switch_discarded", generation);
+          return false;
+        }
+        const { stream: inputStream, diagnostics, stopInputOnDispose } = acquiredSource;
         const processedMicrophone = await createProcessedMicrophoneStream(inputStream, {
           ...currentSettings,
           stopInputOnDispose,
@@ -988,14 +1095,27 @@ export const useRoomState = () => {
           throw new Error(copy.microphoneMissing);
         }
 
-        if (activeClient !== client) return false;
+        if (!ownsSwitch()) {
+          roomSessionOwnership.record("device_switch_discarded", generation);
+          return false;
+        }
         await client.replaceInputTrack(nextTrack);
-        if (activeClient !== client) return false;
-        activeProcessedMicrophone?.dispose();
+        if (!ownsSwitch()) {
+          roomSessionOwnership.record("device_switch_discarded", generation);
+          return false;
+        }
+        const previousProcessor = activeProcessedMicrophone;
         activeProcessedMicrophone = processedMicrophone;
         activeInputSourceId = preferredInputDeviceId;
-        pendingInput = undefined;
+        pendingSource = undefined;
         pendingProcessor = undefined;
+        try {
+          previousProcessor?.dispose();
+        } catch (cleanupError) {
+          void writeRendererLog("audio", "warn", "Previous microphone cleanup failed", {
+            error: cleanupError instanceof Error ? cleanupError.message : String(cleanupError),
+          });
+        }
         setLocalDiagnostics({ ...diagnostics, ...processedMicrophone.processorDiagnostics });
         processedMicrophone.onDiagnostics((processorDiagnostics) => {
           if (activeProcessedMicrophone !== processedMicrophone) return;
@@ -1006,13 +1126,35 @@ export const useRoomState = () => {
           setLocalDiagnostics({ ...diagnostics, ...processorDiagnostics });
         });
         setLocalStream(stream);
-        startSpeakingDetector(stream);
+        try {
+          startSpeakingDetector(stream);
+        } catch (detectorError) {
+          void writeRendererLog(
+            "audio",
+            "warn",
+            "Speaking detector unavailable after input switch",
+            {
+              error: detectorError instanceof Error ? detectorError.message : String(detectorError),
+            },
+          );
+          pushToast({
+            tone: "warning",
+            title: "麦克风已切换",
+            description: "说话状态检测暂不可用，请重新进入房间。",
+          });
+        }
         await writeRendererLog("devices", "info", "Switched input device", {
           preferredInputDeviceId,
           ...diagnostics,
         });
+        roomSessionOwnership.record("device_switch_applied", generation);
         return true;
       } catch (error) {
+        if (!ownsSwitch()) {
+          roomSessionOwnership.record("device_switch_discarded", generation);
+          return false;
+        }
+        roomSessionOwnership.record("device_switch_failed", generation);
         const description = normalizeRoomError(error, copy.microphoneUnavailable);
         await writeRendererLog("devices", "error", "Failed to switch input device", {
           preferredInputDeviceId,
@@ -1027,9 +1169,7 @@ export const useRoomState = () => {
         return false;
       } finally {
         if (pendingProcessor) pendingProcessor.dispose();
-        else if (pendingInput && preferredInputDeviceId !== PHONE_MIC_DEVICE_ID) {
-          pendingInput.getTracks().forEach((track) => track.stop());
-        }
+        else if (pendingSource) releaseAcquiredAudioSource(pendingSource);
       }
     });
     inputDeviceSwitchQueue = operation.catch(() => undefined);
@@ -1042,8 +1182,12 @@ export const useRoomState = () => {
 
   const leaveRoom = () => {
     if (activeLeavePromise) return activeLeavePromise;
+    roomSessionOwnership.record("leave_requested");
+    const pendingJoin = activeJoinPromise;
     activeLeavePromise = (async () => {
       try {
+        if (pendingJoin) await pendingJoin.catch(() => undefined);
+        roomSessionOwnership.advance();
         playUiSound("leave-room");
         setLifecycleState(RoomLifecycleState.Closing);
         if (settings) {
@@ -1056,7 +1200,7 @@ export const useRoomState = () => {
         }
         useAppStore.getState().navigate("home");
         await cleanupPreviousSession({ resetStore: true });
-        previousMemberIds = new Set<string>();
+        roomSessionOwnership.record("leave_completed");
       } catch (error) {
         await writeRendererLog("signaling", "error", "Failed to leave room cleanly", {
           error: error instanceof Error ? error.message : String(error),

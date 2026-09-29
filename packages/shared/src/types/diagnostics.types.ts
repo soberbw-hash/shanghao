@@ -343,4 +343,34 @@ export interface RendererDiagnosticsSummary {
   screenShareRelayState?: "active" | "inactive";
   screenShare?: ScreenSharePipelineDiagnostics;
   audioTimeline?: Array<Record<string, unknown>>;
+  roomSessionTimeline?: {
+    generation: number;
+    capacity: number;
+    retentionMs: number;
+    droppedEvents: number;
+    events: Array<{ at: string; generation: number; event: string }>;
+  };
+  audioRuntime?: {
+    desired: {
+      noiseSuppression: boolean;
+      voiceEnhancement: boolean;
+      echoCancellation: boolean;
+      autoGainControl: boolean;
+      inputSource: "phone" | "device";
+      outputDevice: "default" | "selected";
+    };
+    applied: {
+      noiseProcessor?: LocalAudioDiagnostics["noiseProcessor"];
+      voiceEnhancementProcessor?: LocalAudioDiagnostics["voiceEnhancementProcessor"];
+      inputSource?: "phone" | "device";
+      outputDevice?: "default" | "selected";
+    };
+    observed: {
+      processorPresent: boolean;
+      outputTrackState: "live" | "ended" | "missing";
+      outputRouteStatus:
+        "not_started" | "applying" | "applied" | "fallback" | "unsupported" | "failed";
+    };
+    health: "idle" | "starting" | "healthy" | "degraded" | "failed";
+  };
 }

@@ -56,6 +56,55 @@ test("a stale signaling session cannot close or receive events from the active s
   }
 });
 
+test("an old token refresh cannot open a socket after a newer signaling connection", async () => {
+  const server = new WebSocketServer({ host: "127.0.0.1", port: 0 });
+  await once(server, "listening");
+  const address = server.address();
+  assert.equal(typeof address, "object");
+  assert.ok(address);
+  let connections = 0;
+  server.on("connection", () => {
+    connections += 1;
+  });
+
+  let releaseOldToken: (() => void) | undefined;
+  const oldToken = new Promise<string | undefined>((resolve) => {
+    releaseOldToken = () => resolve(undefined);
+  });
+  let tokenRequests = 0;
+  let firstTokenRequested: (() => void) | undefined;
+  const firstTokenStarted = new Promise<void>((resolve) => {
+    firstTokenRequested = resolve;
+  });
+  const bridge = new SignalingClientBridge(
+    async () => undefined,
+    () => {
+      tokenRequests += 1;
+      if (tokenRequests === 1) {
+        firstTokenRequested?.();
+        return oldToken;
+      }
+      return undefined;
+    },
+  );
+
+  try {
+    const url = `ws://127.0.0.1:${address.port}`;
+    const staleConnect = bridge.connect(url, "old-session");
+    const staleRejected = assert.rejects(staleConnect, /signaling_session_superseded/);
+    await firstTokenStarted;
+    await bridge.connect(url, "new-session");
+    releaseOldToken?.();
+    await staleRejected;
+    assert.equal(connections, 1);
+    await bridge.send('{"type":"heartbeat"}', "new-session");
+  } finally {
+    releaseOldToken?.();
+    await bridge.close("new-session");
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  }
+});
+
 test("update handoff waits for the WebSocket update close handshake", async () => {
   const server = new WebSocketServer({ host: "127.0.0.1", port: 0 });
   await once(server, "listening");

@@ -34,7 +34,10 @@ interface RuntimeArtifactDownloadOptions {
 const fileSize = (filePath: string): Promise<number> =>
   stat(filePath)
     .then((value) => value.size)
-    .catch(() => 0);
+    .catch((error: NodeJS.ErrnoException) => {
+      if (error.code === "ENOENT") return 0;
+      throw error;
+    });
 
 export const runtimeArtifactResumeHeaders = (
   offset: number,
@@ -50,8 +53,21 @@ export const sha256RuntimeArtifact = async (filePath: string): Promise<string> =
   return hash.digest("hex");
 };
 
-const wait = (delayMs: number): Promise<void> =>
-  new Promise((resolve) => setTimeout(resolve, delayMs));
+const wait = (delayMs: number, signal?: AbortSignal): Promise<void> =>
+  new Promise((resolve, reject) => {
+    if (signal?.aborted) return reject(new Error("ai_task_paused"));
+    const onAbort = () => {
+      clearTimeout(timer);
+      signal?.removeEventListener("abort", onAbort);
+      reject(new Error("ai_task_paused"));
+    };
+    const timer = setTimeout(() => {
+      signal?.removeEventListener("abort", onAbort);
+      resolve();
+    }, delayMs);
+    signal?.addEventListener("abort", onAbort, { once: true });
+    if (signal?.aborted) onAbort();
+  });
 
 const verifyArtifact = async (
   filePath: string,
@@ -76,7 +92,7 @@ const downloadAttempt = async (
     offset === options.expectedBytes &&
     (await verifyArtifact(partial, options.expectedBytes, options.expectedSha256))
   ) {
-    await rm(options.destination, { force: true });
+    if (options.signal?.aborted) throw new Error("ai_task_paused");
     await rename(partial, options.destination);
     return;
   }
@@ -88,6 +104,7 @@ const downloadAttempt = async (
   const controller = new AbortController();
   const forwardAbort = () => controller.abort();
   options.signal?.addEventListener("abort", forwardAbort, { once: true });
+  if (options.signal?.aborted) controller.abort();
   const idleTimeoutMs = options.idleTimeoutMs ?? 120_000;
   let idleTimer: NodeJS.Timeout | undefined;
   const refreshIdleTimeout = () => {
@@ -124,6 +141,10 @@ const downloadAttempt = async (
     let received = offset;
     const progress = new Transform({
       transform: (chunk: Buffer, _encoding, callback) => {
+        if (received + chunk.length > options.expectedBytes) {
+          callback(new Error("runtime_artifact_oversized"));
+          return;
+        }
         received += chunk.length;
         refreshIdleTimeout();
         callback(null, chunk);
@@ -140,7 +161,7 @@ const downloadAttempt = async (
       await rm(partial, { force: true });
       throw new Error("runtime_artifact_checksum_mismatch");
     }
-    await rm(options.destination, { force: true });
+    if (options.signal?.aborted) throw new Error("ai_task_paused");
     await rename(partial, options.destination);
   } finally {
     if (idleTimer) clearTimeout(idleTimer);
@@ -152,13 +173,16 @@ const downloadAttempt = async (
 export const downloadVerifiedRuntimeArtifact = async (
   options: RuntimeArtifactDownloadOptions,
 ): Promise<string> => {
+  if (!Number.isSafeInteger(options.expectedBytes) || options.expectedBytes <= 0) {
+    throw new Error("runtime_artifact_size_invalid");
+  }
   if (options.signal?.aborted) throw new Error("ai_task_paused");
   if (!options.sources.length) throw new Error("runtime_artifact_source_missing");
   await mkdir(path.dirname(options.destination), { recursive: true });
   if (await verifyArtifact(options.destination, options.expectedBytes, options.expectedSha256)) {
+    if (options.signal?.aborted) throw new Error("ai_task_paused");
     return options.destination;
   }
-  await rm(options.destination, { force: true });
 
   const partial = `${options.destination}.part`;
   const attempts = Math.max(options.sources.length, options.attempts ?? 6);
@@ -178,7 +202,7 @@ export const downloadVerifiedRuntimeArtifact = async (
       if (options.signal?.aborted) throw new Error("ai_task_paused", { cause: error });
       lastError = error;
       await options.onRetry?.({ attempt, source, error });
-      if (attempt < attempts) await wait(Math.min(8_000, attempt * 1_000));
+      if (attempt < attempts) await wait(Math.min(8_000, attempt * 1_000), options.signal);
     }
   }
   throw new Error("runtime_artifact_download_failed", { cause: lastError });

@@ -1,7 +1,5 @@
 import { useEffect, useRef, useState } from "react";
 
-import QRCode from "qrcode";
-
 import {
   phoneMicSource,
   readablePhoneMicError,
@@ -55,21 +53,29 @@ export const PhoneMicDialog = ({
 
   useEffect(() => {
     let cancelled = false;
-    if (!state.pairingUrl) {
+    if (!open || !state.pairingUrl) {
       setQrDataUrl(undefined);
       return;
     }
-    void QRCode.toDataURL(state.pairingUrl, {
-      margin: 1,
-      width: 220,
-      errorCorrectionLevel: "M",
-    }).then((value) => {
-      if (!cancelled) setQrDataUrl(value);
-    });
+    const pairingUrl = state.pairingUrl;
+    void import("qrcode")
+      .then(({ default: QRCode }) =>
+        QRCode.toDataURL(pairingUrl, {
+          margin: 1,
+          width: 220,
+          errorCorrectionLevel: "M",
+        }),
+      )
+      .then((value) => {
+        if (!cancelled) setQrDataUrl(value);
+      })
+      .catch(() => {
+        if (!cancelled) setQrDataUrl(undefined);
+      });
     return () => {
       cancelled = true;
     };
-  }, [state.pairingUrl]);
+  }, [open, state.pairingUrl]);
 
   useEffect(() => {
     if (!open || state.mode !== "usb") return;

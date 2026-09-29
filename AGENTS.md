@@ -1,5 +1,7 @@
 # ShangHao 长期开发规则
 
+每个版本开始时，除本文件外还应阅读 [`docs/development-playbook.md`](docs/development-playbook.md)，按变更风险选验证范围，并继承上版未完成的证据边界。
+
 本仓库的本地工作区是唯一最新基线。开始开发前必须先阅读 `git status`、`git diff`、
 `git diff --staged`，保留并合并所有现有修改。GitHub 远端可能落后，不能用远端内容
 覆盖本地文件。

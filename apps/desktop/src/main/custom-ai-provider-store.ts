@@ -1,6 +1,7 @@
 import { isIP } from "node:net";
 import { promises as dns } from "node:dns";
-import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
+import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import { app, safeStorage } from "electron";
@@ -126,12 +127,21 @@ const extractJsonObject = <T>(value: string): T => {
 
 /** Stores a user-supplied API key encrypted by Windows DPAPI and never returns it to the renderer. */
 export class CustomAiProviderStore {
-  private readonly filePath = path.join(app.getPath("userData"), "ai", "custom-provider.enc");
+  private readonly filePath: string;
 
-  constructor(private readonly writeLog?: (payload: RendererLogPayload) => Promise<void>) {}
+  constructor(
+    private readonly writeLog?: (payload: RendererLogPayload) => Promise<void>,
+    userDataDirectory = app.getPath("userData"),
+    private readonly secureStorage: Pick<
+      typeof safeStorage,
+      "isEncryptionAvailable" | "encryptString" | "decryptString"
+    > = safeStorage,
+  ) {
+    this.filePath = path.join(userDataDirectory, "ai", "custom-provider.enc");
+  }
 
   async status(): Promise<AiCustomProviderStatus> {
-    const config = await this.read().catch(() => undefined);
+    const config = await this.read();
     return {
       configured: Boolean(config),
       baseUrl: config?.baseUrl,
@@ -141,8 +151,10 @@ export class CustomAiProviderStore {
   }
 
   async save(input: AiCustomProviderInput): Promise<AiCustomProviderStatus> {
-    if (!safeStorage.isEncryptionAvailable()) throw new Error("custom_ai_encryption_unavailable");
-    const previous = await this.read().catch(() => undefined);
+    if (!this.secureStorage.isEncryptionAvailable()) {
+      throw new Error("custom_ai_encryption_unavailable");
+    }
+    const previous = await this.read();
     const baseUrl = normalizeProviderUrl(input.baseUrl);
     await validatePublicProviderHost(baseUrl);
     const model = input.model.trim();
@@ -150,9 +162,15 @@ export class CustomAiProviderStore {
     const apiKey = input.apiKey?.trim() || previous?.apiKey;
     if (!apiKey || apiKey.length > 512) throw new Error("custom_ai_key_required");
 
-    const encrypted = safeStorage.encryptString(JSON.stringify({ baseUrl, model, apiKey }));
+    const encrypted = this.secureStorage.encryptString(JSON.stringify({ baseUrl, model, apiKey }));
     await mkdir(path.dirname(this.filePath), { recursive: true });
-    await writeFile(this.filePath, encrypted, { flag: "w", mode: 0o600 });
+    const temporaryPath = `${this.filePath}.${randomUUID()}.tmp`;
+    try {
+      await writeFile(temporaryPath, encrypted, { flag: "wx", mode: 0o600 });
+      await rename(temporaryPath, this.filePath);
+    } finally {
+      await rm(temporaryPath, { force: true });
+    }
     await this.log("info", "Custom AI provider saved", { baseUrl, model });
     return { configured: true, baseUrl, model, hasApiKey: true };
   }
@@ -220,27 +238,36 @@ export class CustomAiProviderStore {
   }
 
   private async read(): Promise<StoredCustomProvider | undefined> {
+    let encrypted: Buffer;
     try {
-      if (!safeStorage.isEncryptionAvailable()) return undefined;
-      const encrypted = await readFile(this.filePath);
-      const parsed = JSON.parse(
-        safeStorage.decryptString(encrypted),
-      ) as Partial<StoredCustomProvider>;
-      if (
-        typeof parsed.baseUrl !== "string" ||
-        typeof parsed.model !== "string" ||
-        typeof parsed.apiKey !== "string"
-      ) {
-        return undefined;
-      }
-      return {
-        baseUrl: normalizeProviderUrl(parsed.baseUrl),
-        model: parsed.model,
-        apiKey: parsed.apiKey,
-      };
-    } catch {
-      return undefined;
+      encrypted = await readFile(this.filePath);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
+      throw error;
     }
+    if (!this.secureStorage.isEncryptionAvailable()) {
+      throw new Error("custom_ai_encryption_unavailable");
+    }
+    let parsed: Partial<StoredCustomProvider>;
+    try {
+      parsed = JSON.parse(
+        this.secureStorage.decryptString(encrypted),
+      ) as Partial<StoredCustomProvider>;
+    } catch {
+      throw new Error("custom_ai_config_unreadable");
+    }
+    if (
+      typeof parsed.baseUrl !== "string" ||
+      typeof parsed.model !== "string" ||
+      typeof parsed.apiKey !== "string"
+    ) {
+      throw new Error("custom_ai_config_invalid");
+    }
+    return {
+      baseUrl: normalizeProviderUrl(parsed.baseUrl),
+      model: parsed.model,
+      apiKey: parsed.apiKey,
+    };
   }
 
   private async log(

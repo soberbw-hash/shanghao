@@ -229,6 +229,116 @@ test("bundled AI runtime copies only manifest-verified files into persistent sto
   }
 });
 
+test("missing required runner leaves an existing runtime and manifest untouched", async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "shanghao-ai-runtime-missing-"));
+  const bundledRoot = path.join(directory, "bundled");
+  const runtimeRoot = path.join(directory, "runtime");
+  await Promise.all([mkdir(bundledRoot), mkdir(runtimeRoot)]);
+  const asrSource = path.join(bundledRoot, "asr-runner.py");
+  await writeFile(asrSource, "new asr", "utf8");
+  await writeFile(path.join(runtimeRoot, "asr-runner.py"), "old asr", "utf8");
+  await writeFile(path.join(runtimeRoot, "runtime-manifest.json"), "old manifest", "utf8");
+  const manifest: AiRuntimePackageManifest = {
+    schemaVersion: 1,
+    runtimePackageVersion: "test",
+    platform: "win32-x64",
+    vibevoice: { source: "microsoft/VibeASR.cpp", revision: "pinned", files: [] },
+    qwen: {
+      pythonVersion: "test",
+      torchVersion: "test",
+      transformersVersion: "test",
+      runner: { path: "qwen-runner.py", sha256: "0".repeat(64) },
+    },
+    asr: { runner: { path: "asr-runner.py", sha256: await sha256File(asrSource) } },
+  };
+  try {
+    await writeFile(path.join(bundledRoot, "runtime-manifest.json"), JSON.stringify(manifest));
+    await assert.rejects(prepareBundledAiRuntime({ bundledRoot, runtimeRoot }), {
+      message: "ai_runtime_source_missing",
+    });
+    assert.equal(await readFile(path.join(runtimeRoot, "asr-runner.py"), "utf8"), "old asr");
+    assert.equal(
+      await readFile(path.join(runtimeRoot, "runtime-manifest.json"), "utf8"),
+      "old manifest",
+    );
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("corrupt bundled source cannot partially replace an installed runtime", async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "shanghao-ai-runtime-corrupt-"));
+  const bundledRoot = path.join(directory, "bundled");
+  const runtimeRoot = path.join(directory, "runtime");
+  await Promise.all([mkdir(bundledRoot), mkdir(runtimeRoot)]);
+  const qwenSource = path.join(bundledRoot, "qwen-runner.py");
+  const asrSource = path.join(bundledRoot, "asr-runner.py");
+  await writeFile(qwenSource, "new qwen", "utf8");
+  await writeFile(asrSource, "new asr", "utf8");
+  const manifest: AiRuntimePackageManifest = {
+    schemaVersion: 1,
+    runtimePackageVersion: "test",
+    platform: "win32-x64",
+    vibevoice: { source: "microsoft/VibeASR.cpp", revision: "pinned", files: [] },
+    qwen: {
+      pythonVersion: "test",
+      torchVersion: "test",
+      transformersVersion: "test",
+      runner: { path: "qwen-runner.py", sha256: await sha256File(qwenSource) },
+    },
+    asr: { runner: { path: "asr-runner.py", sha256: "0".repeat(64) } },
+  };
+  try {
+    await writeFile(path.join(bundledRoot, "runtime-manifest.json"), JSON.stringify(manifest));
+    await writeFile(path.join(runtimeRoot, "qwen-runner.py"), "old qwen", "utf8");
+    await writeFile(path.join(runtimeRoot, "runtime-manifest.json"), "old manifest", "utf8");
+    await assert.rejects(prepareBundledAiRuntime({ bundledRoot, runtimeRoot }), {
+      message: "ai_runtime_integrity_failed",
+    });
+    assert.equal(await readFile(path.join(runtimeRoot, "qwen-runner.py"), "utf8"), "old qwen");
+    assert.equal(
+      await readFile(path.join(runtimeRoot, "runtime-manifest.json"), "utf8"),
+      "old manifest",
+    );
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("concurrent runtime preparation uses separate verified temporary files", async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "shanghao-ai-runtime-parallel-"));
+  const bundledRoot = path.join(directory, "bundled");
+  const runtimeRoot = path.join(directory, "runtime");
+  await mkdir(bundledRoot);
+  const runnerPath = path.join(bundledRoot, "qwen-runner.py");
+  await writeFile(runnerPath, "new runner", "utf8");
+  const manifest: AiRuntimePackageManifest = {
+    schemaVersion: 1,
+    runtimePackageVersion: "test",
+    platform: "win32-x64",
+    vibevoice: { source: "microsoft/VibeASR.cpp", revision: "pinned", files: [] },
+    qwen: {
+      pythonVersion: "test",
+      torchVersion: "test",
+      transformersVersion: "test",
+      runner: { path: "qwen-runner.py", sha256: await sha256File(runnerPath) },
+    },
+  };
+  try {
+    await writeFile(path.join(bundledRoot, "runtime-manifest.json"), JSON.stringify(manifest));
+    await Promise.all(
+      Array.from({ length: 4 }, () => prepareBundledAiRuntime({ bundledRoot, runtimeRoot })),
+    );
+    assert.equal(await readFile(path.join(runtimeRoot, "qwen-runner.py"), "utf8"), "new runner");
+    assert.deepEqual(
+      JSON.parse(await readFile(path.join(runtimeRoot, "runtime-manifest.json"), "utf8")),
+      manifest,
+    );
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
 test("the checked-in runtime manifest pins source revisions and integrity hashes", async () => {
   const manifestPath = path.join(process.cwd(), "resources", "ai", "runtime-manifest.json");
   const manifest = JSON.parse(await readFile(manifestPath, "utf8")) as AiRuntimePackageManifest;

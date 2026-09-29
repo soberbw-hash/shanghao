@@ -54,6 +54,8 @@ jobs:
       - run: pnpm build
       - run: pnpm dist:win
       - run: pnpm release:verify-package
+      - run: node scripts/report-package-size.mjs --output=apps/desktop/release/package-size.json
+      - run: node scripts/check-package-size.mjs apps/desktop/release/package-size.json docs/package-size-baseline-v3.2.2.json --enforce
       - run: pnpm release:checksums
       - uses: actions/upload-artifact@v7
         with:
@@ -64,6 +66,7 @@ jobs:
             apps/desktop/release/*.blockmap
             apps/desktop/release/latest*.yml
             apps/desktop/release/SHA256SUMS.txt
+            apps/desktop/release/package-size.json
 
   publish:
     needs: [windows]
@@ -86,3 +89,4 @@ jobs:
             artifacts/*.blockmap
             artifacts/latest*.yml
             artifacts/SHA256SUMS.txt
+            artifacts/package-size.json

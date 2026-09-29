@@ -5,7 +5,7 @@ import { runInNewContext } from "node:vm";
 import ts from "typescript";
 import { PhoneShortcut } from "../src/main/phone-shortcut";
 import { UiohookKey } from "uiohook-napi";
-import { QUICK_MESSAGE_SHORTCUT_COUNT } from "@private-voice/shared";
+import { QUICK_MESSAGE_SHORTCUT_COUNT, isQuickMessageShortcutSlot } from "@private-voice/shared";
 
 // Exercise the actual controller with isolated native boundaries. Never register
 // global keys on the developer's computer from a unit test.
@@ -25,6 +25,12 @@ const harness = () => {
         configureQuickMessage(slot: number, key: string): Promise<boolean>;
         configureGlobalMute(key: string): Promise<boolean>;
         configureRecordingMarker(key: string): Promise<boolean>;
+        getRuntimeSnapshot(): {
+          mute: { applied: string | null; observed: string };
+          quickMessages: { slot: number; applied: string | null; observed: string }[];
+          mouseHook: { started: boolean; suppressed: boolean };
+        };
+        setMouseHookSuppressed(suppressed: boolean): void;
         dispose(): void;
         configurePhone(
           key: string,
@@ -50,6 +56,7 @@ const harness = () => {
             },
             unregister: (key: string) => bindings.delete(key),
             unregisterAll: () => bindings.clear(),
+            isRegistered: (key: string) => bindings.has(key),
           },
         };
       if (id === "uiohook-napi")
@@ -63,6 +70,7 @@ const harness = () => {
         };
       if (id === "@private-voice/shared")
         return {
+          isQuickMessageShortcutSlot,
           IPC_CHANNELS: {
             shortcuts: {
               quickMessageTriggered: "quick",
@@ -143,6 +151,16 @@ test("all quick-message slots remain usable after registration conflicts", async
   assert.equal(bindings.size, 0);
 });
 
+test("invalid quick-message slots never register native shortcuts", async () => {
+  const { controller, bindings, registrations } = harness();
+  for (const slot of [-1, QUICK_MESSAGE_SHORTCUT_COUNT, 0.5, NaN, Infinity]) {
+    assert.equal(await controller.configureQuickMessage(slot, "F10"), false);
+  }
+  assert.equal(registrations(), 0);
+  assert.equal(bindings.size, 0);
+  controller.dispose();
+});
+
 test("mute and marker preserve their old keys on failure and avoid repeated registration", async () => {
   const { controller, bindings, registrations } = harness();
   for (const configure of [
@@ -172,4 +190,25 @@ test("mouse shortcut conflicts do not discard the original keyboard binding", as
   assert.equal(await controller.configureQuickMessage(1, "Mouse5"), true);
   assert.equal(bindings.has("F10"), false);
   controller.dispose();
+});
+
+test("runtime snapshot distinguishes saved registrations from observed hook state", async () => {
+  const { controller, bindings } = harness();
+  assert.equal(await controller.configureGlobalMute("F10"), true);
+  assert.equal(await controller.configureQuickMessage(0, "Mouse4"), true);
+  assert.equal(controller.getRuntimeSnapshot().mute.observed, "active");
+  assert.equal(controller.getRuntimeSnapshot().quickMessages[0]?.observed, "active");
+
+  bindings.delete("F10");
+  controller.setMouseHookSuppressed(true);
+  const snapshot = controller.getRuntimeSnapshot();
+  assert.equal(snapshot.mute.applied, "F10");
+  assert.equal(snapshot.mute.observed, "missing");
+  assert.equal(snapshot.mouseHook.suppressed, true);
+  assert.equal(snapshot.quickMessages[0]?.observed, "suspended");
+
+  controller.setMouseHookSuppressed(false);
+  assert.equal(controller.getRuntimeSnapshot().quickMessages[0]?.observed, "active");
+  controller.dispose();
+  assert.equal(controller.getRuntimeSnapshot().mute.observed, "inactive");
 });

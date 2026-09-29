@@ -102,6 +102,7 @@ try {
     $process = Start-Process -FilePath $electronCommand `
       -ArgumentList "." `
       -WorkingDirectory $desktopDirectory `
+      -WindowStyle Hidden `
       -PassThru
 
     $capturePollLimit = if ($capture.Mode -eq "settings" -and ($env:SHANGHAO_CAPTURE_SETTINGS_TABS -eq "1" -or $env:SHANGHAO_PERF_SEQUENCE -eq "settings")) { 120 } else { 60 }

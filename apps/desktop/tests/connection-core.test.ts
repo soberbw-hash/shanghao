@@ -183,17 +183,17 @@ test("room joining uses acknowledgement and snapshot recovery without logging ra
   assert.equal(diagnostics.includes('"log-stats.json"'), true);
 });
 
-test("windows executable and shortcut use cache-busting v3 icons", () => {
+test("windows executable and shortcut use approved v4 icons", () => {
   const builder = read("apps/desktop/electron-builder.yml");
   const installer = read("apps/desktop/build/installer.nsh");
   const mainWindow = read("apps/desktop/src/main/window.ts");
 
-  assert.equal(builder.includes("icon: shanghao-icon-v3.ico"), true);
+  assert.equal(builder.includes("icon: shanghao-icon-v4.ico"), true);
   assert.equal(builder.includes("signAndEditExecutable: true"), true);
   assert.equal(builder.includes("requestedExecutionLevel: requireAdministrator"), true);
   assert.equal(builder.includes("afterPack: scripts/after-pack.cjs"), true);
   assert.equal(read("apps/desktop/scripts/after-pack.cjs").includes("writeInstallManifest"), true);
-  assert.equal(installer.includes("shanghao-shortcut-v3.ico"), true);
+  assert.equal(installer.includes("shanghao-shortcut-v4.ico"), true);
   assert.equal(mainWindow.includes("window.setAppDetails({"), true);
   assert.equal(mainWindow.includes("appIconPath: getIconPath()"), true);
   assert.equal(mainWindow.includes("appId: APP_ID"), true);
@@ -364,7 +364,10 @@ test("knock feedback is intentionally louder than routine UI sounds", () => {
     true,
   );
   assert.equal(sounds.includes("volume: uiGain.deviceToggle"), true);
-  assert.equal(roomState.includes('window.setTimeout(() => playUiSound("knock-bell"), 190)'), true);
+  assert.match(
+    roomState,
+    /window\.setTimeout\(\(\) => \{\s*if \(isCurrentSession\(\)\) playUiSound\("knock-bell"\);\s*\}, 190\)/,
+  );
   assert.equal(roomState.includes("shakeWindow: true"), true);
   assert.equal(ipc.includes("const shakeMainWindow"), true);
   assert.equal(ipc.includes("mainWindow.setPosition(x, original.y, false)"), true);

@@ -1,4 +1,6 @@
-import { mkdir, readFile, readdir, rename, rm, writeFile } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
+import { constants } from "node:fs";
+import { copyFile, mkdir, readFile, readdir, rename, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
@@ -72,16 +74,61 @@ const sessionWrites = new Map<string, Promise<RecordingSpeakerSegmentResponse>>(
 const readManifest = async (
   directory: string,
   sessionId: string,
+  checkUnindexedAudio = false,
 ): Promise<SpeakerSegmentManifest> => {
+  let content: string;
   try {
-    const parsed = JSON.parse(
-      await readFile(manifestPath(directory), "utf8"),
-    ) as SpeakerSegmentManifest;
-    if (parsed.schemaVersion === 1 && Array.isArray(parsed.segments)) return parsed;
-  } catch {
-    // A first segment creates the manifest. A damaged manifest never deletes retained audio.
+    content = await readFile(manifestPath(directory), "utf8");
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    const entries = await readdir(directory, { withFileTypes: true }).catch(
+      (directoryError: NodeJS.ErrnoException) => {
+        if (directoryError.code === "ENOENT") return [];
+        throw directoryError;
+      },
+    );
+    if (entries.some((entry) => entry.isFile() && /\.(?:webm|m4a|ogg)$/i.test(entry.name))) {
+      throw new Error("speaker_segment_manifest_missing_with_audio", { cause: error });
+    }
+    return { schemaVersion: 1, sessionId, segments: [] };
   }
-  return { schemaVersion: 1, sessionId, segments: [] };
+  let parsed: SpeakerSegmentManifest;
+  try {
+    parsed = JSON.parse(content) as SpeakerSegmentManifest;
+  } catch (error) {
+    throw new Error("speaker_segment_manifest_invalid", { cause: error });
+  }
+  if (
+    !parsed ||
+    parsed.schemaVersion !== 1 ||
+    typeof parsed.sessionId !== "string" ||
+    !Array.isArray(parsed.segments) ||
+    !parsed.segments.every(
+      (segment) =>
+        segment &&
+        typeof segment.filePath === "string" &&
+        typeof segment.speakerId === "string" &&
+        typeof segment.startMs === "number" &&
+        typeof segment.endMs === "number",
+    )
+  ) {
+    throw new Error("speaker_segment_manifest_invalid");
+  }
+  if (checkUnindexedAudio) {
+    const indexedNames = new Set(parsed.segments.map((segment) => path.basename(segment.filePath)));
+    const entries = await readdir(directory, { withFileTypes: true });
+    if (
+      entries.some(
+        (entry) =>
+          entry.isFile() &&
+          /\.(?:webm|m4a|ogg)$/i.test(entry.name) &&
+          !indexedNames.has(entry.name),
+      )
+    ) {
+      throw new Error("speaker_segment_unindexed_audio");
+    }
+  }
+  return parsed;
 };
 
 const writeManifest = async (
@@ -89,9 +136,13 @@ const writeManifest = async (
   manifest: SpeakerSegmentManifest,
 ): Promise<void> => {
   const targetPath = manifestPath(directory);
-  const temporaryPath = `${targetPath}.tmp`;
-  await writeFile(temporaryPath, JSON.stringify(manifest, null, 2), "utf8");
-  await rename(temporaryPath, targetPath);
+  const temporaryPath = `${targetPath}.${process.pid}.${randomUUID()}.tmp`;
+  try {
+    await writeFile(temporaryPath, JSON.stringify(manifest, null, 2), { flag: "wx" });
+    await rename(temporaryPath, targetPath);
+  } finally {
+    await rm(temporaryPath, { force: true }).catch(() => undefined);
+  }
 };
 
 const extensionForMime = (mimeType: string): string =>
@@ -103,7 +154,7 @@ const saveRecordingSpeakerSegmentNow = async (
   try {
     const directory = pendingDirectory(payload.sessionId);
     await mkdir(directory, { recursive: true });
-    const manifest = await readManifest(directory, safeId(payload.sessionId));
+    const manifest = await readManifest(directory, safeId(payload.sessionId), true);
     const index = manifest.segments.length;
     const startMs = Math.max(0, Math.round(payload.startMs));
     const endMs = Math.max(startMs + 1, Math.round(payload.endMs));
@@ -111,7 +162,7 @@ const saveRecordingSpeakerSegmentNow = async (
       directory,
       `${String(index).padStart(6, "0")}-${startMs}-${endMs}${extensionForMime(payload.sourceMimeType)}`,
     );
-    await writeFile(filePath, Buffer.from(payload.buffer));
+    await writeFile(filePath, Buffer.from(payload.buffer), { flag: "wx" });
     manifest.segments.push({
       filePath,
       speakerId: payload.speakerId.slice(0, 128),
@@ -156,12 +207,16 @@ export const finalizeRecordingSpeakerSegments = async (
   const sourceDirectory = pendingDirectory(payload.sessionId);
   const targetDirectory = completedDirectory(payload.recordingId);
   await mkdir(targetDirectory, { recursive: true });
-  const manifest = await readManifest(sourceDirectory, safeId(payload.sessionId));
+  const manifest = await readManifest(sourceDirectory, safeId(payload.sessionId), true);
+  const previousTarget = await readManifest(targetDirectory, safeId(payload.sessionId), true);
+  if (previousTarget.recordingId || previousTarget.segments.length > 0) {
+    throw new Error("speaker_segment_target_exists");
+  }
   const copiedSegments: PersistedRecordingSpeakerSegment[] = [];
   for (const segment of manifest.segments) {
     const name = path.basename(segment.filePath);
     const targetPath = path.join(targetDirectory, name);
-    await writeFile(targetPath, await readFile(segment.filePath));
+    await copyFile(segment.filePath, targetPath, constants.COPYFILE_EXCL);
     copiedSegments.push({ ...segment, filePath: targetPath });
   }
   await writeManifest(targetDirectory, {

@@ -9,6 +9,12 @@ import { resolveFfmpegExecutable } from "./media-runtime";
 export const SHORT_RECORDING_MS = 10_000;
 export const SILENT_RECORDING_PEAK_DB = -60;
 
+/** Probe failures are review candidates, never proof that a recording is disposable. */
+export const isAutomaticWasteCandidate = (
+  candidate: RecordingCleanupCandidate | undefined,
+): candidate is RecordingCleanupCandidate =>
+  candidate?.reason === "too_short" || candidate?.reason === "silent";
+
 interface RecordingProbeResult {
   durationMs?: number;
   maximumVolumeDb?: number;

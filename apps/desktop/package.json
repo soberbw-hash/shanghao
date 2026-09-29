@@ -1,6 +1,6 @@
 {
   "name": "shanghao-desktop",
-  "version": "3.2.2",
+  "version": "3.3.0",
   "private": true,
   "license": "AGPL-3.0-or-later",
   "description": "ShangHao desktop voice app for private friends group chat",
@@ -14,6 +14,7 @@
     "build": "corepack pnpm build:main && corepack pnpm build:renderer",
     "build:main": "node ../../scripts/build-phone-audio.mjs && tsup --config tsup.config.ts",
     "build:renderer": "vite build",
+    "report:renderer": "node scripts/report-renderer-bundle.mjs",
     "typecheck": "tsc --project tsconfig.json --noEmit",
     "lint": "eslint src tests --max-warnings=0",
     "test:smoke": "node --import tsx --test tests/*.test.ts",

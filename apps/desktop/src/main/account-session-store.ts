@@ -1,9 +1,11 @@
-import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { readFile, rm } from "node:fs/promises";
 import path from "node:path";
 
 import { safeStorage } from "electron";
 
 import type { AccountRememberedLogin } from "@private-voice/shared";
+
+import { writePrivateFileAtomically } from "./atomic-private-file";
 
 export interface PersistedAccountSession {
   accessToken: string;
@@ -58,8 +60,9 @@ export class AccountSessionStore {
     let encrypted: Buffer;
     try {
       encrypted = await readFile(this.filePath);
-    } catch {
-      return undefined;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
+      throw error;
     }
 
     try {
@@ -69,7 +72,7 @@ export class AccountSessionStore {
       if (decrypted.shouldReEncrypt) await this.write(parsed);
       return parsed;
     } catch {
-      await this.clear();
+      // A transient OS key-store failure must not erase recoverable encrypted bytes.
       return undefined;
     }
   }
@@ -80,10 +83,7 @@ export class AccountSessionStore {
       throw new Error("account_secure_storage_unavailable");
     }
     const encrypted = await safeStorage.encryptStringAsync(JSON.stringify(session));
-    await mkdir(path.dirname(this.filePath), { recursive: true });
-    const temporaryPath = `${this.filePath}.${process.pid}.${Date.now()}.tmp`;
-    await writeFile(temporaryPath, encrypted, { flag: "wx" });
-    await rename(temporaryPath, this.filePath);
+    await writePrivateFileAtomically(this.filePath, encrypted);
   }
 
   async clear(): Promise<void> {
@@ -94,8 +94,9 @@ export class AccountSessionStore {
     let encrypted: Buffer;
     try {
       encrypted = await readFile(this.rememberedLoginFilePath);
-    } catch {
-      return undefined;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
+      throw error;
     }
 
     try {
@@ -105,7 +106,7 @@ export class AccountSessionStore {
       if (decrypted.shouldReEncrypt) await this.writeRememberedLogin(parsed);
       return parsed;
     } catch {
-      await this.clearRememberedLogin();
+      // Keep the encrypted login for a later successful decrypt or explicit logout.
       return undefined;
     }
   }
@@ -116,10 +117,7 @@ export class AccountSessionStore {
       throw new Error("account_secure_storage_unavailable");
     }
     const encrypted = await safeStorage.encryptStringAsync(JSON.stringify(login));
-    await mkdir(path.dirname(this.rememberedLoginFilePath), { recursive: true });
-    const temporaryPath = `${this.rememberedLoginFilePath}.${process.pid}.${Date.now()}.tmp`;
-    await writeFile(temporaryPath, encrypted, { flag: "wx" });
-    await rename(temporaryPath, this.rememberedLoginFilePath);
+    await writePrivateFileAtomically(this.rememberedLoginFilePath, encrypted);
   }
 
   async clearRememberedLogin(): Promise<void> {

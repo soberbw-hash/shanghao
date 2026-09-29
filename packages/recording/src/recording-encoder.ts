@@ -127,7 +127,7 @@ export class BrowserRecordingEncoder implements RecordingEncoder {
     }
     await stopped;
     await this.drainPromise;
-    if (this.streamError) throw this.streamError;
+    const streamError = this.streamError;
 
     const mimeType = recorder.mimeType || this.capability.mimeType || "application/octet-stream";
     const chunks = this.chunks;
@@ -146,6 +146,8 @@ export class BrowserRecordingEncoder implements RecordingEncoder {
       this.pausedForBackpressure = false;
       this.startedAt = 0;
     }
+
+    if (streamError) throw streamError;
 
     return {
       blob: isStreaming ? undefined : new Blob(chunks, { type: mimeType }),

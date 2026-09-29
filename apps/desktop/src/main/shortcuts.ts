@@ -1,12 +1,21 @@
 import { globalShortcut, type BrowserWindow } from "electron";
 import { uIOhook, type UiohookMouseEvent } from "uiohook-napi";
 
-import { IPC_CHANNELS, type RendererLogPayload } from "@private-voice/shared";
+import {
+  IPC_CHANNELS,
+  isQuickMessageShortcutSlot,
+  type RendererLogPayload,
+} from "@private-voice/shared";
 
 import { sendToWindow } from "./safe-web-contents";
 import { PhoneShortcut } from "./phone-shortcut";
 
 type ShortcutOwner = "mute" | "recording-marker" | "push-to-talk" | `quick-message:${number}`;
+
+type ShortcutBindingSnapshot = {
+  applied: string | null;
+  observed: "active" | "suspended" | "missing" | "inactive";
+};
 
 type MouseShortcutBinding = {
   owner: ShortcutOwner;
@@ -92,6 +101,52 @@ export class ShortcutController {
   private mouseHookSuppressed = false;
   private phoneBinding?: PhoneShortcut;
   private phoneAccelerator = "";
+
+  private inspectBinding(owner: ShortcutOwner, accelerator?: string): ShortcutBindingSnapshot {
+    if (!accelerator) return { applied: null, observed: "inactive" };
+    const mouse = parseMouseShortcut(accelerator);
+    if (mouse) {
+      if (this.mouseBindings.get(mouse.accelerator)?.owner !== owner) {
+        return { applied: accelerator, observed: "missing" };
+      }
+      return {
+        applied: accelerator,
+        observed: this.mouseHookStarted
+          ? "active"
+          : this.mouseHookSuppressed
+            ? "suspended"
+            : "missing",
+      };
+    }
+    try {
+      return {
+        applied: accelerator,
+        observed: globalShortcut.isRegistered(accelerator) ? "active" : "missing",
+      };
+    } catch {
+      return { applied: accelerator, observed: "missing" };
+    }
+  }
+
+  getRuntimeSnapshot() {
+    return {
+      capturedAt: new Date().toISOString(),
+      mouseHook: { started: this.mouseHookStarted, suppressed: this.mouseHookSuppressed },
+      mute: this.inspectBinding("mute", this.currentMuteShortcut),
+      recordingMarker: this.inspectBinding("recording-marker", this.currentRecordingMarkerShortcut),
+      pushToTalkMouse: this.inspectBinding("push-to-talk", this.currentPushToTalkShortcut),
+      quickMessages: [...this.currentQuickMessageShortcuts.entries()]
+        .sort(([left], [right]) => left - right)
+        .map(([slot, accelerator]) => ({
+          slot,
+          ...this.inspectBinding(`quick-message:${slot}`, accelerator),
+        })),
+      phone: {
+        applied: this.phoneAccelerator || null,
+        observed: this.phoneBinding ? (this.mouseHookStarted ? "active" : "missing") : "inactive",
+      },
+    };
+  }
 
   private conflictsWithPhone(accelerator: string): boolean {
     return Boolean(
@@ -352,6 +407,7 @@ export class ShortcutController {
   }
 
   async configureQuickMessage(slot: number, accelerator: string): Promise<boolean> {
+    if (!isQuickMessageShortcutSlot(slot)) return false;
     if (this.conflictsWithPhone(accelerator.trim())) return false;
     const owner = `quick-message:${slot}` as const;
     const previous = this.currentQuickMessageShortcuts.get(slot);
@@ -398,5 +454,9 @@ export class ShortcutController {
     globalShortcut.unregisterAll();
     this.mouseBindings.clear();
     this.stopMouseHook();
+    this.currentMuteShortcut = undefined;
+    this.currentRecordingMarkerShortcut = undefined;
+    this.currentPushToTalkShortcut = undefined;
+    this.currentQuickMessageShortcuts.clear();
   }
 }

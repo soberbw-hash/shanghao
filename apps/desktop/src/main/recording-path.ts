@@ -1,5 +1,6 @@
 import { constants } from "node:fs";
-import { access, mkdir } from "node:fs/promises";
+import { access, mkdir, open } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
 import path from "node:path";
 
 export const RECORDING_DIRECTORY_NAME = "上号录音";
@@ -111,4 +112,34 @@ export const resolveAvailableRecordingPath = async (
   }
 
   return path.join(directory, `${stem}-${Date.now()}${extension}`);
+};
+
+/** Reserve the chosen name atomically so concurrent exports cannot overwrite each other. */
+export const reserveAvailableRecordingPath = async (
+  directory: string,
+  suggestedFileName: string,
+): Promise<string> => {
+  const safeFileName = sanitizeRecordingFileName(suggestedFileName);
+  const extension = path.extname(safeFileName);
+  const stem = path.basename(safeFileName, extension);
+
+  for (let suffix = 0; suffix < 1_000; suffix += 1) {
+    const candidate = path.join(
+      directory,
+      suffix === 0 ? safeFileName : `${stem} (${suffix + 1})${extension}`,
+    );
+    try {
+      const handle = await open(candidate, "wx");
+      await handle.close();
+      return candidate;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "EEXIST") continue;
+      throw error;
+    }
+  }
+
+  const candidate = path.join(directory, `${stem}-${randomUUID()}${extension}`);
+  const handle = await open(candidate, "wx");
+  await handle.close();
+  return candidate;
 };

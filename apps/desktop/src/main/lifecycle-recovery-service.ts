@@ -74,8 +74,17 @@ export class LifecycleRecoveryService {
         level: "info",
         message: "lifecycle_reconcile",
         context: { reason },
-      });
-      void this.reconcile(reason);
+      }).catch(() => undefined);
+      void Promise.resolve()
+        .then(() => this.reconcile(reason))
+        .catch((error) =>
+          this.writeLog({
+            category: "app",
+            level: "warn",
+            message: "lifecycle_reconcile_failed",
+            context: { reason, error: error instanceof Error ? error.message : String(error) },
+          }).catch(() => undefined),
+        );
     }, 250);
   }
 }

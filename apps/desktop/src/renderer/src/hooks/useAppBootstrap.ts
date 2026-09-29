@@ -4,6 +4,7 @@ import { useAudioStore } from "../store/audioStore";
 import { useAppStore } from "../store/appStore";
 import { useSettingsStore } from "../store/settingsStore";
 import { prewarmDeepFilterAssets } from "../features/audio/microphoneProcessor";
+import { missingPreferredAudioDevices } from "../features/audio/deviceRecovery";
 import { writeRendererLog } from "../utils/logger";
 
 const BOOTSTRAP_TIMEOUT_MS = 8_000;
@@ -113,21 +114,23 @@ export const useAppBootstrap = (): void => {
 
     const handleDeviceChange = () => {
       void (async () => {
-        const previousSettings = useSettingsStore.getState().settings;
         await refreshDevices();
-        if (!previousSettings) return;
+        const currentSettings = useSettingsStore.getState().settings;
+        if (!currentSettings) return;
 
-        const { inputDevices, outputDevices } = useAudioStore.getState();
+        const { inputDevices, outputDevices, inputState, outputState } = useAudioStore.getState();
         const patch: {
           preferredInputDeviceId?: undefined;
           preferredOutputDeviceId?: undefined;
         } = {};
-        const missingInput =
-          Boolean(previousSettings.preferredInputDeviceId) &&
-          !inputDevices.some((device) => device.id === previousSettings.preferredInputDeviceId);
-        const missingOutput =
-          Boolean(previousSettings.preferredOutputDeviceId) &&
-          !outputDevices.some((device) => device.id === previousSettings.preferredOutputDeviceId);
+        const { missingInput, missingOutput } = missingPreferredAudioDevices({
+          preferredInputDeviceId: currentSettings.preferredInputDeviceId,
+          preferredOutputDeviceId: currentSettings.preferredOutputDeviceId,
+          inputDevices,
+          outputDevices,
+          inputState,
+          outputState,
+        });
 
         if (missingInput) patch.preferredInputDeviceId = undefined;
         if (missingOutput) patch.preferredOutputDeviceId = undefined;

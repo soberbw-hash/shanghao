@@ -32,6 +32,8 @@ import { preparePersistentAiStorage } from "./ai-storage";
 import { prepareBundledAiRuntime } from "./ai-runtime-package";
 import { VoiceMemoryStore } from "./voice-memory-store";
 import { LifecycleRecoveryService } from "./lifecycle-recovery-service";
+import { reconcileResetShortcuts } from "./settings-shortcut-reconciliation";
+import { pruneStaleAsrTempFiles } from "./asr-temp-files";
 import { ensurePre30DataSnapshot } from "./user-data-migration";
 import { removeWindowsStartupTask } from "./windows-startup-task";
 import { rustCoreClient } from "./rust-core-client";
@@ -232,7 +234,7 @@ const showBootstrapError = async (error: unknown) => {
 
   dialog.showErrorBox(
     "\u8F6F\u4EF6\u542F\u52A8\u5931\u8D25",
-    `${"\u4E0A\u53F7\u6CA1\u6709\u6B63\u5E38\u542F\u52A8\u3002"}\n\n${"\u65E5\u5FD7\u76EE\u5F55\uFF1A"}${logsDirectory}\n\n${"\u9519\u8BEF\uFF1A"}${message}\n\n${"\u4F60\u53EF\u4EE5\u91CD\u8BD5\uFF0C\u6216\u8005\u5220\u9664 settings.json \u540E\u518D\u542F\u52A8\u3002"}`,
+    `${"\u4E0A\u53F7\u6CA1\u6709\u6B63\u5E38\u542F\u52A8\u3002"}\n\n${"\u65E5\u5FD7\u76EE\u5F55\uFF1A"}${logsDirectory}\n\n${"\u9519\u8BEF\uFF1A"}${message}\n\n${"\u8BF7\u91CD\u8BD5\uFF1B\u5982\u679C\u95EE\u9898\u6301\u7EED\uFF0C\u8BF7\u4FDD\u7559\u4E0A\u8FF0\u65E5\u5FD7\u7528\u4E8E\u6392\u67E5\u3002"}`,
   );
 
   if (!mainWindow) {
@@ -296,6 +298,25 @@ const bootstrap = async (): Promise<void> => {
     level: "info",
     message: "Main process bootstrap started",
   });
+  void pruneStaleAsrTempFiles()
+    .then(({ examined, removed, removedBytes }) => {
+      if (removed === 0) return;
+      return diagnostics?.writeLog({
+        category: "app",
+        level: "info",
+        message: "Stale ASR temporary WAV files removed",
+        context: { examined, removed, removedBytes },
+      });
+    })
+    .catch(
+      (error) =>
+        diagnostics?.writeLog({
+          category: "app",
+          level: "warn",
+          message: "ASR temporary WAV cleanup skipped",
+          context: { error: error instanceof Error ? error.message : String(error) },
+        }) ?? Promise.resolve(),
+    );
 
   settingsStore = new SettingsStore(
     (payload) => diagnostics?.writeLog(payload) ?? Promise.resolve(),
@@ -383,9 +404,16 @@ const bootstrap = async (): Promise<void> => {
     () => mainWindow,
     (payload) => diagnostics?.writeLog(payload) ?? Promise.resolve(),
   );
-  await shortcuts.configureGlobalMute(settings.globalMuteShortcut);
   registerPhoneMode(() => mainWindow, settingsStore, shortcuts);
-  await shortcuts.configurePushToTalk(settings.pushToTalkShortcut, settings.isPushToTalkEnabled);
+  const failedStartupShortcuts = await reconcileResetShortcuts(settings, shortcuts);
+  if (failedStartupShortcuts.length) {
+    await diagnostics.writeLog({
+      category: "app",
+      level: "warn",
+      message: "Saved shortcuts could not be registered at startup",
+      context: { failed: failedStartupShortcuts },
+    });
+  }
   const overlay = new OverlayWindowController();
   const gameDetection = new GameDetectionController(
     (payload) => diagnostics?.writeLog(payload) ?? Promise.resolve(),
@@ -470,6 +498,8 @@ const bootstrap = async (): Promise<void> => {
     },
     {
       writeLog: (payload) => diagnostics?.writeLog(payload) ?? Promise.resolve(),
+      acquireComputeSlot: (kind, manualRequest, signal) =>
+        aiModels.acquireComputeSlot(kind, manualRequest, signal),
       runtimeFetch: (input, init) =>
         net.fetch(input instanceof URL ? input.toString() : input, init),
     },
@@ -502,7 +532,7 @@ const bootstrap = async (): Promise<void> => {
       aiModels.setLocalLlmRuntimeStatus(id, status);
       return status;
     }
-    const prepared = await aiRuntime.prepareModelRuntime(id);
+    const prepared = await aiRuntime.prepareModelRuntime(id, signal);
     const statuses = await aiRuntime.modelRuntimeStatuses();
     aiModels.setRuntimeStatuses(statuses);
     return statuses[id] ?? prepared;

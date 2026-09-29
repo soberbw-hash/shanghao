@@ -4,6 +4,7 @@ import {
   advanceLoudnessBalance,
   applyLoudnessBalanceToMemberVolume,
   createLoudnessBalanceState,
+  resolveRemoteSpeakingEvidence,
   type LoudnessBalanceState,
 } from "./loudnessBalance";
 import { resolveRemoteAudioPath, type RemoteAudioMediaPath } from "./remoteAudioPathSelection";
@@ -66,6 +67,8 @@ export interface RemoteAudioMixerDiagnostics {
   masterVolume: number;
   loudnessBalanceEnabled: boolean;
   outputDeviceId: string;
+  appliedOutputDeviceId?: string;
+  outputRouteStatus: "not_started" | "applying" | "applied" | "fallback" | "unsupported" | "failed";
   peers: Record<
     string,
     {
@@ -115,12 +118,15 @@ export class RemoteAudioMixer {
   private masterVolume = 1;
   private loudnessBalanceEnabled = false;
   private outputDeviceId?: string;
+  private appliedOutputDeviceId?: string;
+  private outputRouteStatus: RemoteAudioMixerDiagnostics["outputRouteStatus"] = "not_started";
   private outputRouteQueue: Promise<void> = Promise.resolve();
   private resumeInFlight?: Promise<boolean>;
   private audioLevelTimer?: number;
   private playbackWatchdogTimer?: number;
   private readonly smoothedPeerLevels = new Map<string, number>();
   private readonly peerLoudnessStates = new Map<string, LoudnessBalanceState>();
+  private peerSpeakingStates = new Map<string, boolean>();
 
   private ensureGraph(): SinkAwareAudioContext {
     if (this.context && this.masterGain && this.outputLimiter && this.finalOutputTap) {
@@ -145,6 +151,8 @@ export class RemoteAudioMixer {
     outputLimiter.connect(context.destination);
 
     this.context = context;
+    this.appliedOutputDeviceId = "default";
+    this.outputRouteStatus = "applying";
     this.masterGain = masterGain;
     this.outputLimiter = outputLimiter;
     this.finalOutputTap = finalOutputTap;
@@ -292,6 +300,20 @@ export class RemoteAudioMixer {
     }
   }
 
+  setPeerSpeakingStates(
+    states: ReadonlyArray<{ peerId: string; speaking: boolean; muted: boolean }>,
+  ): void {
+    const next = new Map<string, boolean>();
+    for (const { peerId, speaking, muted } of states) {
+      const evidence = resolveRemoteSpeakingEvidence(this.peerSpeakingStates.get(peerId), {
+        speaking,
+        muted,
+      });
+      if (evidence !== undefined) next.set(peerId, evidence);
+    }
+    this.peerSpeakingStates = next;
+  }
+
   /** Final software PCM after per-peer gain, master volume and the peak limiter. */
   getFinalOutputStream(): MediaStream {
     this.ensureGraph();
@@ -411,6 +433,8 @@ export class RemoteAudioMixer {
       masterVolume: this.masterVolume,
       loudnessBalanceEnabled: this.loudnessBalanceEnabled,
       outputDeviceId: this.outputDeviceId || "default",
+      appliedOutputDeviceId: this.appliedOutputDeviceId,
+      outputRouteStatus: this.outputRouteStatus,
       peers: Object.fromEntries(
         [...peerIds].map((peerId) => {
           const webRtcChannel = this.channels.get(peerId);
@@ -545,6 +569,8 @@ export class RemoteAudioMixer {
     this.stopMaintenanceTimers();
     const context = this.context;
     this.context = undefined;
+    this.appliedOutputDeviceId = undefined;
+    this.outputRouteStatus = "not_started";
     this.masterGain = undefined;
     this.outputLimiter = undefined;
     this.finalOutputTap = undefined;
@@ -552,6 +578,7 @@ export class RemoteAudioMixer {
     this.peerMediaPaths.clear();
     this.smoothedPeerLevels.clear();
     this.peerLoudnessStates.clear();
+    this.peerSpeakingStates.clear();
     void context?.close().catch(() => undefined);
   }
 
@@ -745,6 +772,7 @@ export class RemoteAudioMixer {
       ...measurement,
       now: performance.now(),
       enabled: this.loudnessBalanceEnabled,
+      speaking: this.peerSpeakingStates.get(peerId),
     });
     if (next === previous) return;
     this.peerLoudnessStates.set(peerId, next);
@@ -861,7 +889,13 @@ export class RemoteAudioMixer {
 
   private applyOutputDevice(): Promise<void> {
     const context = this.context;
-    if (!context?.setSinkId) return Promise.resolve();
+    if (!context) return Promise.resolve();
+    if (!context.setSinkId) {
+      this.appliedOutputDeviceId = "default";
+      this.outputRouteStatus = this.outputDeviceId ? "unsupported" : "applied";
+      return Promise.resolve();
+    }
+    this.outputRouteStatus = "applying";
     // setSinkId is asynchronous. Keep changes in order so an older device request
     // cannot finish after a newer one and silently move the shared mixer back.
     const route = async () => {
@@ -869,7 +903,13 @@ export class RemoteAudioMixer {
       const requestedOutputDeviceId = this.outputDeviceId;
       try {
         await context.setSinkId!(requestedOutputDeviceId || "default");
+        if (this.context === context && this.outputDeviceId === requestedOutputDeviceId) {
+          this.appliedOutputDeviceId = requestedOutputDeviceId || "default";
+          this.outputRouteStatus = "applied";
+        }
       } catch (error) {
+        if (this.context === context && this.outputDeviceId === requestedOutputDeviceId)
+          this.outputRouteStatus = "failed";
         void writeRendererLog("audio", "warn", "Failed to route shared audio mixer output", {
           outputDeviceId: requestedOutputDeviceId || "default",
           error: error instanceof Error ? error.message : String(error),
@@ -884,6 +924,8 @@ export class RemoteAudioMixer {
           await context.setSinkId!("default");
           if (this.context === context && this.outputDeviceId === requestedOutputDeviceId) {
             this.outputDeviceId = undefined;
+            this.appliedOutputDeviceId = "default";
+            this.outputRouteStatus = "fallback";
           }
           void writeRendererLog("audio", "warn", "Shared audio mixer fell back to default output", {
             failedOutputDeviceId: requestedOutputDeviceId,

@@ -23,7 +23,7 @@ import type { Release } from "./releases";
 function Logo({ compact = false }: { compact?: boolean }) {
   return (
     <a className={`brand ${compact ? "brand-compact" : ""}`} href="/" aria-label="上号首页">
-      <img src="/brand-mark.svg" alt="" />
+      <img src="/brand-mark.png" alt="" />
       <span>
         <strong>上号</strong>
         {!compact && <small>SHANGHAO</small>}
@@ -285,7 +285,7 @@ function DownloadSection({ release, loading }: { release: Release | null; loadin
   return (
     <section className="download-section section-shell" id="download">
       <div className="download-card">
-        <img src="/brand-mark.svg" alt="" />
+        <img src="/brand-mark.png" alt="" />
         <div>
           <h2>准备好了，就上号。</h2>
           <p>下载 Windows 版，和熟悉的人进同一间房。</p>

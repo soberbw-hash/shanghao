@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -113,4 +113,128 @@ test("migration prefers a completed packaged model over a partial development do
   );
 
   await rm(temporaryRoot, { recursive: true, force: true });
+});
+
+test("migration leaves unreadable destination state untouched and does not mark completion", async () => {
+  const temporaryRoot = await mkdtemp(path.join(os.tmpdir(), "shanghao-ai-storage-damaged-"));
+  try {
+    const userData = path.join(temporaryRoot, "legacy-user-data");
+    const appData = path.join(temporaryRoot, "AppData", "Roaming");
+    const localAppData = path.join(temporaryRoot, "AppData", "Local");
+    const destination = path.join(localAppData, "ShangHao", "AI");
+    const statePath = path.join(destination, "models", "state.json");
+    await mkdir(path.dirname(statePath), { recursive: true });
+    await writeFile(statePath, "damaged model state", "utf8");
+
+    await assert.rejects(
+      preparePersistentAiStorage({
+        userDataDirectory: userData,
+        appDataDirectory: appData,
+        localAppDataDirectory: localAppData,
+        writeLog: async () => undefined,
+      }),
+    );
+    assert.equal(await readFile(statePath, "utf8"), "damaged model state");
+    assert.equal((await readdir(destination)).includes(".legacy-migration-v1.json"), false);
+  } finally {
+    await rm(temporaryRoot, { recursive: true, force: true });
+  }
+});
+
+test("migration does not mistake a partial completion marker for a finished migration", async () => {
+  const temporaryRoot = await mkdtemp(path.join(os.tmpdir(), "shanghao-ai-marker-damaged-"));
+  try {
+    const userData = path.join(temporaryRoot, "legacy-user-data");
+    const appData = path.join(temporaryRoot, "AppData", "Roaming");
+    const localAppData = path.join(temporaryRoot, "AppData", "Local");
+    const destination = path.join(localAppData, "ShangHao", "AI");
+    const markerPath = path.join(destination, ".legacy-migration-v1.json");
+    const sourceFile = path.join(userData, "ai-models", "model-a", "weights.bin");
+    await mkdir(path.dirname(sourceFile), { recursive: true });
+    await writeFile(sourceFile, "legacy weights", "utf8");
+    await mkdir(destination, { recursive: true });
+    await writeFile(markerPath, "{", "utf8");
+
+    const paths = await preparePersistentAiStorage({
+      userDataDirectory: userData,
+      appDataDirectory: appData,
+      localAppDataDirectory: localAppData,
+      writeLog: async () => undefined,
+    });
+    assert.equal(
+      await readFile(path.join(paths.models, "model-a", "weights.bin"), "utf8"),
+      "legacy weights",
+    );
+    assert.equal(
+      (JSON.parse(await readFile(markerPath, "utf8")) as { legacyDirectoriesRetained?: boolean })
+        .legacyDirectoriesRetained,
+      true,
+    );
+  } finally {
+    await rm(temporaryRoot, { recursive: true, force: true });
+  }
+});
+
+test("migration does not mark completion after a legacy model copy fails", async () => {
+  const temporaryRoot = await mkdtemp(path.join(os.tmpdir(), "shanghao-ai-copy-failure-"));
+  try {
+    const userData = path.join(temporaryRoot, "legacy-user-data");
+    const appData = path.join(temporaryRoot, "AppData", "Roaming");
+    const localAppData = path.join(temporaryRoot, "AppData", "Local");
+    const destination = path.join(localAppData, "ShangHao", "AI");
+    const sourceFile = path.join(userData, "ai-models", "model-a", "weights.bin");
+    await mkdir(path.dirname(sourceFile), { recursive: true });
+    await writeFile(sourceFile, "legacy weights", "utf8");
+    await mkdir(path.join(destination, "models", "model-a", "weights.bin"), {
+      recursive: true,
+    });
+    const messages: string[] = [];
+
+    await assert.rejects(
+      preparePersistentAiStorage({
+        userDataDirectory: userData,
+        appDataDirectory: appData,
+        localAppDataDirectory: localAppData,
+        writeLog: async (payload) => {
+          messages.push(payload.message);
+        },
+      }),
+      /ai_model_storage_migration_incomplete/,
+    );
+    assert.equal(messages.includes("ai_model_storage_migration_failed"), true);
+    assert.equal(await readFile(sourceFile, "utf8"), "legacy weights");
+    assert.equal((await readdir(destination)).includes(".legacy-migration-v1.json"), false);
+  } finally {
+    await rm(temporaryRoot, { recursive: true, force: true });
+  }
+});
+
+test("migration leaves a failed runtime copy eligible for retry", async () => {
+  const temporaryRoot = await mkdtemp(path.join(os.tmpdir(), "shanghao-ai-runtime-copy-"));
+  try {
+    const userData = path.join(temporaryRoot, "legacy-user-data");
+    const appData = path.join(temporaryRoot, "AppData", "Roaming");
+    const localAppData = path.join(temporaryRoot, "AppData", "Local");
+    const destination = path.join(localAppData, "ShangHao", "AI");
+    const sourceFile = path.join(userData, "ai-runtimes", "runtime-a", "runtime.dll");
+    await mkdir(path.dirname(sourceFile), { recursive: true });
+    await writeFile(sourceFile, "legacy runtime", "utf8");
+    await mkdir(path.join(destination, "runtimes", "runtime-a", "runtime.dll"), {
+      recursive: true,
+    });
+
+    await assert.rejects(
+      preparePersistentAiStorage({
+        userDataDirectory: userData,
+        appDataDirectory: appData,
+        localAppDataDirectory: localAppData,
+        writeLog: async () => undefined,
+      }),
+      /ai_runtime_storage_migration_incomplete/,
+    );
+    assert.equal(await readFile(sourceFile, "utf8"), "legacy runtime");
+    assert.equal((await readdir(destination)).includes(".legacy-migration-v1.json"), false);
+  } finally {
+    await rm(temporaryRoot, { recursive: true, force: true });
+  }
 });

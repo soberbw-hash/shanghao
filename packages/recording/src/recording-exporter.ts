@@ -24,6 +24,8 @@ export interface StreamingRecordingExporter {
     targetFormat: "m4a-aac";
     durationMs: number;
   }) => Promise<RecordingExportResponse>;
+  /** Closes a failed stream while retaining its temporary bytes for recovery. */
+  sealSession?: (sessionId: string) => Promise<void>;
   abortSession: (sessionId: string) => Promise<void>;
 }
 

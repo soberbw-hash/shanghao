@@ -12,15 +12,15 @@ import {
   createRecordingMediaResponse,
   deleteRecordingInDirectory,
   enforceRecordingQuotaInDirectory,
-  forgetRecordingInDirectory,
   isAllowedRecordingPathInDirectory,
   readRecordingLibraryFromDirectory,
+  recycleUnprotectedRecordingInDirectory,
   renameRecordingInDirectory,
   RECORDING_MEDIA_PROTOCOL,
   setRecordingFavoriteInDirectory,
   toRecordingMediaUrl,
 } from "./recording-library-core";
-import { inspectRecordingForCleanup } from "./recording-cleanup";
+import { inspectRecordingForCleanup, isAutomaticWasteCandidate } from "./recording-cleanup";
 
 export {
   createRecordingMediaResponse,
@@ -95,8 +95,9 @@ export const runAutomaticRecordingCleanup = async (
     if (!isAllowedRecordingPathInDirectory(directory, filePath)) {
       throw new Error("invalid_recording_path");
     }
-    await shell.trashItem(filePath);
-    await forgetRecordingInDirectory(directory, filePath);
+    await recycleUnprotectedRecordingInDirectory(directory, filePath, (target) =>
+      shell.trashItem(target),
+    );
   };
 
   const deleteItem = async (item: RecordingLibraryItem): Promise<void> => {
@@ -116,7 +117,7 @@ export const runAutomaticRecordingCleanup = async (
       : undefined;
     if (newest) {
       const candidate = await inspectRecordingForCleanup(newest.filePath).catch(() => undefined);
-      if (candidate) {
+      if (isAutomaticWasteCandidate(candidate)) {
         await deleteItem(newest);
         wasteDeletedCount += 1;
       }
@@ -128,7 +129,7 @@ export const runAutomaticRecordingCleanup = async (
       const itemsByPath = new Map(snapshot.items.map((item) => [item.filePath, item]));
       for (const candidate of scan.candidates) {
         const item = itemsByPath.get(candidate.filePath);
-        if (!item) continue;
+        if (!item || !isAutomaticWasteCandidate(candidate)) continue;
         await deleteItem(item).catch(() => undefined);
         if (deletedPaths.has(item.filePath)) wasteDeletedCount += 1;
       }

@@ -82,6 +82,8 @@ test("diagnostic IPC and bundle expose health without ordinary fault-lab UI", ()
   assert.match(channels, /runtimeHealth: "diagnostics:runtime-health"/);
   assert.match(ipc, /runtime-health\.json/);
   assert.match(ipc, /flight-recorder\.json/);
+  assert.match(ipc, /ai-scheduler\.json/);
+  assert.match(ipc, /ai-compute-timeline\.json/);
   assert.match(diagnosticsCard, /import\.meta\.env\.DEV/);
   assert.match(diagnosticsCard, /开发测试入口/);
   assert.doesNotMatch(diagnosticsCard, /Realtime Fault Lab/);
@@ -91,12 +93,21 @@ test("diagnostics keep screen-share status readable without exposing raw metrics
   const diagnosticsCard = readDesktop(
     "src/renderer/src/components/settings/DiagnosticsSettingsCard.tsx",
   );
+  const healthProjection = readDesktop("src/renderer/src/features/diagnostics/healthProjection.ts");
 
   assert.match(diagnosticsCard, /屏幕分享/);
-  assert.match(diagnosticsCard, /没有发现屏幕分享问题/);
-  assert.match(diagnosticsCard, /屏幕分享可能暂时卡住/);
+  assert.match(healthProjection, /尚无屏幕分享画面可检查/);
+  assert.match(healthProjection, /屏幕分享可能暂时卡住/);
   assert.match(diagnosticsCard, /回到房间/);
   assert.doesNotMatch(diagnosticsCard, /hasScreenShareMetrics/);
   assert.doesNotMatch(diagnosticsCard, /Requested \/ Capture/);
   assert.doesNotMatch(diagnosticsCard, /Encode \/ Bitrate/);
+});
+
+test("a collected runtime sample is not counted as proof of healthy audio or devices", () => {
+  const diagnosticsCard = readDesktop(
+    "src/renderer/src/components/settings/DiagnosticsSettingsCard.tsx",
+  );
+  assert.match(diagnosticsCard, /单次采样不代表语音或设备运行正常/);
+  assert.doesNotMatch(diagnosticsCard, /level:\s*runtimeHealth\s*\?\s*"正常"/);
 });

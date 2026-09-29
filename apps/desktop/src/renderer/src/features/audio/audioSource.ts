@@ -10,6 +10,13 @@ export interface AcquiredAudioSource {
   stopInputOnDispose: boolean;
 }
 
+export const releaseAcquiredAudioSource = (
+  source: Pick<AcquiredAudioSource, "stream" | "stopInputOnDispose">,
+): void => {
+  if (!source.stopInputOnDispose) return;
+  source.stream.getTracks().forEach((track) => track.stop());
+};
+
 export const acquireAudioSource = async (
   deviceId: string | undefined,
   processing: Pick<AudioConstraintOverrides, "echoCancellation" | "autoGainControl">,

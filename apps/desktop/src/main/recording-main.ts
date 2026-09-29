@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { spawn } from "node:child_process";
 import { createWriteStream, type WriteStream } from "node:fs";
-import { copyFile, mkdir, readdir, rm, stat, unlink, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, readdir, rename, rm, stat, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import { app } from "electron";
@@ -15,7 +15,7 @@ import type {
 
 import {
   createNumberedRecordingFileName,
-  resolveAvailableRecordingPath,
+  reserveAvailableRecordingPath,
   resolveUsableRecordingDirectory,
 } from "./recording-path";
 import { registerRecordingInDirectory } from "./recording-library-core";
@@ -35,6 +35,7 @@ interface RecordingStreamSession {
   chunkCount: number;
   writeQueue: Promise<void>;
   streamError?: Error;
+  finalizePromise?: Promise<RecordingExportResponse>;
 }
 
 const streamSessions = new Map<string, RecordingStreamSession>();
@@ -67,29 +68,20 @@ export const exportRecordingFromMain = async (
     .filter((entry) => entry.isFile())
     .map((entry) => entry.name);
   const designedFileName = createNumberedRecordingFileName(new Date(), existingFileNames);
-  const outputPath = await resolveAvailableRecordingPath(
-    recordingDirectory,
-    designedFileName,
-    async (candidate) =>
-      stat(candidate)
-        .then(() => true)
-        .catch(() => false),
-  );
-
   const tempDirectory = path.join(app.getPath("temp"), "shanghao-recordings");
   await mkdir(tempDirectory, { recursive: true });
+  const outputPath = await reserveAvailableRecordingPath(recordingDirectory, designedFileName);
 
-  const timestamp = Date.now().toString();
   const inputPath =
     inputPathOverride ??
     path.join(
       tempDirectory,
-      `recording-${timestamp}${inferExtensionFromMime(payload.sourceMimeType)}`,
+      `recording-${randomUUID()}${inferExtensionFromMime(payload.sourceMimeType)}`,
     );
 
-  if (!inputPathOverride) await writeFile(inputPath, Buffer.from(payload.buffer));
-
+  let outputComplete = false;
   try {
+    if (!inputPathOverride) await writeFile(inputPath, Buffer.from(payload.buffer), { flag: "wx" });
     if (shouldCopyWithoutTranscode(payload.sourceMimeType)) {
       await copyFile(inputPath, outputPath);
     } else {
@@ -127,6 +119,7 @@ export const exportRecordingFromMain = async (
     }
 
     const savedFile = await stat(outputPath);
+    outputComplete = true;
     const recordingId = await registerRecordingInDirectory(recordingDirectory, outputPath);
     await unlink(inputPath).catch(() => undefined);
 
@@ -140,7 +133,7 @@ export const exportRecordingFromMain = async (
         sourceMimeType: payload.sourceMimeType,
         fileSize: savedFile.size,
       },
-    });
+    }).catch(() => undefined);
 
     return {
       ok: true,
@@ -150,6 +143,7 @@ export const exportRecordingFromMain = async (
       fileSize: savedFile.size,
     };
   } catch (error) {
+    if (!outputComplete) await rm(outputPath, { force: true }).catch(() => undefined);
     await writeLog({
       category: "recording",
       level: "error",
@@ -158,7 +152,7 @@ export const exportRecordingFromMain = async (
         error: error instanceof Error ? error.message : "Unknown export error",
         tempFilePath: inputPath,
       },
-    });
+    }).catch(() => undefined);
 
     return {
       ok: false,
@@ -175,19 +169,25 @@ const streamSessionDirectory = (): string =>
   path.join(app.getPath("temp"), "shanghao-recordings", STREAM_SESSION_DIRECTORY);
 
 const persistStreamSession = async (session: RecordingStreamSession): Promise<void> => {
-  await writeFile(
-    session.metadataPath,
-    JSON.stringify({
-      sessionId: session.sessionId,
-      inputPath: session.inputPath,
-      sourceMimeType: session.sourceMimeType,
-      bytesWritten: session.bytesWritten,
-      chunkCount: session.chunkCount,
-      updatedAt: new Date().toISOString(),
-      recoverable: true,
-    }),
-    "utf8",
-  );
+  const temporary = `${session.metadataPath}.${randomUUID()}.tmp`;
+  try {
+    await writeFile(
+      temporary,
+      JSON.stringify({
+        sessionId: session.sessionId,
+        inputPath: session.inputPath,
+        sourceMimeType: session.sourceMimeType,
+        bytesWritten: session.bytesWritten,
+        chunkCount: session.chunkCount,
+        updatedAt: new Date().toISOString(),
+        recoverable: true,
+      }),
+      { encoding: "utf8", flag: "wx" },
+    );
+    await rename(temporary, session.metadataPath);
+  } finally {
+    await rm(temporary, { force: true }).catch(() => undefined);
+  }
 };
 
 const closeStream = (stream: WriteStream): Promise<void> =>
@@ -223,7 +223,12 @@ export const startRecordingSession = async (
     session.streamError = error instanceof Error ? error : new Error("录音临时文件写入失败。");
   });
   streamSessions.set(sessionId, session);
-  await persistStreamSession(session);
+  try {
+    await persistStreamSession(session);
+  } catch (error) {
+    await sealRecordingSession(sessionId).catch(() => undefined);
+    throw error;
+  }
   return { ok: true, sessionId };
 };
 
@@ -233,6 +238,7 @@ export const appendRecordingChunk = async (
 ): Promise<void> => {
   const session = streamSessions.get(sessionId);
   if (!session) throw new Error("recording_stream_session_not_found");
+  if (session.finalizePromise) throw new Error("recording_stream_finalizing");
   if (!(buffer instanceof ArrayBuffer) || buffer.byteLength === 0) return;
   if (buffer.byteLength > MAX_RECORDING_CHUNK_BYTES) {
     throw new Error("recording_stream_chunk_too_large");
@@ -253,17 +259,35 @@ export const appendRecordingChunk = async (
   await session.writeQueue;
 };
 
-export const finalizeRecordingSession = async (
+export const finalizeRecordingSession = (
   payload: RecordingStreamFinalizePayload,
   configuredDirectory: string | undefined,
   writeLog: (payload: RendererLogPayload) => Promise<void>,
 ): Promise<RecordingExportResponse> => {
   const session = streamSessions.get(payload.sessionId);
-  if (!session) return { ok: false, errorMessage: "录音流式会话不存在，无法完成保存。" };
+  if (!session)
+    return Promise.resolve({ ok: false, errorMessage: "录音流式会话不存在，无法完成保存。" });
+  if (session.finalizePromise) return session.finalizePromise;
+  const operation = finalizeRecordingSessionOnce(session, payload, configuredDirectory, writeLog);
+  session.finalizePromise = operation;
+  void operation
+    .finally(() => {
+      if (streamSessions.get(payload.sessionId) === session)
+        streamSessions.delete(payload.sessionId);
+    })
+    .catch(() => undefined);
+  return operation;
+};
+
+const finalizeRecordingSessionOnce = async (
+  session: RecordingStreamSession,
+  payload: RecordingStreamFinalizePayload,
+  configuredDirectory: string | undefined,
+  writeLog: (payload: RendererLogPayload) => Promise<void>,
+): Promise<RecordingExportResponse> => {
   try {
     await session.writeQueue;
     await closeStream(session.stream);
-    streamSessions.delete(payload.sessionId);
     const result = await exportRecordingFromMain(
       {
         buffer: new ArrayBuffer(0),
@@ -280,6 +304,7 @@ export const finalizeRecordingSession = async (
     if (result.ok) await rm(session.metadataPath, { force: true });
     return result;
   } catch (error) {
+    await sealSessionContents(session).catch(() => undefined);
     return {
       ok: false,
       keptTemporaryFilePath: session.inputPath,
@@ -291,9 +316,33 @@ export const finalizeRecordingSession = async (
   }
 };
 
+const sealSessionContents = async (session: RecordingStreamSession): Promise<void> => {
+  await session.writeQueue.catch(() => undefined);
+  if (!session.stream.destroyed) {
+    await closeStream(session.stream).catch(() => session.stream.destroy());
+  }
+  await persistStreamSession(session).catch(() => undefined);
+};
+
+/** Closes a broken writer without removing its recoverable input or metadata. */
+export const sealRecordingSession = async (sessionId: string): Promise<void> => {
+  const session = streamSessions.get(sessionId);
+  if (!session) return;
+  if (session.finalizePromise) {
+    await session.finalizePromise;
+    return;
+  }
+  streamSessions.delete(sessionId);
+  await sealSessionContents(session);
+};
+
 export const abortRecordingSession = async (sessionId: string): Promise<void> => {
   const session = streamSessions.get(sessionId);
   if (!session) return;
+  if (session.finalizePromise) {
+    await session.finalizePromise;
+    return;
+  }
   streamSessions.delete(sessionId);
   await session.writeQueue.catch(() => undefined);
   session.stream.destroy();

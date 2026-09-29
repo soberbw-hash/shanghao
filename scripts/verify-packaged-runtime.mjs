@@ -5,7 +5,10 @@ import path from "node:path";
 import { extractFile, listPackage } from "@electron/asar";
 
 const releaseDirectory = path.resolve(import.meta.dirname, "..", "apps", "desktop", "release");
-const resourcesDirectory = path.join(releaseDirectory, "win-unpacked", "resources");
+const unpackedDirectory = process.argv[2]
+  ? path.resolve(process.argv[2])
+  : path.join(releaseDirectory, "win-unpacked");
+const resourcesDirectory = path.join(unpackedDirectory, "resources");
 const archivePath = path.join(resourcesDirectory, "app.asar");
 await access(archivePath);
 
@@ -45,6 +48,27 @@ for (const nativeHelper of ["shanghao-core.exe", "ShangHao.PhoneAudio.exe"]) {
 const entries = listPackage(archivePath, { isPack: false });
 const normalizedEntries = entries.map((entry) => entry.replaceAll("\\", "/"));
 const fontEntries = normalizedEntries.filter((entry) => entry.endsWith(".woff2"));
+const targetUiohook = "/node_modules/uiohook-napi/prebuilds/win32-x64/uiohook-napi.node";
+if (!normalizedEntries.some((entry) => entry.endsWith(targetUiohook))) {
+  throw new Error("Packaged Windows x64 mouse shortcut addon is missing");
+}
+if (
+  normalizedEntries.some((entry) =>
+    /\/node_modules\/uiohook-napi\/prebuilds\/(?!win32-x64\/)[^/]+\//.test(entry),
+  )
+) {
+  throw new Error("Packaged uiohook addon contains a non-target platform binary");
+}
+if (normalizedEntries.some((entry) => /\/node_modules\/@private-voice\/[^/]+\/src\//.test(entry))) {
+  throw new Error("Packaged workspace dependency contains unused TypeScript source");
+}
+if (
+  normalizedEntries.some((entry) =>
+    entry.includes("/node_modules/@cloudbase/js-sdk/miniprogram_dist/"),
+  )
+) {
+  throw new Error("Packaged Windows client contains CloudBase mini-program distribution");
+}
 
 const rendererScriptEntries = entries.filter((entry) => {
   const normalizedEntry = entry.replaceAll("\\", "/");

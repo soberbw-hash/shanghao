@@ -1,0 +1,4418 @@
+{
+  "generatedAt": "2026-09-27T14:27:14.922Z",
+  "unit": "bytes",
+  "moduleBreakdown": "Rollup renderedLength before final minification; use chunk bytes for actual output size",
+  "jsBytes": 1437342,
+  "initialJsBytes": 897021,
+  "lazyJsBytes": 540321,
+  "duplicatedModules": [],
+  "chunks": [
+    {
+      "file": "assets/DialogCloseButton-lLrecaCo.js",
+      "bytes": 340398,
+      "entry": false,
+      "dynamicEntry": false,
+      "imports": [
+        "assets/rolldown-runtime-B0Z9INg1.js",
+        "assets/vendor-icons-D57X7K8o.js",
+        "assets/vendor-motion-CMs4UaPr.js",
+        "assets/DisplayRefreshRateService-BlUs0Gtj.js",
+        "assets/vendor-state--M8hfQ4H.js"
+      ],
+      "dynamicImports": [],
+      "packages": [
+        {
+          "name": "app source",
+          "renderedLength": 357248
+        },
+        {
+          "name": "tailwind-merge",
+          "renderedLength": 55956
+        },
+        {
+          "name": "uisfx",
+          "renderedLength": 54554
+        },
+        {
+          "name": "packages/webrtc",
+          "renderedLength": 31917
+        },
+        {
+          "name": "deepfilternet3-noise-filter",
+          "renderedLength": 20200
+        },
+        {
+          "name": "packages/ui",
+          "renderedLength": 8619
+        },
+        {
+          "name": "packages/shared",
+          "renderedLength": 5230
+        },
+        {
+          "name": "clsx",
+          "renderedLength": 567
+        }
+      ],
+      "modules": [
+        {
+          "id": "node_modules/.pnpm/tailwind-merge@3.6.0/node_modules/tailwind-merge/dist/bundle-mjs.mjs",
+          "group": "tailwind-merge",
+          "renderedLength": 55956
+        },
+        {
+          "id": "node_modules/.pnpm/uisfx@0.4.0/node_modules/uisfx/dist/index.js",
+          "group": "uisfx",
+          "renderedLength": 54554
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/features/room/roomClient.ts",
+          "group": "app source",
+          "renderedLength": 46892
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/hooks/useRoomState.ts",
+          "group": "app source",
+          "renderedLength": 45614
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/features/audio/microphoneProcessor.ts",
+          "group": "app source",
+          "renderedLength": 31595
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/features/audio/RemoteAudioMixer.ts",
+          "group": "app source",
+          "renderedLength": 23650
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/features/room/signalingAudioRelay.ts",
+          "group": "app source",
+          "renderedLength": 21380
+        },
+        {
+          "id": "node_modules/.pnpm/deepfilternet3-noise-filter@1.2.1/node_modules/deepfilternet3-noise-filter/dist/index.esm.js",
+          "group": "deepfilternet3-noise-filter",
+          "renderedLength": 20200
+        },
+        {
+          "id": "packages/webrtc/src/createPeer.ts",
+          "group": "packages/webrtc",
+          "renderedLength": 17146
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/store/roomStore.ts",
+          "group": "app source",
+          "renderedLength": 16442
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/features/audio/phoneMicSource.ts",
+          "group": "app source",
+          "renderedLength": 13774
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/features/screen-share/RoomScreenShareCoordinator.ts",
+          "group": "app source",
+          "renderedLength": 10272
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/features/audio/uiSound.ts",
+          "group": "app source",
+          "renderedLength": 7341
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/features/chat/ReliableChatTransport.ts",
+          "group": "app source",
+          "renderedLength": 7048
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/store/settingsStore.ts",
+          "group": "app source",
+          "renderedLength": 6939
+        },
+        {
+          "id": "packages/webrtc/src/stats.ts",
+          "group": "packages/webrtc",
+          "renderedLength": 6563
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/features/room/PeerRecoveryCoordinator.ts",
+          "group": "app source",
+          "renderedLength": 5805
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/features/room/PeerStatsMonitor.ts",
+          "group": "app source",
+          "renderedLength": 5635
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/features/audio/quickMessageAudio.ts",
+          "group": "app source",
+          "renderedLength": 5264
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/features/room/RoomMemberEventCoordinator.ts",
+          "group": "app source",
+          "renderedLength": 4717
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/features/visual-runtime/VisualRuntimeController.ts",
+          "group": "app source",
+          "renderedLength": 4095
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/features/audio/phoneMicUsbReceiver.ts",
+          "group": "app source",
+          "renderedLength": 4018
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/features/diagnostics/rendererPerformanceMonitor.ts",
+          "group": "app source",
+          "renderedLength": 3935
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/features/audio/RelayVoiceActivityGate.ts",
+          "group": "app source",
+          "renderedLength": 3848
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/features/audio/loudnessBalance.ts",
+          "group": "app source",
+          "renderedLength": 3775
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/features/room/SignalingReconnectCoordinator.ts",
+          "group": "app source",
+          "renderedLength": 3704
+        },
+        {
+          "id": "packages/shared/src/enums/app.enums.ts",
+          "group": "packages/shared",
+          "renderedLength": 3637
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/features/screen-share/ScreenFrameRelay.ts",
+          "group": "app source",
+          "renderedLength": 3345
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/store/appStore.ts",
+          "group": "app source",
+          "renderedLength": 3325
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/store/audioStore.ts",
+          "group": "app source",
+          "renderedLength": 3307
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/features/room/RoomDiagnostics.ts",
+          "group": "app source",
+          "renderedLength": 3285
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/features/audio/animalCall.ts",
+          "group": "app source",
+          "renderedLength": 3148
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/store/dailyRoomReportStore.ts",
+          "group": "app source",
+          "renderedLength": 3140
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/features/chat/quickReplies.ts",
+          "group": "app source",
+          "renderedLength": 2963
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/features/screen-share/ScreenSharePipelineController.ts",
+          "group": "app source",
+          "renderedLength": 2679
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/features/account/accountMessages.ts",
+          "group": "app source",
+          "renderedLength": 2617
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/store/accountStore.ts",
+          "group": "app source",
+          "renderedLength": 2571
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/features/room/PresenceCoordinator.ts",
+          "group": "app source",
+          "renderedLength": 2538
+        },
+        {
+          "id": "packages/ui/src/components/Button.tsx",
+          "group": "packages/ui",
+          "renderedLength": 2427
+        },
+        {
+          "id": "packages/webrtc/src/speaking.ts",
+          "group": "packages/webrtc",
+          "renderedLength": 2422
+        },
+        {
+          "id": "packages/webrtc/src/peerHealth.ts",
+          "group": "packages/webrtc",
+          "renderedLength": 2377
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/features/diagnostics/interactionPerformanceMonitor.ts",
+          "group": "app source",
+          "renderedLength": 2282
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/features/audio/quickMessageAssets.ts",
+          "group": "app source",
+          "renderedLength": 2205
+        },
+        {
+          "id": "packages/webrtc/src/media.ts",
+          "group": "packages/webrtc",
+          "renderedLength": 2119
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/features/screen-share/ScreenAudioMixer.ts",
+          "group": "app source",
+          "renderedLength": 1956
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/features/motion/motionPresets.ts",
+          "group": "app source",
+          "renderedLength": 1915
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/features/motion/motionSystem.ts",
+          "group": "app source",
+          "renderedLength": 1838
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/assets/account-avatars/10-comet-otter.svg",
+          "group": "app source",
+          "renderedLength": 1723
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/assets/account-avatars/06-lilac-deer.svg",
+          "group": "app source",
+          "renderedLength": 1629
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/assets/account-avatars/07-aqua-whale.svg",
+          "group": "app source",
+          "renderedLength": 1561
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/assets/account-avatars/09-cloud-panda.svg",
+          "group": "app source",
+          "renderedLength": 1531
+        },
+        {
+          "id": "packages/ui/src/components/Slider.tsx",
+          "group": "packages/ui",
+          "renderedLength": 1494
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/assets/account-avatars/04-moon-rabbit.svg",
+          "group": "app source",
+          "renderedLength": 1494
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/features/chat/RoomSocialTransport.ts",
+          "group": "app source",
+          "renderedLength": 1490
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/assets/account-avatars/02-mint-bear.svg",
+          "group": "app source",
+          "renderedLength": 1485
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/assets/account-avatars/08-amber-dog.svg",
+          "group": "app source",
+          "renderedLength": 1462
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/assets/account-avatars/01-sky-cat.svg",
+          "group": "app source",
+          "renderedLength": 1448
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/assets/account-avatars/03-peach-fox.svg",
+          "group": "app source",
+          "renderedLength": 1423
+        },
+        {
+          "id": "packages/ui/src/components/SegmentedControl.tsx",
+          "group": "packages/ui",
+          "renderedLength": 1405
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/assets/account-avatars/05-sun-duck.svg",
+          "group": "app source",
+          "renderedLength": 1319
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/features/room/signalingErrorPolicy.ts",
+          "group": "app source",
+          "renderedLength": 1295
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/features/diagnostics/renderProfiler.ts",
+          "group": "app source",
+          "renderedLength": 1279
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/features/room/presenceSignal.ts",
+          "group": "app source",
+          "renderedLength": 1218
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/features/chat/chatPersistence.ts",
+          "group": "app source",
+          "renderedLength": 1153
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/features/room/useRoomDeepLink.ts",
+          "group": "app source",
+          "renderedLength": 1113
+        },
+        {
+          "id": "packages/ui/src/components/Switch.tsx",
+          "group": "packages/ui",
+          "renderedLength": 1102
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/features/audio/AudioFallbackController.ts",
+          "group": "app source",
+          "renderedLength": 1096
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/features/audio/replaceOutgoingAudioTrack.ts",
+          "group": "app source",
+          "renderedLength": 1057
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/features/room/memberVolumePersistence.ts",
+          "group": "app source",
+          "renderedLength": 1039
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/features/room/peerAudioPath.ts",
+          "group": "app source",
+          "renderedLength": 1033
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/features/chat/serverCapabilities.ts",
+          "group": "app source",
+          "renderedLength": 994
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/features/screen-share/screenSharePresentationMetrics.ts",
+          "group": "app source",
+          "renderedLength": 974
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/features/account/accountAvatarPresets.ts",
+          "group": "app source",
+          "renderedLength": 962
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/features/room/SignalingBridge.ts",
+          "group": "app source",
+          "renderedLength": 944
+        },
+        {
+          "id": "packages/shared/src/types/ai.types.ts",
+          "group": "packages/shared",
+          "renderedLength": 890
+        },
+        {
+          "id": "packages/webrtc/src/audioConstraints.ts",
+          "group": "packages/webrtc",
+          "renderedLength": 868
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/features/room/roomNotifications.ts",
+          "group": "app source",
+          "renderedLength": 787
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/components/base/DialogCloseButton.tsx",
+          "group": "app source",
+          "renderedLength": 742
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/features/room/PeerOperationQueue.ts",
+          "group": "app source",
+          "renderedLength": 734
+        },
+        {
+          "id": "packages/shared/src/constants/app.ts",
+          "group": "packages/shared",
+          "renderedLength": 703
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/features/room/roomMemberSnapshot.ts",
+          "group": "app source",
+          "renderedLength": 687
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/features/audio/audioSource.ts",
+          "group": "app source",
+          "renderedLength": 678
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/features/audio/memberVolume.ts",
+          "group": "app source",
+          "renderedLength": 614
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/features/room/longSessionAudioResources.ts",
+          "group": "app source",
+          "renderedLength": 614
+        },
+        {
+          "id": "node_modules/.pnpm/clsx@2.1.1/node_modules/clsx/dist/clsx.mjs",
+          "group": "clsx",
+          "renderedLength": 567
+        },
+        {
+          "id": "packages/ui/src/components/Input.tsx",
+          "group": "packages/ui",
+          "renderedLength": 534
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/features/audio/remoteAudioPathSelection.ts",
+          "group": "app source",
+          "renderedLength": 500
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/features/screen-share/screenSharePolicy.ts",
+          "group": "app source",
+          "renderedLength": 494
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/features/room/sessionOwnership.ts",
+          "group": "app source",
+          "renderedLength": 466
+        },
+        {
+          "id": "packages/ui/src/motion/presets.ts",
+          "group": "packages/ui",
+          "renderedLength": 449
+        },
+        {
+          "id": "packages/webrtc/src/reconnect.ts",
+          "group": "packages/webrtc",
+          "renderedLength": 422
+        },
+        {
+          "id": "packages/ui/src/components/Select.tsx",
+          "group": "packages/ui",
+          "renderedLength": 405
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/features/room/signalingSessionOwnership.ts",
+          "group": "app source",
+          "renderedLength": 303
+        },
+        {
+          "id": "packages/ui/src/components/IconButton.tsx",
+          "group": "packages/ui",
+          "renderedLength": 287
+        },
+        {
+          "id": "packages/ui/src/components/ToggleButton.tsx",
+          "group": "packages/ui",
+          "renderedLength": 281
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/utils/logger.ts",
+          "group": "app source",
+          "renderedLength": 234
+        },
+        {
+          "id": "apps/desktop/src/common/cloudbase-username.ts",
+          "group": "app source",
+          "renderedLength": 232
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/features/audio/remoteAudioTrack.ts",
+          "group": "app source",
+          "renderedLength": 202
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/hooks/usePrefersReducedMotion.ts",
+          "group": "app source",
+          "renderedLength": 162
+        },
+        {
+          "id": "packages/ui/src/components/AvatarPlaceholder.tsx",
+          "group": "packages/ui",
+          "renderedLength": 126
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/features/audio/filterMath.ts",
+          "group": "app source",
+          "renderedLength": 124
+        },
+        {
+          "id": "packages/ui/src/components/cn.ts",
+          "group": "packages/ui",
+          "renderedLength": 109
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/utils/desktopApi.ts",
+          "group": "app source",
+          "renderedLength": 96
+        },
+        {
+          "id": "packages/ui/src/components/Card.tsx",
+          "group": "packages/ui",
+          "renderedLength": 0
+        },
+        {
+          "id": "packages/ui/src/components/Divider.tsx",
+          "group": "packages/ui",
+          "renderedLength": 0
+        },
+        {
+          "id": "packages/ui/src/components/EmptyState.tsx",
+          "group": "packages/ui",
+          "renderedLength": 0
+        },
+        {
+          "id": "packages/ui/src/components/ProgressRing.tsx",
+          "group": "packages/ui",
+          "renderedLength": 0
+        },
+        {
+          "id": "packages/ui/src/components/Skeleton.tsx",
+          "group": "packages/ui",
+          "renderedLength": 0
+        },
+        {
+          "id": "packages/ui/src/components/Spinner.tsx",
+          "group": "packages/ui",
+          "renderedLength": 0
+        },
+        {
+          "id": "packages/ui/src/components/StatusPill.tsx",
+          "group": "packages/ui",
+          "renderedLength": 0
+        },
+        {
+          "id": "packages/ui/src/components/TimeBadge.tsx",
+          "group": "packages/ui",
+          "renderedLength": 0
+        },
+        {
+          "id": "packages/ui/src/components/Tooltip.tsx",
+          "group": "packages/ui",
+          "renderedLength": 0
+        },
+        {
+          "id": "packages/ui/src/index.ts",
+          "group": "packages/ui",
+          "renderedLength": 0
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/components/base/Button.tsx",
+          "group": "app source",
+          "renderedLength": 0
+        },
+        {
+          "id": "packages/webrtc/src/index.ts",
+          "group": "packages/webrtc",
+          "renderedLength": 0
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/components/base/Input.tsx",
+          "group": "app source",
+          "renderedLength": 0
+        }
+      ]
+    },
+    {
+      "file": "assets/SettingsPage-Bjcf0uxG.js",
+      "bytes": 258351,
+      "entry": false,
+      "dynamicEntry": true,
+      "imports": [
+        "assets/rolldown-runtime-B0Z9INg1.js",
+        "assets/vendor-icons-D57X7K8o.js",
+        "assets/vendor-react-CluWBeuA.js",
+        "assets/vendor-motion-CMs4UaPr.js",
+        "assets/DialogCloseButton-lLrecaCo.js",
+        "assets/DisplayRefreshRateService-BlUs0Gtj.js",
+        "assets/ReleaseDetailModal-DcKM41ln.js",
+        "assets/recordingStore-BeD2ieXv.js"
+      ],
+      "dynamicImports": [],
+      "packages": [
+        {
+          "name": "app source",
+          "renderedLength": 324071
+        },
+        {
+          "name": "react-virtuoso",
+          "renderedLength": 82968
+        },
+        {
+          "name": "packages/shared",
+          "renderedLength": 16176
+        }
+      ],
+      "modules": [
+        {
+          "id": "node_modules/.pnpm/react-virtuoso@4.18.13_reac_f034db59527f4c2183647bdc7e1a2210/node_modules/react-virtuoso/dist/index.mjs",
+          "group": "react-virtuoso",
+          "renderedLength": 82968
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/components/settings/RecordingLibrarySettingsCard.tsx",
+          "group": "app source",
+          "renderedLength": 50510
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/components/settings/AiVoiceMemorySettingsCard.tsx",
+          "group": "app source",
+          "renderedLength": 33675
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/components/settings/ModelTestPanel.tsx",
+          "group": "app source",
+          "renderedLength": 30202
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/features/ai/modelComparisonQueue.ts",
+          "group": "app source",
+          "renderedLength": 27521
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/components/settings/QuickMessageSettingsCard.tsx",
+          "group": "app source",
+          "renderedLength": 25540
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/components/settings/VoiceMemoryDetail.tsx",
+          "group": "app source",
+          "renderedLength": 24737
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/features/ai/modelComparisonExport.ts",
+          "group": "app source",
+          "renderedLength": 17930
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/pages/SettingsPage.tsx",
+          "group": "app source",
+          "renderedLength": 15637
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/features/ai/modelComparisonAnalysis.ts",
+          "group": "app source",
+          "renderedLength": 12345
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/components/settings/DiagnosticsSettingsCard.tsx",
+          "group": "app source",
+          "renderedLength": 11091
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/components/settings/AboutSettingsCard.tsx",
+          "group": "app source",
+          "renderedLength": 10437
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/components/settings/RoomHistorySettingsCard.tsx",
+          "group": "app source",
+          "renderedLength": 8698
+        },
+        {
+          "id": "packages/shared/src/utils/transcriptSegments.ts",
+          "group": "packages/shared",
+          "renderedLength": 7919
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/components/settings/AccountSettingsCard.tsx",
+          "group": "app source",
+          "renderedLength": 7863
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/components/settings/WeatherCityPicker.tsx",
+          "group": "app source",
+          "renderedLength": 7780
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/components/settings/SettingsDiagnosticsSection.tsx",
+          "group": "app source",
+          "renderedLength": 7397
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/features/weather/chinaCities.ts",
+          "group": "app source",
+          "renderedLength": 7268
+        },
+        {
+          "id": "packages/shared/src/utils/transcriptionValidity.ts",
+          "group": "packages/shared",
+          "renderedLength": 4417
+        },
+        {
+          "id": "packages/shared/src/utils/transcriptQuality.ts",
+          "group": "packages/shared",
+          "renderedLength": 3840
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/components/settings/TranscriptParagraphList.tsx",
+          "group": "app source",
+          "renderedLength": 3545
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/components/settings/WeatherSettingsCard.tsx",
+          "group": "app source",
+          "renderedLength": 2783
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/components/settings/PhoneModeSettings.tsx",
+          "group": "app source",
+          "renderedLength": 2660
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/features/ai/modelComparisonReview.ts",
+          "group": "app source",
+          "renderedLength": 2365
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/features/settings/settingsSectionState.ts",
+          "group": "app source",
+          "renderedLength": 2304
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/components/settings/AudioSettingsCard.tsx",
+          "group": "app source",
+          "renderedLength": 1897
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/features/ai/voiceMemoryPresentation.ts",
+          "group": "app source",
+          "renderedLength": 1705
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/features/ai/modelDownloadPresentation.ts",
+          "group": "app source",
+          "renderedLength": 1580
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/components/settings/SettingsPageHeader.tsx",
+          "group": "app source",
+          "renderedLength": 1164
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/components/layout/SectionCard.tsx",
+          "group": "app source",
+          "renderedLength": 1052
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/components/settings/SettingsItemRow.tsx",
+          "group": "app source",
+          "renderedLength": 961
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/features/ai/voiceMemoryReferences.ts",
+          "group": "app source",
+          "renderedLength": 770
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/features/recording/recordingLibraryCache.ts",
+          "group": "app source",
+          "renderedLength": 655
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/components/audio/InputDevicePicker.tsx",
+          "group": "app source",
+          "renderedLength": 620
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/components/audio/OutputDevicePicker.tsx",
+          "group": "app source",
+          "renderedLength": 574
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/features/recording/recordingSize.ts",
+          "group": "app source",
+          "renderedLength": 414
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/components/layout/GlassPanel.tsx",
+          "group": "app source",
+          "renderedLength": 264
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/assets/donate-qr.jpg",
+          "group": "app source",
+          "renderedLength": 127
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/components/base/Select.tsx",
+          "group": "app source",
+          "renderedLength": 0
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/components/settings/SettingsSection.tsx",
+          "group": "app source",
+          "renderedLength": 0
+        }
+      ]
+    },
+    {
+      "file": "assets/RoomPage-Y2PONjKR.js",
+      "bytes": 247106,
+      "entry": false,
+      "dynamicEntry": true,
+      "imports": [
+        "assets/rolldown-runtime-B0Z9INg1.js",
+        "assets/vendor-icons-D57X7K8o.js",
+        "assets/vendor-react-CluWBeuA.js",
+        "assets/vendor-motion-CMs4UaPr.js",
+        "assets/DialogCloseButton-lLrecaCo.js",
+        "assets/AccountAvatar-BVNYRg_Y.js",
+        "assets/DisplayRefreshRateService-BlUs0Gtj.js",
+        "assets/DeskAnimalSprite-ZUoQsthj.js",
+        "assets/recordingStore-BeD2ieXv.js"
+      ],
+      "dynamicImports": [
+        "assets/browser-DFBgVuWK.js"
+      ],
+      "packages": [
+        {
+          "name": "app source",
+          "renderedLength": 404003
+        },
+        {
+          "name": "morphicons",
+          "renderedLength": 35515
+        },
+        {
+          "name": "packages/recording",
+          "renderedLength": 11333
+        },
+        {
+          "name": "lucide",
+          "renderedLength": 4105
+        }
+      ],
+      "modules": [
+        {
+          "id": "apps/desktop/src/renderer/src/pages/RoomPage.tsx",
+          "group": "app source",
+          "renderedLength": 42712
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/components/chat/TemporaryChatPanel.tsx",
+          "group": "app source",
+          "renderedLength": 29530
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/components/room/SceneCharacter.tsx",
+          "group": "app source",
+          "renderedLength": 26611
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/components/room/TeamIsland.tsx",
+          "group": "app source",
+          "renderedLength": 24494
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/features/recording/mixRoomAudio.ts",
+          "group": "app source",
+          "renderedLength": 17142
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/features/screen-share/ScreenShareManager.ts",
+          "group": "app source",
+          "renderedLength": 14977
+        },
+        {
+          "id": "node_modules/.pnpm/morphicons@1.7.0_react@19.2.8/node_modules/morphicons/dist/spring-CFHloqPP.js",
+          "group": "morphicons",
+          "renderedLength": 14815
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/components/room/ScreenSharePanel.tsx",
+          "group": "app source",
+          "renderedLength": 14112
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/components/audio/AudioControlPopover.tsx",
+          "group": "app source",
+          "renderedLength": 13076
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/components/room/RoomOverlays.tsx",
+          "group": "app source",
+          "renderedLength": 12977
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/components/room/RoomAskDialog.tsx",
+          "group": "app source",
+          "renderedLength": 12954
+        },
+        {
+          "id": "node_modules/.pnpm/morphicons@1.7.0_react@19.2.8/node_modules/morphicons/dist/normalize-CYnN3Npw.js",
+          "group": "morphicons",
+          "renderedLength": 11689
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/components/audio/PhoneMicDialog.tsx",
+          "group": "app source",
+          "renderedLength": 9918
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/components/room/RoomDock.tsx",
+          "group": "app source",
+          "renderedLength": 9868
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/components/icons/AnimatedControlIcon.tsx",
+          "group": "app source",
+          "renderedLength": 9346
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/hooks/useMicTest.ts",
+          "group": "app source",
+          "renderedLength": 9167
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/components/chat/ChatImageLightbox.tsx",
+          "group": "app source",
+          "renderedLength": 9041
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/hooks/useRecordingController.ts",
+          "group": "app source",
+          "renderedLength": 7128
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/components/layout/TopStatusBar.tsx",
+          "group": "app source",
+          "renderedLength": 7086
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/components/room/DynamicWeatherWindow.tsx",
+          "group": "app source",
+          "renderedLength": 5922
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/features/voice-scene/characterMotion.ts",
+          "group": "app source",
+          "renderedLength": 5814
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/components/room/MusicActivityBadge.tsx",
+          "group": "app source",
+          "renderedLength": 5469
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/components/room/RoomCollectionShelf.tsx",
+          "group": "app source",
+          "renderedLength": 5347
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/assets/apple-music.png",
+          "group": "app source",
+          "renderedLength": 5347
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/assets/games/fortnite.png",
+          "group": "app source",
+          "renderedLength": 5107
+        },
+        {
+          "id": "packages/recording/src/recording-service.ts",
+          "group": "packages/recording",
+          "renderedLength": 4894
+        },
+        {
+          "id": "node_modules/.pnpm/morphicons@1.7.0_react@19.2.8/node_modules/morphicons/dist/react.js",
+          "group": "morphicons",
+          "renderedLength": 4680
+        },
+        {
+          "id": "packages/recording/src/recording-encoder.ts",
+          "group": "packages/recording",
+          "renderedLength": 4545
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/features/visual-runtime/sceneFeatureRegistry.ts",
+          "group": "app source",
+          "renderedLength": 4533
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/components/room/GameMonitorContent.tsx",
+          "group": "app source",
+          "renderedLength": 4483
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/hooks/useRoomCollection.ts",
+          "group": "app source",
+          "renderedLength": 4336
+        },
+        {
+          "id": "node_modules/.pnpm/morphicons@1.7.0_react@19.2.8/node_modules/morphicons/dist/dom.js",
+          "group": "morphicons",
+          "renderedLength": 4331
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/components/status/RecordingStopDialog.tsx",
+          "group": "app source",
+          "renderedLength": 3940
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/components/room/AnimalSprite.tsx",
+          "group": "app source",
+          "renderedLength": 3648
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/features/screen-share/DetachedScreenSharePublisher.ts",
+          "group": "app source",
+          "renderedLength": 3588
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/hooks/useRoomPageSettings.ts",
+          "group": "app source",
+          "renderedLength": 3210
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/features/screen-share/useScreenShareAudience.ts",
+          "group": "app source",
+          "renderedLength": 3113
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/components/room/ScreenSharePanelContainer.tsx",
+          "group": "app source",
+          "renderedLength": 3067
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/features/voice-scene/useCoordinatedIdleActions.ts",
+          "group": "app source",
+          "renderedLength": 2929
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/features/room/roomViewModel.ts",
+          "group": "app source",
+          "renderedLength": 2839
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/core/shanghaoCore.ts",
+          "group": "app source",
+          "renderedLength": 2795
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/components/room/RoomDateCalendar.tsx",
+          "group": "app source",
+          "renderedLength": 2790
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/components/room/SceneCharacterLabel.tsx",
+          "group": "app source",
+          "renderedLength": 2568
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/utils/chatImage.ts",
+          "group": "app source",
+          "renderedLength": 2527
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/features/voice-scene/characterMotionRuntime.ts",
+          "group": "app source",
+          "renderedLength": 2520
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/components/room/SceneAmbientDecor.tsx",
+          "group": "app source",
+          "renderedLength": 2492
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/features/voice-scene/sceneZones.ts",
+          "group": "app source",
+          "renderedLength": 2414
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/features/voice-scene/characterPersonality.ts",
+          "group": "app source",
+          "renderedLength": 2328
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/features/screen-share/useScreenShare.ts",
+          "group": "app source",
+          "renderedLength": 2147
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/components/chat/RoomChatPanel.tsx",
+          "group": "app source",
+          "renderedLength": 2091
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/features/room/useRoomActivityDetection.ts",
+          "group": "app source",
+          "renderedLength": 1891
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/components/chat/ChatAccountAvatar.tsx",
+          "group": "app source",
+          "renderedLength": 1850
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/components/room/SceneReaction.tsx",
+          "group": "app source",
+          "renderedLength": 1820
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/assets/games/minecraft.png",
+          "group": "app source",
+          "renderedLength": 1621
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/features/visual-runtime/RoomAnimationScheduler.ts",
+          "group": "app source",
+          "renderedLength": 1619
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/features/motion/glassPointerHighlight.ts",
+          "group": "app source",
+          "renderedLength": 1536
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/features/recording/recordingLoudnessBalance.ts",
+          "group": "app source",
+          "renderedLength": 1339
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/assets/games/valorant.png",
+          "group": "app source",
+          "renderedLength": 1279
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/features/voice-scene/activityRules.ts",
+          "group": "app source",
+          "renderedLength": 1241
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/features/chat/linkPreview.ts",
+          "group": "app source",
+          "renderedLength": 1230
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/features/chat/chatImagePreload.ts",
+          "group": "app source",
+          "renderedLength": 1204
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/features/voice-scene/visibleSceneMembers.ts",
+          "group": "app source",
+          "renderedLength": 1071
+        },
+        {
+          "id": "packages/recording/src/mime-capability.ts",
+          "group": "packages/recording",
+          "renderedLength": 1040
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/features/network/networkDiagnostics.ts",
+          "group": "app source",
+          "renderedLength": 1038
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/features/weather/weatherTheme.ts",
+          "group": "app source",
+          "renderedLength": 1010
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/features/recording/recordingTopology.ts",
+          "group": "app source",
+          "renderedLength": 995
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/hooks/useVisualVisibility.ts",
+          "group": "app source",
+          "renderedLength": 946
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/features/chat/collectionDrag.ts",
+          "group": "app source",
+          "renderedLength": 934
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/components/audio/RecordingButton.tsx",
+          "group": "app source",
+          "renderedLength": 919
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/features/room/useCharacterChatBubbles.ts",
+          "group": "app source",
+          "renderedLength": 763
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/components/audio/MuteButton.tsx",
+          "group": "app source",
+          "renderedLength": 679
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/hooks/useQuickMessageMusicPresence.ts",
+          "group": "app source",
+          "renderedLength": 652
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/components/room/IdleMonitorContent.tsx",
+          "group": "app source",
+          "renderedLength": 631
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/features/room/autoAway.ts",
+          "group": "app source",
+          "renderedLength": 537
+        },
+        {
+          "id": "packages/recording/src/recording-exporter.ts",
+          "group": "packages/recording",
+          "renderedLength": 503
+        },
+        {
+          "id": "node_modules/.pnpm/lucide@1.34.0/node_modules/lucide/dist/esm/icons/volume-x.mjs",
+          "group": "lucide",
+          "renderedLength": 444
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/features/screen-share/types.ts",
+          "group": "app source",
+          "renderedLength": 418
+        },
+        {
+          "id": "node_modules/.pnpm/lucide@1.34.0/node_modules/lucide/dist/esm/icons/volume-2.mjs",
+          "group": "lucide",
+          "renderedLength": 414
+        },
+        {
+          "id": "node_modules/.pnpm/lucide@1.34.0/node_modules/lucide/dist/esm/icons/mic-off.mjs",
+          "group": "lucide",
+          "renderedLength": 393
+        },
+        {
+          "id": "node_modules/.pnpm/lucide@1.34.0/node_modules/lucide/dist/esm/icons/user-plus.mjs",
+          "group": "lucide",
+          "renderedLength": 370
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/components/icons/MorphingIcon.tsx",
+          "group": "app source",
+          "renderedLength": 367
+        },
+        {
+          "id": "packages/recording/src/recording-state-machine.ts",
+          "group": "packages/recording",
+          "renderedLength": 351
+        },
+        {
+          "id": "node_modules/.pnpm/lucide@1.34.0/node_modules/lucide/dist/esm/icons/screen-share.mjs",
+          "group": "lucide",
+          "renderedLength": 337
+        },
+        {
+          "id": "node_modules/.pnpm/lucide@1.34.0/node_modules/lucide/dist/esm/icons/monitor-up.mjs",
+          "group": "lucide",
+          "renderedLength": 334
+        },
+        {
+          "id": "node_modules/.pnpm/lucide@1.34.0/node_modules/lucide/dist/esm/icons/bell.mjs",
+          "group": "lucide",
+          "renderedLength": 314
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/components/room/WorkstationArt.tsx",
+          "group": "app source",
+          "renderedLength": 287
+        },
+        {
+          "id": "node_modules/.pnpm/lucide@1.34.0/node_modules/lucide/dist/esm/icons/headphones.mjs",
+          "group": "lucide",
+          "renderedLength": 275
+        },
+        {
+          "id": "node_modules/.pnpm/lucide@1.34.0/node_modules/lucide/dist/esm/icons/mic.mjs",
+          "group": "lucide",
+          "renderedLength": 274
+        },
+        {
+          "id": "node_modules/.pnpm/lucide@1.34.0/node_modules/lucide/dist/esm/icons/log-out.mjs",
+          "group": "lucide",
+          "renderedLength": 253
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/components/room/sceneMemberKey.ts",
+          "group": "app source",
+          "renderedLength": 201
+        },
+        {
+          "id": "node_modules/.pnpm/lucide@1.34.0/node_modules/lucide/dist/esm/icons/square.mjs",
+          "group": "lucide",
+          "renderedLength": 194
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/assets/scenes/shanghao-room/environment-v3-extended.png",
+          "group": "app source",
+          "renderedLength": 176
+        },
+        {
+          "id": "node_modules/.pnpm/lucide@1.34.0/node_modules/lucide/dist/esm/icons/circle.mjs",
+          "group": "lucide",
+          "renderedLength": 171
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/assets/scenes/shanghao-room/foreground-leaves-v2.png",
+          "group": "app source",
+          "renderedLength": 170
+        },
+        {
+          "id": "node_modules/.pnpm/lucide@1.34.0/node_modules/lucide/dist/esm/icons/chevron-down.mjs",
+          "group": "lucide",
+          "renderedLength": 167
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/assets/scenes/shanghao-room/curtain-ceiling-v2.png",
+          "group": "app source",
+          "renderedLength": 166
+        },
+        {
+          "id": "node_modules/.pnpm/lucide@1.34.0/node_modules/lucide/dist/esm/icons/chevron-up.mjs",
+          "group": "lucide",
+          "renderedLength": 165
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/assets/scenes/shanghao-room/calendar-blank-v2.png",
+          "group": "app source",
+          "renderedLength": 164
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/assets/games/league-of-legends-scene.webp",
+          "group": "app source",
+          "renderedLength": 162
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/assets/scenes/shanghao-room/window-frame-v2.png",
+          "group": "app source",
+          "renderedLength": 160
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/assets/scenes/shanghao-room/weather-cloudy.png",
+          "group": "app source",
+          "renderedLength": 158
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/assets/games/red-dead-redemption-2.jpg",
+          "group": "app source",
+          "renderedLength": 157
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/assets/scenes/shanghao-room/weather-night.png",
+          "group": "app source",
+          "renderedLength": 156
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/assets/games/stardew-valley-scene.webp",
+          "group": "app source",
+          "renderedLength": 156
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/assets/scenes/shanghao-room/weather-rain.png",
+          "group": "app source",
+          "renderedLength": 154
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/assets/scenes/shanghao-room/weather-snow.png",
+          "group": "app source",
+          "renderedLength": 154
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/assets/scenes/shanghao-room/weather-day.png",
+          "group": "app source",
+          "renderedLength": 152
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/assets/scenes/shanghao-room/workstation.png",
+          "group": "app source",
+          "renderedLength": 152
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/assets/games/delta-force-scene.webp",
+          "group": "app source",
+          "renderedLength": 150
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/assets/scenes/idle-monitors/window-sky.png",
+          "group": "app source",
+          "renderedLength": 150
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/assets/games/black-myth-wukong.jpg",
+          "group": "app source",
+          "renderedLength": 149
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/assets/games/rainbow-six-siege.jpg",
+          "group": "app source",
+          "renderedLength": 149
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/assets/games/counter-strike-2.jpg",
+          "group": "app source",
+          "renderedLength": 147
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/assets/games/honkai-star-rail.ico",
+          "group": "app source",
+          "renderedLength": 147
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/assets/scenes/shanghao-room/cabinet.png",
+          "group": "app source",
+          "renderedLength": 144
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/assets/avatars/layers/corgi-body.png",
+          "group": "app source",
+          "renderedLength": 144
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/assets/avatars/layers/corgi-feet.png",
+          "group": "app source",
+          "renderedLength": 144
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/assets/avatars/layers/corgi-head.png",
+          "group": "app source",
+          "renderedLength": 144
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/assets/avatars/layers/corgi-tail.png",
+          "group": "app source",
+          "renderedLength": 144
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/assets/avatars/layers/panda-body.png",
+          "group": "app source",
+          "renderedLength": 144
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/assets/avatars/layers/panda-feet.png",
+          "group": "app source",
+          "renderedLength": 144
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/assets/avatars/layers/panda-head.png",
+          "group": "app source",
+          "renderedLength": 144
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/assets/avatars/layers/panda-tail.png",
+          "group": "app source",
+          "renderedLength": 144
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/assets/games/genshin-impact.ico",
+          "group": "app source",
+          "renderedLength": 143
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/assets/games/monster-hunter.jpg",
+          "group": "app source",
+          "renderedLength": 143
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/assets/games/slay-the-spire.jpg",
+          "group": "app source",
+          "renderedLength": 143
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/assets/avatars/layers/duck-body.png",
+          "group": "app source",
+          "renderedLength": 142
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/assets/avatars/layers/duck-feet.png",
+          "group": "app source",
+          "renderedLength": 142
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/assets/avatars/layers/duck-head.png",
+          "group": "app source",
+          "renderedLength": 142
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/assets/avatars/layers/duck-tail.png",
+          "group": "app source",
+          "renderedLength": 142
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/assets/games/lost-castle-2.jpg",
+          "group": "app source",
+          "renderedLength": 141
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/assets/scenes/shanghao-room/clock.png",
+          "group": "app source",
+          "renderedLength": 140
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/assets/avatars/layers/cat-body.png",
+          "group": "app source",
+          "renderedLength": 140
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/assets/avatars/layers/cat-feet.png",
+          "group": "app source",
+          "renderedLength": 140
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/assets/avatars/layers/cat-head.png",
+          "group": "app source",
+          "renderedLength": 140
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/assets/avatars/layers/cat-tail.png",
+          "group": "app source",
+          "renderedLength": 140
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/assets/avatars/layers/fox-body.png",
+          "group": "app source",
+          "renderedLength": 140
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/assets/avatars/layers/fox-feet.png",
+          "group": "app source",
+          "renderedLength": 140
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/assets/avatars/layers/fox-head.png",
+          "group": "app source",
+          "renderedLength": 140
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/assets/avatars/layers/fox-tail.png",
+          "group": "app source",
+          "renderedLength": 140
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/assets/games/apex-legends.jpg",
+          "group": "app source",
+          "renderedLength": 139
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/assets/games/it-takes-two.jpg",
+          "group": "app source",
+          "renderedLength": 139
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/assets/games/kingdom-rush.jpg",
+          "group": "app source",
+          "renderedLength": 139
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/assets/games/overcooked-2.jpg",
+          "group": "app source",
+          "renderedLength": 139
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/assets/scenes/shanghao-room/door.png",
+          "group": "app source",
+          "renderedLength": 138
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/assets/games/overwatch-2.jpg",
+          "group": "app source",
+          "renderedLength": 137
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/assets/games/elden-ring.jpg",
+          "group": "app source",
+          "renderedLength": 135
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/assets/games/palworld.jpg",
+          "group": "app source",
+          "renderedLength": 131
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/assets/games/dota-2.jpg",
+          "group": "app source",
+          "renderedLength": 127
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/assets/games/naraka.jpg",
+          "group": "app source",
+          "renderedLength": 127
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/assets/games/gta-v.jpg",
+          "group": "app source",
+          "renderedLength": 125
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/assets/games/pubg.jpg",
+          "group": "app source",
+          "renderedLength": 123
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/components/base/SegmentedControl.tsx",
+          "group": "app source",
+          "renderedLength": 0
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/components/base/Slider.tsx",
+          "group": "app source",
+          "renderedLength": 0
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/components/base/ToggleButton.tsx",
+          "group": "app source",
+          "renderedLength": 0
+        },
+        {
+          "id": "packages/recording/src/index.ts",
+          "group": "packages/recording",
+          "renderedLength": 0
+        }
+      ]
+    },
+    {
+      "file": "assets/vendor-motion-CMs4UaPr.js",
+      "bytes": 190411,
+      "entry": false,
+      "dynamicEntry": false,
+      "imports": [
+        "assets/rolldown-runtime-B0Z9INg1.js",
+        "assets/vendor-icons-D57X7K8o.js"
+      ],
+      "dynamicImports": [],
+      "packages": [
+        {
+          "name": "framer-motion",
+          "renderedLength": 256062
+        },
+        {
+          "name": "gsap",
+          "renderedLength": 168840
+        },
+        {
+          "name": "motion-dom",
+          "renderedLength": 13217
+        },
+        {
+          "name": "motion-utils",
+          "renderedLength": 1173
+        },
+        {
+          "name": "react",
+          "renderedLength": 1147
+        },
+        {
+          "name": "virtual/other",
+          "renderedLength": 468
+        }
+      ],
+      "modules": [
+        {
+          "id": "node_modules/.pnpm/gsap@3.15.0/node_modules/gsap/gsap-core.js",
+          "group": "gsap",
+          "renderedLength": 110039
+        },
+        {
+          "id": "node_modules/.pnpm/gsap@3.15.0/node_modules/gsap/CSSPlugin.js",
+          "group": "gsap",
+          "renderedLength": 43269
+        },
+        {
+          "id": "node_modules/.pnpm/framer-motion@11.18.2_react_6f47d4eded3b933dcfa6c1217db751a8/node_modules/framer-motion/dist/es/projection/node/create-projection-node.mjs",
+          "group": "framer-motion",
+          "renderedLength": 37218
+        },
+        {
+          "id": "node_modules/.pnpm/framer-motion@11.18.2_react_6f47d4eded3b933dcfa6c1217db751a8/node_modules/framer-motion/dist/es/gestures/drag/VisualElementDragControls.mjs",
+          "group": "framer-motion",
+          "renderedLength": 12268
+        },
+        {
+          "id": "node_modules/.pnpm/framer-motion@11.18.2_react_6f47d4eded3b933dcfa6c1217db751a8/node_modules/framer-motion/dist/es/render/VisualElement.mjs",
+          "group": "framer-motion",
+          "renderedLength": 9881
+        },
+        {
+          "id": "node_modules/.pnpm/gsap@3.15.0/node_modules/gsap/utils/paths.js",
+          "group": "gsap",
+          "renderedLength": 8097
+        },
+        {
+          "id": "node_modules/.pnpm/framer-motion@11.18.2_react_6f47d4eded3b933dcfa6c1217db751a8/node_modules/framer-motion/dist/es/animation/animators/MainThreadAnimation.mjs",
+          "group": "framer-motion",
+          "renderedLength": 7858
+        },
+        {
+          "id": "node_modules/.pnpm/gsap@3.15.0/node_modules/gsap/CustomEase.js",
+          "group": "gsap",
+          "renderedLength": 7240
+        },
+        {
+          "id": "node_modules/.pnpm/framer-motion@11.18.2_react_6f47d4eded3b933dcfa6c1217db751a8/node_modules/framer-motion/dist/es/animation/animators/AcceleratedAnimation.mjs",
+          "group": "framer-motion",
+          "renderedLength": 6227
+        },
+        {
+          "id": "node_modules/.pnpm/framer-motion@11.18.2_react_6f47d4eded3b933dcfa6c1217db751a8/node_modules/framer-motion/dist/es/render/utils/animation-state.mjs",
+          "group": "framer-motion",
+          "renderedLength": 6143
+        },
+        {
+          "id": "node_modules/.pnpm/framer-motion@11.18.2_react_6f47d4eded3b933dcfa6c1217db751a8/node_modules/framer-motion/dist/es/animation/generators/spring/index.mjs",
+          "group": "framer-motion",
+          "renderedLength": 4539
+        },
+        {
+          "id": "node_modules/.pnpm/framer-motion@11.18.2_react_6f47d4eded3b933dcfa6c1217db751a8/node_modules/framer-motion/dist/es/gestures/pan/PanSession.mjs",
+          "group": "framer-motion",
+          "renderedLength": 4190
+        },
+        {
+          "id": "node_modules/.pnpm/framer-motion@11.18.2_react_6f47d4eded3b933dcfa6c1217db751a8/node_modules/framer-motion/dist/es/render/utils/KeyframesResolver.mjs",
+          "group": "framer-motion",
+          "renderedLength": 3778
+        },
+        {
+          "id": "node_modules/.pnpm/framer-motion@11.18.2_react_6f47d4eded3b933dcfa6c1217db751a8/node_modules/framer-motion/dist/es/value/index.mjs",
+          "group": "framer-motion",
+          "renderedLength": 3747
+        },
+        {
+          "id": "node_modules/.pnpm/framer-motion@11.18.2_react_6f47d4eded3b933dcfa6c1217db751a8/node_modules/framer-motion/dist/es/motion/utils/use-visual-element.mjs",
+          "group": "framer-motion",
+          "renderedLength": 3603
+        },
+        {
+          "id": "node_modules/.pnpm/framer-motion@11.18.2_react_6f47d4eded3b933dcfa6c1217db751a8/node_modules/framer-motion/dist/es/render/dom/DOMKeyframesResolver.mjs",
+          "group": "framer-motion",
+          "renderedLength": 3302
+        },
+        {
+          "id": "node_modules/.pnpm/framer-motion@11.18.2_react_6f47d4eded3b933dcfa6c1217db751a8/node_modules/framer-motion/dist/es/components/AnimatePresence/index.mjs",
+          "group": "framer-motion",
+          "renderedLength": 3133
+        },
+        {
+          "id": "node_modules/.pnpm/framer-motion@11.18.2_react_6f47d4eded3b933dcfa6c1217db751a8/node_modules/framer-motion/dist/es/motion/features/layout/MeasureLayout.mjs",
+          "group": "framer-motion",
+          "renderedLength": 3120
+        },
+        {
+          "id": "node_modules/.pnpm/framer-motion@11.18.2_react_6f47d4eded3b933dcfa6c1217db751a8/node_modules/framer-motion/dist/es/gestures/drag/utils/constraints.mjs",
+          "group": "framer-motion",
+          "renderedLength": 2716
+        },
+        {
+          "id": "node_modules/.pnpm/framer-motion@11.18.2_react_6f47d4eded3b933dcfa6c1217db751a8/node_modules/framer-motion/dist/es/motion/index.mjs",
+          "group": "framer-motion",
+          "renderedLength": 2605
+        },
+        {
+          "id": "node_modules/.pnpm/framer-motion@11.18.2_react_6f47d4eded3b933dcfa6c1217db751a8/node_modules/framer-motion/dist/es/animation/generators/spring/find.mjs",
+          "group": "framer-motion",
+          "renderedLength": 2569
+        },
+        {
+          "id": "node_modules/.pnpm/framer-motion@11.18.2_react_6f47d4eded3b933dcfa6c1217db751a8/node_modules/framer-motion/dist/es/utils/mix/complex.mjs",
+          "group": "framer-motion",
+          "renderedLength": 2539
+        },
+        {
+          "id": "node_modules/.pnpm/framer-motion@11.18.2_react_6f47d4eded3b933dcfa6c1217db751a8/node_modules/framer-motion/dist/es/projection/geometry/delta-apply.mjs",
+          "group": "framer-motion",
+          "renderedLength": 2537
+        },
+        {
+          "id": "node_modules/.pnpm/framer-motion@11.18.2_react_6f47d4eded3b933dcfa6c1217db751a8/node_modules/framer-motion/dist/es/motion/utils/use-visual-state.mjs",
+          "group": "framer-motion",
+          "renderedLength": 2531
+        },
+        {
+          "id": "node_modules/.pnpm/framer-motion@11.18.2_react_6f47d4eded3b933dcfa6c1217db751a8/node_modules/framer-motion/dist/es/value/types/complex/index.mjs",
+          "group": "framer-motion",
+          "renderedLength": 2408
+        },
+        {
+          "id": "node_modules/.pnpm/framer-motion@11.18.2_react_6f47d4eded3b933dcfa6c1217db751a8/node_modules/framer-motion/dist/es/animation/interfaces/visual-element-variant.mjs",
+          "group": "framer-motion",
+          "renderedLength": 2167
+        },
+        {
+          "id": "node_modules/.pnpm/framer-motion@11.18.2_react_6f47d4eded3b933dcfa6c1217db751a8/node_modules/framer-motion/dist/es/projection/animation/mix-values.mjs",
+          "group": "framer-motion",
+          "renderedLength": 2116
+        },
+        {
+          "id": "node_modules/.pnpm/framer-motion@11.18.2_react_6f47d4eded3b933dcfa6c1217db751a8/node_modules/framer-motion/dist/es/animation/interfaces/motion-value.mjs",
+          "group": "framer-motion",
+          "renderedLength": 2105
+        },
+        {
+          "id": "node_modules/.pnpm/framer-motion@11.18.2_react_6f47d4eded3b933dcfa6c1217db751a8/node_modules/framer-motion/dist/es/projection/shared/stack.mjs",
+          "group": "framer-motion",
+          "renderedLength": 2103
+        },
+        {
+          "id": "node_modules/.pnpm/framer-motion@11.18.2_react_6f47d4eded3b933dcfa6c1217db751a8/node_modules/framer-motion/dist/es/animation/interfaces/visual-element-target.mjs",
+          "group": "framer-motion",
+          "renderedLength": 2027
+        },
+        {
+          "id": "node_modules/.pnpm/framer-motion@11.18.2_react_6f47d4eded3b933dcfa6c1217db751a8/node_modules/framer-motion/dist/es/animation/generators/inertia.mjs",
+          "group": "framer-motion",
+          "renderedLength": 2019
+        },
+        {
+          "id": "node_modules/.pnpm/framer-motion@11.18.2_react_6f47d4eded3b933dcfa6c1217db751a8/node_modules/framer-motion/dist/es/animation/animators/BaseAnimation.mjs",
+          "group": "framer-motion",
+          "renderedLength": 1987
+        },
+        {
+          "id": "node_modules/.pnpm/framer-motion@11.18.2_react_6f47d4eded3b933dcfa6c1217db751a8/node_modules/framer-motion/dist/es/frameloop/batcher.mjs",
+          "group": "framer-motion",
+          "renderedLength": 1938
+        },
+        {
+          "id": "node_modules/.pnpm/framer-motion@11.18.2_react_6f47d4eded3b933dcfa6c1217db751a8/node_modules/framer-motion/dist/es/render/dom/utils/unit-conversion.mjs",
+          "group": "framer-motion",
+          "renderedLength": 1876
+        },
+        {
+          "id": "node_modules/.pnpm/framer-motion@11.18.2_react_6f47d4eded3b933dcfa6c1217db751a8/node_modules/framer-motion/dist/es/components/AnimatePresence/PopChild.mjs",
+          "group": "framer-motion",
+          "renderedLength": 1857
+        },
+        {
+          "id": "node_modules/.pnpm/framer-motion@11.18.2_react_6f47d4eded3b933dcfa6c1217db751a8/node_modules/framer-motion/dist/es/projection/geometry/delta-calc.mjs",
+          "group": "framer-motion",
+          "renderedLength": 1796
+        },
+        {
+          "id": "node_modules/.pnpm/framer-motion@11.18.2_react_6f47d4eded3b933dcfa6c1217db751a8/node_modules/framer-motion/dist/es/motion/features/viewport/index.mjs",
+          "group": "framer-motion",
+          "renderedLength": 1768
+        },
+        {
+          "id": "node_modules/.pnpm/motion-dom@11.18.1/node_modules/motion-dom/dist/es/animation/controls/BaseGroup.mjs",
+          "group": "motion-dom",
+          "renderedLength": 1726
+        },
+        {
+          "id": "node_modules/.pnpm/motion-dom@11.18.1/node_modules/motion-dom/dist/es/gestures/press/index.mjs",
+          "group": "motion-dom",
+          "renderedLength": 1704
+        },
+        {
+          "id": "node_modules/.pnpm/framer-motion@11.18.2_react_6f47d4eded3b933dcfa6c1217db751a8/node_modules/framer-motion/dist/es/projection/geometry/delta-remove.mjs",
+          "group": "framer-motion",
+          "renderedLength": 1664
+        },
+        {
+          "id": "node_modules/.pnpm/framer-motion@11.18.2_react_6f47d4eded3b933dcfa6c1217db751a8/node_modules/framer-motion/dist/es/utils/interpolate.mjs",
+          "group": "framer-motion",
+          "renderedLength": 1573
+        },
+        {
+          "id": "node_modules/.pnpm/framer-motion@11.18.2_react_6f47d4eded3b933dcfa6c1217db751a8/node_modules/framer-motion/dist/es/components/AnimatePresence/PresenceChild.mjs",
+          "group": "framer-motion",
+          "renderedLength": 1563
+        },
+        {
+          "id": "node_modules/.pnpm/framer-motion@11.18.2_react_6f47d4eded3b933dcfa6c1217db751a8/node_modules/framer-motion/dist/es/projection/styles/transform.mjs",
+          "group": "framer-motion",
+          "renderedLength": 1434
+        },
+        {
+          "id": "node_modules/.pnpm/motion-dom@11.18.1/node_modules/motion-dom/dist/es/animation/waapi/utils/easing.mjs",
+          "group": "motion-dom",
+          "renderedLength": 1429
+        },
+        {
+          "id": "node_modules/.pnpm/framer-motion@11.18.2_react_6f47d4eded3b933dcfa6c1217db751a8/node_modules/framer-motion/dist/es/render/svg/config-motion.mjs",
+          "group": "framer-motion",
+          "renderedLength": 1428
+        },
+        {
+          "id": "node_modules/.pnpm/framer-motion@11.18.2_react_6f47d4eded3b933dcfa6c1217db751a8/node_modules/framer-motion/dist/es/frameloop/render-step.mjs",
+          "group": "framer-motion",
+          "renderedLength": 1408
+        },
+        {
+          "id": "node_modules/.pnpm/framer-motion@11.18.2_react_6f47d4eded3b933dcfa6c1217db751a8/node_modules/framer-motion/dist/es/render/html/utils/build-transform.mjs",
+          "group": "framer-motion",
+          "renderedLength": 1393
+        },
+        {
+          "id": "node_modules/.pnpm/framer-motion@11.18.2_react_6f47d4eded3b933dcfa6c1217db751a8/node_modules/framer-motion/dist/es/render/html/use-props.mjs",
+          "group": "framer-motion",
+          "renderedLength": 1389
+        },
+        {
+          "id": "node_modules/.pnpm/framer-motion@11.18.2_react_6f47d4eded3b933dcfa6c1217db751a8/node_modules/framer-motion/dist/es/gestures/pan/index.mjs",
+          "group": "framer-motion",
+          "renderedLength": 1308
+        },
+        {
+          "id": "node_modules/.pnpm/framer-motion@11.18.2_react_6f47d4eded3b933dcfa6c1217db751a8/node_modules/framer-motion/dist/es/animation/animators/utils/can-animate.mjs",
+          "group": "framer-motion",
+          "renderedLength": 1240
+        },
+        {
+          "id": "node_modules/.pnpm/framer-motion@11.18.2_react_6f47d4eded3b933dcfa6c1217db751a8/node_modules/framer-motion/dist/es/utils/mix/color.mjs",
+          "group": "framer-motion",
+          "renderedLength": 1231
+        },
+        {
+          "id": "node_modules/.pnpm/framer-motion@11.18.2_react_6f47d4eded3b933dcfa6c1217db751a8/node_modules/framer-motion/dist/es/motion/features/viewport/observers.mjs",
+          "group": "framer-motion",
+          "renderedLength": 1230
+        },
+        {
+          "id": "node_modules/.pnpm/framer-motion@11.18.2_react_6f47d4eded3b933dcfa6c1217db751a8/node_modules/framer-motion/dist/es/render/html/HTMLVisualElement.mjs",
+          "group": "framer-motion",
+          "renderedLength": 1221
+        },
+        {
+          "id": "node_modules/.pnpm/framer-motion@11.18.2_react_6f47d4eded3b933dcfa6c1217db751a8/node_modules/framer-motion/dist/es/components/LayoutGroup/index.mjs",
+          "group": "framer-motion",
+          "renderedLength": 1207
+        },
+        {
+          "id": "node_modules/.pnpm/framer-motion@11.18.2_react_6f47d4eded3b933dcfa6c1217db751a8/node_modules/framer-motion/dist/es/render/svg/SVGVisualElement.mjs",
+          "group": "framer-motion",
+          "renderedLength": 1204
+        },
+        {
+          "id": "node_modules/.pnpm/framer-motion@11.18.2_react_6f47d4eded3b933dcfa6c1217db751a8/node_modules/framer-motion/dist/es/render/html/utils/build-styles.mjs",
+          "group": "framer-motion",
+          "renderedLength": 1183
+        },
+        {
+          "id": "node_modules/.pnpm/framer-motion@11.18.2_react_6f47d4eded3b933dcfa6c1217db751a8/node_modules/framer-motion/dist/es/render/svg/utils/build-attrs.mjs",
+          "group": "framer-motion",
+          "renderedLength": 1130
+        },
+        {
+          "id": "node_modules/.pnpm/framer-motion@11.18.2_react_6f47d4eded3b933dcfa6c1217db751a8/node_modules/framer-motion/dist/es/render/dom/utils/css-variables-conversion.mjs",
+          "group": "framer-motion",
+          "renderedLength": 1123
+        },
+        {
+          "id": "node_modules/.pnpm/motion-dom@11.18.1/node_modules/motion-dom/dist/es/gestures/press/utils/keyboard.mjs",
+          "group": "motion-dom",
+          "renderedLength": 1098
+        },
+        {
+          "id": "node_modules/.pnpm/framer-motion@11.18.2_react_6f47d4eded3b933dcfa6c1217db751a8/node_modules/framer-motion/dist/es/animation/generators/keyframes.mjs",
+          "group": "framer-motion",
+          "renderedLength": 1058
+        },
+        {
+          "id": "node_modules/.pnpm/framer-motion@11.18.2_react_6f47d4eded3b933dcfa6c1217db751a8/node_modules/framer-motion/dist/es/render/utils/motion-values.mjs",
+          "group": "framer-motion",
+          "renderedLength": 1037
+        },
+        {
+          "id": "node_modules/.pnpm/framer-motion@11.18.2_react_6f47d4eded3b933dcfa6c1217db751a8/node_modules/framer-motion/dist/es/render/utils/resolve-variants.mjs",
+          "group": "framer-motion",
+          "renderedLength": 1018
+        },
+        {
+          "id": "node_modules/.pnpm/motion-dom@11.18.1/node_modules/motion-dom/dist/es/gestures/hover.mjs",
+          "group": "motion-dom",
+          "renderedLength": 969
+        },
+        {
+          "id": "node_modules/.pnpm/framer-motion@11.18.2_react_6f47d4eded3b933dcfa6c1217db751a8/node_modules/framer-motion/dist/es/motion/utils/valid-prop.mjs",
+          "group": "framer-motion",
+          "renderedLength": 965
+        },
+        {
+          "id": "node_modules/.pnpm/framer-motion@11.18.2_react_6f47d4eded3b933dcfa6c1217db751a8/node_modules/framer-motion/dist/es/easing/cubic-bezier.mjs",
+          "group": "framer-motion",
+          "renderedLength": 964
+        },
+        {
+          "id": "node_modules/.pnpm/framer-motion@11.18.2_react_6f47d4eded3b933dcfa6c1217db751a8/node_modules/framer-motion/dist/es/render/dom/utils/filter-props.mjs",
+          "group": "framer-motion",
+          "renderedLength": 960
+        },
+        {
+          "id": "node_modules/.pnpm/framer-motion@11.18.2_react_6f47d4eded3b933dcfa6c1217db751a8/node_modules/framer-motion/dist/es/utils/hsla-to-rgba.mjs",
+          "group": "framer-motion",
+          "renderedLength": 958
+        },
+        {
+          "id": "node_modules/.pnpm/framer-motion@11.18.2_react_6f47d4eded3b933dcfa6c1217db751a8/node_modules/framer-motion/dist/es/projection/geometry/utils.mjs",
+          "group": "framer-motion",
+          "renderedLength": 953
+        },
+        {
+          "id": "node_modules/.pnpm/framer-motion@11.18.2_react_6f47d4eded3b933dcfa6c1217db751a8/node_modules/framer-motion/dist/es/animation/interfaces/visual-element.mjs",
+          "group": "framer-motion",
+          "renderedLength": 934
+        },
+        {
+          "id": "node_modules/.pnpm/framer-motion@11.18.2_react_6f47d4eded3b933dcfa6c1217db751a8/node_modules/framer-motion/dist/es/render/dom/use-render.mjs",
+          "group": "framer-motion",
+          "renderedLength": 928
+        },
+        {
+          "id": "node_modules/.pnpm/framer-motion@11.18.2_react_6f47d4eded3b933dcfa6c1217db751a8/node_modules/framer-motion/dist/es/render/dom/DOMVisualElement.mjs",
+          "group": "framer-motion",
+          "renderedLength": 923
+        },
+        {
+          "id": "node_modules/.pnpm/framer-motion@11.18.2_react_6f47d4eded3b933dcfa6c1217db751a8/node_modules/framer-motion/dist/es/gestures/focus.mjs",
+          "group": "framer-motion",
+          "renderedLength": 919
+        },
+        {
+          "id": "node_modules/.pnpm/framer-motion@11.18.2_react_6f47d4eded3b933dcfa6c1217db751a8/node_modules/framer-motion/dist/es/motion/features/animation/index.mjs",
+          "group": "framer-motion",
+          "renderedLength": 915
+        },
+        {
+          "id": "node_modules/.pnpm/react@19.2.8/node_modules/react/cjs/react-jsx-runtime.production.js",
+          "group": "react",
+          "renderedLength": 909
+        },
+        {
+          "id": "node_modules/.pnpm/framer-motion@11.18.2_react_6f47d4eded3b933dcfa6c1217db751a8/node_modules/framer-motion/dist/es/gestures/press.mjs",
+          "group": "framer-motion",
+          "renderedLength": 906
+        },
+        {
+          "id": "node_modules/.pnpm/framer-motion@11.18.2_react_6f47d4eded3b933dcfa6c1217db751a8/node_modules/framer-motion/dist/es/projection/styles/scale-box-shadow.mjs",
+          "group": "framer-motion",
+          "renderedLength": 897
+        },
+        {
+          "id": "node_modules/.pnpm/framer-motion@11.18.2_react_6f47d4eded3b933dcfa6c1217db751a8/node_modules/framer-motion/dist/es/motion/features/animation/exit.mjs",
+          "group": "framer-motion",
+          "renderedLength": 883
+        },
+        {
+          "id": "node_modules/.pnpm/framer-motion@11.18.2_react_6f47d4eded3b933dcfa6c1217db751a8/node_modules/framer-motion/dist/es/motion/features/definitions.mjs",
+          "group": "framer-motion",
+          "renderedLength": 880
+        },
+        {
+          "id": "node_modules/.pnpm/framer-motion@11.18.2_react_6f47d4eded3b933dcfa6c1217db751a8/node_modules/framer-motion/dist/es/value/types/complex/filter.mjs",
+          "group": "framer-motion",
+          "renderedLength": 877
+        },
+        {
+          "id": "node_modules/.pnpm/framer-motion@11.18.2_react_6f47d4eded3b933dcfa6c1217db751a8/node_modules/framer-motion/dist/es/projection/node/HTMLProjectionNode.mjs",
+          "group": "framer-motion",
+          "renderedLength": 866
+        },
+        {
+          "id": "node_modules/.pnpm/framer-motion@11.18.2_react_6f47d4eded3b933dcfa6c1217db751a8/node_modules/framer-motion/dist/es/animation/utils/default-transitions.mjs",
+          "group": "framer-motion",
+          "renderedLength": 841
+        },
+        {
+          "id": "node_modules/.pnpm/framer-motion@11.18.2_react_6f47d4eded3b933dcfa6c1217db751a8/node_modules/framer-motion/dist/es/render/html/utils/make-none-animatable.mjs",
+          "group": "framer-motion",
+          "renderedLength": 835
+        },
+        {
+          "id": "node_modules/.pnpm/framer-motion@11.18.2_react_6f47d4eded3b933dcfa6c1217db751a8/node_modules/framer-motion/dist/es/projection/geometry/conversion.mjs",
+          "group": "framer-motion",
+          "renderedLength": 801
+        },
+        {
+          "id": "node_modules/.pnpm/framer-motion@11.18.2_react_6f47d4eded3b933dcfa6c1217db751a8/node_modules/framer-motion/dist/es/render/dom/value-types/number-browser.mjs",
+          "group": "framer-motion",
+          "renderedLength": 797
+        },
+        {
+          "id": "node_modules/.pnpm/framer-motion@11.18.2_react_6f47d4eded3b933dcfa6c1217db751a8/node_modules/framer-motion/dist/es/gestures/hover.mjs",
+          "group": "framer-motion",
+          "renderedLength": 795
+        },
+        {
+          "id": "node_modules/.pnpm/framer-motion@11.18.2_react_6f47d4eded3b933dcfa6c1217db751a8/node_modules/framer-motion/dist/es/render/utils/get-variant-context.mjs",
+          "group": "framer-motion",
+          "renderedLength": 786
+        },
+        {
+          "id": "node_modules/.pnpm/framer-motion@11.18.2_react_6f47d4eded3b933dcfa6c1217db751a8/node_modules/framer-motion/dist/es/animation/animators/waapi/index.mjs",
+          "group": "framer-motion",
+          "renderedLength": 783
+        },
+        {
+          "id": "node_modules/.pnpm/framer-motion@11.18.2_react_6f47d4eded3b933dcfa6c1217db751a8/node_modules/framer-motion/dist/es/utils/subscription-manager.mjs",
+          "group": "framer-motion",
+          "renderedLength": 780
+        },
+        {
+          "id": "node_modules/.pnpm/framer-motion@11.18.2_react_6f47d4eded3b933dcfa6c1217db751a8/node_modules/framer-motion/dist/es/easing/utils/map.mjs",
+          "group": "framer-motion",
+          "renderedLength": 769
+        },
+        {
+          "id": "node_modules/.pnpm/framer-motion@11.18.2_react_6f47d4eded3b933dcfa6c1217db751a8/node_modules/framer-motion/dist/es/projection/node/group.mjs",
+          "group": "framer-motion",
+          "renderedLength": 750
+        },
+        {
+          "id": "node_modules/.pnpm/framer-motion@11.18.2_react_6f47d4eded3b933dcfa6c1217db751a8/node_modules/framer-motion/dist/es/value/types/color/hex.mjs",
+          "group": "framer-motion",
+          "renderedLength": 750
+        },
+        {
+          "id": "node_modules/.pnpm/framer-motion@11.18.2_react_6f47d4eded3b933dcfa6c1217db751a8/node_modules/framer-motion/dist/es/components/AnimatePresence/use-presence.mjs",
+          "group": "framer-motion",
+          "renderedLength": 745
+        },
+        {
+          "id": "node_modules/.pnpm/framer-motion@11.18.2_react_6f47d4eded3b933dcfa6c1217db751a8/node_modules/framer-motion/dist/es/projection/utils/has-transform.mjs",
+          "group": "framer-motion",
+          "renderedLength": 740
+        },
+        {
+          "id": "node_modules/.pnpm/framer-motion@11.18.2_react_6f47d4eded3b933dcfa6c1217db751a8/node_modules/framer-motion/dist/es/value/types/numbers/units.mjs",
+          "group": "framer-motion",
+          "renderedLength": 714
+        },
+        {
+          "id": "node_modules/.pnpm/framer-motion@11.18.2_react_6f47d4eded3b933dcfa6c1217db751a8/node_modules/framer-motion/dist/es/render/dom/utils/is-css-variable.mjs",
+          "group": "framer-motion",
+          "renderedLength": 694
+        },
+        {
+          "id": "node_modules/.pnpm/framer-motion@11.18.2_react_6f47d4eded3b933dcfa6c1217db751a8/node_modules/framer-motion/dist/es/render/svg/use-props.mjs",
+          "group": "framer-motion",
+          "renderedLength": 688
+        },
+        {
+          "id": "node_modules/.pnpm/framer-motion@11.18.2_react_6f47d4eded3b933dcfa6c1217db751a8/node_modules/framer-motion/dist/es/render/components/create-proxy.mjs",
+          "group": "framer-motion",
+          "renderedLength": 683
+        },
+        {
+          "id": "node_modules/.pnpm/framer-motion@11.18.2_react_6f47d4eded3b933dcfa6c1217db751a8/node_modules/framer-motion/dist/es/render/html/utils/scrape-motion-values.mjs",
+          "group": "framer-motion",
+          "renderedLength": 682
+        },
+        {
+          "id": "node_modules/.pnpm/framer-motion@11.18.2_react_6f47d4eded3b933dcfa6c1217db751a8/node_modules/framer-motion/dist/es/value/types/color/utils.mjs",
+          "group": "framer-motion",
+          "renderedLength": 679
+        },
+        {
+          "id": "node_modules/.pnpm/motion-dom@11.18.1/node_modules/motion-dom/dist/es/utils/resolve-elements.mjs",
+          "group": "motion-dom",
+          "renderedLength": 670
+        },
+        {
+          "id": "node_modules/.pnpm/framer-motion@11.18.2_react_6f47d4eded3b933dcfa6c1217db751a8/node_modules/framer-motion/dist/es/render/svg/utils/path.mjs",
+          "group": "framer-motion",
+          "renderedLength": 666
+        },
+        {
+          "id": "node_modules/.pnpm/framer-motion@11.18.2_react_6f47d4eded3b933dcfa6c1217db751a8/node_modules/framer-motion/dist/es/render/utils/setters.mjs",
+          "group": "framer-motion",
+          "renderedLength": 664
+        },
+        {
+          "id": "node_modules/.pnpm/framer-motion@11.18.2_react_6f47d4eded3b933dcfa6c1217db751a8/node_modules/framer-motion/dist/es/projection/utils/measure.mjs",
+          "group": "framer-motion",
+          "renderedLength": 658
+        },
+        {
+          "id": "node_modules/.pnpm/framer-motion@11.18.2_react_6f47d4eded3b933dcfa6c1217db751a8/node_modules/framer-motion/dist/es/motion/utils/use-motion-ref.mjs",
+          "group": "framer-motion",
+          "renderedLength": 657
+        },
+        {
+          "id": "node_modules/.pnpm/framer-motion@11.18.2_react_6f47d4eded3b933dcfa6c1217db751a8/node_modules/framer-motion/dist/es/gestures/drag/index.mjs",
+          "group": "framer-motion",
+          "renderedLength": 657
+        },
+        {
+          "id": "node_modules/.pnpm/framer-motion@11.18.2_react_6f47d4eded3b933dcfa6c1217db751a8/node_modules/framer-motion/dist/es/value/types/color/rgba.mjs",
+          "group": "framer-motion",
+          "renderedLength": 629
+        },
+        {
+          "id": "node_modules/.pnpm/framer-motion@11.18.2_react_6f47d4eded3b933dcfa6c1217db751a8/node_modules/framer-motion/dist/es/render/components/create-factory.mjs",
+          "group": "framer-motion",
+          "renderedLength": 627
+        },
+        {
+          "id": "node_modules/.pnpm/framer-motion@11.18.2_react_6f47d4eded3b933dcfa6c1217db751a8/node_modules/framer-motion/dist/es/render/svg/utils/camel-case-attrs.mjs",
+          "group": "framer-motion",
+          "renderedLength": 624
+        },
+        {
+          "id": "node_modules/.pnpm/framer-motion@11.18.2_react_6f47d4eded3b933dcfa6c1217db751a8/node_modules/framer-motion/dist/es/utils/reduced-motion/index.mjs",
+          "group": "framer-motion",
+          "renderedLength": 623
+        },
+        {
+          "id": "node_modules/.pnpm/framer-motion@11.18.2_react_6f47d4eded3b933dcfa6c1217db751a8/node_modules/framer-motion/dist/es/render/dom/value-types/transform.mjs",
+          "group": "framer-motion",
+          "renderedLength": 618
+        },
+        {
+          "id": "node_modules/.pnpm/framer-motion@11.18.2_react_6f47d4eded3b933dcfa6c1217db751a8/node_modules/framer-motion/dist/es/render/svg/utils/scrape-motion-values.mjs",
+          "group": "framer-motion",
+          "renderedLength": 618
+        },
+        {
+          "id": "node_modules/.pnpm/framer-motion@11.18.2_react_6f47d4eded3b933dcfa6c1217db751a8/node_modules/framer-motion/dist/es/projection/styles/scale-border-radius.mjs",
+          "group": "framer-motion",
+          "renderedLength": 618
+        },
+        {
+          "id": "node_modules/.pnpm/framer-motion@11.18.2_react_6f47d4eded3b933dcfa6c1217db751a8/node_modules/framer-motion/dist/es/projection/geometry/copy.mjs",
+          "group": "framer-motion",
+          "renderedLength": 593
+        },
+        {
+          "id": "node_modules/.pnpm/framer-motion@11.18.2_react_6f47d4eded3b933dcfa6c1217db751a8/node_modules/framer-motion/dist/es/utils/use-force-update.mjs",
+          "group": "framer-motion",
+          "renderedLength": 583
+        },
+        {
+          "id": "node_modules/.pnpm/framer-motion@11.18.2_react_6f47d4eded3b933dcfa6c1217db751a8/node_modules/framer-motion/dist/es/animation/animators/waapi/utils/get-final-keyframe.mjs",
+          "group": "framer-motion",
+          "renderedLength": 577
+        },
+        {
+          "id": "node_modules/.pnpm/framer-motion@11.18.2_react_6f47d4eded3b933dcfa6c1217db751a8/node_modules/framer-motion/dist/es/context/MotionContext/create.mjs",
+          "group": "framer-motion",
+          "renderedLength": 568
+        },
+        {
+          "id": "node_modules/.pnpm/framer-motion@11.18.2_react_6f47d4eded3b933dcfa6c1217db751a8/node_modules/framer-motion/dist/es/value/types/color/hsla.mjs",
+          "group": "framer-motion",
+          "renderedLength": 563
+        },
+        {
+          "id": "node_modules/.pnpm/framer-motion@11.18.2_react_6f47d4eded3b933dcfa6c1217db751a8/node_modules/framer-motion/dist/es/render/utils/flat-tree.mjs",
+          "group": "framer-motion",
+          "renderedLength": 558
+        },
+        {
+          "id": "node_modules/.pnpm/framer-motion@11.18.2_react_6f47d4eded3b933dcfa6c1217db751a8/node_modules/framer-motion/dist/es/render/dom/value-types/defaults.mjs",
+          "group": "framer-motion",
+          "renderedLength": 529
+        },
+        {
+          "id": "node_modules/.pnpm/framer-motion@11.18.2_react_6f47d4eded3b933dcfa6c1217db751a8/node_modules/framer-motion/dist/es/projection/node/DocumentProjectionNode.mjs",
+          "group": "framer-motion",
+          "renderedLength": 517
+        },
+        {
+          "id": "node_modules/.pnpm/framer-motion@11.18.2_react_6f47d4eded3b933dcfa6c1217db751a8/node_modules/framer-motion/dist/es/value/types/color/index.mjs",
+          "group": "framer-motion",
+          "renderedLength": 512
+        },
+        {
+          "id": "node_modules/.pnpm/framer-motion@11.18.2_react_6f47d4eded3b933dcfa6c1217db751a8/node_modules/framer-motion/dist/es/render/svg/utils/transform-origin.mjs",
+          "group": "framer-motion",
+          "renderedLength": 506
+        },
+        {
+          "id": "node_modules/.pnpm/framer-motion@11.18.2_react_6f47d4eded3b933dcfa6c1217db751a8/node_modules/framer-motion/dist/es/context/MotionContext/utils.mjs",
+          "group": "framer-motion",
+          "renderedLength": 502
+        },
+        {
+          "id": "node_modules/.pnpm/motion-dom@11.18.1/node_modules/motion-dom/dist/es/gestures/drag/state/set-active.mjs",
+          "group": "motion-dom",
+          "renderedLength": 500
+        },
+        {
+          "id": "node_modules/.pnpm/motion-dom@11.18.1/node_modules/motion-dom/dist/es/gestures/utils/setup.mjs",
+          "group": "motion-dom",
+          "renderedLength": 491
+        },
+        {
+          "id": "node_modules/.pnpm/framer-motion@11.18.2_react_6f47d4eded3b933dcfa6c1217db751a8/node_modules/framer-motion/dist/es/animation/generators/spring/defaults.mjs",
+          "group": "framer-motion",
+          "renderedLength": 484
+        },
+        {
+          "id": "node_modules/.pnpm/framer-motion@11.18.2_react_6f47d4eded3b933dcfa6c1217db751a8/node_modules/framer-motion/dist/es/utils/delay.mjs",
+          "group": "framer-motion",
+          "renderedLength": 477
+        },
+        {
+          "id": "node_modules/.pnpm/framer-motion@11.18.2_react_6f47d4eded3b933dcfa6c1217db751a8/node_modules/framer-motion/dist/es/frameloop/sync-time.mjs",
+          "group": "framer-motion",
+          "renderedLength": 471
+        },
+        {
+          "id": "node_modules/.pnpm/framer-motion@11.18.2_react_6f47d4eded3b933dcfa6c1217db751a8/node_modules/framer-motion/dist/es/animation/animators/drivers/driver-frameloop.mjs",
+          "group": "framer-motion",
+          "renderedLength": 470
+        },
+        {
+          "id": "__vite-optional-peer-dep:@emotion/is-prop-valid:framer-motion",
+          "group": "virtual/other",
+          "renderedLength": 468
+        },
+        {
+          "id": "node_modules/.pnpm/framer-motion@11.18.2_react_6f47d4eded3b933dcfa6c1217db751a8/node_modules/framer-motion/dist/es/render/svg/lowercase-elements.mjs",
+          "group": "framer-motion",
+          "renderedLength": 461
+        },
+        {
+          "id": "node_modules/.pnpm/framer-motion@11.18.2_react_6f47d4eded3b933dcfa6c1217db751a8/node_modules/framer-motion/dist/es/animation/utils/is-animatable.mjs",
+          "group": "framer-motion",
+          "renderedLength": 457
+        },
+        {
+          "id": "node_modules/.pnpm/framer-motion@11.18.2_react_6f47d4eded3b933dcfa6c1217db751a8/node_modules/framer-motion/dist/es/render/html/utils/keys-transform.mjs",
+          "group": "framer-motion",
+          "renderedLength": 456
+        },
+        {
+          "id": "node_modules/.pnpm/motion-dom@11.18.1/node_modules/motion-dom/dist/es/animation/generators/utils/calc-duration.mjs",
+          "group": "motion-dom",
+          "renderedLength": 453
+        },
+        {
+          "id": "node_modules/.pnpm/framer-motion@11.18.2_react_6f47d4eded3b933dcfa6c1217db751a8/node_modules/framer-motion/dist/es/projection/geometry/models.mjs",
+          "group": "framer-motion",
+          "renderedLength": 451
+        },
+        {
+          "id": "node_modules/.pnpm/motion-dom@11.18.1/node_modules/motion-dom/dist/es/animation/waapi/utils/linear.mjs",
+          "group": "motion-dom",
+          "renderedLength": 442
+        },
+        {
+          "id": "node_modules/.pnpm/framer-motion@11.18.2_react_6f47d4eded3b933dcfa6c1217db751a8/node_modules/framer-motion/dist/es/render/dom/value-types/animatable-none.mjs",
+          "group": "framer-motion",
+          "renderedLength": 439
+        },
+        {
+          "id": "node_modules/.pnpm/framer-motion@11.18.2_react_6f47d4eded3b933dcfa6c1217db751a8/node_modules/framer-motion/dist/es/render/svg/utils/render.mjs",
+          "group": "framer-motion",
+          "renderedLength": 436
+        },
+        {
+          "id": "node_modules/.pnpm/framer-motion@11.18.2_react_6f47d4eded3b933dcfa6c1217db751a8/node_modules/framer-motion/dist/es/components/AnimatePresence/utils.mjs",
+          "group": "framer-motion",
+          "renderedLength": 431
+        },
+        {
+          "id": "node_modules/.pnpm/framer-motion@11.18.2_react_6f47d4eded3b933dcfa6c1217db751a8/node_modules/framer-motion/dist/es/render/utils/is-controlling-variants.mjs",
+          "group": "framer-motion",
+          "renderedLength": 430
+        },
+        {
+          "id": "node_modules/.pnpm/framer-motion@11.18.2_react_6f47d4eded3b933dcfa6c1217db751a8/node_modules/framer-motion/dist/es/animation/animate/single-value.mjs",
+          "group": "framer-motion",
+          "renderedLength": 426
+        },
+        {
+          "id": "node_modules/.pnpm/framer-motion@11.18.2_react_6f47d4eded3b933dcfa6c1217db751a8/node_modules/framer-motion/dist/es/utils/shallow-compare.mjs",
+          "group": "framer-motion",
+          "renderedLength": 422
+        },
+        {
+          "id": "node_modules/.pnpm/framer-motion@11.18.2_react_6f47d4eded3b933dcfa6c1217db751a8/node_modules/framer-motion/dist/es/render/dom/utils/is-svg-component.mjs",
+          "group": "framer-motion",
+          "renderedLength": 410
+        },
+        {
+          "id": "node_modules/.pnpm/framer-motion@11.18.2_react_6f47d4eded3b933dcfa6c1217db751a8/node_modules/framer-motion/dist/es/render/html/utils/render.mjs",
+          "group": "framer-motion",
+          "renderedLength": 409
+        },
+        {
+          "id": "node_modules/.pnpm/framer-motion@11.18.2_react_6f47d4eded3b933dcfa6c1217db751a8/node_modules/framer-motion/dist/es/animation/generators/utils/velocity.mjs",
+          "group": "framer-motion",
+          "renderedLength": 402
+        },
+        {
+          "id": "node_modules/.pnpm/framer-motion@11.18.2_react_6f47d4eded3b933dcfa6c1217db751a8/node_modules/framer-motion/dist/es/utils/reduced-motion/use-reduced-motion.mjs",
+          "group": "framer-motion",
+          "renderedLength": 402
+        },
+        {
+          "id": "node_modules/.pnpm/framer-motion@11.18.2_react_6f47d4eded3b933dcfa6c1217db751a8/node_modules/framer-motion/dist/es/render/utils/resolve-dynamic-variants.mjs",
+          "group": "framer-motion",
+          "renderedLength": 400
+        },
+        {
+          "id": "node_modules/.pnpm/framer-motion@11.18.2_react_6f47d4eded3b933dcfa6c1217db751a8/node_modules/framer-motion/dist/es/utils/mix/visibility.mjs",
+          "group": "framer-motion",
+          "renderedLength": 399
+        },
+        {
+          "id": "node_modules/.pnpm/framer-motion@11.18.2_react_6f47d4eded3b933dcfa6c1217db751a8/node_modules/framer-motion/dist/es/animation/utils/is-transition-defined.mjs",
+          "group": "framer-motion",
+          "renderedLength": 399
+        },
+        {
+          "id": "node_modules/.pnpm/framer-motion@11.18.2_react_6f47d4eded3b933dcfa6c1217db751a8/node_modules/framer-motion/dist/es/utils/offsets/fill.mjs",
+          "group": "framer-motion",
+          "renderedLength": 397
+        },
+        {
+          "id": "node_modules/.pnpm/framer-motion@11.18.2_react_6f47d4eded3b933dcfa6c1217db751a8/node_modules/framer-motion/dist/es/render/dom/create-visual-element.mjs",
+          "group": "framer-motion",
+          "renderedLength": 397
+        },
+        {
+          "id": "node_modules/.pnpm/framer-motion@11.18.2_react_6f47d4eded3b933dcfa6c1217db751a8/node_modules/framer-motion/dist/es/utils/use-is-mounted.mjs",
+          "group": "framer-motion",
+          "renderedLength": 392
+        },
+        {
+          "id": "node_modules/.pnpm/framer-motion@11.18.2_react_6f47d4eded3b933dcfa6c1217db751a8/node_modules/framer-motion/dist/es/motion/utils/is-forced-motion-value.mjs",
+          "group": "framer-motion",
+          "renderedLength": 389
+        },
+        {
+          "id": "node_modules/.pnpm/framer-motion@11.18.2_react_6f47d4eded3b933dcfa6c1217db751a8/node_modules/framer-motion/dist/es/events/event-info.mjs",
+          "group": "framer-motion",
+          "renderedLength": 389
+        },
+        {
+          "id": "node_modules/.pnpm/framer-motion@11.18.2_react_6f47d4eded3b933dcfa6c1217db751a8/node_modules/framer-motion/dist/es/value/types/numbers/index.mjs",
+          "group": "framer-motion",
+          "renderedLength": 376
+        },
+        {
+          "id": "node_modules/.pnpm/motion-dom@11.18.1/node_modules/motion-dom/dist/es/gestures/press/utils/is-keyboard-accessible.mjs",
+          "group": "motion-dom",
+          "renderedLength": 376
+        },
+        {
+          "id": "node_modules/.pnpm/framer-motion@11.18.2_react_6f47d4eded3b933dcfa6c1217db751a8/node_modules/framer-motion/dist/es/utils/resolve-value.mjs",
+          "group": "framer-motion",
+          "renderedLength": 371
+        },
+        {
+          "id": "node_modules/.pnpm/framer-motion@11.18.2_react_6f47d4eded3b933dcfa6c1217db751a8/node_modules/framer-motion/dist/es/value/utils/resolve-motion-value.mjs",
+          "group": "framer-motion",
+          "renderedLength": 371
+        },
+        {
+          "id": "node_modules/.pnpm/framer-motion@11.18.2_react_6f47d4eded3b933dcfa6c1217db751a8/node_modules/framer-motion/dist/es/value/use-will-change/add-will-change.mjs",
+          "group": "framer-motion",
+          "renderedLength": 368
+        },
+        {
+          "id": "node_modules/.pnpm/framer-motion@11.18.2_react_6f47d4eded3b933dcfa6c1217db751a8/node_modules/framer-motion/dist/es/events/add-dom-event.mjs",
+          "group": "framer-motion",
+          "renderedLength": 368
+        },
+        {
+          "id": "node_modules/.pnpm/framer-motion@11.18.2_react_6f47d4eded3b933dcfa6c1217db751a8/node_modules/framer-motion/dist/es/animation/utils/is-none.mjs",
+          "group": "framer-motion",
+          "renderedLength": 366
+        },
+        {
+          "id": "node_modules/.pnpm/framer-motion@11.18.2_react_6f47d4eded3b933dcfa6c1217db751a8/node_modules/framer-motion/dist/es/render/utils/variant-props.mjs",
+          "group": "framer-motion",
+          "renderedLength": 357
+        },
+        {
+          "id": "node_modules/.pnpm/motion-dom@11.18.1/node_modules/motion-dom/dist/es/utils/supports/linear-easing.mjs",
+          "group": "motion-dom",
+          "renderedLength": 354
+        },
+        {
+          "id": "node_modules/.pnpm/framer-motion@11.18.2_react_6f47d4eded3b933dcfa6c1217db751a8/node_modules/framer-motion/dist/es/utils/array.mjs",
+          "group": "framer-motion",
+          "renderedLength": 353
+        },
+        {
+          "id": "node_modules/.pnpm/framer-motion@11.18.2_react_6f47d4eded3b933dcfa6c1217db751a8/node_modules/framer-motion/dist/es/utils/distance.mjs",
+          "group": "framer-motion",
+          "renderedLength": 353
+        },
+        {
+          "id": "node_modules/.pnpm/framer-motion@11.18.2_react_6f47d4eded3b933dcfa6c1217db751a8/node_modules/framer-motion/dist/es/frameloop/frame.mjs",
+          "group": "framer-motion",
+          "renderedLength": 352
+        },
+        {
+          "id": "node_modules/.pnpm/framer-motion@11.18.2_react_6f47d4eded3b933dcfa6c1217db751a8/node_modules/framer-motion/dist/es/context/LayoutGroupContext.mjs",
+          "group": "framer-motion",
+          "renderedLength": 349
+        },
+        {
+          "id": "node_modules/.pnpm/framer-motion@11.18.2_react_6f47d4eded3b933dcfa6c1217db751a8/node_modules/framer-motion/dist/es/render/dom/value-types/number.mjs",
+          "group": "framer-motion",
+          "renderedLength": 346
+        },
+        {
+          "id": "node_modules/.pnpm/framer-motion@11.18.2_react_6f47d4eded3b933dcfa6c1217db751a8/node_modules/framer-motion/dist/es/render/html/config-motion.mjs",
+          "group": "framer-motion",
+          "renderedLength": 345
+        },
+        {
+          "id": "node_modules/.pnpm/framer-motion@11.18.2_react_6f47d4eded3b933dcfa6c1217db751a8/node_modules/framer-motion/dist/es/render/dom/value-types/dimensions.mjs",
+          "group": "framer-motion",
+          "renderedLength": 343
+        },
+        {
+          "id": "node_modules/.pnpm/framer-motion@11.18.2_react_6f47d4eded3b933dcfa6c1217db751a8/node_modules/framer-motion/dist/es/utils/mix/index.mjs",
+          "group": "framer-motion",
+          "renderedLength": 343
+        },
+        {
+          "id": "node_modules/.pnpm/framer-motion@11.18.2_react_6f47d4eded3b933dcfa6c1217db751a8/node_modules/framer-motion/dist/es/motion/features/gestures.mjs",
+          "group": "framer-motion",
+          "renderedLength": 341
+        },
+        {
+          "id": "node_modules/.pnpm/framer-motion@11.18.2_react_6f47d4eded3b933dcfa6c1217db751a8/node_modules/framer-motion/dist/es/render/components/motion/create.mjs",
+          "group": "framer-motion",
+          "renderedLength": 341
+        },
+        {
+          "id": "node_modules/.pnpm/framer-motion@11.18.2_react_6f47d4eded3b933dcfa6c1217db751a8/node_modules/framer-motion/dist/es/easing/ease.mjs",
+          "group": "framer-motion",
+          "renderedLength": 328
+        },
+        {
+          "id": "node_modules/.pnpm/framer-motion@11.18.2_react_6f47d4eded3b933dcfa6c1217db751a8/node_modules/framer-motion/dist/es/value/types/utils/single-color-regex.mjs",
+          "group": "framer-motion",
+          "renderedLength": 327
+        },
+        {
+          "id": "node_modules/.pnpm/motion-dom@11.18.1/node_modules/motion-dom/dist/es/utils/supports/memo.mjs",
+          "group": "motion-dom",
+          "renderedLength": 326
+        },
+        {
+          "id": "node_modules/.pnpm/framer-motion@11.18.2_react_6f47d4eded3b933dcfa6c1217db751a8/node_modules/framer-motion/dist/es/easing/back.mjs",
+          "group": "framer-motion",
+          "renderedLength": 325
+        },
+        {
+          "id": "node_modules/.pnpm/framer-motion@11.18.2_react_6f47d4eded3b933dcfa6c1217db751a8/node_modules/framer-motion/dist/es/motion/features/load-features.mjs",
+          "group": "framer-motion",
+          "renderedLength": 324
+        },
+        {
+          "id": "node_modules/.pnpm/motion-dom@11.18.1/node_modules/motion-dom/dist/es/gestures/utils/is-primary-pointer.mjs",
+          "group": "motion-dom",
+          "renderedLength": 314
+        },
+        {
+          "id": "node_modules/.pnpm/framer-motion@11.18.2_react_6f47d4eded3b933dcfa6c1217db751a8/node_modules/framer-motion/dist/es/utils/use-constant.mjs",
+          "group": "framer-motion",
+          "renderedLength": 313
+        },
+        {
+          "id": "node_modules/.pnpm/framer-motion@11.18.2_react_6f47d4eded3b933dcfa6c1217db751a8/node_modules/framer-motion/dist/es/context/MotionConfigContext.mjs",
+          "group": "framer-motion",
+          "renderedLength": 313
+        },
+        {
+          "id": "node_modules/.pnpm/framer-motion@11.18.2_react_6f47d4eded3b933dcfa6c1217db751a8/node_modules/framer-motion/dist/es/render/html/utils/keys-position.mjs",
+          "group": "framer-motion",
+          "renderedLength": 313
+        },
+        {
+          "id": "node_modules/.pnpm/framer-motion@11.18.2_react_6f47d4eded3b933dcfa6c1217db751a8/node_modules/framer-motion/dist/es/value/types/utils/color-regex.mjs",
+          "group": "framer-motion",
+          "renderedLength": 313
+        },
+        {
+          "id": "node_modules/.pnpm/framer-motion@11.18.2_react_6f47d4eded3b933dcfa6c1217db751a8/node_modules/framer-motion/dist/es/events/add-pointer-event.mjs",
+          "group": "framer-motion",
+          "renderedLength": 313
+        },
+        {
+          "id": "node_modules/.pnpm/framer-motion@11.18.2_react_6f47d4eded3b933dcfa6c1217db751a8/node_modules/framer-motion/dist/es/animation/optimized-appear/data-id.mjs",
+          "group": "framer-motion",
+          "renderedLength": 310
+        },
+        {
+          "id": "node_modules/.pnpm/framer-motion@11.18.2_react_6f47d4eded3b933dcfa6c1217db751a8/node_modules/framer-motion/dist/es/motion/features/drag.mjs",
+          "group": "framer-motion",
+          "renderedLength": 306
+        },
+        {
+          "id": "node_modules/.pnpm/motion-dom@11.18.1/node_modules/motion-dom/dist/es/animation/controls/Group.mjs",
+          "group": "motion-dom",
+          "renderedLength": 304
+        },
+        {
+          "id": "node_modules/.pnpm/motion-dom@11.18.1/node_modules/motion-dom/dist/es/gestures/utils/is-node-or-child.mjs",
+          "group": "motion-dom",
+          "renderedLength": 304
+        },
+        {
+          "id": "node_modules/.pnpm/framer-motion@11.18.2_react_6f47d4eded3b933dcfa6c1217db751a8/node_modules/framer-motion/dist/es/render/dom/value-types/find.mjs",
+          "group": "framer-motion",
+          "renderedLength": 302
+        },
+        {
+          "id": "node_modules/.pnpm/framer-motion@11.18.2_react_6f47d4eded3b933dcfa6c1217db751a8/node_modules/framer-motion/dist/es/render/dom/value-types/get-as-type.mjs",
+          "group": "framer-motion",
+          "renderedLength": 301
+        },
+        {
+          "id": "node_modules/.pnpm/framer-motion@11.18.2_react_6f47d4eded3b933dcfa6c1217db751a8/node_modules/framer-motion/dist/es/animation/utils/is-animation-controls.mjs",
+          "group": "framer-motion",
+          "renderedLength": 300
+        },
+        {
+          "id": "node_modules/.pnpm/motion-utils@11.18.1/node_modules/motion-utils/dist/es/time-conversion.mjs",
+          "group": "motion-utils",
+          "renderedLength": 299
+        },
+        {
+          "id": "node_modules/.pnpm/framer-motion@11.18.2_react_6f47d4eded3b933dcfa6c1217db751a8/node_modules/framer-motion/dist/es/animation/animators/waapi/utils/supports-waapi.mjs",
+          "group": "framer-motion",
+          "renderedLength": 299
+        },
+        {
+          "id": "node_modules/.pnpm/framer-motion@11.18.2_react_6f47d4eded3b933dcfa6c1217db751a8/node_modules/framer-motion/dist/es/projection/styles/scale-correction.mjs",
+          "group": "framer-motion",
+          "renderedLength": 297
+        },
+        {
+          "id": "node_modules/.pnpm/framer-motion@11.18.2_react_6f47d4eded3b933dcfa6c1217db751a8/node_modules/framer-motion/dist/es/animation/optimized-appear/get-appear-id.mjs",
+          "group": "framer-motion",
+          "renderedLength": 297
+        },
+        {
+          "id": "node_modules/.pnpm/framer-motion@11.18.2_react_6f47d4eded3b933dcfa6c1217db751a8/node_modules/framer-motion/dist/es/animation/animators/utils/accelerated-values.mjs",
+          "group": "framer-motion",
+          "renderedLength": 296
+        },
+        {
+          "id": "node_modules/.pnpm/framer-motion@11.18.2_react_6f47d4eded3b933dcfa6c1217db751a8/node_modules/framer-motion/dist/es/utils/is-ref-object.mjs",
+          "group": "framer-motion",
+          "renderedLength": 294
+        },
+        {
+          "id": "node_modules/.pnpm/motion-utils@11.18.1/node_modules/motion-utils/dist/es/progress.mjs",
+          "group": "motion-utils",
+          "renderedLength": 293
+        },
+        {
+          "id": "node_modules/.pnpm/framer-motion@11.18.2_react_6f47d4eded3b933dcfa6c1217db751a8/node_modules/framer-motion/dist/es/utils/velocity-per-second.mjs",
+          "group": "framer-motion",
+          "renderedLength": 292
+        },
+        {
+          "id": "node_modules/.pnpm/framer-motion@11.18.2_react_6f47d4eded3b933dcfa6c1217db751a8/node_modules/framer-motion/dist/es/render/html/utils/create-render-state.mjs",
+          "group": "framer-motion",
+          "renderedLength": 287
+        },
+        {
+          "id": "node_modules/.pnpm/framer-motion@11.18.2_react_6f47d4eded3b933dcfa6c1217db751a8/node_modules/framer-motion/dist/es/easing/circ.mjs",
+          "group": "framer-motion",
+          "renderedLength": 283
+        },
+        {
+          "id": "node_modules/.pnpm/framer-motion@11.18.2_react_6f47d4eded3b933dcfa6c1217db751a8/node_modules/framer-motion/dist/es/render/dom/utils/is-svg-element.mjs",
+          "group": "framer-motion",
+          "renderedLength": 283
+        },
+        {
+          "id": "node_modules/.pnpm/framer-motion@11.18.2_react_6f47d4eded3b933dcfa6c1217db751a8/node_modules/framer-motion/dist/es/utils/pipe.mjs",
+          "group": "framer-motion",
+          "renderedLength": 281
+        },
+        {
+          "id": "node_modules/.pnpm/framer-motion@11.18.2_react_6f47d4eded3b933dcfa6c1217db751a8/node_modules/framer-motion/dist/es/motion/features/animations.mjs",
+          "group": "framer-motion",
+          "renderedLength": 281
+        },
+        {
+          "id": "node_modules/.pnpm/framer-motion@11.18.2_react_6f47d4eded3b933dcfa6c1217db751a8/node_modules/framer-motion/dist/es/motion/features/Feature.mjs",
+          "group": "framer-motion",
+          "renderedLength": 280
+        },
+        {
+          "id": "node_modules/.pnpm/framer-motion@11.18.2_react_6f47d4eded3b933dcfa6c1217db751a8/node_modules/framer-motion/dist/es/utils/get-context-window.mjs",
+          "group": "framer-motion",
+          "renderedLength": 278
+        },
+        {
+          "id": "node_modules/.pnpm/framer-motion@11.18.2_react_6f47d4eded3b933dcfa6c1217db751a8/node_modules/framer-motion/dist/es/utils/offsets/default.mjs",
+          "group": "framer-motion",
+          "renderedLength": 276
+        },
+        {
+          "id": "node_modules/.pnpm/framer-motion@11.18.2_react_6f47d4eded3b933dcfa6c1217db751a8/node_modules/framer-motion/dist/es/utils/use-isomorphic-effect.mjs",
+          "group": "framer-motion",
+          "renderedLength": 275
+        },
+        {
+          "id": "node_modules/.pnpm/motion-dom@11.18.1/node_modules/motion-dom/dist/es/animation/utils/get-value-transition.mjs",
+          "group": "motion-dom",
+          "renderedLength": 275
+        },
+        {
+          "id": "node_modules/.pnpm/framer-motion@11.18.2_react_6f47d4eded3b933dcfa6c1217db751a8/node_modules/framer-motion/dist/es/easing/utils/is-easing-array.mjs",
+          "group": "framer-motion",
+          "renderedLength": 272
+        },
+        {
+          "id": "node_modules/.pnpm/framer-motion@11.18.2_react_6f47d4eded3b933dcfa6c1217db751a8/node_modules/framer-motion/dist/es/utils/reduced-motion/state.mjs",
+          "group": "framer-motion",
+          "renderedLength": 272
+        },
+        {
+          "id": "node_modules/.pnpm/framer-motion@11.18.2_react_6f47d4eded3b933dcfa6c1217db751a8/node_modules/framer-motion/dist/es/easing/modifiers/mirror.mjs",
+          "group": "framer-motion",
+          "renderedLength": 271
+        },
+        {
+          "id": "node_modules/.pnpm/framer-motion@11.18.2_react_6f47d4eded3b933dcfa6c1217db751a8/node_modules/framer-motion/dist/es/value/use-will-change/is.mjs",
+          "group": "framer-motion",
+          "renderedLength": 269
+        },
+        {
+          "id": "node_modules/.pnpm/framer-motion@11.18.2_react_6f47d4eded3b933dcfa6c1217db751a8/node_modules/framer-motion/dist/es/frameloop/microtask.mjs",
+          "group": "framer-motion",
+          "renderedLength": 267
+        },
+        {
+          "id": "node_modules/.pnpm/framer-motion@11.18.2_react_6f47d4eded3b933dcfa6c1217db751a8/node_modules/framer-motion/dist/es/render/svg/utils/create-render-state.mjs",
+          "group": "framer-motion",
+          "renderedLength": 265
+        },
+        {
+          "id": "node_modules/.pnpm/framer-motion@11.18.2_react_6f47d4eded3b933dcfa6c1217db751a8/node_modules/framer-motion/dist/es/render/dom/utils/camel-to-dash.mjs",
+          "group": "framer-motion",
+          "renderedLength": 262
+        },
+        {
+          "id": "node_modules/.pnpm/motion-utils@11.18.1/node_modules/motion-utils/dist/es/memo.mjs",
+          "group": "motion-utils",
+          "renderedLength": 261
+        },
+        {
+          "id": "node_modules/.pnpm/framer-motion@11.18.2_react_6f47d4eded3b933dcfa6c1217db751a8/node_modules/framer-motion/dist/es/easing/anticipate.mjs",
+          "group": "framer-motion",
+          "renderedLength": 261
+        },
+        {
+          "id": "node_modules/.pnpm/framer-motion@11.18.2_react_6f47d4eded3b933dcfa6c1217db751a8/node_modules/framer-motion/dist/es/render/utils/is-variant-label.mjs",
+          "group": "framer-motion",
+          "renderedLength": 260
+        },
+        {
+          "id": "node_modules/.pnpm/framer-motion@11.18.2_react_6f47d4eded3b933dcfa6c1217db751a8/node_modules/framer-motion/dist/es/utils/offsets/time.mjs",
+          "group": "framer-motion",
+          "renderedLength": 260
+        },
+        {
+          "id": "node_modules/.pnpm/framer-motion@11.18.2_react_6f47d4eded3b933dcfa6c1217db751a8/node_modules/framer-motion/dist/es/render/components/motion/proxy.mjs",
+          "group": "framer-motion",
+          "renderedLength": 260
+        },
+        {
+          "id": "node_modules/.pnpm/framer-motion@11.18.2_react_6f47d4eded3b933dcfa6c1217db751a8/node_modules/framer-motion/dist/es/context/DeprecatedLayoutGroupContext.mjs",
+          "group": "framer-motion",
+          "renderedLength": 259
+        },
+        {
+          "id": "node_modules/.pnpm/framer-motion@11.18.2_react_6f47d4eded3b933dcfa6c1217db751a8/node_modules/framer-motion/dist/es/utils/clamp.mjs",
+          "group": "framer-motion",
+          "renderedLength": 259
+        },
+        {
+          "id": "node_modules/.pnpm/framer-motion@11.18.2_react_6f47d4eded3b933dcfa6c1217db751a8/node_modules/framer-motion/dist/es/projection/node/state.mjs",
+          "group": "framer-motion",
+          "renderedLength": 257
+        },
+        {
+          "id": "node_modules/.pnpm/framer-motion@11.18.2_react_6f47d4eded3b933dcfa6c1217db751a8/node_modules/framer-motion/dist/es/render/svg/utils/is-svg-tag.mjs",
+          "group": "framer-motion",
+          "renderedLength": 256
+        },
+        {
+          "id": "node_modules/.pnpm/framer-motion@11.18.2_react_6f47d4eded3b933dcfa6c1217db751a8/node_modules/framer-motion/dist/es/motion/features/layout.mjs",
+          "group": "framer-motion",
+          "renderedLength": 253
+        },
+        {
+          "id": "node_modules/.pnpm/framer-motion@11.18.2_react_6f47d4eded3b933dcfa6c1217db751a8/node_modules/framer-motion/dist/es/utils/mix/number.mjs",
+          "group": "framer-motion",
+          "renderedLength": 251
+        },
+        {
+          "id": "node_modules/.pnpm/motion-dom@11.18.1/node_modules/motion-dom/dist/es/animation/waapi/utils/attach-timeline.mjs",
+          "group": "motion-dom",
+          "renderedLength": 250
+        },
+        {
+          "id": "node_modules/.pnpm/framer-motion@11.18.2_react_6f47d4eded3b933dcfa6c1217db751a8/node_modules/framer-motion/dist/es/context/SwitchLayoutGroupContext.mjs",
+          "group": "framer-motion",
+          "renderedLength": 249
+        },
+        {
+          "id": "node_modules/.pnpm/framer-motion@11.18.2_react_6f47d4eded3b933dcfa6c1217db751a8/node_modules/framer-motion/dist/es/projection/utils/each-axis.mjs",
+          "group": "framer-motion",
+          "renderedLength": 247
+        },
+        {
+          "id": "node_modules/.pnpm/framer-motion@11.18.2_react_6f47d4eded3b933dcfa6c1217db751a8/node_modules/framer-motion/dist/es/animation/utils/is-keyframes-target.mjs",
+          "group": "framer-motion",
+          "renderedLength": 246
+        },
+        {
+          "id": "node_modules/.pnpm/framer-motion@11.18.2_react_6f47d4eded3b933dcfa6c1217db751a8/node_modules/framer-motion/dist/es/utils/GlobalConfig.mjs",
+          "group": "framer-motion",
+          "renderedLength": 245
+        },
+        {
+          "id": "node_modules/.pnpm/framer-motion@11.18.2_react_6f47d4eded3b933dcfa6c1217db751a8/node_modules/framer-motion/dist/es/utils/is-numerical-string.mjs",
+          "group": "framer-motion",
+          "renderedLength": 245
+        },
+        {
+          "id": "node_modules/.pnpm/framer-motion@11.18.2_react_6f47d4eded3b933dcfa6c1217db751a8/node_modules/framer-motion/dist/es/value/utils/is-motion-value.mjs",
+          "group": "framer-motion",
+          "renderedLength": 244
+        },
+        {
+          "id": "node_modules/.pnpm/motion-dom@11.18.1/node_modules/motion-dom/dist/es/gestures/drag/state/is-active.mjs",
+          "group": "motion-dom",
+          "renderedLength": 242
+        },
+        {
+          "id": "node_modules/.pnpm/framer-motion@11.18.2_react_6f47d4eded3b933dcfa6c1217db751a8/node_modules/framer-motion/dist/es/render/dom/value-types/type-auto.mjs",
+          "group": "framer-motion",
+          "renderedLength": 242
+        },
+        {
+          "id": "node_modules/.pnpm/react@19.2.8/node_modules/react/jsx-runtime.js",
+          "group": "react",
+          "renderedLength": 238
+        },
+        {
+          "id": "node_modules/.pnpm/framer-motion@11.18.2_react_6f47d4eded3b933dcfa6c1217db751a8/node_modules/framer-motion/dist/es/context/LazyContext.mjs",
+          "group": "framer-motion",
+          "renderedLength": 238
+        },
+        {
+          "id": "node_modules/.pnpm/framer-motion@11.18.2_react_6f47d4eded3b933dcfa6c1217db751a8/node_modules/framer-motion/dist/es/context/PresenceContext.mjs",
+          "group": "framer-motion",
+          "renderedLength": 233
+        },
+        {
+          "id": "node_modules/.pnpm/framer-motion@11.18.2_react_6f47d4eded3b933dcfa6c1217db751a8/node_modules/framer-motion/dist/es/context/MotionContext/index.mjs",
+          "group": "framer-motion",
+          "renderedLength": 233
+        },
+        {
+          "id": "node_modules/.pnpm/framer-motion@11.18.2_react_6f47d4eded3b933dcfa6c1217db751a8/node_modules/framer-motion/dist/es/motion/utils/symbol.mjs",
+          "group": "framer-motion",
+          "renderedLength": 233
+        },
+        {
+          "id": "node_modules/.pnpm/framer-motion@11.18.2_react_6f47d4eded3b933dcfa6c1217db751a8/node_modules/framer-motion/dist/es/utils/use-instant-transition-state.mjs",
+          "group": "framer-motion",
+          "renderedLength": 231
+        },
+        {
+          "id": "node_modules/.pnpm/framer-motion@11.18.2_react_6f47d4eded3b933dcfa6c1217db751a8/node_modules/framer-motion/dist/es/easing/modifiers/reverse.mjs",
+          "group": "framer-motion",
+          "renderedLength": 231
+        },
+        {
+          "id": "node_modules/.pnpm/framer-motion@11.18.2_react_6f47d4eded3b933dcfa6c1217db751a8/node_modules/framer-motion/dist/es/render/dom/value-types/type-int.mjs",
+          "group": "framer-motion",
+          "renderedLength": 230
+        },
+        {
+          "id": "node_modules/.pnpm/framer-motion@11.18.2_react_6f47d4eded3b933dcfa6c1217db751a8/node_modules/framer-motion/dist/es/utils/mix/immediate.mjs",
+          "group": "framer-motion",
+          "renderedLength": 230
+        },
+        {
+          "id": "node_modules/.pnpm/framer-motion@11.18.2_react_6f47d4eded3b933dcfa6c1217db751a8/node_modules/framer-motion/dist/es/utils/is-zero-value-string.mjs",
+          "group": "framer-motion",
+          "renderedLength": 229
+        },
+        {
+          "id": "node_modules/.pnpm/framer-motion@11.18.2_react_6f47d4eded3b933dcfa6c1217db751a8/node_modules/framer-motion/dist/es/render/utils/compare-by-depth.mjs",
+          "group": "framer-motion",
+          "renderedLength": 228
+        },
+        {
+          "id": "node_modules/.pnpm/framer-motion@11.18.2_react_6f47d4eded3b933dcfa6c1217db751a8/node_modules/framer-motion/dist/es/render/dom/value-types/test.mjs",
+          "group": "framer-motion",
+          "renderedLength": 227
+        },
+        {
+          "id": "node_modules/.pnpm/framer-motion@11.18.2_react_6f47d4eded3b933dcfa6c1217db751a8/node_modules/framer-motion/dist/es/value/types/utils/float-regex.mjs",
+          "group": "framer-motion",
+          "renderedLength": 226
+        },
+        {
+          "id": "node_modules/.pnpm/framer-motion@11.18.2_react_6f47d4eded3b933dcfa6c1217db751a8/node_modules/framer-motion/dist/es/value/types/utils/sanitize.mjs",
+          "group": "framer-motion",
+          "renderedLength": 224
+        },
+        {
+          "id": "node_modules/.pnpm/motion-dom@11.18.1/node_modules/motion-dom/dist/es/utils/is-bezier-definition.mjs",
+          "group": "motion-dom",
+          "renderedLength": 223
+        },
+        {
+          "id": "node_modules/.pnpm/framer-motion@11.18.2_react_6f47d4eded3b933dcfa6c1217db751a8/node_modules/framer-motion/dist/es/value/types/utils/is-nullish.mjs",
+          "group": "framer-motion",
+          "renderedLength": 222
+        },
+        {
+          "id": "node_modules/.pnpm/framer-motion@11.18.2_react_6f47d4eded3b933dcfa6c1217db751a8/node_modules/framer-motion/dist/es/render/store.mjs",
+          "group": "framer-motion",
+          "renderedLength": 217
+        },
+        {
+          "id": "node_modules/.pnpm/framer-motion@11.18.2_react_6f47d4eded3b933dcfa6c1217db751a8/node_modules/framer-motion/dist/es/utils/is-browser.mjs",
+          "group": "framer-motion",
+          "renderedLength": 212
+        },
+        {
+          "id": "node_modules/.pnpm/motion-dom@11.18.1/node_modules/motion-dom/dist/es/animation/generators/utils/is-generator.mjs",
+          "group": "motion-dom",
+          "renderedLength": 210
+        },
+        {
+          "id": "node_modules/.pnpm/motion-dom@11.18.1/node_modules/motion-dom/dist/es/utils/supports/scroll-timeline.mjs",
+          "group": "motion-dom",
+          "renderedLength": 209
+        },
+        {
+          "id": "node_modules/.pnpm/gsap@3.15.0/node_modules/gsap/index.js",
+          "group": "gsap",
+          "renderedLength": 195
+        },
+        {
+          "id": "node_modules/.pnpm/motion-dom@11.18.1/node_modules/motion-dom/dist/es/gestures/press/utils/state.mjs",
+          "group": "motion-dom",
+          "renderedLength": 178
+        },
+        {
+          "id": "node_modules/.pnpm/motion-dom@11.18.1/node_modules/motion-dom/dist/es/utils/supports/flags.mjs",
+          "group": "motion-dom",
+          "renderedLength": 170
+        },
+        {
+          "id": "node_modules/.pnpm/motion-utils@11.18.1/node_modules/motion-utils/dist/es/noop.mjs",
+          "group": "motion-utils",
+          "renderedLength": 164
+        },
+        {
+          "id": "node_modules/.pnpm/motion-utils@11.18.1/node_modules/motion-utils/dist/es/errors.mjs",
+          "group": "motion-utils",
+          "renderedLength": 156
+        },
+        {
+          "id": "node_modules/.pnpm/motion-dom@11.18.1/node_modules/motion-dom/dist/es/view/start.mjs",
+          "group": "motion-dom",
+          "renderedLength": 0
+        },
+        {
+          "id": "node_modules/.pnpm/motion-dom@11.18.1/node_modules/motion-dom/dist/es/view/index.mjs",
+          "group": "motion-dom",
+          "renderedLength": 0
+        },
+        {
+          "id": "node_modules/.pnpm/motion-dom@11.18.1/node_modules/motion-dom/dist/es/index.mjs",
+          "group": "motion-dom",
+          "renderedLength": 0
+        }
+      ]
+    },
+    {
+      "file": "assets/vendor-react-CluWBeuA.js",
+      "bytes": 181749,
+      "entry": false,
+      "dynamicEntry": false,
+      "imports": [
+        "assets/rolldown-runtime-B0Z9INg1.js",
+        "assets/vendor-icons-D57X7K8o.js"
+      ],
+      "dynamicImports": [],
+      "packages": [
+        {
+          "name": "react-dom",
+          "renderedLength": 460027
+        },
+        {
+          "name": "scheduler",
+          "renderedLength": 9309
+        }
+      ],
+      "modules": [
+        {
+          "id": "node_modules/.pnpm/react-dom@19.2.8_react@19.2.8/node_modules/react-dom/cjs/react-dom-client.production.js",
+          "group": "react-dom",
+          "renderedLength": 453208
+        },
+        {
+          "id": "node_modules/.pnpm/scheduler@0.27.0/node_modules/scheduler/cjs/scheduler.production.js",
+          "group": "scheduler",
+          "renderedLength": 9079
+        },
+        {
+          "id": "node_modules/.pnpm/react-dom@19.2.8_react@19.2.8/node_modules/react-dom/cjs/react-dom.production.js",
+          "group": "react-dom",
+          "renderedLength": 5768
+        },
+        {
+          "id": "node_modules/.pnpm/react-dom@19.2.8_react@19.2.8/node_modules/react-dom/client.js",
+          "group": "react-dom",
+          "renderedLength": 528
+        },
+        {
+          "id": "node_modules/.pnpm/react-dom@19.2.8_react@19.2.8/node_modules/react-dom/index.js",
+          "group": "react-dom",
+          "renderedLength": 523
+        },
+        {
+          "id": "node_modules/.pnpm/scheduler@0.27.0/node_modules/scheduler/index.js",
+          "group": "scheduler",
+          "renderedLength": 230
+        }
+      ]
+    },
+    {
+      "file": "assets/index-Cd2Fx46z.js",
+      "bytes": 80548,
+      "entry": true,
+      "dynamicEntry": false,
+      "imports": [
+        "assets/rolldown-runtime-B0Z9INg1.js",
+        "assets/vendor-icons-D57X7K8o.js",
+        "assets/vendor-react-CluWBeuA.js",
+        "assets/vendor-motion-CMs4UaPr.js",
+        "assets/DialogCloseButton-lLrecaCo.js",
+        "assets/AccountAvatar-BVNYRg_Y.js",
+        "assets/DisplayRefreshRateService-BlUs0Gtj.js",
+        "assets/profile-B65SOSwv.js",
+        "assets/ReleaseDetailModal-DcKM41ln.js"
+      ],
+      "dynamicImports": [
+        "assets/RoomPage-Y2PONjKR.js",
+        "assets/SettingsPage-Bjcf0uxG.js",
+        "assets/DeskAnimalSprite-ZUoQsthj.js"
+      ],
+      "packages": [
+        {
+          "name": "app source",
+          "renderedLength": 154376
+        },
+        {
+          "name": "virtual/other",
+          "renderedLength": 1205
+        },
+        {
+          "name": "packages/shared",
+          "renderedLength": 731
+        },
+        {
+          "name": "@fontsource-variable/noto-sans-sc",
+          "renderedLength": 270
+        }
+      ],
+      "modules": [
+        {
+          "id": "apps/desktop/src/renderer/src/pages/AccountPage.tsx",
+          "group": "app source",
+          "renderedLength": 30628
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/pages/HomePage.tsx",
+          "group": "app source",
+          "renderedLength": 21931
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/pages/OverlayPage.tsx",
+          "group": "app source",
+          "renderedLength": 16722
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/app/App.tsx",
+          "group": "app source",
+          "renderedLength": 10033
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/pages/ScreenShareViewerPage.tsx",
+          "group": "app source",
+          "renderedLength": 8846
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/hooks/useAppBootstrap.ts",
+          "group": "app source",
+          "renderedLength": 6598
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/components/status/UpdateModal.tsx",
+          "group": "app source",
+          "renderedLength": 6245
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/components/status/UpdateGatePage.tsx",
+          "group": "app source",
+          "renderedLength": 5995
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/hooks/useUiFeedbackSounds.ts",
+          "group": "app source",
+          "renderedLength": 5746
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/pages/SharedOverlays.tsx",
+          "group": "app source",
+          "renderedLength": 4391
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/components/account/AccountAudioControl.tsx",
+          "group": "app source",
+          "renderedLength": 4124
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/components/status/ReconnectOverlay.tsx",
+          "group": "app source",
+          "renderedLength": 3814
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/components/layout/ToastRegion.tsx",
+          "group": "app source",
+          "renderedLength": 3766
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/hooks/useLocalAudioTransport.ts",
+          "group": "app source",
+          "renderedLength": 3416
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/components/status/ReleaseNotesModal.tsx",
+          "group": "app source",
+          "renderedLength": 2848
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/components/status/OnboardingModal.tsx",
+          "group": "app source",
+          "renderedLength": 2611
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/features/audio/RemoteAudioRenderer.tsx",
+          "group": "app source",
+          "renderedLength": 2568
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/components/status/StartupRecoveryPage.tsx",
+          "group": "app source",
+          "renderedLength": 2380
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/components/layout/WindowFrame.tsx",
+          "group": "app source",
+          "renderedLength": 2003
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/components/status/SafeModeBanner.tsx",
+          "group": "app source",
+          "renderedLength": 1780
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/components/layout/AppErrorBoundary.tsx",
+          "group": "app source",
+          "renderedLength": 1719
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/hooks/usePhoneModeSync.ts",
+          "group": "app source",
+          "renderedLength": 1574
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/components/account/AccountLoginSummary.tsx",
+          "group": "app source",
+          "renderedLength": 1435
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/config/cloudbase.ts",
+          "group": "app source",
+          "renderedLength": 1225
+        },
+        {
+          "id": "\u0000vite/modulepreload-polyfill.js",
+          "group": "virtual/other",
+          "renderedLength": 1205
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/main.tsx",
+          "group": "app source",
+          "renderedLength": 807
+        },
+        {
+          "id": "packages/shared/src/utils/relayUrl.ts",
+          "group": "packages/shared",
+          "renderedLength": 731
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/components/layout/AppShell.tsx",
+          "group": "app source",
+          "renderedLength": 646
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/hooks/useGlobalMuteSync.ts",
+          "group": "app source",
+          "renderedLength": 298
+        },
+        {
+          "id": "node_modules/.pnpm/@fontsource-variable+noto-sans-sc@5.2.10/node_modules/@fontsource-variable/noto-sans-sc/index.css",
+          "group": "@fontsource-variable/noto-sans-sc",
+          "renderedLength": 270
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/components/layout/ModalHost.tsx",
+          "group": "app source",
+          "renderedLength": 227
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/components/diagnostics/InteractionPerformanceHud.tsx",
+          "group": "app source",
+          "renderedLength": 0
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/utils/nickname.ts",
+          "group": "app source",
+          "renderedLength": 0
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/styles/index.css",
+          "group": "app source",
+          "renderedLength": 0
+        },
+        {
+          "id": "apps/desktop/src/renderer/index.html",
+          "group": "app source",
+          "renderedLength": 0
+        }
+      ]
+    },
+    {
+      "file": "assets/ReleaseDetailModal-DcKM41ln.js",
+      "bytes": 57425,
+      "entry": false,
+      "dynamicEntry": false,
+      "imports": [
+        "assets/rolldown-runtime-B0Z9INg1.js",
+        "assets/vendor-icons-D57X7K8o.js",
+        "assets/vendor-react-CluWBeuA.js",
+        "assets/vendor-motion-CMs4UaPr.js",
+        "assets/DialogCloseButton-lLrecaCo.js"
+      ],
+      "dynamicImports": [],
+      "packages": [
+        {
+          "name": "app source",
+          "renderedLength": 50746
+        }
+      ],
+      "modules": [
+        {
+          "id": "apps/desktop/src/renderer/src/components/status/releaseHistory.ts",
+          "group": "app source",
+          "renderedLength": 23744
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/components/status/DailyRoomReportModal.tsx",
+          "group": "app source",
+          "renderedLength": 6351
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/features/diagnostics/runtimeHealthCollector.ts",
+          "group": "app source",
+          "renderedLength": 5757
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/components/status/DetailedReleaseNotesViewer.tsx",
+          "group": "app source",
+          "renderedLength": 5013
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/features/daily-report/dailyRoomReportHighlights.ts",
+          "group": "app source",
+          "renderedLength": 3324
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/components/status/ReleaseDetailModal.tsx",
+          "group": "app source",
+          "renderedLength": 2920
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/features/account/prepareAccountAvatar.ts",
+          "group": "app source",
+          "renderedLength": 1611
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/components/status/StartupSplashPage.tsx",
+          "group": "app source",
+          "renderedLength": 1033
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/components/brand/BrandMark.tsx",
+          "group": "app source",
+          "renderedLength": 553
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/components/layout/PageContainer.tsx",
+          "group": "app source",
+          "renderedLength": 311
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/assets/brand-mark.png",
+          "group": "app source",
+          "renderedLength": 129
+        }
+      ]
+    },
+    {
+      "file": "assets/vendor-icons-D57X7K8o.js",
+      "bytes": 29692,
+      "entry": false,
+      "dynamicEntry": false,
+      "imports": [
+        "assets/rolldown-runtime-B0Z9INg1.js"
+      ],
+      "dynamicImports": [],
+      "packages": [
+        {
+          "name": "lucide-react",
+          "renderedLength": 46273
+        },
+        {
+          "name": "react",
+          "renderedLength": 15430
+        }
+      ],
+      "modules": [
+        {
+          "id": "node_modules/.pnpm/react@19.2.8/node_modules/react/cjs/react.production.js",
+          "group": "react",
+          "renderedLength": 15216
+        },
+        {
+          "id": "node_modules/.pnpm/lucide-react@0.577.0_react@19.2.8/node_modules/lucide-react/dist/esm/icons/brain-circuit.js",
+          "group": "lucide-react",
+          "renderedLength": 1146
+        },
+        {
+          "id": "node_modules/.pnpm/lucide-react@0.577.0_react@19.2.8/node_modules/lucide-react/dist/esm/icons/monitor-cog.js",
+          "group": "lucide-react",
+          "renderedLength": 1004
+        },
+        {
+          "id": "node_modules/.pnpm/lucide-react@0.577.0_react@19.2.8/node_modules/lucide-react/dist/esm/icons/gamepad-2.js",
+          "group": "lucide-react",
+          "renderedLength": 871
+        },
+        {
+          "id": "node_modules/.pnpm/lucide-react@0.577.0_react@19.2.8/node_modules/lucide-react/dist/esm/icons/calendar-days.js",
+          "group": "lucide-react",
+          "renderedLength": 785
+        },
+        {
+          "id": "node_modules/.pnpm/lucide-react@0.577.0_react@19.2.8/node_modules/lucide-react/dist/esm/Icon.js",
+          "group": "lucide-react",
+          "renderedLength": 763
+        },
+        {
+          "id": "node_modules/.pnpm/lucide-react@0.577.0_react@19.2.8/node_modules/lucide-react/dist/esm/icons/keyboard.js",
+          "group": "lucide-react",
+          "renderedLength": 722
+        },
+        {
+          "id": "node_modules/.pnpm/lucide-react@0.577.0_react@19.2.8/node_modules/lucide-react/dist/esm/icons/sparkles.js",
+          "group": "lucide-react",
+          "renderedLength": 690
+        },
+        {
+          "id": "node_modules/.pnpm/lucide-react@0.577.0_react@19.2.8/node_modules/lucide-react/dist/esm/icons/locate-fixed.js",
+          "group": "lucide-react",
+          "renderedLength": 688
+        },
+        {
+          "id": "node_modules/.pnpm/lucide-react@0.577.0_react@19.2.8/node_modules/lucide-react/dist/esm/icons/wifi-off.js",
+          "group": "lucide-react",
+          "renderedLength": 684
+        },
+        {
+          "id": "node_modules/.pnpm/lucide-react@0.577.0_react@19.2.8/node_modules/lucide-react/dist/esm/icons/grip-horizontal.js",
+          "group": "lucide-react",
+          "renderedLength": 648
+        },
+        {
+          "id": "node_modules/.pnpm/lucide-react@0.577.0_react@19.2.8/node_modules/lucide-react/dist/esm/icons/grip-vertical.js",
+          "group": "lucide-react",
+          "renderedLength": 642
+        },
+        {
+          "id": "node_modules/.pnpm/lucide-react@0.577.0_react@19.2.8/node_modules/lucide-react/dist/esm/icons/headphone-off.js",
+          "group": "lucide-react",
+          "renderedLength": 627
+        },
+        {
+          "id": "node_modules/.pnpm/lucide-react@0.577.0_react@19.2.8/node_modules/lucide-react/dist/esm/icons/eye-off.js",
+          "group": "lucide-react",
+          "renderedLength": 615
+        },
+        {
+          "id": "node_modules/.pnpm/lucide-react@0.577.0_react@19.2.8/node_modules/lucide-react/dist/esm/icons/star.js",
+          "group": "lucide-react",
+          "renderedLength": 607
+        },
+        {
+          "id": "node_modules/.pnpm/lucide-react@0.577.0_react@19.2.8/node_modules/lucide-react/dist/esm/icons/mic-off.js",
+          "group": "lucide-react",
+          "renderedLength": 602
+        },
+        {
+          "id": "node_modules/.pnpm/lucide-react@0.577.0_react@19.2.8/node_modules/lucide-react/dist/esm/icons/file-text.js",
+          "group": "lucide-react",
+          "renderedLength": 587
+        },
+        {
+          "id": "node_modules/.pnpm/lucide-react@0.577.0_react@19.2.8/node_modules/lucide-react/dist/esm/icons/volume-x.js",
+          "group": "lucide-react",
+          "renderedLength": 586
+        },
+        {
+          "id": "node_modules/.pnpm/lucide-react@0.577.0_react@19.2.8/node_modules/lucide-react/dist/esm/icons/earth.js",
+          "group": "lucide-react",
+          "renderedLength": 583
+        },
+        {
+          "id": "node_modules/.pnpm/lucide-react@0.577.0_react@19.2.8/node_modules/lucide-react/dist/esm/icons/volume-2.js",
+          "group": "lucide-react",
+          "renderedLength": 562
+        },
+        {
+          "id": "node_modules/.pnpm/lucide-react@0.577.0_react@19.2.8/node_modules/lucide-react/dist/esm/icons/monitor-off.js",
+          "group": "lucide-react",
+          "renderedLength": 557
+        },
+        {
+          "id": "node_modules/.pnpm/lucide-react@0.577.0_react@19.2.8/node_modules/lucide-react/dist/esm/icons/github.js",
+          "group": "lucide-react",
+          "renderedLength": 555
+        },
+        {
+          "id": "node_modules/.pnpm/lucide-react@0.577.0_react@19.2.8/node_modules/lucide-react/dist/esm/icons/shield-alert.js",
+          "group": "lucide-react",
+          "renderedLength": 535
+        },
+        {
+          "id": "node_modules/.pnpm/lucide-react@0.577.0_react@19.2.8/node_modules/lucide-react/dist/esm/icons/trash-2.js",
+          "group": "lucide-react",
+          "renderedLength": 526
+        },
+        {
+          "id": "node_modules/.pnpm/lucide-react@0.577.0_react@19.2.8/node_modules/lucide-react/dist/esm/createLucideIcon.js",
+          "group": "lucide-react",
+          "renderedLength": 524
+        },
+        {
+          "id": "node_modules/.pnpm/lucide-react@0.577.0_react@19.2.8/node_modules/lucide-react/dist/esm/icons/audio-lines.js",
+          "group": "lucide-react",
+          "renderedLength": 524
+        },
+        {
+          "id": "node_modules/.pnpm/lucide-react@0.577.0_react@19.2.8/node_modules/lucide-react/dist/esm/icons/monitor-up.js",
+          "group": "lucide-react",
+          "renderedLength": 523
+        },
+        {
+          "id": "node_modules/.pnpm/lucide-react@0.577.0_react@19.2.8/node_modules/lucide-react/dist/esm/icons/folder-heart.js",
+          "group": "lucide-react",
+          "renderedLength": 516
+        },
+        {
+          "id": "node_modules/.pnpm/lucide-react@0.577.0_react@19.2.8/node_modules/lucide-react/dist/esm/icons/refresh-ccw.js",
+          "group": "lucide-react",
+          "renderedLength": 514
+        },
+        {
+          "id": "node_modules/.pnpm/lucide-react@0.577.0_react@19.2.8/node_modules/lucide-react/dist/esm/icons/refresh-cw.js",
+          "group": "lucide-react",
+          "renderedLength": 512
+        },
+        {
+          "id": "node_modules/.pnpm/lucide-react@0.577.0_react@19.2.8/node_modules/lucide-react/dist/esm/icons/folder-search.js",
+          "group": "lucide-react",
+          "renderedLength": 507
+        },
+        {
+          "id": "node_modules/.pnpm/lucide-react@0.577.0_react@19.2.8/node_modules/lucide-react/dist/esm/icons/users.js",
+          "group": "lucide-react",
+          "renderedLength": 494
+        },
+        {
+          "id": "node_modules/.pnpm/lucide-react@0.577.0_react@19.2.8/node_modules/lucide-react/dist/esm/icons/camera.js",
+          "group": "lucide-react",
+          "renderedLength": 490
+        },
+        {
+          "id": "node_modules/.pnpm/lucide-react@0.577.0_react@19.2.8/node_modules/lucide-react/dist/esm/icons/coffee.js",
+          "group": "lucide-react",
+          "renderedLength": 488
+        },
+        {
+          "id": "node_modules/.pnpm/lucide-react@0.577.0_react@19.2.8/node_modules/lucide-react/dist/esm/icons/list-checks.js",
+          "group": "lucide-react",
+          "renderedLength": 485
+        },
+        {
+          "id": "node_modules/.pnpm/lucide-react@0.577.0_react@19.2.8/node_modules/lucide-react/dist/esm/icons/shield-check.js",
+          "group": "lucide-react",
+          "renderedLength": 479
+        },
+        {
+          "id": "node_modules/.pnpm/lucide-react@0.577.0_react@19.2.8/node_modules/lucide-react/dist/esm/icons/image.js",
+          "group": "lucide-react",
+          "renderedLength": 466
+        },
+        {
+          "id": "node_modules/.pnpm/lucide-react@0.577.0_react@19.2.8/node_modules/lucide-react/dist/esm/icons/circle-alert.js",
+          "group": "lucide-react",
+          "renderedLength": 464
+        },
+        {
+          "id": "node_modules/.pnpm/lucide-react@0.577.0_react@19.2.8/node_modules/lucide-react/dist/esm/icons/lock-keyhole.js",
+          "group": "lucide-react",
+          "renderedLength": 461
+        },
+        {
+          "id": "node_modules/.pnpm/lucide-react@0.577.0_react@19.2.8/node_modules/lucide-react/dist/esm/icons/phone.js",
+          "group": "lucide-react",
+          "renderedLength": 459
+        },
+        {
+          "id": "node_modules/.pnpm/lucide-react@0.577.0_react@19.2.8/node_modules/lucide-react/dist/esm/icons/settings-2.js",
+          "group": "lucide-react",
+          "renderedLength": 459
+        },
+        {
+          "id": "node_modules/.pnpm/lucide-react@0.577.0_react@19.2.8/node_modules/lucide-react/dist/esm/icons/wifi.js",
+          "group": "lucide-react",
+          "renderedLength": 458
+        },
+        {
+          "id": "node_modules/.pnpm/lucide-react@0.577.0_react@19.2.8/node_modules/lucide-react/dist/esm/icons/test-tube-diagonal.js",
+          "group": "lucide-react",
+          "renderedLength": 456
+        },
+        {
+          "id": "node_modules/.pnpm/lucide-react@0.577.0_react@19.2.8/node_modules/lucide-react/dist/esm/icons/triangle-alert.js",
+          "group": "lucide-react",
+          "renderedLength": 449
+        },
+        {
+          "id": "node_modules/.pnpm/lucide-react@0.577.0_react@19.2.8/node_modules/lucide-react/dist/esm/icons/archive.js",
+          "group": "lucide-react",
+          "renderedLength": 442
+        },
+        {
+          "id": "node_modules/.pnpm/lucide-react@0.577.0_react@19.2.8/node_modules/lucide-react/dist/esm/icons/folder-open.js",
+          "group": "lucide-react",
+          "renderedLength": 440
+        },
+        {
+          "id": "node_modules/.pnpm/lucide-react@0.577.0_react@19.2.8/node_modules/lucide-react/dist/esm/icons/sticky-note.js",
+          "group": "lucide-react",
+          "renderedLength": 437
+        },
+        {
+          "id": "node_modules/.pnpm/lucide-react@0.577.0_react@19.2.8/node_modules/lucide-react/dist/esm/icons/external-link.js",
+          "group": "lucide-react",
+          "renderedLength": 435
+        },
+        {
+          "id": "node_modules/.pnpm/lucide-react@0.577.0_react@19.2.8/node_modules/lucide-react/dist/esm/icons/send.js",
+          "group": "lucide-react",
+          "renderedLength": 434
+        },
+        {
+          "id": "node_modules/.pnpm/lucide-react@0.577.0_react@19.2.8/node_modules/lucide-react/dist/esm/icons/minimize-2.js",
+          "group": "lucide-react",
+          "renderedLength": 431
+        },
+        {
+          "id": "node_modules/.pnpm/lucide-react@0.577.0_react@19.2.8/node_modules/lucide-react/dist/esm/icons/maximize-2.js",
+          "group": "lucide-react",
+          "renderedLength": 429
+        },
+        {
+          "id": "node_modules/.pnpm/lucide-react@0.577.0_react@19.2.8/node_modules/lucide-react/dist/esm/icons/ellipsis.js",
+          "group": "lucide-react",
+          "renderedLength": 425
+        },
+        {
+          "id": "node_modules/.pnpm/lucide-react@0.577.0_react@19.2.8/node_modules/lucide-react/dist/esm/icons/link-2.js",
+          "group": "lucide-react",
+          "renderedLength": 424
+        },
+        {
+          "id": "node_modules/.pnpm/lucide-react@0.577.0_react@19.2.8/node_modules/lucide-react/dist/esm/icons/pencil.js",
+          "group": "lucide-react",
+          "renderedLength": 424
+        },
+        {
+          "id": "node_modules/.pnpm/lucide-react@0.577.0_react@19.2.8/node_modules/lucide-react/dist/esm/icons/library.js",
+          "group": "lucide-react",
+          "renderedLength": 416
+        },
+        {
+          "id": "node_modules/.pnpm/lucide-react@0.577.0_react@19.2.8/node_modules/lucide-react/dist/esm/icons/mic.js",
+          "group": "lucide-react",
+          "renderedLength": 416
+        },
+        {
+          "id": "node_modules/.pnpm/lucide-react@0.577.0_react@19.2.8/node_modules/lucide-react/dist/esm/icons/map-pin.js",
+          "group": "lucide-react",
+          "renderedLength": 414
+        },
+        {
+          "id": "node_modules/.pnpm/lucide-react@0.577.0_react@19.2.8/node_modules/lucide-react/dist/esm/icons/shield.js",
+          "group": "lucide-react",
+          "renderedLength": 411
+        },
+        {
+          "id": "node_modules/.pnpm/lucide-react@0.577.0_react@19.2.8/node_modules/lucide-react/dist/esm/icons/history.js",
+          "group": "lucide-react",
+          "renderedLength": 410
+        },
+        {
+          "id": "node_modules/.pnpm/lucide-react@0.577.0_react@19.2.8/node_modules/lucide-react/dist/esm/icons/download.js",
+          "group": "lucide-react",
+          "renderedLength": 407
+        },
+        {
+          "id": "node_modules/.pnpm/lucide-react@0.577.0_react@19.2.8/node_modules/lucide-react/dist/esm/shared/src/utils/mergeClasses.js",
+          "group": "lucide-react",
+          "renderedLength": 406
+        },
+        {
+          "id": "node_modules/.pnpm/lucide-react@0.577.0_react@19.2.8/node_modules/lucide-react/dist/esm/icons/eye.js",
+          "group": "lucide-react",
+          "renderedLength": 404
+        },
+        {
+          "id": "node_modules/.pnpm/lucide-react@0.577.0_react@19.2.8/node_modules/lucide-react/dist/esm/icons/log-out.js",
+          "group": "lucide-react",
+          "renderedLength": 402
+        },
+        {
+          "id": "node_modules/.pnpm/lucide-react@0.577.0_react@19.2.8/node_modules/lucide-react/dist/esm/icons/upload.js",
+          "group": "lucide-react",
+          "renderedLength": 399
+        },
+        {
+          "id": "node_modules/.pnpm/lucide-react@0.577.0_react@19.2.8/node_modules/lucide-react/dist/esm/icons/skip-forward.js",
+          "group": "lucide-react",
+          "renderedLength": 396
+        },
+        {
+          "id": "node_modules/.pnpm/lucide-react@0.577.0_react@19.2.8/node_modules/lucide-react/dist/esm/icons/copy.js",
+          "group": "lucide-react",
+          "renderedLength": 395
+        },
+        {
+          "id": "node_modules/.pnpm/lucide-react@0.577.0_react@19.2.8/node_modules/lucide-react/dist/esm/icons/message-circle.js",
+          "group": "lucide-react",
+          "renderedLength": 395
+        },
+        {
+          "id": "node_modules/.pnpm/lucide-react@0.577.0_react@19.2.8/node_modules/lucide-react/dist/esm/icons/skip-back.js",
+          "group": "lucide-react",
+          "renderedLength": 390
+        },
+        {
+          "id": "node_modules/.pnpm/lucide-react@0.577.0_react@19.2.8/node_modules/lucide-react/dist/esm/icons/circle-x.js",
+          "group": "lucide-react",
+          "renderedLength": 389
+        },
+        {
+          "id": "node_modules/.pnpm/lucide-react@0.577.0_react@19.2.8/node_modules/lucide-react/dist/esm/icons/zap.js",
+          "group": "lucide-react",
+          "renderedLength": 389
+        },
+        {
+          "id": "node_modules/.pnpm/lucide-react@0.577.0_react@19.2.8/node_modules/lucide-react/dist/esm/icons/headphones.js",
+          "group": "lucide-react",
+          "renderedLength": 384
+        },
+        {
+          "id": "node_modules/.pnpm/lucide-react@0.577.0_react@19.2.8/node_modules/lucide-react/dist/esm/icons/pause.js",
+          "group": "lucide-react",
+          "renderedLength": 381
+        },
+        {
+          "id": "node_modules/.pnpm/lucide-react@0.577.0_react@19.2.8/node_modules/lucide-react/dist/esm/icons/info.js",
+          "group": "lucide-react",
+          "renderedLength": 379
+        },
+        {
+          "id": "node_modules/.pnpm/lucide-react@0.577.0_react@19.2.8/node_modules/lucide-react/dist/esm/icons/activity.js",
+          "group": "lucide-react",
+          "renderedLength": 377
+        },
+        {
+          "id": "node_modules/.pnpm/lucide-react@0.577.0_react@19.2.8/node_modules/lucide-react/dist/esm/icons/circle-stop.js",
+          "group": "lucide-react",
+          "renderedLength": 374
+        },
+        {
+          "id": "node_modules/.pnpm/lucide-react@0.577.0_react@19.2.8/node_modules/lucide-react/dist/esm/icons/smartphone.js",
+          "group": "lucide-react",
+          "renderedLength": 368
+        },
+        {
+          "id": "node_modules/.pnpm/lucide-react@0.577.0_react@19.2.8/node_modules/lucide-react/dist/esm/defaultAttributes.js",
+          "group": "lucide-react",
+          "renderedLength": 360
+        },
+        {
+          "id": "node_modules/.pnpm/lucide-react@0.577.0_react@19.2.8/node_modules/lucide-react/dist/esm/icons/rotate-ccw.js",
+          "group": "lucide-react",
+          "renderedLength": 355
+        },
+        {
+          "id": "node_modules/.pnpm/lucide-react@0.577.0_react@19.2.8/node_modules/lucide-react/dist/esm/icons/rotate-cw.js",
+          "group": "lucide-react",
+          "renderedLength": 354
+        },
+        {
+          "id": "node_modules/.pnpm/lucide-react@0.577.0_react@19.2.8/node_modules/lucide-react/dist/esm/icons/circle-check.js",
+          "group": "lucide-react",
+          "renderedLength": 343
+        },
+        {
+          "id": "node_modules/.pnpm/lucide-react@0.577.0_react@19.2.8/node_modules/lucide-react/dist/esm/icons/user-round.js",
+          "group": "lucide-react",
+          "renderedLength": 341
+        },
+        {
+          "id": "node_modules/.pnpm/lucide-react@0.577.0_react@19.2.8/node_modules/lucide-react/dist/esm/icons/search.js",
+          "group": "lucide-react",
+          "renderedLength": 328
+        },
+        {
+          "id": "node_modules/.pnpm/lucide-react@0.577.0_react@19.2.8/node_modules/lucide-react/dist/esm/icons/music-2.js",
+          "group": "lucide-react",
+          "renderedLength": 325
+        },
+        {
+          "id": "node_modules/.pnpm/lucide-react@0.577.0_react@19.2.8/node_modules/lucide-react/dist/esm/icons/play.js",
+          "group": "lucide-react",
+          "renderedLength": 325
+        },
+        {
+          "id": "node_modules/.pnpm/lucide-react@0.577.0_react@19.2.8/node_modules/lucide-react/dist/esm/icons/arrow-right.js",
+          "group": "lucide-react",
+          "renderedLength": 322
+        },
+        {
+          "id": "node_modules/.pnpm/lucide-react@0.577.0_react@19.2.8/node_modules/lucide-react/dist/esm/icons/gauge.js",
+          "group": "lucide-react",
+          "renderedLength": 322
+        },
+        {
+          "id": "node_modules/.pnpm/lucide-react@0.577.0_react@19.2.8/node_modules/lucide-react/dist/esm/icons/arrow-left.js",
+          "group": "lucide-react",
+          "renderedLength": 320
+        },
+        {
+          "id": "node_modules/.pnpm/lucide-react@0.577.0_react@19.2.8/node_modules/lucide-react/dist/esm/icons/arrow-up.js",
+          "group": "lucide-react",
+          "renderedLength": 313
+        },
+        {
+          "id": "node_modules/.pnpm/lucide-react@0.577.0_react@19.2.8/node_modules/lucide-react/dist/esm/shared/src/utils/hasA11yProp.js",
+          "group": "lucide-react",
+          "renderedLength": 307
+        },
+        {
+          "id": "node_modules/.pnpm/lucide-react@0.577.0_react@19.2.8/node_modules/lucide-react/dist/esm/icons/square.js",
+          "group": "lucide-react",
+          "renderedLength": 298
+        },
+        {
+          "id": "node_modules/.pnpm/lucide-react@0.577.0_react@19.2.8/node_modules/lucide-react/dist/esm/icons/plus.js",
+          "group": "lucide-react",
+          "renderedLength": 297
+        },
+        {
+          "id": "node_modules/.pnpm/lucide-react@0.577.0_react@19.2.8/node_modules/lucide-react/dist/esm/icons/loader-circle.js",
+          "group": "lucide-react",
+          "renderedLength": 296
+        },
+        {
+          "id": "node_modules/.pnpm/lucide-react@0.577.0_react@19.2.8/node_modules/lucide-react/dist/esm/shared/src/utils/toPascalCase.js",
+          "group": "lucide-react",
+          "renderedLength": 290
+        },
+        {
+          "id": "node_modules/.pnpm/lucide-react@0.577.0_react@19.2.8/node_modules/lucide-react/dist/esm/icons/x.js",
+          "group": "lucide-react",
+          "renderedLength": 290
+        },
+        {
+          "id": "node_modules/.pnpm/lucide-react@0.577.0_react@19.2.8/node_modules/lucide-react/dist/esm/icons/chevron-right.js",
+          "group": "lucide-react",
+          "renderedLength": 282
+        },
+        {
+          "id": "node_modules/.pnpm/lucide-react@0.577.0_react@19.2.8/node_modules/lucide-react/dist/esm/shared/src/utils/toCamelCase.js",
+          "group": "lucide-react",
+          "renderedLength": 281
+        },
+        {
+          "id": "node_modules/.pnpm/lucide-react@0.577.0_react@19.2.8/node_modules/lucide-react/dist/esm/icons/chevron-left.js",
+          "group": "lucide-react",
+          "renderedLength": 280
+        },
+        {
+          "id": "node_modules/.pnpm/lucide-react@0.577.0_react@19.2.8/node_modules/lucide-react/dist/esm/icons/chevron-down.js",
+          "group": "lucide-react",
+          "renderedLength": 278
+        },
+        {
+          "id": "node_modules/.pnpm/lucide-react@0.577.0_react@19.2.8/node_modules/lucide-react/dist/esm/icons/circle.js",
+          "group": "lucide-react",
+          "renderedLength": 275
+        },
+        {
+          "id": "node_modules/.pnpm/lucide-react@0.577.0_react@19.2.8/node_modules/lucide-react/dist/esm/icons/check.js",
+          "group": "lucide-react",
+          "renderedLength": 261
+        },
+        {
+          "id": "node_modules/.pnpm/lucide-react@0.577.0_react@19.2.8/node_modules/lucide-react/dist/esm/icons/minus.js",
+          "group": "lucide-react",
+          "renderedLength": 254
+        },
+        {
+          "id": "node_modules/.pnpm/lucide-react@0.577.0_react@19.2.8/node_modules/lucide-react/dist/esm/shared/src/utils/toKebabCase.js",
+          "group": "lucide-react",
+          "renderedLength": 240
+        },
+        {
+          "id": "node_modules/.pnpm/react@19.2.8/node_modules/react/index.js",
+          "group": "react",
+          "renderedLength": 214
+        }
+      ]
+    },
+    {
+      "file": "assets/browser-DFBgVuWK.js",
+      "bytes": 23477,
+      "entry": false,
+      "dynamicEntry": true,
+      "imports": [
+        "assets/rolldown-runtime-B0Z9INg1.js"
+      ],
+      "dynamicImports": [],
+      "packages": [
+        {
+          "name": "qrcode",
+          "renderedLength": 50536
+        },
+        {
+          "name": "dijkstrajs",
+          "renderedLength": 2473
+        }
+      ],
+      "modules": [
+        {
+          "id": "node_modules/.pnpm/qrcode@1.5.4/node_modules/qrcode/lib/core/qrcode.js",
+          "group": "qrcode",
+          "renderedLength": 8164
+        },
+        {
+          "id": "node_modules/.pnpm/qrcode@1.5.4/node_modules/qrcode/lib/core/segments.js",
+          "group": "qrcode",
+          "renderedLength": 5695
+        },
+        {
+          "id": "node_modules/.pnpm/qrcode@1.5.4/node_modules/qrcode/lib/core/mask-pattern.js",
+          "group": "qrcode",
+          "renderedLength": 4351
+        },
+        {
+          "id": "node_modules/.pnpm/qrcode@1.5.4/node_modules/qrcode/lib/core/error-correction-code.js",
+          "group": "qrcode",
+          "renderedLength": 3183
+        },
+        {
+          "id": "node_modules/.pnpm/qrcode@1.5.4/node_modules/qrcode/lib/core/version.js",
+          "group": "qrcode",
+          "renderedLength": 2990
+        },
+        {
+          "id": "node_modules/.pnpm/qrcode@1.5.4/node_modules/qrcode/lib/renderer/utils.js",
+          "group": "qrcode",
+          "renderedLength": 2846
+        },
+        {
+          "id": "node_modules/.pnpm/dijkstrajs@1.0.3/node_modules/dijkstrajs/dijkstra.js",
+          "group": "dijkstrajs",
+          "renderedLength": 2473
+        },
+        {
+          "id": "node_modules/.pnpm/qrcode@1.5.4/node_modules/qrcode/lib/core/mode.js",
+          "group": "qrcode",
+          "renderedLength": 2050
+        },
+        {
+          "id": "node_modules/.pnpm/qrcode@1.5.4/node_modules/qrcode/lib/renderer/svg-tag.js",
+          "group": "qrcode",
+          "renderedLength": 2050
+        },
+        {
+          "id": "node_modules/.pnpm/qrcode@1.5.4/node_modules/qrcode/lib/browser.js",
+          "group": "qrcode",
+          "renderedLength": 1876
+        },
+        {
+          "id": "node_modules/.pnpm/qrcode@1.5.4/node_modules/qrcode/lib/renderer/canvas.js",
+          "group": "qrcode",
+          "renderedLength": 1671
+        },
+        {
+          "id": "node_modules/.pnpm/qrcode@1.5.4/node_modules/qrcode/lib/core/alphanumeric-data.js",
+          "group": "qrcode",
+          "renderedLength": 1416
+        },
+        {
+          "id": "node_modules/.pnpm/qrcode@1.5.4/node_modules/qrcode/lib/core/utils.js",
+          "group": "qrcode",
+          "renderedLength": 1391
+        },
+        {
+          "id": "node_modules/.pnpm/qrcode@1.5.4/node_modules/qrcode/lib/core/regex.js",
+          "group": "qrcode",
+          "renderedLength": 1289
+        },
+        {
+          "id": "node_modules/.pnpm/qrcode@1.5.4/node_modules/qrcode/lib/core/numeric-data.js",
+          "group": "qrcode",
+          "renderedLength": 1123
+        },
+        {
+          "id": "node_modules/.pnpm/qrcode@1.5.4/node_modules/qrcode/lib/core/kanji-data.js",
+          "group": "qrcode",
+          "renderedLength": 1109
+        },
+        {
+          "id": "node_modules/.pnpm/qrcode@1.5.4/node_modules/qrcode/lib/core/alignment-pattern.js",
+          "group": "qrcode",
+          "renderedLength": 1090
+        },
+        {
+          "id": "node_modules/.pnpm/qrcode@1.5.4/node_modules/qrcode/lib/core/polynomial.js",
+          "group": "qrcode",
+          "renderedLength": 1057
+        },
+        {
+          "id": "node_modules/.pnpm/qrcode@1.5.4/node_modules/qrcode/lib/core/reed-solomon-encoder.js",
+          "group": "qrcode",
+          "renderedLength": 1055
+        },
+        {
+          "id": "node_modules/.pnpm/qrcode@1.5.4/node_modules/qrcode/lib/core/error-correction-level.js",
+          "group": "qrcode",
+          "renderedLength": 1023
+        },
+        {
+          "id": "node_modules/.pnpm/qrcode@1.5.4/node_modules/qrcode/lib/core/bit-matrix.js",
+          "group": "qrcode",
+          "renderedLength": 948
+        },
+        {
+          "id": "node_modules/.pnpm/qrcode@1.5.4/node_modules/qrcode/lib/core/bit-buffer.js",
+          "group": "qrcode",
+          "renderedLength": 848
+        },
+        {
+          "id": "node_modules/.pnpm/qrcode@1.5.4/node_modules/qrcode/lib/core/byte-data.js",
+          "group": "qrcode",
+          "renderedLength": 840
+        },
+        {
+          "id": "node_modules/.pnpm/qrcode@1.5.4/node_modules/qrcode/lib/core/galois-field.js",
+          "group": "qrcode",
+          "renderedLength": 818
+        },
+        {
+          "id": "node_modules/.pnpm/qrcode@1.5.4/node_modules/qrcode/lib/core/format-info.js",
+          "group": "qrcode",
+          "renderedLength": 580
+        },
+        {
+          "id": "node_modules/.pnpm/qrcode@1.5.4/node_modules/qrcode/lib/core/finder-pattern.js",
+          "group": "qrcode",
+          "renderedLength": 470
+        },
+        {
+          "id": "node_modules/.pnpm/qrcode@1.5.4/node_modules/qrcode/lib/can-promise.js",
+          "group": "qrcode",
+          "renderedLength": 307
+        },
+        {
+          "id": "node_modules/.pnpm/qrcode@1.5.4/node_modules/qrcode/lib/core/version-check.js",
+          "group": "qrcode",
+          "renderedLength": 296
+        }
+      ]
+    },
+    {
+      "file": "assets/DisplayRefreshRateService-BlUs0Gtj.js",
+      "bytes": 12805,
+      "entry": false,
+      "dynamicEntry": false,
+      "imports": [],
+      "dynamicImports": [],
+      "packages": [
+        {
+          "name": "packages/shared",
+          "renderedLength": 14555
+        },
+        {
+          "name": "app source",
+          "renderedLength": 3281
+        }
+      ],
+      "modules": [
+        {
+          "id": "packages/shared/src/constants/quick-messages.ts",
+          "group": "packages/shared",
+          "renderedLength": 9535
+        },
+        {
+          "id": "packages/shared/src/utils/nickname.ts",
+          "group": "packages/shared",
+          "renderedLength": 4203
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/features/visual-runtime/DisplayRefreshRateService.ts",
+          "group": "app source",
+          "renderedLength": 3281
+        },
+        {
+          "id": "packages/shared/src/constants/motion.ts",
+          "group": "packages/shared",
+          "renderedLength": 817
+        },
+        {
+          "id": "packages/shared/src/index.ts",
+          "group": "packages/shared",
+          "renderedLength": 0
+        }
+      ]
+    },
+    {
+      "file": "assets/recordingStore-BeD2ieXv.js",
+      "bytes": 7601,
+      "entry": false,
+      "dynamicEntry": false,
+      "imports": [
+        "assets/rolldown-runtime-B0Z9INg1.js",
+        "assets/vendor-icons-D57X7K8o.js",
+        "assets/vendor-motion-CMs4UaPr.js",
+        "assets/DialogCloseButton-lLrecaCo.js",
+        "assets/DisplayRefreshRateService-BlUs0Gtj.js",
+        "assets/vendor-state--M8hfQ4H.js"
+      ],
+      "dynamicImports": [],
+      "packages": [
+        {
+          "name": "app source",
+          "renderedLength": 11521
+        }
+      ],
+      "modules": [
+        {
+          "id": "apps/desktop/src/renderer/src/components/base/ShortcutInput.tsx",
+          "group": "app source",
+          "renderedLength": 4970
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/utils/userFacingError.ts",
+          "group": "app source",
+          "renderedLength": 2461
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/features/weather/weatherStore.ts",
+          "group": "app source",
+          "renderedLength": 2238
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/store/recordingStore.ts",
+          "group": "app source",
+          "renderedLength": 1147
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/components/motion/LiquidSelectionIndicator.tsx",
+          "group": "app source",
+          "renderedLength": 705
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/components/base/Switch.tsx",
+          "group": "app source",
+          "renderedLength": 0
+        }
+      ]
+    },
+    {
+      "file": "assets/DeskAnimalSprite-ZUoQsthj.js",
+      "bytes": 3786,
+      "entry": false,
+      "dynamicEntry": false,
+      "imports": [
+        "assets/rolldown-runtime-B0Z9INg1.js",
+        "assets/vendor-icons-D57X7K8o.js",
+        "assets/vendor-motion-CMs4UaPr.js",
+        "assets/DisplayRefreshRateService-BlUs0Gtj.js",
+        "assets/profile-B65SOSwv.js"
+      ],
+      "dynamicImports": [],
+      "packages": [
+        {
+          "name": "app source",
+          "renderedLength": 7915
+        }
+      ],
+      "modules": [
+        {
+          "id": "apps/desktop/src/renderer/src/components/room/DeskAnimalSprite.tsx",
+          "group": "app source",
+          "renderedLength": 4930
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/utils/profile.ts",
+          "group": "app source",
+          "renderedLength": 829
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/assets/avatars/cat-scene.png",
+          "group": "app source",
+          "renderedLength": 196
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/assets/avatars/rear-v2/corgi-rear.png",
+          "group": "app source",
+          "renderedLength": 145
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/assets/avatars/rear-v2/panda-rear.png",
+          "group": "app source",
+          "renderedLength": 145
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/assets/avatars/rear-v2/duck-rear.png",
+          "group": "app source",
+          "renderedLength": 143
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/assets/avatars/rear-v2/cat-rear.png",
+          "group": "app source",
+          "renderedLength": 141
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/assets/avatars/rear-v2/fox-rear.png",
+          "group": "app source",
+          "renderedLength": 141
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/assets/avatars/run-cycles-v2/corgi.png",
+          "group": "app source",
+          "renderedLength": 141
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/assets/avatars/run-cycles-v2/panda.png",
+          "group": "app source",
+          "renderedLength": 141
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/assets/avatars/corgi-scene.png",
+          "group": "app source",
+          "renderedLength": 139
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/assets/avatars/panda-scene.png",
+          "group": "app source",
+          "renderedLength": 139
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/assets/avatars/run-cycles-v2/duck.png",
+          "group": "app source",
+          "renderedLength": 139
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/assets/avatars/duck-scene.png",
+          "group": "app source",
+          "renderedLength": 137
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/assets/avatars/run-cycles-v2/cat.png",
+          "group": "app source",
+          "renderedLength": 137
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/assets/avatars/run-cycles-v2/fox.png",
+          "group": "app source",
+          "renderedLength": 137
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/assets/avatars/fox-scene.png",
+          "group": "app source",
+          "renderedLength": 135
+        }
+      ]
+    },
+    {
+      "file": "assets/AccountAvatar-BVNYRg_Y.js",
+      "bytes": 2337,
+      "entry": false,
+      "dynamicEntry": false,
+      "imports": [
+        "assets/rolldown-runtime-B0Z9INg1.js",
+        "assets/vendor-icons-D57X7K8o.js",
+        "assets/vendor-motion-CMs4UaPr.js"
+      ],
+      "dynamicImports": [],
+      "packages": [
+        {
+          "name": "virtual/other",
+          "renderedLength": 2176
+        },
+        {
+          "name": "app source",
+          "renderedLength": 1479
+        },
+        {
+          "name": "packages/shared",
+          "renderedLength": 671
+        }
+      ],
+      "modules": [
+        {
+          "id": "\u0000vite/preload-helper.js",
+          "group": "virtual/other",
+          "renderedLength": 2176
+        },
+        {
+          "id": "apps/desktop/src/renderer/src/components/account/AccountAvatar.tsx",
+          "group": "app source",
+          "renderedLength": 1479
+        },
+        {
+          "id": "packages/shared/src/constants/account-avatars.ts",
+          "group": "packages/shared",
+          "renderedLength": 671
+        }
+      ]
+    },
+    {
+      "file": "assets/rolldown-runtime-B0Z9INg1.js",
+      "bytes": 901,
+      "entry": false,
+      "dynamicEntry": false,
+      "imports": [],
+      "dynamicImports": [],
+      "packages": [
+        {
+          "name": "virtual/other",
+          "renderedLength": 1740
+        }
+      ],
+      "modules": [
+        {
+          "id": "\u0000rolldown/runtime.js",
+          "group": "virtual/other",
+          "renderedLength": 1740
+        }
+      ]
+    },
+    {
+      "file": "assets/vendor-state--M8hfQ4H.js",
+      "bytes": 697,
+      "entry": false,
+      "dynamicEntry": false,
+      "imports": [
+        "assets/rolldown-runtime-B0Z9INg1.js",
+        "assets/vendor-icons-D57X7K8o.js"
+      ],
+      "dynamicImports": [],
+      "packages": [
+        {
+          "name": "zustand",
+          "renderedLength": 1914
+        }
+      ],
+      "modules": [
+        {
+          "id": "node_modules/.pnpm/zustand@5.0.14_@types+react@19.2.18_react@19.2.8/node_modules/zustand/esm/vanilla.mjs",
+          "group": "zustand",
+          "renderedLength": 1149
+        },
+        {
+          "id": "node_modules/.pnpm/zustand@5.0.14_@types+react@19.2.18_react@19.2.8/node_modules/zustand/esm/react.mjs",
+          "group": "zustand",
+          "renderedLength": 765
+        }
+      ]
+    },
+    {
+      "file": "assets/profile-B65SOSwv.js",
+      "bytes": 58,
+      "entry": false,
+      "dynamicEntry": false,
+      "imports": [],
+      "dynamicImports": [],
+      "packages": [
+        {
+          "name": "packages/shared",
+          "renderedLength": 145
+        }
+      ],
+      "modules": [
+        {
+          "id": "packages/shared/src/constants/profile.ts",
+          "group": "packages/shared",
+          "renderedLength": 145
+        }
+      ]
+    }
+  ]
+}

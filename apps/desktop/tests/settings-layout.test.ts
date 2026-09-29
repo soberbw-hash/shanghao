@@ -434,8 +434,8 @@ test("microphone processing lives in the room panel while about keeps release hi
   assert.equal(roomDockSource.includes("settings.isFriendLoudnessBalanceEnabled"), true);
   assert.equal(roomDockSource.includes("pushToTalkEnabled={settings.isPushToTalkEnabled}"), true);
   assert.equal(roomDockSource.includes("microphoneTest={microphoneTest}"), true);
-  assert.equal(RELEASE_HISTORY.length, 81);
-  assert.equal(RELEASE_HISTORY[0]?.version, "3.2.2");
+  assert.equal(RELEASE_HISTORY.length, 82);
+  assert.equal(RELEASE_HISTORY[0]?.version, "3.3.0");
   assert.equal(RELEASE_HISTORY.at(-1)?.version, "0.1.1");
   assert.equal(
     new Set(RELEASE_HISTORY.map((release) => release.version)).size,
@@ -495,7 +495,10 @@ test("recording library safely cleans verified waste recordings", () => {
   assert.equal(source.includes('                : "清理"'), true);
   assert.equal(source.includes("isRecordingWasteAutoCleanupEnabled"), true);
   assert.equal(source.includes("清理录音？"), true);
-  assert.equal(source.includes("五分钟以下"), true);
+  assert.equal(source.includes("十秒以下"), true);
+  assert.equal(source.includes('candidate.reason !== "unreadable"'), true);
+  assert.equal(source.includes("最旧的未收藏、无标记录音移到回收站"), true);
+  assert.equal(roomSource.includes("录音已移至回收站"), true);
   assert.equal(source.includes("收藏和带标记的录音不会被清理"), true);
   assert.equal(source.includes('role="alertdialog"'), true);
   assert.equal(source.includes("window.desktopApi.recording.deleteMany("), true);

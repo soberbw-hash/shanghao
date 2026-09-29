@@ -1,5 +1,6 @@
 import { existsSync } from "node:fs";
-import { cp, mkdir, readFile, writeFile } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
+import { cp, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import type { RendererLogPayload } from "@private-voice/shared";
@@ -56,12 +57,59 @@ interface LegacyAiState {
   taskCheckpoints?: Record<string, unknown>;
 }
 
-const readLegacyAiState = async (directory: string): Promise<LegacyAiState | undefined> => {
+const writeJsonAtomically = async (filePath: string, value: unknown): Promise<void> => {
+  const temporaryPath = `${filePath}.${randomUUID()}.tmp`;
   try {
-    return JSON.parse(await readFile(path.join(directory, "state.json"), "utf8")) as LegacyAiState;
-  } catch {
-    return undefined;
+    await writeFile(temporaryPath, JSON.stringify(value, null, 2), {
+      encoding: "utf8",
+      flag: "wx",
+    });
+    await rename(temporaryPath, filePath);
+  } finally {
+    await rm(temporaryPath, { force: true });
   }
+};
+
+const hasCompletedMigration = async (markerPath: string): Promise<boolean> => {
+  let content: string;
+  try {
+    content = await readFile(markerPath, "utf8");
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return false;
+    throw error;
+  }
+  try {
+    const marker = JSON.parse(content) as { legacyDirectoriesRetained?: unknown };
+    return marker?.legacyDirectoriesRetained === true;
+  } catch {
+    // A partial marker is not proof of completion; retry the idempotent copy.
+    return false;
+  }
+};
+
+const readLegacyAiState = async (directory: string): Promise<LegacyAiState | undefined> => {
+  let content: string;
+  try {
+    content = await readFile(path.join(directory, "state.json"), "utf8");
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
+    throw error;
+  }
+  const state = JSON.parse(content) as LegacyAiState;
+  if (
+    !state ||
+    typeof state !== "object" ||
+    Array.isArray(state) ||
+    (state.models !== undefined &&
+      (!state.models || typeof state.models !== "object" || Array.isArray(state.models))) ||
+    (state.taskCheckpoints !== undefined &&
+      (!state.taskCheckpoints ||
+        typeof state.taskCheckpoints !== "object" ||
+        Array.isArray(state.taskCheckpoints)))
+  ) {
+    throw new Error("ai_storage_state_invalid");
+  }
+  return state;
 };
 
 const modelStateScore = (model: NonNullable<LegacyAiState["models"]>[string]): number => {
@@ -90,7 +138,7 @@ const mergeLegacyAiStates = async (sources: string[], destination: string): Prom
       }
     }
   }
-  await writeFile(path.join(destination, "state.json"), JSON.stringify(merged, null, 2), "utf8");
+  await writeJsonAtomically(path.join(destination, "state.json"), merged);
 };
 
 const copyLegacyDirectory = async (
@@ -122,15 +170,14 @@ export const preparePersistentAiStorage = async (
   if (options.isolateDirectory) {
     await mkdir(paths.models, { recursive: true });
     await mkdir(paths.runtimes, { recursive: true });
-    await writeFile(
-      migrationMarker,
-      JSON.stringify({ migratedAt: new Date().toISOString(), isolatedCapture: true }, null, 2),
-      "utf8",
-    );
+    await writeJsonAtomically(migrationMarker, {
+      migratedAt: new Date().toISOString(),
+      isolatedCapture: true,
+    });
     return paths;
   }
 
-  if (existsSync(migrationMarker)) {
+  if (await hasCompletedMigration(migrationMarker)) {
     await mkdir(paths.models, { recursive: true });
     await mkdir(paths.runtimes, { recursive: true });
     return paths;
@@ -146,10 +193,12 @@ export const preparePersistentAiStorage = async (
   const legacyModelDirectories = knownUserDataDirectories.map((directory) =>
     path.join(directory, "ai-models"),
   );
+  let modelCopyFailed = false;
   for (const legacyModelDirectory of legacyModelDirectories) {
     try {
       await copyLegacyDirectory(legacyModelDirectory, paths.models, options.writeLog);
     } catch (error) {
+      modelCopyFailed = true;
       await options.writeLog({
         category: "app",
         level: "warn",
@@ -162,8 +211,10 @@ export const preparePersistentAiStorage = async (
       });
     }
   }
+  if (modelCopyFailed) throw new Error("ai_model_storage_migration_incomplete");
   await mergeLegacyAiStates(legacyModelDirectories, paths.models);
 
+  let runtimeCopyFailed = false;
   for (const userDataDirectory of knownUserDataDirectories) {
     try {
       await copyLegacyDirectory(
@@ -172,6 +223,7 @@ export const preparePersistentAiStorage = async (
         options.writeLog,
       );
     } catch (error) {
+      runtimeCopyFailed = true;
       await options.writeLog({
         category: "app",
         level: "warn",
@@ -184,20 +236,13 @@ export const preparePersistentAiStorage = async (
       });
     }
   }
+  if (runtimeCopyFailed) throw new Error("ai_runtime_storage_migration_incomplete");
 
   await mkdir(paths.models, { recursive: true });
   await mkdir(paths.runtimes, { recursive: true });
-  await writeFile(
-    migrationMarker,
-    JSON.stringify(
-      {
-        migratedAt: new Date().toISOString(),
-        legacyDirectoriesRetained: true,
-      },
-      null,
-      2,
-    ),
-    "utf8",
-  );
+  await writeJsonAtomically(migrationMarker, {
+    migratedAt: new Date().toISOString(),
+    legacyDirectoriesRetained: true,
+  });
   return paths;
 };

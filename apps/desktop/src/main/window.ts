@@ -40,10 +40,10 @@ const getBuildAssetPath = (fileName: string) =>
     ? path.join(process.resourcesPath, "build", fileName)
     : path.join(app.getAppPath(), "build", fileName);
 
-const getIconPath = () => getBuildAssetPath("shanghao-icon-v3.ico");
+const getIconPath = () => getBuildAssetPath("shanghao-icon-v4.ico");
 
 const getWindowIcon = (): NativeImage => {
-  const iconPath = getBuildAssetPath(app.isPackaged ? "shanghao-icon-v3.ico" : "icon.png");
+  const iconPath = getBuildAssetPath(app.isPackaged ? "shanghao-icon-v4.ico" : "icon.png");
   const image = nativeImage.createFromPath(iconPath);
   return image.isEmpty() ? nativeImage.createFromPath(getIconPath()) : image;
 };

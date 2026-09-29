@@ -347,8 +347,8 @@ export const RoomPage = () => {
       recordingSpeakingTimelineRef.current = [];
       pushToast({
         tone: "neutral",
-        title: "短录音已自动清理",
-        description: "这条录音不足五分钟，且没有收藏或标记。",
+        title: "录音已移至回收站",
+        description: "自动清理按当前设置处理了这条录音，可在 Windows 回收站恢复。",
       });
       return;
     }
@@ -369,10 +369,12 @@ export const RoomPage = () => {
   );
   const runtimePressureRef = useRef({
     connectionState: room.connectionState,
+    recordingActive: recordingStatus.state === RecordingState.Recording,
     screenSharing: Boolean(localScreenShareStream || screenSharingPeerIds.length),
   });
   runtimePressureRef.current = {
     connectionState: room.connectionState,
+    recordingActive: recordingStatus.state === RecordingState.Recording,
     screenSharing: Boolean(localScreenShareStream || screenSharingPeerIds.length),
   };
 
@@ -388,6 +390,7 @@ export const RoomPage = () => {
       ).memory;
       void window.desktopApi.ai?.updateRuntimePressure?.({
         inVoiceRoom: pressure.connectionState === RoomConnectionState.Connected,
+        recordingActive: pressure.recordingActive,
         screenSharing: pressure.screenSharing,
         peerRecovering: telemetry.reconnectAttempt > 0,
         latencyMs: telemetry.latencyMs,
@@ -402,7 +405,7 @@ export const RoomPage = () => {
     if (room.connectionState !== RoomConnectionState.Connected) return;
     const interval = window.setInterval(publishPressure, 3_000);
     return () => window.clearInterval(interval);
-  }, [room.connectionState]);
+  }, [room.connectionState, recordingStatus.state]);
 
   useEffect(() => {
     const overlayState = {

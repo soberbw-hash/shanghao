@@ -198,7 +198,7 @@ registerProcessor("${VOICE_SHAPER_WORKLET_NAME}", ShangHaoCommunicationVoiceShap
  * cannot delay AEC-adjacent protection decisions.  The main thread receives
  * low-rate diagnostics and only forwards DeepFilter level changes.
  */
-const PROTECTION_WORKLET_SOURCE = `
+export const PROTECTION_WORKLET_SOURCE = `
 class ShangHaoMicrophoneProtection extends AudioWorkletProcessor {
   constructor() {
     super();
@@ -218,6 +218,10 @@ class ShangHaoMicrophoneProtection extends AudioWorkletProcessor {
     this.modeHoldUntil = 0;
     this.previousSuppression = 34;
     this.frames = 0;
+    this.squareTotal = 0;
+    this.zeroCrossings = 0;
+    this.previousRawSample = 0;
+    this.hasPreviousRawSample = false;
     this.micHistory = [];
     this.remoteHistory = [];
     this.overruns = 0;
@@ -276,8 +280,6 @@ class ShangHaoMicrophoneProtection extends AudioWorkletProcessor {
     const processed = inputs[1]?.[0];
     const output = outputs[0]?.[0];
     if (!output) return true;
-    let squareTotal = 0;
-    let zeroCrossings = 0;
     for (let index = 0; index < output.length; index += 1) {
       this.rawMix = this.smooth(this.rawMix, this.rawTarget);
       this.processedMix = this.smooth(this.processedMix, this.processedTarget);
@@ -287,17 +289,26 @@ class ShangHaoMicrophoneProtection extends AudioWorkletProcessor {
       output[index] = sample;
       // Preserve the established protection input: measure filtered microphone
       // audio, not the already mixed DeepFilter output.
-      squareTotal += rawSample * rawSample;
-      if (index > 0) {
-        const previous = raw?.[index - 1] ?? 0;
-        if (previous * rawSample < 0) zeroCrossings += 1;
+      this.squareTotal += rawSample * rawSample;
+      if (this.hasPreviousRawSample && this.previousRawSample * rawSample < 0) {
+        this.zeroCrossings += 1;
+      }
+      this.previousRawSample = rawSample;
+      this.hasPreviousRawSample = true;
+      this.frames += 1;
+      if (this.frames === ${PROTECTION_ANALYSIS_FRAMES}) {
+        this.analyzeWindow(startedAt, output.length);
+        this.frames = 0;
+        this.squareTotal = 0;
+        this.zeroCrossings = 0;
       }
     }
-    this.frames += output.length;
-    if (this.frames >= ${PROTECTION_ANALYSIS_FRAMES}) {
-      this.frames = 0;
-      const rms = Math.sqrt(squareTotal / Math.max(1, output.length));
-      const zeroCrossingRate = zeroCrossings / Math.max(1, output.length);
+    return true;
+  }
+
+  analyzeWindow(startedAt, blockFrames) {
+      const rms = Math.sqrt(this.squareTotal / this.frames);
+      const zeroCrossingRate = this.zeroCrossings / this.frames;
       const continuity = Math.min(1, rms / Math.max(0.002, Math.abs(rms - this.previousRms) * 4));
       const speechProbability = Math.max(0, Math.min(1,
         (rms - this.noiseFloor * 1.45) * 36
@@ -344,7 +355,7 @@ class ShangHaoMicrophoneProtection extends AudioWorkletProcessor {
       const suppressionSmoothing = this.protectionActive ? 0.68 : 0.12;
       this.previousSuppression += (targetSuppression - this.previousSuppression) * suppressionSmoothing;
       const processingMs = (globalThis.performance?.now?.() ?? startedAt) - startedAt;
-      const deadlineMs = output.length * 1000 / sampleRate;
+      const deadlineMs = blockFrames * 1000 / sampleRate;
       if (processingMs > deadlineMs) this.overruns += 1;
       this.processingTotalMs += processingMs;
       this.processingSamples += 1;
@@ -365,8 +376,6 @@ class ShangHaoMicrophoneProtection extends AudioWorkletProcessor {
         averageProcessingMs: this.processingTotalMs / Math.max(1, this.processingSamples),
         maxProcessingMs: this.maxProcessingMs,
       });
-    }
-    return true;
   }
 }
 registerProcessor("${PROTECTION_WORKLET_NAME}", ShangHaoMicrophoneProtection);
@@ -669,321 +678,332 @@ export const createProcessedMicrophoneStream = async (
     latencyHint: "interactive",
     sampleRate: DEEPFILTER_SAMPLE_RATE,
   });
-  await context.resume();
-
-  const source = context.createMediaStreamSource(inputStream);
-  const destination = context.createMediaStreamDestination();
-  const outputGain = context.createGain();
-  const outputLimiter = context.createDynamicsCompressor();
-  outputGain.gain.value = sendVolume;
-  outputLimiter.threshold.value = -3;
-  outputLimiter.knee.value = 4;
-  outputLimiter.ratio.value = 12;
-  outputLimiter.attack.value = 0.003;
-  outputLimiter.release.value = 0.12;
-  outputGain.connect(outputLimiter);
-  outputLimiter.connect(destination);
-  const filtered = connectMicrophoneLowCut(context, source, settings.lowCutFrequency);
-  const blendBus = context.createGain();
-  const rawInputAnalyser = context.createAnalyser();
-  rawInputAnalyser.fftSize = 1024;
-  rawInputAnalyser.smoothingTimeConstant = 0;
-  const rawInputMonitorSilence = context.createGain();
-  rawInputMonitorSilence.gain.value = 0;
-  source.connect(rawInputAnalyser);
-  rawInputAnalyser.connect(rawInputMonitorSilence);
-  rawInputMonitorSilence.connect(blendBus);
-  let voiceShaper: CommunicationVoiceShaper = { output: blendBus };
-  if (settings.isVoiceEnhancementEnabled) {
-    try {
-      voiceShaper = await connectCommunicationVoiceShaper(
-        context,
-        blendBus,
-        true,
-        (diagnostics) => {
-          if (disposed) return;
-          processorDiagnostics.voiceEnhancementAverageProcessingMs =
-            diagnostics.averageProcessingMs;
-          processorDiagnostics.voiceEnhancementMaxProcessingMs = diagnostics.maxProcessingMs;
-          processorDiagnostics.voiceEnhancementOverruns = diagnostics.overruns;
-          publishDiagnostics();
-        },
-        () => {
-          if (disposed) return;
-          processorDiagnostics.voiceEnhancementProcessor = "dsp_unavailable";
-          publishDiagnostics(true);
-          announceVoiceEnhancementUnavailable("processor_runtime_error");
-        },
-      );
-    } catch (error) {
-      processorDiagnostics.voiceEnhancementProcessor = "dsp_unavailable";
-      announceVoiceEnhancementUnavailable(
-        error instanceof Error ? error.message : "processor_initialization_failed",
-      );
-    }
-  }
-  const equalized = connectMicrophoneEqualizer(context, voiceShaper.output, userGains, "off");
-  equalized.connect(outputGain);
-  const rawGain = context.createGain();
-  rawGain.gain.value = 1;
-  const rawDelay = settings.isNoiseSuppressionEnabled ? context.createDelay(0.05) : undefined;
-  if (rawDelay) {
-    rawDelay.delayTime.value = DEEPFILTER_RAW_ALIGNMENT_SECONDS;
-    filtered.connect(rawDelay);
-    rawDelay.connect(rawGain);
-  } else {
-    filtered.connect(rawGain);
-  }
-  if (!settings.isNoiseSuppressionEnabled) rawGain.connect(blendBus);
-
-  let activeProcessor: DeepFilterNodeResult | undefined;
-  let processedGain: GainNode | undefined;
-  let protectionWorklet: AudioWorkletNode | undefined;
   let remoteReferenceTimer: number | undefined;
   let inputOverloadTimer: number | undefined;
-  let currentSuppressionLevel = DEEPFILTER_BASE_SUPPRESSION_LEVEL;
-  let lastAppliedSuppressionLevel = DEEPFILTER_BASE_SUPPRESSION_LEVEL;
-  const rawInputSamples = new Float32Array(rawInputAnalyser.fftSize);
-  let overloadFrames = 0;
-  let recoveryFrames = 0;
-  inputOverloadTimer = window.setInterval(() => {
-    if (disposed) return;
-    rawInputAnalyser.getFloatTimeDomainData(rawInputSamples);
-    let peak = 0;
-    for (const sample of rawInputSamples) peak = Math.max(peak, Math.abs(sample));
-    processorDiagnostics.rawInputPeak = peak;
-    if (peak >= 0.985) {
-      overloadFrames += 1;
-      recoveryFrames = 0;
-    } else if (peak < 0.94) {
-      overloadFrames = Math.max(0, overloadFrames - 1);
-      recoveryFrames += 1;
-    }
-    if (overloadFrames >= 5 && processorDiagnostics.inputOverload !== "warning") {
-      processorDiagnostics.inputOverload = "warning";
-      publishDiagnostics(true);
-      window.dispatchEvent(new CustomEvent("shanghao:microphone-input-overload"));
-    } else if (recoveryFrames >= 15 && processorDiagnostics.inputOverload !== "normal") {
-      processorDiagnostics.inputOverload = "normal";
-      publishDiagnostics(true);
-    }
-  }, 100);
-  const setMix = (protectingSpeech: boolean, immediate = false, rawTargetOverride?: number) => {
-    const timeConstant = immediate
-      ? 0.008
-      : protectingSpeech
-        ? SPEECH_MIX_ATTACK_SECONDS
-        : SPEECH_MIX_RELEASE_SECONDS;
-    const rawTarget = rawTargetOverride ?? (protectingSpeech ? SPEECH_RAW_MIX : 0);
-    const processedTarget = Math.max(0, 1 - rawTarget);
-    if (protectionWorklet) {
-      protectionWorklet.port.postMessage({
-        type: "mix",
-        raw: rawTarget,
-        processed: processedTarget,
-        timeConstant,
-      });
-    } else if (processedGain) {
-      const now = context.currentTime;
-      rawGain.gain.cancelScheduledValues(now);
-      processedGain.gain.cancelScheduledValues(now);
-      rawGain.gain.setTargetAtTime(rawTarget, now, timeConstant);
-      processedGain.gain.setTargetAtTime(processedTarget, now, timeConstant);
-    }
-    processorDiagnostics.rawProcessedMix = { raw: rawTarget, processed: processedTarget };
-  };
-  const fallbackToRaw = (reason: string) => {
-    if (disposed || processorDiagnostics.noiseProcessor === "deepfilter_unavailable") return;
-    processorDiagnostics.noiseProcessor = "deepfilter_unavailable";
-    processorDiagnostics.speechProtection = "inactive";
-    processorDiagnostics.currentSuppressionLevel = undefined;
-    processorDiagnostics.rawProcessedMix = { raw: 1, processed: 0 };
-    if (protectionWorklet) {
-      protectionWorklet.port.postMessage({
-        type: "mix",
-        raw: 1,
-        processed: 0,
-        timeConstant: PROCESSOR_CROSSFADE_SECONDS,
-      });
-    } else if (processedGain) {
-      crossfade(context, processedGain, rawGain);
-    }
-    publishDiagnostics(true);
-    resolveReady?.({ ...processorDiagnostics });
-    resolveReady = undefined;
-    announceDeepFilterUnavailable(reason);
-  };
-  let resolveReady:
-    ((diagnostics: ProcessedMicrophoneStream["processorDiagnostics"]) => void) | undefined;
-  const ready = new Promise<ProcessedMicrophoneStream["processorDiagnostics"]>((resolve) => {
-    resolveReady = resolve;
-  });
+  try {
+    await context.resume();
 
-  if (settings.isNoiseSuppressionEnabled) {
-    try {
-      protectionWorklet = await createProtectionWorkletNode(context);
-      rawGain.connect(protectionWorklet, 0, 0);
-      protectionWorklet.connect(blendBus);
-      protectionWorklet.port.postMessage({
-        type: "mix",
-        raw: 1,
-        processed: 0,
-        timeConstant: 0.008,
-      });
-      remoteReferenceTimer = window.setInterval(() => {
-        if (disposed || !protectionWorklet) return;
-        protectionWorklet.port.postMessage({
-          type: "remote-level",
-          level: Math.max(0, settings.getRemoteReferenceLevel?.() ?? 0),
-        });
-      }, 50);
-      protectionWorklet.port.onmessage = (event: MessageEvent) => {
-        if (disposed || event.data?.type !== "analysis") return;
-        const analysis = event.data as {
-          speechProbability: number;
-          remoteLevel: number;
-          echoCorrelation: number;
-          mode: "noise" | "echo" | "near_speech" | "double_talk";
-          protectionActive: boolean;
-          rawMix: number;
-          processedMix: number;
-          targetSuppression: number;
-          processorOverruns: number;
-          averageProcessingMs: number;
-          maxProcessingMs: number;
-        };
-        const modeChanged = processorDiagnostics.processingMode !== analysis.mode;
-        const protectionChanged =
-          processorDiagnostics.speechProtection !==
-          (analysis.protectionActive ? "active" : "inactive");
-        processorDiagnostics.voiceActivity =
-          analysis.speechProbability >= 0.58 ? "active" : "inactive";
-        processorDiagnostics.processingMode = analysis.mode;
-        processorDiagnostics.doubleTalkDetected = analysis.mode === "double_talk";
-        processorDiagnostics.remoteEchoDetected = analysis.mode === "echo";
-        processorDiagnostics.speechProbability = analysis.speechProbability;
-        processorDiagnostics.remoteReferenceLevel = analysis.remoteLevel;
-        processorDiagnostics.speechProtection = analysis.protectionActive ? "active" : "inactive";
-        processorDiagnostics.rawProcessedMix = {
-          raw: analysis.rawMix,
-          processed: analysis.processedMix,
-        };
-        processorDiagnostics.processorOverruns = analysis.processorOverruns;
-        processorDiagnostics.averageProcessingMs = analysis.averageProcessingMs;
-        processorDiagnostics.maxProcessingMs = analysis.maxProcessingMs;
-        currentSuppressionLevel = analysis.targetSuppression;
-        if (activeProcessor && analysis.targetSuppression !== lastAppliedSuppressionLevel) {
-          try {
-            activeProcessor.core.setSuppressionLevel(analysis.targetSuppression);
-            lastAppliedSuppressionLevel = analysis.targetSuppression;
-            processorDiagnostics.currentSuppressionLevel = analysis.targetSuppression;
-          } catch {
-            fallbackToRaw("suppression_update_failed");
-            return;
-          }
-        }
-        publishDiagnostics(modeChanged || protectionChanged);
-      };
-    } catch {
-      // Chromium/Electron versions without AudioWorklet keep the established
-      // direct graph; the DeepFilter failure path still preserves raw audio.
-      protectionWorklet = undefined;
-      rawGain.connect(blendBus);
+    const source = context.createMediaStreamSource(inputStream);
+    const destination = context.createMediaStreamDestination();
+    const outputGain = context.createGain();
+    const outputLimiter = context.createDynamicsCompressor();
+    outputGain.gain.value = sendVolume;
+    outputLimiter.threshold.value = -3;
+    outputLimiter.knee.value = 4;
+    outputLimiter.ratio.value = 12;
+    outputLimiter.attack.value = 0.003;
+    outputLimiter.release.value = 0.12;
+    outputGain.connect(outputLimiter);
+    outputLimiter.connect(destination);
+    const filtered = connectMicrophoneLowCut(context, source, settings.lowCutFrequency);
+    const blendBus = context.createGain();
+    const rawInputAnalyser = context.createAnalyser();
+    rawInputAnalyser.fftSize = 1024;
+    rawInputAnalyser.smoothingTimeConstant = 0;
+    const rawInputMonitorSilence = context.createGain();
+    rawInputMonitorSilence.gain.value = 0;
+    source.connect(rawInputAnalyser);
+    rawInputAnalyser.connect(rawInputMonitorSilence);
+    rawInputMonitorSilence.connect(blendBus);
+    let voiceShaper: CommunicationVoiceShaper = { output: blendBus };
+    if (settings.isVoiceEnhancementEnabled) {
+      try {
+        voiceShaper = await connectCommunicationVoiceShaper(
+          context,
+          blendBus,
+          true,
+          (diagnostics) => {
+            if (disposed) return;
+            processorDiagnostics.voiceEnhancementAverageProcessingMs =
+              diagnostics.averageProcessingMs;
+            processorDiagnostics.voiceEnhancementMaxProcessingMs = diagnostics.maxProcessingMs;
+            processorDiagnostics.voiceEnhancementOverruns = diagnostics.overruns;
+            publishDiagnostics();
+          },
+          () => {
+            if (disposed) return;
+            processorDiagnostics.voiceEnhancementProcessor = "dsp_unavailable";
+            publishDiagnostics(true);
+            announceVoiceEnhancementUnavailable("processor_runtime_error");
+          },
+        );
+      } catch (error) {
+        processorDiagnostics.voiceEnhancementProcessor = "dsp_unavailable";
+        announceVoiceEnhancementUnavailable(
+          error instanceof Error ? error.message : "processor_initialization_failed",
+        );
+      }
     }
+    const equalized = connectMicrophoneEqualizer(context, voiceShaper.output, userGains, "off");
+    equalized.connect(outputGain);
+    const rawGain = context.createGain();
+    rawGain.gain.value = 1;
+    const rawDelay = settings.isNoiseSuppressionEnabled ? context.createDelay(0.05) : undefined;
+    if (rawDelay) {
+      rawDelay.delayTime.value = DEEPFILTER_RAW_ALIGNMENT_SECONDS;
+      filtered.connect(rawDelay);
+      rawDelay.connect(rawGain);
+    } else {
+      filtered.connect(rawGain);
+    }
+    if (!settings.isNoiseSuppressionEnabled) rawGain.connect(blendBus);
 
-    void createDeepFilterNode(context)
-      .then((processor) => {
-        if (disposed) {
-          processor.core.destroy();
-          return;
-        }
-
-        const gain = context.createGain();
-        gain.gain.value = protectionWorklet ? 1 : 0;
-        filtered.connect(processor.node);
-        processor.node.connect(gain);
-        if (protectionWorklet) gain.connect(protectionWorklet, 0, 1);
-        else gain.connect(blendBus);
-        activeProcessor = processor;
-        processedGain = gain;
-        processorDiagnostics.noiseProcessor = "deepfilter_active";
-        currentSuppressionLevel = DEEPFILTER_BASE_SUPPRESSION_LEVEL;
-        lastAppliedSuppressionLevel = Math.round(currentSuppressionLevel);
-        processor.core.setSuppressionLevel(lastAppliedSuppressionLevel);
-        setMix(false, true);
-        processorDiagnostics.currentSuppressionLevel = lastAppliedSuppressionLevel;
-        publishDiagnostics(true);
-        resolveReady?.({ ...processorDiagnostics });
-        resolveReady = undefined;
-
-        processor.node.onprocessorerror = () => {
-          fallbackToRaw("processor_runtime_error");
-        };
-      })
-      .catch((error) => {
-        if (disposed) return;
-        fallbackToRaw(error instanceof Error ? error.message : "processor_initialization_failed");
-      });
-  } else {
-    resolveReady?.({ ...processorDiagnostics });
-    resolveReady = undefined;
-  }
-
-  return {
-    stream: destination.stream,
-    processorDiagnostics,
-    ready,
-    onDiagnostics: (listener) => {
-      diagnosticsListeners.add(listener);
-      listener({ ...processorDiagnostics });
-      return () => diagnosticsListeners.delete(listener);
-    },
-    setSendVolume: (volume) => {
+    let activeProcessor: DeepFilterNodeResult | undefined;
+    let processedGain: GainNode | undefined;
+    let protectionWorklet: AudioWorkletNode | undefined;
+    let currentSuppressionLevel = DEEPFILTER_BASE_SUPPRESSION_LEVEL;
+    let lastAppliedSuppressionLevel = DEEPFILTER_BASE_SUPPRESSION_LEVEL;
+    const rawInputSamples = new Float32Array(rawInputAnalyser.fftSize);
+    let overloadFrames = 0;
+    let recoveryFrames = 0;
+    inputOverloadTimer = window.setInterval(() => {
       if (disposed) return;
-      const normalized = Math.max(0.5, Math.min(1.5, Number.isFinite(volume) ? volume : 1));
-      const now = context.currentTime;
-      outputGain.gain.cancelScheduledValues(now);
-      outputGain.gain.setTargetAtTime(normalized, now, 0.018);
-    },
-    getSendVolume: () => outputGain.gain.value,
-    dispose: () => {
-      disposed = true;
+      rawInputAnalyser.getFloatTimeDomainData(rawInputSamples);
+      let peak = 0;
+      for (const sample of rawInputSamples) peak = Math.max(peak, Math.abs(sample));
+      processorDiagnostics.rawInputPeak = peak;
+      if (peak >= 0.985) {
+        overloadFrames += 1;
+        recoveryFrames = 0;
+      } else if (peak < 0.94) {
+        overloadFrames = Math.max(0, overloadFrames - 1);
+        recoveryFrames += 1;
+      }
+      if (overloadFrames >= 5 && processorDiagnostics.inputOverload !== "warning") {
+        processorDiagnostics.inputOverload = "warning";
+        publishDiagnostics(true);
+        window.dispatchEvent(new CustomEvent("shanghao:microphone-input-overload"));
+      } else if (recoveryFrames >= 15 && processorDiagnostics.inputOverload !== "normal") {
+        processorDiagnostics.inputOverload = "normal";
+        publishDiagnostics(true);
+      }
+    }, 100);
+    const setMix = (protectingSpeech: boolean, immediate = false, rawTargetOverride?: number) => {
+      const timeConstant = immediate
+        ? 0.008
+        : protectingSpeech
+          ? SPEECH_MIX_ATTACK_SECONDS
+          : SPEECH_MIX_RELEASE_SECONDS;
+      const rawTarget = rawTargetOverride ?? (protectingSpeech ? SPEECH_RAW_MIX : 0);
+      const processedTarget = Math.max(0, 1 - rawTarget);
+      if (protectionWorklet) {
+        protectionWorklet.port.postMessage({
+          type: "mix",
+          raw: rawTarget,
+          processed: processedTarget,
+          timeConstant,
+        });
+      } else if (processedGain) {
+        const now = context.currentTime;
+        rawGain.gain.cancelScheduledValues(now);
+        processedGain.gain.cancelScheduledValues(now);
+        rawGain.gain.setTargetAtTime(rawTarget, now, timeConstant);
+        processedGain.gain.setTargetAtTime(processedTarget, now, timeConstant);
+      }
+      processorDiagnostics.rawProcessedMix = { raw: rawTarget, processed: processedTarget };
+    };
+    const fallbackToRaw = (reason: string) => {
+      if (disposed || processorDiagnostics.noiseProcessor === "deepfilter_unavailable") return;
+      processorDiagnostics.noiseProcessor = "deepfilter_unavailable";
+      processorDiagnostics.speechProtection = "inactive";
+      processorDiagnostics.currentSuppressionLevel = undefined;
+      processorDiagnostics.rawProcessedMix = { raw: 1, processed: 0 };
+      if (protectionWorklet) {
+        protectionWorklet.port.postMessage({
+          type: "mix",
+          raw: 1,
+          processed: 0,
+          timeConstant: PROCESSOR_CROSSFADE_SECONDS,
+        });
+      } else if (processedGain) {
+        crossfade(context, processedGain, rawGain);
+      }
+      publishDiagnostics(true);
       resolveReady?.({ ...processorDiagnostics });
       resolveReady = undefined;
-      diagnosticsListeners.clear();
-      if (remoteReferenceTimer !== undefined) window.clearInterval(remoteReferenceTimer);
-      remoteReferenceTimer = undefined;
-      if (inputOverloadTimer !== undefined) window.clearInterval(inputOverloadTimer);
-      inputOverloadTimer = undefined;
-      if (activeProcessor) {
-        activeProcessor.node.onprocessorerror = null;
-        activeProcessor.node.disconnect();
-        activeProcessor.core.destroy();
+      announceDeepFilterUnavailable(reason);
+    };
+    let resolveReady:
+      ((diagnostics: ProcessedMicrophoneStream["processorDiagnostics"]) => void) | undefined;
+    const ready = new Promise<ProcessedMicrophoneStream["processorDiagnostics"]>((resolve) => {
+      resolveReady = resolve;
+    });
+
+    if (settings.isNoiseSuppressionEnabled) {
+      try {
+        protectionWorklet = await createProtectionWorkletNode(context);
+        rawGain.connect(protectionWorklet, 0, 0);
+        protectionWorklet.connect(blendBus);
+        protectionWorklet.port.postMessage({
+          type: "mix",
+          raw: 1,
+          processed: 0,
+          timeConstant: 0.008,
+        });
+        remoteReferenceTimer = window.setInterval(() => {
+          if (disposed || !protectionWorklet) return;
+          protectionWorklet.port.postMessage({
+            type: "remote-level",
+            level: Math.max(0, settings.getRemoteReferenceLevel?.() ?? 0),
+          });
+        }, 50);
+        protectionWorklet.port.onmessage = (event: MessageEvent) => {
+          if (disposed || event.data?.type !== "analysis") return;
+          const analysis = event.data as {
+            speechProbability: number;
+            remoteLevel: number;
+            echoCorrelation: number;
+            mode: "noise" | "echo" | "near_speech" | "double_talk";
+            protectionActive: boolean;
+            rawMix: number;
+            processedMix: number;
+            targetSuppression: number;
+            processorOverruns: number;
+            averageProcessingMs: number;
+            maxProcessingMs: number;
+          };
+          const modeChanged = processorDiagnostics.processingMode !== analysis.mode;
+          const protectionChanged =
+            processorDiagnostics.speechProtection !==
+            (analysis.protectionActive ? "active" : "inactive");
+          processorDiagnostics.voiceActivity =
+            analysis.speechProbability >= 0.58 ? "active" : "inactive";
+          processorDiagnostics.processingMode = analysis.mode;
+          processorDiagnostics.doubleTalkDetected = analysis.mode === "double_talk";
+          processorDiagnostics.remoteEchoDetected = analysis.mode === "echo";
+          processorDiagnostics.speechProbability = analysis.speechProbability;
+          processorDiagnostics.remoteReferenceLevel = analysis.remoteLevel;
+          processorDiagnostics.speechProtection = analysis.protectionActive ? "active" : "inactive";
+          processorDiagnostics.rawProcessedMix = {
+            raw: analysis.rawMix,
+            processed: analysis.processedMix,
+          };
+          processorDiagnostics.processorOverruns = analysis.processorOverruns;
+          processorDiagnostics.averageProcessingMs = analysis.averageProcessingMs;
+          processorDiagnostics.maxProcessingMs = analysis.maxProcessingMs;
+          currentSuppressionLevel = analysis.targetSuppression;
+          if (activeProcessor && analysis.targetSuppression !== lastAppliedSuppressionLevel) {
+            try {
+              activeProcessor.core.setSuppressionLevel(analysis.targetSuppression);
+              lastAppliedSuppressionLevel = analysis.targetSuppression;
+              processorDiagnostics.currentSuppressionLevel = analysis.targetSuppression;
+            } catch {
+              fallbackToRaw("suppression_update_failed");
+              return;
+            }
+          }
+          publishDiagnostics(modeChanged || protectionChanged);
+        };
+      } catch {
+        // Chromium/Electron versions without AudioWorklet keep the established
+        // direct graph; the DeepFilter failure path still preserves raw audio.
+        protectionWorklet = undefined;
+        rawGain.connect(blendBus);
       }
-      processedGain?.disconnect();
-      protectionWorklet?.disconnect();
-      rawDelay?.disconnect();
-      rawGain.disconnect();
-      rawInputAnalyser.disconnect();
-      rawInputMonitorSilence.disconnect();
-      blendBus.disconnect();
-      if (voiceShaper.worklet) {
-        voiceShaper.worklet.onprocessorerror = null;
-        voiceShaper.worklet.port.onmessage = null;
-      }
-      voiceShaper.mudCut?.disconnect();
-      voiceShaper.clarity?.disconnect();
-      voiceShaper.worklet?.disconnect();
-      voiceShaper.processedGain?.disconnect();
-      voiceShaper.bypassGain?.disconnect();
-      voiceShaper.merge?.disconnect();
-      outputGain.disconnect();
-      outputLimiter.disconnect();
-      if (settings.stopInputOnDispose !== false) {
-        inputStream.getTracks().forEach((track) => track.stop());
-      }
-      destination.stream.getTracks().forEach((track) => track.stop());
-      void context.close().catch(() => undefined);
-    },
-  };
+
+      void createDeepFilterNode(context)
+        .then((processor) => {
+          if (disposed) {
+            processor.core.destroy();
+            return;
+          }
+
+          const gain = context.createGain();
+          gain.gain.value = protectionWorklet ? 1 : 0;
+          filtered.connect(processor.node);
+          processor.node.connect(gain);
+          if (protectionWorklet) gain.connect(protectionWorklet, 0, 1);
+          else gain.connect(blendBus);
+          activeProcessor = processor;
+          processedGain = gain;
+          processorDiagnostics.noiseProcessor = "deepfilter_active";
+          currentSuppressionLevel = DEEPFILTER_BASE_SUPPRESSION_LEVEL;
+          lastAppliedSuppressionLevel = Math.round(currentSuppressionLevel);
+          processor.core.setSuppressionLevel(lastAppliedSuppressionLevel);
+          setMix(false, true);
+          processorDiagnostics.currentSuppressionLevel = lastAppliedSuppressionLevel;
+          publishDiagnostics(true);
+          resolveReady?.({ ...processorDiagnostics });
+          resolveReady = undefined;
+
+          processor.node.onprocessorerror = () => {
+            fallbackToRaw("processor_runtime_error");
+          };
+        })
+        .catch((error) => {
+          if (disposed) return;
+          fallbackToRaw(error instanceof Error ? error.message : "processor_initialization_failed");
+        });
+    } else {
+      resolveReady?.({ ...processorDiagnostics });
+      resolveReady = undefined;
+    }
+
+    return {
+      stream: destination.stream,
+      processorDiagnostics,
+      ready,
+      onDiagnostics: (listener) => {
+        diagnosticsListeners.add(listener);
+        listener({ ...processorDiagnostics });
+        return () => diagnosticsListeners.delete(listener);
+      },
+      setSendVolume: (volume) => {
+        if (disposed) return;
+        const normalized = Math.max(0.5, Math.min(1.5, Number.isFinite(volume) ? volume : 1));
+        const now = context.currentTime;
+        outputGain.gain.cancelScheduledValues(now);
+        outputGain.gain.setTargetAtTime(normalized, now, 0.018);
+      },
+      getSendVolume: () => outputGain.gain.value,
+      dispose: () => {
+        disposed = true;
+        resolveReady?.({ ...processorDiagnostics });
+        resolveReady = undefined;
+        diagnosticsListeners.clear();
+        if (remoteReferenceTimer !== undefined) window.clearInterval(remoteReferenceTimer);
+        remoteReferenceTimer = undefined;
+        if (inputOverloadTimer !== undefined) window.clearInterval(inputOverloadTimer);
+        inputOverloadTimer = undefined;
+        if (activeProcessor) {
+          activeProcessor.node.onprocessorerror = null;
+          activeProcessor.node.disconnect();
+          activeProcessor.core.destroy();
+        }
+        processedGain?.disconnect();
+        protectionWorklet?.disconnect();
+        rawDelay?.disconnect();
+        rawGain.disconnect();
+        rawInputAnalyser.disconnect();
+        rawInputMonitorSilence.disconnect();
+        blendBus.disconnect();
+        if (voiceShaper.worklet) {
+          voiceShaper.worklet.onprocessorerror = null;
+          voiceShaper.worklet.port.onmessage = null;
+        }
+        voiceShaper.mudCut?.disconnect();
+        voiceShaper.clarity?.disconnect();
+        voiceShaper.worklet?.disconnect();
+        voiceShaper.processedGain?.disconnect();
+        voiceShaper.bypassGain?.disconnect();
+        voiceShaper.merge?.disconnect();
+        outputGain.disconnect();
+        outputLimiter.disconnect();
+        if (settings.stopInputOnDispose !== false) {
+          inputStream.getTracks().forEach((track) => track.stop());
+        }
+        destination.stream.getTracks().forEach((track) => track.stop());
+        void context.close().catch(() => undefined);
+      },
+    };
+  } catch (error) {
+    disposed = true;
+    if (remoteReferenceTimer !== undefined) window.clearInterval(remoteReferenceTimer);
+    if (inputOverloadTimer !== undefined) window.clearInterval(inputOverloadTimer);
+    if (settings.stopInputOnDispose !== false) {
+      inputStream.getTracks().forEach((track) => track.stop());
+    }
+    await context.close().catch(() => undefined);
+    throw error;
+  }
 };

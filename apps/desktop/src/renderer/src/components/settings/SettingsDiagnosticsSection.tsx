@@ -13,7 +13,17 @@ import {
   runtimeHealthCollector,
   sanitizeRuntimeServerUrl,
 } from "../../features/diagnostics/runtimeHealthCollector";
-import { getRoomRuntimeDiagnostics, injectRealtimeFault } from "../../hooks/useRoomState";
+import {
+  microphoneHealth,
+  roomAudioHealth,
+  speakerHealth,
+} from "../../features/diagnostics/healthProjection";
+import {
+  getAudioRuntimeSnapshot,
+  getRoomRuntimeDiagnostics,
+  getRoomSessionTimeline,
+  injectRealtimeFault,
+} from "../../hooks/useRoomState";
 import { useAppStore } from "../../store/appStore";
 import { useAudioStore } from "../../store/audioStore";
 import { useRoomStore } from "../../store/roomStore";
@@ -133,6 +143,8 @@ export const SettingsDiagnosticsSection = ({
       screenShareRelayState: runtime?.screenShareRelayState,
       screenShare: runtime?.screenShare,
       audioTimeline: runtime?.audioRelayDiagnostics?.audioTimeline,
+      roomSessionTimeline: getRoomSessionTimeline(),
+      audioRuntime: getAudioRuntimeSnapshot(),
     };
   };
 
@@ -147,22 +159,23 @@ export const SettingsDiagnosticsSection = ({
 
   const handleCopyDiagnostics = () => {
     const runtime = getRoomRuntimeDiagnostics();
-    const microphone = localAudioDiagnostics
-      ? localAudioDiagnostics.inputOverload === "warning"
-        ? "输入音量偏高，建议检查"
-        : "正常"
-      : "尚未检测";
-    const roomConnection =
-      (runtime?.remotePeerCount ?? 0) === 0
-        ? "尚未检测"
-        : (runtime?.webrtcReadyPeerCount ?? 0) === runtime?.remotePeerCount
-          ? "正常"
-          : "有好友连接不稳定";
+    const microphone = microphoneHealth(getAudioRuntimeSnapshot(), localAudioDiagnostics);
+    const speaker = speakerHealth({
+      outputDeviceCount,
+      roomActive: Boolean(runtime),
+      remotePeerCount: runtime?.remotePeerCount ?? 0,
+      mixer: runtime?.remoteAudioMixer,
+    });
+    const roomConnection = roomAudioHealth({
+      remotePeerCount: runtime?.remotePeerCount ?? 0,
+      webrtcReadyPeerCount: runtime?.webrtcReadyPeerCount ?? 0,
+      peerHealth: runtime?.peerHealth,
+    });
     const summary = [
       "上号诊断摘要",
-      `麦克风：${microphone}`,
-      `扬声器：${outputDeviceCount > 0 ? "正常" : "没有检测到输出设备"}`,
-      `房间连接：${roomConnection}`,
+      `麦克风：${microphone.level}；${microphone.description}`,
+      `扬声器：${speaker.level}；${speaker.description}`,
+      `房间连接：${roomConnection.level}；${roomConnection.description}`,
       `服务器连接：${relay ? (relay.isReachable ? "正常" : "暂时无法连接") : "尚未检测"}`,
       `网络权限：${windowsStatus ? (windowsStatus.firewall.healthy ? "正常" : "可能影响语音连接") : "尚未检测"}`,
     ].join("\n");
@@ -179,6 +192,10 @@ export const SettingsDiagnosticsSection = ({
         runtimeHealth={runtimeHealth}
         relay={relay}
         localAudioDiagnostics={localAudioDiagnostics}
+        audioRuntime={getAudioRuntimeSnapshot()}
+        mixer={runtime?.remoteAudioMixer}
+        peerHealth={runtime?.peerHealth}
+        roomActive={Boolean(runtime)}
         outputDeviceCount={outputDeviceCount}
         webrtcReadyPeerCount={runtime?.webrtcReadyPeerCount ?? 0}
         remotePeerCount={runtime?.remotePeerCount ?? 0}

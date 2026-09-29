@@ -13,6 +13,7 @@ import {
   abortRecordingSession,
   appendRecordingChunk,
   finalizeRecordingSession,
+  sealRecordingSession,
   startRecordingSession,
 } from "./recording-main";
 import { exportRecordingFromMain } from "./recording-main";
@@ -61,6 +62,9 @@ export const registerRecordingStreamIpcHandlers = ({
   );
   ipcMain.handle(IPC_CHANNELS.recording.abortSession, async (_event, sessionId: unknown) => {
     await abortRecordingSession(requireString(sessionId, 80, "recording_session_id"));
+  });
+  ipcMain.handle(IPC_CHANNELS.recording.sealSession, async (_event, sessionId: unknown) => {
+    await sealRecordingSession(requireString(sessionId, 80, "recording_session_id"));
   });
 };
 

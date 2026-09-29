@@ -256,10 +256,21 @@ test("common VAD keeps model speech misses separate from real silence", () => {
 });
 
 test("obvious decoder repetition is detected conservatively", () => {
-  for (const text of ["真的".repeat(16), "这话".repeat(16)]) {
+  for (const text of ["真的".repeat(16), "这话".repeat(16), "嗯。".repeat(80)]) {
     const analysis = analyzeTranscriptAnomalies(text, 30_000);
     assert.equal(analysis.repetitionLoop, true);
     assert.equal(analysis.abnormalOutput, true);
+  }
+});
+
+test("natural laughter within otherwise normal speech is not a decoder loop", () => {
+  for (const text of [
+    "这局打得不错，哈哈哈哈哈哈哈哈，哈哈哈哈哈哈哈哈，下把继续。",
+    `我们继续讨论刚才的战术，${"哈".repeat(13)}，随后按原计划行动。`,
+  ]) {
+    const analysis = analyzeTranscriptAnomalies(text, 30_000);
+    assert.equal(analysis.repetitionLoop, false);
+    assert.equal(analysis.abnormalOutput, false);
   }
 });
 

@@ -45,13 +45,17 @@ const trimMessages = (messages: ChatMessage[]): ChatMessage[] => {
     .sort((left, right) => left.createdAt.localeCompare(right.createdAt))
     .slice(-MAX_MESSAGES_PER_ROOM);
 
-  while (
-    trimmed.length > 0 &&
-    Buffer.byteLength(JSON.stringify(trimmed), "utf8") > MAX_ROOM_BYTES
-  ) {
-    trimmed.shift();
+  const serializedSizes = trimmed.map((message) =>
+    Buffer.byteLength(JSON.stringify(message), "utf8"),
+  );
+  let totalBytes =
+    2 + serializedSizes.reduce((sum, size) => sum + size, 0) + Math.max(0, trimmed.length - 1);
+  let first = 0;
+  while (first < trimmed.length && totalBytes > MAX_ROOM_BYTES) {
+    totalBytes -= serializedSizes[first]! + (first < trimmed.length - 1 ? 1 : 0);
+    first += 1;
   }
-  return trimmed;
+  return trimmed.slice(first);
 };
 
 export class ChatHistoryStore {
@@ -76,7 +80,11 @@ export class ChatHistoryStore {
     this.writeQueue = this.writeQueue
       .catch(() => undefined)
       .then(async () => {
-        const history = await this.load();
+        const current = await this.load();
+        const history: ChatHistoryFile = {
+          version: CHAT_HISTORY_VERSION,
+          rooms: { ...current.rooms },
+        };
         history.rooms[roomKey] = {
           updatedAt: new Date().toISOString(),
           messages: nextMessages,
@@ -90,6 +98,7 @@ export class ChatHistoryStore {
         await mkdir(path.dirname(this.filePath), { recursive: true });
         await writeFile(this.temporaryFilePath, JSON.stringify(history), "utf8");
         await rename(this.temporaryFilePath, this.filePath);
+        this.cache = history;
       });
     return this.writeQueue;
   }
@@ -101,24 +110,30 @@ export class ChatHistoryStore {
       if (
         parsed.version !== CHAT_HISTORY_VERSION ||
         !parsed.rooms ||
-        typeof parsed.rooms !== "object"
+        typeof parsed.rooms !== "object" ||
+        Array.isArray(parsed.rooms)
       ) {
-        this.cache = emptyHistory();
-        return this.cache;
+        throw new Error("chat_history_unreadable");
       }
 
       const rooms: Record<string, CachedRoomHistory> = {};
       for (const [roomKey, value] of Object.entries(parsed.rooms)) {
-        if (!value || typeof value !== "object") continue;
+        if (!value || typeof value !== "object") throw new Error("chat_history_unreadable");
         const room = value as Partial<CachedRoomHistory>;
+        if (!Array.isArray(room.messages) || !room.messages.every(isChatMessage)) {
+          throw new Error("chat_history_unreadable");
+        }
         rooms[roomKey] = {
           updatedAt:
             typeof room.updatedAt === "string" ? room.updatedAt : new Date(0).toISOString(),
-          messages: trimMessages(Array.isArray(room.messages) ? room.messages : []),
+          messages: trimMessages(room.messages),
         };
       }
       this.cache = { version: CHAT_HISTORY_VERSION, rooms };
-    } catch {
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+        throw new Error("chat_history_unreadable", { cause: error });
+      }
       this.cache = emptyHistory();
     }
     return this.cache;

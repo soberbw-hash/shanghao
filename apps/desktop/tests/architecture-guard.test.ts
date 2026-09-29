@@ -28,12 +28,22 @@ test("large orchestration entry points stay below reviewed growth ceilings", () 
   const ceilings = {
     // Reviewed: replacement/rollback implementation remains in the audio helper;
     // the facade adds only its typed call and the missing-mix failure guard.
-    "apps/desktop/src/renderer/src/features/room/roomClient.ts": 1_708,
+    // Reviewed growth: room exit completes resource cleanup when screen-audio
+    // microphone restoration fails; the normal media path is unchanged.
+    // Reviewed growth: repeated disconnect callers now await the same cleanup.
+    "apps/desktop/src/renderer/src/features/room/roomClient.ts": 1_721,
     "apps/desktop/src/renderer/src/pages/RoomPage.tsx": 1_401,
-    // lineCount includes the final newline; these are the current reviewed
-    // baselines, so any future growth fails until responsibility is extracted.
-    "apps/desktop/src/main/ipc.ts": 1_450,
-    "apps/desktop/src/main/ai-model-manager.ts": 1_526,
+    // lineCount includes the final newline; growth requires reviewing the
+    // added responsibility and updating the ceiling deliberately.
+    // Reviewed growth: the diagnostic export now includes a bounded cross-domain event timeline.
+    "apps/desktop/src/main/ipc.ts": 1_460,
+    // Reviewed growth: model actions are serialized per model, late initialization
+    // cannot restart downloads, and AI compute admission delegates to ResourceScheduler.
+    // The extra lines expose active cancellation state, notify status listeners,
+    // and defer Qwen pressure release until a manual job gives up its lease.
+    // Reviewed growth: download waiter cancellation closes an admission race.
+    // Reviewed growth: damaged state fails closed before model deletion or checkpoint writes.
+    "apps/desktop/src/main/ai-model-manager.ts": 1_620,
     "apps/desktop/src/main/ai-runtime-manager.ts": 1_956,
     "packages/signaling/src/server.ts": 1_853,
     // Reviewed Windows appearance disclosure keeps its risk text beside the controls.
@@ -42,7 +52,9 @@ test("large orchestration entry points stay below reviewed growth ceilings", () 
     "apps/desktop/src/renderer/src/components/room/TeamIsland.tsx": 706,
     "apps/desktop/src/renderer/src/components/chat/TemporaryChatPanel.tsx": 960,
     // Reviewed growth: timestamp-ordered observations use a bounded binary-search scan.
-    "apps/desktop/src/main/ai-voice-memory-service.ts": 3_202,
+    // Per-record setup now serializes clear/start/delete so a delayed job cannot
+    // recreate a deleted memory or append events after comparison results are cleared.
+    "apps/desktop/src/main/ai-voice-memory-service.ts": 3_270,
     "apps/desktop/src/renderer/src/components/settings/SettingsDiagnosticsSection.tsx": 300,
   } as const;
   for (const [relativePath, ceiling] of Object.entries(ceilings)) {

@@ -83,7 +83,8 @@ export class AiTextGateway {
     const taskKind = request.purpose === "organize" ? "summary" : "question";
     const runnable = this.models.canRunTask(taskKind, request.manual);
     if (!runnable.runnable) throw new Error(runnable.reason);
-    this.models.markQwenTaskStarted(`${request.purpose}:local`);
+    const compute = await this.models.acquireComputeSlot(taskKind, request.manual, request.signal);
+    const taskId = this.models.markQwenTaskStarted(`${request.purpose}:local`);
     try {
       // The target machine has 8 GB VRAM and 32 GB RAM. ASR is explicitly released before
       // FreeToken starts, while one complete organization run keeps the LLM loaded.
@@ -91,11 +92,12 @@ export class AiTextGateway {
       return await this.localLlm.generateJson<T>({
         maxNewTokens: request.maxNewTokens,
         timeoutMs: request.timeoutMs ?? 30 * 60_000,
-        signal: request.signal,
+        signal: compute.signal,
         prompt: request.prompt,
       });
     } finally {
-      this.models.markAiTaskFinished();
+      this.models.markAiTaskFinished(taskId);
+      compute.release();
     }
   }
 

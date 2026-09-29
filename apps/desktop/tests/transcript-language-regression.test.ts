@@ -16,3 +16,10 @@ test("language acceptance does not bypass silence and repetition guards", () => 
   for (const text of ["[silence]", "go ".repeat(40), "\uFFFD"])
     assert.equal(isReliableTranscriptText(text), false);
 });
+
+test("conversational laughter does not invalidate an otherwise normal transcript", () => {
+  assert.equal(
+    isReliableTranscriptText("这局打得不错，哈哈哈哈哈哈哈哈，哈哈哈哈哈哈哈哈，下把继续。"),
+    true,
+  );
+});

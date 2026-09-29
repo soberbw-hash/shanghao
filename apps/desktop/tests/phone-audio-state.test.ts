@@ -6,6 +6,8 @@ import { create } from "zustand";
 import * as shared from "@private-voice/shared";
 import ts from "typescript";
 
+import { createDeviceRefreshVersion } from "../src/renderer/src/features/audio/deviceRecovery";
+
 test("phone mode restores every pre-existing mic/speaker combination without overriding settings", () => {
   const source = ts.transpileModule(
     readFileSync(new URL("../src/renderer/src/store/audioStore.ts", import.meta.url), "utf8"),
@@ -31,6 +33,7 @@ test("phone mode restores every pre-existing mic/speaker combination without ove
     require: (id: string) => {
       if (id === "zustand") return { create };
       if (id === "@private-voice/shared") return shared;
+      if (id === "../features/audio/deviceRecovery") return { createDeviceRefreshVersion };
       if (id === "@private-voice/webrtc" || id === "../utils/logger") return {};
       throw new Error(id);
     },

@@ -1,4 +1,4 @@
-import brandMarkUrl from "../../assets/brand-mark.svg";
+import brandMarkUrl from "../../assets/brand-mark.png";
 
 const sizeClassNames = {
   sm: "size-8",

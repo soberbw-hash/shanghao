@@ -414,13 +414,9 @@ export interface DesktopApi {
     setIconOverlaysHidden: (hidden: boolean) => Promise<WindowsIntegrationStatus["iconOverlays"]>;
   };
   shortcuts: {
-    configureMute: (accelerator: string) => Promise<void>;
     onMuteTriggered: (listener: () => void) => () => void;
-    configureRecordingMarker: (accelerator: string) => Promise<boolean>;
     onRecordingMarkerTriggered: (listener: () => void) => () => void;
-    configurePushToTalk: (accelerator: string, enabled: boolean) => Promise<boolean>;
     onPushToTalkState: (listener: (pressed: boolean) => void) => () => void;
-    configureQuickMessage: (slot: number, accelerator: string) => Promise<boolean>;
     onQuickMessageTriggered: (listener: (slot: number) => void) => () => void;
   };
   updates: {
@@ -442,6 +438,7 @@ export interface DesktopApi {
     startSession: (payload: RecordingStreamStartPayload) => Promise<RecordingStreamStartResponse>;
     appendChunk: (sessionId: string, buffer: ArrayBuffer) => Promise<void>;
     finalizeSession: (payload: RecordingStreamFinalizePayload) => Promise<RecordingExportResponse>;
+    sealSession: (sessionId: string) => Promise<void>;
     abortSession: (sessionId: string) => Promise<void>;
     saveSpeakerSegment: (
       payload: RecordingSpeakerSegmentPayload,

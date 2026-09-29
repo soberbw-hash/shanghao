@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -54,6 +54,39 @@ test("chat history de-duplicates messages and keeps the latest 500", async () =>
     assert.equal(restored.length, 500);
     assert.equal(restored[0]?.id, "010");
     assert.equal(restored.at(-1)?.id, "509");
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("chat history refuses to overwrite unreadable user data", async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "shanghao-chat-history-"));
+  const file = path.join(directory, "chat-history.json");
+  try {
+    const original = '{"version":1,"rooms":';
+    await writeFile(file, original, "utf8");
+    const store = new ChatHistoryStore(directory);
+    await assert.rejects(store.read("main"), /chat_history_unreadable/);
+    await assert.rejects(store.save("main", [message("1")]), /chat_history_unreadable/);
+    assert.equal(await readFile(file, "utf8"), original);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("chat history enforces the per-room byte budget", async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "shanghao-chat-history-"));
+  try {
+    const store = new ChatHistoryStore(directory);
+    const oversized = Array.from({ length: 500 }, (_, index) => ({
+      ...message(String(index).padStart(3, "0"), "中".repeat(20_000)),
+      createdAt: new Date(Date.UTC(2026, 7, 11, 0, 0, index)).toISOString(),
+    }));
+    await store.save("main", oversized);
+    const restored = await store.read("main");
+    assert.ok(restored.length > 0 && restored.length < 500);
+    assert.equal(restored.at(-1)?.id, "499");
+    assert.ok(Buffer.byteLength(JSON.stringify(restored), "utf8") <= 24 * 1024 * 1024);
   } finally {
     await rm(directory, { recursive: true, force: true });
   }

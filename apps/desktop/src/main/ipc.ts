@@ -21,7 +21,6 @@ import {
   APP_NAME,
   APP_PROTOCOL_VERSION,
   IPC_CHANNELS,
-  isQuickMessageShortcutSlot,
   type AccountAvatarUpdateRequest,
   type AccountLoginRequest,
   type AccountPasswordResetRequest,
@@ -97,12 +96,16 @@ import {
   setRecordingFavorite,
 } from "./recording-library";
 import { readRelayStatus } from "./relay-status";
+import { buildRuntimeEventTimeline } from "./runtime-event-timeline";
 import { sendToWindow } from "./safe-web-contents";
 import { registerOverlayQuickMusicMuteHandler } from "./overlay-quick-music-ipc";
 import { registerRecordingLocationIpcHandlers } from "./recording-location-ipc";
-import { registerShortcutIpcHandlers } from "./shortcut-ipc";
 import { SettingsStore } from "./settings-store";
 import { ShortcutController } from "./shortcuts";
+import {
+  applyShortcutSettingsPatch,
+  reconcileResetShortcuts,
+} from "./settings-shortcut-reconciliation";
 import { SignalingClientBridge } from "./signaling-client";
 import { UpdateService } from "./updates";
 import { OverlayWindowController } from "./overlay-window";
@@ -281,6 +284,15 @@ export const registerIpcHandlers = ({
   huggingFaceAccess,
   consumePendingDeepLink,
 }: MainProcessServices): void => {
+  let settingsMutation: Promise<unknown> = Promise.resolve();
+  const serializeSettingsMutation = <T>(operation: () => Promise<T>): Promise<T> => {
+    const next = settingsMutation.then(operation, operation);
+    settingsMutation = next.then(
+      () => undefined,
+      () => undefined,
+    );
+    return next;
+  };
   const chatHistoryStore = new ChatHistoryStore(app.getPath("userData"));
   const dailyRoomReportCache = new DailyRoomReportCache(app.getPath("userData"));
   const weatherSession = session.fromPartition("shanghao-weather-direct", { cache: false });
@@ -438,7 +450,6 @@ export const registerIpcHandlers = ({
       await shell.openExternal(target);
     },
   );
-  registerShortcutIpcHandlers(shortcuts);
 
   ipcMain.handle(IPC_CHANNELS.clipboard.writeText, async (_event, text: string): Promise<void> => {
     requireString(text, 4_096, "clipboard_text");
@@ -695,40 +706,51 @@ export const registerIpcHandlers = ({
 
   ipcMain.handle(
     IPC_CHANNELS.settings.save,
-    async (_event, partial: Partial<AppSettings>): Promise<AppSettings> => {
-      if (
-        !partial ||
-        typeof partial !== "object" ||
-        Array.isArray(partial) ||
-        JSON.stringify(partial).length > 32_768
-      ) {
-        throw new Error("invalid_settings_patch");
-      }
-      const previousMuteShortcut = settingsStore.getSnapshot().globalMuteShortcut;
-      const settings = await settingsStore.save(partial);
-      if (partial.aiProcessingMode) aiModels.setProcessingMode(settings.aiProcessingMode);
-      if (partial.aiAsrModel) aiModels.setActiveAsrModel(settings.aiAsrModel);
-      if (typeof partial.isGameDetectionEnabled === "boolean") {
-        await gameDetection.setEnabled(settings.isGameDetectionEnabled);
-      }
-      if ("globalMuteShortcut" in partial) {
-        const registered = await shortcuts.configureGlobalMute(settings.globalMuteShortcut);
-        if (!registered && settings.globalMuteShortcut) {
-          return settingsStore.save({ globalMuteShortcut: previousMuteShortcut });
+    async (_event, partial: Partial<AppSettings>): Promise<AppSettings> =>
+      serializeSettingsMutation(async () => {
+        if (
+          !partial ||
+          typeof partial !== "object" ||
+          Array.isArray(partial) ||
+          JSON.stringify(partial).length > 32_768
+        ) {
+          throw new Error("invalid_settings_patch");
         }
-      }
-      return settings;
-    },
+        const previousSettings = settingsStore.getSnapshot();
+        const settings = await settingsStore.save(partial);
+        if (partial.aiProcessingMode) aiModels.setProcessingMode(settings.aiProcessingMode);
+        if (partial.aiAsrModel) aiModels.setActiveAsrModel(settings.aiAsrModel);
+        if (typeof partial.isGameDetectionEnabled === "boolean") {
+          await gameDetection.setEnabled(settings.isGameDetectionEnabled);
+        }
+        const rollback = await applyShortcutSettingsPatch(
+          previousSettings,
+          settings,
+          partial,
+          shortcuts,
+        );
+        return Object.keys(rollback).length > 0 ? settingsStore.save(rollback) : settings;
+      }),
   );
 
-  ipcMain.handle(IPC_CHANNELS.settings.reset, async (): Promise<AppSettings> => {
-    const settings = await settingsStore.reset();
-    aiModels.setProcessingMode(settings.aiProcessingMode);
-    aiModels.setActiveAsrModel(settings.aiAsrModel);
-    await gameDetection.setEnabled(settings.isGameDetectionEnabled);
-    await shortcuts.configureGlobalMute(settings.globalMuteShortcut);
-    return settings;
-  });
+  ipcMain.handle(IPC_CHANNELS.settings.reset, async (): Promise<AppSettings> =>
+    serializeSettingsMutation(async () => {
+      const settings = await settingsStore.reset();
+      aiModels.setProcessingMode(settings.aiProcessingMode);
+      aiModels.setActiveAsrModel(settings.aiAsrModel);
+      await gameDetection.setEnabled(settings.isGameDetectionEnabled);
+      const failed = await reconcileResetShortcuts(settings, shortcuts);
+      if (failed.length) {
+        await diagnostics.writeLog({
+          category: "app",
+          level: "warn",
+          message: "Default shortcuts could not be registered after settings reset",
+          context: { failed },
+        });
+      }
+      return settings;
+    }),
+  );
 
   ipcMain.handle(IPC_CHANNELS.profile.pickAvatar, async () =>
     pickAvatarImage(settingsStore.getSnapshot().avatarPath),
@@ -871,12 +893,63 @@ export const registerIpcHandlers = ({
           content: JSON.stringify(rendererState?.audioTimeline ?? [], null, 2),
         },
         {
+          name: "room-session-timeline.json",
+          content: JSON.stringify(rendererState?.roomSessionTimeline ?? null, null, 2),
+        },
+        {
+          name: "audio-runtime.json",
+          content: JSON.stringify(rendererState?.audioRuntime ?? null, null, 2),
+        },
+        {
+          name: "ai-scheduler.json",
+          content: JSON.stringify(aiModels.getSnapshot().scheduler, null, 2),
+        },
+        {
+          name: "ai-compute-timeline.json",
+          content: JSON.stringify(aiModels.getComputeTimeline(), null, 2),
+        },
+        {
+          name: "runtime-event-timeline.json",
+          content: JSON.stringify(
+            buildRuntimeEventTimeline({
+              room: rendererState?.roomSessionTimeline,
+              audio: rendererState?.audioTimeline,
+              ai: aiModels.getComputeTimeline(),
+            }),
+            null,
+            2,
+          ),
+        },
+        {
           name: "runtime-health.json",
           content: JSON.stringify(runtimeHealth, null, 2),
         },
         {
           name: "runtime-health-history.json",
           content: JSON.stringify(diagnostics.getRuntimeHealthHistory(), null, 2),
+        },
+        {
+          name: "shortcut-runtime.json",
+          content: JSON.stringify(
+            {
+              desired: {
+                mute: settings.globalMuteShortcut,
+                recordingMarker: settings.recordingMarkerShortcut,
+                pushToTalk: settings.isPushToTalkEnabled ? settings.pushToTalkShortcut : null,
+                phone: settings.phoneModeShortcut ?? null,
+                quickMessages: [
+                  ...settings.quickMessages.slots,
+                  ...settings.quickMessages.musicSlots,
+                ].map((slot, index) => ({
+                  slot: index,
+                  shortcut: slot.enabled ? slot.shortcut : null,
+                })),
+              },
+              runtime: shortcuts.getRuntimeSnapshot(),
+            },
+            null,
+            2,
+          ),
         },
         {
           name: "flight-recorder.json",
@@ -890,20 +963,6 @@ export const registerIpcHandlers = ({
     await diagnostics.openLogsDirectory();
   });
 
-  ipcMain.handle(
-    IPC_CHANNELS.shortcuts.configureMute,
-    async (_event, accelerator: string): Promise<void> => {
-      await shortcuts.configureGlobalMute(accelerator);
-    },
-  );
-  ipcMain.handle(
-    IPC_CHANNELS.shortcuts.configureQuickMessage,
-    async (_event, slot: number, accelerator: string): Promise<boolean> => {
-      if (!isQuickMessageShortcutSlot(slot)) throw new Error("invalid_quick_message_slot");
-      if (typeof accelerator !== "string") throw new Error("invalid_quick_message_shortcut");
-      return shortcuts.configureQuickMessage(slot, accelerator);
-    },
-  );
   ipcMain.handle(IPC_CHANNELS.updates.check, async (): Promise<UpdateCheckResult> => {
     const result = await updates.check();
     diagnostics.setLastUpdateCheckMessage(result.message);
@@ -1105,6 +1164,7 @@ export const registerIpcHandlers = ({
       if (!pressure || typeof pressure !== "object") throw new Error("invalid_ai_runtime_pressure");
       aiModels.updateRuntimePressure({
         inVoiceRoom: Boolean(pressure.inVoiceRoom),
+        recordingActive: Boolean(pressure.recordingActive),
         screenSharing: Boolean(pressure.screenSharing),
         peerRecovering: Boolean(pressure.peerRecovering),
         latencyMs: Math.max(0, Math.min(60_000, Number(pressure.latencyMs) || 0)),

@@ -642,7 +642,11 @@ test("channel switching is exclusive and clears screen-share state before joinin
   assert.equal(roomStateSource.includes("preserveLocalMedia: reuseLocalMedia"), true);
   assert.equal(roomStateSource.includes("reuseExisting: reuseLocalMedia"), true);
   assert.equal(roomPageSource.includes("key={room.roomId}"), false);
-  assert.equal(roomStateSource.includes("previousMemberIds = new Set<string>();"), true);
+  assert.equal(
+    roomStateSource.includes("const memberPresence = new MemberPresenceTracker();"),
+    true,
+  );
+  assert.equal(roomStateSource.includes("let previousMemberIds"), false);
 });
 
 test("image-heavy overlays avoid scale repaints and defer offscreen image decoding", () => {

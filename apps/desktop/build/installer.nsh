@@ -25,7 +25,7 @@
 !macroend
 
 !macro customInstall
-  StrCpy $0 "$INSTDIR\resources\build\shanghao-shortcut-v3.ico"
+  StrCpy $0 "$INSTDIR\resources\build\shanghao-shortcut-v4.ico"
 
   ; 后续覆盖安装只允许清理带有该标记的上号专属目录。
   !insertmacro writeShangHaoInstallMarker

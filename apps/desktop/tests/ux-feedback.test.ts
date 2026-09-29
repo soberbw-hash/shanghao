@@ -21,6 +21,19 @@ test("ordinary UI errors explain the next step without exposing runtime internal
   assert.equal(integrityError.title, "模型文件校验未通过");
   assert.match(integrityError.description, /重新校验并修复/);
   assert.equal(integrityError.description.includes("sha256"), false);
+
+  const stateError = toUserFacingError(new Error("ai_model_state_unavailable"), "model");
+  assert.equal(stateError.title, "模型记录无法读取");
+  assert.match(stateError.description, /原有模型和记录已保留/);
+  assert.equal(stateError.description.includes("ai_model_state"), false);
+
+  const recordingError = toUserFacingError(
+    new Error("recording_library_metadata_invalid"),
+    "recording",
+  );
+  assert.equal(recordingError.title, "录音记录无法读取");
+  assert.match(recordingError.description, /备份录音目录/);
+  assert.equal(recordingError.description.includes("metadata_invalid"), false);
 });
 
 test("channel entry keeps missing-device recovery visible and validates nickname in place", () => {

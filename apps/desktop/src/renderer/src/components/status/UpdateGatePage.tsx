@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Download, RefreshCcw, AlertCircle, FileText } from "lucide-react";
 
-import brandMarkUrl from "../../assets/brand-mark.svg";
+import brandMarkUrl from "../../assets/brand-mark.png";
 import { Button } from "../base/Button";
 import { useSettingsStore } from "../../store/settingsStore";
 import { useAppStore } from "../../store/appStore";

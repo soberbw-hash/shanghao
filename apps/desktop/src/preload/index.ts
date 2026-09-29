@@ -232,23 +232,17 @@ const desktopApi: DesktopApi = {
       ipcRenderer.invoke(IPC_CHANNELS.windows.setIconOverlaysHidden, hidden),
   },
   shortcuts: {
-    configureMute: (accelerator) =>
-      ipcRenderer.invoke(IPC_CHANNELS.shortcuts.configureMute, accelerator),
     onMuteTriggered: (listener) => {
       const wrapped = () => listener();
       ipcRenderer.on(IPC_CHANNELS.shortcuts.muteTriggered, wrapped);
       return () => ipcRenderer.removeListener(IPC_CHANNELS.shortcuts.muteTriggered, wrapped);
     },
-    configureRecordingMarker: (accelerator) =>
-      ipcRenderer.invoke(IPC_CHANNELS.shortcuts.configureRecordingMarker, accelerator),
     onRecordingMarkerTriggered: (listener) => {
       const wrapped = () => listener();
       ipcRenderer.on(IPC_CHANNELS.shortcuts.recordingMarkerTriggered, wrapped);
       return () =>
         ipcRenderer.removeListener(IPC_CHANNELS.shortcuts.recordingMarkerTriggered, wrapped);
     },
-    configurePushToTalk: (accelerator, enabled) =>
-      ipcRenderer.invoke(IPC_CHANNELS.shortcuts.configurePushToTalk, accelerator, enabled),
     onPushToTalkState: (listener) => {
       const wrapped = (_event: Electron.IpcRendererEvent, pressed: unknown) => {
         if (typeof pressed === "boolean") listener(pressed);
@@ -256,8 +250,6 @@ const desktopApi: DesktopApi = {
       ipcRenderer.on(IPC_CHANNELS.shortcuts.pushToTalkState, wrapped);
       return () => ipcRenderer.removeListener(IPC_CHANNELS.shortcuts.pushToTalkState, wrapped);
     },
-    configureQuickMessage: (slot, accelerator) =>
-      ipcRenderer.invoke(IPC_CHANNELS.shortcuts.configureQuickMessage, slot, accelerator),
     onQuickMessageTriggered: (listener) => {
       const wrapped = (_event: Electron.IpcRendererEvent, slot: unknown) => {
         if (typeof slot === "number") listener(slot);
@@ -303,6 +295,7 @@ const desktopApi: DesktopApi = {
       ipcRenderer.invoke(IPC_CHANNELS.recording.appendChunk, sessionId, buffer),
     finalizeSession: (payload) =>
       ipcRenderer.invoke(IPC_CHANNELS.recording.finalizeSession, payload),
+    sealSession: (sessionId) => ipcRenderer.invoke(IPC_CHANNELS.recording.sealSession, sessionId),
     abortSession: (sessionId) => ipcRenderer.invoke(IPC_CHANNELS.recording.abortSession, sessionId),
     saveSpeakerSegment: (payload) =>
       ipcRenderer.invoke(IPC_CHANNELS.recording.saveSpeakerSegment, payload),

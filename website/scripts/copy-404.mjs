@@ -36,7 +36,7 @@ await writeFile(
 <html lang="zh-CN">
 <head>
   <meta charset="UTF-8" />
-  <link rel="icon" href="/brand-mark.svg" type="image/svg+xml" />
+  <link rel="icon" href="/brand-mark.png" type="image/png" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="theme-color" content="#eaf3ff" />
   <meta name="description" content="下载上号 ${escapeHtml(release.tag_name)} Windows 正式版，查看更新亮点与 SHA-256 校验信息。" />
@@ -53,7 +53,7 @@ await writeFile(
 </head>
 <body>
   <div class="shell">
-    <header class="top"><a class="brand" href="/"><img src="/brand-mark.svg" alt="" />上号 <span aria-hidden="true">/</span> SHANGHAO</a><a href="/">返回首页 ↗</a></header>
+    <header class="top"><a class="brand" href="/"><img src="/brand-mark.png" alt="" />上号 <span aria-hidden="true">/</span> SHANGHAO</a><a href="/">返回首页 ↗</a></header>
     <main>
       <div class="layout">
         <section class="card main" aria-labelledby="version"><div class="eyebrow">WINDOWS 10 / 11 · X64</div><h1 class="version" id="version">上号 ${escapeHtml(release.tag_name)}</h1><p class="lead">最新正式版已就绪。选择下载后才会保存安装包，不会自动安装或覆盖旧版本。</p><a class="download" href="${escapeHtml(asset.mirror_path)}" download="${escapeHtml(asset.name)}">下载 Windows 安装包 ↓</a><div class="meta"><span>${escapeHtml(asset.name)}</span><span>${escapeHtml(size)} MB</span>${publishedDate ? `<span>发布于 ${escapeHtml(publishedDate)}</span>` : ""}</div></section>

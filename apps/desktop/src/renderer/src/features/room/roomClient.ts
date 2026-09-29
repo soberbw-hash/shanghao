@@ -171,6 +171,7 @@ export class RoomClient {
   private lastSnapshotRevision = 0;
   private isSignalingConnected = false;
   private isDisconnecting = false;
+  private disconnectOperation?: Promise<void>;
   private lastSocketCloseCode?: number;
   private lastSocketCloseReason?: string;
   private lastSocketClosedAt?: string;
@@ -305,13 +306,16 @@ export class RoomClient {
     );
   }
 
-  async disconnect(): Promise<void> {
-    if (this.isDisconnecting) {
-      return;
-    }
+  disconnect(): Promise<void> {
+    if (this.disconnectOperation) return this.disconnectOperation;
     this.isDisconnecting = true;
+    this.disconnectOperation = this.disconnectNow();
+    return this.disconnectOperation;
+  }
+
+  private async disconnectNow(): Promise<void> {
     this.shouldReconnect = false;
-    this.clearPendingConnection();
+    this.rejectPendingConnection(new Error("room_client_disconnected"));
     this.stopSnapshotRecovery();
     this.stopHeartbeat();
     this.stopAudioPathSync();
@@ -328,7 +332,13 @@ export class RoomClient {
 
     this.clearPeers();
     if (this.screenShareCoordinator.activeStream) {
-      await this.restorePrimaryInputTrack();
+      try {
+        await this.restorePrimaryInputTrack();
+      } catch (error) {
+        void writeRendererLog("audio", "warn", "Screen audio restore failed during room exit", {
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
     }
     this.screenShareCoordinator.stopTracks();
     this.audioFallback?.destroy();
@@ -507,14 +517,16 @@ export class RoomClient {
     this.presenceCoordinator.resetPublication();
 
     return new Promise((resolve, reject) => {
-      this.clearPendingConnection();
+      this.rejectPendingConnection(new Error("signaling_session_superseded"));
       const timeout = window.setTimeout(() => {
+        if (this.pendingConnection !== pending) return;
         const error = new Error(this.wsOpened ? "join_ack_timeout" : "network_unreachable");
         this.rejectPendingConnection(error);
         void this.signalingBridge.close();
       }, INITIAL_CONNECT_TIMEOUT_MS);
 
-      this.pendingConnection = { resolve, reject, timeout };
+      const pending: PendingConnection = { resolve, reject, timeout };
+      this.pendingConnection = pending;
       void this.signalingBridge
         .connect(
           this.options.signalingUrl,
@@ -525,6 +537,7 @@ export class RoomClient {
           (error) => this.handleBridgeFailure(error),
         )
         .catch((error) => {
+          if (this.pendingConnection !== pending) return;
           this.rejectPendingConnection(error instanceof Error ? error : new Error(String(error)));
         });
     });
@@ -634,7 +647,7 @@ export class RoomClient {
         return;
       }
 
-      this.clearPendingConnection();
+      this.rejectPendingConnection(new Error("signaling_socket_closed"));
       this.reconnectCoordinator.beginEpisode();
       this.options.onConnectionState(
         this.webrtcReadyPeerIds.size > 0
@@ -1668,19 +1681,13 @@ export class RoomClient {
 
   private async restorePrimaryInputTrack(): Promise<void> {
     const primaryTrack = this.primaryInputTrack;
-    if (primaryTrack?.readyState === "live" && this.screenAudioMixer.hasActiveMix()) {
-      await this.applyOutgoingAudioTrack(primaryTrack);
+    try {
+      if (primaryTrack?.readyState === "live" && this.screenAudioMixer.hasActiveMix()) {
+        await this.applyOutgoingAudioTrack(primaryTrack);
+      }
+    } finally {
+      this.screenAudioMixer.dispose();
     }
-    this.screenAudioMixer.dispose();
-  }
-
-  private clearPendingConnection(): void {
-    if (!this.pendingConnection) {
-      return;
-    }
-
-    window.clearTimeout(this.pendingConnection.timeout);
-    this.pendingConnection = undefined;
   }
 
   private resolvePendingConnection(): void {

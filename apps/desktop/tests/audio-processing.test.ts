@@ -2,11 +2,13 @@ import assert from "node:assert/strict";
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import test from "node:test";
+import { runInNewContext } from "node:vm";
 
 import {
   FOURTH_ORDER_BUTTERWORTH_Q,
   fourthOrderHighPassMagnitude,
 } from "../src/renderer/src/features/audio/filterMath";
+import { releaseAcquiredAudioSource } from "../src/renderer/src/features/audio/audioSource";
 import {
   clampMemberVolume,
   memberVolumeToPercent,
@@ -20,14 +22,18 @@ import {
   FRIEND_LOUDNESS_MAX_CUT_DB,
   FRIEND_LOUDNESS_TARGET_LUFS,
   FRIEND_LOUDNESS_HANGOVER_MS,
+  resolveRemoteSpeakingEvidence,
 } from "../src/renderer/src/features/audio/loudnessBalance";
 import { hasPlayableAudioTrack } from "../src/renderer/src/features/audio/remoteAudioTrack";
+import { sameRemoteAudioSyncInputs } from "../src/renderer/src/features/audio/remoteAudioSync";
 import { resolveRemoteAudioPath } from "../src/renderer/src/features/audio/remoteAudioPathSelection";
 import {
   DEEPFILTER_BASE_SUPPRESSION_LEVEL,
   DEEPFILTER_SPEECH_SUPPRESSION_LEVEL,
+  PROTECTION_WORKLET_SOURCE,
   SPEECH_PROCESSED_MIX,
   SPEECH_RAW_MIX,
+  createProcessedMicrophoneStream,
 } from "../src/renderer/src/features/audio/microphoneProcessor";
 import {
   advanceSpeechProtection,
@@ -41,6 +47,78 @@ import {
 } from "../../../packages/webrtc/src/speaking";
 
 const root = path.resolve(process.cwd(), "../..");
+
+test("remote speaking updates leave the playback graph intact until stream, track or volume changes", () => {
+  const stream = {} as MediaStream;
+  const original = [
+    { peerId: "friend", stream, audioTrackId: "track-a", playable: true, volume: 0.7 },
+  ];
+  assert.equal(sameRemoteAudioSyncInputs(original, [{ ...original[0]! }]), true);
+  assert.equal(sameRemoteAudioSyncInputs(original, [{ ...original[0]!, volume: 0.8 }]), false);
+  assert.equal(
+    sameRemoteAudioSyncInputs(original, [{ ...original[0]!, audioTrackId: "track-b" }]),
+    false,
+  );
+  assert.equal(sameRemoteAudioSyncInputs(original, [{ ...original[0]!, playable: false }]), false);
+  assert.equal(
+    sameRemoteAudioSyncInputs(original, [{ ...original[0]!, stream: {} as MediaStream }]),
+    false,
+  );
+  assert.equal(sameRemoteAudioSyncInputs(original, []), false);
+});
+
+test("a failed device switch releases local input but preserves the phone transport track", () => {
+  for (const stopInputOnDispose of [true, false]) {
+    let stops = 0;
+    const stream = {
+      getTracks: () => [{ stop: () => (stops += 1) }],
+    } as unknown as MediaStream;
+    releaseAcquiredAudioSource({ stream, stopInputOnDispose });
+    assert.equal(stops, stopInputOnDispose ? 1 : 0);
+  }
+});
+
+test("failed microphone setup closes its context and only stops locally owned input", async () => {
+  const originalAudioContext = globalThis.AudioContext;
+  let closed = 0;
+  class FailingAudioContext {
+    resume = async () => {
+      throw new Error("audio_context_resume_failed");
+    };
+    close = async () => {
+      closed += 1;
+    };
+  }
+  Object.defineProperty(globalThis, "AudioContext", {
+    configurable: true,
+    value: FailingAudioContext,
+  });
+  const settings = {
+    micEqualizerGains: [0, 0, 0, 0, 0] as [number, number, number, number, number],
+    lowCutFrequency: "75" as const,
+    isNoiseSuppressionEnabled: true,
+    isVoiceEnhancementEnabled: true,
+  };
+  try {
+    for (const stopInputOnDispose of [true, false]) {
+      let stopped = 0;
+      const stream = {
+        getTracks: () => [{ stop: () => (stopped += 1) }],
+      } as unknown as MediaStream;
+      await assert.rejects(
+        createProcessedMicrophoneStream(stream, { ...settings, stopInputOnDispose }),
+        /audio_context_resume_failed/,
+      );
+      assert.equal(stopped, stopInputOnDispose ? 1 : 0);
+    }
+    assert.equal(closed, 2);
+  } finally {
+    Object.defineProperty(globalThis, "AudioContext", {
+      configurable: true,
+      value: originalAudioContext,
+    });
+  }
+});
 
 test("fourth-order low cut suppresses rumble without removing speech", () => {
   assert.deepEqual(
@@ -109,6 +187,64 @@ test("microphone raw and processed mix uses a per-sample crossfade coefficient",
   const coefficient = 1 - Math.exp(-1 / (sampleRate * timeConstant));
   const reachedAfterOneTimeConstant = 1 - (1 - coefficient) ** (sampleRate * timeConstant);
   assert.ok(Math.abs(reachedAfterOneTimeConstant - (1 - Math.exp(-1))) < 1e-10);
+});
+
+test("microphone protection analyzes the same 512 samples at any worklet block size", () => {
+  const samples = Float32Array.from({ length: 1_024 }, (_, index) =>
+    index < 512 ? 0.04 * Math.sin((2 * Math.PI * 1_000 * index) / 48_000) : 0,
+  );
+  const runBlocks = (blockSize: number): Array<{ rms: number; protectionActive: boolean }> => {
+    const messages: Array<{ type: string; rms: number; protectionActive: boolean }> = [];
+    let processorClass: unknown;
+    class MockAudioWorkletProcessor {
+      port = {
+        onmessage: (_event: unknown) => undefined,
+        postMessage: (message: { type: string; rms: number; protectionActive: boolean }) => {
+          messages.push(message);
+        },
+      };
+    }
+    const context: Record<string, unknown> = {
+      AudioWorkletProcessor: MockAudioWorkletProcessor,
+      sampleRate: 48_000,
+      currentTime: 0,
+      performance: { now: () => 0 },
+      registerProcessor: (_name: string, registered: unknown) => {
+        processorClass = registered;
+      },
+    };
+    runInNewContext(PROTECTION_WORKLET_SOURCE, context);
+    assert.ok(processorClass);
+    const processor = new (
+      processorClass as new () => {
+        process: (inputs: Float32Array[][], outputs: Float32Array[][]) => boolean;
+        frames: number;
+      }
+    )();
+    for (let offset = 0; offset < samples.length; offset += blockSize) {
+      const input = samples.subarray(offset, Math.min(samples.length, offset + blockSize));
+      context.currentTime = offset / 48_000;
+      assert.equal(processor.process([[input]], [[new Float32Array(input.length)]]), true);
+    }
+    assert.equal(processor.frames, 0);
+    return messages.filter((message) => message.type === "analysis");
+  };
+
+  const expected = runBlocks(1_024);
+  assert.equal(expected.length, 2);
+  assert.ok(expected[0]!.rms > 0.025);
+  assert.equal(expected[0]!.protectionActive, true);
+  assert.equal(expected[1]!.rms, 0);
+  for (const blockSize of [64, 128, 256, 300]) {
+    const actual = runBlocks(blockSize);
+    assert.equal(actual.length, 2);
+    assert.ok(Math.abs(actual[0]!.rms - expected[0]!.rms) < 1e-12);
+    assert.equal(actual[1]!.rms, expected[1]!.rms);
+    assert.deepEqual(
+      actual.map((message) => message.protectionActive),
+      expected.map((message) => message.protectionActive),
+    );
+  }
 });
 
 test("DeepFilterNet is the only suppression engine and keeps raw audio on model failure", () => {
@@ -330,6 +466,71 @@ test("friend loudness balance learns speech without lifting silence or overridin
     enabled: true,
   });
   assert.ok(Math.abs(quiet.gain - silentGain) < 0.01);
+});
+
+test("friend loudness learning requires remote speaking evidence when available", () => {
+  assert.equal(
+    resolveRemoteSpeakingEvidence(undefined, { speaking: false, muted: false }),
+    undefined,
+  );
+  assert.equal(resolveRemoteSpeakingEvidence(undefined, { speaking: false, muted: true }), false);
+  assert.equal(resolveRemoteSpeakingEvidence(undefined, { speaking: true, muted: false }), true);
+  assert.equal(resolveRemoteSpeakingEvidence(true, { speaking: false, muted: false }), false);
+
+  let gated = createLoudnessBalanceState();
+  for (let index = 0; index < 120; index += 1) {
+    gated = advanceLoudnessBalance(gated, {
+      rms: 0.05,
+      peak: 0.14,
+      now: index * 66,
+      enabled: true,
+      speaking: false,
+    });
+  }
+  assert.equal(gated.observedSpeechMs, 0);
+  assert.equal(gated.gain, 1);
+
+  for (let index = 120; index < 240; index += 1) {
+    gated = advanceLoudnessBalance(gated, {
+      rms: 0.05,
+      peak: 0.8,
+      now: index * 66,
+      enabled: true,
+      speaking: true,
+    });
+  }
+  assert.equal(gated.observedSpeechMs, 0);
+
+  for (let index = 240; index < 360; index += 1) {
+    gated = advanceLoudnessBalance(gated, {
+      rms: 0.05,
+      peak: 0.14,
+      now: index * 66,
+      enabled: true,
+      speaking: true,
+    });
+  }
+  assert.ok(gated.gain > 1);
+  const learnedGain = gated.gain;
+  gated = advanceLoudnessBalance(gated, {
+    rms: 0.2,
+    peak: 0.5,
+    now: 360 * 66,
+    enabled: true,
+    speaking: false,
+  });
+  assert.equal(gated.gain, learnedGain);
+
+  let noSignal = createLoudnessBalanceState();
+  for (let index = 0; index < 120; index += 1) {
+    noSignal = advanceLoudnessBalance(noSignal, {
+      rms: 0.05,
+      peak: 0.14,
+      now: index * 66,
+      enabled: true,
+    });
+  }
+  assert.ok(noSignal.gain > 1);
 });
 
 test("independent friend loudness states converge gradually without sharing gain", () => {

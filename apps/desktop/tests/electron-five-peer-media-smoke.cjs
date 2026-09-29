@@ -10,8 +10,13 @@ const PEER_IDS = ["A", "B", "C", "D", "E"];
 const INITIAL_TIMEOUT_MS = 24_000;
 const RECOVERY_TIMEOUT_MS = 12_000;
 const CHANNEL = "five-peer-media";
+const TEST_TEMP_ROOT = fs.realpathSync(os.tmpdir());
+const TEST_USER_DATA_PATH = fs.mkdtempSync(path.join(TEST_TEMP_ROOT, "shanghao-five-peer-profile-"));
 const FAKE_AUDIO_PATH = path.join(os.tmpdir(), `shanghao-five-peer-${process.pid}.wav`);
 const TEST_HTML_PATH = path.join(os.tmpdir(), `shanghao-five-peer-${process.pid}.html`);
+
+// This harness must never open the real ShangHao profile or user recordings.
+app.setPath("userData", TEST_USER_DATA_PATH);
 
 const writeFakeMicrophoneAudio = () => {
   // Chromium's fake audio capture switch expects 44.1 kHz mono PCM WAV.
@@ -444,6 +449,13 @@ const finish = (ok, extra) => {
     fs.unlinkSync(TEST_HTML_PATH);
   } catch {
     // The operating system may still be releasing the temporary page.
+  }
+  try {
+    if (path.dirname(fs.realpathSync(TEST_USER_DATA_PATH)) === TEST_TEMP_ROOT) {
+      fs.rmSync(TEST_USER_DATA_PATH, { recursive: true, force: true });
+    }
+  } catch {
+    // Chromium may retain a handle until process exit; the isolated profile is harmless.
   }
   app.exit(ok ? 0 : 1);
 };

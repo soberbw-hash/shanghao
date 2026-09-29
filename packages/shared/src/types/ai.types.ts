@@ -85,6 +85,8 @@ export interface AiHuggingFaceAccessStatus {
 
 export interface AiRuntimePressure {
   inVoiceRoom: boolean;
+  /** Optional for older clients that do not report recording pressure. */
+  recordingActive?: boolean;
   screenSharing: boolean;
   peerRecovering: boolean;
   latencyMs: number;
@@ -147,6 +149,7 @@ export interface AiTaskSchedulerStatus {
   };
   processingMode: AiProcessingMode;
   gameActive: boolean;
+  recordingActive?: boolean;
   downloadsThrottled: boolean;
   aiTasksPausedForGame: boolean;
   realtimePressureHigh: boolean;
@@ -154,6 +157,15 @@ export interface AiTaskSchedulerStatus {
   qwenLoaded: boolean;
   queuedTasks: number;
   runningTask?: string;
+  computeActiveKind?: AiTaskKind;
+  computeActivePhase?: "running" | "stopping";
+  computeStoppingReason?:
+    | "cancelled"
+    | "recording_priority"
+    | "realtime_pressure"
+    | "manual_only"
+    | "waiting_for_game_to_finish";
+  computeWaiting?: number;
 }
 
 export interface AiVoiceMemorySnapshot {

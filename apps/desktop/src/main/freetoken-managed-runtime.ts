@@ -1,5 +1,6 @@
+import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
-import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import type { RendererLogPayload } from "@private-voice/shared";
@@ -113,17 +114,65 @@ export const parseFreeTokenWindowsAssetPair = (html: string): FreeTokenWindowsAs
 const firstExisting = (values: readonly (string | undefined)[]): string | undefined =>
   values.find((value): value is string => Boolean(value && existsSync(value)));
 
-const atomicWriteJson = async (file: string, value: unknown): Promise<void> => {
-  const temporary = `${file}.${process.pid}.tmp`;
-  await writeFile(temporary, JSON.stringify(value, null, 2), "utf8");
-  await rename(temporary, file);
+const awaitPreparedRuntime = (
+  operation: Promise<FreeTokenManagedRuntimeStatus>,
+  signal?: AbortSignal,
+): Promise<FreeTokenManagedRuntimeStatus> => {
+  if (!signal) return operation;
+  if (signal.aborted) return Promise.reject(new Error("ai_task_paused"));
+  return new Promise((resolve, reject) => {
+    const onAbort = () => {
+      signal.removeEventListener("abort", onAbort);
+      reject(new Error("ai_task_paused"));
+    };
+    signal.addEventListener("abort", onAbort, { once: true });
+    if (signal.aborted) onAbort();
+    void operation.then(
+      (status) => {
+        signal.removeEventListener("abort", onAbort);
+        resolve(status);
+      },
+      (error) => {
+        signal.removeEventListener("abort", onAbort);
+        reject(error);
+      },
+    );
+  });
 };
 
-const responseByteLength = async (
+const manifestWrites = new Map<string, Promise<void>>();
+
+export const writeFreeTokenManifestAtomically = (file: string, value: unknown): Promise<void> => {
+  const previous = manifestWrites.get(file) ?? Promise.resolve();
+  const write = previous
+    .catch(() => undefined)
+    .then(async () => {
+      const temporary = `${file}.${process.pid}.${randomUUID()}.tmp`;
+      try {
+        await writeFile(temporary, JSON.stringify(value, null, 2), {
+          encoding: "utf8",
+          flag: "wx",
+        });
+        await rename(temporary, file);
+      } finally {
+        await rm(temporary, { force: true }).catch(() => undefined);
+      }
+    });
+  manifestWrites.set(file, write);
+  void write
+    .finally(() => {
+      if (manifestWrites.get(file) === write) manifestWrites.delete(file);
+    })
+    .catch(() => undefined);
+  return write;
+};
+
+export const probeFreeTokenAssetByteLength = async (
   fetcher: RuntimeArtifactFetcher,
   url: string,
+  signal?: AbortSignal,
 ): Promise<number> => {
-  const head = await fetcher(url, { method: "HEAD", redirect: "follow" });
+  const head = await fetcher(url, { method: "HEAD", redirect: "follow", signal });
   try {
     const length = Number(head.headers.get("content-length"));
     if (head.ok && Number.isFinite(length) && length > 0) return length;
@@ -133,6 +182,7 @@ const responseByteLength = async (
   const probe = await fetcher(url, {
     headers: { Range: "bytes=0-0" },
     redirect: "follow",
+    signal,
   });
   try {
     const total = Number(probe.headers.get("content-range")?.match(/\/(\d+)$/)?.[1]);
@@ -182,7 +232,8 @@ export class FreeTokenManagedRuntime {
   }
 
   prepare(signal?: AbortSignal): Promise<FreeTokenManagedRuntimeStatus> {
-    if (this.preparePromise) return this.preparePromise;
+    if (signal?.aborted) return Promise.reject(new Error("ai_task_paused"));
+    if (this.preparePromise) return awaitPreparedRuntime(this.preparePromise, signal);
     const operation = this.prepareOnce(signal).finally(() => {
       if (this.preparePromise === operation) this.preparePromise = undefined;
     });
@@ -216,8 +267,8 @@ export class FreeTokenManagedRuntime {
     }
     const pair = parseFreeTokenWindowsAssetPair(await assetsResponse.text());
     const [runtimeBytes, kernelCacheBytes] = await Promise.all([
-      responseByteLength(this.fetcher, pair.runtime.url),
-      responseByteLength(this.fetcher, pair.kernelCache.url),
+      probeFreeTokenAssetByteLength(this.fetcher, pair.runtime.url, signal),
+      probeFreeTokenAssetByteLength(this.fetcher, pair.kernelCache.url, signal),
     ]);
     const [runtimeWheel, kernelCacheWheel] = await Promise.all([
       this.downloadAsset(pair.runtime, runtimeBytes, signal),
@@ -260,6 +311,7 @@ export class FreeTokenManagedRuntime {
       },
     );
     const status = await this.validate(this.managedExecutable, true);
+    if (signal?.aborted) throw new Error("ai_task_paused");
     if (!status.ready || !status.version)
       throw new Error(status.message ?? "freetoken_self_check_failed");
     const manifest: InstalledRuntimeManifest = {
@@ -278,7 +330,7 @@ export class FreeTokenManagedRuntime {
         buildCommit: pair.kernelCache.buildCommit,
       },
     };
-    await atomicWriteJson(this.manifestPath, manifest);
+    await writeFreeTokenManifestAtomically(this.manifestPath, manifest);
     await this.log("info", "freetoken_managed_runtime_ready", {
       executable: this.managedExecutable,
       version: status.version,

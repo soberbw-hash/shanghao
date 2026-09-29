@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readdir, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -30,12 +30,15 @@ import {
   canAutomaticallyTranscribeDuration,
   completedTranscriptionUnits,
   isRecoverableFfmpegFailure,
+  MOSS_CPP_TRANSCRIPTION_CHUNK_MS,
+  mossTranscriptionChunkMsForResume,
   TRANSCRIPTION_CHUNK_MS,
   transcriptForPrompt,
   transcriptionModelMetadata,
 } from "../src/main/ai-voice-memory-service";
 import { bindTranscriptToKnownSpeaker } from "../src/main/speaker-transcript";
 import { VoiceMemoryStore } from "../src/main/voice-memory-store";
+import { AiJobWriteOwnership } from "../src/main/ai-job-write-ownership";
 import {
   advanceVoiceProcessingState,
   createVoiceProcessingState,
@@ -601,6 +604,13 @@ test("speaker timeline lookup includes both tolerance edges and handles out-of-o
 
 test("transcription checkpoints update in shorter visible steps and preserve legacy progress", () => {
   assert.equal(TRANSCRIPTION_CHUNK_MS, 30_000);
+  assert.equal(MOSS_CPP_TRANSCRIPTION_CHUNK_MS, 30_000);
+  assert.equal(mossTranscriptionChunkMsForResume(undefined), 30_000);
+  assert.equal(mossTranscriptionChunkMsForResume({ unitDurationMs: 10 * 60_000 }), 10 * 60_000);
+  assert.equal(
+    mossTranscriptionChunkMsForResume(undefined, [{ startMs: 0, endMs: 10 * 60_000 }]),
+    10 * 60_000,
+  );
   assert.equal(
     completedTranscriptionUnits({ completedUnits: 1, unitDurationMs: 10 * 60_000 }, 20),
     20,
@@ -767,6 +777,7 @@ test("clearing comparison results removes durable variants and checkpoints but k
     },
   } satisfies VoiceMemoryRecord;
   const clearedCheckpoints: string[] = [];
+  let clearedEvents = false;
   const service = new AiVoiceMemoryService(
     {
       clearTaskCheckpoint: async (taskId: string) => {
@@ -777,7 +788,8 @@ test("clearing comparison results removes durable variants and checkpoints but k
     {} as never,
     {
       get: async () => durable,
-      save: async (value: VoiceMemoryRecord) => {
+      save: async (value: VoiceMemoryRecord, options?: { clearTranscriptionEvents?: boolean }) => {
+        clearedEvents = options?.clearTranscriptionEvents === true;
         durable = value as typeof durable;
         return value;
       },
@@ -793,10 +805,216 @@ test("clearing comparison results removes durable variants and checkpoints but k
   assert.equal(cleared.organization, undefined);
   assert.deepEqual(cleared.markerTitles, source.markerTitles);
   assert.deepEqual(cleared.timeline, source.timeline);
+  assert.equal(clearedEvents, true);
   assert.equal(clearedCheckpoints.length, Object.keys(AI_ASR_MODEL_NAMES).length + 1);
   assert.ok(
     clearedCheckpoints.includes(`transcription:${source.recordingId}:qwen3-asr-0.6b-force`),
   );
+});
+
+test("clearing one transcription removes only its derived event file", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "shanghao-memory-clear-"));
+  try {
+    const store = new VoiceMemoryStore(root);
+    await store.initialize();
+    const source = record();
+    await store.save(source);
+    const unit = {
+      recordingId: source.recordingId,
+      modelId: "paraformer-zh" as const,
+      pipelineVersion: CURRENT_TRANSCRIPTION_PIPELINE_VERSION,
+      index: 0,
+      startMs: 0,
+      endMs: 1_000,
+      speakerId: "Speaker 1",
+      status: "completed" as const,
+      attempts: 1,
+    };
+    await store.appendTranscriptionUnit(source.recordingId, unit);
+    await store.appendTranscriptionUnit("another-recording", {
+      ...unit,
+      recordingId: "another-recording",
+    });
+    const service = new AiVoiceMemoryService(
+      {
+        getTaskCheckpoint: () => undefined,
+        clearTaskCheckpoint: async () => undefined,
+      } as never,
+      {} as never,
+      {} as never,
+      store,
+    );
+    await service.clearTranscriptionResults(source.recordingId);
+    assert.deepEqual(await readdir(path.join(root, "transcription-events")), [
+      "another-recording.ndjson",
+    ]);
+    const retained = await store.get(source.recordingId);
+    assert.deepEqual(retained?.transcript, []);
+    assert.deepEqual(retained?.markerTitles, source.markerTitles);
+    await store.appendTranscriptionUnit(source.recordingId, unit);
+    assert.equal((await readdir(path.join(root, "transcription-events"))).length, 2);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("a new transcription setup waits until result clearing has finished", async () => {
+  let releaseCheckpoint = () => undefined;
+  const checkpointGate = new Promise<void>((resolve) => {
+    releaseCheckpoint = resolve;
+  });
+  let durable = record();
+  let eventsCleared = false;
+  let processCalls = 0;
+  const service = new AiVoiceMemoryService(
+    {
+      getTaskCheckpoint: () => undefined,
+      clearTaskCheckpoint: () => checkpointGate,
+    } as never,
+    {} as never,
+    {} as never,
+    {
+      get: async () => durable,
+      save: async (value: VoiceMemoryRecord, options?: { clearTranscriptionEvents?: boolean }) => {
+        eventsCleared ||= options?.clearTranscriptionEvents === true;
+        durable = value;
+        return value;
+      },
+    } as never,
+  );
+  const clearing = service.clearTranscriptionResults(durable.recordingId);
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  await assert.rejects(
+    service.process({ recordingId: durable.recordingId, filePath: durable.filePath, manual: true }),
+    /voice_memory_task_active/,
+  );
+  (service as unknown as { process: () => Promise<VoiceMemoryRecord> }).process = async () => {
+    processCalls += 1;
+    return durable;
+  };
+  let startSettled = false;
+  const starting = service
+    .start({
+      recordingId: durable.recordingId,
+      filePath: durable.filePath,
+      manual: false,
+    })
+    .then((value) => {
+      startSettled = true;
+      return value;
+    });
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  assert.equal(startSettled, false);
+  releaseCheckpoint();
+  await clearing;
+  await starting;
+  assert.equal(eventsCleared, true);
+  assert.equal(processCalls, 1);
+});
+
+test("deleting during result clearing cannot recreate the removed memory", async () => {
+  let releaseCheckpoint = () => undefined;
+  const checkpointGate = new Promise<void>((resolve) => {
+    releaseCheckpoint = resolve;
+  });
+  let durable: VoiceMemoryRecord | undefined = record();
+  let saveCalls = 0;
+  const service = new AiVoiceMemoryService(
+    {
+      getTaskCheckpoint: () => undefined,
+      clearTaskCheckpoint: () => checkpointGate,
+      clearTaskCheckpointsForRecording: async () => undefined,
+    } as never,
+    {} as never,
+    {} as never,
+    {
+      get: async () => durable,
+      save: async (value: VoiceMemoryRecord) => {
+        saveCalls += 1;
+        durable = value;
+        return value;
+      },
+      delete: async () => {
+        durable = undefined;
+      },
+    } as never,
+  );
+  const recordingId = durable!.recordingId;
+  const clearing = service.clearTranscriptionResults(recordingId);
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  const deleting = service.delete(recordingId);
+  releaseCheckpoint();
+  await assert.rejects(clearing, /voice_memory_deleted/);
+  await deleting;
+  assert.equal(durable, undefined);
+  assert.equal(saveCalls, 0);
+});
+
+test("a later explicit start can reuse a recording identity after deletion completes", async () => {
+  let durable: VoiceMemoryRecord | undefined = record();
+  const service = new AiVoiceMemoryService(
+    { clearTaskCheckpointsForRecording: async () => undefined } as never,
+    {} as never,
+    {} as never,
+    {
+      get: async () => durable,
+      save: async (value: VoiceMemoryRecord) => {
+        durable = value;
+        return value;
+      },
+      delete: async () => {
+        durable = undefined;
+      },
+    } as never,
+  );
+  (service as unknown as { process: () => Promise<VoiceMemoryRecord> }).process = async () =>
+    durable!;
+  const recordingId = durable!.recordingId;
+  const filePath = durable!.filePath;
+  await service.delete(recordingId);
+  const restarted = await service.start({ recordingId, filePath, manual: false });
+  assert.equal(restarted.recordingId, recordingId);
+  assert.equal(restarted.taskStatus, "pending");
+});
+
+test("deleting voice memory clears its model checkpoints after the record is removed", async () => {
+  const calls: string[] = [];
+  const service = new AiVoiceMemoryService(
+    {
+      clearTaskCheckpointsForRecording: async (recordingId: string) => {
+        calls.push(`checkpoints:${recordingId}`);
+      },
+    } as never,
+    {} as never,
+    {} as never,
+    {
+      delete: async (recordingId: string) => {
+        calls.push(`record:${recordingId}`);
+      },
+    } as never,
+  );
+  await service.delete("recording-one");
+  assert.deepEqual(calls, ["record:recording-one", "checkpoints:recording-one"]);
+});
+
+test("a checkpoint cleanup failure does not turn a completed deletion into a retryable failure", async () => {
+  let deleted = false;
+  const service = new AiVoiceMemoryService(
+    {
+      clearTaskCheckpointsForRecording: async () => {
+        throw new Error("metadata unavailable");
+      },
+    } as never,
+    {} as never,
+    {} as never,
+    {
+      delete: async () => {
+        deleted = true;
+      },
+    } as never,
+  );
+  await service.delete("recording-one");
+  assert.equal(deleted, true);
 });
 
 test("the shared model selection activates an existing recording result only when safe", () => {
@@ -1281,6 +1499,277 @@ test("new automatic speech yields a running background organization task", async
   assert.equal(organizationController.signal.aborted, true);
 });
 
+test("voice memory preserves unreadable index and record files", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "shanghao-memory-corrupt-"));
+  try {
+    const indexPath = path.join(root, "index.json");
+    const malformedIndex = '{"schemaVersion":1,"entries":';
+    await writeFile(indexPath, malformedIndex, "utf8");
+    await assert.rejects(new VoiceMemoryStore(root).initialize(), /voice_memory_unreadable/);
+    assert.equal(await readFile(indexPath, "utf8"), malformedIndex);
+    await rm(indexPath);
+
+    const invalidIndexEntry = JSON.stringify({ schemaVersion: 1, entries: [{}] });
+    await writeFile(indexPath, invalidIndexEntry, "utf8");
+    await assert.rejects(new VoiceMemoryStore(root).initialize(), /voice_memory_index_unreadable/);
+    assert.equal(await readFile(indexPath, "utf8"), invalidIndexEntry);
+    await rm(indexPath);
+
+    const summaryPath = path.join(root, "summaries.json");
+    const invalidSummaryEntry = JSON.stringify({ schemaVersion: 1, entries: [{}] });
+    await writeFile(summaryPath, invalidSummaryEntry, "utf8");
+    await assert.rejects(
+      new VoiceMemoryStore(root).initialize(),
+      /voice_memory_summaries_unreadable/,
+    );
+    assert.equal(await readFile(summaryPath, "utf8"), invalidSummaryEntry);
+    await rm(summaryPath);
+
+    const store = new VoiceMemoryStore(root);
+    await store.initialize();
+    await store.save(record());
+    const files = await readdir(path.join(root, "records"));
+    const recordPath = path.join(
+      root,
+      "records",
+      files.find((file) => file.endsWith(".json"))!,
+    );
+    const invalidChapter = JSON.stringify({ ...record(), chapters: [{ broken: true }] });
+    await writeFile(recordPath, invalidChapter, "utf8");
+    await assert.rejects(store.get(record().recordingId), /voice_memory_record_unreadable/);
+    await assert.rejects(store.save(record()), /voice_memory_record_unreadable/);
+    assert.equal(await readFile(recordPath, "utf8"), invalidChapter);
+    const malformedRecord = '{"schemaVersion":1,"recordingId":';
+    await writeFile(recordPath, malformedRecord, "utf8");
+    await assert.rejects(store.get(record().recordingId), /voice_memory_unreadable/);
+    await assert.rejects(store.save(record()), /voice_memory_unreadable/);
+    assert.equal(await readFile(recordPath, "utf8"), malformedRecord);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("voice memory rejects malformed incoming records before changing durable files", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "shanghao-memory-invalid-save-"));
+  try {
+    const store = new VoiceMemoryStore(root);
+    await store.initialize();
+    await store.save(record());
+    const files = await readdir(path.join(root, "records"));
+    const recordPath = path.join(root, "records", files[0]!);
+    const previousRecord = await readFile(recordPath, "utf8");
+    const previousIndex = await readFile(path.join(root, "index.json"), "utf8");
+    const previousSummaries = await readFile(path.join(root, "summaries.json"), "utf8");
+    const invalid = {
+      ...record(),
+      highlights: [{ id: "bad", title: "缺少内容", startMs: 100 }],
+    } as unknown as VoiceMemoryRecord;
+
+    await assert.rejects(store.save(invalid), /voice_memory_record_unreadable/);
+    assert.equal(await readFile(recordPath, "utf8"), previousRecord);
+    assert.equal(await readFile(path.join(root, "index.json"), "utf8"), previousIndex);
+    assert.equal(await readFile(path.join(root, "summaries.json"), "utf8"), previousSummaries);
+    await assert.rejects(
+      store.save({ ...invalid, recordingId: "new-invalid-record" }),
+      /voice_memory_record_unreadable/,
+    );
+    assert.deepEqual(await readdir(path.join(root, "records")), files);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("voice memory repairs derived metadata after an interrupted record save or delete", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "shanghao-memory-metadata-recovery-"));
+  try {
+    const store = new VoiceMemoryStore(root);
+    await store.initialize();
+    await store.save(record());
+    const recordPath = path.join(root, "records", (await readdir(path.join(root, "records")))[0]!);
+    const markerPath = path.join(root, "pending-metadata.json");
+    const updated = {
+      ...record(),
+      updatedAt: "2026-09-29T12:00:00.000Z",
+      transcript: [{ ...record().transcript[0]!, text: "改到周日晚上八点吃饭" }],
+    };
+    await writeFile(markerPath, JSON.stringify({ schemaVersion: 1 }), "utf8");
+    await writeFile(recordPath, JSON.stringify(updated), "utf8");
+
+    const recoveredSave = new VoiceMemoryStore(root);
+    await recoveredSave.initialize();
+    assert.equal(recoveredSave.search({ query: "周日晚上八点" }).length, 1);
+    assert.equal(recoveredSave.search({ query: "周六晚上七点" }).length, 0);
+    assert.equal((await recoveredSave.listSummaries())[0]?.updatedAt, updated.updatedAt);
+    await assert.rejects(readFile(markerPath, "utf8"), { code: "ENOENT" });
+
+    await writeFile(markerPath, JSON.stringify({ schemaVersion: 1 }), "utf8");
+    await rm(recordPath);
+    const recoveredDelete = new VoiceMemoryStore(root);
+    await recoveredDelete.initialize();
+    assert.deepEqual(await recoveredDelete.listSummaries(), []);
+    assert.deepEqual(recoveredDelete.search({ query: "周日晚上八点" }), []);
+    await assert.rejects(readFile(markerPath, "utf8"), { code: "ENOENT" });
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("an interrupted voice memory commit can rebuild invalid derived metadata from intact records", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "shanghao-memory-invalid-derived-"));
+  try {
+    const store = new VoiceMemoryStore(root);
+    await store.initialize();
+    await store.save(record());
+    const indexPath = path.join(root, "index.json");
+    const summariesPath = path.join(root, "summaries.json");
+    const pendingPath = path.join(root, "pending-metadata.json");
+    await writeFile(indexPath, "{broken", "utf8");
+    await writeFile(summariesPath, "{broken", "utf8");
+    await assert.rejects(new VoiceMemoryStore(root).initialize(), /voice_memory_unreadable/);
+    assert.equal(await readFile(indexPath, "utf8"), "{broken");
+    assert.equal(await readFile(summariesPath, "utf8"), "{broken");
+
+    await writeFile(pendingPath, JSON.stringify({ schemaVersion: 1 }), "utf8");
+    const recovered = new VoiceMemoryStore(root);
+    await recovered.initialize();
+    assert.equal(recovered.search({ query: "周六晚上七点" }).length, 1);
+    assert.equal((await recovered.listSummaries()).length, 1);
+    await assert.rejects(readFile(pendingPath, "utf8"), { code: "ENOENT" });
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("voice memory refuses more metadata changes after a partial write failure", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "shanghao-memory-metadata-failure-"));
+  try {
+    const store = new VoiceMemoryStore(root);
+    await store.initialize();
+    await store.save(record());
+    const indexPath = path.join(root, "index.json");
+    await rm(indexPath);
+    await mkdir(indexPath);
+    const updated = {
+      ...record(),
+      transcript: [{ ...record().transcript[0]!, text: "新内容等待索引" }],
+    };
+
+    await assert.rejects(store.save(updated));
+    assert.equal((await store.get(record().recordingId))?.transcript[0]?.text, "新内容等待索引");
+    assert.throws(() => store.search({ query: "周六" }), /voice_memory_metadata_recovery_required/);
+    await assert.rejects(store.save(record()), /voice_memory_metadata_recovery_required/);
+    assert.equal(
+      JSON.parse(await readFile(path.join(root, "pending-metadata.json"), "utf8")).schemaVersion,
+      1,
+    );
+
+    await rm(indexPath, { recursive: true });
+    const reopened = new VoiceMemoryStore(root);
+    await reopened.initialize();
+    assert.equal(reopened.search({ query: "新内容等待索引" }).length, 1);
+    await assert.rejects(readFile(path.join(root, "pending-metadata.json"), "utf8"), {
+      code: "ENOENT",
+    });
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("old anonymous transcript index entries remain searchable", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "shanghao-memory-anonymous-"));
+  try {
+    const store = new VoiceMemoryStore(root);
+    await store.initialize();
+    await store.save(record());
+    const indexPath = path.join(root, "index.json");
+    const oldIndex = JSON.parse(await readFile(indexPath, "utf8")) as {
+      entries: Array<{ kind: string; title?: string }>;
+    };
+    delete oldIndex.entries.find((entry) => entry.kind === "transcript")!.title;
+    const oldBytes = JSON.stringify(oldIndex);
+    await writeFile(indexPath, oldBytes, "utf8");
+
+    const reopened = new VoiceMemoryStore(root);
+    await reopened.initialize();
+    assert.equal(
+      reopened.search({ query: "周六" }).find((entry) => entry.kind === "transcript")?.title,
+      "语音",
+    );
+    assert.equal(await readFile(indexPath, "utf8"), oldBytes);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("voice memory rebuilds only missing search data from intact records", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "shanghao-memory-rebuild-"));
+  try {
+    const store = new VoiceMemoryStore(root);
+    await store.initialize();
+    await store.save(record());
+    const indexPath = path.join(root, "index.json");
+    await rm(indexPath);
+
+    const reopened = new VoiceMemoryStore(root);
+    await reopened.initialize();
+    assert.ok(reopened.search({ query: "周六" }).length > 0);
+    assert.equal((await reopened.listSummaries()).length, 1);
+    assert.equal(JSON.parse(await readFile(indexPath, "utf8")).entries.length > 0, true);
+
+    const files = await readdir(path.join(root, "records"));
+    const recordPath = path.join(
+      root,
+      "records",
+      files.find((file) => file.endsWith(".json"))!,
+    );
+    const malformed = '{"recordingId":';
+    await writeFile(recordPath, malformed, "utf8");
+    await rm(indexPath);
+    await assert.rejects(new VoiceMemoryStore(root).initialize(), /voice_memory_unreadable/);
+    assert.equal(await readFile(recordPath, "utf8"), malformed);
+    await assert.rejects(readFile(indexPath, "utf8"), { code: "ENOENT" });
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("minimal legacy voice memory records remain readable and searchable", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "shanghao-memory-legacy-"));
+  try {
+    const store = new VoiceMemoryStore(root);
+    await store.initialize();
+    await store.save(record());
+    const files = await readdir(path.join(root, "records"));
+    const recordPath = path.join(
+      root,
+      "records",
+      files.find((file) => file.endsWith(".json"))!,
+    );
+    const old = record();
+    await writeFile(
+      recordPath,
+      JSON.stringify({
+        recordingId: old.recordingId,
+        filePath: old.filePath,
+        transcript: old.transcript,
+      }),
+      "utf8",
+    );
+    await rm(path.join(root, "index.json"));
+    await rm(path.join(root, "summaries.json"));
+
+    const reopened = new VoiceMemoryStore(root);
+    await reopened.initialize();
+    const restored = await reopened.get(old.recordingId);
+    assert.equal(restored?.schemaVersion, 1);
+    assert.equal(restored?.speakers.length, 0);
+    assert.equal((await reopened.listSummaries())[0]?.transcriptCount, 1);
+    assert.equal(reopened.search({ query: "周六" }).length, 1);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test("voice memory uses durable per-record files and a compact local search index", async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "shanghao-memory-"));
   try {
@@ -1304,8 +1793,19 @@ test("voice memory uses durable per-record files and a compact local search inde
       status: "completed",
       attempts: 1,
     });
+    await store.appendTranscriptionUnit("C:\\录音\\一号房-01.m4a", {
+      recordingId: "C:\\录音\\一号房-01.m4a",
+      modelId: "paraformer-zh",
+      pipelineVersion: CURRENT_TRANSCRIPTION_PIPELINE_VERSION,
+      index: 0,
+      startMs: 0,
+      endMs: 1_000,
+      speakerId: "Speaker 1",
+      status: "completed",
+      attempts: 1,
+    });
     const eventFiles = await readdir(path.join(root, "transcription-events"));
-    assert.equal(eventFiles.length, 1);
+    assert.equal(eventFiles.length, 2);
     const results = store.search({ query: "老王 周六" });
     assert.equal(results.length, 0, "unconfirmed speaker names are not invented");
     assert.ok(
@@ -1320,6 +1820,9 @@ test("voice memory uses durable per-record files and a compact local search inde
     assert.equal(await store.get("C:\\录音\\一号房-01.m4a"), undefined);
     assert.equal((await store.listSummaries()).length, 0);
     assert.equal(store.search({ query: "周六" }).length, 0);
+    assert.deepEqual(await readdir(path.join(root, "transcription-events")), [
+      "event-recording.ndjson",
+    ]);
   } finally {
     await rm(root, { recursive: true, force: true });
   }
@@ -1344,4 +1847,32 @@ test("voice processing enters and leaves double talk without changing conservati
   assert.equal(state.mode, "double_talk");
   assert.deepEqual(targetsForVoiceProcessingMode(state.mode), { suppression: 24, rawMix: 0.16 });
   assert.deepEqual(targetsForVoiceProcessingMode("noise"), { suppression: 34, rawMix: 0 });
+});
+
+test("voice memory refuses a late save from a superseded transcription job", async () => {
+  let writes = 0;
+  const service = new AiVoiceMemoryService(
+    {} as never,
+    {} as never,
+    {} as never,
+    {
+      save: async (record: VoiceMemoryRecord) => {
+        writes += 1;
+        return record;
+      },
+    } as never,
+  );
+  const internal = service as unknown as {
+    requestVersions: Map<string, number>;
+    writeOwnership: AiJobWriteOwnership;
+    save: (record: VoiceMemoryRecord) => Promise<VoiceMemoryRecord>;
+  };
+  internal.requestVersions.set("recording", 3);
+  await assert.rejects(
+    internal.writeOwnership.run("recording", 1, () =>
+      internal.save({ recordingId: "recording" } as VoiceMemoryRecord),
+    ),
+    /voice_memory_task_superseded/,
+  );
+  assert.equal(writes, 0);
 });
