@@ -1,6 +1,6 @@
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { createReadStream, createWriteStream } from "node:fs";
-import { mkdir, rename, rm, stat } from "node:fs/promises";
+import { mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { Readable, Transform } from "node:stream";
 import { pipeline } from "node:stream/promises";
@@ -76,6 +76,93 @@ const verifyArtifact = async (
 ): Promise<boolean> => {
   if ((await fileSize(filePath)) !== expectedBytes) return false;
   return (await sha256RuntimeArtifact(filePath)) === expectedSha256.toLowerCase();
+};
+
+const processIsAlive = (pid: number): boolean => {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code === "EPERM";
+  }
+};
+
+/** Serializes writers for the same artifact across app processes, not just within one process. */
+const acquireArtifactLock = async (
+  destination: string,
+  signal?: AbortSignal,
+): Promise<() => Promise<void>> => {
+  const lockDirectory = `${destination}.lock`;
+  const reclaimDirectory = `${lockDirectory}.reclaim`;
+  const ownerToken = randomUUID();
+  const ownerPath = path.join(lockDirectory, "owner.json");
+  const staleOwnerGraceMs = 30_000;
+
+  while (true) {
+    if (signal?.aborted) throw new Error("ai_task_paused");
+    try {
+      await mkdir(lockDirectory);
+      await writeFile(ownerPath, JSON.stringify({ pid: process.pid, token: ownerToken }), {
+        flag: "wx",
+      });
+      return async () => {
+        try {
+          const owner = JSON.parse(await readFile(ownerPath, "utf8")) as { token?: string };
+          if (owner.token === ownerToken) await rm(lockDirectory, { recursive: true, force: true });
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+        }
+      };
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+    }
+
+    let owner: { pid?: number; token?: string } | undefined;
+    let lockAgeMs: number;
+    try {
+      owner = JSON.parse(await readFile(ownerPath, "utf8")) as { pid?: number; token?: string };
+      lockAgeMs = Date.now() - (await stat(lockDirectory)).mtimeMs;
+    } catch {
+      try {
+        lockAgeMs = Date.now() - (await stat(lockDirectory)).mtimeMs;
+      } catch {
+        continue;
+      }
+    }
+
+    const ownerIsDead = Number.isSafeInteger(owner?.pid) && !processIsAlive(owner!.pid!);
+    const ownerMetadataIsAbandoned = !owner?.pid && lockAgeMs >= staleOwnerGraceMs;
+    if (ownerIsDead || ownerMetadataIsAbandoned) {
+      let ownsReclaim = false;
+      try {
+        await mkdir(reclaimDirectory);
+        ownsReclaim = true;
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+      }
+      if (ownsReclaim) {
+        try {
+          let currentOwner: { pid?: number; token?: string } | undefined;
+          try {
+            currentOwner = JSON.parse(await readFile(ownerPath, "utf8")) as {
+              pid?: number;
+              token?: string;
+            };
+          } catch {
+            // A crashed process may have created the lock directory before its owner file.
+          }
+          const stillAbandoned = currentOwner?.token
+            ? Number.isSafeInteger(currentOwner.pid) && !processIsAlive(currentOwner.pid!)
+            : ownerMetadataIsAbandoned && lockAgeMs >= staleOwnerGraceMs;
+          if (stillAbandoned) await rm(lockDirectory, { recursive: true, force: true });
+        } finally {
+          await rm(reclaimDirectory, { recursive: true, force: true });
+        }
+      }
+    }
+
+    await wait(100, signal);
+  }
 };
 
 const downloadAttempt = async (
@@ -184,26 +271,36 @@ export const downloadVerifiedRuntimeArtifact = async (
     return options.destination;
   }
 
-  const partial = `${options.destination}.part`;
-  const attempts = Math.max(options.sources.length, options.attempts ?? 6);
-  let lastError: unknown;
-  for (let attempt = 1; attempt <= attempts; attempt += 1) {
-    if (options.signal?.aborted) throw new Error("ai_task_paused");
-    const source = options.sources[(attempt - 1) % options.sources.length]!;
-    try {
-      await downloadAttempt(options, source, partial);
-      if (
-        await verifyArtifact(options.destination, options.expectedBytes, options.expectedSha256)
-      ) {
-        return options.destination;
-      }
-      throw new Error("runtime_artifact_verification_failed");
-    } catch (error) {
-      if (options.signal?.aborted) throw new Error("ai_task_paused", { cause: error });
-      lastError = error;
-      await options.onRetry?.({ attempt, source, error });
-      if (attempt < attempts) await wait(Math.min(8_000, attempt * 1_000), options.signal);
+  const releaseLock = await acquireArtifactLock(options.destination, options.signal);
+  try {
+    if (await verifyArtifact(options.destination, options.expectedBytes, options.expectedSha256)) {
+      if (options.signal?.aborted) throw new Error("ai_task_paused");
+      return options.destination;
     }
+
+    const partial = `${options.destination}.part`;
+    const attempts = Math.max(options.sources.length, options.attempts ?? 6);
+    let lastError: unknown;
+    for (let attempt = 1; attempt <= attempts; attempt += 1) {
+      if (options.signal?.aborted) throw new Error("ai_task_paused");
+      const source = options.sources[(attempt - 1) % options.sources.length]!;
+      try {
+        await downloadAttempt(options, source, partial);
+        if (
+          await verifyArtifact(options.destination, options.expectedBytes, options.expectedSha256)
+        ) {
+          return options.destination;
+        }
+        throw new Error("runtime_artifact_verification_failed");
+      } catch (error) {
+        if (options.signal?.aborted) throw new Error("ai_task_paused", { cause: error });
+        lastError = error;
+        await options.onRetry?.({ attempt, source, error });
+        if (attempt < attempts) await wait(Math.min(8_000, attempt * 1_000), options.signal);
+      }
+    }
+    throw new Error("runtime_artifact_download_failed", { cause: lastError });
+  } finally {
+    await releaseLock();
   }
-  throw new Error("runtime_artifact_download_failed", { cause: lastError });
 };
