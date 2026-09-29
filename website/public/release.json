@@ -1,20 +1,20 @@
 {
-  "tag_name": "v3.2.2",
-  "published_at": "2026-09-27T05:38:13Z",
-  "html_url": "https://github.com/soberbw-hash/shanghao/releases/tag/v3.2.2",
+  "tag_name": "v3.3.0",
+  "published_at": "2026-09-29T12:21:49Z",
+  "html_url": "https://github.com/soberbw-hash/shanghao/releases/tag/v3.3.0",
   "highlights": [
-    "麦克风语音保护对近端说话、远端声音与双讲的处理更平滑，减少人声被降噪误压；本地人声增强继续在音频 Worklet 中处理。远端各路的响度学习只参考有效说话片段，并限制增益变化与峰值。",
-    "“我的快捷消息”扩充为八个语音／音效槽位和五个音乐槽位。槽位可以拖拽绑定，音频库顶部同时管理播放开关与音量；主界面的快捷项随文字宽度排布。",
-    "麦克风体检与设备路由增加针对性检查，保持手机麦克风和桌面麦克风进入同一房间处理路径。",
-    "窗外加入不同速度的云层、夜间光雾和窗边植物摆动，窗帘与叶片的轻动画更可见。城市和窗框保持稳定；页面隐藏或减少动态效果时暂停纯视觉运动。"
+    "房间 Session、信令回调、设备切换和屏幕分享操作按会话代际管理；旧操作结束得再晚，也只能释放自己创建的资源。",
+    "麦克风保护分析使用完整连续采样窗口；远端响度学习结合成员说话状态和音频能量，降低键盘、碰撞等瞬态对音量学习的影响。",
+    "输入设备枚举失败不再误清除用户选择；音频诊断区分设置期望、实际应用和检测到的状态。",
+    "房间、Relay、音频与 AI 任务可导出有界状态时间线，诊断继续过滤聊天正文、转录正文、音频内容与凭据。"
   ],
   "assets": [
     {
-      "name": "ShangHao-3.2.2-Setup-x64.exe",
-      "size": 209260284,
-      "browser_download_url": "https://github.com/soberbw-hash/shanghao/releases/download/v3.2.2/ShangHao-3.2.2-Setup-x64.exe",
-      "mirror_path": "/downloads/v3.2.2/ShangHao-3.2.2-Setup-x64.exe",
-      "sha256": "c720020d2da236cb373b5f22a24ede84eb7f1489dceed36ee9c9d8f20d0beb0e"
+      "name": "ShangHao-3.3.0-Setup-x64.exe",
+      "size": 171624655,
+      "browser_download_url": "https://github.com/soberbw-hash/shanghao/releases/download/v3.3.0/ShangHao-3.3.0-Setup-x64.exe",
+      "mirror_path": "/downloads/v3.3.0/ShangHao-3.3.0-Setup-x64.exe",
+      "sha256": "6f5bb2ad0592649f52a99a99a280fcc9a3c5c7b2a424d86032fdb04a60a57b3b"
     }
   ]
 }
