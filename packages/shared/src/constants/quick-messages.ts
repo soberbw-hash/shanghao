@@ -382,8 +382,8 @@ export const DEFAULT_QUICK_MESSAGE_MUSIC_SLOTS: QuickMessageShortcutSlot[] = [
     shortcut: "Ctrl+Shift+3",
     enabled: true,
   },
-  { presetId: undefined, shortcut: "", enabled: false },
-  { presetId: undefined, shortcut: "", enabled: false },
+  { presetId: "music-lol-卡特小曲", shortcut: "Ctrl+Shift+4", enabled: true },
+  { presetId: "music-valorant-霓虹小曲", shortcut: "Ctrl+Shift+5", enabled: true },
 ];
 
 export const QUICK_MESSAGE_PRESETS: QuickMessagePreset[] = [
@@ -394,17 +394,17 @@ export const QUICK_MESSAGE_PRESETS: QuickMessagePreset[] = [
 ];
 
 /** Shared default for voice effects and music; source mastering remains independent. */
-export const DEFAULT_QUICK_MESSAGE_VOLUME = 0.68;
+export const DEFAULT_QUICK_MESSAGE_VOLUME = 0.15;
 
 export const DEFAULT_QUICK_MESSAGE_SLOTS: QuickMessageShortcutSlot[] = [
-  { presetId: undefined, shortcut: "Ctrl+Alt+1", enabled: false },
+  { presetId: "voice-nice", shortcut: "Ctrl+Alt+1", enabled: true },
   { presetId: "legacy-shanghao", shortcut: "Ctrl+Alt+2", enabled: true },
   { presetId: "legacy-mic", shortcut: "Ctrl+Alt+3", enabled: true },
   { presetId: "legacy-wait", shortcut: "Ctrl+Alt+4", enabled: true },
   { presetId: "legacy-hear", shortcut: "Ctrl+Alt+5", enabled: true },
-  { presetId: undefined, shortcut: "", enabled: false },
-  { presetId: undefined, shortcut: "", enabled: false },
-  { presetId: undefined, shortcut: "", enabled: false },
+  { presetId: "voice-you-have-brother", shortcut: "Ctrl+Alt+6", enabled: true },
+  { presetId: "voice-pdd-溜了", shortcut: "Ctrl+Alt+7", enabled: true },
+  { presetId: "voice-dasima-嘿嘿", shortcut: "Ctrl+Alt+8", enabled: true },
 ];
 
 /**
@@ -423,22 +423,23 @@ export const normalizeQuickMessageSlots = (
   defaults: readonly QuickMessageShortcutSlot[] = DEFAULT_QUICK_MESSAGE_SLOTS,
   count = defaults.length,
 ): QuickMessageShortcutSlot[] => {
-  const rawSlots = Array.isArray(value) ? value : [];
+  const hasSavedSlots = Array.isArray(value);
+  const rawSlots = hasSavedSlots ? value : [];
   return Array.from({ length: count }, (_, index) => {
     const fallback = defaults[index] ??
       defaults[0] ?? { presetId: undefined, shortcut: "", enabled: false };
     const candidate = rawSlots[index];
     if (!candidate || typeof candidate !== "object" || Array.isArray(candidate)) {
-      return { ...fallback };
+      return hasSavedSlots
+        ? { presetId: undefined, shortcut: "", enabled: false }
+        : { ...fallback };
     }
     const source = candidate as Record<string, unknown>;
     return {
       ...fallback,
       ...source,
       presetId:
-        typeof source.presetId === "string"
-          ? source.presetId.trim() || undefined
-          : fallback.presetId,
+        typeof source.presetId === "string" ? source.presetId.trim() || undefined : undefined,
       shortcut: typeof source.shortcut === "string" ? source.shortcut.trim() : fallback.shortcut,
       enabled: typeof source.enabled === "boolean" ? source.enabled : fallback.enabled,
     } as QuickMessageShortcutSlot;

@@ -102,3 +102,23 @@ export const resolveSystemWeatherLocation = ({
   }
   return { latitude, longitude, source: "system" };
 };
+
+export const resolveSystemWeatherCity = async (
+  position: { latitude: number; longitude: number },
+  fetchJson: WeatherJsonFetcher,
+): Promise<string | undefined> => {
+  const query = new URLSearchParams({
+    latitude: String(position.latitude),
+    longitude: String(position.longitude),
+    localityLanguage: "zh",
+  });
+  try {
+    const payload = readRecord(
+      await fetchJson(`https://api.bigdatacloud.net/data/reverse-geocode-client?${query}`),
+    );
+    return asText(payload?.city) ?? asText(payload?.locality);
+  } catch {
+    // Weather remains usable if the optional place-name lookup is unavailable.
+    return undefined;
+  }
+};

@@ -3,7 +3,10 @@ import assert from "node:assert/strict";
 
 import {
   DEFAULT_AI_ASR_MODEL_ID,
+  DEFAULT_QUICK_MESSAGE_MUSIC_SLOTS,
+  DEFAULT_QUICK_MESSAGE_SLOTS,
   PROFILE_SCHEMA_VERSION,
+  QUICK_MESSAGE_PRESETS,
   SETTINGS_SCHEMA_VERSION,
 } from "@private-voice/shared";
 
@@ -97,6 +100,7 @@ test("migrateSettings falls back to safe defaults for damaged legacy config", ()
   assert.equal("isRecordingLoudnessBalanceEnabled" in result.settings, false);
   assert.equal(result.settings.weatherLocationMode, "auto");
   assert.equal(result.settings.weatherManualCity, "");
+  assert.equal(result.settings.isSystemWeatherLocationEnabled, false);
   assert.equal(result.settings.weatherEffectMode, "standard");
   assert.deepEqual(result.settings.micEqualizerGains, [0, 0, 0, 0, 0]);
   assert.equal(result.settings.lowCutFrequency, "75");
@@ -179,7 +183,59 @@ test("interface sounds remain enabled at the product default volume", () => {
   );
 });
 
-test("quick message settings keep old bindings while adding voice and music slots", () => {
+test("new quick-message profiles start with eight voices and five distinct music clips", () => {
+  const settings = migrateSettings({}).settings.quickMessages;
+  for (const slots of [settings.slots, settings.musicSlots]) {
+    assert.ok(slots.every((slot) => slot.presetId && slot.enabled && slot.shortcut));
+    assert.equal(new Set(slots.map((slot) => slot.presetId)).size, slots.length);
+  }
+  assert.equal(settings.slots.length, DEFAULT_QUICK_MESSAGE_SLOTS.length);
+  assert.equal(settings.musicSlots.length, DEFAULT_QUICK_MESSAGE_MUSIC_SLOTS.length);
+  assert.equal(
+    new Set([...settings.slots, ...settings.musicSlots].map((slot) => slot.shortcut)).size,
+    settings.slots.length + settings.musicSlots.length,
+  );
+  for (const slot of settings.musicSlots) {
+    assert.equal(
+      QUICK_MESSAGE_PRESETS.find((preset) => preset.id === slot.presetId)?.mediaType,
+      "music",
+    );
+  }
+  for (const slot of settings.slots) {
+    assert.notEqual(
+      QUICK_MESSAGE_PRESETS.find((preset) => preset.id === slot.presetId)?.mediaType,
+      "music",
+    );
+  }
+});
+
+test("saved quick-message bindings and intentionally empty slots survive an update", () => {
+  const saved = JSON.parse(
+    JSON.stringify({
+      ...defaultSettings,
+      quickMessages: {
+        ...defaultSettings.quickMessages,
+        slots: defaultSettings.quickMessages.slots.map((slot, index) =>
+          index === 0 ? { ...slot, presetId: undefined, enabled: false } : slot,
+        ),
+        musicSlots: defaultSettings.quickMessages.musicSlots.map((slot, index) =>
+          index === 4 ? { ...slot, presetId: undefined, enabled: false } : slot,
+        ),
+      },
+    }),
+  );
+  const migrated = migrateSettings(saved).settings.quickMessages;
+  assert.equal(migrated.slots[0]?.presetId, undefined);
+  assert.equal(migrated.musicSlots[4]?.presetId, undefined);
+  assert.equal(migrated.slots[1]?.presetId, "legacy-shanghao");
+  assert.equal(migrated.musicSlots[3]?.presetId, "music-lol-卡特小曲");
+  assert.deepEqual(
+    migrateSettings({ ...defaultSettings, quickMessages: migrated }).settings.quickMessages,
+    migrated,
+  );
+});
+
+test("quick message settings keep old bindings without filling saved sparse slots", () => {
   const migrated = migrateSettings({
     ...defaultSettings,
     quickMessages: {
@@ -212,7 +268,7 @@ test("quick message settings keep old bindings while adding voice and music slot
     enabled: false,
   });
   assert.equal(migrated.settings.quickMessages.slots[1]?.presetId, "missing");
-  assert.equal(migrated.settings.quickMessages.slots[4]?.presetId, "legacy-hear");
+  assert.equal(migrated.settings.quickMessages.slots[4]?.presetId, undefined);
   assert.equal(migrated.settings.quickMessages.slots[5]?.presetId, undefined);
 
   const restoredMusic = migrateSettings({
@@ -225,8 +281,9 @@ test("quick message settings keep old bindings while adding voice and music slot
   assert.equal(restoredMusic.settings.quickMessages.musicPresetId, "music-lol-卡特小曲");
 });
 
-test("quick message volume lowers the untouched legacy default without overriding custom levels", () => {
-  assert.equal(defaultSettings.quickMessages.soundVolume, 0.68);
+test("quick message volume defaults to 15% without changing saved or legacy levels", () => {
+  assert.equal(defaultSettings.quickMessages.soundVolume, 0.15);
+  assert.equal(migrateSettings({}).settings.quickMessages.soundVolume, 0.15);
   assert.equal(
     migrateSettings({
       settingsSchemaVersion: SETTINGS_SCHEMA_VERSION - 1,
@@ -234,6 +291,13 @@ test("quick message volume lowers the untouched legacy default without overridin
         ...defaultSettings.quickMessages,
         soundVolume: 0.72,
       },
+    }).settings.quickMessages.soundVolume,
+    0.68,
+  );
+  assert.equal(
+    migrateSettings({
+      ...defaultSettings,
+      quickMessages: { ...defaultSettings.quickMessages, soundVolume: 0.68 },
     }).settings.quickMessages.soundVolume,
     0.68,
   );
@@ -317,19 +381,39 @@ test("ASR model selection preserves supported providers and repairs damaged valu
   );
 });
 
-test("weather keeps the user toggle while legacy reduced effects migrate to full visuals", () => {
+test("weather stays enabled when legacy settings turned it off", () => {
   const result = migrateSettings({
     ...defaultSettings,
     weatherLocationMode: "manual",
     weatherManualCity: " 杭州 ",
+    isSystemWeatherLocationEnabled: true,
     weatherEffectMode: "reduced",
     isDynamicWeatherEnabled: false,
   });
 
   assert.equal(result.settings.weatherLocationMode, "manual");
   assert.equal(result.settings.weatherManualCity, "杭州");
+  assert.equal(result.settings.isSystemWeatherLocationEnabled, true);
   assert.equal(result.settings.weatherEffectMode, "standard");
-  assert.equal(result.settings.isDynamicWeatherEnabled, false);
+  assert.equal(result.settings.isDynamicWeatherEnabled, true);
+});
+
+test("collection read markers migrate by room without accepting unknown room keys", () => {
+  const legacy = "2026-09-30T00:00:00.000Z";
+  const result = migrateSettings({
+    ...defaultSettings,
+    lastCollectionViewedAt: legacy,
+    hasInitializedCollectionReadState: true,
+    collectionViewedAtByRoom: {
+      main: "2026-09-30T00:05:00.000Z",
+      side: "invalid",
+      other: "2026-09-30T00:06:00.000Z",
+    } as never,
+  });
+  assert.equal(result.settings.lastCollectionViewedAt, legacy);
+  assert.deepEqual(result.settings.collectionViewedAtByRoom, {
+    main: "2026-09-30T00:05:00.000Z",
+  });
 });
 
 test("legacy room question providers migrate to cloud without requiring local Qwen", () => {

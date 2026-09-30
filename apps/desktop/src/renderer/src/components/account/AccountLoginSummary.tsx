@@ -7,13 +7,13 @@ interface AccountLoginSummaryProps {
 }
 
 export const AccountLoginSummary = ({ identifier, isRemembered }: AccountLoginSummaryProps) => {
-  const settings = useSettingsStore((state) => state.settings);
-  if (!settings || !isRemembered) return null;
+  const hasSettings = useSettingsStore((state) => Boolean(state.settings));
+  const accountAvatarPresetId = useSettingsStore((state) => state.settings?.accountAvatarPresetId);
+  const nickname = useSettingsStore((state) => state.settings?.nickname);
+  if (!hasSettings || !isRemembered) return null;
 
-  const avatarPreset = ACCOUNT_AVATAR_PRESETS.find(
-    (preset) => preset.id === settings.accountAvatarPresetId,
-  );
-  const displayName = settings.nickname?.trim() || identifier.trim() || "已记住的账号";
+  const avatarPreset = ACCOUNT_AVATAR_PRESETS.find((preset) => preset.id === accountAvatarPresetId);
+  const displayName = nickname?.trim() || identifier.trim() || "已记住的账号";
 
   return (
     <div className="account-login-summary">

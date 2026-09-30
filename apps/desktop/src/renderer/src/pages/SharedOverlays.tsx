@@ -34,11 +34,17 @@ export const SharedOverlays = () => {
   const settings = useSettingsStore((state) => state.settings);
   const runtimeInfo = useSettingsStore((state) => state.runtimeInfo);
   const updateInfo = useSettingsStore((state) => state.updateInfo);
+  const updatePhase = useSettingsStore((state) => state.updateStatus.phase);
+  const updateStatusVersion = useSettingsStore((state) => state.updateStatus.latestVersion);
+  const updateStatusForced = useSettingsStore((state) => state.updateStatus.forceUpdate);
   const saveSettings = useSettingsStore((state) => state.saveSettings);
   const roomId = useRoomStore((state) => (state.room.roomId === "side" ? "side" : "main"));
   const reports = useDailyRoomReportStore((state) => state.reports[roomId]);
   const reportsLoaded = useDailyRoomReportStore((state) => state.loaded[roomId]);
   const [welcomeQueueReady, setWelcomeQueueReady] = useState(false);
+  const [dismissedUpdateVersion, setDismissedUpdateVersion] = useState(() =>
+    window.localStorage.getItem("shanghao:dismissed-update-version"),
+  );
   const roomEntryRef = useRef<string | undefined>(undefined);
   const [roomEntryKey, setRoomEntryKey] = useState<string | undefined>(undefined);
   const version = runtimeInfo?.version ?? "";
@@ -48,6 +54,22 @@ export const SharedOverlays = () => {
     version !== "0.0.0" &&
     settings.lastReleaseNotesVersionSeen !== version,
   );
+  const updateDownloaded = updatePhase === "downloaded" || updatePhase === "ready_to_restart";
+  const updateVersion = updateInfo?.latestVersion ?? updateStatusVersion ?? "";
+  const updatePending = Boolean(
+    (updateInfo?.hasUpdate || updatePhase === "downloading" || updateDownloaded) &&
+    (updateInfo?.forceUpdate ||
+      updateStatusForced ||
+      updateDownloaded ||
+      dismissedUpdateVersion !== updateVersion),
+  );
+
+  useEffect(() => {
+    const syncDismissedVersion = () =>
+      setDismissedUpdateVersion(window.localStorage.getItem("shanghao:dismissed-update-version"));
+    window.addEventListener("shanghao:update-dismissed", syncDismissedVersion);
+    return () => window.removeEventListener("shanghao:update-dismissed", syncDismissedVersion);
+  }, []);
 
   useEffect(() => {
     if (releasePending) {
@@ -77,7 +99,7 @@ export const SharedOverlays = () => {
     bootstrapPhase === "ready" &&
     welcomeQueueReady &&
     !releasePending &&
-    !updateInfo?.forceUpdate &&
+    !updatePending &&
     currentPage === "room" &&
     roomEntryKey === roomId &&
     reportsLoaded &&
@@ -91,7 +113,7 @@ export const SharedOverlays = () => {
   return (
     <>
       <ToastRegion />
-      {bootstrapPhase === "ready" ? <ReleaseNotesModal /> : null}
+      {bootstrapPhase === "ready" && !updatePending ? <ReleaseNotesModal /> : null}
       <AnimatePresence mode="wait">
         {showDailyReport && yesterdayReport ? (
           <DailyRoomReportModal

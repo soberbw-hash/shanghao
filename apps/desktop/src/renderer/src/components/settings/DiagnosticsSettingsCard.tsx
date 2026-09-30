@@ -138,6 +138,9 @@ interface ShangHaoHealthOverviewProps {
   onRefreshWindows: () => void;
   onRepairFirewall: () => void;
   isRepairingFirewall: boolean;
+  isRefreshingHealth: boolean;
+  isRefreshingWindows: boolean;
+  checkFeedback?: string;
 }
 
 const ShangHaoHealthOverview = ({
@@ -160,6 +163,9 @@ const ShangHaoHealthOverview = ({
   onRefreshWindows,
   onRepairFirewall,
   isRepairingFirewall,
+  isRefreshingHealth,
+  isRefreshingWindows,
+  checkFeedback,
 }: ShangHaoHealthOverviewProps) => {
   const relayLevel: HealthLevel = relay ? (relay.isReachable ? "正常" : "有问题") : "未检测";
   const roomFinding = roomAudioHealth({ remotePeerCount, webrtcReadyPeerCount, peerHealth });
@@ -269,6 +275,11 @@ const ShangHaoHealthOverview = ({
               ? "本机运行指标已记录；单次采样不代表语音或设备运行正常。"
               : "本机运行指标尚未取得。"}
           </div>
+          {checkFeedback ? (
+            <div className="mt-1 text-[11px] leading-5 text-[#52657D]" role="status">
+              {checkFeedback}
+            </div>
+          ) : null}
         </div>
         <div className="flex shrink-0 items-center gap-2">
           <span
@@ -277,8 +288,12 @@ const ShangHaoHealthOverview = ({
             整体：
             {overallLevel === "需要看看" || overallLevel === "有问题" ? "需要处理" : overallLevel}
           </span>
-          <Button variant="ghost" onClick={onRefresh}>
-            重新检查
+          <Button
+            variant="ghost"
+            disabled={isRefreshingHealth || isRefreshingWindows}
+            onClick={onRefresh}
+          >
+            {isRefreshingHealth ? "检查中…" : "重新检查"}
           </Button>
         </div>
       </div>
@@ -311,8 +326,13 @@ const ShangHaoHealthOverview = ({
       </div>
       {windowsStatus ? (
         <div className="mt-3 flex justify-end">
-          <Button variant="ghost" className="px-0 text-[11px]" onClick={onRefreshWindows}>
-            重新检查系统权限
+          <Button
+            variant="ghost"
+            className="px-0 text-[11px]"
+            disabled={isRefreshingHealth || isRefreshingWindows}
+            onClick={onRefreshWindows}
+          >
+            {isRefreshingWindows ? "正在检查系统权限…" : "重新检查系统权限"}
           </Button>
         </div>
       ) : null}
@@ -344,6 +364,9 @@ export const DiagnosticsSettingsCard = ({
   onRefreshWindows,
   onRepairFirewall,
   isRepairingFirewall,
+  isRefreshingHealth,
+  isRefreshingWindows,
+  checkFeedback,
   onInjectFault,
 }: {
   runtimeHealth?: RuntimeHealthSnapshot;
@@ -369,6 +392,9 @@ export const DiagnosticsSettingsCard = ({
   onRefreshWindows: () => void;
   onRepairFirewall: () => void;
   isRepairingFirewall: boolean;
+  isRefreshingHealth: boolean;
+  isRefreshingWindows: boolean;
+  checkFeedback?: string;
   onInjectFault: (kind: RealtimeFaultKind) => void;
 }) => (
   <SettingsSection
@@ -396,6 +422,9 @@ export const DiagnosticsSettingsCard = ({
         onRefreshWindows={onRefreshWindows}
         onRepairFirewall={onRepairFirewall}
         isRepairingFirewall={isRepairingFirewall}
+        isRefreshingHealth={isRefreshingHealth}
+        isRefreshingWindows={isRefreshingWindows}
+        checkFeedback={checkFeedback}
       />
       <AiRuntimeDiagnosticsPanel onOpenAiSettings={onOpenAiSettings} />
       <div className="rounded-[16px] border border-[#E7ECF2] bg-[#F8FAFC] p-4">

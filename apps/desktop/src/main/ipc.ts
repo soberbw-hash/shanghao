@@ -13,7 +13,6 @@ import {
   type BrowserWindow,
   type OpenDialogOptions,
 } from "electron";
-import { writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import {
@@ -53,7 +52,6 @@ import {
   type RecordingBatchDeleteResult,
   type RecordingLibrarySnapshot,
   type RecordingLibraryItem,
-  type RecordingMarker,
   type RendererLogPayload,
   type RendererRuntimeHealthInput,
   type RuntimeInfo,
@@ -86,7 +84,8 @@ import { clearAvatarImage, pickAvatarImage, readAvatarImage } from "./profile-me
 import { registerRecordingStreamIpcHandlers } from "./recording-stream-ipc";
 import { registerRecordingTrackIpcHandlers } from "./recording-tracks-ipc";
 import { cleanupRecordingParticipantTracks } from "./recording-participant-tracks";
-import { resolveRecordingDirectory } from "./recording-path";
+import { resolveRecordingDirectory, resolveUsableRecordingDirectory } from "./recording-path";
+import { requireVoiceMemoryProcessRequest } from "./voice-memory-ipc-validation";
 import {
   deleteRecording,
   readRecordingLibrary,
@@ -100,6 +99,8 @@ import { buildRuntimeEventTimeline } from "./runtime-event-timeline";
 import { sendToWindow } from "./safe-web-contents";
 import { registerOverlayQuickMusicMuteHandler } from "./overlay-quick-music-ipc";
 import { registerRecordingLocationIpcHandlers } from "./recording-location-ipc";
+import { registerRecordingMarkerIpcHandler } from "./recording-marker-ipc";
+import { requireRecordingFileInDirectory } from "./recording-ipc-validation";
 import { SettingsStore } from "./settings-store";
 import { ShortcutController } from "./shortcuts";
 import {
@@ -1033,14 +1034,21 @@ export const registerIpcHandlers = ({
   );
   ipcMain.handle(
     IPC_CHANNELS.ai.processRecording,
-    async (_event, request: VoiceMemoryProcessRequest): Promise<VoiceMemoryRecord> =>
-      voiceMemory.start({
+    async (_event, input: VoiceMemoryProcessRequest): Promise<VoiceMemoryRecord> => {
+      const request = requireVoiceMemoryProcessRequest(input);
+      const settings = settingsStore.getSnapshot();
+      const directory = await resolveUsableRecordingDirectory(
+        settings.recordingSaveDirectory,
+        app.getPath("documents"),
+      );
+      return voiceMemory.start({
         ...request,
         recordingId: requireString(request.recordingId, 2_048, "recording_id"),
-        filePath: requireString(request.filePath, 2_048, "recording_file_path"),
+        filePath: await requireRecordingFileInDirectory(directory, request.filePath),
         asrModelId:
           request.asrModelId === undefined ? undefined : requireAiAsrModelId(request.asrModelId),
-      }),
+      });
+    },
   );
   ipcMain.handle(
     IPC_CHANNELS.ai.selectTranscription,
@@ -1242,30 +1250,7 @@ export const registerIpcHandlers = ({
       : await dialog.showOpenDialog(options);
     return result.canceled ? undefined : result.filePaths[0];
   });
-  ipcMain.handle(
-    IPC_CHANNELS.recording.saveMarkers,
-    async (_event, filePath: string, markers: RecordingMarker[]): Promise<string> => {
-      const parsedPath = path.parse(filePath);
-      const markerPath = path.join(parsedPath.dir, `${parsedPath.name}-精彩时刻.txt`);
-      const formatOffset = (offsetMs: number) => {
-        const totalSeconds = Math.max(0, Math.round(offsetMs / 1_000));
-        const hours = Math.floor(totalSeconds / 3_600);
-        const minutes = Math.floor((totalSeconds % 3_600) / 60);
-        const seconds = totalSeconds % 60;
-        return [hours, minutes, seconds].map((value) => String(value).padStart(2, "0")).join(":");
-      };
-      const content = [
-        "上号录音 · 精彩时刻",
-        `录音文件：${path.basename(filePath)}`,
-        "",
-        ...markers.map((marker, index) => `${index + 1}. ${formatOffset(marker.offsetMs)}`),
-        "",
-        "打开录音并跳到对应时间即可回看。",
-      ].join("\r\n");
-      await writeFile(markerPath, content, "utf8");
-      return markerPath;
-    },
-  );
+  registerRecordingMarkerIpcHandler(settingsStore);
   ipcMain.handle(
     IPC_CHANNELS.recording.applyAutomaticCleanup,
     async (_event, filePath: string): Promise<RecordingAutomaticCleanupResult> => {

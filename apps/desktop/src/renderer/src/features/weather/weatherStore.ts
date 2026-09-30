@@ -7,6 +7,11 @@ import type {
 import { create } from "zustand";
 
 import { desktopApi } from "../../utils/desktopApi";
+import { preloadWeatherSceneAssets } from "./weatherPreload";
+
+interface WeatherRefreshRequest extends LocalWeatherRequest {
+  useSystemLocation?: boolean;
+}
 
 interface WeatherStoreState {
   snapshot?: LocalWeatherSnapshot;
@@ -14,7 +19,7 @@ interface WeatherStoreState {
   isLoading: boolean;
   error?: string;
   preview?: { scene: WeatherSceneKind; phase: WeatherDayPhase };
-  refresh: (request: LocalWeatherRequest) => Promise<LocalWeatherSnapshot>;
+  refresh: (request: WeatherRefreshRequest) => Promise<LocalWeatherSnapshot>;
   setPreview: (preview?: { scene: WeatherSceneKind; phase: WeatherDayPhase }) => void;
   clear: () => void;
 }
@@ -47,12 +52,14 @@ const readSystemPosition = (): Promise<SystemPosition | undefined> => {
   return pendingSystemPosition!;
 };
 
-const createRequestKey = (request: LocalWeatherRequest): string =>
+const createRequestKey = (request: WeatherRefreshRequest): string =>
   request.locationMode === "manual"
     ? `manual:${request.manualCity?.trim().toLocaleLowerCase("zh-CN") ?? ""}`
-    : "auto";
+    : request.useSystemLocation
+      ? "auto:system"
+      : "auto:ip";
 
-export const useWeatherStore = create<WeatherStoreState>((set) => ({
+export const useWeatherStore = create<WeatherStoreState>((set, get) => ({
   snapshot: undefined,
   snapshotRequestKey: undefined,
   isLoading: false,
@@ -62,13 +69,30 @@ export const useWeatherStore = create<WeatherStoreState>((set) => ({
     latestRequestKey = requestKey;
     const existing = activeRequests.get(requestKey);
     if (existing && !request.forceRefresh) return existing;
+    const current = get();
+    if (
+      !request.forceRefresh &&
+      current.snapshotRequestKey === requestKey &&
+      current.snapshot &&
+      Date.parse(current.snapshot.expiresAt) > Date.now()
+    ) {
+      return current.snapshot;
+    }
     set({ isLoading: true, error: undefined });
     const task = (async () => {
       const systemPosition =
-        request.locationMode === "auto" ? await readSystemPosition() : undefined;
-      return desktopApi.weather.getSnapshot({ ...request, systemPosition });
+        request.locationMode === "auto" && request.useSystemLocation
+          ? await readSystemPosition()
+          : undefined;
+      return desktopApi.weather.getSnapshot({
+        locationMode: request.locationMode,
+        manualCity: request.manualCity,
+        forceRefresh: request.forceRefresh,
+        systemPosition,
+      });
     })()
-      .then((snapshot) => {
+      .then(async (snapshot) => {
+        await preloadWeatherSceneAssets(snapshot);
         if (latestRequestKey === requestKey) {
           set({ snapshot, snapshotRequestKey: requestKey, isLoading: false, error: undefined });
         }

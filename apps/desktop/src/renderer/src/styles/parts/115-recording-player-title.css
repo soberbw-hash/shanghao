@@ -1,0 +1,28 @@
+.recording-player-title {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+  margin-top: 0;
+  color: #26364d;
+  font-size: 16px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 760;
+  line-height: 22px;
+}
+
+.recording-player-datetime {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+.recording-player-clock {
+  color: #365f8a;
+}
+
+.recording-player-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

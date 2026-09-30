@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readFile } from "node:fs/promises";
+import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -188,10 +188,14 @@ test("weather service prefers Windows system coordinates over IP lookup", async 
     const url = String(input);
     requestedUrls.push(url);
     return new Response(
-      JSON.stringify({
-        current: { time: "2026-08-15T14:00", is_day: 1, weather_code: 1 },
-        daily: { sunrise: ["2026-08-15T05:56"], sunset: ["2026-08-15T18:51"] },
-      }),
+      JSON.stringify(
+        url.includes("reverse-geocode-client")
+          ? { city: "深圳市" }
+          : {
+              current: { time: "2026-08-15T14:00", is_day: 1, weather_code: 1 },
+              daily: { sunrise: ["2026-08-15T05:56"], sunset: ["2026-08-15T18:51"] },
+            },
+      ),
       { status: 200 },
     );
   };
@@ -202,12 +206,103 @@ test("weather service prefers Windows system coordinates over IP lookup", async 
   });
 
   assert.equal(snapshot.locationSource, "system");
-  assert.equal(requestedUrls.length, 1);
-  assert.equal(requestedUrls[0]?.includes("latitude=22.5431"), true);
+  assert.equal(snapshot.city, "深圳市");
+  assert.equal(requestedUrls.length, 2);
+  assert.equal(
+    requestedUrls.every((url) => url.includes("latitude=22.5431")),
+    true,
+  );
   assert.equal(
     requestedUrls.some((url) => url.includes("ipwho") || url.includes("ipapi")),
     false,
   );
+});
+
+test("weather still renders when a system place-name lookup is unavailable", async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "shanghao-weather-system-offline-"));
+  const fetcher: typeof fetch = async (input) => {
+    if (String(input).includes("reverse-geocode-client")) throw new Error("lookup unavailable");
+    return new Response(
+      JSON.stringify({ current: { time: "2026-08-15T14:00", is_day: 1, weather_code: 1 } }),
+      { status: 200 },
+    );
+  };
+  const snapshot = await new LocalWeatherService(directory, { fetcher }).getSnapshot({
+    locationMode: "auto",
+    systemPosition: { latitude: 22.5431, longitude: 114.0579 },
+  });
+
+  assert.equal(snapshot.source, "live");
+  assert.equal(snapshot.city, undefined);
+});
+
+test("a valid system weather cache without a city gains one after the upgrade", async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "shanghao-weather-old-cache-"));
+  const now = new Date("2026-08-15T06:00:00.000Z");
+  const key = "auto:system:22.54:114.06";
+  await writeFile(
+    path.join(directory, "local-weather-cache.json"),
+    JSON.stringify({
+      version: 1,
+      locations: {
+        [key]: {
+          latitude: 22.5431,
+          longitude: 114.0579,
+          source: "system",
+          resolvedAt: now.toISOString(),
+        },
+      },
+      snapshots: {
+        [key]: {
+          scene: "clear",
+          phase: "day",
+          fetchedAt: now.toISOString(),
+          expiresAt: new Date(now.getTime() + 60_000).toISOString(),
+          source: "live",
+          locationSource: "system",
+        },
+      },
+    }),
+  );
+  let requests = 0;
+  const fetcher: typeof fetch = async (input) => {
+    requests += 1;
+    return new Response(
+      JSON.stringify(
+        String(input).includes("reverse-geocode-client")
+          ? { city: "深圳市" }
+          : { current: { time: "2026-08-15T14:00", is_day: 1, weather_code: 1 } },
+      ),
+      { status: 200 },
+    );
+  };
+  const snapshot = await new LocalWeatherService(directory, {
+    fetcher,
+    now: () => now,
+  }).getSnapshot({
+    locationMode: "auto",
+    systemPosition: { latitude: 22.5431, longitude: 114.0579 },
+  });
+
+  assert.equal(snapshot.city, "深圳市");
+  assert.equal(requests, 2);
+});
+
+test("weather begins during login and swaps the prepared scenery with an opacity transition", async () => {
+  const app = await readFile(path.resolve(process.cwd(), "src/renderer/src/app/App.tsx"), "utf8");
+  const store = await readFile(
+    path.resolve(process.cwd(), "src/renderer/src/features/weather/weatherStore.ts"),
+    "utf8",
+  );
+  const window = await readFile(
+    path.resolve(process.cwd(), "src/renderer/src/components/room/DynamicWeatherWindow.tsx"),
+    "utf8",
+  );
+  assert.equal(app.includes("useWeatherPreload();"), true);
+  assert.equal(store.includes("await preloadWeatherSceneAssets(snapshot)"), true);
+  assert.equal(window.includes("<AnimatePresence initial={false}>"), true);
+  assert.equal(window.includes("initial={{ opacity: 0 }}"), true);
+  assert.equal(window.includes('"当地"'), false);
 });
 
 test("weather service keeps stale local weather when the network fails", async () => {

@@ -126,6 +126,7 @@ const fallbackSettings: AppSettings = {
   isDynamicWeatherEnabled: true,
   weatherLocationMode: "auto",
   weatherManualCity: "",
+  isSystemWeatherLocationEnabled: false,
   weatherEffectMode: "standard",
   isUiSoundEnabled: true,
   quickMessages: {
@@ -137,6 +138,7 @@ const fallbackSettings: AppSettings = {
   },
   isBackgroundUpdateCheckEnabled: true,
   lastCollectionViewedAt: undefined,
+  collectionViewedAtByRoom: undefined,
   hasInitializedCollectionReadState: false,
   lastUpdateCheckAt: undefined,
   lastUpdateVersionSeen: undefined,

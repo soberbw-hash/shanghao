@@ -17,13 +17,13 @@ Release has been published:
 
 ```powershell
 corepack pnpm release:prepare
-npx -p @cloudbase/cli tcb hosting deploy .release-cache/v3.3.0 downloads/v3.3.0 -e shanghao-d3ga95tc8224e727a --verify --safe
+npx -p @cloudbase/cli tcb hosting deploy .release-cache/v3.3.1 downloads/v3.3.1 -e shanghao-d3ga95tc8224e727a --verify --safe
 corepack pnpm release:activate
 corepack pnpm build
 npx -p @cloudbase/cli tcb hosting deploy dist / -e shanghao-d3ga95tc8224e727a
 ```
 
-Replace `v3.3.0` with the release being published. Commit `public/release.json`
+Replace `v3.3.1` with the release being published. Commit `public/release.json`
 after activation. Check the public homepage and `release.json`, HEAD the
 versioned installer and its checksum file, and fetch the first bytes of the
 installer to confirm downloads work. Keep earlier versioned downloads available

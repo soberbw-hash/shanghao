@@ -21,7 +21,7 @@ export const WeatherSettingsCard = ({
   const preview = useWeatherStore((state) => state.preview);
   const refresh = useWeatherStore((state) => state.refresh);
   const setPreview = useWeatherStore((state) => state.setPreview);
-  const detectedCity = snapshotRequestKey === "auto" ? snapshot?.city?.trim() : undefined;
+  const detectedCity = snapshotRequestKey?.startsWith("auto:") ? snapshot?.city?.trim() : undefined;
   const savedCity = settings.weatherManualCity.trim();
   const locationDescription =
     settings.weatherLocationMode === "manual"
@@ -29,58 +29,63 @@ export const WeatherSettingsCard = ({
       : detectedCity
         ? `${snapshot?.locationSource === "system" ? "系统定位" : "网络定位"}到：${detectedCity}。如果不对，可搜索或输入任意地点。`
         : snapshot?.locationSource === "system"
-          ? "已通过 Windows 系统定位获取当前位置。"
+          ? "已获取系统位置，城市名称暂不可用；可手动选择城市。"
           : isLoading
-            ? "正在请求 Windows 系统定位…"
+            ? settings.isSystemWeatherLocationEnabled
+              ? "正在请求 Windows 系统定位…"
+              : "正在获取网络大致位置…"
             : error || snapshot?.source === "fallback"
-              ? "系统定位不可用，且网络定位失败；可搜索或输入地点。"
-              : "优先使用 Windows 系统定位；不可用时才回退到网络定位。";
+              ? "天气位置暂时不可用；可搜索或输入地点。"
+              : settings.isSystemWeatherLocationEnabled
+                ? "使用 Windows 系统定位；不可用时回退到网络大致位置。"
+                : "使用网络大致位置；也可以手动选择城市。";
 
   useEffect(() => {
-    if (!settings.isDynamicWeatherEnabled) return;
     void refresh({
       locationMode: settings.weatherLocationMode,
       manualCity: settings.weatherManualCity,
+      useSystemLocation: settings.isSystemWeatherLocationEnabled,
     }).catch(() => undefined);
   }, [
     refresh,
-    settings.isDynamicWeatherEnabled,
     settings.weatherLocationMode,
     settings.weatherManualCity,
+    settings.isSystemWeatherLocationEnabled,
   ]);
 
   return (
     <div className="weather-settings-block space-y-3" aria-label="天气设置">
-      <SettingsItemRow
-        label="窗外动态天气"
-        description="让窗外天气、昼夜和房间环境光随本地天气变化。"
-      >
-        <Switch
-          ariaLabel="窗外动态天气"
-          isChecked={settings.isDynamicWeatherEnabled}
-          onChange={(isDynamicWeatherEnabled) => onChange({ isDynamicWeatherEnabled })}
+      <SettingsItemRow label="天气位置" description={locationDescription}>
+        <WeatherCityPicker
+          selectedCity={settings.weatherLocationMode === "manual" ? savedCity : undefined}
+          detectedCity={detectedCity}
+          isLoading={isLoading}
+          isSystemLocationEnabled={settings.isSystemWeatherLocationEnabled}
+          onSelect={(city) => {
+            const weatherManualCity = city?.trim().slice(0, 80) ?? "";
+            onChange(
+              weatherManualCity
+                ? { weatherLocationMode: "manual", weatherManualCity }
+                : { weatherLocationMode: "auto", weatherManualCity: "" },
+            );
+          }}
         />
       </SettingsItemRow>
-      {settings.isDynamicWeatherEnabled ? (
-        <>
-          <SettingsItemRow label="天气位置" description={locationDescription}>
-            <WeatherCityPicker
-              selectedCity={settings.weatherLocationMode === "manual" ? savedCity : undefined}
-              detectedCity={detectedCity}
-              isLoading={isLoading}
-              onSelect={(city) => {
-                const weatherManualCity = city?.trim().slice(0, 80) ?? "";
-                onChange(
-                  weatherManualCity
-                    ? { weatherLocationMode: "manual", weatherManualCity }
-                    : { weatherLocationMode: "auto", weatherManualCity: "" },
-                );
-              }}
-            />
-          </SettingsItemRow>
-        </>
+      {settings.weatherLocationMode === "auto" ? (
+        <SettingsItemRow
+          label="Windows 精确定位"
+          description="仅在你开启后读取系统位置，用于获取天气和城市名称；关闭时使用网络大致定位。"
+        >
+          <Switch
+            ariaLabel="Windows 精确定位"
+            isChecked={settings.isSystemWeatherLocationEnabled}
+            onChange={(isSystemWeatherLocationEnabled) =>
+              onChange({ isSystemWeatherLocationEnabled })
+            }
+          />
+        </SettingsItemRow>
       ) : null}
-      {settings.isDynamicWeatherEnabled && import.meta.env.DEV ? (
+      {import.meta.env.DEV ? (
         <SettingsItemRow label="本地天气预览" description="仅开发模式可见，不会保存或联网。">
           <select
             value={preview ? `${preview.scene}:${preview.phase}` : "live"}

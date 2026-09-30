@@ -1,6 +1,32 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+test("departed member cleanup clears cached media state even without a Peer connection", async () => {
+  const { retireDepartedPeerState } =
+    await import("../src/renderer/src/features/room/departedPeerState");
+  const peers = new Map<string, { destroy: () => void }>();
+  const audioPeerIds = new Set(["gone"]);
+  const readyPeerIds = new Set(["stay", "gone"]);
+  const pendingIceCandidates = new Map<string, unknown[]>([["gone", [{}]]]);
+  const relayRequestedByPeerIds = new Set(["gone"]);
+  const retired: string[] = [];
+
+  retireDepartedPeerState(
+    new Set(["stay"]),
+    ["stay", "gone"],
+    peers,
+    [audioPeerIds, readyPeerIds, pendingIceCandidates, relayRequestedByPeerIds],
+    (peerId) => retired.push(peerId),
+  );
+
+  assert.equal(audioPeerIds.has("gone"), false);
+  assert.equal(readyPeerIds.has("gone"), false);
+  assert.equal(pendingIceCandidates.has("gone"), false);
+  assert.equal(relayRequestedByPeerIds.has("gone"), false);
+  assert.equal(readyPeerIds.has("stay"), true);
+  assert.deepEqual(retired, ["gone"]);
+});
+
 test("room exit releases screen audio resources even if microphone restoration fails", async (t) => {
   const originalWindow = Object.getOwnPropertyDescriptor(globalThis, "window");
   let signalingClosed = 0;

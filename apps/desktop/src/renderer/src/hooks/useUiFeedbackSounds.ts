@@ -17,7 +17,10 @@ import { prepareAnimalCalls } from "../features/audio/animalCall";
 let lastClickAt = 0;
 
 export const useUiFeedbackSounds = (): void => {
-  const settings = useSettingsStore((state) => state.settings);
+  const hasSettings = useSettingsStore((state) => Boolean(state.settings));
+  const preferredOutputDeviceId = useSettingsStore(
+    (state) => state.settings?.preferredOutputDeviceId,
+  );
   const isMuted = useAudioStore((state) => state.isMuted);
   const isDeafened = useAudioStore((state) => state.isDeafened);
   const members = useRoomStore((state) => state.room.members);
@@ -35,8 +38,8 @@ export const useUiFeedbackSounds = (): void => {
   );
 
   useEffect(() => {
-    void setUiSoundOutputDevice(settings?.preferredOutputDeviceId);
-  }, [settings?.preferredOutputDeviceId]);
+    void setUiSoundOutputDevice(preferredOutputDeviceId);
+  }, [preferredOutputDeviceId]);
 
   useEffect(() => {
     const prepare = () => {
@@ -76,7 +79,7 @@ export const useUiFeedbackSounds = (): void => {
   }, []);
 
   useEffect(() => {
-    if (!settings) {
+    if (!hasSettings) {
       return;
     }
 
@@ -100,10 +103,10 @@ export const useUiFeedbackSounds = (): void => {
       playUiSound(isDeafened ? "speaker-muted" : "speaker-unmuted");
       previousDeafenRef.current = isDeafened;
     }
-  }, [connectionState, isDeafened, isMuted, members, settings]);
+  }, [connectionState, hasSettings, isDeafened, isMuted, members]);
 
   useEffect(() => {
-    if (!settings || !didInitRef.current) return;
+    if (!hasSettings || !didInitRef.current) return;
     const isSignalingOutage =
       connectionState === RoomConnectionState.Reconnecting || reconnectAttempt > 0;
     const isStable =
@@ -149,7 +152,7 @@ export const useUiFeedbackSounds = (): void => {
         playUiSound("connection-restored");
       }, 3_000);
     }
-  }, [connectionState, reconnectAttempt, settings]);
+  }, [connectionState, hasSettings, reconnectAttempt]);
 
   useEffect(
     () => () => {
@@ -161,7 +164,7 @@ export const useUiFeedbackSounds = (): void => {
   );
 
   useEffect(() => {
-    if (!settings || !didInitRef.current) {
+    if (!hasSettings || !didInitRef.current) {
       return;
     }
     const isStableConnection =
@@ -187,5 +190,5 @@ export const useUiFeedbackSounds = (): void => {
     if (left.length) playUiSound("member-leave");
 
     previousMemberIdsRef.current = currentMemberIds;
-  }, [connectionState, members, settings]);
+  }, [connectionState, hasSettings, members]);
 };

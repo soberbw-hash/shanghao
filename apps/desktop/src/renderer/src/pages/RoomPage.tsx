@@ -252,9 +252,10 @@ export const RoomPage = () => {
     setViewingActive: setScreenShareViewingActive,
     stopShare: stopManagedScreenShare,
   });
-  const visibleMembers = room.members;
   const roomCollection = useRoomCollection({
+    roomId: room.roomId === "side" ? "side" : "main",
     localMemberId: localMember?.id,
+    localProfileId: localMember?.profileId,
     addItem: addRoomCollectionItem,
   });
   const localMemberId = localMember?.id;
@@ -269,7 +270,6 @@ export const RoomPage = () => {
       ].join("|")
     : "";
   const localGameIconKey = localMember?.gameIconDataUrl ?? "";
-
   const handleSceneReaction = useCallback(
     (targetPeerId: string, emoji: Parameters<typeof sendSceneReaction>[1]) => {
       void sendSceneReaction(targetPeerId, emoji);
@@ -1163,7 +1163,7 @@ export const RoomPage = () => {
       >
         <section className="room-scene-column island-panel min-h-0 overflow-hidden">
           <TeamIsland
-            members={visibleMembers}
+            members={room.members}
             onZoneSelect={handleZoneSelect}
             onReact={handleSceneReaction}
             onVolumeChange={handleMemberVolumeChange}

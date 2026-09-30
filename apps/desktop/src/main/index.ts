@@ -62,6 +62,8 @@ let tray: Tray | null = null;
 let isQuitting = false;
 let diagnostics: DiagnosticsService | null = null;
 let settingsStore: SettingsStore | null = null;
+const canUseSystemWeatherLocation = () =>
+  settingsStore?.getSnapshot().isSystemWeatherLocationEnabled === true;
 let shortcutsController: ShortcutController | null = null;
 let overlayController: OverlayWindowController | null = null;
 let gameDetectionController: GameDetectionController | null = null;
@@ -239,6 +241,7 @@ const showBootstrapError = async (error: unknown) => {
 
   if (!mainWindow) {
     mainWindow = createMainWindow({
+      canUseSystemWeatherLocation,
       log: (level, entry, context) => {
         void diagnostics?.writeLog({
           category: "app",
@@ -588,6 +591,7 @@ const bootstrap = async (): Promise<void> => {
   });
 
   mainWindow = createMainWindow({
+    canUseSystemWeatherLocation,
     log: (level, message, context) => {
       void diagnostics?.writeLog({
         category: "app",
@@ -709,6 +713,7 @@ const bootstrap = async (): Promise<void> => {
   app.on("activate", () => {
     if (!mainWindow) {
       mainWindow = createMainWindow({
+        canUseSystemWeatherLocation,
         log: (level, message, context) => {
           void diagnostics?.writeLog({
             category: "app",

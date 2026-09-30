@@ -152,7 +152,7 @@ test("reset releases old owners before registering the default marker", async ()
   assert.deepEqual(failed, []);
   assert.equal(registered.get("F8"), "recording-marker");
   assert.equal(registered.has("F10"), false);
-  assert.equal([...registered.values()].filter((value) => value === "quick-message:0").length, 0);
+  assert.equal(registered.get("Ctrl+Alt+1"), "quick-message:0");
 });
 
 test("unavailable default marker reports failure without leaving an old key active", async () => {

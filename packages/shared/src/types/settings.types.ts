@@ -62,11 +62,13 @@ export interface AppSettings {
   isDynamicWeatherEnabled: boolean;
   weatherLocationMode: WeatherLocationMode;
   weatherManualCity: string;
+  isSystemWeatherLocationEnabled: boolean;
   weatherEffectMode: WeatherEffectMode;
   isUiSoundEnabled: boolean;
   quickMessages: QuickMessageSettings;
   isBackgroundUpdateCheckEnabled: boolean;
   lastCollectionViewedAt?: string;
+  collectionViewedAtByRoom?: Partial<Record<"main" | "side", string>>;
   hasInitializedCollectionReadState: boolean;
   isAutoDownloadUpdateEnabled?: boolean;
   isAutoInstallUpdateEnabled?: boolean;

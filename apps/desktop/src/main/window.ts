@@ -27,6 +27,7 @@ import { screenCaptureService } from "./screen-capture-service";
 const devServerUrl = process.env.VITE_DEV_SERVER_URL?.trim() || "http://127.0.0.1:5173";
 
 interface CreateMainWindowOptions {
+  canUseSystemWeatherLocation?: () => boolean;
   log?: (
     level: "info" | "warn" | "error",
     message: string,
@@ -229,6 +230,7 @@ const createFallbackHtml = (title: string, description: string, logsDirectory?: 
 export const createMainWindow = ({
   log,
   logsDirectory,
+  canUseSystemWeatherLocation,
 }: CreateMainWindowOptions = {}): BrowserWindow => {
   const boundsPath = path.join(app.getPath("userData"), "window-bounds.json");
   let savedBounds: Partial<Rectangle> = {};
@@ -398,7 +400,7 @@ export const createMainWindow = ({
           isTrustedRendererUrl(details.requestingUrl) &&
           (permission === "media" ||
             permission === "display-capture" ||
-            permission === "geolocation"),
+            (permission === "geolocation" && canUseSystemWeatherLocation?.() === true)),
       );
     },
   );

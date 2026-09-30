@@ -32,7 +32,10 @@ const withTimeout = async <T>(
 
 export const useAppBootstrap = (): void => {
   const hydrate = useSettingsStore((state) => state.hydrate);
-  const settings = useSettingsStore((state) => state.settings);
+  const noiseSuppressionEnabled = useSettingsStore(
+    (state) => state.settings?.isNoiseSuppressionEnabled,
+  );
+  const pushToTalkEnabled = useSettingsStore((state) => state.settings?.isPushToTalkEnabled);
   const refreshDevices = useAudioStore((state) => state.refreshDevices);
   const setNoiseSuppressionEnabled = useAudioStore((state) => state.setNoiseSuppressionEnabled);
   const setPushToTalkEnabled = useAudioStore((state) => state.setPushToTalkEnabled);
@@ -221,11 +224,16 @@ export const useAppBootstrap = (): void => {
   ]);
 
   useEffect(() => {
-    if (!settings) {
+    if (noiseSuppressionEnabled === undefined || pushToTalkEnabled === undefined) {
       return;
     }
 
-    setNoiseSuppressionEnabled(settings.isNoiseSuppressionEnabled);
-    setPushToTalkEnabled(settings.isPushToTalkEnabled);
-  }, [setNoiseSuppressionEnabled, setPushToTalkEnabled, settings]);
+    setNoiseSuppressionEnabled(noiseSuppressionEnabled);
+    setPushToTalkEnabled(pushToTalkEnabled);
+  }, [
+    noiseSuppressionEnabled,
+    pushToTalkEnabled,
+    setNoiseSuppressionEnabled,
+    setPushToTalkEnabled,
+  ]);
 };

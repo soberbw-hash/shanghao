@@ -53,6 +53,8 @@ export interface RoomCollectionItem {
   title: string;
   content: string;
   createdByPeerId: string;
+  /** Stable account or guest identity when the server can provide one. */
+  createdByProfileId?: string;
   createdByNickname: string;
   createdAt: string;
 }

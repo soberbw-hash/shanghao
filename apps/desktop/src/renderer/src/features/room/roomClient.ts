@@ -55,7 +55,7 @@ import { PeerOperationQueue } from "./PeerOperationQueue";
 import { PeerRecoveryCoordinator } from "./PeerRecoveryCoordinator";
 import { SignalingBridge } from "./SignalingBridge";
 import { buildRoomDiagnosticsFromSources } from "./RoomDiagnostics";
-import { isPeerAudioPathReady, shouldSendAudioRelay } from "./peerAudioPath";
+import { collectAudioRelayTargets, isPeerAudioPathReady } from "./peerAudioPath";
 import { PresenceCoordinator } from "./PresenceCoordinator";
 import { RoomMemberEventCoordinator } from "./RoomMemberEventCoordinator";
 import {
@@ -64,6 +64,7 @@ import {
 } from "./SignalingReconnectCoordinator";
 import { decideSignalingError } from "./signalingErrorPolicy";
 import { collectActivePeerIds, normalizeRoomMembers } from "./roomMemberSnapshot";
+import { retireDepartedPeerState } from "./departedPeerState";
 import { collectLongSessionAudioResources } from "./longSessionAudioResources";
 import { isSignalingSessionSupersededError } from "./signalingSessionOwnership";
 import { ReliableChatTransport } from "../chat/ReliableChatTransport";
@@ -886,14 +887,9 @@ export class RoomClient {
     this.resolvePendingConnection();
 
     const activePeerIds = collectActivePeerIds(normalizedMembers, this.options.peerId);
+    const previousPeerIds = [...this.remotePeerIds];
     this.remotePeerIds.clear();
     activePeerIds.forEach((peerId) => this.remotePeerIds.add(peerId));
-    for (const peerId of [...this.relayRequestedByPeerIds]) {
-      if (!activePeerIds.has(peerId)) this.relayRequestedByPeerIds.delete(peerId);
-    }
-    for (const peerId of [...this.advertisedRelayNeeds.keys()]) {
-      if (!activePeerIds.has(peerId)) this.advertisedRelayNeeds.delete(peerId);
-    }
     this.screenShareCoordinator.prune(activePeerIds);
     this.startAudioRelay();
     this.startAudioPathSync();
@@ -902,29 +898,32 @@ export class RoomClient {
       this.advertiseAudioPathState(peerId, !this.webrtcReadyPeerIds.has(peerId), "snapshot_sync");
     }
 
-    for (const peerId of [...this.peers.keys()]) {
-      if (!activePeerIds.has(peerId)) {
-        const peer = this.peers.get(peerId);
-        this.peers.delete(peerId);
+    retireDepartedPeerState(
+      activePeerIds,
+      previousPeerIds,
+      this.peers,
+      [
+        this.webrtcConnectedPeerIds,
+        this.webrtcAudioPeerIds,
+        this.webrtcFlowingPeerIds,
+        this.webrtcReadyPeerIds,
+        this.webrtcStalledPeerIds,
+        this.webrtcScreenPeerIds,
+        this.pendingIceCandidates,
+        this.relayRequestedByPeerIds,
+        this.advertisedRelayNeeds,
+      ],
+      (peerId, peer) => {
         this.peerStatsMonitor.forgetPeer(peerId);
         this.peerRecovery.clear(peerId, true);
         peer?.destroy();
-        this.webrtcConnectedPeerIds.delete(peerId);
-        this.webrtcAudioPeerIds.delete(peerId);
-        this.webrtcFlowingPeerIds.delete(peerId);
-        this.webrtcReadyPeerIds.delete(peerId);
-        this.webrtcStalledPeerIds.delete(peerId);
-        this.webrtcScreenPeerIds.delete(peerId);
-        this.pendingIceCandidates.delete(peerId);
-        this.relayRequestedByPeerIds.delete(peerId);
-        this.advertisedRelayNeeds.delete(peerId);
         this.screenShareCoordinator.clearPeer(peerId);
         this.audioFallback?.clearPeer(peerId, "peer_left_room");
         this.options.onRemoteStream(peerId, undefined);
         this.options.onRemoteScreenFrame(peerId, undefined);
         this.options.onRemoteScreenShareState(peerId, false);
-      }
-    }
+      },
+    );
 
     for (const member of normalizedMembers) {
       if (member.id === this.options.peerId || this.peers.has(member.id)) {
@@ -1162,18 +1161,14 @@ export class RoomClient {
   }
 
   private getAudioRelayTargetPeerIds(): string[] {
-    return [...this.remotePeerIds].filter((peerId) =>
-      shouldSendAudioRelay({
-        evidence: {
-          isConnected: this.webrtcConnectedPeerIds.has(peerId),
-          hasAudioTrack: this.webrtcAudioPeerIds.has(peerId),
-          hasInboundRtpFlow: this.webrtcFlowingPeerIds.has(peerId),
-          hasPlaybackChannel: getRemoteAudioMixer().hasVerifiedWebRtcPlayback(peerId),
-          isStalled: this.webrtcStalledPeerIds.has(peerId),
-        },
-        isRelayRequested: this.relayRequestedByPeerIds.has(peerId),
-      }),
-    );
+    return collectAudioRelayTargets(this.remotePeerIds, {
+      connected: this.webrtcConnectedPeerIds,
+      audioTrack: this.webrtcAudioPeerIds,
+      inboundRtp: this.webrtcFlowingPeerIds,
+      stalled: this.webrtcStalledPeerIds,
+      requested: this.relayRequestedByPeerIds,
+      hasPlaybackChannel: (peerId) => getRemoteAudioMixer().hasVerifiedWebRtcPlayback(peerId),
+    });
   }
 
   private createPeer(targetPeerId: string): MeshPeerConnection {

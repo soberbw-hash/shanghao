@@ -13,11 +13,13 @@ export const WeatherCityPicker = ({
   selectedCity,
   detectedCity,
   isLoading,
+  isSystemLocationEnabled,
   onSelect,
 }: {
   selectedCity?: string;
   detectedCity?: string;
   isLoading: boolean;
+  isSystemLocationEnabled: boolean;
   onSelect: (city?: string) => void;
 }) => {
   const dialogRef = useRef<HTMLDialogElement>(null);
@@ -191,7 +193,11 @@ export const WeatherCityPicker = ({
             <div>
               <LocateFixed size={17} aria-hidden="true" />
               <span>
-                {detectedCity ? `当前定位：${detectedCity}` : "优先使用 Windows 系统定位"}
+                {detectedCity
+                  ? `当前定位：${detectedCity}`
+                  : isSystemLocationEnabled
+                    ? "已开启 Windows 精确定位"
+                    : "使用网络大致定位"}
               </span>
             </div>
             <button type="button" onClick={() => selectCity(undefined)}>

@@ -411,7 +411,6 @@ export const captureUi = async (
         ["快捷消息", "quick-messages"],
         ["录音库", "recordings"],
         ["AI 功能", "ai"],
-        ["房间记录", "room-history"],
         ["关于上号", "about"],
         ["诊断", "diagnostics"],
       ] as const;
@@ -544,17 +543,8 @@ export const captureUi = async (
     if (!(await waitForVisibleSelector(window, ".settings-page-header", 2_500))) {
       throw new Error("性能序列无法找到设置页");
     }
-    const labels = [
-      "通用",
-      "语音",
-      "快捷消息",
-      "AI 功能",
-      "录音库",
-      "房间记录",
-      "账号",
-      "关于上号",
-    ];
-    // Prime the bounded lightweight cache once so the measured 56 switches
+    const labels = ["通用", "语音", "快捷消息", "AI 功能", "录音库", "账号", "关于上号"];
+    // Prime the bounded lightweight cache once so the measured 49 switches
     // compare steady-state DOM usage instead of counting intentional first-use mounts.
     for (const label of labels) {
       if (!(await clickButtonByLabel(window, label))) {

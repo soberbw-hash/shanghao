@@ -337,6 +337,7 @@ test("quick-message shortcuts stay subscribed at the app boundary", () => {
 
 test("native notifications and recording markers use main process IPC", () => {
   const ipc = read("apps/desktop/src/main/ipc.ts");
+  const markers = read("apps/desktop/src/main/recording-marker-ipc.ts");
   const roomState = read("apps/desktop/src/renderer/src/hooks/useRoomState.ts");
   const room = read("apps/desktop/src/renderer/src/pages/RoomPage.tsx");
   assert.equal(ipc.includes("Notification.isSupported"), true);
@@ -344,9 +345,10 @@ test("native notifications and recording markers use main process IPC", () => {
   assert.equal(ipc.includes("mainWindow.flashFrame(true)"), true);
   assert.equal(ipc.includes('mainWindow.setAlwaysOnTop(true, "floating")'), true);
   assert.equal(roomState.includes("attention: true"), true);
-  assert.equal(ipc.includes("recording.saveMarkers"), true);
-  assert.equal(ipc.includes("-精彩时刻.txt"), true);
-  assert.equal(ipc.includes(".markers.json"), false);
+  assert.equal(ipc.includes("registerRecordingMarkerIpcHandler(settingsStore)"), true);
+  assert.equal(markers.includes("recording.saveMarkers"), true);
+  assert.equal(markers.includes("-精彩时刻.txt"), true);
+  assert.equal(markers.includes(".markers.json"), false);
   assert.equal(room.includes("onRecordingMarkerTriggered"), true);
 });
 

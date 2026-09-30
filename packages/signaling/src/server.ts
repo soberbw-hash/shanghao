@@ -1415,13 +1415,13 @@ export class SignalingServer extends EventEmitter {
           : MAX_ROOM_COLLECTION_TEXT_LENGTH,
       );
     if (!room || !author || !message.kind || !title || !content) return;
-
     const item: RoomCollectionItem = {
       id: randomUUID(),
       kind: message.kind,
       title,
       content,
       createdByPeerId: author.id,
+      createdByProfileId: author.profileId,
       createdByNickname: author.nickname,
       createdAt: new Date().toISOString(),
     };

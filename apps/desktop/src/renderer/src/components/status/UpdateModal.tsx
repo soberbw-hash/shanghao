@@ -43,6 +43,7 @@ export const UpdateModal = () => {
       window.localStorage.setItem("shanghao:dismissed-update-version", latestVersion);
       setDismissedVersion(latestVersion);
     }
+    window.dispatchEvent(new Event("shanghao:update-dismissed"));
   }, [isForced, latestVersion, status.phase]);
 
   useEffect(() => {
@@ -67,10 +68,10 @@ export const UpdateModal = () => {
           initial="initial"
           animate="open"
           exit="closed"
-          className={`update-modal-backdrop fixed z-[90] grid p-6 ${
+          className={`update-modal-backdrop fixed z-[90] grid ${
             isForced
-              ? "is-forced-update inset-0 place-items-center"
-              : "is-optional-update bottom-0 inset-x-0 pointer-events-none place-items-end"
+              ? "is-forced-update inset-0 place-items-center p-6"
+              : "is-optional-update bottom-6 right-6 w-[min(430px,calc(100vw-48px))] pointer-events-none"
           }`}
         >
           <motion.div

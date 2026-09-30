@@ -1,15 +1,7 @@
 import type { AppSettings } from "@private-voice/shared";
 
 export type SettingsSectionId =
-  | "account"
-  | "general"
-  | "audio"
-  | "quickMessages"
-  | "recordings"
-  | "ai"
-  | "roomHistory"
-  | "about"
-  | "diagnostics";
+  "account" | "general" | "audio" | "quickMessages" | "recordings" | "ai" | "about" | "diagnostics";
 
 export const SETTINGS_SECTION_REQUEST_KEY = "shanghao.settings-section";
 
@@ -20,7 +12,6 @@ const settingsSectionIds: readonly SettingsSectionId[] = [
   "quickMessages",
   "recordings",
   "ai",
-  "roomHistory",
   "about",
   "diagnostics",
 ];
@@ -69,11 +60,9 @@ export const settingsSectionSignature = (
     case "general":
       return JSON.stringify([
         settings.minimizeToTray,
-        settings.isDeveloperModeEnabled,
-        settings.isDynamicWeatherEnabled,
         settings.weatherLocationMode,
         settings.weatherManualCity,
-        settings.weatherEffectMode,
+        settings.isSystemWeatherLocationEnabled,
       ]);
     case "audio":
       return JSON.stringify([
@@ -99,8 +88,6 @@ export const settingsSectionSignature = (
         settings.isAiAutoTranscribeEnabled,
         settings.isAiAutoOrganizeEnabled,
       ]);
-    case "roomHistory":
-      return JSON.stringify(settings.lastDailyRoomReportSeen);
     case "diagnostics":
       return settings.relayServerUrl ?? "";
     default:

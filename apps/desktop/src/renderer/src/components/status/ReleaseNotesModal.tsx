@@ -15,17 +15,22 @@ import { DialogCloseButton } from "../base/DialogCloseButton";
 
 export const ReleaseNotesModal = () => {
   const shouldReduceMotion = useReducedMotion();
-  const settings = useSettingsStore((state) => state.settings);
+  const hasCompletedProfileSetup = useSettingsStore(
+    (state) => state.settings?.hasCompletedProfileSetup,
+  );
+  const lastReleaseNotesVersionSeen = useSettingsStore(
+    (state) => state.settings?.lastReleaseNotesVersionSeen,
+  );
   const runtimeInfo = useSettingsStore((state) => state.runtimeInfo);
   const saveSettings = useSettingsStore((state) => state.saveSettings);
 
   const version = runtimeInfo?.version ?? "";
   const release = getReleaseHistoryEntry(version);
   const isVisible = Boolean(
-    settings?.hasCompletedProfileSetup &&
+    hasCompletedProfileSetup &&
     version &&
     version !== "0.0.0" &&
-    settings.lastReleaseNotesVersionSeen !== version,
+    lastReleaseNotesVersionSeen !== version,
   );
 
   const dismiss = useCallback(() => {

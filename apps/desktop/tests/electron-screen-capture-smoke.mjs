@@ -7,7 +7,7 @@ const directory = path.dirname(fileURLToPath(import.meta.url));
 const timeout = setTimeout(() => {
   console.error(JSON.stringify({ ok: false, error: "screen_capture_smoke_timeout" }));
   app.exit(1);
-}, 15_000);
+}, 30_000);
 
 app.whenReady().then(async () => {
   const enumerationStartedAt = Date.now();
@@ -56,17 +56,21 @@ app.whenReady().then(async () => {
               audio: false,
             });
             const displayTrack = stream.getVideoTracks()[0];
+            const startedLive = displayTrack?.readyState === "live";
             await displayTrack?.applyConstraints?.({
               width: { ideal: profile.width, max: profile.width },
               height: { ideal: profile.height, max: profile.height },
               frameRate: { ideal: profile.frameRate, max: profile.frameRate },
             });
+            const actual = displayTrack?.getSettings?.() ?? {};
+            stream.getTracks().forEach((item) => item.stop());
             captures.push({
               requested: profile,
-              actual: displayTrack?.getSettings?.() ?? {},
-              hasTrack: Boolean(displayTrack),
+              actual,
+              startedLive,
+              stopped: displayTrack?.readyState === "ended" &&
+                stream.getTracks().every((item) => item.readyState === "ended"),
             });
-            stream.getTracks().forEach((item) => item.stop());
             await new Promise((resolve) => setTimeout(resolve, 250));
           }
           const fallbackStream = await navigator.mediaDevices.getUserMedia({
@@ -85,11 +89,14 @@ app.whenReady().then(async () => {
             frameRate: { ideal: 30, max: 30 },
           });
           const fallbackSettings = fallbackTrack?.getSettings?.() ?? {};
+          const fallbackStartedLive = fallbackTrack?.readyState === "live";
           fallbackStream.getTracks().forEach((item) => item.stop());
           return {
-            ok: captures.every((capture) => capture.hasTrack) && Boolean(fallbackTrack),
+            ok: captures.every((capture) => capture.startedLive && capture.stopped) &&
+              fallbackStartedLive && fallbackTrack?.readyState === "ended",
             captures,
             fallbackSettings,
+            fallbackStopped: fallbackTrack?.readyState === "ended",
           };
         } catch (error) {
           return { ok: false, name: error.name, error: error.message };

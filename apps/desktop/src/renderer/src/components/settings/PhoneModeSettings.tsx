@@ -5,9 +5,8 @@ import { SettingsItemRow } from "./SettingsItemRow";
 import { ShortcutInput } from "../base/ShortcutInput";
 
 export function PhoneModeSettings() {
-  const settings = useSettingsStore((state) => state.settings);
-  const shortcut = settings?.phoneModeShortcut ?? "";
-  const trigger = settings?.phoneModeTrigger ?? "hold";
+  const shortcut = useSettingsStore((state) => state.settings?.phoneModeShortcut ?? "");
+  const trigger = useSettingsStore((state) => state.settings?.phoneModeTrigger ?? "hold");
   const configure = async (nextKey: string, nextTrigger: "hold" | "toggle") => {
     try {
       await desktopApi.phoneMode.configure(nextKey, nextTrigger);

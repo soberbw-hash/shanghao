@@ -356,11 +356,6 @@
   opacity: 1;
 }
 
-.room-history-day-summary {
-  display: block;
-  color: #60728a;
-}
-
 @media (max-width: 700px) {
   .settings-reset-section {
     align-items: flex-start;

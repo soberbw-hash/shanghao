@@ -32,6 +32,8 @@ const isStoredItem = (value: unknown): value is RoomCollectionItem => {
         : MAX_ROOM_COLLECTION_TEXT_LENGTH) &&
     typeof item.createdByPeerId === "string" &&
     item.createdByPeerId.length <= 128 &&
+    (item.createdByProfileId === undefined ||
+      (typeof item.createdByProfileId === "string" && item.createdByProfileId.length <= 256)) &&
     typeof item.createdByNickname === "string" &&
     item.createdByNickname.length <= 32 &&
     typeof item.createdAt === "string" &&

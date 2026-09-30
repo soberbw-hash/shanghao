@@ -108,7 +108,11 @@ test("user settings survive save and a fresh store load", async () => {
         slots: store
           .getSnapshot()
           .quickMessages.slots.map((slot, index) =>
-            index === 7 ? { ...slot, presetId: "legacy-hear", enabled: true } : slot,
+            index === 7
+              ? { ...slot, presetId: "legacy-hear", enabled: true }
+              : index === 0
+                ? { ...slot, presetId: undefined, enabled: false }
+                : slot,
           ),
         musicSlots: store.getSnapshot().quickMessages.musicSlots.map((slot, index) =>
           index === 4
@@ -117,7 +121,9 @@ test("user settings survive save and a fresh store load", async () => {
                 presetId: defaultSettings.quickMessages.musicSlots[0]?.presetId,
                 enabled: true,
               }
-            : slot,
+            : index === 3
+              ? { ...slot, presetId: undefined, enabled: false }
+              : slot,
         ),
       },
     });
@@ -126,7 +132,9 @@ test("user settings survive save and a fresh store load", async () => {
     assert.deepEqual(reloaded, saved);
     assert.equal(reloaded.recordingSaveDirectory, "D:/上号录音");
     assert.equal(reloaded.quickMessages.soundVolume, 0.42);
+    assert.equal(reloaded.quickMessages.slots[0]?.presetId, undefined);
     assert.equal(reloaded.quickMessages.slots[7]?.presetId, "legacy-hear");
+    assert.equal(reloaded.quickMessages.musicSlots[3]?.presetId, undefined);
     assert.equal(
       reloaded.quickMessages.musicSlots[4]?.presetId,
       defaultSettings.quickMessages.musicSlots[0]?.presetId,

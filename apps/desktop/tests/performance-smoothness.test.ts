@@ -53,14 +53,13 @@ test("settings keep lightweight pages warm and unload hidden heavy work", () => 
   assert.equal(shellStyles.includes("transition-behavior: allow-discrete"), true);
 });
 
-test("the 56-switch settings stress sequence keeps mounted section count bounded", () => {
+test("the 49-switch settings stress sequence keeps mounted section count bounded", () => {
   const sections: SettingsSectionId[] = [
     "general",
     "audio",
     "quickMessages",
     "ai",
     "recordings",
-    "roomHistory",
     "account",
     "about",
   ];

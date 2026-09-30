@@ -1,18 +1,11 @@
-import { useEffect, useState } from "react";
-
 import type {
   AppSettings,
-  RelayStatusSnapshot,
   RendererDiagnosticsSummary,
-  RuntimeHealthSnapshot,
   WindowsIntegrationStatus,
 } from "@private-voice/shared";
 
 import { Button } from "../base/Button";
-import {
-  runtimeHealthCollector,
-  sanitizeRuntimeServerUrl,
-} from "../../features/diagnostics/runtimeHealthCollector";
+import { sanitizeRuntimeServerUrl } from "../../features/diagnostics/runtimeHealthCollector";
 import {
   microphoneHealth,
   roomAudioHealth,
@@ -29,6 +22,7 @@ import { useAudioStore } from "../../store/audioStore";
 import { useRoomStore } from "../../store/roomStore";
 import { useSettingsStore } from "../../store/settingsStore";
 import { DiagnosticsSettingsCard } from "./DiagnosticsSettingsCard";
+import { useDiagnosticsRefresh } from "./useDiagnosticsRefresh";
 
 export const SettingsDiagnosticsSection = ({
   settings,
@@ -42,7 +36,7 @@ export const SettingsDiagnosticsSection = ({
   settings: AppSettings;
   windowsStatus?: WindowsIntegrationStatus;
   isRepairingFirewall: boolean;
-  onRefreshWindows: () => void;
+  onRefreshWindows: () => Promise<void>;
   onRepairFirewall: () => void;
   onOpenAudioSettings: () => void;
   onOpenAiSettings: () => void;
@@ -52,46 +46,15 @@ export const SettingsDiagnosticsSection = ({
   const resetSettings = useSettingsStore((state) => state.resetSettings);
   const outputDeviceCount = useAudioStore((state) => state.outputDevices.length);
   const localAudioDiagnostics = useAudioStore((state) => state.localDiagnostics);
-  const [runtimeHealth, setRuntimeHealth] = useState<RuntimeHealthSnapshot | undefined>(() =>
-    runtimeHealthCollector.snapshot(),
-  );
-  const [relay, setRelay] = useState<RelayStatusSnapshot>();
-
-  useEffect(() => {
-    if (!settings.relayServerUrl) return;
-    let cancelled = false;
-    void window.desktopApi.diagnostics
-      .testServer(settings.relayServerUrl)
-      .then((snapshot) => {
-        if (!cancelled) setRelay(snapshot);
-      })
-      .catch(() => {
-        if (!cancelled) setRelay(undefined);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [settings.relayServerUrl]);
-
-  useEffect(() => {
-    const unsubscribe = runtimeHealthCollector.subscribe(setRuntimeHealth);
-    const stopDetailed = runtimeHealthCollector.observeDetailed();
-    return () => {
-      stopDetailed();
-      unsubscribe();
-    };
-  }, []);
-
-  const refreshDiagnostics = () => {
-    void runtimeHealthCollector.refresh().catch(() => undefined);
-    if (settings.relayServerUrl) {
-      void window.desktopApi.diagnostics
-        .testServer(settings.relayServerUrl)
-        .then(setRelay)
-        .catch(() => setRelay(undefined));
-    }
-    onRefreshWindows();
-  };
+  const {
+    runtimeHealth,
+    relay,
+    isRefreshingHealth,
+    isRefreshingWindows,
+    checkFeedback,
+    refreshDiagnostics,
+    refreshWindowsPermissions,
+  } = useDiagnosticsRefresh(settings.relayServerUrl, onRefreshWindows);
 
   const buildRendererDiagnostics = (): RendererDiagnosticsSummary => {
     const runtime = getRoomRuntimeDiagnostics();
@@ -209,7 +172,10 @@ export const SettingsDiagnosticsSection = ({
         onOpenHome={() => navigate("home")}
         onOpenRoom={() => navigate("room")}
         onRefreshHealth={refreshDiagnostics}
-        onRefreshWindows={onRefreshWindows}
+        onRefreshWindows={refreshWindowsPermissions}
+        isRefreshingHealth={isRefreshingHealth}
+        isRefreshingWindows={isRefreshingWindows}
+        checkFeedback={checkFeedback}
         onRepairFirewall={onRepairFirewall}
         isRepairingFirewall={isRepairingFirewall}
         onInjectFault={(kind) =>

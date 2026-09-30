@@ -53,6 +53,9 @@ test("runtime health uses real Electron and animation-frame measurements", () =>
   const diagnosticsSection = readDesktop(
     "src/renderer/src/components/settings/SettingsDiagnosticsSection.tsx",
   );
+  const diagnosticsRefresh = readDesktop(
+    "src/renderer/src/components/settings/useDiagnosticsRefresh.ts",
+  );
   const rendererMonitor = readDesktop(
     "src/renderer/src/features/diagnostics/rendererPerformanceMonitor.ts",
   );
@@ -69,7 +72,10 @@ test("runtime health uses real Electron and animation-frame measurements", () =>
   assert.doesNotMatch(appSource, /rendererPerformanceMonitor\.start\(\)/);
   assert.match(settingsSource, /rendererPerformanceMonitor\.start\(\)/);
   assert.match(appSource, /runtimeHealthCollector\.start\(\)/);
-  assert.match(diagnosticsSection, /runtimeHealthCollector\.observeDetailed\(\)/);
+  assert.match(diagnosticsSection, /useDiagnosticsRefresh\(/);
+  assert.match(diagnosticsRefresh, /runtimeHealthCollector\.observeDetailed\(\)/);
+  assert.match(diagnosticsRefresh, /正在检查系统权限/);
+  assert.match(diagnosticsRefresh, /系统权限检查失败/);
   assert.doesNotMatch(settingsSource, /useRoomStore|getRoomRuntimeDiagnostics/);
 });
 

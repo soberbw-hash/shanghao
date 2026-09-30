@@ -15,6 +15,7 @@ import { useGlobalMuteSync } from "../hooks/useGlobalMuteSync";
 import { usePhoneModeSync } from "../hooks/usePhoneModeSync";
 import { useLocalAudioTransport } from "../hooks/useLocalAudioTransport";
 import { useUiFeedbackSounds } from "../hooks/useUiFeedbackSounds";
+import { useWeatherPreload } from "../hooks/useWeatherPreload";
 import { dispatchQuickMessageShortcut } from "../hooks/useRoomState";
 import { AccountPage } from "../pages/AccountPage";
 import { SharedOverlays } from "../pages/SharedOverlays";
@@ -43,6 +44,7 @@ export const App = () => {
   usePhoneModeSync();
   useLocalAudioTransport();
   useUiFeedbackSounds();
+  useWeatherPreload();
 
   useEffect(
     () => window.desktopApi.shortcuts.onQuickMessageTriggered(dispatchQuickMessageShortcut),

@@ -1125,20 +1125,36 @@ export const RecordingLibrarySettingsCard = ({
               <div className="recording-player-sticky">
                 <div className="recording-player-head">
                   <div className="recording-player-heading min-w-0">
-                    {renamingId === selected.recordingId ? (
-                      <div className="flex min-w-0 items-center gap-2">
-                        <input
-                          className="min-w-0 flex-1 rounded-xl border border-[#9fc9f5] bg-white/80 px-3 py-2 text-sm font-bold text-[#29435f] outline-none focus:ring-2 focus:ring-[#76b5f5]/30"
-                          value={renameTitle}
-                          maxLength={120}
-                          autoFocus
-                          aria-label="录音名称"
-                          onChange={(event) => setRenameTitle(event.currentTarget.value)}
-                          onKeyDown={(event) => {
-                            if (event.key === "Enter") void commitRename(selected);
-                            if (event.key === "Escape") setRenamingId(undefined);
-                          }}
-                        />
+                    <div className="flex min-w-0 items-center gap-2">
+                      <div className="recording-player-title">
+                        <time
+                          className="recording-player-datetime"
+                          dateTime={recordingDate(selected).toISOString()}
+                        >
+                          {dateLabel(DATE_FORMAT.format(recordingDate(selected)))}{" "}
+                          <span className="recording-player-clock">
+                            {TIME_FORMAT.format(recordingDate(selected))}
+                          </span>
+                        </time>
+                        <span aria-hidden="true">·</span>
+                        {renamingId === selected.recordingId ? (
+                          <input
+                            className="min-w-0 flex-1 rounded-xl border border-[#9fc9f5] bg-white/80 px-3 py-2 text-sm font-bold text-[#29435f] outline-none focus:ring-2 focus:ring-[#76b5f5]/30"
+                            value={renameTitle}
+                            maxLength={120}
+                            autoFocus
+                            aria-label="录音名称"
+                            onChange={(event) => setRenameTitle(event.currentTarget.value)}
+                            onKeyDown={(event) => {
+                              if (event.key === "Enter") void commitRename(selected);
+                              if (event.key === "Escape") setRenamingId(undefined);
+                            }}
+                          />
+                        ) : (
+                          <span className="recording-player-name">{recordingTitle(selected)}</span>
+                        )}
+                      </div>
+                      {renamingId === selected.recordingId ? (
                         <button
                           type="button"
                           className="recording-icon-button"
@@ -1148,13 +1164,7 @@ export const RecordingLibrarySettingsCard = ({
                         >
                           <Check />
                         </button>
-                      </div>
-                    ) : (
-                      <div className="flex min-w-0 items-center gap-2">
-                        <div className="recording-player-title truncate">
-                          {dateLabel(DATE_FORMAT.format(recordingDate(selected)))} ·{" "}
-                          {recordingTitle(selected)}
-                        </div>
+                      ) : (
                         <button
                           type="button"
                           className="recording-icon-button h-8 w-8 shrink-0"
@@ -1165,10 +1175,9 @@ export const RecordingLibrarySettingsCard = ({
                         >
                           <Pencil />
                         </button>
-                      </div>
-                    )}
+                      )}
+                    </div>
                     <div className="recording-player-subtitle">
-                      录制时间 {TIME_FORMAT.format(recordingDate(selected))} ·{" "}
                       {formatBytes(selected.fileSize)}
                       {selected.markers.length ? ` · ${selected.markers.length} 个标记` : ""}
                     </div>

@@ -108,8 +108,6 @@ export const TeamIsland = ({
   const isDynamicWeatherEnabled = useSettingsStore(
     (state) => state.settings?.isDynamicWeatherEnabled,
   );
-  const weatherLocationMode = useSettingsStore((state) => state.settings?.weatherLocationMode);
-  const weatherManualCity = useSettingsStore((state) => state.settings?.weatherManualCity);
   const isRoomPageObscured = useAppStore((state) => state.currentPage === "settings");
   const weatherSnapshot = useWeatherStore((state) => state.snapshot);
   const weatherPreview = useWeatherStore((state) => state.preview);
@@ -460,11 +458,7 @@ export const TeamIsland = ({
           {wallFeatures["wall-left"].includes("weather-window") &&
           sceneFeatureRegistry.has("weather-window") ? (
             <div className="scene-window-nook">
-              <DynamicWeatherWindow
-                isEnabled={isDynamicWeatherEnabled ?? true}
-                locationMode={weatherLocationMode ?? "auto"}
-                manualCity={weatherManualCity ?? ""}
-              />
+              <DynamicWeatherWindow isEnabled={isDynamicWeatherEnabled ?? true} />
             </div>
           ) : null}
           {wallFeatures["wall-right"].includes("wall-clock") &&

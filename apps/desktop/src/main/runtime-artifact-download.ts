@@ -23,6 +23,7 @@ interface RuntimeArtifactDownloadOptions {
   fetcher?: RuntimeArtifactFetcher;
   attempts?: number;
   idleTimeoutMs?: number;
+  lockWaitTimeoutMs?: number;
   signal?: AbortSignal;
   onRetry?: (context: {
     attempt: number;
@@ -91,15 +92,21 @@ const processIsAlive = (pid: number): boolean => {
 const acquireArtifactLock = async (
   destination: string,
   signal?: AbortSignal,
+  lockWaitTimeoutMs = 30 * 60_000,
 ): Promise<() => Promise<void>> => {
   const lockDirectory = `${destination}.lock`;
   const reclaimDirectory = `${lockDirectory}.reclaim`;
   const ownerToken = randomUUID();
   const ownerPath = path.join(lockDirectory, "owner.json");
+  const reclaimOwnerPath = path.join(reclaimDirectory, "owner.json");
   const staleOwnerGraceMs = 30_000;
+  const lockWaitStartedAt = Date.now();
 
   while (true) {
     if (signal?.aborted) throw new Error("ai_task_paused");
+    if (Date.now() - lockWaitStartedAt >= lockWaitTimeoutMs) {
+      throw new Error("runtime_artifact_lock_timeout");
+    }
     try {
       await mkdir(lockDirectory);
       await writeFile(ownerPath, JSON.stringify({ pid: process.pid, token: ownerToken }), {
@@ -137,7 +144,14 @@ const acquireArtifactLock = async (
       try {
         await mkdir(reclaimDirectory);
         ownsReclaim = true;
+        await writeFile(reclaimOwnerPath, JSON.stringify({ pid: process.pid, token: ownerToken }), {
+          flag: "wx",
+        });
       } catch (error) {
+        if (ownsReclaim) {
+          await rm(reclaimDirectory, { recursive: true, force: true });
+          ownsReclaim = false;
+        }
         if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
       }
       if (ownsReclaim) {
@@ -157,6 +171,32 @@ const acquireArtifactLock = async (
           if (stillAbandoned) await rm(lockDirectory, { recursive: true, force: true });
         } finally {
           await rm(reclaimDirectory, { recursive: true, force: true });
+        }
+      } else {
+        let reclaimOwner: { pid?: number } | undefined;
+        let reclaimAgeMs = 0;
+        try {
+          reclaimOwner = JSON.parse(await readFile(reclaimOwnerPath, "utf8")) as {
+            pid?: number;
+          };
+          reclaimAgeMs = Date.now() - (await stat(reclaimDirectory)).mtimeMs;
+        } catch {
+          try {
+            reclaimAgeMs = Date.now() - (await stat(reclaimDirectory)).mtimeMs;
+          } catch {
+            // Another process already released or reclaimed it.
+          }
+        }
+        const reclaimOwnerIsDead =
+          Number.isSafeInteger(reclaimOwner?.pid) && !processIsAlive(reclaimOwner!.pid!);
+        if (reclaimOwnerIsDead || (!reclaimOwner?.pid && reclaimAgeMs >= staleOwnerGraceMs)) {
+          const abandonedPath = `${reclaimDirectory}.abandoned-${randomUUID()}`;
+          try {
+            await rename(reclaimDirectory, abandonedPath);
+            await rm(abandonedPath, { recursive: true, force: true });
+          } catch (error) {
+            if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+          }
         }
       }
     }
@@ -263,6 +303,12 @@ export const downloadVerifiedRuntimeArtifact = async (
   if (!Number.isSafeInteger(options.expectedBytes) || options.expectedBytes <= 0) {
     throw new Error("runtime_artifact_size_invalid");
   }
+  if (
+    options.lockWaitTimeoutMs !== undefined &&
+    (!Number.isSafeInteger(options.lockWaitTimeoutMs) || options.lockWaitTimeoutMs <= 0)
+  ) {
+    throw new Error("runtime_artifact_lock_wait_invalid");
+  }
   if (options.signal?.aborted) throw new Error("ai_task_paused");
   if (!options.sources.length) throw new Error("runtime_artifact_source_missing");
   await mkdir(path.dirname(options.destination), { recursive: true });
@@ -271,7 +317,11 @@ export const downloadVerifiedRuntimeArtifact = async (
     return options.destination;
   }
 
-  const releaseLock = await acquireArtifactLock(options.destination, options.signal);
+  const releaseLock = await acquireArtifactLock(
+    options.destination,
+    options.signal,
+    options.lockWaitTimeoutMs,
+  );
   try {
     if (await verifyArtifact(options.destination, options.expectedBytes, options.expectedSha256)) {
       if (options.signal?.aborted) throw new Error("ai_task_paused");

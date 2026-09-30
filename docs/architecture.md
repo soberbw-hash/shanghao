@@ -100,7 +100,7 @@ flowchart LR
 
 ![ShangHao 3.0 Core 与平台边界](./assets/architecture-core-platform.svg)
 
-Rust Workspace 当前只有一个有实际职责的 `shanghao-core` crate，承担 Windows 前台
+Rust Workspace 当前是小型原生适配层，只有一个有实际职责的 `shanghao-core` crate，承担 Windows 前台
 活动查询、稳定文件身份和受控子进程生命周期。它不复制 WebRTC、DeepFilter、VAD、
 VibeVoice 或 Qwen 算法。Electron Host 继续负责 Chromium、窗口、WebRTC Host、托盘、
 更新、Deep Link 和 OS 集成。
@@ -118,13 +118,31 @@ VibeVoice 或 Qwen 算法。Electron Host 继续负责 Chromium、窗口、WebRT
 - Weather、Calendar、Clock 和角色环境动画在页面隐藏时暂停；信令、WebRTC、音频、
   录音和模型任务不属于视觉暂停域。
 - `styles/index.css` 只保存有序导入，实际样式按基础、场景、角色、聊天录音、动效和
-  最终材质等职责拆分。架构测试限制入口与分片继续膨胀。
+  最终材质等职责拆分。架构测试为每个现存分片冻结上限；新增职责建立有名称的分片，
+  已有分片只降不升，避免用后续补丁扩大最终材质层。
+
+## 可选 AI 与核心通话的边界
+
+转录和语音记忆由用户主动选择；大型模型与其运行时按需下载，不是使用语音房间的前置条件。
+主进程目前仍负责 AI 任务的调度、取消和数据提交。转录任务单元统计、说话观察归属与持久化
+各有独立模块，通话媒体路径不依赖这些任务。
+
+将 AI 实现改为独立安装插件需要先证明安装包体积收益，并设计插件版本、可信加载、旧录音与
+转录数据迁移、升级失败回滚和任务中断恢复。完成这些边界前不移动已验证的 WebRTC、降噪或
+录音链路；也不把现有按需下载的模型误称为独立插件。
+
+CloudBase 是当前主要账号路径。Supabase 仅为旧部署兼容保留，移除前需要验证客户端、Relay
+和现有账号的迁移及回退。天气可以使用不申请系统权限的网络大致定位；Windows 精确定位只在
+用户显式开启后请求。Renderer 仍依赖组件内联样式，CSP 中的 `style-src 'unsafe-inline'`
+暂时保留，待样式迁移与动效回归验证后再评估收紧。
 
 ## 工程守卫与验证
 
-`architecture-guard.test.ts` 对 CSS 入口/分片、RoomClient、RoomPage、SignalingServer、
+`architecture-guard.test.ts` 对 CSS 入口/各分片、RoomClient、语音记忆服务、RoomPage、SignalingServer、
 Core/Platform/视觉模块和 Preload 能力边界设置可执行约束。CI 保留原有 Release 工作流，
 增加 Rust 格式/单测；长会话工作流必须手动触发，不会在普通提交上自动消耗两小时。
+行数上限以本次已审查的文件大小为基线，只随职责抽离而下降。需要新增实现时先拆出有清晰
+所有权的新模块，不能仅把上限数字调大；自动化检查之外仍需代码评审判断职责是否真正分离。
 
 本地验收默认不打包：
 

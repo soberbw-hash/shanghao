@@ -75,6 +75,7 @@ test("reconnect and detached viewer waits become actionable instead of blocking 
 
 test("optional updates, long AI waits, and toasts all have a clear escape route", () => {
   const update = readRenderer("components/status/UpdateModal.tsx");
+  const sharedOverlays = readRenderer("pages/SharedOverlays.tsx");
   const ask = readRenderer("components/room/RoomAskDialog.tsx");
   const toast = readRenderer("components/layout/ToastRegion.tsx");
   const appStore = readRenderer("store/appStore.ts");
@@ -82,7 +83,10 @@ test("optional updates, long AI waits, and toasts all have a clear escape route"
   assert.match(update, /isForced/);
   assert.match(update, /DialogCloseButton label="稍后提醒"/);
   assert.match(update, /shanghao:dismissed-update-version/);
-  assert.match(update, /is-optional-update bottom-0 inset-x-0/);
+  assert.match(update, /is-optional-update bottom-6 right-6 w-\[min\(430px,calc\(100vw-48px\)\)\]/);
+  assert.doesNotMatch(update, /is-optional-update bottom-0 inset-x-0/);
+  assert.match(update, /shanghao:update-dismissed/);
+  assert.match(sharedOverlays, /!updatePending \? <ReleaseNotesModal \/>/);
   assert.match(update, /mt-6 flex min-w-0 flex-wrap gap-3/);
   assert.match(update, /min-w-\[180px\] flex-\[1_1_180px\]/);
   assert.match(update, /shrink-0 whitespace-nowrap/);

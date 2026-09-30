@@ -11,6 +11,7 @@ import type {
 import {
   resolveAutomaticWeatherLocation,
   resolveManualWeatherLocation,
+  resolveSystemWeatherCity,
   resolveSystemWeatherLocation,
   type WeatherJsonFetcher,
   type WeatherLocation,
@@ -18,6 +19,7 @@ import {
 
 const WEATHER_REFRESH_MS = 25 * 60 * 1_000;
 const LOCATION_REFRESH_MS = 24 * 60 * 60 * 1_000;
+const CITY_LOOKUP_TIMEOUT_MS = 1_800;
 const WEATHER_CACHE_FILE = "local-weather-cache.json";
 
 interface WeatherCacheFile {
@@ -155,7 +157,14 @@ export class LocalWeatherService {
     const cache = await this.readCache();
     const cached = cache.snapshots[key];
     const now = this.now();
-    if (!request.forceRefresh && cached && Date.parse(cached.expiresAt) > now.getTime()) {
+    const needsSystemCity =
+      request.systemPosition && cached?.locationSource === "system" && !cached.city;
+    if (
+      !request.forceRefresh &&
+      cached &&
+      Date.parse(cached.expiresAt) > now.getTime() &&
+      !needsSystemCity
+    ) {
       return { ...cached, source: "cache" };
     }
     const existing = this.pending.get(key);
@@ -177,9 +186,9 @@ export class LocalWeatherService {
     try {
       const cache = await this.readCache();
       const now = this.now();
+      const fetchJson: WeatherJsonFetcher = (url) => this.fetchJson(url);
       let location = cache.locations[key];
       if (!location || !isFresh(location.resolvedAt, now, LOCATION_REFRESH_MS)) {
-        const fetchJson: WeatherJsonFetcher = (url) => this.fetchJson(url);
         const resolved = request.systemPosition
           ? resolveSystemWeatherLocation(request.systemPosition)
           : request.locationMode === "manual"
@@ -190,9 +199,25 @@ export class LocalWeatherService {
         location = { ...resolved, resolvedAt: now.toISOString() };
         cache.locations[key] = location;
       }
+      const cityTask =
+        location.source === "system" && !location.city && request.systemPosition
+          ? resolveSystemWeatherCity(request.systemPosition, (url) =>
+              this.fetchJson(url, CITY_LOOKUP_TIMEOUT_MS),
+            )
+          : Promise.resolve(location.city);
+      const [cityResult, forecastResult] = await Promise.allSettled([
+        cityTask,
+        this.fetchJson(this.createForecastUrl(location)),
+      ]);
+      const city = cityResult.status === "fulfilled" ? cityResult.value : undefined;
+      if (city && !location.city) {
+        location = { ...location, city };
+        cache.locations[key] = location;
+      }
       resolvedCity = location.city;
       resolvedLocationSource = location.source;
-      const payload = readRecord(await this.fetchJson(this.createForecastUrl(location)));
+      if (forecastResult.status === "rejected") throw forecastResult.reason;
+      const payload = readRecord(forecastResult.value);
       const current = readRecord(payload?.current);
       const daily = readRecord(payload?.daily);
       const weatherCode = finiteNumber(current?.weather_code);
@@ -256,10 +281,10 @@ export class LocalWeatherService {
     return `https://api.open-meteo.com/v1/forecast?${parameters.toString()}`;
   }
 
-  private async fetchJson(url: string): Promise<unknown> {
+  private async fetchJson(url: string, timeoutMs = 8_000): Promise<unknown> {
     const response = await this.fetcher(url, {
       headers: { Accept: "application/json", "User-Agent": "ShangHao-Weather/1" },
-      signal: AbortSignal.timeout(8_000),
+      signal: AbortSignal.timeout(timeoutMs),
     });
     if (!response.ok) throw new Error(`weather_request_${response.status}`);
     return response.json();

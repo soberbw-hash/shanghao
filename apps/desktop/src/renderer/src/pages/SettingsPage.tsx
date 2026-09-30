@@ -1,7 +1,6 @@
 import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
   Activity,
-  CalendarDays,
   Headphones,
   Info,
   Library,
@@ -47,7 +46,6 @@ import {
   preloadAiVoiceMemorySnapshot,
   AiVoiceMemorySettingsCard as AiVoiceMemorySettingsCardView,
 } from "../components/settings/AiVoiceMemorySettingsCard";
-import { RoomHistorySettingsCard } from "../components/settings/RoomHistorySettingsCard";
 import { WeatherSettingsCard } from "../components/settings/WeatherSettingsCard";
 import { StartupSplashPage } from "../components/status/StartupSplashPage";
 import { usePrefersReducedMotion } from "../hooks/usePrefersReducedMotion";
@@ -63,7 +61,6 @@ const sections = [
   { id: "quickMessages", label: "快捷消息", icon: Zap },
   { id: "recordings", label: "录音库", icon: Library },
   { id: "ai", label: "AI 功能", icon: Sparkles },
-  { id: "roomHistory", label: "房间记录", icon: CalendarDays },
   { id: "about", label: "关于上号", icon: Info },
   { id: "diagnostics", label: "诊断", icon: Activity },
 ] satisfies Array<{ id: SettingsSectionId; label: string; icon: typeof Headphones }>;
@@ -256,16 +253,15 @@ export const SettingsPage = ({ isActive = true }: { isActive?: boolean }) => {
     interactionPerformanceMonitor.afterNextPaint(interactionId);
   };
 
-  const refreshWindowsDiagnostics = () => {
+  const refreshWindowsDiagnostics = async (): Promise<void> => {
     setIsWindowsDiagnosticsLoading(true);
-    void window.desktopApi.windows
-      .getStatus()
-      .then((snapshot) => {
-        cachedWindowsDiagnostics = snapshot;
-        setWindowsDiagnostics(snapshot);
-      })
-      .catch((error) => pushToast({ tone: "danger", ...toUserFacingError(error, "settings") }))
-      .finally(() => setIsWindowsDiagnosticsLoading(false));
+    try {
+      const snapshot = await window.desktopApi.windows.getStatus();
+      cachedWindowsDiagnostics = snapshot;
+      setWindowsDiagnostics(snapshot);
+    } finally {
+      setIsWindowsDiagnosticsLoading(false);
+    }
   };
   const handleRepairFirewall = () => {
     if (isRepairingFirewall) return;
@@ -312,25 +308,13 @@ export const SettingsPage = ({ isActive = true }: { isActive?: boolean }) => {
   const content: Record<SettingsSectionId, React.ReactNode> = {
     account: <AccountSettingsCard />,
     general: (
-      <SettingsSection title="应用" description="控制窗口与图形渲染。">
+      <SettingsSection title="通用" description="管理窗口与天气位置。">
         <div className="space-y-3">
           <SettingsItemRow label="关闭窗口时留在后台">
             <Switch
               ariaLabel="关闭窗口时留在后台"
               isChecked={settings.minimizeToTray}
               onChange={(minimizeToTray) => void handleSaveSettings({ minimizeToTray })}
-            />
-          </SettingsItemRow>
-          <SettingsItemRow
-            label="开发者模式"
-            description="显示服务器切换和测试入口。普通使用无需开启。"
-          >
-            <Switch
-              ariaLabel="开发者模式"
-              isChecked={settings.isDeveloperModeEnabled}
-              onChange={(isDeveloperModeEnabled) =>
-                void handleSaveSettings({ isDeveloperModeEnabled })
-              }
             />
           </SettingsItemRow>
           <SettingsItemRow
@@ -410,7 +394,6 @@ export const SettingsPage = ({ isActive = true }: { isActive?: boolean }) => {
         pushToast={pushToast}
       />
     ),
-    roomHistory: <RoomHistorySettingsCard settings={settings} onChange={handleSaveSettings} />,
     about: (
       <AboutSettingsCard
         runtimeInfo={runtimeInfo}

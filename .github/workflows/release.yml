@@ -49,6 +49,7 @@ jobs:
       - run: pnpm test:upgrade
       - run: pnpm test:runtime-health
       - run: pnpm test:audio-worklet
+      - run: pnpm test:screen-capture
       - run: pnpm test:five-peer-audio
       - run: pnpm test:five-peer-media
       - run: pnpm build

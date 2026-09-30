@@ -77,6 +77,7 @@ export const defaultSettings: AppSettings = {
   isDynamicWeatherEnabled: true,
   weatherLocationMode: "auto",
   weatherManualCity: "",
+  isSystemWeatherLocationEnabled: false,
   weatherEffectMode: "standard",
   isUiSoundEnabled: true,
   quickMessages: {
@@ -88,6 +89,7 @@ export const defaultSettings: AppSettings = {
   },
   isBackgroundUpdateCheckEnabled: true,
   lastCollectionViewedAt: undefined,
+  collectionViewedAtByRoom: undefined,
   hasInitializedCollectionReadState: false,
   lastUpdateCheckAt: undefined,
   lastUpdateVersionSeen: undefined,
@@ -108,6 +110,20 @@ const trimText = (value?: string): string | undefined => {
 
 const trimUnknownText = (value: unknown): string | undefined =>
   typeof value === "string" ? trimText(value) : undefined;
+
+const normalizeCollectionViewedAtByRoom = (
+  value: unknown,
+): AppSettings["collectionViewedAtByRoom"] => {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const input = value as Record<string, unknown>;
+  const result: NonNullable<AppSettings["collectionViewedAtByRoom"]> = {};
+  for (const roomId of ["main", "side"] as const) {
+    const candidate = trimUnknownText(input[roomId]);
+    const timestamp = candidate && candidate.length <= 40 ? Date.parse(candidate) : NaN;
+    if (Number.isFinite(timestamp)) result[roomId] = new Date(timestamp).toISOString();
+  }
+  return Object.keys(result).length > 0 ? result : undefined;
+};
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 // Account providers own the shape of their user ids. Supabase currently uses UUIDs,
@@ -143,47 +159,55 @@ const normalizeAccountAvatarPresetId = (value: unknown): string | undefined => {
 };
 
 const LEGACY_DEFAULT_QUICK_MESSAGE_VOLUME = 0.72;
+const LEGACY_MIGRATED_QUICK_MESSAGE_VOLUME = 0.68;
+// Profiles that predate saved slot arrays keep their former bindings. Only a
+// profile without quick-message settings receives the newly curated defaults.
+const LEGACY_QUICK_MESSAGE_SLOTS = [
+  { presetId: undefined, shortcut: "Ctrl+Alt+1", enabled: false },
+  { presetId: "legacy-shanghao", shortcut: "Ctrl+Alt+2", enabled: true },
+  { presetId: "legacy-mic", shortcut: "Ctrl+Alt+3", enabled: true },
+  { presetId: "legacy-wait", shortcut: "Ctrl+Alt+4", enabled: true },
+  { presetId: "legacy-hear", shortcut: "Ctrl+Alt+5", enabled: true },
+  { presetId: undefined, shortcut: "", enabled: false },
+  { presetId: undefined, shortcut: "", enabled: false },
+  { presetId: undefined, shortcut: "", enabled: false },
+];
+const LEGACY_QUICK_MESSAGE_MUSIC_SLOTS = [
+  ...DEFAULT_QUICK_MESSAGE_MUSIC_SLOTS.slice(0, 3),
+  { presetId: undefined, shortcut: "", enabled: false },
+  { presetId: undefined, shortcut: "", enabled: false },
+];
 
 const normalizeQuickMessages = (
   value: unknown,
   previousSettingsVersion: number,
 ): AppSettings["quickMessages"] => {
-  const raw =
-    value && typeof value === "object" && !Array.isArray(value)
-      ? (value as Record<string, unknown>)
-      : {};
-  const slots = normalizeQuickMessageSlots(raw.slots);
+  const hasSavedQuickMessages = Boolean(
+    value && typeof value === "object" && !Array.isArray(value),
+  );
+  const raw = hasSavedQuickMessages ? (value as Record<string, unknown>) : {};
+  const slots = normalizeQuickMessageSlots(
+    Array.isArray(raw.slots)
+      ? raw.slots
+      : hasSavedQuickMessages
+        ? LEGACY_QUICK_MESSAGE_SLOTS
+        : undefined,
+  );
   const normalizedSlots = slots.map((slot) =>
     slot.presetId === "legacy-ok" ? { ...slot, presetId: undefined, enabled: false } : slot,
   );
   const rawMusicPresetId =
     typeof raw.musicPresetId === "string" ? raw.musicPresetId.trim() || undefined : undefined;
-  const rawMusicSlots = Array.isArray(raw.musicSlots) ? raw.musicSlots : [];
-  const musicSlots = Array.from(
-    { length: DEFAULT_QUICK_MESSAGE_MUSIC_SLOTS.length },
-    (_, index) => {
-      const fallback = DEFAULT_QUICK_MESSAGE_MUSIC_SLOTS[index] ??
-        DEFAULT_QUICK_MESSAGE_MUSIC_SLOTS[0] ?? {
-          presetId: undefined,
-          shortcut: "",
-          enabled: false,
-        };
-      const candidate = rawMusicSlots[index];
-      const source =
-        candidate && typeof candidate === "object" && !Array.isArray(candidate)
-          ? (candidate as Record<string, unknown>)
-          : {};
-      return {
-        presetId:
-          typeof source.presetId === "string"
-            ? source.presetId.trim() || undefined
-            : index === 0
-              ? (rawMusicPresetId ?? fallback.presetId)
-              : fallback.presetId,
-        shortcut: typeof source.shortcut === "string" ? source.shortcut.trim() : fallback.shortcut,
-        enabled: normalizeBoolean(source.enabled, fallback.enabled),
-      };
-    },
+  const legacyMusicSlots = LEGACY_QUICK_MESSAGE_MUSIC_SLOTS.map((slot, index) =>
+    index === 0 && rawMusicPresetId ? { ...slot, presetId: rawMusicPresetId } : slot,
+  );
+  const musicSlots = normalizeQuickMessageSlots(
+    Array.isArray(raw.musicSlots)
+      ? raw.musicSlots
+      : hasSavedQuickMessages
+        ? legacyMusicSlots
+        : undefined,
+    DEFAULT_QUICK_MESSAGE_MUSIC_SLOTS,
   );
   const normalizedSoundVolume = normalizeNumber(
     raw.soundVolume,
@@ -193,7 +217,7 @@ const normalizeQuickMessages = (
   );
   const soundVolume =
     previousSettingsVersion < 35 && normalizedSoundVolume === LEGACY_DEFAULT_QUICK_MESSAGE_VOLUME
-      ? DEFAULT_QUICK_MESSAGE_VOLUME
+      ? LEGACY_MIGRATED_QUICK_MESSAGE_VOLUME
       : normalizedSoundVolume;
 
   return {
@@ -328,9 +352,12 @@ export const migrateSettings = (raw: RawSettings): MigrationResult => {
     soundVolume: defaultSettings.soundVolume,
     isSystemNotificationEnabled: true,
     isGameDetectionEnabled: true,
-    isDynamicWeatherEnabled: normalizeBoolean(raw.isDynamicWeatherEnabled, true),
+    // Dynamic weather is always on; legacy opt-out values must not leave the
+    // feature disabled after its user-facing switch is removed.
+    isDynamicWeatherEnabled: true,
     weatherLocationMode: raw.weatherLocationMode === "manual" ? "manual" : "auto",
     weatherManualCity: trimUnknownText(raw.weatherManualCity) ?? "",
+    isSystemWeatherLocationEnabled: raw.isSystemWeatherLocationEnabled === true,
     // Visual weather has one complete presentation. Keep the legacy field for
     // settings compatibility, but never migrate users into a reduced tier.
     weatherEffectMode: "standard",
@@ -347,6 +374,7 @@ export const migrateSettings = (raw: RawSettings): MigrationResult => {
     quickMessages: normalizeQuickMessages(raw.quickMessages, previousVersion),
     isBackgroundUpdateCheckEnabled: raw.isBackgroundUpdateCheckEnabled !== false,
     lastCollectionViewedAt: trimUnknownText(raw.lastCollectionViewedAt),
+    collectionViewedAtByRoom: normalizeCollectionViewedAtByRoom(raw.collectionViewedAtByRoom),
     hasInitializedCollectionReadState: raw.hasInitializedCollectionReadState === true,
     isAutoDownloadUpdateEnabled:
       typeof raw.isAutoDownloadUpdateEnabled === "boolean"

@@ -28,15 +28,12 @@ import {
   type VoiceMemorySummary,
   type VoiceMemorySearchRequest,
   type VoiceMemorySearchResult,
-  type VoiceMemorySpeakingObservation,
   type VoiceMemorySummaryPoint,
   type VoiceMemoryProcessingStage,
   type VoiceMemoryTaskDiagnostic,
   type VoiceMemoryTaskStatus,
   type VoiceMemoryTranscriptionModel,
   type VoiceMemoryTranscriptionAttempt,
-  type VoiceMemoryTranscriptionStats,
-  type VoiceMemoryTranscriptionUnit,
   type VoiceMemoryTranscriptSegment,
 } from "@private-voice/shared";
 
@@ -47,6 +44,11 @@ import type { TranscriptionChunkRuntimeResult } from "./asr-benchmark-runtime";
 import { TRANSCRIPTION_CHUNK_MS, transcriptionChunkMsForModel } from "./asr-chunk-policy";
 import { classifyLocalModelRuntimeError } from "./local-model-runtime";
 import { VoiceMemoryStore } from "./voice-memory-store";
+import { applySpeakingTimeline } from "./voice-memory-observation";
+import {
+  createTranscriptionUnits,
+  statsFromTranscriptionUnits,
+} from "./voice-memory-transcription-units";
 import { resolveFfmpegExecutable } from "./media-runtime";
 import { probeRecordingMedia } from "./recording-media-probe";
 import { AiTextGateway } from "./ai-text-gateway";
@@ -72,6 +74,12 @@ export {
   MOSS_CPP_TRANSCRIPTION_CHUNK_MS,
   mossTranscriptionChunkMsForResume,
 } from "./asr-chunk-policy";
+export { applySpeakingTimeline } from "./voice-memory-observation";
+export {
+  createTranscriptionUnits,
+  statsFromTranscriptionUnits,
+  type TranscriptionUnitDefinition,
+} from "./voice-memory-transcription-units";
 export const AUTOMATIC_TRANSCRIPTION_MAX_DURATION_MS = 30 * 60_000;
 export const benchmarkDurationForMode = (
   mode: "smoke" | "standard" | "long" | undefined,
@@ -172,284 +180,6 @@ export const completedTranscriptionUnits = (
         currentUnitDurationMs,
     ),
   );
-
-export interface TranscriptionUnitDefinition {
-  index: number;
-  startMs: number;
-  endMs: number;
-  speakerId?: string;
-}
-
-const transcriptionUnitId = (
-  recordingId: string,
-  modelId: AiAsrModelId,
-  definition: TranscriptionUnitDefinition,
-): string =>
-  [
-    recordingId,
-    modelId,
-    definition.index,
-    definition.startMs,
-    definition.endMs,
-    definition.speakerId,
-  ]
-    .map((value) => String(value ?? ""))
-    .join(":");
-
-export const createTranscriptionUnits = (
-  recordingId: string,
-  modelId: AiAsrModelId,
-  definitions: readonly TranscriptionUnitDefinition[],
-  existing: readonly VoiceMemoryTranscriptionUnit[] | undefined,
-  checkpointCompletedUnits: number,
-): VoiceMemoryTranscriptionUnit[] => {
-  const existingById = new Map((existing ?? []).map((unit) => [unit.unitId, unit]));
-  const now = new Date().toISOString();
-  return definitions.map((definition) => {
-    const unitId = transcriptionUnitId(recordingId, modelId, definition);
-    const saved = existingById.get(unitId);
-    if (saved && saved.modelId === modelId) {
-      // A process can be killed between the pre-flight save and inference. A persisted running
-      // unit is therefore recoverable work, never proof that the unit completed.
-      return saved.status === "running"
-        ? { ...saved, status: "pending", stage: undefined, updatedAt: now, heartbeatAt: now }
-        : {
-            ...saved,
-            index: definition.index,
-            startMs: definition.startMs,
-            endMs: definition.endMs,
-          };
-    }
-    const legacyCompleted = definition.index < checkpointCompletedUnits;
-    return {
-      unitId,
-      modelId,
-      pipelineVersion: TRANSCRIPTION_PIPELINE_VERSION,
-      index: definition.index,
-      startMs: definition.startMs,
-      endMs: definition.endMs,
-      speakerId: definition.speakerId,
-      status: legacyCompleted ? "completed" : "pending",
-      attempts: legacyCompleted ? 1 : 0,
-      retryCount: 0,
-      processedAudioMs: legacyCompleted ? Math.max(1, definition.endMs - definition.startMs) : 0,
-      coveredAudioMs: legacyCompleted ? Math.max(1, definition.endMs - definition.startMs) : 0,
-      segmentCount: 0,
-      updatedAt: now,
-    };
-  });
-};
-
-export const statsFromTranscriptionUnits = (
-  audioDurationMs: number,
-  units: readonly VoiceMemoryTranscriptionUnit[],
-  transcript: readonly VoiceMemoryTranscriptSegment[],
-  fallback?: VoiceMemoryTranscriptionStats,
-): VoiceMemoryTranscriptionStats => {
-  // Only completed units prove that audio was successfully processed. Failed,
-  // pending, and interrupted units must not inflate coverage or make a partial
-  // run look complete when a legacy fallback still contains old totals.
-  const completedUnitsForCoverage = units.filter((unit) => unit.status === "completed");
-  const scheduledSpeechMs = units.reduce(
-    (sum, unit) => sum + Math.max(1, unit.endMs - unit.startMs),
-    0,
-  );
-  // Speaker-aware tracks may overlap, so completed per-speaker work can legitimately exceed
-  // wall-clock clip duration. Keep the real scheduled work here; speechRatioPercent remains
-  // clamped as a user-facing occupancy figure.
-  const processedAudioMs = completedUnitsForCoverage.reduce(
-    (sum, unit) => sum + Math.max(0, unit.processedAudioMs),
-    0,
-  );
-  const coveredAudioMs = completedUnitsForCoverage.reduce(
-    (sum, unit) => sum + Math.max(0, unit.coveredAudioMs),
-    0,
-  );
-  const completedUnits = units.filter((unit) => unit.status === "completed").length;
-  const pendingUnits = units.filter((unit) => unit.status === "pending").length;
-  const runningUnits = units.filter((unit) => unit.status === "running").length;
-  const failedUnits = units.filter((unit) => unit.status === "failed").length;
-  const successfulUnits = completedUnits;
-  const terminalUnits = completedUnits + failedUnits;
-  const vadSilenceUnits = units.filter(
-    (unit) => unit.status === "completed" && unit.outputStatus === "vad_silence",
-  ).length;
-  const speechUnits = units.filter((unit) => unit.commonVad?.hasSpeech).length;
-  const speechWithOutputUnits = units.filter(
-    (unit) =>
-      unit.status === "completed" &&
-      unit.commonVad?.hasSpeech &&
-      unit.outputStatus === "normal" &&
-      unit.segmentCount > 0,
-  ).length;
-  const emptyOutputOnSpeechUnits = units.filter(
-    (unit) => unit.commonVad?.hasSpeech && unit.outputStatus === "empty_output_on_speech",
-  ).length;
-  const suspectedOmissionCount = units.filter(
-    (unit) =>
-      unit.outputStatus === "empty_output_on_speech" &&
-      unit.endMs - unit.startMs >= 2_000 &&
-      (unit.commonVad?.speechDurationMs ?? 0) >= 1_000 &&
-      (unit.commonVad?.activeFrameRatio ?? 0) >= 0.08 &&
-      (unit.commonVad?.peak ?? 0) >= 0.01,
-  ).length;
-  const repetitionLoopCount = units.filter((unit) =>
-    unit.anomalyTypes?.includes("repetition_loop"),
-  ).length;
-  const abnormalOutputCount = units.filter(
-    (unit) =>
-      unit.outputStatus === "abnormal_output" ||
-      unit.outputStatus === "repetition_loop" ||
-      unit.anomalyTypes?.length,
-  ).length;
-  const totalSpeechMs = units.reduce(
-    (sum, unit) => sum + (unit.commonVad?.hasSpeech ? unit.commonVad.speechDurationMs : 0),
-    0,
-  );
-  const coveredSpeechMs = units.reduce(
-    (sum, unit) =>
-      sum +
-      (unit.status === "completed" &&
-      unit.outputStatus === "normal" &&
-      unit.segmentCount > 0 &&
-      unit.commonVad?.hasSpeech
-        ? unit.commonVad.speechDurationMs
-        : 0),
-    0,
-  );
-  const taskProgressPercent = units.length > 0 ? (terminalUnits / units.length) * 100 : 0;
-  const processedPercent = audioDurationMs > 0 ? (processedAudioMs / audioDurationMs) * 100 : 0;
-  const processedSpeechPercent =
-    scheduledSpeechMs > 0 ? (processedAudioMs / scheduledSpeechMs) * 100 : 0;
-  const speechRatioPercent =
-    audioDurationMs > 0 ? Math.min(100, (scheduledSpeechMs / audioDurationMs) * 100) : 0;
-  const speechCoveragePercent =
-    totalSpeechMs > 0 ? (coveredSpeechMs / totalSpeechMs) * 100 : speechUnits === 0 ? 100 : 0;
-  const allCompleted =
-    units.length > 0 && completedUnits === units.length && pendingUnits === 0 && runningUnits === 0;
-  const last = [...units].sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))[0];
-  const resourceSamples = units.flatMap((unit) => (unit.resourceUsage ? [unit.resourceUsage] : []));
-  const maximumDefined = (values: Array<number | undefined>): number | undefined => {
-    const defined = values.filter((value): value is number => value !== undefined);
-    return defined.length ? Math.max(...defined) : undefined;
-  };
-  const resourceUsage = resourceSamples.length
-    ? {
-        ...fallback?.resourceUsage,
-        device: resourceSamples.find((sample) => sample.device)?.device,
-        backend: resourceSamples.find((sample) => sample.backend)?.backend,
-        quantization: resourceSamples.find((sample) => sample.quantization)?.quantization,
-        dtype: resourceSamples.find((sample) => sample.dtype)?.dtype,
-        modelFileSizeBytes: fallback?.resourceUsage?.modelFileSizeBytes,
-        gpuMemoryBeforeLoadMb: resourceSamples.find(
-          (sample) => sample.gpuMemoryBeforeLoadMb !== undefined,
-        )?.gpuMemoryBeforeLoadMb,
-        gpuMemoryAfterLoadMb: [...resourceSamples]
-          .reverse()
-          .find((sample) => sample.gpuMemoryAfterLoadMb !== undefined)?.gpuMemoryAfterLoadMb,
-        gpuPeakMemoryMb: maximumDefined(resourceSamples.map((sample) => sample.gpuPeakMemoryMb)),
-        gpuMemoryAfterReleaseMb: fallback?.resourceUsage?.gpuMemoryAfterReleaseMb,
-        ramPeakMb: maximumDefined(resourceSamples.map((sample) => sample.ramPeakMb)),
-        oomCount: units.filter((unit) =>
-          /oom|out of memory/iu.test(
-            [
-              unit.errorMessage,
-              ...(unit.attemptHistory ?? []).map((attempt) => attempt.errorMessage),
-            ].join("\n"),
-          ),
-        ).length,
-        workerCrashCount: units.filter((unit) =>
-          /worker.*(?:crash|exit)/iu.test(
-            [
-              unit.errorMessage,
-              ...(unit.attemptHistory ?? []).map((attempt) => attempt.errorMessage),
-            ].join("\n"),
-          ),
-        ).length,
-        resourceReleaseSucceeded: fallback?.resourceUsage?.resourceReleaseSucceeded,
-        possibleResourceLeak: fallback?.resourceUsage?.possibleResourceLeak,
-      }
-    : fallback?.resourceUsage;
-  return {
-    audioDurationMs,
-    processedAudioMs: units.length > 0 ? processedAudioMs : fallback?.processedAudioMs || 0,
-    coveredAudioMs: units.length > 0 ? coveredAudioMs : fallback?.coveredAudioMs || 0,
-    totalUnits: units.length,
-    completedUnits,
-    pendingUnits,
-    runningUnits,
-    failedUnits,
-    retryCount: units.reduce((sum, unit) => sum + Math.max(0, unit.retryCount), 0),
-    segmentCount: transcript.length,
-    speakerCount: new Set(transcript.map((segment) => segment.speakerId)).size,
-    successfulUnits,
-    silenceUnits: vadSilenceUnits,
-    vadSilenceUnits,
-    speechUnits,
-    speechWithOutputUnits,
-    emptyOutputOnSpeechUnits,
-    repetitionLoopCount,
-    abnormalOutputCount,
-    hallucinationSuspectedCount: 0,
-    suspectedOmissionCount,
-    taskProgressPercent,
-    scheduledSpeechMs,
-    processedSpeechPercent,
-    speechRatioPercent,
-    processedPercent,
-    speechCoveragePercent,
-    finalResultSaved: allCompleted ? fallback?.finalResultSaved : false,
-    terminationReason:
-      failedUnits > 0
-        ? "partial"
-        : allCompleted
-          ? "completed"
-          : fallback?.terminationReason === "completed" ||
-              fallback?.terminationReason === "no_speech"
-            ? undefined
-            : fallback?.terminationReason,
-    lastErrorStage: [...units].reverse().find((unit) => unit.errorCode)?.stage,
-    inferenceElapsedMs: units.reduce((sum, unit) => sum + (unit.timing?.inferenceTimeMs ?? 0), 0),
-    conversionElapsedMs: units.reduce((sum, unit) => sum + (unit.timing?.conversionTimeMs ?? 0), 0),
-    preflightElapsedMs: units.reduce((sum, unit) => sum + (unit.timing?.preflightTimeMs ?? 0), 0),
-    resourceProbeElapsedMs: units.reduce(
-      (sum, unit) => sum + (unit.timing?.resourceProbeTimeMs ?? 0),
-      0,
-    ),
-    loadElapsedMs: units.reduce((sum, unit) => sum + (unit.timing?.loadTimeMs ?? 0), 0),
-    providerImportElapsedMs: units.reduce(
-      (sum, unit) => sum + (unit.timing?.providerImportTimeMs ?? 0),
-      0,
-    ),
-    modelInitializationElapsedMs: units.reduce(
-      (sum, unit) => sum + (unit.timing?.modelInitializationTimeMs ?? 0),
-      0,
-    ),
-    workerStartupElapsedMs: units.reduce(
-      (sum, unit) => sum + (unit.timing?.workerStartupTimeMs ?? 0),
-      0,
-    ),
-    vadElapsedMs: units.reduce((sum, unit) => sum + (unit.timing?.vadTimeMs ?? 0), 0),
-    postprocessElapsedMs: units.reduce(
-      (sum, unit) => sum + (unit.timing?.postprocessTimeMs ?? 0),
-      0,
-    ),
-    unaccountedElapsedMs: units.reduce(
-      (sum, unit) => sum + (unit.timing?.unaccountedTimeMs ?? 0),
-      0,
-    ),
-    alignmentElapsedMs: units.reduce((sum, unit) => sum + (unit.timing?.alignmentTimeMs ?? 0), 0),
-    saveElapsedMs: units.reduce((sum, unit) => sum + (unit.timing?.saveTimeMs ?? 0), 0),
-    releaseElapsedMs: fallback?.releaseElapsedMs,
-    totalElapsedMs: units.reduce(
-      (sum, unit) => sum + (unit.timing?.totalTimeMs ?? 0) + (unit.timing?.saveTimeMs ?? 0),
-      0,
-    ),
-    resourceUsage,
-    lastChunkOffsetMs: last?.startMs,
-    lastHeartbeatAt: last?.heartbeatAt ?? fallback?.lastHeartbeatAt,
-  };
-};
 
 interface OrganizedResult {
   summary: VoiceMemorySummaryPoint[];
@@ -563,78 +293,6 @@ const emptyRecord = (request: VoiceMemoryProcessRequest): VoiceMemoryRecord => (
     title: `标记 ${Math.round(marker.offsetMs / 1_000)} 秒`,
   })),
 });
-
-export const applySpeakingTimeline = (
-  record: VoiceMemoryRecord,
-  observations: VoiceMemorySpeakingObservation[],
-): VoiceMemoryRecord => {
-  if (!observations.length) return record;
-  // Room observations arrive in timestamp order. Index that common path so a long
-  // recording does not rescan every observation for every transcript segment.
-  // Keep the original scan for imported/out-of-order timelines: its encounter
-  // order is significant when two members receive an equal score.
-  const chronological = observations.every(
-    (observation, index) =>
-      Number.isFinite(observation.offsetMs) &&
-      (index === 0 || observations[index - 1]!.offsetMs <= observation.offsetMs),
-  );
-  const firstObservationAtOrAfter = (offsetMs: number): number => {
-    let low = 0;
-    let high = observations.length;
-    while (low < high) {
-      const middle = (low + high) >>> 1;
-      if (observations[middle]!.offsetMs < offsetMs) low = middle + 1;
-      else high = middle;
-    }
-    return low;
-  };
-  const updates = new Map<
-    string,
-    { memberId: string; nickname: string; confidence: "high" | "medium" }
-  >();
-  for (const speakerId of new Set(record.transcript.map((segment) => segment.speakerId))) {
-    const scores = new Map<string, { memberId: string; nickname: string; count: number }>();
-    for (const segment of record.transcript.filter((item) => item.speakerId === speakerId)) {
-      const lowerBound = segment.startMs - 350;
-      const upperBound = segment.endMs + 350;
-      const firstIndex = chronological ? firstObservationAtOrAfter(lowerBound) : 0;
-      for (let index = firstIndex; index < observations.length; index += 1) {
-        const observation = observations[index]!;
-        if (chronological && observation.offsetMs > upperBound) break;
-        if (observation.offsetMs < lowerBound || observation.offsetMs > upperBound) continue;
-        const current = scores.get(observation.memberId);
-        scores.set(observation.memberId, {
-          memberId: observation.memberId,
-          nickname: observation.nickname,
-          count: (current?.count ?? 0) + 1,
-        });
-      }
-    }
-    const ranked = [...scores.values()].sort((left, right) => right.count - left.count);
-    const total = ranked.reduce((sum, item) => sum + item.count, 0);
-    const best = ranked[0];
-    const second = ranked[1];
-    if (!best || total === 0) continue;
-    const share = best.count / total;
-    if (share < 0.62 || (second && best.count < second.count * 1.45)) continue;
-    updates.set(speakerId, {
-      memberId: best.memberId,
-      nickname: best.nickname,
-      confidence: share >= 0.78 ? "high" : "medium",
-    });
-  }
-  return {
-    ...record,
-    speakers: record.speakers.map((speaker) => ({
-      ...speaker,
-      ...(updates.get(speaker.speakerId) ?? {}),
-    })),
-    transcript: record.transcript.map((segment) => ({
-      ...segment,
-      ...(updates.get(segment.speakerId) ?? {}),
-    })),
-  };
-};
 
 export const transcriptForPrompt = (
   record: VoiceMemoryRecord,

@@ -4,6 +4,7 @@ import test from "node:test";
 import { evaluateInboundAudioFlow, selectNetworkTier } from "@private-voice/webrtc";
 
 import {
+  collectAudioRelayTargets,
   isPeerAudioPathReady,
   shouldRequestRelayResync,
   shouldSendAudioRelay,
@@ -19,6 +20,20 @@ test("network adaptation ignores an unavailable zero bitrate estimate", () => {
       availableOutgoingBitrateBps: 0,
     }),
     "healthy",
+  );
+});
+
+test("relay target collection preserves requested and unverified members", () => {
+  assert.deepEqual(
+    collectAudioRelayTargets(["ready", "requested", "stalled", "missing"], {
+      connected: new Set(["ready", "requested", "stalled"]),
+      audioTrack: new Set(["ready", "requested", "stalled"]),
+      inboundRtp: new Set(["ready", "requested", "stalled"]),
+      stalled: new Set(["stalled"]),
+      requested: new Set(["requested"]),
+      hasPlaybackChannel: (peerId) => peerId !== "missing",
+    }),
+    ["requested", "stalled", "missing"],
   );
 });
 

@@ -7,7 +7,13 @@ import { useAudioStore } from "../../store/audioStore";
 import { useSettingsStore } from "../../store/settingsStore";
 
 export const AccountAudioControl = () => {
-  const settings = useSettingsStore((state) => state.settings);
+  const hasSettings = useSettingsStore((state) => Boolean(state.settings));
+  const preferredInputDeviceId = useSettingsStore(
+    (state) => state.settings?.preferredInputDeviceId,
+  );
+  const preferredOutputDeviceId = useSettingsStore(
+    (state) => state.settings?.preferredOutputDeviceId,
+  );
   const saveSettings = useSettingsStore((state) => state.saveSettings);
   const permissionState = useAudioStore((state) => state.permissionState);
   const inputDevices = useAudioStore((state) => state.inputDevices);
@@ -31,10 +37,10 @@ export const AccountAudioControl = () => {
     };
   }, [isMenuOpen]);
 
-  if (!settings) return null;
+  if (!hasSettings) return null;
 
-  const hasInput = settings.preferredInputDeviceId
-    ? inputDevices.some((device) => device.id === settings.preferredInputDeviceId)
+  const hasInput = preferredInputDeviceId
+    ? inputDevices.some((device) => device.id === preferredInputDeviceId)
     : inputDevices.length > 0;
   const hasOutput = outputDevices.length > 0;
   const audioReady = permissionState !== MicPermissionState.Denied && hasInput && hasOutput;
@@ -62,7 +68,7 @@ export const AccountAudioControl = () => {
           <label>
             <Mic aria-hidden="true" />
             <select
-              value={settings.preferredInputDeviceId || ""}
+              value={preferredInputDeviceId || ""}
               aria-label="麦克风设备"
               onChange={(event) =>
                 void saveSettings({ preferredInputDeviceId: event.target.value || undefined })
@@ -79,7 +85,7 @@ export const AccountAudioControl = () => {
           <label>
             <Volume2 aria-hidden="true" />
             <select
-              value={settings.preferredOutputDeviceId || ""}
+              value={preferredOutputDeviceId || ""}
               aria-label="扬声器设备"
               onChange={(event) =>
                 void saveSettings({ preferredOutputDeviceId: event.target.value || undefined })

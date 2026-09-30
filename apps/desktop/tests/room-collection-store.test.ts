@@ -14,6 +14,7 @@ const makeItem = (index: number): RoomCollectionItem => ({
   title: `珍藏 ${index}`,
   content: index % 2 === 0 ? `https://example.com/${index}` : `固定好友留言 ${index}`,
   createdByPeerId: "peer-owner",
+  createdByProfileId: index % 2 === 0 ? "profile-owner" : undefined,
   createdByNickname: "Sober",
   createdAt: new Date(Date.UTC(2026, 7, 2, 0, 0, index)).toISOString(),
 });
@@ -33,6 +34,7 @@ test("room collection persists all items and restores from backup", async () => 
     assert.equal(persisted.charCodeAt(0) === 0xfeff, false);
     assert.equal(store.get("main").length, 31);
     assert.equal(store.get("main")[0]?.id, "item-0");
+    assert.equal(store.get("main")[0]?.createdByProfileId, "profile-owner");
 
     store.remove("main", "item-1");
     await store.flush();
@@ -46,6 +48,7 @@ test("room collection persists all items and restores from backup", async () => 
     // The atomic backup is the previous complete snapshot, before the latest removal.
     assert.equal(restored.get("main").length, 31);
     assert.equal(restored.get("main")[0]?.id, "item-0");
+    assert.equal(restored.get("main")[1]?.createdByProfileId, undefined);
     assert.equal(
       restored.get("main").some((item) => item.id === "item-1"),
       true,

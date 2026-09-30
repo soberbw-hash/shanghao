@@ -544,15 +544,6 @@
   box-shadow: 0 8px 18px rgba(73, 111, 153, 0.08);
 }
 
-.recording-player-title {
-  margin-top: 0;
-  color: #26364d;
-  font-size: 16px;
-  font-variant-numeric: tabular-nums;
-  font-weight: 760;
-  line-height: 22px;
-}
-
 .recording-player-heading {
   display: flex;
   align-items: center;

@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -224,4 +224,83 @@ test("runtime artifact requires a finite expected size before starting a downloa
     }),
     /runtime_artifact_size_invalid/,
   );
+});
+
+test("runtime artifact rejects an unbounded lock wait setting", async () => {
+  await assert.rejects(
+    downloadVerifiedRuntimeArtifact({
+      destination: path.join(os.tmpdir(), "unused-shanghao-runtime-lock.whl"),
+      expectedBytes: 2,
+      expectedSha256: digest("ok"),
+      sources: [{ url: "https://example.invalid/runtime.whl" }],
+      lockWaitTimeoutMs: Number.POSITIVE_INFINITY,
+    }),
+    /runtime_artifact_lock_wait_invalid/,
+  );
+});
+
+test("runtime artifact recovers after a process dies while reclaiming a dead lock", async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "shanghao-runtime-orphan-reclaim-"));
+  const destination = path.join(directory, "runtime.whl");
+  const lockDirectory = `${destination}.lock`;
+  const reclaimDirectory = `${lockDirectory}.reclaim`;
+  try {
+    await mkdir(lockDirectory);
+    await writeFile(
+      path.join(lockDirectory, "owner.json"),
+      JSON.stringify({ pid: 2147483647, token: "dead" }),
+    );
+    await mkdir(reclaimDirectory);
+    await writeFile(
+      path.join(reclaimDirectory, "owner.json"),
+      JSON.stringify({ pid: 2147483647, token: "dead" }),
+    );
+
+    await downloadVerifiedRuntimeArtifact({
+      destination,
+      expectedBytes: 2,
+      expectedSha256: digest("ok"),
+      sources: [{ url: "https://example.invalid/runtime.whl" }],
+      attempts: 1,
+      lockWaitTimeoutMs: 2_000,
+      fetcher: async () => new Response("ok", { status: 200 }),
+    });
+
+    assert.equal(await readFile(destination, "utf8"), "ok");
+    assert.deepEqual(await readdir(directory), ["runtime.whl"]);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("runtime artifact reports a bounded wait when another live process owns the lock", async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "shanghao-runtime-lock-wait-"));
+  const destination = path.join(directory, "runtime.whl");
+  const lockDirectory = `${destination}.lock`;
+  try {
+    await mkdir(lockDirectory);
+    await writeFile(
+      path.join(lockDirectory, "owner.json"),
+      JSON.stringify({ pid: process.pid, token: "live" }),
+    );
+    await assert.rejects(
+      downloadVerifiedRuntimeArtifact({
+        destination,
+        expectedBytes: 2,
+        expectedSha256: digest("ok"),
+        sources: [{ url: "https://example.invalid/runtime.whl" }],
+        lockWaitTimeoutMs: 150,
+        fetcher: async () => {
+          throw new Error("should_not_fetch_while_lock_held");
+        },
+      }),
+      /runtime_artifact_lock_timeout/,
+    );
+    assert.equal(
+      await readFile(path.join(lockDirectory, "owner.json"), "utf8"),
+      JSON.stringify({ pid: process.pid, token: "live" }),
+    );
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
 });

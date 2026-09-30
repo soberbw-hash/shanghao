@@ -1,38 +1,65 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import type { RoomCollectionItemKind } from "@private-voice/shared";
 
 import { playUiSound } from "../features/audio/uiSound";
+import {
+  collectionLastViewedAt,
+  newestOtherCollectionItemAt,
+} from "../features/chat/collectionUnread";
 import type { RoomCollectionDragPayload } from "../features/chat/collectionDrag";
 import { useAppStore } from "../store/appStore";
 import { useRoomStore } from "../store/roomStore";
 import { useSettingsStore } from "../store/settingsStore";
 
 interface UseRoomCollectionOptions {
+  roomId: "main" | "side";
   localMemberId?: string;
+  localProfileId?: string;
   addItem: (kind: RoomCollectionItemKind, title: string, content: string) => Promise<void>;
 }
 
-export const useRoomCollection = ({ localMemberId, addItem }: UseRoomCollectionOptions) => {
+export const useRoomCollection = ({
+  roomId,
+  localMemberId,
+  localProfileId,
+  addItem,
+}: UseRoomCollectionOptions) => {
   const pushToast = useAppStore((state) => state.pushToast);
   const items = useRoomStore((state) => state.collectionItems);
   const settings = useSettingsStore((state) => state.settings);
   const saveSettings = useSettingsStore((state) => state.saveSettings);
   const initializedRef = useRef(false);
   const [isOpen, setIsOpen] = useState(false);
+  const [locallyViewed, setLocallyViewed] = useState({ roomId, timestamp: 0 });
   const [draft, setDraft] = useState("");
   const [isDragOver, setIsDragOver] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
 
-  const lastViewedAt = settings?.lastCollectionViewedAt
-    ? Date.parse(settings.lastCollectionViewedAt)
-    : 0;
-  const hasUnreadItems = Boolean(
-    settings?.hasInitializedCollectionReadState &&
-    items.some(
-      (item) => item.createdByPeerId !== localMemberId && Date.parse(item.createdAt) > lastViewedAt,
+  const lastViewedAt = Math.max(
+    collectionLastViewedAt(
+      roomId,
+      settings?.collectionViewedAtByRoom,
+      settings?.lastCollectionViewedAt,
     ),
+    locallyViewed.roomId === roomId ? locallyViewed.timestamp : 0,
   );
+  const newestOtherItemAt = newestOtherCollectionItemAt(items, localMemberId, localProfileId);
+  const hasUnreadItems = Boolean(
+    !isOpen && settings?.hasInitializedCollectionReadState && newestOtherItemAt > lastViewedAt,
+  );
+
+  const markVisibleItemsViewed = useCallback(() => {
+    if (!settings || newestOtherItemAt <= lastViewedAt) return;
+    setLocallyViewed({ roomId, timestamp: newestOtherItemAt });
+    void saveSettings({
+      hasInitializedCollectionReadState: true,
+      collectionViewedAtByRoom: {
+        ...settings.collectionViewedAtByRoom,
+        [roomId]: new Date(newestOtherItemAt).toISOString(),
+      },
+    }).catch(() => undefined);
+  }, [lastViewedAt, newestOtherItemAt, roomId, saveSettings, settings]);
 
   useEffect(() => {
     if (!settings || settings.hasInitializedCollectionReadState || initializedRef.current) {
@@ -46,17 +73,23 @@ export const useRoomCollection = ({ localMemberId, addItem }: UseRoomCollectionO
     void saveSettings({
       hasInitializedCollectionReadState: true,
       lastCollectionViewedAt: new Date(newestCreatedAt).toISOString(),
+      collectionViewedAtByRoom: {
+        ...settings.collectionViewedAtByRoom,
+        [roomId]: new Date(newestCreatedAt).toISOString(),
+      },
+    }).catch(() => {
+      initializedRef.current = false;
     });
-  }, [items, saveSettings, settings]);
+  }, [items, roomId, saveSettings, settings]);
+
+  useEffect(() => {
+    if (isOpen && settings?.hasInitializedCollectionReadState) markVisibleItemsViewed();
+  }, [isOpen, markVisibleItemsViewed, settings?.hasInitializedCollectionReadState]);
 
   const open = () => {
     playUiSound("popup-open");
     setIsOpen(true);
-    if (!settings) return;
-    void saveSettings({
-      hasInitializedCollectionReadState: true,
-      lastCollectionViewedAt: new Date().toISOString(),
-    });
+    markVisibleItemsViewed();
   };
 
   const openItem = async (content: string) => {

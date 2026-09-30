@@ -35,6 +35,32 @@ export const shouldSendAudioRelay = ({
   isRelayRequested,
 }: PeerAudioRelayDecision): boolean => isRelayRequested || shouldUseAudioRelay(evidence);
 
+export interface PeerRelayMembership {
+  connected: ReadonlySet<string>;
+  audioTrack: ReadonlySet<string>;
+  inboundRtp: ReadonlySet<string>;
+  stalled: ReadonlySet<string>;
+  requested: ReadonlySet<string>;
+  hasPlaybackChannel: (peerId: string) => boolean;
+}
+
+export const collectAudioRelayTargets = (
+  peerIds: Iterable<string>,
+  membership: PeerRelayMembership,
+): string[] =>
+  [...peerIds].filter((peerId) =>
+    shouldSendAudioRelay({
+      evidence: {
+        isConnected: membership.connected.has(peerId),
+        hasAudioTrack: membership.audioTrack.has(peerId),
+        hasInboundRtpFlow: membership.inboundRtp.has(peerId),
+        hasPlaybackChannel: membership.hasPlaybackChannel(peerId),
+        isStalled: membership.stalled.has(peerId),
+      },
+      isRelayRequested: membership.requested.has(peerId),
+    }),
+  );
+
 export interface RelayResyncEvidence {
   now: number;
   lastReceivedAt?: number;

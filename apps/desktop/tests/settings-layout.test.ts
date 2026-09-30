@@ -37,10 +37,6 @@ const diagnosticsCardPath = path.resolve(
   process.cwd(),
   "src/renderer/src/components/settings/DiagnosticsSettingsCard.tsx",
 );
-const roomHistoryCardPath = path.resolve(
-  process.cwd(),
-  "src/renderer/src/components/settings/RoomHistorySettingsCard.tsx",
-);
 const detailedReleaseNotesPath = path.resolve(
   process.cwd(),
   "src/renderer/src/components/status/DetailedReleaseNotesViewer.tsx",
@@ -103,7 +99,6 @@ test("semantic interface sounds stay enabled without a settings control", () => 
 
 test("settings keep short lists visible and model actions above neighboring cards", () => {
   const aiSource = readFileSync(aiVoiceMemoryCardPath, "utf8");
-  const historySource = readFileSync(roomHistoryCardPath, "utf8");
   const settingsSource = readFileSync(settingsPagePath, "utf8");
   const styles = readRendererCss();
 
@@ -114,8 +109,6 @@ test("settings keep short lists visible and model actions above neighboring card
     /<div className="ai-model-group-heading">\s*<h3 id="model-management-title">模型<\/h3>\s*<div className="ai-model-filter-bar" role="group" aria-label="筛选模型">/,
   );
   assert.match(styles, /\.ai-model-filter-bar\s*\{[^}]*margin-left:\s*auto;/s);
-  assert.equal(historySource.includes('aria-label="搜索房间记录"'), false);
-  assert.equal(historySource.includes('className="room-history-switch"'), true);
   assert.equal(settingsSource.includes('<details className="settings-advanced-operation">'), false);
   assert.equal(settingsSource.includes('label="Windows 外观实验功能"'), true);
   assert.match(
@@ -268,12 +261,14 @@ test("local voice pack keeps streamer and multi-game tags separate from display 
   assert.equal(readFileSync(quickMessageSettingsPath, "utf8").includes("导出音频包"), true);
 });
 
-test("weather settings expose the full dynamic scene without technical quality tiers", () => {
+test("weather stays on without a user toggle or developer-mode switch", () => {
   const source = readFileSync(weatherSettingsPath, "utf8");
+  const settingsPage = readFileSync(settingsPagePath, "utf8");
   const pickerSource = readFileSync(weatherCityPickerPath, "utf8");
   const styles = readRendererCss();
-  assert.equal(source.includes("窗外动态天气"), true);
-  assert.equal(source.includes("isDynamicWeatherEnabled"), true);
+  assert.equal(source.includes("窗外动态天气"), false);
+  assert.equal(source.includes("isDynamicWeatherEnabled"), false);
+  assert.equal(settingsPage.includes("开发者模式"), false);
   assert.equal(source.includes("天气位置"), true);
   assert.equal(source.includes("Windows 系统定位"), true);
   assert.equal(source.includes("公网 IP 自动定位"), false);
@@ -464,14 +459,18 @@ test("microphone processing lives in the room panel while about keeps release hi
   assert.equal(aboutSource.includes("固定好友语音"), false);
 });
 
-test("room history leaves loading state on legacy servers", () => {
-  const source = readFileSync(roomHistoryCardPath, "utf8");
-  assert.equal(source.includes("当前服务器暂不支持房间记录"), true);
-  assert.equal(source.includes("暂无本地记录，进入一次房间后会自动同步"), true);
-  assert.equal(source.includes("当前显示本地记录，服务器暂时无法刷新"), true);
-  assert.equal(source.includes("useDailyRoomReportStore.getState().hydrate()"), true);
-  assert.equal(source.includes("formatParticipantNames(report)"), true);
-  assert.equal(source.includes("来过：{participantNames}"), true);
+test("settings omit room history while the daily report popup remains", () => {
+  const settingsPage = readFileSync(settingsPagePath, "utf8");
+  const sectionState = readFileSync(settingsSectionStatePath, "utf8");
+  const overlays = readFileSync(
+    path.resolve(process.cwd(), "src/renderer/src/pages/SharedOverlays.tsx"),
+    "utf8",
+  );
+  assert.equal(settingsPage.includes("RoomHistorySettingsCard"), false);
+  assert.equal(settingsPage.includes('id: "roomHistory"'), false);
+  assert.equal(sectionState.includes('"roomHistory"'), false);
+  assert.equal(overlays.includes("<DailyRoomReportModal"), true);
+  assert.equal(overlays.includes("lastDailyRoomReportSeen"), true);
 });
 
 test("release notes emphasize only the leading keyword", () => {
@@ -564,7 +563,15 @@ test("recording library keeps both desktop columns useful while browsing long li
   assert.equal(cardSource.includes('className="recording-player-controls-row"'), true);
   assert.equal(cardSource.includes('aria-label="回到录音详情顶部"'), false);
   assert.equal(cardSource.includes("recordingPanelRef.current?.scrollTo({ top: 0 })"), false);
-  assert.equal(cardSource.match(/录制时间/g)?.length, 1);
+  assert.equal(cardSource.includes('className="recording-player-datetime"'), true);
+  assert.match(
+    cardSource,
+    /dateLabel\(DATE_FORMAT\.format\(recordingDate\(selected\)\)\)[\s\S]*TIME_FORMAT\.format\(recordingDate\(selected\)\)/,
+  );
+  assert.equal(
+    cardSource.includes("录制时间 {TIME_FORMAT.format(recordingDate(selected))}"),
+    false,
+  );
   assert.equal(
     cardSource.includes("已播 {formatTime(currentTime)} / 总时长 {formatTime(duration)}"),
     true,
