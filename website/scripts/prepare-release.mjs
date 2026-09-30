@@ -81,11 +81,11 @@ if (activate) {
   await writeFile(resolve(directory, "SHA256SUMS.txt"), `${digest}  ${asset.name}\n`);
   const highlights = (release.body ?? "")
     .split(/\r?\n/)
-    .filter((line) => /^-\s+/.test(line))
+    .filter((line) => /^(?:-\s+|\d+\.\s+)/.test(line))
     .slice(0, 4)
     .map((line) =>
       line
-        .replace(/^-\s+/, "")
+        .replace(/^(?:-\s+|\d+\.\s+)/, "")
         .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
         .replace(/[`*]/g, "")
         .trim(),
