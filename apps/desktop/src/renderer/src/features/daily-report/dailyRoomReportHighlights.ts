@@ -57,7 +57,9 @@ const resolveRoomTitle = (report: DailyRoomReport, mainGameDurationMs: number): 
 };
 
 export const buildDailyRoomReportNarrative = (report: DailyRoomReport): string => {
-  const roomName = report.roomId === "side" ? "二号房" : "一号房";
+  const roomName =
+    report.roomName ??
+    (report.roomId === "side" ? "二号房" : report.roomId === "main" ? "一号房" : "房间");
   const lines = [
     `昨天${roomName}一共在线 ${formatDuration(report.activeDurationMs)}，${report.participantCount} 位朋友来过。`,
   ];

@@ -140,6 +140,7 @@ export interface RoomEvent {
 export interface RoomSummary {
   roomId: string;
   roomName: string;
+  privateRoom?: import("./private-room.types").PrivateRoomInfo;
   memberCount: number;
   members: RoomMember[];
   signalingUrl?: string;
@@ -206,10 +207,11 @@ export interface DailyRoomRecordingRecap {
 }
 
 export interface DailyRoomReport {
+  roomName?: string;
   schemaVersion?: 1;
   revision?: number;
   updatedAt?: string;
-  roomId: "main" | "side";
+  roomId: string;
   date: string;
   hadActivity: boolean;
   participantCount: number;

@@ -21,6 +21,8 @@ interface RecordingRuntime {
   service: RecordingService;
   mix: MixedCallStream | null;
   finalizing?: Promise<RecordingResult>;
+  roomName?: string;
+  roomId?: string;
 }
 
 const RECORDING_RUNTIME_KEY = "__shanghaoRecordingRuntimeV2__";
@@ -37,8 +39,12 @@ const getRecordingRuntime = (): RecordingRuntime => {
     service: new RecordingService({
       exporter: {
         exportRecording: (payload) => {
-          const roomId = useRoomStore.getState().room.roomId === "side" ? "side" : "main";
-          const roomLabel = roomId === "side" ? "二号房" : "一号房";
+          const roomLabel = (runtime.roomName || "房间")
+            .replace(/[<>:"/\\|?*]/g, "-")
+            .split("")
+            .map((char) => (char.charCodeAt(0) < 32 ? "-" : char))
+            .join("")
+            .slice(0, 32);
           const now = new Date();
           const stamp = [
             now.getFullYear(),
@@ -83,7 +89,7 @@ const recordingSourceIdentities = (): Record<string, RecordingSourceIdentity> =>
       displayNameSnapshot: member.nickname,
       userId: member.userId ?? member.id,
       avatarId: member.avatarId,
-      roomId: room.roomId === "side" ? "side" : "main",
+      roomId: room.roomId,
       joinedAt: member.joinedAt,
     };
   }
@@ -170,6 +176,8 @@ export const useRecordingController = () => {
 
     runtime.mix?.dispose();
     const roomState = useRoomStore.getState();
+    runtime.roomId = roomState.room.roomId;
+    runtime.roomName = roomState.room.roomName;
     runtime.mix = createMixedCallStream(roomState.localStream, roomState.remoteStreams, {
       loudnessBalanceEnabled: true,
       finalRemotePlaybackStream: getRemoteAudioMixer().getFinalOutputStream(),

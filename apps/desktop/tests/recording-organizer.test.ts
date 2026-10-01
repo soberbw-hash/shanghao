@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import type { VoiceMemoryRecord, VoiceMemoryTranscriptSegment } from "@private-voice/shared";
+import { VoiceMemoryOrganizer } from "../src/main/voice-memory-organizer";
 
 import {
   materializeOrganizationChunks,
@@ -47,6 +48,80 @@ const longRecord = (): VoiceMemoryRecord => {
     timeline: [],
   };
 };
+
+test("local organization runs chunk and reduction phases and resumes completed chunks", async () => {
+  const source = longRecord();
+  let calls = 0;
+  const organizer = new VoiceMemoryOrganizer(
+    {
+      usesLocalOrganizer: () => true,
+      generateJson: async () => {
+        throw new Error("unexpected_single_pass");
+      },
+      generateJsonWithMetrics: async () => {
+        calls++;
+        return {
+          value: {
+            summary: [{ text: "一起玩游戏", sourceStartMs: 0 }],
+            topics: [],
+            highlights: [],
+            funnyMoments: [],
+            participants: [],
+            todos: [],
+          },
+          metrics: undefined,
+        };
+      },
+    } as never,
+    async (value) => value,
+  );
+  const organized = await organizer.organize(source, false, new AbortController().signal);
+  assert.equal(organized.organization?.status, "completed");
+  const chunks = organized.organization!.chunks;
+  assert.ok(chunks.length > 1);
+  assert.ok(calls > chunks.length, "multiple chunk results must go through reduction");
+  assert.ok(chunks.every((chunk) => chunk.status === "completed"));
+  assert.equal(organized.summary[0]?.text, "一起玩游戏");
+  calls = 0;
+  const resumed = await organizer.organize(
+    {
+      ...organized,
+      organization: {
+        ...organized.organization!,
+        status: "paused",
+        chunks: chunks.map((chunk, index) =>
+          index === 0 ? { ...chunk, status: "pending", result: undefined } : chunk,
+        ),
+      },
+    },
+    false,
+    new AbortController().signal,
+  );
+  assert.equal(resumed.organization?.status, "completed");
+  assert.ok(calls < chunks.length, "completed chunks must not be inferred again");
+});
+
+test("local organization does not publish a late result after cancellation", async () => {
+  const controller = new AbortController();
+  let saved = longRecord();
+  const organizer = new VoiceMemoryOrganizer(
+    {
+      usesLocalOrganizer: () => true,
+      generateJsonWithMetrics: async () => {
+        controller.abort();
+        return { value: {}, metrics: undefined };
+      },
+    } as never,
+    async (value) => {
+      saved = value;
+      return value;
+    },
+  );
+  await assert.rejects(organizer.organize(saved, false, controller.signal), /ai_task_paused/);
+  assert.equal(saved.phase, "paused");
+  assert.equal(saved.organization?.status, "paused");
+  assert.ok(saved.organization!.chunks.every((chunk) => chunk.status !== "completed"));
+});
 
 test("long recording organization chunks cover every reliable segment exactly once", () => {
   const record = longRecord();

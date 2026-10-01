@@ -417,9 +417,6 @@ export class AiModelManager {
   private unsubscribeGameDetection?: () => void;
   private lifecycleGeneration = 0;
   private persistQueue: Promise<void> = Promise.resolve();
-  private throttleQueue: Promise<void> = Promise.resolve();
-  private throttleWindowStartedAt = Date.now();
-  private throttleWindowBytes = 0;
   private activeModelDownloads = 0;
   private readonly downloadSlotWaiters: Array<{
     signal: AbortSignal;
@@ -583,6 +580,9 @@ export class AiModelManager {
 
   shouldDeferBackgroundDownload(): boolean {
     return this.scheduler.backgroundDownloadDecision().defer;
+  }
+  consumeBackgroundDownloadBytes(bytes: number, signal?: AbortSignal): Promise<void> {
+    return this.scheduler.consumeDownloadBytes(bytes, signal);
   }
 
   onStatus(listener: (snapshot: AiVoiceMemorySnapshot) => void): () => void {
@@ -934,7 +934,7 @@ export class AiModelManager {
       }
       if (!response.body) throw new Error("ai_model_empty_response");
 
-      const throttle = this.createThrottle();
+      const throttle = this.createThrottle(signal);
       let received = offset;
       let lastPersistedAt = Date.now();
       const progress = new Transform({
@@ -1089,29 +1089,12 @@ export class AiModelManager {
     );
   }
 
-  private createThrottle(): Transform {
+  private createThrottle(signal: AbortSignal): Transform {
     return new Transform({
       transform: (chunk: Buffer, _encoding, callback) => {
-        const operation = this.throttleQueue
-          .catch(() => undefined)
-          .then(async () => {
-            const now = Date.now();
-            if (now - this.throttleWindowStartedAt >= 1_000) {
-              this.throttleWindowStartedAt = now;
-              this.throttleWindowBytes = 0;
-            }
-            this.throttleWindowBytes += chunk.length;
-            const limit = this.scheduler.downloadBytesPerSecond();
-            const delay = Math.max(
-              0,
-              Math.ceil(
-                (this.throttleWindowBytes / limit) * 1_000 - (now - this.throttleWindowStartedAt),
-              ),
-            );
-            if (delay > 0) await new Promise((resolve) => setTimeout(resolve, delay));
-          });
-        this.throttleQueue = operation;
-        void operation.then(() => callback(null, chunk), callback);
+        void this.scheduler
+          .consumeDownloadBytes(chunk.length, signal)
+          .then(() => callback(null, chunk), callback);
       },
     });
   }

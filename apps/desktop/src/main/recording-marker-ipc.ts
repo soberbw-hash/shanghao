@@ -10,6 +10,7 @@ import {
 } from "./recording-ipc-validation";
 import { resolveUsableRecordingDirectory } from "./recording-path";
 import { SettingsStore } from "./settings-store";
+import { saveRecordingOriginInDirectory } from "./recording-library-core";
 
 const formatOffset = (offsetMs: number): string => {
   const totalSeconds = Math.max(0, Math.round(offsetMs / 1_000));
@@ -20,6 +21,17 @@ const formatOffset = (offsetMs: number): string => {
 };
 
 export const registerRecordingMarkerIpcHandler = (settingsStore: SettingsStore): void => {
+  ipcMain.handle(
+    IPC_CHANNELS.recording.saveOrigin,
+    async (_event, filePath: string, roomId: string, roomName: string) => {
+      const directory = await resolveUsableRecordingDirectory(
+        settingsStore.getSnapshot().recordingSaveDirectory,
+        app.getPath("documents"),
+      );
+      const recording = await requireRecordingFileInDirectory(directory, filePath);
+      await saveRecordingOriginInDirectory(directory, recording, roomId, roomName);
+    },
+  );
   ipcMain.handle(
     IPC_CHANNELS.recording.saveMarkers,
     async (_event, filePath: string, markers: RecordingMarker[]): Promise<string> => {

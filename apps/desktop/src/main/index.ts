@@ -29,6 +29,7 @@ import { AiTextGateway } from "./ai-text-gateway";
 import { CustomAiProviderStore } from "./custom-ai-provider-store";
 import { HuggingFaceAccessStore } from "./hugging-face-access-store";
 import { preparePersistentAiStorage } from "./ai-storage";
+import { registerStorageIpc } from "./storage-ipc";
 import { prepareBundledAiRuntime } from "./ai-runtime-package";
 import { VoiceMemoryStore } from "./voice-memory-store";
 import { LifecycleRecoveryService } from "./lifecycle-recovery-service";
@@ -505,6 +506,8 @@ const bootstrap = async (): Promise<void> => {
         aiModels.acquireComputeSlot(kind, manualRequest, signal),
       runtimeFetch: (input, init) =>
         net.fetch(input instanceof URL ? input.toString() : input, init),
+      consumeDownloadBytes: (bytes, signal) =>
+        aiModels.consumeBackgroundDownloadBytes(bytes, signal),
     },
   );
   const freeTokenRuntime = new FreeTokenManagedRuntime(aiRuntimeDirectory, {
@@ -573,6 +576,7 @@ const bootstrap = async (): Promise<void> => {
   aiRuntimeManager = aiRuntime;
   freeTokenLocalLlmProvider = freeTokenProvider;
 
+  registerStorageIpc(settingsStore, aiStorage);
   registerIpcHandlers({
     getMainWindow: () => mainWindow,
     settingsStore,
@@ -705,7 +709,7 @@ const bootstrap = async (): Promise<void> => {
   );
 
   app.on("before-quit", () => {
-    voiceMemory.pauseAll();
+    voiceMemory.stop();
     aiModelManager?.stop();
     prepareForQuit("before-quit");
   });

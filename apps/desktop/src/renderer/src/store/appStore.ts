@@ -44,6 +44,8 @@ interface AppStoreState {
   startupIssue?: StartupIssue;
   requiredUpdate?: { requiredVersion: string; currentVersion: string };
   voiceMemoryOpenTarget?: VoiceMemoryOpenTarget;
+  pendingRoomInvite?: string;
+  setPendingRoomInvite: (roomId?: string) => void;
   isSafeMode: boolean;
   navigate: (page: AppPage) => void;
   setSettingsReturnTo: (target: SettingsReturnTarget) => void;
@@ -94,6 +96,7 @@ export const useAppStore = create<AppStoreState>((set, get) => ({
     set({
       voiceMemoryOpenTarget: target ? { ...target, requestId: Date.now() } : undefined,
     }),
+  setPendingRoomInvite: (pendingRoomInvite) => set({ pendingRoomInvite }),
   setRoomAction: (roomAction) => set({ roomAction }),
   beginBootstrap: (message = "正在准备上号…") =>
     set((state) => ({

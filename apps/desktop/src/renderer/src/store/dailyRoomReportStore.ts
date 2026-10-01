@@ -2,7 +2,7 @@ import { create } from "zustand";
 
 import type { DailyRoomReport } from "@private-voice/shared";
 
-type RoomId = "main" | "side";
+type RoomId = string;
 
 interface DailyRoomReportStoreState {
   reports: Record<RoomId, DailyRoomReport[]>;
@@ -16,7 +16,7 @@ interface DailyRoomReportStoreState {
   reset: () => void;
 }
 
-const emptyReports = (): Record<RoomId, DailyRoomReport[]> => ({ main: [], side: [] });
+const emptyReports = (): Record<RoomId, DailyRoomReport[]> => ({});
 
 export const mergeDailyRoomReports = (
   local: DailyRoomReport[],
@@ -54,8 +54,8 @@ const persistReports = (reports: Record<RoomId, DailyRoomReport[]>): void => {
 
 export const useDailyRoomReportStore = create<DailyRoomReportStoreState>((set) => ({
   reports: emptyReports(),
-  loaded: { main: false, side: false },
-  unavailable: { main: false, side: false },
+  loaded: {},
+  unavailable: {},
   hydrated: false,
   hydrate: async () => {
     if (useDailyRoomReportStore.getState().hydrated) return;
@@ -63,32 +63,32 @@ export const useDailyRoomReportStore = create<DailyRoomReportStoreState>((set) =
       const cached = await window.desktopApi.app.readDailyRoomReports();
       set((state) => {
         if (state.hydrated) return state;
-        const reports = {
-          main: mergeDailyRoomReports(cached.main, state.reports.main),
-          side: mergeDailyRoomReports(cached.side, state.reports.side),
-        };
+        const reports = Object.fromEntries(
+          [...new Set([...Object.keys(cached), ...Object.keys(state.reports)])].map((roomId) => [
+            roomId,
+            mergeDailyRoomReports(cached[roomId] ?? [], state.reports[roomId] ?? []),
+          ]),
+        );
         return {
           reports,
-          loaded: { main: true, side: true },
+          loaded: Object.fromEntries(Object.keys(reports).map((roomId) => [roomId, true])),
           hydrated: true,
         };
       });
     } catch {
-      set({ loaded: { main: true, side: true }, hydrated: true });
+      set({ hydrated: true });
     }
   },
-  beginLoading: (roomIds = ["main", "side"]) =>
+  beginLoading: (roomIds = []) =>
     set((state) => ({
       loaded: Object.fromEntries(
-        (["main", "side"] as RoomId[]).map((roomId) => [
+        [...new Set([...Object.keys(state.loaded), ...roomIds])].map((roomId) => [
           roomId,
-          roomIds.includes(roomId) && state.reports[roomId].length === 0
-            ? false
-            : state.loaded[roomId],
+          roomIds.includes(roomId) && !state.reports[roomId]?.length ? false : state.loaded[roomId],
         ]),
       ) as Record<RoomId, boolean>,
       unavailable: Object.fromEntries(
-        (["main", "side"] as RoomId[]).map((roomId) => [
+        [...new Set([...Object.keys(state.unavailable), ...roomIds])].map((roomId) => [
           roomId,
           roomIds.includes(roomId) ? false : state.unavailable[roomId],
         ]),
@@ -98,7 +98,7 @@ export const useDailyRoomReportStore = create<DailyRoomReportStoreState>((set) =
     set((state) => {
       const nextReports = {
         ...state.reports,
-        [roomId]: mergeDailyRoomReports(state.reports[roomId], reports),
+        [roomId]: mergeDailyRoomReports(state.reports[roomId] ?? [], reports),
       };
       persistReports(nextReports);
       return {
@@ -108,16 +108,16 @@ export const useDailyRoomReportStore = create<DailyRoomReportStoreState>((set) =
         hydrated: true,
       };
     }),
-  setUnavailable: (roomIds = ["main", "side"]) =>
+  setUnavailable: (roomIds = []) =>
     set((state) => ({
       loaded: Object.fromEntries(
-        (["main", "side"] as RoomId[]).map((roomId) => [
+        [...new Set([...Object.keys(state.loaded), ...roomIds])].map((roomId) => [
           roomId,
           roomIds.includes(roomId) ? true : state.loaded[roomId],
         ]),
       ) as Record<RoomId, boolean>,
       unavailable: Object.fromEntries(
-        (["main", "side"] as RoomId[]).map((roomId) => [
+        [...new Set([...Object.keys(state.unavailable), ...roomIds])].map((roomId) => [
           roomId,
           roomIds.includes(roomId) ? true : state.unavailable[roomId],
         ]),
@@ -126,8 +126,8 @@ export const useDailyRoomReportStore = create<DailyRoomReportStoreState>((set) =
   reset: () =>
     set({
       reports: emptyReports(),
-      loaded: { main: false, side: false },
-      unavailable: { main: false, side: false },
+      loaded: {},
+      unavailable: {},
       hydrated: false,
     }),
 }));

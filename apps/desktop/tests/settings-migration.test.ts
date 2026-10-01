@@ -490,6 +490,15 @@ test("legacy uploaded avatar profiles are reset without clearing channel server 
 
 test("migrateSettings normalizes relay server urls for non-technical users", () => {
   assert.equal(
+    migrateSettings({ relayServerUrl: "ws://118.25.103.107:43821/" }).settings.relayServerUrl,
+    "wss://118.25.103.107/",
+  );
+  assert.equal(
+    migrateSettings({ relayServerUrl: "ws://118.25.103.107:43821/?token=custom" }).settings
+      .relayServerUrl,
+    "ws://118.25.103.107:43821/?token=custom",
+  );
+  assert.equal(
     migrateSettings({ relayServerUrl: "1.2.3.4:43821" }).settings.relayServerUrl,
     "ws://1.2.3.4:43821/",
   );

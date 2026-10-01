@@ -19,7 +19,7 @@ export interface PersistedParticipantTrack {
   displayNameSnapshot: string;
   avatarId?: string;
   trackId: string;
-  roomId: "main" | "side";
+  roomId: string;
   joinedAt?: string;
   startMs: number;
   endMs: number;

@@ -121,6 +121,42 @@ test("voice memory startup pauses interrupted work without eagerly probing the A
   assert.equal(runtimeProbeCount, 1);
 });
 
+test("voice memory shutdown unsubscribes and refuses new work", async () => {
+  let unsubscribed = 0;
+  let observer: (() => void) | undefined;
+  let checkedAdmission = 0;
+  const service = new AiVoiceMemoryService(
+    {
+      onStatus: (listener: () => void) => {
+        observer = listener;
+        return () => {
+          unsubscribed++;
+        };
+      },
+      canRunTask: () => {
+        checkedAdmission++;
+        return { runnable: true };
+      },
+    } as never,
+    {} as never,
+    {} as never,
+    {
+      initialize: async () => undefined,
+      list: async () => [],
+    } as never,
+  );
+  await service.initialize();
+  service.stop();
+  service.stop();
+  observer?.(); // A status dispatch already in progress must not restart the timer.
+  assert.equal(unsubscribed, 1);
+  assert.equal(checkedAdmission, 0);
+  await assert.rejects(
+    service.process({ recordingId: "isolated", filePath: "unused" }),
+    /ai_task_paused/,
+  );
+});
+
 const alignedCharacters = (): VoiceMemoryTranscriptSegment[] =>
   [
     ["能", 2_000, 2_090],

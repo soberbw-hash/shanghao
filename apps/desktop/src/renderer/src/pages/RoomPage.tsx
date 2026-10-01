@@ -1,3 +1,5 @@
+import { useRecordingSpeakingTimeline } from "../hooks/useRecordingSpeakingTimeline";
+import { finishSavedRoomRecording } from "../features/recording/finishSavedRoomRecording";
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 
 import {
@@ -13,6 +15,10 @@ import {
 
 import { RoomChatPanel } from "../components/chat/RoomChatPanel";
 import { TopStatusBar } from "../components/layout/TopStatusBar";
+import { RoomSwitchDialog } from "../components/room/RoomSwitchDialog";
+import { RoomManagementDialog } from "../components/room/RoomManagementDialog";
+import { useAccountStore } from "../store/accountStore";
+import { registerRoomRecordingFinalizer } from "../features/recording/roomRecordingOwnership";
 import { RoomDock } from "../components/room/RoomDock";
 import { RoomAskDialog } from "../components/room/RoomAskDialog";
 import { CollectionDialog, ScreenSourcePicker } from "../components/room/RoomOverlays";
@@ -64,6 +70,10 @@ interface AwaySession {
   enteredAt: string;
 }
 export const RoomPage = () => {
+  const accountProfile = useAccountStore((state) => state.snapshot.profile);
+  const [roomPickerOpen, setRoomPickerOpen] = useState(false);
+  const [roomManagementOpen, setRoomManagementOpen] = useState(false);
+  const switchAfterRecordingRef = useRef<string | undefined>(undefined);
   const {
     room,
     leaveRoom,
@@ -151,7 +161,6 @@ export const RoomPage = () => {
     (state) => summarizeConnectionHealth(state.connectionHealth).level,
   );
   const sceneReactions = useRoomStore((state) => state.sceneReactions);
-  const channelCounts = useRoomStore((state) => state.channelCounts);
   const inputDevices = useAudioStore((state) => state.inputDevices);
   const outputDevices = useAudioStore((state) => state.outputDevices);
   const isMuted = useAudioStore((state) => state.isMuted);
@@ -197,7 +206,7 @@ export const RoomPage = () => {
   const [localKnockPulse, setLocalKnockPulse] = useState(0);
   const [recordingMarkerPulse, setRecordingMarkerPulse] = useState(0);
   const [isLeaving, setIsLeaving] = useState(false);
-  const [recordingStopIntent, setRecordingStopIntent] = useState<"stop" | "leave">();
+  const [recordingStopIntent, setRecordingStopIntent] = useState<"stop" | "leave" | "switch">();
   const [isFinalizingRecording, setIsFinalizingRecording] = useState(false);
   const [isChoosingRecordingDirectory, setIsChoosingRecordingDirectory] = useState(false);
   const [isSwitchingChannelLocally, setIsSwitchingChannelLocally] = useState(false);
@@ -215,16 +224,7 @@ export const RoomPage = () => {
   const moveLocalMemberRef = useRef(moveLocalMember);
   const screenPickerRequestIdRef = useRef(0);
   const channelSwitchInFlightRef = useRef(false);
-  const recordingSpeakingTimelineRef = useRef<
-    Array<{
-      offsetMs: number;
-      memberId: string;
-      nickname: string;
-      userId?: string;
-      usernameSnapshot?: string;
-      displayNameSnapshot?: string;
-    }>
-  >([]);
+  const recordingSpeakingTimelineRef = useRecordingSpeakingTimeline();
   moveLocalMemberRef.current = moveLocalMember;
   const reduceMotion = usePrefersReducedMotion();
   const isScreenShareStarting =
@@ -253,7 +253,7 @@ export const RoomPage = () => {
     stopShare: stopManagedScreenShare,
   });
   const roomCollection = useRoomCollection({
-    roomId: room.roomId === "side" ? "side" : "main",
+    roomId: room.roomId,
     localMemberId: localMember?.id,
     localProfileId: localMember?.profileId,
     addItem: addRoomCollectionItem,
@@ -280,85 +280,43 @@ export const RoomPage = () => {
     (memberId: string, volume: number) => setMemberVolume(memberId, volume),
     [setMemberVolume],
   );
-  useEffect(() => {
-    if (recordingStatus.state !== RecordingState.Recording || !recordingStatus.startedAt) return;
-    const now = Date.now();
-    for (const member of room.members) {
-      if (member.speakingState !== "speaking") continue;
-      const offsetMs = Math.max(0, now - recordingStatus.startedAt);
-      const previous = recordingSpeakingTimelineRef.current.at(-1);
-      if (previous?.memberId === member.id && offsetMs - previous.offsetMs < 240) continue;
-      recordingSpeakingTimelineRef.current.push({
-        offsetMs,
-        memberId: member.id,
-        nickname: member.nickname,
-        userId: member.userId,
-        usernameSnapshot: member.username,
-        displayNameSnapshot: member.displayName ?? member.nickname,
-      });
-    }
-  }, [recordingStatus.startedAt, recordingStatus.state, room.members]);
-
-  const queueVoiceMemory = (
-    result: { filePath: string; recordingId?: string },
-    markers = recordingMarkers,
-  ) => {
-    if (!isAiAutoTranscribeEnabled || !window.desktopApi.ai?.processRecording) return;
-    const request = {
-      recordingId: result.recordingId ?? result.filePath,
-      filePath: result.filePath,
-      roomId: room.roomId,
-      roomName: room.roomName,
-      manual: false,
-      organize: isAiAutoOrganizeEnabled,
-      markers: markers.map((marker) => ({ id: marker.id, offsetMs: marker.offsetMs })),
-      speakingTimeline: recordingSpeakingTimelineRef.current,
-    };
-    recordingSpeakingTimelineRef.current = [];
-    void window.desktopApi.ai.processRecording(request).catch((error) =>
-      window.desktopApi.app.writeLog({
-        category: "app",
-        level: "warn",
-        message: "voice_memory_auto_process_deferred",
-        context: { error: error instanceof Error ? error.message : String(error) },
-      }),
-    );
-  };
   const finishSavedRecording = async (
     result: { filePath: string; recordingId?: string },
     markers = recordingMarkers,
   ) => {
-    if (markers.length) {
-      await window.desktopApi.recording.saveMarkers(result.filePath, markers);
-    }
-    let deletedCurrentRecording = false;
-    try {
-      const cleanup = await window.desktopApi.recording.applyAutomaticCleanup(result.filePath);
-      deletedCurrentRecording = cleanup.deletedCurrentRecording;
-    } catch (error) {
-      void window.desktopApi.app.writeLog({
-        category: "app",
-        level: "warn",
-        message: "recording_automatic_cleanup_deferred",
-        context: { error: error instanceof Error ? error.message : String(error) },
-      });
-    }
-    if (deletedCurrentRecording) {
-      recordingSpeakingTimelineRef.current = [];
-      pushToast({
-        tone: "neutral",
-        title: "录音已移至回收站",
-        description: "自动清理按当前设置处理了这条录音，可在 Windows 回收站恢复。",
-      });
-      return;
-    }
-    queueVoiceMemory(result, markers);
-    pushToast({
-      tone: "success",
-      title: "录音已保存",
-      description: result.filePath,
+    const speakingTimeline = recordingSpeakingTimelineRef.current;
+    await finishSavedRoomRecording({
+      result,
+      markers,
+      roomId: room.roomId,
+      roomName: room.roomName,
+      speakingTimeline,
+      autoTranscribe: isAiAutoTranscribeEnabled,
+      autoOrganize: isAiAutoOrganizeEnabled,
+      api: window.desktopApi,
+      toast: pushToast,
     });
+    if (recordingSpeakingTimelineRef.current === speakingTimeline)
+      recordingSpeakingTimelineRef.current = [];
   };
+  const finishOwnedRecordingRef = useRef<() => Promise<void>>(async () => {});
+  finishOwnedRecordingRef.current = async () => {
+    const status = useRecordingStore.getState().status;
+    if (
+      ![RecordingState.Recording, RecordingState.Stopping, RecordingState.Saving].includes(
+        status.state,
+      )
+    )
+      return;
+    const result = await stopRecording();
+    await finishSavedRecording(result, useRecordingStore.getState().markers);
+    clearRecordingMarkers();
+    resetRecordingStatus();
+  };
+  useEffect(
+    () => registerRoomRecordingFinalizer(room.roomId, () => finishOwnedRecordingRef.current()),
+    [room.roomId],
+  );
   const screenSharingPeerIds = useMemo(
     () =>
       [
@@ -826,6 +784,11 @@ export const RoomPage = () => {
       setRecordingStopIntent(undefined);
       playUiSound("record-stop");
       if (intent === "leave") await performLeave();
+      if (intent === "switch" && switchAfterRecordingRef.current) {
+        const target = switchAfterRecordingRef.current;
+        switchAfterRecordingRef.current = undefined;
+        await handleSwitchChannel(target);
+      }
     } catch (error) {
       pushToast({
         tone: "danger",
@@ -920,9 +883,16 @@ export const RoomPage = () => {
     }
   };
 
-  const handleSwitchChannel = async (channelId: "main" | "side") => {
-    const currentChannelId = room.roomId === "side" ? "side" : "main";
+  const handleSwitchChannel = async (channelId: string) => {
+    const currentChannelId = room.roomId;
     if (channelSwitchInFlightRef.current || currentChannelId === channelId) return;
+
+    if (recordingStatus.state === RecordingState.Recording) {
+      switchAfterRecordingRef.current = channelId;
+      setRoomPickerOpen(false);
+      setRecordingStopIntent("switch");
+      return;
+    }
 
     channelSwitchInFlightRef.current = true;
     setIsSwitchingChannelLocally(true);
@@ -939,6 +909,7 @@ export const RoomPage = () => {
           .catch(() => undefined);
       });
       await switchChannel(channelId);
+      setRoomPickerOpen(false);
     } catch (error) {
       pushToast({
         tone: "danger",
@@ -1145,13 +1116,32 @@ export const RoomPage = () => {
       }`}
     >
       <div>
+        {roomPickerOpen && (
+          <RoomSwitchDialog
+            busy={isSwitchingChannelLocally || roomAction === "joining"}
+            onClose={() => setRoomPickerOpen(false)}
+            onJoin={(target) => handleSwitchChannel(target.roomId)}
+          />
+        )}
+        {roomManagementOpen &&
+          room.privateRoom &&
+          room.privateRoom.ownerId === accountProfile?.userId && (
+            <RoomManagementDialog
+              room={room.privateRoom}
+              members={room.members}
+              onClose={() => setRoomManagementOpen(false)}
+            />
+          )}
         <TopStatusBar
-          currentChannelId={room.roomId === "side" ? "side" : "main"}
-          channelCounts={channelCounts}
           isSwitchingChannel={isSwitchingChannelLocally || roomAction === "joining"}
           isRecording={recordingStatus.state === RecordingState.Recording}
           recordingMarkerPulse={recordingMarkerPulse}
-          onSwitchChannel={(channelId) => void handleSwitchChannel(channelId)}
+          onChooseRoom={() => setRoomPickerOpen(true)}
+          onManageRoom={
+            room.privateRoom?.ownerId === accountProfile?.userId
+              ? () => setRoomManagementOpen(true)
+              : undefined
+          }
           onKnock={() => void knock()}
           onInvite={() => void copyInviteLink()}
         />

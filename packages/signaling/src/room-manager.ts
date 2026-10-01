@@ -12,6 +12,7 @@ import { PeerManager } from "./peer-manager";
 export interface SignalingRoom {
   roomId: string;
   roomName: string;
+  privateRoom?: import("@private-voice/shared").PrivateRoomInfo;
   peers: PeerManager;
   revision: number;
   appVersion: string;
@@ -85,7 +86,7 @@ export class RoomManager {
     }
 
     room.peers.removePeer(peerId);
-    if (room.peers.listPeers().length === 0 && roomId !== "main") {
+    if (room.peers.listPeers().length === 0) {
       this.rooms.delete(roomId);
     }
   }

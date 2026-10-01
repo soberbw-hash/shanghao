@@ -383,7 +383,7 @@ export interface VoiceMemoryOrganizationRun {
 
 export interface VoiceMemoryOrganizationPublication {
   status: "published";
-  roomId: "main" | "side";
+  roomId: string;
   reportDate: string;
   publishedAt: string;
   serverRevision?: number;

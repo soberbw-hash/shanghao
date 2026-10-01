@@ -748,7 +748,13 @@ export class ModelComparisonQueue {
                 recordingId: recording.recordingId,
                 filePath: recording.filePath,
                 roomId: recording.roomId,
-                roomName: recording.roomId === "side" ? "二号房" : "一号房",
+                roomName:
+                  recording.roomName ??
+                  (recording.roomId === "side"
+                    ? "二号房"
+                    : recording.roomId === "main"
+                      ? "一号房"
+                      : "房间"),
                 manual: true,
                 transcribe: true,
                 organize: false,

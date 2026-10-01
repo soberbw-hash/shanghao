@@ -1,25 +1,18 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import {
-  ArrowRight,
-  ChevronDown,
-  CircleAlert,
-  LoaderCircle,
-  Mic,
-  MicOff,
-  Volume2,
-} from "lucide-react";
+import { ChevronDown, CircleAlert, Mic, MicOff, Volume2 } from "lucide-react";
 import { motion } from "framer-motion";
 import { gsap } from "gsap";
+import { useShallow } from "zustand/react/shallow";
 
 import {
-  BUILT_IN_AVATAR_IDS,
   MicPermissionState,
   normalizeRelayServerUrl,
   type BuiltInAvatarId,
   type RelayStatusSnapshot,
+  type PrivateRoomInfo,
 } from "@private-voice/shared";
 
-import { Button } from "../components/base/Button";
+import { PrivateRoomBrowser } from "../components/room/PrivateRoomBrowser";
 import { Input } from "../components/base/Input";
 import { BrandMark } from "../components/brand/BrandMark";
 import { ACCOUNT_AVATAR_PRESETS } from "../features/account/accountAvatarPresets";
@@ -28,7 +21,6 @@ import { motionCurve, motionDuration, motionEase } from "../features/motion/moti
 import { getRemoteAudioMixer } from "../features/audio/RemoteAudioMixer";
 import { usePrefersReducedMotion } from "../hooks/usePrefersReducedMotion";
 import { useRoomState } from "../hooks/useRoomState";
-import type { ChannelId } from "../features/chat/chatPersistence";
 import { useAppStore } from "../store/appStore";
 import { useAudioStore } from "../store/audioStore";
 import { useSettingsStore } from "../store/settingsStore";
@@ -48,7 +40,19 @@ const waitForNextPaint = (): Promise<void> =>
 
 export const HomePage = () => {
   const { joinChannel } = useRoomState();
-  const settings = useSettingsStore((state) => state.settings);
+  const settings = useSettingsStore(
+    useShallow(
+      ({ settings }) =>
+        settings && {
+          nickname: settings.nickname,
+          avatarId: settings.avatarId,
+          accountAvatarPresetId: settings.accountAvatarPresetId,
+          relayServerUrl: settings.relayServerUrl,
+          preferredInputDeviceId: settings.preferredInputDeviceId,
+          preferredOutputDeviceId: settings.preferredOutputDeviceId,
+        },
+    ),
+  );
   const saveSettings = useSettingsStore((state) => state.saveSettings);
   const accountProfile = useAccountStore((state) => state.snapshot.profile);
   const roomAction = useAppStore((state) => state.roomAction);
@@ -66,7 +70,6 @@ export const HomePage = () => {
   const [serverAddress, setServerAddress] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [serverTestResult, setServerTestResult] = useState<RelayStatusSnapshot>();
-  const [selectedChannelId, setSelectedChannelId] = useState<ChannelId>("main");
   const [isCheckingAudio, setIsCheckingAudio] = useState(false);
   const [isMicrophoneMenuOpen, setIsMicrophoneMenuOpen] = useState(false);
   const [nicknameTouched, setNicknameTouched] = useState(false);
@@ -300,7 +303,7 @@ export const HomePage = () => {
     }
   };
 
-  const enterChannel = async () => {
+  const enterChannel = async (target: PrivateRoomInfo) => {
     const normalizedAddress = normalizeRelayServerUrl(serverAddress);
     const trimmedNickname = nickname.trim();
     const nicknameError = getNicknameValidationError(trimmedNickname);
@@ -327,27 +330,14 @@ export const HomePage = () => {
       // Let React commit the pressed/loading state before device and signaling work starts.
       await waitForNextPaint();
       if (!(await verifyAudioDevices())) return;
-      const occupiedAvatarIds = serverTestResult?.occupiedAvatarIds ?? [];
-      const automaticAvatarId = occupiedAvatarIds.includes(avatarId)
-        ? BUILT_IN_AVATAR_IDS.find((candidate) => !occupiedAvatarIds.includes(candidate))
-        : avatarId;
-      if (!automaticAvatarId) {
-        pushToast({
-          tone: "warning",
-          title: "频道里的角色都在使用",
-          description: "请等朋友离开后再进入频道。",
-        });
-        return;
-      }
-      setAvatarId(automaticAvatarId);
       await saveSettings({
         nickname: trimmedNickname.slice(0, 16),
-        avatarId: automaticAvatarId,
+        avatarId,
         avatarPath: undefined,
         relayServerUrl: normalizedAddress,
         hasCompletedProfileSetup: true,
       });
-      await joinChannel(normalizedAddress, selectedChannelId);
+      await joinChannel(normalizedAddress, target.roomId);
     } finally {
       setIsSubmitting(false);
     }
@@ -368,11 +358,11 @@ export const HomePage = () => {
   return (
     <div
       ref={pageRef}
-      className="entry-page relative flex h-full items-center justify-center overflow-hidden px-6 py-7"
+      className="entry-page relative flex h-full items-center justify-center overflow-y-auto px-6 py-7"
     >
       <main
         data-gsap-entry="card"
-        className="entry-card entry-card-entry relative z-10 flex w-full max-w-[560px] flex-col px-8 py-7"
+        className="entry-card entry-card-entry relative z-10 flex w-full max-w-[560px] shrink-0 flex-col px-8 py-7"
       >
         <header
           data-gsap-entry="brand"
@@ -383,7 +373,7 @@ export const HomePage = () => {
             <h1 className="text-[22px] font-[680] leading-[30px] tracking-[-0.02em] text-[#172033]">
               上号
             </h1>
-            <div className="text-[12px] font-medium leading-4 text-[#718198]">固定好友语音</div>
+            <div className="text-[12px] font-medium leading-4 text-[#718198]">私人开黑房间</div>
           </div>
           <div ref={microphoneMenuRef} className="entry-mic-control ml-auto">
             <button
@@ -530,38 +520,8 @@ export const HomePage = () => {
             {serverTestStatus ? (
               <div className="entry-server-status-slot">{serverTestStatus}</div>
             ) : null}
-            <div className="entry-room-choice" role="group" aria-label="选择进入的房间">
-              <span>选择房间</span>
-              <div>
-                {(["main", "side"] as const).map((channelId) => (
-                  <button
-                    key={channelId}
-                    type="button"
-                    className={selectedChannelId === channelId ? "is-active" : ""}
-                    aria-pressed={selectedChannelId === channelId}
-                    disabled={isJoining || isCheckingAudio}
-                    onClick={() => setSelectedChannelId(channelId)}
-                  >
-                    {channelId === "main" ? "一号房" : "二号房"}
-                  </button>
-                ))}
-              </div>
-            </div>
-            <div className="pt-1" data-gsap-entry="cta">
-              <div className="flex justify-center gap-2.5">
-                <Button
-                  className="h-[52px] min-w-[188px] rounded-[16px] text-[15px]"
-                  disabled={isJoining || isCheckingAudio || !serverAddress.trim()}
-                  onClick={() => void enterChannel()}
-                >
-                  {isCheckingAudio ? "正在检查设备..." : isJoining ? "正在进入..." : "进入频道"}
-                  {isJoining ? (
-                    <LoaderCircle className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <ArrowRight className="h-4 w-4" />
-                  )}
-                </Button>
-              </div>
+            <PrivateRoomBrowser busy={isJoining || isCheckingAudio} onJoin={enterChannel} />
+            <div data-gsap-entry="cta">
               {!hasSelectedInput ||
               !hasAudioOutput ||
               permissionState === MicPermissionState.Denied ? (

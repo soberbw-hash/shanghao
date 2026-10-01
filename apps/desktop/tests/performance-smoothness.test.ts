@@ -105,7 +105,7 @@ test("room entry waits for signaling while chat image decode uses visible loadin
   const preload = read("features/chat/chatImagePreload.ts");
 
   const navigateIndex = roomState.indexOf('navigate("room")');
-  const connectIndex = roomState.indexOf("await connectToFixedChannel");
+  const connectIndex = roomState.indexOf("await connectToRoom");
   assert.equal(connectIndex >= 0 && navigateIndex > connectIndex, true);
   assert.equal(roomState.includes("const chatHistoryPromise"), true);
   assert.equal(lightbox.includes("await imageElement.decode()"), false);

@@ -30,7 +30,7 @@ test("cleanup only removes old owned regular files and preserves recent or unrel
     await utimes(oldUnique, oldTime, oldTime);
     await utimes(unrelated, oldTime, oldTime);
 
-    const result = await pruneStaleAsrTempFiles(directory, now);
+    const result = await pruneStaleAsrTempFiles(directory, now, () => false);
     assert.equal(result.removed, 2);
     assert.equal(result.removedBytes, 23);
     await assert.rejects(readFile(old), { code: "ENOENT" });

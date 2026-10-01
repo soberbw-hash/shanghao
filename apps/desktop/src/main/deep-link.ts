@@ -1,9 +1,7 @@
-import type { DeepLinkInvite } from "@private-voice/shared";
+import { isStoredRoomId, type DeepLinkInvite } from "@private-voice/shared";
 
 export const SHANGHAO_PROTOCOL = "shanghao";
 export const SHANGHAO_AUTH_REDIRECT_URL = `${SHANGHAO_PROTOCOL}://auth/confirmed`;
-
-const ALLOWED_CHANNEL_IDS = new Set<DeepLinkInvite["channelId"]>(["main", "side"]);
 
 export const parseDeepLinkInvite = (rawValue: string): DeepLinkInvite | undefined => {
   try {
@@ -12,7 +10,7 @@ export const parseDeepLinkInvite = (rawValue: string): DeepLinkInvite | undefine
 
     const channelId = url.searchParams.get("room") as DeepLinkInvite["channelId"] | null;
     const rawServerUrl = url.searchParams.get("server");
-    if (!channelId || !ALLOWED_CHANNEL_IDS.has(channelId)) return undefined;
+    if (!channelId || !isStoredRoomId(channelId)) return undefined;
     const rawExpiresAt = url.searchParams.get("expires");
     if (rawExpiresAt !== null) {
       const expiresAt = Number(rawExpiresAt);

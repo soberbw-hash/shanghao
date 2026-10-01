@@ -82,7 +82,7 @@ test("room client keeps relay playback until connected WebRTC audio is actually 
   assert.equal(relay.includes("private readonly context = new AudioContext"), false);
 });
 
-test("room flow is fixed-channel only", () => {
+test("room flow uses immutable room IDs without a direct host mode", () => {
   const client = read("apps/desktop/src/renderer/src/features/room/roomClient.ts");
   const hook = read("apps/desktop/src/renderer/src/hooks/useRoomState.ts");
   const protocol = read("packages/signaling/src/protocol.ts");
@@ -91,7 +91,7 @@ test("room flow is fixed-channel only", () => {
   assert.equal(client.includes('type: "leave_channel"'), true);
   assert.equal(client.includes("joinChannelSent"), true);
   assert.equal(client.includes("join_room"), false);
-  assert.equal(hook.includes("connectToFixedChannel"), true);
+  assert.equal(hook.includes("connectToRoom"), true);
   assert.equal(hook.includes("startHost"), false);
   assert.equal(protocol.includes("JoinChannelMessage"), true);
   assert.equal(protocol.includes("JoinRoomMessage"), false);
@@ -288,7 +288,7 @@ test("room invite copies an app deep link with a visible success toast", () => {
   assert.equal(deepLink.includes("consumeDeepLink"), true);
   assert.equal(deepLink.includes("onDeepLink"), true);
   assert.equal(hook.includes('playUiSound("copy-success")'), true);
-  assert.equal(hook.includes("Copied fixed channel invite"), true);
+  assert.equal(hook.includes("Copied room invite"), true);
   assert.equal(hook.includes("desktopApi.clipboard.writeText"), true);
   assert.equal(hook.includes("navigator.clipboard.writeText"), false);
   assert.equal(roomPage.includes("copyInviteLink"), true);

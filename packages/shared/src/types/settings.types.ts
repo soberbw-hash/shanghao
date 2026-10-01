@@ -68,14 +68,14 @@ export interface AppSettings {
   quickMessages: QuickMessageSettings;
   isBackgroundUpdateCheckEnabled: boolean;
   lastCollectionViewedAt?: string;
-  collectionViewedAtByRoom?: Partial<Record<"main" | "side", string>>;
+  collectionViewedAtByRoom?: Partial<Record<string, string>>;
   hasInitializedCollectionReadState: boolean;
   isAutoDownloadUpdateEnabled?: boolean;
   isAutoInstallUpdateEnabled?: boolean;
   lastUpdateCheckAt?: string;
   lastUpdateVersionSeen?: string;
   lastReleaseNotesVersionSeen?: string;
-  lastDailyRoomReportSeen?: Partial<Record<"main" | "side", string>>;
+  lastDailyRoomReportSeen?: Partial<Record<string, string>>;
 }
 
 export interface RelayStatusSnapshot {

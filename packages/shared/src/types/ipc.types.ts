@@ -77,7 +77,7 @@ export interface RuntimeInfo {
 }
 
 export interface DeepLinkInvite {
-  channelId: "main" | "side";
+  channelId: string;
   serverUrl?: string;
 }
 
@@ -245,6 +245,8 @@ export interface GameDetectionSnapshot {
 }
 
 export interface DesktopApi {
+  storage: import("./storage.types").StorageApi;
+  rooms: import("./private-room.types").PrivateRoomsApi;
   phoneMode: {
     get: () => Promise<{ active: boolean; busy: boolean; error?: string }>;
     set: (active: boolean) => Promise<void>;
@@ -275,11 +277,9 @@ export interface DesktopApi {
       channelId: string;
       messages: import("./room.types").ChatMessage[];
     }) => Promise<void>;
-    readDailyRoomReports: () => Promise<
-      Record<"main" | "side", import("./room.types").DailyRoomReport[]>
-    >;
+    readDailyRoomReports: () => Promise<Record<string, import("./room.types").DailyRoomReport[]>>;
     saveDailyRoomReports: (
-      reports: Record<"main" | "side", import("./room.types").DailyRoomReport[]>,
+      reports: Record<string, import("./room.types").DailyRoomReport[]>,
     ) => Promise<void>;
     openExternal: (url: string) => Promise<void>;
     getChatLinkPreview: (url: string) => Promise<{ title?: string; imageDataUrl?: string }>;
@@ -452,6 +452,7 @@ export interface DesktopApi {
     ) => Promise<void>;
     chooseDirectory: () => Promise<string | undefined>;
     saveMarkers: (filePath: string, markers: RecordingMarker[]) => Promise<string>;
+    saveOrigin: (filePath: string, roomId: string, roomName: string) => Promise<void>;
     applyAutomaticCleanup: (filePath: string) => Promise<RecordingAutomaticCleanupResult>;
     list: () => Promise<RecordingLibrarySnapshot>;
     scanWaste: () => Promise<RecordingCleanupScan>;

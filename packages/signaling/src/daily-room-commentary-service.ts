@@ -58,7 +58,9 @@ export class DailyRoomCommentaryService {
         "可以加入2到4个自然的emoji，允许轻微毒舌、吐槽和玩梗，但不要攻击任何人，不要编造统计里没有的事件。",
         '只返回JSON：{"commentary":"第一行\\n第二行"}。',
         JSON.stringify({
-          room: report.roomId === "side" ? "二号房" : "一号房",
+          room:
+            report.roomName ??
+            (report.roomId === "side" ? "二号房" : report.roomId === "main" ? "一号房" : "房间"),
           participantNicknames: report.participantNicknames,
           participantCount: report.participantCount,
           activeMinutes: Math.round(report.activeDurationMs / 60_000),

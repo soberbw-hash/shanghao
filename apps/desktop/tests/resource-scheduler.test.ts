@@ -219,3 +219,47 @@ test("AI compute timeline is bounded and contains only scheduling transitions", 
   }
   assert.equal(scheduler.getComputeTimeline().length, 64);
 });
+test("scheduler lowers inference capacity when system memory is scarce", () => {
+  const scheduler = new ResourceScheduler(() => 1024 ** 3);
+  scheduler.update({ processingMode: "immediate" });
+  assert.equal(scheduler.aiDecision("transcription", true).resourceMode, "low");
+});
+
+test("shared download budget validates chunks and interruption releases the next transfer", async () => {
+  const scheduler = new ResourceScheduler();
+  const controller = new AbortController();
+  scheduler.update({ realtimePressureHigh: true });
+  const delayed = scheduler.consumeDownloadBytes(100, controller.signal);
+  controller.abort();
+  await assert.rejects(delayed, /ai_task_paused/);
+  scheduler.update({ realtimePressureHigh: false });
+  await scheduler.consumeDownloadBytes(0);
+  await assert.rejects(scheduler.consumeDownloadBytes(-1), /invalid_download_chunk/);
+});
+
+test("a queued transfer cancels immediately while another transfer owns the pressure wait", async () => {
+  const scheduler = new ResourceScheduler();
+  scheduler.update({ realtimePressureHigh: true });
+  const firstController = new AbortController();
+  const queuedController = new AbortController();
+  const first = scheduler.consumeDownloadBytes(100, firstController.signal);
+  const queued = scheduler.consumeDownloadBytes(100, queuedController.signal);
+  queuedController.abort();
+  try {
+    await assert.rejects(
+      Promise.race([
+        queued,
+        new Promise<void>((_resolve, reject) => {
+          const timer = setTimeout(() => reject(new Error("queued_cancel_did_not_settle")), 1000);
+          timer.unref();
+        }),
+      ]),
+      /ai_task_paused/,
+    );
+  } finally {
+    firstController.abort();
+    await assert.rejects(first, /ai_task_paused/);
+  }
+  scheduler.update({ realtimePressureHigh: false });
+  await scheduler.consumeDownloadBytes(0);
+});

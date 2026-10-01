@@ -981,7 +981,7 @@ test("request_snapshot returns a fixed-channel snapshot only to the requester", 
   }
 });
 
-test("fixed channel keeps main room alive after everyone leaves", async () => {
+test("empty room releases runtime after everyone leaves", async () => {
   const server = new SignalingServer({ roomName: "固定频道" });
   const port = await server.listen();
   const socket = await openSocket(`ws://127.0.0.1:${port}`);
@@ -1000,7 +1000,7 @@ test("fixed channel keeps main room alive after everyone leaves", async () => {
     const health = (await fetch(`http://127.0.0.1:${port}/health`).then((response) =>
       response.json(),
     )) as { activeRooms: number; connectedPeers: number };
-    assert.equal(health.activeRooms, 1);
+    assert.equal(health.activeRooms, 0);
     assert.equal(health.connectedPeers, 0);
   } finally {
     socket.close();

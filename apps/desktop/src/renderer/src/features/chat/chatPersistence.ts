@@ -3,7 +3,7 @@ import type { ChatMessage } from "@private-voice/shared";
 import { useRoomStore } from "../../store/roomStore";
 import { writeRendererLog } from "../../utils/logger";
 
-export type ChannelId = "main" | "side";
+export type ChannelId = string;
 
 let writeQueue: Promise<void> = Promise.resolve();
 

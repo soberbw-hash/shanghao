@@ -17,6 +17,9 @@ export const decideSignalingError = (
     appVersion: string;
   },
 ): SignalingErrorDecision => {
+  if (["room_not_found", "room_banned", "room_removed", "room_full"].includes(payload.code)) {
+    return { ignore: false, stopReconnect: true, reason: payload.code };
+  }
   if (payload.code === "CLIENT_UPDATE_REQUIRED") {
     return {
       ignore: false,

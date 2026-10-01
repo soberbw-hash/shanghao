@@ -66,7 +66,6 @@ interface RoomStoreState {
   collectionItems: RoomCollectionItem[];
   sceneReactions: SceneReaction[];
   quickMessages: RoomQuickMessage[];
-  channelCounts: { main: number; side: number };
   setConnectionState: (state: RoomConnectionState, reason?: string) => void;
   setLifecycleState: (state: RoomLifecycleState) => void;
   setRoom: (room: Partial<RoomSummary>) => void;
@@ -90,7 +89,6 @@ interface RoomStoreState {
   mergeCollectionItems: (items: RoomCollectionItem[]) => void;
   addSceneReaction: (reaction: SceneReaction) => void;
   addQuickMessage: (message: RoomQuickMessage) => void;
-  setChannelCounts: (counts: { main: number; side: number }) => void;
   clearChannelContent: () => void;
   syncLocalProfile: (profile: LocalProfilePayload) => void;
   updateMemberVolume: (memberId: string, volume: number) => void;
@@ -266,7 +264,7 @@ const initialRoomEvents = (): RoomEvent[] => [
   {
     id: "waiting-seed",
     level: "info",
-    message: "输入服务器地址后即可进入固定频道",
+    message: "选择私人房间后即可上号",
     createdAt: new Date().toISOString(),
   },
 ];
@@ -301,7 +299,6 @@ export const useRoomStore = create<RoomStoreState>((set) => ({
   collectionItems: [],
   sceneReactions: [],
   quickMessages: [],
-  channelCounts: { main: 0, side: 0 },
   setConnectionState: (connectionState, reason) =>
     set((state) => ({
       room: {
@@ -551,7 +548,6 @@ export const useRoomStore = create<RoomStoreState>((set) => ({
         message,
       ].slice(-20),
     })),
-  setChannelCounts: (channelCounts) => set({ channelCounts }),
   clearChannelContent: () =>
     set({
       remoteStreams: {},

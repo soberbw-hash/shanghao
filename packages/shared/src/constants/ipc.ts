@@ -1,4 +1,25 @@
 export const IPC_CHANNELS = {
+  storage: {
+    inspect: "storage:inspect",
+    clearExpiredTemporary: "storage:clear-expired-temporary",
+  },
+  rooms: {
+    mine: "rooms:mine",
+    find: "rooms:find",
+    get: "rooms:get",
+    randomCode: "rooms:random-code",
+    available: "rooms:available",
+    create: "rooms:create",
+    update: "rooms:update",
+    delete: "rooms:delete",
+    kick: "rooms:kick",
+    ban: "rooms:ban",
+    unban: "rooms:unban",
+    bans: "rooms:bans",
+    history: "rooms:history",
+    rememberJoined: "rooms:remember-joined",
+    favorite: "rooms:favorite",
+  },
   phoneMode: {
     get: "phone-mode:get",
     set: "phone-mode:set",
@@ -173,6 +194,7 @@ export const IPC_CHANNELS = {
     finalizeParticipantTracks: "recording:finalize-participant-tracks",
     chooseDirectory: "recording:choose-directory",
     saveMarkers: "recording:save-markers",
+    saveOrigin: "recording:save-origin",
     applyAutomaticCleanup: "recording:apply-automatic-cleanup",
     list: "recording:list",
     scanWaste: "recording:scan-waste",

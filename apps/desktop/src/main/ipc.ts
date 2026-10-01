@@ -86,6 +86,7 @@ import { registerRecordingTrackIpcHandlers } from "./recording-tracks-ipc";
 import { cleanupRecordingParticipantTracks } from "./recording-participant-tracks";
 import { resolveRecordingDirectory, resolveUsableRecordingDirectory } from "./recording-path";
 import { requireVoiceMemoryProcessRequest } from "./voice-memory-ipc-validation";
+import { registerPrivateRoomsIpc } from "./private-rooms-ipc";
 import {
   deleteRecording,
   readRecordingLibrary,
@@ -295,6 +296,7 @@ export const registerIpcHandlers = ({
     return next;
   };
   const chatHistoryStore = new ChatHistoryStore(app.getPath("userData"));
+  registerPrivateRoomsIpc(accounts, settingsStore, app.getPath("userData"));
   const dailyRoomReportCache = new DailyRoomReportCache(app.getPath("userData"));
   const weatherSession = session.fromPartition("shanghao-weather-direct", { cache: false });
   const weatherNetworkReady = weatherSession.setProxy({ mode: "direct" });
@@ -412,11 +414,11 @@ export const registerIpcHandlers = ({
   );
   ipcMain.handle(
     IPC_CHANNELS.app.readDailyRoomReports,
-    async (): Promise<Record<"main" | "side", DailyRoomReport[]>> => dailyRoomReportCache.read(),
+    async (): Promise<Record<string, DailyRoomReport[]>> => dailyRoomReportCache.read(),
   );
   ipcMain.handle(
     IPC_CHANNELS.app.saveDailyRoomReports,
-    async (_event, reports: Record<"main" | "side", DailyRoomReport[]>): Promise<void> => {
+    async (_event, reports: Record<string, DailyRoomReport[]>): Promise<void> => {
       if (!reports || typeof reports !== "object") {
         throw new Error("invalid_daily_room_reports");
       }

@@ -238,12 +238,12 @@ export class AccountHttpController {
     );
   }
 
-  private isSecure(request: IncomingMessage): boolean {
+  isSecure(request: IncomingMessage): boolean {
     if (LOOPBACK_ADDRESSES.has(request.socket.remoteAddress ?? "")) return true;
     if ((request.socket as IncomingMessage["socket"] & { encrypted?: boolean }).encrypted) {
       return true;
     }
-    return request.headers["x-forwarded-proto"] === "https";
+    return false; // Forwarded headers alone cannot authenticate a public HTTP caller.
   }
 
   private isAllowedDevelopmentTokenRequest(request: IncomingMessage, pathname: string): boolean {

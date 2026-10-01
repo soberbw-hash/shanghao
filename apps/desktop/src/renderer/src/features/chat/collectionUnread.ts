@@ -1,6 +1,6 @@
 import type { RoomCollectionItem } from "@private-voice/shared";
 
-type RoomId = "main" | "side";
+type RoomId = string;
 
 export const collectionLastViewedAt = (
   roomId: RoomId,

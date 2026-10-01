@@ -1,4 +1,4 @@
-import { createHash, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import path from "node:path";
 
 import {
@@ -6,41 +6,30 @@ import {
   CURRENT_TRANSCRIPTION_PIPELINE_VERSION,
   evaluateVoiceMemoryTranscriptionValidity,
   hasInvalidVoiceMemoryResult,
-  isReliableTranscriptText,
   mergeTranscriptIntoSentences,
   type AiAsrModelId,
   type AiModelId,
-  type AiAsrRuntimeStatus,
   type AiRuntimeStatus,
   type RendererLogPayload,
   type VoiceMemoryAnswer,
   type VoiceMemoryBenchmarkRunMetadata,
   type VoiceMemoryGlobalQuestionRequest,
-  type VoiceMemoryChapter,
-  type VoiceMemoryHighlight,
-  type VoiceMemoryOrganizationMetrics,
   type VoiceMemoryOrganizationPublication,
-  type VoiceMemoryOrganizationResult,
-  type VoiceMemoryMarkerTitle,
   type VoiceMemoryProcessRequest,
   type VoiceMemoryQuestionRequest,
   type VoiceMemoryRecord,
   type VoiceMemorySummary,
   type VoiceMemorySearchRequest,
   type VoiceMemorySearchResult,
-  type VoiceMemorySummaryPoint,
   type VoiceMemoryProcessingStage,
   type VoiceMemoryTaskDiagnostic,
   type VoiceMemoryTaskStatus,
-  type VoiceMemoryTranscriptionModel,
-  type VoiceMemoryTranscriptionAttempt,
-  type VoiceMemoryTranscriptSegment,
 } from "@private-voice/shared";
 
-import { AiModelManager, QWEN36_NVFP4_MODEL_REVISION } from "./ai-model-manager";
+import { AiModelManager } from "./ai-model-manager";
 import { AiJobWriteOwnership } from "./ai-job-write-ownership";
 import { AiRuntimeManager } from "./ai-runtime-manager";
-import type { TranscriptionChunkRuntimeResult } from "./asr-benchmark-runtime";
+import { transcribeChunkWithRetry } from "./voice-memory-transcription-retry";
 import { TRANSCRIPTION_CHUNK_MS, transcriptionChunkMsForModel } from "./asr-chunk-policy";
 import { classifyLocalModelRuntimeError } from "./local-model-runtime";
 import { VoiceMemoryStore } from "./voice-memory-store";
@@ -50,24 +39,10 @@ import {
   statsFromTranscriptionUnits,
 } from "./voice-memory-transcription-units";
 import { resolveFfmpegExecutable } from "./media-runtime";
-import { probeRecordingMedia } from "./recording-media-probe";
 import { AiTextGateway } from "./ai-text-gateway";
-import {
-  materializeOrganizationChunks,
-  normalizeOrganizationResult,
-  organizationChunkPrompt,
-  organizationFinalPrompt,
-  planRecordingOrganizationChunks,
-  RECORDING_ORGANIZATION_PIPELINE_VERSION,
-} from "./recording-organizer";
-import { loadRecordingSpeakerSegments } from "./recording-speaker-segments";
-import { loadRecordingParticipantTracks } from "./recording-participant-tracks";
-import {
-  bindTranscriptToKnownSpeaker,
-  mergeSpeakerTranscript,
-  splitParticipantTracksIntoSpeakerSources,
-  type KnownSpeakerTranscriptionSource,
-} from "./speaker-transcript";
+import { VoiceMemoryOrganizer } from "./voice-memory-organizer";
+export { transcriptForPrompt } from "./voice-memory-organizer";
+import { bindTranscriptToKnownSpeaker, mergeSpeakerTranscript } from "./speaker-transcript";
 
 export {
   TRANSCRIPTION_CHUNK_MS,
@@ -80,189 +55,26 @@ export {
   statsFromTranscriptionUnits,
   type TranscriptionUnitDefinition,
 } from "./voice-memory-transcription-units";
-export const AUTOMATIC_TRANSCRIPTION_MAX_DURATION_MS = 30 * 60_000;
-export const benchmarkDurationForMode = (
-  mode: "smoke" | "standard" | "long" | undefined,
-  sourceDurationMs: number,
-): number =>
-  Math.min(
-    sourceDurationMs,
-    mode === "smoke" ? 3 * 60_000 : mode === "standard" ? 10 * 60_000 : sourceDurationMs,
-  );
-
-export const benchmarkRangeForMode = (
-  mode: "smoke" | "standard" | "long" | undefined,
-  sourceDurationMs: number,
-): { sourceStartMs: number; sourceEndMs: number; clipDurationMs: number } => {
-  const clipDurationMs = benchmarkDurationForMode(mode, sourceDurationMs);
-  const sourceStartMs =
-    mode === "standard" && clipDurationMs < sourceDurationMs
-      ? Math.max(0, Math.floor((sourceDurationMs - clipDurationMs) / 2))
-      : 0;
-  return {
-    sourceStartMs,
-    sourceEndMs: sourceStartMs + clipDurationMs,
-    clipDurationMs,
-  };
-};
-
-export const resolveTranscriptionRunRange = (
-  sourceDurationMs: number,
-  benchmark: VoiceMemoryBenchmarkRunMetadata | undefined,
-): { sourceStartMs: number; sourceEndMs: number; clipDurationMs: number } => {
-  if (!benchmark) return benchmarkRangeForMode(undefined, sourceDurationMs);
-  const savedClip = benchmark.clips?.[0];
-  const fallback = benchmarkRangeForMode(benchmark.mode, sourceDurationMs);
-  const sourceStartMs = Math.max(
-    0,
-    Math.min(
-      sourceDurationMs,
-      savedClip ? (savedClip.sourceStartMs ?? savedClip.startMs) : fallback.sourceStartMs,
-    ),
-  );
-  const sourceEndMs = Math.max(
-    sourceStartMs,
-    Math.min(
-      sourceDurationMs,
-      savedClip?.sourceEndMs ??
-        sourceStartMs +
-          (savedClip ? Math.max(0, savedClip.endMs - savedClip.startMs) : fallback.clipDurationMs),
-    ),
-  );
-  return { sourceStartMs, sourceEndMs, clipDurationMs: sourceEndMs - sourceStartMs };
-};
-const LEGACY_TRANSCRIPTION_CHUNK_MS = 10 * 60_000;
-// Version 8 binds speaker identity to independent participant streams. Partial mixed-stream
-// results must never be merged into this speaker-aware pipeline.
-const TRANSCRIPTION_PIPELINE_VERSION = CURRENT_TRANSCRIPTION_PIPELINE_VERSION;
-const MAX_TRANSCRIPTION_CHUNK_ATTEMPTS = 3;
-const TRANSCRIPTION_CHUNK_RETRY_DELAY_MS = 1_000;
 import {
-  MAX_ORGANIZATION_ATTEMPTS_PER_RUN,
-  organizationExhausted,
-  resetOrganizationRetry,
-  runOrganizationWithRetry,
-} from "./organization-retry";
-
-export const isFatalTranscriptionRuntimeFailure = (error: unknown): boolean => {
-  const message = (error instanceof Error ? error.message : String(error)).toLowerCase();
-  return /(?:0xc000001d|-1073741795|3221225501|illegal instruction|ark_asr_(?:backend_missing|q8_model_missing|q8_quantization_required)|unable to compare versions for packaging|no package metadata was found|modulenotfounderror|no module named|importerror:|dll load failed)/i.test(
-    message,
-  );
-};
-
-export const canAutomaticallyTranscribeDuration = (durationMs: number): boolean =>
-  durationMs <= AUTOMATIC_TRANSCRIPTION_MAX_DURATION_MS;
-
-export const isRecoverableFfmpegFailure = (record: VoiceMemoryRecord): boolean =>
-  record.phase === "error" &&
-  (record.errorMessage === "ffmpeg_missing" || record.diagnostic?.errorCode === "ffmpeg_missing");
-
-export const transcriptionModelMetadata = (
-  modelId: AiAsrModelId,
-  status: AiAsrRuntimeStatus,
-): VoiceMemoryTranscriptionModel => ({
-  id: modelId,
-  name: status.modelName?.trim() || AI_ASR_MODEL_NAMES[modelId],
-  ...(status.modelVersion?.trim() ? { version: status.modelVersion.trim() } : {}),
-});
-
-export const completedTranscriptionUnits = (
-  checkpoint: { completedUnits: number; unitDurationMs?: number } | undefined,
-  totalUnits: number,
-  currentUnitDurationMs = TRANSCRIPTION_CHUNK_MS,
-): number =>
-  Math.min(
-    totalUnits,
-    Math.floor(
-      ((checkpoint?.completedUnits ?? 0) *
-        (checkpoint?.unitDurationMs ?? LEGACY_TRANSCRIPTION_CHUNK_MS)) /
-        currentUnitDurationMs,
-    ),
-  );
-
-interface OrganizedResult {
-  summary: VoiceMemorySummaryPoint[];
-  chapters: VoiceMemoryChapter[];
-  highlights: VoiceMemoryHighlight[];
-  markerTitles: VoiceMemoryMarkerTitle[];
-}
-
-const createOrganizationMetrics = (): VoiceMemoryOrganizationMetrics => ({
-  modelName: "Qwen3.6-35B-A3B",
-  modelRevision: QWEN36_NVFP4_MODEL_REVISION,
-  quantization: "NVFP4",
-  provider: "freetoken",
-  inputTokens: 0,
-  outputTokens: 0,
-  totalElapsedMs: 0,
-  oomCount: 0,
-  retryCount: 0,
-  chunkCount: 0,
-  interrupted: false,
-  errors: [],
-});
-
-const mergeOrganizationMetrics = (
-  current: VoiceMemoryOrganizationMetrics,
-  next: Partial<VoiceMemoryOrganizationMetrics>,
-): VoiceMemoryOrganizationMetrics => {
-  const previousOutput = current.outputTokens;
-  const nextOutput = next.outputTokens ?? 0;
-  const totalOutput = previousOutput + nextOutput;
-  const weighted = (left?: number, right?: number): number | undefined => {
-    if (right === undefined) return left;
-    if (left === undefined || previousOutput === 0) return right;
-    return totalOutput > 0 ? (left * previousOutput + right * nextOutput) / totalOutput : right;
-  };
-  return {
-    ...current,
-    providerVersion: next.providerVersion ?? current.providerVersion,
-    modelLoadTimeMs: next.modelLoadTimeMs ?? current.modelLoadTimeMs,
-    inputTokens: current.inputTokens + (next.inputTokens ?? 0),
-    outputTokens: totalOutput,
-    prefillTimeMs:
-      current.prefillTimeMs === undefined && next.prefillTimeMs === undefined
-        ? undefined
-        : (current.prefillTimeMs ?? 0) + (next.prefillTimeMs ?? 0),
-    ttftMs: weighted(current.ttftMs, next.ttftMs),
-    outputTokensPerSecond: weighted(current.outputTokensPerSecond, next.outputTokensPerSecond),
-    totalElapsedMs: current.totalElapsedMs + (next.totalElapsedMs ?? 0),
-    peakVramMb: Math.max(current.peakVramMb ?? 0, next.peakVramMb ?? 0) || undefined,
-    peakRamMb: Math.max(current.peakRamMb ?? 0, next.peakRamMb ?? 0) || undefined,
-    oomCount: current.oomCount + (next.oomCount ?? 0),
-  };
-};
-
-const MAX_ORGANIZATION_REDUCTION_INPUT_TOKENS = 5_000;
-
-const estimateOrganizationPromptTokens = (value: string): number => {
-  const han = (value.match(/[\p{Script=Han}]/gu) ?? []).length;
-  return han + Math.ceil(Math.max(0, value.length - han) / 3.5);
-};
-
-const partitionOrganizationResults = (
-  record: VoiceMemoryRecord,
-  results: readonly VoiceMemoryOrganizationResult[],
-): VoiceMemoryOrganizationResult[][] => {
-  const groups: VoiceMemoryOrganizationResult[][] = [];
-  let current: VoiceMemoryOrganizationResult[] = [];
-  for (const result of results) {
-    const candidate = [...current, result];
-    const estimatedTokens = estimateOrganizationPromptTokens(
-      organizationFinalPrompt(record, candidate),
-    );
-    if (current.length > 0 && estimatedTokens > MAX_ORGANIZATION_REDUCTION_INPUT_TOKENS) {
-      groups.push(current);
-      current = [result];
-    } else {
-      current = candidate;
-    }
-  }
-  if (current.length > 0) groups.push(current);
-  return groups;
-};
-
+  canAutomaticallyTranscribeDuration,
+  completedTranscriptionUnits,
+  isRecoverableFfmpegFailure,
+  prepareTranscriptionInput,
+  prepareKnownSpeakerSources,
+  resolveTranscriptionRunRange,
+} from "./voice-memory-transcription-preparation";
+export {
+  AUTOMATIC_TRANSCRIPTION_MAX_DURATION_MS,
+  benchmarkDurationForMode,
+  benchmarkRangeForMode,
+  canAutomaticallyTranscribeDuration,
+  completedTranscriptionUnits,
+  isRecoverableFfmpegFailure,
+  resolveTranscriptionRunRange,
+  transcriptionModelMetadata,
+} from "./voice-memory-transcription-preparation";
+export { isFatalTranscriptionRuntimeFailure } from "./voice-memory-transcription-retry";
+const TRANSCRIPTION_PIPELINE_VERSION = CURRENT_TRANSCRIPTION_PIPELINE_VERSION;
 const createTaskId = (recordingId: string): string =>
   `voice-memory:${recordingId}:${Date.now()}-${randomUUID().slice(0, 8)}`;
 
@@ -294,81 +106,6 @@ const emptyRecord = (request: VoiceMemoryProcessRequest): VoiceMemoryRecord => (
   })),
 });
 
-export const transcriptForPrompt = (
-  record: VoiceMemoryRecord,
-  maximumCharacters = 36_000,
-): string =>
-  mergeTranscriptIntoSentences(record.transcript)
-    .filter((segment) =>
-      isReliableTranscriptText(segment.text, Math.max(100, segment.endMs - segment.startMs)),
-    )
-    .map(
-      (segment) =>
-        `[${Math.round(segment.startMs / 1_000)}s] ${segment.nickname ?? segment.speakerId}: ${segment.text}`,
-    )
-    .join("\n")
-    .slice(0, maximumCharacters);
-
-const asArray = <T>(value: unknown): T[] => {
-  if (Array.isArray(value)) return value as T[];
-  return value && typeof value === "object" ? [value as T] : [];
-};
-
-const normalizeOrganizedResult = (value: unknown, record: VoiceMemoryRecord): OrganizedResult => {
-  const raw = value && typeof value === "object" ? (value as Record<string, unknown>) : {};
-  const summary = asArray<Record<string, unknown>>(raw.summary)
-    .filter((item) => typeof item.text === "string" && item.text.trim())
-    .map((item) => ({
-      text: String(item.text).trim(),
-      sourceStartMs: typeof item.sourceStartMs === "number" ? item.sourceStartMs : undefined,
-      sourceSegmentIds: Array.isArray(item.sourceSegmentIds)
-        ? item.sourceSegmentIds.map((id) => {
-            if (typeof id === "number") return record.transcript[id]?.id ?? String(id);
-            return String(id);
-          })
-        : undefined,
-    }));
-  const chapters = asArray<Record<string, unknown>>(raw.chapters)
-    .filter((item) => typeof item.title === "string" && Number.isFinite(Number(item.startMs)))
-    .map((item, index) => ({
-      id: String(item.id ?? `chapter-${index + 1}`),
-      startMs: Number(item.startMs),
-      title: String(item.title).trim(),
-      description: typeof item.description === "string" ? item.description.trim() : undefined,
-    }));
-  const highlights = asArray<Record<string, unknown>>(raw.highlights)
-    .filter(
-      (item) =>
-        typeof item.title === "string" &&
-        Number.isFinite(Number(item.startMs)) &&
-        Number.isFinite(Number(item.endMs)),
-    )
-    .map((item, index) => ({
-      id: String(item.id ?? `highlight-${index + 1}`),
-      title: String(item.title).trim(),
-      startMs: Number(item.startMs),
-      endMs: Number(item.endMs),
-      description: typeof item.description === "string" ? item.description.trim() : "",
-      transcriptSegmentIds: Array.isArray(item.transcriptSegmentIds)
-        ? item.transcriptSegmentIds.map((id) => String(id))
-        : [],
-      exportable: item.exportable !== false,
-    }));
-  const markerTitles = asArray<Record<string, unknown>>(raw.markerTitles)
-    .filter(
-      (item) =>
-        typeof item.markerId === "string" &&
-        typeof item.title === "string" &&
-        Number.isFinite(Number(item.offsetMs)),
-    )
-    .map((item) => ({
-      markerId: String(item.markerId),
-      offsetMs: Number(item.offsetMs),
-      title: String(item.title).trim(),
-    }));
-  return { summary, chapters, highlights, markerTitles };
-};
-
 /** Runs resumable transcription and organization while persisting every completed unit. */
 export class AiVoiceMemoryService {
   private readonly listeners = new Set<(record: VoiceMemoryRecord) => void>();
@@ -395,6 +132,8 @@ export class AiVoiceMemoryService {
   private activeQuestionController?: AbortController;
   private lastTask?: VoiceMemoryTaskDiagnostic;
   private deferredRetryTimer?: NodeJS.Timeout;
+  private unsubscribeModelStatus?: () => void;
+  private stopped = false;
 
   constructor(
     private readonly models: AiModelManager,
@@ -406,6 +145,7 @@ export class AiVoiceMemoryService {
   ) {}
 
   async initialize(): Promise<void> {
+    if (this.stopped) return;
     await this.store.initialize();
     const records = await this.store.list();
     this.lastTask = records
@@ -487,7 +227,9 @@ export class AiVoiceMemoryService {
         errorMessage: undefined,
       });
     }
-    this.models.onStatus(() => this.scheduleDeferredRetry());
+    if (this.stopped) return;
+    this.unsubscribeModelStatus?.();
+    this.unsubscribeModelStatus = this.models.onStatus(() => this.scheduleDeferredRetry());
     this.scheduleDeferredRetry();
   }
 
@@ -536,6 +278,18 @@ export class AiVoiceMemoryService {
 
   pauseAll(): void {
     for (const controller of this.controllers.values()) controller.abort();
+  }
+
+  /** Ends admission and observation; active jobs keep their existing pause/checkpoint path. */
+  stop(): void {
+    this.stopped = true;
+    if (this.deferredRetryTimer) clearTimeout(this.deferredRetryTimer);
+    this.deferredRetryTimer = undefined;
+    this.unsubscribeModelStatus?.();
+    this.unsubscribeModelStatus = undefined;
+    this.pauseAll();
+    this.activeQuestionController?.abort();
+    this.listeners.clear();
   }
 
   private serializeRecordingSetup<T>(recordingId: string, operation: () => Promise<T>): Promise<T> {
@@ -826,6 +580,7 @@ export class AiVoiceMemoryService {
   }
 
   process(request: VoiceMemoryProcessRequest): Promise<VoiceMemoryRecord> {
+    if (this.stopped) return Promise.reject(new Error("ai_task_paused"));
     if (
       this.clearingRecordings.has(request.recordingId) ||
       this.deletingRecordings.has(request.recordingId)
@@ -948,6 +703,7 @@ export class AiVoiceMemoryService {
       filePath: string;
       fileSize?: number;
       roomId?: string;
+      roomName?: string;
       markers?: Array<{ id: string; offsetMs: number }>;
     }>,
     organize: boolean,
@@ -974,7 +730,14 @@ export class AiVoiceMemoryService {
         recordingId,
         filePath: recording.filePath,
         roomId: recording.roomId,
-        roomName: recording.roomId === "side" ? "二号房" : "一号房",
+        roomName:
+          record?.roomName ??
+          recording.roomName ??
+          (recording.roomId === "side"
+            ? "二号房"
+            : recording.roomId === "main"
+              ? "一号房"
+              : "房间"),
         organize,
         markers: recording.markers,
         taskId,
@@ -1003,6 +766,7 @@ export class AiVoiceMemoryService {
   }
 
   private async processNow(request: VoiceMemoryProcessRequest): Promise<VoiceMemoryRecord> {
+    if (this.stopped) throw new Error("ai_task_paused");
     const taskId = request.taskId ?? createTaskId(request.recordingId);
     this.log("info", "Voice memory processing started", {
       recordingId: request.recordingId,
@@ -1453,33 +1217,25 @@ export class AiVoiceMemoryService {
     requestedBenchmark?: VoiceMemoryBenchmarkRunMetadata,
     onStage?: (stage: VoiceMemoryProcessingStage) => void,
   ): Promise<VoiceMemoryRecord> {
-    const selectedModelId =
-      requestedModelId ?? record.transcriptionModel?.id ?? this.models.getActiveAsrModel();
-    const taskId = `transcription:${record.recordingId}:${selectedModelId}`;
-    const legacyTaskId = `transcription:${record.recordingId}`;
-    const modelCheckpoint = this.models.getTaskCheckpoint(taskId);
-    const legacyCheckpoint = this.models.getTaskCheckpoint(legacyTaskId);
-    const checkpoint =
-      modelCheckpoint ??
-      (legacyCheckpoint?.asrModelId === selectedModelId ? legacyCheckpoint : undefined);
-    const checkpointModel =
-      checkpoint?.pipelineVersion === TRANSCRIPTION_PIPELINE_VERSION
-        ? checkpoint.asrModelId
-        : undefined;
-    // "Continue transcription" belongs to the recording, not to the model currently selected
-    // in Settings. Pin a valid checkpoint to its original ASR so changing the default model does
-    // not restart the recording or mix two recognizers in one transcript.
-    const runnable = this.models.canRunTask(
-      "transcription",
-      manual,
-      checkpointModel ?? selectedModelId,
-    );
-    if (!runnable.runnable) throw new Error(runnable.reason);
-    const asrModelId = runnable.requiredModel as AiAsrModelId;
-    const asrStatus = (await this.runtime.status(asrModelId)).asr;
-    const transcriptionModel = transcriptionModelMetadata(asrModelId, asrStatus);
     onStage?.("preprocess");
-    const audio = await probeRecordingMedia(record.filePath, { signal });
+    const {
+      taskId,
+      legacyTaskId,
+      legacyCheckpoint,
+      checkpoint,
+      runnable,
+      asrModelId,
+      asrStatus,
+      transcriptionModel,
+      audio,
+    } = await prepareTranscriptionInput(
+      this.models,
+      this.runtime,
+      record,
+      manual,
+      signal,
+      requestedModelId,
+    );
     record = await this.updateDiagnostic(
       record,
       { recordingId: record.recordingId, filePath: record.filePath },
@@ -1524,70 +1280,15 @@ export class AiVoiceMemoryService {
     if (!manual && !canAutomaticallyTranscribeDuration(totalDuration)) {
       throw new Error("automatic_long_recording_requires_manual");
     }
-    // Prefer speech-only clips carrying the signed-in participant identity. A twelve-hour room
-    // may contain far less than twelve hours of actual speech, so this avoids repeatedly decoding
-    // every participant's silence while retaining exact nicknames and overlapping speakers.
-    const loadedSpeakerSegments = await loadRecordingSpeakerSegments(
-      record.recordingId,
-      record.filePath,
-    );
-    const speechSources: KnownSpeakerTranscriptionSource[] = (loadedSpeakerSegments ?? [])
-      .filter((segment) => segment.startMs < sourceEndMs && segment.endMs > sourceStartMs)
-      .map((segment) => {
-        const clippedStartMs = Math.max(segment.startMs, sourceStartMs);
-        return {
-          ...segment,
-          speakerId: segment.userId?.trim() || segment.speakerId,
-          startMs: clippedStartMs,
-          endMs: Math.min(segment.endMs, sourceEndMs),
-          audioOffsetMs: Math.max(0, clippedStartMs - segment.startMs),
-        };
-      });
-    const participantTracks = await loadRecordingParticipantTracks(
-      record.recordingId,
-      record.filePath,
-    );
-    const participantSources = participantTracks?.length
-      ? splitParticipantTracksIntoSpeakerSources(
-          participantTracks,
-          sourceEndMs,
-          TRANSCRIPTION_CHUNK_MS,
-          sourceStartMs,
-        )
-      : [];
-    const durableSourceUnits = (record.transcriptionUnits ?? []).filter(
-      (unit) =>
-        unit.modelId === asrModelId && unit.pipelineVersion === TRANSCRIPTION_PIPELINE_VERSION,
-    );
-    const durableUnitsMatch = (sources: KnownSpeakerTranscriptionSource[]): boolean =>
-      durableSourceUnits.length === sources.length &&
-      durableSourceUnits.every((unit, index) => {
-        const source = sources[index];
-        return (
-          source !== undefined &&
-          unit.startMs === source.startMs &&
-          unit.endMs === source.endMs &&
-          unit.speakerId === source.speakerId
-        );
-      });
-    // An interrupted recording created by an older build may already have checkpoints against
-    // the continuous participant tracks. Finish those exact saved units instead of silently
-    // changing the unit timeline mid-run; all fresh work uses the smaller speech-only source.
-    const resumeParticipantSources =
-      participantSources.length > 0 &&
-      ((durableSourceUnits.length > 0 &&
-        durableUnitsMatch(participantSources) &&
-        !durableUnitsMatch(speechSources)) ||
-        (durableSourceUnits.length === 0 &&
-          checkpoint?.pipelineVersion === TRANSCRIPTION_PIPELINE_VERSION &&
-          checkpoint.asrModelId === asrModelId &&
-          checkpoint.totalUnits === participantSources.length &&
-          checkpoint.totalUnits !== speechSources.length));
-    const knownSpeakerSegments: KnownSpeakerTranscriptionSource[] = resumeParticipantSources
-      ? participantSources
-      : speechSources.length
-        ? speechSources
-        : participantSources;
+    const { knownSpeakerSegments, resumeParticipantSources, speechSources } =
+      await prepareKnownSpeakerSources(
+        record,
+        asrModelId,
+        checkpoint,
+        sourceStartMs,
+        sourceEndMs,
+        signal,
+      );
     if (knownSpeakerSegments?.length) {
       const totalUnits = knownSpeakerSegments.length;
       const checkpointCompatible =
@@ -2138,601 +1839,24 @@ export class AiVoiceMemoryService {
     });
   }
 
-  private async transcribeChunkWithRetry(
-    operation: () => Promise<TranscriptionChunkRuntimeResult>,
+  private transcribeChunkWithRetry(
+    operation: Parameters<typeof transcribeChunkWithRetry>[0],
     signal: AbortSignal,
-    context: {
-      recordingId: string;
-      taskId?: string;
-      unit: number;
-      totalUnits: number;
-      benchmark?: boolean;
-    },
-  ): Promise<{
-    segments: VoiceMemoryTranscriptSegment[];
-    result?: TranscriptionChunkRuntimeResult;
-    retries: number;
-    failed: boolean;
-    fatal?: boolean;
-    errorCode?: string;
-    errorMessage?: string;
-    attemptHistory: VoiceMemoryTranscriptionAttempt[];
-  }> {
-    let retries = 0;
-    let lastError: unknown;
-    let anomalyRetryUsed = false;
-    const measuredTimings: TranscriptionChunkRuntimeResult["timing"][] = [];
-    const operationStarted = performance.now();
-    const attemptHistory: VoiceMemoryTranscriptionAttempt[] = [];
-    const maxAttempts = context.benchmark ? 2 : MAX_TRANSCRIPTION_CHUNK_ATTEMPTS;
-    const rawAnomalyAttempts: NonNullable<TranscriptionChunkRuntimeResult["rawAnomalyAttempts"]> =
-      [];
-    for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
-      if (signal.aborted) throw new Error("ai_task_paused");
-      const startedAt = new Date().toISOString();
-      const attemptStarted = performance.now();
-      retries = attempt;
-      try {
-        const result = await operation();
-        measuredTimings.push(result.timing);
-        const anomalous =
-          result.outputStatus === "repetition_loop" || result.outputStatus === "abnormal_output";
-        attemptHistory.push({
-          attempt: attempt + 1,
-          startedAt,
-          completedAt: new Date().toISOString(),
-          outcome: anomalous ? "output_anomaly" : "success",
-          outputStatus: result.outputStatus,
-          elapsedMs: performance.now() - attemptStarted,
-          timing: result.timing,
-          rawText: context.benchmark ? result.rawText : undefined,
-          rawRuntimeOutput: context.benchmark ? JSON.stringify(result.rawOutput) : undefined,
-        });
-        if (anomalous) {
-          rawAnomalyAttempts.push({
-            outputStatus: result.outputStatus as "repetition_loop" | "abnormal_output",
-            rawText: result.rawText,
-            rawOutput: result.rawOutput,
-            anomalyTypes: result.anomalyTypes,
-            anomalyReasons: result.anomalyReasons,
-          });
-        }
-        if (anomalous && !anomalyRetryUsed && attempt + 1 < maxAttempts) {
-          anomalyRetryUsed = true;
-          retries += 1;
-          continue;
-        }
-        return {
-          attemptHistory,
-          result: {
-            ...result,
-            timing: {
-              ...result.timing,
-              ...Object.fromEntries(
-                [
-                  "loadTimeMs",
-                  "conversionTimeMs",
-                  "inferenceTimeMs",
-                  "alignmentTimeMs",
-                  "postprocessTimeMs",
-                  "vadTimeMs",
-                  "providerImportTimeMs",
-                  "modelInitializationTimeMs",
-                  "workerStartupTimeMs",
-                ].map((key) => [
-                  key,
-                  measuredTimings.reduce(
-                    (sum, timing) => sum + (timing[key as keyof typeof timing] ?? 0),
-                    0,
-                  ),
-                ]),
-              ),
-              totalTimeMs: performance.now() - operationStarted,
-            },
-            anomalyTypes: Array.from(
-              new Set([
-                ...rawAnomalyAttempts.flatMap((attempt) => attempt.anomalyTypes),
-                ...result.anomalyTypes,
-              ]),
-            ),
-            anomalyReasons: Array.from(
-              new Set([
-                ...rawAnomalyAttempts.flatMap((attempt) => attempt.anomalyReasons),
-                ...result.anomalyReasons,
-              ]),
-            ),
-            rawAnomalyAttempts: rawAnomalyAttempts.length ? rawAnomalyAttempts : undefined,
-          },
-          // Preserve the raw abnormal output for diagnostics, but never promote it to final text.
-          segments: anomalous ? [] : result.segments,
-          retries,
-          failed: anomalous,
-          errorCode: anomalous ? "transcription_output_anomaly" : undefined,
-          errorMessage: anomalous ? result.anomalyReasons.join(",") : undefined,
-        };
-      } catch (error) {
-        lastError = error;
-        if (signal.aborted || (error as Error)?.message === "ai_task_paused") throw error;
-        const errorMessage = error instanceof Error ? error.message : String(error);
-        const detail = error as Error & { stderr?: string; exitCode?: number };
-        attemptHistory.push({
-          attempt: attempt + 1,
-          startedAt,
-          completedAt: new Date().toISOString(),
-          outcome: "runtime_error",
-          errorCode: this.errorCode(error),
-          errorMessage,
-          elapsedMs: performance.now() - attemptStarted,
-          stderr: context.benchmark ? detail.stderr : undefined,
-          exitCode: detail.exitCode,
-        });
-        if (isFatalTranscriptionRuntimeFailure(error)) {
-          const errorMessage = error instanceof Error ? error.message : String(error);
-          this.log("error", "AI transcription runtime failed deterministically; stopping model", {
-            ...context,
-            reason: errorMessage,
-          });
-          return {
-            attemptHistory,
-            segments: [],
-            retries,
-            failed: true,
-            fatal: true,
-            errorCode: "asr_runtime_fatal",
-            errorMessage,
-          };
-        }
-        if (attempt + 1 < maxAttempts) {
-          await new Promise((resolve) => setTimeout(resolve, TRANSCRIPTION_CHUNK_RETRY_DELAY_MS));
-        }
-      }
-    }
-    this.log("warn", "AI transcription chunk failed; continuing with later chunks", {
-      ...context,
-      reason: lastError instanceof Error ? lastError.message : String(lastError),
-    });
-    const errorMessage = lastError instanceof Error ? lastError.message : String(lastError);
-    return {
-      attemptHistory,
-      segments: [],
-      retries,
-      failed: true,
-      errorCode: this.errorCode(lastError),
-      errorMessage,
-    };
+    context: Parameters<typeof transcribeChunkWithRetry>[2],
+  ) {
+    return transcribeChunkWithRetry(operation, signal, context, this.log.bind(this));
   }
 
-  private async organize(
+  private organize(
     record: VoiceMemoryRecord,
     manual: boolean,
     signal: AbortSignal,
   ): Promise<VoiceMemoryRecord> {
-    if (record.transcript.length === 0) return record;
-    if (manual && record.organizationSinglePassRetry) {
-      record = await this.save({
-        ...record,
-        organizationSinglePassRetry:
-          record.organizationSinglePassRetry.status === "completed"
-            ? undefined
-            : resetOrganizationRetry(record.organizationSinglePassRetry),
-      });
-    }
-    // Only an explicit foreground action grants exhausted work another budget.
-    if (manual && record.organization) {
-      record = await this.save({
-        ...record,
-        organization: {
-          ...record.organization,
-          chunks: record.organization.chunks.map(resetOrganizationRetry),
-          reductionRetries: Object.fromEntries(
-            Object.entries(record.organization.reductionRetries ?? {}).map(([key, value]) => [
-              key,
-              resetOrganizationRetry(value),
-            ]),
-          ),
-        },
-      });
-    }
-    if (!this.textGateway.usesLocalOrganizer()) {
-      return this.organizeSinglePass(record, manual, signal);
-    }
-    const readableTranscript = mergeTranscriptIntoSentences(record.transcript);
-    const preparedRecord = { ...record, transcript: readableTranscript };
-    const plans = planRecordingOrganizationChunks(preparedRecord);
-    if (plans.length === 0) return preparedRecord;
-    const compatibleRun =
-      record.organization?.pipelineVersion === RECORDING_ORGANIZATION_PIPELINE_VERSION &&
-      record.organization.modelId === "qwen36-35b-a3b-nvfp4" &&
-      record.organization.modelRevision === QWEN36_NVFP4_MODEL_REVISION;
-    let chunks = materializeOrganizationChunks(
-      plans,
-      compatibleRun
-        ? record.organization?.chunks
-        : record.organization?.chunks.map((chunk) => ({
-            ...chunk,
-            result: undefined,
-            status: organizationExhausted(chunk)
-              ? ("unrecoverable" as const)
-              : ("pending" as const),
-          })),
-    );
-    let metrics = compatibleRun
-      ? (record.organization?.metrics ?? createOrganizationMetrics())
-      : createOrganizationMetrics();
-    const startedAt = compatibleRun
-      ? (record.organization?.startedAt ?? new Date().toISOString())
-      : new Date().toISOString();
-    record = await this.save({
-      ...preparedRecord,
-      transcript: readableTranscript,
-      phase: "organizing",
-      progress: 75,
-      errorMessage: undefined,
-      organizationPublication: undefined,
-      organization: {
-        pipelineVersion: RECORDING_ORGANIZATION_PIPELINE_VERSION,
-        modelId: "qwen36-35b-a3b-nvfp4",
-        modelRevision: QWEN36_NVFP4_MODEL_REVISION,
-        status: "running",
-        completedChunks: chunks.filter((chunk) => chunk.status === "completed").length,
-        chunks,
-        reductionRetries: record.organization?.reductionRetries,
-        finalResult: compatibleRun ? record.organization?.finalResult : undefined,
-        metrics,
-        startedAt,
-        updatedAt: new Date().toISOString(),
-      },
-    });
-
-    for (let index = 0; index < chunks.length; index += 1) {
-      const currentChunk = chunks[index];
-      if (!currentChunk) continue;
-      if (currentChunk.status === "completed" && currentChunk.result) continue;
-      let completed = false;
-      let lastError: unknown;
-      for (let attempt = 0; attempt < MAX_ORGANIZATION_ATTEMPTS_PER_RUN; attempt += 1) {
-        if (signal.aborted) {
-          metrics = { ...metrics, interrupted: true };
-          await this.save({
-            ...record,
-            phase: "paused",
-            organization: {
-              ...record.organization!,
-              status: "paused",
-              chunks,
-              metrics,
-              updatedAt: new Date().toISOString(),
-            },
-          });
-          throw new Error("ai_task_paused");
-        }
-        const baseChunk = chunks[index];
-        if (!baseChunk) throw new Error("organization_chunk_missing");
-        if (organizationExhausted(baseChunk)) {
-          lastError = new Error("organization_retry_exhausted");
-          break;
-        }
-        const running = {
-          ...baseChunk,
-          status: "running" as const,
-          attempts: baseChunk.attempts + 1,
-          errorMessage: undefined,
-          updatedAt: new Date().toISOString(),
-        };
-        chunks = chunks.map((chunk, chunkIndex) => (chunkIndex === index ? running : chunk));
-        record = await this.save({
-          ...record,
-          progress:
-            75 +
-            (20 * chunks.filter((chunk) => chunk.status === "completed").length) / chunks.length,
-          organization: {
-            ...record.organization!,
-            status: "running",
-            chunks,
-            metrics,
-            updatedAt: new Date().toISOString(),
-          },
-        });
-        try {
-          const generated = await this.textGateway.generateJsonWithMetrics<unknown>({
-            purpose: "organize",
-            manual,
-            maxNewTokens: 3_072,
-            timeoutMs: 30 * 60_000,
-            signal,
-            prompt: organizationChunkPrompt(record, running),
-          });
-          const result = normalizeOrganizationResult(
-            generated.value,
-            record,
-            running.startMs,
-            running.endMs,
-          );
-          if (generated.metrics) metrics = mergeOrganizationMetrics(metrics, generated.metrics);
-          metrics = { ...metrics, chunkCount: metrics.chunkCount + 1 };
-          const finished = {
-            ...running,
-            status: "completed" as const,
-            result,
-            updatedAt: new Date().toISOString(),
-          };
-          chunks = chunks.map((chunk, chunkIndex) => (chunkIndex === index ? finished : chunk));
-          record = await this.save({
-            ...record,
-            progress:
-              75 +
-              (20 * chunks.filter((chunk) => chunk.status === "completed").length) / chunks.length,
-            organization: {
-              ...record.organization!,
-              status: "running",
-              completedChunks: chunks.filter((chunk) => chunk.status === "completed").length,
-              chunks,
-              metrics,
-              updatedAt: new Date().toISOString(),
-            },
-          });
-          completed = true;
-          break;
-        } catch (error) {
-          lastError = error;
-          if (signal.aborted || (error instanceof Error && error.message === "ai_task_paused"))
-            break;
-          if (attempt + 1 < MAX_ORGANIZATION_ATTEMPTS_PER_RUN) {
-            metrics = { ...metrics, retryCount: metrics.retryCount + 1 };
-          }
-        }
-      }
-      if (!completed) {
-        const message = lastError instanceof Error ? lastError.message : String(lastError);
-        const failedBase = chunks[index];
-        if (!failedBase) throw new Error("organization_chunk_missing");
-        const failed = {
-          ...failedBase,
-          status: organizationExhausted(failedBase)
-            ? ("unrecoverable" as const)
-            : ("failed" as const),
-          errorMessage: message,
-          updatedAt: new Date().toISOString(),
-        };
-        chunks = chunks.map((chunk, chunkIndex) => (chunkIndex === index ? failed : chunk));
-        metrics = {
-          ...metrics,
-          interrupted: signal.aborted,
-          oomCount:
-            metrics.oomCount + (/out of memory|\boom\b|cuda.*memory/i.test(message) ? 1 : 0),
-          errors: [...metrics.errors, `chunk_${index + 1}:${message}`].slice(-30),
-        };
-        await this.save({
-          ...record,
-          phase: signal.aborted ? "paused" : "error",
-          organization: {
-            ...record.organization!,
-            status: signal.aborted ? "paused" : failed.status,
-            chunks,
-            metrics,
-            updatedAt: new Date().toISOString(),
-          },
-          errorMessage: signal.aborted ? undefined : `organize_failed:${message}`,
-        });
-        throw lastError instanceof Error ? lastError : new Error(message);
-      }
-    }
-
-    const chunkResults = chunks
-      .map((chunk) => chunk.result)
-      .filter((result): result is VoiceMemoryOrganizationResult => Boolean(result));
-    let finalResult: VoiceMemoryOrganizationResult | undefined;
-    let finalError: unknown;
-    let reductionLevel = 0;
-    let reductionResults = chunkResults;
-    try {
-      while (reductionResults.length > 1) {
-        if (signal.aborted) throw new Error("ai_task_paused");
-        const groups = partitionOrganizationResults(record, reductionResults);
-        // A malformed oversized saved result must not make the reducer loop forever.
-        const effectiveGroups =
-          groups.length < reductionResults.length
-            ? groups
-            : Array.from({ length: Math.ceil(reductionResults.length / 2) }, (_, index) =>
-                reductionResults.slice(index * 2, index * 2 + 2),
-              );
-        const nextLevel: VoiceMemoryOrganizationResult[] = [];
-        for (let groupIndex = 0; groupIndex < effectiveGroups.length; groupIndex += 1) {
-          const group = effectiveGroups[groupIndex];
-          if (!group) continue;
-          let reduced: VoiceMemoryOrganizationResult | undefined;
-          let groupError: unknown;
-          const retryKey = `${reductionLevel}:${groupIndex}:${createHash("sha256").update(JSON.stringify(group)).digest("hex").slice(0, 16)}`;
-          try {
-            reduced = await runOrganizationWithRetry(
-              record.organization?.reductionRetries?.[retryKey],
-              async (state) => {
-                record = await this.save({
-                  ...record,
-                  organization: {
-                    ...record.organization!,
-                    reductionRetries: {
-                      ...record.organization?.reductionRetries,
-                      [retryKey]: state,
-                    },
-                  },
-                });
-              },
-              async () => {
-                const generation = await this.textGateway.generateJsonWithMetrics<unknown>({
-                  purpose: "organize",
-                  manual,
-                  maxNewTokens: 3_072,
-                  timeoutMs: 30 * 60_000,
-                  signal,
-                  prompt: organizationFinalPrompt(record, group),
-                });
-                if (generation.metrics)
-                  metrics = mergeOrganizationMetrics(metrics, generation.metrics);
-                return normalizeOrganizationResult(generation.value, record);
-              },
-              signal,
-            );
-          } catch (error) {
-            groupError = error;
-          }
-          if (!reduced) {
-            throw groupError instanceof Error
-              ? groupError
-              : new Error(`organization_reduce_failed_${reductionLevel}_${groupIndex}`);
-          }
-          nextLevel.push(reduced);
-        }
-        reductionResults = nextLevel;
-        reductionLevel += 1;
-      }
-      finalResult = reductionResults[0];
-    } catch (error) {
-      finalError = error;
-    }
-    if (!finalResult) {
-      const message = finalError instanceof Error ? finalError.message : String(finalError);
-      const paused = signal.aborted || message === "ai_task_paused";
-      metrics = {
-        ...metrics,
-        interrupted: paused,
-        oomCount: metrics.oomCount + (/out of memory|\boom\b|cuda.*memory/i.test(message) ? 1 : 0),
-        chunkCount: chunks.length,
-        errors: [...metrics.errors, `final:${message}`].slice(-30),
-      };
-      await this.save({
-        ...record,
-        phase: paused ? "paused" : "error",
-        organization: {
-          ...record.organization!,
-          status: paused
-            ? "paused"
-            : Object.values(record.organization?.reductionRetries ?? {}).some(organizationExhausted)
-              ? "unrecoverable"
-              : "failed",
-          completedChunks: chunks.filter((chunk) => chunk.status === "completed").length,
-          chunks,
-          metrics,
-          updatedAt: new Date().toISOString(),
-        },
-        errorMessage: paused ? undefined : `organize_failed:${message}`,
-      });
-      throw finalError instanceof Error ? finalError : new Error(message);
-    }
-    metrics = { ...metrics, chunkCount: chunks.length, interrupted: false };
-    const normalized: OrganizedResult = {
-      summary: finalResult.summary,
-      chapters: finalResult.topics.map((topic) => ({
-        id: topic.id,
-        startMs: topic.startMs,
-        title: topic.title,
-        description: topic.description,
-      })),
-      highlights: [...finalResult.highlights, ...finalResult.funnyMoments].map((highlight) => ({
-        id: highlight.id,
-        title: highlight.title,
-        startMs: highlight.startMs,
-        endMs: highlight.endMs,
-        description: highlight.description,
-        transcriptSegmentIds: highlight.sourceSegmentIds,
-        exportable: true,
-      })),
-      markerTitles: record.markerTitles,
-    };
-    return this.save({
-      ...record,
-      summary: normalized.summary,
-      chapters: normalized.chapters,
-      highlights: normalized.highlights,
-      markerTitles:
-        normalized.markerTitles.length > 0 ? normalized.markerTitles : record.markerTitles,
-      organizedAt: new Date().toISOString(),
-      timeline: [
-        ...record.timeline
-          .filter((entry) => entry.kind === "marker")
-          .map((entry) => ({
-            ...entry,
-            title:
-              normalized.markerTitles.find((marker) => marker.markerId === entry.id)?.title ??
-              entry.title,
-          })),
-        ...normalized.chapters.map((chapter) => ({
-          id: chapter.id || randomUUID(),
-          kind: "chapter" as const,
-          offsetMs: chapter.startMs,
-          title: chapter.title,
-          detail: chapter.description,
-        })),
-        ...normalized.highlights.map((highlight) => ({
-          id: highlight.id || randomUUID(),
-          kind: "highlight" as const,
-          offsetMs: highlight.startMs,
-          endMs: highlight.endMs,
-          title: highlight.title,
-          detail: highlight.description,
-        })),
-      ].sort((a, b) => a.offsetMs - b.offsetMs),
-      progress: 98,
-      organization: {
-        ...record.organization!,
-        status: "completed",
-        completedChunks: chunks.length,
-        chunks,
-        finalResult,
-        metrics,
-        updatedAt: new Date().toISOString(),
-      },
-    });
-  }
-
-  private async organizeSinglePass(
-    record: VoiceMemoryRecord,
-    manual: boolean,
-    signal: AbortSignal,
-  ): Promise<VoiceMemoryRecord> {
-    const readableTranscript = mergeTranscriptIntoSentences(record.transcript);
-    record = await this.save({
-      ...record,
-      transcript: readableTranscript,
-      phase: "organizing",
-      progress: 75,
-      errorMessage: undefined,
-      organizationPublication: undefined,
-    });
-    const result = await runOrganizationWithRetry(
-      record.organizationSinglePassRetry,
-      async (state) => {
-        record = await this.save({ ...record, organizationSinglePassRetry: state });
-      },
-      () =>
-        this.textGateway.generateJson<OrganizedResult>({
-          purpose: "organize",
-          manual,
-          maxNewTokens: 384,
-          timeoutMs: 4 * 60_000,
-          signal,
-          prompt: [
-            "你是上号语音软件的录音整理助手。这里是固定好友的日常聊天，不是会议。",
-            "生成自然、有趣、能回到原录音的结构化结果，不要编造。",
-            '只返回 JSON：{"summary":[],"chapters":[],"highlights":[],"markerTitles":[]}。',
-            `已有标记：${record.markerTitles.map((marker) => `${marker.markerId}@${marker.offsetMs}ms`).join(", ") || "无"}`,
-            `录音：${path.basename(record.filePath)}`,
-            transcriptForPrompt(record, 36_000),
-          ].join("\n"),
-        }),
+    return new VoiceMemoryOrganizer(this.textGateway, (next) => this.save(next)).organize(
+      record,
+      manual,
       signal,
     );
-    const normalized = normalizeOrganizedResult(result, record);
-    return this.save({
-      ...record,
-      summary: normalized.summary,
-      chapters: normalized.chapters,
-      highlights: normalized.highlights,
-      markerTitles:
-        normalized.markerTitles.length > 0 ? normalized.markerTitles : record.markerTitles,
-      organizedAt: new Date().toISOString(),
-      progress: 98,
-    });
   }
 
   private async refreshRuntimeStatus(): Promise<void> {
@@ -2753,6 +1877,7 @@ export class AiVoiceMemoryService {
   }
 
   private scheduleDeferredRetry(): void {
+    if (this.stopped) return;
     if (this.deferredRetryTimer) clearTimeout(this.deferredRetryTimer);
     if (!this.isAutomaticTranscriptionEnabled()) {
       this.deferredRetryTimer = undefined;
@@ -2760,11 +1885,14 @@ export class AiVoiceMemoryService {
     }
     this.deferredRetryTimer = setTimeout(() => {
       this.deferredRetryTimer = undefined;
-      void this.retryDeferredRecords();
+      void this.retryDeferredRecords().catch((error) => {
+        this.log("warn", "Deferred transcription retry failed", { reason: this.errorCode(error) });
+      });
     }, 9_000);
   }
 
   private async retryDeferredRecords(): Promise<void> {
+    if (this.stopped) return;
     if (!this.isAutomaticTranscriptionEnabled()) return;
     if (this.controllers.size > 0) return this.scheduleDeferredRetry();
     const runnable = this.models.canRunTask("transcription", false);
@@ -2788,6 +1916,7 @@ export class AiVoiceMemoryService {
   }
 
   private async runQuestion<T>(operation: (signal: AbortSignal) => Promise<T>): Promise<T> {
+    if (this.stopped) throw new Error("ai_task_paused");
     if (this.activeQuestionController) throw new Error("ai_question_in_progress");
     const controller = new AbortController();
     this.activeQuestionController = controller;

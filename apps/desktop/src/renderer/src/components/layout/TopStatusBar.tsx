@@ -7,7 +7,7 @@ import { summarizeConnectionHealth } from "../../features/network/networkDiagnos
 import { useRoomStore } from "../../store/roomStore";
 import { Button } from "../base/Button";
 import { AnimatedControlIcon } from "../icons/AnimatedControlIcon";
-import { LiquidSelectionIndicator } from "../motion/LiquidSelectionIndicator";
+import { PrivateRoomIcon } from "../room/PrivateRoomIcon";
 import {
   clearGlassPointerHighlight,
   updateGlassPointerHighlight,
@@ -49,21 +49,19 @@ const statusTone = (state: RoomConnectionState) => {
 };
 
 export const TopStatusBar = ({
-  currentChannelId,
-  channelCounts,
   isSwitchingChannel,
   isRecording,
   recordingMarkerPulse,
-  onSwitchChannel,
+  onChooseRoom,
+  onManageRoom,
   onKnock,
   onInvite,
 }: {
-  currentChannelId: "main" | "side";
-  channelCounts: { main: number; side: number };
   isSwitchingChannel?: boolean;
   isRecording?: boolean;
   recordingMarkerPulse?: number;
-  onSwitchChannel: (channelId: "main" | "side") => void;
+  onChooseRoom: () => void;
+  onManageRoom?: () => void;
   onKnock?: () => void;
   onInvite?: () => void;
 }) => {
@@ -90,35 +88,37 @@ export const TopStatusBar = ({
       <div className="topbar-channel min-w-0 flex-1">
         <div className="topbar-channel-title flex items-center gap-2.5">
           <h1 className="whitespace-nowrap text-[15px] font-[700] tracking-[-0.02em] text-[#1a2332]">
-            {currentChannelId === "main" ? "一号房" : "二号房"}
+            {room.privateRoom && (
+              <PrivateRoomIcon icon={room.privateRoom.icon} className="mr-2 inline size-4" />
+            )}
+            {room.roomName}
           </h1>
           <span
             className={`channel-status-dot ${statusTone(room.connectionState)}`}
             aria-label={statusCopy(room.connectionState) || "频道已连接"}
           />
-          <div className="channel-switcher" aria-label="切换房间">
-            {(["main", "side"] as const).map((channelId, index) => {
-              const isSelected = currentChannelId === channelId;
-              return (
-                <button
-                  key={channelId}
-                  type="button"
-                  className={`channel-switch-option ${isSelected ? "is-selected" : ""}`}
-                  disabled={isSelected || isSwitchingChannel}
-                  onClick={() => onSwitchChannel(channelId)}
-                  aria-current={isSelected ? "page" : undefined}
-                >
-                  {isSelected ? (
-                    <LiquidSelectionIndicator layoutId="room-channel-selection" />
-                  ) : null}
-                  <span className="channel-switch-content relative z-[1]">
-                    <span>{index + 1} 房</span>
-                    <strong>{channelCounts[channelId]}/5</strong>
-                  </span>
-                </button>
-              );
-            })}
-          </div>
+          <span className="text-xs tabular-nums text-slate-500">
+            {room.privateRoom?.channelCode} ·{" "}
+            {
+              room.members.filter(
+                (member) => !member.isEmptySlot && member.presenceState === "online",
+              ).length
+            }
+            /5
+          </span>
+          <Button
+            variant="ghost"
+            className="whitespace-nowrap text-xs"
+            disabled={isSwitchingChannel}
+            onClick={onChooseRoom}
+          >
+            切换房间
+          </Button>
+          {onManageRoom && (
+            <Button variant="ghost" className="whitespace-nowrap text-xs" onClick={onManageRoom}>
+              管理
+            </Button>
+          )}
           {isRecording ? (
             <div className="room-recording-live" role="status" aria-label="正在录音">
               <i aria-hidden="true" />

@@ -77,7 +77,12 @@ const aiVoiceMemoryServicePath = path.resolve(process.cwd(), "src/main/ai-voice-
 const asrRunnerPath = path.resolve(process.cwd(), "scripts/asr-runner.py");
 
 test("semantic interface sounds stay enabled without a settings control", () => {
-  const source = readFileSync(settingsPagePath, "utf8");
+  const source =
+    readFileSync(settingsPagePath, "utf8") +
+    readFileSync(
+      path.resolve(process.cwd(), "src/renderer/src/components/settings/GeneralSettingsCard.tsx"),
+      "utf8",
+    );
   const audioSource = readFileSync(audioCardPath, "utf8");
 
   assert.equal(source.includes("开麦提示音"), false);
@@ -99,7 +104,12 @@ test("semantic interface sounds stay enabled without a settings control", () => 
 
 test("settings keep short lists visible and model actions above neighboring cards", () => {
   const aiSource = readFileSync(aiVoiceMemoryCardPath, "utf8");
-  const settingsSource = readFileSync(settingsPagePath, "utf8");
+  const settingsSource =
+    readFileSync(settingsPagePath, "utf8") +
+    readFileSync(
+      path.resolve(process.cwd(), "src/renderer/src/components/settings/GeneralSettingsCard.tsx"),
+      "utf8",
+    );
   const styles = readRendererCss();
 
   assert.equal(aiSource.includes('aria-label="搜索模型"'), false);
@@ -263,7 +273,12 @@ test("local voice pack keeps streamer and multi-game tags separate from display 
 
 test("weather stays on without a user toggle or developer-mode switch", () => {
   const source = readFileSync(weatherSettingsPath, "utf8");
-  const settingsPage = readFileSync(settingsPagePath, "utf8");
+  const settingsPage =
+    readFileSync(settingsPagePath, "utf8") +
+    readFileSync(
+      path.resolve(process.cwd(), "src/renderer/src/components/settings/GeneralSettingsCard.tsx"),
+      "utf8",
+    );
   const pickerSource = readFileSync(weatherCityPickerPath, "utf8");
   const styles = readRendererCss();
   assert.equal(source.includes("窗外动态天气"), false);
@@ -296,7 +311,12 @@ test("weather stays on without a user toggle or developer-mode switch", () => {
 });
 
 test("interface scale stays automatic while the room overlay remains always on", () => {
-  const source = readFileSync(settingsPagePath, "utf8");
+  const source =
+    readFileSync(settingsPagePath, "utf8") +
+    readFileSync(
+      path.resolve(process.cwd(), "src/renderer/src/components/settings/GeneralSettingsCard.tsx"),
+      "utf8",
+    );
   const roomSource = readFileSync(roomPagePath, "utf8");
   const appSource = readFileSync(appPath, "utf8");
 
@@ -346,7 +366,12 @@ test("audio settings keep only everyday controls", () => {
 });
 
 test("settings keep only everyday voice controls and remove advanced connection", () => {
-  const source = readFileSync(settingsPagePath, "utf8");
+  const source =
+    readFileSync(settingsPagePath, "utf8") +
+    readFileSync(
+      path.resolve(process.cwd(), "src/renderer/src/components/settings/GeneralSettingsCard.tsx"),
+      "utf8",
+    );
   const sectionStateSource = readFileSync(settingsSectionStatePath, "utf8");
   const diagnosticsSource = readFileSync(diagnosticsCardPath, "utf8");
 
@@ -383,7 +408,12 @@ test("settings keep only everyday voice controls and remove advanced connection"
 });
 
 test("settings pages keep the shared header compact", () => {
-  const source = readFileSync(settingsPagePath, "utf8");
+  const source =
+    readFileSync(settingsPagePath, "utf8") +
+    readFileSync(
+      path.resolve(process.cwd(), "src/renderer/src/components/settings/GeneralSettingsCard.tsx"),
+      "utf8",
+    );
   const headerSource = readFileSync(settingsPageHeaderPath, "utf8");
   const styles = readRendererCss();
 
@@ -404,7 +434,12 @@ test("microphone processing lives in the room panel while about keeps release hi
     path.resolve(process.cwd(), "src/renderer/src/components/room/RoomDock.tsx"),
     "utf8",
   );
-  const settingsSource = readFileSync(settingsPagePath, "utf8");
+  const settingsSource =
+    readFileSync(settingsPagePath, "utf8") +
+    readFileSync(
+      path.resolve(process.cwd(), "src/renderer/src/components/settings/GeneralSettingsCard.tsx"),
+      "utf8",
+    );
   const aboutSource = readFileSync(aboutSettingsPath, "utf8");
 
   assert.equal(homeSource.includes("自动增益"), false);
@@ -460,7 +495,12 @@ test("microphone processing lives in the room panel while about keeps release hi
 });
 
 test("settings omit room history while the daily report popup remains", () => {
-  const settingsPage = readFileSync(settingsPagePath, "utf8");
+  const settingsPage =
+    readFileSync(settingsPagePath, "utf8") +
+    readFileSync(
+      path.resolve(process.cwd(), "src/renderer/src/components/settings/GeneralSettingsCard.tsx"),
+      "utf8",
+    );
   const sectionState = readFileSync(settingsSectionStatePath, "utf8");
   const overlays = readFileSync(
     path.resolve(process.cwd(), "src/renderer/src/pages/SharedOverlays.tsx"),
@@ -484,7 +524,10 @@ test("release notes emphasize only the leading keyword", () => {
 
 test("recording library safely cleans verified waste recordings", () => {
   const source = readFileSync(recordingLibraryCardPath, "utf8");
-  const roomSource = readFileSync(roomPagePath, "utf8");
+  const roomSource = readFileSync(
+    path.resolve(process.cwd(), "src/renderer/src/features/recording/finishSavedRoomRecording.ts"),
+    "utf8",
+  );
   const styles = readRendererCss();
   assert.equal(source.includes("window.desktopApi.recording.scanWaste()"), true);
   assert.equal(source.includes("录音占用"), true);
@@ -514,7 +557,7 @@ test("recording library safely cleans verified waste recordings", () => {
   );
   assert.ok(
     roomSource.indexOf("saveMarkers(result.filePath, markers)") <
-      roomSource.indexOf("applyAutomaticCleanup(result.filePath)"),
+      roomSource.indexOf("api.recording.applyAutomaticCleanup(result.filePath)"),
   );
 });
 
@@ -530,7 +573,12 @@ test("recording library supports accessible multi-selection and confirmed batch 
 
 test("recording library keeps both desktop columns useful while browsing long lists", () => {
   const cardSource = readFileSync(recordingLibraryCardPath, "utf8");
-  const settingsSource = readFileSync(settingsPagePath, "utf8");
+  const settingsSource =
+    readFileSync(settingsPagePath, "utf8") +
+    readFileSync(
+      path.resolve(process.cwd(), "src/renderer/src/components/settings/GeneralSettingsCard.tsx"),
+      "utf8",
+    );
   const styles = readRendererCss();
 
   assert.equal(cardSource.includes('className="recording-library-page"'), true);
@@ -596,7 +644,12 @@ test("recording library keeps both desktop columns useful while browsing long li
 
 test("recording library paints before deferred transcript status hydration", () => {
   const cardSource = readFileSync(recordingLibraryCardPath, "utf8");
-  const settingsSource = readFileSync(settingsPagePath, "utf8");
+  const settingsSource =
+    readFileSync(settingsPagePath, "utf8") +
+    readFileSync(
+      path.resolve(process.cwd(), "src/renderer/src/components/settings/GeneralSettingsCard.tsx"),
+      "utf8",
+    );
   const ipcSource = readFileSync(ipcPath, "utf8");
   const listHandler = ipcSource.slice(
     ipcSource.indexOf("IPC_CHANNELS.recording.list"),
@@ -612,7 +665,9 @@ test("recording library paints before deferred transcript status hydration", () 
 
 test("successful empty ASR units remain silence instead of failing the recording", () => {
   const runtimeSource = readFileSync(aiRuntimeManagerPath, "utf8");
-  const voiceMemorySource = readFileSync(aiVoiceMemoryServicePath, "utf8");
+  const voiceMemorySource =
+    readFileSync(aiVoiceMemoryServicePath, "utf8") +
+    readFileSync(path.resolve(process.cwd(), "src/main/voice-memory-organizer.ts"), "utf8");
   const asrRunnerSource = readFileSync(asrRunnerPath, "utf8");
 
   assert.equal(asrRunnerSource.includes('"qwen3-asr-1.7b-force"'), true);
@@ -655,7 +710,12 @@ test("successful empty ASR units remain silence instead of failing the recording
 test("AI voice memory keeps first install manual and recovers interrupted comparisons", () => {
   const source = readFileSync(aiVoiceMemoryCardPath, "utf8");
   const ipcSource = readFileSync(ipcPath, "utf8");
-  const settingsSource = readFileSync(settingsPagePath, "utf8");
+  const settingsSource =
+    readFileSync(settingsPagePath, "utf8") +
+    readFileSync(
+      path.resolve(process.cwd(), "src/renderer/src/components/settings/GeneralSettingsCard.tsx"),
+      "utf8",
+    );
   const recordingSource = readFileSync(recordingLibraryCardPath, "utf8");
   const modelTestSource = readFileSync(modelTestPanelPath, "utf8");
   const modelComparisonQueueSource = readFileSync(modelComparisonQueuePath, "utf8");
@@ -781,12 +841,14 @@ test("AI voice memory keeps first install manual and recovers interrupted compar
 });
 
 test("desktop icon overlay controls wait for the real Windows state", () => {
-  const source = readFileSync(settingsPagePath, "utf8");
+  const source =
+    readFileSync(settingsPagePath, "utf8") +
+    readFileSync(
+      path.resolve(process.cwd(), "src/renderer/src/components/settings/GeneralSettingsCard.tsx"),
+      "utf8",
+    );
 
   assert.equal(source.includes("cachedWindowsDiagnostics = snapshot"), true);
-  assert.equal(
-    source.includes("isWindowsDiagnosticsLoading || windowsDiagnostics?.iconOverlays.hidden"),
-    true,
-  );
-  assert.equal(source.includes('{isWindowsDiagnosticsLoading ? "读取状态…" : "一键隐藏"}'), true);
+  assert.equal(source.includes("loadingWindows || windowsStatus?.iconOverlays.hidden"), true);
+  assert.equal(source.includes('{loadingWindows ? "读取状态…" : "一键隐藏"}'), true);
 });

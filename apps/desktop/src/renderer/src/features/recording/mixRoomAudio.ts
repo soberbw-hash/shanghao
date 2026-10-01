@@ -51,7 +51,7 @@ export interface RecordingSourceIdentity {
   displayNameSnapshot: string;
   userId?: string;
   avatarId?: string;
-  roomId?: "main" | "side";
+  roomId?: string;
   joinedAt?: string;
 }
 
@@ -71,7 +71,7 @@ export interface MixedCallOptions {
     endMs: number;
     userId?: string;
     trackId?: string;
-    roomId?: "main" | "side";
+    roomId?: string;
     avatarId?: string;
     joinedAt?: string;
   }) => Promise<void>;
@@ -84,7 +84,7 @@ export interface MixedCallOptions {
     displayNameSnapshot: string;
     avatarId?: string;
     trackId: string;
-    roomId: "main" | "side";
+    roomId: string;
     joinedAt?: string;
     startMs: number;
     endMs: number;
@@ -200,6 +200,7 @@ export const createMixedCallStream = (
           const persist = (async () => {
             const blob = new Blob(capture.chunks, { type: capture.recorder.mimeType });
             if (blob.size === 0 || !options.persistSpeakerSegment) return;
+            if (!capture.identity.roomId) throw new Error("recording_room_identity_missing");
             await options.persistSpeakerSegment({
               sessionId,
               buffer: await blob.arrayBuffer(),
@@ -210,7 +211,7 @@ export const createMixedCallStream = (
               endMs: Math.max(capture.startMs + 1, endMs),
               userId: capture.identity.userId ?? capture.identity.speakerId,
               trackId: source.trackId,
-              roomId: capture.identity.roomId ?? "main",
+              roomId: capture.identity.roomId,
               avatarId: capture.identity.avatarId,
               joinedAt: capture.identity.joinedAt,
             });
@@ -304,8 +305,9 @@ export const createMixedCallStream = (
             const blob = new Blob(capture.chunks, { type: capture.recorder.mimeType });
             const identity = capture.identity;
             const userId = identity.userId ?? identity.speakerId;
-            const roomId = identity.roomId ?? "main";
+            const roomId = identity.roomId;
             if (blob.size === 0 || !options.persistParticipantTrack) return;
+            if (!roomId) throw new Error("recording_room_identity_missing");
             await options.persistParticipantTrack({
               sessionId,
               buffer: await blob.arrayBuffer(),

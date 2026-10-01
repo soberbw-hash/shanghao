@@ -295,8 +295,12 @@ test("local speaker and microphone state are applied atomically before server ec
   assert.equal(source.includes("speakingState: isMuted"), true);
   assert.equal(source.includes("activeClient?.updateMuteState(isMuted, isSpeaking)"), true);
   assert.equal(source.includes("updateLocalPresence({\n          speakingState: muted"), true);
-  assert.equal(source.includes("isMuted: audioState.isMuted"), true);
-  assert.equal(source.includes("isDeafened: audioState.isDeafened"), true);
+  const projection = readFileSync(
+    path.resolve(process.cwd(), "src/renderer/src/features/room/memberProjection.ts"),
+    "utf8",
+  );
+  assert.equal(projection.includes("isMuted: audioState.isMuted"), true);
+  assert.equal(projection.includes("isDeafened: audioState.isDeafened"), true);
 });
 
 test("speaking state changes never move the local character to another seat", () => {
@@ -587,7 +591,14 @@ test("home entry hides role selection and automatically chooses an unused server
 
   assert.equal(homeSource.includes("CharacterPicker"), false);
   assert.equal(homeSource.includes("选择角色"), false);
-  assert.equal(homeSource.includes("BUILT_IN_AVATAR_IDS.find"), true);
+  const client = readFileSync(
+    path.resolve(process.cwd(), "../../packages/signaling/src/server.ts"),
+    "utf8",
+  );
+  assert.equal(
+    client.includes("const assignedAvatarId = occupiedAvatarIds.has(requestedAvatarId)"),
+    true,
+  );
   assert.equal(relaySource.includes("occupiedAvatarIds: health?.occupiedAvatarIds"), true);
 });
 

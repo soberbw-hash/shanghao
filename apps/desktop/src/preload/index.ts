@@ -3,6 +3,27 @@ import { contextBridge, ipcRenderer } from "electron";
 import { IPC_CHANNELS, type DesktopApi } from "@private-voice/shared";
 
 const desktopApi: DesktopApi = {
+  storage: {
+    inspect: () => ipcRenderer.invoke(IPC_CHANNELS.storage.inspect),
+    clearExpiredTemporary: () => ipcRenderer.invoke(IPC_CHANNELS.storage.clearExpiredTemporary),
+  },
+  rooms: {
+    mine: () => ipcRenderer.invoke(IPC_CHANNELS.rooms.mine),
+    find: (code) => ipcRenderer.invoke(IPC_CHANNELS.rooms.find, code),
+    get: (id) => ipcRenderer.invoke(IPC_CHANNELS.rooms.get, id),
+    randomCode: () => ipcRenderer.invoke(IPC_CHANNELS.rooms.randomCode),
+    available: (code) => ipcRenderer.invoke(IPC_CHANNELS.rooms.available, code),
+    create: (request) => ipcRenderer.invoke(IPC_CHANNELS.rooms.create, request),
+    update: (request) => ipcRenderer.invoke(IPC_CHANNELS.rooms.update, request),
+    delete: (id) => ipcRenderer.invoke(IPC_CHANNELS.rooms.delete, id),
+    kick: (id, peer) => ipcRenderer.invoke(IPC_CHANNELS.rooms.kick, id, peer),
+    ban: (id, user, name) => ipcRenderer.invoke(IPC_CHANNELS.rooms.ban, id, user, name),
+    unban: (id, user) => ipcRenderer.invoke(IPC_CHANNELS.rooms.unban, id, user),
+    bans: (id) => ipcRenderer.invoke(IPC_CHANNELS.rooms.bans, id),
+    history: () => ipcRenderer.invoke(IPC_CHANNELS.rooms.history),
+    rememberJoined: (id) => ipcRenderer.invoke(IPC_CHANNELS.rooms.rememberJoined, id),
+    favorite: (id, enabled) => ipcRenderer.invoke(IPC_CHANNELS.rooms.favorite, id, enabled),
+  },
   phoneMode: {
     get: () => ipcRenderer.invoke(IPC_CHANNELS.phoneMode.get),
     set: (active) => ipcRenderer.invoke(IPC_CHANNELS.phoneMode.set, active),
@@ -308,6 +329,8 @@ const desktopApi: DesktopApi = {
     chooseDirectory: () => ipcRenderer.invoke(IPC_CHANNELS.recording.chooseDirectory),
     saveMarkers: (filePath, markers) =>
       ipcRenderer.invoke(IPC_CHANNELS.recording.saveMarkers, filePath, markers),
+    saveOrigin: (filePath, roomId, roomName) =>
+      ipcRenderer.invoke(IPC_CHANNELS.recording.saveOrigin, filePath, roomId, roomName),
     applyAutomaticCleanup: (filePath) =>
       ipcRenderer.invoke(IPC_CHANNELS.recording.applyAutomaticCleanup, filePath),
     list: () => ipcRenderer.invoke(IPC_CHANNELS.recording.list),

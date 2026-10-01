@@ -1,4 +1,8 @@
-import type { DailyRoomRecordingRecap, VoiceMemoryRecord } from "@private-voice/shared";
+import {
+  isStoredRoomId,
+  type DailyRoomRecordingRecap,
+  type VoiceMemoryRecord,
+} from "@private-voice/shared";
 
 import type { AiVoiceMemoryService } from "./ai-voice-memory-service";
 import type { SignalingClientBridge } from "./signaling-client";
@@ -27,7 +31,7 @@ export const publishVoiceMemoryOrganization = async ({
   if (!record || record.organization?.status !== "completed" || !result) {
     throw new Error("voice_memory_organization_required");
   }
-  if (record.roomId !== "main" && record.roomId !== "side") {
+  if (!isStoredRoomId(record.roomId)) {
     throw new Error("recording_recap_room_invalid");
   }
 

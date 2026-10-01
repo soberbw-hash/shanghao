@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { AnimatePresence } from "framer-motion";
-import { RoomConnectionState } from "@private-voice/shared";
+import { RoomConnectionState, type DailyRoomReport } from "@private-voice/shared";
 
 import { ModalHost } from "../components/layout/ModalHost";
 import { ToastRegion } from "../components/layout/ToastRegion";
@@ -16,6 +16,7 @@ import { useSettingsStore } from "../store/settingsStore";
 import { useDailyRoomReportStore } from "../store/dailyRoomReportStore";
 import { retryActiveRoomConnection } from "../hooks/useRoomState";
 
+const EMPTY_REPORTS: DailyRoomReport[] = [];
 const getYesterdayDate = (): string =>
   new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Shanghai" }).format(
     new Date(Date.now() - 86_400_000),
@@ -38,8 +39,9 @@ export const SharedOverlays = () => {
   const updateStatusVersion = useSettingsStore((state) => state.updateStatus.latestVersion);
   const updateStatusForced = useSettingsStore((state) => state.updateStatus.forceUpdate);
   const saveSettings = useSettingsStore((state) => state.saveSettings);
-  const roomId = useRoomStore((state) => (state.room.roomId === "side" ? "side" : "main"));
-  const reports = useDailyRoomReportStore((state) => state.reports[roomId]);
+  const roomId = useRoomStore((state) => state.room.roomId);
+  const roomName = useRoomStore((state) => state.room.roomName);
+  const reports = useDailyRoomReportStore((state) => state.reports[roomId] ?? EMPTY_REPORTS);
   const reportsLoaded = useDailyRoomReportStore((state) => state.loaded[roomId]);
   const [welcomeQueueReady, setWelcomeQueueReady] = useState(false);
   const [dismissedUpdateVersion, setDismissedUpdateVersion] = useState(() =>
@@ -119,6 +121,7 @@ export const SharedOverlays = () => {
           <DailyRoomReportModal
             key={`${roomId}-${yesterdayDate}`}
             report={yesterdayReport}
+            roomName={roomName}
             onClose={() =>
               void saveSettings({
                 lastDailyRoomReportSeen: {

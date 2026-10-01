@@ -9,6 +9,7 @@ import type {
   RecordingLibrarySnapshot,
   RecordingMarker,
 } from "@private-voice/shared";
+import { isStoredRoomId } from "@private-voice/shared";
 
 export const RECORDING_MEDIA_PROTOCOL = "shanghao-recording";
 export const RECORDING_MEDIA_MIME_TYPE = "audio/mp4";
@@ -19,6 +20,8 @@ interface RecordingCatalogEntry {
   fileName: string;
   title: string;
   createdAt: string;
+  roomId?: string;
+  roomName?: string;
 }
 
 interface RecordingLibraryMetadata {
@@ -160,7 +163,10 @@ const readLibraryMetadata = async (directory: string): Promise<RecordingLibraryM
             typeof entry.recordingId === "string" &&
             typeof entry.fileName === "string" &&
             typeof entry.title === "string" &&
-            typeof entry.createdAt === "string",
+            typeof entry.createdAt === "string" &&
+            (entry.roomId === undefined || isStoredRoomId(entry.roomId)) &&
+            (entry.roomName === undefined ||
+              (typeof entry.roomName === "string" && entry.roomName.length <= 64)),
         )))
   ) {
     throw new Error("recording_library_metadata_invalid");
@@ -298,11 +304,13 @@ const readRecordingLibraryItemsUnsafe = async (
           favoriteRecordingIds.add(catalogEntry.recordingId);
           metadataChanged = true;
         }
-        const roomId = entry.name.includes("-一号房-")
-          ? "main"
-          : entry.name.includes("-二号房-")
-            ? "side"
-            : undefined;
+        const roomId =
+          catalogEntry.roomId ??
+          (entry.name.includes("-一号房-")
+            ? "main"
+            : entry.name.includes("-二号房-")
+              ? "side"
+              : undefined);
         return {
           id: catalogEntry.recordingId,
           recordingId: catalogEntry.recordingId,
@@ -314,6 +322,7 @@ const readRecordingLibraryItemsUnsafe = async (
           modifiedAt: fileStat.mtime.toISOString(),
           fileSize: fileStat.size,
           roomId,
+          roomName: catalogEntry.roomName,
           isFavorite: favoriteRecordingIds.has(catalogEntry.recordingId),
           markers: await parseMarkers(filePath, catalogEntry.recordingId),
         } satisfies RecordingLibraryItem;
@@ -370,6 +379,27 @@ export const registerRecordingInDirectory = async (
     metadata.recordings = [...(metadata.recordings ?? []), entry];
     await writeLibraryMetadata(directory, metadata);
     return entry.recordingId;
+  });
+};
+
+/** Records immutable originating room identity independently of mutable file titles. */
+export const saveRecordingOriginInDirectory = async (
+  directory: string,
+  filePath: string,
+  roomId: string,
+  roomName: string,
+): Promise<void> => {
+  if (!isStoredRoomId(roomId) || typeof roomName !== "string" || roomName.length > 64)
+    throw new Error("invalid_recording_origin");
+  const recordingId = await registerRecordingInDirectory(directory, filePath);
+  await mutateDirectory(directory, async () => {
+    const metadata = await readLibraryMetadata(directory);
+    const entry = metadata.recordings?.find((item) => item.recordingId === recordingId);
+    if (!entry) throw new Error("recording_not_found");
+    if (entry.roomId && entry.roomId !== roomId) throw new Error("recording_origin_conflict");
+    entry.roomId = roomId;
+    entry.roomName = roomName;
+    await writeLibraryMetadata(directory, metadata);
   });
 };
 

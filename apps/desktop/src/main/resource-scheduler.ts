@@ -1,4 +1,6 @@
 import type { AiProcessingMode, AiRuntimePressure, AiTaskKind } from "@private-voice/shared";
+import { freemem } from "node:os";
+import { awaitTask, waitForTask } from "./task-cancellation";
 
 export const RESOURCE_PRIORITY = {
   realtimeVoice: 900,
@@ -96,6 +98,45 @@ const initialPressure = (): AiRuntimePressure => ({
 
 /** One source of truth for background work yielding to realtime room features. */
 export class ResourceScheduler {
+  private downloadQueue: Promise<void> = Promise.resolve();
+  private downloadWindowStartedAt = 0;
+  private downloadWindowBytes = 0;
+  constructor(private readonly availableMemoryBytes = freemem) {}
+
+  /** Model and Runtime transfers share one bandwidth budget and pressure decision. */
+  consumeDownloadBytes(bytes: number, signal?: AbortSignal): Promise<void> {
+    if (signal?.aborted) return Promise.reject(new Error("ai_task_paused"));
+    if (!Number.isSafeInteger(bytes) || bytes < 0 || bytes > 8 * 1024 * 1024)
+      return Promise.reject(new Error("invalid_download_chunk"));
+    const deadline = Date.now() + 90_000;
+    const operation = this.downloadQueue
+      .catch(() => undefined)
+      .then(async () => {
+        if (signal?.aborted) throw new Error("ai_task_paused");
+        if (Date.now() >= deadline) throw new Error("background_resource_wait_timeout");
+        while (this.backgroundDownloadDecision().defer) {
+          if (Date.now() >= deadline) throw new Error("background_resource_wait_timeout");
+          await waitForTask(500, signal);
+        }
+        if (signal?.aborted) throw new Error("ai_task_paused");
+        const now = Date.now();
+        if (now - this.downloadWindowStartedAt >= 1_000) {
+          this.downloadWindowStartedAt = now;
+          this.downloadWindowBytes = 0;
+        }
+        this.downloadWindowBytes += bytes;
+        const delay = Math.max(
+          0,
+          Math.ceil(
+            (this.downloadWindowBytes / this.downloadBytesPerSecond()) * 1_000 -
+              (now - this.downloadWindowStartedAt),
+          ),
+        );
+        if (delay) await waitForTask(delay, signal);
+      });
+    this.downloadQueue = operation;
+    return awaitTask(operation, signal);
+  }
   private activeCompute?: ActiveAiCompute;
   private readonly computeWaiters: AiComputeWaiter[] = [];
   private readonly computeEvents: AiComputeEvent[] = [];
@@ -347,7 +388,8 @@ export class ResourceScheduler {
         this.state.gameActive ||
         this.state.pressure.recordingActive ||
         realtimeFeatureActive ||
-        (organizing && this.state.pressure.rendererMemoryPressure)
+        (organizing && this.state.pressure.rendererMemoryPressure) ||
+        this.availableMemoryBytes() < 2 * 1024 ** 3
           ? "low"
           : "normal",
     };

@@ -89,14 +89,17 @@ interface RoomClientOptions {
   protocolVersion: string;
   buildNumber: string;
   onMembers: (members: RoomMember[]) => void;
-  onRoomName: (roomName: string) => void;
+  onRoomName: (
+    roomName: string,
+    privateRoom?: import("@private-voice/shared").PrivateRoomInfo,
+  ) => void;
   onConnectionState: (state: RoomConnectionState) => void;
   onRemoteStream: (peerId: string, stream: MediaStream | undefined) => void;
   onChatMessage: (message: ChatMessage) => void;
   onChatRecall: (event: ChatRecallEvent) => void;
   onChatHistory: (messages: ChatMessage[]) => void;
-  onChannelCounts: (counts: ChannelCountsMessage["counts"]) => void;
-  onDailyRoomReports: (roomId: "main" | "side", reports: DailyRoomReport[]) => void;
+  onChannelCounts?: (counts: ChannelCountsMessage["counts"]) => void;
+  onDailyRoomReports: (roomId: string, reports: DailyRoomReport[]) => void;
   onRoomCollection: (items: RoomCollectionItem[], replace: boolean) => void;
   onKnock: (message: ChatMessage) => void;
   onRemoteScreenFrame: (peerId: string, frame?: RemoteScreenFrame) => void;
@@ -342,21 +345,11 @@ export class RoomClient {
       }
     }
     this.screenShareCoordinator.stopTracks();
+    this.clearMemberRuntimeEvidence();
     this.audioFallback?.destroy();
     this.audioFallback = undefined;
-    this.remotePeerIds.clear();
-    this.webrtcConnectedPeerIds.clear();
-    this.webrtcAudioPeerIds.clear();
-    this.webrtcFlowingPeerIds.clear();
-    this.webrtcReadyPeerIds.clear();
-    this.webrtcStalledPeerIds.clear();
-    this.webrtcScreenPeerIds.clear();
-    this.relayRequestedByPeerIds.clear();
-    this.advertisedRelayNeeds.clear();
     this.screenShareCoordinator.clear();
     this.peerStatsMonitor.stop();
-    this.pendingIceCandidates.clear();
-    this.peerOperationQueue.clear();
     this.chatTransport.rejectPending("room_client_disconnected");
     this.isSignalingConnected = false;
     await this.signalingBridge.close();
@@ -616,12 +609,14 @@ export class RoomClient {
       this.audioFallback?.resetTransport("signaling_socket_closed");
       this.reconnectCoordinator.cancelStableWindow();
 
+      if (payload.code === 4003 && this.shouldReconnect) {
+        this.rejectTerminalConnection(new Error(payload.reason || "room_removed"));
+        return;
+      }
+
       if (payload.code === 4400) {
         const error = new Error("signaling_protocol_rejected");
-        this.shouldReconnect = false;
-        this.rejectPendingConnection(error);
-        this.options.onConnectionState(RoomConnectionState.Failed);
-        this.options.onReconnectExhausted?.(error);
+        this.rejectTerminalConnection(error);
         return;
       }
 
@@ -631,10 +626,7 @@ export class RoomClient {
             ? "relay_auth_failed"
             : "relay_auth_required",
         );
-        this.shouldReconnect = false;
-        this.rejectPendingConnection(error);
-        this.options.onConnectionState(RoomConnectionState.Failed);
-        this.options.onReconnectExhausted?.(error);
+        this.rejectTerminalConnection(error);
         return;
       }
 
@@ -702,7 +694,7 @@ export class RoomClient {
         this.chatTransport.handleHistory(payload);
         return;
       case "channel_counts":
-        this.options.onChannelCounts(payload.counts);
+        this.options.onChannelCounts?.(payload.counts);
         return;
       case "daily_room_reports":
         this.options.onDailyRoomReports(payload.targetRoomId, payload.reports);
@@ -865,7 +857,7 @@ export class RoomClient {
     this.joinStage = "room_snapshot_received";
     this.stopSnapshotRecovery();
     this.options.onSnapshotRevision?.(snapshot.revision);
-    this.options.onRoomName(snapshot.roomName);
+    this.options.onRoomName(snapshot.roomName, snapshot.privateRoom);
     const normalizedMembers = normalizeRoomMembers(
       snapshot.members,
       this.options.peerId,
@@ -1022,6 +1014,13 @@ export class RoomClient {
     });
   }
 
+  private rejectTerminalConnection(error: Error): void {
+    this.shouldReconnect = false;
+    this.rejectPendingConnection(error);
+    this.options.onConnectionState(RoomConnectionState.Failed);
+    this.options.onReconnectExhausted?.(error);
+  }
+
   private handleErrorMessage(payload: ErrorMessage): void {
     this.lastServerError = `${payload.code}:${payload.message}`;
     const decision = decideSignalingError(payload, {
@@ -1042,6 +1041,8 @@ export class RoomClient {
     if (decision.stopReconnect) {
       this.shouldReconnect = false;
       void this.signalingBridge.close();
+      if (this.hasJoinedOnce)
+        this.options.onReconnectExhausted?.(new Error(decision.reason ?? "signaling_error"));
     }
     this.options.onConnectionState(RoomConnectionState.Failed);
     this.rejectPendingConnection(new Error(decision.reason ?? "signaling_error"));
@@ -1055,7 +1056,7 @@ export class RoomClient {
     return this.chatTransport.sendMessage(content, image, clientMessageId);
   }
 
-  async requestDailyRoomReports(targetRoomId: "main" | "side"): Promise<boolean> {
+  async requestDailyRoomReports(targetRoomId: string): Promise<boolean> {
     if (!this.canSendChat()) throw new Error("signaling_not_connected");
     // 2.5.x servers share protocol 7 but do not know this additive message.
     // Sending it would make the legacy server return invalid_payload, which in
@@ -1451,18 +1452,8 @@ export class RoomClient {
 
     for (const peer of this.peers.values()) peer.destroy();
     this.peers.clear();
-    this.pendingIceCandidates.clear();
-    this.peerOperationQueue.clear();
-    this.remotePeerIds.clear();
-    this.webrtcConnectedPeerIds.clear();
-    this.webrtcAudioPeerIds.clear();
-    this.webrtcFlowingPeerIds.clear();
-    this.webrtcReadyPeerIds.clear();
-    this.webrtcStalledPeerIds.clear();
-    this.webrtcScreenPeerIds.clear();
-    this.relayRequestedByPeerIds.clear();
-    this.advertisedRelayNeeds.clear();
 
+    this.clearMemberRuntimeEvidence();
     this.audioFallback?.destroy();
     this.audioFallback = undefined;
     this.screenShareCoordinator.stopTracks();
@@ -1474,6 +1465,20 @@ export class RoomClient {
       roomId: this.options.roomId,
       peerId: this.options.peerId,
     });
+  }
+
+  private clearMemberRuntimeEvidence(): void {
+    this.pendingIceCandidates.clear();
+    this.peerOperationQueue.clear();
+    this.remotePeerIds.clear();
+    this.webrtcConnectedPeerIds.clear();
+    this.webrtcAudioPeerIds.clear();
+    this.webrtcFlowingPeerIds.clear();
+    this.webrtcReadyPeerIds.clear();
+    this.webrtcStalledPeerIds.clear();
+    this.webrtcScreenPeerIds.clear();
+    this.relayRequestedByPeerIds.clear();
+    this.advertisedRelayNeeds.clear();
   }
 
   private startHeartbeat(): void {

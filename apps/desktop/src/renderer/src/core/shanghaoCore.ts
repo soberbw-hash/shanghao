@@ -97,6 +97,8 @@ export const createShangHaoCore = (api: DesktopApi) => ({
     nativeCore: "optional",
   } satisfies ShangHaoCoreCapabilities,
   app: api.app,
+  storage: api.storage,
+  rooms: api.rooms,
   audio: api.audio,
   ai: api.ai,
   clipboard: api.clipboard,

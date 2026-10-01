@@ -100,7 +100,7 @@ test("optional updates, long AI waits, and toasts all have a clear escape route"
 });
 
 test("successful recordings use the shared compact notification instead of a modal", () => {
-  const room = readRenderer("pages/RoomPage.tsx");
+  const room = readRenderer("features/recording/finishSavedRoomRecording.ts");
   const overlays = readRenderer("pages/SharedOverlays.tsx");
 
   assert.doesNotMatch(overlays, /RecordingSaveDialog/);

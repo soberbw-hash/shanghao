@@ -3,7 +3,59 @@ import test from "node:test";
 
 import type { AiModelId } from "@private-voice/shared";
 
-import { AiRuntimeManager } from "../src/main/ai-runtime-manager";
+import { AiRuntimeManager, type TranscriptionChunkOptions } from "../src/main/ai-runtime-manager";
+import { ResourceScheduler } from "../src/main/resource-scheduler";
+
+test("FFmpeg preparation and inference share one owned compute lease", async () => {
+  const scheduler = new ResourceScheduler();
+  const manager = new AiRuntimeManager(
+    "C:\\test-runtime",
+    { model: () => undefined, qwen: () => undefined, activeAsr: () => "glm-asr-nano-2512" },
+    {
+      acquireComputeSlot: (kind, manual, signal) => scheduler.acquireCompute(kind, manual, signal),
+    },
+  );
+  const internal = manager as unknown as {
+    transcribeChunkOnce: (options: TranscriptionChunkOptions) => Promise<never>;
+  };
+  let started = false;
+  internal.transcribeChunkOnce = async (options) => {
+    started = true;
+    assert.equal(scheduler.getComputeSnapshot().activeKind, "transcription");
+    assert.equal(options.signal?.aborted, false);
+    throw new Error("fixture_preparation_failed");
+  };
+  await assert.rejects(
+    manager.transcribeChunk({
+      recordingId: "fixture",
+      filePath: "unused",
+      offsetMs: 0,
+      durationMs: 1000,
+      resourceMode: "normal",
+      manual: true,
+    }),
+    /fixture_preparation_failed/,
+  );
+  assert.equal(started, true);
+  assert.equal(scheduler.getComputeSnapshot().activeKind, undefined);
+  const text = await scheduler.acquireCompute("summary", true);
+  const controller = new AbortController();
+  started = false;
+  const waiting = manager.transcribeChunk({
+    recordingId: "fixture",
+    filePath: "unused",
+    offsetMs: 0,
+    durationMs: 1000,
+    resourceMode: "normal",
+    manual: true,
+    signal: controller.signal,
+  });
+  controller.abort();
+  await assert.rejects(waiting, /ai_task_paused/);
+  assert.equal(started, false, "cancelled queued work must not start FFmpeg");
+  assert.equal(scheduler.getComputeSnapshot().activeKind, "summary");
+  text.release();
+});
 
 test("shared AI Runtime preparation is serialized across model completions", async () => {
   const manager = new AiRuntimeManager("C:\\test-runtime", {

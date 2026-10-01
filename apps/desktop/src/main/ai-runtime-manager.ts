@@ -1,3 +1,7 @@
+import {
+  downloadRuntimeComponent,
+  type RuntimeComponentArtifact,
+} from "./runtime-component-download";
 import { existsSync } from "node:fs";
 import { access, copyFile, mkdir, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
@@ -41,10 +45,7 @@ import type { AiComputeLease } from "./resource-scheduler";
 import { resolveFfmpegExecutable } from "./media-runtime";
 import { modelFilesPresent } from "./ai-model-layout";
 import { ACTIVE_ARK_ASR_VARIANT } from "./ark-asr-config";
-import {
-  downloadVerifiedRuntimeArtifact,
-  sha256RuntimeArtifact,
-} from "./runtime-artifact-download";
+import { sha256RuntimeArtifact } from "./runtime-artifact-download";
 import {
   analyzePcm16Wav,
   benchmarkEnvironmentSnapshot,
@@ -60,6 +61,19 @@ interface RuntimeModelPaths {
   model: (id: AiModelId) => string | undefined;
   qwen: () => string | undefined;
   activeAsr: () => AiAsrModelId;
+}
+
+export interface TranscriptionChunkOptions {
+  modelId?: AiAsrModelId;
+  recordingId: string;
+  filePath: string;
+  offsetMs: number;
+  durationMs: number;
+  benchmark?: boolean;
+  signal?: AbortSignal;
+  manual?: boolean;
+  resourceMode: "low" | "normal";
+  onStage?: (stage: VoiceMemoryProcessingStage, context?: Record<string, unknown>) => void;
 }
 
 interface QwenGenerateOptions {
@@ -108,6 +122,7 @@ interface AiRuntimeManagerOptions {
   writeLog?: (payload: RendererLogPayload) => Promise<void>;
   probeCuda?: () => Promise<PythonCudaDiagnostics>;
   runtimeFetch?: import("./runtime-artifact-download").RuntimeArtifactFetcher;
+  consumeDownloadBytes?: (bytes: number, signal?: AbortSignal) => Promise<void>;
   acquireComputeSlot?: (
     kind: AiTaskKind,
     manualRequest: boolean,
@@ -503,26 +518,6 @@ export class AiRuntimeManager {
     return measureAsrRelease(this.asrWorker, reason, baselineGpuMemoryMb);
   }
 
-  private async runAsrWithComputeSlot(
-    request: Parameters<AsrPersistentWorker["run"]>[0],
-    manualRequest: boolean,
-  ): Promise<AsrWorkerResult> {
-    const lease = await this.options.acquireComputeSlot?.(
-      "transcription",
-      manualRequest,
-      request.signal,
-    );
-    try {
-      return await this.asrWorker.run({
-        ...request,
-        signal: lease?.signal ?? request.signal,
-        resourceMode: lease?.resourceMode ?? request.resourceMode,
-      });
-    } finally {
-      lease?.release();
-    }
-  }
-
   async benchmarkEnvironment(): Promise<{
     gpu?: string;
     gpuTotalVramMb?: number;
@@ -803,18 +798,29 @@ export class AiRuntimeManager {
     };
   }
 
-  async transcribeChunk(options: {
-    modelId?: AiAsrModelId;
-    recordingId: string;
-    filePath: string;
-    offsetMs: number;
-    durationMs: number;
-    benchmark?: boolean;
-    signal?: AbortSignal;
-    manual?: boolean;
-    resourceMode: "low" | "normal";
-    onStage?: (stage: VoiceMemoryProcessingStage, context?: Record<string, unknown>) => void;
-  }): Promise<TranscriptionChunkRuntimeResult> {
+  async transcribeChunk(
+    options: TranscriptionChunkOptions,
+  ): Promise<TranscriptionChunkRuntimeResult> {
+    const lease = await this.options.acquireComputeSlot?.(
+      "transcription",
+      Boolean(options.manual),
+      options.signal,
+    );
+    try {
+      return await this.transcribeChunkOnce({
+        ...options,
+        signal: lease?.signal ?? options.signal,
+        resourceMode: lease?.resourceMode ?? options.resourceMode,
+      });
+    } finally {
+      lease?.release();
+    }
+  }
+
+  private async transcribeChunkOnce(
+    options: TranscriptionChunkOptions,
+  ): Promise<TranscriptionChunkRuntimeResult> {
+    if (options.signal?.aborted) throw new Error("ai_task_paused");
     const totalStartedAt = performance.now();
     const executable = resolveFfmpegExecutable();
     if (!executable) {
@@ -975,17 +981,14 @@ export class AiRuntimeManager {
         : undefined;
       resourceSampler?.unref();
       try {
-        result = await this.runAsrWithComputeSlot(
-          {
-            launch: this.pythonAsrLaunch(modelId),
-            wavPath,
-            durationMs: options.durationMs,
-            resourceMode: options.resourceMode,
-            signal: options.signal,
-            timeoutMs: Math.max(240_000, options.durationMs * 8),
-          },
-          Boolean(options.manual),
-        );
+        result = await this.asrWorker.run({
+          launch: this.pythonAsrLaunch(modelId),
+          wavPath,
+          durationMs: options.durationMs,
+          resourceMode: options.resourceMode,
+          signal: options.signal,
+          timeoutMs: Math.max(240_000, options.durationMs * 8),
+        });
       } catch (error) {
         resourceSampleActive = false;
         if (resourceSampler) clearInterval(resourceSampler);
@@ -1276,6 +1279,26 @@ export class AiRuntimeManager {
     return { ready: after.ready, message: after.message };
   }
 
+  private downloadRuntimeComponent(
+    artifact: RuntimeComponentArtifact,
+    destination: string,
+    label: string,
+    signal?: AbortSignal,
+  ): Promise<string> {
+    return downloadRuntimeComponent(artifact, destination, {
+      signal,
+      fetcher: this.options.runtimeFetch,
+      consumeBytes: this.options.consumeDownloadBytes,
+      onRetry: async ({ attempt, source, error }) => {
+        await this.log("warn", `${label} download retry`, {
+          attempt,
+          source: source.url,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      },
+    });
+  }
+
   private async prepareArkAsrRuntimeWheel(signal?: AbortSignal): Promise<string> {
     const destination = path.join(
       this.runtimeRoot,
@@ -1284,23 +1307,12 @@ export class AiRuntimeManager {
       ARK_ASR_RUNTIME_WHEEL.fileName,
     );
     try {
-      return await downloadVerifiedRuntimeArtifact({
+      return await this.downloadRuntimeComponent(
+        ARK_ASR_RUNTIME_WHEEL,
         destination,
-        expectedBytes: ARK_ASR_RUNTIME_WHEEL.bytes,
-        expectedSha256: ARK_ASR_RUNTIME_WHEEL.sha256,
-        sources: ARK_ASR_RUNTIME_WHEEL.sources,
-        fetcher: this.options.runtimeFetch,
-        attempts: 6,
-        idleTimeoutMs: 120_000,
+        "ARK-ASR runtime artifact",
         signal,
-        onRetry: async ({ attempt, source, error }) => {
-          await this.log("warn", "ARK-ASR runtime artifact download retry", {
-            attempt,
-            source: source.url,
-            error: error instanceof Error ? error.message : String(error),
-          });
-        },
-      });
+      );
     } catch (error) {
       await this.log("error", "ARK-ASR runtime artifact download failed", {
         destination,
@@ -1322,23 +1334,12 @@ export class AiRuntimeManager {
     for (const artifact of MOSS_CPP_RUNTIME_WHEELS) {
       const destination = path.join(wheelDirectory, artifact.fileName);
       wheels.push(
-        await downloadVerifiedRuntimeArtifact({
+        await this.downloadRuntimeComponent(
+          artifact,
           destination,
-          expectedBytes: artifact.bytes,
-          expectedSha256: artifact.sha256,
-          sources: artifact.sources,
-          fetcher: this.options.runtimeFetch,
-          attempts: 6,
-          idleTimeoutMs: 120_000,
+          "MOSS Q8 runtime artifact",
           signal,
-          onRetry: async ({ attempt, source, error }) => {
-            await this.log("warn", "MOSS Q8 runtime artifact download retry", {
-              attempt,
-              source: source.url,
-              error: error instanceof Error ? error.message : String(error),
-            });
-          },
-        }),
+        ),
       );
     }
     await mkdir(this.mossCppPythonPath, { recursive: true });
@@ -1411,23 +1412,12 @@ export class AiRuntimeManager {
     if (!(await this.isVerifiedArkAsrCpuHelper(extracted))) {
       const archive = path.join(this.runtimeRoot, "downloads", ARK_ASR_PORTABLE_CLI.fileName);
       try {
-        await downloadVerifiedRuntimeArtifact({
-          destination: archive,
-          expectedBytes: ARK_ASR_PORTABLE_CLI.bytes,
-          expectedSha256: ARK_ASR_PORTABLE_CLI.sha256,
-          sources: ARK_ASR_PORTABLE_CLI.sources,
-          fetcher: this.options.runtimeFetch,
-          attempts: 6,
-          idleTimeoutMs: 120_000,
+        await this.downloadRuntimeComponent(
+          ARK_ASR_PORTABLE_CLI,
+          archive,
+          "ARK-ASR portable CPU helper",
           signal,
-          onRetry: async ({ attempt, source, error }) => {
-            await this.log("warn", "ARK-ASR portable CPU helper download retry", {
-              attempt,
-              source: source.url,
-              error: error instanceof Error ? error.message : String(error),
-            });
-          },
-        });
+        );
         await mkdir(this.arkAsrPortableCliPath, { recursive: true });
         await runLocalProcess("tar.exe", ["-xf", archive, "-C", this.arkAsrPortableCliPath], {
           signal,

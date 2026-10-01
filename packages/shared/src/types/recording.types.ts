@@ -87,7 +87,7 @@ export interface RecordingSpeakerSegmentPayload {
   endMs: number;
   userId?: string;
   trackId?: string;
-  roomId?: "main" | "side";
+  roomId?: string;
   avatarId?: string;
   joinedAt?: string;
 }
@@ -101,7 +101,7 @@ export interface RecordingParticipantTrackPayload {
   displayNameSnapshot: string;
   avatarId?: string;
   trackId: string;
-  roomId: "main" | "side";
+  roomId: string;
   joinedAt?: string;
   startMs: number;
   endMs: number;
@@ -132,6 +132,7 @@ export interface RecordingSpeakerSegmentFinalizePayload {
 }
 
 export interface RecordingLibraryItem {
+  roomName?: string;
   id: string;
   recordingId: string;
   title: string;
@@ -141,7 +142,7 @@ export interface RecordingLibraryItem {
   createdAt: string;
   modifiedAt: string;
   fileSize: number;
-  roomId?: "main" | "side";
+  roomId?: string;
   isFavorite: boolean;
   markers: RecordingMarker[];
 }

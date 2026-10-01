@@ -17,6 +17,7 @@ export async function runOrganizationWithRetry<T>(
   execute: () => Promise<T>,
   signal: AbortSignal,
 ): Promise<T> {
+  if (signal.aborted) throw new Error("ai_task_paused");
   let state = initial ?? { attempts: 0, status: "pending" };
   if (state.status === "completed" && state.value !== undefined) return state.value as T;
   for (let index = 0; index < MAX_ORGANIZATION_ATTEMPTS_PER_RUN; index++) {
@@ -29,6 +30,7 @@ export async function runOrganizationWithRetry<T>(
     await save(state);
     try {
       const result = await execute();
+      if (signal.aborted) throw new Error("ai_task_paused");
       await save({ ...state, status: "completed", errorMessage: undefined, value: result });
       return result;
     } catch (error) {

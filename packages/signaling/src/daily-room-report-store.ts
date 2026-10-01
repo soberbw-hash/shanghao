@@ -1,6 +1,7 @@
 import { copyFile, mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
 import { dirname, join, parse } from "node:path";
 
+import { isStoredRoomId } from "@private-voice/shared";
 import type {
   DailyRoomParticipantSummary,
   DailyRoomRecordingRecap,
@@ -62,7 +63,7 @@ export const shiftShanghaiDate = (date: string, days: number): string => {
   return getShanghaiDate(base + days * 86_400_000);
 };
 
-const isRoomId = (value: string): value is DailyRoomId => value === "main" || value === "side";
+const isRoomId = isStoredRoomId;
 
 const createEmptyReport = (roomId: DailyRoomId, date: string): DailyRoomReport => ({
   schemaVersion: 1,
@@ -483,7 +484,7 @@ export class DailyRoomReportStore {
 
   async flush(): Promise<void> {
     const now = Date.now();
-    for (const roomId of ["main", "side"] as const) {
+    for (const roomId of Object.keys(this.reports.rooms)) {
       this.closeActiveTime(roomId, now, true);
       this.closeActiveParticipants(roomId, now, true);
       this.closeActiveGames(roomId, now, true);
@@ -709,7 +710,7 @@ export class DailyRoomReportStore {
           participants: {},
           gameParticipants: {},
         };
-        for (const roomId of ["main", "side"] as const) {
+        for (const roomId of Object.keys(parsed.rooms).filter(isRoomId)) {
           const source = parsed.rooms[roomId];
           if (!source || typeof source !== "object") continue;
           this.reports.rooms[roomId] = Object.fromEntries(

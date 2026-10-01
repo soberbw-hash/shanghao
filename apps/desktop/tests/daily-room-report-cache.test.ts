@@ -8,7 +8,7 @@ import type { DailyRoomReport } from "@private-voice/shared";
 
 import { DailyRoomReportCache } from "../src/main/daily-room-report-cache";
 
-const report = (roomId: "main" | "side", date: string): DailyRoomReport => ({
+const report = (roomId: string, date: string): DailyRoomReport => ({
   roomId,
   date,
   hadActivity: true,
@@ -64,6 +64,23 @@ test("daily room report cache refuses to overwrite unreadable user data", async 
       /daily_room_reports_unreadable/,
     );
     assert.equal(await readFile(file, "utf8"), original);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("private room reports survive restart without replacing legacy or another private room", async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "shanghao-private-reports-"));
+  try {
+    const a = `room_${"a".repeat(32)}`;
+    const b = `room_${"b".repeat(32)}`;
+    const cache = new DailyRoomReportCache(directory);
+    await cache.save({ main: [report("main", "2026-09-28")], [a]: [report(a, "2026-09-29")] });
+    await cache.save({ [b]: [report(b, "2026-09-29")] });
+    const reports = await new DailyRoomReportCache(directory).read();
+    assert.equal(reports[a]?.[0]?.roomId, a);
+    assert.equal(reports[b]?.[0]?.roomId, b);
+    assert.equal(reports.main?.length, 1);
   } finally {
     await rm(directory, { recursive: true, force: true });
   }

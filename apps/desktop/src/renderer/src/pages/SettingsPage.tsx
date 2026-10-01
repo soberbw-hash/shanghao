@@ -1,3 +1,4 @@
+import { GeneralSettingsCard } from "../components/settings/GeneralSettingsCard";
 import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
   Activity,
@@ -15,8 +16,6 @@ import { LayoutGroup, motion } from "framer-motion";
 import type { AppSettings, WindowsIntegrationStatus } from "@private-voice/shared";
 import { cn } from "@private-voice/ui";
 
-import { Button } from "../components/base/Button";
-import { Switch } from "../components/base/Switch";
 import { playUiSound } from "../features/audio/uiSound";
 import { motionCurve, motionDuration, motionEase } from "../features/motion/motionSystem";
 import { interactionPerformanceMonitor } from "../features/diagnostics/interactionPerformanceMonitor";
@@ -34,9 +33,7 @@ import { AudioSettingsCard } from "../components/settings/AudioSettingsCard";
 import { AboutSettingsCard } from "../components/settings/AboutSettingsCard";
 import { AccountSettingsCard } from "../components/settings/AccountSettingsCard";
 import { SettingsDiagnosticsSection } from "../components/settings/SettingsDiagnosticsSection";
-import { SettingsItemRow } from "../components/settings/SettingsItemRow";
 import { SettingsPageHeader } from "../components/settings/SettingsPageHeader";
-import { SettingsSection } from "../components/settings/SettingsSection";
 import { QuickMessageSettingsCard } from "../components/settings/QuickMessageSettingsCard";
 import {
   preloadRecordingLibrary,
@@ -46,7 +43,6 @@ import {
   preloadAiVoiceMemorySnapshot,
   AiVoiceMemorySettingsCard as AiVoiceMemorySettingsCardView,
 } from "../components/settings/AiVoiceMemorySettingsCard";
-import { WeatherSettingsCard } from "../components/settings/WeatherSettingsCard";
 import { StartupSplashPage } from "../components/status/StartupSplashPage";
 import { usePrefersReducedMotion } from "../hooks/usePrefersReducedMotion";
 import { useAppStore } from "../store/appStore";
@@ -308,44 +304,14 @@ export const SettingsPage = ({ isActive = true }: { isActive?: boolean }) => {
   const content: Record<SettingsSectionId, React.ReactNode> = {
     account: <AccountSettingsCard />,
     general: (
-      <SettingsSection title="通用" description="管理窗口与天气位置。">
-        <div className="space-y-3">
-          <SettingsItemRow label="关闭窗口时留在后台">
-            <Switch
-              ariaLabel="关闭窗口时留在后台"
-              isChecked={settings.minimizeToTray}
-              onChange={(minimizeToTray) => void handleSaveSettings({ minimizeToTray })}
-            />
-          </SettingsItemRow>
-          <SettingsItemRow
-            label="Windows 外观实验功能"
-            description="隐藏 Windows 桌面所有快捷方式的小箭头；此功能会影响整个 Windows，不会隐藏管理员盾牌。"
-          >
-            <div className="flex flex-wrap gap-2">
-              <Button
-                variant="secondary"
-                disabled={isWindowsDiagnosticsLoading || windowsDiagnostics?.iconOverlays.hidden}
-                onClick={() => handleIconOverlayChange(true)}
-              >
-                {isWindowsDiagnosticsLoading ? "读取状态…" : "一键隐藏"}
-              </Button>
-              <Button
-                variant="ghost"
-                disabled={
-                  isWindowsDiagnosticsLoading || windowsDiagnostics?.iconOverlays.hidden !== true
-                }
-                onClick={() => handleIconOverlayChange(false)}
-              >
-                恢复默认
-              </Button>
-            </div>
-          </SettingsItemRow>
-          <WeatherSettingsCard
-            settings={settings}
-            onChange={(patch) => void handleSaveSettings(patch)}
-          />
-        </div>
-      </SettingsSection>
+      <GeneralSettingsCard
+        settings={settings}
+        onChange={(patch) => void handleSaveSettings(patch)}
+        windowsStatus={windowsDiagnostics}
+        loadingWindows={isWindowsDiagnosticsLoading}
+        onIconOverlayChange={handleIconOverlayChange}
+        isActive={isActive && activeSection === "general"}
+      />
     ),
     audio: (
       <div className="space-y-4">

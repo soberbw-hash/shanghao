@@ -1,6 +1,7 @@
 import { EventEmitter } from "node:events";
 import { randomUUID } from "node:crypto";
 import { WebSocket as NodeWebSocket, type RawData } from "ws";
+import { isStoredRoomId } from "@private-voice/shared";
 
 import type {
   DailyRoomRecordingRecap,
@@ -16,13 +17,13 @@ export interface CloudAiBridgeRequest {
 }
 
 export interface RecordingRecapBridgeRequest {
-  roomId: "main" | "side";
+  roomId: string;
   reportDate: string;
   recap: Omit<DailyRoomRecordingRecap, "uploadedAt">;
 }
 
 export interface RecordingRecapBridgeResult {
-  roomId: "main" | "side";
+  roomId: string;
   reportDate: string;
   publishedAt: string;
   serverRevision: number;
@@ -358,7 +359,7 @@ export class SignalingClientBridge extends EventEmitter {
       throw new Error("recording_recap_join_required");
     }
     const roomId = this.joinedRoom.roomId;
-    if (roomId !== "main" && roomId !== "side") throw new Error("recording_recap_room_invalid");
+    if (!isStoredRoomId(roomId)) throw new Error("recording_recap_room_invalid");
     if (roomId !== request.roomId) throw new Error("recording_recap_join_matching_room");
     const requestId = randomUUID();
     const peerId = this.joinedRoom.peerId;
@@ -485,7 +486,7 @@ export class SignalingClientBridge extends EventEmitter {
         const serverRevision = Number(
           (message as { serverRevision?: unknown }).serverRevision ?? 0,
         );
-        const roomId = message.roomId === "side" ? "side" : "main";
+        const roomId = message.roomId!;
         pending.resolve({ roomId, reportDate, publishedAt, serverRevision });
         return true;
       }

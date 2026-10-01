@@ -11,6 +11,7 @@ import type {
 } from "@private-voice/shared";
 import { isAllowedNickname, isBuiltInAvatarId } from "@private-voice/shared";
 import {
+  isStoredRoomId,
   MAX_ROOM_COLLECTION_IMAGE_LENGTH,
   MAX_ROOM_COLLECTION_TEXT_LENGTH,
 } from "@private-voice/shared";
@@ -140,6 +141,7 @@ export interface RoomSnapshotMessage extends BaseMessage, VersionedMessage {
   type: "room_snapshot";
   roomId: string;
   roomName: string;
+  privateRoom?: import("@private-voice/shared").PrivateRoomInfo;
   members: RoomMember[];
   revision: number;
   serverTime: number;
@@ -276,13 +278,13 @@ export interface RequestDailyRoomReportsMessage extends BaseMessage {
   type: "request_daily_room_reports";
   roomId: string;
   peerId: string;
-  targetRoomId: "main" | "side";
+  targetRoomId: string;
 }
 
 export interface DailyRoomReportsMessage extends BaseMessage {
   type: "daily_room_reports";
   roomId: string;
-  targetRoomId: "main" | "side";
+  targetRoomId: string;
   reports: DailyRoomReport[];
 }
 
@@ -782,13 +784,11 @@ export const isSignalEnvelope = (value: unknown): value is SignalEnvelope => {
         isIntegerInRange(value.counts.side, 0, 5)
       );
     case "request_daily_room_reports":
-      return (
-        hasRoom(value) && hasPeer(value) && ["main", "side"].includes(String(value.targetRoomId))
-      );
+      return hasRoom(value) && hasPeer(value) && isStoredRoomId(value.targetRoomId);
     case "daily_room_reports":
       return (
         hasRoom(value) &&
-        ["main", "side"].includes(String(value.targetRoomId)) &&
+        isStoredRoomId(value.targetRoomId) &&
         Array.isArray(value.reports) &&
         value.reports.length <= 14
       );

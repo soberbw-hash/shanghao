@@ -64,8 +64,10 @@ test("dock and segmented audio controls share the outer corner radius", () => {
 test("local account presets and names survive incoming presence", () => {
   const hook = source("hooks/useRoomState.ts");
   assert.ok(hook.includes("nickname: accountSnapshot.profile?.displayName"));
-  assert.ok(hook.includes("nickname: useAccountStore.getState().snapshot.profile?.displayName"));
-  assert.ok(hook.includes("settings?.accountAvatarPresetId"));
+  assert.ok(source("features/room/memberProjection.ts").includes("nickname: profile?.displayName"));
+  assert.ok(
+    source("features/room/memberProjection.ts").includes("settings?.accountAvatarPresetId"),
+  );
   assert.ok(
     source("app/App.tsx").includes(
       "accountSnapshot.profile?.accountAvatarPresetId ?? settings.accountAvatarPresetId",

@@ -27,13 +27,14 @@ const formatDuration = (milliseconds: number): string => {
 
 export const DailyRoomReportModal = ({
   report,
+  roomName = "房间",
   onClose,
 }: {
   report: DailyRoomReport;
+  roomName?: string;
   onClose: () => void;
 }) => {
   const reduceMotion = useReducedMotion();
-  const roomName = report.roomId === "side" ? "二号房" : "一号房";
   const gameActivities = hasMeaningfulDailyRoomGameData(report)
     ? (report.gameActivities ?? []).filter((activity) => activity.durationMs >= 60_000)
     : [];

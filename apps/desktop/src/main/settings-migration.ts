@@ -12,6 +12,7 @@ import {
   PROFILE_SCHEMA_VERSION,
   SETTINGS_SCHEMA_VERSION,
   isBuiltInAvatarId,
+  isStoredRoomId,
   type AppSettings,
 } from "@private-voice/shared";
 
@@ -117,7 +118,7 @@ const normalizeCollectionViewedAtByRoom = (
   if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
   const input = value as Record<string, unknown>;
   const result: NonNullable<AppSettings["collectionViewedAtByRoom"]> = {};
-  for (const roomId of ["main", "side"] as const) {
+  for (const roomId of Object.keys(input).filter(isStoredRoomId)) {
     const candidate = trimUnknownText(input[roomId]);
     const timestamp = candidate && candidate.length <= 40 ? Date.parse(candidate) : NaN;
     if (Number.isFinite(timestamp)) result[roomId] = new Date(timestamp).toISOString();
@@ -389,10 +390,14 @@ export const migrateSettings = (raw: RawSettings): MigrationResult => {
     lastReleaseNotesVersionSeen: trimUnknownText(raw.lastReleaseNotesVersionSeen),
     lastDailyRoomReportSeen:
       raw.lastDailyRoomReportSeen && typeof raw.lastDailyRoomReportSeen === "object"
-        ? {
-            main: trimUnknownText(raw.lastDailyRoomReportSeen.main),
-            side: trimUnknownText(raw.lastDailyRoomReportSeen.side),
-          }
+        ? Object.fromEntries(
+            Object.entries(raw.lastDailyRoomReportSeen).filter(
+              ([roomId, date]) =>
+                isStoredRoomId(roomId) &&
+                typeof date === "string" &&
+                /^\d{4}-\d{2}-\d{2}$/.test(date),
+            ),
+          )
         : undefined,
   };
 

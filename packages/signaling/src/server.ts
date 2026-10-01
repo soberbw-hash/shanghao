@@ -1,5 +1,12 @@
+import { IceConfigHttpController } from "./ice-config-http-controller";
+import { buildRoomCollectionSnapshots } from "./room-collection-snapshots";
+import {
+  buildIceServersForPeer,
+  getSupportedTurnTransports,
+  getTurnUrls,
+} from "./signaling-ice-config";
 import { EventEmitter } from "node:events";
-import { createHash, createHmac, randomUUID, timingSafeEqual } from "node:crypto";
+import { createHash, randomUUID, timingSafeEqual } from "node:crypto";
 import { createServer, type IncomingMessage, type Server as HttpServer } from "node:http";
 
 import {
@@ -31,12 +38,10 @@ import type {
   DailyRoomReportsMessage,
   RoomCollectionAddMessage,
   RoomCollectionRemoveMessage,
-  RoomCollectionSnapshotMessage,
   ErrorMessage,
   IceCandidateMessage,
   JoinChannelMessage,
   JoinAckMessage,
-  IceServerConfig,
   LeaveChannelMessage,
   MemberStateMessage,
   KnockEventMessage,
@@ -66,6 +71,8 @@ import { CloudAiRuntime } from "./cloud-ai-runtime";
 import { AccountHttpController } from "./account-http-controller";
 import { PhoneMicBridge } from "./phone-mic-bridge";
 import { compareVersions } from "./version-comparison";
+import { PrivateRoomDirectory, PrivateRoomError } from "./private-room-directory";
+import { PrivateRoomHttpController } from "./private-room-http-controller";
 import { syncAccountProfileAcrossRooms } from "./account-room-profile-sync";
 import {
   CloudBaseAccountService,
@@ -82,56 +89,12 @@ export interface SignalingServerOptions {
   requiredClientVersion?: string;
   accountBackend?: AccountBackend;
   dailyRoomReportFile?: string;
+  privateRoomFile?: string;
 }
 const MAX_SIGNALING_PAYLOAD_BYTES = 256 * 1024;
 const MAX_PENDING_AUTH_MESSAGES = 4;
 const MAX_PENDING_AUTH_PAYLOAD_BYTES = MAX_SIGNALING_PAYLOAD_BYTES;
 const CHAT_HISTORY_PAYLOAD_BUDGET_BYTES = MAX_SIGNALING_PAYLOAD_BYTES - 8 * 1024;
-const ROOM_COLLECTION_PAYLOAD_BUDGET_BYTES = MAX_SIGNALING_PAYLOAD_BYTES - 8 * 1024;
-const ROOM_COLLECTION_CHUNK_SIZE = 128;
-
-function buildRoomCollectionSnapshots(
-  roomId: string,
-  items: RoomCollectionItem[],
-): RoomCollectionSnapshotMessage[] {
-  if (items.length === 0) {
-    return [{ type: "room_collection_snapshot", roomId, items: [], replace: true }];
-  }
-
-  const snapshots: RoomCollectionSnapshotMessage[] = [];
-  let chunk: RoomCollectionItem[] = [];
-
-  const flush = (): void => {
-    if (chunk.length === 0) return;
-    snapshots.push({
-      type: "room_collection_snapshot",
-      roomId,
-      items: chunk,
-      replace: snapshots.length === 0,
-    });
-    chunk = [];
-  };
-
-  for (const item of items) {
-    const candidate = [...chunk, item];
-    const payload = JSON.stringify({
-      type: "room_collection_snapshot",
-      roomId,
-      items: candidate,
-      replace: snapshots.length === 0,
-    });
-    if (
-      chunk.length > 0 &&
-      (candidate.length > ROOM_COLLECTION_CHUNK_SIZE ||
-        Buffer.byteLength(payload, "utf8") > ROOM_COLLECTION_PAYLOAD_BUDGET_BYTES)
-    ) {
-      flush();
-    }
-    chunk.push(item);
-  }
-  flush();
-  return snapshots;
-}
 const MAX_AVATAR_BYTES = 128 * 1024;
 const MAX_AUDIO_CHUNK_BYTES = 96 * 1024;
 const MAX_SCREEN_FRAME_BYTES = 220 * 1024;
@@ -139,8 +102,6 @@ const MAX_REALTIME_SOCKET_BUFFER_BYTES = 256 * 1024;
 const MAX_SOCKET_BUFFER_BYTES = 8 * 1024 * 1024;
 const BACKPRESSURE_LOG_INTERVAL_MS = 5_000;
 const MAX_INVALID_MESSAGES = 3;
-const ICE_CONFIG_RATE_LIMIT_WINDOW_MS = 60_000;
-const ICE_CONFIG_RATE_LIMIT = 30;
 const MAX_GLOBAL_CONNECTIONS = Math.max(5, Number(process.env.MAX_CONNECTIONS ?? 100) || 100);
 const SERVER_ONLY_MESSAGE_TYPES = new Set([
   "pong",
@@ -247,53 +208,6 @@ const normalizeAvatar = (
   };
 };
 
-const getTurnUrls = (): string[] =>
-  (process.env.TURN_URLS ?? "")
-    .split(",")
-    .map((value) => value.trim())
-    .filter((value) => value.startsWith("turn:") || value.startsWith("turns:"));
-
-const getSupportedTurnTransports = (): string[] => {
-  const transports = new Set<string>();
-  for (const value of getTurnUrls()) {
-    if (value.startsWith("turns:")) {
-      transports.add("tls");
-      continue;
-    }
-    const transport = new URL(
-      value.replace(/^turn:/, "http:"),
-      "http://localhost",
-    ).searchParams.get("transport");
-    transports.add(transport === "tcp" ? "tcp" : "udp");
-  }
-  return [...transports];
-};
-
-const buildIceServersForPeer = (peerId: string): IceServerConfig[] | undefined => {
-  const urls = getTurnUrls();
-  if (urls.length === 0) return undefined;
-
-  const sharedSecret = process.env.TURN_SHARED_SECRET?.trim();
-  if (sharedSecret) {
-    const requestedTtl = Number(process.env.TURN_CREDENTIAL_TTL_SECONDS ?? 86_400);
-    const ttl = Number.isFinite(requestedTtl)
-      ? Math.min(604_800, Math.max(3_600, requestedTtl))
-      : 86_400;
-    const username = `${Math.floor(Date.now() / 1_000) + ttl}:${peerId}`;
-    return [
-      {
-        urls,
-        username,
-        credential: createHmac("sha1", sharedSecret).update(username).digest("base64"),
-      },
-    ];
-  }
-
-  const username = process.env.TURN_USERNAME?.trim();
-  const credential = process.env.TURN_CREDENTIAL?.trim();
-  return username && credential ? [{ urls, username, credential }] : undefined;
-};
-
 export class SignalingServer extends EventEmitter {
   private readonly roomManager = new RoomManager();
   private readonly httpServer: HttpServer;
@@ -311,11 +225,16 @@ export class SignalingServer extends EventEmitter {
   private readonly roomCollection: Promise<RoomCollectionStore>;
   private readonly dailyRoomReports: Promise<DailyRoomReportStore>;
   private readonly sessionTokens = new SessionTokenStore();
-  private readonly iceConfigRateWindows = new Map<string, { startedAt: number; count: number }>();
+  private readonly iceConfigHttp = new IceConfigHttpController((request) =>
+    this.isAuthorizedHttpRequest(request),
+  );
   private readonly cloudAi: CloudAiRuntime;
   private readonly accountBackend: AccountBackend;
   private readonly accountHttp: AccountHttpController;
   private readonly socketIdentities = new WeakMap<WebSocket, SocketIdentity>();
+  private readonly roomDirectory: Promise<PrivateRoomDirectory>;
+  private directory?: PrivateRoomDirectory;
+  private readonly privateRoomHttp: PrivateRoomHttpController;
   constructor(private readonly options: SignalingServerOptions) {
     super();
     this.roomName = options.roomName;
@@ -354,6 +273,51 @@ export class SignalingServer extends EventEmitter {
         this.broadcastSnapshot(roomId),
       ),
     );
+    const privateRoomFile =
+      options.privateRoomFile ??
+      process.env.ROOM_DIRECTORY_FILE ??
+      (process.env.CHAT_HISTORY_FILE
+        ? `${process.env.CHAT_HISTORY_FILE}.private-rooms.json`
+        : undefined);
+    if (process.env.NODE_ENV === "production" && !privateRoomFile) {
+      throw new Error("private_room_durable_storage_required");
+    }
+    this.roomDirectory = PrivateRoomDirectory.open(privateRoomFile).then((directory) => {
+      this.directory = directory;
+      return directory;
+    });
+    // Startup propagates the error; attach a handler immediately to avoid an unhandled rejection.
+    void this.roomDirectory.catch(() => undefined);
+    this.privateRoomHttp = new PrivateRoomHttpController(
+      this.roomDirectory,
+      this.accountBackend,
+      {
+        count: (roomId) => this.roomManager.getConnectedPeerCount(roomId),
+        changed: (metadata) => {
+          const room = this.roomManager.getRoom(metadata.roomId);
+          if (room) {
+            room.roomName = metadata.name;
+            room.privateRoom = metadata;
+            this.broadcastSnapshot(room.roomId);
+          }
+        },
+        deleted: (roomId) => {
+          for (const peer of this.roomManager.getRoom(roomId)?.peers.listPeers() ?? [])
+            this.evictPeer(roomId, peer.id, "room_not_found");
+        },
+        kick: (roomId, peerId, ownerId) => {
+          const peer = this.roomManager.getRoom(roomId)?.peers.getPeer(peerId);
+          if (!peer || peer.userId === ownerId) throw new PrivateRoomError("room_invalid_request");
+          this.evictPeer(roomId, peerId, "room_removed");
+        },
+        banned: (roomId, userId) => {
+          for (const peer of this.roomManager.getRoom(roomId)?.peers.listPeers() ?? [])
+            if (peer.userId === userId) this.evictPeer(roomId, peer.id, "room_banned");
+        },
+      },
+      (request) =>
+        this.accountHttp.isSecure(request) || this.accountHttp.insecureDevelopmentConnection,
+    );
     this.httpServer = createServer(
       (request, response) => void this.handleHttpRequest(request, response),
     );
@@ -383,6 +347,7 @@ export class SignalingServer extends EventEmitter {
   ): Promise<void> {
     if (await this.phoneMicBridge.serveHttpRequest(request, response)) return;
     if (await this.accountHttp.handle(request, response)) return;
+    if (await this.privateRoomHttp.handle(request, response)) return;
 
     const contentLength = Number(request.headers["content-length"] ?? 0);
     if (Number.isFinite(contentLength) && contentLength > 8 * 1024) {
@@ -431,44 +396,7 @@ export class SignalingServer extends EventEmitter {
       return;
     }
 
-    if (request.method === "GET" && request.url?.startsWith("/ice-config")) {
-      if (!this.isAuthorizedHttpRequest(request)) {
-        response.writeHead(401, {
-          "cache-control": "no-store",
-          "content-type": "application/json; charset=utf-8",
-        });
-        response.end(JSON.stringify({ error: "unauthorized" }));
-        return;
-      }
-      if (!this.consumeIceConfigRateLimit(request)) {
-        response.writeHead(429, {
-          "cache-control": "no-store",
-          "content-type": "application/json; charset=utf-8",
-          "retry-after": "60",
-        });
-        response.end(JSON.stringify({ error: "rate_limited" }));
-        return;
-      }
-      const requestUrl = new URL(request.url, "http://localhost");
-      const peerId =
-        (requestUrl.searchParams.get("peerId") ?? "diagnostic-peer")
-          .replace(/[^a-zA-Z0-9._-]/g, "")
-          .slice(0, 64) || "diagnostic-peer";
-      const iceServers = buildIceServersForPeer(peerId) ?? [];
-      response.writeHead(200, {
-        "cache-control": "no-store",
-        "content-type": "application/json; charset=utf-8",
-      });
-      response.end(
-        JSON.stringify({
-          iceServers,
-          serverTime: Date.now(),
-          turnConfigured: iceServers.length > 0,
-          supportedTurnTransports: getSupportedTurnTransports(),
-        }),
-      );
-      return;
-    }
+    if (this.iceConfigHttp.handle(request, response)) return;
 
     response.writeHead(404, { "content-type": "text/plain; charset=utf-8" });
     response.end("ShangHao signaling server");
@@ -536,6 +464,7 @@ export class SignalingServer extends EventEmitter {
   }
 
   async listen(): Promise<number> {
+    await this.roomDirectory;
     const preferredPort = this.options.port ?? 0;
 
     try {
@@ -596,6 +525,7 @@ export class SignalingServer extends EventEmitter {
     await (await this.chatHistory).flush();
     await (await this.roomCollection).flush();
     await (await this.dailyRoomReports).flush();
+    await (await this.roomDirectory).flush();
     this.sessionTokens.clear();
 
     await new Promise<void>((resolve, reject) => {
@@ -685,18 +615,6 @@ export class SignalingServer extends EventEmitter {
     } catch {
       return false;
     }
-  }
-
-  private consumeIceConfigRateLimit(request: IncomingMessage): boolean {
-    const now = Date.now();
-    const key = request.socket.remoteAddress ?? "unknown";
-    const current = this.iceConfigRateWindows.get(key);
-    if (!current || now - current.startedAt >= ICE_CONFIG_RATE_LIMIT_WINDOW_MS) {
-      this.iceConfigRateWindows.set(key, { startedAt: now, count: 1 });
-      return true;
-    }
-    current.count += 1;
-    return current.count <= ICE_CONFIG_RATE_LIMIT;
   }
 
   private rejectInvalid(socket: WebSocket, code: string, message: string): void {
@@ -948,6 +866,28 @@ export class SignalingServer extends EventEmitter {
       });
       return;
     }
+    let metadata: import("@private-voice/shared").PrivateRoomInfo | undefined;
+    if (message.roomId.startsWith("room_") || process.env.NODE_ENV === "production") {
+      try {
+        if (!accountIdentity) {
+          socket.close(4401, "account_required");
+          return;
+        }
+        metadata = this.directory!.assertCanJoin(message.roomId, accountIdentity.userId);
+      } catch (error) {
+        this.safeSend(socket, {
+          type: "error",
+          roomId: message.roomId,
+          peerId: message.peerId,
+          code: error instanceof PrivateRoomError ? error.code : "room_service_unavailable",
+          message:
+            error instanceof PrivateRoomError && error.code === "room_banned"
+              ? "房主已禁止你加入。"
+              : "房间已不存在。",
+        });
+        return;
+      }
+    }
     if (message.protocolVersion !== APP_PROTOCOL_VERSION) {
       const mismatchMessage: ErrorMessage = {
         type: "error",
@@ -988,6 +928,18 @@ export class SignalingServer extends EventEmitter {
       existingRoom = this.roomManager.getRoom(message.roomId);
     }
 
+    if (
+      metadata &&
+      !existingRoom?.peers.getPeer(message.peerId) &&
+      !this.roomManager.canJoin(message.roomId)
+    ) {
+      // Reconnect grace preserves identity only while no new online member needs its seat.
+      for (const peer of existingRoom?.peers.listPeers() ?? []) {
+        if (peer.disconnectedAt) this.evictPeer(message.roomId, peer.id, "room_removed");
+        if (this.roomManager.canJoin(message.roomId)) break;
+      }
+      existingRoom = this.roomManager.getRoom(message.roomId);
+    }
     const existingPeer = existingRoom?.peers.getPeer(message.peerId);
     let sessionToken: string;
     if (existingPeer) {
@@ -1078,7 +1030,7 @@ export class SignalingServer extends EventEmitter {
       message.peerId,
       existingPeer?.sceneZone,
     );
-    const room = this.roomManager.addPeer(message.roomId, this.roomName, {
+    const room = this.roomManager.addPeer(message.roomId, metadata?.name ?? this.roomName, {
       id: message.peerId,
       userId: authoritativeUserId,
       username: accountIdentity?.username,
@@ -1109,6 +1061,7 @@ export class SignalingServer extends EventEmitter {
     });
 
     room.appVersion = message.appVersion;
+    room.privateRoom = metadata;
     room.protocolVersion = APP_PROTOCOL_VERSION;
     room.buildNumber = APP_BUILD_NUMBER;
     this.logger?.(existingPeer ? "peer reconnected" : "peer joined", {
@@ -1163,6 +1116,25 @@ export class SignalingServer extends EventEmitter {
     this.sessionTokens.invalidate(message.roomId, message.peerId);
     this.sessions.delete(socket);
     this.broadcastSnapshot(message.roomId);
+  }
+
+  private evictPeer(roomId: string, peerId: string, code: string): void {
+    const peer = this.roomManager.getRoom(roomId)?.peers.getPeer(peerId);
+    if (!peer) return;
+    this.safeSend(peer.socket, {
+      type: "error",
+      roomId,
+      peerId,
+      code,
+      message:
+        code === "room_banned"
+          ? "房主已禁止你加入。"
+          : code === "room_removed"
+            ? "你已被移出房间，可以稍后重新加入。"
+            : "房间已不存在。",
+    });
+    this.handleLeave(peer.socket, { type: "leave_channel", roomId, peerId });
+    peer.socket.close(4003, code);
   }
 
   private handleMemberState(message: MemberStateMessage): void {
@@ -1588,12 +1560,24 @@ export class SignalingServer extends EventEmitter {
     socket: WebSocket,
     message: RequestDailyRoomReportsMessage,
   ): Promise<void> {
+    if (message.roomId.startsWith("room_") && message.targetRoomId !== message.roomId) {
+      this.safeSend(socket, {
+        type: "error",
+        code: "room_owner_required",
+        roomId: message.roomId,
+        message: "只能读取当前房间的记录。",
+      });
+      return;
+    }
     const reports = await this.cloudAi.getDailyReports(message.targetRoomId);
     const payload: DailyRoomReportsMessage = {
       type: "daily_room_reports",
       roomId: message.roomId,
       targetRoomId: message.targetRoomId,
-      reports,
+      reports: reports.map((report) => ({
+        ...report,
+        roomName: this.roomManager.getRoom(message.targetRoomId)?.roomName ?? report.roomName,
+      })),
     };
     this.safeSend(socket, payload);
   }
@@ -1675,6 +1659,9 @@ export class SignalingServer extends EventEmitter {
         type: room.roomId === "main" ? "channel_snapshot" : "room_snapshot",
         roomId: room.roomId,
         roomName: room.roomName,
+        privateRoom: room.privateRoom
+          ? { ...room.privateRoom, onlineCount: room.peers.listConnectedPeers().length }
+          : undefined,
         members: room.peers.toRoomMembers(peer.id),
         revision: room.revision,
         serverTime,
@@ -1704,7 +1691,11 @@ export class SignalingServer extends EventEmitter {
     };
 
     for (const socket of this.wss.clients) {
-      if (socket.readyState === WebSocket.OPEN && this.sessions.has(socket)) {
+      if (
+        socket.readyState === WebSocket.OPEN &&
+        this.sessions.has(socket) &&
+        !this.sessions.get(socket)?.roomId.startsWith("room_")
+      ) {
         this.safeSend(socket, payload);
       }
     }
@@ -1736,6 +1727,9 @@ export class SignalingServer extends EventEmitter {
       type: room.roomId === "main" ? "channel_snapshot" : "room_snapshot",
       roomId: room.roomId,
       roomName: room.roomName,
+      privateRoom: room.privateRoom
+        ? { ...room.privateRoom, onlineCount: room.peers.listConnectedPeers().length }
+        : undefined,
       members: room.peers.toRoomMembers(localPeerId),
       revision: room.revision,
       serverTime: Date.now(),

@@ -13,7 +13,7 @@ import { useRoomStore } from "../store/roomStore";
 import { useSettingsStore } from "../store/settingsStore";
 
 interface UseRoomCollectionOptions {
-  roomId: "main" | "side";
+  roomId: string;
   localMemberId?: string;
   localProfileId?: string;
   addItem: (kind: RoomCollectionItemKind, title: string, content: string) => Promise<void>;

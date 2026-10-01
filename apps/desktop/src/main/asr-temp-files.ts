@@ -31,6 +31,15 @@ const isOwnedWavName = (name: string): boolean => {
 };
 const STALE_AFTER_MS = 7 * 24 * 60 * 60 * 1_000;
 const MAX_REMOVALS_PER_RUN = 100;
+const processIsAlive = (pid: number): boolean => {
+  if (!Number.isSafeInteger(pid) || pid <= 0) return true;
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code !== "ESRCH";
+  }
+};
 
 export interface AsrTempCleanupResult {
   examined: number;
@@ -42,6 +51,7 @@ export interface AsrTempCleanupResult {
 export const pruneStaleAsrTempFiles = async (
   directory = asrTemporaryDirectory(),
   now = Date.now(),
+  isProcessAlive = processIsAlive,
 ): Promise<AsrTempCleanupResult> => {
   const result: AsrTempCleanupResult = { examined: 0, removed: 0, removedBytes: 0 };
   const entries = await readdir(directory, { withFileTypes: true }).catch(
@@ -53,6 +63,8 @@ export const pruneStaleAsrTempFiles = async (
   for (const entry of entries) {
     if (result.removed >= MAX_REMOVALS_PER_RUN) break;
     if (!entry.isFile() || !isOwnedWavName(entry.name)) continue;
+    const parts = entry.name.slice(0, -4).split("-");
+    if (parts.length === 8 && isProcessAlive(Number(parts[2]))) continue;
     result.examined++;
     const target = path.join(directory, entry.name);
     const info = await lstat(target).catch(() => undefined);

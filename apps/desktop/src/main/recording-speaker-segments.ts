@@ -20,7 +20,7 @@ export interface PersistedRecordingSpeakerSegment {
   endMs: number;
   userId?: string;
   trackId?: string;
-  roomId?: "main" | "side";
+  roomId?: string;
   avatarId?: string;
   joinedAt?: string;
 }

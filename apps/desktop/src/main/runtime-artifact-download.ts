@@ -1,3 +1,4 @@
+import { waitForTask as wait } from "./task-cancellation";
 import { createHash, randomUUID } from "node:crypto";
 import { createReadStream, createWriteStream } from "node:fs";
 import { mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
@@ -25,6 +26,7 @@ interface RuntimeArtifactDownloadOptions {
   idleTimeoutMs?: number;
   lockWaitTimeoutMs?: number;
   signal?: AbortSignal;
+  consumeBytes?: (bytes: number, signal?: AbortSignal) => Promise<void>;
   onRetry?: (context: {
     attempt: number;
     source: RuntimeArtifactSource;
@@ -53,22 +55,6 @@ export const sha256RuntimeArtifact = async (filePath: string): Promise<string> =
   for await (const chunk of createReadStream(filePath)) hash.update(chunk);
   return hash.digest("hex");
 };
-
-const wait = (delayMs: number, signal?: AbortSignal): Promise<void> =>
-  new Promise((resolve, reject) => {
-    if (signal?.aborted) return reject(new Error("ai_task_paused"));
-    const onAbort = () => {
-      clearTimeout(timer);
-      signal?.removeEventListener("abort", onAbort);
-      reject(new Error("ai_task_paused"));
-    };
-    const timer = setTimeout(() => {
-      signal?.removeEventListener("abort", onAbort);
-      resolve();
-    }, delayMs);
-    signal?.addEventListener("abort", onAbort, { once: true });
-    if (signal?.aborted) onAbort();
-  });
 
 const verifyArtifact = async (
   filePath: string,
@@ -274,7 +260,11 @@ const downloadAttempt = async (
         }
         received += chunk.length;
         refreshIdleTimeout();
-        callback(null, chunk);
+        if (options.consumeBytes)
+          void options
+            .consumeBytes(chunk.length, controller.signal)
+            .then(() => callback(null, chunk), callback);
+        else callback(null, chunk);
       },
     });
     await pipeline(
