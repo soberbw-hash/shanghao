@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, realpath, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { transcodeSavedRecording } from "../src/main/recording-transcode";
@@ -40,9 +40,9 @@ test("ordinary FFmpeg recording export produces playable AAC and preserves its i
     );
     assert.deepEqual(await readFile(input), wave);
   } finally {
-    const resolved = await import("node:fs/promises").then((fs) => fs.realpath(root));
-    assert.equal(path.dirname(resolved).toLowerCase(), path.resolve(tmpdir()).toLowerCase());
+    const resolved = await realpath(root);
+    assert.equal(path.dirname(resolved).toLowerCase(), (await realpath(tmpdir())).toLowerCase());
     assert.match(path.basename(resolved), /^shanghao-export-test-/u);
-    await rm(root, { recursive: true, force: true });
+    await rm(resolved, { recursive: true, force: true });
   }
 });

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { mkdtemp, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, readdir, realpath, rm, stat, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -154,7 +154,7 @@ test("real 60 s M4A exports preserve source, samples, boundaries and queued repe
     const media = await probeRecordingMedia(clip.filePath);
     assert.ok(Math.abs(media.durationMs - [13_000, 28_000, 21_000][index]!) <= 100);
     assert.match(media.inputFormat!, /48000 Hz/);
-    assert.equal(path.dirname(clip.filePath), path.join(directory, "名场面"));
+    assert.equal(path.dirname(clip.filePath), await realpath(path.join(directory, "名场面")));
   }
   const repeated = await exporter.export(directory, {
     filePath: source,
