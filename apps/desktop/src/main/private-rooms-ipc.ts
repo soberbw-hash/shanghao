@@ -1,16 +1,15 @@
 import { ipcMain, net } from "electron";
-import { IPC_CHANNELS, type DesktopApi } from "@private-voice/shared";
+import { IPC_CHANNELS } from "@private-voice/shared";
 import type { AccountDesktopService } from "./account-service";
 import type { SettingsStore } from "./settings-store";
 import { PrivateRoomsDesktopService } from "./private-rooms-service";
 import { PrivateRoomHistoryStore } from "./private-room-history";
-
 export const registerPrivateRoomsIpc = (
   accounts: AccountDesktopService,
   settings: SettingsStore,
   userData: string,
 ) => {
-  const rooms: DesktopApi["rooms"] = new PrivateRoomsDesktopService(
+  const rooms = new PrivateRoomsDesktopService(
     accounts,
     () => settings.getSnapshot().relayServerUrl,
     new PrivateRoomHistoryStore(userData),
@@ -31,4 +30,5 @@ export const registerPrivateRoomsIpc = (
   ipcMain.handle(IPC_CHANNELS.rooms.history, () => rooms.history());
   ipcMain.handle(IPC_CHANNELS.rooms.rememberJoined, (_event, id) => rooms.rememberJoined(id));
   ipcMain.handle(IPC_CHANNELS.rooms.favorite, (_event, id, enabled) => rooms.favorite(id, enabled));
+  return rooms;
 };

@@ -467,10 +467,7 @@ export class AccountDesktopService extends EventEmitter {
         developmentConnection: this.developmentConnection,
         profile,
       });
-      await this.sessionStore.writeRememberedLogin({
-        identifier: username,
-        password: input.password,
-      });
+      await this.persistRememberedLogin(username, input.password);
       await this.log("info", "account registration completed", {
         userId: result.profile.userId,
         verificationRequired: false,
@@ -518,10 +515,7 @@ export class AccountDesktopService extends EventEmitter {
         developmentConnection: this.developmentConnection,
         profile,
       });
-      await this.sessionStore.writeRememberedLogin({
-        identifier: username,
-        password: input.password,
-      });
+      await this.persistRememberedLogin(username, input.password);
     } else {
       this.updateSnapshot({
         status: "verification_required",
@@ -660,6 +654,7 @@ export class AccountDesktopService extends EventEmitter {
       await this.ensureFreshSession(false);
       const profile = await this.requireCloudBase().updateProfile(input.displayName);
       this.updateSnapshot({ ...this.snapshot, status: "signed_in", profile });
+      await this.refreshRememberedProfile(profile);
       return this.getSnapshot();
     }
     const profile = await this.authorizedProfileRequest("/api/account/profile", {
@@ -667,6 +662,7 @@ export class AccountDesktopService extends EventEmitter {
       body: JSON.stringify(input),
     });
     this.updateSnapshot({ ...this.snapshot, status: "signed_in", profile });
+    await this.refreshRememberedProfile(profile);
     return this.getSnapshot();
   }
 
@@ -686,6 +682,7 @@ export class AccountDesktopService extends EventEmitter {
       ),
     });
     this.updateSnapshot({ ...this.snapshot, status: "signed_in", profile });
+    await this.refreshRememberedProfile(profile);
     return this.getSnapshot();
   }
 
@@ -921,7 +918,27 @@ export class AccountDesktopService extends EventEmitter {
       await this.sessionStore.clearRememberedLogin();
       return;
     }
-    await this.sessionStore.writeRememberedLogin({ identifier, password });
+    await this.sessionStore.writeRememberedLogin({
+      identifier,
+      password,
+      profile: this.snapshot.profile,
+    });
+  }
+
+  private async refreshRememberedProfile(profile: AccountProfile): Promise<void> {
+    try {
+      const login = await this.sessionStore.readRememberedLogin();
+      if (
+        !login ||
+        (login.profile && login.profile.userId !== profile.userId) ||
+        this.snapshot.profile?.userId !== profile.userId ||
+        !this.rememberSession
+      )
+        return;
+      await this.sessionStore.writeRememberedLogin({ ...login, profile });
+    } catch {
+      await this.log("warn", "Remembered account portrait refresh deferred").catch(() => undefined);
+    }
   }
 
   private async request<T>(pathname: string, init: RequestInit, authorized = false): Promise<T> {

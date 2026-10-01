@@ -11,6 +11,7 @@ import {
 } from "./runtime-artifact-download";
 import { runLocalProcess } from "./local-process";
 import { platformService } from "./platform/PlatformService";
+import { mainResourceScheduler } from "./main-resource-scheduler";
 
 const RELEASE_ASSETS_URL =
   "https://github.com/FlashML-org/FreeToken-Web/releases/expanded_assets/beta";
@@ -234,9 +235,11 @@ export class FreeTokenManagedRuntime {
   prepare(signal?: AbortSignal): Promise<FreeTokenManagedRuntimeStatus> {
     if (signal?.aborted) return Promise.reject(new Error("ai_task_paused"));
     if (this.preparePromise) return awaitPreparedRuntime(this.preparePromise, signal);
-    const operation = this.prepareOnce(signal).finally(() => {
-      if (this.preparePromise === operation) this.preparePromise = undefined;
-    });
+    const operation = mainResourceScheduler
+      .runWork("runtime-preparation", (workSignal) => this.prepareOnce(workSignal), signal)
+      .finally(() => {
+        if (this.preparePromise === operation) this.preparePromise = undefined;
+      });
     this.preparePromise = operation;
     return operation;
   }
@@ -354,6 +357,8 @@ export class FreeTokenManagedRuntime {
       ],
       fetcher: this.fetcher,
       signal,
+      consumeBytes: (bytes, downloadSignal) =>
+        mainResourceScheduler.consumeDownloadBytes(bytes, downloadSignal),
       onRetry: ({ attempt, error }) =>
         this.log("warn", "freetoken_managed_runtime_download_retry", {
           asset: asset.name,

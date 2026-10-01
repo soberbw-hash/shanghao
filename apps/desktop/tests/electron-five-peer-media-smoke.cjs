@@ -50,6 +50,9 @@ app.commandLine.appendSwitch("autoplay-policy", "no-user-gesture-required");
 app.commandLine.appendSwitch("disable-background-timer-throttling");
 app.commandLine.appendSwitch("disable-renderer-backgrounding");
 app.commandLine.appendSwitch("use-fake-device-for-media-stream");
+// Complete Chromium's fake input AND output selection; permission callbacks
+// alone do not select its fake output and can leave RTP undecoded on Windows.
+app.commandLine.appendSwitch("use-fake-ui-for-media-stream");
 app.commandLine.appendSwitch(
   "use-file-for-fake-audio-capture",
   FAKE_AUDIO_PATH.replaceAll("\\", "/"),
@@ -71,7 +74,7 @@ const rendererScript = `
   const inboundTracks = new Map();
   const playbackNodes = new Map();
   const pendingIceCandidates = new Map();
-  const playbackContext = new AudioContext({ sampleRate: 48000, latencyHint: "interactive" });
+  const playbackContext = new AudioContext({ sampleRate: 48000, latencyHint: "interactive", sinkId: "default" });
   const silentPlaybackGain = playbackContext.createGain();
   // Keep both graphs renderable. Chromium may stop pulling a fully silent graph,
   // which would make RTP counters grow while no decoded samples reach playback.
@@ -80,43 +83,30 @@ const rendererScript = `
   void playbackContext.resume();
 
   const createCapturedMediaAudioStream = async () => {
-    const audio = new Audio(
-      new URL(${JSON.stringify(path.basename(FAKE_AUDIO_PATH))}, location.href).href,
-    );
-    audio.loop = true;
-    audio.preload = "auto";
-    audio.volume = 0.0001;
-    await audio.play();
-    const stream = audio.captureStream?.();
-    const track = stream?.getAudioTracks()[0];
-    if (!stream || !track) {
-      audio.pause();
-      throw new Error("HTML media capture did not provide an audio track");
-    }
-
-    const sourceContext = new AudioContext({ sampleRate: 48_000, latencyHint: "interactive" });
-    const source = sourceContext.createMediaStreamSource(stream);
+    // Decode into a silent sink so decoded-sample checks do not depend on a
+    // physical speaker. This is not an audible headset playback test.
+    const sourceContext = new AudioContext({ sampleRate: 48000, latencyHint: "interactive", sinkId: { type: "none" } });
+    const wav = await fetch(new URL(${JSON.stringify(path.basename(FAKE_AUDIO_PATH))}, location.href)).then(response => response.arrayBuffer());
+    const source = sourceContext.createBufferSource();
+    source.buffer = await sourceContext.decodeAudioData(wav);
+    source.loop = true;
+    const destination = sourceContext.createMediaStreamDestination();
     const sourceAnalyser = sourceContext.createAnalyser();
     const renderGain = sourceContext.createGain();
     sourceAnalyser.fftSize = 512;
     renderGain.gain.value = 0.0001;
+    source.connect(destination);
     source.connect(sourceAnalyser);
     sourceAnalyser.connect(renderGain);
     renderGain.connect(sourceContext.destination);
+    source.start();
     await sourceContext.resume();
     await new Promise((resolve) => window.setTimeout(resolve, 180));
-    return {
-      stream,
-      kind: "html_audio_capture",
-      context: sourceContext,
-      analyser: sourceAnalyser,
-      samples: new Float32Array(sourceAnalyser.fftSize),
-      element: audio,
-    };
+    return { stream: destination.stream, kind: "decoded_wav_44100_to_48000", context: sourceContext, analyser: sourceAnalyser, samples: new Float32Array(sourceAnalyser.fftSize) };
   };
 
   const createSyntheticAudioStream = async () => {
-    const sourceContext = new AudioContext({ sampleRate: 48_000, latencyHint: "interactive" });
+    const sourceContext = new AudioContext({ sampleRate: 48_000, latencyHint: "interactive", sinkId: { type: "none" } });
     const oscillator = sourceContext.createOscillator();
     const sourceGain = sourceContext.createGain();
     const sourceAnalyser = sourceContext.createAnalyser();
@@ -530,7 +520,8 @@ app
       const window = new BrowserWindow({
         // A fully hidden Chromium window does not reliably pull decoded audio.
         // Keep it rendered off-screen and transparent so this exercises the
-        // same playback path as the visible desktop application.
+        // decoded WebRTC path with Chromium's test-only fake output. Physical
+        // headset audibility remains a separate real-device check.
         show: true,
         opacity: 0,
         x: -32_000,
@@ -546,6 +537,12 @@ app
         },
       });
       windows.set(peerId, window);
+      window.webContents.on("console-message", (event) => {
+        if (event.level === "error") console.error(`${peerId}: ${event.message}`);
+      });
+      window.webContents.on("render-process-gone", (_event, details) => {
+        finish(false, { error: `${peerId}: renderer ${details.reason}` });
+      });
       await window.loadFile(TEST_HTML_PATH, { hash: `peerId=${peerId}` });
       if (peerId === "D") {
         await new Promise((resolve) => setTimeout(resolve, 600));

@@ -7,6 +7,7 @@ import test from "node:test";
 import { setTimeout as delay } from "node:timers/promises";
 
 import type { AiModelId } from "@private-voice/shared";
+import { ResourceScheduler } from "../src/main/resource-scheduler";
 
 import {
   AiModelManager,
@@ -334,6 +335,37 @@ test("AI compute status follows the lease and recovers when ASR preparation fail
   assert.equal(manager.getSnapshot().scheduler.computeActiveKind, undefined);
   unsubscribe();
   manager.stop();
+});
+
+test("cancellation during capacity sampling releases only the admitted compute owner", async () => {
+  let finishProbe!: () => void;
+  const scheduler = new ResourceScheduler(() => 4 * 1024 ** 3, {
+    current: () => ({ availableMemoryBytes: 4 * 1024 ** 3, sampledAt: 0 }),
+    refresh: () =>
+      new Promise<void>((resolve) => {
+        finishProbe = resolve;
+      }),
+  });
+  const manager = new AiModelManager(
+    "unused-test-directory",
+    new FakeGameDetection() as never,
+    async () => undefined,
+    undefined,
+    undefined,
+    [],
+    undefined,
+    scheduler,
+  );
+  const controller = new AbortController();
+  const pending = manager.acquireComputeSlot("transcription", true, controller.signal);
+  await Promise.resolve();
+  assert.equal(scheduler.getComputeSnapshot().activeKind, "transcription");
+  controller.abort();
+  await assert.rejects(pending, /ai_task_paused/);
+  assert.equal(scheduler.getComputeSnapshot().activeKind, undefined);
+  finishProbe();
+  manager.stop();
+  scheduler.close();
 });
 
 test("recording pressure publishes a stopping phase without repeating unchanged status", async () => {

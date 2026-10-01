@@ -6,10 +6,10 @@ import { ensureWindowsFirewallRulesWithOutcome } from "../src/main/windows-integ
 
 const read = (path: string) => readFile(new URL(path, import.meta.url), "utf8");
 
-test("packaged Windows executable requires administrator without uiAccess", async () => {
+test("Windows packaging configuration and manifest gate require asInvoker without uiAccess", async () => {
   const builder = await read("../electron-builder.yml");
   const verifier = await read("../../../scripts/verify-windows-execution-level.mjs");
-  assert.match(builder, /requestedExecutionLevel:\s*requireAdministrator/);
+  assert.match(builder, /requestedExecutionLevel:\s*asInvoker/);
   assert.match(builder, /signAndEditExecutable:\s*true/);
   assert.match(verifier, /uiAccess\\s\*=/);
   assert.match(verifier, /false/);
@@ -26,7 +26,9 @@ test("legacy startup task support only removes the old auto-login task", async (
 });
 
 test("firewall repair owns exactly four program-scoped TCP and UDP rules", async () => {
-  const firewall = await read("../src/main/windows-firewall.ts");
+  const firewall =
+    (await read("../src/main/windows-firewall.ts")) +
+    (await read("../src/main/windows-system-scripts.ts"));
   assert.match(firewall, /ShangHao Network/);
   assert.equal((firewall.match(/New-NetFirewallRule/g) ?? []).length, 4);
   assert.match(firewall, /-Program \$exePath -Protocol UDP/);
@@ -38,7 +40,7 @@ test("firewall repair owns exactly four program-scoped TCP and UDP rules", async
   assert.match(firewall, /firewallOperationQueue = result\.then/);
 });
 
-test("network permission self-heal repairs missing rules and reports the outcome", async () => {
+test("explicit network permission repair repairs missing rules and reports the outcome", async () => {
   let repairs = 0;
   const outcome = await ensureWindowsFirewallRulesWithOutcome(
     async () => ({
@@ -58,6 +60,7 @@ test("network permission self-heal repairs missing rules and reports the outcome
         message: "repaired",
       };
     },
+    true,
   );
   assert.equal(repairs, 1);
   assert.equal(outcome.repairAttempted, true);
@@ -65,7 +68,7 @@ test("network permission self-heal repairs missing rules and reports the outcome
   assert.equal(outcome.status.healthy, true);
 });
 
-test("network permission self-heal repairs after inspection fails but leaves healthy rules alone", async () => {
+test("explicit repair handles inspection failure but leaves healthy rules alone", async () => {
   let repairs = 0;
   const failedInspection = await ensureWindowsFirewallRulesWithOutcome(
     async () => Promise.reject(new Error("access denied")),
@@ -79,6 +82,7 @@ test("network permission self-heal repairs after inspection fails but leaves hea
         message: "repaired",
       };
     },
+    true,
   );
   assert.equal(failedInspection.inspectionFailed, true);
   assert.equal(failedInspection.repaired, true);
@@ -100,12 +104,24 @@ test("network permission self-heal repairs after inspection fails but leaves hea
   assert.equal(healthy.repairAttempted, false);
 });
 
-test("network permission self-heal runs in background and only notifies after an attempted repair", async () => {
+test("startup network permission inspection does not request elevation", async () => {
   const main = await read("../src/main/index.ts");
-  assert.match(main, /void autoRepairWindowsNetworkPermissions\(\)/);
-  assert.match(main, /if \(!outcome\.repairAttempted\) return/);
-  assert.match(main, /网络权限已自动修复/);
-  assert.match(main, /TCP\/UDP 语音连接权限/);
+  assert.match(main, /void inspectWindowsNetworkPermissions\(\)/);
+  assert.match(main, /if \(outcome\.status\.healthy\) return/);
+  assert.doesNotMatch(main, /网络权限已自动修复/);
+  let repaired = false;
+  const outcome = await ensureWindowsFirewallRulesWithOutcome(
+    async () => {
+      throw new Error("inspection denied");
+    },
+    async () => {
+      repaired = true;
+      throw new Error("must not invoke UAC");
+    },
+  );
+  assert.equal(repaired, false);
+  assert.equal(outcome.inspectionFailed, true);
+  assert.equal(outcome.repairAttempted, false);
 });
 
 test("firewall repair UI blocks repeated clicks while the serialized repair is running", async () => {
@@ -116,7 +132,7 @@ test("firewall repair UI blocks repeated clicks while the serialized repair is r
   assert.match(settings, /if \(isRepairingFirewall\) return/);
   assert.match(settings, /\.finally\(\(\) => setIsRepairingFirewall\(false\)\)/);
   assert.match(settings, /TCP\/UDP 双向规则已正常启用。/);
-  assert.match(diagnosticsCard, /后台已尝试修复/);
+  assert.match(diagnosticsCard, /点击修复时由 Windows 请求授权/);
   assert.match(diagnosticsCard, /disabled=\{isRepairingFirewall\}/);
   assert.match(diagnosticsCard, /修复中…/);
 });

@@ -86,6 +86,9 @@ extraResources:
       - "shanghao-icon-v4.ico"
       - "shanghao-shortcut-v4.ico"
       - "icon.png"
+      # Preserve the approved original in every installed version.
+      - "icon-master.png"
+      - "brand-source.json"
 extraMetadata:
   name: shanghao
   main: dist-electron/main/index.cjs
@@ -97,7 +100,7 @@ win:
   electronLanguages:
     - zh-CN
     - en-US
-  requestedExecutionLevel: requireAdministrator
+  requestedExecutionLevel: asInvoker
   signAndEditExecutable: true
   target:
     - nsis

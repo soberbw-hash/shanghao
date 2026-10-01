@@ -1,4 +1,8 @@
-import type { AccountAvatarPresetId } from "@private-voice/shared";
+import {
+  accountAvatarPresetForIdentity,
+  type AccountAvatarPresetId,
+  type AccountProfile,
+} from "@private-voice/shared";
 
 import skyCat from "../../assets/account-avatars/01-sky-cat.svg";
 import mintBear from "../../assets/account-avatars/02-mint-bear.svg";
@@ -32,3 +36,9 @@ export const ACCOUNT_AVATAR_PRESETS: AccountAvatarPreset[] = [
 
 export const accountAvatarPresetSource = (id?: AccountAvatarPresetId): string | undefined =>
   ACCOUNT_AVATAR_PRESETS.find((preset) => preset.id === id)?.source;
+export const accountProfileAvatarSource = (profile?: AccountProfile): string | undefined =>
+  profile
+    ? accountAvatarPresetSource(
+        profile.accountAvatarPresetId ?? accountAvatarPresetForIdentity(profile.userId),
+      )
+    : undefined;

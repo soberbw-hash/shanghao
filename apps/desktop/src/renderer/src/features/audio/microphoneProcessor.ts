@@ -10,6 +10,7 @@ import { DeepFilterNet3Core } from "deepfilternet3-noise-filter";
 
 import { FOURTH_ORDER_BUTTERWORTH_Q } from "./filterMath";
 import { SPEECH_PROTECTION_HANGOVER_MS } from "./speechProtection";
+import { forwardMicrophoneInputLoss } from "./microphoneInputLoss";
 
 export const MICROPHONE_EQ_FREQUENCIES = [80, 250, 1_000, 4_000, 12_000] as const;
 
@@ -662,6 +663,7 @@ export const createProcessedMicrophoneStream = async (
   };
   const sendVolume = Math.max(0.5, Math.min(1.5, settings.microphoneSendVolume ?? 1));
   let disposed = false;
+  let removeInputLossListener: (() => void) | undefined;
   let lastPublishedDiagnosticsAt = 0;
   const diagnosticsListeners = new Set<
     (diagnostics: ProcessedMicrophoneStream["processorDiagnostics"]) => void
@@ -685,6 +687,11 @@ export const createProcessedMicrophoneStream = async (
 
     const source = context.createMediaStreamSource(inputStream);
     const destination = context.createMediaStreamDestination();
+    removeInputLossListener = forwardMicrophoneInputLoss(
+      inputStream,
+      destination.stream,
+      () => disposed,
+    );
     const outputGain = context.createGain();
     const outputLimiter = context.createDynamicsCompressor();
     outputGain.gain.value = sendVolume;
@@ -958,6 +965,7 @@ export const createProcessedMicrophoneStream = async (
       getSendVolume: () => outputGain.gain.value,
       dispose: () => {
         disposed = true;
+        removeInputLossListener?.();
         resolveReady?.({ ...processorDiagnostics });
         resolveReady = undefined;
         diagnosticsListeners.clear();
@@ -998,6 +1006,7 @@ export const createProcessedMicrophoneStream = async (
     };
   } catch (error) {
     disposed = true;
+    removeInputLossListener?.();
     if (remoteReferenceTimer !== undefined) window.clearInterval(remoteReferenceTimer);
     if (inputOverloadTimer !== undefined) window.clearInterval(inputOverloadTimer);
     if (settings.stopInputOnDispose !== false) {

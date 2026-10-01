@@ -30,6 +30,8 @@ import {
 import { requiredModelFiles, requiredWeightFiles } from "./ai-model-layout";
 import { ACTIVE_ARK_ASR_VARIANT } from "./ark-asr-config";
 import { ResourceScheduler, type AiComputeEvent, type AiComputeLease } from "./resource-scheduler";
+import { waitForTask } from "./task-cancellation";
+import { writePrivateFileAtomically } from "./atomic-private-file";
 import { RuntimePressureController } from "./runtime-pressure-controller";
 export {
   GAMING_DOWNLOAD_BYTES_PER_SECOND,
@@ -395,7 +397,6 @@ class DownloadPausedError extends Error {
 export class AiModelManager {
   private readonly listeners = new Set<(snapshot: AiVoiceMemorySnapshot) => void>();
   private readonly qwenReleaseListeners = new Set<(reason: string) => void>();
-  private readonly scheduler = new ResourceScheduler();
   private readonly abortControllers = new Map<AiModelId, AbortController>();
   private readonly runningDownloads = new Map<AiModelId, Promise<void>>();
   private readonly modelActionQueues = new Map<AiModelId, Promise<void>>();
@@ -442,6 +443,7 @@ export class AiModelManager {
     private readonly readHuggingFaceAccessToken?: () => Promise<string | undefined>,
     private readonly fallbackModelDirectories: readonly string[] = [],
     pressureStaleAfterMs = 30_000,
+    private readonly scheduler = new ResourceScheduler(),
   ) {
     this.pressureController = new RuntimePressureController((change) => {
       this.scheduler.update({ pressure: change.pressure });
@@ -821,20 +823,33 @@ export class AiModelManager {
     current.downloadedBytes = current.totalBytes;
     await this.persist();
     this.emit();
-    await this.validateRevision(definition, definition.revision, files);
-    await writeFile(
-      path.join(revisionDirectory, "model.ready.json"),
-      JSON.stringify(
-        {
-          repository: definition.repository,
-          revision: definition.revision,
-          components: this.modelComponents(definition),
+    await this.scheduler.runWork(
+      "model-verification",
+      async (signal) => {
+        await validateModelRevisionFiles(
+          definition.id,
+          this.revisionDirectory(definition.id, definition.revision),
           files,
-        },
-        null,
-        2,
+        );
+        if (signal.aborted) throw new DownloadPausedError();
+      },
+      controller.signal,
+    );
+    if (controller.signal.aborted) throw new DownloadPausedError();
+    await writePrivateFileAtomically(
+      path.join(revisionDirectory, "model.ready.json"),
+      Buffer.from(
+        JSON.stringify(
+          {
+            repository: definition.repository,
+            revision: definition.revision,
+            components: this.modelComponents(definition),
+            files,
+          },
+          null,
+          2,
+        ),
       ),
-      "utf8",
     );
     const previousRevision = current.activeRevision;
     current.activeRevision = definition.revision;
@@ -993,25 +1008,10 @@ export class AiModelManager {
           attempt,
           maxAttempts: MODEL_FILE_DOWNLOAD_ATTEMPTS,
         });
-        await this.waitForDownloadRetry(attempt * 750, signal);
+        await waitForTask(attempt * 750, signal);
       }
     }
     throw lastError;
-  }
-
-  private waitForDownloadRetry(delayMs: number, signal: AbortSignal): Promise<void> {
-    if (signal.aborted) return Promise.reject(new DownloadPausedError());
-    return new Promise((resolve, reject) => {
-      const timer = setTimeout(() => {
-        signal.removeEventListener("abort", onAbort);
-        resolve();
-      }, delayMs);
-      const onAbort = () => {
-        clearTimeout(timer);
-        reject(new DownloadPausedError());
-      };
-      signal.addEventListener("abort", onAbort, { once: true });
-    });
   }
 
   private withDownloadSlot<T>(signal: AbortSignal, operation: () => Promise<T>): Promise<T> {
@@ -1097,15 +1097,6 @@ export class AiModelManager {
           .then(() => callback(null, chunk), callback);
       },
     });
-  }
-
-  private async validateRevision(
-    definition: ModelDefinition,
-    revision: string,
-    files: RemoteModelFile[],
-  ): Promise<void> {
-    const directory = this.revisionDirectory(definition.id, revision);
-    await validateModelRevisionFiles(definition.id, directory, files);
   }
 
   private modelComponents(definition: ModelDefinition): readonly ModelComponent[] {
@@ -1461,6 +1452,10 @@ export class AiModelManager {
       signal?.addEventListener("abort", onAbort, { once: true });
       if (signal?.aborted) onAbort();
       try {
+        await this.scheduler.refreshCapacity(lease.signal);
+        const decision = this.scheduler.aiDecision(kind, manualRequest);
+        if (!decision.runnable) throw new Error(decision.reason);
+        lease.resourceMode = decision.resourceMode;
         if (kind === "transcription") this.releaseQwenResources("asr_start");
         this.emit();
       } catch (error) {

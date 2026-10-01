@@ -12,6 +12,34 @@ const resourcesDirectory = path.join(unpackedDirectory, "resources");
 const archivePath = path.join(resourcesDirectory, "app.asar");
 await access(archivePath);
 
+// Verify the installed original and the actual EXE resources independently.
+const brandDirectory = path.join(resourcesDirectory, "build");
+const brandSource = JSON.parse(
+  await readFile(path.join(brandDirectory, "brand-source.json"), "utf8"),
+);
+const brandMaster = await readFile(path.join(brandDirectory, "icon-master.png"));
+const approvedMaster = await readFile(
+  path.resolve(import.meta.dirname, "../docs/branding/github-avatar.png"),
+);
+if (
+  !brandMaster.equals(approvedMaster) ||
+  createHash("sha256").update(brandMaster).digest("hex") !== brandSource.sha256
+) {
+  throw new Error("Packaged official icon original does not match the approved source");
+}
+const icon = await readFile(path.join(brandDirectory, "shanghao-icon-v4.ico"));
+const executable = await readFile(path.join(unpackedDirectory, "ShangHao.exe"));
+if (icon.readUInt16LE(4) !== 9)
+  throw new Error("Official Windows icon must contain nine DPI sizes");
+for (let index = 0; index < icon.readUInt16LE(4); index++) {
+  const entry = 6 + index * 16;
+  const size = icon.readUInt32LE(entry + 8),
+    offset = icon.readUInt32LE(entry + 12);
+  if (!executable.includes(icon.subarray(offset, offset + size))) {
+    throw new Error(`EXE is missing official icon frame ${index}`);
+  }
+}
+
 const listFilesRecursively = async (directory) => {
   const entries = await readdir(directory, { withFileTypes: true });
   return (
@@ -47,6 +75,8 @@ for (const nativeHelper of ["shanghao-core.exe", "ShangHao.PhoneAudio.exe"]) {
 
 const entries = listPackage(archivePath, { isPack: false });
 const normalizedEntries = entries.map((entry) => entry.replaceAll("\\", "/"));
+if (!normalizedEntries.includes("/dist/overlay.html"))
+  throw new Error("Dedicated overlay entry is missing");
 const fontEntries = normalizedEntries.filter((entry) => entry.endsWith(".woff2"));
 const targetUiohook = "/node_modules/uiohook-napi/prebuilds/win32-x64/uiohook-napi.node";
 if (!normalizedEntries.some((entry) => entry.endsWith(targetUiohook))) {

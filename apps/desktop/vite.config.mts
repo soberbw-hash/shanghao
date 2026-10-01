@@ -26,6 +26,10 @@ export default defineConfig({
     outDir: resolvePath("dist"),
     emptyOutDir: true,
     rollupOptions: {
+      input: {
+        main: resolvePath("src/renderer/index.html"),
+        overlay: resolvePath("src/renderer/overlay.html"),
+      },
       output: {
         manualChunks(id) {
           const normalizedId = id.replaceAll("\\", "/");

@@ -1,4 +1,5 @@
 import { useRecordingSpeakingTimeline } from "../hooks/useRecordingSpeakingTimeline";
+import { useLocalInputRecovery } from "../features/audio/useLocalInputRecovery";
 import { finishSavedRoomRecording } from "../features/recording/finishSavedRoomRecording";
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 
@@ -16,8 +17,6 @@ import {
 import { RoomChatPanel } from "../components/chat/RoomChatPanel";
 import { TopStatusBar } from "../components/layout/TopStatusBar";
 import { RoomSwitchDialog } from "../components/room/RoomSwitchDialog";
-import { RoomManagementDialog } from "../components/room/RoomManagementDialog";
-import { useAccountStore } from "../store/accountStore";
 import { registerRoomRecordingFinalizer } from "../features/recording/roomRecordingOwnership";
 import { RoomDock } from "../components/room/RoomDock";
 import { RoomAskDialog } from "../components/room/RoomAskDialog";
@@ -51,6 +50,7 @@ import { useRoomPageSettings } from "../hooks/useRoomPageSettings";
 import { useRecordingController } from "../hooks/useRecordingController";
 import { useRoomCollection } from "../hooks/useRoomCollection";
 import { useRoomState } from "../hooks/useRoomState";
+import { useTrayRoomCommands } from "../hooks/useTrayBackground";
 import { useAppStore } from "../store/appStore";
 import { useAudioStore } from "../store/audioStore";
 import { useRecordingStore } from "../store/recordingStore";
@@ -70,9 +70,11 @@ interface AwaySession {
   enteredAt: string;
 }
 export const RoomPage = () => {
-  const accountProfile = useAccountStore((state) => state.snapshot.profile);
   const [roomPickerOpen, setRoomPickerOpen] = useState(false);
-  const [roomManagementOpen, setRoomManagementOpen] = useState(false);
+  const pendingInvite = useAppStore((state) => state.pendingRoomInvite);
+  useEffect(() => {
+    if (pendingInvite) setRoomPickerOpen(true);
+  }, [pendingInvite]);
   const switchAfterRecordingRef = useRef<string | undefined>(undefined);
   const {
     room,
@@ -97,6 +99,7 @@ export const RoomPage = () => {
     addRoomCollectionItem,
     removeRoomCollectionItem,
   } = useRoomState();
+  useTrayRoomCommands(leaveRoom, () => setRoomPickerOpen(true));
   const pushToast = useAppStore((state) => state.pushToast);
   const navigate = useAppStore((state) => state.navigate);
   const setSettingsReturnTo = useAppStore((state) => state.setSettingsReturnTo);
@@ -146,6 +149,7 @@ export const RoomPage = () => {
   const relayServerUrl = useSettingsStore((state) => state.settings?.relayServerUrl);
   const [isPhoneMicDialogOpen, setIsPhoneMicDialogOpen] = useState(false);
   const [phoneMicSelected, setPhoneMicSelected] = useState(false);
+  useLocalInputRecovery(localStream, replaceInputDevice, !phoneMicSelected);
   useEffect(
     () => () => {
       void phoneMicSource.stop();
@@ -642,6 +646,7 @@ export const RoomPage = () => {
       pushToast({
         tone: "neutral",
         title: "刚刚已经敲过啦",
+        dedupeKey: "knock-cooldown",
         description: `${Math.ceil(remaining / 1000)} 秒后可以再敲一次。`,
       });
       return;
@@ -1123,25 +1128,11 @@ export const RoomPage = () => {
             onJoin={(target) => handleSwitchChannel(target.roomId)}
           />
         )}
-        {roomManagementOpen &&
-          room.privateRoom &&
-          room.privateRoom.ownerId === accountProfile?.userId && (
-            <RoomManagementDialog
-              room={room.privateRoom}
-              members={room.members}
-              onClose={() => setRoomManagementOpen(false)}
-            />
-          )}
         <TopStatusBar
           isSwitchingChannel={isSwitchingChannelLocally || roomAction === "joining"}
           isRecording={recordingStatus.state === RecordingState.Recording}
           recordingMarkerPulse={recordingMarkerPulse}
           onChooseRoom={() => setRoomPickerOpen(true)}
-          onManageRoom={
-            room.privateRoom?.ownerId === accountProfile?.userId
-              ? () => setRoomManagementOpen(true)
-              : undefined
-          }
           onKnock={() => void knock()}
           onInvite={() => void copyInviteLink()}
         />
@@ -1231,6 +1222,8 @@ export const RoomPage = () => {
       />
 
       <RoomAskDialog
+        canSend={canSend}
+        onSendToChat={(content, messageId) => sendChatMessage(content, undefined, messageId)}
         isOpen={isRoomAskOpen}
         reduceMotion={reduceMotion}
         onClose={() => setIsRoomAskOpen(false)}

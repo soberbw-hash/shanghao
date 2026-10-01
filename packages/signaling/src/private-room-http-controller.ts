@@ -1,9 +1,8 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import {
-  isChannelCode,
   isPrivateRoomId,
-  isRoomIconId,
   type PrivateRoomInfo,
+  type UpdatePrivateRoomRequest,
 } from "@private-voice/shared";
 import type { AccountBackend } from "./account-service";
 import { PrivateRoomDirectory, PrivateRoomError } from "./private-room-directory";
@@ -122,12 +121,6 @@ export class PrivateRoomHttpController {
       }
       if (method === "POST" && url.pathname === "/api/rooms") {
         const body = await readBody(request);
-        if (
-          (body.channelCode !== undefined && !isChannelCode(body.channelCode)) ||
-          (body.icon !== undefined && !isRoomIconId(body.icon)) ||
-          (body.name !== undefined && typeof body.name !== "string")
-        )
-          throw new PrivateRoomError("room_invalid_request");
         send(201, info(await directory.create(identity.userId, identity.displayName, body)));
         return true;
       }
@@ -157,13 +150,11 @@ export class PrivateRoomHttpController {
       }
       const body = await readBody(request);
       if (method === "PUT" && !action) {
-        if (typeof body.name !== "string" || !isRoomIconId(body.icon))
-          throw new PrivateRoomError("room_invalid_request");
+        // The directory validates appearance before any transaction; the URL owns identity.
         const room = await directory.update(identity.userId, {
+          ...body,
           roomId,
-          name: body.name,
-          icon: body.icon,
-        });
+        } as unknown as UpdatePrivateRoomRequest);
         this.runtime.changed(room);
         send(200, info(room));
         return true;

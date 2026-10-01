@@ -2,6 +2,7 @@ import { startTransition } from "react";
 import { create } from "zustand";
 
 import { interactionPerformanceMonitor } from "../features/diagnostics/interactionPerformanceMonitor";
+import { enqueueToast } from "../features/notifications/toastQueue";
 
 export type AppPage = "home" | "room" | "settings";
 export type SettingsReturnTarget = "home" | "room";
@@ -24,6 +25,8 @@ export interface ToastMessage {
   actionLabel?: string;
   onAction?: () => void;
   persistent?: boolean;
+  dedupeKey?: string;
+  clipFilePath?: string;
 }
 
 export interface StartupIssue {
@@ -45,7 +48,8 @@ interface AppStoreState {
   requiredUpdate?: { requiredVersion: string; currentVersion: string };
   voiceMemoryOpenTarget?: VoiceMemoryOpenTarget;
   pendingRoomInvite?: string;
-  setPendingRoomInvite: (roomId?: string) => void;
+  pendingRoomInviteAutoJoin: boolean;
+  setPendingRoomInvite: (roomId?: string, autoJoin?: boolean) => void;
   isSafeMode: boolean;
   navigate: (page: AppPage) => void;
   setSettingsReturnTo: (target: SettingsReturnTarget) => void;
@@ -64,6 +68,13 @@ interface AppStoreState {
   pushToast: (toast: Omit<ToastMessage, "id">) => void;
   dismissToast: (id: string) => void;
 }
+
+const toastTimers = new Map<string, number>();
+const clearToastTimer = (id: string): void => {
+  const timer = toastTimers.get(id);
+  if (timer !== undefined) window.clearTimeout(timer);
+  toastTimers.delete(id);
+};
 
 export const useAppStore = create<AppStoreState>((set, get) => ({
   currentPage: "home",
@@ -96,7 +107,9 @@ export const useAppStore = create<AppStoreState>((set, get) => ({
     set({
       voiceMemoryOpenTarget: target ? { ...target, requestId: Date.now() } : undefined,
     }),
-  setPendingRoomInvite: (pendingRoomInvite) => set({ pendingRoomInvite }),
+  pendingRoomInviteAutoJoin: false,
+  setPendingRoomInvite: (pendingRoomInvite, autoJoin = false) =>
+    set({ pendingRoomInvite, pendingRoomInviteAutoJoin: Boolean(pendingRoomInvite && autoJoin) }),
   setRoomAction: (roomAction) => set({ roomAction }),
   beginBootstrap: (message = "正在准备上号…") =>
     set((state) => ({
@@ -149,34 +162,17 @@ export const useAppStore = create<AppStoreState>((set, get) => ({
       bootstrapMessage: "准备完成",
     }),
   pushToast: (toast) => {
-    const id = crypto.randomUUID();
+    let id: string = crypto.randomUUID();
     const tone = toast.tone ?? "neutral";
     set((state) => {
-      const duplicate = state.toasts.find(
-        (item) =>
-          item.title === toast.title &&
-          item.description === toast.description &&
-          (item.tone ?? "neutral") === tone,
-      );
-      const uniqueToasts = state.toasts.filter((item) => item.id !== duplicate?.id);
-
-      return {
-        toasts: [
-          ...uniqueToasts,
-          {
-            id,
-            title: toast.title,
-            description: toast.description,
-            tone,
-            actionLabel: toast.actionLabel,
-            onAction: toast.onAction,
-            persistent: toast.persistent,
-            repeatCount: duplicate ? (duplicate.repeatCount ?? 1) + 1 : 1,
-          },
-        ].slice(-3),
-      };
+      const toasts = enqueueToast(state.toasts, toast, id);
+      id = toasts.at(-1)!.id;
+      for (const previous of state.toasts) {
+        if (!toasts.some((item) => item.id === previous.id)) clearToastTimer(previous.id);
+      }
+      return { toasts };
     });
-
+    clearToastTimer(id);
     if (!toast.persistent) {
       const duration =
         tone === "success"
@@ -186,13 +182,17 @@ export const useAppStore = create<AppStoreState>((set, get) => ({
             : tone === "warning"
               ? 8_000
               : 12_000;
-      window.setTimeout(() => {
+      const timer = window.setTimeout(() => {
+        toastTimers.delete(id);
         get().dismissToast(id);
       }, duration);
+      toastTimers.set(id, timer);
     }
   },
-  dismissToast: (id) =>
+  dismissToast: (id) => {
+    clearToastTimer(id);
     set((state) => ({
       toasts: state.toasts.filter((toast) => toast.id !== id),
-    })),
+    }));
+  },
 }));

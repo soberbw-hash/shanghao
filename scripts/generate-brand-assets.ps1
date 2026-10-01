@@ -86,20 +86,38 @@ function Save-MultiSizeIco([System.Drawing.Image]$Source, [string]$Destination) 
   }
 }
 
-# Keep every full-resolution PNG byte-identical to the approved source. Only ICO
-# frames require resizing for Windows shell, executable and installer formats.
-Copy-CanonicalPng (Join-Path $buildPath "icon-master.png")
-Copy-CanonicalPng (Join-Path $buildPath "icon.png")
-Copy-CanonicalPng (Join-Path $rendererPath "brand-mark.png")
-Copy-CanonicalPng (Join-Path $websitePath "brand-mark.png")
-
 $sourceBitmap = [System.Drawing.Bitmap]::FromFile($sourcePath)
 try {
-  if ($sourceBitmap.Width -ne 512 -or $sourceBitmap.Height -ne 512) {
-    throw "The approved brand icon must be 512 x 512 pixels."
+  if ($sourceBitmap.RawFormat.Guid -ne [System.Drawing.Imaging.ImageFormat]::Png.Guid) {
+    throw "The approved original must be a PNG file, not a renamed JPEG or other format."
   }
+  if ($sourceBitmap.Width -ne $sourceBitmap.Height -or $sourceBitmap.Width -lt 256 -or $sourceBitmap.Width -gt 4096) {
+    throw "The approved brand icon must be a square PNG between 256 and 4096 pixels."
+  }
+  # Validate before writing anything. Keep approved PNGs byte-identical; no
+  # recoloring, cropping, sharpening, added glow or reconstructed artwork.
+  Copy-CanonicalPng (Join-Path $workspace "docs/branding/github-avatar.png")
+  Copy-CanonicalPng (Join-Path $buildPath "icon-master.png")
+  Copy-CanonicalPng (Join-Path $buildPath "icon.png")
+  Copy-CanonicalPng (Join-Path $rendererPath "brand-mark.png")
+  Copy-CanonicalPng (Join-Path $websitePath "brand-mark.png")
   Save-MultiSizeIco -Source $sourceBitmap -Destination (Join-Path $buildPath "shanghao-icon-v4.ico")
-  Save-MultiSizeIco -Source $sourceBitmap -Destination (Join-Path $buildPath "shanghao-shortcut-v4.ico")
+  # Legacy filenames may still be referenced by an existing Windows shortcut.
+  foreach ($name in @("shanghao-shortcut-v4.ico", "shanghao-icon.ico", "shanghao-shortcut.ico", "shanghao-icon-v3.ico", "shanghao-shortcut-v3.ico", "shanghao-icon-xl.ico", "shanghao-shortcut-xl.ico")) {
+    Copy-Item -LiteralPath (Join-Path $buildPath "shanghao-icon-v4.ico") -Destination (Join-Path $buildPath $name) -Force
+  }
+  foreach ($name in @("tray-light.png", "tray-dark.png")) {
+    Copy-CanonicalPng (Join-Path $buildPath $name)
+  }
+  $sourceRecord = [ordered]@{
+    source = "docs/branding/github-avatar.png"
+    sha256 = (Get-FileHash -LiteralPath $sourcePath -Algorithm SHA256).Hash.ToLowerInvariant()
+    width = $sourceBitmap.Width
+    height = $sourceBitmap.Height
+    policy = "Exact approved original; resize only for ICO frames."
+    icoSizes = @(16, 20, 24, 32, 40, 48, 64, 128, 256)
+  }
+  [System.IO.File]::WriteAllText((Join-Path $buildPath "brand-source.json"), ($sourceRecord | ConvertTo-Json -Depth 3), (New-Object System.Text.UTF8Encoding $false))
 } finally {
   $sourceBitmap.Dispose()
 }

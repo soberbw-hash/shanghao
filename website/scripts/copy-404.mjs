@@ -37,6 +37,8 @@ const publishedDate = /^\d{4}-\d{2}-\d{2}/.exec(release.published_at)?.[0] ?? ""
 const size = (asset.size / 1024 / 1024).toFixed(1);
 
 await copyFile("dist/index.html", "dist/404.html");
+await mkdir("dist/join", { recursive: true });
+await copyFile("dist/join.html", "dist/join/index.html");
 await mkdir("dist/download", { recursive: true });
 await writeFile(
   "dist/download/index.html",

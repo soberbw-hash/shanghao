@@ -470,6 +470,11 @@ html:not(.is-app-window-focused) .window-frame {
   filter: saturate(0.62);
 }
 
+.scene-character-motion:is(.phase-entering, .phase-walking, .phase-leaving)
+  .room-character-walking-layer.is-active {
+  filter: none;
+}
+
 .room-character-sprite[data-updating="true"]::before {
   border-style: dashed;
   border-color: rgba(66, 139, 234, 0.66);
@@ -500,7 +505,7 @@ html:not(.is-app-window-focused) .window-frame {
 .scene-character-motion:is(.phase-entering, .phase-walking, .phase-approaching, .phase-leaving)
   .walking-animal-shadow {
   opacity: 0.82;
-  animation: character-moving-shadow 420ms ease-in-out infinite alternate;
+  transform: scaleX(1.12);
 }
 
 .scene-character-motion[data-movement-direction="left"] .walking-animal-shadow {
@@ -636,15 +641,6 @@ html:not(.is-app-window-focused) .window-frame {
   38%,
   70% {
     transform: translate(-5px, -7px) rotate(-28deg);
-  }
-}
-
-@keyframes character-moving-shadow {
-  from {
-    transform: scaleX(1.05) translateX(-1px);
-  }
-  to {
-    transform: scaleX(1.52) translateX(3px);
   }
 }
 

@@ -1,0 +1,63 @@
+.private-room-browser {
+  min-height: 218px;
+}
+.private-room-placeholder {
+  display: grid;
+  place-items: center;
+  height: 170px;
+  padding: 16px;
+  border-radius: 16px;
+  background: rgba(235, 243, 253, 0.45);
+}
+.private-room-featured {
+  animation: room-card-reveal 260ms var(--ease-spatial) both;
+}
+@keyframes room-card-reveal {
+  from {
+    opacity: 0;
+    transform: translateY(5px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.app-page-layer {
+  transition-duration: 280ms;
+}
+.app-page-base.is-obscured {
+  visibility: hidden;
+  transition:
+    opacity 280ms var(--ease-out-soft),
+    transform 280ms var(--ease-spatial),
+    visibility 0s 280ms;
+}
+.app-page-settings.is-inactive {
+  transition:
+    opacity 280ms var(--ease-out-soft),
+    transform 280ms var(--ease-spatial),
+    visibility 0s 280ms,
+    content-visibility 0s 280ms;
+  transition-behavior: allow-discrete;
+}
+.diagnostics-user-view button {
+  min-height: 28px !important;
+  height: 28px !important;
+  padding: 0 9px !important;
+  font-size: 12px !important;
+  line-height: 16px !important;
+  border-radius: 8px !important;
+}
+.diagnostics-user-view details button {
+  height: auto !important;
+}
+@media (prefers-reduced-motion: reduce) {
+  .private-room-featured {
+    animation: none;
+  }
+  .app-page-layer,
+  .app-page-settings.is-inactive,
+  .app-page-base.is-obscured {
+    transition: none;
+  }
+}

@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { AnimatePresence } from "framer-motion";
+import { useShallow } from "zustand/react/shallow";
+import { selectOverlaySettings } from "../features/settings/settingsProjection";
 import { RoomConnectionState, type DailyRoomReport } from "@private-voice/shared";
 
 import { ModalHost } from "../components/layout/ModalHost";
@@ -32,7 +34,7 @@ export const SharedOverlays = () => {
   const retryBootstrap = useAppStore((state) => state.retryBootstrap);
   const bootstrapPhase = useAppStore((state) => state.bootstrapPhase);
   const currentPage = useAppStore((state) => state.currentPage);
-  const settings = useSettingsStore((state) => state.settings);
+  const settings = useSettingsStore(useShallow(selectOverlaySettings));
   const runtimeInfo = useSettingsStore((state) => state.runtimeInfo);
   const updateInfo = useSettingsStore((state) => state.updateInfo);
   const updatePhase = useSettingsStore((state) => state.updateStatus.phase);

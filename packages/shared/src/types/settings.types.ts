@@ -21,6 +21,11 @@ export interface AppSettings {
   avatarPath?: string;
   hasCompletedProfileSetup: boolean;
   minimizeToTray: boolean;
+  isFriendOnlineNotificationEnabled: boolean;
+  hasSeenTrayNotice: boolean;
+  recordingClipBeforeMs: number;
+  recordingClipAfterMs: number;
+  hasDismissedRecordingClipConsent: boolean;
   uiScale: UiScale;
   isHardwareAccelerationEnabled: boolean;
   isOverlayEnabled: boolean;

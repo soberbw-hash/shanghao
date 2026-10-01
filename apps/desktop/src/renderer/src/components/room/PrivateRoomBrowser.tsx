@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Plus, Search, Star, Pencil, Trash2, ArrowRight } from "lucide-react";
+import { Plus, Search, Star, ArrowRight } from "lucide-react";
 import { cn } from "@private-voice/ui";
 import type { PrivateRoomHistory, PrivateRoomInfo } from "@private-voice/shared";
 import { shanghaoCore } from "../../core/shanghaoCore";
@@ -10,7 +10,9 @@ import { useSettingsStore } from "../../store/settingsStore";
 import { Button } from "../base/Button";
 import { Input } from "../base/Input";
 import { PrivateRoomIcon } from "./PrivateRoomIcon";
+import { roomIconStyle } from "./roomIconColors";
 import { PrivateRoomEditor } from "./PrivateRoomEditor";
+import { usePendingRoomInvite } from "../../features/room/usePendingRoomInvite";
 
 export const PrivateRoomBrowser = ({
   busy: joining,
@@ -22,6 +24,7 @@ export const PrivateRoomBrowser = ({
   const profile = useAccountStore((state) => state.snapshot.profile);
   const serverUrl = useSettingsStore((state) => state.settings?.relayServerUrl);
   const pendingInvite = useAppStore((state) => state.pendingRoomInvite);
+  const autoJoinInvite = useAppStore((state) => state.pendingRoomInviteAutoJoin);
   const [history, setHistory] = useState<PrivateRoomHistory>({ recent: [], favorites: [] });
   const [mine, setMine] = useState<PrivateRoomInfo[]>([]);
   const [tab, setTab] = useState<"recent" | "favorites" | "mine">("recent");
@@ -31,9 +34,7 @@ export const PrivateRoomBrowser = ({
   const [code, setCode] = useState("");
   const [finding, setFinding] = useState(false);
   const [found, setFound] = useState<PrivateRoomInfo>();
-  const [editor, setEditor] = useState<PrivateRoomInfo | "create">();
-  const [deleting, setDeleting] = useState<PrivateRoomInfo>();
-  const confirm = useRef<HTMLDialogElement>(null);
+  const [creating, setCreating] = useState(false);
   const generation = useRef(0);
   const historyRef = useRef(history);
   historyRef.current = history;
@@ -46,17 +47,14 @@ export const PrivateRoomBrowser = ({
     setHistory({ recent: [], favorites: [] });
     setMine([]);
     setFound(undefined);
-    setEditor(undefined);
-    setDeleting(undefined);
+    setCreating(false);
     setBusy(false);
     setError("");
     void Promise.all([shanghaoCore.rooms.history(), shanghaoCore.rooms.mine()])
       .then(([saved, owned]) => {
         if (generation.current !== current) return;
         setMine(owned);
-        setHistory(saved);
         const fresh = new Map(owned.map((room) => [room.roomId, room]));
-        if (generation.current !== current) return;
         setHistory({
           ...saved,
           recent: saved.recent.map((room) => fresh.get(room.roomId) ?? room),
@@ -73,29 +71,23 @@ export const PrivateRoomBrowser = ({
       counter.current++;
     };
   }, [profile?.userId, serverUrl]);
-  useEffect(() => {
-    if (!pendingInvite) return;
-    let cancelled = false;
-    setFinding(true);
-    setFound(undefined);
-    void shanghaoCore.rooms
-      .get(pendingInvite)
-      .then((room) => {
-        if (!cancelled) {
-          setFound(room);
-          setCode(room.channelCode);
-        }
-      })
-      .catch((error) => {
-        if (!cancelled) setError(privateRoomErrorMessage(error));
-      })
-      .finally(() => {
-        if (!cancelled) useAppStore.getState().setPendingRoomInvite(undefined);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [pendingInvite, profile?.userId, serverUrl]);
+  usePendingRoomInvite({
+    roomId: pendingInvite,
+    autoJoin: autoJoinInvite,
+    userId: profile?.userId,
+    serverUrl,
+    joining: blocked,
+    generation,
+    onFound: (room) => {
+      setFinding(true);
+      setFound(room);
+      setCode(room.channelCode);
+      setError("");
+    },
+    onBusy: setBusy,
+    onError: (error) => setError(privateRoomErrorMessage(error)),
+    onJoin,
+  });
   useEffect(() => {
     if (loading || tab === "mine") return;
     let cancelled = false;
@@ -123,9 +115,6 @@ export const PrivateRoomBrowser = ({
       cancelled = true;
     };
   }, [tab, loading, profile?.userId, serverUrl]);
-  useEffect(() => {
-    if (deleting) confirm.current?.showModal();
-  }, [deleting]);
   const run = async (operation: (current: () => boolean) => Promise<void>) => {
     const owner = generation.current;
     const current = () => generation.current === owner;
@@ -159,13 +148,24 @@ export const PrivateRoomBrowser = ({
     });
   const rooms = tab === "mine" ? mine : history[tab];
   const last = history.recent.find((room) => room.roomId === history.lastRoomId);
-  const roomRow = (room: PrivateRoomInfo, preview = false) => (
+  const showDirectory =
+    !last ||
+    [...history.recent, ...history.favorites, ...mine].some((room) => room.roomId !== last.roomId);
+  const visibleRooms =
+    tab === "recent" ? rooms.filter((room) => room.roomId !== last?.roomId) : rooms;
+  const roomRow = (room: PrivateRoomInfo, preview = false, featured = false) => (
     <div
       key={room.roomId}
       className="flex items-center gap-3 rounded-2xl border border-slate-200/80 bg-white/65 px-3 py-2.5"
     >
-      <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-blue-50 text-blue-600">
-        <PrivateRoomIcon icon={room.icon} />
+      <span
+        className={cn(
+          "flex shrink-0 items-center justify-center rounded-xl",
+          featured ? "size-12" : "size-10",
+        )}
+        style={roomIconStyle(room.iconColor)}
+      >
+        <PrivateRoomIcon icon={room.icon} className={featured ? "size-6" : "size-5"} />
       </span>
       <button
         type="button"
@@ -173,9 +173,11 @@ export const PrivateRoomBrowser = ({
         disabled={blocked || preview}
         onClick={() => void join(room)}
       >
-        <strong className="block truncate text-sm text-[#263b56]">{room.name}</strong>
+        <strong className={cn("block truncate text-[#263b56]", featured ? "text-lg" : "text-sm")}>
+          {room.name}
+        </strong>
         <span className="text-xs tabular-nums text-slate-500">
-          {room.channelCode} · {room.onlineCount}/{room.capacity} 在线
+          频道 {room.channelCode} · {room.onlineCount}/{room.capacity} 在线
         </span>
       </button>
       <button
@@ -196,64 +198,55 @@ export const PrivateRoomBrowser = ({
           }
         />
       </button>
-      {room.ownerId === profile?.userId && (
-        <>
-          <button
-            type="button"
-            disabled={blocked}
-            onClick={() => setEditor(room)}
-            aria-label="编辑房间"
-            className="flex size-8 items-center justify-center rounded-lg text-slate-500"
-          >
-            <Pencil className="size-4" />
-          </button>
-          <button
-            type="button"
-            disabled={blocked}
-            onClick={() => setDeleting(room)}
-            aria-label="删除房间"
-            className="flex size-8 items-center justify-center rounded-lg text-slate-500"
-          >
-            <Trash2 className="size-4" />
-          </button>
-        </>
-      )}
     </div>
   );
   return (
-    <section className="space-y-4" aria-label="私人房间">
+    <section className="private-room-browser space-y-4" aria-label="私人房间" aria-busy={loading}>
+      <header className="flex flex-wrap items-center justify-between gap-2">
+        <h2 className="text-balance text-base font-semibold text-[#263b56]">
+          {last ? "回到房间" : "进入房间"}
+        </h2>
+        <div className="flex items-center gap-1">
+          <Button
+            variant="ghost"
+            className="h-8 px-2 text-xs"
+            disabled={blocked}
+            aria-expanded={finding}
+            onClick={() => {
+              setFinding(!finding);
+              setFound(undefined);
+              setError("");
+            }}
+          >
+            <Search className="size-3.5" />
+            查找
+          </Button>
+          <Button
+            variant="ghost"
+            className="h-8 px-2 text-xs"
+            disabled={blocked || mine.length >= 3}
+            onClick={() => setCreating(true)}
+          >
+            <Plus className="size-3.5" />
+            创建
+          </Button>
+        </div>
+      </header>
+      {loading && (
+        <div className="private-room-placeholder" role="status">
+          正在读取房间…
+        </div>
+      )}
       {last && (
-        <div className="space-y-2">
-          <span className="text-xs font-medium text-slate-500">上次房间</span>
-          {roomRow(last)}
+        <div className="private-room-featured space-y-3 rounded-2xl border border-blue-200/60 bg-blue-50/40 p-3">
+          <span className="text-xs font-medium text-slate-500">上次一起玩的房间</span>
+          {roomRow(last, false, true)}
           <Button className="w-full" disabled={blocked} onClick={() => void join(last)}>
-            进入上次房间
+            {joining ? "正在进入…" : "进入上次房间"}
             <ArrowRight className="size-4" />
           </Button>
         </div>
       )}
-      <div className="grid grid-cols-2 gap-2">
-        <Button
-          variant="secondary"
-          disabled={blocked || mine.length >= 3}
-          onClick={() => setEditor("create")}
-        >
-          <Plus className="size-4" />
-          创建房间
-        </Button>
-        <Button
-          variant="secondary"
-          disabled={blocked}
-          onClick={() => {
-            setFinding(!finding);
-            setFound(undefined);
-            setError("");
-          }}
-        >
-          <Search className="size-4" />
-          查找房间
-        </Button>
-      </div>
       {finding && (
         <form
           className="space-y-2"
@@ -298,112 +291,70 @@ export const PrivateRoomBrowser = ({
           )}
         </form>
       )}
-      <div className="flex gap-1 rounded-xl bg-slate-100/60 p-1" role="group" aria-label="房间列表">
-        {(
-          [
-            ["recent", "最近"],
-            ["favorites", "收藏"],
-            ["mine", "我的房间"],
-          ] as const
-        ).map(([id, label]) => (
-          <button
-            key={id}
-            type="button"
-            aria-pressed={tab === id}
-            onClick={() => setTab(id)}
-            className={cn(
-              "min-h-9 flex-1 rounded-lg text-xs font-semibold",
-              tab === id ? "bg-white text-blue-600 shadow-sm" : "text-slate-500",
-            )}
-          >
-            {label}
-            {id === "mine" ? ` ${mine.length}/3` : ""}
-          </button>
-        ))}
-      </div>
-      <div className="max-h-56 space-y-2 overflow-y-auto">
-        {loading && !rooms.length ? (
-          <p role="status" className="py-3 text-center text-sm text-slate-500">
-            正在读取房间…
-          </p>
-        ) : rooms.length ? (
-          rooms.map((room) => roomRow(room))
-        ) : (
-          <p className="py-3 text-center text-sm text-slate-500">
-            {tab === "favorites"
-              ? "收藏常去的房间，方便下次进入。"
-              : tab === "mine"
-                ? "创建房间后，把频道号发给朋友。"
-                : "创建或查找房间，开始上号。"}
-          </p>
-        )}
-      </div>
+      {showDirectory && (
+        <div
+          className="flex gap-1 rounded-xl bg-slate-100/60 p-1"
+          role="group"
+          aria-label="房间列表"
+        >
+          {(
+            [
+              ["recent", "最近"],
+              ["favorites", "收藏"],
+              ["mine", "我的房间"],
+            ] as const
+          ).map(([id, label]) => (
+            <button
+              key={id}
+              type="button"
+              aria-pressed={tab === id}
+              onClick={() => setTab(id)}
+              className={cn(
+                "min-h-9 flex-1 rounded-lg text-xs font-semibold",
+                tab === id ? "bg-white text-blue-600 shadow-sm" : "text-slate-500",
+              )}
+            >
+              {label}
+              {id === "mine" ? ` ${mine.length}/3` : ""}
+            </button>
+          ))}
+        </div>
+      )}
+      {showDirectory && (loading || visibleRooms.length > 0 || tab !== "recent" || !last) && (
+        <div className="max-h-56 space-y-2 overflow-y-auto">
+          {loading && !visibleRooms.length ? (
+            <p role="status" className="py-3 text-center text-sm text-slate-500">
+              正在读取房间…
+            </p>
+          ) : visibleRooms.length ? (
+            visibleRooms.map((room) => roomRow(room))
+          ) : (
+            <p className="py-3 text-center text-sm text-slate-500">
+              {tab === "favorites"
+                ? "收藏常去的房间，方便下次进入。"
+                : tab === "mine"
+                  ? "创建房间后，把频道号发给朋友。"
+                  : "用朋友的频道号查找，或创建你的房间。"}
+            </p>
+          )}
+        </div>
+      )}
       {error && (
         <p role="alert" className="text-pretty text-sm text-red-600">
           {error}
         </p>
       )}
-      {editor && (
+      {creating && (
         <PrivateRoomEditor
-          room={editor === "create" ? undefined : editor}
           defaultName={profile?.displayName ?? "我的"}
-          onClose={() => setEditor(undefined)}
+          onClose={() => setCreating(false)}
           onSaved={(room) => {
             if (generation.current !== renderedGeneration) return;
             setMine((rooms) => [room, ...rooms.filter((item) => item.roomId !== room.roomId)]);
-            setHistory((saved) => ({
-              ...saved,
-              recent: saved.recent.map((item) => (item.roomId === room.roomId ? room : item)),
-              favorites: saved.favorites.map((item) => (item.roomId === room.roomId ? room : item)),
-            }));
-            setEditor(undefined);
+            setCreating(false);
             setTab("mine");
           }}
         />
-      )}
-      {deleting && (
-        <dialog
-          ref={confirm}
-          role="alertdialog"
-          aria-labelledby="delete-room-title"
-          style={{ background: "rgba(247, 251, 255, 0.98)" }}
-          onCancel={(event) => {
-            if (busy) event.preventDefault();
-            else setDeleting(undefined);
-          }}
-          className="island-panel m-auto w-full max-w-sm rounded-3xl p-6 text-[#263b56] backdrop:bg-slate-900/20"
-        >
-          <h2 id="delete-room-title" className="text-balance text-lg font-semibold">
-            删除“{deleting.name}”？
-          </h2>
-          <p className="mt-3 text-pretty text-sm text-slate-500">
-            房间将立即失效，在线用户会离开。频道号 {deleting.channelCode} 将保留 30
-            天冷却期，本地录音不受影响。
-          </p>
-          {error && (
-            <p role="alert" className="mt-3 text-sm text-red-600">
-              {error}
-            </p>
-          )}
-          <div className="mt-5 flex justify-end gap-2">
-            <Button variant="secondary" disabled={busy} onClick={() => setDeleting(undefined)}>
-              取消
-            </Button>
-            <Button
-              disabled={busy}
-              onClick={() =>
-                void run(async (current) => {
-                  await shanghaoCore.rooms.delete(deleting.roomId);
-                  if (!current()) return;
-                  setMine((rooms) => rooms.filter((room) => room.roomId !== deleting.roomId));
-                  setDeleting(undefined);
-                })
-              }
-            >
-              删除房间
-            </Button>
-          </div>
-        </dialog>
       )}
     </section>
   );

@@ -1,5 +1,7 @@
 import { parsePowerShellJson, runWindowsPowerShell } from "./windows-command";
 import { platformService } from "./platform/PlatformService";
+import { FIREWALL_SCRIPT } from "./windows-system-scripts";
+import { runWindowsSystemOperation } from "./windows-system-operation";
 
 export const SHANGHAO_FIREWALL_GROUP = "ShangHao Network";
 
@@ -11,52 +13,6 @@ export interface WindowsFirewallStatus {
   executablePath?: string;
   message: string;
 }
-
-const FIREWALL_SCRIPT = String.raw`
-$ErrorActionPreference = 'Stop'
-$group = 'ShangHao Network'
-$operation = $env:SHANGHAO_FIREWALL_OPERATION
-$exePath = $env:SHANGHAO_FIREWALL_EXE
-$expectedNames = @(
-  'ShangHao UDP Inbound',
-  'ShangHao UDP Outbound',
-  'ShangHao TCP Inbound',
-  'ShangHao TCP Outbound'
-)
-$expectedRuleNames = @(
-  'ShangHao-UDP-Inbound',
-  'ShangHao-UDP-Outbound',
-  'ShangHao-TCP-Inbound',
-  'ShangHao-TCP-Outbound'
-)
-
-if ($operation -eq 'remove' -or $operation -eq 'repair') {
-  Get-NetFirewallRule -Group $group -ErrorAction SilentlyContinue |
-    Remove-NetFirewallRule -ErrorAction SilentlyContinue
-}
-
-if ($operation -eq 'repair') {
-  if (-not $exePath -or -not (Test-Path -LiteralPath $exePath)) {
-    throw 'firewall_executable_not_found'
-  }
-  New-NetFirewallRule -Name $expectedRuleNames[0] -DisplayName $expectedNames[0] -Group $group -Direction Inbound -Action Allow -Enabled True -Profile Any -Program $exePath -Protocol UDP -EdgeTraversalPolicy Allow | Out-Null
-  New-NetFirewallRule -Name $expectedRuleNames[1] -DisplayName $expectedNames[1] -Group $group -Direction Outbound -Action Allow -Enabled True -Profile Any -Program $exePath -Protocol UDP | Out-Null
-  New-NetFirewallRule -Name $expectedRuleNames[2] -DisplayName $expectedNames[2] -Group $group -Direction Inbound -Action Allow -Enabled True -Profile Any -Program $exePath -Protocol TCP -EdgeTraversalPolicy Allow | Out-Null
-  New-NetFirewallRule -Name $expectedRuleNames[3] -DisplayName $expectedNames[3] -Group $group -Direction Outbound -Action Allow -Enabled True -Profile Any -Program $exePath -Protocol TCP | Out-Null
-}
-
-$rules = @(Get-NetFirewallRule -Group $group -ErrorAction SilentlyContinue)
-$items = @($rules | ForEach-Object {
-  $application = $_ | Get-NetFirewallApplicationFilter -ErrorAction SilentlyContinue
-  @{
-    name = $_.DisplayName
-    enabled = [string]$_.Enabled
-    direction = [string]$_.Direction
-    program = $application.Program
-  }
-})
-@{ count = $items.Count; items = $items } | ConvertTo-Json -Compress -Depth 4
-`;
 
 let firewallOperationQueue: Promise<void> = Promise.resolve();
 
@@ -82,8 +38,10 @@ const runFirewallOperation = async (
 ): Promise<WindowsFirewallStatus> => {
   if (!platformService.isWindows) return unsupportedStatus();
   const executablePath = process.execPath;
+  if (operation !== "inspect")
+    await runWindowsSystemOperation(operation === "repair" ? "firewall-repair" : "firewall-remove");
   const result = await runWindowsPowerShell(FIREWALL_SCRIPT, {
-    SHANGHAO_FIREWALL_OPERATION: operation,
+    SHANGHAO_FIREWALL_OPERATION: "inspect",
     SHANGHAO_FIREWALL_EXE: executablePath,
   });
   const parsed = parsePowerShellJson<{

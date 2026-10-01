@@ -114,6 +114,10 @@ test("a collected runtime sample is not counted as proof of healthy audio or dev
   const diagnosticsCard = readDesktop(
     "src/renderer/src/components/settings/DiagnosticsSettingsCard.tsx",
   );
-  assert.match(diagnosticsCard, /单次采样不代表语音或设备运行正常/);
+  assert.match(diagnosticsCard, /连接异常时，上号会先自动尝试恢复/);
+  assert.match(
+    readDesktop("src/renderer/src/features/diagnostics/healthProjection.ts"),
+    /请让好友确认/,
+  );
   assert.doesNotMatch(diagnosticsCard, /level:\s*runtimeHealth\s*\?\s*"正常"/);
 });

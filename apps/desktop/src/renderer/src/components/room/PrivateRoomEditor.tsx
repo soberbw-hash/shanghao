@@ -1,19 +1,22 @@
 import { useEffect, useRef, useState } from "react";
-import { Shuffle } from "lucide-react";
-import { cn } from "@private-voice/ui";
+import { LockKeyhole, Shuffle } from "lucide-react";
 import {
   ROOM_ICON_IDS,
   isChannelCode,
   type PrivateRoomInfo,
   type RoomIconId,
+  type RoomIconColor,
 } from "@private-voice/shared";
 import { shanghaoCore } from "../../core/shanghaoCore";
+import { useAppStore } from "../../store/appStore";
 import { privateRoomErrorMessage } from "../../features/room/privateRoomMessages";
 import { Button } from "../base/Button";
 import { Input } from "../base/Input";
 import { DialogCloseButton } from "../base/DialogCloseButton";
-import { PrivateRoomIcon, roomIconLabels } from "./PrivateRoomIcon";
-
+import { PrivateRoomIcon } from "./PrivateRoomIcon";
+import { PrivateRoomIconPicker } from "./PrivateRoomIconPicker";
+import { PrivateRoomColorPicker } from "./PrivateRoomColorPicker";
+import { roomIconStyle } from "./roomIconColors";
 export const PrivateRoomEditor = ({
   room,
   defaultName,
@@ -32,6 +35,7 @@ export const PrivateRoomEditor = ({
     room?.icon ?? ROOM_ICON_IDS[Math.floor(Math.random() * ROOM_ICON_IDS.length)]!,
   );
   const [code, setCode] = useState(room?.channelCode ?? "");
+  const [iconColor, setIconColor] = useState<RoomIconColor>(room?.iconColor ?? "blue");
   const [busy, setBusy] = useState(false);
   const [randomBusy, setRandomBusy] = useState(false);
   const [error, setError] = useState("");
@@ -92,9 +96,15 @@ export const PrivateRoomEditor = ({
     setError("");
     try {
       const result = room
-        ? await shanghaoCore.rooms.update({ roomId: room.roomId, name, icon })
-        : await shanghaoCore.rooms.create({ name, icon, channelCode: code });
+        ? await shanghaoCore.rooms.update({ roomId: room.roomId, name, icon, iconColor })
+        : await shanghaoCore.rooms.create({ name, icon, iconColor, channelCode: code });
       onSaved(result);
+      if (iconColor !== "blue" && result.iconColor !== iconColor)
+        useAppStore.getState().pushToast({
+          tone: "warning",
+          title: "房间已保存",
+          description: "当前服务器尚不支持图标颜色，服务器更新后即可保存颜色。",
+        });
     } catch (error) {
       setError(privateRoomErrorMessage(error));
     } finally {
@@ -110,12 +120,28 @@ export const PrivateRoomEditor = ({
       }}
       aria-labelledby="private-room-editor-title"
       style={{ background: "rgba(247, 251, 255, 0.98)" }}
-      className="island-panel m-auto w-full max-w-md rounded-3xl p-6 text-[#263b56] backdrop:bg-slate-900/20"
+      className="island-panel m-auto max-h-[85dvh] w-full max-w-sm overflow-y-auto rounded-3xl p-6 text-[#263b56] backdrop:bg-slate-900/20"
     >
-      <header className="mb-5 flex items-center justify-between gap-3">
-        <h2 id="private-room-editor-title" className="text-balance text-lg font-semibold">
-          {room ? "编辑房间" : "创建房间"}
-        </h2>
+      <header className="mb-5 flex items-start justify-between gap-3 border-b border-slate-200/70 pb-4">
+        <div className="flex min-w-0 items-center gap-3">
+          <span
+            className="flex size-11 shrink-0 items-center justify-center rounded-xl border border-slate-200/60"
+            style={roomIconStyle(iconColor)}
+          >
+            <PrivateRoomIcon icon={icon} className="size-6" />
+          </span>
+          <div className="min-w-0">
+            <h2 id="private-room-editor-title" className="text-balance text-lg font-semibold">
+              {room ? "编辑房间" : "创建房间"}
+            </h2>
+            {room && (
+              <p className="mt-1 flex items-center gap-2 text-xs text-slate-500">
+                <LockKeyhole className="size-3" aria-hidden="true" />
+                <span className="tabular-nums">频道 {room.channelCode} · 创建后固定</span>
+              </p>
+            )}
+          </div>
+        </div>
         <DialogCloseButton onClick={onClose} disabled={busy} label="关闭房间编辑" />
       </header>
       <form
@@ -135,24 +161,23 @@ export const PrivateRoomEditor = ({
             placeholder="给房间起个名字"
           />
         </label>
-        <label className="block space-y-2 text-sm font-medium">
-          频道号
-          <div className="flex gap-2">
-            <Input
-              value={code}
-              aria-label="频道号"
-              inputMode="numeric"
-              maxLength={6}
-              readOnly={Boolean(room)}
-              className="min-w-0 font-mono tabular-nums"
-              disabled={busy || randomBusy}
-              onChange={(event) => {
-                randomGeneration.current++;
-                setCode(event.target.value.replace(/\D/g, ""));
-                setError("");
-              }}
-            />
-            {!room && (
+        {!room && (
+          <label className="block space-y-2 text-sm font-medium">
+            频道号
+            <div className="flex gap-2">
+              <Input
+                value={code}
+                aria-label="频道号"
+                inputMode="numeric"
+                maxLength={6}
+                className="min-w-0 font-mono tabular-nums"
+                disabled={busy || randomBusy}
+                onChange={(event) => {
+                  randomGeneration.current++;
+                  setCode(event.target.value.replace(/\D/g, ""));
+                  setError("");
+                }}
+              />
               <Button
                 type="button"
                 variant="secondary"
@@ -162,39 +187,14 @@ export const PrivateRoomEditor = ({
               >
                 <Shuffle className="size-4" />
               </Button>
-            )}
-          </div>
-          <span className="block text-xs text-slate-500" role="status">
-            {room
-              ? "创建后不变"
-              : checkingCode
-                ? "检查中…"
-                : (availability ?? "六位数字，可保留开头的 0")}
-          </span>
-        </label>
-        <fieldset disabled={busy}>
-          <legend className="mb-2 text-sm font-medium">房间图标</legend>
-          <div className="grid grid-cols-5 gap-2">
-            {ROOM_ICON_IDS.map((id) => (
-              <button
-                key={id}
-                type="button"
-                aria-label={roomIconLabels[id]}
-                aria-pressed={icon === id}
-                title={roomIconLabels[id]}
-                onClick={() => setIcon(id)}
-                className={cn(
-                  "flex h-11 items-center justify-center rounded-xl border",
-                  icon === id
-                    ? "border-blue-300 bg-blue-50 text-blue-600"
-                    : "border-slate-200 bg-white/60 text-slate-500",
-                )}
-              >
-                <PrivateRoomIcon icon={id} />
-              </button>
-            ))}
-          </div>
-        </fieldset>
+            </div>
+            <span className="block text-xs text-slate-500" role="status">
+              {checkingCode ? "检查中…" : (availability ?? "六位数字，可保留开头的 0")}
+            </span>
+          </label>
+        )}
+        <PrivateRoomIconPicker value={icon} disabled={busy} onChange={setIcon} />
+        <PrivateRoomColorPicker value={iconColor} disabled={busy} onChange={setIconColor} />
         {error && (
           <p role="alert" className="text-pretty text-sm text-red-600">
             {error}
@@ -211,7 +211,7 @@ export const PrivateRoomEditor = ({
             (!room && availability === "已被使用或正在冷却")
           }
         >
-          {busy ? "保存中…" : room ? "保存" : "创建房间"}
+          {busy ? "保存中…" : room ? "保存修改" : "创建房间"}
         </Button>
       </form>
     </dialog>

@@ -40,6 +40,26 @@
         color: #172033;
       }
 
+      #app-preboot-cover {
+        position: fixed;
+        inset: 0;
+        z-index: 1000;
+        background: linear-gradient(145deg, #f9fcff, #edf4fd 56%, #f5fbf8);
+        transition: opacity 280ms cubic-bezier(0.22, 1, 0.36, 1);
+        pointer-events: none;
+      }
+      #app-preboot-cover.is-ready {
+        opacity: 0;
+      }
+      @media (prefers-reduced-motion: reduce) {
+        #app-preboot-cover {
+          transition: none;
+        }
+        .app-preboot * {
+          animation: none !important;
+        }
+      }
+
       .app-preboot-content {
         display: grid;
         justify-items: center;
@@ -91,7 +111,7 @@
         background: transparent !important;
       }
 
-      html[data-renderer="overlay"] .app-preboot {
+      html[data-renderer="overlay"] #app-preboot-cover {
         display: none;
       }
 
@@ -132,7 +152,7 @@
     </style>
   </head>
   <body class="bg-app-base">
-    <div id="root">
+    <div id="app-preboot-cover">
       <div class="app-preboot" role="status" aria-label="上号正在启动">
         <div class="app-preboot-content">
           <div class="app-preboot-mark">
@@ -143,6 +163,7 @@
         </div>
       </div>
     </div>
+    <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

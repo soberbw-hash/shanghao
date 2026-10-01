@@ -102,7 +102,7 @@ test("useRoomState delegates persistence, notifications and deep links", () => {
   assert.match(hook, /from "\.\.\/features\/chat\/chatPersistence"/);
   assert.match(hook, /from "\.\.\/features\/room\/memberVolumePersistence"/);
   assert.match(hook, /from "\.\.\/features\/room\/roomNotifications"/);
-  assert.match(hook, /useRoomDeepLink\(/);
+  assert.match(read("hooks/useAppRoomInvites.ts"), /useRoomDeepLink\(/);
   assert.doesNotMatch(hook, /chatHistoryWriteQueue/);
   assert.doesNotMatch(hook, /desktopApi\?\.app\?\.onDeepLink/);
 });

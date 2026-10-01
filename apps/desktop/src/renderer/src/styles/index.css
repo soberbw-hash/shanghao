@@ -8,9 +8,12 @@
 @import "./parts/70-motion.css";
 @import "./parts/80-update.css";
 @import "./parts/90-visual-polish.css";
+@import "./parts/65-chat-affordances.css";
+@import "./parts/66-toast-stack.css";
 @import "./parts/100-scene-weather.css";
 @import "./parts/110-component-polish.css";
 @import "./parts/115-recording-player-title.css";
+@import "./parts/116-recording-clips.css";
 @import "./parts/120-ai.css";
 @import "./parts/130-final-material.css";
 @import "./parts/140-visual-experience.css";
@@ -23,6 +26,9 @@
 @import "./parts/190-room-glass-unification.css";
 @import "./parts/195-phone-mic.css";
 @import "./parts/200-settings-refinement.css";
+@import "./parts/202-room-navigation.css";
 @import "./parts/205-scene-life.css";
+@import "./parts/210-entry-transitions.css";
+@import "./parts/215-game-artwork.css";
 
 /* Keep these imports ordered: later compatibility passes intentionally win the cascade. */

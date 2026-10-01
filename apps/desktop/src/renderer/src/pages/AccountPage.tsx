@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { Check, Eye, EyeOff, LoaderCircle, LockKeyhole, Smartphone, UserRound } from "lucide-react";
 import { AnimatePresence, LayoutGroup, motion } from "framer-motion";
-import type { AccountAvatarPresetId } from "@private-voice/shared";
+import type { AccountAvatarPresetId, AccountProfile } from "@private-voice/shared";
 
 import {
   CLOUDBASE_USERNAME_MESSAGE,
@@ -61,6 +61,7 @@ export const AccountPage = () => {
   const [password, setPassword] = useState("");
   const [rememberMe, setRememberMe] = useState(true);
   const [rememberedIdentifier, setRememberedIdentifier] = useState("");
+  const [rememberedProfile, setRememberedProfile] = useState<AccountProfile>();
   const [confirmPassword, setConfirmPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [isResetOpen, setIsResetOpen] = useState(false);
@@ -86,6 +87,7 @@ export const AccountPage = () => {
         setIdentifier((current) => current || remembered.identifier);
         setPassword((current) => current || remembered.password);
         setRememberedIdentifier(remembered.identifier);
+        setRememberedProfile(remembered.profile);
         setRememberMe(true);
       })
       .catch(() => undefined);
@@ -357,6 +359,7 @@ export const AccountPage = () => {
           >
             {mode === "login" && !isResetOpen ? (
               <AccountLoginSummary
+                profile={rememberedProfile}
                 identifier={identifier}
                 isRemembered={
                   Boolean(rememberedIdentifier) && rememberedIdentifier === identifier.trim()

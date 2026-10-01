@@ -28,6 +28,9 @@ export const IPC_CHANNELS = {
     changed: "phone-mode:changed",
   },
   app: {
+    backgroundActivity: "app:background-activity",
+    backgroundCommand: "app:background-command",
+    completeBackgroundClose: "app:complete-background-close",
     getRuntimeInfo: "app:get-runtime-info",
     getSystemIdleSeconds: "app:get-system-idle-seconds",
     writeLog: "app:write-log",
@@ -182,6 +185,9 @@ export const IPC_CHANNELS = {
     event: "signaling:event",
   },
   recording: {
+    exportClip: "recording:export-clip",
+    showClipInFolder: "recording:show-clip-in-folder",
+    dragClip: "recording:drag-clip",
     export: "recording:export",
     startSession: "recording:start-session",
     appendChunk: "recording:append-chunk",

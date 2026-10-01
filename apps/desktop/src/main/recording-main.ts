@@ -1,5 +1,4 @@
 import { randomUUID } from "node:crypto";
-import { spawn } from "node:child_process";
 import { createWriteStream, type WriteStream } from "node:fs";
 import { copyFile, mkdir, readdir, rename, rm, stat, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
@@ -19,9 +18,8 @@ import {
   resolveUsableRecordingDirectory,
 } from "./recording-path";
 import { registerRecordingInDirectory } from "./recording-library-core";
-import { resolveFfmpegExecutable } from "./media-runtime";
+import { transcodeSavedRecording } from "./recording-transcode";
 
-const RECORDING_AAC_BITRATE = "32k";
 const STREAM_SESSION_DIRECTORY = "stream-sessions";
 const MAX_RECORDING_CHUNK_BYTES = 8 * 1024 * 1024;
 
@@ -85,37 +83,7 @@ export const exportRecordingFromMain = async (
     if (shouldCopyWithoutTranscode(payload.sourceMimeType)) {
       await copyFile(inputPath, outputPath);
     } else {
-      await new Promise<void>((resolve, reject) => {
-        const ffmpeg = spawn(
-          resolveFfmpegExecutable() || "ffmpeg",
-          [
-            "-y",
-            "-i",
-            inputPath,
-            "-ar",
-            "48000",
-            "-ac",
-            `${payload.channels}`,
-            "-c:a",
-            "aac",
-            "-b:a",
-            RECORDING_AAC_BITRATE,
-            "-movflags",
-            "+faststart",
-            outputPath,
-          ],
-          { windowsHide: true },
-        );
-
-        ffmpeg.on("close", (code) => {
-          if (code === 0) {
-            resolve();
-            return;
-          }
-          reject(new Error(`ffmpeg 退出，错误代码 ${code ?? -1}`));
-        });
-        ffmpeg.on("error", reject);
-      });
+      await transcodeSavedRecording(inputPath, outputPath, payload.channels);
     }
 
     const savedFile = await stat(outputPath);

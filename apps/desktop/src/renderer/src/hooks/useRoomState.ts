@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef } from "react";
 
 import {
   isStoredRoomId,
+  privateRoomInvitationUrl,
   isPrivateRoomId,
   APP_BUILD_NUMBER,
   APP_PROTOCOL_VERSION,
@@ -63,7 +64,6 @@ import {
   playSceneReactionSound,
   sendSystemNotification,
 } from "../features/room/roomNotifications";
-import { useRoomDeepLink } from "../features/room/useRoomDeepLink";
 import { useAppStore } from "../store/appStore";
 import { useAccountStore } from "../store/accountStore";
 import { projectRoomMembers } from "../features/room/memberProjection";
@@ -150,7 +150,7 @@ const copy = {
   microphoneMissing: "没有找到可用的麦克风。",
   microphoneBusy: "麦克风正在被其他程序占用。",
   inputDeviceFailed: "输入设备切换失败",
-  copiedInviteDescription: "把链接发给朋友，打开后确认加入当前房间。",
+  copiedInviteDescription: "把邀请发给朋友，点击链接或输入频道号即可加入。",
 } as const;
 
 const normalizeServerUrl = (value?: string): string => {
@@ -200,12 +200,20 @@ const normalizeRoomError = (error: unknown, fallback: string): string => {
   return fallback;
 };
 
-export const buildChannelInviteText = ({ channelId }: { channelId: string }) => {
-  if (!isStoredRoomId(channelId)) throw new Error("room_not_found");
-  const invite = new URL("shanghao://join");
-  invite.searchParams.set("room", channelId);
-  invite.searchParams.set("expires", String(Date.now() + 10 * 60_000));
-  return invite.toString();
+export const buildChannelInviteText = ({
+  channelId,
+  channelCode,
+  roomName,
+  serverUrl,
+}: {
+  channelId: string;
+  channelCode: string;
+  roomName: string;
+  serverUrl?: string;
+}) => {
+  const link = privateRoomInvitationUrl({ roomId: channelId, channelCode, roomName, serverUrl });
+  const title = roomName.replace(/[\r\n]/g, " ");
+  return `来「${title}」一起上号\n频道号：${channelCode}\n点击加入：${link}\n也可在上号中输入频道号加入。`;
 };
 
 const summarizeSignalingEvent = (payload: SignalingEventPayload): Record<string, unknown> => {
@@ -243,7 +251,6 @@ const summarizeSignalingEvent = (payload: SignalingEventPayload): Record<string,
 
 export const useRoomState = () => {
   const runtimeInfo = useSettingsStore((state) => state.runtimeInfo);
-  const settings = useSettingsStore((state) => state.settings);
   const avatarDataUrl = useSettingsStore((state) => state.avatarDataUrl);
   const accountDisplayName = useAccountStore((state) => state.snapshot.profile?.displayName);
   const room = useRoomStore((state) => state.room);
@@ -309,12 +316,12 @@ export const useRoomState = () => {
     );
   }, [isDeafened, isMuted, callModeActive, updateLocalPresence]);
 
-  const profileNickname = accountDisplayName || settings?.nickname;
-  const profileAvatarId = settings?.avatarId;
+  const profileNickname = useSettingsStore(
+    (state) => accountDisplayName || state.settings?.nickname,
+  );
+  const profileAvatarId = useSettingsStore((state) => state.settings?.avatarId);
   useEffect(() => {
-    if (!profileNickname) {
-      return;
-    }
+    if (!profileNickname) return;
 
     activeClient?.updateProfile(profileNickname, avatarDataUrl, profileAvatarId);
   }, [avatarDataUrl, profileAvatarId, profileNickname]);
@@ -374,6 +381,7 @@ export const useRoomState = () => {
     resetStore = false,
     preserveLocalMedia = false,
   }: { resetStore?: boolean; preserveLocalMedia?: boolean } = {}) => {
+    stopQuickMessageMusic();
     await finishRoomRecordingBeforeRelease().catch((error) => {
       pushToast({
         tone: "warning",
@@ -396,6 +404,7 @@ export const useRoomState = () => {
         if (client) await client.disconnect().catch(() => undefined);
       },
       () => {
+        stopQuickMessageMusic();
         if (!preserveLocalMedia) stopLocalMedia();
         setConnectionHealth({ reconnectAttempt: 0 });
         if (resetStore) useRoomStore.getState().resetRoom();
@@ -424,7 +433,7 @@ export const useRoomState = () => {
       }
     }
 
-    const currentSettings = useSettingsStore.getState().settings ?? settings;
+    const currentSettings = useSettingsStore.getState().settings;
     const previousProcessor = activeProcessedMicrophone;
     activeProcessedMicrophone = null;
     try {
@@ -508,7 +517,7 @@ export const useRoomState = () => {
     { reuseLocalMedia = false }: { reuseLocalMedia?: boolean } = {},
   ) => {
     const generation = roomSessionOwnership.current();
-    const currentSettings = useSettingsStore.getState().settings ?? settings;
+    const currentSettings = useSettingsStore.getState().settings;
     roomSessionOwnership.record("microphone_acquire_started", generation);
     const stream = await ensureLocalStream(undefined, { reuseExisting: reuseLocalMedia });
     roomSessionOwnership.record("microphone_acquired", generation);
@@ -721,7 +730,7 @@ export const useRoomState = () => {
         }
       },
       onQuickMessage: (message) => {
-        if (!isCurrentSession()) return;
+        if (!isCurrentSession() || activeLeavePromise) return;
         addQuickMessage(message);
         const currentSettings = useSettingsStore.getState().settings;
         if (
@@ -897,10 +906,8 @@ export const useRoomState = () => {
       return activeJoinPromise;
     }
     const joinPromise = (async () => {
-      const currentSettings = useSettingsStore.getState().settings ?? settings;
-      if (!currentSettings) {
-        return;
-      }
+      const currentSettings = useSettingsStore.getState().settings;
+      if (!currentSettings) return;
       if (useAppStore.getState().requiredUpdate) {
         useAppStore.getState().enterUpdateGate();
         return;
@@ -1016,44 +1023,18 @@ export const useRoomState = () => {
 
   const switchChannel = (channelId: ChannelId): Promise<void> => {
     if (channelId === room.roomId && activeClient) return Promise.resolve();
-    return joinChannel(room.signalingUrl || settings?.relayServerUrl, channelId);
+    return joinChannel(
+      room.signalingUrl || useSettingsStore.getState().settings?.relayServerUrl,
+      channelId,
+    );
   };
-
-  useRoomDeepLink({
-    onInvite: async (invite) => {
-      const storedServerUrl = useSettingsStore.getState().settings?.relayServerUrl;
-      const normalizedServerUrl = normalizeServerUrl(invite.serverUrl || storedServerUrl);
-      if (!normalizedServerUrl) throw new Error("missing_saved_server");
-      if (invite.serverUrl && storedServerUrl !== normalizedServerUrl) {
-        await useSettingsStore.getState().saveSettings({ relayServerUrl: normalizedServerUrl });
-      }
-      if (isPrivateRoomId(invite.channelId)) {
-        await cleanupPreviousSession({ resetStore: true });
-        useAppStore.getState().setPendingRoomInvite(invite.channelId);
-        useAppStore.getState().navigate("home");
-      } else {
-        pushToast({
-          tone: "warning",
-          title: "旧房间邀请已过期",
-          description: "请让朋友发送私人房间的六位频道号。",
-        });
-      }
-    },
-    onError: (error) => {
-      pushToast({
-        tone: "warning",
-        title: "邀请链接无法打开",
-        description: normalizeRoomError(error, "请让朋友重新发送邀请链接。"),
-      });
-    },
-  });
 
   const replaceInputDevice = (preferredInputDeviceId?: string) => {
     const client = activeClient;
     const generation = roomSessionOwnership.current();
     const ownsSwitch = () => activeClient === client && roomSessionOwnership.owns(generation);
     const operation = inputDeviceSwitchQueue.then(async () => {
-      const currentSettings = useSettingsStore.getState().settings ?? settings;
+      const currentSettings = useSettingsStore.getState().settings;
       if (!client || !ownsSwitch() || !currentSettings) {
         return false;
       }
@@ -1172,6 +1153,7 @@ export const useRoomState = () => {
   };
 
   const leaveRoom = () => {
+    stopQuickMessageMusic();
     if (activeLeavePromise) return activeLeavePromise;
     roomSessionOwnership.record("leave_requested");
     const pendingJoin = activeJoinPromise;
@@ -1181,6 +1163,7 @@ export const useRoomState = () => {
         roomSessionOwnership.advance();
         playUiSound("leave-room");
         setLifecycleState(RoomLifecycleState.Closing);
+        const settings = useSettingsStore.getState().settings;
         if (settings) {
           useRoomStore.getState().syncLocalProfile({
             nickname: settings.nickname,
@@ -1205,18 +1188,17 @@ export const useRoomState = () => {
 
   const copyInviteLink = async () => {
     try {
+      if (!room.privateRoom) throw new Error("room_not_found");
       const inviteText = buildChannelInviteText({
         channelId: room.roomId,
+        channelCode: room.privateRoom.channelCode,
+        roomName: room.privateRoom.name,
+        serverUrl: useSettingsStore.getState().settings?.relayServerUrl,
       });
-      await window.desktopApi.clipboard.writeText(
-        room.privateRoom
-          ? `${room.privateRoom.name} · 频道 ${room.privateRoom.channelCode}\n${inviteText}`
-          : inviteText,
-      );
+      await window.desktopApi.clipboard.writeText(inviteText);
       playUiSound("copy-success");
       await writeRendererLog("app", "info", "Copied room invite", {
         channelId: room.roomId,
-        temporary: true,
       });
       pushToast({
         tone: "success",
@@ -1238,9 +1220,8 @@ export const useRoomState = () => {
     existingClientMessageId?: string,
   ) => {
     const trimmed = content.trim();
-    if ((!trimmed && !image) || !settings) {
-      return;
-    }
+    const settings = useSettingsStore.getState().settings;
+    if ((!trimmed && !image) || !settings) return;
 
     if (!activeClient) {
       pushToast({

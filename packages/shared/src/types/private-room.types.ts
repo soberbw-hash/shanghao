@@ -22,6 +22,10 @@ export const ROOM_ICON_IDS = [
   "crown",
 ] as const;
 export type RoomIconId = (typeof ROOM_ICON_IDS)[number];
+export const ROOM_ICON_COLORS = ["blue", "teal", "amber", "rose", "slate"] as const;
+export type RoomIconColor = (typeof ROOM_ICON_COLORS)[number];
+export const isRoomIconColor = (value: unknown): value is RoomIconColor =>
+  typeof value === "string" && ROOM_ICON_COLORS.includes(value as RoomIconColor);
 export const isRoomIconId = (value: unknown): value is RoomIconId =>
   typeof value === "string" && ROOM_ICON_IDS.includes(value as RoomIconId);
 export const isChannelCode = (value: unknown): value is string =>
@@ -39,6 +43,7 @@ export interface PrivateRoomInfo {
   channelCode: string;
   name: string;
   icon: RoomIconId;
+  iconColor?: RoomIconColor;
   ownerId: string;
   createdAt: string;
   updatedAt: string;
@@ -54,11 +59,13 @@ export interface CreatePrivateRoomRequest {
   channelCode?: string;
   name?: string;
   icon?: RoomIconId;
+  iconColor?: RoomIconColor;
 }
 export interface UpdatePrivateRoomRequest {
   roomId: string;
   name: string;
   icon: RoomIconId;
+  iconColor?: RoomIconColor;
 }
 
 export interface PrivateRoomHistory {
@@ -91,6 +98,7 @@ export const isPrivateRoomInfo = (value: unknown): value is PrivateRoomInfo => {
     isPrivateRoomId(room.roomId) &&
     isChannelCode(room.channelCode) &&
     isRoomIconId(room.icon) &&
+    (room.iconColor === undefined || isRoomIconColor(room.iconColor)) &&
     typeof room.name === "string" &&
     room.name.trim().length > 0 &&
     [...room.name].length <= 32 &&

@@ -6,6 +6,7 @@ dist-electron/
 packages/signaling/phone-mic-sidecar-dist/
 release/
 coverage/
+test-artifacts/
 tmp/
 data/
 .DS_Store

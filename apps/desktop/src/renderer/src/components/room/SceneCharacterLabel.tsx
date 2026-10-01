@@ -34,7 +34,10 @@ export const SceneCharacterLabel = ({
       title={isAway ? member.nickname : undefined}
     >
       {isAway ? (
-        <span className="room-character-away-name">{member.nickname}</span>
+        <>
+          <span className="room-character-away-name">{member.nickname}</span>
+          <span className="room-character-away-status">暂离</span>
+        </>
       ) : (
         <>
           <span className="room-character-identity">

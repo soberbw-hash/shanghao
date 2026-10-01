@@ -59,19 +59,18 @@ export const RoomManagementDialog = ({
       }}
       className="island-panel m-auto max-h-[85dvh] w-full max-w-md overflow-y-auto rounded-3xl p-6 text-[#263b56] backdrop:bg-slate-900/20"
     >
-      <header className="mb-4 flex items-center justify-between">
-        <h2 id="room-management-title" className="text-lg font-semibold">
-          房间管理
+      <header className="mb-4 flex items-center gap-3">
+        <h2 id="room-management-title" className="min-w-0 flex-1 truncate text-lg font-semibold">
+          {room.name}
         </h2>
-        <DialogCloseButton onClick={onClose} disabled={busy} label="关闭房间管理" />
-      </header>
-      <div className="mb-4 flex items-center justify-between gap-3">
-        <span className="min-w-0 truncate font-medium">{room.name}</span>
         <Button variant="secondary" disabled={busy} onClick={() => setEditing(true)}>
           编辑
         </Button>
-      </div>
-      <h3 className="mb-2 text-sm font-semibold">在线成员</h3>
+        <DialogCloseButton onClick={onClose} disabled={busy} label="关闭房间管理" />
+      </header>
+      <h3 className="mb-2 text-sm font-semibold">
+        {members.length ? "在线成员" : "进入此房间后可管理在线成员"}
+      </h3>
       <div className="space-y-2">
         {members
           .filter((member) => !member.isEmptySlot)
@@ -184,7 +183,7 @@ export const RoomManagementDialog = ({
           room={room}
           defaultName="我的"
           onClose={() => setEditing(false)}
-          onSaved={() => setEditing(false)}
+          onSaved={onClose}
         />
       )}
     </dialog>

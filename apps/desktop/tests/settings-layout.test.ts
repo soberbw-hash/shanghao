@@ -82,6 +82,10 @@ test("semantic interface sounds stay enabled without a settings control", () => 
     readFileSync(
       path.resolve(process.cwd(), "src/renderer/src/components/settings/GeneralSettingsCard.tsx"),
       "utf8",
+    ) +
+    readFileSync(
+      path.resolve(process.cwd(), "src/renderer/src/components/settings/TraySettingsRows.tsx"),
+      "utf8",
     );
   const audioSource = readFileSync(audioCardPath, "utf8");
 
@@ -93,7 +97,7 @@ test("semantic interface sounds stay enabled without a settings control", () => 
   assert.equal(source.includes("界面提示音"), false);
   assert.equal(source.includes("提示音音量"), false);
   assert.equal(source.includes("自动识别游戏"), false);
-  assert.equal(source.includes("系统通知"), false);
+  assert.equal(source.includes('label="系统通知"'), false);
   assert.equal(source.includes("关闭窗口时留在后台"), true);
   assert.equal(audioSource.includes("界面音效"), false);
   assert.equal(audioSource.includes("isUiSoundEnabled"), false);
@@ -207,11 +211,15 @@ test("quick messages show voice and music slots with playback controls in one li
   assert.match(readRendererCss(), /\.quick-message-filter-select\s*\{/);
   assert.match(readRendererCss(), /\.chat-quick-music\s*\{/);
   assert.match(readRendererCss(), /\.quick-message-music-card\s*\{/);
-  assert.equal(chatSource.includes("chat-quick-music"), true);
+  assert.equal(chatSource.includes("<QuickMessageRow"), true);
   assert.equal(chatSource.includes("item.enabled && Boolean(item.preset)"), false);
   assert.equal(chatSource.includes('item.enabled && item.preset?.mediaType === "music"'), false);
-  assert.equal(chatSource.includes("chat-quick-music-row"), true);
-  assert.equal(chatSource.includes('preset.mediaType === "music"'), true);
+  const quickRow = readFileSync(
+    path.resolve(process.cwd(), "src/renderer/src/components/chat/QuickMessageRow.tsx"),
+    "utf8",
+  );
+  assert.equal(quickRow.includes("chat-quick-music-row"), true);
+  assert.equal(chatSource.includes("items={quickMusicItems}"), true);
   assert.equal(source.includes("1/5"), false);
   assert.equal(source.includes(">聊天<"), false);
 });

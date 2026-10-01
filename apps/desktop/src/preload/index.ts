@@ -38,6 +38,18 @@ const desktopApi: DesktopApi = {
     },
   },
   app: {
+    setBackgroundActivity: (activity) =>
+      ipcRenderer.invoke(IPC_CHANNELS.app.backgroundActivity, activity),
+    completeBackgroundClose: (id, leftRoom) =>
+      ipcRenderer.invoke(IPC_CHANNELS.app.completeBackgroundClose, id, leftRoom),
+    onBackgroundCommand: (listener) => {
+      const wrapped = (
+        _event: Electron.IpcRendererEvent,
+        command: Parameters<typeof listener>[0],
+      ) => listener(command);
+      ipcRenderer.on(IPC_CHANNELS.app.backgroundCommand, wrapped);
+      return () => ipcRenderer.removeListener(IPC_CHANNELS.app.backgroundCommand, wrapped);
+    },
     getRuntimeInfo: () => ipcRenderer.invoke(IPC_CHANNELS.app.getRuntimeInfo),
     getSystemIdleSeconds: () => ipcRenderer.invoke(IPC_CHANNELS.app.getSystemIdleSeconds),
     writeLog: (payload) => ipcRenderer.invoke(IPC_CHANNELS.app.writeLog, payload),
@@ -310,6 +322,10 @@ const desktopApi: DesktopApi = {
     },
   },
   recording: {
+    exportClip: (request) => ipcRenderer.invoke(IPC_CHANNELS.recording.exportClip, request),
+    showClipInFolder: (filePath) =>
+      ipcRenderer.invoke(IPC_CHANNELS.recording.showClipInFolder, filePath),
+    dragClip: (filePath) => ipcRenderer.send(IPC_CHANNELS.recording.dragClip, filePath),
     export: (payload) => ipcRenderer.invoke(IPC_CHANNELS.recording.export, payload),
     startSession: (payload) => ipcRenderer.invoke(IPC_CHANNELS.recording.startSession, payload),
     appendChunk: (sessionId, buffer) =>

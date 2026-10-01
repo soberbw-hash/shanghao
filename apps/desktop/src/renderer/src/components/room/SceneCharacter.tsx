@@ -162,7 +162,7 @@ const SceneCharacterView = ({
   const lastVisualAudioLevelRef = useRef(-1);
   const basePosition = characterPositions[zone];
   const awayZone = sceneZones.find((candidate) => candidate.id === "restroomZone");
-  const awayColumnCount = Math.min(3, Math.max(1, awayCount));
+  const awayColumnCount = Math.min(2, Math.max(1, awayCount));
   const awayColumn = awayIndex % awayColumnCount;
   const awayRow = Math.floor(awayIndex / awayColumnCount);
   const position =
@@ -170,9 +170,9 @@ const SceneCharacterView = ({
       ? {
           ...basePosition,
           left:
-            (awayZone?.left ?? basePosition.left) + (awayColumn - (awayColumnCount - 1) / 2) * 5,
-          top: (awayZone?.top ?? 80) - 7 + awayRow * 6,
-          zIndex: basePosition.zIndex + awayIndex,
+            (awayZone?.left ?? basePosition.left) + (awayColumn - (awayColumnCount - 1) / 2) * 8,
+          top: (awayZone?.top ?? 80) - 8 + awayRow * 9,
+          zIndex: 50 + awayIndex,
         }
       : basePosition;
   const [isPresent, safeToRemove] = usePresence();
@@ -180,6 +180,7 @@ const SceneCharacterView = ({
     shouldReduceMotion ? (zone === "restroomZone" ? "away-idle" : "idle") : "entering",
   );
   const [movementDirection, setMovementDirection] = useState<"left" | "right">("right");
+  const [strideDurationMs, setStrideDurationMs] = useState(480);
   const [displayZone, setDisplayZone] = useState<SceneZoneId>(zone);
   const didStartEntryRef = useRef(shouldReduceMotion);
   const operationIdRef = useRef(0);
@@ -343,15 +344,8 @@ const SceneCharacterView = ({
         "leaving",
       ].includes(motionPhaseRef.current);
 
-      // Going to the away area should hand directly from the seated pose to the
-      // walking pose. The old 72 ms stand-up phase cut a longer CSS animation
-      // mid-frame and caused the small visible twitch when clicking “离开”.
-      if (!isFirstRoute && !wasAlreadyMoving && zone !== "restroomZone") {
-        setMotionPhase("standing-up");
-        await waitForMotionPhase(72);
-        if (!isCurrentOperation()) return;
-      }
-
+      // Hand straight to the walking pose; cutting the 240ms stand-up animation
+      // at 72ms produced an upward twitch before every seat change.
       const routeKind = isFirstRoute ? "enter" : "move";
       const route = applyCharacterPersonality(
         planCharacterRoute({
@@ -370,6 +364,7 @@ const SceneCharacterView = ({
       );
       activeTargetZoneRef.current = zone;
       setMovementDirection(route.direction);
+      setStrideDurationMs(route.strideDurationMs);
       // Restore normal size during the first couple of return steps instead of
       // keeping the away-area scale for the entire walk and popping at the desk.
       if (previousZone === "restroomZone" && isSeatZone(zone)) setDisplayZone(zone);
@@ -664,6 +659,8 @@ const SceneCharacterView = ({
                   avatarId={avatarId}
                   direction={movementDirection}
                   paused={motionPhase === "turning"}
+                  active={isWalkingVisual && !shouldReduceMotion}
+                  strideDurationMs={strideDurationMs}
                 />
               </span>
               <span

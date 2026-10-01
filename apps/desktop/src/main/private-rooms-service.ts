@@ -3,6 +3,7 @@ import {
   isPrivateRoomId,
   isPrivateRoomInfo,
   isRoomIconId,
+  isRoomIconColor,
   type CreatePrivateRoomRequest,
   type PrivateRoomInfo,
   type PrivateRoomsApi,
@@ -11,7 +12,7 @@ import {
 } from "@private-voice/shared";
 import type { AccountDesktopService } from "./account-service";
 import { PrivateRoomHistoryStore } from "./private-room-history";
-
+import { requestPrivateRoom } from "./private-room-request";
 const required = (value: unknown, max: number): string => {
   if (typeof value !== "string" || !value.trim() || value.length > max)
     throw new Error("room_invalid_request");
@@ -33,14 +34,17 @@ const info = (value: unknown): PrivateRoomInfo => {
 /** Owns bounded authenticated room commands. Renderer never receives account tokens. */
 export class PrivateRoomsDesktopService implements PrivateRoomsApi {
   private pending = 0;
+  getPendingCount(): number {
+    return this.pending;
+  }
   constructor(
     private readonly accounts: Pick<AccountDesktopService, "getFreshAccessToken" | "getSnapshot">,
     private readonly getServerUrl: () => string | undefined,
     private readonly historyStore: PrivateRoomHistoryStore,
     private readonly fetcher: typeof fetch,
   ) {}
-  async mine() {
-    const rooms = await this.request("/mine");
+  async mine(signal?: AbortSignal) {
+    const rooms = await this.request("/mine", "GET", undefined, signal);
     if (!Array.isArray(rooms) || rooms.length > 3) throw new Error("room_server_invalid_response");
     return rooms.map(info);
   }
@@ -49,8 +53,8 @@ export class PrivateRoomsDesktopService implements PrivateRoomsApi {
     if (room.channelCode !== channelCode) throw new Error("room_server_invalid_response");
     return room;
   }
-  async get(id: string) {
-    const room = info(await this.request(`/${roomId(id)}`));
+  async get(id: string, signal?: AbortSignal) {
+    const room = info(await this.request(`/${roomId(id)}`, "GET", undefined, signal));
     if (room.roomId !== id) throw new Error("room_server_invalid_response");
     return room;
   }
@@ -72,6 +76,7 @@ export class PrivateRoomsDesktopService implements PrivateRoomsApi {
       await this.request("", "POST", {
         name: request.name === undefined ? undefined : required(request.name, 64),
         icon: request.icon === undefined ? undefined : this.icon(request.icon),
+        iconColor: this.iconColor(request.iconColor),
         channelCode: request.channelCode === undefined ? undefined : code(request.channelCode),
       }),
     );
@@ -82,6 +87,7 @@ export class PrivateRoomsDesktopService implements PrivateRoomsApi {
       await this.request(`/${roomId(request.roomId)}`, "PUT", {
         name: required(request.name, 64),
         icon: this.icon(request.icon),
+        iconColor: this.iconColor(request.iconColor),
       }),
     );
   }
@@ -141,6 +147,10 @@ export class PrivateRoomsDesktopService implements PrivateRoomsApi {
     if (!isRoomIconId(value)) throw new Error("room_invalid_request");
     return value;
   }
+  private iconColor(value: unknown) {
+    if (value !== undefined && !isRoomIconColor(value)) throw new Error("room_invalid_request");
+    return value;
+  }
   private scope(): string {
     const snapshot = this.accounts.getSnapshot();
     if (snapshot.status !== "signed_in" || !snapshot.profile)
@@ -164,7 +174,12 @@ export class PrivateRoomsDesktopService implements PrivateRoomsApi {
     url.pathname = "/";
     return url;
   }
-  private async request(route: string, method = "GET", body?: unknown): Promise<unknown> {
+  private async request(
+    route: string,
+    method = "GET",
+    body?: unknown,
+    signal?: AbortSignal,
+  ): Promise<unknown> {
     if (this.pending >= 8) throw new Error("room_busy");
     const scope = this.scope();
     this.pending++;
@@ -174,38 +189,7 @@ export class PrivateRoomsDesktopService implements PrivateRoomsApi {
       const url = this.server();
       url.pathname = `/api/rooms${route.split("?")[0]}`;
       url.search = route.includes("?") ? route.split("?")[1]! : "";
-      const response = await this.fetcher(url.toString(), {
-        method,
-        headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
-        body: body === undefined ? undefined : JSON.stringify(body),
-        redirect: "error",
-        signal: AbortSignal.timeout(15_000),
-      });
-      if (response.status === 404 && !response.headers.get("content-type")?.includes("json")) {
-        await response.body?.cancel();
-        throw new Error("room_server_upgrade_required");
-      }
-      const reader = response.body?.getReader();
-      const chunks: Uint8Array[] = [];
-      let size = 0;
-      if (!reader) throw new Error("room_server_invalid_response");
-      try {
-        while (true) {
-          const chunk = await reader.read();
-          if (chunk.done) break;
-          size += chunk.value.length;
-          if (size > 512 * 1024) throw new Error("room_server_invalid_response");
-          chunks.push(chunk.value);
-        }
-      } finally {
-        await reader.cancel().catch(() => undefined);
-        reader.releaseLock();
-      }
-      const result = JSON.parse(Buffer.concat(chunks).toString("utf8"));
-      if (!response.ok)
-        throw new Error(
-          typeof result.error?.code === "string" ? result.error.code : "room_service_unavailable",
-        );
+      const result = await requestPrivateRoom(this.fetcher, url, token, method, body, signal);
       if (this.scope() !== scope) throw new Error("account_session_expired");
       return result;
     } finally {

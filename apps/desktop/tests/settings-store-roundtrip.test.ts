@@ -102,6 +102,11 @@ test("user settings survive save and a fresh store load", async () => {
       preferredOutputDeviceId: "test-output",
       recordingSaveDirectory: "D:/上号录音",
       isBackgroundUpdateCheckEnabled: false,
+      isFriendOnlineNotificationEnabled: true,
+      hasSeenTrayNotice: true,
+      hasDismissedRecordingClipConsent: true,
+      recordingClipBeforeMs: 33_000,
+      recordingClipAfterMs: 12_000,
       quickMessages: {
         ...store.getSnapshot().quickMessages,
         soundVolume: 0.42,
@@ -131,6 +136,11 @@ test("user settings survive save and a fresh store load", async () => {
     const reloaded = await new SettingsStore(undefined, directory).load();
     assert.deepEqual(reloaded, saved);
     assert.equal(reloaded.recordingSaveDirectory, "D:/上号录音");
+    assert.equal(reloaded.isFriendOnlineNotificationEnabled, true);
+    assert.equal(reloaded.hasSeenTrayNotice, true);
+    assert.equal(reloaded.hasDismissedRecordingClipConsent, true);
+    assert.equal(reloaded.recordingClipBeforeMs, 33_000);
+    assert.equal(reloaded.recordingClipAfterMs, 12_000);
     assert.equal(reloaded.quickMessages.soundVolume, 0.42);
     assert.equal(reloaded.quickMessages.slots[0]?.presetId, undefined);
     assert.equal(reloaded.quickMessages.slots[7]?.presetId, "legacy-hear");

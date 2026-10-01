@@ -10,7 +10,9 @@ import "./styles/index.css";
 
 configureMotionRuntime();
 
-const isOverlay = new URLSearchParams(window.location.search).get("overlay") === "1";
+const isOverlay =
+  (window as Window & { shanghaoRenderer?: string }).shanghaoRenderer === "overlay" ||
+  new URLSearchParams(window.location.search).get("overlay") === "1";
 const isScreenViewer = new URLSearchParams(window.location.search).get("screenViewer") === "1";
 document.documentElement.dataset.renderer = isOverlay
   ? "overlay"

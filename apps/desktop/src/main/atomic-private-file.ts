@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { mkdir, rename, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 
-/** Atomically replaces an encrypted private file and removes only this write's scratch file. */
+/** Atomically replaces private metadata/encrypted files and removes only this write's scratch file. */
 export const writePrivateFileAtomically = async (
   filePath: string,
   bytes: Buffer,

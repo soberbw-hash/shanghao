@@ -30,6 +30,8 @@ import { CustomAiProviderStore } from "./custom-ai-provider-store";
 import { HuggingFaceAccessStore } from "./hugging-face-access-store";
 import { preparePersistentAiStorage } from "./ai-storage";
 import { registerStorageIpc } from "./storage-ipc";
+import { registerRecordingClipIpc } from "./recording-clip-ipc";
+import { registerBackgroundDesktop } from "./background-desktop";
 import { prepareBundledAiRuntime } from "./ai-runtime-package";
 import { VoiceMemoryStore } from "./voice-memory-store";
 import { LifecycleRecoveryService } from "./lifecycle-recovery-service";
@@ -39,6 +41,7 @@ import { ensurePre30DataSnapshot } from "./user-data-migration";
 import { removeWindowsStartupTask } from "./windows-startup-task";
 import { rustCoreClient } from "./rust-core-client";
 import { BootstrapMigrationRegistry } from "./bootstrap-migration-registry";
+import { mainResourceScheduler } from "./main-resource-scheduler";
 import { ensureWindowsFirewallRulesWithOutcome } from "./windows-integration";
 import {
   findDeepLinkAuth,
@@ -114,16 +117,16 @@ const showNetworkPermissionNotice = (title: string, body: string): void => {
   notification.show();
 };
 
-const autoRepairWindowsNetworkPermissions = async (): Promise<void> => {
+const inspectWindowsNetworkPermissions = async (): Promise<void> => {
   if (!app.isPackaged || !platformService.isWindows || !diagnostics) return;
   try {
     const outcome = await ensureWindowsFirewallRulesWithOutcome();
     await diagnostics.writeLog({
       category: "app",
       level: outcome.status.healthy ? "info" : "warn",
-      message: outcome.repairAttempted
-        ? "Windows network permissions automatically repaired"
-        : "Windows network permissions already healthy",
+      message: outcome.status.healthy
+        ? "Windows network permissions already healthy"
+        : "Windows network permissions need review",
       context: {
         ...outcome.status,
         repairAttempted: outcome.repairAttempted,
@@ -131,24 +134,19 @@ const autoRepairWindowsNetworkPermissions = async (): Promise<void> => {
         inspectionFailed: outcome.inspectionFailed,
       },
     });
-    if (!outcome.repairAttempted) return;
+    if (outcome.status.healthy) return;
     showNetworkPermissionNotice(
-      outcome.repaired ? "网络权限已自动修复" : "网络权限自动修复未完成",
-      outcome.repaired
-        ? "上号已恢复 TCP/UDP 语音连接权限，无需手动操作。"
-        : "上号未能完成网络权限修复，请在设置的诊断页面查看原因。",
+      "请检查网络权限",
+      "上号的程序级防火墙规则需要检查，可在设置的诊断页面修复。",
     );
   } catch (error) {
     await diagnostics.writeLog({
       category: "app",
       level: "warn",
-      message: "Windows network permission automatic repair failed",
+      message: "Windows network permission inspection failed",
       context: { error: error instanceof Error ? error.message : String(error) },
     });
-    showNetworkPermissionNotice(
-      "网络权限自动修复未完成",
-      "上号未能完成网络权限修复，请在设置的诊断页面查看原因。",
-    );
+    showNetworkPermissionNotice("网络权限暂时无法检查", "可在设置的诊断页面重新检查网络权限。");
   }
 };
 
@@ -203,6 +201,7 @@ const prepareForQuit = (reason: string) => {
   lifecycleRecoveryService?.stop();
   accountService?.dispose();
   aiRuntimeManager?.stop();
+  mainResourceScheduler.close();
   freeTokenLocalLlmProvider?.stop();
   shortcutsController?.dispose();
   diagnostics?.stop();
@@ -471,6 +470,8 @@ const bootstrap = async (): Promise<void> => {
           path.join(app.getPath("appData"), "ShangHao", "ai-models"),
           path.join(app.getPath("appData"), "上号", "ai-models"),
         ],
+    undefined,
+    mainResourceScheduler,
   );
   updates.setBackgroundDownloadGuard(() => aiModels.shouldDeferBackgroundDownload());
   const aiRuntimeDirectory = aiStorage.runtimes;
@@ -479,11 +480,15 @@ const bootstrap = async (): Promise<void> => {
     : path.join(app.getAppPath(), "resources", "ai");
   const prepareRuntime = async () => {
     try {
-      await prepareBundledAiRuntime({
-        runtimeRoot: aiRuntimeDirectory,
-        bundledRoot: bundledAiRuntimeRoot,
-        developmentScriptRoot: app.isPackaged ? undefined : path.join(app.getAppPath(), "scripts"),
-      });
+      await mainResourceScheduler.runWork("runtime-preparation", () =>
+        prepareBundledAiRuntime({
+          runtimeRoot: aiRuntimeDirectory,
+          bundledRoot: bundledAiRuntimeRoot,
+          developmentScriptRoot: app.isPackaged
+            ? undefined
+            : path.join(app.getAppPath(), "scripts"),
+        }),
+      );
     } catch (error) {
       await diagnostics?.writeLog({
         category: "app",
@@ -577,7 +582,8 @@ const bootstrap = async (): Promise<void> => {
   freeTokenLocalLlmProvider = freeTokenProvider;
 
   registerStorageIpc(settingsStore, aiStorage);
-  registerIpcHandlers({
+  registerRecordingClipIpc(settingsStore, () => mainWindow);
+  const rooms = registerIpcHandlers({
     getMainWindow: () => mainWindow,
     settingsStore,
     diagnostics,
@@ -657,7 +663,7 @@ const bootstrap = async (): Promise<void> => {
   // The check may invoke PowerShell and elevation-sensitive firewall APIs, so
   // keep it off the startup critical path. It runs once per launch and the
   // firewall layer serializes any manual repair that happens at the same time.
-  void autoRepairWindowsNetworkPermissions();
+  void inspectWindowsNetworkPermissions();
   void maybeRunVisualCapture(mainWindow).catch(async (error) => {
     await diagnostics?.writeLog({
       category: "app",
@@ -672,16 +678,11 @@ const bootstrap = async (): Promise<void> => {
     app.quit();
   });
 
-  mainWindow.on("close", (event) => {
-    if (!isQuitting && settingsStore?.getSnapshot().minimizeToTray) {
-      event.preventDefault();
-      mainWindow?.hide();
-    }
-  });
   mainWindow.on("closed", () => {
     mainWindow = null;
   });
 
+  let background: ReturnType<typeof registerBackgroundDesktop> | undefined;
   tray = createTrayController(
     () => mainWindow,
     async () => {
@@ -706,7 +707,29 @@ const bootstrap = async (): Promise<void> => {
       prepareForQuit("tray");
       return true;
     },
+    () => {
+      void background?.hide().catch(() => {
+        diagnostics?.flightRecorder.record({
+          source: "main",
+          level: "warn",
+          event: "background_hide_failed",
+        });
+      });
+    },
   );
+  const backgroundSettings = settingsStore;
+  const attachBackgroundDesktop = (window: BrowserWindow) =>
+    registerBackgroundDesktop({
+      window,
+      getTray: () => tray,
+      settings: backgroundSettings,
+      accounts,
+      rooms,
+      isQuitting: () => isQuitting,
+      trace: (reason) =>
+        diagnostics?.flightRecorder.record({ source: "main", level: "info", event: reason }),
+    });
+  background = attachBackgroundDesktop(mainWindow);
 
   app.on("before-quit", () => {
     voiceMemory.stop();
@@ -728,6 +751,10 @@ const bootstrap = async (): Promise<void> => {
         },
         logsDirectory: diagnostics?.getSnapshot().logsDirectory,
       });
+      mainWindow.on("closed", () => {
+        mainWindow = null;
+      });
+      background = attachBackgroundDesktop(mainWindow);
       return;
     }
 

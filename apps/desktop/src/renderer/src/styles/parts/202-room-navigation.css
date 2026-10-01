@@ -1,0 +1,139 @@
+/* Room navigation shares the existing compact topbar actions. */
+.topbar-room-name {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  max-width: 260px;
+}
+.topbar-room-count {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: #607188;
+  font-size: 12px;
+  line-height: 14px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.topbar-channel-title {
+  gap: 10px;
+}
+.topbar-room-switch {
+  flex-shrink: 0;
+}
+.account-settings-columns {
+  display: grid;
+  grid-template-columns: minmax(260px, 480px) minmax(0, 1fr);
+  gap: 40px;
+  margin-top: 20px;
+}
+.account-settings-card {
+  container-type: inline-size;
+}
+.account-settings-details {
+  min-width: 0;
+}
+.account-settings-details .account-settings-fields {
+  margin-top: 0;
+}
+.account-rooms-panel {
+  min-width: 0;
+}
+.account-rooms-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+.account-rooms-heading h3 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 650;
+  color: #273750;
+}
+.account-rooms-heading p {
+  margin: 5px 0 0;
+  color: #60728a;
+  font-size: 12px;
+}
+.account-rooms-list {
+  display: grid;
+  gap: 8px;
+}
+.account-room-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid rgba(153, 183, 217, 0.32);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.5);
+}
+.account-room-icon {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  flex-shrink: 0;
+  border-radius: 10px;
+  background: rgba(225, 238, 252, 0.65);
+  color: #607188;
+}
+.account-room-icon svg {
+  width: 18px;
+  height: 18px;
+}
+.account-room-copy {
+  min-width: 0;
+  flex: 1;
+}
+.account-room-copy strong {
+  display: block;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 13px;
+  color: #273750;
+}
+.account-room-copy > span {
+  display: block;
+  margin-top: 5px;
+  color: #60728a;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.account-room-action {
+  height: 32px !important;
+  padding: 0 8px !important;
+  font-size: 12px !important;
+  color: #607188 !important;
+  flex-shrink: 0;
+}
+.account-rooms-empty {
+  margin: 20px 0;
+  font-size: 13px;
+  color: #60728a;
+  line-height: 1.6;
+}
+.account-rooms-error {
+  color: #c24646;
+  font-size: 13px;
+}
+@media (max-width: 1000px) {
+  .account-settings-columns {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 24px;
+  }
+  .account-settings-details .account-settings-fields,
+  .account-settings-details .account-settings-save {
+    max-width: none;
+  }
+}
+@container (max-width: 780px) {
+  .account-settings-columns {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 24px;
+  }
+}

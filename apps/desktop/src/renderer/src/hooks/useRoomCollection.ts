@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useShallow } from "zustand/react/shallow";
+import { selectCollectionSettings } from "../features/settings/settingsProjection";
 
 import type { RoomCollectionItemKind } from "@private-voice/shared";
 
@@ -27,7 +29,7 @@ export const useRoomCollection = ({
 }: UseRoomCollectionOptions) => {
   const pushToast = useAppStore((state) => state.pushToast);
   const items = useRoomStore((state) => state.collectionItems);
-  const settings = useSettingsStore((state) => state.settings);
+  const settings = useSettingsStore(useShallow(selectCollectionSettings));
   const saveSettings = useSettingsStore((state) => state.saveSettings);
   const initializedRef = useRef(false);
   const [isOpen, setIsOpen] = useState(false);

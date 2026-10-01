@@ -12,6 +12,29 @@ import {
 
 import { defaultSettings, migrateSettings } from "../src/main/settings-migration";
 
+test("clip and tray preferences use safe defaults and preserve customized profiles", () => {
+  const old = migrateSettings({ minimizeToTray: true, quickMessageVolume: 27 }).settings;
+  assert.equal(old.isFriendOnlineNotificationEnabled, false);
+  assert.equal(old.hasSeenTrayNotice, false);
+  assert.equal(old.hasDismissedRecordingClipConsent, false);
+  assert.equal(old.recordingClipBeforeMs, 20_000);
+  assert.equal(old.recordingClipAfterMs, 8_000);
+  assert.equal(old.minimizeToTray, true);
+  const saved = migrateSettings({
+    ...old,
+    isFriendOnlineNotificationEnabled: true,
+    hasSeenTrayNotice: true,
+    hasDismissedRecordingClipConsent: true,
+    recordingClipBeforeMs: 33_000,
+    recordingClipAfterMs: 12_000,
+  }).settings;
+  assert.equal(saved.isFriendOnlineNotificationEnabled, true);
+  assert.equal(saved.hasSeenTrayNotice, true);
+  assert.equal(saved.hasDismissedRecordingClipConsent, true);
+  assert.equal(saved.recordingClipBeforeMs, 33_000);
+  assert.equal(saved.recordingClipAfterMs, 12_000);
+});
+
 test("new profiles recommend GLM without replacing an existing ASR choice", () => {
   assert.equal(DEFAULT_AI_ASR_MODEL_ID, "glm-asr-nano-2512");
   assert.equal(defaultSettings.aiAsrModel, DEFAULT_AI_ASR_MODEL_ID);

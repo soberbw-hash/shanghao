@@ -1,6 +1,5 @@
-import { useLayoutEffect, useRef } from "react";
 import { Gamepad2 } from "lucide-react";
-import { gsap } from "gsap";
+import { GameMonitorScene } from "./GameMonitorScene";
 
 import type { GameDetectionSnapshot } from "@private-voice/shared";
 
@@ -85,86 +84,29 @@ export const gameArtworkCatalog: Partial<Record<SupportedGameName, GameArtwork>>
 export const GameMonitorContent = ({
   gameName,
   iconDataUrl,
-  shouldReduceMotion = false,
 }: {
   gameName: string;
   iconDataUrl?: string;
   shouldReduceMotion?: boolean;
 }) => {
-  const rootRef = useRef<HTMLSpanElement>(null);
   const artwork = gameArtworkCatalog[gameName as SupportedGameName];
   const runtimeIconDataUrl = normalizePresenceGameIconDataUrl(gameName, iconDataUrl);
-  const displayedArtwork = artwork?.layout === "scene" || !runtimeIconDataUrl ? artwork : undefined;
-
-  useLayoutEffect(() => {
-    const root = rootRef.current;
-    if (!root) return;
-    let observer: IntersectionObserver | undefined;
-    const context = gsap.context(() => {
-      gsap.set("[data-game-mark]", { opacity: 1, scale: 1, y: 0 });
-      gsap.set("[data-game-scan]", { opacity: shouldReduceMotion ? 0.38 : 0, x: -28 });
-      if (shouldReduceMotion) return;
-
-      const timeline = gsap
-        .timeline({ repeat: -1, repeatDelay: 0.7 })
-        .fromTo(
-          "[data-game-mark]",
-          { opacity: 0.7, scale: 0.94, y: 1 },
-          { opacity: 1, scale: 1, y: 0, duration: 0.52, ease: "power2.out" },
-        )
-        .fromTo(
-          "[data-game-scan]",
-          { opacity: 0, x: -28 },
-          { opacity: 0.64, x: 32, duration: 0.9, ease: "power1.inOut" },
-          0.08,
-        )
-        .to("[data-game-scan]", { opacity: 0, duration: 0.18 });
-
-      observer = new IntersectionObserver(
-        ([entry]) => (entry?.isIntersecting ? timeline.play() : timeline.pause()),
-        { threshold: 0.05 },
-      );
-      observer.observe(root);
-    }, rootRef);
-    return () => {
-      observer?.disconnect();
-      context.revert();
-    };
-  }, [shouldReduceMotion]);
-
-  const layout = displayedArtwork?.layout ?? (runtimeIconDataUrl ? "runtime" : "fallback");
-
+  const identityArtwork =
+    runtimeIconDataUrl || (artwork?.layout !== "scene" ? artwork?.src : undefined);
   return (
     <span
-      ref={rootRef}
-      className={`scene-game-monitor-content scene-game-monitor-content--${layout}`}
-      data-game-scene-tone={displayedArtwork?.sceneTone}
+      className="scene-game-monitor-content scene-game-monitor-content--illustration"
       aria-label={`正在玩 ${gameName}`}
     >
-      {displayedArtwork ? (
-        <img
-          className="scene-game-monitor-art"
-          src={displayedArtwork.src}
-          alt=""
-          draggable={false}
-          aria-hidden="true"
-          data-game-mark={displayedArtwork.layout === "scene" ? undefined : true}
-        />
-      ) : runtimeIconDataUrl ? (
-        <img
-          className="scene-game-monitor-runtime-icon"
-          src={runtimeIconDataUrl}
-          alt=""
-          draggable={false}
-          aria-hidden="true"
-          data-game-mark
-        />
-      ) : (
-        <Gamepad2 aria-hidden="true" data-game-mark />
-      )}
-      {layout === "scene" ? null : (
-        <span className="scene-game-monitor-scan" data-game-scan aria-hidden="true" />
-      )}
+      <GameMonitorScene gameName={gameName} />
+      <span className="scene-game-identity">
+        {identityArtwork ? (
+          <img src={identityArtwork} alt="" aria-hidden="true" draggable={false} />
+        ) : (
+          <Gamepad2 aria-hidden="true" />
+        )}
+        <span>{gameName}</span>
+      </span>
     </span>
   );
 };

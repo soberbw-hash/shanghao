@@ -5,7 +5,7 @@ const REMOVE_STARTUP_TASK_SCRIPT = String.raw`
 $ErrorActionPreference = 'Stop'
 $taskName = 'ShangHao Auto Start'
 Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue |
-  Unregister-ScheduledTask -Confirm:$false -ErrorAction SilentlyContinue
+  Unregister-ScheduledTask -Confirm:$false -ErrorAction Stop
 @{ removed = $true; taskName = $taskName } | ConvertTo-Json -Compress
 `;
 

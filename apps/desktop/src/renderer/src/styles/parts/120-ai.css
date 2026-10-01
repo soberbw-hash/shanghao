@@ -1,4 +1,4 @@
-/* Room AI keeps one focused flow for suggestions, prompting, progress, answers and history. */
+/* Room AI keeps one focused flow for prompting, progress, answers and history. */
 .room-ask-popover {
   position: absolute;
   top: 72px;
@@ -59,23 +59,18 @@
 
 .room-ai-title-icon {
   display: grid;
-  width: 36px;
-  height: 36px;
-  flex: 0 0 36px;
+  width: 44px;
+  height: 44px;
+  flex: 0 0 44px;
   place-items: center;
-  border: 1px solid rgba(139, 185, 233, 0.65);
-  border-radius: 11px;
-  background: rgba(232, 244, 255, 0.86);
-  color: #327bc9;
-  box-shadow:
-    0 3px 9px rgba(66, 119, 175, 0.09),
-    inset 0 1px 0 rgba(255, 255, 255, 0.9);
 }
 
-.room-ai-title-icon svg {
-  width: 19px;
-  height: 19px;
-  stroke-width: 1.8;
+.room-ai-brand-icon {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  pointer-events: none;
 }
 
 .room-ask-popover-body {
@@ -83,50 +78,6 @@
   overflow-y: auto;
   padding: 14px 16px 16px;
   scrollbar-gutter: stable;
-}
-
-.room-ai-empty {
-  padding: 2px 0 14px;
-}
-
-.room-ai-empty > strong {
-  display: block;
-  color: #5c728c;
-  font-size: 12px;
-  font-weight: 700;
-}
-
-.room-ai-suggestions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin-top: 8px;
-}
-
-.room-ai-suggestions button {
-  min-height: 30px;
-  border: 1px solid rgba(180, 207, 237, 0.72);
-  border-radius: 10px;
-  background: rgba(255, 255, 255, 0.72);
-  padding: 5px 9px;
-  color: #4b698c;
-  font-size: 11px;
-  font-weight: 650;
-  line-height: 1.2;
-  transition:
-    transform 140ms ease,
-    border-color 140ms ease,
-    background-color 140ms ease;
-}
-
-.room-ai-suggestions button:hover {
-  border-color: rgba(111, 167, 229, 0.82);
-  background: rgba(244, 249, 255, 0.96);
-  transform: translateY(-1px);
-}
-
-.room-ai-suggestions button:active {
-  transform: translateY(0);
 }
 
 .room-ai-user-question {
@@ -260,19 +211,11 @@
   display: grid;
   flex: 0 0 auto;
   place-items: center;
-  border-radius: 9px;
-  background: rgba(72, 139, 220, 0.12);
-  color: #3c82d4;
 }
 
 .room-ai-working-icon {
-  width: 28px;
-  height: 28px;
-}
-
-.room-ai-working-icon svg {
-  width: 14px;
-  height: 14px;
+  width: 36px;
+  height: 36px;
 }
 
 .room-ai-answer {
@@ -293,13 +236,8 @@
 }
 
 .room-ai-answer-icon {
-  width: 26px;
-  height: 26px;
-}
-
-.room-ai-answer-icon svg {
-  width: 14px;
-  height: 14px;
+  width: 34px;
+  height: 34px;
 }
 
 @media (max-width: 1180px) {

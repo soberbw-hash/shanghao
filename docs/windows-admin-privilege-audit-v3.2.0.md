@@ -1,5 +1,7 @@
 # Windows 管理员权限专项审计（v3.2.0）
 
+**2026-10-01 接续：**本文下方保留 v3.2.0 时的审计快照。当前本地代码已改为 `asInvoker`，防火墙修复/移除与图标标记写入通过固定命令的短期 UAC helper 执行；启动只读检查不再自动提权。普通权限下的隔离音频、屏幕捕获、FFmpeg 与五人自动化已通过，实际 EXE 安装、UAC 点击和旧版升级仍需下一正式产物验收。详见 [调度与权限收口记录](post-v3.4.0-scheduler-and-privileges-2026-10-01.md)。已发布的 v3.4.0 EXE 不会因本地配置变化而改变。
+
 审计范围：当前本地源码；没有修改程序清单、安装器或实际系统权限。`apps/desktop/electron-builder.yml` 仍将 `requestedExecutionLevel` 设为 `requireAdministrator`。
 
 | 功能                           | 当前实现                                                                                                                | 管理员权限判断                                                           | 后续边界                                                                   |

@@ -96,7 +96,7 @@ const verify = async () => {
   const settled = (zone: string) => document.body.dataset.settled === zone;
   await waitFor(() => settled("gameDesk1"), "entry");
   const point = api().read();
-  if (Math.abs(point.left - 30) > 0.05 || Math.abs(point.top - 34.7) > 0.05) {
+  if (Math.abs(point.left - 28) > 0.05 || Math.abs(point.top - 38) > 0.05) {
     throw new Error(`scaled position: ${JSON.stringify(point)}`);
   }
   for (const target of [

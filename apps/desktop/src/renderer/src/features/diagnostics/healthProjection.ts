@@ -30,7 +30,7 @@ export const microphoneHealth = (
     return { level: "未检测", description: "进入房间后检查麦克风输入。" };
   }
   if (audio.observed.outputTrackState !== "live") {
-    return { level: "有问题", description: "麦克风输入 Track 未正常运行。" };
+    return { level: "有问题", description: "麦克风输入已中断，请检查设备是否断开。" };
   }
   if (
     (audio.desired.noiseSuppression && audio.applied.noiseProcessor === "deepfilter_unavailable") ||
@@ -42,7 +42,7 @@ export const microphoneHealth = (
   if (diagnostics?.inputOverload === "warning") {
     return { level: "需要看看", description: "输入音量偏高，建议检查。" };
   }
-  return { level: "正常", description: "麦克风 Track 与处理链运行中；远端听感待确认。" };
+  return { level: "正常", description: "麦克风输入正常。是否能听清，请让好友确认。" };
 };
 
 export const speakerHealth = ({
@@ -60,10 +60,10 @@ export const speakerHealth = ({
     return { level: "有问题", description: "没有检测到可用的输出设备。" };
   }
   if (!roomActive || !mixer || mixer.contextState === "not_started") {
-    return { level: "未检测", description: "输出设备存在；进入房间后检查播放链路。" };
+    return { level: "未检测", description: "已找到扬声器，进入房间后检查声音播放。" };
   }
   if (mixer.outputRouteStatus === "failed") {
-    return { level: "有问题", description: "扬声器路由应用失败。" };
+    return { level: "有问题", description: "无法使用所选扬声器，请检查连接或换一个设备。" };
   }
   if (mixer.outputRouteStatus === "fallback" || mixer.outputRouteStatus === "unsupported") {
     return { level: "需要看看", description: "当前输出设备未按设置生效，已使用系统回退。" };
@@ -72,9 +72,9 @@ export const speakerHealth = ({
     return { level: "未检测", description: "播放链路仍在启动或等待解锁。" };
   }
   if (remotePeerCount === 0) {
-    return { level: "未检测", description: "播放链路已就绪，尚无远端声音可检查。" };
+    return { level: "未检测", description: "扬声器已就绪，等待好友说话后检查。" };
   }
-  return { level: "正常", description: "混音器与输出路由运行中；实际听感请用耳机确认。" };
+  return { level: "正常", description: "扬声器播放链路正常。好友声音是否能听清，请用耳机确认。" };
 };
 
 export const roomAudioHealth = ({
@@ -94,7 +94,7 @@ export const roomAudioHealth = ({
   }
   const peers = Object.values(peerHealth ?? {});
   if (peers.some((peer) => peer.level === "critical" || peer.audioFlow === "stalled")) {
-    return { level: "有问题", description: "检测到好友音频停滞或连接异常。" };
+    return { level: "有问题", description: "好友声音连接异常，上号会自动尝试重新连接。" };
   }
   if (peers.some((peer) => peer.level === "degraded")) {
     return { level: "需要看看", description: "有好友的音频链路质量下降。" };
@@ -108,7 +108,7 @@ export const roomAudioHealth = ({
   if (peers.some((peer) => peer.audioFlow !== "flowing")) {
     return { level: "未检测", description: "尚未取得完整的远端音频流观测。" };
   }
-  return { level: "正常", description: "远端音频链路有运行迹象；听感仍需双方确认。" };
+  return { level: "正常", description: "好友的声音连接正常。是否能听清，请双方确认。" };
 };
 
 export const screenShareHealth = (screenShare?: ScreenSharePipelineDiagnostics): HealthFinding => {
@@ -126,5 +126,5 @@ export const screenShareHealth = (screenShare?: ScreenSharePipelineDiagnostics):
   if (!hasActivePipeline) {
     return { level: "未检测", description: "尚无屏幕分享画面可检查。" };
   }
-  return { level: "正常", description: "屏幕分享链路有运行迹象；画面仍需对方确认。" };
+  return { level: "正常", description: "屏幕分享正在运行，请让好友确认画面是否正常。" };
 };

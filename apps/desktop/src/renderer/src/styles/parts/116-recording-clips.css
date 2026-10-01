@@ -1,0 +1,128 @@
+.recording-clips-panel {
+  margin: 12px 0;
+  padding: 14px 16px;
+  border: 1px solid #d9e7f6;
+  border-radius: 18px;
+  background: #f8fbff;
+  color: #405975;
+  font-size: 12px;
+}
+.recording-clips-heading,
+.recording-clips-range,
+.recording-clip-row,
+.recording-clip-result {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.recording-clips-heading {
+  justify-content: space-between;
+}
+.recording-clips-heading h3 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 700;
+}
+.recording-clips-heading h3 span {
+  margin-left: 6px;
+  color: #8a9eb5;
+  font-size: 12px;
+}
+.recording-clips-heading select,
+.recording-clips-range input {
+  border: 1px solid #d5e5f6;
+  border-radius: 8px;
+  padding: 5px 8px;
+  background: white;
+  color: inherit;
+}
+.recording-clips-heading select {
+  margin-left: 8px;
+  max-width: 100%;
+}
+.recording-clips-range {
+  margin-top: 10px;
+  gap: 14px;
+}
+.recording-clips-range input {
+  width: 66px;
+  font-variant-numeric: tabular-nums;
+}
+.recording-clips-range > span {
+  color: #8196ac;
+}
+.recording-clips-markers {
+  margin-top: 8px;
+  max-height: 216px;
+  overflow-y: auto;
+}
+.recording-clip-row {
+  padding: 6px 0;
+  border-top: 1px solid #e7eff7;
+}
+.recording-clip-row time {
+  margin-right: auto;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+.recording-clip-row button,
+.recording-clip-result button {
+  min-height: 30px;
+  padding: 4px 10px;
+  font-size: 12px;
+}
+.recording-clip-row svg,
+.recording-clip-result svg {
+  width: 14px;
+  height: 14px;
+}
+.recording-clips-error {
+  color: #c55252;
+  margin: 8px 0 0;
+}
+.recording-clip-result {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid #d9e7f6;
+  cursor: grab;
+}
+.recording-clip-result > span {
+  flex: 1;
+  overflow-wrap: anywhere;
+}
+.recording-clip-result small {
+  display: block;
+  color: #8196ac;
+  margin-top: 2px;
+}
+.recording-clip-consent {
+  width: min(420px, calc(100vw - 32px));
+  padding: 24px;
+  border: 1px solid #d5e5f6;
+  border-radius: 24px;
+  color: #405975;
+}
+.recording-clip-consent::backdrop {
+  background: rgb(28 48 72 / 18%);
+}
+.recording-clip-consent h3 {
+  font-size: 18px;
+  font-weight: 700;
+}
+.recording-clip-consent p {
+  line-height: 1.8;
+  margin: 12px 0;
+}
+.recording-clip-consent > label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+}
+.recording-clip-consent > div {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 20px;
+}

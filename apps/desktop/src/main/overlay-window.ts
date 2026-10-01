@@ -35,6 +35,7 @@ export class OverlayWindowController {
   private cursorInside = false;
   private rendererInteractionLock = false;
   private mouseEventsEnabled = false;
+  private lastTopRefresh = 0;
 
   show(): boolean {
     if (!this.window || this.window.isDestroyed()) {
@@ -156,6 +157,9 @@ export class OverlayWindowController {
       height: OVERLAY_MIN_HEIGHT,
       x: this.snapX,
       y,
+      icon: app.isPackaged
+        ? path.join(process.resourcesPath, "build", "shanghao-icon-v4.ico")
+        : path.join(app.getAppPath(), "build", "shanghao-icon-v4.ico"),
       minWidth: OVERLAY_WIDTH,
       minHeight: OVERLAY_MIN_HEIGHT,
       maxWidth: OVERLAY_WIDTH,
@@ -202,18 +206,20 @@ export class OverlayWindowController {
     });
 
     window.webContents.once("did-finish-load", () => {
+      window.webContents.setZoomFactor(1);
       if (this.state) {
         sendToWindow(window, IPC_CHANNELS.overlay.state, this.state);
         this.resizeForMembers(this.state.members.filter((m) => !m.isEmptySlot).length);
       }
       window.showInactive();
+      window.moveTop();
       this.startHoverTracking();
     });
 
     if (!app.isPackaged) {
-      void window.loadURL(`${devServerUrl}?overlay=1`);
+      void window.loadURL(`${devServerUrl}/overlay.html?overlay=1`);
     } else {
-      void window.loadFile(path.join(__dirname, "../../dist/index.html"), {
+      void window.loadFile(path.join(__dirname, "../../dist/overlay.html"), {
         query: { overlay: "1" },
       });
     }
@@ -231,6 +237,13 @@ export class OverlayWindowController {
     this.stopHoverTracking();
     const updateHoverState = () => {
       if (!this.window || this.window.isDestroyed() || !this.window.isVisible()) return;
+      // Borderless games may reorder other topmost windows when activated.
+      // Restore Z order without activating the overlay or stealing game input.
+      if (Date.now() - this.lastTopRefresh >= 2_000) {
+        this.lastTopRefresh = Date.now();
+        this.window.setAlwaysOnTop(true, "screen-saver");
+        this.window.moveTop();
+      }
       const isInside = isPointInsideOverlay(screen.getCursorScreenPoint(), this.window.getBounds());
       if (isInside === this.cursorInside) return;
       this.cursorInside = isInside;

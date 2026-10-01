@@ -6,6 +6,12 @@ import {
   type OverlayQuickMusicMuteRequest,
 } from "@private-voice/shared";
 
+let latestState: OverlayState | undefined;
+const stateListeners = new Set<(state: OverlayState) => void>();
+ipcRenderer.on(IPC_CHANNELS.overlay.state, (_event, state: OverlayState) => {
+  latestState = state;
+  for (const listener of stateListeners) listener(state);
+});
 const overlayBridge = {
   overlay: {
     setInteractive: (interactive: boolean) =>
@@ -15,9 +21,11 @@ const overlayBridge = {
     requestMuteQuickMessage: (request: OverlayQuickMusicMuteRequest) =>
       ipcRenderer.invoke(IPC_CHANNELS.overlay.requestMuteQuickMessage, request),
     onState: (listener: (state: OverlayState) => void) => {
-      const wrapped = (_event: Electron.IpcRendererEvent, state: OverlayState) => listener(state);
-      ipcRenderer.on(IPC_CHANNELS.overlay.state, wrapped);
-      return () => ipcRenderer.removeListener(IPC_CHANNELS.overlay.state, wrapped);
+      stateListeners.add(listener);
+      if (latestState) listener(latestState);
+      return () => {
+        stateListeners.delete(listener);
+      };
     },
     onHoverState: (listener: (inside: boolean) => void) => {
       const wrapped = (_event: Electron.IpcRendererEvent, inside: unknown) => {
@@ -30,3 +38,4 @@ const overlayBridge = {
 };
 
 contextBridge.exposeInMainWorld("desktopApi", overlayBridge);
+contextBridge.exposeInMainWorld("shanghaoRenderer", "overlay");

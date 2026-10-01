@@ -1,4 +1,4 @@
-import { Wifi } from "lucide-react";
+import { ArrowLeftRight, UsersRound, Wifi } from "lucide-react";
 
 import { RoomConnectionState } from "@private-voice/shared";
 
@@ -24,7 +24,7 @@ const statusCopy = (state: RoomConnectionState) => {
     state === RoomConnectionState.WaitingSnapshot
   )
     return "进入中...";
-  if (state === RoomConnectionState.WaitingPeer) return "等待好友上线";
+  if (state === RoomConnectionState.WaitingPeer) return "";
   if (state === RoomConnectionState.Connected) return "";
   return "开黑频道";
 };
@@ -53,7 +53,6 @@ export const TopStatusBar = ({
   isRecording,
   recordingMarkerPulse,
   onChooseRoom,
-  onManageRoom,
   onKnock,
   onInvite,
 }: {
@@ -61,7 +60,6 @@ export const TopStatusBar = ({
   isRecording?: boolean;
   recordingMarkerPulse?: number;
   onChooseRoom: () => void;
-  onManageRoom?: () => void;
   onKnock?: () => void;
   onInvite?: () => void;
 }) => {
@@ -87,38 +85,48 @@ export const TopStatusBar = ({
     >
       <div className="topbar-channel min-w-0 flex-1">
         <div className="topbar-channel-title flex items-center gap-2.5">
-          <h1 className="whitespace-nowrap text-[15px] font-[700] tracking-[-0.02em] text-[#1a2332]">
+          <h1
+            className="topbar-room-name text-[15px] font-[700] text-[#1a2332]"
+            title={room.roomName}
+          >
             {room.privateRoom && (
-              <PrivateRoomIcon icon={room.privateRoom.icon} className="mr-2 inline size-4" />
+              <PrivateRoomIcon
+                icon={room.privateRoom.icon}
+                color={room.privateRoom.iconColor}
+                className="size-4 shrink-0"
+              />
             )}
-            {room.roomName}
+            <span className="truncate">{room.roomName}</span>
           </h1>
           <span
             className={`channel-status-dot ${statusTone(room.connectionState)}`}
             aria-label={statusCopy(room.connectionState) || "频道已连接"}
           />
-          <span className="text-xs tabular-nums text-slate-500">
-            {room.privateRoom?.channelCode} ·{" "}
-            {
-              room.members.filter(
-                (member) => !member.isEmptySlot && member.presenceState === "online",
-              ).length
-            }
-            /5
+          <span
+            className="topbar-room-count h-7 rounded-full border border-[#cddced] bg-white/55 px-2"
+            title="在线人数，最多 5 人"
+            aria-label="房间在线人数"
+          >
+            <UsersRound className="size-3.5" aria-hidden="true" />
+            <span>
+              {
+                room.members.filter(
+                  (member) => !member.isEmptySlot && member.presenceState === "online",
+                ).length
+              }
+              /5
+            </span>
           </span>
           <Button
             variant="ghost"
-            className="whitespace-nowrap text-xs"
+            className="topbar-action topbar-room-switch !h-7 !w-7 !rounded-[9px] !border !border-[#cddced] !bg-white/55 !p-0"
+            title="切换房间"
+            aria-label="切换房间"
             disabled={isSwitchingChannel}
             onClick={onChooseRoom}
           >
-            切换房间
+            <ArrowLeftRight className="size-3.5" aria-hidden="true" />
           </Button>
-          {onManageRoom && (
-            <Button variant="ghost" className="whitespace-nowrap text-xs" onClick={onManageRoom}>
-              管理
-            </Button>
-          )}
           {isRecording ? (
             <div className="room-recording-live" role="status" aria-label="正在录音">
               <i aria-hidden="true" />

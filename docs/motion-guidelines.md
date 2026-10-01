@@ -57,3 +57,7 @@ animation, with or without reduced motion.
 - Preload character sprites before a route starts.
 - Cancel or retarget in-flight character motion instead of queueing another
   route.
+- Walking cadence follows route speed, while adjacent poses blend at compositor
+  rate. Never increase sprite cadence to claim a higher rendering frame rate.
+- Keep the head and ground shadow stable during travel; voice-level scale is
+  reserved for stationary poses. Refresh measured pose offsets when artwork changes.

@@ -1,6 +1,6 @@
 import type { AppSettings, WindowsIntegrationStatus } from "@private-voice/shared";
 import { Button } from "../base/Button";
-import { Switch } from "../base/Switch";
+import { TraySettingsRows } from "./TraySettingsRows";
 import { SettingsSection } from "./SettingsSection";
 import { SettingsItemRow } from "./SettingsItemRow";
 import { WeatherSettingsCard } from "./WeatherSettingsCard";
@@ -24,13 +24,7 @@ export const GeneralSettingsCard = ({
   <div className="space-y-4">
     <SettingsSection title="通用" description="管理窗口与天气位置。">
       <div className="space-y-3">
-        <SettingsItemRow label="关闭窗口时留在后台">
-          <Switch
-            ariaLabel="关闭窗口时留在后台"
-            isChecked={settings.minimizeToTray}
-            onChange={(minimizeToTray) => void onChange({ minimizeToTray })}
-          />
-        </SettingsItemRow>
+        <TraySettingsRows settings={settings} onChange={onChange} />
         <SettingsItemRow
           label="Windows 外观实验功能"
           description="隐藏 Windows 桌面所有快捷方式的小箭头；此功能会影响整个 Windows，不会隐藏管理员盾牌。"

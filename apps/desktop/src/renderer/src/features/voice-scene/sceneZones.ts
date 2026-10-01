@@ -85,9 +85,9 @@ export const activityZones: SceneZone[] = [
     kind: "activity",
     activity: "restroom",
     left: 9,
-    top: 71,
-    width: 16,
-    height: 30,
+    top: 75,
+    width: 4,
+    height: 8,
   },
 ];
 
@@ -140,7 +140,7 @@ export const resolveMemberSceneZones = (
 };
 
 export const characterPositions: Record<SceneZoneId, CharacterPosition> = {
-  restroomZone: { left: 9, top: 71, zIndex: 38, scale: 0.42 },
+  restroomZone: { left: 9, top: 75, zIndex: 38, scale: 0.42 },
   gameDesk1: { left: 28, top: 38, zIndex: 24, scale: 1 },
   gameDesk2: { left: 50, top: 35, zIndex: 25, scale: 1 },
   gameDesk3: { left: 72, top: 38, zIndex: 26, scale: 1 },

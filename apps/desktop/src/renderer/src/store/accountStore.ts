@@ -35,6 +35,7 @@ const initialSnapshot: AccountSnapshot = {
 };
 
 let unsubscribeAccountChanges: (() => void) | undefined;
+let hydration: Promise<AccountSnapshot> | undefined;
 
 export const useAccountStore = create<AccountStoreState>((set) => {
   const run = async <T extends AccountSnapshot>(task: () => Promise<T>): Promise<T> => {
@@ -54,27 +55,59 @@ export const useAccountStore = create<AccountStoreState>((set) => {
     isHydrating: true,
     isBusy: false,
     errorCode: undefined,
-    hydrate: async () => {
-      set({ isHydrating: true });
-      unsubscribeAccountChanges?.();
-      unsubscribeAccountChanges = window.desktopApi.account.onChanged((snapshot) => {
-        set({ snapshot, errorCode: undefined });
+    hydrate: () => {
+      if (hydration) return hydration;
+      hydration = (async () => {
+        set({ isHydrating: true });
+        unsubscribeAccountChanges?.();
+        unsubscribeAccountChanges = window.desktopApi.account.onChanged((snapshot) => {
+          set({ snapshot, errorCode: undefined });
+        });
+        try {
+          let snapshot = await window.desktopApi.account.getSnapshot();
+          // One fallback per startup, only after session recovery has definitively failed.
+          // A network outage must not trigger password retries or erase saved credentials.
+          if (
+            snapshot.status === "signed_out" &&
+            snapshot.configured &&
+            (!snapshot.message || snapshot.message === "account_session_expired")
+          ) {
+            const remembered = await window.desktopApi.account
+              .getRememberedLogin()
+              .catch(() => undefined);
+            if (remembered) {
+              try {
+                snapshot = await window.desktopApi.account.login({
+                  identifier: remembered.identifier,
+                  password: remembered.password,
+                  rememberMe: true,
+                });
+              } catch (error) {
+                const latest = await window.desktopApi.account.getSnapshot().catch(() => snapshot);
+                snapshot =
+                  latest.status === "signed_in"
+                    ? latest
+                    : { ...latest, message: accountErrorCode(error) };
+              }
+            }
+          }
+          set({ snapshot, isHydrating: false, errorCode: snapshot.message });
+          return snapshot;
+        } catch (error) {
+          const errorCode = accountErrorCode(error);
+          const snapshot: AccountSnapshot = {
+            status: "unavailable",
+            configured: false,
+            guestAllowed: false,
+            message: errorCode,
+          };
+          set({ snapshot, isHydrating: false, errorCode });
+          return snapshot;
+        }
+      })().finally(() => {
+        hydration = undefined;
       });
-      try {
-        const snapshot = await window.desktopApi.account.getSnapshot();
-        set({ snapshot, isHydrating: false, errorCode: undefined });
-        return snapshot;
-      } catch (error) {
-        const errorCode = accountErrorCode(error);
-        const snapshot: AccountSnapshot = {
-          status: "unavailable",
-          configured: false,
-          guestAllowed: false,
-          message: errorCode,
-        };
-        set({ snapshot, isHydrating: false, errorCode });
-        return snapshot;
-      }
+      return hydration;
     },
     login: (request) => run(() => window.desktopApi.account.login(request)),
     register: (request) => run(() => window.desktopApi.account.register(request)),

@@ -35,6 +35,8 @@ import { Switch } from "../base/Switch";
 import { SettingsSection } from "./SettingsSection";
 import { VoiceMemoryDetail } from "./VoiceMemoryDetail";
 import { ModelTestPanel } from "./ModelTestPanel";
+import { RecordingClipsPanel } from "./RecordingClipsPanel";
+import { useRecordingClipPreview } from "../../hooks/useRecordingClipPreview";
 import { useRecordingStore } from "../../store/recordingStore";
 import { createRecordingLibraryCache } from "../../features/recording/recordingLibraryCache";
 import { formatRecordingBytes } from "../../features/recording/recordingSize";
@@ -230,13 +232,19 @@ export const RecordingLibrarySettingsCard = ({
     recordingLibraryCache.peek(),
   );
   const [selectedId, setSelectedId] = useState<string>();
+  const clipPreview = useRecordingClipPreview(audioRef, selectedId);
   const [recordingFilter, setRecordingFilter] = useState<RecordingFilter>("all");
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
-  const seekTranscript = useCallback((offsetMs: number) => {
-    if (audioRef.current) audioRef.current.currentTime = offsetMs / 1_000;
-    setCurrentTime(offsetMs / 1_000);
-  }, []);
+  const resetClipPreview = clipPreview.reset;
+  const seekTranscript = useCallback(
+    (offsetMs: number) => {
+      resetClipPreview();
+      if (audioRef.current) audioRef.current.currentTime = offsetMs / 1_000;
+      setCurrentTime(offsetMs / 1_000);
+    },
+    [resetClipPreview],
+  );
   const [duration, setDuration] = useState(0);
   const [playbackRate, setPlaybackRate] = useState(1);
   const [playbackError, setPlaybackError] = useState<string>();
@@ -574,6 +582,7 @@ export const RecordingLibrarySettingsCard = ({
   };
 
   const togglePlayback = async () => {
+    clipPreview.reset();
     const audio = audioRef.current;
     if (!audio || !selected) return;
     if (audio.paused) await audio.play();
@@ -1111,7 +1120,8 @@ export const RecordingLibrarySettingsCard = ({
                 onPause={() => setIsPlaying(false)}
                 onEnded={() => {
                   setIsPlaying(false);
-                  if (!playbackError && duration > 0) moveSelection(1);
+                  if (!clipPreview.wasPreview.current && !playbackError && duration > 0)
+                    moveSelection(1);
                 }}
                 onError={(event) => {
                   const mediaError = event.currentTarget.error;
@@ -1249,6 +1259,7 @@ export const RecordingLibrarySettingsCard = ({
                       }
                       onChange={(event) => {
                         const next = Number(event.target.value);
+                        resetClipPreview();
                         if (audioRef.current) audioRef.current.currentTime = next;
                         setCurrentTime(next);
                       }}
@@ -1262,6 +1273,7 @@ export const RecordingLibrarySettingsCard = ({
                           left: `${duration ? Math.min(100, (marker.offsetMs / 1_000 / duration) * 100) : 0}%`,
                         }}
                         onClick={() => {
+                          if (audioRef.current) resetClipPreview();
                           if (audioRef.current)
                             audioRef.current.currentTime = marker.offsetMs / 1_000;
                         }}
@@ -1300,6 +1312,14 @@ export const RecordingLibrarySettingsCard = ({
                   {playbackError}
                 </div>
               ) : null}
+              <RecordingClipsPanel
+                key={selected.id}
+                recording={selected}
+                durationMs={Math.round(duration * 1_000)}
+                settings={settings}
+                onChange={onChange}
+                onPreview={clipPreview.play}
+              />
               {isModelComparisonOpen ? (
                 <ModelTestPanel
                   key={selected.recordingId}
@@ -1308,6 +1328,7 @@ export const RecordingLibrarySettingsCard = ({
                   audioDurationMs={duration > 0 ? Math.round(duration * 1_000) : undefined}
                   onClose={() => setIsModelComparisonOpen(false)}
                   onSeek={(offsetMs) => {
+                    resetClipPreview();
                     if (audioRef.current) audioRef.current.currentTime = offsetMs / 1_000;
                     setCurrentTime(offsetMs / 1_000);
                   }}

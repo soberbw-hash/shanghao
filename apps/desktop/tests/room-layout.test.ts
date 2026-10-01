@@ -295,7 +295,7 @@ test("room uses a real always-on-top overlay and a ten-second knock cooldown", (
   assert.equal(chatSource.includes("formatCompactUrl"), true);
   assert.equal(chatLinkPreviewSource.includes("getMessageUrlDetails"), true);
   assert.equal(chatSource.includes("<Link2 />"), true);
-  assert.equal(chatSource.includes("quickMessages.map"), true);
+  assert.equal(chatSource.includes("<QuickMessageRow"), true);
   assert.equal(quickRepliesSource.includes("QUICK_MESSAGE_PRESETS"), true);
   assert.equal(roomSource.includes("chatBubbles={characterChatBubbles}"), false);
   assert.equal(teamIslandSource.includes("useCharacterChatBubbles()"), true);
@@ -505,7 +505,7 @@ test("scene seats align with the marked workstation positions", () => {
   assert.equal(sceneZonesSource.includes("gameDesk5: { left: 64, top: 70"), true);
   assert.equal(sceneZonesSource.includes("gameDesk4: { left: 36, top: 70"), true);
   assert.equal(sceneZonesSource.includes("gameDesk1: { left: 28, top: 38"), true);
-  assert.equal(sceneZonesSource.includes("restroomZone: { left: 9, top: 71"), true);
+  assert.equal(sceneZonesSource.includes("restroomZone: { left: 9, top: 75"), true);
   assert.equal(
     sceneZonesSource.includes("gameDesk1: { left: 28, top: 38, zIndex: 24, scale: 1"),
     true,

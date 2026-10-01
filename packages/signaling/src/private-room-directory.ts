@@ -5,15 +5,15 @@ import {
   ROOM_CODE_COOLDOWN_MS,
   ROOM_ICON_IDS,
   isChannelCode,
-  isPrivateRoomId,
+  isPrivateRoomInfo,
   isRoomIconId,
+  isRoomIconColor,
   type CreatePrivateRoomRequest,
   type PrivateRoomInfo,
   type RoomBan,
   type UpdatePrivateRoomRequest,
 } from "@private-voice/shared";
 import { VersionedJsonStore } from "./versioned-json-store";
-
 interface StoredRoom extends Omit<PrivateRoomInfo, "onlineCount" | "capacity"> {
   bans: RoomBan[];
 }
@@ -65,11 +65,7 @@ const validateDirectory = (value: unknown): DirectoryData => {
   for (const room of data.rooms) {
     if (
       !room ||
-      !isPrivateRoomId(room.roomId) ||
-      !isChannelCode(room.channelCode) ||
-      !isRoomIconId(room.icon) ||
-      !timestamp(room.createdAt) ||
-      !timestamp(room.updatedAt) ||
+      !isPrivateRoomInfo({ ...room, onlineCount: 0, capacity: MAX_ROOM_MEMBERS }) ||
       !Array.isArray(room.bans) ||
       room.bans.length > 1_000
     )
@@ -104,7 +100,6 @@ const validateDirectory = (value: unknown): DirectoryData => {
   }
   return data;
 };
-
 /** Permanent room identity and access policy; owns no sockets, tracks or membership. */
 export class PrivateRoomDirectory {
   private cachedRevision = -1;
@@ -175,6 +170,7 @@ export class PrivateRoomDirectory {
     const name = nameText(request.name ?? `${displayName}的房间`.slice(0, 32));
     if (request.channelCode !== undefined && !isChannelCode(request.channelCode)) invalid();
     if (request.icon !== undefined && !isRoomIconId(request.icon)) invalid();
+    if (request.iconColor !== undefined && !isRoomIconColor(request.iconColor)) invalid();
     return this.store.transact((draft) => {
       if (draft.rooms.filter((room) => room.ownerId === ownerId).length >= MAX_CREATED_ROOMS)
         throw new PrivateRoomError("room_limit_reached");
@@ -189,6 +185,7 @@ export class PrivateRoomDirectory {
         channelCode,
         name,
         icon: request.icon ?? ROOM_ICON_IDS[randomInt(ROOM_ICON_IDS.length)]!,
+        iconColor: request.iconColor,
         ownerId,
         createdAt: stamp,
         updatedAt: stamp,
@@ -201,10 +198,12 @@ export class PrivateRoomDirectory {
   update(ownerId: string, request: UpdatePrivateRoomRequest): Promise<PrivateRoomInfo> {
     const name = nameText(request.name);
     if (!isRoomIconId(request.icon)) invalid();
+    if (request.iconColor !== undefined && !isRoomIconColor(request.iconColor)) invalid();
     return this.store.transact((draft) => {
       const room = this.ownedRoom(draft, request.roomId, ownerId);
       room.name = name;
       room.icon = request.icon;
+      if (request.iconColor !== undefined) room.iconColor = request.iconColor;
       room.updatedAt = new Date(this.now()).toISOString();
       return this.info(room);
     });

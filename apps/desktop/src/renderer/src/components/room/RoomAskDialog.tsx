@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ArrowUp, History, Sparkles, Square } from "lucide-react";
+import { ArrowUp, History, Send, Square } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
 
 import type { VoiceMemoryAnswer } from "@private-voice/shared";
@@ -7,12 +7,17 @@ import type { VoiceMemoryAnswer } from "@private-voice/shared";
 import { popoverSurfaceVariants, reducedFadeVariants } from "../../features/motion/motionPresets";
 import { Button } from "../base/Button";
 import { DialogCloseButton } from "../base/DialogCloseButton";
+import { RoomAiIcon } from "./RoomAiIcon";
+import { roomAiError } from "../../features/room/roomAiError";
+import { useRoomAiShare } from "../../features/room/useRoomAiShare";
 
 interface RoomAskDialogProps {
   isOpen: boolean;
   reduceMotion: boolean;
   onClose: () => void;
   onOpenResult: (target: { filePath: string; startMs: number }) => void;
+  onSendToChat: (content: string, clientMessageId: string) => Promise<void>;
+  canSend: boolean;
 }
 
 type PendingAction = "ask";
@@ -26,7 +31,6 @@ interface RoomQuestionHistoryEntry {
 
 const ROOM_QUESTION_HISTORY_KEY = "shanghao:room-question-history:v1";
 const ROOM_QUESTION_HISTORY_LIMIT = 10;
-const ROOM_QUESTION_SUGGESTIONS = ["海克斯大乱斗卡莎出装", "当前版本亚索出装"] as const;
 
 const readQuestionHistory = (): RoomQuestionHistoryEntry[] => {
   try {
@@ -82,37 +86,16 @@ const formatOffset = (offsetMs: number): string => {
   return `${minutes}:${String(seconds % 60).padStart(2, "0")}`;
 };
 
-const friendlyError = (error: unknown): string => {
-  const message = error instanceof Error ? error.message : String(error);
-  if (
-    message.includes("model_qwen35-4b_not_installed") ||
-    message.includes("qwen_runtime_unavailable")
-  )
-    return "房间问答已使用云端 API，请完全退出并重新打开上号后再试。";
-  if (message.includes("cloud_ai_join_required")) return "请先进入一号房或二号房，再使用云端问答。";
-  if (message.includes("cloud_ai_not_configured")) return "房间云端 AI 还没有配置好。";
-  if (message.includes("cloud_ai_unsupported"))
-    return "房间服务器版本较旧，请更新服务器或切换本地模型。";
-  if (message.includes("cloud_ai_busy") || message.includes("cloud_ai_request_in_progress"))
-    return "云端 AI 正忙，请稍后再问。";
-  if (message.includes("custom_ai_not_configured")) return "请先在 AI 功能中保存自定义 API。";
-  if (message.includes("ai_task_paused") || message.includes("cloud_ai_cancelled"))
-    return "已经停止这次回答，可以继续使用房间或重新提问。";
-  if (message.includes("ai_question_in_progress")) return "上一条问题还在处理，可以先停止它。";
-  if (message.includes("waiting_for_game_to_finish"))
-    return "当前设置为游戏结束后处理，可以稍后再问。";
-  if (message.includes("ai_runtime_exit") || message.includes("qwen_invalid_json_response"))
-    return "这次回答没有正常返回，已保留问题，可以直接重试。";
-  return "这次没有得到结果，请稍后重试。";
-};
-
 /** One room-level entry for asking a question without blocking the room. */
 export const RoomAskDialog = ({
   isOpen,
   reduceMotion,
   onClose,
   onOpenResult,
+  onSendToChat,
+  canSend,
 }: RoomAskDialogProps) => {
+  const sharing = useRoomAiShare(onSendToChat);
   const inputRef = useRef<HTMLInputElement>(null);
   const askSequenceRef = useRef(0);
   const [query, setQuery] = useState("");
@@ -165,20 +148,27 @@ export const RoomAskDialog = ({
 
   const ask = async () => {
     const value = query.trim();
-    if (!value || pending) return;
+    if (!value || pending || sharing.sending) return;
     const sequence = ++askSequenceRef.current;
     setPending("ask");
     setStopping(false);
     setError(undefined);
     setAnswer(undefined);
+    sharing.clearNotice();
     try {
       const nextAnswer = await window.desktopApi.ai.askMemory({ question: value });
       if (sequence !== askSequenceRef.current) return;
+      if (
+        typeof nextAnswer?.text !== "string" ||
+        !nextAnswer.text.trim() ||
+        !Array.isArray(nextAnswer.sources)
+      )
+        throw new Error("ai_invalid_json_response");
       setAnswer(nextAnswer);
       setQuestionHistory((current) => rememberQuestion(current, value, nextAnswer));
     } catch (cause) {
       if (sequence !== askSequenceRef.current) return;
-      setError(friendlyError(cause));
+      setError(roomAiError(cause));
     } finally {
       if (sequence === askSequenceRef.current) setPending(undefined);
     }
@@ -216,7 +206,7 @@ export const RoomAskDialog = ({
           <header className="room-ai-header">
             <div className="room-ai-title">
               <span className="room-ai-title-icon" aria-hidden="true">
-                <Sparkles />
+                <RoomAiIcon />
               </span>
               <span>
                 <h2 id="room-ask-title" className="text-balance">
@@ -229,26 +219,6 @@ export const RoomAskDialog = ({
           </header>
 
           <div className="room-ask-popover-body">
-            {!query.trim() && !pending && !answer && !error ? (
-              <section className="room-ai-empty" aria-label="提问建议">
-                <strong>提问示例</strong>
-                <div className="room-ai-suggestions">
-                  {ROOM_QUESTION_SUGGESTIONS.map((suggestion) => (
-                    <button
-                      type="button"
-                      key={suggestion}
-                      onClick={() => {
-                        setQuery(suggestion);
-                        window.setTimeout(() => inputRef.current?.focus(), 0);
-                      }}
-                    >
-                      {suggestion}
-                    </button>
-                  ))}
-                </div>
-              </section>
-            ) : null}
-
             {pending || answer || error ? <p className="room-ai-user-question">{query}</p> : null}
 
             <div className="room-ai-composer" data-pending={pending === "ask" ? "true" : "false"}>
@@ -256,18 +226,18 @@ export const RoomAskDialog = ({
                 ref={inputRef}
                 value={query}
                 maxLength={500}
-                disabled={pending === "ask"}
+                disabled={pending === "ask" || sharing.sending}
                 aria-label="输入问题"
                 onChange={(event) => setQuery(event.target.value)}
                 onKeyDown={(event) => {
-                  if (event.key === "Enter") void ask();
+                  if (event.key === "Enter" && !event.nativeEvent.isComposing) void ask();
                 }}
                 placeholder="输入问题"
               />
               <button
                 type="button"
                 className="room-ai-send"
-                disabled={!query.trim() || Boolean(pending)}
+                disabled={!query.trim() || Boolean(pending) || sharing.sending}
                 onClick={() => void ask()}
                 aria-label="发送问题"
               >
@@ -277,16 +247,10 @@ export const RoomAskDialog = ({
             {pending === "ask" ? (
               <div className="room-ai-working" role="status" aria-live="polite">
                 <span className="room-ai-working-icon" aria-hidden="true">
-                  <Sparkles />
+                  <RoomAiIcon />
                 </span>
                 <span>
-                  <strong>
-                    {pendingSeconds < 5
-                      ? "正在查找资料"
-                      : pendingSeconds < 15
-                        ? "正在整理答案"
-                        : "正在生成回答"}
-                  </strong>
+                  <strong>正在回答</strong>
                   <small>
                     {pendingSeconds >= 8
                       ? `已等待 ${pendingSeconds} 秒，可以停止后重新提问。`
@@ -324,13 +288,30 @@ export const RoomAskDialog = ({
               <article className="room-ai-answer">
                 <h3>
                   <span className="room-ai-answer-icon" aria-hidden="true">
-                    <Sparkles />
+                    <RoomAiIcon />
                   </span>
                   上号 AI
                 </h3>
                 <p className="mt-2 whitespace-pre-wrap text-pretty text-sm leading-7 text-[#53657b]">
                   {answer.text}
                 </p>
+                <div className="mt-3 flex flex-wrap items-center justify-end gap-2">
+                  {sharing.notice ? (
+                    <p role="status" className="text-xs text-[#718096]">
+                      {sharing.notice}
+                    </p>
+                  ) : null}
+                  <Button
+                    variant="secondary"
+                    disabled={
+                      !canSend || sharing.sending || !answer.text.trim() || Boolean(pending)
+                    }
+                    onClick={() => void sharing.share(answer.text)}
+                  >
+                    <Send className="size-3.5" aria-hidden="true" />
+                    {sharing.sending ? "发送中…" : "发送到聊天"}
+                  </Button>
+                </div>
                 {answer.sources.length ? (
                   <div className="mt-3 space-y-2 border-t border-[#e2ebf5] pt-3">
                     {answer.sources.map((source, index) => (
@@ -368,10 +349,12 @@ export const RoomAskDialog = ({
                     <button
                       type="button"
                       key={entry.id}
+                      disabled={Boolean(pending) || sharing.sending}
                       onClick={() => {
                         setQuery(entry.question);
                         setAnswer(entry.answer);
                         setError(undefined);
+                        sharing.clearNotice();
                       }}
                     >
                       <span>{entry.question}</span>

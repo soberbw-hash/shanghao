@@ -40,6 +40,7 @@ import {
   type AsrWorkerResult,
 } from "./asr-persistent-worker";
 import { runLocalProcess } from "./local-process";
+import { mainResourceScheduler } from "./main-resource-scheduler";
 import { measureAsrRelease } from "./asr-resource-release";
 import type { AiComputeLease } from "./resource-scheduler";
 import { resolveFfmpegExecutable } from "./media-runtime";
@@ -370,7 +371,6 @@ export class AiRuntimeManager {
   private cudaDiagnosticsPromise?: Promise<PythonCudaDiagnostics>;
   private cudaInitializationPromise?: Promise<PythonCudaDiagnostics>;
   private cudaPreparationQueue: Promise<void> = Promise.resolve();
-  private runtimePreparationQueue: Promise<void> = Promise.resolve();
 
   constructor(
     private readonly runtimeRoot: string,
@@ -414,15 +414,19 @@ export class AiRuntimeManager {
 
   initializeCudaRuntime(): Promise<PythonCudaDiagnostics> {
     if (this.cudaInitializationPromise) return this.cudaInitializationPromise;
-    const operation = this.initializeCudaRuntimeOnce().catch((error) => {
-      if (this.cudaInitializationPromise === operation) this.cudaInitializationPromise = undefined;
-      throw error;
-    });
+    const operation = mainResourceScheduler
+      .runWork("runtime-preparation", (signal) => this.initializeCudaRuntimeOnce(signal))
+      .catch((error) => {
+        if (this.cudaInitializationPromise === operation)
+          this.cudaInitializationPromise = undefined;
+        throw error;
+      });
     this.cudaInitializationPromise = operation;
     return operation;
   }
 
-  private async initializeCudaRuntimeOnce(): Promise<PythonCudaDiagnostics> {
+  private async initializeCudaRuntimeOnce(signal?: AbortSignal): Promise<PythonCudaDiagnostics> {
+    if (signal?.aborted) throw new Error("ai_task_paused");
     if (!(await exists(this.pythonExecutable))) {
       const missing: PythonCudaDiagnostics = {
         pythonPath: this.pythonExecutable,
@@ -463,6 +467,7 @@ export class AiRuntimeManager {
       return failed;
     });
     const reason = before.failureReason ?? classifyCudaRuntimeFailure(before);
+    if (signal?.aborted) throw new Error("ai_task_paused");
     const repairable = new Set<CudaRuntimeFailureReason>([
       "torch_missing",
       "torch_import_failed",
@@ -478,7 +483,7 @@ export class AiRuntimeManager {
         message: describeCudaRuntimeFailure(reason),
       });
       try {
-        await this.ensureCudaRuntime();
+        await this.ensureCudaRuntime(signal);
       } catch (error) {
         await this.log("error", "AI Runtime CUDA automatic repair failed", {
           failureReason: reason,
@@ -881,30 +886,35 @@ export class AiRuntimeManager {
           outputFormat: asrInputFormat,
           ffmpegPath: executable,
         });
-        await runLocalProcess(
-          executable,
-          [
-            "-nostdin",
-            "-hide_banner",
-            "-loglevel",
-            "error",
-            "-y",
-            "-ss",
-            String(options.offsetMs / 1_000),
-            "-t",
-            String(options.durationMs / 1_000),
-            "-i",
-            options.filePath,
-            "-vn",
-            "-ac",
-            "1",
-            "-ar",
-            String(sampleRate),
-            "-c:a",
-            "pcm_s16le",
-            wavPath,
-          ],
-          { signal: options.signal, timeoutMs: 120_000 },
+        await mainResourceScheduler.runWork(
+          "asr-conversion",
+          (signal) =>
+            runLocalProcess(
+              executable,
+              [
+                "-nostdin",
+                "-hide_banner",
+                "-loglevel",
+                "error",
+                "-y",
+                "-ss",
+                String(options.offsetMs / 1_000),
+                "-t",
+                String(options.durationMs / 1_000),
+                "-i",
+                options.filePath,
+                "-vn",
+                "-ac",
+                "1",
+                "-ar",
+                String(sampleRate),
+                "-c:a",
+                "pcm_s16le",
+                wavPath,
+              ],
+              { signal, timeoutMs: 120_000 },
+            ),
+          options.signal,
         );
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
@@ -1097,35 +1107,11 @@ export class AiRuntimeManager {
     id: AiModelId,
     signal?: AbortSignal,
   ): Promise<{ ready: boolean; message?: string }> {
-    const operation = this.runtimePreparationQueue
-      .catch(() => undefined)
-      .then(() => {
-        if (signal?.aborted) throw new Error("ai_task_paused");
-        return this.prepareModelRuntimeOnce(id, signal);
-      });
-    this.runtimePreparationQueue = operation.then(
-      () => undefined,
-      () => undefined,
+    return mainResourceScheduler.runWork(
+      "runtime-preparation",
+      (workSignal) => this.prepareModelRuntimeOnce(id, workSignal),
+      signal,
     );
-    if (!signal) return operation;
-    return new Promise((resolve, reject) => {
-      const onAbort = () => {
-        signal.removeEventListener("abort", onAbort);
-        reject(new Error("ai_task_paused"));
-      };
-      signal.addEventListener("abort", onAbort, { once: true });
-      if (signal.aborted) onAbort();
-      void operation.then(
-        (result) => {
-          signal.removeEventListener("abort", onAbort);
-          resolve(result);
-        },
-        (error) => {
-          signal.removeEventListener("abort", onAbort);
-          reject(error);
-        },
-      );
-    });
   }
 
   private async prepareModelRuntimeOnce(

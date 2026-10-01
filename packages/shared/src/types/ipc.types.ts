@@ -14,6 +14,7 @@ import type {
   RuntimeHealthSnapshot,
 } from "./diagnostics.types";
 import type { RoomMember } from "./room.types";
+import type { RecordingClipRequest, RecordingClipResult } from "../recording-clips";
 import type {
   RecordingExportPayload,
   RecordingExportResponse,
@@ -79,6 +80,8 @@ export interface RuntimeInfo {
 export interface DeepLinkInvite {
   channelId: string;
   serverUrl?: string;
+  channelCode?: string;
+  autoJoin?: boolean;
 }
 
 export interface WindowsIntegrationStatus {
@@ -237,7 +240,17 @@ export interface GameDetectionSnapshot {
     | "双人成行"
     | "幻兽帕鲁"
     | "胡闹厨房"
-    | "荒野大镖客 2";
+    | "荒野大镖客 2"
+    | "火箭联盟"
+    | "泰拉瑞亚"
+    | "哈迪斯"
+    | "Warframe"
+    | "命运 2"
+    | "绝地潜兵 2"
+    | "漫威争锋"
+    | "黎明杀机"
+    | "致命公司"
+    | "R.E.P.O.";
   gameIconDataUrl?: string;
   detectedAt?: string;
   musicActivity?: import("./room.types").MusicActivity;
@@ -257,6 +270,14 @@ export interface DesktopApi {
     ) => () => void;
   };
   app: {
+    setBackgroundActivity: (activity: { inRoom: boolean; isRecording: boolean }) => Promise<void>;
+    completeBackgroundClose: (requestId: string, leftRoom: boolean) => Promise<void>;
+    onBackgroundCommand: (
+      listener: (
+        command:
+          { kind: "leave-and-hide"; requestId: string } | { kind: "preview-room"; roomId: string },
+      ) => void,
+    ) => () => void;
     getRuntimeInfo: () => Promise<RuntimeInfo>;
     getSystemIdleSeconds: () => Promise<number>;
     writeLog: (payload: RendererLogPayload) => Promise<void>;
@@ -434,6 +455,9 @@ export interface DesktopApi {
     onEvent: (listener: (payload: SignalingEventPayload) => void) => () => void;
   };
   recording: {
+    exportClip: (request: RecordingClipRequest) => Promise<RecordingClipResult>;
+    showClipInFolder: (filePath: string) => Promise<void>;
+    dragClip: (filePath: string) => void;
     export: (payload: RecordingExportPayload) => Promise<RecordingExportResponse>;
     startSession: (payload: RecordingStreamStartPayload) => Promise<RecordingStreamStartResponse>;
     appendChunk: (sessionId: string, buffer: ArrayBuffer) => Promise<void>;

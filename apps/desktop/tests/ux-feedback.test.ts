@@ -90,9 +90,7 @@ test("optional updates, long AI waits, and toasts all have a clear escape route"
   assert.match(update, /mt-6 flex min-w-0 flex-wrap gap-3/);
   assert.match(update, /min-w-\[180px\] flex-\[1_1_180px\]/);
   assert.match(update, /shrink-0 whitespace-nowrap/);
-  assert.match(ask, /正在查找资料/);
-  assert.match(ask, /正在整理答案/);
-  assert.match(ask, /正在生成回答/);
+  assert.match(ask, /正在回答/);
   assert.match(ask, /重新提问/);
   assert.match(toast, /toast.actionLabel && toast.onAction/);
   assert.match(toast, /aria-label="关闭提示"/);

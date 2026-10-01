@@ -1,10 +1,11 @@
-import { isStoredRoomId, type DeepLinkInvite } from "@private-voice/shared";
+import { isChannelCode, isStoredRoomId, type DeepLinkInvite } from "@private-voice/shared";
 
 export const SHANGHAO_PROTOCOL = "shanghao";
 export const SHANGHAO_AUTH_REDIRECT_URL = `${SHANGHAO_PROTOCOL}://auth/confirmed`;
 
 export const parseDeepLinkInvite = (rawValue: string): DeepLinkInvite | undefined => {
   try {
+    if (rawValue.length > 4096) return undefined;
     const url = new URL(rawValue);
     if (url.protocol !== `${SHANGHAO_PROTOCOL}:` || url.hostname !== "join") return undefined;
 
@@ -22,14 +23,21 @@ export const parseDeepLinkInvite = (rawValue: string): DeepLinkInvite | undefine
         return undefined;
       }
     }
-    if (!rawServerUrl) return { channelId };
+    const channelCode = url.searchParams.get("code");
+    if (channelCode !== null && !isChannelCode(channelCode)) return undefined;
+    const invite: DeepLinkInvite = {
+      channelId,
+      ...(channelCode === null ? {} : { channelCode }),
+      ...(url.searchParams.get("action") === "join" ? { autoJoin: true } : {}),
+    };
+    if (!rawServerUrl) return invite;
 
     const serverUrl = new URL(rawServerUrl);
     if (serverUrl.protocol !== "ws:" && serverUrl.protocol !== "wss:") return undefined;
     if (serverUrl.username || serverUrl.password) return undefined;
     serverUrl.hash = "";
 
-    return { channelId, serverUrl: serverUrl.toString() };
+    return { ...invite, serverUrl: serverUrl.toString() };
   } catch {
     return undefined;
   }

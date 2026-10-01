@@ -49,6 +49,23 @@ const getWindowIcon = (): NativeImage => {
   return image.isEmpty() ? nativeImage.createFromPath(getIconPath()) : image;
 };
 
+const applyBrandIdentity = (window: BrowserWindow, windowIcon = getWindowIcon()): void => {
+  window.setIcon(windowIcon);
+  if (platformService.isWindows) {
+    window.setAppDetails({
+      appId: APP_ID,
+      appIconPath: getIconPath(),
+      appIconIndex: 0,
+      // Windows requires the name and command together. Dev pins must include
+      // the app directory instead of launching the bare Electron runtime.
+      relaunchCommand: app.isPackaged
+        ? `"${process.execPath}"`
+        : `"${process.execPath}" "${app.getAppPath()}"`,
+      relaunchDisplayName: APP_NAME,
+    });
+  }
+};
+
 let screenShareViewerWindow: BrowserWindow | null = null;
 let screenShareViewerSessionId: string | undefined;
 
@@ -128,6 +145,7 @@ export const openScreenShareViewer = async ({
       sandbox: true,
     },
   });
+  applyBrandIdentity(viewer);
   screenShareViewerWindow = viewer;
   screenShareViewerSessionId = sessionId;
   // The detached viewer must never be captured into its own stream. Without
@@ -287,15 +305,7 @@ export const createMainWindow = ({
       sandbox: true,
     },
   });
-  window.setIcon(windowIcon);
-  if (platformService.isWindows) {
-    window.setAppDetails({
-      appId: APP_ID,
-      appIconPath: getIconPath(),
-      appIconIndex: 0,
-      relaunchDisplayName: APP_NAME,
-    });
-  }
+  applyBrandIdentity(window, windowIcon);
 
   const targetUrl = !app.isPackaged
     ? devServerUrl

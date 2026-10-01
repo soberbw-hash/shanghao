@@ -1,5 +1,7 @@
 import { lazy, Suspense, useEffect, useState } from "react";
 import { motion } from "framer-motion";
+import { useShallow } from "zustand/react/shallow";
+import { selectAppProfileSettings } from "../features/settings/settingsProjection";
 
 import { APPLE_MOTION_DURATION, APPLE_MOTION_EASE } from "@private-voice/shared";
 
@@ -16,6 +18,8 @@ import { usePhoneModeSync } from "../hooks/usePhoneModeSync";
 import { useLocalAudioTransport } from "../hooks/useLocalAudioTransport";
 import { useUiFeedbackSounds } from "../hooks/useUiFeedbackSounds";
 import { useWeatherPreload } from "../hooks/useWeatherPreload";
+import { useTrayBackground } from "../hooks/useTrayBackground";
+import { useAppRoomInvites } from "../hooks/useAppRoomInvites";
 import { dispatchQuickMessageShortcut } from "../hooks/useRoomState";
 import { AccountPage } from "../pages/AccountPage";
 import { SharedOverlays } from "../pages/SharedOverlays";
@@ -23,7 +27,7 @@ import { useAppStore } from "../store/appStore";
 import { useRoomStore } from "../store/roomStore";
 import { useSettingsStore } from "../store/settingsStore";
 import { useAccountStore } from "../store/accountStore";
-import { ACCOUNT_AVATAR_PRESETS } from "../features/account/accountAvatarPresets";
+import { accountProfileAvatarSource } from "../features/account/accountAvatarPresets";
 import { writeRendererLog } from "../utils/logger";
 import { StartupRecoveryPage } from "../components/status/StartupRecoveryPage";
 import { StartupSplashPage } from "../components/status/StartupSplashPage";
@@ -45,6 +49,8 @@ export const App = () => {
   useLocalAudioTransport();
   useUiFeedbackSounds();
   useWeatherPreload();
+  useTrayBackground();
+  useAppRoomInvites();
 
   useEffect(
     () => window.desktopApi.shortcuts.onQuickMessageTriggered(dispatchQuickMessageShortcut),
@@ -77,14 +83,28 @@ export const App = () => {
   const navigate = useAppStore((state) => state.navigate);
   const setSettingsReturnTo = useAppStore((state) => state.setSettingsReturnTo);
   const isHydrating = useSettingsStore((state) => state.isHydrating);
-  const settings = useSettingsStore((state) => state.settings);
+  const settings = useSettingsStore(useShallow(selectAppProfileSettings));
   const saveSettings = useSettingsStore((state) => state.saveSettings);
   const avatarDataUrl = useSettingsStore((state) => state.avatarDataUrl);
   const accountSnapshot = useAccountStore((state) => state.snapshot);
   const isAccountHydrating = useAccountStore((state) => state.isHydrating);
+  const [accountConfigReady, setAccountConfigReady] = useState(!cloudBaseClientConfig);
+  const startupSettled =
+    accountConfigReady &&
+    !isHydrating &&
+    !isAccountHydrating &&
+    accountSnapshot.status !== "loading" &&
+    bootstrapPhase !== "booting" &&
+    bootstrapPhase !== "checking-update";
+  useEffect(() => {
+    if (!startupSettled) return;
+    const cover = document.getElementById("app-preboot-cover");
+    cover?.classList.add("is-ready");
+    const timer = window.setTimeout(() => cover?.remove(), 300);
+    return () => window.clearTimeout(timer);
+  }, [startupSettled]);
   const hydrateAccount = useAccountStore((state) => state.hydrate);
   const syncLocalProfile = useRoomStore((state) => state.syncLocalProfile);
-  const [accountConfigReady, setAccountConfigReady] = useState(!cloudBaseClientConfig);
 
   useEffect(() => {
     if (bootstrapPhase !== "ready") return;
@@ -158,12 +178,7 @@ export const App = () => {
       username: accountSnapshot.profile?.username,
       displayName: accountSnapshot.profile?.displayName,
       avatarUrl:
-        accountSnapshot.profile?.avatarUrl ??
-        ACCOUNT_AVATAR_PRESETS.find(
-          (preset) =>
-            preset.id ===
-            (accountSnapshot.profile?.accountAvatarPresetId ?? settings.accountAvatarPresetId),
-        )?.source,
+        accountSnapshot.profile?.avatarUrl ?? accountProfileAvatarSource(accountSnapshot.profile),
       isGuest: accountSnapshot.status === "guest",
       nickname: accountSnapshot.profile?.displayName ?? settings.nickname,
       avatarPath: settings.avatarPath,
@@ -214,7 +229,14 @@ export const App = () => {
 
     // Warm the settings route while the renderer is idle so the first switch
     // does not put module evaluation on the navigation frame.
-    const preloadSettings = () => void loadSettingsPage();
+    const preloadSettings = () => {
+      void loadSettingsPage();
+      void visualRuntimeController.preloadAsset("room-scene", () =>
+        import("../features/visual-runtime/sceneAssetWarmup").then(({ warmRoomSceneAssets }) =>
+          warmRoomSceneAssets(),
+        ),
+      );
+    };
     const requestId = window.requestIdleCallback?.(preloadSettings, { timeout: 1_200 });
     const fallbackTimer =
       requestId === undefined ? window.setTimeout(preloadSettings, 180) : undefined;
@@ -281,7 +303,7 @@ export const App = () => {
             <motion.div
               key={basePage}
               className="app-route-motion"
-              initial={basePage === "room" ? { opacity: 0, y: 4 } : false}
+              initial={{ opacity: 0, y: 4 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{
                 duration: APPLE_MOTION_DURATION.panel,

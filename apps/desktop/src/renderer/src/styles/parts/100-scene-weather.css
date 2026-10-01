@@ -1864,10 +1864,6 @@ body::before {
     transform 340ms var(--ease-out-soft);
 }
 
-.scene-character-motion.phase-standing-up .desk-animal {
-  animation: scene-character-stand-prep 240ms var(--ease-out-soft) both;
-}
-
 .scene-character-motion.phase-turning .walking-animal {
   transform: translateY(1px) scale(0.98);
   transition: transform 150ms var(--ease-out-soft);
@@ -1883,15 +1879,6 @@ body::before {
   }
   to {
     transform: translateX(-50%) translateY(0) scale(1);
-  }
-}
-
-@keyframes scene-character-stand-prep {
-  from {
-    transform: translateY(0) scale(1);
-  }
-  to {
-    transform: translateY(-3px) scale(1.015);
   }
 }
 

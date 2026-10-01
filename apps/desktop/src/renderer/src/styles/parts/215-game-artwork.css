@@ -1,0 +1,33 @@
+.scene-game-monitor-content--illustration {
+  background: #20384d;
+}
+.scene-game-illustration {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+.scene-game-identity {
+  position: absolute;
+  inset: auto 0 0;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  padding: 2px 3px;
+  background: rgba(14, 30, 47, 0.84);
+  color: #e6eef5;
+  font-size: 7px;
+  line-height: 10px;
+}
+.scene-game-identity img,
+.scene-game-identity svg {
+  width: 10px;
+  height: 10px;
+  object-fit: contain;
+}
+.scene-game-identity > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

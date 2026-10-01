@@ -1,8 +1,8 @@
-import { spawn } from "node:child_process";
-
 import type { RecordingCleanupCandidate, RecordingCleanupReason } from "@private-voice/shared";
 
 import { resolveFfmpegExecutable } from "./media-runtime";
+import { mainResourceScheduler } from "./main-resource-scheduler";
+import { runLocalProcess } from "./local-process";
 
 // A short recording is only an accidental tap, not an ordinary conversation.
 // Five minutes incorrectly classified real 1–5 minute conversations as waste.
@@ -68,45 +68,40 @@ export const inspectRecordingForCleanup = async (
 ): Promise<RecordingCleanupCandidate | undefined> => {
   const executable = resolveFfmpegExecutable();
   if (!executable) throw new Error("ffmpeg_runtime_unavailable");
-  const result = await new Promise<RecordingProbeResult>((resolve, reject) => {
-    const child = spawn(
-      executable,
-      [
-        "-hide_banner",
-        "-nostdin",
-        "-nostats",
-        "-i",
-        filePath,
-        "-vn",
-        "-sn",
-        "-dn",
-        "-threads",
-        "1",
-        "-af",
-        "volumedetect",
-        "-f",
-        "null",
-        "-",
-      ],
-      { windowsHide: true },
-    );
-    let output = "";
-    let timedOut = false;
-    const timeout = setTimeout(() => {
-      timedOut = true;
-      child.kill();
-    }, 30_000);
-    child.stderr.setEncoding("utf8");
-    child.stderr.on("data", (chunk: string) => {
-      if (output.length < 128_000) output += chunk;
-    });
-    child.on("error", reject);
-    child.on("close", (code) => {
-      clearTimeout(timeout);
-      // A slow decoder is not evidence that the user's recording is corrupt.
-      resolve(timedOut ? {} : parseRecordingProbeOutput(output, code));
-    });
-  });
+  const result = await mainResourceScheduler
+    .runWork("recording-cleanup", async (signal): Promise<RecordingProbeResult> => {
+      try {
+        const output = await runLocalProcess(
+          executable,
+          [
+            "-hide_banner",
+            "-nostdin",
+            "-nostats",
+            "-i",
+            filePath,
+            "-vn",
+            "-sn",
+            "-dn",
+            "-threads",
+            "1",
+            "-filter_threads",
+            "1",
+            "-af",
+            "volumedetect",
+            "-f",
+            "null",
+            "-",
+          ],
+          { signal, timeoutMs: 30_000 },
+        );
+        return parseRecordingProbeOutput(output.stderr, 0);
+      } catch (error) {
+        // Pressure, cancellation and a slow decoder never prove a recording is disposable.
+        const message = error instanceof Error ? error.message : "";
+        return message.startsWith("ai_runtime_exit_") ? { reason: "unreadable" } : {};
+      }
+    })
+    .catch((): RecordingProbeResult => ({}));
   return result.reason
     ? { filePath, reason: result.reason, durationMs: result.durationMs }
     : undefined;

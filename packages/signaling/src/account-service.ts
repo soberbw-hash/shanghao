@@ -9,6 +9,7 @@ import {
 } from "@private-voice/shared";
 
 import { AccountAvatarPresetStore } from "./account-avatar-preset-store";
+import { isInvalidCloudBaseTokenResponse } from "./cloudbase-token-failure";
 
 const USERNAME_PATTERN = /^[a-z0-9][a-z0-9_-]{2,19}$/;
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -715,7 +716,7 @@ export class CloudBaseAccountService implements AccountBackend {
       const introspectionBody = (await introspection.json().catch(() => ({}))) as {
         sub?: string;
       };
-      if (introspection.status === 401 || introspection.status === 403) {
+      if (isInvalidCloudBaseTokenResponse(introspection.status, introspectionBody)) {
         throw new AccountServerError("account_session_expired");
       }
       if (!introspection.ok) {
@@ -729,7 +730,7 @@ export class CloudBaseAccountService implements AccountBackend {
         signal: AbortSignal.timeout(12_000),
       });
       const body = (await response.json().catch(() => ({}))) as CloudBaseUserResponse;
-      if (response.status === 401 || response.status === 403) {
+      if (isInvalidCloudBaseTokenResponse(response.status, body)) {
         throw new AccountServerError("account_session_expired");
       }
       if (!response.ok) throw new AccountServerError("account_network_error");

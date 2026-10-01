@@ -2,6 +2,7 @@
 /* global __dirname, console, require */
 
 const { app, BrowserWindow } = require("electron");
+require("./electron-isolated-profile.cjs").configureIsolatedProfile(app, "audio-worklet");
 const { readFileSync } = require("node:fs");
 const http = require("node:http");
 const path = require("node:path");
@@ -79,7 +80,9 @@ app
 
       const result = await window.webContents.executeJavaScript(`
       (async () => {
-        const context = new AudioContext({ sampleRate: 48000 });
+        // Render DSP samples without opening a physical speaker. This checks
+        // worklet processing and diagnostics, not actual headset audibility.
+        const context = new AudioContext({ sampleRate: 48000, sinkId: { type: "none" } });
         if (!context.audioWorklet) {
           await context.close();
           return { ok: false, error: "audio_worklet_unavailable" };

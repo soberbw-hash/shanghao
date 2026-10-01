@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Camera, Check, LogOut, ShieldCheck, UserRound } from "lucide-react";
+import { accountAvatarPresetForIdentity } from "@private-voice/shared";
 
 import { Button } from "../base/Button";
 import { accountErrorMessage } from "../../features/account/accountMessages";
@@ -8,6 +9,7 @@ import { prepareAccountAvatar } from "../../features/account/prepareAccountAvata
 import { useAccountStore } from "../../store/accountStore";
 import { useAppStore } from "../../store/appStore";
 import { useSettingsStore } from "../../store/settingsStore";
+import { AccountRoomsPanel } from "./AccountRoomsPanel";
 
 export const AccountSettingsCard = () => {
   const snapshot = useAccountStore((state) => state.snapshot);
@@ -16,7 +18,6 @@ export const AccountSettingsCard = () => {
   const updateAvatar = useAccountStore((state) => state.updateAvatar);
   const logout = useAccountStore((state) => state.logout);
   const pushToast = useAppStore((state) => state.pushToast);
-  const selectedAvatarPresetId = useSettingsStore((state) => state.settings?.accountAvatarPresetId);
   const saveSettings = useSettingsStore((state) => state.saveSettings);
   const profile = snapshot.profile;
   const [displayName, setDisplayName] = useState(profile?.displayName ?? "");
@@ -53,7 +54,9 @@ export const AccountSettingsCard = () => {
   };
 
   const selectedAvatar = ACCOUNT_AVATAR_PRESETS.find(
-    (preset) => preset.id === (profile.accountAvatarPresetId ?? selectedAvatarPresetId),
+    (preset) =>
+      preset.id ===
+      (profile.accountAvatarPresetId ?? accountAvatarPresetForIdentity(profile.userId)),
   );
 
   const chooseAvatar = async (presetId: string) => {
@@ -103,8 +106,7 @@ export const AccountSettingsCard = () => {
         {isAvatarPickerOpen ? (
           <div className="account-settings-avatar-picker" role="radiogroup" aria-label="选择头像">
             {ACCOUNT_AVATAR_PRESETS.map((preset) => {
-              const isSelected =
-                preset.id === (profile.accountAvatarPresetId ?? selectedAvatarPresetId);
+              const isSelected = preset.id === selectedAvatar?.id;
               return (
                 <button
                   key={preset.id}
@@ -130,34 +132,41 @@ export const AccountSettingsCard = () => {
           </div>
         ) : null}
 
-        <div className="account-settings-fields">
-          <label>
-            <span>昵称</span>
-            <input
-              value={displayName}
-              maxLength={32}
-              onChange={(event) => setDisplayName(event.target.value)}
-            />
-          </label>
-          <label>
-            <span>账号</span>
-            <input value={profile.username} readOnly aria-readonly="true" />
-            <small>唯一账号名，当前版本不可修改。</small>
-          </label>
-          <label>
-            <span>用户 ID</span>
-            <input value={profile.userId} readOnly aria-readonly="true" />
-            <small>房间身份由服务器验证，其他客户端无法伪造。</small>
-          </label>
-        </div>
-        <div className="account-settings-save">
-          <Button
-            variant="secondary"
-            disabled={isBusy || !displayName.trim() || displayName.trim() === profile.displayName}
-            onClick={() => void saveDisplayName()}
-          >
-            {isBusy ? "保存中…" : "保存修改"}
-          </Button>
+        <div className="account-settings-columns">
+          <div className="account-settings-details">
+            <div className="account-settings-fields">
+              <label>
+                <span>昵称</span>
+                <input
+                  value={displayName}
+                  maxLength={32}
+                  onChange={(event) => setDisplayName(event.target.value)}
+                />
+              </label>
+              <label>
+                <span>账号</span>
+                <input value={profile.username} readOnly aria-readonly="true" />
+                <small>唯一账号名，当前版本不可修改。</small>
+              </label>
+              <label>
+                <span>用户 ID</span>
+                <input value={profile.userId} readOnly aria-readonly="true" />
+                <small>房间身份由服务器验证，其他客户端无法伪造。</small>
+              </label>
+            </div>
+            <div className="account-settings-save">
+              <Button
+                variant="secondary"
+                disabled={
+                  isBusy || !displayName.trim() || displayName.trim() === profile.displayName
+                }
+                onClick={() => void saveDisplayName()}
+              >
+                {isBusy ? "保存中…" : "保存修改"}
+              </Button>
+            </div>
+          </div>
+          <AccountRoomsPanel userId={profile.userId} />
         </div>
       </section>
 

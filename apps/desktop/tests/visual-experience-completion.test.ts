@@ -40,7 +40,7 @@ test("character life is coordinated and includes expressive and connection feedb
   assert.match(character, /room-character-update-device/);
   assert.doesNotMatch(visualStyles, /\.desk-animal-speaking \.desk-animal-art/);
   assert.match(characterStyles, /\.desk-animal-speaking \.desk-animal-body-rig/);
-  assert.match(visualStyles, /character-moving-shadow/);
+  assert.match(visualStyles, /\.walking-animal-shadow \{[^}]*transform: scaleX\(1\.12\)/s);
 });
 
 test("glass highlights follow the pointer without a perpetual sweep", () => {

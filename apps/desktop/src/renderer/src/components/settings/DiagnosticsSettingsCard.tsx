@@ -234,8 +234,6 @@ const ShangHaoHealthOverview = ({
           : networkLevel === "有问题" || networkLevel === "需要看看"
             ? "网络响应偏慢，可能影响语音稳定性。"
             : "网络响应正常。",
-      actionLabel: "回到房间",
-      onClick: onOpenRoom,
     },
     {
       label: "屏幕分享",
@@ -251,7 +249,7 @@ const ShangHaoHealthOverview = ({
         windowsLevel === "未检测"
           ? "尚未检查 Windows 网络权限。"
           : windowsLevel === "需要看看"
-            ? "后台已尝试修复；如果这里仍异常，可以再手动重试。"
+            ? "程序级防火墙规则需要检查；点击修复时由 Windows 请求授权。"
             : "系统网络权限正常。",
       actionLabel: windowsLevel === "需要看看" ? "自动修复" : undefined,
       onClick: windowsLevel === "需要看看" ? onRepairFirewall : undefined,
@@ -272,8 +270,8 @@ const ShangHaoHealthOverview = ({
           </div>
           <div className="mt-1 text-[11px] leading-5 text-[#7A8CA5]">
             {runtimeHealth
-              ? "本机运行指标已记录；单次采样不代表语音或设备运行正常。"
-              : "本机运行指标尚未取得。"}
+              ? "连接异常时，上号会先自动尝试恢复；仍有问题时按下方提示处理。"
+              : "正在读取运行状态。"}
           </div>
           {checkFeedback ? (
             <div className="mt-1 text-[11px] leading-5 text-[#52657D]" role="status">
@@ -398,10 +396,10 @@ export const DiagnosticsSettingsCard = ({
   onInjectFault: (kind: RealtimeFaultKind) => void;
 }) => (
   <SettingsSection
-    title="日志与诊断"
-    description="这里给你看结论；完整的技术数据会在导出诊断包时一并保存。"
+    title="检查与修复"
+    description="连接中断和好友声音异常会自动尝试恢复。这里查看仍需处理的问题，或导出技术报告。"
   >
-    <div className="space-y-3">
+    <div className="diagnostics-user-view space-y-3">
       <ShangHaoHealthOverview
         runtimeHealth={runtimeHealth}
         relay={relay}

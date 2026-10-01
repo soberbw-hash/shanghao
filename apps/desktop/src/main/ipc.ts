@@ -14,7 +14,6 @@ import {
   type OpenDialogOptions,
 } from "electron";
 import path from "node:path";
-
 import {
   APP_BUILD_NUMBER,
   APP_NAME,
@@ -71,7 +70,6 @@ import {
   type VoiceMemorySearchResult,
   type LocalWeatherRequest,
   type LocalWeatherSnapshot,
-  type WindowsIntegrationStatus,
 } from "@private-voice/shared";
 
 import { DiagnosticsService } from "./diagnostics";
@@ -123,12 +121,8 @@ import { LocalWeatherService } from "./weather-service";
 import { platformService } from "./platform/PlatformService";
 import { readWindowsElevationStatus } from "./windows-elevation";
 import { getChatLinkPreview } from "./chat-link-preview";
-import {
-  configureWindowsIconOverlays,
-  readWindowsIntegrationStatus,
-  removeWindowsIntegrationFirewall,
-  repairWindowsIntegrationFirewall,
-} from "./windows-integration";
+import { readWindowsIntegrationStatus } from "./windows-integration";
+import { registerWindowsIntegrationIpc } from "./windows-integration-ipc";
 import {
   closeScreenShareViewer,
   isScreenShareViewerSender,
@@ -285,7 +279,7 @@ export const registerIpcHandlers = ({
   customAiProvider,
   huggingFaceAccess,
   consumePendingDeepLink,
-}: MainProcessServices): void => {
+}: MainProcessServices) => {
   let settingsMutation: Promise<unknown> = Promise.resolve();
   const serializeSettingsMutation = <T>(operation: () => Promise<T>): Promise<T> => {
     const next = settingsMutation.then(operation, operation);
@@ -296,7 +290,7 @@ export const registerIpcHandlers = ({
     return next;
   };
   const chatHistoryStore = new ChatHistoryStore(app.getPath("userData"));
-  registerPrivateRoomsIpc(accounts, settingsStore, app.getPath("userData"));
+  const rooms = registerPrivateRoomsIpc(accounts, settingsStore, app.getPath("userData"));
   const dailyRoomReportCache = new DailyRoomReportCache(app.getPath("userData"));
   const weatherSession = session.fromPartition("shanghao-weather-direct", { cache: false });
   const weatherNetworkReady = weatherSession.setProxy({ mode: "direct" });
@@ -336,7 +330,7 @@ export const registerIpcHandlers = ({
       protocolVersion: APP_PROTOCOL_VERSION,
       buildNumber: APP_BUILD_NUMBER,
       isElevated: elevation.isElevated,
-      requestedExecutionLevel: app.isPackaged ? "requireAdministrator" : "asInvoker",
+      requestedExecutionLevel: "asInvoker",
     };
   });
 
@@ -780,43 +774,7 @@ export const registerIpcHandlers = ({
       return snapshot;
     },
   );
-  ipcMain.handle(IPC_CHANNELS.windows.getStatus, async (): Promise<WindowsIntegrationStatus> =>
-    readWindowsIntegrationStatus(),
-  );
-  ipcMain.handle(IPC_CHANNELS.windows.repairFirewall, async () => {
-    const status = await repairWindowsIntegrationFirewall();
-    await diagnostics.writeLog({
-      category: "app",
-      level: status.healthy ? "info" : "warn",
-      message: "Windows firewall rules repaired",
-      context: { ...status },
-    });
-    return status;
-  });
-  ipcMain.handle(IPC_CHANNELS.windows.removeFirewall, async () => {
-    const status = await removeWindowsIntegrationFirewall();
-    await diagnostics.writeLog({
-      category: "app",
-      level: "info",
-      message: "Windows firewall rules removed",
-      context: { ...status },
-    });
-    return status;
-  });
-  ipcMain.handle(
-    IPC_CHANNELS.windows.setIconOverlaysHidden,
-    async (_event, hidden: unknown): Promise<WindowsIntegrationStatus["iconOverlays"]> => {
-      if (typeof hidden !== "boolean") throw new Error("invalid_icon_overlay_state");
-      const status = await configureWindowsIconOverlays(hidden);
-      await diagnostics.writeLog({
-        category: "app",
-        level: "info",
-        message: hidden ? "Windows icon overlays hidden" : "Windows icon overlays restored",
-        context: { ...status },
-      });
-      return status;
-    },
-  );
+  registerWindowsIntegrationIpc(getMainWindow, (payload) => diagnostics.writeLog(payload));
   ipcMain.handle(
     IPC_CHANNELS.diagnostics.testServer,
     async (_event, serverUrl: unknown): Promise<RelayStatusSnapshot> => {
@@ -1436,4 +1394,5 @@ export const registerIpcHandlers = ({
       return result;
     },
   );
+  return rooms;
 };

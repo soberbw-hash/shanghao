@@ -21,7 +21,8 @@ import {
   Crown,
   type LucideIcon,
 } from "lucide-react";
-import type { RoomIconId } from "@private-voice/shared";
+import type { RoomIconColor, RoomIconId } from "@private-voice/shared";
+import { roomIconColors } from "./roomIconColors";
 const icons: Record<RoomIconId, LucideIcon> = {
   gamepad: Gamepad2,
   headphones: Headphones,
@@ -69,10 +70,19 @@ export const roomIconLabels: Record<RoomIconId, string> = {
 export const PrivateRoomIcon = ({
   icon,
   className = "size-5",
+  color,
 }: {
   icon: RoomIconId;
   className?: string;
+  color?: RoomIconColor;
 }) => {
   const Icon = icons[icon];
-  return <Icon className={className} strokeWidth={1.8} aria-hidden="true" />;
+  return (
+    <Icon
+      className={className}
+      style={color ? { color: roomIconColors[color].ink } : undefined}
+      strokeWidth={1.8}
+      aria-hidden="true"
+    />
+  );
 };

@@ -3,7 +3,11 @@ import path from "node:path";
 
 import { safeStorage } from "electron";
 
-import type { AccountRememberedLogin } from "@private-voice/shared";
+import {
+  isAccountAvatarPresetId,
+  type AccountRememberedLogin,
+  type AccountProfile,
+} from "@private-voice/shared";
 
 import { writePrivateFileAtomically } from "./atomic-private-file";
 
@@ -44,6 +48,34 @@ const isRememberedLogin = (value: unknown): value is AccountRememberedLogin => {
     candidate.password.length > 0 &&
     candidate.password.length <= 128
   );
+};
+const rememberedProfile = (value: unknown): AccountProfile | undefined => {
+  if (!value || typeof value !== "object") return undefined;
+  const profile = value as AccountProfile;
+  if (
+    typeof profile.userId !== "string" ||
+    !profile.userId ||
+    profile.userId.length > 128 ||
+    typeof profile.username !== "string" ||
+    !profile.username ||
+    profile.username.length > 254 ||
+    typeof profile.displayName !== "string" ||
+    !profile.displayName ||
+    profile.displayName.length > 128
+  )
+    return undefined;
+  return {
+    userId: profile.userId,
+    username: profile.username,
+    displayName: profile.displayName,
+    accountAvatarPresetId: isAccountAvatarPresetId(profile.accountAvatarPresetId)
+      ? profile.accountAvatarPresetId
+      : undefined,
+    avatarUrl:
+      typeof profile.avatarUrl === "string" && profile.avatarUrl.length <= 1_048_576
+        ? profile.avatarUrl
+        : undefined,
+  };
 };
 
 /** Keeps account credentials outside settings.json and encrypts them with the OS key store. */
@@ -103,6 +135,7 @@ export class AccountSessionStore {
       const decrypted = await safeStorage.decryptStringAsync(encrypted);
       const parsed = JSON.parse(decrypted.result) as unknown;
       if (!isRememberedLogin(parsed)) throw new Error("invalid_account_login_shape");
+      parsed.profile = rememberedProfile(parsed.profile);
       if (decrypted.shouldReEncrypt) await this.writeRememberedLogin(parsed);
       return parsed;
     } catch {
@@ -116,7 +149,9 @@ export class AccountSessionStore {
     if (!(await safeStorage.isAsyncEncryptionAvailable())) {
       throw new Error("account_secure_storage_unavailable");
     }
-    const encrypted = await safeStorage.encryptStringAsync(JSON.stringify(login));
+    const encrypted = await safeStorage.encryptStringAsync(
+      JSON.stringify({ ...login, profile: rememberedProfile(login.profile) }),
+    );
     await writePrivateFileAtomically(this.rememberedLoginFilePath, encrypted);
   }
 

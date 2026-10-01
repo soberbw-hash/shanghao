@@ -34,6 +34,8 @@ export interface AccountLoginRequest {
 export interface AccountRememberedLogin {
   identifier: string;
   password: string;
+  /** Last authenticated identity, stored with these encrypted credentials, not local settings. */
+  profile?: AccountProfile;
 }
 
 export interface CloudBaseClientConfig {

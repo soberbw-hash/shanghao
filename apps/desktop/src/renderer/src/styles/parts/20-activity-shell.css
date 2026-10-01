@@ -3,7 +3,7 @@
 .music-activity-badge {
   position: absolute;
   z-index: 9;
-  top: 27px;
+  top: 17px;
   right: -5px;
   display: grid;
   width: 34px;
@@ -30,7 +30,7 @@
 .quick-message-music-badge {
   position: absolute;
   z-index: 10;
-  top: 27px;
+  top: 17px;
   right: -5px;
   width: 34px;
   height: 34px;
@@ -318,6 +318,10 @@ html.overlay-renderer body,
 html.overlay-renderer #root {
   width: 100%;
   height: 100%;
+  min-width: 0 !important;
+  min-height: 0 !important;
+  margin: 0;
+  padding: 0;
   overflow: hidden;
   background: transparent !important;
 }
@@ -850,7 +854,7 @@ img {
 }
 
 .app-page-base.is-obscured {
-  visibility: hidden;
+  visibility: visible;
   pointer-events: none;
   opacity: 0;
   transform: translateY(4px) scale(0.996);
@@ -877,8 +881,8 @@ img {
     );
   contain: layout paint;
   transition:
-    opacity var(--duration-fast) var(--ease-out-soft),
-    transform var(--duration-fast) var(--ease-spatial),
+    opacity 280ms var(--ease-out-soft),
+    transform 280ms var(--ease-spatial),
     visibility 0s linear var(--duration-fast),
     content-visibility 0s linear var(--duration-fast);
   transition-behavior: allow-discrete;
@@ -895,7 +899,7 @@ img {
 .app-page-settings.is-inactive {
   visibility: hidden;
   opacity: 0;
-  transform: translateY(4px);
+  transform: translateY(10px);
   content-visibility: hidden;
   pointer-events: none;
 }
@@ -904,13 +908,4 @@ img {
 .app-page-settings.is-inactive *::before,
 .app-page-settings.is-inactive *::after {
   animation-play-state: paused !important;
-}
-
-@keyframes settings-page-enter {
-  from {
-    opacity: 0;
-  }
-  to {
-    opacity: 1;
-  }
 }

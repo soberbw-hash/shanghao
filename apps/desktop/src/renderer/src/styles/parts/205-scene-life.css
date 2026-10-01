@@ -134,19 +134,19 @@
 
 @keyframes weather-foliage-sway {
   from {
-    transform: rotate(-27deg);
+    transform: rotate(-30deg);
   }
   to {
-    transform: rotate(-8deg);
+    transform: rotate(-5deg);
   }
 }
 
 @keyframes weather-foliage-sway-right {
   from {
-    transform: rotate(24deg);
+    transform: rotate(28deg);
   }
   to {
-    transform: rotate(8deg);
+    transform: rotate(5deg);
   }
 }
 
@@ -314,28 +314,28 @@
 
 @keyframes scene-curtain-breathe {
   from {
-    transform: translate3d(-1px, 0, 0) rotate(-1.1deg);
+    transform: translate3d(-3px, 0, 0) rotate(-2.4deg);
   }
   to {
-    transform: translate3d(2px, 0, 0) rotate(1.3deg);
+    transform: translate3d(5px, 0, 0) rotate(2.8deg);
   }
 }
 
 @keyframes scene-foreground-sway {
   from {
-    transform: translate3d(-1px, 0, 0) rotate(-0.7deg);
+    transform: translate3d(-3px, 0, 0) rotate(-1.5deg);
   }
   to {
-    transform: translate3d(4px, 0, 0) rotate(0.85deg);
+    transform: translate3d(7px, 0, 0) rotate(1.8deg);
   }
 }
 
 @keyframes scene-leaf-sway {
   from {
-    transform: rotate(-31deg);
+    transform: rotate(-37deg);
   }
   to {
-    transform: rotate(-24deg);
+    transform: rotate(-20deg);
   }
 }
 

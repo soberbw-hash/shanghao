@@ -144,7 +144,7 @@ export const RoomCollectionShelf = ({
             ? "松开放入收藏"
             : visibleItems.length
               ? itemCountLabel
-              : "把消息拖到书架收藏"}
+              : "把聊天消息拖到这里收藏"}
         </span>
       </button>
     </div>

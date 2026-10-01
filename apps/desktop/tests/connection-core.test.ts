@@ -190,7 +190,7 @@ test("windows executable and shortcut use approved v4 icons", () => {
 
   assert.equal(builder.includes("icon: shanghao-icon-v4.ico"), true);
   assert.equal(builder.includes("signAndEditExecutable: true"), true);
-  assert.equal(builder.includes("requestedExecutionLevel: requireAdministrator"), true);
+  assert.equal(builder.includes("requestedExecutionLevel: asInvoker"), true);
   assert.equal(builder.includes("afterPack: scripts/after-pack.cjs"), true);
   assert.equal(read("apps/desktop/scripts/after-pack.cjs").includes("writeInstallManifest"), true);
   assert.equal(installer.includes("shanghao-shortcut-v4.ico"), true);
@@ -275,15 +275,17 @@ test("installer and updater quit paths clean background surfaces", () => {
   assert.equal(installer.includes("ExecutablePath.StartsWith($$dir"), true);
 });
 
-test("room invite copies an app deep link with a visible success toast", () => {
+test("room invite copies a room website link with a visible success toast", () => {
   const hook = read("apps/desktop/src/renderer/src/hooks/useRoomState.ts");
+  const invite = read("packages/shared/src/utils/roomInvite.ts");
   const deepLink = read("apps/desktop/src/renderer/src/features/room/useRoomDeepLink.ts");
   const roomPage = read("apps/desktop/src/renderer/src/pages/RoomPage.tsx");
 
   assert.equal(hook.includes("buildChannelInviteText"), true);
   assert.equal(hook.includes("上号频道码："), false);
   assert.equal(hook.includes("服务器地址："), false);
-  assert.equal(hook.includes('new URL("shanghao://join")'), true);
+  assert.equal(hook.includes("privateRoomInvitationUrl"), true);
+  assert.equal(invite.includes("shanghao://join?"), true);
   assert.equal(hook.includes("邀请链接已复制"), true);
   assert.equal(deepLink.includes("consumeDeepLink"), true);
   assert.equal(deepLink.includes("onDeepLink"), true);

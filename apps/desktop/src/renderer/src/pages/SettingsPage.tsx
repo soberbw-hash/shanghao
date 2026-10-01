@@ -97,6 +97,7 @@ export const SettingsPage = ({ isActive = true }: { isActive?: boolean }) => {
   const [isRepairingFirewall, setIsRepairingFirewall] = useState(false);
   const [saveNotice, setSaveNotice] = useState("设置会自动保存");
   const pageRef = useRef<HTMLDivElement>(null);
+  const entranceActiveRef = useRef(false);
   const reduceMotion = usePrefersReducedMotion();
   const isSettingsReady = Boolean(settings);
 
@@ -197,20 +198,20 @@ export const SettingsPage = ({ isActive = true }: { isActive?: boolean }) => {
   }, [activeSection, isActive]);
 
   useLayoutEffect(() => {
+    const opening = isActive && !entranceActiveRef.current;
+    entranceActiveRef.current = isActive;
     if (!isActive || !isSettingsReady || !pageRef.current) return;
 
     const context = gsap.context(() => {
-      if (reduceMotion) {
-        gsap.set("[data-gsap-settings]", { clearProps: "all" });
-        return;
-      }
+      if (reduceMotion) return;
 
-      const targets =
-        "[data-gsap-settings='header'], [data-gsap-settings='nav'], [data-gsap-settings='content']";
+      const targets = opening
+        ? "[data-gsap-settings='header'], [data-gsap-settings='nav'], [data-gsap-settings='content']"
+        : "[data-gsap-settings='content']";
       gsap.set(targets, { willChange: "transform,opacity" });
       gsap.fromTo(
         targets,
-        { autoAlpha: 0, y: 12 },
+        { autoAlpha: 0, y: 6 },
         {
           autoAlpha: 1,
           y: 0,
@@ -224,7 +225,7 @@ export const SettingsPage = ({ isActive = true }: { isActive?: boolean }) => {
     }, pageRef);
 
     return () => context.revert();
-  }, [isActive, isSettingsReady, reduceMotion]);
+  }, [activeSection, isActive, isSettingsReady, reduceMotion]);
 
   if (!settings) {
     return <StartupSplashPage message="正在准备设置..." />;
@@ -293,11 +294,10 @@ export const SettingsPage = ({ isActive = true }: { isActive?: boolean }) => {
             : "已恢复修改前的 Windows 图标标记。",
         });
       })
-      .catch(() =>
+      .catch((error) =>
         pushToast({
           tone: "danger",
-          title: hidden ? "隐藏失败" : "恢复失败",
-          description: "请允许 Windows 管理员确认，然后再次操作。",
+          ...toUserFacingError(error, "settings"),
         }),
       );
   };

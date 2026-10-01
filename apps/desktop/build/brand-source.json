@@ -1,0 +1,18 @@
+{
+  "source": "docs/branding/github-avatar.png",
+  "sha256": "17397c7e686279abcea8b8d48d788a02f0a7883f5fe4a69b1405536852de5fa3",
+  "width": 1254,
+  "height": 1254,
+  "policy": "Exact approved original; resize only for ICO frames.",
+  "icoSizes": [
+    16,
+    20,
+    24,
+    32,
+    40,
+    48,
+    64,
+    128,
+    256
+  ]
+}

@@ -49,10 +49,10 @@ test("signaling reconnects use generation, one timer chain, and a stable window"
 });
 
 test("reconnect sounds are episode-scoped and initial join cannot play restored", () => {
-  const source = readRenderer("hooks/useUiFeedbackSounds.ts");
-  assert.match(source, /reconnectEpisodeActiveRef/);
-  assert.match(source, /reconnectStableTimerRef/);
+  const source = readRenderer("features/audio/roomSoundFeedback.ts");
+  assert.match(source, /this\.episode/);
+  assert.match(source, /this\.recoveryTimer/);
   assert.match(source, /}, 3_000\);/);
-  assert.match(source, /reconnectFailurePlayedRef/);
+  assert.match(source, /this\.failurePlayed/);
   assert.doesNotMatch(source, /previousConnectionRef\.current !== RoomConnectionState\.Connected/);
 });

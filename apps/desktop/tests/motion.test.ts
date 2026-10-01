@@ -141,9 +141,9 @@ test("gsap motion is scoped to intentional surfaces with the full visual present
   assert.equal(hookSource.includes("prefers-reduced-motion: reduce"), false);
   assert.equal(hookSource.includes("return appReduceMotion"), true);
   assert.equal(stylesSource.includes("[data-gsap-entry],"), false);
-  assert.equal(stylesSource.includes("@media (prefers-reduced-motion: reduce)"), false);
+  assert.equal(stylesSource.includes("@media (prefers-reduced-motion: reduce)"), true);
   assert.equal(appStoreSource.includes("startTransition"), true);
-  assert.equal(appSource.includes('initial={basePage === "room" ? { opacity: 0, y: 4 }'), true);
+  assert.equal(appSource.includes("initial={{ opacity: 0, y: 4 }}"), true);
   assert.equal(appSource.includes("animate={{ opacity: 1, y: 0 }}"), true);
   assert.equal(animalSource.includes("layered-animal"), true);
   assert.equal(animalSource.includes("avatarLayerAssets"), true);
@@ -159,29 +159,24 @@ test("gsap motion is scoped to intentional surfaces with the full visual present
   );
   assert.equal(sceneCharacterSource.includes('setMotionPhase("approaching")'), false);
   assert.equal(sceneCharacterSource.includes('setMotionPhase("turning")'), false);
-  assert.equal(sceneCharacterSource.includes('setMotionPhase("standing-up")'), true);
+  assert.equal(sceneCharacterSource.includes('setMotionPhase("standing-up")'), false);
   assert.equal(sceneCharacterSource.includes('setMotionPhase("sitting")'), true);
   assert.equal(sceneCharacterSource.includes('setMotionPhase("leaving")'), true);
   assert.equal(sceneCharacterSource.includes("WalkingAnimalSprite"), true);
   assert.equal(sceneCharacterSource.includes("applyCharacterPersonality"), true);
   assert.equal(characterPersonalitySource.includes("CHARACTER_PERSONALITIES"), true);
   assert.equal(deskAnimalSource.includes("runCycleSources"), true);
-  assert.equal(deskAnimalSource.includes("const RUN_CYCLE_FRAME_COUNT = 16"), true);
+  assert.equal(deskAnimalSource.includes("RUN_CYCLE_FRAME_COUNT"), true);
   assert.equal(deskAnimalSource.includes("data-run-cycle-frames={RUN_CYCLE_FRAME_COUNT}"), true);
   assert.equal(deskAnimalSource.includes("data-run-cycle-fps={runCycleTiming.fps}"), true);
   assert.equal(deskAnimalSource.includes("walking-animal-run-cycle-strip"), true);
-  assert.equal(stylesSource.includes("@keyframes walking-animal-run-cycle"), true);
-  assert.equal(stylesSource.includes("--run-cycle-duration: 320ms"), true);
+  assert.equal(deskAnimalSource.includes("useWalkingCycleMotion"), true);
+  assert.equal(stylesSource.includes("--run-cycle-duration: 480ms"), true);
   assert.equal(stylesSource.includes("width: 1600%"), true);
-  assert.equal(
-    stylesSource.includes(
-      "animation: walking-animal-run-cycle var(--run-cycle-duration) linear infinite",
-    ),
-    true,
-  );
+  assert.equal(stylesSource.includes("mix-blend-mode: plus-lighter"), true);
   assert.equal(deskAnimalSource.includes("preloadCharacterSpriteAssets"), true);
   assert.equal(stylesSource.includes("contain: layout paint style"), true);
-  assert.equal(stylesSource.includes("translate3d(-93.75%, 0, 0)"), true);
+  assert.equal(stylesSource.includes(".walking-animal-pose"), true);
   assert.equal(sceneCharacterSource.includes("{ opacity: 0, y: 2"), false);
   assert.equal(stylesSource.includes("will-change: background-position"), false);
   assert.equal(stylesSource.includes("@keyframes walking-animal-shadow-step"), false);
@@ -216,7 +211,14 @@ test("gsap motion is scoped to intentional surfaces with the full visual present
   assert.equal(sceneCharacterSource.includes("operationIdRef.current"), true);
   assert.equal(sceneCharacterSource.includes("routeMotion.cancel()"), true);
   assert.equal(sceneCharacterSource.includes("didStartEntryRef.current"), true);
-  assert.equal(sceneCharacterSource.includes('!wasAlreadyMoving && zone !== "restroomZone"'), true);
+  assert.equal(
+    sceneCharacterSource.includes('setMotionPhase(isFirstRoute ? "entering" : "walking")'),
+    true,
+  );
+  assert.equal(
+    sceneCharacterSource.includes('!wasAlreadyMoving && zone !== "restroomZone"'),
+    false,
+  );
   assert.equal(
     sceneCharacterSource.includes('previousZone === "restroomZone" && isSeatZone(zone)'),
     true,
@@ -324,7 +326,7 @@ test("gsap motion is scoped to intentional surfaces with the full visual present
   assert.equal(toastRegionSource.includes('layout="position"'), false);
   assert.equal(toastRegionSource.includes("opacity-75"), false);
   assert.equal(appStoreSource.includes("repeatCount"), true);
-  assert.equal(appStoreSource.includes(".slice(-3)"), true);
+  assert.equal(appStoreSource.includes("enqueueToast"), true);
   assert.equal(stylesSource.includes(".toast-card"), true);
   assert.equal(stylesSource.includes(".modal-surface"), true);
 });

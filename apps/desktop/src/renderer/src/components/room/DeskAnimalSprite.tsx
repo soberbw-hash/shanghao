@@ -1,9 +1,12 @@
-import { useState, type CSSProperties } from "react";
+import { useRef, useState, type CSSProperties } from "react";
 
 import type { BuiltInAvatarId, MemberActivity } from "@private-voice/shared";
 
 import { getAvatarSrc } from "../../utils/profile";
-import { displayRefreshRateService } from "../../features/visual-runtime/DisplayRefreshRateService";
+import {
+  RUN_CYCLE_FRAME_COUNT,
+  useWalkingCycleMotion,
+} from "../../features/voice-scene/useWalkingCycleMotion";
 import type { CharacterIdleAction } from "../../features/voice-scene/characterPersonality";
 
 import catRear from "../../assets/avatars/rear-v2/cat-rear.png";
@@ -39,19 +42,6 @@ const characterSpriteSources = [
 ];
 let characterSpritePreload: Promise<void> | undefined;
 
-const RUN_CYCLE_FRAME_COUNT = 16;
-const RUN_CYCLE_TARGET_FPS = 50;
-
-const getFrameAlignedRunCycle = (): { durationMs: number; fps: number } => {
-  const refreshRate = Math.max(30, displayRefreshRateService.getRefreshRateHz() ?? 60);
-  const displayFramesPerPose = Math.max(1, Math.round(refreshRate / RUN_CYCLE_TARGET_FPS));
-  const durationMs = (RUN_CYCLE_FRAME_COUNT * displayFramesPerPose * 1_000) / refreshRate;
-  return {
-    durationMs,
-    fps: Math.round((RUN_CYCLE_FRAME_COUNT / durationMs) * 1_000),
-  };
-};
-
 export const preloadCharacterSpriteAssets = (): Promise<void> => {
   characterSpritePreload ??= (async () => {
     // Decode sequentially while the home screen is idle so joining a room does not
@@ -75,15 +65,24 @@ export const WalkingAnimalSprite = ({
   avatarId,
   direction = "right",
   paused = false,
+  active = true,
+  strideDurationMs = 480,
 }: {
   avatarId: BuiltInAvatarId;
   direction?: "left" | "right";
   paused?: boolean;
+  active?: boolean;
+  strideDurationMs?: number;
 }) => {
   const runCycleSource = runCycleSources[avatarId] ?? runCycleSources.fox;
   const [readyRunCycleSource, setReadyRunCycleSource] = useState<string>();
-  const [runCycleTiming] = useState(getFrameAlignedRunCycle);
+  const runCycleTiming = {
+    durationMs: strideDurationMs,
+    fps: Math.round((RUN_CYCLE_FRAME_COUNT * 1_000) / strideDurationMs),
+  };
+  const cycleRef = useRef<HTMLSpanElement>(null);
   const isRunCycleReady = readyRunCycleSource === runCycleSource;
+  useWalkingCycleMotion(cycleRef, avatarId, isRunCycleReady && active && !paused, strideDurationMs);
 
   return (
     <div
@@ -91,6 +90,7 @@ export const WalkingAnimalSprite = ({
       data-run-cycle-avatar={avatarId}
       data-run-cycle-frames={RUN_CYCLE_FRAME_COUNT}
       data-run-cycle-fps={runCycleTiming.fps}
+      data-run-cycle-interpolation="compositor"
       style={
         {
           "--run-cycle-duration": `${runCycleTiming.durationMs.toFixed(2)}ms`,
@@ -106,19 +106,19 @@ export const WalkingAnimalSprite = ({
         draggable={false}
       />
       <span className="walking-animal-facing">
-        <span className="walking-animal-run-cycle">
-          <img
-            className={`walking-animal-run-cycle-strip ${isRunCycleReady ? "is-ready" : ""}`}
-            src={runCycleSource}
-            alt=""
-            draggable={false}
-            onLoad={() => setReadyRunCycleSource(runCycleSource)}
-            onError={() =>
-              setReadyRunCycleSource((current) =>
-                current === runCycleSource ? undefined : current,
-              )
-            }
-          />
+        <span ref={cycleRef} className="walking-animal-run-cycle">
+          {[0, 1].map((layer) => (
+            <span key={layer} className="walking-animal-pose">
+              <img
+                className={`walking-animal-run-cycle-strip ${isRunCycleReady ? "is-ready" : ""}`}
+                src={runCycleSource}
+                alt=""
+                draggable={false}
+                onLoad={layer === 0 ? () => setReadyRunCycleSource(runCycleSource) : undefined}
+                onError={() => setReadyRunCycleSource(undefined)}
+              />
+            </span>
+          ))}
         </span>
       </span>
     </div>

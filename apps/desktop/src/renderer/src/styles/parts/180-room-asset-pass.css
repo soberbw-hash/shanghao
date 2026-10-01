@@ -161,8 +161,8 @@
   display: none;
 }
 .room-date-calendar {
-  left: 49%;
-  top: 3%;
+  left: 50%;
+  top: 2%;
   width: 9%;
   aspect-ratio: 3 / 4;
   transform: translateX(-50%);
@@ -341,10 +341,10 @@
 .scene-service-restroom {
   z-index: 3;
   left: 9%;
-  top: 71%;
-  width: 16%;
+  top: 75%;
+  width: 13.6%;
   min-width: 0;
-  height: 30%;
+  height: 25.5%;
   border: 0;
   background: none;
   box-shadow: none;
@@ -361,10 +361,10 @@
 .scene-service-restroom.is-hovered .scene-exit-door,
 .scene-service-restroom.is-current .scene-exit-door {
   transform: scale(1.025);
-  opacity: 1;
 }
-.scene-service-restroom .scene-exit-label {
-  top: 100%;
+.scene-zone-hotspot.activity > span {
+  pointer-events: none;
+  white-space: nowrap;
 }
 .room-collection-shelf-position {
   right: 3%;

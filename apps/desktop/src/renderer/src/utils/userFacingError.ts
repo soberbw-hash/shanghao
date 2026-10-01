@@ -16,6 +16,13 @@ export const toUserFacingError = (
 ): UserFacingError => {
   const message = technicalErrorMessage(error);
   const normalized = message.toLowerCase();
+  if (normalized.includes("windows_uac_cancelled"))
+    return { title: "已取消系统授权", description: "系统设置未更改，需要时可以重新操作。" };
+  if (
+    normalized.includes("windows_system_timeout") ||
+    normalized.includes("windows_system_operation_failed")
+  )
+    return { title: "系统设置未能完成", description: "请重新检查当前状态后重试。" };
 
   if (
     context === "model" &&

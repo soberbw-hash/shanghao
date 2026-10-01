@@ -2,6 +2,9 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { app, BrowserWindow, desktopCapturer, session } from "electron";
+import profile from "./electron-isolated-profile.cjs";
+
+profile.configureIsolatedProfile(app, "screen-capture");
 
 const directory = path.dirname(fileURLToPath(import.meta.url));
 const timeout = setTimeout(() => {

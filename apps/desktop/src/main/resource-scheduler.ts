@@ -1,6 +1,15 @@
-import type { AiProcessingMode, AiRuntimePressure, AiTaskKind } from "@private-voice/shared";
+import type { AiRuntimePressure, AiTaskKind } from "@private-voice/shared";
 import { freemem } from "node:os";
-import { awaitTask, waitForTask } from "./task-cancellation";
+import { awaitTask } from "./task-cancellation";
+import { DownloadBandwidthBudget, backgroundDownloadPolicy } from "./download-bandwidth-budget";
+import { hostCapacitySampler, type HostCapacitySampler } from "./host-resource-capacity";
+import { ResourceWorkLane, type ResourceWorkKind } from "./resource-work-lane";
+import {
+  aiResourcePolicy,
+  type SchedulerState,
+  type ScheduledAiDecision,
+} from "./ai-resource-policy";
+export type { ScheduledAiDecision } from "./ai-resource-policy";
 
 export const RESOURCE_PRIORITY = {
   realtimeVoice: 900,
@@ -17,23 +26,11 @@ export const RESOURCE_PRIORITY = {
 // This is one aggregate limit shared by every active model download. Keep the
 // idle ceiling above typical home broadband while retaining explicit headroom
 // when realtime voice, screen sharing, or a game needs the network.
-export const NORMAL_DOWNLOAD_BYTES_PER_SECOND = 64 * 1024 * 1024;
-export const GAMING_DOWNLOAD_BYTES_PER_SECOND = 8 * 1024 * 1024;
-export const REALTIME_PRESSURE_DOWNLOAD_BYTES_PER_SECOND = 1024 * 1024;
-
-interface SchedulerState {
-  processingMode: AiProcessingMode;
-  gameActive: boolean;
-  pressure: AiRuntimePressure;
-  realtimePressureHigh: boolean;
-  pressureReason?: string;
-}
-
-export interface ScheduledAiDecision {
-  runnable: boolean;
-  reason?: string;
-  resourceMode: "low" | "normal";
-}
+export {
+  NORMAL_DOWNLOAD_BYTES_PER_SECOND,
+  GAMING_DOWNLOAD_BYTES_PER_SECOND,
+  REALTIME_PRESSURE_DOWNLOAD_BYTES_PER_SECOND,
+} from "./download-bandwidth-budget";
 
 export interface BackgroundDownloadDecision {
   defer: boolean;
@@ -67,6 +64,7 @@ interface AiComputeWaiter {
   priority: number;
   signal?: AbortSignal;
   onAbort: () => void;
+  timer: NodeJS.Timeout;
   resolve: (lease: AiComputeLease) => void;
   reject: (error: Error) => void;
 }
@@ -98,44 +96,62 @@ const initialPressure = (): AiRuntimePressure => ({
 
 /** One source of truth for background work yielding to realtime room features. */
 export class ResourceScheduler {
-  private downloadQueue: Promise<void> = Promise.resolve();
-  private downloadWindowStartedAt = 0;
-  private downloadWindowBytes = 0;
-  constructor(private readonly availableMemoryBytes = freemem) {}
+  private readonly bandwidth = new DownloadBandwidthBudget(() => this.backgroundDownloadDecision());
+  private readonly workLane = new ResourceWorkLane();
+  private closed = false;
+  constructor(
+    private readonly availableMemoryBytes = freemem,
+    private readonly capacity: Pick<
+      HostCapacitySampler,
+      "current" | "refresh"
+    > = hostCapacitySampler,
+    private readonly computeWaitTimeoutMs = 15 * 60_000,
+  ) {}
 
   /** Model and Runtime transfers share one bandwidth budget and pressure decision. */
   consumeDownloadBytes(bytes: number, signal?: AbortSignal): Promise<void> {
-    if (signal?.aborted) return Promise.reject(new Error("ai_task_paused"));
-    if (!Number.isSafeInteger(bytes) || bytes < 0 || bytes > 8 * 1024 * 1024)
-      return Promise.reject(new Error("invalid_download_chunk"));
-    const deadline = Date.now() + 90_000;
-    const operation = this.downloadQueue
-      .catch(() => undefined)
-      .then(async () => {
-        if (signal?.aborted) throw new Error("ai_task_paused");
-        if (Date.now() >= deadline) throw new Error("background_resource_wait_timeout");
-        while (this.backgroundDownloadDecision().defer) {
-          if (Date.now() >= deadline) throw new Error("background_resource_wait_timeout");
-          await waitForTask(500, signal);
-        }
-        if (signal?.aborted) throw new Error("ai_task_paused");
-        const now = Date.now();
-        if (now - this.downloadWindowStartedAt >= 1_000) {
-          this.downloadWindowStartedAt = now;
-          this.downloadWindowBytes = 0;
-        }
-        this.downloadWindowBytes += bytes;
-        const delay = Math.max(
-          0,
-          Math.ceil(
-            (this.downloadWindowBytes / this.downloadBytesPerSecond()) * 1_000 -
-              (now - this.downloadWindowStartedAt),
-          ),
-        );
-        if (delay) await waitForTask(delay, signal);
-      });
-    this.downloadQueue = operation;
-    return awaitTask(operation, signal);
+    return this.bandwidth.consume(bytes, signal);
+  }
+
+  async runWork<T>(
+    kind: ResourceWorkKind,
+    operation: (signal: AbortSignal) => Promise<T>,
+    signal?: AbortSignal,
+  ): Promise<T> {
+    if (kind !== "recording-export" && kind !== "recording-probe")
+      await awaitTask(this.capacity.refresh(), signal);
+    if (
+      kind !== "recording-export" &&
+      kind !== "recording-probe" &&
+      this.availableMemoryBytes() < 512 * 1024 ** 2
+    )
+      throw new Error("memory_pressure");
+    const lease = await this.workLane.acquire(kind, signal);
+    try {
+      if (lease.signal.aborted) throw new Error("ai_task_paused");
+      if (
+        kind === "recording-cleanup" &&
+        (this.backgroundDownloadDecision().defer ||
+          this.state.pressure.recordingActive ||
+          (this.capacity.current().cpuBusyRatio ?? 0) > 0.9 ||
+          this.availableMemoryBytes() < 1024 ** 3)
+      )
+        throw new Error("background_resource_pressure");
+      const result = await operation(lease.signal);
+      if (lease.signal.aborted) throw new Error("ai_task_paused");
+      return result;
+    } finally {
+      lease.release();
+    }
+  }
+
+  close(): void {
+    this.closed = true;
+    this.cancelCompute();
+    this.workLane.close();
+  }
+  refreshCapacity(signal?: AbortSignal): Promise<void> {
+    return awaitTask(this.capacity.refresh(), signal);
   }
   private activeCompute?: ActiveAiCompute;
   private readonly computeWaiters: AiComputeWaiter[] = [];
@@ -197,7 +213,7 @@ export class ResourceScheduler {
     manualRequest: boolean,
     signal?: AbortSignal,
   ): Promise<AiComputeLease> {
-    if (signal?.aborted) throw new Error("ai_task_paused");
+    if (this.closed || signal?.aborted) throw new Error("ai_task_paused");
     const id = ++this.nextComputeId;
     if (!this.activeCompute && this.computeWaiters.length === 0) {
       const decision = this.aiDecision(kind, manualRequest);
@@ -218,10 +234,20 @@ export class ResourceScheduler {
         manualRequest,
         priority: computePriority(kind, manualRequest),
         signal,
+        timer: setTimeout(() => {
+          const index = this.computeWaiters.indexOf(waiter);
+          if (index < 0) return;
+          this.computeWaiters.splice(index, 1);
+          signal?.removeEventListener("abort", waiter.onAbort);
+          this.recordComputeEvent(waiter, "cancelled", "ai_compute_wait_timeout");
+          reject(new Error("ai_compute_wait_timeout"));
+        }, this.computeWaitTimeoutMs),
         onAbort: () => {
           const index = this.computeWaiters.indexOf(waiter);
           if (index < 0) return;
           this.computeWaiters.splice(index, 1);
+          clearTimeout(waiter.timer);
+          signal?.removeEventListener("abort", waiter.onAbort);
           this.recordComputeEvent(waiter, "cancelled", "ai_task_paused");
           reject(new Error("ai_task_paused"));
         },
@@ -238,6 +264,7 @@ export class ResourceScheduler {
 
   cancelWaitingCompute(): void {
     for (const waiter of this.computeWaiters.splice(0)) {
+      clearTimeout(waiter.timer);
       waiter.signal?.removeEventListener("abort", waiter.onAbort);
       this.recordComputeEvent(waiter, "cancelled", "ai_task_paused");
       waiter.reject(new Error("ai_task_paused"));
@@ -291,6 +318,7 @@ export class ResourceScheduler {
     if (this.activeCompute) return;
     while (this.computeWaiters.length > 0) {
       const waiter = this.computeWaiters.shift()!;
+      clearTimeout(waiter.timer);
       waiter.signal?.removeEventListener("abort", waiter.onAbort);
       if (waiter.signal?.aborted) {
         this.recordComputeEvent(waiter, "cancelled", "ai_task_paused");
@@ -329,6 +357,7 @@ export class ResourceScheduler {
       "screen_share_network_pressure",
       "voice_network_pressure",
       "memory_pressure",
+      "cpu_pressure",
       "recording_priority",
     ].includes(reason)
       ? reason
@@ -348,6 +377,8 @@ export class ResourceScheduler {
 
   update(update: Partial<SchedulerState>): void {
     this.state = { ...this.state, ...update };
+    if (this.state.pressure.recordingActive || this.backgroundDownloadDecision().defer)
+      this.workLane.cancelBackgroundScan();
     if (this.activeCompute && !this.activeCompute.manualRequest) {
       const reason = this.state.realtimePressureHigh
         ? "realtime_pressure"
@@ -367,64 +398,19 @@ export class ResourceScheduler {
   }
 
   aiDecision(kind: AiTaskKind, manualRequest: boolean): ScheduledAiDecision {
-    if (this.state.realtimePressureHigh && !manualRequest) {
-      return this.denied(this.state.pressureReason ?? "realtime_pressure");
-    }
-    if (this.state.processingMode === "manual" && !manualRequest) return this.denied("manual_only");
-    if (this.state.pressure.recordingActive && !manualRequest)
-      return this.denied("recording_priority");
-    if (this.state.gameActive && this.state.processingMode === "after_game" && !manualRequest) {
-      return this.denied("waiting_for_game_to_finish");
-    }
-    const realtimeFeatureActive =
-      this.state.pressure.inVoiceRoom ||
-      this.state.pressure.screenSharing ||
-      this.state.pressure.peerRecovering;
-    const organizing = kind !== "transcription";
-    return {
-      runnable: true,
-      resourceMode:
-        this.state.processingMode === "low_resource" ||
-        this.state.gameActive ||
-        this.state.pressure.recordingActive ||
-        realtimeFeatureActive ||
-        (organizing && this.state.pressure.rendererMemoryPressure) ||
-        this.availableMemoryBytes() < 2 * 1024 ** 3
-          ? "low"
-          : "normal",
-    };
+    const decision = aiResourcePolicy(this.state, kind, manualRequest, {
+      ...this.capacity.current(),
+      availableMemoryBytes: this.availableMemoryBytes(),
+    });
+    return decision.runnable ? decision : this.denied(decision.reason ?? "resource_pressure");
   }
 
   downloadBytesPerSecond(): number {
-    if (
-      this.state.realtimePressureHigh ||
-      this.state.pressure.peerRecovering ||
-      (this.state.pressure.inVoiceRoom && this.state.pressure.screenSharing)
-    ) {
-      return REALTIME_PRESSURE_DOWNLOAD_BYTES_PER_SECOND;
-    }
-    if (this.state.gameActive || this.state.pressure.inVoiceRoom)
-      return GAMING_DOWNLOAD_BYTES_PER_SECOND;
-    return NORMAL_DOWNLOAD_BYTES_PER_SECOND;
+    return backgroundDownloadPolicy(this.state).bytesPerSecond;
   }
 
   backgroundDownloadDecision(): BackgroundDownloadDecision {
-    const bytesPerSecond = this.downloadBytesPerSecond();
-    if (this.state.realtimePressureHigh)
-      return {
-        defer: true,
-        bytesPerSecond,
-        reason: this.state.pressureReason ?? "realtime_pressure",
-      };
-    if (this.state.pressure.peerRecovering)
-      return { defer: true, bytesPerSecond, reason: "peer_recovery" };
-    if (this.state.pressure.inVoiceRoom && this.state.pressure.screenSharing)
-      return { defer: true, bytesPerSecond, reason: "voice_and_screen_share" };
-    return {
-      defer: false,
-      bytesPerSecond,
-      reason: this.state.gameActive || this.state.pressure.inVoiceRoom ? "reduced_rate" : undefined,
-    };
+    return backgroundDownloadPolicy(this.state);
   }
 
   shouldReleaseQwen(): { release: boolean; reason?: string } {

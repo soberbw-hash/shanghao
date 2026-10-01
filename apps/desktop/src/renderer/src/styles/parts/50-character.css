@@ -8,9 +8,8 @@
   contain: layout paint style;
   isolation: isolate;
   --run-facing: 1;
-  /* React aligns this fallback duration to the measured display refresh rate.
-     Position remains a separate compositor transform at display rate. */
-  --run-cycle-duration: 320ms;
+  /* Cadence follows travel speed; pose blending follows the display compositor. */
+  --run-cycle-duration: 480ms;
 }
 
 .walking-animal-left {
@@ -52,6 +51,18 @@
   inset: -5px;
   display: block;
   overflow: hidden;
+  isolation: isolate;
+}
+
+.walking-animal-pose {
+  position: absolute;
+  inset: 0;
+  mix-blend-mode: plus-lighter;
+  opacity: 1;
+}
+
+.walking-animal-pose + .walking-animal-pose {
+  opacity: 0;
 }
 
 .walking-animal-run-cycle-strip {
@@ -62,8 +73,6 @@
   max-width: none;
   user-select: none;
   transform: translate3d(0, 0, 0);
-  animation: walking-animal-run-cycle var(--run-cycle-duration) linear infinite;
-  animation-delay: var(--character-motion-delay, 0s);
   backface-visibility: hidden;
   will-change: auto;
   opacity: 0;
@@ -77,9 +86,8 @@
   will-change: transform;
 }
 
-.walking-animal.is-paused .walking-animal-run-cycle-strip {
-  animation: none;
-  transform: translate3d(0, 0, 0);
+.room-character-walking-layer.is-active .walking-animal-pose {
+  will-change: opacity;
 }
 
 .walking-animal-shadow {
@@ -92,73 +100,6 @@
   border-radius: 50%;
   background: radial-gradient(ellipse, rgba(46, 61, 84, 0.24), transparent 70%);
   filter: blur(3px);
-}
-
-@keyframes walking-animal-run-cycle {
-  0%,
-  6.249% {
-    transform: translate3d(0, 0, 0);
-  }
-  6.25%,
-  12.499% {
-    transform: translate3d(-6.25%, 0, 0);
-  }
-  12.5%,
-  18.749% {
-    transform: translate3d(-12.5%, 0, 0);
-  }
-  18.75%,
-  24.999% {
-    transform: translate3d(-18.75%, 0, 0);
-  }
-  25%,
-  31.249% {
-    transform: translate3d(-25%, 0, 0);
-  }
-  31.25%,
-  37.499% {
-    transform: translate3d(-31.25%, 0, 0);
-  }
-  37.5%,
-  43.749% {
-    transform: translate3d(-37.5%, 0, 0);
-  }
-  43.75%,
-  49.999% {
-    transform: translate3d(-43.75%, 0, 0);
-  }
-  50%,
-  56.249% {
-    transform: translate3d(-50%, 0, 0);
-  }
-  56.25%,
-  62.499% {
-    transform: translate3d(-56.25%, 0, 0);
-  }
-  62.5%,
-  68.749% {
-    transform: translate3d(-62.5%, 0, 0);
-  }
-  68.75%,
-  74.999% {
-    transform: translate3d(-68.75%, 0, 0);
-  }
-  75%,
-  81.249% {
-    transform: translate3d(-75%, 0, 0);
-  }
-  81.25%,
-  87.499% {
-    transform: translate3d(-81.25%, 0, 0);
-  }
-  87.5%,
-  93.749% {
-    transform: translate3d(-87.5%, 0, 0);
-  }
-  93.75%,
-  100% {
-    transform: translate3d(-93.75%, 0, 0);
-  }
 }
 
 .desk-animal {
@@ -560,6 +501,8 @@
   )
   .room-character-sprite {
   filter: none;
+  /* Voice-level scale belongs to the seated pose, not the moving silhouette. */
+  transform: none;
   transition:
     transform 80ms linear,
     opacity 160ms var(--ease-out-soft);
@@ -914,24 +857,24 @@
 .room-character-label.room-character-away-label {
   min-width: 0;
   width: max-content;
-  max-width: 104px;
+  max-width: 180px;
   flex-direction: row;
-  align-items: center;
-  margin-top: 3px;
-  padding: 2px 7px;
+  padding: 4px 9px;
+  transform: translateX(-50%) scale(calc(1 / var(--character-scale)));
+  transform-origin: center top;
+  font-size: 12px;
+  line-height: 18px;
 }
 
 .room-character-away-name {
   display: block;
-  max-width: 88px;
+  max-width: 132px;
   overflow: hidden;
   text-overflow: ellipsis;
 }
-
-.room-character-away-label > span:first-child {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
+.room-character-away-status {
+  color: #71839b;
+  font-size: 10px;
 }
 
 .room-character-nickname {

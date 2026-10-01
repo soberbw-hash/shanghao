@@ -68,11 +68,7 @@ test("local account presets and names survive incoming presence", () => {
   assert.ok(
     source("features/room/memberProjection.ts").includes("settings?.accountAvatarPresetId"),
   );
-  assert.ok(
-    source("app/App.tsx").includes(
-      "accountSnapshot.profile?.accountAvatarPresetId ?? settings.accountAvatarPresetId",
-    ),
-  );
+  assert.ok(source("app/App.tsx").includes("accountProfileAvatarSource(accountSnapshot.profile)"));
 });
 test("generated weather retains live effects and visibility/reduced-motion gating", () => {
   const weather = source("components/room/DynamicWeatherWindow.tsx");

@@ -67,13 +67,13 @@ export interface WindowsFirewallEnsureOutcome {
 }
 
 /**
- * Repairs only ShangHao's own program-scoped firewall rules. An inspection
- * failure is also repairable because recreating these four owned rules is
- * idempotent and does not reset adapters, DNS, Winsock, or third-party rules.
+ * Startup only inspects. A system write requires an explicit user request;
+ * read failures must never cause an unsolicited UAC prompt.
  */
 export const ensureWindowsFirewallRulesWithOutcome = async (
   readStatus: () => Promise<WindowsIntegrationStatus["firewall"]> = readWindowsFirewallStatus,
   repair: () => Promise<WindowsIntegrationStatus["firewall"]> = repairWindowsFirewallRules,
+  userRequestedRepair = false,
 ): Promise<WindowsFirewallEnsureOutcome> => {
   let current: WindowsIntegrationStatus["firewall"] | undefined;
   let inspectionFailed = false;
@@ -82,9 +82,15 @@ export const ensureWindowsFirewallRulesWithOutcome = async (
   } catch {
     inspectionFailed = true;
   }
-  if (current?.healthy) {
+  if (current?.healthy || !userRequestedRepair) {
     return {
-      status: current,
+      status: current ?? {
+        supported: platformService.isWindows,
+        healthy: false,
+        ruleCount: 0,
+        expectedRuleCount: 4,
+        message: "无法读取防火墙规则，请在诊断页重新检查。",
+      },
       repairAttempted: false,
       repaired: false,
       inspectionFailed,

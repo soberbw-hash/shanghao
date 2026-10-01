@@ -13,9 +13,10 @@ import {
 } from "@private-voice/shared";
 
 import { PrivateRoomBrowser } from "../components/room/PrivateRoomBrowser";
+import { AccountAvatar } from "../components/account/AccountAvatar";
 import { Input } from "../components/base/Input";
 import { BrandMark } from "../components/brand/BrandMark";
-import { ACCOUNT_AVATAR_PRESETS } from "../features/account/accountAvatarPresets";
+import { accountProfileAvatarSource } from "../features/account/accountAvatarPresets";
 import { StartupSplashPage } from "../components/status/StartupSplashPage";
 import { motionCurve, motionDuration, motionEase } from "../features/motion/motionSystem";
 import { getRemoteAudioMixer } from "../features/audio/RemoteAudioMixer";
@@ -77,10 +78,6 @@ export const HomePage = () => {
   const isSettingsReady = Boolean(settings);
   const savedNickname = settings?.nickname;
   const savedAvatarId = settings?.avatarId;
-  const accountAvatarPreset = ACCOUNT_AVATAR_PRESETS.find(
-    (preset) =>
-      preset.id === (accountProfile?.accountAvatarPresetId ?? settings?.accountAvatarPresetId),
-  );
   const savedServerAddress = settings?.relayServerUrl;
 
   useEffect(() => {
@@ -464,13 +461,12 @@ export const HomePage = () => {
           <div data-gsap-entry="form" className="entry-profile-form flex min-w-0 flex-col gap-4">
             {accountProfile ? (
               <div className="entry-account-identity" aria-label="当前账号">
-                <span className="entry-account-avatar">
-                  {accountProfile.avatarUrl || accountAvatarPreset ? (
-                    <img src={accountProfile.avatarUrl ?? accountAvatarPreset?.source} alt="" />
-                  ) : (
-                    accountProfile.displayName.slice(0, 1).toUpperCase()
-                  )}
-                </span>
+                <AccountAvatar
+                  className="entry-account-avatar"
+                  name={accountProfile.displayName}
+                  src={accountProfile.avatarUrl}
+                  fallbackSrc={accountProfileAvatarSource(accountProfile)}
+                />
                 <span>
                   <strong>{accountProfile.displayName}</strong>
                   <small>@{accountProfile.username}</small>

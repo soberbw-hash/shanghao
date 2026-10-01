@@ -14,6 +14,7 @@ export interface WindowsCommandResult {
 export const runWindowsPowerShell = async (
   script: string,
   environment: Record<string, string | undefined> = {},
+  timeoutMs = 20_000,
 ): Promise<WindowsCommandResult> => {
   if (!platformService.isWindows) {
     throw new Error("windows_command_not_supported");
@@ -31,7 +32,7 @@ export const runWindowsPowerShell = async (
     ["-NoLogo", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", script],
     {
       encoding: "utf8",
-      timeout: 20_000,
+      timeout: timeoutMs,
       maxBuffer: 2 * 1024 * 1024,
       windowsHide: true,
       env: { ...process.env, ...environment },

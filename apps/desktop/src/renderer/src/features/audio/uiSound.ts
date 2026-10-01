@@ -1,4 +1,4 @@
-import { createUISFX, type CueName, type PackName, type UISFXPlayer } from "uisfx";
+import { createUISFX, type CueName, type PackName, type PlayingSFX, type UISFXPlayer } from "uisfx";
 
 import { writeRendererLog } from "../../utils/logger";
 
@@ -8,6 +8,10 @@ export type UiSound =
   | "leave-room"
   | "member-join"
   | "member-leave"
+  | "away"
+  | "return"
+  | "member-away"
+  | "member-return"
   | "knock-bell"
   | "popup-open"
   | "copy-success"
@@ -70,6 +74,10 @@ const soundRecipes: Record<Exclude<UiSound, "knock-bell">, UiSoundRecipe> = {
   "leave-room": { cue: "sleep", pack: "organic", volume: uiGain.standard, cooldownMs: 250 },
   "member-join": { cue: "connect", pack: "organic", volume: uiGain.standard, cooldownMs: 220 },
   "member-leave": { cue: "disconnect", pack: "organic", volume: uiGain.standard, cooldownMs: 220 },
+  away: { cue: "sleep", pack: "soft", volume: uiGain.standard, cooldownMs: 250 },
+  return: { cue: "wake", pack: "soft", volume: uiGain.standard, cooldownMs: 250 },
+  "member-away": { cue: "sleep", pack: "soft", volume: uiGain.subtle, cooldownMs: 250 },
+  "member-return": { cue: "wake", pack: "soft", volume: uiGain.subtle, cooldownMs: 250 },
   "popup-open": { cue: "open", pack: "glass", volume: uiGain.standard, cooldownMs: 90 },
   "copy-success": { cue: "copy", pack: "glass", volume: uiGain.standard, cooldownMs: 120 },
   "device-switch": { cue: "connect", pack: "studio", volume: uiGain.standard, cooldownMs: 160 },
@@ -125,6 +133,12 @@ const soundRecipes: Record<Exclude<UiSound, "knock-bell">, UiSoundRecipe> = {
 const preloadSounds: readonly Exclude<UiSound, "knock-bell">[] = [
   "button-click",
   "popup-open",
+  "enter-room",
+  "leave-room",
+  "member-join",
+  "member-leave",
+  "away",
+  "return",
   "send-message",
   "receive-message",
   "mic-on",
@@ -136,7 +150,9 @@ const preloadSounds: readonly Exclude<UiSound, "knock-bell">[] = [
 
 const knockUrl = new URL("../../assets/sounds/knock-bell.wav", import.meta.url).href;
 
-let player: UISFXPlayer | undefined;
+const players = new Map<PackName, UISFXPlayer>();
+const activeSounds: PlayingSFX[] = [];
+let prepared = false;
 let audioContext: SinkRoutableAudioContext | undefined;
 let knockTemplate: SinkRoutableAudioElement | undefined;
 const masterVolume = 0.72;
@@ -174,21 +190,23 @@ const routeContextToPreferredOutput = async (): Promise<boolean> => {
   }
 };
 
-const ensurePlayer = (): UISFXPlayer | undefined => {
-  if (player) return player;
+const ensurePlayer = (pack: PackName = "studio"): UISFXPlayer | undefined => {
+  const existing = players.get(pack);
+  if (existing) return existing;
   if (typeof window === "undefined" || typeof window.AudioContext !== "function") return undefined;
   try {
-    audioContext = new window.AudioContext({
+    audioContext ??= new window.AudioContext({
       latencyHint: "interactive",
     }) as SinkRoutableAudioContext;
-    player = createUISFX({
+    const player = createUISFX({
       context: audioContext,
-      pack: "studio",
+      pack,
       volume: masterVolume,
       enabled: true,
       maxVoices: 6,
       cooldownMs: 40,
     });
+    players.set(pack, player);
     void routeContextToPreferredOutput();
     return player;
   } catch (error) {
@@ -248,9 +266,22 @@ export const unlockUiSounds = async (): Promise<boolean> => {
 export const prepareUiSounds = (): void => {
   const activePlayer = ensurePlayer();
   ensureKnockTemplate();
-  if (!activePlayer) return;
-  const cues = [...new Set(preloadSounds.map((sound) => soundRecipes[sound].cue))];
-  void activePlayer.preload(cues);
+  if (!activePlayer || prepared) return;
+  prepared = true;
+  const groups = new Map<PackName, Set<CueName>>();
+  for (const sound of preloadSounds) {
+    const recipe = soundRecipes[sound];
+    const cues = groups.get(recipe.pack) ?? new Set<CueName>();
+    cues.add(recipe.cue);
+    groups.set(recipe.pack, cues);
+  }
+  // A fixed player per pack prevents asynchronous preload from warming the
+  // wrong pack when a click changes it. All players share one output context.
+  for (const [pack, cues] of groups) {
+    void ensurePlayer(pack)
+      ?.preload([...cues])
+      .catch(() => undefined);
+  }
 };
 
 export const playUiSound = (sound: UiSound): void => {
@@ -261,14 +292,21 @@ export const playUiSound = (sound: UiSound): void => {
       return;
     }
     const recipe = soundRecipes[sound];
-    const activePlayer = ensurePlayer();
+    const activePlayer = ensurePlayer(recipe.pack);
     if (!activePlayer) return;
-    activePlayer.setPack(recipe.pack);
-    activePlayer.play(recipe.cue, {
+    const playback = activePlayer.play(recipe.cue, {
       volume: recipe.volume,
       cooldownMs: recipe.cooldownMs,
       retrigger: sound === "receive-message" ? "overlap" : "restart",
     });
+    if (playback && !activeSounds.includes(playback)) {
+      activeSounds.push(playback);
+      if (activeSounds.length > 6) activeSounds.shift()?.stop();
+      void playback.ended.then(() => {
+        const index = activeSounds.indexOf(playback);
+        if (index >= 0) activeSounds.splice(index, 1);
+      });
+    }
   } catch {
     // UI feedback must never block room, recording, or signaling work.
   }
@@ -280,5 +318,6 @@ export const playGenericPressUnlessHandled = (clickStartedAt: number): void => {
 };
 
 export const stopAllUiSounds = (): void => {
-  player?.stopAll();
+  players.forEach((player) => player.stopAll());
+  activeSounds.length = 0;
 };

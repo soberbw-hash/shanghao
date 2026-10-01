@@ -8,17 +8,7 @@ import {
   useSyncExternalStore,
   type ReactNode,
 } from "react";
-import {
-  ExternalLink,
-  Link2,
-  LoaderCircle,
-  Music2,
-  Pause,
-  RotateCcw,
-  Settings2,
-  Send,
-  Sparkles,
-} from "lucide-react";
+import { ExternalLink, Link2, LoaderCircle, RotateCcw, Settings2, Send } from "lucide-react";
 import { gsap } from "gsap";
 
 import {
@@ -30,6 +20,7 @@ import {
 } from "@private-voice/shared";
 
 import { ChatAccountAvatar } from "./ChatAccountAvatar";
+import { QuickMessageRow } from "./QuickMessageRow";
 import {
   findFirstMessageUrl,
   formatCompactUrl,
@@ -51,6 +42,7 @@ import { Input } from "../base/Input";
 import { usePrefersReducedMotion } from "../../hooks/usePrefersReducedMotion";
 import { isSupportedChatImageFile } from "../../utils/chatImage";
 import { ChatImageLightbox } from "./ChatImageLightbox";
+import { RoomAiIcon } from "../room/RoomAiIcon";
 
 const urlPattern = /https?:\/\/[^\s<，。！？；：）】》」]+/gi;
 const trailingUrlPunctuation = /[.,!?，。！？;；:：)\]}>》」】]+$/;
@@ -316,65 +308,65 @@ export const TemporaryChatPanel = ({
     const isSystemMessage = latestMessage?.kind === "system";
     const copy = latest.querySelector<HTMLElement>(".chat-message-copy");
     const avatar = latest.querySelector<HTMLElement>(".chat-message-avatar");
-    const timeline = gsap.timeline({ defaults: { overwrite: true, force3D: true } });
-
-    timeline.fromTo(
-      latest,
-      {
-        autoAlpha: 0,
-        x: isSystemMessage ? 0 : latestMessage?.isLocal ? 10 : -8,
-        y: isSystemMessage ? 3 : 6,
-        scale: isSystemMessage ? 0.99 : 0.94,
-        transformOrigin: isSystemMessage ? "50% 100%" : "0% 65%",
-      },
-      {
-        autoAlpha: 1,
-        x: 0,
-        y: 0,
-        scale: 1,
-        duration: motionDuration.message,
-        ease: motionEase.jelly,
-        clearProps: "transform,opacity,visibility",
-      },
-    );
-
-    if (copy && !isSystemMessage) {
+    const context = gsap.context(() => {
+      const timeline = gsap.timeline({ defaults: { overwrite: true, force3D: true } });
       timeline.fromTo(
-        copy,
+        latest,
         {
-          x: latestMessage?.isLocal ? 7 : -5,
-          scale: 0.96,
-          transformOrigin: "0% 65%",
+          autoAlpha: isSystemMessage ? 1 : 0,
+          x: isSystemMessage ? 0 : latestMessage?.isLocal ? 10 : -8,
+          y: isSystemMessage ? 3 : 6,
+          scale: isSystemMessage ? 0.99 : 0.94,
+          transformOrigin: isSystemMessage ? "50% 100%" : "0% 65%",
         },
-        {
-          x: 0,
-          scale: 1,
-          duration: motionDuration.message * 0.9,
-          ease: motionEase.jelly,
-          clearProps: "transform",
-        },
-        0,
-      );
-    }
-
-    if (avatar && !isSystemMessage) {
-      timeline.fromTo(
-        avatar,
-        { autoAlpha: 0, scale: 0.78, y: 4 },
         {
           autoAlpha: 1,
-          scale: 1,
+          x: 0,
           y: 0,
-          duration: motionDuration.icon,
+          scale: 1,
+          duration: motionDuration.message,
           ease: motionEase.jelly,
           clearProps: "transform,opacity,visibility",
         },
-        0.035,
       );
-    }
-    return () => {
-      timeline.kill();
-    };
+
+      if (copy && !isSystemMessage) {
+        timeline.fromTo(
+          copy,
+          {
+            x: latestMessage?.isLocal ? 7 : -5,
+            scale: 0.96,
+            transformOrigin: "0% 65%",
+          },
+          {
+            x: 0,
+            scale: 1,
+            duration: motionDuration.message * 0.9,
+            ease: motionEase.jelly,
+            clearProps: "transform",
+          },
+          0,
+        );
+      }
+
+      if (avatar && !isSystemMessage) {
+        timeline.fromTo(
+          avatar,
+          { autoAlpha: 0, scale: 0.78, y: 4 },
+          {
+            autoAlpha: 1,
+            scale: 1,
+            y: 0,
+            duration: motionDuration.icon,
+            ease: motionEase.jelly,
+            clearProps: "transform,opacity,visibility",
+          },
+          0.035,
+        );
+      }
+    }, list);
+    // Restore inline styles when message updates interrupt the entry animation.
+    return () => context.revert();
   }, [messages, shouldReduceMotion]);
 
   const animateSendFeedback = (source?: HTMLElement) => {
@@ -588,85 +580,24 @@ export const TemporaryChatPanel = ({
             ) : null}
           </div>
           <div className="chat-quick-actions flex min-w-0 flex-col items-end gap-1">
-            <div className="chat-quick-replies flex justify-end gap-1">
-              {quickMessages.map((item, index) =>
-                (() => {
-                  const isPlayingMusic =
-                    item.preset.mediaType === "music" &&
-                    audioSnapshot.soundId === item.preset.soundId &&
-                    audioSnapshot.status === "playing";
-                  const isPausedMusic =
-                    item.preset.mediaType === "music" &&
-                    audioSnapshot.soundId === item.preset.soundId &&
-                    audioSnapshot.status === "paused";
-                  return (
-                    <button
-                      key={`${item.preset.id}-${index}`}
-                      type="button"
-                      disabled={
-                        !canSend || (isQuickSendCoolingDown && !isPlayingMusic && !isPausedMusic)
-                      }
-                      className="chat-quick-reply interactive-surface inline-flex items-center gap-1.5 rounded-[9px] border border-[rgba(220,230,242,0.8)] bg-white font-medium text-[#52657d] disabled:opacity-35 hover:bg-[#f5f7fb]"
-                      onClick={(event) => handleQuickSend(item, event.currentTarget)}
-                      title={
-                        item.shortcut
-                          ? `${item.preset.content} · ${item.shortcut}`
-                          : item.preset.content
-                      }
-                    >
-                      {item.preset.mediaType === "music" ? (
-                        isPlayingMusic ? (
-                          <Pause
-                            className="h-3.5 w-3.5 shrink-0 text-[#4D9BF3]"
-                            aria-hidden="true"
-                          />
-                        ) : (
-                          <Music2
-                            className="h-3.5 w-3.5 shrink-0 text-[#4D9BF3]"
-                            aria-hidden="true"
-                          />
-                        )
-                      ) : null}
-                      <span className="whitespace-nowrap">{item.preset.label}</span>
-                    </button>
-                  );
-                })(),
-              )}
-            </div>
+            <QuickMessageRow
+              items={quickMessages}
+              canSend={canSend}
+              coolingDown={isQuickSendCoolingDown}
+              soundId={audioSnapshot.soundId}
+              status={audioSnapshot.status}
+              onSend={handleQuickSend}
+            />
             {quickMusicItems.length ? (
-              <div
-                className="chat-quick-music-row flex justify-end gap-1"
-                aria-label="音乐快捷消息"
-              >
-                {quickMusicItems.map((item, index) => {
-                  const isPlayingMusic =
-                    audioSnapshot.soundId === item.preset.soundId &&
-                    audioSnapshot.status === "playing";
-                  const isPausedMusic =
-                    audioSnapshot.soundId === item.preset.soundId &&
-                    audioSnapshot.status === "paused";
-                  return (
-                    <button
-                      key={`${item.preset.id}-${index}`}
-                      type="button"
-                      disabled={
-                        !canSend || (isQuickSendCoolingDown && !isPlayingMusic && !isPausedMusic)
-                      }
-                      className="chat-quick-reply chat-quick-music interactive-surface inline-flex items-center gap-1 rounded-[9px] border bg-white font-medium disabled:opacity-35"
-                      aria-label={`播放音乐：${item.preset.label}`}
-                      title={`播放音乐：${item.preset.label}`}
-                      onClick={(event) => handleQuickSend(item, event.currentTarget)}
-                    >
-                      {isPlayingMusic ? (
-                        <Pause className="h-3 w-3 shrink-0" aria-hidden="true" />
-                      ) : (
-                        <Music2 className="h-3 w-3 shrink-0" aria-hidden="true" />
-                      )}
-                      <span className="whitespace-nowrap">{item.preset.label}</span>
-                    </button>
-                  );
-                })}
-              </div>
+              <QuickMessageRow
+                music
+                items={quickMusicItems}
+                canSend={canSend}
+                coolingDown={isQuickSendCoolingDown}
+                soundId={audioSnapshot.soundId}
+                status={audioSnapshot.status}
+                onSend={handleQuickSend}
+              />
             ) : null}
           </div>
         </div>
@@ -681,7 +612,7 @@ export const TemporaryChatPanel = ({
                 title="打开上号 AI"
                 onClick={onOpenRoomAi}
               >
-                <Sparkles className="h-4 w-4" strokeWidth={1.9} aria-hidden="true" />
+                <RoomAiIcon />
               </button>
             </div>
           ) : null}
@@ -736,7 +667,7 @@ export const TemporaryChatPanel = ({
                           index === visibleMessages.length - 1 ? latestMessageElementRef : undefined
                         }
                         data-gsap-chat-message
-                        className="chat-system-message mx-auto w-fit max-w-[90%] rounded-full bg-[#f5f7fb] px-3 py-1 text-center text-[12px] leading-4 text-[#718096]"
+                        className="chat-system-message mx-auto w-fit max-w-[90%] rounded-full px-3 py-1 text-center text-[12px] leading-4"
                         onContextMenu={(event) => {
                           event.preventDefault();
                           copyText(message.content);
@@ -758,28 +689,24 @@ export const TemporaryChatPanel = ({
                         ) : (
                           <ChatAccountAvatar message={message} />
                         )}
-                        <div className="chat-message-copy flex min-w-0 max-w-[82%] flex-col items-start">
-                          {!isGrouped || (message.isLocal && onRecall) ? (
-                            <span
-                              className={`chat-message-meta mb-0.5 flex min-w-0 items-center gap-2 px-1 ${isGrouped ? "is-grouped" : ""}`}
-                            >
-                              {!isGrouped ? (
-                                <span className="chat-message-name min-w-0 truncate text-[12px] font-medium leading-4 text-[#718096]">
-                                  {message.nickname}
-                                </span>
-                              ) : null}
-                              {message.isLocal && onRecall ? (
-                                <button
-                                  type="button"
-                                  className="chat-message-recall-button inline-flex items-center gap-1 text-[11px] text-[#8a9ab0] hover:text-[#3974d8]"
-                                  onClick={() => void onRecall(message.id)}
-                                  title="撤回这条消息"
-                                >
-                                  <RotateCcw className="h-3 w-3" />
-                                  撤回
-                                </button>
-                              ) : null}
+                        <div className="chat-message-copy relative flex min-w-0 max-w-[82%] flex-col items-start">
+                          {!isGrouped ? (
+                            <span className="chat-message-meta mb-0.5 flex min-w-0 items-center gap-2 px-1">
+                              <span className="chat-message-name min-w-0 truncate text-[12px] font-medium leading-4 text-[#718096]">
+                                {message.nickname}
+                              </span>
                             </span>
+                          ) : null}
+                          {message.isLocal && onRecall ? (
+                            <button
+                              type="button"
+                              className="chat-message-recall-button inline-flex items-center gap-1 text-[11px] text-[#8a9ab0] hover:text-[#3974d8]"
+                              onClick={() => void onRecall(message.id)}
+                              title="撤回这条消息"
+                            >
+                              <RotateCcw className="h-3 w-3" aria-hidden="true" />
+                              撤回
+                            </button>
                           ) : null}
                           {message.image ? (
                             <button

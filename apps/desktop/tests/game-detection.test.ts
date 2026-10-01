@@ -95,7 +95,7 @@ test("repository documentation lists every supported game", () => {
     path.resolve(process.cwd(), "../../docs/supported-activities.md"),
     "utf8",
   );
-  assert.equal(SUPPORTED_GAME_NAMES.length, 50);
+  assert.equal(SUPPORTED_GAME_NAMES.length, 60);
   for (const gameName of SUPPORTED_GAME_NAMES) {
     assert.equal(
       documentation.includes(gameName),
@@ -395,17 +395,12 @@ test("bundled monitor artwork stays valid and newly detected games use a readabl
     assert.ok(statSync(path.join(artworkDirectory, filename)).size > 500);
   }
 
-  assert.equal(componentSource.includes('artwork?.layout === "scene"'), true);
+  assert.equal(componentSource.includes('artwork?.layout !== "scene"'), true);
   assert.equal(componentSource.includes("Partial<Record<SupportedGameName"), true);
   assert.equal(componentSource.includes("scene-game-monitor-label"), false);
-  assert.equal(
-    componentSource.indexOf("displayedArtwork ? (") <
-      componentSource.indexOf(") : runtimeIconDataUrl ? ("),
-    true,
-  );
-  assert.equal(componentSource.includes('layout === "scene" ? null'), true);
-  assert.equal(componentSource.includes("data-game-scene-tone"), true);
-  assert.equal(componentSource.includes("data-game-scan"), true);
+  assert.equal(componentSource.includes("<GameMonitorScene gameName={gameName}"), true);
+  assert.equal(componentSource.includes("scene-game-identity"), true);
+  assert.equal(componentSource.includes("repeat: -1"), false);
   assert.equal(componentSource.includes("shouldReduceMotion"), true);
   assert.equal(artworkGuide.includes("110 × 70 CSS px"), true);
   assert.equal(artworkGuide.includes("官方素材查找提示词"), true);
@@ -430,4 +425,29 @@ test("bundled monitor artwork stays valid and newly detected games use a readabl
     true,
   );
   assert.equal(iconResolverSource.includes("private readonly cache"), true);
+});
+
+test("League lobby processes and popular additions match without generic executable false positives", () => {
+  for (const process of ["LeagueClient", "LeagueClientUx.exe", "League of Legends"]) {
+    assert.equal(matchKnownGame(snapshot(process)), "英雄联盟");
+  }
+  for (const [process, name] of [
+    ["RocketLeague", "火箭联盟"],
+    ["Terraria", "泰拉瑞亚"],
+    ["Hades2", "哈迪斯"],
+    ["Warframe.x64", "Warframe"],
+    ["Destiny2", "命运 2"],
+    ["helldivers2", "绝地潜兵 2"],
+    ["Marvel-Win64-Shipping", "漫威争锋"],
+    ["DeadByDaylight-Win64-Shipping", "黎明杀机"],
+    ["Lethal Company", "致命公司"],
+    ["REPO", "R.E.P.O."],
+    ["GTA5_Enhanced", "GTA V"],
+  ]) {
+    assert.equal(matchKnownGame(snapshot(process)), name);
+  }
+  assert.equal(matchKnownGame(snapshot("World-Win64-Shipping", "Other game")), undefined);
+  assert.equal(matchKnownGame(snapshot("World-Win64-Shipping", "王者荣耀世界")), "王者荣耀世界");
+  assert.equal(matchKnownGame(snapshot("Discovery", "Unrelated app")), undefined);
+  assert.equal(matchKnownGame(snapshot("Discovery", "THE FINALS")), "终极角逐");
 });

@@ -8,7 +8,7 @@
 
 进房先看见人。谁在打游戏、听歌、接电话，谁暂时离开；聊天、分享的画面和昨晚的录音，也都在这间房里。
 
-[下载最新版](https://github.com/soberbw-hash/shanghao/releases/latest) · [看更新记录](./docs/release-notes/v3.4.0.md) · [看技术结构](#声音到底经过了什么)
+[下载最新版](https://github.com/soberbw-hash/shanghao/releases/latest) · [看更新记录](./docs/release-notes/v3.4.1.md) · [看技术结构](#声音到底经过了什么)
 
 ![上号二号房：人物、天气、日历、聊天与语音控制](./docs/readme/hero-room.webp)
 
@@ -137,7 +137,7 @@ React/Zustand 管房间界面与状态，Electron 主进程管窗口、设备和
 
 ## 下载与使用
 
-当前仓库版本为 **3.4.0**，正式支持 **Windows 10 / 11 x64**。[到 GitHub Releases 下载最新版](https://github.com/soberbw-hash/shanghao/releases/latest)，同页提供安装包、自动更新元数据与 SHA-256 校验文件。[查看 v3.4.0 更新公告](./docs/release-notes/v3.4.0.md)。安装后可通过 CloudBase 手机号验证注册并登录账号，创建私人房间或通过六位频道号找到朋友，再明确加入同一房间。
+当前仓库版本为 **3.4.1**，正式支持 **Windows 10 / 11 x64**。[到 GitHub Releases 下载最新版](https://github.com/soberbw-hash/shanghao/releases/latest)，同页提供安装包、自动更新元数据与 SHA-256 校验文件。[查看 v3.4.1 更新公告](./docs/release-notes/v3.4.1.md)。安装后可通过 CloudBase 手机号验证注册并登录账号，创建私人房间或通过六位频道号找到朋友，再明确加入同一房间。
 
 录音、模型和已下载资源主要保存在本机。更新可在后台下载，安装并重启必须由用户点击。自行部署可参照 [Relay](./docs/deploy-relay-server.md)、[TURN](./docs/deploy-turn.md) 与[网络修复](./docs/network-repair.md)。
 
