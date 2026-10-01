@@ -29,6 +29,11 @@ versioned installer and its checksum file, and fetch the first bytes of the
 installer to confirm downloads work. Keep earlier versioned downloads available
 for existing clients; do not use `--prune`.
 
+Homepage builds exclude `public/downloads`. Historical installers may remain
+there locally, but are not recopied into `dist` or reuploaded with each homepage
+deployment. Versioned downloads are uploaded separately from `.release-cache`;
+excluding them from the homepage build does not delete any local or hosted file.
+
 If GitHub's anonymous API is rate limited, run `release:prepare` with a
 temporary `GH_TOKEN` from the existing `gh` login. The script reads it only
 from the process environment; never save the token in this repository.

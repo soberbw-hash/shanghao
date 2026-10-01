@@ -1,4 +1,12 @@
-import { copyFile, mkdir, readFile, writeFile } from "node:fs/promises";
+import { copyFile, cp, mkdir, readFile, readdir, writeFile } from "node:fs/promises";
+
+// Versioned installers are deployed separately after checksum verification.
+// Keep local historical downloads intact without copying them into homepage builds.
+for (const entry of await readdir("public", { withFileTypes: true })) {
+  if (entry.name === "downloads") continue;
+  if (entry.isSymbolicLink()) throw new Error("Public assets cannot be symbolic links.");
+  await cp(`public/${entry.name}`, `dist/${entry.name}`, { recursive: true });
+}
 
 const escapeHtml = (value) =>
   String(value).replace(
