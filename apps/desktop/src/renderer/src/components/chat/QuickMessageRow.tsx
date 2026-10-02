@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { ChevronRight, Music2, Pause } from "lucide-react";
+import { Music2, Pause } from "lucide-react";
 import type { QuickMessagePreset } from "@private-voice/shared";
 
 export interface QuickMessageRowItem {
@@ -33,23 +33,16 @@ export const QuickMessageRow = ({
   onSend: (item: QuickMessageRowItem, source: HTMLButtonElement) => void;
 }) => {
   const root = useRef<HTMLDivElement>(null);
+  const font = useRef("");
   const [width, setWidth] = useState(0);
-  const [page, setPage] = useState(0);
+  const isEmpty = items.length === 0;
   const [fontRevision, setFontRevision] = useState(0);
   useEffect(() => {
     let active = true;
-    const button = root.current?.querySelector("button");
-    const style = getComputedStyle(button ?? root.current!);
     void document.fonts
-      .load(
-        `${style.fontWeight} ${style.fontSize} ${style.fontFamily}`,
-        items.map((item) => item.preset.label).join(" "),
-      )
-      .then(() => document.fonts.ready)
+      .load(font.current, items.map((item) => item.preset.label).join(" "))
       .catch(() => undefined)
-      .then(() => {
-        if (active) setFontRevision((revision) => revision + 1);
-      });
+      .then(() => active && setFontRevision((revision) => revision + 1));
     return () => {
       active = false;
     };
@@ -57,19 +50,21 @@ export const QuickMessageRow = ({
   useLayoutEffect(() => {
     const element = root.current;
     if (!element) return;
+    const style = getComputedStyle(element.querySelector("button") ?? element);
+    font.current = `${style.fontWeight} ${style.fontSize} ${style.fontFamily}`;
+    setFontRevision((revision) => revision + 1);
     setWidth(element.getBoundingClientRect().width);
     const observer = new ResizeObserver(([entry]) => {
       if (entry) setWidth(entry.contentRect.width);
     });
     observer.observe(element);
     return () => observer.disconnect();
-  }, []);
-  const pages = useMemo(() => {
+  }, [music, isEmpty]);
+  const visibleItems = useMemo(() => {
     const context = document.createElement("canvas").getContext("2d");
-    if (!context || !width || !fontRevision) return [items.slice(0, 1)];
-    const style = getComputedStyle(root.current!.querySelector("button") ?? root.current!);
-    const cell = parseFloat(style.fontSize) || 12;
-    context.font = `${style.fontWeight} ${cell}px ${style.fontFamily}`;
+    if (!context || !width || !fontRevision) return items.slice(0, 1);
+    const cell = parseFloat(font.current.split(" ")[1] ?? "12");
+    context.font = font.current;
     const costs = items.map(
       ({ preset }) =>
         Math.max(
@@ -80,29 +75,25 @@ export const QuickMessageRow = ({
         (music ? 16 : 0) +
         6,
     );
-    const needsPages = costs.reduce((sum, cost) => sum + cost, -6) > width;
-    const budget = Math.max(1, (width - (needsPages ? 36 : 0)) / cell);
-    const result: QuickMessageRowItem[][] = [];
+    const budget = (width + 6) / cell;
+    const result: QuickMessageRowItem[] = [];
     let used = 0;
     for (let index = 0; index < items.length; index += 1) {
       const cost = costs[index]! / cell;
-      if (!result.length || (used + cost > budget && result.at(-1)!.length)) {
-        result.push([]);
-        used = 0;
-      }
-      result.at(-1)!.push(items[index]!);
+      if (used + cost > budget) break;
+      result.push(items[index]!);
       used += cost;
     }
-    return result.length ? result : [[]];
+    return result;
   }, [items, music, width, fontRevision]);
-  const currentPage = page % pages.length;
   return (
     <div
       ref={root}
       className={music ? "chat-quick-music-row" : "chat-quick-replies"}
+      style={!fontRevision ? { visibility: "hidden" } : undefined}
       aria-label={music ? "音乐快捷消息" : "语音快捷消息"}
     >
-      {pages[currentPage]!.map((item, index) => {
+      {visibleItems.map((item, index) => {
         const playing = soundId === item.preset.soundId && status === "playing";
         const resumable = music && soundId === item.preset.soundId && status === "paused";
         return (
@@ -111,7 +102,7 @@ export const QuickMessageRow = ({
             type="button"
             className={`chat-quick-reply interactive-surface inline-flex items-center gap-1 rounded-[9px] border bg-white font-medium disabled:opacity-35 ${music ? "chat-quick-music" : ""}`}
             disabled={!canSend || (coolingDown && !playing && !resumable)}
-            title={`${item.preset.content}${item.shortcut ? ` · ${item.shortcut}` : ""}`}
+            title={`${item.preset.content}${item.enabled && item.shortcut ? ` · ${item.shortcut}` : ""}`}
             onClick={(event) => onSend(item, event.currentTarget)}
           >
             {music ? (
@@ -125,17 +116,6 @@ export const QuickMessageRow = ({
           </button>
         );
       })}
-      {pages.length > 1 ? (
-        <button
-          type="button"
-          className="chat-quick-reply chat-quick-more interactive-surface rounded-[9px] border bg-white"
-          onClick={() => setPage(currentPage + 1)}
-          aria-label={`查看更多${music ? "音乐" : "语音"}，当前第 ${currentPage + 1} / ${pages.length} 页`}
-          title={`更多 · ${currentPage + 1}/${pages.length}`}
-        >
-          <ChevronRight className="size-3.5" aria-hidden="true" />
-        </button>
-      ) : null}
     </div>
   );
 };

@@ -1,0 +1,40 @@
+@container (min-width: 740px) {
+  .account-settings-avatar-picker {
+    grid-template-columns: repeat(16, minmax(0, 1fr));
+  }
+}
+@container (min-width: 1510px) {
+  .account-settings-avatar-picker {
+    grid-template-columns: repeat(32, minmax(0, 1fr));
+  }
+}
+@container (max-width: 380px) {
+  .account-settings-avatar-picker {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+.account-avatar-presets {
+  grid-template-columns: repeat(8, minmax(0, 1fr));
+  max-height: 180px;
+  overflow-y: auto;
+}
+.room-question-history > div > div > button:first-child {
+  flex: 1;
+  min-width: 0;
+}
+.recording-marker-cue {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  transform: translateX(-50%);
+  display: grid;
+  width: max-content;
+  max-width: 240px;
+  padding: 6px 10px;
+  border: 1px solid #c8d9eb;
+  border-radius: 10px;
+  background: #f8fbff;
+  color: #334352;
+  font-size: 12px;
+  pointer-events: none;
+  z-index: 2;
+}

@@ -4,9 +4,8 @@ import { resolveFfmpegExecutable } from "./media-runtime";
 import { mainResourceScheduler } from "./main-resource-scheduler";
 import { runLocalProcess } from "./local-process";
 
-// A short recording is only an accidental tap, not an ordinary conversation.
-// Five minutes incorrectly classified real 1–5 minute conversations as waste.
-export const SHORT_RECORDING_MS = 10_000;
+// User-selected cleanup threshold; exactly ten minutes is not a short recording.
+export const SHORT_RECORDING_MS = 10 * 60 * 1_000;
 export const SILENT_RECORDING_PEAK_DB = -60;
 
 /** Probe failures are review candidates, never proof that a recording is disposable. */

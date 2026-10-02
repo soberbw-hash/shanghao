@@ -1,4 +1,4 @@
-import type { AiTextProvider } from "@private-voice/shared";
+import { isStoredRoomId, type AiTextProvider } from "@private-voice/shared";
 
 import type { AiModelManager } from "./ai-model-manager";
 import type { AiRuntimeManager } from "./ai-runtime-manager";
@@ -16,6 +16,8 @@ export interface GenerateJsonRequest {
   timeoutMs?: number;
   manual: boolean;
   signal?: AbortSignal;
+  roomId?: string;
+  provider?: AiTextProvider;
 }
 
 export interface GeneratedJson<T> {
@@ -35,10 +37,9 @@ const extractJsonObject = <T>(value: string): T => {
 };
 
 export const resolveAiTextProvider = (
-  purpose: AiTextPurpose,
+  _purpose: AiTextPurpose,
   organizerProvider: AiTextProvider,
-): AiTextProvider =>
-  purpose === "question" || organizerProvider !== "custom" ? "cloud" : "custom";
+): AiTextProvider => (organizerProvider === "custom" ? "custom" : "cloud");
 
 /** Routes summary/question work without coupling ASR to a particular text model. */
 export class AiTextGateway {
@@ -49,6 +50,7 @@ export class AiTextGateway {
     private readonly signaling: SignalingClientBridge,
     private readonly customProvider: CustomAiProviderStore,
     private readonly localLlm: LocalLLMProvider,
+    private readonly memoryContext?: (roomId: string, signal?: AbortSignal) => Promise<string>,
   ) {}
 
   async generateJson<T>(request: GenerateJsonRequest): Promise<T> {
@@ -59,10 +61,22 @@ export class AiTextGateway {
     return this.providerFor("organize") === "local";
   }
 
+  organizerProvider(): "cloud" | "custom" {
+    return this.providerFor("organize") === "custom" ? "custom" : "cloud";
+  }
+
+  questionRoomId(): string | undefined {
+    return this.signaling.getJoinedRoomId();
+  }
+
   async generateJsonWithMetrics<T>(request: GenerateJsonRequest): Promise<GeneratedJson<T>> {
     const provider = this.providerFor(request.purpose);
+    if (request.provider && request.provider !== provider) throw new Error("ai_provider_changed");
     if (provider === "cloud") {
+      if (request.purpose === "organize" && !isStoredRoomId(request.roomId))
+        throw new Error("cloud_ai_join_matching_room");
       const content = await this.signaling.requestCloudAi({
+        roomId: request.roomId,
         purpose: request.purpose,
         prompt: request.prompt,
         useWebSearch: request.purpose === "question",
@@ -71,9 +85,12 @@ export class AiTextGateway {
       return { value: extractJsonObject<T>(content) };
     }
     if (provider === "custom") {
+      const roomId = request.roomId ?? this.questionRoomId();
+      const memory = roomId ? await this.memoryContext?.(roomId, request.signal) : undefined;
+      request.signal?.throwIfAborted();
       return {
         value: await this.customProvider.generateJson<T>({
-          prompt: request.prompt,
+          prompt: memory ? `${memory}\n\n${request.prompt}` : request.prompt,
           maxNewTokens: request.maxNewTokens,
           signal: request.signal,
         }),

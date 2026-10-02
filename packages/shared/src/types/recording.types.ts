@@ -18,6 +18,7 @@ export interface RecordingResult {
 }
 
 export interface RecordingMarker {
+  label?: string;
   id: string;
   offsetMs: number;
   createdAt: string;
@@ -136,6 +137,7 @@ export interface RecordingLibraryItem {
   id: string;
   recordingId: string;
   title: string;
+  isCustomTitle?: boolean;
   fileName: string;
   filePath: string;
   mediaUrl: string;
@@ -160,6 +162,10 @@ export interface RecordingCleanupCandidate {
   filePath: string;
   reason: RecordingCleanupReason;
   durationMs?: number;
+  /** Native scan identity; used to reject files changed after the preview. */
+  recordingId?: string;
+  fileSize?: number;
+  modifiedAt?: string;
 }
 
 export interface RecordingCleanupScan {

@@ -20,6 +20,7 @@ import { useUiFeedbackSounds } from "../hooks/useUiFeedbackSounds";
 import { useWeatherPreload } from "../hooks/useWeatherPreload";
 import { useTrayBackground } from "../hooks/useTrayBackground";
 import { useAppRoomInvites } from "../hooks/useAppRoomInvites";
+import { useGameRecordingMarkers } from "../features/room/useGameRecordingMarkers";
 import { dispatchQuickMessageShortcut } from "../hooks/useRoomState";
 import { AccountPage } from "../pages/AccountPage";
 import { SharedOverlays } from "../pages/SharedOverlays";
@@ -51,6 +52,7 @@ export const App = () => {
   useWeatherPreload();
   useTrayBackground();
   useAppRoomInvites();
+  useGameRecordingMarkers();
 
   useEffect(
     () => window.desktopApi.shortcuts.onQuickMessageTriggered(dispatchQuickMessageShortcut),

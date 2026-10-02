@@ -19,6 +19,8 @@ import {
   APP_NAME,
   APP_PROTOCOL_VERSION,
   IPC_CHANNELS,
+  getQuickMessageShortcutSlots,
+  isAccountAvatarPresetId,
   type AccountAvatarUpdateRequest,
   type AccountLoginRequest,
   type AccountPasswordResetRequest,
@@ -47,7 +49,6 @@ import {
   type RelayStatusSnapshot,
   type RealtimeFaultCommand,
   type RecordingAutomaticCleanupResult,
-  type RecordingCleanupScan,
   type RecordingBatchDeleteResult,
   type RecordingLibrarySnapshot,
   type RecordingLibraryItem,
@@ -90,7 +91,6 @@ import {
   readRecordingLibrary,
   renameRecording,
   runAutomaticRecordingCleanup,
-  scanWasteRecordings,
   setRecordingFavorite,
 } from "./recording-library";
 import { readRelayStatus } from "./relay-status";
@@ -99,7 +99,7 @@ import { sendToWindow } from "./safe-web-contents";
 import { registerOverlayQuickMusicMuteHandler } from "./overlay-quick-music-ipc";
 import { registerRecordingLocationIpcHandlers } from "./recording-location-ipc";
 import { registerRecordingMarkerIpcHandler } from "./recording-marker-ipc";
-import { requireRecordingFileInDirectory } from "./recording-ipc-validation";
+import { registerRecordingCleanupIpc } from "./recording-cleanup-ipc";
 import { SettingsStore } from "./settings-store";
 import { ShortcutController } from "./shortcuts";
 import {
@@ -112,7 +112,8 @@ import { OverlayWindowController } from "./overlay-window";
 import { GameDetectionController } from "./game-detection";
 import { AiModelManager } from "./ai-model-manager";
 import { AiVoiceMemoryService } from "./ai-voice-memory-service";
-import { publishVoiceMemoryOrganization } from "./recording-recap-publisher";
+import { createRecordingRecapUpload } from "./recording-recap-upload";
+import { bindRecordingProcessOrigin } from "./recording-process-origin";
 import { CustomAiProviderStore } from "./custom-ai-provider-store";
 import { HuggingFaceAccessStore } from "./hugging-face-access-store";
 import { ChatHistoryStore } from "./chat-history-store";
@@ -317,8 +318,12 @@ export const registerIpcHandlers = ({
   aiModels.onStatus((snapshot) => {
     sendToWindow(getMainWindow(), IPC_CHANNELS.ai.status, snapshot);
   });
+  const recapUpload = createRecordingRecapUpload({ voiceMemory, signalingClient }, () =>
+    settingsStore.getSnapshot(),
+  );
   voiceMemory.onStatus((record) => {
     sendToWindow(getMainWindow(), IPC_CHANNELS.ai.voiceMemoryStatus, record);
+    recapUpload.onCompleted(record);
   });
 
   ipcMain.handle(IPC_CHANNELS.app.getRuntimeInfo, async (): Promise<RuntimeInfo> => {
@@ -691,7 +696,14 @@ export const registerIpcHandlers = ({
     IPC_CHANNELS.account.updateAvatar,
     async (_event, request: AccountAvatarUpdateRequest): Promise<AccountSnapshot> =>
       accounts.updateAvatar({
-        dataUrl: requireString(request?.dataUrl, 720_000, "account_avatar"),
+        accountAvatarPresetId:
+          request?.accountAvatarPresetId && isAccountAvatarPresetId(request.accountAvatarPresetId)
+            ? request.accountAvatarPresetId
+            : undefined,
+        dataUrl:
+          request?.dataUrl === undefined
+            ? undefined
+            : requireString(request.dataUrl, 720_000, "account_avatar"),
       }),
   );
   ipcMain.handle(IPC_CHANNELS.account.logout, async (): Promise<AccountSnapshot> =>
@@ -898,13 +910,12 @@ export const registerIpcHandlers = ({
                 recordingMarker: settings.recordingMarkerShortcut,
                 pushToTalk: settings.isPushToTalkEnabled ? settings.pushToTalkShortcut : null,
                 phone: settings.phoneModeShortcut ?? null,
-                quickMessages: [
-                  ...settings.quickMessages.slots,
-                  ...settings.quickMessages.musicSlots,
-                ].map((slot, index) => ({
-                  slot: index,
-                  shortcut: slot.enabled ? slot.shortcut : null,
-                })),
+                quickMessages: getQuickMessageShortcutSlots(settings.quickMessages).map(
+                  (slot, index) => ({
+                    slot: index,
+                    shortcut: slot.enabled ? slot.shortcut : null,
+                  }),
+                ),
               },
               runtime: shortcuts.getRuntimeSnapshot(),
             },
@@ -1001,13 +1012,9 @@ export const registerIpcHandlers = ({
         settings.recordingSaveDirectory,
         app.getPath("documents"),
       );
-      return voiceMemory.start({
-        ...request,
-        recordingId: requireString(request.recordingId, 2_048, "recording_id"),
-        filePath: await requireRecordingFileInDirectory(directory, request.filePath),
-        asrModelId:
-          request.asrModelId === undefined ? undefined : requireAiAsrModelId(request.asrModelId),
-      });
+      return voiceMemory.start(
+        await bindRecordingProcessOrigin(request, directory, settings.recordingLibraryQuotaGb),
+      );
     },
   );
   ipcMain.handle(
@@ -1026,11 +1033,7 @@ export const registerIpcHandlers = ({
   ipcMain.handle(
     IPC_CHANNELS.ai.publishOrganization,
     async (_event, recordingIdValue: string): Promise<VoiceMemoryRecord> =>
-      publishVoiceMemoryOrganization({
-        recordingId: requireString(recordingIdValue, 2_048, "recording_id"),
-        voiceMemory,
-        signalingClient,
-      }),
+      recapUpload.upload(requireString(recordingIdValue, 2_048, "recording_id")),
   );
   ipcMain.handle(IPC_CHANNELS.ai.pauseTask, async (_event, recordingId: string): Promise<void> => {
     voiceMemory.pause(requireString(recordingId, 2_048, "recording_id"));
@@ -1251,18 +1254,7 @@ export const registerIpcHandlers = ({
     const settings = settingsStore.getSnapshot();
     return readRecordingLibrary(settings.recordingSaveDirectory, settings.recordingLibraryQuotaGb);
   });
-  ipcMain.handle(IPC_CHANNELS.recording.scanWaste, async (): Promise<RecordingCleanupScan> => {
-    const settings = settingsStore.getSnapshot();
-    return scanWasteRecordings(
-      settings.recordingSaveDirectory,
-      settings.recordingLibraryQuotaGb,
-      (processed, total) =>
-        sendToWindow(getMainWindow(), IPC_CHANNELS.recording.scanWasteProgress, {
-          processed,
-          total,
-        }),
-    );
-  });
+  registerRecordingCleanupIpc(() => settingsStore.getSnapshot(), getMainWindow);
   ipcMain.handle(
     IPC_CHANNELS.recording.setFavorite,
     async (_event, filePath: string, isFavorite: boolean): Promise<void> => {
@@ -1277,16 +1269,14 @@ export const registerIpcHandlers = ({
   ipcMain.handle(
     IPC_CHANNELS.recording.rename,
     async (_event, recordingId: string, title: string): Promise<RecordingLibraryItem> => {
-      const settings = settingsStore.getSnapshot();
+      const { recordingSaveDirectory: directory, recordingLibraryQuotaGb: quotaGb } =
+        settingsStore.getSnapshot();
       const stableId = requireString(recordingId, 180, "recording_id");
       const nextTitle = requireString(title, 124, "recording_title");
-      const before = await readRecordingLibrary(
-        settings.recordingSaveDirectory,
-        settings.recordingLibraryQuotaGb,
-      );
+      const before = await readRecordingLibrary(directory, quotaGb);
       const previous = before.items.find((item) => item.recordingId === stableId);
       if (!previous) throw new Error("recording_not_found");
-      const renamed = await renameRecording(settings.recordingSaveDirectory, stableId, nextTitle);
+      const renamed = await renameRecording(directory, stableId, nextTitle);
       try {
         await voiceMemory.reconcileRecordingIdentity(
           previous.filePath,
@@ -1303,9 +1293,10 @@ export const registerIpcHandlers = ({
         return renamed;
       } catch (error) {
         await renameRecording(
-          settings.recordingSaveDirectory,
+          directory,
           stableId,
           path.parse(previous.fileName).name,
+          previous,
         ).catch(() => undefined);
         throw error;
       }

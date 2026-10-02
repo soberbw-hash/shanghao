@@ -17,12 +17,15 @@ import {
   HEARTBEAT_INTERVAL_MS,
   MAX_ROOM_COLLECTION_IMAGE_LENGTH,
   MAX_ROOM_COLLECTION_TEXT_LENGTH,
+  isRoomAiScopeAllowed,
   type BuiltInAvatarId,
   type RoomCollectionItem,
   type SceneZoneId,
 } from "@private-voice/shared";
 import { WebSocket, WebSocketServer, type RawData } from "ws";
 
+import { handleRecordingRecap } from "./recording-recap-handler";
+import { RoomMemoryRuntime } from "./room-memory-runtime";
 import type {
   AudioChunkMessage,
   AudioPathStateMessage,
@@ -53,7 +56,6 @@ import type {
   RequestSnapshotMessage,
   RequestDailyRoomReportsMessage,
   PublishRecordingRecapMessage,
-  RecordingRecapPublishedMessage,
   ScreenFrameMessage,
   ScreenPathStateMessage,
   ScreenShareStateMessage,
@@ -235,6 +237,7 @@ export class SignalingServer extends EventEmitter {
   private readonly roomDirectory: Promise<PrivateRoomDirectory>;
   private directory?: PrivateRoomDirectory;
   private readonly privateRoomHttp: PrivateRoomHttpController;
+  private readonly roomMemories: RoomMemoryRuntime;
   constructor(private readonly options: SignalingServerOptions) {
     super();
     this.roomName = options.roomName;
@@ -259,7 +262,6 @@ export class SignalingServer extends EventEmitter {
       });
     }
     this.dailyRoomReports = DailyRoomReportStore.create(dailyRoomReportFile, this.logger);
-    this.cloudAi = new CloudAiRuntime(this.dailyRoomReports, this.logger);
     const accountProvider = (process.env.SHANGHAO_ACCOUNT_PROVIDER ?? process.env.ACCOUNT_PROVIDER)
       ?.trim()
       .toLowerCase();
@@ -288,6 +290,21 @@ export class SignalingServer extends EventEmitter {
     });
     // Startup propagates the error; attach a handler immediately to avoid an unhandled rejection.
     void this.roomDirectory.catch(() => undefined);
+    this.roomMemories = new RoomMemoryRuntime(
+      this.roomDirectory,
+      this.accountBackend,
+      (roomId, userId) =>
+        this.roomManager
+          .getRoom(roomId)
+          ?.peers.listConnectedPeers()
+          .some((peer) => peer.userId === userId) ?? false,
+      (request) =>
+        this.accountHttp.isSecure(request) || this.accountHttp.insecureDevelopmentConnection,
+      privateRoomFile ? `${privateRoomFile}.memory.json` : undefined,
+    );
+    this.cloudAi = new CloudAiRuntime(this.dailyRoomReports, this.logger, (roomId) =>
+      this.roomMemories.context(roomId),
+    );
     this.privateRoomHttp = new PrivateRoomHttpController(
       this.roomDirectory,
       this.accountBackend,
@@ -340,13 +357,13 @@ export class SignalingServer extends EventEmitter {
       void this.authorizeSocket(socket, request);
     });
   }
-
   private async handleHttpRequest(
     request: IncomingMessage,
     response: import("node:http").ServerResponse,
   ): Promise<void> {
     if (await this.phoneMicBridge.serveHttpRequest(request, response)) return;
     if (await this.accountHttp.handle(request, response)) return;
+    if (await this.roomMemories.handle(request, response)) return;
     if (await this.privateRoomHttp.handle(request, response)) return;
 
     const contentLength = Number(request.headers["content-length"] ?? 0);
@@ -511,7 +528,6 @@ export class SignalingServer extends EventEmitter {
     this.logger?.("signaling server listening", { port: listeningPort });
     return listeningPort;
   }
-
   async close(): Promise<void> {
     if (this.heartbeatTimer) {
       clearInterval(this.heartbeatTimer);
@@ -526,6 +542,7 @@ export class SignalingServer extends EventEmitter {
     await (await this.roomCollection).flush();
     await (await this.dailyRoomReports).flush();
     await (await this.roomDirectory).flush();
+    await this.roomMemories.close();
     this.sessionTokens.clear();
 
     await new Promise<void>((resolve, reject) => {
@@ -1555,12 +1572,11 @@ export class SignalingServer extends EventEmitter {
       }
     }
   }
-
   private async sendDailyRoomReports(
     socket: WebSocket,
     message: RequestDailyRoomReportsMessage,
   ): Promise<void> {
-    if (message.roomId.startsWith("room_") && message.targetRoomId !== message.roomId) {
+    if (!isRoomAiScopeAllowed(message.roomId, message.targetRoomId)) {
       this.safeSend(socket, {
         type: "error",
         code: "room_owner_required",
@@ -1581,39 +1597,23 @@ export class SignalingServer extends EventEmitter {
     };
     this.safeSend(socket, payload);
   }
-
   private async publishRecordingRecap(
     socket: WebSocket,
     message: PublishRecordingRecapMessage,
   ): Promise<void> {
-    const room = this.roomManager.getRoom(message.roomId);
-    const peer = room?.peers.getPeer(message.peerId);
+    const peer = this.roomManager.getRoom(message.roomId)?.peers.getPeer(message.peerId);
     if (!peer) {
       this.rejectInvalid(socket, "room_unavailable", "The room session is unavailable.");
       return;
     }
-    const result = (await this.dailyRoomReports).publishRecordingRecap(
-      message.roomId,
-      message.reportDate,
-      message.recap,
-      Date.now(),
+    const saved = await handleRecordingRecap(
+      await this.dailyRoomReports,
+      message,
+      (payload) => this.safeSend(socket, payload),
+      (code, reason) => this.rejectInvalid(socket, code, reason),
     );
-    if (!result) {
-      this.rejectInvalid(socket, "invalid_report_date", "The recording date is unavailable.");
-      return;
-    }
-    const payload: RecordingRecapPublishedMessage = {
-      type: "recording_recap_published",
-      roomId: message.roomId,
-      peerId: message.peerId,
-      requestId: message.requestId,
-      reportDate: message.reportDate,
-      publishedAt: result.publishedAt,
-      serverRevision: result.serverRevision,
-    };
-    this.safeSend(socket, payload);
+    if (saved) this.roomMemories.observeRecap(message);
   }
-
   private broadcastSceneReaction(message: SceneReactionMessage): void {
     const room = this.roomManager.getRoom(message.roomId);
     const allowedEmoji = new Set(["👍", "🔥", "😂", "❤️"]);

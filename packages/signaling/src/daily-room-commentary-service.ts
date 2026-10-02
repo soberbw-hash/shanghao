@@ -70,6 +70,7 @@ export class DailyRoomCommentaryService {
           games: report.games,
           gameActivities: report.gameActivities,
           participants: report.participants,
+          recordingRecaps: report.recordingRecaps,
         }),
       ].join("\n"),
     };
@@ -77,7 +78,13 @@ export class DailyRoomCommentaryService {
       const content = await this.cloudAi.execute(request, AbortSignal.timeout(8_000));
       const parsed = JSON.parse(content) as { commentary?: unknown };
       if (typeof parsed.commentary !== "string") return;
-      (await this.reports).setCommentary(report.roomId, report.date, parsed.commentary);
+      (await this.reports).setCommentary(
+        report.roomId,
+        report.date,
+        parsed.commentary,
+        Date.now(),
+        report.revision,
+      );
     } catch (error) {
       this.logger?.("daily room commentary generation failed", {
         roomId: report.roomId,

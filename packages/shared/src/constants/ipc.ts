@@ -1,4 +1,5 @@
 export const IPC_CHANNELS = {
+  roomMemory: { get: "room-memory:get", save: "room-memory:save" },
   storage: {
     inspect: "storage:inspect",
     clearExpiredTemporary: "storage:clear-expired-temporary",
@@ -204,6 +205,7 @@ export const IPC_CHANNELS = {
     applyAutomaticCleanup: "recording:apply-automatic-cleanup",
     list: "recording:list",
     scanWaste: "recording:scan-waste",
+    cleanWaste: "recording:clean-waste",
     scanWasteProgress: "recording:scan-waste-progress",
     setFavorite: "recording:set-favorite",
     rename: "recording:rename",

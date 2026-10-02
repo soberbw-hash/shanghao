@@ -211,5 +211,5 @@ test("recording recaps exist only after explicit publish and replace the same re
   const report = store.getHistory("main", now + 2_000)[0];
   assert.equal(report?.recordingRecaps?.length, 1);
   assert.equal(report?.recordingRecaps?.[0]?.description, "更新后的本地整理。");
-  assert.equal(report?.commentary, "更新后的本地整理。");
+  assert.equal(report?.commentary, undefined);
 });

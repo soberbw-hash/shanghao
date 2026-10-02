@@ -1,0 +1,4 @@
+/* Blend the cropped canvas edge with the backdrop while the leaves sway. */
+.scene-foreground-leaves {
+  mask-image: linear-gradient(90deg, transparent, #000 28px);
+}

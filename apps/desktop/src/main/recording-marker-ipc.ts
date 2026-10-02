@@ -48,7 +48,10 @@ export const registerRecordingMarkerIpcHandler = (settingsStore: SettingsStore):
         "上号录音 · 精彩时刻",
         `录音文件：${path.basename(recordingPath)}`,
         "",
-        ...offsets.map((offset, index) => `${index + 1}. ${formatOffset(offset)}`),
+        ...offsets.map(
+          (offset, index) =>
+            `${index + 1}. ${formatOffset(offset)}${typeof markers[index]?.label === "string" ? ` · ${markers[index]!.label!.replace(/[\r\n]/g, " ").slice(0, 96)}` : ""}`,
+        ),
         "",
         "打开录音并跳到对应时间即可回看。",
       ].join("\r\n");

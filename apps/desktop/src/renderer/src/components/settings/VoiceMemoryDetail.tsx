@@ -1,16 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { TranscriptParagraphList } from "./TranscriptParagraphList";
+import { RecordingUploadAction } from "./RecordingUploadAction";
 import { reuseVoiceMemoryReferences } from "../../features/ai/voiceMemoryReferences";
-import {
-  BrainCircuit,
-  Check,
-  FileText,
-  Pause,
-  Play,
-  RotateCcw,
-  Sparkles,
-  Upload,
-} from "lucide-react";
+import { BrainCircuit, FileText, Pause, Play, RotateCcw, Sparkles } from "lucide-react";
 
 import {
   AI_ASR_MODEL_NAMES,
@@ -114,8 +106,10 @@ const describeError = (message: string, transcriptionFinished: boolean): string 
     return "本地千问整理耗时较长，已超过本次等待时间；转录文字已经保留，请稍后重新整理。";
   }
   if (message.includes("cloud_ai_join_required")) {
-    return "转录文字已经保留。请先进入一号房或二号房，再使用云端模型整理。";
+    return "转录文字已经保留。请先进入这条录音所属的房间，再使用云端模型整理。";
   }
+  if (message.includes("cloud_ai_join_matching_room"))
+    return "请先进入这条录音所属的房间，再使用房间云端整理。";
   if (message.includes("cloud_ai_not_configured")) {
     return "转录文字已经保留，但房间服务器还没有配置好云端 AI。";
   }
@@ -145,9 +139,18 @@ const describeError = (message: string, transcriptionFinished: boolean): string 
   if (message.includes("recording_recap_join_matching_room"))
     return "请先进入这条录音对应的房间，再上传整理结果。";
   if (message.includes("recording_recap_join_required"))
-    return "请先进入一号房或二号房，再上传整理结果。";
+    return "请先进入这条录音所属的房间，再上传整理结果。";
+  if (message.includes("recording_recap_room_invalid"))
+    return "这条旧录音没有可确认的所属房间，无法上传；本地结果已保留。";
   if (message.includes("recording_recap_unsupported"))
     return "当前房间服务器版本较旧，暂时不能接收整理结果。";
+  if (
+    message.includes("invalid_report_date") ||
+    message.includes("recording_recap_date_unavailable")
+  )
+    return "录音日期不在每日总结最近 14 天的范围内，本地整理结果已保留。";
+  if (message.includes("recording_recap_storage_failed"))
+    return "服务器暂时没有保存成功，本地整理结果已保留，请稍后重试。";
   if (message.includes("recording_recap")) return "上传没有完成，请检查房间连接后重试。";
   if (message.includes("organize_failed") || message.includes("ai_runtime_timeout")) {
     return "转录文字已经保留，内容整理没有完成；你仍然可以直接查看文字，稍后再点重新整理。";
@@ -172,7 +175,6 @@ export const VoiceMemoryDetail = ({
     [],
   );
   const [busy, setBusy] = useState(false);
-  const [publishing, setPublishing] = useState(false);
   const [queuedAction, setQueuedAction] = useState<"transcribe" | "organize">();
   const [error, setError] = useState<string>();
   const [speakerNames, setSpeakerNames] = useState<Record<string, string>>({});
@@ -264,19 +266,6 @@ export const VoiceMemoryDetail = ({
     }
   };
 
-  const publishOrganization = async () => {
-    if (publishing || record?.organization?.status !== "completed") return;
-    setPublishing(true);
-    setError(undefined);
-    try {
-      setRecord(await window.desktopApi.ai.publishOrganization(recording.recordingId));
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "上传整理结果失败");
-    } finally {
-      setPublishing(false);
-    }
-  };
-
   const confirmSpeaker = async (speakerId: string) => {
     const nickname = speakerNames[speakerId]?.trim();
     if (!nickname) return;
@@ -318,7 +307,7 @@ export const VoiceMemoryDetail = ({
         <BrainCircuit aria-hidden="true" />
         <div>
           <strong>这条录音还没有整理</strong>
-          <span>转录、章节、精彩片段和问答都只在本机运行。</span>
+          <span>先转录为文字，再整理成摘要，最后按需上传到服务器。</span>
         </div>
         <div className="voice-memory-header-actions">
           <button type="button" disabled={busy} onClick={() => void process("transcribe")}>
@@ -329,6 +318,13 @@ export const VoiceMemoryDetail = ({
             <Sparkles aria-hidden="true" />
             整理内容
           </button>
+          <RecordingUploadAction
+            key={recording.recordingId}
+            record={record}
+            disabled={busy || Boolean(queuedAction)}
+            onRecord={setRecord}
+            onError={setError}
+          />
         </div>
         {error ? <p role="alert">{describeError(error, false)}</p> : null}
       </section>
@@ -435,6 +431,13 @@ export const VoiceMemoryDetail = ({
                     ? "重新整理"
                     : "整理内容"}
             </button>
+            <RecordingUploadAction
+              key={recording.recordingId}
+              record={record}
+              disabled={busy || Boolean(queuedAction)}
+              onRecord={setRecord}
+              onError={setError}
+            />
           </div>
         )}
       </header>
@@ -470,36 +473,29 @@ export const VoiceMemoryDetail = ({
         </p>
       ) : null}
 
+      {record.organizationPublication?.status === "failed" ? (
+        <p className="voice-memory-error" role="alert">
+          整理摘要已保存在本机。
+          {describeError(
+            record.organizationPublication.errorCode ?? "recording_recap_publish_failed",
+            true,
+          )}
+        </p>
+      ) : null}
       {organization ? (
         <div className={`voice-memory-organization is-${organization.status}`}>
           <div className="voice-memory-organization-overview">
             <div>
               <strong>{organizationStatus}</strong>
               <span>
-                Qwen3.6-35B-A3B NVFP4 · {organization.completedChunks}/{organization.chunks.length}{" "}
-                块
+                {organization.modelId === "cloud"
+                  ? "房间云端"
+                  : organization.modelId === "custom"
+                    ? "自定义 API"
+                    : "本地模型"}{" "}
+                · {organization.completedChunks}/{organization.chunks.length} 块
               </span>
             </div>
-            {organization.status === "completed" ? (
-              <button
-                type="button"
-                className="voice-memory-publish-action"
-                disabled={publishing || record.organizationPublication?.status === "published"}
-                title="点击后才会把整理摘要上传到房间服务器"
-                onClick={() => void publishOrganization()}
-              >
-                {record.organizationPublication?.status === "published" ? (
-                  <Check aria-hidden="true" />
-                ) : (
-                  <Upload aria-hidden="true" />
-                )}
-                {record.organizationPublication?.status === "published"
-                  ? "已上传"
-                  : publishing
-                    ? "上传中…"
-                    : "上传服务器"}
-              </button>
-            ) : null}
             {organization.finalResult?.participants.length ? (
               <div className="voice-memory-speaking-share" aria-label="说话占比">
                 {organization.finalResult.participants.map((participant) => (

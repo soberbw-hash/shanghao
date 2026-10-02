@@ -99,6 +99,7 @@ export const createShangHaoCore = (api: DesktopApi) => ({
   app: api.app,
   storage: api.storage,
   rooms: api.rooms,
+  roomMemory: api.roomMemory,
   audio: api.audio,
   ai: api.ai,
   clipboard: api.clipboard,

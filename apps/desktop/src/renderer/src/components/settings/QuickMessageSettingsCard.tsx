@@ -90,6 +90,7 @@ export const QuickMessageSettingsCard = ({
     DEFAULT_QUICK_MESSAGE_MUSIC_SLOTS.length,
   );
   const [dragOverSlot, setDragOverSlot] = useState<string>();
+  const shortcutsEnabled = settings.quickMessages.shortcutsEnabled === true;
   const [libraryQuery, setLibraryQuery] = useState("");
   const [libraryMediaFilter, setLibraryMediaFilter] = useState<LibraryMediaFilter>("全部");
   const [libraryGameFilter, setLibraryGameFilter] = useState("");
@@ -184,7 +185,7 @@ export const QuickMessageSettingsCard = ({
     onChange({
       quickMessages: {
         ...settings.quickMessages,
-        ...(index === 0 && patch.presetId ? { musicPresetId: patch.presetId } : {}),
+        ...(index === 0 && "presetId" in patch ? { musicPresetId: patch.presetId } : {}),
         musicSlots: musicSlots.map((slot, slotIndex) =>
           slotIndex === index ? { ...slot, ...patch } : slot,
         ),
@@ -318,7 +319,7 @@ export const QuickMessageSettingsCard = ({
             <div className="quick-message-slot-group">
               <div className="quick-message-slot-group-heading">
                 <strong>语音 / 音效</strong>
-                <span>拖到槽位即可绑定</span>
+                <span>拖入绑定 · 右键清空</span>
               </div>
               <div className="quick-message-slot-list quick-message-slot-list--voice">
                 {slots.map((slot, index) => {
@@ -330,9 +331,14 @@ export const QuickMessageSettingsCard = ({
                       key={index}
                       type="button"
                       className={`quick-message-slot ${dragOverSlot === `voice-${index}` ? "is-drag-over" : ""}`}
-                      aria-label={`语音槽位 ${index + 1}：${preset?.label ?? "未绑定"}；点击试听或拖入音频替换`}
-                      title="点击试听；从下方拖入语音或音效替换"
+                      aria-label={`语音槽位 ${index + 1}：${preset?.label ?? "拖入语音"}；点击试听，右键清空`}
+                      title="点击试听；拖入替换；右键清空槽位"
                       onClick={() => preset && previewPreset(preset)}
+                      onContextMenu={(event) => {
+                        event.preventDefault();
+                        if (slot.presetId)
+                          updateSlot(index, { presetId: undefined, enabled: false });
+                      }}
                       onDragEnter={(event) => {
                         event.preventDefault();
                         setDragOverSlot(`voice-${index}`);
@@ -345,7 +351,7 @@ export const QuickMessageSettingsCard = ({
                       onDrop={(event) => handleSlotDrop(event, index)}
                     >
                       <span className="quick-message-slot-number">{index + 1}</span>
-                      <span className="quick-message-slot-name">{preset?.label ?? "未绑定"}</span>
+                      <span className="quick-message-slot-name">{preset?.label ?? "拖入语音"}</span>
                     </button>
                   );
                 })}
@@ -356,7 +362,7 @@ export const QuickMessageSettingsCard = ({
                 <strong>
                   <Music2 aria-hidden="true" /> 音乐
                 </strong>
-                <span>拖到槽位即可绑定</span>
+                <span>拖入绑定 · 右键清空</span>
               </div>
               <div className="quick-message-slot-list quick-message-slot-list--music">
                 {musicSlots.map((slot, index) => {
@@ -366,9 +372,14 @@ export const QuickMessageSettingsCard = ({
                       key={index}
                       type="button"
                       className={`quick-message-slot ${dragOverSlot === `music-${index}` ? "is-drag-over" : ""}`}
-                      aria-label={`音乐槽位 ${index + 1}：${preset?.label ?? "未绑定"}；点击试听或拖入音乐替换`}
-                      title="点击试听；从下方拖入音乐替换"
+                      aria-label={`音乐槽位 ${index + 1}：${preset?.label ?? "拖入音乐"}；点击试听，右键清空`}
+                      title="点击试听；拖入替换；右键清空槽位"
                       onClick={() => preset && previewPreset(preset)}
+                      onContextMenu={(event) => {
+                        event.preventDefault();
+                        if (slot.presetId)
+                          updateMusicSlot(index, { presetId: undefined, enabled: false });
+                      }}
                       onDragEnter={(event) => {
                         event.preventDefault();
                         setDragOverSlot(`music-${index}`);
@@ -381,7 +392,7 @@ export const QuickMessageSettingsCard = ({
                       onDrop={(event) => handleMusicDrop(event, index)}
                     >
                       <span className="quick-message-slot-number">{index + 1}</span>
-                      <span className="quick-message-slot-name">{preset?.label ?? "未绑定"}</span>
+                      <span className="quick-message-slot-name">{preset?.label ?? "拖入音乐"}</span>
                     </button>
                   );
                 })}
@@ -538,111 +549,133 @@ export const QuickMessageSettingsCard = ({
       {activeTab === "shortcuts" ? (
         <SettingsSection
           title="快捷键"
-          description="这里的开关只控制全局快捷键；房间里的鼠标点击按钮始终保留。"
-        >
-          <div className="grid gap-1.5 md:grid-cols-2 xl:grid-cols-5">
-            {slots.map((slot, index) => {
-              const preset = QUICK_MESSAGE_PRESETS.find(
-                (candidate) => candidate.id === slot.presetId,
-              );
-              return (
-                <div
-                  key={index}
-                  className="rounded-[11px] border border-[#E5EBF2] bg-[#FBFCFD] p-2 transition-colors"
-                >
-                  <div className="mb-1.5 flex items-center justify-between gap-2">
-                    <div className="flex min-w-0 items-center gap-1.5 text-xs font-semibold text-[#516B87]">
-                      <Zap className="h-3.5 w-3.5 text-[#4D9BF3]" />
-                      槽位 {index + 1}
-                      {preset ? (
-                        <span className="truncate font-normal text-[#8AA0B7]">
-                          · {preset.content}
-                        </span>
-                      ) : null}
-                    </div>
-                    <Switch
-                      isChecked={slot.enabled}
-                      onChange={(enabled) => updateSlot(index, { enabled })}
-                    />
-                  </div>
-                  <div>
-                    <ShortcutInput
-                      compact
-                      value={slot.shortcut}
-                      onChange={(shortcut) =>
-                        updateSlot(index, {
-                          shortcut,
-                          enabled: shortcut ? (slot.shortcut ? slot.enabled : true) : false,
-                        })
-                      }
-                      defaultValue={DEFAULT_QUICK_MESSAGE_SLOTS[index]?.shortcut ?? ""}
-                    />
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-          <div className="mt-2 border-t border-[#E7EEF5] pt-2">
-            <div className="mb-1.5 flex items-center gap-1.5 text-xs font-semibold text-[#287F99]">
-              <Music2 className="quick-message-music-icon h-3.5 w-3.5" aria-hidden="true" />
-              音乐快捷键
-              <span className="font-normal text-[#8AA0B7]">支持键盘组合键和鼠标侧键</span>
+          description="同时控制语音和音乐快捷键；房间里的点击按钮仍可使用。"
+          headerAction={
+            <div className="flex items-center gap-2.5 text-xs font-medium text-[#516B87]">
+              快捷键总开关
+              <Switch
+                isChecked={shortcutsEnabled}
+                ariaLabel="快捷键总开关"
+                onChange={(enabled) =>
+                  onChange({
+                    quickMessages: { ...settings.quickMessages, shortcutsEnabled: enabled },
+                  })
+                }
+              />
             </div>
-            <div className="grid grid-cols-3 gap-1.5">
-              {musicSlots.map((slot, index) => {
-                const preset = musicPresets.find((candidate) => candidate.id === slot.presetId);
+          }
+        >
+          <fieldset
+            disabled={!shortcutsEnabled}
+            aria-label="快捷消息快捷键设置"
+            className="quick-message-shortcuts-options"
+          >
+            <div className="grid gap-1.5 md:grid-cols-2 xl:grid-cols-5">
+              {slots.map((slot, index) => {
+                const preset = QUICK_MESSAGE_PRESETS.find(
+                  (candidate) => candidate.id === slot.presetId,
+                );
                 return (
                   <div
                     key={index}
-                    className="quick-message-music-shortcut rounded-[11px] border p-2 transition-colors"
+                    className="rounded-[11px] border border-[#E5EBF2] bg-[#FBFCFD] p-2 transition-colors"
                   >
                     <div className="mb-1.5 flex items-center justify-between gap-2">
-                      <div className="flex min-w-0 items-center gap-1.5 text-xs font-semibold text-[#287F99]">
-                        <Music2 className="quick-message-music-icon h-3.5 w-3.5" />
-                        音乐 {index + 1}
-                        <span className="truncate font-normal text-[#8AA0B7]">
-                          · {preset?.label ?? "未选择"}
-                        </span>
+                      <div className="flex min-w-0 items-center gap-1.5 text-xs font-semibold text-[#516B87]">
+                        <Zap className="h-3.5 w-3.5 text-[#4D9BF3]" />
+                        槽位 {index + 1}
+                        {preset ? (
+                          <span className="truncate font-normal text-[#8AA0B7]">
+                            · {preset.content}
+                          </span>
+                        ) : null}
                       </div>
                       <Switch
                         isChecked={slot.enabled}
-                        onChange={(enabled) => updateMusicSlot(index, { enabled })}
+                        onChange={(enabled) => updateSlot(index, { enabled })}
                       />
                     </div>
-                    <div className="grid gap-1.5 sm:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)]">
-                      <select
-                        className="quick-message-music-select settings-inline-select h-9 min-w-0 text-xs"
-                        value={slot.presetId ?? ""}
-                        aria-label={`选择音乐快捷键 ${index + 1} 的音乐`}
-                        disabled={!slot.enabled || !settings.quickMessages.soundEnabled}
-                        onChange={(event) =>
-                          updateMusicSlot(index, { presetId: event.target.value })
-                        }
-                      >
-                        <option value="">选择音乐</option>
-                        {musicPresets.map((musicPreset) => (
-                          <option key={musicPreset.id} value={musicPreset.id}>
-                            {musicPreset.label}
-                          </option>
-                        ))}
-                      </select>
+                    <div>
                       <ShortcutInput
                         compact
                         value={slot.shortcut}
                         onChange={(shortcut) =>
-                          updateMusicSlot(index, {
+                          updateSlot(index, {
                             shortcut,
                             enabled: shortcut ? (slot.shortcut ? slot.enabled : true) : false,
                           })
                         }
-                        defaultValue={DEFAULT_QUICK_MESSAGE_MUSIC_SLOTS[index]?.shortcut ?? ""}
+                        defaultValue={DEFAULT_QUICK_MESSAGE_SLOTS[index]?.shortcut ?? ""}
                       />
                     </div>
                   </div>
                 );
               })}
             </div>
-          </div>
+            <div className="mt-2 border-t border-[#E7EEF5] pt-2">
+              <div className="mb-2 flex items-center justify-between gap-3">
+                <div className="flex items-center gap-1.5 text-xs font-semibold text-[#287F99]">
+                  <Music2 className="quick-message-music-icon h-3.5 w-3.5" aria-hidden="true" />
+                  音乐快捷键
+                  <span className="font-normal text-[#8AA0B7]">支持键盘组合键和鼠标侧键</span>
+                </div>
+              </div>
+              <div aria-label="音乐快捷键设置" className="grid grid-cols-3 gap-1.5">
+                {musicSlots.map((slot, index) => {
+                  const preset = musicPresets.find((candidate) => candidate.id === slot.presetId);
+                  return (
+                    <div
+                      key={index}
+                      className="quick-message-music-shortcut rounded-[11px] border p-2 transition-colors"
+                    >
+                      <div className="mb-1.5 flex items-center justify-between gap-2">
+                        <div className="flex min-w-0 items-center gap-1.5 text-xs font-semibold text-[#287F99]">
+                          <Music2 className="quick-message-music-icon h-3.5 w-3.5" />
+                          音乐 {index + 1}
+                          <span className="truncate font-normal text-[#8AA0B7]">
+                            · {preset?.label ?? "未选择"}
+                          </span>
+                        </div>
+                        <Switch
+                          isChecked={slot.enabled}
+                          onChange={(enabled) => updateMusicSlot(index, { enabled })}
+                        />
+                      </div>
+                      <div className="grid gap-1.5 sm:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)]">
+                        <select
+                          className="quick-message-music-select settings-inline-select h-9 min-w-0 text-xs"
+                          value={slot.presetId ?? ""}
+                          aria-label={`选择音乐快捷键 ${index + 1} 的音乐`}
+                          disabled={!slot.enabled || !settings.quickMessages.soundEnabled}
+                          onChange={(event) =>
+                            updateMusicSlot(index, { presetId: event.target.value })
+                          }
+                        >
+                          <option value="">选择音乐</option>
+                          {musicPresets.map((musicPreset) => (
+                            <option key={musicPreset.id} value={musicPreset.id}>
+                              {musicPreset.label}
+                            </option>
+                          ))}
+                        </select>
+                        <ShortcutInput
+                          compact
+                          value={slot.shortcut}
+                          onChange={(shortcut) =>
+                            updateMusicSlot(index, {
+                              shortcut,
+                              enabled: shortcut ? (slot.shortcut ? slot.enabled : true) : false,
+                            })
+                          }
+                          defaultValue={DEFAULT_QUICK_MESSAGE_MUSIC_SLOTS[index]?.shortcut ?? ""}
+                        />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </fieldset>
         </SettingsSection>
       ) : null}
     </div>

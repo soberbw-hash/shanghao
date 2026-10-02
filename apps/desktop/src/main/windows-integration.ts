@@ -1,5 +1,7 @@
 import type { WindowsIntegrationStatus } from "@private-voice/shared";
 import { app } from "electron";
+import path from "node:path";
+import { firewallRepairAttempt, WindowsFirewallRecovery } from "./windows-firewall-recovery";
 
 import { readWindowsElevationStatus } from "./windows-elevation";
 import {
@@ -13,10 +15,28 @@ import {
 } from "./windows-icon-overlays";
 import { platformService } from "./platform/PlatformService";
 
+let recovery: WindowsFirewallRecovery | undefined;
+const firewallRecovery = () => {
+  if (!recovery) {
+    const attempt = firewallRepairAttempt(
+      path.join(app.getPath("userData"), "firewall-recovery"),
+      process.execPath,
+    );
+    recovery = new WindowsFirewallRecovery({
+      read: readWindowsFirewallStatus,
+      repair: repairWindowsFirewallRules,
+      ...attempt,
+      enabled: () => app.isPackaged && platformService.isWindows,
+    });
+  }
+  return recovery;
+};
+export const inspectAndRecoverWindowsFirewall = () => firewallRecovery().inspect(true);
+
 export const readWindowsIntegrationStatus = async (): Promise<WindowsIntegrationStatus> => {
   const [elevationResult, firewallResult, iconOverlaysResult] = await Promise.allSettled([
     readWindowsElevationStatus(),
-    readWindowsFirewallStatus(),
+    firewallRecovery().inspect(),
     readWindowsIconOverlayStatus(),
   ]);
   const elevation =
@@ -105,6 +125,6 @@ export const ensureWindowsFirewallRulesWithOutcome = async (
   };
 };
 
-export const repairWindowsIntegrationFirewall = repairWindowsFirewallRules;
+export const repairWindowsIntegrationFirewall = () => firewallRecovery().retry();
 export const removeWindowsIntegrationFirewall = removeWindowsFirewallRules;
 export const configureWindowsIconOverlays = setWindowsIconOverlaysHidden;

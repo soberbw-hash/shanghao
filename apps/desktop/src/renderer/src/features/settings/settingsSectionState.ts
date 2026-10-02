@@ -60,6 +60,7 @@ export const settingsSectionSignature = (
     case "general":
       return JSON.stringify([
         settings.minimizeToTray,
+        settings.isFriendOnlineNotificationEnabled,
         settings.weatherLocationMode,
         settings.weatherManualCity,
         settings.isSystemWeatherLocationEnabled,
@@ -70,6 +71,7 @@ export const settingsSectionSignature = (
         settings.preferredOutputDeviceId,
         settings.recordingMarkerShortcut,
         settings.isAutoRecordOnJoinEnabled,
+        settings.isRecordingAutoGameMarkerEnabled,
       ]);
     case "quickMessages":
       return JSON.stringify([settings.avatarId, settings.quickMessages]);
@@ -87,6 +89,7 @@ export const settingsSectionSignature = (
         settings.aiProcessingMode,
         settings.isAiAutoTranscribeEnabled,
         settings.isAiAutoOrganizeEnabled,
+        settings.isAiAutoUploadEnabled,
       ]);
     case "diagnostics":
       return settings.relayServerUrl ?? "";

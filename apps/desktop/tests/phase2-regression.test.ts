@@ -11,11 +11,13 @@ const readRenderer = (relativePath: string) =>
   readFileSync(path.join(sourceRoot, relativePath), "utf8");
 const readMain = (relativePath: string) => readFileSync(path.join(mainRoot, relativePath), "utf8");
 
-test("top bar reserves one status row for every connection state", () => {
+test("top bar centers normal room information and only shows a status row for connection notices", () => {
   const source = readRenderer("components/layout/TopStatusBar.tsx");
   assert.match(source, /const connectionStatus = statusCopy/);
-  assert.match(source, /topbar-channel-copy[^`]*min-h-4/);
-  assert.match(source, /connectionStatus \|\| "频道状态正常"/);
+  assert.match(source, /\{connectionStatus && \(/);
+  assert.match(source, /topbar-channel-copy[\s\S]*role="status"/);
+  assert.doesNotMatch(source, /topbar-channel-copy[^`]*min-h-4/);
+  assert.doesNotMatch(source, /connectionStatus \|\| "频道状态正常"/);
   assert.doesNotMatch(source, /\{statusCopy\(room\.connectionState\) \? \(/);
 });
 

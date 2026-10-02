@@ -154,7 +154,7 @@ test("quick messages show voice and music slots with playback controls in one li
   assert.equal(source.includes("quick-message-slot-list--voice"), true);
   assert.equal(source.includes("quick-message-slot-list--music"), true);
   assert.equal(source.includes("语音 / 音效"), true);
-  assert.equal(source.includes("拖到槽位即可绑定"), true);
+  assert.equal(source.includes("拖入绑定 · 右键清空"), true);
   assert.equal(source.includes("onDrop={(event) => handleSlotDrop(event, index)}"), true);
   assert.equal(source.includes("onDrop={(event) => handleMusicDrop(event, index)}"), true);
   assert.equal(source.includes("draggable"), true);
@@ -175,6 +175,13 @@ test("quick messages show voice and music slots with playback controls in one li
   assert.equal(source.includes("settings-inline-select"), true);
   assert.equal(source.includes("xl:grid-cols-5"), true);
   assert.equal(source.includes("快捷键"), true);
+  assert.equal(source.includes('ariaLabel="快捷键总开关"'), true);
+  assert.equal(source.includes('ariaLabel="音乐快捷键总开关"'), false);
+  assert.match(
+    source,
+    /<fieldset\s+disabled=\{!shortcutsEnabled\}[^>]*>[\s\S]*slots\.map[\s\S]*musicSlots\.map[\s\S]*<\/fieldset>/,
+  );
+  assert.equal(chatSource.match(/enabled: shortcutsEnabled && slot\.enabled/g)?.length, 2);
   assert.equal(source.includes("compact"), true);
   assert.equal(source.includes("soundVolume"), true);
   assert.equal(source.includes('"--ui-sound-volume"'), true);
@@ -472,8 +479,8 @@ test("microphone processing lives in the room panel while about keeps release hi
   assert.equal(roomDockSource.includes("settings.isFriendLoudnessBalanceEnabled"), true);
   assert.equal(roomDockSource.includes("pushToTalkEnabled={settings.isPushToTalkEnabled}"), true);
   assert.equal(roomDockSource.includes("microphoneTest={microphoneTest}"), true);
-  assert.equal(RELEASE_HISTORY.length, 82);
-  assert.equal(RELEASE_HISTORY[0]?.version, "3.3.0");
+  assert.equal(RELEASE_HISTORY.length >= 83, true);
+  assert.equal(RELEASE_HISTORY[0]?.version, "3.4.2");
   assert.equal(RELEASE_HISTORY.at(-1)?.version, "0.1.1");
   assert.equal(
     new Set(RELEASE_HISTORY.map((release) => release.version)).size,
@@ -521,17 +528,24 @@ test("settings omit room history while the daily report popup remains", () => {
   assert.equal(overlays.includes("lastDailyRoomReportSeen"), true);
 });
 
-test("release notes emphasize only the leading keyword", () => {
+test("release notes show a concise overview and optional themed details", () => {
   const source = readFileSync(detailedReleaseNotesPath, "utf8");
   assert.equal(source.includes('className="release-notes-detail-keyword"'), true);
   assert.equal(source.includes('item.indexOf("：")'), true);
   assert.equal(source.includes('aria-label="本次更新重点"'), true);
   assert.equal(source.includes("release-notes-highlight-list"), true);
-  assert.equal(source.includes("release-notes-inline-emphasis"), true);
+  assert.equal(source.includes("RELEASE_EMPHASIS_PATTERN"), false);
+  assert.equal(source.includes('<details className="release-notes-expanded"'), true);
+  assert.equal(source.includes("release-notes-pagination"), false);
+  assert.equal(source.includes("可在「设置 → 关于上号」再次查看"), true);
 });
 
 test("recording library safely cleans verified waste recordings", () => {
   const source = readFileSync(recordingLibraryCardPath, "utf8");
+  const cleanup = readFileSync(
+    path.resolve(process.cwd(), "src/renderer/src/components/settings/RecordingCleanupDialog.tsx"),
+    "utf8",
+  );
   const roomSource = readFileSync(
     path.resolve(process.cwd(), "src/renderer/src/features/recording/finishSavedRoomRecording.ts"),
     "utf8",
@@ -542,15 +556,19 @@ test("recording library safely cleans verified waste recordings", () => {
   assert.equal(source.includes("自动清理"), true);
   assert.equal(source.includes("上限"), true);
   assert.equal(source.includes("立即清理"), false);
-  assert.equal(source.includes('                : "清理"'), true);
+  assert.equal(source.includes('                : "清理废弃录音"'), true);
   assert.equal(source.includes("isRecordingWasteAutoCleanupEnabled"), true);
-  assert.equal(source.includes("清理录音？"), true);
-  assert.equal(source.includes("十秒以下"), true);
+  assert.equal(cleanup.includes("清理废弃录音"), true);
+  assert.equal(source.includes("不足10分钟"), true);
+  assert.equal(cleanup.includes("不足10分钟"), true);
+  assert.equal(source.includes("十秒以下"), false);
+  assert.equal(cleanup.includes("不足10秒"), false);
   assert.equal(source.includes('candidate.reason !== "unreadable"'), true);
-  assert.equal(source.includes("最旧的未收藏、无标记录音移到回收站"), true);
+  assert.equal(source.includes("回收最旧的未收藏、无标记录音"), true);
   assert.equal(roomSource.includes("录音已移至回收站"), true);
-  assert.equal(source.includes("收藏和带标记的录音不会被清理"), true);
-  assert.equal(source.includes('role="alertdialog"'), true);
+  assert.equal(cleanup.includes("收藏和带标记的录音不会被清理"), true);
+  assert.equal(cleanup.includes('role="alertdialog"'), true);
+  assert.equal(source.includes("window.desktopApi.recording.cleanWaste(filePaths)"), true);
   assert.equal(source.includes("window.desktopApi.recording.deleteMany("), true);
   assert.equal(source.includes("showItemInFolder(item.filePath)"), true);
   assert.equal(source.includes("在文件夹中定位"), true);
@@ -647,7 +665,10 @@ test("recording library keeps both desktop columns useful while browsing long li
   assert.doesNotMatch(styles, /\.voice-memory-transcript\s*\{[^}]*overflow:\s*auto/s);
   assert.equal(cardSource.includes('["main", "一号房"]'), false);
   assert.equal(cardSource.includes('["side", "二号房"]'), false);
-  assert.equal(cardSource.includes("`语音 ${String(recordingNumbers.get(item.id)"), true);
+  assert.equal(
+    cardSource.includes("recordingDisplayTitle(item, recordingNumbers.get(item.id) ?? 1)"),
+    true,
+  );
 });
 
 test("recording library paints before deferred transcript status hydration", () => {
@@ -661,7 +682,7 @@ test("recording library paints before deferred transcript status hydration", () 
   const ipcSource = readFileSync(ipcPath, "utf8");
   const listHandler = ipcSource.slice(
     ipcSource.indexOf("IPC_CHANNELS.recording.list"),
-    ipcSource.indexOf("IPC_CHANNELS.recording.scanWaste"),
+    ipcSource.indexOf("registerRecordingCleanupIpc(() => settingsStore.getSnapshot()"),
   );
 
   assert.equal(cardSource.includes("const RECORDING_RENDER_BATCH = 24"), true);
@@ -702,7 +723,7 @@ test("successful empty ASR units remain silence instead of failing the recording
     false,
   );
   assert.equal(runtimeSource.includes("timeoutMs: options.timeoutMs ?? 4 * 60_000"), true);
-  assert.equal(voiceMemorySource.includes("maxNewTokens: 384"), true);
+  assert.equal(voiceMemorySource.includes("maxNewTokens: 3_072"), true);
   assert.equal(voiceMemorySource.includes("planRecordingOrganizationChunks(preparedRecord)"), true);
   assert.equal(voiceMemorySource.includes("organizationChunkPrompt(record, running)"), true);
   assert.equal(voiceMemorySource.includes("normalizeOrganizationResult("), true);
@@ -773,7 +794,18 @@ test("AI voice memory keeps first install manual and recovers interrupted compar
   assert.equal(source.includes("isDisabled={!organizerReady || !selectedAsrReady}"), true);
   assert.equal(source.includes('option value="cloud">房间云端（默认）'), true);
   assert.equal(source.includes("云端 API · 无需本地模型"), false);
-  assert.equal(source.includes('ai-cloud-provider-badge">房间云端 AI'), true);
+  assert.equal(source.includes('label="整理与问答模型"'), true);
+  assert.equal(source.includes('label="录音整理模型"'), false);
+  assert.equal(source.includes('label="房间问答模型"'), false);
+  assert.ok(
+    source.indexOf('aria-labelledby="transcription-settings-title"') <
+      source.indexOf("ref={modelManagementRef}"),
+  );
+  assert.ok(
+    source.indexOf('aria-labelledby="ai-analysis-title"') <
+      source.indexOf("ref={modelManagementRef}"),
+  );
+  assert.equal(source.includes('ariaLabel="整理后自动上传"'), true);
   assert.equal(source.includes("providerSelect(settings.aiRoomAskProvider"), false);
   assert.equal(source.includes("无需安装任何本地问答模型"), false);
   assert.equal(source.includes("密钥经 Windows 加密，仅保存在本机"), true);

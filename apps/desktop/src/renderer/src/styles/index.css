@@ -14,10 +14,16 @@
 @import "./parts/110-component-polish.css";
 @import "./parts/115-recording-player-title.css";
 @import "./parts/116-recording-clips.css";
+@import "./parts/117-recording-card-meta.css";
+@import "./parts/118-music-shortcuts.css";
+@import "./parts/119-recording-cleanup.css";
+@import "./parts/120-recording-ai-workflow.css";
 @import "./parts/120-ai.css";
 @import "./parts/130-final-material.css";
 @import "./parts/140-visual-experience.css";
 @import "./parts/150-account.css";
+@import "./parts/151-account-avatar-polish.css";
+@import "./parts/218-account-recording-feedback.css";
 @import "./parts/160-sensory-polish.css";
 @import "./parts/170-model-comparison.css";
 @import "./parts/175-voice-memory-organization.css";
@@ -27,6 +33,8 @@
 @import "./parts/195-phone-mic.css";
 @import "./parts/200-settings-refinement.css";
 @import "./parts/202-room-navigation.css";
+@import "./parts/203-room-switch-dialog.css";
+@import "./parts/204-scene-foreground-edge.css";
 @import "./parts/205-scene-life.css";
 @import "./parts/210-entry-transitions.css";
 @import "./parts/215-game-artwork.css";

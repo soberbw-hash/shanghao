@@ -3,12 +3,6 @@ $ErrorActionPreference = 'Stop'
 $group = 'ShangHao Network'
 $operation = $env:SHANGHAO_FIREWALL_OPERATION
 $exePath = $env:SHANGHAO_FIREWALL_EXE
-$expectedNames = @(
-  'ShangHao UDP Inbound',
-  'ShangHao UDP Outbound',
-  'ShangHao TCP Inbound',
-  'ShangHao TCP Outbound'
-)
 $expectedRuleNames = @(
   'ShangHao-UDP-Inbound',
   'ShangHao-UDP-Outbound',
@@ -31,9 +25,13 @@ if ($operation -eq 'repair') {
   New-NetFirewallRule -Name $expectedRuleNames[3] -DisplayName $expectedNames[3] -Group $group -Direction Outbound -Action Allow -Enabled True -Profile Any -Program $exePath -Protocol TCP | Out-Null
 }
 
-$rules = @(Get-NetFirewallRule -Group $group -ErrorAction SilentlyContinue)
+try { $rules = @(Get-NetFirewallRule -Group $group -ErrorAction Stop) }
+catch {
+  if ($_.CategoryInfo.Category -ne 'ObjectNotFound') { throw }
+  $rules = @()
+}
 $items = @($rules | ForEach-Object {
-  $application = $_ | Get-NetFirewallApplicationFilter -ErrorAction SilentlyContinue
+  $application = $_ | Get-NetFirewallApplicationFilter -ErrorAction Stop
   @{
     name = $_.DisplayName
     enabled = [string]$_.Enabled

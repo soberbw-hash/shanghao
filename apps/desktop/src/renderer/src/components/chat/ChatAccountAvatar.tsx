@@ -8,6 +8,8 @@ import { useAccountStore } from "../../store/accountStore";
 import { useSettingsStore } from "../../store/settingsStore";
 import { accountAvatarPresetSource } from "../../features/account/accountAvatarPresets";
 import { AccountAvatar } from "../account/AccountAvatar";
+import { RoomAiIcon } from "../room/RoomAiIcon";
+import { isGameAssistantMessage } from "../../features/chat/gameAssistantMessage";
 
 export const ChatAccountAvatar = ({ message }: { message: ChatMessage }) => {
   // A primitive selector ignores speaking/latency updates and follows account-photo changes.
@@ -45,6 +47,16 @@ export const ChatAccountAvatar = ({ message }: { message: ChatMessage }) => {
     : accountAvatarPresetSource(
         fallbackIdentity ? accountAvatarPresetForIdentity(fallbackIdentity) : undefined,
       );
+  if (isGameAssistantMessage(message))
+    return (
+      <span
+        role="img"
+        aria-label="游戏助手"
+        className="chat-message-avatar mt-0.5 h-7 w-7 shrink-0 rounded-[10px]"
+      >
+        <RoomAiIcon />
+      </span>
+    );
   return (
     <AccountAvatar
       name={message.nickname}

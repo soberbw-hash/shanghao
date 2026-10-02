@@ -3,6 +3,7 @@ dist
 dist-electron
 release
 artifacts
+**/test-artifacts
 tmp
 .pnpm-store
 .turbo

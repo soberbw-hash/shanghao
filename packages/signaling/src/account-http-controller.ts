@@ -32,7 +32,7 @@ const ROUTE_LIMITS: Record<string, { windowMs: number; limit: number }> = {
   "POST /api/account/refresh": { windowMs: 60_000, limit: 30 },
   "POST /api/account/password-reset": { windowMs: 60 * 60_000, limit: 5 },
   "PUT /api/account/profile": { windowMs: 60_000, limit: 20 },
-  "PUT /api/account/avatar": { windowMs: 10 * 60_000, limit: 8 },
+  "PUT /api/account/avatar": { windowMs: 60_000, limit: 120 },
 };
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -135,11 +135,8 @@ export class AccountHttpController {
       this.send(response, 503, { error: { code: "account_not_configured" } });
       return true;
     }
-    if (!this.consumeRateLimit(request, pathname)) {
-      response.setHeader("retry-after", "60");
-      this.send(response, 429, { error: { code: "account_rate_limited" } });
-      return true;
-    }
+    const retryAfter = this.consumeRateLimit(request, pathname);
+    if (retryAfter) return this.sendRateLimited(response, retryAfter);
 
     try {
       if (request.method === "POST" && pathname === "/api/account/register") {
@@ -200,10 +197,28 @@ export class AccountHttpController {
       if (request.method === "PUT" && pathname === "/api/account/avatar") {
         const body = await readJsonBody(request);
         const token = bearerToken(request);
-        const profile =
-          this.backend.updateAvatarPreset && isAccountAvatarPresetId(body.accountAvatarPresetId)
-            ? await this.backend.updateAvatarPreset(token, body.accountAvatarPresetId)
-            : await this.backend.updateAvatar(token, requiredText(body.dataUrl, 720_000));
+        let profile: AccountProfile;
+        if (this.backend.updateAvatarPreset && body.accountAvatarPresetId !== undefined) {
+          if (!isAccountAvatarPresetId(body.accountAvatarPresetId))
+            throw new AccountServerError("account_avatar_invalid");
+          const owner = await this.backend.getProfile(token);
+          const wait = this.consumeRateLimit(request, pathname, `preset:${owner.userId}`, {
+            windowMs: 60_000,
+            limit: 60,
+          });
+          if (wait) return this.sendRateLimited(response, wait);
+          profile = await this.backend.updateAvatarPreset(token, body.accountAvatarPresetId);
+        } else {
+          const wait = this.consumeRateLimit(
+            request,
+            pathname,
+            undefined,
+            { windowMs: 10 * 60_000, limit: 8 },
+            "image-upload",
+          );
+          if (wait) return this.sendRateLimited(response, wait);
+          profile = await this.backend.updateAvatar(token, requiredText(body.dataUrl, 720_000));
+        }
         await this.notifyProfileUpdated(profile);
         this.send(response, 200, { profile });
         return true;
@@ -251,20 +266,34 @@ export class AccountHttpController {
     return TOKEN_ONLY_DEVELOPMENT_ROUTES.has(`${request.method ?? "UNKNOWN"} ${pathname}`);
   }
 
-  private consumeRateLimit(request: IncomingMessage, pathname: string): boolean {
+  private consumeRateLimit(
+    request: IncomingMessage,
+    pathname: string,
+    owner?: string,
+    policy?: { windowMs: number; limit: number },
+    kind = "request",
+  ): number {
     const route = `${request.method ?? "UNKNOWN"} ${pathname}`;
-    const limit = ROUTE_LIMITS[route];
-    if (!limit) return true;
+    const limit = policy ?? ROUTE_LIMITS[route];
+    if (!limit) return 0;
     const address = request.socket.remoteAddress ?? "unknown";
-    const key = `${address}|${route}`;
+    const key = `${owner ?? address}|${route}|${kind}`;
     const now = Date.now();
     const current = this.rateWindows.get(key);
     if (!current || now - current.startedAt >= limit.windowMs) {
       this.rateWindows.set(key, { startedAt: now, count: 1 });
-      return true;
+      return 0;
     }
     current.count += 1;
-    return current.count <= limit.limit;
+    return current.count <= limit.limit
+      ? 0
+      : Math.max(1, Math.ceil((limit.windowMs - (now - current.startedAt)) / 1_000));
+  }
+
+  private sendRateLimited(response: ServerResponse, retryAfterSeconds: number): true {
+    response.setHeader("retry-after", String(retryAfterSeconds));
+    this.send(response, 429, { error: { code: "account_rate_limited", retryAfterSeconds } });
+    return true;
   }
 
   private applyHeaders(response: ServerResponse): void {

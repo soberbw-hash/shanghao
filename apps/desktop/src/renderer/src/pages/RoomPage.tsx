@@ -2,7 +2,6 @@ import { useRecordingSpeakingTimeline } from "../hooks/useRecordingSpeakingTimel
 import { useLocalInputRecovery } from "../features/audio/useLocalInputRecovery";
 import { finishSavedRoomRecording } from "../features/recording/finishSavedRoomRecording";
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
-
 import {
   RecordingEncoderState,
   RecordingState,
@@ -13,7 +12,6 @@ import {
   type ScreenCaptureSourceDescriptor,
   type SceneZoneId,
 } from "@private-voice/shared";
-
 import { RoomChatPanel } from "../components/chat/RoomChatPanel";
 import { TopStatusBar } from "../components/layout/TopStatusBar";
 import { RoomSwitchDialog } from "../components/room/RoomSwitchDialog";
@@ -58,10 +56,10 @@ import { getLatestConnectionHealthTelemetry, useRoomStore } from "../store/roomS
 import { useSettingsStore } from "../store/settingsStore";
 import { toUserFacingError } from "../utils/userFacingError";
 import roomEnvironmentUrl from "../assets/scenes/shanghao-room/environment-v3-extended.png";
-
 const KNOCK_COOLDOWN_MS = 10_000;
 interface AwaySession {
   method: "auto" | "manual";
+  wasMuted: boolean;
   seat: SceneZoneId;
   activity: MemberActivity;
   gameName?: string;
@@ -518,8 +516,8 @@ export const RoomPage = () => {
   useEffect(() => {
     let disposed = false;
     const checkIdleState = async () => {
-      const idleSeconds = await window.desktopApi.app.getSystemIdleSeconds().catch(() => 0);
-      if (disposed) return;
+      const idleSeconds = await window.desktopApi.app.getSystemIdleSeconds().catch(() => undefined);
+      if (disposed || idleSeconds === undefined) return;
       const currentLocalMember = useRoomStore
         .getState()
         .room.members.find((member) => member.isLocal);
@@ -542,6 +540,7 @@ export const RoomPage = () => {
         const seat = isSeatZone(currentZone) ? currentZone : lastSeatZoneRef.current;
         awaySessionRef.current = {
           method: "auto",
+          wasMuted: useAudioStore.getState().isMuted,
           seat,
           activity: currentLocalMember.activity ?? "idle",
           gameName: currentLocalMember.gameName,
@@ -576,6 +575,7 @@ export const RoomPage = () => {
         awaySessionRef.current = undefined;
         const shouldRemainMuted = shouldMuteAfterAwayReturn({
           isDeafened: useAudioStore.getState().isDeafened,
+          wasMuted: awaySession.wasMuted,
         });
         setMuted(shouldRemainMuted);
         moveLocalMemberRef.current(
@@ -594,7 +594,7 @@ export const RoomPage = () => {
         pushToast({
           tone: "success",
           title: "欢迎回来，已回到原来的位置。",
-          description: shouldRemainMuted ? "扬声器仍关闭，麦克风保持静音。" : "麦克风已自动恢复。",
+          description: shouldRemainMuted ? "麦克风保持静音。" : "已恢复离开前的麦克风状态。",
         });
       }
     };
@@ -1064,7 +1064,12 @@ export const RoomPage = () => {
       const wasAway = Boolean(awaySession || localMember?.sceneZone === "restroomZone");
       awaySessionRef.current = undefined;
       if (wasAway) {
-        setMuted(shouldMuteAfterAwayReturn({ isDeafened }));
+        setMuted(
+          shouldMuteAfterAwayReturn({
+            isDeafened: useAudioStore.getState().isDeafened,
+            wasMuted: awaySession?.wasMuted,
+          }),
+        );
       }
       if (wasAway) {
         void window.desktopApi.app.writeLog({
@@ -1077,6 +1082,7 @@ export const RoomPage = () => {
     } else if (zone === "restroomZone") {
       awaySessionRef.current = {
         method: "manual",
+        wasMuted: awaySessionRef.current?.wasMuted ?? useAudioStore.getState().isMuted,
         seat: lastSeatZoneRef.current,
         activity: localMember?.activity ?? "idle",
         gameName: localMember?.gameName,
@@ -1123,6 +1129,7 @@ export const RoomPage = () => {
       <div>
         {roomPickerOpen && (
           <RoomSwitchDialog
+            currentRoom={room.privateRoom}
             busy={isSwitchingChannelLocally || roomAction === "joining"}
             onClose={() => setRoomPickerOpen(false)}
             onJoin={(target) => handleSwitchChannel(target.roomId)}

@@ -368,12 +368,6 @@
   min-width: 0;
   overflow-wrap: anywhere;
 }
-.chat-quick-more {
-  margin-left: auto;
-  flex: 0 0 26px;
-  display: grid;
-  place-items: center;
-}
 
 .chat-quick-reply:hover:not(:disabled) {
   transform: translateY(-1px) scale(1.01);

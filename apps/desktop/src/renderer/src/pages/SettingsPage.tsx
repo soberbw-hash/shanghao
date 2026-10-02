@@ -21,6 +21,7 @@ import { motionCurve, motionDuration, motionEase } from "../features/motion/moti
 import { interactionPerformanceMonitor } from "../features/diagnostics/interactionPerformanceMonitor";
 import { rendererPerformanceMonitor } from "../features/diagnostics/rendererPerformanceMonitor";
 import { useRenderProfiler } from "../features/diagnostics/renderProfiler";
+import { observeWindowsIntegration } from "../features/diagnostics/observeWindowsIntegration";
 import {
   cacheSettingsSection,
   getInitialSettingsSection,
@@ -177,24 +178,17 @@ export const SettingsPage = ({ isActive = true }: { isActive?: boolean }) => {
 
   useEffect(() => {
     if (!isActive || (activeSection !== "general" && activeSection !== "diagnostics")) return;
-    let cancelled = false;
     setIsWindowsDiagnosticsLoading(!cachedWindowsDiagnostics);
-    void window.desktopApi.windows
-      .getStatus()
-      .then((snapshot) => {
-        if (cancelled) return;
+    return observeWindowsIntegration(
+      (snapshot) => {
         cachedWindowsDiagnostics = snapshot;
         setWindowsDiagnostics(snapshot);
-      })
-      .catch(() => {
-        if (!cancelled && !cachedWindowsDiagnostics) setWindowsDiagnostics(undefined);
-      })
-      .finally(() => {
-        if (!cancelled) setIsWindowsDiagnosticsLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
+      },
+      () => setIsWindowsDiagnosticsLoading(false),
+      () => {
+        if (!cachedWindowsDiagnostics) setWindowsDiagnostics(undefined);
+      },
+    );
   }, [activeSection, isActive]);
 
   useLayoutEffect(() => {
@@ -266,7 +260,10 @@ export const SettingsPage = ({ isActive = true }: { isActive?: boolean }) => {
     void window.desktopApi.windows
       .repairFirewall()
       .then((firewall) => {
-        setWindowsDiagnostics((current) => (current ? { ...current, firewall } : current));
+        setWindowsDiagnostics((current) => {
+          cachedWindowsDiagnostics = current ? { ...current, firewall } : current;
+          return cachedWindowsDiagnostics;
+        });
         pushToast({
           tone: firewall.healthy ? "success" : "danger",
           title: firewall.healthy ? "防火墙规则已修复" : "防火墙修复未完成",

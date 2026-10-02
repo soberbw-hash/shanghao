@@ -331,10 +331,10 @@ test("Supabase migration keeps login mapping private and derives profiles atomic
   assert.doesNotMatch(sql, /sb_secret_/i, "migration must not contain a real key value");
 });
 
-test("registration offers ten local SVG avatar presets without embedding remote content", async () => {
+test("registration offers 32 local SVG avatar presets without embedding remote content", async () => {
   const avatarDirectory = new URL("../src/renderer/src/assets/account-avatars/", import.meta.url);
   const avatarFiles = (await readdir(avatarDirectory)).filter((name) => name.endsWith(".svg"));
-  assert.equal(avatarFiles.length, 10);
+  assert.equal(avatarFiles.length, 32);
   for (const avatarFile of avatarFiles) {
     const source = await readFile(new URL(avatarFile, avatarDirectory), "utf8");
     assert.match(source, /^<svg[\s>]/);

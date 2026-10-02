@@ -3,6 +3,10 @@ import { contextBridge, ipcRenderer } from "electron";
 import { IPC_CHANNELS, type DesktopApi } from "@private-voice/shared";
 
 const desktopApi: DesktopApi = {
+  roomMemory: {
+    get: (id) => ipcRenderer.invoke(IPC_CHANNELS.roomMemory.get, id),
+    save: (request) => ipcRenderer.invoke(IPC_CHANNELS.roomMemory.save, request),
+  },
   storage: {
     inspect: () => ipcRenderer.invoke(IPC_CHANNELS.storage.inspect),
     clearExpiredTemporary: () => ipcRenderer.invoke(IPC_CHANNELS.storage.clearExpiredTemporary),
@@ -351,6 +355,7 @@ const desktopApi: DesktopApi = {
       ipcRenderer.invoke(IPC_CHANNELS.recording.applyAutomaticCleanup, filePath),
     list: () => ipcRenderer.invoke(IPC_CHANNELS.recording.list),
     scanWaste: () => ipcRenderer.invoke(IPC_CHANNELS.recording.scanWaste),
+    cleanWaste: (filePaths) => ipcRenderer.invoke(IPC_CHANNELS.recording.cleanWaste, filePaths),
     onScanWasteProgress: (listener) => {
       const wrapped = (_event: Electron.IpcRendererEvent, progress: unknown) => {
         listener(progress as Parameters<typeof listener>[0]);

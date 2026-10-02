@@ -23,7 +23,7 @@ const messages: Record<string, string> = {
   account_email_invalid: "邮箱格式不正确，请检查邮箱地址。",
   account_email_taken: "这个邮箱已经注册，可以直接登录或找回密码。",
   account_password_weak: "密码需为 8～32 位，并包含字母和数字。",
-  account_rate_limited: "尝试次数较多，请稍等一分钟后再试。",
+  account_rate_limited: "操作过于频繁，请稍后再试。",
   account_session_expired: "登录已过期，请重新登录。",
   account_server_not_configured: "账号服务器地址尚未配置。开发时请先填写服务器地址。",
   account_server_upgrade_required:

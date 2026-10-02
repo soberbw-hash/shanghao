@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ArrowUp, History, Send, Square } from "lucide-react";
+import { ArrowUp, History, Send, Square, Trash2 } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
 
 import type { VoiceMemoryAnswer } from "@private-voice/shared";
@@ -346,27 +346,50 @@ export const RoomAskDialog = ({
                 </h3>
                 <div>
                   {questionHistory.map((entry) => (
-                    <button
-                      type="button"
-                      key={entry.id}
-                      disabled={Boolean(pending) || sharing.sending}
-                      onClick={() => {
-                        setQuery(entry.question);
-                        setAnswer(entry.answer);
-                        setError(undefined);
-                        sharing.clearNotice();
-                      }}
-                    >
-                      <span>{entry.question}</span>
-                      <time dateTime={entry.createdAt}>
-                        {new Date(entry.createdAt).toLocaleString("zh-CN", {
-                          month: "numeric",
-                          day: "numeric",
-                          hour: "2-digit",
-                          minute: "2-digit",
-                        })}
-                      </time>
-                    </button>
+                    <div key={entry.id} className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        key={entry.id}
+                        disabled={Boolean(pending) || sharing.sending}
+                        onClick={() => {
+                          setQuery(entry.question);
+                          setAnswer(entry.answer);
+                          setError(undefined);
+                          sharing.clearNotice();
+                        }}
+                      >
+                        <span>{entry.question}</span>
+                        <time dateTime={entry.createdAt}>
+                          {new Date(entry.createdAt).toLocaleString("zh-CN", {
+                            month: "numeric",
+                            day: "numeric",
+                            hour: "2-digit",
+                            minute: "2-digit",
+                          })}
+                        </time>
+                      </button>
+                      <button
+                        type="button"
+                        aria-label={`删除提问：${entry.question}`}
+                        title="删除提问"
+                        disabled={Boolean(pending) || sharing.sending}
+                        style={{ flex: "0 0 30px", padding: 6 }}
+                        onClick={() => {
+                          const next = questionHistory.filter((item) => item.id !== entry.id);
+                          try {
+                            window.localStorage.setItem(
+                              ROOM_QUESTION_HISTORY_KEY,
+                              JSON.stringify(next),
+                            );
+                            setQuestionHistory(next);
+                          } catch {
+                            setError("未能删除这条提问，请重试。");
+                          }
+                        }}
+                      >
+                        <Trash2 size={16} aria-hidden="true" />
+                      </button>
+                    </div>
                   ))}
                 </div>
               </section>

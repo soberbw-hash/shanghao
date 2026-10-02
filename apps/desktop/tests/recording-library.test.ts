@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, rename as moveFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -26,8 +26,8 @@ import {
   SILENT_RECORDING_PEAK_DB,
 } from "../src/main/recording-cleanup";
 
-test("recording cleanup marks recordings below ten seconds, silent media, or unreadable media", () => {
-  assert.equal(SHORT_RECORDING_MS, 10_000);
+test("recording cleanup marks recordings below ten minutes, silent media, or unreadable media", () => {
+  assert.equal(SHORT_RECORDING_MS, 600_000);
   assert.equal(SILENT_RECORDING_PEAK_DB, -60);
   assert.equal(
     parseRecordingProbeOutput("Duration: 00:00:08.40, start: 0.000000\nmax_volume: -12.0 dB", 0)
@@ -35,17 +35,17 @@ test("recording cleanup marks recordings below ten seconds, silent media, or unr
     "too_short",
   );
   assert.equal(
-    parseRecordingProbeOutput("Duration: 00:06:16.06, start: 0.000000\nmax_volume: -80.8 dB", 0)
+    parseRecordingProbeOutput("Duration: 00:16:16.06, start: 0.000000\nmax_volume: -80.8 dB", 0)
       .reason,
     "silent",
   );
   assert.equal(
-    parseRecordingProbeOutput("Duration: 00:00:09.99, start: 0.000000\nmax_volume: -8.0 dB", 0)
+    parseRecordingProbeOutput("Duration: 00:09:59.99, start: 0.000000\nmax_volume: -8.0 dB", 0)
       .reason,
     "too_short",
   );
   assert.equal(
-    parseRecordingProbeOutput("Duration: 00:00:10.00, start: 0.000000\nmax_volume: -8.0 dB", 0)
+    parseRecordingProbeOutput("Duration: 00:10:00.00, start: 0.000000\nmax_volume: -8.0 dB", 0)
       .reason,
     undefined,
   );
@@ -61,6 +61,90 @@ test("automatic cleanup leaves unreadable recordings for manual review", () => {
   assert.equal(isAutomaticWasteCandidate({ filePath: "recording.m4a", reason: "silent" }), true);
 });
 
+test("sub-ten-minute recordings are waste while ten minutes and longer need silence to qualify", () => {
+  for (const duration of ["00:00:10.00", "00:01:00.00", "00:05:00.00", "00:09:59.99"]) {
+    const result = parseRecordingProbeOutput(
+      `Duration: ${duration}, start: 0\nmax_volume: -25.0 dB`,
+      0,
+    );
+    assert.equal(result.reason, "too_short");
+    assert.equal(isAutomaticWasteCandidate({ filePath: "short.m4a", reason: result.reason }), true);
+  }
+  for (const duration of ["00:10:00.00", "00:10:00.01", "01:00:00.00"]) {
+    assert.equal(
+      parseRecordingProbeOutput(`Duration: ${duration}, start: 0\nmax_volume: -25.0 dB`, 0).reason,
+      undefined,
+    );
+  }
+  assert.equal(
+    parseRecordingProbeOutput("Duration: 00:10:00.00, start: 0\nmax_volume: -inf dB", 0).reason,
+    "silent",
+  );
+  assert.equal(
+    parseRecordingProbeOutput("Duration: 01:00:00.00, start: 0\nmax_volume: -inf dB", 0).reason,
+    "silent",
+  );
+});
+
+test("manual waste recycling rechecks file identity, favorites and markers", async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "shanghao-waste-guard-"));
+  const filePath = path.join(directory, "recording.m4a");
+  let moved = 0;
+  try {
+    await writeFile(filePath, Buffer.from([1, 2, 3]));
+    const before = (await readRecordingLibraryFromDirectory(directory, 1)).items[0]!;
+    const recycle = async () => {
+      moved++;
+    };
+    await setRecordingFavoriteInDirectory(directory, filePath, true);
+    await assert.rejects(
+      recycleUnprotectedRecordingInDirectory(directory, filePath, recycle, before),
+      /recording_protected/,
+    );
+    await setRecordingFavoriteInDirectory(directory, filePath, false);
+    await writeFile(markerPathFor(filePath), "1. 00:00:01\n");
+    await assert.rejects(
+      recycleUnprotectedRecordingInDirectory(directory, filePath, recycle, before),
+      /recording_protected/,
+    );
+    await rm(markerPathFor(filePath));
+    await writeFile(filePath, Buffer.from([1, 2, 3, 4]));
+    await assert.rejects(
+      recycleUnprotectedRecordingInDirectory(directory, filePath, recycle, before),
+      /recording_changed_since_scan/,
+    );
+    assert.equal(moved, 0);
+    assert.deepEqual(await readFile(filePath), Buffer.from([1, 2, 3, 4]));
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("manual recycle recovery preserves recording identity and custom title", async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "shanghao-waste-restore-"));
+  try {
+    const filePath = path.join(directory, "recording.m4a");
+    const trash = path.join(directory, "recycled.bin");
+    await writeFile(filePath, Buffer.from([1, 2, 3]));
+    const first = (await readRecordingLibraryFromDirectory(directory, 1)).items[0]!;
+    const before = await renameRecordingInDirectory(directory, first.recordingId, "我的误录");
+    await recycleUnprotectedRecordingInDirectory(
+      directory,
+      before.filePath,
+      (target) => moveFile(target, trash),
+      before,
+    );
+    assert.equal((await readRecordingLibraryFromDirectory(directory, 1)).items.length, 0);
+    await moveFile(trash, before.filePath);
+    const restored = (await readRecordingLibraryFromDirectory(directory, 1)).items[0]!;
+    assert.equal(restored.recordingId, before.recordingId);
+    assert.equal(restored.title, "我的误录");
+    assert.equal(restored.isCustomTitle, true);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
 test("recording library lists old and room-aware recordings with marker points", async () => {
   const directory = await mkdtemp(path.join(os.tmpdir(), "shanghao-recordings-"));
   try {
@@ -70,7 +154,7 @@ test("recording library lists old and room-aware recordings with marker points",
     await writeFile(roomPath, Buffer.from([3, 4, 5, 6]));
     await writeFile(
       path.join(directory, "上号-一号房-2026-08-12-10-21-30-精彩时刻.txt"),
-      "1. 00:00:12\r\n2. 00:01:05\r\n",
+      "1. 00:00:12 · 12:26 启动了英雄联盟\r\n2. 00:01:05\r\n",
       "utf8",
     );
 
@@ -78,6 +162,7 @@ test("recording library lists old and room-aware recordings with marker points",
     assert.equal(library.items.length, 2);
     const roomRecording = library.items.find((item) => item.filePath === roomPath);
     assert.equal(roomRecording?.roomId, "main");
+    assert.equal(roomRecording?.markers[0]?.label, "12:26 启动了英雄联盟");
     assert.deepEqual(
       roomRecording?.markers.map((marker) => marker.offsetMs),
       [12_000, 65_000],

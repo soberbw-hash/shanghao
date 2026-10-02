@@ -57,6 +57,7 @@ const runFirewallOperation = async (
   ]);
   const healthy =
     items.length === expectedNames.size &&
+    new Set(items.map((item) => item.name)).size === expectedNames.size &&
     items.every(
       (item) =>
         item.name &&

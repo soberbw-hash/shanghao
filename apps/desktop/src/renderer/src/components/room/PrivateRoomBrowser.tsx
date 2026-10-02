@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Plus, Search, Star, ArrowRight } from "lucide-react";
 import { cn } from "@private-voice/ui";
-import type { PrivateRoomHistory, PrivateRoomInfo } from "@private-voice/shared";
+import type { PrivateRoomInfo } from "@private-voice/shared";
 import { shanghaoCore } from "../../core/shanghaoCore";
 import { privateRoomErrorMessage } from "../../features/room/privateRoomMessages";
 import { useAccountStore } from "../../store/accountStore";
@@ -13,63 +13,46 @@ import { PrivateRoomIcon } from "./PrivateRoomIcon";
 import { roomIconStyle } from "./roomIconColors";
 import { PrivateRoomEditor } from "./PrivateRoomEditor";
 import { usePendingRoomInvite } from "../../features/room/usePendingRoomInvite";
+import { usePrivateRoomDirectory } from "../../features/room/usePrivateRoomDirectory";
 
 export const PrivateRoomBrowser = ({
   busy: joining,
   onJoin,
+  currentRoom,
 }: {
   busy: boolean;
   onJoin: (room: PrivateRoomInfo) => Promise<void>;
+  currentRoom?: PrivateRoomInfo;
 }) => {
   const profile = useAccountStore((state) => state.snapshot.profile);
   const serverUrl = useSettingsStore((state) => state.settings?.relayServerUrl);
   const pendingInvite = useAppStore((state) => state.pendingRoomInvite);
   const autoJoinInvite = useAppStore((state) => state.pendingRoomInviteAutoJoin);
-  const [history, setHistory] = useState<PrivateRoomHistory>({ recent: [], favorites: [] });
-  const [mine, setMine] = useState<PrivateRoomInfo[]>([]);
+  const generation = useRef(0);
+  const {
+    history,
+    setHistory,
+    mine,
+    setMine,
+    loading,
+    error: directoryError,
+  } = usePrivateRoomDirectory(profile?.userId, serverUrl, generation, currentRoom);
   const [tab, setTab] = useState<"recent" | "favorites" | "mine">("recent");
-  const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [code, setCode] = useState("");
   const [finding, setFinding] = useState(false);
   const [found, setFound] = useState<PrivateRoomInfo>();
   const [creating, setCreating] = useState(false);
-  const generation = useRef(0);
   const historyRef = useRef(history);
   historyRef.current = history;
   const blocked = busy || joining;
   const renderedGeneration = generation.current;
   useEffect(() => {
-    const counter = generation;
-    const current = ++counter.current;
-    setLoading(true);
-    setHistory({ recent: [], favorites: [] });
-    setMine([]);
     setFound(undefined);
     setCreating(false);
     setBusy(false);
     setError("");
-    void Promise.all([shanghaoCore.rooms.history(), shanghaoCore.rooms.mine()])
-      .then(([saved, owned]) => {
-        if (generation.current !== current) return;
-        setMine(owned);
-        const fresh = new Map(owned.map((room) => [room.roomId, room]));
-        setHistory({
-          ...saved,
-          recent: saved.recent.map((room) => fresh.get(room.roomId) ?? room),
-          favorites: saved.favorites.map((room) => fresh.get(room.roomId) ?? room),
-        });
-      })
-      .catch((error) => {
-        if (generation.current === current) setError(privateRoomErrorMessage(error));
-      })
-      .finally(() => {
-        if (generation.current === current) setLoading(false);
-      });
-    return () => {
-      counter.current++;
-    };
   }, [profile?.userId, serverUrl]);
   usePendingRoomInvite({
     roomId: pendingInvite,
@@ -114,7 +97,7 @@ export const PrivateRoomBrowser = ({
     return () => {
       cancelled = true;
     };
-  }, [tab, loading, profile?.userId, serverUrl]);
+  }, [tab, loading, profile?.userId, serverUrl, setHistory]);
   const run = async (operation: (current: () => boolean) => Promise<void>) => {
     const owner = generation.current;
     const current = () => generation.current === owner;
@@ -149,8 +132,11 @@ export const PrivateRoomBrowser = ({
   const rooms = tab === "mine" ? mine : history[tab];
   const last = history.recent.find((room) => room.roomId === history.lastRoomId);
   const showDirectory =
-    !last ||
-    [...history.recent, ...history.favorites, ...mine].some((room) => room.roomId !== last.roomId);
+    !loading &&
+    (!last ||
+      [...history.recent, ...history.favorites, ...mine].some(
+        (room) => room.roomId !== last.roomId,
+      ));
   const visibleRooms =
     tab === "recent" ? rooms.filter((room) => room.roomId !== last?.roomId) : rooms;
   const roomRow = (room: PrivateRoomInfo, preview = false, featured = false) => (
@@ -232,7 +218,7 @@ export const PrivateRoomBrowser = ({
           </Button>
         </div>
       </header>
-      {loading && (
+      {loading && !last && (
         <div className="private-room-placeholder" role="status">
           正在读取房间…
         </div>
@@ -264,15 +250,20 @@ export const PrivateRoomBrowser = ({
               inputMode="numeric"
               maxLength={6}
               value={code}
-              placeholder="六位频道号"
+              placeholder="频道号"
               aria-label="查找频道号"
-              className="min-w-0 font-mono tabular-nums"
+              className="min-w-0 flex-1 font-mono tabular-nums"
               onChange={(event) => {
                 setCode(event.target.value.replace(/\D/g, ""));
                 setFound(undefined);
               }}
             />
-            <Button type="submit" variant="secondary" disabled={blocked || code.length !== 6}>
+            <Button
+              type="submit"
+              variant="secondary"
+              className="min-w-16 shrink-0 whitespace-nowrap"
+              disabled={blocked || code.length !== 6}
+            >
               查找
             </Button>
           </div>
@@ -320,13 +311,9 @@ export const PrivateRoomBrowser = ({
           ))}
         </div>
       )}
-      {showDirectory && (loading || visibleRooms.length > 0 || tab !== "recent" || !last) && (
+      {showDirectory && (visibleRooms.length > 0 || tab !== "recent" || !last) && (
         <div className="max-h-56 space-y-2 overflow-y-auto">
-          {loading && !visibleRooms.length ? (
-            <p role="status" className="py-3 text-center text-sm text-slate-500">
-              正在读取房间…
-            </p>
-          ) : visibleRooms.length ? (
+          {visibleRooms.length ? (
             visibleRooms.map((room) => roomRow(room))
           ) : (
             <p className="py-3 text-center text-sm text-slate-500">
@@ -339,9 +326,9 @@ export const PrivateRoomBrowser = ({
           )}
         </div>
       )}
-      {error && (
+      {(error || directoryError) && (
         <p role="alert" className="text-pretty text-sm text-red-600">
-          {error}
+          {error || directoryError}
         </p>
       )}
       {creating && (

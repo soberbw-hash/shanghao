@@ -178,6 +178,58 @@ test("private rooms isolate sessions, bound five seats, and persist moderation a
       }),
     );
     assert.equal((await crossRoom).type, "error");
+    const recap = {
+      recordingId: "room-a-summary",
+      description: "仅属于房间A的整理",
+      summary: ["房间A的约饭内容"],
+      highlights: [],
+      funnyMoments: [],
+      participantNicknames: [],
+      keywords: [],
+    };
+    const reportDate = new Intl.DateTimeFormat("en-CA", {
+      timeZone: "Asia/Shanghai",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).format(new Date(Date.now() - 86_400_000));
+    const rejectedUpload = next(
+      one.socket,
+      (data) => data.type === "error" && data.code === "room_mismatch",
+    );
+    one.socket.send(
+      JSON.stringify({
+        type: "publish_recording_recap",
+        roomId: b.roomId,
+        requestId: "wrong-upload",
+        peerId: "a0",
+        reportDate,
+        recap,
+      }),
+    );
+    await rejectedUpload;
+    const acceptedUpload = next(one.socket, (data) => data.type === "recording_recap_published");
+    one.socket.send(
+      JSON.stringify({
+        type: "publish_recording_recap",
+        roomId: a.roomId,
+        requestId: "right-upload",
+        peerId: "spoofed",
+        reportDate,
+        recap,
+      }),
+    );
+    assert.equal((await acceptedUpload).roomId, a.roomId);
+    const otherReports = next(other.socket, (data) => data.type === "daily_room_reports");
+    other.socket.send(
+      JSON.stringify({
+        type: "request_daily_room_reports",
+        roomId: b.roomId,
+        peerId: "b1",
+        targetRoomId: b.roomId,
+      }),
+    );
+    assert.equal(JSON.stringify(await otherReports).includes("room-a-summary"), false);
     for (let i = 1; i < 5; i++)
       assert.equal((await join(a, `user${i}`, `a${i}`, i)).result.type, "join_ack");
     assert.equal((await join(a, "user5", "a5", 0)).result.code, "room_full");

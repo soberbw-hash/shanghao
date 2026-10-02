@@ -20,6 +20,7 @@ export function registerPhoneMode(
   let devices = { inputDeviceId: "", outputDeviceId: "" };
   let sequence = 0;
   let desiredRevision = 0;
+  let desiredActive = false;
   let queue = Promise.resolve();
   let closing = false;
   const pending = new Map<
@@ -94,7 +95,7 @@ export function registerPhoneMode(
             else if (response.active !== request.active)
               request.reject(new Error("系统音频状态未确认，请使用硬件静音"));
             else request.resolve();
-          } else if (response.error)
+          } else if (response.error && response.id === 0)
             publish({
               active: state.active || response.active,
               busy: false,
@@ -159,11 +160,13 @@ export function registerPhoneMode(
   };
   const setActive = (active: boolean): Promise<void> => {
     if (closing) return Promise.reject(new Error("软件正在退出"));
-    // Immediately gate ShangHao audio; native commands stay serialized even under rapid key presses.
+    // Gate immediately on press; release only after native restoration is confirmed.
+    desiredActive = active;
     const request = ++desiredRevision;
-    publish({ active, busy: true });
+    publish({ active: active || state.active, busy: true });
     const operation = queue
-      .then(() => command(active))
+      // Keep the in-flight command serialized, discarding obsolete queued transitions.
+      .then(() => (request === desiredRevision ? command(active) : undefined))
       .then(() => {
         if (request === desiredRevision) publish({ active, busy: false });
       })
@@ -183,7 +186,9 @@ export function registerPhoneMode(
     void setActive(active).catch(() => undefined);
   };
   const configure = (shortcut: string, trigger: "hold" | "toggle") =>
-    shortcuts.configurePhone(shortcut, trigger, (active) => safeSet(active ?? !state.active));
+    shortcuts.configurePhone(shortcut, trigger, (active) =>
+      safeSet(active ?? (state.error ? false : !desiredActive)),
+    );
   const trusted = (event: Electron.IpcMainInvokeEvent) => {
     const window = getWindow();
     if (
@@ -212,7 +217,7 @@ export function registerPhoneMode(
     )
       throw new Error("invalid_audio_devices");
     devices = value;
-    if (state.active) return setActive(true);
+    if (desiredActive) return setActive(true);
   });
   ipcMain.handle(
     IPC_CHANNELS.phoneMode.configure,
@@ -243,7 +248,7 @@ export function registerPhoneMode(
   // Renderer reload/crash, screen lock and suspend are not user requests to
   // end a private call. Keep native mute until the shortcut explicitly releases.
   powerMonitor.on("resume", () => {
-    if (state.active) safeSet(true);
+    if (desiredActive) safeSet(true);
   });
   app.on("before-quit", () => {
     closing = true;

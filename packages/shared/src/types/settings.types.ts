@@ -51,12 +51,15 @@ export interface AppSettings {
   aiProcessingMode: AiProcessingMode;
   isAiAutoTranscribeEnabled: boolean;
   isAiAutoOrganizeEnabled: boolean;
+  /** Opt-in: publish completed summaries to the recording's matching room only. */
+  isAiAutoUploadEnabled?: boolean;
   isNoiseSuppressionEnabled: boolean;
   isEchoCancellationEnabled: boolean;
   isAutoGainControlEnabled: boolean;
   isVoiceEnhancementEnabled: boolean;
   isPushToTalkEnabled: boolean;
   isAutoRecordOnJoinEnabled: boolean;
+  isRecordingAutoGameMarkerEnabled?: boolean;
   micMonitorMode: MicMonitorMode;
   relayServerUrl?: string;
   isDeveloperModeEnabled: boolean;

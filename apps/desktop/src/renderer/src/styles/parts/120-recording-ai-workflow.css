@@ -1,0 +1,18 @@
+.voice-memory-header-actions {
+  flex-wrap: wrap;
+}
+.voice-memory-empty {
+  flex-wrap: wrap;
+}
+.voice-memory-empty > .voice-memory-header-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+.voice-memory-header-actions button {
+  white-space: nowrap;
+}
+.voice-memory-header-actions button:disabled {
+  background: #edf2f7;
+  color: #8b9bb0;
+  cursor: default;
+}

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Camera, Check, LogOut, ShieldCheck, UserRound } from "lucide-react";
 import { accountAvatarPresetForIdentity } from "@private-voice/shared";
 
@@ -22,6 +22,9 @@ export const AccountSettingsCard = () => {
   const profile = snapshot.profile;
   const [displayName, setDisplayName] = useState(profile?.displayName ?? "");
   const [isAvatarPickerOpen, setIsAvatarPickerOpen] = useState(false);
+  const [avatarDraft, setAvatarDraft] = useState<{ userId: string; id: string }>();
+  const [isAvatarSaving, setIsAvatarSaving] = useState(false);
+  const avatarSaveLock = useRef(false);
 
   useEffect(() => setDisplayName(profile?.displayName ?? ""), [profile?.displayName]);
 
@@ -53,23 +56,45 @@ export const AccountSettingsCard = () => {
     }
   };
 
-  const selectedAvatar = ACCOUNT_AVATAR_PRESETS.find(
-    (preset) =>
-      preset.id ===
-      (profile.accountAvatarPresetId ?? accountAvatarPresetForIdentity(profile.userId)),
-  );
+  const savedAvatarId =
+    profile.accountAvatarPresetId ??
+    (profile.avatarUrl ? undefined : accountAvatarPresetForIdentity(profile.userId));
+  const draftId = avatarDraft?.userId === profile.userId ? avatarDraft.id : savedAvatarId;
+  const selectedAvatar = ACCOUNT_AVATAR_PRESETS.find((preset) => preset.id === draftId);
+  const avatarChanged = Boolean(selectedAvatar && selectedAvatar.id !== savedAvatarId);
+  const busy = isBusy || isAvatarSaving;
 
-  const chooseAvatar = async (presetId: string) => {
+  const saveAvatar = async () => {
+    if (!avatarChanged || !selectedAvatar || busy || avatarSaveLock.current) return;
+    avatarSaveLock.current = true;
+    setIsAvatarSaving(true);
+    const presetId = selectedAvatar.id;
+    const userId = profile.userId;
     try {
       const preset = ACCOUNT_AVATAR_PRESETS.find((candidate) => candidate.id === presetId);
       if (!preset) throw new Error("account_avatar_invalid");
       const dataUrl = await prepareAccountAvatar(preset.source);
+      if (useAccountStore.getState().snapshot.profile?.userId !== userId) return;
       await updateAvatar({ dataUrl, accountAvatarPresetId: preset.id });
-      await saveSettings({ accountAvatarPresetId: presetId });
+      if (useAccountStore.getState().snapshot.profile?.userId !== userId) return;
+      let preferenceSaved = true;
+      await saveSettings({ accountAvatarPresetId: presetId }).catch(() => {
+        preferenceSaved = false;
+      });
+      setAvatarDraft(undefined);
       setIsAvatarPickerOpen(false);
-      pushToast({ tone: "success", title: "头像已同步", description: "房间和悬浮窗会自动更新。" });
+      pushToast({
+        tone: preferenceSaved ? "success" : "warning",
+        title: "头像已同步",
+        description: preferenceSaved
+          ? "房间和悬浮窗会自动更新。"
+          : "本地偏好未保存，账号头像不受影响。",
+      });
     } catch (error) {
       pushToast({ tone: "danger", title: "头像没有保存", description: accountErrorMessage(error) });
+    } finally {
+      avatarSaveLock.current = false;
+      setIsAvatarSaving(false);
     }
   };
 
@@ -81,12 +106,19 @@ export const AccountSettingsCard = () => {
             type="button"
             className="account-settings-avatar"
             onClick={() => setIsAvatarPickerOpen((open) => !open)}
-            disabled={isBusy}
+            disabled={busy}
             aria-expanded={isAvatarPickerOpen}
             aria-label="更换头像"
           >
             {profile.avatarUrl || selectedAvatar ? (
-              <img src={profile.avatarUrl ?? selectedAvatar?.source} alt="账号头像" />
+              <img
+                src={
+                  avatarChanged
+                    ? selectedAvatar?.source
+                    : (profile.avatarUrl ?? selectedAvatar?.source)
+                }
+                alt="账号头像"
+              />
             ) : (
               <UserRound />
             )}
@@ -104,25 +136,37 @@ export const AccountSettingsCard = () => {
         </header>
 
         {isAvatarPickerOpen ? (
-          <div className="account-settings-avatar-picker" role="radiogroup" aria-label="选择头像">
-            {ACCOUNT_AVATAR_PRESETS.map((preset) => {
-              const isSelected = preset.id === selectedAvatar?.id;
-              return (
-                <button
-                  key={preset.id}
-                  type="button"
-                  role="radio"
-                  aria-checked={isSelected}
-                  title={preset.name}
-                  className={isSelected ? "is-selected" : ""}
-                  disabled={isBusy}
-                  onClick={() => void chooseAvatar(preset.id)}
-                >
-                  <img src={preset.source} alt={preset.name} />
-                  {isSelected ? <Check aria-hidden="true" /> : null}
-                </button>
-              );
-            })}
+          <div>
+            <div className="account-settings-avatar-picker" role="radiogroup" aria-label="选择头像">
+              {ACCOUNT_AVATAR_PRESETS.map((preset) => {
+                const isSelected = preset.id === selectedAvatar?.id;
+                return (
+                  <button
+                    key={preset.id}
+                    type="button"
+                    role="radio"
+                    aria-checked={isSelected}
+                    title={preset.name}
+                    className={isSelected ? "is-selected" : ""}
+                    disabled={busy}
+                    onClick={() => setAvatarDraft({ userId: profile.userId, id: preset.id })}
+                  >
+                    <img src={preset.source} alt={preset.name} />
+                    {isSelected ? <Check aria-hidden="true" /> : null}
+                  </button>
+                );
+              })}
+            </div>
+            <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
+              <span className="text-xs text-slate-500">选择后预览，保存后同步。</span>
+              <Button
+                variant="secondary"
+                disabled={busy || !avatarChanged}
+                onClick={() => void saveAvatar()}
+              >
+                {isAvatarSaving ? "保存中…" : "保存头像"}
+              </Button>
+            </div>
           </div>
         ) : null}
 
@@ -157,9 +201,7 @@ export const AccountSettingsCard = () => {
             <div className="account-settings-save">
               <Button
                 variant="secondary"
-                disabled={
-                  isBusy || !displayName.trim() || displayName.trim() === profile.displayName
-                }
+                disabled={busy || !displayName.trim() || displayName.trim() === profile.displayName}
                 onClick={() => void saveDisplayName()}
               >
                 {isBusy ? "保存中…" : "保存修改"}
@@ -175,7 +217,7 @@ export const AccountSettingsCard = () => {
           <strong>退出账号</strong>
           <p>本地录音、模型和设置不会被删除。</p>
         </div>
-        <Button variant="danger" disabled={isBusy} onClick={() => void logout()}>
+        <Button variant="danger" disabled={busy} onClick={() => void logout()}>
           <LogOut /> 退出登录
         </Button>
       </section>

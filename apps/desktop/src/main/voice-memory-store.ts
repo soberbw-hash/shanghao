@@ -36,6 +36,11 @@ interface PersistedVoiceMemorySummaries {
   entries: VoiceMemorySummary[];
 }
 
+export interface VoiceMemorySaveOptions {
+  clearTranscriptionEvents?: boolean;
+  publicationFor?: { roomId?: string; organizedAt?: string };
+}
+
 const normalize = (value: string): string =>
   value.normalize("NFKC").toLocaleLowerCase("zh-CN").replace(/\s+/g, " ").trim();
 
@@ -327,13 +332,25 @@ export class VoiceMemoryStore {
 
   async save(
     record: VoiceMemoryRecord,
-    options: { clearTranscriptionEvents?: boolean } = {},
+    options: VoiceMemorySaveOptions = {},
   ): Promise<VoiceMemoryRecord> {
     return this.mutate(async () => {
       if (!isVoiceMemoryRecord(record)) {
         throw new Error("voice_memory_record_unreadable");
       }
-      await this.get(record.recordingId);
+      const current = await this.get(record.recordingId);
+      if (options.publicationFor) {
+        if (
+          !current ||
+          current.phase !== "ready" ||
+          current.organization?.status !== "completed" ||
+          current.roomId !== options.publicationFor.roomId ||
+          current.organizedAt !== options.publicationFor.organizedAt
+        ) {
+          throw new Error("recording_recap_result_changed");
+        }
+        record = { ...current, organizationPublication: record.organizationPublication };
+      }
       const next = normalizeLegacyRecord({ ...record, updatedAt: new Date().toISOString() });
       if (!isVoiceMemoryRecord(next)) {
         throw new Error("voice_memory_record_unreadable");
@@ -470,7 +487,7 @@ export class VoiceMemoryStore {
       );
   }
 
-  related(query: string, limit = 24): VoiceMemorySearchResult[] {
+  related(query: string, limit = 24, roomId?: string): VoiceMemorySearchResult[] {
     this.assertMetadataReady();
     const normalizedQuery = normalize(query);
     const wordTerms = normalizedQuery.split(" ").filter((term) => term.length > 1);
@@ -483,6 +500,7 @@ export class VoiceMemoryStore {
     const terms = [...new Set([...wordTerms, ...bigrams])].slice(0, 32);
     if (!terms.length) return [];
     return this.index.entries
+      .filter((entry) => roomId === undefined || entry.roomId === roomId)
       .map((entry) => ({
         entry,
         score: terms.reduce(

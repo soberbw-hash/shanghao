@@ -746,177 +746,175 @@
   line-height: 18px;
 }
 
-.release-notes-viewer {
-  margin-top: 18px;
-}
-
-.release-notes-page {
-  display: grid;
-  gap: 14px;
-}
-
-.release-notes-kicker {
-  color: #5084c6;
-  font-size: 11px;
-  font-weight: 750;
-  letter-spacing: 0.06em;
-}
-
-.release-notes-page h3 {
-  margin: 4px 0 0;
+.release-announcement {
+  margin: auto;
+  width: min(600px, calc(100vw - 32px));
+  max-height: min(780px, calc(100dvh - 32px));
+  overflow: hidden;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  border: 1px solid #d7e4f3;
+  border-radius: 24px;
+  padding: 24px;
   color: #26364d;
-  font-size: 18px;
-  font-weight: 760;
-  line-height: 26px;
+  background: #f7fbff;
 }
 
-.release-notes-page > div > p {
-  margin: 5px 0 0;
-  color: #66758b;
-  font-size: 13px;
-  line-height: 20px;
+.release-announcement[open] {
+  display: flex;
+  flex-direction: column;
 }
 
-.release-notes-summary-card {
-  margin-top: 14px;
-  border: 1px solid rgba(157, 198, 239, 0.72);
-  border-radius: 16px;
-  background: rgba(239, 248, 255, 0.76);
-  padding: 13px 14px 12px;
+.release-announcement-header {
+  flex-shrink: 0;
 }
-
-.release-notes-summary-heading {
+.release-announcement::backdrop {
+  background: rgba(27, 43, 66, 0.22);
+}
+.release-announcement-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
+  gap: 16px;
 }
-
-.release-notes-summary-heading > span {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  color: #2e6fbe;
-  font-size: 13px;
-  font-weight: 760;
-}
-
-.release-notes-summary-heading svg {
-  width: 15px;
-  height: 15px;
-}
-
-.release-notes-summary-heading small {
-  color: #7a91aa;
-  font-size: 11px;
-  font-weight: 650;
-}
-
-.release-notes-summary-card > p {
-  margin: 8px 0 0;
-  color: #4e6077;
-  font-size: 13px;
-  line-height: 21px;
-  text-wrap: pretty;
-}
-
-.release-notes-highlight-list {
-  display: grid;
-  gap: 6px;
-  margin: 11px 0 0;
-  padding: 0;
-  list-style: none;
-}
-
-.release-notes-highlight-list li {
-  display: grid;
-  grid-template-columns: 22px minmax(0, 1fr);
-  align-items: start;
-  gap: 7px;
-  color: #53667e;
+.release-announcement-header p {
+  margin: 0 0 3px;
+  color: #66758b;
   font-size: 12px;
-  line-height: 19px;
-  text-wrap: pretty;
 }
-
-.release-notes-highlight-list li > span:first-child {
-  line-height: 19px;
-  text-align: center;
-}
-
-.release-notes-inline-emphasis {
-  color: #2f74c5;
-  font-weight: 760;
-}
-
-.release-notes-image {
-  display: block;
-  width: 100%;
-  max-height: 176px;
-  border: 1px solid rgba(189, 210, 233, 0.68);
-  border-radius: 16px;
-  object-fit: cover;
-  box-shadow: 0 10px 26px rgba(55, 91, 132, 0.1);
-}
-
-.release-notes-detail-list {
-  display: grid;
-  gap: 9px;
+.release-announcement-header h2 {
   margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.release-notes-detail-list li {
-  display: grid;
-  grid-template-columns: 22px minmax(0, 1fr);
-  align-items: start;
-  gap: 9px;
-  border: 1px solid rgba(219, 232, 247, 0.82);
-  border-radius: 14px;
-  background: rgba(255, 255, 255, 0.64);
-  padding: 10px 11px;
-  color: #607087;
-  font-size: 13px;
-  line-height: 20px;
-}
-
-.release-notes-detail-keyword {
-  color: #3476c5;
+  font-size: 26px;
   font-weight: 750;
+  text-wrap: balance;
 }
-
-.release-notes-detail-number {
-  display: grid;
-  width: 22px;
-  height: 22px;
-  place-items: center;
-  border: 1px solid rgba(93, 158, 235, 0.48);
-  border-radius: 999px;
-  background: rgba(235, 246, 255, 0.82);
-  color: #347fd3;
-  font-size: 11px;
-  font-weight: 750;
-  font-variant-numeric: tabular-nums;
-}
-
-.release-notes-pagination {
-  display: grid;
-  grid-template-columns: 1fr auto 1fr;
-  align-items: center;
-  gap: 10px;
+.release-notes-viewer {
   margin-top: 18px;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
 }
-
-.release-notes-pagination > :last-child {
-  justify-self: end;
+.release-notes-page {
+  display: grid;
+  gap: 16px;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
 }
-
-.release-notes-pagination > span {
+.release-notes-kicker {
   color: #718096;
   font-size: 12px;
   font-variant-numeric: tabular-nums;
-  font-weight: 700;
+}
+.release-notes-page h3 {
+  margin: 6px 0 0;
+  font-size: 20px;
+  font-weight: 750;
+  line-height: 28px;
+  text-wrap: balance;
+}
+.release-notes-page > div > p {
+  margin: 6px 0 0;
+  color: #66758b;
+  font-size: 14px;
+  line-height: 22px;
+  text-wrap: pretty;
+}
+.release-notes-summary-card {
+  border: 1px solid #d7e4f3;
+  border-radius: 16px;
+  background: #eef6ff;
+  padding: 16px;
+}
+.release-notes-summary-heading {
+  margin: 0;
+  color: #26364d;
+  font-size: 14px;
+  font-weight: 750;
+}
+.release-notes-highlight-list {
+  display: grid;
+  gap: 12px;
+  margin: 12px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.release-notes-highlight-list li {
+  color: #53667e;
+  font-size: 14px;
+  line-height: 23px;
+  text-wrap: pretty;
+}
+.release-notes-detail-keyword {
+  color: #263b56;
+  font-weight: 750;
+}
+.release-notes-expanded {
+  border: 1px solid #d7e4f3;
+  border-radius: 14px;
+  padding: 0 14px;
+}
+.release-notes-expanded > summary {
+  padding: 13px 0;
+  cursor: pointer;
+  color: #3476c5;
+  font-size: 13px;
+  font-weight: 650;
+}
+.release-notes-expanded > summary:focus-visible {
+  outline: 2px solid #4a8de8;
+  outline-offset: 3px;
+  border-radius: 4px;
+}
+.release-notes-topic {
+  padding: 12px 0;
+  border-top: 1px solid #d7e4f3;
+}
+.release-notes-topic h4 {
+  margin: 0 0 8px;
+  font-size: 14px;
+  font-weight: 750;
+}
+.release-notes-topic ul {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding-left: 18px;
+  color: #607087;
+  font-size: 13px;
+  line-height: 22px;
+  text-wrap: pretty;
+}
+.release-notes-footer {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 18px;
+}
+.release-notes-footer > span {
+  color: #718096;
+  font-size: 12px;
+  line-height: 18px;
+}
+.release-notes-footer button {
+  white-space: nowrap;
+  margin-left: auto;
+}
+@media (max-width: 480px) {
+  .release-announcement {
+    padding: 18px;
+  }
+  .release-announcement-header h2 {
+    font-size: 24px;
+  }
+  .release-notes-summary-card {
+    padding: 13px;
+  }
 }
 
 .recording-library-list {

@@ -369,7 +369,7 @@ export interface VoiceMemoryOrganizationMetrics {
 
 export interface VoiceMemoryOrganizationRun {
   pipelineVersion: number;
-  modelId: AiOrganizerModelId;
+  modelId: AiOrganizerModelId | "cloud" | "custom";
   modelRevision: string;
   status: "pending" | "running" | "completed" | "paused" | "failed" | "unrecoverable";
   reductionRetries?: Record<string, OrganizationRetryState>;
@@ -382,11 +382,12 @@ export interface VoiceMemoryOrganizationRun {
 }
 
 export interface VoiceMemoryOrganizationPublication {
-  status: "published";
+  status: "published" | "failed";
   roomId: string;
   reportDate: string;
   publishedAt: string;
   serverRevision?: number;
+  errorCode?: string;
 }
 
 export interface VoiceMemoryTranscriptionModel {
@@ -657,6 +658,8 @@ export interface VoiceMemoryRecord {
   processingStage?: VoiceMemoryProcessingStage;
   diagnostic?: VoiceMemoryTaskDiagnostic;
   organizedAt?: string;
+  /** Native recording catalog time, independent of when AI processing was started. */
+  recordedAt?: string;
   /** Recognition pipeline that produced the persisted transcript. Missing means legacy output. */
   transcriptionPipelineVersion?: number;
   /** ASR model that produced this transcript; independent from the model currently selected. */
@@ -679,10 +682,10 @@ export interface VoiceMemoryRecord {
   highlights: VoiceMemoryHighlight[];
   markerTitles: VoiceMemoryMarkerTitle[];
   timeline: VoiceMemoryTimelineEntry[];
-  /** Resumable hierarchical local-LLM organization state. */
+  /** Resumable organization state for local, room cloud and custom providers. */
   organization?: VoiceMemoryOrganizationRun;
   organizationSinglePassRetry?: OrganizationRetryState;
-  /** Present only after the user explicitly publishes the local organization to the room server. */
+  /** Explicit upload, or opt-in automatic upload, scoped to the original room. */
   organizationPublication?: VoiceMemoryOrganizationPublication;
 }
 
@@ -785,6 +788,8 @@ export interface VoiceMemoryProcessRequest {
   filePath: string;
   roomId?: string;
   roomName?: string;
+  /** Populated from the native catalog, never trusted from the renderer. */
+  recordedAt?: string;
   manual?: boolean;
   organize?: boolean;
   /** False runs Qwen organization from the saved transcript without invoking ASR again. */

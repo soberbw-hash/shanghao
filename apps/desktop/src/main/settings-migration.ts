@@ -39,7 +39,7 @@ export const defaultSettings: AppSettings = {
   avatarPath: undefined,
   hasCompletedProfileSetup: false,
   minimizeToTray: false,
-  isFriendOnlineNotificationEnabled: false,
+  isFriendOnlineNotificationEnabled: true,
   hasSeenTrayNotice: false,
   recordingClipBeforeMs: 20_000,
   recordingClipAfterMs: 8_000,
@@ -67,12 +67,14 @@ export const defaultSettings: AppSettings = {
   aiProcessingMode: "manual",
   isAiAutoTranscribeEnabled: false,
   isAiAutoOrganizeEnabled: false,
+  isAiAutoUploadEnabled: false,
   isNoiseSuppressionEnabled: true,
   isEchoCancellationEnabled: true,
   isAutoGainControlEnabled: true,
   isVoiceEnhancementEnabled: true,
   isPushToTalkEnabled: false,
   isAutoRecordOnJoinEnabled: true,
+  isRecordingAutoGameMarkerEnabled: true,
   micMonitorMode: "processed",
   relayServerUrl: OFFICIAL_RELAY_SERVER_URL,
   isDeveloperModeEnabled: false,
@@ -87,6 +89,8 @@ export const defaultSettings: AppSettings = {
   weatherEffectMode: "standard",
   isUiSoundEnabled: true,
   quickMessages: {
+    shortcutsEnabled: false,
+    musicShortcutsEnabled: false,
     soundEnabled: true,
     soundVolume: DEFAULT_QUICK_MESSAGE_VOLUME,
     musicPresetId: DEFAULT_QUICK_MESSAGE_MUSIC_PRESET_ID,
@@ -228,6 +232,8 @@ const normalizeQuickMessages = (
 
   return {
     soundEnabled: normalizeBoolean(raw.soundEnabled, defaultSettings.quickMessages.soundEnabled),
+    shortcutsEnabled: normalizeBoolean(raw.shortcutsEnabled, false),
+    musicShortcutsEnabled: normalizeBoolean(raw.musicShortcutsEnabled, false),
     soundVolume,
     musicPresetId: rawMusicPresetId ?? defaultSettings.quickMessages.musicPresetId,
     musicSlots,
@@ -262,7 +268,7 @@ export const migrateSettings = (raw: RawSettings): MigrationResult => {
     minimizeToTray: normalizeBoolean(raw.minimizeToTray, defaultSettings.minimizeToTray),
     isFriendOnlineNotificationEnabled: normalizeBoolean(
       raw.isFriendOnlineNotificationEnabled,
-      false,
+      true,
     ),
     hasSeenTrayNotice: normalizeBoolean(raw.hasSeenTrayNotice, false),
     recordingClipBeforeMs: normalizeNumber(raw.recordingClipBeforeMs, 20_000, 0, 120_000),
@@ -331,7 +337,7 @@ export const migrateSettings = (raw: RawSettings): MigrationResult => {
     aiOrganizerProvider: raw.aiOrganizerProvider === "custom" ? raw.aiOrganizerProvider : "cloud",
     // Room Ask is a shared cloud capability. Legacy local/custom selections
     // must not make friends download Qwen before they can ask a question.
-    aiRoomAskProvider: "cloud",
+    aiRoomAskProvider: raw.aiOrganizerProvider === "custom" ? "custom" : "cloud",
     aiProcessingMode:
       previousVersion < 35 &&
       raw.aiProcessingMode === "after_game" &&
@@ -345,6 +351,7 @@ export const migrateSettings = (raw: RawSettings): MigrationResult => {
           : "manual",
     isAiAutoTranscribeEnabled: normalizeBoolean(raw.isAiAutoTranscribeEnabled, false),
     isAiAutoOrganizeEnabled: normalizeBoolean(raw.isAiAutoOrganizeEnabled, false),
+    isAiAutoUploadEnabled: normalizeBoolean(raw.isAiAutoUploadEnabled, false),
     relayServerUrl:
       normalizeRelayServerUrl(trimUnknownText(raw.relayServerUrl)) ??
       defaultSettings.relayServerUrl,
@@ -384,6 +391,7 @@ export const migrateSettings = (raw: RawSettings): MigrationResult => {
     isVoiceEnhancementEnabled: raw.isVoiceEnhancementEnabled !== false,
     isPushToTalkEnabled: raw.isPushToTalkEnabled === true,
     isAutoRecordOnJoinEnabled: normalizeBoolean(raw.isAutoRecordOnJoinEnabled, true),
+    isRecordingAutoGameMarkerEnabled: normalizeBoolean(raw.isRecordingAutoGameMarkerEnabled, true),
     isUiSoundEnabled: true,
     quickMessages: normalizeQuickMessages(raw.quickMessages, previousVersion),
     isBackgroundUpdateCheckEnabled: raw.isBackgroundUpdateCheckEnabled !== false,

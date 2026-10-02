@@ -59,7 +59,13 @@ export const scanWasteRecordings = async (
     const item = inspectable[index];
     if (!item) continue;
     const candidate = await inspectRecordingForCleanup(item.filePath).catch(() => undefined);
-    if (candidate) candidates.push(candidate);
+    if (candidate)
+      candidates.push({
+        ...candidate,
+        recordingId: item.recordingId,
+        fileSize: item.fileSize,
+        modifiedAt: item.modifiedAt,
+      });
     onProgress?.(index + 1, inspectable.length);
   }
   return { candidates, protectedCount: protectedItems.length };
@@ -173,11 +179,13 @@ export const renameRecording = async (
   configuredDirectory: string | undefined,
   recordingId: string,
   title: string,
+  titleMetadata?: Pick<RecordingLibraryItem, "title" | "isCustomTitle">,
 ): Promise<RecordingLibraryItem> =>
   renameRecordingInDirectory(
     await getUsableRecordingDirectory(configuredDirectory),
     recordingId,
     title,
+    titleMetadata,
   );
 
 export const isAllowedRecordingMediaPath = (

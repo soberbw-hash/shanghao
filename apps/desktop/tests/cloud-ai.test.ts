@@ -16,9 +16,12 @@ const request = {
   prompt: "请返回 JSON",
 };
 
-test("room questions always use cloud AI without a local model dependency", () => {
+test("organization and room questions share the configured text provider", () => {
   for (const legacyProvider of ["cloud", "local", "custom"] as const) {
-    assert.equal(resolveAiTextProvider("question", legacyProvider), "cloud");
+    assert.equal(
+      resolveAiTextProvider("question", legacyProvider),
+      legacyProvider === "custom" ? "custom" : "cloud",
+    );
     assert.equal(
       resolveAiTextProvider("organize", legacyProvider),
       legacyProvider === "custom" ? "custom" : "cloud",

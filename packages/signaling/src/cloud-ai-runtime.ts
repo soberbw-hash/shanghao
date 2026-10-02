@@ -14,8 +14,12 @@ export class CloudAiRuntime {
   private readonly requests: CloudAiRequestController;
   private readonly commentary: DailyRoomCommentaryService;
 
-  constructor(reports: Promise<DailyRoomReportStore>, logger?: Logger) {
-    const service = new CloudAiService();
+  constructor(
+    reports: Promise<DailyRoomReportStore>,
+    logger?: Logger,
+    memoryContext?: (roomId: string) => Promise<string>,
+  ) {
+    const service = new CloudAiService({ memoryContext });
     this.requests = new CloudAiRequestController(logger, service);
     this.commentary = new DailyRoomCommentaryService(reports, service, logger);
   }

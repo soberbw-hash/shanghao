@@ -1,0 +1,19 @@
+.recording-item-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  overflow: visible;
+  white-space: normal;
+}
+
+.recording-item-meta > span {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0 5px;
+}
+
+.recording-item-meta time,
+.recording-item-meta > span > span {
+  white-space: nowrap;
+}

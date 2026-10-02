@@ -2,8 +2,8 @@ import { useRef, useState } from "react";
 import { RoomConnectionState } from "@private-voice/shared";
 import { useRoomStore } from "../../store/roomStore";
 import { playUiSound } from "../audio/uiSound";
+import { gameAssistantMessageId } from "../chat/gameAssistantMessage";
 
-/** Share through the existing ACK/retry path, retaining IDs after a partial failure. */
 export const useRoomAiShare = (
   onSend: (content: string, clientMessageId: string) => Promise<void>,
 ) => {
@@ -36,7 +36,7 @@ export const useRoomAiShare = (
         roomId: initialRoom.roomId,
         text,
         chunks,
-        ids: chunks.map(() => crypto.randomUUID()),
+        ids: chunks.map(() => gameAssistantMessageId(crypto.randomUUID())),
         sent: 0,
       };
     }

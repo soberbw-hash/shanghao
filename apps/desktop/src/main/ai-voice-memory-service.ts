@@ -32,7 +32,9 @@ import { AiRuntimeManager } from "./ai-runtime-manager";
 import { transcribeChunkWithRetry } from "./voice-memory-transcription-retry";
 import { TRANSCRIPTION_CHUNK_MS, transcriptionChunkMsForModel } from "./asr-chunk-policy";
 import { classifyLocalModelRuntimeError } from "./local-model-runtime";
-import { VoiceMemoryStore } from "./voice-memory-store";
+import { VoiceMemoryStore, type VoiceMemorySaveOptions } from "./voice-memory-store";
+import { markVoiceMemoryPublication } from "./voice-memory-publication";
+import { createEmptyVoiceMemoryRecord as emptyRecord } from "./voice-memory-record";
 import { applySpeakingTimeline } from "./voice-memory-observation";
 import {
   createTranscriptionUnits,
@@ -40,6 +42,11 @@ import {
 } from "./voice-memory-transcription-units";
 import { resolveFfmpegExecutable } from "./media-runtime";
 import { AiTextGateway } from "./ai-text-gateway";
+import {
+  ASSISTANT_ANSWER_STYLE,
+  assistantAnswerText,
+  roomQuestionPrompt,
+} from "./voice-memory-question-prompt";
 import { VoiceMemoryOrganizer } from "./voice-memory-organizer";
 export { transcriptForPrompt } from "./voice-memory-organizer";
 import { bindTranscriptToKnownSpeaker, mergeSpeakerTranscript } from "./speaker-transcript";
@@ -77,34 +84,6 @@ export { isFatalTranscriptionRuntimeFailure } from "./voice-memory-transcription
 const TRANSCRIPTION_PIPELINE_VERSION = CURRENT_TRANSCRIPTION_PIPELINE_VERSION;
 const createTaskId = (recordingId: string): string =>
   `voice-memory:${recordingId}:${Date.now()}-${randomUUID().slice(0, 8)}`;
-
-const emptyRecord = (request: VoiceMemoryProcessRequest): VoiceMemoryRecord => ({
-  schemaVersion: 1,
-  recordingId: request.recordingId,
-  filePath: request.filePath,
-  roomId: request.roomId,
-  roomName: request.roomName,
-  createdAt: new Date().toISOString(),
-  updatedAt: new Date().toISOString(),
-  phase: "idle",
-  progress: 0,
-  speakers: [],
-  transcript: [],
-  summary: [],
-  chapters: [],
-  highlights: [],
-  markerTitles: (request.markers ?? []).map((marker) => ({
-    markerId: marker.id,
-    offsetMs: marker.offsetMs,
-    title: `标记 ${Math.round(marker.offsetMs / 1_000)} 秒`,
-  })),
-  timeline: (request.markers ?? []).map((marker) => ({
-    id: marker.id,
-    kind: "marker" as const,
-    offsetMs: marker.offsetMs,
-    title: `标记 ${Math.round(marker.offsetMs / 1_000)} 秒`,
-  })),
-});
 
 /** Runs resumable transcription and organization while persisting every completed unit. */
 export class AiVoiceMemoryService {
@@ -367,12 +346,15 @@ export class AiVoiceMemoryService {
   async markOrganizationPublished(
     recordingId: string,
     publication: VoiceMemoryOrganizationPublication,
+    organizedAt?: string,
   ): Promise<VoiceMemoryRecord> {
-    const record = await this.requireRecord(recordingId);
-    if (record.organization?.status !== "completed" || !record.organization.finalResult) {
-      throw new Error("voice_memory_organization_required");
-    }
-    return this.save({ ...record, organizationPublication: publication });
+    return markVoiceMemoryPublication(
+      recordingId,
+      publication,
+      organizedAt,
+      (id) => this.requireRecord(id),
+      (record, options) => this.save(record, options),
+    );
   }
 
   cancelQuestion(): boolean {
@@ -564,6 +546,9 @@ export class AiVoiceMemoryService {
     };
     const queued = await this.save({
       ...(previous ?? emptyRecord(queuedRequest)),
+      recordedAt: request.recordedAt ?? previous?.recordedAt,
+      roomId: request.roomId ?? previous?.roomId,
+      roomName: request.roomName ?? previous?.roomName,
       phase: "idle",
       taskId,
       taskStatus: "pending",
@@ -833,6 +818,8 @@ export class AiVoiceMemoryService {
             transcriptionUnits: undefined,
             transcriptionBenchmark: request.benchmark ? record.transcriptionBenchmark : undefined,
             organizedAt: undefined,
+            organization: undefined,
+            organizationPublication: undefined,
             errorMessage: undefined,
           });
         }
@@ -1077,12 +1064,14 @@ export class AiVoiceMemoryService {
       .map(({ segment }) => segment);
     const answer = await this.runQuestion((signal) =>
       this.textGateway.generateJson<VoiceMemoryAnswer>({
+        roomId: record.roomId,
         purpose: "question",
         manual: true,
         maxNewTokens: 700,
         signal,
         prompt: [
           "你是上号的本地语音记忆助手。只根据给出的录音片段回答朋友间的日常问题。",
+          ...ASSISTANT_ANSWER_STYLE,
           '返回 JSON：{"text":"回答","sources":[{"startMs":数字,"segmentId":"id","quote":"简短原话"}]}。没有依据就明确说没找到。',
           `问题：${request.question.slice(0, 500)}`,
           "片段：",
@@ -1094,7 +1083,7 @@ export class AiVoiceMemoryService {
       }),
     );
     return {
-      text: String(answer.text ?? ""),
+      text: assistantAnswerText(answer.text),
       sources: (Array.isArray(answer.sources) ? answer.sources : [])
         .map((source) => {
           const segment = candidates.find((candidate) => candidate.id === source.segmentId);
@@ -1118,30 +1107,20 @@ export class AiVoiceMemoryService {
   async askMemory(request: VoiceMemoryGlobalQuestionRequest): Promise<VoiceMemoryAnswer> {
     const question = request.question.trim().slice(0, 500);
     if (!question) throw new Error("memory_question_required");
-    const candidates = this.store.related(question, 24);
+    const roomId = this.textGateway.questionRoomId();
+    const candidates = roomId ? this.store.related(question, 24, roomId) : [];
     const answer = await this.runQuestion((signal) =>
       this.textGateway.generateJson<VoiceMemoryAnswer>({
+        roomId,
         purpose: "question",
         manual: true,
         maxNewTokens: 700,
         signal,
-        prompt: [
-          "你是上号房间里的中文助手。用户可能在查找朋友语音记忆，也可能在问普通问题。",
-          "有相关语音记忆时优先依据它们回答，并给出来源；没有相关记忆时可以正常回答常识问题，但不要编造录音来源。",
-          '只返回 JSON：{"text":"回答","sources":[{"segmentId":"memory-1","startMs":数字,"quote":"简短原话"}]}。来源编号必须取自下面的 memory-N；没有录音依据时 sources 返回空数组。',
-          `问题：${question}`,
-          "可能相关的本地语音记忆：",
-          ...(candidates.length
-            ? candidates.map(
-                (item, index) =>
-                  `memory-${index + 1}\t${item.roomName ?? "房间"}\t${item.createdAt}\t${item.startMs}\t${item.kind}\t${item.title}\t${item.excerpt}`,
-              )
-            : ["没有检索到相关语音记忆。"]),
-        ].join("\n"),
+        prompt: roomQuestionPrompt(question, candidates),
       }),
     );
     return {
-      text: String(answer.text ?? ""),
+      text: assistantAnswerText(answer.text),
       sources: (Array.isArray(answer.sources) ? answer.sources : [])
         .map((source) => {
           const match = /^memory-(\d+)$/.exec(source.segmentId);
@@ -1993,7 +1972,7 @@ export class AiVoiceMemoryService {
 
   private async save(
     record: VoiceMemoryRecord,
-    options: { clearTranscriptionEvents?: boolean } = {},
+    options: VoiceMemorySaveOptions = {},
   ): Promise<VoiceMemoryRecord> {
     this.writeOwnership.assertCurrent(
       record.recordingId,

@@ -83,6 +83,14 @@ export const buildDailyRoomReportHighlights = (
 ): DailyRoomReportHighlight[] => {
   const result: DailyRoomReportHighlight[] = [];
   const recap = report.recordingRecaps?.at(-1);
+  if (recap && !recap.highlights.length && !recap.funnyMoments.length) {
+    result.push({
+      id: "recording-summary",
+      label: "昨晚聊了什么",
+      value: recap.summary[0] ?? "录音整理",
+      detail: recap.description,
+    });
+  }
   for (const [index, moment] of [...(recap?.funnyMoments ?? []), ...(recap?.highlights ?? [])]
     .slice(0, 2)
     .entries()) {

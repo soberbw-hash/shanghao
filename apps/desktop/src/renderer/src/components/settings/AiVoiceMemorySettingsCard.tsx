@@ -485,17 +485,16 @@ export const AiVoiceMemorySettingsCard = ({
     void selectAsrModel(model);
   };
 
-  const providerSelect = (
-    value: AiTextProvider,
-    setting: "aiOrganizerProvider",
-    ariaLabel: string,
-  ) => (
+  const providerSelect = (value: AiTextProvider, ariaLabel: string) => (
     <select
       className="ai-processing-select"
       aria-label={ariaLabel}
       value={value}
       onChange={(event) =>
-        void onChange({ [setting]: event.target.value as AiTextProvider } as Partial<AppSettings>)
+        void onChange({
+          aiOrganizerProvider: event.target.value as AiTextProvider,
+          aiRoomAskProvider: event.target.value as AiTextProvider,
+        })
       }
     >
       <option value="cloud">房间云端（默认）</option>
@@ -720,70 +719,14 @@ export const AiVoiceMemorySettingsCard = ({
           </article>
           <article>
             <small>房间问答</small>
-            <strong>房间云端 AI</strong>
+            <strong>
+              {settings.aiOrganizerProvider === "custom" ? "自定义 API" : "房间云端 AI"}
+            </strong>
           </article>
           <article>
             <small>已安装</small>
             <strong>{installedAsrCount} 个转录</strong>
           </article>
-        </div>
-      </section>
-
-      <section
-        ref={modelManagementRef}
-        id="ai-model-management"
-        className="ai-model-group scroll-mt-4"
-        aria-labelledby="model-management-title"
-      >
-        <div className="ai-model-group-heading">
-          <h3 id="model-management-title">模型</h3>
-          <div className="ai-model-filter-bar" role="group" aria-label="筛选模型">
-            {(
-              [
-                ["all", "全部"],
-                ["installed", "已安装"],
-                ["available", "可安装"],
-              ] as const
-            ).map(([value, label]) => (
-              <button
-                key={value}
-                type="button"
-                aria-pressed={modelFilter === value}
-                onClick={() => setModelFilter(value)}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
-        </div>
-        {(["high_accuracy", "high_speed"] as const).map((category) => (
-          <div className="ai-model-subgroup" key={category}>
-            <div className="ai-model-subgroup-heading">
-              <strong>{category === "high_accuracy" ? "高精度转录" : "极速转录"}</strong>
-            </div>
-            <div className="ai-model-management-grid">
-              {asrModels
-                .filter(
-                  (model) =>
-                    AI_ASR_PRODUCT_CLASSES[model.id as AiAsrModelId] === category &&
-                    visibleModel(model),
-                )
-                .sort(
-                  (left, right) =>
-                    Number(right.id === DEFAULT_AI_ASR_MODEL_ID) -
-                    Number(left.id === DEFAULT_AI_ASR_MODEL_ID),
-                )
-                .map(renderModel)}
-            </div>
-          </div>
-        ))}
-        <div className="ai-model-subgroup is-compact">
-          <div className="ai-model-subgroup-heading">
-            <strong>共享组件</strong>
-          </div>
-          <div className="ai-model-management-grid">
-            {supportModels.filter(visibleModel).map(renderModel)}
-          </div>
         </div>
       </section>
 
@@ -831,11 +774,62 @@ export const AiVoiceMemorySettingsCard = ({
           <h3 id="ai-analysis-title">整理与问答</h3>
         </div>
         <div className="mt-3 space-y-3">
-          <SettingsItemRow label="录音整理模型">
-            {providerSelect(settings.aiOrganizerProvider, "aiOrganizerProvider", "整理内容方式")}
+          <SettingsItemRow
+            label="自动整理"
+            description={organizerReady ? undefined : "请先保存自定义 API。"}
+          >
+            <Switch
+              isChecked={settings.isAiAutoOrganizeEnabled}
+              isDisabled={!organizerReady || !selectedAsrReady}
+              ariaLabel="自动整理"
+              onChange={(checked) => void onChange({ isAiAutoOrganizeEnabled: checked })}
+            />
           </SettingsItemRow>
-          <SettingsItemRow label="房间问答模型">
-            <span className="ai-cloud-provider-badge">房间云端 AI</span>
+          <SettingsItemRow
+            label="整理后自动上传"
+            description="完成后分享摘要到录音所属房间，用于每日总结；需进入对应房间。"
+          >
+            <Switch
+              isChecked={settings.isAiAutoUploadEnabled === true}
+              ariaLabel="整理后自动上传"
+              onChange={(checked) => void onChange({ isAiAutoUploadEnabled: checked })}
+            />
+          </SettingsItemRow>
+        </div>
+      </section>
+      <section
+        ref={modelManagementRef}
+        id="ai-model-management"
+        className="ai-model-group mt-3 scroll-mt-4"
+        aria-labelledby="model-management-title"
+      >
+        <div className="ai-model-group-heading">
+          <h3 id="model-management-title">模型</h3>
+          <div className="ai-model-filter-bar" role="group" aria-label="筛选模型">
+            {(
+              [
+                ["all", "全部"],
+                ["installed", "已安装"],
+                ["available", "可安装"],
+              ] as const
+            ).map(([value, label]) => (
+              <button
+                key={value}
+                type="button"
+                aria-pressed={modelFilter === value}
+                onClick={() => setModelFilter(value)}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div className="mt-3 space-y-3">
+          <SettingsItemRow
+            label="整理与问答模型"
+            description="整理会将文字稿发送至所选服务；上传只分享整理摘要到房间。"
+          >
+            {providerSelect(settings.aiOrganizerProvider, "整理与问答模型")}
           </SettingsItemRow>
           {showCustomProvider ? (
             <div className="settings-item-row rounded-[16px] border border-[#E7ECF2] bg-[#F8FAFC] p-4">
@@ -894,19 +888,38 @@ export const AiVoiceMemorySettingsCard = ({
               </p>
             </div>
           ) : null}
-          <SettingsItemRow
-            label="自动整理"
-            description={organizerReady ? undefined : "请先保存自定义 API。"}
-          >
-            <Switch
-              isChecked={settings.isAiAutoOrganizeEnabled}
-              isDisabled={!organizerReady || !selectedAsrReady}
-              ariaLabel="自动整理"
-              onChange={(checked) => void onChange({ isAiAutoOrganizeEnabled: checked })}
-            />
-          </SettingsItemRow>
+        </div>
+        {(["high_accuracy", "high_speed"] as const).map((category) => (
+          <div className="ai-model-subgroup" key={category}>
+            <div className="ai-model-subgroup-heading">
+              <strong>{category === "high_accuracy" ? "高精度转录" : "极速转录"}</strong>
+            </div>
+            <div className="ai-model-management-grid">
+              {asrModels
+                .filter(
+                  (model) =>
+                    AI_ASR_PRODUCT_CLASSES[model.id as AiAsrModelId] === category &&
+                    visibleModel(model),
+                )
+                .sort(
+                  (left, right) =>
+                    Number(right.id === DEFAULT_AI_ASR_MODEL_ID) -
+                    Number(left.id === DEFAULT_AI_ASR_MODEL_ID),
+                )
+                .map(renderModel)}
+            </div>
+          </div>
+        ))}
+        <div className="ai-model-subgroup is-compact">
+          <div className="ai-model-subgroup-heading">
+            <strong>共享组件</strong>
+          </div>
+          <div className="ai-model-management-grid">
+            {supportModels.filter(visibleModel).map(renderModel)}
+          </div>
         </div>
       </section>
+
       {pendingDeleteModel
         ? createPortal(
             <div className="modal-scrim fixed inset-0 z-50 flex items-center justify-center px-6">

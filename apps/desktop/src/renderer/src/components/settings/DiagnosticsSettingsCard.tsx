@@ -23,6 +23,10 @@ import {
   type HealthLevel,
 } from "../../features/diagnostics/healthProjection";
 import { SettingsSection } from "./SettingsSection";
+import {
+  networkHealth,
+  networkPermissionHealth,
+} from "../../features/diagnostics/networkPermissionHealth";
 
 const AiRuntimeDiagnosticsPanel = ({ onOpenAiSettings }: { onOpenAiSettings: () => void }) => {
   const [status, setStatus] = useState<AiRuntimeStatus>();
@@ -171,26 +175,16 @@ const ShangHaoHealthOverview = ({
   const roomFinding = roomAudioHealth({ remotePeerCount, webrtcReadyPeerCount, peerHealth });
   const micFinding = microphoneHealth(audioRuntime, localAudioDiagnostics);
   const outputFinding = speakerHealth({ outputDeviceCount, roomActive, remotePeerCount, mixer });
-  const networkLevel: HealthLevel =
-    relay?.latencyMs === undefined
-      ? "未检测"
-      : relay.latencyMs < 160
-        ? "正常"
-        : relay.latencyMs < 300
-          ? "需要看看"
-          : "有问题";
+  const networkFinding = networkHealth(relay);
   const screenFinding = screenShareHealth(screenShare);
-  const windowsLevel: HealthLevel = windowsStatus
-    ? windowsStatus.firewall.healthy
-      ? "正常"
-      : "需要看看"
-    : "未检测";
+  const windowsFinding = networkPermissionHealth(windowsStatus?.firewall);
   const items: Array<{
     label: string;
     level: HealthLevel;
     description: string;
     actionLabel?: string;
     onClick?: () => void;
+    badge?: string;
   }> = [
     {
       label: "麦克风",
@@ -227,13 +221,8 @@ const ShangHaoHealthOverview = ({
     },
     {
       label: "网络速度",
-      level: networkLevel,
-      description:
-        networkLevel === "未检测"
-          ? "尚未取得网络延迟。"
-          : networkLevel === "有问题" || networkLevel === "需要看看"
-            ? "网络响应偏慢，可能影响语音稳定性。"
-            : "网络响应正常。",
+      ...networkFinding,
+      badge: networkFinding.level === "需要看看" ? "延迟偏高" : undefined,
     },
     {
       label: "屏幕分享",
@@ -244,15 +233,9 @@ const ShangHaoHealthOverview = ({
     },
     {
       label: "Windows 网络权限",
-      level: windowsLevel,
-      description:
-        windowsLevel === "未检测"
-          ? "尚未检查 Windows 网络权限。"
-          : windowsLevel === "需要看看"
-            ? "程序级防火墙规则需要检查；点击修复时由 Windows 请求授权。"
-            : "系统网络权限正常。",
-      actionLabel: windowsLevel === "需要看看" ? "自动修复" : undefined,
-      onClick: windowsLevel === "需要看看" ? onRepairFirewall : undefined,
+      ...windowsFinding,
+      actionLabel: windowsFinding.retry ? "重试修复" : undefined,
+      onClick: windowsFinding.retry ? onRepairFirewall : undefined,
     },
   ];
   const attentionCount = items.filter(({ level }) => isAttentionLevel(level)).length;
@@ -266,11 +249,11 @@ const ShangHaoHealthOverview = ({
         <div>
           <div className="text-[14px] font-semibold text-[#344054]">系统状态 · 连接与设备</div>
           <div className="mt-1 text-xs leading-5 text-[#667085]">
-            {normalCount} 项正常 · {attentionCount} 项需要处理 · {uncheckedCount} 项尚未检测
+            {normalCount} 项正常 · {attentionCount} 项提醒 · {uncheckedCount} 项待确认
           </div>
           <div className="mt-1 text-[11px] leading-5 text-[#7A8CA5]">
             {runtimeHealth
-              ? "连接异常时，上号会先自动尝试恢复；仍有问题时按下方提示处理。"
+              ? "连接异常会自动尝试恢复，缺失的网络规则会自动修复；系统授权仍需你确认。"
               : "正在读取运行状态。"}
           </div>
           {checkFeedback ? (
@@ -284,7 +267,7 @@ const ShangHaoHealthOverview = ({
             className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${healthClass(overallLevel)}`}
           >
             整体：
-            {overallLevel === "需要看看" || overallLevel === "有问题" ? "需要处理" : overallLevel}
+            {overallLevel === "需要看看" || overallLevel === "有问题" ? "有提醒" : overallLevel}
           </span>
           <Button
             variant="ghost"
@@ -296,14 +279,14 @@ const ShangHaoHealthOverview = ({
         </div>
       </div>
       <div className="mt-3 grid items-start gap-2 sm:grid-cols-2">
-        {items.map(({ label, level, description, actionLabel, onClick }) => (
+        {items.map(({ label, level, description, actionLabel, onClick, badge }) => (
           <div key={label} className="rounded-xl border border-[#EDF2F7] bg-[#FAFCFF] px-3 py-2.5">
             <div className="flex items-center justify-between gap-2">
               <span className="text-[12px] font-semibold text-[#52657D]">{label}</span>
               <span
                 className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${healthClass(level)}`}
               >
-                {level === "有问题" || level === "需要看看" ? "需要处理" : level}
+                {badge ?? (level === "有问题" || level === "需要看看" ? "需要处理" : level)}
               </span>
             </div>
             <div className="mt-1 flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
@@ -397,7 +380,7 @@ export const DiagnosticsSettingsCard = ({
 }) => (
   <SettingsSection
     title="检查与修复"
-    description="连接中断和好友声音异常会自动尝试恢复。这里查看仍需处理的问题，或导出技术报告。"
+    description="上号会在后台检查并自动尝试修复。这里查看进度、系统授权提醒，或导出技术报告。"
   >
     <div className="diagnostics-user-view space-y-3">
       <ShangHaoHealthOverview

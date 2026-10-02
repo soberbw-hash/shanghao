@@ -10,6 +10,7 @@ import type {
   SignalingEventPayload,
 } from "@private-voice/shared";
 export interface CloudAiBridgeRequest {
+  roomId?: string;
   purpose: "organize" | "question";
   prompt: string;
   useWebSearch?: boolean;
@@ -288,12 +289,17 @@ export class SignalingClientBridge extends EventEmitter {
     return this.closeSocket(4002, "client_updating");
   }
 
+  getJoinedRoomId(): string | undefined {
+    return this.socket?.readyState === NodeWebSocket.OPEN ? this.joinedRoom?.roomId : undefined;
+  }
+
   async requestCloudAi(request: CloudAiBridgeRequest): Promise<string> {
     if (!this.socket || this.socket.readyState !== NodeWebSocket.OPEN || !this.joinedRoom) {
       throw new Error("cloud_ai_join_required");
     }
     const requestId = randomUUID();
     const { roomId, peerId } = this.joinedRoom;
+    if (request.roomId && request.roomId !== roomId) throw new Error("cloud_ai_join_matching_room");
     return new Promise<string>((resolve, reject) => {
       const finish = (error?: Error, content?: string) => {
         const pending = this.pendingCloudAi.get(requestId);

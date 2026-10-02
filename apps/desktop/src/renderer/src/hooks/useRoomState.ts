@@ -6,10 +6,8 @@ import {
   isPrivateRoomId,
   APP_BUILD_NUMBER,
   APP_PROTOCOL_VERSION,
-  DEFAULT_QUICK_MESSAGE_MUSIC_SLOTS,
-  DEFAULT_QUICK_MESSAGE_SLOTS,
+  getQuickMessageShortcutSlots,
   findQuickMessagePreset,
-  normalizeQuickMessageSlots,
   MemberSpeakingState,
   RoomConnectionState,
   RoomLifecycleState,
@@ -22,6 +20,8 @@ import {
   type SignalingEventPayload,
 } from "@private-voice/shared";
 import { createSpeakingDetector, type ScreenShareEncodingProfile } from "@private-voice/webrtc";
+import { randomRoomAvatar } from "../features/room/randomRoomAvatar";
+import { rememberRoomDirectory } from "../features/room/usePrivateRoomDirectory";
 
 import {
   createProcessedMicrophoneStream,
@@ -323,7 +323,12 @@ export const useRoomState = () => {
   useEffect(() => {
     if (!profileNickname) return;
 
-    activeClient?.updateProfile(profileNickname, avatarDataUrl, profileAvatarId);
+    activeClient?.updateProfile(
+      profileNickname,
+      avatarDataUrl,
+      useRoomStore.getState().room.members.find((member) => member.isLocal)?.avatarId ??
+        profileAvatarId,
+    );
   }, [avatarDataUrl, profileAvatarId, profileNickname]);
 
   const startSpeakingDetector = (stream: MediaStream) => {
@@ -544,7 +549,7 @@ export const useRoomState = () => {
       profileId: signalingProfileId,
       nickname: accountSnapshot.profile?.displayName || currentSettings?.nickname || "访客",
       avatarDataUrl: undefined,
-      avatarId: currentSettings?.avatarId,
+      avatarId: randomRoomAvatar(currentSettings?.avatarId),
       localStream: stream,
       appVersion: runtimeInfo?.version ?? "0.0.0",
       protocolVersion: runtimeInfo?.protocolVersion ?? APP_PROTOCOL_VERSION,
@@ -908,6 +913,7 @@ export const useRoomState = () => {
     const joinPromise = (async () => {
       const currentSettings = useSettingsStore.getState().settings;
       if (!currentSettings) return;
+      const joiningUserId = useAccountStore.getState().snapshot.profile?.userId;
       if (useAppStore.getState().requiredUpdate) {
         useAppStore.getState().enterUpdateGate();
         return;
@@ -966,6 +972,9 @@ export const useRoomState = () => {
           channelId,
         });
         await connectToRoom(serverUrl, channelId, { reuseLocalMedia });
+        const joinedRoom = useRoomStore.getState().room.privateRoom;
+        if (joinedRoom && joiningUserId === useAccountStore.getState().snapshot.profile?.userId)
+          rememberRoomDirectory(joiningUserId, serverUrl, joinedRoom);
         // Keep the entry page visible until microphone acquisition, authorization,
         // join acknowledgement and the first room snapshot have all succeeded.
         // A failed device check must never flash the room shell before returning.
@@ -1409,20 +1418,7 @@ export const useRoomState = () => {
   quickMessageShortcutHandlerRef.current = (slotIndex) => {
     const currentSettings = useSettingsStore.getState().settings;
     if (!currentSettings) return;
-    const voiceSlots = normalizeQuickMessageSlots(
-      currentSettings?.quickMessages.slots,
-      DEFAULT_QUICK_MESSAGE_SLOTS,
-      DEFAULT_QUICK_MESSAGE_SLOTS.length,
-    );
-    const musicSlots = normalizeQuickMessageSlots(
-      currentSettings?.quickMessages.musicSlots,
-      DEFAULT_QUICK_MESSAGE_MUSIC_SLOTS,
-      DEFAULT_QUICK_MESSAGE_MUSIC_SLOTS.length,
-    );
-    const slot =
-      slotIndex < voiceSlots.length
-        ? voiceSlots[slotIndex]
-        : musicSlots[slotIndex - voiceSlots.length];
+    const slot = getQuickMessageShortcutSlots(currentSettings.quickMessages)[slotIndex];
     if (!slot?.enabled || !slot.presetId) return;
     void sendConfiguredQuickMessage(slot.presetId).catch(() => {
       pushToast({

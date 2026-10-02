@@ -1,7 +1,6 @@
 import {
-  DEFAULT_QUICK_MESSAGE_MUSIC_SLOTS,
   DEFAULT_QUICK_MESSAGE_SLOTS,
-  normalizeQuickMessageSlots,
+  getQuickMessageShortcutSlots,
   type AppSettings,
 } from "@private-voice/shared";
 
@@ -13,29 +12,24 @@ type ShortcutBindings = {
 };
 
 const quickMessageBindings = (settings: AppSettings): string[] =>
-  [
-    ...normalizeQuickMessageSlots(settings.quickMessages.slots, DEFAULT_QUICK_MESSAGE_SLOTS),
-    ...normalizeQuickMessageSlots(
-      settings.quickMessages.musicSlots,
-      DEFAULT_QUICK_MESSAGE_MUSIC_SLOTS,
-      DEFAULT_QUICK_MESSAGE_MUSIC_SLOTS.length,
-    ),
-  ].map((slot) => (slot.enabled ? slot.shortcut.trim() : ""));
+  getQuickMessageShortcutSlots(settings.quickMessages).map((slot) =>
+    slot.enabled ? slot.shortcut.trim() : "",
+  );
 
 const configureQuickMessageMap = async (
   bindings: string[],
   shortcuts: ShortcutBindings,
-): Promise<string[]> => {
+): Promise<number[]> => {
   for (let index = 0; index < bindings.length; index++) {
     await shortcuts.configureQuickMessage(index, "").catch(() => false);
   }
-  const failed: string[] = [];
+  const failed: number[] = [];
   for (const [index, accelerator] of bindings.entries()) {
     if (
       accelerator &&
       !(await shortcuts.configureQuickMessage(index, accelerator).catch(() => false))
     ) {
-      failed.push(`quick-message:${index}`);
+      failed.push(index);
     }
   }
   return failed;
@@ -83,12 +77,30 @@ export const applyShortcutSettingsPatch = async (
     if (before.some((binding, index) => binding !== desired[index])) {
       const failed = await configureQuickMessageMap(desired, shortcuts);
       if (failed.length) {
-        await configureQuickMessageMap(before, shortcuts);
-        rollback.quickMessages = {
-          ...current.quickMessages,
-          slots: previous.quickMessages.slots,
-          musicSlots: previous.quickMessages.musicSlots,
-        };
+        if (
+          previous.quickMessages.shortcutsEnabled !== true &&
+          current.quickMessages.shortcutsEnabled
+        ) {
+          // One occupied key must not lock the entire editor behind the master switch.
+          const slots = getQuickMessageShortcutSlots(current.quickMessages).map((slot, index) =>
+            failed.includes(index) ? { ...slot, enabled: false } : slot,
+          );
+          const voiceCount = DEFAULT_QUICK_MESSAGE_SLOTS.length;
+          rollback.quickMessages = {
+            ...current.quickMessages,
+            slots: slots.slice(0, voiceCount),
+            musicSlots: slots.slice(voiceCount),
+          };
+        } else {
+          await configureQuickMessageMap(before, shortcuts);
+          rollback.quickMessages = {
+            ...current.quickMessages,
+            slots: previous.quickMessages.slots,
+            musicSlots: previous.quickMessages.musicSlots,
+            shortcutsEnabled: previous.quickMessages.shortcutsEnabled ?? false,
+            musicShortcutsEnabled: previous.quickMessages.musicShortcutsEnabled ?? false,
+          };
+        }
       }
     }
   }

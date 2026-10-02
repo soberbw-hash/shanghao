@@ -3,6 +3,7 @@ import test from "node:test";
 
 import type { VoiceMemoryRecord, VoiceMemoryTranscriptSegment } from "@private-voice/shared";
 import { VoiceMemoryOrganizer } from "../src/main/voice-memory-organizer";
+import type { GenerateJsonRequest } from "../src/main/ai-text-gateway";
 
 import {
   materializeOrganizationChunks,
@@ -48,6 +49,59 @@ const longRecord = (): VoiceMemoryRecord => {
     timeline: [],
   };
 };
+
+test("room cloud and custom organization retain every chunk and produce upload-ready results", async () => {
+  for (const provider of ["cloud", "custom"] as const) {
+    const source = { ...longRecord(), roomId: `room_${"a".repeat(32)}` };
+    const requests: Array<{ roomId?: string; provider?: string; prompt: string }> = [];
+    const organizer = new VoiceMemoryOrganizer(
+      {
+        usesLocalOrganizer: () => false,
+        organizerProvider: () => provider,
+        generateJsonWithMetrics: async (request: GenerateJsonRequest) => {
+          requests.push(request);
+          return {
+            value: { description: "朋友一起玩游戏。", summary: [{ text: "按原录音整理。" }] },
+          };
+        },
+      } as never,
+      async (record) => record,
+    );
+    const result = await organizer.organize(source, false, new AbortController().signal);
+    assert.equal(result.organization?.status, "completed");
+    assert.equal(result.organization?.modelId, provider);
+    assert.equal(result.organization?.metrics, undefined);
+    assert.ok(result.organization?.finalResult?.summary.length);
+    assert.equal(
+      result.organization?.chunks.flatMap((chunk) => chunk.sourceSegmentIds).length,
+      source.transcript.length,
+    );
+    assert.ok(
+      requests.every(
+        (request) => request.roomId === source.roomId && request.provider === provider,
+      ),
+    );
+    for (const segment of source.transcript)
+      assert.ok(requests.some((request) => request.prompt.includes(segment.id)));
+  }
+});
+
+test("empty remote replies cannot become completed summaries", async () => {
+  let saved = longRecord();
+  const organizer = new VoiceMemoryOrganizer(
+    {
+      usesLocalOrganizer: () => false,
+      generateJsonWithMetrics: async () => ({ value: {} }),
+    } as never,
+    async (value) => (saved = value),
+  );
+  await assert.rejects(
+    organizer.organize(saved, false, new AbortController().signal),
+    /organization_empty_result/,
+  );
+  assert.equal(saved.organization?.status, "failed");
+  assert.equal(saved.organization?.finalResult, undefined);
+});
 
 test("local organization runs chunk and reduction phases and resumes completed chunks", async () => {
   const source = longRecord();

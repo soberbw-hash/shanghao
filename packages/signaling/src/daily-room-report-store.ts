@@ -288,9 +288,20 @@ export class DailyRoomReportStore {
       .filter((report) => report.hadActivity);
   }
 
-  setCommentary(roomId: DailyRoomId, date: string, value: string, now = Date.now()): boolean {
+  setCommentary(
+    roomId: DailyRoomId,
+    date: string,
+    value: string,
+    now = Date.now(),
+    expectedRevision?: number,
+  ): boolean {
     const report = this.reports.rooms[roomId]?.[date];
-    if (!report || isRichCommentary(report.commentary)) return false;
+    if (
+      !report ||
+      isRichCommentary(report.commentary) ||
+      (expectedRevision !== undefined && report.revision !== expectedRevision)
+    )
+      return false;
     const commentary = normalizeCommentary(value);
     if (!commentary) return false;
     report.commentary = commentary;
@@ -319,10 +330,8 @@ export class DailyRoomReportStore {
       ),
       recap,
     ].slice(-6);
-    const recapCommentary = normalizeCommentary(
-      [recap.description, ...recap.summary].filter(Boolean).slice(0, 3).join("\n"),
-    );
-    if (recapCommentary) report.commentary = recapCommentary;
+    // A new summary invalidates the generated commentary so the next read includes it.
+    report.commentary = undefined;
     report.hadActivity = true;
     this.touch(report, now);
     return { publishedAt, serverRevision: report.revision ?? 0 };
@@ -480,6 +489,12 @@ export class DailyRoomReportStore {
     } else if (!isSharing) {
       this.closeActiveShare(roomIdValue, identityId, now, true);
     }
+  }
+
+  /** Wait for queued disk commits without ending active room/game sessions. */
+  async flushWrites(): Promise<void> {
+    await this.writeQueue;
+    if (this.writeFailure) throw new Error("daily_room_report_storage_failed");
   }
 
   async flush(): Promise<void> {
@@ -758,6 +773,8 @@ export class DailyRoomReportStore {
     }
   }
 
+  private writeFailure?: unknown;
+
   private queueWrite(): void {
     if (!this.filePath) return;
     const snapshot = JSON.stringify(this.reports, null, 2);
@@ -770,8 +787,12 @@ export class DailyRoomReportStore {
         await unlink(temporaryPath).catch(() => undefined);
         await writeFile(temporaryPath, snapshot, { encoding: "utf8", flag: "wx" });
         await rename(temporaryPath, this.filePath!);
+        this.writeFailure = undefined;
       })
-      .catch((error) => this.log?.("daily room reports write failed", { error: String(error) }));
+      .catch((error) => {
+        this.writeFailure = error;
+        this.log?.("daily room reports write failed", { error: String(error) });
+      });
   }
 
   private getBackupPath(): string {

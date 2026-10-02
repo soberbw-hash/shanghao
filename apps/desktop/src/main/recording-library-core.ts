@@ -1,6 +1,17 @@
 import { createReadStream } from "node:fs";
 import { randomUUID } from "node:crypto";
-import { mkdir, readFile, readdir, rename, rm, stat, unlink, writeFile } from "node:fs/promises";
+import { parseRecordingMarkers } from "./recording-marker-parser";
+import {
+  lstat,
+  mkdir,
+  readFile,
+  readdir,
+  rename,
+  rm,
+  stat,
+  unlink,
+  writeFile,
+} from "node:fs/promises";
 import path from "node:path";
 import { Readable } from "node:stream";
 
@@ -19,6 +30,7 @@ interface RecordingCatalogEntry {
   recordingId: string;
   fileName: string;
   title: string;
+  isCustomTitle?: boolean;
   createdAt: string;
   roomId?: string;
   roomName?: string;
@@ -163,6 +175,7 @@ const readLibraryMetadata = async (directory: string): Promise<RecordingLibraryM
             typeof entry.recordingId === "string" &&
             typeof entry.fileName === "string" &&
             typeof entry.title === "string" &&
+            (entry.isCustomTitle === undefined || typeof entry.isCustomTitle === "boolean") &&
             typeof entry.createdAt === "string" &&
             (entry.roomId === undefined || isStoredRoomId(entry.roomId)) &&
             (entry.roomName === undefined ||
@@ -241,13 +254,7 @@ const parseMarkers = async (filePath: string, recordingId: string): Promise<Reco
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
     throw error;
   }
-  const matches = [...source.matchAll(/(\d{2}):(\d{2}):(\d{2})/g)];
-  if (source.trim() && matches.length === 0) throw new Error("recording_marker_unreadable");
-  return matches.map((match, index) => ({
-    id: `${recordingId}-${index}`,
-    offsetMs: (Number(match[1]) * 3_600 + Number(match[2]) * 60 + Number(match[3])) * 1_000,
-    createdAt: new Date(0).toISOString(),
-  }));
+  return parseRecordingMarkers(source, recordingId);
 };
 
 export const toRecordingMediaUrl = (filePath: string): string =>
@@ -315,6 +322,7 @@ const readRecordingLibraryItemsUnsafe = async (
           id: catalogEntry.recordingId,
           recordingId: catalogEntry.recordingId,
           title: catalogEntry.title,
+          isCustomTitle: catalogEntry.isCustomTitle,
           fileName: entry.name,
           filePath,
           mediaUrl: toRecordingMediaUrl(filePath),
@@ -439,6 +447,7 @@ export const renameRecordingInDirectory = async (
   directory: string,
   recordingId: string,
   requestedTitle: string,
+  titleMetadata?: Pick<RecordingLibraryItem, "title" | "isCustomTitle">,
 ): Promise<RecordingLibraryItem> => {
   return mutateDirectory(directory, async () => {
     const title = validateRecordingTitle(requestedTitle.replace(/\.m4a$/i, ""));
@@ -477,12 +486,14 @@ export const renameRecordingInDirectory = async (
         }
       }
       catalogEntry.fileName = path.basename(targetPath);
-      catalogEntry.title = title;
+      catalogEntry.title = titleMetadata?.title ?? title;
+      catalogEntry.isCustomTitle = titleMetadata ? titleMetadata.isCustomTitle : true;
       metadata.favorites = [...legacyFavorites].sort();
       await writeLibraryMetadata(directory, metadata);
     } catch (error) {
       catalogEntry.fileName = originalEntry.fileName;
       catalogEntry.title = originalEntry.title;
+      catalogEntry.isCustomTitle = originalEntry.isCustomTitle;
       if (markerRenamed) await rename(targetMarkerPath, sourceMarkerPath).catch(() => undefined);
       if (audioRenamed) await rename(targetPath, sourcePath).catch(() => undefined);
       throw error;
@@ -559,6 +570,7 @@ export const recycleUnprotectedRecordingInDirectory = async (
   directory: string,
   filePath: string,
   recycle: (filePath: string) => Promise<void>,
+  expected?: Pick<RecordingLibraryItem, "recordingId" | "fileSize" | "modifiedAt">,
 ): Promise<void> => {
   if (!isAllowedRecordingPathInDirectory(directory, filePath)) {
     throw new Error("invalid_recording_path");
@@ -567,6 +579,17 @@ export const recycleUnprotectedRecordingInDirectory = async (
     const metadata = await readLibraryMetadata(directory);
     const fileName = path.basename(filePath);
     const entry = metadata.recordings?.find((recording) => recording.fileName === fileName);
+    if (expected) {
+      const file = await lstat(filePath);
+      if (
+        !file.isFile() ||
+        entry?.recordingId !== expected.recordingId ||
+        file.size !== expected.fileSize ||
+        file.mtime.toISOString() !== expected.modifiedAt
+      ) {
+        throw new Error("recording_changed_since_scan");
+      }
+    }
     if (
       metadata.favorites.includes(fileName) ||
       (entry && metadata.favoriteRecordingIds?.includes(entry.recordingId)) ||
@@ -575,7 +598,8 @@ export const recycleUnprotectedRecordingInDirectory = async (
       throw new Error("recording_protected");
     }
     await recycle(filePath);
-    await forgetRecordingInDirectoryUnsafe(directory, filePath, metadata);
+    // A manual reversible cleanup keeps identity and custom titles for restoration.
+    if (!expected) await forgetRecordingInDirectoryUnsafe(directory, filePath, metadata);
   });
 };
 

@@ -9,7 +9,7 @@ import {
   DEFAULT_QUICK_MESSAGE_SLOTS,
   DEFAULT_QUICK_MESSAGE_VOLUME,
   DEFAULT_AI_ASR_MODEL_ID,
-  normalizeQuickMessageSlots,
+  getQuickMessageShortcutSlots,
   APP_BUILD_NUMBER,
   APP_PROTOCOL_VERSION,
   type AppSettings,
@@ -87,7 +87,7 @@ const fallbackSettings: AppSettings = {
   avatarPath: undefined,
   hasCompletedProfileSetup: false,
   minimizeToTray: false,
-  isFriendOnlineNotificationEnabled: false,
+  isFriendOnlineNotificationEnabled: true,
   hasSeenTrayNotice: false,
   recordingClipBeforeMs: 20_000,
   recordingClipAfterMs: 8_000,
@@ -115,12 +115,14 @@ const fallbackSettings: AppSettings = {
   aiProcessingMode: "manual",
   isAiAutoTranscribeEnabled: false,
   isAiAutoOrganizeEnabled: false,
+  isAiAutoUploadEnabled: false,
   isNoiseSuppressionEnabled: true,
   isEchoCancellationEnabled: true,
   isAutoGainControlEnabled: true,
   isVoiceEnhancementEnabled: true,
   isPushToTalkEnabled: false,
   isAutoRecordOnJoinEnabled: true,
+  isRecordingAutoGameMarkerEnabled: true,
   micMonitorMode: "processed",
   relayServerUrl: OFFICIAL_RELAY_SERVER_URL,
   isDeveloperModeEnabled: false,
@@ -135,6 +137,8 @@ const fallbackSettings: AppSettings = {
   weatherEffectMode: "standard",
   isUiSoundEnabled: true,
   quickMessages: {
+    shortcutsEnabled: false,
+    musicShortcutsEnabled: false,
     soundEnabled: true,
     soundVolume: DEFAULT_QUICK_MESSAGE_VOLUME,
     musicPresetId: DEFAULT_QUICK_MESSAGE_MUSIC_PRESET_ID,
@@ -173,14 +177,7 @@ const withTimeout = async <T>(
   });
 
 const getQuickMessageShortcutSignature = (settings: AppSettings): string =>
-  [
-    ...normalizeQuickMessageSlots(settings.quickMessages.slots, DEFAULT_QUICK_MESSAGE_SLOTS),
-    ...normalizeQuickMessageSlots(
-      settings.quickMessages.musicSlots,
-      DEFAULT_QUICK_MESSAGE_MUSIC_SLOTS,
-      DEFAULT_QUICK_MESSAGE_MUSIC_SLOTS.length,
-    ),
-  ]
+  getQuickMessageShortcutSlots(settings.quickMessages)
     .map((slot) => `${slot.enabled ? "1" : "0"}:${slot.shortcut.trim().toLowerCase()}`)
     .join("|");
 
@@ -284,10 +281,25 @@ export const useSettingsStore = create<SettingsStoreState>((set, get) => ({
       getQuickMessageShortcutSignature({ ...settings, quickMessages: partial.quickMessages }) !==
         getQuickMessageShortcutSignature(settings)
     ) {
+      const activation =
+        previousSettings?.quickMessages.shortcutsEnabled !== true &&
+        partial.quickMessages.shortcutsEnabled === true &&
+        settings.quickMessages.shortcutsEnabled === true;
+      const requested = getQuickMessageShortcutSlots(partial.quickMessages);
+      const applied = getQuickMessageShortcutSlots(settings.quickMessages);
+      const unavailable = requested.flatMap((slot, index) =>
+        slot.enabled && !applied[index]?.enabled
+          ? [
+              `${index < DEFAULT_QUICK_MESSAGE_SLOTS.length ? `语音 ${index + 1}` : `音乐 ${index - DEFAULT_QUICK_MESSAGE_SLOTS.length + 1}`}（${slot.shortcut}）`,
+            ]
+          : [],
+      );
       useAppStore.getState().pushToast({
         tone: "warning",
-        title: "快捷消息按键未更改",
-        description: "有组合键无法注册，已保留原来的槽位设置。",
+        title: activation ? "按键未能启用" : "快捷消息按键未更改",
+        description: activation
+          ? `${unavailable.slice(0, 3).join("、")}${unavailable.length > 3 ? `等 ${unavailable.length} 个按键` : ""}无法注册，已关闭对应槽位。可修改按键后重新开启。`
+          : "有组合键无法注册，已保留原来的槽位设置。",
       });
     }
     return settings;

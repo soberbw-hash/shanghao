@@ -26,6 +26,7 @@ import { FreeTokenLocalLlmProvider } from "./freetoken-local-llm-provider";
 import { FreeTokenManagedRuntime } from "./freetoken-managed-runtime";
 import { AiVoiceMemoryService } from "./ai-voice-memory-service";
 import { AiTextGateway } from "./ai-text-gateway";
+import { registerRoomMemoryIpc } from "./room-memory-ipc";
 import { CustomAiProviderStore } from "./custom-ai-provider-store";
 import { HuggingFaceAccessStore } from "./hugging-face-access-store";
 import { preparePersistentAiStorage } from "./ai-storage";
@@ -42,7 +43,7 @@ import { removeWindowsStartupTask } from "./windows-startup-task";
 import { rustCoreClient } from "./rust-core-client";
 import { BootstrapMigrationRegistry } from "./bootstrap-migration-registry";
 import { mainResourceScheduler } from "./main-resource-scheduler";
-import { ensureWindowsFirewallRulesWithOutcome } from "./windows-integration";
+import { inspectAndRecoverWindowsFirewall } from "./windows-integration";
 import {
   findDeepLinkAuth,
   findDeepLinkInvite,
@@ -120,24 +121,17 @@ const showNetworkPermissionNotice = (title: string, body: string): void => {
 const inspectWindowsNetworkPermissions = async (): Promise<void> => {
   if (!app.isPackaged || !platformService.isWindows || !diagnostics) return;
   try {
-    const outcome = await ensureWindowsFirewallRulesWithOutcome();
+    const status = await inspectAndRecoverWindowsFirewall();
     await diagnostics.writeLog({
       category: "app",
-      level: outcome.status.healthy ? "info" : "warn",
-      message: outcome.status.healthy
-        ? "Windows network permissions already healthy"
-        : "Windows network permissions need review",
-      context: {
-        ...outcome.status,
-        repairAttempted: outcome.repairAttempted,
-        repaired: outcome.repaired,
-        inspectionFailed: outcome.inspectionFailed,
-      },
+      level: status.healthy ? "info" : "warn",
+      message: "Windows network permission recovery status",
+      context: { ...status },
     });
-    if (outcome.status.healthy) return;
+    if (status.healthy || status.repairState !== "repairing") return;
     showNetworkPermissionNotice(
-      "请检查网络权限",
-      "上号的程序级防火墙规则需要检查，可在设置的诊断页面修复。",
+      "正在自动修复网络权限",
+      "上号会补齐自己的网络规则。如 Windows 请求授权，请在系统授权框确认。",
     );
   } catch (error) {
     await diagnostics.writeLog({
@@ -558,6 +552,7 @@ const bootstrap = async (): Promise<void> => {
     aiRuntime.releaseQwen(reason);
     freeTokenProvider.release(reason);
   });
+  const roomMemories = registerRoomMemoryIpc(accounts, settingsStore);
   const aiTextGateway = new AiTextGateway(
     settingsStore,
     aiModels,
@@ -565,6 +560,7 @@ const bootstrap = async (): Promise<void> => {
     signalingClient,
     customAiProvider,
     freeTokenProvider,
+    (roomId, signal) => roomMemories.context(roomId, signal),
   );
   const voiceMemory = new AiVoiceMemoryService(
     aiModels,
@@ -660,10 +656,11 @@ const bootstrap = async (): Promise<void> => {
     level: "info",
     message: "Main window created",
   });
-  // The check may invoke PowerShell and elevation-sensitive firewall APIs, so
-  // keep it off the startup critical path. It runs once per launch and the
-  // firewall layer serializes any manual repair that happens at the same time.
+  // Recovery stays off the startup critical path and coalesces explicit retries.
   void inspectWindowsNetworkPermissions();
+  const firewallRecoveryTimer = setInterval(() => void inspectWindowsNetworkPermissions(), 300_000);
+  firewallRecoveryTimer.unref();
+  app.once("will-quit", () => clearInterval(firewallRecoveryTimer));
   void maybeRunVisualCapture(mainWindow).catch(async (error) => {
     await diagnostics?.writeLog({
       category: "app",

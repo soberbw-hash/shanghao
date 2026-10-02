@@ -1100,6 +1100,7 @@ test("room questions expose a real cancellation signal to every text provider", 
     {} as never,
     {} as never,
     {
+      questionRoomId: () => "main",
       generateJson: async ({ signal }: { signal?: AbortSignal }) => {
         questionSignal = signal;
         return new Promise((_resolve, reject) => {

@@ -1,5 +1,4 @@
 import { createHash, randomUUID } from "node:crypto";
-import path from "node:path";
 import {
   isReliableTranscriptText,
   mergeTranscriptIntoSentences,
@@ -126,75 +125,23 @@ export const transcriptForPrompt = (
     .join("\n")
     .slice(0, maximumCharacters);
 
-const asArray = <T>(value: unknown): T[] => {
-  if (Array.isArray(value)) return value as T[];
-  return value && typeof value === "object" ? [value as T] : [];
-};
-
-const normalizeOrganizedResult = (value: unknown, record: VoiceMemoryRecord): OrganizedResult => {
-  const raw = value && typeof value === "object" ? (value as Record<string, unknown>) : {};
-  const summary = asArray<Record<string, unknown>>(raw.summary)
-    .filter((item) => typeof item.text === "string" && item.text.trim())
-    .map((item) => ({
-      text: String(item.text).trim(),
-      sourceStartMs: typeof item.sourceStartMs === "number" ? item.sourceStartMs : undefined,
-      sourceSegmentIds: Array.isArray(item.sourceSegmentIds)
-        ? item.sourceSegmentIds.map((id) => {
-            if (typeof id === "number") return record.transcript[id]?.id ?? String(id);
-            return String(id);
-          })
-        : undefined,
-    }));
-  const chapters = asArray<Record<string, unknown>>(raw.chapters)
-    .filter((item) => typeof item.title === "string" && Number.isFinite(Number(item.startMs)))
-    .map((item, index) => ({
-      id: String(item.id ?? `chapter-${index + 1}`),
-      startMs: Number(item.startMs),
-      title: String(item.title).trim(),
-      description: typeof item.description === "string" ? item.description.trim() : undefined,
-    }));
-  const highlights = asArray<Record<string, unknown>>(raw.highlights)
-    .filter(
-      (item) =>
-        typeof item.title === "string" &&
-        Number.isFinite(Number(item.startMs)) &&
-        Number.isFinite(Number(item.endMs)),
-    )
-    .map((item, index) => ({
-      id: String(item.id ?? `highlight-${index + 1}`),
-      title: String(item.title).trim(),
-      startMs: Number(item.startMs),
-      endMs: Number(item.endMs),
-      description: typeof item.description === "string" ? item.description.trim() : "",
-      transcriptSegmentIds: Array.isArray(item.transcriptSegmentIds)
-        ? item.transcriptSegmentIds.map((id) => String(id))
-        : [],
-      exportable: item.exportable !== false,
-    }));
-  const markerTitles = asArray<Record<string, unknown>>(raw.markerTitles)
-    .filter(
-      (item) =>
-        typeof item.markerId === "string" &&
-        typeof item.title === "string" &&
-        Number.isFinite(Number(item.offsetMs)),
-    )
-    .map((item) => ({
-      markerId: String(item.markerId),
-      offsetMs: Number(item.offsetMs),
-      title: String(item.title).trim(),
-    }));
-  return { summary, chapters, highlights, markerTitles };
-};
-
 /** Plans and resumes organization; persistence remains owned by the caller. */
 export class VoiceMemoryOrganizer {
   constructor(
     private readonly textGateway: Pick<
       AiTextGateway,
       "usesLocalOrganizer" | "generateJson" | "generateJsonWithMetrics"
-    >,
-    private readonly save: (record: VoiceMemoryRecord) => Promise<VoiceMemoryRecord>,
+    > &
+      Partial<Pick<AiTextGateway, "organizerProvider">>,
+    private readonly persist: (record: VoiceMemoryRecord) => Promise<VoiceMemoryRecord>,
   ) {}
+
+  private save(record: VoiceMemoryRecord): Promise<VoiceMemoryRecord> {
+    if (record.organization?.modelId === "cloud" || record.organization?.modelId === "custom") {
+      record = { ...record, organization: { ...record.organization, metrics: undefined } };
+    }
+    return this.persist(record);
+  }
 
   async organize(
     record: VoiceMemoryRecord,
@@ -228,17 +175,19 @@ export class VoiceMemoryOrganizer {
         },
       });
     }
-    if (!this.textGateway.usesLocalOrganizer()) {
-      return this.organizeSinglePass(record, manual, signal);
-    }
+    const local = this.textGateway.usesLocalOrganizer();
+    const modelId = local
+      ? "qwen36-35b-a3b-nvfp4"
+      : (this.textGateway.organizerProvider?.() ?? "cloud");
+    const modelRevision = local ? QWEN36_NVFP4_MODEL_REVISION : "remote-v1";
     const readableTranscript = mergeTranscriptIntoSentences(record.transcript);
     const preparedRecord = { ...record, transcript: readableTranscript };
     const plans = planRecordingOrganizationChunks(preparedRecord);
     if (plans.length === 0) return preparedRecord;
     const compatibleRun =
       record.organization?.pipelineVersion === RECORDING_ORGANIZATION_PIPELINE_VERSION &&
-      record.organization.modelId === "qwen36-35b-a3b-nvfp4" &&
-      record.organization.modelRevision === QWEN36_NVFP4_MODEL_REVISION;
+      record.organization.modelId === modelId &&
+      record.organization.modelRevision === modelRevision;
     let chunks = materializeOrganizationChunks(
       plans,
       compatibleRun
@@ -266,8 +215,8 @@ export class VoiceMemoryOrganizer {
       organizationPublication: undefined,
       organization: {
         pipelineVersion: RECORDING_ORGANIZATION_PIPELINE_VERSION,
-        modelId: "qwen36-35b-a3b-nvfp4",
-        modelRevision: QWEN36_NVFP4_MODEL_REVISION,
+        modelId,
+        modelRevision,
         status: "running",
         completedChunks: chunks.filter((chunk) => chunk.status === "completed").length,
         chunks,
@@ -348,6 +297,11 @@ export class VoiceMemoryOrganizer {
         });
         try {
           const generated = await this.textGateway.generateJsonWithMetrics<unknown>({
+            roomId: record.roomId,
+            provider:
+              record.organization?.modelId === "cloud" || record.organization?.modelId === "custom"
+                ? record.organization.modelId
+                : "local",
             purpose: "organize",
             manual,
             maxNewTokens: 3_072,
@@ -362,6 +316,14 @@ export class VoiceMemoryOrganizer {
             running.startMs,
             running.endMs,
           );
+          if (
+            !result.description &&
+            !result.summary.length &&
+            !result.topics.length &&
+            !result.highlights.length &&
+            !result.funnyMoments.length
+          )
+            throw new Error("organization_empty_result");
           if (generated.metrics) metrics = mergeOrganizationMetrics(metrics, generated.metrics);
           metrics = { ...metrics, chunkCount: metrics.chunkCount + 1 };
           const finished = {
@@ -483,6 +445,12 @@ export class VoiceMemoryOrganizer {
               },
               async () => {
                 const generation = await this.textGateway.generateJsonWithMetrics<unknown>({
+                  roomId: record.roomId,
+                  provider:
+                    record.organization?.modelId === "cloud" ||
+                    record.organization?.modelId === "custom"
+                      ? record.organization.modelId
+                      : "local",
                   purpose: "organize",
                   manual,
                   maxNewTokens: 3_072,
@@ -614,56 +582,6 @@ export class VoiceMemoryOrganizer {
         metrics,
         updatedAt: new Date().toISOString(),
       },
-    });
-  }
-
-  private async organizeSinglePass(
-    record: VoiceMemoryRecord,
-    manual: boolean,
-    signal: AbortSignal,
-  ): Promise<VoiceMemoryRecord> {
-    const readableTranscript = mergeTranscriptIntoSentences(record.transcript);
-    record = await this.save({
-      ...record,
-      transcript: readableTranscript,
-      phase: "organizing",
-      progress: 75,
-      errorMessage: undefined,
-      organizationPublication: undefined,
-    });
-    const result = await runOrganizationWithRetry(
-      record.organizationSinglePassRetry,
-      async (state) => {
-        record = await this.save({ ...record, organizationSinglePassRetry: state });
-      },
-      () =>
-        this.textGateway.generateJson<OrganizedResult>({
-          purpose: "organize",
-          manual,
-          maxNewTokens: 384,
-          timeoutMs: 4 * 60_000,
-          signal,
-          prompt: [
-            "你是上号语音软件的录音整理助手。这里是固定好友的日常聊天，不是会议。",
-            "生成自然、有趣、能回到原录音的结构化结果，不要编造。",
-            '只返回 JSON：{"summary":[],"chapters":[],"highlights":[],"markerTitles":[]}。',
-            `已有标记：${record.markerTitles.map((marker) => `${marker.markerId}@${marker.offsetMs}ms`).join(", ") || "无"}`,
-            `录音：${path.basename(record.filePath)}`,
-            transcriptForPrompt(record, 36_000),
-          ].join("\n"),
-        }),
-      signal,
-    );
-    const normalized = normalizeOrganizedResult(result, record);
-    return this.save({
-      ...record,
-      summary: normalized.summary,
-      chapters: normalized.chapters,
-      highlights: normalized.highlights,
-      markerTitles:
-        normalized.markerTitles.length > 0 ? normalized.markerTitles : record.markerTitles,
-      organizedAt: new Date().toISOString(),
-      progress: 98,
     });
   }
 }

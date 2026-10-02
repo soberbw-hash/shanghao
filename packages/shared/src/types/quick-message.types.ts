@@ -23,6 +23,10 @@ export interface QuickMessageShortcutSlot {
 }
 
 export interface QuickMessageSettings {
+  /** Explicit opt-in for all voice and music keys; legacy profiles default to off. */
+  shortcutsEnabled?: boolean;
+  /** Legacy music-only preference, retained for profile compatibility. */
+  musicShortcutsEnabled?: boolean;
   soundEnabled: boolean;
   soundVolume: number;
   /** The music clip shown in the dedicated room quick-play button. */

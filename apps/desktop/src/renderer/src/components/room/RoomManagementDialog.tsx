@@ -5,7 +5,7 @@ import { privateRoomErrorMessage } from "../../features/room/privateRoomMessages
 import { Button } from "../base/Button";
 import { DialogCloseButton } from "../base/DialogCloseButton";
 import { PrivateRoomEditor } from "./PrivateRoomEditor";
-
+import { RoomMemoryPanel } from "./RoomMemoryPanel";
 export const RoomManagementDialog = ({
   room,
   members,
@@ -68,6 +68,7 @@ export const RoomManagementDialog = ({
         </Button>
         <DialogCloseButton onClick={onClose} disabled={busy} label="关闭房间管理" />
       </header>
+      <RoomMemoryPanel roomId={room.roomId} />
       <h3 className="mb-2 text-sm font-semibold">
         {members.length ? "在线成员" : "进入此房间后可管理在线成员"}
       </h3>

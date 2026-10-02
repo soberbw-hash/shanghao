@@ -76,7 +76,7 @@ export const TopStatusBar = ({
 
   return (
     <header
-      className="room-topbar flex items-center gap-3 px-4 py-2.5"
+      className="room-topbar flex min-h-14 items-center gap-3 px-4 py-2.5"
       data-testid="channel-status-bar"
       onPointerMove={(event) =>
         updateGlassPointerHighlight(event.currentTarget, event.clientX, event.clientY)
@@ -141,14 +141,14 @@ export const TopStatusBar = ({
             </div>
           ) : null}
         </div>
-        <div
-          className={`topbar-channel-copy mt-0.5 min-h-4 truncate text-[11px] text-[#8494a7] transition-opacity duration-150 ${
-            connectionStatus ? "opacity-100" : "opacity-0"
-          }`}
-          aria-hidden={!connectionStatus}
-        >
-          {connectionStatus || "频道状态正常"}
-        </div>
+        {connectionStatus && (
+          <div
+            className="topbar-channel-copy mt-0.5 truncate text-[11px] text-[#8494a7]"
+            role="status"
+          >
+            {connectionStatus}
+          </div>
+        )}
       </div>
       <div className="topbar-controls">
         <div className="topbar-metrics" aria-label="频道状态">

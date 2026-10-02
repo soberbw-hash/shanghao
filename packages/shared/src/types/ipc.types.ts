@@ -99,6 +99,7 @@ export interface WindowsIntegrationStatus {
     expectedRuleCount: number;
     executablePath?: string;
     message: string;
+    repairState?: "idle" | "repairing" | "authorization_required" | "failed" | "unavailable";
   };
   iconOverlays: {
     supported: boolean;
@@ -260,6 +261,7 @@ export interface GameDetectionSnapshot {
 export interface DesktopApi {
   storage: import("./storage.types").StorageApi;
   rooms: import("./private-room.types").PrivateRoomsApi;
+  roomMemory: import("./room-memory.types").RoomMemoryApi;
   phoneMode: {
     get: () => Promise<{ active: boolean; busy: boolean; error?: string }>;
     set: (active: boolean) => Promise<void>;
@@ -480,6 +482,7 @@ export interface DesktopApi {
     applyAutomaticCleanup: (filePath: string) => Promise<RecordingAutomaticCleanupResult>;
     list: () => Promise<RecordingLibrarySnapshot>;
     scanWaste: () => Promise<RecordingCleanupScan>;
+    cleanWaste: (filePaths: string[]) => Promise<RecordingBatchDeleteResult>;
     onScanWasteProgress: (listener: (progress: RecordingCleanupProgress) => void) => () => void;
     setFavorite: (filePath: string, isFavorite: boolean) => Promise<void>;
     rename: (recordingId: string, title: string) => Promise<RecordingLibraryItem>;

@@ -667,6 +667,8 @@ export class AccountDesktopService extends EventEmitter {
   }
 
   async updateAvatar(input: AccountAvatarUpdateRequest): Promise<AccountSnapshot> {
+    const ownerId = this.snapshot.profile?.userId;
+    const serverUrl = this.getRelayServerUrl();
     if (this.accountProvider === "cloudbase" && !input.accountAvatarPresetId) {
       throw new AccountDesktopError("account_avatar_invalid");
     }
@@ -681,6 +683,14 @@ export class AccountDesktopService extends EventEmitter {
           : { dataUrl: input.dataUrl },
       ),
     });
+    if (
+      !ownerId ||
+      profile.userId !== ownerId ||
+      this.snapshot.profile?.userId !== ownerId ||
+      this.snapshot.status !== "signed_in" ||
+      this.getRelayServerUrl() !== serverUrl
+    )
+      throw new AccountDesktopError("account_session_expired");
     this.updateSnapshot({ ...this.snapshot, status: "signed_in", profile });
     await this.refreshRememberedProfile(profile);
     return this.getSnapshot();

@@ -1,0 +1,19 @@
+.room-switch-dialog {
+  height: min(420px, 85dvh);
+  overflow: hidden;
+  background: rgba(247, 251, 255, 0.98);
+}
+.room-switch-dialog[open] {
+  display: flex;
+  flex-direction: column;
+}
+.room-switch-dialog > header {
+  flex-shrink: 0;
+}
+.room-switch-content {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+  overscroll-behavior: contain;
+}

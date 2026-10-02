@@ -9,6 +9,28 @@ export const ACCOUNT_AVATAR_PRESET_IDS = [
   "amber-dog",
   "cloud-panda",
   "comet-otter",
+  "snow-penguin",
+  "golden-tiger",
+  "moss-frog",
+  "eucalyptus-koala",
+  "dusk-owl",
+  "rust-red-panda",
+  "sand-lion",
+  "oat-hamster",
+  "lagoon-turtle",
+  "chestnut-hedgehog",
+  "ice-seal",
+  "lemon-chick",
+  "cocoa-capybara",
+  "slate-raccoon",
+  "silver-wolf",
+  "jade-dragon",
+  "orbit-robot",
+  "lunar-astronaut",
+  "ring-planet",
+  "coral-mushroom",
+  "linen-ghost",
+  "apricot-squirrel",
 ] as const;
 
 export type AccountAvatarPresetId = (typeof ACCOUNT_AVATAR_PRESET_IDS)[number];
@@ -23,5 +45,5 @@ export const accountAvatarPresetForIdentity = (identity: string): AccountAvatarP
     hash ^= character.codePointAt(0)!;
     hash = Math.imul(hash, 16777619);
   }
-  return ACCOUNT_AVATAR_PRESET_IDS[(hash >>> 0) % ACCOUNT_AVATAR_PRESET_IDS.length]!;
+  return ACCOUNT_AVATAR_PRESET_IDS[(hash >>> 0) % 10]!;
 };

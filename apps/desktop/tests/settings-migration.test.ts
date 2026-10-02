@@ -12,9 +12,53 @@ import {
 
 import { defaultSettings, migrateSettings } from "../src/main/settings-migration";
 
+test("all quick-message shortcuts require explicit opt-in without erasing saved bindings", () => {
+  assert.equal(defaultSettings.quickMessages.shortcutsEnabled, false);
+  const legacy = { ...defaultSettings.quickMessages };
+  delete legacy.shortcutsEnabled;
+  const musicSlots = legacy.musicSlots.map((slot, index) => ({
+    ...slot,
+    shortcut: index === 0 ? "Mouse4" : slot.shortcut,
+    enabled: index !== 1,
+  }));
+  const upgraded = migrateSettings({
+    ...defaultSettings,
+    quickMessages: { ...legacy, musicShortcutsEnabled: true, musicSlots },
+  }).settings;
+  assert.equal(upgraded.quickMessages.shortcutsEnabled, false);
+  assert.equal(upgraded.quickMessages.musicShortcutsEnabled, true);
+  assert.deepEqual(upgraded.quickMessages.slots, legacy.slots);
+  assert.deepEqual(upgraded.quickMessages.musicSlots, musicSlots);
+  const enabled = migrateSettings({
+    ...upgraded,
+    quickMessages: { ...upgraded.quickMessages, shortcutsEnabled: true },
+  }).settings;
+  assert.equal(enabled.quickMessages.shortcutsEnabled, true);
+  assert.deepEqual(enabled.quickMessages.slots, legacy.slots);
+  assert.deepEqual(enabled.quickMessages.musicSlots, musicSlots);
+  const disabled = migrateSettings({
+    ...enabled,
+    quickMessages: { ...enabled.quickMessages, shortcutsEnabled: false },
+  }).settings;
+  assert.equal(disabled.quickMessages.shortcutsEnabled, false);
+  assert.deepEqual(disabled.quickMessages.slots, legacy.slots);
+  assert.deepEqual(disabled.quickMessages.musicSlots, musicSlots);
+});
+test("friend notifications and local game markers default on and preserve explicit opt-out", () => {
+  const defaults = migrateSettings({}).settings;
+  assert.equal(defaults.isFriendOnlineNotificationEnabled, true);
+  assert.equal(defaults.isRecordingAutoGameMarkerEnabled, true);
+  const saved = migrateSettings({
+    isFriendOnlineNotificationEnabled: false,
+    isRecordingAutoGameMarkerEnabled: false,
+  }).settings;
+  assert.equal(saved.isFriendOnlineNotificationEnabled, false);
+  assert.equal(saved.isRecordingAutoGameMarkerEnabled, false);
+});
+
 test("clip and tray preferences use safe defaults and preserve customized profiles", () => {
   const old = migrateSettings({ minimizeToTray: true, quickMessageVolume: 27 }).settings;
-  assert.equal(old.isFriendOnlineNotificationEnabled, false);
+  assert.equal(old.isFriendOnlineNotificationEnabled, true);
   assert.equal(old.hasSeenTrayNotice, false);
   assert.equal(old.hasDismissedRecordingClipConsent, false);
   assert.equal(old.recordingClipBeforeMs, 20_000);
@@ -439,11 +483,30 @@ test("collection read markers migrate by room without accepting unknown room key
   });
 });
 
-test("legacy room question providers migrate to cloud without requiring local Qwen", () => {
+test("legacy room question providers follow the unified text provider", () => {
   for (const aiRoomAskProvider of ["local", "custom"] as const) {
     const result = migrateSettings({ ...defaultSettings, aiRoomAskProvider });
     assert.equal(result.settings.aiRoomAskProvider, "cloud");
   }
+});
+
+test("automatic organization and upload default off while explicit preferences survive", () => {
+  const initial = migrateSettings({
+    ...defaultSettings,
+    isAiAutoUploadEnabled: undefined,
+  }).settings;
+  assert.equal(initial.isAiAutoOrganizeEnabled, false);
+  assert.equal(initial.isAiAutoUploadEnabled, false);
+  const custom = migrateSettings({
+    ...defaultSettings,
+    aiOrganizerProvider: "custom",
+    aiRoomAskProvider: "cloud",
+    isAiAutoOrganizeEnabled: true,
+    isAiAutoUploadEnabled: true,
+  }).settings;
+  assert.equal(custom.aiRoomAskProvider, "custom");
+  assert.equal(custom.isAiAutoOrganizeEnabled, true);
+  assert.equal(custom.isAiAutoUploadEnabled, true);
 });
 
 test("migrateSettings preserves the release notes version already shown", () => {

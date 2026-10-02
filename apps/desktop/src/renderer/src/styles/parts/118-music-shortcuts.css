@@ -1,0 +1,15 @@
+.quick-message-shortcuts-options {
+  min-width: 0;
+  margin: 0;
+  border: 0;
+  padding: 0;
+}
+
+.quick-message-shortcuts-options:disabled {
+  opacity: 0.48;
+  filter: grayscale(1);
+}
+
+.quick-message-shortcuts-options:disabled :is(button, input, select) {
+  cursor: not-allowed;
+}

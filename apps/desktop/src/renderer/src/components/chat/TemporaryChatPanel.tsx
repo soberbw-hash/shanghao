@@ -20,6 +20,7 @@ import {
 } from "@private-voice/shared";
 
 import { ChatAccountAvatar } from "./ChatAccountAvatar";
+import { chatDisplayName, isGameAssistantMessage } from "../../features/chat/gameAssistantMessage";
 import { QuickMessageRow } from "./QuickMessageRow";
 import {
   findFirstMessageUrl,
@@ -203,6 +204,7 @@ export const TemporaryChatPanel = ({
   const previewOriginElements = useRef(new Map<string, HTMLButtonElement>());
   const [isQuickSendCoolingDown, setIsQuickSendCoolingDown] = useState(false);
   const shouldReduceMotion = usePrefersReducedMotion(reduceMotion);
+  const shortcutsEnabled = quickMessageSettings?.shortcutsEnabled === true;
   const quickMessages = useMemo(() => {
     const configured = normalizeQuickMessageSlots(
       quickMessageSlots,
@@ -212,7 +214,7 @@ export const TemporaryChatPanel = ({
       .map((slot) => ({
         preset: QUICK_MESSAGE_PRESETS.find((candidate) => candidate.id === slot.presetId),
         shortcut: slot.shortcut,
-        enabled: slot.enabled,
+        enabled: shortcutsEnabled && slot.enabled,
       }))
       .filter(
         (
@@ -223,16 +225,8 @@ export const TemporaryChatPanel = ({
           enabled: boolean;
         } => Boolean(item.preset),
       );
-    return configured.filter(
-      (
-        item,
-      ): item is {
-        preset: (typeof QUICK_MESSAGE_PRESETS)[number];
-        shortcut: string;
-        enabled: boolean;
-      } => Boolean(item.preset) && item.preset.mediaType !== "music",
-    );
-  }, [quickMessageSlots]);
+    return configured.filter((item) => item.preset.mediaType !== "music");
+  }, [quickMessageSlots, shortcutsEnabled]);
   const quickMusicItems = useMemo(() => {
     const musicSlots = normalizeQuickMessageSlots(
       quickMessageSettings?.musicSlots?.length
@@ -252,7 +246,7 @@ export const TemporaryChatPanel = ({
       .map((slot) => ({
         preset: QUICK_MESSAGE_PRESETS.find((candidate) => candidate.id === slot.presetId),
         shortcut: slot.shortcut,
-        enabled: slot.enabled,
+        enabled: shortcutsEnabled && slot.enabled,
       }))
       .filter(
         (
@@ -263,7 +257,7 @@ export const TemporaryChatPanel = ({
           enabled: boolean;
         } => item.preset?.mediaType === "music",
       );
-  }, [quickMessageSettings?.musicPresetId, quickMessageSettings?.musicSlots]);
+  }, [quickMessageSettings, shortcutsEnabled]);
 
   useEffect(
     () => () => {
@@ -648,6 +642,7 @@ export const TemporaryChatPanel = ({
                   previousMessage &&
                   previousMessage.kind !== "system" &&
                   previousMessage.peerId === message.peerId &&
+                  isGameAssistantMessage(previousMessage) === isGameAssistantMessage(message) &&
                   formatMessageDate(previousMessage.createdAt) ===
                     formatMessageDate(message.createdAt) &&
                   Number.isFinite(previousCreatedAt) &&
@@ -681,7 +676,11 @@ export const TemporaryChatPanel = ({
                           index === visibleMessages.length - 1 ? latestMessageElementRef : undefined
                         }
                         data-gsap-chat-message
-                        data-chat-direction={message.isLocal ? "outgoing" : "incoming"}
+                        data-chat-direction={
+                          message.isLocal && !isGameAssistantMessage(message)
+                            ? "outgoing"
+                            : "incoming"
+                        }
                         className={`chat-message-row flex min-w-0 items-start gap-2 ${isGrouped ? "is-grouped" : ""}`}
                       >
                         {isGrouped ? (
@@ -693,7 +692,7 @@ export const TemporaryChatPanel = ({
                           {!isGrouped ? (
                             <span className="chat-message-meta mb-0.5 flex min-w-0 items-center gap-2 px-1">
                               <span className="chat-message-name min-w-0 truncate text-[12px] font-medium leading-4 text-[#718096]">
-                                {message.nickname}
+                                {chatDisplayName(message)}
                               </span>
                             </span>
                           ) : null}
@@ -755,7 +754,7 @@ export const TemporaryChatPanel = ({
                           {shouldShowMessageBubble ? (
                             <span
                               className={`chat-message-bubble max-w-full whitespace-pre-wrap break-words rounded-[14px] px-3 py-1.5 text-[13px] leading-[1.4] [overflow-wrap:anywhere] ${
-                                message.isLocal
+                                message.isLocal && !isGameAssistantMessage(message)
                                   ? "is-local rounded-tl-[4px] bg-[#EAF4FF] text-[#2F6FCC] border border-[rgba(126,184,249,0.25)]"
                                   : "is-remote rounded-bl-[4px] bg-white text-[#374151] border border-[rgba(220,230,242,0.5)]"
                               }`}

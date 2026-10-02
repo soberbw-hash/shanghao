@@ -1,0 +1,14 @@
+.recording-library-cleanup-tools {
+  flex-wrap: wrap;
+  row-gap: 8px;
+}
+
+.recording-library-cleanup-tools > button {
+  white-space: nowrap;
+}
+
+dialog.recording-cleanup-dialog {
+  max-height: calc(100dvh - 48px);
+  overflow-y: auto;
+  background: #f7fbff;
+}

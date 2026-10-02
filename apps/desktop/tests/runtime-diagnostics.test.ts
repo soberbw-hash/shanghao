@@ -114,7 +114,7 @@ test("a collected runtime sample is not counted as proof of healthy audio or dev
   const diagnosticsCard = readDesktop(
     "src/renderer/src/components/settings/DiagnosticsSettingsCard.tsx",
   );
-  assert.match(diagnosticsCard, /连接异常时，上号会先自动尝试恢复/);
+  assert.match(diagnosticsCard, /连接异常会自动尝试恢复/);
   assert.match(
     readDesktop("src/renderer/src/features/diagnostics/healthProjection.ts"),
     /请让好友确认/,

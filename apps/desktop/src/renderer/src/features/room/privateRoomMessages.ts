@@ -1,4 +1,10 @@
 const messages: Record<string, string> = {
+  room_memory_conflict: "记忆已被更新。请载入最新内容，核对后再保存。",
+  room_memory_invalid: "请检查记忆内容和字数。",
+  room_memory_full: "记忆存储已满，请联系房主处理。",
+  room_memory_access_denied: "只有房主和当前房间成员可以查看记忆。",
+  room_memory_unavailable: "房间记忆暂时无法读取，已有内容已保留。",
+  room_memory_server_upgrade_required: "服务器更新后才能使用房间记忆。",
   room_not_found: "房间已不存在。",
   room_code_unavailable: "这个频道号已被使用或仍在冷却期，请换一个。",
   room_limit_reached: "你已创建三个房间，请先删除不再使用的房间。",

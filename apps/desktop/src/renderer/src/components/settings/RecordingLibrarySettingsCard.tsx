@@ -22,7 +22,7 @@ import {
   hasInvalidVoiceMemoryResult,
   RecordingState,
   type AppSettings,
-  type RecordingCleanupReason,
+  type RecordingBatchDeleteResult,
   type RecordingLibraryItem,
   type RecordingLibrarySnapshot,
   type VoiceMemoryRecord,
@@ -36,10 +36,16 @@ import { SettingsSection } from "./SettingsSection";
 import { VoiceMemoryDetail } from "./VoiceMemoryDetail";
 import { ModelTestPanel } from "./ModelTestPanel";
 import { RecordingClipsPanel } from "./RecordingClipsPanel";
+import { RecordingRenameDialog } from "./RecordingRenameDialog";
+import { RecordingCardMeta } from "./RecordingCardMeta";
+import { RecordingMarkerCue } from "./RecordingMarkerCue";
+import { RecordingCleanupDialog, type WasteRecordingPreview } from "./RecordingCleanupDialog";
+import { useRecordingDurations } from "../../hooks/useRecordingDurations";
 import { useRecordingClipPreview } from "../../hooks/useRecordingClipPreview";
 import { useRecordingStore } from "../../store/recordingStore";
 import { createRecordingLibraryCache } from "../../features/recording/recordingLibraryCache";
 import { formatRecordingBytes } from "../../features/recording/recordingSize";
+import { recordingDisplayTitle } from "../../features/recording/recordingDisplayTitle";
 import { isVoiceMemoryTranscriptionComplete } from "../../features/ai/voiceMemoryPresentation";
 
 interface RecordingLibrarySettingsCardProps {
@@ -248,18 +254,14 @@ export const RecordingLibrarySettingsCard = ({
   const [duration, setDuration] = useState(0);
   const [playbackRate, setPlaybackRate] = useState(1);
   const [playbackError, setPlaybackError] = useState<string>();
-  const [cleanupRecordings, setCleanupRecordings] =
-    useState<Array<{ item: RecordingLibraryItem; reason: RecordingCleanupReason }>>();
+  const [cleanupRecordings, setCleanupRecordings] = useState<WasteRecordingPreview[]>();
   const [isScanningRecordings, setIsScanningRecordings] = useState(false);
   const [cleanupScanProgress, setCleanupScanProgress] = useState({ processed: 0, total: 0 });
-  const [isCleaningRecordings, setIsCleaningRecordings] = useState(false);
   const [isSelectionMode, setIsSelectionMode] = useState(false);
   const [selectedRecordingIds, setSelectedRecordingIds] = useState<Set<string>>(() => new Set());
   const [pendingBatchDelete, setPendingBatchDelete] = useState<RecordingLibraryItem[]>();
   const [isDeletingBatch, setIsDeletingBatch] = useState(false);
-  const [renamingId, setRenamingId] = useState<string>();
-  const [renameTitle, setRenameTitle] = useState("");
-  const [isRenaming, setIsRenaming] = useState(false);
+  const [renamingItem, setRenamingItem] = useState<RecordingLibraryItem>();
   const [renderLimit, setRenderLimit] = useState(RECORDING_RENDER_BATCH);
   const [isLibraryLoading, setIsLibraryLoading] = useState(!recordingLibraryCache.peek());
   const recordingState = useRecordingStore((state) => state.status.state);
@@ -384,6 +386,7 @@ export const RecordingLibrarySettingsCard = ({
     if (isActive) return;
     audioRef.current?.pause();
     setIsPlaying(false);
+    setRenamingItem(undefined);
   }, [isActive]);
 
   const selected = useMemo(
@@ -438,6 +441,11 @@ export const RecordingLibrarySettingsCard = ({
       return [[dateKey, visible] as const];
     });
   }, [groupedItems, renderLimit]);
+  const durationItems = useMemo(
+    () => renderedGroups.flatMap(([, items]) => items),
+    [renderedGroups],
+  );
+  const recordingDuration = useRecordingDurations(durationItems, isActive);
 
   useEffect(() => {
     setRenderLimit(RECORDING_RENDER_BATCH);
@@ -496,49 +504,22 @@ export const RecordingLibrarySettingsCard = ({
   }, [library?.items]);
 
   const recordingTitle = (item: RecordingLibraryItem): string =>
-    item.title && item.title !== item.fileName.replace(/\.m4a$/i, "")
-      ? item.title
-      : `语音 ${String(recordingNumbers.get(item.id) ?? 1).padStart(2, "0")}`;
+    recordingDisplayTitle(item, recordingNumbers.get(item.id) ?? 1);
 
-  const beginRename = (item: RecordingLibraryItem) => {
-    if (recordingBusy) {
-      pushToast({ tone: "neutral", title: "录音结束后才能重命名" });
-      return;
-    }
-    setRenamingId(item.recordingId);
-    setRenameTitle(recordingTitle(item));
-  };
-
-  const commitRename = async (item: RecordingLibraryItem) => {
-    if (isRenaming || !renameTitle.trim()) return;
-    setIsRenaming(true);
+  const commitRename = async (item: RecordingLibraryItem, title: string) => {
     audioRef.current?.pause();
-    try {
-      const renamed = await window.desktopApi.recording.rename(item.recordingId, renameTitle);
-      setLibrary((current) =>
-        current
-          ? {
-              ...current,
-              items: current.items.map((entry) =>
-                entry.recordingId === renamed.recordingId ? renamed : entry,
-              ),
-            }
-          : current,
-      );
-      setRenamingId(undefined);
-      pushToast({ tone: "success", title: "录音名称已更新" });
-    } catch (error) {
-      pushToast({
-        tone: "danger",
-        title: "录音重命名失败",
-        description:
-          error instanceof Error && error.message.includes("invalid_recording_title")
-            ? "名称不能为空，也不能包含 Windows 文件名禁用字符。"
-            : "文件可能正在处理或被其他程序占用，原文件已保留。",
-      });
-    } finally {
-      setIsRenaming(false);
-    }
+    const renamed = await window.desktopApi.recording.rename(item.recordingId, title);
+    setLibrary((current) =>
+      current
+        ? {
+            ...current,
+            items: current.items.map((entry) =>
+              entry.recordingId === renamed.recordingId ? renamed : entry,
+            ),
+          }
+        : current,
+    );
+    pushToast({ tone: "success", title: "录音名称已更新" });
   };
 
   useEffect(() => {
@@ -555,15 +536,6 @@ export const RecordingLibrarySettingsCard = ({
   useEffect(() => {
     if (audioRef.current) audioRef.current.playbackRate = playbackRate;
   }, [playbackRate]);
-
-  useEffect(() => {
-    if (!cleanupRecordings || isCleaningRecordings) return;
-    const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setCleanupRecordings(undefined);
-    };
-    document.addEventListener("keydown", closeOnEscape);
-    return () => document.removeEventListener("keydown", closeOnEscape);
-  }, [cleanupRecordings, isCleaningRecordings]);
 
   useEffect(() => {
     if (!pendingBatchDelete || isDeletingBatch) return;
@@ -763,7 +735,16 @@ export const RecordingLibrarySettingsCard = ({
       );
       const matches = items.flatMap((item) => {
         const candidate = candidates.get(item.filePath);
-        return candidate ? [{ item, reason: candidate.reason }] : [];
+        return candidate
+          ? [
+              {
+                item,
+                reason: candidate.reason,
+                durationMs: candidate.durationMs,
+                title: recordingTitle(item),
+              },
+            ]
+          : [];
       });
       if (!matches.length) {
         pushToast({
@@ -777,6 +758,8 @@ export const RecordingLibrarySettingsCard = ({
         });
         return;
       }
+      audioRef.current?.pause();
+      setIsPlaying(false);
       setCleanupRecordings(matches);
       if (unreadableCount) {
         pushToast({
@@ -793,37 +776,20 @@ export const RecordingLibrarySettingsCard = ({
     }
   };
 
-  const cleanWasteRecordings = async () => {
-    if (!cleanupRecordings?.length || isCleaningRecordings) return;
-    setIsCleaningRecordings(true);
+  const cleanWasteRecordings = async (filePaths: string[]): Promise<RecordingBatchDeleteResult> => {
     audioRef.current?.pause();
-    try {
-      if (typeof window.desktopApi.recording.deleteMany !== "function") {
-        throw new Error("recording_library_restart_required");
-      }
-      const result = await window.desktopApi.recording.deleteMany(
-        cleanupRecordings.map(({ item }) => item.filePath),
-      );
-      const deletedCount = result.deletedFilePaths.length;
-      setCleanupRecordings(undefined);
-      await reload();
-      pushToast({
-        tone: deletedCount === cleanupRecordings.length ? "success" : "danger",
-        title: `已清理 ${deletedCount} 条废录音`,
-        description:
-          deletedCount === cleanupRecordings.length
-            ? undefined
-            : `${cleanupRecordings.length - deletedCount} 条删除失败，已保留在录音库。`,
-      });
-    } catch {
-      pushToast({
-        tone: "danger",
-        title: "清理没有完成",
-        description: "没有确认删除成功的录音都会继续保留。",
-      });
-    } finally {
-      setIsCleaningRecordings(false);
+    if (typeof window.desktopApi.recording.cleanWaste !== "function") {
+      throw new Error("recording_library_restart_required");
     }
+    const result = await window.desktopApi.recording.cleanWaste(filePaths);
+    await reload().catch(() => undefined);
+    if (result.deletedFilePaths.length)
+      pushToast({
+        tone: "success",
+        title: `已清理 ${result.deletedFilePaths.length} 条废弃录音`,
+        description: "可在 Windows 回收站恢复。",
+      });
+    return result;
   };
 
   return (
@@ -856,19 +822,19 @@ export const RecordingLibrarySettingsCard = ({
           </div>
           <div
             className="recording-library-cleanup-tools"
-            title="自动清理十秒以下或静音录音；无法读取的录音留待人工查看。超过容量上限时，回收最旧的未收藏、无标记录音。"
+            title="自动清理不足10分钟或静音录音；无法读取的录音留待人工查看。超过容量上限时，回收最旧的未收藏、无标记录音。"
           >
             <span className="recording-library-usage">
               录音占用 <strong>{formatBytes(library?.totalBytes ?? 0)}</strong>
             </span>
             <label
               className="recording-library-auto-cleanup"
-              title="录音保存后自动清理十秒以下或静音的录音；无法读取的录音留待人工查看"
+              title="录音保存后自动清理不足10分钟或静音的录音；无法读取的录音留待人工查看"
             >
               <span>自动清理</span>
               <Switch
                 isChecked={settings.isRecordingWasteAutoCleanupEnabled}
-                ariaLabel="自动清理十秒以下或静音的录音"
+                ariaLabel="自动清理不足10分钟或静音的录音"
                 onChange={(checked) =>
                   void onChange({ isRecordingWasteAutoCleanupEnabled: checked })
                 }
@@ -897,8 +863,10 @@ export const RecordingLibrarySettingsCard = ({
             <Button
               variant="secondary"
               className="h-9 shrink-0 px-3"
-              title="扫描十秒以下或静音录音；无法读取的录音只提示，不加入批量清理"
-              disabled={!recordingCounts.all || isScanningRecordings || isSelectionMode}
+              title="检查不足10分钟和整段静音的录音，可试听并选择后移到回收站。收藏、带标记及无法读取的录音保留。"
+              disabled={
+                !recordingCounts.all || isScanningRecordings || isSelectionMode || recordingBusy
+              }
               onClick={() => void findWasteRecordings()}
             >
               <Trash2 className="size-4" aria-hidden="true" />
@@ -906,12 +874,9 @@ export const RecordingLibrarySettingsCard = ({
                 ? cleanupScanProgress.total
                   ? `${cleanupScanProgress.processed}/${cleanupScanProgress.total}`
                   : "检查中"
-                : "清理"}
+                : "清理废弃录音"}
             </Button>
           </div>
-          <p className="mt-2 text-xs text-[#72839a]">
-            自动清理开关只管十秒以下和静音录音；超过上限仍会把最旧的未收藏、无标记录音移到回收站。
-          </p>
         </div>
       </SettingsSection>
 
@@ -1032,10 +997,16 @@ export const RecordingLibrarySettingsCard = ({
                             title={item.fileName}
                           >
                             <span className="recording-item-title">{recordingTitle(item)}</span>
-                            <span className="recording-item-meta">
-                              {TIME_FORMAT.format(recordingDate(item))} ·{" "}
-                              {formatBytes(item.fileSize)}
-                            </span>
+                            <RecordingCardMeta
+                              dateTime={recordingDate(item).toISOString()}
+                              recordedAt={TIME_FORMAT.format(recordingDate(item))}
+                              bytes={item.fileSize}
+                              duration={
+                                item.id === selected?.id && duration > 0
+                                  ? duration
+                                  : recordingDuration(item)
+                              }
+                            />
                             {memoryStatus && memoryStatus.tone !== "is-ready" ? (
                               <span className={`recording-item-ai-status ${memoryStatus.tone}`}>
                                 <span>{memoryStatus.label}</span>
@@ -1147,45 +1118,17 @@ export const RecordingLibrarySettingsCard = ({
                           </span>
                         </time>
                         <span aria-hidden="true">·</span>
-                        {renamingId === selected.recordingId ? (
-                          <input
-                            className="min-w-0 flex-1 rounded-xl border border-[#9fc9f5] bg-white/80 px-3 py-2 text-sm font-bold text-[#29435f] outline-none focus:ring-2 focus:ring-[#76b5f5]/30"
-                            value={renameTitle}
-                            maxLength={120}
-                            autoFocus
-                            aria-label="录音名称"
-                            onChange={(event) => setRenameTitle(event.currentTarget.value)}
-                            onKeyDown={(event) => {
-                              if (event.key === "Enter") void commitRename(selected);
-                              if (event.key === "Escape") setRenamingId(undefined);
-                            }}
-                          />
-                        ) : (
-                          <span className="recording-player-name">{recordingTitle(selected)}</span>
-                        )}
+                        <span className="recording-player-name">{recordingTitle(selected)}</span>
                       </div>
-                      {renamingId === selected.recordingId ? (
-                        <button
-                          type="button"
-                          className="recording-icon-button"
-                          disabled={isRenaming || !renameTitle.trim()}
-                          aria-label="保存名称"
-                          onClick={() => void commitRename(selected)}
-                        >
-                          <Check />
-                        </button>
-                      ) : (
-                        <button
-                          type="button"
-                          className="recording-icon-button h-8 w-8 shrink-0"
-                          aria-label="重命名录音"
-                          title="重命名"
-                          disabled={recordingBusy}
-                          onClick={() => beginRename(selected)}
-                        >
-                          <Pencil />
-                        </button>
-                      )}
+                      <button
+                        type="button"
+                        className="recording-icon-button h-8 w-8 shrink-0"
+                        aria-label="重命名录音"
+                        title="重命名"
+                        onClick={() => setRenamingItem(selected)}
+                      >
+                        <Pencil />
+                      </button>
                     </div>
                     <div className="recording-player-subtitle">
                       {formatBytes(selected.fileSize)}
@@ -1244,6 +1187,11 @@ export const RecordingLibrarySettingsCard = ({
                     已播 {formatTime(currentTime)} / 总时长 {formatTime(duration)}
                   </span>
                   <div className="recording-timeline-wrap">
+                    <RecordingMarkerCue
+                      markers={selected.markers}
+                      currentTime={currentTime}
+                      duration={duration}
+                    />
                     <input
                       className="recording-timeline"
                       type="range"
@@ -1277,8 +1225,8 @@ export const RecordingLibrarySettingsCard = ({
                           if (audioRef.current)
                             audioRef.current.currentTime = marker.offsetMs / 1_000;
                         }}
-                        title={`标记 ${formatTime(marker.offsetMs / 1_000)}`}
-                        aria-label={`跳到标记 ${formatTime(marker.offsetMs / 1_000)}`}
+                        title={`${marker.label ?? "手动标记"} · ${formatTime(marker.offsetMs / 1_000)}`}
+                        aria-label={`跳到${marker.label ?? "手动标记"} ${formatTime(marker.offsetMs / 1_000)}`}
                       />
                     ))}
                   </div>
@@ -1347,62 +1295,21 @@ export const RecordingLibrarySettingsCard = ({
           )}
         </section>
       </div>
-      {cleanupRecordings
-        ? createPortal(
-            <div className="modal-scrim fixed inset-0 z-50 flex items-center justify-center px-6">
-              <section
-                role="alertdialog"
-                aria-modal="true"
-                aria-labelledby="clean-recordings-title"
-                aria-describedby="clean-recordings-description"
-                className="modal-surface relative w-full max-w-[430px] rounded-[26px] p-6"
-              >
-                <DialogCloseButton
-                  className="absolute right-4 top-4"
-                  label="取消清理录音"
-                  disabled={isCleaningRecordings}
-                  onClick={() => setCleanupRecordings(undefined)}
-                />
-                <h2
-                  id="clean-recordings-title"
-                  className="pr-12 text-balance text-[22px] font-bold text-[#172235]"
-                >
-                  清理录音？
-                </h2>
-                <p
-                  id="clean-recordings-description"
-                  className="mt-2 text-pretty text-sm leading-6 text-[#66778d]"
-                >
-                  找到 {cleanupRecordings.length} 条可清理录音：十秒以下{" "}
-                  {cleanupRecordings.filter((entry) => entry.reason === "too_short").length}
-                  条、静音 {cleanupRecordings.filter((entry) => entry.reason === "silent").length}
-                  条。预计释放{" "}
-                  {formatBytes(
-                    cleanupRecordings.reduce((total, entry) => total + entry.item.fileSize, 0),
-                  )}
-                  。收藏和带标记的录音不会被清理。
-                </p>
-                <div className="mt-6 flex justify-end gap-2">
-                  <Button
-                    variant="secondary"
-                    disabled={isCleaningRecordings}
-                    onClick={() => setCleanupRecordings(undefined)}
-                  >
-                    取消
-                  </Button>
-                  <Button
-                    variant="danger"
-                    disabled={isCleaningRecordings}
-                    onClick={() => void cleanWasteRecordings()}
-                  >
-                    {isCleaningRecordings ? "正在清理…" : "确认清理"}
-                  </Button>
-                </div>
-              </section>
-            </div>,
-            document.body,
-          )
-        : null}
+      {isActive && cleanupRecordings && (
+        <RecordingCleanupDialog
+          entries={cleanupRecordings}
+          onClean={cleanWasteRecordings}
+          onClose={() => setCleanupRecordings(undefined)}
+        />
+      )}
+      {isActive && renamingItem && (
+        <RecordingRenameDialog
+          title={recordingTitle(renamingItem)}
+          blocked={recordingBusy}
+          onSave={(title) => commitRename(renamingItem, title)}
+          onClose={() => setRenamingItem(undefined)}
+        />
+      )}
       {pendingBatchDelete?.length
         ? createPortal(
             <div className="modal-scrim fixed inset-0 z-50 flex items-center justify-center px-6">

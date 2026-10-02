@@ -48,6 +48,18 @@ export const AudioSettingsCard = ({
         />
       </SettingsItemRow>
       <SettingsItemRow
+        label="自动标记游戏"
+        description="启动或退出游戏时，自动标记录音位置。仅保存在本机。"
+      >
+        <Switch
+          ariaLabel="自动标记游戏"
+          isChecked={settings.isRecordingAutoGameMarkerEnabled !== false}
+          onChange={(isRecordingAutoGameMarkerEnabled) =>
+            onChange({ isRecordingAutoGameMarkerEnabled })
+          }
+        />
+      </SettingsItemRow>
+      <SettingsItemRow
         label="自动录音并保存"
         description="默认开启。进入频道后自动录音，退出时直接保存到录音库。"
       >

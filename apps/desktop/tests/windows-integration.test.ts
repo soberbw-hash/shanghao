@@ -38,6 +38,8 @@ test("firewall repair owns exactly four program-scoped TCP and UDP rules", async
   assert.match(firewall, /queueFirewallOperation/);
   assert.match(firewall, /-Name \$expectedRuleNames\[0\]/);
   assert.match(firewall, /firewallOperationQueue = result\.then/);
+  assert.match(firewall, /CategoryInfo\.Category -ne 'ObjectNotFound'\) \{ throw \}/);
+  assert.match(firewall, /Get-NetFirewallApplicationFilter -ErrorAction Stop/);
 });
 
 test("explicit network permission repair repairs missing rules and reports the outcome", async () => {
@@ -104,10 +106,11 @@ test("explicit repair handles inspection failure but leaves healthy rules alone"
   assert.equal(healthy.repairAttempted, false);
 });
 
-test("startup network permission inspection does not request elevation", async () => {
+test("startup runs background recovery but a failed inspection cannot request elevation", async () => {
   const main = await read("../src/main/index.ts");
   assert.match(main, /void inspectWindowsNetworkPermissions\(\)/);
-  assert.match(main, /if \(outcome\.status\.healthy\) return/);
+  assert.match(main, /await inspectAndRecoverWindowsFirewall\(\)/);
+  assert.match(main, /300_000/);
   assert.doesNotMatch(main, /网络权限已自动修复/);
   let repaired = false;
   const outcome = await ensureWindowsFirewallRulesWithOutcome(
@@ -132,7 +135,8 @@ test("firewall repair UI blocks repeated clicks while the serialized repair is r
   assert.match(settings, /if \(isRepairingFirewall\) return/);
   assert.match(settings, /\.finally\(\(\) => setIsRepairingFirewall\(false\)\)/);
   assert.match(settings, /TCP\/UDP 双向规则已正常启用。/);
-  assert.match(diagnosticsCard, /点击修复时由 Windows 请求授权/);
+  assert.match(diagnosticsCard, /重试修复/);
+  assert.doesNotMatch(diagnosticsCard, /actionLabel:.*"自动修复"/);
   assert.match(diagnosticsCard, /disabled=\{isRepairingFirewall\}/);
   assert.match(diagnosticsCard, /修复中…/);
 });
