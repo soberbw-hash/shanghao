@@ -1,20 +1,20 @@
 {
-  "tag_name": "v3.4.1",
-  "published_at": "2026-10-01T21:44:09Z",
-  "html_url": "https://github.com/soberbw-hash/shanghao/releases/tag/v3.4.1",
+  "tag_name": "v3.4.2",
+  "published_at": "2026-10-02T17:40:17Z",
+  "html_url": "https://github.com/soberbw-hash/shanghao/releases/tag/v3.4.2",
   "highlights": [
-    "回来就进上次房间。 登录状态可安全恢复，入口突出上次房间，创建和查找缩为次要操作。登录页与房间页使用同一账号头像；房间管理集中在账号设置，图标可选择颜色，固定频道号不再显示为输入框。",
-    "邀请能找到正确房间。 复制内容包含房间名称、六位频道号和网页入口。朋友点击后可打开上号，首次登录后继续加入该永久 RoomID；没有安装时可先下载。",
-    "快捷消息完整显示。 语音和音乐依据字符占用、实际文字宽度及窗口宽度分页，放不下的整项收起，不再露出半个按钮。所有自定义绑定保留。退出或切换房间立即停止音乐，迟到加载不能重新播放。",
-    "通知统一堆叠。 折叠后保留背后卡片的层次；重复敲门提示合并，聊天里的敲门记录颜色一致。补齐加入、离开、暂离、返回等音效，音乐标记与人物状态留出间距。"
+    "房间记忆。 在「设置 → 账号 → 我的房间 → 管理」记录成员称呼、关系和偏好。AI 问答、录音整理和每日总结参考本房间记忆；房主可以编辑或删除自动提取的条目，并查看出处。",
+    "录音三步处理。 开始转录 → 整理内容 → 上传到服务器。整理完成后才能分享摘要到录音原房间，供每日总结参考；原始录音与本地标记不上传。",
+    "静音状态保持。 挂机回来按离开前的状态恢复麦克风；修复快速反复按住静音后卡住的问题。",
+    "快捷消息更直接。 语音和音乐共用一个快捷键总开关，默认关闭。按钮按一行能放下的数量完整展示，不再翻页；设置槽位可右键清空、拖入重新绑定。"
   ],
   "assets": [
     {
-      "name": "ShangHao-3.4.1-Setup-x64.exe",
-      "size": 175324213,
-      "browser_download_url": "https://github.com/soberbw-hash/shanghao/releases/download/v3.4.1/ShangHao-3.4.1-Setup-x64.exe",
-      "mirror_path": "/downloads/v3.4.1/ShangHao-3.4.1-Setup-x64.exe",
-      "sha256": "130ce2ebaef4d8790c093d6894d36f637561b248a9ff44c7cf11a4d5bdee252b"
+      "name": "ShangHao-3.4.2-Setup-x64.exe",
+      "size": 175345295,
+      "browser_download_url": "https://github.com/soberbw-hash/shanghao/releases/download/v3.4.2/ShangHao-3.4.2-Setup-x64.exe",
+      "mirror_path": "/downloads/v3.4.2/ShangHao-3.4.2-Setup-x64.exe",
+      "sha256": "cd05bc922136df20d22e27acbaef20e2976b67c61c49527183f97c6c21b23a9c"
     }
   ]
 }
