@@ -144,8 +144,9 @@ app
       "Object.defineProperty(document,'hasFocus',{configurable:true,value:()=>true});Object.defineProperty(document,'visibilityState',{configurable:true,value:'visible'});window.dispatchEvent(new Event('focus'))",
     );
     const tab = async (label) => {
+      const literal = JSON.stringify(label).replaceAll("<", "\\u003c").replaceAll(">", "\\u003e");
       await run(
-        `Array.from(document.querySelectorAll('.review-tabs button')).find(x=>x.textContent===${JSON.stringify(label)}).click()`,
+        `Array.from(document.querySelectorAll('.review-tabs button')).find(x=>x.textContent===${literal}).click()`,
       );
       await delay();
     };
