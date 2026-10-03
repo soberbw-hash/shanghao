@@ -158,8 +158,16 @@ app
       await delay();
     };
     const select = async (label, value) => {
+      const source = new Map([
+        ["天气昼夜", "document.querySelector('select[aria-label=\"天气昼夜\"]')"],
+        ["角色动作", "document.querySelector('select[aria-label=\"角色动作\"]')"],
+      ]).get(label);
+      assert.ok(source, "only known preview controls may be selected");
+      const options = await run(`Array.from(${source}.options).map(x=>x.value)`);
+      const index = options.indexOf(value);
+      assert.ok(index >= 0, "only existing preview options may be selected");
       await run(
-        `(()=>{const x=document.querySelector('select[aria-label="${label}"]');x.value=${JSON.stringify(value)};x.dispatchEvent(new Event('change',{bubbles:true}));})()`,
+        `(()=>{const x=${source};x.selectedIndex=${index};x.dispatchEvent(new Event('change',{bubbles:true}));})()`,
       );
       await delay();
     };
