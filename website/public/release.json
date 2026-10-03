@@ -1,20 +1,20 @@
 {
-  "tag_name": "v3.4.2",
-  "published_at": "2026-10-02T17:40:17Z",
-  "html_url": "https://github.com/soberbw-hash/shanghao/releases/tag/v3.4.2",
+  "tag_name": "v3.4.3",
+  "published_at": "2026-10-03T06:43:59Z",
+  "html_url": "https://github.com/soberbw-hash/shanghao/releases/tag/v3.4.3",
   "highlights": [
-    "房间记忆。 在「设置 → 账号 → 我的房间 → 管理」记录成员称呼、关系和偏好。AI 问答、录音整理和每日总结参考本房间记忆；房主可以编辑或删除自动提取的条目，并查看出处。",
-    "录音三步处理。 开始转录 → 整理内容 → 上传到服务器。整理完成后才能分享摘要到录音原房间，供每日总结参考；原始录音与本地标记不上传。",
-    "静音状态保持。 挂机回来按离开前的状态恢复麦克风；修复快速反复按住静音后卡住的问题。",
-    "快捷消息更直接。 语音和音乐共用一个快捷键总开关，默认关闭。按钮按一行能放下的数量完整展示，不再翻页；设置槽位可右键清空、拖入重新绑定。"
+    "游戏画面更真实。 全部 60 款支持的游戏分别配置显示器画面，优先采用官方场景、游戏截图与演示静帧。",
+    "房间记忆更清楚。 只保留手动记忆和一份自动记忆，新信息继续补充，已有修改保留，各房间分别保存。",
+    "分享前先预览。 应用窗口和整个屏幕分开选，确认清晰度与系统声音后才开始分享；可直接复制房间邀请。",
+    "素材可以自己审核。 关于页打开内置上号素材，或创建桌面入口；图标、天气、角色动作分别查看，复制下载并保存意见。"
   ],
   "assets": [
     {
-      "name": "ShangHao-3.4.2-Setup-x64.exe",
-      "size": 175345295,
-      "browser_download_url": "https://github.com/soberbw-hash/shanghao/releases/download/v3.4.2/ShangHao-3.4.2-Setup-x64.exe",
-      "mirror_path": "/downloads/v3.4.2/ShangHao-3.4.2-Setup-x64.exe",
-      "sha256": "cd05bc922136df20d22e27acbaef20e2976b67c61c49527183f97c6c21b23a9c"
+      "name": "ShangHao-3.4.3-Setup-x64.exe",
+      "size": 193215389,
+      "browser_download_url": "https://github.com/soberbw-hash/shanghao/releases/download/v3.4.3/ShangHao-3.4.3-Setup-x64.exe",
+      "mirror_path": "/downloads/v3.4.3/ShangHao-3.4.3-Setup-x64.exe",
+      "sha256": "1616740a4c91e890cffdc9554e1167dbcc9d297e4eae726a6e71ad8c24572ae2"
     }
   ]
 }

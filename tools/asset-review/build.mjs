@@ -258,7 +258,7 @@ if (!bundled) {
   if (process.platform === "win32") {
     const quote = (value) => "'" + value.replaceAll("'", "''") + "'";
     const shortcut = path.join(os.homedir(), "Desktop", "上号素材.lnk");
-    const script = `$s=(New-Object -ComObject WScript.Shell).CreateShortcut(${quote(shortcut)}); $s.TargetPath=${quote(path.join(runtime, "electron.exe"))}; $s.Arguments=${quote('"' + output + '"')}; $s.WorkingDirectory=${quote(output)}; $s.IconLocation=${quote(path.join(output, "studio.ico"))}; $s.Description='查看、复制、下载上号素材并保存审核意见'; $s.Save()`;
+    const script = `$s=(New-Object -ComObject WScript.Shell).CreateShortcut(${quote(shortcut)}); $s.TargetPath=${quote(path.join(runtime, "electron.exe"))}; $s.Arguments=${quote('"' + output + '"')}; $s.WorkingDirectory=${quote(output)}; $s.IconLocation=${quote(path.join(output, "assets/branding/studio-icon.ico"))}; $s.Description='查看、复制、下载上号素材并保存审核意见'; $s.Save()`;
     execFileSync("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", script]);
   }
 }
