@@ -45,6 +45,7 @@ jobs:
       - run: pnpm release:verify -- ${{ inputs.release_tag || github.ref_name }}
       - run: pnpm lint
       - run: pnpm typecheck
+      - run: pnpm exec tsc -p tools/asset-review/tsconfig.json --noEmit
       - run: cargo fmt --manifest-path native/Cargo.toml --all -- --check
       - run: pnpm test:native
       - run: pnpm test
@@ -59,6 +60,13 @@ jobs:
       - run: pnpm build
       - run: pnpm dist:win
       - run: pnpm release:verify-package
+      - run: pnpm --dir apps/desktop exec electron ../../tools/asset-review/verify.cjs
+        env:
+          ASSET_STUDIO_TEST_ROOT: ${{ github.workspace }}/apps/desktop/release/win-unpacked/resources/asset-studio
+      - run: pnpm --dir apps/desktop exec electron ../../tools/asset-review/verify.cjs
+        env:
+          ASSET_STUDIO_TEST_ROOT: ${{ github.workspace }}/apps/desktop/release/win-unpacked/resources/asset-studio
+          ASSET_STUDIO_TEST_ENTRY: "1"
       - run: node scripts/report-package-size.mjs --output=apps/desktop/release/package-size.json
       - run: node scripts/check-package-size.mjs apps/desktop/release/package-size.json docs/package-size-baseline-v3.2.2.json --enforce
       - run: pnpm release:checksums

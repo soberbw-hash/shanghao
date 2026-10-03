@@ -10,6 +10,7 @@ import { DiagnosticsService } from "./diagnostics";
 import { AccountDesktopService } from "./account-service";
 import { AccountSessionStore } from "./account-session-store";
 import { registerIpcHandlers } from "./ipc";
+import { registerAssetStudioIpc } from "./asset-studio-ipc";
 import { SettingsStore } from "./settings-store";
 import { ShortcutController } from "./shortcuts";
 import { registerPhoneMode } from "./phone-mode-service";
@@ -596,6 +597,7 @@ const bootstrap = async (): Promise<void> => {
     consumePendingDeepLink,
   });
 
+  registerAssetStudioIpc(() => mainWindow);
   mainWindow = createMainWindow({
     canUseSystemWeatherLocation,
     log: (level, message, context) => {

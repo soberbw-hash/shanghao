@@ -1,5 +1,6 @@
 const { app, BrowserWindow, ipcMain, dialog, clipboard, nativeImage, shell } = require("electron");
 const fs = require("node:fs/promises");
+const { mkdirSync } = require("node:fs");
 const path = require("node:path");
 const { pathToFileURL } = require("node:url");
 function startStudio({
@@ -7,15 +8,23 @@ function startStudio({
   profile = path.join(app.getPath("appData"), "ShangHaoAssetStudio"),
   show = true,
 } = {}) {
-  app.setName("上号素材工作室");
+  // Electron requires overridden paths to exist before the first session starts.
+  mkdirSync(path.join(profile, "session"), { recursive: true });
+  app.setName("上号素材");
   app.setPath("userData", profile);
   app.setPath("sessionData", path.join(profile, "session"));
   app.setAppUserModelId("ShangHao.AssetStudio");
   const entry = pathToFileURL(path.join(root, "index.html")).href;
+  const quitForInstall = process.argv.includes("--shanghao-quit-for-install");
   let window;
   if (!app.requestSingleInstanceLock()) app.quit();
+  else if (quitForInstall) app.quit();
   else {
-    app.on("second-instance", () => {
+    app.on("second-instance", (_event, argv) => {
+      if (argv.includes("--shanghao-quit-for-install")) {
+        app.quit();
+        return;
+      }
       if (window) {
         window.restore();
         window.show();
@@ -157,10 +166,19 @@ function startStudio({
         });
         handle("downloadAsset", async (relative) => {
           if (!assets.has(relative)) throw Error("找不到素材");
-          const file = path.resolve(root, "assets", relative),
+          const shared = assets.get(relative).bundledFile;
+          if (
+            shared &&
+            (!manifest.packaged || !/^[a-zA-Z0-9_.-]+\.(png|jpe?g|webp|svg|ico)$/i.test(shared))
+          )
+            throw Error("无效素材路径");
+          const allowed = shared
+            ? path.resolve(root, "../app.asar/dist/assets")
+            : path.join(root, "assets");
+          const file = shared ? path.join(allowed, shared) : path.resolve(allowed, relative),
             real = await fs.realpath(file);
-          if (!real.startsWith(path.join(root, "assets") + path.sep)) throw Error("无效素材路径");
-          return saveBytes(path.basename(file), await fs.readFile(real));
+          if (!real.startsWith(allowed + path.sep)) throw Error("无效素材路径");
+          return saveBytes(path.basename(relative), await fs.readFile(real));
         });
         handle("copyPng", async (data) => {
           if (
@@ -194,7 +212,7 @@ function startStudio({
           height: 1000,
           minWidth: 900,
           minHeight: 650,
-          title: "上号素材工作室",
+          title: "上号素材",
           autoHideMenuBar: true,
           backgroundColor: "#f5f7fa",
           icon: path.join(root, "studio.ico"),
@@ -203,6 +221,7 @@ function startStudio({
             contextIsolation: true,
             nodeIntegration: false,
             sandbox: true,
+            offscreen: !show,
             backgroundThrottling: show,
           },
         });
@@ -210,8 +229,10 @@ function startStudio({
           window.setAppDetails({
             appId: "ShangHao.AssetStudio",
             appIconPath: path.join(root, "studio.ico"),
-            relaunchDisplayName: "上号素材工作室",
-            relaunchCommand: `"${process.execPath}" "${root}"`,
+            relaunchDisplayName: "上号素材",
+            relaunchCommand: app.isPackaged
+              ? `"${process.execPath}" --asset-studio`
+              : `"${process.execPath}" "${root}"`,
           });
         let drained = false;
         app.on("before-quit", (event) => {
@@ -233,7 +254,7 @@ function startStudio({
         await window.loadFile(path.join(root, "index.html"));
       })
       .catch((error) => {
-        dialog.showErrorBox("素材工作室无法打开", error.message);
+        dialog.showErrorBox("上号素材无法打开", error.message);
         app.exit(1);
       });
     app.on("window-all-closed", () => app.quit());

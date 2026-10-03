@@ -54,6 +54,8 @@ files:
   - "!node_modules/@cloudbase/js-sdk/miniprogram_dist/**"
   - "package.json"
 extraResources:
+  - from: resources/asset-studio
+    to: asset-studio
   - from: node_modules/ffmpeg-static/ffmpeg.exe
     to: ffmpeg/ffmpeg.exe
   - from: ../../THIRD_PARTY_NOTICES.md

@@ -15,6 +15,16 @@ import {
 import { WorkstationArt } from "../../apps/desktop/src/renderer/src/components/room/WorkstationArt";
 import { DynamicWeatherWindow } from "../../apps/desktop/src/renderer/src/components/room/DynamicWeatherWindow";
 import { useWeatherStore } from "../../apps/desktop/src/renderer/src/features/weather/weatherStore";
+import { visualRuntimeController } from "../../apps/desktop/src/renderer/src/features/visual-runtime/VisualRuntimeController";
+import type { WeatherDayPhase } from "@private-voice/shared";
+import {
+  CharacterPreview,
+  WeatherPreview,
+  characterKinds,
+  characterActions,
+  weatherScenes,
+  MotionPreviewContext,
+} from "./MotionPreviews";
 
 type ReviewStatus = "待审核" | "通过" | "需要修改";
 interface ReviewNote {
@@ -31,6 +41,7 @@ interface ReviewAsset {
   label: string;
   group: string;
   note: string;
+  sourcePath?: string;
 }
 interface GameSource {
   name: string;
@@ -59,6 +70,7 @@ declare global {
       version: string;
       generatedAt: string;
       sourceRoot: string;
+      packaged?: boolean;
       assets: ReviewAsset[];
       games: GameSource[];
     };
@@ -85,6 +97,7 @@ type Card = {
   note: string;
   content: React.ReactNode;
   url?: string;
+  assetRelative?: string;
 };
 const widgets: Card[] = [
   {
@@ -116,7 +129,7 @@ const widgets: Card[] = [
     name: "窗户 · 天气与昼夜",
     kind: "当前组件",
     path: base + "components/room/DynamicWeatherWindow.tsx",
-    note: "可用上方天气选项查看不同状态",
+    note: "全部天气与昼夜状态在「天气效果」分类中查看。",
     content: (
       <div className="review-window">
         <DynamicWeatherWindow isEnabled />
@@ -195,6 +208,7 @@ const games: Card[] = GAME_RULES.map(({ name }) => ({
   path: base + "assets/games/screens/" + manifest.games.find((x) => x.name === name)?.file,
   note: manifest.games.find((x) => x.name === name)?.kind + " · 静态显示画面",
   url: raw("games/screens/" + manifest.games.find((x) => x.name === name)?.file),
+  assetRelative: "games/screens/" + manifest.games.find((x) => x.name === name)?.file,
   content: (
     <div className="review-monitor">
       <GameMonitorContent gameName={name} />
@@ -205,11 +219,40 @@ const assets: Card[] = manifest.assets.map((item) => ({
   id: `asset-${item.relative}`,
   name: item.label,
   kind: item.group,
-  path: base + "assets/" + item.relative,
+  path: item.sourcePath || base + "assets/" + item.relative,
   note: item.note,
   url: item.url,
+  assetRelative: item.relative,
   content: image(item.url, item.label),
 }));
+const weather: Card[] = weatherScenes.map(([scene, label]) => ({
+  id: `widget-weather-${scene}`,
+  name: label,
+  kind: "动态天气",
+  path: base + "components/room/DynamicWeatherWindow.tsx",
+  note: "切换昼夜查看同一天气；与房间使用相同的动态组件。",
+  content: <WeatherPreview scene={scene} />,
+}));
+const characters: Card[] = characterKinds.map(([avatarId, name]) => ({
+  id: `widget-character-${avatarId}`,
+  name,
+  kind: "角色动作",
+  path: base + "components/room/DeskAnimalSprite.tsx",
+  note: "正面、坐姿、左右行走、说话、游戏和闲置小动作；原动画保留。",
+  content: <CharacterPreview avatarId={avatarId} />,
+}));
+const brands = assets.filter((item) => item.kind === "品牌图标");
+const allCharacterActions: Card[] = characterKinds.flatMap(([avatarId, name]) =>
+  characterActions.map(([action, label]) => ({
+    id: `widget-character-${avatarId}-${action}`,
+    name: `${name} · ${label}`,
+    kind: "角色动作",
+    path: base + "components/room/DeskAnimalSprite.tsx",
+    note: "保留原比例；可暂停、放大和保存审核意见。",
+    content: <CharacterPreview avatarId={avatarId} actionOverride={action} />,
+  })),
+);
+const avatars = assets.filter((item) => item.kind === "账号头像");
 const storageKey = "shanghao-asset-review-v1";
 const readNotes = (): ReviewNotes => {
   try {
@@ -223,6 +266,7 @@ const readNotes = (): ReviewNotes => {
 };
 
 function ReviewApp() {
+  useEffect(() => visualRuntimeController.start(), []);
   const [tab, setTab] = useState("widgets"),
     [query, setQuery] = useState(""),
     [group, setGroup] = useState("全部"),
@@ -236,6 +280,9 @@ function ReviewApp() {
   const preview = useRef<HTMLDivElement>(null);
   const importInput = useRef<HTMLInputElement>(null);
   const [reviewFilter, setReviewFilter] = useState("全部状态");
+  const [phase, setPhase] = useState<WeatherDayPhase>("day");
+  const [action, setAction] = useState("idle");
+  const [paused, setPaused] = useState(false);
   const [ready, setReady] = useState(!studio);
   const [busy, setBusy] = useState(false);
   useEffect(() => {
@@ -256,7 +303,22 @@ function ReviewApp() {
       active = false;
     };
   }, []);
-  const source = tab === "widgets" ? [...widgets, ...legacy] : tab === "games" ? games : assets;
+  const source =
+    tab === "widgets"
+      ? [...widgets, ...legacy]
+      : tab === "games"
+        ? games
+        : tab === "weather"
+          ? weather
+          : tab === "characters"
+            ? action === "all"
+              ? allCharacterActions
+              : characters
+            : tab === "brand"
+              ? brands
+              : tab === "avatars"
+                ? avatars
+                : assets;
   const filtered = source.filter(
     (item) =>
       (tab !== "assets" || group === "全部" || item.kind === group) &&
@@ -332,7 +394,17 @@ function ReviewApp() {
   const mergeNotes = async (incoming: unknown) => {
     if (!incoming || typeof incoming !== "object" || Array.isArray(incoming))
       throw Error("审核文件格式不正确");
-    const ids = new Set([...widgets, ...legacy, ...games, ...assets].map((item) => item.id));
+    const ids = new Set(
+      [
+        ...widgets,
+        ...legacy,
+        ...weather,
+        ...characters,
+        ...allCharacterActions,
+        ...games,
+        ...assets,
+      ].map((item) => item.id),
+    );
     const next = { ...notes };
     let count = 0;
     for (const [id, value] of Object.entries(incoming)) {
@@ -371,7 +443,7 @@ function ReviewApp() {
     perform(async () => {
       if (!item.url) throw Error("请先放大该组件，再选择“下载效果图”。");
       if (studio)
-        return (await studio.downloadAsset(item.url.replace("./assets/", "")))
+        return (await studio.downloadAsset(item.assetRelative ?? item.url.replace("./assets/", "")))
           ? "素材已保存"
           : "已取消保存";
       const link = document.createElement("a");
@@ -402,7 +474,7 @@ function ReviewApp() {
     });
   const capture = (action: "copy" | "save") =>
     perform(async () => {
-      if (!studio) throw Error("组件效果图的复制和下载，请从桌面的“上号素材工作室”打开。");
+      if (!studio) throw Error("组件效果图的复制和下载，请从桌面的“上号素材”打开。");
       const rect = preview.current?.getBoundingClientRect();
       if (!rect || !selected) throw Error("请先打开素材");
       const done = await studio.capture(
@@ -412,257 +484,289 @@ function ReviewApp() {
       );
       return done ? (action === "copy" ? "效果图已复制" : "效果图已保存") : "已取消保存";
     });
-  return (
-    <main className={`asset-review review-background-${background}`}>
-      <header className="review-header">
-        <div>
-          <p className="review-eyebrow">SHANGHAO · ASSET STUDIO</p>
-          <h1>素材工作室</h1>
-          <p>
-            当前源码 {manifest.version} · {games.length} 款游戏 · {assets.length}{" "}
-            份图片。查看、复制、下载，让每次修改有据可查。
-          </p>
-        </div>
-        <div className="review-actions">
-          <span className="review-local">
-            {studio ? "本地工作室 · 审核记录保存在本机" : "浏览器预览 · 完整功能请打开桌面工作室"}
-          </span>
-          <button onClick={importNotes} disabled={busy}>
-            导入意见
-          </button>
-          <button onClick={exportNotes} disabled={busy}>
-            导出意见（{Object.keys(notes).length}）
-          </button>
-          <input
-            hidden
-            ref={importInput}
-            type="file"
-            accept=".json"
-            onChange={(event) => {
-              const file = event.target.files?.[0];
-              if (file)
-                void perform(async () => {
-                  if (file.size > 5 * 1024 * 1024) throw Error("文件过大");
-                  return mergeNotes(JSON.parse(await file.text()).notes);
-                });
-              event.target.value = "";
-            }}
-          />
-        </div>
-      </header>
-      <nav className="review-tabs" aria-label="素材分类">
-        {[
-          ["widgets", "房间组件"],
-          ["games", "游戏显示器"],
-          ["assets", "原始图片 / 头像"],
-        ].map(([id = "widgets", label]) => (
-          <button
-            key={id}
-            aria-pressed={tab === id}
-            onClick={() => {
-              setTab(id);
-              setQuery("");
-            }}
+  const motionControls = (kind: string) => (
+    <>
+      {kind === "weather" && (
+        <label>
+          昼夜
+          <select
+            aria-label="天气昼夜"
+            value={phase}
+            onChange={(e) => setPhase(e.target.value as WeatherDayPhase)}
           >
-            {label}
-          </button>
-        ))}
-      </nav>
-      <div className="review-controls">
-        <label>
-          搜索
-          <input
-            type="search"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="例如：时钟、英雄联盟、窗户、fox"
-          />
+            <option value="dawn">黎明</option>
+            <option value="day">白天</option>
+            <option value="dusk">黄昏</option>
+            <option value="night">夜晚</option>
+          </select>
         </label>
-        {tab === "assets" && (
-          <label>
-            图片分类
-            <select value={group} onChange={(e) => setGroup(e.target.value)}>
-              {["全部", ...new Set(assets.map((item) => item.kind))].map((x) => (
-                <option key={x}>{x}</option>
-              ))}
-            </select>
-          </label>
-        )}
+      )}
+      {kind === "characters" && (
         <label>
-          审核进度
-          <select value={reviewFilter} onChange={(e) => setReviewFilter(e.target.value)}>
-            {["全部状态", "待审核", "需要修改", "通过"].map((value) => (
-              <option key={value}>{value}</option>
+          角色动作
+          <select aria-label="角色动作" value={action} onChange={(e) => setAction(e.target.value)}>
+            <option value="all">全部动作</option>
+            {characterActions.map(([id, label]) => (
+              <option key={id} value={id}>
+                {label}
+              </option>
             ))}
           </select>
         </label>
-        <label>
-          预览底色
-          <select value={background} onChange={(e) => setBackground(e.target.value)}>
-            <option value="light">浅色</option>
-            <option value="dark">深色</option>
-            <option value="grid">透明格</option>
-          </select>
-        </label>
-        {tab === "widgets" && (
-          <label>
-            窗外状态
-            <select
-              onChange={(e) => {
-                const [scene, phase] = e.target.value.split(":");
-                type WeatherPreview = NonNullable<
-                  Parameters<ReturnType<typeof useWeatherStore.getState>["setPreview"]>[0]
-                >;
-                useWeatherStore.getState().setPreview({
-                  scene: scene as WeatherPreview["scene"],
-                  phase: phase as WeatherPreview["phase"],
-                });
+      )}
+      {["weather", "characters"].includes(kind) && (
+        <button type="button" aria-pressed={paused} onClick={() => setPaused(!paused)}>
+          {paused ? "继续动画" : "暂停动画"}
+        </button>
+      )}
+    </>
+  );
+  return (
+    <MotionPreviewContext.Provider value={{ phase, action, paused }}>
+      <main className={`asset-review review-background-${background}`}>
+        <header className="review-header">
+          <div>
+            <p className="review-eyebrow">SHANGHAO · ASSET STUDIO</p>
+            <h1>上号素材</h1>
+            <p>
+              {manifest.packaged ? "上号" : "开发预览"} {manifest.version} · {games.length} 款游戏 ·{" "}
+              {assets.length} 份图片
+            </p>
+          </div>
+          <div className="review-actions">
+            <span className="review-local">
+              {studio ? "本地工作室 · 审核记录保存在本机" : "浏览器预览 · 完整功能请打开桌面工作室"}
+            </span>
+            <button onClick={importNotes} disabled={busy}>
+              导入意见
+            </button>
+            <button onClick={exportNotes} disabled={busy}>
+              导出意见（{Object.keys(notes).length}）
+            </button>
+            <input
+              hidden
+              ref={importInput}
+              type="file"
+              accept=".json"
+              onChange={(event) => {
+                const file = event.target.files?.[0];
+                if (file)
+                  void perform(async () => {
+                    if (file.size > 5 * 1024 * 1024) throw Error("文件过大");
+                    return mergeNotes(JSON.parse(await file.text()).notes);
+                  });
+                event.target.value = "";
+              }}
+            />
+          </div>
+        </header>
+        <nav className="review-tabs" aria-label="素材分类">
+          {[
+            ["brand", "品牌图标"],
+            ["widgets", "房间组件"],
+            ["weather", "天气效果"],
+            ["characters", "角色动作"],
+            ["games", "游戏显示器"],
+            ["avatars", "账号头像"],
+            ["assets", "原始素材"],
+          ].map(([id = "widgets", label]) => (
+            <button
+              key={id}
+              aria-pressed={tab === id}
+              onClick={() => {
+                setTab(id);
+                setQuery("");
               }}
             >
-              <option value="clear:day">晴天</option>
-              <option value="overcast:day">阴天</option>
-              <option value="light_rain:day">下雨</option>
-              <option value="snow:day">下雪</option>
-              <option value="clear:night">夜晚</option>
+              {label}
+            </button>
+          ))}
+        </nav>
+        <div className="review-controls">
+          <label>
+            搜索
+            <input
+              type="search"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="例如：时钟、英雄联盟、窗户、fox"
+            />
+          </label>
+          {tab === "assets" && (
+            <label>
+              图片分类
+              <select value={group} onChange={(e) => setGroup(e.target.value)}>
+                {["全部", ...new Set(assets.map((item) => item.kind))].map((x) => (
+                  <option key={x}>{x}</option>
+                ))}
+              </select>
+            </label>
+          )}
+          <label>
+            审核进度
+            <select value={reviewFilter} onChange={(e) => setReviewFilter(e.target.value)}>
+              {["全部状态", "待审核", "需要修改", "通过"].map((value) => (
+                <option key={value}>{value}</option>
+              ))}
             </select>
           </label>
-        )}
-        <span>{filtered.length} 项</span>
-      </div>
-      <p className="review-info">
-        {tab === "games"
-          ? "每款游戏都有独立画面。点击卡片查看放大效果与房间实际小屏尺寸；来源链接、原图和审核意见都在详情里。"
-          : "点击卡片放大审核，可复制图片或下载原图。时钟、日历等组合组件也能导出当前效果。"}
-      </p>
-      <p role="status" className="review-status">
-        {message}
-      </p>
-      <section className="review-grid">
-        {filtered.map((item) => (
-          <article className="review-card" key={item.id}>
-            <button
-              className="review-preview"
-              aria-label={`放大并审核${item.name}`}
-              onClick={() => open(item)}
-            >
-              {item.content}
-            </button>
-            <div className="review-card-body">
-              <div className="review-kind">
-                {item.kind}
-                <span>{notes[item.id]?.status || "待审核"}</span>
-              </div>
-              <h2>{item.name}</h2>
-              <p>{item.note}</p>
-              <div className="review-card-actions">
-                <button onClick={() => open(item)}>查看 / 审核</button>
-                {item.url && (
-                  <>
-                    <button disabled={busy} onClick={() => void copy(item)}>
-                      复制
-                    </button>
-                    <button disabled={busy} onClick={() => void download(item)}>
-                      下载
-                    </button>
-                  </>
-                )}
-              </div>
-            </div>
-          </article>
-        ))}
-      </section>
-      {!filtered.length && <p>没有匹配的素材，请换一个关键词。</p>}
-      <dialog ref={dialog} className="review-dialog" onCancel={() => setSelected(undefined)}>
-        <div className="review-dialog-head">
-          <h2>{selected?.name}</h2>
-          <button onClick={() => dialog.current?.close()}>关闭</button>
+          <label>
+            预览底色
+            <select value={background} onChange={(e) => setBackground(e.target.value)}>
+              <option value="light">浅色</option>
+              <option value="dark">深色</option>
+              <option value="grid">透明格</option>
+            </select>
+          </label>
+          {motionControls(tab)}
+          <span>{filtered.length} 项</span>
         </div>
-        <div ref={preview} className="review-enlarged">
-          {selected?.content}
-        </div>
-        {selected?.id.startsWith("game-") && (
-          <div className="review-size-check">
-            <span>房间小屏 · 110 × 70</span>
-            <div className="review-monitor review-monitor-actual">
-              <GameMonitorContent gameName={selected.name} />
-            </div>
-          </div>
-        )}
-        <p>{selected?.note}</p>
-        <div className="review-card-actions">
-          {selected?.url && (
-            <>
-              <button disabled={busy} onClick={() => void copy(selected)}>
-                复制素材
-              </button>
-              <button disabled={busy} onClick={() => void download(selected)}>
-                下载素材
-              </button>
-            </>
-          )}
-          <button disabled={busy} onClick={() => void capture("copy")}>
-            复制效果图
-          </button>
-          <button disabled={busy} onClick={() => void capture("save")}>
-            下载效果图
-          </button>
-        </div>
-        <details>
-          <summary>素材来源与文件位置</summary>
-          <code>{selected?.path}</code>
-          {selected?.id.startsWith("game-") && (
-            <p>
-              {manifest.games.find((x) => x.name === selected.name)?.publisher} ·{" "}
-              <a
-                href={manifest.games.find((x) => x.name === selected.name)?.page}
-                target="_blank"
-                rel="noreferrer"
-              >
-                官方来源
-              </a>
-            </p>
-          )}
-          <button
-            onClick={() =>
-              void perform(async () => {
-                if (studio) await studio.copyText(manifest.sourceRoot + "/" + selected?.path);
-                else
-                  await navigator.clipboard.writeText(manifest.sourceRoot + "/" + selected?.path);
-                return "文件路径已复制";
-              })
-            }
-          >
-            复制文件路径
-          </button>
-        </details>
+        <p className="review-info">
+          {tab === "games"
+            ? "每款游戏都有独立画面。点击卡片查看放大效果与房间实际小屏尺寸；来源链接、原图和审核意见都在详情里。"
+            : "点击卡片放大审核，可复制图片或下载原图。时钟、日历等组合组件也能导出当前效果。"}
+        </p>
         <p role="status" className="review-status">
           {message}
         </p>
-        <label>
-          审核结果
-          <select value={status} onChange={(e) => setStatus(e.target.value as ReviewStatus)}>
-            <option>待审核</option>
-            <option>通过</option>
-            <option>需要修改</option>
-          </select>
-        </label>
-        <label>
-          修改意见
-          <textarea
-            value={comment}
-            onChange={(e) => setComment(e.target.value)}
-            placeholder="例如：时钟外圈太厚，希望细一点。"
-          />
-        </label>
-        <button className="review-primary" disabled={!ready || busy} onClick={save}>
-          保存意见
-        </button>
-      </dialog>
-      <footer>
-        素材快照：{new Date(manifest.generatedAt).toLocaleString("zh-CN")}
-        。审核记录保存在本机；导出意见可用于备份和交接。
-      </footer>
-    </main>
+        <section className="review-grid">
+          {filtered.map((item) => (
+            <article className="review-card" key={item.id}>
+              <button
+                className="review-preview"
+                aria-label={`放大并审核${item.name}`}
+                onClick={() => open(item)}
+              >
+                {item.content}
+              </button>
+              <div className="review-card-body">
+                <div className="review-kind">
+                  {item.kind}
+                  <span>{notes[item.id]?.status || "待审核"}</span>
+                </div>
+                <h2>{item.name}</h2>
+                <p>{item.note}</p>
+                <div className="review-card-actions">
+                  <button onClick={() => open(item)}>查看 / 审核</button>
+                  {item.url && (
+                    <>
+                      <button disabled={busy} onClick={() => void copy(item)}>
+                        复制
+                      </button>
+                      <button disabled={busy} onClick={() => void download(item)}>
+                        下载
+                      </button>
+                    </>
+                  )}
+                </div>
+              </div>
+            </article>
+          ))}
+        </section>
+        {!filtered.length && <p>没有匹配的素材，请换一个关键词。</p>}
+        <dialog ref={dialog} className="review-dialog" onCancel={() => setSelected(undefined)}>
+          <div className="review-dialog-head">
+            <h2>{selected?.name}</h2>
+            <button onClick={() => dialog.current?.close()}>关闭</button>
+          </div>
+          <div className="review-controls">
+            {motionControls(
+              selected?.kind === "动态天气"
+                ? "weather"
+                : selected?.kind === "角色动作"
+                  ? "characters"
+                  : "",
+            )}
+          </div>
+          <div ref={preview} className="review-enlarged">
+            {selected?.content}
+          </div>
+          {selected?.id.startsWith("game-") && (
+            <div className="review-size-check">
+              <span>房间小屏 · 110 × 70</span>
+              <div className="review-monitor review-monitor-actual">
+                <GameMonitorContent gameName={selected.name} />
+              </div>
+            </div>
+          )}
+          <p>{selected?.note}</p>
+          <div className="review-card-actions">
+            {selected?.url && (
+              <>
+                <button disabled={busy} onClick={() => void copy(selected)}>
+                  复制素材
+                </button>
+                <button disabled={busy} onClick={() => void download(selected)}>
+                  下载素材
+                </button>
+              </>
+            )}
+            <button disabled={busy} onClick={() => void capture("copy")}>
+              复制效果图
+            </button>
+            <button disabled={busy} onClick={() => void capture("save")}>
+              下载效果图
+            </button>
+          </div>
+          <details>
+            <summary>素材来源与文件位置</summary>
+            <code>{selected?.path}</code>
+            {selected?.id.startsWith("game-") && (
+              <p>
+                {manifest.games.find((x) => x.name === selected.name)?.publisher} ·{" "}
+                <a
+                  href={manifest.games.find((x) => x.name === selected.name)?.page}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  官方来源
+                </a>
+              </p>
+            )}
+            <button
+              onClick={() =>
+                void perform(async () => {
+                  const location = manifest.packaged
+                    ? `https://github.com/soberbw-hash/shanghao/blob/v${manifest.version}/${selected?.path}`
+                    : manifest.sourceRoot + "/" + selected?.path;
+                  if (studio) await studio.copyText(location);
+                  else await navigator.clipboard.writeText(location);
+                  return "文件路径已复制";
+                })
+              }
+            >
+              复制文件路径
+            </button>
+          </details>
+          <p role="status" className="review-status">
+            {message}
+          </p>
+          <label>
+            审核结果
+            <select value={status} onChange={(e) => setStatus(e.target.value as ReviewStatus)}>
+              <option>待审核</option>
+              <option>通过</option>
+              <option>需要修改</option>
+            </select>
+          </label>
+          <label>
+            修改意见
+            <textarea
+              value={comment}
+              onChange={(e) => setComment(e.target.value)}
+              placeholder="例如：时钟外圈太厚，希望细一点。"
+            />
+          </label>
+          <button className="review-primary" disabled={!ready || busy} onClick={save}>
+            保存意见
+          </button>
+        </dialog>
+        <footer>
+          素材快照：{new Date(manifest.generatedAt).toLocaleString("zh-CN")}
+          。审核记录保存在本机；导出意见可用于备份和交接。
+        </footer>
+      </main>
+    </MotionPreviewContext.Provider>
   );
 }
 createRoot(document.getElementById("root")!).render(<ReviewApp />);

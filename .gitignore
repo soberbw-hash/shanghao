@@ -28,6 +28,7 @@ apps/desktop/.dev-user-data/
 # Local AI models, runtimes and inference work files can exceed many GB and are user data.
 apps/desktop/work/
 apps/desktop/resources/native/shanghao-core*
+apps/desktop/resources/asset-studio/
 
 # Local visual QA captures are generated during review and are not release assets.
 design-qa*.png

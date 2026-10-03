@@ -31,6 +31,7 @@ jobs:
       - run: bash -n scripts/deploy-relay-ubuntu.sh
       - run: bash -n deploy/install-phone-mic-sidecar.sh
       - run: pnpm typecheck
+      - run: pnpm exec tsc -p tools/asset-review/tsconfig.json --noEmit
       - run: cargo fmt --manifest-path native/Cargo.toml --all -- --check
       - run: pnpm test:native
       - run: pnpm lint
@@ -58,6 +59,7 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm typecheck
+      - run: pnpm exec tsc -p tools/asset-review/tsconfig.json --noEmit
       - run: cargo fmt --manifest-path native/Cargo.toml --all -- --check
       - run: pnpm test:native
       - run: pnpm lint

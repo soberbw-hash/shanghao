@@ -17,6 +17,7 @@ import { DialogCloseButton } from "../base/DialogCloseButton";
 import { ReleaseDetailModal } from "../status/ReleaseDetailModal";
 import { RELEASE_HISTORY, type ReleaseHistoryEntry } from "../status/releaseHistory";
 import { SettingsSection } from "./SettingsSection";
+import { AssetStudioSettingsCard } from "./AssetStudioSettingsCard";
 
 const AUTHOR_URL = "https://github.com/soberbw-hash";
 const PROJECT_URL = "https://github.com/soberbw-hash/shanghao";
@@ -147,6 +148,7 @@ export const AboutSettingsCard = ({
         </section>
 
         <div className="about-info-grid">
+          <AssetStudioSettingsCard />
           <article className="about-info-card">
             <span className="about-info-icon about-info-icon--project">
               <Github aria-hidden="true" />

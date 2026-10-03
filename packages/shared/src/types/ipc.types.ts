@@ -281,6 +281,8 @@ export interface DesktopApi {
       ) => void,
     ) => () => void;
     getRuntimeInfo: () => Promise<RuntimeInfo>;
+    openAssetStudio: () => Promise<void>;
+    createAssetStudioShortcut: () => Promise<void>;
     getSystemIdleSeconds: () => Promise<number>;
     writeLog: (payload: RendererLogPayload) => Promise<void>;
     notify: (payload: {

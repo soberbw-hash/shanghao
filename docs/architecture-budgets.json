@@ -1,4 +1,7 @@
 {
+  "apps/desktop/src/main/entry.ts": 35,
+  "apps/desktop/src/main/asset-studio-ipc.ts": 80,
+  "apps/desktop/src/renderer/src/components/settings/AssetStudioSettingsCard.tsx": 75,
   "packages/shared/src/types/room-memory.types.ts": 76,
   "packages/signaling/src/room-memory-store.ts": 221,
   "packages/signaling/src/room-memory-http-controller.ts": 125,

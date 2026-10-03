@@ -55,6 +55,8 @@ const desktopApi: DesktopApi = {
       return () => ipcRenderer.removeListener(IPC_CHANNELS.app.backgroundCommand, wrapped);
     },
     getRuntimeInfo: () => ipcRenderer.invoke(IPC_CHANNELS.app.getRuntimeInfo),
+    openAssetStudio: () => ipcRenderer.invoke(IPC_CHANNELS.app.openAssetStudio),
+    createAssetStudioShortcut: () => ipcRenderer.invoke(IPC_CHANNELS.app.createAssetStudioShortcut),
     getSystemIdleSeconds: () => ipcRenderer.invoke(IPC_CHANNELS.app.getSystemIdleSeconds),
     writeLog: (payload) => ipcRenderer.invoke(IPC_CHANNELS.app.writeLog, payload),
     notify: (payload) => ipcRenderer.invoke(IPC_CHANNELS.app.notify, payload),

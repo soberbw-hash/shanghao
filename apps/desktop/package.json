@@ -11,7 +11,7 @@
     "dev:main": "tsup --config tsup.config.ts --watch",
     "dev:renderer": "vite",
     "dev:electron": "wait-on tcp:5173 file:dist-electron/main/index.cjs && electron .",
-    "build": "corepack pnpm build:main && corepack pnpm build:renderer",
+    "build": "corepack pnpm build:main && corepack pnpm build:renderer && node ../../tools/asset-review/build.mjs --bundle",
     "build:main": "node ../../scripts/build-phone-audio.mjs && tsup --config tsup.config.ts",
     "build:renderer": "vite build",
     "report:renderer": "node scripts/report-renderer-bundle.mjs",

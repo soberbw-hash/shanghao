@@ -33,6 +33,8 @@ export const IPC_CHANNELS = {
     backgroundCommand: "app:background-command",
     completeBackgroundClose: "app:complete-background-close",
     getRuntimeInfo: "app:get-runtime-info",
+    openAssetStudio: "app:open-asset-studio",
+    createAssetStudioShortcut: "app:create-asset-studio-shortcut",
     getSystemIdleSeconds: "app:get-system-idle-seconds",
     writeLog: "app:write-log",
     notify: "app:notify",

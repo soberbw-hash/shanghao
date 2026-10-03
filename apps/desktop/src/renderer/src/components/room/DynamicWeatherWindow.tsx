@@ -2,6 +2,7 @@ import { useEffect, useMemo, type CSSProperties } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 
 import { cn } from "@private-voice/ui";
+import type { WeatherDayPhase, WeatherSceneKind } from "@private-voice/shared";
 
 import { usePrefersReducedMotion } from "../../hooks/usePrefersReducedMotion";
 import { useVisibleInterval, useVisualVisibility } from "../../hooks/useVisualVisibility";
@@ -17,14 +18,22 @@ import nightView from "../../assets/scenes/shanghao-room/weather-night.png";
 
 const REFRESH_INTERVAL_MS = 25 * 60 * 1_000;
 
-export const DynamicWeatherWindow = ({ isEnabled }: { isEnabled: boolean }) => {
+export const DynamicWeatherWindow = ({
+  isEnabled,
+  previewOverride,
+}: {
+  isEnabled: boolean;
+  previewOverride?: { scene: WeatherSceneKind; phase: WeatherDayPhase };
+}) => {
   const locationMode = useSettingsStore((state) => state.settings?.weatherLocationMode ?? "auto");
   const manualCity = useSettingsStore((state) => state.settings?.weatherManualCity ?? "");
   const useSystemLocation = useSettingsStore(
     (state) => state.settings?.isSystemWeatherLocationEnabled === true,
   );
   const snapshot = useWeatherStore((state) => state.snapshot);
-  const preview = useWeatherStore((state) => state.preview);
+  const storedPreview = useWeatherStore((state) => state.preview);
+  const preview = previewOverride ?? storedPreview;
+  const hasPreviewOverride = previewOverride !== undefined;
   const refresh = useWeatherStore((state) => state.refresh);
   const clear = useWeatherStore((state) => state.clear);
   const isPageVisible = useVisualVisibility();
@@ -35,15 +44,17 @@ export const DynamicWeatherWindow = ({ isEnabled }: { isEnabled: boolean }) => {
   );
 
   useEffect(() => {
+    if (hasPreviewOverride) return;
     if (!isEnabled) {
       clear();
       return;
     }
     void refresh(request).catch(() => undefined);
-  }, [clear, isEnabled, refresh, request]);
+  }, [clear, hasPreviewOverride, isEnabled, refresh, request]);
 
   useVisibleInterval(() => {
-    if (isEnabled) void refresh({ ...request, forceRefresh: true }).catch(() => undefined);
+    if (isEnabled && !hasPreviewOverride)
+      void refresh({ ...request, forceRefresh: true }).catch(() => undefined);
   }, REFRESH_INTERVAL_MS);
 
   const visualSnapshot = preview

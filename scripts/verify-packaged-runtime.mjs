@@ -12,6 +12,57 @@ const resourcesDirectory = path.join(unpackedDirectory, "resources");
 const archivePath = path.join(resourcesDirectory, "app.asar");
 await access(archivePath);
 
+// The review tool uses this EXE and shares immutable renderer assets with app.asar.
+const studioDirectory = path.join(resourcesDirectory, "asset-studio");
+const studioManifest = JSON.parse(
+  await readFile(path.join(studioDirectory, "manifest.json"), "utf8"),
+);
+const desktopPackage = JSON.parse(extractFile(archivePath, "package.json").toString());
+if (
+  !studioManifest.packaged ||
+  studioManifest.version !== desktopPackage.version ||
+  studioManifest.games.length !== 60
+)
+  throw new Error("Bundled asset studio version or catalog is invalid");
+for (const name of [
+  "desktop.cjs",
+  "preload.cjs",
+  "index.html",
+  "app.js",
+  "assets/product.css",
+  "assets/review.css",
+  "studio.ico",
+])
+  await access(path.join(studioDirectory, name));
+await assertStudioAssets();
+async function assertStudioAssets() {
+  for (const asset of studioManifest.assets) {
+    if (
+      !asset.sourcePath ||
+      !/^(apps\/desktop\/|docs\/branding\/|tools\/asset-review\/assets\/)/.test(asset.sourcePath)
+    )
+      throw new Error("Bundled asset source is invalid");
+    const source = await readFile(path.resolve(import.meta.dirname, "..", asset.sourcePath));
+    const shared = asset.bundledFile;
+    if (shared && !/^[a-zA-Z0-9_.-]+\.(png|jpe?g|webp|svg|ico)$/i.test(shared))
+      throw new Error("Bundled shared asset filename is invalid");
+    const packaged = shared
+      ? extractFile(archivePath, path.join("dist", "assets", shared))
+      : await readFile(path.join(studioDirectory, "assets", asset.relative));
+    if (!source.equals(packaged))
+      throw new Error(`Bundled studio asset changed: ${asset.relative}`);
+  }
+  const entry = extractFile(
+    archivePath,
+    path.join("dist-electron", "main", "index.cjs"),
+  ).toString();
+  if (!entry.includes("--asset-studio") || !entry.includes("app.cjs"))
+    throw new Error("Packaged application does not expose the independent studio entry");
+  const files = await readdir(studioDirectory);
+  if (files.some((file) => /^runtime/.test(file)))
+    throw new Error("Studio duplicates the Electron runtime");
+}
+
 // Verify the installed original and the actual EXE resources independently.
 const brandDirectory = path.join(resourcesDirectory, "build");
 const brandSource = JSON.parse(

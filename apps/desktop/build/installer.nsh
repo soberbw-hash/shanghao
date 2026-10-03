@@ -138,6 +138,8 @@
     DetailPrint "正在请求旧版上号退出..."
     ; Exec 不等待旧进程结束。旧版不认识退出参数时也不会把安装器卡住。
     Exec '"${EXECUTABLE_PATH}" --shanghao-quit-for-install'
+    ; 工作室与上号共用 EXE、使用不同 profile，分别通知两个实例保存并退出。
+    Exec '"${EXECUTABLE_PATH}" --asset-studio --shanghao-quit-for-install'
     Sleep 1200
   ${endif}
 !macroend

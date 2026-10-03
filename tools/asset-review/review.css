@@ -454,3 +454,68 @@ body {
     transition: none !important;
   }
 }
+.review-character-stage {
+  --review-travel: 75px;
+  position: relative;
+  width: 290px;
+  height: 195px;
+  overflow: hidden;
+  display: grid;
+  place-items: center;
+  background: linear-gradient(transparent 75%, #dfeaf6 75% 76%, transparent 76%);
+}
+.review-character-actor {
+  position: relative;
+  display: block;
+  width: 105px;
+  height: 128px;
+}
+.review-character-actor .walking-animal {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  width: 100%;
+  height: auto;
+  aspect-ratio: 1;
+}
+.review-character-actor .desk-animal {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+.review-character-front {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+.review-walk-right {
+  animation: review-character-travel 3.5s linear infinite;
+}
+.review-walk-left {
+  animation: review-character-travel 3.5s linear infinite reverse;
+}
+@keyframes review-character-travel {
+  from {
+    transform: translateX(calc(-1 * var(--review-travel)));
+  }
+  to {
+    transform: translateX(var(--review-travel));
+  }
+}
+.review-motion-paused,
+.review-motion-paused *,
+.review-motion-paused *::before,
+.review-motion-paused *::after {
+  animation-play-state: paused !important;
+}
+.review-enlarged .review-character-stage {
+  --review-travel: 180px;
+  width: 560px;
+  height: 300px;
+  max-width: 100%;
+}
+.review-enlarged .review-character-actor {
+  width: 160px;
+  height: 200px;
+}

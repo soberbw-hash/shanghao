@@ -27,6 +27,7 @@ export default tseslint.config(
       "apps/network-repair/**",
       "apps/desktop/build/**",
       "apps/desktop/work/**",
+      "apps/desktop/resources/asset-studio/**",
       "apps/desktop/src/renderer/src/assets/**",
     ],
   },
