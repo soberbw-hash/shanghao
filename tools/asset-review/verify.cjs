@@ -208,7 +208,13 @@ app
     await run(
       "Promise.all(Array.from(document.querySelectorAll('.review-grid img')).map(x=>x.decode()))",
     );
-    checks += 3;
+    assert.ok(
+      await run(
+        "Array.from(document.querySelectorAll('.review-grid .desk-animal')).every(x=>{const r=x.getBoundingClientRect();return Math.abs(r.width-r.height)<0.01})",
+      ),
+      "seated character container must preserve production proportions",
+    );
+    checks += 4;
     for (const direction of ["walk-left", "walk-right"]) {
       await select("角色动作", direction);
       await run(
