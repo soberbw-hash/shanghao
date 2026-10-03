@@ -101,6 +101,7 @@
   "apps/desktop/src/renderer/src/styles/parts/120-ai.css": 427,
   "apps/desktop/src/renderer/src/styles/parts/130-final-material.css": 1936,
   "apps/desktop/src/renderer/src/styles/parts/140-visual-experience.css": 1551,
+  "apps/desktop/src/renderer/src/styles/parts/141-about-cards.css": 100,
   "apps/desktop/src/renderer/src/styles/parts/150-account.css": 1096,
   "apps/desktop/src/renderer/src/styles/parts/160-sensory-polish.css": 266,
   "apps/desktop/src/renderer/src/styles/parts/170-model-comparison.css": 545,

@@ -8,7 +8,7 @@
 
 进房先看见人。谁在打游戏、听歌、接电话，谁暂时离开；聊天、分享的画面和昨晚的录音，也都在这间房里。
 
-[下载最新版](https://github.com/soberbw-hash/shanghao/releases/latest) · [看更新记录](./docs/release-notes/v3.4.3.md) · [看技术结构](#声音到底经过了什么)
+[下载最新版](https://github.com/soberbw-hash/shanghao/releases/latest) · [看更新记录](./docs/release-notes/v3.4.4.md) · [看技术结构](#声音到底经过了什么)
 
 ![上号二号房：人物、天气、日历、聊天与语音控制](./docs/readme/hero-room.webp)
 
@@ -76,7 +76,19 @@
 
 **20 · 房间记录按天回看。** 成员、活跃时长、游戏、消息数与屏幕分享情况会形成每日记录，当天首次开启时弹出；设置页不再重复提供入口。整理摘要默认留在本机，点击“上传到服务器”后才进入录音原房间的共享记录；也可按需开启默认关闭的自动上传。
 
-## 3.4.3 更新
+## 3.4.4 更新
+
+每日回顾聚焦真实笑点、互动和下次约定，游戏只作简短概括，不再逐人报时长。调整字号、行距和卡片布局，长内容可滚动；回顾依据本房间已上传摘要，不编造战绩或台词。
+
+![每日回顾的短段落与真实趣事，使用演示数据](./docs/readme/v344/daily-report.png)
+
+更新公告和其他弹窗统一背景模糊，避免底层文字重叠。关于页素材入口重新对齐，主软件与素材窗口加强图标设置。
+
+![重新对齐的上号素材入口](./docs/readme/v344/about.png)
+
+云端保持原模型优先，故障时尝试智谱备用接口，支持取消与限速冷却。备用接口目前不带联网搜索；密钥保存在服务器，各房间资料仍分别读取。
+
+## 3.4.3 游戏与素材更新
 
 ### 每款游戏都有自己的画面
 
@@ -124,7 +136,7 @@
 
 打开软件先看到本版重点，按主题展开完整说明。正文可滚动，关闭按钮始终可见；看过后不再重复弹出，也可以从「设置 → 关于上号」重新查看。
 
-![3.4.3 更新公告的重点和完整说明入口](./docs/readme/v343/update-overview.png)
+![3.4.4 更新公告的重点和完整说明入口](./docs/readme/v344/update-overview.png)
 
 ## 声音到底经过了什么
 
@@ -187,7 +199,7 @@ React/Zustand 管房间界面与状态，Electron 主进程管窗口、设备和
 
 ## 下载与使用
 
-当前仓库版本为 **3.4.3**，正式支持 **Windows 10 / 11 x64**。[到 GitHub Releases 下载最新版](https://github.com/soberbw-hash/shanghao/releases/latest)，同页提供安装包、自动更新元数据与 SHA-256 校验文件。[查看 v3.4.3 更新公告](./docs/release-notes/v3.4.3.md)。安装后可通过 CloudBase 手机号验证注册并登录账号，创建私人房间或通过频道号找到朋友，再明确加入同一房间。
+当前仓库版本为 **3.4.4**，正式支持 **Windows 10 / 11 x64**。[到 GitHub Releases 下载最新版](https://github.com/soberbw-hash/shanghao/releases/latest)，同页提供安装包、自动更新元数据与 SHA-256 校验文件。[查看 v3.4.4 更新公告](./docs/release-notes/v3.4.4.md)。安装后可通过 CloudBase 手机号验证注册并登录账号，创建私人房间或通过频道号找到朋友，再明确加入同一房间。
 
 录音、模型和已下载资源主要保存在本机。更新可在后台下载，安装并重启必须由用户点击。自行部署可参照 [Relay](./docs/deploy-relay-server.md)、[TURN](./docs/deploy-turn.md) 与[网络修复](./docs/network-repair.md)。
 

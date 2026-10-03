@@ -252,6 +252,53 @@
   }
 }
 
+.daily-report-dialog {
+  overflow-x: hidden;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+}
+
+.daily-report-meta {
+  max-width: calc(100% - 52px);
+  line-height: 1.6;
+  font-variant-numeric: tabular-nums;
+}
+
+.daily-report-title {
+  line-height: 1.3;
+  letter-spacing: normal;
+}
+
+.daily-report-narrative {
+  display: grid;
+  gap: 10px;
+  margin-top: 18px;
+  color: var(--sg-ink-1);
+  font-size: 15px;
+  font-weight: 400;
+  line-height: 1.9;
+  letter-spacing: 0.01em;
+  overflow-wrap: anywhere;
+}
+
+.daily-report-narrative p {
+  margin: 0;
+  text-wrap: pretty;
+}
+
+.daily-report-highlights {
+  margin-top: 20px;
+}
+
+.daily-report-highlight {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.daily-report-highlight:last-child:nth-child(odd) {
+  grid-column: 1 / -1;
+}
+
 .daily-report-stat {
   display: grid;
   min-height: 104px;

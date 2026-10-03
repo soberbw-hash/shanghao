@@ -206,6 +206,11 @@ function startStudio({
           clipboard.writeText(text);
           return true;
         });
+        let windowIcon = nativeImage.createFromPath(
+          path.join(root, "assets/branding/studio-icon.png"),
+        );
+        if (windowIcon.isEmpty())
+          windowIcon = nativeImage.createFromPath(path.join(root, "studio.ico"));
         window = new BrowserWindow({
           show,
           width: 1440,
@@ -215,7 +220,7 @@ function startStudio({
           title: "上号素材",
           autoHideMenuBar: true,
           backgroundColor: "#f5f7fa",
-          icon: path.join(root, "studio.ico"),
+          icon: windowIcon,
           webPreferences: {
             preload: path.join(root, "preload.cjs"),
             contextIsolation: true,
@@ -225,14 +230,21 @@ function startStudio({
             backgroundThrottling: show,
           },
         });
+        if (!windowIcon.isEmpty()) window.setIcon(windowIcon);
+        window.once("ready-to-show", () => {
+          if (!windowIcon.isEmpty()) window.setIcon(windowIcon);
+        });
         if (process.platform === "win32")
           window.setAppDetails({
             appId: "ShangHao.AssetStudio",
             appIconPath: path.join(root, "studio.ico"),
+            appIconIndex: 0,
             relaunchDisplayName: "上号素材",
             relaunchCommand: app.isPackaged
               ? `"${process.execPath}" --asset-studio`
-              : `"${process.execPath}" "${root}"`,
+              : process.argv.includes("--asset-studio")
+                ? `"${process.execPath}" "${app.getAppPath()}" --asset-studio`
+                : `"${process.execPath}" "${root}"`,
           });
         let drained = false;
         app.on("before-quit", (event) => {

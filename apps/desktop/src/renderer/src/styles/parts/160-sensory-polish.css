@@ -255,11 +255,11 @@
   }
 }
 
-/* Audio menus keep their frosted-glass appearance through an opaque tint and
-   shadow, without re-blurring the entire 4K room during each open animation. */
+/* Keep the audio menu readable with the shared tint and a compact, static
+   Gaussian blur. Never animate the filter itself. */
 .room-page .audio-control-popover {
-  background: rgba(248, 252, 255, 0.965) !important;
-  backdrop-filter: none !important;
-  -webkit-backdrop-filter: none !important;
+  background: var(--sg-overlay-surface) !important;
+  backdrop-filter: blur(var(--sg-overlay-blur)) saturate(112%) !important;
+  -webkit-backdrop-filter: blur(var(--sg-overlay-blur)) saturate(112%) !important;
   contain: layout paint;
 }

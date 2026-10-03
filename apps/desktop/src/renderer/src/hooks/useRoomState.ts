@@ -146,9 +146,10 @@ const copy = {
   relayAuthRequired: "频道服务器需要登录，请先登录上号账号。",
   relayAuthFailed: "登录状态已过期，请重新登录后再进入频道。",
   microphoneUnavailable: "麦克风不可用",
-  microphonePermission: "麦克风不可用，请先在系统设置里允许访问麦克风。",
+  microphonePermission:
+    "麦克风访问未获允许。请在 Windows 设置 → 隐私和安全性 → 麦克风中开启麦克风访问及桌面应用访问，然后重启上号。",
   microphoneMissing: "没有找到可用的麦克风。",
-  microphoneBusy: "麦克风正在被其他程序占用。",
+  microphoneBusy: "麦克风暂时无法读取。请检查设备连接、RODE Connect 输入和是否被其他程序独占。",
   inputDeviceFailed: "输入设备切换失败",
   copiedInviteDescription: "把邀请发给朋友，点击链接或输入频道号即可加入。",
 } as const;

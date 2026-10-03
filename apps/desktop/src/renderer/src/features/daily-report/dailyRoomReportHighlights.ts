@@ -7,26 +7,6 @@ export interface DailyRoomReportHighlight {
   detail?: string;
 }
 
-const formatDuration = (milliseconds: number): string => {
-  const totalMinutes = Math.max(0, Math.round(milliseconds / 60_000));
-  if (totalMinutes < 60) return `${totalMinutes} 分钟`;
-  const hours = Math.floor(totalMinutes / 60);
-  const minutes = totalMinutes % 60;
-  return minutes ? `${hours} 小时 ${minutes} 分钟` : `${hours} 小时`;
-};
-
-const clock = (iso?: string): string | undefined => {
-  if (!iso) return undefined;
-  const timestamp = Date.parse(iso);
-  if (!Number.isFinite(timestamp)) return undefined;
-  return new Intl.DateTimeFormat("zh-CN", {
-    timeZone: "Asia/Shanghai",
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-  }).format(timestamp);
-};
-
 const aggregateGames = (report: DailyRoomReport): Array<[string, number]> => {
   const games = new Map<string, number>();
   for (const activity of report.gameActivities ?? []) {
@@ -50,7 +30,7 @@ export const hasMeaningfulDailyRoomGameData = (report: DailyRoomReport): boolean
 const resolveRoomTitle = (report: DailyRoomReport, mainGameDurationMs: number): string => {
   if (mainGameDurationMs >= 4 * 60 * 60_000) return "长线开黑局";
   if (report.activeDurationMs >= 12 * 60 * 60_000) return "从早开到夜";
-  if (report.peakConcurrent >= 4) return "满员小分队";
+  if (report.peakConcurrent >= 4) return "开黑小分队";
   if (report.peakConcurrent >= 3) return "三人小队成型";
   if (mainGameDurationMs >= 60 * 60_000) return "认真开了一局";
   return "好友碰头日";
@@ -60,21 +40,16 @@ export const buildDailyRoomReportNarrative = (report: DailyRoomReport): string =
   const roomName =
     report.roomName ??
     (report.roomId === "side" ? "二号房" : report.roomId === "main" ? "一号房" : "房间");
-  const lines = [
-    `昨天${roomName}一共在线 ${formatDuration(report.activeDurationMs)}，${report.participantCount} 位朋友来过。`,
-  ];
+  const lines = [`昨天${roomName}有 ${report.participantCount} 位朋友来过。`];
   const mainGame = hasMeaningfulDailyRoomGameData(report) ? aggregateGames(report)[0] : undefined;
-  const peakClock = clock(report.peakConcurrentAt);
   if (mainGame?.[1]) {
-    lines.push(`现有游戏记录里《${mainGame[0]}》最长，累计 ${formatDuration(mainGame[1])}。`);
+    lines[0] += `大家主要玩了《${mainGame[0]}》。`;
   }
-  if (report.peakConcurrent > 1) {
-    lines.push(
-      peakClock
-        ? `${peakClock} 最热闹，最高 ${report.peakConcurrent} 人同时在线。`
-        : `最高 ${report.peakConcurrent} 人同时在线。`,
-    );
-  }
+  const recap = report.recordingRecaps?.at(-1);
+  const summary = recap?.summary.filter((line) => line.trim()).slice(0, 2);
+  if (summary?.length) lines.push(...summary);
+  else if (report.lastExit)
+    lines.push(`${report.lastExit.nickname} 是最后离开的那位，负责给昨天收个尾。`);
   return lines.join("\n");
 };
 
@@ -82,7 +57,8 @@ export const buildDailyRoomReportHighlights = (
   report: DailyRoomReport,
 ): DailyRoomReportHighlight[] => {
   const result: DailyRoomReportHighlight[] = [];
-  const recap = report.recordingRecaps?.at(-1);
+  const recaps = [...(report.recordingRecaps ?? [])].reverse();
+  const recap = recaps[0];
   if (recap && !recap.highlights.length && !recap.funnyMoments.length) {
     result.push({
       id: "recording-summary",
@@ -91,33 +67,32 @@ export const buildDailyRoomReportHighlights = (
       detail: recap.description,
     });
   }
-  for (const [index, moment] of [...(recap?.funnyMoments ?? []), ...(recap?.highlights ?? [])]
-    .slice(0, 2)
-    .entries()) {
+  const seen = new Set<string>();
+  for (const item of recaps.flatMap((entry) => [
+    ...entry.funnyMoments.map((moment) => ({ moment, label: "昨晚的笑点" })),
+    ...entry.highlights.map((moment) => ({ moment, label: "值得记住" })),
+  ])) {
+    const { moment, label } = item;
+    const identity = `${moment.title.trim()}\n${moment.description.trim()}`;
+    if (seen.has(identity)) continue;
+    seen.add(identity);
     result.push({
-      id: `recording-recap-${index}`,
-      label: index === 0 && recap?.funnyMoments.length ? "昨晚最好笑" : "值得回听",
+      id: `recording-recap-${result.length}`,
+      label,
       value: moment.title,
       detail: moment.description,
     });
+    if (result.length >= 3) break;
   }
   const mainGame = hasMeaningfulDailyRoomGameData(report) ? aggregateGames(report)[0] : undefined;
-  if (mainGame?.[1]) {
+  const plan = recaps
+    .flatMap((entry) => entry.summary)
+    .find((line) => /约好|约定|下次|下回|明天|周[一二三四五六日天].*(?:一起|开黑|上线)/.test(line));
+  if (plan && !result.some((highlight) => highlight.value === plan || highlight.detail === plan)) {
     result.push({
-      id: "main-game",
-      label: "昨日主游",
-      value: mainGame[0],
-      detail: `累计 ${formatDuration(mainGame[1])}`,
-    });
-  }
-
-  const peakClock = clock(report.peakConcurrentAt);
-  if (report.peakConcurrent > 1 && peakClock) {
-    result.push({
-      id: "peak",
-      label: "最热闹时刻",
-      value: peakClock,
-      detail: `${report.peakConcurrent} 人同时在线`,
+      id: "next-plan",
+      label: "下次约定",
+      value: plan,
     });
   }
 

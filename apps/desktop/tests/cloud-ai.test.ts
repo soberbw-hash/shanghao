@@ -16,6 +16,54 @@ const request = {
   prompt: "请返回 JSON",
 };
 
+test("cloud fallback handles provider failure without exposing credentials or inventing web search", async () => {
+  const calls: Array<{ url: string; body: string }> = [];
+  const service = new CloudAiService({
+    apiKey: "primary-test-key",
+    fallback: {
+      apiKey: "fallback-test-key",
+      baseUrl: "https://open.bigmodel.cn/api/paas/v4",
+      model: "glm-4-flash-250414",
+    },
+    fetcher: async (input, init) => {
+      calls.push({ url: String(input), body: String(init?.body) });
+      return calls.length === 1
+        ? new Response("", { status: 429 })
+        : new Response(JSON.stringify({ choices: [{ message: { content: '{"answer":"ok"}' } }] }));
+    },
+  });
+  assert.equal(await service.execute({ ...request, useWebSearch: true }), '{"answer":"ok"}');
+  assert.equal(calls.length, 2);
+  assert.equal(calls[1].url, "https://open.bigmodel.cn/api/paas/v4/chat/completions");
+  assert.match(calls[1].body, /不带联网能力/);
+  assert.doesNotMatch(calls[1].body, /fallback-test-key/);
+  assert.equal(JSON.parse(calls[1].body).thinking, undefined);
+});
+
+test("cloud fallback never retries cancellation and cools down after rate limiting", async () => {
+  let calls = 0;
+  const service = new CloudAiService({
+    apiKey: "primary-test-key",
+    fallback: {
+      apiKey: "fallback-test-key",
+      baseUrl: "https://open.bigmodel.cn/api/paas/v4",
+      model: "glm-4-flash-250414",
+    },
+    fetcher: async () => {
+      calls++;
+      return new Response("", { status: 429 });
+    },
+  });
+  await assert.rejects(service.execute(request), /cloud_ai_busy/);
+  assert.equal(calls, 2);
+  await assert.rejects(service.execute(request), /cloud_ai_busy/);
+  assert.equal(calls, 3);
+  const cancelled = new AbortController();
+  cancelled.abort();
+  await assert.rejects(service.execute(request, cancelled.signal));
+  assert.equal(calls, 3);
+});
+
 test("organization and room questions share the configured text provider", () => {
   for (const legacyProvider of ["cloud", "local", "custom"] as const) {
     assert.equal(
@@ -27,6 +75,39 @@ test("organization and room questions share the configured text provider", () =>
       legacyProvider === "custom" ? "custom" : "cloud",
     );
   }
+});
+
+test("fallback preserves the requesting room memory and never bypasses a failed memory read", async () => {
+  let calls = 0;
+  let fallbackPrompt = "";
+  const options = {
+    apiKey: "primary-test-key",
+    fallback: {
+      apiKey: "memory-test-key",
+      baseUrl: "https://open.bigmodel.cn/api/paas/v4",
+      model: "glm-4-flash-250414",
+    },
+    memoryContext: async (roomId: string) => `memory for ${roomId}`,
+    fetcher: async (_input: unknown, init?: RequestInit) => {
+      calls++;
+      if (calls === 1) return new Response("", { status: 503 });
+      fallbackPrompt = JSON.parse(String(init?.body)).messages[1].content;
+      return new Response(
+        JSON.stringify({ choices: [{ message: { content: '{"answer":"ok"}' } }] }),
+      );
+    },
+  };
+  await new CloudAiService(options).execute({ ...request, roomId: "side" });
+  assert.match(fallbackPrompt, /memory for side/);
+  assert.doesNotMatch(fallbackPrompt, /memory for main/);
+  const failure = new CloudAiService({
+    ...options,
+    memoryContext: async () => {
+      throw new Error("memory_read_failed");
+    },
+  });
+  await assert.rejects(failure.execute(request), /memory_read_failed/);
+  assert.equal(calls, 2);
 });
 
 test("cloud AI signaling accepts bounded joined-room requests only", () => {

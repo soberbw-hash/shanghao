@@ -48,7 +48,7 @@ test("daily highlights are emitted only when backed by a positive metric", () =>
   });
   assert.deepEqual(
     highlights.map((highlight) => highlight.id),
-    ["main-game", "peak", "room-title"],
+    ["room-title"],
   );
 });
 
@@ -62,10 +62,9 @@ test("daily narrative uses measured values instead of saved generated commentary
     commentary: "一号房三人三小时，这句话与统计冲突。\n不应该继续显示。",
     gameActivities: [{ nickname: "小明", gameName: "英雄联盟", durationMs: 7 * 60 * 60_000 }],
   });
-  assert.match(narrative, /23 小时 9 分钟/);
   assert.match(narrative, /英雄联盟/);
-  assert.match(narrative, /7 小时/);
-  assert.match(narrative, /08:44/);
+  assert.match(narrative, /3 位朋友/);
+  assert.doesNotMatch(narrative, /小时|08:44/);
   assert.doesNotMatch(narrative, /三人三小时/);
 });
 
@@ -82,4 +81,32 @@ test("a tiny legacy game fragment is not promoted as the main game of an all-day
     false,
   );
   assert.doesNotMatch(buildDailyRoomReportNarrative(report), /KK 对战平台/);
+});
+
+test("daily recap prioritizes real anecdotes, merges duplicate moments and retains an actual next plan", () => {
+  const moment = {
+    title: "开团先开麦",
+    description: "阿南发现自己一直静音",
+    startMs: 100,
+    endMs: 200,
+  };
+  const recap = {
+    recordingId: "old",
+    uploadedAt: "2026-08-19T10:00:00Z",
+    description: "复盘配合",
+    summary: ["约好周五继续开黑"],
+    highlights: [],
+    funnyMoments: [moment],
+    participantNicknames: ["阿南"],
+    keywords: [],
+  };
+  const report = { ...base, recordingRecaps: [recap, { ...recap, recordingId: "new" }] };
+  const highlights = buildDailyRoomReportHighlights(report);
+  assert.equal(highlights.filter((item) => item.value === moment.title).length, 1);
+  assert.equal(highlights.find((item) => item.id === "next-plan")?.value, "约好周五继续开黑");
+  assert.equal(
+    highlights.some((item) => ["main-game", "peak", "room-title"].includes(item.id)),
+    false,
+  );
+  assert.match(buildDailyRoomReportNarrative(report), /约好周五/);
 });

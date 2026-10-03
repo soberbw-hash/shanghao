@@ -15,7 +15,7 @@ export const AssetStudioSettingsCard = () => {
     try {
       if (shortcut) await shanghaoCore.app.createAssetStudioShortcut();
       else await shanghaoCore.app.openAssetStudio();
-      setMessage(shortcut ? "桌面入口已创建" : "上号素材已打开");
+      setMessage(shortcut ? "桌面入口已创建" : "已打开");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "暂时无法打开上号素材");
     } finally {
@@ -30,7 +30,7 @@ export const AssetStudioSettingsCard = () => {
       </span>
       <div className="about-info-copy">
         <h4>上号素材</h4>
-        <p>查看图标、房间、天气、角色动作和游戏画面，复制下载并保存审核意见。</p>
+        <p>预览、复制和下载素材，保存审核意见。</p>
       </div>
       <div className="about-card-actions">
         <Button variant="secondary" disabled={busy} onClick={() => void run(false)}>
@@ -39,10 +39,10 @@ export const AssetStudioSettingsCard = () => {
         <Button variant="ghost" disabled={busy} onClick={() => void run(true)}>
           创建桌面入口
         </Button>
+        <span className="about-card-status" role="status">
+          {message}
+        </span>
       </div>
-      <p role="status" style={{ minHeight: "1.5em" }}>
-        {message}
-      </p>
     </article>
   );
 };

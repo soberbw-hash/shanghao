@@ -30,11 +30,11 @@ test("approved branding assets exist for app, shortcut, renderer and website", (
   const windowSource = readFileSync(path.join(root, "apps/desktop/src/main/window.ts"), "utf8");
   assert.equal(
     windowSource.includes(
-      'getBuildAssetPath(app.isPackaged ? "shanghao-icon-v4.ico" : "icon.png")',
+      'for (const name of ["icon.png", "icon-master.png", "shanghao-icon-v4.ico"])',
     ),
     true,
   );
-  assert.equal(windowSource.includes("nativeImage.createFromPath(iconPath)"), true);
+  assert.equal(windowSource.includes("nativeImage.createFromPath(getBuildAssetPath(name))"), true);
   assert.equal(windowSource.includes("window.setIcon(windowIcon)"), true);
 });
 

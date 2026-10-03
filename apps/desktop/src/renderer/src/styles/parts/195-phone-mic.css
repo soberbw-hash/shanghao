@@ -4,8 +4,8 @@
   z-index: 10020;
   display: grid;
   place-items: center;
-  background: #1c34566b;
-  backdrop-filter: blur(7px);
+  background: var(--sg-overlay-tint);
+  backdrop-filter: blur(var(--sg-overlay-blur)) saturate(112%);
   padding: 20px;
 }
 .phone-mic-dialog {

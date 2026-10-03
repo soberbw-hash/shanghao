@@ -131,7 +131,7 @@ test("audio menus retain only panels that have actually been opened", () => {
   assert.equal(styles.includes('.audio-control-popover[aria-hidden="false"]'), true);
   assert.match(
     sensoryStyles,
-    /\.room-page \.audio-control-popover\s*\{[^}]*backdrop-filter:\s*none !important/s,
+    /\.room-page \.audio-control-popover\s*\{[^}]*backdrop-filter:\s*blur\(var\(--sg-overlay-blur\)\)/s,
   );
 });
 

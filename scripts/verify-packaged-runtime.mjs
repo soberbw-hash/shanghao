@@ -32,6 +32,7 @@ for (const name of [
   "assets/product.css",
   "assets/review.css",
   "studio.ico",
+  "assets/branding/studio-icon.png",
 ])
   await access(path.join(studioDirectory, name));
 await assertStudioAssets();

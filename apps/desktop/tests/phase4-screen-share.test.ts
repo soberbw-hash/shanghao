@@ -193,6 +193,13 @@ test("screen-share and shared floating windows use readable backdrop blur", () =
   );
   assert.match(visualStyles, /\.screen-share-panel[\s\S]*backdrop-filter: blur\(30px\)/);
   assert.match(visualStyles, /\.modal-surface,[\s\S]*backdrop-filter: blur\(24px\)/);
-  assert.match(visualStyles, /\.modal-scrim,[\s\S]*backdrop-filter: blur\(8px\)/);
-  assert.match(visualStyles, /\.weather-city-dialog::backdrop/);
+  assert.match(
+    visualStyles,
+    /\.modal-scrim,[\s\S]*backdrop-filter: blur\(var\(--sg-overlay-blur\)\)/,
+  );
+  assert.match(
+    visualStyles,
+    /dialog::backdrop\s*\{[^}]*backdrop-filter: blur\(var\(--sg-overlay-blur\)\)/s,
+  );
+  assert.match(visualStyles, /dialog::backdrop/);
 });

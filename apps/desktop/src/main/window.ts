@@ -44,13 +44,16 @@ const getBuildAssetPath = (fileName: string) =>
 const getIconPath = () => getBuildAssetPath("shanghao-icon-v4.ico");
 
 const getWindowIcon = (): NativeImage => {
-  const iconPath = getBuildAssetPath(app.isPackaged ? "shanghao-icon-v4.ico" : "icon.png");
-  const image = nativeImage.createFromPath(iconPath);
-  return image.isEmpty() ? nativeImage.createFromPath(getIconPath()) : image;
+  // Set HWND icons from the original PNG, independently of Windows shell ICO caching.
+  for (const name of ["icon.png", "icon-master.png", "shanghao-icon-v4.ico"]) {
+    const image = nativeImage.createFromPath(getBuildAssetPath(name));
+    if (!image.isEmpty()) return image;
+  }
+  return nativeImage.createEmpty();
 };
 
 const applyBrandIdentity = (window: BrowserWindow, windowIcon = getWindowIcon()): void => {
-  window.setIcon(windowIcon);
+  if (!windowIcon.isEmpty()) window.setIcon(windowIcon);
   if (platformService.isWindows) {
     window.setAppDetails({
       appId: APP_ID,
@@ -387,7 +390,7 @@ export const createMainWindow = ({
   });
 
   window.once("ready-to-show", () => {
-    window.setIcon(windowIcon);
+    if (!windowIcon.isEmpty()) window.setIcon(windowIcon);
     window.show();
   });
 
