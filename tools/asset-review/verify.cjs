@@ -144,10 +144,17 @@ app
       "Object.defineProperty(document,'hasFocus',{configurable:true,value:()=>true});Object.defineProperty(document,'visibilityState',{configurable:true,value:'visible'});window.dispatchEvent(new Event('focus'))",
     );
     const tab = async (label) => {
-      const literal = JSON.stringify(label).replaceAll("<", "\\u003c").replaceAll(">", "\\u003e");
-      await run(
-        `Array.from(document.querySelectorAll('.review-tabs button')).find(x=>x.textContent===${literal}).click()`,
-      );
+      const index = [
+        "品牌图标",
+        "房间组件",
+        "天气效果",
+        "角色动作",
+        "游戏显示器",
+        "账号头像",
+        "原始素材",
+      ].indexOf(label);
+      assert.ok(index >= 0, "only known review categories may be selected");
+      await run(`document.querySelectorAll('.review-tabs button')[${index}].click()`);
       await delay();
     };
     const select = async (label, value) => {
