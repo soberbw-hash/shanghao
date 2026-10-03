@@ -16,6 +16,6 @@ Piik 的[使用指南](https://github.com/TNTcraftHIM/Piik/blob/main/docs/guide/
 
 ## 留作后续需求
 
-浏览器免安装观看需要单独的观看授权、过期令牌和房间权限设计，本次未添加公共观看入口。应用独立音频需要原生进程音频捕获与实际设备验证，本次沿用系统声音能力。Piik 的[自动路由 ADR](https://github.com/TNTcraftHIM/Piik/blob/main/docs/adr/0005-adaptive-routing.md)面向更多观看者；上号目前是五人语音房，不因参考交互而重写已验证的媒体拓扑。
+浏览器免安装观看需要单独的观看授权、过期令牌和房间权限设计，本次未添加公共观看入口。应用独立音频需要原生进程音频捕获与实际设备验证，本次沿用系统声音能力。Piik 的[自动路由 ADR](https://github.com/TNTcraftHIM/Piik/blob/main/docs/adr/0005-automatic-hybrid-media-routing.md)面向更多观看者；上号目前是五人语音房，不因参考交互而重写已验证的媒体拓扑。
 
 实现与隔离界面证据见本版发布核对记录；实际跨设备画面和系统声音仍单独验收。
