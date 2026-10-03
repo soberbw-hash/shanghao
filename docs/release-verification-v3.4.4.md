@@ -8,7 +8,16 @@
 
 ## 发布进度
 
-发布准备中。先完成本地门禁与候选包校验，再推送版本提交和标签，由 GitHub Release 工作流构建正式产物。公开下载校验后按官网文档上传版本目录、激活 metadata、最后部署首页；历史下载保留。
+GitHub 与服务器已发布，官网同步等待腾讯云授权。官网原下载保持可用，不提前激活尚未上传的链接。
+
+## 正式产物与在线核对
+
+- 标签 `v3.4.4` 对应提交 `139c8ef858d2bd732d2a3c2a440c9c7fb5c6b183`；[正式 Release](https://github.com/soberbw-hash/shanghao/releases/tag/v3.4.4) 已发布，非 draft／prerelease。
+- [Release](https://github.com/soberbw-hash/shanghao/actions/runs/37129736787)、[CI](https://github.com/soberbw-hash/shanghao/actions/runs/37129735106)、[CodeQL](https://github.com/soberbw-hash/shanghao/actions/runs/37129735110) 全部通过。
+- 五个公开资产逐项下载核对 GitHub digest／大小／SHA-256 清单，更新 metadata SHA-512 一致；安装包 193,220,178 字节，SHA-256 `539d8ec192cce666cf40546216b6d337a74fbaf3412f37ea4f45ded4c65efc40`。正式体积为安装包 184.27 MiB、解压 486.43 MiB、app.asar 56.99 MiB，全部在既有预算内。
+- GitHub 最新正式版本为 3.4.4，更新 provider 保持 `github / soberbw-hash / shanghao`。三张 README 新版截图逐字节核对通过。
+- 服务器为 3.4.4／2026.10.03.3、协议 7；更新前无房间／成员／手机会话。备份 `/root/shanghao/.codex-backups/release-v3.4.4-2026-10-03T14-34-30-105Z`，六个数据文件 SHA-256 一致，Nginx、TURN、手机麦克风服务正常；云端私人备用凭据保留。
+- CloudBase 3.8.5 与 3.8.4 均报告旧登录无效；浏览器授权连续超时。`release:prepare` 已校验正式安装包，但版本目录尚未上传，未执行 activate／首页部署。官网 metadata 只读核对仍为 3.4.3；已请求用户完成登录，之后继续上传、激活并核对官网整包下载及旧版链接。
 
 ## 本地门禁
 
