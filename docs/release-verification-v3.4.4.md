@@ -8,7 +8,7 @@
 
 ## 发布进度
 
-GitHub 与服务器已发布，官网同步等待腾讯云授权。官网原下载保持可用，不提前激活尚未上传的链接。
+GitHub、官网与服务器全部完成 3.4.4 发布。先核验公开 GitHub 产物，再上传官网版本目录，最后激活 metadata 并部署首页，历史下载保留。
 
 ## 正式产物与在线核对
 
@@ -17,7 +17,8 @@ GitHub 与服务器已发布，官网同步等待腾讯云授权。官网原下�
 - 五个公开资产逐项下载核对 GitHub digest／大小／SHA-256 清单，更新 metadata SHA-512 一致；安装包 193,220,178 字节，SHA-256 `539d8ec192cce666cf40546216b6d337a74fbaf3412f37ea4f45ded4c65efc40`。正式体积为安装包 184.27 MiB、解压 486.43 MiB、app.asar 56.99 MiB，全部在既有预算内。
 - GitHub 最新正式版本为 3.4.4，更新 provider 保持 `github / soberbw-hash / shanghao`。三张 README 新版截图逐字节核对通过。
 - 服务器为 3.4.4／2026.10.03.3、协议 7；更新前无房间／成员／手机会话。备份 `/root/shanghao/.codex-backups/release-v3.4.4-2026-10-03T14-34-30-105Z`，六个数据文件 SHA-256 一致，Nginx、TURN、手机麦克风服务正常；云端私人备用凭据保留。
-- CloudBase 3.8.5 与 3.8.4 均报告旧登录无效；浏览器授权连续超时。`release:prepare` 已校验正式安装包，但版本目录尚未上传，未执行 activate／首页部署。官网 metadata 只读核对仍为 3.4.3；已请求用户完成登录，之后继续上传、激活并核对官网整包下载及旧版链接。
+- CloudBase 旧登录失效，用户通过新的官方 device flow 完成授权后，3.8.4 CLI 上传版本目录并完成 safe 一致性核对，再执行 activate／网站构建／根目录部署。根目录未使用 safe 回滚，未 prune。官网完整重下载的安装包 SHA-256 与正式 GitHub 产物一致，网站 metadata 为 3.4.4。
+- 官网首页、release.json、下载页、邀请页逐字节对照本地构建通过；官网校验文件一致，3.4.3 历史安装包返回 200 且大小保持 193,215,389 字节。发布记录补充提交 `7bf7f16` 的 [CI](https://github.com/soberbw-hash/shanghao/actions/runs/37131697318) 与 [CodeQL](https://github.com/soberbw-hash/shanghao/actions/runs/37131697304) 通过。
 
 ## 本地门禁
 
