@@ -57,7 +57,7 @@ export const RoomManagementDialog = ({
         if (busy) event.preventDefault();
         else onClose();
       }}
-      className="island-panel m-auto max-h-[85dvh] w-full max-w-md overflow-y-auto rounded-3xl p-6 text-[#263b56] backdrop:bg-slate-900/20"
+      className="island-panel m-auto max-h-[85dvh] w-full max-w-lg overflow-y-auto rounded-3xl p-6 text-[#263b56] backdrop:bg-slate-900/20"
     >
       <header className="mb-4 flex items-center gap-3">
         <h2 id="room-management-title" className="min-w-0 flex-1 truncate text-lg font-semibold">
@@ -69,9 +69,9 @@ export const RoomManagementDialog = ({
         <DialogCloseButton onClick={onClose} disabled={busy} label="关闭房间管理" />
       </header>
       <RoomMemoryPanel roomId={room.roomId} />
-      <h3 className="mb-2 text-sm font-semibold">
-        {members.length ? "在线成员" : "进入此房间后可管理在线成员"}
-      </h3>
+      {members.some((member) => !member.isEmptySlot) && (
+        <h3 className="mb-2 mt-5 text-sm font-semibold">在线成员</h3>
+      )}
       <div className="space-y-2">
         {members
           .filter((member) => !member.isEmptySlot)
@@ -147,32 +147,30 @@ export const RoomManagementDialog = ({
           </div>
         </section>
       )}
-      <h3 className="mb-2 mt-5 text-sm font-semibold">已封禁</h3>
+      {bans.length > 0 && <h3 className="mb-2 mt-5 text-sm font-semibold">已封禁</h3>}
       <div className="space-y-2">
-        {bans.length ? (
-          bans.map((ban) => (
-            <div
-              key={ban.userId}
-              className="flex items-center gap-2 rounded-xl border border-slate-200/80 p-2"
-            >
-              <span className="min-w-0 flex-1 truncate text-sm">{ban.displayName}</span>
-              <Button
-                variant="ghost"
-                disabled={busy}
-                onClick={() =>
-                  void run(async () => {
-                    await shanghaoCore.rooms.unban(room.roomId, ban.userId);
-                    setBans((items) => items.filter((item) => item.userId !== ban.userId));
-                  })
-                }
+        {bans.length
+          ? bans.map((ban) => (
+              <div
+                key={ban.userId}
+                className="flex items-center gap-2 rounded-xl border border-slate-200/80 p-2"
               >
-                解除封禁
-              </Button>
-            </div>
-          ))
-        ) : (
-          <p className="text-sm text-slate-500">暂无封禁成员</p>
-        )}
+                <span className="min-w-0 flex-1 truncate text-sm">{ban.displayName}</span>
+                <Button
+                  variant="ghost"
+                  disabled={busy}
+                  onClick={() =>
+                    void run(async () => {
+                      await shanghaoCore.rooms.unban(room.roomId, ban.userId);
+                      setBans((items) => items.filter((item) => item.userId !== ban.userId));
+                    })
+                  }
+                >
+                  解除封禁
+                </Button>
+              </div>
+            ))
+          : null}
       </div>
       {error && (
         <p role="alert" className="mt-3 text-sm text-red-600">

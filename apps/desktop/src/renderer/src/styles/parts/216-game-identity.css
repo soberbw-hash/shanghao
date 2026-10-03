@@ -1,0 +1,29 @@
+.scene-game-identity {
+  position: absolute;
+  inset: auto 3px 3px;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 3px;
+  padding: 1px 3px;
+  width: fit-content;
+  max-width: calc(100% - 6px);
+  border-radius: 3px;
+  background: rgba(10, 21, 32, 0.86);
+  color: #f6f9fc;
+  font-size: 7px;
+  line-height: 10px;
+}
+.scene-game-identity img,
+.scene-game-identity svg {
+  width: 9px;
+  height: 9px;
+  flex-shrink: 0;
+  object-fit: contain;
+}
+.scene-game-identity > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

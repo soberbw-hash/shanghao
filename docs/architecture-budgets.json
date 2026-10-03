@@ -155,5 +155,13 @@
   "apps/desktop/src/renderer/src/styles/parts/210-entry-transitions.css": 64,
   "apps/desktop/src/renderer/src/styles/parts/215-game-artwork.css": 34,
   "apps/desktop/src/renderer/src/features/audio/microphoneInputLoss.ts": 18,
-  "apps/desktop/src/renderer/src/features/audio/useLocalInputRecovery.ts": 78
+  "apps/desktop/src/renderer/src/features/audio/useLocalInputRecovery.ts": 78,
+  "packages/shared/src/types/room-memory-context.ts": 55,
+  "packages/signaling/src/room-memory-document.ts": 75,
+  "apps/desktop/src/main/room-memory-request.ts": 55,
+  "apps/desktop/src/renderer/src/features/room/roomMemoryDraftText.ts": 55,
+  "apps/desktop/src/renderer/src/features/screen-share/useScreenSourcePicker.ts": 90,
+  "apps/desktop/src/renderer/src/components/room/ScreenSourcePicker.tsx": 290,
+  "apps/desktop/src/renderer/src/styles/parts/216-game-identity.css": 35,
+  "apps/desktop/src/renderer/src/styles/parts/220-screen-source-picker.css": 450
 }

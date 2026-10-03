@@ -38,5 +38,7 @@
 @import "./parts/205-scene-life.css";
 @import "./parts/210-entry-transitions.css";
 @import "./parts/215-game-artwork.css";
+@import "./parts/216-game-identity.css";
+@import "./parts/220-screen-source-picker.css";
 
 /* Keep these imports ordered: later compatibility passes intentionally win the cascade. */

@@ -1,5 +1,5 @@
 import { Gamepad2 } from "lucide-react";
-import { GameMonitorScene } from "./GameMonitorScene";
+import { gameScreenshotCatalog } from "./GameScreenshotCatalog";
 
 import type { GameDetectionSnapshot } from "@private-voice/shared";
 
@@ -90,15 +90,26 @@ export const GameMonitorContent = ({
   shouldReduceMotion?: boolean;
 }) => {
   const artwork = gameArtworkCatalog[gameName as SupportedGameName];
+  const screenshot = gameScreenshotCatalog[gameName];
   const runtimeIconDataUrl = normalizePresenceGameIconDataUrl(gameName, iconDataUrl);
   const identityArtwork =
     runtimeIconDataUrl || (artwork?.layout !== "scene" ? artwork?.src : undefined);
   return (
     <span
-      className="scene-game-monitor-content scene-game-monitor-content--illustration"
+      className="scene-game-monitor-content scene-game-monitor-content--screenshot"
       aria-label={`正在玩 ${gameName}`}
+      title={gameName}
     >
-      <GameMonitorScene gameName={gameName} />
+      {screenshot && (
+        <img
+          className="scene-game-screenshot"
+          src={screenshot.src}
+          alt=""
+          aria-hidden="true"
+          draggable={false}
+          style={{ objectPosition: screenshot.position }}
+        />
+      )}
       <span className="scene-game-identity">
         {identityArtwork ? (
           <img src={identityArtwork} alt="" aria-hidden="true" draggable={false} />

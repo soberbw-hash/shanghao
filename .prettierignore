@@ -11,4 +11,5 @@ apps/desktop/build
 apps/desktop/src/renderer/src/assets
 docs/release-notes
 pnpm-lock.yaml
+tools/asset-review/sources
 LICENSE.md

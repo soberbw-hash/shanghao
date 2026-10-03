@@ -1,10 +1,11 @@
 {
   "name": "shanghao-workspace",
-  "version": "3.4.2",
+  "version": "3.4.3",
   "private": true,
   "license": "AGPL-3.0-or-later",
   "packageManager": "pnpm@10.34.5",
   "scripts": {
+    "review:assets": "node tools/asset-review/build.mjs",
     "dev": "corepack pnpm --dir apps/desktop dev",
     "build": "corepack pnpm build:native && corepack pnpm -r --filter @private-voice/shared --filter @private-voice/ui --filter @private-voice/signaling --filter @private-voice/webrtc --filter @private-voice/recording --filter shanghao-desktop run build",
     "build:native": "node scripts/build-rust-core.mjs",

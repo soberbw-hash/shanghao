@@ -6,11 +6,16 @@ import {
   ROOM_MEMORY_ENTRY_LIMIT,
   ROOM_MEMORY_FACT_LIMIT,
   ROOM_MEMORY_TEXT_LIMIT,
+  isOptionalRoomMemoryText,
   type RoomMemorySnapshot,
   type SaveRoomMemoryRequest,
 } from "@private-voice/shared";
 import { VersionedJsonStore } from "./versioned-json-store";
-
+import {
+  appendAutomaticMemoryFact,
+  publicRoomMemory as publicMemory,
+  saveAutomaticMemoryDocument,
+} from "./room-memory-document";
 interface StoredMemory extends RoomMemorySnapshot {
   rejected: string[];
   sources: string[];
@@ -56,14 +61,6 @@ const validate = (value: unknown): MemoryData => {
 };
 const fingerprint = (value: string) =>
   createHash("sha256").update(value.trim().toLowerCase().replace(/\s+/g, " ")).digest("hex");
-const publicMemory = ({
-  roomId,
-  revision,
-  manualText,
-  autoEnabled,
-  entries,
-}: StoredMemory): RoomMemorySnapshot =>
-  structuredClone({ roomId, revision, manualText, autoEnabled, entries });
 /** Atomic per-room revisions; no automatic operation overwrites human text or corrections. */
 export class RoomMemoryStore {
   private readonly memories: Map<string, StoredMemory>;
@@ -96,6 +93,7 @@ export class RoomMemoryStore {
       typeof request.manualText !== "string" ||
       request.manualText.length > ROOM_MEMORY_TEXT_LIMIT ||
       typeof request.autoEnabled !== "boolean" ||
+      !isOptionalRoomMemoryText(request.automaticText) ||
       !Array.isArray(request.entries) ||
       request.entries.length > ROOM_MEMORY_ENTRY_LIMIT ||
       new Set(request.entries.map((entry) => entry?.id)).size !== request.entries.length
@@ -105,7 +103,7 @@ export class RoomMemoryStore {
       .transact((data) => {
         const memory = this.obtain(data, request.roomId);
         if (memory.revision !== request.revision) throw new RoomMemoryError("room_memory_conflict");
-        const entries = request.entries.map((edit) => {
+        let entries = request.entries.map((edit) => {
           const saved = memory.entries.find((entry) => entry.id === edit?.id);
           if (
             !saved ||
@@ -120,6 +118,7 @@ export class RoomMemoryStore {
             updatedAt: saved.text === edit.text.trim() ? saved.updatedAt : new Date().toISOString(),
           };
         });
+        entries = saveAutomaticMemoryDocument(memory, request, entries);
         const removed = memory.entries
           .filter((entry) => !entries.some((saved) => entry.id === saved.id))
           .map((entry) => entry.id);
@@ -178,6 +177,7 @@ export class RoomMemoryStore {
           memory.entries.some((entry) => entry.id === id)
         )
           continue;
+        if (!appendAutomaticMemoryFact(memory, fact.text)) continue;
         memory.entries.push({
           id,
           text: fact.text.trim(),

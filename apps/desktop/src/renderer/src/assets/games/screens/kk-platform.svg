@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="640" height="400" viewBox="0 0 640 400">
+ <rect width="640" height="400" fill="#101c2d"/>
+ <rect width="118" height="400" fill="#0a1322"/>
+ <text x="28" y="56" fill="#78b4ff" font-family="Arial,sans-serif" font-size="33" font-weight="bold">KK</text>
+ <g font-family="Microsoft YaHei,sans-serif" font-size="17" fill="#a9bad0"><text x="26" y="113">游戏大厅</text><text x="26" y="165">RPG 地图</text><text x="26" y="217">经典对战</text></g>
+ <text x="146" y="57" fill="#edf4ff" font-family="Microsoft YaHei,sans-serif" font-size="26" font-weight="bold">经典联机 · 一起开局</text>
+ <g stroke="#294460" stroke-width="2"><rect x="145" y="88" width="224" height="166" rx="14" fill="#1e3952"/><rect x="388" y="88" width="224" height="166" rx="14" fill="#43352a"/><rect x="145" y="270" width="467" height="81" rx="12" fill="#183e50"/></g>
+ <path d="M174 204L210 118L234 155L260 120L308 204Z" fill="#80adce"/><path d="M428 194V146H448V173H470V122H492V194M428 211H566" fill="none" stroke="#bf9874" stroke-width="12"/>
+ <g font-family="Microsoft YaHei,sans-serif" fill="#f1f6fb" font-size="24" font-weight="bold"><text x="172" y="237">魔兽 RPG</text><text x="418" y="237">红色警戒</text><text x="170" y="320">CS · 星际 · 更多经典游戏</text></g>
+</svg>

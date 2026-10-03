@@ -4,11 +4,11 @@
 
 ## 固定输出
 
-- 横向 `16:10`，交付 `768 × 480 WebP`。
-- 建议 WebP quality `82`，单张尽量小于 `100 KB`。
+- 显示区横向 `16:10`，优先使用横向官方截图，按焦点设置 `objectPosition`。
+- 缩略版建议 WebP quality `82`、尽量小于 `100 KB`；保留原图时记录大小并计入包体积预算。3.4.3 的 60 项使用官方商店缩略图、官方场景或演示静帧，KK 为平台入口 SVG。
 - 优先选择没有大段文字、Logo、水印和复杂 HUD 的官方实机画面。
 - 保持静态图片；整张场景图不做循环缩放、位移、闪烁或扫描动画。
-- 在 `SOURCES.md` 保存原始网页和图片直链；正式发版前复核对应素材使用条款。
+- 在 `screens/SOURCES.md` 与 `screens/catalog.json` 保存原始网页、素材地址、发布者及素材类型。游戏图像版权归对应权利人，仓库代码许可证不涵盖这些素材。
 
 ## 官方素材查找提示词
 
@@ -58,7 +58,11 @@
 
 1. 在共享 `GameDetectionSnapshot` 联合类型中加入固定中文名。
 2. 在 `GAME_RULES` 添加明确的可执行进程名，避免模糊匹配。
-3. 把优化后的 WebP 放入本目录，并在 `SOURCES.md` 记录官方页面、图片直链和发布者。
-4. 在 `GameMonitorContent.tsx` 注册画面；需要满屏氛围图时使用 `layout: "scene"`，并选择 `cozy`、`moba` 或 `tactical` 明暗基调。
+3. 把画面放入 `screens/`，更新 `screens/catalog.json` 和 `screens/SOURCES.md`。
+4. 在 `components/room/GameScreenshotCatalog.ts` 静态导入独立画面；`GameMonitorContent` 直接展示该图，保留名称和小型身份图标。未知游戏使用图标与名称降级，不套用通用场景。
 5. 更新 `docs/supported-activities.md` 和 `tests/game-detection.test.ts`。
 6. 按上面的两轮审核流程留存截图与结论。
+
+## 自助审核
+
+在仓库运行 `corepack pnpm review:assets` 生成桌面「上号素材工作室」。之后双击快捷方式即可打开，关闭和重启电脑后仍可使用。游戏页同时提供放大预览及真实 `110 × 70` 小屏，可下载原素材、复制画面并保存／导出意见。更新素材后重新生成，审核意见单独保存在本机，不进入 Git 或上号安装包。完整说明见仓库 `tools/asset-review/README.md`。

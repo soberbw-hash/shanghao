@@ -684,11 +684,11 @@ test("screen sharing is wired through the room page and WebRTC peer layer", () =
   assert.equal(mainWindowSource.includes('"loopback"'), true);
   assert.equal(roomSource.includes("startSharingScreen(sourceId, quality, origin)"), true);
   const overlaysSource = readFileSync(
-    path.resolve(process.cwd(), "src/renderer/src/components/room/RoomOverlays.tsx"),
+    path.resolve(process.cwd(), "src/renderer/src/components/room/ScreenSourcePicker.tsx"),
     "utf8",
   );
-  assert.equal(overlaysSource.includes('{ value: "1440p", detail: "2K" }'), true);
-  assert.equal(overlaysSource.includes("SCREEN_SHARE_QUALITY_OPTIONS.map"), true);
+  assert.equal(overlaysSource.includes('value === "1440p" ? "2K"'), true);
+  assert.equal(overlaysSource.includes('"720p", "1080p", "1440p"'), true);
   assert.equal(overlaysSource.includes("DEFAULT_SCREEN_SHARE_QUALITY"), true);
   assert.equal(overlaysSource.includes("aria-pressed={includeSystemAudio}"), true);
 });

@@ -395,10 +395,21 @@ test("bundled monitor artwork stays valid and newly detected games use a readabl
     assert.ok(statSync(path.join(artworkDirectory, filename)).size > 500);
   }
 
-  assert.equal(componentSource.includes('artwork?.layout !== "scene"'), true);
+  const screenDirectory = path.join(artworkDirectory, "screens");
+  const screens = JSON.parse(
+    readFileSync(path.join(screenDirectory, "catalog.json"), "utf8"),
+  ) as Array<{ name: string; file: string; page: string }>;
+  assert.equal(screens.length, 60);
+  assert.equal(new Set(screens.map((screen) => screen.file)).size, screens.length);
+  for (const screen of screens) {
+    assert.ok(statSync(path.join(screenDirectory, screen.file)).size > 500);
+    assert.match(screen.page, /^https:\/\//);
+  }
   assert.equal(componentSource.includes("Partial<Record<SupportedGameName"), true);
   assert.equal(componentSource.includes("scene-game-monitor-label"), false);
-  assert.equal(componentSource.includes("<GameMonitorScene gameName={gameName}"), true);
+  assert.equal(componentSource.includes("gameScreenshotCatalog[gameName]"), true);
+  assert.equal(componentSource.includes("scene-game-screenshot"), true);
+  assert.equal(componentSource.includes("<GameMonitorScene"), false);
   assert.equal(componentSource.includes("scene-game-identity"), true);
   assert.equal(componentSource.includes("repeat: -1"), false);
   assert.equal(componentSource.includes("shouldReduceMotion"), true);

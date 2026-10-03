@@ -50,15 +50,18 @@ test("channel entry keeps missing-device recovery visible and validates nickname
 });
 
 test("screen-source loading has explicit empty, failure, and retry states", () => {
-  const overlays = readRenderer("components/room/RoomOverlays.tsx");
+  const overlays = readRenderer("components/room/ScreenSourcePicker.tsx");
   const room = readRenderer("pages/RoomPage.tsx");
+  const lifecycle = readRenderer("features/screen-share/useScreenSourcePicker.ts");
   assert.match(overlays, /status === "loading"/);
   assert.match(overlays, /status === "empty" \|\| status === "error"/);
   assert.match(overlays, /没有找到可分享的画面/);
   assert.match(overlays, /重新读取/);
   assert.match(overlays, /打开显示设置/);
-  assert.match(room, /setScreenSourcePickerStatus\("empty"\)/);
-  assert.match(room, /setScreenSourcePickerStatus\("error"\)/);
+  assert.match(room, /useScreenSourcePicker\(prepareScreenSourcePicker, cancelSourcePicker\)/);
+  assert.match(lifecycle, /setStatus\(sources.length \? "ready" : "empty"\)/);
+  assert.match(lifecycle, /setStatus\("error"\)/);
+  assert.match(lifecycle, /id !== request.current/);
 });
 
 test("reconnect and detached viewer waits become actionable instead of blocking forever", () => {

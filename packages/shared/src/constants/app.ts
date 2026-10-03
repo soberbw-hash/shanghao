@@ -17,7 +17,7 @@ export const OFFICIAL_RELAY_SERVER_URL = "wss://118.25.103.107/";
 // Wire format stays at protocol 7; private-room deployments separately enforce
 // the minimum client version before checking room identity.
 export const APP_PROTOCOL_VERSION = "7";
-export const APP_BUILD_NUMBER = "2026.10.03.1";
+export const APP_BUILD_NUMBER = "2026.10.03.2";
 export const SETTINGS_SCHEMA_VERSION = 35;
 export const PROFILE_SCHEMA_VERSION = 2;
 export const DEFAULT_RELEASES_URL = "https://github.com/soberbw-hash/shanghao/releases";

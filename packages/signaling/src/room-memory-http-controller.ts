@@ -90,7 +90,7 @@ export class RoomMemoryHttpController {
       for await (const chunk of request) {
         const buffer = Buffer.from(chunk);
         size += buffer.length;
-        if (size > 65536) throw new RoomMemoryError("room_memory_invalid");
+        if (size > 131072) throw new RoomMemoryError("room_memory_invalid");
         chunks.push(buffer);
       }
       let body: SaveRoomMemoryRequest;

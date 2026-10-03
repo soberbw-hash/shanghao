@@ -676,7 +676,12 @@ test("image-heavy overlays avoid scale repaints and defer offscreen image decodi
   assert.equal(overlaysSource.includes('fetchPriority="low"'), true);
   assert.equal(overlaysSource.includes("COLLECTION_RENDER_BATCH_SIZE = 24"), true);
   assert.equal(overlaysSource.includes("orderedItems.slice(0, visibleItemCount)"), true);
-  assert.equal(overlaysSource.includes("sources.slice(0, 24)"), true);
+  const pickerSource = readFileSync(
+    path.resolve(process.cwd(), "src/renderer/src/components/room/ScreenSourcePicker.tsx"),
+    "utf8",
+  );
+  assert.equal(pickerSource.includes("visible.map"), true);
+  assert.equal(pickerSource.includes("开始分享"), true);
   assert.equal(motionSource.includes("export const largeDialogSurfaceVariants"), true);
   const largeDialogVariants = motionSource.slice(
     motionSource.indexOf("export const largeDialogSurfaceVariants"),

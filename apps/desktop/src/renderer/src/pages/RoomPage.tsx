@@ -9,7 +9,6 @@ import {
   type AppSettings,
   type GameDetectionSnapshot,
   type MemberActivity,
-  type ScreenCaptureSourceDescriptor,
   type SceneZoneId,
 } from "@private-voice/shared";
 import { RoomChatPanel } from "../components/chat/RoomChatPanel";
@@ -19,6 +18,7 @@ import { registerRoomRecordingFinalizer } from "../features/recording/roomRecord
 import { RoomDock } from "../components/room/RoomDock";
 import { RoomAskDialog } from "../components/room/RoomAskDialog";
 import { CollectionDialog, ScreenSourcePicker } from "../components/room/RoomOverlays";
+import { useScreenSourcePicker } from "../features/screen-share/useScreenSourcePicker";
 import { ScreenSharePanelContainer } from "../components/room/ScreenSharePanelContainer";
 import { TeamIsland } from "../components/room/TeamIsland";
 import { RecordingStopDialog } from "../components/status/RecordingStopDialog";
@@ -188,14 +188,15 @@ export const RoomPage = () => {
     lowCutFrequency: roomDockSettings?.lowCutFrequency,
   });
   const pageRef = useRef<HTMLDivElement>(null);
-  const [pendingIncludeSystemAudio, setPendingIncludeSystemAudio] = useState(false);
-  const [isScreenSourcePickerOpen, setIsScreenSourcePickerOpen] = useState(false);
-  const [screenSourcePickerSources, setScreenSourcePickerSources] = useState<
-    ScreenCaptureSourceDescriptor[]
-  >([]);
-  const [screenSourcePickerStatus, setScreenSourcePickerStatus] = useState<
-    "loading" | "ready" | "empty" | "error"
-  >("loading");
+  const {
+    pendingIncludeSystemAudio,
+    setPendingIncludeSystemAudio,
+    isScreenSourcePickerOpen,
+    screenSourcePickerSources,
+    screenSourcePickerStatus,
+    closeScreenSourcePicker,
+    openScreenSourcePicker,
+  } = useScreenSourcePicker(prepareScreenSourcePicker, cancelSourcePicker);
   const [isOverlayOpen, setIsOverlayOpen] = useState(false);
   const [isNoiseSuppressionSwitching, setIsNoiseSuppressionSwitching] = useState(false);
   const [isAutoGainSwitching, setIsAutoGainSwitching] = useState(false);
@@ -224,7 +225,6 @@ export const RoomPage = () => {
   const autoRecordRetryCountRef = useRef(0);
   const autoRecordRetryTimerRef = useRef<number | undefined>(undefined);
   const moveLocalMemberRef = useRef(moveLocalMember);
-  const screenPickerRequestIdRef = useRef(0);
   const channelSwitchInFlightRef = useRef(false);
   const recordingSpeakingTimelineRef = useRecordingSpeakingTimeline();
   moveLocalMemberRef.current = moveLocalMember;
@@ -682,14 +682,6 @@ export const RoomPage = () => {
     }
   };
 
-  const closeScreenSourcePicker = (cancelManager = true) => {
-    screenPickerRequestIdRef.current += 1;
-    setIsScreenSourcePickerOpen(false);
-    setScreenSourcePickerSources([]);
-    setScreenSourcePickerStatus("loading");
-    if (cancelManager) void cancelSourcePicker();
-  };
-
   const performLeave = async () => {
     if (isLeaving) return;
     setIsLeaving(true);
@@ -863,28 +855,6 @@ export const RoomPage = () => {
             ? "没有找到可分享的显示器或窗口。"
             : "桌面捕获没有启动，请重试；错误详情已经写入诊断日志。",
       });
-    }
-  };
-
-  const openScreenSourcePicker = async () => {
-    const requestId = ++screenPickerRequestIdRef.current;
-    setScreenSourcePickerSources([]);
-    setScreenSourcePickerStatus("loading");
-    setPendingIncludeSystemAudio(false);
-    setIsScreenSourcePickerOpen(true);
-    try {
-      const sources = await prepareScreenSourcePicker();
-      if (requestId !== screenPickerRequestIdRef.current) return;
-      if (!sources.length) {
-        setScreenSourcePickerStatus("empty");
-        return;
-      }
-      setScreenSourcePickerSources(sources);
-      setScreenSourcePickerStatus("ready");
-    } catch {
-      if (requestId !== screenPickerRequestIdRef.current) return;
-      setScreenSourcePickerSources([]);
-      setScreenSourcePickerStatus("error");
     }
   };
 
@@ -1225,6 +1195,7 @@ export const RoomPage = () => {
         onIncludeSystemAudioChange={setPendingIncludeSystemAudio}
         onSelect={(sourceId, quality, origin) => void startSharingScreen(sourceId, quality, origin)}
         onRetry={() => void openScreenSourcePicker()}
+        onInvite={() => void copyInviteLink()}
         onClose={() => closeScreenSourcePicker()}
       />
 

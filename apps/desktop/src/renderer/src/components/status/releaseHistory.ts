@@ -1,4 +1,5 @@
 import { RELEASE_342 } from "./release342";
+import { RELEASE_343 } from "./release343";
 
 export interface ReleaseHistoryEntry {
   version: string;
@@ -75,6 +76,7 @@ const HISTORICAL_RELEASE_EVIDENCE: readonly HistoricalReleaseEvidence[] = [
 ];
 
 export const RELEASE_HISTORY: readonly ReleaseHistoryEntry[] = [
+  RELEASE_343,
   RELEASE_342,
   {
     version: "3.3.0",

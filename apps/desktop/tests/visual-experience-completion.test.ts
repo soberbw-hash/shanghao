@@ -58,7 +58,7 @@ test("glass highlights follow the pointer without a perpetual sweep", () => {
 
 test("screen sharing unfolds from the selected source and supports ambient and immersive feedback", () => {
   const panel = readRenderer("components/room/ScreenSharePanel.tsx");
-  const picker = readRenderer("components/room/RoomOverlays.tsx");
+  const picker = readRenderer("components/room/ScreenSourcePicker.tsx");
   const viewer = readRenderer("pages/ScreenShareViewerPage.tsx");
 
   assert.match(picker, /getBoundingClientRect/);

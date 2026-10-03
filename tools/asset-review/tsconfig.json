@@ -1,0 +1,18 @@
+{
+  "extends": "../../apps/desktop/tsconfig.json",
+  "compilerOptions": {
+    "types": ["node"],
+    "typeRoots": ["../../apps/desktop/node_modules/@types"],
+    "paths": {
+      "react": ["apps/desktop/node_modules/@types/react"],
+      "react/*": ["apps/desktop/node_modules/@types/react/*"],
+      "react-dom/*": ["apps/desktop/node_modules/@types/react-dom/*"],
+      "@private-voice/shared": ["packages/shared/src/index.ts"],
+      "@private-voice/ui": ["packages/ui/src/index.ts"],
+      "@private-voice/signaling": ["packages/signaling/src/index.ts"],
+      "@private-voice/webrtc": ["packages/webrtc/src/index.ts"],
+      "@private-voice/recording": ["packages/recording/src/index.ts"]
+    }
+  },
+  "include": ["ReviewApp.tsx", "../../apps/desktop/src/renderer/src/**/*.d.ts"]
+}

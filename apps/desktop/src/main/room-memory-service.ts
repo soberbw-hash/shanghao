@@ -2,9 +2,7 @@ import {
   isPrivateRoomId,
   isPrivateRoomInfo,
   isRoomMemorySnapshot,
-  ROOM_MEMORY_TEXT_LIMIT,
-  ROOM_MEMORY_ENTRY_LIMIT,
-  ROOM_MEMORY_FACT_LIMIT,
+  verifySavedMemoryDocument,
   roomMemoryContext,
   type RoomMemoryApi,
   type RoomMemorySnapshot,
@@ -12,6 +10,7 @@ import {
 } from "@private-voice/shared";
 import type { AccountDesktopService } from "./account-service";
 import { requestPrivateRoom } from "./private-room-request";
+import { validateRoomMemoryRequest } from "./room-memory-request";
 
 /** Authenticated, bounded memory transport; account tokens remain in the main process. */
 export class RoomMemoryDesktopService implements RoomMemoryApi {
@@ -25,28 +24,10 @@ export class RoomMemoryDesktopService implements RoomMemoryApi {
     return this.request(roomId, "GET", undefined, signal);
   }
   save(request: SaveRoomMemoryRequest): Promise<RoomMemorySnapshot> {
-    if (
-      !request ||
-      typeof request !== "object" ||
-      !Number.isSafeInteger(request.revision) ||
-      request.revision < 0 ||
-      typeof request.manualText !== "string" ||
-      request.manualText.length > ROOM_MEMORY_TEXT_LIMIT ||
-      typeof request.autoEnabled !== "boolean" ||
-      !Array.isArray(request.entries) ||
-      request.entries.length > ROOM_MEMORY_ENTRY_LIMIT ||
-      !request.entries.every(
-        (entry) =>
-          entry &&
-          typeof entry.id === "string" &&
-          /^[a-f0-9]{64}$/.test(entry.id) &&
-          typeof entry.text === "string" &&
-          entry.text.trim() &&
-          entry.text.length <= ROOM_MEMORY_FACT_LIMIT,
-      )
-    )
-      throw new Error("room_memory_invalid");
-    return this.request(request.roomId, "PUT", request);
+    validateRoomMemoryRequest(request);
+    return this.request(request.roomId, "PUT", request).then((saved) =>
+      verifySavedMemoryDocument(saved, request),
+    );
   }
   async context(roomId: string, signal?: AbortSignal): Promise<string> {
     if (!isPrivateRoomId(roomId)) return "";

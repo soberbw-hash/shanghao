@@ -387,8 +387,15 @@ test("dialogs use interruptible compositor motion without full-screen blur anima
   assert.equal(reconnectSource.includes("RECONNECT_MIN_VISIBLE_MS = 600"), true);
 
   const roomSource = readFileSync(roomOverlaysPath, "utf8");
-  assert.equal(roomSource.includes('key="screen-source-picker"'), true);
+  assert.equal(roomSource.includes("export { ScreenSourcePicker }"), true);
   assert.equal(roomSource.includes("largeDialogSurfaceVariants"), true);
+  const picker = readFileSync(
+    path.resolve(process.cwd(), "src/renderer/src/components/room/ScreenSourcePicker.tsx"),
+    "utf8",
+  );
+  assert.match(picker, /showModal\(\)/);
+  assert.match(picker, /reduce-motion/);
+  assert.doesNotMatch(picker, /backdrop-blur/);
 });
 
 test("local scene identity survives placeholder-to-server peer replacement", () => {

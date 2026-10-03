@@ -75,7 +75,7 @@ test("RoomPage composes extracted regions without changing their user-facing con
   assert.doesNotMatch(roomPage, /const ScreenShareVideo =/);
   assert.doesNotMatch(roomPage, /const AudioControlPopover =/);
   assert.match(roomDock, /import \{ AudioControlPopover \}/);
-  assert.match(roomOverlays, /export const ScreenSourcePicker/);
+  assert.match(roomOverlays, /export \{ ScreenSourcePicker \} from "\.\/ScreenSourcePicker"/);
   assert.match(screenPanel, /data-testid="screen-share-panel"/);
   assert.match(audioPopover, /referenceValue=\{1\}/);
 });

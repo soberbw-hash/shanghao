@@ -480,7 +480,7 @@ test("microphone processing lives in the room panel while about keeps release hi
   assert.equal(roomDockSource.includes("pushToTalkEnabled={settings.isPushToTalkEnabled}"), true);
   assert.equal(roomDockSource.includes("microphoneTest={microphoneTest}"), true);
   assert.equal(RELEASE_HISTORY.length >= 83, true);
-  assert.equal(RELEASE_HISTORY[0]?.version, "3.4.2");
+  assert.equal(RELEASE_HISTORY[0]?.version, "3.4.3");
   assert.equal(RELEASE_HISTORY.at(-1)?.version, "0.1.1");
   assert.equal(
     new Set(RELEASE_HISTORY.map((release) => release.version)).size,

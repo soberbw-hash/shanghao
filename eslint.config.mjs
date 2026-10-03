@@ -17,6 +17,7 @@ export default tseslint.config(
       "**/test-artifacts/**",
       // Generated browser evidence and isolated downloaded runtimes, not sources.
       "output/**",
+      "tools/asset-review/sources/**",
       ".playwright-cli/**",
       "tmp/**",
       ".pnpm-store/**",
@@ -66,6 +67,7 @@ export default tseslint.config(
   {
     files: [
       "scripts/**/*.{js,mjs,cjs}",
+      "tools/asset-review/**/*.{js,mjs,cjs}",
       "website/scripts/**/*.{js,mjs,cjs}",
       "apps/desktop/scripts/**/*.{js,mjs,cjs}",
       "apps/desktop/tests/**/*.{ts,mjs}",

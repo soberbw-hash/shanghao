@@ -7,6 +7,7 @@ import path from "node:path";
 import { WebSocket } from "ws";
 import {
   roomMemoryContext,
+  roomAutomaticMemoryText,
   isRoomMemorySnapshot,
   isRoomAiScopeAllowed,
   APP_PROTOCOL_VERSION,
@@ -58,6 +59,41 @@ const waitFor = async (check: () => boolean | Promise<boolean>) => {
     await new Promise((resolve) => setTimeout(resolve, 10));
   }
 };
+test("unified automatic memory preserves legacy evidence, edits, new facts and room isolation", async (t) => {
+  const file = path.join(await fixture(t), "unified.json");
+  let store = await RoomMemoryStore.open(file);
+  await store.add(roomA, 0, source, [fact]);
+  let memory = store.get(roomA);
+  assert.equal(roomAutomaticMemoryText(memory), fact.text);
+  memory = await store.save({ ...save(memory), automaticText: "C文是陈文，常玩辅助。" });
+  assert.equal(memory.entries[0]!.quote, fact.quote);
+  const newFact = { text: "Sober是房主", quote: "Sober是房主" };
+  await store.add(roomA, memory.revision, { ...source, id: "second" }, [fact, newFact]);
+  memory = store.get(roomA);
+  assert.equal(roomAutomaticMemoryText(memory), "C文是陈文，常玩辅助。\nSober是房主");
+  assert.equal(store.get(roomB).entries.length, 0);
+  assert.match(roomMemoryContext(memory), /C文是陈文，常玩辅助/);
+  assert.doesNotMatch(roomMemoryContext(memory), /sourceTitle|录音整理/);
+  store = await RoomMemoryStore.open(file);
+  assert.deepEqual(store.get(roomA), memory);
+  const old = store.get(roomA),
+    draft = { ...old, automaticText: "我的修改" };
+  await store.add(roomA, old.revision, { ...source, id: "third" }, [
+    { text: "Sober喜欢辅助", quote: "Sober喜欢辅助" },
+  ]);
+  assert.equal(
+    mergeRoomMemoryDraft(old, draft, store.get(roomA)).automaticText,
+    "我的修改\nSober喜欢辅助",
+  );
+  const cleared = await store.save({ ...save(store.get(roomA)), automaticText: "" });
+  assert.equal(cleared.entries.length, 0);
+  await store.add(roomA, cleared.revision, { ...source, id: "fourth" }, [fact, newFact]);
+  assert.equal(roomAutomaticMemoryText(store.get(roomA)), "");
+  await assert.rejects(
+    async () => store.save({ ...save(store.get(roomA)), automaticText: "x".repeat(8001) }),
+    /room_memory_invalid/,
+  );
+});
 test("private AI scope refuses legacy-to-private and private-to-private report access", () => {
   assert.equal(isRoomAiScopeAllowed("main", roomA), false);
   assert.equal(isRoomAiScopeAllowed(roomA, roomB), false);
