@@ -182,8 +182,12 @@ await writeFile(
   path.join(output, "index.html"),
   `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>上号素材工作室</title><link rel="stylesheet" href="./assets/product.css"><link rel="stylesheet" href="./assets/review.css"></head><body><div id="root"></div><script>window.reviewManifest=${payload};</script><script src="./app.js"></script></body></html>`,
 );
-for (const name of ["desktop.cjs", "preload.cjs"])
+for (const name of ["desktop.cjs", "preload.cjs", "launch.cjs"])
   await copyFile(path.join(root, "tools/asset-review", name), path.join(output, name));
+await writeFile(
+  path.join(output, "package.json"),
+  JSON.stringify({ name: "shanghao-asset-studio", version: "1.0.0", main: "launch.cjs" }),
+);
 await copyFile(
   path.join(root, "apps/desktop/build/shanghao-icon.ico"),
   path.join(output, "studio.ico"),
@@ -204,7 +208,7 @@ if (
 if (process.platform === "win32") {
   const quote = (value) => "'" + value.replaceAll("'", "''") + "'";
   const shortcut = path.join(os.homedir(), "Desktop", "上号素材工作室.lnk");
-  const script = `$s=(New-Object -ComObject WScript.Shell).CreateShortcut(${quote(shortcut)}); $s.TargetPath=${quote(path.join(runtime, "electron.exe"))}; $s.Arguments=${quote('"' + path.join(output, "desktop.cjs") + '"')}; $s.WorkingDirectory=${quote(output)}; $s.IconLocation=${quote(path.join(output, "studio.ico"))}; $s.Description='查看、复制、下载上号素材并保存审核意见'; $s.Save()`;
+  const script = `$s=(New-Object -ComObject WScript.Shell).CreateShortcut(${quote(shortcut)}); $s.TargetPath=${quote(path.join(runtime, "electron.exe"))}; $s.Arguments=${quote('"' + output + '"')}; $s.WorkingDirectory=${quote(output)}; $s.IconLocation=${quote(path.join(output, "studio.ico"))}; $s.Description='查看、复制、下载上号素材并保存审核意见'; $s.Save()`;
   execFileSync("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", script]);
 }
 console.log(`Created ${assets.length} image previews: ${path.join(output, "index.html")}`);

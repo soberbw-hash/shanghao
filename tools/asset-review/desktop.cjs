@@ -211,7 +211,7 @@ function startStudio({
             appId: "ShangHao.AssetStudio",
             appIconPath: path.join(root, "studio.ico"),
             relaunchDisplayName: "上号素材工作室",
-            relaunchCommand: `"${process.execPath}" "${path.join(root, "desktop.cjs")}"`,
+            relaunchCommand: `"${process.execPath}" "${root}"`,
           });
         let drained = false;
         app.on("before-quit", (event) => {

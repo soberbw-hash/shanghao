@@ -6,6 +6,19 @@ const assert = require("node:assert/strict");
 const { mkdtempSync } = require("node:fs");
 const profile = mkdtempSync(path.join(os.tmpdir(), "shanghao-studio-verify-"));
 const root = path.join(os.homedir(), "Desktop", "上号素材审核");
+const entryPackage = JSON.parse(
+  require("node:fs").readFileSync(path.join(root, "package.json"), "utf8"),
+);
+assert.equal(entryPackage.main, "launch.cjs");
+const entrySource = require("node:fs").readFileSync(path.join(root, entryPackage.main), "utf8");
+let launches = 0;
+require("node:vm").runInNewContext(entrySource, {
+  require: (name) => {
+    assert.equal(name, "./desktop.cjs");
+    return { startStudio: () => launches++ };
+  },
+});
+assert.equal(launches, 1, "desktop entry must start without require.main equality");
 let output;
 dialog.showSaveDialog = async () => ({ canceled: false, filePath: output });
 dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [output] });
@@ -94,7 +107,7 @@ app
     console.log(
       JSON.stringify({
         ok: true,
-        checks: 15,
+        checks: 17,
         dimensions,
         profile,
         assets: manifest.assets.length,
