@@ -4,7 +4,7 @@ import { isPrivateRoomId, roomMemoryContext } from "@private-voice/shared";
 import type { AccountBackend } from "./account-service";
 import type { PrivateRoomDirectory } from "./private-room-directory";
 import type { PublishRecordingRecapMessage } from "./protocol";
-import { CloudAiService } from "./cloud-ai-service";
+import { CloudAiService, CLOUD_AI_TASK_TIMEOUT_MS } from "./cloud-ai-service";
 import { RoomMemoryStore } from "./room-memory-store";
 import { RoomMemoryHttpController } from "./room-memory-http-controller";
 
@@ -93,7 +93,7 @@ export class RoomMemoryRuntime {
           JSON.stringify({ summary: source.text }),
         ].join("\n"),
       },
-      AbortSignal.any([signal, AbortSignal.timeout(10000)]),
+      AbortSignal.any([signal, AbortSignal.timeout(CLOUD_AI_TASK_TIMEOUT_MS)]),
     );
     if (this.closed || signal.aborted) return;
     (await this.directory).get(message.roomId);

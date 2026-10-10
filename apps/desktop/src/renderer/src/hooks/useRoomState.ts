@@ -75,8 +75,10 @@ import { writeRendererLog } from "../utils/logger";
 import { shanghaoCore } from "../core/shanghaoCore";
 import { privateRoomErrorMessage } from "../features/room/privateRoomMessages";
 import { finishRoomRecordingBeforeRelease } from "../features/recording/roomRecordingOwnership";
+import { retainRoomRuntime, type RoomRuntimeHotState } from "../features/room/roomRuntimeHotState";
 
-let activeClient: RoomClient | null = null;
+const previousRuntime = import.meta.hot?.data.roomRuntime as RoomRuntimeHotState | undefined;
+let activeClient: RoomClient | null = previousRuntime?.activeClient ?? null;
 registerMemberVolumeReset(() => {
   const { room, updateMemberVolume } = useRoomStore.getState();
   applyDefaultMemberVolumes(room.members, (peerId, volume) => {
@@ -84,16 +86,31 @@ registerMemberVolumeReset(() => {
     activeClient?.setPeerVolume(peerId, volume);
   });
 });
-let activePeerId: string | undefined;
-let activeJoinPromise: Promise<void> | null = null;
-let activeSpeakingDetector: ReturnType<typeof createSpeakingDetector> | null = null;
-let activeProcessedMicrophone: ProcessedMicrophoneStream | null = null;
-let activeInputSourceId: string | undefined;
-let inputDeviceSwitchQueue: Promise<unknown> = Promise.resolve();
-let activeLeavePromise: Promise<void> | undefined;
-const roomSessionOwnership = new RoomSessionOwnership();
-let lastQuickMessageSentAt = 0;
-let lastQuickMessageCooldownMs = 3_000;
+let activePeerId = previousRuntime?.activePeerId;
+let activeJoinPromise: Promise<void> | null = previousRuntime?.activeJoinPromise ?? null;
+let activeSpeakingDetector = previousRuntime?.activeSpeakingDetector ?? null;
+let activeProcessedMicrophone: ProcessedMicrophoneStream | null =
+  previousRuntime?.activeProcessedMicrophone ?? null;
+let activeInputSourceId = previousRuntime?.activeInputSourceId;
+let inputDeviceSwitchQueue: Promise<unknown> =
+  previousRuntime?.inputDeviceSwitchQueue ?? Promise.resolve();
+let activeLeavePromise = previousRuntime?.activeLeavePromise;
+const roomSessionOwnership = previousRuntime?.roomSessionOwnership ?? new RoomSessionOwnership();
+let lastQuickMessageSentAt = previousRuntime?.lastQuickMessageSentAt ?? 0;
+let lastQuickMessageCooldownMs = previousRuntime?.lastQuickMessageCooldownMs ?? 3_000;
+retainRoomRuntime(import.meta.hot, () => ({
+  activeClient,
+  activePeerId,
+  activeJoinPromise,
+  activeSpeakingDetector,
+  activeProcessedMicrophone,
+  activeInputSourceId,
+  inputDeviceSwitchQueue,
+  activeLeavePromise,
+  roomSessionOwnership,
+  lastQuickMessageSentAt,
+  lastQuickMessageCooldownMs,
+}));
 type QuickMessageShortcutHandler = (slotIndex: number) => void;
 let activeQuickMessageShortcutHandler: QuickMessageShortcutHandler | undefined;
 const ROUTINE_SIGNAL_MESSAGE_TYPES = new Set([
@@ -1189,6 +1206,7 @@ export const useRoomState = () => {
         await writeRendererLog("signaling", "error", "Failed to leave room cleanly", {
           error: error instanceof Error ? error.message : String(error),
         });
+        throw error;
       } finally {
         activeLeavePromise = undefined;
       }
@@ -1345,7 +1363,8 @@ export const useRoomState = () => {
   const sendConfiguredQuickMessage = async (presetId: string) => {
     const preset = findQuickMessagePreset(presetId);
     const targetPeerId = preset ? encodeQuickMessageTarget(preset.id) : undefined;
-    if (!preset || !targetPeerId || !activeClient?.canSendChat()) {
+    if (!preset || !targetPeerId) throw new Error("quick_message_preset_unavailable");
+    if (!activeClient?.canSendChat()) {
       throw new Error("signaling_not_connected");
     }
     if (preset.mediaType === "music" && toggleQuickMessageMusic(preset.soundId)) {

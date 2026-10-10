@@ -13,6 +13,7 @@ import { privateRoomErrorMessage } from "../../features/room/privateRoomMessages
 import { mergeRoomMemoryDraft } from "../../features/room/roomMemoryDraft";
 import { Button } from "../base/Button";
 import { Switch } from "../base/Switch";
+import { OperationFeedbackIcon } from "../base/OperationFeedbackIcon";
 
 const editable = (memory: RoomMemorySnapshot) => ({
   roomId: memory.roomId,
@@ -38,6 +39,7 @@ const RoomMemoryEditor = ({ roomId }: { roomId: string }) => {
     entries: [],
   });
   const [busy, setBusy] = useState(true);
+  const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const active = useRef(false);
@@ -95,6 +97,7 @@ const RoomMemoryEditor = ({ roomId }: { roomId: string }) => {
     pending.current = true;
     const id = ++sequence.current;
     setBusy(true);
+    setSaving(true);
     setError("");
     setNotice("");
     try {
@@ -108,6 +111,7 @@ const RoomMemoryEditor = ({ roomId }: { roomId: string }) => {
       if (active.current && sequence.current === id) setError(privateRoomErrorMessage(error));
     } finally {
       if (active.current && sequence.current === id) {
+        setSaving(false);
         pending.current = false;
         setBusy(false);
       }
@@ -191,10 +195,14 @@ const RoomMemoryEditor = ({ roomId }: { roomId: string }) => {
         {draft && (
           <Button
             variant="secondary"
+            className="min-w-32"
             disabled={busy || !dirty || draft.entries.some((entry) => !entry.text.trim())}
             onClick={() => void save()}
           >
-            {busy ? "保存中…" : "保存记忆"}
+            <OperationFeedbackIcon
+              state={saving ? "pending" : notice === "记忆已保存" ? "success" : "idle"}
+            />
+            {saving ? "保存中…" : notice === "记忆已保存" ? "已保存" : "保存记忆"}
           </Button>
         )}
       </div>

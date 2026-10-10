@@ -19,7 +19,11 @@ test("semantic UI sound engine stays bounded, routed, and free of hover or typin
   assert.equal(source.includes("playGenericPressUnlessHandled"), true);
   assert.equal(source.includes('"mic-on": { cue: "toggle-on", pack: "soft"'), true);
   assert.equal(source.includes('"speaker-muted": { cue: "lock", pack: "soft"'), true);
-  assert.equal(source.includes("deviceToggle: 0.075"), true);
+  assert.equal(source.includes("deviceToggle: 1"), true);
+  assert.equal(source.includes("setUiSoundVolume"), true);
+  for (const cue of ["button-click", "popup-open", "settings-section"]) {
+    assert.match(source, new RegExp(`"${cue}": \\{ cue: "press", pack: "studio"`));
+  }
   assert.equal(source.includes('"hover"'), false);
   assert.equal(source.includes('"typing"'), false);
   assert.equal(source.match(/\.wav/g)?.length, 1);

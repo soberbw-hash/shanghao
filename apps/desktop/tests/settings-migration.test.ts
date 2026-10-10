@@ -231,23 +231,17 @@ test("recording library cleanup defaults to 20 GB and upgrades the old 10 GB def
   );
 });
 
-test("interface sounds remain enabled at the product default volume", () => {
+test("interface volume preserves user choice independently of voice clips", () => {
   const result = migrateSettings({
     ...defaultSettings,
     soundVolume: 0.31,
     isUiSoundEnabled: false,
   });
 
-  assert.equal(result.settings.soundVolume, defaultSettings.soundVolume);
+  assert.equal(result.settings.soundVolume, 0.31);
   assert.equal(result.settings.isUiSoundEnabled, true);
-  assert.equal(
-    migrateSettings({ soundVolume: 9 }).settings.soundVolume,
-    defaultSettings.soundVolume,
-  );
-  assert.equal(
-    migrateSettings({ soundVolume: -1 }).settings.soundVolume,
-    defaultSettings.soundVolume,
-  );
+  assert.equal(migrateSettings({ soundVolume: 9 }).settings.soundVolume, 1);
+  assert.equal(migrateSettings({ soundVolume: -1 }).settings.soundVolume, 0);
 });
 
 test("new quick-message profiles start with eight voices and five distinct music clips", () => {

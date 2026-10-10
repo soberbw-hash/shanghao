@@ -10,6 +10,7 @@ interface CloudAiServiceOptions {
 }
 
 const MAX_RESPONSE_BYTES = 768 * 1024;
+export const CLOUD_AI_TASK_TIMEOUT_MS = 80_000;
 
 const normalizeBaseUrl = (value: string): string => {
   const url = new URL(value);
@@ -22,11 +23,25 @@ const normalizeBaseUrl = (value: string): string => {
 const readBoundedText = async (response: Response): Promise<string> => {
   const declaredLength = Number(response.headers.get("content-length") ?? 0);
   if (declaredLength > MAX_RESPONSE_BYTES) throw new Error("cloud_ai_response_too_large");
-  const text = await response.text();
-  if (Buffer.byteLength(text, "utf8") > MAX_RESPONSE_BYTES) {
-    throw new Error("cloud_ai_response_too_large");
+  if (!response.body) return "";
+  const reader = response.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      size += value.byteLength;
+      if (size > MAX_RESPONSE_BYTES) {
+        await reader.cancel().catch(() => undefined);
+        throw new Error("cloud_ai_response_too_large");
+      }
+      chunks.push(value);
+    }
+  } finally {
+    reader.releaseLock();
   }
-  return text;
+  return Buffer.concat(chunks).toString("utf8");
 };
 
 const providerErrorCode = (status: number): string => {
@@ -47,6 +62,7 @@ export class CloudAiService {
   private readonly fallback?: CloudAiServiceOptions["fallback"];
   private fallbackBusy = false;
   private fallbackRetryAfter = 0;
+  private readonly fallbackWaiters: Array<() => void> = [];
 
   constructor(options: CloudAiServiceOptions = {}) {
     this.apiKey = options.apiKey?.trim() ?? process.env.DEEPSEEK_API_KEY?.trim() ?? "";
@@ -79,10 +95,9 @@ export class CloudAiService {
 
   async execute(request: CloudAiRequestMessage, signal?: AbortSignal): Promise<string> {
     if (!this.isConfigured()) throw new Error("cloud_ai_not_configured");
-    if (this.fallback) {
-      const deadline = AbortSignal.timeout(80_000);
-      signal = signal ? AbortSignal.any([signal, deadline]) : deadline;
-    }
+    const deadline = AbortSignal.timeout(CLOUD_AI_TASK_TIMEOUT_MS);
+    signal = signal ? AbortSignal.any([signal, deadline]) : deadline;
+    signal.throwIfAborted();
     const memory = this.memoryContext ? await this.memoryContext(request.roomId) : "";
     signal?.throwIfAborted();
     if (memory) request = { ...request, prompt: `${memory}\n\n${request.prompt}` };
@@ -106,9 +121,8 @@ export class CloudAiService {
         ].includes(error.message) ||
           error.name === "TimeoutError" ||
           error instanceof TypeError);
-      if (!retryable || !this.fallback || this.fallbackBusy || Date.now() < this.fallbackRetryAfter)
-        throw error;
-      this.fallbackBusy = true;
+      if (!retryable || !this.fallback) throw error;
+      const release = await this.acquireFallback(signal);
       try {
         return await this.executeOpenAiCompatible(request, signal, this.fallback);
       } catch (fallbackError) {
@@ -117,9 +131,51 @@ export class CloudAiService {
         }
         throw fallbackError;
       } finally {
-        this.fallbackBusy = false;
+        release();
       }
     }
+  }
+
+  private async acquireFallback(signal: AbortSignal): Promise<() => void> {
+    signal.throwIfAborted();
+    if (Date.now() < this.fallbackRetryAfter) throw new Error("cloud_ai_busy");
+    if (this.fallbackBusy) {
+      if (this.fallbackWaiters.length >= 16) throw new Error("cloud_ai_busy");
+      const waiting = AbortSignal.any([signal, AbortSignal.timeout(8_000)]);
+      await new Promise<void>((resolve, reject) => {
+        const remove = () => {
+          waiting.removeEventListener("abort", abort);
+          const index = this.fallbackWaiters.indexOf(ready);
+          if (index >= 0) this.fallbackWaiters.splice(index, 1);
+        };
+        const ready = () => {
+          remove();
+          resolve();
+        };
+        const abort = () => {
+          remove();
+          reject(waiting.reason);
+        };
+        this.fallbackWaiters.push(ready);
+        waiting.addEventListener("abort", abort, { once: true });
+        if (waiting.aborted) abort();
+      });
+      // The previous owner reserved the slot before waking us. Pass it on if cancelled.
+      if (signal.aborted || Date.now() < this.fallbackRetryAfter) {
+        this.releaseFallback();
+        signal.throwIfAborted();
+        throw new Error("cloud_ai_busy");
+      }
+    } else {
+      this.fallbackBusy = true;
+    }
+    return () => this.releaseFallback();
+  }
+
+  private releaseFallback(): void {
+    const next = this.fallbackWaiters.shift();
+    if (next) next();
+    else this.fallbackBusy = false;
   }
 
   private async executeOpenAiCompatible(

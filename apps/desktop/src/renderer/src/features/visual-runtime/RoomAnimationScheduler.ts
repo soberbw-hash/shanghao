@@ -62,6 +62,8 @@ export class RoomAnimationScheduler {
       mutations.forEach((mutation, index) => mutation.write(values[index], frame));
     }
 
+    // Reads, writes and reconciliation may enqueue work for the next frame.
+    if (this.pending.size || this.reconcileRequired) return true;
     this.stopFrameTask = undefined;
     return false;
   };

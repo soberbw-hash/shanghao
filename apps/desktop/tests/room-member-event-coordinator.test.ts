@@ -79,6 +79,38 @@ test("the server can still authoritatively resolve a local seat conflict", () =>
   assert.equal(snapshots.at(-1)?.find((member) => member.isLocal)?.sceneZone, "gameDesk4");
 });
 
+test("a delayed away echo and a full snapshot cannot undo manual return", () => {
+  const coordinator = new RoomMemberEventCoordinator({
+    localPeerId: "local",
+    onMembers: () => undefined,
+    onCollection: () => undefined,
+    onKnock: () => undefined,
+    onReaction: () => undefined,
+    onQuickMessage: () => undefined,
+  });
+  coordinator.setMembers([createMember("local", true, "restroomZone")]);
+  coordinator.updateLocalPresence(false, "idle", "gameDesk3");
+  coordinator.handleMemberState({
+    type: "member_state",
+    roomId: "main",
+    peerId: "local",
+    sceneZone: "restroomZone",
+    activity: "restroom",
+  });
+  assert.equal(coordinator.currentMembers[0]?.sceneZone, "gameDesk3");
+  coordinator.setMembers([createMember("local", true, "restroomZone")]);
+  assert.equal(coordinator.currentMembers[0]?.sceneZone, "gameDesk3");
+  coordinator.updateLocalPresence(false, "restroom", "restroomZone");
+  coordinator.handleMemberState({
+    type: "member_state",
+    roomId: "main",
+    peerId: "local",
+    sceneZone: "restroomZone",
+    activity: "restroom",
+  });
+  assert.equal(coordinator.currentMembers[0]?.sceneZone, "restroomZone");
+});
+
 test("music toggle controls ignore local echoes and reach remote listeners", () => {
   const controls: Array<{ presetId: string; peerId: string }> = [];
   const coordinator = new RoomMemberEventCoordinator({

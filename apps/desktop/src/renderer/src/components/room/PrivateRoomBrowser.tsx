@@ -8,7 +8,8 @@ import { useAccountStore } from "../../store/accountStore";
 import { useAppStore } from "../../store/appStore";
 import { useSettingsStore } from "../../store/settingsStore";
 import { Button } from "../base/Button";
-import { Input } from "../base/Input";
+import { RoomChannelLookupInput } from "./RoomChannelLookupInput";
+import { RoomSearchDialog } from "./RoomSearchDialog";
 import { PrivateRoomIcon } from "./PrivateRoomIcon";
 import { roomIconStyle } from "./roomIconColors";
 import { PrivateRoomEditor } from "./PrivateRoomEditor";
@@ -42,6 +43,7 @@ export const PrivateRoomBrowser = ({
   const [error, setError] = useState("");
   const [code, setCode] = useState("");
   const [finding, setFinding] = useState(false);
+  const [searching, setSearching] = useState(false);
   const [found, setFound] = useState<PrivateRoomInfo>();
   const [creating, setCreating] = useState(false);
   const historyRef = useRef(history);
@@ -50,8 +52,10 @@ export const PrivateRoomBrowser = ({
   const renderedGeneration = generation.current;
   useEffect(() => {
     setFound(undefined);
+    setFinding(false);
     setCreating(false);
     setBusy(false);
+    setSearching(false);
     setError("");
   }, [profile?.userId, serverUrl]);
   usePendingRoomInvite({
@@ -199,7 +203,7 @@ export const PrivateRoomBrowser = ({
             disabled={blocked}
             aria-expanded={finding}
             onClick={() => {
-              setFinding(!finding);
+              setFinding(true);
               setFound(undefined);
               setError("");
             }}
@@ -234,53 +238,55 @@ export const PrivateRoomBrowser = ({
         </div>
       )}
       {finding && (
-        <form
-          className="space-y-2"
-          onSubmit={(event) => {
-            event.preventDefault();
-            void run(async (current) => {
-              const room = await shanghaoCore.rooms.find(code);
-              if (current()) setFound(room);
-            });
-          }}
-        >
-          <div className="flex gap-2">
-            <Input
-              autoFocus
-              inputMode="numeric"
-              maxLength={6}
-              value={code}
-              placeholder="频道号"
-              aria-label="查找频道号"
-              className="min-w-0 flex-1 font-mono tabular-nums"
-              onChange={(event) => {
-                setCode(event.target.value.replace(/\D/g, ""));
+        <RoomSearchDialog busy={blocked} onClose={() => setFinding(false)}>
+          <form
+            className="space-y-2"
+            onSubmit={(event) => {
+              event.preventDefault();
+              void run(async (current) => {
+                setSearching(true);
                 setFound(undefined);
-              }}
-            />
-            <Button
-              type="submit"
-              variant="secondary"
-              className="min-w-16 shrink-0 whitespace-nowrap"
-              disabled={blocked || code.length !== 6}
-            >
-              查找
-            </Button>
-          </div>
-          {found && (
-            <div className="space-y-2">
-              {roomRow(found, true)}
-              <Button
-                type="button"
-                disabled={blocked || found.onlineCount >= found.capacity}
-                className="w-full"
-                onClick={() => void join(found)}
-              >
-                {found.onlineCount >= found.capacity ? "房间已满" : "加入房间"}
-              </Button>
-            </div>
-          )}
-        </form>
+                try {
+                  const room = await shanghaoCore.rooms.find(code);
+                  if (current()) setFound(room);
+                } finally {
+                  if (current()) setSearching(false);
+                }
+              });
+            }}
+          >
+            {!found && (
+              <RoomChannelLookupInput
+                code={code}
+                blocked={blocked}
+                searching={searching}
+                onChange={(value) => {
+                  setCode(value);
+                  setFound(undefined);
+                  setError("");
+                }}
+              />
+            )}
+            {found && (
+              <div className="space-y-2">
+                {roomRow(found, true)}
+                <Button
+                  type="button"
+                  disabled={blocked || found.onlineCount >= found.capacity}
+                  className="w-full"
+                  onClick={() => void join(found)}
+                >
+                  {found.onlineCount >= found.capacity ? "房间已满" : "加入房间"}
+                </Button>
+              </div>
+            )}
+            {error && (
+              <p role="alert" className="pt-2 text-pretty text-sm text-red-600">
+                {error}
+              </p>
+            )}
+          </form>
+        </RoomSearchDialog>
       )}
       {showDirectory && (
         <div
@@ -326,9 +332,9 @@ export const PrivateRoomBrowser = ({
           )}
         </div>
       )}
-      {(error || directoryError) && (
+      {((error && !finding) || directoryError) && (
         <p role="alert" className="text-pretty text-sm text-red-600">
-          {error || directoryError}
+          {(!finding && error) || directoryError}
         </p>
       )}
       {creating && (

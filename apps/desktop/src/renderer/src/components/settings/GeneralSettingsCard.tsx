@@ -5,6 +5,7 @@ import { SettingsSection } from "./SettingsSection";
 import { SettingsItemRow } from "./SettingsItemRow";
 import { WeatherSettingsCard } from "./WeatherSettingsCard";
 import { StorageSettingsCard } from "./StorageSettingsCard";
+import { InterfaceSoundVolumeRow } from "./InterfaceSoundVolumeRow";
 
 export const GeneralSettingsCard = ({
   settings,
@@ -25,6 +26,7 @@ export const GeneralSettingsCard = ({
     <SettingsSection title="通用" description="管理窗口与天气位置。">
       <div className="space-y-3">
         <TraySettingsRows settings={settings} onChange={onChange} />
+        <InterfaceSoundVolumeRow settings={settings} onChange={onChange} />
         <SettingsItemRow
           label="Windows 外观实验功能"
           description="隐藏 Windows 桌面所有快捷方式的小箭头；此功能会影响整个 Windows，不会隐藏管理员盾牌。"

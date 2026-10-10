@@ -16,6 +16,7 @@ import { TopStatusBar } from "../components/layout/TopStatusBar";
 import { RoomSwitchDialog } from "../components/room/RoomSwitchDialog";
 import { registerRoomRecordingFinalizer } from "../features/recording/roomRecordingOwnership";
 import { RoomDock } from "../components/room/RoomDock";
+import { RoomLeaveTransition } from "../components/room/RoomLeaveTransition";
 import { RoomAskDialog } from "../components/room/RoomAskDialog";
 import { CollectionDialog, ScreenSourcePicker } from "../components/room/RoomOverlays";
 import { useScreenSourcePicker } from "../features/screen-share/useScreenSourcePicker";
@@ -104,7 +105,7 @@ export const RoomPage = () => {
   const setVoiceMemoryOpenTarget = useAppStore((state) => state.setVoiceMemoryOpenTarget);
   const roomAction = useAppStore((state) => state.roomAction);
   useEffect(() => {
-    const leaveReconnectingRoom = () => void leaveRoom();
+    const leaveReconnectingRoom = () => void leaveRoom().catch(() => undefined);
     window.addEventListener("shanghao:leave-reconnecting-room", leaveReconnectingRoom);
     return () =>
       window.removeEventListener("shanghao:leave-reconnecting-room", leaveReconnectingRoom);
@@ -1328,6 +1329,15 @@ export const RoomPage = () => {
         }}
         onLeave={() => void leave()}
       />
+      {isLeaving && (
+        <RoomLeaveTransition
+          recording={[
+            RecordingState.Recording,
+            RecordingState.Stopping,
+            RecordingState.Saving,
+          ].includes(recordingStatus.state)}
+        />
+      )}
     </div>
   );
 };

@@ -354,15 +354,15 @@ test("native notifications and recording markers use main process IPC", () => {
   assert.equal(room.includes("onRecordingMarkerTriggered"), true);
 });
 
-test("knock feedback is intentionally louder than routine UI sounds", () => {
+test("knock and routine UI sounds follow the interface volume without extra attenuation", () => {
   const sounds = read("apps/desktop/src/renderer/src/features/audio/uiSound.ts");
   const roomState = read("apps/desktop/src/renderer/src/hooks/useRoomState.ts");
   const ipc = read("apps/desktop/src/main/ipc.ts");
-  assert.equal(sounds.includes("playback.volume = Math.min(1, 0.34 * masterVolume)"), true);
+  assert.equal(sounds.includes("playback.volume = masterVolume"), true);
   assert.equal(sounds.includes("volume: uiGain.subtle"), true);
   assert.equal(sounds.includes("volume: uiGain.standard"), true);
   assert.equal(sounds.includes("volume: uiGain.important"), true);
-  assert.equal(sounds.includes("roomEntry: 0.025"), true);
+  assert.equal(sounds.includes("roomEntry: 1"), true);
   assert.equal(
     sounds.includes('"enter-room": { cue: "wake", pack: "soft", volume: uiGain.roomEntry'),
     true,

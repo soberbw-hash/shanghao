@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { LockKeyhole, Shuffle } from "lucide-react";
+import { LockKeyhole } from "lucide-react";
 import {
   ROOM_ICON_IDS,
   isChannelCode,
@@ -12,6 +12,7 @@ import { useAppStore } from "../../store/appStore";
 import { privateRoomErrorMessage } from "../../features/room/privateRoomMessages";
 import { Button } from "../base/Button";
 import { Input } from "../base/Input";
+import { RoomChannelCodeField } from "./RoomChannelCodeField";
 import { DialogCloseButton } from "../base/DialogCloseButton";
 import { PrivateRoomIcon } from "./PrivateRoomIcon";
 import { PrivateRoomIconPicker } from "./PrivateRoomIconPicker";
@@ -162,36 +163,18 @@ export const PrivateRoomEditor = ({
           />
         </label>
         {!room && (
-          <label className="block space-y-2 text-sm font-medium">
-            频道号
-            <div className="flex gap-2">
-              <Input
-                value={code}
-                aria-label="频道号"
-                inputMode="numeric"
-                maxLength={6}
-                className="min-w-0 font-mono tabular-nums"
-                disabled={busy || randomBusy}
-                onChange={(event) => {
-                  randomGeneration.current++;
-                  setCode(event.target.value.replace(/\D/g, ""));
-                  setError("");
-                }}
-              />
-              <Button
-                type="button"
-                variant="secondary"
-                onClick={() => void shuffle()}
-                disabled={busy || randomBusy}
-                aria-label="随机可用频道号"
-              >
-                <Shuffle className="size-4" />
-              </Button>
-            </div>
-            <span className="block text-xs text-slate-500" role="status">
-              {checkingCode ? "检查中…" : (availability ?? "六位数字，可保留开头的 0")}
-            </span>
-          </label>
+          <RoomChannelCodeField
+            code={code}
+            disabled={busy || randomBusy}
+            checking={checkingCode || randomBusy || busy}
+            availability={availability}
+            onShuffle={() => void shuffle()}
+            onChange={(value) => {
+              randomGeneration.current++;
+              setCode(value);
+              setError("");
+            }}
+          />
         )}
         <PrivateRoomIconPicker value={icon} disabled={busy} onChange={setIcon} />
         <PrivateRoomColorPicker value={iconColor} disabled={busy} onChange={setIconColor} />

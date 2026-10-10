@@ -9,6 +9,7 @@ import {
 } from "../../../common/cloudbase-username";
 
 import { Button } from "../components/base/Button";
+import { DigitCodeInput } from "../components/base/DigitCodeInput";
 import { BrandMark } from "../components/brand/BrandMark";
 import { AccountAudioControl } from "../components/account/AccountAudioControl";
 import { AccountLoginSummary } from "../components/account/AccountLoginSummary";
@@ -72,6 +73,7 @@ export const AccountPage = () => {
   const [resetPassword, setResetPassword] = useState("");
   const [resetConfirmation, setResetConfirmation] = useState("");
   const [resetCountdown, setResetCountdown] = useState(0);
+  const [verifyingCode, setVerifyingCode] = useState<"register" | "reset">();
   const [selectedAvatarPresetId, setSelectedAvatarPresetId] = useState<
     AccountAvatarPresetId | undefined
   >();
@@ -194,6 +196,7 @@ export const AccountPage = () => {
         return;
       }
       const avatarDataUrl = await prepareAccountAvatar(preset.source);
+      setVerifyingCode("register");
       await register({
         username: username.trim(),
         phone: phone.trim(),
@@ -211,6 +214,8 @@ export const AccountPage = () => {
         setLocalError(accountErrorMessage(error));
       }
       playUiSound("process-error");
+    } finally {
+      setVerifyingCode(undefined);
     }
   };
 
@@ -261,6 +266,7 @@ export const AccountPage = () => {
       return;
     }
     try {
+      setVerifyingCode("reset");
       await requestPasswordReset({
         email: resetIdentifier.trim(),
         verificationCode: resetCode,
@@ -275,6 +281,8 @@ export const AccountPage = () => {
       setResetNotice("密码已重置。请返回登录，使用新密码登录。");
     } catch {
       // Keep the form open for retry; never report success on a provider error.
+    } finally {
+      setVerifyingCode(undefined);
     }
   };
 
@@ -490,17 +498,24 @@ export const AccountPage = () => {
                 <label className="account-field">
                   <span>验证码</span>
                   <div className="account-verification-control">
-                    <input
+                    <DigitCodeInput
+                      aria-label="验证码"
                       autoComplete="one-time-code"
-                      inputMode="numeric"
-                      maxLength={6}
                       value={verificationCode}
-                      onChange={(event) => {
-                        setVerificationCode(event.target.value.replace(/\D/g, "").slice(0, 6));
+                      disabled={isBusy}
+                      status={
+                        verifyingCode === "register"
+                          ? "checking"
+                          : errorCode === "account_verification_invalid" ||
+                              errorCode === "account_verification_expired"
+                            ? "error"
+                            : "idle"
+                      }
+                      onValueChange={(value) => {
+                        setVerificationCode(value);
                         setLocalError(undefined);
                         clearError();
                       }}
-                      placeholder="6 位验证码"
                     />
                     <button
                       type="button"
@@ -663,19 +678,25 @@ export const AccountPage = () => {
                     <>
                       <label className="account-field">
                         <span>重置验证码</span>
-                        <div>
-                          <input
-                            autoComplete="one-time-code"
-                            inputMode="numeric"
-                            maxLength={6}
-                            value={resetCode}
-                            disabled={isBusy}
-                            onChange={(event) =>
-                              setResetCode(event.target.value.replace(/\D/g, "").slice(0, 6))
-                            }
-                            placeholder="输入收到的 6 位验证码"
-                          />
-                        </div>
+                        <DigitCodeInput
+                          aria-label="重置验证码"
+                          autoComplete="one-time-code"
+                          value={resetCode}
+                          disabled={isBusy}
+                          status={
+                            verifyingCode === "reset"
+                              ? "checking"
+                              : errorCode === "account_verification_invalid" ||
+                                  errorCode === "account_verification_expired"
+                                ? "error"
+                                : "idle"
+                          }
+                          onValueChange={(value) => {
+                            setResetCode(value);
+                            setLocalError(undefined);
+                            clearError();
+                          }}
+                        />
                       </label>
                       <label className="account-field">
                         <span>新密码</span>

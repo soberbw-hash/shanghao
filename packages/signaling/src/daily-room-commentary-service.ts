@@ -4,12 +4,13 @@ import type { DailyRoomReport } from "@private-voice/shared";
 
 import type { CloudAiRequestMessage } from "./protocol";
 import type { DailyRoomReportStore } from "./daily-room-report-store";
-import type { CloudAiService } from "./cloud-ai-service";
+import { CLOUD_AI_TASK_TIMEOUT_MS, type CloudAiService } from "./cloud-ai-service";
 
 type Logger = (message: string, context?: Record<string, unknown>) => void;
 
 export class DailyRoomCommentaryService {
   private readonly inFlight = new Map<string, Promise<void>>();
+  private readonly retryAfter = new Map<string, number>();
 
   constructor(
     private readonly reports: Promise<DailyRoomReportStore>,
@@ -19,13 +20,12 @@ export class DailyRoomCommentaryService {
 
   async getReports(roomId: DailyRoomReport["roomId"]): Promise<DailyRoomReport[]> {
     const store = await this.reports;
-    let reports = store.getHistory(roomId);
+    const reports = store.getHistory(roomId);
     if (reports[0] && !this.hasRichCommentary(reports[0].commentary)) {
       // Despite the legacy "cloud_ai" protocol name, CloudAiService is the
       // server-configured provider router. This never calls CloudBase AI
       // and therefore cannot consume CloudBase AI resource points.
-      await this.ensure(reports[0]);
-      reports = store.getHistory(roomId);
+      void this.ensure(reports[0]).catch(() => undefined);
     }
     return reports;
   }
@@ -33,11 +33,16 @@ export class DailyRoomCommentaryService {
   async ensure(report: DailyRoomReport): Promise<void> {
     if (this.hasRichCommentary(report.commentary) || !this.cloudAi.isConfigured()) return;
     const key = `${report.roomId}:${report.date}`;
+    const retryKey = `${key}:${report.revision}`;
+    if ((this.retryAfter.get(retryKey) ?? 0) > Date.now()) return;
     const existing = this.inFlight.get(key);
     if (existing) {
       await existing;
       return;
     }
+    // Bound repeated attempts for unchanged reports, including invalid model responses.
+    this.retryAfter.set(retryKey, Date.now() + 5 * 60_000);
+    if (this.retryAfter.size > 256) this.retryAfter.delete(this.retryAfter.keys().next().value!);
     const task = this.generate(report).finally(() => this.inFlight.delete(key));
     this.inFlight.set(key, task);
     await task;
@@ -76,7 +81,10 @@ export class DailyRoomCommentaryService {
       ].join("\n"),
     };
     try {
-      const content = await this.cloudAi.execute(request, AbortSignal.timeout(8_000));
+      const content = await this.cloudAi.execute(
+        request,
+        AbortSignal.timeout(CLOUD_AI_TASK_TIMEOUT_MS),
+      );
       const parsed = JSON.parse(content) as { commentary?: unknown };
       if (typeof parsed.commentary !== "string") return;
       (await this.reports).setCommentary(

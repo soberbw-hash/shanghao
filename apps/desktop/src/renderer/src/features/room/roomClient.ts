@@ -865,7 +865,7 @@ export class RoomClient {
     );
 
     this.memberEvents.setMembers(normalizedMembers);
-    this.options.onMembers(normalizedMembers);
+    this.options.onMembers(this.memberEvents.currentMembers);
     this.options.onConnectionState(
       normalizedMembers.filter((member) => !member.isEmptySlot).length <= 1
         ? RoomConnectionState.WaitingPeer

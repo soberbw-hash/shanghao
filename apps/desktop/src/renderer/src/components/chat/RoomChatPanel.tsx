@@ -7,6 +7,7 @@ import { useAppStore } from "../../store/appStore";
 import { useRoomStore } from "../../store/roomStore";
 import { prepareChatImage } from "../../utils/chatImage";
 import { TemporaryChatPanel } from "./TemporaryChatPanel";
+import { writeRendererLog } from "../../utils/logger";
 
 interface RoomChatPanelProps {
   sendChatMessage: (
@@ -38,6 +39,24 @@ export const RoomChatPanel = memo(
     const messages = useRoomStore((state) => state.chatMessages);
     const pushToast = useAppStore((state) => state.pushToast);
     const [chatInput, setChatInput] = useState("");
+    const reportQuickMessageFailure = (error: unknown) => {
+      const code =
+        error instanceof Error &&
+        ["signaling_not_connected", "quick_message_preset_unavailable"].includes(error.message)
+          ? error.message
+          : "quick_message_send_failed";
+      void writeRendererLog("signaling", "warn", "Quick message send failed", { code });
+      pushToast({
+        tone: "warning",
+        title: "快捷消息没有发出去",
+        description:
+          code === "quick_message_preset_unavailable"
+            ? "这个音频已不可用，请重新绑定。"
+            : code === "signaling_not_connected"
+              ? "房间连接未就绪，请重新进入房间后再试。"
+              : "发送失败，请稍后重试。",
+      });
+    };
 
     const send = async () => {
       const content = chatInput.trim();
@@ -74,22 +93,10 @@ export const RoomChatPanel = memo(
         onChatInputChange={setChatInput}
         onSend={() => void send()}
         onQuickSend={(message) => {
-          void sendQuickMessage(message).catch(() => {
-            pushToast({
-              tone: "warning",
-              title: "提醒没有发出去",
-              description: "连接恢复后再试一次。",
-            });
-          });
+          void sendQuickMessage(message).catch(reportQuickMessageFailure);
         }}
         onQuickMessageSend={(presetId) => {
-          void sendConfiguredQuickMessage(presetId).catch(() => {
-            pushToast({
-              tone: "warning",
-              title: "快捷消息没有发出去",
-              description: "连接恢复后再试一次。",
-            });
-          });
+          void sendConfiguredQuickMessage(presetId).catch(reportQuickMessageFailure);
         }}
         onOpenQuickMessageSettings={onOpenQuickMessageSettings}
         onOpenRoomAi={onOpenRoomAi}

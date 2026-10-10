@@ -46,16 +46,14 @@ interface UiSoundRecipe {
   cooldownMs?: number;
 }
 
-// These gains are tuned for perceived loudness, not raw peak equality. Short tactile
-// toggles need less gain than wide, soft notifications to sound equally present.
+// Use unity application gain; Windows output and per-app volume control loudness.
+// Cue synthesis retains its own envelope, so unity gain is not peak normalization.
 const uiGain = {
-  subtle: 0.09,
-  standard: 0.11,
-  important: 0.13,
-  // Entering a room can coincide with the first remote PCM frame. Keep this
-  // cue deliberately below normal UI feedback so the two never stack into a pop.
-  roomEntry: 0.025,
-  deviceToggle: 0.075,
+  subtle: 1,
+  standard: 1,
+  important: 1,
+  roomEntry: 1,
+  deviceToggle: 1,
 } as const;
 
 type SinkRoutableAudioContext = AudioContext & {
@@ -68,8 +66,7 @@ type SinkRoutableAudioElement = HTMLAudioElement & {
 
 const soundRecipes: Record<Exclude<UiSound, "knock-bell">, UiSoundRecipe> = {
   "button-click": { cue: "press", pack: "studio", volume: uiGain.subtle, cooldownMs: 70 },
-  // Room entry is played right as remote audio becomes available. Keep it soft and
-  // avoid the organic pack's bright transient so it never jumps out of the speakers.
+  // Keep the soft entry cue; playback gain follows the same policy as other cues.
   "enter-room": { cue: "wake", pack: "soft", volume: uiGain.roomEntry, cooldownMs: 250 },
   "leave-room": { cue: "sleep", pack: "organic", volume: uiGain.standard, cooldownMs: 250 },
   "member-join": { cue: "connect", pack: "organic", volume: uiGain.standard, cooldownMs: 220 },
@@ -78,7 +75,7 @@ const soundRecipes: Record<Exclude<UiSound, "knock-bell">, UiSoundRecipe> = {
   return: { cue: "wake", pack: "soft", volume: uiGain.standard, cooldownMs: 250 },
   "member-away": { cue: "sleep", pack: "soft", volume: uiGain.subtle, cooldownMs: 250 },
   "member-return": { cue: "wake", pack: "soft", volume: uiGain.subtle, cooldownMs: 250 },
-  "popup-open": { cue: "open", pack: "glass", volume: uiGain.standard, cooldownMs: 90 },
+  "popup-open": { cue: "press", pack: "studio", volume: uiGain.standard, cooldownMs: 90 },
   "copy-success": { cue: "copy", pack: "glass", volume: uiGain.standard, cooldownMs: 120 },
   "device-switch": { cue: "connect", pack: "studio", volume: uiGain.standard, cooldownMs: 160 },
   "send-message": { cue: "send", pack: "glass", volume: uiGain.standard, cooldownMs: 180 },
@@ -98,7 +95,7 @@ const soundRecipes: Record<Exclude<UiSound, "knock-bell">, UiSoundRecipe> = {
   "mic-off": { cue: "toggle-off", pack: "soft", volume: uiGain.deviceToggle, cooldownMs: 120 },
   "speaker-muted": { cue: "lock", pack: "soft", volume: uiGain.deviceToggle, cooldownMs: 120 },
   "speaker-unmuted": { cue: "unlock", pack: "soft", volume: uiGain.deviceToggle, cooldownMs: 120 },
-  "settings-section": { cue: "select", pack: "soft", volume: uiGain.subtle, cooldownMs: 80 },
+  "settings-section": { cue: "press", pack: "studio", volume: uiGain.subtle, cooldownMs: 80 },
   "screen-share-start": {
     cue: "connect",
     pack: "scifi",
@@ -155,7 +152,12 @@ const activeSounds: PlayingSFX[] = [];
 let prepared = false;
 let audioContext: SinkRoutableAudioContext | undefined;
 let knockTemplate: SinkRoutableAudioElement | undefined;
-const masterVolume = 0.72;
+let masterVolume = 1;
+export const setUiSoundVolume = (volume: number): void => {
+  if (!Number.isFinite(volume)) return;
+  masterVolume = Math.max(0, Math.min(1, volume));
+  players.forEach((player) => player.setVolume(masterVolume));
+};
 let preferredOutputDeviceId: string | undefined;
 let lastSemanticSoundAt = 0;
 let didLogSinkFailureForDevice: string | undefined;
@@ -235,7 +237,7 @@ const playBrandKnock = (): void => {
   const template = ensureKnockTemplate();
   if (!template) return;
   const playback = template.cloneNode(true) as SinkRoutableAudioElement;
-  playback.volume = Math.min(1, 0.34 * masterVolume);
+  playback.volume = masterVolume;
   void routeElementToPreferredOutput(playback)
     .catch(() => undefined)
     .then(() => playback.play())

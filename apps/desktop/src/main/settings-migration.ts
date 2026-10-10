@@ -370,7 +370,7 @@ export const migrateSettings = (raw: RawSettings): MigrationResult => {
               .map(([name, value]) => [name.slice(0, 24), Math.max(0, Math.min(3, Number(value)))]),
           )
         : {},
-    soundVolume: defaultSettings.soundVolume,
+    soundVolume: normalizeNumber(raw.soundVolume, defaultSettings.soundVolume, 0, 1),
     isSystemNotificationEnabled: true,
     isGameDetectionEnabled: true,
     // Dynamic weather is always on; legacy opt-out values must not leave the

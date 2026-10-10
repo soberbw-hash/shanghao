@@ -64,6 +64,52 @@ test("cloud fallback never retries cancellation and cools down after rate limiti
   assert.equal(calls, 3);
 });
 
+test("fallback serializes callers and removes cancelled waiting requests", async () => {
+  let releaseFirst: (() => void) | undefined;
+  let fallbackCalls = 0;
+  let started: (() => void) | undefined;
+  const firstStarted = new Promise<void>((resolve) => {
+    started = resolve;
+  });
+  const service = new CloudAiService({
+    apiKey: "primary-test",
+    fallback: { apiKey: "fallback-test", baseUrl: "https://fallback.invalid/v1", model: "test" },
+    fetcher: async (input) => {
+      if (!String(input).includes("fallback.invalid")) return new Response("", { status: 503 });
+      fallbackCalls++;
+      if (fallbackCalls === 1) {
+        started?.();
+        await new Promise<void>((resolve) => {
+          releaseFirst = resolve;
+        });
+      }
+      return new Response(JSON.stringify({ choices: [{ message: { content: "ok" } }] }));
+    },
+  });
+  const first = service.execute(request);
+  await firstStarted;
+  const cancelled = new AbortController();
+  const waiting = service.execute(request, cancelled.signal);
+  await new Promise((resolve) => setImmediate(resolve));
+  cancelled.abort();
+  await assert.rejects(waiting);
+  const next = service.execute(request);
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(fallbackCalls, 1);
+  releaseFirst?.();
+  assert.equal(await first, "ok");
+  assert.equal(await next, "ok");
+  assert.equal(fallbackCalls, 2);
+});
+
+test("cloud response size is bounded while reading the stream", async () => {
+  const service = new CloudAiService({
+    apiKey: "test",
+    fetcher: async () => new Response("x".repeat(800 * 1024)),
+  });
+  await assert.rejects(service.execute(request), /cloud_ai_response_too_large/);
+});
+
 test("organization and room questions share the configured text provider", () => {
   for (const legacyProvider of ["cloud", "local", "custom"] as const) {
     assert.equal(

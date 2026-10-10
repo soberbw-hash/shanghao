@@ -40,6 +40,7 @@ interface RoomMemberEventCoordinatorOptions {
 /** Applies member-facing signaling events to the single current-members snapshot. */
 export class RoomMemberEventCoordinator {
   private members: RoomMember[] = [];
+  private localScene?: Pick<RoomMember, "sceneZone" | "activity">;
   private readonly avatars = new Map<string, { avatarHash?: string; avatarDataUrl?: string }>();
 
   constructor(private readonly options: RoomMemberEventCoordinatorOptions) {}
@@ -49,7 +50,11 @@ export class RoomMemberEventCoordinator {
   }
 
   setMembers(members: RoomMember[]): void {
-    this.members = members;
+    this.members = members.map((member) =>
+      member.id === this.options.localPeerId && this.localScene
+        ? { ...member, ...this.localScene }
+        : member,
+    );
   }
 
   updateLocalPresence(
@@ -61,6 +66,7 @@ export class RoomMemberEventCoordinator {
     gameIconDataUrl?: string,
     callModeActive?: boolean,
   ): void {
+    this.localScene = { sceneZone, activity };
     this.members = this.members.map((member) => {
       if (member.id !== this.options.localPeerId) return member;
       const normalizedGameName = normalizePresenceGameName(gameName);
@@ -140,6 +146,21 @@ export class RoomMemberEventCoordinator {
   }
 
   handleMemberState(payload: MemberStateMessage): void {
+    if (payload.peerId === this.options.localPeerId && this.localScene) {
+      // A delayed away echo must not undo a manual return. Seat conflicts can
+      // still resolve to another desk chosen by the server.
+      if (payload.sceneZone === "restroomZone" && this.localScene.sceneZone !== "restroomZone") {
+        payload = {
+          ...payload,
+          sceneZone: this.localScene.sceneZone,
+          activity: this.localScene.activity,
+        };
+      }
+      this.localScene = {
+        sceneZone: payload.sceneZone ?? this.localScene.sceneZone,
+        activity: payload.activity ?? this.localScene.activity,
+      };
+    }
     let changed = false;
     this.members = this.members.map((member) => {
       if (member.id !== payload.peerId) return member;
@@ -162,8 +183,16 @@ export class RoomMemberEventCoordinator {
         avatarId: payload.avatarId ?? member.avatarId,
         isDeafened: payload.isDeafened ?? member.isDeafened,
         callModeActive: payload.callModeActive ?? member.callModeActive,
-        activity: payload.activity ?? member.activity,
-        sceneZone: payload.sceneZone ?? member.sceneZone,
+        // Our scene destination is local intent. Delayed server echoes and
+        // unrelated full snapshots must not replay the previous away position.
+        activity:
+          member.id === this.options.localPeerId && this.localScene
+            ? this.localScene.activity
+            : (payload.activity ?? member.activity),
+        sceneZone:
+          member.id === this.options.localPeerId && this.localScene
+            ? this.localScene.sceneZone
+            : (payload.sceneZone ?? member.sceneZone),
         gameName,
         gameIconDataUrl: normalizePresenceGameIconDataUrl(gameName, incomingGameIconDataUrl),
         musicActivity:

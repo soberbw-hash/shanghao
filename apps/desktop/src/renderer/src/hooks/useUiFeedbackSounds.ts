@@ -8,6 +8,7 @@ import {
   playUiSound,
   prepareUiSounds,
   setUiSoundOutputDevice,
+  setUiSoundVolume,
   unlockUiSounds,
 } from "../features/audio/uiSound";
 import { RoomSoundFeedback } from "../features/audio/roomSoundFeedback";
@@ -15,6 +16,8 @@ import { prepareAnimalCalls } from "../features/audio/animalCall";
 
 export const useUiFeedbackSounds = (): void => {
   const hasSettings = useSettingsStore((state) => Boolean(state.settings));
+  const uiSoundVolume = useSettingsStore((state) => state.settings?.soundVolume ?? 1);
+  useEffect(() => setUiSoundVolume(uiSoundVolume), [uiSoundVolume]);
   const preferredOutputDeviceId = useSettingsStore(
     (state) => state.settings?.preferredOutputDeviceId,
   );
