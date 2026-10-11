@@ -1,20 +1,20 @@
 {
-  "tag_name": "v3.4.5",
-  "published_at": "2026-10-10T17:02:38Z",
-  "html_url": "https://github.com/soberbw-hash/shanghao/releases/tag/v3.4.5",
+  "tag_name": "v3.4.6",
+  "published_at": "2026-10-11T12:20:14Z",
+  "html_url": "https://github.com/soberbw-hash/shanghao/releases/tag/v3.4.6",
   "highlights": [
-    "独立查找房间。 点击“查找”打开毛玻璃弹窗；找到后隐藏频道号输入，只显示房间与加入按钮。",
-    "数字输入更自然。 验证码和频道号各自在原入口使用逐格输入、检查和完成动效，支持粘贴、前导零及单格修改。",
-    "界面音量可调。 设置切换与普通按钮使用统一点击音；通用新增“界面音效音量”，语音包音量独立保留。",
-    "回座与退出更稳。 改善手动回座后被迟到状态送回门口的问题，保留座位冲突处理；长录音退出时提示正在保存，完成后再返回首页。"
+    "减少首页卡顿与叠音。 资源在空闲时分批准备，启动期间不积攒提示音，避免解锁声音后一齐播放。",
+    "播放中也能调音量。 语音包和音乐正在播放时，设置里的音量立即生效；新用户默认 30%，已有音量保持不变，界面按钮音量仍独立。",
+    "游戏悬浮窗更安静。 游戏中保持鼠标穿透，减少鼠标轮询和重复置顶；悬浮窗不再单独占用任务栏预览，迟到加载不会重新弹出主窗口。",
+    "麦克风切换更稳。 同设备调整降噪或人声增强时复用有效采集，减少反复打开设备；设置失败保留原状态，输入不可用时显示具体原因。"
   ],
   "assets": [
     {
-      "name": "ShangHao-3.4.5-Setup-x64.exe",
-      "size": 193224815,
-      "browser_download_url": "https://github.com/soberbw-hash/shanghao/releases/download/v3.4.5/ShangHao-3.4.5-Setup-x64.exe",
-      "mirror_path": "/downloads/v3.4.5/ShangHao-3.4.5-Setup-x64.exe",
-      "sha256": "3b7ccc6fb694463e3e6741a2467667a036c5c562f98f21e5c9709a2b8da73cb7"
+      "name": "ShangHao-3.4.6-Setup-x64.exe",
+      "size": 193226809,
+      "browser_download_url": "https://github.com/soberbw-hash/shanghao/releases/download/v3.4.6/ShangHao-3.4.6-Setup-x64.exe",
+      "mirror_path": "/downloads/v3.4.6/ShangHao-3.4.6-Setup-x64.exe",
+      "sha256": "94e43a31eb3a599bf2e6616f358ec48053b4ea523b38ff6ed9ff885c07b98644"
     }
   ]
 }
