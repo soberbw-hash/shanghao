@@ -3,6 +3,7 @@ import { useRef, useState, type CSSProperties } from "react";
 import type { BuiltInAvatarId, MemberActivity } from "@private-voice/shared";
 
 import { getAvatarSrc } from "../../utils/profile";
+import { waitForVisualIdle } from "../../features/visual-runtime/waitForVisualIdle";
 import {
   RUN_CYCLE_FRAME_COUNT,
   useWalkingCycleMotion,
@@ -42,11 +43,14 @@ const characterSpriteSources = [
 ];
 let characterSpritePreload: Promise<void> | undefined;
 
-export const preloadCharacterSpriteAssets = (): Promise<void> => {
+export const preloadCharacterSpriteAssets = (
+  signal = new AbortController().signal,
+): Promise<void> => {
   characterSpritePreload ??= (async () => {
     // Decode sequentially while the home screen is idle so joining a room does not
     // make all five large sprite sheets compete for memory on the first frame.
     for (const source of characterSpriteSources) {
+      await waitForVisualIdle(signal);
       const image = new Image();
       image.decoding = "async";
       image.src = source;
@@ -56,7 +60,10 @@ export const preloadCharacterSpriteAssets = (): Promise<void> => {
         // Chromium can still render the image after a transient decode rejection.
       }
     }
-  })();
+  })().catch((error) => {
+    characterSpritePreload = undefined;
+    throw error;
+  });
 
   return characterSpritePreload;
 };

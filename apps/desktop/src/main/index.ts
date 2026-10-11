@@ -417,6 +417,7 @@ const bootstrap = async (): Promise<void> => {
     (payload) => diagnostics?.writeLog(payload) ?? Promise.resolve(),
   );
   gameDetection.onDetected((snapshot) => {
+    overlay.setGameActive(Boolean(snapshot.gameName));
     shortcuts.setMouseHookSuppressed(Boolean(snapshot.gameName));
   });
   const usesInjectedCapturePresence =

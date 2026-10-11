@@ -342,9 +342,9 @@ test("quick message settings keep old bindings without filling saved sparse slot
   assert.equal(restoredMusic.settings.quickMessages.musicPresetId, "music-lol-卡特小曲");
 });
 
-test("quick message volume defaults to 15% without changing saved or legacy levels", () => {
-  assert.equal(defaultSettings.quickMessages.soundVolume, 0.15);
-  assert.equal(migrateSettings({}).settings.quickMessages.soundVolume, 0.15);
+test("quick message volume defaults to 30% without changing saved or legacy levels", () => {
+  assert.equal(defaultSettings.quickMessages.soundVolume, 0.3);
+  assert.equal(migrateSettings({}).settings.quickMessages.soundVolume, 0.3);
   assert.equal(
     migrateSettings({
       settingsSchemaVersion: SETTINGS_SCHEMA_VERSION - 1,

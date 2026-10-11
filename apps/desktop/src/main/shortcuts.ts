@@ -27,6 +27,7 @@ type MouseShortcutBinding = {
   alt: boolean;
   onPress: () => void;
   onRelease?: () => void;
+  pressed?: boolean;
 };
 
 const mouseShortcutAliases: Record<string, 4 | 5> = {
@@ -206,16 +207,25 @@ export class ShortcutController {
   private readonly handleMouseDown = (event: UiohookMouseEvent): void => {
     this.phoneBinding?.mouseDown(event);
     for (const binding of this.mouseBindings.values()) {
-      if (matchesMouseShortcut(event, binding)) binding.onPress();
+      if (!matchesMouseShortcut(event, binding) || binding.pressed) continue;
+      if (binding.onRelease) binding.pressed = true;
+      binding.onPress();
     }
   };
 
   private readonly handleMouseUp = (event: UiohookMouseEvent): void => {
     this.phoneBinding?.mouseUp(event);
     for (const binding of this.mouseBindings.values()) {
-      if (matchesMouseShortcut(event, binding)) binding.onRelease?.();
+      // The pressed button owns release even if Ctrl/Alt was released first.
+      if (Number(event.button) === binding.button) this.releaseMouseBinding(binding);
     }
   };
+
+  private releaseMouseBinding(binding: MouseShortcutBinding): void {
+    if (!binding.pressed) return;
+    binding.pressed = false;
+    binding.onRelease?.();
+  }
 
   private ensureMouseHook(): boolean {
     if (this.mouseHookStarted) return true;
@@ -239,12 +249,18 @@ export class ShortcutController {
   }
 
   private stopMouseHookIfUnused(): void {
-    if (this.phoneBinding || this.mouseBindings.size > 0 || !this.mouseHookStarted) return;
+    if (
+      !this.mouseHookStarted ||
+      this.phoneBinding ||
+      (!this.mouseHookSuppressed && this.mouseBindings.size > 0)
+    )
+      return;
     this.stopMouseHook();
   }
 
   private stopMouseHook(): void {
     if (!this.mouseHookStarted) return;
+    for (const binding of this.mouseBindings.values()) this.releaseMouseBinding(binding);
     uIOhook.off("mousedown", this.handleMouseDown);
     uIOhook.off("mouseup", this.handleMouseUp);
     try {
@@ -278,7 +294,10 @@ export class ShortcutController {
     const mouseBinding = parseMouseShortcut(accelerator);
     if (mouseBinding) {
       const current = this.mouseBindings.get(mouseBinding.accelerator);
-      if (current?.owner === owner) this.mouseBindings.delete(mouseBinding.accelerator);
+      if (current?.owner === owner) {
+        this.releaseMouseBinding(current);
+        this.mouseBindings.delete(mouseBinding.accelerator);
+      }
     } else {
       globalShortcut.unregister(accelerator);
     }
@@ -392,17 +411,24 @@ export class ShortcutController {
 
   async configurePushToTalk(accelerator: string, enabled: boolean): Promise<boolean> {
     if (enabled && this.conflictsWithPhone(accelerator.trim())) return false;
-    this.removeBinding("push-to-talk", this.currentPushToTalkShortcut);
-    this.currentPushToTalkShortcut = undefined;
+    const previous = this.currentPushToTalkShortcut;
     const normalized = accelerator.trim();
-    if (!enabled || !normalized || !parseMouseShortcut(normalized)) return true;
+    if (!enabled || !normalized || !parseMouseShortcut(normalized)) {
+      this.removeBinding("push-to-talk", previous);
+      this.currentPushToTalkShortcut = undefined;
+      return true;
+    }
+    if (previous === normalized) return true;
     const registered = this.addMouseBinding(
       "push-to-talk",
       normalized,
       () => sendToWindow(this.windowProvider(), IPC_CHANNELS.shortcuts.pushToTalkState, true),
       () => sendToWindow(this.windowProvider(), IPC_CHANNELS.shortcuts.pushToTalkState, false),
     );
-    if (registered) this.currentPushToTalkShortcut = normalized;
+    if (registered) {
+      this.removeBinding("push-to-talk", previous);
+      this.currentPushToTalkShortcut = normalized;
+    }
     return registered;
   }
 
@@ -452,8 +478,8 @@ export class ShortcutController {
   dispose(): void {
     this.configurePhone("", "hold", () => undefined);
     globalShortcut.unregisterAll();
-    this.mouseBindings.clear();
     this.stopMouseHook();
+    this.mouseBindings.clear();
     this.currentMuteShortcut = undefined;
     this.currentRecordingMarkerShortcut = undefined;
     this.currentPushToTalkShortcut = undefined;

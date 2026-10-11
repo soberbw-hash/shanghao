@@ -23,11 +23,10 @@ import { createSpeakingDetector, type ScreenShareEncodingProfile } from "@privat
 import { randomRoomAvatar } from "../features/room/randomRoomAvatar";
 import { rememberRoomDirectory } from "../features/room/usePrivateRoomDirectory";
 
-import {
-  createProcessedMicrophoneStream,
-  type ProcessedMicrophoneStream,
-} from "../features/audio/microphoneProcessor";
+import type { ProcessedMicrophoneStream } from "../features/audio/microphoneProcessor";
+import { createRoomMicrophoneProcessor } from "../features/audio/roomMicrophoneProcessor";
 import { acquireAudioSource, releaseAcquiredAudioSource } from "../features/audio/audioSource";
+import { MicrophoneAcquisitionError } from "../features/audio/microphoneError";
 import { createAudioRuntimeSnapshot } from "../features/audio/audioRuntimeSnapshot";
 import { PHONE_MIC_DEVICE_ID } from "../features/audio/phoneMicSource";
 import { REMOTE_AUDIO_LEVEL_EVENT } from "../features/audio/RemoteAudioMixer";
@@ -479,16 +478,8 @@ export const useRoomState = () => {
         echoCancellation: currentSettings?.isEchoCancellationEnabled ?? true,
         autoGainControl: currentSettings?.isAutoGainControlEnabled ?? true,
       });
-      const { stream: inputStream, diagnostics, stopInputOnDispose } = acquiredSource;
-      processedMicrophone = await createProcessedMicrophoneStream(inputStream, {
-        micEqualizerGains: currentSettings?.micEqualizerGains ?? [0, 0, 0, 0, 0],
-        lowCutFrequency: currentSettings?.lowCutFrequency ?? "75",
-        isNoiseSuppressionEnabled: currentSettings?.isNoiseSuppressionEnabled ?? true,
-        isVoiceEnhancementEnabled: currentSettings?.isVoiceEnhancementEnabled ?? true,
-        microphoneSendVolume: currentSettings?.microphoneSendVolume ?? 1,
-        getRemoteReferenceLevel: () => getRemoteAudioMixer().getRemoteReferenceLevel(),
-        stopInputOnDispose,
-      });
+      const { diagnostics } = acquiredSource;
+      processedMicrophone = await createRoomMicrophoneProcessor(acquiredSource, currentSettings);
       activeProcessedMicrophone = processedMicrophone;
       activeInputSourceId = selectedDeviceId;
       const stream = processedMicrophone.stream;
@@ -526,11 +517,13 @@ export const useRoomState = () => {
         releaseAcquiredAudioSource(acquiredSource);
       }
       await writeRendererLog("audio", "error", "Failed to acquire local microphone stream", {
+        errorName: error instanceof Error ? error.name : "unknown",
+        inputSelection: currentSettings?.preferredInputDeviceId
+          ? "selected_device"
+          : "system_default",
         error: error instanceof Error ? error.message : String(error),
       });
-      throw new Error(normalizeRoomError(error, copy.microphoneUnavailable), {
-        cause: error,
-      });
+      throw new MicrophoneAcquisitionError(error);
     }
   };
 
@@ -1056,7 +1049,10 @@ export const useRoomState = () => {
     );
   };
 
-  const replaceInputDevice = (preferredInputDeviceId?: string) => {
+  const replaceInputDevice = (
+    preferredInputDeviceId?: string,
+    { reuseCapture = false }: { reuseCapture?: boolean } = {},
+  ) => {
     const client = activeClient;
     const generation = roomSessionOwnership.current();
     const ownsSwitch = () => activeClient === client && roomSessionOwnership.owns(generation);
@@ -1070,23 +1066,26 @@ export const useRoomState = () => {
       let pendingSource: Awaited<ReturnType<typeof acquireAudioSource>> | undefined;
       let pendingProcessor: ProcessedMicrophoneStream | undefined;
       try {
+        const selectedInputId = preferredInputDeviceId;
+        const sameInput = (selectedInputId || "default") === (activeInputSourceId || "default");
         const acquiredSource = await acquireAudioSource(
-          preferredInputDeviceId ?? currentSettings.preferredInputDeviceId,
+          selectedInputId,
           {
             echoCancellation: currentSettings.isEchoCancellationEnabled,
             autoGainControl: currentSettings.isAutoGainControlEnabled,
           },
+          reuseCapture && sameInput ? activeProcessedMicrophone?.inputStream : undefined,
         );
         pendingSource = acquiredSource;
         if (!ownsSwitch()) {
           roomSessionOwnership.record("device_switch_discarded", generation);
           return false;
         }
-        const { stream: inputStream, diagnostics, stopInputOnDispose } = acquiredSource;
-        const processedMicrophone = await createProcessedMicrophoneStream(inputStream, {
-          ...currentSettings,
-          stopInputOnDispose,
-        });
+        const { diagnostics } = acquiredSource;
+        const processedMicrophone = await createRoomMicrophoneProcessor(
+          acquiredSource,
+          currentSettings,
+        );
         pendingProcessor = processedMicrophone;
         const stream = processedMicrophone.stream;
         const [nextTrack] = stream.getAudioTracks();
@@ -1105,7 +1104,7 @@ export const useRoomState = () => {
         }
         const previousProcessor = activeProcessedMicrophone;
         activeProcessedMicrophone = processedMicrophone;
-        activeInputSourceId = preferredInputDeviceId;
+        activeInputSourceId = selectedInputId;
         pendingSource = undefined;
         pendingProcessor = undefined;
         try {

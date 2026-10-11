@@ -37,6 +37,8 @@ apps/desktop/design-qa*.png
 # Local experiments and repair utilities are intentionally outside the product workspace.
 apps/desktop-pet/
 apps/network-repair/
+# Paused promotional-video workspace; retain locally, outside desktop releases.
+tools/shanghao-film/
 desktop-pet-research-sources.md
 insider-exit-backup-*/
 leave_insider_keep_apps.done

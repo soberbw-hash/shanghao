@@ -1,3 +1,5 @@
+import { MicrophoneAcquisitionError } from "../audio/microphoneError";
+
 const messages: Record<string, string> = {
   room_memory_conflict: "记忆已被更新。请载入最新内容，核对后再保存。",
   room_memory_invalid: "请检查记忆内容和字数。",
@@ -22,6 +24,7 @@ const messages: Record<string, string> = {
   account_session_expired: "请先登录后再使用私人房间。",
 };
 export const privateRoomErrorMessage = (error: unknown): string => {
+  if (error instanceof MicrophoneAcquisitionError) return error.message;
   const text = error instanceof Error ? error.message : String(error);
   const matched = Object.keys(messages).find((code) => text.includes(code));
   return matched ? messages[matched]! : "无法完成房间操作，请稍后重试。";

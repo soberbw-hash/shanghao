@@ -1,5 +1,6 @@
 import { useRecordingSpeakingTimeline } from "../hooks/useRecordingSpeakingTimeline";
 import { useLocalInputRecovery } from "../features/audio/useLocalInputRecovery";
+import { useMicrophoneProcessingUpdate } from "../features/audio/useMicrophoneProcessingUpdate";
 import { finishSavedRoomRecording } from "../features/recording/finishSavedRoomRecording";
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import {
@@ -148,6 +149,11 @@ export const RoomPage = () => {
   const relayServerUrl = useSettingsStore((state) => state.settings?.relayServerUrl);
   const [isPhoneMicDialogOpen, setIsPhoneMicDialogOpen] = useState(false);
   const [phoneMicSelected, setPhoneMicSelected] = useState(false);
+  const { applyProcessingPatch, isProcessingBusy } = useMicrophoneProcessingUpdate(() =>
+    replaceInputDevice(phoneMicSelected ? PHONE_MIC_DEVICE_ID : preferredInputDeviceId, {
+      reuseCapture: true,
+    }),
+  );
   useLocalInputRecovery(localStream, replaceInputDevice, !phoneMicSelected);
   useEffect(
     () => () => {
@@ -171,7 +177,6 @@ export const RoomPage = () => {
   const toggleMicrophone = useAudioStore((state) => state.toggleMicrophone);
   const toggleDeafen = useAudioStore((state) => state.toggleDeafen);
   const setMuted = useAudioStore((state) => state.setMuted);
-  const setPushToTalkEnabled = useAudioStore((state) => state.setPushToTalkEnabled);
   const recordingStatus = useRecordingStore((state) => state.status);
   const recordingMarkers = useRecordingStore((state) => state.markers);
   const addRecordingMarker = useRecordingStore((state) => state.addMarker);
@@ -919,8 +924,8 @@ export const RoomPage = () => {
       setIsPhoneMicDialogOpen(true);
       return;
     }
-    await saveSettings({ preferredInputDeviceId });
     if (await replaceInputDevice(preferredInputDeviceId)) {
+      await saveSettings({ preferredInputDeviceId });
       setPhoneMicSelected(false);
       await phoneMicSource.stop();
       playUiSound("device-switch");
@@ -928,12 +933,12 @@ export const RoomPage = () => {
   };
 
   const toggleNoiseSuppression = async () => {
-    if (isNoiseSuppressionEnabled === undefined || isNoiseSuppressionSwitching) return;
+    if (isNoiseSuppressionEnabled === undefined || isProcessingBusy()) return;
     const nextNoiseSuppressionEnabled = !isNoiseSuppressionEnabled;
     setIsNoiseSuppressionSwitching(true);
     try {
-      await saveSettings({ isNoiseSuppressionEnabled: nextNoiseSuppressionEnabled });
-      await replaceInputDevice(phoneMicSelected ? PHONE_MIC_DEVICE_ID : preferredInputDeviceId);
+      if (!(await applyProcessingPatch({ isNoiseSuppressionEnabled: nextNoiseSuppressionEnabled })))
+        return;
       playUiSound("button-click");
       await window.desktopApi.app.writeLog({
         category: "audio",
@@ -961,11 +966,10 @@ export const RoomPage = () => {
   const updateMicrophoneProcessing = async (
     patch: Partial<Pick<AppSettings, "isEchoCancellationEnabled" | "isVoiceEnhancementEnabled">>,
   ) => {
-    if (isNoiseSuppressionEnabled === undefined || isNoiseSuppressionSwitching) return;
+    if (isNoiseSuppressionEnabled === undefined || isProcessingBusy()) return;
     setIsNoiseSuppressionSwitching(true);
     try {
-      await saveSettings(patch);
-      await replaceInputDevice(phoneMicSelected ? PHONE_MIC_DEVICE_ID : preferredInputDeviceId);
+      if (!(await applyProcessingPatch(patch))) return;
       playUiSound("button-click");
     } catch (error) {
       pushToast({
@@ -985,11 +989,10 @@ export const RoomPage = () => {
   };
 
   const toggleAutoGain = async (isAutoGainControlEnabled: boolean) => {
-    if (isAutoGainSwitching) return;
+    if (isProcessingBusy()) return;
     setIsAutoGainSwitching(true);
     try {
-      await saveSettings({ isAutoGainControlEnabled });
-      await replaceInputDevice(phoneMicSelected ? PHONE_MIC_DEVICE_ID : preferredInputDeviceId);
+      if (!(await applyProcessingPatch({ isAutoGainControlEnabled }))) return;
       playUiSound("button-click");
     } catch (error) {
       pushToast({
@@ -1258,7 +1261,7 @@ export const RoomPage = () => {
         outputDevices={outputDevices}
         isMuted={isMuted}
         isDeafened={isDeafened}
-        isNoiseSuppressionSwitching={isNoiseSuppressionSwitching}
+        isNoiseSuppressionSwitching={isNoiseSuppressionSwitching || isAutoGainSwitching}
         microphoneTest={{
           phase: micTest.phase,
           level: micTest.level,
@@ -1293,8 +1296,13 @@ export const RoomPage = () => {
           void toggleAutoGain(isAutoGainControlEnabled)
         }
         onPushToTalkEnabledChange={(isPushToTalkEnabled) => {
-          setPushToTalkEnabled(isPushToTalkEnabled);
-          void saveSettings({ isPushToTalkEnabled });
+          void saveSettings({ isPushToTalkEnabled }).catch(() =>
+            pushToast({
+              tone: "danger",
+              title: "按住说话设置未保存",
+              description: "已保留原来的语音模式，请稍后重试。",
+            }),
+          );
         }}
         onPushToTalkShortcutChange={(pushToTalkShortcut) =>
           void saveSettings({ pushToTalkShortcut })

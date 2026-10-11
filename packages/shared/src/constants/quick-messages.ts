@@ -394,7 +394,7 @@ export const QUICK_MESSAGE_PRESETS: QuickMessagePreset[] = [
 ];
 
 /** Shared default for voice effects and music; source mastering remains independent. */
-export const DEFAULT_QUICK_MESSAGE_VOLUME = 0.15;
+export const DEFAULT_QUICK_MESSAGE_VOLUME = 0.3;
 
 export const DEFAULT_QUICK_MESSAGE_SLOTS: QuickMessageShortcutSlot[] = [
   { presetId: "voice-nice", shortcut: "Ctrl+Alt+1", enabled: true },

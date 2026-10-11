@@ -31,6 +31,10 @@
 
 本机桌面和开始菜单的上号快捷方式已更新图标及 AppUserModelID；确认是本仓库裸运行器的 `Electron.lnk` 已改为启动已安装的上号，并设置同一图标。改动前的快捷方式和外部图标备份在 `%LOCALAPPDATA%\ShangHao-brand-backups\2026-10-01T12-55-22-237Z`。未修改 EXE 内嵌资源、Windows 固定项数据库或真实用户数据。旧固定项名称可能仍缓存为 Electron。
 
+2026-10-11 实机又发现开始菜单 `Electron.lnk` 指向裸 Electron，但使用 `com.sober.shanghao`；在窗口与 EXE 图标均正确的情况下，任务栏仍显示原子图标。备份并移出错误入口、明确正确入口的官方 ICO 后，用户确认恢复耳机图标，无须再次重启上号或 Explorer。备份在 `%LOCALAPPDATA%\ShangHao-brand-backups\2026-10-11-shortcut-collision`。前段是 10 月 1 日的历史状态，不能作为以后入口未变化的证明。
+
+开发／测试入口不得给裸 Electron 注册正式 `com.sober.shanghao` 身份。创建和修复快捷方式时同时核对目标、参数、IconLocation 和 AppUserModelID；正式身份只用于真正启动上号的入口。图标故障排查应枚举桌面、开始菜单和固定项目录的同身份快捷方式，再判断窗口资源和 Shell 缓存，避免反复刷新正确资源。
+
 ## AI 专用图标
 
 用户另提供的三张蓝色 AI 原图原样保存在 `apps/desktop/src/renderer/src/assets/ai/`：`assistant-entry.png`、`assistant-headset.png` 和 `assistant-answer.png`。2026-10-01 用户明确改为统一采用耳机机器人，并要求去掉方形底板；入口、弹窗标题、等待和答案区均使用独立透明衍生文件 `assistant-headset-cutout.png`，不再切换成气泡或笑脸图。

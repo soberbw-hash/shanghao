@@ -2,7 +2,7 @@ import path from "node:path";
 import { existsSync, readFileSync } from "node:fs";
 import { writeFile } from "node:fs/promises";
 
-import { app, BrowserWindow, screen } from "electron";
+import { app, BaseWindow, BrowserWindow, screen } from "electron";
 
 import { IPC_CHANNELS, type OverlayState } from "@private-voice/shared";
 
@@ -14,6 +14,7 @@ import {
   snapOverlayTop,
 } from "./overlay-bounds";
 import { sendToWindow } from "./safe-web-contents";
+import { platformService } from "./platform/PlatformService";
 
 const devServerUrl = process.env.VITE_DEV_SERVER_URL?.trim() || "http://127.0.0.1:5173";
 const OVERLAY_WIDTH = 142;
@@ -35,7 +36,7 @@ export class OverlayWindowController {
   private cursorInside = false;
   private rendererInteractionLock = false;
   private mouseEventsEnabled = false;
-  private lastTopRefresh = 0;
+  private gameActive = false;
 
   show(): boolean {
     if (!this.window || this.window.isDestroyed()) {
@@ -62,8 +63,20 @@ export class OverlayWindowController {
   }
 
   setInteractive(interactive: boolean): void {
+    if (this.gameActive) return;
     this.rendererInteractionLock = interactive;
     this.applyMouseEventMode();
+  }
+
+  /** Games own mouse input; the overlay remains a passive status display. */
+  setGameActive(active: boolean): void {
+    if (this.gameActive === active) return;
+    this.gameActive = active;
+    this.stopHoverTracking();
+    if (!this.window || this.window.isDestroyed()) return;
+    sendToWindow(this.window, IPC_CHANNELS.overlay.hoverState, false);
+    if (!active && this.window.isVisible() && !this.window.webContents.isLoading())
+      this.startHoverTracking();
   }
 
   moveTo(desiredTopY: number): void {
@@ -93,7 +106,7 @@ export class OverlayWindowController {
     this.snapX = display.workArea.x + 6;
     const nextY = clampOverlayTop(bounds.y, bounds.height, display.workArea);
     this.window.setPosition(this.snapX, nextY, false);
-    this.window.setAlwaysOnTop(true, "screen-saver");
+    if (!this.window.isAlwaysOnTop()) this.window.setAlwaysOnTop(true, "screen-saver");
     this.scheduleBoundsSave();
   }
 
@@ -152,36 +165,56 @@ export class OverlayWindowController {
         ? centerOverlayTop(OVERLAY_MIN_HEIGHT, workArea)
         : clampOverlayTop(savedY, OVERLAY_MIN_HEIGHT, workArea);
 
-    const window = new BrowserWindow({
-      width: OVERLAY_WIDTH,
-      height: OVERLAY_MIN_HEIGHT,
-      x: this.snapX,
-      y,
-      icon: app.isPackaged
-        ? path.join(process.resourcesPath, "build", "shanghao-icon-v4.ico")
-        : path.join(app.getAppPath(), "build", "shanghao-icon-v4.ico"),
-      minWidth: OVERLAY_WIDTH,
-      minHeight: OVERLAY_MIN_HEIGHT,
-      maxWidth: OVERLAY_WIDTH,
-      maxHeight: OVERLAY_MAX_HEIGHT,
-      frame: false,
-      transparent: true,
-      backgroundColor: "#00000000",
-      alwaysOnTop: true,
-      skipTaskbar: true,
-      focusable: false,
-      resizable: false,
-      show: false,
-      closable: false,
-      minimizable: false,
-      maximizable: false,
-      webPreferences: {
-        preload: path.join(__dirname, "../preload/overlay.cjs"),
-        contextIsolation: true,
-        nodeIntegration: false,
-        sandbox: true,
-      },
-    });
+    const icon = app.isPackaged
+      ? path.join(process.resourcesPath, "build", "shanghao-icon-v4.ico")
+      : path.join(app.getAppPath(), "build", "shanghao-icon-v4.ico");
+    // A hidden native owner keeps Windows shell rebuilds from registering the
+    // overlay as an independent app. BaseWindow creates no extra renderer.
+    const owner = platformService.isWindows
+      ? new BaseWindow({
+          width: 1,
+          height: 1,
+          show: false,
+          focusable: false,
+          skipTaskbar: true,
+          icon,
+        })
+      : undefined;
+    let window: BrowserWindow;
+    try {
+      window = new BrowserWindow({
+        parent: owner,
+        width: OVERLAY_WIDTH,
+        height: OVERLAY_MIN_HEIGHT,
+        x: this.snapX,
+        y,
+        icon,
+        minWidth: OVERLAY_WIDTH,
+        minHeight: OVERLAY_MIN_HEIGHT,
+        maxWidth: OVERLAY_WIDTH,
+        maxHeight: OVERLAY_MAX_HEIGHT,
+        frame: false,
+        transparent: true,
+        backgroundColor: "#00000000",
+        alwaysOnTop: true,
+        skipTaskbar: true,
+        focusable: false,
+        resizable: false,
+        show: false,
+        closable: false,
+        minimizable: false,
+        maximizable: false,
+        webPreferences: {
+          preload: path.join(__dirname, "../preload/overlay.cjs"),
+          contextIsolation: true,
+          nodeIntegration: false,
+          sandbox: true,
+        },
+      });
+    } catch (error) {
+      owner?.destroy();
+      throw error;
+    }
 
     this.window = window;
     this.cursorInside = false;
@@ -190,29 +223,27 @@ export class OverlayWindowController {
     window.setAlwaysOnTop(true, "screen-saver");
     window.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
     window.setMovable(false);
-    window.setIgnoreMouseEvents(true, { forward: true });
+    window.setIgnoreMouseEvents(true, { forward: !this.gameActive });
 
     window.on("closed", () => {
-      this.stopHoverTracking();
       if (this.window === window) {
+        this.stopHoverTracking();
         this.window = null;
       }
+      if (owner && !owner.isDestroyed()) owner.destroy();
     });
-
-    window.on("blur", () => {
-      if (this.window && !this.window.isDestroyed()) {
-        this.window.setAlwaysOnTop(true, "screen-saver");
-      }
+    window.on("show", () => {
+      if (this.window === window && !window.isDestroyed()) window.setSkipTaskbar(true);
     });
 
     window.webContents.once("did-finish-load", () => {
+      if (this.window !== window || window.isDestroyed()) return;
       window.webContents.setZoomFactor(1);
       if (this.state) {
         sendToWindow(window, IPC_CHANNELS.overlay.state, this.state);
         this.resizeForMembers(this.state.members.filter((m) => !m.isEmptySlot).length);
       }
       window.showInactive();
-      window.moveTop();
       this.startHoverTracking();
     });
 
@@ -227,23 +258,17 @@ export class OverlayWindowController {
 
   private applyMouseEventMode(): void {
     if (!this.window || this.window.isDestroyed()) return;
-    const shouldEnable = this.cursorInside || this.rendererInteractionLock;
+    const shouldEnable = !this.gameActive && (this.cursorInside || this.rendererInteractionLock);
     if (shouldEnable === this.mouseEventsEnabled) return;
     this.mouseEventsEnabled = shouldEnable;
-    this.window.setIgnoreMouseEvents(!shouldEnable, { forward: true });
+    this.window.setIgnoreMouseEvents(!shouldEnable, { forward: !this.gameActive });
   }
 
   private startHoverTracking(): void {
     this.stopHoverTracking();
+    if (this.gameActive) return;
     const updateHoverState = () => {
       if (!this.window || this.window.isDestroyed() || !this.window.isVisible()) return;
-      // Borderless games may reorder other topmost windows when activated.
-      // Restore Z order without activating the overlay or stealing game input.
-      if (Date.now() - this.lastTopRefresh >= 2_000) {
-        this.lastTopRefresh = Date.now();
-        this.window.setAlwaysOnTop(true, "screen-saver");
-        this.window.moveTop();
-      }
       const isInside = isPointInsideOverlay(screen.getCursorScreenPoint(), this.window.getBounds());
       if (isInside === this.cursorInside) return;
       this.cursorInside = isInside;
@@ -261,7 +286,7 @@ export class OverlayWindowController {
     this.rendererInteractionLock = false;
     if (this.window && !this.window.isDestroyed()) {
       this.mouseEventsEnabled = false;
-      this.window.setIgnoreMouseEvents(true, { forward: true });
+      this.window.setIgnoreMouseEvents(true, { forward: !this.gameActive });
     }
   }
 

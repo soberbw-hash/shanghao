@@ -18,6 +18,7 @@ import { SettingsSection } from "./SettingsSection";
 import {
   getQuickMessageAudioSnapshot,
   playQuickMessageSound,
+  setQuickMessageVolume,
   subscribeQuickMessageAudio,
   toggleQuickMessageMusic,
 } from "../../features/audio/quickMessageAudio";
@@ -280,14 +281,16 @@ export const QuickMessageSettingsCard = ({
               "--ui-sound-volume": `${settings.quickMessages.soundVolume * 100}%`,
             } as CSSProperties
           }
-          onChange={(event) =>
+          onChange={(event) => {
+            const soundVolume = Number(event.target.value);
+            setQuickMessageVolume(soundVolume);
             onChange({
               quickMessages: {
                 ...settings.quickMessages,
-                soundVolume: Number(event.target.value),
+                soundVolume,
               },
-            })
-          }
+            });
+          }}
         />
         <output>{Math.round(settings.quickMessages.soundVolume * 100)}%</output>
       </label>

@@ -117,26 +117,32 @@ export const useLocalAudioTransport = (): void => {
 
     track.enabled = false;
     setPushToTalkState(PushToTalkState.Armed);
+    let pressedKey: string | undefined;
+    const release = () => {
+      pressedKey = undefined;
+      track.enabled = false;
+      setPushToTalkState(PushToTalkState.Armed);
+    };
 
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (matchesShortcut(event, pushToTalkShortcut)) {
+      if (!pressedKey && !event.repeat && matchesShortcut(event, pushToTalkShortcut)) {
+        pressedKey = event.code || event.key;
         track.enabled = !isMuted && !isDeafened;
         setPushToTalkState(PushToTalkState.Pressed);
       }
     };
 
     const handleKeyUp = (event: KeyboardEvent) => {
-      if (matchesShortcut(event, pushToTalkShortcut)) {
-        track.enabled = false;
-        setPushToTalkState(PushToTalkState.Armed);
-      }
+      if (pressedKey === (event.code || event.key)) release();
     };
     window.addEventListener("keydown", handleKeyDown);
     window.addEventListener("keyup", handleKeyUp);
+    window.addEventListener("blur", release);
 
     return () => {
       window.removeEventListener("keydown", handleKeyDown);
       window.removeEventListener("keyup", handleKeyUp);
+      window.removeEventListener("blur", release);
       track.enabled = false;
     };
   }, [

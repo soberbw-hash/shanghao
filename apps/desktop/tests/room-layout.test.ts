@@ -750,7 +750,7 @@ test("entering a channel uses one lightweight route transition without replaying
   assert.equal(homeSource.includes("SERVER_CHECK_HEALTHY_INTERVAL_MS = 45_000"), true);
   assert.equal(homeSource.includes("window.setInterval"), false);
   assert.equal(homeSource.includes('document.addEventListener("visibilitychange"'), true);
-  assert.equal(appSource.includes("const roomPagePromise = loadRoomPage()"), true);
+  assert.equal(appSource.includes('roomPagePromise ??= import("../pages/RoomPage")'), true);
   assert.equal(roomSource.includes("{ autoAlpha: 0.94, y: 5 }"), false);
   assert.equal(appSource.includes('basePage === "room" ? { opacity: 0 } : false'), false);
   assert.equal(appSource.includes("<motion.div"), true);

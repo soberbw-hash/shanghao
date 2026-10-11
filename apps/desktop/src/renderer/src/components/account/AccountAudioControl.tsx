@@ -55,7 +55,7 @@ export const AccountAudioControl = () => {
         onClick={() => setIsMenuOpen((current) => !current)}
       >
         {audioReady ? <Mic aria-hidden="true" /> : <MicOff aria-hidden="true" />}
-        <span>{audioReady ? "声音正常" : "检查声音设备"}</span>
+        <span>{audioReady ? "声音设备" : "检查声音设备"}</span>
         <ChevronDown className={isMenuOpen ? "is-open" : ""} aria-hidden="true" />
       </button>
 

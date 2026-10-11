@@ -25,6 +25,7 @@ const harness = () => {
         configureQuickMessage(slot: number, key: string): Promise<boolean>;
         configureGlobalMute(key: string): Promise<boolean>;
         configureRecordingMarker(key: string): Promise<boolean>;
+        configurePushToTalk(key: string, enabled: boolean): Promise<boolean>;
         getRuntimeSnapshot(): {
           mute: { applied: string | null; observed: string };
           quickMessages: { slot: number; applied: string | null; observed: string }[];
@@ -76,6 +77,7 @@ const harness = () => {
               quickMessageTriggered: "quick",
               muteTriggered: "mute",
               recordingMarkerTriggered: "marker",
+              pushToTalkState: "push-to-talk",
             },
           },
         };
@@ -211,4 +213,95 @@ test("runtime snapshot distinguishes saved registrations from observed hook stat
   assert.equal(controller.getRuntimeSnapshot().quickMessages[0]?.observed, "active");
   controller.dispose();
   assert.equal(controller.getRuntimeSnapshot().mute.observed, "inactive");
+});
+
+test("mouse push-to-talk releases when its modifier was released first", async () => {
+  const { controller, hooks, sent } = harness();
+  await controller.configurePushToTalk("Ctrl+Mouse4", true);
+  const down = { button: 4, ctrlKey: true, altKey: false, shiftKey: false, metaKey: false };
+  hooks.get("mousedown")!(down);
+  hooks.get("mousedown")!(down);
+  hooks.get("mouseup")!({ ...down, ctrlKey: false });
+  assert.deepEqual(
+    sent.map((event) => event.slice(1)),
+    [
+      ["push-to-talk", true],
+      ["push-to-talk", false],
+    ],
+  );
+  hooks.get("mouseup")!(down);
+  assert.equal(sent.length, 2, "a release without a held press has no effect");
+  controller.dispose();
+});
+
+test("removing a held mouse binding releases push-to-talk exactly once", async () => {
+  const { controller, hooks, sent } = harness();
+  await controller.configurePushToTalk("Mouse4", true);
+  hooks.get("mousedown")!({
+    button: 4,
+    ctrlKey: false,
+    altKey: false,
+    shiftKey: false,
+    metaKey: false,
+  });
+  await controller.configurePushToTalk("", false);
+  controller.dispose();
+  assert.deepEqual(
+    sent.map((event) => event[2]),
+    [true, false],
+  );
+});
+
+test("game suppression releases a held mouse binding before stopping the hook", async () => {
+  const { controller, hooks, sent } = harness();
+  await controller.configurePushToTalk("Mouse4", true);
+  hooks.get("mousedown")!({
+    button: 4,
+    ctrlKey: false,
+    altKey: false,
+    shiftKey: false,
+    metaKey: false,
+  });
+  controller.setMouseHookSuppressed(true);
+  assert.deepEqual(
+    sent.map((event) => event[2]),
+    [true, false],
+  );
+  assert.equal(controller.getRuntimeSnapshot().mouseHook.started, false);
+  controller.setMouseHookSuppressed(false);
+  controller.dispose();
+  assert.equal(sent.length, 2);
+});
+
+test("clearing the phone key during a game stops a now-unneeded native hook", async () => {
+  const { controller } = harness();
+  await controller.configureQuickMessage(0, "Mouse4");
+  controller.configurePhone("ArrowDown", "hold", () => undefined);
+  controller.setMouseHookSuppressed(true);
+  assert.equal(controller.getRuntimeSnapshot().mouseHook.started, true);
+  controller.configurePhone("", "hold", () => undefined);
+  assert.equal(controller.getRuntimeSnapshot().mouseHook.started, false);
+  assert.equal(controller.getRuntimeSnapshot().quickMessages[0]?.observed, "suspended");
+  controller.setMouseHookSuppressed(false);
+  assert.equal(controller.getRuntimeSnapshot().quickMessages[0]?.observed, "active");
+  controller.dispose();
+});
+
+test("failed mouse push-to-talk replacement preserves the held original binding", async () => {
+  const { controller, hooks, sent } = harness();
+  await controller.configurePushToTalk("Mouse4", true);
+  await controller.configureQuickMessage(0, "Mouse5");
+  const event = { button: 4, ctrlKey: false, altKey: false, shiftKey: false, metaKey: false };
+  hooks.get("mousedown")!(event);
+  assert.equal(await controller.configurePushToTalk("Mouse5", true), false);
+  assert.deepEqual(
+    sent.map((message) => message[2]),
+    [true],
+  );
+  hooks.get("mouseup")!(event);
+  assert.deepEqual(
+    sent.map((message) => message[2]),
+    [true, false],
+  );
+  controller.dispose();
 });

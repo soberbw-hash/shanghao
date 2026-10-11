@@ -25,6 +25,12 @@ export interface QuickMessagePlaybackSource {
 }
 
 const activePlayers = new Set<HTMLAudioElement>();
+/** Adjust existing playback in place, including paused and still-loading music. */
+export const setQuickMessageVolume = (volume: number): void => {
+  const level = Math.min(1, Math.max(0, Number.isFinite(volume) ? volume : 0));
+  for (const player of activePlayers) player.volume = level;
+};
+
 const audioListeners = new Set<() => void>();
 let activePlayer: HTMLAudioElement | undefined;
 let activeSoundId: string | undefined;

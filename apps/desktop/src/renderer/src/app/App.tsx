@@ -11,6 +11,7 @@ import { InteractionPerformanceHud } from "../components/diagnostics/Interaction
 import { runtimeHealthCollector } from "../features/diagnostics/runtimeHealthCollector";
 import { RemoteAudioRenderer } from "../features/audio/RemoteAudioRenderer";
 import { visualRuntimeController } from "../features/visual-runtime/VisualRuntimeController";
+import { waitForVisualIdle } from "../features/visual-runtime/waitForVisualIdle";
 import { displayRefreshRateService } from "../features/visual-runtime/DisplayRefreshRateService";
 import { useAppBootstrap } from "../hooks/useAppBootstrap";
 import { useGlobalMuteSync } from "../hooks/useGlobalMuteSync";
@@ -35,10 +36,10 @@ import { StartupSplashPage } from "../components/status/StartupSplashPage";
 import { UpdateGatePage } from "../components/status/UpdateGatePage";
 import { cloudBaseClientConfig } from "../config/cloudbase";
 
-const loadRoomPage = () => import("../pages/RoomPage");
+let roomPagePromise: Promise<typeof import("../pages/RoomPage")> | undefined;
+const loadRoomPage = () => (roomPagePromise ??= import("../pages/RoomPage"));
 const loadSettingsPage = () => import("../pages/SettingsPage");
-const roomPagePromise = loadRoomPage();
-const RoomPage = lazy(() => roomPagePromise.then(({ RoomPage: Page }) => ({ default: Page })));
+const RoomPage = lazy(() => loadRoomPage().then(({ RoomPage: Page }) => ({ default: Page })));
 const SettingsPage = lazy(() =>
   loadSettingsPage().then(({ SettingsPage: Page }) => ({ default: Page })),
 );
@@ -48,7 +49,6 @@ export const App = () => {
   useGlobalMuteSync();
   usePhoneModeSync();
   useLocalAudioTransport();
-  useUiFeedbackSounds();
   useWeatherPreload();
   useTrayBackground();
   useAppRoomInvites();
@@ -98,6 +98,7 @@ export const App = () => {
     accountSnapshot.status !== "loading" &&
     bootstrapPhase !== "booting" &&
     bootstrapPhase !== "checking-update";
+  useUiFeedbackSounds(startupSettled && bootstrapPhase === "ready");
   useEffect(() => {
     if (!startupSettled) return;
     const cover = document.getElementById("app-preboot-cover");
@@ -219,34 +220,32 @@ export const App = () => {
   }, []);
 
   useEffect(() => {
-    if (bootstrapPhase !== "ready") {
+    if (bootstrapPhase !== "ready" || !startupSettled) {
       return;
     }
-
-    void visualRuntimeController.preloadAsset("character-sprites", () =>
-      import("../components/room/DeskAnimalSprite").then(({ preloadCharacterSpriteAssets }) =>
-        preloadCharacterSpriteAssets(),
-      ),
-    );
-
-    // Warm the settings route while the renderer is idle so the first switch
-    // does not put module evaluation on the navigation frame.
-    const preloadSettings = () => {
-      void loadSettingsPage();
-      void visualRuntimeController.preloadAsset("room-scene", () =>
+    const controller = new AbortController();
+    const { signal } = controller;
+    void (async () => {
+      // Let the home entrance finish, then warm one optional resource at a time.
+      await waitForVisualIdle(signal, 1_200);
+      await loadRoomPage();
+      await waitForVisualIdle(signal);
+      await visualRuntimeController.preloadAsset("room-scene", () =>
         import("../features/visual-runtime/sceneAssetWarmup").then(({ warmRoomSceneAssets }) =>
-          warmRoomSceneAssets(),
+          warmRoomSceneAssets(signal),
         ),
       );
-    };
-    const requestId = window.requestIdleCallback?.(preloadSettings, { timeout: 1_200 });
-    const fallbackTimer =
-      requestId === undefined ? window.setTimeout(preloadSettings, 180) : undefined;
-    return () => {
-      if (requestId !== undefined) window.cancelIdleCallback?.(requestId);
-      if (fallbackTimer !== undefined) window.clearTimeout(fallbackTimer);
-    };
-  }, [bootstrapPhase]);
+      await waitForVisualIdle(signal);
+      await visualRuntimeController.preloadAsset("character-sprites", () =>
+        import("../components/room/DeskAnimalSprite").then(({ preloadCharacterSpriteAssets }) =>
+          preloadCharacterSpriteAssets(signal),
+        ),
+      );
+      await waitForVisualIdle(signal);
+      await loadSettingsPage();
+    })().catch(() => undefined);
+    return () => controller.abort();
+  }, [bootstrapPhase, startupSettled]);
 
   useEffect(() => {
     if (!import.meta.env.DEV || bootstrapPhase !== "ready") {

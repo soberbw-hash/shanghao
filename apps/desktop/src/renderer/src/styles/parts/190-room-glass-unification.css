@@ -214,7 +214,7 @@
 }
 
 .room-page .chat-message-list {
-  scrollbar-color: rgba(117, 157, 203, 0.52) transparent;
+  scrollbar-color: rgba(117, 157, 203, 0.18) transparent;
   scrollbar-width: thin;
 }
 
@@ -228,7 +228,7 @@
 
 .room-page .chat-message-list::-webkit-scrollbar-thumb {
   border-radius: 999px;
-  background: rgba(103, 150, 203, 0.42);
+  background: rgba(117, 157, 203, 0.18);
 }
 
 .room-page .chat-message-list .chat-message-row {

@@ -44,10 +44,17 @@ const getBuildAssetPath = (fileName: string) =>
 const getIconPath = () => getBuildAssetPath("shanghao-icon-v4.ico");
 
 const getWindowIcon = (): NativeImage => {
-  // Set HWND icons from the original PNG, independently of Windows shell ICO caching.
+  // Windows must keep the ICO-backed NativeImage: Electron loads its requested
+  // 16/32 px HICON frames. PNG-backed images retain their original bitmap size.
+  if (platformService.isWindows) {
+    const icon = nativeImage.createFromPath(getIconPath());
+    if (!icon.isEmpty()) return icon;
+  }
   for (const name of ["icon.png", "icon-master.png", "shanghao-icon-v4.ico"]) {
     const image = nativeImage.createFromPath(getBuildAssetPath(name));
-    if (!image.isEmpty()) return image;
+    if (!image.isEmpty()) {
+      return platformService.isWindows ? image.resize({ width: 32, height: 32 }) : image;
+    }
   }
   return nativeImage.createEmpty();
 };
@@ -315,6 +322,43 @@ export const createMainWindow = ({
     : pathToFileURL(path.join(__dirname, "../../dist/index.html")).toString();
 
   let hasShownFallback = false;
+  let visibilityLogWindow = 0;
+  let visibilityLogCount = 0;
+  const logVisibility = (event: "show" | "hide" | "focus" | "blur" | "minimize" | "restore") => {
+    if (window.isDestroyed()) return;
+    const minute = Math.floor(Date.now() / 60_000);
+    if (minute !== visibilityLogWindow) {
+      visibilityLogWindow = minute;
+      visibilityLogCount = 0;
+    }
+    if (visibilityLogCount++ >= 32) return;
+    log?.("info", "Main window visibility changed", {
+      event,
+      visible: window.isVisible(),
+      focused: window.isFocused(),
+      minimized: window.isMinimized(),
+    });
+  };
+  window.on("show", () => logVisibility("show"));
+  window.on("hide", () => logVisibility("hide"));
+  window.on("focus", () => logVisibility("focus"));
+  window.on("blur", () => logVisibility("blur"));
+  window.on("minimize", () => logVisibility("minimize"));
+  window.on("restore", () => logVisibility("restore"));
+  let canRevealAtStartup = true;
+  let hasRevealedAtStartup = false;
+  // A late load/fallback must not undo the user's minimize or tray choice.
+  window.on("hide", () => {
+    canRevealAtStartup = false;
+  });
+  window.on("minimize", () => {
+    canRevealAtStartup = false;
+  });
+  const revealAtStartup = () => {
+    if (window.isDestroyed() || !canRevealAtStartup || hasRevealedAtStartup) return;
+    hasRevealedAtStartup = true;
+    window.showInactive();
+  };
 
   const loadFallback = async (
     title: string,
@@ -332,8 +376,6 @@ export const createMainWindow = ({
         createFallbackHtml(title, description, logsDirectory),
       )}`,
     );
-    window.show();
-    window.focus();
   };
 
   const loadRenderer = async () => {
@@ -391,7 +433,7 @@ export const createMainWindow = ({
 
   window.once("ready-to-show", () => {
     if (!windowIcon.isEmpty()) window.setIcon(windowIcon);
-    window.show();
+    revealAtStartup();
   });
 
   window.webContents.setWindowOpenHandler(({ url }) => {
@@ -488,10 +530,7 @@ export const createMainWindow = ({
   });
 
   setTimeout(() => {
-    if (!window.isVisible()) {
-      window.show();
-      window.focus();
-    }
+    revealAtStartup();
   }, 1_500);
 
   void loadRenderer();

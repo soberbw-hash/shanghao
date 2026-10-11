@@ -16,6 +16,8 @@ export const MICROPHONE_EQ_FREQUENCIES = [80, 250, 1_000, 4_000, 12_000] as cons
 
 export interface ProcessedMicrophoneStream {
   stream: MediaStream;
+  /** Raw capture can be cloned for DSP changes without opening the device again. */
+  inputStream?: MediaStream;
   processorDiagnostics: Pick<
     LocalAudioDiagnostics,
     | "noiseProcessor"
@@ -948,6 +950,7 @@ export const createProcessedMicrophoneStream = async (
 
     return {
       stream: destination.stream,
+      inputStream,
       processorDiagnostics,
       ready,
       onDiagnostics: (listener) => {

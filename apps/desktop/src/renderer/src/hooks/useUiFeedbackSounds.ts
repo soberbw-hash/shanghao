@@ -1,4 +1,5 @@
-import { useEffect } from "react";
+import { useEffect, useLayoutEffect } from "react";
+import { DEFAULT_QUICK_MESSAGE_VOLUME } from "@private-voice/shared";
 
 import { useAudioStore } from "../store/audioStore";
 import { useRoomStore } from "../store/roomStore";
@@ -9,15 +10,25 @@ import {
   prepareUiSounds,
   setUiSoundOutputDevice,
   setUiSoundVolume,
+  setUiSoundFeedbackEnabled,
   unlockUiSounds,
 } from "../features/audio/uiSound";
 import { RoomSoundFeedback } from "../features/audio/roomSoundFeedback";
 import { prepareAnimalCalls } from "../features/audio/animalCall";
+import { setQuickMessageVolume } from "../features/audio/quickMessageAudio";
 
-export const useUiFeedbackSounds = (): void => {
+export const useUiFeedbackSounds = (enabled = true): void => {
+  useLayoutEffect(() => {
+    setUiSoundFeedbackEnabled(enabled);
+    return () => setUiSoundFeedbackEnabled(false);
+  }, [enabled]);
   const hasSettings = useSettingsStore((state) => Boolean(state.settings));
   const uiSoundVolume = useSettingsStore((state) => state.settings?.soundVolume ?? 1);
   useEffect(() => setUiSoundVolume(uiSoundVolume), [uiSoundVolume]);
+  const quickMessageVolume = useSettingsStore(
+    (state) => state.settings?.quickMessages.soundVolume ?? DEFAULT_QUICK_MESSAGE_VOLUME,
+  );
+  useEffect(() => setQuickMessageVolume(quickMessageVolume), [quickMessageVolume]);
   const preferredOutputDeviceId = useSettingsStore(
     (state) => state.settings?.preferredOutputDeviceId,
   );
@@ -27,20 +38,29 @@ export const useUiFeedbackSounds = (): void => {
   }, [preferredOutputDeviceId]);
 
   useEffect(() => {
-    const prepare = () => {
+    if (!enabled) return;
+    const controller = new AbortController();
+    void prepareUiSounds(controller.signal)
+      .then(() => {
+        if (!controller.signal.aborted) prepareAnimalCalls();
+      })
+      .catch(() => undefined);
+    const unlock = () => {
       void unlockUiSounds();
-      prepareUiSounds();
-      prepareAnimalCalls();
+      window.removeEventListener("pointerdown", unlock);
+      window.removeEventListener("keydown", unlock);
     };
-    window.addEventListener("pointerdown", prepare, { once: true, passive: true });
-    window.addEventListener("keydown", prepare, { once: true });
+    window.addEventListener("pointerdown", unlock, { once: true, passive: true });
+    window.addEventListener("keydown", unlock, { once: true });
     return () => {
-      window.removeEventListener("pointerdown", prepare);
-      window.removeEventListener("keydown", prepare);
+      controller.abort();
+      window.removeEventListener("pointerdown", unlock);
+      window.removeEventListener("keydown", unlock);
     };
-  }, []);
+  }, [enabled]);
 
   useEffect(() => {
+    if (!enabled) return;
     let lastClickAt = 0;
     const pending = new Set<number>();
     const deferPress = () => {
@@ -81,10 +101,10 @@ export const useUiFeedbackSounds = (): void => {
       document.removeEventListener("change", handleChange, true);
       pending.forEach((timer) => window.clearTimeout(timer));
     };
-  }, []);
+  }, [enabled]);
 
   useEffect(() => {
-    if (!hasSettings) return;
+    if (!hasSettings || !enabled) return;
     const feedback = new RoomSoundFeedback(() => {
       const state = useRoomStore.getState();
       const audio = useAudioStore.getState();
@@ -130,5 +150,5 @@ export const useUiFeedbackSounds = (): void => {
       unsubscribeAudio();
       feedback.dispose();
     };
-  }, [hasSettings]);
+  }, [hasSettings, enabled]);
 };

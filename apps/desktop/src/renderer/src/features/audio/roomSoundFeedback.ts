@@ -65,6 +65,11 @@ export class RoomSoundFeedback {
     this.previous = next;
     const room = next.room;
     const current = present(room.members);
+    if (!previous) {
+      this.baseline = current;
+      this.failurePlayed = room.connectionState === RoomConnectionState.Failed;
+      return;
+    }
     const sameSession =
       previous?.room.roomId === room.roomId && previous.room.signalingUrl === room.signalingUrl;
     const isOpen = room.lifecycleState === RoomLifecycleState.Open;

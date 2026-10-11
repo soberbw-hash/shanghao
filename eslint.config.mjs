@@ -18,6 +18,8 @@ export default tseslint.config(
       // Generated browser evidence and isolated downloaded runtimes, not sources.
       "output/**",
       "tools/asset-review/sources/**",
+      // Independently managed, paused video project with its own parser/config.
+      "tools/shanghao-film/**",
       ".playwright-cli/**",
       "tmp/**",
       ".pnpm-store/**",

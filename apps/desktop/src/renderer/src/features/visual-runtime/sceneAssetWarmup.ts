@@ -2,14 +2,14 @@ import environment from "../../assets/scenes/shanghao-room/environment-v3-extend
 import workstation from "../../assets/scenes/shanghao-room/workstation.png";
 import curtain from "../../assets/scenes/shanghao-room/curtain-ceiling-v2.png";
 import leaves from "../../assets/scenes/shanghao-room/foreground-leaves-v2.png";
-
-// Retain only the fixed scene images; joining/audio never awaits this visual work.
+import { waitForVisualIdle } from "./waitForVisualIdle";
 const sceneImages: HTMLImageElement[] = [];
-export const warmRoomSceneAssets = async (): Promise<void> => {
+export const warmRoomSceneAssets = async (signal = new AbortController().signal): Promise<void> => {
   for (const src of [environment, workstation, curtain, leaves]) {
+    await waitForVisualIdle(signal);
     const image = new Image();
     image.src = src;
     await image.decode().catch(() => undefined);
-    sceneImages.push(image);
+    if (!sceneImages.some((cached) => cached.src === image.src)) sceneImages.push(image);
   }
 };

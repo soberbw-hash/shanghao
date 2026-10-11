@@ -1,6 +1,7 @@
 import { createUISFX, type CueName, type PackName, type PlayingSFX, type UISFXPlayer } from "uisfx";
 
 import { writeRendererLog } from "../../utils/logger";
+import { waitForVisualIdle } from "../visual-runtime/waitForVisualIdle";
 
 export type UiSound =
   | "button-click"
@@ -150,6 +151,10 @@ const knockUrl = new URL("../../assets/sounds/knock-bell.wav", import.meta.url).
 const players = new Map<PackName, UISFXPlayer>();
 const activeSounds: PlayingSFX[] = [];
 let prepared = false;
+let feedbackEnabled = true;
+let feedbackRevision = 0;
+let latestResumeRequest = 0;
+let resumePromise: Promise<void> | undefined;
 let audioContext: SinkRoutableAudioContext | undefined;
 let knockTemplate: SinkRoutableAudioElement | undefined;
 let masterVolume = 1;
@@ -158,9 +163,17 @@ export const setUiSoundVolume = (volume: number): void => {
   masterVolume = Math.max(0, Math.min(1, volume));
   players.forEach((player) => player.setVolume(masterVolume));
 };
+export const setUiSoundFeedbackEnabled = (enabled: boolean): void => {
+  if (feedbackEnabled === enabled) return;
+  feedbackEnabled = enabled;
+  feedbackRevision++;
+  if (!enabled) stopAllUiSounds();
+};
 let preferredOutputDeviceId: string | undefined;
 let lastSemanticSoundAt = 0;
 let didLogSinkFailureForDevice: string | undefined;
+let routedSinkId: string | undefined;
+let outputRoutePromise: Promise<void> | undefined;
 
 const normalizeSinkId = (deviceId?: string): string =>
   !deviceId || deviceId === "default" ? "" : deviceId;
@@ -175,8 +188,15 @@ const routeContextToPreferredOutput = async (): Promise<boolean> => {
   if (typeof audioContext.setSinkId !== "function") {
     return !preferredOutputDeviceId || preferredOutputDeviceId === "default";
   }
+  while (outputRoutePromise) await outputRoutePromise.catch(() => undefined);
+  const sinkId = normalizeSinkId(preferredOutputDeviceId);
+  if (routedSinkId === sinkId) return true;
+  let route: Promise<void> | undefined;
   try {
-    await audioContext.setSinkId(normalizeSinkId(preferredOutputDeviceId));
+    route = audioContext.setSinkId(sinkId);
+    outputRoutePromise = route;
+    await route;
+    routedSinkId = sinkId;
     didLogSinkFailureForDevice = undefined;
     return true;
   } catch (error) {
@@ -189,6 +209,8 @@ const routeContextToPreferredOutput = async (): Promise<boolean> => {
       });
     }
     return false;
+  } finally {
+    if (outputRoutePromise === route) outputRoutePromise = undefined;
   }
 };
 
@@ -197,9 +219,12 @@ const ensurePlayer = (pack: PackName = "studio"): UISFXPlayer | undefined => {
   if (existing) return existing;
   if (typeof window === "undefined" || typeof window.AudioContext !== "function") return undefined;
   try {
-    audioContext ??= new window.AudioContext({
-      latencyHint: "interactive",
-    }) as SinkRoutableAudioContext;
+    if (!audioContext) {
+      audioContext = new window.AudioContext({
+        latencyHint: "interactive",
+      }) as SinkRoutableAudioContext;
+      void routeContextToPreferredOutput();
+    }
     const player = createUISFX({
       context: audioContext,
       pack,
@@ -209,7 +234,6 @@ const ensurePlayer = (pack: PackName = "studio"): UISFXPlayer | undefined => {
       cooldownMs: 40,
     });
     players.set(pack, player);
-    void routeContextToPreferredOutput();
     return player;
   } catch (error) {
     void writeRendererLog("audio", "warn", "ui_sound_runtime_initialization_failed", {
@@ -265,28 +289,29 @@ export const unlockUiSounds = async (): Promise<boolean> => {
   return unlocked;
 };
 
-export const prepareUiSounds = (): void => {
+export const prepareUiSounds = async (signal = new AbortController().signal): Promise<void> => {
+  if (prepared) return;
+  await waitForVisualIdle(signal, 1_200);
   const activePlayer = ensurePlayer();
   ensureKnockTemplate();
   if (!activePlayer || prepared) return;
   prepared = true;
-  const groups = new Map<PackName, Set<CueName>>();
-  for (const sound of preloadSounds) {
-    const recipe = soundRecipes[sound];
-    const cues = groups.get(recipe.pack) ?? new Set<CueName>();
-    cues.add(recipe.cue);
-    groups.set(recipe.pack, cues);
-  }
-  // A fixed player per pack prevents asynchronous preload from warming the
-  // wrong pack when a click changes it. All players share one output context.
-  for (const [pack, cues] of groups) {
-    void ensurePlayer(pack)
-      ?.preload([...cues])
-      .catch(() => undefined);
+  try {
+    // Synthesis is synchronous inside UISFX. Never warm several packs in parallel.
+    for (const sound of preloadSounds) {
+      await waitForVisualIdle(signal);
+      const recipe = soundRecipes[sound];
+      await ensurePlayer(recipe.pack)?.preload([recipe.cue], { signal });
+      signal.throwIfAborted();
+    }
+  } catch (error) {
+    prepared = false;
+    throw error;
   }
 };
 
 export const playUiSound = (sound: UiSound): void => {
+  if (!feedbackEnabled) return;
   if (sound !== "button-click") lastSemanticSoundAt = performance.now();
   try {
     if (sound === "knock-bell") {
@@ -296,6 +321,29 @@ export const playUiSound = (sound: UiSound): void => {
     const recipe = soundRecipes[sound];
     const activePlayer = ensurePlayer(recipe.pack);
     if (!activePlayer) return;
+    if (audioContext?.state !== "running") {
+      // A suspended context used to accumulate sources at audio time zero and
+      // release them together on unlock. Retain only one fresh cue, never a backlog.
+      const request = ++latestResumeRequest;
+      const revision = feedbackRevision;
+      const requestedAt = performance.now();
+      resumePromise ??= audioContext?.resume().finally(() => {
+        resumePromise = undefined;
+      });
+      void resumePromise
+        ?.then(() => {
+          if (
+            feedbackEnabled &&
+            revision === feedbackRevision &&
+            request === latestResumeRequest &&
+            performance.now() - requestedAt < 250 &&
+            audioContext?.state === "running"
+          )
+            playUiSound(sound);
+        })
+        .catch(() => undefined);
+      return;
+    }
     const playback = activePlayer.play(recipe.cue, {
       volume: recipe.volume,
       cooldownMs: recipe.cooldownMs,
@@ -303,7 +351,7 @@ export const playUiSound = (sound: UiSound): void => {
     });
     if (playback && !activeSounds.includes(playback)) {
       activeSounds.push(playback);
-      if (activeSounds.length > 6) activeSounds.shift()?.stop();
+      if (activeSounds.length > 2) activeSounds.shift()?.stop();
       void playback.ended.then(() => {
         const index = activeSounds.indexOf(playback);
         if (index >= 0) activeSounds.splice(index, 1);

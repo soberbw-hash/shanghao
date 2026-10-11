@@ -40,6 +40,18 @@ const MAIN_WATCHDOG_INTERVAL_MS = 1_000;
 const MAIN_WATCHDOG_WARN_MS = 500;
 const RUNTIME_HISTORY_WINDOW_MS = 6 * 60 * 60_000;
 const RUNTIME_DETAILED_WINDOW_MS = 10 * 60_000;
+const RECENT_DIAGNOSTIC_ARRAY_KEYS = new Set([
+  "events",
+  "samples",
+  "audioTimeline",
+  "longSessionAudio",
+  "audio-timeline.json",
+  "room-session-timeline.json",
+  "ai-compute-timeline.json",
+  "runtime-event-timeline.json",
+  "runtime-health-history.json",
+  "flight-recorder.json",
+]);
 const isSensitiveDiagnosticKey = (key: string): boolean => {
   const normalized = key.replace(/[_-]/g, "").toLowerCase();
   return (
@@ -86,7 +98,11 @@ export const sanitizeDiagnosticValue = (value: unknown, key = ""): unknown => {
   if (/url$/i.test(key)) return typeof value === "string" ? sanitizeUrl(value) : "[redacted]";
   if (isSensitiveDiagnosticKey(key)) return "[redacted]";
   if (typeof value === "string") return sanitizeText(value);
-  if (Array.isArray(value)) return value.slice(0, 100).map((item) => sanitizeDiagnosticValue(item));
+  if (Array.isArray(value)) {
+    // Chronological evidence must retain the incident nearest the export time.
+    const bounded = RECENT_DIAGNOSTIC_ARRAY_KEYS.has(key) ? value.slice(-100) : value.slice(0, 100);
+    return bounded.map((item) => sanitizeDiagnosticValue(item));
+  }
   if (value && typeof value === "object") {
     return Object.fromEntries(
       Object.entries(value as Record<string, unknown>).map(([childKey, childValue]) => [
@@ -335,7 +351,11 @@ export class DiagnosticsService {
       for (const file of extraFiles) {
         let content: string;
         try {
-          content = JSON.stringify(sanitizeDiagnosticValue(JSON.parse(file.content)), null, 2);
+          content = JSON.stringify(
+            sanitizeDiagnosticValue(JSON.parse(file.content), file.name),
+            null,
+            2,
+          );
         } catch {
           content = sanitizeText(file.content);
         }
