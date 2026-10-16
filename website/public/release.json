@@ -1,20 +1,20 @@
 {
-  "tag_name": "v3.4.6",
-  "published_at": "2026-10-11T12:20:14Z",
-  "html_url": "https://github.com/soberbw-hash/shanghao/releases/tag/v3.4.6",
+  "tag_name": "v3.4.7",
+  "published_at": "2026-10-16T00:46:20Z",
+  "html_url": "https://github.com/soberbw-hash/shanghao/releases/tag/v3.4.7",
   "highlights": [
-    "减少首页卡顿与叠音。 资源在空闲时分批准备，启动期间不积攒提示音，避免解锁声音后一齐播放。",
-    "播放中也能调音量。 语音包和音乐正在播放时，设置里的音量立即生效；新用户默认 30%，已有音量保持不变，界面按钮音量仍独立。",
-    "游戏悬浮窗更安静。 游戏中保持鼠标穿透，减少鼠标轮询和重复置顶；悬浮窗不再单独占用任务栏预览，迟到加载不会重新弹出主窗口。",
-    "麦克风切换更稳。 同设备调整降噪或人声增强时复用有效采集，减少反复打开设备；设置失败保留原状态，输入不可用时显示具体原因。"
+    "修复重复的精彩时刻区域。 录音库的录音片段和转录/模型对比区域使用各自稳定且唯一的组件标识，不会因 React 复用组件状态而把同一组精彩时刻重复渲染。",
+    "回放时不再误加标记。 标记仅在实际录音期间接受；回看录音或在对比页面点击播放进度条，不会把播放位置写成新标记。重复标记 ID 也会被忽略。",
+    "减轻进入房间时的瞬时卡顿和叠音。 房间设备初始化前暂停可选的视觉资源预热，进入并完成页面切换后再恢复。自动录音仍会启动，但不再与进房提示音叠播。",
+    "麦克风无响应时给出有限等待和明确提示。 采集请求超过设定等待时间会返回可识别错误；若底层请求迟到返回，会释放迟到音轨，避免留下未使用的采集流。"
   ],
   "assets": [
     {
-      "name": "ShangHao-3.4.6-Setup-x64.exe",
-      "size": 193226809,
-      "browser_download_url": "https://github.com/soberbw-hash/shanghao/releases/download/v3.4.6/ShangHao-3.4.6-Setup-x64.exe",
-      "mirror_path": "/downloads/v3.4.6/ShangHao-3.4.6-Setup-x64.exe",
-      "sha256": "94e43a31eb3a599bf2e6616f358ec48053b4ea523b38ff6ed9ff885c07b98644"
+      "name": "ShangHao-3.4.7-Setup-x64.exe",
+      "size": 193229513,
+      "browser_download_url": "https://github.com/soberbw-hash/shanghao/releases/download/v3.4.7/ShangHao-3.4.7-Setup-x64.exe",
+      "mirror_path": "/downloads/v3.4.7/ShangHao-3.4.7-Setup-x64.exe",
+      "sha256": "34cdf25de65205491ed4e92a0b03b0c8c71db2a4b9f18d03454911afaa00b3b8"
     }
   ]
 }
