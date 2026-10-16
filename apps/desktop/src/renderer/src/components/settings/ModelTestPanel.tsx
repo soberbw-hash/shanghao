@@ -701,7 +701,7 @@ export const ModelTestPanel = ({
               ))}
             </div>
           ) : (
-            <p className="model-comparison-empty">在上方播放时间轴添加标记后，可在这里快捷跳转。</p>
+            <p className="model-comparison-empty">暂无录音标记</p>
           )}
         </section>
         <section className="model-comparison-summary-block">

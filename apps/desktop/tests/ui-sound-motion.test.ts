@@ -6,6 +6,20 @@ import test from "node:test";
 const readSource = (file: string): string =>
   readFileSync(path.resolve(process.cwd(), file), "utf8");
 
+test("entry suspends optional preparation before devices and auto-record does not stack a cue", () => {
+  const home = readSource("src/renderer/src/pages/HomePage.tsx");
+  const entry = home.slice(home.indexOf("const enterChannel ="), home.indexOf("const isJoining ="));
+  assert.ok(entry.indexOf('setRoomAction("starting")') < entry.indexOf('.unlock("enter-channel")'));
+  assert.ok(entry.includes('roomAction === "starting"'));
+  const room = readSource("src/renderer/src/pages/RoomPage.tsx");
+  const automatic = room.slice(
+    room.indexOf("const attemptAutoRecord ="),
+    room.indexOf("const attemptAutoRecord =") + 2500,
+  );
+  assert.equal(automatic.includes('playUiSound("record-start")'), false);
+  assert.ok(room.includes('playUiSound("record-start")'), "manual record still has feedback");
+});
+
 test("semantic UI sound engine stays bounded, routed, and free of hover or typing noise", () => {
   const packageJson = JSON.parse(readSource("package.json")) as {
     dependencies?: Record<string, string>;

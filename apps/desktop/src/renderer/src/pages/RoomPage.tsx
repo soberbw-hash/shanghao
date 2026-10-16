@@ -435,7 +435,8 @@ export const RoomPage = () => {
         }
         autoRecordRetryCountRef.current = 0;
         autoRecordRetryTimerRef.current = undefined;
-        playUiSound("record-start");
+        // Joining already plays its entry cue. Automatic recording keeps its
+        // visual confirmation without layering a second startup sound on top.
         pushToast({
           tone: "neutral",
           title: "已自动开始录音",

@@ -11,7 +11,10 @@ import { InteractionPerformanceHud } from "../components/diagnostics/Interaction
 import { runtimeHealthCollector } from "../features/diagnostics/runtimeHealthCollector";
 import { RemoteAudioRenderer } from "../features/audio/RemoteAudioRenderer";
 import { visualRuntimeController } from "../features/visual-runtime/VisualRuntimeController";
-import { waitForVisualIdle } from "../features/visual-runtime/waitForVisualIdle";
+import {
+  updateVisualWarmupActivity,
+  waitForVisualIdle,
+} from "../features/visual-runtime/waitForVisualIdle";
 import { displayRefreshRateService } from "../features/visual-runtime/DisplayRefreshRateService";
 import { useAppBootstrap } from "../hooks/useAppBootstrap";
 import { useGlobalMuteSync } from "../hooks/useGlobalMuteSync";
@@ -75,6 +78,14 @@ export const App = () => {
   }, []);
 
   const currentPage = useAppStore((state) => state.currentPage);
+  useEffect(() => {
+    const sync = () => {
+      const state = useAppStore.getState();
+      updateVisualWarmupActivity(state.roomAction !== "idle", state.currentPage);
+    };
+    sync();
+    return useAppStore.subscribe(sync);
+  }, []);
   const [hasOpenedSettings, setHasOpenedSettings] = useState(currentPage === "settings");
   const settingsReturnTo = useAppStore((state) => state.settingsReturnTo);
   const bootstrapPhase = useAppStore((state) => state.bootstrapPhase);

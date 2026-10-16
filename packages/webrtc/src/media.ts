@@ -8,6 +8,7 @@ import {
 } from "@private-voice/shared";
 
 import { createAudioConstraints, type AudioConstraintOverrides } from "./audioConstraints";
+import { requestAudioCapture } from "./audioCaptureRequest";
 
 export const requestMicrophoneStream = async (
   overrides: AudioConstraintOverrides = {},
@@ -19,7 +20,7 @@ export const requestMicrophoneStream = async (
   let sampleRateFallbackApplied = false;
   let stream: MediaStream;
   try {
-    stream = await navigator.mediaDevices.getUserMedia(createAudioConstraints(overrides));
+    stream = await requestAudioCapture(createAudioConstraints(overrides));
   } catch (error) {
     const canRetryWithoutSampleRate =
       error instanceof DOMException &&
@@ -29,7 +30,7 @@ export const requestMicrophoneStream = async (
     }
     sampleRateFallbackApplied = true;
     const fallbackConstraints = createAudioConstraints(overrides);
-    stream = await navigator.mediaDevices.getUserMedia({
+    stream = await requestAudioCapture({
       ...fallbackConstraints,
       audio: {
         ...(fallbackConstraints.audio as MediaTrackConstraints),

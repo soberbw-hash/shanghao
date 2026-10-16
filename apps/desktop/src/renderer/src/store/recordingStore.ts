@@ -59,7 +59,16 @@ export const useRecordingStore = create<RecordingStoreState>((set, get) => ({
     saveRecordings(newHistory);
     set({ history: newHistory });
   },
-  addMarker: (marker) => set((state) => ({ markers: [...state.markers, marker] })),
+  addMarker: (marker) =>
+    set((state) => {
+      // Library playback must never mutate the active recording's marker list.
+      if (
+        state.status.state !== RecordingState.Recording ||
+        state.markers.some((item) => item.id === marker.id)
+      )
+        return state;
+      return { markers: [...state.markers, marker] };
+    }),
   clearMarkers: () => set({ markers: [] }),
   resetStatus: () =>
     set({

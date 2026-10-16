@@ -130,8 +130,9 @@ const soundRecipes: Record<Exclude<UiSound, "knock-bell">, UiSoundRecipe> = {
 
 const preloadSounds: readonly Exclude<UiSound, "knock-bell">[] = [
   "button-click",
-  "popup-open",
   "enter-room",
+  "record-start",
+  "popup-open",
   "leave-room",
   "member-join",
   "member-leave",
@@ -141,7 +142,6 @@ const preloadSounds: readonly Exclude<UiSound, "knock-bell">[] = [
   "receive-message",
   "mic-on",
   "mic-off",
-  "record-start",
   "record-stop",
   "model-complete",
 ];

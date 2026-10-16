@@ -64,7 +64,7 @@ test("home page summarizes both sound devices without a mic-test panel", () => {
   const source = readFileSync(sourcePath, "utf8");
 
   assert.equal(source.includes("试音"), false);
-  assert.equal(source.includes("声音正常"), true);
+  assert.equal(source.includes("声音设备"), true);
   assert.equal(source.includes('aria-label="扬声器设备"'), true);
 });
 

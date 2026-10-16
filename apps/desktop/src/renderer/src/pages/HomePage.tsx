@@ -239,7 +239,7 @@ export const HomePage = () => {
         ? { title: "听不到你", tone: "warn" }
         : outputDevices.length === 0
           ? { title: "没有扬声器", tone: "warn" }
-          : { title: "声音正常", tone: "good" };
+          : { title: "声音设备", tone: "good" };
 
   const hasSelectedInput = settings.preferredInputDeviceId
     ? inputDevices.some((device) => device.id === settings.preferredInputDeviceId)
@@ -301,6 +301,7 @@ export const HomePage = () => {
   };
 
   const enterChannel = async (target: PrivateRoomInfo) => {
+    if (useAppStore.getState().roomAction !== "idle") return;
     const normalizedAddress = normalizeRelayServerUrl(serverAddress);
     const trimmedNickname = nickname.trim();
     const nicknameError = getNicknameValidationError(trimmedNickname);
@@ -319,11 +320,13 @@ export const HomePage = () => {
       return;
     }
 
-    // Keep this call inside the click event so Chromium grants remote audio playback
-    // before settings/network awaits consume the user activation.
-    void getRemoteAudioMixer().unlock("enter-channel");
     setIsSubmitting(true);
+    useAppStore.getState().setRoomAction("starting");
     try {
+      // Keep this call inside the click event so Chromium grants remote audio playback
+      // before settings/network awaits consume the user activation. Suspend optional
+      // warmup before even the first device/context initialization starts.
+      void getRemoteAudioMixer().unlock("enter-channel");
       // Let React commit the pressed/loading state before device and signaling work starts.
       await waitForNextPaint();
       if (!(await verifyAudioDevices())) return;
@@ -337,6 +340,8 @@ export const HomePage = () => {
       await joinChannel(normalizedAddress, target.roomId);
     } finally {
       setIsSubmitting(false);
+      if (useAppStore.getState().roomAction === "starting")
+        useAppStore.getState().setRoomAction("idle");
     }
   };
 

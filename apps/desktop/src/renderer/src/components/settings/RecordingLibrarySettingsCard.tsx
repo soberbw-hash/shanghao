@@ -1260,35 +1260,39 @@ export const RecordingLibrarySettingsCard = ({
                   {playbackError}
                 </div>
               ) : null}
-              <RecordingClipsPanel
-                key={selected.id}
-                recording={selected}
-                durationMs={Math.round(duration * 1_000)}
-                settings={settings}
-                onChange={onChange}
-                onPreview={clipPreview.play}
-              />
-              {isModelComparisonOpen ? (
-                <ModelTestPanel
-                  key={selected.recordingId}
+              <div key="recording-clips-slot">
+                <RecordingClipsPanel
+                  key={`clips:${selected.id}`}
                   recording={selected}
-                  recordingTitle={recordingTitle(selected)}
-                  audioDurationMs={duration > 0 ? Math.round(duration * 1_000) : undefined}
-                  onClose={() => setIsModelComparisonOpen(false)}
-                  onSeek={(offsetMs) => {
-                    resetClipPreview();
-                    if (audioRef.current) audioRef.current.currentTime = offsetMs / 1_000;
-                    setCurrentTime(offsetMs / 1_000);
-                  }}
+                  durationMs={Math.round(duration * 1_000)}
+                  settings={settings}
+                  onChange={onChange}
+                  onPreview={clipPreview.play}
                 />
-              ) : (
-                <VoiceMemoryDetail
-                  recording={selected}
-                  roomName="好友语音"
-                  selectedAsrModel={settings.aiAsrModel}
-                  onSeek={seekTranscript}
-                />
-              )}
+              </div>
+              <div key="recording-analysis-slot">
+                {isModelComparisonOpen ? (
+                  <ModelTestPanel
+                    key={`comparison:${selected.recordingId}`}
+                    recording={selected}
+                    recordingTitle={recordingTitle(selected)}
+                    audioDurationMs={duration > 0 ? Math.round(duration * 1_000) : undefined}
+                    onClose={() => setIsModelComparisonOpen(false)}
+                    onSeek={(offsetMs) => {
+                      resetClipPreview();
+                      if (audioRef.current) audioRef.current.currentTime = offsetMs / 1_000;
+                      setCurrentTime(offsetMs / 1_000);
+                    }}
+                  />
+                ) : (
+                  <VoiceMemoryDetail
+                    recording={selected}
+                    roomName="好友语音"
+                    selectedAsrModel={settings.aiAsrModel}
+                    onSeek={seekTranscript}
+                  />
+                )}
+              </div>
             </div>
           ) : (
             <div className="recording-library-empty">录音会按房间和日期自动整理在这里。</div>

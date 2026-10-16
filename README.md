@@ -8,7 +8,7 @@
 
 进房先看见人。谁在打游戏、听歌、接电话，谁暂时离开；聊天、分享的画面和昨晚的录音，也都在这间房里。
 
-[下载最新版](https://github.com/soberbw-hash/shanghao/releases/latest) · [看更新记录](./docs/release-notes/v3.4.6.md) · [看技术结构](#声音到底经过了什么)
+[下载最新版](https://github.com/soberbw-hash/shanghao/releases/latest) · [看更新记录](./docs/release-notes/v3.4.7.md) · [看技术结构](#声音到底经过了什么)
 
 ![上号二号房：人物、天气、日历、聊天与语音控制](./docs/readme/hero-room.webp)
 
@@ -75,6 +75,12 @@
 **19 · 长录音可以继续整理。** 转录后可以整理要点、查找片段；房间问答可查询游戏攻略和资料。AI 结果需要自己核对，连接云端问答时也应留意服务器的数据边界。
 
 **20 · 房间记录按天回看。** 成员、活跃时长、游戏、消息数与屏幕分享情况会形成每日记录，当天首次开启时弹出；设置页不再重复提供入口。整理摘要默认留在本机，点击“上传到服务器”后才进入录音原房间的共享记录；也可按需开启默认关闭的自动上传。
+
+## 3.4.7 更新
+
+录音库回放和模型对比不会再把卡片错误复用成重复的精彩时刻；只有录音进行中产生的新标记才会保存。进入房间时推迟可选视觉资源预热，并避免自动录音提示音和进房音效叠在一起。麦克风采集无响应时会在有限等待后给出明确提示。
+
+修复录音库中重复标记卡片、回放期间点击时间轴错误写入标记、进房瞬间资源准备造成的卡顿，以及自动录音提示音叠加。[查看全部更新](./docs/release-notes/v3.4.7.md)。
 
 ## 3.4.6 更新
 
@@ -213,7 +219,7 @@ React/Zustand 管房间界面与状态，Electron 主进程管窗口、设备和
 
 ## 下载与使用
 
-当前仓库版本为 **3.4.6**，正式支持 **Windows 10 / 11 x64**。[到 GitHub Releases 下载最新版](https://github.com/soberbw-hash/shanghao/releases/latest)，同页提供安装包、自动更新元数据与 SHA-256 校验文件。[查看 v3.4.6 更新公告](./docs/release-notes/v3.4.6.md)。安装后可通过 CloudBase 手机号验证注册并登录账号，创建私人房间或通过频道号找到朋友，再明确加入同一房间。
+当前仓库版本为 **3.4.7**，正式支持 **Windows 10 / 11 x64**。[到 GitHub Releases 下载最新版](https://github.com/soberbw-hash/shanghao/releases/latest)，同页提供安装包、自动更新元数据与 SHA-256 校验文件。[查看 v3.4.7 更新公告](./docs/release-notes/v3.4.7.md)。安装后可通过 CloudBase 手机号验证注册并登录账号，创建私人房间或通过频道号找到朋友，再明确加入同一房间。
 
 录音、模型和已下载资源主要保存在本机。更新可在后台下载，安装并重启必须由用户点击。自行部署可参照 [Relay](./docs/deploy-relay-server.md)、[TURN](./docs/deploy-turn.md) 与[网络修复](./docs/network-repair.md)。
 

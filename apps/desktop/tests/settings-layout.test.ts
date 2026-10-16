@@ -870,7 +870,8 @@ test("AI voice memory keeps first install manual and recovers interrupted compar
   assert.equal(readFileSync(voiceMemoryDetailPath, "utf8").includes("model-comparison:"), true);
   assert.equal(readFileSync(voiceMemoryDetailPath, "utf8").includes("转录进度 ·"), false);
   assert.equal(recordingSource.includes("setIsModelComparisonOpen(false)"), true);
-  assert.equal(recordingSource.includes("key={selected.recordingId}"), true);
+  assert.equal(recordingSource.includes("key={`comparison:${selected.recordingId}`}"), true);
+  assert.equal(recordingSource.includes("key={`clips:${selected.id}`}"), true);
   assert.match(
     styles,
     /\.model-comparison-picker-grid\s*\{[^}]*grid-template-columns:\s*repeat\(3,/s,
