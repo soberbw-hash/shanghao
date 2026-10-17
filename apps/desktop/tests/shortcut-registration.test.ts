@@ -14,7 +14,7 @@ const source = ts.transpileModule(
   { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } },
 ).outputText;
 
-const harness = () => {
+const harness = (keyAtHookStart?: UiohookKeyboardEvent) => {
   const bindings = new Map<string, () => void>();
   const sent: unknown[][] = [];
   const hooks = new Map<string, (...args: unknown[]) => void>();
@@ -30,6 +30,7 @@ const harness = () => {
           mute: { applied: string | null; observed: string };
           quickMessages: { slot: number; applied: string | null; observed: string }[];
           mouseHook: { started: boolean; suppressed: boolean };
+          phone: { applied: string | null; observed: string };
         };
         setMouseHookSuppressed(suppressed: boolean): void;
         dispose(): void;
@@ -64,8 +65,12 @@ const harness = () => {
         return {
           uIOhook: {
             on: (name: string, callback: (...args: unknown[]) => void) => hooks.set(name, callback),
-            off: (name: string) => hooks.delete(name),
-            start: () => undefined,
+            off: (name: string, callback: (...args: unknown[]) => void) => {
+              if (hooks.get(name) === callback) hooks.delete(name);
+            },
+            start: () => {
+              if (keyAtHookStart) hooks.get("keydown")?.(keyAtHookStart);
+            },
             stop: () => undefined,
           },
         };
@@ -89,6 +94,39 @@ const harness = () => {
   const controller = new module.exports.ShortcutController(() => null);
   return { controller, bindings, hooks, sent, registrations: () => registrations };
 };
+
+test("phone shortcut listens before the native hook starts delivering keys", () => {
+  const states: (boolean | undefined)[] = [];
+  const { controller } = harness({
+    keycode: UiohookKey.ArrowDown,
+    ctrlKey: false,
+    altKey: false,
+    shiftKey: false,
+    metaKey: false,
+  });
+  controller.configurePhone("ArrowDown", "hold", (active) => states.push(active));
+  assert.deepEqual(states, [true], "the first key-down must not be lost during hook startup");
+  controller.dispose();
+});
+
+test("game input suppression keeps the phone keyboard shortcut available", () => {
+  const states: (boolean | undefined)[] = [];
+  const { controller, hooks } = harness();
+  controller.configurePhone("ArrowDown", "hold", (active) => states.push(active));
+  controller.setMouseHookSuppressed(true);
+  const key = {
+    keycode: UiohookKey.ArrowDown,
+    ctrlKey: false,
+    altKey: false,
+    shiftKey: false,
+    metaKey: false,
+  };
+  hooks.get("keydown")!(key);
+  hooks.get("keyup")!(key);
+  assert.deepEqual(states, [true, false]);
+  assert.equal(controller.getRuntimeSnapshot().phone.observed, "active");
+  controller.dispose();
+});
 
 test("phone Space works even when Electron refuses to reserve it", async () => {
   const { controller, hooks, registrations } = harness();

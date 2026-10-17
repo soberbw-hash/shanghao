@@ -477,8 +477,10 @@ export const AiVoiceMemorySettingsCard = ({
       );
       pushToast({
         tone: "neutral",
-        title: `${model.name} 正在准备`,
-        description: dependencyPending ? "正在准备所需文件。" : "软件会自动完成，请稍后重试。",
+        title: `${model.name} 运行组件未就绪`,
+        description: dependencyPending
+          ? "请先完成共享组件的安装。"
+          : (model.runtimeMessage ?? "请在模型菜单中点击“重试 / 修复”。"),
       });
       return;
     }
@@ -533,7 +535,9 @@ export const AiVoiceMemorySettingsCard = ({
       : model.activeRevision && !model.runtimeReady && model.runtimeMessage
         ? dependencyPending
           ? "等待共享组件"
-          : "正在自动准备"
+          : model.phase === "preparing"
+            ? "正在准备运行组件"
+            : "运行组件未就绪，点击菜单修复"
         : model.activeRevision && model.inferenceBackend === "freetoken" && model.runtimeMetrics
           ? `${
               model.runtimeMetrics.phase === "starting" || model.runtimeMetrics.phase === "loading"

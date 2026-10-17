@@ -3,6 +3,7 @@ import {
   type RuntimeComponentArtifact,
 } from "./runtime-component-download";
 import { existsSync } from "node:fs";
+import { preparePortablePython } from "./portable-python-runtime";
 import { access, copyFile, mkdir, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { cleanAsrText, hasAsrBody, restoreAlignedPunctuation } from "./asr-text-postprocess";
@@ -1138,9 +1139,7 @@ export class AiRuntimeManager {
       if (before.ready || before.errorCode === "model_missing") {
         return { ready: before.ready, message: before.message };
       }
-      if (!(await exists(this.pythonExecutable))) {
-        return { ready: false, message: "便携 Python 尚未安装，无法准备本地整理组件。" };
-      }
+      await this.ensurePythonRuntime(signal);
       await this.ensureCudaRuntime(signal);
       await mkdir(this.qwenOrganizerPythonPath, { recursive: true });
       try {
@@ -1171,9 +1170,7 @@ export class AiRuntimeManager {
     if (before.ready || before.errorCode === "model_missing") {
       return { ready: before.ready, message: before.message };
     }
-    if (!(await exists(this.pythonExecutable))) {
-      return { ready: false, message: "便携 Python 尚未安装，无法准备转录运行组件。" };
-    }
+    await this.ensurePythonRuntime(signal);
 
     const mossCppModel = id === "moss-transcribe-diarize-0.9b-q8_0";
     if (!mossCppModel) await this.ensureCudaRuntime(signal);
@@ -1201,6 +1198,9 @@ export class AiRuntimeManager {
       "pip",
       "install",
       ...PRIVATE_PIP_INSTALL_ARGUMENTS,
+      ...(existsSync(path.join(path.dirname(this.pythonExecutable), ".shanghao-embedded-python"))
+        ? ["--no-build-isolation"]
+        : []),
       "--timeout",
       "120",
       "--retries",
@@ -1263,6 +1263,17 @@ export class AiRuntimeManager {
     if (!mossCppModel) await this.pythonCudaDiagnostics(true);
     const after = await this.asrStatus(id);
     return { ready: after.ready, message: after.message };
+  }
+
+  private async ensurePythonRuntime(signal?: AbortSignal): Promise<void> {
+    await preparePortablePython(
+      this.pythonExecutable,
+      {
+        fetcher: this.options.runtimeFetch,
+        consumeBytes: this.options.consumeDownloadBytes,
+      },
+      signal,
+    );
   }
 
   private downloadRuntimeComponent(

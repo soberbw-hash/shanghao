@@ -177,9 +177,20 @@ export class ShortcutController {
     )
       throw new Error("该快捷键已用于上号的其他功能，请先更改原快捷键");
     const previous = this.phoneBinding;
+    // Subscribe before starting the native hook. `start()` begins delivering
+    // events immediately, so registering listeners afterward can lose the
+    // first key-down (notably when the user presses the shortcut as the app
+    // or a replacement binding is initializing).
+    if (next) {
+      uIOhook.on("keydown", next.keyDown);
+      uIOhook.on("keyup", next.keyUp);
+    }
     this.phoneBinding = next;
     if (next && !this.ensureMouseHook()) {
       this.phoneBinding = previous;
+      uIOhook.off("keydown", next.keyDown);
+      uIOhook.off("keyup", next.keyUp);
+      next.reset();
       throw new Error("全局快捷键监听启动失败");
     }
     if (previous) {
@@ -188,10 +199,6 @@ export class ShortcutController {
       previous.reset();
     }
     this.phoneAccelerator = normalized;
-    if (next) {
-      uIOhook.on("keydown", next.keyDown);
-      uIOhook.on("keyup", next.keyUp);
-    }
     this.stopMouseHookIfUnused();
   }
 
