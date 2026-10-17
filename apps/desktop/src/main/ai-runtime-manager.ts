@@ -3,7 +3,7 @@ import {
   type RuntimeComponentArtifact,
 } from "./runtime-component-download";
 import { existsSync } from "node:fs";
-import { preparePortablePython } from "./portable-python-runtime";
+import { preparePortablePython, type PortablePythonOptions } from "./portable-python-runtime";
 import { access, copyFile, mkdir, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { cleanAsrText, hasAsrBody, restoreAlignedPunctuation } from "./asr-text-postprocess";
@@ -120,11 +120,9 @@ export type CudaRuntimeFailureReason =
   | "cuda_runtime_missing"
   | "bf16_unsupported";
 
-interface AiRuntimeManagerOptions {
+interface AiRuntimeManagerOptions extends PortablePythonOptions {
   writeLog?: (payload: RendererLogPayload) => Promise<void>;
   probeCuda?: () => Promise<PythonCudaDiagnostics>;
-  runtimeFetch?: import("./runtime-artifact-download").RuntimeArtifactFetcher;
-  consumeDownloadBytes?: (bytes: number, signal?: AbortSignal) => Promise<void>;
   acquireComputeSlot?: (
     kind: AiTaskKind,
     manualRequest: boolean,
@@ -1139,7 +1137,7 @@ export class AiRuntimeManager {
       if (before.ready || before.errorCode === "model_missing") {
         return { ready: before.ready, message: before.message };
       }
-      await this.ensurePythonRuntime(signal);
+      await preparePortablePython(this.pythonExecutable, this.options, signal);
       await this.ensureCudaRuntime(signal);
       await mkdir(this.qwenOrganizerPythonPath, { recursive: true });
       try {
@@ -1170,7 +1168,7 @@ export class AiRuntimeManager {
     if (before.ready || before.errorCode === "model_missing") {
       return { ready: before.ready, message: before.message };
     }
-    await this.ensurePythonRuntime(signal);
+    await preparePortablePython(this.pythonExecutable, this.options, signal);
 
     const mossCppModel = id === "moss-transcribe-diarize-0.9b-q8_0";
     if (!mossCppModel) await this.ensureCudaRuntime(signal);
@@ -1265,17 +1263,6 @@ export class AiRuntimeManager {
     return { ready: after.ready, message: after.message };
   }
 
-  private async ensurePythonRuntime(signal?: AbortSignal): Promise<void> {
-    await preparePortablePython(
-      this.pythonExecutable,
-      {
-        fetcher: this.options.runtimeFetch,
-        consumeBytes: this.options.consumeDownloadBytes,
-      },
-      signal,
-    );
-  }
-
   private downloadRuntimeComponent(
     artifact: RuntimeComponentArtifact,
     destination: string,
@@ -1284,8 +1271,8 @@ export class AiRuntimeManager {
   ): Promise<string> {
     return downloadRuntimeComponent(artifact, destination, {
       signal,
-      fetcher: this.options.runtimeFetch,
-      consumeBytes: this.options.consumeDownloadBytes,
+      fetcher: this.options.fetcher,
+      consumeBytes: this.options.consumeBytes,
       onRetry: async ({ attempt, source, error }) => {
         await this.log("warn", `${label} download retry`, {
           attempt,

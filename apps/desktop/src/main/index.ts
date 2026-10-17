@@ -505,10 +505,8 @@ const bootstrap = async (): Promise<void> => {
       writeLog: (payload) => diagnostics?.writeLog(payload) ?? Promise.resolve(),
       acquireComputeSlot: (kind, manualRequest, signal) =>
         aiModels.acquireComputeSlot(kind, manualRequest, signal),
-      runtimeFetch: (input, init) =>
-        net.fetch(input instanceof URL ? input.toString() : input, init),
-      consumeDownloadBytes: (bytes, signal) =>
-        aiModels.consumeBackgroundDownloadBytes(bytes, signal),
+      fetcher: (input, init) => net.fetch(input instanceof URL ? input.toString() : input, init),
+      consumeBytes: (bytes, signal) => aiModels.consumeBackgroundDownloadBytes(bytes, signal),
     },
   );
   const freeTokenRuntime = new FreeTokenManagedRuntime(aiRuntimeDirectory, {
