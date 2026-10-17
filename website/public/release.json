@@ -1,20 +1,20 @@
 {
-  "tag_name": "v3.4.7",
-  "published_at": "2026-10-16T00:46:20Z",
-  "html_url": "https://github.com/soberbw-hash/shanghao/releases/tag/v3.4.7",
+  "tag_name": "v3.4.8",
+  "published_at": "2026-10-17T06:40:35Z",
+  "html_url": "https://github.com/soberbw-hash/shanghao/releases/tag/v3.4.8",
   "highlights": [
-    "修复重复的精彩时刻区域。 录音库的录音片段和转录/模型对比区域使用各自稳定且唯一的组件标识，不会因 React 复用组件状态而把同一组精彩时刻重复渲染。",
-    "回放时不再误加标记。 标记仅在实际录音期间接受；回看录音或在对比页面点击播放进度条，不会把播放位置写成新标记。重复标记 ID 也会被忽略。",
-    "减轻进入房间时的瞬时卡顿和叠音。 房间设备初始化前暂停可选的视觉资源预热，进入并完成页面切换后再恢复。自动录音仍会启动，但不再与进房提示音叠播。",
-    "麦克风无响应时给出有限等待和明确提示。 采集请求超过设定等待时间会返回可识别错误；若底层请求迟到返回，会释放迟到音轨，避免留下未使用的采集流。"
+    "修复本地模型无法准备。 本地 ASR 模型已下载但应用准备失败时，受管私有 Python Runtime 会按应用需要完成初始化，不依赖用户另行安装系统 Python。初始化失败会返回明确状态，并支持从模型卡片重试。",
+    "修复启动时的通话快捷键竞态。 电话模式在启动全局输入钩子前先注册按键监听，避免钩子启动瞬间按下快捷键、监听尚未就绪而漏掉事件。",
+    "保留游戏状态下的按键处理。 回归覆盖游戏活动抑制逻辑和全局按键路径，确保该路径不会因普通游戏活动检测被整体屏蔽。",
+    "模型 Runtime、模型初始化失败提示和重试路径，以及电话模式快捷键的定向自动化回归已覆盖；合并到发布标签后的完整检查由 GitHub Actions 执行。"
   ],
   "assets": [
     {
-      "name": "ShangHao-3.4.7-Setup-x64.exe",
-      "size": 193229513,
-      "browser_download_url": "https://github.com/soberbw-hash/shanghao/releases/download/v3.4.7/ShangHao-3.4.7-Setup-x64.exe",
-      "mirror_path": "/downloads/v3.4.7/ShangHao-3.4.7-Setup-x64.exe",
-      "sha256": "34cdf25de65205491ed4e92a0b03b0c8c71db2a4b9f18d03454911afaa00b3b8"
+      "name": "ShangHao-3.4.8-Setup-x64.exe",
+      "size": 193230573,
+      "browser_download_url": "https://github.com/soberbw-hash/shanghao/releases/download/v3.4.8/ShangHao-3.4.8-Setup-x64.exe",
+      "mirror_path": "/downloads/v3.4.8/ShangHao-3.4.8-Setup-x64.exe",
+      "sha256": "2f7ed79ac3db60d21bb501777d71c2d6fb8052b7de3bafbc6f4e7a7c478adeb5"
     }
   ]
 }
