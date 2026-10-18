@@ -56,6 +56,8 @@ $captures = @(
 )
 
 $viteProcess = $null
+$captureWorkspace = Join-Path $env:TEMP ("shanghao-release-capture-" + [guid]::NewGuid().ToString("N"))
+New-Item -ItemType Directory -Path $captureWorkspace | Out-Null
 
 try {
   if (-not (Test-RendererReady)) {
@@ -83,7 +85,9 @@ try {
   }
 
   foreach ($capture in $captures) {
-    $target = Join-Path $resolvedOutput $capture.File
+    # The application also places its isolated profile beside SHANGHAO_CAPTURE_PATH.
+    # Keep that cache outside the repository and export only the curated PNG.
+    $target = Join-Path $captureWorkspace $capture.File
 
     if (Test-Path $target) {
       Remove-Item $target -Force
@@ -126,6 +130,7 @@ try {
     if (-not $process.WaitForExit(5000)) {
       Stop-ProcessTree -ProcessId $process.Id
     }
+    Copy-Item -LiteralPath $target -Destination (Join-Path $resolvedOutput $capture.File) -Force
   }
 } finally {
   Remove-Item Env:SHANGHAO_CAPTURE_MODE -ErrorAction SilentlyContinue

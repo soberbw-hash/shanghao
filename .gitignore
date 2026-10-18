@@ -25,6 +25,10 @@ apps/desktop/.local-reconnect-build/
 apps/desktop/local-test/
 apps/desktop/.tmp/
 apps/desktop/.dev-user-data/
+# Capture profiles are isolated caches, never release illustrations or source assets.
+docs/assets/releases/**/.user-data-*/
+docs/assets/releases/**/.documents-*/
+docs/assets/releases/**/ai/
 # Local AI models, runtimes and inference work files can exceed many GB and are user data.
 apps/desktop/work/
 apps/desktop/resources/native/shanghao-core*
