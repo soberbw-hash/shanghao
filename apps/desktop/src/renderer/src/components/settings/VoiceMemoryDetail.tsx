@@ -17,6 +17,7 @@ import {
 import { voiceMemoryTranscriptionPercent } from "../../features/ai/voiceMemoryPresentation";
 import { playUiSound } from "../../features/audio/uiSound";
 import { formatRecordingMarkerLabel } from "../../features/recording/recordingMarkerLabel";
+import { TranscriptionTimingNotice } from "./TranscriptionTimingNotice";
 import { transcriptionProviderError } from "../../features/ai/transcriptionProviderError";
 import { useSettingsStore } from "../../store/settingsStore";
 
@@ -55,7 +56,7 @@ const isKnownAsrModelId = (value: string): value is AiAsrModelId =>
 
 const describeError = (message: string, transcriptionFinished: boolean): string => {
   if (message.includes("voice_memory_shared_result_changed"))
-    return "另一个版本已保存完整转录，旧任务没有覆盖它。请重新打开这条录音查看。";
+    return "另一个版本已更新这条录音，旧任务没有覆盖新结果。请重新打开查看。";
   const providerError = transcriptionProviderError(message);
   if (providerError) return providerError;
   if (message.includes("organization_retry_exhausted"))
@@ -463,6 +464,7 @@ export const VoiceMemoryDetail = ({
           </div>
         )}
       </header>
+      <TranscriptionTimingNotice record={record} />
       {processing ? (
         <div className={`voice-memory-working is-${record.phase}`}>
           <div className="voice-memory-audio-trajectory" aria-hidden="true">

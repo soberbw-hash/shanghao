@@ -1159,6 +1159,7 @@ export const RoomPage = () => {
         </section>
         <div className="room-chat-column min-h-0">
           <RoomChatPanel
+            key={room.roomId}
             presenceControls={
               <MemberAvailabilityControls canSend={canSend} send={sendSceneReaction} />
             }
@@ -1172,6 +1173,8 @@ export const RoomPage = () => {
             isRoomAskOpen={isRoomAskOpen}
             roomAiPanel={
               <RoomAskDialog
+                key={room.roomId}
+                roomId={room.roomId}
                 canSend={canSend}
                 onSendToChat={(content, messageId) =>
                   sendChatMessage(content, undefined, messageId)

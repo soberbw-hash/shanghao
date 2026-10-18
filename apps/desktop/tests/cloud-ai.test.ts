@@ -16,6 +16,39 @@ const request = {
   prompt: "请返回 JSON",
 };
 
+test("leaving a room discards its late cloud response and cannot clear a new request", async () => {
+  const finish: Array<(text: string) => void> = [];
+  const controller = new CloudAiRequestController(undefined, {
+    isConfigured: () => true,
+    execute: async () => new Promise<string>((resolve) => finish.push(resolve)),
+  });
+  const socket = {} as Parameters<typeof controller.handle>[0];
+  const responses: Array<{ roomId: string; content?: string; errorCode?: string }> = [];
+  const a = controller.handle(socket, { ...request, roomId: "main" }, (response) =>
+    responses.push(response),
+  );
+  controller.cancelSocket(socket);
+  const b = controller.handle(
+    socket,
+    { ...request, roomId: "side", requestId: "request-b" },
+    (response) => responses.push(response),
+  );
+  finish[0]!("old A private answer");
+  await a;
+  assert.deepEqual(responses, []);
+  const blocked = controller.handle(
+    socket,
+    { ...request, roomId: "side", requestId: "request-c" },
+    (response) => responses.push(response),
+  );
+  await blocked;
+  assert.equal(responses[0]?.errorCode, "cloud_ai_request_in_progress");
+  finish[1]!("B answer");
+  await b;
+  assert.equal(responses[1]?.roomId, "side");
+  assert.equal(responses[1]?.content, "B answer");
+});
+
 test("cloud fallback handles provider failure without exposing credentials or inventing web search", async () => {
   const calls: Array<{ url: string; body: string }> = [];
   const service = new CloudAiService({

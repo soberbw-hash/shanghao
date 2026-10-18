@@ -11,6 +11,7 @@ export const roomAiError = (error: unknown): string => {
     cloud_ai_busy: "AI 服务繁忙，请稍后重试。",
     cloud_ai_request_in_progress: "上一条问题仍在处理，请先停止它。",
     ai_question_in_progress: "上一条问题仍在处理，请先停止它。",
+    ai_question_room_changed: "房间已经切换，这次回答已停止，请在当前房间重新提问。",
     cloud_ai_timeout: "AI 回答超时，问题已保留，可以重试。",
     cloud_ai_connection_closed: "房间连接已断开，恢复连接后再试。",
     cloud_ai_send_failed: "问题未发送成功，恢复连接后再试。",
@@ -26,8 +27,6 @@ export const roomAiError = (error: unknown): string => {
     model_qwen35: "请完全退出并重新打开上号，切换至房间云端 AI。",
     qwen_runtime_unavailable: "请完全退出并重新打开上号，切换至房间云端 AI。",
   };
-  return (
-    Object.entries(messages).find(([code]) => message.includes(code))?.[1] ??
-    "这次没有得到结果，请稍后重试。"
-  );
+  const known = Object.entries(messages).find(([code]) => message.includes(code));
+  return known?.[1] ?? "这次没有得到结果，请稍后重试。";
 };

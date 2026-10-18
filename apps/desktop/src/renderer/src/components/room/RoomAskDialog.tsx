@@ -12,7 +12,14 @@ import { useRoomAiShare } from "../../features/room/useRoomAiShare";
 import { AssistantBotAvatar } from "./AssistantBotAvatar";
 import type { AssistantBotMood } from "../../features/ai/useAssistantBotState";
 
+import {
+  readQuestionHistory,
+  rememberQuestion,
+  roomQuestionHistoryKey,
+} from "../../features/room/roomQuestionHistory";
+
 interface RoomAskDialogProps {
+  roomId: string;
   isOpen: boolean;
   inline?: boolean;
   reduceMotion: boolean;
@@ -25,63 +32,6 @@ interface RoomAskDialogProps {
 
 type PendingAction = "ask";
 
-interface RoomQuestionHistoryEntry {
-  id: string;
-  question: string;
-  answer: VoiceMemoryAnswer;
-  createdAt: string;
-}
-
-const ROOM_QUESTION_HISTORY_KEY = "shanghao:room-question-history:v1";
-const ROOM_QUESTION_HISTORY_LIMIT = 10;
-const readQuestionHistory = (): RoomQuestionHistoryEntry[] => {
-  try {
-    const parsed = JSON.parse(window.localStorage.getItem(ROOM_QUESTION_HISTORY_KEY) ?? "[]") as
-      RoomQuestionHistoryEntry[] | undefined;
-    if (!Array.isArray(parsed)) return [];
-    return parsed
-      .filter(
-        (entry) =>
-          typeof entry?.id === "string" &&
-          typeof entry.question === "string" &&
-          typeof entry.createdAt === "string" &&
-          typeof entry.answer?.text === "string" &&
-          Array.isArray(entry.answer.sources) &&
-          entry.answer.sources.every(
-            (source) =>
-              typeof source?.startMs === "number" &&
-              Number.isFinite(source.startMs) &&
-              typeof source.quote === "string",
-          ),
-      )
-      .slice(0, ROOM_QUESTION_HISTORY_LIMIT);
-  } catch {
-    return [];
-  }
-};
-
-const rememberQuestion = (
-  history: RoomQuestionHistoryEntry[],
-  question: string,
-  answer: VoiceMemoryAnswer,
-): RoomQuestionHistoryEntry[] => {
-  const next = [
-    {
-      id: crypto.randomUUID(),
-      question,
-      answer,
-      createdAt: new Date().toISOString(),
-    },
-    ...history,
-  ].slice(0, ROOM_QUESTION_HISTORY_LIMIT);
-  try {
-    window.localStorage.setItem(ROOM_QUESTION_HISTORY_KEY, JSON.stringify(next));
-  } catch {
-    // A full or unavailable local store must not block the current answer.
-  }
-  return next;
-};
-
 const formatOffset = (offsetMs: number): string => {
   const seconds = Math.max(0, Math.floor(offsetMs / 1_000));
   const minutes = Math.floor(seconds / 60);
@@ -90,6 +40,7 @@ const formatOffset = (offsetMs: number): string => {
 
 /** One room-level entry for asking a question without blocking the room. */
 export const RoomAskDialog = ({
+  roomId,
   isOpen,
   inline = false,
   reduceMotion,
@@ -111,8 +62,7 @@ export const RoomAskDialog = ({
   const [pendingSeconds, setPendingSeconds] = useState(0);
   const [answer, setAnswer] = useState<VoiceMemoryAnswer>();
   const [error, setError] = useState<string>();
-  const [questionHistory, setQuestionHistory] =
-    useState<RoomQuestionHistoryEntry[]>(readQuestionHistory);
+  const [questionHistory, setQuestionHistory] = useState(() => readQuestionHistory(roomId));
   const [retainedOpen, setRetainedOpen] = useState(isOpen);
   useEffect(
     () => () => {
@@ -197,7 +147,7 @@ export const RoomAskDialog = ({
     setAnswer(undefined);
     sharing.clearNotice();
     try {
-      const nextAnswer = await window.desktopApi.ai.askMemory({ question: value });
+      const nextAnswer = await window.desktopApi.ai.askMemory({ question: value, roomId });
       if (sequence !== askSequenceRef.current) return;
       if (
         typeof nextAnswer?.text !== "string" ||
@@ -208,7 +158,7 @@ export const RoomAskDialog = ({
       setAnswer(nextAnswer);
       setQuery("");
       onAssistantMoodChange("idle");
-      setQuestionHistory((current) => rememberQuestion(current, value, nextAnswer));
+      setQuestionHistory((current) => rememberQuestion(roomId, current, value, nextAnswer));
     } catch (cause) {
       if (sequence !== askSequenceRef.current) return;
       setError(roomAiError(cause));
@@ -435,7 +385,7 @@ export const RoomAskDialog = ({
                           const next = questionHistory.filter((item) => item.id !== entry.id);
                           try {
                             window.localStorage.setItem(
-                              ROOM_QUESTION_HISTORY_KEY,
+                              roomQuestionHistoryKey(roomId),
                               JSON.stringify(next),
                             );
                             setQuestionHistory(next);

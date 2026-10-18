@@ -514,6 +514,18 @@ test("custom API receives original recording room memory and question room memor
   assert.deepEqual(ids, [roomA, roomB]);
   assert.ok(prompts[0]!.includes(roomA));
   assert.ok(!prompts[0]!.includes(roomB));
+  await gateway.generateJson({
+    purpose: "organize",
+    prompt: "没有房间归属的旧录音",
+    maxNewTokens: 100,
+    manual: true,
+  });
+  assert.deepEqual(
+    ids,
+    [roomA, roomB],
+    "unscoped recordings cannot inherit the joined room's private memory",
+  );
+  assert.doesNotMatch(prompts[2]!, /房间记忆/);
 });
 
 const recap = (roomId: string, id: string): PublishRecordingRecapMessage => ({
@@ -662,6 +674,7 @@ test("automatic extraction serializes each room, deduplicates sources, and honor
   await directory.delete(room.roomId, "owner");
   await assert.rejects(runtime.context(room.roomId), /room_not_found/);
   assert.equal(await runtime.context("main"), "");
+  await runtime.close();
 });
 
 test("automatic extraction cannot overwrite manual saves, and close cancels pending inference", async (t) => {
@@ -727,4 +740,55 @@ test("automatic extraction cannot overwrite manual saves, and close cancels pend
   await runtime.close();
   result = (await RoomMemoryStore.open(file)).get(room.roomId);
   assert.equal(result.entries.length, 0);
+});
+
+test("server restart resumes durable extraction only into the original room", async (t) => {
+  const directory = await PrivateRoomDirectory.open();
+  const a = await directory.create("owner", "A", {}),
+    b = await directory.create("outside", "B", {});
+  const file = path.join(await fixture(t), "memory.json");
+  let started = false;
+  const interrupted = new RoomMemoryRuntime(
+    Promise.resolve(directory),
+    backend,
+    () => true,
+    () => true,
+    file,
+    {
+      isConfigured: () => true,
+      execute: async (_request, signal) => {
+        started = true;
+        return new Promise((_resolve, reject) =>
+          signal?.addEventListener("abort", () => reject(Error("restart")), { once: true }),
+        );
+      },
+    },
+  );
+  await interrupted.observeRecap(recap(a.roomId, "restart-source"));
+  await waitFor(() => started);
+  await interrupted.close();
+  assert.match(await readFile(`${file}.jobs.json`, "utf8"), /restart-source/);
+  let calls = 0;
+  const resumed = new RoomMemoryRuntime(
+    Promise.resolve(directory),
+    backend,
+    () => true,
+    () => true,
+    file,
+    {
+      isConfigured: () => true,
+      execute: async (request) => {
+        calls++;
+        assert.equal(request.roomId, a.roomId);
+        return JSON.stringify({ facts: [fact] });
+      },
+    },
+  );
+  t.after(() => resumed.close());
+  await waitFor(async () => (await resumed.context(a.roomId)).includes(fact.text));
+  assert.equal(calls, 1);
+  assert.equal((await RoomMemoryStore.open(file)).get(b.roomId).entries.length, 0);
+  await waitFor(
+    async () => JSON.parse(await readFile(`${file}.jobs.json`, "utf8")).pending.length === 0,
+  );
 });

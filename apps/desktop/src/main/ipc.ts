@@ -1090,6 +1090,8 @@ export const registerIpcHandlers = ({
     async (_event, request: VoiceMemoryGlobalQuestionRequest): Promise<VoiceMemoryAnswer> =>
       voiceMemory.askMemory({
         question: requireString(request.question, 500, "memory_question"),
+        roomId:
+          request.roomId === undefined ? undefined : requireString(request.roomId, 64, "room_id"),
       }),
   );
   ipcMain.handle(IPC_CHANNELS.ai.cancelQuestion, async (): Promise<boolean> =>

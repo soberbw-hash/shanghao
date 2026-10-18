@@ -7,7 +7,7 @@ $ErrorActionPreference = "Stop"
 
 $workspaceRoot = Resolve-Path (Join-Path $PSScriptRoot "..")
 $desktopDirectory = Join-Path $workspaceRoot "apps/desktop"
-$electronCommand = Join-Path $desktopDirectory "node_modules/.bin/electron.cmd"
+$electronCommand = Join-Path $desktopDirectory "node_modules/electron/dist/electron.exe"
 $viteCommand = Join-Path $desktopDirectory "node_modules/.bin/vite.cmd"
 $rendererUrl = "http://127.0.0.1:5173"
 

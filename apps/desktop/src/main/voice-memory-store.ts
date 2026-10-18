@@ -370,7 +370,10 @@ export class VoiceMemoryStore {
         }
         record = { ...current, organizationPublication: record.organizationPublication };
       }
-      const next = normalizeLegacyRecord({ ...record, updatedAt: new Date().toISOString() });
+      const updatedAt = new Date(
+        Math.max(Date.now(), (Date.parse(current?.updatedAt ?? record.updatedAt) || 0) + 1),
+      ).toISOString();
+      const next = normalizeLegacyRecord({ ...record, updatedAt });
       if (!isVoiceMemoryRecord(next)) {
         throw new Error("voice_memory_record_unreadable");
       }
@@ -413,6 +416,7 @@ export class VoiceMemoryStore {
   async appendTranscriptionUnit(
     recordingId: string,
     unit: VoiceMemoryTranscriptionUnit,
+    _expectedUpdatedAt?: string,
   ): Promise<void> {
     await this.mutate(async () => {
       const directory = path.join(this.rootDirectory, TRANSCRIPTION_EVENT_DIRECTORY);

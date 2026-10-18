@@ -1,8 +1,5 @@
-import { lookup } from "node:dns/promises";
-import http from "node:http";
-import https from "node:https";
 import { isIP } from "node:net";
-import { net } from "electron";
+import { fetchPublicUrl, readPublicResponse } from "./public-network";
 import { readChatLinkMetadata } from "./chat-link-metadata";
 
 export interface ChatLinkPreview {
@@ -16,33 +13,6 @@ export interface ChatLinkPreview {
 const MAX_HTML_BYTES = 256 * 1024;
 const MAX_IMAGE_BYTES = 1024 * 1024;
 const cache = new Map<string, Promise<ChatLinkPreview>>();
-
-const isPublicIpv4 = (address: string): boolean => {
-  const octets = address.split(".").map(Number);
-  if (
-    octets.length !== 4 ||
-    octets.some((part) => !Number.isInteger(part) || part < 0 || part > 255)
-  )
-    return false;
-  const a = octets[0]!;
-  const b = octets[1]!;
-  const c = octets[2]!;
-  return !(
-    a === 0 ||
-    a === 10 ||
-    a === 127 ||
-    a >= 224 ||
-    (a === 169 && b === 254) ||
-    (a === 172 && b >= 16 && b <= 31) ||
-    (a === 192 && b === 168) ||
-    (a === 100 && b >= 64 && b <= 127) ||
-    (a === 192 && b === 0) ||
-    (a === 192 && b === 88) ||
-    (a === 192 && b === 0 && c === 2) ||
-    (a === 198 && b === 51 && c === 100) ||
-    (a === 203 && b === 0 && c === 113)
-  );
-};
 
 const validatedUrl = (raw: string): URL => {
   const url = new URL(raw);
@@ -66,120 +36,29 @@ const readPublicResource = async (
 ): Promise<{ body: Buffer; contentType: string; finalUrl: URL }> => {
   if (redirects > 3) throw new Error("link_preview_redirect_limit");
   const url = validatedUrl(raw);
-  const { address, family } = await lookup(url.hostname, { family: 4 });
-  if (family !== 4 || !isPublicIpv4(address)) throw new Error("link_preview_address_not_allowed");
-  if (typeof net?.request === "function") {
-    return new Promise((resolve, reject) => {
-      const request = net.request({ url: url.href, redirect: "manual" });
-      request.setHeader("Accept", maxBytes === MAX_HTML_BYTES ? "text/html" : "image/*");
-      const timeout = setTimeout(() => request.abort(), 5_000);
-      let redirected = false;
-      request.on("redirect", (_status, _method, target) => {
-        redirected = true;
-        clearTimeout(timeout);
-        request.abort();
-        void readPublicResource(target, maxBytes, redirects + 1).then(resolve, reject);
-      });
-      request.on("response", (response) => {
-        if (redirected) return;
-        const header = (name: string): string => {
-          const value: string | string[] | undefined = response.headers[name];
-          return Array.isArray(value) ? (value[0] ?? "") : (value ?? "");
-        };
-        if (response.statusCode !== 200 || Number(header("content-length")) > maxBytes) {
-          clearTimeout(timeout);
-          request.abort();
-          reject(new Error("link_preview_response_rejected"));
-          return;
-        }
-        const chunks: Buffer[] = [];
-        let size = 0;
-        response.on("data", (chunk: Buffer) => {
-          size += chunk.length;
-          if (size > maxBytes) {
-            request.abort();
-            reject(new Error("link_preview_too_large"));
-            return;
-          }
-          chunks.push(chunk);
-        });
-        response.on("end", () => {
-          clearTimeout(timeout);
-          resolve({
-            body: Buffer.concat(chunks),
-            contentType: header("content-type").split(";")[0]!.toLowerCase(),
-            finalUrl: url,
-          });
-        });
-        response.on("error", reject);
-      });
-      request.on("error", (error) => {
-        clearTimeout(timeout);
-        if (!redirected) reject(error);
-      });
-      request.end();
-    });
+  const response = await fetchPublicUrl(
+    url,
+    {
+      redirect: "manual",
+      signal: AbortSignal.timeout(5_000),
+      headers: { Accept: maxBytes === MAX_HTML_BYTES ? "text/html" : "image/*" },
+    },
+    "link_preview_address_not_allowed",
+  );
+  const location = response.headers.get("location");
+  if (response.status >= 300 && response.status < 400 && location) {
+    await response.body?.cancel();
+    return readPublicResource(new URL(location, url).href, maxBytes, redirects + 1);
   }
-  return new Promise((resolve, reject) => {
-    const requester = url.protocol === "https:" ? https : http;
-    const request = requester.get(
-      url,
-      {
-        lookup: (_hostname, _options, callback) => callback(null, address, 4),
-        timeout: 5_000,
-        headers: {
-          "User-Agent": "ShangHao/3 LinkPreview",
-          Accept: maxBytes === MAX_HTML_BYTES ? "text/html" : "image/*",
-        },
-      },
-      (response) => {
-        const location = response.headers.location;
-        if (
-          response.statusCode &&
-          response.statusCode >= 300 &&
-          response.statusCode < 400 &&
-          location
-        ) {
-          response.resume();
-          void readPublicResource(new URL(location, url).href, maxBytes, redirects + 1).then(
-            resolve,
-            reject,
-          );
-          return;
-        }
-        if (
-          response.statusCode !== 200 ||
-          Number(response.headers["content-length"] ?? 0) > maxBytes
-        ) {
-          response.resume();
-          reject(new Error("link_preview_response_rejected"));
-          return;
-        }
-        const chunks: Buffer[] = [];
-        let size = 0;
-        response.on("data", (chunk: Buffer) => {
-          size += chunk.length;
-          if (size > maxBytes) {
-            request.destroy(new Error("link_preview_too_large"));
-            return;
-          }
-          chunks.push(chunk);
-        });
-        response.on("end", () =>
-          resolve({
-            body: Buffer.concat(chunks),
-            contentType: String(response.headers["content-type"] ?? "")
-              .split(";")[0]!
-              .toLowerCase(),
-            finalUrl: url,
-          }),
-        );
-        response.on("error", reject);
-      },
-    );
-    request.on("timeout", () => request.destroy(new Error("link_preview_timeout")));
-    request.on("error", reject);
-  });
+  if (response.status !== 200) {
+    await response.body?.cancel();
+    throw new Error("link_preview_response_rejected");
+  }
+  return {
+    body: await readPublicResponse(response, maxBytes),
+    contentType: (response.headers.get("content-type") ?? "").split(";")[0]!.toLowerCase(),
+    finalUrl: url,
+  };
 };
 
 const loadPreview = async (raw: string): Promise<ChatLinkPreview> => {

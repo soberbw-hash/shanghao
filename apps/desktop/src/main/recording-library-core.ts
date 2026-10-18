@@ -286,56 +286,63 @@ const readRecordingLibraryItemsUnsafe = async (
   const legacyFavorites = new Set(metadata.favorites);
   const favoriteRecordingIds = new Set(metadata.favoriteRecordingIds ?? []);
   let metadataChanged = metadata.version !== 2;
-  const items = await Promise.all(
-    entries
-      .filter((entry) => entry.isFile() && entry.name.toLowerCase().endsWith(".m4a"))
-      .map(async (entry) => {
-        const filePath = path.join(directory, entry.name);
-        const fileStat = await stat(filePath);
-        let catalogEntry = byFileName.get(entry.name);
-        if (!catalogEntry) {
-          catalogEntry = {
-            recordingId: randomUUID(),
-            fileName: entry.name,
-            title: path.parse(entry.name).name,
-            createdAt: fileStat.birthtime.toISOString(),
-          };
-          recordings.push(catalogEntry);
-          byFileName.set(entry.name, catalogEntry);
-          metadataChanged = true;
-        }
-        if (
-          legacyFavorites.has(entry.name) &&
-          !favoriteRecordingIds.has(catalogEntry.recordingId)
-        ) {
-          favoriteRecordingIds.add(catalogEntry.recordingId);
-          metadataChanged = true;
-        }
-        const roomId =
-          catalogEntry.roomId ??
-          (entry.name.includes("-一号房-")
-            ? "main"
-            : entry.name.includes("-二号房-")
-              ? "side"
-              : undefined);
-        return {
-          id: catalogEntry.recordingId,
-          recordingId: catalogEntry.recordingId,
-          title: catalogEntry.title,
-          isCustomTitle: catalogEntry.isCustomTitle,
-          fileName: entry.name,
-          filePath,
-          mediaUrl: toRecordingMediaUrl(filePath),
-          createdAt: catalogEntry.createdAt,
-          modifiedAt: fileStat.mtime.toISOString(),
-          fileSize: fileStat.size,
-          roomId,
-          roomName: catalogEntry.roomName,
-          isFavorite: favoriteRecordingIds.has(catalogEntry.recordingId),
-          markers: await parseMarkers(filePath, catalogEntry.recordingId),
-        } satisfies RecordingLibraryItem;
-      }),
+  const files = entries.filter(
+    (entry) => entry.isFile() && entry.name.toLowerCase().endsWith(".m4a"),
   );
+  const items: RecordingLibraryItem[] = [];
+  // Bound disk pressure when thousands of recordings are refreshed.
+  for (let offset = 0; offset < files.length; offset += 8) {
+    items.push(
+      ...(await Promise.all(
+        files.slice(offset, offset + 8).map(async (entry) => {
+          const filePath = path.join(directory, entry.name);
+          const fileStat = await stat(filePath);
+          let catalogEntry = byFileName.get(entry.name);
+          if (!catalogEntry) {
+            catalogEntry = {
+              recordingId: randomUUID(),
+              fileName: entry.name,
+              title: path.parse(entry.name).name,
+              createdAt: fileStat.birthtime.toISOString(),
+            };
+            recordings.push(catalogEntry);
+            byFileName.set(entry.name, catalogEntry);
+            metadataChanged = true;
+          }
+          if (
+            legacyFavorites.has(entry.name) &&
+            !favoriteRecordingIds.has(catalogEntry.recordingId)
+          ) {
+            favoriteRecordingIds.add(catalogEntry.recordingId);
+            metadataChanged = true;
+          }
+          const roomId =
+            catalogEntry.roomId ??
+            (entry.name.includes("-一号房-")
+              ? "main"
+              : entry.name.includes("-二号房-")
+                ? "side"
+                : undefined);
+          return {
+            id: catalogEntry.recordingId,
+            recordingId: catalogEntry.recordingId,
+            title: catalogEntry.title,
+            isCustomTitle: catalogEntry.isCustomTitle,
+            fileName: entry.name,
+            filePath,
+            mediaUrl: toRecordingMediaUrl(filePath),
+            createdAt: catalogEntry.createdAt,
+            modifiedAt: fileStat.mtime.toISOString(),
+            fileSize: fileStat.size,
+            roomId,
+            roomName: catalogEntry.roomName,
+            isFavorite: favoriteRecordingIds.has(catalogEntry.recordingId),
+            markers: await parseMarkers(filePath, catalogEntry.recordingId),
+          } satisfies RecordingLibraryItem;
+        }),
+      )),
+    );
+  }
   if (metadataChanged) {
     await writeLibraryMetadata(directory, {
       version: 2,

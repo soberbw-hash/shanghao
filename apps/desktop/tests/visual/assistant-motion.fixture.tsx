@@ -5,7 +5,7 @@ import { RoomAskDialog } from "../../src/renderer/src/components/room/RoomAskDia
 import "../../src/renderer/src/styles/index.css";
 
 localStorage.setItem(
-  "shanghao:room-question-history:v1",
+  "shanghao:room-question-history:v2:main",
   JSON.stringify([
     {
       id: "fixture-history",
@@ -19,7 +19,7 @@ localStorage.setItem(
 window.desktopApi = {
   ai: {
     askMemory: async () => ({
-      text: "可以回答游戏问题，也可以查找语音记录。\n这是隔离界面验证中的测试回答。",
+      text: "可以帮你解答游戏问题，也能查找房间里的语音记录。\n直接输入想问的问题就好。",
       sources: [],
     }),
     cancelQuestion: async () => true,
@@ -45,6 +45,7 @@ const Fixture = () => {
         }}
         roomAiPanel={
           <RoomAskDialog
+            roomId="main"
             isOpen={asking}
             inline
             reduceMotion={false}

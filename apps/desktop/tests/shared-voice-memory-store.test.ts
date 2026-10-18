@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, mkdir, readFile, writeFile, readdir, rm } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, writeFile, readdir, rm, stat } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -153,6 +153,96 @@ test("separate app processes serialize shared index commits", async () => {
     const shared = new SharedVoiceMemoryStore(f.shared);
     await shared.initialize();
     assert.equal((await shared.listSummaries()).length, 2);
+  } finally {
+    await rm(f.root, { recursive: true, force: true });
+  }
+});
+
+test("same-length and longer stale results cannot overwrite a newer shared revision", async () => {
+  const f = await fixture();
+  try {
+    const a = new SharedVoiceMemoryStore(f.shared),
+      b = new SharedVoiceMemoryStore(f.shared);
+    await Promise.all([a.initialize(), b.initialize()]);
+    const original = await a.save({ ...fixtureRecord("race"), roomId: "main" });
+    const stale = await b.get("race");
+    const newest = await a.save({ ...original, summary: [{ text: "new summary" }] });
+    assert.notEqual(original.updatedAt, newest.updatedAt);
+    await assert.rejects(
+      b.appendTranscriptionUnit("race", {} as never, original.updatedAt),
+      /shared_result_changed/,
+    );
+    await assert.rejects(
+      b.save({ ...stale!, transcript: [{ ...stale!.transcript[0]!, text: "stale replacement" }] }),
+      /shared_result_changed/,
+    );
+    await assert.rejects(
+      b.save({ ...stale!, transcript: [...stale!.transcript, ...stale!.transcript] }),
+      /shared_result_changed/,
+    );
+    assert.equal((await a.get("race"))?.summary[0]?.text, "new summary");
+    await assert.rejects(a.save({ ...newest, roomId: "side" }), /room_changed/);
+    await a.delete("race");
+    await assert.rejects(b.save(newest), /shared_result_changed/);
+    assert.equal(await a.get("race"), undefined);
+  } finally {
+    await rm(f.root, { recursive: true, force: true });
+  }
+});
+
+test("unchanged shared-library polling does not make the two profiles rewrite each other's index", async () => {
+  const f = await fixture();
+  try {
+    const a = new SharedVoiceMemoryStore(f.shared),
+      b = new SharedVoiceMemoryStore(f.shared);
+    await Promise.all([a.initialize(), b.initialize()]);
+    await a.save(fixtureRecord("stable"));
+    await b.listSummaries();
+    await a.listSummaries();
+    const index = path.join(f.shared, "index.json");
+    const before = (await stat(index, { bigint: true })).mtimeNs;
+    for (let i = 0; i < 5; i++) {
+      await a.listSummaries();
+      await b.listSummaries();
+    }
+    assert.equal((await stat(index, { bigint: true })).mtimeNs, before);
+  } finally {
+    await rm(f.root, { recursive: true, force: true });
+  }
+});
+
+test("legacy import cannot overwrite an active task, change its room, or resurrect deleted results", async () => {
+  const f = await fixture();
+  try {
+    const current = new VoiceMemoryStore(f.shared),
+      legacy = new VoiceMemoryStore(f.legacy);
+    await current.initialize();
+    await legacy.initialize();
+    await current.save({
+      ...fixtureRecord("active"),
+      roomId: "main",
+      phase: "transcribing",
+      transcript: [],
+      taskId: "new-task",
+    });
+    await legacy.save({ ...fixtureRecord("active"), roomId: "main" });
+    await current.save({
+      ...fixtureRecord("room-bound"),
+      roomId: "main",
+      phase: "error",
+      transcript: [],
+    });
+    await legacy.save({ ...fixtureRecord("room-bound"), roomId: "side" });
+    const shared = new SharedVoiceMemoryStore(f.shared);
+    await shared.initialize();
+    assert.equal((await shared.get("active"))?.taskId, "new-task");
+    assert.equal((await shared.get("active"))?.phase, "transcribing");
+    assert.equal((await shared.get("room-bound"))?.roomId, "main");
+    assert.equal((await shared.get("room-bound"))?.phase, "error");
+    await shared.delete("active");
+    await legacy.save(fixtureRecord("active", "a delayed old-profile update"));
+    await shared.initialize();
+    assert.equal(await shared.get("active"), undefined);
   } finally {
     await rm(f.root, { recursive: true, force: true });
   }

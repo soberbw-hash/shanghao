@@ -1117,6 +1117,7 @@ export class SignalingServer extends EventEmitter {
   }
 
   private handleLeave(socket: WebSocket, message: LeaveChannelMessage): void {
+    this.cloudAi.cancelSocket(socket);
     this.logger?.("peer left", { roomId: message.roomId, peerId: message.peerId });
     const peer = this.roomManager.getRoom(message.roomId)?.peers.getPeer(message.peerId);
     this.roomManager.removePeer(message.roomId, message.peerId);
@@ -1601,18 +1602,17 @@ export class SignalingServer extends EventEmitter {
     socket: WebSocket,
     message: PublishRecordingRecapMessage,
   ): Promise<void> {
-    const peer = this.roomManager.getRoom(message.roomId)?.peers.getPeer(message.peerId);
-    if (!peer) {
+    if (!this.roomManager.getRoom(message.roomId)?.peers.getPeer(message.peerId)) {
       this.rejectInvalid(socket, "room_unavailable", "The room session is unavailable.");
       return;
     }
-    const saved = await handleRecordingRecap(
+    await handleRecordingRecap(
       await this.dailyRoomReports,
       message,
       (payload) => this.safeSend(socket, payload),
       (code, reason) => this.rejectInvalid(socket, code, reason),
+      () => this.roomMemories.observeRecap(message),
     );
-    if (saved) this.roomMemories.observeRecap(message);
   }
   private broadcastSceneReaction(message: SceneReactionMessage): void {
     const room = this.roomManager.getRoom(message.roomId);

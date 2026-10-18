@@ -51,34 +51,56 @@ export class SharedVoiceMemoryStore extends VoiceMemoryStore {
   override async save(record: VoiceMemoryRecord, options: VoiceMemorySaveOptions = {}) {
     return this.transaction(async () => {
       const current = await super.get(record.recordingId);
-      // A stale job from another profile cannot erase a completed shared transcript.
-      // Explicit re-transcription starts from the current revision and remains possible.
-      if (
-        current &&
-        completed(current) &&
-        current.updatedAt !== record.updatedAt &&
-        record.transcript.length < current.transcript.length
-      )
+      if (current?.roomId && current.roomId !== record.roomId)
+        throw new Error("voice_memory_room_changed");
+      // Compare every revision, including equal-length/newer-looking stale results.
+      if (current && current.updatedAt !== record.updatedAt && !options.publicationFor)
         throw new Error("voice_memory_shared_result_changed");
+      if (!current) {
+        const deletedAt = await optionalRead(this.deletedPath(record.recordingId));
+        if (deletedAt && !(Date.parse(record.createdAt) > Date.parse(deletedAt)))
+          throw new Error("voice_memory_shared_result_changed");
+      }
       return super.save(record, options);
     });
   }
 
   override async delete(recordingId: string) {
-    return this.transaction(() => super.delete(recordingId));
+    return this.transaction(async () => {
+      const file = this.deletedPath(recordingId);
+      await mkdir(path.dirname(file), { recursive: true });
+      const temporary = `${file}.${randomUUID()}.tmp`;
+      await writeFile(temporary, new Date().toISOString(), { flag: "wx" });
+      await rename(temporary, file);
+      return super.delete(recordingId);
+    });
   }
 
-  override async appendTranscriptionUnit(recordingId: string, unit: VoiceMemoryTranscriptionUnit) {
-    return this.transaction(() => super.appendTranscriptionUnit(recordingId, unit));
+  private deletedPath(recordingId: string): string {
+    return path.join(
+      this.directory,
+      "deleted-records",
+      createHash("sha256").update(recordingId).digest("hex"),
+    );
+  }
+
+  override async appendTranscriptionUnit(
+    recordingId: string,
+    unit: VoiceMemoryTranscriptionUnit,
+    expectedUpdatedAt?: string,
+  ) {
+    return this.transaction(async () => {
+      if (
+        expectedUpdatedAt !== undefined &&
+        (await super.get(recordingId))?.updatedAt !== expectedUpdatedAt
+      )
+        throw new Error("voice_memory_shared_result_changed");
+      await super.appendTranscriptionUnit(recordingId, unit);
+    });
   }
 
   private async snapshot(): Promise<string> {
-    const files = [
-      "index.json",
-      "summaries.json",
-      "pending-metadata.json",
-      ...(await filesIn(path.join(this.directory, "records"))).map((name) => `records/${name}`),
-    ];
+    const files = ["index.json", "summaries.json", "pending-metadata.json", "records"];
     const signatures: string[] = [];
     for (const file of files) {
       try {
@@ -102,10 +124,18 @@ export class SharedVoiceMemoryStore extends VoiceMemoryStore {
           15_000,
         );
         try {
-          if (this.fingerprint !== (await this.snapshot())) {
+          const signature = await this.snapshot();
+          if (this.fingerprint !== signature) {
+            const records = (value?: string) =>
+              value?.split("|").find((entry) => entry.startsWith("records:"));
+            const rebuild =
+              !this.fingerprint ||
+              records(this.fingerprint) !== records(signature) ||
+              signature.includes("pending-metadata.json:");
             await super.initialize();
             // Old releases can write stale aggregate indexes; records are authoritative.
-            await super.rebuildMetadata();
+            // Another instance updating only derived metadata must not cause write ping-pong.
+            if (rebuild) await super.rebuildMetadata();
           }
           const value = await operation();
           this.fingerprint = await this.snapshot();
@@ -150,7 +180,14 @@ export class SharedVoiceMemoryStore extends VoiceMemoryStore {
         if (!isVoiceMemoryRecord(parsed)) throw new Error("voice_memory_legacy_record_unreadable");
         const record = normalizeLegacyRecord(parsed);
         const current = await super.get(record.recordingId);
-        if (!current || (completed(record) && !completed(current))) {
+        const deleted = await optionalRead(this.deletedPath(record.recordingId));
+        const recoverable =
+          current &&
+          !["transcribing", "organizing"].includes(current.phase) &&
+          current.transcript.length === 0 &&
+          completed(record) &&
+          (!current.roomId || current.roomId === record.roomId);
+        if (!deleted && (!current || recoverable)) {
           const backup = path.join(this.directory, "profile-import-backups", name, hash);
           await mkdir(backup, { recursive: true });
           await copyFile(sourcePath, path.join(backup, "source.json"));

@@ -205,7 +205,11 @@ test("room exposes one dedicated AI entry with suggestions, prompt and history s
   assert.equal(assistantStateSource.includes('transition("idle");\n    setAskOpen(false);'), true);
   assert.equal(dialogSource.includes("搜索记忆"), false);
   assert.equal(dialogSource.includes("房间云端 AI，可联网搜索相关知识"), false);
-  assert.equal(dialogSource.includes("ROOM_QUESTION_HISTORY_LIMIT = 10"), true);
+  const historySource = readFileSync(
+    path.resolve(process.cwd(), "src/renderer/src/features/room/roomQuestionHistory.ts"),
+    "utf8",
+  );
+  assert.equal(historySource.includes("ROOM_QUESTION_HISTORY_LIMIT = 10"), true);
   assert.equal(dialogSource.includes("ROOM_QUESTION_SUGGESTIONS"), false);
   assert.equal(dialogSource.includes("海克斯大乱斗卡莎出装"), false);
   assert.equal(dialogSource.includes("三角洲行动零号大坝撤离路线"), false);
@@ -688,7 +692,8 @@ test("channel switching is exclusive and clears screen-share state before joinin
   );
   assert.equal(roomStateSource.includes("preserveLocalMedia: reuseLocalMedia"), true);
   assert.equal(roomStateSource.includes("reuseExisting: reuseLocalMedia"), true);
-  assert.equal(roomPageSource.includes("key={room.roomId}"), false);
+  assert.match(roomPageSource, /<RoomChatPanel\s+key=\{room\.roomId\}/);
+  assert.doesNotMatch(roomPageSource, /<(?:RoomScene|RoomAudio)[^>]*key=\{room\.roomId\}/);
   assert.equal(
     roomStateSource.includes("const memberPresence = new MemberPresenceTracker();"),
     true,

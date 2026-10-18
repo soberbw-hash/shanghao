@@ -767,6 +767,7 @@ export interface VoiceMemoryQuestionRequest {
 
 export interface VoiceMemoryGlobalQuestionRequest {
   question: string;
+  roomId?: string;
 }
 
 export interface VoiceMemoryAnswer {

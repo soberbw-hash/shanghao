@@ -85,9 +85,12 @@ export class AiTextGateway {
       return { value: extractJsonObject<T>(content) };
     }
     if (provider === "custom") {
-      const roomId = request.roomId ?? this.questionRoomId();
+      const roomId =
+        request.roomId ?? (request.purpose === "question" ? this.questionRoomId() : undefined);
       const memory = roomId ? await this.memoryContext?.(roomId, request.signal) : undefined;
       request.signal?.throwIfAborted();
+      if (request.purpose === "question" && this.questionRoomId() !== roomId)
+        throw new Error("ai_question_room_changed");
       return {
         value: await this.customProvider.generateJson<T>({
           prompt: memory ? `${memory}\n\n${request.prompt}` : request.prompt,

@@ -59,9 +59,12 @@ export class CloudAiRequestController {
     }
 
     const controller = new AbortController();
-    this.inFlight.set(socket, { requestId: message.requestId, controller });
+    const active = { requestId: message.requestId, controller };
+    this.inFlight.set(socket, active);
     try {
       const content = await this.service.execute(message, controller.signal);
+      controller.signal.throwIfAborted();
+      if (this.inFlight.get(socket) !== active) return;
       send({
         type: "cloud_ai_response",
         roomId: message.roomId,
@@ -72,6 +75,7 @@ export class CloudAiRequestController {
       });
       this.logResult("cloud AI request completed", message);
     } catch (error) {
+      if (this.inFlight.get(socket) !== active) return;
       const reason = controller.signal.aborted
         ? "cloud_ai_cancelled"
         : error instanceof Error
@@ -88,7 +92,7 @@ export class CloudAiRequestController {
       });
       this.logResult("cloud AI request failed", message, errorCode);
     } finally {
-      this.inFlight.delete(socket);
+      if (this.inFlight.get(socket) === active) this.inFlight.delete(socket);
     }
   }
 
@@ -101,7 +105,9 @@ export class CloudAiRequestController {
   }
 
   cancelSocket(socket: WebSocket): void {
-    this.inFlight.get(socket)?.controller.abort();
+    const active = this.inFlight.get(socket);
+    this.inFlight.delete(socket);
+    active?.controller.abort();
   }
 
   private logResult(

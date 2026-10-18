@@ -108,6 +108,16 @@ test("ASR rejects internal custom hosts and bounds streamed results", async () =
       }),
       /private_host/,
     );
+    for (const baseUrl of [
+      "https://[::ffff:127.0.0.1]",
+      "https://[::ffff:7f00:1]",
+      "https://[fe80::1]",
+      "https://[2001:db8::1]",
+    ])
+      await assert.rejects(
+        store.save({ provider: "custom", baseUrl, model: "test", apiKey: "test" }),
+        /private_host/,
+      );
     await store.save({ provider: "cloud", apiKey: "test" });
     await assert.rejects(
       store.transcribe(f.audio, 1000, "cloud", new AbortController().signal),

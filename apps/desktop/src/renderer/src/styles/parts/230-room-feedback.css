@@ -3,6 +3,32 @@
   background: #eaf4ff;
   border-color: #bfd7f1;
 }
+.assistant-bot-error {
+  position: relative;
+  display: inline-flex;
+}
+.assistant-bot-error b {
+  position: absolute;
+  right: -3px;
+  top: -3px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: #f9af58;
+  color: #51330c;
+  font: 700 10px/12px sans-serif;
+  text-align: center;
+}
+.assistant-bot-companion[data-mood="error"]::after {
+  content: "!";
+  position: absolute;
+  right: 5%;
+  top: 8%;
+  padding: 2px 7px;
+  border-radius: 50%;
+  background: #f9af58;
+  color: #51330c;
+}
 .quick-message-slot.is-unbound {
   border-style: dashed;
   background: rgba(248, 250, 253, 0.75);

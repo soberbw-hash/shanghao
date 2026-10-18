@@ -13,7 +13,7 @@ export const mascotImages: Record<AssistantBotMood, string> = {
   thinking,
   speaking: idle,
   gaming,
-  error: idle,
+  error: thinking,
 };
 
 export const AssistantBotAvatar = ({
@@ -27,7 +27,7 @@ export const AssistantBotAvatar = ({
   const [failedSource, setFailedSource] = useState<string>();
 
   if (failedSource === source) return <RoomAiIcon />;
-  return (
+  const image = (
     <img
       src={source}
       className="assistant-bot-image"
@@ -39,5 +39,13 @@ export const AssistantBotAvatar = ({
       draggable={false}
       onError={() => setFailedSource(source)}
     />
+  );
+  return mood === "error" ? (
+    <span className="assistant-bot-error" role="img" aria-label="小助手遇到了问题">
+      {image}
+      <b aria-hidden="true">!</b>
+    </span>
+  ) : (
+    image
   );
 };

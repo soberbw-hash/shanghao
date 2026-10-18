@@ -188,5 +188,9 @@
   "apps/desktop/src/renderer/src/components/room/CollectionLinkPreview.tsx": 110,
   "apps/desktop/src/renderer/src/components/audio/MicrophoneLevelFill.tsx": 70,
   "apps/desktop/src/renderer/src/features/recording/useRecordingMarkerCue.ts": 50,
-  "apps/desktop/src/renderer/src/features/recording/recordingMarkerLabel.ts": 12
+  "apps/desktop/src/renderer/src/features/recording/recordingMarkerLabel.ts": 12,
+  "apps/desktop/src/main/public-network.ts": 220,
+  "apps/desktop/src/renderer/src/features/room/roomQuestionHistory.ts": 90,
+  "apps/desktop/src/renderer/src/components/settings/TranscriptionTimingNotice.tsx": 25,
+  "packages/signaling/src/room-memory-jobs.ts": 200
 }

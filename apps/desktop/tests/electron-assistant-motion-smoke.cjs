@@ -96,6 +96,9 @@ app.whenReady().then(async () => {
     })()`,
       true,
     ));
+    await window.webContents.executeJavaScript(
+      `document.querySelector('#fixture-open').style.visibility='hidden'`,
+    );
     await fs.writeFile(
       path.join(os.tmpdir(), "shanghao-assistant-conversation.png"),
       (await window.webContents.capturePage()).toPNG(),

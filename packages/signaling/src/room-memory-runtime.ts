@@ -3,20 +3,18 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import { isPrivateRoomId, roomMemoryContext } from "@private-voice/shared";
 import type { AccountBackend } from "./account-service";
 import type { PrivateRoomDirectory } from "./private-room-directory";
+import { PrivateRoomError } from "./private-room-directory";
 import type { PublishRecordingRecapMessage } from "./protocol";
 import { CloudAiService, CLOUD_AI_TASK_TIMEOUT_MS } from "./cloud-ai-service";
 import { RoomMemoryStore } from "./room-memory-store";
 import { RoomMemoryHttpController } from "./room-memory-http-controller";
+import { RoomMemoryJobs } from "./room-memory-jobs";
 
 /** Extraction is detached from realtime handling and never sees unuploaded local recordings. */
 export class RoomMemoryRuntime {
   private readonly store: Promise<RoomMemoryStore>;
   private readonly http: RoomMemoryHttpController;
-  private readonly tasks = new Map<
-    string,
-    { roomId: string; promise: Promise<void>; controller: AbortController }
-  >();
-  private readonly queue = new Map<string, PublishRecordingRecapMessage>();
+  private readonly jobs: RoomMemoryJobs;
   private closed = false;
   constructor(
     private readonly directory: Promise<PrivateRoomDirectory>,
@@ -32,6 +30,17 @@ export class RoomMemoryRuntime {
     this.store = RoomMemoryStore.open(file);
     void this.store.catch(() => undefined);
     this.http = new RoomMemoryHttpController(directory, this.store, accounts, joined, secure);
+    this.jobs = new RoomMemoryJobs(
+      file ? `${file}.jobs.json` : undefined,
+      async (message, signal) => {
+        if (!this.extractor.isConfigured()) throw new Error("room_memory_extractor_unavailable");
+        try {
+          await this.extract(message, signal);
+        } catch (error) {
+          if (!(error instanceof PrivateRoomError && error.code === "room_not_found")) throw error;
+        }
+      },
+    );
   }
   handle(request: IncomingMessage, response: ServerResponse) {
     return this.http.handle(request, response);
@@ -41,30 +50,10 @@ export class RoomMemoryRuntime {
     (await this.directory).get(roomId);
     return roomMemoryContext((await this.store).get(roomId));
   }
-  observeRecap(message: PublishRecordingRecapMessage): void {
-    if (this.closed || !isPrivateRoomId(message.roomId) || !this.extractor.isConfigured()) return;
-    const key = `${message.roomId}|${message.recap.recordingId}`;
-    if (this.tasks.has(key)) return;
-    if (this.queue.size < 32 || this.queue.has(key)) this.queue.set(key, structuredClone(message));
-    this.drain();
-  }
-  private drain(): void {
-    while (!this.closed && this.tasks.size < 2 && this.queue.size) {
-      const next = [...this.queue].find(
-        ([, message]) => ![...this.tasks.values()].some((task) => task.roomId === message.roomId),
-      );
-      if (!next) return;
-      const [key, message] = next;
-      this.queue.delete(key);
-      const controller = new AbortController();
-      const promise = this.extract(message, controller.signal)
-        .catch(() => undefined)
-        .finally(() => {
-          this.tasks.delete(key);
-          this.drain();
-        });
-      this.tasks.set(key, { roomId: message.roomId, promise, controller });
-    }
+  async observeRecap(message: PublishRecordingRecapMessage): Promise<void> {
+    if (this.closed) throw new Error("room_memory_runtime_closed");
+    if (!isPrivateRoomId(message.roomId) || !this.extractor.isConfigured()) return;
+    await this.jobs.enqueue(message);
   }
   private async extract(message: PublishRecordingRecapMessage, signal: AbortSignal): Promise<void> {
     const store = await this.store;
@@ -103,9 +92,7 @@ export class RoomMemoryRuntime {
   }
   async close(): Promise<void> {
     this.closed = true;
-    this.queue.clear();
-    for (const task of this.tasks.values()) task.controller.abort();
-    await Promise.allSettled([...this.tasks.values()].map((task) => task.promise));
+    await this.jobs.close();
     await this.store.then((store) => store.flush()).catch(() => undefined);
   }
 }

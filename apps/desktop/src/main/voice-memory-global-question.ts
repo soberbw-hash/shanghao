@@ -22,13 +22,15 @@ export const answerGlobalVoiceQuestion = async (
   const question = request.question.trim().slice(0, 500);
   if (!question) throw new Error("memory_question_required");
   return run(async (signal) => {
+    const roomId = gateway.questionRoomId();
+    if (request.roomId !== undefined && request.roomId !== roomId)
+      throw new Error("ai_question_room_changed");
     if (capabilityQuestions.has(question.replace(/[?？。！!\s]/gu, ""))) {
       return {
         text: "可以帮你解答游戏问题，也能查找房间里的语音记录。直接输入想问的问题就好。",
         sources: [],
       };
     }
-    const roomId = gateway.questionRoomId();
     const candidates = roomId ? store.related(question, 24, roomId) : [];
     const answer = await gateway.generateJson<VoiceMemoryAnswer>({
       roomId,
@@ -38,6 +40,8 @@ export const answerGlobalVoiceQuestion = async (
       signal,
       prompt: roomQuestionPrompt(question, candidates),
     });
+    signal.throwIfAborted();
+    if (gateway.questionRoomId() !== roomId) throw new Error("ai_question_room_changed");
     return {
       text: assistantAnswerText(answer.text),
       sources: (Array.isArray(answer.sources) ? answer.sources : [])

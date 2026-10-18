@@ -1396,7 +1396,11 @@ export class AiVoiceMemoryService {
             record.recordingId,
             this.requestVersions.get(record.recordingId),
           );
-          await this.store.appendTranscriptionUnit(record.recordingId, durableUnit);
+          await this.store.appendTranscriptionUnit(
+            record.recordingId,
+            durableUnit,
+            record.updatedAt,
+          );
         }
         stats = statsFromTranscriptionUnits(totalDuration, units, record.transcript, stats);
         if (chunk.fatal) {

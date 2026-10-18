@@ -274,3 +274,50 @@ test("server acknowledges only after storage completes and never on storage fail
   assert.equal(sent, 1);
   assert.equal(code, "recording_recap_storage_failed");
 });
+
+test("recap acknowledgement waits for the durable memory queue and propagates queue write failure", async () => {
+  let sent = 0,
+    rejected = "",
+    resume!: () => void;
+  const store = {
+    publishRecordingRecap: () => ({ publishedAt: "now", serverRevision: 1 }),
+    flushWrites: async () => {},
+  };
+  const message = {
+    roomId: roomA,
+    recap: {},
+    reportDate: "2026-10-19",
+    peerId: "peer",
+    requestId: "request",
+  } as never;
+  const work = handleRecordingRecap(
+    store as never,
+    message,
+    () => sent++,
+    (code) => {
+      rejected = code;
+    },
+    async () =>
+      new Promise<void>((resolve) => {
+        resume = resolve;
+      }),
+  );
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(sent, 0);
+  resume();
+  await work;
+  assert.equal(sent, 1);
+  await handleRecordingRecap(
+    store as never,
+    message,
+    () => sent++,
+    (code) => {
+      rejected = code;
+    },
+    async () => {
+      throw Error("queue write failed");
+    },
+  );
+  assert.equal(sent, 1);
+  assert.equal(rejected, "recording_recap_storage_failed");
+});
