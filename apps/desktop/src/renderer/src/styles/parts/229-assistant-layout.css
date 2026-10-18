@@ -1,0 +1,67 @@
+/* Reserve the history-summary line before morphing, so only the input width changes. */
+.chat-ai-welcome {
+  min-height: 133px;
+  padding-right: 24px;
+}
+.chat-ai-welcome:has(.room-ai-user-question) {
+  padding-right: 24px;
+}
+.chat-ai-welcome-copy {
+  padding-top: 12px;
+}
+.chat-ai-welcome-copy > strong {
+  font-size: 14.5px;
+}
+.chat-ai-welcome > .assistant-bot-companion {
+  width: 88px;
+  height: 88px;
+}
+.chat-ai-action-morph,
+.chat-ai-action-morph[data-asking="true"] {
+  min-height: 70px;
+}
+.chat-ai-action-morph {
+  width: min(100px, 100%);
+}
+.chat-ai-welcome-action {
+  min-height: 34px;
+  margin-top: 0;
+  font-size: 11px;
+}
+.room-ask-inline .room-ai-composer {
+  min-height: 34px;
+}
+.room-page .room-ask-inline .room-ask-popover-body,
+.room-ask-inline .room-ask-popover-body {
+  max-height: min(48vh, 440px);
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-gutter: stable;
+  padding: 0 8px 4px 0;
+}
+.room-ask-inline .room-question-history {
+  margin-top: 6px;
+  padding-top: 4px;
+}
+.room-ask-inline .room-question-history > div {
+  padding-right: 4px;
+}
+.room-ask-inline .room-question-history > div > div {
+  margin-right: 4px;
+}
+.room-ask-inline .room-ai-user-question {
+  margin-right: 20px;
+}
+.room-ask-inline .room-ai-answer > p {
+  font-size: 12px;
+  line-height: 1.8;
+}
+@media (max-width: 1250px) {
+  .chat-ai-welcome {
+    min-height: 133px;
+  }
+  .chat-ai-welcome > .assistant-bot-companion {
+    width: 64px;
+    height: 64px;
+  }
+}

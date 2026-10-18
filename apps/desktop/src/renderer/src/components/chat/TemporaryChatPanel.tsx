@@ -155,6 +155,7 @@ export const TemporaryChatPanel = ({
   onCloseRoomAi,
   isRoomAskOpen = false,
   roomAiPanel,
+  presenceControls,
   assistantMood = "idle",
   onSendImage,
   onRecall,
@@ -176,6 +177,7 @@ export const TemporaryChatPanel = ({
   onCloseRoomAi?: () => void;
   isRoomAskOpen?: boolean;
   roomAiPanel?: ReactNode;
+  presenceControls?: ReactNode;
   assistantMood?: AssistantBotMood;
   onSendImage?: (file: File) => Promise<void>;
   onRecall?: (messageId: string) => Promise<void>;
@@ -567,6 +569,7 @@ export const TemporaryChatPanel = ({
       >
         <ChatPanelHeader
           mood={assistantMood}
+          presenceControls={presenceControls}
           isAsking={isRoomAskOpen}
           roomAiPanel={roomAiPanel}
           onOpenAssistant={onOpenRoomAi}

@@ -43,6 +43,7 @@ import { SceneReaction } from "./SceneReaction";
 import { Slider } from "../base/Slider";
 import { sceneMemberKey } from "./sceneMemberKey";
 import { writeRendererLog } from "../../utils/logger";
+import { availabilityLabels } from "../../features/room/memberAvailability";
 
 export interface SceneCharacterQuickMessage {
   id: string;
@@ -588,7 +589,8 @@ const SceneCharacterView = ({
         transform: shouldReduceMotion
           ? sceneTransform(position.left, position.top)
           : sceneTransform(sceneEntryPoint().left, sceneEntryPoint().top),
-        opacity: shouldReduceMotion ? targetOpacity : 0,
+        // A lost compositor animation must never leave a counted member hidden.
+        opacity: targetOpacity,
         zIndex: isAudioControlsOpen ? 80 : position.zIndex,
       }}
     >
@@ -716,6 +718,18 @@ const SceneCharacterView = ({
             <SceneCharacterLabel member={displayedMember} isAway={displayZone === "restroomZone"} />
           </div>
           <CharacterChatBubble message={chatBubble} shouldReduceMotion={shouldReduceMotion} />
+          {member.availabilityStatus || member.sceneZone === "restroomZone" ? (
+            <div className="scene-availability-bubble" role="status">
+              <span aria-hidden="true">
+                {member.availabilityStatus === "eating"
+                  ? "🍚"
+                  : member.availabilityStatus === "restroom"
+                    ? "🚪"
+                    : "☕"}
+              </span>
+              {availabilityLabels[member.availabilityStatus ?? "away"]}
+            </div>
+          ) : null}
           <SceneReaction reactions={reactions} shouldReduceMotion={shouldReduceMotion} />
 
           <AnimatePresence>

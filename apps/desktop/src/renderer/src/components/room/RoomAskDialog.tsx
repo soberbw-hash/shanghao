@@ -102,7 +102,10 @@ export const RoomAskDialog = ({
   const sharing = useRoomAiShare(onSendToChat);
   const inputRef = useRef<HTMLInputElement>(null);
   const askSequenceRef = useRef(0);
+  const requestPendingRef = useRef(false);
+  const cancelledOnCloseRef = useRef(false);
   const [query, setQuery] = useState("");
+  const [submittedQuestion, setSubmittedQuestion] = useState("");
   const [pending, setPending] = useState<PendingAction>();
   const [stopping, setStopping] = useState(false);
   const [pendingSeconds, setPendingSeconds] = useState(0);
@@ -110,12 +113,31 @@ export const RoomAskDialog = ({
   const [error, setError] = useState<string>();
   const [questionHistory, setQuestionHistory] =
     useState<RoomQuestionHistoryEntry[]>(readQuestionHistory);
+  const [retainedOpen, setRetainedOpen] = useState(isOpen);
+  useEffect(
+    () => () => {
+      askSequenceRef.current += 1;
+      if (requestPendingRef.current) {
+        requestPendingRef.current = false;
+        void window.desktopApi.ai.cancelQuestion().catch(() => undefined);
+      }
+    },
+    [],
+  );
+  useEffect(() => {
+    if (isOpen) {
+      setRetainedOpen(true);
+      return;
+    }
+    const timer = window.setTimeout(() => setRetainedOpen(false), inline ? 280 : 0);
+    return () => window.clearTimeout(timer);
+  }, [inline, isOpen]);
 
   const closeDialog = useCallback(() => {
     if (pending === "ask") {
       askSequenceRef.current += 1;
+      requestPendingRef.current = false;
       void window.desktopApi.ai.cancelQuestion();
-      setPending(undefined);
       onAssistantMoodChange("idle");
     }
     onClose();
@@ -135,12 +157,20 @@ export const RoomAskDialog = ({
   }, [closeDialog, isOpen]);
 
   useEffect(() => {
+    if (isOpen && cancelledOnCloseRef.current) {
+      cancelledOnCloseRef.current = false;
+      setPending(undefined);
+      return;
+    }
     if (isOpen || pending !== "ask") return;
+    cancelledOnCloseRef.current = true;
     askSequenceRef.current += 1;
-    setPending(undefined);
+    requestPendingRef.current = false;
     void window.desktopApi.ai.cancelQuestion();
     onAssistantMoodChange("idle");
-  }, [isOpen, onAssistantMoodChange, pending]);
+    const timer = window.setTimeout(() => setPending(undefined), inline ? 280 : 0);
+    return () => window.clearTimeout(timer);
+  }, [inline, isOpen, onAssistantMoodChange, pending]);
 
   useEffect(() => {
     if (pending !== "ask") {
@@ -158,6 +188,8 @@ export const RoomAskDialog = ({
     const value = query.trim();
     if (!value || pending || sharing.sending) return;
     const sequence = ++askSequenceRef.current;
+    requestPendingRef.current = true;
+    setSubmittedQuestion(value);
     setPending("ask");
     onAssistantMoodChange("thinking");
     setStopping(false);
@@ -174,6 +206,7 @@ export const RoomAskDialog = ({
       )
         throw new Error("ai_invalid_json_response");
       setAnswer(nextAnswer);
+      setQuery("");
       onAssistantMoodChange("idle");
       setQuestionHistory((current) => rememberQuestion(current, value, nextAnswer));
     } catch (cause) {
@@ -181,7 +214,10 @@ export const RoomAskDialog = ({
       setError(roomAiError(cause));
       onAssistantMoodChange("error");
     } finally {
-      if (sequence === askSequenceRef.current) setPending(undefined);
+      if (sequence === askSequenceRef.current) {
+        requestPendingRef.current = false;
+        setPending(undefined);
+      }
     }
   };
 
@@ -192,6 +228,7 @@ export const RoomAskDialog = ({
       const stopped = await window.desktopApi.ai.cancelQuestion();
       if (!stopped) return;
       askSequenceRef.current += 1;
+      requestPendingRef.current = false;
       setPending(undefined);
       setError("已经停止这次回答，可以继续使用房间或重新提问。");
       onAssistantMoodChange("idle");
@@ -205,10 +242,12 @@ export const RoomAskDialog = ({
 
   return (
     <AnimatePresence>
-      {isOpen ? (
+      {isOpen || (inline && retainedOpen) ? (
         <motion.aside
           key="room-ask-dialog"
           role="dialog"
+          aria-hidden={!isOpen}
+          inert={!isOpen}
           aria-labelledby="room-ask-title"
           className={`room-ask-popover${inline ? " room-ask-inline" : ""}`}
           variants={
@@ -234,7 +273,9 @@ export const RoomAskDialog = ({
           </header>
 
           <div className="room-ask-popover-body">
-            {pending || answer || error ? <p className="room-ai-user-question">{query}</p> : null}
+            {submittedQuestion ? (
+              <p className="room-ai-user-question">{submittedQuestion}</p>
+            ) : null}
 
             <div className="room-ai-composer" data-pending={pending === "ask" ? "true" : "false"}>
               <input
@@ -305,7 +346,7 @@ export const RoomAskDialog = ({
                   <span className="room-ai-answer-icon" aria-hidden="true">
                     <AssistantBotAvatar mood="idle" size={32} />
                   </span>
-                  上号 AI
+                  回答
                 </h3>
                 <p className="mt-2 whitespace-pre-wrap text-pretty text-sm leading-7 text-[#53657b]">
                   {answer.text}
@@ -354,11 +395,11 @@ export const RoomAskDialog = ({
             ) : null}
 
             {questionHistory.length ? (
-              <section className="room-question-history" aria-label="最近提问">
-                <h3>
+              <details className="room-question-history" aria-label="最近提问">
+                <summary>
                   <History aria-hidden="true" />
-                  最近提问
-                </h3>
+                  最近提问 · {questionHistory.length}
+                </summary>
                 <div>
                   {questionHistory.map((entry) => (
                     <div key={entry.id} className="flex items-center gap-2">
@@ -367,7 +408,8 @@ export const RoomAskDialog = ({
                         key={entry.id}
                         disabled={Boolean(pending) || sharing.sending}
                         onClick={() => {
-                          setQuery(entry.question);
+                          setQuery("");
+                          setSubmittedQuestion(entry.question);
                           setAnswer(entry.answer);
                           setError(undefined);
                           sharing.clearNotice();
@@ -407,7 +449,7 @@ export const RoomAskDialog = ({
                     </div>
                   ))}
                 </div>
-              </section>
+              </details>
             ) : null}
           </div>
         </motion.aside>

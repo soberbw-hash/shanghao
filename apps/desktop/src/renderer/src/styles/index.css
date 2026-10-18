@@ -42,8 +42,5 @@
 @import "./parts/215-game-artwork.css";
 @import "./parts/216-game-identity.css";
 @import "./parts/220-screen-source-picker.css";
-@import "./parts/221-ai-mascot.css";
-@import "./parts/222-ai-inline-question.css";
-@import "./parts/223-assistant-avatar-motion.css";
-@import "./parts/224-quick-message-library-spacing.css";
-@import "./parts/225-assistant-companion.css";
+@import "./room-interactions.css";
+@import "./parts/228-collection-preview.css";

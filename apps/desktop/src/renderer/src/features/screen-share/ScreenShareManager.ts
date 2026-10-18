@@ -56,6 +56,8 @@ export class ScreenShareManager {
   private snapshot: ScreenShareManagerSnapshot = initialSnapshot;
   private readonly listeners = new Set<ScreenShareListener>();
   private detachedPublisher?: DetachedScreenSharePublisher;
+  private detachedStream?: MediaStream;
+  private detachedTrackId?: string;
   private detachedSessionId?: string;
   private operationId = 0;
   private isDisposed = false;
@@ -318,30 +320,49 @@ export class ScreenShareManager {
     this.closeDetachedPublisher(false);
     const sessionId = crypto.randomUUID();
     this.detachedSessionId = sessionId;
-    await window.desktopApi.screenShareViewer.open({ title: item.title, sessionId });
     this.patch({ displayMode: "detached", detachedItemId: item.id });
+    try {
+      await window.desktopApi.screenShareViewer.open({ title: item.title, sessionId });
+    } catch (error) {
+      if (this.detachedSessionId === sessionId) this.closeDetachedViewer();
+      throw error;
+    }
+    if (this.detachedSessionId !== sessionId || this.isDisposed) return;
+    await this.syncDetachedItem(item);
+  }
 
-    if (item.stream) {
+  async syncDetachedItem(item?: ScreenShareItem): Promise<void> {
+    const sessionId = this.detachedSessionId;
+    if (!sessionId) return;
+    if (!item) {
+      this.closeDetachedViewer();
+      return;
+    }
+    if (item.id !== this.snapshot.detachedItemId) return;
+    if (
+      item.stream &&
+      (this.detachedStream !== item.stream ||
+        this.detachedTrackId !== item.stream.getVideoTracks()[0]?.id)
+    ) {
+      this.closeDetachedPublisher(false);
+      this.detachedStream = item.stream;
+      this.detachedTrackId = item.stream.getVideoTracks()[0]?.id;
       const publisher = new DetachedScreenSharePublisher({
         sessionId,
         title: item.title,
         stream: item.stream,
-        onClosed: () => this.closeDetachedViewer(),
+        onClosed: () => {
+          if (this.detachedSessionId === sessionId && this.detachedPublisher === publisher)
+            this.closeDetachedViewer();
+        },
       });
       this.detachedPublisher = publisher;
       publisher.start();
-      return;
     }
-    await this.sendFallbackFrame(item);
-  }
-
-  async syncDetachedItem(item?: ScreenShareItem): Promise<void> {
-    if (!this.detachedSessionId) return;
-    if (!item || item.id !== this.snapshot.detachedItemId) {
-      this.closeDetachedViewer();
-      return;
+    if (!item.stream && item.frameDataUrl) {
+      this.closeDetachedPublisher(false);
+      await this.sendFallbackFrame(item);
     }
-    if (item.frameDataUrl) await this.sendFallbackFrame(item);
   }
 
   setDisplayMode(mode: ScreenShareDisplayMode): void {
@@ -513,6 +534,8 @@ export class ScreenShareManager {
   private closeDetachedPublisher(notifyViewer: boolean): void {
     this.detachedPublisher?.destroy(notifyViewer);
     this.detachedPublisher = undefined;
+    this.detachedStream = undefined;
+    this.detachedTrackId = undefined;
   }
 
   private stopLocalTracks(): void {

@@ -1,0 +1,115 @@
+.collection-list {
+  align-content: start;
+}
+.collection-item.is-link {
+  align-items: flex-end;
+  gap: 14px;
+  padding: 16px;
+  background: linear-gradient(115deg, rgba(255, 255, 255, 0.92), rgba(239, 247, 255, 0.8));
+}
+.collection-item.is-link .collection-item-copy {
+  flex: 1;
+}
+.collection-link-preview {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  width: 100%;
+  min-width: 0;
+  text-align: left;
+  color: inherit;
+  border-radius: 12px;
+}
+.collection-link-preview:focus-visible {
+  outline: 2px solid #70a9e9;
+  outline-offset: 5px;
+}
+.collection-link-art {
+  display: grid;
+  place-items: center;
+  flex: 0 0 118px;
+  height: 100px;
+  overflow: hidden;
+  border: 1px solid rgba(175, 204, 238, 0.5);
+  border-radius: 13px;
+  background: linear-gradient(140deg, #e0efff, #f1edff);
+  color: #7aa1cd;
+}
+.collection-link-art > svg {
+  width: 30px;
+  height: 30px;
+}
+.collection-link-art img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.collection-link-art.is-site-icon img {
+  width: 44px;
+  height: 44px;
+  object-fit: contain;
+}
+.collection-link-details {
+  display: grid;
+  min-width: 0;
+  gap: 5px;
+}
+.collection-link-site {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  color: #6386ad;
+  font-size: 10px;
+}
+.collection-link-site svg {
+  flex-shrink: 0;
+  width: 12px;
+  height: 12px;
+}
+.collection-link-details strong,
+.collection-link-description {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  white-space: normal;
+}
+.collection-link-details strong {
+  margin: 0;
+  font-size: 15px;
+  line-height: 1.5;
+  color: #334e6c;
+}
+.collection-link-description {
+  color: #73869c;
+  font-size: 12px;
+  line-height: 1.6;
+}
+.collection-link-address {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #94a4b6;
+  font-size: 10px;
+}
+.collection-item.is-link .collection-item-copy > small {
+  margin-top: 10px;
+}
+@media (max-width: 680px) {
+  .collection-item.is-link {
+    flex-wrap: wrap;
+  }
+  .collection-item.is-link .collection-item-copy {
+    flex-basis: 100%;
+  }
+  .collection-item.is-link .collection-item-actions {
+    margin-left: auto;
+  }
+  .collection-link-art {
+    flex-basis: 82px;
+    height: 82px;
+  }
+  .collection-link-preview {
+    gap: 12px;
+  }
+}

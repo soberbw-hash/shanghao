@@ -21,6 +21,7 @@ import {
 } from "@private-voice/shared";
 import { createSpeakingDetector, type ScreenShareEncodingProfile } from "@private-voice/webrtc";
 import { randomRoomAvatar } from "../features/room/randomRoomAvatar";
+import { decodeMemberAvailability } from "../features/room/memberAvailability";
 import { rememberRoomDirectory } from "../features/room/usePrivateRoomDirectory";
 
 import type { ProcessedMicrophoneStream } from "../features/audio/microphoneProcessor";
@@ -1356,7 +1357,7 @@ export const useRoomState = () => {
       return;
     }
     await activeClient.sendSceneReaction(targetPeerId, emoji);
-    playSceneReactionSound("send-message");
+    if (!decodeMemberAvailability(targetPeerId)) playSceneReactionSound("send-message");
   };
 
   const sendConfiguredQuickMessage = async (presetId: string) => {

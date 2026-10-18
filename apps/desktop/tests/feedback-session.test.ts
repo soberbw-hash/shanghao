@@ -55,7 +55,7 @@ test("game marker cue appears only near the recorded event", () => {
     renderToStaticMarkup(
       createElement(RecordingMarkerCue, { markers, currentTime, duration: 100 }),
     );
-  assert.match(render(12), /12:26 启动了英雄联盟/);
+  assert.match(render(12), /时钟 12点26分 · 启动了英雄联盟/);
   assert.equal(render(20), "");
 });
 

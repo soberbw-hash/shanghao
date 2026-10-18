@@ -13,6 +13,10 @@ test("renderer style entry remains an ordered composition instead of a God file"
   const entry = read(entryPath);
   assert.ok(lineCount(entryPath) <= 50, "styles/index.css must contain imports only");
   assert.doesNotMatch(entry, /\{[^}]*\}/s);
+  const interactions = read("apps/desktop/src/renderer/src/styles/room-interactions.css");
+  assert.ok(lineCount("apps/desktop/src/renderer/src/styles/room-interactions.css") <= 20);
+  assert.doesNotMatch(interactions, /\{[^}]*\}/s);
+  assert.match(entry, /@import "\.\/room-interactions\.css"/);
 
   const partDirectory = path.join(workspaceRoot, "apps/desktop/src/renderer/src/styles/parts");
   const parts = readdirSync(partDirectory).filter((name) => name.endsWith(".css"));
@@ -31,7 +35,7 @@ test("renderer style entry remains an ordered composition instead of a God file"
       lineCount(relativePath) <= partCeilings[part]!,
       `${part} grew beyond its reviewed ceiling`,
     );
-    assert.match(entry, new RegExp(part.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+    assert.match(entry + interactions, new RegExp(part.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
   }
 });
 

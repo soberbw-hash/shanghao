@@ -1,0 +1,290 @@
+import { createHotContext as __vite__createHotContext } from "/@vite/client";import.meta.hot = __vite__createHotContext("/src/components/status/UpdateModal.tsx");const _jsxDEV = __vite__cjsImport0_react_jsxDevRuntime["jsxDEV"];const useCallback = __vite__cjsImport1_react["useCallback"]; const useEffect = __vite__cjsImport1_react["useEffect"]; const useState = __vite__cjsImport1_react["useState"];import __vite__cjsImport0_react_jsxDevRuntime from "/@fs/C:/Users/sober/Documents/Codex/2026-10-17/files-mentioned-by-the-user-codex/work/shanghao/apps/desktop/node_modules/.vite/deps/react_jsx-dev-runtime.js?v=b37745cb";
+var _s = $RefreshSig$();
+import __vite__cjsImport1_react from "/@fs/C:/Users/sober/Documents/Codex/2026-10-17/files-mentioned-by-the-user-codex/work/shanghao/apps/desktop/node_modules/.vite/deps/react.js?v=b37745cb";
+import { Download, RefreshCcw } from "/@fs/C:/Users/sober/Documents/Codex/2026-10-17/files-mentioned-by-the-user-codex/work/shanghao/apps/desktop/node_modules/.vite/deps/lucide-react.js?v=b37745cb";
+import { AnimatePresence, motion } from "/@fs/C:/Users/sober/Documents/Codex/2026-10-17/files-mentioned-by-the-user-codex/work/shanghao/apps/desktop/node_modules/.vite/deps/framer-motion.js?v=b37745cb";
+import { Button } from "/src/components/base/Button.tsx?t=1792337404327";
+import { DialogCloseButton } from "/src/components/base/DialogCloseButton.tsx";
+import { useSettingsStore } from "/src/store/settingsStore.ts?t=1792337404327";
+import { dialogSurfaceVariants, overlayScrimVariants, popoverSurfaceVariants, reducedFadeVariants } from "/src/features/motion/motionPresets.ts?t=1792337404327";
+import { usePrefersReducedMotion as useReducedMotion } from "/src/hooks/usePrefersReducedMotion.ts";
+export const UpdateModal = ()=>{
+    _s();
+    const shouldReduceMotion = useReducedMotion();
+    const updateInfo = useSettingsStore((state)=>state.updateInfo);
+    const status = useSettingsStore((state)=>state.updateStatus);
+    const downloadUpdate = useSettingsStore((state)=>state.downloadUpdate);
+    const installUpdate = useSettingsStore((state)=>state.installUpdate);
+    const checkUpdates = useSettingsStore((state)=>state.checkUpdates);
+    const [dismissedVersion, setDismissedVersion] = useState(()=>window.localStorage.getItem("shanghao:dismissed-update-version"));
+    const [hiddenPhase, setHiddenPhase] = useState();
+    const latestVersion = updateInfo?.latestVersion ?? status.latestVersion ?? "";
+    const isForced = Boolean(updateInfo?.forceUpdate || status.forceUpdate);
+    const isDownloading = status.phase === "downloading";
+    const isDownloaded = status.phase === "downloaded" || status.phase === "ready_to_restart";
+    const isVisible = Boolean((updateInfo?.hasUpdate || isDownloading || isDownloaded) && hiddenPhase !== status.phase && (isForced || isDownloaded || dismissedVersion !== latestVersion));
+    const dismissOptionalUpdate = useCallback(()=>{
+        if (isForced) return;
+        setHiddenPhase(status.phase);
+        if (latestVersion) {
+            window.localStorage.setItem("shanghao:dismissed-update-version", latestVersion);
+            setDismissedVersion(latestVersion);
+        }
+        window.dispatchEvent(new Event("shanghao:update-dismissed"));
+    }, [
+        isForced,
+        latestVersion,
+        status.phase
+    ]);
+    useEffect(()=>{
+        setHiddenPhase(undefined);
+    }, [
+        status.phase
+    ]);
+    useEffect(()=>{
+        if (!isVisible || isForced) return;
+        const closeOnEscape = (event)=>{
+            if (event.key === "Escape") dismissOptionalUpdate();
+        };
+        document.addEventListener("keydown", closeOnEscape);
+        return ()=>document.removeEventListener("keydown", closeOnEscape);
+    }, [
+        dismissOptionalUpdate,
+        isForced,
+        isVisible
+    ]);
+    return /*#__PURE__*/ _jsxDEV(AnimatePresence, {
+        children: isVisible ? /*#__PURE__*/ _jsxDEV(motion.div, {
+            variants: shouldReduceMotion ? reducedFadeVariants : overlayScrimVariants,
+            initial: "initial",
+            animate: "open",
+            exit: "closed",
+            className: `update-modal-backdrop fixed z-[90] grid ${isForced ? "is-forced-update inset-0 place-items-center p-6" : "is-optional-update bottom-6 right-6 w-[min(430px,calc(100vw-48px))] pointer-events-none"}`,
+            children: /*#__PURE__*/ _jsxDEV(motion.div, {
+                variants: shouldReduceMotion ? reducedFadeVariants : isForced ? dialogSurfaceVariants : popoverSurfaceVariants,
+                initial: "initial",
+                animate: "open",
+                exit: "closed",
+                role: isForced ? "alertdialog" : "status",
+                "aria-modal": isForced ? "true" : undefined,
+                "aria-labelledby": "update-modal-title",
+                className: "update-modal-surface modal-surface pointer-events-auto w-full min-w-0 max-w-[430px] rounded-[30px] p-6",
+                children: [
+                    /*#__PURE__*/ _jsxDEV("div", {
+                        className: "flex items-start justify-between gap-4",
+                        children: [
+                            /*#__PURE__*/ _jsxDEV("div", {
+                                className: "text-xs font-semibold tracking-[0.18em] text-[#7990ad]",
+                                children: isForced ? "需要更新" : "发现新版"
+                            }, void 0, false, {
+                                fileName: "C:/Users/sober/Documents/Codex/2026-10-17/files-mentioned-by-the-user-codex/work/shanghao/apps/desktop/src/renderer/src/components/status/UpdateModal.tsx",
+                                lineNumber: 94,
+                                columnNumber: 15
+                            }, this),
+                            !isForced ? /*#__PURE__*/ _jsxDEV(DialogCloseButton, {
+                                label: "稍后提醒",
+                                onClick: dismissOptionalUpdate
+                            }, void 0, false, {
+                                fileName: "C:/Users/sober/Documents/Codex/2026-10-17/files-mentioned-by-the-user-codex/work/shanghao/apps/desktop/src/renderer/src/components/status/UpdateModal.tsx",
+                                lineNumber: 98,
+                                columnNumber: 17
+                            }, this) : null
+                        ]
+                    }, void 0, true, {
+                        fileName: "C:/Users/sober/Documents/Codex/2026-10-17/files-mentioned-by-the-user-codex/work/shanghao/apps/desktop/src/renderer/src/components/status/UpdateModal.tsx",
+                        lineNumber: 93,
+                        columnNumber: 13
+                    }, this),
+                    /*#__PURE__*/ _jsxDEV("h2", {
+                        id: "update-modal-title",
+                        className: "mt-2 text-[26px] font-[740] tracking-[-0.04em] text-[#111827]",
+                        children: [
+                            "上号 ",
+                            latestVersion
+                        ]
+                    }, void 0, true, {
+                        fileName: "C:/Users/sober/Documents/Codex/2026-10-17/files-mentioned-by-the-user-codex/work/shanghao/apps/desktop/src/renderer/src/components/status/UpdateModal.tsx",
+                        lineNumber: 101,
+                        columnNumber: 13
+                    }, this),
+                    /*#__PURE__*/ _jsxDEV("p", {
+                        className: "mt-2 text-sm leading-6 text-[#667085]",
+                        children: status.phase === "ready_to_restart" || status.phase === "downloaded" ? "新版已安全下载，确认后会安装并重新打开。" : isForced ? "正在后台下载，完成后需要你确认安装。" : "正在后台准备新版，下载完成前可以继续使用。"
+                    }, void 0, false, {
+                        fileName: "C:/Users/sober/Documents/Codex/2026-10-17/files-mentioned-by-the-user-codex/work/shanghao/apps/desktop/src/renderer/src/components/status/UpdateModal.tsx",
+                        lineNumber: 107,
+                        columnNumber: 13
+                    }, this),
+                    isDownloading ? /*#__PURE__*/ _jsxDEV("div", {
+                        className: "mt-5",
+                        children: [
+                            /*#__PURE__*/ _jsxDEV("div", {
+                                className: "mb-2 flex justify-between text-xs text-[#667085]",
+                                children: [
+                                    /*#__PURE__*/ _jsxDEV("span", {
+                                        children: status.message
+                                    }, void 0, false, {
+                                        fileName: "C:/Users/sober/Documents/Codex/2026-10-17/files-mentioned-by-the-user-codex/work/shanghao/apps/desktop/src/renderer/src/components/status/UpdateModal.tsx",
+                                        lineNumber: 118,
+                                        columnNumber: 19
+                                    }, this),
+                                    /*#__PURE__*/ _jsxDEV("span", {
+                                        children: [
+                                            Math.round(status.percent ?? 0),
+                                            "%"
+                                        ]
+                                    }, void 0, true, {
+                                        fileName: "C:/Users/sober/Documents/Codex/2026-10-17/files-mentioned-by-the-user-codex/work/shanghao/apps/desktop/src/renderer/src/components/status/UpdateModal.tsx",
+                                        lineNumber: 119,
+                                        columnNumber: 19
+                                    }, this)
+                                ]
+                            }, void 0, true, {
+                                fileName: "C:/Users/sober/Documents/Codex/2026-10-17/files-mentioned-by-the-user-codex/work/shanghao/apps/desktop/src/renderer/src/components/status/UpdateModal.tsx",
+                                lineNumber: 117,
+                                columnNumber: 17
+                            }, this),
+                            /*#__PURE__*/ _jsxDEV("div", {
+                                className: "h-2 overflow-hidden rounded-full bg-[#edf2f8]",
+                                children: /*#__PURE__*/ _jsxDEV("div", {
+                                    className: "h-full w-full origin-left rounded-full bg-[#4f7df7] transition-transform duration-300",
+                                    style: {
+                                        transform: `scaleX(${Math.max(0, Math.min(100, status.percent ?? 0)) / 100})`
+                                    }
+                                }, void 0, false, {
+                                    fileName: "C:/Users/sober/Documents/Codex/2026-10-17/files-mentioned-by-the-user-codex/work/shanghao/apps/desktop/src/renderer/src/components/status/UpdateModal.tsx",
+                                    lineNumber: 122,
+                                    columnNumber: 19
+                                }, this)
+                            }, void 0, false, {
+                                fileName: "C:/Users/sober/Documents/Codex/2026-10-17/files-mentioned-by-the-user-codex/work/shanghao/apps/desktop/src/renderer/src/components/status/UpdateModal.tsx",
+                                lineNumber: 121,
+                                columnNumber: 17
+                            }, this)
+                        ]
+                    }, void 0, true, {
+                        fileName: "C:/Users/sober/Documents/Codex/2026-10-17/files-mentioned-by-the-user-codex/work/shanghao/apps/desktop/src/renderer/src/components/status/UpdateModal.tsx",
+                        lineNumber: 116,
+                        columnNumber: 15
+                    }, this) : null,
+                    /*#__PURE__*/ _jsxDEV("div", {
+                        className: "mt-6 flex min-w-0 flex-wrap gap-3",
+                        children: [
+                            status.phase === "downloaded" || status.phase === "ready_to_restart" ? /*#__PURE__*/ _jsxDEV(Button, {
+                                className: "min-w-[180px] flex-[1_1_180px]",
+                                onClick: ()=>void installUpdate(),
+                                children: [
+                                    /*#__PURE__*/ _jsxDEV(RefreshCcw, {
+                                        className: "h-4 w-4"
+                                    }, void 0, false, {
+                                        fileName: "C:/Users/sober/Documents/Codex/2026-10-17/files-mentioned-by-the-user-codex/work/shanghao/apps/desktop/src/renderer/src/components/status/UpdateModal.tsx",
+                                        lineNumber: 138,
+                                        columnNumber: 19
+                                    }, this),
+                                    "安装并重新打开"
+                                ]
+                            }, void 0, true, {
+                                fileName: "C:/Users/sober/Documents/Codex/2026-10-17/files-mentioned-by-the-user-codex/work/shanghao/apps/desktop/src/renderer/src/components/status/UpdateModal.tsx",
+                                lineNumber: 134,
+                                columnNumber: 17
+                            }, this) : /*#__PURE__*/ _jsxDEV(Button, {
+                                className: "min-w-[180px] flex-[1_1_180px]",
+                                disabled: isDownloading,
+                                onClick: ()=>void downloadUpdate(),
+                                children: [
+                                    /*#__PURE__*/ _jsxDEV(Download, {
+                                        className: "h-4 w-4"
+                                    }, void 0, false, {
+                                        fileName: "C:/Users/sober/Documents/Codex/2026-10-17/files-mentioned-by-the-user-codex/work/shanghao/apps/desktop/src/renderer/src/components/status/UpdateModal.tsx",
+                                        lineNumber: 147,
+                                        columnNumber: 19
+                                    }, this),
+                                    isDownloading ? "正在更新…" : "立即更新"
+                                ]
+                            }, void 0, true, {
+                                fileName: "C:/Users/sober/Documents/Codex/2026-10-17/files-mentioned-by-the-user-codex/work/shanghao/apps/desktop/src/renderer/src/components/status/UpdateModal.tsx",
+                                lineNumber: 142,
+                                columnNumber: 17
+                            }, this),
+                            status.phase === "error" ? /*#__PURE__*/ _jsxDEV(Button, {
+                                className: "shrink-0 whitespace-nowrap",
+                                variant: "secondary",
+                                onClick: ()=>void checkUpdates(),
+                                children: "重试"
+                            }, void 0, false, {
+                                fileName: "C:/Users/sober/Documents/Codex/2026-10-17/files-mentioned-by-the-user-codex/work/shanghao/apps/desktop/src/renderer/src/components/status/UpdateModal.tsx",
+                                lineNumber: 152,
+                                columnNumber: 17
+                            }, this) : null,
+                            !isForced && !isDownloading && !isDownloaded ? /*#__PURE__*/ _jsxDEV(Button, {
+                                className: "shrink-0 whitespace-nowrap",
+                                variant: "secondary",
+                                onClick: dismissOptionalUpdate,
+                                children: "稍后提醒"
+                            }, void 0, false, {
+                                fileName: "C:/Users/sober/Documents/Codex/2026-10-17/files-mentioned-by-the-user-codex/work/shanghao/apps/desktop/src/renderer/src/components/status/UpdateModal.tsx",
+                                lineNumber: 161,
+                                columnNumber: 17
+                            }, this) : null
+                        ]
+                    }, void 0, true, {
+                        fileName: "C:/Users/sober/Documents/Codex/2026-10-17/files-mentioned-by-the-user-codex/work/shanghao/apps/desktop/src/renderer/src/components/status/UpdateModal.tsx",
+                        lineNumber: 132,
+                        columnNumber: 13
+                    }, this)
+                ]
+            }, void 0, true, {
+                fileName: "C:/Users/sober/Documents/Codex/2026-10-17/files-mentioned-by-the-user-codex/work/shanghao/apps/desktop/src/renderer/src/components/status/UpdateModal.tsx",
+                lineNumber: 77,
+                columnNumber: 11
+            }, this)
+        }, isForced ? "forced-update" : "optional-update", false, {
+            fileName: "C:/Users/sober/Documents/Codex/2026-10-17/files-mentioned-by-the-user-codex/work/shanghao/apps/desktop/src/renderer/src/components/status/UpdateModal.tsx",
+            lineNumber: 65,
+            columnNumber: 9
+        }, this) : null
+    }, void 0, false, {
+        fileName: "C:/Users/sober/Documents/Codex/2026-10-17/files-mentioned-by-the-user-codex/work/shanghao/apps/desktop/src/renderer/src/components/status/UpdateModal.tsx",
+        lineNumber: 63,
+        columnNumber: 5
+    }, this);
+};
+_s(UpdateModal, "a7zp2o3zYTChwcwQOjvQ/J/FXzQ=", false, function() {
+    return [
+        useReducedMotion,
+        useSettingsStore,
+        useSettingsStore,
+        useSettingsStore,
+        useSettingsStore,
+        useSettingsStore
+    ];
+});
+_c = UpdateModal;
+var _c;
+$RefreshReg$(_c, "UpdateModal");
+
+
+import * as RefreshRuntime from "/@react-refresh";
+const inWebWorker = typeof WorkerGlobalScope !== 'undefined' && self instanceof WorkerGlobalScope;
+import * as __vite_react_currentExports from "/src/components/status/UpdateModal.tsx?t=1792337404327";
+if (import.meta.hot && !inWebWorker) {
+  if (!window.$RefreshReg$) {
+    throw new Error(
+      "@vitejs/plugin-react-swc can't detect preamble. Something is wrong."
+    );
+  }
+
+  const currentExports = __vite_react_currentExports;
+  queueMicrotask(() => {
+    RefreshRuntime.registerExportsForReactRefresh("C:/Users/sober/Documents/Codex/2026-10-17/files-mentioned-by-the-user-codex/work/shanghao/apps/desktop/src/renderer/src/components/status/UpdateModal.tsx", currentExports);
+    import.meta.hot.accept((nextExports) => {
+      if (!nextExports) return;
+      const invalidateMessage = RefreshRuntime.validateRefreshBoundaryAndEnqueueUpdate("C:/Users/sober/Documents/Codex/2026-10-17/files-mentioned-by-the-user-codex/work/shanghao/apps/desktop/src/renderer/src/components/status/UpdateModal.tsx", currentExports, nextExports);
+      if (invalidateMessage) import.meta.hot.invalidate(invalidateMessage);
+    });
+  });
+}
+function $RefreshReg$(type, id) { return RefreshRuntime.register(type, "C:/Users/sober/Documents/Codex/2026-10-17/files-mentioned-by-the-user-codex/work/shanghao/apps/desktop/src/renderer/src/components/status/UpdateModal.tsx" + ' ' + id) }
+function $RefreshSig$() { return RefreshRuntime.createSignatureFunctionForTransform(); }
+
+//# sourceMappingURL=data:application/json;base64,eyJ2ZXJzaW9uIjozLCJzb3VyY2VzIjpbIlVwZGF0ZU1vZGFsLnRzeCJdLCJzb3VyY2VzQ29udGVudCI6WyJpbXBvcnQgeyB1c2VDYWxsYmFjaywgdXNlRWZmZWN0LCB1c2VTdGF0ZSB9IGZyb20gXCJyZWFjdFwiO1xuaW1wb3J0IHsgRG93bmxvYWQsIFJlZnJlc2hDY3cgfSBmcm9tIFwibHVjaWRlLXJlYWN0XCI7XG5pbXBvcnQgeyBBbmltYXRlUHJlc2VuY2UsIG1vdGlvbiB9IGZyb20gXCJmcmFtZXItbW90aW9uXCI7XG5cbmltcG9ydCB7IEJ1dHRvbiB9IGZyb20gXCIuLi9iYXNlL0J1dHRvblwiO1xuaW1wb3J0IHsgRGlhbG9nQ2xvc2VCdXR0b24gfSBmcm9tIFwiLi4vYmFzZS9EaWFsb2dDbG9zZUJ1dHRvblwiO1xuaW1wb3J0IHsgdXNlU2V0dGluZ3NTdG9yZSB9IGZyb20gXCIuLi8uLi9zdG9yZS9zZXR0aW5nc1N0b3JlXCI7XG5pbXBvcnQge1xuICBkaWFsb2dTdXJmYWNlVmFyaWFudHMsXG4gIG92ZXJsYXlTY3JpbVZhcmlhbnRzLFxuICBwb3BvdmVyU3VyZmFjZVZhcmlhbnRzLFxuICByZWR1Y2VkRmFkZVZhcmlhbnRzLFxufSBmcm9tIFwiLi4vLi4vZmVhdHVyZXMvbW90aW9uL21vdGlvblByZXNldHNcIjtcbmltcG9ydCB7IHVzZVByZWZlcnNSZWR1Y2VkTW90aW9uIGFzIHVzZVJlZHVjZWRNb3Rpb24gfSBmcm9tIFwiLi4vLi4vaG9va3MvdXNlUHJlZmVyc1JlZHVjZWRNb3Rpb25cIjtcblxuZXhwb3J0IGNvbnN0IFVwZGF0ZU1vZGFsID0gKCkgPT4ge1xuICBjb25zdCBzaG91bGRSZWR1Y2VNb3Rpb24gPSB1c2VSZWR1Y2VkTW90aW9uKCk7XG4gIGNvbnN0IHVwZGF0ZUluZm8gPSB1c2VTZXR0aW5nc1N0b3JlKChzdGF0ZSkgPT4gc3RhdGUudXBkYXRlSW5mbyk7XG4gIGNvbnN0IHN0YXR1cyA9IHVzZVNldHRpbmdzU3RvcmUoKHN0YXRlKSA9PiBzdGF0ZS51cGRhdGVTdGF0dXMpO1xuICBjb25zdCBkb3dubG9hZFVwZGF0ZSA9IHVzZVNldHRpbmdzU3RvcmUoKHN0YXRlKSA9PiBzdGF0ZS5kb3dubG9hZFVwZGF0ZSk7XG4gIGNvbnN0IGluc3RhbGxVcGRhdGUgPSB1c2VTZXR0aW5nc1N0b3JlKChzdGF0ZSkgPT4gc3RhdGUuaW5zdGFsbFVwZGF0ZSk7XG4gIGNvbnN0IGNoZWNrVXBkYXRlcyA9IHVzZVNldHRpbmdzU3RvcmUoKHN0YXRlKSA9PiBzdGF0ZS5jaGVja1VwZGF0ZXMpO1xuICBjb25zdCBbZGlzbWlzc2VkVmVyc2lvbiwgc2V0RGlzbWlzc2VkVmVyc2lvbl0gPSB1c2VTdGF0ZSgoKSA9PlxuICAgIHdpbmRvdy5sb2NhbFN0b3JhZ2UuZ2V0SXRlbShcInNoYW5naGFvOmRpc21pc3NlZC11cGRhdGUtdmVyc2lvblwiKSxcbiAgKTtcbiAgY29uc3QgW2hpZGRlblBoYXNlLCBzZXRIaWRkZW5QaGFzZV0gPSB1c2VTdGF0ZTxzdHJpbmc+KCk7XG5cbiAgY29uc3QgbGF0ZXN0VmVyc2lvbiA9IHVwZGF0ZUluZm8/LmxhdGVzdFZlcnNpb24gPz8gc3RhdHVzLmxhdGVzdFZlcnNpb24gPz8gXCJcIjtcbiAgY29uc3QgaXNGb3JjZWQgPSBCb29sZWFuKHVwZGF0ZUluZm8/LmZvcmNlVXBkYXRlIHx8IHN0YXR1cy5mb3JjZVVwZGF0ZSk7XG4gIGNvbnN0IGlzRG93bmxvYWRpbmcgPSBzdGF0dXMucGhhc2UgPT09IFwiZG93bmxvYWRpbmdcIjtcbiAgY29uc3QgaXNEb3dubG9hZGVkID0gc3RhdHVzLnBoYXNlID09PSBcImRvd25sb2FkZWRcIiB8fCBzdGF0dXMucGhhc2UgPT09IFwicmVhZHlfdG9fcmVzdGFydFwiO1xuXG4gIGNvbnN0IGlzVmlzaWJsZSA9IEJvb2xlYW4oXG4gICAgKHVwZGF0ZUluZm8/Lmhhc1VwZGF0ZSB8fCBpc0Rvd25sb2FkaW5nIHx8IGlzRG93bmxvYWRlZCkgJiZcbiAgICBoaWRkZW5QaGFzZSAhPT0gc3RhdHVzLnBoYXNlICYmXG4gICAgKGlzRm9yY2VkIHx8IGlzRG93bmxvYWRlZCB8fCBkaXNtaXNzZWRWZXJzaW9uICE9PSBsYXRlc3RWZXJzaW9uKSxcbiAgKTtcblxuICBjb25zdCBkaXNtaXNzT3B0aW9uYWxVcGRhdGUgPSB1c2VDYWxsYmFjaygoKSA9PiB7XG4gICAgaWYgKGlzRm9yY2VkKSByZXR1cm47XG4gICAgc2V0SGlkZGVuUGhhc2Uoc3RhdHVzLnBoYXNlKTtcbiAgICBpZiAobGF0ZXN0VmVyc2lvbikge1xuICAgICAgd2luZG93LmxvY2FsU3RvcmFnZS5zZXRJdGVtKFwic2hhbmdoYW86ZGlzbWlzc2VkLXVwZGF0ZS12ZXJzaW9uXCIsIGxhdGVzdFZlcnNpb24pO1xuICAgICAgc2V0RGlzbWlzc2VkVmVyc2lvbihsYXRlc3RWZXJzaW9uKTtcbiAgICB9XG4gICAgd2luZG93LmRpc3BhdGNoRXZlbnQobmV3IEV2ZW50KFwic2hhbmdoYW86dXBkYXRlLWRpc21pc3NlZFwiKSk7XG4gIH0sIFtpc0ZvcmNlZCwgbGF0ZXN0VmVyc2lvbiwgc3RhdHVzLnBoYXNlXSk7XG5cbiAgdXNlRWZmZWN0KCgpID0+IHtcbiAgICBzZXRIaWRkZW5QaGFzZSh1bmRlZmluZWQpO1xuICB9LCBbc3RhdHVzLnBoYXNlXSk7XG5cbiAgdXNlRWZmZWN0KCgpID0+IHtcbiAgICBpZiAoIWlzVmlzaWJsZSB8fCBpc0ZvcmNlZCkgcmV0dXJuO1xuICAgIGNvbnN0IGNsb3NlT25Fc2NhcGUgPSAoZXZlbnQ6IEtleWJvYXJkRXZlbnQpID0+IHtcbiAgICAgIGlmIChldmVudC5rZXkgPT09IFwiRXNjYXBlXCIpIGRpc21pc3NPcHRpb25hbFVwZGF0ZSgpO1xuICAgIH07XG4gICAgZG9jdW1lbnQuYWRkRXZlbnRMaXN0ZW5lcihcImtleWRvd25cIiwgY2xvc2VPbkVzY2FwZSk7XG4gICAgcmV0dXJuICgpID0+IGRvY3VtZW50LnJlbW92ZUV2ZW50TGlzdGVuZXIoXCJrZXlkb3duXCIsIGNsb3NlT25Fc2NhcGUpO1xuICB9LCBbZGlzbWlzc09wdGlvbmFsVXBkYXRlLCBpc0ZvcmNlZCwgaXNWaXNpYmxlXSk7XG5cbiAgcmV0dXJuIChcbiAgICA8QW5pbWF0ZVByZXNlbmNlPlxuICAgICAge2lzVmlzaWJsZSA/IChcbiAgICAgICAgPG1vdGlvbi5kaXZcbiAgICAgICAgICBrZXk9e2lzRm9yY2VkID8gXCJmb3JjZWQtdXBkYXRlXCIgOiBcIm9wdGlvbmFsLXVwZGF0ZVwifVxuICAgICAgICAgIHZhcmlhbnRzPXtzaG91bGRSZWR1Y2VNb3Rpb24gPyByZWR1Y2VkRmFkZVZhcmlhbnRzIDogb3ZlcmxheVNjcmltVmFyaWFudHN9XG4gICAgICAgICAgaW5pdGlhbD1cImluaXRpYWxcIlxuICAgICAgICAgIGFuaW1hdGU9XCJvcGVuXCJcbiAgICAgICAgICBleGl0PVwiY2xvc2VkXCJcbiAgICAgICAgICBjbGFzc05hbWU9e2B1cGRhdGUtbW9kYWwtYmFja2Ryb3AgZml4ZWQgei1bOTBdIGdyaWQgJHtcbiAgICAgICAgICAgIGlzRm9yY2VkXG4gICAgICAgICAgICAgID8gXCJpcy1mb3JjZWQtdXBkYXRlIGluc2V0LTAgcGxhY2UtaXRlbXMtY2VudGVyIHAtNlwiXG4gICAgICAgICAgICAgIDogXCJpcy1vcHRpb25hbC11cGRhdGUgYm90dG9tLTYgcmlnaHQtNiB3LVttaW4oNDMwcHgsY2FsYygxMDB2dy00OHB4KSldIHBvaW50ZXItZXZlbnRzLW5vbmVcIlxuICAgICAgICAgIH1gfVxuICAgICAgICA+XG4gICAgICAgICAgPG1vdGlvbi5kaXZcbiAgICAgICAgICAgIHZhcmlhbnRzPXtcbiAgICAgICAgICAgICAgc2hvdWxkUmVkdWNlTW90aW9uXG4gICAgICAgICAgICAgICAgPyByZWR1Y2VkRmFkZVZhcmlhbnRzXG4gICAgICAgICAgICAgICAgOiBpc0ZvcmNlZFxuICAgICAgICAgICAgICAgICAgPyBkaWFsb2dTdXJmYWNlVmFyaWFudHNcbiAgICAgICAgICAgICAgICAgIDogcG9wb3ZlclN1cmZhY2VWYXJpYW50c1xuICAgICAgICAgICAgfVxuICAgICAgICAgICAgaW5pdGlhbD1cImluaXRpYWxcIlxuICAgICAgICAgICAgYW5pbWF0ZT1cIm9wZW5cIlxuICAgICAgICAgICAgZXhpdD1cImNsb3NlZFwiXG4gICAgICAgICAgICByb2xlPXtpc0ZvcmNlZCA/IFwiYWxlcnRkaWFsb2dcIiA6IFwic3RhdHVzXCJ9XG4gICAgICAgICAgICBhcmlhLW1vZGFsPXtpc0ZvcmNlZCA/IFwidHJ1ZVwiIDogdW5kZWZpbmVkfVxuICAgICAgICAgICAgYXJpYS1sYWJlbGxlZGJ5PVwidXBkYXRlLW1vZGFsLXRpdGxlXCJcbiAgICAgICAgICAgIGNsYXNzTmFtZT1cInVwZGF0ZS1tb2RhbC1zdXJmYWNlIG1vZGFsLXN1cmZhY2UgcG9pbnRlci1ldmVudHMtYXV0byB3LWZ1bGwgbWluLXctMCBtYXgtdy1bNDMwcHhdIHJvdW5kZWQtWzMwcHhdIHAtNlwiXG4gICAgICAgICAgPlxuICAgICAgICAgICAgPGRpdiBjbGFzc05hbWU9XCJmbGV4IGl0ZW1zLXN0YXJ0IGp1c3RpZnktYmV0d2VlbiBnYXAtNFwiPlxuICAgICAgICAgICAgICA8ZGl2IGNsYXNzTmFtZT1cInRleHQteHMgZm9udC1zZW1pYm9sZCB0cmFja2luZy1bMC4xOGVtXSB0ZXh0LVsjNzk5MGFkXVwiPlxuICAgICAgICAgICAgICAgIHtpc0ZvcmNlZCA/IFwi6ZyA6KaB5pu05pawXCIgOiBcIuWPkeeOsOaWsOeJiFwifVxuICAgICAgICAgICAgICA8L2Rpdj5cbiAgICAgICAgICAgICAgeyFpc0ZvcmNlZCA/IChcbiAgICAgICAgICAgICAgICA8RGlhbG9nQ2xvc2VCdXR0b24gbGFiZWw9XCLnqI3lkI7mj5DphpJcIiBvbkNsaWNrPXtkaXNtaXNzT3B0aW9uYWxVcGRhdGV9IC8+XG4gICAgICAgICAgICAgICkgOiBudWxsfVxuICAgICAgICAgICAgPC9kaXY+XG4gICAgICAgICAgICA8aDJcbiAgICAgICAgICAgICAgaWQ9XCJ1cGRhdGUtbW9kYWwtdGl0bGVcIlxuICAgICAgICAgICAgICBjbGFzc05hbWU9XCJtdC0yIHRleHQtWzI2cHhdIGZvbnQtWzc0MF0gdHJhY2tpbmctWy0wLjA0ZW1dIHRleHQtWyMxMTE4MjddXCJcbiAgICAgICAgICAgID5cbiAgICAgICAgICAgICAg5LiK5Y+3IHtsYXRlc3RWZXJzaW9ufVxuICAgICAgICAgICAgPC9oMj5cbiAgICAgICAgICAgIDxwIGNsYXNzTmFtZT1cIm10LTIgdGV4dC1zbSBsZWFkaW5nLTYgdGV4dC1bIzY2NzA4NV1cIj5cbiAgICAgICAgICAgICAge3N0YXR1cy5waGFzZSA9PT0gXCJyZWFkeV90b19yZXN0YXJ0XCIgfHwgc3RhdHVzLnBoYXNlID09PSBcImRvd25sb2FkZWRcIlxuICAgICAgICAgICAgICAgID8gXCLmlrDniYjlt7LlronlhajkuIvovb3vvIznoa7orqTlkI7kvJrlronoo4Xlubbph43mlrDmiZPlvIDjgIJcIlxuICAgICAgICAgICAgICAgIDogaXNGb3JjZWRcbiAgICAgICAgICAgICAgICAgID8gXCLmraPlnKjlkI7lj7DkuIvovb3vvIzlrozmiJDlkI7pnIDopoHkvaDnoa7orqTlronoo4XjgIJcIlxuICAgICAgICAgICAgICAgICAgOiBcIuato+WcqOWQjuWPsOWHhuWkh+aWsOeJiO+8jOS4i+i9veWujOaIkOWJjeWPr+S7pee7p+e7reS9v+eUqOOAglwifVxuICAgICAgICAgICAgPC9wPlxuXG4gICAgICAgICAgICB7aXNEb3dubG9hZGluZyA/IChcbiAgICAgICAgICAgICAgPGRpdiBjbGFzc05hbWU9XCJtdC01XCI+XG4gICAgICAgICAgICAgICAgPGRpdiBjbGFzc05hbWU9XCJtYi0yIGZsZXgganVzdGlmeS1iZXR3ZWVuIHRleHQteHMgdGV4dC1bIzY2NzA4NV1cIj5cbiAgICAgICAgICAgICAgICAgIDxzcGFuPntzdGF0dXMubWVzc2FnZX08L3NwYW4+XG4gICAgICAgICAgICAgICAgICA8c3Bhbj57TWF0aC5yb3VuZChzdGF0dXMucGVyY2VudCA/PyAwKX0lPC9zcGFuPlxuICAgICAgICAgICAgICAgIDwvZGl2PlxuICAgICAgICAgICAgICAgIDxkaXYgY2xhc3NOYW1lPVwiaC0yIG92ZXJmbG93LWhpZGRlbiByb3VuZGVkLWZ1bGwgYmctWyNlZGYyZjhdXCI+XG4gICAgICAgICAgICAgICAgICA8ZGl2XG4gICAgICAgICAgICAgICAgICAgIGNsYXNzTmFtZT1cImgtZnVsbCB3LWZ1bGwgb3JpZ2luLWxlZnQgcm91bmRlZC1mdWxsIGJnLVsjNGY3ZGY3XSB0cmFuc2l0aW9uLXRyYW5zZm9ybSBkdXJhdGlvbi0zMDBcIlxuICAgICAgICAgICAgICAgICAgICBzdHlsZT17e1xuICAgICAgICAgICAgICAgICAgICAgIHRyYW5zZm9ybTogYHNjYWxlWCgke01hdGgubWF4KDAsIE1hdGgubWluKDEwMCwgc3RhdHVzLnBlcmNlbnQgPz8gMCkpIC8gMTAwfSlgLFxuICAgICAgICAgICAgICAgICAgICB9fVxuICAgICAgICAgICAgICAgICAgLz5cbiAgICAgICAgICAgICAgICA8L2Rpdj5cbiAgICAgICAgICAgICAgPC9kaXY+XG4gICAgICAgICAgICApIDogbnVsbH1cblxuICAgICAgICAgICAgPGRpdiBjbGFzc05hbWU9XCJtdC02IGZsZXggbWluLXctMCBmbGV4LXdyYXAgZ2FwLTNcIj5cbiAgICAgICAgICAgICAge3N0YXR1cy5waGFzZSA9PT0gXCJkb3dubG9hZGVkXCIgfHwgc3RhdHVzLnBoYXNlID09PSBcInJlYWR5X3RvX3Jlc3RhcnRcIiA/IChcbiAgICAgICAgICAgICAgICA8QnV0dG9uXG4gICAgICAgICAgICAgICAgICBjbGFzc05hbWU9XCJtaW4tdy1bMTgwcHhdIGZsZXgtWzFfMV8xODBweF1cIlxuICAgICAgICAgICAgICAgICAgb25DbGljaz17KCkgPT4gdm9pZCBpbnN0YWxsVXBkYXRlKCl9XG4gICAgICAgICAgICAgICAgPlxuICAgICAgICAgICAgICAgICAgPFJlZnJlc2hDY3cgY2xhc3NOYW1lPVwiaC00IHctNFwiIC8+XG4gICAgICAgICAgICAgICAgICDlronoo4Xlubbph43mlrDmiZPlvIBcbiAgICAgICAgICAgICAgICA8L0J1dHRvbj5cbiAgICAgICAgICAgICAgKSA6IChcbiAgICAgICAgICAgICAgICA8QnV0dG9uXG4gICAgICAgICAgICAgICAgICBjbGFzc05hbWU9XCJtaW4tdy1bMTgwcHhdIGZsZXgtWzFfMV8xODBweF1cIlxuICAgICAgICAgICAgICAgICAgZGlzYWJsZWQ9e2lzRG93bmxvYWRpbmd9XG4gICAgICAgICAgICAgICAgICBvbkNsaWNrPXsoKSA9PiB2b2lkIGRvd25sb2FkVXBkYXRlKCl9XG4gICAgICAgICAgICAgICAgPlxuICAgICAgICAgICAgICAgICAgPERvd25sb2FkIGNsYXNzTmFtZT1cImgtNCB3LTRcIiAvPlxuICAgICAgICAgICAgICAgICAge2lzRG93bmxvYWRpbmcgPyBcIuato+WcqOabtOaWsOKAplwiIDogXCLnq4vljbPmm7TmlrBcIn1cbiAgICAgICAgICAgICAgICA8L0J1dHRvbj5cbiAgICAgICAgICAgICAgKX1cbiAgICAgICAgICAgICAge3N0YXR1cy5waGFzZSA9PT0gXCJlcnJvclwiID8gKFxuICAgICAgICAgICAgICAgIDxCdXR0b25cbiAgICAgICAgICAgICAgICAgIGNsYXNzTmFtZT1cInNocmluay0wIHdoaXRlc3BhY2Utbm93cmFwXCJcbiAgICAgICAgICAgICAgICAgIHZhcmlhbnQ9XCJzZWNvbmRhcnlcIlxuICAgICAgICAgICAgICAgICAgb25DbGljaz17KCkgPT4gdm9pZCBjaGVja1VwZGF0ZXMoKX1cbiAgICAgICAgICAgICAgICA+XG4gICAgICAgICAgICAgICAgICDph43or5VcbiAgICAgICAgICAgICAgICA8L0J1dHRvbj5cbiAgICAgICAgICAgICAgKSA6IG51bGx9XG4gICAgICAgICAgICAgIHshaXNGb3JjZWQgJiYgIWlzRG93bmxvYWRpbmcgJiYgIWlzRG93bmxvYWRlZCA/IChcbiAgICAgICAgICAgICAgICA8QnV0dG9uXG4gICAgICAgICAgICAgICAgICBjbGFzc05hbWU9XCJzaHJpbmstMCB3aGl0ZXNwYWNlLW5vd3JhcFwiXG4gICAgICAgICAgICAgICAgICB2YXJpYW50PVwic2Vjb25kYXJ5XCJcbiAgICAgICAgICAgICAgICAgIG9uQ2xpY2s9e2Rpc21pc3NPcHRpb25hbFVwZGF0ZX1cbiAgICAgICAgICAgICAgICA+XG4gICAgICAgICAgICAgICAgICDnqI3lkI7mj5DphpJcbiAgICAgICAgICAgICAgICA8L0J1dHRvbj5cbiAgICAgICAgICAgICAgKSA6IG51bGx9XG4gICAgICAgICAgICA8L2Rpdj5cbiAgICAgICAgICA8L21vdGlvbi5kaXY+XG4gICAgICAgIDwvbW90aW9uLmRpdj5cbiAgICAgICkgOiBudWxsfVxuICAgIDwvQW5pbWF0ZVByZXNlbmNlPlxuICApO1xufTtcbiJdLCJuYW1lcyI6WyJ1c2VDYWxsYmFjayIsInVzZUVmZmVjdCIsInVzZVN0YXRlIiwiRG93bmxvYWQiLCJSZWZyZXNoQ2N3IiwiQW5pbWF0ZVByZXNlbmNlIiwibW90aW9uIiwiQnV0dG9uIiwiRGlhbG9nQ2xvc2VCdXR0b24iLCJ1c2VTZXR0aW5nc1N0b3JlIiwiZGlhbG9nU3VyZmFjZVZhcmlhbnRzIiwib3ZlcmxheVNjcmltVmFyaWFudHMiLCJwb3BvdmVyU3VyZmFjZVZhcmlhbnRzIiwicmVkdWNlZEZhZGVWYXJpYW50cyIsInVzZVByZWZlcnNSZWR1Y2VkTW90aW9uIiwidXNlUmVkdWNlZE1vdGlvbiIsIlVwZGF0ZU1vZGFsIiwic2hvdWxkUmVkdWNlTW90aW9uIiwidXBkYXRlSW5mbyIsInN0YXRlIiwic3RhdHVzIiwidXBkYXRlU3RhdHVzIiwiZG93bmxvYWRVcGRhdGUiLCJpbnN0YWxsVXBkYXRlIiwiY2hlY2tVcGRhdGVzIiwiZGlzbWlzc2VkVmVyc2lvbiIsInNldERpc21pc3NlZFZlcnNpb24iLCJ3aW5kb3ciLCJsb2NhbFN0b3JhZ2UiLCJnZXRJdGVtIiwiaGlkZGVuUGhhc2UiLCJzZXRIaWRkZW5QaGFzZSIsImxhdGVzdFZlcnNpb24iLCJpc0ZvcmNlZCIsIkJvb2xlYW4iLCJmb3JjZVVwZGF0ZSIsImlzRG93bmxvYWRpbmciLCJwaGFzZSIsImlzRG93bmxvYWRlZCIsImlzVmlzaWJsZSIsImhhc1VwZGF0ZSIsImRpc21pc3NPcHRpb25hbFVwZGF0ZSIsInNldEl0ZW0iLCJkaXNwYXRjaEV2ZW50IiwiRXZlbnQiLCJ1bmRlZmluZWQiLCJjbG9zZU9uRXNjYXBlIiwiZXZlbnQiLCJrZXkiLCJkb2N1bWVudCIsImFkZEV2ZW50TGlzdGVuZXIiLCJyZW1vdmVFdmVudExpc3RlbmVyIiwiZGl2IiwidmFyaWFudHMiLCJpbml0aWFsIiwiYW5pbWF0ZSIsImV4aXQiLCJjbGFzc05hbWUiLCJyb2xlIiwiYXJpYS1tb2RhbCIsImFyaWEtbGFiZWxsZWRieSIsImxhYmVsIiwib25DbGljayIsImgyIiwiaWQiLCJwIiwic3BhbiIsIm1lc3NhZ2UiLCJNYXRoIiwicm91bmQiLCJwZXJjZW50Iiwic3R5bGUiLCJ0cmFuc2Zvcm0iLCJtYXgiLCJtaW4iLCJkaXNhYmxlZCIsInZhcmlhbnQiXSwibWFwcGluZ3MiOiI7O0FBQUEsU0FBU0EsV0FBVyxFQUFFQyxTQUFTLEVBQUVDLFFBQVEsUUFBUSxRQUFRO0FBQ3pELFNBQVNDLFFBQVEsRUFBRUMsVUFBVSxRQUFRLGVBQWU7QUFDcEQsU0FBU0MsZUFBZSxFQUFFQyxNQUFNLFFBQVEsZ0JBQWdCO0FBRXhELFNBQVNDLE1BQU0sUUFBUSxpQkFBaUI7QUFDeEMsU0FBU0MsaUJBQWlCLFFBQVEsNEJBQTRCO0FBQzlELFNBQVNDLGdCQUFnQixRQUFRLDRCQUE0QjtBQUM3RCxTQUNFQyxxQkFBcUIsRUFDckJDLG9CQUFvQixFQUNwQkMsc0JBQXNCLEVBQ3RCQyxtQkFBbUIsUUFDZCxzQ0FBc0M7QUFDN0MsU0FBU0MsMkJBQTJCQyxnQkFBZ0IsUUFBUSxzQ0FBc0M7QUFFbEcsT0FBTyxNQUFNQyxjQUFjOztJQUN6QixNQUFNQyxxQkFBcUJGO0lBQzNCLE1BQU1HLGFBQWFULGlCQUFpQixDQUFDVSxRQUFVQSxNQUFNRCxVQUFVO0lBQy9ELE1BQU1FLFNBQVNYLGlCQUFpQixDQUFDVSxRQUFVQSxNQUFNRSxZQUFZO0lBQzdE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

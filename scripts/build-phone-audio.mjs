@@ -30,6 +30,7 @@ if (process.platform === "win32") {
         "/platform:x64",
         "/target:exe",
         "/r:System.Web.Extensions.dll",
+        "/r:System.Windows.Forms.dll",
         `/out:${target}`,
         source,
       ],

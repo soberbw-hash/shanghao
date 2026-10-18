@@ -7,6 +7,7 @@ export async function replaceOutgoingAudioTrack(
   previousStream: MediaStream,
   peers: Iterable<{ replaceLocalTrack(track: MediaStreamTrack): Promise<void> }>,
   fallback?: { replaceLocalStream(stream: MediaStream): Promise<void> },
+  recoverPeer?: (peer: { replaceLocalTrack(track: MediaStreamTrack): Promise<void> }) => void,
 ): Promise<MediaStream> {
   const nextStream = new MediaStream([track]);
   const previousTrack = previousStream.getAudioTracks()[0];
@@ -14,6 +15,15 @@ export async function replaceOutgoingAudioTrack(
   const replacements = await Promise.allSettled(
     destinations.map((peer) => peer.replaceLocalTrack(track)),
   );
+  if (recoverPeer) {
+    // Restoring a microphone must not roll healthy senders back to a mix that
+    // is about to close just because one disconnected peer rejects its track.
+    replacements.forEach((result, index) => {
+      if (result.status === "rejected") recoverPeer(destinations[index]!);
+    });
+    await fallback?.replaceLocalStream(nextStream);
+    return nextStream;
+  }
   try {
     const failed = replacements.find((result) => result.status === "rejected");
     if (failed?.status === "rejected") throw failed.reason;

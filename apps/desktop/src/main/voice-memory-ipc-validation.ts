@@ -108,7 +108,11 @@ export const requireVoiceMemoryProcessRequest = (value: unknown): VoiceMemoryPro
       (!Array.isArray(request.markers) ||
         request.markers.length > 2_000 ||
         request.markers.some(
-          (marker) => !marker || !validText(marker.id, 128) || !validOffset(marker.offsetMs),
+          (marker) =>
+            !marker ||
+            !validText(marker.id, 128) ||
+            !validOffset(marker.offsetMs) ||
+            !validOptionalText(marker.label, 240),
         ))) ||
     (request.speakingTimeline !== undefined &&
       (!Array.isArray(request.speakingTimeline) ||

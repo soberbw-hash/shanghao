@@ -1,6 +1,6 @@
-import * as cue from "../../features/recording/recordingMarkerPresentation";
+import * as cue from "../../features/recording/useRecordingMarkerCue";
 export const RecordingMarkerCue = (props: cue.RecordingMarkerCueProps) => {
-  const { nearby, position } = cue.recordingMarkerPresentation(props);
+  const { nearby, position } = cue.useRecordingMarkerCue(props);
   if (!nearby.length) return null;
   return (
     <output className="recording-marker-cue" style={{ left: `${position}%` }}>

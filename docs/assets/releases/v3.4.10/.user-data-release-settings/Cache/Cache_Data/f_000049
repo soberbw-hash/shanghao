@@ -1,0 +1,205 @@
+import { createHotContext as __vite__createHotContext } from "/@vite/client";import.meta.hot = __vite__createHotContext("/src/components/status/DetailedReleaseNotesViewer.tsx");const _jsxDEV = __vite__cjsImport0_react_jsxDevRuntime["jsxDEV"]; const _Fragment = __vite__cjsImport0_react_jsxDevRuntime["Fragment"];import __vite__cjsImport0_react_jsxDevRuntime from "/@fs/C:/Users/sober/Documents/Codex/2026-10-17/files-mentioned-by-the-user-codex/work/shanghao/apps/desktop/node_modules/.vite/deps/react_jsx-dev-runtime.js?v=b37745cb";
+import { Button } from "/src/components/base/Button.tsx?t=1792337404327";
+const renderDetail = (item)=>{
+    const separator = item.indexOf("：");
+    if (separator <= 0 || separator > 18) return item;
+    return /*#__PURE__*/ _jsxDEV(_Fragment, {
+        children: [
+            /*#__PURE__*/ _jsxDEV("strong", {
+                className: "release-notes-detail-keyword",
+                children: item.slice(0, separator + 1)
+            }, void 0, false, {
+                fileName: "C:/Users/sober/Documents/Codex/2026-10-17/files-mentioned-by-the-user-codex/work/shanghao/apps/desktop/src/renderer/src/components/status/DetailedReleaseNotesViewer.tsx",
+                lineNumber: 9,
+                columnNumber: 7
+            }, this),
+            item.slice(separator + 1)
+        ]
+    }, void 0, true, {
+        fileName: "C:/Users/sober/Documents/Codex/2026-10-17/files-mentioned-by-the-user-codex/work/shanghao/apps/desktop/src/renderer/src/components/status/DetailedReleaseNotesViewer.tsx",
+        lineNumber: 8,
+        columnNumber: 5
+    }, this);
+};
+export const DetailedReleaseNotesViewer = ({ release, onComplete, completeLabel = "知道了，开始上号" })=>/*#__PURE__*/ _jsxDEV("div", {
+        className: "release-notes-viewer",
+        children: [
+            /*#__PURE__*/ _jsxDEV("div", {
+                className: "release-notes-page",
+                children: [
+                    /*#__PURE__*/ _jsxDEV("div", {
+                        children: [
+                            /*#__PURE__*/ _jsxDEV("div", {
+                                className: "release-notes-kicker",
+                                children: release.date
+                            }, void 0, false, {
+                                fileName: "C:/Users/sober/Documents/Codex/2026-10-17/files-mentioned-by-the-user-codex/work/shanghao/apps/desktop/src/renderer/src/components/status/DetailedReleaseNotesViewer.tsx",
+                                lineNumber: 27,
+                                columnNumber: 9
+                            }, this),
+                            /*#__PURE__*/ _jsxDEV("h3", {
+                                children: release.title
+                            }, void 0, false, {
+                                fileName: "C:/Users/sober/Documents/Codex/2026-10-17/files-mentioned-by-the-user-codex/work/shanghao/apps/desktop/src/renderer/src/components/status/DetailedReleaseNotesViewer.tsx",
+                                lineNumber: 28,
+                                columnNumber: 9
+                            }, this),
+                            release.summary ? /*#__PURE__*/ _jsxDEV("p", {
+                                children: release.summary
+                            }, void 0, false, {
+                                fileName: "C:/Users/sober/Documents/Codex/2026-10-17/files-mentioned-by-the-user-codex/work/shanghao/apps/desktop/src/renderer/src/components/status/DetailedReleaseNotesViewer.tsx",
+                                lineNumber: 29,
+                                columnNumber: 28
+                            }, this) : null
+                        ]
+                    }, void 0, true, {
+                        fileName: "C:/Users/sober/Documents/Codex/2026-10-17/files-mentioned-by-the-user-codex/work/shanghao/apps/desktop/src/renderer/src/components/status/DetailedReleaseNotesViewer.tsx",
+                        lineNumber: 26,
+                        columnNumber: 7
+                    }, this),
+                    /*#__PURE__*/ _jsxDEV("section", {
+                        className: "release-notes-summary-card",
+                        "aria-label": "本次更新重点",
+                        children: [
+                            /*#__PURE__*/ _jsxDEV("h4", {
+                                className: "release-notes-summary-heading",
+                                children: "本次更新"
+                            }, void 0, false, {
+                                fileName: "C:/Users/sober/Documents/Codex/2026-10-17/files-mentioned-by-the-user-codex/work/shanghao/apps/desktop/src/renderer/src/components/status/DetailedReleaseNotesViewer.tsx",
+                                lineNumber: 32,
+                                columnNumber: 9
+                            }, this),
+                            /*#__PURE__*/ _jsxDEV("ul", {
+                                className: "release-notes-highlight-list",
+                                children: release.highlights.map((item)=>/*#__PURE__*/ _jsxDEV("li", {
+                                        children: renderDetail(item)
+                                    }, item, false, {
+                                        fileName: "C:/Users/sober/Documents/Codex/2026-10-17/files-mentioned-by-the-user-codex/work/shanghao/apps/desktop/src/renderer/src/components/status/DetailedReleaseNotesViewer.tsx",
+                                        lineNumber: 35,
+                                        columnNumber: 13
+                                    }, this))
+                            }, void 0, false, {
+                                fileName: "C:/Users/sober/Documents/Codex/2026-10-17/files-mentioned-by-the-user-codex/work/shanghao/apps/desktop/src/renderer/src/components/status/DetailedReleaseNotesViewer.tsx",
+                                lineNumber: 33,
+                                columnNumber: 9
+                            }, this)
+                        ]
+                    }, void 0, true, {
+                        fileName: "C:/Users/sober/Documents/Codex/2026-10-17/files-mentioned-by-the-user-codex/work/shanghao/apps/desktop/src/renderer/src/components/status/DetailedReleaseNotesViewer.tsx",
+                        lineNumber: 31,
+                        columnNumber: 7
+                    }, this),
+                    release.details.length ? /*#__PURE__*/ _jsxDEV("details", {
+                        className: "release-notes-expanded",
+                        children: [
+                            /*#__PURE__*/ _jsxDEV("summary", {
+                                children: [
+                                    "查看完整更新 · ",
+                                    release.details.length,
+                                    " 个主题"
+                                ]
+                            }, void 0, true, {
+                                fileName: "C:/Users/sober/Documents/Codex/2026-10-17/files-mentioned-by-the-user-codex/work/shanghao/apps/desktop/src/renderer/src/components/status/DetailedReleaseNotesViewer.tsx",
+                                lineNumber: 41,
+                                columnNumber: 11
+                            }, this),
+                            release.details.map((group)=>/*#__PURE__*/ _jsxDEV("section", {
+                                    className: "release-notes-topic",
+                                    children: [
+                                        /*#__PURE__*/ _jsxDEV("h4", {
+                                            children: group.title
+                                        }, void 0, false, {
+                                            fileName: "C:/Users/sober/Documents/Codex/2026-10-17/files-mentioned-by-the-user-codex/work/shanghao/apps/desktop/src/renderer/src/components/status/DetailedReleaseNotesViewer.tsx",
+                                            lineNumber: 44,
+                                            columnNumber: 15
+                                        }, this),
+                                        /*#__PURE__*/ _jsxDEV("ul", {
+                                            children: group.items.map((item)=>/*#__PURE__*/ _jsxDEV("li", {
+                                                    children: renderDetail(item)
+                                                }, item, false, {
+                                                    fileName: "C:/Users/sober/Documents/Codex/2026-10-17/files-mentioned-by-the-user-codex/work/shanghao/apps/desktop/src/renderer/src/components/status/DetailedReleaseNotesViewer.tsx",
+                                                    lineNumber: 47,
+                                                    columnNumber: 19
+                                                }, this))
+                                        }, void 0, false, {
+                                            fileName: "C:/Users/sober/Documents/Codex/2026-10-17/files-mentioned-by-the-user-codex/work/shanghao/apps/desktop/src/renderer/src/components/status/DetailedReleaseNotesViewer.tsx",
+                                            lineNumber: 45,
+                                            columnNumber: 15
+                                        }, this)
+                                    ]
+                                }, group.title, true, {
+                                    fileName: "C:/Users/sober/Documents/Codex/2026-10-17/files-mentioned-by-the-user-codex/work/shanghao/apps/desktop/src/renderer/src/components/status/DetailedReleaseNotesViewer.tsx",
+                                    lineNumber: 43,
+                                    columnNumber: 13
+                                }, this))
+                        ]
+                    }, release.version, true, {
+                        fileName: "C:/Users/sober/Documents/Codex/2026-10-17/files-mentioned-by-the-user-codex/work/shanghao/apps/desktop/src/renderer/src/components/status/DetailedReleaseNotesViewer.tsx",
+                        lineNumber: 40,
+                        columnNumber: 9
+                    }, this) : null
+                ]
+            }, void 0, true, {
+                fileName: "C:/Users/sober/Documents/Codex/2026-10-17/files-mentioned-by-the-user-codex/work/shanghao/apps/desktop/src/renderer/src/components/status/DetailedReleaseNotesViewer.tsx",
+                lineNumber: 25,
+                columnNumber: 5
+            }, this),
+            /*#__PURE__*/ _jsxDEV("footer", {
+                className: "release-notes-footer",
+                children: [
+                    /*#__PURE__*/ _jsxDEV("span", {
+                        children: "可在「设置 → 关于上号」再次查看"
+                    }, void 0, false, {
+                        fileName: "C:/Users/sober/Documents/Codex/2026-10-17/files-mentioned-by-the-user-codex/work/shanghao/apps/desktop/src/renderer/src/components/status/DetailedReleaseNotesViewer.tsx",
+                        lineNumber: 56,
+                        columnNumber: 7
+                    }, this),
+                    /*#__PURE__*/ _jsxDEV(Button, {
+                        onClick: onComplete,
+                        children: completeLabel
+                    }, void 0, false, {
+                        fileName: "C:/Users/sober/Documents/Codex/2026-10-17/files-mentioned-by-the-user-codex/work/shanghao/apps/desktop/src/renderer/src/components/status/DetailedReleaseNotesViewer.tsx",
+                        lineNumber: 57,
+                        columnNumber: 7
+                    }, this)
+                ]
+            }, void 0, true, {
+                fileName: "C:/Users/sober/Documents/Codex/2026-10-17/files-mentioned-by-the-user-codex/work/shanghao/apps/desktop/src/renderer/src/components/status/DetailedReleaseNotesViewer.tsx",
+                lineNumber: 55,
+                columnNumber: 5
+            }, this)
+        ]
+    }, void 0, true, {
+        fileName: "C:/Users/sober/Documents/Codex/2026-10-17/files-mentioned-by-the-user-codex/work/shanghao/apps/desktop/src/renderer/src/components/status/DetailedReleaseNotesViewer.tsx",
+        lineNumber: 24,
+        columnNumber: 3
+    }, this);
+_c = DetailedReleaseNotesViewer;
+var _c;
+$RefreshReg$(_c, "DetailedReleaseNotesViewer");
+
+
+import * as RefreshRuntime from "/@react-refresh";
+const inWebWorker = typeof WorkerGlobalScope !== 'undefined' && self instanceof WorkerGlobalScope;
+import * as __vite_react_currentExports from "/src/components/status/DetailedReleaseNotesViewer.tsx?t=1792337404327";
+if (import.meta.hot && !inWebWorker) {
+  if (!window.$RefreshReg$) {
+    throw new Error(
+      "@vitejs/plugin-react-swc can't detect preamble. Something is wrong."
+    );
+  }
+
+  const currentExports = __vite_react_currentExports;
+  queueMicrotask(() => {
+    RefreshRuntime.registerExportsForReactRefresh("C:/Users/sober/Documents/Codex/2026-10-17/files-mentioned-by-the-user-codex/work/shanghao/apps/desktop/src/renderer/src/components/status/DetailedReleaseNotesViewer.tsx", currentExports);
+    import.meta.hot.accept((nextExports) => {
+      if (!nextExports) return;
+      const invalidateMessage = RefreshRuntime.validateRefreshBoundaryAndEnqueueUpdate("C:/Users/sober/Documents/Codex/2026-10-17/files-mentioned-by-the-user-codex/work/shanghao/apps/desktop/src/renderer/src/components/status/DetailedReleaseNotesViewer.tsx", currentExports, nextExports);
+      if (invalidateMessage) import.meta.hot.invalidate(invalidateMessage);
+    });
+  });
+}
+function $RefreshReg$(type, id) { return RefreshRuntime.register(type, "C:/Users/sober/Documents/Codex/2026-10-17/files-mentioned-by-the-user-codex/work/shanghao/apps/desktop/src/renderer/src/components/status/DetailedReleaseNotesViewer.tsx" + ' ' + id) }
+function $RefreshSig$() { return RefreshRuntime.createSignatureFunctionForTransform(); }
+
+//# sourceMappingURL=data:application/json;base64,eyJ2ZXJzaW9uIjozLCJzb3VyY2VzIjpbIkRldGFpbGVkUmVsZWFzZU5vdGVzVmlld2VyLnRzeCJdLCJzb3VyY2VzQ29udGVudCI6WyJpbXBvcnQgdHlwZSB7IFJlbGVhc2VIaXN0b3J5RW50cnkgfSBmcm9tIFwiLi9yZWxlYXNlSGlzdG9yeVwiO1xuaW1wb3J0IHsgQnV0dG9uIH0gZnJvbSBcIi4uL2Jhc2UvQnV0dG9uXCI7XG5cbmNvbnN0IHJlbmRlckRldGFpbCA9IChpdGVtOiBzdHJpbmcpID0+IHtcbiAgY29uc3Qgc2VwYXJhdG9yID0gaXRlbS5pbmRleE9mKFwi77yaXCIpO1xuICBpZiAoc2VwYXJhdG9yIDw9IDAgfHwgc2VwYXJhdG9yID4gMTgpIHJldHVybiBpdGVtO1xuICByZXR1cm4gKFxuICAgIDw+XG4gICAgICA8c3Ryb25nIGNsYXNzTmFtZT1cInJlbGVhc2Utbm90ZXMtZGV0YWlsLWtleXdvcmRcIj57aXRlbS5zbGljZSgwLCBzZXBhcmF0b3IgKyAxKX08L3N0cm9uZz5cbiAgICAgIHtpdGVtLnNsaWNlKHNlcGFyYXRvciArIDEpfVxuICAgIDwvPlxuICApO1xufTtcblxuZXhwb3J0IGNvbnN0IERldGFpbGVkUmVsZWFzZU5vdGVzVmlld2VyID0gKHtcbiAgcmVsZWFzZSxcbiAgb25Db21wbGV0ZSxcbiAgY29tcGxldGVMYWJlbCA9IFwi55+l6YGT5LqG77yM5byA5aeL5LiK5Y+3XCIsXG59OiB7XG4gIHJlbGVhc2U6IFJlbGVhc2VIaXN0b3J5RW50cnk7XG4gIG9uQ29tcGxldGU6ICgpID0+IHZvaWQ7XG4gIGNvbXBsZXRlTGFiZWw/OiBzdHJpbmc7XG59KSA9PiAoXG4gIDxkaXYgY2xhc3NOYW1lPVwicmVsZWFzZS1ub3Rlcy12aWV3ZXJcIj5cbiAgICA8ZGl2IGNsYXNzTmFtZT1cInJlbGVhc2Utbm90ZXMtcGFnZVwiPlxuICAgICAgPGRpdj5cbiAgICAgICAgPGRpdiBjbGFzc05hbWU9XCJyZWxlYXNlLW5vdGVzLWtpY2tlclwiPntyZWxlYXNlLmRhdGV9PC9kaXY+XG4gICAgICAgIDxoMz57cmVsZWFzZS50aXRsZX08L2gzPlxuICAgICAgICB7cmVsZWFzZS5zdW1tYXJ5ID8gPHA+e3JlbGVhc2Uuc3VtbWFyeX08L3A+IDogbnVsbH1cbiAgICAgIDwvZGl2PlxuICAgICAgPHNlY3Rpb24gY2xhc3NOYW1lPVwicmVsZWFzZS1ub3Rlcy1zdW1tYXJ5LWNhcmRcIiBhcmlhLWxhYmVsPVwi5pys5qyh5pu05paw6YeN54K5XCI+XG4gICAgICAgIDxoNCBjbGFzc05hbWU9XCJyZWxlYXNlLW5vdGVzLXN1bW1hcnktaGVhZGluZ1wiPuacrOasoeabtOaWsDwvaDQ+XG4gICAgICAgIDx1bCBjbGFzc05hbWU9XCJyZWxlYXNlLW5vdGVzLWhpZ2hsaWdodC1saXN0XCI+XG4gICAgICAgICAge3JlbGVhc2UuaGlnaGxpZ2h0cy5tYXAoKGl0ZW0pID0+IChcbiAgICAgICAgICAgIDxsaSBrZXk9e2l0ZW19PntyZW5kZXJEZXRhaWwoaXRlbSl9PC9saT5cbiAgICAgICAgICApKX1cbiAgICAgICAgPC91bD5cbiAgICAgIDwvc2VjdGlvbj5cbiAgICAgIHtyZWxlYXNlLmRldGFpbHMubGVuZ3RoID8gKFxuICAgICAgICA8ZGV0YWlscyBjbGFzc05hbWU9XCJyZWxlYXNlLW5vdGVzLWV4cGFuZGVkXCIga2V5PXtyZWxlYXNlLnZlcnNpb259PlxuICAgICAgICAgIDxzdW1tYXJ5Puafpeeci+WujOaVtOabtOaWsCDCtyB7cmVsZWFzZS5kZXRhaWxzLmxlbmd0aH0g5Liq5Li76aKYPC9zdW1tYXJ5PlxuICAgICAgICAgIHtyZWxlYXNlLmRldGFpbHMubWFwKChncm91cCkgPT4gKFxuICAgICAgICAgICAgPHNlY3Rpb24gY2xhc3NOYW1lPVwicmVsZWFzZS1ub3Rlcy10b3BpY1wiIGtleT17Z3JvdXAudGl0bGV9PlxuICAgICAgICAgICAgICA8aDQ+e2dyb3VwLnRpdGxlfTwvaDQ+XG4gICAgICAgICAgICAgIDx1bD5cbiAgICAgICAgICAgICAgICB7Z3JvdXAuaXRlbXMubWFwKChpdGVtKSA9PiAoXG4gICAgICAgICAgICAgICAgICA8bGkga2V5PXtpdGVtfT57cmVuZGVyRGV0YWlsKGl0ZW0pfTwvbGk+XG4gICAgICAgICAgICAgICAgKSl9XG4gICAgICAgICAgICAgIDwvdWw+XG4gICAgICAgICAgICA8L3NlY3Rpb24+XG4gICAgICAgICAgKSl9XG4gICAgICAgIDwvZGV0YWlscz5cbiAgICAgICkgOiBudWxsfVxuICAgIDwvZGl2PlxuICAgIDxmb290ZXIgY2xhc3NOYW1lPVwicmVsZWFzZS1ub3Rlcy1mb290ZXJcIj5cbiAgICAgIDxzcGFuPuWPr+WcqOOAjOiuvue9riDihpIg5YWz5LqO5LiK5Y+344CN5YaN5qyh5p+l55yLPC9zcGFuPlxuICAgICAgPEJ1dHRvbiBvbkNsaWNrPXtvbkNvbXBsZXRlfT57Y29tcGxldGVMYWJlbH08L0J1dHRvbj5cbiAgICA8L2Zvb3Rlcj5cbiAgPC9kaXY+XG4pO1xuIl0sIm5hbWVzIjpbIkJ1dHRvbiIsInJlbmRlckRldGFpbCIsIml0ZW0iLCJzZXBhcmF0b3IiLCJpbmRleE9mIiwic3Ryb25nIiwiY2xhc3NOYW1lIiwic2xpY2UiLCJEZXRhaWxlZFJlbGVhc2VOb3Rlc1ZpZXdlciIsInJlbGVhc2UiLCJvbkNvbXBsZXRlIiwiY29tcGxldGVMYWJlbCIsImRpdiIsImRhdGUiLCJoMyIsInRpdGxlIiwic3VtbWFyeSIsInAiLCJzZWN0aW9uIiwiYXJpYS1sYWJlbCIsImg0IiwidWwiLCJoaWdobGlnaHRzIiwibWFwIiwibGkiLCJkZXRhaWxzIiwibGVuZ3RoIiwiZ3JvdXAiLCJpdGVtcyIsInZlcnNpb24iLCJmb290ZXIiLCJzcGFuIiwib25DbGljayJdLCJtYXBwaW5ncyI6IjtBQUNBLFNBQVNBLE1BQU0sUUFBUSxpQkFBaUI7QUFFeEMsTUFBTUMsZUFBZSxDQUFDQztJQUNwQixNQUFNQyxZQUFZRCxLQUFLRSxPQUFPLENBQUM7SUFDL0IsSUFBSUQsYUFBYSxLQUFLQSxZQUFZLElBQUksT0FBT0Q7SUFDN0MscUJBQ0U7OzBCQUNFLFFBQUNHO2dCQUFPQyxXQUFVOzBCQUFnQ0osS0FBS0ssS0FBSyxDQUFDLEdBQUdKLFlBQVk7Ozs7OztZQUMzRUQsS0FBS0ssS0FBSyxDQUFDSixZQUFZOzs7Ozs7O0FBRzlCO0FBRUEsT0FBTyxNQUFNSyw2QkFBNkIsQ0FBQyxFQUN6Q0MsT0FBTyxFQUNQQyxVQUFVLEVBQ1ZDLGdCQUFnQixVQUFVLEVBSzNCLGlCQUNDLFFBQUNDO1FBQUlOLFdBQVU7OzBCQUNiLFFBQUNNO2dCQUFJTixXQUFVOztrQ0FDYixRQUFDTTs7MENBQ0MsUUFBQ0E7Z0NBQUlOLFdBQVU7MENBQXdCRyxRQUFRSSxJQUFJOzs7Ozs7MENBQ25ELFFBQUNDOzBDQUFJTCxRQUFRTSxLQUFLOzs7Ozs7NEJBQ2pCTixRQUFRTyxPQUFPLGlCQUFHLFFBQUNDOzBDQUFHUixRQUFRTyxPQUFPOzs7Ozt1Q0FBUTs7Ozs7OztrQ0FFaEQsUUFBQ0U7d0JBQVFaLFdBQVU7d0JBQTZCYSxjQUFXOzswQ0FDekQsUUFBQ0M7Z0NBQUdkLFdBQVU7MENBQWdDOzs7Ozs7MENBQzlDLFFBQUNlO2dDQUFHZixXQUFVOzBDQUNYRyxRQUFRYSxVQUFVLENBQUNDLEdBQUcsQ0FBQyxDQUFDckIscUJBQ3ZCLFFBQUNzQjtrREFBZXZCLGFBQWFDO3VDQUFwQkE7Ozs7Ozs7Ozs7Ozs7Ozs7b0JBSWRPLFFBQVFnQixPQUFPLENBQUNDLE1BQU0saUJBQ3JCLFFBQUNEO3dCQUFRbkIsV0FBVTs7MENBQ2pCLFFBQUNVOztvQ0FBUTtvQ0FBVVAsUUFBUWdCLE9BQU8sQ0FBQ0MsTUFBTTtvQ0FBQzs7Ozs7Ozs0QkFDekNqQixRQUFRZ0IsT0FBTyxDQUFDRixHQUFHLENBQUMsQ0FBQ0ksc0JBQ3BCLFFBQUNUO29DQUFRWixXQUFVOztzREFDakIsUUFBQ2M7c0RBQUlPLE1BQU1aLEtBQUs7Ozs7OztzREFDaEIsUUFBQ007c0RBQ0VNLE1BQU1DLEtBQUssQ0FBQ0wsR0FBRyxDQUFDLENBQUNyQixxQkFDaEIsUUFBQ3NCOzhEQUFldkIsYUFBYUM7bURBQXBCQTs7Ozs7Ozs7Ozs7bUNBSitCeUIsTUFBTVosS0FBSzs7Ozs7O3VCQUhaTixRQUFRb0IsT0FBTzs7OzsrQkFhOUQ7Ozs7Ozs7MEJBRU4sUUFBQ0M7Z0JBQU94QixXQUFVOztrQ0FDaEIsUUFBQ3lCO2tDQUFLOzs7Ozs7a0NBQ04sUUFBQy9CO3dCQUFPZ0MsU0FBU3RCO2tDQUFhQzs7Ozs7Ozs7Ozs7Ozs7Ozs7YUFHbEM7S0E3Q1dIIn0=

@@ -115,6 +115,7 @@ export interface RoomMember {
   isMuted: boolean;
   isDeafened?: boolean;
   callModeActive?: boolean;
+  availabilityStatus?: "away" | "eating" | "restroom";
   activity?: MemberActivity;
   sceneZone?: SceneZoneId;
   gameName?: string;

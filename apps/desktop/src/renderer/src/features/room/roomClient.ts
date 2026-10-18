@@ -335,15 +335,14 @@ export class RoomClient {
     }
 
     this.clearPeers();
-    if (this.screenShareCoordinator.activeStream) {
-      try {
-        await this.restorePrimaryInputTrack();
-      } catch (error) {
-        void writeRendererLog("audio", "warn", "Screen audio restore failed during room exit", {
-          error: error instanceof Error ? error.message : String(error),
-        });
-      }
+    try {
+      await this.restorePrimaryInputTrack();
+    } catch (error) {
+      void writeRendererLog("audio", "warn", "Screen audio restore failed during room exit", {
+        error: error instanceof Error ? error.message : String(error),
+      });
     }
+    this.screenAudioMixer.dispose();
     this.screenShareCoordinator.stopTracks();
     this.clearMemberRuntimeEvidence();
     this.audioFallback?.destroy();
@@ -1660,12 +1659,18 @@ export class RoomClient {
     return this.peerOperationQueue.enqueue(peerId, operationName, operation);
   }
 
-  private async applyOutgoingAudioTrack(track: MediaStreamTrack): Promise<void> {
+  private async applyOutgoingAudioTrack(track: MediaStreamTrack, restoring = false): Promise<void> {
     this.localStream = await replaceOutgoingAudioTrack(
       track,
       this.localStream,
       this.peers.values(),
       this.audioFallback,
+      restoring
+        ? (peer) => {
+            for (const [id, current] of this.peers)
+              if (current === peer) this.peerRecovery.schedule(id, "microphone_restore_failed");
+          }
+        : undefined,
     );
   }
 
@@ -1673,21 +1678,15 @@ export class RoomClient {
     microphoneTrack: MediaStreamTrack,
     systemAudioTrack: MediaStreamTrack,
   ): Promise<void> {
-    const mixedTrack = await this.screenAudioMixer.mix(microphoneTrack, systemAudioTrack, (track) =>
+    await this.screenAudioMixer.mix(microphoneTrack, systemAudioTrack, (track) =>
       this.applyOutgoingAudioTrack(track),
     );
-    if (!mixedTrack) throw new Error("screen_audio_mix_track_missing");
   }
 
   private async restorePrimaryInputTrack(): Promise<void> {
-    const primaryTrack = this.primaryInputTrack;
-    try {
-      if (primaryTrack?.readyState === "live" && this.screenAudioMixer.hasActiveMix()) {
-        await this.applyOutgoingAudioTrack(primaryTrack);
-      }
-    } finally {
-      this.screenAudioMixer.dispose();
-    }
+    await this.screenAudioMixer.restore(this.primaryInputTrack, (track) =>
+      this.applyOutgoingAudioTrack(track, true),
+    );
   }
 
   private resolvePendingConnection(): void {

@@ -8,7 +8,7 @@ import { useAccountStore } from "../../store/accountStore";
 import { useSettingsStore } from "../../store/settingsStore";
 import { accountAvatarPresetSource } from "../../features/account/accountAvatarPresets";
 import { AccountAvatar } from "../account/AccountAvatar";
-import { RoomAiIcon } from "../room/RoomAiIcon";
+import { AssistantBotAvatar } from "../room/AssistantBotAvatar";
 import { isGameAssistantMessage } from "../../features/chat/gameAssistantMessage";
 
 export const ChatAccountAvatar = ({ message }: { message: ChatMessage }) => {
@@ -54,7 +54,7 @@ export const ChatAccountAvatar = ({ message }: { message: ChatMessage }) => {
         aria-label="游戏助手"
         className="chat-message-avatar mt-0.5 h-7 w-7 shrink-0 rounded-[10px]"
       >
-        <RoomAiIcon />
+        <AssistantBotAvatar mood="idle" size={28} />
       </span>
     );
   return (

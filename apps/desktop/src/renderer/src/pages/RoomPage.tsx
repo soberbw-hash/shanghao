@@ -1,4 +1,7 @@
 import { useRecordingSpeakingTimeline } from "../hooks/useRecordingSpeakingTimeline";
+import { MemberAvailabilityControls } from "../components/chat/MemberAvailabilityControls";
+import type { AwaySession } from "../features/room/autoAway";
+import { writeRendererLog } from "../utils/logger";
 import { useLocalInputRecovery } from "../features/audio/useLocalInputRecovery";
 import { useMicrophoneProcessingUpdate } from "../features/audio/useMicrophoneProcessingUpdate";
 import { finishSavedRoomRecording } from "../features/recording/finishSavedRoomRecording";
@@ -60,16 +63,6 @@ import { useAssistantBotState } from "../features/ai/useAssistantBotState";
 import { toUserFacingError } from "../utils/userFacingError";
 import roomEnvironmentUrl from "../assets/scenes/shanghao-room/environment-v3-extended.png";
 const KNOCK_COOLDOWN_MS = 10_000;
-interface AwaySession {
-  method: "auto" | "manual";
-  wasMuted: boolean;
-  seat: SceneZoneId;
-  activity: MemberActivity;
-  gameName?: string;
-  gameIconDataUrl?: string;
-  musicActivity?: GameDetectionSnapshot["musicActivity"];
-  enteredAt: string;
-}
 export const RoomPage = () => {
   const [roomPickerOpen, setRoomPickerOpen] = useState(false);
   const pendingInvite = useAppStore((state) => state.pendingRoomInvite);
@@ -525,7 +518,7 @@ export const RoomPage = () => {
       const currentLocalMember = useRoomStore
         .getState()
         .room.members.find((member) => member.isLocal);
-      if (!currentLocalMember) return;
+      if (!currentLocalMember || currentLocalMember.availabilityStatus) return;
       const currentConnectionState = useRoomStore.getState().room.connectionState;
       const isConnectionValid =
         currentConnectionState === RoomConnectionState.Connected ||
@@ -1044,12 +1037,7 @@ export const RoomPage = () => {
         );
       }
       if (wasAway) {
-        void window.desktopApi.app.writeLog({
-          category: "app",
-          level: "info",
-          message: "manual_return",
-          context: { seat: zone },
-        });
+        void writeRendererLog("app", "info", "manual_return", { seat: zone });
       }
     } else if (zone === "restroomZone") {
       awaySessionRef.current = {
@@ -1063,12 +1051,7 @@ export const RoomPage = () => {
         enteredAt: new Date().toISOString(),
       };
       setMuted(true);
-      void window.desktopApi.app.writeLog({
-        category: "app",
-        level: "info",
-        message: "manual_away",
-        context: { seat: lastSeatZoneRef.current },
-      });
+      void writeRendererLog("app", "info", "manual_away", { seat: lastSeatZoneRef.current });
     }
     moveLocalMember(
       zone,
@@ -1176,6 +1159,9 @@ export const RoomPage = () => {
         </section>
         <div className="room-chat-column min-h-0">
           <RoomChatPanel
+            presenceControls={
+              <MemberAvailabilityControls canSend={canSend} send={sendSceneReaction} />
+            }
             sendChatMessage={sendChatMessage}
             recallChatMessage={recallChatMessage}
             sendQuickMessage={sendQuickMessage}

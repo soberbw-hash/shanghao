@@ -1,0 +1,302 @@
+import { createHotContext as __vite__createHotContext } from "/@vite/client";import.meta.hot = __vite__createHotContext("/src/components/layout/ToastRegion.tsx");const _jsxDEV = __vite__cjsImport0_react_jsxDevRuntime["jsxDEV"];const useState = __vite__cjsImport1_react["useState"];import __vite__cjsImport0_react_jsxDevRuntime from "/@fs/C:/Users/sober/Documents/Codex/2026-10-17/files-mentioned-by-the-user-codex/work/shanghao/apps/desktop/node_modules/.vite/deps/react_jsx-dev-runtime.js?v=b37745cb";
+var _s = $RefreshSig$(), _s1 = $RefreshSig$();
+import __vite__cjsImport1_react from "/@fs/C:/Users/sober/Documents/Codex/2026-10-17/files-mentioned-by-the-user-codex/work/shanghao/apps/desktop/node_modules/.vite/deps/react.js?v=b37745cb";
+import { AnimatePresence, motion } from "/@fs/C:/Users/sober/Documents/Codex/2026-10-17/files-mentioned-by-the-user-codex/work/shanghao/apps/desktop/node_modules/.vite/deps/framer-motion.js?v=b37745cb";
+import { AlertTriangle, CheckCircle2, ChevronDown, Info, X, XCircle } from "/@fs/C:/Users/sober/Documents/Codex/2026-10-17/files-mentioned-by-the-user-codex/work/shanghao/apps/desktop/node_modules/.vite/deps/lucide-react.js?v=b37745cb";
+import { cn } from "/@fs/C:/Users/sober/Documents/Codex/2026-10-17/files-mentioned-by-the-user-codex/work/shanghao/packages/ui/src/index.ts?t=1792337404327";
+import { useAppStore } from "/src/store/appStore.ts";
+import { toastStackDepth } from "/src/features/notifications/toastQueue.ts";
+import { reducedFadeVariants, toastItemVariants } from "/src/features/motion/motionPresets.ts?t=1792337404327";
+import { usePrefersReducedMotion as useReducedMotion } from "/src/hooks/usePrefersReducedMotion.ts";
+import { RecordingClipToastActions } from "/src/components/layout/RecordingClipToastActions.tsx";
+const toneClasses = {
+    neutral: {
+        card: "toast-neutral",
+        icon: "text-[#40546B]",
+        title: "text-[#243247]",
+        description: "text-[#475569]"
+    },
+    success: {
+        card: "toast-success",
+        icon: "text-[#0A7A44]",
+        title: "text-[#0D6B3A]",
+        description: "text-[#315D49]"
+    },
+    warning: {
+        card: "toast-warning",
+        icon: "text-[#9A5B05]",
+        title: "text-[#8A5004]",
+        description: "text-[#704A1A]"
+    },
+    danger: {
+        card: "toast-danger",
+        icon: "text-[#B42318]",
+        title: "text-[#A61B13]",
+        description: "text-[#71302B]"
+    }
+};
+const toneIcons = {
+    neutral: Info,
+    success: CheckCircle2,
+    warning: AlertTriangle,
+    danger: XCircle
+};
+export const ToastRegion = ()=>{
+    _s();
+    const toasts = useAppStore((state)=>state.toasts);
+    const dismissToast = useAppStore((state)=>state.dismissToast);
+    return /*#__PURE__*/ _jsxDEV(AnimatePresence, {
+        children: toasts.length ? /*#__PURE__*/ _jsxDEV(ToastStack, {
+            toasts: toasts,
+            dismissToast: dismissToast
+        }, "notifications", false, {
+            fileName: "C:/Users/sober/Documents/Codex/2026-10-17/files-mentioned-by-the-user-codex/work/shanghao/apps/desktop/src/renderer/src/components/layout/ToastRegion.tsx",
+            lineNumber: 52,
+            columnNumber: 9
+        }, this) : null
+    }, void 0, false, {
+        fileName: "C:/Users/sober/Documents/Codex/2026-10-17/files-mentioned-by-the-user-codex/work/shanghao/apps/desktop/src/renderer/src/components/layout/ToastRegion.tsx",
+        lineNumber: 50,
+        columnNumber: 5
+    }, this);
+};
+_s(ToastRegion, "MFAt5pgDek7WCShIdKkOlogZk7c=", false, function() {
+    return [
+        useAppStore,
+        useAppStore
+    ];
+});
+_c = ToastRegion;
+const ToastStack = ({ toasts, dismissToast })=>{
+    _s1();
+    const shouldReduceMotion = useReducedMotion();
+    const [isExpanded, setExpanded] = useState(false);
+    const expanded = isExpanded && toasts.length > 1;
+    const ordered = [
+        ...toasts
+    ].reverse();
+    const visible = expanded ? ordered : ordered.slice(0, 1);
+    const depth = toastStackDepth(toasts);
+    return /*#__PURE__*/ _jsxDEV(motion.div, {
+        variants: shouldReduceMotion ? reducedFadeVariants : toastItemVariants,
+        initial: "initial",
+        animate: "open",
+        exit: "closed",
+        className: "toast-region pointer-events-none fixed left-1/2 top-[74px] z-[100] w-[min(360px,calc(100vw-32px))] -translate-x-1/2",
+        "aria-live": "polite",
+        "aria-atomic": "false",
+        children: [
+            /*#__PURE__*/ _jsxDEV("div", {
+                className: cn("toast-stack", expanded && "is-expanded"),
+                children: [
+                    !expanded && Array.from({
+                        length: Math.max(0, depth - 1)
+                    }, (_, index)=>{
+                        const level = index + 1;
+                        const tone = ordered[level]?.tone ?? ordered[0]?.tone ?? "neutral";
+                        return /*#__PURE__*/ _jsxDEV("div", {
+                            "aria-hidden": "true",
+                            className: cn("toast-card toast-stack-back", toneClasses[tone].card),
+                            "data-depth": level
+                        }, level, false, {
+                            fileName: "C:/Users/sober/Documents/Codex/2026-10-17/files-mentioned-by-the-user-codex/work/shanghao/apps/desktop/src/renderer/src/components/layout/ToastRegion.tsx",
+                            lineNumber: 88,
+                            columnNumber: 15
+                        }, this);
+                    }),
+                    /*#__PURE__*/ _jsxDEV("div", {
+                        id: "notification-cards",
+                        className: "toast-stack-cards",
+                        children: /*#__PURE__*/ _jsxDEV(AnimatePresence, {
+                            initial: false,
+                            mode: "popLayout",
+                            children: visible.map((toast)=>{
+                                const tone = toast.tone ?? "neutral";
+                                const ToneIcon = toneIcons[tone];
+                                const classes = toneClasses[tone];
+                                return /*#__PURE__*/ _jsxDEV(motion.div, {
+                                    variants: shouldReduceMotion ? reducedFadeVariants : toastItemVariants,
+                                    initial: "initial",
+                                    animate: "open",
+                                    exit: "closed",
+                                    role: tone === "danger" ? "alert" : "status",
+                                    className: cn("toast-card toast-stack-front pointer-events-auto flex min-h-14 items-center gap-3 rounded-[18px] px-3.5 py-2.5 text-left", classes.card),
+                                    children: [
+                                        /*#__PURE__*/ _jsxDEV("span", {
+                                            className: `toast-icon grid h-7 w-7 shrink-0 place-items-center rounded-full ${classes.icon}`,
+                                            children: /*#__PURE__*/ _jsxDEV(ToneIcon, {
+                                                className: "h-4 w-4"
+                                            }, void 0, false, {
+                                                fileName: "C:/Users/sober/Documents/Codex/2026-10-17/files-mentioned-by-the-user-codex/work/shanghao/apps/desktop/src/renderer/src/components/layout/ToastRegion.tsx",
+                                                lineNumber: 118,
+                                                columnNumber: 21
+                                            }, this)
+                                        }, void 0, false, {
+                                            fileName: "C:/Users/sober/Documents/Codex/2026-10-17/files-mentioned-by-the-user-codex/work/shanghao/apps/desktop/src/renderer/src/components/layout/ToastRegion.tsx",
+                                            lineNumber: 115,
+                                            columnNumber: 19
+                                        }, this),
+                                        /*#__PURE__*/ _jsxDEV("span", {
+                                            className: "toast-copy min-w-0 flex-1",
+                                            children: [
+                                                /*#__PURE__*/ _jsxDEV("span", {
+                                                    className: `toast-title block text-balance text-[13px] font-bold ${classes.title}`,
+                                                    children: [
+                                                        toast.title,
+                                                        (toast.repeatCount ?? 1) > 1 ? /*#__PURE__*/ _jsxDEV("span", {
+                                                            className: "toast-repeat-count",
+                                                            children: [
+                                                                "×",
+                                                                toast.repeatCount
+                                                            ]
+                                                        }, void 0, true, {
+                                                            fileName: "C:/Users/sober/Documents/Codex/2026-10-17/files-mentioned-by-the-user-codex/work/shanghao/apps/desktop/src/renderer/src/components/layout/ToastRegion.tsx",
+                                                            lineNumber: 126,
+                                                            columnNumber: 25
+                                                        }, this) : null
+                                                    ]
+                                                }, void 0, true, {
+                                                    fileName: "C:/Users/sober/Documents/Codex/2026-10-17/files-mentioned-by-the-user-codex/work/shanghao/apps/desktop/src/renderer/src/components/layout/ToastRegion.tsx",
+                                                    lineNumber: 121,
+                                                    columnNumber: 21
+                                                }, this),
+                                                toast.description ? /*#__PURE__*/ _jsxDEV("span", {
+                                                    className: `mt-0.5 block break-words text-pretty text-[12px] leading-[18px] ${classes.description}`,
+                                                    children: toast.description
+                                                }, void 0, false, {
+                                                    fileName: "C:/Users/sober/Documents/Codex/2026-10-17/files-mentioned-by-the-user-codex/work/shanghao/apps/desktop/src/renderer/src/components/layout/ToastRegion.tsx",
+                                                    lineNumber: 130,
+                                                    columnNumber: 23
+                                                }, this) : null,
+                                                toast.clipFilePath && /*#__PURE__*/ _jsxDEV(RecordingClipToastActions, {
+                                                    filePath: toast.clipFilePath
+                                                }, void 0, false, {
+                                                    fileName: "C:/Users/sober/Documents/Codex/2026-10-17/files-mentioned-by-the-user-codex/work/shanghao/apps/desktop/src/renderer/src/components/layout/ToastRegion.tsx",
+                                                    lineNumber: 137,
+                                                    columnNumber: 23
+                                                }, this)
+                                            ]
+                                        }, void 0, true, {
+                                            fileName: "C:/Users/sober/Documents/Codex/2026-10-17/files-mentioned-by-the-user-codex/work/shanghao/apps/desktop/src/renderer/src/components/layout/ToastRegion.tsx",
+                                            lineNumber: 120,
+                                            columnNumber: 19
+                                        }, this),
+                                        toast.actionLabel && toast.onAction ? /*#__PURE__*/ _jsxDEV("button", {
+                                            type: "button",
+                                            className: "shrink-0 rounded-[10px] border border-current/15 bg-white/55 px-2.5 py-1.5 text-xs font-bold",
+                                            onClick: ()=>{
+                                                dismissToast(toast.id);
+                                                toast.onAction?.();
+                                            },
+                                            children: toast.actionLabel
+                                        }, void 0, false, {
+                                            fileName: "C:/Users/sober/Documents/Codex/2026-10-17/files-mentioned-by-the-user-codex/work/shanghao/apps/desktop/src/renderer/src/components/layout/ToastRegion.tsx",
+                                            lineNumber: 141,
+                                            columnNumber: 21
+                                        }, this) : null,
+                                        /*#__PURE__*/ _jsxDEV("button", {
+                                            type: "button",
+                                            "aria-label": "关闭提示",
+                                            title: "关闭",
+                                            className: "grid size-9 shrink-0 place-items-center rounded-[10px] text-current/70 transition-colors hover:bg-white/55 hover:text-current",
+                                            onClick: ()=>dismissToast(toast.id),
+                                            children: /*#__PURE__*/ _jsxDEV(X, {
+                                                className: "size-4",
+                                                "aria-hidden": "true"
+                                            }, void 0, false, {
+                                                fileName: "C:/Users/sober/Documents/Codex/2026-10-17/files-mentioned-by-the-user-codex/work/shanghao/apps/desktop/src/renderer/src/components/layout/ToastRegion.tsx",
+                                                lineNumber: 159,
+                                                columnNumber: 21
+                                            }, this)
+                                        }, void 0, false, {
+                                            fileName: "C:/Users/sober/Documents/Codex/2026-10-17/files-mentioned-by-the-user-codex/work/shanghao/apps/desktop/src/renderer/src/components/layout/ToastRegion.tsx",
+                                            lineNumber: 152,
+                                            columnNumber: 19
+                                        }, this)
+                                    ]
+                                }, toast.id, true, {
+                                    fileName: "C:/Users/sober/Documents/Codex/2026-10-17/files-mentioned-by-the-user-codex/work/shanghao/apps/desktop/src/renderer/src/components/layout/ToastRegion.tsx",
+                                    lineNumber: 103,
+                                    columnNumber: 17
+                                }, this);
+                            })
+                        }, void 0, false, {
+                            fileName: "C:/Users/sober/Documents/Codex/2026-10-17/files-mentioned-by-the-user-codex/work/shanghao/apps/desktop/src/renderer/src/components/layout/ToastRegion.tsx",
+                            lineNumber: 97,
+                            columnNumber: 11
+                        }, this)
+                    }, void 0, false, {
+                        fileName: "C:/Users/sober/Documents/Codex/2026-10-17/files-mentioned-by-the-user-codex/work/shanghao/apps/desktop/src/renderer/src/components/layout/ToastRegion.tsx",
+                        lineNumber: 96,
+                        columnNumber: 9
+                    }, this)
+                ]
+            }, void 0, true, {
+                fileName: "C:/Users/sober/Documents/Codex/2026-10-17/files-mentioned-by-the-user-codex/work/shanghao/apps/desktop/src/renderer/src/components/layout/ToastRegion.tsx",
+                lineNumber: 82,
+                columnNumber: 7
+            }, this),
+            toasts.length > 1 && /*#__PURE__*/ _jsxDEV("button", {
+                type: "button",
+                className: "toast-stack-toggle pointer-events-auto",
+                "aria-expanded": expanded,
+                "aria-controls": "notification-cards",
+                onClick: ()=>setExpanded(!expanded),
+                children: [
+                    expanded ? "收起通知" : `展开 ${toasts.length} 条通知`,
+                    /*#__PURE__*/ _jsxDEV(ChevronDown, {
+                        className: cn("size-3.5", expanded && "rotate-180"),
+                        "aria-hidden": "true"
+                    }, void 0, false, {
+                        fileName: "C:/Users/sober/Documents/Codex/2026-10-17/files-mentioned-by-the-user-codex/work/shanghao/apps/desktop/src/renderer/src/components/layout/ToastRegion.tsx",
+                        lineNumber: 176,
+                        columnNumber: 11
+                    }, this)
+                ]
+            }, void 0, true, {
+                fileName: "C:/Users/sober/Documents/Codex/2026-10-17/files-mentioned-by-the-user-codex/work/shanghao/apps/desktop/src/renderer/src/components/layout/ToastRegion.tsx",
+                lineNumber: 168,
+                columnNumber: 9
+            }, this)
+        ]
+    }, void 0, true, {
+        fileName: "C:/Users/sober/Documents/Codex/2026-10-17/files-mentioned-by-the-user-codex/work/shanghao/apps/desktop/src/renderer/src/components/layout/ToastRegion.tsx",
+        lineNumber: 73,
+        columnNumber: 5
+    }, this);
+};
+_s1(ToastStack, "RsfkafCgLqU8ERyryMCiHcrkXSg=", false, function() {
+    return [
+        useReducedMotion
+    ];
+});
+_c1 = ToastStack;
+var _c, _c1;
+$RefreshReg$(_c, "ToastRegion");
+$RefreshReg$(_c1, "ToastStack");
+
+
+import * as RefreshRuntime from "/@react-refresh";
+const inWebWorker = typeof WorkerGlobalScope !== 'undefined' && self instanceof WorkerGlobalScope;
+import * as __vite_react_currentExports from "/src/components/layout/ToastRegion.tsx?t=1792337404327";
+if (import.meta.hot && !inWebWorker) {
+  if (!window.$RefreshReg$) {
+    throw new Error(
+      "@vitejs/plugin-react-swc can't detect preamble. Something is wrong."
+    );
+  }
+
+  const currentExports = __vite_react_currentExports;
+  queueMicrotask(() => {
+    RefreshRuntime.registerExportsForReactRefresh("C:/Users/sober/Documents/Codex/2026-10-17/files-mentioned-by-the-user-codex/work/shanghao/apps/desktop/src/renderer/src/components/layout/ToastRegion.tsx", currentExports);
+    import.meta.hot.accept((nextExports) => {
+      if (!nextExports) return;
+      const invalidateMessage = RefreshRuntime.validateRefreshBoundaryAndEnqueueUpdate("C:/Users/sober/Documents/Codex/2026-10-17/files-mentioned-by-the-user-codex/work/shanghao/apps/desktop/src/renderer/src/components/layout/ToastRegion.tsx", currentExports, nextExports);
+      if (invalidateMessage) import.meta.hot.invalidate(invalidateMessage);
+    });
+  });
+}
+function $RefreshReg$(type, id) { return RefreshRuntime.register(type, "C:/Users/sober/Documents/Codex/2026-10-17/files-mentioned-by-the-user-codex/work/shanghao/apps/desktop/src/renderer/src/components/layout/ToastRegion.tsx" + ' ' + id) }
+function $RefreshSig$() { return RefreshRuntime.createSignatureFunctionForTransform(); }
+
+//# sourceMappingURL=data:application/json;base64,eyJ2ZXJzaW9uIjozLCJzb3VyY2VzIjpbIlRvYXN0UmVnaW9uLnRzeCJdLCJzb3VyY2VzQ29udGVudCI6WyJpbXBvcnQgeyB1c2VTdGF0ZSB9IGZyb20gXCJyZWFjdFwiO1xuaW1wb3J0IHsgQW5pbWF0ZVByZXNlbmNlLCBtb3Rpb24gfSBmcm9tIFwiZnJhbWVyLW1vdGlvblwiO1xuaW1wb3J0IHsgQWxlcnRUcmlhbmdsZSwgQ2hlY2tDaXJjbGUyLCBDaGV2cm9uRG93biwgSW5mbywgWCwgWENpcmNsZSB9IGZyb20gXCJsdWNpZGUtcmVhY3RcIjtcbmltcG9ydCB7IGNuIH0gZnJvbSBcIkBwcml2YXRlLXZvaWNlL3VpXCI7XG5cbmltcG9ydCB7IHVzZUFwcFN0b3JlLCB0eXBlIFRvYXN0TWVzc2FnZSB9IGZyb20gXCIuLi8uLi9zdG9yZS9hcHBTdG9yZVwiO1xuaW1wb3J0IHsgdG9hc3RTdGFja0RlcHRoIH0gZnJvbSBcIi4uLy4uL2ZlYXR1cmVzL25vdGlmaWNhdGlvbnMvdG9hc3RRdWV1ZVwiO1xuaW1wb3J0IHsgcmVkdWNlZEZhZGVWYXJpYW50cywgdG9hc3RJdGVtVmFyaWFudHMgfSBmcm9tIFwiLi4vLi4vZmVhdHVyZXMvbW90aW9uL21vdGlvblByZXNldHNcIjtcbmltcG9ydCB7IHVzZVByZWZlcnNSZWR1Y2VkTW90aW9uIGFzIHVzZVJlZHVjZWRNb3Rpb24gfSBmcm9tIFwiLi4vLi4vaG9va3MvdXNlUHJlZmVyc1JlZHVjZWRNb3Rpb25cIjtcbmltcG9ydCB7IFJlY29yZGluZ0NsaXBUb2FzdEFjdGlvbnMgfSBmcm9tIFwiLi9SZWNvcmRpbmdDbGlwVG9hc3RBY3Rpb25zXCI7XG5cbmNvbnN0IHRvbmVDbGFzc2VzID0ge1xuICBuZXV0cmFsOiB7XG4gICAgY2FyZDogXCJ0b2FzdC1uZXV0cmFsXCIsXG4gICAgaWNvbjogXCJ0ZXh0LVsjNDA1NDZCXVwiLFxuICAgIHRpdGxlOiBcInRleHQtWyMyNDMyNDddXCIsXG4gICAgZGVzY3JpcHRpb246IFwidGV4dC1bIzQ3NTU2OV1cIixcbiAgfSxcbiAgc3VjY2Vzczoge1xuICAgIGNhcmQ6IFwidG9hc3Qtc3VjY2Vzc1wiLFxuICAgIGljb246IFwidGV4dC1bIzBBN0E0NF1cIixcbiAgICB0aXRsZTogXCJ0ZXh0LVsjMEQ2QjNBXVwiLFxuICAgIGRlc2NyaXB0aW9uOiBcInRleHQtWyMzMTVENDldXCIsXG4gIH0sXG4gIHdhcm5pbmc6IHtcbiAgICBjYXJkOiBcInRvYXN0LXdhcm5pbmdcIixcbiAgICBpY29uOiBcInRleHQtWyM5QTVCMDVdXCIsXG4gICAgdGl0bGU6IFwidGV4dC1bIzhBNTAwNF1cIixcbiAgICBkZXNjcmlwdGlvbjogXCJ0ZXh0LVsjNzA0QTFBXVwiLFxuICB9LFxuICBkYW5nZXI6IHtcbiAgICBjYXJkOiBcInRvYXN0LWRhbmdlclwiLFxuICAgIGljb246IFwidGV4dC1bI0I0MjMxOF1cIixcbiAgICB0aXRsZTogXCJ0ZXh0LVsjQTYxQjEzXVwiLFxuICAgIGRlc2NyaXB0aW9uOiBcInRleHQtWyM3MTMwMkJdXCIsXG4gIH0sXG59IGFzIGNvbnN0O1xuXG5jb25zdCB0b25lSWNvbnMgPSB7XG4gIG5ldXRyYWw6IEluZm8sXG4gIHN1Y2Nlc3M6IENoZWNrQ2lyY2xlMixcbiAgd2FybmluZzogQWxlcnRUcmlhbmdsZSxcbiAgZGFuZ2VyOiBYQ2lyY2xlLFxufSBhcyBjb25zdDtcblxuZXhwb3J0IGNvbnN0IFRvYXN0UmVnaW9uID0gKCkgPT4ge1xuICBjb25zdCB0b2FzdHMgPSB1c2VBcHBTdG9yZSgoc3RhdGUpID0+IHN0YXRlLnRvYXN0cyk7XG4gIGNvbnN0IGRpc21pc3NUb2FzdCA9IHVzZUFwcFN0b3JlKChzdGF0ZSkgPT4gc3RhdGUuZGlzbWlzc1RvYXN0KTtcbiAgcmV0dXJuIChcbiAgICA8QW5pbWF0ZVByZXNlbmNlPlxuICAgICAge3RvYXN0cy5sZW5ndGggPyAoXG4gICAgICAgIDxUb2FzdFN0YWNrIGtleT1cIm5vdGlmaWNhdGlvbnNcIiB0b2FzdHM9e3RvYXN0c30gZGlzbWlzc1RvYXN0PXtkaXNtaXNzVG9hc3R9IC8+XG4gICAgICApIDogbnVsbH1cbiAgICA8L0FuaW1hdGVQcmVzZW5jZT5cbiAgKTtcbn07XG5cbmNvbnN0IFRvYXN0U3RhY2sgPSAoe1xuICB0b2FzdHMsXG4gIGRpc21pc3NUb2FzdCxcbn06IHtcbiAgdG9hc3RzOiBUb2FzdE1lc3NhZ2VbXTtcbiAgZGlzbWlzc1RvYXN0OiAoaWQ6IHN0cmluZykgPT4gdm9pZDtcbn0pID0+IHtcbiAgY29uc3Qgc2hvdWxkUmVkdWNlTW90aW9uID0gdXNlUmVkdWNlZE1vdGlvbigpO1xuICBjb25zdCBbaXNFeHBhbmRlZCwgc2V0RXhwYW5kZWRdID0gdXNlU3RhdGUoZmFsc2UpO1xuICBjb25zdCBleHBhbmRlZCA9IGlzRXhwYW5kZWQgJiYgdG9hc3RzLmxlbmd0aCA+IDE7XG4gIGNvbnN0IG9yZGVyZWQgPSBbLi4udG9hc3RzXS5yZXZlcnNlKCk7XG4gIGNvbnN0IHZpc2libGUgPSBleHBhbmRlZCA/IG9yZGVyZWQgOiBvcmRlcmVkLnNsaWNlKDAsIDEpO1xuICBjb25zdCBkZXB0aCA9IHRvYXN0U3RhY2tEZXB0aCh0b2FzdHMpO1xuXG4gIHJldHVybiAoXG4gICAgPG1vdGlvbi5kaXZcbiAgICAgIHZhcmlhbnRzPXtzaG91bGRSZWR1Y2VNb3Rpb24gPyByZWR1Y2VkRmFkZVZhcmlhbnRzIDogdG9hc3RJdGVtVmFyaWFudHN9XG4gICAgICBpbml0aWFsPVwiaW5pdGlhbFwiXG4gICAgICBhbmltYXRlPVwib3BlblwiXG4gICAgICBleGl0PVwiY2xvc2VkXCJcbiAgICAgIGNsYXNzTmFtZT1cInRvYXN0LXJlZ2lvbiBwb2ludGVyLWV2ZW50cy1ub25lIGZpeGVkIGxlZnQtMS8yIHRvcC1bNzRweF0gei1bMTAwXSB3LVttaW4oMzYwcHgsY2FsYygxMDB2dy0zMnB4KSldIC10cmFuc2xhdGUteC0xLzJcIlxuICAgICAgYXJpYS1saXZlPVwicG9saXRlXCJcbiAgICAgIGFyaWEtYXRvbWljPVwiZmFsc2VcIlxuICAgID5cbiAgICAgIDxkaXYgY2xhc3NOYW1lPXtjbihcInRvYXN0LXN0YWNrXCIsIGV4cGFuZGVkICYmIFwiaXMtZXhwYW5kZWRcIil9PlxuICAgICAgICB7IWV4cGFuZGVkICYmXG4gICAgICAgICAgQXJyYXkuZnJvbSh7IGxlbmd0aDogTWF0aC5tYXgoMCwgZGVwdGggLSAxKSB9LCAoXywgaW5kZXgpID0+IHtcbiAgICAgICAgICAgIGNvbnN0IGxldmVsID0gaW5kZXggKyAxO1xuICAgICAgICAgICAgY29uc3QgdG9uZSA9IG9yZGVyZWRbbGV2ZWxdPy50b25lID8/IG9yZGVyZWRbMF0/LnRvbmUgPz8gXCJuZXV0cmFsXCI7XG4gICAgICAgICAgICByZXR1cm4gKFxuICAgICAgICAgICAgICA8ZGl2XG4gICAgICAgICAgICAgICAga2V5PXtsZXZlbH1cbiAgICAgICAgICAgICAgICBhcmlhLWhpZGRlbj1cInRydWVcIlxuICAgICAgICAgICAgICAgIGNsYXNzTmFtZT17Y24oXCJ0b2FzdC1jYXJkIHRvYXN0LXN0YWNrLWJhY2tcIiwgdG9uZUNsYXNzZXNbdG9uZV0uY2FyZCl9XG4gICAgICAgICAgICAgICAgZGF0YS1kZXB0aD17bGV2ZWx9XG4gICAgICAgICAgICAgIC8+XG4gICAgICAgICAgICApO1xuICAgICAgICAgIH0pfVxuICAgICAgICA8ZGl2IGlkPVwibm90aWZpY2F0aW9uLWNhcmRzXCIgY2xhc3NOYW1lPVwidG9hc3Qtc3RhY2stY2FyZHNcIj5cbiAgICAgICAgICA8QW5pbWF0ZVByZXNlbmNlIGluaXRpYWw9e2ZhbHNlfSBtb2RlPVwicG9wTGF5b3V0XCI+XG4gICAgICAgICAgICB7dmlzaWJsZS5tYXAoKHRvYXN0KSA9PiB7XG4gICAgICAgICAgICAgIGNvbnN0IHRvbmUgPSB0b2FzdC50b25lID8/IFwibmV1dHJhbFwiO1xuICAgICAgICAgICAgICBjb25zdCBUb25lSWNvbiA9IHRvbmVJY29uc1t0b25lXTtcbiAgICAgICAgICAgICAgY29uc3QgY2xhc3NlcyA9IHRvbmVDbGFzc2VzW3RvbmVdO1xuICAgICAgICAgICAgICByZXR1cm4gKFxuICAgICAgICAgICAgICAgIDxtb3Rpb24uZGl2XG4gICAgICAgICAgICAgICAgICBrZXk9e3RvYXN0LmlkfVxuICAgICAgICAgICAgICAgICAgdmFyaWFudHM9e3Nob3VsZFJlZHVjZU1vdGlvbiA/IHJlZHVjZWRGYWRlVmFyaWFudHMgOiB0b2FzdEl0ZW1WYXJpYW50c31cbiAgICAgICAgICAgICAgICAgIGluaXRpYWw9XCJpbml0aWFsXCJcbiAgICAgICAgICAgICAgICAgIGFuaW1hdGU9XCJvcGVuXCJcbiAgICAgICAgICAgICAgICAgIGV4aXQ9XCJjbG9zZWRcIlxuICAgICAgICAgICAgICAgICAgcm9sZT17dG9uZSA9PT0gXCJkYW5nZXJcIiA/IFwiYWxlcnRcIiA6IFwic3RhdHVzXCJ9XG4gICAgICAgICAgICAgICAgICBjbGFzc05hbWU9e2NuKFxuICAgICAgICAgICAgICAgICAgICBcInRvYXN0LWNhcmQgdG9hc3Qtc3RhY2stZnJvbnQgcG9pbnRlci1ldmVudHMtYXV0byBmbGV4IG1pbi1oLTE0IGl0ZW1zLWNlbnRlciBnYXAtMyByb3VuZGVkLVsxOHB4XSBweC0zLjUgcHktMi41IHRleHQtbGVmdFwiLFxuICAgICAgICAgICAgICAgICAgICBjbGFzc2VzLmNhcmQsXG4gICAgICAgICAgICAgICAgICApfVxuICAgICAgICAgICAgICAgID5cbiAgICAgICAgICAgICAgICAgIDxzcGFuXG4gICAgICAgICAgICAgICAgICAgIGNsYXNzTmFtZT17YHRvYXN0LWljb24gZ3JpZCBoLTcgdy03IHNocmluay0wIHBsYWNlLWl0ZW1zLWNlbnRlciByb3VuZGVkLWZ1bGwgJHtjbGFzc2VzLmljb259YH1cbiAgICAgICAgICAgICAgICAgID5cbiAgICAgICAgICAgICAgICAgICAgPFRvbmVJY29uIGNsYXNzTmFtZT1cImgtNCB3LTRcIiAvPlxuICAgICAgICAgICAgICAgICAgPC9zcGFuPlxuICAgICAgICAgICAgICAgICAgPHNwYW4gY2xhc3NOYW1lPVwidG9hc3QtY29weSBtaW4tdy0wIGZsZXgtMVwiPlxuICAgICAgICAgICAgICAgICAgICA8c3BhblxuICAgICAgICAgICAgICAgICAgICAgIGNsYXNzTmFtZT17YHRvYXN0LXRpdGxlIGJsb2NrIHRleHQtYmFsYW5jZSB0ZXh0LVsxM3B4XSBmb250LWJvbGQgJHtjbGFzc2VzLnRpdGxlfWB9XG4gICAgICAgICAgICAgICAgICAgID5cbiAgICAgICAgICAgICAgICAgICAgICB7dG9hc3QudGl0bGV9XG4gICAgICAgICAgICAgICAgICAgICAgeyh0b2FzdC5yZXBlYXRDb3VudCA/PyAxKSA+IDEgPyAoXG4gICAgICAgICAgICAgICAgICAgICAgICA8c3BhbiBjbGFzc05hbWU9XCJ0b2FzdC1yZXBlYXQtY291bnRcIj7Dl3t0b2FzdC5yZXBlYXRDb3VudH08L3NwYW4+XG4gICAgICAgICAgICAgICAgICAgICAgKSA6IG51bGx9XG4gICAgICAgICAgICAgICAgICAgIDwvc3Bhbj5cbiAgICAgICAgICAgICAgICAgICAge3RvYXN0LmRlc2NyaXB0aW9uID8gKFxuICAgICAgICAgICAgICAgICAgICAgIDxzcGFuXG4gICAgICAgICAgICAgICAgICAgICAgICBjbGFzc05hbWU9e2BtdC0wLjUgYmxvY2sgYnJlYWstd29yZHMgdGV4dC1wcmV0dHkgdGV4dC1bMTJweF0gbGVhZGluZy1bMThweF0gJHtjbGFzc2VzLmRlc2NyaXB0aW9ufWB9XG4gICAgICAgICAgICAgICAgICAgICAgPlxuICAgICAgICAgICAgICAgICAgICAgICAge3RvYXN0LmRlc2NyaXB0aW9ufVxuICAgICAgICAgICAgICAgICAgICAgIDwvc3Bhbj5cbiAgICAgICAgICAgICAgICAgICAgKSA6IG51bGx9XG4gICAgICAgICAgICAgICAgICAgIHt0b2FzdC5jbGlwRmlsZVBhdGggJiYgKFxuICAgICAgICAgICAgICAgICAgICAgIDxSZWNvcmRpbmdDbGlwVG9hc3RBY3Rpb25zIGZpbGVQYXRoPXt0b2FzdC5jbGlwRmlsZVBhdGh9IC8+XG4gICAgICAgICAgICAgICAgICAgICl9XG4gICAgICAgICAgICAgICAgICA8L3NwYW4+XG4gICAgICAgICAgICAgICAgICB7dG9hc3QuYWN0aW9uTGFiZWwgJiYgdG9hc3Qub25BY3Rpb24gPyAoXG4gICAgICAgICAgICAgICAgICAgIDxidXR0b25cbiAgICAgICAgICAgICAgICAgICAgICB0eXBlPVwiYnV0dG9uXCJcbiAgICAgICAgICAgICAgICAgICAgICBjbGFzc05hbWU9XCJzaHJpbmstMCByb3VuZGVkLVsxMHB4XSBib3JkZXIgYm9yZGVyLWN1cnJlbnQvMTUgYmctd2hpdGUvNTUgcHgtMi41IHB5LTEuNSB0ZXh0LXhzIGZvbnQtYm9sZFwiXG4gICAgICAgICAgICAgICAgICAgICAgb25DbGljaz17KCkgPT4ge1xuICAgICAgICAgICAgICAgICAgICAgICAgZGlzbWlzc1RvYXN0KHRvYXN0LmlkKTtcbiAgICAgICAgICAgICAgICAgICAgICAgIHRvYXN0Lm9uQWN0aW9uPy4oKTtcbiAgICAgICAgICAgICAgICAgICAgICB9fVxuICAgICAgICAgICAgICAgICAgICA+XG4gICAgICAgICAgICAgICAgICAgICAge3RvYXN0LmFjdGlvbkxhYmVsfVxuICAgICAgICAgICAgICAgICAgICA8L2J1dHRvbj5cbiAgICAgICAgICAgICAgICAgICkgOiBudWxsfVxuICAgICAgICAgICAgICAgICAgPGJ1dHRvblxuICAgICAgICAgICAgICAgICAgICB0eXBlPVwiYnV0dG9uXCJcbiAgICAgICAgICAgICAgICAgICAgYXJpYS1sYWJlbD1cIuWFs+mXreaPkOekulwiXG4gICAgICAgICAgICAgICAgICAgIHRpdGxlPVwi5YWz6ZetXCJcbiAgICAgICAgICAgICAgICAgICAgY2xhc3NOYW1lPVwiZ3JpZCBzaXplLTkgc2hyaW5rLTAgcGxhY2UtaXRlbXMtY2VudGVyIHJvdW5kZWQtWzEwcHhdIHRleHQtY3VycmVudC83MCB0cmFuc2l0aW9uLWNvbG9ycyBob3ZlcjpiZy13aGl0ZS81NSBob3Zlcjp0ZXh0LWN1cnJlbnRcIlxuICAgICAgICAgICAgICAgICAgICBvbkNsaWNrPXsoKSA9PiBkaXNtaXNzVG9hc3QodG9hc3QuaWQpfVxuICAgICAgICAgICAgICAgICAgPlxuICAgICAgICAgICAgICAgICAgICA8WCBjbGFzc05hbWU9XCJzaXplLTRcIiBhcmlhLWhpZGRlbj1cInRydWVcIiAvPlxuICAgICAgICAgICAgICAgICAgPC9idXR0b24+XG4gICAgICAgICAgICAgICAgPC9tb3Rpb24uZGl2PlxuICAgICAgICAgICAgICApO1xuICAgICAgICAgICAgfSl9XG4gICAgICAgICAgPC9BbmltYXRlUHJlc2VuY2U+XG4gICAgICAgIDwvZGl2PlxuICAgICAgPC9kaXY+XG4gICAgICB7dG9hc3RzLmxlbmd0aCA+IDEgJiYgKFxuICAgICAgICA8YnV0dG9uXG4gICAgICAgICAgdHlwZT1cImJ1dHRvblwiXG4gICAgICAgICAgY2xhc3NOYW1lPVwidG9hc3Qtc3RhY2stdG9nZ2xlIHBvaW50ZXItZXZlbnRzLWF1dG9cIlxuICAgICAgICAgIGFyaWEtZXhwYW5kZWQ9e2V4cGFuZGVkfVxuICAgICAgICAgIGFyaWEtY29udHJvbHM9XCJub3RpZmljYXRpb24tY2FyZHNcIlxuICAgICAgICAgIG9uQ2xpY2s9eygpID0+IHNldEV4cGFuZGVkKCFleHBhbmRlZCl9XG4gICAgICAgID5cbiAgICAgICAgICB7ZXhwYW5kZWQgPyBcIuaUtui1t+mAmuefpVwiIDogYOWxleW8gCAke3RvYXN0cy5sZW5ndGh9IOadoemAmuefpWB9XG4gICAgICAgICAgPENoZXZyb25Eb3duIGNsYXNzTmFtZT17Y24oXCJzaXplLTMuNVwiLCBleHBhbmRlZCAmJiBcInJvdGF0ZS0xODBcIil9IGFyaWEtaGlkZGVuPVwidHJ1ZVwiIC8+XG4gICAgICAgIDwvYnV0dG9uPlxuICAgICAgKX1cbiAgICA8L21vdGlvbi5kaXY+XG4gICk7XG59O1xuIl0sIm5hbWVzIjpbInVzZVN0YXRlIiwiQW5pbWF0ZVByZXNlbmNlIiwibW90aW9uIiwiQWxlcnRUcmlhbmdsZSIsIkNoZWNrQ2lyY2xlMiIsIkNoZXZyb25Eb3duIiwiSW5mbyIsIlgiLCJYQ2lyY2xlIiwiY24iLCJ1c2VBcHBTdG9yZSIsInRvYXN0U3RhY2tEZXB0aCIsInJlZHVjZWRGYWRlVmFyaWFudHMiLCJ0b2FzdEl0ZW1WYXJpYW50cyIsInVzZVByZWZlcnNSZWR1Y2VkTW90aW9uIiwidXNlUmVkdWNlZE1vdGlvbiIsIlJlY29yZGluZ0NsaXBUb2FzdEFjdGlvbnMiLCJ0b25lQ2xhc3NlcyIsIm5ldXRyYWwiLCJjYXJkIiwiaWNvbiIsInRpdGxlIiwiZGVzY3JpcHRpb24iLCJzdWNjZXNzIiwid2FybmluZyIsImRhbmdlciIsInRvbmVJY29ucyIsIlRvYXN0UmVnaW9uIiwidG9hc3RzIiwic3RhdGUiLCJkaXNtaXNzVG9hc3QiLCJsZW5ndGgiLCJUb2FzdFN0YWNrIiwic2hvdWxkUmVkdWNlTW90aW9uIiwiaXNFeHBhbmRlZCIsInNldEV4cGFuZGVkIiwiZXhwYW5kZWQiLCJvcmRlcmVkIiwicmV2ZXJzZSIsInZpc2libGUiLCJzbGljZSIsImRlcHRoIiwiZGl2IiwidmFyaWFudHMiLCJpbml0aWFsIiwiYW5pbWF0ZSIsImV4aXQiLCJjbGFzc05hbWUiLCJhcmlhLWxpdmUiLCJhcmlhLWF0b21pYyIsIkFycmF5IiwiZnJvbSIsIk1hdGgiLCJtYXgiLCJfIiwiaW5kZXgiLCJsZXZlbCIsInRvbmUiLCJhcmlhLWhpZGRlbiIsImRhdGEtZGVwdGgiLCJpZCIsIm1vZGUiLCJtYXAiLCJ0b2FzdCIsIlRvbmVJY29uIiwiY2xhc3NlcyIsInJvbGUiLCJzcGFuIiwicmVwZWF0Q291bnQiLCJjbGlwRmlsZVBhdGgiLCJmaWxlUGF0aCIsImFjdGlvbkxhYmVsIiwib25BY3Rpb24iLCJidXR0b24iLCJ0eXBlIiwib25DbGljayIsImFyaWEtbGFiZWwiLCJhcmlhLWV4cGFuZGVkIiwiYXJpYS1jb250cm9scyJdLCJtYXBwaW5ncyI6Ijs7QUFBQSxTQUFTQSxRQUFRLFFBQVEsUUFBUTtBQUNqQyxTQUFTQyxlQUFlLEVBQUVDLE1BQU0sUUFBUSxnQkFBZ0I7QUFD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

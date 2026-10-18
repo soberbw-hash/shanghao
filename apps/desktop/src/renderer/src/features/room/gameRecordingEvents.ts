@@ -30,7 +30,7 @@ export const addGameRecordingEvents = (
       id: crypto.randomUUID(),
       createdAt: new Date(now).toISOString(),
       offsetMs: Math.max(0, now - recording.status.startedAt),
-      label: `${time} ${label}`,
+      label: `时钟 ${time.replace(":", "点")}分 · ${label}`,
     });
   }
 };

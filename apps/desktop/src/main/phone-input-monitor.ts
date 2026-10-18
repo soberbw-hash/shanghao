@@ -15,7 +15,7 @@ export class PhoneInputMonitor {
   private lastMessage = 0;
   private failures = 0;
   constructor(
-    private readonly availability: (ready: boolean) => void,
+    private readonly availability: (ready: boolean, rawInput?: boolean) => void,
     private readonly acceptSample: (sampledAt: number) => boolean = () => true,
   ) {}
 
@@ -61,13 +61,14 @@ export class PhoneInputMonitor {
       try {
         const value = JSON.parse(line) as Partial<PhonePhysicalInput> & {
           ready?: boolean;
+          rawInput?: boolean;
           sampledAt?: number;
         };
         if (value.ready === true) {
           ready = true;
           this.failures = 0;
           this.lastMessage = Date.now();
-          this.availability(true);
+          this.availability(true, value.rawInput === true);
         } else if (
           ready &&
           [value.down, value.ctrlKey, value.altKey, value.shiftKey, value.metaKey].every(

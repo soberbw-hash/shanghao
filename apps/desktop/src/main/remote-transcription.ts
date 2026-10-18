@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import {
   CURRENT_TRANSCRIPTION_PIPELINE_VERSION,
+  evaluateVoiceMemoryTranscriptionValidity,
   type AiTranscriptionProvider,
   type VoiceMemoryRecord,
   type VoiceMemoryProcessRequest,
@@ -11,6 +12,25 @@ import {
 import type { AiTranscriptionProviderStore } from "./ai-transcription-provider-store";
 import { probeRecordingMedia } from "./recording-media-probe";
 import { parseVibeVoiceOutput } from "./asr-transcript-parser";
+import { transcribeRemoteParts } from "./remote-transcription-parts";
+
+/** Whole-file API output has no local chunk/VAD statistics. Organization has its own status. */
+export const isTranscriptionExecutionComplete = (record: VoiceMemoryRecord): boolean => {
+  if (
+    (record.transcriptionModel?.id === "siliconflow-sensevoice-small" ||
+      record.transcriptionModel?.id === "custom-asr-api") &&
+    Number.isFinite(record.transcriptionElapsedMs) &&
+    (record.transcriptionElapsedMs ?? -1) >= 0 &&
+    record.transcriptionStats === undefined &&
+    record.transcriptionUnits === undefined &&
+    record.transcript.some((segment) => segment.text.trim())
+  )
+    return true;
+  return evaluateVoiceMemoryTranscriptionValidity(
+    record.transcriptionStats,
+    record.transcriptionUnits,
+  ).complete;
+};
 
 interface RemoteTranscriptionHost {
   record: VoiceMemoryRecord;
@@ -51,9 +71,22 @@ export async function transcribeWithRemoteProvider({
     runtimeMessage: "正在上传音频并请求云端转录",
   });
   const started = performance.now();
-  const result = await host.store.transcribe(record.filePath, audio.durationMs, provider, signal);
+  const store = host.store;
+  const parts = await transcribeRemoteParts(
+    record.filePath,
+    audio.durationMs,
+    signal,
+    (file, duration) => store.transcribe(file, duration, provider, signal),
+    async (index, count) => {
+      record = await host.updateDiagnostic(record, request, taskId, "asr", "processing", {
+        runtimeMessage: `正在转录第 ${index}/${count} 段，完成后自动合并`,
+      });
+    },
+  );
   signal.throwIfAborted();
-  const segments = parseVibeVoiceOutput(result.text, record.recordingId, 0, audio.durationMs);
+  const segments = parts.flatMap((part) =>
+    parseVibeVoiceOutput(part.text, record.recordingId, part.startMs, part.durationMs),
+  );
   if (!segments.length) throw new Error("cloud_asr_unusable_transcript");
   return host.save({
     ...record,
@@ -64,9 +97,12 @@ export async function transcribeWithRemoteProvider({
     transcriptionPipelineVersion: CURRENT_TRANSCRIPTION_PIPELINE_VERSION,
     transcriptionModel: {
       id: provider === "cloud" ? "siliconflow-sensevoice-small" : "custom-asr-api",
-      name: result.modelName,
+      name: parts[0]!.modelName,
     },
     transcriptionElapsedMs: performance.now() - started,
+    transcriptionStats: undefined,
+    transcriptionUnits: undefined,
+    transcriptionBenchmark: undefined,
     speakers: [{ speakerId: "Speaker 1", confidence: "pending" }],
     transcript: segments,
     errorMessage: undefined,

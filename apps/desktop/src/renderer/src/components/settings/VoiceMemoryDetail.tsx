@@ -16,7 +16,9 @@ import {
 
 import { voiceMemoryTranscriptionPercent } from "../../features/ai/voiceMemoryPresentation";
 import { playUiSound } from "../../features/audio/uiSound";
+import { formatRecordingMarkerLabel } from "../../features/recording/recordingMarkerLabel";
 import { transcriptionProviderError } from "../../features/ai/transcriptionProviderError";
+import { useSettingsStore } from "../../store/settingsStore";
 
 interface VoiceMemoryDetailProps {
   recording: RecordingLibraryItem;
@@ -174,6 +176,9 @@ export const VoiceMemoryDetail = ({
   selectedAsrModel,
   onSeek,
 }: VoiceMemoryDetailProps) => {
+  const transcriptionProvider = useSettingsStore(
+    (state) => state.settings?.aiTranscriptionProvider ?? "cloud",
+  );
   const [record, setRecordState] = useState<VoiceMemoryRecord>();
   const setRecord = useCallback(
     (value: VoiceMemoryRecord | undefined) =>
@@ -248,10 +253,14 @@ export const VoiceMemoryDetail = ({
         transcribe: action === "transcribe",
         organize: action === "organize",
         restartTranscription: action === "transcribe",
-        asrModelId: action === "transcribe" ? effectiveSelectedAsrModel : undefined,
+        asrModelId:
+          action === "transcribe" && transcriptionProvider === "local"
+            ? effectiveSelectedAsrModel
+            : undefined,
         markers: recording.markers.map((marker) => ({
           id: marker.id,
           offsetMs: marker.offsetMs,
+          label: marker.label,
         })),
       });
       setRecord(accepted);
@@ -616,8 +625,16 @@ export const VoiceMemoryDetail = ({
         <div className="voice-memory-timeline">
           {record.timeline.map((item) => (
             <button type="button" key={item.id} onClick={() => onSeek(item.offsetMs)}>
-              <time>{clock(item.offsetMs)}</time>
-              <span>{item.title}</span>
+              <time>录音 {clock(item.offsetMs)}</time>
+              <span>
+                {formatRecordingMarkerLabel(
+                  item.kind === "marker"
+                    ? recording.markers.find(
+                        (marker) => marker.id === item.id || marker.offsetMs === item.offsetMs,
+                      )?.label || item.title
+                    : item.title,
+                )}
+              </span>
             </button>
           ))}
         </div>

@@ -259,8 +259,8 @@ export const AiVoiceMemorySettingsCard = ({
       .then((status) => {
         if (!active) return;
         setCustomProvider(status);
-        setCustomBaseUrl(status.baseUrl ?? "https://api.deepseek.com");
-        setCustomModel(status.model ?? "deepseek-flash");
+        setCustomBaseUrl(status.baseUrl ?? "https://open.bigmodel.cn/api/paas/v4");
+        setCustomModel(status.model ?? "glm-4-flash-250414");
       })
       .catch(() => {
         if (!active) return;
@@ -888,20 +888,22 @@ export const AiVoiceMemorySettingsCard = ({
               className="ai-processing-select"
               aria-label="文本整理与问答模型"
               value={
-                settings.aiOrganizerProvider === "cloud"
+                settings.aiTextModelPreset ??
+                (settings.aiOrganizerProvider === "cloud"
                   ? "cloud"
                   : customModel === "deepseek-flash"
                     ? "deepseek"
                     : customModel.startsWith("glm-4-flash")
                       ? "glm"
-                      : "custom"
+                      : "custom")
               }
               onChange={(event) => {
-                const value = event.target.value;
+                const value = event.target.value as NonNullable<AppSettings["aiTextModelPreset"]>;
                 if (value === "cloud")
                   void onChange({
                     aiOrganizerProvider: value,
                     aiRoomAskProvider: value,
+                    aiTextModelPreset: value,
                   });
                 else {
                   const preset =
@@ -917,18 +919,22 @@ export const AiVoiceMemorySettingsCard = ({
                     setCustomBaseUrl(preset.baseUrl);
                     setCustomModel(preset.model);
                   }
-                  void onChange({ aiOrganizerProvider: "custom", aiRoomAskProvider: "custom" });
+                  void onChange({
+                    aiOrganizerProvider: "custom",
+                    aiRoomAskProvider: "custom",
+                    aiTextModelPreset: value,
+                  });
                 }
               }}
             >
-              <option value="cloud">房间云端（默认）</option>
+              <option value="cloud">房间云端</option>
               <option value="deepseek">DeepSeek Flash（V4.1）</option>
               <option value="glm">GLM-4-Flash-250414（免费）</option>
               <option value="custom">自定义 API</option>
             </select>
             {settings.aiOrganizerProvider === "custom" ? (
-              <div className="settings-item-row rounded-[16px] border border-[#E7ECF2] bg-[#F8FAFC] p-4">
-                <div className="flex flex-col gap-3 lg:flex-row lg:items-end">
+              <div className="ai-provider-config-note">
+                <div className="ai-provider-fields">
                   <label className="min-w-0 flex-1 text-sm font-medium text-[#26364d]">
                     API 地址
                     <input
@@ -958,7 +964,7 @@ export const AiVoiceMemorySettingsCard = ({
                       placeholder={customProvider?.hasApiKey ? "已保存；留空不修改" : "请输入密钥"}
                     />
                   </label>
-                  <div className="flex shrink-0 gap-2">
+                  <div className="ai-provider-form-actions">
                     <Button
                       disabled={savingCustomProvider}
                       onClick={() => void saveCustomProvider()}
@@ -1044,37 +1050,51 @@ export const AiVoiceMemorySettingsCard = ({
             ) : null}
             {transcriptionProvider === "custom" ? (
               <div className="ai-provider-config-note">
-                <input
-                  className="ai-provider-key-input"
-                  aria-label="转录 API 地址"
-                  value={transcriptionBaseUrl}
-                  onChange={(event) => setTranscriptionBaseUrl(event.target.value)}
-                  placeholder="https://api.example.com/v1"
-                />
-                <input
-                  className="ai-provider-key-input"
-                  aria-label="转录模型 ID"
-                  value={transcriptionModel}
-                  onChange={(event) => setTranscriptionModel(event.target.value)}
-                  placeholder="模型 ID"
-                />
-                <input
-                  className="ai-provider-key-input"
-                  aria-label="转录 API 密钥"
-                  type="password"
-                  autoComplete="off"
-                  value={transcriptionApiKey}
-                  onChange={(event) => setTranscriptionApiKey(event.target.value)}
-                  placeholder={
-                    transcriptionStatus?.customConfigured ? "已保存；留空不修改" : "API Key"
-                  }
-                />
-                <Button
-                  disabled={savingTranscriptionProvider}
-                  onClick={() => void saveTranscriptionProvider("custom")}
-                >
-                  保存转录 API
-                </Button>
+                <div className="ai-provider-fields">
+                  <label>
+                    API 地址
+                    <input
+                      className="ai-provider-key-input"
+                      aria-label="转录 API 地址"
+                      value={transcriptionBaseUrl}
+                      onChange={(event) => setTranscriptionBaseUrl(event.target.value)}
+                      placeholder="https://api.example.com/v1"
+                    />
+                  </label>
+                  <label>
+                    模型名称
+                    <input
+                      className="ai-provider-key-input"
+                      aria-label="转录模型 ID"
+                      value={transcriptionModel}
+                      onChange={(event) => setTranscriptionModel(event.target.value)}
+                      placeholder="模型 ID"
+                    />
+                  </label>
+                  <label>
+                    API 密钥
+                    <input
+                      className="ai-provider-key-input"
+                      aria-label="转录 API 密钥"
+                      type="password"
+                      autoComplete="off"
+                      value={transcriptionApiKey}
+                      onChange={(event) => setTranscriptionApiKey(event.target.value)}
+                      placeholder={
+                        transcriptionStatus?.customConfigured ? "已保存；留空不修改" : "API Key"
+                      }
+                    />
+                  </label>
+                  <div className="ai-provider-form-actions">
+                    <Button
+                      disabled={savingTranscriptionProvider}
+                      onClick={() => void saveTranscriptionProvider("custom")}
+                    >
+                      保存转录 API
+                    </Button>
+                  </div>
+                </div>
+                <p>密钥经 Windows 加密，仅保存在本机。仅支持 HTTPS 地址。</p>
               </div>
             ) : null}
           </section>

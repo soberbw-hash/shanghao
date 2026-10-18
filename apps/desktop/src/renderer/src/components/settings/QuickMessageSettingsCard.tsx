@@ -333,7 +333,7 @@ export const QuickMessageSettingsCard = ({
                     <button
                       key={index}
                       type="button"
-                      className={`quick-message-slot ${dragOverSlot === `voice-${index}` ? "is-drag-over" : ""}`}
+                      className={`quick-message-slot ${preset ? "is-bound" : "is-unbound"} ${dragOverSlot === `voice-${index}` ? "is-drag-over" : ""}`}
                       aria-label={`语音槽位 ${index + 1}：${preset?.label ?? "拖入语音"}；点击试听，右键清空`}
                       title="点击试听；拖入替换；右键清空槽位"
                       onClick={() => preset && previewPreset(preset)}
@@ -355,6 +355,9 @@ export const QuickMessageSettingsCard = ({
                     >
                       <span className="quick-message-slot-number">{index + 1}</span>
                       <span className="quick-message-slot-name">{preset?.label ?? "拖入语音"}</span>
+                      <span className="quick-message-binding-state">
+                        {preset ? "已绑定" : "待绑定"}
+                      </span>
                     </button>
                   );
                 })}
@@ -374,7 +377,7 @@ export const QuickMessageSettingsCard = ({
                     <button
                       key={index}
                       type="button"
-                      className={`quick-message-slot ${dragOverSlot === `music-${index}` ? "is-drag-over" : ""}`}
+                      className={`quick-message-slot ${preset ? "is-bound" : "is-unbound"} ${dragOverSlot === `music-${index}` ? "is-drag-over" : ""}`}
                       aria-label={`音乐槽位 ${index + 1}：${preset?.label ?? "拖入音乐"}；点击试听，右键清空`}
                       title="点击试听；拖入替换；右键清空槽位"
                       onClick={() => preset && previewPreset(preset)}
@@ -396,6 +399,9 @@ export const QuickMessageSettingsCard = ({
                     >
                       <span className="quick-message-slot-number">{index + 1}</span>
                       <span className="quick-message-slot-name">{preset?.label ?? "拖入音乐"}</span>
+                      <span className="quick-message-binding-state">
+                        {preset ? "已绑定" : "待绑定"}
+                      </span>
                     </button>
                   );
                 })}

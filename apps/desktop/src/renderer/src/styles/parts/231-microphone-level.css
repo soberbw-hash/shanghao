@@ -1,0 +1,50 @@
+.microphone-meter-control {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+}
+.microphone-meter-control > :not(.microphone-level-fill) {
+  position: relative;
+  z-index: 1;
+}
+.microphone-level-fill {
+  opacity: 0;
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background: linear-gradient(to top, rgba(65, 191, 139, 0.54), rgba(124, 225, 174, 0.4));
+  transform: translateY(100%);
+  transition: transform 140ms ease-out;
+}
+.microphone-level-fill[data-active="true"] {
+  opacity: 1;
+}
+.microphone-level-fill::before {
+  content: "";
+  position: absolute;
+  width: 200%;
+  height: 15px;
+  top: -6px;
+  left: -50%;
+  border-radius: 45%;
+  background: rgba(125, 225, 177, 0.4);
+  animation: microphone-water 3s linear infinite;
+  animation-play-state: paused;
+}
+.microphone-level-fill[data-active="true"]::before {
+  animation-play-state: running;
+}
+@keyframes microphone-water {
+  50% {
+    transform: translateX(12%) scaleY(0.6);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .microphone-level-fill {
+    transition: none;
+  }
+  .microphone-level-fill::before {
+    animation: none;
+  }
+}

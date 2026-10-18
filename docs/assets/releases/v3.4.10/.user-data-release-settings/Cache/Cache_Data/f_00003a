@@ -1,0 +1,203 @@
+import { createHotContext as __vite__createHotContext } from "/@vite/client";import.meta.hot = __vite__createHotContext("/src/components/status/DailyRoomReportModal.tsx");const _jsxDEV = __vite__cjsImport0_react_jsxDevRuntime["jsxDEV"];const useEffect = __vite__cjsImport3_react["useEffect"];const createPortal = __vite__cjsImport4_reactDom["createPortal"];import __vite__cjsImport0_react_jsxDevRuntime from "/@fs/C:/Users/sober/Documents/Codex/2026-10-17/files-mentioned-by-the-user-codex/work/shanghao/apps/desktop/node_modules/.vite/deps/react_jsx-dev-runtime.js?v=b37745cb";
+var _s = $RefreshSig$();
+import { CalendarDays } from "/@fs/C:/Users/sober/Documents/Codex/2026-10-17/files-mentioned-by-the-user-codex/work/shanghao/apps/desktop/node_modules/.vite/deps/lucide-react.js?v=b37745cb";
+import { motion } from "/@fs/C:/Users/sober/Documents/Codex/2026-10-17/files-mentioned-by-the-user-codex/work/shanghao/apps/desktop/node_modules/.vite/deps/framer-motion.js?v=b37745cb";
+import __vite__cjsImport3_react from "/@fs/C:/Users/sober/Documents/Codex/2026-10-17/files-mentioned-by-the-user-codex/work/shanghao/apps/desktop/node_modules/.vite/deps/react.js?v=b37745cb";
+import __vite__cjsImport4_reactDom from "/@fs/C:/Users/sober/Documents/Codex/2026-10-17/files-mentioned-by-the-user-codex/work/shanghao/apps/desktop/node_modules/.vite/deps/react-dom.js?v=b37745cb";
+import { Button } from "/src/components/base/Button.tsx?t=1792337404327";
+import { DialogCloseButton } from "/src/components/base/DialogCloseButton.tsx";
+import { buildDailyRoomReportHighlights, buildDailyRoomReportNarrative } from "/src/features/daily-report/dailyRoomReportHighlights.ts";
+import { dialogSurfaceVariants, overlayScrimVariants, reducedFadeVariants } from "/src/features/motion/motionPresets.ts?t=1792337404327";
+import { usePrefersReducedMotion as useReducedMotion } from "/src/hooks/usePrefersReducedMotion.ts";
+export const DailyRoomReportModal = ({ report, roomName = "房间", onClose })=>{
+    _s();
+    const reduceMotion = useReducedMotion();
+    const highlights = buildDailyRoomReportHighlights(report);
+    const savedCommentary = report.commentary?.trim();
+    const headline = savedCommentary && savedCommentary.split(/\r?\n/).filter((line)=>line.trim()).length >= 2 ? savedCommentary : buildDailyRoomReportNarrative(report);
+    const narrativeParagraphs = headline.split(/\r?\n/).map((paragraph)=>paragraph.trim()).filter(Boolean);
+    useEffect(()=>{
+        const closeOnEscape = (event)=>{
+            if (event.key === "Escape") onClose();
+        };
+        document.addEventListener("keydown", closeOnEscape);
+        return ()=>document.removeEventListener("keydown", closeOnEscape);
+    }, [
+        onClose
+    ]);
+    return /*#__PURE__*/ createPortal(/*#__PURE__*/ _jsxDEV(motion.div, {
+        variants: reduceMotion ? reducedFadeVariants : overlayScrimVariants,
+        initial: "initial",
+        animate: "open",
+        exit: "closed",
+        className: "modal-scrim fixed inset-0 z-[87] flex items-start justify-center overflow-y-auto p-4 sm:p-6",
+        children: /*#__PURE__*/ _jsxDEV(motion.section, {
+            variants: reduceMotion ? reducedFadeVariants : dialogSurfaceVariants,
+            initial: "initial",
+            animate: "open",
+            exit: "closed",
+            role: "dialog",
+            "aria-modal": "true",
+            "aria-labelledby": "daily-room-report-title",
+            className: "modal-surface daily-report-dialog relative my-auto max-h-[calc(100dvh-32px)] w-full max-w-[560px] overflow-y-auto overscroll-contain rounded-[30px] p-6 sm:max-h-[calc(100dvh-48px)] sm:p-7",
+            children: [
+                /*#__PURE__*/ _jsxDEV("div", {
+                    className: "absolute right-5 top-5",
+                    children: /*#__PURE__*/ _jsxDEV(DialogCloseButton, {
+                        onClick: onClose
+                    }, void 0, false, {
+                        fileName: "C:/Users/sober/Documents/Codex/2026-10-17/files-mentioned-by-the-user-codex/work/shanghao/apps/desktop/src/renderer/src/components/status/DailyRoomReportModal.tsx",
+                        lineNumber: 69,
+                        columnNumber: 11
+                    }, this)
+                }, void 0, false, {
+                    fileName: "C:/Users/sober/Documents/Codex/2026-10-17/files-mentioned-by-the-user-codex/work/shanghao/apps/desktop/src/renderer/src/components/status/DailyRoomReportModal.tsx",
+                    lineNumber: 68,
+                    columnNumber: 9
+                }, this),
+                /*#__PURE__*/ _jsxDEV("div", {
+                    className: "daily-report-meta inline-flex items-center gap-2 text-xs font-semibold text-[#4779b8]",
+                    children: [
+                        /*#__PURE__*/ _jsxDEV(CalendarDays, {
+                            className: "h-4 w-4"
+                        }, void 0, false, {
+                            fileName: "C:/Users/sober/Documents/Codex/2026-10-17/files-mentioned-by-the-user-codex/work/shanghao/apps/desktop/src/renderer/src/components/status/DailyRoomReportModal.tsx",
+                            lineNumber: 72,
+                            columnNumber: 11
+                        }, this),
+                        " ",
+                        report.date,
+                        " · ",
+                        roomName
+                    ]
+                }, void 0, true, {
+                    fileName: "C:/Users/sober/Documents/Codex/2026-10-17/files-mentioned-by-the-user-codex/work/shanghao/apps/desktop/src/renderer/src/components/status/DailyRoomReportModal.tsx",
+                    lineNumber: 71,
+                    columnNumber: 9
+                }, this),
+                /*#__PURE__*/ _jsxDEV("h2", {
+                    id: "daily-room-report-title",
+                    className: "daily-report-title mt-3 pr-12 text-balance text-[28px] font-bold text-[#172235]",
+                    children: "昨日房间"
+                }, void 0, false, {
+                    fileName: "C:/Users/sober/Documents/Codex/2026-10-17/files-mentioned-by-the-user-codex/work/shanghao/apps/desktop/src/renderer/src/components/status/DailyRoomReportModal.tsx",
+                    lineNumber: 74,
+                    columnNumber: 9
+                }, this),
+                /*#__PURE__*/ _jsxDEV("div", {
+                    className: "daily-report-narrative",
+                    children: narrativeParagraphs.map((paragraph, index)=>/*#__PURE__*/ _jsxDEV("p", {
+                            children: paragraph
+                        }, index, false, {
+                            fileName: "C:/Users/sober/Documents/Codex/2026-10-17/files-mentioned-by-the-user-codex/work/shanghao/apps/desktop/src/renderer/src/components/status/DailyRoomReportModal.tsx",
+                            lineNumber: 82,
+                            columnNumber: 13
+                        }, this))
+                }, void 0, false, {
+                    fileName: "C:/Users/sober/Documents/Codex/2026-10-17/files-mentioned-by-the-user-codex/work/shanghao/apps/desktop/src/renderer/src/components/status/DailyRoomReportModal.tsx",
+                    lineNumber: 80,
+                    columnNumber: 9
+                }, this),
+                highlights.length ? /*#__PURE__*/ _jsxDEV("section", {
+                    className: "daily-report-highlights grid grid-cols-1 gap-3 sm:grid-cols-2",
+                    "aria-label": "昨日亮点",
+                    children: highlights.map((highlight)=>/*#__PURE__*/ _jsxDEV("div", {
+                            className: `daily-report-highlight rounded-2xl border border-[#d9e8f8] bg-white/55 p-4 ${highlight.id === "room-title" ? "sm:col-span-2" : ""}`,
+                            children: [
+                                /*#__PURE__*/ _jsxDEV("small", {
+                                    className: "block text-xs font-semibold text-[#7b91aa]",
+                                    children: highlight.label
+                                }, void 0, false, {
+                                    fileName: "C:/Users/sober/Documents/Codex/2026-10-17/files-mentioned-by-the-user-codex/work/shanghao/apps/desktop/src/renderer/src/components/status/DailyRoomReportModal.tsx",
+                                    lineNumber: 97,
+                                    columnNumber: 17
+                                }, this),
+                                /*#__PURE__*/ _jsxDEV("strong", {
+                                    className: "mt-1.5 block text-pretty text-[15px] font-semibold leading-relaxed text-[#29435f]",
+                                    children: highlight.value
+                                }, void 0, false, {
+                                    fileName: "C:/Users/sober/Documents/Codex/2026-10-17/files-mentioned-by-the-user-codex/work/shanghao/apps/desktop/src/renderer/src/components/status/DailyRoomReportModal.tsx",
+                                    lineNumber: 100,
+                                    columnNumber: 17
+                                }, this),
+                                highlight.detail ? /*#__PURE__*/ _jsxDEV("span", {
+                                    className: "mt-2 block text-pretty text-[13px] leading-relaxed text-[#6c839d]",
+                                    children: highlight.detail
+                                }, void 0, false, {
+                                    fileName: "C:/Users/sober/Documents/Codex/2026-10-17/files-mentioned-by-the-user-codex/work/shanghao/apps/desktop/src/renderer/src/components/status/DailyRoomReportModal.tsx",
+                                    lineNumber: 104,
+                                    columnNumber: 19
+                                }, this) : null
+                            ]
+                        }, highlight.id, true, {
+                            fileName: "C:/Users/sober/Documents/Codex/2026-10-17/files-mentioned-by-the-user-codex/work/shanghao/apps/desktop/src/renderer/src/components/status/DailyRoomReportModal.tsx",
+                            lineNumber: 91,
+                            columnNumber: 15
+                        }, this))
+                }, void 0, false, {
+                    fileName: "C:/Users/sober/Documents/Codex/2026-10-17/files-mentioned-by-the-user-codex/work/shanghao/apps/desktop/src/renderer/src/components/status/DailyRoomReportModal.tsx",
+                    lineNumber: 86,
+                    columnNumber: 11
+                }, this) : null,
+                /*#__PURE__*/ _jsxDEV("div", {
+                    className: "sticky bottom-0 -mx-2 mt-4 bg-gradient-to-t from-[#f7fbff] via-[#f7fbff]/95 to-transparent px-2 pt-3",
+                    children: /*#__PURE__*/ _jsxDEV(Button, {
+                        isFullWidth: true,
+                        onClick: onClose,
+                        children: "知道了"
+                    }, void 0, false, {
+                        fileName: "C:/Users/sober/Documents/Codex/2026-10-17/files-mentioned-by-the-user-codex/work/shanghao/apps/desktop/src/renderer/src/components/status/DailyRoomReportModal.tsx",
+                        lineNumber: 113,
+                        columnNumber: 11
+                    }, this)
+                }, void 0, false, {
+                    fileName: "C:/Users/sober/Documents/Codex/2026-10-17/files-mentioned-by-the-user-codex/work/shanghao/apps/desktop/src/renderer/src/components/status/DailyRoomReportModal.tsx",
+                    lineNumber: 112,
+                    columnNumber: 9
+                }, this)
+            ]
+        }, void 0, true, {
+            fileName: "C:/Users/sober/Documents/Codex/2026-10-17/files-mentioned-by-the-user-codex/work/shanghao/apps/desktop/src/renderer/src/components/status/DailyRoomReportModal.tsx",
+            lineNumber: 58,
+            columnNumber: 7
+        }, this)
+    }, void 0, false, {
+        fileName: "C:/Users/sober/Documents/Codex/2026-10-17/files-mentioned-by-the-user-codex/work/shanghao/apps/desktop/src/renderer/src/components/status/DailyRoomReportModal.tsx",
+        lineNumber: 51,
+        columnNumber: 5
+    }, this), document.body);
+};
+_s(DailyRoomReportModal, "oKjszd0NPf63EC8ERfuoCZXctHI=", false, function() {
+    return [
+        useReducedMotion
+    ];
+});
+_c = DailyRoomReportModal;
+var _c;
+$RefreshReg$(_c, "DailyRoomReportModal");
+
+
+import * as RefreshRuntime from "/@react-refresh";
+const inWebWorker = typeof WorkerGlobalScope !== 'undefined' && self instanceof WorkerGlobalScope;
+import * as __vite_react_currentExports from "/src/components/status/DailyRoomReportModal.tsx?t=1792337404327";
+if (import.meta.hot && !inWebWorker) {
+  if (!window.$RefreshReg$) {
+    throw new Error(
+      "@vitejs/plugin-react-swc can't detect preamble. Something is wrong."
+    );
+  }
+
+  const currentExports = __vite_react_currentExports;
+  queueMicrotask(() => {
+    RefreshRuntime.registerExportsForReactRefresh("C:/Users/sober/Documents/Codex/2026-10-17/files-mentioned-by-the-user-codex/work/shanghao/apps/desktop/src/renderer/src/components/status/DailyRoomReportModal.tsx", currentExports);
+    import.meta.hot.accept((nextExports) => {
+      if (!nextExports) return;
+      const invalidateMessage = RefreshRuntime.validateRefreshBoundaryAndEnqueueUpdate("C:/Users/sober/Documents/Codex/2026-10-17/files-mentioned-by-the-user-codex/work/shanghao/apps/desktop/src/renderer/src/components/status/DailyRoomReportModal.tsx", currentExports, nextExports);
+      if (invalidateMessage) import.meta.hot.invalidate(invalidateMessage);
+    });
+  });
+}
+function $RefreshReg$(type, id) { return RefreshRuntime.register(type, "C:/Users/sober/Documents/Codex/2026-10-17/files-mentioned-by-the-user-codex/work/shanghao/apps/desktop/src/renderer/src/components/status/DailyRoomReportModal.tsx" + ' ' + id) }
+function $RefreshSig$() { return RefreshRuntime.createSignatureFunctionForTransform(); }
+
+//# sourceMappingURL=data:application/json;base64,eyJ2ZXJzaW9uIjozLCJzb3VyY2VzIjpbIkRhaWx5Um9vbVJlcG9ydE1vZGFsLnRzeCJdLCJzb3VyY2VzQ29udGVudCI6WyJpbXBvcnQgeyBDYWxlbmRhckRheXMgfSBmcm9tIFwibHVjaWRlLXJlYWN0XCI7XG5pbXBvcnQgeyBtb3Rpb24gfSBmcm9tIFwiZnJhbWVyLW1vdGlvblwiO1xuaW1wb3J0IHsgdXNlRWZmZWN0IH0gZnJvbSBcInJlYWN0XCI7XG5pbXBvcnQgeyBjcmVhdGVQb3J0YWwgfSBmcm9tIFwicmVhY3QtZG9tXCI7XG5cbmltcG9ydCB0eXBlIHsgRGFpbHlSb29tUmVwb3J0IH0gZnJvbSBcIkBwcml2YXRlLXZvaWNlL3NoYXJlZFwiO1xuXG5pbXBvcnQgeyBCdXR0b24gfSBmcm9tIFwiLi4vYmFzZS9CdXR0b25cIjtcbmltcG9ydCB7IERpYWxvZ0Nsb3NlQnV0dG9uIH0gZnJvbSBcIi4uL2Jhc2UvRGlhbG9nQ2xvc2VCdXR0b25cIjtcbmltcG9ydCB7XG4gIGJ1aWxkRGFpbHlSb29tUmVwb3J0SGlnaGxpZ2h0cyxcbiAgYnVpbGREYWlseVJvb21SZXBvcnROYXJyYXRpdmUsXG59IGZyb20gXCIuLi8uLi9mZWF0dXJlcy9kYWlseS1yZXBvcnQvZGFpbHlSb29tUmVwb3J0SGlnaGxpZ2h0c1wiO1xuaW1wb3J0IHtcbiAgZGlhbG9nU3VyZmFjZVZhcmlhbnRzLFxuICBvdmVybGF5U2NyaW1WYXJpYW50cyxcbiAgcmVkdWNlZEZhZGVWYXJpYW50cyxcbn0gZnJvbSBcIi4uLy4uL2ZlYXR1cmVzL21vdGlvbi9tb3Rpb25QcmVzZXRzXCI7XG5pbXBvcnQgeyB1c2VQcmVmZXJzUmVkdWNlZE1vdGlvbiBhcyB1c2VSZWR1Y2VkTW90aW9uIH0gZnJvbSBcIi4uLy4uL2hvb2tzL3VzZVByZWZlcnNSZWR1Y2VkTW90aW9uXCI7XG5cbmV4cG9ydCBjb25zdCBEYWlseVJvb21SZXBvcnRNb2RhbCA9ICh7XG4gIHJlcG9ydCxcbiAgcm9vbU5hbWUgPSBcIuaIv+mXtFwiLFxuICBvbkNsb3NlLFxufToge1xuICByZXBvcnQ6IERhaWx5Um9vbVJlcG9ydDtcbiAgcm9vbU5hbWU/OiBzdHJpbmc7XG4gIG9uQ2xvc2U6ICgpID0+IHZvaWQ7XG59KSA9PiB7XG4gIGNvbnN0IHJlZHVjZU1vdGlvbiA9IHVzZVJlZHVjZWRNb3Rpb24oKTtcbiAgY29uc3QgaGlnaGxpZ2h0cyA9IGJ1aWxkRGFpbHlSb29tUmVwb3J0SGlnaGxpZ2h0cyhyZXBvcnQpO1xuICBjb25zdCBzYXZlZENvbW1lbnRhcnkgPSByZXBvcnQuY29tbWVudGFyeT8udHJpbSgpO1xuICBjb25zdCBoZWFkbGluZSA9XG4gICAgc2F2ZWRDb21tZW50YXJ5ICYmIHNhdmVkQ29tbWVudGFyeS5zcGxpdCgvXFxyP1xcbi8pLmZpbHRlcigobGluZSkgPT4gbGluZS50cmltKCkpLmxlbmd0aCA+PSAyXG4gICAgICA/IHNhdmVkQ29tbWVudGFyeVxuICAgICAgOiBidWlsZERhaWx5Um9vbVJlcG9ydE5hcnJhdGl2ZShyZXBvcnQpO1xuICBjb25zdCBuYXJyYXRpdmVQYXJhZ3JhcGhzID0gaGVhZGxpbmVcbiAgICAuc3BsaXQoL1xccj9cXG4vKVxuICAgIC5tYXAoKHBhcmFncmFwaCkgPT4gcGFyYWdyYXBoLnRyaW0oKSlcbiAgICAuZmlsdGVyKEJvb2xlYW4pO1xuXG4gIHVzZUVmZmVjdCgoKSA9PiB7XG4gICAgY29uc3QgY2xvc2VPbkVzY2FwZSA9IChldmVudDogS2V5Ym9hcmRFdmVudCkgPT4ge1xuICAgICAgaWYgKGV2ZW50LmtleSA9PT0gXCJFc2NhcGVcIikgb25DbG9zZSgpO1xuICAgIH07XG4gICAgZG9jdW1lbnQuYWRkRXZlbnRMaXN0ZW5lcihcImtleWRvd25cIiwgY2xvc2VPbkVzY2FwZSk7XG4gICAgcmV0dXJuICgpID0+IGRvY3VtZW50LnJlbW92ZUV2ZW50TGlzdGVuZXIoXCJrZXlkb3duXCIsIGNsb3NlT25Fc2NhcGUpO1xuICB9LCBbb25DbG9zZV0pO1xuXG4gIHJldHVybiBjcmVhdGVQb3J0YWwoXG4gICAgPG1vdGlvbi5kaXZcbiAgICAgIHZhcmlhbnRzPXtyZWR1Y2VNb3Rpb24gPyByZWR1Y2VkRmFkZVZhcmlhbnRzIDogb3ZlcmxheVNjcmltVmFyaWFudHN9XG4gICAgICBpbml0aWFsPVwiaW5pdGlhbFwiXG4gICAgICBhbmltYXRlPVwib3BlblwiXG4gICAgICBleGl0PVwiY2xvc2VkXCJcbiAgICAgIGNsYXNzTmFtZT1cIm1vZGFsLXNjcmltIGZpeGVkIGluc2V0LTAgei1bODddIGZsZXggaXRlbXMtc3RhcnQganVzdGlmeS1jZW50ZXIgb3ZlcmZsb3cteS1hdXRvIHAtNCBzbTpwLTZcIlxuICAgID5cbiAgICAgIDxtb3Rpb24uc2VjdGlvblxuICAgICAgICB2YXJpYW50cz17cmVkdWNlTW90aW9uID8gcmVkdWNlZEZhZGVWYXJpYW50cyA6IGRpYWxvZ1N1cmZhY2VWYXJpYW50c31cbiAgICAgICAgaW5pdGlhbD1cImluaXRpYWxcIlxuICAgICAgICBhbmltYXRlPVwib3BlblwiXG4gICAgICAgIGV4aXQ9XCJjbG9zZWRcIlxuICAgICAgICByb2xlPVwiZGlhbG9nXCJcbiAgICAgICAgYXJpYS1tb2RhbD1cInRydWVcIlxuICAgICAgICBhcmlhLWxhYmVsbGVkYnk9XCJkYWlseS1yb29tLXJlcG9ydC10aXRsZVwiXG4gICAgICAgIGNsYXNzTmFtZT1cIm1vZGFsLXN1cmZhY2UgZGFpbHktcmVwb3J0LWRpYWxvZyByZWxhdGl2ZSBteS1hdXRvIG1heC1oLVtjYWxjKDEwMGR2aC0zMnB4KV0gdy1mdWxsIG1heC13LVs1NjBweF0gb3ZlcmZsb3cteS1hdXRvIG92ZXJzY3JvbGwtY29udGFpbiByb3VuZGVkLVszMHB4XSBwLTYgc206bWF4LWgtW2NhbGMoMTAwZHZoLTQ4cHgpXSBzbTpwLTdcIlxuICAgICAgPlxuICAgICAgICA8ZGl2IGNsYXNzTmFtZT1cImFic29sdXRlIHJpZ2h0LTUgdG9wLTVcIj5cbiAgICAgICAgICA8RGlhbG9nQ2xvc2VCdXR0b24gb25DbGljaz17b25DbG9zZX0gLz5cbiAgICAgICAgPC9kaXY+XG4gICAgICAgIDxkaXYgY2xhc3NOYW1lPVwiZGFpbHktcmVwb3J0LW1ldGEgaW5saW5lLWZsZXggaXRlbXMtY2VudGVyIGdhcC0yIHRleHQteHMgZm9udC1zZW1pYm9sZCB0ZXh0LVsjNDc3OWI4XVwiPlxuICAgICAgICAgIDxDYWxlbmRhckRheXMgY2xhc3NOYW1lPVwiaC00IHctNFwiIC8+IHtyZXBvcnQuZGF0ZX0gwrcge3Jvb21OYW1lfVxuICAgICAgICA8L2Rpdj5cbiAgICAgICAgPGgyXG4gICAgICAgICAgaWQ9XCJkYWlseS1yb29tLXJlcG9ydC10aXRsZVwiXG4gICAgICAgICAgY2xhc3NOYW1lPVwiZGFpbHktcmVwb3J0LXRpdGxlIG10LTMgcHItMTIgdGV4dC1iYWxhbmNlIHRleHQtWzI4cHhdIGZvbnQtYm9sZCB0ZXh0LVsjMTcyMjM1XVwiXG4gICAgICAgID5cbiAgICAgICAgICDmmKjml6XmiL/pl7RcbiAgICAgICAgPC9oMj5cbiAgICAgICAgPGRpdiBjbGFzc05hbWU9XCJkYWlseS1yZXBvcnQtbmFycmF0aXZlXCI+XG4gICAgICAgICAge25hcnJhdGl2ZVBhcmFncmFwaHMubWFwKChwYXJhZ3JhcGgsIGluZGV4KSA9PiAoXG4gICAgICAgICAgICA8cCBrZXk9e2luZGV4fT57cGFyYWdyYXBofTwvcD5cbiAgICAgICAgICApKX1cbiAgICAgICAgPC9kaXY+XG4gICAgICAgIHtoaWdobGlnaHRzLmxlbmd0aCA/IChcbiAgICAgICAgICA8c2VjdGlvblxuICAgICAgICAgICAgY2xhc3NOYW1lPVwiZGFpbHktcmVwb3J0LWhpZ2hsaWdodHMgZ3JpZCBncmlkLWNvbHMtMSBnYXAtMyBzbTpncmlkLWNvbHMtMlwiXG4gICAgICAgICAgICBhcmlhLWxhYmVsPVwi5pio5pel5Lqu54K5XCJcbiAgICAgICAgICA+XG4gICAgICAgICAgICB7aGlnaGxpZ2h0cy5tYXAoKGhpZ2hsaWdodCkgPT4gKFxuICAgICAgICAgICAgICA8ZGl2XG4gICAgICAgICAgICAgICAga2V5PXtoaWdobGlnaHQuaWR9XG4gICAgICAgICAgICAgICAgY2xhc3NOYW1lPXtgZGFpbHktcmVwb3J0LWhpZ2hsaWdodCByb3VuZGVkLTJ4bCBib3JkZXIgYm9yZGVyLVsjZDllOGY4XSBiZy13aGl0ZS81NSBwLTQgJHtcbiAgICAgICAgICAgICAgICAgIGhpZ2hsaWdodC5pZCA9PT0gXCJyb29tLXRpdGxlXCIgPyBcInNtOmNvbC1zcGFuLTJcIiA6IFwiXCJcbiAgICAgICAgICAgICAgICB9YH1cbiAgICAgICAgICAgICAgPlxuICAgICAgICAgICAgICAgIDxzbWFsbCBjbGFzc05hbWU9XCJibG9jayB0ZXh0LXhzIGZvbnQtc2VtaWJvbGQgdGV4dC1bIzdiOTFhYV1cIj5cbiAgICAgICAgICAgICAgICAgIHtoaWdobGlnaHQubGFiZWx9XG4gICAgICAgICAgICAgICAgPC9zbWFsbD5cbiAgICAgICAgICAgICAgICA8c3Ryb25nIGNsYXNzTmFtZT1cIm10LTEuNSBibG9jayB0ZXh0LXByZXR0eSB0ZXh0LVsxNXB4XSBmb250LXNlbWlib2xkIGxlYWRpbmctcmVsYXhlZCB0ZXh0LVsjMjk0MzVmXVwiPlxuICAgICAgICAgICAgICAgICAge2hpZ2hsaWdodC52YWx1ZX1cbiAgICAgICAgICAgICAgICA8L3N0cm9uZz5cbiAgICAgICAgICAgICAgICB7aGlnaGxpZ2h0LmRldGFpbCA/IChcbiAgICAgICAgICAgICAgICAgIDxzcGFuIGNsYXNzTmFtZT1cIm10LTIgYmxvY2sgdGV4dC1wcmV0dHkgdGV4dC1bMTNweF0gbGVhZGluZy1yZWxheGVkIHRleHQtWyM2YzgzOWRdXCI+XG4gICAgICAgICAgICAgICAgICAgIHtoaWdobGlnaHQuZGV0YWlsfVxuICAgICAgICAgICAgICAgICAgPC9zcGFuPlxuICAgICAgICAgICAgICAgICkgOiBudWxsfVxuICAgICAgICAgICAgICA8L2Rpdj5cbiAgICAgICAgICAgICkpfVxuICAgICAgICAgIDwvc2VjdGlvbj5cbiAgICAgICAgKSA6IG51bGx9XG4gICAgICAgIDxkaXYgY2xhc3NOYW1lPVwic3RpY2t5IGJvdHRvbS0wIC1teC0yIG10LTQgYmctZ3JhZGllbnQtdG8tdCBmcm9tLVsjZjdmYmZmXSB2aWEtWyNmN2ZiZmZdLzk1IHRvLXRyYW5zcGFyZW50IHB4LTIgcHQtM1wiPlxuICAgICAgICAgIDxCdXR0b24gaXNGdWxsV2lkdGggb25DbGljaz17b25DbG9zZX0+XG4gICAgICAgICAgICDnn6XpgZPkuoZcbiAgICAgICAgICA8L0J1dHRvbj5cbiAgICAgICAgPC9kaXY+XG4gICAgICA8L21vdGlvbi5zZWN0aW9uPlxuICAgIDwvbW90aW9uLmRpdj4sXG4gICAgZG9jdW1lbnQuYm9keSxcbiAgKTtcbn07XG4iXSwibmFtZXMiOlsiQ2FsZW5kYXJEYXlzIiwibW90aW9uIiwidXNlRWZmZWN0IiwiY3JlYXRlUG9ydGFsIiwiQnV0dG9uIiwiRGlhbG9nQ2xvc2VCdXR0b24iLCJidWlsZERhaWx5Um9vbVJlcG9ydEhpZ2hsaWdodHMiLCJidWlsZERhaWx5Um9vbVJlcG9ydE5hcnJhdGl2ZSIsImRpYWxvZ1N1cmZhY2VWYXJpYW50cyIsIm92ZXJsYXlTY3JpbVZhcmlhbnRzIiwicmVkdWNlZEZhZGVWYXJpYW50cyIsInVzZVByZWZlcnNSZWR1Y2VkTW90aW9uIiwidXNlUmVkdWNlZE1vdGlvbiIsIkRhaWx5Um9vbVJlcG9ydE1vZGFsIiwicmVwb3J0Iiwicm9vbU5hbWUiLCJvbkNsb3NlIiwicmVkdWNlTW90aW9uIiwiaGlnaGxpZ2h0cyIsInNhdmVkQ29tbWVudGFyeSIsImNvbW1lbnRhcnkiLCJ0cmltIiwiaGVhZGxpbmUiLCJzcGxpdCIsImZpbHRlciIsImxpbmUiLCJsZW5ndGgiLCJuYXJyYXRpdmVQYXJhZ3JhcGhzIiwibWFwIiwicGFyYWdyYXBoIiwiQm9vbGVhbiIsImNsb3NlT25Fc2NhcGUiLCJldmVudCIsImtleSIsImRvY3VtZW50IiwiYWRkRXZlbnRMaXN0ZW5lciIsInJlbW92ZUV2ZW50TGlzdGVuZXIiLCJkaXYiLCJ2YXJpYW50cyIsImluaXRpYWwiLCJhbmltYXRlIiwiZXhpdCIsImNsYXNzTmFtZSIsInNlY3Rpb24iLCJyb2xlIiwiYXJpYS1tb2RhbCIsImFyaWEtbGFiZWxsZWRieSIsIm9uQ2xpY2siLCJkYXRlIiwiaDIiLCJpZCIsImluZGV4IiwicCIsImFyaWEtbGFiZWwiLCJoaWdobGlnaHQiLCJzbWFsbCIsImxhYmVsIiwic3Ryb25nIiwidmFsdWUiLCJkZXRhaWwiLCJzcGFuIiwiaXNGdWxsV2lkdGgiLCJib2R5Il0sIm1hcHBpbmdzIjoiOztBQUFBLFNBQVNBLFlBQVksUUFBUSxlQUFlO0FBQzVDLFNBQVNDLE1BQU0sUUFBUSxnQkFBZ0I7QUFDdkMsU0FBU0MsU0FBUyxRQUFRLFFBQVE7QUFDbEMsU0FBU0MsWUFBWSxRQUFRLFlBQVk7QUFJekMsU0FBU0MsTUFBTSxRQUFRLGlCQUFpQjtBQUN4QyxTQUFTQyxpQkFBaUIsUUFBUSw0QkFBNEI7QUFDOUQsU0FDRUMsOEJBQThCLEVBQzlCQyw2QkFBNkIsUUFDeEIsd0RBQXdEO0FBQy9ELFNBQ0VDLHFCQUFxQixFQUNyQkMsb0JBQW9CLEVBQ3BCQyxtQkFBbUIsUUFDZCxzQ0FBc0M7QUFDN0MsU0FBU0MsMkJBQTJCQyxnQkFBZ0IsUUFBUSxzQ0FBc0M7QUFFbEcsT0FBTyxNQUFNQyx1QkFBdUIsQ0FBQyxFQUNuQ0MsTUFBTSxFQUNOQyxXQUFXLElBQUksRUFDZkMsT0FBTyxFQUtSOztJQUNDLE1BQU1DLGVBQWVMO0lBQ3JCLE1BQU1NLGFBQWFaLCtCQUErQlE7SUFDbEQsTUFBTUssa0JBQWtCTCxPQUFPTSxVQUFVLEVBQUVDO0lBQzNDLE1BQU1DLFdBQ0pILG1CQUFtQkEsZ0JBQWdCSSxLQUFLLENBQUMsU0FBU0MsTUFBTSxDQUFDLENBQUNDLE9BQVNBLEtBQUtKLElBQUksSUFBSUssTUFBTSxJQUFJLElBQ3RGUCxrQkFDQVosOEJBQThCTztJQUNwQyxNQUFNYSxzQkFBc0JMLFNBQ3pCQyxLQUFLLENBQUMsU0FDTkssR0FBRyxDQUFDLENBQUNDLFlBQWNBLFVBQVVSLElBQUksSUFDakNHLE1BQU0sQ0FBQ007SUFFVjVCLFVBQVU7UUFDUixNQUFNNkIsZ0JBQWdCLENBQUNDO1lBQ3JCLElBQUlBLE1BQU1DLEdBQUcsS0FBSyxVQUFVakI7UUFDOUI7UUFDQWtCLFNBQVNDLGdCQUFnQixDQUFDLFdBQVdKO1FBQ3JDLE9BQU8sSUFBTUcsU0FBU0UsbUJBQW1CLENBQUMsV0FBV0w7SUFDdkQsR0FBRztRQUFDZjtLQUFRO0lBRVoscUJBQU9iLDJCQUNMLFFBQUNGLE9BQU9vQyxHQUFHO1FBQ1RDLFVBQVVyQixlQUFlUCxzQkFBc0JEO1FBQy9DOEIsU0FBUTtRQUNSQyxTQUFRO1FBQ1JDLE1BQUs7UUFDTEMsV0FBVTtrQkFFVixjQUFBLFFBQUN6QyxPQUFPMEMsT0FBTztZQUNiTCxVQUFVckIsZUFBZVAsc0JBQXNCRjtZQUMvQytCLFNBQVE7WUFDUkMsU0FBUTtZQUNSQyxNQUFLO1lBQ0xHLE1BQUs7WUFDTEMsY0FBVztZQUNYQyxtQkFBZ0I7WUFDaEJKLFdBQVU7OzhCQUVWLFFBQUNMO29CQUFJSyxXQUFVOzhCQUNiLGNBQUEsUUFBQ3JDO3dCQUFrQjBDLFNBQVMvQjs7Ozs7Ozs7Ozs7OEJBRTlCLFFBQUNxQjtvQkFBSUssV0FBVTs7c0NBQ2IsUUFBQzFDOzRCQUFhMEMsV0FBVTs7Ozs7O3dCQUFZO3dCQUFFNUIsT0FBT2tDLElBQUk7d0JBQUM7d0JBQUlqQzs7Ozs7Ozs4QkFFeEQsUUFBQ2tDO29CQUNDQyxJQUFHO29CQUNIUixXQUFVOzhCQUNYOzs7Ozs7OEJBR0QsUUFBQ0w7b0JBQUlLLFdBQVU7OEJBQ1pmLG9CQUFvQkMsR0FBRyxDQUFDLENBQUNDLFdBQVdzQixzQkFDbkMsUUFBQ0M7c0NBQWV2QjsyQkFBUnNCOzs7Ozs7Ozs7O2dCQUdYakMsV0FBV1EsTUFBTSxpQkFDaEIsUUFBQ2lCO29CQUNDRCxXQUFVO29CQUNWVyxjQUFXOzhCQUVWbkMsV0FBV1UsR0FBRyxDQUFDLENBQUMwQiwwQkFDZixRQUFDakI7NEJBRUNLLFdBQVcsQ0FBQywyRUFBMkUsRUFDckZZLFVBQVVKLEVBQUUsS0FBSyxlQUFlLGtCQUFrQixJQUNsRDs7OENBRUYsUUFBQ0s7b0NBQU1iLFdBQVU7OENBQ2RZLFVBQVVFLEtBQUs7Ozs7Ozs4Q0FFbEIsUUFBQ0M7b0NBQU9mLFdBQVU7OENBQ2ZZLFVBQVVJLEtBQUs7Ozs7OztnQ0FFakJKLFVBQVVLLE1BQU0saUJBQ2YsUUFBQ0M7b0NBQUtsQixXQUFVOzhDQUNiWSxVQUFVSyxNQUFNOzs7OzsyQ0FFakI7OzJCQWZDTCxVQUFVSixFQUFFOzs7Ozs7Ozs7MkJBbUJyQjs4QkFDSixRQUFDYjtvQkFBSUssV0FBVTs4QkFDYixjQUFBLFFBQUN0Qzt3QkFBT3lELFdBQVc7d0JBQUNkLFNBQVMvQjtrQ0FBUzs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7O2NBTTVDa0IsU0FBUzRCLElBQUk7QUFFakIsRUFBRTtHQXBHV2pEOztRQVNVRDs7O0tBVFZDIn0=

@@ -920,7 +920,7 @@ html:not(.is-app-window-focused) .window-frame {
   .donation-modal-panel,
   .collection-modal-panel,
   .weather-city-dialog-shell,
-  .room-ask-popover,
+  .room-ask-popover:not(.room-ask-inline),
   .update-modal-surface,
   .chat-image-preview-surface,
   .entry-mic-menu,

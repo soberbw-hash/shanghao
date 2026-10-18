@@ -64,9 +64,9 @@ export class PhoneShortcut {
       phoneVirtualKey(mouseButton ? `Mouse${mouseButton}` : name!),
     );
   }
-  keyDown = (event: UiohookKeyboardEvent): void => {
-    if (this.mouseButton) return;
-    if (this.down || event.keycode !== this.keycode) return;
+  keyDown = (event: UiohookKeyboardEvent): boolean => {
+    if (this.mouseButton) return false;
+    if (this.down || event.keycode !== this.keycode) return false;
     if (
       Object.entries(this.modifiers).some(([key, value]) =>
         value
@@ -75,19 +75,21 @@ export class PhoneShortcut {
             Boolean(event[key as keyof UiohookKeyboardEvent]),
       )
     )
-      return;
+      return false;
     this.down = true;
     this.change(this.trigger === "hold" ? true : undefined);
+    return true;
   };
-  keyUp = (event: UiohookKeyboardEvent): void => {
-    if (this.mouseButton) return;
+  keyUp = (event: UiohookKeyboardEvent): boolean => {
+    if (this.mouseButton) return false;
     // Modifiers may have been released first; keycode owns this press.
-    if (!this.down || event.keycode !== this.keycode) return;
+    if (!this.down || event.keycode !== this.keycode) return false;
     this.down = false;
     if (this.trigger === "hold") this.change(false);
+    return true;
   };
-  mouseDown = (event: UiohookMouseEvent): void => {
-    if (!this.mouseButton || this.down || Number(event.button) !== this.mouseButton) return;
+  mouseDown = (event: UiohookMouseEvent): boolean => {
+    if (!this.mouseButton || this.down || Number(event.button) !== this.mouseButton) return false;
     if (
       Object.entries(this.modifiers).some(([key, value]) =>
         value
@@ -96,14 +98,16 @@ export class PhoneShortcut {
             Boolean(event[key as keyof UiohookMouseEvent]),
       )
     )
-      return;
+      return false;
     this.down = true;
     this.change(this.trigger === "hold" ? true : undefined);
+    return true;
   };
-  mouseUp = (event: UiohookMouseEvent): void => {
-    if (!this.mouseButton || !this.down || Number(event.button) !== this.mouseButton) return;
+  mouseUp = (event: UiohookMouseEvent): boolean => {
+    if (!this.mouseButton || !this.down || Number(event.button) !== this.mouseButton) return false;
     this.down = false;
     if (this.trigger === "hold") this.change(false);
+    return true;
   };
   reset(): void {
     if (this.down && this.trigger === "hold") this.change(false);

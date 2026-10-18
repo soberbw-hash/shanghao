@@ -29,7 +29,10 @@ import { AiModelManager } from "./ai-model-manager";
 import { AiJobWriteOwnership } from "./ai-job-write-ownership";
 import { AiRuntimeManager } from "./ai-runtime-manager";
 import { transcribeChunkWithRetry } from "./voice-memory-transcription-retry";
-import { transcribeWithRemoteProvider } from "./remote-transcription";
+import {
+  isTranscriptionExecutionComplete,
+  transcribeWithRemoteProvider,
+} from "./remote-transcription";
 import { TRANSCRIPTION_CHUNK_MS, transcriptionChunkMsForModel } from "./asr-chunk-policy";
 import { classifyLocalModelRuntimeError } from "./local-model-runtime";
 import { VoiceMemoryStore, type VoiceMemorySaveOptions } from "./voice-memory-store";
@@ -42,11 +45,8 @@ import {
 } from "./voice-memory-transcription-units";
 import { resolveFfmpegExecutable } from "./media-runtime";
 import { AiTextGateway } from "./ai-text-gateway";
-import {
-  ASSISTANT_ANSWER_STYLE,
-  assistantAnswerText,
-  roomQuestionPrompt,
-} from "./voice-memory-question-prompt";
+import { ASSISTANT_ANSWER_STYLE, assistantAnswerText } from "./voice-memory-question-prompt";
+import { answerGlobalVoiceQuestion } from "./voice-memory-global-question";
 import { VoiceMemoryOrganizer } from "./voice-memory-organizer";
 export { transcriptForPrompt } from "./voice-memory-organizer";
 import { bindTranscriptToKnownSpeaker, mergeSpeakerTranscript } from "./speaker-transcript";
@@ -909,11 +909,7 @@ export class AiVoiceMemoryService {
           });
         }
       }
-      const transcriptionValidity = evaluateVoiceMemoryTranscriptionValidity(
-        record.transcriptionStats,
-        record.transcriptionUnits,
-      );
-      const partialTranscription = !transcriptionValidity.complete;
+      const partialTranscription = !isTranscriptionExecutionComplete(record);
       record = await this.save({
         ...record,
         phase: "ready",
@@ -1111,43 +1107,9 @@ export class AiVoiceMemoryService {
   }
 
   async askMemory(request: VoiceMemoryGlobalQuestionRequest): Promise<VoiceMemoryAnswer> {
-    const question = request.question.trim().slice(0, 500);
-    if (!question) throw new Error("memory_question_required");
-    const roomId = this.textGateway.questionRoomId();
-    const candidates = roomId ? this.store.related(question, 24, roomId) : [];
-    const answer = await this.runQuestion((signal) =>
-      this.textGateway.generateJson<VoiceMemoryAnswer>({
-        roomId,
-        purpose: "question",
-        manual: true,
-        maxNewTokens: 700,
-        signal,
-        prompt: roomQuestionPrompt(question, candidates),
-      }),
+    return answerGlobalVoiceQuestion(request, this.textGateway, this.store, (operation) =>
+      this.runQuestion(operation),
     );
-    return {
-      text: assistantAnswerText(answer.text),
-      sources: (Array.isArray(answer.sources) ? answer.sources : [])
-        .map((source) => {
-          const match = /^memory-(\d+)$/.exec(source.segmentId);
-          const candidate = match
-            ? candidates[Number.parseInt(match[1] ?? "0", 10) - 1]
-            : undefined;
-          return candidate
-            ? {
-                startMs: candidate.startMs,
-                segmentId: source.segmentId,
-                quote: String(source.quote || candidate.excerpt).slice(0, 240),
-                recordingId: candidate.recordingId,
-                filePath: candidate.filePath,
-                roomName: candidate.roomName,
-                createdAt: candidate.createdAt,
-              }
-            : undefined;
-        })
-        .filter((source): source is NonNullable<typeof source> => Boolean(source))
-        .slice(0, 8),
-    };
   }
 
   private async transcribe(
@@ -1205,7 +1167,7 @@ export class AiVoiceMemoryService {
     onStage?.("preprocess");
     const transcriptionProvider = this.getTranscriptionProvider();
     if (transcriptionProvider !== "local") {
-      if (requestedModelId || requestedBenchmark) {
+      if (requestedBenchmark || record.taskId?.startsWith("model-comparison:")) {
         throw new Error("remote_asr_model_comparison_not_supported");
       }
       return transcribeWithRemoteProvider({

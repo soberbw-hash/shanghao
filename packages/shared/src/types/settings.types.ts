@@ -52,6 +52,7 @@ export interface AppSettings {
   isRecordingWasteAutoCleanupEnabled: boolean;
   aiAsrModel: AiAsrModelId;
   aiTranscriptionProvider?: AiTranscriptionProvider;
+  aiTextModelPreset?: "cloud" | "glm" | "deepseek" | "custom";
   aiOrganizerProvider: AiTextProvider;
   aiRoomAskProvider: AiTextProvider;
   aiProcessingMode: AiProcessingMode;

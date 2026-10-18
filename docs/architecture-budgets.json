@@ -173,5 +173,20 @@
   "apps/desktop/src/renderer/src/styles/parts/222-ai-inline-question.css": 125,
   "apps/desktop/src/renderer/src/styles/parts/223-assistant-avatar-motion.css": 85,
   "apps/desktop/src/renderer/src/styles/parts/224-quick-message-library-spacing.css": 20,
-  "apps/desktop/src/renderer/src/styles/parts/225-assistant-companion.css": 80
+  "apps/desktop/src/renderer/src/styles/parts/225-assistant-companion.css": 80,
+  "apps/desktop/src/renderer/src/styles/parts/226-member-availability.css": 100,
+  "apps/desktop/src/renderer/src/styles/parts/227-ai-conversation.css": 120,
+  "apps/desktop/src/main/voice-memory-global-question.ts": 120,
+  "apps/desktop/src/renderer/src/components/chat/MemberAvailabilityControls.tsx": 150,
+  "apps/desktop/src/renderer/src/features/room/memberAvailability.ts": 50,
+  "apps/desktop/src/renderer/src/styles/parts/228-collection-preview.css": 150,
+  "apps/desktop/src/renderer/src/styles/parts/229-assistant-layout.css": 80,
+  "apps/desktop/src/renderer/src/styles/parts/230-room-feedback.css": 100,
+  "apps/desktop/src/renderer/src/styles/parts/231-microphone-level.css": 70,
+  "apps/desktop/src/main/remote-transcription-parts.ts": 140,
+  "apps/desktop/src/main/chat-link-metadata.ts": 80,
+  "apps/desktop/src/renderer/src/components/room/CollectionLinkPreview.tsx": 110,
+  "apps/desktop/src/renderer/src/components/audio/MicrophoneLevelFill.tsx": 70,
+  "apps/desktop/src/renderer/src/features/recording/useRecordingMarkerCue.ts": 50,
+  "apps/desktop/src/renderer/src/features/recording/recordingMarkerLabel.ts": 12
 }

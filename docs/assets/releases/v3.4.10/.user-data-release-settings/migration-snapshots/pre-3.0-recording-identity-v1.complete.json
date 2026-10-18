@@ -1,0 +1,15 @@
+{
+  "snapshot": "C:\\Users\\sober\\Documents\\Codex\\2026-10-17\\files-mentioned-by-the-user-codex\\work\\shanghao\\docs\\assets\\releases\\v3.4.10\\.user-data-release-settings\\migration-snapshots\\pre-3.0-recording-identity-v1-1792338538277",
+  "schemaVersion": 1,
+  "snapshotId": "pre-3.0-recording-identity-v1",
+  "createdAt": "2026-10-18T15:48:58.278Z",
+  "entries": [
+    {
+      "source": "C:\\Users\\sober\\Documents\\Codex\\2026-10-17\\files-mentioned-by-the-user-codex\\work\\shanghao\\docs\\assets\\releases\\v3.4.10\\.user-data-release-settings\\settings.json",
+      "relativePath": "settings.json",
+      "size": 3835,
+      "sha256": "ef067ae3e1927899bacdbf0cfd081d99a599c6a8ab390ecd1128d34f65325ce0"
+    }
+  ],
+  "skipped": []
+}

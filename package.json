@@ -1,6 +1,6 @@
 {
   "name": "shanghao-workspace",
-  "version": "3.4.9",
+  "version": "3.4.10",
   "private": true,
   "license": "AGPL-3.0-or-later",
   "packageManager": "pnpm@10.34.5",
@@ -29,6 +29,7 @@
     "relay:health": "node -e \"fetch('http://127.0.0.1:43821/health').then(r=>r.text()).then(console.log)\"",
     "test:five-peer-audio": "corepack pnpm relay:build && node scripts/verify-five-peer-audio.mjs",
     "test:five-peer-media": "node scripts/verify-five-peer-media.mjs",
+    "test:room-ui": "node scripts/verify-room-ui.mjs",
     "test:audio-worklet": "corepack pnpm --dir apps/desktop exec electron tests/electron-audio-worklet-smoke.cjs",
     "test:phone-mic": "corepack pnpm --filter @private-voice/shared build && corepack pnpm --filter @private-voice/signaling build:phone-mic-sidecar && node scripts/verify-phone-mic-sidecar.mjs && corepack pnpm --dir apps/desktop exec tsx --test tests/phone-mic-bridge.test.ts tests/phone-mic-health.test.ts tests/phone-mic-source-state.test.ts tests/phone-mic-usb-service.test.ts",
     "test:migration": "corepack pnpm --dir apps/desktop exec tsx --test tests/settings-migration.test.ts tests/settings-store-roundtrip.test.ts tests/user-data-migration.test.ts",

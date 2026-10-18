@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "snapshotId": "pre-3.0-recording-identity-v1",
+  "createdAt": "2026-10-18T15:48:46.609Z",
+  "entries": [
+    {
+      "source": "C:\\Users\\sober\\Documents\\Codex\\2026-10-17\\files-mentioned-by-the-user-codex\\work\\shanghao\\docs\\assets\\releases\\v3.4.10\\.user-data-release-home\\settings.json",
+      "relativePath": "settings.json",
+      "size": 3835,
+      "sha256": "98a27ff5fa5667a066644a1baea15efbb0510995a7fbcd599090e68366ebddd1"
+    }
+  ],
+  "skipped": []
+}

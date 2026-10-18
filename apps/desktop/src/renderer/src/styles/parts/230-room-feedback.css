@@ -1,0 +1,64 @@
+.quick-message-slot.is-bound {
+  border-style: solid;
+  background: #eaf4ff;
+  border-color: #bfd7f1;
+}
+.quick-message-slot.is-unbound {
+  border-style: dashed;
+  background: rgba(248, 250, 253, 0.75);
+  color: #8b9aad;
+}
+.quick-message-binding-state {
+  font-size: 9px;
+  padding: 1px 4px;
+  border-radius: 5px;
+  background: #d8eaff;
+  color: #6088b5;
+}
+.is-unbound .quick-message-binding-state {
+  color: #8a98ab;
+  background: #eaf0f6;
+}
+.scene-availability-bubble {
+  bottom: 60%;
+  left: calc(100% + 9px);
+  transform: scale(calc(1 / var(--character-scale, 1)));
+  transform-origin: left bottom;
+  border-radius: 13px 13px 13px 3px;
+  padding: 6px 9px;
+  font-size: 11px;
+  pointer-events: none;
+}
+[data-scene-zone="gameDesk3"] .scene-availability-bubble,
+[data-scene-zone="gameDesk5"] .scene-availability-bubble {
+  left: auto;
+  right: calc(100% + 9px);
+  transform-origin: right bottom;
+  border-radius: 13px 13px 3px 13px;
+}
+.ai-provider-fields {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  width: 100%;
+}
+.ai-provider-fields label {
+  font-size: 12px;
+}
+.ai-provider-fields input {
+  width: 100%;
+  margin-top: 4px;
+  font: inherit;
+  padding: 8px 10px;
+  border-radius: 10px;
+}
+.ai-provider-form-actions {
+  display: flex;
+  gap: 8px;
+  grid-column: 1 / -1;
+}
+@media (max-width: 1100px) {
+  .ai-provider-fields {
+    grid-template-columns: 1fr;
+  }
+}

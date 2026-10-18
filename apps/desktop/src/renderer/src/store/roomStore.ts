@@ -236,6 +236,7 @@ const areMembersEqual = (left: RoomMember[], right: RoomMember[]): boolean => {
       member.isMuted === candidate.isMuted &&
       member.isDeafened === candidate.isDeafened &&
       member.callModeActive === candidate.callModeActive &&
+      member.availabilityStatus === candidate.availabilityStatus &&
       member.activity === candidate.activity &&
       member.sceneZone === candidate.sceneZone &&
       member.gameName === candidate.gameName &&

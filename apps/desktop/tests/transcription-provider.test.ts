@@ -123,6 +123,12 @@ test("ASR account and key errors give actionable messages without raw provider t
   assert.match(transcriptionProviderError("cloud_asr_http_402")!, /余额不足/);
   assert.match(transcriptionProviderError("cloud_asr_http_401")!, /密钥/);
   assert.match(transcriptionProviderError("cloud_asr_http_429")!, /稍后/);
+  assert.match(transcriptionProviderError("cloud_asr_http_402")!, /免费模型.*欠费/);
+  assert.match(
+    transcriptionProviderError("remote_asr_model_comparison_not_supported")!,
+    /本地模型对比/,
+  );
+  assert.match(transcriptionProviderError("cloud_asr_http_400")!, /音频或参数/);
   assert.equal(transcriptionProviderError("unrelated_failure"), undefined);
 });
 

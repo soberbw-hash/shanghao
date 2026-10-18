@@ -186,7 +186,12 @@ test("room exposes one dedicated AI entry with suggestions, prompt and history s
   assert.equal(assistantWelcomeSource.includes("<AssistantBotAvatar mood={mood}"), true);
   assert.equal(assistantWelcomeSource.includes("chat-ai-welcome"), true);
   assert.equal(assistantMascotStyles.includes('.chat-ai-welcome-shell[data-open="true"]'), true);
-  assert.equal(assistantMascotStyles.includes("width: min(160px, 100%)"), true);
+  assert.equal(assistantMascotStyles.includes("width: min(112px, 100%)"), true);
+  assert.equal(
+    assistantMascotStyles.includes(".chat-ai-welcome:has(.room-ai-user-question)"),
+    true,
+  );
+  assert.equal(dialogSource.includes('<details className="room-question-history"'), true);
   assert.equal(assistantMascotStyles.includes("width 520ms cubic-bezier(0.22, 1, 0.36, 1)"), true);
   assert.equal(chatSource.includes("isAsking={isRoomAskOpen}"), true);
   assert.equal(chatSource.includes("onOpenAssistant={onOpenRoomAi}"), true);

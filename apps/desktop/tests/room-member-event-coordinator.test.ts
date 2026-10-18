@@ -160,3 +160,68 @@ test("music toggle controls ignore local echoes and reach remote listeners", () 
 
   assert.deepEqual(controls, [{ presetId: musicPresetId, peerId: "remote" }]);
 });
+
+test("a delayed seated echo cannot undo manual away while mute has already applied", () => {
+  const coordinator = new RoomMemberEventCoordinator({
+    localPeerId: "local",
+    onMembers: () => {},
+    onCollection: () => {},
+    onKnock: () => {},
+    onReaction: () => {},
+    onQuickMessage: () => {},
+  });
+  coordinator.setMembers([createMember("local", true, "gameDesk1")]);
+  coordinator.updateLocalPresence(false, "restroom", "restroomZone");
+  coordinator.handleMemberState({
+    type: "member_state",
+    roomId: "main",
+    peerId: "local",
+    sceneZone: "gameDesk1",
+    activity: "gaming",
+    isMuted: true,
+  });
+  assert.equal(coordinator.currentMembers[0]?.sceneZone, "restroomZone");
+  assert.equal(coordinator.currentMembers[0]?.activity, "restroom");
+  assert.equal(coordinator.currentMembers[0]?.isMuted, true);
+});
+
+test("persistent availability survives snapshots, clears on return, and never creates a reaction", () => {
+  let reactions = 0;
+  const coordinator = new RoomMemberEventCoordinator({
+    localPeerId: "local",
+    onMembers: () => {},
+    onCollection: () => {},
+    onKnock: () => {},
+    onReaction: () => {
+      reactions++;
+    },
+    onQuickMessage: () => {},
+  });
+  coordinator.setMembers([
+    createMember("local", true, "gameDesk1"),
+    createMember("remote", false, "restroomZone"),
+  ]);
+  const control = {
+    type: "scene_reaction" as const,
+    roomId: "main",
+    peerId: "remote",
+    emoji: "👍" as const,
+    createdAt: new Date().toISOString(),
+    targetPeerId: "shanghao-status:v1:eating",
+  };
+  assert.equal(isSignalEnvelope(control), true);
+  coordinator.handleReaction(control);
+  assert.equal(coordinator.currentMembers[1]?.availabilityStatus, "eating");
+  coordinator.setMembers([
+    createMember("local", true, "gameDesk1"),
+    createMember("remote", false, "restroomZone"),
+  ]);
+  assert.equal(coordinator.currentMembers[1]?.availabilityStatus, "eating");
+  coordinator.handleReaction({ ...control, targetPeerId: "shanghao-status:v1:available" });
+  assert.equal(coordinator.currentMembers[1]?.availabilityStatus, undefined);
+  coordinator.handleReaction(control);
+  coordinator.setMembers([createMember("local", true, "gameDesk1")]);
+  coordinator.setMembers([createMember("remote", false, "gameDesk2")]);
+  assert.equal(coordinator.currentMembers[0]?.availabilityStatus, undefined);
+  assert.equal(reactions, 0);
+});

@@ -480,7 +480,7 @@ test("collection read markers migrate by room without accepting unknown room key
 test("legacy room question providers follow the unified text provider", () => {
   for (const aiRoomAskProvider of ["local", "custom"] as const) {
     const result = migrateSettings({ ...defaultSettings, aiRoomAskProvider });
-    assert.equal(result.settings.aiRoomAskProvider, "cloud");
+    assert.equal(result.settings.aiRoomAskProvider, "custom");
   }
 });
 

@@ -99,6 +99,13 @@
   flex-direction: column;
   align-items: flex-start;
   gap: 5px;
+  align-self: flex-start;
+  padding-top: 24px;
+}
+
+.chat-ai-welcome > .assistant-bot-companion {
+  align-self: flex-start;
+  margin-top: 12px;
 }
 
 .chat-ai-welcome-copy > strong {
@@ -108,16 +115,6 @@
   font-weight: 500;
   letter-spacing: 0.01em;
   line-height: 1.5;
-}
-
-.chat-ai-welcome-copy > p {
-  margin: 0;
-  color: #70849e;
-  font-family: inherit;
-  font-size: 13px;
-  font-weight: 400;
-  letter-spacing: 0.01em;
-  line-height: 1.75;
 }
 
 .chat-ai-welcome-close {

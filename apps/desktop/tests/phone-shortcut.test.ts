@@ -136,3 +136,22 @@ test("Space and both side buttons support hold/toggle without repeats or wrong r
     }
   }
 });
+
+test("rejected or repeated hook events cannot outrank an independent physical sample", () => {
+  const states: (boolean | undefined)[] = [];
+  const binding = PhoneShortcut.parse("ArrowDown", "hold", (value) => states.push(value));
+  const key = { ...event(false), keycode: UiohookKey.ArrowDown };
+  assert.equal(binding.keyDown({ ...key, altKey: true }), false);
+  binding.synchronizePhysical({
+    down: true,
+    ctrlKey: false,
+    shiftKey: false,
+    altKey: false,
+    metaKey: false,
+  });
+  assert.deepEqual(states, [true]);
+  assert.equal(binding.keyDown(key), false);
+  assert.equal(binding.keyUp(key), true);
+  assert.equal(binding.keyUp(key), false);
+  assert.deepEqual(states, [true, false]);
+});

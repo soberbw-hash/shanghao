@@ -75,7 +75,12 @@ test("actual room idle callbacks restore muted and open microphones over repeate
   );
   let idleSeconds = 0;
   let fail = false;
-  const member = { isLocal: true, sceneZone: "gameDesk2", activity: "idle" };
+  const member = {
+    isLocal: true,
+    sceneZone: "gameDesk2",
+    activity: "idle",
+    availabilityStatus: undefined as "away" | "eating" | "restroom" | undefined,
+  };
   const room = { connectionState: RoomConnectionState.Connected, members: [member] };
   const away = { current: undefined as { method: string; wasMuted: boolean } | undefined };
   const pageWindow = {
@@ -108,6 +113,14 @@ test("actual room idle callbacks restore muted and open microphones over repeate
     RoomConnectionState,
   ) as () => Promise<void>;
   try {
+    idleSeconds = 3_600;
+    for (const status of ["away", "eating", "restroom"] as const) {
+      member.availabilityStatus = status;
+      await check();
+      assert.equal(member.sceneZone, "gameDesk2", "explicit status must stay at its seat");
+      assert.equal(away.current, undefined);
+    }
+    member.availabilityStatus = undefined;
     for (const wasMuted of [true, false, true, false]) {
       useAudioStore.getState().setAudioState({ isMuted: wasMuted, isDeafened: false });
       idleSeconds = 1_800;
@@ -154,6 +167,7 @@ test("actual room idle callbacks restore muted and open microphones over repeate
       "detectedGameRef",
       "detectedMusicRef",
       "detectedGameIconRef",
+      "writeRendererLog",
       handlerBody,
     );
     const select = (zone: string) =>
@@ -174,6 +188,7 @@ test("actual room idle callbacks restore muted and open microphones over repeate
         {},
         {},
         {},
+        async () => undefined,
       );
     for (const wasMuted of [true, false]) {
       useAudioStore.getState().setAudioState({ isMuted: wasMuted, isDeafened: false });

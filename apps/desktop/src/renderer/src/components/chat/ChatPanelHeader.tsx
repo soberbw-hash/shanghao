@@ -10,6 +10,7 @@ export const ChatPanelHeader = ({
   onOpenAssistant,
   onCloseAssistant,
   onOpenQuickSettings,
+  presenceControls,
   children,
 }: {
   mood: AssistantBotMood;
@@ -18,6 +19,7 @@ export const ChatPanelHeader = ({
   onOpenAssistant?: () => void;
   onCloseAssistant?: () => void;
   onOpenQuickSettings?: () => void;
+  presenceControls?: ReactNode;
   children: ReactNode;
 }) => {
   const [isWelcomeOpen, setWelcomeOpen] = useState(false);
@@ -31,6 +33,7 @@ export const ChatPanelHeader = ({
         <div className="chat-panel-title whitespace-nowrap text-[13px] font-semibold text-[#1a2332]">
           聊天
         </div>
+        {presenceControls}
         <div className="chat-title-actions flex shrink-0 items-center gap-2.5">
           {onOpenAssistant ? (
             <ChatAssistantEntry

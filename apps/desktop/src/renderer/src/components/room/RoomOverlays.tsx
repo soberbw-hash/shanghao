@@ -11,6 +11,7 @@ import {
   reducedFadeVariants,
 } from "../../features/motion/motionPresets";
 import { Button } from "../base/Button";
+import { CollectionLinkPreview } from "./CollectionLinkPreview";
 export { ScreenSourcePicker } from "./ScreenSourcePicker";
 
 interface CollectionDialogProps {
@@ -113,31 +114,45 @@ export const CollectionDialog = ({
                 visibleItems.map((item) => (
                   <article
                     key={item.id}
-                    className={cn("collection-item", item.kind === "image" && "is-image")}
+                    className={cn(
+                      "collection-item",
+                      item.kind === "image" && "is-image",
+                      item.kind === "link" && "is-link",
+                    )}
                   >
                     <div className="collection-item-copy">
-                      <span>
-                        {item.kind === "text"
-                          ? "便笺"
-                          : item.kind === "game"
-                            ? "游戏"
-                            : item.kind === "image"
-                              ? "图片"
-                              : "链接"}
-                      </span>
-                      <strong>{item.title}</strong>
-                      {item.kind === "image" ? (
-                        <img
-                          className="collection-item-image"
-                          src={item.content}
-                          alt={item.title}
-                          loading="lazy"
-                          decoding="async"
-                          fetchPriority="low"
-                          draggable={false}
+                      {item.kind === "link" ? (
+                        <CollectionLinkPreview
+                          url={item.content}
+                          title={item.title}
+                          onOpen={onOpenItem}
                         />
                       ) : (
-                        <p>{item.content}</p>
+                        <>
+                          <span>
+                            {item.kind === "text"
+                              ? "便笺"
+                              : item.kind === "game"
+                                ? "游戏"
+                                : item.kind === "image"
+                                  ? "图片"
+                                  : "链接"}
+                          </span>
+                          <strong>{item.title}</strong>
+                          {item.kind === "image" ? (
+                            <img
+                              className="collection-item-image"
+                              src={item.content}
+                              alt={item.title}
+                              loading="lazy"
+                              decoding="async"
+                              fetchPriority="low"
+                              draggable={false}
+                            />
+                          ) : (
+                            <p>{item.content}</p>
+                          )}
+                        </>
                       )}
                       <small>由 {item.createdByNickname} 留下</small>
                     </div>

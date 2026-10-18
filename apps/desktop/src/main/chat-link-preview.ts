@@ -3,10 +3,14 @@ import http from "node:http";
 import https from "node:https";
 import { isIP } from "node:net";
 import { net } from "electron";
+import { readChatLinkMetadata } from "./chat-link-metadata";
 
 export interface ChatLinkPreview {
   title?: string;
+  description?: string;
+  siteName?: string;
   imageDataUrl?: string;
+  imageKind?: "cover" | "icon";
 }
 
 const MAX_HTML_BYTES = 256 * 1024;
@@ -178,24 +182,10 @@ const readPublicResource = async (
   });
 };
 
-const metaValue = (html: string, name: string): string | undefined => {
-  for (const tag of html.match(/<meta\s+[^>]*>/gi) ?? []) {
-    const attributes = new Map<string, string>();
-    for (const match of tag.matchAll(/([\w:-]+)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/g)) {
-      if (match[1]) attributes.set(match[1].toLowerCase(), match[2] ?? match[3] ?? match[4] ?? "");
-    }
-    if ((attributes.get("property") ?? attributes.get("name"))?.toLowerCase() === name) {
-      return attributes.get("content");
-    }
-  }
-  return undefined;
-};
-
 const loadPreview = async (raw: string): Promise<ChatLinkPreview> => {
   const page = await readPublicResource(raw, MAX_HTML_BYTES);
   const html = page.contentType === "text/html" ? page.body.toString("utf8") : "";
-  const title = metaValue(html, "og:title")?.slice(0, 100);
-  const rawImage = metaValue(html, "og:image") ?? metaValue(html, "twitter:image");
+  const { image: rawImage, ...metadata } = readChatLinkMetadata(html);
   const icon = html.match(/<link\s+[^>]*rel=["'][^"']*icon[^"']*["'][^>]*>/i)?.[0];
   const iconHref = icon?.match(/\bhref\s*=\s*["']([^"']+)["']/i)?.[1];
   const candidates = [rawImage, iconHref, "/favicon.ico"].filter((value): value is string =>
@@ -220,14 +210,15 @@ const loadPreview = async (raw: string): Promise<ChatLinkPreview> => {
       )
         continue;
       return {
-        title,
+        ...metadata,
+        imageKind: candidate === rawImage ? "cover" : "icon",
         imageDataUrl: `data:${image.contentType};base64,${image.body.toString("base64")}`,
       };
     } catch {
       // A missing Open Graph image can still have a normal site icon.
     }
   }
-  return { title };
+  return metadata;
 };
 
 export const getChatLinkPreview = (raw: string): Promise<ChatLinkPreview> => {

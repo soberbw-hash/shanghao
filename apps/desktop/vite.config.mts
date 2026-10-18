@@ -60,7 +60,13 @@ export default defineConfig({
     host: "127.0.0.1",
     port: 5173,
     watch: {
-      ignored: ["**/.dev-user-data/**"],
+      ignored: [
+        "**/.dev-user-data/**",
+        "**/dist/**",
+        "**/dist-electron/**",
+        "**/resources/asset-studio/**",
+        "**/release/**",
+      ],
     },
   },
 });

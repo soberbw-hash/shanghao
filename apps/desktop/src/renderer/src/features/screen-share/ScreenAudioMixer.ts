@@ -10,11 +10,20 @@ export class ScreenAudioMixer {
     return Boolean(this.mixedTrack);
   }
 
+  async restore(
+    primaryTrack: MediaStreamTrack | undefined,
+    connect: (track: MediaStreamTrack) => Promise<void>,
+  ): Promise<void> {
+    const revision = this.revision;
+    if (primaryTrack?.readyState === "live" && this.hasActiveMix()) await connect(primaryTrack);
+    if (revision === this.revision) this.dispose();
+  }
+
   async mix(
     microphoneTrack: MediaStreamTrack,
     systemAudioTrack: MediaStreamTrack,
     connect?: (track: MediaStreamTrack) => Promise<void>,
-  ): Promise<MediaStreamTrack | undefined> {
+  ): Promise<MediaStreamTrack> {
     const revision = ++this.revision;
     let context: AudioContext;
     try {
@@ -39,7 +48,7 @@ export class ScreenAudioMixer {
       preparedTrack = mixedTrack;
       if (!mixedTrack) {
         await context.close();
-        return undefined;
+        throw new Error("screen_audio_mix_track_missing");
       }
 
       mixedTrack.contentHint = "speech";

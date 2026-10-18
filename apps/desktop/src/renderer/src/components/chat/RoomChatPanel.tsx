@@ -25,6 +25,7 @@ interface RoomChatPanelProps {
   onCloseRoomAi: () => void;
   isRoomAskOpen: boolean;
   roomAiPanel: ReactNode;
+  presenceControls?: ReactNode;
   assistantMood: AssistantBotMood;
   onAssistantMoodChange: (mood: AssistantBotMood) => void;
   canSend: boolean;
@@ -43,6 +44,7 @@ export const RoomChatPanel = memo(
     onCloseRoomAi,
     isRoomAskOpen,
     roomAiPanel,
+    presenceControls,
     assistantMood,
     onAssistantMoodChange,
     canSend,
@@ -122,6 +124,7 @@ export const RoomChatPanel = memo(
         onCloseRoomAi={onCloseRoomAi}
         isRoomAskOpen={isRoomAskOpen}
         roomAiPanel={roomAiPanel}
+        presenceControls={presenceControls}
         assistantMood={assistantMood}
         onSendImage={sendImage}
         onRecall={async (messageId) => {

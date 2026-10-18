@@ -820,7 +820,7 @@ export interface VoiceMemoryProcessRequest {
   asrModelId?: AiAsrModelId;
   /** Optional metadata for comparison runs; it never changes recognition parameters. */
   benchmark?: VoiceMemoryBenchmarkRunMetadata;
-  markers?: Array<{ id: string; offsetMs: number }>;
+  markers?: Array<{ id: string; offsetMs: number; label?: string }>;
   speakingTimeline?: VoiceMemorySpeakingObservation[];
   taskId?: string;
 }

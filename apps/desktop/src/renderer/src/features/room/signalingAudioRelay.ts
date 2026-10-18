@@ -467,6 +467,7 @@ export class SignalingAudioRelay {
     if (state) {
       this.resetPeerQueue(peerId, state, reason);
     }
+    this.peerStates.delete(peerId);
     this.mixer.forgetPeerMediaPath(peerId);
   }
 

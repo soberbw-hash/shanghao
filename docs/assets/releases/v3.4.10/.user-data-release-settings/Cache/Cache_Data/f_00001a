@@ -1,0 +1,337 @@
+import { createHotContext as __vite__createHotContext } from "/@vite/client";import.meta.hot = __vite__createHotContext("/src/components/status/UpdateGatePage.tsx");const _jsxDEV = __vite__cjsImport0_react_jsxDevRuntime["jsxDEV"];const useState = __vite__cjsImport1_react["useState"];import __vite__cjsImport0_react_jsxDevRuntime from "/@fs/C:/Users/sober/Documents/Codex/2026-10-17/files-mentioned-by-the-user-codex/work/shanghao/apps/desktop/node_modules/.vite/deps/react_jsx-dev-runtime.js?v=b37745cb";
+var _s = $RefreshSig$();
+import __vite__cjsImport1_react from "/@fs/C:/Users/sober/Documents/Codex/2026-10-17/files-mentioned-by-the-user-codex/work/shanghao/apps/desktop/node_modules/.vite/deps/react.js?v=b37745cb";
+import { Download, RefreshCcw, AlertCircle, FileText } from "/@fs/C:/Users/sober/Documents/Codex/2026-10-17/files-mentioned-by-the-user-codex/work/shanghao/apps/desktop/node_modules/.vite/deps/lucide-react.js?v=b37745cb";
+import brandMarkUrl from "/src/assets/brand-mark.png?import";
+import { Button } from "/src/components/base/Button.tsx?t=1792337404327";
+import { useSettingsStore } from "/src/store/settingsStore.ts?t=1792337404327";
+import { useAppStore } from "/src/store/appStore.ts";
+import { ReleaseDetailModal } from "/src/components/status/ReleaseDetailModal.tsx?t=1792337404327";
+import { getReleaseHistoryEntry } from "/src/components/status/releaseHistory.ts?t=1792337404338";
+export const UpdateGatePage = ()=>{
+    _s();
+    const [isReleaseNotesOpen, setIsReleaseNotesOpen] = useState(false);
+    const updateInfo = useSettingsStore((state)=>state.updateInfo);
+    const updateStatus = useSettingsStore((state)=>state.updateStatus);
+    const downloadUpdate = useSettingsStore((state)=>state.downloadUpdate);
+    const installUpdate = useSettingsStore((state)=>state.installUpdate);
+    const checkUpdates = useSettingsStore((state)=>state.checkUpdates);
+    const requiredUpdate = useAppStore((state)=>state.requiredUpdate);
+    const latestVersion = requiredUpdate?.requiredVersion ?? updateInfo?.latestVersion ?? updateStatus.latestVersion ?? "";
+    const isForced = Boolean(requiredUpdate || updateInfo?.forceUpdate || updateStatus.forceUpdate);
+    const isDownloading = updateStatus.phase === "downloading";
+    const isInstalling = updateStatus.phase === "installing";
+    const isReady = updateStatus.phase === "ready_to_restart" || updateStatus.phase === "downloaded";
+    const isError = updateStatus.phase === "error";
+    return /*#__PURE__*/ _jsxDEV("div", {
+        className: "update-gate-page",
+        children: [
+            /*#__PURE__*/ _jsxDEV("div", {
+                className: "update-gate-card",
+                children: [
+                    /*#__PURE__*/ _jsxDEV("div", {
+                        className: "flex justify-center",
+                        children: /*#__PURE__*/ _jsxDEV("img", {
+                            src: brandMarkUrl,
+                            alt: "上号",
+                            draggable: false,
+                            className: "h-14 w-14 object-contain"
+                        }, void 0, false, {
+                            fileName: "C:/Users/sober/Documents/Codex/2026-10-17/files-mentioned-by-the-user-codex/work/shanghao/apps/desktop/src/renderer/src/components/status/UpdateGatePage.tsx",
+                            lineNumber: 35,
+                            columnNumber: 11
+                        }, this)
+                    }, void 0, false, {
+                        fileName: "C:/Users/sober/Documents/Codex/2026-10-17/files-mentioned-by-the-user-codex/work/shanghao/apps/desktop/src/renderer/src/components/status/UpdateGatePage.tsx",
+                        lineNumber: 34,
+                        columnNumber: 9
+                    }, this),
+                    /*#__PURE__*/ _jsxDEV("div", {
+                        className: "mt-5 text-center text-xs font-semibold tracking-[0.18em] text-[#7B8798]",
+                        children: isInstalling ? "正在安装" : isDownloading ? "正在更新" : isForced ? "需要更新" : "发现新版"
+                    }, void 0, false, {
+                        fileName: "C:/Users/sober/Documents/Codex/2026-10-17/files-mentioned-by-the-user-codex/work/shanghao/apps/desktop/src/renderer/src/components/status/UpdateGatePage.tsx",
+                        lineNumber: 43,
+                        columnNumber: 9
+                    }, this),
+                    /*#__PURE__*/ _jsxDEV("h2", {
+                        className: "mt-2 text-center text-[28px] font-[740] tracking-[-0.04em] text-[#172033]",
+                        children: [
+                            "上号 ",
+                            latestVersion
+                        ]
+                    }, void 0, true, {
+                        fileName: "C:/Users/sober/Documents/Codex/2026-10-17/files-mentioned-by-the-user-codex/work/shanghao/apps/desktop/src/renderer/src/components/status/UpdateGatePage.tsx",
+                        lineNumber: 52,
+                        columnNumber: 9
+                    }, this),
+                    /*#__PURE__*/ _jsxDEV("p", {
+                        className: "mt-2 text-center text-sm leading-6 text-[#44546A]",
+                        children: isInstalling ? "安装完成后会自动重新打开。" : isDownloading ? "正在后台下载，完成后需要你确认安装。" : isReady ? "新版已下载完成，确认后会安装并重新打开。" : isForced ? "更新后才能继续进入频道。" : "新版会在后台下载，完成后由你决定何时安装。"
+                    }, void 0, false, {
+                        fileName: "C:/Users/sober/Documents/Codex/2026-10-17/files-mentioned-by-the-user-codex/work/shanghao/apps/desktop/src/renderer/src/components/status/UpdateGatePage.tsx",
+                        lineNumber: 55,
+                        columnNumber: 9
+                    }, this),
+                    requiredUpdate ? /*#__PURE__*/ _jsxDEV("div", {
+                        className: "mt-4 rounded-2xl border border-[rgba(174,199,226,0.64)] bg-white/65 px-4 py-3 text-sm leading-6 text-[#44546A]",
+                        children: [
+                            /*#__PURE__*/ _jsxDEV("strong", {
+                                className: "block text-[#26364d]",
+                                children: "需要更新上号"
+                            }, void 0, false, {
+                                fileName: "C:/Users/sober/Documents/Codex/2026-10-17/files-mentioned-by-the-user-codex/work/shanghao/apps/desktop/src/renderer/src/components/status/UpdateGatePage.tsx",
+                                lineNumber: 68,
+                                columnNumber: 13
+                            }, this),
+                            "为了避免不同版本之间出现语音、聊天和房间状态错乱，当前版本已经不能进入频道。",
+                            /*#__PURE__*/ _jsxDEV("span", {
+                                className: "mt-2 block tabular-nums",
+                                children: [
+                                    "当前版本：",
+                                    requiredUpdate.currentVersion,
+                                    " · 需要版本：",
+                                    requiredUpdate.requiredVersion
+                                ]
+                            }, void 0, true, {
+                                fileName: "C:/Users/sober/Documents/Codex/2026-10-17/files-mentioned-by-the-user-codex/work/shanghao/apps/desktop/src/renderer/src/components/status/UpdateGatePage.tsx",
+                                lineNumber: 70,
+                                columnNumber: 13
+                            }, this)
+                        ]
+                    }, void 0, true, {
+                        fileName: "C:/Users/sober/Documents/Codex/2026-10-17/files-mentioned-by-the-user-codex/work/shanghao/apps/desktop/src/renderer/src/components/status/UpdateGatePage.tsx",
+                        lineNumber: 67,
+                        columnNumber: 11
+                    }, this) : null,
+                    isDownloading ? /*#__PURE__*/ _jsxDEV("div", {
+                        className: "mt-6",
+                        children: [
+                            /*#__PURE__*/ _jsxDEV("div", {
+                                className: "mb-2 flex justify-between text-xs text-[#44546A]",
+                                children: [
+                                    /*#__PURE__*/ _jsxDEV("span", {
+                                        children: updateStatus.message
+                                    }, void 0, false, {
+                                        fileName: "C:/Users/sober/Documents/Codex/2026-10-17/files-mentioned-by-the-user-codex/work/shanghao/apps/desktop/src/renderer/src/components/status/UpdateGatePage.tsx",
+                                        lineNumber: 79,
+                                        columnNumber: 15
+                                    }, this),
+                                    /*#__PURE__*/ _jsxDEV("span", {
+                                        children: [
+                                            Math.round(updateStatus.percent ?? 0),
+                                            "%"
+                                        ]
+                                    }, void 0, true, {
+                                        fileName: "C:/Users/sober/Documents/Codex/2026-10-17/files-mentioned-by-the-user-codex/work/shanghao/apps/desktop/src/renderer/src/components/status/UpdateGatePage.tsx",
+                                        lineNumber: 80,
+                                        columnNumber: 15
+                                    }, this)
+                                ]
+                            }, void 0, true, {
+                                fileName: "C:/Users/sober/Documents/Codex/2026-10-17/files-mentioned-by-the-user-codex/work/shanghao/apps/desktop/src/renderer/src/components/status/UpdateGatePage.tsx",
+                                lineNumber: 78,
+                                columnNumber: 13
+                            }, this),
+                            /*#__PURE__*/ _jsxDEV("div", {
+                                className: "h-2 overflow-hidden rounded-full bg-[#edf2f8]",
+                                children: /*#__PURE__*/ _jsxDEV("div", {
+                                    className: "h-full origin-left rounded-full bg-[#4DA3FF] transition-transform duration-300",
+                                    style: {
+                                        transform: `scaleX(${Math.max(0, Math.min(1, (updateStatus.percent ?? 0) / 100))})`
+                                    }
+                                }, void 0, false, {
+                                    fileName: "C:/Users/sober/Documents/Codex/2026-10-17/files-mentioned-by-the-user-codex/work/shanghao/apps/desktop/src/renderer/src/components/status/UpdateGatePage.tsx",
+                                    lineNumber: 83,
+                                    columnNumber: 15
+                                }, this)
+                            }, void 0, false, {
+                                fileName: "C:/Users/sober/Documents/Codex/2026-10-17/files-mentioned-by-the-user-codex/work/shanghao/apps/desktop/src/renderer/src/components/status/UpdateGatePage.tsx",
+                                lineNumber: 82,
+                                columnNumber: 13
+                            }, this)
+                        ]
+                    }, void 0, true, {
+                        fileName: "C:/Users/sober/Documents/Codex/2026-10-17/files-mentioned-by-the-user-codex/work/shanghao/apps/desktop/src/renderer/src/components/status/UpdateGatePage.tsx",
+                        lineNumber: 77,
+                        columnNumber: 11
+                    }, this) : null,
+                    isInstalling ? /*#__PURE__*/ _jsxDEV("div", {
+                        className: "mt-6 flex justify-center",
+                        children: /*#__PURE__*/ _jsxDEV("div", {
+                            className: "flex items-center gap-2 text-sm text-[#44546A]",
+                            children: [
+                                /*#__PURE__*/ _jsxDEV(RefreshCcw, {
+                                    className: "h-4 w-4 animate-spin"
+                                }, void 0, false, {
+                                    fileName: "C:/Users/sober/Documents/Codex/2026-10-17/files-mentioned-by-the-user-codex/work/shanghao/apps/desktop/src/renderer/src/components/status/UpdateGatePage.tsx",
+                                    lineNumber: 96,
+                                    columnNumber: 15
+                                }, this),
+                                "正在安装…"
+                            ]
+                        }, void 0, true, {
+                            fileName: "C:/Users/sober/Documents/Codex/2026-10-17/files-mentioned-by-the-user-codex/work/shanghao/apps/desktop/src/renderer/src/components/status/UpdateGatePage.tsx",
+                            lineNumber: 95,
+                            columnNumber: 13
+                        }, this)
+                    }, void 0, false, {
+                        fileName: "C:/Users/sober/Documents/Codex/2026-10-17/files-mentioned-by-the-user-codex/work/shanghao/apps/desktop/src/renderer/src/components/status/UpdateGatePage.tsx",
+                        lineNumber: 94,
+                        columnNumber: 11
+                    }, this) : isError ? /*#__PURE__*/ _jsxDEV("div", {
+                        className: "mt-6",
+                        children: [
+                            /*#__PURE__*/ _jsxDEV("div", {
+                                className: "mb-3 flex items-center justify-center gap-2 text-sm text-[#FF5A5A]",
+                                children: [
+                                    /*#__PURE__*/ _jsxDEV(AlertCircle, {
+                                        className: "h-4 w-4"
+                                    }, void 0, false, {
+                                        fileName: "C:/Users/sober/Documents/Codex/2026-10-17/files-mentioned-by-the-user-codex/work/shanghao/apps/desktop/src/renderer/src/components/status/UpdateGatePage.tsx",
+                                        lineNumber: 103,
+                                        columnNumber: 15
+                                    }, this),
+                                    "更新失败，请重试"
+                                ]
+                            }, void 0, true, {
+                                fileName: "C:/Users/sober/Documents/Codex/2026-10-17/files-mentioned-by-the-user-codex/work/shanghao/apps/desktop/src/renderer/src/components/status/UpdateGatePage.tsx",
+                                lineNumber: 102,
+                                columnNumber: 13
+                            }, this),
+                            /*#__PURE__*/ _jsxDEV(Button, {
+                                isFullWidth: true,
+                                onClick: ()=>void checkUpdates(),
+                                children: [
+                                    /*#__PURE__*/ _jsxDEV(RefreshCcw, {
+                                        className: "h-4 w-4"
+                                    }, void 0, false, {
+                                        fileName: "C:/Users/sober/Documents/Codex/2026-10-17/files-mentioned-by-the-user-codex/work/shanghao/apps/desktop/src/renderer/src/components/status/UpdateGatePage.tsx",
+                                        lineNumber: 107,
+                                        columnNumber: 15
+                                    }, this),
+                                    "重试"
+                                ]
+                            }, void 0, true, {
+                                fileName: "C:/Users/sober/Documents/Codex/2026-10-17/files-mentioned-by-the-user-codex/work/shanghao/apps/desktop/src/renderer/src/components/status/UpdateGatePage.tsx",
+                                lineNumber: 106,
+                                columnNumber: 13
+                            }, this)
+                        ]
+                    }, void 0, true, {
+                        fileName: "C:/Users/sober/Documents/Codex/2026-10-17/files-mentioned-by-the-user-codex/work/shanghao/apps/desktop/src/renderer/src/components/status/UpdateGatePage.tsx",
+                        lineNumber: 101,
+                        columnNumber: 11
+                    }, this) : /*#__PURE__*/ _jsxDEV("div", {
+                        className: "mt-6 grid gap-2",
+                        children: [
+                            /*#__PURE__*/ _jsxDEV(Button, {
+                                isFullWidth: true,
+                                disabled: isDownloading,
+                                onClick: ()=>void (isReady ? installUpdate() : downloadUpdate()),
+                                children: [
+                                    isReady ? /*#__PURE__*/ _jsxDEV(RefreshCcw, {
+                                        className: "h-4 w-4"
+                                    }, void 0, false, {
+                                        fileName: "C:/Users/sober/Documents/Codex/2026-10-17/files-mentioned-by-the-user-codex/work/shanghao/apps/desktop/src/renderer/src/components/status/UpdateGatePage.tsx",
+                                        lineNumber: 118,
+                                        columnNumber: 26
+                                    }, this) : /*#__PURE__*/ _jsxDEV(Download, {
+                                        className: "h-4 w-4"
+                                    }, void 0, false, {
+                                        fileName: "C:/Users/sober/Documents/Codex/2026-10-17/files-mentioned-by-the-user-codex/work/shanghao/apps/desktop/src/renderer/src/components/status/UpdateGatePage.tsx",
+                                        lineNumber: 118,
+                                        columnNumber: 63
+                                    }, this),
+                                    isReady ? "安装并重新打开" : isDownloading ? "正在下载…" : "开始下载"
+                                ]
+                            }, void 0, true, {
+                                fileName: "C:/Users/sober/Documents/Codex/2026-10-17/files-mentioned-by-the-user-codex/work/shanghao/apps/desktop/src/renderer/src/components/status/UpdateGatePage.tsx",
+                                lineNumber: 113,
+                                columnNumber: 13
+                            }, this),
+                            /*#__PURE__*/ _jsxDEV(Button, {
+                                isFullWidth: true,
+                                variant: "secondary",
+                                onClick: ()=>setIsReleaseNotesOpen(true),
+                                children: [
+                                    /*#__PURE__*/ _jsxDEV(FileText, {
+                                        className: "h-4 w-4"
+                                    }, void 0, false, {
+                                        fileName: "C:/Users/sober/Documents/Codex/2026-10-17/files-mentioned-by-the-user-codex/work/shanghao/apps/desktop/src/renderer/src/components/status/UpdateGatePage.tsx",
+                                        lineNumber: 122,
+                                        columnNumber: 15
+                                    }, this),
+                                    "查看更新内容"
+                                ]
+                            }, void 0, true, {
+                                fileName: "C:/Users/sober/Documents/Codex/2026-10-17/files-mentioned-by-the-user-codex/work/shanghao/apps/desktop/src/renderer/src/components/status/UpdateGatePage.tsx",
+                                lineNumber: 121,
+                                columnNumber: 13
+                            }, this)
+                        ]
+                    }, void 0, true, {
+                        fileName: "C:/Users/sober/Documents/Codex/2026-10-17/files-mentioned-by-the-user-codex/work/shanghao/apps/desktop/src/renderer/src/components/status/UpdateGatePage.tsx",
+                        lineNumber: 112,
+                        columnNumber: 11
+                    }, this)
+                ]
+            }, void 0, true, {
+                fileName: "C:/Users/sober/Documents/Codex/2026-10-17/files-mentioned-by-the-user-codex/work/shanghao/apps/desktop/src/renderer/src/components/status/UpdateGatePage.tsx",
+                lineNumber: 33,
+                columnNumber: 7
+            }, this),
+            /*#__PURE__*/ _jsxDEV(ReleaseDetailModal, {
+                release: isReleaseNotesOpen ? getReleaseHistoryEntry(latestVersion) : undefined,
+                onClose: ()=>setIsReleaseNotesOpen(false)
+            }, void 0, false, {
+                fileName: "C:/Users/sober/Documents/Codex/2026-10-17/files-mentioned-by-the-user-codex/work/shanghao/apps/desktop/src/renderer/src/components/status/UpdateGatePage.tsx",
+                lineNumber: 128,
+                columnNumber: 7
+            }, this)
+        ]
+    }, void 0, true, {
+        fileName: "C:/Users/sober/Documents/Codex/2026-10-17/files-mentioned-by-the-user-codex/work/shanghao/apps/desktop/src/renderer/src/components/status/UpdateGatePage.tsx",
+        lineNumber: 32,
+        columnNumber: 5
+    }, this);
+};
+_s(UpdateGatePage, "r+EAT9jSvZ3HCZJkf3zrVPx/tDo=", false, function() {
+    return [
+        useSettingsStore,
+        useSettingsStore,
+        useSettingsStore,
+        useSettingsStore,
+        useSettingsStore,
+        useAppStore
+    ];
+});
+_c = UpdateGatePage;
+var _c;
+$RefreshReg$(_c, "UpdateGatePage");
+
+
+import * as RefreshRuntime from "/@react-refresh";
+const inWebWorker = typeof WorkerGlobalScope !== 'undefined' && self instanceof WorkerGlobalScope;
+import * as __vite_react_currentExports from "/src/components/status/UpdateGatePage.tsx?t=1792337404338";
+if (import.meta.hot && !inWebWorker) {
+  if (!window.$RefreshReg$) {
+    throw new Error(
+      "@vitejs/plugin-react-swc can't detect preamble. Something is wrong."
+    );
+  }
+
+  const currentExports = __vite_react_currentExports;
+  queueMicrotask(() => {
+    RefreshRuntime.registerExportsForReactRefresh("C:/Users/sober/Documents/Codex/2026-10-17/files-mentioned-by-the-user-codex/work/shanghao/apps/desktop/src/renderer/src/components/status/UpdateGatePage.tsx", currentExports);
+    import.meta.hot.accept((nextExports) => {
+      if (!nextExports) return;
+      const invalidateMessage = RefreshRuntime.validateRefreshBoundaryAndEnqueueUpdate("C:/Users/sober/Documents/Codex/2026-10-17/files-mentioned-by-the-user-codex/work/shanghao/apps/desktop/src/renderer/src/components/status/UpdateGatePage.tsx", currentExports, nextExports);
+      if (invalidateMessage) import.meta.hot.invalidate(invalidateMessage);
+    });
+  });
+}
+function $RefreshReg$(type, id) { return RefreshRuntime.register(type, "C:/Users/sober/Documents/Codex/2026-10-17/files-mentioned-by-the-user-codex/work/shanghao/apps/desktop/src/renderer/src/components/status/UpdateGatePage.tsx" + ' ' + id) }
+function $RefreshSig$() { return RefreshRuntime.createSignatureFunctionForTransform(); }
+
+//# sourceMappingURL=data:application/json;base64,eyJ2ZXJzaW9uIjozLCJzb3VyY2VzIjpbIlVwZGF0ZUdhdGVQYWdlLnRzeCJdLCJzb3VyY2VzQ29udGVudCI6WyJpbXBvcnQgeyB1c2VTdGF0ZSB9IGZyb20gXCJyZWFjdFwiO1xuaW1wb3J0IHsgRG93bmxvYWQsIFJlZnJlc2hDY3csIEFsZXJ0Q2lyY2xlLCBGaWxlVGV4dCB9IGZyb20gXCJsdWNpZGUtcmVhY3RcIjtcblxuaW1wb3J0IGJyYW5kTWFya1VybCBmcm9tIFwiLi4vLi4vYXNzZXRzL2JyYW5kLW1hcmsucG5nXCI7XG5pbXBvcnQgeyBCdXR0b24gfSBmcm9tIFwiLi4vYmFzZS9CdXR0b25cIjtcbmltcG9ydCB7IHVzZVNldHRpbmdzU3RvcmUgfSBmcm9tIFwiLi4vLi4vc3RvcmUvc2V0dGluZ3NTdG9yZVwiO1xuaW1wb3J0IHsgdXNlQXBwU3RvcmUgfSBmcm9tIFwiLi4vLi4vc3RvcmUvYXBwU3RvcmVcIjtcbmltcG9ydCB7IFJlbGVhc2VEZXRhaWxNb2RhbCB9IGZyb20gXCIuL1JlbGVhc2VEZXRhaWxNb2RhbFwiO1xuaW1wb3J0IHsgZ2V0UmVsZWFzZUhpc3RvcnlFbnRyeSB9IGZyb20gXCIuL3JlbGVhc2VIaXN0b3J5XCI7XG5cbmV4cG9ydCBjb25zdCBVcGRhdGVHYXRlUGFnZSA9ICgpID0+IHtcbiAgY29uc3QgW2lzUmVsZWFzZU5vdGVzT3Blbiwgc2V0SXNSZWxlYXNlTm90ZXNPcGVuXSA9IHVzZVN0YXRlKGZhbHNlKTtcbiAgY29uc3QgdXBkYXRlSW5mbyA9IHVzZVNldHRpbmdzU3RvcmUoKHN0YXRlKSA9PiBzdGF0ZS51cGRhdGVJbmZvKTtcbiAgY29uc3QgdXBkYXRlU3RhdHVzID0gdXNlU2V0dGluZ3NTdG9yZSgoc3RhdGUpID0+IHN0YXRlLnVwZGF0ZVN0YXR1cyk7XG4gIGNvbnN0IGRvd25sb2FkVXBkYXRlID0gdXNlU2V0dGluZ3NTdG9yZSgoc3RhdGUpID0+IHN0YXRlLmRvd25sb2FkVXBkYXRlKTtcbiAgY29uc3QgaW5zdGFsbFVwZGF0ZSA9IHVzZVNldHRpbmdzU3RvcmUoKHN0YXRlKSA9PiBzdGF0ZS5pbnN0YWxsVXBkYXRlKTtcbiAgY29uc3QgY2hlY2tVcGRhdGVzID0gdXNlU2V0dGluZ3NTdG9yZSgoc3RhdGUpID0+IHN0YXRlLmNoZWNrVXBkYXRlcyk7XG4gIGNvbnN0IHJlcXVpcmVkVXBkYXRlID0gdXNlQXBwU3RvcmUoKHN0YXRlKSA9PiBzdGF0ZS5yZXF1aXJlZFVwZGF0ZSk7XG5cbiAgY29uc3QgbGF0ZXN0VmVyc2lvbiA9XG4gICAgcmVxdWlyZWRVcGRhdGU/LnJlcXVpcmVkVmVyc2lvbiA/P1xuICAgIHVwZGF0ZUluZm8/LmxhdGVzdFZlcnNpb24gPz9cbiAgICB1cGRhdGVTdGF0dXMubGF0ZXN0VmVyc2lvbiA/P1xuICAgIFwiXCI7XG4gIGNvbnN0IGlzRm9yY2VkID0gQm9vbGVhbihyZXF1aXJlZFVwZGF0ZSB8fCB1cGRhdGVJbmZvPy5mb3JjZVVwZGF0ZSB8fCB1cGRhdGVTdGF0dXMuZm9yY2VVcGRhdGUpO1xuICBjb25zdCBpc0Rvd25sb2FkaW5nID0gdXBkYXRlU3RhdHVzLnBoYXNlID09PSBcImRvd25sb2FkaW5nXCI7XG4gIGNvbnN0IGlzSW5zdGFsbGluZyA9IHVwZGF0ZVN0YXR1cy5waGFzZSA9PT0gXCJpbnN0YWxsaW5nXCI7XG4gIGNvbnN0IGlzUmVhZHkgPSB1cGRhdGVTdGF0dXMucGhhc2UgPT09IFwicmVhZHlfdG9fcmVzdGFydFwiIHx8IHVwZGF0ZVN0YXR1cy5waGFzZSA9PT0gXCJkb3dubG9hZGVkXCI7XG4gIGNvbnN0IGlzRXJyb3IgPSB1cGRhdGVTdGF0dXMucGhhc2UgPT09IFwiZXJyb3JcIjtcblxuICByZXR1cm4gKFxuICAgIDxkaXYgY2xhc3NOYW1lPVwidXBkYXRlLWdhdGUtcGFnZVwiPlxuICAgICAgPGRpdiBjbGFzc05hbWU9XCJ1cGRhdGUtZ2F0ZS1jYXJkXCI+XG4gICAgICAgIDxkaXYgY2xhc3NOYW1lPVwiZmxleCBqdXN0aWZ5LWNlbnRlclwiPlxuICAgICAgICAgIDxpbWdcbiAgICAgICAgICAgIHNyYz17YnJhbmRNYXJrVXJsfVxuICAgICAgICAgICAgYWx0PVwi5LiK5Y+3XCJcbiAgICAgICAgICAgIGRyYWdnYWJsZT17ZmFsc2V9XG4gICAgICAgICAgICBjbGFzc05hbWU9XCJoLTE0IHctMTQgb2JqZWN0LWNvbnRhaW5cIlxuICAgICAgICAgIC8+XG4gICAgICAgIDwvZGl2PlxuXG4gICAgICAgIDxkaXYgY2xhc3NOYW1lPVwibXQtNSB0ZXh0LWNlbnRlciB0ZXh0LXhzIGZvbnQtc2VtaWJvbGQgdHJhY2tpbmctWzAuMThlbV0gdGV4dC1bIzdCODc5OF1cIj5cbiAgICAgICAgICB7aXNJbnN0YWxsaW5nXG4gICAgICAgICAgICA/IFwi5q2j5Zyo5a6J6KOFXCJcbiAgICAgICAgICAgIDogaXNEb3dubG9hZGluZ1xuICAgICAgICAgICAgICA/IFwi5q2j5Zyo5pu05pawXCJcbiAgICAgICAgICAgICAgOiBpc0ZvcmNlZFxuICAgICAgICAgICAgICAgID8gXCLpnIDopoHmm7TmlrBcIlxuICAgICAgICAgICAgICAgIDogXCLlj5HnjrDmlrDniYhcIn1cbiAgICAgICAgPC9kaXY+XG4gICAgICAgIDxoMiBjbGFzc05hbWU9XCJtdC0yIHRleHQtY2VudGVyIHRleHQtWzI4cHhdIGZvbnQtWzc0MF0gdHJhY2tpbmctWy0wLjA0ZW1dIHRleHQtWyMxNzIwMzNdXCI+XG4gICAgICAgICAg5LiK5Y+3IHtsYXRlc3RWZXJzaW9ufVxuICAgICAgICA8L2gyPlxuICAgICAgICA8cCBjbGFzc05hbWU9XCJtdC0yIHRleHQtY2VudGVyIHRleHQtc20gbGVhZGluZy02IHRleHQtWyM0NDU0NkFdXCI+XG4gICAgICAgICAge2lzSW5zdGFsbGluZ1xuICAgICAgICAgICAgPyBcIuWuieijheWujOaIkOWQjuS8muiHquWKqOmHjeaWsOaJk+W8gOOAglwiXG4gICAgICAgICAgICA6IGlzRG93bmxvYWRpbmdcbiAgICAgICAgICAgICAgPyBcIuato+WcqOWQjuWPsOS4i+i9ve+8jOWujOaIkOWQjumcgOimgeS9oOehruiupOWuieijheOAglwiXG4gICAgICAgICAgICAgIDogaXNSZWFkeVxuICAgICAgICAgICAgICAgID8gXCLmlrDniYjlt7LkuIvovb3lrozmiJDvvIznoa7orqTlkI7kvJrlronoo4Xlubbph43mlrDmiZPlvIDjgIJcIlxuICAgICAgICAgICAgICAgIDogaXNGb3JjZWRcbiAgICAgICAgICAgICAgICAgID8gXCLmm7TmlrDlkI7miY3og73nu6fnu63ov5vlhaXpopHpgZPjgIJcIlxuICAgICAgICAgICAgICAgICAgOiBcIuaWsOeJiOS8muWcqOWQjuWPsOS4i+i9ve+8jOWujOaIkOWQjueUseS9oOWGs+WumuS9leaXtuWuieijheOAglwifVxuICAgICAgICA8L3A+XG4gICAgICAgIHtyZXF1aXJlZFVwZGF0ZSA/IChcbiAgICAgICAgICA8ZGl2IGNsYXNzTmFtZT1cIm10LTQgcm91bmRlZC0yeGwgYm9yZGVyIGJvcmRlci1bcmdiYSgxNzQsMTk5LDIyNiwwLjY0KV0gYmctd2hpdGUvNjUgcHgtNCBweS0zIHRleHQtc20gbGVhZGluZy02IHRleHQtWyM0NDU0NkFdXCI+XG4gICAgICAgICAgICA8c3Ryb25nIGNsYXNzTmFtZT1cImJsb2NrIHRleHQtWyMyNjM2NGRdXCI+6ZyA6KaB5pu05paw5LiK5Y+3PC9zdHJvbmc+XG4gICAgICAgICAgICDkuLrkuobpgb/lhY3kuI3lkIzniYjmnKzkuYvpl7Tlh7rnjrDor63pn7PjgIHogYrlpKnlkozmiL/pl7TnirbmgIHplJnkubHvvIzlvZPliY3niYjmnKzlt7Lnu4/kuI3og73ov5vlhaXpopHpgZPjgIJcbiAgICAgICAgICAgIDxzcGFuIGNsYXNzTmFtZT1cIm10LTIgYmxvY2sgdGFidWxhci1udW1zXCI+XG4gICAgICAgICAgICAgIOW9k+WJjeeJiOacrO+8mntyZXF1aXJlZFVwZGF0ZS5jdXJyZW50VmVyc2lvbn0gwrcg6ZyA6KaB54mI5pys77yae3JlcXVpcmVkVXBkYXRlLnJlcXVpcmVkVmVyc2lvbn1cbiAgICAgICAgICAgIDwvc3Bhbj5cbiAgICAgICAgICA8L2Rpdj5cbiAgICAgICAgKSA6IG51bGx9XG5cbiAgICAgICAge2lzRG93bmxvYWRpbmcgPyAoXG4gICAgICAgICAgPGRpdiBjbGFzc05hbWU9XCJtdC02XCI+XG4gICAgICAgICAgICA8ZGl2IGNsYXNzTmFtZT1cIm1iLTIgZmxleCBqdXN0aWZ5LWJldHdlZW4gdGV4dC14cyB0ZXh0LVsjNDQ1NDZBXVwiPlxuICAgICAgICAgICAgICA8c3Bhbj57dXBkYXRlU3RhdHVzLm1lc3NhZ2V9PC9zcGFuPlxuICAgICAgICAgICAgICA8c3Bhbj57TWF0aC5yb3VuZCh1cGRhdGVTdGF0dXMucGVyY2VudCA/PyAwKX0lPC9zcGFuPlxuICAgICAgICAgICAgPC9kaXY+XG4gICAgICAgICAgICA8ZGl2IGNsYXNzTmFtZT1cImgtMiBvdmVyZmxvdy1oaWRkZW4gcm91bmRlZC1mdWxsIGJnLVsjZWRmMmY4XVwiPlxuICAgICAgICAgICAgICA8ZGl2XG4gICAgICAgICAgICAgICAgY2xhc3NOYW1lPVwiaC1mdWxsIG9yaWdpbi1sZWZ0IHJvdW5kZWQtZnVsbCBiZy1bIzREQTNGRl0gdHJhbnNpdGlvbi10cmFuc2Zvcm0gZHVyYXRpb24tMzAwXCJcbiAgICAgICAgICAgICAgICBzdHlsZT17e1xuICAgICAgICAgICAgICAgICAgdHJhbnNmb3JtOiBgc2NhbGVYKCR7TWF0aC5tYXgoMCwgTWF0aC5taW4oMSwgKHVwZGF0ZVN0YXR1cy5wZXJjZW50ID8/IDApIC8gMTAwKSl9KWAsXG4gICAgICAgICAgICAgICAgfX1cbiAgICAgICAgICAgICAgLz5cbiAgICAgICAgICAgIDwvZGl2PlxuICAgICAgICAgIDwvZGl2PlxuICAgICAgICApIDogbnVsbH1cblxuICAgICAgICB7aXNJbnN0YWxsaW5nID8gKFxuICAgICAgICAgIDxkaXYgY2xhc3NOYW1lPVwibXQtNiBmbGV4IGp1c3RpZnktY2VudGVyXCI+XG4gICAgICAgICAgICA8ZGl2IGNsYXNzTmFtZT1cImZsZXggaXRlbXMtY2VudGVyIGdhcC0yIHRleHQtc20gdGV4dC1bIzQ0NTQ2QV1cIj5cbiAgICAgICAgICAgICAgPFJlZnJlc2hDY3cgY2xhc3NOYW1lPVwiaC00IHctNCBhbmltYXRlLXNwaW5cIiAvPlxuICAgICAgICAgICAgICDmraPlnKjlronoo4XigKZcbiAgICAgICAgICAgIDwvZGl2PlxuICAgICAgICAgIDwvZGl2PlxuICAgICAgICApIDogaXNFcnJvciA/IChcbiAgICAgICAgICA8ZGl2IGNsYXNzTmFtZT1cIm10LTZcIj5cbiAgICAgICAgICAgIDxkaXYgY2xhc3NOYW1lPVwibWItMyBmbGV4IGl0ZW1zLWNlbnRlciBqdXN0aWZ5LWNlbnRlciBnYXAtMiB0ZXh0LXNtIHRleHQtWyNGRjVBNUFdXCI+XG4gICAgICAgICAgICAgIDxBbGVydENpcmNsZSBjbGFzc05hbWU9XCJoLTQgdy00XCIgLz5cbiAgICAgICAgICAgICAg5pu05paw5aSx6LSl77yM6K+36YeN6K+VXG4gICAgICAgICAgICA8L2Rpdj5cbiAgICAgICAgICAgIDxCdXR0b24gaXNGdWxsV2lkdGggb25DbGljaz17KCkgPT4gdm9pZCBjaGVja1VwZGF0ZXMoKX0+XG4gICAgICAgICAgICAgIDxSZWZyZXNoQ2N3IGNsYXNzTmFtZT1cImgtNCB3LTRcIiAvPlxuICAgICAgICAgICAgICDph43or5VcbiAgICAgICAgICAgIDwvQnV0dG9uPlxuICAgICAgICAgIDwvZGl2PlxuICAgICAgICApIDogKFxuICAgICAgICAgIDxkaXYgY2xhc3NOYW1lPVwibXQtNiBncmlkIGdhcC0yXCI+XG4gICAgICAgICAgICA8QnV0dG9uXG4gICAgICAgICAgICAgIGlzRnVsbFdpZHRoXG4gICAgICAgICAgICAgIGRpc2FibGVkPXtpc0Rvd25sb2FkaW5nfVxuICAgICAgICAgICAgICBvbkNsaWNrPXsoKSA9PiB2b2lkIChpc1JlYWR5ID8gaW5zdGFsbFVwZGF0ZSgpIDogZG93bmxvYWRVcGRhdGUoKSl9XG4gICAgICAgICAgICA+XG4gICAgICAgICAgICAgIHtpc1JlYWR5ID8gPFJlZnJlc2hDY3cgY2xhc3NOYW1lPVwiaC00IHctNFwiIC8+IDogPERvd25sb2FkIGNsYXNzTmFtZT1cImgtNCB3LTRcIiAvPn1cbiAgICAgICAgICAgICAge2lzUmVhZHkgPyBcIuWuieijheW5tumHjeaWsOaJk+W8gFwiIDogaXNEb3dubG9hZGluZyA/IFwi5q2j5Zyo5LiL6L294oCmXCIgOiBcIuW8gOWni+S4i+i9vVwifVxuICAgICAgICAgICAgPC9CdXR0b24+XG4gICAgICAgICAgICA8QnV0dG9uIGlzRnVsbFdpZHRoIHZhcmlhbnQ9XCJzZWNvbmRhcnlcIiBvbkNsaWNrPXsoKSA9PiBzZXRJc1JlbGVhc2VOb3Rlc09wZW4odHJ1ZSl9PlxuICAgICAgICAgICAgICA8RmlsZVRleHQgY2xhc3NOYW1lPVwiaC00IHctNFwiIC8+XG4gICAgICAgICAgICAgIOafpeeci+abtOaWsOWGheWuuVxuICAgICAgICAgICAgPC9CdXR0b24+XG4gICAgICAgICAgPC9kaXY+XG4gICAgICAgICl9XG4gICAgICA8L2Rpdj5cbiAgICAgIDxSZWxlYXNlRGV0YWlsTW9kYWxcbiAgICAgICAgcmVsZWFzZT17aXNSZWxlYXNlTm90ZXNPcGVuID8gZ2V0UmVsZWFzZUhpc3RvcnlFbnRyeShsYXRlc3RWZXJzaW9uKSA6IHVuZGVmaW5lZH1cbiAgICAgICAgb25DbG9zZT17KCkgPT4gc2V0SXNSZWxlYXNlTm90ZXNPcGVuKGZhbHNlKX1cbiAgICAgIC8+XG4gICAgPC9kaXY+XG4gICk7XG59O1xuIl0sIm5hbWVzIjpbInVzZVN0YXRlIiwiRG93bmxvYWQiLCJSZWZyZXNoQ2N3IiwiQWxlcnRDaXJjbGUiLCJGaWxlVGV4dCIsImJyYW5kTWFya1VybCIsIkJ1dHRvbiIsInVzZVNldHRpbmdzU3RvcmUiLCJ1c2VBcHBTdG9yZSIsIlJlbGVhc2VEZXRhaWxNb2RhbCIsImdldFJlbGVhc2VIaXN0b3J5RW50cnkiLCJVcGRhdGVHYXRlUGFnZSIsImlzUmVsZWFzZU5vdGVzT3BlbiIsInNldElzUmVsZWFzZU5vdGVzT3BlbiIsInVwZGF0ZUluZm8iLCJzdGF0ZSIsInVwZGF0ZVN0YXR1cyIsImRvd25sb2FkVXBkYXRlIiwiaW5zdGFsbFVwZGF0ZSIsImNoZWNrVXBkYXRlcyIsInJlcXVpcmVkVXBkYXRlIiwibGF0ZXN0VmVyc2lvbiIsInJlcXVpcmVkVmVyc2lvbiIsImlzRm9yY2VkIiwiQm9vbGVhbiIsImZvcmNlVXBkYXRlIiwiaXNEb3dubG9hZGluZyIsInBoYXNlIiwiaXNJbnN0YWxsaW5nIiwiaXNSZWFkeSIsImlzRXJyb3IiLCJkaXYiLCJjbGFzc05hbWUiLCJpbWciLCJzcmMiLCJhbHQiLCJkcmFnZ2FibGUiLCJoMiIsInAiLCJzdHJvbmciLCJzcGFuIiwiY3VycmVudFZlcnNpb24iLCJtZXNzYWdlIiwiTWF0aCIsInJvdW5kIiwicGVyY2VudCIsInN0eWxlIiwidHJhbnNmb3JtIiwibWF4IiwibWluIiwiaXNGdWxsV2lkdGgiLCJvbkNsaWNrIiwiZGlzYWJsZWQiLCJ2YXJpYW50IiwicmVsZWFzZSIsInVuZGVmaW5lZCIsIm9uQ2xvc2UiXSwibWFwcGluZ3MiOiI7O0FBQUEsU0FBU0EsUUFBUSxRQUFRLFFBQVE7QUFDakMsU0FBU0MsUUFBUSxFQUFFQyxVQUFVLEVBQUVDLFdBQVcsRUFBRUMsUUFBUSxRQUFRLGVBQWU7QUFFM0UsT0FBT0Msa0JBQWtCLDhCQUE4QjtBQUN2RCxTQUFTQyxNQUFNLFFBQVEsaUJBQWlCO0FBQ3hDLFNBQVNDLGdCQUFnQixRQUFRLDRCQUE0QjtBQUM3RCxTQUFTQyxXQUFXLFFBQVEsdUJBQXVCO0FBQ25ELFNBQVNDLGtCQUFrQixRQUFRLHVCQUF1QjtBQUMxRCxTQUFTQyxzQkFBc0IsUUFBUSxtQkFBbUI7QUFFMUQsT0FBTyxNQUFNQyxpQkFBaUI7O0lBQzVCLE1BQU0sQ0FBQ0Msb0JBQW9CQyxzQkFBc0IsR0FBR2IsU0FBUztJQUM3RCxNQUFNYyxhQUFhUCxpQkFBaUIsQ0FBQ1EsUUFBVUEsTUFBTUQsVUFBVTtJQUMvRCxNQUFNRSxlQUFlVCxpQkFBaUIsQ0FBQ1EsUUFBVUEsTUFBTUMsWUFBWTtJQUNuRSxNQUFNQyxpQkFBaUJW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

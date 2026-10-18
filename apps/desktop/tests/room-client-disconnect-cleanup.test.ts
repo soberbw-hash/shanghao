@@ -89,12 +89,12 @@ test("room exit releases screen audio resources even if microphone restoration f
     };
     applyOutgoingAudioTrack: () => Promise<void>;
   };
-  internals.screenAudioMixer = {
+  Object.assign(internals.screenAudioMixer, {
     hasActiveMix: () => true,
     dispose: () => {
       mixerDisposed += 1;
     },
-  };
+  });
   internals.screenShareCoordinator = {
     activeStream: {} as MediaStream,
     stopTracks: () => {
@@ -167,6 +167,7 @@ test("concurrent room exits await the same cleanup operation", async (t) => {
   const first = client.disconnect();
   const second = client.disconnect();
   assert.strictEqual(second, first);
+  await new Promise<void>((resolve) => setImmediate(resolve));
   assert.equal(closeCalls, 1);
   assert.equal(disconnected, 0);
   assert.ok(finishClose);

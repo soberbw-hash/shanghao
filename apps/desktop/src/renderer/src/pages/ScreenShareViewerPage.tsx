@@ -24,7 +24,8 @@ export const ScreenShareViewerPage = () => {
 
   useEffect(() => {
     if (!sessionId) return;
-    const peer = new RTCPeerConnection({ iceServers: [] });
+    let peer: RTCPeerConnection;
+    let hasOffer = false;
     const pendingCandidates: RTCIceCandidateInit[] = [];
     let disposed = false;
     const send = (signal: Omit<ScreenShareViewerSignal, "sessionId" | "sender">) =>
@@ -35,40 +36,62 @@ export const ScreenShareViewerPage = () => {
           sender: "viewer",
         })
         .catch(() => false);
-    const flushCandidates = async () => {
-      while (pendingCandidates.length > 0) {
+    const flushCandidates = async (target: RTCPeerConnection) => {
+      while (pendingCandidates.length > 0 && target === peer && !disposed) {
         const candidate = pendingCandidates.shift();
-        if (candidate) await peer.addIceCandidate(candidate);
+        if (candidate) await target.addIceCandidate(candidate);
       }
     };
-    peer.ontrack = ({ streams }) => {
-      const nextStream = streams[0];
-      if (nextStream) {
-        setFallbackFrame(undefined);
-        setStream(nextStream);
-      }
+    const createPeer = () => {
+      const next = new RTCPeerConnection({ iceServers: [] });
+      next.ontrack = ({ streams }) => {
+        if (disposed || peer !== next) return;
+        const nextStream = streams[0];
+        if (nextStream) {
+          setFallbackFrame(undefined);
+          setStream(nextStream);
+        }
+      };
+      next.onicecandidate = ({ candidate }) => {
+        if (!candidate || disposed || peer !== next) return;
+        const json = candidate.toJSON();
+        void send({
+          type: "ice",
+          candidate: json.candidate,
+          sdpMid: json.sdpMid,
+          sdpMLineIndex: json.sdpMLineIndex,
+        });
+      };
+      return next;
     };
-    peer.onicecandidate = ({ candidate }) => {
-      if (!candidate || disposed) return;
-      const json = candidate.toJSON();
-      void send({
-        type: "ice",
-        candidate: json.candidate,
-        sdpMid: json.sdpMid,
-        sdpMLineIndex: json.sdpMLineIndex,
-      });
-    };
+    peer = createPeer();
     const unsubscribe = window.screenShareViewerApi.onSignal((signal) => {
       if (signal.sessionId !== sessionId || signal.sender !== "host") return;
       if (signal.title) setTitle(signal.title.replace(/^上号\s*·\s*/, ""));
       void (async () => {
         if (signal.type === "ready") {
+          // A new publisher has a new DTLS identity. Its ready handshake must
+          // replace the previous receiver rather than renegotiate that identity
+          // into an already established connection and leave the viewer loading.
+          if (hasOffer) {
+            peer.ontrack = peer.onicecandidate = null;
+            peer.close();
+            pendingCandidates.length = 0;
+            peer = createPeer();
+            hasOffer = false;
+          }
           await send({ type: "ready" });
         } else if (signal.type === "offer" && signal.sdp) {
-          await peer.setRemoteDescription({ type: "offer", sdp: signal.sdp });
-          await flushCandidates();
-          const answer = await peer.createAnswer();
-          await peer.setLocalDescription(answer);
+          hasOffer = true;
+          const current = peer;
+          await current.setRemoteDescription({ type: "offer", sdp: signal.sdp });
+          if (disposed || current !== peer) return;
+          await flushCandidates(current);
+          if (disposed || current !== peer) return;
+          const answer = await current.createAnswer();
+          if (disposed || current !== peer) return;
+          await current.setLocalDescription(answer);
+          if (disposed || current !== peer) return;
           await send({ type: "answer", sdp: answer.sdp });
         } else if (signal.type === "ice" && signal.candidate) {
           const candidate: RTCIceCandidateInit = {
@@ -77,7 +100,10 @@ export const ScreenShareViewerPage = () => {
             sdpMLineIndex: signal.sdpMLineIndex,
           };
           if (peer.remoteDescription) await peer.addIceCandidate(candidate);
-          else pendingCandidates.push(candidate);
+          else {
+            if (pendingCandidates.length >= 64) pendingCandidates.shift();
+            pendingCandidates.push(candidate);
+          }
         } else if (signal.type === "fallback-frame" && signal.frameDataUrl) {
           setStream(undefined);
           setFallbackFrame(signal.frameDataUrl);

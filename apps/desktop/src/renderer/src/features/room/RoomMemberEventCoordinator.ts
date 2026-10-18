@@ -26,6 +26,7 @@ import {
   normalizePresenceGameName,
   resolvePresenceGameNameUpdate,
 } from "./presenceSignal";
+import { decodeMemberAvailability, type MemberAvailability } from "./memberAvailability";
 
 interface RoomMemberEventCoordinatorOptions {
   localPeerId: string;
@@ -42,6 +43,7 @@ export class RoomMemberEventCoordinator {
   private members: RoomMember[] = [];
   private localScene?: Pick<RoomMember, "sceneZone" | "activity">;
   private readonly avatars = new Map<string, { avatarHash?: string; avatarDataUrl?: string }>();
+  private readonly availability = new Map<string, MemberAvailability>();
 
   constructor(private readonly options: RoomMemberEventCoordinatorOptions) {}
 
@@ -50,6 +52,12 @@ export class RoomMemberEventCoordinator {
   }
 
   setMembers(members: RoomMember[]): void {
+    const ids = new Set(members.map((member) => member.id));
+    for (const id of this.availability.keys()) if (!ids.has(id)) this.availability.delete(id);
+    members = members.map((member) => ({
+      ...member,
+      availabilityStatus: this.availability.get(member.id),
+    }));
     this.members = members.map((member) =>
       member.id === this.options.localPeerId && this.localScene
         ? { ...member, ...this.localScene }
@@ -105,6 +113,19 @@ export class RoomMemberEventCoordinator {
   }
 
   handleReaction(payload: SceneReactionMessage): void {
+    const status = decodeMemberAvailability(payload.targetPeerId);
+    if (status) {
+      if (!this.members.some((member) => member.id === payload.peerId)) return;
+      if (status === "available") this.availability.delete(payload.peerId);
+      else this.availability.set(payload.peerId, status);
+      this.members = this.members.map((member) =>
+        member.id === payload.peerId
+          ? { ...member, availabilityStatus: status === "available" ? undefined : status }
+          : member,
+      );
+      this.options.onMembers(this.members);
+      return;
+    }
     const quickMessageControl = decodeQuickMessageControlTarget(payload.targetPeerId);
     if (quickMessageControl) {
       if (payload.peerId === this.options.localPeerId) return;
@@ -149,7 +170,10 @@ export class RoomMemberEventCoordinator {
     if (payload.peerId === this.options.localPeerId && this.localScene) {
       // A delayed away echo must not undo a manual return. Seat conflicts can
       // still resolve to another desk chosen by the server.
-      if (payload.sceneZone === "restroomZone" && this.localScene.sceneZone !== "restroomZone") {
+      if (
+        (payload.sceneZone === "restroomZone") !==
+        (this.localScene.sceneZone === "restroomZone")
+      ) {
         payload = {
           ...payload,
           sceneZone: this.localScene.sceneZone,

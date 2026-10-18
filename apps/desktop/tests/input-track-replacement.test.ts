@@ -167,3 +167,40 @@ test("disposing during a pending mix never resurrects its audio graph", async ()
   assert.equal(contexts.at(-1)!.closed, true);
   assert.equal(contexts.at(-1)!.track.readyState, "ended");
 });
+
+test("stopping system audio keeps healthy peers on the microphone when one peer rejects restore", async () => {
+  const restore = load<{ replaceOutgoingAudioTrack: (...args: unknown[]) => Promise<Stream> }>(
+    "../src/renderer/src/features/audio/replaceOutgoingAudioTrack.ts",
+  ).replaceOutgoingAudioTrack;
+  const mic = new Track("microphone");
+  const mixed = new Track("old-mix");
+  const healthyTracks: Track[] = [];
+  const broken = {
+    replaceLocalTrack: async () => {
+      throw Error("peer closed");
+    },
+  };
+  const healthy = {
+    replaceLocalTrack: async (track: Track) => {
+      healthyTracks.push(track);
+    },
+  };
+  const recover: unknown[] = [];
+  let fallback: Stream | undefined;
+  const stream = await restore(
+    mic,
+    new Stream([mixed]),
+    [broken, healthy],
+    {
+      replaceLocalStream: async (next: Stream) => {
+        fallback = next;
+      },
+    },
+    (peer: unknown) => recover.push(peer),
+  );
+  assert.equal(stream.getAudioTracks()[0], mic);
+  assert.equal(fallback?.getAudioTracks()[0], mic);
+  assert.deepEqual(healthyTracks, [mic]);
+  assert.deepEqual(recover, [broken]);
+  assert.equal(mic.readyState, "live");
+});

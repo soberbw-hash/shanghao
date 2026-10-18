@@ -57,6 +57,8 @@ export class RoomScreenShareCoordinator {
   private readonly screenRecoveryTimers = new Map<string, number>();
   private diagnosticsTimer?: number;
   private viewingActive = true;
+  private lifecycle: Promise<void> = Promise.resolve();
+  private generation = 0;
 
   constructor(private readonly options: RoomScreenShareCoordinatorOptions) {
     this.relay = new ScreenFrameRelay({
@@ -93,9 +95,23 @@ export class RoomScreenShareCoordinator {
     stream: MediaStream,
     profile: ScreenShareEncodingProfile = DEFAULT_SCREEN_SHARE_PROFILE,
   ): Promise<void> {
+    const generation = this.generation;
+    return this.serialize(() => this.startCapture(stream, profile, generation));
+  }
+
+  private async startCapture(
+    stream: MediaStream,
+    profile: ScreenShareEncodingProfile,
+    generation: number,
+  ): Promise<void> {
+    const assertCurrent = () => {
+      if (generation !== this.generation) throw new Error("screen_share_superseded");
+    };
+    assertCurrent();
     const [videoTrack] = stream.getVideoTracks();
     if (!videoTrack) throw new Error("screen_track_missing");
     if (this.stream) await this.options.restorePrimaryInputTrack();
+    assertCurrent();
     this.stopTracks();
     this.relayRequestedByPeerIds.clear();
     this.localViewers.clear();
@@ -109,6 +125,7 @@ export class RoomScreenShareCoordinator {
     if (systemAudioTrack && microphoneTrack) {
       await this.options.applyScreenAudioMix(microphoneTrack, systemAudioTrack);
     }
+    assertCurrent();
     this.updateRelay();
     void this.options.safeSend({
       type: "screen_share_state",
@@ -116,10 +133,23 @@ export class RoomScreenShareCoordinator {
       peerId: this.options.peerId,
       isSharing: true,
     });
-    videoTrack.addEventListener("ended", () => void this.stop(false), { once: true });
-    await Promise.all(
-      [...this.options.getPeers().values()].map((peer) => peer.setScreenTrack(videoTrack, profile)),
+    videoTrack.addEventListener(
+      "ended",
+      () => {
+        void this.serialize(async () => {
+          if (this.stream === stream) await this.stopCapture(false);
+        });
+      },
+      { once: true },
     );
+    const peers = [...this.options.getPeers()];
+    const attached = await Promise.allSettled(
+      peers.map(([, peer]) => peer.setScreenTrack(videoTrack, profile)),
+    );
+    assertCurrent();
+    attached.forEach((result, index) => {
+      if (result.status === "rejected") this.options.onScreenTrackLost(peers[index]![0]);
+    });
     void writeRendererLog("webrtc", "info", "Screen share track attached", {
       peerCount: this.options.getPeers().size,
       trackId: videoTrack.id,
@@ -129,6 +159,16 @@ export class RoomScreenShareCoordinator {
   }
 
   async stop(stopTracks = true): Promise<void> {
+    return this.serialize(() => this.stopCapture(stopTracks));
+  }
+
+  private serialize(operation: () => Promise<void>): Promise<void> {
+    const next = this.lifecycle.then(operation);
+    this.lifecycle = next.catch(() => undefined);
+    return next;
+  }
+
+  private async stopCapture(stopTracks: boolean): Promise<void> {
     const previousStream = this.stream;
     this.stream = undefined;
     this.relayRequestedByPeerIds.clear();
@@ -150,7 +190,9 @@ export class RoomScreenShareCoordinator {
     } catch {
       void writeRendererLog("webrtc", "warn", "Microphone restore after screen sharing failed");
     }
-    if (stopTracks) previousStream?.getTracks().forEach((track) => track.stop());
+    previousStream?.getTracks().forEach((track) => {
+      if (stopTracks || track.readyState === "live") track.stop();
+    });
     void this.options.safeSend({
       type: "screen_share_state",
       roomId: this.options.roomId,
@@ -310,6 +352,7 @@ export class RoomScreenShareCoordinator {
   }
 
   clear(): void {
+    this.generation++;
     this.remoteSharingPeerIds.clear();
     this.localViewers.clear();
     this.emitLocalViewers();

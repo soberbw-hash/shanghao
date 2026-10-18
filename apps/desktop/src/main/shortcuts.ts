@@ -104,20 +104,20 @@ export class ShortcutController {
   private phoneBinding?: PhoneShortcut;
   private phoneAccelerator = "";
   private phoneNativeReady = false;
+  private phoneRawInputReady = false;
   private lastPhoneHookAt = 0;
   private readonly phoneInput = new PhoneInputMonitor(
-    (ready) => {
+    (ready, rawInput) => {
       this.phoneNativeReady = ready;
+      this.phoneRawInputReady = ready && rawInput === true;
     },
     (sampledAt) => sampledAt > this.lastPhoneHookAt,
   );
   private readonly phoneKeyDown = (event: Parameters<PhoneShortcut["keyDown"]>[0]) => {
-    if (event.keycode === this.phoneBinding?.keycode) this.lastPhoneHookAt = Date.now();
-    this.phoneBinding?.keyDown(event);
+    if (this.phoneBinding?.keyDown(event)) this.lastPhoneHookAt = Date.now();
   };
   private readonly phoneKeyUp = (event: Parameters<PhoneShortcut["keyUp"]>[0]) => {
-    if (event.keycode === this.phoneBinding?.keycode) this.lastPhoneHookAt = Date.now();
-    this.phoneBinding?.keyUp(event);
+    if (this.phoneBinding?.keyUp(event)) this.lastPhoneHookAt = Date.now();
   };
 
   private inspectBinding(owner: ShortcutOwner, accelerator?: string): ShortcutBindingSnapshot {
@@ -167,6 +167,8 @@ export class ShortcutController {
             : "missing"
           : "inactive",
         inputPath: this.phoneNativeReady ? "hook+windows-native" : "hook",
+        nativeInputReady: this.phoneNativeReady,
+        rawInputReady: this.phoneRawInputReady,
       },
     };
   }
@@ -239,8 +241,7 @@ export class ShortcutController {
   ) {}
 
   private readonly handleMouseDown = (event: UiohookMouseEvent): void => {
-    if (Number(event.button) === this.phoneBinding?.mouseButton) this.lastPhoneHookAt = Date.now();
-    this.phoneBinding?.mouseDown(event);
+    if (this.phoneBinding?.mouseDown(event)) this.lastPhoneHookAt = Date.now();
     for (const binding of this.mouseBindings.values()) {
       if (!matchesMouseShortcut(event, binding) || binding.pressed) continue;
       if (binding.onRelease) binding.pressed = true;
@@ -249,8 +250,7 @@ export class ShortcutController {
   };
 
   private readonly handleMouseUp = (event: UiohookMouseEvent): void => {
-    if (Number(event.button) === this.phoneBinding?.mouseButton) this.lastPhoneHookAt = Date.now();
-    this.phoneBinding?.mouseUp(event);
+    if (this.phoneBinding?.mouseUp(event)) this.lastPhoneHookAt = Date.now();
     for (const binding of this.mouseBindings.values()) {
       // The pressed button owns release even if Ctrl/Alt was released first.
       if (Number(event.button) === binding.button) this.releaseMouseBinding(binding);

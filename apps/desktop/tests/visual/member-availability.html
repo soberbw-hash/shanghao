@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <script>
+      window.desktopApi = { app: { writeLog: async () => {} } };
+    </script>
+    <script type="module">
+      import { injectIntoGlobalHook } from "/@react-refresh";
+      injectIntoGlobalHook(window);
+      window.$RefreshReg$ = () => {};
+      window.$RefreshSig$ = () => (type) => type;
+    </script>
+    <script type="module" src="/@vite/client"></script>
+    <meta charset="UTF-8" />
+    <title>Member availability regression fixture</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="./member-availability.fixture.tsx"></script>
+  </body>
+</html>

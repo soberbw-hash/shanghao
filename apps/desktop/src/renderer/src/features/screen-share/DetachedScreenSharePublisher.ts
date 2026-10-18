@@ -91,7 +91,9 @@ export class DetachedScreenSharePublisher {
     if (this.hasOffered || this.isDisposed) return;
     this.hasOffered = true;
     try {
-      await this.configureVideoSender();
+      // Sender quality hints are optional; older drivers can reject them even
+      // though an ordinary local WebRTC offer and playback would work.
+      await this.configureVideoSender().catch(() => undefined);
       const offer = await this.peer.createOffer();
       await this.peer.setLocalDescription(offer);
       await this.send({ type: "offer", sdp: offer.sdp });

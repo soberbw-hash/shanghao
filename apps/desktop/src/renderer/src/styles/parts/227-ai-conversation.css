@@ -1,0 +1,81 @@
+/* The initial button morph stays anchored; submitted conversations use the full card. */
+.chat-ai-welcome:has(.room-ai-user-question) {
+  display: block;
+  padding: 24px 14px 12px;
+}
+.chat-ai-welcome:has(.room-ai-user-question) > .assistant-bot-companion {
+  display: none;
+}
+.chat-ai-welcome:has(.room-ai-user-question) .chat-ai-welcome-copy {
+  display: block;
+  padding: 0;
+}
+.chat-ai-welcome:has(.room-ai-user-question) .chat-ai-welcome-copy > strong {
+  display: none;
+}
+.chat-ai-welcome:has(.room-ai-user-question) .chat-ai-action-morph {
+  grid-column: 1 / -1;
+  width: 100%;
+  transition: none;
+}
+.room-ask-inline .room-ai-user-question {
+  align-self: flex-end;
+  max-width: 90%;
+  margin: 0 0 10px;
+  padding: 7px 11px;
+  font-size: 13px;
+  line-height: 1.6;
+}
+.room-ask-inline .room-ai-answer {
+  max-height: none;
+  overflow: visible;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  margin: 0 0 12px;
+  border: 0;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.46);
+  padding: 10px 12px;
+}
+.room-ask-inline .room-ai-answer > h3 {
+  gap: 6px;
+  font-size: 12px;
+}
+.room-ask-inline .room-ai-answer-icon {
+  display: none;
+}
+.room-ask-inline .room-ai-answer button:not(.block) {
+  min-height: 28px;
+  padding: 4px 9px;
+  border-radius: 10px;
+  font-size: 11px;
+}
+.room-ask-inline .room-ai-answer > p {
+  font-size: 13px;
+  line-height: 1.85;
+}
+.room-ask-inline .room-ai-composer {
+  order: 2;
+  flex-shrink: 0;
+}
+.room-ask-inline .room-question-history {
+  order: 3;
+  margin-top: 10px;
+  padding-top: 8px;
+}
+.room-ask-inline .room-question-history summary {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: #71849b;
+  font-size: 11px;
+  cursor: pointer;
+}
+.room-ask-inline .room-question-history summary svg {
+  width: 13px;
+  height: 13px;
+}
+.room-ask-inline .room-question-history > div {
+  max-height: none;
+  overflow: visible;
+}
