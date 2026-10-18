@@ -42,8 +42,10 @@ export const readRequestedSettingsSection = (): SettingsSectionId | undefined =>
 };
 
 export const getInitialSettingsSection = (): SettingsSectionId => {
-  const storedSection = readRequestedSettingsSection();
-  if (storedSection) return storedSection;
+  const storedSection = window.sessionStorage.getItem(
+    SETTINGS_SECTION_REQUEST_KEY,
+  ) as SettingsSectionId;
+  if (settingsSectionIds.includes(storedSection)) return storedSection;
   if (!import.meta.env.DEV) return "general";
   const requestedSection = new URLSearchParams(window.location.search).get("settingsSection");
   return settingsSectionIds.includes(requestedSection as SettingsSectionId)

@@ -1,3 +1,5 @@
+import { transcriptionProviderError } from "../features/ai/transcriptionProviderError";
+
 export type UserErrorContext =
   "audio" | "model" | "recording" | "screen-share" | "settings" | "general";
 
@@ -16,6 +18,13 @@ export const toUserFacingError = (
 ): UserFacingError => {
   const message = technicalErrorMessage(error);
   const normalized = message.toLowerCase();
+  if (normalized.includes("voice_memory_shared_result_changed"))
+    return {
+      title: "转录结果已更新",
+      description: "另一个版本已保存完整转录，旧任务没有覆盖它。请重新打开这条录音查看。",
+    };
+  const transcriptionError = transcriptionProviderError(normalized);
+  if (transcriptionError) return { title: "语音转录未完成", description: transcriptionError };
   if (normalized.includes("windows_uac_cancelled"))
     return { title: "已取消系统授权", description: "系统设置未更改，需要时可以重新操作。" };
   if (

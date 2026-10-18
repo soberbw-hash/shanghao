@@ -109,7 +109,7 @@ const hasIndexableEntries = (value: unknown, timeField: "startMs" | "offsetMs"):
         isObject(entry) && isFiniteNumber(entry[timeField]) && typeof entry.title === "string",
     ));
 
-const isVoiceMemoryRecord = (value: unknown): value is VoiceMemoryRecord => {
+export const isVoiceMemoryRecord = (value: unknown): value is VoiceMemoryRecord => {
   if (!value || typeof value !== "object") return false;
   const record = value as Partial<VoiceMemoryRecord>;
   const compatibleVersion = record.schemaVersion === undefined || record.schemaVersion === 1;
@@ -145,7 +145,7 @@ const isVoiceMemoryRecord = (value: unknown): value is VoiceMemoryRecord => {
   );
 };
 
-const normalizeLegacyRecord = (record: VoiceMemoryRecord): VoiceMemoryRecord => {
+export const normalizeLegacyRecord = (record: VoiceMemoryRecord): VoiceMemoryRecord => {
   if (record.schemaVersion === 1) return record;
   const createdAt =
     typeof record.createdAt === "string" ? record.createdAt : new Date(0).toISOString();
@@ -312,6 +312,25 @@ export class VoiceMemoryStore {
     return createHash("sha256")
       .update(path.resolve(filePath).toLocaleLowerCase("en-US"))
       .digest("hex");
+  }
+
+  /** Rebuild derived metadata only after all authoritative records validate. */
+  protected async rebuildMetadata(): Promise<void> {
+    const records = await this.list();
+    const index = { schemaVersion: 1 as const, entries: records.flatMap(indexEntriesFor) };
+    const summaries = {
+      schemaVersion: 1 as const,
+      entries: records
+        .map(toVoiceMemorySummary)
+        .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)),
+    };
+    await this.beginMetadataMutation();
+    await atomicWrite(this.indexPath(), JSON.stringify(index));
+    await atomicWrite(this.summaryPath(), JSON.stringify(summaries));
+    await rm(this.pendingMetadataPath());
+    this.index = index;
+    this.summaries = summaries;
+    this.metadataRecoveryRequired = false;
   }
 
   private transcriptionEventsPath(recordingId: string): string {

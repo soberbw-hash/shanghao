@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { UiohookKey, type UiohookKeyboardEvent, type UiohookMouseEvent } from "uiohook-napi";
 import { PhoneShortcut } from "../src/main/phone-shortcut";
+import { phoneVirtualKey } from "../src/main/phone-virtual-key";
 
 const event = (ctrlKey = true) =>
   ({
@@ -11,6 +12,38 @@ const event = (ctrlKey = true) =>
     altKey: false,
     metaKey: false,
   }) as UiohookKeyboardEvent;
+
+test("phone direction key remains usable with game Shift/Ctrl, and native release repairs a lost hook-up", () => {
+  const states: (boolean | undefined)[] = [];
+  const binding = PhoneShortcut.parse("ArrowDown", "hold", (active) => states.push(active));
+  binding.synchronizePhysical({
+    down: true,
+    ctrlKey: true,
+    shiftKey: true,
+    altKey: false,
+    metaKey: false,
+  });
+  binding.synchronizePhysical({
+    down: true,
+    ctrlKey: true,
+    shiftKey: true,
+    altKey: false,
+    metaKey: false,
+  });
+  binding.synchronizePhysical({
+    down: false,
+    ctrlKey: false,
+    shiftKey: false,
+    altKey: false,
+    metaKey: false,
+  });
+  assert.deepEqual(states, [true, false]);
+  assert.equal(binding.virtualKey, 0x28);
+  assert.equal(phoneVirtualKey("NumpadEnter"), undefined, "ambiguous keys retain the native hook");
+  assert.equal(phoneVirtualKey("Mouse4"), 5);
+  assert.equal(phoneVirtualKey("F10"), 0x79);
+  assert.equal(phoneVirtualKey("A"), 65);
+});
 
 test("arrows, editing keys, numpad and modifier combinations retain key-up ownership", () => {
   for (const key of [

@@ -8,7 +8,7 @@
 
 进房先看见人。谁在打游戏、听歌、接电话，谁暂时离开；聊天、分享的画面和昨晚的录音，也都在这间房里。
 
-[下载最新版](https://github.com/soberbw-hash/shanghao/releases/latest) · [看更新记录](./docs/release-notes/v3.4.8.md) · [看技术结构](#声音到底经过了什么)
+[下载最新版](https://github.com/soberbw-hash/shanghao/releases/latest) · [看更新记录](./docs/release-notes/v3.4.9.md) · [看技术结构](#声音到底经过了什么)
 
 ![上号二号房：人物、天气、日历、聊天与语音控制](./docs/readme/hero-room.webp)
 
@@ -76,11 +76,11 @@
 
 **20 · 房间记录按天回看。** 成员、活跃时长、游戏、消息数与屏幕分享情况会形成每日记录，当天首次开启时弹出；设置页不再重复提供入口。整理摘要默认留在本机，点击“上传到服务器”后才进入录音原房间的共享记录；也可按需开启默认关闭的自动上传。
 
-## 3.4.8 更新
+## 3.4.9 更新
 
-修复本地语音模型已下载但准备失败的问题，并让模型初始化错误提供可操作的重试提示。通话模式快捷键会在全局输入钩子启动前完成监听注册，降低启动阶段按键丢失的情况。
+电话模式增加独立 Windows 按键状态检测，和原有全局监听相互补充；游戏中按住 Shift、Ctrl 时仍可使用电话快捷键。聊天区加入保留原始形象的 AI 小助手，支持原地提问、轻微跟随与点击互动。
 
-电话模式快捷键在游戏活动抑制场景下有自动化回归覆盖；不同游戏的独占全屏、无边框窗口和驱动环境仍需实机验证。[查看全部更新](./docs/release-notes/v3.4.8.md)。
+文本整理问答与语音转录分开配置，支持 SenseVoiceSmall 云端转录和自定义接口；正式版与开发版共用转录结果。云端使用自己的密钥，实际调用受服务商账户限制；不同游戏的独占全屏、无边框窗口和反作弊环境仍需实机验证。[查看全部更新](./docs/release-notes/v3.4.9.md)。
 
 ## 3.4.7 更新
 
@@ -225,7 +225,7 @@ React/Zustand 管房间界面与状态，Electron 主进程管窗口、设备和
 
 ## 下载与使用
 
-当前仓库版本为 **3.4.8**，正式支持 **Windows 10 / 11 x64**。[到 GitHub Releases 下载最新版](https://github.com/soberbw-hash/shanghao/releases/latest)，同页提供安装包、自动更新元数据与 SHA-256 校验文件。[查看 v3.4.8 更新公告](./docs/release-notes/v3.4.8.md)。安装后可通过 CloudBase 手机号验证注册并登录账号，创建私人房间或通过频道号找到朋友，再明确加入同一房间。
+当前仓库版本为 **3.4.9**，正式支持 **Windows 10 / 11 x64**。[到 GitHub Releases 下载最新版](https://github.com/soberbw-hash/shanghao/releases/latest)，同页提供安装包、自动更新元数据与 SHA-256 校验文件。[查看 v3.4.9 更新公告](./docs/release-notes/v3.4.9.md)。安装后可通过 CloudBase 手机号验证注册并登录账号，创建私人房间或通过频道号找到朋友，再明确加入同一房间。
 
 录音、模型和已下载资源主要保存在本机。更新可在后台下载，安装并重启必须由用户点击。自行部署可参照 [Relay](./docs/deploy-relay-server.md)、[TURN](./docs/deploy-turn.md) 与[网络修复](./docs/network-repair.md)。
 

@@ -8,7 +8,7 @@ import {
   useSyncExternalStore,
   type ReactNode,
 } from "react";
-import { ExternalLink, Link2, LoaderCircle, RotateCcw, Settings2, Send } from "lucide-react";
+import { ExternalLink, Link2, LoaderCircle, RotateCcw, Send } from "lucide-react";
 import { gsap } from "gsap";
 
 import {
@@ -43,7 +43,8 @@ import { Input } from "../base/Input";
 import { usePrefersReducedMotion } from "../../hooks/usePrefersReducedMotion";
 import { isSupportedChatImageFile } from "../../utils/chatImage";
 import { ChatImageLightbox } from "./ChatImageLightbox";
-import { RoomAiIcon } from "../room/RoomAiIcon";
+import type { AssistantBotMood } from "../../features/ai/useAssistantBotState";
+import { ChatPanelHeader } from "./ChatPanelHeader";
 
 const urlPattern = /https?:\/\/[^\s<，。！？；：）】》」]+/gi;
 const trailingUrlPunctuation = /[.,!?，。！？;；:：)\]}>》」】]+$/;
@@ -151,6 +152,10 @@ export const TemporaryChatPanel = ({
   onQuickMessageSend,
   onOpenQuickMessageSettings,
   onOpenRoomAi,
+  onCloseRoomAi,
+  isRoomAskOpen = false,
+  roomAiPanel,
+  assistantMood = "idle",
   onSendImage,
   onRecall,
   onRetry,
@@ -168,6 +173,10 @@ export const TemporaryChatPanel = ({
   onQuickMessageSend?: (presetId: string) => void;
   onOpenQuickMessageSettings?: () => void;
   onOpenRoomAi?: () => void;
+  onCloseRoomAi?: () => void;
+  isRoomAskOpen?: boolean;
+  roomAiPanel?: ReactNode;
+  assistantMood?: AssistantBotMood;
   onSendImage?: (file: File) => Promise<void>;
   onRecall?: (messageId: string) => Promise<void>;
   onRetry?: (message: ChatMessage) => Promise<void>;
@@ -556,23 +565,14 @@ export const TemporaryChatPanel = ({
           sendImageFile(Array.from(event.dataTransfer.files).find(isSupportedChatImageFile));
         }}
       >
-        <div className="chat-panel-header flex flex-col items-stretch gap-2 border-b border-[rgba(220,230,242,0.6)] pb-2.5">
-          <div className="chat-panel-title-row flex items-center justify-between gap-3">
-            <div className="chat-panel-title whitespace-nowrap text-[13px] font-semibold text-[#1a2332]">
-              聊天
-            </div>
-            {onOpenQuickMessageSettings ? (
-              <button
-                type="button"
-                className="chat-settings-button interactive-surface mr-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-[9px] border border-[rgba(220,230,242,0.8)] bg-white text-[#52657d] hover:bg-[#f5f7fb]"
-                aria-label="设置快捷消息"
-                title="设置快捷消息"
-                onClick={onOpenQuickMessageSettings}
-              >
-                <Settings2 className="h-3.5 w-3.5" />
-              </button>
-            ) : null}
-          </div>
+        <ChatPanelHeader
+          mood={assistantMood}
+          isAsking={isRoomAskOpen}
+          roomAiPanel={roomAiPanel}
+          onOpenAssistant={onOpenRoomAi}
+          onCloseAssistant={onCloseRoomAi}
+          onOpenQuickSettings={onOpenQuickMessageSettings}
+        >
           <div className="chat-quick-actions flex min-w-0 flex-col items-end gap-1">
             <QuickMessageRow
               items={quickMessages}
@@ -594,25 +594,12 @@ export const TemporaryChatPanel = ({
               />
             ) : null}
           </div>
-        </div>
+        </ChatPanelHeader>
 
-        <div className="relative min-h-0 flex-1">
-          {onOpenRoomAi ? (
-            <div className="chat-ai-slot">
-              <button
-                type="button"
-                className="chat-ai-entry interactive-surface"
-                aria-label="打开上号 AI"
-                title="打开上号 AI"
-                onClick={onOpenRoomAi}
-              >
-                <RoomAiIcon />
-              </button>
-            </div>
-          ) : null}
+        <div className="relative flex min-h-0 flex-1 flex-col">
           <div
             ref={listRef}
-            className="chat-message-list flex h-full min-h-0 flex-col gap-3 overflow-x-hidden overflow-y-auto pr-1"
+            className="chat-message-list flex min-h-0 flex-1 flex-col gap-3 overflow-x-hidden overflow-y-auto pr-1"
             onScroll={(event) => {
               const list = event.currentTarget;
               isNearBottomRef.current = list.scrollHeight - list.scrollTop - list.clientHeight < 64;

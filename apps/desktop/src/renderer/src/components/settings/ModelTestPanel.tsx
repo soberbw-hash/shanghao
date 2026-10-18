@@ -145,7 +145,12 @@ export const ModelTestPanel = ({
 
       if (recordResult.status === "fulfilled") {
         setRecord(savedRecord);
-        setViewingModelId(savedRecord?.transcriptionModel?.id);
+        const savedModelId = savedRecord?.transcriptionModel?.id;
+        setViewingModelId(
+          savedModelId && savedModelId in AI_ASR_MODEL_NAMES
+            ? (savedModelId as AiAsrModelId)
+            : undefined,
+        );
       } else {
         setError((current) => current ?? "无法读取这条录音的转录结果，但仍可重新开始测试。");
       }
@@ -203,7 +208,10 @@ export const ModelTestPanel = ({
           errorMessage: next.errorMessage,
         };
       });
-      if (next.transcriptionModel?.id) setViewingModelId(next.transcriptionModel.id);
+      const nextModelId = next.transcriptionModel?.id;
+      if (nextModelId && nextModelId in AI_ASR_MODEL_NAMES) {
+        setViewingModelId(nextModelId as AiAsrModelId);
+      }
     });
     return () => {
       active = false;

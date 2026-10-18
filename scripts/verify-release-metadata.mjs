@@ -43,6 +43,12 @@ const releaseNotes = await readFile(releaseNotesPath, "utf8");
 if (releaseNotes.trim().length < 200) {
   throw new Error(`Release notes are missing or incomplete: ${releaseNotesPath}`);
 }
+for (const match of releaseNotes.matchAll(/!\[[^\]]*\]\((\.\.\/assets\/releases\/[^)]+)\)/g)) {
+  const file = path.resolve(path.dirname(releaseNotesPath), match[1]);
+  const bytes = await readFile(file);
+  if (!bytes.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10])))
+    throw new Error(`Release screenshot is not a PNG: ${file}`);
+}
 if (!readme.includes(`当前仓库版本为 **${expectedVersion}**`)) {
   throw new Error(`README current version is not ${expectedVersion}`);
 }

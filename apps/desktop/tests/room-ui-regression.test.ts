@@ -151,22 +151,53 @@ test("room exposes one dedicated AI entry with suggestions, prompt and history s
     path.resolve(process.cwd(), "src/renderer/src/pages/RoomPage.tsx"),
     "utf8",
   );
-  const chatSource = readFileSync(
-    path.resolve(process.cwd(), "src/renderer/src/components/chat/TemporaryChatPanel.tsx"),
-    "utf8",
-  );
+  const chatSource =
+    readFileSync(
+      path.resolve(process.cwd(), "src/renderer/src/components/chat/TemporaryChatPanel.tsx"),
+      "utf8",
+    ) +
+    readFileSync(
+      path.resolve(process.cwd(), "src/renderer/src/components/chat/ChatPanelHeader.tsx"),
+      "utf8",
+    );
   const dialogSource = readFileSync(
     path.resolve(process.cwd(), "src/renderer/src/components/room/RoomAskDialog.tsx"),
+    "utf8",
+  );
+  const assistantWelcomeSource = readFileSync(
+    path.resolve(process.cwd(), "src/renderer/src/components/chat/ChatAssistantWelcome.tsx"),
+    "utf8",
+  );
+  const assistantMascotStyles = readRendererCss();
+  const assistantStateSource = readFileSync(
+    path.resolve(process.cwd(), "src/renderer/src/features/ai/useAssistantBotState.ts"),
     "utf8",
   );
   assert.equal(windowFrameSource.includes('aria-label="打开上号 AI"'), false);
   assert.equal(windowFrameSource.includes('className="window-ai-zone"'), false);
   assert.equal(windowFrameSource.includes('className="window-ai-entry whitespace-nowrap"'), false);
-  assert.equal(chatSource.includes('className="chat-ai-entry interactive-surface"'), true);
-  assert.equal(chatSource.includes('aria-label="打开上号 AI"'), true);
-  assert.equal(chatSource.includes("<RoomAiIcon />"), true);
+  assert.equal(assistantWelcomeSource.includes('className="chat-ai-entry"'), true);
+  assert.equal(
+    assistantWelcomeSource.includes('aria-label={isOpen ? "收起 AI 助手" : "打开 AI 助手"}'),
+    true,
+  );
+  assert.equal(assistantWelcomeSource.includes("嗨，想问点什么？"), true);
+  assert.equal(assistantWelcomeSource.includes("我是上号 AI"), false);
+  assert.equal(assistantWelcomeSource.includes("<AssistantBotAvatar mood={mood}"), true);
+  assert.equal(assistantWelcomeSource.includes("chat-ai-welcome"), true);
+  assert.equal(assistantMascotStyles.includes('.chat-ai-welcome-shell[data-open="true"]'), true);
+  assert.equal(assistantMascotStyles.includes("width: min(160px, 100%)"), true);
+  assert.equal(assistantMascotStyles.includes("width 520ms cubic-bezier(0.22, 1, 0.36, 1)"), true);
+  assert.equal(chatSource.includes("isAsking={isRoomAskOpen}"), true);
+  assert.equal(chatSource.includes("onOpenAssistant={onOpenRoomAi}"), true);
+  assert.equal(chatSource.includes("chat-title-actions flex shrink-0 items-center gap-2.5"), true);
   assert.equal(windowFrameSource.includes("shanghao:open-room-ai"), false);
-  assert.equal(roomSource.includes("shanghao:open-room-ai"), true);
+  assert.equal(roomSource.includes("shanghao:open-room-ai"), false);
+  assert.equal(
+    assistantStateSource.includes('window.addEventListener("shanghao:open-room-ai"'),
+    true,
+  );
+  assert.equal(assistantStateSource.includes('transition("idle");\n    setAskOpen(false);'), true);
   assert.equal(dialogSource.includes("搜索记忆"), false);
   assert.equal(dialogSource.includes("房间云端 AI，可联网搜索相关知识"), false);
   assert.equal(dialogSource.includes("ROOM_QUESTION_HISTORY_LIMIT = 10"), true);
@@ -186,7 +217,7 @@ test("room exposes one dedicated AI entry with suggestions, prompt and history s
   assert.equal(dialogSource.includes("window.desktopApi.ai.cancelQuestion"), true);
   assert.equal(dialogSource.includes("停止回答"), true);
   assert.equal(dialogSource.includes("onOpenResult"), true);
-  assert.equal(dialogSource.includes('className="room-ask-popover"'), true);
+  assert.equal(dialogSource.includes('" room-ask-inline"'), true);
   assert.equal(dialogSource.includes("需要先在设置的 AI 功能里下载问答模型"), false);
   assert.equal(dialogSource.includes('aria-modal="true"'), false);
   assert.equal(dialogSource.includes("fixed inset-0"), false);

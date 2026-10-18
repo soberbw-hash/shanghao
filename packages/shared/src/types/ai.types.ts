@@ -60,6 +60,21 @@ export type AiModelFailureKind = "download" | "network" | "disk" | "integrity" |
 export type AiProcessingMode = "after_game" | "low_resource" | "immediate" | "manual";
 
 export type AiTextProvider = "cloud" | "local" | "custom";
+export type AiTranscriptionProvider = "cloud" | "local" | "custom";
+
+export interface AiTranscriptionProviderInput {
+  provider: "cloud" | "custom";
+  apiKey?: string;
+  baseUrl?: string;
+  model?: string;
+}
+
+export interface AiTranscriptionProviderStatus {
+  cloudConfigured: boolean;
+  customConfigured: boolean;
+  customBaseUrl?: string;
+  customModel?: string;
+}
 
 export interface AiCustomProviderInput {
   baseUrl: string;
@@ -391,7 +406,7 @@ export interface VoiceMemoryOrganizationPublication {
 }
 
 export interface VoiceMemoryTranscriptionModel {
-  id: AiAsrModelId;
+  id: AiAsrModelId | "siliconflow-sensevoice-small" | "custom-asr-api";
   name: string;
   /** Exact downloaded revision used when the runtime reported one. */
   version?: string;
@@ -665,7 +680,12 @@ export interface VoiceMemoryRecord {
   /** ASR model that produced this transcript; independent from the model currently selected. */
   transcriptionModel?: VoiceMemoryTranscriptionModel;
   /** Per-model A/B results. The active variant is also mirrored in transcript/speakers. */
-  transcriptionVariants?: Partial<Record<AiAsrModelId, VoiceMemoryTranscriptionVariant>>;
+  transcriptionVariants?: Partial<
+    Record<
+      AiAsrModelId | "siliconflow-sensevoice-small" | "custom-asr-api",
+      VoiceMemoryTranscriptionVariant
+    >
+  >;
   /** Effective ASR runtime time; pauses, queueing, conversion and organization are excluded. */
   transcriptionElapsedMs?: number;
   /** Durable coverage and recovery metrics for long-running or comparison transcriptions. */

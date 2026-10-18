@@ -65,6 +65,11 @@ const games = JSON.parse(
   await readFile(path.join(assetsRoot, "games/screens/catalog.json"), "utf8"),
 );
 const labels = {
+  "idle.png": "AI 搭子 · 待机原图",
+  "greeting.png": "AI 搭子 · 欢迎原图",
+  "thinking.png": "AI 搭子 · 思考原图",
+  "gaming.png": "AI 搭子 · 游戏原图",
+  "reference-room.png": "AI 搭子 · 房间布局参考备份",
   "clock.png": "时钟表盘原图",
   "calendar-blank-v2.png": "当前空白日历",
   "calendar.png": "旧日历原图",

@@ -313,7 +313,30 @@ export const captureUi = async (
   await sleep(5_200);
   await dismissReleaseNotes(window);
   await dismissDailyReport(window);
-  if (options.mode === "profile-settings") {
+  const releaseFixture = process.env.SHANGHAO_CAPTURE_RELEASE_FIXTURE === "1";
+  if (releaseFixture) {
+    if (!process.env.VITE_DEV_SERVER_URL) throw new Error("release_fixture_requires_dev_renderer");
+    // Isolated capture profile only: render the real room UI with no network session,
+    // user messages, recordings or credentials. This is a visual fixture, not a call test.
+    await window.webContents.executeJavaScript(
+      `(async () => {
+      const { useAccountStore } = await import('/src/store/accountStore.ts');
+      const { useAppStore } = await import('/src/store/appStore.ts');
+      const { useRoomStore } = await import('/src/store/roomStore.ts');
+      useAccountStore.setState({ isHydrating: false, snapshot: {
+        status: 'guest', configured: false, guestAllowed: true, guestId: 'release-preview'
+      }});
+      await window.desktopApi.settings.save({ isAiAutoTranscribeEnabled: false,
+        aiTranscriptionProvider: 'cloud' });
+      useRoomStore.getState().syncLocalProfile({nickname: '一起上号', avatarId: 'corgi'});
+      useRoomStore.getState().setRoom({ roomName: '一起上号', connectionState: 'idle' });
+      useAppStore.getState().setSettingsReturnTo('room');
+      useAppStore.getState().navigate(${JSON.stringify(options.mode.startsWith("settings") ? "settings" : "room")});
+    })()`,
+      true,
+    );
+    await sleep(2_500);
+  } else if (options.mode === "profile-settings") {
     if (await clickButtonByLabel(window, "以访客身份继续")) {
       await sleep(700);
       await dismissReleaseNotes(window, 1_500);
@@ -459,8 +482,11 @@ export const captureUi = async (
   }
 
   if (options.mode === "room-ai") {
-    const opened = await clickButtonByLabelWithMouse(window, "打开上号 AI");
-    if (!opened || !(await waitForVisibleSelector(window, ".room-ask-popover", 1_500))) {
+    const opened = await clickButtonByLabelWithMouse(window, "打开 AI 助手");
+    if (
+      !opened ||
+      !(await waitForVisibleSelector(window, '.chat-ai-welcome-shell[data-open="true"]', 1_500))
+    ) {
       const failedImage = await window.capturePage();
       await mkdir(dirname(options.outputPath), { recursive: true });
       await writeFile(options.outputPath, failedImage.toPNG());

@@ -477,7 +477,7 @@ export const QuickMessageSettingsCard = ({
               </Button>
             </div>
           </div>
-          <div className="flex flex-wrap gap-1.5">
+          <div className="quick-message-preset-grid flex flex-wrap gap-2.5">
             {visiblePresets.map((preset) => {
               const assignedSlots = assignedSlotsByPreset.get(preset.id) ?? [];
               const assignedMusicSlots = assignedMusicSlotsByPreset.get(preset.id) ?? [];

@@ -7,7 +7,32 @@ import test from "node:test";
 import {
   preparePersistentAiStorage,
   resolvePersistentAiStoragePaths,
+  resolveVoiceMemoryStoragePath,
 } from "../src/main/ai-storage";
+
+test("packaged and development profiles share voice-memory while capture profiles stay isolated", () => {
+  const appData = "C:\\Users\\tester\\AppData\\Roaming";
+  const shared = path.join(appData, "shanghao", "voice-memory");
+  assert.equal(resolveVoiceMemoryStoragePath(path.join(appData, "shanghao"), appData), shared);
+  assert.equal(
+    resolveVoiceMemoryStoragePath(path.join(appData, "shanghao-desktop"), appData),
+    shared,
+  );
+  assert.equal(
+    resolveVoiceMemoryStoragePath(
+      path.join(appData, "shanghao-desktop"),
+      appData,
+      path.join(os.tmpdir(), "capture"),
+    ),
+    path.join(appData, "shanghao-desktop", "voice-memory"),
+  );
+  const isolatedProfile = path.join(os.tmpdir(), "test-profile");
+  const unrelatedAppData = path.join(os.tmpdir(), "unrelated-app-data");
+  assert.equal(
+    resolveVoiceMemoryStoragePath(isolatedProfile, unrelatedAppData),
+    path.join(isolatedProfile, "voice-memory"),
+  );
+});
 
 test("development and packaged builds resolve one version-independent local AI directory", () => {
   const localAppDataDirectory = "C:\\Users\\tester\\AppData\\Local";

@@ -7,17 +7,20 @@ import type { VoiceMemoryAnswer } from "@private-voice/shared";
 import { popoverSurfaceVariants, reducedFadeVariants } from "../../features/motion/motionPresets";
 import { Button } from "../base/Button";
 import { DialogCloseButton } from "../base/DialogCloseButton";
-import { RoomAiIcon } from "./RoomAiIcon";
 import { roomAiError } from "../../features/room/roomAiError";
 import { useRoomAiShare } from "../../features/room/useRoomAiShare";
+import { AssistantBotAvatar } from "./AssistantBotAvatar";
+import type { AssistantBotMood } from "../../features/ai/useAssistantBotState";
 
 interface RoomAskDialogProps {
   isOpen: boolean;
+  inline?: boolean;
   reduceMotion: boolean;
   onClose: () => void;
   onOpenResult: (target: { filePath: string; startMs: number }) => void;
   onSendToChat: (content: string, clientMessageId: string) => Promise<void>;
   canSend: boolean;
+  onAssistantMoodChange: (mood: AssistantBotMood) => void;
 }
 
 type PendingAction = "ask";
@@ -31,7 +34,6 @@ interface RoomQuestionHistoryEntry {
 
 const ROOM_QUESTION_HISTORY_KEY = "shanghao:room-question-history:v1";
 const ROOM_QUESTION_HISTORY_LIMIT = 10;
-
 const readQuestionHistory = (): RoomQuestionHistoryEntry[] => {
   try {
     const parsed = JSON.parse(window.localStorage.getItem(ROOM_QUESTION_HISTORY_KEY) ?? "[]") as
@@ -89,11 +91,13 @@ const formatOffset = (offsetMs: number): string => {
 /** One room-level entry for asking a question without blocking the room. */
 export const RoomAskDialog = ({
   isOpen,
+  inline = false,
   reduceMotion,
   onClose,
   onOpenResult,
   onSendToChat,
   canSend,
+  onAssistantMoodChange,
 }: RoomAskDialogProps) => {
   const sharing = useRoomAiShare(onSendToChat);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -112,13 +116,14 @@ export const RoomAskDialog = ({
       askSequenceRef.current += 1;
       void window.desktopApi.ai.cancelQuestion();
       setPending(undefined);
+      onAssistantMoodChange("idle");
     }
     onClose();
-  }, [onClose, pending]);
+  }, [onAssistantMoodChange, onClose, pending]);
 
   useEffect(() => {
     if (!isOpen) return;
-    const timer = window.setTimeout(() => inputRef.current?.focus(), 80);
+    const timer = window.setTimeout(() => inputRef.current?.focus({ preventScroll: true }), 80);
     const closeOnEscape = (event: KeyboardEvent) => {
       if (event.key === "Escape") closeDialog();
     };
@@ -131,8 +136,11 @@ export const RoomAskDialog = ({
 
   useEffect(() => {
     if (isOpen || pending !== "ask") return;
+    askSequenceRef.current += 1;
+    setPending(undefined);
     void window.desktopApi.ai.cancelQuestion();
-  }, [isOpen, pending]);
+    onAssistantMoodChange("idle");
+  }, [isOpen, onAssistantMoodChange, pending]);
 
   useEffect(() => {
     if (pending !== "ask") {
@@ -151,6 +159,7 @@ export const RoomAskDialog = ({
     if (!value || pending || sharing.sending) return;
     const sequence = ++askSequenceRef.current;
     setPending("ask");
+    onAssistantMoodChange("thinking");
     setStopping(false);
     setError(undefined);
     setAnswer(undefined);
@@ -165,10 +174,12 @@ export const RoomAskDialog = ({
       )
         throw new Error("ai_invalid_json_response");
       setAnswer(nextAnswer);
+      onAssistantMoodChange("idle");
       setQuestionHistory((current) => rememberQuestion(current, value, nextAnswer));
     } catch (cause) {
       if (sequence !== askSequenceRef.current) return;
       setError(roomAiError(cause));
+      onAssistantMoodChange("error");
     } finally {
       if (sequence === askSequenceRef.current) setPending(undefined);
     }
@@ -183,8 +194,10 @@ export const RoomAskDialog = ({
       askSequenceRef.current += 1;
       setPending(undefined);
       setError("已经停止这次回答，可以继续使用房间或重新提问。");
+      onAssistantMoodChange("idle");
     } catch {
       setError("停止回答没有成功，请关闭提问窗口后重试。");
+      onAssistantMoodChange("error");
     } finally {
       setStopping(false);
     }
@@ -197,25 +210,27 @@ export const RoomAskDialog = ({
           key="room-ask-dialog"
           role="dialog"
           aria-labelledby="room-ask-title"
-          className="room-ask-popover"
-          variants={reduceMotion ? reducedFadeVariants : popoverSurfaceVariants}
-          initial="initial"
-          animate="open"
-          exit="closed"
+          className={`room-ask-popover${inline ? " room-ask-inline" : ""}`}
+          variants={
+            inline ? undefined : reduceMotion ? reducedFadeVariants : popoverSurfaceVariants
+          }
+          initial={inline ? false : "initial"}
+          animate={inline ? undefined : "open"}
+          exit={inline ? undefined : "closed"}
         >
           <header className="room-ai-header">
             <div className="room-ai-title">
               <span className="room-ai-title-icon" aria-hidden="true">
-                <RoomAiIcon />
+                <AssistantBotAvatar mood={pending === "ask" ? "thinking" : "idle"} size={44} />
               </span>
               <span>
                 <h2 id="room-ask-title" className="text-balance">
-                  上号 AI
+                  {inline ? "语音记录提问" : "上号 AI"}
                 </h2>
-                <small>游戏助手</small>
+                <small>{inline ? "直接提问，查看房间语音记录" : "游戏助手"}</small>
               </span>
             </div>
-            <DialogCloseButton label="关闭提问浮窗" onClick={closeDialog} />
+            <DialogCloseButton label={inline ? "关闭提问" : "关闭提问浮窗"} onClick={closeDialog} />
           </header>
 
           <div className="room-ask-popover-body">
@@ -247,7 +262,7 @@ export const RoomAskDialog = ({
             {pending === "ask" ? (
               <div className="room-ai-working" role="status" aria-live="polite">
                 <span className="room-ai-working-icon" aria-hidden="true">
-                  <RoomAiIcon />
+                  <AssistantBotAvatar mood="thinking" size={36} />
                 </span>
                 <span>
                   <strong>正在回答</strong>
@@ -288,7 +303,7 @@ export const RoomAskDialog = ({
               <article className="room-ai-answer">
                 <h3>
                   <span className="room-ai-answer-icon" aria-hidden="true">
-                    <RoomAiIcon />
+                    <AssistantBotAvatar mood="idle" size={32} />
                   </span>
                   上号 AI
                 </h3>

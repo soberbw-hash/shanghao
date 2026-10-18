@@ -196,7 +196,11 @@ test("windows executable and shortcut use approved v4 icons", () => {
   assert.equal(installer.includes("shanghao-shortcut-v4.ico"), true);
   assert.equal(mainWindow.includes("window.setAppDetails({"), true);
   assert.equal(mainWindow.includes("appIconPath: getIconPath()"), true);
-  assert.equal(mainWindow.includes("appId: APP_ID"), true);
+  assert.equal(mainWindow.includes("appId: getWindowsAppId()"), true);
+  const identity = read("apps/desktop/src/main/development-shortcuts.ts");
+  assert.match(identity, /app.isPackaged\s*\?\s*APP_ID/);
+  assert.equal(identity.includes("`${APP_ID}.dev`"), true);
+  assert.equal(identity.includes("`${APP_ID}.capture`"), true);
 });
 
 test("AI voice memory remains local and legacy server LLM proxy paths stay removed", () => {

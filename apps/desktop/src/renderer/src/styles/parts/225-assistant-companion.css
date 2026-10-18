@@ -1,0 +1,53 @@
+.assistant-bot-companion {
+  position: relative;
+  display: block;
+  width: clamp(72px, 8vw, 98px);
+  height: clamp(72px, 8vw, 98px);
+  flex: 0 0 auto;
+  appearance: none;
+  border: 0;
+  border-radius: 50%;
+  padding: 0;
+  background: transparent;
+  transform-style: preserve-3d;
+  touch-action: manipulation;
+  cursor: pointer;
+}
+.assistant-bot-companion:focus-visible {
+  outline: 2px solid #7aabe5;
+  outline-offset: 3px;
+}
+.assistant-bot-companion-float {
+  position: absolute;
+  inset: 0;
+  animation: companion-breathe 4.8s ease-in-out infinite;
+}
+.assistant-bot-companion-float img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  pointer-events: none;
+  user-select: none;
+}
+.assistant-bot-companion[data-active="false"] .assistant-bot-companion-float {
+  animation-play-state: paused;
+}
+.assistant-bot-companion[data-mood="thinking"] .assistant-bot-companion-float {
+  animation-duration: 3.2s;
+}
+@keyframes companion-breathe {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-2px);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .assistant-bot-companion-float {
+    animation: none;
+  }
+}

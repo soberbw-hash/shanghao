@@ -117,7 +117,11 @@ for (const runner of [runtimeManifest.qwen.runner, runtimeManifest.asr?.runner])
   }
 }
 
-for (const nativeHelper of ["shanghao-core.exe", "ShangHao.PhoneAudio.exe"]) {
+for (const nativeHelper of [
+  "shanghao-core.exe",
+  "ShangHao.PhoneAudio.exe",
+  "ShangHao.PhoneInput.exe",
+]) {
   const nativeHelperPath = path.join(resourcesDirectory, "native", nativeHelper);
   await access(nativeHelperPath);
   if ((await stat(nativeHelperPath)).size < 1024) {

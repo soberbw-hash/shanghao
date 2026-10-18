@@ -1,4 +1,9 @@
-import type { AiAsrModelId, AiProcessingMode, AiTextProvider } from "./ai.types";
+import type {
+  AiAsrModelId,
+  AiProcessingMode,
+  AiTextProvider,
+  AiTranscriptionProvider,
+} from "./ai.types";
 import type { WeatherEffectMode, WeatherLocationMode } from "./weather.types";
 import type { QuickMessageSettings } from "./quick-message.types";
 
@@ -46,6 +51,7 @@ export interface AppSettings {
   recordingLibraryQuotaGb: number;
   isRecordingWasteAutoCleanupEnabled: boolean;
   aiAsrModel: AiAsrModelId;
+  aiTranscriptionProvider?: AiTranscriptionProvider;
   aiOrganizerProvider: AiTextProvider;
   aiRoomAskProvider: AiTextProvider;
   aiProcessingMode: AiProcessingMode;

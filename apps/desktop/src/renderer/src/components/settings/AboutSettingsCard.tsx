@@ -121,6 +121,7 @@ export const AboutSettingsCard = ({
             <div className="about-product-title-row">
               <div>
                 <h4>上号</h4>
+                <p className="text-xs text-[#70849e]">字体使用 HarmonyOS Sans 与 Noto Sans SC</p>
               </div>
               <span className="about-version-chip">版本 {currentVersion}</span>
             </div>

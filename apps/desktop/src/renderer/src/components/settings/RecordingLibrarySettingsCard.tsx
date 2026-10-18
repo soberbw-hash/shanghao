@@ -44,6 +44,7 @@ import { useRecordingDurations } from "../../hooks/useRecordingDurations";
 import { useRecordingClipPreview } from "../../hooks/useRecordingClipPreview";
 import { useRecordingStore } from "../../store/recordingStore";
 import { createRecordingLibraryCache } from "../../features/recording/recordingLibraryCache";
+import { subscribeSharedRecordingRefresh } from "../../features/recording/sharedRecordingRefresh";
 import { formatRecordingBytes } from "../../features/recording/recordingSize";
 import { recordingDisplayTitle } from "../../features/recording/recordingDisplayTitle";
 import { isVoiceMemoryTranscriptionComplete } from "../../features/ai/voiceMemoryPresentation";
@@ -134,7 +135,9 @@ const voiceMemoryStatus = (
   if (!record) return undefined;
   const progress = record.progress;
   const modelLabel = record.transcriptionModel
-    ? compactTranscriptionModelNames[record.transcriptionModel.id]
+    ? (compactTranscriptionModelNames[
+        record.transcriptionModel.id as keyof typeof compactTranscriptionModelNames
+      ] ?? record.transcriptionModel.name)
     : record.transcriptCount > 0
       ? "模型未知"
       : undefined;
@@ -292,6 +295,11 @@ export const RecordingLibrarySettingsCard = ({
       current && next.items.some((item) => item.id === current) ? current : next.items[0]?.id,
     );
   }, []);
+
+  useEffect(() => {
+    if (!isActive) return;
+    return subscribeSharedRecordingRefresh(reload);
+  }, [isActive, reload]);
 
   useEffect(() => {
     if (!isActive) return;

@@ -1,6 +1,5 @@
 import { randomUUID } from "node:crypto";
 import path from "node:path";
-
 import {
   AI_ASR_MODEL_NAMES,
   CURRENT_TRANSCRIPTION_PIPELINE_VERSION,
@@ -10,6 +9,7 @@ import {
   type AiAsrModelId,
   type AiModelId,
   type AiRuntimeStatus,
+  type AiTranscriptionProvider,
   type RendererLogPayload,
   type VoiceMemoryAnswer,
   type VoiceMemoryBenchmarkRunMetadata,
@@ -25,11 +25,11 @@ import {
   type VoiceMemoryTaskDiagnostic,
   type VoiceMemoryTaskStatus,
 } from "@private-voice/shared";
-
 import { AiModelManager } from "./ai-model-manager";
 import { AiJobWriteOwnership } from "./ai-job-write-ownership";
 import { AiRuntimeManager } from "./ai-runtime-manager";
 import { transcribeChunkWithRetry } from "./voice-memory-transcription-retry";
+import { transcribeWithRemoteProvider } from "./remote-transcription";
 import { TRANSCRIPTION_CHUNK_MS, transcriptionChunkMsForModel } from "./asr-chunk-policy";
 import { classifyLocalModelRuntimeError } from "./local-model-runtime";
 import { VoiceMemoryStore, type VoiceMemorySaveOptions } from "./voice-memory-store";
@@ -50,6 +50,7 @@ import {
 import { VoiceMemoryOrganizer } from "./voice-memory-organizer";
 export { transcriptForPrompt } from "./voice-memory-organizer";
 import { bindTranscriptToKnownSpeaker, mergeSpeakerTranscript } from "./speaker-transcript";
+import { AiTranscriptionProviderStore } from "./ai-transcription-provider-store";
 
 export {
   TRANSCRIPTION_CHUNK_MS,
@@ -121,6 +122,8 @@ export class AiVoiceMemoryService {
     private readonly store: VoiceMemoryStore,
     private readonly writeLog?: (payload: RendererLogPayload) => Promise<void>,
     private readonly isAutomaticTranscriptionEnabled: () => boolean = () => true,
+    private readonly transcriptionProviderStore?: AiTranscriptionProviderStore,
+    private readonly getTranscriptionProvider: () => AiTranscriptionProvider = () => "local",
   ) {}
 
   async initialize(): Promise<void> {
@@ -466,7 +469,10 @@ export class AiVoiceMemoryService {
       manual: true,
       transcribe: !resumeOrganization,
       organize: resumeOrganization,
-      asrModelId: record.transcriptionModel?.id,
+      asrModelId:
+        record.transcriptionModel?.id && record.transcriptionModel.id in AI_ASR_MODEL_NAMES
+          ? (record.transcriptionModel.id as AiAsrModelId)
+          : undefined,
     });
   }
 
@@ -1197,6 +1203,21 @@ export class AiVoiceMemoryService {
     onStage?: (stage: VoiceMemoryProcessingStage) => void,
   ): Promise<VoiceMemoryRecord> {
     onStage?.("preprocess");
+    const transcriptionProvider = this.getTranscriptionProvider();
+    if (transcriptionProvider !== "local") {
+      if (requestedModelId || requestedBenchmark) {
+        throw new Error("remote_asr_model_comparison_not_supported");
+      }
+      return transcribeWithRemoteProvider({
+        record,
+        provider: transcriptionProvider,
+        signal,
+        store: this.transcriptionProviderStore,
+        updateDiagnostic: this.updateDiagnostic.bind(this),
+        save: this.save.bind(this),
+        onStage,
+      });
+    }
     const {
       taskId,
       legacyTaskId,
@@ -1875,7 +1896,7 @@ export class AiVoiceMemoryService {
     if (!this.isAutomaticTranscriptionEnabled()) return;
     if (this.controllers.size > 0) return this.scheduleDeferredRetry();
     const runnable = this.models.canRunTask("transcription", false);
-    if (!runnable.runnable) return;
+    if (this.getTranscriptionProvider() === "local" && !runnable.runnable) return;
     const records = await this.store.list();
     for (const record of records.filter((item) => item.errorMessage?.startsWith("deferred:"))) {
       await this.process({
@@ -1916,7 +1937,7 @@ export class AiVoiceMemoryService {
           ...record,
           transcriptionModel: {
             id: modelId,
-            name: AI_ASR_MODEL_NAMES[modelId],
+            name: AI_ASR_MODEL_NAMES[modelId as AiAsrModelId] ?? modelId,
           },
         }
       : record;

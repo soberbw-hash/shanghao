@@ -127,7 +127,7 @@ test("settings keep short lists visible and model actions above neighboring card
   assert.equal(aiSource.includes('aria-label="筛选模型"'), true);
   assert.match(
     aiSource,
-    /<div className="ai-model-group-heading">\s*<h3 id="model-management-title">模型<\/h3>\s*<div className="ai-model-filter-bar" role="group" aria-label="筛选模型">/,
+    /<div className="ai-model-group-heading">\s*<h3 id="model-management-title">模型<\/h3>\s*\{transcriptionProvider === "local" \? \(\s*<div className="ai-model-filter-bar" role="group" aria-label="筛选模型">/,
   );
   assert.match(styles, /\.ai-model-filter-bar\s*\{[^}]*margin-left:\s*auto;/s);
   assert.equal(settingsSource.includes('<details className="settings-advanced-operation">'), false);
@@ -166,7 +166,10 @@ test("quick messages show voice and music slots with playback controls in one li
   assert.equal(source.includes("onDrop={(event) => handleMusicDrop(event, index)}"), true);
   assert.equal(source.includes("draggable"), true);
   assert.equal(source.includes("快捷音频库"), false);
-  assert.equal(source.includes('className="flex flex-wrap gap-1.5"'), true);
+  assert.equal(
+    source.includes('className="quick-message-preset-grid flex flex-wrap gap-2.5"'),
+    true,
+  );
   assert.equal(source.includes("rounded-[9px] border px-2 py-1"), true);
   assert.equal(source.includes("w-fit max-w-full cursor-grab"), true);
   assert.equal(source.includes("搜索音频名称或标签"), true);
@@ -487,7 +490,10 @@ test("microphone processing lives in the room panel while about keeps release hi
   assert.equal(roomDockSource.includes("pushToTalkEnabled={settings.isPushToTalkEnabled}"), true);
   assert.equal(roomDockSource.includes("microphoneTest={microphoneTest}"), true);
   assert.equal(RELEASE_HISTORY.length >= 83, true);
-  assert.equal(RELEASE_HISTORY[0]?.version, "3.4.5");
+  const desktopPackage = JSON.parse(
+    readFileSync(path.resolve(process.cwd(), "package.json"), "utf8"),
+  ) as { version: string };
+  assert.equal(RELEASE_HISTORY[0]?.version, desktopPackage.version);
   assert.equal(RELEASE_HISTORY.at(-1)?.version, "0.1.1");
   assert.equal(
     new Set(RELEASE_HISTORY.map((release) => release.version)).size,
@@ -777,7 +783,7 @@ test("AI voice memory keeps first install manual and recovers interrupted compar
     /\.ai-model-management-grid\s*\{[^}]*grid-template-columns:\s*repeat\(auto-fit/s,
   );
   assert.match(styles, /\.ai-model-management-grid\s*\{[^}]*grid-auto-rows:\s*max-content/s);
-  assert.match(styles, /\.ai-model-card\s*\{[^}]*min-height:\s*72px/s);
+  assert.match(styles, /\.ai-model-card\s*\{[^}]*min-height:\s*86px/s);
   assert.equal(styles.includes("grid-auto-rows: 112px"), false);
   assert.equal(source.includes("ai-model-card-footer"), true);
   assert.equal(source.includes("悬停卡片可查看完整技术信息"), false);
@@ -797,11 +803,11 @@ test("AI voice memory keeps first install manual and recovers interrupted compar
   assert.equal(source.includes('typeof aiApi.getRuntimeStatus !== "function"'), true);
   assert.equal(source.includes("model.id === settings.aiAsrModel"), true);
   assert.equal(source.includes("qwen3-forced-aligner-0.6b"), true);
-  assert.equal(source.includes("isDisabled={!selectedAsrReady}"), true);
-  assert.equal(source.includes("isDisabled={!organizerReady || !selectedAsrReady}"), true);
+  assert.equal(source.includes("isDisabled={!activeTranscriptionReady}"), true);
+  assert.equal(source.includes("isDisabled={!organizerReady || !activeTranscriptionReady}"), true);
   assert.equal(source.includes('option value="cloud">房间云端（默认）'), true);
   assert.equal(source.includes("云端 API · 无需本地模型"), false);
-  assert.equal(source.includes('label="整理与问答模型"'), true);
+  assert.equal(source.includes('aria-label="文本整理与问答模型"'), true);
   assert.equal(source.includes('label="录音整理模型"'), false);
   assert.equal(source.includes('label="房间问答模型"'), false);
   assert.ok(

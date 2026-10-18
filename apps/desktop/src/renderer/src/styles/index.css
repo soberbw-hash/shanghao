@@ -29,6 +29,7 @@
 @import "./parts/170-model-comparison.css";
 @import "./parts/175-voice-memory-organization.css";
 @import "./parts/176-ai-model-management.css";
+@import "./parts/177-ai-model-provider-panels.css";
 @import "./parts/180-room-asset-pass.css";
 @import "./parts/190-room-glass-unification.css";
 @import "./parts/195-phone-mic.css";
@@ -41,5 +42,8 @@
 @import "./parts/215-game-artwork.css";
 @import "./parts/216-game-identity.css";
 @import "./parts/220-screen-source-picker.css";
-
-/* Keep these imports ordered: later compatibility passes intentionally win the cascade. */
+@import "./parts/221-ai-mascot.css";
+@import "./parts/222-ai-inline-question.css";
+@import "./parts/223-assistant-avatar-motion.css";
+@import "./parts/224-quick-message-library-spacing.css";
+@import "./parts/225-assistant-companion.css";

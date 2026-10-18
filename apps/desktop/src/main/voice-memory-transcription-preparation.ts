@@ -101,7 +101,6 @@ export const completedTranscriptionUnits = (
     ),
   );
 
-/** Resolves the pinned model and probes media; never owns jobs or writes checkpoints. */
 export async function prepareTranscriptionInput(
   models: Pick<AiModelManager, "getActiveAsrModel" | "getTaskCheckpoint" | "canRunTask">,
   runtime: Pick<AiRuntimeManager, "status">,
@@ -111,8 +110,9 @@ export async function prepareTranscriptionInput(
   requestedModelId?: AiAsrModelId,
 ) {
   if (signal.aborted) throw new Error("ai_task_paused");
-  const selectedModelId =
-    requestedModelId ?? record.transcriptionModel?.id ?? models.getActiveAsrModel();
+  const pinnedId = (requestedModelId ?? record.transcriptionModel?.id) as AiAsrModelId;
+  const activeId = models.getActiveAsrModel();
+  const selectedModelId = Object.hasOwn(AI_ASR_MODEL_NAMES, pinnedId) ? pinnedId : activeId;
   const taskId = `transcription:${record.recordingId}:${selectedModelId}`;
   const legacyTaskId = `transcription:${record.recordingId}`;
   const modelCheckpoint = models.getTaskCheckpoint(taskId);

@@ -1,4 +1,13 @@
 import { UiohookKey, type UiohookKeyboardEvent, type UiohookMouseEvent } from "uiohook-napi";
+import { phoneVirtualKey } from "./phone-virtual-key";
+
+export interface PhonePhysicalInput {
+  down: boolean;
+  ctrlKey: boolean;
+  altKey: boolean;
+  shiftKey: boolean;
+  metaKey: boolean;
+}
 
 export class PhoneShortcut {
   private down = false;
@@ -8,6 +17,7 @@ export class PhoneShortcut {
     private trigger: "hold" | "toggle",
     private change: (active?: boolean) => void,
     readonly mouseButton?: number,
+    readonly virtualKey?: number,
   ) {}
   static parse(
     shortcut: string,
@@ -51,14 +61,18 @@ export class PhoneShortcut {
       trigger,
       change,
       mouseButton,
+      phoneVirtualKey(mouseButton ? `Mouse${mouseButton}` : name!),
     );
   }
   keyDown = (event: UiohookKeyboardEvent): void => {
     if (this.mouseButton) return;
     if (this.down || event.keycode !== this.keycode) return;
     if (
-      Object.entries(this.modifiers).some(
-        ([key, value]) => event[key as keyof UiohookKeyboardEvent] !== value,
+      Object.entries(this.modifiers).some(([key, value]) =>
+        value
+          ? !event[key as keyof UiohookKeyboardEvent]
+          : (key === "altKey" || key === "metaKey") &&
+            Boolean(event[key as keyof UiohookKeyboardEvent]),
       )
     )
       return;
@@ -75,8 +89,11 @@ export class PhoneShortcut {
   mouseDown = (event: UiohookMouseEvent): void => {
     if (!this.mouseButton || this.down || Number(event.button) !== this.mouseButton) return;
     if (
-      Object.entries(this.modifiers).some(
-        ([key, value]) => event[key as keyof UiohookMouseEvent] !== value,
+      Object.entries(this.modifiers).some(([key, value]) =>
+        value
+          ? !event[key as keyof UiohookMouseEvent]
+          : (key === "altKey" || key === "metaKey") &&
+            Boolean(event[key as keyof UiohookMouseEvent]),
       )
     )
       return;
@@ -91,5 +108,16 @@ export class PhoneShortcut {
   reset(): void {
     if (this.down && this.trigger === "hold") this.change(false);
     this.down = false;
+  }
+  synchronizePhysical(input: PhonePhysicalInput): void {
+    if (this.mouseButton) {
+      const event = { ...input, button: this.mouseButton } as unknown as UiohookMouseEvent;
+      if (input.down) this.mouseDown(event);
+      else this.mouseUp(event);
+    } else {
+      const event = { ...input, keycode: this.keycode } as unknown as UiohookKeyboardEvent;
+      if (input.down) this.keyDown(event);
+      else this.keyUp(event);
+    }
   }
 }

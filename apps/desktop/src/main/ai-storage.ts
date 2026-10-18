@@ -41,6 +41,25 @@ export const resolvePersistentAiStoragePaths = ({
   };
 };
 
+/** Packaged and development profiles share transcripts, while capture profiles remain isolated. */
+export const resolveVoiceMemoryStoragePath = (
+  userDataDirectory: string,
+  appDataDirectory: string,
+  isolateDirectory?: string,
+): string => {
+  const userData = path.resolve(userDataDirectory);
+  const appData = path.resolve(appDataDirectory);
+  if (isolateDirectory || path.dirname(userData).toLowerCase() !== appData.toLowerCase()) {
+    return path.join(userData, "voice-memory");
+  }
+
+  const profileName = path.basename(userData).toLowerCase();
+  if (!["shanghao", "shanghao-desktop", "上号"].includes(profileName)) {
+    return path.join(userData, "voice-memory");
+  }
+  return path.join(appData, "shanghao", "voice-memory");
+};
+
 interface LegacyAiState {
   models?: Record<
     string,

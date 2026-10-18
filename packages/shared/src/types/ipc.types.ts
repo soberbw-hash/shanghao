@@ -38,6 +38,8 @@ import type {
 import type {
   AiCustomProviderInput,
   AiCustomProviderStatus,
+  AiTranscriptionProviderInput,
+  AiTranscriptionProviderStatus,
   AiHuggingFaceAccessInput,
   AiHuggingFaceAccessStatus,
   AiAsrModelId,
@@ -393,6 +395,13 @@ export interface DesktopApi {
     getCustomProvider: () => Promise<AiCustomProviderStatus>;
     saveCustomProvider: (input: AiCustomProviderInput) => Promise<AiCustomProviderStatus>;
     clearCustomProvider: () => Promise<void>;
+    getTranscriptionProvider: () => Promise<AiTranscriptionProviderStatus>;
+    saveTranscriptionProvider: (
+      input: AiTranscriptionProviderInput,
+    ) => Promise<AiTranscriptionProviderStatus>;
+    clearTranscriptionProvider: (
+      provider: "cloud" | "custom",
+    ) => Promise<AiTranscriptionProviderStatus>;
     getHuggingFaceAccess: () => Promise<AiHuggingFaceAccessStatus>;
     saveHuggingFaceAccess: (input: AiHuggingFaceAccessInput) => Promise<AiHuggingFaceAccessStatus>;
     clearHuggingFaceAccess: () => Promise<void>;

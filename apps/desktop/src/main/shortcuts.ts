@@ -9,6 +9,7 @@ import {
 
 import { sendToWindow } from "./safe-web-contents";
 import { PhoneShortcut } from "./phone-shortcut";
+import { PhoneInputMonitor } from "./phone-input-monitor";
 
 type ShortcutOwner = "mute" | "recording-marker" | "push-to-talk" | `quick-message:${number}`;
 
@@ -102,6 +103,22 @@ export class ShortcutController {
   private mouseHookSuppressed = false;
   private phoneBinding?: PhoneShortcut;
   private phoneAccelerator = "";
+  private phoneNativeReady = false;
+  private lastPhoneHookAt = 0;
+  private readonly phoneInput = new PhoneInputMonitor(
+    (ready) => {
+      this.phoneNativeReady = ready;
+    },
+    (sampledAt) => sampledAt > this.lastPhoneHookAt,
+  );
+  private readonly phoneKeyDown = (event: Parameters<PhoneShortcut["keyDown"]>[0]) => {
+    if (event.keycode === this.phoneBinding?.keycode) this.lastPhoneHookAt = Date.now();
+    this.phoneBinding?.keyDown(event);
+  };
+  private readonly phoneKeyUp = (event: Parameters<PhoneShortcut["keyUp"]>[0]) => {
+    if (event.keycode === this.phoneBinding?.keycode) this.lastPhoneHookAt = Date.now();
+    this.phoneBinding?.keyUp(event);
+  };
 
   private inspectBinding(owner: ShortcutOwner, accelerator?: string): ShortcutBindingSnapshot {
     if (!accelerator) return { applied: null, observed: "inactive" };
@@ -144,7 +161,12 @@ export class ShortcutController {
         })),
       phone: {
         applied: this.phoneAccelerator || null,
-        observed: this.phoneBinding ? (this.mouseHookStarted ? "active" : "missing") : "inactive",
+        observed: this.phoneBinding
+          ? this.phoneNativeReady || this.mouseHookStarted
+            ? "active"
+            : "missing"
+          : "inactive",
+        inputPath: this.phoneNativeReady ? "hook+windows-native" : "hook",
       },
     };
   }
@@ -181,24 +203,29 @@ export class ShortcutController {
     // events immediately, so registering listeners afterward can lose the
     // first key-down (notably when the user presses the shortcut as the app
     // or a replacement binding is initializing).
-    if (next) {
-      uIOhook.on("keydown", next.keyDown);
-      uIOhook.on("keyup", next.keyUp);
+    if (next && !previous) {
+      uIOhook.on("keydown", this.phoneKeyDown);
+      uIOhook.on("keyup", this.phoneKeyUp);
     }
     this.phoneBinding = next;
-    if (next && !this.ensureMouseHook()) {
+    if (next && !this.ensureMouseHook() && next.virtualKey === undefined) {
       this.phoneBinding = previous;
-      uIOhook.off("keydown", next.keyDown);
-      uIOhook.off("keyup", next.keyUp);
+      if (!previous) {
+        uIOhook.off("keydown", this.phoneKeyDown);
+        uIOhook.off("keyup", this.phoneKeyUp);
+      }
       next.reset();
       throw new Error("全局快捷键监听启动失败");
     }
     if (previous) {
-      uIOhook.off("keydown", previous.keyDown);
-      uIOhook.off("keyup", previous.keyUp);
+      if (!next) {
+        uIOhook.off("keydown", this.phoneKeyDown);
+        uIOhook.off("keyup", this.phoneKeyUp);
+      }
       previous.reset();
     }
     this.phoneAccelerator = normalized;
+    this.phoneInput.configure(next);
     this.stopMouseHookIfUnused();
   }
 
@@ -212,6 +239,7 @@ export class ShortcutController {
   ) {}
 
   private readonly handleMouseDown = (event: UiohookMouseEvent): void => {
+    if (Number(event.button) === this.phoneBinding?.mouseButton) this.lastPhoneHookAt = Date.now();
     this.phoneBinding?.mouseDown(event);
     for (const binding of this.mouseBindings.values()) {
       if (!matchesMouseShortcut(event, binding) || binding.pressed) continue;
@@ -221,6 +249,7 @@ export class ShortcutController {
   };
 
   private readonly handleMouseUp = (event: UiohookMouseEvent): void => {
+    if (Number(event.button) === this.phoneBinding?.mouseButton) this.lastPhoneHookAt = Date.now();
     this.phoneBinding?.mouseUp(event);
     for (const binding of this.mouseBindings.values()) {
       // The pressed button owns release even if Ctrl/Alt was released first.

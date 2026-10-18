@@ -4,7 +4,7 @@ import { pathToFileURL } from "node:url";
 
 import { app, BrowserWindow, Notification, Tray, dialog, net, protocol } from "electron";
 
-import { APP_ID, IPC_CHANNELS, type DeepLinkInvite } from "@private-voice/shared";
+import { IPC_CHANNELS, type DeepLinkInvite } from "@private-voice/shared";
 
 import { DiagnosticsService } from "./diagnostics";
 import { AccountDesktopService } from "./account-service";
@@ -18,6 +18,11 @@ import { SignalingClientBridge } from "./signaling-client";
 import { createTrayController } from "./tray";
 import { UpdateService } from "./updates";
 import { createMainWindow } from "./window";
+import {
+  repairDevelopmentShortcuts,
+  watchDevelopmentShortcuts,
+  windowsAppUserModelId,
+} from "./development-shortcuts";
 import { OverlayWindowController } from "./overlay-window";
 import { GameDetectionController } from "./game-detection";
 import { platformService } from "./platform/PlatformService";
@@ -29,13 +34,14 @@ import { AiVoiceMemoryService } from "./ai-voice-memory-service";
 import { AiTextGateway } from "./ai-text-gateway";
 import { registerRoomMemoryIpc } from "./room-memory-ipc";
 import { CustomAiProviderStore } from "./custom-ai-provider-store";
+import { AiTranscriptionProviderStore } from "./ai-transcription-provider-store";
 import { HuggingFaceAccessStore } from "./hugging-face-access-store";
-import { preparePersistentAiStorage } from "./ai-storage";
+import { preparePersistentAiStorage, resolveVoiceMemoryStoragePath } from "./ai-storage";
 import { registerStorageIpc } from "./storage-ipc";
 import { registerRecordingClipIpc } from "./recording-clip-ipc";
 import { registerBackgroundDesktop } from "./background-desktop";
 import { prepareBundledAiRuntime } from "./ai-runtime-package";
-import { VoiceMemoryStore } from "./voice-memory-store";
+import { SharedVoiceMemoryStore } from "./shared-voice-memory-store";
 import { LifecycleRecoveryService } from "./lifecycle-recovery-service";
 import { reconcileResetShortcuts } from "./settings-shortcut-reconciliation";
 import { pruneStaleAsrTempFiles } from "./asr-temp-files";
@@ -105,6 +111,12 @@ const showWindow = () => {
 
   if (!mainWindow.isVisible()) {
     mainWindow.show();
+  }
+
+  if (!app.isPackaged && mainWindow.webContents.getURL().startsWith("data:")) {
+    void mainWindow
+      .loadURL(process.env.VITE_DEV_SERVER_URL?.trim() || "http://127.0.0.1:5173")
+      .catch(() => undefined);
   }
 
   mainWindow.focus();
@@ -379,6 +391,7 @@ const bootstrap = async (): Promise<void> => {
   const customAiProvider = new CustomAiProviderStore(
     (payload) => diagnostics?.writeLog(payload) ?? Promise.resolve(),
   );
+  const transcriptionProvider = new AiTranscriptionProviderStore();
   const huggingFaceAccess = new HuggingFaceAccessStore(
     app.getPath("userData"),
     (payload) => diagnostics?.writeLog(payload) ?? Promise.resolve(),
@@ -566,9 +579,19 @@ const bootstrap = async (): Promise<void> => {
     aiModels,
     aiRuntime,
     aiTextGateway,
-    new VoiceMemoryStore(path.join(app.getPath("userData"), "voice-memory")),
+    new SharedVoiceMemoryStore(
+      resolveVoiceMemoryStoragePath(
+        app.getPath("userData"),
+        app.getPath("appData"),
+        !app.isPackaged && process.env.SHANGHAO_CAPTURE_PATH
+          ? path.dirname(process.env.SHANGHAO_CAPTURE_PATH)
+          : undefined,
+      ),
+    ),
     (payload) => diagnostics?.writeLog(payload) ?? Promise.resolve(),
     () => settingsStore?.getSnapshot().isAiAutoTranscribeEnabled ?? false,
+    transcriptionProvider,
+    () => settingsStore?.getSnapshot().aiTranscriptionProvider ?? "cloud",
   );
   shortcutsController = shortcuts;
   overlayController = overlay;
@@ -592,11 +615,23 @@ const bootstrap = async (): Promise<void> => {
     aiModels,
     voiceMemory,
     customAiProvider,
+    transcriptionProvider,
     huggingFaceAccess,
     consumePendingDeepLink,
   });
 
   registerAssetStudioIpc(() => mainWindow);
+  try {
+    repairDevelopmentShortcuts();
+    app.once("will-quit", watchDevelopmentShortcuts());
+  } catch (error) {
+    void diagnostics.writeLog({
+      category: "app",
+      level: "warn",
+      message: "Development shortcuts could not be repaired",
+      context: { error: error instanceof Error ? error.message : String(error) },
+    });
+  }
   mainWindow = createMainWindow({
     canUseSystemWeatherLocation,
     log: (level, message, context) => {
@@ -760,7 +795,7 @@ const bootstrap = async (): Promise<void> => {
   });
 };
 
-if (platformService.isWindows) app.setAppUserModelId(APP_ID);
+if (platformService.isWindows) app.setAppUserModelId(windowsAppUserModelId());
 protocol.registerSchemesAsPrivileged([
   {
     scheme: RECORDING_MEDIA_PROTOCOL,

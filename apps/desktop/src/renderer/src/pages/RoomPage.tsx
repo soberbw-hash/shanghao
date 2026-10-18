@@ -56,6 +56,7 @@ import { useAudioStore } from "../store/audioStore";
 import { useRecordingStore } from "../store/recordingStore";
 import { getLatestConnectionHealthTelemetry, useRoomStore } from "../store/roomStore";
 import { useSettingsStore } from "../store/settingsStore";
+import { useAssistantBotState } from "../features/ai/useAssistantBotState";
 import { toUserFacingError } from "../utils/userFacingError";
 import roomEnvironmentUrl from "../assets/scenes/shanghao-room/environment-v3-extended.png";
 const KNOCK_COOLDOWN_MS = 10_000;
@@ -207,11 +208,7 @@ export const RoomPage = () => {
   const [isNoiseSuppressionSwitching, setIsNoiseSuppressionSwitching] = useState(false);
   const [isAutoGainSwitching, setIsAutoGainSwitching] = useState(false);
   const [isRoomAskOpen, setIsRoomAskOpen] = useState(false);
-  useEffect(() => {
-    const openRoomAi = () => setIsRoomAskOpen(true);
-    window.addEventListener("shanghao:open-room-ai", openRoomAi);
-    return () => window.removeEventListener("shanghao:open-room-ai", openRoomAi);
-  }, []);
+  const assistantBot = useAssistantBotState(room.roomId, setIsRoomAskOpen);
   const [localKnockPulse, setLocalKnockPulse] = useState(0);
   const [recordingMarkerPulse, setRecordingMarkerPulse] = useState(0);
   const [isLeaving, setIsLeaving] = useState(false);
@@ -1185,6 +1182,32 @@ export const RoomPage = () => {
             sendConfiguredQuickMessage={sendConfiguredQuickMessage}
             onOpenQuickMessageSettings={openQuickMessageSettings}
             onOpenRoomAi={() => setIsRoomAskOpen(true)}
+            onCloseRoomAi={() => setIsRoomAskOpen(false)}
+            isRoomAskOpen={isRoomAskOpen}
+            roomAiPanel={
+              <RoomAskDialog
+                canSend={canSend}
+                onSendToChat={(content, messageId) =>
+                  sendChatMessage(content, undefined, messageId)
+                }
+                isOpen={isRoomAskOpen}
+                inline
+                reduceMotion={reduceMotion}
+                onClose={() => {
+                  setIsRoomAskOpen(false);
+                  assistantBot.transition("idle");
+                }}
+                onAssistantMoodChange={assistantBot.transition}
+                onOpenResult={(target) => {
+                  setIsRoomAskOpen(false);
+                  setVoiceMemoryOpenTarget(target);
+                  setSettingsReturnTo("room");
+                  navigate("settings");
+                }}
+              />
+            }
+            assistantMood={assistantBot.mood}
+            onAssistantMoodChange={assistantBot.transition}
             canSend={canSend}
             reduceMotion={reduceMotion}
           />
@@ -1204,19 +1227,6 @@ export const RoomPage = () => {
         onClose={() => closeScreenSourcePicker()}
       />
 
-      <RoomAskDialog
-        canSend={canSend}
-        onSendToChat={(content, messageId) => sendChatMessage(content, undefined, messageId)}
-        isOpen={isRoomAskOpen}
-        reduceMotion={reduceMotion}
-        onClose={() => setIsRoomAskOpen(false)}
-        onOpenResult={(target) => {
-          setIsRoomAskOpen(false);
-          setVoiceMemoryOpenTarget(target);
-          setSettingsReturnTo("room");
-          navigate("settings");
-        }}
-      />
       <CollectionDialog
         isOpen={roomCollection.isOpen}
         reduceMotion={reduceMotion}

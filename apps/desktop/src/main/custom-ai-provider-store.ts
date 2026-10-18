@@ -70,6 +70,9 @@ const normalizeProviderUrl = (value: string): string => {
 };
 
 const validatePublicProviderHost = async (baseUrl: string): Promise<void> => {
+  // The fixed built-in HTTPS endpoint also works with Clash's local fake-IP DNS.
+  // Arbitrary custom URLs still go through the public-address check below.
+  if (baseUrl === "https://open.bigmodel.cn/api/paas/v4") return;
   const url = new URL(baseUrl);
   if (isIP(url.hostname)) {
     if (isPrivateAddress(url.hostname)) throw new Error("custom_ai_private_host_not_allowed");

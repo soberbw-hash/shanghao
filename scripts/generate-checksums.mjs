@@ -15,7 +15,8 @@ const versionMarker = `-${desktopPackage.version}-`;
 const names = (await readdir(releaseDirectory))
   .filter(
     (name) =>
-      ((name.endsWith(".exe") || name.endsWith(".blockmap")) && name.includes(versionMarker)) ||
+      ((name.endsWith(".exe") || name.endsWith(".blockmap") || name.endsWith(".zip")) &&
+        name.includes(versionMarker)) ||
       /^latest.*\.ya?ml$/i.test(name) ||
       name === "package-size.json",
   )

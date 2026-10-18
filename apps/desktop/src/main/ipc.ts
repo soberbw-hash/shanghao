@@ -78,6 +78,7 @@ import { AccountDesktopService } from "./account-service";
 import { captureRuntimeHealth } from "./runtime-health";
 import { readDeepFilterAssets } from "./deepfilter-assets";
 import { registerPhoneMicUsbIpc } from "./phone-mic-usb-ipc";
+import { registerTranscriptionProviderIpc } from "./transcription-provider-ipc";
 import { exportQuickMessagePack } from "./quick-message-export";
 import { clearAvatarImage, pickAvatarImage, readAvatarImage } from "./profile-media";
 import { registerRecordingStreamIpcHandlers } from "./recording-stream-ipc";
@@ -115,6 +116,7 @@ import { AiVoiceMemoryService } from "./ai-voice-memory-service";
 import { createRecordingRecapUpload } from "./recording-recap-upload";
 import { bindRecordingProcessOrigin } from "./recording-process-origin";
 import { CustomAiProviderStore } from "./custom-ai-provider-store";
+import { AiTranscriptionProviderStore } from "./ai-transcription-provider-store";
 import { HuggingFaceAccessStore } from "./hugging-face-access-store";
 import { ChatHistoryStore } from "./chat-history-store";
 import { DailyRoomReportCache } from "./daily-room-report-cache";
@@ -165,6 +167,7 @@ interface MainProcessServices {
   aiModels: AiModelManager;
   voiceMemory: AiVoiceMemoryService;
   customAiProvider: CustomAiProviderStore;
+  transcriptionProvider: AiTranscriptionProviderStore;
   huggingFaceAccess: HuggingFaceAccessStore;
   consumePendingDeepLink: () => DeepLinkInvite | undefined;
 }
@@ -278,6 +281,7 @@ export const registerIpcHandlers = ({
   aiModels,
   voiceMemory,
   customAiProvider,
+  transcriptionProvider,
   huggingFaceAccess,
   consumePendingDeepLink,
 }: MainProcessServices) => {
@@ -1109,6 +1113,7 @@ export const registerIpcHandlers = ({
   ipcMain.handle(IPC_CHANNELS.ai.clearCustomProvider, async (): Promise<void> => {
     await customAiProvider.clear();
   });
+  registerTranscriptionProviderIpc(transcriptionProvider);
   ipcMain.handle(
     IPC_CHANNELS.ai.getHuggingFaceAccess,
     async (): Promise<AiHuggingFaceAccessStatus> => huggingFaceAccess.status(),

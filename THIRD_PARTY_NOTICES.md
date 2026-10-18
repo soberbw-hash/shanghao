@@ -1,5 +1,22 @@
 # Third-party notices
 
+## HarmonyOS Sans SC Medium
+
+- Typeface: HarmonyOS Sans, Huawei Device Co., Ltd.
+- Font assets already present in the project; the AI welcome card embeds Medium.
+- License: HarmonyOS Sans Fonts License Agreement.
+- License source: https://github.com/openharmony/utils_system_resources/blob/master/LICENSE_Fonts
+
+The font license is included under `resources/licenses/HarmonyOS-Sans.txt`.
+The original character artwork supplied by the user remains separate from this font.
+
+## Assistant motion references
+
+Motion (https://github.com/motiondivision/motion) and react-spring
+(https://github.com/pmndrs/react-spring) were reviewed for spring interaction
+patterns. The implementation uses the project's existing Framer Motion dependency;
+no third-party mascot artwork or animation assets are copied.
+
 ## Phone microphone pairing QR codes
 
 - Package: `qrcode` `1.5.4`

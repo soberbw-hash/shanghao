@@ -69,6 +69,19 @@ jobs:
           ASSET_STUDIO_TEST_ENTRY: "1"
       - run: node scripts/report-package-size.mjs --output=apps/desktop/release/package-size.json
       - run: node scripts/check-package-size.mjs apps/desktop/release/package-size.json docs/package-size-baseline-v3.2.2.json --enforce
+      - name: Create versioned Windows ZIP
+        shell: pwsh
+        run: |
+          $version = (Get-Content apps/desktop/package.json -Raw | ConvertFrom-Json).version
+          Compress-Archive -Path apps/desktop/release/win-unpacked/* -DestinationPath "apps/desktop/release/ShangHao-$version-Windows-x64.zip" -CompressionLevel Optimal
+      - name: Prepare illustrated release body
+        shell: pwsh
+        env:
+          RELEASE_TAG: ${{ inputs.release_tag || github.ref_name }}
+        run: |
+          $body = Get-Content "docs/release-notes/$env:RELEASE_TAG.md" -Raw
+          $body = $body.Replace('](../assets/releases/', "](https://raw.githubusercontent.com/soberbw-hash/shanghao/$env:RELEASE_TAG/docs/assets/releases/")
+          Set-Content apps/desktop/release/release-body.md -Value $body -Encoding utf8
       - run: pnpm release:checksums
       - uses: actions/upload-artifact@v7
         with:
@@ -76,10 +89,12 @@ jobs:
           if-no-files-found: error
           path: |
             apps/desktop/release/*.exe
+            apps/desktop/release/*.zip
             apps/desktop/release/*.blockmap
             apps/desktop/release/latest*.yml
             apps/desktop/release/SHA256SUMS.txt
             apps/desktop/release/package-size.json
+            apps/desktop/release/release-body.md
 
   publish:
     needs: [windows]
@@ -95,10 +110,12 @@ jobs:
       - uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ inputs.release_tag || github.ref_name }}
-          body_path: docs/release-notes/${{ inputs.release_tag || github.ref_name }}.md
+          name: 上号 ${{ inputs.release_tag || github.ref_name }}
+          body_path: artifacts/release-body.md
           fail_on_unmatched_files: true
           files: |
             artifacts/*.exe
+            artifacts/*.zip
             artifacts/*.blockmap
             artifacts/latest*.yml
             artifacts/SHA256SUMS.txt

@@ -1,0 +1,115 @@
+.ai-model-card {
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.88);
+  transition:
+    border-color 140ms ease,
+    box-shadow 140ms ease,
+    background-color 140ms ease;
+}
+
+.ai-model-group {
+  padding: 18px;
+  border-color: rgba(164, 191, 222, 0.56);
+  background: rgba(250, 252, 255, 0.78);
+}
+
+.ai-model-group-heading {
+  align-items: flex-start;
+}
+
+.ai-model-filter-bar {
+  gap: 8px;
+}
+
+.ai-model-filter-bar button {
+  min-height: 34px;
+  padding: 7px 13px;
+  border-radius: 11px;
+}
+
+.ai-model-card .ai-model-summary {
+  margin-top: 4px;
+  color: #71839a;
+}
+
+.ai-model-card:hover {
+  border-color: rgba(86, 155, 230, 0.58);
+  background: #fff;
+  box-shadow: 0 8px 22px rgba(56, 110, 170, 0.08);
+}
+
+.ai-model-provider-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: start;
+  gap: 16px;
+}
+
+.ai-model-provider-panel {
+  align-self: start;
+  min-width: 0;
+  border: 1px solid rgba(190, 211, 237, 0.8);
+  border-radius: 16px;
+  background: linear-gradient(145deg, rgba(255, 255, 255, 0.86), rgba(243, 248, 255, 0.82));
+  padding: 16px;
+}
+
+.ai-model-provider-panel > h4 {
+  margin: 0;
+  color: #26364d;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.ai-model-provider-panel > p,
+.ai-provider-config-note p {
+  margin: 5px 0 12px;
+  color: #718096;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.ai-model-provider-panel > select {
+  width: 100%;
+}
+
+.ai-provider-config-note {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+  border-radius: 12px;
+  background: rgba(234, 243, 255, 0.68);
+  padding: 12px;
+  color: #536a85;
+  font-size: 12px;
+}
+
+.ai-provider-config-note p {
+  flex: 1 0 100%;
+  margin: 0;
+}
+
+.ai-provider-key-input {
+  min-width: 0;
+  flex: 1 1 180px;
+  border: 1px solid #d7e4f4;
+  border-radius: 10px;
+  background: #fff;
+  padding: 8px 10px;
+  color: #26364d;
+  font: inherit;
+}
+
+@media (max-width: 760px) {
+  .ai-model-provider-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 900px) {
+  .ai-model-group {
+    padding: 14px;
+  }
+}

@@ -23,6 +23,10 @@ export default defineConfig({
       currentDirectory,
       "tests/electron-asr-runtime-smoke.ts",
     ),
+    "tests/electron-phone-input-smoke": path.join(
+      currentDirectory,
+      "tests/electron-phone-input-smoke.ts",
+    ),
   },
   clean: true,
   dts: false,

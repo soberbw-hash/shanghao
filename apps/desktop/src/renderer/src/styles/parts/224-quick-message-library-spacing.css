@@ -1,0 +1,13 @@
+.quick-message-preset-grid {
+  gap: 10px;
+}
+
+.quick-message-preset-grid > .group {
+  padding: 8px 12px;
+  border-radius: 12px;
+}
+
+.quick-message-preset-grid > .group > div {
+  min-height: 34px;
+  gap: 8px;
+}

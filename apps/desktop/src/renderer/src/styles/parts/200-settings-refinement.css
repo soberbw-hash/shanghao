@@ -162,15 +162,15 @@
 
 .quick-message-slot-groups {
   display: grid;
-  gap: 8px;
-  margin-bottom: 13px;
+  gap: 14px;
+  margin-bottom: 18px;
 }
 
 .quick-message-slot-group {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 6px 10px;
+  gap: 8px 14px;
 }
 
 .quick-message-slot-group-heading {
@@ -205,16 +205,16 @@
 .quick-message-slot-list {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: 9px;
 }
 
 .quick-message-slot {
   display: inline-flex;
   min-width: 0;
-  min-height: 32px;
+  min-height: 38px;
   align-items: center;
-  gap: 4px;
-  padding: 5px 9px;
+  gap: 6px;
+  padding: 7px 12px;
   border: 1px dashed #bad2eb;
   border-radius: 9px;
   color: #526b87;

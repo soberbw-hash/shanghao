@@ -75,7 +75,7 @@ const processIsAlive = (pid: number): boolean => {
 };
 
 /** Serializes writers for the same artifact across app processes, not just within one process. */
-const acquireArtifactLock = async (
+export const acquireArtifactLock = async (
   destination: string,
   signal?: AbortSignal,
   lockWaitTimeoutMs = 30 * 60_000,

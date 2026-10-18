@@ -23,7 +23,9 @@ onlyBuiltDependencies:
   - uiohook-napi
 
 allowBuilds:
-  '@swc/core': set this to true or false
-  electron-winstaller: set this to true or false
-  esbuild: set this to true or false
-  ffmpeg-static: set this to true or false
+  '@swc/core': true
+  core-js-pure: false
+  electron-winstaller: true
+  esbuild: true
+  ffmpeg-static: true
+  uiohook-napi: true

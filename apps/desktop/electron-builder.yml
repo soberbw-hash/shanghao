@@ -60,6 +60,8 @@ extraResources:
     to: ffmpeg/ffmpeg.exe
   - from: ../../THIRD_PARTY_NOTICES.md
     to: licenses/THIRD_PARTY_NOTICES.md
+  - from: resources/licenses/HarmonyOS-Sans.txt
+    to: licenses/HarmonyOS-Sans.txt
   - from: node_modules/deepfilternet3-noise-filter/LICENSE-APACHE
     to: licenses/deepfilternet3-noise-filter-APACHE-2.0.txt
   - from: node_modules/@fontsource-variable/noto-sans-sc/LICENSE
@@ -78,6 +80,7 @@ extraResources:
     filter:
       - "shanghao-core.exe"
       - "ShangHao.PhoneAudio.exe"
+      - "ShangHao.PhoneInput.exe"
   - from: scripts/qwen-runner.py
     to: ai/qwen-runner.py
   - from: scripts/asr-runner.py

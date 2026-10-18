@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { TranscriptParagraphList } from "./TranscriptParagraphList";
 import { RecordingUploadAction } from "./RecordingUploadAction";
 import { reuseVoiceMemoryReferences } from "../../features/ai/voiceMemoryReferences";
+import { subscribeSharedRecordingRefresh } from "../../features/recording/sharedRecordingRefresh";
 import { BrainCircuit, FileText, Pause, Play, RotateCcw, Sparkles } from "lucide-react";
 
 import {
@@ -15,6 +16,7 @@ import {
 
 import { voiceMemoryTranscriptionPercent } from "../../features/ai/voiceMemoryPresentation";
 import { playUiSound } from "../../features/audio/uiSound";
+import { transcriptionProviderError } from "../../features/ai/transcriptionProviderError";
 
 interface VoiceMemoryDetailProps {
   recording: RecordingLibraryItem;
@@ -50,6 +52,10 @@ const isKnownAsrModelId = (value: string): value is AiAsrModelId =>
   Object.prototype.hasOwnProperty.call(AI_ASR_MODEL_NAMES, value);
 
 const describeError = (message: string, transcriptionFinished: boolean): string => {
+  if (message.includes("voice_memory_shared_result_changed"))
+    return "另一个版本已保存完整转录，旧任务没有覆盖它。请重新打开这条录音查看。";
+  const providerError = transcriptionProviderError(message);
+  if (providerError) return providerError;
   if (message.includes("organization_retry_exhausted"))
     return "多次尝试后仍无法整理，请点重新整理。";
   if (message.includes("no_reliable_speech")) {
@@ -185,11 +191,17 @@ export const VoiceMemoryDetail = ({
     setRecord(undefined);
     setQueuedAction(undefined);
     previousPhaseRef.current = undefined;
-    void window.desktopApi.ai.getVoiceMemory(recording.recordingId).then((value) => {
+    const refresh = async () => {
+      const value = await window.desktopApi.ai.getVoiceMemory(recording.recordingId);
       if (!active) return;
-      previousPhaseRef.current = value?.phase;
-      setRecord(value);
-    });
+      setRecordState((previous) => {
+        if (previous && value && previous.updatedAt > value.updatedAt) return previous;
+        previousPhaseRef.current = value?.phase;
+        return reuseVoiceMemoryReferences(previous, value);
+      });
+    };
+    void refresh().catch(() => undefined);
+    const stopRefresh = subscribeSharedRecordingRefresh(refresh);
     const unsubscribe = window.desktopApi.ai.onVoiceMemoryStatus((value) => {
       if (active && value.recordingId === recording.recordingId) {
         const previousPhase = previousPhaseRef.current;
@@ -213,6 +225,7 @@ export const VoiceMemoryDetail = ({
     });
     return () => {
       active = false;
+      stopRefresh();
       unsubscribe();
     };
   }, [recording.filePath, recording.recordingId, setRecord]);

@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { copyFileSync, mkdirSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -15,4 +15,8 @@ execFileSync(
   { cwd: workspaceRoot, stdio: "inherit", windowsHide: true },
 );
 mkdirSync(resourceDirectory, { recursive: true });
-copyFileSync(builtExecutable, path.join(resourceDirectory, executableName));
+const target = path.join(resourceDirectory, executableName);
+// A live developer client can own this EXE; identical builds need no replacement.
+if (!existsSync(target) || !readFileSync(target).equals(readFileSync(builtExecutable))) {
+  copyFileSync(builtExecutable, target);
+}

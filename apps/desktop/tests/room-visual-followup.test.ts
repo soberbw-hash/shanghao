@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { readFileSync, existsSync } from "node:fs";
+import path from "node:path";
 import test from "node:test";
 
 const source = (path: string) => readFileSync(`src/renderer/src/${path}`, "utf8");
@@ -25,10 +26,12 @@ test("seat numbers stay below characters and desk tint excludes live screens", (
   );
 });
 test("chat settings live in the title row, outside quick replies", () => {
-  const chat = source("components/chat/TemporaryChatPanel.tsx");
-  assert.ok(
-    chat.indexOf('className="chat-settings-button') < chat.indexOf('className="chat-quick-actions'),
-  );
+  const chat =
+    source("components/chat/TemporaryChatPanel.tsx") +
+    source("components/chat/ChatPanelHeader.tsx");
+  const header = source("components/chat/ChatPanelHeader.tsx");
+  assert.ok(header.indexOf('className="chat-settings-button') < header.indexOf("{children}"));
+  assert.ok(chat.includes("<ChatPanelHeader"));
   assert.ok(chat.includes("chat-panel-title-row flex items-center justify-between"));
 });
 test("quick-message header is an inset rounded card instead of a clipped divider", () => {
@@ -39,7 +42,36 @@ test("quick-message header is an inset rounded card instead of a clipped divider
     /\.room-page \.chat-panel-header\s*\{[^}]*margin-inline: 2px;[^}]*border: 1px solid[^;]*;[^}]*border-radius: 16px;/s,
   );
   assert.doesNotMatch(css, /\.room-page \.chat-panel-header\s*\{[^}]*border-bottom:/s);
-  assert.ok(chat.includes('className="relative min-h-0 flex-1"'));
+  assert.ok(chat.includes('className="relative flex min-h-0 flex-1 flex-col"'));
+});
+test("AI mascot originals are transparent bundled resources with a unified state map", () => {
+  const assets = ["idle.png", "greeting.png", "thinking.png", "gaming.png"];
+  const mascotDirectory = path.resolve(process.cwd(), "src/renderer/src/assets/ai/mascot");
+  for (const asset of assets) {
+    const bytes = readFileSync(path.join(mascotDirectory, asset));
+    assert.equal(bytes.toString("hex", 0, 8), "89504e470d0a1a0a");
+    assert.equal(bytes.readUInt32BE(16), 1254);
+    assert.equal(bytes.readUInt32BE(20), 1254);
+    assert.equal(bytes[25], 6, `${asset} must keep its RGBA alpha channel`);
+  }
+  const avatar = source("components/room/AssistantBotAvatar.tsx");
+  const welcome = source("components/chat/ChatAssistantWelcome.tsx");
+  const chat = source("components/chat/TemporaryChatPanel.tsx");
+  const dialog = source("components/room/RoomAskDialog.tsx");
+  for (const asset of assets) assert.ok(avatar.includes(`mascot/${asset}`));
+  assert.ok(avatar.includes("if (failedSource === source) return <RoomAiIcon />"));
+  assert.ok(!chat.includes('onAssistantMoodChange?.("greeting")'));
+  assert.ok(chat.includes("onOpenAssistant={onOpenRoomAi}"));
+  assert.ok(dialog.includes('" room-ask-inline"'));
+  assert.ok(welcome.includes("嗨，想问点什么？"));
+  assert.ok(!welcome.includes("我是上号 AI"));
+  assert.match(welcome, /askingLayout \?\s*\(\s*roomAiPanel/s);
+  const css = source("styles/parts/221-ai-mascot.css");
+  assert.match(
+    css,
+    /\.chat-ai-welcome-shell\[data-open="false"\]\s*\{\s*grid-template-rows: 0fr;/s,
+  );
+  assert.ok(source("assets/ai/mascot/README.md").includes("SHA-256"));
 });
 test("scene window art can paint above its coordinate canvas", () => {
   const css = source("styles/parts/130-final-material.css");

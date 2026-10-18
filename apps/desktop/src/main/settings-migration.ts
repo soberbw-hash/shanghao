@@ -62,6 +62,7 @@ export const defaultSettings: AppSettings = {
   recordingLibraryQuotaGb: 20,
   isRecordingWasteAutoCleanupEnabled: false,
   aiAsrModel: DEFAULT_AI_ASR_MODEL_ID,
+  aiTranscriptionProvider: "cloud",
   aiOrganizerProvider: "cloud",
   aiRoomAskProvider: "cloud",
   aiProcessingMode: "manual",
@@ -335,6 +336,10 @@ export const migrateSettings = (raw: RawSettings): MigrationResult => {
           ? "qwen3-asr-0.6b-force"
           : "qwen3-asr-0.6b-force",
     aiOrganizerProvider: raw.aiOrganizerProvider === "custom" ? raw.aiOrganizerProvider : "cloud",
+    aiTranscriptionProvider:
+      raw.aiTranscriptionProvider === "local" || raw.aiTranscriptionProvider === "custom"
+        ? raw.aiTranscriptionProvider
+        : "cloud",
     // Room Ask is a shared cloud capability. Legacy local/custom selections
     // must not make friends download Qwen before they can ask a question.
     aiRoomAskProvider: raw.aiOrganizerProvider === "custom" ? "custom" : "cloud",

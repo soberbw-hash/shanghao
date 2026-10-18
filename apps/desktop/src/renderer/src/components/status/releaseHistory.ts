@@ -2,6 +2,7 @@ import { RELEASE_342 } from "./release342";
 import { RELEASE_343 } from "./release343";
 import { RELEASE_344 } from "./release344";
 import { RELEASE_345 } from "./release345";
+import { RELEASE_349, RELEASES_346_TO_348 } from "./release349";
 
 export interface ReleaseHistoryEntry {
   version: string;
@@ -78,6 +79,8 @@ const HISTORICAL_RELEASE_EVIDENCE: readonly HistoricalReleaseEvidence[] = [
 ];
 
 export const RELEASE_HISTORY: readonly ReleaseHistoryEntry[] = [
+  RELEASE_349,
+  ...RELEASES_346_TO_348,
   RELEASE_345,
   RELEASE_344,
   RELEASE_343,

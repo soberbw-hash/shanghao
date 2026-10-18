@@ -9,7 +9,8 @@ import type {
   AiModelStatus,
   AiRuntimeStatus,
   AiCustomProviderStatus,
-  AiTextProvider,
+  AiTranscriptionProvider,
+  AiTranscriptionProviderStatus,
   AiVoiceMemorySnapshot,
   AppSettings,
 } from "@private-voice/shared";
@@ -217,6 +218,12 @@ export const AiVoiceMemorySettingsCard = ({
   const [pendingDeleteModel, setPendingDeleteModel] = useState<AiModelStatus>();
   const [runtimeStatus, setRuntimeStatus] = useState<AiRuntimeStatus>();
   const [customProvider, setCustomProvider] = useState<AiCustomProviderStatus>();
+  const [transcriptionStatus, setTranscriptionStatus] = useState<AiTranscriptionProviderStatus>();
+  const [transcriptionBaseUrl, setTranscriptionBaseUrl] = useState("https://api.example.com/v1");
+  const [transcriptionModel, setTranscriptionModel] = useState("whisper-1");
+  const [transcriptionApiKey, setTranscriptionApiKey] = useState("");
+  const [editingTranscriptionKey, setEditingTranscriptionKey] = useState(false);
+  const [savingTranscriptionProvider, setSavingTranscriptionProvider] = useState(false);
   const [customBaseUrl, setCustomBaseUrl] = useState("");
   const [customModel, setCustomModel] = useState("");
   const [customApiKey, setCustomApiKey] = useState("");
@@ -267,6 +274,23 @@ export const AiVoiceMemorySettingsCard = ({
       active = false;
     };
   }, [isActive, pushToast]);
+
+  useEffect(() => {
+    if (!isActive) return;
+    let active = true;
+    void window.desktopApi.ai
+      .getTranscriptionProvider()
+      .then((status) => {
+        if (!active) return;
+        setTranscriptionStatus(status);
+        setTranscriptionBaseUrl(status.customBaseUrl ?? "https://api.example.com/v1");
+        setTranscriptionModel(status.customModel ?? "whisper-1");
+      })
+      .catch(() => undefined);
+    return () => {
+      active = false;
+    };
+  }, [isActive]);
 
   const controlModel = async (model: AiModelStatus, action: AiModelAction) => {
     if (action === "delete") {
@@ -343,6 +367,31 @@ export const AiVoiceMemorySettingsCard = ({
       });
     } finally {
       setSavingCustomProvider(false);
+    }
+  };
+
+  const saveTranscriptionProvider = async (provider: "cloud" | "custom") => {
+    setSavingTranscriptionProvider(true);
+    try {
+      const status = await window.desktopApi.ai.saveTranscriptionProvider({
+        provider,
+        apiKey: transcriptionApiKey || undefined,
+        ...(provider === "custom"
+          ? { baseUrl: transcriptionBaseUrl, model: transcriptionModel }
+          : {}),
+      });
+      setTranscriptionStatus(status);
+      setTranscriptionApiKey("");
+      setEditingTranscriptionKey(false);
+      pushToast({ tone: "success", title: "转录 API 已安全保存" });
+    } catch {
+      pushToast({
+        tone: "danger",
+        title: "转录 API 保存失败",
+        description: "请检查 API 地址、模型名称和密钥后重试。",
+      });
+    } finally {
+      setSavingTranscriptionProvider(false);
     }
   };
 
@@ -453,10 +502,26 @@ export const AiVoiceMemorySettingsCard = ({
   const selectedAsrReady = Boolean(
     selectedAsr?.activeRevision && (selectedAsr.runtimeReady ?? asrRuntimeStatus?.ready),
   );
+  const transcriptionProvider = settings.aiTranscriptionProvider ?? "cloud";
+  const activeTranscriptionReady =
+    transcriptionProvider === "local"
+      ? selectedAsrReady
+      : transcriptionProvider === "cloud"
+        ? Boolean(transcriptionStatus?.cloudConfigured)
+        : Boolean(transcriptionStatus?.customConfigured);
   const organizerReady =
     settings.aiOrganizerProvider === "custom" ? Boolean(customProvider?.configured) : true;
-  const showCustomProvider = settings.aiOrganizerProvider === "custom";
   const installedAsrCount = asrModels.filter((model) => model.activeRevision).length;
+  const transcriptionName =
+    transcriptionProvider === "cloud"
+      ? "SenseVoiceSmall 云端"
+      : transcriptionProvider === "custom"
+        ? (transcriptionStatus?.customModel ?? "自定义转录 API")
+        : (selectedAsr?.name ?? "未选择");
+  const textModelName =
+    settings.aiOrganizerProvider === "custom"
+      ? (customProvider?.model ?? "自定义 API（未配置）")
+      : "房间云端 AI";
 
   const chooseAsrModel = (model: AiModelStatus) => {
     if (model.id === settings.aiAsrModel) return;
@@ -486,23 +551,6 @@ export const AiVoiceMemorySettingsCard = ({
     }
     void selectAsrModel(model);
   };
-
-  const providerSelect = (value: AiTextProvider, ariaLabel: string) => (
-    <select
-      className="ai-processing-select"
-      aria-label={ariaLabel}
-      value={value}
-      onChange={(event) =>
-        void onChange({
-          aiOrganizerProvider: event.target.value as AiTextProvider,
-          aiRoomAskProvider: event.target.value as AiTextProvider,
-        })
-      }
-    >
-      <option value="cloud">房间云端（默认）</option>
-      <option value="custom">自定义 API</option>
-    </select>
-  );
 
   const renderModel = (model: AiModelStatus) => {
     const selectable = model.category === "asr";
@@ -713,19 +761,15 @@ export const AiVoiceMemorySettingsCard = ({
         <div className="ai-overview-grid">
           <article>
             <small>已选转录模型</small>
-            <strong>{selectedAsr?.name ?? "未选择"}</strong>
+            <strong>{transcriptionName}</strong>
           </article>
           <article>
             <small>录音整理</small>
-            <strong>
-              {settings.aiOrganizerProvider === "custom" ? "自定义 API" : "房间云端 AI"}
-            </strong>
+            <strong>{textModelName}</strong>
           </article>
           <article>
             <small>房间问答</small>
-            <strong>
-              {settings.aiOrganizerProvider === "custom" ? "自定义 API" : "房间云端 AI"}
-            </strong>
+            <strong>{textModelName}</strong>
           </article>
           <article>
             <small>已安装</small>
@@ -761,11 +805,17 @@ export const AiVoiceMemorySettingsCard = ({
           </SettingsItemRow>
           <SettingsItemRow
             label="自动转录"
-            description={selectedAsrReady ? undefined : "当前转录模型未就绪。"}
+            description={
+              activeTranscriptionReady
+                ? undefined
+                : transcriptionProvider === "local"
+                  ? "当前本地转录模型未就绪。"
+                  : "请先配置当前转录 API 密钥。"
+            }
           >
             <Switch
               isChecked={settings.isAiAutoTranscribeEnabled}
-              isDisabled={!selectedAsrReady}
+              isDisabled={!activeTranscriptionReady}
               ariaLabel="自动转录"
               onChange={(checked) => void onChange({ isAiAutoTranscribeEnabled: checked })}
             />
@@ -784,7 +834,7 @@ export const AiVoiceMemorySettingsCard = ({
           >
             <Switch
               isChecked={settings.isAiAutoOrganizeEnabled}
-              isDisabled={!organizerReady || !selectedAsrReady}
+              isDisabled={!organizerReady || !activeTranscriptionReady}
               ariaLabel="自动整理"
               onChange={(checked) => void onChange({ isAiAutoOrganizeEnabled: checked })}
             />
@@ -809,119 +859,259 @@ export const AiVoiceMemorySettingsCard = ({
       >
         <div className="ai-model-group-heading">
           <h3 id="model-management-title">模型</h3>
-          <div className="ai-model-filter-bar" role="group" aria-label="筛选模型">
-            {(
-              [
-                ["all", "全部"],
-                ["installed", "已安装"],
-                ["available", "可安装"],
-              ] as const
-            ).map(([value, label]) => (
-              <button
-                key={value}
-                type="button"
-                aria-pressed={modelFilter === value}
-                onClick={() => setModelFilter(value)}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
-        </div>
-        <div className="mt-3 space-y-3">
-          <SettingsItemRow
-            label="整理与问答模型"
-            description="整理会将文字稿发送至所选服务；上传只分享整理摘要到房间。"
-          >
-            {providerSelect(settings.aiOrganizerProvider, "整理与问答模型")}
-          </SettingsItemRow>
-          {showCustomProvider ? (
-            <div className="settings-item-row rounded-[16px] border border-[#E7ECF2] bg-[#F8FAFC] p-4">
-              <div className="flex flex-col gap-3 lg:flex-row lg:items-end">
-                <label className="min-w-0 flex-1 text-sm font-medium text-[#26364d]">
-                  API 地址
-                  <input
-                    className="mt-1 w-full rounded-xl border border-[#d7e4f4] bg-white px-3 py-2 text-sm"
-                    value={customBaseUrl}
-                    onChange={(event) => setCustomBaseUrl(event.target.value)}
-                    placeholder="https://api.example.com/v1"
-                  />
-                </label>
-                <label className="min-w-0 flex-1 text-sm font-medium text-[#26364d]">
-                  模型名称
-                  <input
-                    className="mt-1 w-full rounded-xl border border-[#d7e4f4] bg-white px-3 py-2 text-sm"
-                    value={customModel}
-                    onChange={(event) => setCustomModel(event.target.value)}
-                    placeholder="模型 ID"
-                  />
-                </label>
-                <label className="min-w-0 flex-1 text-sm font-medium text-[#26364d]">
-                  API 密钥
-                  <input
-                    className="mt-1 w-full rounded-xl border border-[#d7e4f4] bg-white px-3 py-2 text-sm"
-                    type="password"
-                    autoComplete="off"
-                    value={customApiKey}
-                    onChange={(event) => setCustomApiKey(event.target.value)}
-                    placeholder={customProvider?.hasApiKey ? "已保存；留空不修改" : "请输入密钥"}
-                  />
-                </label>
-                <div className="flex shrink-0 gap-2">
-                  <Button disabled={savingCustomProvider} onClick={() => void saveCustomProvider()}>
-                    保存
-                  </Button>
-                  {customProvider?.configured ? (
-                    <Button
-                      variant="ghost"
-                      disabled={savingCustomProvider}
-                      onClick={() => {
-                        void window.desktopApi.ai.clearCustomProvider().then(() => {
-                          setCustomProvider({ configured: false, hasApiKey: false });
-                          setCustomApiKey("");
-                        });
-                      }}
-                    >
-                      清除
-                    </Button>
-                  ) : null}
-                </div>
-              </div>
-              <p className="mt-2 text-xs leading-5 text-[#718096]">
-                密钥经 Windows 加密，仅保存在本机。仅支持 HTTPS 地址。
-              </p>
+          {transcriptionProvider === "local" ? (
+            <div className="ai-model-filter-bar" role="group" aria-label="筛选模型">
+              {(
+                [
+                  ["all", "全部"],
+                  ["installed", "已安装"],
+                  ["available", "可安装"],
+                ] as const
+              ).map(([value, label]) => (
+                <button
+                  key={value}
+                  type="button"
+                  aria-pressed={modelFilter === value}
+                  onClick={() => setModelFilter(value)}
+                >
+                  {label}
+                </button>
+              ))}
             </div>
           ) : null}
         </div>
-        {(["high_accuracy", "high_speed"] as const).map((category) => (
-          <div className="ai-model-subgroup" key={category}>
-            <div className="ai-model-subgroup-heading">
-              <strong>{category === "high_accuracy" ? "高精度转录" : "极速转录"}</strong>
-            </div>
-            <div className="ai-model-management-grid">
-              {asrModels
-                .filter(
-                  (model) =>
-                    AI_ASR_PRODUCT_CLASSES[model.id as AiAsrModelId] === category &&
-                    visibleModel(model),
-                )
-                .sort(
-                  (left, right) =>
-                    Number(right.id === DEFAULT_AI_ASR_MODEL_ID) -
-                    Number(left.id === DEFAULT_AI_ASR_MODEL_ID),
-                )
-                .map(renderModel)}
-            </div>
-          </div>
-        ))}
-        <div className="ai-model-subgroup is-compact">
-          <div className="ai-model-subgroup-heading">
-            <strong>共享组件</strong>
-          </div>
-          <div className="ai-model-management-grid">
-            {supportModels.filter(visibleModel).map(renderModel)}
-          </div>
+        <div className="ai-model-provider-grid mt-3">
+          <section className="ai-model-provider-panel" aria-label="文本整理与问答模型">
+            <h4>文本整理与问答</h4>
+            <p>用于总结转录、整理内容和回答问题。</p>
+            <select
+              className="ai-processing-select"
+              aria-label="文本整理与问答模型"
+              value={
+                settings.aiOrganizerProvider === "cloud"
+                  ? "cloud"
+                  : customModel === "deepseek-flash"
+                    ? "deepseek"
+                    : customModel.startsWith("glm-4-flash")
+                      ? "glm"
+                      : "custom"
+              }
+              onChange={(event) => {
+                const value = event.target.value;
+                if (value === "cloud")
+                  void onChange({
+                    aiOrganizerProvider: value,
+                    aiRoomAskProvider: value,
+                  });
+                else {
+                  const preset =
+                    value === "deepseek"
+                      ? { baseUrl: "https://api.deepseek.com", model: "deepseek-flash" }
+                      : value === "glm"
+                        ? {
+                            baseUrl: "https://open.bigmodel.cn/api/paas/v4",
+                            model: "glm-4-flash-250414",
+                          }
+                        : undefined;
+                  if (preset) {
+                    setCustomBaseUrl(preset.baseUrl);
+                    setCustomModel(preset.model);
+                  }
+                  void onChange({ aiOrganizerProvider: "custom", aiRoomAskProvider: "custom" });
+                }
+              }}
+            >
+              <option value="cloud">房间云端（默认）</option>
+              <option value="deepseek">DeepSeek Flash（V4.1）</option>
+              <option value="glm">GLM-4-Flash-250414（免费）</option>
+              <option value="custom">自定义 API</option>
+            </select>
+            {settings.aiOrganizerProvider === "custom" ? (
+              <div className="settings-item-row rounded-[16px] border border-[#E7ECF2] bg-[#F8FAFC] p-4">
+                <div className="flex flex-col gap-3 lg:flex-row lg:items-end">
+                  <label className="min-w-0 flex-1 text-sm font-medium text-[#26364d]">
+                    API 地址
+                    <input
+                      className="mt-1 w-full rounded-xl border border-[#d7e4f4] bg-white px-3 py-2 text-sm"
+                      value={customBaseUrl}
+                      onChange={(event) => setCustomBaseUrl(event.target.value)}
+                      placeholder="https://api.example.com/v1"
+                    />
+                  </label>
+                  <label className="min-w-0 flex-1 text-sm font-medium text-[#26364d]">
+                    模型名称
+                    <input
+                      className="mt-1 w-full rounded-xl border border-[#d7e4f4] bg-white px-3 py-2 text-sm"
+                      value={customModel}
+                      onChange={(event) => setCustomModel(event.target.value)}
+                      placeholder="模型 ID"
+                    />
+                  </label>
+                  <label className="min-w-0 flex-1 text-sm font-medium text-[#26364d]">
+                    API 密钥
+                    <input
+                      className="mt-1 w-full rounded-xl border border-[#d7e4f4] bg-white px-3 py-2 text-sm"
+                      type="password"
+                      autoComplete="off"
+                      value={customApiKey}
+                      onChange={(event) => setCustomApiKey(event.target.value)}
+                      placeholder={customProvider?.hasApiKey ? "已保存；留空不修改" : "请输入密钥"}
+                    />
+                  </label>
+                  <div className="flex shrink-0 gap-2">
+                    <Button
+                      disabled={savingCustomProvider}
+                      onClick={() => void saveCustomProvider()}
+                    >
+                      保存
+                    </Button>
+                    {customProvider?.configured ? (
+                      <Button
+                        variant="ghost"
+                        disabled={savingCustomProvider}
+                        onClick={() => {
+                          void window.desktopApi.ai.clearCustomProvider().then(() => {
+                            setCustomProvider({ configured: false, hasApiKey: false });
+                            setCustomApiKey("");
+                          });
+                        }}
+                      >
+                        清除
+                      </Button>
+                    ) : null}
+                  </div>
+                </div>
+                <p className="mt-2 text-xs leading-5 text-[#718096]">
+                  密钥经 Windows 加密，仅保存在本机。仅支持 HTTPS 地址。
+                </p>
+              </div>
+            ) : null}
+          </section>
+          <section className="ai-model-provider-panel" aria-label="语音转录模型">
+            <h4>语音转录</h4>
+            <p>选择云端 SenseVoice、本地模型或兼容的自定义转录 API。</p>
+            <select
+              className="ai-processing-select"
+              aria-label="语音转录模型来源"
+              value={transcriptionProvider}
+              onChange={(event) => {
+                setTranscriptionApiKey("");
+                setEditingTranscriptionKey(false);
+                void onChange({
+                  aiTranscriptionProvider: event.target.value as AiTranscriptionProvider,
+                });
+              }}
+            >
+              <option value="cloud">SenseVoiceSmall 云端</option>
+              <option value="local">本地模型</option>
+              <option value="custom">自定义 API</option>
+            </select>
+            {transcriptionProvider === "cloud" ? (
+              <div className="ai-provider-config-note">
+                <span>
+                  {transcriptionStatus?.cloudConfigured
+                    ? "API 密钥已保存在本机"
+                    : "需要 SiliconFlow API Key"}
+                </span>
+                {transcriptionStatus?.cloudConfigured && !editingTranscriptionKey ? (
+                  <Button variant="ghost" onClick={() => setEditingTranscriptionKey(true)}>
+                    更换密钥
+                  </Button>
+                ) : null}
+                <p>音频发送至云端；返回纯文本，时间轴为估算，不能提供说话人分离。</p>
+                {!transcriptionStatus?.cloudConfigured || editingTranscriptionKey ? (
+                  <>
+                    <input
+                      className="ai-provider-key-input"
+                      aria-label="SenseVoice API 密钥"
+                      type="password"
+                      autoComplete="off"
+                      value={transcriptionApiKey}
+                      onChange={(event) => setTranscriptionApiKey(event.target.value)}
+                      placeholder={
+                        transcriptionStatus?.cloudConfigured ? "已保存；留空不修改" : "粘贴 API Key"
+                      }
+                    />
+                    <Button
+                      disabled={savingTranscriptionProvider}
+                      onClick={() => void saveTranscriptionProvider("cloud")}
+                    >
+                      保存密钥
+                    </Button>
+                  </>
+                ) : null}
+              </div>
+            ) : null}
+            {transcriptionProvider === "custom" ? (
+              <div className="ai-provider-config-note">
+                <input
+                  className="ai-provider-key-input"
+                  aria-label="转录 API 地址"
+                  value={transcriptionBaseUrl}
+                  onChange={(event) => setTranscriptionBaseUrl(event.target.value)}
+                  placeholder="https://api.example.com/v1"
+                />
+                <input
+                  className="ai-provider-key-input"
+                  aria-label="转录模型 ID"
+                  value={transcriptionModel}
+                  onChange={(event) => setTranscriptionModel(event.target.value)}
+                  placeholder="模型 ID"
+                />
+                <input
+                  className="ai-provider-key-input"
+                  aria-label="转录 API 密钥"
+                  type="password"
+                  autoComplete="off"
+                  value={transcriptionApiKey}
+                  onChange={(event) => setTranscriptionApiKey(event.target.value)}
+                  placeholder={
+                    transcriptionStatus?.customConfigured ? "已保存；留空不修改" : "API Key"
+                  }
+                />
+                <Button
+                  disabled={savingTranscriptionProvider}
+                  onClick={() => void saveTranscriptionProvider("custom")}
+                >
+                  保存转录 API
+                </Button>
+              </div>
+            ) : null}
+          </section>
         </div>
+        {transcriptionProvider === "local" ? (
+          <>
+            {(["high_accuracy", "high_speed"] as const).map((category) => (
+              <div className="ai-model-subgroup" key={category}>
+                <div className="ai-model-subgroup-heading">
+                  <strong>{category === "high_accuracy" ? "高精度转录" : "极速转录"}</strong>
+                </div>
+                <div className="ai-model-management-grid">
+                  {asrModels
+                    .filter(
+                      (model) =>
+                        AI_ASR_PRODUCT_CLASSES[model.id as AiAsrModelId] === category &&
+                        visibleModel(model),
+                    )
+                    .sort(
+                      (left, right) =>
+                        Number(right.id === DEFAULT_AI_ASR_MODEL_ID) -
+                        Number(left.id === DEFAULT_AI_ASR_MODEL_ID),
+                    )
+                    .map(renderModel)}
+                </div>
+              </div>
+            ))}
+            <div className="ai-model-subgroup is-compact">
+              <div className="ai-model-subgroup-heading">
+                <strong>共享组件</strong>
+              </div>
+              <div className="ai-model-management-grid">
+                {supportModels.filter(visibleModel).map(renderModel)}
+              </div>
+            </div>
+          </>
+        ) : null}
       </section>
 
       {pendingDeleteModel

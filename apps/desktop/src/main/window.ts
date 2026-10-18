@@ -13,7 +13,6 @@ import {
 } from "electron";
 
 import {
-  APP_ID,
   APP_NAME,
   IPC_CHANNELS,
   type ScreenCaptureSourceDescriptor,
@@ -23,6 +22,7 @@ import {
 
 import { platformService } from "./platform/PlatformService";
 import { screenCaptureService } from "./screen-capture-service";
+import { developmentRelaunchCommand, windowsAppUserModelId } from "./development-shortcuts";
 
 const devServerUrl = process.env.VITE_DEV_SERVER_URL?.trim() || "http://127.0.0.1:5173";
 
@@ -42,6 +42,7 @@ const getBuildAssetPath = (fileName: string) =>
     : path.join(app.getAppPath(), "build", fileName);
 
 const getIconPath = () => getBuildAssetPath("shanghao-icon-v4.ico");
+const getWindowsAppId = windowsAppUserModelId;
 
 const getWindowIcon = (): NativeImage => {
   // Windows must keep the ICO-backed NativeImage: Electron loads its requested
@@ -63,15 +64,13 @@ const applyBrandIdentity = (window: BrowserWindow, windowIcon = getWindowIcon())
   if (!windowIcon.isEmpty()) window.setIcon(windowIcon);
   if (platformService.isWindows) {
     window.setAppDetails({
-      appId: APP_ID,
+      appId: getWindowsAppId(),
       appIconPath: getIconPath(),
       appIconIndex: 0,
       // Windows requires the name and command together. Dev pins must include
       // the app directory instead of launching the bare Electron runtime.
-      relaunchCommand: app.isPackaged
-        ? `"${process.execPath}"`
-        : `"${process.execPath}" "${app.getAppPath()}"`,
-      relaunchDisplayName: APP_NAME,
+      relaunchCommand: app.isPackaged ? `"${process.execPath}"` : developmentRelaunchCommand(),
+      relaunchDisplayName: app.isPackaged ? APP_NAME : `${APP_NAME}（开发版）`,
     });
   }
 };

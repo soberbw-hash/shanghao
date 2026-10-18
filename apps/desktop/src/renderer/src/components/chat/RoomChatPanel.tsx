@@ -1,4 +1,4 @@
-import { memo, useState } from "react";
+import { memo, useEffect, useState, type ReactNode } from "react";
 
 import type { ChatImageAttachment, ChatMessage } from "@private-voice/shared";
 
@@ -8,6 +8,8 @@ import { useRoomStore } from "../../store/roomStore";
 import { prepareChatImage } from "../../utils/chatImage";
 import { TemporaryChatPanel } from "./TemporaryChatPanel";
 import { writeRendererLog } from "../../utils/logger";
+import type { AssistantBotMood } from "../../features/ai/useAssistantBotState";
+import { isGameAssistantMessage } from "../../features/chat/gameAssistantMessage";
 
 interface RoomChatPanelProps {
   sendChatMessage: (
@@ -20,6 +22,11 @@ interface RoomChatPanelProps {
   sendConfiguredQuickMessage: (presetId: string) => Promise<void>;
   onOpenQuickMessageSettings: () => void;
   onOpenRoomAi: () => void;
+  onCloseRoomAi: () => void;
+  isRoomAskOpen: boolean;
+  roomAiPanel: ReactNode;
+  assistantMood: AssistantBotMood;
+  onAssistantMoodChange: (mood: AssistantBotMood) => void;
   canSend: boolean;
   reduceMotion: boolean;
 }
@@ -33,12 +40,24 @@ export const RoomChatPanel = memo(
     sendConfiguredQuickMessage,
     onOpenQuickMessageSettings,
     onOpenRoomAi,
+    onCloseRoomAi,
+    isRoomAskOpen,
+    roomAiPanel,
+    assistantMood,
+    onAssistantMoodChange,
     canSend,
     reduceMotion,
   }: RoomChatPanelProps) => {
     const messages = useRoomStore((state) => state.chatMessages);
+    const latestGameAssistantMessageId = messages
+      .slice(-100)
+      .reverse()
+      .find(isGameAssistantMessage)?.id;
     const pushToast = useAppStore((state) => state.pushToast);
     const [chatInput, setChatInput] = useState("");
+    useEffect(() => {
+      if (latestGameAssistantMessageId) onAssistantMoodChange("gaming");
+    }, [latestGameAssistantMessageId, onAssistantMoodChange]);
     const reportQuickMessageFailure = (error: unknown) => {
       const code =
         error instanceof Error &&
@@ -100,6 +119,10 @@ export const RoomChatPanel = memo(
         }}
         onOpenQuickMessageSettings={onOpenQuickMessageSettings}
         onOpenRoomAi={onOpenRoomAi}
+        onCloseRoomAi={onCloseRoomAi}
+        isRoomAskOpen={isRoomAskOpen}
+        roomAiPanel={roomAiPanel}
+        assistantMood={assistantMood}
         onSendImage={sendImage}
         onRecall={async (messageId) => {
           try {

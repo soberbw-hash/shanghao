@@ -167,5 +167,11 @@
   "apps/desktop/src/renderer/src/features/screen-share/useScreenSourcePicker.ts": 90,
   "apps/desktop/src/renderer/src/components/room/ScreenSourcePicker.tsx": 290,
   "apps/desktop/src/renderer/src/styles/parts/216-game-identity.css": 35,
-  "apps/desktop/src/renderer/src/styles/parts/220-screen-source-picker.css": 450
+  "apps/desktop/src/renderer/src/styles/parts/220-screen-source-picker.css": 450,
+  "apps/desktop/src/renderer/src/styles/parts/221-ai-mascot.css": 194,
+  "apps/desktop/src/renderer/src/styles/parts/177-ai-model-provider-panels.css": 130,
+  "apps/desktop/src/renderer/src/styles/parts/222-ai-inline-question.css": 125,
+  "apps/desktop/src/renderer/src/styles/parts/223-assistant-avatar-motion.css": 85,
+  "apps/desktop/src/renderer/src/styles/parts/224-quick-message-library-spacing.css": 20,
+  "apps/desktop/src/renderer/src/styles/parts/225-assistant-companion.css": 80
 }

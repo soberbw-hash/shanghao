@@ -46,6 +46,12 @@ const harness = (keyAtHookStart?: UiohookKeyboardEvent) => {
     exports: module.exports,
     require: (id: string) => {
       if (id === "./phone-shortcut") return { PhoneShortcut };
+      if (id === "./phone-input-monitor")
+        return {
+          PhoneInputMonitor: class {
+            configure() {}
+          },
+        };
       if (id === "electron")
         return {
           globalShortcut: {

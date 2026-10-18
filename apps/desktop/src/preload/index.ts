@@ -198,6 +198,11 @@ const desktopApi: DesktopApi = {
     getCustomProvider: () => ipcRenderer.invoke(IPC_CHANNELS.ai.getCustomProvider),
     saveCustomProvider: (input) => ipcRenderer.invoke(IPC_CHANNELS.ai.saveCustomProvider, input),
     clearCustomProvider: () => ipcRenderer.invoke(IPC_CHANNELS.ai.clearCustomProvider),
+    getTranscriptionProvider: () => ipcRenderer.invoke(IPC_CHANNELS.ai.getTranscriptionProvider),
+    saveTranscriptionProvider: (input) =>
+      ipcRenderer.invoke(IPC_CHANNELS.ai.saveTranscriptionProvider, input),
+    clearTranscriptionProvider: (provider) =>
+      ipcRenderer.invoke(IPC_CHANNELS.ai.clearTranscriptionProvider, provider),
     getHuggingFaceAccess: () => ipcRenderer.invoke(IPC_CHANNELS.ai.getHuggingFaceAccess),
     saveHuggingFaceAccess: (input) =>
       ipcRenderer.invoke(IPC_CHANNELS.ai.saveHuggingFaceAccess, input),

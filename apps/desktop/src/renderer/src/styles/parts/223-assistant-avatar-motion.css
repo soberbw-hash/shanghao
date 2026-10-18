@@ -1,0 +1,76 @@
+.assistant-bot-image {
+  display: block;
+  flex: 0 0 auto;
+  object-fit: contain;
+  pointer-events: none;
+  user-select: none;
+}
+
+.assistant-bot-image[data-mood="idle"] {
+  animation: assistant-bot-idle 3.8s ease-in-out infinite;
+}
+
+.assistant-bot-image[data-mood="greeting"] {
+  animation: none;
+}
+
+.assistant-bot-image[data-mood="thinking"] {
+  animation: assistant-bot-thinking 2.7s ease-in-out infinite;
+}
+
+.assistant-bot-image[data-mood="gaming"] {
+  animation: assistant-bot-gaming 720ms ease-in-out 2;
+}
+
+.assistant-bot-image[data-mood="error"] {
+  opacity: 0.88;
+}
+
+@keyframes assistant-bot-idle {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-2px);
+  }
+}
+
+@keyframes assistant-bot-greeting {
+  0%,
+  100% {
+    transform: translateY(0) rotate(0);
+  }
+  35% {
+    transform: translateY(-3px) rotate(-2deg);
+  }
+  70% {
+    transform: translateY(0) rotate(1deg);
+  }
+}
+
+@keyframes assistant-bot-thinking {
+  0%,
+  100% {
+    transform: translateY(0) scale(1);
+  }
+  50% {
+    transform: translateY(-2px) scale(1.015);
+  }
+}
+
+@keyframes assistant-bot-gaming {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  45% {
+    transform: translateY(-3px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .assistant-bot-image {
+    animation: none !important;
+  }
+}

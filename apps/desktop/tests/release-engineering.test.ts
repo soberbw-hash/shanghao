@@ -65,7 +65,9 @@ test("current local metadata and safeguards are complete", () => {
   assert.equal(desktopBuilder.includes("shanghao-icon.icns"), false);
   assert.equal(release.includes("windows-${{ inputs.release_tag || github.ref_name }}"), true);
   assert.equal(
-    release.includes("docs/release-notes/${{ inputs.release_tag || github.ref_name }}.md"),
+    release.includes("docs/release-notes/$env:RELEASE_TAG.md") &&
+      release.includes("body_path: artifacts/release-body.md") &&
+      release.includes("https://raw.githubusercontent.com/soberbw-hash/shanghao/"),
     true,
   );
   assert.equal(release.includes("VITE_CLOUDBASE_ENV_ID"), true);
