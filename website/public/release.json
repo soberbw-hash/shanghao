@@ -1,20 +1,20 @@
 {
-  "tag_name": "v3.4.8",
-  "published_at": "2026-10-17T06:40:35Z",
-  "html_url": "https://github.com/soberbw-hash/shanghao/releases/tag/v3.4.8",
+  "tag_name": "v3.4.9",
+  "published_at": "2026-10-18T01:50:58Z",
+  "html_url": "https://github.com/soberbw-hash/shanghao/releases/tag/v3.4.9",
   "highlights": [
-    "修复本地模型无法准备。 本地 ASR 模型已下载但应用准备失败时，受管私有 Python Runtime 会按应用需要完成初始化，不依赖用户另行安装系统 Python。初始化失败会返回明确状态，并支持从模型卡片重试。",
-    "修复启动时的通话快捷键竞态。 电话模式在启动全局输入钩子前先注册按键监听，避免钩子启动瞬间按下快捷键、监听尚未就绪而漏掉事件。",
-    "保留游戏状态下的按键处理。 回归覆盖游戏活动抑制逻辑和全局按键路径，确保该路径不会因普通游戏活动检测被整体屏蔽。",
-    "模型 Runtime、模型初始化失败提示和重试路径，以及电话模式快捷键的定向自动化回归已覆盖；合并到发布标签后的完整检查由 GitHub Actions 执行。"
+    "电话模式更可靠。 除原有全局按键监听外，Windows 增加独立的只读按键状态检测。游戏中按着 Shift、Ctrl 时仍能触发所选方向键；两条路径共享按下状态并按采样时间去重，辅助进程退出时回退原监听。屏幕锁定不能被当成松开按键而自动解除静音。",
+    "AI 小助手进入聊天区。 使用原始四张形象，在原有快捷消息区域展开，原地从“开始提问”变成输入框。保留轻微呼吸，鼠标靠近时柔和跟随，点击可以打招呼；请求处理、异常和游戏消息仍由实际业务状态驱动。关闭时不再闪回开始按钮，支持减少动态效果。",
+    "模型选择更清楚。 左侧选择文本整理与问答，右侧选择语音转录；只在本地转录模式显示下载库。支持 GLM、DeepSeek、自定义文本接口，以及 SenseVoiceSmall 或自定义转录 API，密钥只在本机加密保存。",
+    "结果不用转两遍。 正式版与开发版共用录音及转录库；旧目录独有结果安全合并，完整结果优先于空失败记录，导入前备份。返回录音库时刷新共享结果。"
   ],
   "assets": [
     {
-      "name": "ShangHao-3.4.8-Setup-x64.exe",
-      "size": 193230573,
-      "browser_download_url": "https://github.com/soberbw-hash/shanghao/releases/download/v3.4.8/ShangHao-3.4.8-Setup-x64.exe",
-      "mirror_path": "/downloads/v3.4.8/ShangHao-3.4.8-Setup-x64.exe",
-      "sha256": "2f7ed79ac3db60d21bb501777d71c2d6fb8052b7de3bafbc6f4e7a7c478adeb5"
+      "name": "ShangHao-3.4.9-Setup-x64.exe",
+      "size": 205229883,
+      "browser_download_url": "https://github.com/soberbw-hash/shanghao/releases/download/v3.4.9/ShangHao-3.4.9-Setup-x64.exe",
+      "mirror_path": "/downloads/v3.4.9/ShangHao-3.4.9-Setup-x64.exe",
+      "sha256": "98eef8c74590f35e3cd17569559949c57136ac3bd6e17fbd9eea88a4cf0d9ac7"
     }
   ]
 }

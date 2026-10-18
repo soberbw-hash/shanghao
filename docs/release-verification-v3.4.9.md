@@ -15,7 +15,25 @@
 
 ## 产物与渠道
 
-第一份本机候选包和体积预算说明见 [体积记录](package-size-v3.4.9.md)。正式公开资产由 GitHub Release 工作流重新构建；完成后在本文件补充公开资产、ZIP 下载检查、GitHub 与 CloudBase 哈希核对。
+第一份本机候选包和体积预算说明见 [体积记录](package-size-v3.4.9.md)。正式公开资产由 [Windows Release 工作流](https://github.com/soberbw-hash/shanghao/actions/runs/39087487814) 重新构建，全部步骤通过；产品代码对应标签提交 `9e8c848c2551e2751eb1135b78efb23c40416c2a`。随后只修正一个测试中的 Windows 路径夹具，主分支 [Linux / Windows CI](https://github.com/soberbw-hash/shanghao/actions/runs/39087931453) 和 CodeQL 全部通过，未改动已发布产品代码。
+
+- [GitHub Release](https://github.com/soberbw-hash/shanghao/releases/tag/v3.4.9)：安装器、ZIP、blockmap、latest.yml、校验文件及体积报告共 6 个资产。正文包含 3 张截图，所有图片公开请求返回 200。
+- 安装器：`ShangHao-3.4.9-Setup-x64.exe`，205,229,883 字节，SHA-256 `98eef8c74590f35e3cd17569559949c57136ac3bd6e17fbd9eea88a4cf0d9ac7`。已下载 GitHub 资产核对哈希和 latest.yml 的 SHA-512。
+- ZIP：`ShangHao-3.4.9-Windows-x64.zip`，255,574,416 字节，SHA-256 `ff37f60944ff4ff7d464276b38f8eb3c01fc775596703934de94b21f98bda0cb`。已实际下载，204 个条目 CRC 全通过；启动器、app.asar、PhoneInput/PhoneAudio、官方 ICO、字体许可齐全，无根目录 node_modules 或用户 profile。
+- 正式体积：安装器 195.72 MiB、安装后 498.43 MiB、app.asar 66.65 MiB。200/520/80 MiB 当前预算及单份 FFmpeg、无多平台插件/源码等资源规则通过；安装器预算变化原因已单独记录。
+- [腾讯云官网](https://shanghao-d3ga95tc8224e727a-1315451893.tcloudbaseapp.com/) 首页和 release.json 返回 200，公开 manifest 为 v3.4.9；版本目录先验证上传，再激活 manifest、构建和上传根目录，未使用根目录 --safe 或 --prune。
+- 已从腾讯云完整下载 205,229,883 字节安装器，SHA-256 与 GitHub 和 manifest 完全一致，校验文件返回 200；旧 v3.4.8 下载仍返回 200。
+- 下载和核验记录保留在本机 `artifacts/releases/v3.4.9/`；正式安装器也保留在 `website/.release-cache/v3.4.9/`。更新需用户主动安装，本次没有替换正在使用的客户端。
+
+## 主要改动位置
+
+- 电话模式：`phone-shortcut.ts`、`phone-input-monitor.ts`、`phone-virtual-key.ts`、`shortcuts.ts` 与 `native/phone-mode/PhoneInput.cs`。
+- 共享转录：`ai-storage.ts`、`shared-voice-memory-store.ts`、`voice-memory-store.ts` 与录音库外部刷新逻辑。
+- 云端配置：`ai-transcription-provider-store.ts`、`remote-transcription.ts`、`transcription-provider-ipc.ts` 与模型设置组件。
+- 助手：`ChatPanelHeader.tsx`、`ChatAssistantWelcome.tsx`、`AssistantBotCompanion.tsx`、状态 Hook、`221`—`225` 样式分片及原始素材映射。
+- 开发入口和图标：`development-shortcuts.ts`、`window.ts`、开发启动/安装脚本；发布资源与工作流同步校验。
+
+完整前阶段文件与状态说明见 [AI 与云端检查](ai-assistant-cloud-review-2026-10-18.md) 和 [共享录音检查](shared-recordings-review-2026-10-18.md)。
 
 ## 继续保留的边界
 
