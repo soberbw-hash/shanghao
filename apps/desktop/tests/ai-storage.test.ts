@@ -11,7 +11,7 @@ import {
 } from "../src/main/ai-storage";
 
 test("packaged and development profiles share voice-memory while capture profiles stay isolated", () => {
-  const appData = "C:\\Users\\tester\\AppData\\Roaming";
+  const appData = path.resolve(os.tmpdir(), "voice-memory-path-fixture", "AppData", "Roaming");
   const shared = path.join(appData, "shanghao", "voice-memory");
   assert.equal(resolveVoiceMemoryStoragePath(path.join(appData, "shanghao"), appData), shared);
   assert.equal(
