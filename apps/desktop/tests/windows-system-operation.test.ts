@@ -92,20 +92,30 @@ test(
   "Windows parses every fixed privileged script without running it or changing system settings",
   { skip: process.platform !== "win32" },
   async () => {
-    for (const operation of [
-      "firewall-repair",
-      "firewall-remove",
-      "icon-hide",
-      "icon-restore",
-    ] as const) {
-      const encoded = encodeWindowsSystemOperation(operation, executable, Date.now() + 90_000);
-      const result = await runWindowsPowerShell(`
-      $source = [Text.Encoding]::Unicode.GetString([Convert]::FromBase64String('${encoded}'))
+    const operations = ["firewall-repair", "firewall-remove", "icon-hide", "icon-restore"] as const;
+    const encoded = operations
+      .map(
+        (operation) =>
+          `'${encodeWindowsSystemOperation(operation, executable, Date.now() + 90_000)}'`,
+      )
+      .join(",");
+    // Parse all four scripts in one cold host. Hosted Windows startup can exceed
+    // the product command deadline under parallel CI load; no script is executed.
+    const result = await runWindowsPowerShell(
+      `
+      $results = @(@(${encoded}) | ForEach-Object {
+      $source = [Text.Encoding]::Unicode.GetString([Convert]::FromBase64String($_))
       $tokens = $null; $parseErrors = $null
       $null = [System.Management.Automation.Language.Parser]::ParseInput($source, [ref]$tokens, [ref]$parseErrors)
-      @{ errors = $parseErrors.Count } | ConvertTo-Json -Compress
-    `);
-      assert.equal(parsePowerShellJson<{ errors: number }>(result.stdout).errors, 0);
-    }
+      @{ errors = $parseErrors.Count }
+      })
+      ConvertTo-Json -InputObject $results -Compress
+    `,
+      {},
+      60_000,
+    );
+    const parsed = parsePowerShellJson<Array<{ errors: number }>>(result.stdout);
+    assert.equal(parsed.length, operations.length);
+    for (const entry of parsed) assert.equal(entry.errors, 0);
   },
 );
