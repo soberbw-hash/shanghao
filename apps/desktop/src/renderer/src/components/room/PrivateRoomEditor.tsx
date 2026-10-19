@@ -31,6 +31,7 @@ export const PrivateRoomEditor = ({
 }) => {
   const dialog = useRef<HTMLDialogElement>(null);
   const randomGeneration = useRef(0);
+  const generatedCode = useRef<string | undefined>(undefined);
   const [name, setName] = useState(room?.name ?? `${defaultName}的房间`.slice(0, 32));
   const [icon, setIcon] = useState<RoomIconId>(
     room?.icon ?? ROOM_ICON_IDS[Math.floor(Math.random() * ROOM_ICON_IDS.length)]!,
@@ -46,9 +47,17 @@ export const PrivateRoomEditor = ({
     const generation = ++randomGeneration.current;
     setRandomBusy(true);
     setError("");
+    setAvailability(undefined);
     try {
       const result = await shanghaoCore.rooms.randomCode();
-      if (generation === randomGeneration.current) setCode(result);
+      if (generation === randomGeneration.current) {
+        // randomCode already checked availability. Commit its result together so
+        // the input never flashes the previous success before checking again.
+        generatedCode.current = result;
+        setCode(result);
+        setAvailability("可用");
+        setCheckingCode(false);
+      }
     } catch (error) {
       if (generation === randomGeneration.current) setError(privateRoomErrorMessage(error));
     } finally {
@@ -66,6 +75,7 @@ export const PrivateRoomEditor = ({
     };
   }, [room]);
   useEffect(() => {
+    if (code === generatedCode.current) return;
     if (room || !isChannelCode(code)) {
       setAvailability(undefined);
       setCheckingCode(false);
@@ -171,6 +181,7 @@ export const PrivateRoomEditor = ({
             onShuffle={() => void shuffle()}
             onChange={(value) => {
               randomGeneration.current++;
+              generatedCode.current = undefined;
               setCode(value);
               setError("");
             }}

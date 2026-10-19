@@ -8,7 +8,7 @@ import type { ShortcutController } from "./shortcuts";
 import { sendToWindow } from "./safe-web-contents";
 import { platformService } from "./platform/PlatformService";
 
-type State = { active: boolean; busy: boolean; error?: string };
+type State = { active: boolean; busy: boolean; error?: string; entryCue?: number };
 export function registerPhoneMode(
   getWindow: () => BrowserWindow | null,
   settings: SettingsStore,
@@ -137,8 +137,16 @@ export function registerPhoneMode(
     });
     return ready;
   };
-  const command = async (active: boolean) => {
+  const command = async (active: boolean, request: number, entering: boolean) => {
     await start();
+    if (request !== desiredRevision || closing) return;
+    if (entering && (settings.getSnapshot().soundVolume ?? 0.72) > 0) {
+      // Endpoints are muted globally, so the entry cue must precede native mute.
+      // Renderer closes its own microphone gate before playing this brief cue.
+      publish({ active: true, busy: true, entryCue: request });
+      await new Promise<void>((resolve) => setTimeout(resolve, 180));
+      if (request !== desiredRevision || closing) return;
+    }
     if (closing || !helper || helper.stdin.destroyed || helper.stdin.writableEnded) {
       throw new Error("电话模式助手已退出");
     }
@@ -162,11 +170,12 @@ export function registerPhoneMode(
     if (closing) return Promise.reject(new Error("软件正在退出"));
     // Gate immediately on press; release only after native restoration is confirmed.
     desiredActive = active;
+    const entering = active && !state.active;
     const request = ++desiredRevision;
     publish({ active: active || state.active, busy: true });
     const operation = queue
       // Keep the in-flight command serialized, discarding obsolete queued transitions.
-      .then(() => (request === desiredRevision ? command(active) : undefined))
+      .then(() => (request === desiredRevision ? command(active, request, entering) : undefined))
       .then(() => {
         if (request === desiredRevision) publish({ active, busy: false });
       })

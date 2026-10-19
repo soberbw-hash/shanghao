@@ -55,6 +55,7 @@ import {
   type RendererLogPayload,
   type RendererRuntimeHealthInput,
   type RuntimeInfo,
+  type DesktopApi,
   type RuntimeHealthSnapshot,
   type ScreenShareViewerOpenRequest,
   type ScreenShareViewerSignal,
@@ -97,6 +98,7 @@ import {
 import { readRelayStatus } from "./relay-status";
 import { buildRuntimeEventTimeline } from "./runtime-event-timeline";
 import { sendToWindow } from "./safe-web-contents";
+import { systemNotificationDelivery } from "./notification-delivery";
 import { registerOverlayQuickMusicMuteHandler } from "./overlay-quick-music-ipc";
 import { registerRecordingLocationIpcHandlers } from "./recording-location-ipc";
 import { registerRecordingMarkerIpcHandler } from "./recording-marker-ipc";
@@ -364,34 +366,30 @@ export const registerIpcHandlers = ({
 
   ipcMain.handle(
     IPC_CHANNELS.app.notify,
-    async (
-      _event,
-      payload: {
-        title: string;
-        body: string;
-        attention?: boolean;
-        shakeWindow?: boolean;
-        showNotification?: boolean;
-      },
-    ): Promise<void> => {
-      requireString(payload?.title, 80, "notification_title");
-      requireString(payload?.body, 180, "notification_body");
+    async (_event, payload: Parameters<DesktopApi["app"]["notify"]>[0]): Promise<void> => {
+      const title = requireString(payload?.title, 80, "notification_title");
+      const body = requireString(payload?.body, 180, "notification_body");
       const mainWindow = getMainWindow();
       if (payload.attention === true) bringWindowToFront(mainWindow, true);
       if (payload.shakeWindow === true) shakeMainWindow(mainWindow);
       if (payload.showNotification === false) return;
-      if (!Notification.isSupported()) {
-        return;
-      }
-      const notification = new Notification({
-        title: payload.title.slice(0, 80),
-        body: payload.body.slice(0, 180),
-        silent: false,
-      });
-      notification.on("click", () => {
-        bringWindowToFront(getMainWindow());
-      });
-      notification.show();
+      if (!Notification.isSupported()) return;
+      const notification = new Notification({ title, body, silent: false });
+      systemNotificationDelivery.show(
+        notification,
+        () => bringWindowToFront(getMainWindow()),
+        (reason) => {
+          sendToWindow(getMainWindow(), IPC_CHANNELS.app.notificationFailed, reason);
+          void diagnostics
+            .writeLog({
+              category: "app",
+              level: "warn",
+              message: "system_notification_delivery_failed",
+              context: { reason },
+            })
+            .catch(() => undefined);
+        },
+      );
     },
   );
   ipcMain.handle(
@@ -445,11 +443,12 @@ export const registerIpcHandlers = ({
   );
   ipcMain.handle(
     IPC_CHANNELS.app.openSystemSettings,
-    async (_event, page: "microphone" | "sound" | "display"): Promise<void> => {
+    async (_event, page: "microphone" | "sound" | "display" | "notifications"): Promise<void> => {
       const pages = {
         microphone: "ms-settings:privacy-microphone",
         sound: "ms-settings:sound",
         display: "ms-settings:display",
+        notifications: "ms-settings:notifications",
       } as const;
       const target = pages[page];
       if (!target) throw new Error("invalid_system_settings_page");

@@ -55,45 +55,61 @@ export const DigitCodeInput = ({
     if (!element) return;
     const completing = previousStatus.current === "checking" && status === "success";
     previousStatus.current = status;
-    const context = gsap.context(() => {
-      const cells = Array.from(element.querySelectorAll<HTMLElement>(".digit-code-cell"));
-      const badge = element.querySelector(".digit-code-result");
-      gsap.set(badge, { opacity: 0, scale: 0.85 });
-      if (status === "error" && !reduceMotion) {
-        gsap.fromTo(
-          cells,
-          { x: -3 },
-          { x: 0, duration: motionDuration.fast, ease: motionEase.feedback },
-        );
-      }
-      if (status !== "checking" && status !== "success") return;
-      const duration = reduceMotion ? motionDuration.instant : motionDuration.compact;
-      const timeline = gsap.timeline({ defaults: { duration, ease: motionEase.feedback } });
-      const merged = {
-        x: (index: number) =>
-          reduceMotion
-            ? 0
-            : element.clientWidth / 2 - cells[index]!.offsetLeft - cells[index]!.offsetWidth / 2,
-        scale: reduceMotion ? 1 : 0.85,
-        opacity: 0,
-      };
-      if (completing) {
-        gsap.set(cells, merged);
-        gsap.set(badge, { opacity: 1, scale: 1 });
-      } else
-        timeline
-          .to(cells, {
-            ...merged,
-            stagger: reduceMotion ? 0 : { each: 0.025, from: "edges" },
-          })
-          .to(badge, { opacity: 1, scale: 1 }, "<0.08");
-      if (status === "success") {
-        timeline
-          .to(badge, { opacity: 0 }, "+=0.3")
-          .to(cells, { x: 0, scale: 1, opacity: 1, stagger: 0 }, "<");
-      }
-    }, element);
-    return () => context.revert();
+    const cells = Array.from(element.querySelectorAll<HTMLElement>(".digit-code-cell"));
+    const badge = element.querySelector(".digit-code-result");
+    // Read every layout metric before GSAP writes transforms. Function-valued
+    // destinations previously forced a layout read after each cell's write.
+    const center = element.clientWidth / 2;
+    const destinations = cells.map((cell) => center - cell.offsetLeft - cell.offsetWidth / 2);
+    const duration = reduceMotion ? motionDuration.instant : motionDuration.compact;
+    const timeline = gsap.timeline({
+      defaults: { duration, ease: motionEase.feedback, force3D: true },
+      onComplete: () => gsap.set([...cells, badge], { clearProps: "willChange" }),
+    });
+    gsap.set([...cells, badge], { willChange: "transform,opacity" });
+    if (status === "error" && !reduceMotion) {
+      timeline.fromTo(
+        cells,
+        { x: -3 },
+        { x: 0, scale: 1, opacity: 1, duration: motionDuration.fast },
+      );
+    }
+    const merged = {
+      x: (index: number) => (reduceMotion ? 0 : destinations[index]!),
+      scale: reduceMotion ? 1 : 0.85,
+      opacity: 0,
+    };
+    if (status === "checking" || status === "success") {
+      // Retarget from the current pose when a fast request completes mid-merge.
+      // Reverting the checking context first snapped six cells to their ends.
+      if (!completing) gsap.set(badge, { opacity: 0, scale: 0.85 });
+      timeline
+        .to(cells, {
+          ...merged,
+          stagger: reduceMotion ? 0 : { each: 0.025, from: "edges" },
+        })
+        .to(badge, { opacity: 1, scale: 1 }, "<0.08");
+    } else {
+      timeline.to(badge, { opacity: 0 }, 0);
+      if (status !== "error" || reduceMotion) timeline.to(cells, { x: 0, scale: 1, opacity: 1 }, 0);
+    }
+    if (status === "success") {
+      timeline
+        .to(badge, { opacity: 0 }, "+=0.3")
+        .to(cells, { x: 0, scale: 1, opacity: 1, stagger: 0 }, "<");
+    }
+    const pauseHidden = () =>
+      timeline.paused(document.visibilityState === "hidden" || !document.hasFocus());
+    document.addEventListener("visibilitychange", pauseHidden);
+    window.addEventListener("focus", pauseHidden);
+    window.addEventListener("blur", pauseHidden);
+    pauseHidden();
+    return () => {
+      document.removeEventListener("visibilitychange", pauseHidden);
+      window.removeEventListener("focus", pauseHidden);
+      window.removeEventListener("blur", pauseHidden);
+      timeline.kill();
+    };
   }, [status, reduceMotion]);
   const commit = (text: string, caret: number) => {
     const clean = digits(text).slice(0, length);

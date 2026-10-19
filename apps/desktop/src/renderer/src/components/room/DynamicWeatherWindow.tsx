@@ -31,8 +31,7 @@ export const DynamicWeatherWindow = ({
     (state) => state.settings?.isSystemWeatherLocationEnabled === true,
   );
   const snapshot = useWeatherStore((state) => state.snapshot);
-  const storedPreview = useWeatherStore((state) => state.preview);
-  const preview = previewOverride ?? storedPreview;
+  const preview = previewOverride;
   const hasPreviewOverride = previewOverride !== undefined;
   const refresh = useWeatherStore((state) => state.refresh);
   const clear = useWeatherStore((state) => state.clear);

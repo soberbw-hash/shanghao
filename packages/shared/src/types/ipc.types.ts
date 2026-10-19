@@ -265,12 +265,17 @@ export interface DesktopApi {
   rooms: import("./private-room.types").PrivateRoomsApi;
   roomMemory: import("./room-memory.types").RoomMemoryApi;
   phoneMode: {
-    get: () => Promise<{ active: boolean; busy: boolean; error?: string }>;
+    get: () => Promise<{ active: boolean; busy: boolean; error?: string; entryCue?: number }>;
     set: (active: boolean) => Promise<void>;
     devices: (devices: { inputDeviceId: string; outputDeviceId: string }) => Promise<void>;
     configure: (shortcut: string, trigger: "hold" | "toggle") => Promise<void>;
     onChanged: (
-      listener: (state: { active: boolean; busy: boolean; error?: string }) => void,
+      listener: (state: {
+        active: boolean;
+        busy: boolean;
+        error?: string;
+        entryCue?: number;
+      }) => void,
     ) => () => void;
   };
   app: {
@@ -295,6 +300,7 @@ export interface DesktopApi {
       showNotification?: boolean;
     }) => Promise<void>;
     onLifecycleRecovery: (listener: (notice: { reason: string; at: string }) => void) => () => void;
+    onNotificationFailed: (listener: (reason: "blocked" | "failed") => void) => () => void;
     readChatHistory: (payload: {
       serverUrl: string;
       channelId: string;
@@ -316,7 +322,9 @@ export interface DesktopApi {
       imageDataUrl?: string;
       imageKind?: "cover" | "icon";
     }>;
-    openSystemSettings: (page: "microphone" | "sound" | "display") => Promise<void>;
+    openSystemSettings: (
+      page: "microphone" | "sound" | "display" | "notifications",
+    ) => Promise<void>;
     consumeDeepLink: () => Promise<DeepLinkInvite | undefined>;
     onDeepLink: (listener: (invite: DeepLinkInvite) => void) => () => void;
   };

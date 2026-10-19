@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-require-imports */
-/* global Buffer, clearTimeout, console, process, require, setTimeout */
+/* global Buffer, clearInterval, clearTimeout, console, performance, process, require, setInterval, setTimeout */
 
 const fs = require("node:fs");
 const os = require("node:os");
@@ -63,6 +63,21 @@ app.commandLine.appendSwitch(
 
 const windows = new Map();
 const reports = new Map();
+const observeTiming = process.env.SHANGHAO_TEST_PERFORMANCE === "1";
+const mainTiming = { maxTimerDelayMs: 0, lastDelayAtMs: 0 };
+let mainTimer;
+if (observeTiming) {
+  let previous = performance.now();
+  mainTimer = setInterval(() => {
+    const now = performance.now();
+    const delay = Math.max(0, now - previous - 20);
+    if (delay > mainTiming.maxTimerDelayMs) {
+      mainTiming.maxTimerDelayMs = delay;
+      mainTiming.lastDelayAtMs = now;
+    }
+    previous = now;
+  }, 20);
+}
 const readyPeers = new Set();
 let phase = "initial";
 let phaseTimer;
@@ -72,6 +87,34 @@ const rendererScript = `
   const { ipcRenderer } = require("electron");
   const channel = ${JSON.stringify(CHANNEL)};
   const peerId = new URLSearchParams(location.hash.slice(1)).get("peerId");
+  // Optional, bounded observations of this transport fixture's renderer. This
+  // does not load the product scene, native audio driver or microphone DSP.
+  const observeTiming = ${JSON.stringify(process.env.SHANGHAO_TEST_PERFORMANCE === "1")};
+  const timing = { elapsedMs: 0, longTaskCount: 0, maxLongTaskMs: 0, maxFrameGapMs: 0, maxFrameGapAtMs: 0, framesOver34Ms: 0, frames: 0 };
+  const timingStartedAt = performance.now();
+  if (observeTiming) {
+    new PerformanceObserver(list => {
+      for (const entry of list.getEntries()) {
+        timing.longTaskCount++;
+        timing.maxLongTaskMs = Math.max(timing.maxLongTaskMs, entry.duration);
+      }
+    }).observe({ type: "longtask", buffered: true });
+    let previousFrame;
+    const observeFrame = now => {
+      if (previousFrame !== undefined) {
+        const gap = now - previousFrame;
+        if (gap > timing.maxFrameGapMs) {
+          timing.maxFrameGapMs = gap;
+          timing.maxFrameGapAtMs = now;
+        }
+        if (gap > 34) timing.framesOver34Ms++;
+        timing.frames++;
+      }
+      previousFrame = now;
+      requestAnimationFrame(observeFrame);
+    };
+    requestAnimationFrame(observeFrame);
+  }
   void (async () => {
   const peerConnections = new Map();
   const inboundTracks = new Map();
@@ -342,6 +385,7 @@ const rendererScript = `
         phase: currentPhase,
         flowing,
         diagnostics,
+        ...(observeTiming ? { rendererTiming: { ...timing, elapsedMs: performance.now() - timingStartedAt } } : {}),
       });
     }, 300);
   };
@@ -420,6 +464,7 @@ const summarize = (ok, extra = {}) => {
     lateJoinPeer: "E",
     recoveredPair: ["A", "E"],
     phase,
+    ...(observeTiming ? { mainTiming } : {}),
     peers: Object.fromEntries(reports),
     ...extra,
   };
@@ -429,6 +474,7 @@ const finish = (ok, extra) => {
   if (isFinished) return;
   isFinished = true;
   clearTimeout(phaseTimer);
+  clearInterval(mainTimer);
   console.log(JSON.stringify(summarize(ok, extra), null, 2));
   for (const window of windows.values()) {
     if (!window.isDestroyed()) window.destroy();

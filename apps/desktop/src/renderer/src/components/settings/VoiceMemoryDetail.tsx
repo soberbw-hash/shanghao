@@ -399,6 +399,14 @@ export const VoiceMemoryDetail = ({
     : undefined;
   return (
     <section className="voice-memory-detail" aria-label="AI 语音记忆">
+      {record.errorMessage?.startsWith("deferred:") &&
+      /(?:_key_required|_not_configured|_not_installed|_runtime_not_ready)$/.test(
+        record.errorMessage,
+      ) ? (
+        <p role="status" className="text-sm text-[#718096]">
+          录音已保存，等待在“AI 功能”中配置转录或整理服务、准备所选本地模型，然后自动继续。
+        </p>
+      ) : null}
       {record.organizationSinglePassRetry?.status === "unrecoverable" ? (
         <p role="status">多次尝试后仍无法整理，请点重新整理。</p>
       ) : null}

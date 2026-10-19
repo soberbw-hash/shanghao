@@ -624,14 +624,14 @@
   position: relative;
   min-width: 80px;
   flex: 1;
-  margin: 0;
+  display: flex;
 }
 
 .recording-timeline {
   height: 20px;
   width: 100%;
+  margin: 0;
   appearance: none;
-  outline: none;
   background: transparent;
   cursor: pointer;
 }

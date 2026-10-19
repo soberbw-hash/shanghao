@@ -67,6 +67,14 @@ test("initial snapshot is quiet; joins and departures produce one cue per update
   f.feedback.dispose();
 });
 
+test("phone mode privacy gates do not stack ordinary microphone and speaker cues", () => {
+  const f = fixture();
+  f.update();
+  f.update({ isMuted: true, isDeafened: true, phoneModeActive: true });
+  f.update({ isMuted: false, isDeafened: false, phoneModeActive: false });
+  assert.deepEqual(f.sounds, []);
+});
+
 test("stable account identities survive peer replacement; offline placeholders leave once", () => {
   const f = fixture();
   f.update({}, { members: [member("old", { userId: "alice" })] });

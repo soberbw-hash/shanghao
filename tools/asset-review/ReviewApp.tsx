@@ -81,10 +81,10 @@ const manifest = window.reviewManifest;
 const studio = window.assetStudio;
 // The review uses in-memory weather fixtures and has no Electron bridge or room connection.
 useWeatherStore.setState({
+  snapshot: { scene: "clear", phase: "day", fetchedAt: "", expiresAt: "", source: "fallback" },
   refresh: async () => useWeatherStore.getState().snapshot!,
   clear: () => {},
 });
-useWeatherStore.getState().setPreview({ scene: "clear", phase: "day" });
 const base = "apps/desktop/src/renderer/src/";
 const raw = (file: string) => manifest.assets.find((item) => item.relative === file)?.url;
 const scene = (name: string) => raw(`scenes/shanghao-room/${name}`);

@@ -167,7 +167,7 @@ test("migrateSettings falls back to safe defaults for damaged legacy config", ()
   assert.equal("isRecordingLoudnessBalanceEnabled" in result.settings, false);
   assert.equal(result.settings.weatherLocationMode, "auto");
   assert.equal(result.settings.weatherManualCity, "");
-  assert.equal(result.settings.isSystemWeatherLocationEnabled, false);
+  assert.equal(result.settings.isSystemWeatherLocationEnabled, true);
   assert.equal(result.settings.weatherEffectMode, "standard");
   assert.deepEqual(result.settings.micEqualizerGains, [0, 0, 0, 0, 0]);
   assert.equal(result.settings.lowCutFrequency, "75");
@@ -184,9 +184,16 @@ test("friend loudness balance is on by default and explicit choices survive migr
   );
 });
 
-test("voice transcription defaults to manual and only preserves an intentional automatic mode", () => {
-  assert.equal(defaultSettings.aiProcessingMode, "manual");
-  assert.equal(migrateSettings({}).settings.aiProcessingMode, "manual");
+test("voice transcription defaults to resource-safe automation and preserves saved modes", () => {
+  assert.equal(defaultSettings.aiProcessingMode, "low_resource");
+  assert.equal(migrateSettings({}).settings.aiProcessingMode, "low_resource");
+  assert.equal(defaultSettings.isAiAutoTranscribeEnabled, true);
+  assert.equal(migrateSettings({}).settings.isAiAutoTranscribeEnabled, true);
+  assert.equal(
+    migrateSettings({ isAiAutoTranscribeEnabled: false }).settings.isAiAutoTranscribeEnabled,
+    false,
+  );
+  assert.equal(migrateSettings({ aiProcessingMode: "manual" }).settings.aiProcessingMode, "manual");
   assert.equal(
     migrateSettings({
       settingsSchemaVersion: 34,
@@ -484,13 +491,23 @@ test("legacy room question providers follow the unified text provider", () => {
   }
 });
 
-test("automatic organization and upload default off while explicit preferences survive", () => {
+test("automatic organization defaults on and upload stays opt-in while explicit preferences survive", () => {
   const initial = migrateSettings({
     ...defaultSettings,
     isAiAutoUploadEnabled: undefined,
   }).settings;
-  assert.equal(initial.isAiAutoOrganizeEnabled, false);
+  assert.equal(initial.isAiAutoOrganizeEnabled, true);
   assert.equal(initial.isAiAutoUploadEnabled, false);
+  assert.equal(
+    migrateSettings({ isAiAutoOrganizeEnabled: false }).settings.isAiAutoOrganizeEnabled,
+    false,
+  );
+  assert.equal(migrateSettings({}).settings.isRecordingWasteAutoCleanupEnabled, true);
+  assert.equal(
+    migrateSettings({ isRecordingWasteAutoCleanupEnabled: false }).settings
+      .isRecordingWasteAutoCleanupEnabled,
+    false,
+  );
   const custom = migrateSettings({
     ...defaultSettings,
     aiOrganizerProvider: "custom",

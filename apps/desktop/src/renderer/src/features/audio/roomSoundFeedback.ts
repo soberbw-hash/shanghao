@@ -15,6 +15,7 @@ export interface RoomSoundSnapshot {
   >;
   isMuted: boolean;
   isDeafened: boolean;
+  phoneModeActive?: boolean;
   reconnectAttempt: number;
   remoteScreenSharing: Record<string, boolean>;
 }
@@ -97,11 +98,13 @@ export class RoomSoundFeedback {
       next.isMuted !== previous.isMuted &&
       !localAwayChanged &&
       !leaving &&
-      !deafenChanged
+      !deafenChanged &&
+      !next.phoneModeActive &&
+      !previous.phoneModeActive
     ) {
       this.play(next.isMuted ? "mic-off" : "mic-on");
     }
-    if (deafenChanged && !leaving) {
+    if (deafenChanged && !leaving && !next.phoneModeActive && !previous?.phoneModeActive) {
       this.play(next.isDeafened ? "speaker-muted" : "speaker-unmuted");
     }
 

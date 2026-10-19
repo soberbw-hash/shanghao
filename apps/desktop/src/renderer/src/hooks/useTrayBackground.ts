@@ -5,6 +5,7 @@ import { useRoomStore } from "../store/roomStore";
 import { useRecordingStore } from "../store/recordingStore";
 import { useSettingsStore } from "../store/settingsStore";
 import { useAppStore } from "../store/appStore";
+import { subscribeToSystemNotificationFailures } from "../features/notifications/systemNotificationFeedback";
 
 export const trayBackgroundActivity = () => ({
   inRoom: ![RoomLifecycleState.Idle, RoomLifecycleState.Closed].includes(
@@ -18,7 +19,6 @@ export const trayBackgroundActivity = () => ({
   ].includes(useRecordingStore.getState().status.state),
 });
 
-/** Publishes only two observed lifecycle flags; no media objects or account tokens cross IPC. */
 export const useTrayBackground = (): void => {
   useEffect(() => {
     const publish = () => {
@@ -26,6 +26,7 @@ export const useTrayBackground = (): void => {
     };
     publish();
     const stops = [
+      subscribeToSystemNotificationFailures(),
       useRoomStore.subscribe((next, previous) => {
         if (next.room.lifecycleState !== previous.room.lifecycleState) publish();
       }),
@@ -49,9 +50,7 @@ export const useTrayBackground = (): void => {
         if (!trayBackgroundActivity().inRoom) app.navigate("home");
       }),
     ];
-    return () => {
-      stops.forEach((stop) => stop());
-    };
+    return () => stops.forEach((stop) => stop());
   }, []);
 };
 

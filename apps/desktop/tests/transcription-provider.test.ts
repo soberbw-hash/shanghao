@@ -80,6 +80,35 @@ test("ASR uses the official model, multipart upload and authorization header", a
   }
 });
 
+test("custom ASR never reuses a saved credential for a different origin", async () => {
+  const f = await fixture();
+  try {
+    const store = new AiTranscriptionProviderStore(f.directory, secure);
+    await store.save({
+      provider: "custom",
+      baseUrl: "https://8.8.8.8/v1",
+      model: "asr",
+      apiKey: "fixture-key",
+    });
+    await store.save({ provider: "custom", baseUrl: "https://8.8.8.8/v2", model: "asr-next" });
+    const original = await readFile(f.file);
+    await assert.rejects(
+      store.save({ provider: "custom", baseUrl: "https://8.8.4.4", model: "asr-next" }),
+      /custom_asr_key_required/,
+    );
+    assert.deepEqual(await readFile(f.file), original);
+    await store.save({
+      provider: "custom",
+      baseUrl: "https://8.8.4.4",
+      model: "asr-next",
+      apiKey: "replacement-fixture-key",
+    });
+    assert.equal((await store.status()).customBaseUrl, "https://8.8.4.4");
+  } finally {
+    await rm(f.directory, { recursive: true, force: true });
+  }
+});
+
 test("ASR rejects internal custom hosts and bounds streamed results", async () => {
   const f = await fixture();
   try {

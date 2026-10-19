@@ -22,7 +22,6 @@ import {
   hasInvalidVoiceMemoryResult,
   RecordingState,
   type AppSettings,
-  type RecordingBatchDeleteResult,
   type RecordingLibraryItem,
   type RecordingLibrarySnapshot,
   type VoiceMemoryRecord,
@@ -39,7 +38,6 @@ import { RecordingClipsPanel } from "./RecordingClipsPanel";
 import { RecordingRenameDialog } from "./RecordingRenameDialog";
 import { RecordingCardMeta } from "./RecordingCardMeta";
 import { RecordingMarkerCue } from "./RecordingMarkerCue";
-import { RecordingCleanupDialog, type WasteRecordingPreview } from "./RecordingCleanupDialog";
 import { useRecordingDurations } from "../../hooks/useRecordingDurations";
 import { useRecordingClipPreview } from "../../hooks/useRecordingClipPreview";
 import { useRecordingStore } from "../../store/recordingStore";
@@ -257,9 +255,6 @@ export const RecordingLibrarySettingsCard = ({
   const [duration, setDuration] = useState(0);
   const [playbackRate, setPlaybackRate] = useState(1);
   const [playbackError, setPlaybackError] = useState<string>();
-  const [cleanupRecordings, setCleanupRecordings] = useState<WasteRecordingPreview[]>();
-  const [isScanningRecordings, setIsScanningRecordings] = useState(false);
-  const [cleanupScanProgress, setCleanupScanProgress] = useState({ processed: 0, total: 0 });
   const [isSelectionMode, setIsSelectionMode] = useState(false);
   const [selectedRecordingIds, setSelectedRecordingIds] = useState<Set<string>>(() => new Set());
   const [pendingBatchDelete, setPendingBatchDelete] = useState<RecordingLibraryItem[]>();
@@ -380,15 +375,6 @@ export const RecordingLibrarySettingsCard = ({
       if (timerId !== undefined) window.clearTimeout(timerId);
     };
   }, [isActive, library]);
-
-  useEffect(() => {
-    if (!isActive) return;
-    const subscribe = window.desktopApi.recording.onScanWasteProgress;
-    if (typeof subscribe !== "function") return undefined;
-    return subscribe((progress) => {
-      setCleanupScanProgress(progress);
-    });
-  }, [isActive]);
 
   useEffect(() => {
     if (isActive) return;
@@ -726,80 +712,6 @@ export const RecordingLibrarySettingsCard = ({
     }
   };
 
-  const findWasteRecordings = async () => {
-    const items = library?.items ?? [];
-    if (!items.length || isScanningRecordings) return;
-    setIsScanningRecordings(true);
-    setCleanupScanProgress({ processed: 0, total: items.length });
-    try {
-      const scan = await window.desktopApi.recording.scanWaste();
-      const unreadableCount = scan.candidates.filter(
-        (candidate) => candidate.reason === "unreadable",
-      ).length;
-      const candidates = new Map(
-        scan.candidates
-          .filter((candidate) => candidate.reason !== "unreadable")
-          .map((candidate) => [candidate.filePath, candidate]),
-      );
-      const matches = items.flatMap((item) => {
-        const candidate = candidates.get(item.filePath);
-        return candidate
-          ? [
-              {
-                item,
-                reason: candidate.reason,
-                durationMs: candidate.durationMs,
-                title: recordingTitle(item),
-              },
-            ]
-          : [];
-      });
-      if (!matches.length) {
-        pushToast({
-          tone: unreadableCount ? "neutral" : "success",
-          title: unreadableCount ? "有录音需要人工核查" : "没有发现废录音",
-          description: unreadableCount
-            ? `${unreadableCount} 条录音暂时无法读取，已排除批量清理，请在录音库中逐条检查。`
-            : scan.protectedCount
-              ? `${scan.protectedCount} 条收藏或带标记录音已自动保留。`
-              : undefined,
-        });
-        return;
-      }
-      audioRef.current?.pause();
-      setIsPlaying(false);
-      setCleanupRecordings(matches);
-      if (unreadableCount) {
-        pushToast({
-          tone: "neutral",
-          title: "无法读取的录音已保留",
-          description: `${unreadableCount} 条录音没有加入批量清理，请逐条核查。`,
-        });
-      }
-    } catch {
-      pushToast({ tone: "danger", title: "录音检查失败", description: "没有删除任何文件。" });
-    } finally {
-      setIsScanningRecordings(false);
-      setCleanupScanProgress({ processed: 0, total: 0 });
-    }
-  };
-
-  const cleanWasteRecordings = async (filePaths: string[]): Promise<RecordingBatchDeleteResult> => {
-    audioRef.current?.pause();
-    if (typeof window.desktopApi.recording.cleanWaste !== "function") {
-      throw new Error("recording_library_restart_required");
-    }
-    const result = await window.desktopApi.recording.cleanWaste(filePaths);
-    await reload().catch(() => undefined);
-    if (result.deletedFilePaths.length)
-      pushToast({
-        tone: "success",
-        title: `已清理 ${result.deletedFilePaths.length} 条废弃录音`,
-        description: "可在 Windows 回收站恢复。",
-      });
-    return result;
-  };
-
   return (
     <div className="recording-library-page">
       <SettingsSection title="录音库" description="录音、标记和播放进度都保存在本机。">
@@ -868,22 +780,6 @@ export const RecordingLibrarySettingsCard = ({
               />
               <span>GB</span>
             </label>
-            <Button
-              variant="secondary"
-              className="h-9 shrink-0 px-3"
-              title="检查不足10分钟和整段静音的录音，可试听并选择后移到回收站。收藏、带标记及无法读取的录音保留。"
-              disabled={
-                !recordingCounts.all || isScanningRecordings || isSelectionMode || recordingBusy
-              }
-              onClick={() => void findWasteRecordings()}
-            >
-              <Trash2 className="size-4" aria-hidden="true" />
-              {isScanningRecordings
-                ? cleanupScanProgress.total
-                  ? `${cleanupScanProgress.processed}/${cleanupScanProgress.total}`
-                  : "检查中"
-                : "清理废弃录音"}
-            </Button>
           </div>
         </div>
       </SettingsSection>
@@ -901,7 +797,7 @@ export const RecordingLibrarySettingsCard = ({
               <button
                 type="button"
                 className={`recording-selection-toggle ${isSelectionMode ? "is-active" : ""}`}
-                disabled={!recordingCounts.all || isScanningRecordings}
+                disabled={!recordingCounts.all}
                 onClick={() => {
                   setIsSelectionMode((current) => !current);
                   setSelectedRecordingIds(new Set());
@@ -1195,11 +1091,6 @@ export const RecordingLibrarySettingsCard = ({
                     已播 {formatTime(currentTime)} / 总时长 {formatTime(duration)}
                   </span>
                   <div className="recording-timeline-wrap">
-                    <RecordingMarkerCue
-                      markers={selected.markers}
-                      currentTime={currentTime}
-                      duration={duration}
-                    />
                     <input
                       className="recording-timeline"
                       type="range"
@@ -1226,12 +1117,13 @@ export const RecordingLibrarySettingsCard = ({
                         type="button"
                         className="recording-marker-dot"
                         style={{
-                          left: `${duration ? Math.min(100, (marker.offsetMs / 1_000 / duration) * 100) : 0}%`,
+                          left: `calc(8px + (100% - 16px) * ${duration ? Math.max(0, Math.min(1, marker.offsetMs / 1_000 / duration)) : 0})`,
                         }}
                         onClick={() => {
                           if (audioRef.current) resetClipPreview();
                           if (audioRef.current)
                             audioRef.current.currentTime = marker.offsetMs / 1_000;
+                          setCurrentTime(marker.offsetMs / 1_000);
                         }}
                         title={`${marker.label ?? "手动标记"} · ${formatTime(marker.offsetMs / 1_000)}`}
                         aria-label={`跳到${marker.label ?? "手动标记"} ${formatTime(marker.offsetMs / 1_000)}`}
@@ -1263,6 +1155,15 @@ export const RecordingLibrarySettingsCard = ({
                   </div>
                 </div>
               </div>
+              {selected.markers.length > 0 ? (
+                <div className="recording-marker-cue-slot" aria-live="polite">
+                  <RecordingMarkerCue
+                    markers={selected.markers}
+                    currentTime={currentTime}
+                    duration={duration}
+                  />
+                </div>
+              ) : null}
               {playbackError ? (
                 <div className="recording-player-error" role="alert">
                   {playbackError}
@@ -1307,13 +1208,6 @@ export const RecordingLibrarySettingsCard = ({
           )}
         </section>
       </div>
-      {isActive && cleanupRecordings && (
-        <RecordingCleanupDialog
-          entries={cleanupRecordings}
-          onClean={cleanWasteRecordings}
-          onClose={() => setCleanupRecordings(undefined)}
-        />
-      )}
       {isActive && renamingItem && (
         <RecordingRenameDialog
           title={recordingTitle(renamingItem)}

@@ -107,7 +107,11 @@ export class AiTranscriptionProviderStore {
       await validatePublicHost(baseUrl);
       const model = input.model?.trim() ?? "";
       if (!model || model.length > 120) throw new Error("custom_asr_model_invalid");
-      const apiKey = input.apiKey?.trim() || previous?.custom?.apiKey;
+      const retainedKey =
+        previous?.custom && new URL(previous.custom.baseUrl).origin === new URL(baseUrl).origin
+          ? previous.custom.apiKey
+          : undefined;
+      const apiKey = input.apiKey?.trim() || retainedKey;
       if (!apiKey || apiKey.length > 512) throw new Error("custom_asr_key_required");
       next.custom = { baseUrl, model, apiKey };
     }

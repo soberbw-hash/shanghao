@@ -24,6 +24,8 @@ interface GenerateRequest {
 }
 
 const MAX_PROVIDER_RESPONSE_BYTES = 512 * 1024;
+const isBuiltInProviderUrl = (baseUrl: string): boolean =>
+  baseUrl === "https://open.bigmodel.cn/api/paas/v4" || baseUrl === "https://api.deepseek.com";
 
 const normalizeProviderUrl = (value: string): string => {
   const url = new URL(value.trim());
@@ -36,9 +38,9 @@ const normalizeProviderUrl = (value: string): string => {
 };
 
 const validatePublicProviderHost = async (baseUrl: string): Promise<void> => {
-  // The fixed built-in HTTPS endpoint also works with Clash's local fake-IP DNS.
+  // Fixed built-in HTTPS endpoints also work with Clash's local fake-IP DNS.
   // Arbitrary custom URLs still go through the public-address check below.
-  if (baseUrl === "https://open.bigmodel.cn/api/paas/v4") return;
+  if (isBuiltInProviderUrl(baseUrl)) return;
   await resolvePublicAddress(new URL(baseUrl), "custom_ai_private_host_not_allowed");
 };
 
@@ -120,7 +122,12 @@ export class CustomAiProviderStore {
     await validatePublicProviderHost(baseUrl);
     const model = input.model.trim();
     if (!model || model.length > 120) throw new Error("custom_ai_model_invalid");
-    const apiKey = input.apiKey?.trim() || previous?.apiKey;
+    // Never carry a credential to another provider (or port) through a preset switch.
+    const retainedKey =
+      previous && new URL(previous.baseUrl).origin === new URL(baseUrl).origin
+        ? previous.apiKey
+        : undefined;
+    const apiKey = input.apiKey?.trim() || retainedKey;
     if (!apiKey || apiKey.length > 512) throw new Error("custom_ai_key_required");
 
     const encrypted = this.secureStorage.encryptString(JSON.stringify({ baseUrl, model, apiKey }));
@@ -145,8 +152,7 @@ export class CustomAiProviderStore {
     const config = await this.requireConfig();
     await validatePublicProviderHost(config.baseUrl);
     const requestUrl = `${config.baseUrl}/chat/completions`;
-    const fetcher =
-      config.baseUrl === "https://open.bigmodel.cn/api/paas/v4" ? fetch : fetchPublicUrl;
+    const fetcher = isBuiltInProviderUrl(config.baseUrl) ? fetch : fetchPublicUrl;
     const response = await fetcher(requestUrl, {
       method: "POST",
       redirect: "error",

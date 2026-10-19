@@ -14,8 +14,8 @@ import { createDeviceRefreshVersion } from "../src/renderer/src/features/audio/d
 import { PhoneShortcut } from "../src/main/phone-shortcut";
 import { UiohookKey, type UiohookKeyboardEvent } from "uiohook-napi";
 
-type State = { active: boolean; busy: boolean; error?: string };
-const tick = () => new Promise<void>((resolve) => setImmediate(resolve));
+type State = { active: boolean; busy: boolean; error?: string; entryCue?: number };
+const tick = () => new Promise<void>((resolve) => setTimeout(resolve, 200));
 const harness = (onState: (state: State) => void = () => undefined) => {
   const handlers = new Map<string, (...args: unknown[]) => unknown>();
   const states: State[] = [];
@@ -131,6 +131,29 @@ const harness = (onState: (state: State) => void = () => undefined) => {
     },
   };
 };
+
+test("release during the entry cue cannot perform a late native activation", async () => {
+  const h = harness();
+  try {
+    h.ready();
+    h.press();
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    assert.ok(h.states.at(-1)?.entryCue);
+    assert.equal(h.states.at(-1)?.active, true, "renderer privacy gate precedes the cue");
+    assert.equal(h.commands.length, 0, "cue precedes full endpoint mute");
+    h.release();
+    await tick();
+    assert.deepEqual(
+      h.commands.map((command) => command.active),
+      [false],
+    );
+    h.ack(h.commands[0]);
+    await tick();
+    assert.equal(h.states.at(-1)?.active, false);
+  } finally {
+    h.close();
+  }
+});
 
 test("rapid ArrowDown hold presses discard obsolete native operations and restore only after ACK", async () => {
   const h = harness();

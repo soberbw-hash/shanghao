@@ -41,12 +41,12 @@
 .ai-model-provider-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  align-items: start;
+  align-items: stretch;
   gap: 16px;
 }
 
 .ai-model-provider-panel {
-  align-self: start;
+  align-self: stretch;
   min-width: 0;
   border: 1px solid rgba(190, 211, 237, 0.8);
   border-radius: 16px;

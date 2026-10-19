@@ -7,6 +7,17 @@ import {
   buildModelComparisonExport,
   buildModelComparisonSummaryExport,
 } from "../src/renderer/src/features/ai/modelComparisonExport";
+import { formatModelComparisonError } from "../src/renderer/src/features/ai/modelComparisonQueue";
+
+test("comparison failures explain recovery without relying on a disabled tab tooltip", () => {
+  assert.match(
+    formatModelComparisonError(new Error("remote_asr_model_comparison_not_supported")),
+    /重新.*测试/,
+  );
+  assert.match(formatModelComparisonError(new Error("cloud_asr_http_402")), /余额不足/);
+  assert.match(formatModelComparisonError(new Error("asr_runtime_fatal")), /修复运行组件/);
+  assert.match(formatModelComparisonError(new Error("model_not_downloaded")), /下载/);
+});
 
 const recording: RecordingLibraryItem = {
   id: "recording-1",

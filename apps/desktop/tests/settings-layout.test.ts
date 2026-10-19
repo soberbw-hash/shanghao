@@ -553,7 +553,7 @@ test("release notes show a concise overview and optional themed details", () => 
   assert.equal(source.includes("可在「设置 → 关于上号」再次查看"), true);
 });
 
-test("recording library safely cleans verified waste recordings", () => {
+test("recording library uses one automatic cleanup control and retains individual deletion", () => {
   const source = readFileSync(recordingLibraryCardPath, "utf8");
   const cleanup = readFileSync(
     path.resolve(process.cwd(), "src/renderer/src/components/settings/RecordingCleanupDialog.tsx"),
@@ -564,29 +564,28 @@ test("recording library safely cleans verified waste recordings", () => {
     "utf8",
   );
   const styles = readRendererCss();
-  assert.equal(source.includes("window.desktopApi.recording.scanWaste()"), true);
+  assert.equal(source.includes("window.desktopApi.recording.scanWaste()"), false);
   assert.equal(source.includes("录音占用"), true);
   assert.equal(source.includes("自动清理"), true);
   assert.equal(source.includes("上限"), true);
   assert.equal(source.includes("立即清理"), false);
-  assert.equal(source.includes('                : "清理废弃录音"'), true);
+  assert.equal(source.includes("清理废弃录音"), false);
   assert.equal(source.includes("isRecordingWasteAutoCleanupEnabled"), true);
   assert.equal(cleanup.includes("清理废弃录音"), true);
   assert.equal(source.includes("不足10分钟"), true);
   assert.equal(cleanup.includes("不足10分钟"), true);
   assert.equal(source.includes("十秒以下"), false);
   assert.equal(cleanup.includes("不足10秒"), false);
-  assert.equal(source.includes('candidate.reason !== "unreadable"'), true);
   assert.equal(source.includes("回收最旧的未收藏、无标记录音"), true);
   assert.equal(roomSource.includes("录音已移至回收站"), true);
   assert.equal(cleanup.includes("收藏和带标记的录音不会被清理"), true);
   assert.equal(cleanup.includes('role="alertdialog"'), true);
-  assert.equal(source.includes("window.desktopApi.recording.cleanWaste(filePaths)"), true);
+  assert.equal(source.includes("window.desktopApi.recording.cleanWaste(filePaths)"), false);
   assert.equal(source.includes("window.desktopApi.recording.deleteMany("), true);
   assert.equal(source.includes("showItemInFolder(item.filePath)"), true);
   assert.equal(source.includes("在文件夹中定位"), true);
-  assert.equal(source.includes("onScanWasteProgress"), true);
-  assert.equal(source.includes("cleanupScanProgress.processed"), true);
+  assert.equal(source.includes("onScanWasteProgress"), false);
+  assert.equal(source.includes("cleanupScanProgress.processed"), false);
   assert.equal(source.includes('className="recording-library-utility-bar"'), true);
   assert.equal(source.includes('from "./SettingsItemRow"'), false);
   assert.match(styles, /\.recording-library-utility-bar\s*\{[^}]*display:\s*flex;/s);
@@ -749,7 +748,7 @@ test("successful empty ASR units remain silence instead of failing the recording
   assert.equal(detailSource.includes("diagnostic?.taskId"), false);
 });
 
-test("AI voice memory keeps first install manual and recovers interrupted comparisons", () => {
+test("AI voice memory exposes provider readiness and recovers interrupted comparisons", () => {
   const source = readFileSync(aiVoiceMemoryCardPath, "utf8");
   const ipcSource = readFileSync(ipcPath, "utf8");
   const settingsSource =
@@ -803,8 +802,8 @@ test("AI voice memory keeps first install manual and recovers interrupted compar
   assert.equal(source.includes('typeof aiApi.getRuntimeStatus !== "function"'), true);
   assert.equal(source.includes("model.id === settings.aiAsrModel"), true);
   assert.equal(source.includes("qwen3-forced-aligner-0.6b"), true);
-  assert.equal(source.includes("isDisabled={!activeTranscriptionReady}"), true);
-  assert.equal(source.includes("isDisabled={!organizerReady || !activeTranscriptionReady}"), true);
+  assert.equal(source.includes("isDisabled={!activeTranscriptionReady}"), false);
+  assert.equal(source.includes("isDisabled={!organizerReady || !activeTranscriptionReady}"), false);
   assert.equal(source.includes('option value="cloud">房间云端'), true);
   assert.equal(source.includes("云端 API · 无需本地模型"), false);
   assert.equal(source.includes('aria-label="文本整理与问答模型"'), true);

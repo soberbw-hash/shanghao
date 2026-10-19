@@ -12,6 +12,8 @@ export const transcriptionProviderError = (message: string): string | undefined 
   if (message.includes("http_403"))
     return "转录服务拒绝访问，请在服务商控制台检查实名认证和模型权限。";
   if (message.includes("http_429")) return "转录服务请求过于频繁，请稍后重试。";
+  if (/http_5\d\d/.test(message))
+    return "转录服务暂时不可用，自动重试后仍未完成。请稍后重试或切换本地模型。";
   if (message.includes("not_configured") || message.includes("key_required"))
     return "请先在“AI 功能 → 语音转录”中保存 API 密钥。";
   if (message.includes("file_size_limit"))

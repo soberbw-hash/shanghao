@@ -3,14 +3,36 @@ import { useAudioStore } from "../store/audioStore";
 import { useSettingsStore } from "../store/settingsStore";
 import { useAppStore } from "../store/appStore";
 import { desktopApi } from "../utils/desktopApi";
+import { useRoomStore } from "../store/roomStore";
+import { playUiSound } from "../features/audio/uiSound";
 
 export function usePhoneModeSync(): void {
   useEffect(() => {
     if (!desktopApi.phoneMode) return;
     let verifiedActive = false;
     let eventRevision = 0;
-    const apply = (state: { active: boolean; busy?: boolean; error?: string }) => {
+    let lastEntryCue = 0;
+    const apply = (
+      state: { active: boolean; busy?: boolean; error?: string; entryCue?: number },
+      live = false,
+    ) => {
+      if (state.active) {
+        // Shut the outgoing track immediately, before React's transport effect.
+        for (const track of useRoomStore.getState().localStream?.getAudioTracks() ?? [])
+          track.enabled = false;
+      }
       useAudioStore.getState().setPhoneMode(state.active);
+      if (
+        live &&
+        state.active &&
+        state.busy &&
+        !state.error &&
+        state.entryCue &&
+        state.entryCue !== lastEntryCue
+      ) {
+        lastEntryCue = state.entryCue;
+        playUiSound("phone-mode-enter");
+      }
       if (state.error)
         useAppStore
           .getState()
@@ -22,11 +44,12 @@ export function usePhoneModeSync(): void {
           description: "已确认系统音频设备静音",
         });
       }
-      verifiedActive = state.active && !state.busy && !state.error;
+      if (!state.active) verifiedActive = false;
+      else if (!state.busy && !state.error) verifiedActive = true;
     };
     const unsubscribe = desktopApi.phoneMode.onChanged((state) => {
       eventRevision++;
-      apply(state);
+      apply(state, true);
     });
     void desktopApi.phoneMode
       .get()

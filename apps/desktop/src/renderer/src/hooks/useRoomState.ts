@@ -33,7 +33,7 @@ import { PHONE_MIC_DEVICE_ID } from "../features/audio/phoneMicSource";
 import { REMOTE_AUDIO_LEVEL_EVENT } from "../features/audio/RemoteAudioMixer";
 import { getRemoteAudioMixer } from "../features/audio/RemoteAudioMixer";
 import { clampMemberVolume } from "../features/audio/memberVolume";
-import { playUiSound } from "../features/audio/uiSound";
+import { cancelDelayedRoomEntryCue, playUiSound } from "../features/audio/uiSound";
 import {
   getQuickMessageAudioSnapshot,
   muteQuickMessagePlayback,
@@ -404,6 +404,7 @@ export const useRoomState = () => {
     resetStore = false,
     preserveLocalMedia = false,
   }: { resetStore?: boolean; preserveLocalMedia?: boolean } = {}) => {
+    cancelDelayedRoomEntryCue();
     stopQuickMessageMusic();
     await finishRoomRecordingBeforeRelease().catch((error) => {
       pushToast({

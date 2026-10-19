@@ -38,6 +38,7 @@ export const IPC_CHANNELS = {
     getSystemIdleSeconds: "app:get-system-idle-seconds",
     writeLog: "app:write-log",
     notify: "app:notify",
+    notificationFailed: "app:notification-failed",
     readChatHistory: "app:read-chat-history",
     saveChatHistory: "app:save-chat-history",
     readDailyRoomReports: "app:read-daily-room-reports",

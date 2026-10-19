@@ -13,6 +13,7 @@ import {
   isVoiceMemoryTranscriptionComplete,
   voiceMemoryTranscriptionPercent,
 } from "./voiceMemoryPresentation";
+import { transcriptionProviderError } from "./transcriptionProviderError";
 
 export type ModelComparisonPhase =
   | "waiting"
@@ -431,8 +432,15 @@ const isRetryableFailure = (record: VoiceMemoryRecord): boolean => {
 
 const COMPARISON_STALE_MS = 30 * 60_000;
 
-const formatError = (cause: unknown): string => {
-  const message = cause instanceof Error ? cause.message : "";
+export const formatModelComparisonError = (cause: unknown): string => {
+  const message = cause instanceof Error ? cause.message : typeof cause === "string" ? cause : "";
+  if (message.includes("remote_asr_model_comparison_not_supported")) {
+    return "此前测试被云端转录设置阻止。请重新开始测试；本地模型对比会自动使用选中的本地模型。";
+  }
+  const providerError = transcriptionProviderError(message);
+  if (providerError) return providerError;
+  if (message.includes("model_not_downloaded"))
+    return "模型尚未下载完成，请在 AI 功能中完成下载后重新测试。";
   if (/(?:0xc000001d|-1073741795|3221225501|illegal instruction)/i.test(message)) {
     return "ARK-ASR Q8 原生运行组件不兼容当前 CPU，已停止该模型且保留断点；请先在 AI 功能中修复运行组件。";
   }
@@ -794,7 +802,7 @@ export class ModelComparisonQueue {
                 attempt === 0 &&
                 !job.pauseRequested &&
                 !job.stopRequested &&
-                isRetryableMessage(formatError(cause))
+                isRetryableMessage(formatModelComparisonError(cause))
               ) {
                 await new Promise((resolve) => window.setTimeout(resolve, 1_000));
                 continue;
@@ -918,7 +926,7 @@ export class ModelComparisonQueue {
           job.activeTaskId = undefined;
           job.currentPhase = "failed";
           job.currentProgress = 1;
-          const message = formatError(cause);
+          const message = formatModelComparisonError(cause);
           job.results[modelId] = {
             modelId,
             status: "failed",

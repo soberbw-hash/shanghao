@@ -13,6 +13,7 @@ import type { AiTranscriptionProviderStore } from "./ai-transcription-provider-s
 import { probeRecordingMedia } from "./recording-media-probe";
 import { parseVibeVoiceOutput } from "./asr-transcript-parser";
 import { transcribeRemoteParts } from "./remote-transcription-parts";
+import { transcribeRemoteWithRetry } from "./remote-transcription-retry";
 
 /** Whole-file API output has no local chunk/VAD statistics. Organization has its own status. */
 export const isTranscriptionExecutionComplete = (record: VoiceMemoryRecord): boolean => {
@@ -33,6 +34,7 @@ export const isTranscriptionExecutionComplete = (record: VoiceMemoryRecord): boo
 };
 
 interface RemoteTranscriptionHost {
+  manual?: boolean;
   record: VoiceMemoryRecord;
   provider: Exclude<AiTranscriptionProvider, "local">;
   signal: AbortSignal;
@@ -54,10 +56,16 @@ export async function transcribeWithRemoteProvider({
   record,
   provider,
   signal,
+  manual = true,
   onStage,
   ...host
 }: RemoteTranscriptionHost): Promise<VoiceMemoryRecord> {
   if (!host.store) throw new Error("remote_asr_unavailable");
+  if (!manual) {
+    const status = await host.store.status();
+    if (!(provider === "cloud" ? status.cloudConfigured : status.customConfigured))
+      throw new Error(provider === "cloud" ? "cloud_asr_key_required" : "custom_asr_key_required");
+  }
   const taskId =
     record.taskId ?? `voice-memory:${record.recordingId}:${Date.now()}-${randomUUID().slice(0, 8)}`;
   const request = { recordingId: record.recordingId, filePath: record.filePath };
@@ -76,7 +84,8 @@ export async function transcribeWithRemoteProvider({
     record.filePath,
     audio.durationMs,
     signal,
-    (file, duration) => store.transcribe(file, duration, provider, signal),
+    (file, duration) =>
+      transcribeRemoteWithRetry(() => store.transcribe(file, duration, provider, signal), signal),
     async (index, count) => {
       record = await host.updateDiagnostic(record, request, taskId, "asr", "processing", {
         runtimeMessage: `正在转录第 ${index}/${count} 段，完成后自动合并`,

@@ -26,6 +26,7 @@ import { Button } from "../base/Button";
 import { LiquidSelectionIndicator } from "../motion/LiquidSelectionIndicator";
 import {
   DEFAULT_MODEL_COMPARISON_BENCHMARK_MODE,
+  formatModelComparisonError,
   isSelectableModelComparisonModel,
   modelComparisonQueue,
   type ModelComparisonJobSnapshot,
@@ -594,6 +595,18 @@ export const ModelTestPanel = ({
           <p className="model-comparison-error" role="alert">
             {error ?? job?.error}
           </p>
+        ) : null}
+        {comparisonModelIds.some((modelId) => results[modelId]?.status === "failed") ? (
+          <div className="model-comparison-error" role="status" aria-label="模型测试失败原因">
+            {comparisonModelIds
+              .filter((modelId) => results[modelId]?.status === "failed")
+              .map((modelId) => (
+                <p key={modelId}>
+                  {modelDisplayName(modelId)}：
+                  {formatModelComparisonError(results[modelId]?.message)}
+                </p>
+              ))}
+          </div>
         ) : null}
         {comparisonModelIds.length ? (
           <div

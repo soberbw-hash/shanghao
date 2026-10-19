@@ -116,6 +116,8 @@ export const isVoiceMemoryRecord = (value: unknown): value is VoiceMemoryRecord 
   const legacyRecord = record.schemaVersion === undefined;
   return (
     compatibleVersion &&
+    (record.autoOrganizeRequested === undefined ||
+      typeof record.autoOrganizeRequested === "boolean") &&
     typeof record.recordingId === "string" &&
     typeof record.filePath === "string" &&
     Array.isArray(record.transcript) &&

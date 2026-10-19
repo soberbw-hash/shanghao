@@ -3,7 +3,6 @@ import { useEffect } from "react";
 import type { AppSettings } from "@private-voice/shared";
 
 import { SettingsItemRow } from "./SettingsItemRow";
-import { Switch } from "../base/Switch";
 import { useWeatherStore } from "../../features/weather/weatherStore";
 import { WeatherCityPicker } from "./WeatherCityPicker";
 
@@ -18,9 +17,7 @@ export const WeatherSettingsCard = ({
   const snapshotRequestKey = useWeatherStore((state) => state.snapshotRequestKey);
   const isLoading = useWeatherStore((state) => state.isLoading);
   const error = useWeatherStore((state) => state.error);
-  const preview = useWeatherStore((state) => state.preview);
   const refresh = useWeatherStore((state) => state.refresh);
-  const setPreview = useWeatherStore((state) => state.setPreview);
   const detectedCity = snapshotRequestKey?.startsWith("auto:") ? snapshot?.city?.trim() : undefined;
   const savedCity = settings.weatherManualCity.trim();
   const locationDescription =
@@ -71,52 +68,6 @@ export const WeatherSettingsCard = ({
           }}
         />
       </SettingsItemRow>
-      {settings.weatherLocationMode === "auto" ? (
-        <SettingsItemRow
-          label="Windows 精确定位"
-          description="仅在你开启后读取系统位置，用于获取天气和城市名称；关闭时使用网络大致定位。"
-        >
-          <Switch
-            ariaLabel="Windows 精确定位"
-            isChecked={settings.isSystemWeatherLocationEnabled}
-            onChange={(isSystemWeatherLocationEnabled) =>
-              onChange({ isSystemWeatherLocationEnabled })
-            }
-          />
-        </SettingsItemRow>
-      ) : null}
-      {import.meta.env.DEV ? (
-        <SettingsItemRow label="本地天气预览" description="仅开发模式可见，不会保存或联网。">
-          <select
-            value={preview ? `${preview.scene}:${preview.phase}` : "live"}
-            className="settings-inline-select"
-            aria-label="本地天气预览"
-            onChange={(event) => {
-              if (event.target.value === "live") {
-                setPreview(undefined);
-                return;
-              }
-              const [scene, phase] = event.target.value.split(":") as [
-                NonNullable<typeof preview>["scene"],
-                NonNullable<typeof preview>["phase"],
-              ];
-              setPreview({ scene, phase });
-            }}
-          >
-            <option value="live">实时天气</option>
-            <option value="clear:day">晴天</option>
-            <option value="overcast:day">阴天</option>
-            <option value="light_rain:day">小雨</option>
-            <option value="heavy_rain:day">大雨</option>
-            <option value="thunderstorm:day">雷雨</option>
-            <option value="snow:day">下雪</option>
-            <option value="fog:day">雾 / 霾</option>
-            <option value="clear:dawn">清晨</option>
-            <option value="clear:dusk">傍晚</option>
-            <option value="clear:night">晴朗夜晚</option>
-          </select>
-        </SettingsItemRow>
-      ) : null}
     </div>
   );
 };

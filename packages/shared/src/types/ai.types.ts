@@ -671,6 +671,8 @@ export interface VoiceMemoryRecord {
   taskId?: string;
   taskStatus?: VoiceMemoryTaskStatus;
   processingStage?: VoiceMemoryProcessingStage;
+  /** Original per-record organization choice for recovery. Missing legacy consent means false. */
+  autoOrganizeRequested?: boolean;
   diagnostic?: VoiceMemoryTaskDiagnostic;
   organizedAt?: string;
   /** Native recording catalog time, independent of when AI processing was started. */

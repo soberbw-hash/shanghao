@@ -8,7 +8,7 @@
 
 进房先看见人。谁在打游戏、听歌、接电话，谁暂时离开；聊天、分享的画面和昨晚的录音，也都在这间房里。
 
-[下载最新版](https://github.com/soberbw-hash/shanghao/releases/latest) · [看更新记录](./docs/release-notes/v3.4.11.md) · [看技术结构](#声音到底经过了什么)
+[下载最新版](https://github.com/soberbw-hash/shanghao/releases/latest) · [看更新记录](./docs/release-notes/v3.4.12.md) · [看技术结构](#声音到底经过了什么)
 
 ![上号二号房：人物、天气、日历、聊天与语音控制](./docs/readme/hero-room.webp)
 
@@ -68,9 +68,15 @@
 
 **17 · 房间录音留在本机。** 可按设置自动录音。回放、精彩时刻 Marker、收藏和转录放在同一条记录上；不会因为退出房间就把本地录音变成公共内容。
 
-**18 · 转录模型按需要安装。** 模型列表提供高精度与高速路线，包括 GLM-ASR-Nano、Qwen3-ASR、Fun-ASR-Nano、FireRedASR2-AED、Paraformer 和 ARK-ASR。GLM-ASR-Nano 有默认推荐标记；已选模型不会被推荐标记改掉。模型体积、时间对齐能力和运行条件以应用内显示为准。
+**18 · 云端与本地随时切换。** 语音转录默认选择 SenseVoiceSmall 云端，文本整理与问答默认使用 GLM-4-Flash，也可配置 DeepSeek V4.1 Flash 或自定义 API。云端需要对应服务的密钥，凭据在本机加密保存；DeepSeek 官方别名已对应 10 月 17 日更新。本地提供 GLM-ASR-Nano、Qwen3-ASR、Fun-ASR-Nano、FireRedASR2-AED、Paraformer、MOSS 和 ARK-ASR，按需安装，选择后才在本机推理。
 
-![AI 功能中的模型分类、推荐标记与安装状态](./docs/readme/ai-models.webp)
+![云端与本地 AI 配置](./docs/assets/releases/v3.4.12/release-models.png)
+
+![AI 问答演示：按段回答并可发送到聊天](./docs/assets/releases/v3.4.12/release-assistant-answer.png)
+
+![录音语音记忆演示：文字、摘要与标记](./docs/assets/releases/v3.4.12/voice-memory-demo.png)
+
+这些截图使用隔离演示数据。新设置默认开启自动转录和自动整理；云端不等待游戏，本地保留资源调度。超过单次限制的云录音自动分段合并，纯文本云模型位置是估算，本地精细时间轴能力按模型标明。正式版和开发版共用本机结果，并保护并发写入版本。
 
 **19 · 长录音可以继续整理。** 转录后可以整理要点、查找片段；房间问答可查询游戏攻略和资料。AI 结果需要自己核对，连接云端问答时也应留意服务器的数据边界。
 
@@ -144,7 +150,7 @@
 
 ### 录音转录、整理与上传
 
-录音处理分三步：**开始转录 → 整理内容 → 上传到服务器**。整理完成后才能分享摘要到录音原房间，供每日总结参考；原始录音和游戏启动／退出标记仍留在本机。自动整理和自动上传默认关闭。
+录音处理分三步：**转录 → 整理内容 → 按需上传到服务器**。新设置默认自动转录、自动整理，保留已保存的明确偏好；未配置转录密钥时等待配置。自动上传仍默认关闭，整理完成后由用户选择分享摘要到录音原房间，供每日总结参考；原始录音和游戏启动／退出标记仍留在本机。
 
 ![录音库的三个处理步骤，未完成整理时上传置灰](./docs/readme/v342/recording-workflow.png)
 
@@ -225,7 +231,7 @@ React/Zustand 管房间界面与状态，Electron 主进程管窗口、设备和
 
 ## 下载与使用
 
-当前仓库版本为 **3.4.11**，正式支持 **Windows 10 / 11 x64**。[到 GitHub Releases 下载最新版](https://github.com/soberbw-hash/shanghao/releases/latest)，同页提供安装包、自动更新元数据与 SHA-256 校验文件。[查看 v3.4.11 更新公告](./docs/release-notes/v3.4.11.md)。安装后可通过 CloudBase 手机号验证注册并登录账号，创建私人房间或通过频道号找到朋友，再明确加入同一房间。
+当前仓库版本为 **3.4.12**，正式支持 **Windows 10 / 11 x64**。[到 GitHub Releases 下载最新版](https://github.com/soberbw-hash/shanghao/releases/latest)，同页提供安装包、自动更新元数据与 SHA-256 校验文件。[查看 v3.4.12 更新公告](./docs/release-notes/v3.4.12.md)。安装后可通过 CloudBase 手机号验证注册并登录账号，创建私人房间或通过频道号找到朋友，再明确加入同一房间。
 
 录音、模型和已下载资源主要保存在本机。更新可在后台下载，安装并重启必须由用户点击。自行部署可参照 [Relay](./docs/deploy-relay-server.md)、[TURN](./docs/deploy-turn.md) 与[网络修复](./docs/network-repair.md)。
 

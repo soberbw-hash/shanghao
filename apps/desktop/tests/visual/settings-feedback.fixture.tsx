@@ -6,9 +6,10 @@ import { MuteButton } from "../../src/renderer/src/components/audio/MuteButton";
 import { RecordingMarkerCue } from "../../src/renderer/src/components/settings/RecordingMarkerCue";
 import "../../src/renderer/src/styles/index.css";
 
-const saved = {
-  configured: true,
-  hasApiKey: true,
+const unconfigured = new URLSearchParams(window.location.search).has("unconfigured");
+let saved = {
+  configured: !unconfigured,
+  hasApiKey: !unconfigured,
   model: "glm-4-flash-250414",
   baseUrl: "https://open.bigmodel.cn/api/paas/v4",
 };
@@ -16,8 +17,12 @@ window.desktopApi = {
   app: { writeLog: async () => {} },
   ai: {
     getCustomProvider: async () => saved,
-    saveCustomProvider: async () => saved,
-    getTranscriptionProvider: async () => ({ cloudConfigured: true, customConfigured: true }),
+    saveCustomProvider: async (input: { baseUrl: string; model: string }) =>
+      (saved = { ...saved, ...input }),
+    getTranscriptionProvider: async () => ({
+      cloudConfigured: !unconfigured,
+      customConfigured: !unconfigured,
+    }),
     getSnapshot: async () => ({
       models: [],
       scheduler: { gameActive: false },
@@ -33,6 +38,10 @@ const Fixture = () => {
     aiRoomAskProvider: "custom",
     aiTextModelPreset: "glm",
     aiTranscriptionProvider: "custom",
+    isAiAutoTranscribeEnabled: true,
+    isAiAutoOrganizeEnabled: true,
+    isAiAutoUploadEnabled: false,
+    aiProcessingMode: "low_resource",
   } as AppSettings);
   const [muted, setMuted] = useState(false);
   return (

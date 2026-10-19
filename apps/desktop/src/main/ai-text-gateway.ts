@@ -69,6 +69,11 @@ export class AiTextGateway {
     return this.signaling.getJoinedRoomId();
   }
 
+  async assertOrganizerConfigured(): Promise<void> {
+    if (this.organizerProvider() === "custom" && !(await this.customProvider.status()).configured)
+      throw new Error("custom_ai_not_configured");
+  }
+
   async generateJsonWithMetrics<T>(request: GenerateJsonRequest): Promise<GeneratedJson<T>> {
     const provider = this.providerFor(request.purpose);
     if (request.provider && request.provider !== provider) throw new Error("ai_provider_changed");

@@ -1,20 +1,20 @@
 {
-  "tag_name": "v3.4.10",
-  "published_at": "2026-10-18T17:01:10Z",
-  "html_url": "https://github.com/soberbw-hash/shanghao/releases/tag/v3.4.10",
+  "tag_name": "v3.4.11",
+  "published_at": "2026-10-18T18:47:04Z",
+  "html_url": "https://github.com/soberbw-hash/shanghao/releases/tag/v3.4.11",
   "highlights": [
-    "长录音自动分段。超过单次 1 小时或 50 MB 的录音，在本机转换为最多 15 分钟的片段后逐段转录，完成后合并；原始录音保留，取消时停止编码与请求并清理本次临时文件。云端返回纯文本，时间轴仍为估算，没有新增说话人分离能力。",
-    "录音标记显示“录音 1:01”和具体事件；“时钟 09点47分”明确表示当天时间。进度条临时提示约 2.5 秒后收起，完整事件保留在时间线。",
-    "文本与转录 API 表单统一，修复自定义选项跳回预设。新配置默认 GLM-4-Flash-250414 与 SenseVoiceSmall；已有选择保留，密钥仍需本机配置，未打入安装包。服务额度、余额和网络限制仍由提供商决定。",
-    "收藏展示封面、标题、简介与网站来源；旧收藏无需重新添加。预览失败时保留原标题、链接与备用图标，打开、复制和删除正常。"
+    "AI 提问历史按永久房间 ID 分开保存，包括回答与录音引用。切房间会重置助手面板、取消旧请求并拒绝迟到回答；服务器也不会把旧请求结果发到新会话。无法确定归属的旧全局历史保留在本机，不自动归入任何房间。",
+    "云端记忆继续核验账号、房主或当前房间成员权限；问答只使用自己的房间上下文，无房间归属的旧录音不再继承当前房间的记忆。",
+    "链接预览与自定义文本、转录 API 的公网校验绑定到实际连接，拒绝内网、保留地址、IPv6 绕过和不安全重定向。代理 fake-IP 使用独立解析后的真实公网地址，保持正常网页预览。",
+    "共享转录严格核对记录版本，等长或更长的旧结果也不能覆盖新结果；增加已删除结果和检查点保护。建议正式版和开发版均更新，旧客户端无法获得新写入保护。"
   ],
   "assets": [
     {
-      "name": "ShangHao-3.4.10-Setup-x64.exe",
-      "size": 205238130,
-      "browser_download_url": "https://github.com/soberbw-hash/shanghao/releases/download/v3.4.10/ShangHao-3.4.10-Setup-x64.exe",
-      "mirror_path": "/downloads/v3.4.10/ShangHao-3.4.10-Setup-x64.exe",
-      "sha256": "0416a059e6b2695812b328b12baf4015d8f3aa3cca47338046d3805ede975986"
+      "name": "ShangHao-3.4.11-Setup-x64.exe",
+      "size": 205240091,
+      "browser_download_url": "https://github.com/soberbw-hash/shanghao/releases/download/v3.4.11/ShangHao-3.4.11-Setup-x64.exe",
+      "mirror_path": "/downloads/v3.4.11/ShangHao-3.4.11-Setup-x64.exe",
+      "sha256": "7db0a40b87311c29d1b9c835b0f991c05aead98097f5432519cbabdf766c3b4a"
     }
   ]
 }

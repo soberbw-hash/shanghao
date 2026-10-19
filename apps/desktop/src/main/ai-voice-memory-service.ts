@@ -48,6 +48,10 @@ import { AiTextGateway } from "./ai-text-gateway";
 import { ASSISTANT_ANSWER_STYLE, assistantAnswerText } from "./voice-memory-question-prompt";
 import { answerGlobalVoiceQuestion } from "./voice-memory-global-question";
 import { VoiceMemoryOrganizer } from "./voice-memory-organizer";
+import {
+  automaticOrganizationConsent,
+  deferredVoiceMemoryRequest,
+} from "./automatic-voice-memory-request";
 export { transcriptForPrompt } from "./voice-memory-organizer";
 import { bindTranscriptToKnownSpeaker, mergeSpeakerTranscript } from "./speaker-transcript";
 import { AiTranscriptionProviderStore } from "./ai-transcription-provider-store";
@@ -124,6 +128,7 @@ export class AiVoiceMemoryService {
     private readonly isAutomaticTranscriptionEnabled: () => boolean = () => true,
     private readonly transcriptionProviderStore?: AiTranscriptionProviderStore,
     private readonly getTranscriptionProvider: () => AiTranscriptionProvider = () => "local",
+    private readonly isAutomaticOrganizationEnabled: () => boolean = () => true,
   ) {}
 
   async initialize(): Promise<void> {
@@ -449,7 +454,7 @@ export class AiVoiceMemoryService {
         roomId: migrated.roomId,
         roomName: migrated.roomName,
         manual: true,
-        organize: true,
+        organize: migrated.autoOrganizeRequested === true,
       });
     }
   }
@@ -468,7 +473,7 @@ export class AiVoiceMemoryService {
       roomName: record.roomName,
       manual: true,
       transcribe: !resumeOrganization,
-      organize: resumeOrganization,
+      organize: resumeOrganization || record.autoOrganizeRequested === true,
       asrModelId:
         record.transcriptionModel?.id && record.transcriptionModel.id in AI_ASR_MODEL_NAMES
           ? (record.transcriptionModel.id as AiAsrModelId)
@@ -545,6 +550,7 @@ export class AiVoiceMemoryService {
     const taskId = request.taskId ?? createTaskId(request.recordingId);
     const queuedRequest = {
       ...request,
+      organize: request.manual ? request.organize : automaticOrganizationConsent(previous, request),
       taskId,
       // A manual retry is a durable resume unless the caller explicitly requests a restart.
       // Invalid/partial results are exactly the records that need their completed units kept.
@@ -552,6 +558,7 @@ export class AiVoiceMemoryService {
     };
     const queued = await this.save({
       ...(previous ?? emptyRecord(queuedRequest)),
+      autoOrganizeRequested: automaticOrganizationConsent(previous, request),
       recordedAt: request.recordedAt ?? previous?.recordedAt,
       roomId: request.roomId ?? previous?.roomId,
       roomName: request.roomName ?? previous?.roomName,
@@ -767,6 +774,7 @@ export class AiVoiceMemoryService {
     });
     const previous = await this.store.get(request.recordingId);
     let record = previous ?? emptyRecord(request);
+    record = { ...record, autoOrganizeRequested: automaticOrganizationConsent(previous, request) };
     if (request.benchmark) {
       const environment = await this.runtime.benchmarkEnvironment();
       const previousBenchmark = previous?.transcriptionBenchmark;
@@ -893,14 +901,19 @@ export class AiVoiceMemoryService {
         transcriptionPipelineVersion: TRANSCRIPTION_PIPELINE_VERSION,
       });
       let organizationError: string | undefined;
-      if (request.organize !== false) {
+      if (
+        request.organize !== false &&
+        (request.manual || (record.autoOrganizeRequested && this.isAutomaticOrganizationEnabled()))
+      ) {
         try {
           currentStage = "organize";
+          if (!request.manual) await this.textGateway.assertOrganizerConfigured?.();
           record = await this.organize(record, request.manual === true, controller.signal);
         } catch (error) {
           if (controller.signal.aborted || (error as Error).message === "ai_task_paused")
             throw error;
           organizationError = error instanceof Error ? error.message : String(error);
+          if (!request.manual && organizationError === "custom_ai_not_configured") throw error;
           // Preserve the durable attempts/failure state saved inside organize before it threw.
           record = (await this.store.get(record.recordingId)) ?? record;
           this.log("warn", "Voice memory organization failed; transcript retained", {
@@ -956,6 +969,10 @@ export class AiVoiceMemoryService {
         !request.manual &&
         !requiresManual &&
         (reason === "manual_only" ||
+          reason === "cloud_asr_key_required" ||
+          reason === "custom_asr_key_required" ||
+          reason === "custom_ai_not_configured" ||
+          /^model_.+_(?:not_installed|runtime_not_ready)$/.test(reason) ||
           reason === "waiting_for_game_to_finish" ||
           reason === "realtime_pressure" ||
           reason.startsWith("voice_") ||
@@ -968,13 +985,14 @@ export class AiVoiceMemoryService {
       // this caller. Reload the durable copy so this final status update never overwrites already
       // visible transcript segments with the stale pre-transcription snapshot.
       const durableRecord = (await this.store.get(request.recordingId)) ?? record;
-      const interruptedStats = durableRecord.transcriptionStats
-        ? {
-            ...durableRecord.transcriptionStats,
-            finalResultSaved: false,
-            terminationReason: paused ? ("paused" as const) : ("failed" as const),
-          }
-        : undefined;
+      const interruptedStats =
+        currentStage !== "organize" && durableRecord.transcriptionStats
+          ? {
+              ...durableRecord.transcriptionStats,
+              finalResultSaved: false,
+              terminationReason: paused ? ("paused" as const) : ("failed" as const),
+            }
+          : durableRecord.transcriptionStats;
       record = await this.save({
         ...durableRecord,
         transcriptionStats: interruptedStats,
@@ -1165,14 +1183,17 @@ export class AiVoiceMemoryService {
     onStage?: (stage: VoiceMemoryProcessingStage) => void,
   ): Promise<VoiceMemoryRecord> {
     onStage?.("preprocess");
-    const transcriptionProvider = this.getTranscriptionProvider();
+    // A model comparison is explicit consent to run the selected installed ASR locally.
+    // The global provider still controls ordinary recordings, including retained local IDs.
+    const transcriptionProvider =
+      requestedBenchmark || record.taskId?.startsWith("model-comparison:")
+        ? "local"
+        : this.getTranscriptionProvider();
     if (transcriptionProvider !== "local") {
-      if (requestedBenchmark || record.taskId?.startsWith("model-comparison:")) {
-        throw new Error("remote_asr_model_comparison_not_supported");
-      }
       return transcribeWithRemoteProvider({
         record,
         provider: transcriptionProvider,
+        manual,
         signal,
         store: this.transcriptionProviderStore,
         updateDiagnostic: this.updateDiagnostic.bind(this),
@@ -1861,17 +1882,16 @@ export class AiVoiceMemoryService {
     if (this.stopped) return;
     if (!this.isAutomaticTranscriptionEnabled()) return;
     if (this.controllers.size > 0) return this.scheduleDeferredRetry();
-    const runnable = this.models.canRunTask("transcription", false);
-    if (this.getTranscriptionProvider() === "local" && !runnable.runnable) return;
+    if (
+      this.getTranscriptionProvider() === "local" &&
+      !this.models.canRunTask("transcription", false).runnable
+    )
+      return;
     const records = await this.store.list();
     for (const record of records.filter((item) => item.errorMessage?.startsWith("deferred:"))) {
-      await this.process({
-        recordingId: record.recordingId,
-        filePath: record.filePath,
-        roomId: record.roomId,
-        roomName: record.roomName,
-        organize: true,
-      }).catch(() => undefined);
+      await this.process(
+        deferredVoiceMemoryRequest(record, this.isAutomaticOrganizationEnabled()),
+      ).catch(() => undefined);
     }
   }
 

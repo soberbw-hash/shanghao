@@ -60,15 +60,15 @@ export const defaultSettings: AppSettings = {
   recordingMarkerShortcut: "F8",
   recordingSaveDirectory: undefined,
   recordingLibraryQuotaGb: 20,
-  isRecordingWasteAutoCleanupEnabled: false,
+  isRecordingWasteAutoCleanupEnabled: true,
   aiAsrModel: DEFAULT_AI_ASR_MODEL_ID,
   aiTranscriptionProvider: "cloud",
   aiOrganizerProvider: "custom",
   aiRoomAskProvider: "custom",
   aiTextModelPreset: "glm",
-  aiProcessingMode: "manual",
-  isAiAutoTranscribeEnabled: false,
-  isAiAutoOrganizeEnabled: false,
+  aiProcessingMode: "low_resource",
+  isAiAutoTranscribeEnabled: true,
+  isAiAutoOrganizeEnabled: true,
   isAiAutoUploadEnabled: false,
   isNoiseSuppressionEnabled: true,
   isEchoCancellationEnabled: true,
@@ -87,7 +87,7 @@ export const defaultSettings: AppSettings = {
   isDynamicWeatherEnabled: true,
   weatherLocationMode: "auto",
   weatherManualCity: "",
-  isSystemWeatherLocationEnabled: false,
+  isSystemWeatherLocationEnabled: true,
   weatherEffectMode: "standard",
   isUiSoundEnabled: true,
   quickMessages: {
@@ -319,7 +319,7 @@ export const migrateSettings = (raw: RawSettings): MigrationResult => {
           ),
     isRecordingWasteAutoCleanupEnabled: normalizeBoolean(
       raw.isRecordingWasteAutoCleanupEnabled,
-      false,
+      defaultSettings.isRecordingWasteAutoCleanupEnabled,
     ),
     // Saved and legacy configurations keep their choice or original fallback;
     // the new-profile recommendation only applies through defaultSettings.
@@ -365,9 +365,9 @@ export const migrateSettings = (raw: RawSettings): MigrationResult => {
             raw.aiProcessingMode === "immediate" ||
             raw.aiProcessingMode === "manual"
           ? raw.aiProcessingMode
-          : "manual",
-    isAiAutoTranscribeEnabled: normalizeBoolean(raw.isAiAutoTranscribeEnabled, false),
-    isAiAutoOrganizeEnabled: normalizeBoolean(raw.isAiAutoOrganizeEnabled, false),
+          : defaultSettings.aiProcessingMode,
+    isAiAutoTranscribeEnabled: normalizeBoolean(raw.isAiAutoTranscribeEnabled, true),
+    isAiAutoOrganizeEnabled: normalizeBoolean(raw.isAiAutoOrganizeEnabled, true),
     isAiAutoUploadEnabled: normalizeBoolean(raw.isAiAutoUploadEnabled, false),
     relayServerUrl:
       normalizeRelayServerUrl(trimUnknownText(raw.relayServerUrl)) ??
@@ -395,7 +395,7 @@ export const migrateSettings = (raw: RawSettings): MigrationResult => {
     isDynamicWeatherEnabled: true,
     weatherLocationMode: raw.weatherLocationMode === "manual" ? "manual" : "auto",
     weatherManualCity: trimUnknownText(raw.weatherManualCity) ?? "",
-    isSystemWeatherLocationEnabled: raw.isSystemWeatherLocationEnabled === true,
+    isSystemWeatherLocationEnabled: normalizeBoolean(raw.isSystemWeatherLocationEnabled, true),
     // Visual weather has one complete presentation. Keep the legacy field for
     // settings compatibility, but never migrate users into a reduced tier.
     weatherEffectMode: "standard",

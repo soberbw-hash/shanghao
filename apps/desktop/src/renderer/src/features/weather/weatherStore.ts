@@ -1,9 +1,4 @@
-import type {
-  LocalWeatherRequest,
-  LocalWeatherSnapshot,
-  WeatherDayPhase,
-  WeatherSceneKind,
-} from "@private-voice/shared";
+import type { LocalWeatherRequest, LocalWeatherSnapshot } from "@private-voice/shared";
 import { create } from "zustand";
 
 import { desktopApi } from "../../utils/desktopApi";
@@ -18,9 +13,7 @@ interface WeatherStoreState {
   snapshotRequestKey?: string;
   isLoading: boolean;
   error?: string;
-  preview?: { scene: WeatherSceneKind; phase: WeatherDayPhase };
   refresh: (request: WeatherRefreshRequest) => Promise<LocalWeatherSnapshot>;
-  setPreview: (preview?: { scene: WeatherSceneKind; phase: WeatherDayPhase }) => void;
   clear: () => void;
 }
 
@@ -111,7 +104,6 @@ export const useWeatherStore = create<WeatherStoreState>((set, get) => ({
     activeRequests.set(requestKey, task);
     return task;
   },
-  setPreview: (preview) => set({ preview }),
   clear: () => {
     latestRequestKey = "";
     set({

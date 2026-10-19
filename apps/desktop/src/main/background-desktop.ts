@@ -17,6 +17,7 @@ import type { PrivateRoomsDesktopService } from "./private-rooms-service";
 import { cleanTrayRoomName, RoomPresenceWatcher } from "./room-presence-watcher";
 import { updateTrayPresence } from "./tray";
 import { sendToWindow } from "./safe-web-contents";
+import { NotificationDelivery } from "./notification-delivery";
 
 export const requireBackgroundActivity = (
   input: unknown,
@@ -53,7 +54,7 @@ export const registerBackgroundDesktop = ({
   let closeBusy = false;
   let disposed = false;
   let pendingClose: { id: string; resolve: (left: boolean) => void } | undefined;
-  const notifications = new Set<Notification>();
+  const notifications = new NotificationDelivery();
   const context = () => {
     const account = accounts.getSnapshot();
     const config = settings.getSnapshot();
@@ -88,22 +89,10 @@ export const registerBackgroundDesktop = ({
     if (!settings.getSnapshot().isSystemNotificationEnabled || !Notification.isSupported())
       return false;
     const notification = new Notification({ title, body, silent: false });
-    notifications.add(notification);
-    notification.once("click", () => {
-      notifications.delete(notification);
-      click();
+    notifications.show(notification, click, (reason) => {
+      trace(`background_notification_failed:${reason}`);
+      sendToWindow(window, IPC_CHANNELS.app.notificationFailed, reason);
     });
-    notification.once("close", () => notifications.delete(notification));
-    notification.once("failed", () => {
-      notifications.delete(notification);
-      trace("background_notification_failed");
-    });
-    while (notifications.size > 4) {
-      const old = notifications.values().next().value!;
-      old.close();
-      notifications.delete(old);
-    }
-    notification.show();
     return true;
   };
   const watcher = new RoomPresenceWatcher({
@@ -249,8 +238,7 @@ export const registerBackgroundDesktop = ({
     window.removeListener("minimize", refresh);
     window.removeListener("restore", refresh);
     app.removeListener("before-quit", dispose);
-    for (const notification of notifications) notification.close();
-    notifications.clear();
+    notifications.closeAll();
     ipcMain.removeHandler(IPC_CHANNELS.app.backgroundActivity);
     ipcMain.removeHandler(IPC_CHANNELS.app.completeBackgroundClose);
   };

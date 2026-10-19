@@ -23,18 +23,19 @@
   min-width: 0;
 }
 .recording-marker-cue {
-  position: absolute;
-  bottom: calc(100% + 8px);
-  transform: translateX(-50%);
-  display: grid;
-  width: max-content;
-  max-width: 240px;
-  padding: 6px 10px;
-  border: 1px solid #c8d9eb;
-  border-radius: 10px;
-  background: #f8fbff;
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   color: #334352;
   font-size: 12px;
-  pointer-events: none;
-  z-index: 2;
+  line-height: 24px;
+}
+.recording-marker-cue-slot {
+  min-height: 24px;
+  margin-top: 4px;
+}
+.recording-marker-cue > span + span::before {
+  content: " · ";
 }

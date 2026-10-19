@@ -7,7 +7,12 @@ import { AiVoiceMemoryService } from "../src/main/ai-voice-memory-service";
 import { VoiceMemoryStore } from "../src/main/voice-memory-store";
 import { isTranscriptionExecutionComplete } from "../src/main/remote-transcription";
 
-const fixture = async (provider: "cloud" | "custom", fail = false) => {
+const fixture = async (
+  provider: "cloud" | "custom" | "local",
+  fail: boolean | "transient" = false,
+  configured = true,
+  localAdmissionReason?: string,
+) => {
   const directory = await mkdtemp(path.join(os.tmpdir(), "shanghao-cloud-routing-"));
   const audio = path.join(directory, "fixture.wav");
   const wav = Buffer.alloc(44 + 32_000);
@@ -31,6 +36,11 @@ const fixture = async (provider: "cloud" | "custom", fail = false) => {
     {
       getActiveAsrModel: () => "fun-asr-nano-2512",
       clearTaskCheckpoint: async () => undefined,
+      getTaskCheckpoint: () => undefined,
+      canRunTask: () => {
+        if (localAdmissionReason) return { runnable: false, reason: localAdmissionReason };
+        throw new Error("local_admission_reached");
+      },
     } as never,
     { validateInputFile: async () => undefined, releaseAsr: () => undefined } as never,
     {} as never,
@@ -38,12 +48,14 @@ const fixture = async (provider: "cloud" | "custom", fail = false) => {
     undefined,
     () => false,
     {
+      status: async () => ({ cloudConfigured: configured, customConfigured: configured }),
       transcribe: async (file: string, duration: number, selected: string) => {
         assert.equal(file, audio);
         assert.equal(duration, 1000);
         assert.equal(selected, provider);
         calls++;
-        if (fail) throw new Error("cloud_asr_http_402");
+        if (fail === "transient" && calls === 1) throw new Error("cloud_asr_http_500");
+        if (fail === true) throw new Error("cloud_asr_http_402");
         return { text: "这是一段用于验证云端转录路由的测试语音。", modelName: "ASR fixture" };
       },
     } as never,
@@ -117,14 +129,25 @@ test("normal cloud/custom transcription ignores a retained local model selection
   }
 });
 
-test("explicit local model comparison remains blocked before any cloud upload", async () => {
+test("explicit local model comparison uses local admission despite a cloud default", async () => {
   const f = await fixture("cloud");
   try {
     await assert.rejects(
       f.service.process({ ...f.request, taskId: "model-comparison:fixture" }),
-      /remote_asr_model_comparison_not_supported/,
+      /local_admission_reached/,
     );
     assert.equal(f.calls(), 0);
+  } finally {
+    await rm(f.directory, { recursive: true, force: true });
+  }
+});
+
+test("automatic cloud transcription bypasses local game/resource admission", async () => {
+  const f = await fixture("cloud");
+  try {
+    const result = await f.service.process({ ...f.request, manual: false });
+    assert.equal(result.phase, "ready");
+    assert.equal(f.calls(), 1);
   } finally {
     await rm(f.directory, { recursive: true, force: true });
   }
@@ -140,6 +163,49 @@ test("a cloud billing rejection is persisted as an ASR failure, not a model comp
     assert.equal(saved?.processingStage, "asr");
     assert.equal(saved?.errorMessage, "cloud_asr_http_402");
   } finally {
+    await rm(f.directory, { recursive: true, force: true });
+  }
+});
+
+test("a transient provider failure recovers before the recording is marked failed", async () => {
+  const f = await fixture("cloud", "transient");
+  try {
+    const result = await f.service.process(f.request);
+    assert.equal(f.calls(), 2);
+    assert.equal(result.phase, "ready");
+    assert.equal(result.taskStatus, "success");
+    assert.equal(result.errorMessage, undefined);
+  } finally {
+    await rm(f.directory, { recursive: true, force: true });
+  }
+});
+
+test("automatic recordings await missing provider credentials without uploading or failing", async () => {
+  for (const provider of ["cloud", "custom"] as const) {
+    const f = await fixture(provider, false, false);
+    try {
+      const result = await f.service.process({ ...f.request, manual: false });
+      assert.equal(result.phase, "paused");
+      assert.equal(result.taskStatus, "pending");
+      assert.match(result.errorMessage ?? "", /^deferred:(cloud|custom)_asr_key_required$/);
+      assert.equal(f.calls(), 0);
+    } finally {
+      f.service.stop();
+      await rm(f.directory, { recursive: true, force: true });
+    }
+  }
+});
+
+test("automatic local recordings await an installed and ready model without downloading", async () => {
+  const f = await fixture("local", false, true, "model_fun-asr-nano-2512_not_installed");
+  try {
+    const result = await f.service.process({ ...f.request, manual: false });
+    assert.equal(result.phase, "paused");
+    assert.equal(result.taskStatus, "pending");
+    assert.equal(result.errorMessage, "deferred:model_fun-asr-nano-2512_not_installed");
+    assert.equal(f.calls(), 0);
+  } finally {
+    f.service.stop();
     await rm(f.directory, { recursive: true, force: true });
   }
 });

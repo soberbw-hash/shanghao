@@ -132,8 +132,8 @@ VibeVoice 或 Qwen 算法。Electron Host 继续负责 Chromium、窗口、WebRT
 录音链路；也不把现有按需下载的模型误称为独立插件。
 
 CloudBase 是当前主要账号路径。Supabase 仅为旧部署兼容保留，移除前需要验证客户端、Relay
-和现有账号的迁移及回退。天气可以使用不申请系统权限的网络大致定位；Windows 精确定位只在
-用户显式开启后请求。Renderer 仍依赖组件内联样式，CSP 中的 `style-src 'unsafe-inline'`
+和现有账号的迁移及回退。天气默认尝试 Windows 系统定位，遵循系统位置权限，不可用时回退
+到网络大致定位；旧设置里明确关闭系统定位的选择仍保留。Renderer 仍依赖组件内联样式，CSP 中的 `style-src 'unsafe-inline'`
 暂时保留，待样式迁移与动效回归验证后再评估收紧。
 
 ## 工程守卫与验证

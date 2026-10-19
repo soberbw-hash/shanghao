@@ -26,6 +26,11 @@ import { SettingsItemRow } from "./SettingsItemRow";
 import { SettingsSection } from "./SettingsSection";
 import type { ToastMessage } from "../../store/appStore";
 import { toUserFacingError } from "../../utils/userFacingError";
+import {
+  canReuseTextProviderKey,
+  textModelPreset,
+  type TextModelPreset,
+} from "../../features/ai/textModelPreset";
 
 interface AiVoiceMemorySettingsCardProps {
   isActive?: boolean;
@@ -227,6 +232,10 @@ export const AiVoiceMemorySettingsCard = ({
   const [customBaseUrl, setCustomBaseUrl] = useState("");
   const [customModel, setCustomModel] = useState("");
   const [customApiKey, setCustomApiKey] = useState("");
+  const [textPreset, setTextPreset] = useState<TextModelPreset>(
+    settings.aiOrganizerProvider === "cloud" ? "cloud" : "custom",
+  );
+  const textPresetEdited = useRef(false);
   const [savingCustomProvider, setSavingCustomProvider] = useState(false);
   const [modelFilter, setModelFilter] = useState<"all" | "installed" | "available">("all");
   const modelManagementRef = useRef<HTMLElement>(null);
@@ -259,8 +268,10 @@ export const AiVoiceMemorySettingsCard = ({
       .then((status) => {
         if (!active) return;
         setCustomProvider(status);
+        if (textPresetEdited.current) return;
         setCustomBaseUrl(status.baseUrl ?? "https://open.bigmodel.cn/api/paas/v4");
         setCustomModel(status.model ?? "glm-4-flash-250414");
+        setTextPreset(settings.aiOrganizerProvider === "cloud" ? "cloud" : textModelPreset(status));
       })
       .catch(() => {
         if (!active) return;
@@ -273,7 +284,7 @@ export const AiVoiceMemorySettingsCard = ({
     return () => {
       active = false;
     };
-  }, [isActive, pushToast]);
+  }, [isActive, pushToast, settings.aiOrganizerProvider]);
 
   useEffect(() => {
     if (!isActive) return;
@@ -305,7 +316,11 @@ export const AiVoiceMemorySettingsCard = ({
     try {
       const next = await window.desktopApi.ai.controlModel(model.id, action);
       setSnapshot(next);
-      if (action === "delete" && model.id === settings.aiAsrModel) {
+      if (
+        action === "delete" &&
+        model.id === settings.aiAsrModel &&
+        settings.aiTranscriptionProvider === "local"
+      ) {
         await onChange({
           isAiAutoTranscribeEnabled: false,
           isAiAutoOrganizeEnabled: false,
@@ -350,6 +365,13 @@ export const AiVoiceMemorySettingsCard = ({
         model: customModel,
         apiKey: customApiKey || undefined,
       });
+      const preset = textModelPreset(status);
+      await onChange({
+        aiOrganizerProvider: "custom",
+        aiRoomAskProvider: "custom",
+        aiTextModelPreset: preset,
+      });
+      setTextPreset(preset);
       setCustomProvider(status);
       setCustomApiKey("");
       pushToast({ tone: "success", title: "自定义 API 已安全保存" });
@@ -503,6 +525,14 @@ export const AiVoiceMemorySettingsCard = ({
     selectedAsr?.activeRevision && (selectedAsr.runtimeReady ?? asrRuntimeStatus?.ready),
   );
   const transcriptionProvider = settings.aiTranscriptionProvider ?? "cloud";
+  const canReuseTranscriptionKey = canReuseTextProviderKey(
+    {
+      configured: Boolean(transcriptionStatus?.customConfigured),
+      hasApiKey: Boolean(transcriptionStatus?.customConfigured),
+      baseUrl: transcriptionStatus?.customBaseUrl,
+    },
+    transcriptionBaseUrl,
+  );
   const activeTranscriptionReady =
     transcriptionProvider === "local"
       ? selectedAsrReady
@@ -783,26 +813,34 @@ export const AiVoiceMemorySettingsCard = ({
           <h3 id="transcription-settings-title">转录设置</h3>
         </div>
         <div className="mt-3 space-y-3">
-          <SettingsItemRow
-            label="转录时机"
-            description={snapshot?.scheduler.gameActive ? "游戏中将自动降低后台占用。" : undefined}
-          >
-            <select
-              className="ai-processing-select"
-              aria-label="转录时机"
-              value={settings.aiProcessingMode}
-              onChange={(event) =>
-                void onChange({
-                  aiProcessingMode: event.target.value as AppSettings["aiProcessingMode"],
-                })
+          {transcriptionProvider === "local" ? (
+            <SettingsItemRow
+              label="转录时机"
+              description={
+                snapshot?.scheduler.gameActive ? "游戏中将自动降低后台占用。" : undefined
               }
             >
-              <option value="after_game">游戏结束后</option>
-              <option value="low_resource">后台低资源</option>
-              <option value="immediate">立即转录</option>
-              <option value="manual">仅手动</option>
-            </select>
-          </SettingsItemRow>
+              <select
+                className="ai-processing-select"
+                aria-label="转录时机"
+                value={settings.aiProcessingMode}
+                onChange={(event) =>
+                  void onChange({
+                    aiProcessingMode: event.target.value as AppSettings["aiProcessingMode"],
+                  })
+                }
+              >
+                <option value="after_game">游戏结束后</option>
+                <option value="low_resource">后台低资源</option>
+                <option value="immediate">立即转录</option>
+                <option value="manual">仅手动</option>
+              </select>
+            </SettingsItemRow>
+          ) : (
+            <p className="text-xs text-[#718096]">
+              云端直接处理，不等待游戏结束；切换本地后按所选时机和电脑资源自动调度。
+            </p>
+          )}
           <SettingsItemRow
             label="自动转录"
             description={
@@ -815,7 +853,7 @@ export const AiVoiceMemorySettingsCard = ({
           >
             <Switch
               isChecked={settings.isAiAutoTranscribeEnabled}
-              isDisabled={!activeTranscriptionReady}
+              isDisabled={!activeTranscriptionReady && !settings.isAiAutoTranscribeEnabled}
               ariaLabel="自动转录"
               onChange={(checked) => void onChange({ isAiAutoTranscribeEnabled: checked })}
             />
@@ -834,7 +872,9 @@ export const AiVoiceMemorySettingsCard = ({
           >
             <Switch
               isChecked={settings.isAiAutoOrganizeEnabled}
-              isDisabled={!organizerReady || !activeTranscriptionReady}
+              isDisabled={
+                (!organizerReady || !activeTranscriptionReady) && !settings.isAiAutoOrganizeEnabled
+              }
               ariaLabel="自动整理"
               onChange={(checked) => void onChange({ isAiAutoOrganizeEnabled: checked })}
             />
@@ -887,18 +927,12 @@ export const AiVoiceMemorySettingsCard = ({
             <select
               className="ai-processing-select"
               aria-label="文本整理与问答模型"
-              value={
-                settings.aiTextModelPreset ??
-                (settings.aiOrganizerProvider === "cloud"
-                  ? "cloud"
-                  : customModel === "deepseek-flash"
-                    ? "deepseek"
-                    : customModel.startsWith("glm-4-flash")
-                      ? "glm"
-                      : "custom")
-              }
+              value={textPreset}
               onChange={(event) => {
                 const value = event.target.value as NonNullable<AppSettings["aiTextModelPreset"]>;
+                textPresetEdited.current = true;
+                setTextPreset(value);
+                setCustomApiKey("");
                 if (value === "cloud")
                   void onChange({
                     aiOrganizerProvider: value,
@@ -919,20 +953,15 @@ export const AiVoiceMemorySettingsCard = ({
                     setCustomBaseUrl(preset.baseUrl);
                     setCustomModel(preset.model);
                   }
-                  void onChange({
-                    aiOrganizerProvider: "custom",
-                    aiRoomAskProvider: "custom",
-                    aiTextModelPreset: value,
-                  });
                 }
               }}
             >
               <option value="cloud">房间云端</option>
-              <option value="deepseek">DeepSeek Flash（V4.1）</option>
+              <option value="deepseek">DeepSeek V4.1 Flash（10月17日更新）</option>
               <option value="glm">GLM-4-Flash-250414（免费）</option>
               <option value="custom">自定义 API</option>
             </select>
-            {settings.aiOrganizerProvider === "custom" ? (
+            {textPreset !== "cloud" ? (
               <div className="ai-provider-config-note">
                 <div className="ai-provider-fields">
                   <label className="min-w-0 flex-1 text-sm font-medium text-[#26364d]">
@@ -940,7 +969,10 @@ export const AiVoiceMemorySettingsCard = ({
                     <input
                       className="mt-1 w-full rounded-xl border border-[#d7e4f4] bg-white px-3 py-2 text-sm"
                       value={customBaseUrl}
-                      onChange={(event) => setCustomBaseUrl(event.target.value)}
+                      onChange={(event) => {
+                        setCustomBaseUrl(event.target.value);
+                        setTextPreset("custom");
+                      }}
                       placeholder="https://api.example.com/v1"
                     />
                   </label>
@@ -949,7 +981,10 @@ export const AiVoiceMemorySettingsCard = ({
                     <input
                       className="mt-1 w-full rounded-xl border border-[#d7e4f4] bg-white px-3 py-2 text-sm"
                       value={customModel}
-                      onChange={(event) => setCustomModel(event.target.value)}
+                      onChange={(event) => {
+                        setCustomModel(event.target.value);
+                        setTextPreset("custom");
+                      }}
                       placeholder="模型 ID"
                     />
                   </label>
@@ -961,12 +996,20 @@ export const AiVoiceMemorySettingsCard = ({
                       autoComplete="off"
                       value={customApiKey}
                       onChange={(event) => setCustomApiKey(event.target.value)}
-                      placeholder={customProvider?.hasApiKey ? "已保存；留空不修改" : "请输入密钥"}
+                      placeholder={
+                        canReuseTextProviderKey(customProvider, customBaseUrl)
+                          ? "已保存；留空不修改"
+                          : "请输入此服务的密钥"
+                      }
                     />
                   </label>
                   <div className="ai-provider-form-actions">
                     <Button
-                      disabled={savingCustomProvider}
+                      disabled={
+                        savingCustomProvider ||
+                        (!customApiKey.trim() &&
+                          !canReuseTextProviderKey(customProvider, customBaseUrl))
+                      }
                       onClick={() => void saveCustomProvider()}
                     >
                       保存
@@ -988,7 +1031,8 @@ export const AiVoiceMemorySettingsCard = ({
                   </div>
                 </div>
                 <p className="mt-2 text-xs leading-5 text-[#718096]">
-                  密钥经 Windows 加密，仅保存在本机。仅支持 HTTPS 地址。
+                  保存后生效；切换服务需填写对应密钥。密钥经 Windows 加密，仅保存在本机。仅支持
+                  HTTPS 地址。
                 </p>
               </div>
             ) : null}
@@ -1081,13 +1125,16 @@ export const AiVoiceMemorySettingsCard = ({
                       value={transcriptionApiKey}
                       onChange={(event) => setTranscriptionApiKey(event.target.value)}
                       placeholder={
-                        transcriptionStatus?.customConfigured ? "已保存；留空不修改" : "API Key"
+                        canReuseTranscriptionKey ? "已保存；留空不修改" : "请输入此服务的密钥"
                       }
                     />
                   </label>
                   <div className="ai-provider-form-actions">
                     <Button
-                      disabled={savingTranscriptionProvider}
+                      disabled={
+                        savingTranscriptionProvider ||
+                        (!transcriptionApiKey.trim() && !canReuseTranscriptionKey)
+                      }
                       onClick={() => void saveTranscriptionProvider("custom")}
                     >
                       保存转录 API

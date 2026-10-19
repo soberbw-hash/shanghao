@@ -114,6 +114,7 @@ export const useUiFeedbackSounds = (enabled = true): void => {
         reconnectAttempt: state.connectionHealth.reconnectAttempt,
         isMuted: audio.isMuted,
         isDeafened: audio.isDeafened,
+        phoneModeActive: audio.phoneModeActive,
       };
     }, playUiSound);
     let queued = false;

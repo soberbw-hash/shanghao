@@ -2,6 +2,7 @@ import { createUISFX, type CueName, type PackName, type PlayingSFX, type UISFXPl
 
 import { writeRendererLog } from "../../utils/logger";
 import { waitForVisualIdle } from "../visual-runtime/waitForVisualIdle";
+import { loadRoomEntryCue } from "./roomEntryCue";
 
 export type UiSound =
   | "button-click"
@@ -29,6 +30,7 @@ export type UiSound =
   | "mic-off"
   | "speaker-muted"
   | "speaker-unmuted"
+  | "phone-mode-enter"
   | "settings-section"
   | "screen-share-start"
   | "screen-share-stop"
@@ -45,6 +47,7 @@ interface UiSoundRecipe {
   pack: PackName;
   volume: number;
   cooldownMs?: number;
+  playbackRate?: number;
 }
 
 // Use unity application gain; Windows output and per-app volume control loudness.
@@ -96,6 +99,13 @@ const soundRecipes: Record<Exclude<UiSound, "knock-bell">, UiSoundRecipe> = {
   "mic-off": { cue: "toggle-off", pack: "soft", volume: uiGain.deviceToggle, cooldownMs: 120 },
   "speaker-muted": { cue: "lock", pack: "soft", volume: uiGain.deviceToggle, cooldownMs: 120 },
   "speaker-unmuted": { cue: "unlock", pack: "soft", volume: uiGain.deviceToggle, cooldownMs: 120 },
+  "phone-mode-enter": {
+    cue: "double-click",
+    pack: "soft",
+    volume: 0.6,
+    playbackRate: 1.6,
+    cooldownMs: 180,
+  },
   "settings-section": { cue: "press", pack: "studio", volume: uiGain.subtle, cooldownMs: 80 },
   "screen-share-start": {
     cue: "connect",
@@ -150,6 +160,12 @@ const knockUrl = new URL("../../assets/sounds/knock-bell.wav", import.meta.url).
 
 const players = new Map<PackName, UISFXPlayer>();
 const activeSounds: PlayingSFX[] = [];
+const entryGains = new Set<GainNode>();
+let entryCueRevision = 0;
+let lastEntryCueAt = -Infinity;
+export const cancelDelayedRoomEntryCue = (): void => {
+  entryCueRevision++;
+};
 let prepared = false;
 let feedbackEnabled = true;
 let feedbackRevision = 0;
@@ -162,6 +178,9 @@ export const setUiSoundVolume = (volume: number): void => {
   if (!Number.isFinite(volume)) return;
   masterVolume = Math.max(0, Math.min(1, volume));
   players.forEach((player) => player.setVolume(masterVolume));
+  entryGains.forEach((gain) => {
+    gain.gain.value = masterVolume * uiGain.roomEntry;
+  });
 };
 export const setUiSoundFeedbackEnabled = (enabled: boolean): void => {
   if (feedbackEnabled === enabled) return;
@@ -301,13 +320,76 @@ export const prepareUiSounds = async (signal = new AbortController().signal): Pr
     for (const sound of preloadSounds) {
       await waitForVisualIdle(signal);
       const recipe = soundRecipes[sound];
-      await ensurePlayer(recipe.pack)?.preload([recipe.cue], { signal });
+      if (sound === "enter-room" && audioContext) await loadRoomEntryCue(audioContext);
+      else await ensurePlayer(recipe.pack)?.preload([recipe.cue], { signal });
       signal.throwIfAborted();
     }
   } catch (error) {
     prepared = false;
     throw error;
   }
+};
+
+const retainPlayback = (playback: PlayingSFX): void => {
+  if (activeSounds.includes(playback)) return;
+  activeSounds.push(playback);
+  if (activeSounds.length > 2) activeSounds.shift()?.stop();
+  void playback.ended.then(() => {
+    const index = activeSounds.indexOf(playback);
+    if (index >= 0) activeSounds.splice(index, 1);
+  });
+};
+
+const playRoomEntryCue = (): void => {
+  const context = audioContext;
+  if (!context) return;
+  const requestedAt = performance.now();
+  if (requestedAt - lastEntryCueAt < 250) return;
+  lastEntryCueAt = requestedAt;
+  const revision = ++entryCueRevision;
+  const feedback = feedbackRevision;
+  void loadRoomEntryCue(context)
+    .then(({ buffer }) => {
+      if (
+        !feedbackEnabled ||
+        feedback !== feedbackRevision ||
+        revision !== entryCueRevision ||
+        context.state !== "running" ||
+        performance.now() - requestedAt > 250
+      )
+        return;
+      const source = context.createBufferSource();
+      const gain = context.createGain();
+      source.buffer = buffer;
+      gain.gain.value = masterVolume * uiGain.roomEntry;
+      source.connect(gain);
+      gain.connect(context.destination);
+      entryGains.add(gain);
+      const ended = new Promise<void>((resolve) =>
+        source.addEventListener(
+          "ended",
+          () => {
+            source.disconnect();
+            gain.disconnect();
+            entryGains.delete(gain);
+            resolve();
+          },
+          { once: true },
+        ),
+      );
+      let stopped = false;
+      retainPlayback({
+        stop: () => {
+          if (!stopped) {
+            stopped = true;
+            source.stop();
+          }
+        },
+        ended,
+      });
+      source.start();
+    })
+    .catch(() => undefined);
 };
 
 export const playUiSound = (sound: UiSound): void => {
@@ -326,6 +408,7 @@ export const playUiSound = (sound: UiSound): void => {
       // release them together on unlock. Retain only one fresh cue, never a backlog.
       const request = ++latestResumeRequest;
       const revision = feedbackRevision;
+      const entryRevision = entryCueRevision;
       const requestedAt = performance.now();
       resumePromise ??= audioContext?.resume().finally(() => {
         resumePromise = undefined;
@@ -335,6 +418,7 @@ export const playUiSound = (sound: UiSound): void => {
           if (
             feedbackEnabled &&
             revision === feedbackRevision &&
+            (sound !== "enter-room" || entryRevision === entryCueRevision) &&
             request === latestResumeRequest &&
             performance.now() - requestedAt < 250 &&
             audioContext?.state === "running"
@@ -344,19 +428,17 @@ export const playUiSound = (sound: UiSound): void => {
         .catch(() => undefined);
       return;
     }
+    if (sound === "enter-room") {
+      playRoomEntryCue();
+      return;
+    }
     const playback = activePlayer.play(recipe.cue, {
       volume: recipe.volume,
+      playbackRate: recipe.playbackRate,
       cooldownMs: recipe.cooldownMs,
       retrigger: sound === "receive-message" ? "overlap" : "restart",
     });
-    if (playback && !activeSounds.includes(playback)) {
-      activeSounds.push(playback);
-      if (activeSounds.length > 2) activeSounds.shift()?.stop();
-      void playback.ended.then(() => {
-        const index = activeSounds.indexOf(playback);
-        if (index >= 0) activeSounds.splice(index, 1);
-      });
-    }
+    if (playback) retainPlayback(playback);
   } catch {
     // UI feedback must never block room, recording, or signaling work.
   }
@@ -368,6 +450,8 @@ export const playGenericPressUnlessHandled = (clickStartedAt: number): void => {
 };
 
 export const stopAllUiSounds = (): void => {
+  cancelDelayedRoomEntryCue();
   players.forEach((player) => player.stopAll());
+  activeSounds.forEach((playback) => playback.stop());
   activeSounds.length = 0;
 };

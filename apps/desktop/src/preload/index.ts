@@ -60,6 +60,12 @@ const desktopApi: DesktopApi = {
     getSystemIdleSeconds: () => ipcRenderer.invoke(IPC_CHANNELS.app.getSystemIdleSeconds),
     writeLog: (payload) => ipcRenderer.invoke(IPC_CHANNELS.app.writeLog, payload),
     notify: (payload) => ipcRenderer.invoke(IPC_CHANNELS.app.notify, payload),
+    onNotificationFailed: (listener) => {
+      const wrapped = (_event: Electron.IpcRendererEvent, reason: "blocked" | "failed") =>
+        listener(reason);
+      ipcRenderer.on(IPC_CHANNELS.app.notificationFailed, wrapped);
+      return () => ipcRenderer.removeListener(IPC_CHANNELS.app.notificationFailed, wrapped);
+    },
     onLifecycleRecovery: (listener) => {
       const wrapped = (_event: Electron.IpcRendererEvent, notice: unknown) => {
         listener(notice as Parameters<typeof listener>[0]);

@@ -110,19 +110,8 @@ export const TeamIsland = ({
   );
   const isRoomPageObscured = useAppStore((state) => state.currentPage === "settings");
   const weatherSnapshot = useWeatherStore((state) => state.snapshot);
-  const weatherPreview = useWeatherStore((state) => state.preview);
   const weatherTheme = resolveWeatherVisualTheme(
-    isDynamicWeatherEnabled
-      ? weatherPreview
-        ? {
-            ...weatherSnapshot,
-            ...weatherPreview,
-            fetchedAt: weatherSnapshot?.fetchedAt ?? "",
-            expiresAt: weatherSnapshot?.expiresAt ?? "",
-            source: weatherSnapshot?.source ?? "fallback",
-          }
-        : weatherSnapshot
-      : undefined,
+    isDynamicWeatherEnabled ? weatherSnapshot : undefined,
   );
   const weatherRoomClass =
     isDynamicWeatherEnabled === false

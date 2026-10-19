@@ -539,30 +539,7 @@ export const captureUi = async (
 
   const weatherPreview = process.env.SHANGHAO_CAPTURE_WEATHER_PREVIEW?.trim();
   if (weatherPreview && options.mode === "room") {
-    if (!(await clickButtonByLabel(window, "设置"))) throw new Error("无法打开天气预览设置");
-    if (!(await waitForVisibleSelector(window, ".settings-page-header"))) {
-      throw new Error("天气预览设置页未完成渲染");
-    }
-    if (!(await clickButtonByLabel(window, "通用"))) throw new Error("无法打开通用设置");
-    if (!(await waitForVisibleSelector(window, 'select[aria-label="本地天气预览"]'))) {
-      throw new Error("无法找到本地天气预览");
-    }
-    const selected = await window.webContents.executeJavaScript(
-      `
-        (() => {
-          const select = document.querySelector('select[aria-label="本地天气预览"]');
-          if (!(select instanceof HTMLSelectElement)) return false;
-          select.value = ${JSON.stringify(weatherPreview)};
-          select.dispatchEvent(new Event("change", { bubbles: true }));
-          return true;
-        })()
-      `,
-      true,
-    );
-    if (!selected || !(await clickButtonByLabel(window, "返回"))) {
-      throw new Error("天气预览未能返回房间");
-    }
-    await sleep(600);
+    throw new Error("正式房间的天气预览选项已移除；请使用资源审阅工具的天气夹具");
   }
 
   if (process.env.SHANGHAO_PERF_SEQUENCE === "settings" && options.mode === "settings") {

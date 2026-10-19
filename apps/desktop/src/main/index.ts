@@ -592,6 +592,7 @@ const bootstrap = async (): Promise<void> => {
     () => settingsStore?.getSnapshot().isAiAutoTranscribeEnabled ?? false,
     transcriptionProvider,
     () => settingsStore?.getSnapshot().aiTranscriptionProvider ?? "cloud",
+    () => settingsStore?.getSnapshot().isAiAutoOrganizeEnabled ?? false,
   );
   shortcutsController = shortcuts;
   overlayController = overlay;
