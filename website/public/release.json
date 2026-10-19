@@ -1,20 +1,20 @@
 {
-  "tag_name": "v3.4.11",
-  "published_at": "2026-10-18T18:47:04Z",
-  "html_url": "https://github.com/soberbw-hash/shanghao/releases/tag/v3.4.11",
+  "tag_name": "v3.4.12",
+  "published_at": "2026-10-19T06:46:51Z",
+  "html_url": "https://github.com/soberbw-hash/shanghao/releases/tag/v3.4.12",
   "highlights": [
-    "AI 提问历史按永久房间 ID 分开保存，包括回答与录音引用。切房间会重置助手面板、取消旧请求并拒绝迟到回答；服务器也不会把旧请求结果发到新会话。无法确定归属的旧全局历史保留在本机，不自动归入任何房间。",
-    "云端记忆继续核验账号、房主或当前房间成员权限；问答只使用自己的房间上下文，无房间归属的旧录音不再继承当前房间的记忆。",
-    "链接预览与自定义文本、转录 API 的公网校验绑定到实际连接，拒绝内网、保留地址、IPv6 绕过和不安全重定向。代理 fake-IP 使用独立解析后的真实公网地址，保持正常网页预览。",
-    "共享转录严格核对记录版本，等长或更长的旧结果也不能覆盖新结果；增加已删除结果和检查点保护。建议正式版和开发版均更新，旧客户端无法获得新写入保护。"
+    "本地模型对比不再误用全局云端选项；失败原因直接显示。云端临时服务故障对当前分段最多尝试三次，取消会及时停止；密钥、权限和余额错误不反复请求。",
+    "新设置默认开启自动转录、自动整理和自动清理，保留已保存的明确选择。云端直接处理，不等待游戏结束；本地保留后台资源调度。未配置转录密钥时等待配置，不产生虚假的识别失败，也不会自动下载大型本地模型。",
+    "超过单次时长或大小限制的云转录继续自动分段、合并，保留原始录音。纯文本云模型的位置仍为片段内估算；需要精确逐句时间轴时可选择本地模型。",
+    "自动上传摘要仍默认关闭，需单独选择；未上传的房间录音继续保留在本机，房间身份、历史和云端记忆保护继承 3.4.11。"
   ],
   "assets": [
     {
-      "name": "ShangHao-3.4.11-Setup-x64.exe",
-      "size": 205240091,
-      "browser_download_url": "https://github.com/soberbw-hash/shanghao/releases/download/v3.4.11/ShangHao-3.4.11-Setup-x64.exe",
-      "mirror_path": "/downloads/v3.4.11/ShangHao-3.4.11-Setup-x64.exe",
-      "sha256": "7db0a40b87311c29d1b9c835b0f991c05aead98097f5432519cbabdf766c3b4a"
+      "name": "ShangHao-3.4.12-Setup-x64.exe",
+      "size": 205250858,
+      "browser_download_url": "https://github.com/soberbw-hash/shanghao/releases/download/v3.4.12/ShangHao-3.4.12-Setup-x64.exe",
+      "mirror_path": "/downloads/v3.4.12/ShangHao-3.4.12-Setup-x64.exe",
+      "sha256": "1136650fc1a33707b6cb922008b617f8323359edf553f87b6c9e3fe958cba570"
     }
   ]
 }

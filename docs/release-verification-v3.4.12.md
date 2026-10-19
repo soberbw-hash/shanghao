@@ -1,6 +1,6 @@
 # 上号 v3.4.12 发布核对
 
-本轮用户已授权修复、统一检查并按桌面流程发布。当前文件记录构建前证据；GitHub 与官网资产未全部下载核对前，不声称本版已发布。
+本轮用户已授权修复、统一检查并按桌面流程发布。GitHub、CloudBase 官网和服务器均已更新到 3.4.12；Windows 安装包与 ZIP 完整下载校验通过，开发版已重启并目视确认 3.4.12。
 
 ## 修复与证据
 
@@ -24,6 +24,12 @@
 - 普通 / 减少动态效果助手、收藏、状态、模型保存、密钥隔离、12 组卡片、录音实际原生滑块像素及视频替换检查通过。
 - 本轮 9 张实际组件截图保存在 `docs/assets/releases/v3.4.12/`，均来自隔离数据；首页为未登录干净界面。
 - 原 3.4.11 官网授权阻塞已解除，完整下载安装包 SHA-256 与 GitHub 一致，旧下载保留。
-- 3.4.12 GitHub、Windows 资产、官网清单和服务器部署待最终验证后执行并补充。
+- 产品提交为 `935eee25ec668df2950a77f446ce02bae4987f80`，正式标签 `v3.4.12`，发布后不移动标签。
+- [GitHub Release](https://github.com/soberbw-hash/shanghao/releases/tag/v3.4.12) 提供六项资产与九张截图；[Windows 正式构建及发布](https://github.com/soberbw-hash/shanghao/actions/runs/39211171974)、[Windows / Linux CI](https://github.com/soberbw-hash/shanghao/actions/runs/39211167192) 与 [CodeQL](https://github.com/soberbw-hash/shanghao/actions/runs/39211167151) 均成功。九张标签内截图逐一 HTTP 200，`latest.yml` 的版本和安装器名称正确。
+- Windows 安装包 205250858 字节，SHA-256：`1136650fc1a33707b6cb922008b617f8323359edf553f87b6c9e3fe958cba570`。先从 GitHub 完整下载校验，再上传 CloudBase 版本目录并激活清单；官网完整 HTTPS 下载得到相同大小与哈希。
+- Windows ZIP 255603344 字节，SHA-256：`31ef09cd248bc270aa71c3057008d1fc2ca9acf03b5d3d246408fe2afec1f0d1`，已保存至本机 `artifacts/releases/v3.4.12/`；204 条目 CRC 全部通过，程序及 app.asar 存在，未包含用户设置或提供方密钥文件。
+- 官网首页、v3.4.12 校验文件、旧 v3.4.11 安装包均返回 HTTP 200，旧下载保留。根目录部署未使用会回滚删除根文件的 `--safe` 或 `--prune`。
+- 服务器在零通话时更新，健康检查返回 3.4.12 / 2026.10.19.3，账号和 TURN 正常。私有备份位于服务器 `/root/shanghao/.codex-backups/room-isolation-FrXWhIQI`，目录权限 700，七份原持久文件哈希通过；房间目录不变，环境配置仅版本字段变化。临时 SSH 私钥副本已删除，桌面原件保留。
+- 开发版通过正常退出清理后重新打开，实际更新说明显示 3.4.12，主页正常、没有自动加入房间。正式版未自动安装，用户需主动确认升级。
 
 真实英雄联盟全屏/反作弊组合、不同电脑驱动下的整体进房听感、Windows 横幅到达及正式版主动点击升级需另做现场验收。五人原始媒体夹具的离屏窗口存在共同 RAF 空档，不能把隔离 UI 没有长帧冒充真实整机完全不卡。
