@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1100" height="560" viewBox="0 0 1100 560" role="img" aria-labelledby="title desc">
+  <title id="title">WebRTC 与 Relay 音频恢复状态</title>
+  <desc id="desc">连接从 RelayFallback 开始，经 WebRTCConnecting 验证入站 RTP 后进入 WebRTCVerified，失败或停滞时按成员回退。</desc>
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto"><path d="M0 0L10 5L0 10Z" fill="#6685a7"/></marker>
+    <style>
+      .state{fill:#f8fbff;stroke:#b9cde3;stroke-width:2}.fallback{fill:#fff9ee;stroke:#e4bd75}.verified{fill:#effaf5;stroke:#79c59a}.label{font:600 24px "Segoe UI","Microsoft YaHei",sans-serif;fill:#243b59}.small{font:16px "Segoe UI","Microsoft YaHei",sans-serif;fill:#637b98}.line{stroke:#6685a7;stroke-width:3;fill:none;marker-end:url(#arrow)}.dash{stroke:#d19b3f;stroke-width:3;stroke-dasharray:9 8;fill:none;marker-end:url(#arrow)}
+    </style>
+  </defs>
+  <rect width="1100" height="560" rx="24" fill="#ffffff"/>
+  <text x="48" y="58" class="label" font-size="30">五人语音：WebRTC / Relay 恢复</text>
+  <text x="48" y="88" class="small">“连接成功”不等于“已经听见声音”，只有确认入站 RTP 后才标记为可用。</text>
+  <circle cx="115" cy="280" r="12" fill="#6685a7"/>
+  <rect x="180" y="230" width="250" height="100" rx="18" class="state fallback"/>
+  <text x="305" y="272" text-anchor="middle" class="label">RelayFallback</text><text x="305" y="300" text-anchor="middle" class="small">安全起步 / 定向兜底</text>
+  <rect x="555" y="130" width="250" height="100" rx="18" class="state"/>
+  <text x="680" y="172" text-anchor="middle" class="label">WebRTCConnecting</text><text x="680" y="200" text-anchor="middle" class="small">offer / answer / ICE</text>
+  <rect x="555" y="370" width="250" height="100" rx="18" class="state verified"/>
+  <text x="680" y="412" text-anchor="middle" class="label">WebRTCVerified</text><text x="680" y="440" text-anchor="middle" class="small">入站 RTP 已确认</text>
+  <path d="M127 280H180" class="line"/><path d="M430 250L555 180" class="line"/><path d="M430 310L555 420" class="line"/><path d="M680 230V370" class="line"/>
+  <path d="M805 180C940 180 940 280 430 280" class="dash"/><path d="M805 420C960 420 960 320 430 320" class="dash"/>
+  <text x="456" y="183" class="small">开始协商</text><text x="456" y="385" class="small">inbound RTP received</text><text x="820" y="164" class="small" fill="#a87525">connection failed</text><text x="820" y="455" class="small" fill="#a87525">RTP stalled</text><text x="836" y="398" class="small" fill="#4d9b70">RTP resumed</text>
+</svg>
