@@ -47,9 +47,13 @@ app.whenReady().then(async () => {
       `(()=>{const grid=document.querySelector('.ai-model-provider-grid');grid.closest('details').open=true;grid.scrollIntoView({block:'center'});if(grid.getBoundingClientRect().height<100)throw Error('model configuration is still collapsed')})()`,
     );
     await capture("release-models.png");
+    // Reload the fixture's custom transcription settings rather than relying on
+    // two controlled select updates being committed in the same browser task.
+    await load("settings-feedback.html");
     await window.webContents.executeJavaScript(`(()=>{
-      const text=document.querySelector('select[aria-label="文本整理与问答模型"]');text.value='custom';text.dispatchEvent(new Event('change',{bubbles:true}));
-      const asr=document.querySelector('[aria-label="语音转录模型来源"]');asr.value='custom';asr.dispatchEvent(new Event('change',{bubbles:true}));
+      document.querySelector('main > div').style.display='none';
+      const grid=document.querySelector('.ai-model-provider-grid');grid.closest('details').open=true;grid.scrollIntoView({block:'center'});
+      const asr=document.querySelector('select[aria-label="语音转录模型来源"]');if(asr.value!=='custom')throw Error('custom transcription configuration did not mount');
     })()`);
     await capture("release-models-custom.png");
     window.setContentSize(620, 760);

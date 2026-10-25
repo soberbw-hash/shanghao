@@ -1,6 +1,19 @@
 # 上号 v3.4.13 发布核对
 
-2026-10-25 用户已重新授权恢复开源，并在完成本地验证后按桌面流程发布。GitHub 与 CloudBase `release.json` 实查均为 3.4.12；本次目标 3.4.13，构建号 2026.10.25.1。原仓库已恢复公开，发布与官网激活尚需分别完成。下文早期验证作为历史保留，本段和新增最终核对优先。
+2026-10-25 已按用户最新授权恢复开源并完成 3.4.13 发布，构建号 2026.10.25.1。发布前 GitHub 与 CloudBase 同为 3.4.12；发布后两处均已核验为 3.4.13。下文早期验证作为历史保留，最终发布结果优先。
+
+## 最终发布结果
+
+- 产品提交 `c0f776a9c6cb6c834fb9dd4e8cf7b43a6338a63b`，正式标签 `v3.4.13`，发布后未移动标签。后续说明、演示截图补充和网站清单作为文档提交保存，不替换程序资产。
+- [Windows/Linux CI](https://github.com/soberbw-hash/shanghao/actions/runs/40170465783)、[CodeQL](https://github.com/soberbw-hash/shanghao/actions/runs/40170465814) 与 [正式 Windows 构建发布](https://github.com/soberbw-hash/shanghao/actions/runs/40170854942) 均成功。正式完整 smoke 1497 项：1492 通过、5 跳过、0 失败；迁移、N-1、手机麦克风、Runtime、AudioWorklet、屏幕捕获、五人音频和实际媒体恢复均通过。
+- [GitHub Release](https://github.com/soberbw-hash/shanghao/releases/tag/v3.4.13) 共 20 项资产，包含安装器、ZIP、更新元数据、blockmap、体积报告、校验文件和 14 张干净实际组件截图。补充自定义转录配置截图，避免与默认模型配置重复。
+- 正式安装器 214320591 字节；SHA-256：`4b7c285adf753c288d7f2646ca9ff9f5542e319577c5078cd37007cd26c58787`。GitHub 安装器完整下载校验后上传 CloudBase 版本目录，再激活清单、构建并部署首页；官网完整下载得到相同大小与哈希。根目录部署未使用 `--safe` 或 `--prune`，旧 3.4.12 安装器仍返回 HTTP 200。
+- 正式 ZIP 264746741 字节；SHA-256：`11b677acf2465bdcdb9f94f55d7dd608fa9bd6223ca21463ca42110bb2e2dddc`。从 GitHub 完整下载至本机 `artifacts/releases/v3.4.13/remote-verified/`，206 个条目 CRC 通过，启动 EXE 和 `resources/app.asar` 齐全。本机先行候选包哈希与 CI 正式包分别记录，没有混用。
+- 服务器在零通话时升级到同一产品提交，健康检查 3.4.13 / 2026.10.25.1、账号和 TURN 正常；原持久数据备份至 `/root/shanghao/.codex-backups/room-isolation-EPZtA00s`。旧十分钟更新 cron 继续停用，未恢复反复重启行为。
+- 原源码仓库已恢复公开的 `soberbw-hash/shanghao`，源码与下载统一；临时下载站说明已改为指向原仓库并只读归档，历史资产保留。发布前后均核对仓库 ID，未创建空仓覆盖历史。
+- 桌面和开始菜单的开发版快捷方式目标、图标均存在，使用内嵌 PowerShell 启动，不引用缺失 VBS。稳定入口为 `%LOCALAPPDATA%/Programs/ShangHaoDev/launch-dev.cmd`，另有 `launch-dev-admin.cmd`；未强制重启用户正在运行的窗口。
+
+**真实设备边界：** LOL 管理员／独占全屏按键、完整对局状态切换、真实朋友跨网络长通话听感和旧客户端点击安装升级尚未完成现场验收。只读 LOL 探针在普通权限下未取得管理员客户端 API；不把本机 TLS／WebSocket 测试当作游戏实测。未替用户自动安装新版本，也未恢复独立审核。
 
 ## 10 月 25 日最终候选核对
 

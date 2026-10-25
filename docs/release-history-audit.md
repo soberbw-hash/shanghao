@@ -1,7 +1,8 @@
 # 上号版本历史证据审计
 
-本表用于维护设置页的离线更新历史。历史只写可以由 Git tag、GitHub Release、CHANGELOG
-或正式版本提交核验的内容。v2.6.1 当前只是本地候选版本，没有 tag、Release 或安装包。
+本表保留 2026 年 8 月的早期历史审计，不能用其中“候选”状态判断当前版本。最新正式版为
+3.4.13，见 [3.4.13 发布核对](release-verification-v3.4.13.md)；设置页离线历史已包含对应条目。
+历史只写可以由 Git tag、GitHub Release、CHANGELOG 或正式提交核验的内容。
 
 ## 统计
 

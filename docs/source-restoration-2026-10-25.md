@@ -3,7 +3,7 @@
 用户于 2026-10-25 明确要求重新开源、完成本地验证后按桌面规范发布，并确认恢复原地址、源码和下载统一。此决定替代 10 月 20 日的源码私有化要求。
 
 - 原源码仓库 ID `1207314298` 从 `shanghao-source` 恢复为 `soberbw-hash/shanghao`，保留提交、分支、标签和历史 Release。
-- 临时下载仓库 ID `1427201349` 改名 `soberbw-hash/shanghao-downloads`，保留为存档，不删除下载资产。
+- 临时下载仓库 ID `1427201349` 改名 `soberbw-hash/shanghao-downloads`，说明已改为指向恢复开源的原仓库并只读归档，不删除下载资产。
 - GitHub API 已确认原源码仓库 `visibility=public`，匿名访问返回 HTTP 200、相同仓库 ID；本地 origin 同步恢复原地址。
 - 恢复原有 AGPL-3.0-or-later，README 和 NOTICE 的源码地址同步更新，第三方资源及历史许可保留。
 - 公开前检查 6939 个历史文件版本和当前 2830 个文件，未发现所查高置信度凭据模式；未将本机密钥、用户设置、真实录音或诊断日志加入源码。

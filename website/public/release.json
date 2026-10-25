@@ -1,20 +1,20 @@
 {
-  "tag_name": "v3.4.12",
-  "published_at": "2026-10-19T06:46:51Z",
-  "html_url": "https://github.com/soberbw-hash/shanghao/releases/tag/v3.4.12",
+  "tag_name": "v3.4.13",
+  "published_at": "2026-10-25T07:02:46Z",
+  "html_url": "https://github.com/soberbw-hash/shanghao/releases/tag/v3.4.13",
   "highlights": [
-    "本地模型对比不再误用全局云端选项；失败原因直接显示。云端临时服务故障对当前分段最多尝试三次，取消会及时停止；密钥、权限和余额错误不反复请求。",
-    "新设置默认开启自动转录、自动整理和自动清理，保留已保存的明确选择。云端直接处理，不等待游戏结束；本地保留后台资源调度。未配置转录密钥时等待配置，不产生虚假的识别失败，也不会自动下载大型本地模型。",
-    "超过单次时长或大小限制的云转录继续自动分段、合并，保留原始录音。纯文本云模型的位置仍为片段内估算；需要精确逐句时间轴时可选择本地模型。",
-    "自动上传摘要仍默认关闭，需单独选择；未上传的房间录音继续保留在本机，房间身份、历史和云端记忆保护继承 3.4.11。"
+    "录音库把阅读放在首位：存储和模型设置折叠，操作按钮紧凑，列表卡片统一，文字稿缩小行距并保留来源标识。",
+    "默认自动转录；未转录的历史录音顺序排队，保留手动暂停。转录后自动在云端生成摘要，不因离开页面暂停，不自动上传到房间。",
+    "摘要提取实际事件、原话和有依据的趣事，避免空泛复述；长任务保留完成分段，瞬时故障有限重试，明确的账号或余额错误不反复请求。",
+    "云端按小段持久保存进度；有成员独立音轨时交替处理各成员，再按统一时间合并。修复只处理一个成员、切段续录空档和失败阻断其余成员的问题。"
   ],
   "assets": [
     {
-      "name": "ShangHao-3.4.12-Setup-x64.exe",
-      "size": 205250858,
-      "browser_download_url": "https://github.com/soberbw-hash/shanghao/releases/download/v3.4.12/ShangHao-3.4.12-Setup-x64.exe",
-      "mirror_path": "/downloads/v3.4.12/ShangHao-3.4.12-Setup-x64.exe",
-      "sha256": "1136650fc1a33707b6cb922008b617f8323359edf553f87b6c9e3fe958cba570"
+      "name": "ShangHao-3.4.13-Setup-x64.exe",
+      "size": 214320591,
+      "browser_download_url": "https://github.com/soberbw-hash/shanghao/releases/download/v3.4.13/ShangHao-3.4.13-Setup-x64.exe",
+      "mirror_path": "/downloads/v3.4.13/ShangHao-3.4.13-Setup-x64.exe",
+      "sha256": "4b7c285adf753c288d7f2646ca9ff9f5542e319577c5078cd37007cd26c58787"
     }
   ]
 }
