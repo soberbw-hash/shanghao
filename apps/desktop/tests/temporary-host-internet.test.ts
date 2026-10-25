@@ -77,4 +77,10 @@ test("overlapping host publications cannot submit an older authority revision af
   assert.equal(host.routeFor(room.sessionId)?.registration.payload.revision, 3);
   await host.publish({ ...room, revision: 2 });
   assert.equal(host.routeFor(room.sessionId)?.registration.payload.revision, 3);
+  let clock = Date.now();
+  t.mock.method(Date, "now", () => ++clock);
+  await host.publish({ ...room, revision: 4 });
+  const registration = host.routeFor(room.sessionId)!.registration.payload;
+  assert.equal(registration.revision, 4);
+  assert.equal(registration.expiresAt - registration.issuedAt, 15000);
 });

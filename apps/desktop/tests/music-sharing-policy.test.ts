@@ -17,6 +17,7 @@ test("music picker excludes browsers, games and chat even when their window titl
   const service = new ApplicationAudioService({
     executablePath: "unused",
     isWindows: true,
+    windowsBuild: 26100,
     musicOnly: true,
     listNativeSources: async () =>
       processNames.map((processName, i) => ({
@@ -42,6 +43,7 @@ test("music source revalidation refuses a process that no longer qualifies befor
   const service = new ApplicationAudioService({
     executablePath: "unused",
     isWindows: true,
+    windowsBuild: 26100,
     musicOnly: true,
     listNativeSources: async () => [{ pid: 8100, creationTime: "123", processName, name: "音乐" }],
     spawnCapture: () => {

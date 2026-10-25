@@ -47,6 +47,7 @@ test("opaque source ids carry icons without exposing process ids or executable p
   const service = new ApplicationAudioService({
     executablePath: "unused",
     isWindows: true,
+    windowsBuild: 26100,
     listNativeSources: async () => [row],
     loadIcons: async () => new Map([[row.executablePath, { appIconDataUrl: icon }]]),
   });
@@ -61,6 +62,7 @@ test("process identity change while reading icons discards the stale icon", asyn
   const service = new ApplicationAudioService({
     executablePath: "unused",
     isWindows: true,
+    windowsBuild: 26100,
     listNativeSources: async () => [{ ...row, creationTime: ++calls === 1 ? "123" : "456" }],
     loadIcons: async () => new Map([[row.executablePath, { appIconDataUrl: icon }]]),
   });
@@ -72,6 +74,7 @@ test("slow icon extraction falls back to selectable apps without multiplying bac
   const service = new ApplicationAudioService({
     executablePath: "unused",
     isWindows: true,
+    windowsBuild: 26100,
     iconTimeoutMs: 10,
     listNativeSources: async () => [row],
     loadIcons: () => {

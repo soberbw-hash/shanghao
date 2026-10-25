@@ -13,5 +13,7 @@
 @import "./parts/253-application-audio-picker.css";
 @import "./parts/254-recording-storage.css";
 @import "./parts/255-recording-list-cards.css";
+@import "./parts/256-transcript-reading.css";
+@import "./parts/257-recording-panel-accessibility.css";
 @import "./parts/254-temporary-avatar-picker.css";
 @import "./parts/250-remote-control.css";

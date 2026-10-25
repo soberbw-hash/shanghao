@@ -60,24 +60,3 @@
 .recording-storage-settings .recording-library-usage {
   display: none;
 }
-.recording-library-page {
-  gap: 8px;
-}
-.recording-storage-settings > summary:focus-visible,
-.recording-processing-settings > summary:focus-visible,
-.recording-overview > summary:focus-visible {
-  outline: 2px solid #327dd9;
-  outline-offset: 3px;
-  border-radius: 6px;
-}
-@media (max-width: 700px) {
-  .recording-library-local-note {
-    display: none;
-  }
-  .recording-storage-settings .recording-library-location-tools {
-    flex-wrap: wrap;
-  }
-  .recording-storage-settings .recording-library-location-path {
-    flex-basis: 65%;
-  }
-}

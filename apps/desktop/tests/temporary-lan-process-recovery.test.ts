@@ -161,9 +161,17 @@ test(
     assert.equal(third.roomId, first.roomId);
     await new Promise((resolve) => setTimeout(resolve, 2000));
     await stop(a.process);
-    const resumed = await b.rpc("recover").catch(async (error) => {
-      throw Error(String(error) + JSON.stringify(await c.rpc("diagnostics")) + c.stderr());
-    });
+    // The signed authority lease lasts five seconds; process exit does not
+    // expire it immediately. Observe the actual handoff within a bounded wait.
+    const recoveryDeadline = Date.now() + 15000;
+    let resumed;
+    do {
+      resumed = await b.rpc("recover").catch(async (error) => {
+        throw Error(String(error) + JSON.stringify(await c.rpc("diagnostics")) + c.stderr());
+      });
+      if (resumed.room.epoch === 2) break;
+      await new Promise((resolve) => setTimeout(resolve, 250));
+    } while (Date.now() < recoveryDeadline);
     assert.equal(resumed.open, true);
     assert.equal(resumed.room.sessionId, first.roomId);
     assert.equal(resumed.room.epoch, 2);

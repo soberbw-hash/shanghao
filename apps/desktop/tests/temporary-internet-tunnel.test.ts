@@ -71,6 +71,7 @@ test(
     });
     const first = await local.create(),
       profile = (await identity.getProfile())!;
+    const issuedAt = Date.now();
     const signed = await identity.signInternetRegistration({
       version: 1,
       sessionId: first.roomId,
@@ -83,8 +84,8 @@ test(
       certificateSha256: createHash("sha256")
         .update(new X509Certificate(route.certificate!).raw)
         .digest("hex"),
-      issuedAt: Date.now(),
-      expiresAt: Date.now() + 15000,
+      issuedAt,
+      expiresAt: issuedAt + 15000,
     });
     const provider = new TemporaryInternetProvider(
       identity,
@@ -241,6 +242,7 @@ test(
     const identity = temporaryTestIdentity(),
       profile = (await identity.getProfile())!,
       sessionId = "temp_" + "e".repeat(32);
+    const issuedAt = Date.now();
     const signed = await identity.signInternetRegistration({
       version: 1,
       sessionId,
@@ -251,8 +253,8 @@ test(
       code: "13572468",
       members: [profile],
       certificateSha256: cert.sha256,
-      issuedAt: Date.now(),
-      expiresAt: Date.now() + 15000,
+      issuedAt,
+      expiresAt: issuedAt + 15000,
     });
     const provider = new TemporaryInternetProvider(
       identity,

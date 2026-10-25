@@ -205,5 +205,7 @@
   "apps/desktop/src/renderer/src/styles/parts/254-temporary-avatar-picker.css": 59,
   "apps/desktop/src/main/private-room-auth.ts": 62,
   "packages/shared/src/constants/music-apps.ts": 22,
-  "apps/desktop/src/renderer/src/styles/parts/255-recording-list-cards.css": 38
+  "apps/desktop/src/renderer/src/styles/parts/255-recording-list-cards.css": 38,
+  "apps/desktop/src/renderer/src/styles/parts/256-transcript-reading.css": 55,
+  "apps/desktop/src/renderer/src/styles/parts/257-recording-panel-accessibility.css": 25
 }

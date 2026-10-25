@@ -66,6 +66,7 @@ const fixture = () => {
   const service = new ApplicationAudioService({
     executablePath: "unused-test-executable",
     isWindows: true,
+    windowsBuild: 26100,
     listNativeSources: async () => rows,
     spawnCapture: () => {
       spawns++;
@@ -124,6 +125,7 @@ test("stop during source revalidation cannot launch a late capture", async () =>
   const service = new ApplicationAudioService({
     executablePath: "unused",
     isWindows: true,
+    windowsBuild: 26100,
     listNativeSources: async () => {
       if (++calls > 1) await gate;
       return [{ pid: 99, creationTime: "12", processName: "player.exe", name: "Player" }];

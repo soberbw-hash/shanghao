@@ -1,0 +1,51 @@
+/* Transcript provenance and reading density share one responsive layout. */
+.transcript-source-control {
+  display: flex;
+  align-items: center;
+  margin: 12px 0 4px;
+  color: #60728a;
+  justify-content: space-between;
+  font-size: 12px;
+}
+
+.transcript-source-control strong {
+  color: #24384f;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.transcript-source-control select {
+  min-height: 30px;
+}
+
+.voice-memory-transcript .transcript-paragraph {
+  grid-template-columns: 48px 64px minmax(0, 1fr);
+  padding: 6px;
+  gap: 6px;
+  border-radius: 8px;
+}
+
+.voice-memory-transcript span {
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.voice-memory-transcript time,
+.voice-memory-transcript strong {
+  padding-top: 1px;
+  font-size: 12px;
+  line-height: 1.7;
+}
+
+.voice-memory-transcript strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 500;
+}
+
+@media (max-width: 1050px) {
+  .voice-memory-transcript .transcript-paragraph {
+    grid-template-columns: 48px 56px minmax(0, 1fr);
+  }
+}

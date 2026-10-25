@@ -89,6 +89,7 @@ export class TemporaryHostInternet {
       await this.unpublishNow(room.sessionId);
       return;
     }
+    const issuedAt = Date.now();
     const signed = await this.identity.signInternetRegistration({
       version: 1,
       sessionId: room.sessionId,
@@ -99,8 +100,8 @@ export class TemporaryHostInternet {
       revision: room.revision,
       members,
       certificateSha256: this.certificateSha256,
-      issuedAt: Date.now(),
-      expiresAt: Date.now() + 15000,
+      issuedAt,
+      expiresAt: issuedAt + 15000,
     });
     const publishedRole = role ?? (room.authorityId === profile.deviceId ? "authority" : "member");
     try {

@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 const workspace = path.resolve(fileURLToPath(new URL("../", import.meta.url)));
 const [reportPath, previousPath] = process.argv
   .slice(2)
-  .filter((argument) => argument !== "--enforce");
+  .filter((argument) => !["--enforce", "--size-advisory"].includes(argument));
 if (!reportPath)
   throw new Error("Usage: node scripts/check-package-size.mjs <report.json> [previous.json]");
 const report = JSON.parse(await readFile(reportPath, "utf8"));
@@ -41,6 +41,7 @@ const rendererOnlyRawBytes = Object.values(report.rendererOnlyModuleCopies).redu
   0,
 );
 const issues = [];
+const sizeFindings = [];
 const physicalKeys = [
   "electronRuntime",
   "appAsar",
@@ -60,8 +61,10 @@ if (!physicalKeys.every((key) => Number.isSafeInteger(report.componentBytes?.[ke
   }
 }
 for (const [name, bytes, , limitMiB] of fields) {
-  if (bytes > limitMiB * 1024 ** 2) issues.push(`${name} exceeds ${limitMiB} MiB`);
+  if (bytes > limitMiB * 1024 ** 2) sizeFindings.push(`${name} exceeds ${limitMiB} MiB`);
 }
+// The owner treats package size as advisory; packaging integrity remains enforced.
+if (!process.argv.includes("--size-advisory")) issues.push(...sizeFindings);
 if (report.ffmpegCopies.length !== budget.ffmpegCopies)
   issues.push(`Expected ${budget.ffmpegCopies} FFmpeg binary, found ${report.ffmpegCopies.length}`);
 if (rendererOnlyRawBytes > budget.rendererOnlyRawMiB * 1024 ** 2)
@@ -95,6 +98,9 @@ const markdown = [
   "",
   `FFmpeg copies: ${report.ffmpegCopies.length}; raw renderer libraries: ${mib(rendererOnlyRawBytes)} MiB; non-target native addons: ${report.nonTargetUiohookPrebuilds?.count ?? "not reported"}; workspace source files: ${report.workspaceSourceFiles?.count ?? "not reported"}; CloudBase mini-program files: ${report.cloudbaseMiniProgramFiles?.count ?? "not reported"}.`,
   ...(issues.length ? ["", `Budget findings: ${issues.join("; ")}.`] : []),
+  ...(process.argv.includes("--size-advisory") && sizeFindings.length
+    ? ["", `Size advisory: ${sizeFindings.join("; ")}.`]
+    : []),
   "",
 ].join("\n");
 process.stdout.write(markdown);
