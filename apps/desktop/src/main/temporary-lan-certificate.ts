@@ -37,8 +37,10 @@ export function createLanCertificate(now = Date.now()): {
   key: string;
   sha256: string;
 } {
-  const pair = generateKeyPairSync("ed25519");
-  const algorithm = sequence(oid([0x2b, 0x65, 0x70]));
+  // Electron's BoringSSL cannot negotiate the previous Ed25519 TLS certificate.
+  // Device proofs keep Ed25519; only this ephemeral TLS key uses P-256/SHA-256.
+  const pair = generateKeyPairSync("ec", { namedCurve: "prime256v1" });
+  const algorithm = sequence(oid([0x2a, 0x86, 0x48, 0xce, 0x3d, 0x04, 0x03, 0x02]));
   const name = sequence(
     der(0x31, sequence(oid([0x55, 4, 3]), der(0x0c, Buffer.from("shanghao.local")))),
   );
@@ -62,7 +64,7 @@ export function createLanCertificate(now = Date.now()): {
   const certificate = sequence(
     tbs,
     algorithm,
-    der(3, Buffer.concat([Buffer.from([0]), sign(null, tbs, pair.privateKey)])),
+    der(3, Buffer.concat([Buffer.from([0]), sign("sha256", tbs, pair.privateKey)])),
   );
   const parsed = new X509Certificate(certificate);
   if (!parsed.verify(pair.publicKey) || parsed.checkHost("shanghao.local") !== "shanghao.local")

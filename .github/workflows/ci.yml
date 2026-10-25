@@ -41,6 +41,7 @@ jobs:
       - run: pnpm test:upgrade
       - run: pnpm test:runtime-health
       - run: xvfb-run -a pnpm --dir apps/desktop exec electron --no-sandbox tests/electron-audio-worklet-smoke.cjs
+      - run: xvfb-run -a pnpm --dir apps/desktop exec electron --no-sandbox tests/electron-temporary-room-smoke.cjs
       - run: pnpm test:five-peer-audio
       - run: xvfb-run -a pnpm test:five-peer-media
       - run: pnpm build
@@ -69,6 +70,7 @@ jobs:
       - run: pnpm test:upgrade
       - run: pnpm test:runtime-health
       - run: pnpm test:audio-worklet
+      - run: pnpm test:temporary-room
       - run: pnpm test:screen-capture
       - run: pnpm test:five-peer-audio
       - run: pnpm test:five-peer-media

@@ -31,6 +31,7 @@
     "test:five-peer-media": "node scripts/verify-five-peer-media.mjs",
     "test:room-ui": "node scripts/verify-room-ui.mjs",
     "test:audio-worklet": "corepack pnpm --dir apps/desktop exec electron tests/electron-audio-worklet-smoke.cjs",
+    "test:temporary-room": "corepack pnpm --dir apps/desktop exec electron tests/electron-temporary-room-smoke.cjs",
     "test:phone-mic": "corepack pnpm --filter @private-voice/shared build && corepack pnpm --filter @private-voice/signaling build:phone-mic-sidecar && node scripts/verify-phone-mic-sidecar.mjs && corepack pnpm --dir apps/desktop exec tsx --test tests/phone-mic-bridge.test.ts tests/phone-mic-health.test.ts tests/phone-mic-source-state.test.ts tests/phone-mic-usb-service.test.ts",
     "test:migration": "corepack pnpm --dir apps/desktop exec tsx --test tests/settings-migration.test.ts tests/settings-store-roundtrip.test.ts tests/user-data-migration.test.ts",
     "test:upgrade": "corepack pnpm --dir apps/desktop exec tsx --test tests/n-minus-one-storage-fixture.test.ts",
